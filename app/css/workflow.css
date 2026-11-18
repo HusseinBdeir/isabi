@@ -472,8 +472,85 @@
 }
 .vlog-inspect-k { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .vlog-inspect-v { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
-.vlog-modal-ft { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.vlog-modal-ft { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
 .perm-page-chip.is-role-locked { opacity: .48; cursor: not-allowed; }
+.vlog-head-acts { flex-wrap: wrap; }
+
+/* Mandatory Void Reason Modal, Sentinel Void Patterns, Cascade Preview & AI Summary */
+.vlog-reason-backdrop { z-index: 10500; }
+.vlog-reason-card {
+  width: min(560px, 100%); max-height: 88dvh; overflow: hidden; display: flex; flex-direction: column;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--brass-border);
+  border-top: 3px solid var(--crit, #DC2626); border-radius: 12px; box-shadow: var(--shadow-lg);
+}
+.vlog-reason-triggers { display: flex; flex-wrap: wrap; gap: 6px; }
+.vlog-reason-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vlog-reason-chip { font-size: 11.5px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.vlog-reason-chip:hover { border-color: var(--brass); color: var(--brass-ink, var(--ink)); }
+.vlog-reason-textarea {
+  width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; min-height: 76px;
+}
+.vlog-reason-textarea:focus { outline: 2px solid var(--brass); outline-offset: -1px; }
+.vlog-reason-err {
+  padding: 7px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  color: var(--crit, #DC2626); background: rgba(220, 38, 38, .08); border: 1px solid rgba(220, 38, 38, .28);
+}
+.insp-edit-inp.is-invalid {
+  border-color: var(--crit, #DC2626) !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, .18);
+}
+.insp-edit-inp.is-required-hint { border-color: rgba(217, 119, 6, .55); }
+
+.vlog-cascade-box {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 10px 12px; display: grid; gap: 8px;
+}
+.vlog-cascade-hd {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+}
+.vlog-cascade-banner {
+  padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.45;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.vlog-cascade-banner.warn { background: rgba(217, 119, 6, .11); border: 1px solid rgba(217, 119, 6, .35); color: var(--ink); }
+.vlog-cascade-banner.crit { background: rgba(220, 38, 38, .10); border: 1px solid rgba(220, 38, 38, .35); color: var(--ink); }
+.vlog-cascade-banner.ok { background: rgba(21, 128, 61, .09); border: 1px solid rgba(21, 128, 61, .3); color: var(--ink); }
+.vlog-cascade-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.vlog-cascade-list li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  font-size: 12px; padding: 4px 6px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line);
+}
+.vlog-cascade-k { font-weight: 700; color: var(--ink); }
+.vlog-cascade-v { color: var(--muted); overflow-wrap: anywhere; }
+
+.vlog-ai-panel {
+  margin-bottom: 12px; padding: 12px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--brass-border); border-left: 3px solid var(--brass);
+  display: grid; gap: 10px;
+}
+[dir="rtl"] .vlog-ai-panel { border-left: 1px solid var(--brass-border); border-right: 3px solid var(--brass); }
+.vlog-ai-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.vlog-ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vlog-ai-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font-size: 12px; cursor: pointer;
+}
+.vlog-ai-chip.active, .vlog-ai-chip:hover { border-color: var(--brass); background: var(--brass-soft, rgba(180, 83, 9, .09)); }
+.vlog-ai-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; font-size: 12px; }
+.vlog-ai-card { padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface-2); min-width: 0; }
+.vlog-ai-cloud { padding: 9px 11px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface-2); font-size: 12.5px; line-height: 1.5; }
+
+.sn-void-panel { margin-top: 14px; }
+.sn-void-grid { display: grid; gap: 8px; }
+.sn-void-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2);
+}
+.sn-void-row-main { min-width: 0; flex: 1 1 240px; display: grid; gap: 2px; }
+.sn-void-row-title { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.sn-void-row-sub { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
 
 @media (max-width: 1040px) {
   .vlog-pulse-grid { grid-template-columns: minmax(0, 1fr); }
@@ -486,11 +563,11 @@
   .vlog-combo-wrap { flex: 1 1 160px; }
   .vlog-combo-btn { width: 100%; max-width: none; }
   .vlog-search-wrap { max-width: none; width: 100%; }
-  .vlog-search, .vlog-combo-search, .vlog-select, .vlog-note-inp, .vlog-drawer-textarea { font-size: 16px !important; }
+  .vlog-search, .vlog-combo-search, .vlog-select, .vlog-note-inp, .vlog-drawer-textarea, .vlog-reason-textarea { font-size: 16px !important; }
 }
 @media (max-width: 520px) {
   .vlog-kpi-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (pointer: coarse) {
-  .vlog-seg-btn, .vlog-btn-xs, .vlog-combo-btn, .vlog-combo-opt, .vlog-lens-chip { min-height: 44px; }
+  .vlog-seg-btn, .vlog-btn-xs, .vlog-combo-btn, .vlog-combo-opt, .vlog-lens-chip, .vlog-reason-chip, .vlog-ai-chip { min-height: 44px; }
 }

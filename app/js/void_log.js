@@ -81,6 +81,7 @@
     re_leases: 'Lease Contracts',
     re_invoicing: 'Rent Invoices',
     re_sales: 'Property Sales',
+    re_instalments: 'Buyer Instalment Schedules',
     re_workorders: 'Fit-Out Work Orders',
     ins_policies: 'Policies & Endorsements',
     ins_claims: 'Claims (FNOL)',
@@ -187,6 +188,7 @@
     actor: 'all',
     lens: 'all',
     drillDay: '',
+    cluster: 'all',
     q: '',
     sortKey: 'voided_at',
     sortDir: 'desc',
@@ -197,12 +199,36 @@
   let D = null;
   let wired = false;
   let armedRestoreKey = '';
+  let armedCutoffKey = '';
   let editingNoteKey = '';
   let inspectKey = '';
   let openCombo = '';
   let comboQuery = '';
   let lastMatchedKeys = [];
+  let aiPanelOpen = false;
+  let aiRequestGen = 0;
+  let aiAbortCtrl = null;
+  let aiSyncTimer = null;
+  let aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
   const inFlightKeys = new Set();
+
+  function cancelPendingAiSummary() {
+    if (aiSyncTimer) { clearTimeout(aiSyncTimer); aiSyncTimer = null; }
+    if (aiAbortCtrl) { try { aiAbortCtrl.abort(); } catch (_) {} aiAbortCtrl = null; }
+  }
+
+  function scheduleAiSummarySync(delayMs = 120) {
+    if (aiSyncTimer) clearTimeout(aiSyncTimer);
+    aiSyncTimer = setTimeout(() => {
+      aiSyncTimer = null;
+      syncAiSummaryAfterChange();
+    }, delayMs);
+  }
+
+  function disarmRestoreConfirmations() {
+    armedRestoreKey = '';
+    armedCutoffKey = '';
+  }
 
   const filterState = Object.assign({}, DEFAULT_FILTERS);
 
@@ -358,20 +384,31 @@
     if (!s || /^confidential$/i.test(s)) return null;
     let neg = false;
     if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
-    s = s.replace(/[^0-9.\-]/g, '');
-    if (!s || s === '-' || s === '.') return null;
-    const n = Number(s);
+    const cleaned = s.replace(/,/g, '');
+    const m = cleaned.match(/[-+]?\d+(?:\.\d+)?/);
+    if (!m) return null;
+    const n = Number(m[0]);
     if (!Number.isFinite(n)) return null;
     return neg ? -Math.abs(n) : n;
   }
 
+  const VOID_LOG_USD_KEYS = [
+    'total_ttc_usd', 'ttc_usd', 'ttc_period_usd', 'annual_ttc_usd', 'total_usd',
+    'net_usd', 'amount_usd', 'usd_amount', 'ttc', 'gross_prem_usd', 'gwp_usd',
+    'premium_usd', 'net_payable_4017_usd', 'settled_to_carrier_usd', 'gross_comm_usd',
+    'net_comm_usd', 'quoted_renewal_usd', 'claimed_usd', 'approved_usd',
+    'paid_by_insurer_usd', 'contract_usd', 'season_contract_usd', 'seasonal_rate_usd',
+    'nightly_rate_usd', 'gross_pool_usd', 'open_payable_usd', 'pos_billed_ttc',
+    'scheduled_usd', 'actual_usd', 'open_usd', 'landed_cost_usd', 'total_landed_add',
+    'fob_usd', 'gross_ar_usd', 'unallocated_usd', 'principal_usd', 'total_due_usd',
+    'balance_usd', 'paid_usd', 'advance_usd', 'price_usd', 'cost_usd', 'salary_usd',
+    'net_pay_usd', 'base_salary_usd', 'rent_usd', 'commission_usd', 'claim_usd',
+    'billed_usd', 'cash_usd', 'gross_usd', 'usd', 'total_ttc'
+  ];
+
   function extractRecordAmountUsd(rec, crKey) {
     if (!rec || typeof rec !== 'object') return null;
-    const usdKeys = [
-      'ttc_usd', 'total_usd', 'amount_usd', 'net_usd', 'paid_usd', 'price_usd', 'cost_usd',
-      'salary_usd', 'premium_usd', 'rent_usd', 'commission_usd', 'claim_usd', 'billed_usd', 'cash_usd'
-    ];
-    for (const k of usdKeys) {
+    for (const k of VOID_LOG_USD_KEYS) {
       if (rec[k] !== undefined && rec[k] !== null && rec[k] !== '') {
         const n = parseMoneyNumber(rec[k]);
         if (n !== null) return Math.round(n * 100) / 100;
@@ -860,6 +897,20 @@
       if (myGen === posVoidsState.gen) posVoidsState.loading = false;
     }
     if (D.STATE && D.STATE.view === 'void_log') patchResultsInPlace();
+    else if (D.STATE && D.STATE.view === 'sentinels' && D.render) {
+      if (D.invalidateSentinelCache) D.invalidateSentinelCache();
+      D.render();
+    }
+  }
+
+  function ensurePosVoidsLoaded(force) {
+    if (!D) return;
+    const u = D.activeUser();
+    if (!needsHospitalityPosFeed(u)) return;
+    const sk = currentPosScopeKey(u);
+    if (!force && posVoidsState.loaded && posVoidsState.scopeKey === sk) return;
+    if (posVoidsState.loading && posVoidsState.scopeKey === sk && !force) return;
+    refreshPosVoids({ force: Boolean(force) });
   }
 
   function collectScopedVoidEntries() {
@@ -1123,7 +1174,7 @@
           moduleLabel: humanizeModule(bucket, snap.tableTitle || (ed && ed.tableTitle) || r.tableTitle),
           company: coEff || 'Shared',
           industry: meta.industry,
-          date: effectiveRecordDate(r, snap) || String((ed && ed.date) || '').slice(0, 10),
+          date: effectiveRecordDate(r, snap) || String(r.due_date || (ed && ed.date) || '').slice(0, 10),
           summary: String([pid, r.counterparty || snap.counterparty || (ed && ed.counterparty) || r.customer || r.supplier || r.tenant || r.entity || r.outlet || r.notes || ''].filter(Boolean).join(' · ')).slice(0, 140),
           refCode: disp.refCode || pid,
           partyName: disp.partyName,
@@ -1280,6 +1331,876 @@
     return entries;
   }
 
+  const VOID_CLUSTER_DEFS = [
+    { key: 'rekey_print', label: 'Till / Re-Key Alert', rx: /re-?key|after[- ]?print|reprint|till|slip|طباعة|إيصال|صندوق|reimpression|caisse/i },
+    { key: 'pricing_rate', label: 'Pricing / Rate', rx: /pric|rate|tariff|discount|rebate|vat|ttc|margin|fee|سعر|تسعير|تعرفة|حسم|ضريبة|tarif|remise|tva|prix/i },
+    { key: 'duplicate_typo', label: 'Duplicate / Typo', rx: /duplic|dup\b|double|typo|mistake|twice|wrong num|entry error|مكرر|خطأ|تكرار|إدخال|doublon|erreur|saisie/i },
+    { key: 'wrong_entity', label: 'Wrong Party / Vehicle', rx: /wrong cust|wrong truck|wrong driver|wrong co|wrong item|wrong party|wrong entity|entity|plate|vehicle|عميل|شاحنة|سائق|جهة|لوحة|client|camion|chauffeur/i },
+    { key: 'cancelled_return', label: 'Cancelled / Returned', rx: /cancel|return|reject|abort|refund|refus|melt|ملغ|ملغي|إلغاء|مرتجع|annul|retour/i },
+    { key: 'unexplained', label: 'Unexplained / Blank', rx: /^$/ }
+  ];
+
+  function classifyVoidCluster(entry, alertKeysSet) {
+    if (!entry) return 'unexplained';
+    const raw = entry.raw || {};
+    const txt = String(entry.voidReason || '').trim();
+    if (txt && txt.length >= 3 && !/^[-.]+$/.test(txt)) {
+      for (let i = 0; i < VOID_CLUSTER_DEFS.length - 1; i++) {
+        if (VOID_CLUSTER_DEFS[i].rx.test(txt)) return VOID_CLUSTER_DEFS[i].key;
+      }
+      if (entry.isPosTill && raw.lower_rekey) return 'rekey_print';
+      return 'other';
+    }
+    if ((entry.isPosTill && raw.lower_rekey) || (alertKeysSet && alertKeysSet.has(entry.key))) return 'rekey_print';
+    return 'unexplained';
+  }
+
+  function sanitizeOutwardText(raw) {
+    return String(raw == null ? '' : raw)
+      .replace(/\s*\u2014\s*/g, ' - ')
+      .replace(/\u2014/g, ' - ')
+      .replace(/\s*\u2192\s*/g, ' -> ')
+      .replace(/\u2192/g, ' -> ')
+      .replace(/\bTHEO\b/gi, 'Audit Assistant')
+      .trim();
+  }
+
+  function normStr(v) {
+    return D && D.norm ? D.norm(v) : String(v == null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  function indPrefixOf(ind) {
+    const s = String(ind || '').toLowerCase();
+    if (s.includes('hold')) return 'hld';
+    if (s.includes('hospit') || s.includes('resort')) return 'hsp';
+    if (s.includes('trad') || s.includes('auto')) return 'trd';
+    if (s.includes('real') || s.includes('prop')) return 're';
+    if (s.includes('insur') || s.includes('brok')) return 'ins';
+    return 'mfg';
+  }
+
+  function getVoidSentinelRuleConfig(ind) {
+    const pfx = indPrefixOf(ind);
+    const ruleId = pfx === 'mfg' ? 'S19' : `ind_${pfx}_10`;
+    const enabled = (D && D.isAlertRuleEnabled) ? D.isAlertRuleEnabled(ruleId) : true;
+    const p = (D && D.getAlertRuleParamsObj) ? D.getAlertRuleParamsObj(ruleId) : {};
+    const maxShift = Math.max(2, Number.isFinite(Number(p.max_shift_voids)) ? Number(p.max_shift_voids) : 3);
+    const rekeyWinMin = Math.max(15, Number.isFinite(Number(p.rekey_window_min)) ? Number(p.rekey_window_min) : 180);
+    return { ruleId, enabled, maxShiftVoids: maxShift, rekeyWindowMin: rekeyWinMin };
+  }
+
+  function _extractActiveRowUsdSimple(r) {
+    if (!r || typeof r !== 'object') return 0;
+    for (let i = 0; i < VOID_LOG_USD_KEYS.length; i++) {
+      const n = parseMoneyNumber(r[VOID_LOG_USD_KEYS[i]]);
+      if (n != null && n !== 0) return Math.abs(n);
+    }
+    const genFallback = ['total', 'amount'];
+    for (let i = 0; i < genFallback.length; i++) {
+      const n = parseMoneyNumber(r[genFallback[i]]);
+      if (n != null && n !== 0) return Math.abs(n);
+    }
+    return 0;
+  }
+
+  function _findErpLowerRekeyReplacement(e, rekeyWindowMin) {
+    if (!D || !e || e.isPosTill || e.amountMasked || !(e.amountUsd > 0.01)) return null;
+    const tbl = String(e.crKey || '').trim();
+    if (!tbl || PAYROLL_CONFIDENTIAL_TABLES.has(tbl)) return null;
+    const st = (D.STATE && D.STATE.customRecords) || {};
+    const sd = (D.SEED && D.SEED.records) || {};
+    const indSt = (D.getIndustryCustomRowsStore && D.getIndustryCustomRowsStore()) || {};
+    let pool = [];
+    if (e.sourceKind === 'custom_record') {
+      pool = (Array.isArray(st[tbl]) ? st[tbl] : []).concat(Array.isArray(sd[tbl]) ? sd[tbl] : []);
+    } else if (Array.isArray(indSt[tbl])) {
+      pool = indSt[tbl];
+    }
+    if (!pool.length) return null;
+    const rawV = e.raw || {};
+    const vParty = normStr(rawV.customer || rawV.supplier || rawV.tenant || rawV.client || rawV.party || rawV.counterparty || rawV.entered_by || '');
+    const vCo = normStr(e.company || '');
+    const vDay = String(e.voidedAt || e.date || '').slice(0, 10);
+    const vMs = e.voidedAtMs || parseTimestampMs(e.date);
+    const seen = new Set();
+    let best = null;
+    for (let i = 0; i < pool.length; i++) {
+      const r = pool[i];
+      if (!r || r.voided) continue;
+      const rid = String(r.id || r.ticket_no || r.invoice_no || '').trim();
+      if (!rid || rid === String(e.id || '') || seen.has(rid)) continue;
+      seen.add(rid);
+      if (vCo && normStr(r.company || '') && normStr(r.company || '') !== vCo) continue;
+      const aUsd = _extractActiveRowUsdSimple(r);
+      if (!(aUsd > 0 && aUsd < e.amountUsd - 0.01)) continue;
+      const aParty = normStr(r.customer || r.supplier || r.tenant || r.client || r.party || r.counterparty || r.entered_by || '');
+      if (vParty && aParty && aParty !== vParty) continue;
+      const aStamp = r.entered_at || r.created_at || r.updated_at || r.date || '';
+      const aDay = String(aStamp || r.date || '').slice(0, 10);
+      const aMs = parseTimestampMs(aStamp);
+      let deltaMin = null;
+      if (vMs && aMs) {
+        const dm = Math.round((aMs - vMs) / 60000);
+        if (dm >= -5 && dm <= rekeyWindowMin) deltaMin = Math.max(0, dm);
+      } else if (vDay && aDay && aDay === vDay) {
+        deltaMin = 0;
+      }
+      if (deltaMin === null) continue;
+      const dropUsd = Math.round((e.amountUsd - aUsd) * 100) / 100;
+      if (!best || dropUsd > best.drop_usd) {
+        best = {
+          id: rid,
+          num: String(r.ticket_no || r.invoice_no || r.name || rid),
+          total_usd: Math.round(aUsd * 100) / 100,
+          drop_usd: dropUsd,
+          delta_min: deltaMin
+        };
+      }
+    }
+    return best;
+  }
+
+  function resolveActiveVoidInd(targetInd, targetCompany) {
+    if (targetInd && targetInd !== 'all') return targetInd;
+    const co = targetCompany || (D && D.STATE && D.STATE.company) || '';
+    if (D && typeof D.getActiveIndustry === 'function') return D.getActiveIndustry(co) || 'Manufacturing';
+    return 'Manufacturing';
+  }
+
+  function computeVoidSentinelDigest(targetInd, targetCompany) {
+    const effIndEarly = resolveActiveVoidInd(targetInd, targetCompany);
+    const cfgEarly = getVoidSentinelRuleConfig(effIndEarly);
+    if (!D || !D.canViewVoidLog || !D.canViewVoidLog(D.activeUser())) {
+      return { enabled: true, ruleId: cfgEarly.ruleId, cfg: cfgEarly, findings: [], alertKeys: new Set(), counts: { repeat: 0, afterPrint: 0, lowerRekey: 0 }, maxSeverity: 'ok', scannedCount: 0 };
+    }
+    const u = D.activeUser();
+    const effInd = effIndEarly;
+    const cfg = cfgEarly;
+    const GROUP_DISPLAY_LABELS = new Set([
+      'all', 'all group', 'manufacturing-group', 'wtc & bbconstruction', 'manufacturing',
+      'holding & treasury', 'hospitality & resorts', 'automotive & heavy trading',
+      'real estate & property', 'insurance & brokerage'
+    ]);
+    const all = collectScopedVoidEntries().filter(e => {
+      if (!e || e.originGroup === 'system' || e.isCascadedChild) return false;
+      if (targetInd && targetInd !== 'all' && e.industry !== targetInd) return false;
+      if (targetCompany && !String(targetCompany).startsWith('industry:') && !GROUP_DISPLAY_LABELS.has(String(targetCompany).trim().toLowerCase())) {
+        const tcLow = String(targetCompany).trim().toLowerCase();
+        const buMatch = (D.COMPANY_BU_MATCH && D.COMPANY_BU_MATCH[tcLow]) || (D.COMPANY_BU_MATCH && D.COMPANY_BU_MATCH[targetCompany]) || '';
+        const eCoKey = (D.COMPANY_KEY_BY_NAME && D.COMPANY_KEY_BY_NAME[e.company]) || '';
+        const matchesKey = eCoKey && String(eCoKey).toLowerCase() === tcLow;
+        const matchesBu = buMatch && normStr(e.company) === normStr(buMatch);
+        const matchesRaw = normStr(e.company) === normStr(targetCompany);
+        if (normStr(e.company) && !matchesKey && !matchesBu && !matchesRaw) return false;
+      }
+      return true;
+    });
+    const findings = [];
+    const alertKeys = new Set();
+
+    // 1. Shift repeat-void clusters per actor/till & day
+    const actorDayMap = new Map();
+    all.forEach(e => {
+      const dayIso = String(e.voidedAt || e.date || '').slice(0, 10) || 'Undated';
+      const actor = String(e.voidedBy || 'Supervisor').trim();
+      const key = `${actor.toLowerCase()}::${dayIso}::${e.company || ''}`;
+      if (!actorDayMap.has(key)) actorDayMap.set(key, { actor, day: dayIso, company: e.company || '', entries: [] });
+      actorDayMap.get(key).entries.push(e);
+    });
+    actorDayMap.forEach(grp => {
+      if (grp.entries.length >= cfg.maxShiftVoids) {
+        const sorted = grp.entries.slice().sort((a, b) => (b.voidedAtMs || 0) - (a.voidedAtMs || 0));
+        const lead = sorted[0];
+        sorted.forEach(x => alertKeys.add(x.key));
+        const unmaskedSum = sorted.filter(x => !x.amountMasked && x.amountUsd != null).reduce((s, x) => s + Number(x.amountUsd || 0), 0);
+        const allMasked = sorted.every(x => x.amountMasked);
+        findings.push({
+          kind: 'repeat_shift',
+          severity: grp.entries.length >= cfg.maxShiftVoids + 2 ? 'crit' : 'warn',
+          actor: grp.actor,
+          day: grp.day,
+          company: grp.company,
+          count: grp.entries.length,
+          totalUsd: allMasked ? null : Math.round(unmaskedSum * 100) / 100,
+          amountMasked: allMasked,
+          leadEntry: lead
+        });
+      }
+    });
+
+    // 2. Void after print (POS gate till or ERP thermal slip) + 3. Lower-amount re-key
+    all.forEach(e => {
+      const raw = e.raw || {};
+      const printedBefore = Boolean(
+        raw.printed_before_void === true
+        || raw.printed === true
+        || raw.printed_at
+        || raw.last_printed_at
+        || Number(raw.print_count || 0) > 0
+      );
+      if (printedBefore) {
+        alertKeys.add(e.key);
+        findings.push({
+          kind: 'after_print',
+          severity: 'warn',
+          actor: e.voidedBy,
+          day: String(e.voidedAt || e.date || '').slice(0, 10),
+          company: e.company,
+          leadEntry: e
+        });
+      }
+      const rawRekey = raw.lower_rekey && Number(raw.lower_rekey.drop_usd) > 0 ? raw.lower_rekey : null;
+      const lowerRk = e.isPosTill
+        ? (rawRekey && Number(rawRekey.delta_min || 0) <= cfg.rekeyWindowMin ? rawRekey : null)
+        : _findErpLowerRekeyReplacement(e, cfg.rekeyWindowMin);
+      if (lowerRk) {
+        alertKeys.add(e.key);
+        findings.push({
+          kind: 'lower_rekey',
+          severity: 'crit',
+          actor: e.voidedBy,
+          day: String(e.voidedAt || e.date || '').slice(0, 10),
+          company: e.company,
+          rekey: lowerRk,
+          leadEntry: e
+        });
+      }
+    });
+
+    const sevRank = { crit: 2, warn: 1, ok: 0 };
+    findings.sort((a, b) => (sevRank[b.severity] - sevRank[a.severity]) || ((b.leadEntry.voidedAtMs || 0) - (a.leadEntry.voidedAtMs || 0)));
+    const repeat = findings.filter(f => f.kind === 'repeat_shift').length;
+    const afterPrint = findings.filter(f => f.kind === 'after_print').length;
+    const lowerRekey = findings.filter(f => f.kind === 'lower_rekey').length;
+    const maxSeverity = findings.some(f => f.severity === 'crit') ? 'crit' : (findings.length ? 'warn' : 'ok');
+    return { enabled: cfg.enabled, ruleId: cfg.ruleId, cfg, findings, alertKeys, counts: { repeat, afterPrint, lowerRekey }, maxSeverity, u, scannedCount: all.length };
+  }
+
+  function buildVoidSentinelItem(ind, opts = {}) {
+    const isMfg = !ind || ind === 'Manufacturing';
+    const scopeCo = opts.scopeCompany !== undefined ? opts.scopeCompany : ((D && D.STATE && D.STATE.company) || '');
+    const d = computeVoidSentinelDigest(ind, scopeCo);
+    const cfg = d.cfg || getVoidSentinelRuleConfig(resolveActiveVoidInd(ind, scopeCo));
+    const total = d.findings.length;
+    const badge = total
+      ? `${fmtNum(total)} FLAG${total === 1 ? '' : 'S'}`
+      : 'CLEAR';
+    const detail = total
+      ? `${fmtNum(d.counts.repeat)} repeat-shift, ${fmtNum(d.counts.afterPrint)} after-print, and ${fmtNum(d.counts.lowerRekey)} lower-rekey anomalies across ${fmtNum(d.scannedCount)} scoped voids (shift >= ${fmtNum(cfg.maxShiftVoids)}, re-key <= ${fmtNum(cfg.rekeyWindowMin)}m).`
+      : `No repeat-shift (>= ${fmtNum(cfg.maxShiftVoids)}), after-print, or lower-rekey (<= ${fmtNum(cfg.rekeyWindowMin)}m) anomalies across ${fmtNum(d.scannedCount)} scoped voids.`;
+    return {
+      id: opts.id || (isMfg ? 'S19' : 'VOID_AUDIT'),
+      ruleId: opts.ruleId || d.ruleId,
+      code: isMfg ? 'Rule #31 · Void & Audit Controls' : 'Rule #10 · Void & Audit Controls',
+      industry: ind || 'Manufacturing',
+      company: opts.company || (isMfg ? 'All Group' : ind),
+      title: 'Repeat-Void, After-Print & Lower-Rekey Sentinel',
+      badge,
+      severity: d.maxSeverity,
+      rawMetric: total,
+      detail,
+      summary: detail,
+      scrollPanel: 'snVoidPatternsPanel',
+      navView: 'void_log',
+      navLabel: 'Open Void Log'
+    };
+  }
+
+  function renderSentinelVoidPanelHtml(targetInd, targetCompany) {
+    if (!D || !D.canViewVoidLog || (!D.canViewVoidLog(D.activeUser()) && !D.isDemoScopeActive())) return '';
+    const d = computeVoidSentinelDigest(targetInd, targetCompany);
+    if (!d.enabled) return '';
+    const u = d.u || D.activeUser();
+    const hideCo = activeScopeCompanies(u).length <= 1;
+    const statusBadge = d.maxSeverity === 'crit'
+      ? `<span class="badge badge-crit" data-no-i18n="1">${esc(L(`${d.findings.length} High-Risk Flags`, `${d.findings.length} تنبيهات حرجة`, `${d.findings.length} alertes critiques`))}</span>`
+      : (d.findings.length
+        ? `<span class="badge badge-warn" data-no-i18n="1">${esc(L(`${d.findings.length} Watch Flags`, `${d.findings.length} تنبيهات`, `${d.findings.length} alertes`))}</span>`
+        : `<span class="badge badge-good">Clear</span>`);
+
+    const rowsHtml = d.findings.length
+      ? d.findings.slice(0, 12).map(f => {
+        const e = f.leadEntry;
+        const coTxt = (!hideCo && f.company) ? ` · ${f.company}` : '';
+        const amtTxt = e.amountMasked ? tr('Confidential') : (e.amountUsd != null ? formatSignedUsd(e.amountUsd) : '-');
+        let tagHtml = '';
+        let descTxt = '';
+        if (f.kind === 'repeat_shift') {
+          tagHtml = `<span class="vlog-badge vlog-badge-warn">Shift Repeat (${fmtNum(f.count)})</span>`;
+          const grpAmt = f.amountMasked ? tr('Confidential') : (f.totalUsd != null ? formatSignedUsd(f.totalUsd) : '-');
+          descTxt = L(`${f.actor}${coTxt} voided ${f.count} times on ${f.day} (${grpAmt})`, `${f.actor}${coTxt} ألغى ${f.count} مرات بتاريخ ${f.day} (${grpAmt})`, `${f.actor}${coTxt} a annulé ${f.count} fois le ${f.day} (${grpAmt})`);
+        } else if (f.kind === 'after_print') {
+          tagHtml = `<span class="vlog-badge vlog-badge-warn">After-Print Void</span>`;
+          descTxt = `${e.id}${coTxt} · ${e.summary} (${amtTxt}) · ${f.actor}`;
+        } else {
+          tagHtml = `<span class="vlog-badge vlog-badge-crit">Lower Re-Key</span>`;
+          const rkAmt = e.amountMasked ? tr('Confidential') : formatSignedUsd(f.rekey.total_usd);
+          const rkDrop = e.amountMasked ? tr('Confidential') : formatSignedUsd(f.rekey.drop_usd);
+          descTxt = L(
+            `${e.id}${coTxt} (${amtTxt}) replaced by #${f.rekey.num} (${rkAmt}, -${rkDrop} in ${f.rekey.delta_min}m) · ${f.actor}`,
+            `${e.id}${coTxt} (${amtTxt}) استبدل بالتذكرة #${f.rekey.num} (${rkAmt}, -${rkDrop} خلال ${f.rekey.delta_min}د) · ${f.actor}`,
+            `${e.id}${coTxt} (${amtTxt}) remplacé par #${f.rekey.num} (${rkAmt}, -${rkDrop} en ${f.rekey.delta_min}m) · ${f.actor}`
+          );
+        }
+        return `
+          <div class="sn-void-row">
+            <div class="sn-void-row-main">
+              <div class="sn-void-row-title">${tagHtml} <span data-no-i18n="1">${esc(e.moduleLabel)} · ${esc(f.day || e.date || '')}</span></div>
+              <div class="sn-void-row-sub" data-no-i18n="1">${esc(descTxt)}</div>
+            </div>
+            <button type="button" class="btn btn-outline-bar vlog-btn-xs" data-vlog-jump-key="${esc(e.key)}">Inspect Void</button>
+          </div>`;
+      }).join('')
+      : `<div class="mu" style="font-size:12.5px;padding:6px 0">No repeat-void, after-print, or lower-amount re-key anomalies under current thresholds.</div>`;
+
+    return `
+      <section class="panel-card sn-void-panel" id="snVoidPatternsPanel" data-vlog-sn-ind="${esc(targetInd || 'Manufacturing')}">
+        <div class="panel-hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div>
+            <h3>Repeat-Void, After-Print &amp; Lower-Rekey Sentinel</h3>
+            <div class="mu" style="font-size:12px" data-no-i18n="1">${esc(L(`Shift cluster >= ${d.cfg.maxShiftVoids} · After-print voids · Lower re-key <= ${d.cfg.rekeyWindowMin}m`, `تكرار الوردية >= ${d.cfg.maxShiftVoids} · إلغاء بعد الطباعة · إعادة إدخال أقل خلال ${d.cfg.rekeyWindowMin} دقيقة`, `Répétition >= ${d.cfg.maxShiftVoids} · Après impression · Re-saisie inférieure <= ${d.cfg.rekeyWindowMin}m`))}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${statusBadge}
+            <button type="button" class="btn btn-ghost-bar vlog-btn-xs" data-vlog-open-view="1">Open Void Log</button>
+          </div>
+        </div>
+        <div class="sn-void-grid">${rowsHtml}</div>
+      </section>`;
+  }
+
+  function jumpToVoidEntry(entryKey) {
+    if (!D || !D.setView) return;
+    D.setView('void_log');
+    setTimeout(() => {
+      const e = findEntryByKey(entryKey);
+      if (e) openInspectModal(e);
+    }, 35);
+  }
+
+  function wireSentinelContainer(container) {
+    if (!container || container.dataset.vlogSnDelegated === '1') return;
+    container.dataset.vlogSnDelegated = '1';
+    container.addEventListener('click', ev => {
+      const jumpBtn = ev.target && ev.target.closest ? ev.target.closest('[data-vlog-jump-key]') : null;
+      if (jumpBtn && container.contains(jumpBtn)) {
+        ev.preventDefault();
+        jumpToVoidEntry(jumpBtn.getAttribute('data-vlog-jump-key') || '');
+        return;
+      }
+      const openBtn = ev.target && ev.target.closest ? ev.target.closest('[data-vlog-open-view]') : null;
+      if (openBtn && container.contains(openBtn) && D && D.setView) {
+        ev.preventDefault();
+        D.setView('void_log');
+      }
+    });
+  }
+
+  function _datesOverlapIso(aStart, aEnd, bStart, bEnd) {
+    const as = String(aStart || '').slice(0, 10) || '1900-01-01';
+    const ae = (!aEnd || /open/i.test(String(aEnd))) ? '9999-12-31' : String(aEnd).slice(0, 10);
+    const bs = String(bStart || '').slice(0, 10) || '1900-01-01';
+    const be = (!bEnd || /open/i.test(String(bEnd))) ? '9999-12-31' : String(bEnd).slice(0, 10);
+    return as <= be && bs <= ae;
+  }
+
+  function computeVoidCascadePreview(entry) {
+    const res = { banners: [], rows: [], isInsuranceCutoffBlocked: false, cutoffReason: '' };
+    if (!entry || !D) return res;
+    const raw = entry.raw || {};
+    const cr = String(entry.crKey || '').trim();
+    const ind = String(entry.industry || '');
+    const idU = String(entry.id || '').trim().toUpperCase();
+    const u = D.activeUser();
+    const showPayroll = D.canViewPayrollDollarAmounts ? D.canViewPayrollDollarAmounts(u) : false;
+    const maskPay = PAYROLL_CONFIDENTIAL_TABLES.has(cr) && !showPayroll;
+
+    // 1. Insurance Bordereau Cutoff + Invoice / Remittance Linkage
+    if (ind.includes('Insurance') || /^ins_/i.test(cr)) {
+      let ins = null;
+      try { ins = D.computeInsuranceOperations ? D.computeInsuranceOperations({ ignorePeriod: true, ignoreRls: true }) : null; } catch (_) {}
+      const indStoreIns = (D.getIndustryCustomRowsStore && D.getIndustryCustomRowsStore()) || {};
+      const allBill = ((ins && ins.billing) || []).concat(Array.isArray(indStoreIns.ins_billing) ? indStoreIns.ins_billing : []);
+      const allRem = ((ins && ins.remittances) || []).concat(Array.isArray(indStoreIns.ins_remittances) ? indStoreIns.ins_remittances : []);
+      const allStmt = ((ins && ins.statements) || []).concat(Array.isArray(indStoreIns.ins_statements) ? indStoreIns.ins_statements : []);
+      if (ins || allStmt.length || allRem.length || allBill.length) {
+        const polNo = String(raw.policy_no || raw.id || entry.id || '').trim();
+        const carrierN = normStr(raw.carrier || '');
+        const eYm = String(entry.date || raw.date || raw.effective_from || '').slice(0, 7);
+        const billingHits = allBill.filter(b => b && !b.voided && (
+          (polNo && String(b.policy_no || '').toUpperCase() === polNo.toUpperCase())
+          || String(b.id || '').toUpperCase() === idU
+        ));
+        const remHits = allRem.filter(rm => {
+          if (!rm || rm.voided) return false;
+          const rmIdU = String(rm.id || '').toUpperCase();
+          if (rmIdU === idU) return true;
+          if (polNo && rmIdU === `REM-${polNo.toUpperCase()}`) return true;
+          const rmPol = String(rm.policy_no || rm.policy_id || rm.reference || '').trim().toUpperCase();
+          const polNoU = polNo.toUpperCase();
+          const rmPolTokens = rmPol ? rmPol.split(/[\s,;|/]+/).filter(Boolean) : [];
+          if (polNoU && (rmPol === polNoU || rmPolTokens.includes(polNoU))) return true;
+          if (carrierN && normStr(rm.carrier || '') === carrierN) {
+            const rmYm = String(rm.period || rm.remittance_date || rm.date || '').slice(0, 7);
+            return Boolean(eYm && rmYm && rmYm === eYm);
+          }
+          return false;
+        });
+        billingHits.slice(0, 4).forEach(b => {
+          res.rows.push({
+            label: L(`Invoice ${b.id}`, `فاتورة ${b.id}`, `Facture ${b.id}`),
+            value: L(
+              `${b.status || 'Open'} · Billed $${fmtNum(Number(b.client_billed_4112_usd || 0))} · Open $${fmtNum(Number(b.open_ar_4112_usd || 0))}`,
+              `${b.status || 'مفتوحة'} · مفوتر $${fmtNum(Number(b.client_billed_4112_usd || 0))} · رصيد $${fmtNum(Number(b.open_ar_4112_usd || 0))}`,
+              `${b.status || 'Ouvert'} · Facturé $${fmtNum(Number(b.client_billed_4112_usd || 0))} · Ouvert $${fmtNum(Number(b.open_ar_4112_usd || 0))}`
+            )
+          });
+        });
+        remHits.slice(0, 3).forEach(rm => {
+          res.rows.push({
+            label: L(`Remittance ${rm.id}`, `حوالة ${rm.id}`, `Versement ${rm.id}`),
+            value: L(
+              `${rm.carrier || ''} · ${rm.status || ''} · Net $${fmtNum(Number(rm.net_payable_4017_usd || 0))}`,
+              `${rm.carrier || ''} · ${rm.status || ''} · صافي $${fmtNum(Number(rm.net_payable_4017_usd || 0))}`,
+              `${rm.carrier || ''} · ${rm.status || ''} · Net $${fmtNum(Number(rm.net_payable_4017_usd || 0))}`
+            )
+          });
+        });
+        const settledStmt = allStmt.find(st => {
+          if (!st || st.voided) return false;
+          const stStatus = String(st.status || '');
+          if (!/settled|matched|reconciled/i.test(stStatus)) return false;
+          if (carrierN && normStr(st.carrier || '') !== carrierN) return false;
+          const pYm = String(st.period || '').slice(0, 7);
+          return !pYm || !eYm || eYm <= pYm;
+        });
+        const settledRem = remHits.find(rm => !rm.voided && /settled|paid/i.test(String(rm.status || '')));
+        if (settledStmt || settledRem) {
+          res.isInsuranceCutoffBlocked = true;
+          const ref = settledStmt ? `${settledStmt.id} (${settledStmt.period || ''} · ${settledStmt.status})` : `${settledRem.id} (${settledRem.status})`;
+          res.cutoffReason = L(
+            `Carrier bordereau ${ref} is already locked; restoring ${entry.id} requires 2-step cutoff override confirmation.`,
+            `جدول شركة التأمين ${ref} مقفل بالفعل؛ تتطلب استعادة ${entry.id} تأكيدا من خطوتين لتجاوز القطع.`,
+            `Le bordereau assureur ${ref} est déjà clôturé ; la restauration de ${entry.id} requiert une confirmation en 2 étapes.`
+          );
+          res.banners.push({
+            id: 'vlogBordereauCutoffBanner',
+            tone: 'crit',
+            html: `<strong>${esc(tr('Bordereau Cutoff Lock'))}:</strong> ${esc(res.cutoffReason)}`
+          });
+        }
+      }
+    }
+
+    // 2. Holding Intercompany Mirror Pair & Partner Pool
+    if (ind.includes('Holding') || cr === 'external_movements' || /^hld_/i.test(cr)) {
+      let ic = null;
+      try { ic = D.computeIntercompanyInteractions ? D.computeIntercompanyInteractions({ ignorePeriod: true }) : null; } catch (_) {}
+      const fromN = normStr(raw.fromCo || raw.from_entity || raw.company || entry.company || '');
+      const toN = normStr(raw.toCo || raw.to_entity || raw.counterparty || raw.party || '');
+      const amtAbs = entry.amountUsd != null ? Math.abs(entry.amountUsd) : 0;
+      const stRec = (D.STATE && D.STATE.customRecords && D.STATE.customRecords.external_movements) || [];
+      const sdRec = (D.SEED && D.SEED.records && D.SEED.records.external_movements) || [];
+      const indHld = ((D.getIndustryCustomRowsStore && D.getIndustryCustomRowsStore()) || {}).hld_interactions || [];
+      const allLegs = stRec.concat(sdRec, indHld);
+      const isIc = Boolean(toN || raw.flow === 'Intercompany' || /transfer|mirror/i.test(String(raw.kind || raw.type || '')) || cr === 'hld_interactions');
+      let matchedPair = null;
+      if (ic && Array.isArray(ic.interactions)) {
+        matchedPair = ic.interactions.find(p => {
+          const p1 = p && p.primaryRow && String(p.primaryRow.id || '').toUpperCase();
+          const p2 = p && p.mirrorRow && String(p.mirrorRow.id || '').toUpperCase();
+          return p1 === idU || p2 === idU;
+        }) || null;
+      }
+      const mirrorLeg = (matchedPair && ((String((matchedPair.primaryRow || {}).id || '').toUpperCase() === idU) ? matchedPair.mirrorRow : matchedPair.primaryRow))
+        || (isIc && toN ? allLegs.find(l => {
+          if (!l || String(l.id || '').toUpperCase() === idU) return false;
+          const lFrom = normStr(l.fromCo || l.company || '');
+          const lTo = normStr(l.toCo || l.party || l.counterparty || '');
+          const revMatch = (lFrom === toN && (!fromN || lTo === fromN));
+          const sameAmt = amtAbs > 0 ? Math.abs(_extractActiveRowUsdSimple(l) - amtAbs) <= 0.1 : true;
+          return revMatch && sameAmt && (!entry.date || !l.date || String(l.date).slice(0, 10) === String(entry.date).slice(0, 10));
+        }) : null);
+
+      if (mirrorLeg) {
+        const legVoided = Boolean(mirrorLeg.voided);
+        res.banners.push({
+          id: 'vlogMirrorPairBanner',
+          tone: legVoided ? 'ok' : 'warn',
+          html: legVoided
+            ? `<strong>${esc(tr('Mirror Leg Also Voided'))}:</strong> ${esc(L(`Counterpart ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) is also voided.`, `القيد المقابل ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) ملغي أيضا.`, `La contrepartie ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) est également annulée.`))}`
+            : `<strong>${esc(tr('Intercompany Mirror Active'))}:</strong> ${esc(L(`Counterpart ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) is still active ($${fmtNum(_extractActiveRowUsdSimple(mirrorLeg))}). Restoring restores bilateral balance.`, `القيد المقابل ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) لا يزال نشطا ($${fmtNum(_extractActiveRowUsdSimple(mirrorLeg))}). الاستعادة تعيد التوازن المتقابل.`, `La contrepartie ${mirrorLeg.id || ''} (${mirrorLeg.company || mirrorLeg.fromCo || ''}) est encore active ($${fmtNum(_extractActiveRowUsdSimple(mirrorLeg))}). La restauration rétablit l'équilibre bilatéral.`))}`
+        });
+      } else if (isIc && (cr === 'hld_interactions' || cr === 'external_movements')) {
+        res.banners.push({
+          id: 'vlogMirrorPairBanner',
+          tone: 'warn',
+          html: `<strong>${esc(tr('Unmatched Sister Leg'))}:</strong> ${esc(L(`No active or voided counterparty mirror leg matched for ${entry.id}.`, `لم يتم العثور على قيد مقابل نشط أو ملغي لـ ${entry.id}.`, `Aucune jambe miroir active ou annulée trouvée pour ${entry.id}.`))}`
+        });
+      }
+      if (/^hld_(distributions|partners|extended)$/i.test(cr)) {
+        res.rows.push({
+          label: tr('Holding Pool Link'),
+          value: `${raw.partner || raw.party || raw.counterparty || entry.company} · ${raw.entity || entry.company}`
+        });
+      }
+    }
+
+    // 3. Real Estate Chronological Unit Overlap & Reopened Accrual Window
+    if (ind.includes('Real Estate') || /^re_/i.test(cr)) {
+      let re = null;
+      try { re = D.computeRealEstateOperations ? D.computeRealEstateOperations({ ignorePeriod: true }) : null; } catch (_) {}
+      if (re) {
+        if (cr === 're_leases' || /lease/i.test(entry.moduleLabel)) {
+          const sDt = String(raw.start_date || entry.date || '').slice(0, 10);
+          const eDt = String(raw.end_date || 'Open');
+          const unitN = normStr(raw.unit || raw.unit_id || '');
+          const overlap = unitN ? (re.leases || []).filter(l => !l.voided && String(l.id || '').toUpperCase() !== idU && normStr(l.unit || '') === unitN && _datesOverlapIso(sDt, eDt, l.start_date, l.end_date)) : [];
+          res.banners.push({
+            id: 'vlogReWindowBanner',
+            tone: overlap.length ? 'warn' : 'ok',
+            html: overlap.length
+              ? `<strong>${esc(tr('Unit Overlap Conflict'))}:</strong> ${esc(L(`${raw.unit || ''} already has ${overlap.length} active lease(s) (${overlap.map(x => x.id).join(', ')}) overlapping ${sDt} to ${eDt}.`, `الوحدة ${raw.unit || ''} لديها بالفعل ${overlap.length} عقد إيجار نشط (${overlap.map(x => x.id).join(', ')}) يتداخل من ${sDt} إلى ${eDt}.`, `${raw.unit || ''} possède déjà ${overlap.length} bail(aux) actif(s) (${overlap.map(x => x.id).join(', ')}) chevauchant ${sDt} à ${eDt}.`))}`
+              : `<strong>${esc(tr('Reopened Rent Accrual Window'))}:</strong> ${esc(L(`${sDt || '-'} to ${eDt} · ${raw.frequency || 'Quarterly'} · $${fmtNum(Number(raw.ttc_period_usd || raw.net_period_usd || entry.amountUsd || 0))}/period (0 unit overlaps).`, `من ${sDt || '-'} إلى ${eDt} · ${raw.frequency || 'ربع سنوي'} · $${fmtNum(Number(raw.ttc_period_usd || raw.net_period_usd || entry.amountUsd || 0))}/فترة (بدون تداخل وحدات).`, `${sDt || '-'} au ${eDt} · ${raw.frequency || 'Trimestriel'} · $${fmtNum(Number(raw.ttc_period_usd || raw.net_period_usd || entry.amountUsd || 0))}/période (0 chevauchement).`))}`
+          });
+          const tenN = normStr(raw.tenant || '');
+          const invHits = (re.invoices || []).filter(iv => {
+            if (String(iv.lease_id || '').toUpperCase() === idU) return true;
+            return Boolean(tenN) && normStr(iv.tenant || '') === tenN && (!unitN || !iv.unit || normStr(iv.unit) === unitN);
+          });
+          if (invHits.length) {
+            res.rows.push({
+              label: tr('Linked Rent Invoices'),
+              value: L(
+                `${invHits.length} invoice(s): ${invHits.slice(0, 3).map(x => x.id).join(', ')}`,
+                `${invHits.length} فاتورة: ${invHits.slice(0, 3).map(x => x.id).join(', ')}`,
+                `${invHits.length} facture(s) : ${invHits.slice(0, 3).map(x => x.id).join(', ')}`
+              )
+            });
+          }
+        } else if (cr === 're_invoicing') {
+          const tenN = normStr(raw.tenant || '');
+          const unitN = normStr(raw.unit || raw.unit_id || '');
+          const rctHits = tenN ? (re.receipts || []).filter(rc => normStr(rc.tenant || '') === tenN && (!unitN || !rc.unit || normStr(rc.unit) === unitN)) : [];
+          if (rctHits.length) {
+            res.rows.push({
+              label: tr('Tenant Receipts'),
+              value: L(
+                `${rctHits.length} receipt(s): ${rctHits.slice(0, 3).map(x => x.id).join(', ')}`,
+                `${rctHits.length} إيصال: ${rctHits.slice(0, 3).map(x => x.id).join(', ')}`,
+                `${rctHits.length} reçu(s) : ${rctHits.slice(0, 3).map(x => x.id).join(', ')}`
+              )
+            });
+          }
+        } else if (cr === 're_sales') {
+          const instHits = (re.instalments || []).filter(it => String(it.sale_ref || '').toUpperCase() === idU);
+          if (instHits.length) {
+            res.rows.push({
+              label: tr('Linked Deed Instalments'),
+              value: L(
+                `${instHits.length} milestone(s): ${instHits.map(x => x.id).join(', ')}`,
+                `${instHits.length} قسط: ${instHits.map(x => x.id).join(', ')}`,
+                `${instHits.length} échéance(s) : ${instHits.map(x => x.id).join(', ')}`
+              )
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Trading Linked Receivables, VIN Units & Landed Allocations
+    if (ind.includes('Trading') || /^trd_/i.test(cr)) {
+      let trd = null;
+      try { trd = D.computeTradingOperations ? D.computeTradingOperations({ ignorePeriod: true }) : null; } catch (_) {}
+      if (trd) {
+        if (cr === 'trd_sales') {
+          const custN = normStr(raw.customer || '');
+          const arHits = (trd.receivableRows || []).filter(r => custN && normStr(r.customer || '') === custN && normStr(r.company || '') === normStr(entry.company || ''));
+          const vinHits = (trd.serialUnits || []).filter(uRow => String(uRow.sale_id || '').toUpperCase() === idU || (raw.chassis && String(uRow.chassis_vin || '').toUpperCase() === String(raw.chassis || '').toUpperCase()));
+          if (raw.book || raw.seq) res.rows.push({ label: tr('Book / VAT Sequence'), value: `${raw.book || '-'} ${raw.seq ? '#' + raw.seq : ''}` });
+          arHits.slice(0, 2).forEach(ar => res.rows.push({
+            label: L(`Customer AR (${ar.customer})`, `ذمم العميل (${ar.customer})`, `Créances client (${ar.customer})`),
+            value: L(
+              `Open $${fmtNum(Number(ar.gross_ar_usd || 0))} · Adv $${fmtNum(Number(ar.advance_usd || 0))}`,
+              `مفتوح $${fmtNum(Number(ar.gross_ar_usd || 0))} · سلفة $${fmtNum(Number(ar.advance_usd || 0))}`,
+              `Ouvert $${fmtNum(Number(ar.gross_ar_usd || 0))} · Avance $${fmtNum(Number(ar.advance_usd || 0))}`
+            )
+          }));
+          if (vinHits.length) res.rows.push({ label: tr('Showroom VIN Link'), value: vinHits.map(v => `${v.id} (${v.chassis_vin || v.model || ''})`).join(', ') });
+        } else if (cr === 'trd_purchases' || cr === 'trd_landed') {
+          const ldHits = (trd.landedRows || []).filter(l => String(l.import_file || '').toUpperCase() === idU || String(l.id || '').toUpperCase() === idU);
+          const grnHits = (trd.grnRows || []).filter(g => String(g.import_file || '').toUpperCase() === idU);
+          ldHits.slice(0, 2).forEach(l => res.rows.push({
+            label: L(`Landed File ${l.id}`, `ملف الشحن ${l.id}`, `Dossier arrivage ${l.id}`),
+            value: `$${fmtNum(Number(l.total_landed_add || 0))} · ${l.status || ''}`
+          }));
+          if (grnHits.length) {
+            res.rows.push({
+              label: tr('Warehouse GRN Receipts'),
+              value: L(
+                `${grnHits.length} GRN(s): ${grnHits.map(g => g.id).join(', ')}`,
+                `${grnHits.length} سند استلام: ${grnHits.map(g => g.id).join(', ')}`,
+                `${grnHits.length} bon(s) réception : ${grnHits.map(g => g.id).join(', ')}`
+              )
+            });
+          }
+        }
+      }
+    }
+
+    // 5. Manufacturing & Hospitality Group Transfers, Salary Back-Pay, Child Lines & POS
+    if (entry.sourceKind === 'custom_record') {
+      if (D.findGroupTransferCounterpart) {
+        const peer = D.findGroupTransferCounterpart(cr, raw, true);
+        if (peer && peer.row) {
+          const peerMod = tr(humanizeModule(peer.crKey));
+          res.rows.push({
+            label: L(`Group Transfer Counterpart (${peerMod})`, `الطرف المقابل للتحويل (${peerMod})`, `Contrepartie transfert groupe (${peerMod})`),
+            value: `${peer.row.id || ''} · ${peer.row.company || ''} · ${peer.row.voided ? tr('Also Voided') : tr('Active')}`
+          });
+        }
+      }
+      if (D.salaryVoucherPeers) {
+        const bp = D.salaryVoucherPeers(cr, raw, true);
+        if (Array.isArray(bp) && bp.length) {
+          const listStr = maskPay ? tr('Confidential') : bp.map(p => p.id).slice(0, 3).join(', ');
+          res.rows.push({
+            label: tr('Back-Pay Voucher Peers'),
+            value: L(
+              `${bp.length} peer row(s) (${listStr})`,
+              `${bp.length} سجل مقابل (${listStr})`,
+              `${bp.length} ligne(s) liées (${listStr})`
+            )
+          });
+        }
+      }
+      const st = (D.STATE && D.STATE.customRecords) || {};
+      const childKeys = cr === 'expenses' ? ['expense_items', 'documents'] : (cr === 'equipment_repairs' ? ['repair_items', 'documents'] : ['documents']);
+      childKeys.forEach(ck => {
+        const kids = (Array.isArray(st[ck]) ? st[ck] : []).filter(ch => ch && ch.voided && String(ch.voided_with_parent || '') === String(entry.id || ''));
+        if (kids.length) {
+          const modTr = tr(humanizeModule(ck));
+          res.rows.push({
+            label: L(`Linked ${modTr}`, `مرتبط (${modTr})`, `Lié (${modTr})`),
+            value: L(
+              `${kids.length} auto-voided child record(s) (restores together)`,
+              `${kids.length} سجل فرعي ملغي تلقائيا (يستعاد معا)`,
+              `${kids.length} sous-enregistrement(s) annulé(s) (restaurés ensemble)`
+            )
+          });
+        }
+      });
+    }
+    if (entry.isPosTill) {
+      const posPrinted = Boolean(
+        raw.printed_before_void === true
+        || raw.printed === true
+        || raw.printed_at
+        || raw.last_printed_at
+        || Number(raw.print_count || 0) > 0
+      );
+      res.rows.push({ label: tr('Thermal Print Check'), value: posPrinted ? tr('Printed at gate till before void') : tr('Unprinted cancellation') });
+      if (raw.lower_rekey) {
+        res.banners.push({
+          id: 'vlogPosRekeyBanner',
+          tone: 'crit',
+          html: `<strong>${esc(tr('Lower Re-Key Match'))}:</strong> ${esc(L(`Replacement ticket #${raw.lower_rekey.num || ''} for $${fmtNum(raw.lower_rekey.total_usd)} (-$${fmtNum(raw.lower_rekey.drop_usd)}) posted ${raw.lower_rekey.delta_min || 0}m later.`, `التذكرة البديلة #${raw.lower_rekey.num || ''} بمبلغ $${fmtNum(raw.lower_rekey.total_usd)} (-$${fmtNum(raw.lower_rekey.drop_usd)}) سجلت بعد ${raw.lower_rekey.delta_min || 0} دقيقة.`, `Ticket de remplacement #${raw.lower_rekey.num || ''} de $${fmtNum(raw.lower_rekey.total_usd)} (-$${fmtNum(raw.lower_rekey.drop_usd)}) saisi ${raw.lower_rekey.delta_min || 0}m plus tard.`))}`
+        });
+      }
+    }
+    return res;
+  }
+
+  function buildLocalVoidPatternSummary(filteredEntries, targetInd) {
+    const scopeRows = filteredEntries.filter(e => e.originGroup !== 'system' && !e.isCascadedChild);
+    const actCo = (D && D.STATE && D.STATE.company) || '';
+    const actInd = resolveActiveVoidInd(targetInd, actCo);
+    const dig = computeVoidSentinelDigest(actInd, actCo);
+    const counts = new Map();
+    const usdSums = new Map();
+    const actorCounts = new Map();
+    let afterHours = 0;
+    let unmaskedTotalUsd = 0;
+    let maskedPayrollCount = 0;
+
+    scopeRows.forEach(e => {
+      const ck = classifyVoidCluster(e, dig.alertKeys);
+      counts.set(ck, (counts.get(ck) || 0) + 1);
+      if (e.amountMasked) maskedPayrollCount++;
+      else if (e.amountUsd != null && Number.isFinite(e.amountUsd)) {
+        usdSums.set(ck, (usdSums.get(ck) || 0) + Number(e.amountUsd || 0));
+        unmaskedTotalUsd += Number(e.amountUsd || 0);
+      }
+      actorCounts.set(e.voidedBy || 'Supervisor', (actorCounts.get(e.voidedBy || 'Supervisor') || 0) + 1);
+      if (e.afterHours) afterHours++;
+    });
+
+    const clusters = VOID_CLUSTER_DEFS.map(def => ({
+      key: def.key,
+      label: def.label,
+      count: counts.get(def.key) || 0,
+      usd: Math.round((usdSums.get(def.key) || 0) * 100) / 100
+    })).concat([{
+      key: 'other',
+      label: 'Other Operational',
+      count: counts.get('other') || 0,
+      usd: Math.round((usdSums.get('other') || 0) * 100) / 100
+    }]).filter(c => c.count > 0).sort((a, b) => (b.count - a.count) || (b.usd - a.usd));
+
+    const topActors = Array.from(actorCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const coSig = String((D && D.STATE && D.STATE.company) || '');
+    const lcNow = lang();
+    const tbPeriod = (D && D.STATE)
+      ? `${D.STATE.period || 'all'}:${D.STATE.dateGrain || 'all'}:${D.STATE.dateFrom || ''}:${D.STATE.dateTo || ''}`
+      : 'all';
+    const filtSig = `${filterState.origin || 'user'}:${filterState.days || 'all'}:${filterState.module || 'all'}:${filterState.actor || 'all'}:${filterState.lens || 'all'}:${filterState.drillDay || ''}:${String(filterState.q || '').trim()}`;
+    const uNow = (D && D.activeUser) ? D.activeUser() : null;
+    const paySig = (D && D.canViewPayrollDollarAmounts && D.canViewPayrollDollarAmounts(uNow)) ? 'pay1' : 'pay0';
+    const reasonDigest = scopeRows.slice(0, 25).map(e => `${e.key}:${e.voidReason || ''}`).join('~');
+    const sig = `${coSig}|${lcNow}|${tbPeriod}|${filtSig}|${paySig}|${scopeRows.length}|${clusters.map(c => c.key + ':' + c.count).join(',')}|${dig.findings.length}|${reasonDigest}`;
+    return {
+      sig,
+      totalCount: scopeRows.length,
+      unmaskedTotalUsd: Math.round(unmaskedTotalUsd * 100) / 100,
+      maskedPayrollCount,
+      afterHours,
+      clusters,
+      topActors,
+      sentinelCounts: dig.counts,
+      sentinelTotal: dig.findings.length
+    };
+  }
+
+  async function requestCloudVoidSummary(localStats, filteredEntries) {
+    if (!D || !D.edgeApiFetch || !D.hasServerApi || !D.hasServerApi() || D.isDemoScopeActive()) return;
+    if (!D.STATE || !D.STATE.authed) return;
+    if (aiCloudState.loading && aiCloudState.sig === localStats.sig) return;
+    if (aiCloudState.attemptedSig === localStats.sig && (aiCloudState.text || aiCloudState.mode === 'local_hybrid')) return;
+    cancelPendingAiSummary();
+    const myGen = ++aiRequestGen;
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    aiAbortCtrl = ctrl;
+    const lcNow = lang();
+    const outLangName = lcNow === 'ar' ? 'Arabic' : (lcNow === 'fr' ? 'French' : 'English');
+    const sampleReasons = filteredEntries
+      .filter(e => e.originGroup !== 'system' && !e.isCascadedChild && e.voidReason)
+      .slice(0, 18)
+      .map(e => `- [${e.moduleLabel}${e.amountMasked ? ', Payroll Confidential' : ''}] ${sanitizeOutwardText(e.voidReason)} (${e.amountMasked ? 'Confidential' : formatSignedUsd(e.amountUsd || 0)})`)
+      .join('\n');
+    const prompt = sanitizeOutwardText(
+      `Summarize these ERP Void Log audit patterns concisely in JSON {"headline": string, "recommendations": string[]} without any em-dash characters or mentioning any assistant name. Write "headline" and every string in "recommendations" strictly in ${outLangName}. Strict rule: never reveal confidential payroll figures.\n`
+      + `Total user/till voids: ${localStats.totalCount}, non-confidential value: $${localStats.unmaskedTotalUsd}, confidential payroll count: ${localStats.maskedPayrollCount}, after-hours voids: ${localStats.afterHours}.\n`
+      + `Clusters: ${localStats.clusters.map(c => `${c.label}: ${c.count}`).join('; ')}.\n`
+      + `Sentinel alerts: ${localStats.sentinelCounts.repeat} shift-repeat, ${localStats.sentinelCounts.afterPrint} after-print, ${localStats.sentinelCounts.lowerRekey} lower-rekey.\n`
+      + `Sample notes:\n${sampleReasons || '(no typed notes yet)'}`
+    );
+    aiCloudState = { loading: true, sig: localStats.sig, attemptedSig: localStats.sig, text: '', mode: '', recs: [], error: '' };
+    patchAiSummaryInPlace();
+    try {
+      const resp = await D.edgeApiFetch('./api/ai-edge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'void_pattern_summary', tier: 'fast', prompt }),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (myGen !== aiRequestGen || !aiPanelOpen) return;
+      if (resp && resp.ok) {
+        const j = await resp.json().catch(() => null);
+        if (myGen !== aiRequestGen || !aiPanelOpen) return;
+        const r = j && j.result;
+        if (r && typeof r === 'object') {
+          aiCloudState = {
+            loading: false,
+            sig: localStats.sig,
+            attemptedSig: localStats.sig,
+            mode: String(j.mode || 'gemini_ai_edge'),
+            text: sanitizeOutwardText(r.headline || r.summary || ''),
+            recs: Array.isArray(r.recommendations) ? r.recommendations.slice(0, 3).map(sanitizeOutwardText).filter(Boolean) : [],
+            error: ''
+          };
+          patchAiSummaryInPlace();
+          return;
+        }
+      }
+      aiCloudState = { loading: false, sig: localStats.sig, attemptedSig: localStats.sig, mode: 'local_hybrid', text: '', recs: [], error: '' };
+    } catch (_) {
+      if (myGen !== aiRequestGen || !aiPanelOpen || (ctrl && ctrl.signal && ctrl.signal.aborted)) return;
+      aiCloudState = { loading: false, sig: localStats.sig, attemptedSig: localStats.sig, mode: 'local_hybrid', text: '', recs: [], error: '' };
+    } finally {
+      if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
+    }
+    if (myGen === aiRequestGen && aiPanelOpen) patchAiSummaryInPlace();
+  }
+
+  function syncAiSummaryAfterChange() {
+    if (!aiPanelOpen || !document.getElementById('vlogAiSummaryPanel')) return;
+    const allE = collectScopedVoidEntries();
+    const { preClusterMatched } = applyFiltersAndSort(allE);
+    const activeInd = resolveActiveVoidInd('', (D && D.STATE && D.STATE.company) || '');
+    const localSt = buildLocalVoidPatternSummary(preClusterMatched, activeInd);
+    if (aiCloudState.attemptedSig !== localSt.sig) {
+      cancelPendingAiSummary();
+      aiRequestGen += 1;
+      aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
+      patchAiSummaryInPlace();
+      requestCloudVoidSummary(localSt, preClusterMatched);
+    }
+  }
+
+  function renderAiSummaryPanelHtml(allEntries, matchedBeforeCluster) {
+    if (!aiPanelOpen) return '';
+    const activeInd = resolveActiveVoidInd('', (D && D.STATE && D.STATE.company) || '');
+    const st = buildLocalVoidPatternSummary(matchedBeforeCluster, activeInd);
+    const chipsHtml = [
+      `<button type="button" class="vlog-ai-chip${filterState.cluster === 'all' ? ' active' : ''}" data-vlog-cluster="all" data-no-i18n="1">${esc(L(`All Clusters (${fmtNum(st.totalCount)})`, `جميع التصنيفات (${fmtNum(st.totalCount)})`, `Tous les groupes (${fmtNum(st.totalCount)})`))}</button>`
+    ].concat(st.clusters.map(c =>
+      `<button type="button" class="vlog-ai-chip${filterState.cluster === c.key ? ' active' : ''}" data-vlog-cluster="${esc(c.key)}" data-no-i18n="1">${esc(tr(c.label))} (${fmtNum(c.count)})</button>`
+    )).join('');
+    const actorsTxt = st.topActors.length ? st.topActors.map(([a, n]) => `${a} (${fmtNum(n)})`).join(', ') : '-';
+    const cloudMatch = aiCloudState.sig === st.sig;
+    const cloudHtml = !cloudMatch
+      ? ''
+      : (aiCloudState.loading
+        ? `<div class="vlog-ai-cloud mu">Analyzing free-text void notes...</div>`
+        : (aiCloudState.text
+          ? `<div class="vlog-ai-cloud" data-no-i18n="1"><strong>${esc(aiCloudState.text)}</strong>${aiCloudState.recs.length ? `<ul style="margin:6px 0 0 18px;padding:0">${aiCloudState.recs.map(rc => `<li>${esc(rc)}</li>`).join('')}</ul>` : ''}</div>`
+          : ''));
+
+    return `
+      <section class="vlog-ai-panel" id="vlogAiSummaryPanel" aria-label="AI Void Pattern Summary">
+        <div class="vlog-ai-hd">
+          <div>
+            <strong>AI Void Pattern Summary</strong>
+            <div class="mu" style="font-size:11.5px" data-no-i18n="1">${esc(L(`Deterministic EN/AR/FR clustering across ${fmtNum(st.totalCount)} voids · Payroll details protected`, `تصنيف ذكي لـ ${fmtNum(st.totalCount)} إلغاء مع حماية سرية الرواتب`, `Regroupement sur ${fmtNum(st.totalCount)} annulations · Paie protégée`))}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn btn-ghost-bar vlog-btn-xs" id="vlogAiCloseBtn">Close Summary</button>
+          </div>
+        </div>
+        <div class="vlog-ai-chips">${chipsHtml}</div>
+        <div class="vlog-ai-meta">
+          <div class="vlog-ai-card"><span class="vlog-inspect-k">Top Actors &amp; Tills</span><div class="vlog-inspect-v" data-no-i18n="1">${esc(actorsTxt)}</div></div>
+          <div class="vlog-ai-card"><span class="vlog-inspect-k">After-Hours (22:00-06:00)</span><div class="vlog-inspect-v" data-no-i18n="1">${fmtNum(st.afterHours)}</div></div>
+          <div class="vlog-ai-card"><span class="vlog-inspect-k">Sentinel Pattern Alerts</span><div class="vlog-inspect-v" data-no-i18n="1">${esc(L(`${fmtNum(st.sentinelCounts.repeat)} repeat · ${fmtNum(st.sentinelCounts.afterPrint)} after-print · ${fmtNum(st.sentinelCounts.lowerRekey)} re-key`, `${fmtNum(st.sentinelCounts.repeat)} تكرار · ${fmtNum(st.sentinelCounts.afterPrint)} بعد الطباعة · ${fmtNum(st.sentinelCounts.lowerRekey)} إعادة إدخال`, `${fmtNum(st.sentinelCounts.repeat)} répétition · ${fmtNum(st.sentinelCounts.afterPrint)} après impr. · ${fmtNum(st.sentinelCounts.lowerRekey)} re-saisie`))}</div></div>
+        </div>
+        ${cloudHtml}
+      </section>`;
+  }
+
+  function patchAiSummaryInPlace() {
+    const mount = document.getElementById('vlogAiMount');
+    if (!mount) return;
+    const allEntries = collectScopedVoidEntries();
+    const { preClusterMatched } = applyFiltersAndSort(allEntries);
+    mount.innerHTML = renderAiSummaryPanelHtml(allEntries, preClusterMatched);
+    try {
+      const lc = lang();
+      if (lc !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(mount, lc);
+      }
+    } catch (_) {}
+  }
+
   function getTopBarPeriodRange() {
     if (!D || !D.STATE || !D.STATE.period || D.STATE.period === 'all' || typeof D.periodRange !== 'function') return null;
     try {
@@ -1385,7 +2306,7 @@
       .sort((a, b) => (a.day < b.day ? -1 : 1))
       .slice(-14);
 
-    const matched = dateFiltered.filter(e => {
+    const preClusterMatched = dateFiltered.filter(e => {
       if (modF !== 'all' && e.moduleLabel !== modF) return false;
       if (actorF !== 'all' && e.actorKey !== actorF && e.voidedBy !== actorF && e.actorDisplay !== actorF) return false;
       if (drillDay && (e.voidedDayIso || e.date) !== drillDay) return false;
@@ -1400,6 +2321,13 @@
       }
       return true;
     });
+    const clusterF = filterState.cluster || 'all';
+    let matched = preClusterMatched;
+    if (clusterF !== 'all') {
+      const actCo = (D && D.STATE && D.STATE.company) || '';
+      const dig = computeVoidSentinelDigest(resolveActiveVoidInd('', actCo), actCo);
+      matched = preClusterMatched.filter(e => classifyVoidCluster(e, dig.alertKeys) === clusterF);
+    }
 
     const sk = filterState.sortKey || 'voided_at';
     const dir = filterState.sortDir === 'asc' ? 1 : -1;
@@ -1434,6 +2362,7 @@
 
     return {
       matched,
+      preClusterMatched,
       topbarScoped,
       tbRange,
       originCounts,
@@ -1468,6 +2397,7 @@
       || filterState.module !== 'all'
       || filterState.actor !== 'all'
       || filterState.lens !== 'all'
+      || (filterState.cluster && filterState.cluster !== 'all')
       || filterState.drillDay
       || String(filterState.q || '').trim()
       || getTopBarPeriodRange()
@@ -1844,7 +2774,7 @@
 
         const restoreBtn = e.canRestore
           ? (armedRestoreKey === e.key
-            ? `<button type="button" class="btn btn-primary vlog-btn-xs" data-vlog-restore="${esc(e.key)}">Confirm?</button>`
+            ? `<button type="button" class="btn btn-primary vlog-btn-xs" data-vlog-restore="${esc(e.key)}">${armedCutoffKey === e.key ? 'Confirm Cutoff?' : 'Confirm?'}</button>`
             : `<button type="button" class="btn btn-outline-bar vlog-btn-xs" data-vlog-restore="${esc(e.key)}">Restore</button>`)
           : '';
         const noteBtn = (e.canEditNote && !isEditingNote)
@@ -1972,7 +2902,7 @@
 
     const allEntries = collectScopedVoidEntries();
     const stats = applyFiltersWithPrune(allEntries);
-    const { matched, topbarScoped, moduleOptions, actorOptions, originCounts } = stats;
+    const { matched, preClusterMatched, topbarScoped, moduleOptions, actorOptions, originCounts } = stats;
 
     const modOptsHtml = buildModuleSelectOptionsHtml(moduleOptions);
     const actorOptsHtml = buildActorSelectOptionsHtml(actorOptions);
@@ -1987,6 +2917,7 @@
     const originBtn = val => `<button type="button" class="vlog-seg-btn${filterState.origin === val ? ' active' : ''}" data-vlog-origin="${val}" data-no-i18n="1">${esc(originLabels[val])}</button>`;
     const dayBtn = (val, label) => `<button type="button" class="vlog-seg-btn${filterState.days === val ? ' active' : ''}" data-vlog-days="${val}">${label}</button>`;
 
+    if (aiPanelOpen) scheduleAiSummarySync(120);
     const askAvailable = Boolean(window.MFG_ASK && typeof window.MFG_ASK.ask === 'function');
 
     return `
@@ -2000,6 +2931,7 @@
             </div>
           </div>
           <div class="vlog-head-acts">
+            <button type="button" class="btn btn-outline-bar${aiPanelOpen ? ' active' : ''}" id="vlogAiPatternBtn">${ic('sparkles')} AI Void Pattern Summary</button>
             ${askAvailable ? `<button type="button" class="btn btn-outline-bar" id="vlogAuditBriefBtn">${ic('sparkles')} Audit Brief</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" id="vlogRefreshBtn">${ic('rotate')} Refresh</button>
             <button type="button" class="btn btn-outline-bar" id="vlogExportCsvBtn">${ic('download')} Export CSV</button>
@@ -2008,6 +2940,7 @@
         <div id="vlogPosNoticeMount">${renderPosNoticeHtml(u)}</div>
         <div id="vlogKpiMount">${renderKpiStripHtml(topbarScoped, matched)}</div>
         <div id="vlogPulseMount">${renderPulsePanelHtml(stats)}</div>
+        <div id="vlogAiMount">${renderAiSummaryPanelHtml(allEntries, preClusterMatched)}</div>
         <div class="vlog-toolbar panel-card" id="vlogToolbar">
           <div class="vlog-toolbar-main">
             <div class="vlog-seg-group" id="vlogOriginSegGroup" role="group" aria-label="Filter void source">
@@ -2052,10 +2985,21 @@
     const stats = applyFiltersWithPrune(allEntries);
     syncToolbarSelectOptions(stats.moduleOptions, stats.actorOptions, stats);
 
+    const aiBtn = document.getElementById('vlogAiPatternBtn');
+    if (aiBtn) aiBtn.classList.toggle('active', Boolean(aiPanelOpen));
     const kpiMount = document.getElementById('vlogKpiMount');
     if (kpiMount) kpiMount.innerHTML = renderKpiStripHtml(stats.topbarScoped, stats.matched);
     const pulseMount = document.getElementById('vlogPulseMount');
     if (pulseMount) pulseMount.innerHTML = renderPulsePanelHtml(stats);
+    const aiMount = document.getElementById('vlogAiMount');
+    if (aiMount) aiMount.innerHTML = renderAiSummaryPanelHtml(allEntries, stats.preClusterMatched);
+    if (aiPanelOpen) {
+      const actIndSync = resolveActiveVoidInd('', (D && D.STATE && D.STATE.company) || '');
+      const stSync = buildLocalVoidPatternSummary(stats.preClusterMatched, actIndSync);
+      if (aiCloudState.attemptedSig !== stSync.sig) {
+        scheduleAiSummarySync(120);
+      }
+    }
     const resMount = document.getElementById('vlogResultsRegion');
     if (resMount) resMount.innerHTML = renderResultsTableHtml(stats.matched, u);
 
@@ -2130,6 +3074,7 @@
 
   function closeInspectModal() {
     inspectKey = '';
+    disarmRestoreConfirmations();
     const existing = document.getElementById('vlogInspectModal');
     if (existing) existing.remove();
     document.querySelectorAll('#vlogTable tbody tr.is-inspecting').forEach(trEl => trEl.classList.remove('is-inspecting'));
@@ -2193,6 +3138,18 @@
       const linesSummary = raw.lines.map(l => `${l.qty || 1}x ${l.name || l.category || l.sku || 'Item'} (${l.cur || 'USD'} ${l.price || 0})`).join('; ');
       detailRows.push(['Till Lines', linesSummary]);
     }
+
+    const cascade = computeVoidCascadePreview(entry);
+    const hasCascade = cascade.banners.length > 0 || cascade.rows.length > 0;
+    const cascadeHtml = hasCascade ? `
+      <div class="vlog-cascade-box" id="vlogCascadePreviewBox">
+        <div class="vlog-cascade-hd">
+          <span>Cascade &amp; Accounting Impact</span>
+          <span class="mu" data-no-i18n="1">${esc(tr(entry.industry))}</span>
+        </div>
+        ${cascade.banners.map(b => `<div class="vlog-cascade-banner ${esc(b.tone || 'warn')}"${b.id ? ` id="${esc(b.id)}"` : ''} data-no-i18n="1">${b.html}</div>`).join('')}
+        ${cascade.rows.length ? `<ul class="vlog-cascade-list">${cascade.rows.map(rw => `<li><span class="vlog-cascade-k" data-no-i18n="1">${esc(rw.label)}</span><span class="vlog-cascade-v" data-no-i18n="1">${esc(rw.value)}</span></li>`).join('')}</ul>` : ''}
+      </div>` : '';
 
     const allScoped = collectScopedVoidEntries();
     const linkedChildren = resolveLinkedChildren(entry, allScoped);
@@ -2315,8 +3272,8 @@
 
     const drawerRestoreBtn = entry.canRestore
       ? (armedRestoreKey === entry.key
-        ? `<button type="button" class="btn btn-primary" data-vlog-drawer-restore="${esc(entry.key)}">Confirm?</button>`
-        : `<button type="button" class="btn btn-outline-bar" data-vlog-drawer-restore="${esc(entry.key)}">Restore</button>`)
+        ? `<button type="button" class="btn ${armedCutoffKey === entry.key ? 'btn-danger' : 'btn-primary'}" id="vlogInspectRestoreBtn" data-vlog-drawer-restore="${esc(entry.key)}" data-vlog-insp-restore="${esc(entry.key)}" data-cutoff-blocked="${cascade.isInsuranceCutoffBlocked ? '1' : '0'}">${armedCutoffKey === entry.key ? 'Confirm Bordereau Cutoff Bypass?' : 'Confirm?'}</button>`
+        : `<button type="button" class="btn btn-outline-bar" id="vlogInspectRestoreBtn" data-vlog-drawer-restore="${esc(entry.key)}" data-vlog-insp-restore="${esc(entry.key)}" data-cutoff-blocked="${cascade.isInsuranceCutoffBlocked ? '1' : '0'}">${cascade.isInsuranceCutoffBlocked ? 'Restore (Cutoff Warning)' : 'Restore'}</button>`)
       : '';
 
     const modal = document.createElement('div');
@@ -2350,6 +3307,7 @@
             ${partyActionHtml ? `<div class="vlog-drawer-hero-acts">${partyActionHtml}</div>` : ''}
           </div>
           ${readinessMsg ? `<div class="vlog-readiness is-${readinessTone}"${readinessNoI18n ? ' data-no-i18n="1"' : ''}>${esc(readinessMsg)}</div>` : ''}
+          ${cascadeHtml}
           ${noteEditorHtml}
           ${twinsSecHtml}
           ${childrenSecHtml}
@@ -2428,7 +3386,7 @@
     if (!entry || !entry.canRestore || !D) return;
     if (inFlightKeys.has(entry.key)) return;
     inFlightKeys.add(entry.key);
-    armedRestoreKey = '';
+    disarmRestoreConfirmations();
     const wasInspectOpen = inspectKey === entry.key;
     try {
       if (entry.sourceKind === 'custom_record') {
@@ -2474,12 +3432,13 @@
     filterState.module = 'all';
     filterState.actor = 'all';
     filterState.lens = 'all';
+    filterState.cluster = 'all';
     filterState.drillDay = '';
     filterState.q = '';
     filterState.visibleLimit = PAGE_STEP;
     openCombo = '';
     comboQuery = '';
-    armedRestoreKey = '';
+    disarmRestoreConfirmations();
     editingNoteKey = '';
     const srch = document.getElementById('vlogSearchInput');
     if (srch) srch.value = '';
@@ -2513,6 +3472,11 @@
     wired = true;
 
     window.addEventListener('mfg:lang-changed', () => {
+      if (aiPanelOpen) {
+        cancelPendingAiSummary();
+        aiRequestGen += 1;
+        aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
+      }
       if (document.getElementById('vlogRoot')) patchResultsInPlace();
       if (inspectKey && document.getElementById('vlogInspectModal')) {
         const cur = findEntryByKey(inspectKey);
@@ -2572,18 +3536,31 @@
         const dRest = e.target.closest('[data-vlog-drawer-restore]');
         if (dRest) {
           const key = dRest.getAttribute('data-vlog-drawer-restore') || '';
-          if (inFlightKeys.has(key)) return;
-          if (armedRestoreKey !== key) {
+          const cur = findEntryByKey(key);
+          if (!cur || inFlightKeys.has(key)) return;
+          const isCutoff = dRest.getAttribute('data-cutoff-blocked') === '1';
+          if (isCutoff && armedCutoffKey !== key) {
+            armedCutoffKey = key;
             armedRestoreKey = key;
             dRest.setAttribute('data-no-i18n', '1');
-            dRest.textContent = tr('Confirm?');
-            dRest.classList.remove('btn-outline-bar');
-            dRest.classList.add('btn-primary');
+            dRest.classList.remove('btn-outline-bar', 'btn-primary');
+            dRest.classList.add('btn-danger');
+            dRest.textContent = tr('Confirm Bordereau Cutoff Bypass?');
+            const c = computeVoidCascadePreview(cur);
+            if (D && D.toast && c.cutoffReason) D.toast(c.cutoffReason, 'warn');
             patchResultsInPlace();
             return;
           }
-          const cur = findEntryByKey(key);
-          if (cur) await handleRestore(cur);
+          if (!isCutoff && armedRestoreKey !== key) {
+            armedRestoreKey = key;
+            dRest.setAttribute('data-no-i18n', '1');
+            dRest.classList.remove('btn-outline-bar', 'btn-danger');
+            dRest.classList.add('btn-primary');
+            dRest.textContent = tr('Confirm?');
+            patchResultsInPlace();
+            return;
+          }
+          await handleRestore(cur);
           return;
         }
         return;
@@ -2597,6 +3574,46 @@
 
       const root = e.target.closest('#vlogRoot');
       if (!root) return;
+
+      if (e.target.closest('#vlogAiPatternBtn')) {
+        aiPanelOpen = !aiPanelOpen;
+        if (!aiPanelOpen) {
+          cancelPendingAiSummary();
+          filterState.cluster = 'all';
+          aiRequestGen += 1;
+          aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
+        }
+        disarmRestoreConfirmations();
+        patchResultsInPlace();
+        if (aiPanelOpen) {
+          const allE = collectScopedVoidEntries();
+          const { preClusterMatched } = applyFiltersAndSort(allE);
+          const activeInd = resolveActiveVoidInd('', (D && D.STATE && D.STATE.company) || '');
+          const localSt = buildLocalVoidPatternSummary(preClusterMatched, activeInd);
+          requestCloudVoidSummary(localSt, preClusterMatched);
+        }
+        return;
+      }
+
+      if (e.target.closest('#vlogAiCloseBtn')) {
+        cancelPendingAiSummary();
+        aiPanelOpen = false;
+        aiRequestGen += 1;
+        aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
+        filterState.cluster = 'all';
+        disarmRestoreConfirmations();
+        patchResultsInPlace();
+        return;
+      }
+
+      const clBtn = e.target.closest('[data-vlog-cluster]');
+      if (clBtn) {
+        const ck = clBtn.getAttribute('data-vlog-cluster') || 'all';
+        filterState.cluster = (filterState.cluster === ck && ck !== 'all') ? 'all' : ck;
+        disarmRestoreConfirmations();
+        patchResultsInPlace();
+        return;
+      }
 
       if (e.target.closest('[data-vlog-pos-retry]')) {
         posVoidsState.loaded = false;
@@ -2636,7 +3653,7 @@
         openCombo = '';
         comboQuery = '';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
         return;
       }
@@ -2666,7 +3683,7 @@
           filterState.drillDay = '';
         }
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         editingNoteKey = '';
         patchResultsInPlace();
         return;
@@ -2676,7 +3693,7 @@
       if (origBtn) {
         filterState.origin = origBtn.getAttribute('data-vlog-origin') || 'user';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         editingNoteKey = '';
         patchResultsInPlace();
         return;
@@ -2687,7 +3704,7 @@
         filterState.days = dayBtn.getAttribute('data-vlog-days') || 'all';
         filterState.drillDay = '';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         editingNoteKey = '';
         patchResultsInPlace();
         return;
@@ -2698,7 +3715,7 @@
         const nextL = lensBtn.getAttribute('data-vlog-lens') || 'all';
         filterState.lens = (filterState.lens === nextL && nextL !== 'all') ? 'all' : nextL;
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
         return;
       }
@@ -2800,7 +3817,7 @@
       }
 
       if (e.target.closest('#vlogRefreshBtn')) {
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         editingNoteKey = '';
         posVoidsState.loaded = false;
         await refreshPosVoids({ force: true });
@@ -2824,7 +3841,7 @@
       const noteEditBtn = e.target.closest('[data-vlog-note-edit]');
       if (noteEditBtn) {
         editingNoteKey = noteEditBtn.getAttribute('data-vlog-note-edit') || '';
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
         const inp = document.querySelector(`[data-vlog-note-input="${CSS.escape(editingNoteKey)}"]`);
         if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
@@ -2847,12 +3864,21 @@
       if (restBtn) {
         const key = restBtn.getAttribute('data-vlog-restore') || '';
         if (inFlightKeys.has(key)) return;
+        const entry = findEntryByKey(key);
+        const cascade = entry ? computeVoidCascadePreview(entry) : { isInsuranceCutoffBlocked: false };
+        if (cascade.isInsuranceCutoffBlocked && armedCutoffKey !== key) {
+          armedCutoffKey = key;
+          armedRestoreKey = key;
+          if (D && D.toast && cascade.cutoffReason) D.toast(cascade.cutoffReason, 'warn');
+          patchResultsInPlace();
+          return;
+        }
         if (armedRestoreKey !== key) {
           armedRestoreKey = key;
           patchResultsInPlace();
           return;
         }
-        const entry = findEntryByKey(key);
+        disarmRestoreConfirmations();
         if (entry) await handleRestore(entry);
         return;
       }
@@ -2873,12 +3899,12 @@
       if (e.target.id === 'vlogModuleSelect') {
         filterState.module = e.target.value || 'all';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
       } else if (e.target.id === 'vlogActorSelect') {
         filterState.actor = e.target.value || 'all';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
       }
     });
@@ -2887,7 +3913,7 @@
       if (e.target && e.target.id === 'vlogSearchInput') {
         filterState.q = e.target.value || '';
         filterState.visibleLimit = PAGE_STEP;
-        armedRestoreKey = '';
+        disarmRestoreConfirmations();
         patchResultsInPlace();
       } else if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-vlog-combo-search')) {
         comboQuery = e.target.value || '';
@@ -2933,11 +3959,15 @@
   }
 
   function reset() {
-    armedRestoreKey = '';
+    disarmRestoreConfirmations();
     editingNoteKey = '';
     openCombo = '';
     comboQuery = '';
     lastMatchedKeys = [];
+    cancelPendingAiSummary();
+    aiPanelOpen = false;
+    aiRequestGen += 1;
+    aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
     inFlightKeys.clear();
     Object.assign(filterState, DEFAULT_FILTERS);
     closeInspectModal();
@@ -2955,6 +3985,19 @@
   }
 
   window.MFG_VOID_LOG = {
-    init, reset, renderView, collectScopedVoidEntries, refreshPosVoids, openInspectModal, exportCsv
+    init,
+    reset,
+    renderView,
+    collectScopedVoidEntries,
+    refreshPosVoids,
+    ensurePosVoidsLoaded,
+    wireSentinelContainer,
+    buildVoidSentinelItem,
+    renderSentinelVoidPanelHtml,
+    computeVoidSentinelDigest,
+    computeVoidCascadePreview,
+    openInspectModal,
+    jumpToVoidEntry,
+    exportCsv
   };
 })();

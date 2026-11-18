@@ -1283,6 +1283,9 @@
         if (note) note.textContent = 'Connecting to Bluetooth thermal printer…';
         const bytes = buildEscPosBytes(_activeModalState.docType, _activeModalState.record, _activeModalState.opts);
         const res = await sendToWebBluetooth(bytes, _activeModalState.opts);
+        if (res && res.ok) {
+          _notifyThermalPrinted(_activeModalState.docType, _activeModalState.record, 'webbt', _activeModalState.opts.priceMode);
+        }
         if (note) {
           note.textContent = res.ok
             ? `✓ Printed ${bytes.length} bytes on ${res.job.deviceName}`
@@ -1296,6 +1299,9 @@
       browserBtn.addEventListener('click', () => {
         document.body.classList.add('printing-thermal-ticket');
         window.print();
+        if (_activeModalState) {
+          _notifyThermalPrinted(_activeModalState.docType, _activeModalState.record, 'browser', _activeModalState.opts.priceMode);
+        }
         setTimeout(() => document.body.classList.remove('printing-thermal-ticket'), 500);
       });
     }
@@ -1369,6 +1375,18 @@
     if (modal) modal.hidden = true;
   }
 
+  function _notifyThermalPrinted(docType, record, transport, priceMode) {
+    if (!record || typeof record !== 'object') return;
+    if (typeof window !== 'undefined' && typeof window.__mfgCanPrintWrite === 'function' && !window.__mfgCanPrintWrite()) return;
+    const nowIso = new Date().toISOString();
+    if (!record.printed_at) record.printed_at = nowIso;
+    record.last_printed_at = nowIso;
+    record.print_count = Number(record.print_count || 0) + 1;
+    if (typeof window !== 'undefined' && typeof window.__mfgOnThermalPrinted === 'function') {
+      try { window.__mfgOnThermalPrinted({ docType, record, transport, priceMode, printedAt: nowIso }); } catch (_) {}
+    }
+  }
+
   // ---- Main Entry Point: Print + Preview Thermal Ticket --------------------
   function printThermalTicket(a, b, c) {
     const resolved = resolveDocArgs(a, b, c);
@@ -1396,7 +1414,20 @@
         barcode: normalized.barcodeDigits
       });
     } else if (transport === 'webbt') {
-      sendToWebBluetooth(bytes, normOpts);
+      Promise.resolve(sendToWebBluetooth(bytes, normOpts)).then(btRes => {
+        if (btRes && btRes.ok) {
+          _notifyThermalPrinted(normalized.docType, record, 'webbt', priceMode);
+          const note = document.getElementById('thermalModalStatusNote');
+          if (note) note.textContent = `✓ Sent ${bytes.length} ESC/POS bytes (${paperWidth} · ${priceMode}) via Bluetooth GATT`;
+        } else {
+          const note = document.getElementById('thermalModalStatusNote');
+          if (note) note.textContent = `Bluetooth error: ${(btRes && (btRes.reason || btRes.error)) || 'Printer disconnected or cancelled'}`;
+        }
+      }).catch(() => {});
+    }
+
+    if (sendRes && sendRes.ok !== false && transport !== 'preview' && transport !== 'webbt') {
+      _notifyThermalPrinted(normalized.docType, record, transport, priceMode);
     }
 
     if (opts.openModal !== false) {

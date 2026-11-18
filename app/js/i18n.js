@@ -13420,6 +13420,86 @@
       "5-Day Avg": "متوسط 5 أيام",
       "6-Day Avg": "متوسط 6 أيام",
       "Show Details": "عرض التفاصيل",
+      "After-Hours (22:00-06:00)": "خارج أوقات العمل (22:00-06:00)",
+      "After-Print Void": "إلغاء بعد الطباعة",
+      "Aged": "العمر",
+      "AI Sentinels & Void Log": "المراقبة الذكية وسجل الإلغاءات",
+      "AI Void Pattern Summary": "ملخص أنماط الإلغاء بالذكاء الاصطناعي",
+      "Also Voided": "ملغي أيضا",
+      "Analyzing free-text void notes...": "جاري تحليل ملاحظات الإلغاء...",
+      "Back-Pay Voucher Peers": "قيود سند الراتب المرتبطة بالرجعي",
+      "Book / VAT Sequence": "الدفتر / تسلسل الضريبة",
+      "Bordereau Cutoff Lock": "قفل قطع الجدول",
+      "Cancelled / Returned": "ملغي / مرتجع",
+      "Cascade & Accounting Impact": "الأثر المتسلسل والمحاسبي",
+      "Close Summary": "إغلاق الملخص",
+      "Confirm Bordereau Cutoff Bypass?": "تأكيد تجاوز قطع البورديرو؟",
+      "Confirm Cutoff?": "تأكيد تجاوز القطع؟",
+      "Confirm Void": "تأكيد الإلغاء",
+      "Customer cancelled": "إلغاء من العميل",
+      "Data entry typo": "خطأ في إدخال البيانات",
+      "Domain Sentinels & Void Log": "مراقبة القطاع وسجل الإلغاءات",
+      "Duplicate / Typo": "تكرار / خطأ إدخال",
+      "Duplicate entry": "قيد مكرر",
+      "Explain why this entry is being voided...": "اشرح سبب إلغاء هذا القيد...",
+      "Holding Pool Link": "رابط حصة القابضة",
+      "Inspect Void": "فحص الإلغاء",
+      "Intercompany Mirror Active": "القيد البيني المقابل نشط",
+      "Linked Deed Instalments": "أقساط البيع العقاري المرتبطة",
+      "Linked Rent Invoices": "فواتير الإيجار المرتبطة",
+      "Lower Re-Key": "إعادة إدخال بأقل",
+      "Lower Re-Key Match": "تطابق إعادة إدخال أقل قيمة",
+      "Lower-Rekey Watch Window (min)": "نافذة مراقبة إعادة الإدخال الأقل (دقيقة)",
+      "Mandatory Void Reason Above Amount or Age": "سبب إلغاء إلزامي فوق حد المبلغ أو العمر",
+      "Min Amount Threshold ($ USD)": "الحد الأدنى للمبلغ ($ دولار)",
+      "min chars": "أحرف كحد أدنى",
+      "Mirror Leg Also Voided": "القيد المقابل ملغي أيضا",
+      "No repeat-void, after-print, or lower-amount re-key anomalies under current thresholds.": "لا توجد حالات إلغاء متكرر أو بعد الطباعة أو إعادة إدخال بأقل وفق الحدود الحالية.",
+      "No repeat-void, post-print, or lower-rekey anomalies detected.": "لم يتم رصد أي تكرار أو إلغاء بعد الطباعة أو إعادة إدخال بقيمة أقل.",
+      "Open Void Log": "فتح سجل الإلغاءات",
+      "Other Operational": "تشغيلي آخر",
+      "Please enter at least 3 characters explaining why this entry is being voided.": "يرجى إدخال 3 أحرف على الأقل توضح سبب إلغاء هذا القيد.",
+      "Policy: All operational voids": "السياسة: جميع الإلغاءات التشغيلية",
+      "Pricing / Rate": "تسعير / تعرفة",
+      "Printed at gate till before void": "تمت الطباعة على الصندوق قبل الإلغاء",
+      "Quick reasons": "أسباب سريعة",
+      "Reason for Voiding": "سبب الإلغاء",
+      "Reopened Rent Accrual Window": "نافذة استحقاق الإيجار المعاد فتحها",
+      "Repeat-Void, After-Print & Lower-Rekey Sentinel": "مراقب الإلغاء المتكرر وما بعد الطباعة وإعادة الإدخال بأقل",
+      "Require Reason When Aged >= (days, 0 = all)": "إلزام السبب بعد عدد أيام >= (0 = الكل)",
+      "Required void reason (min 3 chars)": "سبب الإلغاء مطلوب (3 أحرف على الأقل)",
+      "Restore (Cutoff Warning)": "استعادة (تحذير قطع)",
+      "Restore Record": "استعادة القيد",
+      "Schedule correction": "تصحيح الجدول الزمني",
+      "Sentinel Pattern Alerts": "تنبيهات أنماط المراقب",
+      "Shift Repeat": "تكرار الوردية",
+      "Shift Repeat-Void Alert Count": "حد تنبيه الإلغاء المتكرر بالوردية",
+      "Showroom VIN Link": "رابط رقم الشاسيه بالمعرض",
+      "Tenant Receipts": "مقبوضات المستأجر",
+      "Thermal Print Check": "فحص الطباعة الحرارية",
+      "This void will be permanently logged in the Void Log with your name, timestamp, and reason (minimum 3 characters).": "سيتم توثيق هذا الإلغاء بشكل دائم في سجل الإلغاءات باسمك ووقت العملية والسبب (3 أحرف على الأقل).",
+      "Till / Re-Key Alert": "تنبيه الصندوق / إعادة الإدخال",
+      "Top Actors & Tills": "أكثر المستخدمين والصناديق",
+      "Unexplained / Blank": "بدون سبب / فارغ",
+      "Unit Overlap Conflict": "تعارض تداخل الوحدة",
+      "Unmatched Sister Leg": "طرف شقيق غير مطابق",
+      "Unprinted cancellation": "إلغاء قبل الطباعة",
+      "Void & Audit Controls": "ضوابط الإلغاء والتدقيق",
+      "Void Confirmation, Inspectors & Server API": "تأكيد الإلغاء والمفتش وواجهة الخادم",
+      "Void Reason Required": "مطلوب سبب الإلغاء",
+      "Warehouse GRN Receipts": "سندات استلام المستودع",
+      "Wrong entity / vehicle": "كيان أو مركبة خاطئة",
+      "Wrong Party / Vehicle": "عميل أو مركبة خاطئة",
+      "Rule #29 · Void & Audit Controls": "قاعدة #29 · ضوابط الإلغاء والتدقيق",
+      "Rule #10 · Void & Audit Controls": "قاعدة #10 · ضوابط الإلغاء والتدقيق",
+      "CLEAR": "سليم",
+      "Protects financial integrity by requiring a written reason (min 3 characters) whenever high-value or backdated operational entries are voided, while keeping small same-day typo voids fast.": "يحمي السلامة المالية عبر إلزام توثيق سبب (3 أحرف على الأقل) عند إلغاء أي قيد تشغيلي مرتفع القيمة أو مؤرخ سابقاً، مع إبقاء تصحيح أخطاء نفس اليوم الصغيرة سريعاً.",
+      "Requires a documented void reason (3+ chars) on all operational and schedule voids across UI inspectors and server APIs.": "يتطلب توثيق سبب الإلغاء (3+ أحرف) على جميع الإلغاءات التشغيلية والجدولية عبر واجهات الفحص وواجهات الخادم.",
+      "All operational & schedule voids (3+ chars)": "كل الإلغاءات التشغيلية والجدولية (3+ أحرف)",
+      "Live rule: Every operational or schedule void prompts for a brief reason across UI and server API.": "قاعدة مباشرة: كل إلغاء تشغيلي أو جدولي يطلب سبباً مختصراً عبر الواجهة والخادم.",
+      "Detects shift-level void bursts per actor or gate till, slips voided after thermal printing, and voids followed quickly by a lower-amount replacement entry for the same party or cashier.": "يكتشف تركزات الإلغاء في الوردية لكل مستخدم أو صندوق بوابة، والإيصالات الملغاة بعد الطباعة الحرارية، والإلغاءات التي يتبعها قيد بديل بأقل قيمة للطرف أو أمين الصندوق نفسه.",
+      "Rule #30 · Void & Audit Controls": "قاعدة #30 · ضوابط الإلغاء والتدقيق",
+      "Rule #31 · Void & Audit Controls": "قاعدة #31 · ضوابط الإلغاء والتدقيق",
       "Reporting Period & Date Basis": "فترة التقرير وأساس التاريخ",
       "Rep": "تقرير",
       "Tx": "عملية",
@@ -26837,6 +26917,86 @@
       "5-Day Avg": "Moy. 5 jours",
       "6-Day Avg": "Moy. 6 jours",
       "Show Details": "Afficher le détail",
+      "After-Hours (22:00-06:00)": "Hors horaires (22:00-06:00)",
+      "After-Print Void": "Annulation après impression",
+      "Aged": "Ancienneté",
+      "AI Sentinels & Void Log": "Sentinelles IA et journal des annulations",
+      "AI Void Pattern Summary": "Synthèse IA des motifs d'annulation",
+      "Also Voided": "Également annulé",
+      "Analyzing free-text void notes...": "Analyse des notes d'annulation en cours...",
+      "Back-Pay Voucher Peers": "Écritures de rappel salarial liées",
+      "Book / VAT Sequence": "Carnet / séquence TVA",
+      "Bordereau Cutoff Lock": "Verrouillage clôture bordereau",
+      "Cancelled / Returned": "Annulé / Retourné",
+      "Cascade & Accounting Impact": "Impact en cascade et comptable",
+      "Close Summary": "Fermer la synthèse",
+      "Confirm Bordereau Cutoff Bypass?": "Confirmer le dépassement de clôture bordereau ?",
+      "Confirm Cutoff?": "Confirmer clôture ?",
+      "Confirm Void": "Confirmer l'annulation",
+      "Customer cancelled": "Annulation par le client",
+      "Data entry typo": "Erreur de saisie",
+      "Domain Sentinels & Void Log": "Sentinelles sectorielles et journal des annulations",
+      "Duplicate / Typo": "Doublon / Erreur",
+      "Duplicate entry": "Saisie en double",
+      "Explain why this entry is being voided...": "Expliquez la raison de cette annulation...",
+      "Holding Pool Link": "Lien quote-part holding",
+      "Inspect Void": "Inspecter l'annulation",
+      "Intercompany Mirror Active": "Contrepartie intersociété active",
+      "Linked Deed Instalments": "Échéances de vente liées",
+      "Linked Rent Invoices": "Factures de loyer liées",
+      "Lower Re-Key": "Re-saisie réduite",
+      "Lower Re-Key Match": "Correspondance re-saisie inférieure",
+      "Lower-Rekey Watch Window (min)": "Fenêtre de suivi re-saisie réduite (min)",
+      "Mandatory Void Reason Above Amount or Age": "Motif d'annulation obligatoire selon montant ou ancienneté",
+      "Min Amount Threshold ($ USD)": "Seuil de montant minimum ($ USD)",
+      "min chars": "car. min",
+      "Mirror Leg Also Voided": "Contrepartie également annulée",
+      "No repeat-void, after-print, or lower-amount re-key anomalies under current thresholds.": "Aucune anomalie d'annulation répétée, après impression ou re-saisie réduite selon les seuils actuels.",
+      "No repeat-void, post-print, or lower-rekey anomalies detected.": "Aucune anomalie de répétition, annulation post-impression ou re-saisie inférieure détectée.",
+      "Open Void Log": "Ouvrir le journal",
+      "Other Operational": "Autre opérationnel",
+      "Please enter at least 3 characters explaining why this entry is being voided.": "Veuillez saisir au moins 3 caractères expliquant cette annulation.",
+      "Policy: All operational voids": "Règle : toutes les annulations opérationnelles",
+      "Pricing / Rate": "Tarification / Taux",
+      "Printed at gate till before void": "Imprimé à la caisse avant annulation",
+      "Quick reasons": "Motifs rapides",
+      "Reason for Voiding": "Motif de l'annulation",
+      "Reopened Rent Accrual Window": "Fenêtre de loyer rouverte",
+      "Repeat-Void, After-Print & Lower-Rekey Sentinel": "Sentinelle annulations répétées, après impression et re-saisie réduite",
+      "Require Reason When Aged >= (days, 0 = all)": "Exiger un motif après >= jours (0 = tous)",
+      "Required void reason (min 3 chars)": "Motif d'annulation requis (3 car. min.)",
+      "Restore (Cutoff Warning)": "Restaurer (Alerte clôture)",
+      "Restore Record": "Restaurer l'écriture",
+      "Schedule correction": "Correction du barème",
+      "Sentinel Pattern Alerts": "Alertes de la sentinelle",
+      "Shift Repeat": "Répétition par quart",
+      "Shift Repeat-Void Alert Count": "Seuil d'alerte annulations par quart",
+      "Showroom VIN Link": "Lien VIN / Châssis showroom",
+      "Tenant Receipts": "Encaissements locataire",
+      "Thermal Print Check": "Contrôle d'impression thermique",
+      "This void will be permanently logged in the Void Log with your name, timestamp, and reason (minimum 3 characters).": "Cette annulation sera enregistrée dans le journal des annulations avec votre nom, l'horodatage et le motif (3 caractères minimum).",
+      "Till / Re-Key Alert": "Alerte caisse / Re-saisie",
+      "Top Actors & Tills": "Principaux opérateurs et caisses",
+      "Unexplained / Blank": "Non justifié / Vide",
+      "Unit Overlap Conflict": "Conflit de chevauchement d'unité",
+      "Unmatched Sister Leg": "Jambe sœur non appariée",
+      "Unprinted cancellation": "Annulation sans impression",
+      "Void & Audit Controls": "Contrôles d'annulation et d'audit",
+      "Void Confirmation, Inspectors & Server API": "Confirmation d'annulation, inspecteurs et API",
+      "Void Reason Required": "Motif d'annulation requis",
+      "Warehouse GRN Receipts": "Bons de réception entrepôt",
+      "Wrong entity / vehicle": "Entité ou véhicule erroné",
+      "Wrong Party / Vehicle": "Tiers ou véhicule erroné",
+      "Rule #29 · Void & Audit Controls": "Règle #29 · Contrôles d'annulation et d'audit",
+      "Rule #10 · Void & Audit Controls": "Règle #10 · Contrôles d'annulation et d'audit",
+      "CLEAR": "RAS",
+      "Protects financial integrity by requiring a written reason (min 3 characters) whenever high-value or backdated operational entries are voided, while keeping small same-day typo voids fast.": "Protège l'intégrité financière en exigeant un motif écrit (3 caractères min.) pour toute annulation de valeur élevée ou antérieure au jour même, tout en gardant rapides les petites corrections du jour.",
+      "Requires a documented void reason (3+ chars) on all operational and schedule voids across UI inspectors and server APIs.": "Exige un motif documenté (3+ car.) sur toutes les annulations opérationnelles et d'échéanciers dans l'interface et les API.",
+      "All operational & schedule voids (3+ chars)": "Toutes annulations opérationnelles & d'échéanciers (3+ car.)",
+      "Live rule: Every operational or schedule void prompts for a brief reason across UI and server API.": "Règle active : chaque annulation opérationnelle ou d'échéancier demande un bref motif dans l'interface et l'API.",
+      "Detects shift-level void bursts per actor or gate till, slips voided after thermal printing, and voids followed quickly by a lower-amount replacement entry for the same party or cashier.": "Détecte les pics d'annulations par quart et utilisateur/caisse, les tickets annulés après impression thermique et les annulations suivies rapidement d'une re-saisie inférieure pour le même tiers ou caissier.",
+      "Rule #30 · Void & Audit Controls": "Règle #30 · Contrôles d'annulation et d'audit",
+      "Rule #31 · Void & Audit Controls": "Règle #31 · Contrôles d'annulation et d'audit",
       "Reporting Period & Date Basis": "Période et base comptable",
       "Rep": "Rapp.",
       "Tx": "Op.",
@@ -29098,6 +29258,82 @@
       return lang === 'ar'
         ? `${m[1]} عنقود توقف منحرف: ${m[2]} دبوس قديم، ${m[3]} تفريغ خارج الدبوس.${m[4] || ''}`
         : `${m[1]} zone(s) en dérive : ${m[2]} repère(s) obsolète(s), ${m[3]} dépose(s) hors repère.${m[4] || ''}`;
+    }
+    // Void Log & Audit Sentinel (#30 / #31 / #10 / S19) dynamic templates
+    m = trimmed.match(/^([\d,]+)\s+FLAGS?$/);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, '')) || 0;
+      return lang === 'ar'
+        ? `${m[1]} ${n === 1 ? 'تنبيه' : 'تنبيهات'}`
+        : `${m[1]} ALERTE${n === 1 ? '' : 'S'}`;
+    }
+    m = trimmed.match(/^Shift\s+Repeat\s*\(([\d,]+)\)$/i);
+    if (m) {
+      return lang === 'ar' ? `تكرار الوردية (${m[1]})` : `Répétition quart (${m[1]})`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+repeat-shift,\s*([\d,]+)\s+after-print,\s*and\s*([\d,]+)\s+lower-rekey\s+anomalies\s+across\s+([\d,]+)\s+scoped\s+voids\s*\(shift\s*>=\s*([\d,]+),\s*re-key\s*<=\s*([\d,]+)m\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} تكرار وردية و${m[2]} إلغاء بعد الطباعة و${m[3]} إعادة إدخال بأقل ضمن ${m[4]} إلغاءً مراقباً (الوردية >= ${m[5]}، إعادة الإدخال <= ${m[6]}د).`
+        : `${m[1]} répétition(s) par quart, ${m[2]} après impression et ${m[3]} re-saisie(s) réduite(s) sur ${m[4]} annulations analysées (quart >= ${m[5]}, re-saisie <= ${m[6]}m).`;
+    }
+    m = trimmed.match(/^No\s+repeat-shift\s*\(>=\s*([\d,]+)\),\s*after-print,\s*or\s*lower-rekey\s*\(<=\s*([\d,]+)m\)\s+anomalies\s+across\s+([\d,]+)\s+scoped\s+voids\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `لا توجد حالات تكرار وردية (>= ${m[1]}) أو إلغاء بعد الطباعة أو إعادة إدخال بأقل (<= ${m[2]}د) ضمن ${m[3]} إلغاءً مراقباً.`
+        : `Aucune anomalie de répétition (>= ${m[1]}), d'annulation après impression ou de re-saisie réduite (<= ${m[2]}m) sur ${m[3]} annulations analysées.`;
+    }
+    m = trimmed.match(/^Requires\s+a\s+documented\s+void\s+reason\s*\(3\+\s*chars\)\s+when\s+voiding\s+any\s+operational\s+or\s+schedule\s+entry\s+with\s+amount\s*>=\s*\$([\d,]+)\s+or\s+dated\s+([\d,]+)\+\s*day\(s\)\s+before\s+today\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يتطلب تدوين سبب الإلغاء (3+ أحرف) عند إلغاء أي قيد تشغيلي أو جدول بمبلغ >= $${m[1]} أو مؤرخ قبل اليوم بـ ${m[2]}+ يوم.`
+        : `Exige un motif documenté (3+ car.) pour annuler toute écriture ou échéance >= $${m[1]} ou datée d'au moins ${m[2]} jour(s).`;
+    }
+    m = trimmed.match(/^>=\s*\$([\d,]+)\s+OR\s+>=\s*([\d,]+)d\s+old$/i);
+    if (m) {
+      return lang === 'ar' ? `>= $${m[1]} أو أقدم >= ${m[2]}ي` : `>= $${m[1]} OU ancienneté >= ${m[2]}j`;
+    }
+    m = trimmed.match(/^Live\s+rule:\s*A\s+same-day\s+void\s+under\s+\$([\d,]+)\s+stays\s+fast,\s*while\s+any\s+voucher\s*>=\s*\$([\d,]+)\s+or\s+dated\s+([\d,]+)\+\s*day\(s\)\s+ago\s+requires\s+a\s+3\+\s*character\s+reason\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `قاعدة مباشرة: الإلغاء في نفس اليوم دون $${m[1]} يبقى فورياً، بينما يتطلب أي قيد >= $${m[2]} أو أقدم بـ ${m[3]}+ يوم سبباً من 3+ أحرف.`
+        : `Règle active : une annulation du jour sous $${m[1]} reste directe, tandis qu'une pièce >= $${m[2]} ou datée de ${m[3]}+ jour(s) exige un motif de 3+ caractères.`;
+    }
+    m = trimmed.match(/^Flags\s+any\s+seat\s+or\s+gate\s+till\s+reaching\s+([\d,]+)\+\s*voids\s+in\s+one\s+shift\/day,\s*any\s+entry\s+voided\s+after\s+thermal\s+printing,\s*or\s+any\s+void\s+followed\s+within\s+([\d,]+)\s+min\s+by\s+a\s+lower\s+active\s+entry\s+for\s+the\s+same\s+party\/cashier\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `ينبّه عند بلوغ أي مستخدم أو صندوق بوابة ${m[1]}+ إلغاءات في وردية/يوم واحد، أو الإلغاء بعد الطباعة الحرارية، أو إعادة إدخال قيد نشط أقل للطرف/أمين الصندوق نفسه خلال ${m[2]} دقيقة.`
+        : `Signale tout poste ou caisse atteignant ${m[1]}+ annulations sur un quart/jour, toute annulation après impression thermique, ou toute re-saisie inférieure sous ${m[2]} min pour le même tiers/caissier.`;
+    }
+    m = trimmed.match(/^([\d,]+)\+\s+shift\s+voids\s*·\s*After-print\s*·\s*Re-key\s*<=\s*([\d,]+)m$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]}+ إلغاءات وردية · بعد الطباعة · إعادة إدخال <= ${m[2]}د`
+        : `${m[1]}+ annulations/quart · Après impression · Re-saisie <= ${m[2]}m`;
+    }
+    m = trimmed.match(/^Live\s+Sentinel:\s*Watches\s+operational\s+Void\s+Log\s*\+\s*live\s+gate\s+POS\s+voids\s+across\s+([\d,]+)\+\s+same-day\s+actor\s+voids,\s*printed\s+receipts\s+voided\s+later,\s*and\s+lower-amount\s+re-keys\s+within\s+([\d,]+)\s+min\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقب مباشر: يتابع سجل الإلغاءات التشغيلية + نقاط بيع البوابات عند ${m[1]}+ إلغاءات في اليوم لنفس المستخدم، والإيصالات الملغاة بعد طباعتها، وإعادة الإدخال بمبلغ أقل خلال ${m[2]} دقيقة.`
+        : `Sentinelle active : analyse le journal des annulations et caisses de portail sur ${m[1]}+ annulations du jour par utilisateur, tickets annulés après impression et re-saisies inférieures sous ${m[2]} min.`;
+    }
+    m = trimmed.match(/^Watches\s+(.+?)\s+voids\s+and\s+gate-till\s+activity\s+for\s+repeat\s+same-shift\s+voids\s+per\s+user\s+or\s+till,\s*void-after-print\s+slips,\s*and\s+quick\s+lower-amount\s+re-keys\s+under\s+entity\s+and\s+payroll\s+confidentiality\s+RLS\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يراقب إلغاءات قطاع ${geoIndTr(m[1])} ونشاط صناديق البوابات لرصد تكرار الإلغاءات في نفس الوردية لكل مستخدم أو صندوق، وإلغاءات ما بعد الطباعة، وإعادة الإدخال السريعة بمبلغ أقل ضمن صلاحيات الكيان وسرية الرواتب.`
+        : `Surveille les annulations et caisses de ${geoIndTr(m[1])} pour détecter les répétitions par quart/utilisateur, annulations après impression et re-saisies réduites sous RLS entité et confidentialité paie.`;
+    }
+    m = trimmed.match(/^Flags\s+any\s+(.+?)\s+seat\s+or\s+till\s+with\s+([\d,]+)\+\s+voids\s+in\s+one\s+shift\/day,\s*any\s+void\s+after\s+thermal\s+print,\s*or\s+any\s+void\s+followed\s+within\s+([\d,]+)\s+min\s+by\s+a\s+lower\s+active\s+entry\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `ينبّه عند وجود أي مستخدم أو صندوق في قطاع ${geoIndTr(m[1])} لديه ${m[2]}+ إلغاءات في وردية/يوم واحد، أو إلغاء بعد الطباعة الحرارية، أو إلغاء يتبعه قيد نشط أقل خلال ${m[3]} دقيقة.`
+        : `Signale tout poste ou caisse de ${geoIndTr(m[1])} avec ${m[2]}+ annulations par quart/jour, toute annulation après impression thermique ou suivie sous ${m[3]} min d'une saisie inférieure active.`;
+    }
+    m = trimmed.match(/^Live\s+Sentinel:\s*Flags\s*>=\s*([\d,]+)\s+shift\s+voids,\s*post-print\s+cancellations,\s*and\s+lower\s+re-keys\s+within\s+([\d,]+)\s+min\s+with\s+1-click\s+drilldown\s+to\s+Void\s+Log\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقب مباشر: ينبّه عند >= ${m[1]} إلغاءات وردية، أو الإلغاء بعد الطباعة، أو إعادة الإدخال بمبلغ أقل خلال ${m[2]} دقيقة مع انتقال بنقرة واحدة إلى سجل الإلغاءات.`
+        : `Sentinelle active : signale >= ${m[1]} annulations/quart, suppressions après impression et re-saisies réduites sous ${m[2]} min avec accès direct au journal.`;
     }
     m = trimmed.match(/^Site Wait >\s*([\d,]+)m$/i);
     if (m) {

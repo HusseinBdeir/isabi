@@ -22740,6 +22740,50 @@
       whatFn: p => `Weights brake-lining, retarder, and drivetrain intervals by steep-corridor loads (grade >= ${fmtNum(p.min_grade_pct, 1)}% or climb/drop >= ${fmtNum(p.min_climb_m, 0)} m at ${fmtNum(p.wear_factor_x, 1)}x wear) and alerts once unserviced company trucks cross ${fmtNum(p.warn_ton_km, 0)} t-km.`,
       threshFn: p => `>= ${fmtNum(p.min_grade_pct, 1)}% or >= ${fmtNum(p.min_climb_m, 0)}m · ${fmtNum(p.wear_factor_x, 1)}x · ${fmtNum(p.warn_ton_km, 0)} t-km`,
       previewFn: p => `Steep wear monitor: Flat odometer readings stay unchanged while heavy steep-corridor loads (grade >= ${fmtNum(p.min_grade_pct, 1)}% or >= ${fmtNum(p.min_climb_m, 0)}m at ${fmtNum(p.wear_factor_x, 1)}x) accelerate brake and drivetrain inspection schedules.`
+    },
+    {
+      id: 'G_VOID_REASON',
+      code: '#30',
+      name: 'Mandatory Void Reason Above Amount or Age',
+      domain: 'Void & Audit Controls',
+      behavior: 'block',
+      whereLabel: 'Void Confirmation, Inspectors & Server API',
+      jumpForm: '',
+      jumpView: 'void_log',
+      lockedActive: false,
+      why: 'Protects financial integrity by requiring a written reason (min 3 characters) whenever high-value or backdated operational entries are voided, while keeping small same-day typo voids fast.',
+      params: [
+        { key: 'min_usd', label: 'Min Amount Threshold ($ USD)', def: 500, min: 0, max: 10000, step: 50, unit: 'USD' },
+        { key: 'backdated_days', label: 'Require Reason When Aged >= (days, 0 = all)', def: 1, min: 0, max: 30, step: 1, unit: 'days' }
+      ],
+      whatFn: p => Number(p.backdated_days) === 0
+        ? 'Requires a documented void reason (3+ chars) on all operational and schedule voids across UI inspectors and server APIs.'
+        : `Requires a documented void reason (3+ chars) when voiding any operational or schedule entry with amount >= $${fmtNum(p.min_usd, 0)} or dated ${fmtNum(p.backdated_days, 0)}+ day(s) before today.`,
+      threshFn: p => Number(p.backdated_days) === 0
+        ? 'All operational & schedule voids (3+ chars)'
+        : `>= $${fmtNum(p.min_usd, 0)} OR >= ${fmtNum(p.backdated_days, 0)}d old`,
+      previewFn: p => Number(p.backdated_days) === 0
+        ? 'Live rule: Every operational or schedule void prompts for a brief reason across UI and server API.'
+        : `Live rule: A same-day void under $${fmtNum(p.min_usd, 0)} stays fast, while any voucher >= $${fmtNum(p.min_usd, 0)} or dated ${fmtNum(p.backdated_days, 0)}+ day(s) ago requires a 3+ character reason.`
+    },
+    {
+      id: 'S19',
+      code: '#31',
+      name: 'Repeat-Void, After-Print & Lower-Rekey Sentinel',
+      domain: 'Void & Audit Controls',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Void Log',
+      jumpView: 'sentinels',
+      sentinelId: 'S19',
+      lockedActive: false,
+      why: 'Detects shift-level void bursts per actor or gate till, slips voided after thermal printing, and voids followed quickly by a lower-amount replacement entry for the same party or cashier.',
+      params: [
+        { key: 'max_shift_voids', label: 'Shift Repeat-Void Alert Count', def: 3, min: 2, max: 15, step: 1, unit: 'voids' },
+        { key: 'rekey_window_min', label: 'Lower-Rekey Watch Window (min)', def: 180, min: 30, max: 720, step: 30, unit: 'min' }
+      ],
+      whatFn: p => `Flags any seat or gate till reaching ${fmtNum(p.max_shift_voids, 0)}+ voids in one shift/day, any entry voided after thermal printing, or any void followed within ${fmtNum(p.rekey_window_min, 0)} min by a lower active entry for the same party/cashier.`,
+      threshFn: p => `${fmtNum(p.max_shift_voids, 0)}+ shift voids · After-print · Re-key <= ${fmtNum(p.rekey_window_min, 0)}m`,
+      previewFn: p => `Live Sentinel: Watches operational Void Log + live gate POS voids across ${fmtNum(p.max_shift_voids, 0)}+ same-day actor voids, printed receipts voided later, and lower-amount re-keys within ${fmtNum(p.rekey_window_min, 0)} min.`
     }
   ];
 
@@ -23167,6 +23211,27 @@
     threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m · Gate ${fmtNum(p.gateRadiusM || 120, 0)}m / > ${fmtNum(p.maxSiteWaitMin || 45, 0)}m`,
     previewFn: () => 'Dwell watchdog: Queue a Gate Pin Review in Approvals directly from any drifted site cluster.'
   });
+  const mkIndVoidPatternRule = (id, industry) => ({
+    id,
+    code: '#10',
+    industry,
+    name: 'Repeat-Void, After-Print & Lower-Rekey Sentinel',
+    domain: 'Void & Audit Controls',
+    behavior: 'audit',
+    whereLabel: 'Domain Sentinels & Void Log',
+    jumpForm: '',
+    jumpView: 'sentinels',
+    sentinelId: id,
+    lockedActive: false,
+    why: `Watches ${industry} voids and gate-till activity for repeat same-shift voids per user or till, void-after-print slips, and quick lower-amount re-keys under entity and payroll confidentiality RLS.`,
+    params: [
+      { key: 'max_shift_voids', label: 'Shift Repeat-Void Alert Count', def: 3, min: 2, max: 15, step: 1, unit: 'voids' },
+      { key: 'rekey_window_min', label: 'Lower-Rekey Watch Window (min)', def: 180, min: 30, max: 720, step: 30, unit: 'min' }
+    ],
+    whatFn: p => `Flags any ${industry} seat or till with ${fmtNum(p.max_shift_voids, 0)}+ voids in one shift/day, any void after thermal print, or any void followed within ${fmtNum(p.rekey_window_min, 0)} min by a lower active entry.`,
+    threshFn: p => `${fmtNum(p.max_shift_voids, 0)}+ shift voids · After-print · Re-key <= ${fmtNum(p.rekey_window_min, 0)}m`,
+    previewFn: p => `Live Sentinel: Flags >= ${fmtNum(p.max_shift_voids, 0)} shift voids, post-print cancellations, and lower re-keys within ${fmtNum(p.rekey_window_min, 0)} min with 1-click drilldown to Void Log.`
+  });
   IND_ALERT_RULE_CATALOG.push(
     mkIndGeoAuditRule('ind_hld_08', 'Holding & Treasury'),
     mkIndGeoAuditRule('ind_hsp_08', 'Hospitality & Resorts'),
@@ -23177,7 +23242,12 @@
     mkIndDwellDriftRule('ind_hsp_09', 'Hospitality & Resorts'),
     mkIndDwellDriftRule('ind_trd_09', 'Automotive & Heavy Trading'),
     mkIndDwellDriftRule('ind_re_09', 'Real Estate & Property'),
-    mkIndDwellDriftRule('ind_ins_09', 'Insurance & Brokerage')
+    mkIndDwellDriftRule('ind_ins_09', 'Insurance & Brokerage'),
+    mkIndVoidPatternRule('ind_hld_10', 'Holding & Treasury'),
+    mkIndVoidPatternRule('ind_hsp_10', 'Hospitality & Resorts'),
+    mkIndVoidPatternRule('ind_trd_10', 'Automotive & Heavy Trading'),
+    mkIndVoidPatternRule('ind_re_10', 'Real Estate & Property'),
+    mkIndVoidPatternRule('ind_ins_10', 'Insurance & Brokerage')
   );
   IND_ALERT_RULE_CATALOG.forEach(r => ALERT_RULE_BY_ID.set(r.id, r));
 
@@ -24925,7 +24995,7 @@
       : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
     let indSentByRule = null;
 
-    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13']);
+    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON']);
     const scopedBuiltInCatalog = isMfgScope
       ? ALERT_RULE_CATALOG
       : ALERT_RULE_CATALOG.filter(r => universalRuleIds.has(r.id));
@@ -25083,7 +25153,7 @@
 
     const arChip = (key, lbl) => `<button type="button" class="filter-chip ${flt === key ? 'active' : ''}" data-ar-filter="${esc(key)}">${lbl}</button>`;
     const domains = isMfgScope
-      ? Array.from(new Set(['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll'].concat(unifiedRows.map(r => r.domain))))
+      ? Array.from(new Set(['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll', 'Void & Audit Controls'].concat(unifiedRows.map(r => r.domain))))
       : Array.from(new Set(unifiedRows.map(r => r.domain)));
     const compOpts = ['all'].concat(allowedCompanyNames());
     const initCaMetricKey = Object.keys(scopedCaMetrics)[0] || 'expense_usd';
@@ -26437,6 +26507,9 @@
 
       rawItems.push(_buildGeoAuditSentinelItem('Manufacturing', { id: 'S15', ruleId: 'S15', company: scope }));
       rawItems.push(_buildDwellDriftSentinelItem('Manufacturing', { id: 'S16', ruleId: 'S16', company: scope }));
+      if ((canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.buildVoidSentinelItem === 'function') {
+        rawItems.push(window.MFG_VOID_LOG.buildVoidSentinelItem('Manufacturing', { id: 'S19', ruleId: 'S19', company: scope }));
+      }
 
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
       const snAllowedCos = allowedCompanyNames();
@@ -27563,6 +27636,8 @@
       ${renderMapsQuotaPanelHtml()}
 
       ${renderGpsDwellDriftPanelHtml(isNonMfgSn ? activeInd : 'Manufacturing')}
+
+      ${(canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.renderSentinelVoidPanelHtml === 'function' ? window.MFG_VOID_LOG.renderSentinelVoidPanelHtml(isNonMfgSn ? activeInd : 'Manufacturing', isNonMfgSn ? 'all' : STATE.company) : ''}
 
       ${(canReviewSentinels() || isOwner() || isDemoScopeActive()) ? renderGeoAuditPanelHtml('sentinelGeoAuditCard', 'geoAuditFilter', { industry: isNonMfgSn ? activeInd : 'all', company: isNonMfgSn ? 'all' : STATE.company }) : ''}
 
@@ -59590,6 +59665,10 @@
     receipts.length = 0; receipts.push(...mReceipts);
     const mSales = mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales'));
     sales.length = 0; sales.push(...mSales);
+    const mInstalments = mergeCustomOverSeededRows(instalments, getIndustryCustomRows('re_instalments'));
+    instalments.length = 0; instalments.push(...mInstalments);
+    const mUnits = mergeCustomOverSeededRows(units, getIndustryCustomRows('re_units'));
+    units.length = 0; units.push(...mUnits);
     const mWorkorders = mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'));
     workorders.length = 0; workorders.push(...mWorkorders);
     const mRecharges = mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges'));
@@ -62144,11 +62223,15 @@
       const indPfx = pfxMap[ind] || 'hld';
       const geoItem = _buildGeoAuditSentinelItem(ind, { id: indPfx.toUpperCase() + '_GA', ruleId: `ind_${indPfx}_08`, company: scopeLabel });
       const dwellItem = _buildDwellDriftSentinelItem(ind, { id: indPfx.toUpperCase() + '_DW', ruleId: `ind_${indPfx}_09`, company: scopeLabel });
-      const withGeo = list.concat([geoItem, dwellItem]);
+      const extraIndSn = [geoItem, dwellItem];
+      if ((canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.buildVoidSentinelItem === 'function') {
+        extraIndSn.push(window.MFG_VOID_LOG.buildVoidSentinelItem(ind, { id: indPfx.toUpperCase() + '_VL', ruleId: `ind_${indPfx}_10`, company: scopeLabel }));
+      }
+      const withGeo = list.concat(extraIndSn);
       const base = withGeo
         .filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId))
         .map(it => Object.assign({}, it, {
-          scrollPanel: ['sentinelMapsQuotaCard', 'sentinelGeoAuditCard', 'snGpsDwellDriftPanel'].includes(it.scrollPanel)
+          scrollPanel: ['sentinelMapsQuotaCard', 'sentinelGeoAuditCard', 'snGpsDwellDriftPanel', 'snVoidPatternsPanel'].includes(it.scrollPanel)
             ? it.scrollPanel
             : `snInd_${it.id}`
         }));
@@ -84660,7 +84743,6 @@
       : rawCells.slice();
     if (cells.length) cells[0] = primaryId;
     const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
-    const amountCell = cells.slice().reverse().find(c => /\$|\d/.test(String(c))) || '$0.00';
     const domainTblKey = opts.domainTblKey || (opts.trEl && opts.trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
     const initialRowCompany = String(
       opts.rowCompany
@@ -84700,8 +84782,34 @@
       ? (resolvedDomainChrono.prefill.company || resolvedDomainChrono.prefill.entity || resolvedDomainChrono.prefill.venue || '')
       : '';
     const rowCompany = String(initialRowCompany || pfCo || pickColCompany() || inferVerticalCompany() || '').trim();
-    const dateCell = cells.find(c => /^\d{4}-\d{2}-\d{2}$/.test(String(c || '').trim())) || todayISO();
-    const numericAmt = parseFloat(String(amountCell || '').replace(/[^0-9.-]/g, '')) || 0;
+    const dtHdrIdx = headers.findIndex((h, i) => /date|start|effective|close|due|loss|issue|check.?in|arrival/i.test(String(h || '')) && _normalizeVoidDateIso(cells[i]));
+    const firstValidDateCell = dtHdrIdx >= 0
+      ? _normalizeVoidDateIso(cells[dtHdrIdx])
+      : (cells.map(c => _normalizeVoidDateIso(c)).find(Boolean) || '');
+    const prefillDateIso = _normalizeVoidDateIso(
+      resolvedDomainChrono && resolvedDomainChrono.prefill && (
+        resolvedDomainChrono.prefill.date || resolvedDomainChrono.prefill.start_date
+        || resolvedDomainChrono.prefill.effective_from || resolvedDomainChrono.prefill.due_date
+        || resolvedDomainChrono.prefill.loss_date || ''
+      )
+    );
+    const dateCell = firstValidDateCell || prefillDateIso || todayISO();
+    const isNonMoneyHdr = h => /\b(date|due\s*date|start|end|status|stage|type|id|code|ref|reference|notes?|remark|qty|quantity|km|m3|%|rate|share|margin|ratio|occ|days?|months?|periods?|count|weight|ton)\b|#/i.test(String(h || ''));
+    const isMoneyHdr = h => !isNonMoneyHdr(h) && /total|amount|usd|lbp|value|balance|net|gross|premium|rent|cost|revenue|billed|cash|paid|principal|fee|price|due|claim|approved|contract|scheduled/i.test(String(h || ''));
+    const currHdrIdx = headers.findIndex((h, i) => i !== dtHdrIdx && isMoneyHdr(h) && /(\$|usd|lbp)/i.test(String(h || '')) && String(cells[i] || '').trim());
+    const genHdrIdx = currHdrIdx >= 0 ? currHdrIdx : headers.findIndex((h, i) => i !== dtHdrIdx && isMoneyHdr(h) && !_normalizeVoidDateIso(cells[i]) && String(cells[i] || '').trim());
+    const amtHdrIdx = genHdrIdx;
+    const fallbackDollarCell = cells.slice().reverse().find(c => /^\s*[-+]?\$/.test(String(c || ''))) || '';
+    const amountCell = (amtHdrIdx >= 0 ? String(cells[amtHdrIdx] || '').trim() : fallbackDollarCell) || '$0.00';
+    const parseDomainCellNum = v => {
+      const m = String(v || '').replace(/,/g, '').match(/[-+]?\d+(?:\.\d+)?/);
+      return m ? (Number(m[0]) || 0) : 0;
+    };
+    const isAmtCellLbp = (amtHdrIdx >= 0 && /lbp|l\.l/i.test(String(headers[amtHdrIdx] || ''))) || /lbp|l\.l/i.test(amountCell);
+    const rawDomCellNum = Math.abs(parseDomainCellNum(amountCell));
+    const domFx = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
+    const numericAmtCell = isAmtCellLbp ? (rawDomCellNum / (domFx > 0 ? domFx : 89500)) : rawDomCellNum;
+    const numericAmt = numericAmtCell > 0 ? numericAmtCell : _extractVoidRowUsd(resolvedDomainChrono && resolvedDomainChrono.prefill);
     const domainMeta = {
       crKey: domainTblKey,
       primaryId,
@@ -85132,7 +85240,23 @@
               ${(domainGeoSpec && window.MFG_GEO && typeof window.MFG_GEO.canMintDriverGateLink === 'function' && window.MFG_GEO.canMintDriverGateLink()) ? `<button type="button" class="btn btn-outline-bar" id="indInspDriverGateLinkBtn">${ic('send')} Driver Gate Link</button>` : ''}
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
-              ${allowVoid ? '<input type="text" id="indInspVoidReasonInput" class="insp-edit-inp" placeholder="Optional void reason" aria-label="Optional void reason" style="max-width:210px;padding:6px 10px;font-size:12px">' : ''}
+          ${allowVoid ? (() => {
+            const _indVoidReq = evaluateVoidReasonRequirement({
+              table: domainTblKey || tableTitle || ind,
+              row: Object.assign({}, resolvedDomainChrono && resolvedDomainChrono.prefill ? resolvedDomainChrono.prefill : {}, {
+                date: dateCell,
+                company: rowCompany || STATE.company || ind,
+                ...(numericAmt > 0 ? { amount_usd: numericAmt } : {}),
+                tableTitle
+              }),
+              date: dateCell,
+              amountUsd: numericAmt > 0 ? numericAmt : undefined
+            });
+            const _vrPh = _indVoidReq.required
+              ? (window.MFG_I18N ? window.MFG_I18N.t('Required void reason (min 3 chars)') : 'Required void reason (min 3 chars)')
+              : (window.MFG_I18N ? window.MFG_I18N.t('Optional void reason') : 'Optional void reason');
+            return `<input type="text" id="indInspVoidReasonInput" class="insp-edit-inp${_indVoidReq.required ? ' is-required-hint' : ''}" placeholder="${esc(_vrPh)}" aria-label="${esc(_vrPh)}" data-void-required="${_indVoidReq.required ? '1' : '0'}" style="max-width:230px;padding:6px 10px;font-size:12px">`;
+          })() : ''}
               ${allowVoid ? '<button type="button" class="btn btn-ghost-bar" id="indInspVoidRowBtn" style="color:var(--crit,#DC2626)">Void / Delete Row</button>' : ''}
             </div>
             <button type="button" class="btn btn-ghost-bar" id="indInspCloseFooterBtn">Close Inspector</button>
@@ -85805,12 +85929,39 @@
           return;
         }
         if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
-          const origDtCell = cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '';
+          const origDtCell = firstValidDateCell || dateCell || '';
           const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(STATE.company, origDtCell, origDtCell, { industry: ind });
           if (pGuard && pGuard.blocked) {
             toast(pGuard.message, 'err');
             return;
           }
+        }
+        const _curVoidReasonEl = $('indInspVoidReasonInput');
+        const _curVoidReason = String((_curVoidReasonEl && _curVoidReasonEl.value) || '').trim();
+        const _curSnapDate = firstValidDateCell || dateCell || '';
+        const _indVoidCheck = evaluateVoidReasonRequirement({
+          table: domainTblKey || tableTitle || ind,
+          row: Object.assign({}, resolvedDomainChrono && resolvedDomainChrono.prefill ? resolvedDomainChrono.prefill : {}, {
+            date: _curSnapDate,
+            company: rowCompany || STATE.company || ind,
+            ...(numericAmt > 0 ? { amount_usd: numericAmt } : {}),
+            tableTitle
+          }),
+          date: _curSnapDate,
+          amountUsd: numericAmt > 0 ? numericAmt : undefined
+        });
+        if (_indVoidCheck.required && _curVoidReason.length < 3) {
+          if (_curVoidReasonEl) {
+            _curVoidReasonEl.classList.add('is-invalid');
+            _curVoidReasonEl.setAttribute('aria-invalid', 'true');
+            try { _curVoidReasonEl.focus(); } catch (_) {}
+          }
+          toast(formatVoidReasonRequiredMsg(_indVoidCheck), 'err');
+          return;
+        }
+        if (_curVoidReasonEl) {
+          _curVoidReasonEl.classList.remove('is-invalid');
+          _curVoidReasonEl.removeAttribute('aria-invalid');
         }
         const execDomainVoid = async () => {
           const prevVoidEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
@@ -85845,11 +85996,10 @@
             const voidWhoEmail = String(au.email || '').trim().toLowerCase();
             const voidReasonEl = $('indInspVoidReasonInput');
             const voidReason = String((voidReasonEl && voidReasonEl.value) || '').trim().slice(0, 500);
-            const snapDateCell = (cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '').trim();
+            const snapDateCell = firstValidDateCell || dateCell || '';
             const cpIdx = headers.findIndex((h, i) => i > 0 && /customer|client|supplier|vendor|counterparty|party|partner|tenant|carrier|insurer|property|staff|employee|driver|entity|resort|outlet|item|product|unit|name|title/i.test(String(h || '')) && String(cells[i] || '').trim());
             const snapCounterparty = String((cpIdx >= 0 ? cells[cpIdx] : (cells[1] || cells[2] || '')) || '').trim();
-            const amtIdx = headers.findIndex((h, i) => /total|amount|usd|value|balance|net|gross|premium|rent|cost|revenue|billed|cash/i.test(String(h || '')) && !/qty|km|m3|%|rate|share/i.test(String(h || '')) && String(cells[i] || '').trim());
-            const snapAmount = String((amtIdx >= 0 ? cells[amtIdx] : (amountCell || '')) || '').trim();
+            const snapAmount = String((amtHdrIdx >= 0 ? cells[amtHdrIdx] : (fallbackDollarCell || '')) || '').trim();
             const hasPrevEntry = Boolean(prevEntry && typeof prevEntry === 'object' && Object.keys(prevEntry).length > 0);
             const voidSnap = {
               tableTitle: tableTitle || '',
@@ -86141,6 +86291,9 @@
             notes: `${ind} · ${tableTitle}`,
             _domainSlip: {
               ind,
+              domainTblKey,
+              tableTitle,
+              editKey,
               title: `${tableTitle.toUpperCase()} VOUCHER`,
               unpricedTitle: `${tableTitle.toUpperCase()} PASS`,
               badge: `${ind.toUpperCase()} REGISTER`,
@@ -90050,6 +90203,7 @@
       orig.voided = true;
       orig.voided_by = record.entered_by_email || '';
       orig.voided_at = record.entered_at || nowStamp();
+      orig.void_reason = `Redirected load to Ticket #${record.ticket_no || ''}`;
       orig.redirected_to_ticket = record.ticket_no;
       orig.notes = [orig.notes, `Redirected load to Ticket #${record.ticket_no} (${record.customer || ''})`].filter(Boolean).join(' · ');
       const cIdx = STATE.customRecords.sales_tickets.findIndex(x => x && String(x.id) === String(orig.id));
@@ -112213,6 +112367,32 @@
             Boolean(crKey === 'sites' || crKey === 'regions' || assignSiteReg)
           )
         : null;
+      const reclassReason = String((evOrOpts && !(evOrOpts instanceof Event) && evOrOpts._reclassVoidReason) || '').trim().slice(0, 500);
+      if (isEditingExisting && editCtx && editCtx.crKey && editCtx.crKey !== crKey) {
+        const oCr = editCtx.crKey;
+        const oRow = editCtx.orig
+          || ((STATE.customRecords[oCr] || []).find(x => x && String(x.id) === String(editCtx.id)))
+          || ((SEED.records && SEED.records[oCr] || []).find(x => x && String(x.id) === String(editCtx.id)))
+          || record;
+        const reEv = evaluateVoidReasonRequirement({ table: oCr, row: oRow });
+        if (reEv.required && reclassReason.length < 3) {
+          STATE.saving = false;
+          if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+          openVoidReasonPromptModal({
+            title: 'Void Reason Required',
+            recordLabel: (oRow && (oRow.name || oRow.ticket_no || oRow.invoice_no || oRow.id)) || editCtx.id,
+            subtitle: `${CR_LABEL[oCr] || oCr}${oRow && oRow.company ? ' · ' + oRow.company : ''}`,
+            reqEval: reEv,
+            initialReason: reclassReason,
+            onConfirm: (typedReason) => {
+              const nextOpts = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
+              nextOpts._reclassVoidReason = typedReason;
+              saveModalEntry(nextOpts);
+            }
+          });
+          return;
+        }
+      }
       if (modalSaveRollbackSnap) {
         modalSaveRollbackSnap.snapSeedRow(crKey, record.id);
         if (editCtx && editCtx.crKey && editCtx.id) modalSaveRollbackSnap.snapSeedRow(editCtx.crKey, editCtx.id);
@@ -112274,10 +112454,12 @@
         if (origCrKey && origCrKey !== crKey) {
           const oldSeedArr = (SEED.records && Array.isArray(SEED.records[origCrKey])) ? SEED.records[origCrKey] : [];
           let voidedOld = null;
+          const reclassVR = reclassReason || `Reclassified to ${CR_LABEL[crKey] || crKey}`;
           oldSeedArr.forEach(r => {
             if (r && String(r.id) === String(editCtx.id)) {
               r.voided = true;
               r.voided_at = new Date().toISOString();
+              r.void_reason = reclassVR;
               voidedOld = Object.assign({}, r);
             }
           });
@@ -112286,6 +112468,7 @@
           if (oldCIdx >= 0) {
             STATE.customRecords[origCrKey][oldCIdx].voided = true;
             STATE.customRecords[origCrKey][oldCIdx].voided_at = new Date().toISOString();
+            STATE.customRecords[origCrKey][oldCIdx].void_reason = reclassVR;
             voidedOld = Object.assign({}, STATE.customRecords[origCrKey][oldCIdx]);
           } else if (voidedOld) {
             STATE.customRecords[origCrKey].unshift(voidedOld);
@@ -112556,6 +112739,7 @@
           if (!matchExp) return;
           it.voided = true;
           it.voided_at = new Date().toISOString();
+          it.void_reason = `Superseded by updated voucher ${String(record.name || record.id || '')}`.trim();
           if (it.id && !seenEi.has(String(it.id))) {
             seenEi.add(String(it.id));
             const ci = STATE.customRecords.expense_items.findIndex(x => x && String(x.id) === String(it.id));
@@ -112574,6 +112758,7 @@
           if (!it || it.voided || String(it.repair_id || '') !== String(record.id)) return;
           it.voided = true;
           it.voided_at = new Date().toISOString();
+          it.void_reason = `Superseded by updated voucher ${String(record.name || record.id || '')}`.trim();
           if (it.id && !seenRi.has(String(it.id))) {
             seenRi.add(String(it.id));
             const ci = STATE.customRecords.repair_items.findIndex(x => x && String(x.id) === String(it.id));
@@ -113026,17 +113211,17 @@
             if (prevRec) {
               await postRecordToLocalApi(pTbl, Object.assign({}, prevRec, { same_person_confirmed: true }), { deferRender: true });
             } else if (pRec && pRec.id) {
-              await postRecordToLocalApi(pTbl, Object.assign({}, pRec, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+              await postRecordToLocalApi(pTbl, Object.assign({}, pRec, { voided: true, voided_at: new Date().toISOString(), void_reason: 'Rolled back after peer save rejection' }), { deferRender: true });
             }
           }
           if (hasServerApi() && !isDemoScopeActive()) {
             if (keptPeriodModal) {
               // The save had gone on as a new entry: that entry is struck out on the server and the row it was
               // typed over goes back as it was.
-              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString(), void_reason: 'Rolled back after peer save rejection' }), { deferRender: true });
               if (editCtx && editCtx.orig) await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
             } else if (!isEditingExisting && !isUpdatingPending) {
-              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString(), void_reason: 'Rolled back after peer save rejection' }), { deferRender: true });
             } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
               await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
             } else if (bpPendRow && String(bpPendRow.id || '') === String(record.id || '')) {
@@ -113284,6 +113469,271 @@
       }
     }
     return '';
+  }
+
+  const MASTER_DIRECTORY_VOID_TABLES = new Set([
+    'sites', 'regions', 'customers', 'suppliers', 'staff_members', 'company_equipment', 'equipment',
+    'staff_roles', 'staff_assignments', 'work_shifts', 'documents', 'accounts', 'companies', 'partners',
+    'settings', 're_properties', 're_units', 're_ownership', 're_valuations', 'trd_trucks', 'trd_stock',
+    'trd_suppliers', 'ins_catalogue', 'ins_carriers', 'ins_brokers', 'ins_agents', 'hsp_stock',
+    'hsp_outlets', 'hsp_rooms', 'hld_entities', 'hld_partners_dir'
+  ]);
+  const MASTER_DIRECTORY_TITLE_RX = /^(sites|properties|units|ownership|valuations|trucks|catalogue|directories|rooms)$/i;
+
+  const VOID_USD_EXTRACT_KEYS = [
+    'total_usd', 'total_ttc_usd', 'net_usd', 'amount_usd', 'usd_amount', 'ttc_usd',
+    'ttc_period_usd', 'annual_ttc_usd', 'ttc', 'gross_prem_usd', 'gwp_usd', 'premium_usd',
+    'net_payable_4017_usd', 'settled_to_carrier_usd', 'gross_comm_usd', 'net_comm_usd',
+    'quoted_renewal_usd', 'claimed_usd', 'approved_usd', 'paid_by_insurer_usd',
+    'contract_usd', 'season_contract_usd', 'seasonal_rate_usd', 'nightly_rate_usd',
+    'gross_pool_usd', 'open_payable_usd', 'pos_billed_ttc', 'scheduled_usd',
+    'actual_usd', 'open_usd', 'landed_cost_usd', 'total_landed_add', 'fob_usd',
+    'gross_ar_usd', 'unallocated_usd', 'principal_usd', 'total_due_usd',
+    'balance_usd', 'paid_usd', 'advance_usd', 'cash_usd', 'cost_usd',
+    'gross_usd', 'net_pay_usd', 'base_salary_usd', 'usd', 'total_ttc', 'total', 'amount'
+  ];
+
+  function _parseVoidMoneyNum(val) {
+    if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+    const cleaned = String(val || '').replace(/,/g, '').trim();
+    if (!cleaned) return 0;
+    const m = cleaned.match(/[-+]?\d+(?:\.\d+)?/);
+    if (!m) return 0;
+    const n = Number(m[0]);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function _extractVoidRowUsd(row, fallbackAmt) {
+    if (fallbackAmt != null && Number.isFinite(Number(fallbackAmt)) && Number(fallbackAmt) !== 0) {
+      return Math.abs(Number(fallbackAmt));
+    }
+    if (!row || typeof row !== 'object') return 0;
+    const snap = (row.void_snapshot && typeof row.void_snapshot === 'object') ? row.void_snapshot : null;
+    const srcs = snap ? [row, snap] : [row];
+    for (let sIdx = 0; sIdx < srcs.length; sIdx++) {
+      const src = srcs[sIdx];
+      const srcCur = String(src.currency || src.cur || row.currency || row.cur || '').trim().toUpperCase();
+      const fx = Number(src.rate || src.fx_rate || row.rate || row.fx_rate || (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500);
+      for (let i = 0; i < VOID_USD_EXTRACT_KEYS.length; i++) {
+        const k = VOID_USD_EXTRACT_KEYS[i];
+        const rawVal = src[k];
+        const v = _parseVoidMoneyNum(rawVal);
+        if (v !== 0) {
+          const isExplicitUsd = /_usd$|^usd$/i.test(k);
+          const isLbp = /lbp|l\.l/i.test(String(rawVal || '')) || (!isExplicitUsd && srcCur === 'LBP');
+          return isLbp ? Math.abs(v / (fx > 0 ? fx : 89500)) : Math.abs(v);
+        }
+      }
+    }
+    const lbpKeys = ['amount_lbp', 'lbp_amount', 'total_lbp'];
+    for (let sIdx = 0; sIdx < srcs.length; sIdx++) {
+      const src = srcs[sIdx];
+      for (let i = 0; i < lbpKeys.length; i++) {
+        const lbp = _parseVoidMoneyNum(src[lbpKeys[i]]);
+        if (lbp !== 0) {
+          const fx = Number(src.rate || src.fx_rate || row.rate || row.fx_rate || (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500);
+          return Math.abs(lbp / (fx > 0 ? fx : 89500));
+        }
+      }
+    }
+    return 0;
+  }
+
+  function _normalizeVoidDateIso(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+    if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+    return '';
+  }
+
+  function evaluateVoidReasonRequirement(spec) {
+    const s = spec || {};
+    const tableRaw = String(s.table || '').trim();
+    const tblLow = tableRaw.toLowerCase();
+    const row = s.row || {};
+    const snap = (row.void_snapshot && typeof row.void_snapshot === 'object') ? row.void_snapshot : {};
+    const titleStr = String(row.tableTitle || s.tableTitle || '').trim();
+    const isMaster = Boolean(
+      (tblLow && (MASTER_DIRECTORY_VOID_TABLES.has(tblLow) || UNIVERSAL_MAIN_SPEC[tblLow])) ||
+      (titleStr && MASTER_DIRECTORY_TITLE_RX.test(titleStr) && (!tblLow || MASTER_DIRECTORY_VOID_TABLES.has(tblLow) || tblLow === tableRaw.toLowerCase()))
+    );
+    const isSystemOrWorkbook = Boolean(
+      row._systemTopup
+      || (
+        Boolean(row.voided)
+        && (
+          row.twin_of
+          || row.twin_difference
+          || /^(system-topup|sharepoint top-up|workbook match|workbook reconciliation)/i.test(String(row.voided_by || row.voidedBy || '').trim())
+        )
+      )
+    );
+    const ruleEnabled = typeof isAlertRuleEnabled === 'function' ? isAlertRuleEnabled('G_VOID_REASON') : true;
+    const p = typeof getAlertRuleParamsObj === 'function' ? getAlertRuleParamsObj('G_VOID_REASON') : { min_usd: 500, backdated_days: 1 };
+    const minUsd = Number.isFinite(Number(p.min_usd)) ? Number(p.min_usd) : 500;
+    const backdatedDays = Number.isFinite(Number(p.backdated_days)) ? Number(p.backdated_days) : 1;
+    const absUsd = _extractVoidRowUsd(row, s.amountUsd);
+    const rowDate = _normalizeVoidDateIso(
+      s.date || row.date || row.rep_date || row.start_date || row.effective_from || row.period_start
+      || row.close_date || row.invoice_date || row.remittance_date || row.loss_date || row.due_date
+      || row.issue_date || row.lease_start || row.policy_start || row.booking_date || row.check_in
+      || row.arrival_date || row.txn_date || row.val_date || row.day || snap.date || ''
+    );
+    const today = typeof todayISO === 'function' ? todayISO() : new Date().toISOString().slice(0, 10);
+    let daysOld = 0;
+    if (rowDate && /^\d{4}-\d{2}-\d{2}$/.test(today)) {
+      daysOld = Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(rowDate + 'T00:00:00Z')) / 86400000);
+    }
+    const byAll = backdatedDays === 0;
+    const byAmount = absUsd >= minUsd && minUsd >= 0 && (minUsd > 0 || absUsd >= 0);
+    const byAge = backdatedDays > 0 && Boolean(rowDate) && daysOld >= backdatedDays;
+    const triggers = [];
+    if (byAll) triggers.push('all');
+    if (byAmount) triggers.push('amount');
+    if (byAge) triggers.push('age');
+    const required = Boolean(ruleEnabled && !isMaster && !isSystemOrWorkbook && (byAll || byAmount || byAge));
+    return { required, isMaster, isSystemOrWorkbook, ruleEnabled, minUsd, backdatedDays, absUsd, rowDate, today, daysOld, byAll, byAmount, byAge, triggers };
+  }
+
+  function formatVoidReasonRequiredMsg(ev) {
+    if (!ev) return 'Void reason required (min 3 characters).';
+    if (ev.byAmount && ev.byAge) {
+      return `Void reason required (min 3 chars): amount $${fmtNum(ev.absUsd, 0)} >= $${fmtNum(ev.minUsd, 0)} and aged ${ev.daysOld}d (${ev.rowDate}).`;
+    }
+    if (ev.byAmount) {
+      return `Void reason required (min 3 chars): amount $${fmtNum(ev.absUsd, 0)} >= $${fmtNum(ev.minUsd, 0)}.`;
+    }
+    if (ev.byAge) {
+      return `Void reason required (min 3 chars): entry dated ${ev.rowDate} (${ev.daysOld}d before today).`;
+    }
+    return 'Void reason required (min 3 chars) under G_VOID_REASON rule.';
+  }
+
+  function openVoidReasonPromptModal(cfg) {
+    const c = cfg || {};
+    const _t = (s) => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+    const existing = $('voidReasonPromptModal');
+    if (existing) existing.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'voidReasonPromptModal';
+    wrap.className = 'modal-backdrop vlog-reason-backdrop';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-labelledby', 'voidReasonModalTitle');
+    const ev = c.reqEval || {};
+    const pills = [];
+    if (ev.byAmount) pills.push(`<span class="badge badge-warn" data-no-i18n="1">${esc(_t('Amount'))}: $${esc(fmtNum(ev.absUsd, 0))} &gt;= $${esc(fmtNum(ev.minUsd, 0))}</span>`);
+    if (ev.byAge) pills.push(`<span class="badge badge-warn" data-no-i18n="1">${esc(_t('Aged'))}: ${esc(String(ev.daysOld))}d (${esc(ev.rowDate)})</span>`);
+    if (ev.byAll) pills.push(`<span class="badge badge-info" data-no-i18n="1">${esc(_t('Policy: All operational voids'))}</span>`);
+    const quickReasons = [
+      'Data entry typo',
+      'Duplicate entry',
+      'Customer cancelled',
+      'Wrong entity / vehicle',
+      'Schedule correction'
+    ];
+    wrap.innerHTML = `
+      <div class="modal-card vlog-reason-card" onclick="event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <h3 id="voidReasonModalTitle" style="margin:0;font-size:16px">${ic('warn')} <span>${esc(c.title || 'Void Reason Required')}</span>${c.recordLabel ? ` · <span data-no-i18n="1">${esc(c.recordLabel)}</span>` : ''}</h3>
+            ${c.subtitle ? `<div class="mu" style="font-size:12px;margin-top:3px" data-no-i18n="1">${esc(c.subtitle)}</div>` : ''}
+          </div>
+          <button type="button" class="btn-icon" id="voidReasonCloseX" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+          ${pills.length ? `<div class="vlog-reason-triggers">${pills.join('')}</div>` : ''}
+          <div class="mu" style="font-size:12.5px">This void will be permanently logged in the Void Log with your name, timestamp, and reason (minimum 3 characters).</div>
+          <div class="vlog-reason-chips" role="group" aria-label="Quick reasons">
+            ${quickReasons.map(r => `<button type="button" class="btn btn-sm vlog-reason-chip" data-vr-chip="${esc(r)}">${esc(r)}</button>`).join('')}
+          </div>
+          <label for="voidReasonModalInput" style="display:flex;flex-direction:column;gap:6px">
+            <span style="display:flex;justify-content:space-between;font-size:12px;font-weight:700">
+              <span><span>Reason for Voiding</span> <span style="color:var(--crit,#DC2626)">*</span></span>
+              <span id="voidReasonModalCount" class="mono mu" data-no-i18n="1">0 / 3+ ${esc(_t('min chars'))}</span>
+            </span>
+            <textarea id="voidReasonModalInput" class="vlog-reason-textarea" rows="3" maxlength="500" placeholder="Explain why this entry is being voided...">${esc(String(c.initialReason || ''))}</textarea>
+          </label>
+          <div id="voidReasonModalErr" class="vlog-reason-err" hidden></div>
+        </div>
+        <div class="modal-foot" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost-bar" id="voidReasonCancelBtn">Cancel</button>
+          <button type="button" class="btn btn-danger" id="voidReasonConfirmBtn">${ic('trash')} <span>Confirm Void</span></button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    try {
+      const lcNow = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+      if (lcNow !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(wrap, lcNow);
+      }
+    } catch (_) {}
+    const inp = $('voidReasonModalInput');
+    const cnt = $('voidReasonModalCount');
+    const errEl = $('voidReasonModalErr');
+    const syncCnt = () => {
+      const len = String((inp && inp.value) || '').trim().length;
+      if (cnt) {
+        cnt.textContent = `${len} / 3+ ${_t('min chars')}`;
+        cnt.style.color = len >= 3 ? 'var(--ok,#15803D)' : 'var(--muted)';
+      }
+      if (errEl && len >= 3) errEl.hidden = true;
+    };
+    const closeMe = () => {
+      const el = $('voidReasonPromptModal');
+      if (el) el.remove();
+      document.removeEventListener('keydown', onEsc, true);
+      if (typeof c.onCancel === 'function') { try { c.onCancel(); } catch (_) {} }
+    };
+    const onEsc = e => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMe();
+      }
+    };
+    document.addEventListener('keydown', onEsc, true);
+    wrap.addEventListener('click', e => { if (e.target === wrap) closeMe(); });
+    $('voidReasonCloseX').addEventListener('click', closeMe);
+    $('voidReasonCancelBtn').addEventListener('click', closeMe);
+    wrap.querySelectorAll('[data-vr-chip]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (inp) {
+          inp.value = btn.getAttribute('data-vr-chip') || '';
+          syncCnt();
+          try { inp.focus(); } catch (_) {}
+        }
+      });
+    });
+    if (inp) {
+      inp.addEventListener('input', syncCnt);
+      inp.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          $('voidReasonConfirmBtn').click();
+        }
+      });
+      syncCnt();
+      setTimeout(() => { try { inp.focus(); } catch (_) {} }, 25);
+    }
+    $('voidReasonConfirmBtn').addEventListener('click', () => {
+      const reason = String((inp && inp.value) || '').trim().slice(0, 500);
+      if (reason.length < 3) {
+        if (errEl) {
+          errEl.textContent = _t('Please enter at least 3 characters explaining why this entry is being voided.');
+          errEl.hidden = false;
+        }
+        if (inp) { try { inp.focus(); } catch (_) {} }
+        return;
+      }
+      const el = $('voidReasonPromptModal');
+      if (el) el.remove();
+      document.removeEventListener('keydown', onEsc, true);
+      if (typeof c.onConfirm === 'function') c.onConfirm(reason);
+    });
   }
 
   function _buildSparseVoidApiRecord(tblKey, rowObj, fallbackId, isVoid, meta) {
@@ -113650,8 +114100,57 @@
         window.MFG_STEP_UP.requireStepUpAuth(voidSpec).then(ok => {
           if (ok) voidRecord(crKey, id, Object.assign({}, opts || {}, { bypassStepUp: true }));
         });
-        return;
+        return false;
       }
+    }
+    const targetForReason = r || seedRow;
+    const preReason = String((opts && opts.reason) || '').trim().slice(0, 500);
+    const cascadeReasonCandidates = [[crKey, targetForReason]];
+    if (gtVoidPeer && gtVoidPeer.row) cascadeReasonCandidates.push([gtVoidPeer.crKey, gtVoidPeer.row]);
+    salaryVoucherPeers(crKey, targetForReason, false).forEach(p => cascadeReasonCandidates.push(['salaries', p]));
+    const candPid = String((targetForReason && targetForReason.id) || q);
+    const candPref = norm((targetForReason && targetForReason.name) || '');
+    if (crKey === 'expenses' || crKey === 'equipment_repairs') {
+      const ck = crKey === 'expenses' ? 'expense_items' : 'repair_items';
+      const idF = crKey === 'expenses' ? 'expense_id' : 'repair_id';
+      const refF = crKey === 'expenses' ? 'expense_ref' : 'repair_ref';
+      (STATE.customRecords[ck] || []).concat((SEED.records && SEED.records[ck]) || []).forEach(ch => {
+        if (!ch || ch.voided) return;
+        const m = ch[idF] ? (String(ch[idF]) === candPid) : (Boolean(candPref) && norm(ch[refF] || '') === candPref);
+        if (m) cascadeReasonCandidates.push([ck, ch]);
+      });
+    }
+    if (crKey !== 'documents') {
+      (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []).forEach(d => {
+        if (d && !d.voided && norm(d.parent_table || '') === norm(crKey) && String(d.parent_id || '') === candPid) {
+          cascadeReasonCandidates.push(['documents', d]);
+        }
+      });
+    }
+    let reasonEval = { required: false };
+    for (let ci = 0; ci < cascadeReasonCandidates.length; ci++) {
+      const [ctbl, crow] = cascadeReasonCandidates[ci];
+      if (!crow) continue;
+      const evC = evaluateVoidReasonRequirement({ table: ctbl, row: crow });
+      if (evC && evC.required) {
+        reasonEval = evC;
+        break;
+      }
+    }
+    if (reasonEval.required && preReason.length < 3) {
+      const recLabel = (targetForReason && (targetForReason.name || targetForReason.ticket_no || targetForReason.invoice_no || targetForReason.staff || targetForReason.driver || targetForReason.equipment || targetForReason.id)) || q;
+      const _tLbl = (s) => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+      openVoidReasonPromptModal({
+        title: 'Void Reason Required',
+        recordLabel: recLabel,
+        subtitle: `${_tLbl(CR_LABEL[crKey] || crKey)}${targetForReason && targetForReason.company ? ' · ' + targetForReason.company : ''}`,
+        reqEval: reasonEval,
+        initialReason: preReason,
+        onConfirm: (typedReason) => {
+          voidRecord(crKey, id, Object.assign({}, opts || {}, { bypassStepUp: true, reason: typedReason }));
+        }
+      });
+      return false;
     }
     const voidedTargetPre = r || seedRow;
     const isEffVoidTbl = voidedTargetPre ? isEffectiveSeriesTable(crKey, voidedTargetPre) : false;
@@ -113721,7 +114220,7 @@
       if (reasonOpt) gtVoidPeer.row.void_reason = reasonOpt;
       delete gtVoidPeer.row.restored_at;
       const peerSeed = ((SEED.records && SEED.records[gtVoidPeer.crKey]) || []).find(x => x && String(x.id) === String(gtVoidPeer.row.id));
-      if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; if (whoEmail) peerSeed.voided_by_email = whoEmail; peerSeed.voided_at = when; }
+      if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; if (whoEmail) peerSeed.voided_by_email = whoEmail; peerSeed.voided_at = when; if (reasonOpt) peerSeed.void_reason = reasonOpt; }
       extraVoidPosts.push([gtVoidPeer.crKey, gtVoidPeer.row]);
     }
     // A salary voucher that carried back pay: its other rows (one per closed month) go with it
@@ -113732,10 +114231,11 @@
       p.voided_by = who;
       if (whoEmail) p.voided_by_email = whoEmail;
       p.voided_at = when;
+      if (reasonOpt) p.void_reason = reasonOpt;
       p.voided_with_voucher = String((r || seedRow).id || '');
       delete p.restored_at;
       const pSeed = ((SEED.records && SEED.records.salaries) || []).find(x => x && String(x.id) === String(p.id));
-      if (pSeed && pSeed !== p) { pSeed.voided = true; pSeed.voided_by = who; if (whoEmail) pSeed.voided_by_email = whoEmail; pSeed.voided_at = when; pSeed.voided_with_voucher = p.voided_with_voucher; }
+      if (pSeed && pSeed !== p) { pSeed.voided = true; pSeed.voided_by = who; if (whoEmail) pSeed.voided_by_email = whoEmail; pSeed.voided_at = when; if (reasonOpt) pSeed.void_reason = reasonOpt; pSeed.voided_with_voucher = p.voided_with_voucher; }
       extraVoidPosts.push(['salaries', p]);
     });
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
@@ -113761,6 +114261,7 @@
         ch.voided_by = who;
         if (whoEmail) ch.voided_by_email = whoEmail;
         ch.voided_at = when;
+        if (reasonOpt) ch.void_reason = reasonOpt;
         ch.voided_with_parent = parentId;
         const cIdx = STATE.customRecords[childKey].findIndex(x => x && String(x.id || x.name) === cid);
         if (cIdx >= 0) Object.assign(STATE.customRecords[childKey][cIdx], ch);
@@ -113783,6 +114284,7 @@
         d.voided_by = who;
         if (whoEmail) d.voided_by_email = whoEmail;
         d.voided_at = when;
+        if (reasonOpt) d.void_reason = reasonOpt;
         d.voided_with_parent = parentId;
         const cIdx = STATE.customRecords.documents.findIndex(x => x && String(x.id || '') === did);
         if (cIdx >= 0) Object.assign(STATE.customRecords.documents[cIdx], d);
@@ -113848,6 +114350,9 @@
     }
     stampBatchModifiedAt(extraVoidPosts, crKey, r);
     renderApp();
+    if (opts && typeof opts.onComplete === 'function') {
+      try { opts.onComplete(); } catch (_) {}
+    }
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
     toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
@@ -115018,8 +115523,9 @@
           clearTimeout(voidArmTimer);
           const targetKey = editTargetCrKey;
           const targetId = String(editTargetRow.id);
-          closeEntryModal(true);
-          voidRecord(targetKey, targetId);
+          voidRecord(targetKey, targetId, {
+            onComplete: () => { closeEntryModal(true); }
+          });
         });
       }
       if (!body.dataset.enterWired) { // #modalBody persists across opens — bind once; Enter advances to next editable field instead of prematurely posting
@@ -121763,14 +122269,20 @@
           if (STATE.inspectorHistory && STATE.inspectorHistory.length > 1) {
             const prevIdx = STATE.inspectorHistory.length - 2;
             const prev = STATE.inspectorHistory[prevIdx];
-            voidRecord(key, row.id || row.name || row.ticket_no || idOrName);
-            if (prev && prev.key && prev.id != null) {
-              showRecordInspector(prev.key, prev.id, { fromCrumbIdx: prevIdx, tab: prev.tab, tableContext: prev.tableContext, preserveScroll: true });
-              return;
-            }
+            voidRecord(key, row.id || row.name || row.ticket_no || idOrName, {
+              onComplete: () => {
+                if (prev && prev.key && prev.id != null) {
+                  showRecordInspector(prev.key, prev.id, { fromCrumbIdx: prevIdx, tab: prev.tab, tableContext: prev.tableContext, preserveScroll: true });
+                } else {
+                  closeRecordInspector();
+                }
+              }
+            });
+            return;
           }
-          closeRecordInspector();
-          voidRecord(key, row.id || row.name || row.ticket_no || idOrName);
+          voidRecord(key, row.id || row.name || row.ticket_no || idOrName, {
+            onComplete: () => { closeRecordInspector(); }
+          });
         } else {
           btn.dataset.armed = '1';
           btn.innerHTML = `${ic('warn')} Confirm Void / Delete?`;
@@ -138603,6 +139115,7 @@
         method: strV('ik_method') || 'Bank Transfer', entered_by: who,
         _domainSlip: {
           ind: activeInd,
+          domainTblKey: activeInd === 'Holding & Treasury' ? 'hld_interactions' : '',
           title: 'INTERCOMPANY TREASURY CLEARING VOUCHER',
           unpricedTitle: 'TREASURY MIRROR ADVICE SLIP',
           badge: 'BILATERAL SISTER VOUCHER',
@@ -138628,6 +139141,7 @@
         method: 'Treasury Facility', entered_by: who,
         _domainSlip: {
           ind: activeInd,
+          domainTblKey: activeInd === 'Holding & Treasury' ? 'hld_loans' : '',
           title: 'GROUP CREDIT FACILITY & CAPITAL VOUCHER',
           unpricedTitle: 'BOARD RESOLUTION CLEARANCE SLIP',
           badge: 'HOLDING FACILITY SCHEDULE',
@@ -138651,6 +139165,7 @@
       method: 'Partner Current Account', entered_by: who,
       _domainSlip: {
         ind: activeInd,
+        domainTblKey: activeInd === 'Holding & Treasury' ? 'hld_partners' : '',
         title: 'MANAGING PARTNER DISTRIBUTION VOUCHER',
         unpricedTitle: 'PARTNER ENTITLEMENT ADVICE',
         badge: 'EQUITY & DIVIDEND DESK',
@@ -167595,6 +168110,8 @@
                 method: 'Official Register', entered_by: activeUser().full_name || 'Officer',
                 _domainSlip: {
                   ind: curInd,
+                  domainTblKey: inferDomainTblKey(curInd, STATE.view, rowCells[0] || ''),
+                  tableTitle: ds.title || curInd,
                   title: `${(ds.title || curInd).toUpperCase()} VOUCHER`,
                   unpricedTitle: `${(ds.title || curInd).toUpperCase()} PASS`,
                   badge: `${curInd.toUpperCase()} KIOSK`,
@@ -169228,6 +169745,12 @@
           _rehydrateGeoAuditPanelsInPlace();
         }).catch(() => {});
       }
+    }
+    if ((hasServerApi() || isDemoScopeActive()) && STATE.authed && container.querySelector('#snVoidPatternsPanel') && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.ensurePosVoidsLoaded === 'function') {
+      window.MFG_VOID_LOG.ensurePosVoidsLoaded(false);
+    }
+    if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.wireSentinelContainer === 'function') {
+      window.MFG_VOID_LOG.wireSentinelContainer(container);
     }
     wireModalSuggestions(container);
     applyIndustryDomRowEdits(container);
@@ -174140,6 +174663,7 @@
         SEED,
         SEED_VOIDED_ARCHIVE,
         COMPANY_LABELS,
+        COMPANY_BU_MATCH,
         COMPANY_KEY_BY_NAME,
         esc,
         ic,
@@ -174174,7 +174698,18 @@
         fmtDateDMY,
         showRecordInspector,
         coBadge,
-        relLink
+        relLink,
+        computeTradingOperations,
+        computeRealEstateOperations,
+        computeInsuranceOperations,
+        computeIntercompanyInteractions,
+        findGroupTransferCounterpart,
+        salaryVoucherPeers,
+        resolveDomainChronoRestoreState,
+        isAlertRuleEnabled,
+        getAlertParam,
+        getAlertRuleParamsObj,
+        invalidateSentinelCache: () => { if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear(); }
       });
     }
 
@@ -175018,7 +175553,89 @@
     window.__openRecordFromTableRow = (crKey, id, trEl) => openRecordFromTableRow(crKey, id, trEl);
     window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
     window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);
-    window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
+    window.__voidRecord = (crKey, id, opts) => voidRecord(crKey, id, opts);
+    window.__mfgCanPrintWrite = () => (typeof canModifyRecord === 'function' ? canModifyRecord() : canModifyData());
+    window.__mfgOnThermalPrinted = ({ docType, record, printedAt }) => {
+      if (!record || !record.id || /^DRAFT-/i.test(String(record.id))) return;
+      const canWriteSrv = typeof canModifyRecord === 'function' ? canModifyRecord() : canModifyData();
+      if (!canWriteSrv) return;
+      const stampIso = printedAt || new Date().toISOString();
+      if (record._domainSlip) {
+        const ds = record._domainSlip;
+        const rid = String(record.id).trim();
+        const indStore = getIndustryCustomRowsStore();
+        const bucketOrder = [];
+        if (ds.domainTblKey && Array.isArray(indStore[ds.domainTblKey])) bucketOrder.push(ds.domainTblKey);
+        Object.keys(indStore).forEach(bk => {
+          if (bk !== ds.domainTblKey && Array.isArray(indStore[bk])) bucketOrder.push(bk);
+        });
+        let matchedCustom = null;
+        for (let bi = 0; bi < bucketOrder.length; bi++) {
+          const hit = indStore[bucketOrder[bi]].find(x => x && String(x.id || x.primaryId || '').trim() === rid);
+          if (hit) { matchedCustom = hit; break; }
+        }
+        if (matchedCustom) {
+          if (!matchedCustom.printed_at) matchedCustom.printed_at = stampIso;
+          matchedCustom.last_printed_at = stampIso;
+          matchedCustom.print_count = Number(matchedCustom.print_count || 0) + 1;
+          matchedCustom.updated_at = stampIso;
+          matchedCustom.updatedAt = stampIso;
+          matchedCustom.rev = Math.max(1, Number(matchedCustom.rev || 0) + 1);
+          saveIndustryCustomRowsStore({ skipServerPost: !canWriteSrv });
+        } else {
+          const editStore = getIndustryRowEditStore();
+          const tgtInd = ds.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
+          const ek = ds.editKey || makeIndustryRowEditKey(tgtInd, ds.tableTitle || '', rid);
+          const prev = (editStore[ek] && typeof editStore[ek] === 'object') ? editStore[ek] : {};
+          editStore[ek] = Object.assign({}, prev, {
+            ind: prev.ind || tgtInd,
+            primaryId: prev.primaryId || rid,
+            company: prev.company || record.company || '',
+            domainTblKey: prev.domainTblKey || ds.domainTblKey || '',
+            printed_at: prev.printed_at || stampIso,
+            last_printed_at: stampIso,
+            print_count: Number(prev.print_count || 0) + 1,
+            rev: Math.max(1, Number(prev.rev || 0) + 1),
+            updated_at: stampIso,
+            updatedAt: stampIso,
+            _revBumped: true
+          });
+          saveIndustryRowEditStore(editStore, { skipServerPost: !canWriteSrv, forceEditKeys: [ek] });
+        }
+        if (canWriteSrv && typeof syncWithCloud === 'function' && !isDemoScopeActive()) {
+          syncWithCloud(true);
+        }
+        return;
+      }
+      const tbl = docType === 'raw' ? 'raw_purchases' : (docType === 'fuel' ? 'fuel_intakes' : 'sales_tickets');
+      const custList = STATE.customRecords[tbl];
+      const seedList = SEED && SEED.records && SEED.records[tbl];
+      const match = x => x && String(x.id) === String(record.id);
+      const cRow = Array.isArray(custList) ? custList.find(match) : null;
+      const sRow = Array.isArray(seedList) ? seedList.find(match) : null;
+      [cRow, sRow].forEach(tgt => {
+        if (!tgt) return;
+        if (!tgt.printed_at) tgt.printed_at = stampIso;
+        tgt.last_printed_at = stampIso;
+        tgt.print_count = Number(tgt.print_count || 0) + 1;
+      });
+      let syncRow = cRow;
+      if (!syncRow && sRow) {
+        if (!Array.isArray(STATE.customRecords[tbl])) STATE.customRecords[tbl] = [];
+        syncRow = Object.assign({}, sRow);
+        STATE.customRecords[tbl].unshift(syncRow);
+      } else if (!syncRow && record.id) {
+        syncRow = Object.assign({}, record);
+        if (!syncRow.printed_at) syncRow.printed_at = stampIso;
+        syncRow.last_printed_at = stampIso;
+        syncRow.print_count = Number(syncRow.print_count || 0) + 1;
+      }
+      saveLocalAuthAndRecords();
+      if (canWriteSrv && hasServerApi() && !isDemoScopeActive()) {
+        if (syncRow && syncRow.id) postRecordToLocalApi(tbl, syncRow, { deferRender: true }).catch(() => {});
+        if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      }
+    };
     window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
     window.__cascadeSiteRename = (oldName, newName) => cascadeSiteRename(oldName, newName, [], 'Manufacturing');
     window.__getCustomRecords = () => STATE.customRecords;
