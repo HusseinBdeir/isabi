@@ -31238,6 +31238,10 @@
 
   function getCompanyIndustryName(companyRaw) {
     const raw = String(companyRaw || '').trim();
+    if (/^(democompany|demo_company)$/i.test(raw)) {
+      const demoInd = (typeof getActiveIndustry === 'function' ? getActiveIndustry(DEMO_COMPANY_KEY) : '') || (STATE && STATE.demoCompanyIndustry) || 'Hospitality & Resorts';
+      return getCompanyIndustryName('industry:' + demoInd);
+    }
     const s = (raw.startsWith('industry:') ? raw.slice(9).trim() : raw).toLowerCase();
     if (/hospitality|resort|blanca|las*una|launa|palms|voile|platinum/i.test(s)) return 'Hospitality';
     if (/trading|auto|korri|shacman/i.test(s)) return 'Trading';
@@ -31252,33 +31256,48 @@
     return 'Manufacturing';
   }
 
-  // Company Defaults cards follow the company picked in #companySwitch: one card for a single
-  // company, every company of the industry only on a group scope (owner 2026-11-17).
+  // Scoped company list: returns [singleCompany] when companyOpt (or #companySwitch when omitted)
+  // names a single company, and every seat-permitted company of the active industry on a group scope
+  // ('manufacturing-group', 'industry:*', 'democompany', 'ALL', 'All Companies', 'All BUs').
   function getAttendanceDefaultsCompanies(companyOpt = '') {
-    const picked = COMPANY_BU_MATCH[STATE.company] || '';
-    if (picked) return [picked];
-    return getActiveIndustryBuList(companyOpt);
+    const raw = String(companyOpt || STATE.company || '').trim();
+    if (!raw || /^(manufacturing-group|democompany|demo_company|all|all\s*companies|all\s*bus)$/i.test(raw) || /^industry:/i.test(raw)) {
+      return getActiveIndustryBuList(raw);
+    }
+    const single = COMPANY_BU_MATCH[raw] || canonCompany(raw) || raw;
+    const viewerAllowed = typeof allowedCompanyNames === 'function' && typeof activeUser === 'function'
+      ? allowedCompanyNames(activeUser())
+      : [];
+    if (viewerAllowed.length && !viewerAllowed.some(c => norm(c) === norm(single))) return [];
+    return [single];
   }
 
   function getActiveIndustryBuList(companyOpt = '') {
-    const rawActive = companyOpt
-      ? companyOpt
-      : (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company);
+    const isDemoOpt = /^(democompany|demo_company)$/i.test(String(companyOpt || '').trim());
+    const rawActive = isDemoOpt
+      ? ((typeof getActiveIndustry === 'function' ? getActiveIndustry(DEMO_COMPANY_KEY) : '') || (STATE && STATE.demoCompanyIndustry) || 'Hospitality & Resorts')
+      : (companyOpt
+        ? companyOpt
+        : (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company));
     const activeInd = getCompanyIndustryName(rawActive);
     const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
     const viewerAllowed = typeof allowedCompanyNames === 'function' && typeof activeUser === 'function'
       ? allowedCompanyNames(activeUser())
       : [];
     const bus = cat
-      .filter(c => getCompanyIndustryName(c.industry || c.name) === activeInd && (!viewerAllowed.length || viewerAllowed.includes(c.name)))
+      .filter(c => getCompanyIndustryName(c.industry || c.name) === activeInd && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(c.name))))
       .map(c => c.name);
     if (bus.length) return bus;
-    if (activeInd === 'Hospitality') return ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
-    if (activeInd === 'Trading') return ['Korri Auto', 'Shacman'];
-    if (activeInd === 'Real Estate') return ['Properties', '4235 Company S.A.L'];
-    if (activeInd === 'Insurance') return ['Insurance Company'];
-    if (activeInd === 'Holding') return ['Bdeir Holding'];
-    return ['WTC', 'BBConstruction', 'Lions Transport'];
+    const fb = activeInd === 'Hospitality'
+      ? ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum']
+      : (activeInd === 'Trading'
+        ? ['Korri Auto', 'Shacman']
+        : (activeInd === 'Real Estate'
+          ? ['Properties', '4235 Company S.A.L']
+          : (activeInd === 'Insurance'
+            ? ['Insurance Company']
+            : (activeInd === 'Holding' ? ['Bdeir Holding'] : ['WTC', 'BBConstruction', 'Lions Transport']))));
+    return viewerAllowed.length ? fb.filter(c => viewerAllowed.some(v => norm(v) === norm(c))) : fb;
   }
 
   function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
@@ -43561,7 +43580,8 @@
     getState: () => STATE,
     getSeed: () => SEED,
     getSeedDate: () => SEED_DATE,
-    getActiveIndustryBuList: co => getActiveIndustryBuList(co)
+    getActiveIndustryBuList: co => getActiveIndustryBuList(co),
+    getScopedIndustryBuList: co => getAttendanceDefaultsCompanies(co)
   };
 
   function computeStaffMonthPayrollPosition(staffName, company, payrollMonth, txDate, excludeSalId = null, _skipPrev = false) {
@@ -135586,7 +135606,7 @@
     const byCo = KIOSK_STATION_SITES_BY_CO;
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     if (scopedCo && byCo[scopedCo]) return byCo[scopedCo].slice();
-    const scopeCompanies = getActiveIndustryBuList(scopedCo || STATE.company);
+    const scopeCompanies = getAttendanceDefaultsCompanies(scopedCo || STATE.company);
     const scopeNormSet = new Set(scopeCompanies.map(c => norm(c)));
     const allowed = allowedCompanyNames();
     const out = [];
@@ -137435,16 +137455,19 @@
 
   function getPolicyGroups(companyOpt = '') {
     const memo = _getWsPolicyMemo();
-    const cacheKey = companyOpt ? ('co:' + norm(companyOpt)) : ('scope:' + (STATE.company || ''));
+    const seatKey = typeof seatScopeSig === 'function' ? seatScopeSig() : '';
+    const demoKey = STATE.company === DEMO_COMPANY_KEY ? `|${STATE.demoCompanyIndustry || ''}` : '';
+    const cacheKey = `${companyOpt ? ('co:' + norm(companyOpt)) : ('scope:' + (STATE.company || ''))}|${seatKey}${demoKey}`;
     const hit = memo.policyGroups.get(cacheKey);
     if (hit) return hit.slice();
     const ws = ensureWorkSchedulesState();
     const rawScope = companyOpt || COMPANY_BU_MATCH[STATE.company] || '';
-    const scopeBuList = getActiveIndustryBuList(rawScope || STATE.company);
+    const scopeBuList = getAttendanceDefaultsCompanies(companyOpt || STATE.company);
     const scopeNormSet = new Set(scopeBuList.map(c => norm(c)));
     const targetCo = COMPANY_BU_MATCH[rawScope] || (scopeNormSet.has(norm(rawScope)) ? rawScope : (scopeBuList[0] || defaultEntryCompany() || 'WTC'));
     const coNorm = norm(targetCo);
     const coDefId = getCompanyDefaultPolicyGroupId(targetCo);
+    const isGroupReq = !companyOpt || /^(manufacturing-group|democompany|demo_company|all|all\s*companies|all\s*bus)$/i.test(companyOpt) || /^industry:/i.test(companyOpt);
     const customById = new Map();
     (ws.policyGroups || []).forEach(g => {
       if (g && g.id && !g.voided && !LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) {
@@ -137460,7 +137483,7 @@
     customById.forEach(custom => {
       if (custom && !custom.voided) {
         const gCoNorm = norm(custom.company || 'All Companies');
-        if (!gCoNorm || gCoNorm === norm('All Companies') || gCoNorm === norm('All BUs') || gCoNorm === coNorm || (!companyOpt && scopeNormSet.has(gCoNorm))) {
+        if (!gCoNorm || gCoNorm === norm('All Companies') || gCoNorm === norm('All BUs') || gCoNorm === coNorm || (isGroupReq && scopeNormSet.has(gCoNorm))) {
           out.push(normalizePolicyGroupObj(custom));
         }
       }
@@ -137765,8 +137788,12 @@
     const spanEndToday = effTo
       ? ((effFrom && effFrom > today) || spec.includeFutureBackfill ? effTo : (effTo < today ? effTo : today))
       : ((effFrom && effFrom > today) ? '9999-12-31' : today);
+    const bfCoNormSet = (!isSingleScoped && Array.isArray(spec.backfillScopeCompanies) && spec.backfillScopeCompanies.length)
+      ? new Set(spec.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
+      : null;
     const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
     allStaff.forEach(s => {
+      if (bfCoNormSet && !bfCoNormSet.has(norm(canonCompany(s.company || '')))) return;
       const sCoN = norm(s.company || '');
       const curRule = getStaffWorkRule(s.name, s.company);
       const entry = getStaffRuleEntry(s.name, s.company);
@@ -138465,7 +138492,7 @@
     return opts.inline ? ` ${html}` : `<div class="att-rule-audit-row">${html}</div>`;
   }
 
-  function backfillAttendancePolicyChange({ company = '', staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
+  function backfillAttendancePolicyChange({ company = '', companies = null, staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
     const today = todayISO();
     const startD = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '').slice(0, 10))
       ? String(fromDate).slice(0, 10)
@@ -138479,6 +138506,9 @@
     }
 
     const coNorm = norm(company || '');
+    const cosNormSet = (Array.isArray(companies) && companies.length)
+      ? new Set(companies.map(c => norm(canonCompany(c))).filter(Boolean))
+      : null;
     if (Array.isArray(staffNames) && staffNames.length === 0) {
       return { ok: true, dryRun: Boolean(dryRun), updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: startD, toDate: endD, rows: [] };
     }
@@ -138503,6 +138533,7 @@
       const attType = String(a.type || a.status || 'Present').trim();
       if (/^(config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) continue;
       if (coNorm && norm(a.company || '') !== coNorm) continue;
+      if (cosNormSet && !cosNormSet.has(norm(canonCompany(a.company || '')))) continue;
       if (staffSet && !staffSet.has(norm(a.staff || ''))) continue;
       const effD = String(a.set_date || a.date || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(effD) || effD < startD || effD > endD) continue;
@@ -138655,6 +138686,7 @@
       : today;
     return backfillAttendancePolicyChange({
       company: spec.company || '',
+      companies: spec.companies || null,
       staffNames: spec.staffNames || null,
       fromDate: fromD,
       toDate: toD,
@@ -138753,9 +138785,13 @@
       const grpIdN = normalizePolicyGroupIdAlias(pgPayloadRaw.id);
       const coScope = pgPayloadRaw.company && !/^all/i.test(String(pgPayloadRaw.company)) ? norm(pgPayloadRaw.company) : '';
       const isNarrowing = Boolean(coScope && coScope !== norm('All Companies') && coScope !== norm('All BUs'));
+      const bfSimSet = (!isNarrowing && Array.isArray(pgPayloadRaw.backfillScopeCompanies) && pgPayloadRaw.backfillScopeCompanies.length)
+        ? new Set(pgPayloadRaw.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
+        : null;
       const simSpanEnd = effTo || (isFutureEffective ? '9999-12-31' : endD);
       staffDirAll.forEach(s => {
         if (!isNarrowing && coScope && norm(s.company) !== coScope) return;
+        if (bfSimSet && !bfSimSet.has(norm(canonCompany(s.company || '')))) return;
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
         const rule = getStaffWorkRule(s.name, s.company);
         const ov = _getStaffGroupOverrideFlags(raw, grpIdN, startD, simSpanEnd, s.company);
@@ -138887,9 +138923,14 @@
           return { ok: false, error: (simRes && simRes.error) || 'Could not simulate policy group changes' };
         }
         const targetDefCo = String(spec.targetDefCo || '').trim();
-        scopeLabel = `${simRes.policyGroup.name}${(simRes.policyGroup.company && !/^all/i.test(simRes.policyGroup.company)) ? ` (${simRes.policyGroup.company})` : ' (All Companies)'}`;
+        const singleBfCo = (!pgPayload.company || /^all/i.test(String(pgPayload.company)))
+          && Array.isArray(pgPayload.backfillScopeCompanies)
+          && pgPayload.backfillScopeCompanies.length === 1
+          ? pgPayload.backfillScopeCompanies[0]
+          : '';
+        scopeLabel = `${simRes.policyGroup.name}${(simRes.policyGroup.company && !/^all/i.test(simRes.policyGroup.company)) ? ` (${simRes.policyGroup.company})` : (singleBfCo ? ` (${singleBfCo})` : ' (All Companies)')}`;
         simTitle = simRes.policyGroup.name;
-        const pgCoFilter = pgPayload.company && !/^all/i.test(String(pgPayload.company)) ? String(pgPayload.company) : '';
+        const pgCoFilter = (pgPayload.company && !/^all/i.test(String(pgPayload.company))) ? String(pgPayload.company) : singleBfCo;
         const pairs = Array.isArray(simRes.affectedStaffPairs) ? simRes.affectedStaffPairs : [];
         if (pgPayload.backfill !== false && pairs.length > 0) {
           const byCoMap = new Map();
@@ -139644,13 +139685,13 @@
     const uAllowed = allowedCompanyNames(activeUser()).map(c => norm(canonCompany(c)));
     const allowedSet = uAllowed.length ? new Set(uAllowed) : null;
     const scopeRaw = String(spec.company || '').trim();
-    const coSingle = normalizeLegacyBackfillCoFilter(scopeRaw);
+    const isExplicitAll = /^(?:all|all\s*companies|all\s*bus)$/i.test(scopeRaw);
+    const coSingle = isExplicitAll ? '' : normalizeLegacyBackfillCoFilter(scopeRaw || (COMPANY_BU_MATCH[STATE.company] || ''));
     const coNorm = coSingle ? norm(coSingle) : '';
     let indCoSet = null;
-    if (!coNorm && /^industry:/i.test(scopeRaw) && typeof getActiveIndustryBuList === 'function') {
-      indCoSet = new Set(getActiveIndustryBuList(scopeRaw).map(c => norm(canonCompany(c))));
-    } else if (!coNorm && STATE.company && /^industry:/i.test(String(STATE.company)) && typeof getActiveIndustryBuList === 'function' && !spec.allIndustries) {
-      indCoSet = new Set(getActiveIndustryBuList(STATE.company).map(c => norm(canonCompany(c))));
+    if (!coNorm && !spec.allIndustries && typeof getActiveIndustryBuList === 'function') {
+      const indSource = (!isExplicitAll && scopeRaw) ? scopeRaw : STATE.company;
+      indCoSet = new Set(getActiveIndustryBuList(indSource).map(c => norm(canonCompany(c))));
     }
     const staffSet = (Array.isArray(spec.staffNames) && spec.staffNames.length)
       ? new Set(spec.staffNames.map(s => norm(s)).filter(Boolean))
@@ -140042,8 +140083,10 @@
       document.body.appendChild(modal);
     }
 
+    const pickedSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isModalExplicitAll = /^(?:all|all\s*companies|all\s*bus)$/i.test(String(LEGACY_BACKFILL_MODAL_STATE.company || '').trim());
     const baseScan = detectLegacyTenthHourBackfill({
-      company: '',
+      company: (pickedSingleCo && !isModalExplicitAll) ? pickedSingleCo : 'ALL',
       staffNames: LEGACY_BACKFILL_MODAL_STATE.staffNames,
       fromDate: LEGACY_BACKFILL_MODAL_STATE.fromDate,
       toDate: LEGACY_BACKFILL_MODAL_STATE.toDate
@@ -140086,7 +140129,7 @@
     const visibleOpenRows = shownRows.filter(r => !r.isProtected);
     const allVisibleSelected = visibleOpenRows.length > 0 && visibleOpenRows.every(r => LEGACY_BACKFILL_MODAL_STATE.selectedIds.has(r.id));
     const scopeNotes = [];
-    if (scopedCo) scopeNotes.push(scopedCo);
+    if (scopedCo && !pickedSingleCo) scopeNotes.push(scopedCo);
     if (Array.isArray(LEGACY_BACKFILL_MODAL_STATE.staffNames) && LEGACY_BACKFILL_MODAL_STATE.staffNames.length) {
       scopeNotes.push(LEGACY_BACKFILL_MODAL_STATE.staffNames.length === 1 ? LEGACY_BACKFILL_MODAL_STATE.staffNames[0] : `${LEGACY_BACKFILL_MODAL_STATE.staffNames.length} staff`);
     }
@@ -140235,7 +140278,7 @@
       });
     }
     $('bfmClearScopeBtn')?.addEventListener('click', () => {
-      LEGACY_BACKFILL_MODAL_STATE.company = 'ALL';
+      LEGACY_BACKFILL_MODAL_STATE.company = (COMPANY_BU_MATCH[STATE.company] || '') || 'ALL';
       LEGACY_BACKFILL_MODAL_STATE.staffNames = null;
       LEGACY_BACKFILL_MODAL_STATE.fromDate = '';
       LEGACY_BACKFILL_MODAL_STATE.toDate = '';
@@ -140293,7 +140336,8 @@
 
   function openBackfillModal(opts = {}) {
     LEGACY_BACKFILL_MODAL_STATE.open = true;
-    LEGACY_BACKFILL_MODAL_STATE.company = opts.company ? String(opts.company) : 'ALL';
+    const pickedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    LEGACY_BACKFILL_MODAL_STATE.company = opts.company ? String(opts.company) : (pickedCo || 'ALL');
     LEGACY_BACKFILL_MODAL_STATE.filter = opts.filter || 'tenth_hour';
     LEGACY_BACKFILL_MODAL_STATE.fromDate = opts.fromDate ? String(opts.fromDate).slice(0, 10) : '';
     LEGACY_BACKFILL_MODAL_STATE.toDate = opts.toDate ? String(opts.toDate).slice(0, 10) : '';
@@ -148002,7 +148046,10 @@
       document.body.appendChild(modal);
     }
     const opAllowed = allowedCompanyNames(activeUser());
-    const allSum = getFatherBackfillSummary({ companyFilter: 'ALL' });
+    const pinnedFbSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isFbSingleLocked = Boolean(pinnedFbSingleCo && (!opAllowed.length || opAllowed.includes(pinnedFbSingleCo)));
+    if (isFbSingleLocked) FATHER_BACKFILL_STATE.companyFilter = pinnedFbSingleCo;
+    const allSum = getFatherBackfillSummary({ companyFilter: isFbSingleLocked ? pinnedFbSingleCo : 'ALL' });
     const coFreq = new Map();
     const bumpCo = (c, w) => {
       const cc = canonCompany(c);
@@ -148014,8 +148061,10 @@
       if (r && !r.voided && r.company) bumpCo(r.company, 1);
     });
     const baseCos = opAllowed.length ? opAllowed : getCompanyCatalog().map(c => c.name);
-    const rankedCos = Array.from(new Set(baseCos.concat(Array.from(coFreq.keys())))).filter(c => !opAllowed.length || opAllowed.includes(c))
-      .sort((a, b) => (coFreq.get(b) || 0) - (coFreq.get(a) || 0));
+    const rankedCos = isFbSingleLocked
+      ? [pinnedFbSingleCo]
+      : Array.from(new Set(baseCos.concat(Array.from(coFreq.keys())))).filter(c => !opAllowed.length || opAllowed.includes(c))
+          .sort((a, b) => (coFreq.get(b) || 0) - (coFreq.get(a) || 0));
 
     modal.innerHTML = `
       <div class="modal-card fb-modal-card">
@@ -148045,7 +148094,7 @@
 
           <div class="fb-filter-bar">
             <select id="fbCompanySelect" class="kiosk-select" data-native-select="1">
-              <option value="ALL" ${FATHER_BACKFILL_STATE.companyFilter === 'ALL' ? 'selected' : ''}>All Allowed BUs (${fmtNum(rankedCos.length)})</option>
+              ${isFbSingleLocked ? '' : `<option value="ALL" ${FATHER_BACKFILL_STATE.companyFilter === 'ALL' ? 'selected' : ''}>All Allowed BUs (${fmtNum(rankedCos.length)})</option>`}
               ${rankedCos.map(c => `<option value="${esc(c)}" ${norm(FATHER_BACKFILL_STATE.companyFilter) === norm(c) ? 'selected' : ''}>${esc(c)}</option>`).join('')}
             </select>
             <div class="fb-tier-pills">
@@ -148320,6 +148369,16 @@
 
   function getEnrolModalStaffPool(operatorUser = null) {
     const op = operatorUser || getActiveEnrolOperatorUser();
+    const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+    if (lockCo) {
+      return getKioskStaffDirectory({
+        companyOverride: lockCo,
+        scopeBySelectedCompany: true,
+        strictCompanyScope: true,
+        operatorUser: op,
+        includeEnded: true
+      });
+    }
     const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true });
     if (indScoped.length) return indScoped;
     return getKioskStaffDirectory({ operatorUser: op, includeEnded: true });
@@ -148328,10 +148387,12 @@
   function getEnrolOperatorAllowedCompanies(operatorUser = null) {
     const op = operatorUser || getActiveEnrolOperatorUser();
     const opAllowed = allowedCompanyNames(op);
-    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
-    const indCos = getCompanyCatalog()
-      .filter(c => (c.industry || 'Manufacturing') === activeInd && (!opAllowed.length || opAllowed.includes(c.name)))
-      .map(c => c.name);
+    const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+    if (lockCo && (!opAllowed.length || opAllowed.some(c => norm(c) === norm(lockCo)))) {
+      return [lockCo];
+    }
+    const indCos = getActiveIndustryBuList(STATE.company)
+      .filter(name => !opAllowed.length || opAllowed.some(c => norm(c) === norm(name)));
     if (indCos.length) return indCos;
     if (opAllowed.length) return opAllowed.slice();
     return [defaultEntryCompany() || 'WTC'];
@@ -149332,7 +149393,10 @@
       ? (allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null)
       : null;
     if (!curEntry && STAFF_FACE_MODAL_STATE.staffName) {
-      const globalHit = getKioskStaffDirectory().find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
+      const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+      const globalHit = getKioskStaffDirectory(
+        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true } : {}
+      ).find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
       if (globalHit) {
         curEntry = globalHit;
         allStaff = [globalHit].concat(allStaff);
@@ -149669,6 +149733,10 @@
   function openStaffFaceEnrolModal(staffName = '', opts = {}) {
     stopKioskAttCamera();
     stopStaffEnrolModalCamera();
+    if (staffName && typeof staffName === 'object') {
+      opts = staffName;
+      staffName = (opts && opts.staffName) || '';
+    }
     const opUser = (opts && opts.operatorUser)
       || (KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser)
       || activeUser();
@@ -149676,13 +149744,21 @@
       toast('Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.', 'warn');
       return null;
     }
+    const reqCo = (opts && opts.company) ? canonCompany(opts.company) : '';
     STAFF_FACE_MODAL_STATE.operatorUser = opUser;
     STAFF_FACE_MODAL_STATE.newStaffOpen = Boolean(opts && opts.openNewStaff);
+    STAFF_FACE_MODAL_STATE.lockSingleCo = (opts && opts.lockIndustry === false)
+      ? ''
+      : (reqCo || COMPANY_BU_MATCH[STATE.company] || '');
     const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
     const indStaff = getEnrolModalStaffPool(opUser);
-    const fullStaff = indStaff.length ? indStaff : getKioskStaffDirectory({ operatorUser: opUser, includeEnded: true });
+    const fullStaff = (indStaff.length || STAFF_FACE_MODAL_STATE.lockSingleCo)
+      ? indStaff
+      : getKioskStaffDirectory({ operatorUser: opUser, includeEnded: true });
     let picked = staffName
-      ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || null)
+      ? ((reqCo && fullStaff.find(s => norm(s.name) === norm(staffName) && norm(canonCompany(s.company)) === norm(reqCo)))
+        || fullStaff.find(s => norm(s.name) === norm(staffName))
+        || null)
       : null;
     if (!picked && STATE.kioskAttRosterSearch) {
       const rq = norm(STATE.kioskAttRosterSearch);
@@ -150610,11 +150686,13 @@
         : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
       const curPolicyGrp = livePolicyGroups.find(g => g.id === draftPolicyGroupId) || null;
       const buCompanies = getActiveIndustryBuList(entry.company);
-      const buCoNormSet = new Set(buCompanies.map(c => norm(c)));
-      const ssmOwnCo = buCompanies.find(c => norm(canonCompany(c)) === norm(canonCompany(entry.company || '')));
+      const ssmOwnCo = buCompanies.find(c => norm(canonCompany(c)) === norm(canonCompany(entry.company || '')))
+        || canonCompany(entry.company || '')
+        || '';
       const ssmDefaultsCos = ssmOwnCo ? [ssmOwnCo] : buCompanies;
+      const ssmCoNormSet = new Set(ssmDefaultsCos.map(c => norm(c)));
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
-        .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
+        .filter(r => r && !r.voided && ssmCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
       const dayTimingsSummaryTxt = formatShiftExceptionsSummary(draftHasTimingExc ? pruneDayTimingsToWorkdays(draftDayTimings, draftDays) : {}, draftHasTimingExc ? draftDateTimings : [], curShiftObj.start_time, curShiftObj.end_time);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
@@ -150796,7 +150874,7 @@
                   <button type="button" class="btn kiosk-mini-btn ${draftShowShiftTable ? 'btn-primary' : ''}" id="ssmToggleShiftTableBtn">
                     ${ic('clock')} ${draftShowShiftTable ? 'Hide BU Shift Table' : 'BU Defaults &amp; Shift Table'} (${workShiftRows.length})
                   </button>
-                  <button type="button" class="btn kiosk-mini-btn" id="ssmOpenNewShiftModalBtn" ${buCompanies.some(bu => canEditShiftsAndRules(null, bu)) ? '' : 'disabled'}>+ New Shift</button>
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmOpenNewShiftModalBtn" ${ssmDefaultsCos.some(bu => canEditShiftsAndRules(null, bu)) ? '' : 'disabled'}>+ New Shift</button>
                 </div>
               </div>
               <div class="ssm-shift-cards">
@@ -151067,10 +151145,10 @@
                         `;
                       }).join('')}
                       ${(() => {
-                        const writableNewBus = buCompanies.filter(bu => canEditShiftsAndRules(null, bu));
+                        const writableNewBus = ssmDefaultsCos.filter(bu => canEditShiftsAndRules(null, bu));
                         const canAddNewRow = writableNewBus.length > 0;
                         const disNewRow = canAddNewRow ? '' : 'disabled';
-                        const newCoOpts = canAddNewRow ? writableNewBus : buCompanies;
+                        const newCoOpts = canAddNewRow ? writableNewBus : ssmDefaultsCos;
                         return `<tr id="ssmNewShiftInlineRow" style="background:var(--bg)">
                         <td>
                           <select id="ssmNewShiftCo" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11.5px;padding:2px 4px" ${disNewRow}>
@@ -151855,7 +151933,7 @@
       });
       $('ssmOpenFaceStudioBtn')?.addEventListener('click', () => {
         closeStaffScheduleModal();
-        openStaffFaceEnrolModal(entry.name);
+        openStaffFaceEnrolModal(entry.name, { company: entry.company });
       });
       $('ssmToggleShiftTableBtn')?.addEventListener('click', () => {
         syncLiveInputs();
@@ -151863,7 +151941,7 @@
         renderModalInner();
       });
       $('ssmOpenNewShiftModalBtn')?.addEventListener('click', () => {
-        if (!buCompanies.some(bu => canEditShiftsAndRules(null, bu))) return;
+        if (!ssmDefaultsCos.some(bu => canEditShiftsAndRules(null, bu))) return;
         syncLiveInputs();
         draftShowShiftTable = true;
         renderModalInner();
@@ -153281,7 +153359,7 @@
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
     ensureWorkShiftsSeeded();
-    const activeBuList = getActiveIndustryBuList(STATE.company);
+    const activeBuList = getAttendanceDefaultsCompanies(STATE.company);
     const defCo = opts.company || COMPANY_BU_MATCH[STATE.company] || activeBuList[0] || defaultEntryCompany() || 'WTC';
     if (!canEditShiftsAndRules(null, defCo)) {
       toast('You do not have rights to edit shifts for this company', 'warn');
@@ -153347,7 +153425,16 @@
     const curCoDef = getBuDefaultShift(defCo);
     const initIsBuDef = Boolean(existing && ((curCoDef && normalizeShiftCodeAlias(curCoDef.shift_code) === existing.id) || existing.is_bu_default));
     const viewerAllowed = allowedCompanyNames();
-    const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
+    const pinnedSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const stmBaseCos = (pinnedSingleCo ? getAttendanceDefaultsCompanies(STATE.company) : getActiveIndustryBuList(opts.company || STATE.company))
+      .filter(nm => !viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(nm)));
+    const stmCoOpts = stmBaseCos.slice();
+    if (defCo && defCo !== 'All Companies' && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(defCo))) && !stmCoOpts.includes(defCo)) {
+      stmCoOpts.unshift(defCo);
+    }
+    if ((!pinnedSingleCo && isFullGroupSeat()) || (existing && existing.company === 'All Companies') || defCo === 'All Companies') {
+      if (!stmCoOpts.includes('All Companies')) stmCoOpts.push('All Companies');
+    }
     // Preset chips ranked by how many staff work each window (hard rule 11), re-ranked on Company Scope change.
     const stmUsageMemo = new Map();
     // live = read the open form; false at first render (a previous open may have left stale inputs in the DOM).
@@ -153493,7 +153580,7 @@
             <div class="ssm-field">
               <label for="stmCompany">Company Scope</label>
               <select id="stmCompany" class="kiosk-select" data-plain-options="1"${cohortLockAttr}>
-                ${(isFullGroupSeat() ? allAllowedCos.concat(['All Companies']) : allAllowedCos).map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+                ${stmCoOpts.map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
               </select>
             </div>
             <div class="ssm-field">
@@ -154847,7 +154934,7 @@
     const canWrite = canApplyShiftCalendar();
     const ranked = getRankedShiftCalPresets();
     const thisYear = Number(todayISO().slice(0, 4));
-    const buList = getActiveIndustryBuList(STATE.company);
+    const buList = getAttendanceDefaultsCompanies(STATE.company);
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const st = {
       presetId: opts.presetId || ranked[0].id,
@@ -155648,7 +155735,9 @@
     const to = String(opts.to || todayISO()).slice(0, 10);
     const from = shiftCalAddDays(to, -(weeks * 7 - 1));
     const weekFrom = shiftCalAddDays(to, -6);
-    const allowedCos = (opts.companies && opts.companies.length ? opts.companies : getActiveIndustryBuList(STATE.company));
+    const allowedCos = (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -156247,6 +156336,7 @@
       : getKioskStaffDirectory({
           companyOverride: activeScopedCo,
           scopeBySelectedCompany: Boolean(activeScopedCo),
+          strictCompanyScope: Boolean(activeScopedCo),
           scopeByActiveIndustry: !activeScopedCo,
           includeEnded: true
         }).filter(s => !s.isEndedContract);
@@ -157349,7 +157439,9 @@
     const minObs = Math.max(2, Number(opts.minObs || 4));
     const to = String(opts.to || todayISO()).slice(0, 10);
     const from = shiftCalAddDays(to, -(days - 1));
-    const allowedCos = (opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company);
+    const allowedCos = (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -157973,7 +158065,7 @@
     const reqCompany = opts.company ? (canonCompany(opts.company) || String(opts.company).trim()) : '';
     const allowedCos = reqCompany
       ? [reqCompany]
-      : ((opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company));
+      : ((opts.companies && opts.companies.length) ? opts.companies : getAttendanceDefaultsCompanies(STATE.company));
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -158265,12 +158357,16 @@
       wireBackdropDismiss(modal, closePunchDriftModal);
       document.body.appendChild(modal);
     }
+    const getModalScopeCos = () => (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const compute = () => {
-      dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin });
+      const scopeCos = getModalScopeCos();
+      dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin, companies: scopeCos });
       window.__lastPunchDriftDigest = dg;
-      advRes = computeRoleSiteDriftProposals({ days: st.advDays });
+      advRes = computeRoleSiteDriftProposals({ days: st.advDays, companies: scopeCos });
       window.__lastRoleSiteDriftProposals = advRes;
-      outcomesRes = computeCohortDriftOutcomes({ refDate: opts.refDate || todayISO() });
+      outcomesRes = computeCohortDriftOutcomes({ refDate: opts.refDate || todayISO(), companies: scopeCos });
       window.__lastCohortDriftOutcomes = outcomesRes;
     };
     const patHtml = list => list.map(x => `<span class="pdr-pat" data-side="${esc(x.side)}"><span>${esc(x.label)}</span> <b class="mono">${x.medianMin > 0 ? '+' : ''}${fmtNum(x.medianMin)}</b> <span>min</span></span>`).join(' ');
@@ -158311,7 +158407,7 @@
           <td>${actionsHtml(`person:${i}`, f.split)}</td>
         </tr>`).join('');
       const brief = st.brief;
-      const activeRules = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company));
+      const activeRules = listActivePunchDriftRules(getModalScopeCos());
       const filteredAdvProps = (advRes && Array.isArray(advRes.proposals) ? advRes.proposals : []).filter(p => {
         if (st.advSite !== 'all' && norm(p.site) !== norm(st.advSite)) return false;
         if (st.advRole !== 'all' && norm(p.role) !== norm(st.advRole)) return false;
@@ -158644,7 +158740,7 @@
         }
         st.armed = '';
         // Found again by its id (never by position, a sync may have reordered the list between the two clicks).
-        const r = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company)).find(x => String(x.item.id) === String(rid));
+        const r = listActivePunchDriftRules(getModalScopeCos()).find(x => String(x.item.id) === String(rid));
         const res = r ? removePunchDriftRule(r.staff, r.company, r.item.id) : null;
         toast(res && res.ok ? 'Drift rule removed' : ((res && res.error) || 'Nothing changed'), res && res.ok ? 'ok' : 'warn');
         compute();
@@ -158863,7 +158959,7 @@
 
   function openPolicyGroupModal(groupId = '', seedSpec = null, onSaved = null) {
     const canEdit = canEditPolicyGroupsCatalog();
-    const activeBuList = getActiveIndustryBuList(STATE.company);
+    const activeBuList = getAttendanceDefaultsCompanies((seedSpec && seedSpec.targetCompany) || STATE.company);
     const industryAllowedCos = activeBuList.filter(Boolean);
     const explicitTargetCo = (seedSpec && seedSpec.targetCompany) || COMPANY_BU_MATCH[STATE.company] || '';
     const groups = getPolicyGroups(explicitTargetCo);
@@ -158904,7 +159000,7 @@
     }));
     let draftName = existing ? existing.name : ((seedSpec && seedSpec.name) || '');
     let draftShort = existing ? existing.short : '';
-    let draftCompany = existing ? (existing.isBuiltin ? 'All Companies' : (existing.company || 'All Companies')) : ((seedSpec && seedSpec.company) || 'All Companies');
+    let draftCompany = existing ? (existing.isBuiltin ? 'All Companies' : (existing.company || 'All Companies')) : ((seedSpec && seedSpec.company) || explicitTargetCo || 'All Companies');
     const resolvedInitCo = effDefCo(draftCompany);
     let draftSetCoDef = Boolean(existing && resolvedInitCo && getCompanyDefaultPolicyGroupId(resolvedInitCo) === existing.id);
     let draftMathMode = base.math_mode;
@@ -158938,7 +159034,23 @@
     let draftVersionNote = '';
     let draftBackfill = true;
     const viewerAllowed = allowedCompanyNames();
-    const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
+    const indCosForModal = getActiveIndustryBuList(explicitTargetCo || STATE.company);
+    const indNormSet = new Set(indCosForModal.map(c => norm(canonCompany(c))));
+    const pinnedPgmSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isExistingUniv = Boolean(existing && (!existing.company || existing.company === 'All Companies' || existing.company === 'All BUs'));
+    const pgmAllowedCos = (pinnedPgmSingleCo
+      ? getAttendanceDefaultsCompanies(explicitTargetCo || STATE.company)
+      : indCosForModal)
+      .filter(nm => !viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(nm)));
+    if (existing && existing.company && existing.company !== 'All Companies' && existing.company !== 'All BUs'
+      && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(existing.company)))
+      && !pgmAllowedCos.some(c => norm(c) === norm(existing.company))) {
+      pgmAllowedCos.push(existing.company);
+    }
+    const getEffBackfillCos = () => {
+      const isUniv = !draftCompany || draftCompany === 'All Companies' || draftCompany === 'All BUs';
+      return !isUniv ? [draftCompany] : (explicitTargetCo ? [explicitTargetCo] : indCosForModal.slice());
+    };
 
     let modal = $('policyGroupModal');
     if (!modal) {
@@ -158957,8 +159069,13 @@
       const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
+      const effBackfillCos = getEffBackfillCos();
+      const effScopeNormSet = new Set(effBackfillCos.map(c => norm(canonCompany(c))));
       const assignedStaff = existing
-        ? getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id)
+        ? getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => {
+            if (getStaffWorkRule(s.name, s.company).policy_group_id !== existing.id) return false;
+            return effScopeNormSet.has(norm(canonCompany(s.company || '')));
+          })
         : [];
       const assignedCnt = assignedStaff.length;
       const showDollars = canViewPayrollDollarAmounts();
@@ -158989,7 +159106,8 @@
       const previewRes = (draftBackfill && existing && hasDraftRuleChange)
         ? (assignedStaff.length > 0
             ? previewPolicyChangeImpact({
-                company: draftCompany !== 'All Companies' ? draftCompany : '',
+                company: effBackfillCos.length === 1 ? effBackfillCos[0] : '',
+                companies: effBackfillCos,
                 staffNames: assignedStaff.map(s => s.name),
                 fromDate: previewFrom,
                 toDate: previewTo,
@@ -159041,8 +159159,8 @@
               <div class="ssm-field">
                 <label for="pgmCompany">Company Scope</label>
                 <select id="pgmCompany" class="kiosk-select" data-plain-options="1" ${existing && existing.isBuiltin ? 'disabled' : ''}>
-                  <option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>
-                  ${allAllowedCos.map(co => `<option value="${esc(co)}" ${draftCompany === co ? 'selected' : ''}>${esc(co)} Only</option>`).join('')}
+                  ${((!pinnedPgmSingleCo && isFullGroupSeat()) || draftCompany === 'All Companies' || isExistingUniv) ? `<option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>` : ''}
+                  ${pgmAllowedCos.map(co => `<option value="${esc(co)}" ${draftCompany === co ? 'selected' : ''}>${esc(co)} Only</option>`).join('')}
                 </select>
               </div>
               <div class="ssm-field">
@@ -159284,10 +159402,10 @@
                     ? `<span>Scheduled for future effective date <b>${esc(fmtDateDMY(draftEffFrom))}</b> (current active policy stays until then).</span>`
                     : `<span>Dry-Run Preview (${esc(fmtDateDMY(previewRes.fromDate))}–${esc(fmtDateDMY(previewRes.toDate))}): recalculates <b>${fmtNum(previewRes.updatedRows)}</b> unlocked logs${showDollars ? ` · Earned Δ <b class="att-earn-pos">${previewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${previewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${previewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(previewRes.netDeltaUsd), 2)}</b>` : ''}${(previewRes.skippedClosed || previewRes.skippedManual) ? ` (${fmtNum(previewRes.skippedClosed)} closed skipped, ${fmtNum(previewRes.skippedManual)} manual kept)` : ''}</span>`}
                   ${!isRo ? ` <button type="button" class="btn kiosk-mini-btn" data-pgm-open-sim="1">Inspect employee diffs</button>` : ''}
-                  ${renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) })}
+                  ${renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''), staffNames: assignedStaff.map(s => s.name) })}
                 </div>
               ` : (() => {
-                const pgmLegHtml = renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) });
+                const pgmLegHtml = renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''), staffNames: assignedStaff.map(s => s.name) });
                 return pgmLegHtml ? `<div class="att-backfill-preview" id="pgmBackfillPreview">${pgmLegHtml}</div>` : '';
               })()}
             </div>
@@ -159667,6 +159785,7 @@
           version_id: draftEditingVersionId || undefined,
           version_note: draftVersionNote,
           backfill: draftBackfill,
+          backfillScopeCompanies: getEffBackfillCos(),
           deferSave: willUpdateCoDefault,
           deferSync: willUpdateCoDefault
         };
@@ -159698,9 +159817,13 @@
           }
           const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
           const defBfCount = defUpdateRes && defUpdateRes.attBackfill ? Number(defUpdateRes.attBackfill.updatedRows || 0) : 0;
-          const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : '');
+          const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''));
           const pgStaffNames = getKioskStaffDirectory({ includeEnded: true, lite: true })
-            .filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === res.policyGroup.id)
+            .filter(s => {
+              if (getStaffWorkRule(s.name, s.company).policy_group_id !== res.policyGroup.id) return false;
+              const scNorm = norm(canonCompany(s.company || ''));
+              return pgScopeCo ? scNorm === norm(canonCompany(pgScopeCo)) : indNormSet.has(scNorm);
+            })
             .map(s => s.name);
           const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, countOnly: true });
           closePolicyGroupModal();
@@ -159804,7 +159927,7 @@
       _PAY_BIO_SUM_KEPT.delete(bioKey);
       _PAY_BIO_SUM_KEPT.set(bioKey, bioCounts);
     } else {
-      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, strictCompanyScope: Boolean(COMPANY_BU_MATCH[STATE.company]) });
       const shiftTypes = getShiftTypes();
       bioCounts = {
         shiftCount: shiftTypes.length,
@@ -159850,7 +159973,11 @@
     const staffStatusFilter = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter)
       ? STATE.kioskStaffStatusFilter
       : 'all';
-    const fullStaffDir = opts.fullStaffDir || getKioskStaffDirectory({ scopeBySelectedCompany, includeEnded });
+    const fullStaffDir = opts.fullStaffDir || getKioskStaffDirectory({
+      scopeBySelectedCompany,
+      strictCompanyScope: Boolean(scopeBySelectedCompany && COMPANY_BU_MATCH[STATE.company]),
+      includeEnded
+    });
     const staffDir = staffStatusFilter === 'active'
       ? fullStaffDir.filter(s => !s.isEndedContract)
       : (staffStatusFilter === 'inactive' ? fullStaffDir.filter(s => s.isEndedContract) : fullStaffDir);
@@ -160075,12 +160202,8 @@
       STATE.kioskAttSite = attSites[0] || 'WTC Main Plant';
     }
 
-    const allEmpRecords = (SEED.records.employments || []).concat(STATE.customRecords.employments || []);
     const rawScopedCo = COMPANY_BU_MATCH[STATE.company] || '';
-    const rawCoHasEmps = rawScopedCo
-      ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
-      : true;
-    const effectiveScopedCo = rawCoHasEmps ? rawScopedCo : '';
+    const effectiveScopedCo = rawScopedCo;
     const {
       staffStatusFilter, fullStaffDir, staffDir, rosterQuery,
       latePenFilter, lateTolFilter, lateWhenFilter, lateOtFilter, lateTodayFilter, policyGroupFilter,
@@ -160090,7 +160213,7 @@
     const endedStaffTotal = fullStaffDir.filter(s => s.isEndedContract).length;
     const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'all'];
     const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : 'roster';
-    const policyGroupsCatalog = getPolicyGroups(effectiveScopedCo || defCo);
+    const policyGroupsCatalog = getPolicyGroups(rawScopedCo);
     const countByCriteria = overrides => searchFilteredRoster.filter(s => checkStaffFilterCriteria(s, overrides)).length;
 
     const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
@@ -160112,7 +160235,7 @@
       return true;
     });
 
-    const shiftTypesCatalog = getShiftTypes(effectiveScopedCo || defCo);
+    const shiftTypesCatalog = getShiftTypes(rawScopedCo || effectiveScopedCo || defCo);
     const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
@@ -160243,12 +160366,12 @@
       `;
     };
 
-    const companyDefaultsTargets = effectiveScopedCo ? [effectiveScopedCo] : Array.from(indCoNames);
-    const editCoAttr = effectiveScopedCo ? ` data-edit-co="${esc(effectiveScopedCo)}"` : '';
+    const companyDefaultsTargets = getAttendanceDefaultsCompanies(STATE.company);
+    const editCoAttr = rawScopedCo ? ` data-edit-co="${esc(rawScopedCo)}"` : '';
 
     const canWritePolCat = canEditPolicyGroupsCatalog();
-    const canWriteShiftCat = effectiveScopedCo
-      ? canEditShiftsAndRules(null, effectiveScopedCo)
+    const canWriteShiftCat = rawScopedCo
+      ? canEditShiftsAndRules(null, rawScopedCo)
       : (indCoNames.size ? Array.from(indCoNames).some(c => canEditShiftsAndRules(null, c)) : canEditShiftsAndRules(null, defCo));
 
     const companyDefaultsStripHtml = companyDefaultsTargets.length ? `
@@ -170585,6 +170708,8 @@
       closeBackfillModal: () => closeBackfillModal(),
       computeAttendanceOtSnapPremium: (a, prof) => computeAttendanceOtSnapPremium(a, prof),
       computeJobOtSnapAllocation: (opts = {}) => computeJobOtSnapAllocation(opts),
+      getAttendanceDefaultsCompanies: (co = '') => getAttendanceDefaultsCompanies(co),
+      getActiveIndustryBuList: (co = '') => getActiveIndustryBuList(co),
       getOtSnapAllocSig: () => getOtSnapAllocSig(),
       clearFlashPunch: () => clearKioskFlashPunch(true)
     };
