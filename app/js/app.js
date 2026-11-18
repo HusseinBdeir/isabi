@@ -68751,6 +68751,7 @@
   }
 
   function closeIndustryDomainEntryModal() {
+    cancelNearCopyLiveCheck();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
       window.MFG_AI_EDGE.stopVoiceCapture();
     }
@@ -68836,11 +68837,13 @@
     $('indEntryModalTitle').textContent = isEditMode ? `Edit · ${prefill.id || prefill.code || spec.label}` : spec.title;
 
     const fldWrap = (label, inputHtml, hint = '') => `
-      <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:7px">
-        <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${label}</span>
-        ${inputHtml}
+      <div class="ide-fld-card" style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:7px;min-width:0">
+        <label style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${label}</span>
+          ${inputHtml}
+        </label>
         ${hint ? `<span style="font-size:10.5px;color:var(--muted,#64748B)">${hint}</span>` : ''}
-      </label>
+      </div>
     `;
     const inpStyle = 'padding:6px 9px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:12.5px;font-weight:600';
     const roStyle = 'padding:6px 9px;border:1px solid var(--line,#E2E8F0);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--ink,#0F172A);font-size:12.5px;font-weight:700';
@@ -69878,6 +69881,19 @@
       el.addEventListener('input', recalcLive);
       el.addEventListener('change', recalcLive);
     });
+    if (isEditMode) {
+      bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender').forEach(el => {
+        el.dataset.partyInitVal = String(el.value || '');
+      });
+    }
+    if (typeof wirePartyTypoHost === 'function') {
+      wirePartyTypoHost(bodyEl, {
+        getInd: () => ind,
+        getCo: () => strVal('ide_company') || defCo,
+        isEditMode: () => isEditMode,
+        isDomainModal: true
+      });
+    }
     recalcLive();
 
     formEl.onsubmit = async ev => {
@@ -88591,6 +88607,7 @@
         ? ['wrap_f_date', 'wrap_f_saletype', 'wrap_f_ticketno', 'wrap_f_notes']
         : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_notes'];
       showOnRemoveIds.forEach(id => setFieldVisible(id, true));
+      syncNearCopyBanner(side === 'sales' ? 'sales_tickets' : 'raw_purchases', null);
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
@@ -88598,6 +88615,7 @@
     } else if (isReturn) {
       hideOnReturnIds.forEach(id => setFieldVisible(id, false));
       showOnReturnIds.forEach(id => setFieldVisible(id, true));
+      syncNearCopyBanner(side === 'sales' ? 'sales_tickets' : 'raw_purchases', null);
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
@@ -88766,6 +88784,7 @@
           ${fld('Driver Tip ($)', inp('f_tip', 'number', '0.00', 'step="0.50" min="0" inputmode="decimal"'), { id: 'wrap_f_tip' })}
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount', hintId: 'hint_disc', hint: '' })}
           ${fld('Total Ex-VAT (USD) *', inp('f_total_usd', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_total_usd', lockField: 'f_total_usd', lockReason: 'Computed as Material Total + Transport Total', hint: 'Material Total + Transport Total' })}
+          ${nearCopyAmtJumpHtml()}
 
           ${secHdr('3. References, Statutory VAT & Notes')}
           ${fld('VAT Invoice No.', inp('f_vatinvoice', 'text', '', 'placeholder="Auto-linked VAT invoice" readonly'), { id: 'wrap_vatinvoice', hidden: true, lockField: 'f_vatinvoice', lockReason: 'Linked by statutory VAT invoicing batch', hint: '11% VAT applies to this customer' })}
@@ -88856,6 +88875,7 @@
           ${fld(`<span id="lbl_transunitprice">Haulage Unit Cost ($ / ${initRawUom})</span>`, inp('f_transunitprice', 'number', pendRawEditRow ? Number(pendRawEditRow.trans_unit_cost || 0).toFixed(2) : '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
           ${fld('Haulage Cost (USD)', inp('f_trans_total', 'number', pendRawEditRow ? Number(pendRawEditRow.trans_cost || 0).toFixed(2) : '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Haulage Unit Cost' })}
           ${fld('Total Payable (USD) *', inp('f_total_usd', 'number', pendRawEditRow ? Number(pendRawEditRow.total || 0).toFixed(2) : '0.00', 'step="0.01" readonly'), { id: 'wrap_f_total_usd', lockField: 'f_total_usd', lockReason: 'Computed as Material Cost + Haulage Cost' })}
+          ${pendRawEditRow ? '' : nearCopyAmtJumpHtml()}
           ${fld('Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], pendRawEditRow ? (pendRawEditRow.method || 'Credit') : 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit (2-leg AP split) by default' })}
 
           ${secHdr('3. References & Notes')}
@@ -91194,6 +91214,100 @@
     return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, '');
   }
 
+  function partyWordsKey(v) {
+    return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06ff\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Two compact party keys differing by one non-digit typo (or adjacent non-digit swap), never digit-only numbers
+  // ("Store 1" vs "Store 2", "Amtrac" vs "Amtrac 1") or short first-letter names ("Sami" vs "Rami").
+  function partyKeyOneLetterOff(a, b) {
+    if (!a || !b || a === b || Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
+    if (a.length === b.length) {
+      const diff = [];
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff.push(i);
+      if (diff.length === 1) {
+        const idx = diff[0];
+        if (/\d/.test(a[idx]) || /\d/.test(b[idx])) return false;
+        if (a.length <= 5 && idx === 0) return false;
+        return true;
+      }
+      return diff.length === 2
+        && diff[1] === diff[0] + 1
+        && a[diff[0]] === b[diff[1]]
+        && a[diff[1]] === b[diff[0]]
+        && !(/\d/.test(a[diff[0]]) && /\d/.test(a[diff[1]]));
+    }
+    const lo = a.length < b.length ? a : b;
+    const hi = a.length < b.length ? b : a;
+    for (let i = 0; i < hi.length; i++) {
+      if (hi.slice(0, i) + hi.slice(i + 1) === lo) return !/\d/.test(hi[i]);
+    }
+    return false;
+  }
+
+  // Matches 1-letter key typos AND single missing/extra spaces ("StarSolutions" vs "Star Solutions").
+  function partyNameOneLetterOff(rawA, rawB) {
+    const ka = nearCopyPartyKey(rawA);
+    const kb = nearCopyPartyKey(rawB);
+    if (!ka || !kb) return false;
+    if (ka !== kb) return partyKeyOneLetterOff(ka, kb);
+    const wa = partyWordsKey(rawA);
+    const wb = partyWordsKey(rawB);
+    if (!wa || !wb || wa === wb || Math.min(ka.length, kb.length) < 4 || Math.abs(wa.length - wb.length) !== 1) return false;
+    const lo = wa.length < wb.length ? wa : wb;
+    const hi = wa.length < wb.length ? wb : wa;
+    for (let i = 0; i < hi.length; i++) {
+      if (hi[i] === ' ' && hi.slice(0, i) + hi.slice(i + 1) === lo) return true;
+    }
+    return false;
+  }
+
+  // True when `rawName` is an independent active party in the Universal Customer/Supplier master for `company`'s industry.
+  function isExactMasterParty(partyKind, rawName, company) {
+    const key = nearCopyPartyKey(rawName);
+    if (!key) return false;
+    const crKey = partyKind === 'customer' ? 'customers' : 'suppliers';
+    const rows = nearCopyPool(crKey);
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const targetInd = hasIndFn
+      ? (inferIndustryForCompany(company || '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing'))
+      : 'Manufacturing';
+    const demoOn = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
+    const isMfg = !targetInd || targetInd === 'Manufacturing';
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.voided || r.voided_at) continue;
+      if (!demoOn && r._demoSpineRow) continue;
+      if (isMfg) {
+        if (r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) continue;
+      } else {
+        const rowInd = r._industry || (hasIndFn && r.company ? inferIndustryForCompany(r.company) : '');
+        if (rowInd !== targetInd) continue;
+      }
+      const rName = r.name || (partyKind === 'customer' ? r.Customer : r.Supplier) || '';
+      if (rName && nearCopyPartyKey(rName) === key) return true;
+    }
+    return false;
+  }
+
+  // Returns the highest-ranked (caller-ordered) candidate that is 1 letter off `rawName`, or null if `rawName` matches
+  // an existing candidate exactly or has no 1-letter-off neighbour.
+  function findNearPartyMatch(rawName, candidates) {
+    const w = partyWordsKey(rawName);
+    const k = nearCopyPartyKey(rawName);
+    const n = norm(rawName);
+    if (!w || k.length < 4 || !Array.isArray(candidates) || !candidates.length) return null;
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (c && (norm(c) === n || partyWordsKey(c) === w)) return null;
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (c && partyNameOneLetterOff(rawName, c)) return c;
+    }
+    return null;
+  }
+
   // The dollar figure the top-up compares: the USD amount, else the pounds at 89,500.
   function nearCopySumUsd(x) {
     const n = v => { const k = Number(v || 0); return Number.isFinite(k) ? k : 0; };
@@ -91236,7 +91350,7 @@
     return t.toISOString().slice(0, 10);
   }
 
-  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' }, or null.
+  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' }, or null.
   function findNearCopySumEntry(crKey, rec) {
     const pk = NEAR_COPY_SUM_PARTY[crKey];
     if (!pk || !rec || rec.price_pending || rec.group_transfer_id || rec.backpay_voucher || rec._backpay_lines) return null;
@@ -91248,13 +91362,16 @@
     if (!day || !co || !cls || !party || !(amt > 0.005)) return null;
     const days = [day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
+    const checkTypo = (pk === 'supplier' || pk === 'customer') && party.length >= 4 && !isExactMasterParty(pk, rec[pk], rec.company);
+    const closeByParty = checkTypo ? new Map() : null;
     const rows = nearCopyPool(crKey);
     const seen = new Set();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       // An app row the browser already holds as a copy of a seed row (_absorbedSeedTwin) is that row: never count it twice.
       if (!r || r.voided || r.voided_at || r.price_pending || r._absorbedSeedTwin) continue;
-      const bucket = byDay.get(String(r.date || '').slice(0, 10));
+      const rDay = String(r.date || '').slice(0, 10);
+      const bucket = byDay.get(rDay);
       if (!bucket || norm(r.company || '') !== co) continue;
       if (rec.id && r.id && String(r.id) === String(rec.id)) continue;
       if (isSelfEditingRow(r, crKey)) continue;
@@ -91262,9 +91379,20 @@
         if (seen.has(String(r.id))) continue;
         seen.add(String(r.id));
       }
-      if (nearCopyPartyKey(r[pk]) !== party || nearCopySumClass(crKey, r) !== cls) continue;
+      if (nearCopySumClass(crKey, r) !== cls) continue;
       if (Math.abs(nearCopySumUsd(r)) <= 0.005) continue;
-      bucket.push(r);
+      const rp = nearCopyPartyKey(r[pk]);
+      if (!rp) continue;
+      if (rp === party) {
+        bucket.push(r);
+      } else if (closeByParty && partyKeyOneLetterOff(party, rp)) {
+        let pDays = closeByParty.get(rp);
+        if (!pDays) {
+          pDays = new Map(days.map(d => [d, []]));
+          closeByParty.set(rp, pDays);
+        }
+        pDays.get(rDay).push(r);
+      }
     }
     const lbpOf = x => Number(x.lbp_amount || 0) || 0;
     const recLbp = lbpOf(rec);
@@ -91278,14 +91406,27 @@
       return lbpOff && Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - amt) < NEAR_COPY_SUM_USD_TOL;
     };
     const toks = nearCopyRefTokens(rec.invoice, rec.reference, rec.notes);
-    for (const d of days) {
-      const cands = byDay.get(d);
-      let group = addsUp(cands) ? cands : null;
-      if (!group && toks.size) {
-        const named = cands.filter(x => [...nearCopyRefTokens(x.invoice, x.reference)].some(t => toks.has(t)));
-        if (addsUp(named)) group = named;
+    const matchFromMap = (dayMap, sameReason, gapReason) => {
+      for (const d of days) {
+        const cands = dayMap.get(d);
+        let group = addsUp(cands) ? cands : null;
+        if (!group && toks.size) {
+          const named = cands.filter(x => [...nearCopyRefTokens(x.invoice, x.reference)].some(t => toks.has(t)));
+          if (addsUp(named)) group = named;
+        }
+        if (group) return { row: group[0], rows: group.slice(), day: d, reason: d === day ? sameReason : gapReason };
       }
-      if (group) return { row: group[0], rows: group.slice(), day: d, reason: d === day ? 'sum' : 'sum_gap' };
+      return null;
+    };
+    const exactHit = matchFromMap(byDay, 'sum', 'sum_gap');
+    if (exactHit) return exactHit;
+    if (closeByParty && closeByParty.size) {
+      const countRows = dm => { let n = 0; dm.forEach(arr => { n += arr.length; }); return n; };
+      const ranked = Array.from(closeByParty.values()).sort((a, b) => countRows(b) - countRows(a));
+      for (const dm of ranked) {
+        const typoHit = matchFromMap(dm, 'sum_typo', 'sum_gap_typo');
+        if (typoHit) return typoHit;
+      }
     }
     return null;
   }
@@ -91309,11 +91450,16 @@
     if (!day || !co || !(amt > 0.005)) return null;
     const digits = v => String(v || '').replace(/\D/g, '');
     const recTruck = digits(rec.truck);
-    const recParty = crKey === 'sales_tickets' ? norm(rec.customer || '') : (crKey === 'raw_purchases' ? norm(rec.site || rec.site_owner || '') : normSupPayable(rec.supplier || ''));
+    const rawRecParty = crKey === 'sales_tickets' ? (rec.customer || '') : (crKey === 'raw_purchases' ? (rec.site || rec.site_owner || '') : (rec.supplier || ''));
+    const recParty = crKey === 'sales_tickets' ? norm(rawRecParty) : (crKey === 'raw_purchases' ? norm(rawRecParty) : normSupPayable(rawRecParty));
     if (!recParty) return null;
+    const recPartyCompact = nearCopyPartyKey(rawRecParty);
+    const typoKind = crKey === 'sales_tickets' ? 'customer' : (crKey === 'expenses' ? 'supplier' : '');
+    const allowTypo = Boolean(typoKind && recPartyCompact.length >= 4 && !isExactMasterParty(typoKind, rawRecParty, rec.company));
     const recInv = normTicketNo(cleanVoucherRef(rec.invoice || rec.reference));
     const rows = nearCopyPool(crKey);
     const seen = new Set();
+    let typoHit = null;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r || r.voided || r.voided_at || r._absorbedSeedTwin || String(r.date || '').slice(0, 10) !== day || norm(r.company || '') !== co) continue;
@@ -91325,28 +91471,40 @@
       }
       if (crKey === 'sales_tickets' || crKey === 'raw_purchases') {
         if (r.removed_slip || r.ticket_disposition === 'remove_slip') continue;
-        const party = crKey === 'sales_tickets' ? norm(r.customer || '') : norm(r.site || r.site_owner || '');
-        if (party !== recParty) continue;
+        const rawRowParty = crKey === 'sales_tickets' ? (r.customer || '') : (r.site || r.site_owner || '');
+        const party = norm(rawRowParty);
+        const exactParty = party === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowParty) === recPartyCompact);
+        const typoParty = !exactParty && allowTypo && Boolean(rawRowParty) && partyNameOneLetterOff(rawRecParty, rawRowParty);
+        if (!exactParty && !typoParty) continue;
         const rTruck = digits(r.truck);
         if (recTruck && rTruck && recTruck !== rTruck) continue;
         if (Math.abs(nearCopyRowUsd(crKey, r) - amt) >= 1.0) continue;
         if (!ticketNoOneSlip(rec.ticket_no, r.ticket_no)) continue;
         if (Math.abs(Number(normTicketNo(rec.ticket_no)) - Number(normTicketNo(r.ticket_no))) < NEAR_COPY_MIN_TICKET_GAP) continue;
-        return { row: r, reason: 'ticket' };
+        if (exactParty) return { row: r, reason: 'ticket' };
+        if (!typoHit) typoHit = { row: r, reason: 'ticket_typo' };
+        continue;
       }
-      if (r.price_pending || normSupPayable(r.supplier || '') !== recParty) continue;
+      if (r.price_pending) continue;
+      const rawRowSup = r.supplier || '';
+      const exactSup = normSupPayable(rawRowSup) === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowSup) === recPartyCompact);
+      const typoSup = !exactSup && allowTypo && Boolean(rawRowSup) && partyNameOneLetterOff(rawRecParty, rawRowSup);
+      if (!exactSup && !typoSup) continue;
       if (rec.equipment && r.equipment && norm(rec.equipment) !== norm(r.equipment)) continue;
       const rInv = normTicketNo(cleanVoucherRef(r.invoice || r.reference));
       if (recInv && rInv && recInv !== rInv) continue;
       if (!amountsVatApart(amt, nearCopyRowUsd(crKey, r))) continue;
-      return { row: r, reason: 'vat' };
+      if (exactSup) return { row: r, reason: 'vat' };
+      if (!typoHit) typoHit = { row: r, reason: 'vat_typo' };
     }
-    return null;
+    return typoHit;
   }
 
   // Shows (or hides) the confirm box under the form; a different match unticks it.
   function syncNearCopyBanner(crKey, hit) {
     const wrap = $('wrap_nearcopyok');
+    const jump = $('nearCopyAmtJump');
+    if (!hit && jump) jump.hidden = true;
     if (!wrap) return false;
     const cb = $('f_nearcopyok');
     const hint = $('hint_nearcopy');
@@ -91370,6 +91528,18 @@
       if (cb) cb.checked = false;
     }
     wrap.hidden = false;
+    if (jump) jump.hidden = false;
+    const reasonMap = {
+      sum: 'Same day and party, these entries add up to this amount',
+      sum_gap: 'Same party, these entries one day apart add up to this amount',
+      sum_typo: 'Same day, entries under a similar name add up to this amount',
+      sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      ticket: 'Same day, party, truck and amount, ticket number one digit apart',
+      ticket_typo: 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
+      vat: 'Same day and supplier, amount differs by exactly the 11% VAT',
+      vat_typo: 'Same day and similar supplier name, amount differs by exactly the 11% VAT'
+    };
+    const reason = reasonMap[hit.reason] || '';
     if (hint && hit.rows) {
       const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment' }[crKey] || 'Entry';
       const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
@@ -91377,9 +91547,6 @@
         const ref = cleanVoucherRef(r.invoice || r.reference);
         return `${ref ? '#' + ref + ' ' : ''}${fmtUSD(nearCopySumUsd(r), 2)}`;
       }).join(' + ');
-      const reason = hit.reason === 'sum'
-        ? 'Same day and party, these entries add up to this amount'
-        : 'Same party, these entries one day apart add up to this amount';
       const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
     } else if (hint) {
@@ -91388,10 +91555,11 @@
       const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
       const party = crKey === 'sales_tickets' ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
       const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(nearCopyRowUsd(crKey, r), 2)].filter(Boolean);
-      const reason = hit.reason === 'ticket'
-        ? 'Same day, party, truck and amount, ticket number one digit apart'
-        : 'Same day and supplier, amount differs by exactly the 11% VAT';
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`);
+    }
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(wrap);
+      if (jump) window.MFG_I18N.translateDom(jump);
     }
     return true;
   }
@@ -91420,6 +91588,11 @@
     return `<div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>`;
   }
 
+  function nearCopyAmtJumpHtml() {
+    const ico = typeof ic === 'function' ? ic('warn') : '';
+    return `<button type="button" class="near-copy-jump span-3" id="nearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
+  }
+
   // Warn while typing (owner 2026-11-17): the second-copy check runs while the form is filled in, not only at Post, so
   // the entry the new one may repeat shows under the form before it is finished. It is the Post check itself
   // (validateAndBuild in preview: no field is rewritten, nothing is added to a register, no red field is shown), so
@@ -91428,9 +91601,12 @@
   const NEAR_COPY_LIVE_FORMS = ['sales', 'raw', 'expense', 'settlement', 'receipt', 'salary'];
   const NEAR_COPY_LIVE_DELAY_MS = 300;
   let nearCopyLiveTimer = 0;
+  let partyTypoTimer = 0;
   function cancelNearCopyLiveCheck() {
     if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
     nearCopyLiveTimer = 0;
+    if (partyTypoTimer) clearTimeout(partyTypoTimer);
+    partyTypoTimer = 0;
   }
   function scheduleNearCopyLiveCheck(calcRes) {
     cancelNearCopyLiveCheck();
@@ -93456,6 +93632,7 @@
       upEl.value = '0.00';
       setText('lbl_pricelock', 'PENDING PRICE');
       setHint('hint_price', 'Logs receipt at $0.00 material cost · enter final invoice price when supplier bill arrives', 'warn');
+      syncNearCopyBanner('raw_purchases', null);
     } else if (pendRawEditRow && upEl) {
       setText('lbl_pricelock', 'FINAL INVOICE PRICE');
       const curUp = num('f_unitprice');
@@ -94464,6 +94641,7 @@
       }
     } else if (pricePending) {
       setHint('hint_amount', 'Posted at $0.00 Credit AP now; click "Enter Price" when invoiced', 'ok');
+      syncNearCopyBanner('expenses', null);
     } else if (isMultiTicketSplit) {
       if (amount <= 0 && FORM_UI.postAttempted) {
         setHint('hint_amount', 'Enter unit prices above (or switch to Pending $0)', 'crit');
@@ -101210,9 +101388,11 @@
       if (FORM_UI.postAttempted) {
         const v = validateAndBuild({ skipRecalc: true, calcResult: res });
         syncFormValidationUI(v.fieldErrors, false);
+        if (typeof syncFormPartyTypoHints === 'function') syncFormPartyTypoHints(activeFormHost());
       } else {
         syncFormValidationUI([], false);
         scheduleNearCopyLiveCheck(res);
+        if (typeof schedulePartyTypoCheck === 'function') schedulePartyTypoCheck(activeFormHost());
       }
       if (STATE.view === 'kiosks' && typeof updateKioskLiveThermalPreview === 'function') {
         updateKioskLiveThermalPreview(res);
@@ -105451,6 +105631,15 @@
     });
     recalcForm();
     wireModalSuggestions(body);
+    if (typeof wirePartyTypoHost === 'function') {
+      wirePartyTypoHost(body, {
+        getInd: () => (typeof getActiveIndustry === 'function' ? getActiveIndustry(val('f_company') || STATE.company) : 'Manufacturing'),
+        getCo: () => val('f_company') || '',
+        getModalForm: () => STATE.modalForm || '',
+        isEditMode: () => Boolean(STATE.editingRecord || STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId),
+        isDomainModal: false
+      });
+    }
     renderEntryAttachmentsListUI();
     const handleModalAttachmentFiles = async (fileList, captureMethod = 'File Upload') => {
       const arr = Array.from(fileList || []).filter(Boolean);
@@ -105689,6 +105878,431 @@
       span.remove();
     }
     return dup;
+  }
+
+  // ---- misspelled party name check (1 letter off existing customer/supplier/counterparty) ----
+  const ENTRY_PARTY_FIELD_KINDS = {
+    f_customer: 'customer',
+    f_supplier: 'supplier',
+    f_siteowner: 'supplier',
+    f_truckowner: 'truck_owner'
+  };
+  const DOMAIN_PARTY_FIELD_KINDS = {
+    ide_client: 'customer',
+    ide_tenant: 'customer',
+    ide_buyer: 'customer',
+    ide_customer: 'customer',
+    ide_member: 'customer',
+    ide_supplier: 'supplier',
+    ide_contractor: 'supplier',
+    ide_carrier: 'supplier',
+    ide_party: 'counterparty',
+    ide_partner: 'counterparty',
+    ide_lender: 'counterparty'
+  };
+
+  function resolvePartyFieldKind(el, isDomainModal, modalForm) {
+    if (!el || !el.id) return '';
+    if (isDomainModal) return DOMAIN_PARTY_FIELD_KINDS[el.id] || '';
+    const k = ENTRY_PARTY_FIELD_KINDS[el.id] || '';
+    if (!k) return '';
+    if (el.id === 'f_supplier' && (modalForm === 'equipment' || modalForm === 'driver')) return 'truck_owner';
+    return k;
+  }
+
+  function isIndustryDomainRowVoided(ind, rowId) {
+    if (!ind || !rowId) return false;
+    const store = STATE && STATE.industryRowEdits;
+    if (!store || typeof store !== 'object') return false;
+    const pfx = `${ind}::`;
+    const sfx = `::${String(rowId).trim()}`;
+    const keys = Object.keys(store);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (k.startsWith(pfx) && k.endsWith(sfx) && store[k] && store[k].voided) return true;
+    }
+    return false;
+  }
+
+  function getScopedPartyCandidates(partyKind, company, inputEl, opts = {}) {
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const ind = opts.ind || (hasIndFn ? inferIndustryForCompany(company || STATE.company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company || STATE.company) : 'Manufacturing') || 'Manufacturing';
+    const demoActive = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
+    const modalForm = String(opts.modalForm || '');
+    const isRegEdit = modalForm === 'customer' || modalForm === 'supplier';
+    const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    if (fIdx && !fIdx._partyTypoPools) fIdx._partyTypoPools = new Map();
+    const dlId = (demoActive && inputEl && inputEl.list && inputEl.list.id) ? inputEl.list.id : '';
+    const cacheKey = isRegEdit ? '' : `${ind}|${partyKind}|${demoActive ? 1 : 0}|${opts.isDomainModal ? 1 : 0}|${dlId}`;
+    if (cacheKey && fIdx && fIdx._partyTypoPools.has(cacheKey)) {
+      return fIdx._partyTypoPools.get(cacheKey);
+    }
+
+    const out = [];
+    const push = v => { if (v && typeof v === 'string') { const s = v.trim(); if (s) out.push(s); } };
+    const isMfg = ind === 'Manufacturing';
+    const recs = (SEED && SEED.records) || {};
+    const custRecs = (STATE && STATE.customRecords) || (SEED && SEED.customRecords) || {};
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCoSet = new Set(cat.filter(c => c && (c.industry || 'Manufacturing') === ind).map(c => c.name));
+    const matchScopeRow = r => {
+      if (!r || r.voided || r.voided_at || r._absorbedSeedTwin) return false;
+      if (!demoActive && r._demoSpineRow) return false;
+      if (isMfg) {
+        if (r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return false;
+        if (r.company && indCoSet.size && !indCoSet.has(r.company)) return false;
+        return true;
+      }
+      if (r._industry) return r._industry === ind;
+      if (r.company && indCoSet.has(r.company)) return true;
+      return false;
+    };
+    const allRowsFor = tbl => {
+      const a = Array.isArray(recs[tbl]) ? recs[tbl] : [];
+      const b = Array.isArray(custRecs[tbl]) ? custRecs[tbl] : [];
+      return b.length ? a.concat(b) : a;
+    };
+
+    if (isRegEdit) {
+      const tbl = modalForm === 'customer' ? 'customers' : 'suppliers';
+      allRowsFor(tbl).forEach(r => {
+        if (!matchScopeRow(r)) return;
+        if (typeof isSelfEditingRow === 'function' && isSelfEditingRow(r, tbl)) return;
+        push(r.name || r.Customer || r.Supplier);
+      });
+      const fMap = fIdx ? (modalForm === 'customer' ? fIdx.customer : fIdx.supplier) : null;
+      return typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : out;
+    }
+
+    const wantCust = partyKind === 'customer' || partyKind === 'truck_owner';
+    const wantSup = partyKind === 'supplier' || partyKind === 'truck_owner';
+    const wantCp = partyKind === 'counterparty';
+
+    if (wantCust) {
+      allRowsFor('customers').forEach(c => { if (matchScopeRow(c)) push(c.name || c.Customer); });
+      if (isMfg && SEED && SEED.models) {
+        ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].forEach(mk => {
+          const m = SEED.models[mk];
+          if (m && Array.isArray(m.customers)) m.customers.forEach(c => push(c && c.Customer));
+        });
+        allRowsFor('sales_tickets').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+        allRowsFor('price_rules').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+      }
+      allRowsFor('receipts').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+    }
+    if (wantSup) {
+      allRowsFor('suppliers').forEach(s => { if (matchScopeRow(s)) push(s.name || s.Supplier); });
+      if (isMfg && SEED && SEED.models) {
+        ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].forEach(mk => {
+          const m = SEED.models[mk];
+          if (m && Array.isArray(m.suppliers)) m.suppliers.forEach(s => push(s && s.Supplier));
+        });
+        allRowsFor('raw_purchases').forEach(r => { if (matchScopeRow(r)) { push(r.site_owner); push(r.truck_owner); } });
+        allRowsFor('price_rules').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+      }
+      allRowsFor('expenses').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+      allRowsFor('settlements').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+    }
+    if (isMfg && partyKind === 'truck_owner') {
+      allRowsFor('equipment').forEach(e => { if (e && !e.voided && !e._multiIndustrySeed) push(e.supplier); });
+      allRowsFor('drivers').forEach(d => { if (d && !d.voided && !d._multiIndustrySeed) push(d.truck_owner); });
+      allRowsFor('sales_tickets').forEach(r => { if (matchScopeRow(r)) push(r.truck_owner); });
+    }
+
+    if (!isMfg) {
+      const live = (SEED && SEED.industryLive) || {};
+      const icr = (STATE && STATE.industryCustomRows) || {};
+      const overriddenIds = new Set();
+      Object.keys(icr).forEach(bk => {
+        const arr = icr[bk];
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const cr = arr[i];
+          if (!cr || typeof cr !== 'object') continue;
+          const rawId = String(cr.id || cr.code || '').trim();
+          if (!rawId) continue;
+          overriddenIds.add(rawId.toUpperCase());
+          if (typeof resolveLegacyIndustryId === 'function') {
+            const upgId = resolveLegacyIndustryId(rawId);
+            if (upgId) overriddenIds.add(String(upgId).trim().toUpperCase());
+          }
+        }
+      });
+      const walkLive = (rows, fields) => {
+        if (!Array.isArray(rows)) return;
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.voided || r.voided_at) continue;
+          if (!demoActive && r._demoSpineRow) continue;
+          const rKey = String(r.id || r.code || '').trim().toUpperCase();
+          if (rKey && overriddenIds.has(rKey)) continue;
+          if (r.id && isIndustryDomainRowVoided(ind, r.id)) continue;
+          for (let fi = 0; fi < fields.length; fi++) push(r[fields[fi]]);
+        }
+      };
+      const walkCustom = (buckets, fields) => {
+        for (let bi = 0; bi < buckets.length; bi++) {
+          const arr = icr[buckets[bi]];
+          if (!Array.isArray(arr)) continue;
+          for (let i = 0; i < arr.length; i++) {
+            const r = arr[i];
+            if (!r || r.voided || r.voided_at) continue;
+            for (let fi = 0; fi < fields.length; fi++) push(r[fields[fi]]);
+          }
+        }
+      };
+      if (ind === 'Holding & Treasury') {
+        if (wantCp) {
+          const h = live.holding || {};
+          walkLive(h.sisterExternalLegs, ['party', 'counterparty']);
+          walkLive(h.partnerAgreements, ['partner']);
+          walkLive(h.partnerDistributions, ['partner']);
+          walkLive(h.facilitySchedules, ['lender']);
+          walkLive(h.loanAccruals, ['lender']);
+          walkCustom(['hld_extended', 'hld_partners', 'hld_loans'], ['party', 'counterparty', 'partner', 'lender']);
+          allRowsFor('external_movements').forEach(r => { if (matchScopeRow(r)) push(r.counterparty || r.party); });
+          allRowsFor('loans').forEach(r => { if (matchScopeRow(r)) push(r.counterparty || r.lender); });
+        }
+      } else if (ind === 'Hospitality & Resorts') {
+        const h = live.hospitality || {};
+        if (wantCust) {
+          walkLive(h.membershipRows, ['member']);
+          walkCustom(['hsp_memberships'], ['member']);
+        }
+        if (wantSup) {
+          walkLive(h.maintRows, ['vendor']);
+        }
+      } else if (ind === 'Automotive & Heavy Trading') {
+        const t = live.trading || {};
+        if (wantCust) {
+          walkLive(t.salesRows, ['customer']);
+          walkLive(t.receivableRows, ['customer']);
+          walkLive(t.serialUnits, ['buyer']);
+          walkCustom(['trd_sales'], ['customer']);
+        }
+        if (wantSup) {
+          walkLive(t.importRows, ['supplier']);
+          walkLive(t.grnRows, ['supplier']);
+          walkLive(t.targetRows, ['supplier']);
+          walkCustom(['trd_purchases', 'trd_targets'], ['supplier']);
+        }
+      } else if (ind === 'Real Estate & Property') {
+        const re = live.realestate || {};
+        if (wantCust) {
+          walkLive(re.leases, ['tenant']);
+          walkLive(re.invoices, ['tenant']);
+          walkLive(re.receipts, ['tenant']);
+          walkLive(re.units, ['tenant']);
+          walkLive(re.sales, ['buyer']);
+          walkCustom(['re_leases', 're_invoicing', 're_sales'], ['tenant', 'buyer']);
+        }
+        if (wantSup) {
+          walkLive(re.workorders, ['contractor']);
+          walkCustom(['re_workorders'], ['contractor']);
+        }
+      } else if (ind === 'Insurance & Brokerage') {
+        const ins = live.insurance || {};
+        if (wantCust) {
+          walkLive(ins.policies, ['client']);
+          walkLive(ins.billing, ['client']);
+          walkLive(ins.claims, ['client']);
+          walkLive(ins.items, ['client']);
+          walkLive(ins.renewals, ['client']);
+          walkCustom(['ins_policies', 'ins_claims'], ['client']);
+        }
+        if (wantSup) {
+          walkLive(ins.policies, ['carrier']);
+          walkLive(ins.billing, ['carrier']);
+          walkLive(ins.claims, ['carrier']);
+          walkLive(ins.agreements, ['carrier']);
+          walkLive(ins.catalogue, ['carrier']);
+          walkLive(ins.remittances, ['carrier']);
+          walkLive(ins.renewals, ['carrier']);
+          walkLive(ins.statements, ['carrier']);
+          walkCustom(['ins_policies', 'ins_claims', 'ins_agreements', 'ins_remittances'], ['carrier']);
+        }
+      }
+      if (demoActive && inputEl && inputEl.list) {
+        Array.from(inputEl.list.querySelectorAll('option')).forEach(o => push(o && o.value));
+      }
+    }
+
+    const fMap = fIdx
+      ? (partyKind === 'customer'
+          ? fIdx.customer
+          : (partyKind === 'truck_owner'
+              ? fIdx.truckOwner
+              : (partyKind === 'counterparty' ? fIdx.counterparty : fIdx.supplier)))
+      : null;
+    const ranked = typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : Array.from(new Set(out));
+    if (cacheKey && fIdx) fIdx._partyTypoPools.set(cacheKey, ranked);
+    return ranked;
+  }
+
+  function syncPartyTypoForInput(el, ctx = {}) {
+    if (!el || !el.id) return false;
+    const isDom = Boolean(ctx.isDomainModal);
+    const modalForm = typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || '');
+    const kind = resolvePartyFieldKind(el, isDom, modalForm);
+    if (!kind) return false;
+    const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+    if (!wrap) return false;
+    const barId = `partyTypo_${el.id}`;
+    let bar = wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`) || $(barId);
+    const hideBar = () => {
+      if (!bar) return;
+      bar.hidden = true;
+      bar.dataset.matchSig = '';
+      bar.dataset.typedNorm = '';
+    };
+    const isLocked = el.disabled || el.readOnly || el.type === 'hidden' || Boolean(el.closest('[hidden]')) || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id));
+    if (isLocked) { hideBar(); return false; }
+    const rawVal = String(el.value || '').trim();
+    if (!rawVal || nearCopyPartyKey(rawVal).length < 4) { hideBar(); return false; }
+    const isEdit = typeof ctx.isEditMode === 'function' ? ctx.isEditMode() : Boolean(ctx.isEditMode);
+    const initRaw = el.dataset.partyInitVal !== undefined ? el.dataset.partyInitVal : el.dataset.initVal;
+    if (isEdit && initRaw !== undefined && norm(rawVal) === norm(initRaw)) { hideBar(); return false; }
+    if (!isDom && (modalForm === 'customer' || modalForm === 'supplier') && wrap.querySelector('.univ-dup-hint')) {
+      hideBar();
+      return false;
+    }
+    const co = typeof ctx.getCo === 'function' ? ctx.getCo() : (val('f_company') || '');
+    const ind = typeof ctx.getInd === 'function' ? ctx.getInd() : '';
+    const candidates = getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom });
+    const match = findNearPartyMatch(rawVal, candidates);
+    if (!match) { hideBar(); return false; }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = barId;
+      bar.className = 'party-typo-bar';
+      bar.setAttribute('data-party-typo-for', el.id);
+      wrap.appendChild(bar);
+    }
+    const lblKind = kind === 'customer' ? 'customer' : (kind === 'counterparty' ? 'counterparty' : 'supplier');
+    const sig = `${lblKind}|${match}`;
+    bar.dataset.typedNorm = norm(rawVal);
+    if (bar.dataset.matchSig !== sig) {
+      bar.dataset.matchSig = sig;
+      const lbl = lblKind === 'customer'
+        ? 'One letter off existing customer:'
+        : (lblKind === 'counterparty' ? 'One letter off existing counterparty:' : 'One letter off existing supplier:');
+      bar.innerHTML = `<span class="party-typo-msg">${ic('warn')}<span>${esc(lbl)}</span> <b data-no-i18n="1">${esc(match)}</b></span><button type="button" class="party-typo-use-btn" data-use-party-field="${esc(el.id)}" data-use-party-name="${esc(match)}"><span>Use</span> <b data-no-i18n="1">${esc(match)}</b></button>`;
+      if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(bar);
+      }
+    }
+    bar.hidden = false;
+    return true;
+  }
+
+  function syncFormPartyTypoHints(host, ctx) {
+    if (!host || !host.isConnected) return;
+    const effCtx = ctx || host._partyTypoCtx || {};
+    const selStr = effCtx.isDomainModal
+      ? '#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender'
+      : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner';
+    host.querySelectorAll(selStr).forEach(el => syncPartyTypoForInput(el, effCtx));
+  }
+
+  function schedulePartyTypoCheck(host) {
+    if (partyTypoTimer) clearTimeout(partyTypoTimer);
+    partyTypoTimer = 0;
+    if (!host || !host.isConnected || FORM_UI.hydrating) return;
+    partyTypoTimer = setTimeout(() => {
+      partyTypoTimer = 0;
+      if (!host.isConnected || FORM_UI.hydrating || STATE.saving) return;
+      syncFormPartyTypoHints(host);
+    }, NEAR_COPY_LIVE_DELAY_MS);
+  }
+
+  function wirePartyTypoHost(host, ctx) {
+    if (!host) return;
+    host._partyTypoCtx = ctx || {};
+    if (host.dataset.partyTypoWired === '1') return;
+    host.dataset.partyTypoWired = '1';
+    const isTargetInp = el => Boolean(el && el.id && resolvePartyFieldKind(el, Boolean((host._partyTypoCtx || {}).isDomainModal), typeof (host._partyTypoCtx || {}).getModalForm === 'function' ? host._partyTypoCtx.getModalForm() : ''));
+    host.addEventListener('input', ev => {
+      if (FORM_UI.hydrating) return;
+      const el = ev.target;
+      if (!isTargetInp(el)) return;
+      const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+      const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
+      if (bar && norm(el.value) !== bar.dataset.typedNorm) {
+        bar.hidden = true;
+      }
+      if (!host._partyTypoCtx.isDomainModal && FORM_UI.postAttempted) {
+        syncPartyTypoForInput(el, host._partyTypoCtx);
+      } else {
+        schedulePartyTypoCheck(host);
+      }
+    });
+    host.addEventListener('change', ev => {
+      if (FORM_UI.hydrating) return;
+      if (isTargetInp(ev.target)) syncPartyTypoForInput(ev.target, host._partyTypoCtx);
+    });
+    host.addEventListener('focusout', ev => {
+      if (FORM_UI.hydrating) return;
+      const el = ev.target;
+      if (!isTargetInp(el)) return;
+      setTimeout(() => {
+        if (!el.isConnected || FORM_UI.hydrating || document.activeElement === el) return;
+        const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+        const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
+        if (bar && bar.contains(document.activeElement)) return;
+        syncPartyTypoForInput(el, host._partyTypoCtx);
+      }, 130);
+    });
+    host.addEventListener('mousedown', ev => {
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump') : null;
+      if (t) ev.preventDefault();
+    });
+    host.addEventListener('click', ev => {
+      const jumpBtn = ev.target && ev.target.closest ? ev.target.closest('#nearCopyAmtJump') : null;
+      if (jumpBtn) {
+        ev.preventDefault();
+        const ncWrap = $('wrap_nearcopyok');
+        const ncCb = $('f_nearcopyok');
+        if (ncWrap && !ncWrap.hidden) {
+          try {
+            ncWrap.scrollIntoView({ behavior: (typeof navigator !== 'undefined' && navigator.webdriver) ? 'auto' : 'smooth', block: 'center' });
+          } catch (_) {
+            try { ncWrap.scrollIntoView(); } catch (__) {}
+          }
+          ncWrap.classList.remove('is-jump-flash');
+          void ncWrap.offsetWidth;
+          ncWrap.classList.add('is-jump-flash');
+          if (ncCb) {
+            try { ncCb.focus({ preventScroll: true }); } catch (_) {}
+          }
+        }
+        return;
+      }
+      const useBtn = ev.target && ev.target.closest ? ev.target.closest('[data-use-party-field]') : null;
+      if (!useBtn) return;
+      ev.preventDefault();
+      const fid = useBtn.getAttribute('data-use-party-field') || '';
+      const nextName = useBtn.getAttribute('data-use-party-name') || '';
+      const inpEl = (fid && (host.querySelector('#' + fid) || $(fid))) || null;
+      if (!inpEl || !nextName) return;
+      const curBar = useBtn.closest('.party-typo-bar');
+      if (curBar) {
+        curBar.hidden = true;
+        curBar.dataset.matchSig = '';
+        curBar.dataset.typedNorm = '';
+      }
+      const isDom = Boolean((host._partyTypoCtx || {}).isDomainModal);
+      if (!isDom) FORM_UI.userInteracted = true;
+      inpEl.value = nextName;
+      try { inpEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      try { inpEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+      if (!isDom && NEAR_COPY_LIVE_FORMS.includes(STATE.modalForm) && $('wrap_nearcopyok')) {
+        if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
+        nearCopyLiveTimer = 0;
+        try { validateAndBuild({ skipRecalc: false, preview: true }); } catch (_) {}
+      }
+      try { inpEl.focus({ preventScroll: true }); } catch (_) {}
+    });
   }
 
   function validateAndBuild(opts = {}) {
@@ -111737,7 +112351,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -112249,6 +112863,7 @@
 
   function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
+    cancelNearCopyLiveCheck();
     const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
     if (!force && isInteractiveClose && isEntryModalDirty()) {
       promptUnsavedEntrySwitch({ type: 'close' });

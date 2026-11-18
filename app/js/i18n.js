@@ -13225,7 +13225,15 @@
       "Day Revenue (Ex-Tax)": "إيرادات اليوم (دون ضريبة)",
       "Premium & Commission": "الأقساط والعمولات",
       "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "تتطلب الجداول والتكاليف المباشرة صلاحيات المصاريف والتدفقات النقدية ودفتر الأستاذ العام.",
-      "Gross Premium": "إجمالي الأقساط"
+      "Gross Premium": "إجمالي الأقساط",
+      "Looks like an entry already in ISABI, see below": "يشبه قيداً موجوداً في إيسابي، انظر أدناه",
+      "One letter off existing supplier:": "يختلف بحرف واحد عن مورد موجود:",
+      "One letter off existing customer:": "يختلف بحرف واحد عن عميل موجود:",
+      "One letter off existing counterparty:": "يختلف بحرف واحد عن طرف موجود:",
+      "Same day, entries under a similar name add up to this amount": "نفس اليوم، ومجموع القيود المسجلة باسم مشابه يساوي هذا المبلغ",
+      "One day apart, entries under a similar name add up to this amount": "بفارق يوم واحد، مجموع القيود المسجلة باسم مشابه يساوي هذا المبلغ",
+      "Same day, similar customer name, same truck and amount, ticket number one digit apart": "نفس اليوم واسم عميل مشابه ونفس الشاحنة والمبلغ، ورقم الإيصال يختلف برقم واحد",
+      "Same day and similar supplier name, amount differs by exactly the 11% VAT": "نفس اليوم واسم مورد مشابه، والمبلغ يختلف بقيمة ضريبة 11% تماماً"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -26432,7 +26440,15 @@
       "Day Revenue (Ex-Tax)": "Revenus du jour (HT)",
       "Premium & Commission": "Primes & commissions",
       "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "Les échéanciers et coûts directs nécessitent les droits Dépenses, Trésorerie & Grand Livre.",
-      "Gross Premium": "Prime brute"
+      "Gross Premium": "Prime brute",
+      "Looks like an entry already in ISABI, see below": "Ressemble à une écriture déjà dans ISABI, voir ci-dessous",
+      "One letter off existing supplier:": "À une lettre d'un fournisseur existant :",
+      "One letter off existing customer:": "À une lettre d'un client existant :",
+      "One letter off existing counterparty:": "À une lettre d'un tiers existant :",
+      "Same day, entries under a similar name add up to this amount": "Même jour, des écritures sous un nom proche totalisent ce montant",
+      "One day apart, entries under a similar name add up to this amount": "À un jour d'écart, des écritures sous un nom proche totalisent ce montant",
+      "Same day, similar customer name, same truck and amount, ticket number one digit apart": "Même jour, nom de client proche, même camion et montant, numéro de bon à un chiffre près",
+      "Same day and similar supplier name, amount differs by exactly the 11% VAT": "Même jour et nom de fournisseur proche, le montant diffère exactement de la TVA de 11 %"
     }
   };
 
