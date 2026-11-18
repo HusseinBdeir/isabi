@@ -1609,8 +1609,10 @@
 
     // Unified Cash & Treasury Movements for Panel 4 (Cash Sales, AR, AP, Ext In/Out, Loans, Cash Expenses, Payroll, FX)
     const cashMoveRows = [];
+    // Config / VATConfig are balances carried forward, not cash (owner 2026-11-18; app.js isCarriedBalanceMethod).
+    const isCarried = row => typeof ctx.isCarriedBalanceMethod === 'function' && ctx.isCarriedBalanceMethod(row);
     dayRcpts.forEach(r => {
-      if (ctx.receiptKind(r) === 'Excluded') return;
+      if (ctx.receiptKind(r) === 'Excluded' || isCarried(r)) return;
       const amt = round2(Number(r.amount || 0) + Number(r.discount || 0));
       cashMoveRows.push({
         rkey: 'receipts',
@@ -1691,7 +1693,7 @@
       });
     });
     daySets.forEach(s => {
-      if (ctx.settlementKind(s) === 'Excluded') return;
+      if (ctx.settlementKind(s) === 'Excluded' || isCarried(s)) return;
       const amt = round2(Number(s.amount || 0) + Number(s.discount || 0));
       cashMoveRows.push({
         rkey: 'settlements',

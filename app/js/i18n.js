@@ -10704,6 +10704,37 @@
       "A delivered price that does not cover the pickup price plus the diesel for the round trip loses money on every load. Diesel is costed at the latest priced delivery, so a fuel price rise shows at once which agreements stopped paying.": "سعر التوصيل الذي لا يغطي سعر الاستلام زائد مازوت الذهاب والإياب يخسر في كل نقلة. يُحتسب المازوت على آخر توريد مسعّر، فيظهر فوراً عند ارتفاع سعره أي الاتفاقيات لم تعد رابحة.",
       "Min Own-Fleet Loads in 90 Days to Flag": "أدنى عدد نقلات بأسطولنا خلال 90 يوماً للتنبيه",
       "Critical 90-Day Shortfall": "عجز حرج خلال 90 يوماً",
+      "End Date cannot be before Start Date.": "لا يمكن أن يسبق تاريخ الانتهاء تاريخ البداية.",
+      "Loads Off the Logged Truck Size": "نقلات بغير حجم الشاحنة المسجّل",
+      "LOADS OFF THE LOGGED TRUCK SIZE": "نقلات بغير حجم الشاحنة المسجّل",
+      "Truck Sizes": "أحجام الشاحنات",
+      "Rule #28 · Truck Sizes": "قاعدة #28 · أحجام الشاحنات",
+      "AI Sentinels & Truck Logs": "المراقب الذكي وسجلات الشاحنات",
+      "A truck is billed and paid by its size. When its tickets carry another quantity than the size its log gives that day, either the truck changed size and nobody logged it, or a quantity was keyed wrong. Both cost money on every load until someone looks.": "تُفوتَر الشاحنة ويُدفع لها بحسب حجمها. عندما تحمل إيصالاتها كمية غير الحجم الذي يعطيه سجلها في ذلك اليوم، فإما أن حجم الشاحنة تغيّر ولم يُسجَّل، أو أن كمية أُدخلت خطأً. وكلاهما يكلّف مالاً في كل نقلة إلى أن يُراجَع.",
+      "Days of Tickets to Check": "عدد أيام الإيصالات المراد فحصها",
+      "Difference Allowed per Load": "الفرق المسموح لكل نقلة",
+      "Min Loads at the Same Size to Flag": "أدنى عدد نقلات بالحجم نفسه للتنبيه",
+      "Critical Value of the Difference": "قيمة الفرق الحرجة",
+      "Reads every m³ Sales and Raw Material ticket of the last": "يقرأ كل إيصال مبيعات ومواد أولية بالمتر المكعب خلال آخر",
+      "days against the size its truck's log (or price agreement) gives that day, and lists a truck once": "يوماً مقابل الحجم الذي يعطيه سجل شاحنته (أو اتفاقية السعر) في ذلك اليوم، ويدرج الشاحنة عندما تحمل",
+      "or more loads carry the same other size, more than": "نقلة أو أكثر الحجم الآخر نفسه، بفارق يزيد على",
+      "apart. Critical once the difference is worth": "ويصبح حرجاً عندما تبلغ قيمة الفرق",
+      "at the tickets' own rates.": "بأسعار الإيصالات نفسها.",
+      "Live example: A truck logged at 28 m³ whose last 14 tickets read 27 m³ is listed with its loads, the m³ and the value of the difference; add a log from the day the size changed, or correct the tickets.": "مثال حي: شاحنة مسجّلة بحجم 28 م³ وآخر 14 إيصالاً لها بحجم 27 م³ تُدرج مع نقلاتها وفرق الأمتار المكعبة وقيمته؛ أضف سجلاً من يوم تغيّر الحجم، أو صحّح الإيصالات.",
+      "SIZES MATCH": "الأحجام مطابقة",
+      "Open Fleet": "فتح الأسطول",
+      "Size From": "مصدر الحجم",
+      "Logged Size": "الحجم المسجّل",
+      "On the Tickets": "في الإيصالات",
+      "First Load": "أول نقلة",
+      "m³ Apart": "فرق م³",
+      "Worth": "القيمة",
+      "Truck Log": "سجل الشاحنة",
+      "Click to start a new log from this entry": "اضغط لبدء سجل جديد انطلاقاً من هذا القيد",
+      "Changes this log in place": "يعدّل هذا السجل في مكانه",
+      "No ticket changes": "لا يتغيّر أي إيصال",
+      "1 ticket changes": "يتغيّر إيصال واحد",
+      "1 quantity re-sized": "تُعدَّل كمية واحدة",
       "Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least": "يشغّل حساب صافي العائد على كل اتفاقية توصيل ونقل للعميل سارية: سعر التوصيل مقابل سعر الاستلام زائد مازوت الذهاب والإياب (المسافة × استهلاك الأسطول المقاس × آخر سعر للمازوت). يسرد الاتفاقيات دون نقطة التعادل التي لها على الأقل",
       "own-fleet loads in 90 days and escalates to critical from": "نقلة بأسطولنا خلال 90 يوماً ويصعّد إلى حرج ابتداءً من",
       "lost.": "خسارة.",
@@ -10898,6 +10929,8 @@
       "Record restored, with the back-pay rows of this salary voucher": "استُعيد القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
       "Till on This Day": "الصندوق في هذا اليوم",
       "Drag to replay the till day by day": "اسحب لاستعراض رصيد الصندوق يوماً بيوم",
+      "Opening Till": "رصيد الصندوق الافتتاحي",
+      "Opening balances the till starts from on its first day (not payments)": "الأرصدة الافتتاحية التي يبدأ منها الصندوق في يومه الأول (ليست دفعات)",
       "Workbook Cash Edited Since Last Update": "تم تعديل نقد الدفتر بعد آخر تحديث",
       "Net Difference": "صافي الفرق",
       "Run a workbook update to refresh ISABI.": "شغّل تحديث الدفاتر لتحديث أرقام إيسابي.",
@@ -13223,7 +13256,58 @@
       "Day Revenue (Ex-Tax)": "إيرادات اليوم (دون ضريبة)",
       "Premium & Commission": "الأقساط والعمولات",
       "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "تتطلب الجداول والتكاليف المباشرة صلاحيات المصاريف والتدفقات النقدية ودفتر الأستاذ العام.",
-      "Gross Premium": "إجمالي الأقساط"
+      "Gross Premium": "إجمالي الأقساط",
+      "Looks like an entry already in ISABI, see below": "يشبه قيداً موجوداً في إيسابي، انظر أدناه",
+      "One letter off existing supplier:": "يختلف بحرف واحد عن مورد موجود:",
+      "One letter off existing customer:": "يختلف بحرف واحد عن عميل موجود:",
+      "One letter off existing counterparty:": "يختلف بحرف واحد عن طرف موجود:",
+      "Same day, entries under a similar name add up to this amount": "نفس اليوم، ومجموع القيود المسجلة باسم مشابه يساوي هذا المبلغ",
+      "One day apart, entries under a similar name add up to this amount": "بفارق يوم واحد، مجموع القيود المسجلة باسم مشابه يساوي هذا المبلغ",
+      "Same day, similar customer name, same truck and amount, ticket number one digit apart": "نفس اليوم واسم عميل مشابه ونفس الشاحنة والمبلغ، ورقم الإيصال يختلف برقم واحد",
+      "Same day and similar supplier name, amount differs by exactly the 11% VAT": "نفس اليوم واسم مورد مشابه، والمبلغ يختلف بقيمة ضريبة 11% تماماً",
+      "Synced workbook rows cannot be restored directly.": "لا يمكن استعادة السجلات المتزامنة مع الدفتر مباشرة.",
+      "Activity Timeline": "الجدول الزمني للإلغاءات",
+      "Audit Brief": "ملخص التدقيق",
+      "Audit lens filters": "مرشحات عدسة التدقيق",
+      "By void count": "حسب عدد الإلغاءات",
+      "Captured Fields": "الحقول المسجلة",
+      "Clear Filters": "مسح المرشحات",
+      "Clear Note": "مسح الملاحظة",
+      "Click bar to isolate day": "اضغط على العمود لعزل اليوم",
+      "Click to filter": "اضغط للتصفية",
+      "Filter options": "تصفية الخيارات",
+      "Gate-till voids are final and cannot be reversed here.": "إلغاءات صندوق البوابة نهائية ولا يمكن عكسها من هنا.",
+      "Hide Insights": "إخفاء التحليلات",
+      "Industry": "القطاع",
+      "Inspect Live Record": "فحص السجل النشط",
+      "Linked Child Lines": "البنود التابعة المرتبطة",
+      "Manual Void": "إلغاء يدوي",
+      "Matched 1-to-1 with an active workbook row; controlled by the workbook ledger.": "مطابق واحد لواحد مع سطر نشط في الدفتر؛ يُدار عبر سجل الدفتر.",
+      "Matched Workbook Rows": "سطور الدفتر المطابقة",
+      "Missing Reason": "بدون سبب",
+      "No actor activity.": "لا يوجد نشاط للمستخدمين.",
+      "No dated activity in this view.": "لا يوجد نشاط مؤرخ في هذا العرض.",
+      "No matching options": "لا توجد خيارات مطابقة",
+      "No module activity.": "لا يوجد نشاط للوحدات.",
+      "No reason recorded": "لم يُسجل سبب",
+      "Note Updated By": "تم تحديث الملاحظة بواسطة",
+      "Open Counterparty 360°": "فتح ملف الطرف 360°",
+      "Payroll details restricted": "تفاصيل الرواتب مقيدة",
+      "Record ID": "معرّف السجل",
+      "Reopenable": "قابل لإعادة الفتح",
+      "Reopening this workbook match restores it to active books and keeps it active across future top-ups.": "إعادة فتح هذه المطابقة تُرجع السجل إلى الدفاتر النشطة وتُبقيه نشطاً في التحديثات القادمة.",
+      "Restorable": "قابل للاسترجاع",
+      "Restore the parent voucher first; linked lines restore automatically.": "استرجع السند الأب أولاً؛ تُسترجع البنود المرتبطة تلقائياً.",
+      "Restoring returns this record to active books immediately.": "الاسترجاع يعيد هذا السجل إلى الدفاتر النشطة فوراً.",
+      "Show 200 More": "عرض 200 إضافية",
+      "Show Insights": "عرض التحليلات",
+      "Till Lines": "بنود الصندوق",
+      "Top Actors": "أكثر المستخدمين",
+      "Top Modules": "أكثر الوحدات",
+      "Void Reason": "سبب الإلغاء",
+      "Void Reason & Audit Note": "سبب الإلغاء وملاحظة التدقيق",
+      "Workbook Sync": "مزامنة الدفتر",
+      "Voided record": "سجل ملغى"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -23909,6 +23993,37 @@
       "A delivered price that does not cover the pickup price plus the diesel for the round trip loses money on every load. Diesel is costed at the latest priced delivery, so a fuel price rise shows at once which agreements stopped paying.": "Un prix livré qui ne couvre pas le prix départ plus le gasoil de l'aller-retour perd de l'argent à chaque voyage. Le gasoil est valorisé à la dernière livraison chiffrée : une hausse montre aussitôt quels accords ne sont plus rentables.",
       "Min Own-Fleet Loads in 90 Days to Flag": "Voyages flotte min. sur 90 jours pour signaler",
       "Critical 90-Day Shortfall": "Manque critique sur 90 jours",
+      "End Date cannot be before Start Date.": "La date de fin ne peut pas précéder la date de début.",
+      "Loads Off the Logged Truck Size": "Voyages hors volume du journal du camion",
+      "LOADS OFF THE LOGGED TRUCK SIZE": "VOYAGES HORS VOLUME DU JOURNAL DU CAMION",
+      "Truck Sizes": "Volumes des camions",
+      "Rule #28 · Truck Sizes": "Règle #28 · Volumes des camions",
+      "AI Sentinels & Truck Logs": "Sentinelles IA et journaux des camions",
+      "A truck is billed and paid by its size. When its tickets carry another quantity than the size its log gives that day, either the truck changed size and nobody logged it, or a quantity was keyed wrong. Both cost money on every load until someone looks.": "Un camion est facturé et payé selon son volume. Quand ses bons portent une autre quantité que le volume donné par son journal ce jour-là, soit le camion a changé de volume sans que ce soit noté, soit une quantité a été mal saisie. Dans les deux cas, chaque voyage coûte de l'argent tant que personne ne regarde.",
+      "Days of Tickets to Check": "Jours de bons à contrôler",
+      "Difference Allowed per Load": "Écart toléré par voyage",
+      "Min Loads at the Same Size to Flag": "Voyages minimum au même volume pour signaler",
+      "Critical Value of the Difference": "Valeur critique de l'écart",
+      "Reads every m³ Sales and Raw Material ticket of the last": "Lit chaque bon de vente et de matière première en m³ des derniers",
+      "days against the size its truck's log (or price agreement) gives that day, and lists a truck once": "jours par rapport au volume que le journal du camion (ou l'accord de prix) donne ce jour-là, et liste un camion dès que",
+      "or more loads carry the same other size, more than": "voyages ou plus portent le même autre volume, à plus de",
+      "apart. Critical once the difference is worth": "d'écart. Critique dès que l'écart vaut",
+      "at the tickets' own rates.": "aux tarifs des bons.",
+      "Live example: A truck logged at 28 m³ whose last 14 tickets read 27 m³ is listed with its loads, the m³ and the value of the difference; add a log from the day the size changed, or correct the tickets.": "Exemple : un camion noté à 28 m³ dont les 14 derniers bons indiquent 27 m³ est listé avec ses voyages, l'écart en m³ et sa valeur ; ajoutez un journal à partir du jour où le volume a changé, ou corrigez les bons.",
+      "SIZES MATCH": "VOLUMES CONFORMES",
+      "Open Fleet": "Ouvrir la flotte",
+      "Size From": "Volume selon",
+      "Logged Size": "Volume du journal",
+      "On the Tickets": "Sur les bons",
+      "First Load": "Premier voyage",
+      "m³ Apart": "Écart m³",
+      "Worth": "Valeur",
+      "Truck Log": "Journal du camion",
+      "Click to start a new log from this entry": "Cliquer pour créer un nouveau journal à partir de cette entrée",
+      "Changes this log in place": "Modifie ce journal sur place",
+      "No ticket changes": "Aucun bon ne change",
+      "1 ticket changes": "1 bon change",
+      "1 quantity re-sized": "1 quantité redimensionnée",
       "Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least": "Calcule le net-back de chaque accord de livraison et de transport client en vigueur : prix livré face au prix départ plus le gasoil de l'aller-retour (distance x consommation mesurée x dernier prix du gasoil). Liste les accords sous le seuil ayant au moins",
       "own-fleet loads in 90 days and escalates to critical from": "voyages flotte sur 90 jours et passe en critique à partir de",
       "lost.": "perdus.",
@@ -24103,6 +24218,8 @@
       "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire",
       "Till on This Day": "Caisse à cette date",
       "Drag to replay the till day by day": "Faites glisser pour rejouer la caisse jour par jour",
+      "Opening Till": "Caisse d’ouverture",
+      "Opening balances the till starts from on its first day (not payments)": "Soldes d’ouverture dont la caisse part à son premier jour (pas des paiements)",
       "Workbook Cash Edited Since Last Update": "Trésorerie du classeur modifiée depuis la dernière mise à jour",
       "Net Difference": "Écart net",
       "Run a workbook update to refresh ISABI.": "Exécutez une mise à jour des classeurs pour actualiser ISABI.",
@@ -26428,7 +26545,58 @@
       "Day Revenue (Ex-Tax)": "Revenus du jour (HT)",
       "Premium & Commission": "Primes & commissions",
       "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "Les échéanciers et coûts directs nécessitent les droits Dépenses, Trésorerie & Grand Livre.",
-      "Gross Premium": "Prime brute"
+      "Gross Premium": "Prime brute",
+      "Looks like an entry already in ISABI, see below": "Ressemble à une écriture déjà dans ISABI, voir ci-dessous",
+      "One letter off existing supplier:": "À une lettre d'un fournisseur existant :",
+      "One letter off existing customer:": "À une lettre d'un client existant :",
+      "One letter off existing counterparty:": "À une lettre d'un tiers existant :",
+      "Same day, entries under a similar name add up to this amount": "Même jour, des écritures sous un nom proche totalisent ce montant",
+      "One day apart, entries under a similar name add up to this amount": "À un jour d'écart, des écritures sous un nom proche totalisent ce montant",
+      "Same day, similar customer name, same truck and amount, ticket number one digit apart": "Même jour, nom de client proche, même camion et montant, numéro de bon à un chiffre près",
+      "Same day and similar supplier name, amount differs by exactly the 11% VAT": "Même jour et nom de fournisseur proche, le montant diffère exactement de la TVA de 11 %",
+      "Synced workbook rows cannot be restored directly.": "Les lignes synchronisées avec le classeur ne peuvent pas être restaurées directement.",
+      "Activity Timeline": "Chronologie des annulations",
+      "Audit Brief": "Synthèse d'audit",
+      "Audit lens filters": "Filtres d'analyse d'audit",
+      "By void count": "Par nombre d'annulations",
+      "Captured Fields": "Champs enregistrés",
+      "Clear Filters": "Effacer les filtres",
+      "Clear Note": "Effacer la note",
+      "Click bar to isolate day": "Cliquer pour isoler le jour",
+      "Click to filter": "Cliquer pour filtrer",
+      "Filter options": "Filtrer les options",
+      "Gate-till voids are final and cannot be reversed here.": "Les annulations de caisse d'entrée sont définitives et ne peuvent pas être annulées ici.",
+      "Hide Insights": "Masquer les aperçus",
+      "Industry": "Secteur",
+      "Inspect Live Record": "Inspecter l'écriture active",
+      "Linked Child Lines": "Lignes liées associées",
+      "Manual Void": "Annulation manuelle",
+      "Matched 1-to-1 with an active workbook row; controlled by the workbook ledger.": "Apparié 1 à 1 avec une ligne active du classeur ; géré par le registre du classeur.",
+      "Matched Workbook Rows": "Lignes du classeur appariées",
+      "Missing Reason": "Sans motif",
+      "No actor activity.": "Aucune activité utilisateur.",
+      "No dated activity in this view.": "Aucune activité datée dans cette vue.",
+      "No matching options": "Aucune option correspondante",
+      "No module activity.": "Aucune activité par module.",
+      "No reason recorded": "Aucun motif enregistré",
+      "Note Updated By": "Note mise à jour par",
+      "Open Counterparty 360°": "Ouvrir la fiche 360°",
+      "Payroll details restricted": "Détails de paie restreints",
+      "Record ID": "ID d'enregistrement",
+      "Reopenable": "Réouvrable",
+      "Reopening this workbook match restores it to active books and keeps it active across future top-ups.": "La réouverture rétablit l'écriture dans les livres actifs et la conserve active lors des mises à jour futures.",
+      "Restorable": "Restaurable",
+      "Restore the parent voucher first; linked lines restore automatically.": "Restaurez d'abord le justificatif principal ; les lignes liées suivront automatiquement.",
+      "Restoring returns this record to active books immediately.": "La restauration réactive immédiatement cet enregistrement dans les livres.",
+      "Show 200 More": "Afficher 200 de plus",
+      "Show Insights": "Afficher les aperçus",
+      "Till Lines": "Lignes de caisse",
+      "Top Actors": "Principaux utilisateurs",
+      "Top Modules": "Principaux modules",
+      "Void Reason": "Motif d'annulation",
+      "Void Reason & Audit Note": "Motif d'annulation et note d'audit",
+      "Workbook Sync": "Synchro classeur",
+      "Voided record": "Enregistrement annulé"
     }
   };
 
@@ -28414,6 +28582,25 @@
     m = trimmed.match(/^([\d,]+) NIGHT TRIPS LOSE$/i);
     if (m) return lang === 'ar' ? `${m[1]} نقلات ليلية خاسرة` : `${m[1]} VOYAGES DE NUIT DÉFICITAIRES`;
 
+    // Truck size Sentinel (rule #28): m³ tickets against the size the truck's log gives that day
+    m = trimmed.match(/^([\d,]+) m³ tickets of the last ([\d,]+) days checked against the size their truck's log gives that day: (?:([\d,]+) loads on ([\d,]+) trucks carry another size \(([\d.,]+) m³ apart in all, worth (-?\$[\d.,]+) at the tickets' own rates\)|(every load carries its logged size))\.(?: ([\d,]+) more fall on a day no log covers and are not judged\.)?$/i);
+    if (m) {
+      const tailAr = m[8] ? ` ${m[8]} إيصالاً آخر تقع في يوم لا يغطيه أي سجل ولا يُحكم عليها.` : '';
+      const tailFr = m[8] ? ` ${m[8]} autres tombent un jour qu'aucun journal ne couvre et ne sont pas jugés.` : '';
+      const headAr = `تم فحص ${m[1]} إيصالاً بالمتر المكعب لآخر ${m[2]} يوماً مقابل الحجم الذي يعطيه سجل الشاحنة في ذلك اليوم: `;
+      const headFr = `${m[1]} bons en m³ des ${m[2]} derniers jours comparés au volume que le journal du camion donne ce jour-là : `;
+      if (m[7]) return lang === 'ar' ? `${headAr}كل نقلة تحمل حجمها المسجّل.${tailAr}` : `${headFr}chaque voyage porte le volume de son journal.${tailFr}`;
+      return lang === 'ar'
+        ? `${headAr}${m[3]} نقلة على ${m[4]} شاحنة تحمل حجماً آخر (بفارق إجمالي ${m[5]} م³، قيمته ${m[6]} بأسعار الإيصالات نفسها).${tailAr}`
+        : `${headFr}${m[3]} voyages sur ${m[4]} camions portent un autre volume (${m[5]} m³ d'écart au total, soit ${m[6]} aux tarifs des bons).${tailFr}`;
+    }
+
+    m = trimmed.match(/^([\d,]+) LOADS OFF SIZE$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نقلة بغير الحجم` : `${m[1]} VOYAGES HORS VOLUME`;
+
+    m = trimmed.match(/^([\d,]+) days · Off by > ([\d.,]+) m³ · Loads >= ([\d,]+) · Crit >= (\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} يوماً · فرق > ${m[2]} م³ · النقلات >= ${m[3]} · حرج >= ${m[4]}` : `${m[1]} jours · Écart > ${m[2]} m³ · Voyages >= ${m[3]} · Critique >= ${m[4]}`;
+
     // Google Maps Free-Tier Quota Sentinel & Alert Rules (#24 / #06)
     m = trimmed.match(/^FREE TIER OK \(([\d.]+%)\)$/i);
     if (m) return lang === 'ar' ? `الباقة المجانية سليمة (${m[1]})` : `FORFAIT GRATUIT OK (${m[1]})`;
@@ -30213,6 +30400,60 @@
     if (m) return lang === 'ar' ? `أعيد فتح أو تمديد ${m[1]} من اتفاقيات الأسعار: نقلة أو اتفاقية جديدة خلال 90 يوماً` : `${m[1]} accord(s) de prix rouvert(s) ou prolongé(s) : un voyage ou un nouvel accord dans les 90 jours`;
     m = trimmed.match(/^(\d+)\s+price agreements?\s+closed after 90 days without a load$/i);
     if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار بعد 90 يوماً بلا نقلات` : `${m[1]} accord(s) de prix clôturé(s) après 90 jours sans voyage`;
+
+    // Truck log saved with a later start and another size, owner or driver: the earlier period stays as its own log
+    m = trimmed.match(/^(.+?)\s+·\s+Earlier log kept to\s+(\S+)$/i);
+    if (m) return `${translateCore(m[1].trim(), lang, depth + 1)} · ${lang === 'ar' ? `أُبقي السجل السابق حتى ${m[2]}` : `Journal précédent conservé jusqu'au ${m[2]}`}`;
+    m = trimmed.match(/^Earlier log kept to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أُبقي السجل السابق حتى ${m[1]}` : `Journal précédent conservé jusqu'au ${m[1]}`;
+
+    // Truck log forms: what the button will do, said under it before it is pressed (v19.6.390)
+    m = trimmed.match(/^Keeps\s+(\S+)\s+to\s+(\S+)\s+as its own log$/i);
+    if (m) return lang === 'ar' ? `يُبقي ${m[1]} إلى ${m[2]} كسجل مستقل` : `Conserve du ${m[1]} au ${m[2]} comme journal à part`;
+    m = trimmed.match(/^New log from\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `سجل جديد من ${m[1]}` : `Nouveau journal à partir du ${m[1]}`;
+    m = trimmed.match(/^Ends the log before it on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `ينهي السجل السابق في ${m[1]}` : `Clôt le journal précédent le ${m[1]}`;
+    m = trimmed.match(/^Moves this log's start from\s+(\S+)\s+to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `ينقل بداية هذا السجل من ${m[1]} إلى ${m[2]}` : `Déplace le début de ce journal du ${m[1]} au ${m[2]}`;
+    m = trimmed.match(/^The log before it then runs to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `فيمتد السجل السابق حتى ${m[1]}` : `Le journal précédent court alors jusqu'au ${m[1]}`;
+    m = trimmed.match(/^([\d,]+) tickets change$/i);
+    if (m) return lang === 'ar' ? `يتغيّر ${m[1]} إيصالاً` : `${m[1]} bons changent`;
+    m = trimmed.match(/^([\d,]+) quantities re-sized$/i);
+    if (m) return lang === 'ar' ? `تُعدَّل ${m[1]} كميات` : `${m[1]} quantités redimensionnées`;
+    // ... and why a save would be refused (the same words the forms give when the button is pressed)
+    m = trimmed.match(/^A log entry for (.+) already starts on (\S+)\. Use Edit on that row to change it, or pick a Start Date after (\S+)\.$/i);
+    if (m) return lang === 'ar'
+      ? `يوجد قيد سجل لـ ${m[1]} يبدأ في ${m[2]}. استخدم «تعديل» في ذلك السطر لتغييره، أو اختر تاريخ بداية بعد ${m[3]}.`
+      : `Un journal pour ${m[1]} commence déjà le ${m[2]}. Utilisez Modifier sur cette ligne pour le changer, ou choisissez une date de début après le ${m[3]}.`;
+    m = trimmed.match(/^New log Start Date \((\S+)\) cannot be before the previous log's Start Date \((\S+)\)\.$/i);
+    if (m) return lang === 'ar'
+      ? `تاريخ بداية السجل الجديد (${m[1]}) لا يمكن أن يسبق تاريخ بداية السجل السابق (${m[2]}).`
+      : `La date de début du nouveau journal (${m[1]}) ne peut pas précéder celle du journal précédent (${m[2]}).`;
+    m = trimmed.match(/^New log Start Date \((\S+)\) must be after the previous log's End Date \((\S+)\)\.$/i);
+    if (m) return lang === 'ar'
+      ? `تاريخ بداية السجل الجديد (${m[1]}) يجب أن يكون بعد تاريخ انتهاء السجل السابق (${m[2]}).`
+      : `La date de début du nouveau journal (${m[1]}) doit être après la date de fin du journal précédent (${m[2]}).`;
+    m = trimmed.match(/^Log Start Date \((\S+)\) must be after the preceding log's (Start|End) Date \((\S+)\)\.$/i);
+    if (m) {
+      const isStart = /^start$/i.test(m[2]);
+      return lang === 'ar'
+        ? `تاريخ بداية السجل (${m[1]}) يجب أن يكون بعد تاريخ ${isStart ? 'بداية' : 'انتهاء'} السجل الذي يسبقه (${m[3]}).`
+        : `La date de début du journal (${m[1]}) doit être après la date de ${isStart ? 'début' : 'fin'} du journal qui le précède (${m[3]}).`;
+    }
+    m = trimmed.match(/^Log (Start|End) Date \((\S+)\) must be before the next log's Start Date \((\S+)\)\.$/i);
+    if (m) {
+      const isStart = /^start$/i.test(m[1]);
+      return lang === 'ar'
+        ? `تاريخ ${isStart ? 'بداية' : 'انتهاء'} السجل (${m[2]}) يجب أن يكون قبل تاريخ بداية السجل التالي (${m[3]}).`
+        : `La date de ${isStart ? 'début' : 'fin'} du journal (${m[2]}) doit être avant la date de début du journal suivant (${m[3]}).`;
+    }
+
+    // A dated row (price agreement, contract, allowance) saved from a later day with another value: the earlier
+    // period stays on the row as it was and the save goes on as a new entry (v19.6.390)
+    m = trimmed.match(/^Earlier period kept to\s+(\S+)\s+·\s+New entry from\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أُبقيت الفترة السابقة حتى ${m[1]} · قيد جديد من ${m[2]}` : `Période précédente conservée jusqu'au ${m[1]} · Nouvelle entrée à partir du ${m[2]}`;
 
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;

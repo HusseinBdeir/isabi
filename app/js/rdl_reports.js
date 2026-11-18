@@ -2191,7 +2191,8 @@
       if (!d || Math.abs(paid) < 0.005) return;
       const cust = r.customer || 'Customer';
       const ref = String(r.invoice_no || r.ticket_no || 'RCPT');
-      const clearAcct = r.pay_method === 'Config' ? '467' : (r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531');
+      // Config and VATConfig are carried balances, not cash (owner 2026-11-18): clearing 467, never Cash 531.
+      const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : (r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531');
       if (paid > 0) {
         pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, paid, 0);
         pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, paid);
@@ -2233,7 +2234,7 @@
       if (!d || Math.abs(paid) < 0.005) return;
       const sup = r.supplier || 'Supplier';
       const ref = String(r.voucher || r.name || 'SETL');
-      const clearAcct = r.pay_method === 'Config' ? '467' : '531';
+      const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : '531';
       if (paid > 0) {
         pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', paid, 0);
         pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, paid);

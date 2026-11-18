@@ -3305,6 +3305,14 @@
     if (m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return 'Rent & Barter';
     return 'Payment';
   }
+  // Owner rule 2026-11-18: Config and VATConfig are balances carried forward, never payments, so no cash view (till,
+  // register, per-name cash tables, sibling cash books, Daily Operations cash panel) lists them as cash on any day.
+  // receiptKind / settlementKind still say 'VAT received' / 'VAT paid' for VATConfig so AR and VAT ledgers keep them.
+  // Mirrors build/cashflow_workbook.py NONCASH_CONFIG_METHODS; the Opening Till line carries the opening-day ones.
+  function isCarriedBalanceMethod(r) {
+    const m = String((r && r.method) || '').trim();
+    return m === 'Config' || m === 'VATConfig';
+  }
   function isArSettlingReceipt(r) {
     if (!r || r.voided) return false;
     const m = String(r.method || '').trim();
@@ -4180,6 +4188,7 @@
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(r)) return;
       if (mth === 'VATRent') {
         const lbp = Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * 89500)));
         addMove(r.date, 0, 0, 0, lbp, mult);
@@ -4203,6 +4212,7 @@
       addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
     });
     forEachCashCustomDelta('settlements', matchCo, (s, mult) => {
+      if (isCarriedBalanceMethod(s)) return;
       const knd = settlementKind(s);
       const lbp = Number(s.lbp_amount || 0);
       const usd = lbp ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
@@ -8662,11 +8672,13 @@
     if (key === 'sales_tickets') return isCashSaleTicket(r) && ticketSign(r) !== 0;
     if (key === 'expenses') return isCashExpense(r) && expenseSign(r) !== 0;
     if (key === 'receipts') {
+      if (isCarriedBalanceMethod(r)) return false; // a carried balance moves no cash (owner 2026-11-18)
       const mth = String(r.method || '').trim();
       const knd = receiptKind(r);
       return knd === 'Settlement' || knd === 'VAT received' || mth === 'Rent' || mth === 'VATRent';
     }
     if (key === 'settlements') {
+      if (isCarriedBalanceMethod(r)) return false;
       const knd = settlementKind(r);
       return knd === 'Payment' || knd === 'VAT paid';
     }
@@ -16089,7 +16101,7 @@
         const prevS = String(bounds.prevPeer.s || '2024-01-01').slice(0, 10);
         const prevExpE = (bounds.prevPeer._explicitEnd && bounds.prevPeer.e) ? String(bounds.prevPeer.e).slice(0, 10) : '';
         if (s === prevS) {
-          return { ok: false, field: 'start', reason: `A log entry for ${unitLbl} already starts on ${fmtDateDMY(prevS)}. Click that row to edit it, or pick a Start Date after ${fmtDateDMY(prevS)}.` };
+          return { ok: false, field: 'start', reason: `A log entry for ${unitLbl} already starts on ${fmtDateDMY(prevS)}. Use Edit on that row to change it, or pick a Start Date after ${fmtDateDMY(prevS)}.` };
         }
         if (s < prevS) {
           return { ok: false, field: 'start', reason: `New log Start Date (${fmtDateDMY(s)}) cannot be before the previous log's Start Date (${fmtDateDMY(prevS)}).` };
@@ -16243,7 +16255,10 @@
     }
     return removed;
   }
+  // Set by appendOrUpdateTruckWindow when a save kept the earlier period as its own log ({ s, e, cap, own, drv }), else null.
+  let _lastTruckLogSplit = null;
   function appendOrUpdateTruckWindow(eq, winSpec, editIdx = -1) {
+    _lastTruckLogSplit = null;
     if (!eq || !winSpec) return null;
     ensureEquipmentInitBaseline(eq);
     if (!Array.isArray(eq.adj_windows)) eq.adj_windows = [];
@@ -16283,6 +16298,37 @@
       _explicitEnd: Boolean(existing._explicitEnd),
       _autoClosedByNext: Boolean(existing._autoClosedByNext)
     } : null;
+
+    // A log saved with a later Start Date and another size, owner or driver is a new period, not a correction of the
+    // old one: the days from the old start to the day before the new start were worked under the old values. The old
+    // log stays as it was, closed the day before, and this save goes on as the log that follows it. Before, the
+    // earlier log stretched over those days and their tickets were re-sized and re-assigned to it (truck 357152,
+    // 2026-11-18: an open 5 m³ log saved as 9 m³ from a later day turned two priced 5 m³ tickets into 8 m³).
+    // A later start with the same size, owner and driver is still a correction of the date and moves the log.
+    let splitKept = null;
+    if (existing && oldSnap && s > oldSnap.s && !winSpec._moveStart) {
+      const oldOwnEff = norm(oldSnap.own || eq.supplier);
+      const oldDrvEff = norm(oldSnap.drv || eq.default_driver);
+      const capDiff = cap > 0 && oldSnap.cap > 0 && Math.abs(cap - oldSnap.cap) > 1e-6;
+      const ownDiff = Boolean(own) && norm(own) !== oldOwnEff;
+      const drvDiff = Boolean(drv) && norm(drv) !== oldDrvEff;
+      if (capDiff || ownDiff || drvDiff) {
+        const dayBefore = prevDayISO(s);
+        splitKept = Object.assign({}, existing);
+        delete splitKept._lastBackfill;
+        if (oldSnap.e && oldSnap.e < dayBefore) {
+          splitKept.e = oldSnap.e;   // it had already ended before the new start: that end stands
+          delete splitKept._autoClosedByNext;
+        } else {
+          splitKept.e = dayBefore;
+          splitKept._autoClosedByNext = true;
+          delete splitKept._explicitEnd;
+        }
+        eq.adj_windows.push(splitKept);
+        existing.s = s;   // so the kept period sorts before it when its neighbours are read below
+        _lastTruckLogSplit = { s: oldSnap.s, e: splitKept.e, cap: oldSnap.cap, own: oldSnap.own, drv: oldSnap.drv };
+      }
+    }
 
     const effEditIdx = existing ? eq.adj_windows.indexOf(existing) : -1;
     const bounds = getTruckWindowBounds(eq, { co, side, cust, site }, effEditIdx);
@@ -16363,14 +16409,23 @@
       eq.adj_windows.push(targetWin);
     }
     eq.adj_windows.sort((a, b) => String(a.s || '').localeCompare(String(b.s || '')) || String(a.e || '9999-12-31').localeCompare(String(b.e || '9999-12-31')));
-    syncEquipmentBaselineFromWindows(eq);
-    _WIN_REV++;
-    _FLEET_IDX = null;
+    // _dryRun (describeTruckLogSave): `eq` is a copy of the truck, so nothing outside it may change: no driver
+    // registry sync, no cache reset, and the tickets are only read.
+    const isDryRun = Boolean(winSpec._dryRun);
+    if (!isDryRun) {
+      syncEquipmentBaselineFromWindows(eq);
+      _WIN_REV++;
+      _FLEET_IDX = null;
+    }
     if (winSpec.backfillTickets !== false) {
       const dateCandidatesFrom = [s];
       const dateCandidatesTo = [effEnd || '9999-12-31'];
-      if (oldSnap) {
+      if (oldSnap && !splitKept) {
         if (oldSnap.s) dateCandidatesFrom.push(oldSnap.s);
+        dateCandidatesTo.push(oldSnap.e || '9999-12-31');
+      } else if (oldSnap) {
+        // A kept earlier period keeps its tickets: the days before the new start are not re-read. The days after a
+        // shortened end still are (no log covers them any more).
         dateCandidatesTo.push(oldSnap.e || '9999-12-31');
       }
       if (prevPeer && String(prevPeer.e || '') !== prevPeerOldE) {
@@ -16382,7 +16437,8 @@
       const priorRefCap = oldSnap ? Number(oldSnap.cap || 0) : Number((prevPeer && prevPeer.cap) || preSyncCap || 0);
       const capChanged = Boolean(Number(cap || 0) > 0 && priorRefCap > 0 && Math.abs(priorRefCap - Number(cap)) > 1e-6);
       targetWin._lastBackfill = backfillTruckWindowToTickets(eq, targetWin, {
-        persistCustom: Boolean(winSpec.persistTicketBackfill),
+        persistCustom: Boolean(winSpec.persistTicketBackfill) && !isDryRun,
+        dryRun: isDryRun,
         rangeFrom: dateCandidatesFrom[0] || s,
         rangeTo: dateCandidatesTo[dateCandidatesTo.length - 1] || '9999-12-31',
         capChanged,
@@ -16391,6 +16447,120 @@
       });
     }
     return targetWin;
+  }
+  // What saving this log would do, worked out on a copy of the truck (the forms show it before the button is
+  // pressed; owner 2026-11-18 after truck 357152). Nothing is changed. Returns:
+  //   { ok: false, reason }                       the save would be refused, with the form's own message
+  //   { ok: true, mode, saved, kept, closed, tickets }
+  //     mode    'add' (a new log) | 'split' (a picked log saved from a later day with another size, owner or driver:
+  //             its earlier days stay as their own log) | 'move' (a picked log, same values, another start: the log
+  //             itself moves) | 'update' (a picked log changed in place)
+  //     saved   { s, e, cap, own, drv } as the log would read after the save
+  //     kept    { s, e, cap, own, drv } the earlier period that stays apart (split only), else null
+  //     closed  { s, e, was } a log before it whose end date the save changes, else null
+  //     tickets { total, sales, raw, fuel, resized, usdDelta, firstDay, lastDay } the tickets the save would change
+  function describeTruckLogSave(eq, winSpec, editIdx = -1) {
+    if (!eq || !winSpec) return { ok: false, reason: '' };
+    const chk = validateTruckWindowChronology(eq, winSpec, editIdx);
+    if (!chk.ok) return { ok: false, reason: chk.reason, field: chk.field || '' };
+    let copyEq;
+    try { copyEq = JSON.parse(JSON.stringify(eq)); } catch (_) { return { ok: false, reason: '' }; }
+    if (!Array.isArray(copyEq.adj_windows)) copyEq.adj_windows = [];
+    const snap = w => ({ s: String(w.s || '2024-01-01').slice(0, 10), e: String(w.e || '').slice(0, 10), cap: Number(w.cap || 0), own: String(w.own || ''), drv: String(w.drv || '') });
+    const before = copyEq.adj_windows.map(w => (w ? snap(w) : null));
+    const hasEdit = typeof editIdx === 'number' && editIdx >= 0 && editIdx < copyEq.adj_windows.length;
+    const editBefore = hasEdit ? before[editIdx] : null;
+    const beforeRefs = copyEq.adj_windows.slice();
+    const heldSplit = _lastTruckLogSplit;
+    let savedWin = null, kept = null;
+    try {
+      savedWin = appendOrUpdateTruckWindow(copyEq, Object.assign({}, winSpec, { _dryRun: true, persistTicketBackfill: false }), editIdx);
+      kept = _lastTruckLogSplit;
+    } finally {
+      _lastTruckLogSplit = heldSplit;
+    }
+    if (!savedWin) return { ok: false, reason: '' };
+    const saved = snap(savedWin);
+    let mode = 'add';
+    if (kept) mode = 'split';
+    else if (editBefore) mode = editBefore.s !== saved.s ? 'move' : 'update';
+    // A log before the saved one whose end the save moved (the open log a new one closes, or the one that stretches
+    // or shrinks when a log moves)
+    let closed = null;
+    beforeRefs.forEach((w, i) => {
+      if (!w || w === savedWin || !before[i] || closed) return;
+      const nowE = String(w.e || '').slice(0, 10);
+      if (nowE !== before[i].e && String(w.s || '').slice(0, 10) === before[i].s && before[i].s < saved.s) {
+        closed = { s: before[i].s, e: nowE, was: before[i].e, cap: before[i].cap };
+      }
+    });
+    const bf = savedWin._lastBackfill || { sales: 0, raw: 0, fuel: 0, total: 0, rows: [] };
+    const rows = Array.isArray(bf.rows) ? bf.rows : [];
+    const resizedRows = rows.filter(r => Math.abs(Number(r.qtyTo || 0) - Number(r.qtyFrom || 0)) > 1e-6);
+    const days = rows.map(r => r.date).filter(Boolean).sort();
+    const tickets = {
+      total: Number(bf.total || 0), sales: Number(bf.sales || 0), raw: Number(bf.raw || 0), fuel: Number(bf.fuel || 0),
+      resized: resizedRows.length,
+      usdDelta: round2(rows.reduce((sum, r) => sum + (Number(r.usdTo || 0) - Number(r.usdFrom || 0)), 0)),
+      firstDay: days[0] || '', lastDay: days[days.length - 1] || '',
+      earlier: rows.filter(r => r.date && r.date < saved.s).length,
+    };
+    return { ok: true, mode, saved, kept: kept ? Object.assign({}, kept) : null, closed, tickets, was: editBefore };
+  }
+  // The line both truck log forms show under their button, as separate short phrases (each is translated on its own).
+  function truckLogSavePreviewHtml(plan, opts = {}) {
+    if (!plan) return '';
+    if (!plan.ok) return plan.reason ? `<span class="tw-prev-part tw-prev-warn">${esc(plan.reason)}</span>` : '';
+    const showSize = opts.showSize !== false;
+    const d = fmtDateDMY;
+    const what = w => {
+      const bits = [];
+      if (showSize && Number(w.cap) > 0) bits.push(`${fmtNum(w.cap, 1)} m³`);
+      if (w.drv) bits.push(w.drv);
+      else if (w.own) bits.push(w.own);
+      return bits.join(' · ');
+    };
+    const tag = txt => (txt ? ` <span class="tw-prev-val" data-no-i18n="1">(${esc(txt)})</span>` : '');
+    const parts = [];
+    if (plan.mode === 'split' && plan.kept) {
+      parts.push(`<span>Keeps ${esc(d(plan.kept.s))} to ${esc(d(plan.kept.e))} as its own log</span>${tag(what(plan.kept))}`);
+      parts.push(`<span>New log from ${esc(d(plan.saved.s))}</span>${tag(what(plan.saved))}`);
+    } else if (plan.mode === 'add') {
+      if (plan.closed) parts.push(`<span>Ends the log before it on ${esc(d(plan.closed.e))}</span>${tag(showSize && Number(plan.closed.cap) > 0 ? `${fmtNum(plan.closed.cap, 1)} m³` : '')}`);
+      parts.push(`<span>New log from ${esc(d(plan.saved.s))}</span>${tag(what(plan.saved))}`);
+    } else if (plan.mode === 'move') {
+      parts.push(`<span>Moves this log's start from ${esc(d(plan.was.s))} to ${esc(d(plan.saved.s))}</span>`);
+      if (plan.closed) parts.push(`<span>The log before it then runs to ${esc(d(plan.closed.e))}</span>`);
+    } else {
+      parts.push('<span>Changes this log in place</span>');
+    }
+    const t = plan.tickets || { total: 0 };
+    if (!(t.total > 0)) {
+      parts.push('<span>No ticket changes</span>');
+    } else {
+      const span = t.firstDay && t.lastDay ? (t.firstDay === t.lastDay ? d(t.firstDay) : `${d(t.firstDay)} to ${d(t.lastDay)}`) : '';
+      parts.push(`<span>${t.total === 1 ? '1 ticket changes' : `${fmtNum(t.total, 0)} tickets change`}</span>${tag(span)}`);
+      if (t.resized > 0) {
+        const usd = Math.abs(t.usdDelta) >= 0.005 ? `${t.usdDelta > 0 ? '+' : '-'}${fmtUSD(Math.abs(t.usdDelta), 2)}` : '';
+        parts.push(`<span>${t.resized === 1 ? '1 quantity re-sized' : `${fmtNum(t.resized, 0)} quantities re-sized`}</span>${tag(usd)}`);
+      }
+    }
+    // Amber when tickets of days before the new start would change: that is the save to look at twice
+    const warn = t.total > 0 && (plan.mode === 'move' || plan.mode === 'update' || t.earlier > 0 || t.resized > 0);
+    return parts.map(p => `<span class="tw-prev-part${warn ? ' tw-prev-warn' : ''}">${p}</span>`).join('<span class="tw-prev-sep" data-no-i18n="1" aria-hidden="true"> · </span>');
+  }
+  function paintTruckLogSavePreview(hostEl, plan, opts) {
+    if (!hostEl) return;
+    const html = truckLogSavePreviewHtml(plan, opts);
+    // Rewritten only when it says something new: it is refreshed on every keystroke, and a rewrite would flash the
+    // English text before it is translated again.
+    if (hostEl.dataset.twPrevHtml === html) return;
+    hostEl.dataset.twPrevHtml = html;
+    hostEl.innerHTML = html;
+    hostEl.hidden = !html;
+    if (html && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(hostEl);
+    }
   }
   function backfillTruckWindowToTickets(eq, targetWin, opts = {}) {
     if (!eq || !targetWin || !SEED || !SEED.records) return { sales: 0, raw: 0, fuel: 0, total: 0 };
@@ -16409,11 +16579,15 @@
     const wEnd = rawWEnd === '9999-12-31' ? '' : rawWEnd;
     const wCustNorm = norm(targetWin.cust);
     const wSiteNorm = norm(targetWin.site);
-    const persistCustom = opts.persistCustom !== false && !window.__fastInspectorModifyTest;
+    // dryRun: work out what the save would change on copies of the rows; nothing is written, stamped or sent.
+    const dry = Boolean(opts.dryRun);
+    const dryRows = [];
+    const capOrig = dry ? () => {} : ensureSeedOrigCapturedBeforeMutate;
+    const persistCustom = !dry && opts.persistCustom !== false && !window.__fastInspectorModifyTest;
     const baseFallback = eq._initBaseline || { cap: Number(eq.capacity || 0), own: String(eq.supplier || '').trim(), drv: String(eq.default_driver || '').trim() };
     let salesCnt = 0, rawCnt = 0, fuelCnt = 0;
 
-    const truckBfStampIso = nextMonotonicIso();
+    const truckBfStampIso = dry ? '' : nextMonotonicIso();
     const touchTicketInCustom = (tk, row) => {
       if (!persistCustom || !row || !row.id) return;
       row.modified_at = truckBfStampIso;
@@ -16426,8 +16600,9 @@
 
     if (wSide === 'both' || wSide === 'sales') {
       const salesList = Array.isArray(SEED.records.sales_tickets) ? SEED.records.sales_tickets : [];
-      salesList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.truck)) return;
+      salesList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16447,12 +16622,12 @@
           if (!isExPlant && !isCustTrk && (effOwn || isOwn)) {
             const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
             const nextOwn = isOwn ? '' : effOwn;
-            if (String(r.transport_by || '') !== nextTrBy) { ensureSeedOrigCapturedBeforeMutate('sales_tickets', r); r.transport_by = nextTrBy; rowChanged = true; }
-            if (String(r.truck_owner || '') !== nextOwn) { ensureSeedOrigCapturedBeforeMutate('sales_tickets', r); r.truck_owner = nextOwn; rowChanged = true; }
+            if (String(r.transport_by || '') !== nextTrBy) { capOrig('sales_tickets', r); r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { capOrig('sales_tickets', r); r.truck_owner = nextOwn; rowChanged = true; }
           }
         }
         if (effDrv && String(r.driver || '') !== effDrv) {
-          ensureSeedOrigCapturedBeforeMutate('sales_tickets', r);
+          capOrig('sales_tickets', r);
           r.driver = effDrv;
           rowChanged = true;
         }
@@ -16461,7 +16636,10 @@
         if (matchesPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
           const agrSize = resolveAgreementTruckSize({ side: 'sales', company: r.company || 'WTC', customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curQty - effCap) > 1e-6) {
-            ensureSeedOrigCapturedBeforeMutate('sales_tickets', r);
+            capOrig('sales_tickets', r);
+            // Marks a quantity set by a log change, not keyed by a person: the top-up puts the workbook quantity back
+            // on a workbook ticket that carries it (build/meter_check.py)
+            r._log_resized = { from: curQty, to: effCap, at: truckBfStampIso };
             r.qty = effCap;
             if (!r.mat_indiff) r.price = round2(effCap * Number(r.unit_price || 0) - Math.abs(Number(r.discount || 0)));
             if (String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) r.trans_price = round2(effCap * Number(r.trans_unit_price || 0));
@@ -16474,16 +16652,18 @@
         }
         if (rowChanged) {
           salesCnt++;
+          if (dry) dryRows.push({ table: 'sales_tickets', id: String(src.id || ''), date: dt, ticket_no: String(src.ticket_no || ''), qtyFrom: Number(src.qty || 0), qtyTo: Number(r.qty || 0), usdFrom: Number(src.total_ttc != null ? src.total_ttc : (src.total || 0)), usdTo: Number(r.total_ttc != null ? r.total_ttc : (r.total || 0)) });
           touchTicketInCustom('sales_tickets', r);
         }
       });
-      if (salesCnt > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+      if (!dry && salesCnt > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
     }
 
     if (wSide === 'both' || wSide === 'raw') {
       const rawList = Array.isArray(SEED.records.raw_purchases) ? SEED.records.raw_purchases : [];
-      rawList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.truck)) return;
+      rawList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16500,12 +16680,12 @@
           if (effOwn || isOwn) {
             const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
             const nextOwn = isOwn ? '' : effOwn;
-            if (String(r.transport_by || '') !== nextTrBy) { ensureSeedOrigCapturedBeforeMutate('raw_purchases', r); r.transport_by = nextTrBy; rowChanged = true; }
-            if (String(r.truck_owner || '') !== nextOwn) { ensureSeedOrigCapturedBeforeMutate('raw_purchases', r); r.truck_owner = nextOwn; rowChanged = true; }
+            if (String(r.transport_by || '') !== nextTrBy) { capOrig('raw_purchases', r); r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { capOrig('raw_purchases', r); r.truck_owner = nextOwn; rowChanged = true; }
           }
         }
         if (effDrv && String(r.driver || '') !== effDrv) {
-          ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
+          capOrig('raw_purchases', r);
           r.driver = effDrv;
           rowChanged = true;
         }
@@ -16514,7 +16694,8 @@
         if (matchesRawPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
           const agrSize = resolveAgreementTruckSize({ side: 'raw', company: r.company || 'WTC', site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curRawQty - effCap) > 1e-6) {
-            ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
+            capOrig('raw_purchases', r);
+            r._log_resized = { from: curRawQty, to: effCap, at: truckBfStampIso };
             r.qty = effCap;
             if (!r.mat_indiff && Number(r.unit_cost || 0) > 0) r.cost = round2(effCap * Number(r.unit_cost || 0));
             if (!r.trans_indiff && Number(r.trans_unit_cost || 0) > 0) r.trans_cost = round2(effCap * Number(r.trans_unit_cost || 0));
@@ -16524,16 +16705,18 @@
         }
         if (rowChanged) {
           rawCnt++;
+          if (dry) dryRows.push({ table: 'raw_purchases', id: String(src.id || ''), date: dt, ticket_no: String(src.ticket_no || ''), qtyFrom: Number(src.qty || 0), qtyTo: Number(r.qty || 0), usdFrom: Number(src.total || 0), usdTo: Number(r.total || 0) });
           touchTicketInCustom('raw_purchases', r);
         }
       });
-      if (rawCnt > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
+      if (!dry && rawCnt > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
     }
 
     if (wSide === 'both' || wSide === 'fuel') {
       const fuelList = Array.isArray(SEED.records.fuel_intakes) ? SEED.records.fuel_intakes : [];
-      fuelList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.equipment || r.truck)) return;
+      fuelList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.equipment || src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16547,10 +16730,11 @@
           touchTicketInCustom('fuel_intakes', r);
         }
       });
-      if (fuelCnt > 0 && SEED._tableRev) SEED._tableRev.fuel_intakes = (SEED._tableRev.fuel_intakes || 0) + 1;
+      if (!dry && fuelCnt > 0 && SEED._tableRev) SEED._tableRev.fuel_intakes = (SEED._tableRev.fuel_intakes || 0) + 1;
     }
 
     const total = salesCnt + rawCnt + fuelCnt;
+    if (dry) return { sales: salesCnt, raw: rawCnt, fuel: fuelCnt, total, rows: dryRows };
     if (total > 0) {
       _WIN_REV++;
       _FLEET_IDX = null;
@@ -17355,6 +17539,183 @@
     }
   }
 
+  // ── A dated row saved from a later day with another value keeps the earlier period (owner 2026-11-18) ──
+  // The truck-log rule of v19.6.388, for every dated log the general engine governs: price agreements, contracts,
+  // allowances, rates, recurring expenses and any future dated table. Fields that never make a save "another value":
+  // identity, the dates themselves, free text and bookkeeping.
+  const CHRONO_NON_VALUE_KEYS = new Set([
+    'id', 'name', 'date', 'rep_date', 'start_date', 'end_date', 'effective_to', 'status', 'notes', 'note', 'remarks',
+    'comment', 'comments', 'source', 'voided', 'voided_at', 'voided_by', 'void_reason', 'restored_at', 'restored_by',
+    'created_at', 'created_by', 'entered_by', 'entered_by_email', 'entered_at', 'modified_at', 'modified_by',
+    'updated_at', 'updatedAt', 'attachments', 'admin_overrides', 'after_hours', 'after_hours_logged_on',
+    'same_person_confirmed', 'wb_index', 'wb_end_date', 'wb_total', 'backfill_enabled',
+  ]);
+  // Figures a form works out from the row's dates or from its other fields: they move with a date, so they are not a
+  // value of their own (an allowance paid per day is re-totalled over its window).
+  const CHRONO_DERIVED_KEYS = {
+    price_rules: ['price', 'trans_price', 'total1', 'total2'],
+    logistics_allowances: ['amount', 'usd_amount', 'lbp_amount', 'working_days'],
+  };
+  function _chronoSameValue(a, b) {
+    const isEmpty = v => v == null || v === '' || v === 0 || v === false || (Array.isArray(v) && !v.length);
+    if (isEmpty(a) && isEmpty(b)) return true;
+    if ((a && typeof a === 'object') || (b && typeof b === 'object')) {
+      try { return JSON.stringify(a) === JSON.stringify(b); } catch (_) { return false; }
+    }
+    if (typeof a !== 'boolean' && typeof b !== 'boolean' && !isEmpty(a) && !isEmpty(b)) {
+      const na = Number(a), nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-6;
+    }
+    if (typeof a === 'boolean' || typeof b === 'boolean') return Boolean(a) === Boolean(b);
+    return norm(a) === norm(b);
+  }
+  // True when `savedRow` carries a value the row did not have before. Only the fields the save itself carries are
+  // read: a field the form does not send is not a change. A table may name its value fields (`chronoSpec.valueKeys`).
+  function chronoRowValuesDiffer(crKey, savedRow, origRow) {
+    if (!savedRow || !origRow) return false;
+    const customSpec = CUSTOM_CHRONO_SPECS.get(crKey);
+    const cat = getCatalogChronoEntry(crKey);
+    const declared = (customSpec && customSpec.valueKeys) || (cat && ((cat.chronoSpec && cat.chronoSpec.valueKeys) || cat.valueKeys)) || null;
+    let keys;
+    if (Array.isArray(declared) && declared.length) {
+      keys = declared.filter(k => k in savedRow);
+    } else {
+      const derived = new Set(CHRONO_DERIVED_KEYS[crKey] || []);
+      if (crKey === 'price_rules') {
+        // An agreement priced as a fixed sum (no rate per unit) holds its value in the sum itself
+        if (!(Number(savedRow.unit_price) > 0 || Number(origRow.unit_price) > 0)) derived.delete('price');
+        if (!(Number(savedRow.trans_unit_price) > 0 || Number(origRow.trans_unit_price) > 0)) derived.delete('trans_price');
+      }
+      if (crKey === 'logistics_allowances' && !(Number(savedRow.daily_usd) > 0 || Number(origRow.daily_usd) > 0)) {
+        derived.delete('amount'); derived.delete('usd_amount'); derived.delete('lbp_amount');
+      }
+      keys = Object.keys(savedRow).filter(k => k && k.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(k) && !derived.has(k));
+    }
+    return keys.some(k => !_chronoSameValue(savedRow[k], origRow[k]));
+  }
+  // What the next save of this row would do to the days before its new start: null (nothing kept apart), or the
+  // period that stays as its own entry. Read by the forms before a save and by the engine during it.
+  // Tables the rule leaves alone: shift timings (their own ledger and backfill switch), the company fleet rows that
+  // drive the truck logs (those logs have the rule already), and the shared registries matched by name.
+  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers', 'fx_rates', 'vat_rates']);
+  function chronoKeptPeriodToastText(kp) {
+    return kp ? `Earlier period kept to ${fmtDateDMY(kp.to)} · New entry from ${fmtDateDMY(kp.newFrom)}` : '';
+  }
+  // `hint.userChangedValue` is what the form itself knows: false when the person changed nothing but dates, notes or
+  // the label (a date correction, whatever the form re-writes or fills in by default when it builds the row), true
+  // when a value field was changed, undefined when the caller cannot tell (the row's own fields then decide).
+  function describeChronoKeptPeriod(crKey, savedRow, editOrig, hint) {
+    if (!savedRow || !editOrig || !editOrig.id || editOrig.voided || savedRow._moveStart) return null;
+    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey) || (typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey])) return null;
+    // Filling in a row that was waiting for its figure (Salary Pending, Price Pending) completes that row: there is
+    // no earlier period under an old value to keep.
+    if (editOrig.salary_pending || editOrig.price_pending) return null;
+    if (hint && hint.userChangedValue === false) return null;
+    if (!isEffectiveSeriesTable(crKey, savedRow)) return null;
+    const newStart = String(savedRow.start_date || '').slice(0, 10);
+    const origStart = String(editOrig.start_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newStart) || !/^\d{4}-\d{2}-\d{2}$/.test(origStart) || !(newStart > origStart)) return null;
+    // A row re-assigned to another series (another customer, staff, site...) is a correction of the row, not a new
+    // period of the same agreement: it moves whole, as before.
+    if (!isSameChronologicalSeries(crKey, Object.assign({}, savedRow, { voided: false }), editOrig)) return null;
+    if (!chronoRowValuesDiffer(crKey, savedRow, editOrig)) return null;
+    const dayBefore = prevDayISO(newStart);
+    const origEnd = _rowEndIso(editOrig);
+    const endedBefore = Boolean(origEnd && origEnd < dayBefore);
+    return { from: origStart, to: endedBefore ? origEnd : dayBefore, endedBefore, newFrom: newStart };
+  }
+  // Set by syncChronologicalSeriesNeighbors when a save kept the earlier period apart: { id (the row that stays, the
+  // original one), newId (the entry that follows it), from, to, table }, else null.
+  let _lastChronoKeptPeriod = null;
+  // Bookkeeping the entry that follows must not inherit from the row it was typed over.
+  const CHRONO_NEW_ENTRY_DROP_RE = /^_(seed_orig|auto_closed_|prev_end_date|last_prev_end|prev_status|explicitEnd|reopenedExplicitly|dormant_|backpay_|reconciled_at|absorbedSeedTwin|lastBackfill|moveStart)/;
+  // Turns "an existing row saved from a later day with another value" into what + Add would have done: the row goes
+  // back to what it was (same id, so the next top-up still matches it to its workbook line) and the values being saved
+  // become a new entry under a new id. Everything after this point in the engine then runs as for an added entry: the
+  // open row before it ends the day before, an explicit earlier end stands, the tickets before the new start are not
+  // re-read. Returns the restored row, or null when the save is an ordinary edit or a date correction.
+  // Takes the entry a kept-period save added out of the working rows and the device copy again: a save the server
+  // refused is put back from a snapshot taken before it, and that snapshot does not know the new entry.
+  function dropChronoKeptPeriodEntry(kept) {
+    if (!kept || !kept.newId || !kept.table) return 0;
+    let dropped = 0;
+    [SEED.records && SEED.records[kept.table], STATE.customRecords && STATE.customRecords[kept.table]].forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i] && String(arr[i].id) === String(kept.newId)) { arr.splice(i, 1); dropped += 1; }
+      }
+    });
+    if (dropped) {
+      if (SEED._tableRev) SEED._tableRev[kept.table] = (SEED._tableRev[kept.table] || 0) + 1;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return dropped;
+  }
+  function splitChronoSaveIntoNewEntry(crKey, savedRow, editOrig, extraApiPosts, hint) {
+    const plan = describeChronoKeptPeriod(crKey, savedRow, editOrig, hint);
+    if (!plan) return null;
+    const origId = String(editOrig.id);
+    if (!SEED.records) return null;
+    if (!Array.isArray(SEED.records[crKey])) SEED.records[crKey] = [];
+    const list = SEED.records[crKey];
+    let restored;
+    try { restored = JSON.parse(JSON.stringify(editOrig)); } catch (_) { restored = Object.assign({}, editOrig); }
+    restored.id = editOrig.id;
+    const overwrite = (target, src) => {
+      Object.keys(target).forEach(k => { if (!(k in src)) delete target[k]; });
+      Object.assign(target, src);
+      return target;
+    };
+    // 1. The row keeps its id and gets its old values back
+    const seedIdx = list.findIndex(x => x && String(x.id) === origId);
+    if (seedIdx >= 0 && list[seedIdx] !== savedRow) restored = overwrite(list[seedIdx], restored);
+    else if (seedIdx >= 0) list[seedIdx] = restored;
+    else list.push(restored);
+    if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+    const custom = STATE.customRecords[crKey];
+    const cIdx = custom.findIndex(x => x && String(x.id) === origId);
+    if (cIdx >= 0 && custom[cIdx] !== savedRow) overwrite(custom[cIdx], restored);
+    else if (cIdx >= 0) custom[cIdx] = Object.assign({}, restored);
+    // 2. The values being saved become a new entry
+    Object.keys(savedRow).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete savedRow[k]; });
+    ['wb_index', 'wb_end_date', 'wb_total'].forEach(k => { delete savedRow[k]; });
+    const stampIso = nextMonotonicIso();
+    const who = (typeof activeUser === 'function' && activeUser()) || null;
+    savedRow.id = uid((String(crKey).replace(/[^a-z]/g, '') + 'xx').slice(0, 2));
+    savedRow.source = 'app';
+    savedRow.voided = false;
+    savedRow.created_at = stampIso;
+    if (who) {
+      if (who.full_name) savedRow.entered_by = who.full_name;
+      if (who.email) savedRow.entered_by_email = who.email;
+    }
+    savedRow._continues_id = origId;
+    // A contract and the one that follows it are the same person by construction: both say so, or the server's
+    // same-name guard refuses the new contract while the old one is still open there (and the old one after it).
+    if (crKey === 'employments' || crKey === 'freelance_entries') {
+      savedRow.same_person_confirmed = true;
+      restored.same_person_confirmed = true;
+      if (cIdx >= 0 && custom[cIdx]) custom[cIdx].same_person_confirmed = true;
+    }
+    // A price agreement is found by its name on the tickets it priced: the new entry gets a name of its own, as an
+    // added agreement would (the date in an automatic code moves to the new start; a typed name gets the date).
+    if (crKey === 'price_rules' && savedRow.name && String(savedRow.name) === String(editOrig.name || '')) {
+      const nm = String(savedRow.name);
+      const compact = plan.newFrom.replace(/-/g, '');
+      savedRow.name = /^PRC-\d{8}-/.test(nm) ? nm.replace(/^PRC-\d{8}-/, `PRC-${compact}-`) : `${nm} (${fmtDateDMY(plan.newFrom)})`;
+      if (String(savedRow.name) === nm) savedRow.name = `${nm} (${fmtDateDMY(plan.newFrom)})`;
+    }
+    // An end date the row only had because the entry after it starts then is worked out again for the new entry
+    const savedEnd = _rowEndIso(savedRow);
+    if (savedEnd && savedEnd === _rowEndIso(editOrig) && !editOrig._explicitEnd) _setRowEndIso(savedRow, '');
+    if (!list.includes(savedRow)) list.push(savedRow);
+    if (!custom.includes(savedRow)) custom.unshift(savedRow);
+    if (SEED._tableRev) SEED._tableRev[crKey] = (SEED._tableRev[crKey] || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _lastChronoKeptPeriod = { id: origId, newId: savedRow.id, from: plan.from, to: plan.to, newFrom: plan.newFrom, table: crKey };
+    return restored;
+  }
+
   // Synchronizes adjacent rows in the same effective-dated series when `savedRow` is added or edited:
   //   - Marks `savedRow._explicitEnd` when user explicitly sets/clears `end_date`.
   //   - If `savedRow` has a predecessor `prevPeer`:
@@ -17365,8 +17726,14 @@
   //         intentional gap (`prevPeer._explicitEnd = true`) untouched!
   //   - If `savedRow` has a successor `nextPeer` and `savedRow.end_date` is blank (Open), caps
   //     `savedRow.end_date = prevDayISO(nextPeer.start_date)` (`_explicitEnd = false`).
-  function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts) {
+  function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts, hint) {
+    _lastChronoKeptPeriod = null;
     if (!savedRow || !savedRow.start_date || !isEffectiveSeriesTable(crKey, savedRow)) return [];
+    // A later Start Date with another value is a new period: the days before it stay under the old values, on the
+    // row as it was, and this save goes on as a new entry that follows it. Before, the row moved, the entry before
+    // it (or the list price) stretched over those days and their tickets were re-priced. The same values from a
+    // later day are still a correction of the date and move the row.
+    if (editOrig && splitChronoSaveIntoNewEntry(crKey, savedRow, editOrig, extraApiPosts, hint)) editOrig = null;
     const syncSelfToCustom = () => {
       if (!savedRow || !savedRow.id) return;
       if (Array.isArray(STATE.customRecords[crKey])) {
@@ -18288,6 +18655,10 @@
       if (pLow < rangeFrom) rangeFrom = pLow < pS ? pLow : pS;
       if (pHigh > rangeTo) rangeTo = pHigh;
     });
+    // An agreement saved from a later day with another rate kept its earlier period as it was: the tickets of those
+    // days are not re-read (they stay under the same agreement, at the price they carry).
+    const notBefore = (opts && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.notBefore || ''))) ? String(opts.notBefore) : '';
+    if (notBefore && rangeFrom < notBefore) rangeFrom = notBefore;
 
     const candidates = [ruleRow, origRow, ...touchedPeers].filter(Boolean);
     const anyCandidateTruckSize = candidates.some(c => Number(c.truck_size || 0) > 0);
@@ -19209,11 +19580,29 @@
     getBounds: getChronologicalSeriesBounds,
     validate: validateChronologicalSeriesEntry,
     syncNeighbors: syncChronologicalSeriesNeighbors,
+    // A row saved from a later day with another value keeps its earlier period; read by build/verify_dated_log_keep_period.mjs
+    describeKeptPeriod: describeChronoKeptPeriod,
+    valuesDiffer: chronoRowValuesDiffer,
+    lastKeptPeriod: () => _lastChronoKeptPeriod,
+    keptPeriodToast: chronoKeptPeriodToastText,
+    // For the headless gate only: the snapshot a save takes so a refused save can be put back
+    rollbackSnapForCheck: tables => (window.__MFG_HEADLESS_TEST ? _captureLedgerAndGeoRollbackSnap(tables || [], false) : null),
+    formChangedValueForCheck: () => (window.__MFG_HEADLESS_TEST ? entryModalUserChangedValue() : undefined),
     reopenOnVoid: reopenChronologicalSeriesOnVoid,
     resolveActive: resolveEffectiveSeriesRow,
     backfill: backfillEffectiveLogChange,
     registerSpec: registerChronoSeriesSpec,
     unregisterSpec: unregisterChronoSeriesSpec,
+    // Truck size, owner and driver logs (equipment.adj_windows); read by build/verify_truck_log_split.mjs
+    truckLog: {
+      save: appendOrUpdateTruckWindow,
+      remove: removeTruckWindowAt,
+      resolve: resolveTruckWindow,
+      lastKept: () => _lastTruckLogSplit,
+      // What a save would do, before it is pressed (changes nothing); the line both forms show under their button
+      describe: describeTruckLogSave,
+      previewHtml: truckLogSavePreviewHtml,
+    },
   };
 
   let _arrUidSeq = 1;
@@ -22182,6 +22571,26 @@
       whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> from a pinned site as Stale Pin Drift and stops beyond <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
       threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
       previewFn: () => 'Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.'
+    },
+    {
+      id: 'S17',
+      code: '#28',
+      name: 'Loads Off the Logged Truck Size',
+      domain: 'Fleet & Diesel',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Truck Logs',
+      jumpView: 'sentinels',
+      sentinelId: 'S17',
+      why: 'A truck is billed and paid by its size. When its tickets carry another quantity than the size its log gives that day, either the truck changed size and nobody logged it, or a quantity was keyed wrong. Both cost money on every load until someone looks.',
+      params: [
+        { key: 'lookback_days', label: 'Days of Tickets to Check', def: 90, min: 7, max: 365, step: 1, unit: 'days' },
+        { key: 'tolerance_m3', label: 'Difference Allowed per Load', def: 0.25, min: 0, max: 2, step: 0.05, unit: 'm³' },
+        { key: 'min_loads', label: 'Min Loads at the Same Size to Flag', def: 2, min: 1, max: 20, step: 1, unit: 'loads' },
+        { key: 'crit_usd', label: 'Critical Value of the Difference', def: 1000, min: 0, max: 50000, step: 100, unit: '$' }
+      ],
+      whatFn: p => `Reads every m³ Sales and Raw Material ticket of the last <b>${fmtNum(p.lookback_days, 0)}</b> days against the size its truck's log (or price agreement) gives that day, and lists a truck once <b>${fmtNum(p.min_loads, 0)}</b> or more loads carry the same other size, more than <b>${fmtNum(p.tolerance_m3, 2)} m³</b> apart. Critical once the difference is worth <b>$${fmtNum(p.crit_usd, 0)}</b> at the tickets' own rates.`,
+      threshFn: p => `${fmtNum(p.lookback_days, 0)} days · Off by > ${fmtNum(p.tolerance_m3, 2)} m³ · Loads >= ${fmtNum(p.min_loads, 0)} · Crit >= $${fmtNum(p.crit_usd, 0)}`,
+      previewFn: () => 'Live example: A truck logged at 28 m³ whose last 14 tickets read 27 m³ is listed with its loads, the m³ and the value of the difference; add a log from the day the size changed, or correct the tickets.'
     }
   ];
 
@@ -25459,6 +25868,13 @@
     const nbSnSig = nbSn
       ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.approxCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
       : 'x';
+    // Loads off the truck's logged size (own cache, keyed on seat, scope, tickets, truck logs and the rule's
+    // thresholds). Switched off in Alerts & Thresholds: no scan, the card shows as paused.
+    const tsSnOff = !isNonMfgSn && !isAlertRuleEnabled('S17');
+    const tsSn = (isNonMfgSn || tsSnOff) ? null : getTruckSizeSentinelData();
+    const tsSnSig = tsSn
+      ? `${tsSn.trucksCnt}:${tsSn.loadsCnt}:${tsSn.m3Abs}:${tsSn.usdAbs}:${tsSn.judged}:${tsSn.noLog}:${tsSn.lookback}:${tsSn.rows.length}`
+      : (tsSnOff ? 'off' : 'x');
     const _wdStaffArr = (SEED.records && SEED.records.staff_members) || [];
     let wdSig = String(_wdStaffArr.length);
     for (let i = 0; i < _wdStaffArr.length; i++) {
@@ -25481,7 +25897,7 @@
         return `${d.scannedPunches}:${(d.clusters || []).map(c => `${c.id}=${c.count}`).join(',')}`;
       })()
       : 'x';
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -25742,6 +26158,41 @@
         scrollPanel: 'snNetBack',
         navView: 'pricing',
         navLabel: 'Open Pricing'
+      });
+    }
+    if (tsSnOff && (typeof canAccessTable !== 'function' || canAccessTable('sales_tickets') || canAccessTable('raw_purchases'))) {
+      rawItems.push({
+        id: 'S17',
+        code: 'Rule #28 · Truck Sizes',
+        title: 'Loads Off the Logged Truck Size',
+        detail: '',
+        severity: 'ok',
+        badge: 'PAUSED',
+        company: scope,
+        rawMetric: 0,
+        rawSecondary: 0,
+        navView: 'fleet',
+        navLabel: 'Open Fleet'
+      });
+    }
+    if (tsSn) {
+      const tsCritUsd = Number(getAlertParam('S17', 'crit_usd', 1000)) || 0;
+      const tsNoLogTxt = tsSn.noLog > 0 ? ` ${fmtNum(tsSn.noLog)} more fall on a day no log covers and are not judged.` : '';
+      rawItems.push({
+        id: 'S17',
+        code: 'Rule #28 · Truck Sizes',
+        title: 'Loads Off the Logged Truck Size',
+        detail: tsSn.loadsCnt > 0
+          ? `${fmtNum(tsSn.judged)} m³ tickets of the last ${fmtNum(tsSn.lookback)} days checked against the size their truck's log gives that day: ${fmtNum(tsSn.loadsCnt)} loads on ${fmtNum(tsSn.trucksCnt)} trucks carry another size (${fmtNum(tsSn.m3Abs, 1)} m³ apart in all, worth ${fmtUSD(tsSn.usdAbs, 0)} at the tickets' own rates).${tsNoLogTxt}`
+          : `${fmtNum(tsSn.judged)} m³ tickets of the last ${fmtNum(tsSn.lookback)} days checked against the size their truck's log gives that day: every load carries its logged size.${tsNoLogTxt}`,
+        severity: tsSn.loadsCnt > 0 ? ((tsCritUsd > 0 && tsSn.usdAbs >= tsCritUsd) ? 'crit' : 'warn') : 'ok',
+        badge: tsSn.loadsCnt > 0 ? `${fmtNum(tsSn.loadsCnt)} LOADS OFF SIZE` : 'SIZES MATCH',
+        company: scope,
+        rawMetric: tsSn.loadsCnt,
+        rawSecondary: tsSn.trucksCnt,
+        scrollPanel: 'snTruckSize',
+        navView: 'fleet',
+        navLabel: 'Open Fleet'
       });
     }
     if (isAlertRuleEnabled('G_MAPS_QUOTA')) rawItems.push(buildMapsQuotaSentinelItem({ ruleId: 'G_MAPS_QUOTA', itemId: 'M24', company: 'All Operations' }));
@@ -26783,6 +27234,7 @@
     const usd2 = v => fmtUSD(v, 2);
     const num1 = v => fmtNum(v, 1);
     const nbSnData = (isNonMfgSn || !isAlertRuleEnabled('S12')) ? null : getNetBackSentinelData();
+    const tsSnData = (isNonMfgSn || !isAlertRuleEnabled('S17')) ? null : getTruckSizeSentinelData();
     const nbUnitFmt = (v, r) => (v == null || !Number.isFinite(Number(v)))
       ? '-'
       : `<span data-no-i18n="1">${esc(usd2(v))}${r && r.unit ? ` / ${esc(r.unit)}` : ''}</span>`;
@@ -27002,6 +27454,19 @@
             ? `<button type="button" class="btn-sn-act btn-nb-pin-site" data-nb-pin-site="${esc(String(r.site))}" data-ui-tip="Open this site on the map to pin it or set its distance">${ic('pin')} <span>Pin Site</span></button>`
             : '') }
         ], 'snNetBackApprox') : ''}
+        ${tsSnData ? miniTable('LOADS OFF THE LOGGED TRUCK SIZE', tsSnData.rows, [
+          { label: 'Truck', key: 'truck', mono: true, fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Tickets', key: 'side_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Size From', key: 'source_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Logged Size', key: 'logged_size', r: true, noFoot: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 2)} m³</span>` },
+          { label: 'On the Tickets', key: 'ticket_size', r: true, noFoot: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 2)} m³</span>` },
+          { label: 'Loads', key: 'loads', r: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 0)}</span>` },
+          { label: 'First Load', key: 'first_date', mono: true, fmt: v => `<span data-no-i18n="1">${esc(fmtDateDMY(v))}</span>` },
+          { label: 'Last Load', key: 'last_date', mono: true, fmt: v => `<span data-no-i18n="1">${esc(fmtDateDMY(v))}</span>` },
+          { label: 'm³ Apart', key: 'm3_diff', r: true, fmt: v => `<span data-no-i18n="1">${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v || 0, 1)}</span>` },
+          { label: 'Worth', key: 'usd_diff', r: true, fmt: v => `<span data-no-i18n="1">${Number(v || 0) < 0 ? '-' : (Number(v || 0) > 0 ? '+' : '')}${usd2(Math.abs(Number(v || 0)))}</span>` }
+        ], 'snTruckSize') : ''}
         ${miniTable('FUEL CONSUMPTION &amp; METER OUTLIERS', fleet.consumption_outliers || [], [
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
@@ -31189,6 +31654,10 @@
 
   function getCompanyIndustryName(companyRaw) {
     const raw = String(companyRaw || '').trim();
+    if (/^(democompany|demo_company)$/i.test(raw)) {
+      const demoInd = (typeof getActiveIndustry === 'function' ? getActiveIndustry(DEMO_COMPANY_KEY) : '') || (STATE && STATE.demoCompanyIndustry) || 'Hospitality & Resorts';
+      return getCompanyIndustryName('industry:' + demoInd);
+    }
     const s = (raw.startsWith('industry:') ? raw.slice(9).trim() : raw).toLowerCase();
     if (/hospitality|resort|blanca|las*una|launa|palms|voile|platinum/i.test(s)) return 'Hospitality';
     if (/trading|auto|korri|shacman/i.test(s)) return 'Trading';
@@ -31203,33 +31672,48 @@
     return 'Manufacturing';
   }
 
-  // Company Defaults cards follow the company picked in #companySwitch: one card for a single
-  // company, every company of the industry only on a group scope (owner 2026-11-17).
+  // Scoped company list: returns [singleCompany] when companyOpt (or #companySwitch when omitted)
+  // names a single company, and every seat-permitted company of the active industry on a group scope
+  // ('manufacturing-group', 'industry:*', 'democompany', 'ALL', 'All Companies', 'All BUs').
   function getAttendanceDefaultsCompanies(companyOpt = '') {
-    const picked = COMPANY_BU_MATCH[STATE.company] || '';
-    if (picked) return [picked];
-    return getActiveIndustryBuList(companyOpt);
+    const raw = String(companyOpt || STATE.company || '').trim();
+    if (!raw || /^(manufacturing-group|democompany|demo_company|all|all\s*companies|all\s*bus)$/i.test(raw) || /^industry:/i.test(raw)) {
+      return getActiveIndustryBuList(raw);
+    }
+    const single = COMPANY_BU_MATCH[raw] || canonCompany(raw) || raw;
+    const viewerAllowed = typeof allowedCompanyNames === 'function' && typeof activeUser === 'function'
+      ? allowedCompanyNames(activeUser())
+      : [];
+    if (viewerAllowed.length && !viewerAllowed.some(c => norm(c) === norm(single))) return [];
+    return [single];
   }
 
   function getActiveIndustryBuList(companyOpt = '') {
-    const rawActive = companyOpt
-      ? companyOpt
-      : (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company);
+    const isDemoOpt = /^(democompany|demo_company)$/i.test(String(companyOpt || '').trim());
+    const rawActive = isDemoOpt
+      ? ((typeof getActiveIndustry === 'function' ? getActiveIndustry(DEMO_COMPANY_KEY) : '') || (STATE && STATE.demoCompanyIndustry) || 'Hospitality & Resorts')
+      : (companyOpt
+        ? companyOpt
+        : (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company));
     const activeInd = getCompanyIndustryName(rawActive);
     const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
     const viewerAllowed = typeof allowedCompanyNames === 'function' && typeof activeUser === 'function'
       ? allowedCompanyNames(activeUser())
       : [];
     const bus = cat
-      .filter(c => getCompanyIndustryName(c.industry || c.name) === activeInd && (!viewerAllowed.length || viewerAllowed.includes(c.name)))
+      .filter(c => getCompanyIndustryName(c.industry || c.name) === activeInd && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(c.name))))
       .map(c => c.name);
     if (bus.length) return bus;
-    if (activeInd === 'Hospitality') return ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
-    if (activeInd === 'Trading') return ['Korri Auto', 'Shacman'];
-    if (activeInd === 'Real Estate') return ['Properties', '4235 Company S.A.L'];
-    if (activeInd === 'Insurance') return ['Insurance Company'];
-    if (activeInd === 'Holding') return ['Bdeir Holding'];
-    return ['WTC', 'BBConstruction', 'Lions Transport'];
+    const fb = activeInd === 'Hospitality'
+      ? ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum']
+      : (activeInd === 'Trading'
+        ? ['Korri Auto', 'Shacman']
+        : (activeInd === 'Real Estate'
+          ? ['Properties', '4235 Company S.A.L']
+          : (activeInd === 'Insurance'
+            ? ['Insurance Company']
+            : (activeInd === 'Holding' ? ['Bdeir Holding'] : ['WTC', 'BBConstruction', 'Lions Transport']))));
+    return viewerAllowed.length ? fb.filter(c => viewerAllowed.some(v => norm(v) === norm(c))) : fb;
   }
 
   function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
@@ -43512,7 +43996,8 @@
     getState: () => STATE,
     getSeed: () => SEED,
     getSeedDate: () => SEED_DATE,
-    getActiveIndustryBuList: co => getActiveIndustryBuList(co)
+    getActiveIndustryBuList: co => getActiveIndustryBuList(co),
+    getScopedIndustryBuList: co => getAttendanceDefaultsCompanies(co)
   };
 
   function computeStaffMonthPayrollPosition(staffName, company, payrollMonth, txDate, excludeSalId = null, _skipPrev = false) {
@@ -48317,6 +48802,7 @@
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(r)) return;
       let lbp = 0, usd = 0, cat = 'AR Receipt';
       if (mth === 'VATRent') {
         lbp = -Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * rate)));
@@ -48367,6 +48853,7 @@
     filterRecords(SEED.records.settlements, baseFilterOpts).forEach(s => {
       const knd = settlementKind(s);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(s)) return;
       const lbp = -Math.round(Number(s.lbp_amount || (knd === 'VAT paid' ? Number(s.amount || 0) * rate : 0)));
       const usd = knd === 'VAT paid' ? 0 : -(s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0));
       pushMove({
@@ -48520,6 +49007,33 @@
             usd: jvU,
             lbp: 0,
             raw: jd
+          });
+        });
+      }
+
+      // Opening till (owner 2026-11-13 / 2026-11-18): on each company's first sheet day the till starts from opening
+      // balances that are not payments (Config rows, salary and borrowing openings), so they are not register lines.
+      // The top-up stores their total with the sheet (build/till_register_check.py opening_till_line, from the
+      // loaded records, so app edits never move it) and the register shows it as one line, so register and till
+      // agree from day one. Whole-register seats only, and never in the official-books scope (it trims the register,
+      // so a difference taken against the full register would not hold there).
+      if (!offScope) {
+        const otAllowed = allowedCompanyNames(u);
+        ['WTC', 'BBConstruction'].forEach(coName => {
+          if (!matchesCashScopeCompany({ company: coName }, effCo, otAllowed)) return;
+          const coModel = SEED.models && SEED.models[coName.toLowerCase()];
+          const ot = coModel && coModel.cash_flow_sheet && coModel.cash_flow_sheet.opening_till;
+          if (!ot || !/^\d{4}-\d{2}-\d{2}$/.test(String(ot.date || ''))) return;
+          pushMove({
+            id: `opening-till-${coName.toLowerCase()}`, rkey: '', date: ot.date, company: coName,
+            stream: 'open', cat: 'Opening Till',
+            party: coName, partyRel: '',
+            detail: 'Opening balances the till starts from on its first day (not payments)',
+            ref: '—',
+            method: 'Opening',
+            usd: Number(ot.usd || 0),
+            lbp: Number(ot.lbp || 0),
+            raw: { id: `opening-till-${coName.toLowerCase()}`, date: ot.date, company: coName, notes: 'Opening till' }
           });
         });
       }
@@ -48783,6 +49297,7 @@
       const knd = receiptKind(rc);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(rc)) return;
       let u = 0, l = 0;
       if (mth === 'VATRent') {
         l = -Math.round(mult * Number(rc.lbp_amount || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * (rate || 89500))));
@@ -48819,6 +49334,7 @@
     forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(sp)) return;
       const lRaw = Number(sp.lbp_amount || 0);
       const u = knd === 'Payment' ? round2(mult * (lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0))) : 0;
       const l = knd === 'Payment' ? Math.round(mult * lRaw) : Math.round(mult * (lRaw || Math.round(Number(sp.amount || 0) * (rate || 89500))));
@@ -49690,8 +50206,8 @@
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                 const cfCand = appOnlyCandMap ? appOnlyCandMap.get(`${r.rkey}:${r.id}`) : null;
                 return `
-                <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
-                  <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${appCell(r.raw, r.rkey)}</td>
+                <tr${r.rkey ? ` class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}"` : ''}>
+                  <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${r.rkey ? appCell(r.raw, r.rkey) : ''}</td>
                   <td>${coBadge(r.company)}</td>
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${flowCls}">${flowSym}</span><span class="cf-cat-txt">${esc(r.cat)}</span></td>
                   <td class="cf-party-cell" title="${esc(r.party)}">${partyHtml}</td>
@@ -64958,6 +65474,7 @@
       const mth = String(rc.method || '').trim();
       const knd = receiptKind(rc);
       if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
+      if (isCarriedBalanceMethod(rc)) return;
       const lRaw = Number(rc.lbp_amount || 0);
       const u = mth === 'Rent' ? -round2(Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))
         : (knd === 'Settlement' ? round2(lRaw ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0)) : 0);
@@ -64976,6 +65493,7 @@
     effectiveRows('settlements', scopedSeed('settlements'), null).forEach(sp => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(sp)) return;
       const lRaw = Number(sp.lbp_amount || 0);
       const u = knd === 'Payment' ? -round2(lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0)) : 0;
       const l = knd === 'Payment' ? -Math.round(lRaw) : -Math.round(lRaw || Math.round(Number(sp.amount || 0) * 89500));
@@ -68675,6 +69193,7 @@
   }
 
   function closeIndustryDomainEntryModal() {
+    cancelNearCopyLiveCheck();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
       window.MFG_AI_EDGE.stopVoiceCapture();
     }
@@ -68760,11 +69279,13 @@
     $('indEntryModalTitle').textContent = isEditMode ? `Edit · ${prefill.id || prefill.code || spec.label}` : spec.title;
 
     const fldWrap = (label, inputHtml, hint = '') => `
-      <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:7px">
-        <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${label}</span>
-        ${inputHtml}
+      <div class="ide-fld-card" style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:7px;min-width:0">
+        <label style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${label}</span>
+          ${inputHtml}
+        </label>
         ${hint ? `<span style="font-size:10.5px;color:var(--muted,#64748B)">${hint}</span>` : ''}
-      </label>
+      </div>
     `;
     const inpStyle = 'padding:6px 9px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:12.5px;font-weight:600';
     const roStyle = 'padding:6px 9px;border:1px solid var(--line,#E2E8F0);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--ink,#0F172A);font-size:12.5px;font-weight:700';
@@ -69802,6 +70323,19 @@
       el.addEventListener('input', recalcLive);
       el.addEventListener('change', recalcLive);
     });
+    if (isEditMode) {
+      bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender').forEach(el => {
+        el.dataset.partyInitVal = String(el.value || '');
+      });
+    }
+    if (typeof wirePartyTypoHost === 'function') {
+      wirePartyTypoHost(bodyEl, {
+        getInd: () => ind,
+        getCo: () => strVal('ide_company') || defCo,
+        isEditMode: () => isEditMode,
+        isDomainModal: true
+      });
+    }
     recalcLive();
 
     formEl.onsubmit = async ev => {
@@ -71448,6 +71982,7 @@
     let trdOps = null;
     let icOps = null;
     let nbSnBrief = null;
+    let tsSnBrief = null;
     let customHitsMap = {};
 
     try {
@@ -71456,6 +71991,7 @@
       snSliceData = sentinelSlice();
       kpiData = getKPI();
       if (targetInd === 'Manufacturing') nbSnBrief = getNetBackSentinelData();
+      if (targetInd === 'Manufacturing' && isAlertRuleEnabled('S17')) tsSnBrief = getTruckSizeSentinelData();
       if (targetInd !== 'Manufacturing') {
         indExcTables = buildIndustrySentinelExceptionTables(targetInd) || [];
         if (canViewBooks && typeof getIndustryGlModel === 'function') {
@@ -72142,6 +72678,41 @@
             leadCl ? sanitizePlain(leadCl.headlineFr) : 'Aucune concentration anormale aux seuils ou paliers d\'heures sup.',
             leadCl ? sanitizePlain(leadCl.recommendationFr) : 'Conservez les seuils et paliers d\'heures sup. actuels.'
           ];
+        } else if (rid === 'S17') {
+          const tsd = tsSnBrief || { rows: [], loadsCnt: 0, trucksCnt: 0, m3Abs: 0, usdAbs: 0, judged: 0, lookback: 90, noLog: 0 };
+          expUsd = round2(safeNum(tsd.usdAbs));
+          rowCnt = safeNum(tsd.loadsCnt);
+          if (!(expUsd > 0)) {
+            physValEn = `${fmtNum(tsd.loadsCnt, 0)} Loads Off Size`;
+            physValAr = `${fmtNum(tsd.loadsCnt, 0)} نقلة بغير الحجم المسجّل`;
+            physValFr = `${fmtNum(tsd.loadsCnt, 0)} voyages hors volume`;
+          }
+          const tsTop = (tsd.rows || [])[0] || null;
+          topParty = tsTop ? sanitizePlain(`${tsTop.truck} (${tsTop.company})`) : 'No Repeat Offenders';
+          topSubEn = tsTop ? `${fmtNum(tsTop.loads)} loads at ${fmtNum(tsTop.ticket_size, 2)} m³, logged ${fmtNum(tsTop.logged_size, 2)} m³` : 'Every load carries its logged size';
+          topSubAr = tsTop ? `${fmtNum(tsTop.loads)} نقلة بحجم ${fmtNum(tsTop.ticket_size, 2)} م³، والمسجّل ${fmtNum(tsTop.logged_size, 2)} م³` : 'كل نقلة تحمل الحجم المسجّل';
+          topSubFr = tsTop ? `${fmtNum(tsTop.loads)} voyages à ${fmtNum(tsTop.ticket_size, 2)} m³, journal à ${fmtNum(tsTop.logged_size, 2)} m³` : 'Chaque voyage porte le volume du journal';
+          bEn = [
+            `${fmtNum(tsd.judged)} m³ tickets of the last ${fmtNum(tsd.lookback)} days were read against the size each truck's log gives that day: ${fmtNum(tsd.loadsCnt)} loads on ${fmtNum(tsd.trucksCnt)} trucks carry another size, ${fmtNum(tsd.m3Abs, 1)} m³ apart in all.`,
+            tsTop
+              ? `The most frequent is ${topParty}: ${topSubEn}, last on ${fmtDateDMY(tsTop.last_date)}; the differences are worth ${fmtUSD(expUsd, 0)} at the tickets' own rates.`
+              : 'No truck has repeated loads at a size other than its log.',
+            'For each truck, add a log from the day its size changed, or correct the tickets keyed at the wrong quantity, before signing off.'
+          ];
+          bAr = [
+            `تمت قراءة ${fmtNum(tsd.judged)} قسيمة بالمتر المكعب لآخر ${fmtNum(tsd.lookback)} يوماً مقابل الحجم الذي يعطيه سجل كل شاحنة في ذلك اليوم: ${fmtNum(tsd.loadsCnt)} نقلة على ${fmtNum(tsd.trucksCnt)} شاحنة تحمل حجماً آخر، بفارق إجمالي ${fmtNum(tsd.m3Abs, 1)} م³.`,
+            tsTop
+              ? `الأكثر تكراراً ${locOffender(topParty, 'ar')}: ${topSubAr}، آخرها في ${fmtDateDMY(tsTop.last_date)}؛ قيمة الفروقات ${fmtUSD(expUsd, 0)} بأسعار القسائم نفسها.`
+              : 'لا توجد شاحنة تكررت نقلاتها بحجم غير المسجّل في سجلها.',
+            'لكل شاحنة، أضف سجلاً من اليوم الذي تغيّر فيه الحجم، أو صحّح القسائم المدخلة بكمية خاطئة، قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtNum(tsd.judged)} bons en m³ des ${fmtNum(tsd.lookback)} derniers jours ont été comparés au volume que le journal de chaque camion donne ce jour-là : ${fmtNum(tsd.loadsCnt)} voyages sur ${fmtNum(tsd.trucksCnt)} camions portent un autre volume, soit ${fmtNum(tsd.m3Abs, 1)} m³ d écart au total.`,
+            tsTop
+              ? `Le plus fréquent est ${locOffender(topParty, 'fr')} : ${topSubFr}, dernier le ${fmtDateDMY(tsTop.last_date)} ; les écarts valent ${fmtUSD(expUsd, 0)} aux tarifs des bons.`
+              : 'Aucun camion ne répète des voyages à un volume autre que celui de son journal.',
+            'Pour chaque camion, ajoutez un journal à partir du jour où le volume a changé, ou corrigez les bons saisis à la mauvaise quantité, avant validation.'
+          ];
         }
       } else {
         // 5 Sibling Verticals: H1-H7, R1-R7, T1-T7, P1-P7, I1-I7
@@ -72461,6 +73032,7 @@
         S12: { ar: 'اتفاقيات التوصيل دون نقطة تعادل النقل', fr: 'Accords de livraison sous le seuil de rentabilité du transport' },
         S13: { ar: 'مراقب انتهاء تصاريح العمل والإقامات والهويات', fr: 'Surveillance des expirations de permis, résidences et pièces d’identité' },
         S14: { ar: 'مراقب تكتّل عتبات وتثبيت الإضافي (30 يوماً)', fr: 'Veille concentration seuils & paliers HS (30j)' },
+        S17: { ar: 'نقلات بغير حجم الشاحنة المسجّل', fr: 'Voyages hors volume du journal du camion' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
@@ -73227,7 +73799,7 @@
           getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters,
           ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd,
           expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense,
-          isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake,
+          isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake,
           activeUser, isOwner, canViewHub,
           coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2
         };
@@ -74102,13 +74674,15 @@
       if (!canPayroll && m.stream === 'sal') continue;
       const uAmt = safeNum(m.usd) + (safeNum(m.lbp) / fxRate);
       const cp = scrubOutwardGuideText(m.party || m.counterparty || m.type || coLabel) || coLabel;
+      // The Opening Till line counts in the period's cash, but no counterparty stands behind it: never list it as one.
+      const isOpenLine = m.stream === 'open';
       if (uAmt >= 0) {
         periodInUsd += uAmt;
-        inByCounterparty[cp] = (inByCounterparty[cp] || 0) + uAmt;
+        if (!isOpenLine) inByCounterparty[cp] = (inByCounterparty[cp] || 0) + uAmt;
       } else {
         const absOut = Math.abs(uAmt);
         periodOutUsd += absOut;
-        outByCounterparty[cp] = (outByCounterparty[cp] || 0) + absOut;
+        if (!isOpenLine) outByCounterparty[cp] = (outByCounterparty[cp] || 0) + absOut;
       }
     }
     periodInUsd = round2(periodInUsd);
@@ -88513,6 +89087,7 @@
         ? ['wrap_f_date', 'wrap_f_saletype', 'wrap_f_ticketno', 'wrap_f_notes']
         : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_notes'];
       showOnRemoveIds.forEach(id => setFieldVisible(id, true));
+      syncNearCopyBanner(side === 'sales' ? 'sales_tickets' : 'raw_purchases', null);
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
@@ -88520,6 +89095,7 @@
     } else if (isReturn) {
       hideOnReturnIds.forEach(id => setFieldVisible(id, false));
       showOnReturnIds.forEach(id => setFieldVisible(id, true));
+      syncNearCopyBanner(side === 'sales' ? 'sales_tickets' : 'raw_purchases', null);
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
@@ -88688,6 +89264,7 @@
           ${fld('Driver Tip ($)', inp('f_tip', 'number', '0.00', 'step="0.50" min="0" inputmode="decimal"'), { id: 'wrap_f_tip' })}
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount', hintId: 'hint_disc', hint: '' })}
           ${fld('Total Ex-VAT (USD) *', inp('f_total_usd', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_total_usd', lockField: 'f_total_usd', lockReason: 'Computed as Material Total + Transport Total', hint: 'Material Total + Transport Total' })}
+          ${nearCopyAmtJumpHtml()}
 
           ${secHdr('3. References, Statutory VAT & Notes')}
           ${fld('VAT Invoice No.', inp('f_vatinvoice', 'text', '', 'placeholder="Auto-linked VAT invoice" readonly'), { id: 'wrap_vatinvoice', hidden: true, lockField: 'f_vatinvoice', lockReason: 'Linked by statutory VAT invoicing batch', hint: '11% VAT applies to this customer' })}
@@ -88778,6 +89355,7 @@
           ${fld(`<span id="lbl_transunitprice">Haulage Unit Cost ($ / ${initRawUom})</span>`, inp('f_transunitprice', 'number', pendRawEditRow ? Number(pendRawEditRow.trans_unit_cost || 0).toFixed(2) : '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
           ${fld('Haulage Cost (USD)', inp('f_trans_total', 'number', pendRawEditRow ? Number(pendRawEditRow.trans_cost || 0).toFixed(2) : '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Haulage Unit Cost' })}
           ${fld('Total Payable (USD) *', inp('f_total_usd', 'number', pendRawEditRow ? Number(pendRawEditRow.total || 0).toFixed(2) : '0.00', 'step="0.01" readonly'), { id: 'wrap_f_total_usd', lockField: 'f_total_usd', lockReason: 'Computed as Material Cost + Haulage Cost' })}
+          ${pendRawEditRow ? '' : nearCopyAmtJumpHtml()}
           ${fld('Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], pendRawEditRow ? (pendRawEditRow.method || 'Credit') : 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit (2-leg AP split) by default' })}
 
           ${secHdr('3. References & Notes')}
@@ -91116,6 +91694,100 @@
     return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, '');
   }
 
+  function partyWordsKey(v) {
+    return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06ff\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Two compact party keys differing by one non-digit typo (or adjacent non-digit swap), never digit-only numbers
+  // ("Store 1" vs "Store 2", "Amtrac" vs "Amtrac 1") or short first-letter names ("Sami" vs "Rami").
+  function partyKeyOneLetterOff(a, b) {
+    if (!a || !b || a === b || Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
+    if (a.length === b.length) {
+      const diff = [];
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff.push(i);
+      if (diff.length === 1) {
+        const idx = diff[0];
+        if (/\d/.test(a[idx]) || /\d/.test(b[idx])) return false;
+        if (a.length <= 5 && idx === 0) return false;
+        return true;
+      }
+      return diff.length === 2
+        && diff[1] === diff[0] + 1
+        && a[diff[0]] === b[diff[1]]
+        && a[diff[1]] === b[diff[0]]
+        && !(/\d/.test(a[diff[0]]) && /\d/.test(a[diff[1]]));
+    }
+    const lo = a.length < b.length ? a : b;
+    const hi = a.length < b.length ? b : a;
+    for (let i = 0; i < hi.length; i++) {
+      if (hi.slice(0, i) + hi.slice(i + 1) === lo) return !/\d/.test(hi[i]);
+    }
+    return false;
+  }
+
+  // Matches 1-letter key typos AND single missing/extra spaces ("StarSolutions" vs "Star Solutions").
+  function partyNameOneLetterOff(rawA, rawB) {
+    const ka = nearCopyPartyKey(rawA);
+    const kb = nearCopyPartyKey(rawB);
+    if (!ka || !kb) return false;
+    if (ka !== kb) return partyKeyOneLetterOff(ka, kb);
+    const wa = partyWordsKey(rawA);
+    const wb = partyWordsKey(rawB);
+    if (!wa || !wb || wa === wb || Math.min(ka.length, kb.length) < 4 || Math.abs(wa.length - wb.length) !== 1) return false;
+    const lo = wa.length < wb.length ? wa : wb;
+    const hi = wa.length < wb.length ? wb : wa;
+    for (let i = 0; i < hi.length; i++) {
+      if (hi[i] === ' ' && hi.slice(0, i) + hi.slice(i + 1) === lo) return true;
+    }
+    return false;
+  }
+
+  // True when `rawName` is an independent active party in the Universal Customer/Supplier master for `company`'s industry.
+  function isExactMasterParty(partyKind, rawName, company) {
+    const key = nearCopyPartyKey(rawName);
+    if (!key) return false;
+    const crKey = partyKind === 'customer' ? 'customers' : 'suppliers';
+    const rows = nearCopyPool(crKey);
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const targetInd = hasIndFn
+      ? (inferIndustryForCompany(company || '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing'))
+      : 'Manufacturing';
+    const demoOn = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
+    const isMfg = !targetInd || targetInd === 'Manufacturing';
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.voided || r.voided_at) continue;
+      if (!demoOn && r._demoSpineRow) continue;
+      if (isMfg) {
+        if (r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) continue;
+      } else {
+        const rowInd = r._industry || (hasIndFn && r.company ? inferIndustryForCompany(r.company) : '');
+        if (rowInd !== targetInd) continue;
+      }
+      const rName = r.name || (partyKind === 'customer' ? r.Customer : r.Supplier) || '';
+      if (rName && nearCopyPartyKey(rName) === key) return true;
+    }
+    return false;
+  }
+
+  // Returns the highest-ranked (caller-ordered) candidate that is 1 letter off `rawName`, or null if `rawName` matches
+  // an existing candidate exactly or has no 1-letter-off neighbour.
+  function findNearPartyMatch(rawName, candidates) {
+    const w = partyWordsKey(rawName);
+    const k = nearCopyPartyKey(rawName);
+    const n = norm(rawName);
+    if (!w || k.length < 4 || !Array.isArray(candidates) || !candidates.length) return null;
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (c && (norm(c) === n || partyWordsKey(c) === w)) return null;
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (c && partyNameOneLetterOff(rawName, c)) return c;
+    }
+    return null;
+  }
+
   // The dollar figure the top-up compares: the USD amount, else the pounds at 89,500.
   function nearCopySumUsd(x) {
     const n = v => { const k = Number(v || 0); return Number.isFinite(k) ? k : 0; };
@@ -91158,7 +91830,7 @@
     return t.toISOString().slice(0, 10);
   }
 
-  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' }, or null.
+  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' }, or null.
   function findNearCopySumEntry(crKey, rec) {
     const pk = NEAR_COPY_SUM_PARTY[crKey];
     if (!pk || !rec || rec.price_pending || rec.group_transfer_id || rec.backpay_voucher || rec._backpay_lines) return null;
@@ -91170,13 +91842,16 @@
     if (!day || !co || !cls || !party || !(amt > 0.005)) return null;
     const days = [day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
+    const checkTypo = (pk === 'supplier' || pk === 'customer') && party.length >= 4 && !isExactMasterParty(pk, rec[pk], rec.company);
+    const closeByParty = checkTypo ? new Map() : null;
     const rows = nearCopyPool(crKey);
     const seen = new Set();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       // An app row the browser already holds as a copy of a seed row (_absorbedSeedTwin) is that row: never count it twice.
       if (!r || r.voided || r.voided_at || r.price_pending || r._absorbedSeedTwin) continue;
-      const bucket = byDay.get(String(r.date || '').slice(0, 10));
+      const rDay = String(r.date || '').slice(0, 10);
+      const bucket = byDay.get(rDay);
       if (!bucket || norm(r.company || '') !== co) continue;
       if (rec.id && r.id && String(r.id) === String(rec.id)) continue;
       if (isSelfEditingRow(r, crKey)) continue;
@@ -91184,9 +91859,20 @@
         if (seen.has(String(r.id))) continue;
         seen.add(String(r.id));
       }
-      if (nearCopyPartyKey(r[pk]) !== party || nearCopySumClass(crKey, r) !== cls) continue;
+      if (nearCopySumClass(crKey, r) !== cls) continue;
       if (Math.abs(nearCopySumUsd(r)) <= 0.005) continue;
-      bucket.push(r);
+      const rp = nearCopyPartyKey(r[pk]);
+      if (!rp) continue;
+      if (rp === party) {
+        bucket.push(r);
+      } else if (closeByParty && partyKeyOneLetterOff(party, rp)) {
+        let pDays = closeByParty.get(rp);
+        if (!pDays) {
+          pDays = new Map(days.map(d => [d, []]));
+          closeByParty.set(rp, pDays);
+        }
+        pDays.get(rDay).push(r);
+      }
     }
     const lbpOf = x => Number(x.lbp_amount || 0) || 0;
     const recLbp = lbpOf(rec);
@@ -91200,14 +91886,27 @@
       return lbpOff && Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - amt) < NEAR_COPY_SUM_USD_TOL;
     };
     const toks = nearCopyRefTokens(rec.invoice, rec.reference, rec.notes);
-    for (const d of days) {
-      const cands = byDay.get(d);
-      let group = addsUp(cands) ? cands : null;
-      if (!group && toks.size) {
-        const named = cands.filter(x => [...nearCopyRefTokens(x.invoice, x.reference)].some(t => toks.has(t)));
-        if (addsUp(named)) group = named;
+    const matchFromMap = (dayMap, sameReason, gapReason) => {
+      for (const d of days) {
+        const cands = dayMap.get(d);
+        let group = addsUp(cands) ? cands : null;
+        if (!group && toks.size) {
+          const named = cands.filter(x => [...nearCopyRefTokens(x.invoice, x.reference)].some(t => toks.has(t)));
+          if (addsUp(named)) group = named;
+        }
+        if (group) return { row: group[0], rows: group.slice(), day: d, reason: d === day ? sameReason : gapReason };
       }
-      if (group) return { row: group[0], rows: group.slice(), day: d, reason: d === day ? 'sum' : 'sum_gap' };
+      return null;
+    };
+    const exactHit = matchFromMap(byDay, 'sum', 'sum_gap');
+    if (exactHit) return exactHit;
+    if (closeByParty && closeByParty.size) {
+      const countRows = dm => { let n = 0; dm.forEach(arr => { n += arr.length; }); return n; };
+      const ranked = Array.from(closeByParty.values()).sort((a, b) => countRows(b) - countRows(a));
+      for (const dm of ranked) {
+        const typoHit = matchFromMap(dm, 'sum_typo', 'sum_gap_typo');
+        if (typoHit) return typoHit;
+      }
     }
     return null;
   }
@@ -91231,11 +91930,16 @@
     if (!day || !co || !(amt > 0.005)) return null;
     const digits = v => String(v || '').replace(/\D/g, '');
     const recTruck = digits(rec.truck);
-    const recParty = crKey === 'sales_tickets' ? norm(rec.customer || '') : (crKey === 'raw_purchases' ? norm(rec.site || rec.site_owner || '') : normSupPayable(rec.supplier || ''));
+    const rawRecParty = crKey === 'sales_tickets' ? (rec.customer || '') : (crKey === 'raw_purchases' ? (rec.site || rec.site_owner || '') : (rec.supplier || ''));
+    const recParty = crKey === 'sales_tickets' ? norm(rawRecParty) : (crKey === 'raw_purchases' ? norm(rawRecParty) : normSupPayable(rawRecParty));
     if (!recParty) return null;
+    const recPartyCompact = nearCopyPartyKey(rawRecParty);
+    const typoKind = crKey === 'sales_tickets' ? 'customer' : (crKey === 'expenses' ? 'supplier' : '');
+    const allowTypo = Boolean(typoKind && recPartyCompact.length >= 4 && !isExactMasterParty(typoKind, rawRecParty, rec.company));
     const recInv = normTicketNo(cleanVoucherRef(rec.invoice || rec.reference));
     const rows = nearCopyPool(crKey);
     const seen = new Set();
+    let typoHit = null;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r || r.voided || r.voided_at || r._absorbedSeedTwin || String(r.date || '').slice(0, 10) !== day || norm(r.company || '') !== co) continue;
@@ -91247,28 +91951,40 @@
       }
       if (crKey === 'sales_tickets' || crKey === 'raw_purchases') {
         if (r.removed_slip || r.ticket_disposition === 'remove_slip') continue;
-        const party = crKey === 'sales_tickets' ? norm(r.customer || '') : norm(r.site || r.site_owner || '');
-        if (party !== recParty) continue;
+        const rawRowParty = crKey === 'sales_tickets' ? (r.customer || '') : (r.site || r.site_owner || '');
+        const party = norm(rawRowParty);
+        const exactParty = party === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowParty) === recPartyCompact);
+        const typoParty = !exactParty && allowTypo && Boolean(rawRowParty) && partyNameOneLetterOff(rawRecParty, rawRowParty);
+        if (!exactParty && !typoParty) continue;
         const rTruck = digits(r.truck);
         if (recTruck && rTruck && recTruck !== rTruck) continue;
         if (Math.abs(nearCopyRowUsd(crKey, r) - amt) >= 1.0) continue;
         if (!ticketNoOneSlip(rec.ticket_no, r.ticket_no)) continue;
         if (Math.abs(Number(normTicketNo(rec.ticket_no)) - Number(normTicketNo(r.ticket_no))) < NEAR_COPY_MIN_TICKET_GAP) continue;
-        return { row: r, reason: 'ticket' };
+        if (exactParty) return { row: r, reason: 'ticket' };
+        if (!typoHit) typoHit = { row: r, reason: 'ticket_typo' };
+        continue;
       }
-      if (r.price_pending || normSupPayable(r.supplier || '') !== recParty) continue;
+      if (r.price_pending) continue;
+      const rawRowSup = r.supplier || '';
+      const exactSup = normSupPayable(rawRowSup) === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowSup) === recPartyCompact);
+      const typoSup = !exactSup && allowTypo && Boolean(rawRowSup) && partyNameOneLetterOff(rawRecParty, rawRowSup);
+      if (!exactSup && !typoSup) continue;
       if (rec.equipment && r.equipment && norm(rec.equipment) !== norm(r.equipment)) continue;
       const rInv = normTicketNo(cleanVoucherRef(r.invoice || r.reference));
       if (recInv && rInv && recInv !== rInv) continue;
       if (!amountsVatApart(amt, nearCopyRowUsd(crKey, r))) continue;
-      return { row: r, reason: 'vat' };
+      if (exactSup) return { row: r, reason: 'vat' };
+      if (!typoHit) typoHit = { row: r, reason: 'vat_typo' };
     }
-    return null;
+    return typoHit;
   }
 
   // Shows (or hides) the confirm box under the form; a different match unticks it.
   function syncNearCopyBanner(crKey, hit) {
     const wrap = $('wrap_nearcopyok');
+    const jump = $('nearCopyAmtJump');
+    if (!hit && jump) jump.hidden = true;
     if (!wrap) return false;
     const cb = $('f_nearcopyok');
     const hint = $('hint_nearcopy');
@@ -91292,6 +92008,18 @@
       if (cb) cb.checked = false;
     }
     wrap.hidden = false;
+    if (jump) jump.hidden = false;
+    const reasonMap = {
+      sum: 'Same day and party, these entries add up to this amount',
+      sum_gap: 'Same party, these entries one day apart add up to this amount',
+      sum_typo: 'Same day, entries under a similar name add up to this amount',
+      sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      ticket: 'Same day, party, truck and amount, ticket number one digit apart',
+      ticket_typo: 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
+      vat: 'Same day and supplier, amount differs by exactly the 11% VAT',
+      vat_typo: 'Same day and similar supplier name, amount differs by exactly the 11% VAT'
+    };
+    const reason = reasonMap[hit.reason] || '';
     if (hint && hit.rows) {
       const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment' }[crKey] || 'Entry';
       const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
@@ -91299,9 +92027,6 @@
         const ref = cleanVoucherRef(r.invoice || r.reference);
         return `${ref ? '#' + ref + ' ' : ''}${fmtUSD(nearCopySumUsd(r), 2)}`;
       }).join(' + ');
-      const reason = hit.reason === 'sum'
-        ? 'Same day and party, these entries add up to this amount'
-        : 'Same party, these entries one day apart add up to this amount';
       const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
     } else if (hint) {
@@ -91310,10 +92035,11 @@
       const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
       const party = crKey === 'sales_tickets' ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
       const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(nearCopyRowUsd(crKey, r), 2)].filter(Boolean);
-      const reason = hit.reason === 'ticket'
-        ? 'Same day, party, truck and amount, ticket number one digit apart'
-        : 'Same day and supplier, amount differs by exactly the 11% VAT';
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`);
+    }
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(wrap);
+      if (jump) window.MFG_I18N.translateDom(jump);
     }
     return true;
   }
@@ -91342,6 +92068,11 @@
     return `<div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>`;
   }
 
+  function nearCopyAmtJumpHtml() {
+    const ico = typeof ic === 'function' ? ic('warn') : '';
+    return `<button type="button" class="near-copy-jump span-3" id="nearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
+  }
+
   // Warn while typing (owner 2026-11-17): the second-copy check runs while the form is filled in, not only at Post, so
   // the entry the new one may repeat shows under the form before it is finished. It is the Post check itself
   // (validateAndBuild in preview: no field is rewritten, nothing is added to a register, no red field is shown), so
@@ -91350,9 +92081,12 @@
   const NEAR_COPY_LIVE_FORMS = ['sales', 'raw', 'expense', 'settlement', 'receipt', 'salary'];
   const NEAR_COPY_LIVE_DELAY_MS = 300;
   let nearCopyLiveTimer = 0;
+  let partyTypoTimer = 0;
   function cancelNearCopyLiveCheck() {
     if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
     nearCopyLiveTimer = 0;
+    if (partyTypoTimer) clearTimeout(partyTypoTimer);
+    partyTypoTimer = 0;
   }
   function scheduleNearCopyLiveCheck(calcRes) {
     cancelNearCopyLiveCheck();
@@ -93378,6 +94112,7 @@
       upEl.value = '0.00';
       setText('lbl_pricelock', 'PENDING PRICE');
       setHint('hint_price', 'Logs receipt at $0.00 material cost · enter final invoice price when supplier bill arrives', 'warn');
+      syncNearCopyBanner('raw_purchases', null);
     } else if (pendRawEditRow && upEl) {
       setText('lbl_pricelock', 'FINAL INVOICE PRICE');
       const curUp = num('f_unitprice');
@@ -94386,6 +95121,7 @@
       }
     } else if (pricePending) {
       setHint('hint_amount', 'Posted at $0.00 Credit AP now; click "Enter Price" when invoiced', 'ok');
+      syncNearCopyBanner('expenses', null);
     } else if (isMultiTicketSplit) {
       if (amount <= 0 && FORM_UI.postAttempted) {
         setHint('hint_amount', 'Enter unit prices above (or switch to Pending $0)', 'crit');
@@ -95976,6 +96712,134 @@
   }
 
   let _nbSentinelCache = null;
+  // Sentinel S17 (rule #28), owner 2026-11-18: m³ tickets whose quantity is not the size the truck's log gives that
+  // day. Every such load is either a size change nobody logged or a keying slip, and it is worth money per load.
+  // Deterministic and read-only: the size is the one the ticket forms lock to (a price agreement's truck size first,
+  // then the log in force that day); a day no log covers is not judged. Rows are grouped per truck, company, side
+  // and the two sizes, so one line reads "363234 · 27 on the tickets, 28 on the log · 14 loads".
+  let _tsSentinelCache = null;
+  let _tsSentinelScans = 0;   // how many times the tickets were actually read (the gate checks it is not on every screen change)
+  function getTruckSizeSentinelData() {
+    if (getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    if (!SEED || !SEED._recordsReady) return null; // tickets are not in memory yet
+    const canSales = typeof canAccessTable !== 'function' || canAccessTable('sales_tickets');
+    const canRaw = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    if (!canSales && !canRaw) return null;
+    const today = todayISO();
+    const recs = SEED.records || {};
+    const u = activeUser() || {};
+    const singleBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const lookback = Math.min(730, Math.max(1, Math.round(Number(getAlertParam('S17', 'lookback_days', 90)) || 90)));
+    const tol = Math.max(0, Number(getAlertParam('S17', 'tolerance_m3', 0.25)) || 0);
+    const minLoads = Math.max(1, Math.round(Number(getAlertParam('S17', 'min_loads', 2)) || 1));
+    const fromDt = new Date(today + 'T00:00:00Z');
+    fromDt.setUTCDate(fromDt.getUTCDate() - lookback);
+    const fromIso = fromDt.toISOString().slice(0, 10);
+    const key = [SEED._customRev || 0, STATE._customRev || 0, _WIN_REV, STATE.company, today, u.id || u.email || '', u.role || '',
+      (recs.sales_tickets || []).length, (recs.raw_purchases || []).length, (recs.equipment || []).length, (recs.price_rules || []).length,
+      isOfficialScopeActive() ? 'OFF' : 'ALL', lookback, tol, minLoads, canSales ? 1 : 0, canRaw ? 1 : 0, allowedCompanyNames().join(',')].join('|');
+    if (_tsSentinelCache && _tsSentinelCache.key === key) return _tsSentinelCache.data;
+    _tsSentinelScans += 1;
+
+    const eqByKey = new Map();
+    (recs.equipment || []).forEach(e => {
+      if (!e || e.voided) return;
+      [norm(e.name || e.equipment), norm(e.plate_no)].forEach(k => { if (k && !eqByKey.has(k)) eqByKey.set(k, e); });
+    });
+    // Trucks a price agreement gives its own size to: only their tickets need the agreement lookup
+    const agrTrucks = new Set();
+    (recs.price_rules || []).forEach(r => { if (r && !r.voided && Number(r.truck_size) > 0 && r.truck) agrTrucks.add(norm(r.truck)); });
+    const allowedCoSet = new Set(allowedCompanyNames().map(n => norm(n)));
+    const groups = new Map();
+    let scanned = 0, judged = 0, noLog = 0;
+    const scan = (tableKey, side) => {
+      const pool = (recs[tableKey] || []).filter(r => {
+        if (!r || r.voided || r.removed_slip || r._is_statement_adj) return false;
+        const dt = String(r.date || '').slice(0, 10);
+        if (!dt || dt < fromIso || dt > today) return false;
+        if (!/^m/i.test(String(r.uom || 'm³'))) return false;
+        return Boolean(norm(r.truck)) && Number(r.qty) > 0;
+      });
+      if (!pool.length) return;
+      const scoped = filterRecords(pool, { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true, tableKey })
+        .filter(r => !singleBu || canonTwBu(r.company || 'WTC') === singleBu)
+        .filter(r => allowedCoSet.has(norm(canonTwBu(r.company || 'WTC'))));
+      scoped.forEach(r => {
+        if (isReturnTicket(r)) return;
+        const eq = eqByKey.get(norm(r.truck));
+        if (!eq) return;
+        scanned += 1;
+        const dt = String(r.date || '').slice(0, 10);
+        const co = r.company || 'WTC';
+        let expected = 0, src = '';
+        if (agrTrucks.has(norm(eq.name)) || agrTrucks.has(norm(eq.plate_no))) {
+          const agr = side === 'sales'
+            ? resolveAgreementTruckSize({ side: 'sales', company: co, customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq })
+            : resolveAgreementTruckSize({ side: 'raw', company: co, site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
+          if (agr && Number(agr.size) > 0) { expected = Number(agr.size); src = 'agreement'; }
+        }
+        if (!expected) {
+          const win = resolveTruckWindow(eq, co, dt, side === 'sales' ? { side: 'sales', customer: r.customer, site: r.site } : { side: 'raw', site: r.site });
+          if (win && Number(win.cap) > 0) { expected = Number(win.cap); src = 'log'; }
+        }
+        if (!expected) { noLog += 1; return; }
+        judged += 1;
+        const qty = Number(r.qty || 0);
+        const diff = qty - expected;
+        if (Math.abs(diff) <= tol + 1e-9) return;
+        // What the difference is worth at the ticket's own rates (per m³ legs only; a fixed-sum leg does not move)
+        const rate = side === 'sales'
+          ? (r.mat_indiff ? 0 : Number(r.unit_price || 0)) + ((String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) ? Number(r.trans_unit_price || 0) : 0)
+          : (r.mat_indiff ? 0 : Number(r.unit_cost || 0)) + (r.trans_indiff ? 0 : Number(r.trans_unit_cost || 0));
+        const gk = [norm(eq.name), canonTwBu(co), side, expected.toFixed(3), qty.toFixed(3), src].join('|');
+        let g = groups.get(gk);
+        if (!g) {
+          g = { rkey: 'equipment', rid: String(eq.id || eq.name || ''), truck: String(eq.name || r.truck), company: canonTwBu(co), side,
+            side_label: side === 'sales' ? 'Sales' : 'Raw Material', logged_size: expected, ticket_size: qty, size_source: src,
+            source_label: src === 'agreement' ? 'Price Agreement' : 'Truck Log', loads: 0, m3_diff: 0, usd_diff: 0, first_date: dt, last_date: dt, last_ticket: '' };
+          groups.set(gk, g);
+        }
+        g.loads += 1;
+        g.m3_diff = round2(g.m3_diff + diff);
+        g.usd_diff = round2(g.usd_diff + diff * rate);
+        if (dt < g.first_date) g.first_date = dt;
+        if (dt >= g.last_date) { g.last_date = dt; g.last_ticket = String(r.ticket_no || ''); }
+      });
+    };
+    if (canSales) scan('sales_tickets', 'sales');
+    if (canRaw) scan('raw_purchases', 'raw');
+    const rows = Array.from(groups.values()).filter(g => g.loads >= minLoads)
+      .sort((a, b) => b.loads - a.loads || Math.abs(b.usd_diff) - Math.abs(a.usd_diff) || String(b.last_date).localeCompare(String(a.last_date)) || a.truck.localeCompare(b.truck));
+    const trucks = new Set(rows.map(g => norm(g.truck)));
+    const data = {
+      rows, lookback, tol, minLoads, fromIso, scanned, judged, noLog,
+      trucksCnt: trucks.size,
+      loadsCnt: rows.reduce((s, g) => s + g.loads, 0),
+      m3Abs: round2(rows.reduce((s, g) => s + Math.abs(g.m3_diff), 0)),
+      usdAbs: round2(rows.reduce((s, g) => s + Math.abs(g.usd_diff), 0)),
+      singleCnt: groups.size - rows.length,
+    };
+    _tsSentinelCache = { key, data };
+    return data;
+  }
+  if (typeof window !== 'undefined') {
+    // Read by build/verify_truck_size_sentinel.mjs
+    window.__mfgTruckSizeSentinel = {
+      data: () => getTruckSizeSentinelData(),
+      item: () => (buildSentinelItems() || []).find(x => x && x.id === 'S17') || null,
+      clearCache: () => { _tsSentinelCache = null; },
+      scans: () => _tsSentinelScans,
+      // The gate's on/off switch (headless only): the rule as Alerts & Thresholds would pause it
+      setRuleEnabledForCheck: on => {
+        if (!window.__MFG_HEADLESS_TEST) return isAlertRuleEnabled('S17');
+        const st = ensureAlertRulesState();
+        st.overrides.S17 = Object.assign({}, st.overrides.S17, { enabled: Boolean(on) });
+        invalidateAlertRuleCaches();
+        return isAlertRuleEnabled('S17');
+      },
+    };
+  }
+
   function getNetBackSentinelData() {
     if (getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
     if (typeof canAccessTable === 'function' && !canAccessTable('price_rules')) return null;
@@ -96660,8 +97524,12 @@
     FORM_UI.lastCustomer = '';
     recalcForm();
     if (cleanBefore) {
-      FORM_UI.initialModalSig = getEntryModalStateSignature();
+      FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
       FORM_UI.userInteracted = false;
+    } else if (FORM_UI.initialModalFields && siteEl) {
+      // The move re-wrote the site on the form and on the row being edited: for the "what did the person change"
+      // check the new site is the starting point, not a change.
+      FORM_UI.initialModalFields[siteEl.id || 'f_site'] = String(siteEl.value == null ? '' : siteEl.value).trim();
     }
     toast(`✓ Moved to Own Site: ${res.newSite}`);
     return res;
@@ -101132,9 +102000,11 @@
       if (FORM_UI.postAttempted) {
         const v = validateAndBuild({ skipRecalc: true, calcResult: res });
         syncFormValidationUI(v.fieldErrors, false);
+        if (typeof syncFormPartyTypoHints === 'function') syncFormPartyTypoHints(activeFormHost());
       } else {
         syncFormValidationUI([], false);
         scheduleNearCopyLiveCheck(res);
+        if (typeof schedulePartyTypoCheck === 'function') schedulePartyTypoCheck(activeFormHost());
       }
       if (STATE.view === 'kiosks' && typeof updateKioskLiveThermalPreview === 'function') {
         updateKioskLiveThermalPreview(res);
@@ -101233,6 +102103,7 @@
               <button type="button" class="btn" id="btnCancelLogEquipDriver" hidden>Cancel</button>
             </div>
           </div>
+          <div class="tw-save-preview" id="modalTwSavePreview" role="status" aria-live="polite" hidden></div>
         ` : ''}
         <div class="table-wrap" style="max-height:210px;overflow:auto">
           <table class="ledger-table">
@@ -101249,7 +102120,7 @@
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                 const wCo = w.co || 'WTC';
                 return `
-                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to start a new log from this entry">
                     <td>${coBadge(wCo)}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -101309,6 +102180,73 @@
         }
       });
     }
+    // What the button would do, said under it before it is pressed (same line as the truck's 360° log form)
+    const modalTwEditIdx = () => ((logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1);
+    const readModalTwSpec = () => {
+      const eIdx = modalTwEditIdx();
+      // Changing a log keeps its scope and size. A new assignment, started from a row or not, is a general one at
+      // the truck's current size, as before: this form has no size field, so it never takes a size from an old row.
+      const refWin = (eIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[eIdx] : null;
+      return {
+        co: val('f_log_co') || defCo,
+        side: (refWin && refWin.side) || 'both',
+        s: val('f_log_start') || todayISO(),
+        e: val('f_log_end') || '',
+        cap: Number((refWin && refWin.cap) || targetEq.capacity || 0),
+        own: val('f_log_owner'),
+        drv: val('f_log_driver'),
+        cust: (refWin && refWin.cust) || '',
+        site: (refWin && refWin.site) || '',
+        persistTicketBackfill: true
+      };
+    };
+    const refreshModalTwPreview = () => {
+      const host = $('modalTwSavePreview');
+      if (!host || !canSwitchEquipmentDriver()) return;
+      const spec = readModalTwSpec();
+      if (!spec.own || !spec.drv || !spec.s) { paintTruckLogSavePreview(host, null); return; }
+      let plan = null;
+      try { plan = describeTruckLogSave(targetEq, spec, modalTwEditIdx()); } catch (_) { plan = null; }
+      paintTruckLogSavePreview(host, plan, { showSize: false });
+    };
+    // While typing the line waits for a pause (it reads the truck's tickets); a pick or a button refreshes it at once
+    let modalTwPrevTimer = 0;
+    const queueModalTwPreview = () => {
+      if (modalTwPrevTimer) clearTimeout(modalTwPrevTimer);
+      modalTwPrevTimer = setTimeout(() => { modalTwPrevTimer = 0; if ($('modalTwSavePreview')) refreshModalTwPreview(); }, 180);
+    };
+    ['f_log_co', 'f_log_start', 'f_log_end', 'f_log_owner', 'f_log_driver'].forEach(fid => {
+      const el = $(fid);
+      if (!el) return;
+      el.addEventListener('input', queueModalTwPreview);
+      el.addEventListener('change', queueModalTwPreview);
+    });
+    refreshModalTwPreview();
+    // Clicking a row starts a NEW assignment from it (its owner and driver, starting today); changing a log itself is
+    // the row's Edit button. A change "from now on" must never rewrite the days already worked.
+    const startModalWinNewFrom = idx => {
+      if (!canSwitchEquipmentDriver() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
+      const w = targetEq.adj_windows[idx];
+      if (!w) return;
+      logBox.dataset.editModalWinIdx = '';
+      if ($('f_log_co')) $('f_log_co').value = canonTwBu(w.co || defCo);
+      syncModalTwCoRows();
+      if ($('f_log_start')) {
+        const minNewS = getTruckWindowMinStart(targetEq, { co: w.co || defCo, side: 'both', cust: '', site: '' }, -1);
+        if (minNewS) $('f_log_start').setAttribute('min', minNewS);
+        else $('f_log_start').removeAttribute('min');
+        $('f_log_start').value = (minNewS && minNewS > today) ? minNewS : today;
+      }
+      if ($('f_log_end')) $('f_log_end').value = '';
+      if ($('f_log_owner')) $('f_log_owner').value = w.own || targetEq.supplier || defLogOwner || '';
+      if ($('f_log_driver')) $('f_log_driver').value = w.drv || targetEq.default_driver || '';
+      if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
+      if (cancelLogBtn) cancelLogBtn.hidden = false;
+      logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-modal-tw-row-idx')) === idx ? 'rgba(74,144,217,0.10)' : '';
+      });
+      refreshModalTwPreview();
+    };
     const startModalWinEdit = idx => {
       if (!canSwitchEquipmentDriver() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
       const w = targetEq.adj_windows[idx];
@@ -101330,6 +102268,7 @@
       logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
         tr.style.background = Number(tr.getAttribute('data-modal-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
       });
+      refreshModalTwPreview();
     };
     if (cancelLogBtn) {
       cancelLogBtn.addEventListener('click', ev => {
@@ -101348,6 +102287,7 @@
         if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
         cancelLogBtn.hidden = true;
         logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+        refreshModalTwPreview();
       });
     }
     logWrap.querySelectorAll('[data-edit-modal-tw-idx]').forEach(btn => {
@@ -101360,7 +102300,7 @@
     logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
       tr.addEventListener('click', ev => {
         if (ev.target && ev.target.closest('button, a, [data-rel-key]')) return;
-        startModalWinEdit(Number(tr.getAttribute('data-modal-tw-row-idx')));
+        startModalWinNewFrom(Number(tr.getAttribute('data-modal-tw-row-idx')));
       });
     });
     if (logBtn) {
@@ -101375,35 +102315,26 @@
         if (!ownVal) { toast('Enter the Truck Owner name to log.', 'err'); return; }
         if (!drvVal) { toast('Enter the Active / Substitute Driver name to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const rawEditIdx = (logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1;
-        const editWin = (rawEditIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[rawEditIdx] : null;
-        const winSpec = {
-          co: logCo,
-          side: (editWin && editWin.side) || 'both',
-          s: sVal,
-          e: eVal,
-          cap: Number((editWin && editWin.cap) || targetEq.capacity || 0),
-          own: ownVal,
-          drv: drvVal,
-          cust: (editWin && editWin.cust) || '',
-          site: (editWin && editWin.site) || '',
-          persistTicketBackfill: true
-        };
+        const rawEditIdx = modalTwEditIdx();
+        // The same reading of the form the line under the button used, so the save does what the line said
+        const winSpec = readModalTwSpec();
         const chk = validateTruckWindowChronology(targetEq, winSpec, rawEditIdx);
         if (!chk.ok) {
           toast(chk.reason, 'err');
           return;
         }
         appendOrUpdateTruckWindow(targetEq, winSpec, rawEditIdx);
+        const keptLog = _lastTruckLogSplit;
         if (!eVal && $('f_driver')) $('f_driver').value = drvVal;
         persistEquipmentLogMutation(targetEq);
         logWrap.dataset.logKey = '';
         renderModalEquipDriverLog(curTruck, company);
-        toast(rawEditIdx >= 0
+        toast((rawEditIdx >= 0 && !keptLog
           ? `✓ Updated driver assignment "${drvVal}" on ${targetEq.name} (${sVal} to ${eVal || 'Open'})`
           : (eVal
               ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} to ${eVal})`
-              : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`), 'ok');
+              : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`))
+          + (keptLog ? ` · Earlier log kept to ${fmtDateDMY(keptLog.e)}` : ''), 'ok');
       });
     }
     logWrap.querySelectorAll('[data-del-modal-tw-idx]').forEach(btn => {
@@ -105371,6 +106302,15 @@
     });
     recalcForm();
     wireModalSuggestions(body);
+    if (typeof wirePartyTypoHost === 'function') {
+      wirePartyTypoHost(body, {
+        getInd: () => (typeof getActiveIndustry === 'function' ? getActiveIndustry(val('f_company') || STATE.company) : 'Manufacturing'),
+        getCo: () => val('f_company') || '',
+        getModalForm: () => STATE.modalForm || '',
+        isEditMode: () => Boolean(STATE.editingRecord || STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId),
+        isDomainModal: false
+      });
+    }
     renderEntryAttachmentsListUI();
     const handleModalAttachmentFiles = async (fileList, captureMethod = 'File Upload') => {
       const arr = Array.from(fileList || []).filter(Boolean);
@@ -105609,6 +106549,431 @@
       span.remove();
     }
     return dup;
+  }
+
+  // ---- misspelled party name check (1 letter off existing customer/supplier/counterparty) ----
+  const ENTRY_PARTY_FIELD_KINDS = {
+    f_customer: 'customer',
+    f_supplier: 'supplier',
+    f_siteowner: 'supplier',
+    f_truckowner: 'truck_owner'
+  };
+  const DOMAIN_PARTY_FIELD_KINDS = {
+    ide_client: 'customer',
+    ide_tenant: 'customer',
+    ide_buyer: 'customer',
+    ide_customer: 'customer',
+    ide_member: 'customer',
+    ide_supplier: 'supplier',
+    ide_contractor: 'supplier',
+    ide_carrier: 'supplier',
+    ide_party: 'counterparty',
+    ide_partner: 'counterparty',
+    ide_lender: 'counterparty'
+  };
+
+  function resolvePartyFieldKind(el, isDomainModal, modalForm) {
+    if (!el || !el.id) return '';
+    if (isDomainModal) return DOMAIN_PARTY_FIELD_KINDS[el.id] || '';
+    const k = ENTRY_PARTY_FIELD_KINDS[el.id] || '';
+    if (!k) return '';
+    if (el.id === 'f_supplier' && (modalForm === 'equipment' || modalForm === 'driver')) return 'truck_owner';
+    return k;
+  }
+
+  function isIndustryDomainRowVoided(ind, rowId) {
+    if (!ind || !rowId) return false;
+    const store = STATE && STATE.industryRowEdits;
+    if (!store || typeof store !== 'object') return false;
+    const pfx = `${ind}::`;
+    const sfx = `::${String(rowId).trim()}`;
+    const keys = Object.keys(store);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (k.startsWith(pfx) && k.endsWith(sfx) && store[k] && store[k].voided) return true;
+    }
+    return false;
+  }
+
+  function getScopedPartyCandidates(partyKind, company, inputEl, opts = {}) {
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const ind = opts.ind || (hasIndFn ? inferIndustryForCompany(company || STATE.company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company || STATE.company) : 'Manufacturing') || 'Manufacturing';
+    const demoActive = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
+    const modalForm = String(opts.modalForm || '');
+    const isRegEdit = modalForm === 'customer' || modalForm === 'supplier';
+    const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    if (fIdx && !fIdx._partyTypoPools) fIdx._partyTypoPools = new Map();
+    const dlId = (demoActive && inputEl && inputEl.list && inputEl.list.id) ? inputEl.list.id : '';
+    const cacheKey = isRegEdit ? '' : `${ind}|${partyKind}|${demoActive ? 1 : 0}|${opts.isDomainModal ? 1 : 0}|${dlId}`;
+    if (cacheKey && fIdx && fIdx._partyTypoPools.has(cacheKey)) {
+      return fIdx._partyTypoPools.get(cacheKey);
+    }
+
+    const out = [];
+    const push = v => { if (v && typeof v === 'string') { const s = v.trim(); if (s) out.push(s); } };
+    const isMfg = ind === 'Manufacturing';
+    const recs = (SEED && SEED.records) || {};
+    const custRecs = (STATE && STATE.customRecords) || (SEED && SEED.customRecords) || {};
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCoSet = new Set(cat.filter(c => c && (c.industry || 'Manufacturing') === ind).map(c => c.name));
+    const matchScopeRow = r => {
+      if (!r || r.voided || r.voided_at || r._absorbedSeedTwin) return false;
+      if (!demoActive && r._demoSpineRow) return false;
+      if (isMfg) {
+        if (r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return false;
+        if (r.company && indCoSet.size && !indCoSet.has(r.company)) return false;
+        return true;
+      }
+      if (r._industry) return r._industry === ind;
+      if (r.company && indCoSet.has(r.company)) return true;
+      return false;
+    };
+    const allRowsFor = tbl => {
+      const a = Array.isArray(recs[tbl]) ? recs[tbl] : [];
+      const b = Array.isArray(custRecs[tbl]) ? custRecs[tbl] : [];
+      return b.length ? a.concat(b) : a;
+    };
+
+    if (isRegEdit) {
+      const tbl = modalForm === 'customer' ? 'customers' : 'suppliers';
+      allRowsFor(tbl).forEach(r => {
+        if (!matchScopeRow(r)) return;
+        if (typeof isSelfEditingRow === 'function' && isSelfEditingRow(r, tbl)) return;
+        push(r.name || r.Customer || r.Supplier);
+      });
+      const fMap = fIdx ? (modalForm === 'customer' ? fIdx.customer : fIdx.supplier) : null;
+      return typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : out;
+    }
+
+    const wantCust = partyKind === 'customer' || partyKind === 'truck_owner';
+    const wantSup = partyKind === 'supplier' || partyKind === 'truck_owner';
+    const wantCp = partyKind === 'counterparty';
+
+    if (wantCust) {
+      allRowsFor('customers').forEach(c => { if (matchScopeRow(c)) push(c.name || c.Customer); });
+      if (isMfg && SEED && SEED.models) {
+        ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].forEach(mk => {
+          const m = SEED.models[mk];
+          if (m && Array.isArray(m.customers)) m.customers.forEach(c => push(c && c.Customer));
+        });
+        allRowsFor('sales_tickets').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+        allRowsFor('price_rules').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+      }
+      allRowsFor('receipts').forEach(r => { if (matchScopeRow(r)) push(r.customer); });
+    }
+    if (wantSup) {
+      allRowsFor('suppliers').forEach(s => { if (matchScopeRow(s)) push(s.name || s.Supplier); });
+      if (isMfg && SEED && SEED.models) {
+        ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].forEach(mk => {
+          const m = SEED.models[mk];
+          if (m && Array.isArray(m.suppliers)) m.suppliers.forEach(s => push(s && s.Supplier));
+        });
+        allRowsFor('raw_purchases').forEach(r => { if (matchScopeRow(r)) { push(r.site_owner); push(r.truck_owner); } });
+        allRowsFor('price_rules').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+      }
+      allRowsFor('expenses').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+      allRowsFor('settlements').forEach(r => { if (matchScopeRow(r)) push(r.supplier); });
+    }
+    if (isMfg && partyKind === 'truck_owner') {
+      allRowsFor('equipment').forEach(e => { if (e && !e.voided && !e._multiIndustrySeed) push(e.supplier); });
+      allRowsFor('drivers').forEach(d => { if (d && !d.voided && !d._multiIndustrySeed) push(d.truck_owner); });
+      allRowsFor('sales_tickets').forEach(r => { if (matchScopeRow(r)) push(r.truck_owner); });
+    }
+
+    if (!isMfg) {
+      const live = (SEED && SEED.industryLive) || {};
+      const icr = (STATE && STATE.industryCustomRows) || {};
+      const overriddenIds = new Set();
+      Object.keys(icr).forEach(bk => {
+        const arr = icr[bk];
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const cr = arr[i];
+          if (!cr || typeof cr !== 'object') continue;
+          const rawId = String(cr.id || cr.code || '').trim();
+          if (!rawId) continue;
+          overriddenIds.add(rawId.toUpperCase());
+          if (typeof resolveLegacyIndustryId === 'function') {
+            const upgId = resolveLegacyIndustryId(rawId);
+            if (upgId) overriddenIds.add(String(upgId).trim().toUpperCase());
+          }
+        }
+      });
+      const walkLive = (rows, fields) => {
+        if (!Array.isArray(rows)) return;
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.voided || r.voided_at) continue;
+          if (!demoActive && r._demoSpineRow) continue;
+          const rKey = String(r.id || r.code || '').trim().toUpperCase();
+          if (rKey && overriddenIds.has(rKey)) continue;
+          if (r.id && isIndustryDomainRowVoided(ind, r.id)) continue;
+          for (let fi = 0; fi < fields.length; fi++) push(r[fields[fi]]);
+        }
+      };
+      const walkCustom = (buckets, fields) => {
+        for (let bi = 0; bi < buckets.length; bi++) {
+          const arr = icr[buckets[bi]];
+          if (!Array.isArray(arr)) continue;
+          for (let i = 0; i < arr.length; i++) {
+            const r = arr[i];
+            if (!r || r.voided || r.voided_at) continue;
+            for (let fi = 0; fi < fields.length; fi++) push(r[fields[fi]]);
+          }
+        }
+      };
+      if (ind === 'Holding & Treasury') {
+        if (wantCp) {
+          const h = live.holding || {};
+          walkLive(h.sisterExternalLegs, ['party', 'counterparty']);
+          walkLive(h.partnerAgreements, ['partner']);
+          walkLive(h.partnerDistributions, ['partner']);
+          walkLive(h.facilitySchedules, ['lender']);
+          walkLive(h.loanAccruals, ['lender']);
+          walkCustom(['hld_extended', 'hld_partners', 'hld_loans'], ['party', 'counterparty', 'partner', 'lender']);
+          allRowsFor('external_movements').forEach(r => { if (matchScopeRow(r)) push(r.counterparty || r.party); });
+          allRowsFor('loans').forEach(r => { if (matchScopeRow(r)) push(r.counterparty || r.lender); });
+        }
+      } else if (ind === 'Hospitality & Resorts') {
+        const h = live.hospitality || {};
+        if (wantCust) {
+          walkLive(h.membershipRows, ['member']);
+          walkCustom(['hsp_memberships'], ['member']);
+        }
+        if (wantSup) {
+          walkLive(h.maintRows, ['vendor']);
+        }
+      } else if (ind === 'Automotive & Heavy Trading') {
+        const t = live.trading || {};
+        if (wantCust) {
+          walkLive(t.salesRows, ['customer']);
+          walkLive(t.receivableRows, ['customer']);
+          walkLive(t.serialUnits, ['buyer']);
+          walkCustom(['trd_sales'], ['customer']);
+        }
+        if (wantSup) {
+          walkLive(t.importRows, ['supplier']);
+          walkLive(t.grnRows, ['supplier']);
+          walkLive(t.targetRows, ['supplier']);
+          walkCustom(['trd_purchases', 'trd_targets'], ['supplier']);
+        }
+      } else if (ind === 'Real Estate & Property') {
+        const re = live.realestate || {};
+        if (wantCust) {
+          walkLive(re.leases, ['tenant']);
+          walkLive(re.invoices, ['tenant']);
+          walkLive(re.receipts, ['tenant']);
+          walkLive(re.units, ['tenant']);
+          walkLive(re.sales, ['buyer']);
+          walkCustom(['re_leases', 're_invoicing', 're_sales'], ['tenant', 'buyer']);
+        }
+        if (wantSup) {
+          walkLive(re.workorders, ['contractor']);
+          walkCustom(['re_workorders'], ['contractor']);
+        }
+      } else if (ind === 'Insurance & Brokerage') {
+        const ins = live.insurance || {};
+        if (wantCust) {
+          walkLive(ins.policies, ['client']);
+          walkLive(ins.billing, ['client']);
+          walkLive(ins.claims, ['client']);
+          walkLive(ins.items, ['client']);
+          walkLive(ins.renewals, ['client']);
+          walkCustom(['ins_policies', 'ins_claims'], ['client']);
+        }
+        if (wantSup) {
+          walkLive(ins.policies, ['carrier']);
+          walkLive(ins.billing, ['carrier']);
+          walkLive(ins.claims, ['carrier']);
+          walkLive(ins.agreements, ['carrier']);
+          walkLive(ins.catalogue, ['carrier']);
+          walkLive(ins.remittances, ['carrier']);
+          walkLive(ins.renewals, ['carrier']);
+          walkLive(ins.statements, ['carrier']);
+          walkCustom(['ins_policies', 'ins_claims', 'ins_agreements', 'ins_remittances'], ['carrier']);
+        }
+      }
+      if (demoActive && inputEl && inputEl.list) {
+        Array.from(inputEl.list.querySelectorAll('option')).forEach(o => push(o && o.value));
+      }
+    }
+
+    const fMap = fIdx
+      ? (partyKind === 'customer'
+          ? fIdx.customer
+          : (partyKind === 'truck_owner'
+              ? fIdx.truckOwner
+              : (partyKind === 'counterparty' ? fIdx.counterparty : fIdx.supplier)))
+      : null;
+    const ranked = typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : Array.from(new Set(out));
+    if (cacheKey && fIdx) fIdx._partyTypoPools.set(cacheKey, ranked);
+    return ranked;
+  }
+
+  function syncPartyTypoForInput(el, ctx = {}) {
+    if (!el || !el.id) return false;
+    const isDom = Boolean(ctx.isDomainModal);
+    const modalForm = typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || '');
+    const kind = resolvePartyFieldKind(el, isDom, modalForm);
+    if (!kind) return false;
+    const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+    if (!wrap) return false;
+    const barId = `partyTypo_${el.id}`;
+    let bar = wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`) || $(barId);
+    const hideBar = () => {
+      if (!bar) return;
+      bar.hidden = true;
+      bar.dataset.matchSig = '';
+      bar.dataset.typedNorm = '';
+    };
+    const isLocked = el.disabled || el.readOnly || el.type === 'hidden' || Boolean(el.closest('[hidden]')) || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id));
+    if (isLocked) { hideBar(); return false; }
+    const rawVal = String(el.value || '').trim();
+    if (!rawVal || nearCopyPartyKey(rawVal).length < 4) { hideBar(); return false; }
+    const isEdit = typeof ctx.isEditMode === 'function' ? ctx.isEditMode() : Boolean(ctx.isEditMode);
+    const initRaw = el.dataset.partyInitVal !== undefined ? el.dataset.partyInitVal : el.dataset.initVal;
+    if (isEdit && initRaw !== undefined && norm(rawVal) === norm(initRaw)) { hideBar(); return false; }
+    if (!isDom && (modalForm === 'customer' || modalForm === 'supplier') && wrap.querySelector('.univ-dup-hint')) {
+      hideBar();
+      return false;
+    }
+    const co = typeof ctx.getCo === 'function' ? ctx.getCo() : (val('f_company') || '');
+    const ind = typeof ctx.getInd === 'function' ? ctx.getInd() : '';
+    const candidates = getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom });
+    const match = findNearPartyMatch(rawVal, candidates);
+    if (!match) { hideBar(); return false; }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = barId;
+      bar.className = 'party-typo-bar';
+      bar.setAttribute('data-party-typo-for', el.id);
+      wrap.appendChild(bar);
+    }
+    const lblKind = kind === 'customer' ? 'customer' : (kind === 'counterparty' ? 'counterparty' : 'supplier');
+    const sig = `${lblKind}|${match}`;
+    bar.dataset.typedNorm = norm(rawVal);
+    if (bar.dataset.matchSig !== sig) {
+      bar.dataset.matchSig = sig;
+      const lbl = lblKind === 'customer'
+        ? 'One letter off existing customer:'
+        : (lblKind === 'counterparty' ? 'One letter off existing counterparty:' : 'One letter off existing supplier:');
+      bar.innerHTML = `<span class="party-typo-msg">${ic('warn')}<span>${esc(lbl)}</span> <b data-no-i18n="1">${esc(match)}</b></span><button type="button" class="party-typo-use-btn" data-use-party-field="${esc(el.id)}" data-use-party-name="${esc(match)}"><span>Use</span> <b data-no-i18n="1">${esc(match)}</b></button>`;
+      if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(bar);
+      }
+    }
+    bar.hidden = false;
+    return true;
+  }
+
+  function syncFormPartyTypoHints(host, ctx) {
+    if (!host || !host.isConnected) return;
+    const effCtx = ctx || host._partyTypoCtx || {};
+    const selStr = effCtx.isDomainModal
+      ? '#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender'
+      : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner';
+    host.querySelectorAll(selStr).forEach(el => syncPartyTypoForInput(el, effCtx));
+  }
+
+  function schedulePartyTypoCheck(host) {
+    if (partyTypoTimer) clearTimeout(partyTypoTimer);
+    partyTypoTimer = 0;
+    if (!host || !host.isConnected || FORM_UI.hydrating) return;
+    partyTypoTimer = setTimeout(() => {
+      partyTypoTimer = 0;
+      if (!host.isConnected || FORM_UI.hydrating || STATE.saving) return;
+      syncFormPartyTypoHints(host);
+    }, NEAR_COPY_LIVE_DELAY_MS);
+  }
+
+  function wirePartyTypoHost(host, ctx) {
+    if (!host) return;
+    host._partyTypoCtx = ctx || {};
+    if (host.dataset.partyTypoWired === '1') return;
+    host.dataset.partyTypoWired = '1';
+    const isTargetInp = el => Boolean(el && el.id && resolvePartyFieldKind(el, Boolean((host._partyTypoCtx || {}).isDomainModal), typeof (host._partyTypoCtx || {}).getModalForm === 'function' ? host._partyTypoCtx.getModalForm() : ''));
+    host.addEventListener('input', ev => {
+      if (FORM_UI.hydrating) return;
+      const el = ev.target;
+      if (!isTargetInp(el)) return;
+      const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+      const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
+      if (bar && norm(el.value) !== bar.dataset.typedNorm) {
+        bar.hidden = true;
+      }
+      if (!host._partyTypoCtx.isDomainModal && FORM_UI.postAttempted) {
+        syncPartyTypoForInput(el, host._partyTypoCtx);
+      } else {
+        schedulePartyTypoCheck(host);
+      }
+    });
+    host.addEventListener('change', ev => {
+      if (FORM_UI.hydrating) return;
+      if (isTargetInp(ev.target)) syncPartyTypoForInput(ev.target, host._partyTypoCtx);
+    });
+    host.addEventListener('focusout', ev => {
+      if (FORM_UI.hydrating) return;
+      const el = ev.target;
+      if (!isTargetInp(el)) return;
+      setTimeout(() => {
+        if (!el.isConnected || FORM_UI.hydrating || document.activeElement === el) return;
+        const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+        const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
+        if (bar && bar.contains(document.activeElement)) return;
+        syncPartyTypoForInput(el, host._partyTypoCtx);
+      }, 130);
+    });
+    host.addEventListener('mousedown', ev => {
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump') : null;
+      if (t) ev.preventDefault();
+    });
+    host.addEventListener('click', ev => {
+      const jumpBtn = ev.target && ev.target.closest ? ev.target.closest('#nearCopyAmtJump') : null;
+      if (jumpBtn) {
+        ev.preventDefault();
+        const ncWrap = $('wrap_nearcopyok');
+        const ncCb = $('f_nearcopyok');
+        if (ncWrap && !ncWrap.hidden) {
+          try {
+            ncWrap.scrollIntoView({ behavior: (typeof navigator !== 'undefined' && navigator.webdriver) ? 'auto' : 'smooth', block: 'center' });
+          } catch (_) {
+            try { ncWrap.scrollIntoView(); } catch (__) {}
+          }
+          ncWrap.classList.remove('is-jump-flash');
+          void ncWrap.offsetWidth;
+          ncWrap.classList.add('is-jump-flash');
+          if (ncCb) {
+            try { ncCb.focus({ preventScroll: true }); } catch (_) {}
+          }
+        }
+        return;
+      }
+      const useBtn = ev.target && ev.target.closest ? ev.target.closest('[data-use-party-field]') : null;
+      if (!useBtn) return;
+      ev.preventDefault();
+      const fid = useBtn.getAttribute('data-use-party-field') || '';
+      const nextName = useBtn.getAttribute('data-use-party-name') || '';
+      const inpEl = (fid && (host.querySelector('#' + fid) || $(fid))) || null;
+      if (!inpEl || !nextName) return;
+      const curBar = useBtn.closest('.party-typo-bar');
+      if (curBar) {
+        curBar.hidden = true;
+        curBar.dataset.matchSig = '';
+        curBar.dataset.typedNorm = '';
+      }
+      const isDom = Boolean((host._partyTypoCtx || {}).isDomainModal);
+      if (!isDom) FORM_UI.userInteracted = true;
+      inpEl.value = nextName;
+      try { inpEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      try { inpEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+      if (!isDom && NEAR_COPY_LIVE_FORMS.includes(STATE.modalForm) && $('wrap_nearcopyok')) {
+        if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
+        nearCopyLiveTimer = 0;
+        try { validateAndBuild({ skipRecalc: false, preview: true }); } catch (_) {}
+      }
+      try { inpEl.focus({ preventScroll: true }); } catch (_) {}
+    });
   }
 
   function validateAndBuild(opts = {}) {
@@ -108664,6 +110029,8 @@
       ? JSON.parse(JSON.stringify(window.MFG_GEO.exportGeoConfig()))
       : null;
     const prevSeedRev = (SEED && SEED._customRev) || 0;
+    const extraDrops = [];
+    const dropOnRestore = (tk, id) => { if (tk && id != null && String(id)) extraDrops.push([String(tk), String(id)]); };
     const restore = (errMsg) => {
       if (STATE && STATE.customRecords) {
         Object.keys(STATE.customRecords).forEach(k => {
@@ -108690,6 +110057,14 @@
             }
           });
         });
+        // Rows the save added after this snapshot was taken (a kept-period save adds a new entry): out again
+        extraDrops.forEach(([tk, sid]) => {
+          const arr = SEED.records[tk];
+          if (!Array.isArray(arr)) return;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            if (arr[i] && String(arr[i].id) === sid) arr.splice(i, 1);
+          }
+        });
         SEED._customRev = prevSeedRev;
       }
       if (geoSnap && window.MFG_GEO && typeof window.MFG_GEO.restoreGeoConfigSnapshot === 'function') {
@@ -108704,7 +110079,7 @@
       renderApp();
       if (errMsg) toast(errMsg, 'err');
     };
-    return { snapSeedRow, restore };
+    return { snapSeedRow, restore, dropOnRestore };
   }
 
   const isServerRejectRes = r => Boolean(r && r.ok === false && !r.networkError && (r.status == null || Number(r.status) >= 400));
@@ -109678,6 +111053,9 @@
         : pendSalOrigSnap;
       const isEffModalTbl = isEffectiveSeriesTable(crKey, record);
       let touchedModalPeers = [];
+      // Set when this save kept the earlier period on the row as it was and went on as a new entry (a later Start
+      // Date with another value): `record` then carries a new id and is handled as an added entry from here on.
+      let keptPeriodModal = null;
       if (isEffModalTbl && record.start_date) {
         if ('date' in record) record.date = record.start_date;
         if (editOrigModal && _rowEndIso(editOrigModal) && !_rowEndIso(record)) {
@@ -109685,14 +111063,21 @@
         } else if (_rowEndIso(record)) {
           record._reopenedExplicitly = false;
         }
-        touchedModalPeers = syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
+        // What the form knows about this edit: whether the person changed anything but dates, notes or the label
+        const modalValueHint = (isEditingExisting && editOrigModal) ? { userChangedValue: entryModalUserChangedValue() } : undefined;
+        touchedModalPeers = syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts, modalValueHint);
+        keptPeriodModal = _lastChronoKeptPeriod;
+        if (keptPeriodModal && modalSaveRollbackSnap && typeof modalSaveRollbackSnap.dropOnRestore === 'function') {
+          modalSaveRollbackSnap.dropOnRestore(crKey, keptPeriodModal.newId);
+        }
       }
       if (record && (crKey === 'documents' || (Array.isArray(record.attachments) && record.attachments.length) || Boolean(editOrigModal))) {
         syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts);
       }
       applyCustomRecordsToSeed();
       if (isEffModalTbl || crKey === 'products') {
-        backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts, { touchedPeers: touchedModalPeers });
+        backfillEffectiveLogChange(crKey, record, keptPeriodModal ? null : editOrigModal, extraApiPosts,
+          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '' });
         applyCustomRecordsToSeed();
       }
       if (backpayCtx) {
@@ -109727,7 +111112,10 @@
         const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
         const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
         if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
-        if (opts && opts.quarantine) {
+        // A save that kept the earlier period added a new entry after that snapshot was taken: out again
+        dropChronoKeptPeriodEntry(keptPeriodModal);
+        // ... and with it gone there is nothing left to set aside (a search by name could pick another row)
+        if (opts && opts.quarantine && !keptPeriodModal) {
           if (!preSaveSameNameIds || !preSaveSameNameIds.has(`${canonQTbl}:${String(qId || '')}`)) {
             quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
           }
@@ -109767,7 +111155,12 @@
             }
           }
           if (hasServerApi() && !isDemoScopeActive()) {
-            if (!isEditingExisting && !isUpdatingPending) {
+            if (keptPeriodModal) {
+              // The save had gone on as a new entry: that entry is struck out on the server and the row it was
+              // typed over goes back as it was.
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+              if (editCtx && editCtx.orig) await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
+            } else if (!isEditingExisting && !isUpdatingPending) {
               await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
             } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
               await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
@@ -109812,7 +111205,7 @@
         FORM_UI.lastAttTimeKey = '';
         recalcForm();
         FORM_UI.userInteracted = false;
-        FORM_UI.initialModalSig = getEntryModalStateSignature();
+        FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
       } else if (afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
           const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
@@ -109861,6 +111254,7 @@
         toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
+      if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
       renderApp();
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
         const _salRecCtx = buildSalaryVoucherReceiptContext(record);
@@ -109879,7 +111273,13 @@
           await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
           const rbOk = await rollbackRecordOnServer(mainPostRes);
           if (!rbOk) {
-            if (isEditingExisting && editCtx && editCtx.orig && !canModifyTextOnly() && canModifyRecord()) {
+            if (keptPeriodModal) {
+              // The save had gone on as a new entry: strike that entry out and put the row it was typed over back
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              if (editCtx && editCtx.orig) {
+                await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              }
+            } else if (isEditingExisting && editCtx && editCtx.orig && !canModifyTextOnly() && canModifyRecord()) {
               await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
             } else if (!isEditingExisting && canVoid()) {
               await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
@@ -110027,6 +111427,10 @@
       const stamp = (meta && meta.restoreStampIso) || (rowObj && rowObj.restored_at) || '';
       out.restored_at = stamp;
       out.modified_at = stamp;
+      if ((meta && meta.reopenedExplicitly) || (rowObj && rowObj._reopenedExplicitly)) {
+        out._reopenedExplicitly = true;
+        if (rowObj && rowObj.rev != null) out.rev = rowObj.rev;
+      }
     }
     return out;
   }
@@ -110045,6 +111449,10 @@
     const candRestore = r || archivedSeed;
     const scopeErr = _checkVoidRestoreScopeAllowed(crKey, candRestore);
     if (scopeErr) { toast(scopeErr, 'err'); return false; }
+    if (candRestore && /^(system-topup|sharepoint top-up)/i.test(String(candRestore.voided_by || '').trim())) {
+      toast('Synced workbook rows cannot be restored directly.', 'err');
+      return false;
+    }
     const candRestoreProbe = candRestore ? Object.assign({}, candRestore, { voided: false }) : null;
     if (candRestoreProbe && isEffectiveSeriesTable(crKey, candRestoreProbe) && candRestoreProbe.start_date) {
       const cStart = String(candRestoreProbe.start_date).slice(0, 10);
@@ -110097,6 +111505,10 @@
         siteSplitReset = true;
       });
     }
+    const wasWorkbookMatch = Boolean(
+      (candRestore && (candRestore.twin_of || candRestore.twin_difference))
+      || /^(workbook match|workbook reconciliation)/i.test(String((candRestore && candRestore.voided_by) || '').trim())
+    );
     const cleanVoidMeta = obj => {
       if (!obj || typeof obj !== 'object') return;
       delete obj.voided_by;
@@ -110111,12 +111523,18 @@
       delete obj.voided_with_parent;
       delete obj.void_note_updated_by;
       delete obj.void_note_updated_at;
+      delete obj.twin_of;
+      delete obj.twin_difference;
     };
     const restoreWho = (activeUser() && (activeUser().full_name || activeUser().name || activeUser().email)) || '';
     let cleanSeed = null;
     if (archivedSeed && SEED.records && Array.isArray(SEED.records[crKey])) {
       cleanSeed = Object.assign({}, archivedSeed, { voided: false });
       cleanVoidMeta(cleanSeed);
+      if (wasWorkbookMatch) {
+        cleanSeed._reopenedExplicitly = true;
+        cleanSeed.rev = Number(cleanSeed.rev || 1) + 1;
+      }
       if (!SEED.records[crKey].some(x => x && String(x.id) === String(cleanSeed.id))) {
         SEED.records[crKey].unshift(cleanSeed);
       }
@@ -110128,6 +111546,10 @@
       if (restoreWho) r.restored_by = restoreWho;
       r.modified_at = restoreStampIso;
       cleanVoidMeta(r);
+      if (wasWorkbookMatch) {
+        r._reopenedExplicitly = true;
+        r.rev = Number(r.rev || 1) + 1;
+      }
     }
     const extraRestorePosts = [];
     if (gtRestorePeer) {
@@ -110216,7 +111638,7 @@
 
     const mainRestoreTarget = r || cleanSeed;
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig() && !siteSplitReset);
-    const metaRestore = { restoreStampIso };
+    const metaRestore = { restoreStampIso, reopenedExplicitly: wasWorkbookMatch };
     const mainPayload = mainRestoreTarget
       ? (sparseBase
         ? _buildSparseVoidApiRecord(crKey, mainRestoreTarget, canonTargetId, false, metaRestore)
@@ -110386,6 +111808,7 @@
       if (whoEmail) seedRow.voided_by_email = whoEmail;
       seedRow.voided_at = when;
       if (reasonOpt) seedRow.void_reason = reasonOpt;
+      delete seedRow._reopenedExplicitly;
     }
     if (r) {
       if (seedRow && !r._seed_orig) {
@@ -110398,6 +111821,7 @@
       r.voided_at = when;
       if (reasonOpt) r.void_reason = reasonOpt;
       delete r.restored_at;
+      delete r._reopenedExplicitly;
     } else if (seedRow) {
       const sOrig = captureSeedOrigSnapshot(crKey, seedRow);
       r = Object.assign({}, seedRow, { id: seedRow.id || q, voided: true, voided_by: who, voided_at: when });
@@ -110405,6 +111829,7 @@
       if (reasonOpt) r.void_reason = reasonOpt;
       if (sOrig && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(sOrig);
       delete r.restored_at;
+      delete r._reopenedExplicitly;
       list.unshift(r);
     }
     const extraVoidPosts = [];
@@ -110709,6 +112134,25 @@
       }
     }
 
+    const isSyncTwinRow = row => Boolean(row && /^(system-topup|sharepoint top-up)/i.test(String(row.voided_by || '').trim()));
+    const hasBlockedSyncTwinEdit = Boolean(
+      (editKey && storeEdits[editKey] && storeEdits[editKey].voided && isSyncTwinRow(storeEdits[editKey]))
+      || (!editKey && primaryId && Object.keys(storeEdits).some(ek => {
+        const ed = storeEdits[ek];
+        if (!ed || !ed.voided || !isSyncTwinRow(ed)) return false;
+        const pid = String(ed.primaryId || ek.split('::').pop() || '').trim();
+        return pid === primaryId && (!ind || !ed.ind || ed.ind === ind);
+      }))
+    );
+    const hasBlockedSyncTwinCustom = (bucket ? [bucket] : Object.keys(storeCustom)).some(bk => {
+      const arr = storeCustom[bk];
+      return Array.isArray(arr) && arr.some(r => r && r.voided && String(r.id || r.code || '').trim() === primaryId && isSyncTwinRow(r));
+    });
+    if (hasBlockedSyncTwinEdit || hasBlockedSyncTwinCustom) {
+      toast('Synced workbook rows cannot be restored directly.', 'err');
+      return false;
+    }
+
     const nowIso = nextMonotonicIso();
     const au = activeUser() || {};
     const restoreWho = String(au.full_name || au.name || au.email || '').trim();
@@ -110719,6 +112163,11 @@
 
     const stripMeta = obj => {
       if (!obj || typeof obj !== 'object') return;
+      const isWbMatch = Boolean(
+        obj.twin_of
+        || obj.twin_difference
+        || /^(workbook match|workbook reconciliation)/i.test(String(obj.voided_by || '').trim())
+      );
       obj.voided = false;
       delete obj._scheduleVoided;
       delete obj.voided_by;
@@ -110733,6 +112182,9 @@
       delete obj.voided_with_parent;
       delete obj.void_note_updated_by;
       delete obj.void_note_updated_at;
+      delete obj.twin_of;
+      delete obj.twin_difference;
+      if (isWbMatch) obj._reopenedExplicitly = true;
       obj.restored_at = nowIso;
       if (restoreWho) obj.restored_by = restoreWho;
       obj.rev = Number(obj.rev || 1) + 1;
@@ -111056,6 +112508,69 @@
     return parts.join('|');
   }
 
+  // The entry form's fields by id, as the signature above reads them (kept when the form opens, so a save can tell
+  // which fields the person changed).
+  function entryModalFieldMap() {
+    const body = $('modalBody');
+    const out = {};
+    if (!body) return out;
+    body.querySelectorAll('input, select, textarea').forEach(el => {
+      if (!el.id && !el.name) return;
+      if (el.type === 'file') return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput' || el.id === 'tktSitePinPasteInp') return;
+      out[el.id || el.name] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
+    });
+    return out;
+  }
+  function markEntryModalBaseline() {
+    FORM_UI.initialModalFields = entryModalFieldMap();
+    FORM_UI.touchedFields = new Set();
+    FORM_UI.touchedAll = false;
+  }
+  function clearEntryModalBaseline() {
+    FORM_UI.initialModalFields = null;
+    FORM_UI.touchedFields = new Set();
+    FORM_UI.touchedAll = false;
+  }
+  // Form fields that are a date, a note or the row's label: changing one of them is never "another value".
+  const ENTRY_NON_VALUE_FIELD_RE = /^(f_date|f_repdate|f_enddate|f_startdate|f_start|f_end|f_notes|f_name)$/;
+  // Notes which fields the person worked on. Typing or picking in a field marks that field. A pill, a suggestion or
+  // a preset button can set other fields than the one it sits in, so it marks the whole form, unless it belongs to
+  // a date or note field (a calendar button, a clear button).
+  function noteEntryModalTouch(ev) {
+    const t = ev && ev.target;
+    if (!t || !t.closest) return;
+    if (!(FORM_UI.touchedFields instanceof Set)) FORM_UI.touchedFields = new Set();
+    if (ev.type !== 'click') {
+      const k = t.id || t.name;
+      if (k) FORM_UI.touchedFields.add(k);
+      return;
+    }
+    const wrap = t.closest('.form-field');
+    const ids = wrap ? Array.from(wrap.querySelectorAll('input, select, textarea')).map(el => el.id || el.name).filter(Boolean) : [];
+    ids.forEach(k => FORM_UI.touchedFields.add(k));
+    if (!ids.length || !ids.every(k => ENTRY_NON_VALUE_FIELD_RE.test(k))) FORM_UI.touchedAll = true;
+  }
+  // Did the person change a field that is not a date, a note or the label, so that it now reads differently from
+  // when the form opened? undefined when the form has no baseline to compare with.
+  function entryModalUserChangedValue() {
+    const base = FORM_UI.initialModalFields;
+    if (!base || typeof base !== 'object') return undefined;
+    const now = entryModalFieldMap();
+    const touched = FORM_UI.touchedFields instanceof Set ? FORM_UI.touchedFields : new Set();
+    const same = (a, b) => {
+      const sa = String(a == null ? '' : a).trim(), sb = String(b == null ? '' : b).trim();
+      if (sa === sb) return true;
+      if (sa !== '' && sb !== '') {
+        const na = Number(sa.replace(/,/g, '')), nb = Number(sb.replace(/,/g, ''));
+        if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-6;
+      }
+      return norm(sa) === norm(sb);
+    };
+    const keys = FORM_UI.touchedAll ? Array.from(new Set(Object.keys(now).concat(Object.keys(base)))) : Array.from(touched);
+    return keys.some(k => !ENTRY_NON_VALUE_FIELD_RE.test(k) && !same(now[k], base[k]));
+  }
+
   function isEntryModalDirty() {
     const modal = $('entryModal');
     if (!modal || modal.hidden) return false;
@@ -111156,7 +112671,7 @@
     const target = FORM_UI.pendingSwitchTarget;
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = '';
+    FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (!target || target.type === 'close') {
       closeEntryModal(true);
       return;
@@ -111657,12 +113172,13 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
           }
           FORM_UI.userInteracted = true;
+          noteEntryModalTouch(ev);
         };
         body.addEventListener('input', markDirtyInteraction, true);
         body.addEventListener('change', markDirtyInteraction, true);
@@ -112164,11 +113680,12 @@
       window.MFG_I18N.translateDom(modal || document.body);
     }
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = getEntryModalStateSignature();
+    FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
   }
 
   function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
+    cancelNearCopyLiveCheck();
     const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
     if (!force && isInteractiveClose && isEntryModalDirty()) {
       promptUnsavedEntrySwitch({ type: 'close' });
@@ -112176,7 +113693,7 @@
     }
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = '';
+    FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
     }
@@ -118163,6 +119680,7 @@
                 </div>
               </div>
             </div>
+            <div class="tw-save-preview" id="inspTwSavePreview" role="status" aria-live="polite" hidden></div>
           ` : ''}
           <div class="table-wrap" style="max-height:260px;overflow:auto">
             <table class="ledger-table">
@@ -118181,7 +119699,7 @@
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
                   const wCo = w.co || 'WTC';
                   return `
-                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to start a new log from this entry">
                       <td>${coBadge(wCo)}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -120432,12 +121950,23 @@
             inspBackpayCtx = { company: bpCo, staff: row.staff, before: backpayBeforeSet(bpCo, row.staff, [row.id], origRowSnap || null) };
           }
           let touchedInspPeers = [];
+          let keptPeriodInsp = null;   // see keptPeriodModal: the save went on as a new entry, `row` has a new id
           if (isEffInspTbl && row.start_date) {
-            touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
+            // What the drawer knows about this edit: whether a field other than dates, notes or the label was changed
+            const inspValueHint = {
+              userChangedValue: Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+                && !_chronoSameValue(row[fk], origRowSnap ? origRowSnap[fk] : undefined))
+            };
+            touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts, inspValueHint);
+            keptPeriodInsp = _lastChronoKeptPeriod;
+            if (keptPeriodInsp && inspRollbackSnap && typeof inspRollbackSnap.dropOnRestore === 'function') {
+              inspRollbackSnap.dropOnRestore(key, keptPeriodInsp.newId);
+            }
           }
           applyCustomRecordsToSeed();
           if (isEffInspTbl || key === 'products') {
-            backfillEffectiveLogChange(key, row, origRowSnap, inspExtraPosts, { touchedPeers: touchedInspPeers });
+            backfillEffectiveLogChange(key, row, keptPeriodInsp ? null : origRowSnap, inspExtraPosts,
+              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '' });
             applyCustomRecordsToSeed();
           }
           let inspBackpayHit = null;
@@ -120458,14 +121987,19 @@
             await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
             if (compensateMain && mainPostRes && mainPostRes.ok) {
               const rbOk = await rollbackRecordOnServer(mainPostRes);
+              if (!rbOk && keptPeriodInsp && row && row.id) {
+                // The save had gone on as a new entry: strike that entry out on the server as well
+                await postRecordToLocalApi(key, Object.assign({}, row, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              }
               if (!rbOk && !isSaveWordOnly && canModifyRecord() && origRowSnap && origRowSnap.id) {
                 await postRecordToLocalApi(key, Object.assign({}, origRowSnap, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
               }
             }
             const errTxt = await extractServerRejectMsg(failRes, 'Permission denied: save rejected by server');
             if (inspRollbackSnap) {
-              inspRollbackSnap.restore(errTxt);
+              inspRollbackSnap.restore(errTxt);   // also takes out the entry a kept-period save added (dropOnRestore)
             } else {
+              dropChronoKeptPeriodEntry(keptPeriodInsp);
               toast(errTxt, 'err');
             }
             showRecordInspector(key, (origRowSnap && origRowSnap.id) || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
@@ -120490,6 +122024,7 @@
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
+          if (keptPeriodInsp) toast(chronoKeptPeriodToastText(keptPeriodInsp), 'ok');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
         }
       });
@@ -120601,6 +122136,37 @@
         sInp.removeAttribute('min');
       }
     };
+    // What the button would do, said under it before it is pressed (owner 2026-11-18): worked out on a copy of the
+    // truck by the same function the save runs, so the line and the save always agree.
+    const inspTwEditIdx = () => ((twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1);
+    const readInspTwSpec = () => {
+      const eIdx = inspTwEditIdx();
+      const origWin = (eIdx >= 0 && targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[eIdx] : null;
+      return {
+        co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
+        side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
+        s: ($('insp_tw_start') && $('insp_tw_start').value) || todayISO(),
+        e: ($('insp_tw_end') && $('insp_tw_end').value) || '',
+        cap: canModifyData()
+          ? Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0)
+          : Number((origWin && origWin.cap != null ? origWin.cap : ((targetEqRow && targetEqRow.capacity) || 0))),
+        own: (($('insp_tw_own') && $('insp_tw_own').value) || '').trim(),
+        drv: (($('insp_tw_drv') && $('insp_tw_drv').value) || '').trim(),
+        cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
+        site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
+        persistTicketBackfill: true
+      };
+    };
+    const refreshInspTwPreview = () => {
+      const host = $('inspTwSavePreview');
+      if (!host || !targetEqRow || !canSwitchEquipmentDriver()) return;
+      const spec = readInspTwSpec();
+      // Nothing to say until the form holds what a save needs (the button names what is missing)
+      if (!spec.own || !spec.drv || !spec.s) { paintTruckLogSavePreview(host, null); return; }
+      let plan = null;
+      try { plan = describeTruckLogSave(targetEqRow, spec, inspTwEditIdx()); } catch (_) { plan = null; }
+      paintTruckLogSavePreview(host, plan);
+    };
     syncInspTwCoFilter();
     syncInspTwStartMin(-1);
     ['insp_tw_co', 'insp_tw_side', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
@@ -120610,6 +122176,45 @@
         syncInspTwStartMin();
       });
     });
+    // While typing the line waits for a pause (it reads the truck's tickets); a pick or a button refreshes it at once
+    let inspTwPrevTimer = 0;
+    const queueInspTwPreview = () => {
+      if (inspTwPrevTimer) clearTimeout(inspTwPrevTimer);
+      inspTwPrevTimer = setTimeout(() => { inspTwPrevTimer = 0; if ($('inspTwSavePreview')) refreshInspTwPreview(); }, 180);
+    };
+    ['insp_tw_co', 'insp_tw_side', 'insp_tw_cap', 'insp_tw_start', 'insp_tw_end', 'insp_tw_own', 'insp_tw_drv', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
+      const el = $(fid);
+      if (!el) return;
+      el.addEventListener('input', queueInspTwPreview);
+      el.addEventListener('change', queueInspTwPreview);
+    });
+    refreshInspTwPreview();
+    // Clicking a log row starts a NEW log from it (its values, starting today): the usual wish is "from now on this
+    // truck is 9 m³ / has this driver", and that must never rewrite the days already worked. Changing a log itself
+    // (a wrong date or a typing slip) is the row's Edit button.
+    const startInspWinNewFrom = idx => {
+      if (!canSwitchEquipmentDriver() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
+      const w = targetEqRow.adj_windows[idx];
+      if (!w) return;
+      twBox.dataset.editTwIdx = '';
+      if ($('insp_tw_co')) $('insp_tw_co').value = canonTwBu(w.co || inspDefaultTwCo);
+      syncInspTwCoFilter();
+      if ($('insp_tw_side')) $('insp_tw_side').value = (w.side === 'all' || !w.side) ? 'both' : w.side;
+      if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(w.cap != null ? w.cap : (targetEqRow.capacity || 0)));
+      if ($('insp_tw_start')) $('insp_tw_start').value = todayISO();
+      if ($('insp_tw_end')) $('insp_tw_end').value = '';
+      if ($('insp_tw_own')) $('insp_tw_own').value = w.own != null ? w.own : (targetEqRow.supplier || '');
+      if ($('insp_tw_drv')) $('insp_tw_drv').value = w.drv != null ? w.drv : (targetEqRow.default_driver || '');
+      if ($('insp_tw_cust')) $('insp_tw_cust').value = w.cust || '';
+      if ($('insp_tw_site')) $('insp_tw_site').value = w.site || '';
+      syncInspTwStartMin(-1);
+      if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
+      if (cancelTwBtn) cancelTwBtn.hidden = false;
+      bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-insp-tw-row-idx')) === idx ? 'rgba(74,144,217,0.10)' : '';
+      });
+      refreshInspTwPreview();
+    };
     const startInspWinEdit = idx => {
       if (!canSwitchEquipmentDriver() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const w = targetEqRow.adj_windows[idx];
@@ -120631,6 +122236,7 @@
       bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
         tr.style.background = Number(tr.getAttribute('data-insp-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
       });
+      refreshInspTwPreview();
     };
     if (cancelTwBtn) {
       cancelTwBtn.addEventListener('click', () => {
@@ -120649,6 +122255,7 @@
         if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
         cancelTwBtn.hidden = true;
         bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+        refreshInspTwPreview();
       });
     }
     bodyEl.querySelectorAll('button[data-edit-tw-idx]').forEach(btn => btn.addEventListener('click', e => {
@@ -120657,43 +122264,31 @@
     }));
     bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => tr.addEventListener('click', e => {
       if (e.target && e.target.closest('button, a, [data-rel-key]')) return;
-      startInspWinEdit(Number(tr.getAttribute('data-insp-tw-row-idx')));
+      startInspWinNewFrom(Number(tr.getAttribute('data-insp-tw-row-idx')));
     }));
     if (addTwBtn && targetEqRow) {
       addTwBtn.addEventListener('click', () => {
         if (!canSwitchEquipmentDriver()) { toast('Your seat does not have permission to switch equipment drivers', 'err'); return; }
-        const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
-        const origEditWin = (rawEditIdx >= 0 && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[rawEditIdx] : null;
-        const capVal = canModifyData()
-          ? Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0)
-          : Number((origEditWin && origEditWin.cap != null ? origEditWin.cap : (targetEqRow.capacity || 0)));
-        const sVal = ($('insp_tw_start') && $('insp_tw_start').value) || todayISO();
-        const eVal = ($('insp_tw_end') && $('insp_tw_end').value) || '';
-        const ownVal = (($('insp_tw_own') && $('insp_tw_own').value) || '').trim();
-        const drvVal = (($('insp_tw_drv') && $('insp_tw_drv').value) || '').trim();
+        const rawEditIdx = inspTwEditIdx();
+        // The same reading of the form the line under the button used, so the save does what the line said
+        const winSpec = readInspTwSpec();
+        const capVal = winSpec.cap;
+        const sVal = winSpec.s;
+        const eVal = winSpec.e;
+        const ownVal = winSpec.own;
+        const drvVal = winSpec.drv;
         const isTruckCat = /^(truck|mixer)/i.test(targetEqRow.type || '');
         if (!ownVal) { toast('Select or enter the Truck Owner.', 'err'); return; }
         if (!drvVal) { toast('Select or enter the Active / Substitute Driver.', 'err'); return; }
         if (isTruckCat && !(capVal > 0)) { toast('Enter Truck Capacity (m³) above 0.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const winSpec = {
-          co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
-          side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
-          s: sVal,
-          e: eVal,
-          cap: capVal,
-          own: ($('insp_tw_own') && $('insp_tw_own').value) || '',
-          drv: drvVal,
-          cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
-          site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
-          persistTicketBackfill: true
-        };
         const chk = validateTruckWindowChronology(targetEqRow, winSpec, rawEditIdx);
         if (!chk.ok) {
           toast(chk.reason, 'err');
           return;
         }
         const savedWin = appendOrUpdateTruckWindow(targetEqRow, winSpec, rawEditIdx);
+        const keptLog = _lastTruckLogSplit;
         const bf = (savedWin && savedWin._lastBackfill) || { total: 0 };
         if (targetEqRow !== row) {
           if (targetEqRow.capacity) row.capacity = targetEqRow.capacity;
@@ -120711,7 +122306,8 @@
         syncWithCloud(true);
         renderApp();
         const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
-        toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}`);
+        const keptMsg = keptLog ? ` · Earlier log kept to ${fmtDateDMY(keptLog.e)}` : '';
+        toast(`✓ ${rawEditIdx >= 0 && !keptLog ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}${keptMsg}`);
         showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
       });
     }
@@ -134889,7 +136485,7 @@
     const byCo = KIOSK_STATION_SITES_BY_CO;
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     if (scopedCo && byCo[scopedCo]) return byCo[scopedCo].slice();
-    const scopeCompanies = getActiveIndustryBuList(scopedCo || STATE.company);
+    const scopeCompanies = getAttendanceDefaultsCompanies(scopedCo || STATE.company);
     const scopeNormSet = new Set(scopeCompanies.map(c => norm(c)));
     const allowed = allowedCompanyNames();
     const out = [];
@@ -136738,16 +138334,19 @@
 
   function getPolicyGroups(companyOpt = '') {
     const memo = _getWsPolicyMemo();
-    const cacheKey = companyOpt ? ('co:' + norm(companyOpt)) : ('scope:' + (STATE.company || ''));
+    const seatKey = typeof seatScopeSig === 'function' ? seatScopeSig() : '';
+    const demoKey = STATE.company === DEMO_COMPANY_KEY ? `|${STATE.demoCompanyIndustry || ''}` : '';
+    const cacheKey = `${companyOpt ? ('co:' + norm(companyOpt)) : ('scope:' + (STATE.company || ''))}|${seatKey}${demoKey}`;
     const hit = memo.policyGroups.get(cacheKey);
     if (hit) return hit.slice();
     const ws = ensureWorkSchedulesState();
     const rawScope = companyOpt || COMPANY_BU_MATCH[STATE.company] || '';
-    const scopeBuList = getActiveIndustryBuList(rawScope || STATE.company);
+    const scopeBuList = getAttendanceDefaultsCompanies(companyOpt || STATE.company);
     const scopeNormSet = new Set(scopeBuList.map(c => norm(c)));
     const targetCo = COMPANY_BU_MATCH[rawScope] || (scopeNormSet.has(norm(rawScope)) ? rawScope : (scopeBuList[0] || defaultEntryCompany() || 'WTC'));
     const coNorm = norm(targetCo);
     const coDefId = getCompanyDefaultPolicyGroupId(targetCo);
+    const isGroupReq = !companyOpt || /^(manufacturing-group|democompany|demo_company|all|all\s*companies|all\s*bus)$/i.test(companyOpt) || /^industry:/i.test(companyOpt);
     const customById = new Map();
     (ws.policyGroups || []).forEach(g => {
       if (g && g.id && !g.voided && !LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) {
@@ -136763,7 +138362,7 @@
     customById.forEach(custom => {
       if (custom && !custom.voided) {
         const gCoNorm = norm(custom.company || 'All Companies');
-        if (!gCoNorm || gCoNorm === norm('All Companies') || gCoNorm === norm('All BUs') || gCoNorm === coNorm || (!companyOpt && scopeNormSet.has(gCoNorm))) {
+        if (!gCoNorm || gCoNorm === norm('All Companies') || gCoNorm === norm('All BUs') || gCoNorm === coNorm || (isGroupReq && scopeNormSet.has(gCoNorm))) {
           out.push(normalizePolicyGroupObj(custom));
         }
       }
@@ -137068,8 +138667,12 @@
     const spanEndToday = effTo
       ? ((effFrom && effFrom > today) || spec.includeFutureBackfill ? effTo : (effTo < today ? effTo : today))
       : ((effFrom && effFrom > today) ? '9999-12-31' : today);
+    const bfCoNormSet = (!isSingleScoped && Array.isArray(spec.backfillScopeCompanies) && spec.backfillScopeCompanies.length)
+      ? new Set(spec.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
+      : null;
     const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
     allStaff.forEach(s => {
+      if (bfCoNormSet && !bfCoNormSet.has(norm(canonCompany(s.company || '')))) return;
       const sCoN = norm(s.company || '');
       const curRule = getStaffWorkRule(s.name, s.company);
       const entry = getStaffRuleEntry(s.name, s.company);
@@ -137768,7 +139371,7 @@
     return opts.inline ? ` ${html}` : `<div class="att-rule-audit-row">${html}</div>`;
   }
 
-  function backfillAttendancePolicyChange({ company = '', staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
+  function backfillAttendancePolicyChange({ company = '', companies = null, staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
     const today = todayISO();
     const startD = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '').slice(0, 10))
       ? String(fromDate).slice(0, 10)
@@ -137782,6 +139385,9 @@
     }
 
     const coNorm = norm(company || '');
+    const cosNormSet = (Array.isArray(companies) && companies.length)
+      ? new Set(companies.map(c => norm(canonCompany(c))).filter(Boolean))
+      : null;
     if (Array.isArray(staffNames) && staffNames.length === 0) {
       return { ok: true, dryRun: Boolean(dryRun), updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: startD, toDate: endD, rows: [] };
     }
@@ -137806,6 +139412,7 @@
       const attType = String(a.type || a.status || 'Present').trim();
       if (/^(config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) continue;
       if (coNorm && norm(a.company || '') !== coNorm) continue;
+      if (cosNormSet && !cosNormSet.has(norm(canonCompany(a.company || '')))) continue;
       if (staffSet && !staffSet.has(norm(a.staff || ''))) continue;
       const effD = String(a.set_date || a.date || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(effD) || effD < startD || effD > endD) continue;
@@ -137958,6 +139565,7 @@
       : today;
     return backfillAttendancePolicyChange({
       company: spec.company || '',
+      companies: spec.companies || null,
       staffNames: spec.staffNames || null,
       fromDate: fromD,
       toDate: toD,
@@ -138056,9 +139664,13 @@
       const grpIdN = normalizePolicyGroupIdAlias(pgPayloadRaw.id);
       const coScope = pgPayloadRaw.company && !/^all/i.test(String(pgPayloadRaw.company)) ? norm(pgPayloadRaw.company) : '';
       const isNarrowing = Boolean(coScope && coScope !== norm('All Companies') && coScope !== norm('All BUs'));
+      const bfSimSet = (!isNarrowing && Array.isArray(pgPayloadRaw.backfillScopeCompanies) && pgPayloadRaw.backfillScopeCompanies.length)
+        ? new Set(pgPayloadRaw.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
+        : null;
       const simSpanEnd = effTo || (isFutureEffective ? '9999-12-31' : endD);
       staffDirAll.forEach(s => {
         if (!isNarrowing && coScope && norm(s.company) !== coScope) return;
+        if (bfSimSet && !bfSimSet.has(norm(canonCompany(s.company || '')))) return;
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
         const rule = getStaffWorkRule(s.name, s.company);
         const ov = _getStaffGroupOverrideFlags(raw, grpIdN, startD, simSpanEnd, s.company);
@@ -138190,9 +139802,14 @@
           return { ok: false, error: (simRes && simRes.error) || 'Could not simulate policy group changes' };
         }
         const targetDefCo = String(spec.targetDefCo || '').trim();
-        scopeLabel = `${simRes.policyGroup.name}${(simRes.policyGroup.company && !/^all/i.test(simRes.policyGroup.company)) ? ` (${simRes.policyGroup.company})` : ' (All Companies)'}`;
+        const singleBfCo = (!pgPayload.company || /^all/i.test(String(pgPayload.company)))
+          && Array.isArray(pgPayload.backfillScopeCompanies)
+          && pgPayload.backfillScopeCompanies.length === 1
+          ? pgPayload.backfillScopeCompanies[0]
+          : '';
+        scopeLabel = `${simRes.policyGroup.name}${(simRes.policyGroup.company && !/^all/i.test(simRes.policyGroup.company)) ? ` (${simRes.policyGroup.company})` : (singleBfCo ? ` (${singleBfCo})` : ' (All Companies)')}`;
         simTitle = simRes.policyGroup.name;
-        const pgCoFilter = pgPayload.company && !/^all/i.test(String(pgPayload.company)) ? String(pgPayload.company) : '';
+        const pgCoFilter = (pgPayload.company && !/^all/i.test(String(pgPayload.company))) ? String(pgPayload.company) : singleBfCo;
         const pairs = Array.isArray(simRes.affectedStaffPairs) ? simRes.affectedStaffPairs : [];
         if (pgPayload.backfill !== false && pairs.length > 0) {
           const byCoMap = new Map();
@@ -138947,13 +140564,13 @@
     const uAllowed = allowedCompanyNames(activeUser()).map(c => norm(canonCompany(c)));
     const allowedSet = uAllowed.length ? new Set(uAllowed) : null;
     const scopeRaw = String(spec.company || '').trim();
-    const coSingle = normalizeLegacyBackfillCoFilter(scopeRaw);
+    const isExplicitAll = /^(?:all|all\s*companies|all\s*bus)$/i.test(scopeRaw);
+    const coSingle = isExplicitAll ? '' : normalizeLegacyBackfillCoFilter(scopeRaw || (COMPANY_BU_MATCH[STATE.company] || ''));
     const coNorm = coSingle ? norm(coSingle) : '';
     let indCoSet = null;
-    if (!coNorm && /^industry:/i.test(scopeRaw) && typeof getActiveIndustryBuList === 'function') {
-      indCoSet = new Set(getActiveIndustryBuList(scopeRaw).map(c => norm(canonCompany(c))));
-    } else if (!coNorm && STATE.company && /^industry:/i.test(String(STATE.company)) && typeof getActiveIndustryBuList === 'function' && !spec.allIndustries) {
-      indCoSet = new Set(getActiveIndustryBuList(STATE.company).map(c => norm(canonCompany(c))));
+    if (!coNorm && !spec.allIndustries && typeof getActiveIndustryBuList === 'function') {
+      const indSource = (!isExplicitAll && scopeRaw) ? scopeRaw : STATE.company;
+      indCoSet = new Set(getActiveIndustryBuList(indSource).map(c => norm(canonCompany(c))));
     }
     const staffSet = (Array.isArray(spec.staffNames) && spec.staffNames.length)
       ? new Set(spec.staffNames.map(s => norm(s)).filter(Boolean))
@@ -139345,8 +140962,10 @@
       document.body.appendChild(modal);
     }
 
+    const pickedSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isModalExplicitAll = /^(?:all|all\s*companies|all\s*bus)$/i.test(String(LEGACY_BACKFILL_MODAL_STATE.company || '').trim());
     const baseScan = detectLegacyTenthHourBackfill({
-      company: '',
+      company: (pickedSingleCo && !isModalExplicitAll) ? pickedSingleCo : 'ALL',
       staffNames: LEGACY_BACKFILL_MODAL_STATE.staffNames,
       fromDate: LEGACY_BACKFILL_MODAL_STATE.fromDate,
       toDate: LEGACY_BACKFILL_MODAL_STATE.toDate
@@ -139389,7 +141008,7 @@
     const visibleOpenRows = shownRows.filter(r => !r.isProtected);
     const allVisibleSelected = visibleOpenRows.length > 0 && visibleOpenRows.every(r => LEGACY_BACKFILL_MODAL_STATE.selectedIds.has(r.id));
     const scopeNotes = [];
-    if (scopedCo) scopeNotes.push(scopedCo);
+    if (scopedCo && !pickedSingleCo) scopeNotes.push(scopedCo);
     if (Array.isArray(LEGACY_BACKFILL_MODAL_STATE.staffNames) && LEGACY_BACKFILL_MODAL_STATE.staffNames.length) {
       scopeNotes.push(LEGACY_BACKFILL_MODAL_STATE.staffNames.length === 1 ? LEGACY_BACKFILL_MODAL_STATE.staffNames[0] : `${LEGACY_BACKFILL_MODAL_STATE.staffNames.length} staff`);
     }
@@ -139538,7 +141157,7 @@
       });
     }
     $('bfmClearScopeBtn')?.addEventListener('click', () => {
-      LEGACY_BACKFILL_MODAL_STATE.company = 'ALL';
+      LEGACY_BACKFILL_MODAL_STATE.company = (COMPANY_BU_MATCH[STATE.company] || '') || 'ALL';
       LEGACY_BACKFILL_MODAL_STATE.staffNames = null;
       LEGACY_BACKFILL_MODAL_STATE.fromDate = '';
       LEGACY_BACKFILL_MODAL_STATE.toDate = '';
@@ -139596,7 +141215,8 @@
 
   function openBackfillModal(opts = {}) {
     LEGACY_BACKFILL_MODAL_STATE.open = true;
-    LEGACY_BACKFILL_MODAL_STATE.company = opts.company ? String(opts.company) : 'ALL';
+    const pickedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    LEGACY_BACKFILL_MODAL_STATE.company = opts.company ? String(opts.company) : (pickedCo || 'ALL');
     LEGACY_BACKFILL_MODAL_STATE.filter = opts.filter || 'tenth_hour';
     LEGACY_BACKFILL_MODAL_STATE.fromDate = opts.fromDate ? String(opts.fromDate).slice(0, 10) : '';
     LEGACY_BACKFILL_MODAL_STATE.toDate = opts.toDate ? String(opts.toDate).slice(0, 10) : '';
@@ -147305,7 +148925,10 @@
       document.body.appendChild(modal);
     }
     const opAllowed = allowedCompanyNames(activeUser());
-    const allSum = getFatherBackfillSummary({ companyFilter: 'ALL' });
+    const pinnedFbSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isFbSingleLocked = Boolean(pinnedFbSingleCo && (!opAllowed.length || opAllowed.includes(pinnedFbSingleCo)));
+    if (isFbSingleLocked) FATHER_BACKFILL_STATE.companyFilter = pinnedFbSingleCo;
+    const allSum = getFatherBackfillSummary({ companyFilter: isFbSingleLocked ? pinnedFbSingleCo : 'ALL' });
     const coFreq = new Map();
     const bumpCo = (c, w) => {
       const cc = canonCompany(c);
@@ -147317,8 +148940,10 @@
       if (r && !r.voided && r.company) bumpCo(r.company, 1);
     });
     const baseCos = opAllowed.length ? opAllowed : getCompanyCatalog().map(c => c.name);
-    const rankedCos = Array.from(new Set(baseCos.concat(Array.from(coFreq.keys())))).filter(c => !opAllowed.length || opAllowed.includes(c))
-      .sort((a, b) => (coFreq.get(b) || 0) - (coFreq.get(a) || 0));
+    const rankedCos = isFbSingleLocked
+      ? [pinnedFbSingleCo]
+      : Array.from(new Set(baseCos.concat(Array.from(coFreq.keys())))).filter(c => !opAllowed.length || opAllowed.includes(c))
+          .sort((a, b) => (coFreq.get(b) || 0) - (coFreq.get(a) || 0));
 
     modal.innerHTML = `
       <div class="modal-card fb-modal-card">
@@ -147348,7 +148973,7 @@
 
           <div class="fb-filter-bar">
             <select id="fbCompanySelect" class="kiosk-select" data-native-select="1">
-              <option value="ALL" ${FATHER_BACKFILL_STATE.companyFilter === 'ALL' ? 'selected' : ''}>All Allowed BUs (${fmtNum(rankedCos.length)})</option>
+              ${isFbSingleLocked ? '' : `<option value="ALL" ${FATHER_BACKFILL_STATE.companyFilter === 'ALL' ? 'selected' : ''}>All Allowed BUs (${fmtNum(rankedCos.length)})</option>`}
               ${rankedCos.map(c => `<option value="${esc(c)}" ${norm(FATHER_BACKFILL_STATE.companyFilter) === norm(c) ? 'selected' : ''}>${esc(c)}</option>`).join('')}
             </select>
             <div class="fb-tier-pills">
@@ -147623,6 +149248,16 @@
 
   function getEnrolModalStaffPool(operatorUser = null) {
     const op = operatorUser || getActiveEnrolOperatorUser();
+    const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+    if (lockCo) {
+      return getKioskStaffDirectory({
+        companyOverride: lockCo,
+        scopeBySelectedCompany: true,
+        strictCompanyScope: true,
+        operatorUser: op,
+        includeEnded: true
+      });
+    }
     const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true });
     if (indScoped.length) return indScoped;
     return getKioskStaffDirectory({ operatorUser: op, includeEnded: true });
@@ -147631,10 +149266,12 @@
   function getEnrolOperatorAllowedCompanies(operatorUser = null) {
     const op = operatorUser || getActiveEnrolOperatorUser();
     const opAllowed = allowedCompanyNames(op);
-    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
-    const indCos = getCompanyCatalog()
-      .filter(c => (c.industry || 'Manufacturing') === activeInd && (!opAllowed.length || opAllowed.includes(c.name)))
-      .map(c => c.name);
+    const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+    if (lockCo && (!opAllowed.length || opAllowed.some(c => norm(c) === norm(lockCo)))) {
+      return [lockCo];
+    }
+    const indCos = getActiveIndustryBuList(STATE.company)
+      .filter(name => !opAllowed.length || opAllowed.some(c => norm(c) === norm(name)));
     if (indCos.length) return indCos;
     if (opAllowed.length) return opAllowed.slice();
     return [defaultEntryCompany() || 'WTC'];
@@ -148635,7 +150272,10 @@
       ? (allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null)
       : null;
     if (!curEntry && STAFF_FACE_MODAL_STATE.staffName) {
-      const globalHit = getKioskStaffDirectory().find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
+      const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
+      const globalHit = getKioskStaffDirectory(
+        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true } : {}
+      ).find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
       if (globalHit) {
         curEntry = globalHit;
         allStaff = [globalHit].concat(allStaff);
@@ -148972,6 +150612,10 @@
   function openStaffFaceEnrolModal(staffName = '', opts = {}) {
     stopKioskAttCamera();
     stopStaffEnrolModalCamera();
+    if (staffName && typeof staffName === 'object') {
+      opts = staffName;
+      staffName = (opts && opts.staffName) || '';
+    }
     const opUser = (opts && opts.operatorUser)
       || (KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser)
       || activeUser();
@@ -148979,13 +150623,21 @@
       toast('Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.', 'warn');
       return null;
     }
+    const reqCo = (opts && opts.company) ? canonCompany(opts.company) : '';
     STAFF_FACE_MODAL_STATE.operatorUser = opUser;
     STAFF_FACE_MODAL_STATE.newStaffOpen = Boolean(opts && opts.openNewStaff);
+    STAFF_FACE_MODAL_STATE.lockSingleCo = (opts && opts.lockIndustry === false)
+      ? ''
+      : (reqCo || COMPANY_BU_MATCH[STATE.company] || '');
     const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
     const indStaff = getEnrolModalStaffPool(opUser);
-    const fullStaff = indStaff.length ? indStaff : getKioskStaffDirectory({ operatorUser: opUser, includeEnded: true });
+    const fullStaff = (indStaff.length || STAFF_FACE_MODAL_STATE.lockSingleCo)
+      ? indStaff
+      : getKioskStaffDirectory({ operatorUser: opUser, includeEnded: true });
     let picked = staffName
-      ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || null)
+      ? ((reqCo && fullStaff.find(s => norm(s.name) === norm(staffName) && norm(canonCompany(s.company)) === norm(reqCo)))
+        || fullStaff.find(s => norm(s.name) === norm(staffName))
+        || null)
       : null;
     if (!picked && STATE.kioskAttRosterSearch) {
       const rq = norm(STATE.kioskAttRosterSearch);
@@ -149913,11 +151565,13 @@
         : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
       const curPolicyGrp = livePolicyGroups.find(g => g.id === draftPolicyGroupId) || null;
       const buCompanies = getActiveIndustryBuList(entry.company);
-      const buCoNormSet = new Set(buCompanies.map(c => norm(c)));
-      const ssmOwnCo = buCompanies.find(c => norm(canonCompany(c)) === norm(canonCompany(entry.company || '')));
+      const ssmOwnCo = buCompanies.find(c => norm(canonCompany(c)) === norm(canonCompany(entry.company || '')))
+        || canonCompany(entry.company || '')
+        || '';
       const ssmDefaultsCos = ssmOwnCo ? [ssmOwnCo] : buCompanies;
+      const ssmCoNormSet = new Set(ssmDefaultsCos.map(c => norm(c)));
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
-        .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
+        .filter(r => r && !r.voided && ssmCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
       const dayTimingsSummaryTxt = formatShiftExceptionsSummary(draftHasTimingExc ? pruneDayTimingsToWorkdays(draftDayTimings, draftDays) : {}, draftHasTimingExc ? draftDateTimings : [], curShiftObj.start_time, curShiftObj.end_time);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
@@ -150099,7 +151753,7 @@
                   <button type="button" class="btn kiosk-mini-btn ${draftShowShiftTable ? 'btn-primary' : ''}" id="ssmToggleShiftTableBtn">
                     ${ic('clock')} ${draftShowShiftTable ? 'Hide BU Shift Table' : 'BU Defaults &amp; Shift Table'} (${workShiftRows.length})
                   </button>
-                  <button type="button" class="btn kiosk-mini-btn" id="ssmOpenNewShiftModalBtn" ${buCompanies.some(bu => canEditShiftsAndRules(null, bu)) ? '' : 'disabled'}>+ New Shift</button>
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmOpenNewShiftModalBtn" ${ssmDefaultsCos.some(bu => canEditShiftsAndRules(null, bu)) ? '' : 'disabled'}>+ New Shift</button>
                 </div>
               </div>
               <div class="ssm-shift-cards">
@@ -150370,10 +152024,10 @@
                         `;
                       }).join('')}
                       ${(() => {
-                        const writableNewBus = buCompanies.filter(bu => canEditShiftsAndRules(null, bu));
+                        const writableNewBus = ssmDefaultsCos.filter(bu => canEditShiftsAndRules(null, bu));
                         const canAddNewRow = writableNewBus.length > 0;
                         const disNewRow = canAddNewRow ? '' : 'disabled';
-                        const newCoOpts = canAddNewRow ? writableNewBus : buCompanies;
+                        const newCoOpts = canAddNewRow ? writableNewBus : ssmDefaultsCos;
                         return `<tr id="ssmNewShiftInlineRow" style="background:var(--bg)">
                         <td>
                           <select id="ssmNewShiftCo" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11.5px;padding:2px 4px" ${disNewRow}>
@@ -151158,7 +152812,7 @@
       });
       $('ssmOpenFaceStudioBtn')?.addEventListener('click', () => {
         closeStaffScheduleModal();
-        openStaffFaceEnrolModal(entry.name);
+        openStaffFaceEnrolModal(entry.name, { company: entry.company });
       });
       $('ssmToggleShiftTableBtn')?.addEventListener('click', () => {
         syncLiveInputs();
@@ -151166,7 +152820,7 @@
         renderModalInner();
       });
       $('ssmOpenNewShiftModalBtn')?.addEventListener('click', () => {
-        if (!buCompanies.some(bu => canEditShiftsAndRules(null, bu))) return;
+        if (!ssmDefaultsCos.some(bu => canEditShiftsAndRules(null, bu))) return;
         syncLiveInputs();
         draftShowShiftTable = true;
         renderModalInner();
@@ -152584,7 +154238,7 @@
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
     ensureWorkShiftsSeeded();
-    const activeBuList = getActiveIndustryBuList(STATE.company);
+    const activeBuList = getAttendanceDefaultsCompanies(STATE.company);
     const defCo = opts.company || COMPANY_BU_MATCH[STATE.company] || activeBuList[0] || defaultEntryCompany() || 'WTC';
     if (!canEditShiftsAndRules(null, defCo)) {
       toast('You do not have rights to edit shifts for this company', 'warn');
@@ -152650,7 +154304,16 @@
     const curCoDef = getBuDefaultShift(defCo);
     const initIsBuDef = Boolean(existing && ((curCoDef && normalizeShiftCodeAlias(curCoDef.shift_code) === existing.id) || existing.is_bu_default));
     const viewerAllowed = allowedCompanyNames();
-    const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
+    const pinnedSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const stmBaseCos = (pinnedSingleCo ? getAttendanceDefaultsCompanies(STATE.company) : getActiveIndustryBuList(opts.company || STATE.company))
+      .filter(nm => !viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(nm)));
+    const stmCoOpts = stmBaseCos.slice();
+    if (defCo && defCo !== 'All Companies' && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(defCo))) && !stmCoOpts.includes(defCo)) {
+      stmCoOpts.unshift(defCo);
+    }
+    if ((!pinnedSingleCo && isFullGroupSeat()) || (existing && existing.company === 'All Companies') || defCo === 'All Companies') {
+      if (!stmCoOpts.includes('All Companies')) stmCoOpts.push('All Companies');
+    }
     // Preset chips ranked by how many staff work each window (hard rule 11), re-ranked on Company Scope change.
     const stmUsageMemo = new Map();
     // live = read the open form; false at first render (a previous open may have left stale inputs in the DOM).
@@ -152796,7 +154459,7 @@
             <div class="ssm-field">
               <label for="stmCompany">Company Scope</label>
               <select id="stmCompany" class="kiosk-select" data-plain-options="1"${cohortLockAttr}>
-                ${(isFullGroupSeat() ? allAllowedCos.concat(['All Companies']) : allAllowedCos).map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+                ${stmCoOpts.map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
               </select>
             </div>
             <div class="ssm-field">
@@ -154150,7 +155813,7 @@
     const canWrite = canApplyShiftCalendar();
     const ranked = getRankedShiftCalPresets();
     const thisYear = Number(todayISO().slice(0, 4));
-    const buList = getActiveIndustryBuList(STATE.company);
+    const buList = getAttendanceDefaultsCompanies(STATE.company);
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const st = {
       presetId: opts.presetId || ranked[0].id,
@@ -154951,7 +156614,9 @@
     const to = String(opts.to || todayISO()).slice(0, 10);
     const from = shiftCalAddDays(to, -(weeks * 7 - 1));
     const weekFrom = shiftCalAddDays(to, -6);
-    const allowedCos = (opts.companies && opts.companies.length ? opts.companies : getActiveIndustryBuList(STATE.company));
+    const allowedCos = (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -155550,6 +157215,7 @@
       : getKioskStaffDirectory({
           companyOverride: activeScopedCo,
           scopeBySelectedCompany: Boolean(activeScopedCo),
+          strictCompanyScope: Boolean(activeScopedCo),
           scopeByActiveIndustry: !activeScopedCo,
           includeEnded: true
         }).filter(s => !s.isEndedContract);
@@ -156652,7 +158318,9 @@
     const minObs = Math.max(2, Number(opts.minObs || 4));
     const to = String(opts.to || todayISO()).slice(0, 10);
     const from = shiftCalAddDays(to, -(days - 1));
-    const allowedCos = (opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company);
+    const allowedCos = (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -157276,7 +158944,7 @@
     const reqCompany = opts.company ? (canonCompany(opts.company) || String(opts.company).trim()) : '';
     const allowedCos = reqCompany
       ? [reqCompany]
-      : ((opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company));
+      : ((opts.companies && opts.companies.length) ? opts.companies : getAttendanceDefaultsCompanies(STATE.company));
     const coSet = new Set(allowedCos.map(c => norm(c)));
     const viewerAllowed = allowedCompanyNames();
     const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
@@ -157568,12 +159236,16 @@
       wireBackdropDismiss(modal, closePunchDriftModal);
       document.body.appendChild(modal);
     }
+    const getModalScopeCos = () => (opts.companies && opts.companies.length)
+      ? opts.companies
+      : getAttendanceDefaultsCompanies(opts.company || STATE.company);
     const compute = () => {
-      dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin });
+      const scopeCos = getModalScopeCos();
+      dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin, companies: scopeCos });
       window.__lastPunchDriftDigest = dg;
-      advRes = computeRoleSiteDriftProposals({ days: st.advDays });
+      advRes = computeRoleSiteDriftProposals({ days: st.advDays, companies: scopeCos });
       window.__lastRoleSiteDriftProposals = advRes;
-      outcomesRes = computeCohortDriftOutcomes({ refDate: opts.refDate || todayISO() });
+      outcomesRes = computeCohortDriftOutcomes({ refDate: opts.refDate || todayISO(), companies: scopeCos });
       window.__lastCohortDriftOutcomes = outcomesRes;
     };
     const patHtml = list => list.map(x => `<span class="pdr-pat" data-side="${esc(x.side)}"><span>${esc(x.label)}</span> <b class="mono">${x.medianMin > 0 ? '+' : ''}${fmtNum(x.medianMin)}</b> <span>min</span></span>`).join(' ');
@@ -157614,7 +159286,7 @@
           <td>${actionsHtml(`person:${i}`, f.split)}</td>
         </tr>`).join('');
       const brief = st.brief;
-      const activeRules = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company));
+      const activeRules = listActivePunchDriftRules(getModalScopeCos());
       const filteredAdvProps = (advRes && Array.isArray(advRes.proposals) ? advRes.proposals : []).filter(p => {
         if (st.advSite !== 'all' && norm(p.site) !== norm(st.advSite)) return false;
         if (st.advRole !== 'all' && norm(p.role) !== norm(st.advRole)) return false;
@@ -157947,7 +159619,7 @@
         }
         st.armed = '';
         // Found again by its id (never by position, a sync may have reordered the list between the two clicks).
-        const r = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company)).find(x => String(x.item.id) === String(rid));
+        const r = listActivePunchDriftRules(getModalScopeCos()).find(x => String(x.item.id) === String(rid));
         const res = r ? removePunchDriftRule(r.staff, r.company, r.item.id) : null;
         toast(res && res.ok ? 'Drift rule removed' : ((res && res.error) || 'Nothing changed'), res && res.ok ? 'ok' : 'warn');
         compute();
@@ -158166,7 +159838,7 @@
 
   function openPolicyGroupModal(groupId = '', seedSpec = null, onSaved = null) {
     const canEdit = canEditPolicyGroupsCatalog();
-    const activeBuList = getActiveIndustryBuList(STATE.company);
+    const activeBuList = getAttendanceDefaultsCompanies((seedSpec && seedSpec.targetCompany) || STATE.company);
     const industryAllowedCos = activeBuList.filter(Boolean);
     const explicitTargetCo = (seedSpec && seedSpec.targetCompany) || COMPANY_BU_MATCH[STATE.company] || '';
     const groups = getPolicyGroups(explicitTargetCo);
@@ -158207,7 +159879,7 @@
     }));
     let draftName = existing ? existing.name : ((seedSpec && seedSpec.name) || '');
     let draftShort = existing ? existing.short : '';
-    let draftCompany = existing ? (existing.isBuiltin ? 'All Companies' : (existing.company || 'All Companies')) : ((seedSpec && seedSpec.company) || 'All Companies');
+    let draftCompany = existing ? (existing.isBuiltin ? 'All Companies' : (existing.company || 'All Companies')) : ((seedSpec && seedSpec.company) || explicitTargetCo || 'All Companies');
     const resolvedInitCo = effDefCo(draftCompany);
     let draftSetCoDef = Boolean(existing && resolvedInitCo && getCompanyDefaultPolicyGroupId(resolvedInitCo) === existing.id);
     let draftMathMode = base.math_mode;
@@ -158241,7 +159913,23 @@
     let draftVersionNote = '';
     let draftBackfill = true;
     const viewerAllowed = allowedCompanyNames();
-    const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
+    const indCosForModal = getActiveIndustryBuList(explicitTargetCo || STATE.company);
+    const indNormSet = new Set(indCosForModal.map(c => norm(canonCompany(c))));
+    const pinnedPgmSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const isExistingUniv = Boolean(existing && (!existing.company || existing.company === 'All Companies' || existing.company === 'All BUs'));
+    const pgmAllowedCos = (pinnedPgmSingleCo
+      ? getAttendanceDefaultsCompanies(explicitTargetCo || STATE.company)
+      : indCosForModal)
+      .filter(nm => !viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(nm)));
+    if (existing && existing.company && existing.company !== 'All Companies' && existing.company !== 'All BUs'
+      && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(existing.company)))
+      && !pgmAllowedCos.some(c => norm(c) === norm(existing.company))) {
+      pgmAllowedCos.push(existing.company);
+    }
+    const getEffBackfillCos = () => {
+      const isUniv = !draftCompany || draftCompany === 'All Companies' || draftCompany === 'All BUs';
+      return !isUniv ? [draftCompany] : (explicitTargetCo ? [explicitTargetCo] : indCosForModal.slice());
+    };
 
     let modal = $('policyGroupModal');
     if (!modal) {
@@ -158260,8 +159948,13 @@
       const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
+      const effBackfillCos = getEffBackfillCos();
+      const effScopeNormSet = new Set(effBackfillCos.map(c => norm(canonCompany(c))));
       const assignedStaff = existing
-        ? getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id)
+        ? getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => {
+            if (getStaffWorkRule(s.name, s.company).policy_group_id !== existing.id) return false;
+            return effScopeNormSet.has(norm(canonCompany(s.company || '')));
+          })
         : [];
       const assignedCnt = assignedStaff.length;
       const showDollars = canViewPayrollDollarAmounts();
@@ -158292,7 +159985,8 @@
       const previewRes = (draftBackfill && existing && hasDraftRuleChange)
         ? (assignedStaff.length > 0
             ? previewPolicyChangeImpact({
-                company: draftCompany !== 'All Companies' ? draftCompany : '',
+                company: effBackfillCos.length === 1 ? effBackfillCos[0] : '',
+                companies: effBackfillCos,
                 staffNames: assignedStaff.map(s => s.name),
                 fromDate: previewFrom,
                 toDate: previewTo,
@@ -158344,8 +160038,8 @@
               <div class="ssm-field">
                 <label for="pgmCompany">Company Scope</label>
                 <select id="pgmCompany" class="kiosk-select" data-plain-options="1" ${existing && existing.isBuiltin ? 'disabled' : ''}>
-                  <option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>
-                  ${allAllowedCos.map(co => `<option value="${esc(co)}" ${draftCompany === co ? 'selected' : ''}>${esc(co)} Only</option>`).join('')}
+                  ${((!pinnedPgmSingleCo && isFullGroupSeat()) || draftCompany === 'All Companies' || isExistingUniv) ? `<option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>` : ''}
+                  ${pgmAllowedCos.map(co => `<option value="${esc(co)}" ${draftCompany === co ? 'selected' : ''}>${esc(co)} Only</option>`).join('')}
                 </select>
               </div>
               <div class="ssm-field">
@@ -158587,10 +160281,10 @@
                     ? `<span>Scheduled for future effective date <b>${esc(fmtDateDMY(draftEffFrom))}</b> (current active policy stays until then).</span>`
                     : `<span>Dry-Run Preview (${esc(fmtDateDMY(previewRes.fromDate))}–${esc(fmtDateDMY(previewRes.toDate))}): recalculates <b>${fmtNum(previewRes.updatedRows)}</b> unlocked logs${showDollars ? ` · Earned Δ <b class="att-earn-pos">${previewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${previewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${previewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(previewRes.netDeltaUsd), 2)}</b>` : ''}${(previewRes.skippedClosed || previewRes.skippedManual) ? ` (${fmtNum(previewRes.skippedClosed)} closed skipped, ${fmtNum(previewRes.skippedManual)} manual kept)` : ''}</span>`}
                   ${!isRo ? ` <button type="button" class="btn kiosk-mini-btn" data-pgm-open-sim="1">Inspect employee diffs</button>` : ''}
-                  ${renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) })}
+                  ${renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''), staffNames: assignedStaff.map(s => s.name) })}
                 </div>
               ` : (() => {
-                const pgmLegHtml = renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) });
+                const pgmLegHtml = renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''), staffNames: assignedStaff.map(s => s.name) });
                 return pgmLegHtml ? `<div class="att-backfill-preview" id="pgmBackfillPreview">${pgmLegHtml}</div>` : '';
               })()}
             </div>
@@ -158970,6 +160664,7 @@
           version_id: draftEditingVersionId || undefined,
           version_note: draftVersionNote,
           backfill: draftBackfill,
+          backfillScopeCompanies: getEffBackfillCos(),
           deferSave: willUpdateCoDefault,
           deferSync: willUpdateCoDefault
         };
@@ -159001,9 +160696,13 @@
           }
           const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
           const defBfCount = defUpdateRes && defUpdateRes.attBackfill ? Number(defUpdateRes.attBackfill.updatedRows || 0) : 0;
-          const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : '');
+          const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''));
           const pgStaffNames = getKioskStaffDirectory({ includeEnded: true, lite: true })
-            .filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === res.policyGroup.id)
+            .filter(s => {
+              if (getStaffWorkRule(s.name, s.company).policy_group_id !== res.policyGroup.id) return false;
+              const scNorm = norm(canonCompany(s.company || ''));
+              return pgScopeCo ? scNorm === norm(canonCompany(pgScopeCo)) : indNormSet.has(scNorm);
+            })
             .map(s => s.name);
           const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, countOnly: true });
           closePolicyGroupModal();
@@ -159107,7 +160806,7 @@
       _PAY_BIO_SUM_KEPT.delete(bioKey);
       _PAY_BIO_SUM_KEPT.set(bioKey, bioCounts);
     } else {
-      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, strictCompanyScope: Boolean(COMPANY_BU_MATCH[STATE.company]) });
       const shiftTypes = getShiftTypes();
       bioCounts = {
         shiftCount: shiftTypes.length,
@@ -159153,7 +160852,11 @@
     const staffStatusFilter = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter)
       ? STATE.kioskStaffStatusFilter
       : 'all';
-    const fullStaffDir = opts.fullStaffDir || getKioskStaffDirectory({ scopeBySelectedCompany, includeEnded });
+    const fullStaffDir = opts.fullStaffDir || getKioskStaffDirectory({
+      scopeBySelectedCompany,
+      strictCompanyScope: Boolean(scopeBySelectedCompany && COMPANY_BU_MATCH[STATE.company]),
+      includeEnded
+    });
     const staffDir = staffStatusFilter === 'active'
       ? fullStaffDir.filter(s => !s.isEndedContract)
       : (staffStatusFilter === 'inactive' ? fullStaffDir.filter(s => s.isEndedContract) : fullStaffDir);
@@ -159378,12 +161081,8 @@
       STATE.kioskAttSite = attSites[0] || 'WTC Main Plant';
     }
 
-    const allEmpRecords = (SEED.records.employments || []).concat(STATE.customRecords.employments || []);
     const rawScopedCo = COMPANY_BU_MATCH[STATE.company] || '';
-    const rawCoHasEmps = rawScopedCo
-      ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
-      : true;
-    const effectiveScopedCo = rawCoHasEmps ? rawScopedCo : '';
+    const effectiveScopedCo = rawScopedCo;
     const {
       staffStatusFilter, fullStaffDir, staffDir, rosterQuery,
       latePenFilter, lateTolFilter, lateWhenFilter, lateOtFilter, lateTodayFilter, policyGroupFilter,
@@ -159393,7 +161092,7 @@
     const endedStaffTotal = fullStaffDir.filter(s => s.isEndedContract).length;
     const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'all'];
     const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : 'roster';
-    const policyGroupsCatalog = getPolicyGroups(effectiveScopedCo || defCo);
+    const policyGroupsCatalog = getPolicyGroups(rawScopedCo);
     const countByCriteria = overrides => searchFilteredRoster.filter(s => checkStaffFilterCriteria(s, overrides)).length;
 
     const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
@@ -159415,7 +161114,7 @@
       return true;
     });
 
-    const shiftTypesCatalog = getShiftTypes(effectiveScopedCo || defCo);
+    const shiftTypesCatalog = getShiftTypes(rawScopedCo || effectiveScopedCo || defCo);
     const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
@@ -159546,12 +161245,12 @@
       `;
     };
 
-    const companyDefaultsTargets = effectiveScopedCo ? [effectiveScopedCo] : Array.from(indCoNames);
-    const editCoAttr = effectiveScopedCo ? ` data-edit-co="${esc(effectiveScopedCo)}"` : '';
+    const companyDefaultsTargets = getAttendanceDefaultsCompanies(STATE.company);
+    const editCoAttr = rawScopedCo ? ` data-edit-co="${esc(rawScopedCo)}"` : '';
 
     const canWritePolCat = canEditPolicyGroupsCatalog();
-    const canWriteShiftCat = effectiveScopedCo
-      ? canEditShiftsAndRules(null, effectiveScopedCo)
+    const canWriteShiftCat = rawScopedCo
+      ? canEditShiftsAndRules(null, rawScopedCo)
       : (indCoNames.size ? Array.from(indCoNames).some(c => canEditShiftsAndRules(null, c)) : canEditShiftsAndRules(null, defCo));
 
     const companyDefaultsStripHtml = companyDefaultsTargets.length ? `
@@ -163167,7 +164866,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -168182,28 +169881,52 @@
       }
       const sEl = e.target.closest('[data-series-idx]');
       const activeIdx = sEl ? Number(sEl.getAttribute('data-series-idx')) : -1;
-      const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
-      if (!html) {
-        hideChartPopover();
-        return;
-      }
-      chartPopEl.innerHTML = html;
-      chartPopEl.hidden = false;
       const hRect = popHost.getBoundingClientRect();
-      const pRect = chartPopEl.getBoundingClientRect();
       const hasPtr = typeof e.clientX === 'number' && typeof e.clientY === 'number' && (e.clientX > 0 || e.clientY > 0);
-      const anchorX = hasPtr ? e.clientX : (hRect.left + hRect.width / 2);
-      const anchorY = hasPtr ? e.clientY : hRect.top;
-      const leftPx = Math.min(
-        window.innerWidth - pRect.width - 10,
-        Math.max(10, Math.round(anchorX - pRect.width / 2))
-      );
-      let topPx = Math.round(anchorY - pRect.height - 14);
-      if (topPx < 10) {
-        topPx = Math.min(window.innerHeight - pRect.height - 10, Math.round((hasPtr ? e.clientY : hRect.bottom) + 16));
+      // Cards and list rows (HTML hosts of normal size) get a popover pinned to the host itself;
+      // chart marks (SVG) and very tall or wide hosts follow the pointer.
+      const isMark = typeof SVGElement !== 'undefined' && popHost instanceof SVGElement;
+      const pinToHost = !isMark && hRect.height <= 160 && hRect.width <= 520;
+      const popKey = `${rawSpec}|${activeIdx}`;
+      if (pinToHost && !chartPopEl.hidden && chartPopEl._popHost === popHost && chartPopEl._popKey === popKey) return;
+      if (chartPopEl._popKey !== popKey || chartPopEl.hidden) {
+        const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
+        if (!html) {
+          hideChartPopover();
+          return;
+        }
+        chartPopEl.innerHTML = html;
+        chartPopEl._popKey = popKey;
       }
-      chartPopEl.style.left = `${leftPx}px`;
-      chartPopEl.style.top = `${Math.max(10, topPx)}px`;
+      chartPopEl._popHost = popHost;
+      chartPopEl.hidden = false;
+      const pRect = chartPopEl.getBoundingClientRect();
+      const M = 10;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const clampLeft = x => Math.min(vw - pRect.width - M, Math.max(M, Math.round(x)));
+      let leftPx;
+      let rightPx = null;
+      let topPx = null;
+      if (pinToHost) {
+        // Open downward under the hovered card so its figures and the header above stay readable;
+        // flip above only when the screen has no room below.
+        leftPx = clampLeft(hRect.left);
+        // Arabic: hold the card's right edge (the translation lands after this and changes the width).
+        if (document.documentElement.dir === 'rtl') rightPx = Math.max(M, Math.min(vw - pRect.width - M, Math.round(vw - hRect.right)));
+        if (hRect.bottom + 8 + pRect.height <= vh - M) topPx = hRect.bottom + 8;
+        else if (hRect.top - 8 - pRect.height >= M) topPx = hRect.top - 8 - pRect.height;
+      } else {
+        leftPx = clampLeft((hasPtr ? e.clientX : (hRect.left + hRect.width / 2)) - pRect.width / 2);
+      }
+      if (topPx === null) {
+        // Pointer-anchored: below the cursor first, above it only when there is no room below.
+        const py = hasPtr ? e.clientY : hRect.bottom;
+        topPx = (py + 18 + pRect.height <= vh - M) ? py + 18 : (hasPtr ? e.clientY : hRect.top) - pRect.height - 14;
+      }
+      chartPopEl.style.left = rightPx === null ? `${leftPx}px` : 'auto';
+      chartPopEl.style.right = rightPx === null ? 'auto' : `${rightPx}px`;
+      chartPopEl.style.top = `${Math.max(M, Math.min(vh - pRect.height - M, Math.round(topPx)))}px`;
     };
     if (wsElForPop) {
       wsElForPop.addEventListener('mouseover', showChartPopoverForEvent);
@@ -169063,7 +170786,12 @@
         restoreVoidedIndustryDomainRow,
         saveVoidNote,
         navigateToRecordOrDomainRow,
-        recordDateDMY
+        recordDateDMY,
+        periodRange,
+        fmtDateDMY,
+        showRecordInspector,
+        coBadge,
+        relLink
       });
     }
 
@@ -169864,6 +171592,8 @@
       closeBackfillModal: () => closeBackfillModal(),
       computeAttendanceOtSnapPremium: (a, prof) => computeAttendanceOtSnapPremium(a, prof),
       computeJobOtSnapAllocation: (opts = {}) => computeJobOtSnapAllocation(opts),
+      getAttendanceDefaultsCompanies: (co = '') => getAttendanceDefaultsCompanies(co),
+      getActiveIndustryBuList: (co = '') => getActiveIndustryBuList(co),
       getOtSnapAllocSig: () => getOtSnapAllocSig(),
       clearFlashPunch: () => clearKioskFlashPunch(true)
     };
