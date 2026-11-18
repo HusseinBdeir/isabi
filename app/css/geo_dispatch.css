@@ -1597,6 +1597,35 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden])) .insp-site-map-wra
   flex-wrap: wrap;
   max-width: 100%;
 }
+.geo-route-grade-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: var(--surface, #F8FAFC);
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.geo-route-grade-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.geo-route-grade-swatch {
+  width: 12px;
+  height: 4px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.geo-route-grade-swatch.is-flat { background: #1F7A4C; }
+.geo-route-grade-swatch.is-moderate { background: #C96A22; }
+.geo-route-grade-swatch.is-steep { background: #C43B2D; }
 .geo-km-override-inp {
   width: 98px;
   min-width: 92px;

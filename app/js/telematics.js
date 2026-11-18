@@ -202,6 +202,22 @@
     _lastScopeSig = baseSig;
   }
 
+  const _TELEMATICS_SCOPE_CANON = {
+    '4235company': '4235companysal',
+    '4235companysal': '4235companysal',
+    'insurance': 'insurancecompany',
+    'insuranceco': 'insurancecompany',
+    'insurancecompany': 'insurancecompany',
+    'bbc': 'bbconstruction',
+    'bbconstruction': 'bbconstruction',
+    'lions': 'lionstransport',
+    'lionstransport': 'lionstransport'
+  };
+  function _canonTelematicsCompanyAlnum(v) {
+    const k = normAlnum(v);
+    return _TELEMATICS_SCOPE_CANON[k] || k;
+  }
+
   function canSeatAccessCompany(unitCo) {
     if (!unitCo) return false;
     if (isDemoActive()) return true;
@@ -209,12 +225,12 @@
     const u = typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
     if (!u) return false;
     const allowed = _ctx.allowedCompanyNames() || [];
-    const target = normAlnum(unitCo);
-    return allowed.some(c => normAlnum(c) === target);
+    const target = _canonTelematicsCompanyAlnum(unitCo);
+    return allowed.some(c => _canonTelematicsCompanyAlnum(c) === target);
   }
 
   function companyMatchesScope(unitCo, scopeRaw) {
-    const uc = normAlnum(unitCo || 'WTC');
+    const uc = _canonTelematicsCompanyAlnum(unitCo || 'WTC');
     const sc = String(scopeRaw || '').trim().toLowerCase();
     if (!sc || sc === 'all') return true;
     if (sc === 'manufacturing-group' || sc === 'industry:manufacturing') {
@@ -231,7 +247,7 @@
       if (ind.includes('insurance')) return uc.includes('insurance');
       return false;
     }
-    return uc === normAlnum(sc);
+    return uc === _canonTelematicsCompanyAlnum(sc);
   }
 
   function enrichUnitWithIsabiGeo(u) {
@@ -702,6 +718,99 @@
     };
   }
 
+  // Strictly read-only CAN-bus & settled-tank dip calibration summary (zero network calls)
+  function getCanFuelCalibrationSummary(companyOpt) {
+    ensureSeatScopeFresh();
+    const targetScope = companyOpt || getActiveCompanyScope();
+    const units = getScopedUnits(targetScope);
+    const ecuUnits = units.filter(u => u && u.has_ecu_io83);
+    const sigPrefix = `${getSeatIdentitySig()}|`;
+    const unitByDevId = new Map();
+    units.forEach(u => {
+      if (u && u.device_id != null) unitByDevId.set(Number(u.device_id), u);
+    });
+
+    let sumEcuBurnL = 0;
+    let sumGpsKm = 0;
+    let pairedPumpL = 0;
+    let pairedEcuL = 0;
+    let historySamplesCount = 0;
+    let settledDipSamples = 0;
+    const seenHistKeys = new Set();
+
+    _histCache.forEach((hist, cacheKey) => {
+      if (!hist || typeof cacheKey !== 'string' || !cacheKey.startsWith(sigPrefix)) return;
+      const devId = Number(hist.device_id || 0);
+      const u = unitByDevId.get(devId);
+      if (!u || !canSeatAccessCompany(u.company)) return;
+      const fDate = String(hist.from_date || '').slice(0, 10);
+      const dedupKey = `${devId}|${fDate}`;
+      if (seenHistKeys.has(dedupKey)) return;
+      seenHistKeys.add(dedupKey);
+      historySamplesCount += 1;
+      if (hist.opening_settled_l != null && hist.closing_settled_l != null) {
+        settledDipSamples += 1;
+      }
+      const km = Number(hist.km_gps || 0);
+      const burn = Number(hist.ecu_burn_l || 0);
+      if (hist.has_ecu_io83 && km > 10 && burn > 0) {
+        const rate = burn / km;
+        if (rate >= 0.25 && rate <= 1.65) {
+          sumGpsKm += km;
+          sumEcuBurnL += burn;
+          if (fDate) {
+            const recon = computeLedgerReconForUnitDate(u, hist, fDate);
+            if (recon && recon.pumpLitres > 0 && hist.opening_settled_l != null && hist.closing_settled_l != null) {
+              const adjBurn = hist.opening_settled_l + recon.pumpLitres - hist.closing_settled_l;
+              if (adjBurn > 5 && burn > 5) {
+                const ratio = adjBurn / burn;
+                if (ratio >= 0.75 && ratio <= 1.35) {
+                  pairedPumpL += adjBurn;
+                  pairedEcuL += burn;
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const seed = _ctx && typeof _ctx.getSeed === 'function' ? _ctx.getSeed() : window.MFG_SEED;
+    const st = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : null;
+    const dipBase = (seed && seed.records && Array.isArray(seed.records.diesel_dips)) ? seed.records.diesel_dips : [];
+    const dipCust = (st && st.customRecords && Array.isArray(st.customRecords.diesel_dips)) ? st.customRecords.diesel_dips : [];
+    const visibleDips = dipBase.concat(dipCust).filter(d => d && !d.voided && canSeatAccessCompany(d.company || 'WTC')).length;
+
+    let ecuLPerKm = null;
+    const ecuFromHistory = sumGpsKm > 10 && sumEcuBurnL > 0;
+    if (ecuFromHistory) {
+      ecuLPerKm = round2(sumEcuBurnL / sumGpsKm);
+    } else if (ecuUnits.length > 0) {
+      const explicitRates = ecuUnits
+        .map(u => Number(u.ecu_l_per_km || u.burn_rate_l_km || 0))
+        .filter(v => Number.isFinite(v) && v >= 0.25 && v <= 1.65);
+      ecuLPerKm = explicitRates.length
+        ? round2(explicitRates.reduce((a, b) => a + b, 0) / explicitRates.length)
+        : 0.72;
+    }
+
+    const rawRatio = (pairedEcuL > 10 && pairedPumpL > 0) ? (pairedPumpL / pairedEcuL) : 1.0;
+    const pumpToEcuRatio = round2(Math.max(0.90, Math.min(1.15, rawRatio)));
+    const summary = summarizeUnits(units);
+
+    return {
+      scope: targetScope,
+      connectedCount: units.length,
+      ecuUnitsCount: ecuUnits.length,
+      ecuLPerKm,
+      ecuFromHistory,
+      historySamplesCount,
+      dipReconCount: settledDipSamples + visibleDips,
+      pumpToEcuRatio,
+      tankTotalL: summary ? summary.tankTotalL : 0
+    };
+  }
+
   function buildDeterministicTelemetryBrief(unit, hist, ledgerRecon) {
     if (!unit) return '';
     const lang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
@@ -945,11 +1054,13 @@
       const rCo = norm(r.company || (buPart ? buPart.slice(3) : ''));
       if (coNorm && rCo && rCo !== coNorm) continue;
       if (segBu && buPart && buPart !== segBu) continue;
-      const pts = Array.isArray(r.coords) ? r.coords : (Array.isArray(r.points) ? r.points : null);
+      const hasCoords = Array.isArray(r.coords) && r.coords.length > 0;
+      const hasLngLat = !hasCoords && Array.isArray(r.coordsLngLat) && r.coordsLngLat.length > 0;
+      const pts = hasCoords ? r.coords : (hasLngLat ? r.coordsLngLat : (Array.isArray(r.points) ? r.points : null));
       if (!pts || !pts.length) continue;
       const parsed = pts.map(pt => ({
-        lat: Array.isArray(pt) ? Number(pt[0]) : Number(pt && pt.lat),
-        lng: Array.isArray(pt) ? Number(pt[1]) : Number(pt && pt.lng)
+        lat: Array.isArray(pt) ? Number(hasLngLat ? pt[1] : pt[0]) : Number(pt && pt.lat),
+        lng: Array.isArray(pt) ? Number(hasLngLat ? pt[0] : pt[1]) : Number(pt && pt.lng)
       })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
       if (!parsed.length) continue;
       if (parsed.length === 1) {
@@ -1600,6 +1711,192 @@
       ? `<span class="tel-ind-chip is-dwell"><span data-no-i18n="1">${fmtNum(dwellDigest.alertCount, 0)} </span><span>Dwell Drift</span></span>`
       : `<span class="tel-ind-chip"><span>Pins Aligned (0 Drift)</span></span>`;
 
+    const indByView = {
+      trd_trucks: 'Automotive & Heavy Trading',
+      hsp_energy: 'Hospitality & Resorts',
+      re_workorders: 'Real Estate & Property',
+      ins_claims: 'Insurance & Brokerage',
+      hld_consolidation: 'Holding & Treasury'
+    };
+    const targetInd = indByView[industryViewKey] || '';
+    const vrMap = (typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.exportGeoConfig === 'function')
+      ? (window.MFG_GEO.exportGeoConfig().verifiedRoutes || {})
+      : {};
+    const activeScope = getActiveCompanyScope();
+    const scLow = String(activeScope || '').trim().toLowerCase();
+    const isSingleEntityScope = Boolean(
+      scLow
+      && scLow !== 'all'
+      && scLow !== 'manufacturing-group'
+      && scLow !== 'bdeirholding'
+      && scLow !== 'bdeir-holding'
+      && scLow !== 'bdeir holding'
+      && scLow !== 'democompany'
+      && !scLow.startsWith('industry:')
+    );
+    const nrmSite = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const siteMatchesTargetInd = site => {
+      if (!site) return false;
+      const si = String(site._industry || '').trim();
+      if (!targetInd || targetInd === 'Manufacturing') {
+        return !site._multiIndustrySeed && (!si || si === 'Manufacturing');
+      }
+      if (targetInd === 'Holding & Treasury') {
+        return si === 'Holding & Treasury' || si === 'Holding & Group Treasury';
+      }
+      return si === targetInd;
+    };
+    const isInactiveSite = site => Boolean(site && (site.voided || site.removed || site.active === false || /^(?:closed|inactive)$/i.test(String(site.status || '').trim())));
+    const siteCoMap = new Map();
+    const allSiteCoMap = new Map();
+    const blockedSiteNames = new Set();
+    const allBlockedSiteNames = new Set();
+    const activeSiteNames = new Set();
+    const otherIndSiteNames = new Set();
+    const resolveSiteIndNorm = site => {
+      if (!site) return '';
+      if (!site._multiIndustrySeed && (!site._industry || String(site._industry).trim() === 'Manufacturing')) return 'Manufacturing';
+      const si = String(site._industry || '').trim();
+      return /^holding\s*&\s*(?:group\s+)?treasury$/i.test(si) ? 'Holding & Treasury' : si;
+    };
+    const normTargetInd = /^holding\s*&\s*(?:group\s+)?treasury$/i.test(String(targetInd || '')) ? 'Holding & Treasury' : String(targetInd || '');
+    try {
+      const seedObj = (_ctx && typeof _ctx.getSeed === 'function' ? _ctx.getSeed() : window.MFG_SEED) || {};
+      const stObj = (_ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : null) || {};
+      const seedSites = (seedObj.records && Array.isArray(seedObj.records.sites)) ? seedObj.records.sites : [];
+      const custSites = (stObj.customRecords && Array.isArray(stObj.customRecords.sites)) ? stObj.customRecords.sites : [];
+      const activeByIndName = new Map();
+      const activeCustByIndName = new Map();
+      const shadowedIds = new Set();
+      custSites.forEach(site => {
+        if (!site) return;
+        const sInd = resolveSiteIndNorm(site);
+        if (site.id) shadowedIds.add(String(site.id));
+        if (site.override_id) shadowedIds.add(String(site.override_id));
+        if (!site.name) return;
+        const nk = nrmSite(site.name);
+        if (!isInactiveSite(site)) {
+          if (!activeByIndName.has(sInd)) activeByIndName.set(sInd, new Set());
+          activeByIndName.get(sInd).add(nk);
+          if (!activeCustByIndName.has(sInd)) activeCustByIndName.set(sInd, new Set());
+          activeCustByIndName.get(sInd).add(nk);
+          if (!normTargetInd || sInd === normTargetInd) activeSiteNames.add(nk);
+          else otherIndSiteNames.add(nk);
+        }
+      });
+      seedSites.forEach(site => {
+        if (!site || !site.name) return;
+        const sInd = resolveSiteIndNorm(site);
+        const nk = nrmSite(site.name);
+        const isTarget = !normTargetInd || sInd === normTargetInd;
+        if (site.id && shadowedIds.has(String(site.id))) {
+          const actSet = activeByIndName.get(sInd);
+          if (!actSet || !actSet.has(nk)) {
+            allBlockedSiteNames.add(nk);
+            if (isTarget) blockedSiteNames.add(nk);
+          }
+          return;
+        }
+        if (!isInactiveSite(site)) {
+          if (!activeByIndName.has(sInd)) activeByIndName.set(sInd, new Set());
+          activeByIndName.get(sInd).add(nk);
+          if (isTarget) activeSiteNames.add(nk);
+          else otherIndSiteNames.add(nk);
+        }
+      });
+      custSites.concat(seedSites).forEach((site, idx) => {
+        if (!site || !site.name || !isInactiveSite(site)) return;
+        const isSeed = idx >= custSites.length;
+        if (isSeed && site.id && shadowedIds.has(String(site.id))) return;
+        const sInd = resolveSiteIndNorm(site);
+        const nk = nrmSite(site.name);
+        const actSet = activeByIndName.get(sInd);
+        if (!actSet || !actSet.has(nk)) {
+          allBlockedSiteNames.add(nk);
+          if (!normTargetInd || sInd === normTargetInd) blockedSiteNames.add(nk);
+        }
+      });
+      const addCoEntry = (site, isSeed) => {
+        if (!site || isInactiveSite(site) || !site.name || !site.company) return;
+        if (isSeed && site.id && shadowedIds.has(String(site.id))) return;
+        const sInd = resolveSiteIndNorm(site);
+        const nk = nrmSite(site.name);
+        if (isSeed) {
+          const csSet = activeCustByIndName.get(sInd);
+          if (csSet && csSet.has(nk)) return;
+        }
+        const co = String(site.company).trim();
+        if (!allSiteCoMap.has(nk)) allSiteCoMap.set(nk, new Set());
+        allSiteCoMap.get(nk).add(co);
+        if (!normTargetInd || sInd === normTargetInd) {
+          if (!siteCoMap.has(nk)) siteCoMap.set(nk, new Set());
+          siteCoMap.get(nk).add(co);
+        }
+      };
+      custSites.forEach(s => addCoEntry(s, false));
+      seedSites.forEach(s => addCoEntry(s, true));
+    } catch (_) {}
+
+    let vrCnt = 0;
+    let steepCnt = 0;
+    const pfxLower = targetInd ? `${targetInd.toLowerCase()}::` : '';
+    Object.entries(vrMap).forEach(([rk, vr]) => {
+      if (!vr || !(Number(vr.km) > 0)) return;
+      const kl = String(rk || '').toLowerCase();
+      const isHoldingAlias = targetInd === 'Holding & Treasury' && (kl.startsWith('holding & group treasury::') || kl.startsWith('holding & treasury::'));
+      const matchInd = isHoldingAlias || Boolean(pfxLower && kl.startsWith(pfxLower));
+      if (!matchInd) return;
+      const bodyPart = kl.includes('::') ? kl.slice(kl.indexOf('::') + 2) : kl;
+      const buCos = [];
+      const explicitBuCos = [];
+      const siteCos = [];
+      const allSiteCos = [];
+      const routeSiteNames = [];
+      let hasBlockedSite = false;
+      if (vr.company) buCos.push(String(vr.company).trim());
+      bodyPart.split('||').forEach(seg => {
+        const t = seg.trim();
+        if (t.startsWith('bu:')) {
+          const coName = t.slice(3).trim();
+          if (coName) {
+            buCos.push(coName);
+            explicitBuCos.push(coName);
+          }
+        } else if (t.startsWith('site:')) {
+          const sn = nrmSite(t.slice(5));
+          if (sn) {
+            routeSiteNames.push(sn);
+            if (blockedSiteNames.has(sn) || (!activeSiteNames.has(sn) && (allBlockedSiteNames.has(sn) || otherIndSiteNames.has(sn)))) {
+              hasBlockedSite = true;
+            }
+            const matchedSet = siteCoMap.get(sn);
+            if (matchedSet) matchedSet.forEach(c => siteCos.push(c));
+            if (!normTargetInd && !(matchedSet && matchedSet.size)) {
+              const allSet = allSiteCoMap.get(sn);
+              if (allSet) allSet.forEach(c => allSiteCos.push(c));
+            }
+          }
+        }
+      });
+      if (hasBlockedSite) return;
+      if (!explicitBuCos.length && routeSiteNames.some(sn => !activeSiteNames.has(sn))) return;
+      if (!buCos.length && !siteCos.length) return;
+      if (buCos.some(c => !canSeatAccessCompany(c))) return;
+      if (siteCos.some(c => !canSeatAccessCompany(c)) || allSiteCos.some(c => !canSeatAccessCompany(c))) return;
+      if (isSingleEntityScope) {
+        const scopeCos = buCos.concat(siteCos).concat(allSiteCos);
+        if (!scopeCos.length || scopeCos.some(c => !companyMatchesScope(c, activeScope))) return;
+      }
+      vrCnt += 1;
+      if (vr.elevAvailable && (Number(vr.maxGradePct || 0) >= 5 || Number(vr.elevGainM || 0) >= 150)) {
+        steepCnt += 1;
+      }
+    });
+    const terrainChip = vrCnt > 0
+      ? `<span data-no-i18n="1">${fmtNum(vrCnt)} </span><span>Verified Corridors</span>${steepCnt > 0 ? ` (<span data-no-i18n="1">${fmtNum(steepCnt)}</span> <span>Grade &ge;5%</span>)` : ''}`
+      : '<span>Grade-Adjusted Route Burn</span>';
+    const chipsOut = cfg.chipsHtml.concat([terrainChip]);
+
     return `
       <div class="tel-ind-strip" data-tel-ind-strip="${esc(industryViewKey)}">
         <div class="tel-ind-strip-main">
@@ -1610,7 +1907,7 @@
           </div>
         </div>
         <div class="tel-ind-strip-metrics">
-          ${cfg.chipsHtml.map(c => `<span class="tel-ind-chip">${c}</span>`).join('')}
+          ${chipsOut.map(c => `<span class="tel-ind-chip">${c}</span>`).join('')}
           ${dwellChip}
         </div>
       </div>
@@ -1960,6 +2257,7 @@
     getLiveMeterHintForForm,
     evaluateSettledFuelPhysics,
     computeLedgerReconForUnitDate,
+    getCanFuelCalibrationSummary,
     getWatchdogAlertsForSentinels,
     computeGpsDwellDriftDigest,
     renderFleetTelematicsDeck,

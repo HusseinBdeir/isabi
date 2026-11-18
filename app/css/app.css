@@ -39325,6 +39325,25 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   gap: 8px;
   flex-wrap: wrap;
 }
+.sn-gate-warmup-bar {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, #E2E8F0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+.sn-gate-warmup-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--ink-2, #475569);
+  min-width: 0;
+}
 :root[data-theme="dark"] .sn-maps-quota-meter {
   background: rgba(15, 23, 42, 0.55);
 }
@@ -40953,6 +40972,14 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   gap: 10px;
   margin-top: 8px;
 }
+.unit-econ-kpis.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.unit-econ-subpanel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line, #e2e8f0);
+}
 .unit-econ-kpi {
   padding: 10px 12px;
   border-radius: 10px;
@@ -41069,8 +41096,9 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
     font-size: 16px;
     min-height: 42px;
   }
-  .unit-econ-kpis {
-    grid-template-columns: 1fr;
+  .unit-econ-kpis,
+  .unit-econ-kpis.cols-4 {
+    grid-template-columns: minmax(0, 1fr);
   }
   .job-otsnap-banner,
   .unit-econ-snap-panel,

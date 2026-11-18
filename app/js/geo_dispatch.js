@@ -1095,11 +1095,37 @@
 
   let _geoSessionEpoch = 0;
   let _geoExplicitlySignedOut = false;
+  let _gateSatWarmupEpoch = 0;
+  let _gateSatWarmupTimer = null;
+  let _gateSatWarmupIdleId = null;
+  const _gateSatWarmupState = {
+    running: false,
+    promise: null,
+    warmedSessionCount: 0,
+    lastStoppedReason: '',
+    scheduledEpoch: -1,
+    scheduledInd: ''
+  };
+  function _cancelGateSatWarmupTimer() {
+    if (_gateSatWarmupTimer != null) { try { clearTimeout(_gateSatWarmupTimer); } catch (_) {} _gateSatWarmupTimer = null; }
+    if (_gateSatWarmupIdleId != null && typeof cancelIdleCallback === 'function') {
+      try { cancelIdleCallback(_gateSatWarmupIdleId); } catch (_) {}
+      _gateSatWarmupIdleId = null;
+    }
+  }
   function markGeoSessionActive() {
     _geoExplicitlySignedOut = false;
   }
   function resetGeoStoreSession() {
     _geoSessionEpoch++;
+    _gateSatWarmupEpoch++;
+    _cancelGateSatWarmupTimer();
+    _gateSatWarmupState.running = false;
+    _gateSatWarmupState.promise = null;
+    _gateSatWarmupState.warmedSessionCount = 0;
+    _gateSatWarmupState.lastStoppedReason = '';
+    _gateSatWarmupState.scheduledEpoch = -1;
+    _gateSatWarmupState.scheduledInd = '';
     _geoExplicitlySignedOut = true;
     try {
       if (typeof STUDIO !== 'undefined' && STUDIO) {
@@ -1110,6 +1136,7 @@
         document.body.classList.remove('has-geo-full-window');
       }
     } catch (_) {}
+    if (typeof _mapsQuotaResetFn === 'function') _mapsQuotaResetFn();
     GEO_STORE.companyHubs = {};
     GEO_STORE.regions = {};
     GEO_STORE.sites = {};
@@ -2713,9 +2740,16 @@
     return Math.abs(Number(latA) - Number(latB)) <= tolDeg && Math.abs(Number(lngA) - Number(lngB)) <= tolDeg;
   }
 
+  const GRADE_TIER_COLORS = {
+    flat: '#1F7A4C',
+    moderate: '#C96A22',
+    steep: '#C43B2D'
+  };
+
   function _verifiedRouteForCoords(pairKey, c1, c2) {
     const vr = GEO_STORE.verifiedRoutes && GEO_STORE.verifiedRoutes[pairKey];
     if (!vr || !Number.isFinite(Number(vr.km))) return null;
+    const hasPairedElev = Array.isArray(vr.elevProfileM) && Array.isArray(vr.coordsLngLat) && vr.elevProfileM.length === vr.coordsLngLat.length;
     if (c1 && c2 && c1.lat != null && c2.lat != null && vr.fromLat != null && vr.toLat != null) {
       if (_coordsNear(c1.lat, c1.lng, vr.fromLat, vr.fromLng) && _coordsNear(c2.lat, c2.lng, vr.toLat, vr.toLng)) {
         return { entry: vr, reversed: false };
@@ -2727,7 +2761,8 @@
             elevEndM: vr.elevStartM,
             elevGainM: vr.elevDropM,
             elevDropM: vr.elevGainM,
-            coordsLngLat: Array.isArray(vr.coordsLngLat) ? vr.coordsLngLat.slice().reverse() : null
+            coordsLngLat: Array.isArray(vr.coordsLngLat) ? vr.coordsLngLat.slice().reverse() : null,
+            elevProfileM: hasPairedElev ? vr.elevProfileM.slice().reverse() : null
           }),
           reversed: true
         };
@@ -2737,23 +2772,140 @@
     return { entry: vr, reversed: false };
   }
 
-  function _downsampleLngLatCoords(latLngList, maxPts = 120) {
-    if (!Array.isArray(latLngList) || !latLngList.length) return null;
-    const out = [];
+  function _downsampleRouteCoordsAndElev(latLngList, elevArr, maxPts = 120) {
+    if (!Array.isArray(latLngList) || !latLngList.length) return { coordsLngLat: null, elevProfileM: null };
+    const hasElev = Array.isArray(elevArr) && elevArr.length === latLngList.length;
+    const coordsOut = [];
+    const elevOut = [];
     const step = Math.max(1, Math.ceil(latLngList.length / maxPts));
-    for (let i = 0; i < latLngList.length; i += step) {
-      const pt = latLngList[i];
-      if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))) {
-        out.push([round5(Number(pt[1])), round5(Number(pt[0]))]);
+    let elevValid = hasElev;
+    const pushPoint = idx => {
+      const pt = latLngList[idx];
+      if (!Array.isArray(pt) || pt.length < 2 || !Number.isFinite(Number(pt[0])) || !Number.isFinite(Number(pt[1]))) return null;
+      const lng = round5(Number(pt[1]));
+      const lat = round5(Number(pt[0]));
+      coordsOut.push([lng, lat]);
+      if (elevValid) {
+        const rawE = elevArr[idx];
+        const eNum = rawE !== null && rawE !== undefined && typeof rawE !== 'boolean' && rawE !== '' ? Number(rawE) : NaN;
+        if (Number.isFinite(eNum)) {
+          elevOut.push(Math.max(-500, Math.min(9000, round1(eNum))));
+        } else {
+          elevValid = false;
+        }
       }
+      return [lng, lat];
+    };
+    for (let i = 0; i < latLngList.length; i += step) {
+      pushPoint(i);
     }
-    const last = latLngList[latLngList.length - 1];
+    const lastIdx = latLngList.length - 1;
+    const last = latLngList[lastIdx];
     if (Array.isArray(last) && last.length >= 2 && Number.isFinite(Number(last[0])) && Number.isFinite(Number(last[1]))) {
       const lng = round5(Number(last[1])), lat = round5(Number(last[0]));
-      const prev = out[out.length - 1];
-      if (!prev || prev[0] !== lng || prev[1] !== lat) out.push([lng, lat]);
+      const prev = coordsOut[coordsOut.length - 1];
+      if (!prev || prev[0] !== lng || prev[1] !== lat) pushPoint(lastIdx);
     }
-    return out.length >= 2 ? out : null;
+    if (coordsOut.length < 2) return { coordsLngLat: null, elevProfileM: null };
+    return {
+      coordsLngLat: coordsOut,
+      elevProfileM: elevValid && elevOut.length === coordsOut.length ? elevOut : null
+    };
+  }
+
+  function _downsampleLngLatCoords(latLngList, maxPts = 120) {
+    return _downsampleRouteCoordsAndElev(latLngList, null, maxPts).coordsLngLat;
+  }
+
+  function buildRouteGradeSegments(routeCoordsLngLat, elevProfileM) {
+    if (!Array.isArray(routeCoordsLngLat) || routeCoordsLngLat.length < 2 || !Array.isArray(elevProfileM) || elevProfileM.length !== routeCoordsLngLat.length) {
+      return { available: false, segments: [] };
+    }
+    const segments = [];
+    for (let i = 0; i < routeCoordsLngLat.length - 1; i++) {
+      const p1 = routeCoordsLngLat[i];
+      const p2 = routeCoordsLngLat[i + 1];
+      const e1 = Number(elevProfileM[i]);
+      const e2 = Number(elevProfileM[i + 1]);
+      if (!Array.isArray(p1) || p1.length < 2 || !Array.isArray(p2) || p2.length < 2 || !Number.isFinite(e1) || !Number.isFinite(e2)) {
+        return { available: false, segments: [] };
+      }
+      const lat1 = Number(p1[1]), lng1 = Number(p1[0]);
+      const lat2 = Number(p2[1]), lng2 = Number(p2[0]);
+      if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) {
+        return { available: false, segments: [] };
+      }
+      const distM = haversineKm(lat1, lng1, lat2, lng2) * 1000;
+      const deltaElevM = round1(e2 - e1);
+      const rawGradePct = distM >= 1 ? Math.min(28, (Math.abs(e2 - e1) / distM) * 100) : 0;
+      const gradePct = round1(rawGradePct);
+      const signedGradePct = distM >= 1 ? round1(Math.max(-28, Math.min(28, ((e2 - e1) / distM) * 100))) : 0;
+      const tier = gradePct >= 9 ? 'steep' : (gradePct >= 5 ? 'moderate' : 'flat');
+      segments.push({
+        from: [lat1, lng1],
+        to: [lat2, lng2],
+        gradePct,
+        signedGradePct,
+        deltaElevM,
+        distM: Math.round(distM),
+        tier,
+        color: GRADE_TIER_COLORS[tier]
+      });
+    }
+    return { available: segments.length > 0, segments };
+  }
+
+  function renderVerifiedRoutePolylineLayers(L, lg, est, opts = {}) {
+    if (!L || !lg || !est || !est.fromCoord || !est.toCoord || est.fromCoord.lat == null || est.toCoord.lat == null) return false;
+    const hasCoords = Array.isArray(est.routeCoords) && est.routeCoords.length > 1;
+    const latlngs = hasCoords
+      ? est.routeCoords.map(pt => [pt[1], pt[0]])
+      : [[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]];
+    const weight = Number(opts.weight) || 3.4;
+    const opacity = Number(opts.opacity) || 0.92;
+    const fallbackColor = opts.fallbackColor || '#B45309';
+    const hasGrades = Boolean(est.verifiedRoute && hasCoords && Array.isArray(est.gradeSegments) && est.gradeSegments.length > 0);
+    if (opts.halo !== false && (hasCoords || hasGrades)) {
+      L.polyline(latlngs, {
+        color: '#FFFFFF',
+        weight: weight + 2.6,
+        opacity: 0.88,
+        lineCap: 'round',
+        lineJoin: 'round',
+        interactive: false
+      }).addTo(lg);
+    }
+    if (hasGrades) {
+      est.gradeSegments.forEach(seg => {
+        const line = L.polyline([seg.from, seg.to], {
+          color: seg.color,
+          weight,
+          opacity,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: opts.interactive !== false
+        }).addTo(lg);
+        if (opts.interactive !== false && line.bindTooltip) {
+          const dirLbl = seg.deltaElevM > 0.5 ? `+${seg.deltaElevM.toFixed(0)}m` : (seg.deltaElevM < -0.5 ? `${seg.deltaElevM.toFixed(0)}m` : '0m');
+          const tierWordRaw = seg.tier === 'steep' ? 'Steep' : (seg.tier === 'moderate' ? 'Moderate' : 'Flat');
+          line.bindTooltip(() => {
+            const trTier = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+              ? window.MFG_I18N.t(tierWordRaw)
+              : tierWordRaw;
+            return `${trTier}: ${seg.gradePct.toFixed(1)}% (${dirLbl})`;
+          }, { className: 'geo-zone-tooltip', sticky: true });
+        }
+      });
+      return true;
+    }
+    L.polyline(latlngs, {
+      color: fallbackColor,
+      weight,
+      dashArray: hasCoords ? null : (opts.dashArray || '6, 6'),
+      opacity,
+      interactive: false
+    }).addTo(lg);
+    return false;
   }
 
   function estimateLegKm(fromSpec, toSpec, SEED, opts = {}) {
@@ -2769,6 +2921,7 @@
     let oneWayKm = null;
     let source = '';
     let routeCoords = null;
+    let elevProfileM = null;
     let estMinutes = null;
     let verifiedRoute = false;
     let routeMeta = null;
@@ -2796,6 +2949,7 @@
       oneWayKm = round1(Number(vr.km));
       estMinutes = Number(vr.heavyTruckMins || vr.mins || 0) || null;
       routeCoords = Array.isArray(vr.coordsLngLat) && vr.coordsLngLat.length > 1 ? vr.coordsLngLat : null;
+      elevProfileM = vr.elevAvailable && Array.isArray(vr.elevProfileM) && routeCoords && vr.elevProfileM.length === routeCoords.length ? vr.elevProfileM : null;
       source = 'Road route';
       verifiedRoute = true;
       routeMeta = vr;
@@ -2827,12 +2981,26 @@
     const roundTripKm = showRoundTrip ? round1(oneWayKm * 2) : null;
     if (estMinutes == null) estMinutes = oneWayKm > 0 ? Math.max(2, Math.round((oneWayKm / 38) * 60)) : 0;
     const basisKmForFuel = roundTripKm != null ? roundTripKm : oneWayKm;
+    const gradeInfo = (verifiedRoute && routeMeta && routeMeta.elevAvailable)
+      ? buildRouteGradeSegments(routeCoords, elevProfileM)
+      : { available: false, segments: [] };
     // Diesel for the leg: the company's measured fleet burn (odometer fill-to-fill) and the latest priced
     // diesel delivery, both read live from the books (window.MFG_FUEL_ECON). No fixed L/km or $/L here;
     // a seat that may not read fuel slips or diesel purchases gets no diesel figure.
     const fuelCo = fromSpec.type === 'bu' ? fromSpec.name : (toSpec.type === 'bu' ? toSpec.name : '');
-    const fuelEcon = (window.MFG_FUEL_ECON && typeof window.MFG_FUEL_ECON.legFuel === 'function')
-      ? window.MFG_FUEL_ECON.legFuel(fuelCo, basisKmForFuel)
+    const routeGradeCtx = verifiedRoute && routeMeta ? {
+      verifiedRoute: true,
+      oneWayKm,
+      roundTripKm,
+      showRoundTrip,
+      elevAvailable: Boolean(routeMeta.elevAvailable),
+      elevGainM: routeMeta.elevGainM != null ? Number(routeMeta.elevGainM) : null,
+      elevDropM: routeMeta.elevDropM != null ? Number(routeMeta.elevDropM) : null,
+      maxGradePct: routeMeta.maxGradePct != null ? Number(routeMeta.maxGradePct) : null,
+      avgClimbGradePct: routeMeta.avgClimbGradePct != null ? Number(routeMeta.avgClimbGradePct) : null
+    } : null;
+    const fuelEcon = (!opts.skipFuel && window.MFG_FUEL_ECON && typeof window.MFG_FUEL_ECON.legFuel === 'function')
+      ? window.MFG_FUEL_ECON.legFuel(fuelCo, basisKmForFuel, routeGradeCtx)
       : null;
     const estDieselL = fuelEcon ? round1(fuelEcon.litres) : null;
 
@@ -2862,10 +3030,15 @@
       dieselUsdPerL: fuelEcon ? fuelEcon.usdPerL : null,
       dieselPriceDate: fuelEcon ? fuelEcon.priceDate : '',
       dieselPriceHidden: Boolean(fuelEcon && fuelEcon.priceHidden),
+      gradeFuelAdjusted: Boolean(fuelEcon && fuelEcon.gradeAdjusted),
+      gradeFuelDeltaL: fuelEcon && fuelEcon.gradeDeltaLitres != null ? fuelEcon.gradeDeltaLitres : null,
+      gradeFuelDeltaUsd: fuelEcon && fuelEcon.gradeDeltaUsd != null ? fuelEcon.gradeDeltaUsd : null,
       pairKey,
       fromCoord: c1,
       toCoord: c2,
-      routeCoords
+      routeCoords,
+      elevProfileM: gradeInfo.available ? elevProfileM : null,
+      gradeSegments: gradeInfo.available ? gradeInfo.segments : []
     };
   }
 
@@ -2948,6 +3121,10 @@
     }
     if (!GEO_STORE.verifiedRoutes || typeof GEO_STORE.verifiedRoutes !== 'object') GEO_STORE.verifiedRoutes = {};
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
+    const rawElevProf = (data.elevAvailable && Array.isArray(data.elevProfileM) && Array.isArray(data.coords) && data.elevProfileM.length === data.coords.length)
+      ? data.elevProfileM
+      : null;
+    const sampled = _downsampleRouteCoordsAndElev(data.coords, rawElevProf);
     const entry = {
       km: round1(Number(data.km)),
       distanceMeters: Number(data.distanceMeters || Math.round(Number(data.km) * 1000)),
@@ -2967,7 +3144,8 @@
       fromLng: round5(c1.lng),
       toLat: round5(c2.lat),
       toLng: round5(c2.lng),
-      coordsLngLat: _downsampleLngLatCoords(data.coords),
+      coordsLngLat: sampled.coordsLngLat,
+      elevProfileM: sampled.elevProfileM,
       verifiedAt: String(data.verifiedAt || nowIso),
       updated_at: nowIso
     };
@@ -4450,30 +4628,38 @@
     });
   }
 
-  function _hydrateGateSatFromIdb() {
-    if (_isDemoGeoSession()) return;
-    _openGateSatIdb().then(db => {
-      if (!db) return;
-      if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} return; }
-      try {
-        const tx = db.transaction(GATE_SAT_IDB_STORE, 'readonly');
-        const st = tx.objectStore(GATE_SAT_IDB_STORE);
-        const req = st.getAll();
-        req.onsuccess = () => {
-          if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} return; }
-          const rows = Array.isArray(req.result) ? req.result : [];
-          rows.forEach(r => {
-            if (r && r.key && typeof r.dataUrl === 'string' && r.dataUrl.startsWith('data:image/')) {
-              const mk = `prod:${r.key}`;
-              if (!_gateSatMem.has(mk)) _gateSatMem.set(mk, r.dataUrl);
-              _applyGateSatToDom(r.key, r.dataUrl);
-            }
-          });
-          db.close();
-        };
-        req.onerror = () => { try { db.close(); } catch (_) {} };
-      } catch (_) { try { db.close(); } catch (_) {} }
-    });
+  let _gateSatIdbHydratedPromise = null;
+  function _hydrateGateSatFromIdb(opts = {}) {
+    if (_isDemoGeoSession()) return Promise.resolve(false);
+    if (_gateSatIdbHydratedPromise && !(opts && opts.force)) return _gateSatIdbHydratedPromise;
+    const p = _openGateSatIdb().then(db => {
+      if (!db) return true;
+      if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} return false; }
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction(GATE_SAT_IDB_STORE, 'readonly');
+          const st = tx.objectStore(GATE_SAT_IDB_STORE);
+          const req = st.getAll();
+          req.onsuccess = () => {
+            if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} resolve(false); return; }
+            const rows = Array.isArray(req.result) ? req.result : [];
+            rows.forEach(r => {
+              if (r && r.key && typeof r.dataUrl === 'string' && r.dataUrl.startsWith('data:image/')) {
+                const mk = `prod:${r.key}`;
+                if (!_gateSatMem.has(mk)) _gateSatMem.set(mk, r.dataUrl);
+                _applyGateSatToDom(r.key, r.dataUrl);
+              }
+            });
+            try { db.close(); } catch (_) {}
+            if (rows.length > 0) _emitGateSatWarmupChanged();
+            resolve(true);
+          };
+          req.onerror = () => { try { db.close(); } catch (_) {} resolve(true); };
+        } catch (_) { try { db.close(); } catch (_) {} resolve(true); }
+      });
+    }).catch(() => true);
+    _gateSatIdbHydratedPromise = p;
+    return p;
   }
   if (typeof window !== 'undefined' && typeof setTimeout === 'function') {
     setTimeout(() => { _hydrateGateSatFromIdb(); }, 90);
@@ -4602,6 +4788,9 @@
         }
       }
       const tiles = (await Promise.all(tileTasks)).filter(Boolean);
+      if (tiles.length > 0 && typeof _noteLocalTile2dFetch === 'function') {
+        _noteLocalTile2dFetch(tiles.length);
+      }
       if (!tiles.length || tiles.length !== tileTasks.length) {
         tiles.forEach(t => { try { if (t && t.bmp && typeof t.bmp.close === 'function') t.bmp.close(); } catch (_) {} });
         return cached || '';
@@ -4796,6 +4985,23 @@
     ok: false
   };
   let _mapsUsageInflight = null;
+  let _mapsQuotaResetFn = () => {
+    MAPS_QUOTA_STATE.month = '';
+    MAPS_QUOTA_STATE.overallBand = 'ok';
+    MAPS_QUOTA_STATE.metrics = {};
+    MAPS_QUOTA_STATE.clientPolicy = {
+      tileProvider: 'google',
+      placesRemoteEnabled: true,
+      placesDebounceMs: 260,
+      placesMinChars: 2,
+      routesRemoteEnabled: true
+    };
+    MAPS_QUOTA_STATE.routesApi = null;
+    MAPS_QUOTA_STATE.gcpBilling = null;
+    MAPS_QUOTA_STATE.fetchedAt = 0;
+    MAPS_QUOTA_STATE.ok = false;
+    _mapsUsageInflight = null;
+  };
 
   function _normQuotaBand(b) {
     const s = String(b || '').trim();
@@ -4919,7 +5125,12 @@
     const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
       ? window.ISABI_EDGE_FETCH
       : (typeof fetch === 'function' ? fetch.bind(window) : null);
-    if (!fetchFn) return MAPS_QUOTA_STATE;
+    if (!fetchFn) {
+      MAPS_QUOTA_STATE.ok = false;
+      MAPS_QUOTA_STATE.fetchedAt = 0;
+      _emitMapsQuotaChanged();
+      return MAPS_QUOTA_STATE;
+    }
 
     const isDemo = _isDemoGeoSession();
     const qp = [];
@@ -4933,11 +5144,27 @@
     })
       .then(async res => {
         _ingestMapsQuotaHeaders(res);
-        if (!res || !res.ok) return MAPS_QUOTA_STATE;
+        if (!res || !res.ok) {
+          MAPS_QUOTA_STATE.ok = false;
+          MAPS_QUOTA_STATE.fetchedAt = 0;
+          _emitMapsQuotaChanged();
+          return MAPS_QUOTA_STATE;
+        }
         const data = await res.json();
+        if (!data || typeof data !== 'object' || data.ok === false) {
+          MAPS_QUOTA_STATE.ok = false;
+          MAPS_QUOTA_STATE.fetchedAt = 0;
+          _emitMapsQuotaChanged();
+          return MAPS_QUOTA_STATE;
+        }
         return _applyMapsUsageSnapshot(data);
       })
-      .catch(() => MAPS_QUOTA_STATE)
+      .catch(() => {
+        MAPS_QUOTA_STATE.ok = false;
+        MAPS_QUOTA_STATE.fetchedAt = 0;
+        _emitMapsQuotaChanged();
+        return MAPS_QUOTA_STATE;
+      })
       .finally(() => {
         if (_mapsUsageInflight === p) _mapsUsageInflight = null;
       });
@@ -4965,6 +5192,424 @@
     } catch (err) {
       return { ok: false, error: String(err && err.message ? err.message : err) };
     }
+  }
+
+  function _emitGateSatWarmupChanged() {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('isabi:gate-sat-warmup-changed'));
+      } catch (_) {}
+    }
+  }
+
+  function _noteLocalTile2dFetch(tileCount = 1) {
+    if (_isDemoGeoSession()) return;
+    if (!MAPS_QUOTA_STATE.ok || !MAPS_QUOTA_STATE.metrics || !MAPS_QUOTA_STATE.metrics.tiles_2d) return;
+    const t2 = MAPS_QUOTA_STATE.metrics.tiles_2d;
+    const add = Math.max(0, Number(tileCount) || 0);
+    const lim = Number(t2.cap || t2.limit || 100000);
+    if (!add || !Number.isFinite(Number(t2.used)) || !(lim > 0)) return;
+    const nextUsed = Number(t2.used) + add;
+    const nextPct = Math.round((nextUsed / lim) * 1000) / 10;
+    t2.used = nextUsed;
+    t2.pct = nextPct;
+    const th = MAPS_QUOTA_STATE.thresholds || {};
+    const warnPct = Number(th.warnPct || 50);
+    const tightPct = Number(th.tightPct || 80);
+    const fallbackPct = Number(th.fallbackPct || 95);
+    const prevBand = t2.band || 'ok';
+    const nextBand = nextPct >= fallbackPct ? 'fallback_95' : (nextPct >= tightPct ? 'tight_80' : (nextPct >= warnPct ? 'warn_50' : 'ok'));
+    t2.band = nextBand;
+    if (nextBand !== prevBand) {
+      MAPS_QUOTA_STATE.overallBand = _recomputeOverallQuotaBand();
+      if (nextBand === 'fallback_95' && MAPS_QUOTA_STATE.clientPolicy) {
+        MAPS_QUOTA_STATE.clientPolicy = Object.assign({}, MAPS_QUOTA_STATE.clientPolicy, { tileProvider: 'osm' });
+        refreshMountedMapTiles();
+      }
+      _emitMapsQuotaChanged();
+    }
+  }
+
+  function getGateSatWarmupCeilingPct() {
+    const rawWarn = Number((MAPS_QUOTA_STATE.thresholds && MAPS_QUOTA_STATE.thresholds.warnPct) || 50);
+    const warn = Number.isFinite(rawWarn) && rawWarn > 0 ? rawWarn : 50;
+    return Math.min(45, Math.max(10, Math.round(warn - 5)));
+  }
+
+  function _isGeoSessionAuthedNow() {
+    try {
+      if (typeof window !== 'undefined' && typeof window.MFG_IS_GEO_AUTHED === 'function') {
+        return window.MFG_IS_GEO_AUTHED() === true;
+      }
+      if (typeof window !== 'undefined' && window.__mfgAuthedEmail) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function _evalGateSatWarmupGate(opts = {}) {
+    const ceilingPct = getGateSatWarmupCeilingPct();
+    if (_geoExplicitlySignedOut) return { allowed: false, reason: 'signed_out', ceilingPct, tilesPct: null };
+    if (!opts.skipAuthCheck && !_isGeoSessionAuthedNow()) {
+      return { allowed: false, reason: 'unauthenticated', ceilingPct, tilesPct: null };
+    }
+    if (_isDemoGeoSession()) return { allowed: false, reason: 'demo', ceilingPct, tilesPct: null };
+    if (!canWriteGeoConfigNow() || !canPinLocationsNow()) {
+      return { allowed: false, reason: 'readonly', ceilingPct, tilesPct: null };
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { allowed: false, reason: 'offline', ceilingPct, tilesPct: null };
+    }
+    if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) {
+      return { allowed: false, reason: 'save_data', ceilingPct, tilesPct: null };
+    }
+    if (!opts.forUi) {
+      const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
+      const allowSat = Boolean(opts.allowHeadless || (typeof window !== 'undefined' && (window.__MFG_TEST_ENABLE_SATELLITE_CAPTURE || window.__MFG_TEST_ENABLE_LIVE_TILES)));
+      if (isHeadless && !allowSat) {
+        return { allowed: false, reason: 'headless', ceilingPct, tilesPct: null };
+      }
+    }
+    const fetchedAt = Number(MAPS_QUOTA_STATE.fetchedAt || 0);
+    const maxQuotaAgeMs = Number(opts.quotaMaxAgeMs) > 0 ? Number(opts.quotaMaxAgeMs) : 60000;
+    if (MAPS_QUOTA_STATE.ok !== true || !(fetchedAt > 0) || (Date.now() - fetchedAt) > maxQuotaAgeMs) {
+      return { allowed: false, reason: 'quota_unknown', ceilingPct, tilesPct: null };
+    }
+    const tilesMetric = MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.tiles_2d;
+    if (!tilesMetric || typeof tilesMetric !== 'object') {
+      return { allowed: false, reason: 'quota_unknown', ceilingPct, tilesPct: null };
+    }
+    const rawPct = Number(tilesMetric.pct);
+    if (!Number.isFinite(rawPct) || rawPct < 0) {
+      return { allowed: false, reason: 'quota_unknown', ceilingPct, tilesPct: null };
+    }
+    const tilesBand = tilesMetric.band || 'ok';
+    const tilesPct = rawPct;
+    if ((MAPS_QUOTA_STATE.clientPolicy && MAPS_QUOTA_STATE.clientPolicy.tileProvider === 'osm') || tilesBand === 'fallback_95') {
+      return { allowed: false, reason: 'osm_fallback', ceilingPct, tilesPct };
+    }
+    if (tilesBand !== 'ok') {
+      return { allowed: false, reason: 'quota_band', ceilingPct, tilesPct };
+    }
+    if (tilesPct >= ceilingPct) {
+      return { allowed: false, reason: 'quota_ceiling', ceilingPct, tilesPct };
+    }
+    return { allowed: true, reason: '', ceilingPct, tilesPct };
+  }
+
+  function canRunGateSatWarmupNow(opts = {}) {
+    return _evalGateSatWarmupGate(opts).allowed;
+  }
+
+  const WARMUP_ALL_INDS = [
+    'Manufacturing',
+    'Holding & Treasury',
+    'Hospitality & Resorts',
+    'Automotive & Heavy Trading',
+    'Real Estate & Property',
+    'Insurance & Brokerage'
+  ];
+
+  function _resolveWarmupSiteInd(s) {
+    if (!s) return '';
+    if (!s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing')) return 'Manufacturing';
+    const raw = String(s._industry || '').trim();
+    if (/^Holding\s*&\s*(?:Group\s+)?Treasury$/i.test(raw)) return 'Holding & Treasury';
+    return raw;
+  }
+
+  function collectGateSatWarmupCandidates(SEED, STATE) {
+    const seedRef = SEED || (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL)) || null;
+    const stateRef = STATE || (typeof window !== 'undefined' && ((window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || window.STATE)) || null;
+    const activeInd = getGeoActiveIndustry();
+    const permittedInds = WARMUP_ALL_INDS.filter(ind => canAccessGeoIndustryNow(ind));
+    const permittedIndSet = new Set(permittedInds);
+    const seedSites = (seedRef && seedRef.records && Array.isArray(seedRef.records.sites)) ? seedRef.records.sites : [];
+    const customSites = (stateRef && stateRef.customRecords && Array.isArray(stateRef.customRecords.sites)) ? stateRef.customRecords.sites : [];
+
+    const activeCustomCatNames = new Set();
+    const blockedKeys = new Set();
+    const shadowedIds = new Set();
+    const isInactiveWarmSite = s => Boolean(s && (s.voided || s.removed || s.active === false || /^(?:closed|inactive)$/i.test(String(s.status || '').trim())));
+    customSites.forEach(s => {
+      if (!s) return;
+      const siteInd = _resolveWarmupSiteInd(s);
+      if (!permittedIndSet.has(siteInd)) return;
+      if (s.id) shadowedIds.add(String(s.id));
+      if (s.override_id) shadowedIds.add(String(s.override_id));
+      if (isInactiveWarmSite(s)) {
+        if (s.id) blockedKeys.add(String(s.id));
+        if (s.override_id) blockedKeys.add(String(s.override_id));
+      }
+      if (!s.name) return;
+      const cat = resolveGeoSiteCat(s);
+      if (!isInactiveWarmSite(s)) activeCustomCatNames.add(`${siteInd}|${cat}|${norm(s.name)}`);
+    });
+    customSites.forEach(s => {
+      if (!s || !s.name) return;
+      const siteInd = _resolveWarmupSiteInd(s);
+      if (!permittedIndSet.has(siteInd)) return;
+      const cat = resolveGeoSiteCat(s);
+      if (isInactiveWarmSite(s)) {
+        if (!activeCustomCatNames.has(`${siteInd}|${cat}|${norm(s.name)}`)) blockedKeys.add(`${siteInd}|${cat}|${norm(s.name)}`);
+      }
+    });
+
+    const poolByKey = new Map();
+    const sitesByInd = new Map();
+    const addWarmupSiteRow = (s, idx, isSeed) => {
+      if (!s || isInactiveWarmSite(s) || !s.name) return;
+      if (isSeed && s.id && shadowedIds.has(String(s.id))) return;
+      const siteInd = _resolveWarmupSiteInd(s);
+      if (!permittedIndSet.has(siteInd)) return;
+      const cat = resolveGeoSiteCat(s);
+      const dedupKey = s.id ? String(s.id) : `${siteInd}|${cat}|${norm(s.name)}`;
+      const nameCatKey = `${siteInd}|${cat}|${norm(s.name)}`;
+      if (blockedKeys.has(dedupKey) || (!activeCustomCatNames.has(nameCatKey) && blockedKeys.has(nameCatKey))) return;
+      if (!poolByKey.has(dedupKey)) {
+        poolByKey.set(dedupKey, { s, siteInd, idx });
+        if (!sitesByInd.has(siteInd)) sitesByInd.set(siteInd, []);
+        sitesByInd.get(siteInd).push(s);
+      }
+    };
+    customSites.forEach((s, idx) => addWarmupSiteRow(s, idx, false));
+    seedSites.forEach((s, idx) => addWarmupSiteRow(s, customSites.length + idx, true));
+
+    const freqIdx = (typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function') ? window.MFG_FREQ() : null;
+    const freqMap = freqIdx && freqIdx.site instanceof Map ? freqIdx.site : null;
+    const siteStats = seedRef ? getUnifiedSiteStats(seedRef, stateRef) : { byNorm: new Map() };
+    const lifeByInd = new Map();
+    const anchorIso = geoTodayIso();
+    const cutoffIso = geoIsoAddDays(anchorIso, -90);
+    const domainVolByInd = new Map();
+    if (seedRef) {
+      sitesByInd.forEach((indList, siteInd) => {
+        lifeByInd.set(siteInd, getSiteLifecycleIndex(indList, seedRef, stateRef));
+        if (siteInd !== 'Manufacturing' && typeof window !== 'undefined' && typeof window.__mfgGetDomainSiteActivity90d === 'function') {
+          try {
+            domainVolByInd.set(siteInd, window.__mfgGetDomainSiteActivity90d(siteInd, cutoffIso, anchorIso, seedRef, stateRef));
+          } catch (_) {}
+        }
+      });
+    }
+
+    const bySatKey = new Map();
+    poolByKey.forEach(({ s, siteInd, idx }) => {
+      if (_isPinClearedFlag(s._pinCleared)) return;
+      if (s.company && !canAccessGeoCompanyNow(s.company)) return;
+      if (!isValidLatLngPair(s.latitude, s.longitude)) return;
+      const lat = Number(s.latitude);
+      const lng = Number(s.longitude);
+      if (!isPointInLebanon(lat, lng)) return;
+      const nk = norm(s.name);
+      const lifeIdx = lifeByInd.get(siteInd);
+      const lc = lifeIdx && lifeIdx.byNorm ? lifeIdx.byNorm.get(nk) : null;
+      if (lc && lc.state !== 'active') return;
+      const satKey = gateSatKey(lat, lng);
+      if (!satKey) return;
+      const stObj = siteStats && siteStats.byNorm ? siteStats.byNorm.get(nk) : null;
+      const recTotal = stObj ? Number(stObj.total || 0) : 0;
+      let freqScore = 0;
+      if (siteInd === 'Manufacturing') {
+        freqScore = freqMap ? Number(freqMap.get(nk) || 0) : 0;
+      } else {
+        const dm = domainVolByInd.get(siteInd);
+        const dv = (dm && typeof dm.get === 'function') ? dm.get(nk) : null;
+        if (dv) freqScore = Number((dv.totalCount ?? dv.totalVol ?? dv.count90d ?? dv.vol90) || 0);
+      }
+      const isAct = siteInd === activeInd ? 1 : 0;
+      const prev = bySatKey.get(satKey);
+      if (!prev
+        || freqScore > prev.freqScore
+        || (freqScore === prev.freqScore && recTotal > prev.recTotal)
+        || (freqScore === prev.freqScore && recTotal === prev.recTotal && isAct > prev.isActiveInd)) {
+        bySatKey.set(satKey, {
+          siteId: String(s.id || ''),
+          siteName: String(s.name || ''),
+          company: String(s.company || ''),
+          industry: siteInd,
+          isActiveInd: isAct,
+          lat: round5(lat),
+          lng: round5(lng),
+          satKey,
+          freqScore,
+          recTotal,
+          seedOrder: idx
+        });
+      }
+    });
+
+    const ranked = Array.from(bySatKey.values()).sort((a, b) =>
+      (b.freqScore - a.freqScore) || (b.recTotal - a.recTotal) || (b.isActiveInd - a.isActiveInd) || (a.seedOrder - b.seedOrder)
+    );
+    const pending = [];
+    const cached = [];
+    ranked.forEach(item => {
+      if (getCachedGateSatelliteSync(item.lat, item.lng)) {
+        cached.push(item);
+      } else {
+        pending.push(item);
+      }
+    });
+    return {
+      industry: activeInd,
+      industries: permittedInds,
+      totalEligible: ranked.length,
+      cachedCount: cached.length,
+      pendingCount: pending.length,
+      pending,
+      cached
+    };
+  }
+
+  function getGateSatWarmupState(SEED, STATE, opts = {}) {
+    const gate = _evalGateSatWarmupGate(Object.assign({ forUi: true }, opts));
+    const cands = collectGateSatWarmupCandidates(SEED, STATE);
+    return {
+      industry: cands.industry,
+      industries: cands.industries,
+      ceilingPct: gate.ceilingPct,
+      tilesPct: gate.tilesPct,
+      allowedNow: gate.allowed,
+      pauseReason: gate.reason,
+      running: Boolean(_gateSatWarmupState.running),
+      warmedSessionCount: Number(_gateSatWarmupState.warmedSessionCount || 0),
+      lastStoppedReason: String(_gateSatWarmupState.lastStoppedReason || ''),
+      cachedCount: cands.cachedCount,
+      pendingCount: cands.pendingCount,
+      totalEligible: cands.totalEligible
+    };
+  }
+
+  function _yieldGateSatTurn(ms = 60) {
+    return new Promise(resolve => {
+      if (typeof requestIdleCallback === 'function') {
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        try {
+          requestIdleCallback(finish, { timeout: Math.max(120, ms * 3) });
+          setTimeout(finish, Math.max(150, ms * 3));
+          return;
+        } catch (_) {}
+      }
+      setTimeout(resolve, ms);
+    });
+  }
+
+  async function runGateSatelliteWarmupBatch(opts = {}) {
+    if (_gateSatWarmupState.running && _gateSatWarmupState.promise) {
+      return _gateSatWarmupState.promise;
+    }
+    const startEpoch = _gateSatWarmupEpoch;
+    const startSess = _geoSessionEpoch;
+    const task = (async () => {
+      _gateSatWarmupState.running = true;
+      _emitGateSatWarmupChanged();
+      try {
+        await _hydrateGateSatFromIdb();
+        if (startEpoch !== _gateSatWarmupEpoch || startSess !== _geoSessionEpoch) {
+          return { ok: false, warmed: 0, stoppedReason: 'session_reset' };
+        }
+        const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
+        const allowQuota = Boolean(typeof window !== 'undefined' && (window.__MFG_TEST_ENABLE_MAPS_QUOTA || window.ISABI_EDGE_FETCH));
+        const canFetchQuota = (typeof navigator === 'undefined' || navigator.onLine !== false) && (!isHeadless || allowQuota || opts.allowHeadless || opts.manual);
+        if (canFetchQuota) {
+          await fetchMapsUsageSnapshot(true);
+        }
+        const initialGate = _evalGateSatWarmupGate(opts);
+        if (!initialGate.allowed) {
+          _gateSatWarmupState.lastStoppedReason = initialGate.reason;
+          return { ok: true, warmed: 0, skipped: initialGate.reason, stoppedReason: initialGate.reason, ceilingPct: initialGate.ceilingPct };
+        }
+        const seedRef = opts.SEED || (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL)) || null;
+        const stateRef = opts.STATE || (typeof window !== 'undefined' && ((window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || window.STATE)) || null;
+        const cands = collectGateSatWarmupCandidates(seedRef, stateRef);
+        const maxBatch = Math.min(8, Math.max(1, Number(opts.maxBatch) || 8));
+        const batch = cands.pending.slice(0, maxBatch);
+        let warmed = 0;
+        let stoppedReason = '';
+        for (let i = 0; i < batch.length; i++) {
+          if (i > 0) await _yieldGateSatTurn(75);
+          if (startEpoch !== _gateSatWarmupEpoch || startSess !== _geoSessionEpoch) {
+            stoppedReason = 'session_reset';
+            break;
+          }
+          if (canFetchQuota && i > 0) {
+            await fetchMapsUsageSnapshot(true);
+          }
+          const stepGate = _evalGateSatWarmupGate(opts);
+          if (!stepGate.allowed) {
+            stoppedReason = stepGate.reason;
+            break;
+          }
+          const item = batch[i];
+          if (getCachedGateSatelliteSync(item.lat, item.lng)) continue;
+          const imgUrl = await ensureGateSatelliteCached(item.lat, item.lng, { allowHeadless: Boolean(opts.allowHeadless) });
+          if (startEpoch !== _gateSatWarmupEpoch || startSess !== _geoSessionEpoch) {
+            stoppedReason = 'session_reset';
+            break;
+          }
+          if (imgUrl) {
+            warmed += 1;
+            _gateSatWarmupState.warmedSessionCount += 1;
+          }
+        }
+        _gateSatWarmupState.lastStoppedReason = stoppedReason;
+        const afterCands = collectGateSatWarmupCandidates(seedRef, stateRef);
+        return {
+          ok: true,
+          warmed,
+          stoppedReason,
+          ceilingPct: getGateSatWarmupCeilingPct(),
+          cachedCount: afterCands.cachedCount,
+          pendingCount: afterCands.pendingCount,
+          totalEligible: afterCands.totalEligible
+        };
+      } finally {
+        if (_gateSatWarmupState.promise === task) {
+          _gateSatWarmupState.running = false;
+          _gateSatWarmupState.promise = null;
+        }
+        _emitGateSatWarmupChanged();
+      }
+    })();
+    _gateSatWarmupState.promise = task;
+    return task;
+  }
+
+  function scheduleIdleGateSatelliteWarmup(opts = {}) {
+    const activeInd = getGeoActiveIndustry();
+    const preGate = _evalGateSatWarmupGate(opts);
+    if (!preGate.allowed && preGate.reason !== 'quota_unknown') return false;
+    if (_gateSatWarmupState.running) return false;
+    if (!opts.force && _gateSatWarmupState.scheduledEpoch === _geoSessionEpoch && _gateSatWarmupState.scheduledInd === activeInd) {
+      return false;
+    }
+    _cancelGateSatWarmupTimer();
+    _gateSatWarmupState.scheduledEpoch = _geoSessionEpoch;
+    _gateSatWarmupState.scheduledInd = activeInd;
+    const epochSnap = _gateSatWarmupEpoch;
+    const sessSnap = _geoSessionEpoch;
+    const run = () => {
+      _gateSatWarmupTimer = null;
+      _gateSatWarmupIdleId = null;
+      if (epochSnap !== _gateSatWarmupEpoch || sessSnap !== _geoSessionEpoch) return;
+      const runGate = _evalGateSatWarmupGate(opts);
+      if (!runGate.allowed && runGate.reason !== 'quota_unknown') return;
+      runGateSatelliteWarmupBatch(opts).catch(() => {});
+    };
+    if (typeof requestIdleCallback === 'function') {
+      _gateSatWarmupTimer = setTimeout(() => {
+        if (epochSnap !== _gateSatWarmupEpoch || sessSnap !== _geoSessionEpoch) return;
+        try {
+          _gateSatWarmupIdleId = requestIdleCallback(run, { timeout: 2500 });
+        } catch (_) {
+          run();
+        }
+      }, Number(opts.delayMs) >= 0 ? Number(opts.delayMs) : 1200);
+    } else {
+      _gateSatWarmupTimer = setTimeout(run, Number(opts.delayMs) >= 0 ? Number(opts.delayMs) : 1400);
+    }
+    return true;
   }
 
   function _isDemoGeoSession() {
@@ -6975,6 +7620,13 @@
                     ${kmEst.elevAvailable && kmEst.ascentM != null ? `<b data-no-i18n="1">+${Math.round(kmEst.ascentM)}m</b> <span>Climb</span><span aria-hidden="true"> · </span><b data-no-i18n="1">${Number(kmEst.maxGradePct || 0).toFixed(1)}%</b> <span>Max Grade</span><span aria-hidden="true"> · </span>` : ''}
                     <span>Truck ETA</span> <b data-no-i18n="1">~${Math.round(kmEst.heavyTruckMins || kmEst.estMinutes || 0)} min</b>
                   </span>
+                  ${kmEst.elevAvailable && Array.isArray(kmEst.gradeSegments) && kmEst.gradeSegments.length > 0 ? `
+                    <span class="geo-route-grade-legend" id="geoRouteGradeLegend">
+                      <span class="geo-route-grade-chip"><span class="geo-route-grade-swatch is-flat" aria-hidden="true"></span><span>Flat (&lt;5%)</span></span>
+                      <span class="geo-route-grade-chip"><span class="geo-route-grade-swatch is-moderate" aria-hidden="true"></span><span>Moderate (5-9%)</span></span>
+                      <span class="geo-route-grade-chip"><span class="geo-route-grade-swatch is-steep" aria-hidden="true"></span><span>Steep (9%+)</span></span>
+                    </span>
+                  ` : ''}
                 ` : ''}
                 <span class="geo-km-sub" id="geoDistMetaSub"${dieselTipAttr(kmEst)}>~${kmEst.estMinutes} min${isMfg && kmEst.estDieselL != null ? ` · ~${kmEst.estDieselL.toFixed(1)} L diesel${kmEst.estDieselUsd != null ? ` · ~$${kmEst.estDieselUsd.toFixed(2)}` : ''}` : ''} (${esc(kmEst.source)})</span>
               ` : `
@@ -7097,6 +7749,7 @@
     const kmEst = (fromSpec.name && toSpec.name && STUDIO.distFrom !== STUDIO.distTo)
       ? estimateLegKm(fromSpec, toSpec, SEED, {
           roundTripIfAnyBu: isMfg,
+          skipFuel: true,
           onAsyncRoute: () => {
             if (document.getElementById('geoMapStudioDeck')) {
               if (_studioUserZooming) {
@@ -7110,15 +7763,12 @@
         })
       : null;
     if (kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null && kmEst.oneWayKm > 0) {
-      const latlngs = Array.isArray(kmEst.routeCoords) && kmEst.routeCoords.length > 1
-        ? kmEst.routeCoords.map(pt => [pt[1], pt[0]])
-        : [[kmEst.fromCoord.lat, kmEst.fromCoord.lng], [kmEst.toCoord.lat, kmEst.toCoord.lng]];
-      L.polyline(latlngs, {
-        color: '#B45309',
-        weight: 3,
-        dashArray: Array.isArray(kmEst.routeCoords) ? null : '6, 6',
-        opacity: 0.85
-      }).addTo(lg);
+      renderVerifiedRoutePolylineLayers(L, lg, kmEst, {
+        weight: 3.6,
+        fallbackColor: '#B45309',
+        halo: true,
+        interactive: true
+      });
     }
 
     // 3. Draw Site Pins
@@ -9884,12 +10534,20 @@
     const zoomRouteBtn = deck.querySelector('#geoDistZoomBtn');
     if (zoomRouteBtn) {
       zoomRouteBtn.addEventListener('click', () => {
-        const est = estimateLegKm(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), SEED);
+        const est = estimateLegKm(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), SEED, { skipFuel: true });
         if (STUDIO.map && window.L && est && est.fromCoord && est.toCoord && est.fromCoord.lat != null && est.toCoord.lat != null) {
           STUDIO._userPanned = true;
-          const b = window.L.latLngBounds([[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]]);
+          const pts = [[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]];
+          if (Array.isArray(est.routeCoords) && est.routeCoords.length > 1) {
+            est.routeCoords.forEach(pt => {
+              if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))) {
+                pts.push([Number(pt[1]), Number(pt[0])]);
+              }
+            });
+          }
+          const b = window.L.latLngBounds(pts);
           _runStudioProgrammaticCamera(() => {
-            STUDIO.map.fitBounds(b, { padding: [42, 42], maxZoom: 13, animate: false });
+            STUDIO.map.fitBounds(b, { padding: [42, 42], maxZoom: 14, animate: false });
           });
           _saveStudioMapView(STUDIO.map);
           syncResetViewBtnDom(deck);
@@ -10903,6 +11561,56 @@
         const previewLng = hasExplicitPin ? rawLng : (hasBaselinePin ? Number(bp.lng) : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null)));
 
         if (previewLat != null && previewLng != null && Number.isFinite(previewLat) && Number.isFinite(previewLng)) {
+          const siteNameVal = siteInp ? String(siteInp.value || '').trim() : '';
+          if (siteNameVal) {
+            const pickCo = (typeof cfg.getCompany === 'function' ? String(cfg.getCompany() || '').trim() : '') || (isMfg ? 'WTC' : '');
+            const hubCandidates = [];
+            if (isMfg) {
+              if (pickCo) hubCandidates.push(pickCo);
+              getAllCompanyHubs(SEED).forEach(h => {
+                if (h && h.name && !hubCandidates.some(x => norm(x) === norm(h.name))) hubCandidates.push(h.name);
+              });
+            }
+            let drawnSiteRoute = false;
+            for (const hName of hubCandidates) {
+              const est = estimateLegKm({ type: 'bu', name: hName }, { type: 'site', name: siteNameVal }, SEED, { skipFuel: true });
+              if (est && est.verifiedRoute && est.toCoord && _coordsNear(previewLat, previewLng, est.toCoord.lat, est.toCoord.lng) && Array.isArray(est.routeCoords) && est.routeCoords.length > 1) {
+                renderVerifiedRoutePolylineLayers(L, lg, est, { weight: 3.4, fallbackColor: '#1D4ED8', halo: true, interactive: true });
+                drawnSiteRoute = true;
+                break;
+              }
+            }
+            if (!drawnSiteRoute) {
+              const snTarget = norm(siteNameVal);
+              const vrEntries = Object.entries(GEO_STORE.verifiedRoutes || {});
+              for (const [rk, vr] of vrEntries) {
+                if (!vr || !(Number(vr.km) > 0)) continue;
+                const sp = _splitScopedGeoKey(rk, vr);
+                if (norm(sp.ind) !== norm(activeInd)) continue;
+                const halves = String(sp.body || '').split('||').map(x => x.trim()).filter(Boolean);
+                if (halves.length !== 2) continue;
+                const parseSegSpec = seg => {
+                  const low = seg.toLowerCase();
+                  if (low.startsWith('bu:')) return { type: 'bu', name: seg.slice(3).trim() };
+                  if (low.startsWith('site:')) return { type: 'site', name: seg.slice(5).trim() };
+                  return null;
+                };
+                const aSpec = parseSegSpec(halves[0]);
+                const bSpec = parseSegSpec(halves[1]);
+                if (!aSpec || !bSpec) continue;
+                let peerSpec = null;
+                if (aSpec.type === 'site' && norm(aSpec.name) === snTarget) peerSpec = bSpec;
+                else if (bSpec.type === 'site' && norm(bSpec.name) === snTarget) peerSpec = aSpec;
+                if (!peerSpec || !peerSpec.name) continue;
+                const est = estimateLegKm(peerSpec, { type: 'site', name: siteNameVal }, SEED, { skipFuel: true });
+                if (est && est.verifiedRoute && est.toCoord && _coordsNear(previewLat, previewLng, est.toCoord.lat, est.toCoord.lng) && Array.isArray(est.routeCoords) && est.routeCoords.length > 1) {
+                  renderVerifiedRoutePolylineLayers(L, lg, est, { weight: 3.4, fallbackColor: '#1D4ED8', halo: true, interactive: true });
+                  drawnSiteRoute = true;
+                  break;
+                }
+              }
+            }
+          }
           const allowOptReg = typeof cfg.isBundled === 'function' ? cfg.isBundled(inclTransInp) : Boolean(inclTransInp && inclTransInp.value === '1');
           const check = cfg.skipRegionContainmentCheck
             ? { ok: true }
@@ -11917,6 +12625,7 @@
     const toSpec = spec.toSpec;
     const est = (fromSpec && fromSpec.name && toSpec && toSpec.name)
       ? estimateLegKm(fromSpec, toSpec, SEED, {
+          skipFuel: true,
           onAsyncRoute: () => {
             _ticketOriginMini.lastStamp = '';
             if (_ticketOriginMini.callbacks && typeof _ticketOriginMini.callbacks.onRouteResolved === 'function') {
@@ -11927,16 +12636,13 @@
       : null;
 
     if (est && est.fromCoord && est.toCoord && est.fromCoord.lat != null && est.toCoord.lat != null && est.oneWayKm > 0) {
-      const latlngs = Array.isArray(est.routeCoords) && est.routeCoords.length > 1
-        ? est.routeCoords.map(pt => [pt[1], pt[0]])
-        : [[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]];
-      L.polyline(latlngs, { color: '#FFFFFF', weight: 6, opacity: 0.85 }).addTo(lg);
-      L.polyline(latlngs, {
-        color: '#1D4ED8',
-        weight: 3.2,
-        dashArray: Array.isArray(est.routeCoords) ? null : '6, 5',
-        opacity: 0.95
-      }).addTo(lg);
+      renderVerifiedRoutePolylineLayers(L, lg, est, {
+        weight: 3.4,
+        fallbackColor: '#1D4ED8',
+        dashArray: '6, 5',
+        halo: true,
+        interactive: true
+      });
     }
 
     const siteStats = getUnifiedSiteStats(SEED, STATE);
@@ -11990,7 +12696,15 @@
     const cFrom = fromSpec ? resolveEndpointCoord(fromSpec, SEED) : null;
     const cTo = toSpec ? resolveEndpointCoord(toSpec, SEED) : null;
     if (cFrom && cFrom.lat != null && cTo && cTo.lat != null && (Math.abs(cFrom.lat - cTo.lat) > 0.0005 || Math.abs(cFrom.lng - cTo.lng) > 0.0005)) {
-      const b = L.latLngBounds([[cFrom.lat, cFrom.lng], [cTo.lat, cTo.lng]]);
+      const miniPts = [[cFrom.lat, cFrom.lng], [cTo.lat, cTo.lng]];
+      if (est && Array.isArray(est.routeCoords) && est.routeCoords.length > 1) {
+        est.routeCoords.forEach(pt => {
+          if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))) {
+            miniPts.push([Number(pt[1]), Number(pt[0])]);
+          }
+        });
+      }
+      const b = L.latLngBounds(miniPts);
       map.fitBounds(b, { padding: [28, 28], maxZoom: 13, animate: false });
     } else if (cFrom && cFrom.lat != null) {
       map.setView([cFrom.lat, cFrom.lng], 11, { animate: false });
@@ -13127,6 +13841,15 @@
     canPinLocations: canPinLocationsNow,
     getCachedGateSatelliteSync,
     ensureGateSatelliteCached,
+    hydrateGateSatFromIdb: _hydrateGateSatFromIdb,
+    getGateSatWarmupCeilingPct,
+    canRunGateSatWarmupNow,
+    collectGateSatWarmupCandidates,
+    getGateSatWarmupState,
+    runGateSatelliteWarmupBatch,
+    scheduleIdleGateSatelliteWarmup,
+    buildRouteGradeSegments,
+    renderVerifiedRoutePolylineLayers,
     verifyPairRoadRoute,
     fetchMapsUsageSnapshot,
     confirmGcpMapsBudget,

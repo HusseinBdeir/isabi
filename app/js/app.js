@@ -10393,6 +10393,7 @@
   }
   // Map, Regions with No Shape: shaping existing Regions or pinning Company Hubs / existing Sites requires Supervisor+Entry, Owner, or Custom master+modify
   window.MFG_CAN_WRITE_GEO_CONFIG = u => canWriteGeoConfig(u);
+  window.MFG_IS_GEO_AUTHED = () => Boolean(typeof STATE !== 'undefined' && STATE && STATE.authed);
   window.MFG_CAN_SHAPE_REGIONS = u => canWriteGeoConfig(u);
   window.MFG_CAN_PIN_LOCATIONS = u => canWriteGeoConfig(u);
   window.MFG_CAN_ENTER_SITE = u => canEnterForm('site', u);
@@ -22725,23 +22726,57 @@
             ${canConfirmBudget && !isDemo ? `<button type="button" class="btn-sn-act ${q.gcp && q.gcp.budgetConfirmed ? 'is-undo' : 'is-check'}" id="confirmGcpBudgetBtn" data-confirmed="${q.gcp && q.gcp.budgetConfirmed ? '1' : '0'}">${ic('check_circle')} ${q.gcp && q.gcp.budgetConfirmed ? 'Unconfirm Budget Alert' : 'Confirm $1 Budget Alert'}</button>` : ''}
           </div>
         </div>
+        ${(() => {
+          const geo = window.MFG_GEO;
+          const ws = (geo && typeof geo.getGateSatWarmupState === 'function') ? geo.getGateSatWarmupState(SEED, STATE) : null;
+          if (!ws) return '';
+          const canWarmManual = Boolean(!isDemo && canWriteGeoConfig(activeUser()));
+          let stBadge = '<span class="badge badge-ok">Idle queue ready</span>';
+          if (isDemo) stBadge = '<span class="badge badge-warn">Demo Sandbox paused</span>';
+          else if (ws.running) stBadge = '<span class="badge badge-ok">Warming Batch</span>';
+          else if (!ws.allowedNow && ws.pauseReason === 'quota_unknown') stBadge = '<span class="badge badge-neutral">Checking Maps Quota</span>';
+          else if (!ws.allowedNow && ws.pauseReason === 'quota_ceiling') stBadge = '<span class="badge badge-warn">Paused above ceiling</span>';
+          else if (!ws.allowedNow && (ws.pauseReason === 'osm_fallback' || ws.pauseReason === 'quota_band')) stBadge = '<span class="badge badge-warn">Paused by Quota Guard</span>';
+          else if (!ws.allowedNow && ws.pauseReason === 'offline') stBadge = '<span class="badge badge-warn">Offline paused</span>';
+          else if (!ws.allowedNow && ws.pauseReason === 'readonly') stBadge = '<span class="badge badge-neutral">View Only</span>';
+          else if (ws.pendingCount === 0) stBadge = '<span class="badge badge-ok">All active gates cached</span>';
+          return `
+            <div class="sn-gate-warmup-bar" id="gateSatWarmupBar" data-warmup-reason="${esc(ws.pauseReason || '')}" data-warmup-running="${ws.running ? '1' : '0'}">
+              <div class="sn-gate-warmup-meta">
+                <span id="gateSatWarmupCounts">
+                  <span>Gate Satellite Pre-Warm</span>:
+                  <b class="mono" data-no-i18n="1">${ws.cachedCount} / ${ws.totalEligible}</b>
+                  <span>Cached</span> ·
+                  <b class="mono" data-no-i18n="1">${ws.pendingCount}</b>
+                  <span>Pending</span> ·
+                  <span>Ceiling</span> <b class="mono" data-no-i18n="1">&lt;${ws.ceilingPct}%</b>
+                </span>
+                ${stBadge}
+              </div>
+              ${canWarmManual ? `<button type="button" class="btn-sn-act" id="warmGateSatNowBtn" ${(ws.running || !ws.allowedNow || ws.pendingCount === 0) ? 'disabled' : ''} data-ui-tip="Pre-warm up to 8 uncached high-frequency active site Zoom-19 thumbnails while monthly tiles sit under the ceiling">${ws.running ? 'Warming...' : 'Pre-warm Next 8 Gates'}</button>` : ''}
+            </div>
+          `;
+        })()}
       </div>
     `;
   }
 
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiMapsQuotaListenerWired) {
     window.__isabiMapsQuotaListenerWired = true;
-    window.addEventListener('isabi:maps-quota-changed', () => {
+    const _rerenderQuotaPanelView = () => {
       try {
         if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
-        if (STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
+        const modalOpen = ($('entryModal') && !$('entryModal').hidden) || ($('recordInspector') && !$('recordInspector').hidden);
+        if (!modalOpen && STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
           renderApp();
           if (ws) ws.scrollTop = y;
         }
       } catch (_) {}
-    });
+    };
+    window.addEventListener('isabi:maps-quota-changed', _rerenderQuotaPanelView);
+    window.addEventListener('isabi:gate-sat-warmup-changed', _rerenderQuotaPanelView);
   }
 
   function _geoAuditIndSlug(raw) {
@@ -29684,6 +29719,162 @@
             equipList: SEED.records.equipment || []
           })
         : ''}
+
+      ${(() => {
+        if (!canSeeFleetBurn()) return '';
+        const showUsd = canSeeFuelEconomics();
+        const geo = window.MFG_GEO;
+        const idx = getSiteNetBackIndex();
+        const freqIdx = (typeof window.MFG_FREQ === 'function') ? window.MFG_FREQ() : null;
+        const freqMap = (freqIdx && freqIdx.site instanceof Map) ? freqIdx.site : null;
+        const cos = (STATE.company === 'manufacturing-group'
+          ? ['WTC', 'BBConstruction', 'Lions Transport']
+          : [canonTwBu(STATE.company || 'WTC')]
+        ).filter(co => co && isFuelCompanyAllowed(co));
+        if (!cos.length) return '';
+
+        const models = cos.map(co => getGradeFuelCorrelationModel(co)).filter(Boolean);
+        if (!models.length) return '';
+        const hasPaired = models.some(m => Number(m.sampleCount || 0) > 0);
+        const hasCorrs = models.some(m => Number(m.verifiedCorridors || 0) > 0);
+        const wRateOf = m => hasPaired ? Number(m.sampleCount || 0) : (hasCorrs ? Number(m.verifiedCorridors || 0) : 1);
+        const hasCal = models.some(m => (Number(m.ecuUnitsCount || 0) + Number(m.dipLogsCount || 0) + Number(m.sampleCount || 0)) > 0);
+        const wCalOf = m => hasCal ? (Number(m.ecuUnitsCount || 0) + Number(m.dipLogsCount || 0) + Number(m.sampleCount || 0)) : 1;
+        const wAvg = (fnVal, fnW) => {
+          let num = 0, den = 0;
+          models.forEach(m => {
+            const val = Number(fnVal(m));
+            const w = Math.max(0, Number(fnW(m) || 0));
+            if (Number.isFinite(val) && w > 0) { num += val * w; den += w; }
+          });
+          return den > 0 ? (num / den) : Number(fnVal(models[0]) || 0);
+        };
+        const repModel = models.length === 1 ? models[0] : {
+          climbFactorLPer100m: round2(wAvg(m => m.climbFactorLPer100m, wRateOf)),
+          baseLPerKm: wAvg(m => m.baseLPerKm, wRateOf),
+          refClimbMPerKm: _gfRound1(wAvg(m => m.refClimbMPerKm, wRateOf)),
+          pumpToEcuRatio: round2(wAvg(m => m.pumpToEcuRatio, wCalOf))
+        };
+        const hideCo = Boolean(window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.isSingleCorporationScope === 'function' && window.MFG_TABLE_COLS.isSingleCorporationScope(STATE));
+        const sitesPool = _getActiveMfgGeoSites();
+        const seenPairs = new Set();
+        const corrRows = [];
+
+        if (geo && typeof geo.estimateLegKm === 'function') {
+          cos.forEach(co => {
+            const fp = showUsd ? getLatestDieselPrice(co) : null;
+            sitesPool.forEach(s => {
+              const sn = norm(s.name);
+              const pk = `${co}|${sn}`;
+              if (!sn || seenPairs.has(pk)) return;
+              const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: s.name }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
+              if (!est || !est.verifiedRoute || !(Number(est.oneWayKm) > 0)) return;
+              seenPairs.add(pk);
+              const basisKm = est.roundTripKm || est.oneWayKm;
+              const gf = resolveRouteGradeFuel(co, basisKm, Object.assign({ showRoundTrip: Boolean(est.roundTripKm) }, est));
+              const siteLoads = (idx.loadsBySite.get(sn) || []).filter(x => x.co === co).length;
+              const freqScore = freqMap ? Number(freqMap.get(sn) || 0) : 0;
+              corrRows.push({
+                co,
+                site: s.name,
+                oneWayKm: est.oneWayKm,
+                roundTripKm: est.roundTripKm || est.oneWayKm,
+                ascentM: est.elevAvailable && est.ascentM != null ? Number(est.ascentM) : null,
+                maxGradePct: est.elevAvailable && est.maxGradePct != null ? Number(est.maxGradePct) : null,
+                effLPerKm: gf.effLPerKm,
+                deltaLitres: gf.deltaLitres,
+                deltaUsd: (showUsd && fp && gf.gradeAdjusted) ? round2(gf.deltaLitres * fp.usdPerL) : null,
+                gradeAdjusted: gf.gradeAdjusted,
+                loads: siteLoads,
+                freqScore
+              });
+            });
+          });
+        }
+
+        corrRows.sort((a, b) => (b.freqScore - a.freqScore) || (b.loads - a.loads) || ((b.maxGradePct || 0) - (a.maxGradePct || 0)));
+        const periodImp = computePeriodGradeFuelImpact();
+        const steepCount = corrRows.filter(r => r.maxGradePct != null && r.maxGradePct >= 5).length;
+        const maxGrade = corrRows.reduce((mx, r) => Math.max(mx, r.maxGradePct || 0), 0);
+        const maxAscent = corrRows.reduce((mx, r) => Math.max(mx, r.ascentM || 0), 0);
+        const totalEcuUnits = models.reduce((s, x) => s + Number(x.ecuUnitsCount || 0), 0);
+        const totalDips = models.reduce((s, x) => s + Number(x.dipLogsCount || 0), 0);
+        const totalSamples = models.reduce((s, x) => s + Number(x.sampleCount || 0), 0);
+        const displayRows = corrRows.slice(0, 12);
+        const colSpanCnt = hideCo ? (showUsd ? 7 : 6) : (showUsd ? 8 : 7);
+
+        return `
+          <section class="panel-card" id="fleetGradeFuelCorrPanel" style="margin-bottom:14px">
+            <div class="panel-head">
+              <div>
+                <h3 style="margin:0">${ic('fuel')} <span>Route Climb &amp; Grade vs. CAN-Bus Fuel Calibration</span></h3>
+                <span class="muted">Deterministic truck fuel-to-elevation calibration pairing Teltonika CAN io83 fuel counters and settled tank dips against verified road climb profiles</span>
+              </div>
+              <span class="panel-meta"><span data-no-i18n="1">${fmtNum(corrRows.length, 0)}</span> <span>Verified Corridors</span></span>
+            </div>
+            <div class="unit-econ-kpis cols-4" style="margin-bottom:12px">
+              <div class="unit-econ-kpi">
+                <span class="unit-econ-lbl">Climb Burn Factor</span>
+                <b class="unit-econ-val" data-no-i18n="1">${fmtNum(repModel.climbFactorLPer100m, 2)} L / 100m</b>
+                <span class="unit-econ-sub"><span>Base</span> <span data-no-i18n="1">${fmtNum(repModel.baseLPerKm, 2)} L/km</span> · <span>Ref Climb</span> <span data-no-i18n="1">${fmtNum(repModel.refClimbMPerKm, 1)} m/km</span></span>
+              </div>
+              <div class="unit-econ-kpi">
+                <span class="unit-econ-lbl">CAN ECU &amp; Dip Calibration</span>
+                <b class="unit-econ-val" data-no-i18n="1">${fmtNum(totalEcuUnits, 0)} ECU · ${repModel.pumpToEcuRatio.toFixed(2)}x</b>
+                <span class="unit-econ-sub"><span data-no-i18n="1">${fmtNum(totalDips, 0)}</span> <span>Settled Dip Logs</span> · <span data-no-i18n="1">${fmtNum(totalSamples, 0)}</span> <span>Paired Trips</span></span>
+              </div>
+              <div class="unit-econ-kpi">
+                <span class="unit-econ-lbl">Verified Steep Corridors</span>
+                <b class="unit-econ-val" data-no-i18n="1">${fmtNum(steepCount, 0)} / ${fmtNum(corrRows.length, 0)}</b>
+                <span class="unit-econ-sub"><span>Max Grade</span> <span data-no-i18n="1">${maxGrade.toFixed(1)}%</span> · <span>Max Climb</span> <span data-no-i18n="1">+${fmtNum(maxAscent, 0)}m</span></span>
+              </div>
+              ${showUsd ? `
+                <div class="unit-econ-kpi">
+                  <span class="unit-econ-lbl">Period Climb Fuel Impact</span>
+                  <b class="unit-econ-val ${periodImp.deltaUsd > 0 ? 'warn' : (periodImp.deltaUsd < 0 ? 'good' : '')}" data-no-i18n="1">${periodImp.deltaUsd != null ? esc(fmtSignedUSD(periodImp.deltaUsd, 2)) : '-'}</b>
+                  <span class="unit-econ-sub"><span data-no-i18n="1">${periodImp.deltaLitres >= 0 ? '+' : ''}${fmtNum(periodImp.deltaLitres, 1)} L</span> · <span data-no-i18n="1">${fmtNum(periodImp.verifiedLoads, 0)}</span> <span>Verified Loads</span></span>
+                </div>
+              ` : `
+                <div class="unit-econ-kpi">
+                  <span class="unit-econ-lbl">Period Climb Fuel Impact</span>
+                  <b class="unit-econ-val muted">Restricted</b>
+                  <span class="unit-econ-sub">Diesel purchase access required for USD</span>
+                </div>
+              `}
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    ${hideCo ? '' : '<th>Company</th>'}
+                    <th>Site</th>
+                    <th class="r">Round Trip</th>
+                    <th class="r">Climb (+m)</th>
+                    <th class="r">Max Grade</th>
+                    <th class="r">Eff. Burn</th>
+                    <th class="r">Climb Delta (L)</th>
+                    ${showUsd ? '<th class="r">Climb Delta ($)</th>' : ''}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${displayRows.length ? displayRows.map(r => `
+                    <tr>
+                      ${hideCo ? '' : `<td>${coBadge(r.co)}</td>`}
+                      <td><strong>${esc(r.site)}</strong></td>
+                      <td class="r mono" data-no-i18n="1">${fmtNum(r.roundTripKm, 1)} km</td>
+                      <td class="r mono" data-no-i18n="1">${r.ascentM != null ? `+${fmtNum(r.ascentM, 0)}m` : '-'}</td>
+                      <td class="r mono" data-no-i18n="1">${r.maxGradePct != null ? `${r.maxGradePct.toFixed(1)}%` : '-'}</td>
+                      <td class="r mono" data-no-i18n="1">${fmtNum(r.effLPerKm, 2)} L/km</td>
+                      <td class="r mono" data-no-i18n="1">${r.gradeAdjusted ? `${r.deltaLitres >= 0 ? '+' : ''}${fmtNum(r.deltaLitres, 1)} L` : '0.0 L'}</td>
+                      ${showUsd ? `<td class="r mono" data-no-i18n="1">${r.deltaUsd != null ? esc(fmtSignedUSD(r.deltaUsd, 2)) : (r.gradeAdjusted ? '-' : '$0.00')}</td>` : ''}
+                    </tr>
+                  `).join('') : emptyRow(colSpanCnt, 'Verify road corridors in Map Studio to populate climb and fuel correlation metrics')}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        `;
+      })()}
     `;
   }
 
@@ -94256,35 +94447,458 @@
   function canSeeFuelEconomics() {
     return typeof canAccessTable !== 'function' || (canAccessTable('fuel_intakes') && canAccessTable('expenses'));
   }
+  function _resolveGradeFuelCompany(company) {
+    const fk = fuelCompanyKey(company);
+    if (fk.co) return fk.co;
+    const bu = (typeof COMPANY_BU_MATCH === 'object' && COMPANY_BU_MATCH) ? (COMPANY_BU_MATCH[STATE.company] || '') : '';
+    return bu ? (fuelCompanyKey(bu).co || '') : '';
+  }
   // A company's own burn and diesel price are shown only to a seat assigned to that company.
   function isFuelCompanyAllowed(company) {
-    if (!company || typeof allowedCompanyNames !== 'function') return true;
-    const cn = norm(canonTwBu(company));
+    const fk = fuelCompanyKey(company);
+    if (!fk.co) return false;
+    if (typeof allowedCompanyNames !== 'function') return true;
+    const cn = norm(fk.co);
     return allowedCompanyNames().some(n => norm(n) === cn);
+  }
+
+  const GRADE_FUEL_DEFAULT_CLIMB_M_PER_100M = 1.65;
+  const GRADE_FUEL_REF_COASTAL_CLIMB_M_PER_KM = 12.0;
+  const _gfRound1 = n => Math.round(Number(n || 0) * 10) / 10;
+  const _gfNormAlnum = s => String(s || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
+  let _gradeFuelModelMemo = { key: '', map: new Map() };
+  const _inGradeFuelModel = new Set();
+
+  function _getActiveMfgGeoSites() {
+    const isMfgSite = s => Boolean(s && !s._multiIndustrySeed && (!s._industry || normGeoIndustryName(s._industry) === 'Manufacturing'));
+    const isInactive = s => Boolean(s && (s.voided || s.removed || s.active === false || /^(?:closed|inactive)$/i.test(String(s.status || '').trim())));
+    const custSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
+    const seedSites = (SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+    const shadowIds = new Set();
+    const activeCustNames = new Set();
+    const blockedNames = new Set();
+    custSites.forEach(s => {
+      if (!isMfgSite(s)) return;
+      if (s.id) shadowIds.add(String(s.id));
+      if (s.override_id) shadowIds.add(String(s.override_id));
+      if (s.name && !isInactive(s)) activeCustNames.add(norm(s.name));
+    });
+    custSites.forEach(s => {
+      if (isMfgSite(s) && s.name && isInactive(s) && !activeCustNames.has(norm(s.name))) {
+        blockedNames.add(norm(s.name));
+      }
+    });
+    const out = [];
+    custSites.forEach(s => {
+      if (isMfgSite(s) && !isInactive(s) && s.name) out.push(s);
+    });
+    seedSites.forEach(s => {
+      if (!isMfgSite(s) || isInactive(s) || !s.name) return;
+      if (s.id && shadowIds.has(String(s.id))) return;
+      if (blockedNames.has(norm(s.name)) || activeCustNames.has(norm(s.name))) return;
+      out.push(s);
+    });
+    return out;
+  }
+
+  function _invalidateGradeFuelMemo() {
+    _gradeFuelModelMemo.key = '';
+    _gradeFuelModelMemo.map.clear();
+  }
+
+  function _scopedGeoRoutesSnapshot() {
+    const geo = window.MFG_GEO;
+    if (!geo || typeof geo.exportGeoConfig !== 'function') return {};
+    try {
+      const cfg = geo.exportGeoConfig();
+      return (cfg && cfg.verifiedRoutes && typeof cfg.verifiedRoutes === 'object') ? cfg.verifiedRoutes : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function _resolveGradeFuelTripObs(coCanon, idx, vrEntriesBySite) {
+    const coSlug = (typeof COMPANY_KEY_BY_NAME === 'object' && COMPANY_KEY_BY_NAME && COMPANY_KEY_BY_NAME[coCanon]) ? COMPANY_KEY_BY_NAME[coCanon] : 'manufacturing-group';
+    const fuelRows = filterRecords((SEED.records && SEED.records.fuel_intakes) || [], { company: coSlug, ignorePeriod: true, ignoreSearch: true })
+      .filter(f => f && !f.voided && canonTwBu(f.company || 'WTC') === coCanon && /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel')));
+    const salesRows = (typeof canAccessTable !== 'function' || canAccessTable('sales_tickets'))
+      ? filterRecords((SEED.records && SEED.records.sales_tickets) || [], { company: coSlug, ignorePeriod: true, ignoreSearch: true })
+          .filter(t => t && !t.voided && !isRemovedTicket(t) && canonTwBu(t.company || 'WTC') === coCanon && /company\s*fleet/i.test(String(t.transport_by || '')) && t.truck && t.site)
+      : [];
+    if (!fuelRows.length || !salesRows.length) return [];
+
+    const truckDateClimb = new Map();
+    salesRows.forEach(t => {
+      const vr = vrEntriesBySite.get(norm(t.site));
+      if (!vr || !(vr.oneWayKm > 0) || !vr.elevAvailable || vr.ascentM == null) return;
+      const tdKey = `${_gfNormAlnum(t.truck)}|${String(t.date || '').slice(0, 10)}`;
+      const climbMPerKm = vr.ascentM / vr.oneWayKm;
+      const cur = truckDateClimb.get(tdKey) || { sumClimb: 0, cnt: 0 };
+      cur.sumClimb += climbMPerKm;
+      cur.cnt += 1;
+      truckDateClimb.set(tdKey, cur);
+    });
+    if (!truckDateClimb.size) return [];
+
+    const byTruck = new Map();
+    fuelRows.forEach((f, i) => {
+      const m = effectiveFuelMeter(f);
+      const l = Number(f.litres || 0);
+      const eqK = _gfNormAlnum(f.equipment);
+      if (!eqK || !(l > 0)) return;
+      if (!byTruck.has(eqK)) byTruck.set(eqK, []);
+      byTruck.get(eqK).push({ d: String(f.date || '').slice(0, 10), odo: (m && (m.type === 'odometer' || m.unit === 'km')) ? m.reading : null, l, i });
+    });
+
+    const obs = [];
+    byTruck.forEach((list, eqK) => {
+      list.sort((a, b) => (a.d === b.d ? a.i - b.i : (a.d < b.d ? -1 : 1)));
+      let prevOdo = null;
+      let pendingL = 0;
+      list.forEach(s => {
+        pendingL += s.l;
+        if (s.odo == null) return;
+        if (prevOdo != null) {
+          const stepKm = s.odo - prevOdo;
+          const dc = truckDateClimb.get(`${eqK}|${s.d}`);
+          if (dc && dc.cnt > 0 && stepKm > 5 && stepKm <= 1500) {
+            const rate = pendingL / stepKm;
+            if (rate >= 0.25 && rate <= 1.65) {
+              obs.push({ climbMPerKm: dc.sumClimb / dc.cnt, lPerKm: rate, km: stepKm });
+            }
+          }
+        }
+        prevOdo = s.odo;
+        pendingL = 0;
+      });
+    });
+    return obs;
+  }
+
+  function getGradeFuelCorrelationModel(company) {
+    const co = fuelCompanyKey(company).co;
+    if (!co || !isFuelCompanyAllowed(co)) return null;
+    const idx = getSiteNetBackIndex();
+    const geo = window.MFG_GEO;
+    const geoStamp = (geo && typeof geo.getConfigStamp === 'function') ? String(geo.getConfigStamp() || '') : '';
+    const vrSnap = _scopedGeoRoutesSnapshot();
+    const vrCountKey = Object.keys(vrSnap).length;
+    const canSum = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getCanFuelCalibrationSummary === 'function')
+      ? window.MFG_TELEMATICS.getCanFuelCalibrationSummary(co)
+      : null;
+    const maySales = typeof canAccessTable !== 'function' || canAccessTable('sales_tickets');
+    const mayFuel = typeof canAccessTable !== 'function' || canAccessTable('fuel_intakes');
+    const offScope = typeof isOfficialScopeActive === 'function' ? isOfficialScopeActive() : false;
+    const demoScope = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
+    const allowedCosKey = typeof allowedCompanyNames === 'function' ? allowedCompanyNames().join(',') : '';
+    const custSitesLen = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites.length : 0;
+    const custSitesSig = custSitesLen
+      ? STATE.customRecords.sites.map(s => (s ? `${s.id || ''}:${s.override_id || ''}:${s.voided ? 1 : 0}:${s.active === false ? 0 : 1}:${s.name || ''}` : '')).join(';')
+      : '';
+    const memoKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${STATE.company || ''}|${offScope ? 1 : 0}|${demoScope ? 1 : 0}|${allowedCosKey}|${maySales ? 1 : 0}:${mayFuel ? 1 : 0}|${geoStamp}|${vrCountKey}|${custSitesSig}|${canSum ? `${canSum.historySamplesCount}:${canSum.pumpToEcuRatio}:${canSum.dipReconCount}` : ''}`;
+    if (_gradeFuelModelMemo.key !== memoKey) {
+      _gradeFuelModelMemo.key = memoKey;
+      _gradeFuelModelMemo.map.clear();
+    }
+    if (_gradeFuelModelMemo.map.has(co)) return _gradeFuelModelMemo.map.get(co);
+    const burn = resolveFleetBurnRate(co);
+    if (_inGradeFuelModel.has(co)) {
+      return {
+        co,
+        baseLPerKm: burn.lPerKm,
+        burnSrc: burn.src,
+        climbFactorLPer100m: GRADE_FUEL_DEFAULT_CLIMB_M_PER_100M,
+        refClimbMPerKm: GRADE_FUEL_REF_COASTAL_CLIMB_M_PER_KM,
+        sampleCount: 0,
+        dipLogsCount: 0,
+        ecuUnitsCount: 0,
+        ecuLPerKm: null,
+        pumpToEcuRatio: 1.0,
+        src: 'physical_can_baseline',
+        verifiedCorridors: 0
+      };
+    }
+
+    _inGradeFuelModel.add(co);
+    try {
+      const activeSites = _getActiveMfgGeoSites();
+
+      const vrBySite = new Map();
+      let sumWeightedClimb = 0;
+      let sumWeight = 0;
+      let verifiedCorridors = 0;
+      const seenSites = new Set();
+
+      activeSites.forEach(s => {
+        const sn = norm(s.name);
+        if (!sn || seenSites.has(sn)) return;
+        seenSites.add(sn);
+        const loads = (idx.loadsBySite.get(sn) || []).filter(x => x.co === co).length;
+        const w = Math.max(1, loads);
+        let siteClimb = GRADE_FUEL_REF_COASTAL_CLIMB_M_PER_KM;
+        if (geo && typeof geo.estimateLegKm === 'function') {
+          const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: s.name }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
+          if (est && est.verifiedRoute && est.elevAvailable && est.oneWayKm > 0 && est.ascentM != null) {
+            verifiedCorridors += 1;
+            vrBySite.set(sn, est);
+            siteClimb = Math.max(0, Math.min(120, Number(est.ascentM) / Number(est.oneWayKm)));
+          }
+        }
+        sumWeightedClimb += siteClimb * w;
+        sumWeight += w;
+      });
+
+      const refClimbMPerKm = sumWeight > 0
+        ? _gfRound1(Math.max(5.0, Math.min(28.0, sumWeightedClimb / sumWeight)))
+        : GRADE_FUEL_REF_COASTAL_CLIMB_M_PER_KM;
+
+      const canScale = (canSum && Number.isFinite(Number(canSum.pumpToEcuRatio)))
+        ? Math.max(0.90, Math.min(1.15, Number(canSum.pumpToEcuRatio)))
+        : 1.0;
+      const physicalBaseline = round2(Math.max(1.00, Math.min(2.60, GRADE_FUEL_DEFAULT_CLIMB_M_PER_100M * canScale)));
+
+      const obs = _resolveGradeFuelTripObs(co, idx, vrBySite);
+      let wlsSlopePer100m = null;
+      if (obs.length >= 3) {
+        let sw = 0, sx = 0, sy = 0;
+        obs.forEach(o => {
+          const w = Math.max(1, o.km);
+          sw += w;
+          sx += w * o.climbMPerKm;
+          sy += w * o.lPerKm;
+        });
+        const xBar = sw > 0 ? sx / sw : 0;
+        const yBar = sw > 0 ? sy / sw : 0;
+        let num = 0, den = 0;
+        let minX = Infinity, maxX = -Infinity;
+        obs.forEach(o => {
+          const w = Math.max(1, o.km);
+          const dx = o.climbMPerKm - xBar;
+          num += w * dx * (o.lPerKm - yBar);
+          den += w * dx * dx;
+          if (o.climbMPerKm < minX) minX = o.climbMPerKm;
+          if (o.climbMPerKm > maxX) maxX = o.climbMPerKm;
+        });
+        if ((maxX - minX) >= 6 && den > 1e-6) {
+          wlsSlopePer100m = Math.max(1.00, Math.min(2.60, (num / den) * 100));
+        }
+      }
+
+      const climbFactorLPer100m = wlsSlopePer100m != null
+        ? round2(Math.max(1.00, Math.min(2.60, (wlsSlopePer100m * obs.length + physicalBaseline * 6) / (obs.length + 6))))
+        : physicalBaseline;
+
+      let dipLogsCount = canSum ? Number(canSum.dipReconCount || 0) : 0;
+      try {
+        const dt = typeof getDieselTankLedger === 'function' ? getDieselTankLedger(co, { ignorePeriod: true }) : null;
+        if (dt && Number(dt.discrepancyCount || 0) > 0) dipLogsCount += Number(dt.discrepancyCount || 0);
+      } catch (_) {}
+
+      const modelOut = {
+        co,
+        baseLPerKm: burn.lPerKm,
+        burnSrc: burn.src,
+        climbFactorLPer100m,
+        refClimbMPerKm,
+        sampleCount: obs.length,
+        dipLogsCount,
+        ecuUnitsCount: canSum ? Number(canSum.ecuUnitsCount || 0) : 0,
+        ecuLPerKm: canSum ? canSum.ecuLPerKm : null,
+        pumpToEcuRatio: canScale,
+        src: wlsSlopePer100m != null ? 'wls_can_dip' : 'physical_can_baseline',
+        verifiedCorridors
+      };
+      _gradeFuelModelMemo.map.set(co, modelOut);
+      return modelOut;
+    } finally {
+      _inGradeFuelModel.delete(co);
+    }
+  }
+
+  function resolveRouteGradeFuel(company, basisKm, routeCtx) {
+    const co = fuelCompanyKey(company).co;
+    const k = Number(basisKm);
+    if (!co || !isFuelCompanyAllowed(co)) {
+      return {
+        gradeAdjusted: false,
+        baseLitres: 0,
+        totalLitres: 0,
+        deltaLitres: 0,
+        effLPerKm: 0,
+        baseLPerKm: 0,
+        climbMPerKm: null,
+        refClimbMPerKm: null,
+        climbFactorLPer100m: null,
+        steepGradeAdderL: 0,
+        excessClimbM: 0,
+        src: ''
+      };
+    }
+    const burn = resolveFleetBurnRate(co);
+    const baseLitres = k > 0 ? k * burn.lPerKm : 0;
+    const rawGain = routeCtx && (routeCtx.elevGainM != null ? routeCtx.elevGainM : routeCtx.ascentM);
+    if (!routeCtx || !routeCtx.verifiedRoute || !routeCtx.elevAvailable || rawGain == null || !(k > 0)) {
+      return {
+        gradeAdjusted: false,
+        baseLitres,
+        totalLitres: baseLitres,
+        deltaLitres: 0,
+        effLPerKm: burn.lPerKm,
+        baseLPerKm: burn.lPerKm,
+        climbMPerKm: null,
+        refClimbMPerKm: null,
+        climbFactorLPer100m: null,
+        steepGradeAdderL: 0,
+        excessClimbM: 0,
+        src: ''
+      };
+    }
+
+    const model = getGradeFuelCorrelationModel(co);
+    const isRoundTrip = Boolean(routeCtx.showRoundTrip || (Number(routeCtx.oneWayKm) > 0 && k >= Number(routeCtx.oneWayKm) * 1.6));
+    const oneWayKm = Number(routeCtx.oneWayKm) > 0 ? Number(routeCtx.oneWayKm) : (isRoundTrip ? k / 2 : k);
+    const elevGainM = Math.max(0, Number(rawGain) || 0);
+    const rawDrop = routeCtx.elevDropM != null ? routeCtx.elevDropM : routeCtx.descentM;
+    const elevDropM = Math.max(0, Number(rawDrop) || 0);
+    const maxGradePct = Math.max(0, Number(routeCtx.maxGradePct) || 0);
+
+    const actualClimbWorkM = isRoundTrip ? (elevGainM + 0.35 * elevDropM) : elevGainM;
+    const refClimbWorkM = model.refClimbMPerKm * oneWayKm * (isRoundTrip ? 1.35 : 1.0);
+    const excessClimbM = actualClimbWorkM - refClimbWorkM;
+    const steepGradeAdderL = oneWayKm * Math.max(0, maxGradePct - 7.0) * 0.045 * (isRoundTrip ? 1.2 : 1.0);
+    const rawDeltaL = (excessClimbM / 100) * model.climbFactorLPer100m + steepGradeAdderL;
+
+    const clampedTotal = Math.max(baseLitres * 0.65, Math.min(baseLitres * 1.85, baseLitres + rawDeltaL));
+    const totalLitres = round2(clampedTotal);
+    const deltaLitres = round2(totalLitres - baseLitres);
+    const effLPerKm = k > 0 ? totalLitres / k : burn.lPerKm;
+
+    return {
+      gradeAdjusted: true,
+      baseLitres: round2(baseLitres),
+      totalLitres,
+      deltaLitres,
+      effLPerKm,
+      baseLPerKm: burn.lPerKm,
+      climbMPerKm: oneWayKm > 0 ? _gfRound1(elevGainM / oneWayKm) : 0,
+      refClimbMPerKm: model.refClimbMPerKm,
+      climbFactorLPer100m: model.climbFactorLPer100m,
+      steepGradeAdderL: round2(steepGradeAdderL),
+      excessClimbM: Math.round(excessClimbM),
+      src: model.src
+    };
+  }
+
+  function computePeriodGradeFuelImpact(salesRowsOverride = null) {
+    const canBurn = canSeeFleetBurn();
+    const showUsd = canSeeFuelEconomics();
+    const maySales = typeof canAccessTable !== 'function' || canAccessTable('sales_tickets');
+    const baseSales = !maySales
+      ? []
+      : (Array.isArray(salesRowsOverride) ? salesRowsOverride : filterRecords((SEED.records && SEED.records.sales_tickets) || []));
+    const salesPool = baseSales.filter(t =>
+      t && !t.voided && !isRemovedTicket(t) && ticketSign(t) > 0 && String(t.sale_type || '') === 'Delivery' && /company\s*fleet/i.test(String(t.transport_by || '')) && t.site
+    );
+
+    const geo = window.MFG_GEO;
+    const bySite = new Map();
+    let totalVerifiedLoads = 0;
+    let totalVerifiedM3 = 0;
+    let totalDeltaLitres = 0;
+    let totalDeltaUsd = 0;
+    let anyPriced = false;
+
+    if (canBurn && geo && typeof geo.estimateLegKm === 'function') {
+      const fpByCo = new Map();
+      const getFp = co => {
+        if (!fpByCo.has(co)) fpByCo.set(co, showUsd ? getLatestDieselPrice(co) : null);
+        return fpByCo.get(co);
+      };
+      salesPool.forEach(t => {
+        const co = canonTwBu(t.company || 'WTC');
+        if (!isFuelCompanyAllowed(co)) return;
+        const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: t.site }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
+        if (!est || !est.verifiedRoute || !est.elevAvailable || !(Number(est.roundTripKm || est.oneWayKm) > 0)) return;
+        const gf = resolveRouteGradeFuel(co, est.roundTripKm || est.oneWayKm, est);
+        if (!gf || !gf.gradeAdjusted) return;
+        const q = Number(t.qty || 0);
+        const rawUom = t.uom;
+        const uomKey = (rawUom == null || rawUom === '') ? 'm3' : _siteNbUomKey(rawUom);
+        const m3 = uomKey === 'm3' && q > 0 ? q : 0;
+        const fp = getFp(co);
+        const hasFp = Boolean(fp && Number.isFinite(Number(fp.usdPerL)));
+        const loadUsd = hasFp ? round2(gf.deltaLitres * fp.usdPerL) : 0;
+        totalVerifiedLoads += 1;
+        totalVerifiedM3 += m3;
+        totalDeltaLitres += gf.deltaLitres;
+        if (hasFp) {
+          anyPriced = true;
+          totalDeltaUsd += loadUsd;
+        }
+
+        const sk = `${co}|${norm(t.site)}`;
+        const cur = bySite.get(sk) || { co, site: t.site, loads: 0, m3: 0, deltaL: 0, deltaUsd: 0, hasPriced: false, climbM: est.ascentM || 0, maxGradePct: est.maxGradePct || 0, oneWayKm: est.oneWayKm || 0 };
+        cur.loads += 1;
+        cur.m3 += m3;
+        cur.deltaL += gf.deltaLitres;
+        if (hasFp) {
+          cur.hasPriced = true;
+          cur.deltaUsd += loadUsd;
+        }
+        bySite.set(sk, cur);
+      });
+    }
+
+    return {
+      authorizedBurn: canBurn,
+      authorizedDollar: showUsd,
+      verifiedLoads: totalVerifiedLoads,
+      verifiedM3: _gfRound1(totalVerifiedM3),
+      deltaLitres: round2(totalDeltaLitres),
+      deltaUsd: showUsd ? (totalVerifiedLoads === 0 ? 0 : (anyPriced ? round2(totalDeltaUsd) : null)) : null,
+      perM3Usd: (showUsd && anyPriced && totalVerifiedM3 > 0.001) ? round2(totalDeltaUsd / totalVerifiedM3) : null,
+      bySite: Array.from(bySite.values())
+        .map(s => Object.assign({}, s, { deltaUsd: (showUsd && s.hasPriced) ? round2(s.deltaUsd) : null }))
+        .sort((a, b) => b.loads - a.loads || b.m3 - a.m3)
+    };
   }
 
   // Diesel for a leg of N km, for the map and form estimates (MFG_GEO.estimateLegKm): measured burn x latest price.
   // Litres for a seat that may read fuel slips; the $ figure only when it may also read diesel purchases.
   window.MFG_FUEL_ECON = {
-    legFuel(company, km) {
+    legFuel(company, km, routeGradeCtx) {
       const k = Number(km);
       if (!(k > 0) || getActiveIndustry() !== 'Manufacturing' || !canSeeFleetBurn()) return null;
-      const co = company ? canonTwBu(company) : (COMPANY_BU_MATCH[STATE.company] || '');
-      if (!isFuelCompanyAllowed(co)) return null; // a hub of a company the seat is not assigned to: distance only
+      const co = _resolveGradeFuelCompany(company);
+      if (!co || !isFuelCompanyAllowed(co)) return null; // a hub of a company the seat is not assigned to: distance only
       const burn = resolveFleetBurnRate(co);
+      const gf = resolveRouteGradeFuel(co, k, routeGradeCtx);
       const showPrice = canSeeFuelEconomics();
       const fp = showPrice ? getLatestDieselPrice(co) : null;
-      const litres = k * burn.lPerKm;
+      const litres = gf.totalLitres;
       return {
         litres,
-        lPerKm: burn.lPerKm,
+        lPerKm: gf.effLPerKm,
+        baseLPerKm: burn.lPerKm,
         burnSrc: burn.src,
+        gradeAdjusted: gf.gradeAdjusted,
+        gradeDeltaLitres: gf.deltaLitres,
+        gradeDeltaUsd: (fp && gf.gradeAdjusted) ? round2(gf.deltaLitres * fp.usdPerL) : null,
+        climbMPerKm: gf.climbMPerKm,
         priceHidden: !showPrice,
         usd: fp ? round2(litres * fp.usdPerL) : null,
         usdPerL: fp ? fp.usdPerL : null,
         priceDate: fp ? fp.date : '',
         priceSrc: fp ? fp.src : ''
       };
+    },
+    gradeModel: company => {
+      const co = fuelCompanyKey(company).co;
+      return (canSeeFleetBurn() && co && isFuelCompanyAllowed(co)) ? getGradeFuelCorrelationModel(co) : null;
+    },
+    resolveRouteGradeFuel: (company, km, routeGradeCtx) => {
+      const co = fuelCompanyKey(company).co;
+      return (canSeeFleetBurn() && co && isFuelCompanyAllowed(co)) ? resolveRouteGradeFuel(co, km, routeGradeCtx) : null;
     },
     latestPrice: company => ((canSeeFuelEconomics() && isFuelCompanyAllowed(company)) ? getLatestDieselPrice(company) : null),
     // Diesel $/L on a day, for statements and briefs (never a fixed figure): a Manufacturing company at the price
@@ -94329,8 +94943,10 @@
     return dt.toISOString().slice(0, 10);
   }
   function _siteNbUomKey(u) {
-    const s = String(u || '').trim().toLowerCase();
-    if (!s || /^m(3|³)?$/.test(s) || s === 'cbm' || s === 'cubic') return 'm3';
+    if (u == null || u === '') return 'm3';
+    const s = String(u).trim().toLowerCase();
+    if (!s) return 'invalid_uom';
+    if (/^(m3|m³|m\^3|cbm|cubic)$/.test(s)) return 'm3';
     if (/^(t|ton|tons|tonne|tonnes)$/.test(s)) return 'ton';
     if (/^(truck|load|trip)$/.test(s)) return 'load';
     return s;
@@ -94549,7 +95165,7 @@
     const geo = window.MFG_GEO;
     if (!geo || typeof geo.estimateLegKm !== 'function' || !siteName) return null;
     const co = canonTwBu(company || 'WTC');
-    const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED, { roundTripIfAnyBu: true });
+    const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
     const canVerifyPin = typeof geo.canEditPairKm === 'function'
       ? geo.canEditPairKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED)
       : (typeof geo.canPinLocations === 'function' && geo.canPinLocations());
@@ -94578,6 +95194,7 @@
       ascentM: est.ascentM != null ? Number(est.ascentM) : null,
       descentM: est.descentM != null ? Number(est.descentM) : null,
       maxGradePct: est.maxGradePct != null ? Number(est.maxGradePct) : null,
+      avgClimbGradePct: est.avgClimbGradePct != null ? Number(est.avgClimbGradePct) : null,
       heavyTruckMins: est.heavyTruckMins != null ? Number(est.heavyTruckMins) : null,
       estMinutes: est.estMinutes != null ? Number(est.estMinutes) : null,
       canVerify: Boolean(canVerifyPin && est.fromCoord && est.fromCoord.lat != null && est.toCoord && est.toCoord.lat != null)
@@ -94604,9 +95221,14 @@
       const trip = canSeeTripPay
         ? resolveSiteTripRate(co, siteName || origSiteName, opts.regionHint, today)
         : { rate: 0, region: '', hidden: true };
-      const fuelPerTrip = (leg && usdPerL > 0) ? round2(leg.roundTripKm * burn.lPerKm * usdPerL) : null;
       const coOk = isFuelCompanyAllowed(co);
-      const out = { co, leg, burn, usdPerL, fuelPrice, trip, fuelPerTrip, showBurn: canSeeFleetBurn() && coOk, showFuelInputs: canSeeFuelCost && coOk, showTripPay: canSeeTripPay };
+      const gradeFuel = leg ? resolveRouteGradeFuel(co, leg.roundTripKm, Object.assign({ showRoundTrip: true }, leg)) : null;
+      const effLitres = gradeFuel ? gradeFuel.totalLitres : (leg ? leg.roundTripKm * burn.lPerKm : 0);
+      const fuelPerTrip = (coOk && leg && usdPerL > 0) ? round2(effLitres * usdPerL) : null;
+      const gradeFuelOut = (coOk && gradeFuel && gradeFuel.gradeAdjusted)
+        ? Object.assign({}, gradeFuel, { deltaUsd: (canSeeFuelCost && usdPerL > 0) ? round2(gradeFuel.deltaLitres * usdPerL) : null })
+        : null;
+      const out = { co, coOk, leg, burn, usdPerL, fuelPrice, trip, fuelPerTrip, gradeFuel: gradeFuelOut, showBurn: canSeeFleetBurn() && coOk, showFuelInputs: canSeeFuelCost && coOk, showTripPay: canSeeTripPay };
       inputsByCo.set(co, out);
       return out;
     };
@@ -94814,7 +95436,9 @@
       const netBackUnit = (isSalesDel && deliveredPerLoad != null && fuelPerLoad != null && L.qty > 0)
         ? (deliveredPerLoad - fuelPerLoad) / L.qty
         : null;
-      const kmCost = inp.usdPerL > 0 ? 2 * inp.burn.lPerKm * inp.usdPerL : 0; // $ per one-way km, there and back
+      const kmCost = (inp.fuelPerTrip > 0 && inp.leg && inp.leg.oneWayKm > 0)
+        ? (inp.fuelPerTrip / inp.leg.oneWayKm)
+        : ((inp.coOk !== false && inp.usdPerL > 0) ? 2 * inp.burn.lPerKm * inp.usdPerL : 0); // $ per one-way km, there and back
       const breakevenKm = (!isHaulBuy && haulIncome != null && kmCost > 0) ? Math.max(0, haulIncome / kmCost) : null;
 
       let status;
@@ -94910,6 +95534,7 @@
   window.__mfgInvalidateSiteNetBack = () => {
     _siteNbIdx = null;
     _siteNbIdxKey = '';
+    _invalidateGradeFuelMemo();
   };
 
   // Hooks for build/verify_site_netback.mjs. All read-only except setRuleEnabledForCheck, which flips rule #22
@@ -94918,6 +95543,7 @@
     invalidate: () => {
       _siteNbIdx = null;
       _siteNbIdxKey = '';
+      _invalidateGradeFuelMemo();
     },
     setRuleEnabledForCheck: on => {
       const st = ensureAlertRulesState();
@@ -94931,6 +95557,9 @@
     index: () => getSiteNetBackIndex(),
     latestDieselPrice: company => getLatestDieselPrice(company),
     burnRate: company => resolveFleetBurnRate(company),
+    gradeModel: company => window.MFG_FUEL_ECON.gradeModel(company),
+    resolveRouteGradeFuel: (company, km, ctx) => window.MFG_FUEL_ECON.resolveRouteGradeFuel(company, km, ctx),
+    periodGradeFuel: sales => computePeriodGradeFuelImpact(sales),
     sentinel: () => getNetBackSentinelData(),
     sentinelItem: () => buildSentinelItems().find(i => i && i.id === 'S12') || null,
     floor: draft => computePriceRuleFloor(draft),
@@ -95233,6 +95862,7 @@
     else if (nightPayUnit > 0 && gapUnit - nightPayUnit < -0.005) state = 'night';
     else if (row.status === 'thin') state = 'thin';
     else state = 'ok';
+    const gf = (inp.gradeFuel && inp.gradeFuel.gradeAdjusted) ? inp.gradeFuel : null;
     return {
       state,
       co,
@@ -95255,6 +95885,11 @@
       leg: inp.leg,
       burn: inp.showBurn ? inp.burn : null,
       fuelPrice: inp.showFuelInputs ? inp.fuelPrice : null,
+      gradeAdjusted: Boolean(gf),
+      gradeDeltaLitres: (inp.showBurn && gf) ? gf.deltaLitres : 0,
+      gradeDeltaUsd: (inp.showFuelInputs && gf && gf.deltaUsd != null) ? gf.deltaUsd : null,
+      gradeDeltaPerUnit: (inp.showFuelInputs && gf && gf.deltaUsd != null && q > 0) ? (gf.deltaUsd / q) : null,
+      climbMPerKm: (inp.showBurn && gf) ? gf.climbMPerKm : null,
       tripRegion: inp.showTripPay ? (row.tripRegion || (inp.trip ? inp.trip.region : '')) : '',
       loads90: row.loads90
     };
@@ -95336,6 +95971,13 @@
       if (fl.leg.verifiedRoute) {
         const gSub = `${(fl.leg.heavyTruckMins || fl.leg.estMinutes) ? `<span>Truck ETA</span> ${nv(esc(`~${Math.round(fl.leg.heavyTruckMins || fl.leg.estMinutes)} min`))}` : ''}${fl.leg.elevAvailable && fl.leg.ascentM != null ? `${(fl.leg.heavyTruckMins || fl.leg.estMinutes) ? ' · ' : ''}${nv(esc(`+${fmtNum(fl.leg.ascentM, 0)}m`))} <span>Climb</span>` : ''}`;
         chips.push(`<span class="site-nb-chip" id="prFloorRoadGradeChip"><small>Road Grade &amp; ETA</small><b>${fl.leg.elevAvailable && fl.leg.maxGradePct != null ? `${nv(esc(`${fmtNum(fl.leg.maxGradePct, 1)}%`))} <span>Max Grade</span>` : `<span>Road route</span>`}</b>${gSub ? `<em>${gSub}</em>` : ''}</span>`);
+        if (fl.gradeAdjusted && (fl.burn || fl.fuelPrice)) {
+          const gfMain = fl.gradeDeltaPerUnit != null
+            ? `${nv(esc(fmtSignedUSD(fl.gradeDeltaPerUnit, 2)))} <small class="site-nb-uom" data-no-i18n="1">/ ${esc(fl.unitLbl)}</small>`
+            : `${nv(esc(`${fl.gradeDeltaLitres >= 0 ? '+' : ''}${fmtNum(fl.gradeDeltaLitres, 1)} L`))}`;
+          const gfSub = `${fl.burn ? `${nv(esc(`${fl.gradeDeltaLitres >= 0 ? '+' : ''}${fmtNum(fl.gradeDeltaLitres, 1)} L/trip`))}` : '<span>Verified Grade</span>'}${(fl.gradeDeltaUsd != null && fl.burn) ? ` · ${nv(esc(`${fmtSignedUSD(fl.gradeDeltaUsd, 2)}/trip`))}` : ''}`;
+          chips.push(`<span class="site-nb-chip" id="prFloorGradeFuelChip"><small>Climb Fuel Delta</small><b>${gfMain}</b>${gfSub ? `<em>${gfSub}</em>` : ''}</span>`);
+        }
       }
     } else {
       chips.push(`<span class="site-nb-chip is-approx"><small>Fuel Cost</small><b>Pin the site to compute</b></span>`);
@@ -95446,6 +96088,7 @@
           <span class="site-nb-chip"><small>Round Trip</small><b>${nv(`${esc(fmtNum(inp.leg.roundTripKm, 1))} km`)}</b></span>
           <span class="site-nb-chip${inp.leg.approx ? ' is-approx' : ''}"><small>Distance Basis</small><b>${esc(srcLbl[inp.leg.source] || 'Map road estimate')}</b></span>
           ${inp.leg.verifiedRoute ? `<span class="site-nb-chip" data-nb-road-grade="1"><small>Road Grade &amp; ETA</small><b>${inp.leg.elevAvailable && inp.leg.maxGradePct != null ? `${nv(esc(`${fmtNum(inp.leg.maxGradePct, 1)}%`))} <span>Max Grade</span>` : `<span>Road route</span>`}</b>${(inp.leg.heavyTruckMins || inp.leg.estMinutes || (inp.leg.elevAvailable && inp.leg.ascentM != null)) ? `<em>${(inp.leg.heavyTruckMins || inp.leg.estMinutes) ? `<span>Truck ETA</span> ${nv(esc(`~${Math.round(inp.leg.heavyTruckMins || inp.leg.estMinutes)} min`))}` : ''}${inp.leg.elevAvailable && inp.leg.ascentM != null ? `${(inp.leg.heavyTruckMins || inp.leg.estMinutes) ? ' · ' : ''}${nv(esc(`+${fmtNum(inp.leg.ascentM, 0)}m`))} <span>Climb</span>` : ''}</em>` : ''}</span>` : ''}
+          ${inp.gradeFuel && inp.gradeFuel.gradeAdjusted && inp.showBurn ? `<span class="site-nb-chip" data-nb-grade-fuel="1"><small>Climb Fuel Delta</small><b>${nv(esc(`${inp.gradeFuel.deltaLitres >= 0 ? '+' : ''}${fmtNum(inp.gradeFuel.deltaLitres, 1)} L/trip`))}</b>${inp.showFuelInputs && inp.gradeFuel.deltaUsd != null ? `<em>${nv(esc(`${fmtSignedUSD(inp.gradeFuel.deltaUsd, 2)}/trip`))}</em>` : (inp.leg && inp.leg.maxGradePct != null ? `<em>${nv(esc(`${fmtNum(inp.leg.maxGradePct, 1)}%`))} <span>Max Grade</span></em>` : '')}</span>` : ''}
         ` : `<span class="site-nb-chip is-approx"><small>Round Trip</small><b>Pin the site to compute</b></span>`}
         ${inp.showBurn ? `<span class="site-nb-chip"><small>Fleet Burn</small><b>${nv(`${esc(fmtNum(inp.burn.lPerKm, 2))} L/km`)}</b><em>${esc(burnSrcLbl[inp.burn.src] || 'Standard estimate')}</em></span>` : ''}
         ${inp.showFuelInputs ? fuelPriceChip(inp) : ''}
@@ -128542,6 +129185,9 @@
       if (popEl) popEl.hidden = true;
       if (trigEl) trigEl.setAttribute('aria-expanded', 'false');
     }
+    if (prevInd !== nextInd && STATE.authed && !nextDemo && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
+      try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
+    }
     renderApp();
   }
 
@@ -129636,6 +130282,8 @@
     try { window.dispatchEvent(new CustomEvent('mfg:auth-gate-closed')); } catch (_) {}
     if (!SEED._recordsReady) {
       hydrateSeedData();
+    } else if (!isDemoScopeActive() && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
+      try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
     const shouldKeepNonAuthCam = () => Boolean(
       FACE_STATE.enrolCamActive ||
@@ -139595,6 +140243,88 @@
             </div>
           </div>
         ` : `<p class="muted" style="margin:8px 0 0">No snapped overtime deltas in the active Manufacturing scope. All OT minutes currently match exact-minute payroll timing.</p>`}
+        ${(() => {
+          const gfImp = computePeriodGradeFuelImpact(Array.isArray(salesRows) ? salesRows : null);
+          const hideCo = Boolean(window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.isSingleCorporationScope === 'function' && window.MFG_TABLE_COLS.isSingleCorporationScope(STATE));
+          const gfSites = (gfImp.bySite || []).slice(0, 6);
+          return `
+            <div class="unit-econ-subpanel" id="unitEconGradeFuelSubpanel">
+              <div class="panel-head" style="margin-bottom:6px">
+                <div>
+                  <h4 style="margin:0">${ic('fuel')} <span>Verified Route Climb &amp; Grade Fuel Unit Economics</span></h4>
+                  <span class="muted">Deterministic uphill diesel allocation per delivered m³ across verified elevation corridors</span>
+                </div>
+                <span class="panel-meta"><span data-no-i18n="1">${fmtNum(gfImp.verifiedLoads, 0)}</span> <span>Verified Loads</span></span>
+              </div>
+              <div class="unit-econ-kpis">
+                <div class="unit-econ-kpi">
+                  <span class="unit-econ-lbl">Verified Corridor Volume</span>
+                  <b class="unit-econ-val" data-no-i18n="1">${fmtNum(gfImp.verifiedM3, 1)} m³</b>
+                  <span class="unit-econ-sub"><span data-no-i18n="1">${fmtNum(gfImp.verifiedLoads, 0)}</span> <span>Own-Fleet Deliveries</span></span>
+                </div>
+                ${gfImp.authorizedBurn ? `
+                  <div class="unit-econ-kpi">
+                    <span class="unit-econ-lbl">Climb Fuel Delta (Litres)</span>
+                    <b class="unit-econ-val ${gfImp.deltaLitres > 0 ? 'warn' : (gfImp.deltaLitres < 0 ? 'good' : '')}" data-no-i18n="1">${gfImp.deltaLitres >= 0 ? '+' : ''}${fmtNum(gfImp.deltaLitres, 1)} L</b>
+                    <span class="unit-econ-sub">Adjusted against verified road climb and max grade</span>
+                  </div>
+                ` : `
+                  <div class="unit-econ-kpi">
+                    <span class="unit-econ-lbl">Climb Fuel Delta (Litres)</span>
+                    <b class="unit-econ-val muted">Restricted</b>
+                    <span class="unit-econ-sub">Fuel slip access required</span>
+                  </div>
+                `}
+                ${gfImp.authorizedDollar ? `
+                  <div class="unit-econ-kpi">
+                    <span class="unit-econ-lbl">Uphill Terrain Impact</span>
+                    <b class="unit-econ-val ${gfImp.perM3Usd > 0 ? 'warn' : (gfImp.perM3Usd < 0 ? 'good' : '')}" data-no-i18n="1">${gfImp.perM3Usd != null ? `${esc(fmtSignedUSD(gfImp.perM3Usd, 2))}/m³` : (gfImp.verifiedLoads > 0 ? '-' : esc(fmtUSD(0, 2)))}</b>
+                    <span class="unit-econ-sub"><span data-no-i18n="1">${gfImp.deltaUsd != null ? esc(fmtSignedUSD(gfImp.deltaUsd, 2)) : '-'}</span> <span>Period Fuel Delta</span></span>
+                  </div>
+                ` : `
+                  <div class="unit-econ-kpi">
+                    <span class="unit-econ-lbl">Uphill Terrain Impact</span>
+                    <b class="unit-econ-val muted">Restricted</b>
+                    <span class="unit-econ-sub">Diesel purchase access required for USD</span>
+                  </div>
+                `}
+              </div>
+              ${gfImp.authorizedBurn && gfSites.length ? `
+                <div class="table-wrap" style="margin-top:10px">
+                  <table>
+                    <thead>
+                      <tr>
+                        ${hideCo ? '' : '<th>Company</th>'}
+                        <th>Work Site</th>
+                        <th class="r">Loads</th>
+                        <th class="r">Volume (m³)</th>
+                        <th class="r">Climb (+m)</th>
+                        <th class="r">Delta (L)</th>
+                        ${gfImp.authorizedDollar ? '<th class="r">Delta ($)</th><th class="r">$/m³ Impact</th>' : ''}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${gfSites.map(s => {
+                        const sitePerM3 = (s.deltaUsd != null && s.m3 > 0.001) ? round2(s.deltaUsd / s.m3) : null;
+                        return `
+                          <tr>
+                            ${hideCo ? '' : `<td>${coBadge(s.co)}</td>`}
+                            <td><strong>${esc(s.site)}</strong></td>
+                            <td class="r mono" data-no-i18n="1">${fmtNum(s.loads, 0)}</td>
+                            <td class="r mono" data-no-i18n="1">${fmtNum(s.m3, 1)}</td>
+                            <td class="r mono" data-no-i18n="1">+${fmtNum(s.climbM, 0)}m</td>
+                            <td class="r mono" data-no-i18n="1">${s.deltaL >= 0 ? '+' : ''}${fmtNum(s.deltaL, 1)} L</td>
+                            ${gfImp.authorizedDollar ? `<td class="r mono" data-no-i18n="1">${s.deltaUsd != null ? esc(fmtSignedUSD(s.deltaUsd, 2)) : '-'}</td><td class="r mono" data-no-i18n="1">${sitePerM3 != null ? esc(fmtSignedUSD(sitePerM3, 2)) : '-'}</td>` : ''}
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        })()}
       </section>
     `;
   }
@@ -164841,6 +165571,37 @@
         }
       });
     }
+    const warmGateBtn = $('warmGateSatNowBtn');
+    if (warmGateBtn) {
+      warmGateBtn.addEventListener('click', async () => {
+        const geo = window.MFG_GEO;
+        if (!geo || typeof geo.runGateSatelliteWarmupBatch !== 'function') return;
+        warmGateBtn.disabled = true;
+        try {
+          const res = await geo.runGateSatelliteWarmupBatch({ maxBatch: 8, manual: true, forUi: true, SEED, STATE });
+          if (STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
+            const wsEl = $('workspace');
+            const y = wsEl ? wsEl.scrollTop : 0;
+            renderApp();
+            if (wsEl) wsEl.scrollTop = y;
+          } else if (warmGateBtn.isConnected) {
+            warmGateBtn.disabled = !geo.canRunGateSatWarmupNow({ forUi: true });
+          }
+          if (res && res.warmed > 0) {
+            toast(`Warmed ${res.warmed} Zoom-19 gate thumbnail${res.warmed === 1 ? '' : 's'}`, 'ok');
+          } else if (res && (res.stoppedReason === 'quota_ceiling' || res.stoppedReason === 'osm_fallback' || res.stoppedReason === 'quota_band')) {
+            toast('Gate satellite warm-up paused to preserve monthly 2D tile free-tier budget', 'warn');
+          } else if (res && res.stoppedReason) {
+            toast('Gate satellite warm-up paused', 'warn');
+          } else {
+            toast('All eligible active gates are already cached', 'ok');
+          }
+        } catch (err) {
+          if (warmGateBtn.isConnected) warmGateBtn.disabled = false;
+          toast(err && err.message ? err.message : 'Gate satellite warm-up failed', 'err');
+        }
+      });
+    }
     container.querySelectorAll('[data-sn-explain]').forEach(btn => btn.addEventListener('click', ev => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -170583,6 +171344,9 @@
         window.MFG_SEED = SEED;
         try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
         scheduleDormantAgreementSweep(2500);
+        if (STATE.authed && !isDemoScopeActive() && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
+          try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
+        }
         if (STATE.authed || isAutoTest) {
           safeRender();
         } else {
