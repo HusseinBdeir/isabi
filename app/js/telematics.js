@@ -9,7 +9,13 @@
   'use strict';
 
   const PREF_STORAGE_KEY = 'isabi_telematics_ui_v1';
-  const POLL_INTERVAL_MS = 30000;
+  // 10 s poll + 8 s shared Edge cache: a new tracker report reaches the screen in
+  // ~10-18 s. Polling runs only while a telematics surface is on screen and the
+  // tab is visible. The report-age labels tick every second without a fetch.
+  const POLL_INTERVAL_MS = 10000;
+  const AGE_TICK_MS = 1000;
+  const ENGINE_ON_LATE_S = 180;
+  const PARKED_LATE_S = 86400;
 
   let _ctx = null;
   let _lastScopeSig = '';
@@ -24,6 +30,16 @@
   const _histCache = new Map();
 
   let _pollTimer = null;
+  let _ageTimer = null;
+  let _lastSnapAttemptMs = 0;
+  let _deckRedrawPending = false;
+  let _pointerDownInDeck = false;
+  let _pointerDownAtMs = 0;
+  // A press counts for at most 5 s, so a release outside the window can never
+  // freeze the card.
+  function isPointerHeldInDeck() {
+    return _pointerDownInDeck && (Date.now() - _pointerDownAtMs) < 5000;
+  }
 
   const UI_STATE = {
     collapsed: false,
@@ -465,29 +481,39 @@
     _snapAbort = ctrl;
     _inflightSnapScope = baseSig;
     _snapStore.loading = true;
+    _lastSnapAttemptMs = Date.now();
 
     const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
     const fetcher = window.ISABI_EDGE_FETCH || fetch;
 
     const p = (async () => {
       try {
-        const res = await fetcher(`${base}/api/telematics?action=snapshot`, { signal: ctrl.signal });
+        const res = await fetcher(`${base}/api/telematics?action=snapshot${opts.fresh ? '&fresh=1' : ''}`, { signal: ctrl.signal });
         if (!res || !res.ok) {
           if (_snapAbort === ctrl) {
             _snapStore.loading = false;
             _snapStore.error = res ? `HTTP ${res.status}` : 'Network error';
+            _snapStore.errorKind = (res && (res.status === 401 || res.status === 403)) ? 'auth' : 'provider';
+            if (!opts.silent) refreshDeckInPlace();
           }
           return getScopedUnits();
         }
         const j = await res.json();
         if (_snapAbort !== ctrl || baseSig !== getSeatIdentitySig()) return [];
         if (j && j.ok && Array.isArray(j.units)) {
+          const recvMs = Date.now();
+          const srvMs = Date.parse(j.server_now || '');
           _snapStore = {
             scopeBase: baseSig,
             fetchedAt: j.fetched_at || new Date().toISOString(),
             units: j.units,
             geofences: j.geofences || [],
             demo: Boolean(j.demo),
+            stale: Boolean(j.stale),
+            receivedAtMs: recvMs,
+            // Server clock minus this device's clock, so report ages stay right
+            // on a PC or phone whose clock is off.
+            skewMs: Number.isFinite(srvMs) ? (srvMs - recvMs) : 0,
             loading: false,
             error: ''
           };
@@ -496,6 +522,9 @@
             if (st && (st.view === 'reg_sites' || st.view === 'reg_regions')) {
               const refreshedInPlace = Boolean(window.MFG_GEO && typeof window.MFG_GEO.refreshStudioMapInPlace === 'function' && window.MFG_GEO.refreshStudioMapInPlace());
               if (!refreshedInPlace) _ctx.rerenderWorkspace();
+            } else if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment') && refreshDeckInPlace()) {
+              // Only the telematics card was redrawn: the page keeps its scroll,
+              // open popovers and the studios below it.
             } else if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
               _ctx.rerenderWorkspace();
             }
@@ -507,6 +536,8 @@
         if (_snapAbort === ctrl) {
           _snapStore.loading = false;
           _snapStore.error = 'Telematics sync paused';
+          _snapStore.errorKind = 'provider';
+          if (!opts.silent) refreshDeckInPlace();
         }
         return getScopedUnits();
       } finally {
@@ -1435,7 +1466,13 @@
       stopAutoPoll();
       return;
     }
-    if (!_snapStore.fetchedAt && !_snapStore.loading) {
+    // First load, or back on the tab / view after the data went older than one
+    // poll: fetch now instead of waiting for the next tick.
+    // At most one such catch-up attempt per poll interval, so a failing network
+    // (whose error redraw calls back in here) never turns into a retry loop.
+    const tooOld = _snapStore.receivedAtMs && (Date.now() - _snapStore.receivedAtMs) > POLL_INTERVAL_MS;
+    const mayAttempt = (Date.now() - _lastSnapAttemptMs) > POLL_INTERVAL_MS;
+    if (!_snapStore.loading && mayAttempt && (!_snapStore.fetchedAt || tooOld)) {
       fetchSnapshot({ silent: false });
     }
     if (!_pollTimer) {
@@ -1447,6 +1484,9 @@
         fetchSnapshot({ silent: false });
       }, POLL_INTERVAL_MS);
     }
+    if (!_ageTimer && document.getElementById('fleetTelematicsDeck')) {
+      _ageTimer = setInterval(tickReportAges, AGE_TICK_MS);
+    }
   }
 
   function stopAutoPoll() {
@@ -1454,6 +1494,115 @@
       clearInterval(_pollTimer);
       _pollTimer = null;
     }
+    if (_ageTimer) {
+      clearInterval(_ageTimer);
+      _ageTimer = null;
+    }
+  }
+
+  // ==================== REPORT AGE (how old each truck's last GPS report is) ====================
+  function serverNowSec() {
+    return (Date.now() + (Number(_snapStore.skewMs) || 0)) / 1000;
+  }
+
+  function fmtAgo(sec) {
+    const s = Math.max(0, Math.round(Number(sec) || 0));
+    let n, k;
+    if (s < 60) { n = s; k = 's'; }
+    else if (s < 3600) { n = Math.floor(s / 60); k = 'm'; }
+    else if (s < 172800) { n = Math.floor(s / 3600); k = 'h'; }
+    else { n = Math.floor(s / 86400); k = 'd'; }
+    const lang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    if (lang === 'ar') return `منذ ${n} ${({ s: 'ث', m: 'د', h: 'س', d: n <= 10 ? 'أيام' : 'يوماً' })[k]}`;
+    if (lang === 'fr') return `il y a ${n} ${({ s: 's', m: 'min', h: 'h', d: 'j' })[k]}`;
+    return `${n} ${({ s: 's', m: 'min', h: 'h', d: 'd' })[k]} ago`;
+  }
+
+  function reportAgeTone(statusCode, ageS) {
+    const engineOn = statusCode === 'moving' || statusCode === 'idling';
+    if (engineOn) {
+      if (ageS > ENGINE_ON_LATE_S) return 'is-late';
+      return ageS <= 60 ? 'is-fresh' : '';
+    }
+    return ageS > PARKED_LATE_S ? 'is-late' : '';
+  }
+
+  function renderReportAge(u) {
+    const ts = Number(u && u.timestamp) || 0;
+    if (ts < 1000000000) return '';
+    const ageS = serverNowSec() - ts;
+    const sc = String((u && u.status_code) || 'parked');
+    return `<span class="tel-report-age ${reportAgeTone(sc, ageS)}" data-tel-ts="${ts}" data-tel-sc="${esc(sc)}" data-no-i18n="1" data-ui-tip="${esc(tr('Last GPS report from the truck'))}">${esc(fmtAgo(ageS))}</span>`;
+  }
+
+  function tickReportAges() {
+    const deck = typeof document !== 'undefined' ? document.getElementById('fleetTelematicsDeck') : null;
+    if (!deck) {
+      if (_ageTimer) { clearInterval(_ageTimer); _ageTimer = null; }
+      return;
+    }
+    const nowS = serverNowSec();
+    const ageEls = deck.querySelectorAll('[data-tel-ts]');
+    for (let i = 0; i < ageEls.length; i++) {
+      const el = ageEls[i];
+      const ageS = nowS - Number(el.getAttribute('data-tel-ts') || 0);
+      const txt = fmtAgo(ageS);
+      if (el.textContent !== txt) el.textContent = txt;
+      const tone = reportAgeTone(el.getAttribute('data-tel-sc') || '', ageS);
+      el.classList.toggle('is-late', tone === 'is-late');
+      el.classList.toggle('is-fresh', tone === 'is-fresh');
+    }
+    const syn = deck.querySelector('[data-tel-synced-ms]');
+    if (syn) {
+      const txt = fmtAgo(nowS - Number(syn.getAttribute('data-tel-synced-ms') || 0) / 1000);
+      if (syn.textContent !== txt) syn.textContent = txt;
+    }
+  }
+
+  // Redraw only the telematics card (not the whole page) after a poll.
+  function refreshDeckInPlace() {
+    if (typeof document === 'undefined') return false;
+    const el = document.getElementById('fleetTelematicsDeck');
+    if (!el || !el.isConnected) return false;
+    const ae = document.activeElement;
+    // Someone is typing or picking inside the card (e.g. the recon date), or has
+    // text selected in it: keep it. The data is stored; the card redraws as soon
+    // as they leave the field or clear the selection (see wireDomEventsOnce).
+    const sel = typeof window.getSelection === 'function' ? window.getSelection() : null;
+    const selecting = Boolean(sel && !sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode));
+    if ((ae && el.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) || selecting || isPointerHeldInDeck()) {
+      _deckRedrawPending = true;
+      return true;
+    }
+    // Keep keyboard focus on the same button across the redraw.
+    let focusSel = '';
+    if (ae && ae !== el && el.contains(ae)) {
+      if (ae.id) focusSel = '#' + CSS.escape(ae.id);
+      else {
+        const a = Array.from(ae.attributes || []).find(x => x.name.indexOf('data-tel-') === 0 || x.name.indexOf('data-dwell-') === 0);
+        if (a) focusSel = `[${a.name}="${CSS.escape(a.value)}"]`;
+      }
+    }
+    const html = renderFleetTelematicsDeck();
+    if (!html) return false;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html.trim();
+    const next = tpl.content.firstElementChild;
+    if (!next || next.id !== 'fleetTelematicsDeck') return false;
+    _deckRedrawPending = false;
+    el.replaceWith(next);
+    if (focusSel) {
+      try {
+        const f = next.querySelector(focusSel);
+        if (f && typeof f.focus === 'function') f.focus({ preventScroll: true });
+      } catch (_) {}
+    }
+    try {
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(next);
+      }
+    } catch (_) {}
+    return true;
   }
 
   if (typeof document !== 'undefined') {
@@ -1547,6 +1696,15 @@
     const milestoneUnit = units.find(u => Boolean(u.milestone_alert));
     const canFuelCreate = _ctx && typeof _ctx.canEnterForm === 'function' ? _ctx.canEnterForm('fuel') : false;
     const syncTimeRaw = _snapStore.fetchedAt ? String(_snapStore.fetchedAt).slice(11, 19) + ' UTC' : '';
+    const syncedMs = Date.parse(_snapStore.fetchedAt || '') || 0;
+    const isDelayed = !_snapStore.demo && Boolean(_snapStore.stale || _snapStore.error);
+    // Say exactly what is on screen: an expired session, no live data received
+    // yet (the rows are the built-in fleet list, not positions), or real last
+    // positions held while the provider does not answer.
+    const delayMsg = !isDelayed ? ''
+      : (_snapStore.error && _snapStore.errorKind === 'auth') ? 'Your session has expired. Sign in again to see live positions.'
+      : !syncedMs ? 'No live GPS data received yet. The trucks below are not live positions.'
+      : 'GPS provider not answering. Showing the last positions received.';
 
     return `
       <section class="tel-deck" id="fleetTelematicsDeck" aria-label="Live Fleet GPS & CAN-Bus Sensor Telematics">
@@ -1559,12 +1717,14 @@
             ${_snapStore.demo ? `<span class="badge badge-info">Demo Telemetry</span>` : ''}
           </div>
           <div class="tel-deck-actions">
-            <span class="tel-sync-meta"><span>Synced</span>: ${syncTimeRaw ? `<span data-no-i18n="1">${esc(syncTimeRaw)}</span>` : `<span>Live</span>`}</span>
+            ${isDelayed ? `<span class="badge badge-warn">Delayed</span>` : ''}
+            <span class="tel-sync-meta"${syncTimeRaw ? ` data-ui-tip="${esc(syncTimeRaw)}"` : ''}><span>Synced</span>: ${syncedMs ? `<span data-tel-synced-ms="${syncedMs}" data-no-i18n="1">${esc(fmtAgo(serverNowSec() - syncedMs / 1000))}</span>` : (isDelayed ? `<span data-no-i18n="1">-</span>` : `<span>Live</span>`)}</span>
             <button type="button" class="tel-mini-btn" id="telRefreshNowBtn" data-tel-refresh-snap="1">${ic('rotate')} <span>Refresh GPS</span></button>
             <button type="button" class="tel-mini-btn is-brass" data-tel-open-map-all="1">${ic('pin')} <span>Live Fleet Map</span></button>
             <button type="button" class="tel-mini-btn" data-tel-toggle-collapse="1"><span>${UI_STATE.collapsed ? 'Expand' : 'Collapse'}</span></button>
           </div>
         </div>
+        ${delayMsg ? `<div class="tel-delay-note">${ic('alert')} <span>${esc(delayMsg)}</span></div>` : ''}
         ${!UI_STATE.collapsed ? `
           <div class="tel-kpi-strip">
             <div class="tel-kpi-box">
@@ -1618,7 +1778,7 @@
                     <tr data-tel-unit-row="${u.device_id}">
                       <td class="mono" data-no-i18n="1"><strong>${esc(u.equipment)}</strong> <span style="color:var(--ink-2)">(${esc(u.plate_no)})</span>${u.milestone_alert ? ` <span class="badge badge-warn">500k km</span>` : ''}</td>
                       <td${isDemoDrv ? '' : ' data-no-i18n="1"'}>${esc(u.driver || '-')}</td>
-                      <td>${renderStatusPill(u)}</td>
+                      <td><span class="tel-status-cell">${renderStatusPill(u)}${renderReportAge(u)}</span></td>
                       <td>${u.isabi_region ? `<span>${esc(u.isabi_region)}</span><span data-no-i18n="1"> · </span><span>${esc(u.zone_name || 'Unknown')}</span>` : `<span>${esc(u.zone_name || 'Unknown')}</span>`}</td>
                       <td class="r mono" data-no-i18n="1">${u.odometer_km != null ? `${fmtNum(u.odometer_km, 0)} km` : '-'}</td>
                       <td class="r mono" data-no-i18n="1">${u.engine_hours != null ? `${fmtNum(u.engine_hours, 1)} h` : '-'}</td>
@@ -2005,6 +2165,37 @@
     if (typeof document === 'undefined' || document.documentElement._telDelegated) return;
     document.documentElement._telDelegated = true;
 
+    // A redraw held back while someone typed or selected text in the card runs
+    // as soon as they leave the field or clear the selection.
+    // Never redraw between press and release of a click inside the card (the
+    // press node would be replaced and the click lost): wait for pointerup; the
+    // timer queued there runs after the click event.
+    const flushPendingDeckRedraw = () => {
+      if (_deckRedrawPending && !isPointerHeldInDeck()) setTimeout(() => { if (_deckRedrawPending && !isPointerHeldInDeck()) refreshDeckInPlace(); }, 0);
+    };
+    document.addEventListener('pointerdown', ev => {
+      const deck = document.getElementById('fleetTelematicsDeck');
+      _pointerDownInDeck = Boolean(deck && ev.target && deck.contains(ev.target));
+      _pointerDownAtMs = Date.now();
+    }, true);
+    const onPointerEnd = () => {
+      if (!_pointerDownInDeck) return;
+      _pointerDownInDeck = false;
+      flushPendingDeckRedraw();
+    };
+    document.addEventListener('pointerup', onPointerEnd, true);
+    document.addEventListener('pointercancel', onPointerEnd, true);
+    document.addEventListener('focusout', ev => {
+      const deck = document.getElementById('fleetTelematicsDeck');
+      if (!deck || !ev.target || !deck.contains(ev.target)) return;
+      if (ev.relatedTarget && deck.contains(ev.relatedTarget)) return; // focus moving within the card (click on its button)
+      flushPendingDeckRedraw();
+    });
+    document.addEventListener('selectionchange', () => {
+      const sel = typeof window.getSelection === 'function' ? window.getSelection() : null;
+      if (_deckRedrawPending && (!sel || sel.isCollapsed)) flushPendingDeckRedraw();
+    });
+
     document.addEventListener('click', ev => {
       const t = ev.target && ev.target.closest ? ev.target : null;
       if (!t) return;
@@ -2012,7 +2203,7 @@
       const btnRefresh = t.closest('[data-tel-refresh-snap]');
       if (btnRefresh) {
         ev.preventDefault();
-        fetchSnapshot({ force: true, silent: false });
+        fetchSnapshot({ force: true, fresh: true, silent: false });
         return;
       }
 
@@ -2265,6 +2456,9 @@
     renderLeafletTruckMarkers,
     buildAskContextSummary,
     tryAnswerTelematicsQuestion,
-    stopAutoPoll
+    stopAutoPoll,
+    refreshDeckInPlace,
+    tickReportAges,
+    fmtAgo
   };
 })();
