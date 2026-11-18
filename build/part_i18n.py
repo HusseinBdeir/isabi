@@ -161,6 +161,8 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "ISABI Systems (Custom ERP & Cited AI)":{"ar":"ISABI Systems (نظام مخصص وذكاء موثّق)","fr":"ISABI Systems (ERP sur Mesure & IA Sourcée)"},
 "Generic SaaS (Odoo / Zoho / Off-the-Shelf)":{"ar":"الأنظمة الجاهزة (Odoo / Zoho / عامة)","fr":"SaaS Générique (Odoo / Zoho / Standard)"},
 "Traditional Legacy ERP Consultancies":{"ar":"شركات استشارات ERP التقليدية","fr":"Intégrateurs ERP Traditionnels"},
+"Generic SaaS":{"ar":"الأنظمة الجاهزة","fr":"SaaS Générique"},
+"Legacy Consultancies":{"ar":"الاستشارات التقليدية","fr":"Intégrateurs Classiques"},
 "Fit to Your Workflow":{"ar":"الملاءمة لمسار عملك","fr":"Adaptation à votre Métier"},
 "Rigid templates and awkward workarounds":{"ar":"قوالب جامدة وحلول التفافية مرهقة","fr":"Modèles rigides et contournements lourds"},
 "Possible only after expensive custom change orders":{"ar":"ممكن فقط عبر أوامر تعديل مكلفة وبطيئة","fr":"Possible uniquement via des avenants coûteux"},
@@ -2244,6 +2246,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
           targetRoot.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(el => translateShowcaseAttr(el, 'placeholder', lang));
           targetRoot.querySelectorAll('[aria-label]').forEach(el => translateShowcaseAttr(el, 'aria-label', lang));
           targetRoot.querySelectorAll('[title]').forEach(el => translateShowcaseAttr(el, 'title', lang));
+          targetRoot.querySelectorAll('[data-col-lbl]').forEach(el => translateShowcaseAttr(el, 'data-col-lbl', lang));
         }
         document.querySelectorAll('#hdr-lang-switch [data-lang-switch]').forEach(el => {
           const c = el.getAttribute('data-lang-switch');
@@ -2281,9 +2284,12 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
         }
       }
       if (root.querySelectorAll) {
-        ['placeholder', 'aria-label', 'title'].forEach(attr => {
+        ['placeholder', 'aria-label', 'title', 'data-col-lbl'].forEach(attr => {
           root.querySelectorAll('[' + attr + ']').forEach(el => {
-            if (isShowcaseAuditExcluded(el) || !isShowcaseElVisible(el)) return;
+            const skip = attr === 'data-col-lbl'
+              ? Boolean(el.closest && el.closest('[data-no-i18n]'))
+              : isShowcaseAuditExcluded(el);
+            if (skip || !isShowcaseElVisible(el)) return;
             const raw = (el['__enAttr_' + attr] !== undefined ? el['__enAttr_' + attr] : (el.getAttribute(attr) || '')).trim();
             if (!raw || !/[A-Za-z]/.test(raw)) return;
             const res = evalShowcaseCached(raw, targetLang);
