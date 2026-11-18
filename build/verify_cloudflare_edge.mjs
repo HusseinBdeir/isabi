@@ -336,14 +336,22 @@ async function main() {
       table: 'expenses',
       record: { id: validWriteId, company: 'WTC', date: '2026-11-08', name: 'Edge Verified Expense', total_usd: 125.5, voided: false }
     }, { 'X-ISABI-Session': entryToken });
-    await httpReq('POST', '/app/api/records', {
+    const voidWithoutReason400 = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
       record: { id: validWriteId, company: 'WTC', voided: true }
     }, { 'X-ISABI-Session': ownerToken });
-    if (rlsForbiddenWrite.status === 403 && demoForbiddenWrite.status === 403 && allowedWrite.status === 200 && allowedWrite.json?.ok) {
-      pass('edge-05-bu-rls-write-and-demo-guard', `Cross-BU write=403, Demo write=403, Authorized WTC write=200`);
+    const voidWithReason200 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: validWriteId, company: 'WTC', voided: true, void_reason: 'Edge cleanup void' }
+    }, { 'X-ISABI-Session': ownerToken });
+    if (
+      rlsForbiddenWrite.status === 403 && demoForbiddenWrite.status === 403 && allowedWrite.status === 200 && allowedWrite.json?.ok
+      && voidWithoutReason400.status === 400 && voidWithoutReason400.json?.code === 'void_reason_required'
+      && voidWithReason200.status === 200
+    ) {
+      pass('edge-05-bu-rls-write-and-demo-guard', `Cross-BU write=403, Demo write=403, Authorized WTC write=200, Backdated void w/o reason=400, w/ reason=200`);
     } else {
-      fail('edge-05-bu-rls-write-and-demo-guard', JSON.stringify({ cross: rlsForbiddenWrite.status, demo: demoForbiddenWrite.status, ok: allowedWrite.status }));
+      fail('edge-05-bu-rls-write-and-demo-guard', JSON.stringify({ cross: rlsForbiddenWrite.status, demo: demoForbiddenWrite.status, ok: allowedWrite.status, vr400: [voidWithoutReason400.status, voidWithoutReason400.json], vr200: voidWithReason200.status }));
     }
 
     // 6. Seat Security: Unauthenticated /app/api/users=401 + Authenticated PIN stripping + Entry privilege-escalation block
@@ -4917,7 +4925,7 @@ finally:
     }, { 'X-ISABI-Session': bbcSupToken });
     const e44bSupPureVoid = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
-      record: { id: 'exp-e44b-bbc', company: 'BBConstruction', date: '2026-11-12', amount: 55, notes: 'Supervisor void target', voided: 1 }
+      record: { id: 'exp-e44b-bbc', company: 'BBConstruction', date: '2026-11-12', amount: 55, notes: 'Supervisor void target', voided: 1, void_reason: 'Supervisor void target' }
     }, { 'X-ISABI-Session': bbcSupToken });
 
     // /app/api/sync blank-company overwrite + Words-Only GPS tamper sanitization
@@ -6282,12 +6290,12 @@ finally:
       table: 'expenses',
       record: {
         id: e48WbId, company: 'BBConstruction', date: '2026-11-12', amount: 120,
-        notes: 'Workbook Match Edge48', voided: 1, twin_of: 'exp-e48-live-bbc', twin_difference: -10
+        notes: 'Workbook Match Edge48', voided: 1, void_reason: 'Workbook match Edge48', twin_of: 'exp-e48-live-bbc', twin_difference: -10
       }
     }, { 'X-ISABI-Session': ownerToken });
     const e48NormSeed = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
-      record: { id: e48NormId, company: 'BBConstruction', date: '2026-11-12', amount: 75, notes: 'Normal Void Edge48', voided: 1 }
+      record: { id: e48NormId, company: 'BBConstruction', date: '2026-11-12', amount: 75, notes: 'Normal Void Edge48', voided: 1, void_reason: 'Normal Void Edge48' }
     }, { 'X-ISABI-Session': ownerToken });
     const e48SupWbRestore = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
@@ -6544,6 +6552,205 @@ finally:
         updDenied: [e49OwnerJvSeed.status, e49EntryUpdGl403.status, e49EntryUpdJv403.status, e49DispUpdGl403.status, e49DispUpdJv403.status, e49MvUpdSt403.status, e49MvVoidSt403.status, e49EntrySync.status, e49MvSync.status],
         persisted: e49Persisted
       }));
+      }
+
+    // 50. Mandatory Void Reason Rule (G_VOID_REASON) across /records, /industry_domain_store, RBAC precedence & alert_rules override tuning
+    const todayBeirut = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Beirut' }).format(new Date());
+    const vrBigId = 'exp-vr-big-' + Date.now();
+    const vrSmallId = 'exp-vr-small-' + Date.now();
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', date: todayBeirut, amount_usd: 600, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', date: todayBeirut, amount_usd: 45, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    const vrEntry403 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': entryToken });
+    const vrBig400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    const preAr48 = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
+    const preOv48 = (preAr48.json && preAr48.json.overrides) || {};
+    const preCust48 = (preAr48.json && preAr48.json.custom) || [];
+    const arTsNow = new Date().toISOString();
+    await httpReq('POST', '/app/api/alert_rules', {
+      overrides: Object.assign({}, preOv48, { G_VOID_REASON: { enabled: true, params: { min_usd: 30, backdated_days: 0 }, updated_at: arTsNow } }),
+      custom: preCust48
+    }, { 'X-ISABI-Session': ownerToken });
+    const vrTunedSmall400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/alert_rules', {
+      overrides: Object.assign({}, preOv48, { G_VOID_REASON: { enabled: true, params: { min_usd: 500, backdated_days: 1 }, updated_at: new Date(Date.now() + 1000).toISOString() } }),
+      custom: preCust48
+    }, { 'X-ISABI-Session': ownerToken });
+    const vrSmall200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    const vrBig200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true, void_reason: 'Edge high-value void' } }, { 'X-ISABI-Session': ownerToken });
+
+    // Industry domain vertical USD key (gross_prem_usd >= 500) + note clear on already-voided row
+    const polId48 = 'POL-EDGE-VR-' + Date.now();
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domEntry403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true }] }
+    }, { 'X-ISABI-Session': entryToken });
+    const domVert400 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domVert200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true, void_reason: 'Edge vertical audit void' }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domVertClear200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 3, voided: true, void_reason: '' }] }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    // 50b. Anti-spoofing: incoming voided_by="Workbook match" or twin_of="fake" cannot bypass G_VOID_REASON (#30), and non-Owner twin_of is stripped
+    const spoofByRecId = 'exp-vr-spoof-by-' + Date.now();
+    const spoofTwinRecId = 'exp-vr-spoof-tw-' + Date.now();
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    const spoofSupBy400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, voided_by: 'Workbook match' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofSupTwin400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, twin_of: 'fake-twin-1' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofOwnBy400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, voided_by: 'Workbook match' } }, { 'X-ISABI-Session': ownerToken });
+    const spoofOwnTwin400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, twin_of: 'fake-twin-1' } }, { 'X-ISABI-Session': ownerToken });
+    const spoofSupTwinWithReason200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, void_reason: 'Valid reason with forged twin', twin_of: 'fake-twin-1', voided_by: 'Workbook match' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofReadBack = await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': bbcSupToken });
+    const spoofRowAfter = (spoofReadBack.json?.rows || []).find(r => r && r.id === spoofTwinRecId);
+
+    // 50c. Domain row print metadata persists on /api/industry_domain_store & read-only seat cannot tamper with print count on void
+    const printPolId = 'POL-EDGE-PRT-' + Date.now();
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: printPolId, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 220, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domPrintStamp200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: printPolId, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 220, rev: 2, voided: false, printed_at: new Date().toISOString(), last_printed_at: new Date().toISOString(), print_count: 1 }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domPrintRead = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+    const domPrintRow = ((domPrintRead.json?.industryCustomRows || {}).ins_policies || []).find(r => r && r.id === printPolId);
+    const spoofPrintSupClear403 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, void_reason: 'Attempt print tamper', print_count: 99 }
+    }, { 'X-ISABI-Session': bbcSupToken });
+
+    // 50d. /api/sync op=patch enforces G_VOID_REASON (#30) on active->void transitions and strips non-Owner twin_of/twin_difference
+    const sync49Read0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const sync49Doc0 = sync49Read0.json?.docs?.mfg_web_store || {};
+    const sync49Ts0 = String(sync49Doc0.updatedAt || '');
+    const sync49Exps0 = (sync49Doc0.customRecords?.expenses || []).filter(x => x && x.id !== spoofByRecId);
+    const ownSyncVr400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(sync49Ts0) || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, sync49Doc0.customRecords || {}, {
+            expenses: sync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, voided_by: 'Workbook match', twin_of: 'fake-sync-twin' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const sync49Pol400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(sync49Ts0) || 0) + 1500)).toISOString(),
+          industryCustomRows: Object.assign({}, sync49Doc0.industryCustomRows || {}, {
+            ins_policies: ((sync49Doc0.industryCustomRows || {}).ins_policies || []).filter(x => x && x.id !== 'POL-SYNC-VR-49D').concat([
+              { id: 'POL-SYNC-VR-49D', company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, voided: true, rev: 1 }
+            ])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const supSync49Read0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const supSync49Doc0 = supSync49Read0.json?.docs?.mfg_web_store || {};
+    const supSync49Ts0 = String(supSync49Doc0.updatedAt || '');
+    const supSync49Exps0 = (supSync49Doc0.customRecords?.expenses || []).filter(x => x && x.id !== spoofByRecId);
+    const supSyncVr400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: supSync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(supSync49Ts0) || 0) + 2000)).toISOString(),
+          customRecords: Object.assign({}, supSync49Doc0.customRecords || {}, {
+            expenses: supSync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, twin_of: 'fake-sup-sync-twin' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+
+    const supSyncValid200 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true, ifMatchUpdatedAt: supSync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(supSync49Ts0) || 0) + 3000)).toISOString(),
+          customRecords: Object.assign({}, supSync49Doc0.customRecords || {}, {
+            expenses: supSync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, void_reason: 'Valid sync void note', voided_by: 'Workbook match', twin_of: 'fake-sup-sync-twin', twin_difference: 9 }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const supSyncReadBack = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const supSyncExpAfter = ((supSyncReadBack.json?.docs?.mfg_web_store?.customRecords || {}).expenses || []).find(r => r && r.id === spoofByRecId);
+
+    const entSyncRead0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': entryToken });
+    const entSyncDoc0 = entSyncRead0.json?.docs?.mfg_web_store || {};
+    const entSyncTs0 = String(entSyncDoc0.updatedAt || '');
+    const entTwinExpId = 'exp-sync-ent-tw-' + Date.now();
+    const entSyncTwin200 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true, ifMatchUpdatedAt: entSyncTs0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(entSyncTs0) || 0) + 4000)).toISOString(),
+          customRecords: Object.assign({}, entSyncDoc0.customRecords || {}, {
+            expenses: (entSyncDoc0.customRecords?.expenses || []).concat([{ id: entTwinExpId, company: 'WTC', date: todayBeirut, amount_usd: 115, voided: false, twin_of: 'fake-entry-sync-twin', twin_difference: -4 }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const entSyncReadBack = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': entryToken });
+    const entSyncExpAfter = ((entSyncReadBack.json?.docs?.mfg_web_store?.customRecords || {}).expenses || []).find(r => r && r.id === entTwinExpId);
+    const syncGuardsOk = Boolean(
+      ownSyncVr400.status === 400 && ownSyncVr400.json?.code === 'void_reason_required' &&
+      sync49Pol400.status === 400 && sync49Pol400.json?.code === 'void_reason_required' &&
+      supSyncVr400.status === 400 && supSyncVr400.json?.code === 'void_reason_required' &&
+      supSyncValid200.status === 200 && supSyncExpAfter && supSyncExpAfter.voided === true &&
+      !supSyncExpAfter.twin_of && supSyncExpAfter.twin_difference === undefined &&
+      !/workbook/i.test(String(supSyncExpAfter.voided_by || '')) &&
+      entSyncTwin200.status === 200 && entSyncExpAfter && !entSyncExpAfter.twin_of && entSyncExpAfter.twin_difference === undefined
+    );
+
+    if (
+      vrEntry403.status === 403 && domEntry403.status === 403 &&
+      vrBig400.status === 400 && vrBig400.json?.code === 'void_reason_required' &&
+      vrTunedSmall400.status === 400 && vrTunedSmall400.json?.code === 'void_reason_required' &&
+      vrSmall200.status === 200 && vrBig200.status === 200 &&
+      domVert400.status === 400 && domVert400.json?.code === 'void_reason_required' &&
+      domVert200.status === 200 && domVertClear200.status === 200 &&
+      spoofSupBy400.status === 400 && spoofSupTwin400.status === 400 &&
+      spoofOwnBy400.status === 400 && spoofOwnTwin400.status === 400 &&
+      spoofSupTwinWithReason200.status === 200 && spoofRowAfter && !spoofRowAfter.twin_of &&
+      !/workbook/i.test(String(spoofRowAfter.voided_by || '')) &&
+      domPrintStamp200.status === 200 && domPrintRow && Number(domPrintRow.print_count) === 1 && Boolean(domPrintRow.printed_at) &&
+      spoofPrintSupClear403.status === 403 &&
+      syncGuardsOk
+    ) {
+      pass('edge-50-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 + vertical gross_prem_usd + Workbook/twin_of spoof blocked + domain print_count persisted + read-only print tamper 403 + /api/sync guards');
+    } else {
+      fail('edge-50-mandatory-void-reason', JSON.stringify({
+        entry403: [vrEntry403.status, domEntry403.status],
+        big400: [vrBig400.status, vrBig400.json],
+        tuned400: [vrTunedSmall400.status, vrTunedSmall400.json],
+        small200: vrSmall200.status,
+        big200: vrBig200.status,
+        domVert400: [domVert400.status, domVert400.json],
+        domVert200: domVert200.status,
+        domClear200: domVertClear200.status,
+        spoof400s: [spoofSupBy400.status, spoofSupTwin400.status, spoofOwnBy400.status, spoofOwnTwin400.status],
+        spoofRowAfter,
+        domPrint: [domPrintStamp200.status, domPrintRow],
+        spoofPrintSupClear403: spoofPrintSupClear403.status,
+        syncGuardsOk,
+        sync49Statuses: [ownSyncVr400.status, sync49Pol400.status, supSyncVr400.status, supSyncValid200.status, entSyncTwin200.status],
+        supSyncExpAfter,
+        entSyncExpAfter
+      }).slice(0, 900));
     }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
