@@ -569,6 +569,8 @@ export function computeHistoryRecon(rawHist, unitMeta = {}, fromDate = '', toDat
         }
       }
       settledStops.push({
+        start_ts: w.startTs > 0 ? w.startTs : null,
+        end_ts: w.endTs > 0 ? w.endTs : null,
         start_time: w.startTime,
         end_time: w.endTime,
         duration_min: Math.max(1, Math.round(durSec / 60)),
