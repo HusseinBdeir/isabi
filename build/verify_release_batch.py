@@ -767,6 +767,130 @@ def main() -> int:  # noqa: PLR0915
               "an unreadable entry is listed, not shipped, and does not hold the line up")
         git(A, "push", "-q", "origin", f":{RB.QUEUE_NS}/20000101T000000Z-bad00000")
 
+        # 14b. a dropped connection is waited out, never a reason to give up a place in line (2026-11-18 outage)
+        reset = "fatal: unable to access 'https://github.com/x/isabi.git/': Recv failure: Connection was reset"
+        real_git, real_sleep, real_poll, real_touch = RL._git, RB._sleep, RB.poll_once, RB._touch
+        slept: list[float] = []
+        fails = [0]
+
+        def flaky_git(args, cwd, **kw):
+            if args[:1] == ["fetch"] and any(str(a).startswith(f"+{RB.QUEUE_NS}/") for a in args) and fails[0] > 0:
+                fails[0] -= 1
+                return subprocess.CompletedProcess(["git", *args], 128, "", fails_text[0])
+            return real_git(args, cwd, **kw)
+
+        fails_text = [reset]
+        RL._git, RB._sleep = flaky_git, slept.append
+        try:
+            fails[0] = 2
+            line_ok = isinstance(RB.read_line(B), list)
+            check(line_ok and slept == list(RB.NET_RETRY_S) and fails[0] == 0,
+                  "reading the line retries a connection reset (after 5 s, then 15 s) and succeeds")
+            slept.clear()
+            fails[0] = 3
+            kind, msg = raises(RB.read_line, B)
+            check(kind == "BatchError" and "Connection was reset" in msg and len(slept) == len(RB.NET_RETRY_S),
+                  "three failed reads in a row give up with the network error named")
+            slept.clear()
+            fails[0], fails_text[0] = 1, "fatal: repository 'https://github.com/x/nope.git/' not found"
+            kind, msg = raises(RB.read_line, B)
+            check(kind == "BatchError" and "not found" in msg and slept == [], "a failure that is not the network is reported at once, without retrying")
+            fails[0] = 0
+            slept.clear()
+            polls = [0]
+
+            def offline_then_left_out(cwd, entry_id, **kw):
+                polls[0] += 1
+                if polls[0] <= 2:
+                    raise RB.BatchError(f"cannot read the release line from origin ({reset})")
+                return "LEFT_OUT", "left out (test)", False
+
+            RB.poll_once, RB._touch = offline_then_left_out, (lambda cwd, entry_id: None)
+            st, msg = RB.wait(B, "20990101T000000Z-test0001", wait_s=600, poll_s=7, quiet=True)
+            check(st == "LEFT_OUT" and polls[0] == 3 and slept == [7, 7], "a session waiting in line keeps waiting while GitHub cannot be reached")
+            slept.clear()
+            RB.poll_once = lambda cwd, entry_id, **kw: (_ for _ in ()).throw(RB.BatchError(f"cannot read ({reset})"))
+            st, msg = RB.wait(B, "20990101T000000Z-test0001", wait_s=0, poll_s=7, quiet=True)
+            check(st == "WAITING" and "place in line is kept" in msg and "wait --id 20990101T000000Z-test0001" in msg,
+                  "still offline when the wait runs out: WAITING, naming the wait command (ship re-joins first and does not wait out an outage)")
+            # head start: free, then offline, then free again: the free time counts again from the reconnect
+            seen_free: list[float] = []
+            seq = iter(["free", "offline", "free", "free", "free"])
+            fake_t = [0.0]
+
+            def step_mono() -> float:
+                fake_t[0] += 10.0
+                return fake_t[0]
+
+            def head_start_poll(cwd, entry_id, *, known=None, free_for_s=0.0):
+                if next(seq) == "offline":
+                    raise RL.LockError(f"cannot read the release lock from origin ({reset}); refusing to deploy")
+                seen_free.append(free_for_s)
+                return ("TURN", "turn", True) if len(seen_free) == 4 else ("WAITING", "second in line", True)
+
+            real_mono2, RB._mono = RB._mono, step_mono
+            RB.poll_once = head_start_poll
+            try:
+                st, msg = RB.wait(B, "20990101T000000Z-test0001", wait_s=600, poll_s=0, quiet=True)
+            finally:
+                RB._mono = real_mono2
+            check(st == "TURN" and seen_free[0] == 0.0 and seen_free[1] == 0.0 and seen_free[2] > 0.0,
+                  "an outage restarts the head-start clock: free time counts only from the reconnect")
+            RB.poll_once = lambda cwd, entry_id, **kw: (_ for _ in ()).throw(RB.BatchError("the entry belongs to another worktree"))
+            kind, msg = raises(RB.wait, B, "20990101T000000Z-test0001", wait_s=600, poll_s=7, quiet=True)
+            check(kind == "BatchError" and "another worktree" in msg, "an error that is not the network still stops the wait")
+            race = ("cannot read the release lock from origin (error: cannot lock ref 'refs/isabi-release-lock/seen': "
+                    "is at 0b1a222 but expected bae52c1); refusing to deploy without knowing who holds it")
+            check(RB._is_net_error(race)
+                  and RB._is_net_error("git fetch --no-tags --quiet did not finish (TimeoutExpired)")
+                  and RB._is_net_error("schannel: failed to receive handshake, SSL/TLS connection failed")
+                  and not RB._is_net_error("error: cannot lock ref 'refs/isabi-release-queue/x': Unable to create "
+                                           "'C:/r/.git/refs/isabi-release-queue/x.lock': File exists.")
+                  and not RB._is_net_error("fatal: Unable to create 'C:/r/.git/packed-refs.lock': File exists.")
+                  and not RB._is_net_error("git fetch --no-tags --quiet did not finish (FileNotFoundError)")
+                  and not RB._is_net_error("schannel: SEC_E_UNTRUSTED_ROOT (0x80090325) - The certificate chain was issued by an untrusted authority.")
+                  and not RB._is_net_error("schannel: next InitializeSecurityContext failed: CRYPT_E_NO_REVOCATION_CHECK")
+                  and not RB._is_net_error("fatal: Authentication failed for 'https://github.com/x/isabi.git/'")
+                  and not RB._is_net_error("fatal: repository 'https://github.com/x/nope.git/' not found"),
+                  "a passing race on a local ref, a git timeout and a dropped TLS handshake are waited out; a lock file left "
+                  "behind, a missing folder, an intercepted certificate, auth and a missing repository are reported")
+            # the real read of the lock (a plain LockError from release_lock.py, not a BatchError) is waited out too
+            RB.poll_once, RB._touch = real_poll, real_touch
+            feature(appB, "wt/net1", {"js/net1.js": "net1\n"})
+            tick()
+            eN = quiet(RB.join, B, holder="session B", summary="net change", app_branch="wt/net1")
+            lock_fails = [2]
+
+            def flaky_lock_git(args, cwd, **kw):
+                if args[:1] == ["fetch"] and any(str(a).startswith(f"+{RL.LOCK_REF}:") for a in args) and lock_fails[0] > 0:
+                    lock_fails[0] -= 1
+                    return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: unable to access 'https://github.com/x/isabi.git/': "
+                                                       "Failed to connect to github.com port 443 after 21049 ms: Could not connect to server")
+                return real_git(args, cwd, **kw)
+
+            RL._git = flaky_lock_git
+            slept.clear()
+            st, msg = RB.wait(B, eN["id"], wait_s=0, poll_s=3, known=eN, quiet=True)
+            check(st == "WAITING" and lock_fails[0] == 1 and "wait --id" in msg and "21049" not in msg,
+                  "the release lock unreadable on the real path: WAITING with the wait command, not exit 2")
+            jump = [0.0]
+
+            def jump_mono() -> float:  # 250 s per look at the clock: the 600 s wait ends after a few polls, whatever the line holds
+                jump[0] += 250.0
+                return jump[0]
+
+            real_mono3, RB._mono = RB._mono, jump_mono
+            try:
+                st, msg = RB.wait(B, eN["id"], wait_s=600, poll_s=3, known=eN, quiet=True)
+            finally:
+                RB._mono = real_mono3
+            check(lock_fails[0] == 0 and st in ("TURN", "WAITING", "IN_BATCH") and slept[:1] == [3] and "cannot be reached" not in msg,
+                  "once the lock can be read again the wait carries on where it was")
+            RL._git = real_git
+            quiet(RB.leave, B, eN["id"])
+        finally:
+            RL._git, RB._sleep, RB.poll_once, RB._touch = real_git, real_sleep, real_poll, real_touch
+
         # 15. versions
         check(RB.next_version("19.6.9", "19.6.10", "") == "19.6.11" and RB.next_version("19.6.99") == "19.6.100", "the next version counts numerically")
         check("is not above" in raises(RB.batch_version, A, appA, "19.6.50")[1] and RB.batch_version(A, appA, "v19.6.200") == "19.6.200",
