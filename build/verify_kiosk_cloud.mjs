@@ -1066,6 +1066,52 @@ console.log('pos void feed (/app/api/kiosk/pos-voids): Supervisor & Owner only +
   ok('Supervisor + Entry sees its assigned La Una POS till voids (200) without Blanca leakage',
     supEntryLaUna.status === 200 && supEntryIds.includes('sale-mix-1') && !supEntryIds.includes('sale-blanca-void-1'),
     { status: supEntryLaUna.status, supEntryIds });
+
+  // Printed-before-void + lower-amount rekey Sentinel enrichment on /api/kiosk/pos-voids
+  d1.exec(`CREATE TABLE IF NOT EXISTS alert_rules (
+    id TEXT PRIMARY KEY,
+    kind TEXT DEFAULT 'override',
+    payload_json TEXT DEFAULT '{}',
+    updated_at TEXT DEFAULT ''
+  )`);
+  d1.exec(`INSERT OR REPLACE INTO kiosk_pos_sales (id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, net_lbp, rate, voided, rev, payload_json, updated_at) VALUES
+    ('sale-lu-rekey-v', 'launa', '${DAY}', '920', 'u-cash1', 'Cashier Rita', 60, 5400000, 60, 0, 90000, 1, 2,
+      '{"id":"sale-lu-rekey-v","day":"${DAY}","num":"920","voided":true,"printed":true,"voided_by":"Cashier Rita","voided_at":"2026-11-17T11:00:00.000Z","void_reason":"Wrong items"}',
+      '2026-11-17T11:00:00.000Z'),
+    ('sale-lu-rekey-act', 'launa', '${DAY}', '921', 'u-cash1', 'Cashier Rita', 25, 2250000, 25, 0, 90000, 0, 1,
+      '{"id":"sale-lu-rekey-act","day":"${DAY}","num":"921","ts":"2026-11-17T11:12:00.000Z"}',
+      '2026-11-17T11:12:00.000Z'),
+    ('sale-lu-unprinted', 'launa', '${DAY}', '922', 'u-cash2', 'Cashier Ziad', 40, 3600000, 40, 0, 90000, 1, 2,
+      '{"id":"sale-lu-unprinted","day":"${DAY}","num":"922","voided":true,"printed":false,"voided_by":"Cashier Ziad","voided_at":"2026-11-17T12:00:00.000Z"}',
+      '2026-11-17T12:00:00.000Z'),
+    ('sale-lu-omitted', 'launa', '${DAY}', '930', 'u-cash3', 'Cashier Tarek', 50, 4500000, 50, 0, 90000, 1, 2,
+      '{"id":"sale-lu-omitted","day":"${DAY}","num":"930","voided":true,"voided_by":"Cashier Tarek","voided_at":"2026-11-17T08:00:00.000Z"}',
+      '2026-11-17T08:00:00.000Z'),
+    ('sale-lu-late-act', 'launa', '${DAY}', '931', 'u-cash3', 'Cashier Tarek', 20, 1800000, 20, 0, 90000, 0, 1,
+      '{"id":"sale-lu-late-act","day":"${DAY}","num":"931","ts":"2026-11-17T13:00:00.000Z"}',
+      '2026-11-17T13:00:00.000Z')`);
+  const enrRes = await posVoids({ role: 'Supervisor', companies: 'La Una' });
+  const rVoid = (enrRes.json.voids || []).find(v => v.id === 'sale-lu-rekey-v');
+  const uVoid = (enrRes.json.voids || []).find(v => v.id === 'sale-lu-unprinted');
+  const omVoid = (enrRes.json.voids || []).find(v => v.id === 'sale-lu-omitted');
+  ok('POS void feed flags printed_before_void, treats omitted printed as false, and rejects >180m lower_rekey despite close ticket #',
+    rVoid && rVoid.printed_before_void === true && rVoid.lower_rekey
+    && rVoid.lower_rekey.id === 'sale-lu-rekey-act' && rVoid.lower_rekey.num === '921'
+    && rVoid.lower_rekey.total_usd === 25 && rVoid.lower_rekey.drop_usd === 35 && rVoid.lower_rekey.delta_min === 12
+    && uVoid && uVoid.printed_before_void === false && uVoid.lower_rekey === null
+    && omVoid && omVoid.printed_before_void === false && omVoid.lower_rekey === null,
+    { rVoid, uVoid, omVoid });
+
+  d1.exec(`INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES ('ind_hsp_10', 'override', '{"enabled":true,"params":{"max_shift_voids":3,"rekey_window_min":360}}', '2026-11-17T14:00:00Z')`);
+  const enrTunedRes = await posVoids({ role: 'Supervisor', companies: 'La Una' });
+  const omVoidTuned = (enrTunedRes.json.voids || []).find(v => v.id === 'sale-lu-omitted');
+  d1.exec(`DELETE FROM alert_rules WHERE id = 'ind_hsp_10'`);
+  const enrResetRes = await posVoids({ role: 'Supervisor', companies: 'La Una' });
+  const omVoidReset = (enrResetRes.json.voids || []).find(v => v.id === 'sale-lu-omitted');
+  ok('POS void feed reads ind_hsp_10 rekey_window_min override (+300m matches at 360m, null again when restored)',
+    omVoidTuned && omVoidTuned.lower_rekey && omVoidTuned.lower_rekey.id === 'sale-lu-late-act' && omVoidTuned.lower_rekey.delta_min === 300
+    && omVoidReset && omVoidReset.lower_rekey === null,
+    { omVoidTuned, omVoidReset });
 }
 
 console.log('supervisor domain void snapshots & note clearing without resurrection (d1_store)');
@@ -1163,6 +1209,14 @@ console.log('supervisor domain void snapshots & note clearing without resurrecti
   const storedExp = JSON.parse(d1.rows("SELECT payload_json FROM expenses WHERE id='exp-d1-clr-1'")[0].payload_json);
   ok('Owner clears void_reason on handleRecordsPost without resurrecting Temp D1 note',
     clrRec.status === 200 && !('void_reason' in storedExp), { clrRec, storedExp });
+
+  // Mandatory void reason (400 void_reason_required) on active -> voided high-value row in D1
+  await postRec({ table: 'expenses', record: { id: 'exp-d1-vr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 650, voided: false } }, OWNER_FU);
+  const blockNoReason = await postRec({ table: 'expenses', record: { id: 'exp-d1-vr-1', company: 'La Una', voided: true } }, OWNER_FU);
+  const allowWithReason = await postRec({ table: 'expenses', record: { id: 'exp-d1-vr-1', company: 'La Una', voided: true, void_reason: 'D1 mandatory check' } }, OWNER_FU);
+  ok('d1_store enforces HTTP 400 void_reason_required on active -> void >= $500 and accepts with reason',
+    blockNoReason.status === 400 && blockNoReason.json && blockNoReason.json.code === 'void_reason_required' && allowWithReason.status === 200,
+    { blockNoReason, allowWithReason });
 
   await postSync({
     customRecords: { expenses: [{ id: 'exp-sync-clr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 40, voided: true, void_reason: 'Sync Old Note', rev: 1 }] },

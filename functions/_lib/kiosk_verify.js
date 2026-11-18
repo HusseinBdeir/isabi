@@ -1223,6 +1223,43 @@ function summarizePosSaleLines(lines) {
   return parts.length ? cleanText(parts.join(', '), 200) : 'Gate Till Sale';
 }
 
+async function loadPosVoidRekeyWindowMin(db) {
+  let winMin = 180;
+  let foundInSql = false;
+  if (!db) return winMin;
+  try {
+    const res = await db.prepare(
+      `SELECT id, payload_json FROM alert_rules WHERE id IN ('ind_hsp_10', 'S18')`
+    ).all();
+    const byId = new Map();
+    for (const r of (res.results || [])) {
+      const obj = safeParseJson(r.payload_json, null);
+      if (obj && typeof obj === 'object') byId.set(String(r.id), obj);
+    }
+    const ov = byId.get('ind_hsp_10') || byId.get('S18');
+    const rawW = ov && ov.params ? Number(ov.params.rekey_window_min) : NaN;
+    if (Number.isFinite(rawW)) {
+      winMin = Math.max(15, Math.min(720, Math.round(rawW)));
+      foundInSql = true;
+    }
+  } catch (_) {}
+  if (!foundInSql) {
+    try {
+      const kv = await db.prepare(
+        `SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'`
+      ).first();
+      const doc = kv && kv.payload_json ? safeParseJson(kv.payload_json, null) : null;
+      const overrides = doc && doc.alertRules && doc.alertRules.overrides;
+      const ov = overrides && (overrides.ind_hsp_10 || overrides.S18);
+      const rawW = ov && ov.params ? Number(ov.params.rekey_window_min) : NaN;
+      if (Number.isFinite(rawW)) {
+        winMin = Math.max(15, Math.min(720, Math.round(rawW)));
+      }
+    } catch (_) {}
+  }
+  return winMin;
+}
+
 export async function handleKioskPosVoidFeed(request, env, session, body, helpers = {}) {
   if (!session) return feedJson({ ok: false, error: 'Sign in to read POS voids.' }, 401);
   const roleStr = String((session && session.role) || '').trim();
@@ -1237,16 +1274,49 @@ export async function handleKioskPosVoidFeed(request, env, session, body, helper
 
   const b = body || {};
   const limit = Math.max(1, Math.min(250, Math.floor(Number(b.limit) || 200)));
-  const siteList = sites.map(s => `'${s.replace(/[^a-z0-9_-]/g, '')}'`).join(',');
+  const rekeyWindowMin = await loadPosVoidRekeyWindowMin(env.DB);
+  const siteMarks = sites.map((_, i) => `?${i + 1}`).join(',');
   const res = await env.DB.prepare(
     `SELECT id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, rate, updated_at, payload_json
      FROM kiosk_pos_sales
-     WHERE site_key IN (${siteList}) AND voided = 1
-     ORDER BY updated_at DESC, id DESC LIMIT ?1`
-  ).bind(limit).all();
+     WHERE site_key IN (${siteMarks}) AND voided = 1
+     ORDER BY updated_at DESC, id DESC LIMIT ?${sites.length + 1}`
+  ).bind(...sites, limit).all();
+
+  const rawRows = res.results || [];
+  const days = Array.from(new Set(rawRows.map(r => cleanText(r.day, 10)).filter(Boolean)));
+  const activeBySiteDay = new Map();
+  if (days.length) {
+    try {
+      const aSiteMarks = sites.map((_, i) => `?${i + 1}`).join(',');
+      const aDayMarks = days.map((_, i) => `?${sites.length + i + 1}`).join(',');
+      const actRes = await env.DB.prepare(
+        `SELECT id, site_key, day, num, user_id, user_name, total_usd, net_usd, updated_at, payload_json
+         FROM kiosk_pos_sales
+         WHERE site_key IN (${aSiteMarks}) AND day IN (${aDayMarks}) AND COALESCE(voided, 0) = 0`
+      ).bind(...sites, ...days).all();
+      for (const ar of (actRes.results || [])) {
+        const key = `${String(ar.site_key || '').trim().toLowerCase()}::${cleanText(ar.day, 10)}`;
+        if (!activeBySiteDay.has(key)) activeBySiteDay.set(key, []);
+        const aSale = safeParseJson(ar.payload_json, {}) || {};
+        const aRawTs = aSale.ts || aSale.created_at || aSale.createdAt || ar.updated_at || '';
+        const aMs = typeof aRawTs === 'number' ? aRawTs : Date.parse(String(aRawTs || '').trim());
+        const aNum = parseInt(String(ar.num || '').replace(/\D+/g, ''), 10);
+        activeBySiteDay.get(key).push({
+          id: cleanText(ar.id, 80),
+          num: cleanText(ar.num, 60),
+          numInt: Number.isFinite(aNum) ? aNum : null,
+          userId: cleanText(ar.user_id, 80).toLowerCase(),
+          userName: cleanText(ar.user_name || aSale.cashier || '', 120).toLowerCase(),
+          totalUsd: round2(Number(ar.total_usd) || Number(ar.net_usd) || 0),
+          ms: Number.isFinite(aMs) ? aMs : null
+        });
+      }
+    } catch (_) {}
+  }
 
   const voids = [];
-  for (const r of (res.results || [])) {
+  for (const r of rawRows) {
     const sk = String(r.site_key || '').trim().toLowerCase();
     const company = posCompanyOf(sk);
     if (!company) continue;
@@ -1261,6 +1331,54 @@ export async function handleKioskPosVoidFeed(request, env, session, body, helper
         cur: cleanText((l && l.cur) || 'USD', 8)
       }))
       : [];
+    const voidedAt = cleanText(sale.voided_at || sale.voidedAt || r.updated_at || sale.ts || '', 40);
+    const voidedBy = cleanText(sale.voided_by || sale.voidedBy || r.user_name || 'Till Cashier', 120);
+    const printedBeforeVoid = Boolean(
+      sale.printed === true
+      || sale.printed_before_void === true
+      || sale.printed_at
+      || sale.last_printed_at
+      || Number(sale.print_count || 0) > 0
+    );
+    const vUsd = round2(Number(r.total_usd) || Number(r.net_usd) || 0);
+    const vMs = (() => {
+      const raw = sale.voided_at || sale.voidedAt || r.updated_at || sale.ts || '';
+      const ms = typeof raw === 'number' ? raw : Date.parse(String(raw || '').trim());
+      return Number.isFinite(ms) ? ms : null;
+    })();
+    const vNumInt = (() => {
+      const n = parseInt(String(r.num || '').replace(/\D+/g, ''), 10);
+      return Number.isFinite(n) ? n : null;
+    })();
+    const vKeys = new Set([cleanText(r.user_id, 80).toLowerCase(), cleanText(r.user_name, 120).toLowerCase(), cleanText(sale.cashier, 120).toLowerCase(), voidedBy.toLowerCase()].filter(Boolean));
+    let lowerRekey = null;
+    if (vUsd > 0) {
+      const cands = activeBySiteDay.get(`${sk}::${cleanText(r.day, 10)}`) || [];
+      let bestDelta = Infinity;
+      for (const act of cands) {
+        if (!act || !(act.totalUsd > 0 && act.totalUsd < vUsd - 0.01)) continue;
+        const aKeys = [act.userId, act.userName].filter(Boolean);
+        if (vKeys.size && aKeys.length && !aKeys.some(k => vKeys.has(k))) continue;
+        let deltaMin = null;
+        if (vMs !== null && act.ms !== null) {
+          const dm = Math.round((act.ms - vMs) / 60000);
+          if (dm >= -5 && dm <= rekeyWindowMin) deltaMin = Math.max(0, dm);
+        } else if (vNumInt !== null && act.numInt !== null) {
+          if (act.numInt > vNumInt && act.numInt - vNumInt <= 5) deltaMin = 0;
+        }
+        if (deltaMin === null) continue;
+        if (deltaMin < bestDelta || (deltaMin === bestDelta && (!lowerRekey || (vUsd - act.totalUsd) > lowerRekey.drop_usd))) {
+          bestDelta = deltaMin;
+          lowerRekey = {
+            id: act.id,
+            num: act.num,
+            total_usd: act.totalUsd,
+            drop_usd: round2(vUsd - act.totalUsd),
+            delta_min: deltaMin
+          };
+        }
+      }
+    }
     voids.push({
       id: cleanText(r.id, 80),
       site: sk.toUpperCase(),
@@ -1275,9 +1393,11 @@ export async function handleKioskPosVoidFeed(request, env, session, body, helper
       rate: Number(r.rate) || 0,
       summary: summarizePosSaleLines(sale.lines),
       lines,
-      voided_at: cleanText(sale.voided_at || sale.voidedAt || r.updated_at || sale.ts || '', 40),
-      voided_by: cleanText(sale.voided_by || sale.voidedBy || r.user_name || 'Till Cashier', 120),
-      void_reason: cleanText(sale.void_reason || sale.voidReason || sale.note || '', 240)
+      voided_at: voidedAt,
+      voided_by: voidedBy,
+      void_reason: cleanText(sale.void_reason || sale.voidReason || sale.note || '', 240),
+      printed_before_void: printedBeforeVoid,
+      lower_rekey: lowerRekey
     });
   }
   return feedJson({ ok: true, voids });

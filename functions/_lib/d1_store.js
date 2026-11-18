@@ -2814,6 +2814,7 @@ const VOID_META_KEYS = [
 
 const VOID_META_AND_GPS_SKIP_KEYS = new Set([
   ...VOID_META_KEYS,
+  'printed', 'printed_at', 'last_printed_at', 'print_count',
   'restored_at', 'restoredAt', 'restored_by', 'restoredBy',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
@@ -2824,6 +2825,7 @@ const VOID_META_AND_GPS_SKIP_KEYS = new Set([
 ]);
 
 const PIN_FILL_SKIP_KEYS = new Set([
+  'printed', 'printed_at', 'last_printed_at', 'print_count',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'entered_by', 'enteredBy', 'entered_at', 'enteredAt', 'source',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
@@ -3263,6 +3265,162 @@ function enforceServerVoidActorFields(targetObj, prevObj, session, nowIso, opts 
   return targetObj;
 }
 
+const MASTER_DIRECTORY_VOID_TABLES_EDGE = new Set([
+  'sites', 'regions', 'customers', 'suppliers', 'staff_members', 'company_equipment', 'equipment',
+  'staff_roles', 'staff_assignments', 'work_shifts', 'documents', 'accounts', 'companies', 'partners',
+  'settings', 'employments', 're_properties', 're_units', 're_ownership', 're_valuations', 'trd_trucks',
+  'trd_stock', 'trd_suppliers', 'ins_catalogue', 'ins_carriers', 'ins_brokers', 'ins_agents',
+  'hsp_stock', 'hsp_outlets', 'hsp_rooms', 'hld_entities', 'hld_partners_dir'
+]);
+const MASTER_DIRECTORY_TITLE_RX_EDGE = /^(sites|properties|units|ownership|valuations|trucks|catalogue|directories|rooms)$/i;
+
+function beirutTodayIsoEdge() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Beirut' }).format(new Date());
+  } catch (_) {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function parseVoidMoneyNumEdge(val) {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  const cleaned = String(val || '').replace(/,/g, '').trim();
+  if (!cleaned) return 0;
+  const m = cleaned.match(/[-+]?\d+(?:\.\d+)?/);
+  if (!m) return 0;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const VOID_USD_EXTRACT_KEYS_EDGE = [
+  'total_usd', 'total_ttc_usd', 'net_usd', 'amount_usd', 'usd_amount', 'ttc_usd',
+  'ttc_period_usd', 'annual_ttc_usd', 'ttc', 'gross_prem_usd', 'gwp_usd', 'premium_usd',
+  'net_payable_4017_usd', 'settled_to_carrier_usd', 'gross_comm_usd', 'net_comm_usd',
+  'quoted_renewal_usd', 'claimed_usd', 'approved_usd', 'paid_by_insurer_usd',
+  'contract_usd', 'season_contract_usd', 'seasonal_rate_usd', 'nightly_rate_usd',
+  'gross_pool_usd', 'open_payable_usd', 'pos_billed_ttc', 'scheduled_usd',
+  'actual_usd', 'open_usd', 'landed_cost_usd', 'total_landed_add', 'fob_usd',
+  'gross_ar_usd', 'unallocated_usd', 'principal_usd', 'total_due_usd',
+  'balance_usd', 'paid_usd', 'advance_usd', 'cash_usd', 'cost_usd',
+  'gross_usd', 'net_pay_usd', 'base_salary_usd', 'usd', 'total_ttc', 'total', 'amount'
+];
+
+function extractVoidRowUsdEdge(row) {
+  if (!row || typeof row !== 'object') return 0;
+  const snap = (row.void_snapshot && typeof row.void_snapshot === 'object') ? row.void_snapshot : null;
+  const srcs = snap ? [row, snap] : [row];
+  for (const src of srcs) {
+    const srcCur = String(src.currency || src.cur || row.currency || row.cur || '').trim().toUpperCase();
+    const fxRaw = Number(src.rate || src.fx_rate || row.rate || row.fx_rate || 89500);
+    const fx = fxRaw > 0 ? fxRaw : 89500;
+    for (const k of VOID_USD_EXTRACT_KEYS_EDGE) {
+      const rawVal = src[k];
+      const v = parseVoidMoneyNumEdge(rawVal);
+      if (v !== 0) {
+        const isExplicitUsd = /_usd$|^usd$/i.test(k);
+        const isLbpVal = /lbp|l\.l/i.test(String(rawVal || '')) || (!isExplicitUsd && srcCur === 'LBP');
+        return isLbpVal ? Math.abs(v / fx) : Math.abs(v);
+      }
+    }
+  }
+  const lbpKeys = ['amount_lbp', 'lbp_amount', 'total_lbp'];
+  for (const src of srcs) {
+    for (const k of lbpKeys) {
+      const lbp = parseVoidMoneyNumEdge(src[k]);
+      if (lbp !== 0) {
+        const fx = Number(src.rate || src.fx_rate || row.rate || row.fx_rate || 89500);
+        return Math.abs(lbp / (fx > 0 ? fx : 89500));
+      }
+    }
+  }
+  return 0;
+}
+
+function normalizeVoidDateIsoEdge(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return '';
+}
+
+async function loadVoidReasonRuleCfgEdge(db) {
+  const defCfg = { enabled: true, min_usd: 500, backdated_days: 1 };
+  if (!db) return defCfg;
+  let ov = null;
+  try {
+    const sqlAr = await loadCanonicalAlertRulesFromDb(db);
+    if (sqlAr && sqlAr.overrides && sqlAr.overrides.G_VOID_REASON && typeof sqlAr.overrides.G_VOID_REASON === 'object') {
+      ov = sqlAr.overrides.G_VOID_REASON;
+    }
+  } catch (_) {}
+  if (!ov) {
+    try {
+      const kv = await readEdgeKvDoc(db, 'mfg_web_store');
+      const doc = kv && kv.payload_json ? safeJsonParse(kv.payload_json, null) : null;
+      const cand = doc && doc.alertRules && doc.alertRules.overrides && doc.alertRules.overrides.G_VOID_REASON;
+      if (cand && typeof cand === 'object') ov = cand;
+    } catch (_) {}
+  }
+  if (!ov) return defCfg;
+  const p = (ov.params && typeof ov.params === 'object') ? ov.params : {};
+  const minUsd = Number.isFinite(Number(p.min_usd)) ? Number(p.min_usd) : 500;
+  const backdatedDays = Number.isFinite(Number(p.backdated_days)) ? Number(p.backdated_days) : 1;
+  return {
+    enabled: ov.enabled !== false,
+    min_usd: Math.max(0, minUsd),
+    backdated_days: Math.max(0, backdatedDays)
+  };
+}
+
+function checkMandatoryVoidReasonEdge(tableOrBucket, rowObj, session, ruleCfg) {
+  if (session && session.build_ticket) return null;
+  const cfg = ruleCfg || { enabled: true, min_usd: 500, backdated_days: 1 };
+  if (!cfg.enabled) return null;
+  const row = rowObj || {};
+  const tblLow = String(tableOrBucket || row.domainTblKey || (row.void_snapshot && row.void_snapshot.domainTblKey) || '').trim().toLowerCase();
+  const titleStr = String(row.tableTitle || (row.void_snapshot && row.void_snapshot.tableTitle) || '').trim();
+  const isMaster = Boolean(
+    (tblLow && MASTER_DIRECTORY_VOID_TABLES_EDGE.has(tblLow))
+    || (titleStr && MASTER_DIRECTORY_TITLE_RX_EDGE.test(titleStr) && (!tblLow || MASTER_DIRECTORY_VOID_TABLES_EDGE.has(tblLow) || /^wf::/i.test(tblLow) || tblLow.includes('::')))
+  );
+  if (isMaster) return null;
+  const byRaw = String(row.voided_by || row.voidedBy || '').trim();
+  if (
+    row.twin_of
+    || row.twin_difference
+    || /^(system-topup|sharepoint top-up|workbook match|workbook reconciliation)/i.test(byRaw)
+  ) {
+    return null;
+  }
+  const snap = (row.void_snapshot && typeof row.void_snapshot === 'object') ? row.void_snapshot : {};
+  const absUsd = extractVoidRowUsdEdge(row);
+  const rowDate = normalizeVoidDateIsoEdge(
+    row.date || row.rep_date || row.start_date || row.effective_from || row.period_start
+    || row.close_date || row.invoice_date || row.remittance_date || row.loss_date || row.due_date
+    || row.issue_date || row.lease_start || row.policy_start || row.booking_date || row.check_in
+    || row.arrival_date || row.txn_date || row.val_date || row.day || snap.date || ''
+  );
+  const todayIso = beirutTodayIsoEdge();
+  let daysOld = 0;
+  if (rowDate && /^\d{4}-\d{2}-\d{2}$/.test(todayIso)) {
+    daysOld = Math.round((Date.parse(todayIso + 'T00:00:00Z') - Date.parse(rowDate + 'T00:00:00Z')) / 86400000);
+  }
+  const byAll = cfg.backdated_days === 0;
+  const byAmount = absUsd >= cfg.min_usd && (cfg.min_usd > 0 || absUsd >= 0);
+  const byAge = cfg.backdated_days > 0 && Boolean(rowDate) && daysOld >= cfg.backdated_days;
+  if (!byAll && !byAmount && !byAge) return null;
+  const reason = String(row.void_reason || row.voidReason || '').trim();
+  if (reason.length >= 3) return null;
+  const msg = byAll
+    ? 'Void reason required (min 3 chars) under active G_VOID_REASON rule.'
+    : (byAmount
+      ? `Void reason required (min 3 chars): amount $${absUsd.toFixed(0)} >= $${cfg.min_usd}.`
+      : `Void reason required (min 3 chars): entry dated ${rowDate} is ${daysOld}d before today.`);
+  return { ok: false, code: 'void_reason_required', error: msg };
+}
+
 const SALES_ALLOWED_TABLES = new Set([
   'sites', 'sales_tickets', 'customer_receipts', 'customers', 'products',
   'price_rules', 'vat_invoices', 'credit_terms', 'regions', 'equipment',
@@ -3473,6 +3631,11 @@ export async function handleRecordsPost(request, env, session, body) {
     if (!String(recordToWrite.entered_at || '').trim()) {
       recordToWrite.entered_at = new Date().toISOString();
     }
+    if (Boolean(recordToWrite.voided)) {
+      const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
+      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg);
+      if (vrErr) return jsonResponse(vrErr, 400);
+    }
     enforceServerVoidActorFields(recordToWrite, null, session, new Date().toISOString());
   } else {
     const exHydrated = exHydratedRls || hydrateRowJson(exRow);
@@ -3537,6 +3700,11 @@ export async function handleRecordsPost(request, env, session, body) {
           applyExplicitVoidReason(recordToWrite, record);
         }
       }
+    }
+    if (!wasVoid && nowVoid) {
+      const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
+      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg);
+      if (vrErr) return jsonResponse(vrErr, 400);
     }
     enforceServerVoidActorFields(recordToWrite, exHydrated, session, new Date().toISOString(), { allowDoorTablet: canonTable === 'attendance' });
   }
@@ -5555,6 +5723,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
             applyExplicitVoidReason(rowToWrite, r);
           }
         }
+        if (!exVoid && incVoid) {
+          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+          if (vrErr) return jsonResponse(vrErr, 400);
+        }
         enforceServerVoidActorFields(rowToWrite, exObj, session, serverVoidNow);
         if (gpsChanged) {
           const ev = detectRecordGeoAuditEvent('sites', exObj, rowToWrite, 'industry_domain_store', rowInd || exInd);
@@ -5569,6 +5741,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         }
         if (!perms.canWriteGeoConfig && (hasAnyGpsField(r) || hasExplicitGpsKeyInPayload(r))) {
           return await rejectDomainGeo403('Supervisor + Entry or Geo-authorized seat required to pin location coordinates.', { industry: rowInd, company: co, target_id: rid, target_label: String(r.name || rid), detail: { bucket } });
+        }
+        if (incVoid) {
+          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+          if (vrErr) return jsonResponse(vrErr, 400);
         }
         enforceServerVoidActorFields(rowToWrite, null, session, serverVoidNow);
         const ev = detectRecordGeoAuditEvent('sites', null, rowToWrite, 'industry_domain_store', rowInd);
@@ -5657,6 +5833,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           applyExplicitVoidReason(editToWrite, ev);
         }
       }
+      if (!exVoid && incVoid && !/^WF::/i.test(ek)) {
+        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+        if (vrErr) return jsonResponse(vrErr, 400);
+      }
       enforceServerVoidActorFields(editToWrite, exObj, session, serverEditVoidNow);
       if (gpsChanged) {
         const ev = detectRecordGeoAuditEvent('sites', exObj, editToWrite, 'industry_domain_store', edInd);
@@ -5674,6 +5854,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (!allowVoidOnly) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
+      }
+      if (incVoid && !/^WF::/i.test(ek)) {
+        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+        if (vrErr) return jsonResponse(vrErr, 400);
       }
       enforceServerVoidActorFields(editToWrite, null, session, serverEditVoidNow);
       const geoEv = detectRecordGeoAuditEvent('sites', null, editToWrite, 'industry_domain_store', edInd);

@@ -306,14 +306,22 @@ async function main() {
       table: 'expenses',
       record: { id: validWriteId, company: 'WTC', date: '2026-11-08', name: 'Edge Verified Expense', total_usd: 125.5, voided: false }
     }, { 'X-ISABI-Session': entryToken });
-    await httpReq('POST', '/app/api/records', {
+    const voidWithoutReason400 = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
       record: { id: validWriteId, company: 'WTC', voided: true }
     }, { 'X-ISABI-Session': ownerToken });
-    if (rlsForbiddenWrite.status === 403 && demoForbiddenWrite.status === 403 && allowedWrite.status === 200 && allowedWrite.json?.ok) {
-      pass('edge-05-bu-rls-write-and-demo-guard', `Cross-BU write=403, Demo write=403, Authorized WTC write=200`);
+    const voidWithReason200 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: validWriteId, company: 'WTC', voided: true, void_reason: 'Edge cleanup void' }
+    }, { 'X-ISABI-Session': ownerToken });
+    if (
+      rlsForbiddenWrite.status === 403 && demoForbiddenWrite.status === 403 && allowedWrite.status === 200 && allowedWrite.json?.ok
+      && voidWithoutReason400.status === 400 && voidWithoutReason400.json?.code === 'void_reason_required'
+      && voidWithReason200.status === 200
+    ) {
+      pass('edge-05-bu-rls-write-and-demo-guard', `Cross-BU write=403, Demo write=403, Authorized WTC write=200, Backdated void w/o reason=400, w/ reason=200`);
     } else {
-      fail('edge-05-bu-rls-write-and-demo-guard', JSON.stringify({ cross: rlsForbiddenWrite.status, demo: demoForbiddenWrite.status, ok: allowedWrite.status }));
+      fail('edge-05-bu-rls-write-and-demo-guard', JSON.stringify({ cross: rlsForbiddenWrite.status, demo: demoForbiddenWrite.status, ok: allowedWrite.status, vr400: [voidWithoutReason400.status, voidWithoutReason400.json], vr200: voidWithReason200.status }));
     }
 
     // 6. Seat Security: Unauthenticated /app/api/users=401 + Authenticated PIN stripping + Entry privilege-escalation block
@@ -4873,7 +4881,7 @@ finally:
     }, { 'X-ISABI-Session': bbcSupToken });
     const e44bSupPureVoid = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
-      record: { id: 'exp-e44b-bbc', company: 'BBConstruction', date: '2026-11-12', amount: 55, notes: 'Supervisor void target', voided: 1 }
+      record: { id: 'exp-e44b-bbc', company: 'BBConstruction', date: '2026-11-12', amount: 55, notes: 'Supervisor void target', voided: 1, void_reason: 'Supervisor void target' }
     }, { 'X-ISABI-Session': bbcSupToken });
 
     // /app/api/sync blank-company overwrite + Words-Only GPS tamper sanitization
@@ -6229,6 +6237,69 @@ finally:
         get1: ePushOwnerGet1.json, getReset: ePushOwnerGetReset.json, entry403: ePushEntryDisp403.status,
         unsub: { st: ePushUnsub200.status, j: ePushUnsub200.json }, get2: ePushOwnerGet2.json
       }).slice(0, 800));
+    }
+
+    // 48. Mandatory Void Reason Rule (G_VOID_REASON) across /records, /industry_domain_store, RBAC precedence & alert_rules override tuning
+    const todayBeirut = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Beirut' }).format(new Date());
+    const vrBigId = 'exp-vr-big-' + Date.now();
+    const vrSmallId = 'exp-vr-small-' + Date.now();
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', date: todayBeirut, amount_usd: 600, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', date: todayBeirut, amount_usd: 45, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    const vrEntry403 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': entryToken });
+    const vrBig400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    const preAr48 = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
+    const preOv48 = (preAr48.json && preAr48.json.overrides) || {};
+    const preCust48 = (preAr48.json && preAr48.json.custom) || [];
+    const arTsNow = new Date().toISOString();
+    await httpReq('POST', '/app/api/alert_rules', {
+      overrides: Object.assign({}, preOv48, { G_VOID_REASON: { enabled: true, params: { min_usd: 30, backdated_days: 0 }, updated_at: arTsNow } }),
+      custom: preCust48
+    }, { 'X-ISABI-Session': ownerToken });
+    const vrTunedSmall400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/alert_rules', {
+      overrides: Object.assign({}, preOv48, { G_VOID_REASON: { enabled: true, params: { min_usd: 500, backdated_days: 1 }, updated_at: new Date(Date.now() + 1000).toISOString() } }),
+      custom: preCust48
+    }, { 'X-ISABI-Session': ownerToken });
+    const vrSmall200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrSmallId, company: 'WTC', voided: true } }, { 'X-ISABI-Session': ownerToken });
+    const vrBig200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: vrBigId, company: 'WTC', voided: true, void_reason: 'Edge high-value void' } }, { 'X-ISABI-Session': ownerToken });
+
+    // Industry domain vertical USD key (gross_prem_usd >= 500) + note clear on already-voided row
+    const polId48 = 'POL-EDGE-VR-' + Date.now();
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domEntry403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true }] }
+    }, { 'X-ISABI-Session': entryToken });
+    const domVert400 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domVert200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 2, voided: true, void_reason: 'Edge vertical audit void' }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domVertClear200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 3, voided: true, void_reason: '' }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    if (
+      vrEntry403.status === 403 && domEntry403.status === 403 &&
+      vrBig400.status === 400 && vrBig400.json?.code === 'void_reason_required' &&
+      vrTunedSmall400.status === 400 && vrTunedSmall400.json?.code === 'void_reason_required' &&
+      vrSmall200.status === 200 && vrBig200.status === 200 &&
+      domVert400.status === 400 && domVert400.json?.code === 'void_reason_required' &&
+      domVert200.status === 200 && domVertClear200.status === 200
+    ) {
+      pass('edge-48-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 override/restore + vertical gross_prem_usd 400->200->note-clear 200');
+    } else {
+      fail('edge-48-mandatory-void-reason', JSON.stringify({
+        entry403: [vrEntry403.status, domEntry403.status],
+        big400: [vrBig400.status, vrBig400.json],
+        tuned400: [vrTunedSmall400.status, vrTunedSmall400.json],
+        small200: vrSmall200.status,
+        big200: vrBig200.status,
+        domVert400: [domVert400.status, domVert400.json],
+        domVert200: domVert200.status,
+        domClear200: domVertClear200.status
+      }));
     }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
