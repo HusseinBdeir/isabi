@@ -21,7 +21,7 @@ const SNAPSHOT_TTL_MS = 8000;
 const FRESH_MIN_MS = 3000;
 const GEOFENCE_TTL_MS = 300000;
 const UPSTREAM_RETRY_MS = 5000;
-const UPSTREAM_PENDING_MAX_MS = 15000; // > two chained 6.5 s provider calls (401 re-login path)
+const UPSTREAM_PENDING_MAX_MS = 20000; // > slowest read: 401 + 6.5 s retry + 4.5 s geofences + D1
 const PENDING_STALE_MS = 30000;
 
 export const VT_DEVICE_MAP = {
@@ -912,11 +912,14 @@ async function getNormalizedUpstreamSnapshot(env, opts = {}) {
     const held = newestKnown();
     if (held) return snapAgeMs(held) <= PENDING_STALE_MS ? held : Object.assign({}, held, { stale: true });
   }
-  _upstreamPendingSince = now;
+  const myMark = now || 1;
+  _upstreamPendingSince = myMark;
   try {
     return await readUpstreamSnapshot(env, now, lastKnown);
   } finally {
-    _upstreamPendingSince = 0;
+    // Clear only our own marker: a later call that started after the window
+    // expired keeps its marker until it finishes.
+    if (_upstreamPendingSince === myMark) _upstreamPendingSince = 0;
   }
 }
 
