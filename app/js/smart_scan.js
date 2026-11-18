@@ -2648,6 +2648,13 @@
     } else {
       renderSmartScanBarDom();
     }
+    const liveScanModal = $('entryModal');
+    if (liveScanModal) {
+      liveScanModal.classList.add('mob-ai-scan-open');
+      liveScanModal.classList.remove('mob-ai-voice-open');
+      liveScanModal._mobScanAutoExpanded = true;
+      syncEntryMobAiQuickBarUi(liveScanModal);
+    }
 
     const updateStatus = msg => {
       SCAN_STATE.progressMsg = sanitizeOutwardText(msg);
@@ -3073,6 +3080,36 @@
     bar.classList.toggle('has-result', Boolean(SCAN_STATE.lastScan && !SCAN_STATE.busy));
     bar.innerHTML = renderSmartScanBarHtml();
     wireSmartScanBarEvents(bar);
+    const modal = $('entryModal');
+    if (modal) {
+      const scanActive = Boolean(SCAN_STATE.busy || SCAN_STATE.lastScan || SCAN_STATE.sampleMenuOpen);
+      const prevAuto = Boolean(modal._mobScanAutoExpanded);
+      modal._mobScanAutoExpanded = scanActive;
+      if (scanActive && !prevAuto) {
+        modal.classList.add('mob-ai-scan-open');
+        modal.classList.remove('mob-ai-voice-open');
+      } else if (!scanActive && prevAuto) {
+        modal.classList.remove('mob-ai-scan-open');
+      }
+      syncEntryMobAiQuickBarUi(modal);
+    }
+  }
+
+  function syncEntryMobAiQuickBarUi(modal) {
+    const qBar = $('entryMobAiQuickBar');
+    if (!qBar || !modal) return;
+    const scanOpen = modal.classList.contains('mob-ai-scan-open');
+    const voiceOpen = modal.classList.contains('mob-ai-voice-open');
+    const sBtn = qBar.querySelector('[data-mob-ai="scan"]');
+    const vBtn = qBar.querySelector('[data-mob-ai="voice"]');
+    if (sBtn) {
+      sBtn.classList.toggle('is-open', scanOpen);
+      sBtn.setAttribute('aria-expanded', scanOpen ? 'true' : 'false');
+    }
+    if (vBtn) {
+      vBtn.classList.toggle('is-open', voiceOpen);
+      vBtn.setAttribute('aria-expanded', voiceOpen ? 'true' : 'false');
+    }
   }
 
   function wireSmartScanBarEvents(bar) {
@@ -3190,8 +3227,54 @@
     if (isEditing || isUniv) {
       const oldBar = $('entrySmartScanBar');
       if (oldBar) oldBar.remove();
+      const oldQuick = $('entryMobAiQuickBar');
+      if (oldQuick) oldQuick.remove();
+      modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      modal._mobScanAutoExpanded = false;
       unwrapSplitPreviewDom();
       return;
+    }
+
+    if (!SCAN_STATE.suppressResetOnModalSwitch && !SCAN_STATE.lastScan && !SCAN_STATE.busy && !SCAN_STATE.sampleMenuOpen) {
+      modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      modal._mobScanAutoExpanded = false;
+    }
+
+    let quickBar = $('entryMobAiQuickBar');
+    if (!quickBar) {
+      quickBar = document.createElement('div');
+      quickBar.id = 'entryMobAiQuickBar';
+      quickBar.className = 'mob-ai-quick-bar no-print';
+      quickBar.innerHTML = `
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
+      `;
+      quickBar.querySelectorAll('[data-mob-ai]').forEach(btn => btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const mode = btn.getAttribute('data-mob-ai');
+        if (mode === 'scan') {
+          const next = !modal.classList.contains('mob-ai-scan-open');
+          modal.classList.toggle('mob-ai-scan-open', next);
+          if (next) modal.classList.remove('mob-ai-voice-open');
+          syncEntryMobAiQuickBarUi(modal);
+        } else if (mode === 'voice') {
+          const next = !modal.classList.contains('mob-ai-voice-open');
+          modal.classList.toggle('mob-ai-voice-open', next);
+          if (next) {
+            modal.classList.remove('mob-ai-scan-open');
+            const vInp = $('aieMfgVoicePromptInput');
+            if (vInp) setTimeout(() => { try { vInp.focus(); } catch (_) {} }, 30);
+          }
+          syncEntryMobAiQuickBarUi(modal);
+        } else if (mode === 'batch') {
+          const batchBtn = $('aieMfgOpenBatchBtn');
+          if (batchBtn) batchBtn.click();
+        }
+      }));
+      body.insertBefore(quickBar, body.firstChild);
+    } else if (quickBar.parentElement !== body || body.firstElementChild !== quickBar) {
+      body.insertBefore(quickBar, body.firstChild);
     }
 
     let bar = $('entrySmartScanBar');
@@ -3199,12 +3282,15 @@
       bar = document.createElement('div');
       bar.id = 'entrySmartScanBar';
       bar.className = 'entry-smart-scan-bar';
-      body.insertBefore(bar, body.firstChild);
-    } else if (bar.parentElement !== body || body.firstElementChild !== bar) {
-      body.insertBefore(bar, body.firstChild);
+      body.insertBefore(bar, quickBar.nextSibling);
+    } else if (bar.parentElement !== body || bar.previousElementSibling !== quickBar) {
+      body.insertBefore(bar, quickBar.nextSibling);
     }
 
     renderSmartScanBarDom();
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(quickBar); } catch (_) {}
+    }
 
     // Drag & Drop + Paste on #entryModal (wired once)
     if (modal.dataset.ssDropWired !== '1') {
@@ -3264,6 +3350,12 @@
     SCAN_STATE.splitOpen = false;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
+    const modalEl = $('entryModal');
+    if (modalEl) {
+      modalEl._mobScanAutoExpanded = false;
+      modalEl.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      syncEntryMobAiQuickBarUi(modalEl);
+    }
     unwrapSplitPreviewDom();
     const body = $('modalBody');
     if (body) {
@@ -3847,6 +3939,17 @@
     }
 
     const liveModal = $('indDomainEntryModal');
+    if (liveModal) {
+      liveModal.classList.add('mob-ai-scan-open');
+      liveModal.classList.remove('mob-ai-voice-open');
+      const indQ = $('indMobAiQuickBar');
+      if (indQ) {
+        const sB = indQ.querySelector('[data-mob-ai="scan"]');
+        const vB = indQ.querySelector('[data-mob-ai="voice"]');
+        if (sB) { sB.classList.add('is-open'); sB.setAttribute('aria-expanded', 'true'); }
+        if (vB) { vB.classList.remove('is-open'); vB.setAttribute('aria-expanded', 'false'); }
+      }
+    }
     if (liveModal && typeof liveModal._addPendingDomainFile === 'function') {
       const existingPending = typeof liveModal._getPendingDomainFiles === 'function' ? (liveModal._getPendingDomainFiles() || []) : [];
       const rawFiles = Array.isArray(sampleOrExt.rawFiles) && sampleOrExt.rawFiles.length

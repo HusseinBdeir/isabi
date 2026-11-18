@@ -454,39 +454,39 @@ BODY = f"""
           <tbody>
             <tr>
               <td><b>{ICONS["apps"]} Fit to Your Workflow</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% tailored workspaces, guided forms &amp; interactive page tours</td>
-              <td>{ICONS["warn"]} Rigid templates and awkward workarounds</td>
-              <td>{ICONS["cross"]} Possible only after expensive custom change orders</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} 100% tailored workspaces, guided forms &amp; interactive page tours</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} Rigid templates and awkward workarounds</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} Possible only after expensive custom change orders</td>
             </tr>
             <tr>
               <td><b>{ICONS["key"]} Setup &amp; Per-Seat Pricing</b></td>
-              <td class="isabi-col">{ICONS["check"]} From $3,000 custom setup + $50 to $100/seat/month</td>
-              <td>{ICONS["warn"]} Rigid per-module tiers + costly implementation add-ons</td>
-              <td>{ICONS["cross"]} Steep six-figure setup fees plus heavy annual maintenance</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} From $3,000 custom setup + $50 to $100/seat/month</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} Rigid per-module tiers + costly implementation add-ons</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} Steep six-figure setup fees plus heavy annual maintenance</td>
             </tr>
             <tr>
               <td><b>{ICONS["analytics"]} Executive Analytics &amp; SOA</b></td>
-              <td class="isabi-col">{ICONS["check"]} What-If scenario studio, 30-day cash bridge &amp; bilingual statements</td>
-              <td>{ICONS["warn"]} Basic built-in charts and constant Excel exports</td>
-              <td>{ICONS["cross"]} Sold as a separate six-figure BI project</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} What-If scenario studio, 30-day cash bridge &amp; bilingual statements</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} Basic built-in charts and constant Excel exports</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} Sold as a separate six-figure BI project</td>
             </tr>
             <tr>
               <td><b>{ICONS["ai"]} AI, Telematics &amp; Kiosks</b></td>
-              <td class="isabi-col">{ICONS["check"]} Spoken briefings (EN/AR/FR), Smart Scan, Fleet GPS &amp; Face Kiosks</td>
-              <td>{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
-              <td>{ICONS["cross"]} Rarely available or requires external middleware</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} Spoken briefings (EN/AR/FR), Smart Scan, Fleet GPS &amp; Face Kiosks</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} Rarely available or requires external middleware</td>
             </tr>
             <tr>
               <td><b>{ICONS["lock"]} Ownership, Close &amp; Speed</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% client-owned data, automated close locks, live in 1 to 2 weeks</td>
-              <td>{ICONS["warn"]} 2 to 4 months locked inside vendor subscription cloud</td>
-              <td>{ICONS["cross"]} 9 to 18 months on aging on-premise servers</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} 100% client-owned data, automated close locks, live in 1 to 2 weeks</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} 2 to 4 months locked inside vendor subscription cloud</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} 9 to 18 months on aging on-premise servers</td>
             </tr>
             <tr>
               <td><b>{ICONS["user"]} Architect Access</b></td>
-              <td class="isabi-col">{ICONS["check"]} Direct access to the principal architect who builds your system</td>
-              <td>{ICONS["warn"]} Ticket queues and scripted support agents</td>
-              <td>{ICONS["cross"]} Layered account managers and rotating juniors</td>
+              <td class="isabi-col" data-col-lbl="ISABI Systems">{ICONS["check"]} Direct access to the principal architect who builds your system</td>
+              <td data-col-lbl="Generic SaaS">{ICONS["warn"]} Ticket queues and scripted support agents</td>
+              <td data-col-lbl="Legacy Consultancies">{ICONS["cross"]} Layered account managers and rotating juniors</td>
             </tr>
           </tbody>
         </table>

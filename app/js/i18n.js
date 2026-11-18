@@ -13414,7 +13414,23 @@
       "4-Day Avg": "متوسط 4 أيام",
       "5-Day Avg": "متوسط 5 أيام",
       "6-Day Avg": "متوسط 6 أيام",
-      "Show Details": "عرض التفاصيل"
+      "Show Details": "عرض التفاصيل",
+      "Reporting Period & Date Basis": "فترة التقرير وأساس التاريخ",
+      "Rep": "تقرير",
+      "Tx": "عملية",
+      "WTD": "الأسبوع الحالي",
+      "MTD": "الشهر الحالي",
+      "QTD": "الربع الحالي",
+      "7D": "7ي",
+      "2M": "2ش",
+      "1Q": "ربع",
+      "12M": "12ش",
+      "KPIs": "المؤشرات",
+      "Hide KPIs": "إخفاء المؤشرات",
+      "Summary": "ملخص",
+      "Scan Slip / PDF": "مسح إيصال / PDF",
+      "Voice Fill": "ملء صوتي",
+      "Toggle dashboard filters": "تبديل فلاتر اللوحة"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -26810,7 +26826,23 @@
       "4-Day Avg": "Moy. 4 jours",
       "5-Day Avg": "Moy. 5 jours",
       "6-Day Avg": "Moy. 6 jours",
-      "Show Details": "Afficher le détail"
+      "Show Details": "Afficher le détail",
+      "Reporting Period & Date Basis": "Période et base comptable",
+      "Rep": "Rapp.",
+      "Tx": "Op.",
+      "WTD": "Hebdo",
+      "MTD": "Mensuel",
+      "QTD": "Trimestriel",
+      "7D": "7J",
+      "2M": "2M",
+      "1Q": "1T",
+      "12M": "12M",
+      "KPIs": "Indicateurs",
+      "Hide KPIs": "Masquer",
+      "Summary": "Résumé",
+      "Scan Slip / PDF": "Scanner / PDF",
+      "Voice Fill": "Saisie vocale",
+      "Toggle dashboard filters": "Basculer les filtres du tableau"
     }
   };
 

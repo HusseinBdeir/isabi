@@ -505,25 +505,32 @@ button {
     gap: 4px;
   }
   .ask-isabi-trigger {
-    padding: 5px 7px !important;
-    font-size: 11px !important;
+    min-height: 36px;
+    padding: 6px 8px !important;
+    font-size: 11.5px !important;
     gap: 4px !important;
   }
   #theme-toggle-btn {
-    padding: 5px 6px !important;
-    font-size: 11px !important;
+    min-height: 36px;
+    padding: 6px 7px !important;
+    font-size: 11.5px !important;
   }
   .hdr-signin-btn {
-    padding: 5px 7px !important;
+    min-height: 36px;
+    min-width: 36px;
+    padding: 6px 8px !important;
   }
   .hdr-lang-switch {
-    height: 24px;
-    padding: 1.5px;
-    gap: 1px;
+    height: 36px;
+    padding: 2px;
+    gap: 1.5px;
   }
   .hdr-lang-switch .lang-pill {
-    padding: 2.5px 4px;
-    font-size: 9.5px;
+    padding: 5px 5.5px;
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
   }
 }
 html[dir="rtl"] *,
@@ -3486,6 +3493,13 @@ table.m-grid tr.total td {
   .mobile-sec-nav {
     padding: 0 max(12px, env(safe-area-inset-right, 12px)) 0 max(12px, env(safe-area-inset-left, 12px));
   }
+  .mobile-sec-nav a {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
   .brand-badge {
     width: 30px;
     height: 30px;
@@ -3593,19 +3607,21 @@ table.m-grid tr.total td {
   }
   .hlc-kpi {
     padding: 8px 9px;
+    justify-content: flex-start;
   }
   .hlc-kpi small {
-    font-size: 8.5px;
+    font-size: 9px;
     letter-spacing: 0.01em;
   }
   .hlc-kpi strong {
     font-size: 18px;
   }
   .hlc-kpi span {
-    font-size: 10.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 10.8px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
   }
   .hlc-table th {
     padding: 4px 4px;
@@ -3715,18 +3731,31 @@ table.m-grid tr.total td {
     font-size: 12px;
     line-height: 1.38;
   }
-  /* Section 2: All 8 Industries Visible in 2x4 Grid + Tabbed Detail on Phone */
+  /* Section 2: All 8 Industries in 1-Row Swipeable Strip on Phone */
   .ind-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     gap: 6px;
     padding: 6px;
   }
+  .ind-tabs::-webkit-scrollbar {
+    display: none;
+  }
   .ind-tab {
-    padding: 8px 9px;
+    flex: 0 0 auto;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
     min-width: 0;
   }
   .ind-tab b {
     font-size: 12.5px;
+    white-space: nowrap;
   }
   .ind-tab small {
     display: none;
@@ -3779,14 +3808,25 @@ table.m-grid tr.total td {
   }
   /* Section 3: 100% Phone-Native Live ERP Sandbox (Zero Hidden Parts!) */
   .sbox-ind-bar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     width: 100%;
-    gap: 5px;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+  .sbox-ind-bar::-webkit-scrollbar {
+    display: none;
   }
   .sbox-ind-btn {
-    padding: 7px 8px;
-    font-size: 11.5px;
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 12px;
+    white-space: nowrap;
     text-align: center;
   }
   .sbox-theme-bar {
@@ -3928,15 +3968,58 @@ table.m-grid tr.total td {
   }
   .comp-wrap {
     margin-bottom: 0;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
   }
-  .comp-table th, .comp-table td {
-    padding: 8px 7px;
-    font-size: 11px;
-    line-height: 1.3;
+  .comp-table,
+  .comp-table tbody {
+    display: block;
+    width: 100%;
   }
-  .comp-table th:nth-child(4),
-  .comp-table td:nth-child(4) {
+  .comp-table thead {
     display: none;
+  }
+  .comp-table tbody tr {
+    display: block;
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--surface);
+  }
+  .comp-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .comp-table tbody td {
+    display: block;
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    border: 0;
+    text-align: start;
+  }
+  .comp-table tbody td:first-child {
+    padding: 0 0 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .comp-table tbody td.isabi-col {
+    border-radius: 8px;
+    margin-bottom: 6px;
+  }
+  .comp-table tbody td[data-col-lbl]::before {
+    content: attr(data-col-lbl);
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 2px;
   }
   .roi-box {
     padding: 16px 14px;
@@ -3992,8 +4075,11 @@ table.m-grid tr.total td {
   .ftr-grid .ftr-col:first-child {
     grid-column: 1 / -1;
   }
+  .site-footer {
+    padding: 32px 0 calc(24px + env(safe-area-inset-bottom, 0px));
+  }
   .mobile-dock {
-    display: grid;
+    display: none !important;
   }
 }
 /* ---------- Skip link & focus ring ---------- */
@@ -4794,31 +4880,100 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hero-cta-row .btn {
-    padding: 9px 6px;
-    font-size: 11.4px;
+    min-height: 44px;
+    padding: 10px 8px;
+    font-size: 12.5px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: normal;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+  .hero-trust-inline {
+    grid-column: 1 / -1;
+    width: 100%;
+    border-radius: 10px;
+    padding: 8px 12px;
+    white-space: normal;
+    line-height: 1.35;
+    justify-content: flex-start;
+    gap: 6px 10px;
+    font-size: 11.8px;
   }
   .sec-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     width: 100%;
-    gap: 4px;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+  .sec-tabs::-webkit-scrollbar,
+  .app-cat-bar::-webkit-scrollbar,
+  .app-suite-grid::-webkit-scrollbar {
+    display: none;
   }
   .sec-tab {
-    padding: 7px 6px;
-    font-size: 11.5px;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: 0 0 auto;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .app-cat-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    width: 100%;
+    gap: 6px;
+    padding-bottom: 2px;
+    margin-bottom: 10px;
+  }
+  .app-cat-pill {
+    flex: 0 0 auto;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    white-space: nowrap;
   }
   .app-suite-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: grid;
+    grid-template-columns: none;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: calc(46% - 6px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     gap: 8px;
+    padding-bottom: 4px;
   }
   .app-tile {
+    scroll-snap-align: start;
+    min-width: 0;
     padding: 10px 8px;
+  }
+  .ind-subtab-btn {
+    min-height: 40px;
+  }
+  #portal input,
+  #portal select,
+  #portal textarea,
+  .ai-drawer input,
+  .ai-drawer textarea,
+  .ai-console input,
+  .ai-console textarea {
+    font-size: 16px !important;
   }
   .app-icon {
     width: 36px;
