@@ -3523,7 +3523,7 @@
               : (rdlCoRaw === 'Insurance Company' ? 'insurance'
                 : rdlCoRaw.toLowerCase().replace(/\s+/g, ''))))));
     const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
-      ? window.__mfgComputeStaffPayrollRegister({ company: rdlPayCo, ignoreSearch: true, activeRange: { from: p.from, to: p.to } })
+      ? window.__mfgComputeStaffPayrollRegister({ company: rdlPayCo, ignoreSearch: true, activeRange: { from: p.from, to: p.to }, inProgressPick: null })
       : null;
     const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
       if (!sr) return false;
@@ -6928,7 +6928,7 @@
         return true;
       });
       const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
-        ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to } })
+        ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to }, inProgressPick: null })
         : null;
       const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
         if (!sr) return false;

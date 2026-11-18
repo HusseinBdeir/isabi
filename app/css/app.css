@@ -25259,6 +25259,16 @@ label.exp-inline-bar-lbl {
   border-color: var(--line-strong);
 }
 
+/* Period filter on the month in progress: To Date / Full only, with Standard Cutoff beside them */
+.payroll-cutoff-pills.is-two {
+  grid-template-columns: repeat(2, 148px);
+}
+
+.payroll-cutoff-pills.is-two + .payroll-cutoff-custom-slot {
+  margin-inline-start: 6px;
+  flex-shrink: 0;
+}
+
 .payroll-cutoff-pill {
   appearance: none;
   display: inline-flex;
@@ -25614,6 +25624,9 @@ label.exp-inline-bar-lbl {
   .payroll-cutoff-pills {
     grid-template-columns: repeat(3, 134px);
   }
+  .payroll-cutoff-pills.is-two {
+    grid-template-columns: repeat(2, 134px);
+  }
   .payroll-status-pill {
     padding: 0 7px;
     font-size: 10.9px;
@@ -25623,6 +25636,9 @@ label.exp-inline-bar-lbl {
 @media (max-width: 1120px) and (min-width: 861px) {
   .payroll-cutoff-pills {
     grid-template-columns: repeat(3, 118px);
+  }
+  .payroll-cutoff-pills.is-two {
+    grid-template-columns: repeat(2, 118px);
   }
   .payroll-cutoff-pill {
     font-size: 10.5px;
@@ -25662,6 +25678,12 @@ label.exp-inline-bar-lbl {
   .payroll-cutoff-pills {
     width: 100%;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .payroll-cutoff-pills.is-two {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .payroll-cutoff-pill {
     padding: 0 4px;
@@ -34930,6 +34952,62 @@ html[dir="rtl"] .ceo-pv-d {
 :root[data-theme="dark"] .pgm-ro-banner svg {
   color: var(--brass);
 }
+.pgm-fork-banner,
+.pgm-forked-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.38;
+  color: var(--ink);
+}
+.pgm-fork-banner {
+  border: 1px solid var(--brass-border);
+  background: var(--brass-tint);
+}
+.pgm-fork-banner-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.pgm-fork-banner-msg svg {
+  width: 15px;
+  height: 15px;
+  color: var(--brass-strong);
+  flex-shrink: 0;
+}
+:root[data-theme="dark"] .pgm-fork-banner-msg svg {
+  color: var(--brass);
+}
+.pgm-fork-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#pgmForkTargetCo {
+  min-width: 140px;
+  max-width: 220px;
+  height: 30px;
+  font-size: 12px;
+}
+.pgm-forked-banner {
+  justify-content: flex-start;
+  border: 1px solid var(--line);
+  background: var(--good-bg);
+}
+.pgm-forked-banner svg {
+  width: 15px;
+  height: 15px;
+  color: var(--good);
+  flex-shrink: 0;
+}
 .pgm-default-target-row {
   display: flex;
   align-items: center;
@@ -34980,6 +35058,12 @@ html[dir="rtl"] .ceo-pv-d {
 @media (max-width: 768px) {
   .pgm-top-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .pgm-fork-banner-actions,
+  #pgmForkCompanyBtn,
+  #pgmForkTargetCo {
+    width: 100%;
+    max-width: 100%;
   }
   #policyGroupModal input:not([type="checkbox"]):not([type="radio"]),
   #policyGroupModal select,

@@ -1486,6 +1486,27 @@
     countRepDiff(dayExts);
     const exceptionCount = belowAgreedLoads + pendingExps.length + absentCount + dayMalfs.length + openCritDefects.length;
 
+    const turnaroundDigest = (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeSiteTurnaroundDigest === 'function')
+      ? window.MFG_TELEMATICS.computeSiteTurnaroundDigest({
+          industry: 'manufacturing',
+          companyScope: ctx.STATE.company,
+          dateIso: targetDate,
+          salesTickets: effSales,
+          rawTickets: effRaw,
+          applyStamps: true
+        })
+      : { dateIso: targetDate, industry: 'manufacturing', gateRadiusM: 120, maxSiteWaitMin: 45, visits: [], flaggedVisits: [], flaggedCount: 0, avgWaitMin: 0, maxWaitMin: 0, onSiteCount: 0, pairedTickets: new Map(), unpairedFlaggedVisits: [], bySite: new Map(), byQuarry: new Map() };
+    const getTaStamp = (tbl, r) => {
+      if (!r) return null;
+      const k = r.id != null ? `${tbl}:${r.id}` : '';
+      if (k && turnaroundDigest.pairedTickets && turnaroundDigest.pairedTickets.has(k)) {
+        return turnaroundDigest.pairedTickets.get(k);
+      }
+      return (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function')
+        ? window.MFG_TELEMATICS.getTicketTurnaroundStamp(tbl, r)
+        : null;
+    };
+
     // 7-Day Transaction Pulse & Benchmark
     const priorActive = idx.sortedOpDates.filter(d => d < targetDate).slice(-6);
     const pulseDates = priorActive.concat([targetDate]);
@@ -1604,12 +1625,23 @@
           unitPrices: [],
           tickets: [],
           rcpts: [],
+          waitCount: 0,
+          waitFlagged: 0,
+          waitMaxMin: 0,
+          waitOnSite: false,
           sampleId: s.id,
           sampleRkey: 'sales_tickets'
         };
         custMap.set(ck, cur);
       }
       cur.tickets.push(s);
+      const sTa = getTaStamp('sales_tickets', s);
+      if (sTa && sTa.unload_dwell_min != null) {
+        cur.waitCount += 1;
+        cur.waitMaxMin = Math.max(cur.waitMaxMin, Number(sTa.unload_dwell_min || 0));
+        if (sTa.turnaround_flagged) cur.waitFlagged += 1;
+        if (sTa.on_site_now) cur.waitOnSite = true;
+      }
       if (hasRepShift(s)) {
         const rpD = repDateOf(s);
         cur.repShiftCount += 1;
@@ -1671,7 +1703,25 @@
       }
       cur.collected = round2(cur.collected + Number(r.amount || 0) + Number(r.discount || 0));
     });
-    const customerRows = Array.from(custMap.values()).sort((a, b) => (b.ttc - a.ttc) || (b.collected - a.collected));
+    const customerRows = Array.from(custMap.values()).map(c => {
+      if ((c.waitCount || 0) === 0 && turnaroundDigest.byUnpairedCustomerSite && turnaroundDigest.byUnpairedCustomerSite.size && Array.isArray(c.sites)) {
+        let wCount = 0, wFlagged = 0, wMax = 0, wLive = false;
+        c.sites.forEach(sn => {
+          const agg = turnaroundDigest.byUnpairedCustomerSite.get(String(sn || '').trim().toLowerCase().replace(/\s+/g, ' '));
+          if (agg) {
+            wCount = Math.max(wCount, agg.count);
+            wFlagged = Math.max(wFlagged, agg.flagged);
+            wMax = Math.max(wMax, agg.maxMin);
+            if (agg.onSite > 0) wLive = true;
+          }
+        });
+        c.waitCount = wCount;
+        c.waitFlagged = wFlagged;
+        c.waitMaxMin = wMax;
+        c.waitOnSite = wLive;
+      }
+      return c;
+    }).sort((a, b) => (b.ttc - a.ttc) || (b.collected - a.collected));
 
     // Quarry Sites, Suppliers & 3rd-Party Haulers Breakdown
     const quarryMap = new Map();
@@ -1702,11 +1752,22 @@
           haulCost: 0,
           totalCost: 0,
           tickets: [],
+          waitCount: 0,
+          waitFlagged: 0,
+          waitMaxMin: 0,
+          waitOnSite: false,
           sampleId: r.id
         };
         quarryMap.set(qk, cur);
       }
       cur.tickets.push(r);
+      const rTa = getTaStamp('raw_purchases', r);
+      if (rTa && rTa.unload_dwell_min != null) {
+        cur.waitCount += 1;
+        cur.waitMaxMin = Math.max(cur.waitMaxMin, Number(rTa.unload_dwell_min || 0));
+        if (rTa.turnaround_flagged) cur.waitFlagged += 1;
+        if (rTa.on_site_now) cur.waitOnSite = true;
+      }
       cur.loads += 1;
       if (ahIdSet.has(r.id)) cur.ahLoads += 1;
       if (r.overtime) cur.otLoads += 1;
@@ -1733,7 +1794,14 @@
     });
     const quarryGroupRows = Array.from(quarryMap.values()).map(q => {
       const hList = Array.from(q.haulersMap.entries()).sort((a, b) => b[1] - a[1]).map(([nm, cnt]) => cnt > 1 ? `${nm} (${cnt})` : nm);
-      return Object.assign({}, q, { haulersTxt: hList.join(', ') });
+      const qAgg = (q.waitCount || 0) === 0 && turnaroundDigest.byUnpairedQuarrySite
+        ? turnaroundDigest.byUnpairedQuarrySite.get(String(q.site || '').trim().toLowerCase().replace(/\s+/g, ' '))
+        : null;
+      const waitCount = Math.max(q.waitCount || 0, qAgg ? qAgg.count : 0);
+      const waitFlagged = Math.max(q.waitFlagged || 0, qAgg ? qAgg.flagged : 0);
+      const waitMaxMin = Math.max(q.waitMaxMin || 0, qAgg ? qAgg.maxMin : 0);
+      const waitOnSite = Boolean(q.waitOnSite || (qAgg && qAgg.onSite > 0));
+      return Object.assign({}, q, { haulersTxt: hList.join(', '), waitCount, waitFlagged, waitMaxMin, waitOnSite });
     }).sort((a, b) => (b.totalCost - a.totalCost) || (b.loads - a.loads));
 
     const prodMap = new Map();
@@ -2001,10 +2069,11 @@
       const m3 = Number(ctx.ticketMeters(s) || 0) * (sgn || 1);
       const qtyTxt = m3 !== 0 ? `${ctx.fmtNum(m3, m3 % 1 ? 1 : 0)} m³` : `${ctx.fmtNum(Number(s.qty || 0), 0)} ${s.uom || ''}`.trim();
       const amt = round2(Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * (sgn || 1));
+      const taStamp = getTaStamp('sales_tickets', s);
       stream.push({
         rkey: 'sales_tickets', rid: s.id, company: s.company || 'WTC',
         group: 'sales', kindCls: sgn < 0 ? 'crit' : 'sales', kindLbl: sgn < 0 ? 'Return' : 'Sale',
-        isAfterHours: isAh, isOvertime: Boolean(s.overtime), isRepShifted: hasRepShift(s), repDate: repDateOf(s), txDate: txDateOf(s), time: String(s.time || '').slice(0, 5),
+        isAfterHours: isAh, isOvertime: Boolean(s.overtime), isRepShifted: hasRepShift(s), isTurnaround: Boolean(taStamp && taStamp.turnaround_flagged), turnaroundStamp: taStamp, repDate: repDateOf(s), txDate: txDateOf(s), time: String(s.time || '').slice(0, 5),
         ref: s.ticket_no ? `#${s.ticket_no}` : compactRef(s.name, s.id, 'S'),
         party: s.customer || 'Walk-in', detail: [s.product, s.site, s.method].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: amt >= 0, tier: 2,
@@ -2016,14 +2085,40 @@
       const m3 = Number(ctx.ticketMeters(r) || 0);
       const qtyTxt = m3 !== 0 ? `${ctx.fmtNum(m3, m3 % 1 ? 1 : 0)} m³` : `${ctx.fmtNum(Number(r.qty || 0), 0)} ${r.uom || ''}`.trim();
       const amt = round2(Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))));
+      const taStamp = getTaStamp('raw_purchases', r);
       stream.push({
         rkey: 'raw_purchases', rid: r.id, company: r.company || 'WTC',
         group: 'raw', kindCls: 'raw', kindLbl: 'Quarry',
-        isAfterHours: isAh, isOvertime: Boolean(r.overtime), isPendingPrice: Boolean(r.price_pending), isRepShifted: hasRepShift(r), repDate: repDateOf(r), txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
+        isAfterHours: isAh, isOvertime: Boolean(r.overtime), isPendingPrice: Boolean(r.price_pending), isRepShifted: hasRepShift(r), isTurnaround: Boolean(taStamp && taStamp.turnaround_flagged), turnaroundStamp: taStamp, repDate: repDateOf(r), txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
         ref: r.ticket_no ? `#${r.ticket_no}` : compactRef(r.name, r.id, 'R'),
         party: r.site_owner || r.truck_owner || r.site || 'Quarry', detail: [r.product, r.site, r.truck].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: false, tier: 2,
         sortKey: String(r.time || '12:00').padStart(5, '0') + '_' + String(r.ticket_no || '').padStart(8, '0')
+      });
+    });
+    (turnaroundDigest.unpairedFlaggedVisits || []).forEach(v => {
+      const onSiteLbl = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && ctx.STATE && ctx.STATE.lang && ctx.STATE.lang !== 'en') ? window.MFG_I18N.t('On site now') : 'On site now';
+      const tWin = `${v.arrivalHHMM}${v.departureHHMM ? ' to ' + v.departureHHMM : ' (' + onSiteLbl + ')'}`;
+      stream.push({
+        rkey: '', rid: '', company: v.company || 'WTC',
+        group: 'fuel_maint', kindCls: 'warn', kindLbl: 'Site Wait',
+        isAfterHours: false, isOvertime: false, isRepShifted: false, isTurnaround: true,
+        isNonCashVisit: true,
+        turnaroundStamp: {
+          gate_arrival: v.arrivalHHMM,
+          unload_dwell_min: v.durationMin,
+          site_departure: v.departureHHMM,
+          turnaround_flagged: true,
+          on_site_now: v.on_site_now,
+          max_site_wait_min: v.maxSiteWaitMin,
+          gate_name: v.siteName
+        },
+        repDate: '', txDate: v.arrivalDate || targetDate, time: v.arrivalHHMM || '',
+        ref: v.equipment || 'GPS',
+        party: v.siteName || 'Verified Gate',
+        detail: [v.equipment, tWin].filter(Boolean).join(' · '),
+        qtyTxt: `${ctx.fmtNum(v.durationMin, 0)} min`, amount: null, inflow: false, tier: 5,
+        sortKey: String(v.arrivalHHMM || '12:00').padStart(5, '0') + '_' + String(v.id || '')
       });
     });
     extItems.forEach(ex => {
@@ -2397,6 +2492,9 @@
       attOtPayUsd,
       repShiftedCount,
       exceptionCount,
+      turnaroundDigest,
+      bottleneckCount: turnaroundDigest.flaggedCount || 0,
+      bottleneckThresholdMin: turnaroundDigest.maxSiteWaitMin || 45,
       avg7Sales,
       avg7Profit,
       norm7,
@@ -2590,6 +2688,22 @@
     `;
   }
 
+  function renderTurnaroundBadgeHtml(ctx, stamp, aggStats) {
+    const { esc, fmtNum } = ctx;
+    if (stamp && stamp.unload_dwell_min != null) {
+      const flagged = Boolean(stamp.turnaround_flagged);
+      const depTxt = stamp.on_site_now ? 'On site now' : (stamp.site_departure ? `Departure ${stamp.site_departure}` : 'Closed');
+      const tip = `Gate Arrival ${stamp.gate_arrival || '-'} · Dwell ${fmtNum(stamp.unload_dwell_min, 0)} min · ${depTxt}`;
+      return `<span class="dops-dwell-badge${flagged ? ' is-warn' : ''}" data-no-i18n="1" data-ui-tip="${esc(tip)}">${fmtNum(stamp.unload_dwell_min, 0)}m${stamp.on_site_now ? ' live' : ''}</span>`;
+    }
+    if (aggStats && aggStats.waitCount > 0 && aggStats.waitMaxMin > 0) {
+      const flagged = Boolean(aggStats.waitFlagged > 0);
+      const tip = `${fmtNum(aggStats.waitCount, 0)} GPS gate visits · max ${fmtNum(aggStats.waitMaxMin, 0)} min wait`;
+      return `<span class="dops-dwell-badge${flagged ? ' is-warn' : ''}" data-no-i18n="1" data-ui-tip="${esc(tip)}">${fmtNum(aggStats.waitMaxMin, 0)}m${aggStats.waitOnSite ? ' live' : ''}</span>`;
+    }
+    return '';
+  }
+
   function renderPanel1Sales(ctx, dm, lens, isSingleCo) {
     const { esc, ic, fmtUSD, fmtUSDk, fmtNum, coBadge, relLink, norm } = ctx;
     const perms = resolveDopsPerms(ctx);
@@ -2712,6 +2826,7 @@
       if (qFilter === 'rep_shifted' && !(r.repShiftCount > 0)) return false;
       if (qFilter === 'overtime' && !(r.otLoads > 0)) return false;
       if (qFilter === 'exceptions' && !belowCustSet.has(r.key)) return false;
+      if (qFilter === 'turnaround' && !(r.waitFlagged > 0)) return false;
       if (qNorm) {
         const groupHit = matchesQuickSearch(qNorm, [r.name, r.company, (r.sites || []).join(' '), (r.products || []).join(' ')]);
         const tktHit = (r.tickets || []).some(t => matchesQuickSearch(qNorm, [t.ticket_no, t.truck, t.driver, t.site, t.product, t.notes]));
@@ -2758,10 +2873,14 @@
                   const subTkts = isExp ? (r.tickets || []).filter(t => {
                     if (qFilter === 'rep_shifted' && !hasRepShift(t)) return false;
                     if (qFilter === 'overtime' && !t.overtime) return false;
+                    if (qFilter === 'turnaround') {
+                      const st = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function' ? window.MFG_TELEMATICS.getTicketTurnaroundStamp('sales_tickets', t) : null;
+                      if (!st || !st.turnaround_flagged) return false;
+                    }
                     if (innerTktHit && !matchesQuickSearch(qNorm, [t.ticket_no, t.truck, t.driver, t.site, t.product])) return false;
                     return true;
                   }) : [];
-                  const subRcpts = isExp ? (r.rcpts || []).filter(rc => qFilter !== 'rep_shifted' || hasRepShift(rc)) : [];
+                  const subRcpts = isExp ? (r.rcpts || []).filter(rc => qFilter !== 'rep_shifted' && qFilter !== 'turnaround' || (qFilter === 'rep_shifted' && hasRepShift(rc))) : [];
                   return `
                     <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(totalEntries)} individual ${totalEntries === 1 ? 'entry' : 'entries'} for ${esc(r.name)}">
                       <td class="dops-trunc">
@@ -2769,6 +2888,7 @@
                           <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
                           ${relLink('customers', r.name, r.name, true)}
                           ${repBadge}
+                          ${renderTurnaroundBadgeHtml(ctx, null, r)}
                           ${r.ahLoads > 0 ? `<span class="dops-ah-badge">${ic('moon')}+${r.ahLoads}</span>` : ''}
                           ${r.otLoads > 0 ? `<span class="dops-ot-badge" data-ui-tip="${r.otLoads} overtime dispatch">${ic('overtime')}${r.otLoads}</span>` : ''}
                         </div>
@@ -2793,6 +2913,7 @@
                       const sgn = ctx.ticketSign(t) || 1;
                       const m3 = ctx.round2(Number(ctx.ticketMeters(t) || 0) * sgn);
                       const rowTtc = ctx.round2(Number(t.total_ttc != null ? t.total_ttc : t.total || 0) * sgn);
+                      const tStamp = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function' ? window.MFG_TELEMATICS.getTicketTurnaroundStamp('sales_tickets', t) : null;
                       return `
                         <tr class="rrow dops-subrow" data-rkey="sales_tickets" data-rid="${esc(String(t.id || ''))}">
                           <td class="dops-trunc">
@@ -2802,6 +2923,7 @@
                               ${t.time ? `<small class="dops-time-tag">${esc(String(t.time).slice(0, 5))}</small>` : ''}
                               <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="sales" data-print-id="${esc(String(t.id || ''))}" data-ui-tip="Print Sales Slip #${esc(String(t.ticket_no || ''))}">${ic('printer')}</button>
                               ${renderRepBadge(ctx, txDateOf(t), repDateOf(t))}
+                              ${renderTurnaroundBadgeHtml(ctx, tStamp)}
                               ${t.overtime ? `<span class="dops-ot-badge" data-ui-tip="Overtime dispatch">${ic('overtime')}</span>` : ''}
                             </div>
                           </td>
@@ -3017,6 +3139,7 @@
       if (qFilter === 'rep_shifted' && !(q.repShiftCount > 0)) return false;
       if (qFilter === 'overtime' && !(q.otLoads > 0)) return false;
       if (qFilter === 'exceptions') return false;
+      if (qFilter === 'turnaround' && !(q.waitFlagged > 0)) return false;
       if (qNorm) {
         const gHit = matchesQuickSearch(qNorm, [q.site, q.supplier, q.product, q.haulersTxt, q.company]);
         const tHit = (q.tickets || []).some(t => matchesQuickSearch(qNorm, [t.ticket_no, t.truck, t.driver, t.truck_owner]));
@@ -3061,6 +3184,10 @@
                 const subTkts = isExp ? (q.tickets || []).filter(t => {
                   if (qFilter === 'rep_shifted' && !hasRepShift(t)) return false;
                   if (qFilter === 'overtime' && !t.overtime) return false;
+                  if (qFilter === 'turnaround') {
+                    const st = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function' ? window.MFG_TELEMATICS.getTicketTurnaroundStamp('raw_purchases', t) : null;
+                    if (!st || !st.turnaround_flagged) return false;
+                  }
                   if (innerHit && !matchesQuickSearch(qNorm, [t.ticket_no, t.truck, t.driver, t.truck_owner])) return false;
                   return true;
                 }) : [];
@@ -3071,6 +3198,7 @@
                         <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
                         <strong>${esc(q.site)}</strong>
                         ${repBadge}
+                        ${renderTurnaroundBadgeHtml(ctx, null, q)}
                       </div>
                       <small class="dops-cell-sub dops-sub-pad">Quarry · ${relLink('suppliers', q.supplier, q.supplier, true)}</small>
                     </td>
@@ -3089,6 +3217,7 @@
                     const tot = ctx.round2(Number(t.total != null ? t.total : (mat + haul)));
                     const m3 = Number(ctx.ticketMeters(t) || 0);
                     const haulerTag = t.transport_by === 'Company fleet' ? `Own ${t.truck || ''}` : `${t.truck || ''} (${t.truck_owner || t.driver || 'Hauler'})`;
+                    const tStamp = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function' ? window.MFG_TELEMATICS.getTicketTurnaroundStamp('raw_purchases', t) : null;
                     return `
                       <tr class="rrow dops-subrow" data-rkey="raw_purchases" data-rid="${esc(String(t.id || ''))}">
                         <td class="dops-trunc">
@@ -3098,6 +3227,7 @@
                             ${t.time ? `<small class="dops-time-tag">${esc(String(t.time).slice(0, 5))}</small>` : ''}
                             <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="raw" data-print-id="${esc(String(t.id || ''))}" data-ui-tip="Print Quarry Slip #${esc(String(t.ticket_no || ''))}">${ic('printer')}</button>
                             ${renderRepBadge(ctx, txDateOf(t), repDateOf(t))}
+                            ${renderTurnaroundBadgeHtml(ctx, tStamp)}
                             ${t.overtime ? `<span class="dops-ot-badge" data-ui-tip="Overtime trip">${ic('overtime')}</span>` : ''}
                           </div>
                         </td>
@@ -3227,7 +3357,7 @@
       const rows = (dm.expCategoryRows || []).filter(r => {
         if (qFilter === 'rep_shifted' && !(r.repShiftCount > 0)) return false;
         if (qFilter === 'exceptions' && !(r.pending > 0)) return false;
-        if (qFilter === 'overtime') return false;
+        if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
         if (qNorm) {
           const cHit = matchesQuickSearch(qNorm, [r.label, r.category, r.method]);
           const bHit = (r.bills || []).some(b => matchesQuickSearch(qNorm, [b.supplier, b.equipment, b.notes, b.invoice]));
@@ -3289,8 +3419,8 @@
     }
 
     if (lens === 'stock') {
-      const items = dm.dayExpItems.filter(it => matchesQuickSearch(qNorm, [it.item_name, it.subcategory, it.category, it.target_equipment, it.warehouse_location]));
-      const wh = dm.dayWhMoves.filter(wm => matchesQuickSearch(qNorm, [wm.item_name, wm.warehouse_location, wm.target_equipment]));
+      const items = qFilter === 'turnaround' ? [] : dm.dayExpItems.filter(it => matchesQuickSearch(qNorm, [it.item_name, it.subcategory, it.category, it.target_equipment, it.warehouse_location]));
+      const wh = qFilter === 'turnaround' ? [] : dm.dayWhMoves.filter(wm => matchesQuickSearch(qNorm, [wm.item_name, wm.warehouse_location, wm.target_equipment]));
       return `
         <div class="dops-card-body no-pad dops-flex-col">
           ${pnlStripHtml}
@@ -3337,7 +3467,7 @@
     const bills = (dm.expenseBillRows || []).filter(b => {
       if (qFilter === 'rep_shifted' && !b.isRepShifted) return false;
       if (qFilter === 'exceptions' && !b.isPending) return false;
-      if (qFilter === 'overtime') return false;
+      if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
       if (qNorm && !matchesQuickSearch(qNorm, [b.supplier, b.category, b.subcategory, b.equipment, b.notes, b.invoice, (b.itemNames || []).join(' ')])) return false;
       return true;
     });
@@ -3423,7 +3553,7 @@
     if (lens === 'external') {
       const extRows = dm.extItems.filter(ex => {
         if (qFilter === 'rep_shifted' && !ex.isRepShifted) return false;
-        if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+        if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [ex.counterparty, ex.notes, ex.kind, ex.company]);
       });
       if (!extRows.length) {
@@ -3464,10 +3594,10 @@
     }
 
     if (lens === 'fx_loans') {
-      const convRows = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions')
+      const convRows = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround')
         ? []
         : dm.convItems.filter(cv => matchesQuickSearch(qNorm, [cv.dirLabel, cv.notes, cv.company]));
-      const lnRows = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions')
+      const lnRows = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround')
         ? []
         : dm.loanEvents.filter(ln => matchesQuickSearch(qNorm, [ln.party, ln.badge, ln.notes, ln.company]));
       if (!convRows.length && !lnRows.length && (!dm.dayFxRates.length || qFilter !== 'all')) {
@@ -3518,13 +3648,13 @@
       const rcptRows = dm.dayRcpts.filter(r => {
         if (ctx.receiptKind(r) === 'Excluded') return false;
         if (qFilter === 'rep_shifted' && !hasRepShift(r)) return false;
-        if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+        if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [r.customer, r.method, r.reference, r.notes, r.company]);
       });
       const setRows = dm.daySets.filter(s => {
         if (ctx.settlementKind(s) === 'Excluded') return false;
         if (qFilter === 'rep_shifted' && !hasRepShift(s)) return false;
-        if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+        if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [s.supplier, s.method, s.reference, s.notes, s.company]);
       });
       if (!rcptRows.length && !setRows.length) {
@@ -3574,7 +3704,7 @@
     // Default ('bridge'): Cash Inflow/Outflow Balance Bar + Complete Named Cash, External, AR/AP & Loans Table
     const moves = (dm.cashMoveRows || []).filter(m => {
       if (qFilter === 'rep_shifted' && !m.isRepShifted) return false;
-      if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+      if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [m.party, m.badgeTxt, m.detail, m.company]);
     });
     return `
@@ -3619,6 +3749,26 @@
     const expMap = ctx.STATE.dailyOpsExpanded || {};
     const maintCount = dm.dayOilLogs.length + dm.dayRepairs.length + dm.dayDefects.length + dm.dayPartMoves.length;
 
+    const taDigest = dm.turnaroundDigest || { visits: [], flaggedVisits: [], flaggedCount: 0, maxSiteWaitMin: 45, avgWaitMin: 0 };
+    const taFlaggedVisits = Array.isArray(taDigest.flaggedVisits) ? taDigest.flaggedVisits : [];
+    const hasFlaggedTaEquip = eqName => {
+      const raw = String(eqName || '').trim();
+      const re = raw.toLowerCase();
+      if (!re) return false;
+      const matchFn = (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.unitMatchesRecordEquip === 'function')
+        ? window.MFG_TELEMATICS.unitMatchesRecordEquip
+        : null;
+      return taFlaggedVisits.some(v => {
+        if (matchFn) return matchFn({ equipment: v.equipment, plate_no: v.plate_no, aliases: v.aliases }, raw);
+        const ve = String(v.equipment || '').trim().toLowerCase();
+        const vp = String(v.plate_no || '').trim().toLowerCase();
+        return (ve && ve === re) || (vp && vp === re);
+      });
+    };
+    const taBadgeHtml = taDigest.visits && taDigest.visits.length
+      ? `<span class="dops-dwell-badge${taDigest.flaggedCount > 0 ? ' is-warn' : ''}" data-no-i18n="1" data-ui-tip="GPS Gate Turnaround: ${fmtNum(taDigest.visits.length)} visits · ${fmtNum(taDigest.avgWaitMin, 0)}m avg">${taDigest.flaggedCount > 0 ? `${fmtNum(taDigest.flaggedCount)} Wait > ${fmtNum(taDigest.maxSiteWaitMin, 0)}m` : `${fmtNum(taDigest.avgWaitMin, 0)}m Wait`}</span>`
+      : '';
+
     const topStripHtml = `
       <div class="dops-stat-strip-3 dops-substrip">
         <div class="dops-stat-box" data-dops-lens="fuel:fuel_maint">
@@ -3626,7 +3776,7 @@
           <b>${dm.closingTankL != null ? `${fmtNum(dm.closingTankL, 0)} L` : 'N/A'} <span class="dops-stat-muted">· ${fmtNum(dm.dieselIssuedL, 0)} L issued</span></b>
         </div>
         <div class="dops-stat-box" data-dops-lens="fuel:units">
-          <small>Active Fleet (${fmtNum(dm.activeTrucksCount)} Units)</small>
+          <small>Active Fleet (${fmtNum(dm.activeTrucksCount)} Units) ${taBadgeHtml}</small>
           <b>Own ${fmtNum(dm.companyFleetTrips)} <span class="dops-stat-muted">· Haulers ${fmtNum(dm.haulerTrips)} trips</span></b>
         </div>
         <div class="dops-stat-box${dm.openCritDefects.length > 0 ? ' tone-crit' : (dm.dayMalfs.length > 0 ? ' tone-brass' : '')}" data-dops-lens="fuel:maint_only">
@@ -3636,28 +3786,41 @@
       </div>
     `;
 
-    const malfFiltered = dm.dayMalfs.filter(mf => {
+    const malfFiltered = (qFilter === 'turnaround' ? [] : dm.dayMalfs).filter(mf => {
       if (qFilter === 'rep_shifted' && !hasRepShift(mf)) return false;
       if (qFilter === 'overtime') return false;
       return matchesQuickSearch(qNorm, [mf.item, mf.notes, mf.discrepancy_type, mf.company]);
     });
-    const repFiltered = dm.dayRepairs.filter(rp => {
+    const repFiltered = (qFilter === 'turnaround' ? [] : dm.dayRepairs).filter(rp => {
       if (qFilter === 'rep_shifted' && !hasRepShift(rp)) return false;
       if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
       return matchesQuickSearch(qNorm, [rp.equipment, rp.notes, rp.repair_source, rp.company]);
     });
+    const taVisFiltered = qFilter === 'turnaround'
+      ? taFlaggedVisits.filter(v => matchesQuickSearch(qNorm, [v.equipment, v.siteName, v.company, v.pairedParty]))
+      : [];
+    const onSitePanelLbl = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && ctx.STATE && ctx.STATE.lang && ctx.STATE.lang !== 'en')
+      ? window.MFG_I18N.t('On site now')
+      : 'On site now';
+    const renderPanel5TurnaroundRows = () => taVisFiltered.map(v => `
+      <tr${v.pairedTicketKey && v.pairedTicketKey.includes(':') ? ` class="rrow" data-rkey="${esc(v.pairedTicketKey.split(':')[0])}" data-rid="${esc(v.pairedTicketKey.split(':')[1])}"` : ''}>
+        <td class="dops-trunc"><span class="dops-kind warn">Site Wait</span> <strong>${v.equipment ? esc(v.equipment) : '<span>GPS Gate Visit</span>'}</strong></td>
+        <td class="dops-trunc">${esc(v.siteName)} · ${esc(v.arrivalHHMM)}${v.departureHHMM ? ` to ${esc(v.departureHHMM)}` : ` (${esc(onSitePanelLbl)})`}</td>
+        <td class="r"><span class="dops-dwell-badge is-warn" data-no-i18n="1">${fmtNum(v.durationMin, 0)}m${v.on_site_now ? ' live' : ''}</span></td>
+      </tr>
+    `).join('');
 
     if (lens === 'maint' || lens === 'maint_only') {
-      const oilFiltered = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions')
+      const oilFiltered = (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround')
         ? []
         : dm.dayOilLogs.filter(ol => matchesQuickSearch(qNorm, [ol.equipment, ol.oil_type, ol.service_action]));
       const defAll = dm.dayDefects.concat(dm.openCritDefects.filter(d => !dm.dayDefects.includes(d)));
       const defFiltered = defAll.filter(df => {
         if (qFilter === 'rep_shifted' && !hasRepShift(df)) return false;
-        if (qFilter === 'overtime') return false;
+        if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [df.equipment, df.severity, df.part_name, df.description, df.notes]);
       });
-      const hasMaint = malfFiltered.length || oilFiltered.length || repFiltered.length || defFiltered.length;
+      const hasMaint = malfFiltered.length || oilFiltered.length || repFiltered.length || defFiltered.length || taVisFiltered.length;
       return `
         <div class="dops-card-body no-pad dops-flex-col">
           ${topStripHtml}
@@ -3672,6 +3835,7 @@
                 </tr>
               </thead>
               <tbody>
+                ${renderPanel5TurnaroundRows()}
                 ${malfFiltered.map(mf => {
                   const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
                   const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
@@ -3724,6 +3888,7 @@
       const unitRows = allUnits.filter(fu => {
         if (qFilter === 'rep_shifted' && !(fu.repShiftCount > 0)) return false;
         if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+        if (qFilter === 'turnaround' && !hasFlaggedTaEquip(fu.equipment)) return false;
         if (qNorm) {
           const uHit = matchesQuickSearch(qNorm, [fu.equipment, fu.category, fu.drivers.join(' '), fu.company]);
           const fHit = (fu.fills || []).some(fl => matchesQuickSearch(qNorm, [fl.ticket_no, fl.driver, fl.item, fl.notes]));
@@ -3746,6 +3911,7 @@
                 </tr>
               </thead>
               <tbody>
+                ${renderPanel5TurnaroundRows()}
                 ${malfFiltered.map(mf => {
                   const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
                   const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
@@ -3811,7 +3977,7 @@
                     }).join('')}
                   `;
                 }).join('')}
-                ${!unitRows.length && !malfFiltered.length ? `<tr><td colspan="3" class="dops-empty">No matching equipment diesel or lube issues on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
+                ${!unitRows.length && !malfFiltered.length && !taVisFiltered.length ? `<tr><td colspan="3" class="dops-empty">No matching equipment diesel or lube issues on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
               </tbody>
               <tfoot>
                 <tr>
@@ -3830,6 +3996,7 @@
     const fuels = (dm.fuelSortedRows || []).filter(fl => {
       if (qFilter === 'rep_shifted' && !hasRepShift(fl)) return false;
       if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+      if (qFilter === 'turnaround' && !hasFlaggedTaEquip(fl.equipment)) return false;
       return matchesQuickSearch(qNorm, [fl.equipment, fl.driver, fl.item, fl.ticket_no, fl.equipment_category, fl.notes, fl.company]);
     });
     return `
@@ -3846,6 +4013,7 @@
               </tr>
             </thead>
             <tbody>
+              ${renderPanel5TurnaroundRows()}
               ${malfFiltered.map(mf => {
                 const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
                 const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
@@ -3889,7 +4057,7 @@
                   </tr>
                 `;
               }).join('')}
-              ${!fuels.length && !malfFiltered.length && !repFiltered.length ? `<tr><td colspan="3" class="dops-empty">No matching diesel fills, lube issues, or fleet repairs on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
+              ${!fuels.length && !malfFiltered.length && !repFiltered.length && !taVisFiltered.length ? `<tr><td colspan="3" class="dops-empty">No matching diesel fills, lube issues, or fleet repairs on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
             </tbody>
             <tfoot>
               <tr>
@@ -3976,7 +4144,7 @@
 
     if (lens === 'master' || lens === 'master_gov') {
       const adds = (dm.dayRegAdds || []).filter(ad => {
-        if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions') return false;
+        if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [ad.cleanName, ad.cleanSub, ad.cleanLabel]);
       });
       return `
@@ -4022,16 +4190,16 @@
     // Default ('overview' or 'team'): 3-Stat Strip + Exceptions, Salaries, New Master & Overtime Attendance Table + Governance Bar
     const empRows = perms.canPayroll ? dm.dayEmps.filter(em => {
       if (qFilter === 'rep_shifted' && !hasRepShift(em)) return false;
-      if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+      if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [em.staff, em.type, em.company]);
     }) : [];
     const salRows = perms.canPayroll ? dm.daySals.filter(sa => {
       if (qFilter === 'rep_shifted' && !hasRepShift(sa)) return false;
-      if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
+      if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [sa.staff, sa.payroll_month, sa.method, sa.notes, sa.company]);
     }) : [];
     const adds = (dm.dayRegAdds || []).filter(ad => {
-      if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions') return false;
+      if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [ad.cleanName, ad.cleanSub, ad.cleanLabel]);
     });
     const attRows = (dm.attSortedRows || []).filter(at => {
@@ -4040,6 +4208,7 @@
       if (qFilter === 'rep_shifted' && !hasRepShift(at)) return false;
       if (qFilter === 'overtime' && !(oth > 0)) return false;
       if (qFilter === 'exceptions' && !isAbs) return false;
+      if (qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [at.staff, at.status, at.type, at.in_time, at.out_time, at.notes, at.company]);
     });
     return `
@@ -4121,6 +4290,7 @@
       if (perms && !perms.canPayroll && row.group === 'team' && ['salaries', 'employments', 'freelance_entries', 'logistics_allowances'].includes(row.rkey)) return false;
       if (streamFilter === 'after_hours' && !row.isAfterHours) return false;
       else if (streamFilter === 'rep_shifted' && !row.isRepShifted) return false;
+      else if (streamFilter === 'turnaround' && !row.isTurnaround) return false;
       else if (streamFilter === 'sales' && row.group !== 'sales') return false;
       else if (streamFilter === 'raw' && row.group !== 'raw') return false;
       else if (streamFilter === 'agreements' && row.group !== 'agreements') return false;
@@ -4178,14 +4348,14 @@
         </thead>
         <tbody>
           ${filtered.slice(0, 160).map(row => `
-            <tr class="rrow${row.isAfterHours ? ' is-afterhours-row' : ''}" data-rkey="${esc(row.rkey)}" data-rid="${esc(String(row.rid || ''))}">
+            <tr class="${row.rkey && row.rid ? 'rrow' : ''}${row.isAfterHours ? ' is-afterhours-row' : ''}"${row.rkey && row.rid ? ` data-rkey="${esc(row.rkey)}" data-rid="${esc(String(row.rid || ''))}"` : ''}>
               <td class="mono dops-ref-cell">
                 <strong>${esc(row.ref)}</strong>${row.time ? `<small class="dops-time-tag">${esc(row.time)}</small>` : ''}
               </td>
               <td class="dops-type-cell">
                 <span class="dops-kind ${row.kindCls}">${esc(row.kindLbl)}</span>
               </td>
-              <td class="dops-trunc">${!isSingleCo ? `${coBadge(row.company)} ` : ''}${row.isRepShifted ? renderRepBadge(ctx, row.txDate, row.repDate) : ''}${row.isAfterHours ? `<span class="dops-ah-badge" data-ui-tip="Occurred on ${esc(fmtShortDay(row.txDate))} after accountants left · logged via Yesterday's After-Hours">${ic('moon')}After-Hours</span>` : ''}${row.isOvertime ? `<span class="dops-ot-badge" data-ui-tip="Overtime shift load">${ic('overtime')}Overtime</span>` : ''}${row.isPendingPrice ? `<span class="dops-pend-badge" data-ui-tip="Pending supplier invoice price">${ic('clock')}Pending $</span>` : ''}<strong>${esc(row.party)}</strong>${row.detail ? ` <span style="color:var(--muted)">· ${esc(row.detail)}</span>` : ''}</td>
+              <td class="dops-trunc">${!isSingleCo ? `${coBadge(row.company)} ` : ''}${row.isRepShifted ? renderRepBadge(ctx, row.txDate, row.repDate) : ''}${row.isAfterHours ? `<span class="dops-ah-badge" data-ui-tip="Occurred on ${esc(fmtShortDay(row.txDate))} after accountants left · logged via Yesterday's After-Hours">${ic('moon')}After-Hours</span>` : ''}${row.isOvertime ? `<span class="dops-ot-badge" data-ui-tip="Overtime shift load">${ic('overtime')}Overtime</span>` : ''}${row.isPendingPrice ? `<span class="dops-pend-badge" data-ui-tip="Pending supplier invoice price">${ic('clock')}Pending $</span>` : ''}${renderTurnaroundBadgeHtml(ctx, row.turnaroundStamp)}<strong>${esc(row.party)}</strong>${row.detail ? ` <span style="color:var(--muted)">· ${esc(row.detail)}</span>` : ''}</td>
               <td class="r dops-vol-cell">${esc(row.qtyTxt || '-')}</td>
               <td class="r dops-amt-cell">${row.amount == null ? '-' : `<strong style="color:${row.inflow ? 'var(--good)' : (row.amount < 0 ? 'var(--crit)' : 'var(--ink)')}">${fmtUSD(row.amount, 0)}</strong>`}</td>
             </tr>
@@ -4403,7 +4573,9 @@
       [dm.absentCount, 'Absent']
     ].filter(k => k[0] > 0);
     const excLabel = excKinds.length === 1 ? excKinds[0][1] : 'Exceptions';
-    const hasAttention = attChips.length > 0 || dm.exceptionCount > 0;
+    const turnaroundCount = Number(dm.bottleneckCount || 0);
+    const turnaroundThresh = Number(dm.bottleneckThresholdMin || 45);
+    const hasAttention = attChips.length > 0 || dm.exceptionCount > 0 || turnaroundCount > 0;
 
     // KPI 3: Expenses & Bills
     const topExpBill = dm.expenseBillRows[0] || null;
@@ -4538,6 +4710,7 @@
     const cntStream = k => filterDrawerRows(dm, k, '', perms).length;
     const ahCnt = cntStream('after_hours');
     const repShiftStreamCnt = cntStream('rep_shifted');
+    const turnaroundStreamCnt = cntStream('turnaround');
 
     // Multi-Entity BU Attribution Strip when viewing All Group
     const buStripHtml = (!isSingleCo && dm.entityRows && dm.entityRows.length > 1)
@@ -4589,6 +4762,13 @@
                   ${ic('warn')}
                   <span class="dops-att-lbl">${excLabel}</span>
                   <span class="dops-fp-cnt">${fmtNum(dm.exceptionCount)}</span>
+                </button>
+              ` : ''}
+              ${turnaroundCount > 0 || qFilter === 'turnaround' ? `
+                <button type="button" class="dops-att-chip warn dops-filter-pill turnaround${qFilter === 'turnaround' ? ' active' : ''}" id="dopsTurnaroundBtn" data-dops-qfilter="turnaround" aria-pressed="${qFilter === 'turnaround' ? 'true' : 'false'}" data-ui-tip="Filter panels to geofenced site stops exceeding ${fmtNum(turnaroundThresh, 0)} minutes">
+                  ${ic('clock')}
+                  <span class="dops-att-lbl">Site Wait &gt; ${fmtNum(turnaroundThresh, 0)}m</span>
+                  <span class="dops-fp-cnt">${fmtNum(turnaroundCount)}</span>
                 </button>
               ` : ''}
               ${dm.repShiftedCount > 0 || qFilter === 'rep_shifted' ? `
@@ -4756,6 +4936,7 @@
                 <button type="button" class="dops-dchip${streamFilter === 'costs' ? ' active' : ''}" data-dops-stream="costs">Costs (${fmtNum(cntStream('costs'))})</button>
                 <button type="button" class="dops-dchip is-rep-tab${repShiftStreamCnt > 0 ? ' has-rep' : ''}${streamFilter === 'rep_shifted' ? ' active' : ''}" data-dops-stream="rep_shifted">${ic('rep_shift')} Booked to Another Day (${fmtNum(repShiftStreamCnt)})</button>
                 <button type="button" class="dops-dchip is-ah-tab${ahCnt > 0 ? ' has-ah' : ''}${streamFilter === 'after_hours' ? ' active' : ''}" data-dops-stream="after_hours">After-Hours (${fmtNum(ahCnt)})</button>
+                ${turnaroundStreamCnt > 0 || streamFilter === 'turnaround' ? `<button type="button" class="dops-dchip${streamFilter === 'turnaround' ? ' active' : ''}" data-dops-stream="turnaround">Site Wait (${fmtNum(turnaroundStreamCnt)})</button>` : ''}
                 <button type="button" class="dops-dchip${streamFilter === 'sales' ? ' active' : ''}" data-dops-stream="sales">Sales (${fmtNum(cntStream('sales'))})</button>
                 <button type="button" class="dops-dchip${streamFilter === 'raw' ? ' active' : ''}" data-dops-stream="raw">Quarry (${fmtNum(cntStream('raw'))})</button>
                 <button type="button" class="dops-dchip${streamFilter === 'agreements' ? ' active' : ''}" data-dops-stream="agreements">Agreements (${fmtNum(cntStream('agreements'))})</button>
@@ -4788,6 +4969,20 @@
     if (window.MFG_ASK && typeof window.MFG_ASK.rebindDailyHandoverButtons === 'function') {
       window.MFG_ASK.rebindDailyHandoverButtons(stage);
     }
+    if (typeof window !== 'undefined' && window.MFG_TELEMATICS) {
+      const targetDt = stage.getAttribute('data-target-date') || '';
+      const lCtx = (_lastDayModel && _lastDayModel.ctx) || ctx;
+      const au = lCtx && typeof lCtx.activeUser === 'function' ? lCtx.activeUser() : null;
+      const tdy = lCtx && typeof lCtx.todayISO === 'function' ? lCtx.todayISO() : '';
+      const sig = `${(au && (au.id || au.email)) || 'anon'}|${targetDt}`;
+      if (targetDt && tdy && targetDt === tdy && window._dopsTelFetchedSig !== sig && typeof window.MFG_TELEMATICS.fetchSnapshot === 'function') {
+        window._dopsTelFetchedSig = sig;
+        window.MFG_TELEMATICS.fetchSnapshot({ silent: Boolean(window.__MFG_HEADLESS_TEST) });
+      }
+      if (targetDt && tdy && targetDt <= tdy && typeof window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate === 'function') {
+        window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate(targetDt, { companyScope: STATE.company, silent: Boolean(window.__MFG_HEADLESS_TEST) });
+      }
+    }
 
     const refreshBentoInPlace = () => {
       if (!_lastDayModel) {
@@ -4818,6 +5013,11 @@
       if (excBtn) {
         excBtn.classList.toggle('active', qf === 'exceptions');
         excBtn.setAttribute('aria-pressed', qf === 'exceptions' ? 'true' : 'false');
+      }
+      const taBtn = stage.querySelector('#dopsTurnaroundBtn');
+      if (taBtn) {
+        taBtn.classList.toggle('active', qf === 'turnaround');
+        taBtn.setAttribute('aria-pressed', qf === 'turnaround' ? 'true' : 'false');
       }
     };
 

@@ -19,7 +19,7 @@
 
   let _ctx = null;
   let _lastScopeSig = '';
-  let _snapStore = { scopeBase: '', fetchedAt: '', units: [], geofences: [], demo: false, loading: false, error: '' };
+  let _snapStore = { scopeBase: '', fetchedAt: '', units: [], geofences: [], demo: false, fallback: false, stale: false, receivedAtMs: 0, skewMs: 0, loading: false, error: '', errorKind: '' };
   let _inflightSnapPromise = null;
   let _inflightSnapScope = '';
   let _snapAbort = null;
@@ -28,6 +28,8 @@
   let _inflightHistKey = '';
   let _inflightHistPromise = null;
   const _histCache = new Map();
+  const _fetchedTurnaroundDates = new Map();
+  const _inflightTurnaroundDates = new Set();
 
   let _pollTimer = null;
   let _ageTimer = null;
@@ -208,8 +210,11 @@
       if (_histAbort) { try { _histAbort.abort(); } catch (_) {} _histAbort = null; }
       _inflightSnapPromise = null;
       _inflightHistPromise = null;
-      _snapStore = { scopeBase: baseSig, fetchedAt: '', units: [], geofences: [], demo: isDemoActive(), loading: false, error: '' };
+      _snapStore = { scopeBase: baseSig, fetchedAt: '', units: [], geofences: [], demo: isDemoActive(), fallback: false, stale: false, receivedAtMs: 0, skewMs: 0, loading: false, error: '', errorKind: '' };
       _histCache.clear();
+      _fetchedTurnaroundDates.clear();
+      _inflightTurnaroundDates.clear();
+      _clearInMemoryTicketStamps();
       UI_STATE.reconOpenDeviceId = 0;
       UI_STATE.reconBusy = false;
       UI_STATE.aiBusy = false;
@@ -465,8 +470,9 @@
     const u = _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
     if (!u && !isDemoActive()) return null;
     if (!hasLiveApi()) {
-      _snapStore.units = buildOfflineFallbackUnits();
+      _snapStore.units = buildOfflineFallbackUnits().map(u => Object.assign({}, u, { _fallback: true }));
       _snapStore.demo = isDemoActive();
+      _snapStore.fallback = true;
       _snapStore.fetchedAt = new Date().toISOString();
       return getScopedUnits();
     }
@@ -509,23 +515,27 @@
             units: j.units,
             geofences: j.geofences || [],
             demo: Boolean(j.demo),
+            fallback: false,
             stale: Boolean(j.stale),
             receivedAtMs: recvMs,
             // Server clock minus this device's clock, so report ages stay right
             // on a PC or phone whose clock is off.
             skewMs: Number.isFinite(srvMs) ? (srvMs - recvMs) : 0,
             loading: false,
-            error: ''
+            error: '',
+            errorKind: ''
           };
           if (!opts.silent && _ctx && typeof _ctx.rerenderWorkspace === 'function') {
+            const ae = typeof document !== 'undefined' ? document.activeElement : null;
+            const isTypingOrEditing = Boolean(ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable));
             const st = _ctx.getState ? _ctx.getState() : null;
             if (st && (st.view === 'reg_sites' || st.view === 'reg_regions')) {
               const refreshedInPlace = Boolean(window.MFG_GEO && typeof window.MFG_GEO.refreshStudioMapInPlace === 'function' && window.MFG_GEO.refreshStudioMapInPlace());
-              if (!refreshedInPlace) _ctx.rerenderWorkspace();
+              if (!refreshedInPlace && !isTypingOrEditing) _ctx.rerenderWorkspace();
             } else if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment') && refreshDeckInPlace()) {
               // Only the telematics card was redrawn: the page keeps its scroll,
               // open popovers and the studios below it.
-            } else if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
+            } else if (!isTypingOrEditing && st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'sentinels' || st.view === 'daily_ops' || st.view === 'trd_daily' || st.view === 'hsp_daily' || st.view === 're_daily' || st.view === 'ins_daily' || st.view === 'hld_daily' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
               _ctx.rerenderWorkspace();
             }
           }
@@ -652,6 +662,110 @@
     _inflightHistPromise = p;
 
     return _inflightHistPromise;
+  }
+
+  async function ensureTurnaroundHistoryForDate(dateIso, opts = {}) {
+    ensureSeatScopeFresh();
+    if (!hasLiveApi() || isDemoActive()) return 0;
+    const u = _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
+    if (!u) return 0;
+    const dStr = String(dateIso || todayIso()).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dStr) || dStr > todayIso()) return 0;
+    const reqSig = getSeatIdentitySig();
+    const scopeStr = String(opts.companyScope || getActiveCompanyScope());
+    const dateKey = `${reqSig}|${scopeStr}|${dStr}`;
+    if (_inflightTurnaroundDates.has(dateKey)) return 0;
+    const isToday = dStr === todayIso();
+    const TODAY_TTL_MS = 120 * 1000;
+    const prev = _fetchedTurnaroundDates.get(dateKey);
+    if (!opts.force && prev && (!isToday || (Date.now() - prev.ts) < TODAY_TTL_MS)) return 0;
+
+    _inflightTurnaroundDates.add(dateKey);
+    try {
+      if (!Array.isArray(_snapStore.units) || !_snapStore.units.length || _snapStore.scopeBase !== reqSig) {
+        await fetchSnapshot({ silent: true });
+      }
+      if (reqSig !== getSeatIdentitySig() || _snapStore.fallback) {
+        _fetchedTurnaroundDates.delete(dateKey);
+        return 0;
+      }
+      const units = getScopedUnits(scopeStr).filter(unit => unit && unit.device_id);
+      if (!units.length) {
+        _fetchedTurnaroundDates.delete(dateKey);
+        return 0;
+      }
+      const refreshToday = Boolean(isToday && (opts.force || prev));
+      const toFetch = refreshToday
+        ? units
+        : units.filter(unit => !_histCache.has(`${reqSig}|${unit.device_id}|${dStr}|${dStr}`));
+      if (!toFetch.length) {
+        _fetchedTurnaroundDates.set(dateKey, { ts: Date.now() });
+        return 0;
+      }
+
+      const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+      const fetcher = window.ISABI_EDGE_FETCH || fetch;
+      let loaded = 0;
+      let changed = false;
+      let allSucceeded = true;
+      for (const unit of toFetch) {
+        if (reqSig !== getSeatIdentitySig()) {
+          allSucceeded = false;
+          break;
+        }
+        const devId = Number(unit.device_id);
+        const cacheKey = `${reqSig}|${devId}|${dStr}|${dStr}`;
+        if (!refreshToday && _histCache.has(cacheKey)) continue;
+        try {
+          const qs = `action=history&device_id=${encodeURIComponent(devId)}&from_date=${encodeURIComponent(dStr)}&to_date=${encodeURIComponent(dStr)}`;
+          const res = await fetcher(`${base}/api/telematics?${qs}`);
+          if (reqSig !== getSeatIdentitySig()) {
+            allSucceeded = false;
+            break;
+          }
+          if (res && res.ok) {
+            const j = await res.json().catch(() => null);
+            if (j && j.ok && j.history && Array.isArray(j.history.stops)) {
+              const prevHist = _histCache.get(cacheKey);
+              if (!prevHist || JSON.stringify(prevHist.stops || []) !== JSON.stringify(j.history.stops)) {
+                changed = true;
+              }
+              _histCache.set(cacheKey, j.history);
+              loaded += 1;
+            } else {
+              allSucceeded = false;
+            }
+          } else {
+            allSucceeded = false;
+          }
+        } catch (_) {
+          allSucceeded = false;
+        }
+      }
+      if (allSucceeded && reqSig === getSeatIdentitySig()) {
+        _fetchedTurnaroundDates.set(dateKey, { ts: Date.now() });
+      } else {
+        _fetchedTurnaroundDates.delete(dateKey);
+      }
+      if (changed && loaded > 0 && !opts.silent && reqSig === getSeatIdentitySig() && _ctx && typeof _ctx.rerenderWorkspace === 'function') {
+        const ae = typeof document !== 'undefined' ? document.activeElement : null;
+        const isTyping = Boolean(ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable));
+        if (!isTyping) {
+          const st = _ctx.getState ? _ctx.getState() : null;
+          if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment') && refreshDeckInPlace()) {
+            // Only the telematics card was redrawn: keep page scroll & open popovers.
+          } else {
+            _ctx.rerenderWorkspace();
+          }
+        }
+      }
+      return loaded;
+    } catch (_) {
+      _fetchedTurnaroundDates.delete(dateKey);
+      return 0;
+    } finally {
+      _inflightTurnaroundDates.delete(dateKey);
+    }
   }
 
   function unitMatchesRecordEquip(unit, recEquipStr) {
@@ -941,6 +1055,236 @@
 
   // ==================== DETERMINISTIC GPS DWELL VS. PINNED SITE DRIFT WATCHDOG ====================
   let _lastDwellAlerts = [];
+  let _lastTurnaroundAlerts = [];
+  let _lastTurnaroundDigest = null;
+  const _stampedTicketRefs = new Set();
+  const _lastTurnaroundByTicketKey = new Map();
+  let _beirutPartsFmt = null;
+
+  function _clearInMemoryTicketStamps() {
+    _stampedTicketRefs.forEach(rec => {
+      if (!rec || typeof rec !== 'object' || rec._turnaround_persisted) return;
+      delete rec.gate_arrival;
+      delete rec.unload_dwell_min;
+      delete rec.site_departure;
+      delete rec.turnaround_flagged;
+      delete rec._turnaround_meta;
+      delete rec._turnaround_ephemeral;
+    });
+    _stampedTicketRefs.clear();
+    _lastTurnaroundByTicketKey.clear();
+    _lastTurnaroundAlerts = [];
+    _lastTurnaroundDigest = null;
+  }
+
+  function _normSiteKey(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function _normalizeGateCategory(rawCat, hasSupplierHint) {
+    const c = String(rawCat || '').trim().toLowerCase();
+    if (/^(supplier|quarry|crusher)$/.test(c)) return 'supplier';
+    if (/^(customer|client|site|delivery|project)$/.test(c)) return 'customer';
+    return hasSupplierHint ? 'supplier' : 'general';
+  }
+
+  function _getCompanyHubs(geoCfg, seed) {
+    const hubs = [];
+    if (typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.getAllCompanyHubs === 'function') {
+      (window.MFG_GEO.getAllCompanyHubs(seed) || []).forEach(h => {
+        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name, lat: Number(h.lat), lng: Number(h.lng) });
+      });
+    }
+    if (geoCfg && geoCfg.companyHubs && typeof geoCfg.companyHubs === 'object') {
+      Object.entries(geoCfg.companyHubs).forEach(([k, h]) => {
+        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name || k, lat: Number(h.lat), lng: Number(h.lng) });
+      });
+    }
+    return hubs;
+  }
+
+  function _validCoordPair(latRaw, lngRaw) {
+    if (latRaw == null || lngRaw == null || latRaw === '' || lngRaw === '') return null;
+    const lat = Number(latRaw), lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4) return null;
+    return { lat, lng };
+  }
+
+  function _buildVerifiedGatePinPool(seed, geoCfg, stNow) {
+    const slotMap = new Map();
+    const putGate = entry => {
+      const nKey = _normSiteKey(entry.name);
+      if (!nKey) return;
+      let cat = _normalizeGateCategory(entry.site_category, Boolean(entry._hasSupplierHint));
+      if (cat === 'general') {
+        const hasCust = slotMap.has(`${entry.industry}|${nKey}|customer`);
+        const hasSupp = slotMap.has(`${entry.industry}|${nKey}|supplier`);
+        if (hasCust && !hasSupp) cat = 'customer';
+        else if (hasSupp && !hasCust) cat = 'supplier';
+      }
+      const slotKey = `${entry.industry}|${nKey}|${cat}`;
+      const genKey = `${entry.industry}|${nKey}|general`;
+      if (cat !== 'general' && slotMap.has(genKey)) {
+        slotMap.delete(genKey);
+      }
+      const prev = slotMap.get(slotKey);
+      slotMap.set(slotKey, {
+        id: entry.id || (prev ? prev.id : ''),
+        name: entry.name,
+        nKey,
+        company: entry.company || (prev ? prev.company : ''),
+        industry: entry.industry,
+        site_category: cat,
+        lat: entry.lat,
+        lng: entry.lng
+      });
+    };
+    const deleteGateMatch = (ind, idStr, nameStr, catRaw) => {
+      const nKey = _normSiteKey(nameStr);
+      const idNorm = norm(idStr);
+      const cat = catRaw ? _normalizeGateCategory(catRaw, false) : '';
+      for (const [sk, g] of Array.from(slotMap.entries())) {
+        if (g.industry !== ind) continue;
+        if (cat && g.site_category !== cat) continue;
+        if ((idNorm && norm(g.id) === idNorm) || (nKey && g.nKey === nKey)) slotMap.delete(sk);
+      }
+    };
+
+    const seedSites = (seed && seed.records && Array.isArray(seed.records.sites)) ? seed.records.sites : [];
+    const custSites = (stNow && stNow.customRecords && Array.isArray(stNow.customRecords.sites)) ? stNow.customRecords.sites : [];
+    const clearedSeedIds = new Set();
+    const clearedSeedKeys = new Set();
+    custSites.forEach(cs => {
+      if (!cs) return;
+      if (cs.voided || cs._pinCleared) {
+        if (cs.id) clearedSeedIds.add(String(cs.id));
+        if (cs.override_id) clearedSeedIds.add(String(cs.override_id));
+        if (cs.name) clearedSeedKeys.add(`${_canonDwellInd(cs._industry || 'manufacturing')}|${_normSiteKey(cs.name)}`);
+      }
+    });
+    for (const sr of seedSites) {
+      if (!sr || sr.voided || sr._pinCleared) continue;
+      const srInd = _canonDwellInd(sr._industry || 'manufacturing');
+      if (sr.id && clearedSeedIds.has(String(sr.id))) continue;
+      if (sr.name && clearedSeedKeys.has(`${srInd}|${_normSiteKey(sr.name)}`)) continue;
+      const pt = _validCoordPair(sr.latitude, sr.longitude);
+      if (!pt) continue;
+      putGate({
+        id: String(sr.id || ''),
+        name: String(sr.name || ''),
+        company: String(sr.company || ''),
+        industry: srInd,
+        site_category: sr.site_category || '',
+        _hasSupplierHint: Boolean(sr.supplier && !sr.customer),
+        lat: pt.lat,
+        lng: pt.lng
+      });
+    }
+    for (const cs of custSites) {
+      if (!cs || cs.voided || cs._pinCleared) continue;
+      const pt = _validCoordPair(cs.latitude != null ? cs.latitude : cs.lat, cs.longitude != null ? cs.longitude : cs.lng);
+      if (!pt) continue;
+      putGate({
+        id: String(cs.id || cs.override_id || ''),
+        name: String(cs.name || ''),
+        company: String(cs.company || ''),
+        industry: _canonDwellInd(cs._industry || 'manufacturing'),
+        site_category: cs.site_category || '',
+        _hasSupplierHint: Boolean(cs.supplier && !cs.customer),
+        lat: pt.lat,
+        lng: pt.lng
+      });
+    }
+    if (geoCfg && geoCfg.sites && typeof geoCfg.sites === 'object') {
+      for (const [gk, gv] of Object.entries(geoCfg.sites)) {
+        if (!gv) continue;
+        const ind = gk.includes('::') ? _canonDwellInd(gk.split('::')[0]) : 'manufacturing';
+        const tail = gk.split('::').pop() || '';
+        const catPrefix = tail.match(/^(supplier|customer|general):/i);
+        const rawName = String(gv.name || tail.replace(/^(supplier|customer|general):/i, ''));
+        const catVal = gv.site_category || (catPrefix ? catPrefix[1].toLowerCase() : '');
+        if (gv._pinCleared || gv.voided) {
+          deleteGateMatch(ind, gv.id || '', rawName, catVal);
+          continue;
+        }
+        const pt = _validCoordPair(gv.latitude != null ? gv.latitude : gv.lat, gv.longitude != null ? gv.longitude : gv.lng);
+        if (!pt) continue;
+        putGate({
+          id: String(gv.id || ''),
+          name: rawName,
+          company: String(gv.company || ''),
+          industry: ind,
+          site_category: catVal,
+          _hasSupplierHint: catVal === 'supplier',
+          lat: pt.lat,
+          lng: pt.lng
+        });
+      }
+    }
+    if (stNow && stNow.industryCustomRows && typeof stNow.industryCustomRows === 'object') {
+      for (const [bk, rows] of Object.entries(stNow.industryCustomRows)) {
+        if (!Array.isArray(rows)) continue;
+        const bkInd = _canonDwellInd(bk.split('::')[0] || '');
+        for (const row of rows) {
+          if (!row || row.voided || row._pinCleared) continue;
+          const pt = _validCoordPair(row.latitude != null ? row.latitude : row.lat, row.longitude != null ? row.longitude : row.lng);
+          if (!pt) continue;
+          putGate({
+            id: String(row.id || row.code || ''),
+            name: String(row.siteName || row.name || row.title || row.property || row.unit || bk),
+            company: String(row.company || row.resort || row.entity || ''),
+            industry: _canonDwellInd(row._industry || bkInd),
+            site_category: String(row.site_category || ''),
+            lat: pt.lat,
+            lng: pt.lng
+          });
+        }
+      }
+    }
+    if (stNow && stNow.industryRowEdits && typeof stNow.industryRowEdits === 'object') {
+      for (const [ek, eobj] of Object.entries(stNow.industryRowEdits)) {
+        if (!eobj || eobj.voided) continue;
+        const eInd = _canonDwellInd(eobj.ind || ek.split('::')[0] || '');
+        const ePid = eobj.primaryId || '';
+        const eSn = eobj.siteName || eobj.primaryId || '';
+        if (eobj._pinCleared) {
+          deleteGateMatch(eInd, ePid, eSn, eobj.site_category || '');
+          continue;
+        }
+        const pt = _validCoordPair(eobj.latitude != null ? eobj.latitude : eobj.lat, eobj.longitude != null ? eobj.longitude : eobj.lng);
+        if (!pt) continue;
+        let matched = false;
+        for (const g of slotMap.values()) {
+          if (g.industry !== eInd) continue;
+          if ((ePid && norm(g.id) === norm(ePid)) || (eSn && g.nKey === _normSiteKey(eSn))) {
+            g.lat = pt.lat;
+            g.lng = pt.lng;
+            matched = true;
+          }
+        }
+        if (!matched) {
+          putGate({
+            id: String(ePid || ''),
+            name: String(eSn || ek),
+            company: String(eobj.company || eobj.resort || eobj.entity || ''),
+            industry: eInd,
+            site_category: String(eobj.site_category || ''),
+            lat: pt.lat,
+            lng: pt.lng
+          });
+        }
+      }
+    }
+    const gates = Array.from(slotMap.values());
+    const catByName = new Map();
+    gates.forEach(g => {
+      const k = `${g.industry}|${g.nKey}`;
+      if (!catByName.has(k)) catByName.set(k, new Set());
+      catByName.get(k).add(g.site_category);
+    });
+    return { gates, catByName };
+  }
 
   function _haversineMeters(lat1, lng1, lat2, lng2) {
     const la1 = Number(lat1), ln1 = Number(lng1), la2 = Number(lat2), ln2 = Number(lng2);
@@ -1160,9 +1504,9 @@
       }
     }
     // Read only real live snapshot units (never buildOfflineFallbackUnits mock fixtures outside explicit Demo mode)
-    const liveUnits = Array.isArray(_snapStore.units) && (!_snapStore.demo || isDemoActive()) ? _snapStore.units : [];
+    const liveUnits = Array.isArray(_snapStore.units) && (!_snapStore.fallback || isDemoActive()) && (!_snapStore.demo || isDemoActive()) ? _snapStore.units : [];
     for (const u of liveUnits) {
-      if (!u || u.lat == null || u.lng == null || u.status_code === 'moving') continue;
+      if (!u || (u._fallback && !isDemoActive()) || u.lat == null || u.lng == null || u.status_code === 'moving') continue;
       const uDev = u.device_id != null ? String(u.device_id).trim() : '';
       const uEq = norm(u.equipment || '');
       const uLat = Number(u.lat);
@@ -1198,17 +1542,7 @@
       ? window.MFG_GEO.exportGeoConfig()
       : { companyHubs: {}, sites: {}, verifiedRoutes: {} };
 
-    const hubs = [];
-    if (window.MFG_GEO && typeof window.MFG_GEO.getAllCompanyHubs === 'function') {
-      (window.MFG_GEO.getAllCompanyHubs(seed) || []).forEach(h => {
-        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name, lat: Number(h.lat), lng: Number(h.lng) });
-      });
-    }
-    if (geoCfg.companyHubs && typeof geoCfg.companyHubs === 'object') {
-      Object.entries(geoCfg.companyHubs).forEach(([k, h]) => {
-        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name || k, lat: Number(h.lat), lng: Number(h.lng) });
-      });
-    }
+    const hubs = _getCompanyHubs(geoCfg, seed);
 
     // Filter non-hub >=10m stops with strict RLS and industry/company scope
     const eligible = [];
@@ -1266,98 +1600,8 @@
       return { totalClusters: 0, alertCount: 0, staleCount: 0, offPinCount: 0, clusters: [], alerts: [] };
     }
 
-    // Index all pinned sites per industry from SEED + GEO_STORE + active domain pins
-    const sitePool = [];
-    const seedSites = (seed && seed.records && Array.isArray(seed.records.sites)) ? seed.records.sites : [];
-    for (const sr of seedSites) {
-      if (!sr || sr.voided || sr._pinCleared) continue;
-      if (sr.latitude == null || sr.longitude == null) continue;
-      const lat = Number(sr.latitude), lng = Number(sr.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4)) continue;
-      sitePool.push({
-        id: String(sr.id || ''),
-        name: String(sr.name || ''),
-        company: String(sr.company || ''),
-        industry: _canonDwellInd(sr._industry || 'manufacturing'),
-        site_category: String(sr.site_category || 'supplier'),
-        lat, lng
-      });
-    }
-    if (geoCfg.sites && typeof geoCfg.sites === 'object') {
-      for (const [gk, gv] of Object.entries(geoCfg.sites)) {
-        if (!gv || gv._pinCleared || gv.latitude == null || gv.longitude == null) continue;
-        const lat = Number(gv.latitude), lng = Number(gv.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4)) continue;
-        const ind = gk.includes('::') ? _canonDwellInd(gk.split('::')[0]) : 'manufacturing';
-        sitePool.push({
-          id: String(gv.id || ''),
-          name: String(gv.name || gk.split('::').pop().replace(/^(supplier|customer):/i, '')),
-          company: String(gv.company || ''),
-          industry: ind,
-          site_category: String(gv.site_category || 'supplier'),
-          lat, lng
-        });
-      }
-    }
     const stNow = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : (typeof window !== 'undefined' ? window.STATE : null);
-    if (stNow && stNow.industryCustomRows && typeof stNow.industryCustomRows === 'object') {
-      for (const [bk, rows] of Object.entries(stNow.industryCustomRows)) {
-        if (!Array.isArray(rows)) continue;
-        const bkInd = _canonDwellInd(bk.split('::')[0] || '');
-        for (const row of rows) {
-          if (!row || row.voided || row._pinCleared) continue;
-          const la = Number(row.latitude != null ? row.latitude : row.lat);
-          const ln = Number(row.longitude != null ? row.longitude : row.lng);
-          if (!Number.isFinite(la) || !Number.isFinite(ln) || (Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4)) continue;
-          sitePool.push({
-            id: String(row.id || row.code || ''),
-            name: String(row.siteName || row.name || row.title || row.property || row.unit || bk),
-            company: String(row.company || row.resort || row.entity || ''),
-            industry: _canonDwellInd(row._industry || bkInd),
-            site_category: String(row.site_category || 'supplier'),
-            lat: la, lng: ln
-          });
-        }
-      }
-    }
-    if (stNow && stNow.industryRowEdits && typeof stNow.industryRowEdits === 'object') {
-      for (const [ek, eobj] of Object.entries(stNow.industryRowEdits)) {
-        if (!eobj || eobj.voided) continue;
-        const eInd = _canonDwellInd(eobj.ind || ek.split('::')[0] || '');
-        const ePid = norm(eobj.primaryId || '');
-        const eSn = norm(eobj.siteName || eobj.primaryId || '');
-        if (eobj._pinCleared) {
-          for (let i = sitePool.length - 1; i >= 0; i--) {
-            const sp = sitePool[i];
-            if (sp.industry !== eInd) continue;
-            if ((ePid && norm(sp.id) === ePid) || (eSn && norm(sp.name) === eSn)) sitePool.splice(i, 1);
-          }
-          continue;
-        }
-        const la = Number(eobj.latitude != null ? eobj.latitude : eobj.lat);
-        const ln = Number(eobj.longitude != null ? eobj.longitude : eobj.lng);
-        if (!Number.isFinite(la) || !Number.isFinite(ln) || (Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4)) continue;
-        let updated = false;
-        for (const sp of sitePool) {
-          if (sp.industry !== eInd) continue;
-          if ((ePid && norm(sp.id) === ePid) || (eSn && norm(sp.name) === eSn)) {
-            sp.lat = la;
-            sp.lng = ln;
-            updated = true;
-          }
-        }
-        if (!updated) {
-          sitePool.push({
-            id: String(eobj.primaryId || ''),
-            name: String(eobj.siteName || eobj.primaryId || ek),
-            company: String(eobj.company || eobj.resort || eobj.entity || ''),
-            industry: eInd,
-            site_category: String(eobj.site_category || 'supplier'),
-            lat: la, lng: ln
-          });
-        }
-      }
-    }
+    const sitePool = _buildVerifiedGatePinPool(seed, geoCfg, stNow).gates;
 
     const alerts = [];
     let staleCount = 0;
@@ -1456,6 +1700,864 @@
       </div>`;
   }
 
+  // ==================== DETERMINISTIC GEOFENCED AUTO-ARRIVAL & SITE TURNAROUND ENGINE ====================
+  function _getBeirutParts(ms) {
+    try {
+      if (!_beirutPartsFmt && typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+        _beirutPartsFmt = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Beirut',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+      }
+      if (_beirutPartsFmt) {
+        const parts = _beirutPartsFmt.formatToParts(new Date(ms));
+        const map = {};
+        parts.forEach(p => { map[p.type] = p.value; });
+        const y = Number(map.year), mo = Number(map.month), d = Number(map.day);
+        let hh = Number(map.hour);
+        if (hh === 24) hh = 0;
+        const mm = Number(map.minute);
+        if ([y, mo, d, hh, mm].every(Number.isFinite)) {
+          return {
+            dateIso: `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+            hhmm: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
+            minOfDay: hh * 60 + mm,
+            epochMin: Math.floor(Date.UTC(y, mo - 1, d, hh, mm) / 60000)
+          };
+        }
+      }
+    } catch (_) {}
+    const dObj = new Date(ms + 2 * 3600000);
+    const y = dObj.getUTCFullYear(), mo = dObj.getUTCMonth() + 1, da = dObj.getUTCDate();
+    const hh = dObj.getUTCHours(), mm = dObj.getUTCMinutes();
+    return {
+      dateIso: `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(da).padStart(2, '0')}`,
+      hhmm: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
+      minOfDay: hh * 60 + mm,
+      epochMin: Math.floor(Date.UTC(y, mo - 1, da, hh, mm) / 60000)
+    };
+  }
+
+  function _formatEpochMin(epochMin) {
+    const dt = new Date(Math.round(Number(epochMin) || 0) * 60000);
+    const y = dt.getUTCFullYear(), mo = dt.getUTCMonth() + 1, da = dt.getUTCDate();
+    const hh = dt.getUTCHours(), mm = dt.getUTCMinutes();
+    return {
+      dateIso: `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(da).padStart(2, '0')}`,
+      hhmm: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
+      minOfDay: hh * 60 + mm,
+      epochMin: Math.round(Number(epochMin) || 0)
+    };
+  }
+
+  function _addCalendarDaysIso(dateIso, deltaDays) {
+    const m = String(dateIso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return dateIso;
+    const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + deltaDays * 86400000;
+    const d = new Date(ms);
+    return `${String(d.getUTCFullYear()).padStart(4, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function _parseStampComponents(raw, fallbackDateIso) {
+    if (raw == null || raw === '') return null;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      const ms = raw > 1e12 ? raw : raw * 1000;
+      return _getBeirutParts(ms);
+    }
+    const s = String(raw).trim();
+    if (!s) return null;
+    if (/^\d{9,13}$/.test(s)) {
+      const num = Number(s);
+      return _getBeirutParts(num > 1e12 ? num : num * 1000);
+    }
+    const bareTime = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+    if (bareTime && fallbackDateIso) {
+      const dm = String(fallbackDateIso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dm) {
+        let hh = Number(bareTime[1]);
+        const ap = (bareTime[4] || '').toUpperCase();
+        if (ap === 'PM' && hh < 12) hh += 12;
+        else if (ap === 'AM' && hh === 12) hh = 0;
+        const mm = Number(bareTime[2]);
+        const ep = Math.floor(Date.UTC(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]), hh, mm) / 60000);
+        return _formatEpochMin(ep);
+      }
+    }
+    const hasTz = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(s);
+    if (hasTz) {
+      const ms = Date.parse(s);
+      if (Number.isFinite(ms)) return _getBeirutParts(ms);
+    }
+    const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+    if (ymd) {
+      let hh = Number(ymd[4]);
+      const ap = (ymd[7] || '').toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      else if (ap === 'AM' && hh === 12) hh = 0;
+      const ep = Math.floor(Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), hh, Number(ymd[5])) / 60000);
+      return _formatEpochMin(ep);
+    }
+    const dmy = s.match(/^(\d{2})-(\d{2})-(\d{4})[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+    if (dmy) {
+      let hh = Number(dmy[4]);
+      const ap = (dmy[7] || '').toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      else if (ap === 'AM' && hh === 12) hh = 0;
+      const ep = Math.floor(Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), hh, Number(dmy[5])) / 60000);
+      return _formatEpochMin(ep);
+    }
+    return null;
+  }
+
+  function _parseStopTiming(st, fallbackDateIso) {
+    const dHint = String(st.date || '').slice(0, 10) || fallbackDateIso || todayIso();
+    const rawDur = _parseStopMinutes(st.duration_min != null ? st.duration_min : st.dwell_min, st.stop_duration);
+    const startRaw = st.start_ts != null ? st.start_ts : (st.start_time != null ? st.start_time : (st.start || st.arrival_time || st.arrived_at || ''));
+    const endRaw = st.end_ts != null ? st.end_ts : (st.end_time != null ? st.end_time : (st.end || st.departure_time || st.departed_at || ''));
+    let sParts = _parseStampComponents(startRaw, dHint);
+    let eParts = _parseStampComponents(endRaw, dHint);
+    if (sParts && eParts && eParts.epochMin < sParts.epochMin) {
+      eParts = _formatEpochMin(eParts.epochMin + 1440);
+    }
+    const durFromSpan = (sParts && eParts && eParts.epochMin >= sParts.epochMin) ? Math.round(eParts.epochMin - sParts.epochMin) : 0;
+    const durationMin = Math.max(Math.round(rawDur || 0), durFromSpan);
+    if (!sParts && eParts && durationMin > 0) {
+      sParts = _formatEpochMin(eParts.epochMin - durationMin);
+    }
+    if (!eParts && sParts) {
+      eParts = _formatEpochMin(sParts.epochMin + Math.max(0, durationMin));
+    }
+    if (!sParts || !eParts) return null;
+    return {
+      arrivalDate: sParts.dateIso,
+      arrivalHHMM: sParts.hhmm,
+      arrivalMinOfDay: sParts.minOfDay,
+      startEpochMin: sParts.epochMin,
+      departureDate: eParts.dateIso,
+      departureHHMM: st.on_site_now ? '' : eParts.hhmm,
+      endEpochMin: eParts.epochMin,
+      durationMin,
+      onSiteNow: Boolean(st.on_site_now)
+    };
+  }
+
+  function _buildDemoTurnaroundStops(dateIso, gatePool) {
+    if (!isDemoActive() || !dateIso || dateIso !== todayIso()) return [];
+    const pickPin = (ind, preferCat, defLat, defLng, defSite, defCo) => {
+      const candidates = (gatePool || []).filter(g => g.industry === ind && (!preferCat || g.site_category === preferCat || g.site_category === 'general'));
+      const hit = candidates[0] || (gatePool || []).find(g => g.industry === ind);
+      return {
+        lat: hit ? hit.lat : defLat,
+        lng: hit ? hit.lng : defLng,
+        site: hit ? hit.name : defSite,
+        company: (hit && hit.company) || defCo
+      };
+    };
+    const mfgCust = pickPin('manufacturing', 'customer', 33.8101, 35.4930, 'Choueifat South Approach', 'WTC');
+    const mfgQuarry = pickPin('manufacturing', 'supplier', 33.6312, 35.4310, 'Sibline Quarry Gate', 'BBConstruction');
+    const hsp = pickPin('hospitality', '', 33.9752, 35.6164, 'La Una Service Ramp', 'La Una');
+    const trd = pickPin('trading', '', 33.8968, 35.5665, 'Korri PDI Gate', 'Korri Auto');
+    const re = pickPin('real_estate', '', 33.8935, 35.5092, 'Tower B Service Dock', 'Properties');
+    const hld = pickPin('holding', '', 33.8895, 35.5028, 'Treasury Vault Entrance', 'Bdeir Holding');
+    const ins = pickPin('insurance', '', 33.8822, 35.5390, 'Garage Inspection Gate', 'Insurance Company');
+    return [
+      { id: 'demo_ta_mfg_1', company: mfgCust.company || 'WTC', industry: 'manufacturing', equipment: 'TB3', lat: mfgCust.lat, lng: mfgCust.lng, date: dateIso, start_time: `${dateIso} 09:12:00`, end_time: `${dateIso} 10:04:00`, duration_min: 52, zone_name: mfgCust.site },
+      { id: 'demo_ta_mfg_2', company: mfgQuarry.company || 'BBConstruction', industry: 'manufacturing', equipment: 'TB1', lat: mfgQuarry.lat, lng: mfgQuarry.lng, date: dateIso, start_time: `${dateIso} 11:05:00`, end_time: `${dateIso} 11:32:00`, duration_min: 27, zone_name: mfgQuarry.site },
+      { id: 'demo_ta_hsp_1', company: hsp.company || 'La Una', industry: 'hospitality', equipment: 'Resort Van 1', lat: hsp.lat, lng: hsp.lng, date: dateIso, start_time: `${dateIso} 08:20:00`, end_time: `${dateIso} 09:14:00`, duration_min: 54, zone_name: hsp.site },
+      { id: 'demo_ta_trd_1', company: trd.company || 'Korri Auto', industry: 'trading', equipment: 'Service Carrier 2', lat: trd.lat, lng: trd.lng, date: dateIso, start_time: `${dateIso} 10:00:00`, end_time: `${dateIso} 10:51:00`, duration_min: 51, zone_name: trd.site },
+      { id: 'demo_ta_re_1', company: re.company || 'Properties', industry: 'real_estate', equipment: 'MEP Van 4', lat: re.lat, lng: re.lng, date: dateIso, start_time: `${dateIso} 13:15:00`, end_time: `${dateIso} 14:08:00`, duration_min: 53, zone_name: re.site },
+      { id: 'demo_ta_hld_1', company: hld.company || 'Bdeir Holding', industry: 'holding', equipment: 'Cash Courier 1', lat: hld.lat, lng: hld.lng, date: dateIso, start_time: `${dateIso} 12:10:00`, end_time: `${dateIso} 12:59:00`, duration_min: 49, zone_name: hld.site },
+      { id: 'demo_ta_ins_1', company: ins.company || 'Insurance Company', industry: 'insurance', equipment: 'Surveyor Unit 1', lat: ins.lat, lng: ins.lng, date: dateIso, start_time: `${dateIso} 14:00:00`, end_time: `${dateIso} 14:50:00`, duration_min: 50, zone_name: ins.site }
+    ];
+  }
+
+  function _collectTurnaroundRawStops(targetDateIso, filterInd, filterCo, gatePool) {
+    const todayStr = todayIso();
+    const prevDateIso = targetDateIso ? _addCalendarDaysIso(targetDateIso, -1) : '';
+    const unitMetaByDev = new Map();
+    const unitMetaByEq = new Map();
+    getScopedUnits('all').forEach(u => {
+      if (!u) return;
+      if (u.device_id != null) unitMetaByDev.set(String(u.device_id).trim(), u);
+      if (u.equipment) unitMetaByEq.set(norm(u.equipment), u);
+    });
+
+    const out = [];
+    const curSeatPrefix = getSeatIdentitySig() + '|';
+    const extTest = typeof window !== 'undefined' && Array.isArray(window.__ISABI_TEST_TURNAROUND_STOPS)
+      ? window.__ISABI_TEST_TURNAROUND_STOPS
+      : (typeof window !== 'undefined' && Array.isArray(window.__ISABI_TEST_DWELL_STOPS) ? window.__ISABI_TEST_DWELL_STOPS : []);
+    for (const s of extTest) {
+      if (!s || s.lat == null || s.lng == null) continue;
+      out.push(s);
+    }
+    if (isDemoActive()) {
+      for (const ds of _buildDemoTurnaroundStops(targetDateIso, gatePool)) out.push(ds);
+    }
+
+    const histEntries = [];
+    for (const [hk, hist] of _histCache.entries()) {
+      if (!String(hk || '').startsWith(curSeatPrefix)) continue;
+      if (!hist || !Array.isArray(hist.stops)) continue;
+      if (hist._fallback || (hist.demo && !isDemoActive())) continue;
+      const tail = String(hk).slice(curSeatPrefix.length);
+      const [hkDev, hkFrom, hkTo] = tail.split('|');
+      const devId = String(hist.device_id || hkDev || '').trim();
+      const meta = (devId && unitMetaByDev.get(devId)) || (hist.equipment && unitMetaByEq.get(norm(hist.equipment))) || null;
+      const eq = String(hist.equipment || (meta && meta.equipment) || '').trim();
+      const co = String(hist.company || (meta && meta.company) || 'WTC').trim();
+      const histDateFallback = String(hist.to_date || hkTo || hist.from_date || hkFrom || '').slice(0, 10) || targetDateIso;
+      for (const st of hist.stops) {
+        if (!st || st.lat == null || st.lng == null) continue;
+        const timing = _parseStopTiming(st, histDateFallback);
+        if (!timing) continue;
+        if (targetDateIso && timing.arrivalDate !== targetDateIso && timing.departureDate !== targetDateIso && timing.arrivalDate !== prevDateIso && timing.departureDate !== prevDateIso) continue;
+        const rec = {
+          device_id: devId,
+          company: st.company || co,
+          industry: st.industry || _companyDefaultInd(st.company || co),
+          equipment: st.equipment || eq,
+          plate_no: st.plate_no || (meta && meta.plate_no) || '',
+          aliases: st.aliases || (meta && meta.aliases) || [],
+          lat: Number(st.lat),
+          lng: Number(st.lng),
+          zone_name: String(st.zone_name || ''),
+          _timing: timing
+        };
+        histEntries.push(rec);
+        out.push(rec);
+      }
+    }
+
+    const liveUnits = Array.isArray(_snapStore.units) && (!_snapStore.fallback || isDemoActive()) && (!_snapStore.demo || isDemoActive()) ? _snapStore.units : [];
+    if (!targetDateIso || targetDateIso === todayStr) {
+      const nowMs = Date.now();
+      for (const u of liveUnits) {
+        if (!u || (u._fallback && !isDemoActive()) || u.lat == null || u.lng == null || u.status_code === 'moving') continue;
+        const mins = Math.round(_parseStopMinutes(u.stop_duration_min, u.stop_duration));
+        if (mins < 5) continue;
+        const uDev = u.device_id != null ? String(u.device_id).trim() : '';
+        const uEq = norm(u.equipment || '');
+        const uLat = Number(u.lat), uLng = Number(u.lng);
+        const refParts = _parseStampComponents(Number(u.timestamp) > 0 ? u.timestamp : (u.last_time || nowMs), todayStr) || _getBeirutParts(nowMs);
+        const startParts = _formatEpochMin(refParts.epochMin - mins);
+        const timing = {
+          arrivalDate: startParts.dateIso,
+          arrivalHHMM: startParts.hhmm,
+          arrivalMinOfDay: startParts.minOfDay,
+          startEpochMin: startParts.epochMin,
+          departureDate: refParts.dateIso,
+          departureHHMM: '',
+          endEpochMin: refParts.epochMin,
+          durationMin: mins,
+          onSiteNow: true
+        };
+        // Avoid double counting an already-cached stop at the exact same spot
+        const liveDup = histEntries.some(hs => {
+          const sameUnit = (uDev && hs.device_id && uDev === hs.device_id) || (uEq && hs.equipment && uEq === norm(hs.equipment));
+          if (!sameUnit) return false;
+          const d = _haversineMeters(hs.lat, hs.lng, uLat, uLng);
+          if (d == null || d > 25) return false;
+          if (Math.abs(hs._timing.endEpochMin - timing.startEpochMin) <= 20 || Math.abs(hs._timing.endEpochMin - timing.endEpochMin) <= 20) {
+            hs._timing.onSiteNow = true;
+            hs._timing.departureHHMM = '';
+            hs._timing.endEpochMin = Math.max(hs._timing.endEpochMin, timing.endEpochMin);
+            hs._timing.departureDate = timing.departureDate;
+            hs._timing.durationMin = Math.max(hs._timing.durationMin, Math.round(hs._timing.endEpochMin - hs._timing.startEpochMin));
+            return true;
+          }
+          return false;
+        });
+        if (liveDup) continue;
+        out.push({
+          device_id: uDev,
+          company: u.company || 'WTC',
+          industry: _companyDefaultInd(u.company || 'WTC'),
+          equipment: u.equipment || '',
+          plate_no: u.plate_no || '',
+          aliases: u.aliases || [],
+          lat: uLat,
+          lng: uLng,
+          zone_name: u.isabi_region || u.zone_name || '',
+          on_site_now: true,
+          _timing: timing
+        });
+      }
+    }
+
+    const filtered = [];
+    for (const s of out) {
+      const pt = _validCoordPair(s.lat, s.lng);
+      if (!pt) continue;
+      const timing = s._timing || _parseStopTiming(s, String(s.date || targetDateIso || todayStr).slice(0, 10));
+      if (!timing) continue;
+      const co = String(s.company || 'WTC').trim();
+      const ind = _canonDwellInd(s.industry || _companyDefaultInd(co));
+      if (filterInd && ind !== filterInd) continue;
+      if (filterCo && !companyMatchesScope(co, filterCo)) continue;
+      if (!_canSeatAccessDwellStop(co, ind)) continue;
+      filtered.push({
+        device_id: String(s.device_id || ''),
+        company: co,
+        industry: ind,
+        equipment: String(s.equipment || '').trim(),
+        plate_no: String(s.plate_no || '').trim(),
+        aliases: Array.isArray(s.aliases) ? s.aliases : [],
+        lat: pt.lat,
+        lng: pt.lng,
+        zone_name: String(s.zone_name || ''),
+        timing
+      });
+    }
+    return filtered;
+  }
+
+  function _matchStopToGatePin(stop, gatePool, gateRadiusM) {
+    let best = null;
+    let bestDist = Infinity;
+    let bestRank = Infinity;
+    for (const g of gatePool) {
+      if (g.industry !== stop.industry) continue;
+      const d = _haversineMeters(stop.lat, stop.lng, g.lat, g.lng);
+      if (d == null || d > gateRadiusM) continue;
+      const sameCo = g.company && norm(g.company) === norm(stop.company) ? 0 : (g.company ? 2 : 1);
+      if (d < bestDist || (d === bestDist && sameCo < bestRank)) {
+        best = g;
+        bestDist = d;
+        bestRank = sameCo;
+      }
+    }
+    return best ? { gate: best, distMeters: bestDist } : null;
+  }
+
+  function _collectDefaultRecordsForTurnaround(seed, stNow, dateIso, filterInd, filterCo) {
+    const outSales = [];
+    const outRaw = [];
+    const outIndRows = [];
+    if (!dateIso) return { sales: outSales, raw: outRaw, indRows: outIndRows };
+
+    const mergeSeedAndCustom = (tbl, targetArr) => {
+      const sArr = (seed && seed.records && Array.isArray(seed.records[tbl])) ? seed.records[tbl] : [];
+      const cArr = (stNow && stNow.customRecords && Array.isArray(stNow.customRecords[tbl])) ? stNow.customRecords[tbl] : [];
+      const customById = new Map();
+      cArr.forEach(c => {
+        if (!c) return;
+        if (c.id) customById.set(String(c.id), c);
+        if (c.override_id) customById.set(String(c.override_id), c);
+      });
+      const seen = new Set();
+      sArr.forEach(r => {
+        if (!r || !r.id) return;
+        const ov = customById.get(String(r.id));
+        const eff = ov || r;
+        seen.add(String(r.id));
+        if (eff.voided) return;
+        if (String(eff.date || '').slice(0, 10) !== dateIso) return;
+        const co = eff.company || 'WTC';
+        if (filterCo && !companyMatchesScope(co, filterCo)) return;
+        if (!canSeatAccessCompany(co)) return;
+        targetArr.push(eff);
+      });
+      cArr.forEach(c => {
+        if (!c || c.voided) return;
+        const k = String(c.override_id || c.id || '');
+        if (k && seen.has(k)) return;
+        if (String(c.date || '').slice(0, 10) !== dateIso) return;
+        const co = c.company || 'WTC';
+        if (filterCo && !companyMatchesScope(co, filterCo)) return;
+        if (!canSeatAccessCompany(co)) return;
+        targetArr.push(c);
+      });
+    };
+
+    if (!filterInd || filterInd === 'manufacturing') {
+      mergeSeedAndCustom('sales_tickets', outSales);
+      mergeSeedAndCustom('raw_purchases', outRaw);
+    }
+    if (!filterInd || filterInd !== 'manufacturing') {
+      if (stNow && stNow.industryCustomRows && typeof stNow.industryCustomRows === 'object') {
+        for (const [bk, rows] of Object.entries(stNow.industryCustomRows)) {
+          if (!Array.isArray(rows)) continue;
+          const ind = _canonDwellInd(bk.split('::')[0] || '');
+          if (filterInd && ind !== filterInd) continue;
+          rows.forEach(row => {
+            if (!row || row.voided) return;
+            const rowInd = _canonDwellInd(row._industry || ind);
+            if (filterInd && rowInd !== filterInd) return;
+            const d = String(row.date || row.rep_date || '').slice(0, 10);
+            if (d && d !== dateIso) return;
+            const co = String(row.company || row.resort || row.entity || '');
+            if (co && filterCo && !companyMatchesScope(co, filterCo)) return;
+            if (co && !canSeatAccessCompany(co)) return;
+            outIndRows.push({ _row: row, _ind: rowInd, _rkey: bk });
+          });
+        }
+      }
+    }
+    return { sales: outSales, raw: outRaw, indRows: outIndRows };
+  }
+
+  function _pairTicketsWithVisits(visits, candidates, twinCatLookup) {
+    const pairs = [];
+    for (let ti = 0; ti < candidates.length; ti++) {
+      const c = candidates[ti];
+      const r = c.rec;
+      const tSite = _normSiteKey(r.site || r.siteName || r.destination || r.location || r.property || '');
+      const tTruck = String(r.truck || r.equipment || r.vehicle || '').trim();
+      if (!tSite || !tTruck) continue;
+      const tTime = _parseStampComponents(r.time || '12:00', String(r.date || '').slice(0, 10) || todayIso());
+      const tMin = tTime ? tTime.minOfDay : 720;
+      const tEpoch = tTime ? tTime.epochMin : null;
+      for (let vi = 0; vi < visits.length; vi++) {
+        const v = visits[vi];
+        if (c.industry && v.industry !== c.industry) continue;
+        if (v.siteNKey !== tSite) continue;
+        // Strict Quarry vs Customer Delivery twin isolation
+        const twinCats = twinCatLookup.get(`${v.industry}|${v.siteNKey}`);
+        const hasCustTwin = Boolean(twinCats && twinCats.has('customer'));
+        const hasSuppTwin = Boolean(twinCats && twinCats.has('supplier'));
+        if (c.kind === 'sales') {
+          if (v.gateCategory === 'supplier' && (hasCustTwin || hasSuppTwin)) continue;
+        } else if (c.kind === 'raw') {
+          if (v.gateCategory === 'customer' && (hasCustTwin || hasSuppTwin)) continue;
+        }
+        const unitLike = { equipment: v.equipment, plate_no: v.plate_no, aliases: v.aliases };
+        if (!unitMatchesRecordEquip(unitLike, tTruck)) continue;
+        const diffMin = (v.startEpochMin != null && tEpoch != null) ? Math.abs(v.startEpochMin - tEpoch) : Math.abs(v.arrivalMinOfDay - tMin);
+        pairs.push({ ti, vi, diffMin });
+      }
+    }
+    pairs.sort((a, b) => (a.diffMin - b.diffMin) || (a.ti - b.ti) || (a.vi - b.vi));
+    const usedT = new Set();
+    const usedV = new Set();
+    const out = [];
+    for (const p of pairs) {
+      if (usedT.has(p.ti) || usedV.has(p.vi)) continue;
+      usedT.add(p.ti);
+      usedV.add(p.vi);
+      out.push({ cand: candidates[p.ti], visit: visits[p.vi] });
+    }
+    return out;
+  }
+
+  function _clearEphemeralStampProps(rec) {
+    if (!rec || typeof rec !== 'object' || !rec._turnaround_ephemeral) return;
+    delete rec.gate_arrival;
+    delete rec.unload_dwell_min;
+    delete rec.site_departure;
+    delete rec.turnaround_flagged;
+    delete rec._turnaround_meta;
+    delete rec._turnaround_ephemeral;
+    _stampedTicketRefs.delete(rec);
+  }
+
+  function _writeStampOntoRecord(rec, stamp, markEphemeral) {
+    if (!rec || typeof rec !== 'object' || rec.voided) return;
+    const wasExplicitSaved = Boolean(rec.gate_arrival && !rec._turnaround_ephemeral);
+    const isSavedUserRec = !markEphemeral;
+    if (markEphemeral && wasExplicitSaved) {
+      if (rec.site_departure) return;
+      const incomingCompleted = Boolean(!stamp.on_site_now && stamp.site_departure);
+      const incomingLonger = Number(stamp.unload_dwell_min || 0) > Number(rec.unload_dwell_min || 0);
+      if (!incomingCompleted && !incomingLonger) return;
+    }
+    rec.gate_arrival = stamp.gate_arrival;
+    rec.unload_dwell_min = stamp.unload_dwell_min;
+    rec.site_departure = stamp.site_departure;
+    rec.turnaround_flagged = Boolean(stamp.turnaround_flagged);
+    rec._turnaround_meta = {
+      gateName: stamp.gate_name,
+      equipment: stamp.equipment,
+      on_site_now: Boolean(stamp.on_site_now),
+      max_site_wait_min: stamp.max_site_wait_min,
+      pairedBy: 'gps_gate'
+    };
+    if (isSavedUserRec || wasExplicitSaved) {
+      delete rec._turnaround_ephemeral;
+      _stampedTicketRefs.delete(rec);
+    } else {
+      rec._turnaround_ephemeral = true;
+      _stampedTicketRefs.add(rec);
+    }
+  }
+
+  function computeSiteTurnaroundDigest(opts = {}) {
+    ensureSeatScopeFresh();
+    const o = opts || {};
+    const filterInd = o.industry && o.industry !== 'all' ? _canonDwellInd(o.industry) : '';
+    const filterCo = o.companyScope || '';
+    const dateIso = String(o.dateIso || todayIso()).slice(0, 10);
+    const seed = _ctx && typeof _ctx.getSeed === 'function' ? _ctx.getSeed() : window.MFG_SEED;
+    const geoCfg = (window.MFG_GEO && typeof window.MFG_GEO.exportGeoConfig === 'function')
+      ? window.MFG_GEO.exportGeoConfig()
+      : { companyHubs: {}, sites: {}, verifiedRoutes: {} };
+    const stNow = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : (typeof window !== 'undefined' ? window.STATE : null);
+
+    const ruleForThreshold = filterInd ? (DWELL_RULE_BY_IND[filterInd] || 'S16') : 'S16';
+    const rawRad = _resolveDwellThreshold(ruleForThreshold, 'gateRadiusM', o.gateRadiusM, 120);
+    const gateRadiusM = Math.max(50, Math.min(200, Math.round(Number.isFinite(rawRad) ? rawRad : 120)));
+    const rawWait = _resolveDwellThreshold(ruleForThreshold, 'maxSiteWaitMin', o.maxSiteWaitMin, 45);
+    const maxSiteWaitMin = Math.max(15, Math.min(180, Math.round(Number.isFinite(rawWait) ? rawWait : 45)));
+
+    const hubs = _getCompanyHubs(geoCfg, seed);
+    const { gates: gatePool, catByName } = _buildVerifiedGatePinPool(seed, geoCfg, stNow);
+    const rawStops = _collectTurnaroundRawStops(dateIso, filterInd, filterCo, gatePool);
+
+    // Exclude hubs within 220m, match verified gates within clamped gateRadiusM (50-200m), group by unit+gate
+    const grouped = new Map();
+    for (const s of rawStops) {
+      const nearHub = hubs.some(h => {
+        const d = _haversineMeters(s.lat, s.lng, h.lat, h.lng);
+        return d != null && d <= 220;
+      });
+      if (nearHub) continue;
+      const m = _matchStopToGatePin(s, gatePool, gateRadiusM);
+      if (!m) continue;
+      const unitKey = norm(s.equipment || s.plate_no || s.device_id || 'unit');
+      const gateKey = `${m.gate.industry}|${m.gate.nKey}|${m.gate.site_category}`;
+      const gKey = `${unitKey}||${gateKey}`;
+      if (!grouped.has(gKey)) grouped.set(gKey, { gate: m.gate, distMeters: m.distMeters, items: [] });
+      grouped.get(gKey).items.push(s);
+    }
+
+    // Merge consecutive stops with <= 20m gap, drop transient < 5m stays, keep target date visits
+    const visits = [];
+    let visitSeq = 0;
+    for (const bucket of grouped.values()) {
+      const sorted = bucket.items.slice().sort((a, b) => (a.timing.startEpochMin - b.timing.startEpochMin) || (a.timing.endEpochMin - b.timing.endEpochMin));
+      const merged = [];
+      for (const s of sorted) {
+        const prev = merged.length ? merged[merged.length - 1] : null;
+        if (prev && (s.timing.startEpochMin - prev.endEpochMin) <= 20) {
+          prev.endEpochMin = Math.max(prev.endEpochMin, s.timing.endEpochMin);
+          prev.departureDate = s.timing.departureDate;
+          prev.on_site_now = Boolean(prev.on_site_now || s.timing.onSiteNow);
+          prev.departureHHMM = prev.on_site_now ? '' : _formatEpochMin(prev.endEpochMin).hhmm;
+          prev.durationMin = Math.max(prev.durationMin + s.timing.durationMin, Math.round(prev.endEpochMin - prev.startEpochMin));
+          prev.stopCount += 1;
+        } else {
+          merged.push({
+            gate: bucket.gate,
+            distMeters: bucket.distMeters,
+            company: s.company || bucket.gate.company || 'WTC',
+            industry: s.industry || bucket.gate.industry,
+            equipment: s.equipment || '',
+            plate_no: s.plate_no || '',
+            aliases: s.aliases || [],
+            lat: bucket.gate.lat,
+            lng: bucket.gate.lng,
+            arrivalDate: s.timing.arrivalDate,
+            arrivalHHMM: s.timing.arrivalHHMM,
+            arrivalMinOfDay: s.timing.arrivalMinOfDay,
+            startEpochMin: s.timing.startEpochMin,
+            departureDate: s.timing.departureDate,
+            departureHHMM: s.timing.onSiteNow ? '' : s.timing.departureHHMM,
+            endEpochMin: s.timing.endEpochMin,
+            durationMin: Math.round(s.timing.durationMin),
+            on_site_now: Boolean(s.timing.onSiteNow),
+            stopCount: 1
+          });
+        }
+      }
+      for (const mv of merged) {
+        if (mv.durationMin < 5) continue;
+        if (dateIso && mv.arrivalDate !== dateIso && mv.departureDate !== dateIso) continue;
+        const indRuleId = DWELL_RULE_BY_IND[mv.industry] || 'S16';
+        const indWaitLimit = o.maxSiteWaitMin != null ? maxSiteWaitMin : Math.max(15, Math.min(180, Math.round(_resolveDwellThreshold(indRuleId, 'maxSiteWaitMin', null, 45))));
+        visitSeq += 1;
+        visits.push({
+          id: `ta_${mv.industry}_${visitSeq}`,
+          industry: mv.industry,
+          company: mv.company,
+          equipment: mv.equipment,
+          plate_no: mv.plate_no,
+          aliases: mv.aliases,
+          siteId: mv.gate.id,
+          siteName: mv.gate.name,
+          siteNKey: mv.gate.nKey,
+          gateCategory: mv.gate.site_category,
+          lat: mv.gate.lat,
+          lng: mv.gate.lng,
+          pinnedLat: mv.gate.lat,
+          pinnedLng: mv.gate.lng,
+          distMeters: mv.distMeters,
+          arrivalDate: mv.arrivalDate,
+          arrivalHHMM: mv.arrivalHHMM,
+          arrivalMinOfDay: mv.arrivalMinOfDay,
+          startEpochMin: mv.startEpochMin,
+          departureDate: mv.departureDate,
+          departureHHMM: mv.departureHHMM,
+          durationMin: mv.durationMin,
+          on_site_now: mv.on_site_now,
+          stopCount: mv.stopCount,
+          maxSiteWaitMin: indWaitLimit,
+          flagged: mv.durationMin > indWaitLimit,
+          pairedTicketKey: '',
+          pairedParty: ''
+        });
+      }
+    }
+
+    visits.sort((a, b) => (Number(b.flagged) - Number(a.flagged)) || (b.durationMin - a.durationMin) || a.arrivalHHMM.localeCompare(b.arrivalHHMM));
+
+    const candInputProvided = Boolean(Array.isArray(o.salesTickets) || Array.isArray(o.rawTickets) || Array.isArray(o.industryRows));
+    const defRecs = candInputProvided
+      ? {
+          sales: Array.isArray(o.salesTickets) ? o.salesTickets : [],
+          raw: Array.isArray(o.rawTickets) ? o.rawTickets : [],
+          indRows: Array.isArray(o.industryRows) ? o.industryRows : []
+        }
+      : _collectDefaultRecordsForTurnaround(seed, stNow, dateIso, filterInd, filterCo);
+
+    const candidates = [];
+    defRecs.sales.forEach(r => {
+      if (!r || r.voided) return;
+      if (o.applyStamps) _clearEphemeralStampProps(r);
+      candidates.push({ kind: 'sales', rkey: 'sales_tickets', industry: 'manufacturing', rec: r });
+    });
+    defRecs.raw.forEach(r => {
+      if (!r || r.voided) return;
+      if (o.applyStamps) _clearEphemeralStampProps(r);
+      candidates.push({ kind: 'raw', rkey: 'raw_purchases', industry: 'manufacturing', rec: r });
+    });
+    defRecs.indRows.forEach(item => {
+      const r = item && item._row ? item._row : item;
+      if (!r || r.voided) return;
+      if (o.applyStamps) _clearEphemeralStampProps(r);
+      candidates.push({
+        kind: String(r.kind || 'industry').toLowerCase(),
+        rkey: (item && item._rkey) || r._rkey || 'industry_custom',
+        industry: (item && item._ind) || _canonDwellInd(r._industry || filterInd || 'manufacturing'),
+        rec: r
+      });
+    });
+
+    const pairedList = _pairTicketsWithVisits(visits, candidates, catByName);
+    const pairedTickets = new Map();
+    pairedList.forEach(({ cand, visit }) => {
+      const rid = cand.rec.id != null ? String(cand.rec.id) : '';
+      const tKey = `${cand.rkey}:${rid}`;
+      visit.pairedTicketKey = tKey;
+      visit.pairedParty = String(cand.rec.customer || cand.rec.site_owner || cand.rec.truck_owner || cand.rec.site || '');
+      const stamp = {
+        gate_arrival: visit.arrivalHHMM,
+        unload_dwell_min: visit.durationMin,
+        site_departure: visit.on_site_now ? '' : visit.departureHHMM,
+        turnaround_flagged: visit.flagged,
+        on_site_now: visit.on_site_now,
+        max_site_wait_min: visit.maxSiteWaitMin,
+        gate_name: visit.siteName,
+        equipment: visit.equipment,
+        paired_by: 'gps_gate'
+      };
+      if (rid) {
+        pairedTickets.set(tKey, stamp);
+        const alreadyClosedSaved = Boolean(cand.rec.gate_arrival && cand.rec.site_departure && !cand.rec._turnaround_ephemeral);
+        if ((!o.preserveDigest || o.applyStamps) && !alreadyClosedSaved) {
+          _lastTurnaroundByTicketKey.set(tKey, stamp);
+        }
+      }
+      if (o.applyStamps) _writeStampOntoRecord(cand.rec, stamp, true);
+    });
+
+    const bySite = new Map();
+    const byQuarry = new Map();
+    const byUnpairedCustomerSite = new Map();
+    const byUnpairedQuarrySite = new Map();
+    const bumpAgg = (map, key, v) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, { count: 0, totalMin: 0, maxMin: 0, avgMin: 0, flagged: 0, onSite: 0 });
+      const a = map.get(key);
+      a.count += 1;
+      a.totalMin += v.durationMin;
+      a.maxMin = Math.max(a.maxMin, v.durationMin);
+      a.avgMin = Math.round(a.totalMin / a.count);
+      if (v.flagged) a.flagged += 1;
+      if (v.on_site_now) a.onSite += 1;
+    };
+    visits.forEach(v => {
+      bumpAgg(bySite, v.siteNKey, v);
+      if (v.gateCategory === 'supplier') bumpAgg(byQuarry, v.siteNKey, v);
+      if (!v.pairedTicketKey) {
+        if (v.gateCategory !== 'supplier') bumpAgg(byUnpairedCustomerSite, v.siteNKey, v);
+        if (v.gateCategory !== 'customer') bumpAgg(byUnpairedQuarrySite, v.siteNKey, v);
+      }
+    });
+
+    const flaggedVisits = visits.filter(v => v.flagged);
+    const unpairedFlaggedVisits = flaggedVisits.filter(v => !v.pairedTicketKey);
+    const totalMin = visits.reduce((s, v) => s + v.durationMin, 0);
+    const avgWaitMin = visits.length ? Math.round(totalMin / visits.length) : 0;
+    const maxWaitMin = visits.reduce((m, v) => Math.max(m, v.durationMin), 0);
+    const onSiteCount = visits.filter(v => v.on_site_now).length;
+
+    const digest = {
+      dateIso,
+      industry: filterInd || 'all',
+      gateRadiusM,
+      maxSiteWaitMin,
+      visits,
+      flaggedVisits,
+      flaggedCount: flaggedVisits.length,
+      avgWaitMin,
+      maxWaitMin,
+      onSiteCount,
+      pairedTickets,
+      unpairedFlaggedVisits,
+      bySite,
+      byQuarry,
+      byUnpairedCustomerSite,
+      byUnpairedQuarrySite
+    };
+    if (!o.preserveDigest) {
+      _lastTurnaroundAlerts = flaggedVisits;
+      _lastTurnaroundDigest = digest;
+    }
+    return digest;
+  }
+
+  function getTicketTurnaroundStamp(rkey, ridOrRec) {
+    ensureSeatScopeFresh();
+    const rec = ridOrRec && typeof ridOrRec === 'object' ? ridOrRec : null;
+    if (rec && rec.voided) return null;
+    const rid = rec ? (rec.id != null ? String(rec.id) : '') : String(ridOrRec || '');
+    const tKey = rkey && rid ? `${rkey}:${rid}` : '';
+    const liveMatch = tKey ? _lastTurnaroundByTicketKey.get(tKey) : null;
+    if (liveMatch) {
+      const indSrc = (rec && rec._industry) || 'manufacturing';
+      const ruleId = DWELL_RULE_BY_IND[_canonDwellInd(indSrc)] || 'S16';
+      const limitMin = Math.max(15, Math.min(180, Math.round(_resolveDwellThreshold(ruleId, 'maxSiteWaitMin', null, 45))));
+      if (liveMatch.max_site_wait_min === limitMin) return liveMatch;
+      const dur = liveMatch.unload_dwell_min != null ? Number(liveMatch.unload_dwell_min) : 0;
+      const validDur = Number.isFinite(dur) ? dur : 0;
+      return Object.assign({}, liveMatch, {
+        max_site_wait_min: limitMin,
+        turnaround_flagged: validDur > 0 ? validDur > limitMin : false
+      });
+    }
+    if (rec && (rec.gate_arrival || rec.unload_dwell_min != null)) {
+      const ruleId = DWELL_RULE_BY_IND[_canonDwellInd(rec._industry || 'manufacturing')] || 'S16';
+      const limitMin = Math.max(15, Math.min(180, Math.round(_resolveDwellThreshold(ruleId, 'maxSiteWaitMin', null, 45))));
+      const dur = rec.unload_dwell_min != null ? Number(rec.unload_dwell_min) : 0;
+      const validDur = Number.isFinite(dur) ? dur : 0;
+      return {
+        gate_arrival: String(rec.gate_arrival || ''),
+        unload_dwell_min: validDur,
+        site_departure: String(rec.site_departure || ''),
+        turnaround_flagged: validDur > 0 ? validDur > limitMin : false,
+        on_site_now: Boolean(rec._turnaround_meta && rec._turnaround_meta.on_site_now) || (!rec.site_departure && Boolean(rec.gate_arrival)),
+        max_site_wait_min: limitMin,
+        gate_name: String((rec._turnaround_meta && rec._turnaround_meta.gateName) || rec.site || ''),
+        equipment: String((rec._turnaround_meta && rec._turnaround_meta.equipment) || rec.truck || rec.equipment || ''),
+        paired_by: 'saved'
+      };
+    }
+    return null;
+  }
+
+  function stampSameDayTicketsInScope(opts = {}) {
+    const o = Object.assign({}, opts, { applyStamps: true });
+    return computeSiteTurnaroundDigest(o);
+  }
+
+  function resolveTicketTurnaroundStampForSave(rkey, rec, opts = {}) {
+    if (!rec || typeof rec !== 'object') return false;
+    const rid = rec.id != null ? String(rec.id) : '';
+    const tKey = `${rkey}:${rid}`;
+    const clearSaved = () => {
+      delete rec.gate_arrival;
+      delete rec.unload_dwell_min;
+      delete rec.site_departure;
+      delete rec.turnaround_flagged;
+      delete rec._turnaround_meta;
+      delete rec._turnaround_ephemeral;
+      _stampedTicketRefs.delete(rec);
+      if (rid) _lastTurnaroundByTicketKey.delete(tKey);
+    };
+    if (rec.voided) {
+      clearSaved();
+      return false;
+    }
+    const kind = rkey === 'raw_purchases' ? 'raw' : (rkey === 'sales_tickets' ? 'sales' : 'industry');
+    const recDate = String(rec.date || opts.dateIso || todayIso()).slice(0, 10);
+    const ind = _canonDwellInd(opts.industry || rec._industry || 'manufacturing');
+    const seed = _ctx && typeof _ctx.getSeed === 'function' ? _ctx.getSeed() : window.MFG_SEED;
+    const stNow = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : (typeof window !== 'undefined' ? window.STATE : null);
+    const allRecs = _collectDefaultRecordsForTurnaround(seed, stNow, recDate, ind, '');
+    const mergeSavedTarget = (arr, targetRec) => {
+      const tid = targetRec.id != null ? String(targetRec.id) : '';
+      const filtered = arr.filter(x => x && String(x.id || '') !== tid);
+      filtered.unshift(targetRec);
+      return filtered;
+    };
+    const salesPool = kind === 'sales' ? mergeSavedTarget(allRecs.sales, rec) : allRecs.sales;
+    const rawPool = kind === 'raw' ? mergeSavedTarget(allRecs.raw, rec) : allRecs.raw;
+    const indPool = kind === 'industry'
+      ? [{ _row: rec, _ind: ind, _rkey: rkey }].concat(allRecs.indRows.filter(x => x && x._row && String(x._row.id || '') !== rid))
+      : allRecs.indRows;
+
+    const digest = computeSiteTurnaroundDigest({
+      dateIso: recDate,
+      industry: ind,
+      companyScope: rec.company || getActiveCompanyScope(),
+      salesTickets: salesPool,
+      rawTickets: rawPool,
+      industryRows: indPool,
+      applyStamps: false,
+      preserveDigest: true
+    });
+    const matched = digest.pairedTickets.get(tKey);
+    if (matched) {
+      _writeStampOntoRecord(rec, matched, false);
+      if (rid) _lastTurnaroundByTicketKey.set(tKey, matched);
+      return true;
+    }
+    const editedSet = opts.editedFields instanceof Set ? opts.editedFields : new Set(Array.isArray(opts.editedFields) ? opts.editedFields : []);
+    const keyDriverChanged = editedSet.has('truck') || editedSet.has('equipment') || editedSet.has('site') || editedSet.has('date');
+    if (keyDriverChanged || !rec.site || !(rec.truck || rec.equipment)) {
+      clearSaved();
+    }
+    return false;
+  }
+
+  function renderTurnaroundStripHtml() {
+    const digest = computeSiteTurnaroundDigest({ companyScope: getActiveCompanyScope(), industry: 'manufacturing', dateIso: todayIso() });
+    if (!digest.visits.length) return '';
+    const onSiteLabel = tr('On site now');
+    const rows = digest.visits.slice(0, 6).map(v => {
+      const badgeCls = v.flagged ? 'badge-warn' : 'badge-ok';
+      const timeWindow = `${v.arrivalHHMM}${v.departureHHMM ? ' to ' + v.departureHHMM : ' (' + onSiteLabel + ')'}`;
+      return `
+        <div class="tel-turnaround-row" data-tel-turnaround-id="${esc(v.id)}">
+          <div class="tel-dwell-main">
+            <span class="badge ${badgeCls}" data-no-i18n="1">${fmtNum(v.durationMin, 0)}m${v.flagged ? ' &gt; ' + fmtNum(v.maxSiteWaitMin, 0) + 'm' : ''}</span>
+            <b data-no-i18n="1">${esc(v.siteName)}</b>
+            <span class="tel-dwell-meta" data-no-i18n="1">${esc(v.company)}${v.equipment ? ' · ' + esc(v.equipment) : ''} · ${esc(timeWindow)}${v.pairedParty ? ' · ' + esc(v.pairedParty) : ''}</span>
+          </div>
+          <div class="tel-dwell-acts">
+            <button type="button" class="tel-mini-btn is-brass" data-tel-turnaround-map="${esc(v.id)}">${ic('pin')} <span>Inspect on Map</span></button>
+            <button type="button" class="tel-mini-btn" data-tel-turnaround-dops="${esc(v.id)}">${ic('clock')} <span>Daily Ops</span></button>
+          </div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="tel-turnaround-strip" id="telTurnaroundStrip">
+        <div class="tel-dwell-hd">
+          <span>${ic('clock')} <b>Geofenced Gate Arrival &amp; Site Turnaround</b></span>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="badge">${fmtNum(digest.visits.length, 0)} visits · ${fmtNum(digest.avgWaitMin, 0)}m avg</span>
+            ${digest.flaggedCount > 0 ? `<span class="badge badge-warn" data-no-i18n="1">${fmtNum(digest.flaggedCount, 0)} &gt; ${fmtNum(digest.maxSiteWaitMin, 0)}m</span>` : '<span class="badge badge-ok">On Schedule</span>'}
+          </div>
+        </div>
+        <div class="tel-dwell-list">${rows}</div>
+      </div>`;
+  }
+
   function startOrSyncAutoPoll() {
     if (isHeadlessEnv()) {
       stopAutoPoll();
@@ -1474,6 +2576,9 @@
     const mayAttempt = (Date.now() - _lastSnapAttemptMs) > POLL_INTERVAL_MS;
     if (!_snapStore.loading && mayAttempt && (!_snapStore.fetchedAt || tooOld)) {
       fetchSnapshot({ silent: false });
+    }
+    if (document.getElementById('fleetTelematicsDeck')) {
+      ensureTurnaroundHistoryForDate(todayIso(), { silent: true });
     }
     if (!_pollTimer) {
       _pollTimer = setInterval(() => {
@@ -1579,7 +2684,7 @@
     if (ae && ae !== el && el.contains(ae)) {
       if (ae.id) focusSel = '#' + CSS.escape(ae.id);
       else {
-        const a = Array.from(ae.attributes || []).find(x => x.name.indexOf('data-tel-') === 0 || x.name.indexOf('data-dwell-') === 0);
+        const a = Array.from(ae.attributes || []).find(x => x.name.indexOf('data-tel-') === 0 || x.name.indexOf('data-dwell-') === 0 || x.name.indexOf('data-turnaround-') === 0);
         if (a) focusSel = `[${a.name}="${CSS.escape(a.value)}"]`;
       }
     }
@@ -1751,6 +2856,7 @@
 
           ${renderReconDrawerHtml(units)}
           ${renderDwellDriftStripHtml()}
+          ${renderTurnaroundStripHtml()}
 
           <div class="table-wrap" style="padding:0 15px 12px">
             <table class="ledger-table" id="fleetTelematicsTable">
@@ -1870,6 +2976,12 @@
     const dwellChip = dwellDigest.alertCount > 0
       ? `<span class="tel-ind-chip is-dwell"><span data-no-i18n="1">${fmtNum(dwellDigest.alertCount, 0)} </span><span>Dwell Drift</span></span>`
       : `<span class="tel-ind-chip"><span>Pins Aligned (0 Drift)</span></span>`;
+    const turnDigest = computeSiteTurnaroundDigest({ industry: _indStripToCanon(industryViewKey), companyScope: getActiveCompanyScope(), dateIso: todayIso() });
+    const turnChip = turnDigest.flaggedCount > 0
+      ? `<span class="tel-ind-chip is-dwell"><span data-no-i18n="1">${fmtNum(turnDigest.flaggedCount, 0)} </span><span>Site Wait &gt; ${fmtNum(turnDigest.maxSiteWaitMin, 0)}m</span></span>`
+      : (turnDigest.visits.length > 0
+        ? `<span class="tel-ind-chip"><span data-no-i18n="1">${fmtNum(turnDigest.avgWaitMin, 0)}m </span><span>Avg Site Wait</span></span>`
+        : '');
 
     const indByView = {
       trd_trucks: 'Automotive & Heavy Trading',
@@ -2069,6 +3181,7 @@
         <div class="tel-ind-strip-metrics">
           ${chipsOut.map(c => `<span class="tel-ind-chip">${c}</span>`).join('')}
           ${dwellChip}
+          ${turnChip}
         </div>
       </div>
     `;
@@ -2131,14 +3244,31 @@
     const lines = units.map(u =>
       `${u.equipment}(${u.plate_no}): ${u.status_label}${u.speed_kph > 0 ? ' ' + u.speed_kph + 'km/h' : ''} at ${u.isabi_region || u.zone_name}, odo=${u.odometer_km != null ? Math.round(u.odometer_km) + 'km' : 'n/a'}, tank=${u.tank_litres != null ? u.tank_litres + 'L' : 'n/a'}, io83=${u.ecu_fuel_total_l != null ? u.ecu_fuel_total_l + 'L' : 'n/a'}, pwr=${u.ext_power_v != null ? u.ext_power_v + 'V' : 'n/a'}`
     );
-    return `LIVE FLEET GPS & CAN SENSORS (${s.total} trucks, ${s.moving} moving, ${s.powerCut} 0V power-cut, ${s.tankTotalL}L onboard diesel): ` + lines.join(' | ');
+    const td = computeSiteTurnaroundDigest({ companyScope: explicitScope || getActiveCompanyScope(), dateIso: todayIso() });
+    const taSuffix = td.visits.length
+      ? ` | SITE TURNAROUND (${td.visits.length} gate visits, avg=${td.avgWaitMin}m, >${td.maxSiteWaitMin}m flags=${td.flaggedCount})`
+      : '';
+    return `LIVE FLEET GPS & CAN SENSORS (${s.total} trucks, ${s.moving} moving, ${s.powerCut} 0V power-cut, ${s.tankTotalL}L onboard diesel): ` + lines.join(' | ') + taSuffix;
   }
 
   function tryAnswerTelematicsQuestion(qRaw, explicitScope) {
     const q = String(qRaw || '').trim().toLowerCase();
     if (!q) return null;
-    const isTelQuery = /\b(gps|telematics|where\s+are\s+(?:the\s+|our\s+)?trucks|where\s+is\s+(?:tb\d*|309570|hino)|truck\s+locations?|live\s+trucks?|can[- ]bus|io83|power\s+cut|0v|onboard\s+diesel)\b|وين الشاحنات|موقع الشاحنات|تتبع|où sont les camions/i.test(q);
+    const isTurnaroundQuery = /\b(site\s+wait|turnaround|gate\s+arrival|unload\s+dwell|wait\s+time|bottleneck)\b|انتظار الموقع|وقت الانتظار|temps d'attente/i.test(q);
+    const isTelQuery = isTurnaroundQuery || /\b(gps|telematics|where\s+are\s+(?:the\s+|our\s+)?trucks|where\s+is\s+(?:tb\d*|309570|hino)|truck\s+locations?|live\s+trucks?|can[- ]bus|io83|power\s+cut|0v|onboard\s+diesel)\b|وين الشاحنات|موقع الشاحنات|تتبع|où sont les camions/i.test(q);
     if (!isTelQuery) return null;
+    if (isTurnaroundQuery) {
+      const td = computeSiteTurnaroundDigest({ companyScope: explicitScope || getActiveCompanyScope(), dateIso: todayIso() });
+      if (!td.visits.length) {
+        return { matched: true, units: getScopedUnits(explicitScope), text: tr('No geofenced site arrivals or turnaround dwell stops matched today in the current scope.') };
+      }
+      const vRows = td.visits.slice(0, 8).map(v => `- **${v.siteName}** (${v.company}${v.equipment ? ' · ' + v.equipment : ''}): ${v.arrivalHHMM}${v.departureHHMM ? ' to ' + v.departureHHMM : ' (' + tr('On site now') + ')'} · **${fmtNum(v.durationMin, 0)}m**${v.flagged ? ' · ' + tr('Wait Over Limit') : ''}`).join('\n');
+      return {
+        matched: true,
+        units: getScopedUnits(explicitScope),
+        text: `**${tr('Geofenced Gate Arrival & Site Turnaround')}** (${fmtNum(td.visits.length, 0)} ${tr('Visits')}, ${fmtNum(td.avgWaitMin, 0)}m ${tr('Avg')}, ${fmtNum(td.flaggedCount, 0)} > ${fmtNum(td.maxSiteWaitMin, 0)}m):\n${vRows}`
+      };
+    }
     const allScoped = getScopedUnits(explicitScope);
     if (!allScoped.length) {
       return {
@@ -2381,6 +3511,50 @@
             access_note: `Observed ${Number(hit.stopCount || 1)} Teltonika stops (${Math.round(Number(hit.totalMin || 0))} min dwell)`
           });
         }
+        return;
+      }
+
+      const btnTurnaroundMap = t.closest('[data-tel-turnaround-map]');
+      if (btnTurnaroundMap) {
+        ev.preventDefault();
+        const vid = btnTurnaroundMap.getAttribute('data-tel-turnaround-map') || '';
+        const list = (_lastTurnaroundDigest && Array.isArray(_lastTurnaroundDigest.visits)) ? _lastTurnaroundDigest.visits : computeSiteTurnaroundDigest({ dateIso: todayIso() }).visits;
+        const v = list.find(x => x.id === vid);
+        if (v && window.MFG_GEO && typeof window.MFG_GEO.setStudioDwellDriftTarget === 'function') {
+          window.MFG_GEO.setStudioDwellDriftTarget({
+            industry: v.industry,
+            company: v.company,
+            siteId: v.siteId,
+            siteName: v.siteName,
+            siteCategory: v.gateCategory,
+            dwellLat: v.lat,
+            dwellLng: v.lng,
+            pinnedLat: v.pinnedLat,
+            pinnedLng: v.pinnedLng,
+            label: `Site Wait > ${v.maxSiteWaitMin}m`,
+            stopCount: v.stopCount,
+            totalMin: v.durationMin
+          });
+        } else if (_ctx && typeof _ctx.jumpView === 'function') {
+          _ctx.jumpView('reg_sites');
+        }
+        return;
+      }
+
+      const btnTurnaroundDops = t.closest('[data-tel-turnaround-dops]');
+      if (btnTurnaroundDops) {
+        ev.preventDefault();
+        const vid = btnTurnaroundDops.getAttribute('data-tel-turnaround-dops') || '';
+        const list = (_lastTurnaroundDigest && Array.isArray(_lastTurnaroundDigest.visits)) ? _lastTurnaroundDigest.visits : computeSiteTurnaroundDigest({ dateIso: todayIso() }).visits;
+        const v = list.find(x => x.id === vid);
+        const st = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : (typeof window !== 'undefined' ? window.STATE : null);
+        if (st) {
+          st.dailyOpsDate = (v && (v.departureDate || v.arrivalDate)) || todayIso();
+          st.dailyOpsQuickFilter = 'turnaround';
+        }
+        if (_ctx && typeof _ctx.jumpView === 'function') {
+          _ctx.jumpView('daily_ops');
+        }
       }
     });
 
@@ -2428,8 +3602,12 @@
     _inflightSnapPromise = null;
     _inflightHistPromise = null;
     stopAutoPoll();
-    _snapStore = { scopeBase: '', fetchedAt: '', units: [], geofences: [], demo: false, loading: false, error: '' };
+    _lastScopeSig = '';
+    _snapStore = { scopeBase: '', fetchedAt: '', units: [], geofences: [], demo: false, fallback: false, stale: false, receivedAtMs: 0, skewMs: 0, loading: false, error: '', errorKind: '' };
     _histCache.clear();
+    _fetchedTurnaroundDates.clear();
+    _inflightTurnaroundDates.clear();
+    _clearInMemoryTicketStamps();
     UI_STATE.reconOpenDeviceId = 0;
     UI_STATE.reconBusy = false;
     UI_STATE.aiBusy = false;
@@ -2442,8 +3620,10 @@
     clearSessionCache,
     fetchSnapshot,
     fetchUnitHistory,
+    ensureTurnaroundHistoryForDate,
     getScopedUnits,
     summarizeUnits,
+    unitMatchesRecordEquip,
     findUnitByEquipment,
     getLiveMeterHintForForm,
     evaluateSettledFuelPhysics,
@@ -2451,6 +3631,10 @@
     getCanFuelCalibrationSummary,
     getWatchdogAlertsForSentinels,
     computeGpsDwellDriftDigest,
+    computeSiteTurnaroundDigest,
+    getTicketTurnaroundStamp,
+    stampSameDayTicketsInScope,
+    resolveTicketTurnaroundStampForSave,
     renderFleetTelematicsDeck,
     renderCrossIndustryStrip,
     renderLeafletTruckMarkers,
