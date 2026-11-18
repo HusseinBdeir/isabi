@@ -4835,6 +4835,38 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       if ('km' in v && v.km !== undefined && v.km !== null && !parseGeoKm(v.km).ok) {
         return jsonResponse({ ok: false, error: 'Invalid verified route KM value (must be 0 to 5000).' }, 400);
       }
+      if ('coordsLngLat' in v && v.coordsLngLat !== undefined && v.coordsLngLat !== null) {
+        if (!Array.isArray(v.coordsLngLat) || v.coordsLngLat.length < 2 || v.coordsLngLat.length > 128) {
+          return jsonResponse({ ok: false, error: 'Invalid verified route coordinates (expected 2 to 128 [lng, lat] points).' }, 400);
+        }
+        for (const pt of v.coordsLngLat) {
+          if (!Array.isArray(pt) || pt.length < 2 || (typeof pt[0] !== 'number' && typeof pt[0] !== 'string') || (typeof pt[1] !== 'number' && typeof pt[1] !== 'string') || String(pt[0]).trim() === '' || String(pt[1]).trim() === '') {
+            return jsonResponse({ ok: false, error: 'Invalid verified route coordinate pair.' }, 400);
+          }
+          const lng = Number(pt[0]);
+          const lat = Number(pt[1]);
+          if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -85 || lat > 85) {
+            return jsonResponse({ ok: false, error: 'Verified route coordinate out of bounds.' }, 400);
+          }
+        }
+      }
+      if ('elevProfileM' in v && v.elevProfileM !== undefined && v.elevProfileM !== null) {
+        if (!Array.isArray(v.elevProfileM) || v.elevProfileM.length < 2 || v.elevProfileM.length > 128) {
+          return jsonResponse({ ok: false, error: 'Invalid verified route elevation profile (expected 2 to 128 samples).' }, 400);
+        }
+        if (!Array.isArray(v.coordsLngLat) || v.elevProfileM.length !== v.coordsLngLat.length) {
+          return jsonResponse({ ok: false, error: 'Verified route elevation profile must match coordinates length.' }, 400);
+        }
+        for (const eVal of v.elevProfileM) {
+          if ((typeof eVal !== 'number' && typeof eVal !== 'string') || String(eVal).trim() === '') {
+            return jsonResponse({ ok: false, error: 'Invalid verified route elevation value.' }, 400);
+          }
+          const n = Number(eVal);
+          if (!Number.isFinite(n) || n < -500 || n > 9000) {
+            return jsonResponse({ ok: false, error: 'Verified route elevation out of bounds (must be -500 to 9000 m).' }, 400);
+          }
+        }
+      }
     }
 
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
@@ -5194,15 +5226,15 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   if (docKey === 'geo_config') {
     const mergeIncomingGeo = (basePrev) => {
       if (!(incoming && typeof incoming === 'object')) return incoming;
-      if (!(basePrev && typeof basePrev === 'object')) return incoming;
+      const prevBase = (basePrev && typeof basePrev === 'object') ? basePrev : {};
       const merged = {
-        companyHubs: Object.assign({}, basePrev.companyHubs || {}),
-        regions: Object.assign({}, basePrev.regions || {}),
-        sites: Object.assign({}, basePrev.sites || {}),
-        pairKmOverrides: Object.assign({}, basePrev.pairKmOverrides || {}),
-        verifiedRoutes: Object.assign({}, basePrev.verifiedRoutes || {}),
-        _pairKmTs: Object.assign({}, basePrev._pairKmTs || {}),
-        _deletedKeys: Object.assign({}, basePrev._deletedKeys || {}),
+        companyHubs: Object.assign({}, prevBase.companyHubs || {}),
+        regions: Object.assign({}, prevBase.regions || {}),
+        sites: Object.assign({}, prevBase.sites || {}),
+        pairKmOverrides: Object.assign({}, prevBase.pairKmOverrides || {}),
+        verifiedRoutes: Object.assign({}, prevBase.verifiedRoutes || {}),
+        _pairKmTs: Object.assign({}, prevBase._pairKmTs || {}),
+        _deletedKeys: Object.assign({}, prevBase._deletedKeys || {}),
         updatedAt: nowIso
       };
       const inDel = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
