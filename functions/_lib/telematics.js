@@ -21,6 +21,8 @@ const SNAPSHOT_TTL_MS = 8000;
 const FRESH_MIN_MS = 3000;
 const GEOFENCE_TTL_MS = 300000;
 const UPSTREAM_RETRY_MS = 5000;
+const UPSTREAM_PENDING_MAX_MS = 15000; // > two chained 6.5 s provider calls (401 re-login path)
+const PENDING_STALE_MS = 30000;
 
 export const VT_DEVICE_MAP = {
   19130: {
@@ -119,6 +121,7 @@ export const VT_DEVICE_MAP = {
 let _memSnapshotCache = { ts: 0, data: null };
 let _memGeofenceCache = { ts: 0, data: null };
 let _memUpstreamFailAt = 0;
+let _upstreamPendingSince = 0;
 let _memRefreshedHash = '';
 
 function round1(n) { return Math.round((Number(n) || 0) * 10) / 10; }
@@ -866,8 +869,11 @@ async function getNormalizedUpstreamSnapshot(env, opts = {}) {
         if (parsed && Array.isArray(parsed.units)) {
           if (!parsed.fetched_at) parsed.fetched_at = kv.updated_at || '';
           d1Snap = parsed;
+          // Seed geofences only from a row whose geofence read succeeded
+          // (geofences_at set). Rows from a failed read, or from before
+          // v19.6.393, carry [] and must not blank zones for 5 min.
           if (Array.isArray(parsed.geofences) && !_memGeofenceCache.data) {
-            const gfAt = Date.parse(parsed.geofences_at || parsed.fetched_at || '') || 0;
+            const gfAt = Date.parse(parsed.geofences_at || '') || 0;
             if (gfAt) _memGeofenceCache = { ts: gfAt, data: parsed.geofences };
           }
           const ageMs = snapAgeMs(parsed);
@@ -880,11 +886,14 @@ async function getNormalizedUpstreamSnapshot(env, opts = {}) {
     } catch (_) {}
   }
 
-  const lastKnown = () => {
+  const newestKnown = () => {
     const mem = _memSnapshotCache.data;
-    const best = (mem && d1Snap)
+    return (mem && d1Snap)
       ? ((Date.parse(mem.fetched_at || '') || 0) >= (Date.parse(d1Snap.fetched_at || '') || 0) ? mem : d1Snap)
       : (mem || d1Snap);
+  };
+  const lastKnown = () => {
+    const best = newestKnown();
     return best ? Object.assign({}, best, { stale: true }) : null;
   };
 
@@ -895,6 +904,23 @@ async function getNormalizedUpstreamSnapshot(env, opts = {}) {
     if (fallback) return fallback;
   }
 
+  // One provider call at a time per isolate: while one is pending, answer from
+  // the newest copy held (flagged stale only once it is older than
+  // PENDING_STALE_MS). No promise is shared across requests (not supported
+  // reliably by the Workers runtime); a cold isolate with no copy still calls.
+  if (_upstreamPendingSince && (now - _upstreamPendingSince) < UPSTREAM_PENDING_MAX_MS) {
+    const held = newestKnown();
+    if (held) return snapAgeMs(held) <= PENDING_STALE_MS ? held : Object.assign({}, held, { stale: true });
+  }
+  _upstreamPendingSince = now;
+  try {
+    return await readUpstreamSnapshot(env, now, lastKnown);
+  } finally {
+    _upstreamPendingSince = 0;
+  }
+}
+
+async function readUpstreamSnapshot(env, now, lastKnown) {
   let apiHash = await resolveVtApiHash(env, false);
   if (!apiHash) {
     throw new Error('Telematics upstream credentials not configured on server.');

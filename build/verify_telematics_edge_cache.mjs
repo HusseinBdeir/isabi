@@ -16,12 +16,16 @@ const realNow = Date.now;
 Date.now = () => T;
 
 let mode = 'ok';
+let gfMode = 'ok';
+let releaseHang = null;
 const calls = { devices: 0, geofences: 0, login: 0 };
 globalThis.fetch = async (url) => {
   const u = String(url);
   if (u.includes('/get_devices')) {
     calls.devices++;
     if (mode === 'fail') return new Response('upstream down', { status: 503 });
+    if (mode === 'throw') { const e = new Error('The operation was aborted'); e.name = 'AbortError'; throw e; }
+    if (mode === 'hang') await new Promise(r => { releaseHang = r; });
     const item = {
       id: 19130, name: 'TB1', lat: 33.84, lng: 35.49, speed: 42, course: 10, online: 'online',
       time: '18-11-2026 02:00:00 PM', timestamp: Math.floor(T / 1000) - 4, stop_duration: '0s',
@@ -31,6 +35,7 @@ globalThis.fetch = async (url) => {
   }
   if (u.includes('/get_geofences')) {
     calls.geofences++;
+    if (gfMode === 'fail') return new Response('gf down', { status: 503 });
     return new Response(JSON.stringify({ items: { geofences: [{ id: 1, name: 'Yard', coordinates: '[]' }] } }), { status: 200 });
   }
   if (u.includes('/login')) { calls.login++; return new Response('{}', { status: 401 }); }
@@ -109,6 +114,39 @@ try {
   const gfBefore = calls.geofences;
   at(400); await snap(h);
   check('geofences re-read after 5 min', calls.geofences === gfBefore + 1, JSON.stringify(calls));
+
+  // Provider call that throws (timeout / AbortError): last-known, stale, HTTP 200.
+  h = await newIsolate();
+  mode = 'throw';
+  at(500); r = await snap(h);
+  check('thrown provider call (AbortError): last-known served stale, HTTP 200', r.status === 200 && r.j.stale === true && r.j.units.length === 1, JSON.stringify({ s: r.status, stale: r.j.stale }));
+
+  // Five polls while one provider call hangs: exactly one provider call.
+  mode = 'hang';
+  h = await newIsolate();
+  at(600);
+  const devBefore = calls.devices;
+  const burst = [snap(h), snap(h), snap(h), snap(h), snap(h)];
+  for (let i = 0; i < 50 && !releaseHang; i++) await new Promise(res => setTimeout(res, 5));
+  await new Promise(res => setTimeout(res, 20));
+  const devDuring = calls.devices - devBefore;
+  mode = 'ok';
+  if (releaseHang) releaseHang();
+  const burstRes = await Promise.all(burst);
+  check('5 polls during a hanging provider call: 1 provider call, all HTTP 200', devDuring === 1 && burstRes.every(x => x.status === 200 && x.j.units.length === 1), JSON.stringify({ devDuring, statuses: burstRes.map(x => x.status) }));
+
+  // A failed geofence read must not blank zones in other isolates.
+  db.row = null;
+  gfMode = 'fail';
+  h = await newIsolate();
+  at(700); await snap(h);
+  const savedGfAt = db.row ? JSON.parse(db.row.payload_json).geofences_at : 'none';
+  gfMode = 'ok';
+  h = await newIsolate();
+  at(710);
+  const gfBefore2 = calls.geofences;
+  await snap(h);
+  check('row from a failed geofence read has no geofences_at and is not used as a geofence cache', savedGfAt === '' && calls.geofences === gfBefore2 + 1, JSON.stringify({ savedGfAt, gf: calls.geofences - gfBefore2 }));
 } catch (err) {
   check('harness', false, err && err.stack ? err.stack : String(err));
 } finally {
