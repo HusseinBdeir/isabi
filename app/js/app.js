@@ -168879,28 +168879,52 @@
       }
       const sEl = e.target.closest('[data-series-idx]');
       const activeIdx = sEl ? Number(sEl.getAttribute('data-series-idx')) : -1;
-      const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
-      if (!html) {
-        hideChartPopover();
-        return;
-      }
-      chartPopEl.innerHTML = html;
-      chartPopEl.hidden = false;
       const hRect = popHost.getBoundingClientRect();
-      const pRect = chartPopEl.getBoundingClientRect();
       const hasPtr = typeof e.clientX === 'number' && typeof e.clientY === 'number' && (e.clientX > 0 || e.clientY > 0);
-      const anchorX = hasPtr ? e.clientX : (hRect.left + hRect.width / 2);
-      const anchorY = hasPtr ? e.clientY : hRect.top;
-      const leftPx = Math.min(
-        window.innerWidth - pRect.width - 10,
-        Math.max(10, Math.round(anchorX - pRect.width / 2))
-      );
-      let topPx = Math.round(anchorY - pRect.height - 14);
-      if (topPx < 10) {
-        topPx = Math.min(window.innerHeight - pRect.height - 10, Math.round((hasPtr ? e.clientY : hRect.bottom) + 16));
+      // Cards and list rows (HTML hosts of normal size) get a popover pinned to the host itself;
+      // chart marks (SVG) and very tall or wide hosts follow the pointer.
+      const isMark = typeof SVGElement !== 'undefined' && popHost instanceof SVGElement;
+      const pinToHost = !isMark && hRect.height <= 160 && hRect.width <= 520;
+      const popKey = `${rawSpec}|${activeIdx}`;
+      if (pinToHost && !chartPopEl.hidden && chartPopEl._popHost === popHost && chartPopEl._popKey === popKey) return;
+      if (chartPopEl._popKey !== popKey || chartPopEl.hidden) {
+        const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
+        if (!html) {
+          hideChartPopover();
+          return;
+        }
+        chartPopEl.innerHTML = html;
+        chartPopEl._popKey = popKey;
       }
-      chartPopEl.style.left = `${leftPx}px`;
-      chartPopEl.style.top = `${Math.max(10, topPx)}px`;
+      chartPopEl._popHost = popHost;
+      chartPopEl.hidden = false;
+      const pRect = chartPopEl.getBoundingClientRect();
+      const M = 10;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const clampLeft = x => Math.min(vw - pRect.width - M, Math.max(M, Math.round(x)));
+      let leftPx;
+      let rightPx = null;
+      let topPx = null;
+      if (pinToHost) {
+        // Open downward under the hovered card so its figures and the header above stay readable;
+        // flip above only when the screen has no room below.
+        leftPx = clampLeft(hRect.left);
+        // Arabic: hold the card's right edge (the translation lands after this and changes the width).
+        if (document.documentElement.dir === 'rtl') rightPx = Math.max(M, Math.min(vw - pRect.width - M, Math.round(vw - hRect.right)));
+        if (hRect.bottom + 8 + pRect.height <= vh - M) topPx = hRect.bottom + 8;
+        else if (hRect.top - 8 - pRect.height >= M) topPx = hRect.top - 8 - pRect.height;
+      } else {
+        leftPx = clampLeft((hasPtr ? e.clientX : (hRect.left + hRect.width / 2)) - pRect.width / 2);
+      }
+      if (topPx === null) {
+        // Pointer-anchored: below the cursor first, above it only when there is no room below.
+        const py = hasPtr ? e.clientY : hRect.bottom;
+        topPx = (py + 18 + pRect.height <= vh - M) ? py + 18 : (hasPtr ? e.clientY : hRect.top) - pRect.height - 14;
+      }
+      chartPopEl.style.left = rightPx === null ? `${leftPx}px` : 'auto';
+      chartPopEl.style.right = rightPx === null ? 'auto' : `${rightPx}px`;
+      chartPopEl.style.top = `${Math.max(M, Math.min(vh - pRect.height - M, Math.round(topPx)))}px`;
     };
     if (wsElForPop) {
       wsElForPop.addEventListener('mouseover', showChartPopoverForEvent);
