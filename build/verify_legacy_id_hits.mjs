@@ -473,7 +473,7 @@ console.log('\nTimed @ISO purge & R2/D1 relational seed restoration');
     },
     {
       id: 'rp_d7970d45b512', company: 'WTC', date: '2026-11-14', site_owner: 'Sibline',
-      ticket_no: '18030', total: 200, voided: true, voided_at: '2026-11-14T08:00:00Z', modified_by: 'u1'
+      ticket_no: '18030', total: 200, voided: true, void_reason: 'Seed override purge test', voided_at: '2026-11-14T08:00:00Z', modified_by: 'u1'
     },
     {
       id: 'rp-app-deleted-1', company: 'WTC', date: '2026-11-14', site_owner: 'Sibline',
