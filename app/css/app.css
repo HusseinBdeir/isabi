@@ -2023,6 +2023,186 @@ a.system-showcase-btn .nav-ico {
   font-weight: 600;
   color: var(--brass, #C0892F);
 }
+/* "7-Day Avg" column: the same figure averaged over the last active days, and the gap against it. */
+.mfg-chart-popover:not(.is-sheet):has(.chart-pop-rows.has-norm) {
+  max-width: min(480px, calc(100vw - 20px));
+}
+.chart-pop-rows.has-norm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 14px;
+  row-gap: 5px;
+}
+.chart-pop-rows.has-norm .chart-pop-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+.chart-pop-colhdr {
+  font-size: 9.8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted, #5C6B80);
+  line-height: 1.2;
+}
+.chart-pop-colhdr-val,
+.chart-pop-rows.has-norm .chart-pop-val { text-align: end; }
+.chart-pop-norm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 11.6px;
+  font-weight: 600;
+  color: var(--muted, #5C6B80);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chart-pop-gap {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0.5px 4px;
+  border-radius: 4px;
+  color: var(--muted, #5C6B80);
+  background: rgba(122, 136, 155, 0.12);
+}
+.chart-pop-gap.is-off {
+  color: #9A4F12;
+  background: rgba(201, 106, 34, 0.15);
+}
+:root[data-theme="dark"] .chart-pop-gap.is-off { color: #F0A867; background: rgba(201, 106, 34, 0.22); }
+/* Pinned (desktop) and sheet (touch): the popover takes clicks; rows that name records open them. */
+.chart-pop-actions { display: none; }
+.mfg-chart-popover.is-pinned,
+.mfg-chart-popover.is-sheet {
+  pointer-events: auto;
+}
+.mfg-chart-popover.is-pinned {
+  border-top-color: var(--chart-navy, #2356A8);
+  box-shadow: 0 18px 42px rgba(15, 30, 56, 0.2), 0 3px 8px rgba(15, 30, 56, 0.08);
+}
+.mfg-chart-popover.is-pinned .chart-pop-actions,
+.mfg-chart-popover.is-sheet .chart-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line, #E1E4E9);
+}
+.mfg-chart-popover.is-pinned .chart-pop-row.has-go,
+.mfg-chart-popover.is-sheet .chart-pop-row.has-go {
+  cursor: pointer;
+  margin: 0 -5px;
+  padding: 1.5px 5px;
+  border-radius: 4px;
+}
+.mfg-chart-popover.is-pinned .chart-pop-row.has-go:hover,
+.mfg-chart-popover.is-pinned .chart-pop-row.has-go:focus-visible,
+.mfg-chart-popover.is-sheet .chart-pop-row.has-go:active,
+.mfg-chart-popover.is-sheet .chart-pop-row.has-go:focus-visible {
+  background: var(--brass-tint, rgba(192, 137, 47, 0.10));
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--brass-border, rgba(192, 137, 47, 0.32));
+}
+.chart-pop-act {
+  font: 600 12px "Instrument Sans", system-ui, -apple-system, sans-serif;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong, #C6CDD8);
+  background: var(--surface, #fff);
+  color: var(--ink, #0F1E38);
+  cursor: pointer;
+}
+.chart-pop-act:hover { background: var(--surface-2, #F3F5F8); }
+.chart-pop-act.is-primary {
+  background: var(--brass, #C0892F);
+  border-color: var(--brass, #C0892F);
+  color: #fff;
+}
+.chart-pop-act.is-primary:hover { filter: brightness(1.06); background: var(--brass, #C0892F); }
+.mfg-chart-popover.is-sheet {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  z-index: 9620;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  padding: 6px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  font-size: 14px;
+  box-shadow: 0 -12px 34px rgba(15, 30, 56, 0.22);
+  animation: chartPopSheetIn 0.18s ease-out;
+}
+.chart-pop-grab {
+  width: 40px;
+  height: 4px;
+  margin: 2px auto 10px;
+  border-radius: 99px;
+  background: var(--line-strong, #C6CDD8);
+}
+.mfg-chart-popover.is-sheet .chart-pop-title { font-size: 15px; }
+.mfg-chart-popover.is-sheet .chart-pop-badge { font-size: 11.5px; }
+.mfg-chart-popover.is-sheet .chart-pop-rows { gap: 8px; }
+.mfg-chart-popover.is-sheet .chart-pop-rows.has-norm { row-gap: 8px; }
+.mfg-chart-popover.is-sheet .chart-pop-row { font-size: 14px; min-height: 28px; }
+.mfg-chart-popover.is-sheet .chart-pop-val { font-size: 14px; }
+.mfg-chart-popover.is-sheet .chart-pop-norm { font-size: 13px; }
+.mfg-chart-popover.is-sheet .chart-pop-gap { font-size: 11.5px; }
+.mfg-chart-popover.is-sheet .chart-pop-colhdr { font-size: 11px; min-height: 0; }
+.mfg-chart-popover.is-sheet .chart-pop-ftr { font-size: 12.5px; }
+.mfg-chart-popover.is-sheet .chart-pop-act {
+  flex: 1;
+  min-height: 44px;
+  font-size: 14px;
+  padding: 10px 16px;
+}
+/* Narrow sheet: the label takes its own line, the day's figure and the 7-day average sit under it. */
+@media (max-width: 560px) {
+  .mfg-chart-popover.is-sheet .chart-pop-rows.has-norm { grid-template-columns: minmax(0, 1fr) auto; row-gap: 12px; }
+  .mfg-chart-popover.is-sheet .chart-pop-rows.has-norm .chart-pop-row { row-gap: 2px; min-height: 0; }
+  .mfg-chart-popover.is-sheet .chart-pop-rows.has-norm .chart-pop-lbl { grid-column: 1 / -1; }
+  .mfg-chart-popover.is-sheet .chart-pop-rows.has-norm .chart-pop-val { text-align: start; white-space: normal; }
+  .mfg-chart-popover.is-sheet .chart-pop-colhdr > span:first-child { display: none; }
+  .mfg-chart-popover.is-sheet .chart-pop-colhdr > span:nth-child(2) { text-align: start; }
+}
+.mfg-chart-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9610;
+  background: rgba(15, 30, 56, 0.34);
+}
+.mfg-chart-pop-backdrop[hidden] { display: none; }
+@keyframes chartPopSheetIn {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mfg-chart-popover.is-sheet { animation: none; }
+}
+/* Touch screens: a long press opens the breakdown, so no text selection or callout on KPI cards and chart
+   marks (list rows keep text selection so names can still be copied). */
+@media (hover: none) {
+  #workspace .dops-kpi[data-chart-pop],
+  #workspace svg [data-chart-pop] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
 .pbi-chart-col,
 .cf-chart-bar {
   cursor: pointer;
@@ -4250,6 +4430,17 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-behind-note .cf-behind-tail { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; max-width: 100%; font-variant-numeric: tabular-nums; color: var(--ink-2, var(--ink)); border-inline-start: 1px solid var(--line); padding-inline-start: 10px; }
 .cf-behind-note .cf-behind-sep { display: inline-block; margin: 0 4px; color: var(--muted); }
 .cf-behind-note b.crit { color: var(--crit); }
+/* Entries this device has not sent (#unsentEntriesBar) and entries other devices hold (#devicesHoldingBar, Owner):
+   strips under the top bar on every page, shown only when there is something to say. */
+.unsent-bar { flex: 0 0 auto; }
+.unsent-bar[hidden] { display: none !important; }
+.unsent-bar .unsent-bar-reason { color: var(--ink-2, var(--ink)); }
+.unsent-bar .unsent-bar-btn { flex: 0 0 auto; min-height: 28px; padding: 3px 12px; border: 1px solid var(--warn); border-radius: 999px; background: var(--surface, #fff); color: var(--ink); font: inherit; font-weight: 600; line-height: 1.3; white-space: nowrap; cursor: pointer; }
+.unsent-bar .unsent-bar-btn:hover { background: var(--warn-bg); }
+@media (max-width: 860px) {
+  .unsent-bar { padding: 7px 12px; }
+  .unsent-bar .unsent-bar-btn { min-height: 36px; padding: 6px 14px; }
+}
 /* Staff timed against the company default while they clock another shift (Attendance & Overtime, v19.6.345) */
 .ws-reminder-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 12px; padding: 9px 14px; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--ink); min-width: 0; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
 .ws-reminder-note .ws-reminder-icon { display: inline-flex; color: var(--warn); flex: 0 0 auto; }
