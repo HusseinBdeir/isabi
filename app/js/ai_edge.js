@@ -6687,7 +6687,7 @@
       const filtered = reqCosArr.filter(c => allowedSet.has(c));
       return { companies: filtered, deniedEmpty: filtered.length === 0 };
     }
-    if (!reqCo || /^ALL$/i.test(reqCo) || /^(manufacturing-group|demo_company)$/i.test(reqCo) || /^industry:/i.test(reqCo)) {
+    if (!reqCo || /^ALL$/i.test(reqCo) || /^(manufacturing-group|democompany|demo_company)$/i.test(reqCo) || /^industry:/i.test(reqCo)) {
       if (bridge && typeof bridge.getActiveIndustryBuList === 'function') {
         const buList = (bridge.getActiveIndustryBuList(reqCo) || []).map(c => canon(c)).filter(Boolean);
         if (buList.length) {
@@ -7514,24 +7514,28 @@
     return cleanLang;
   }
 
-  function listFrequencyStaffOptions(bridge, companyHint) {
+  function listFrequencyStaffOptions(bridge, companyHint, scopeCosOpt) {
     const seed = (bridge && typeof bridge.getSeed === 'function' ? bridge.getSeed() : {}) || {};
     const state = (bridge && typeof bridge.getState === 'function' ? bridge.getState() : {}) || {};
     const allowed = bridge && typeof bridge.allowedCompanyNames === 'function' ? bridge.allowedCompanyNames() : [];
     if (!Array.isArray(allowed) || !allowed.length) return [];
     const allowedSet = new Set(allowed);
     const canon = co => (bridge && typeof bridge.canonCompany === 'function') ? bridge.canonCompany(co) : String(co || '').trim();
-    const coHint = companyHint && !/^(ALL|manufacturing-group)$/i.test(companyHint) && !/^industry:/i.test(companyHint)
+    const coHint = companyHint && !/^(ALL|manufacturing-group|democompany|demo_company)$/i.test(companyHint) && !/^industry:/i.test(companyHint)
       ? canon(companyHint)
       : '';
+    const scopeSet = Array.isArray(scopeCosOpt)
+      ? new Set(scopeCosOpt.map(c => canon(c)).filter(Boolean))
+      : (coHint ? new Set([coHint]) : null);
 
     const counts = new Map();
     const meta = new Map();
     const touch = (staff, co, weight, fatherName) => {
       const s = String(staff || '').trim();
       if (!s) return;
-      const c = canon(co) || coHint || (allowed[0] || '');
+      const c = canon(co) || coHint || (allowed.length === 1 ? allowed[0] : '');
       if (!c || !allowedSet.has(c)) return;
+      if (scopeSet && !scopeSet.has(c)) return;
       const key = `${c}|${s}`;
       counts.set(key, (counts.get(key) || 0) + weight);
       if (!meta.has(key)) meta.set(key, { staff: s, company: c, fatherName: String(fatherName || '').trim() });
@@ -7546,13 +7550,21 @@
 
     if (bridge && typeof bridge.getKioskStaffDirectory === 'function') {
       try {
-        (bridge.getKioskStaffDirectory({ company: coHint || undefined }) || []).forEach((k, idx) => {
+        (bridge.getKioskStaffDirectory({
+          companyOverride: coHint || undefined,
+          scopeBySelectedCompany: Boolean(coHint),
+          strictCompanyScope: Boolean(coHint),
+          scopeByActiveIndustry: !coHint
+        }) || []).forEach((k, idx) => {
           touch(k && (k.staff || k.name), k && k.company, Math.max(1, 5 - Math.floor(idx / 5)), k && k.father_name);
         });
       } catch (_) {}
     }
 
-    const activeCo = coHint || (allowedSet.has(state.company) ? state.company : '');
+    const stateSingleCo = (state.company && !/^(ALL|manufacturing-group|democompany|demo_company)$/i.test(state.company) && !/^industry:/i.test(state.company))
+      ? canon(state.company)
+      : '';
+    const activeCo = coHint || (stateSingleCo && allowedSet.has(stateSingleCo) ? stateSingleCo : '');
     return Array.from(meta.entries())
       .map(([k, m]) => ({
         staff: m.staff,
@@ -7601,22 +7613,30 @@
     }
     const canon = co => bridge.canonCompany ? bridge.canonCompany(co) : String(co || '').trim();
     const stateIndCos = bridge.getActiveIndustryBuList ? bridge.getActiveIndustryBuList(state.company) : [];
+    const scopedCos = bridge.getScopedIndustryBuList
+      ? bridge.getScopedIndustryBuList(opts.company || state.company)
+      : (opts.company && !/^(manufacturing-group|democompany|demo_company|ALL)$/i.test(opts.company) && !/^industry:/i.test(opts.company)
+          ? [canon(opts.company)]
+          : stateIndCos);
     const allowedIndCo = stateIndCos.find(c => allowed.includes(canon(c))) || '';
-    const rawCo = canon(opts.company || (state.company && !/^(manufacturing-group|demo_company|ALL)$/i.test(state.company) && !/^industry:/i.test(state.company) ? state.company : '') || allowedIndCo || allowed[0] || '');
-    const staffOptions = listFrequencyStaffOptions(bridge, rawCo);
+    const singleCoHint = canon(opts.company || (state.company && !/^(manufacturing-group|democompany|demo_company|ALL)$/i.test(state.company) && !/^industry:/i.test(state.company) ? state.company : '') || '');
+    const staffOptions = listFrequencyStaffOptions(bridge, singleCoHint, scopedCos);
 
     let staff = String(opts.staff || '').trim();
-    let company = rawCo;
+    let company = singleCoHint || canon(allowedIndCo || allowed[0] || '');
     if (staff.includes('||')) {
       const parts = staff.split('||');
       if (!opts.company && parts[0]) company = canon(parts[0]);
       staff = parts.slice(1).join('||').trim();
     }
+    if (singleCoHint && !allowed.includes(singleCoHint)) {
+      return { error: 'restricted_company', canDollars: Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts()), staffOptions, monthOptions: [] };
+    }
     if (!staff && staffOptions.length) {
       staff = staffOptions[0].staff;
       company = staffOptions[0].company;
     } else if (staff) {
-      const hit = staffOptions.find(s => s.staff.toLowerCase() === staff.toLowerCase() && (!rawCo || s.company === rawCo))
+      const hit = staffOptions.find(s => s.staff.toLowerCase() === staff.toLowerCase() && (!singleCoHint || s.company === singleCoHint))
         || staffOptions.find(s => s.staff.toLowerCase() === staff.toLowerCase());
       if (hit) {
         staff = hit.staff;
@@ -7628,14 +7648,35 @@
       return { error: 'restricted_company', canDollars: Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts()), staffOptions, monthOptions: [] };
     }
 
-    const monthOptions = listFrequencyMonthOptions(bridge, staff, company);
+    const canDollars = Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts());
     const seedDate = (bridge.getSeedDate && bridge.getSeedDate()) || String(seed.generated_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
     const periodYm = String(state && state.period || '').startsWith('month:') ? String(state.period).slice(6, 13) : '';
     const defaultYm = String(opts.month || periodYm || (state && (state.dateTo || state.dateFrom)) || seedDate).slice(0, 7);
+    const fallbackMonth = /^\d{4}-\d{2}$/.test(defaultYm) ? defaultYm : seedDate.slice(0, 7);
+    if (!staff && !staffOptions.length) {
+      const cleanLang = opts.lang
+        ? (/^(bilingual|en|ar|fr)$/.test(opts.lang) ? opts.lang : 'bilingual')
+        : getPrePaydayStaffLang('', singleCoHint || company || '');
+      return {
+        error: 'no_staff',
+        staff: '',
+        company: singleCoHint || company || '',
+        month: fallbackMonth,
+        lang: cleanLang,
+        canDollars,
+        staffOptions: [],
+        monthOptions: [fallbackMonth],
+        rows: [],
+        windows: [],
+        missingOutCount: 0,
+        waDigits: ''
+      };
+    }
+
+    const monthOptions = listFrequencyMonthOptions(bridge, staff, company);
     const month = /^\d{4}-\d{2}$/.test(defaultYm) ? defaultYm : (monthOptions[0] || seedDate.slice(0, 7));
     if (!monthOptions.includes(month)) monthOptions.unshift(month);
 
-    const canDollars = Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts());
     const lang = opts.lang
       ? (/^(bilingual|en|ar|fr)$/.test(opts.lang) ? opts.lang : 'bilingual')
       : getPrePaydayStaffLang(staff, company);
@@ -8166,6 +8207,17 @@
   function renderPrePaydayModalBodyHtml(ctx) {
     if (!ctx) return '<div style="padding:16px">No attendance / payroll data available.</div>';
     if (ctx.error === 'restricted_company') return '<div style="padding:16px">Access restricted to your assigned companies.</div>';
+    if (ctx.error === 'no_staff') {
+      const coName = ctx.company ? ` (${esc(ctx.company)})` : '';
+      const isAr = ctx.lang === 'ar';
+      const isFr = ctx.lang === 'fr';
+      const msg = isAr
+        ? `لا يوجد موظفون في النطاق المحدد${coName}. أضف عقد عمل أو ملف موظف لهذه الشركة لعرض بطاقة ما قبل الصرف.`
+        : (isFr
+          ? `Aucun employé dans le périmètre sélectionné${coName}. Ajoutez un contrat ou profil pour afficher cette fiche.`
+          : `No active staff in the selected company${coName}. Add a staff profile or employment contract to generate a Pre-Payday Card.`);
+      return `<div id="ppdEmptyStaffNotice" data-no-i18n="1" dir="${isAr ? 'rtl' : 'ltr'}" style="padding:20px;text-align:center;color:var(--muted,#6E6254)">${msg}</div>`;
+    }
     const isAr = ctx.lang === 'ar';
     const isFr = ctx.lang === 'fr';
     const restrLbl = isAr ? 'مقيّد' : (isFr ? 'Restreint' : 'Restricted');
@@ -8359,7 +8411,7 @@
           <div class="aie-ppd-toolbar no-print">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <label style="font-size:11.5px;font-weight:700"><span>Staff</span>
-                <select id="ppdStaffSel" class="aie-ppd-select" aria-label="Select staff member">
+                <select id="ppdStaffSel" class="aie-ppd-select" aria-label="Select staff member"${!(ctx.staffOptions && ctx.staffOptions.length) ? ' disabled' : ''}>
                   ${(ctx.staffOptions || []).map(s => `<option value="${esc(`${s.company}||${s.staff}`)}" data-co="${esc(s.company)}" data-staff="${esc(s.staff)}" ${s.staff === ctx.staff && s.company === ctx.company ? 'selected' : ''}>${esc(s.staff)}${s.fatherName ? ` (${esc(s.fatherName)})` : ''} - ${esc(s.company)}</option>`).join('')}
                 </select>
               </label>
@@ -8390,6 +8442,32 @@
       </div>
     `;
     document.body.appendChild(modal);
+    const syncPpdActions = c => {
+      const noAction = Boolean(!c || c.error || !c.staff);
+      ['ppdCopyTextBtn', 'ppdDownloadPngBtn', 'ppdPrintBtn'].forEach(id => {
+        const el = $(id);
+        if (el) el.disabled = noAction;
+      });
+      const waBtn = $('ppdWaBtn');
+      if (waBtn) {
+        if (noAction) {
+          waBtn.setAttribute('aria-disabled', 'true');
+          waBtn.setAttribute('tabindex', '-1');
+          waBtn.removeAttribute('href');
+          waBtn.style.pointerEvents = 'none';
+          waBtn.style.opacity = '0.45';
+        } else {
+          waBtn.removeAttribute('aria-disabled');
+          waBtn.removeAttribute('tabindex');
+          waBtn.href = `https://wa.me/${encodeURIComponent(c.waDigits || '')}?text=${encodeURIComponent(formatPrePaydaySummaryText(c))}`;
+          waBtn.style.pointerEvents = '';
+          waBtn.style.opacity = '';
+        }
+      }
+      const stSel = $('ppdStaffSel');
+      if (stSel) stSel.disabled = !(c && Array.isArray(c.staffOptions) && c.staffOptions.length);
+    };
+    syncPpdActions(ctx);
     syncI18n();
 
     const refreshView = (syncMonths = false) => {
@@ -8409,13 +8487,10 @@
       }
       const box = $('ppdCardBodyContainer');
       if (box) box.innerHTML = renderPrePaydayModalBodyHtml(ctx);
-      const waBtn = $('ppdWaBtn');
-      if (waBtn) {
-        waBtn.href = `https://wa.me/${encodeURIComponent(ctx.waDigits || '')}?text=${encodeURIComponent(formatPrePaydaySummaryText(ctx))}`;
-      }
       modal.querySelectorAll('[data-ppd-lang]').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-ppd-lang') === ctx.lang);
       });
+      syncPpdActions(ctx);
       syncI18n();
     };
 
@@ -8455,6 +8530,7 @@
     const copyBtn = $('ppdCopyTextBtn');
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
+        if (!ctx || ctx.error || !ctx.staff) return;
         const txt = formatPrePaydaySummaryText(ctx);
         const st = $('ppdStatusMsg');
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
@@ -8474,6 +8550,7 @@
     const dlBtn = $('ppdDownloadPngBtn');
     if (dlBtn) {
       dlBtn.addEventListener('click', () => {
+        if (!ctx || ctx.error || !ctx.staff) return;
         const out = renderPrePaydaySummaryCanvas(ctx);
         if (!out || !out.dataUrl) return;
         const a = document.createElement('a');
@@ -8488,6 +8565,7 @@
     const printBtn = $('ppdPrintBtn');
     if (printBtn) {
       printBtn.addEventListener('click', () => {
+        if (!ctx || ctx.error || !ctx.staff) return;
         document.body.classList.add('printing-prepayday-card');
         try { window.print(); } catch (_) {}
         setTimeout(() => document.body.classList.remove('printing-prepayday-card'), 500);
