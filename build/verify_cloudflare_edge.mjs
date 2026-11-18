@@ -94,6 +94,36 @@ const PY_SETUP = [
   path.join(os.homedir(), '.local', 'python312', 'python.exe'),
   'python'
 ].find(p => p === 'python' || fs.existsSync(p));
+
+// Seed synthetic edge-48 system-topup + Workbook Match fixtures into local D1 SQLite before wrangler spawns
+execFileSync(PY_SETUP, [
+  '-c',
+  `import glob, json, os, sqlite3, sys
+d1_root = sys.argv[1]
+sqls = glob.glob(os.path.join(d1_root, '**', '*.sqlite'), recursive=True)
+if not sqls:
+  raise SystemExit('D1 sqlite not found under ' + d1_root)
+c = sqlite3.connect(sqls[0])
+exp_cols = {r[1] for r in c.execute('PRAGMA table_info(expenses)').fetchall()}
+topup_pj = {'id':'exp-e48-topup-bbc','company':'BBConstruction','date':'2026-11-12','amount':95,'notes':'Sync Topup Edge48','voided':True,'voided_by':'system-topup-20261117','voided_at':'2026-11-17T19:48:00Z'}
+ins_cols = [k for k in topup_pj if k in exp_cols]
+ins_vals = [1 if isinstance(topup_pj[k], bool) and topup_pj[k] else (0 if isinstance(topup_pj[k], bool) else topup_pj[k]) for k in ins_cols]
+if 'payload_json' in exp_cols:
+  ins_cols.append('payload_json')
+  ins_vals.append(json.dumps(topup_pj))
+c.execute(f"INSERT OR REPLACE INTO expenses ({','.join(ins_cols)}) VALUES ({','.join('?' for _ in ins_cols)})", ins_vals)
+for bk, rid, pj in [
+  ('mfg_sites', 'dom-e48-topup-bbc', {'id':'dom-e48-topup-bbc','ind':'Manufacturing','company':'BBConstruction','name':'E48 Topup Dom','voided':True,'voided_by':'system-topup-20261117','voided_at':'2026-11-17T19:48:00Z','rev':1})
+]:
+  c.execute("INSERT OR REPLACE INTO industry_custom_rows (bucket, row_id, company, rev, voided, updated_at, payload_json) VALUES (?,?,?,?,?,?,?)", (bk, rid, 'BBConstruction', 1, 1, '2026-11-17T19:48:00Z', json.dumps(pj)))
+for ek, pj in [
+  ('Manufacturing::Sites::E48-TOPUP', {'ind':'Manufacturing','tableTitle':'Sites','primaryId':'E48-TOPUP','company':'BBConstruction','voided':True,'voided_by':'system-topup-20261117','voided_at':'2026-11-17T19:48:00Z','rev':1})
+]:
+  c.execute("INSERT OR REPLACE INTO industry_row_edits (edit_key, rev, voided, updated_at, payload_json) VALUES (?,?,?,?,?)", (ek, 1, 1, '2026-11-17T19:48:00Z', json.dumps(pj)))
+c.commit()
+c.close()`,
+  path.join(tmpPersist, 'v3', 'd1')
+], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
 execFileSync(PY_SETUP, [path.join(ROOT, 'build', 'stage_pages_bundle.py'), tmpBundle], {
   cwd: ROOT,
   stdio: 'inherit',
@@ -1040,6 +1070,19 @@ finally:
       method: 'PIN'
     });
     const bbcSupToken = String(bbcSupLogin.json?.token || '');
+    // Pre-edge-18 domain sync-twin unvoid 403 checks (before edge-18 bulk snapshot replaces mfg_sites)
+    const e48OwnDomTopup403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'dom-e48-topup-bbc', company: 'BBConstruction', ind: 'Manufacturing', voided: false, rev: 2 }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48OwnEditTopup403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: { 'Manufacturing::Sites::E48-TOPUP': { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E48-TOPUP', company: 'BBConstruction', voided: false, rev: 2 } }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48SupDomTopup403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'dom-e48-topup-bbc', company: 'BBConstruction', ind: 'Manufacturing', voided: false, rev: 2 }] }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e48SupEditTopup403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: { 'Manufacturing::Sites::E48-TOPUP': { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E48-TOPUP', company: 'BBConstruction', voided: false, rev: 2 } }
+    }, { 'X-ISABI-Session': bbcSupToken });
     const supEditOwner = await httpReq('POST', '/app/api/users', {
       user: { id: 'u1', email: 'husseinbdeir@bhfirms.com', full_name: 'Hussein Bdeir', role: 'Full Access (Owner)', companies: 'All' }
     }, { 'X-ISABI-Session': bbcSupToken });
@@ -6228,6 +6271,103 @@ finally:
         sub: { st: ePushSub200.status, j: ePushSub200.json }, prefs: { st: ePushPrefs200.status, j: ePushPrefs200.json },
         get1: ePushOwnerGet1.json, getReset: ePushOwnerGetReset.json, entry403: ePushEntryDisp403.status,
         unsub: { st: ePushUnsub200.status, j: ePushUnsub200.json }, get2: ePushOwnerGet2.json
+      }).slice(0, 800));
+    }
+
+    // 48. Workbook match reopenable restore by read-only Supervisor + anti-forgery _reopenedExplicitly strip
+    const e48WbId = 'exp-e48-wb-bbc';
+    const e48NormId = 'exp-e48-norm-bbc';
+    const e48WbSeed = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: {
+        id: e48WbId, company: 'BBConstruction', date: '2026-11-12', amount: 120,
+        notes: 'Workbook Match Edge48', voided: 1, twin_of: 'exp-e48-live-bbc', twin_difference: -10
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48NormSeed = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e48NormId, company: 'BBConstruction', date: '2026-11-12', amount: 75, notes: 'Normal Void Edge48', voided: 1 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48SupWbRestore = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e48WbId, company: 'BBConstruction', voided: 0 }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e48SupForgeRestore = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e48NormId, company: 'BBConstruction', voided: 0, _reopenedExplicitly: true }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e48ReadBack = await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': bbcSupToken });
+    const e48Rows = Array.isArray(e48ReadBack.json?.rows) ? e48ReadBack.json.rows : [];
+    const e48WbAfter = e48Rows.find(r => r && r.id === e48WbId);
+    const e48NormAfter = e48Rows.find(r => r && r.id === e48NormId);
+    const e48Ok = Boolean(
+      e48WbSeed.status === 200 && e48NormSeed.status === 200 &&
+      e48SupWbRestore.status === 200 && e48SupForgeRestore.status === 200 &&
+      e48WbAfter && !e48WbAfter.voided && e48WbAfter._reopenedExplicitly === true &&
+      !e48WbAfter.twin_of && !e48WbAfter.twin_difference && Number(e48WbAfter.rev || 0) >= 2 &&
+      e48NormAfter && !e48NormAfter.voided && e48NormAfter._reopenedExplicitly === undefined
+    );
+
+    // 48b. system-topup unvoid guards across /records (Owner/Sup 403), /sync (Owner/Sup keep voided), and /industry_domain_store (custom rows & edits 403 + Workbook match _reopenedExplicitly)
+    const e48OwnRecTopup403 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e48-topup-bbc', company: 'BBConstruction', voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48SupRecTopup403 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e48-topup-bbc', company: 'BBConstruction', voided: false }
+    }, { 'X-ISABI-Session': bbcSupToken });
+
+    const e48SyncRead = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e48Doc = e48SyncRead.json?.docs?.mfg_web_store || {};
+    const e48Exps0 = (e48Doc.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e48-topup-bbc');
+    const e48OwnSyncPatch = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e48Doc.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e48Doc.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e48Doc.customRecords || {}, {
+            expenses: e48Exps0.concat([{ id: 'exp-e48-topup-bbc', company: 'BBConstruction', date: '2026-11-12', amount: 95, voided: false }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48SyncTopupRead = await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': ownerToken });
+    const e48TopupAfterSync = (e48SyncTopupRead.json?.rows || []).find(r => r && r.id === 'exp-e48-topup-bbc');
+
+    const e48DomWbSeed = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'dom-e48-wb-bbc', company: 'BBConstruction', ind: 'Manufacturing', name: 'E48 WB Dom', voided: true, twin_of: 'dom-e48-live-bbc', twin_difference: -5, rev: 1 }] },
+      industryRowEdits: { 'Manufacturing::Sites::E48-WB': { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E48-WB', company: 'BBConstruction', voided: true, twin_of: 'site-e48-live', twin_difference: 'km', rev: 1 } }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e48SupDomWbRestore = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'dom-e48-wb-bbc', company: 'BBConstruction', ind: 'Manufacturing', voided: false, rev: 2 }] },
+      industryRowEdits: { 'Manufacturing::Sites::E48-WB': { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E48-WB', company: 'BBConstruction', voided: false, rev: 2 } }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e48DomRead = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken });
+    const e48DomWbAfter = ((e48DomRead.json?.industryCustomRows || {}).mfg_sites || []).find(r => r && r.id === 'dom-e48-wb-bbc');
+    const e48EditWbAfter = (e48DomRead.json?.industryRowEdits || {})['Manufacturing::Sites::E48-WB'];
+
+    const e48FullOk = Boolean(
+      e48Ok &&
+      e48OwnRecTopup403.status === 403 && e48SupRecTopup403.status === 403 &&
+      e48OwnSyncPatch.status === 200 && e48TopupAfterSync && e48TopupAfterSync.voided === true && /^system-topup/i.test(String(e48TopupAfterSync.voided_by || '')) &&
+      e48OwnDomTopup403.status === 403 && e48OwnEditTopup403.status === 403 &&
+      e48SupDomTopup403.status === 403 && e48SupEditTopup403.status === 403 &&
+      e48DomWbSeed.status === 200 && e48SupDomWbRestore.status === 200 &&
+      e48DomWbAfter && !e48DomWbAfter.voided && e48DomWbAfter._reopenedExplicitly === true && !e48DomWbAfter.twin_of &&
+      e48EditWbAfter && !e48EditWbAfter.voided && e48EditWbAfter._reopenedExplicitly === true && !e48EditWbAfter.twin_of
+    );
+    if (e48FullOk) {
+      pass('edge-48-void-workbook-match-and-sync-twin-guards', 'Read-only Supervisor Workbook match restore (/records + /industry_domain_store) sets _reopenedExplicitly=true + strips twins; /records + /sync + /industry_domain_store lock system-topup for Owner & Supervisor');
+    } else {
+      fail('edge-48-void-workbook-match-and-sync-twin-guards', JSON.stringify({
+        e48Ok,
+        rec403: [e48OwnRecTopup403.status, e48SupRecTopup403.status],
+        syncStatus: e48OwnSyncPatch.status, topupAfterSync: e48TopupAfterSync,
+        dom403: [e48OwnDomTopup403.status, e48OwnEditTopup403.status, e48SupDomTopup403.status, e48SupEditTopup403.status],
+        domSeedSt: e48DomWbSeed.status, domWbSt: e48SupDomWbRestore.status, domWbAfter: e48DomWbAfter, editWbAfter: e48EditWbAfter
       }).slice(0, 800));
     }
   } finally {
