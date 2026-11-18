@@ -482,8 +482,9 @@ async function main() {
     await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
       source: `try { localStorage.setItem('isabi_edge_active_v1', '1'); } catch (_) {}`
     });
+    await httpReq('GET', '/').catch(() => null);
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 80; i++) {
       const rdy11 = await evalJs(`Boolean(window.ISABI_I18N && document.querySelector('h1'))`).catch(() => false);
       if (rdy11) break;
       await sleep(250);
@@ -3340,7 +3341,7 @@ finally:
     const e33RootRes = await httpReq('GET', '/');
     const e33ResetRes = await httpReq('GET', '/reset.html');
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 80; i++) {
       const hasHelper = await evalJs(`typeof window.__ISABI_TEST_AI_REPLY === 'function'`);
       if (hasHelper) break;
       await sleep(250);
@@ -6369,6 +6370,180 @@ finally:
         dom403: [e48OwnDomTopup403.status, e48OwnEditTopup403.status, e48SupDomTopup403.status, e48SupEditTopup403.status],
         domSeedSt: e48DomWbSeed.status, domWbSt: e48SupDomWbRestore.status, domWbAfter: e48DomWbAfter, editWbAfter: e48EditWbAfter
       }).slice(0, 800));
+    }
+
+    // 49. /app/api/records RBAC Parity for items, gl_accounts, equipment_oil_logs & sales_tickets
+    const e49Ts = Date.now();
+    const e49Users = [
+      { id: 'u-49-disp', email: 'disp.49@bhfirms.com', full_name: 'Edge 49 Dispatch', role: 'Custom', companies: 'WTC', pin_code: '6294', status: 'Active', custom_perms: { rights: { read_ops: true, enter_dispatch: true, modify_data: true } } },
+      { id: 'u-49-mast', email: 'mast.49@bhfirms.com', full_name: 'Edge 49 Master', role: 'Custom', companies: 'WTC', pin_code: '7385', status: 'Active', custom_perms: { rights: { read_ops: true, enter_master: true, modify_data: true } } },
+      { id: 'u-49-mv', email: 'mv.49@bhfirms.com', full_name: 'Edge 49 Master Void', role: 'Custom', companies: 'WTC', pin_code: '7496', status: 'Active', custom_perms: { rights: { read_ops: true, enter_master: true, modify_data: true, void_data: true } } },
+      { id: 'u-49-sales', email: 'sales.49@bhfirms.com', full_name: 'Edge 49 Sales', role: 'Sales', companies: 'WTC', pin_code: '8419', status: 'Active' },
+      { id: 'u-49-sup', email: 'sup.49@bhfirms.com', full_name: 'Edge 49 Supervisor', role: 'Supervisor', companies: 'WTC', pin_code: '9527', status: 'Active' }
+    ];
+    for (const u of e49Users) {
+      await httpReq('POST', '/app/api/users', { user: u }, { 'X-ISABI-Session': ownerToken });
+    }
+    const e49Login = async (email, pin) => {
+      const r = await httpReq('POST', '/app/api/auth/login', { email, pin, method: 'PIN' });
+      return String(r.json?.token || '');
+    };
+    const disp49 = await e49Login('disp.49@bhfirms.com', '6294');
+    const mast49 = await e49Login('mast.49@bhfirms.com', '7385');
+    const mastVoid49 = await e49Login('mv.49@bhfirms.com', '7496');
+    const sales49 = await e49Login('sales.49@bhfirms.com', '8419');
+    const sup49 = await e49Login('sup.49@bhfirms.com', '9527');
+    const e49Post = (tok, table, record) => httpReq('POST', '/app/api/records', { table, record }, { 'X-ISABI-Session': tok });
+
+    const e49OilDispId = `oil_49_d_${e49Ts}`;
+    const e49ItmDispId = `itm_49_d_${e49Ts}`;
+    const e49StDispId = `st_49_d_${e49Ts}`;
+    const e49DispOil = await e49Post(disp49, 'equipment_oil_logs', { id: e49OilDispId, company: 'WTC', date: '2026-11-18', equipment: 'Volvo 19', notes: 'e49 disp oil', voided: 0 });
+    const e49DispItm = await e49Post(disp49, 'items', { id: e49ItmDispId, name: `Edge49 Disp Item ${e49Ts}`, voided: 0 });
+    const e49DispGl403 = await e49Post(disp49, 'gl_accounts', { id: `gl_49_d403_${e49Ts}`, name: `Edge49 Disp GL ${e49Ts}`, code: '619941', voided: 0 });
+    const e49DispSt = await e49Post(disp49, 'sales_tickets', { id: e49StDispId, company: 'WTC', date: '2026-11-18', item: 'Edge49 Concrete', qty: 4, voided: 0 });
+
+    const e49OilMastId = `oil_49_m_${e49Ts}`;
+    const e49ItmMastId = `itm_49_m_${e49Ts}`;
+    const e49GlMastId = `gl_49_m_${e49Ts}`;
+    const e49MastOil = await e49Post(mast49, 'equipment_oil_logs', { id: e49OilMastId, company: 'WTC', date: '2026-11-18', equipment: 'Volvo 19', notes: 'e49 mast oil', voided: 0 });
+    const e49MastItm = await e49Post(mast49, 'items', { id: e49ItmMastId, name: `Edge49 Mast Item ${e49Ts}`, voided: 0 });
+    const e49MastGl = await e49Post(mast49, 'gl_accounts', { id: e49GlMastId, name: `Edge49 Mast GL ${e49Ts}`, code: '619942', voided: 0 });
+    const e49MastSt403 = await e49Post(mast49, 'sales_tickets', { id: `st_49_m403_${e49Ts}`, company: 'WTC', date: '2026-11-18', item: 'Edge49 Concrete', qty: 4, voided: 0 });
+
+    const e49ItmSalesId = `itm_49_s_${e49Ts}`;
+    const e49StSalesId = `st_49_s_${e49Ts}`;
+    const e49SalesItm = await e49Post(sales49, 'items', { id: e49ItmSalesId, name: `Edge49 Sales Item ${e49Ts}`, voided: 0 });
+    const e49SalesSt = await e49Post(sales49, 'sales_tickets', { id: e49StSalesId, company: 'WTC', date: '2026-11-18', item: 'Edge49 Concrete', qty: 6, voided: 0 });
+    const e49SalesGl403 = await e49Post(sales49, 'gl_accounts', { id: `gl_49_s403_${e49Ts}`, name: `Edge49 Sales GL ${e49Ts}`, code: '619943', voided: 0 });
+    const e49SalesOil403 = await e49Post(sales49, 'equipment_oil_logs', { id: `oil_49_s403_${e49Ts}`, company: 'WTC', date: '2026-11-18', equipment: 'Volvo 19', notes: 'e49 sales oil', voided: 0 });
+
+    const e49SupOil403 = await e49Post(sup49, 'equipment_oil_logs', { id: `oil_49_p403_${e49Ts}`, company: 'WTC', date: '2026-11-18', equipment: 'Volvo 19', notes: 'e49 sup oil', voided: 0 });
+    const e49SupItm403 = await e49Post(sup49, 'items', { id: `itm_49_p403_${e49Ts}`, name: `Edge49 Sup Item ${e49Ts}`, voided: 0 });
+    const e49SupGl403 = await e49Post(sup49, 'gl_accounts', { id: `gl_49_p403_${e49Ts}`, name: `Edge49 Sup GL ${e49Ts}`, code: '619944', voided: 0 });
+    const e49SupSt403 = await e49Post(sup49, 'sales_tickets', { id: `st_49_p403_${e49Ts}`, company: 'WTC', date: '2026-11-18', item: 'Edge49 Concrete', qty: 2, voided: 0 });
+    const e49EntryGl403 = await e49Post(entryToken, 'gl_accounts', { id: `gl_49_e403_${e49Ts}`, name: `Edge49 Entry GL ${e49Ts}`, code: '619945', voided: 0 });
+    const e49EntryJv403 = await e49Post(entryToken, 'jv_distributions', { id: `jv_49_e403_${e49Ts}`, company: 'WTC', date: '2026-11-18', basis: 'Stock', amount: 100, voided: 0 });
+    const e49JvSeedId = `jv_49_seed_${e49Ts}`;
+    const e49OwnerJvSeed = await e49Post(ownerToken, 'jv_distributions', { id: e49JvSeedId, company: 'WTC', date: '2026-11-18', basis: 'Stock', amount: 100, voided: 0 });
+    const e49EntryUpdGl403 = await e49Post(entryToken, 'gl_accounts', { id: e49GlMastId, name: `Edge49 Mast GL ${e49Ts}`, code: '999999', voided: 0 });
+    const e49EntryUpdJv403 = await e49Post(entryToken, 'jv_distributions', { id: e49JvSeedId, company: 'WTC', amount: 999999 });
+    const e49DispUpdGl403 = await e49Post(disp49, 'gl_accounts', { id: e49GlMastId, name: `Edge49 Mast GL ${e49Ts}`, code: '999998', voided: 0 });
+    const e49DispUpdJv403 = await e49Post(disp49, 'jv_distributions', { id: e49JvSeedId, company: 'WTC', amount: 888888 });
+    const e49MvUpdSt403 = await e49Post(mastVoid49, 'sales_tickets', { id: e49StDispId, company: 'WTC', qty: 777 });
+    const e49MvVoidSt403 = await e49Post(mastVoid49, 'sales_tickets', { id: e49StDispId, company: 'WTC', voided: 1, void_reason: 'hack' });
+
+    const e49SyncGet1 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e49BaseDoc1 = e49SyncGet1.json?.docs?.mfg_web_store || {};
+    const e49EntrySync = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(e49BaseDoc1.updatedAt || ''),
+      awaitMirror: true,
+      patch: {
+        mfg_web_store: Object.assign({}, e49BaseDoc1, {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Date.now() + 25000).toISOString(),
+          customRecords: Object.assign({}, e49BaseDoc1.customRecords || {}, {
+            gl_accounts: [{ id: e49GlMastId, name: 'SyncHacked', code: '999997' }],
+            jv_distributions: [{ id: e49JvSeedId, company: 'WTC', date: '2026-11-18', basis: 'Stock', amount: 777777 }]
+          })
+        })
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const e49SyncGet2 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e49BaseDoc2 = e49SyncGet2.json?.docs?.mfg_web_store || {};
+    const e49MvSync = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(e49BaseDoc2.updatedAt || ''),
+      awaitMirror: true,
+      patch: {
+        mfg_web_store: Object.assign({}, e49BaseDoc2, {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Date.now() + 27000).toISOString(),
+          customRecords: Object.assign({}, e49BaseDoc2.customRecords || {}, {
+            sales_tickets: [{ id: e49StDispId, company: 'WTC', date: '2026-11-18', qty: 666 }],
+            jv_distributions: [{ id: e49JvSeedId, company: 'WTC', date: '2026-11-18', basis: 'Stock', amount: 666666 }]
+          })
+        })
+      }
+    }, { 'X-ISABI-Session': mastVoid49 });
+    const e49SyncGet3 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e49CrAfterSync = e49SyncGet3.json?.docs?.mfg_web_store?.customRecords || {};
+
+    const e49OilGet = await httpReq('GET', '/app/api/records?table=equipment_oil_logs&company=WTC&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e49ItmGet = await httpReq('GET', '/app/api/records?table=items&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e49GlGet = await httpReq('GET', '/app/api/records?table=gl_accounts&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e49JvGet = await httpReq('GET', '/app/api/records?table=jv_distributions&company=WTC&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e49StGet = await httpReq('GET', '/app/api/records?table=sales_tickets&company=WTC&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+
+    const e49GlRow = (e49GlGet.json?.rows || []).find(r => r && r.id === e49GlMastId);
+    const e49JvRow = (e49JvGet.json?.rows || []).find(r => r && r.id === e49JvSeedId);
+    const e49StRow = (e49StGet.json?.rows || []).find(r => r && r.id === e49StDispId);
+    const e49Persisted = Boolean(
+      (e49OilGet.json?.rows || []).some(r => r && r.id === e49OilMastId)
+      && (e49ItmGet.json?.rows || []).some(r => r && r.id === e49ItmSalesId)
+      && e49GlRow && e49GlRow.code === '619942'
+      && e49JvRow && Number(e49JvRow.amount) === 100
+      && e49StRow && Number(e49StRow.qty) === 4 && !e49StRow.voided
+      && (e49StGet.json?.rows || []).some(r => r && r.id === e49StSalesId)
+      && !(e49CrAfterSync.gl_accounts || []).some(r => r && r.id === e49GlMastId && r.code === '999997')
+      && !(e49CrAfterSync.jv_distributions || []).some(r => r && r.id === e49JvSeedId && (Number(r.amount) === 777777 || Number(r.amount) === 666666))
+      && !(e49CrAfterSync.sales_tickets || []).some(r => r && r.id === e49StDispId && Number(r.qty) === 666)
+    );
+
+    const e49Cleanups = [
+      [disp49, 'equipment_oil_logs', e49OilDispId, 'WTC', e49DispOil],
+      [disp49, 'items', e49ItmDispId, '', e49DispItm],
+      [disp49, 'sales_tickets', e49StDispId, 'WTC', e49DispSt],
+      [mast49, 'equipment_oil_logs', e49OilMastId, 'WTC', e49MastOil],
+      [mast49, 'items', e49ItmMastId, '', e49MastItm],
+      [mast49, 'gl_accounts', e49GlMastId, '', e49MastGl],
+      [sales49, 'items', e49ItmSalesId, '', e49SalesItm],
+      [sales49, 'sales_tickets', e49StSalesId, 'WTC', e49SalesSt],
+      [ownerToken, 'jv_distributions', e49JvSeedId, 'WTC', e49OwnerJvSeed]
+    ];
+    for (const [tok, tbl, rid, co, res] of e49Cleanups) {
+      const rbTok = res?.json?.rollbackToken;
+      if (rbTok && tok) {
+        await httpReq('POST', '/app/api/records', { op: 'rollback', rollbackToken: rbTok }, { 'X-ISABI-Session': tok }).catch(() => {});
+      } else if (res?.status === 200) {
+        const rec = co ? { id: rid, company: co, voided: 1 } : { id: rid, voided: 1 };
+        await httpReq('POST', '/app/api/records', { table: tbl, record: rec }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+      }
+    }
+    for (const u of e49Users) {
+      await httpReq('POST', '/app/api/users', { user: Object.assign({}, u, { status: 'Inactive' }) }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    }
+
+    const e49Ok = Boolean(
+      disp49 && mast49 && mastVoid49 && sales49 && sup49
+      && e49DispOil.status === 200 && e49DispItm.status === 200 && e49DispGl403.status === 403 && e49DispSt.status === 200
+      && e49MastOil.status === 200 && e49MastItm.status === 200 && e49MastGl.status === 200 && e49MastSt403.status === 403
+      && e49SalesItm.status === 200 && e49SalesSt.status === 200 && e49SalesGl403.status === 403 && e49SalesOil403.status === 403
+      && e49SupOil403.status === 403 && e49SupItm403.status === 403 && e49SupGl403.status === 403 && e49SupSt403.status === 403
+      && e49EntryGl403.status === 403 && e49EntryJv403.status === 403
+      && e49OwnerJvSeed.status === 200
+      && e49EntryUpdGl403.status === 403 && e49EntryUpdJv403.status === 403
+      && e49DispUpdGl403.status === 403 && e49DispUpdJv403.status === 403
+      && e49MvUpdSt403.status === 403 && e49MvVoidSt403.status === 403
+      && e49EntrySync.status === 200 && e49MvSync.status === 200
+      && e49Persisted
+    );
+    if (e49Ok) {
+      pass('edge-49-records-rbac-items-gl-oillog', 'CustomDispatch/Master/MasterVoid/Sales/Supervisor/Entry create, existing-row update & /api/sync fast-path RBAC + D1 persistence verified');
+    } else {
+      fail('edge-49-records-rbac-items-gl-oillog', JSON.stringify({
+        tokens: [Boolean(disp49), Boolean(mast49), Boolean(mastVoid49), Boolean(sales49), Boolean(sup49)],
+        disp: [e49DispOil.status, e49DispItm.status, e49DispGl403.status, e49DispSt.status],
+        mast: [e49MastOil.status, e49MastItm.status, e49MastGl.status, e49MastSt403.status],
+        sales: [e49SalesItm.status, e49SalesSt.status, e49SalesGl403.status, e49SalesOil403.status],
+        sup: [e49SupOil403.status, e49SupItm403.status, e49SupGl403.status, e49SupSt403.status],
+        entryDenied: [e49EntryGl403.status, e49EntryJv403.status],
+        updDenied: [e49OwnerJvSeed.status, e49EntryUpdGl403.status, e49EntryUpdJv403.status, e49DispUpdGl403.status, e49DispUpdJv403.status, e49MvUpdSt403.status, e49MvVoidSt403.status, e49EntrySync.status, e49MvSync.status],
+        persisted: e49Persisted
+      }));
     }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
