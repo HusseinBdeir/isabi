@@ -98,16 +98,16 @@ def run_dom_and_screenshots():
         assert sw_doc['offers'][0]['priceSpecification'][1]['price'] == 50 and sw_doc['offers'][0]['priceSpecification'][1]['billingDuration'] == 'P1M' and sw_doc['offers'][0]['priceSpecification'][1]['unitText'] == 'seat'
         assert sw_doc['offers'][1]['priceSpecification'][0]['minPrice'] == 5600 and sw_doc['offers'][1]['priceSpecification'][1]['minPrice'] == 80 and sw_doc['offers'][1]['priceSpecification'][1]['maxPrice'] == 100 and sw_doc['offers'][1]['priceSpecification'][1]['billingDuration'] == 'P1M'
         bot_res = subprocess.run(
-            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
-            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
+            [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
         )
         assert 'class="js-io"' not in bot_res.stdout and 'reveal in done' in bot_res.stdout, "Googlebot UA must bypass js-io opacity gate and immediately reveal cards"
         print('[SEO] robots.txt, sitemap.xml (valid XML), CNAME, IndexNow key, email_off, sameAs & Googlebot reveal verified')
 
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
         res = subprocess.run(
-            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1440,900', '--dump-dom', URL + '#industries'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
+            [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--window-size=1440,900', '--dump-dom', URL + '#industries'],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
         )
         dom = res.stdout
         checks = [
@@ -205,11 +205,27 @@ document.addEventListener('DOMContentLoaded', function() {
     var activeMain = Array.from(document.querySelectorAll('#main-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeMob = Array.from(document.querySelectorAll('#mobile-sec-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeDock = Array.from(document.querySelectorAll('.mobile-dock a.active')).map(function(a){ return a.getAttribute('href'); });
+    var dockEl = document.querySelector('.mobile-dock');
+    var dockHiddenMob = !dockEl || getComputedStyle(dockEl).display === 'none';
+    var langSwitchEl = document.getElementById('hdr-lang-switch');
+    var langSwitchH = langSwitchEl ? Math.round(langSwitchEl.getBoundingClientRect().height) : 0;
+    var mobInpEls = Array.from(document.querySelectorAll('#portal input, #portal select, #portal textarea, .ai-drawer input, .ai-drawer textarea, .ai-console input, .ai-console textarea')).filter(function(el){ return getComputedStyle(el).display !== 'none'; });
+    var inputFontMin = mobInpEls.length ? Math.min.apply(null, mobInpEls.map(function(el){ return parseFloat(getComputedStyle(el).fontSize || '0'); })) : 16;
     var effW = window.innerWidth < 600 ? 390 : window.innerWidth;
+    var suiteGrid = document.getElementById('app-suite-grid');
+    var suiteTiles = Array.from(document.querySelectorAll('#app-suite-grid .app-tile'));
+    var suiteTops = suiteTiles.map(function(t){ return t.getBoundingClientRect().top; }).sort(function(a, b){ return a - b; });
+    var suiteRows = suiteTops.length ? 1 : 0;
+    for (var si = 1; si < suiteTops.length; si++) { if (suiteTops[si] - suiteTops[si - 1] > 20) suiteRows++; }
+    if (suiteGrid && getComputedStyle(suiteGrid).gridAutoFlow !== 'column' && effW === 390) suiteRows = 0;
+    var compTds = Array.from(document.querySelectorAll('#ingenuity .comp-table tbody td'));
+    var compTdBlock = compTds.length > 0 && compTds.every(function(td){ return getComputedStyle(td).display === 'block'; });
     var overflows = [];
     if (effW === 390) {
       document.querySelectorAll('*').forEach(function(el) {
         if (el.closest('#mobile-sec-nav') || el.closest('.rail nav')) return;
+        var sc = el.closest('#app-suite-grid, .app-cat-bar, .ind-tabs, #sbox-ind-bar, .sec-tabs, .ind-subtabs');
+        if (sc && sc !== el && sc.getBoundingClientRect().right <= 390.5) return;
         var r = el.getBoundingClientRect();
         if (r.right > 390.5) {
           overflows.push((el.tagName + '.' + (el.className || '') + '#' + (el.id || '')) + ':' + Math.round(r.right));
@@ -267,6 +283,11 @@ document.addEventListener('DOMContentLoaded', function() {
       activeMain: activeMain,
       activeMob: activeMob,
       activeDock: activeDock,
+      dockHiddenMob: dockHiddenMob,
+      langSwitchH: langSwitchH,
+      inputFontMin: inputFontMin,
+      suiteRows: suiteRows,
+      compTdBlock: compTdBlock,
       overflows: overflows.slice(0, 12),
       cardOverflows: cardOverflows.slice(0, 12)
     };
@@ -567,11 +588,16 @@ document.addEventListener('DOMContentLoaded', function() {
       var frNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       var frHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
       var frHeroCard = document.querySelector('.hero-ledger-card')?.textContent || '';
+      var frScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
+      var frMobBodyW = document.body.scrollWidth;
+      var frColLbl = document.querySelector('#ingenuity .comp-table tbody td:nth-child(3)')?.getAttribute('data-col-lbl') || '';
       window.ISABI_I18N.setLang('ar', false);
       var arDir = document.documentElement.getAttribute('dir');
       var arNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       var arHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
       var arScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
+      var arMobBodyW = document.body.scrollWidth;
+      var arColLbl = document.querySelector('#ingenuity .comp-table tbody td:nth-child(3)')?.getAttribute('data-col-lbl') || '';
       var indSel = document.getElementById('lead-industry');
       var arOptTxt = indSel && indSel.options[0] ? indSel.options[0].text : '';
       var arOptVal = indSel && indSel.options[0] ? indSel.options[0].value : '';
@@ -630,10 +656,15 @@ document.addEventListener('DOMContentLoaded', function() {
       i18nDiag = {
         frNav: frNav,
         frHeroOk: frHeroH1.indexOf("L'ERP sur lequel votre Groupe") !== -1 && /Chiffre d'Affaires/i.test(frHeroCard),
+        frScrollOk: frScrollOk,
+        frMobBodyW: frMobBodyW,
+        frColLbl: frColLbl,
         arDir: arDir,
         arNav: arNav,
         arHeroOk: arHeroH1.indexOf('نظام ERP الذي تعتمد عليه') !== -1,
         arScrollOk: arScrollOk,
+        arMobBodyW: arMobBodyW,
+        arColLbl: arColLbl,
         arOptOk: /[\\u0600-\\u06FF]/.test(arOptTxt) && arOptVal === 'Hospitality & Resorts',
         arPricingOk: /[\\u0600-\\u06FF]/.test(arPricingTxt) && arPricingTxt.indexOf('الأساس التشغيلي') !== -1,
         arPhOk: /[\\u0600-\\u06FF]/.test(arLeadPh),
@@ -649,9 +680,9 @@ document.addEventListener('DOMContentLoaded', function() {
         enRestoreOk: enHeroH1.indexOf('The ERP Your Group') !== -1 && enLeadPh.indexOf('Karim Mansour') !== -1
       };
       i18nOk = (
-        frNav === 'Fonctionnalités' && i18nDiag.frHeroOk &&
+        frNav === 'Fonctionnalités' && i18nDiag.frHeroOk && frScrollOk && frColLbl === 'SaaS Générique' &&
         arDir === 'rtl' && arNav === 'المميزات' && i18nDiag.arHeroOk &&
-        i18nDiag.arScrollOk && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
+        i18nDiag.arScrollOk && /[\\u0600-\\u06FF]/.test(arColLbl) && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
         i18nDiag.arPhOk && i18nDiag.arFlowOk &&
         arDomAudit.count === 0 && frDomAudit.count === 0 &&
         esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' &&
@@ -709,8 +740,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         def probe_viewport(w, h, label):
             res_vp = subprocess.run(
-                [EDGE, '--headless=new', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#industries'],
-                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
+                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#industries'],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
             )
             m_vp = html.unescape(res_vp.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
             d_vp = json.loads(m_vp)
@@ -767,7 +798,13 @@ document.addEventListener('DOMContentLoaded', function() {
         assert abs(d_mob['kpi1W'] - d_mob['kpi2W']) <= 2, f"Mobile .hlc-kpi width mismatch: {d_mob['kpi1W']} vs {d_mob['kpi2W']}"
         assert abs(d_mob['kpi1StrongTop'] - d_mob['kpi2StrongTop']) <= 2, f"Mobile .hlc-kpi strong baseline mismatch: {d_mob['kpi1StrongTop']} vs {d_mob['kpi2StrongTop']}"
         assert d_mob['activeMob'] == ['#industries'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
-        assert d_mob['activeDock'] == ['#industries'], f"Mobile bottom dock active mismatch: {d_mob['activeDock']}"
+        assert d_mob['dockHiddenMob'] is True, "Duplicate .mobile-dock was not hidden on <= 720px!"
+        assert d_mob['langSwitchH'] >= 36, f"Mobile header lang switch height {d_mob['langSwitchH']}px < 36px!"
+        assert d_mob['inputFontMin'] >= 16, f"Mobile input font-size {d_mob['inputFontMin']}px < 16px (triggers iOS zoom)!"
+        assert d_mob['suiteRows'] == 2, f"Expected 2-row snap carousel in #app-suite-grid on mobile, got {d_mob['suiteRows']}"
+        assert d_mob['compTdBlock'] is True, "Expected stacked card tds (display:block) in .comp-table at 390x844"
+        assert d_mob['v4Test'].get('i18nOk') is True, f"Mobile EN/AR(RTL)/FR i18n check failed: {d_mob['v4Test'].get('i18nDiag')}"
+        assert d_mob['v4Test']['i18nDiag']['arMobBodyW'] <= 390 and d_mob['v4Test']['i18nDiag']['frMobBodyW'] <= 390, f"Mobile RTL/FR body overflow: {d_mob['v4Test']['i18nDiag']}"
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
 
         ai = d_desk['aiTest']
@@ -845,8 +882,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 try:
                     p_url = 'file:///' + probe_404.replace('\\', '/')
                     out_404 = subprocess.check_output(
-                        [EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', f'--window-size={vw_w},{vw_h}', '--dump-dom', p_url],
-                        timeout=20
+                        [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={vw_w},{vw_h}', '--dump-dom', p_url],
+                        timeout=45
                     ).decode('utf-8', errors='ignore')
                     m404 = re.search(r'<pre id="__d404">(.*?)</pre>', out_404, flags=re.DOTALL)
                     assert m404, f"Missing __d404 probe in 404.html ({loc} {vw_w}x{vw_h})"

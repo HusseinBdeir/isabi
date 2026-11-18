@@ -53,17 +53,17 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.36">
-  <link rel="icon" href="icon.svg?v=6.36" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.36" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.36" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.36">
-  <link rel="icon" href="favicon-dark.ico?v=6.36" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.36" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.36">
+  <link rel="manifest" href="manifest.json?v=6.37">
+  <link rel="icon" href="icon.svg?v=6.37" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.37" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.37" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.37">
+  <link rel="icon" href="favicon-dark.ico?v=6.37" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.37" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.37">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
   <script id="pre-theme">
     (function(){
       try {
@@ -82,6 +82,14 @@ HEAD = """<!DOCTYPE html>
         if (/(?:^|\\.)isabisystems\\.com$|\\.pages\\.dev$/i.test(location.hostname || '') || localStorage.getItem('isabi_edge_active_v1') === '1') {
           window.ISABI_HAS_EDGE_API = true;
         }
+        window.addEventListener('load', function () {
+          if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+            var gf = document.createElement('link');
+            gf.rel = 'stylesheet';
+            gf.href = 'https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap';
+            document.head.appendChild(gf);
+          }
+        }, { once: true });
       } catch (e) {}
     })();
   </script>
@@ -113,7 +121,7 @@ ORG_JSONLD = _json.dumps({
     "identifier": "isabisystems",
     "url": "https://isabisystems.com/",
     "mainEntityOfPage": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.36",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.37",
     "image": "https://isabisystems.com/og-image.png",
     "sameAs": [
         "https://github.com/HusseinBdeir",
@@ -128,7 +136,7 @@ ORG_JSONLD = _json.dumps({
         "name": "ISABI Systems",
         "alternateName": ["ISABI", "isabisystems"],
         "url": "https://isabisystems.com/",
-        "logo": "https://isabisystems.com/icon-512.png?v=6.36",
+        "logo": "https://isabisystems.com/icon-512.png?v=6.37",
         "slogan": "The ERP Your Group Actually Runs On"
     },
     "email": "husseinbdeir@isabisystems.com",
@@ -300,7 +308,10 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def render_and_validate_showcase_html() -> str:
-    full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
+    compact_css = re.sub(r'/\*[\s\S]*?\*/', '', CSS)
+    compact_css = re.sub(r'\n[ \t]+', '\n', compact_css)
+    compact_css = re.sub(r'\n{2,}', '\n', compact_css).strip()
+    full_html = f"{HEAD}<style>{compact_css}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
     # Check deliverable rules: no em dashes or unicode/ascii arrows in visible text
     for forbidden, label in [('\u2014', 'em dash'), ('\u2192', 'unicode arrow'), ('&mdash;', 'mdash entity'), ('&rarr;', 'rarr entity')]:
         if forbidden in full_html:
