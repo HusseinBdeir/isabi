@@ -530,3 +530,20 @@ CREATE TABLE IF NOT EXISTS geo_gate_suggestions (
 );
 CREATE INDEX IF NOT EXISTS idx_geo_gate_status_created ON geo_gate_suggestions (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_geo_gate_site ON geo_gate_suggestions (industry, company, site_name, status);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  endpoint TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL DEFAULT '',
+  p256dh TEXT NOT NULL DEFAULT '',
+  auth TEXT NOT NULL DEFAULT '',
+  lang TEXT NOT NULL DEFAULT 'en',
+  key_fp TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT '',
+  last_sent_at TEXT DEFAULT '',
+  last_status INTEGER DEFAULT 0,
+  fail_count INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions (user_id, updated_at);

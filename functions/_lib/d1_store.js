@@ -4444,16 +4444,18 @@ function inferDomainIndustry(obj, keyHint = '') {
   }
   const hint = String(keyHint || '').trim();
   if (hint.includes('::')) {
-    const head = hint.split('::', 1)[0].trim();
-    if (head) {
-      const hl = head.toLowerCase();
-      if (hl === 'hsp' || hl === 'resort' || hl === 'resorts') return 'Hospitality & Resorts';
-      if (hl === 'hld' || hl === 'holding') return 'Holding & Treasury';
-      if (hl === 'trd' || hl === 'trading') return 'Automotive & Heavy Trading';
-      if (hl === 'res' || hl === 'realestate' || hl === 'real_estate' || hl === 'prop' || hl === 'properties') return 'Real Estate & Property';
-      if (hl === 'ins' || hl === 'insurance') return 'Insurance & Brokerage';
-      if (hl === 'mfg' || hl === 'manufacturing') return 'Manufacturing';
-      const byHead = canonGeoIndustryKey(head);
+    const parts = hint.split('::');
+    const head = parts[0].trim();
+    const effHead = (head.toLowerCase() === 'wf' && parts.length > 1) ? String(parts[1] || '').trim() : head;
+    if (effHead) {
+      const hl = effHead.toLowerCase();
+      if (hl.startsWith('hsp') || hl === 'resort' || hl === 'resorts') return 'Hospitality & Resorts';
+      if (hl.startsWith('hld') || hl === 'holding') return 'Holding & Treasury';
+      if (hl.startsWith('trd') || hl === 'trading') return 'Automotive & Heavy Trading';
+      if (hl.startsWith('res') || hl.startsWith('re_') || hl === 'realestate' || hl === 'real_estate' || hl === 'prop' || hl === 'properties') return 'Real Estate & Property';
+      if (hl.startsWith('ins') || hl === 'insurance') return 'Insurance & Brokerage';
+      if (hl.startsWith('mfg') || hl === 'manufacturing') return 'Manufacturing';
+      const byHead = canonGeoIndustryKey(effHead);
       if (byHead) return byHead;
     }
   }
@@ -6371,6 +6373,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const [ek, rawEv] of Object.entries(editsMap)) {
     if (!ek || !rawEv || typeof rawEv !== 'object') continue;
     if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
+    const isPeriodCloseWf = /^WF::(period_close|hld_close_gate)::/i.test(ek);
+    if (isPeriodCloseWf && !perms.voidData) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to lock or reopen an accounting period.' }, 403);
+    }
     if (!validateRecordGpsCoords(rawEv)) {
       return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
     }
@@ -6423,7 +6429,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
-        if (!allowVoidOnly) {
+        const allowPeriodClose = Boolean(isPeriodCloseWf && perms.voidData && !gpsChanged);
+        if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
         if (voidNoteChanged) {
@@ -6454,7 +6461,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
-        if (!allowVoidOnly) {
+        const allowPeriodClose = Boolean(isPeriodCloseWf && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
+        if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
       }
@@ -6522,6 +6530,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const rawEk of purgedEditKeys) {
     const ek = String(rawEk || '').trim();
     if (!ek || isServerOwnedRowEditKey(ek)) continue;
+    if (/^WF::(period_close|hld_close_gate)::/i.test(ek) && !perms.voidData) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to purge period-close locks.' }, 403);
+    }
     const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
     const exObj = safeJsonParse(ex.payload_json, {});

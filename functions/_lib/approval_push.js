@@ -332,10 +332,19 @@ export async function handlePushApi(request, env, session, body, subPath) {
   await ensurePushSchema(db);
   const nowIso = new Date().toISOString();
   const id = 'ps-' + (await sha256Hex(endpoint)).slice(0, 32);
-  // Language: as sent; otherwise kept from this device's row, or from the row it replaces (the browser renewed
-  // the subscription in the background, where the language is not known).
   let lang = (body && typeof body.lang === 'string' && body.lang.trim()) ? normLang(body.lang) : '';
   const replaces = String((body && body.replaces) || '').trim();
+  // Service-worker rotation: never silently enroll a seat that is only using another push feature (e.g. Day-Close).
+  if (Boolean(body && body.only_if_replaces)) {
+    const hasExisting = await db.prepare(
+      "SELECT 1 FROM push_subscriptions WHERE user_id = ?1 AND (endpoint = ?2 OR (?3 != '' AND endpoint = ?3)) LIMIT 1"
+    ).bind(me, endpoint, replaces).first();
+    if (!hasExisting) {
+      return jsonResponse({ ok: true, enabled: true, stored: false, skipped: 'not_subscribed' });
+    }
+  }
+  // Language: as sent; otherwise kept from this device's row, or from the row it replaces (the browser renewed
+  // the subscription in the background, where the language is not known).
   const ownLang = async (ep) => {
     if (!ep || !isAllowedPushEndpoint(ep)) return '';
     const r = await db.prepare('SELECT lang FROM push_subscriptions WHERE endpoint = ?1 AND user_id = ?2 LIMIT 1').bind(ep, me).first();

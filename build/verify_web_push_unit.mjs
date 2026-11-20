@@ -147,7 +147,10 @@ async function verifyVapidAuthHeader(authHdr, targetUrl) {
   if (hdr.alg !== 'ES256' || hdr.typ !== 'JWT') throw new Error(`Unexpected VAPID alg/typ: ${JSON.stringify(hdr)}`);
   const expectedAud = new URL(targetUrl).origin;
   if (pl.aud !== expectedAud) throw new Error(`VAPID aud mismatch: ${pl.aud} !== ${expectedAud}`);
-  if (pl.sub !== 'mailto:ops@isabisystems.com') throw new Error(`VAPID sub mismatch: ${pl.sub}`);
+  const expectedSub = (env.VAPID_SUBJECT && /^(mailto:|https:\/\/)/i.test(String(env.VAPID_SUBJECT).trim()))
+    ? String(env.VAPID_SUBJECT).trim()
+    : 'mailto:ops@isabisystems.com';
+  if (pl.sub !== expectedSub) throw new Error(`VAPID sub mismatch: ${pl.sub} !== ${expectedSub}`);
   const pubBytes = b64uDec(pubB64u);
   if (pubBytes.length !== 65 || pubBytes[0] !== 0x04) throw new Error('Invalid VAPID public key length');
   const jwk = {
@@ -784,6 +787,57 @@ try {
     hspArBody.includes('1,110') &&
     !/نقلة/.test(hspArBody)
   ), { entry403: entryTest403.status, hspArTest: hspArTest.json, hspArBody });
+  // 6f. env.VAPID_* precedence + VAPID_SUBJECT in Day-Close JWT & WF::period_close::* Supervisor RBAC parity
+  const kpEnv = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const pubEnvRaw = new Uint8Array(await crypto.subtle.exportKey('raw', kpEnv.publicKey));
+  const jwkEnvPriv = await crypto.subtle.exportKey('jwk', kpEnv.privateKey);
+  const envPubB64u = b64uEnc(pubEnvRaw);
+  const envSubj = 'mailto:push-subj-test@isabisystems.com';
+  try {
+    env.VAPID_PUBLIC_KEY = envPubB64u;
+    env.VAPID_PRIVATE_KEY = jwkEnvPriv.d;
+    env.VAPID_SUBJECT = envSubj;
+    const dcGetEnv = await api('day-close-push', { method: 'GET', token: ownerTok });
+    fetchLog.length = 0;
+    const dcTestEnv = await api('day-close-push', { token: ownerTok, body: { op: 'test', company: 'wtc', targetDate: '2026-10-22', lang: 'en' } });
+    ok('env.VAPID_* overrides D1 fallback and honors VAPID_SUBJECT in ES256 VAPID JWT', Boolean(
+      dcGetEnv.status === 200 && dcGetEnv.json?.vapidPublicKey === envPubB64u &&
+      dcTestEnv.status === 200 && dcTestEnv.json?.delivered === 1 && fetchLog.length === 1
+    ), { dcGetEnv: dcGetEnv.json, dcTestEnv: dcTestEnv.json });
+  } finally {
+    delete env.VAPID_PUBLIC_KEY;
+    delete env.VAPID_PRIVATE_KEY;
+    delete env.VAPID_SUBJECT;
+  }
+
+  const wtcSupTok = await seedSeat({ id: 'u_wtc_sup', full_name: 'WTC Sup', email: 'wtc.sup@isabisystems.com', role: 'Supervisor', companies: 'WTC', pbi_access: 'full', statements_access: 'full' });
+  const wtcEntryTok = await seedSeat({ id: 'u_wtc_ent', full_name: 'WTC Entry', email: 'wtc.ent@isabisystems.com', role: 'Entry', companies: 'WTC', pbi_access: 'full', statements_access: 'none' });
+  const wfCloseKey = 'WF::period_close::wtc';
+  const supCloseWrite = await api('industry_domain_store', {
+    token: wtcSupTok,
+    body: { industryRowEdits: { [wfCloseKey]: { company: 'WTC', industry: 'Manufacturing', lockedUntil: '2026-10-31', rev: 1, updated_at: new Date().toISOString() } } }
+  });
+  const storedWfRow = d1.db.prepare('SELECT payload_json FROM industry_row_edits WHERE edit_key = ?').get(wfCloseKey);
+  const storedWfPayload = storedWfRow ? JSON.parse(storedWfRow.payload_json) : null;
+  const entryCloseWrite403 = await api('industry_domain_store', {
+    token: wtcEntryTok,
+    body: { industryRowEdits: { [wfCloseKey]: { company: 'WTC', industry: 'Manufacturing', lockedUntil: '2026-11-30', rev: 2, updated_at: new Date().toISOString() } } }
+  });
+  const entryClosePurge403 = await api('industry_domain_store', {
+    token: wtcEntryTok,
+    body: { purgedEditKeys: [wfCloseKey] }
+  });
+  const rlsHld403 = await api('industry_domain_store', {
+    token: wtcSupTok,
+    body: { industryRowEdits: { 'WF::hld_close_gate::hld': { company: 'Bdeir Holding', lockedUntil: '2026-10-31', rev: 1, updated_at: new Date().toISOString() } } }
+  });
+  ok('WF::period_close allows Supervisor 200 write and denies Entry (403 write/purge) + cross-industry WF::hld_close_gate RLS 403', Boolean(
+    supCloseWrite.status === 200 && supCloseWrite.json?.ok === true &&
+    storedWfPayload && storedWfPayload.lockedUntil === '2026-10-31' &&
+    entryCloseWrite403.status === 403 &&
+    entryClosePurge403.status === 403 &&
+    rlsHld403.status === 403
+  ), { supCloseWrite: supCloseWrite.json, storedWfPayload, st403: [entryCloseWrite403.status, entryClosePurge403.status, rlsHld403.status] });
 } finally {
   globalThis.fetch = origFetch;
 }

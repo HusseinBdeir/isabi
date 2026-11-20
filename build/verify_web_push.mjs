@@ -581,6 +581,110 @@ console.log('\n[6] Shared D1 vapid_keypair_v1 fallback (coexistence with Day-Clo
   d1.exec("DELETE FROM edge_kv_store WHERE doc_key = 'vapid_keypair_v1'");
 }
 
+console.log('\n[7] Coexistence: env.VAPID precedence, only_if_replaces, and Day-Close rotate');
+{
+  const altV = mintVapid();
+  d1.exec("DELETE FROM push_subscriptions");
+  d1.exec("DELETE FROM edge_kv_store WHERE doc_key IN ('vapid_keypair_v1', 'day_close_push_subs_v1')");
+  d1.db.prepare("INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('vapid_keypair_v1', ?, ?, 'system:vapid', 1)")
+    .run(JSON.stringify({ publicKeyB64Url: altV.VAPID_PUBLIC_KEY, privateJwk: altV.jwk, createdAt: new Date().toISOString() }), new Date().toISOString());
+  setVapid(VAPID_ON);
+  const cfgEnv = await api('push/config', { method: 'GET', as: 't-sup-wtc' });
+  const dcEnv = await api('day-close-push', { method: 'GET', as: 't-sup-wtc' });
+  ok('env.VAPID_* takes identical precedence over D1 fallback across both push endpoints',
+    cfgEnv.status === 200 && dcEnv.status === 200 && cfgEnv.json.publicKey === V1.VAPID_PUBLIC_KEY && dcEnv.json.vapidPublicKey === V1.VAPID_PUBLIC_KEY,
+    { cfg: cfgEnv.json, dc: dcEnv.json });
+
+  const uaDc = newUaKeys();
+  const keysDc = { p256dh: b64uEncode(uaDc.pub), auth: b64uEncode(uaDc.auth) };
+  const epDcOld = endpointFor('t-entry-wtc', 90, 'fcm');
+  const epDcNew = endpointFor('t-entry-wtc', 91, 'fcm');
+  const epDcOther = endpointFor('t-sup-wtc', 92, 'fcm');
+  const dcSub = await api('day-close-push', {
+    method: 'POST',
+    as: 't-entry-wtc',
+    body: { op: 'subscribe', scopeKey: 'wtc', closeHourBeirut: 19, lang: 'fr', subscription: { endpoint: epDcOld, keys: keysDc } }
+  });
+  ok('day-close subscribe succeeds for Day-Close-only Entry seat', dcSub.status === 200 && dcSub.json.subscribed === true, dcSub.json);
+
+  // SW pushsubscriptionchange must NOT enroll a Day-Close-only seat into Approvals Push when only_if_replaces is set
+  const apvSkip = await api('push/subscribe', {
+    method: 'POST',
+    as: 't-entry-wtc',
+    body: { endpoint: epDcNew, keys: keysDc, server_key: V1.VAPID_PUBLIC_KEY, replaces: epDcOld, only_if_replaces: true }
+  });
+  ok('only_if_replaces skips Approvals Push enrollment for Day-Close-only seat',
+    apvSkip.status === 200 && apvSkip.json.stored === false && apvSkip.json.skipped === 'not_subscribed' && subCount('user_id = ?', 't-entry-wtc') === 0,
+    apvSkip.json);
+
+  // Day-Close rotate updates subscribed seat's endpoint cleanly without enrolling unsubscribed seats
+  const dcRotUnauth = await api('day-close-push', {
+    method: 'POST',
+    as: 't-sup-wtc',
+    body: { op: 'rotate', replaces: epDcOld, subscription: { endpoint: epDcOther, keys: keysDc } }
+  });
+  ok('day-close rotate skips unsubscribed seat without subscribing or stealing peer row',
+    dcRotUnauth.status === 200 && dcRotUnauth.json.rotated === false && dcRotUnauth.json.subscribed === false,
+    dcRotUnauth.json);
+
+  const dcRotOk = await api('day-close-push', {
+    method: 'POST',
+    as: 't-entry-wtc',
+    body: { op: 'rotate', replaces: epDcOld, subscription: { endpoint: epDcNew, keys: keysDc } }
+  });
+  const dcGetAfter = await api('day-close-push', { method: 'GET', as: 't-entry-wtc' });
+  ok('day-close rotate swaps old endpoint to new endpoint preserving prefs',
+    dcRotOk.status === 200 && dcRotOk.json.rotated === true && dcRotOk.json.subscribed === true
+    && dcGetAfter.status === 200 && Number(dcGetAfter.json.closeHourBeirut) === 19 && dcGetAfter.json.lang === 'fr',
+    { rot: dcRotOk.json, get: dcGetAfter.json });
+
+  // Subscribed Approvals Push user with only_if_replaces: true still replaces its row
+  const supApv = await subscribe('t-sup-wtc', { host: 'fcm', lang: 'fr', n: 93 });
+  const epSupNew = endpointFor('t-sup-wtc', 94, 'fcm');
+  const apvRotOk = await api('push/subscribe', {
+    method: 'POST',
+    as: 't-sup-wtc',
+    body: { endpoint: epSupNew, keys: { p256dh: b64uEncode(newUaKeys().pub), auth: b64uEncode(newUaKeys().auth) }, server_key: V1.VAPID_PUBLIC_KEY, replaces: supApv.endpoint, only_if_replaces: true }
+  });
+  ok('only_if_replaces updates already-subscribed Approvals Push seat and inherits lang',
+    apvRotOk.status === 200 && apvRotOk.json.stored === true && subCount('endpoint = ?', supApv.endpoint) === 0
+    && d1.one('SELECT lang FROM push_subscriptions WHERE endpoint = ?', epSupNew).lang === 'fr',
+    apvRotOk.json);
+  d1.exec("DELETE FROM push_subscriptions");
+  d1.exec("DELETE FROM edge_kv_store WHERE doc_key IN ('vapid_keypair_v1', 'day_close_push_subs_v1')");
+}
+
+console.log('\n[8] Period Close WF:: RBAC parity on industry_domain_store (negative guards)');
+{
+  const wfKey = 'WF::period_close::wtc';
+  const entryLock = await api('industry_domain_store', {
+    method: 'POST',
+    as: 't-entry-wtc',
+    body: { industryRowEdits: { [wfKey]: { company: 'WTC', industry: 'Manufacturing', lockedUntil: '2026-11-30', rev: 2, updated_at: new Date().toISOString() } } }
+  });
+  ok('NEGATIVE: Entry seat (voidData=false) receives 403 on WF::period_close write',
+    entryLock.status === 403,
+    entryLock.json);
+
+  const entryPurge = await api('industry_domain_store', {
+    method: 'POST',
+    as: 't-entry-wtc',
+    body: { purgedEditKeys: [wfKey] }
+  });
+  ok('NEGATIVE: Entry seat receives 403 on WF::period_close purge',
+    entryPurge.status === 403,
+    entryPurge.json);
+
+  const rlsHld = await api('industry_domain_store', {
+    method: 'POST',
+    as: 't-sup-wtc',
+    body: { industryRowEdits: { 'WF::hld_close_gate::hld': { company: 'Bdeir Holding', lockedUntil: '2026-10-31', rev: 1, updated_at: new Date().toISOString() } } }
+  });
+  ok('NEGATIVE: WF::hld_close_gate infers Holding & Treasury (not WF) and enforces RLS',
+    rlsHld.status === 403,
+    rlsHld.json);
+}
+
 globalThis.fetch = realFetch;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
