@@ -3,12 +3,6 @@
   "branch": "wt/entry-daily-ops",
   "sha": "047bc3a38107d09ab5a3c4db6c1c97ae8ba4ca24"
  },
- "batch": {
-  "at": "2026-11-20T15:36:54Z",
-  "holder": "THEO d5944226 (entry-daily-ops)",
-  "lockId": "36826cf46f2a492cb4396bc6704f3a59",
-  "version": "19.6.403"
- },
  "gates": [
   "isabi-app: node build/verify_entry_daily_ops.mjs",
   "isabi-app: node build/verify_dops_handover.mjs"
