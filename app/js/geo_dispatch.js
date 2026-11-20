@@ -2913,6 +2913,16 @@
     return false;
   }
 
+  // True when a verified road route is on file for this pair (the same test _verifiedRouteForCoords starts
+  // with, on the same key estimateLegKm builds). estimateLegKm can answer verifiedRoute only for such a pair,
+  // so a screen that lists verified corridors only asks this first and skips the full estimate, which looks
+  // both endpoints up in the whole site list, for the hundreds of sites that have no verified route.
+  function hasVerifiedRoutePair(fromSpec, toSpec, explicitInd) {
+    if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) return false;
+    const vr = GEO_STORE.verifiedRoutes && GEO_STORE.verifiedRoutes[makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name, explicitInd)];
+    return Boolean(vr && Number.isFinite(Number(vr.km)));
+  }
+
   function estimateLegKm(fromSpec, toSpec, SEED, opts = {}) {
     if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) return null;
     const fromIsBu = fromSpec.type === 'bu';
@@ -14187,6 +14197,7 @@
     validateSiteInsideRegion,
     ensureRegionInSeed,
     estimateLegKm,
+    hasVerifiedRoutePair,
     canEditPairKm,
     getConfigStamp: () => String(GEO_STORE.updatedAt || ''),
     setPairKmOverride,
