@@ -3221,6 +3221,46 @@ function isSyncTwinVoidBy(obj) {
   return /^(system-topup|sharepoint top-up)/i.test(String(obj.voided_by || obj.voidedBy || '').trim());
 }
 
+// The other five industries' dated schedules. A save from a later Start Date with another value keeps the row and adds
+// a new schedule under the id "<keptId>-YYYYMMDD" (app.js planSiblingChronoSplit), so two devices that have not synced
+// reach the same id on their own. Kept 1:1 with _SCHEDULE_SPLIT_BUCKETS in isabi-app/server.py.
+const SCHEDULE_SPLIT_BUCKETS = new Set(['hsp_tariffs', 're_leases', 'trd_targets', 'ins_agreements', 'hld_partners', 'hld_loans']);
+const VOIDED_ID_CONFLICT_CODE = 'voided_id_conflict';
+const VOIDED_ID_CONFLICT_ERROR = 'This schedule was saved and undone on another device. Refresh the page and save again.';
+
+// The stamp format both the app (Date.toISOString) and the two servers write: fixed width, so it compares as text
+const ISO_MS_Z_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
+const ASCII_ALNUM_RE = /[A-Za-z0-9]/;
+
+// A live schedule that a save kept apart, posted under an id whose stored row is another one's voided row. Only called
+// where the stored row is voided, the incoming one is live and its rev is not higher (a restore from the Void Log
+// raises the rev and never gets here). All of these must hold, or the row is left to the merge as before:
+// - the bucket is one of the six dated schedules;
+// - the incoming row was made by such a save (`_continues_id`, set by planSiblingChronoSplit): its id was worked out
+//   by the device, and the app gives the next save another id. A row keyed under an id typed in the form, or a device
+//   copy of a workbook row, is the same record on every device and is not judged here;
+// - the two rows were made separately: `_createdAt` is stamped once when a row is first made on a device and is
+//   carried by every later copy of it, its void included. A device sending its own older copy of the voided row
+//   carries the same stamp and is not a reuse;
+// - the incoming row was made after the stored one was voided (`voided_at`, stamped by the server when the void
+//   arrived). A live copy made before that is an older copy the device still holds and sends with every save,
+//   whatever its stamp (two devices can each have made the row before one of them undid it).
+// A field that is missing, not text or not in the stamp format means the row is not judged. Text is compared as it
+// is (no trimming), so this and server.py decide alike.
+function isVoidedScheduleIdReuse(bucket, exObj, inc) {
+  if (!SCHEDULE_SPLIT_BUCKETS.has(String(bucket || ''))) return false;
+  if (!exObj || typeof exObj !== 'object' || Array.isArray(exObj) || !inc || typeof inc !== 'object' || Array.isArray(inc)) return false;
+  const cont = inc._continues_id;
+  if (typeof cont !== 'string' || !ASCII_ALNUM_RE.test(cont)) return false;
+  const exMade = exObj._createdAt;
+  const incMade = inc._createdAt;
+  const voidedAt = exObj.voided_at;
+  for (const stamp of [exMade, incMade, voidedAt]) {
+    if (typeof stamp !== 'string' || !ISO_MS_Z_RE.test(stamp)) return false;
+  }
+  return exMade !== incMade && incMade > voidedAt;
+}
+
 function sanitizeIncomingTwinKeys(targetObj, baseObj, session, perms) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const trusted = Boolean((session && session.build_ticket) || (perms && perms.roleKey === 'Full Access (Owner)'));
@@ -6204,7 +6244,15 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
           return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
         }
-        if (exVoid && !incVoid && exRev >= incRev) continue;
+        if (exVoid && !incVoid && exRev >= incRev) {
+          // Another device saved a schedule under this id and undid it; this one, made on a device that never saw
+          // it, would be dropped here while the answer says OK. Refused instead, before anything in the request
+          // is written.
+          if (isVoidedScheduleIdReuse(bucket, exObj, r)) {
+            return jsonResponse({ ok: false, error: VOIDED_ID_CONFLICT_ERROR, code: VOIDED_ID_CONFLICT_CODE, bucket: String(bucket), id: rid }, 409);
+          }
+          continue;
+        }
         if (exRev > incRev && !(incVoid && !exVoid)) continue;
         if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
           return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);

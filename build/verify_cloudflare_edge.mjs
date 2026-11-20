@@ -6380,6 +6380,107 @@ finally:
       }).slice(0, 800));
     }
 
+    // 48c. A dated schedule's id reached on two devices (/industry_domain_store, 1:1 with isabi-app server.py and its
+    //      gate verify_dated_log_server_save.mjs 38, 45-48). Device A saves a tariff from a later day and undoes it:
+    //      the voided row stays under "<id>-YYYYMMDD". Device B then posts its own live row under that id: refused
+    //      whole (409 voided_id_conflict), where the answer used to be OK with the voided row kept.
+    const e48cDom = body => httpReq('POST', '/app/api/industry_domain_store', body, { 'X-ISABI-Session': ownerToken });
+    const e48cRow = async (bk, id) => {
+      const g = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+      return ((g.json?.industryCustomRows || {})[bk] || []).find(r => r && r.id === id) || null;
+    };
+    // Stamps as a device writes them (this PC's clock, as the local Edge's)
+    const e48cNow = () => new Date().toISOString();
+    const e48cAgo = sec => new Date(Date.now() - sec * 1000).toISOString();
+    const e48cMadeA = e48cAgo(600);
+    const e48cId = 'TRF-E48C-20261201';
+    const e48cA = { id: e48cId, company: 'Blanca', tier: 'E48C Cabana', season: 'E48C', start_date: '2026-12-01', end_date: 'Open', nightly_rate_usd: 480, _continues_id: 'TRF-E48C', _createdAt: e48cMadeA };
+    const e48cLiveA = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { rev: 1, updated_at: e48cMadeA })] } });
+    const e48cTombBody = Object.assign({}, e48cA, { voided: true, _scheduleVoided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() });
+    const e48cVoidA = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTombBody] } });
+    const e48cTomb = await e48cRow('hsp_tariffs', e48cId);
+    await sleep(30);
+    // Device B: the same id, live, made after the void, with another good row in the same request
+    const e48cMadeB = e48cNow();
+    const e48cB = Object.assign({}, e48cA, { nightly_rate_usd: 490, _createdAt: e48cMadeB, rev: 1, updated_at: e48cMadeB });
+    const e48cClash = await e48cDom({ industryCustomRows: { hsp_tariffs: [
+      { id: 'TRF-E48C-HALF', company: 'Blanca', tier: 'E48C Cabana Half', season: 'E48C', start_date: '2027-01-01', end_date: 'Open', nightly_rate_usd: 100, _createdAt: e48cMadeB, rev: 1, updated_at: e48cMadeB },
+      e48cB
+    ] } });
+    const e48cAfterClash = await e48cRow('hsp_tariffs', e48cId);
+    const e48cHalf = await e48cRow('hsp_tariffs', 'TRF-E48C-HALF');
+    // Left as it was: the same voided row again; a device's own older live copy of it (same stamp, or none); a row
+    // keyed under that id in the form (no _continues_id); a row made before the void
+    const e48cSame = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTomb || e48cTombBody] } });
+    const e48cOlder = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { nightly_rate_usd: 999, rev: 1, updated_at: e48cMadeA })] } });
+    const e48cNoStampRow = Object.assign({}, e48cA, { nightly_rate_usd: 998, rev: 1, updated_at: e48cMadeA });
+    delete e48cNoStampRow._createdAt;
+    const e48cNoStamp = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cNoStampRow] } });
+    const e48cTypedRow = Object.assign({}, e48cB, { nightly_rate_usd: 996 });
+    delete e48cTypedRow._continues_id;
+    const e48cTyped = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTypedRow] } });
+    const e48cBefore = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cB, { nightly_rate_usd: 995, _createdAt: e48cAgo(300) })] } });
+    // Another device's voided copy with other values and its own void time, written over the stored voided row:
+    // the time it was first voided stays (the refusal reads it)
+    const e48cVoidedOver = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTomb || e48cTombBody, { notes: 'Voided copy from another device', voided_at: '2099-01-01T00:00:00.000Z' })] } });
+    const e48cAfterOlder = await e48cRow('hsp_tariffs', e48cId);
+    // Another bucket is not refused (answered OK, the voided row kept, as before)
+    const e48cMem = { id: 'MEM-E48C-TOMB', company: 'Blanca', unit: 'E48C Cabana', member: 'E48C Member', start_date: '2026-07-01', end_date: '2026-07-31', contract_usd: 100, _continues_id: 'MEM-E48C', _createdAt: e48cMadeA };
+    const e48cMem1 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { rev: 1, updated_at: e48cMadeA })] } });
+    const e48cMem2 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { voided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() })] } });
+    await sleep(30);
+    const e48cMem3 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { contract_usd: 200, _createdAt: e48cNow(), rev: 1, updated_at: e48cNow() })] } });
+    const e48cMemAfter = await e48cRow('hsp_memberships', 'MEM-E48C-TOMB');
+    // The other order: B's schedule stored first, A's same save over it (both live), then A's undo. B still holds its
+    // own live copy and sends it with every save: made before the void, so not refused. One made after the void is.
+    const e48cTwinId = 'TRF-E48C-TWIN-20261201';
+    const e48cTwinB0 = e48cAgo(240);
+    const e48cTwinA0 = e48cAgo(120);
+    const e48cTwin = { id: e48cTwinId, company: 'Blanca', tier: 'E48C Cabana Twin', season: 'E48C', start_date: '2026-12-01', end_date: 'Open', nightly_rate_usd: 810, _continues_id: 'TRF-E48C-TWIN' };
+    const e48cTwin1 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { _createdAt: e48cTwinB0, rev: 1, updated_at: e48cTwinB0 })] } });
+    const e48cTwin2 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 820, _createdAt: e48cTwinA0, rev: 1, updated_at: e48cTwinA0 })] } });
+    const e48cTwin3 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 820, _createdAt: e48cTwinA0, voided: true, _scheduleVoided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() })] } });
+    const e48cTwinTomb = await e48cRow('hsp_tariffs', e48cTwinId);
+    const e48cTwin4 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { _createdAt: e48cTwinB0, rev: 1, updated_at: e48cTwinB0 })] } });
+    const e48cTwinAfter4 = await e48cRow('hsp_tariffs', e48cTwinId);
+    await sleep(30);
+    const e48cTwin5 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 830, _createdAt: e48cNow(), rev: 1, updated_at: e48cNow() })] } });
+    const e48cTwinAfter5 = await e48cRow('hsp_tariffs', e48cTwinId);
+    // Device B saves again under the next free id; then the voided row is restored (live, a higher rev)
+    const e48cNext = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cB, { id: e48cId + '-2' })] } });
+    const e48cNextAfter = await e48cRow('hsp_tariffs', e48cId + '-2');
+    const e48cRestore = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { voided: false, _scheduleVoided: false, restored_at: e48cNow(), rev: 3, updated_at: e48cNow() })] } });
+    const e48cRestored = await e48cRow('hsp_tariffs', e48cId);
+    const e48cOk = Boolean(
+      e48cLiveA.status === 200 && e48cVoidA.status === 200 && e48cTomb && e48cTomb.voided === true && Number(e48cTomb.rev) === 2 &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(String(e48cTomb.voided_at || '')) &&
+      e48cClash.status === 409 && e48cClash.json?.ok === false && e48cClash.json?.code === 'voided_id_conflict' && e48cClash.json?.id === e48cId &&
+      e48cClash.json?.bucket === 'hsp_tariffs' && /saved and undone on another device/.test(String(e48cClash.json?.error || '')) &&
+      e48cAfterClash && e48cAfterClash.voided === true && Number(e48cAfterClash.nightly_rate_usd) === 480 && Number(e48cAfterClash.rev) === 2 && !e48cHalf &&
+      e48cSame.status === 200 && e48cSame.json?.ok === true && e48cOlder.status === 200 && e48cNoStamp.status === 200 && e48cTyped.status === 200 && e48cBefore.status === 200 &&
+      e48cAfterOlder && e48cAfterOlder.voided === true && Number(e48cAfterOlder.nightly_rate_usd) === 480 &&
+      e48cVoidedOver.status === 200 && e48cAfterOlder.notes === 'Voided copy from another device' && e48cAfterOlder.voided_at === e48cTomb.voided_at &&
+      e48cMem1.status === 200 && e48cMem2.status === 200 && e48cMem3.status === 200 && e48cMemAfter && e48cMemAfter.voided === true && Number(e48cMemAfter.contract_usd) === 100 &&
+      e48cTwin1.status === 200 && e48cTwin2.status === 200 && e48cTwin3.status === 200 && e48cTwinTomb && e48cTwinTomb.voided === true && e48cTwinTomb._createdAt === e48cTwinA0 &&
+      e48cTwin4.status === 200 && e48cTwin4.json?.ok === true && e48cTwinAfter4 && e48cTwinAfter4.voided === true && Number(e48cTwinAfter4.nightly_rate_usd) === 820 &&
+      e48cTwin5.status === 409 && e48cTwin5.json?.code === 'voided_id_conflict' && e48cTwin5.json?.id === e48cTwinId && e48cTwinAfter5 && e48cTwinAfter5.voided === true && Number(e48cTwinAfter5.nightly_rate_usd) === 820 &&
+      e48cNext.status === 200 && e48cNextAfter && !e48cNextAfter.voided && Number(e48cNextAfter.nightly_rate_usd) === 490 &&
+      e48cRestore.status === 200 && e48cRestored && !e48cRestored.voided && Number(e48cRestored.rev) === 3
+    );
+    if (e48cOk) {
+      pass('edge-48c-voided-schedule-id-conflict', 'live schedule kept apart by a save, made after another device\'s same-id schedule was voided = 409 voided_id_conflict, nothing of the request stored; same voided row again, a device\'s own older copy (same or no first-made stamp), a row keyed under that id in the form, a row made before the void (incl. the stored-first then overwritten order) and other buckets answered OK as before; a voided copy written over the voided row keeps the time it was first voided; next free id and Void Log restore (higher rev) accepted');
+    } else {
+      fail('edge-48c-voided-schedule-id-conflict', JSON.stringify({
+        seed: [e48cLiveA.status, e48cVoidA.status, e48cTomb && [e48cTomb.voided, e48cTomb.rev, e48cTomb.voided_at]],
+        clash: [e48cClash.status, e48cClash.json], afterClash: e48cAfterClash && [e48cAfterClash.voided, e48cAfterClash.nightly_rate_usd, e48cAfterClash.rev], half: Boolean(e48cHalf),
+        same: [e48cSame.status, e48cOlder.status, e48cNoStamp.status, e48cTyped.status, e48cBefore.status, e48cVoidedOver.status], afterOlder: e48cAfterOlder && [e48cAfterOlder.voided, e48cAfterOlder.nightly_rate_usd, e48cAfterOlder.notes, e48cAfterOlder.voided_at],
+        mem: [e48cMem1.status, e48cMem2.status, e48cMem3.status, e48cMemAfter && [e48cMemAfter.voided, e48cMemAfter.contract_usd]],
+        twin: [e48cTwin1.status, e48cTwin2.status, e48cTwin3.status, e48cTwin4.status, e48cTwin5.status, e48cTwin5.json?.code, e48cTwinAfter5 && [e48cTwinAfter5.voided, e48cTwinAfter5.nightly_rate_usd]],
+        next: [e48cNext.status, e48cNextAfter && [e48cNextAfter.voided, e48cNextAfter.nightly_rate_usd]],
+        restore: [e48cRestore.status, e48cRestored && [e48cRestored.voided, e48cRestored.rev]]
+      }).slice(0, 1600));
+    }
+
     // 49. /app/api/records RBAC Parity for items, gl_accounts, equipment_oil_logs & sales_tickets
     const e49Ts = Date.now();
     const e49Users = [
