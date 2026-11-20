@@ -851,18 +851,18 @@ async function main() {
 
       // 14-26: All 13 Phase-16 Recon & Phase-17 Period-Close Studios across all 6 verticals
       await test('mfg-statement-recon', M, 'raw', toggleIn('mfgAiStatementReconPanel'), ['mfgAiStatementReconPanel', 'mfgAiPostReconBtn']);
-      await test('mfg-period-close', M, 'statements', toggleIn('mfgPeriodClosePanel'), ['mfgPeriodClosePanel', 'mfgAiCutoffSweepBtn', 'mfgConfirmationPackBtn']);
+      await test('mfg-period-close', M, 'ledger', toggleIn('mfgPeriodClosePanel'), ['mfgPeriodClosePanel', 'mfgAiCutoffSweepBtn', 'mfgConfirmationPackBtn']);
       await test('holding-14-entity-close', HLD, 'hld_consolidation', toggleIn('hldCloseGatePanel'), ['hldCloseGatePanel', 'hldBoardPackBriefBtn', 'hldBoardPackListenBtn', 'hldSealAll14EntitiesBtn']);
       await test('holding-bank-sweep', HLD, 'hld_interactions', toggleIn('hldAiBankSweepPanel'), ['hldAiBankSweepPanel', 'hldAiPostBankSweepBtn']);
       await test('holding-semantic-matcher', HLD, 'hld_interactions', toggleIn('hldAiMatchPanel'), ['hldAiMatchPanel']);
       await test('hospitality-settlement-recon', HSP, 'hsp_revenue', toggleIn('hspAiSettlementReconPanel'), ['hspAiSettlementReconPanel', 'hspAiPostClearBtn']);
-      await test('hospitality-period-close', HSP, 'statements', toggleIn('hspPeriodClosePanel'), ['hspPeriodClosePanel', 'hspAiShrinkageBriefBtn']);
+      await test('hospitality-period-close', HSP, 'ledger', toggleIn('hspPeriodClosePanel'), ['hspPeriodClosePanel', 'hspAiShrinkageBriefBtn']);
       await test('trading-landed-warranty', TRD, 'trd_sales', toggleIn('trdAiLandedWarrantyPanel'), ['trdAiLandedWarrantyPanel', 'trdAiPostPackBtn']);
-      await test('trading-period-close', TRD, 'statements', toggleIn('trdPeriodClosePanel'), ['trdPeriodClosePanel', 'trdAiBottleneckEtaBtn']);
+      await test('trading-period-close', TRD, 'ledger', toggleIn('trdPeriodClosePanel'), ['trdPeriodClosePanel', 'trdAiBottleneckEtaBtn']);
       await test('realestate-cam-recon', RE, 're_leases', toggleIn('reAiCamDepositReconPanel'), ['reAiCamDepositReconPanel', 'reAiPostCamBtn', 'reAiArrearsDraftBtn']);
-      await test('realestate-period-close', RE, 'statements', toggleIn('rePeriodClosePanel'), ['rePeriodClosePanel', 'reAiAddendumParserBtn']);
+      await test('realestate-period-close', RE, 'ledger', toggleIn('rePeriodClosePanel'), ['rePeriodClosePanel', 'reAiAddendumParserBtn']);
       await test('insurance-bordereau-recon', INS, 'ins_policies', toggleIn('insAiBordereauPanel'), ['insAiBordereauPanel', 'insAiPostBordereauBtn']);
-      await test('insurance-period-close', INS, 'statements', toggleIn('insPeriodClosePanel'), ['insPeriodClosePanel', 'insAiRenewalBriefBtn']);
+      await test('insurance-period-close', INS, 'ledger', toggleIn('insPeriodClosePanel'), ['insPeriodClosePanel', 'insAiRenewalBriefBtn']);
 
       // 27-29: + New Entry Voice-to-Form & Batch Table (Manufacturing + Sibling Industry across tab switches)
       await test('mfg-new-entry-voice-and-batch', M, 'sales', newEntryBtn, ['entryModal', 'entrySmartScanBar', 'aieMfgVoiceStrip', 'aieMfgOpenBatchBtn', 'entryAttachmentsBar'], {
