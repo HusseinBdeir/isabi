@@ -33097,7 +33097,8 @@
     }
 
     // Daily Operations spelled-out phrases & Close-of-Day Digest (v19.6.378+)
-    m = trimmed.match(/^Material\s+(\$[\d.,]+)\s*·\s*Haulage\s+(\$[\d.,]+)$/i);
+    // A material figure can be negative (a quarry that pays the company per load, WTC 2026-11-20 Bassam Ziadeh).
+    m = trimmed.match(/^Material\s+([-−]?\$[\d.,]+)\s*·\s*Haulage\s+([-−]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `المواد ${m[1]} · النقل ${m[2]}` : `Matériau ${m[1]} · Transport ${m[2]}`;
 
     m = trimmed.match(/^Own\s+([\d,]+)\s*·\s*Haulers\s+([\d,]+)(?:\s*\((.+)\))?$/i);
