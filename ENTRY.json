@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/sidebar-click-speed",
+  "sha": "2f5deb6da29af898362372c96f78a76de8b4e6d1"
+ },
+ "gates": [
+  "isabi-app: node build/verify_two_step_paint.mjs"
+ ],
+ "holder": "THEO 3c38cfc4 (sidebar-click-speed)",
+ "id": "20261120T224430Z-0ef3caa5",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T22:44:30Z",
+ "seenAt": "2026-11-20T22:44:30Z",
+ "state": "waiting",
+ "summary": "Sidebar taps answer at once: highlight in the next frame on a slow hub, first screen of a hub painted first (Chromium), Sentinels no longer redraws on an unchanged Maps quota refresh"
+}
