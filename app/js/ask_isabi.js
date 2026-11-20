@@ -11887,7 +11887,15 @@
               const existingSub = effReg && effReg.pushManager ? await effReg.pushManager.getSubscription().catch(() => null) : null;
               if (existingSub) {
                 if (existingSub.endpoint) ep = String(existingSub.endpoint);
-                try { await existingSub.unsubscribe(); } catch (_) {}
+                const apvActive = Boolean(
+                  typeof window !== 'undefined' &&
+                  window.MFG_APPROVALS &&
+                  typeof window.MFG_APPROVALS.isApprovalPushActive === 'function' &&
+                  window.MFG_APPROVALS.isApprovalPushActive()
+                );
+                if (!apvActive) {
+                  try { await existingSub.unsubscribe(); } catch (_) {}
+                }
               }
             }
             _chatState.activePushEndpoint = '';
@@ -20546,8 +20554,41 @@
   }
 
 
+  function isDayClosePushActiveOnDevice() {
+    return Boolean(
+      _chatState.activePushEndpoint ||
+      (_chatState.closeDigestServerState && _chatState.closeDigestServerState.subscribed)
+    );
+  }
+
+  async function checkDayClosePushSubscribed() {
+    if (_chatState.activePushEndpoint) return true;
+    const srv = _chatState.closeDigestServerState;
+    if (srv && typeof srv === 'object' && 'subscribed' in srv) {
+      return Boolean(srv.subscribed);
+    }
+    if (typeof navigator !== 'undefined' && navigator.webdriver && window.__ISABI_TEST_PUSH !== true) {
+      return false;
+    }
+    const fetchFn = (typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchFn) return false;
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    try {
+      const res = await fetchFn('./api/day-close-push', { credentials: 'same-origin' });
+      if (!res || !res.ok) return false;
+      const j = await res.json().catch(() => null);
+      if (j && typeof j === 'object' && reqEpoch === (_chatState.sessionEpoch || 0)) {
+        _chatState.closeDigestServerState = j;
+      }
+      return Boolean(j && j.subscribed);
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function unsubscribePushOnSignOut(opts = {}) {
     const tok = (opts && opts.token) ? String(opts.token) : '';
+    const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);
     let ep = String(_chatState.activePushEndpoint || '');
     try {
       const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
@@ -20571,7 +20612,7 @@
         : null;
       if (sub) {
         if (!ep && sub.endpoint) ep = String(sub.endpoint);
-        if (typeof sub.unsubscribe === 'function') {
+        if (!deferBrowserUnsub && typeof sub.unsubscribe === 'function') {
           await Promise.resolve(sub.unsubscribe()).catch(() => {});
         }
       }
@@ -22428,6 +22469,8 @@
     }),
     syncScope: syncHeaderAndChips,
     unsubscribePushOnSignOut,
+    isDayClosePushActiveOnDevice,
+    checkDayClosePushSubscribed,
     answer: answerHtmlSnapshot,
     answerQuestion,
     getState: () => ({

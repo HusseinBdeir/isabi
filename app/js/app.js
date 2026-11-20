@@ -15279,6 +15279,288 @@
     box.hidden = lines.length === 0;
   }
 
+  // ==================== SITE CLEAN-UP (bulk Close Site) ====================
+  // Two reviewed lists of Manufacturing sites: Dormant sites that still hold open price agreements, and sites that
+  // never had a load and hold no agreement (registry noise such as "Unknown", "All", "canceled"). Close Selected
+  // applies the Edit Site closure to each row: status Closed, end date today, and every agreement already in force
+  // ends the same day through applySiteAgreementClosure, so reopening a site in Edit Site restores them.
+  // Deterministic, no AI. Sites created in the last 90 days and sites with a load after the end date are never offered.
+  const SITE_CLEANUP = { sel: new Set(), busy: false, cand: null };
+  function canUseSiteCleanup(u) {
+    u = u || activeUser();
+    return Boolean(u && canModifyData(u) && canEnterForm('site', u));
+  }
+  function getSiteCleanupCandidates(opts = {}) {
+    const today = String(opts.today || todayISO()).slice(0, 10);
+    const out = { ready: siteLoadsReady(), today, dormant: [], unused: [], agreements: 0 };
+    const G = window.MFG_GEO;
+    if (!out.ready || !G || typeof G.getSiteLifecycle !== 'function' || typeof G.getUnifiedSiteStats !== 'function') return out;
+    const stats = G.getUnifiedSiteStats(SEED, STATE);
+    const rulesBySite = new Map();
+    const seenR = new Set();
+    ((STATE.customRecords && STATE.customRecords.price_rules) || []).concat((SEED.records && SEED.records.price_rules) || []).forEach(r => {
+      if (!r || !r.site) return;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seenR.has(rid)) return;
+        seenR.add(rid);
+      }
+      if (r.voided || r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return;
+      const k = norm(r.site);
+      let e = rulesBySite.get(k);
+      if (!e) { e = { any: 0, open: 0 }; rulesBySite.set(k, e); }
+      e.any += 1;
+      const s0 = String(r.start_date || '').slice(0, 10);
+      const e0 = String(r.end_date || '').slice(0, 10);
+      if ((!s0 || s0 <= today) && (!e0 || e0 >= today)) e.open += 1;
+    });
+    const seenS = new Set();
+    const allSites = (SEED.records && SEED.records.sites) || [];
+    // An area site whose customers moved to their own sites keeps no loads or agreements of its own at read time,
+    // yet Move Back would bring them back: never offer it as never used
+    const splitSources = new Set(allSites.filter(x => x && !x.voided && x.split_from).map(x => norm(x.split_from)));
+    allSites.forEach(s => {
+      if (!s || s.voided || !s.name || !isSiteRowMfg(s)) return;
+      const k = norm(s.name);
+      if (!k || seenS.has(k) || splitSources.has(k)) return;
+      seenS.add(k);
+      const lc = G.getSiteLifecycle(s, SEED, STATE, { stats, today });
+      // A site whose end date is set (closing today or later) is already handled: its last open day is the end date
+      if (!lc || lc.state !== 'dormant' || !lc.activityKnown || lc.isNew || lc.closesOn) return;
+      const st = stats.byNorm.get(k);
+      const loads = st ? (Number(st.total) || 0) : 0;
+      const ag = rulesBySite.get(k) || { any: 0, open: 0 };
+      const isDormantOpen = ag.open > 0;
+      const isUnused = !isDormantOpen && !lc.lastDate && loads === 0 && ag.any === 0;
+      if (!isDormantOpen && !isUnused) return;
+      let blocked = '';
+      const lastLd = (st && st.lastDate) || '';
+      if (lastLd && lastLd > today) {
+        blocked = 'Has loads after today';
+      } else {
+        const plan = planSiteAgreementClosure(Object.assign({}, s, { status: 'Closed', end_date: today }), { altNames: [s.name] });
+        if (plan.outOfScope > 0) blocked = 'Agreements of a company your seat cannot change';
+      }
+      const row = { key: k, id: String(s.id || ''), name: s.name, region: s.region || s.geo_zone || '', lastDate: lc.lastDate || '', loads, open: ag.open, blocked };
+      if (isDormantOpen) {
+        out.dormant.push(row);
+        out.agreements += ag.open;
+      } else {
+        out.unused.push(row);
+      }
+    });
+    const cmpStr = (x, y) => { const a = String(x || ''); const b = String(y || ''); return a < b ? -1 : (a > b ? 1 : 0); };
+    out.dormant.sort((a, b) => (b.open - a.open) || cmpStr(a.lastDate, b.lastDate) || cmpStr(a.name, b.name));
+    out.unused.sort((a, b) => cmpStr(a.name, b.name));
+    return out;
+  }
+
+  // Close the given sites (by name) as of endDate. Same writes as an Edit Site closure, batched into one sync.
+  async function closeSitesInBulk(siteNames, endDate, opts = {}) {
+    const res = { closed: 0, ended: 0, skipped: [], closedNames: [], pairs: [] };
+    const end = String(endDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) { res.error = 'Enter a valid end date.'; return res; }
+    if (!siteLoadsReady()) { res.error = SEED._recordsLoadFailed ? 'Ticket records did not load. Reload the page to close a site.' : 'Loads are still loading. Try again in a moment.'; return res; }
+    if (!opts.skipSeatCheck && !canUseSiteCleanup()) { res.error = 'Your seat cannot close sites.'; return res; }
+    const who = activeUser() || {};
+    const stampIso = new Date().toISOString();
+    const extraApiPosts = [];
+    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const want = new Set((siteNames || []).map(n => norm(n)).filter(Boolean));
+    const done = new Set();
+    // Fresh last-load dates for the wanted sites in one pass over the tickets (later of date and reporting date)
+    const lastByNorm = new Map();
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      [SEED.records && SEED.records[tk], STATE.customRecords && STATE.customRecords[tk]].forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const t = arr[i];
+          if (!t || t.voided || !t.site) continue;
+          const nk = norm(t.site);
+          if (!want.has(nk)) continue;
+          const d1 = String(t.date || '').slice(0, 10);
+          const d2 = String(t.rep_date || '').slice(0, 10);
+          let best = lastByNorm.get(nk) || '';
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d1) && d1 > best) best = d1;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d2) && d2 > best) best = d2;
+          if (best) lastByNorm.set(nk, best);
+        }
+      });
+    });
+    ((SEED.records && SEED.records.sites) || []).forEach(orig => {
+      if (!orig || orig.voided || !orig.name || !isSiteRowMfg(orig)) return;
+      const k = norm(orig.name);
+      if (!want.has(k) || done.has(k)) return;
+      done.add(k);
+      if (window.MFG_GEO && typeof window.MFG_GEO.isSiteRecordClosedOn === 'function' && window.MFG_GEO.isSiteRecordClosedOn(orig, end)) {
+        res.skipped.push({ name: orig.name, why: 'Already closed' });
+        return;
+      }
+      const lastLd = lastByNorm.get(k) || '';
+      if (lastLd && end < lastLd) {
+        res.skipped.push({ name: orig.name, why: `The site has loads up to ${lastLd}. The end date must be on or after it.` });
+        return;
+      }
+      const plan = planSiteAgreementClosure(Object.assign({}, orig, { status: 'Closed', end_date: end }), { altNames: [orig.name] });
+      if (plan.outOfScope > 0) {
+        res.skipped.push({ name: orig.name, why: 'Agreements of a company your seat cannot change' });
+        return;
+      }
+      const seedOrigSnap = !isAppRecord(orig) ? captureSeedOrigSnapshot('sites', orig) : null;
+      const patch = { status: 'Closed', end_date: end, _reopenedExplicitly: false, modified_at: stampIso };
+      if (who.email) patch.modified_by = who.email;
+      const record = Object.assign({}, orig, patch);
+      if (seedOrigSnap && !record._seed_orig) record._seed_orig = buildSeedOrigMeta(seedOrigSnap);
+      const applied = applySiteAgreementClosure(record, orig, extraApiPosts);
+      const cIdx = record.id != null ? STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(record.id)) : -1;
+      if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], record);
+      else STATE.customRecords.sites.unshift(Object.assign({}, record));
+      Object.assign(orig, patch);
+      if (record._seed_orig && !orig._seed_orig) orig._seed_orig = record._seed_orig;
+      extraApiPosts.push(['sites', Object.assign({}, record)]);
+      res.closed += 1;
+      res.ended += applied.ending;
+      res.closedNames.push(orig.name);
+    });
+    if (!res.closed) return res;
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.sites = (SEED._tableRev.sites || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _filterRecordsWeakCache = new WeakMap();
+    applyCustomRecordsToSeed();
+    normalizeDistinctSiteCategories(SEED);
+    stampBatchModifiedAt(extraApiPosts, null, null);
+    res.pairs = extraApiPosts;
+    if (opts.noPersist) return res;
+    saveLocalAuthAndRecords();
+    renderApp();
+    await postRecordPairsChunked(extraApiPosts);
+    syncWithCloud(true);
+    return res;
+  }
+
+  function ensureSiteCleanupModal() {
+    let modal = $('siteCleanupModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'siteCleanupModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="modal-card site-cleanup-card" role="dialog" aria-modal="true" aria-labelledby="siteCleanupTitle"><div class="modal-header"><div><span class="modal-eyebrow">Sites &amp; Regions</span><h2 id="siteCleanupTitle">Site Clean-up</h2></div><button type="button" class="modal-close-btn" data-sc-dismiss="1" aria-label="Close">✕</button></div><div class="modal-body" id="siteCleanupBody"></div></div>';
+    document.body.appendChild(modal);
+    if (typeof wireBackdropDismiss === 'function') wireBackdropDismiss(modal, closeSiteCleanupModal);
+    modal.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); closeSiteCleanupModal(); } });
+    modal.addEventListener('click', ev => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-sc-dismiss]')) { ev.preventDefault(); closeSiteCleanupModal(); return; }
+      if (t.closest('[data-sc-run]')) { ev.preventDefault(); runSiteCleanupClose(); }
+    });
+    modal.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (!inp || SITE_CLEANUP.busy) return;
+      const pick = inp.getAttribute && inp.getAttribute('data-sc-pick');
+      const all = inp.getAttribute && inp.getAttribute('data-sc-all');
+      const cand = SITE_CLEANUP.cand;
+      if (pick) {
+        if (inp.checked) SITE_CLEANUP.sel.add(pick); else SITE_CLEANUP.sel.delete(pick);
+      } else if (all && cand) {
+        (cand[all] || []).forEach(r => {
+          if (r.blocked) return;
+          if (inp.checked) SITE_CLEANUP.sel.add(r.key); else SITE_CLEANUP.sel.delete(r.key);
+        });
+      } else {
+        return;
+      }
+      renderSiteCleanupModal();
+    });
+    return modal;
+  }
+  function closeSiteCleanupModal() {
+    if (SITE_CLEANUP.busy) return;
+    const modal = $('siteCleanupModal');
+    if (modal) modal.hidden = true;
+  }
+  function openSiteCleanupModal() {
+    if (!canUseSiteCleanup()) { toast('Your seat cannot close sites.', 'err'); return; }
+    SITE_CLEANUP.cand = getSiteCleanupCandidates();
+    SITE_CLEANUP.sel = new Set();
+    const modal = ensureSiteCleanupModal();
+    modal.hidden = false;
+    renderSiteCleanupModal();
+  }
+  function siteCleanupGroupHtml(grp, title, sub, rows) {
+    const pickable = rows.filter(r => !r.blocked);
+    const allOn = pickable.length > 0 && pickable.every(r => SITE_CLEANUP.sel.has(r.key));
+    const isDormant = grp === 'dormant';
+    const body = rows.map(r => {
+      const on = !r.blocked && SITE_CLEANUP.sel.has(r.key);
+      return `<tr class="${r.blocked ? 'is-blocked' : ''}"${r.blocked ? ` data-ui-tip="${esc(r.blocked)}"` : ''}>
+        <td class="sc-chk"><input type="checkbox" data-sc-pick="${esc(r.key)}"${on ? ' checked' : ''}${r.blocked ? ' disabled' : ''} aria-label="${esc(r.name)}"></td>
+        <td class="sc-name">${esc(r.name)}${r.blocked ? ` <span class="sc-blocked">${esc(r.blocked)}</span>` : ''}</td>
+        <td>${esc(r.region || '-')}</td>
+        <td class="mono">${r.lastDate ? esc(r.lastDate) : 'No loads'}</td>
+        ${isDormant ? `<td class="num">${fmtNum(r.open, 0)}</td>` : ''}
+      </tr>`;
+    }).join('');
+    return `<section class="sc-group" data-sc-group="${grp}">
+      <div class="sc-group-head">
+        <div><h3>${esc(title)}</h3><div class="sc-group-sub">${sub}</div></div>
+        ${pickable.length ? `<label class="sc-all"><input type="checkbox" data-sc-all="${grp}"${allOn ? ' checked' : ''}> <span>Select All</span></label>` : ''}
+      </div>
+      ${rows.length ? `<div class="sc-tbl-wrap"><table class="sc-tbl"><thead><tr><th class="sc-chk"><span class="sr-only">Select</span></th><th>Site</th><th>Region</th><th>Last Load</th>${isDormant ? '<th class="num">Open Agreements</th>' : ''}</tr></thead><tbody>${body}</tbody></table></div>` : '<div class="sc-empty">Nothing to clean up.</div>'}
+    </section>`;
+  }
+  function renderSiteCleanupModal() {
+    const bodyEl = $('siteCleanupBody');
+    const cand = SITE_CLEANUP.cand;
+    if (!bodyEl || !cand) return;
+    if (!cand.ready) {
+      bodyEl.innerHTML = `<div class="sc-empty">${SEED._recordsLoadFailed ? 'Ticket records did not load. Reload the page to close a site.' : 'Loads are still loading. Try again in a moment.'}</div>`;
+      return;
+    }
+    const nSel = SITE_CLEANUP.sel.size;
+    bodyEl.innerHTML = `
+      <p class="sc-intro">Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.</p>
+      ${siteCleanupGroupHtml('dormant', 'Dormant with Open Agreements', `${cand.dormant.length} ${cand.dormant.length === 1 ? 'site' : 'sites'} · ${cand.agreements} open price ${cand.agreements === 1 ? 'agreement' : 'agreements'}`, cand.dormant)}
+      ${siteCleanupGroupHtml('unused', 'Never Used', 'No loads and no price agreements', cand.unused)}
+      <div class="sc-foot">
+        <button type="button" class="btn btn-outline-bar" data-sc-dismiss="1">Cancel</button>
+        <button type="button" class="btn btn-brass" data-sc-run="1"${nSel && !SITE_CLEANUP.busy ? '' : ' disabled'}>Close ${nSel} selected ${nSel === 1 ? 'site' : 'sites'}</button>
+      </div>`;
+  }
+  async function runSiteCleanupClose() {
+    if (SITE_CLEANUP.busy || !SITE_CLEANUP.cand || !SITE_CLEANUP.sel.size) return;
+    const pool = SITE_CLEANUP.cand.dormant.concat(SITE_CLEANUP.cand.unused);
+    const names = pool.filter(r => !r.blocked && SITE_CLEANUP.sel.has(r.key)).map(r => r.name);
+    if (!names.length) return;
+    SITE_CLEANUP.busy = true;
+    renderSiteCleanupModal();
+    let res = null;
+    try {
+      res = await closeSitesInBulk(names, todayISO());
+    } finally {
+      SITE_CLEANUP.busy = false;
+    }
+    if (res && res.error) { toast(res.error, 'err'); renderSiteCleanupModal(); return; }
+    toast(`${res.closed} ${res.closed === 1 ? 'site' : 'sites'} closed · ${res.ended} price ${res.ended === 1 ? 'agreement' : 'agreements'} ended on ${todayISO()}`, 'ok');
+    if (res.skipped.length) {
+      // Translate each reason on its own: the joined line never matches a dictionary entry
+      const trS = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+      toast(res.skipped.map(s => `${s.name}: ${trS(s.why)}`).join(' · '), 'warn');
+    }
+    closeSiteCleanupModal();
+  }
+  if (typeof window !== 'undefined') {
+    window.MFG_SITE_CLEANUP = { canUse: canUseSiteCleanup, candidates: getSiteCleanupCandidates, closeSites: closeSitesInBulk, open: openSiteCleanupModal };
+    document.addEventListener('click', ev => {
+      const b = ev.target && ev.target.closest ? ev.target.closest('[data-site-cleanup-open]') : null;
+      if (!b) return;
+      ev.preventDefault();
+      openSiteCleanupModal();
+    });
+  }
+
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
     if (!siteRow || !siteRow.name || !siteRow.is_jv) return;
     const partner = String(siteRow.jv_partner || 'Assaf').trim() || 'Assaf';
@@ -17357,6 +17639,40 @@
   function listPriceRule(company, product, date) {
     return findRule({ company, product, date, listPrice: true, types: ['List Price'] });
   }
+  // Posting rule (owner decision 2026-11-12): a Delivery sale needs a Sales (Delivery) agreement in force for the
+  // customer at that site (product line or product-less transport line), and a raw material ticket needs a
+  // Purchase Price (Site) agreement in force ($0 counts) or must be posted as Price Pending. List Price is no
+  // longer a silent fallback for either. Edits that keep the priced keys unchanged are not re-checked, so
+  // historical tickets stay editable. Returns '' when the ticket may post, else the error text.
+  const TICKET_AGREEMENT_ERR_SALES = 'No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.';
+  const TICKET_AGREEMENT_ERR_RAW = 'No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.';
+  function ticketAgreementKeysUnchanged(kind, q, orig) {
+    if (!orig) return false;
+    const same = (a, b) => norm(a || '') === norm(b || '');
+    const d10 = v => String(v || '').slice(0, 10);
+    const base = same(q.company, orig.company) && same(q.product, orig.product) && same(q.site, orig.site) &&
+      d10(q.date) === d10(orig.date) && d10(q.repDate || q.date) === d10(orig.rep_date || orig.date);
+    if (!base) return false;
+    if (kind === 'sales') return same(q.customer, orig.customer) && String(q.saleType || '') === String(orig.sale_type || 'Delivery');
+    return same(q.owner, orig.site_owner);
+  }
+  function ticketAgreementCheck(kind, q) {
+    if (!q || q.isReturn || q.isRemove) return '';
+    if (q.orig && ticketAgreementKeysUnchanged(kind, q, q.orig)) return '';
+    const date = q.effDate || q.repDate || q.date || todayISO();
+    if (kind === 'sales') {
+      if (q.saleType !== 'Delivery' || !q.customer || !q.site) return '';
+      const r = findRule({ company: q.company, customer: q.customer, product: q.product || '', site: q.site, date, types: ['Sales (Delivery)'] });
+      return r ? '' : TICKET_AGREEMENT_ERR_SALES;
+    }
+    if (kind === 'raw') {
+      if (q.pricePending || !q.product || !(q.owner || q.site)) return '';
+      const r = findRule({ company: q.company, supplier: q.owner, site: q.site, product: q.product, date, types: ['Purchase Price (Site)'] });
+      return r ? '' : TICKET_AGREEMENT_ERR_RAW;
+    }
+    return '';
+  }
+  if (typeof window !== 'undefined') window.MFG_TICKET_AGREEMENT = { check: ticketAgreementCheck, ERR_SALES: TICKET_AGREEMENT_ERR_SALES, ERR_RAW: TICKET_AGREEMENT_ERR_RAW };
   function resolveAgreementTruckSize(q) {
     const trkRow = q.truckRow || null;
     const tNameN = norm(trkRow && trkRow.name);
@@ -69759,9 +70075,17 @@
     if (b.startsWith('hld_')) return 'Holding & Treasury';
     if (b.startsWith('hsp_')) return 'Hospitality & Resorts';
     if (b.startsWith('trd_')) return 'Automotive & Heavy Trading';
-    if (b.startsWith('re_')) return 'Real Estate & Property';
+    if (b.startsWith('re_') || b.startsWith('res_')) return 'Real Estate & Property';
     if (b.startsWith('ins_')) return 'Insurance & Brokerage';
+    if (b.startsWith('mfg_')) return 'Manufacturing';
     return (r && (r._industry || r.ind || r.industry)) || '';
+  }
+
+  function _inferEditKeyIndustry(ek, entry) {
+    const parts = String(ek || '').split('::');
+    const head = parts[0] || '';
+    if (/^WF$/i.test(head)) return _inferIndBucketName(parts[1] || '', entry);
+    return (entry && (entry._industry || entry.ind || entry.industry)) || head || '';
   }
 
   let _deferIndustryDomainServerPost = false;
@@ -69805,7 +70129,7 @@
             nextEdits[ek] = entry;
             return;
           }
-          const indNm = (entry && (entry.ind || entry.industry)) || String(ek || '').split('::')[0] || '';
+          const indNm = _inferEditKeyIndustry(ek, entry);
           if (indNm && !canAccessGeoIndustry(indNm)) return;
           const coRaw = String((entry && (entry.company || entry.fromCo || entry.resort || entry.entity)) || '').trim();
           if (coRaw && !canAccessGeoCompany(coRaw)) return;
@@ -69825,7 +70149,7 @@
         });
         sentEdits = sentEdits.filter(k => {
           if (forceEditSet.has(k)) return true;
-          const indNm = String(k || '').split('::')[0] || '';
+          const indNm = _inferEditKeyIndustry(k, null);
           return !indNm || canAccessGeoIndustry(indNm);
         });
       }
@@ -98499,6 +98823,12 @@
       setText('lbl_pricelock', isFieldAdminUnlocked('f_unitprice') ? 'ADMIN OVERRIDE' : 'MANUAL');
       setHint('hint_price', rule ? `Overrides ${rule.rule_type || 'agreement'} (${fmtUSD(agreedMatRate, 2)})` : 'Manual / Admin-unlocked unit price', rule ? 'warn' : '');
     }
+    if (isDelivery && !isUnreg && customer && site && !FORM_UI.hydrating) {
+      const editOrigS = STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets' ? STATE.editingRecord.orig : null;
+      if (ticketAgreementCheck('sales', { company, customer, product, site, saleType, date, repDate: val('f_repdate') || date, effDate, orig: editOrigS })) {
+        setHint('hint_price', 'No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.', FORM_UI.postAttempted ? 'crit' : 'warn');
+      }
+    }
 
     if (tpEl) {
       if (!isDelivery) {
@@ -99205,6 +99535,12 @@
     } else if (upEl) {
       setText('lbl_pricelock', isFieldAdminUnlocked('f_unitprice') ? 'ADMIN OVERRIDE' : 'MANUAL');
       setHint('hint_price', rule ? `Overrides ${rule.rule_type || 'agreement'} (${fmtUSD(agreedMatCost, 2)})` : '', rule ? 'warn' : '');
+    }
+    if (!pendRawEditRow && !rawPricePending && product && (owner || site) && !FORM_UI.hydrating) {
+      const editOrigR = STATE.editingRecord && STATE.editingRecord.crKey === 'raw_purchases' ? STATE.editingRecord.orig : null;
+      if (ticketAgreementCheck('raw', { company, owner, product, site, pricePending: false, date, repDate: val('f_repdate') || date, effDate, orig: editOrigR })) {
+        setHint('hint_price', 'No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.', FORM_UI.postAttempted ? 'crit' : 'warn');
+      }
     }
 
     if (tpEl) {
@@ -112566,6 +112902,12 @@
               addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
             }
           }
+          const agrErrS = ticketAgreementCheck('sales', {
+            company, customer: c.customer, product: c.product, site: c.site, saleType: c.saleType,
+            date, repDate, effDate: (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date,
+            orig: editCtx && editCtx.crKey === 'sales_tickets' ? editCtx.orig : null
+          });
+          if (agrErrS) addErr(c.product ? 'f_customer' : 'f_site', agrErrS);
           const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
           if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
           if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
@@ -112759,6 +113101,12 @@
               addErr('f_qty', c.tonGuard.hint);
             }
             if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
+            const agrErrR = ticketAgreementCheck('raw', {
+              company, owner: c.owner, product: c.product, site: c.site, pricePending: Boolean(c.pricePending),
+              date, repDate, effDate: (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date,
+              orig: editCtx && editCtx.crKey === 'raw_purchases' ? editCtx.orig : null
+            });
+            if (agrErrR) addErr('f_unitprice', agrErrR);
           }
           if (!isSuppDeliv && !val('f_truck')) addErr('f_truck', 'Truck is required.');
           if (!isSuppDeliv && !val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
@@ -113386,12 +113734,14 @@
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED, undefined, { recordsOnly: true });
         if (hitReg && hitReg.name) siteReg = hitReg.name;
       }
-      if (!inclTrans && !siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
+      const origHadNoRegion = Boolean(origSite && !String(origSite.region || origSite.geo_zone || '').trim());
+      if (!inclTrans && !siteReg && !origHadNoRegion && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
         const pHit = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
         if (pHit && pHit.region) siteReg = pHit.region;
       }
       const isMfgSiteSave = getActiveIndustry() === 'Manufacturing';
-      if (!siteReg && !inclTrans) {
+      const allowBlankLegacyEditRegion = Boolean(origHadNoRegion);
+      if (!siteReg && !inclTrans && !allowBlankLegacyEditRegion) {
         addErr('f_region', isMfgSiteSave
           ? 'Region is required when hauling in our trucks or 3rd-party haulers (or select Bundled Supplier Material + Transport).'
           : 'Region is required. Select a Region or click inside a zone on the map.');
@@ -113401,7 +113751,7 @@
           regionName: siteReg,
           lat: siteLat,
           lng: siteLng,
-          allowMissingRegion: inclTrans
+          allowMissingRegion: inclTrans || allowBlankLegacyEditRegion
         }, SEED);
         if (!geoCheck.ok) {
           addErr(geoCheck.field || 'f_region', geoCheck.reason);
@@ -127075,6 +127425,23 @@
             pendingUpdates.region = resolvedReg;
           }
         }
+        // Posting rule on a modified ticket: same check as the entry form when a priced key moves (owner decision 2026-11-12)
+        if ((key === 'sales_tickets' || key === 'raw_purchases') && ['customer', 'product', 'site', 'site_owner', 'sale_type', 'date', 'rep_date', 'company', 'unit_cost', 'price_pending'].some(k => k in pendingUpdates)) {
+          const cand = Object.assign({}, row, pendingUpdates);
+          const isSalesT = key === 'sales_tickets';
+          const candPending = !isSalesT && Boolean('price_pending' in pendingUpdates ? pendingUpdates.price_pending : row.price_pending) && !(Number(pendingUpdates.unit_cost) > 0);
+          const agrErrI = ticketAgreementCheck(isSalesT ? 'sales' : 'raw', {
+            company: cand.company, customer: cand.customer, product: cand.product, site: cand.site, owner: cand.site_owner,
+            saleType: cand.sale_type || 'Delivery', pricePending: candPending,
+            date: cand.date, repDate: cand.rep_date || cand.date, effDate: cand.rep_date || cand.date,
+            isReturn: isReturnTicket(row), isRemove: isRemovedTicket(row),
+            orig: row
+          });
+          if (agrErrI) {
+            toast(agrErrI, 'err');
+            return;
+          }
+        }
         if (key === 'conversions' && ('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates || 'exchange_rate' in pendingUpdates)) {
           const nextUsd = round2(Number(('usd_amount' in pendingUpdates) ? pendingUpdates.usd_amount : (row.usd_amount || row.amount || 0)));
           const nextLbp = Math.round(Number(('lbp_amount' in pendingUpdates) ? pendingUpdates.lbp_amount : (row.lbp_amount || 0)));
@@ -139186,6 +139553,12 @@
   function signOut() {
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
+    // Stop approval notifications cleanly: demo cleanup runs locally; live sessions await server unsub before logout.
+    if (isDemoSandboxSession()) {
+      if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.pushSignOut === 'function') {
+        window.MFG_APPROVALS.pushSignOut({ serverApi: false });
+      }
+    }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -139240,27 +139613,41 @@
         }
       } catch (_) {}
       const logoutTok = _edgeSessionToken || '';
+      const serverOn = hasServerApi();
+      const logoutSeat = (() => {
+        try { const u = activeUser(); return u ? String(u.id || u.email || '') : ''; } catch (_) { return ''; }
+      })();
       const sendLogout = () => {
-        if (!hasServerApi()) return;
+        if (!serverOn) return;
         try {
           const hdrs = {};
           if (logoutTok) hdrs['X-ISABI-Session'] = logoutTok;
           fetch('./api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: hdrs }).catch(() => {});
         } catch (_) {}
       };
-      if (window.MFG_ASK && typeof window.MFG_ASK.unsubscribePushOnSignOut === 'function') {
-        try {
-          const unsubP = window.MFG_ASK.unsubscribePushOnSignOut({ token: logoutTok, serverApi: hasServerApi() });
-          Promise.race([
-            Promise.resolve(unsubP),
-            new Promise(r => setTimeout(r, 800))
-          ]).finally(sendLogout);
-        } catch (_) {
-          sendLogout();
+      const pushCleanup = (async () => {
+        const unsubs = [];
+        if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.pushSignOut === 'function') {
+          unsubs.push(Promise.resolve().then(() => window.MFG_APPROVALS.pushSignOut({ token: logoutTok, serverApi: serverOn, deferBrowserUnsub: true, seatId: logoutSeat })));
         }
-      } else {
-        sendLogout();
-      }
+        if (window.MFG_ASK && typeof window.MFG_ASK.unsubscribePushOnSignOut === 'function') {
+          unsubs.push(Promise.resolve().then(() => window.MFG_ASK.unsubscribePushOnSignOut({ token: logoutTok, serverApi: serverOn, deferBrowserUnsub: true })));
+        }
+        if (unsubs.length) await Promise.allSettled(unsubs);
+        try {
+          const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
+          const reg = sw && typeof sw.getRegistration === 'function'
+            ? await Promise.race([sw.getRegistration('./').catch(() => null), new Promise(r => setTimeout(() => r(null), 300))])
+            : null;
+          const sub = reg && reg.pushManager && typeof reg.pushManager.getSubscription === 'function'
+            ? await Promise.resolve(reg.pushManager.getSubscription()).catch(() => null)
+            : null;
+          if (sub && typeof sub.unsubscribe === 'function') {
+            await Promise.resolve(sub.unsubscribe()).catch(() => {});
+          }
+        } catch (_) {}
+      })();
+      Promise.race([pushCleanup, new Promise(r => setTimeout(r, 800))]).finally(sendLogout);
       setEdgeSessionToken('');
       _edgeCookieAuthed = false;
       purgePrivateSeedCachesOnLogout();
@@ -178221,6 +178608,9 @@
         allowedCompanyNames,
         getActiveIndustry,
         canEnterForm,
+        canEnterAny,
+        canModifyData,
+        isOwner,
         canAccessTable,
         canViewPayrollDollarAmounts,
         canModifyTextOnly,

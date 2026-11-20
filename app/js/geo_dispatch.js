@@ -7519,6 +7519,9 @@
               <span class="geo-kpi-pill">${regions.length} Regions (${mappedRegionsCnt} Mapped)</span>
               <span class="geo-kpi-pill">${activeSites.length} Sites (${pinnedSitesCnt} Pinned)</span>
               ${siteLifeKpiHtml(siteLife)}
+              ${(isMfg && siteLife.activityKnown && window.MFG_SITE_CLEANUP && typeof window.MFG_SITE_CLEANUP.canUse === 'function' && window.MFG_SITE_CLEANUP.canUse())
+                ? '<button type="button" class="geo-mini-btn geo-site-cleanup-btn" id="geoSiteCleanupBtn" data-site-cleanup-open="1" data-ui-tip="Review dormant sites that still hold price agreements, and sites never used, then close them in one step">Clean Up Sites</button>'
+                : ''}
             </div>
           </div>
           <div class="geo-studio-controls-right">

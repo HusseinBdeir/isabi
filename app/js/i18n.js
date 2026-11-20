@@ -8924,7 +8924,10 @@
       "Supervisor Override": "تجاوز المشرف",
       "Supervisor Override: Reprice Confirmed History": "تجاوز المشرف: إعادة تسعير السجل المؤكد",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "إلغاء المشرف: إيصال حُرّر بالخطأ (0 كم · يحتفظ بالرقم التسلسلي في دفتر الـ 25 إيصالاً)",
+      "Supervisor or Owner permission is required to lock or reopen an accounting period": "تتطلب عملية إقفال الفترة المحاسبية أو إعادة فتحها صلاحية مشرف أو مالك",
       "Supervisor or Owner permission is required to reopen a sealed period": "يتطلب إعادة فتح فترة مقفلة صلاحية مشرف أو مالك",
+      "Owner or all-entity permission is required to lock or reopen all 14 entities": "تتطلب عملية إقفال جميع الشركات الـ 14 أو إعادة فتحها صلاحية المالك أو الوصول الكامل",
+      "Period close entries require data-entry and Supervisor or Owner permission": "تتطلب قيود إقفال الفترة صلاحية إدخال البيانات مع صلاحية مشرف أو مالك",
       "Supervisor permission required to manage chronological rate schedules": "صلاحية المشرف مطلوبة لإدارة جداول الأسعار الزمنية",
       "Supervisor rights are required to override a confirmed statement watermark.": "تتطلب عملية تجاوز تاريخ الكشف المؤكد صلاحيات مشرف.",
       "Supervisor seat does not have access to this company.": "مقعد المشرف لا يملك صلاحية الوصول إلى هذه الشركة.",
@@ -13721,7 +13724,82 @@
       "Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.": "السجلات التي كانت تتبع هذا السعر عادت إلى السعر السابق له. السعر المُدخل يدوياً على السجل بقي كما هو.",
       "Records that follow this rate were re-priced. A price typed on a record stayed as typed.": "أُعيد تسعير السجلات التي تتبع هذا السعر. السعر المُدخل يدوياً على السجل بقي كما هو.",
       "This schedule was saved and undone on another device. Your screen is now up to date: save again.": "تم حفظ هذا الجدول ثم التراجع عنه على جهاز آخر. شاشتك محدّثة الآن: احفظ مرة أخرى.",
-      "This schedule was saved and undone on another device. Refresh the page and save again.": "تم حفظ هذا الجدول ثم التراجع عنه على جهاز آخر. حدّث الصفحة واحفظ مرة أخرى."
+      "This schedule was saved and undone on another device. Refresh the page and save again.": "تم حفظ هذا الجدول ثم التراجع عنه على جهاز آخر. حدّث الصفحة واحفظ مرة أخرى.",
+      "Lock the month, book estimates for unpriced items and send balance letters": "إقفال الشهر وتسجيل تقديرات للبنود غير المسعّرة وإرسال رسائل مصادقة الأرصدة",
+      "Month-End Close": "إقفال نهاية الشهر",
+      "Month Locked": "الشهر مقفل",
+      "Estimates for Unpriced Items": "تقديرات البنود غير المسعّرة",
+      "Estimates Reverse On": "تاريخ عكس التقديرات",
+      "Tickets Reported in Another Month": "بطاقات مسجّلة في شهر آخر",
+      "Books Out of Balance": "فرق توازن الدفاتر",
+      "Locked Through": "مقفل حتى",
+      "Month to Close": "الشهر المطلوب إقفاله",
+      "Hide Month-End Close": "إخفاء إقفال نهاية الشهر",
+      "Open Month-End Close": "فتح إقفال نهاية الشهر",
+      "Companies Covered": "الشركات المشمولة",
+      "Entries in the closed month are locked": "القيود في الشهر المقفل مقفلة",
+      "Ready to lock entries in the closed month": "جاهز لإقفال القيود في الشهر المنتهي",
+      "AI Check Before Closing": "فحص ذكي قبل الإقفال",
+      "Balance Confirmation Letters": "رسائل مصادقة الأرصدة",
+      "+ Book Estimates": "+ تسجيل التقديرات",
+      "Lock Month Through": "إقفال الشهر حتى",
+      "Spread season memberships over the days used, lock stock counts and review food and bar losses": "توزيع اشتراكات الموسم على الأيام المستخدمة وإقفال جرد المخزون ومراجعة خسائر المطبخ والبار",
+      "Count the rent earned this month, lock the VAT month and prepare lease renewals": "احتساب الإيجار المكتسب هذا الشهر وإقفال شهر الضريبة وتحضير تجديد العقود",
+      "Leases Up for Renewal": "عقود مستحقة التجديد",
+      "Finance cost on unsold trucks, buyer deposits held and a reserve for slow-moving parts": "كلفة تمويل الشاحنات غير المباعة ودفعات الزبائن المحتفظ بها ومؤونة لقطع الغيار بطيئة الحركة",
+      "Finance Cost on Unsold Trucks": "كلفة تمويل الشاحنات غير المباعة",
+      "Slow-Moving Parts Reserve": "مؤونة القطع بطيئة الحركة",
+      "Parts to Reorder": "قطع يجب إعادة طلبها",
+      "Policies renewing soon, lock the insurer statement month and hold back commission at risk": "بوالص تتجدد قريباً وإقفال شهر كشف شركة التأمين وحجز العمولة المعرضة للاسترداد",
+      "Premiums Renewing Soon": "أقساط تتجدد قريباً",
+      "Commission Held Back": "العمولة المحجوزة",
+      "Group Month Locked (14/14)": "شهر المجموعة مقفل (14/14)",
+      "Group Month-End Close": "إقفال نهاية الشهر للمجموعة",
+      "Check that every company balances, lock the month for the whole group and brief the board": "التحقق من توازن كل شركة وإقفال الشهر للمجموعة كاملة وإطلاع مجلس الإدارة",
+      "Companies Out of Balance": "فرق توازن الشركات",
+      "Locked through": "مقفل حتى",
+      "Partly locked through": "مقفل جزئياً حتى",
+      "Entries dated on or before this day are locked. Reopen the month from General Ledger.": "القيود المؤرخة في هذا اليوم أو قبله مقفلة. أعد فتح الشهر من دفتر الأستاذ العام.",
+      "Nothing pending to estimate for this month": "لا توجد بنود معلّقة لتقديرها هذا الشهر",
+      "resorts skipped: that month is already locked": "منتجعات تم تخطيها: هذا الشهر مقفل مسبقاً",
+      "That month is already locked. Reopen it from General Ledger first.": "هذا الشهر مقفل مسبقاً. أعد فتحه أولاً من دفتر الأستاذ العام.",
+      "Nothing to book for this month": "لا يوجد ما يُسجّل لهذا الشهر",
+      "Choose Korri Auto or Shacman before booking": "اختر Korri Auto أو Shacman قبل التسجيل",
+      "resorts skipped: a later month is already booked": "منتجعات تم تخطيها: تم تسجيل شهر لاحق مسبقاً",
+      "Not Due for Renewal": "غير مستحق للتجديد",
+      "Region Zone:": "المنطقة:",
+      "Inside Region Zone:": "داخل المنطقة:",
+      "Measure KM": "قياس الكيلومترات",
+      "Move Pin": "نقل الدبوس",
+      "Close popup": "إغلاق النافذة",
+      "No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.": "لا توجد اتفاقية سعر مبيعات (تسليم) تشمل هذا الزبون والمنتج والموقع في هذا التاريخ. أضف الاتفاقية أولاً ثم سجّل الإيصال.",
+      "No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.": "لا توجد اتفاقية سعر شراء تشمل هذا الموقع وهذه المادة في هذا التاريخ. أضف اتفاقية (يُسمح باتفاقية بقيمة 0$) أو سجّل الإيصال بسعر معلّق.",
+      "No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.": "لا توجد اتفاقية مبيعات (تسليم) لهذا الزبون وهذا الموقع في هذا التاريخ. أضف واحدة قبل التسجيل.",
+      "No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.": "لا توجد اتفاقية سعر شراء لهذا الموقع وهذه المادة في هذا التاريخ. أضف واحدة (يُسمح بـ 0$) أو انتقل إلى سعر معلّق.",
+      "Site Clean-up": "تنظيف المواقع",
+      "Clean Up Sites": "تنظيف المواقع",
+      "Review dormant sites that still hold price agreements, and sites never used, then close them in one step": "راجع المواقع الخاملة التي ما زالت عليها اتفاقيات أسعار والمواقع غير المستخدمة، ثم أغلقها بخطوة واحدة",
+      "Dormant with Open Agreements": "خاملة مع اتفاقيات مفتوحة",
+      "Never Used": "غير مستخدمة أبداً",
+      "No loads and no price agreements": "لا نقلات ولا اتفاقيات أسعار",
+      "Open Agreements": "الاتفاقيات المفتوحة",
+      "Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.": "إغلاق الموقع ينهي اتفاقيات الأسعار المفتوحة عليه اليوم. إعادة فتحه من تعديل الموقع تعيدها.",
+      "Nothing to clean up.": "لا يوجد ما يحتاج إلى تنظيف.",
+      "No loads": "لا نقلات",
+      "Has loads after today": "لديه نقلات بعد اليوم",
+      "Agreements of a company your seat cannot change": "اتفاقيات لشركة لا يمكن لمقعدك تعديلها",
+      "Your seat cannot close sites.": "لا يمكن لمقعدك إغلاق المواقع.",
+      "Already closed": "مغلق مسبقاً",
+      "Notify me on this device": "نبّهني على هذا الجهاز",
+      "Notifications are on for this device.": "التنبيهات مفعّلة على هذا الجهاز.",
+      "Turn Off": "إيقاف",
+      "Phone notifications are not set up yet.": "تنبيهات الهاتف غير مُعدّة بعد.",
+      "This browser cannot show notifications.": "هذا المتصفح لا يستطيع عرض التنبيهات.",
+      "Notifications are blocked for this site in the browser settings.": "التنبيهات محظورة لهذا الموقع في إعدادات المتصفح.",
+      "On iPhone or iPad, add the app to the Home Screen first (iOS 16.4 or later), then open it from there.": "على iPhone أو iPad، أضف التطبيق إلى الشاشة الرئيسية أولاً (iOS 16.4 أو أحدث)، ثم افتحه من هناك.",
+      "Notifications were not allowed on this device.": "لم يُسمح بالتنبيهات على هذا الجهاز.",
+      "Could not turn on notifications. Try again.": "تعذّر تفعيل التنبيهات. حاول مرة أخرى.",
+      "Notifications turned off for this device.": "تم إيقاف التنبيهات على هذا الجهاز."
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -22627,7 +22705,10 @@
       "Supervisor Override": "Dérogation Superviseur",
       "Supervisor Override: Reprice Confirmed History": "Dérogation Superviseur : revaloriser l'historique confirmé",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "Retrait Superviseur : bon créé par erreur (0 KM · conserve le N° dans le carnet de 25)",
+      "Supervisor or Owner permission is required to lock or reopen an accounting period": "L'autorisation d'un superviseur ou du propriétaire est requise pour verrouiller ou rouvrir une période comptable",
       "Supervisor or Owner permission is required to reopen a sealed period": "L autorisation d un superviseur ou proprietaire est requise pour rouvrir une periode scellee",
+      "Owner or all-entity permission is required to lock or reopen all 14 entities": "L'autorisation du propriétaire ou l'accès complet est requis pour verrouiller ou rouvrir les 14 entités",
+      "Period close entries require data-entry and Supervisor or Owner permission": "Les écritures de clôture requièrent le droit de saisie et l'autorisation d'un superviseur ou du propriétaire",
       "Supervisor permission required to manage chronological rate schedules": "Autorisation Superviseur requise pour gérer les grilles tarifaires chronologiques",
       "Supervisor rights are required to override a confirmed statement watermark.": "Les droits Superviseur sont requis pour outrepasser la date jalon d'un relevé confirmé.",
       "Supervisor seat does not have access to this company.": "Le poste superviseur n’a pas accès à cette société.",
@@ -27424,7 +27505,82 @@
       "Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.": "Les enregistrements qui suivaient ce tarif sont revenus au tarif précédent. Un prix saisi sur un enregistrement est resté tel quel.",
       "Records that follow this rate were re-priced. A price typed on a record stayed as typed.": "Les enregistrements qui suivent ce tarif ont été retarifés. Un prix saisi sur un enregistrement est resté tel quel.",
       "This schedule was saved and undone on another device. Your screen is now up to date: save again.": "Ce barème a été enregistré puis annulé sur un autre appareil. Votre écran est maintenant à jour : enregistrez de nouveau.",
-      "This schedule was saved and undone on another device. Refresh the page and save again.": "Ce barème a été enregistré puis annulé sur un autre appareil. Actualisez la page et enregistrez de nouveau."
+      "This schedule was saved and undone on another device. Refresh the page and save again.": "Ce barème a été enregistré puis annulé sur un autre appareil. Actualisez la page et enregistrez de nouveau.",
+      "Lock the month, book estimates for unpriced items and send balance letters": "Clôturer le mois, comptabiliser des estimations pour les éléments non chiffrés et envoyer les lettres de confirmation de solde",
+      "Month-End Close": "Clôture de fin de mois",
+      "Month Locked": "Mois clôturé",
+      "Estimates for Unpriced Items": "Estimations des éléments non chiffrés",
+      "Estimates Reverse On": "Extourne des estimations le",
+      "Tickets Reported in Another Month": "Bons déclarés sur un autre mois",
+      "Books Out of Balance": "Écart d'équilibre des livres",
+      "Locked Through": "Clôturé jusqu'au",
+      "Month to Close": "Mois à clôturer",
+      "Hide Month-End Close": "Masquer la clôture de fin de mois",
+      "Open Month-End Close": "Ouvrir la clôture de fin de mois",
+      "Companies Covered": "Sociétés concernées",
+      "Entries in the closed month are locked": "Les écritures du mois clôturé sont verrouillées",
+      "Ready to lock entries in the closed month": "Prêt à verrouiller les écritures du mois écoulé",
+      "AI Check Before Closing": "Vérification IA avant clôture",
+      "Balance Confirmation Letters": "Lettres de confirmation de solde",
+      "+ Book Estimates": "+ Comptabiliser les estimations",
+      "Lock Month Through": "Clôturer le mois jusqu'au",
+      "Spread season memberships over the days used, lock stock counts and review food and bar losses": "Répartir les abonnements de saison sur les jours utilisés, figer les inventaires et revoir les pertes cuisine et bar",
+      "Count the rent earned this month, lock the VAT month and prepare lease renewals": "Calculer le loyer acquis ce mois, clôturer le mois de TVA et préparer les renouvellements de baux",
+      "Leases Up for Renewal": "Baux à renouveler",
+      "Finance cost on unsold trucks, buyer deposits held and a reserve for slow-moving parts": "Coût de financement des camions invendus, acomptes clients détenus et provision pour pièces à rotation lente",
+      "Finance Cost on Unsold Trucks": "Coût de financement des camions invendus",
+      "Slow-Moving Parts Reserve": "Provision pièces à rotation lente",
+      "Parts to Reorder": "Pièces à recommander",
+      "Policies renewing soon, lock the insurer statement month and hold back commission at risk": "Polices à renouveler bientôt, clôturer le mois du relevé assureur et retenir la commission à risque",
+      "Premiums Renewing Soon": "Primes à renouveler bientôt",
+      "Commission Held Back": "Commission retenue",
+      "Group Month Locked (14/14)": "Mois du groupe clôturé (14/14)",
+      "Group Month-End Close": "Clôture de fin de mois du groupe",
+      "Check that every company balances, lock the month for the whole group and brief the board": "Vérifier l'équilibre de chaque société, clôturer le mois pour tout le groupe et informer le conseil",
+      "Companies Out of Balance": "Écart d'équilibre des sociétés",
+      "Locked through": "Clôturé jusqu'au",
+      "Partly locked through": "Partiellement clôturé jusqu'au",
+      "Entries dated on or before this day are locked. Reopen the month from General Ledger.": "Les écritures datées de ce jour ou avant sont verrouillées. Rouvrez le mois depuis le Grand livre.",
+      "Nothing pending to estimate for this month": "Aucun élément en attente à estimer pour ce mois",
+      "resorts skipped: that month is already locked": "complexes ignorés : ce mois est déjà clôturé",
+      "That month is already locked. Reopen it from General Ledger first.": "Ce mois est déjà clôturé. Rouvrez-le d'abord depuis le Grand livre.",
+      "Nothing to book for this month": "Rien à comptabiliser pour ce mois",
+      "Choose Korri Auto or Shacman before booking": "Choisissez Korri Auto ou Shacman avant de comptabiliser",
+      "resorts skipped: a later month is already booked": "complexes ignorés : un mois ultérieur est déjà comptabilisé",
+      "Not Due for Renewal": "Pas encore à renouveler",
+      "Region Zone:": "Zone de région :",
+      "Inside Region Zone:": "Dans la zone de région :",
+      "Measure KM": "Mesurer les km",
+      "Move Pin": "Déplacer l'épingle",
+      "Close popup": "Fermer la fenêtre",
+      "No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.": "Aucun accord de prix Ventes (Livraison) ne couvre ce client, ce produit et ce site à cette date. Ajoutez d'abord l'accord, puis enregistrez le bon.",
+      "No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.": "Aucun accord de prix d'achat ne couvre ce site et cette matière à cette date. Ajoutez-en un (un accord à 0 $ est permis) ou enregistrez le bon en Prix en attente.",
+      "No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.": "Aucun accord Ventes (Livraison) pour ce client et ce site à cette date. Ajoutez-en un avant d'enregistrer.",
+      "No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.": "Aucun accord de prix d'achat pour ce site et cette matière à cette date. Ajoutez-en un (0 $ permis) ou passez en Prix en attente.",
+      "Site Clean-up": "Nettoyage des sites",
+      "Clean Up Sites": "Nettoyer les sites",
+      "Review dormant sites that still hold price agreements, and sites never used, then close them in one step": "Passez en revue les sites dormants qui ont encore des accords de prix et les sites jamais utilisés, puis fermez-les en une seule étape",
+      "Dormant with Open Agreements": "Dormants avec accords ouverts",
+      "Never Used": "Jamais utilisés",
+      "No loads and no price agreements": "Aucun voyage et aucun accord de prix",
+      "Open Agreements": "Accords ouverts",
+      "Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.": "Fermer un site met fin aujourd'hui à ses accords de prix ouverts. Le rouvrir dans Modifier le site les rétablit.",
+      "Nothing to clean up.": "Rien à nettoyer.",
+      "No loads": "Aucun voyage",
+      "Has loads after today": "A des voyages après aujourd'hui",
+      "Agreements of a company your seat cannot change": "Accords d'une société que votre poste ne peut pas modifier",
+      "Your seat cannot close sites.": "Votre poste ne peut pas fermer de sites.",
+      "Already closed": "Déjà fermé",
+      "Notify me on this device": "M'avertir sur cet appareil",
+      "Notifications are on for this device.": "Les notifications sont activées sur cet appareil.",
+      "Turn Off": "Désactiver",
+      "Phone notifications are not set up yet.": "Les notifications sur téléphone ne sont pas encore configurées.",
+      "This browser cannot show notifications.": "Ce navigateur ne peut pas afficher de notifications.",
+      "Notifications are blocked for this site in the browser settings.": "Les notifications sont bloquées pour ce site dans les réglages du navigateur.",
+      "On iPhone or iPad, add the app to the Home Screen first (iOS 16.4 or later), then open it from there.": "Sur iPhone ou iPad, ajoutez d'abord l'application à l'écran d'accueil (iOS 16.4 ou ultérieur), puis ouvrez-la depuis celui-ci.",
+      "Notifications were not allowed on this device.": "Les notifications n'ont pas été autorisées sur cet appareil.",
+      "Could not turn on notifications. Try again.": "Impossible d'activer les notifications. Réessayez.",
+      "Notifications turned off for this device.": "Notifications désactivées sur cet appareil."
     }
   };
 
@@ -31514,6 +31670,44 @@
     // period stays on the row as it was and the save goes on as a new entry (v19.6.390)
     m = trimmed.match(/^Earlier period kept to\s+(\S+)\s+·\s+New entry from\s+(\S+)$/i);
     if (m) return lang === 'ar' ? `أُبقيت الفترة السابقة حتى ${m[1]} · قيد جديد من ${m[2]}` : `Période précédente conservée jusqu'au ${m[1]} · Nouvelle entrée à partir du ${m[2]}`;
+
+    // Site clean-up (bulk close of dormant and never-used sites)
+    m = trimmed.match(/^(\d+)\s+sites? closed\s*·\s*(\d+)\s+price agreements?\s+ended on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أُغلق ${m[1]} من المواقع · وأُنهيت ${m[2]} من اتفاقيات الأسعار في ${m[3]}` : `${m[1]} site(s) fermé(s) · ${m[2]} accord(s) de prix clôturé(s) le ${m[3]}`;
+    m = trimmed.match(/^Close\s+(\d+)\s+selected sites?$/i);
+    if (m) return lang === 'ar' ? `إغلاق ${m[1]} من المواقع المحددة` : `Fermer ${m[1]} site(s) sélectionné(s)`;
+    m = trimmed.match(/^(\d+)\s+sites?\s*·\s*(\d+)\s+open price agreements?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من المواقع · ${m[2]} من اتفاقيات الأسعار المفتوحة` : `${m[1]} site(s) · ${m[2]} accord(s) de prix ouvert(s)`;
+
+    // Save toast of any edited record: "<Record> updated · <name>[ · <closure note>]"
+    // Record labels only (letters, spaces, & / ( ) -): toasts such as "✓ Seat updated · ..." keep their own handling
+    m = trimmed.match(/^([A-Z][A-Za-z &/()-]{1,40}?)\s+updated\s+·\s+(.+)$/);
+    if (m && depth < 3) {
+      const label = translateCore(m[1].trim(), lang, depth + 1);
+      const parts = m[2].split(/\s+·\s+/);
+      const rest = [parts[0]].concat(parts.slice(1).map(p => translateCore(p.trim(), lang, depth + 1))).join(' · ');
+      return lang === 'ar' ? `تم تحديث ${label} · ${rest}` : `${label} mis à jour · ${rest}`;
+    }
+    // APP badge tooltip
+    m = trimmed.match(/^Entered in this web app(?:\s+by\s+(.+?))?(?:\s+·\s+(.+))?$/);
+    if (m) {
+      const by = m[1] ? (lang === 'ar' ? ` بواسطة ${m[1]}` : ` par ${m[1]}`) : '';
+      const at = m[2] ? ` · ${m[2]}` : '';
+      return lang === 'ar' ? `أُدخل في تطبيق الويب هذا${by}${at}` : `Saisi dans cette application web${by}${at}`;
+    }
+    // Map pin popup distances
+    m = trimmed.match(/^\(RT\s+([\d.,]+)\s+km\)$/);
+    if (m) return lang === 'ar' ? `(ذهاب وإياب ${m[1]} كم)` : `(A/R ${m[1]} km)`;
+    m = trimmed.match(/^From\s+(WTC|BBConstruction|Lions Transport):$/);
+    if (m) return lang === 'ar' ? `من ${m[1]}:` : `Depuis ${m[1]} :`;
+    // Site form pin preview: "[Region: X · ]From WTC: One-Way N km · Round-Trip M km" and "[Region: X · ]lat, lng"
+    m = trimmed.match(/^(?:Region:\s+(.+?)\s+·\s+)?From\s+(WTC|BBConstruction|Lions Transport):\s+One-Way\s+([\d.,]+)\s+km\s+·\s+Round-Trip\s+([\d.,]+)\s+km$/);
+    if (m) {
+      const reg = m[1] ? (lang === 'ar' ? `المنطقة: ${m[1]} · ` : `Région : ${m[1]} · `) : '';
+      return lang === 'ar' ? `${reg}من ${m[2]}: ذهاب ${m[3]} كم · ذهاب وإياب ${m[4]} كم` : `${reg}Depuis ${m[2]} : aller ${m[3]} km · aller-retour ${m[4]} km`;
+    }
+    m = trimmed.match(/^Region:\s+(.+?)\s+·\s+(-?[\d.]+,\s*-?[\d.]+)$/);
+    if (m) return lang === 'ar' ? `المنطقة: ${m[1]} · ${m[2]}` : `Région : ${m[1]} · ${m[2]}`;
 
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;
