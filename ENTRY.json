@@ -3,6 +3,12 @@
   "branch": "wt/rate-impact-recs",
   "sha": "65307a3f54df1a7db9e0c6001047a8679e91ee0e"
  },
+ "batch": {
+  "at": "2026-11-20T23:00:35Z",
+  "holder": "THEO 5a74d592 (rate-impact-recs)",
+  "lockId": "018d057e53394af4a04390163e6a4e3c",
+  "version": "19.6.410"
+ },
  "gates": [
   "isabi-app: node build/verify_rate_change_recs.mjs",
   "isabi-app: node build/verify_statement_past_ranges.mjs",
