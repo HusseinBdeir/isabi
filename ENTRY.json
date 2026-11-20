@@ -3,12 +3,6 @@
   "branch": "wt/topup-20261120",
   "sha": "52e77cee829bc13d9d494d6b7f26f210105f4d0f"
  },
- "batch": {
-  "at": "2026-11-20T22:04:09Z",
-  "holder": "THEO 712e0473 (topup-20261120)",
-  "lockId": "713dab3329364f89b805fcf91f00a69c",
-  "version": "19.6.408"
- },
  "gates": [
   "isabi-app: python build/verify_cashflow_rules.py",
   "isabi-app: node build/verify_i18n_templates.mjs",
@@ -19,6 +13,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-20T22:03:05Z",
  "seenAt": "2026-11-20T22:03:05Z",
- "state": "waiting",
+ "shippedAt": "2026-11-20T22:41:42Z",
+ "shippedBy": "THEO 712e0473 (topup-20261120)",
+ "shippedVersion": "19.6.408",
+ "state": "shipped",
  "summary": "Manufacturing top-up to 2026-11-20 (WTC + BBConstruction); a new negative cash entry gets its own Cash Flow table row; Material / Haulage label translated when negative"
 }
