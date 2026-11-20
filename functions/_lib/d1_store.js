@@ -3178,6 +3178,30 @@ function stripRegionZoneFields(targetObj) {
   return targetObj;
 }
 
+function normSiteRoadSurface(val) {
+  const s = String(val || '').trim().toLowerCase();
+  return (s === 'paved' || s === 'unpaved') ? s : '';
+}
+
+function hasSiteSurfaceMutation(canonTable, baseObj, nextObj) {
+  if (canonTable !== 'sites') return false;
+  const a = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  const b = (nextObj && typeof nextObj === 'object') ? nextObj : {};
+  if (!Object.prototype.hasOwnProperty.call(b, 'road_surface')) return false;
+  return normSiteRoadSurface(a.road_surface) !== normSiteRoadSurface(b.road_surface);
+}
+
+function restoreSiteSurfaceFromBase(targetObj, baseObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  if (Object.prototype.hasOwnProperty.call(base, 'road_surface') && base.road_surface !== undefined) {
+    targetObj.road_surface = base.road_surface;
+  } else {
+    delete targetObj.road_surface;
+  }
+  return targetObj;
+}
+
 function restoreVoidFieldsFromBase(targetObj, baseObj) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
@@ -3968,6 +3992,7 @@ export async function handleRecordsPost(request, env, session, body) {
       (wasVoid !== nowVoid || voidNoteChanged)
       && !hasExplicitGpsKeyInPayload(record)
       && !hasExplicitRegionZoneKeyInPayload(record)
+      && !hasSiteSurfaceMutation(canonTable, exHydrated, record)
       && !hasNonVoidFieldChange(exHydrated, record)
     );
     recordToWrite = Object.assign({}, exHydrated, record);
@@ -3980,16 +4005,18 @@ export async function handleRecordsPost(request, env, session, body) {
       }
       restoreGpsFieldsFromBase(recordToWrite, exHydrated);
       restoreRegionZoneFieldsFromBase(recordToWrite, exHydrated);
+      restoreSiteSurfaceFromBase(recordToWrite, exHydrated);
     }
     const gpsChanged = hasGpsFieldMutation(exHydrated, recordToWrite);
     const regionZoneChanged = hasRegionZoneMutation(exHydrated, recordToWrite);
+    const surfaceChanged = hasSiteSurfaceMutation(canonTable, exHydrated, recordToWrite);
     const missingPinFill = isInitialMissingSitePinFill(canonTable, exHydrated, recordToWrite, perms);
     const allowUnpinnedPinAdd = !missingPinFill && isInitialUnpinnedSitePinAddition(canonTable, exHydrated, recordToWrite, perms);
     const canEditTbl = canEditExistingTableRecord(perms, canonTable);
     const allowVoidTbl = perms.roleKey === 'Supervisor' || canCreateTableRecord(perms, canonTable);
     const allowVoidOnly = Boolean(
       perms.voidData && allowVoidTbl && (wasVoid !== nowVoid || voidNoteChanged)
-      && !gpsChanged && !regionZoneChanged
+      && !gpsChanged && !regionZoneChanged && !surfaceChanged
       && !hasNonVoidFieldChange(exHydrated, recordToWrite)
     );
     if (missingPinFill) {
@@ -3997,6 +4024,9 @@ export async function handleRecordsPost(request, env, session, body) {
     } else if (allowUnpinnedPinAdd) {
       if (!perms.canWriteGeoConfig && regionZoneChanged) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.', 'region');
+      }
+      if (!perms.canWriteGeoConfig && surfaceChanged) {
+        return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify haul road surface.', 'site');
       }
       applyCanonSiteLatLngAliases(recordToWrite);
       recordToWrite._pinCleared = false;
@@ -4008,6 +4038,9 @@ export async function handleRecordsPost(request, env, session, body) {
       }
       if (!perms.canWriteGeoConfig && regionZoneChanged) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.', 'region');
+      }
+      if (!perms.canWriteGeoConfig && surfaceChanged) {
+        return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify haul road surface.', 'site');
       }
       if ((!canEditTbl || (!perms.modifyText && !perms.modifyData)) && !allowVoidOnly) {
         const denyMsg = !canEditTbl
@@ -8297,10 +8330,11 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           (wasVoid !== Boolean(sanIr.voided) || voidNoteChanged)
           && !hasExplicitGpsKeyInPayload(sanIr)
           && !hasExplicitRegionZoneKeyInPayload(sanIr)
+          && !hasSiteSurfaceMutation(canonTable, pr, sanIr)
           && !hasNonVoidFieldChange(pr, sanIr)
         );
         const mergedIr = isSparsePureVoid
-          ? restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr)
+          ? restoreSiteSurfaceFromBase(restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr), pr)
           : sanIr;
         if (isSparsePureVoid && voidNoteChanged) {
           applyExplicitVoidReason(mergedIr, sanIr);
@@ -8321,6 +8355,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             && (wasVoid !== Boolean(mergedIr.voided) || (wasVoid && Boolean(mergedIr.voided) && hasVoidReasonChange(pr, mergedIr)))
             && !hasGpsFieldMutation(pr, mergedIr)
             && !hasRegionZoneMutation(pr, mergedIr)
+            && !hasSiteSurfaceMutation(canonTable, pr, mergedIr)
             && !hasNonVoidFieldChange(pr, mergedIr)
           );
           if (allowVoidOnly) {
@@ -8435,6 +8470,22 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               });
             }
             restoreRegionZoneFieldsFromBase(mergedIr, pr);
+          }
+          if (hasSiteSurfaceMutation(canonTable, pr, mergedIr)) {
+            if (Array.isArray(auditOut)) {
+              auditOut.push({
+                outcome: 'blocked_403',
+                action: 'blocked_403',
+                source: 'sync',
+                industry: String(mergedIr._industry || pr._industry || 'manufacturing'),
+                company: String(mergedIr.company || pr.company || ''),
+                target_type: 'site',
+                target_id: rid,
+                target_label: String(mergedIr.name || pr.name || canonTable),
+                detail: { table: canonTable, error: 'Unauthorized road surface mutation reverted on sync' }
+              });
+            }
+            restoreSiteSurfaceFromBase(mergedIr, pr);
           }
         }
         outList.push(mergedIr);
