@@ -11971,7 +11971,8 @@
       if (view === 'kiosks') return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master || p.rights.read_ops);
       if (view === 'cashflow') return !!(p.rights.read_ops || p.rights.read_fin || p.rights.enter_accounting || p.rights.enter_dispatch || p.dashboards.dash_financial_gl || p.dashboards.dash_expenses_vat);
       if (view === 'overview' || view === 'pbi') return anyDash;
-      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_overview || p.dashboards.dash_executive || p.dashboards.dash_financial_gl);
+      // Entry seats on custom dashboard/statement tiers keep Daily Operations (owner 2026-11-20); true Custom roles unchanged.
+      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_overview || p.dashboards.dash_executive || p.dashboards.dash_financial_gl || (!/^Custom/i.test(role) && /Entry/i.test(role) && !/Sales/i.test(role)));
       if (view === 'statements') return anyStmt;
       if (view === 'payroll') return !!(p.rights.read_ops || p.rights.read_fin || p.dashboards.dash_payroll_hr || p.rights.enter_payroll_jv || p.rights.enter_master);
       if (view === 'ledger' || view === 'gl' || view === 'sentinels') return !!(p.rights.read_fin || p.dashboards.dash_financial_gl);
@@ -11985,7 +11986,10 @@
     if (view === 'overview' || view === 'pbi') return pbi !== 'none';
     if (view === 'expenses') return !/Sales/i.test(role);
     if (view === 'raw' || view === 'fleet' || view === 'suppliers' || view === 'ap' || view === 'payroll') return !/Sales/i.test(role);
-    if (view === 'daily_ops' || view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
+    // Daily Operations: Entry seats see the day they keyed (owner 2026-11-20); the cockpit,
+    // sibling cockpits and handover already mask profit, cash, till and books for non-finance seats.
+    if (view === 'daily_ops') return (pbi === 'full' || isOwner(u) || /Entry/i.test(role)) && !/Sales/i.test(role);
+    if (view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
     if (view === 'statements') return st !== 'none';
     return true;
   }
@@ -61497,12 +61501,14 @@
       }));
     });
     billing.length = 0; billing.push(...cleanBilling);
+    const excludeBillIdUp = opts && opts.excludeBillingId ? String(opts.excludeBillingId).trim().toUpperCase() : '';
     billing
-      .filter(r => r && r._isClientReceipt && Number(r.collected_usd || 0) > 0.005)
+      .filter(r => r && r._isClientReceipt && Number(r.collected_usd || 0) > 0.005
+        && (!excludeBillIdUp || String(r.id || '').trim().toUpperCase() !== excludeBillIdUp))
       .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')))
       .forEach(rc => {
         const rcDate = String(rc.date || '').slice(0, 10);
-        if (insPm.pr && insPm.pr.to && rcDate && rcDate > insPm.pr.to) return;
+        if (!opts.ignorePeriod && insPm.pr && insPm.pr.to && rcDate && rcDate > insPm.pr.to) return;
         const rcCo = norm(rc.company || 'Insurance Company');
         const rcCli = norm(rc.client || rc.insured || '');
         if (!rcCli) return;
@@ -61523,6 +61529,7 @@
           if (!(curOpen > 0.005)) return;
           const take = round2(Math.min(rem, curOpen));
           dn.open_ar_4112_usd = Math.max(0, round2(curOpen - take));
+          dn._standalone_settled_4112_usd = round2((dn._standalone_settled_4112_usd || 0) + take);
           dn.status = dn.open_ar_4112_usd <= 0.005 ? 'Paid' : 'Partial AR';
           const refTok = rc.receipt_ref || rc.id;
           if (refTok && !String(dn.receipt_ref || '').includes(refTok)) {
@@ -65866,12 +65873,19 @@
     const canViewExp = Boolean(isOwner(dopsUser) || canViewHub('expenses', dopsUser));
     const canViewDirect = Boolean(canViewBooks && canViewExp);
     const canViewProfit = canViewDirect;
+    // Holding's day is group treasury (per-company profit, partner splits): seats without the books get the
+    // restricted view, as the handover does (Entry seats reach Daily Operations since 2026-11-20).
+    if (!canViewBooks && ind === 'Holding & Treasury') {
+      return `<div class="dops-stage" id="dailyOpsStage"><div class="dops-empty"><strong>Restricted Treasury Scope</strong><p>Treasury and external cash flows require Cash Flow &amp; General Ledger permissions.</p></div></div>`;
+    }
 
     const ds0 = buildIndustryDomainDataset(ind, 0);
     const ds1 = buildIndustryDomainDataset(ind, 1);
     const ds2 = buildIndustryDomainDataset(ind, 2);
     const rawSentinels = buildSentinelItems();
-    const sentinels = canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1');
+    // Seats that cannot open Sentinels (Entry) get no alert titles or counts here.
+    const sibCanSn = canViewView('sentinels', dopsUser);
+    const sentinels = !sibCanSn ? [] : (canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1'));
     const openSn = sentinels.filter(s => s && s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
@@ -66244,7 +66258,7 @@
     });
     const sibPlantPop = JSON.stringify({
       title: `Workforce & Controls · ${targetDate}`,
-      badge: openSn.length > 0 ? `${openSn.length} Open` : 'All Clear',
+      badge: !sibCanSn ? `${fmtNum(empRows.length)} Staff` : (openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'),
       norm: sibPopNorm,
       rows: [
         { label: 'Active Staff', value: fmtNum(empRows.length), color: '#2356A8' },
@@ -66356,7 +66370,7 @@
           </div>
           <div class="dops-bar-controls">
             <div class="dops-att-strip" id="dopsAttentionStrip" role="group" aria-label="Needs Attention">
-              ${sibHasAtt ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">All Clear</span></span>`}
+              ${sibHasAtt ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">${sibCanSn ? 'All Clear' : 'No Exceptions'}</span></span>`}
               ${sibDayLoss ? `<button type="button" class="dops-att-chip crit" data-nav-jump="${canViewExp ? 'expenses' : 'ledger'}" data-ui-tip="Costs were higher than sales on this day. Click to see the cost breakdown.">${ic('warn')}<span class="dops-att-lbl">Day Loss</span><bdi class="dops-att-val">${fmtUSD(dayOpProfit, 0)}</bdi></button>` : ''}
               ${sibTillNeg ? `<button type="button" class="dops-att-chip crit" data-nav-jump="cashflow" data-ui-tip="The US dollar cash till is below zero as of this day. Click to review cash movements.">${ic('cashflow')}<span class="dops-att-lbl">Till Negative</span><bdi class="dops-att-val">${fmtUSD(closingTillUsd, 0)}</bdi></button>` : ''}
               ${sibSalesLow ? `<button type="button" class="dops-att-chip warn" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" data-ui-tip="Compared with the average of the last 7 active days">${ic('sales')}<span class="dops-att-lbl">Sales Below Usual</span><bdi class="dops-att-val">${sibSalesVs7}%</bdi></button>` : ''}
@@ -66450,7 +66464,7 @@
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" data-chart-pop="${esc(sibPlantPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Team &amp; Alerts</span>
-              <span class="dops-kpi-delta ${openSn.length > 0 ? 'warn' : 'good'}">${openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'}</span>
+              ${sibCanSn ? `<span class="dops-kpi-delta ${openSn.length > 0 ? 'warn' : 'good'}">${openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'}</span>` : ''}
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(empRows.length)} Staff</span>
@@ -66647,7 +66661,7 @@
                 <h2 class="dops-card-title">${canViewProfit ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend'}</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>
+                ${sibCanSn ? `<button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>` : ''}
                 <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(p6EmpRows.length)}</button>
               </div>
             </div>
@@ -66662,7 +66676,7 @@
               </div>
               <div class="dops-digest-bar dops-workforce-foot">
                 <button type="button" class="dops-dpill" data-nav-jump="payroll">${ic('payroll')} ${fmtNum(empRows.length)} Staff</button>
-                <button type="button" class="dops-dpill${openSn.length > 0 ? ' warn' : ' good'}" data-nav-jump="sentinels">${ic(openSn.length > 0 ? 'warn' : 'check_circle')} ${fmtNum(openSn.length)} Alerts</button>
+                ${sibCanSn ? `<button type="button" class="dops-dpill${openSn.length > 0 ? ' warn' : ' good'}" data-nav-jump="sentinels">${ic(openSn.length > 0 ? 'warn' : 'check_circle')} ${fmtNum(openSn.length)} Alerts</button>` : ''}
                 ${canViewExp ? `<button type="button" class="dops-dpill" data-nav-jump="documents">${ic('expenses')} ${fmtNum(docRows.length)} Documents</button>` : ''}
               </div>
             </div>
@@ -71254,9 +71268,106 @@
     return { ind, list, spec: list[0] };
   }
 
+  function previewTradingReceiptFifo({ company, customer, method, totalSettledUsd, cashAmountUsd = null, editRow = null } = {}) {
+    const settleNow = round2(Number(totalSettledUsd || 0) || 0);
+    if (!customer || !(settleNow > 0.005) || (cashAmountUsd != null && !(Number(cashAmountUsd) > 0.005))) {
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+    }
+    const rCo = canonCompany(company) || String(company || '').trim();
+    const probeCand = { company: rCo, customer, method: method || 'Payment', amount: settleNow };
+    const kNow = typeof receiptKind === 'function' ? receiptKind(probeCand) : 'Settlement';
+    if ((typeof isArSettlingReceipt === 'function' && !isArSettlingReceipt(probeCand))
+      || kNow === 'Excluded' || kNow === 'Customer invoice' || kNow === 'Rent & Barter') {
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+    }
+    const trdOps = typeof computeTradingOperations === 'function'
+      ? computeTradingOperations({ company: rCo || company, ignoreSearch: true, ignoreRls: true, ignorePeriod: true })
+      : null;
+    const arRows = (trdOps && Array.isArray(trdOps.receivableRows)) ? trdOps.receivableRows : [];
+    const hitRow = arRows.find(x => x && (canonCompany(x.company) || String(x.company || '').trim()) === rCo && norm(x.customer) === norm(customer)) || null;
+    let priorSelfSettle = 0;
+    if (editRow && editRow._editMode) {
+      let origRow = editRow;
+      if (editRow.id) {
+        const custR = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
+        const seedR = (SEED && SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
+        const foundStored = custR.find(x => x && String(x.id) === String(editRow.id))
+          || seedR.find(x => x && String(x.id) === String(editRow.id));
+        if (foundStored) origRow = foundStored;
+      }
+      if (!origRow.voided && !origRow.voided_at && !origRow._absorbedSeedTwin && String(origRow.source || '').toLowerCase() === 'app') {
+        const editCo = canonCompany(origRow.company) || String(origRow.company || '').trim();
+        const editK = typeof receiptKind === 'function' ? receiptKind(origRow) : 'Settlement';
+        if (editCo === rCo && norm(origRow.customer) === norm(customer)
+          && (typeof isArSettlingReceipt !== 'function' || isArSettlingReceipt(origRow))
+          && editK !== 'Excluded' && editK !== 'Customer invoice' && editK !== 'Rent & Barter') {
+          const origFx = Number(origRow.fx_rate || origRow.exchange_rate || 89500) || 89500;
+          const hasSplitCurr = origRow.usd_amount != null || origRow.lbp_amount != null;
+          const origUsd = (origRow.amount != null && (!hasSplitCurr || origRow !== editRow))
+            ? (Number(origRow.amount || 0) || 0)
+            : round2((Number(origRow.usd_amount || 0) || 0) + ((Number(origRow.lbp_amount || 0) || 0) / origFx));
+          priorSelfSettle = round2(origUsd + (Number(origRow.discount || 0) || 0));
+        }
+      }
+    }
+    let openBeforeUsd = 0;
+    if (hitRow) {
+      const invTtc = Number(hitRow.invoiced_ttc || 0) || 0;
+      const otherSettled = round2((Number(hitRow.settled_usd || 0) || 0) - priorSelfSettle);
+      openBeforeUsd = Math.max(0, round2(invTtc - otherSettled));
+    }
+    const allocatedUsd = round2(Math.min(settleNow, openBeforeUsd));
+    const unallocatedUsd = Math.max(0, round2(settleNow - allocatedUsd));
+    return { openBeforeUsd, allocatedUsd, unallocatedUsd };
+  }
+
+  function previewInsuranceBillingFifo({ company, client, policyNo, billedUsd, collectedUsd, editRow = null } = {}) {
+    const billed = Math.max(0, round2(Number(billedUsd || 0) || 0));
+    const col = Math.max(0, round2(Number(collectedUsd || 0) || 0));
+    const cliNorm = norm(client || '');
+    const coNorm = norm(company || 'Insurance Company');
+    const editIdUp = (editRow && editRow._editMode && editRow.id) ? String(editRow.id).trim().toUpperCase() : '';
+    if (billed > 0.005) {
+      let priorStandalone = 0;
+      if (editIdUp && cliNorm && typeof computeInsuranceOperations === 'function') {
+        const pbOps = computeInsuranceOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true });
+        const existingDn = (pbOps && Array.isArray(pbOps.billing))
+          ? pbOps.billing.find(dn => dn && !dn._isClientReceipt && String(dn.id || '').trim().toUpperCase() === editIdUp)
+          : null;
+        if (existingDn && norm(existingDn.company || 'Insurance Company') === coNorm && norm(existingDn.client || existingDn.insured || '') === cliNorm) {
+          priorStandalone = Math.max(0, Number(existingDn._standalone_settled_4112_usd || 0));
+        }
+      }
+      const ownNeed = Math.max(0, round2(billed - priorStandalone));
+      const allocatedUsd = round2(Math.min(ownNeed, col));
+      const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
+      const remainingOpenArUsd = Math.max(0, round2(ownNeed - allocatedUsd));
+      return { mode: 'billing', openBeforeUsd: ownNeed, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+    }
+    if (!cliNorm) return { mode: 'receipt', openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: col, remainingOpenArUsd: 0 };
+    const insOps = typeof computeInsuranceOperations === 'function'
+      ? computeInsuranceOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeBillingId: editIdUp })
+      : null;
+    const allBilling = (insOps && Array.isArray(insOps.billing)) ? insOps.billing : [];
+    const openBeforeUsd = round2(allBilling
+      .filter(dn => dn && !dn._isClientReceipt
+        && (!editIdUp || String(dn.id || '').trim().toUpperCase() !== editIdUp)
+        && Number(dn.client_billed_4112_usd || 0) > 0.005
+        && Number(dn.open_ar_4112_usd || 0) > 0.005
+        && norm(dn.company || 'Insurance Company') === coNorm
+        && norm(dn.client || dn.insured || '') === cliNorm)
+      .reduce((s, dn) => s + Number(dn.open_ar_4112_usd || 0), 0));
+    const allocatedUsd = round2(Math.min(col, openBeforeUsd));
+    const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
+    const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - allocatedUsd));
+    return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+  }
+
   function closeIndustryDomainEntryModal() {
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
+    FORM_UI.domainNearCopyPeekItems = [];
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
       window.MFG_AI_EDGE.stopVoiceCapture();
     }
@@ -71265,6 +71376,7 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -71390,6 +71502,7 @@
         ${fldWrap('Product / Cover Plan', `<input type="text" id="ide_product" style="${inpStyle}" value="${esc(prefill.product || 'Commercial All-Risk Cover')}">`)}
         ${fldWrap('Sum Insured ($)', `<input type="number" id="ide_sum_insured" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.sum_insured_usd != null ? prefill.sum_insured_usd : '500000')}">`)}
         ${fldWrap('Gross Written Premium ($ GWP) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '10000')}">`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Brokerage Comm Rate (%) *', `<input type="number" id="ide_rate" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="${esc(defRate)}">`, `<span id="ideRateSourceHint">${esc(initRateLookup.isFallback ? 'Baseline rate (' + initRateLookup.agreementId + ')' : 'Chrono Agreement ' + initRateLookup.agreementId + ' (' + initRateLookup.rate + '%)')}</span>`)}
         ${fldWrap('Gross Commission ($)', `<input type="text" id="ide_gross_comm" class="mono" readonly style="${roStyle}" value="$1,500.00">`, 'Auto: GWP x Comm Rate %')}
         ${fldWrap('Client Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount_usd != null ? prefill.discount_usd : '0')}">`, 'Must not exceed Gross Commission')}
@@ -71424,6 +71537,9 @@
         ${fldWrap('Instalment', `<input type="text" id="ide_instalment" style="${inpStyle}" value="${esc(prefill.instalment || '1/1')}">`)}
         ${fldWrap('Client Billed ($)', `<input type="number" id="ide_billed" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defBilled)}" placeholder="0.00">`)}
         ${fldWrap('Collected Now ($) *', `<input type="number" id="ide_collected" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defCollected)}" placeholder="0.00">`)}
+        ${domainNearCopyAmtJumpHtml()}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_ins_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_ins_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Open Client AR ($)', `<input type="text" id="ide_open_ar" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Receipt Ref', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.receipt_ref || '')}" placeholder="Cheque / transfer ref...">`)}
         ${fldWrap('Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || '')}" placeholder="Optional note...">`)}
@@ -71525,6 +71641,7 @@
         ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initLeaseHit.isFallback ? 'Baseline rate (' + initLeaseHit.leaseId + ' · ' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')' : 'Chrono Lease ' + initLeaseHit.leaseId + ' (' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')')}</span>`)}
         ${fldWrap('VAT Amount ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
         ${fldWrap('Total Billed Rent ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Collected Now ($)', `<input type="number" id="ide_collected" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.collected_usd != null ? prefill.collected_usd : '0')}">`)}
       `;
     } else if (spec.key === 're_receipts') {
@@ -71553,6 +71670,7 @@
         ${fldWrap('Receipt Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}">${rTypes.map(t => `<option value="${esc(t)}" ${t === defType ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
         ${fldWrap('Payment Method', `<select id="ide_method" data-plain-options="1" style="${inpStyle}">${rMethods.map(m => `<option value="${esc(m)}" ${m === defMethod ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`)}
         ${fldWrap('Security Deposit ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_gl4196_usd != null ? prefill.deposit_gl4196_usd : '0')}">`)}
         ${fldWrap('Unallocated Advance ($)', `<input type="text" id="ide_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
@@ -71626,6 +71744,7 @@
         ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defCost)}">`)}
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
       `;
@@ -71648,6 +71767,9 @@
         ${fldWrap('LBP Received (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(prefill.lbp_amount != null && Number(prefill.lbp_amount) !== 0 ? prefill.lbp_amount : '')}" placeholder="0">`)}
         ${fldWrap('Settlement Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
         ${fldWrap('Total Settled ($)', `<input type="text" id="ide_total_settled" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${domainNearCopyAmtJumpHtml()}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_trd_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Reference', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.reference || '')}" placeholder="Cheque / transfer / receipt no.">`)}
         ${fldWrap('Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || '')}" placeholder="Optional settlement note...">`)}
       `;
@@ -71737,6 +71859,7 @@
         ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(defRooms)}">`)}
         ${fldWrap('Guest Covers', `<input type="number" id="ide_covers" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.covers != null ? prefill.covers : '95')}">`)}
         ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defTot)}">`, `<span id="ideRateSourceHint">${esc(initHspHit.isFallback ? 'Baseline rate (' + initHspHit.tariffId + ' · ' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)' : 'Chrono Tariff ' + initHspHit.tariffId + ' (' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)')}</span>`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Net Excl. Tax ($)', `<input type="text" id="ide_ht" class="mono" readonly style="${roStyle}" value="$8,000.00">`)}
         ${fldWrap('Output VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$880.00">`, 'Zero-VAT enforced on Tips & Diesel')}
         ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card" ${defMth === 'Cash & Card' ? 'selected' : ''}>Cash & Card</option><option value="POS Till #1" ${defMth === 'POS Till #1' ? 'selected' : ''}>POS Till #1</option><option value="Card / Whish" ${defMth === 'Card / Whish' ? 'selected' : ''}>Card / Whish</option><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option></select>`)}
@@ -71752,6 +71875,7 @@
         ${fldWrap('Cashier Name *', `<input type="text" id="ide_cashier" style="${inpStyle}" value="${esc(prefill.cashier || 'Maya S.')}">`)}
         ${fldWrap('Closed Bills Count', `<input type="number" id="ide_bills" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.bills_count != null ? prefill.bills_count : '120')}">`)}
         ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : (prefill.pos_billed_ttc != null ? prefill.pos_billed_ttc : '9500'))}">`)}
+        ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Physical Cash Counted ($)', `<input type="number" id="ide_cash" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.cash_usd != null ? prefill.cash_usd : '5200')}">`)}
         ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.card_usd != null ? prefill.card_usd : (prefill.card_whish_usd != null ? prefill.card_whish_usd : '4300'))}">`)}
         ${fldWrap('Approved Comp / Promo ($)', `<input type="number" id="ide_comp" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.comp_usd != null ? prefill.comp_usd : '0')}">`)}
@@ -72021,7 +72145,17 @@
         const col = Math.max(0, numVal('ide_collected'));
         const billedRaw = numVal('ide_billed');
         const billed = billedRaw > 0.005 ? billedRaw : 0;
-        if ($('ide_open_ar')) $('ide_open_ar').value = fmtUSD(billed > 0.005 ? Math.max(0, round2(billed - col)) : 0, 2);
+        const fifoIns = previewInsuranceBillingFifo({
+          company: strVal('ide_company') || defCo,
+          client: strVal('ide_client'),
+          policyNo: strVal('ide_policy_no'),
+          billedUsd: billed,
+          collectedUsd: col,
+          editRow: isEditMode ? prefill : null
+        });
+        if ($('ide_ins_allocated')) $('ide_ins_allocated').value = fmtUSD(fifoIns.allocatedUsd, 2);
+        if ($('ide_ins_unallocated')) $('ide_ins_unallocated').value = fmtUSD(fifoIns.unallocatedUsd, 2);
+        if ($('ide_open_ar')) $('ide_open_ar').value = fmtUSD(fifoIns.remainingOpenArUsd, 2);
       } else if (spec.key === 'ins_remittances') {
         const pay = round2(numVal('ide_gwp') - numVal('ide_comm') - numVal('ide_settled'));
         if ($('ide_payable')) $('ide_payable').value = fmtUSD(Math.max(0, pay), 2);
@@ -72080,7 +72214,18 @@
         const lbp = Math.max(0, Math.round(numVal('ide_lbp')));
         const disc = Math.max(0, numVal('ide_discount'));
         const totAmt = round2(usd + (lbp / fx));
-        if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(round2(totAmt + disc), 2);
+        const settledTot = round2(totAmt + disc);
+        if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(settledTot, 2);
+        const fifoTrd = previewTradingReceiptFifo({
+          company: strVal('ide_company') || defCo,
+          customer: strVal('ide_customer'),
+          method: strVal('ide_method') || 'Payment',
+          totalSettledUsd: settledTot,
+          cashAmountUsd: totAmt,
+          editRow: isEditMode ? prefill : null
+        });
+        if ($('ide_trd_allocated')) $('ide_trd_allocated').value = fmtUSD(fifoTrd.allocatedUsd, 2);
+        if ($('ide_trd_unallocated')) $('ide_trd_unallocated').value = fmtUSD(fifoTrd.unallocatedUsd, 2);
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
@@ -73161,6 +73306,11 @@
         const notes = strVal('ide_notes');
         const curSeat = activeUser() || {};
         const nowStamp = new Date().toISOString();
+        const curRctArr = (STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
+        const seedRctArr = (SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
+        const storedOrigRct = isEditMode ? (curRctArr.find(x => x && String(x.id) === String(recId)) || seedRctArr.find(x => x && String(x.id) === String(recId))) : null;
+        const origRctSourceRaw = isEditMode ? String((storedOrigRct && storedOrigRct.source) ?? (prefill && prefill.source) ?? '').trim() : '';
+        const keepNonAppSource = Boolean(isEditMode && (storedOrigRct || (prefill && prefill.source != null)) && origRctSourceRaw.toLowerCase() !== 'app');
         const rcptRec = {
           id: recId,
           name: `RCP ${dt} ${customer}`,
@@ -73178,7 +73328,7 @@
           discount: disc,
           reference: ref,
           notes,
-          source: 'app',
+          source: keepNonAppSource ? (origRctSourceRaw || 'workbook') : 'app',
           voided: false,
           entered_by: (isEditMode && prefill && prefill.entered_by) || curSeat.full_name || curSeat.name || 'Owner',
           entered_by_email: (isEditMode && prefill && prefill.entered_by_email != null) ? prefill.entered_by_email : (curSeat.email || ''),
@@ -76808,7 +76958,8 @@
       });
     }
 
-    const visibleSentinels = canViewBooks ? sentinels : sentinels.filter(s => s && s.id !== 'S1');
+    // Seats that cannot open Sentinels (Entry) get no alert titles in the handover or its spoken briefing.
+    const visibleSentinels = !canViewView('sentinels', u) ? [] : (canViewBooks ? sentinels : sentinels.filter(s => s && s.id !== 'S1'));
     const openSentinels = visibleSentinels.filter(s => s && s.severity && s.severity !== 'ok');
     const critSentinels = openSentinels.filter(s => s.severity === 'crit');
     if (openSentinels.length > 0 && anomalies.length === 0) {
@@ -76850,9 +77001,11 @@
 
     const anomalyCount = anomalies.length;
     const topAnom = anomalies[0] || null;
-    const topAnomalyEn = topAnom ? topAnom.en : 'All shift controls clear';
-    const topAnomalyAr = topAnom ? topAnom.ar : 'جميع ضوابط المناوبة سليمة';
-    const topAnomalyFr = topAnom ? topAnom.fr : 'Tous les contrôles du poste sont conformes';
+    // Seats that cannot open Sentinels get neutral wording: their "clear" covers shift checks only.
+    const hoCanSn = canViewView('sentinels', u);
+    const topAnomalyEn = topAnom ? topAnom.en : (hoCanSn ? 'All shift controls clear' : 'No shift exceptions recorded');
+    const topAnomalyAr = topAnom ? topAnom.ar : (hoCanSn ? 'جميع ضوابط المناوبة سليمة' : 'لا استثناءات مسجلة في المناوبة');
+    const topAnomalyFr = topAnom ? topAnom.fr : (hoCanSn ? 'Tous les contrôles du poste sont conformes' : 'Aucune exception de poste enregistrée');
 
     const priorLblEn = isCalendarYesterday ? 'vs Yesterday' : `vs ${priorDate || 'Prior Day'}`;
     const priorLblAr = isCalendarYesterday ? 'مقارنة بالأمس' : `مقارنة بـ ${priorDate || 'اليوم السابق'}`;
@@ -76923,17 +77076,17 @@
         valStr: hoTillOff ? 'Not Tracked Yet' : fmtUSD(closingTillRaw, 0),
         valAr: hoTillOff ? 'غير متتبَّع بعد' : fmtUSD(closingTillRaw, 0),
         valFr: hoTillOff ? 'Pas encore suivi' : fmtUSD(closingTillRaw, 0),
-        subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : 'Clear'}`,
-        subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : 'سليم'}`,
-        subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : 'Conforme'}`,
+        subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : (hoCanSn ? 'Clear' : 'No Exceptions')}`,
+        subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : (hoCanSn ? 'سليم' : 'بلا استثناءات')}`,
+        subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : (hoCanSn ? 'Conforme' : 'Aucune exception')}`,
         tone: anomalyCount > 0 || critSentinels.length > 0 ? 'warn' : 'ok'
       } : {
         labelEn: 'Shift Priorities',
         labelAr: 'أولويات تسليم المناوبة',
         labelFr: 'Priorités de passation',
-        valStr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} Open` : 'All Clear',
-        valAr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} مفتوحة` : 'سليمة بالكامل',
-        valFr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} ouverte(s)` : 'Tout conforme',
+        valStr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} Open` : (hoCanSn ? 'All Clear' : 'No Exceptions'),
+        valAr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} مفتوحة` : (hoCanSn ? 'سليمة بالكامل' : 'بلا استثناءات'),
+        valFr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} ouverte(s)` : (hoCanSn ? 'Tout conforme' : 'Aucune exception'),
         subEn: sanitizePlain(topAnomalyEn).slice(0, 44),
         subAr: sanitizePlain(topAnomalyAr).slice(0, 44),
         subFr: sanitizePlain(topAnomalyFr).slice(0, 44),
@@ -77017,9 +77170,9 @@
           : `Passation de poste (${companyFr} · ${targetDate}) : ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (Comptant ${fmtUSD(cashSalesUsd, 0)}, Crédit ${fmtUSD(creditSalesUsd, 0)}). Priorité équipe suivante : ${topAnomalyFr}.`)
     };
 
-    const statusBadgeEn = anomalyCount > 0 ? `${anomalyCount} Shift Priority` : (openSentinels.length > 0 ? `${openSentinels.length} Watchdogs` : 'Shift Clear');
-    const statusBadgeAr = anomalyCount > 0 ? `${anomalyCount} أولويات مناوبة` : (openSentinels.length > 0 ? `${openSentinels.length} تنبيهات` : 'مناوبة سليمة');
-    const statusBadgeFr = anomalyCount > 0 ? `${anomalyCount} priorité(s)` : (openSentinels.length > 0 ? `${openSentinels.length} alerte(s)` : 'Poste conforme');
+    const statusBadgeEn = anomalyCount > 0 ? `${anomalyCount} Shift Priority` : (openSentinels.length > 0 ? `${openSentinels.length} Watchdogs` : (hoCanSn ? 'Shift Clear' : 'No Exceptions'));
+    const statusBadgeAr = anomalyCount > 0 ? `${anomalyCount} أولويات مناوبة` : (openSentinels.length > 0 ? `${openSentinels.length} تنبيهات` : (hoCanSn ? 'مناوبة سليمة' : 'بلا استثناءات'));
+    const statusBadgeFr = anomalyCount > 0 ? `${anomalyCount} priorité(s)` : (openSentinels.length > 0 ? `${openSentinels.length} alerte(s)` : (hoCanSn ? 'Poste conforme' : 'Aucune exception'));
 
     const scopeKey = `dops_ho|${u ? u.id : 'anon'}|${canViewBooks ? 1 : 0}|${canViewExp ? 1 : 0}|${evalCoKey}|${targetInd}|${targetDate}|ah:${includeAfterHours ? 1 : 0}|rev:${Math.round(dayRevUsd * 100)}|prof:${canViewProfit ? Math.round(dayOpProfitRaw * 100) : 'np'}|till:${canViewBooks ? Math.round(closingTillRaw * 100) : 'nb'}|anom:${anomalyCount}|sn:${openSentinels.length}|${SEED._customRev || 0}:${STATE._customRev || 0}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}|${punchSig}`;
 
@@ -77063,8 +77216,10 @@
       dayOpProfit: canViewProfit ? dayOpProfitRaw : null,
       closingTillUsd: canViewBooks && !hoTillOff ? closingTillRaw : null,
       dayNetCash: canViewBooks ? dayNetCashRaw : null,
-      pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : tbBalanced,
+      // Ledger tie status stays with seats that see the books (Entry seats reach this handover since 2026-11-20).
+      pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : undefined,
       pnlBridgeVarianceUsd: (canViewProfit && !pnlBridgeBalanced) ? pnlBridgeDiff : 0,
+      canViewSentinels: canViewView('sentinels', u),
       vatRatePct,
       vatRegimeEn,
       vatRegimeAr,
@@ -77112,9 +77267,10 @@
         repShiftedCount,
         anomalyCount,
         topAnomaly: topAnomalyEn,
-        openSentinelCount: openSentinels.length,
+        // Unknown (not 0) for seats that cannot open Sentinels, so the AI never reads it as "no alerts".
+        openSentinelCount: canViewView('sentinels', u) ? openSentinels.length : undefined,
         vatRatePct,
-        pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : tbBalanced,
+        pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : undefined,
         tbBalanced: canViewBooks ? tbBalanced : undefined
       }
     };
@@ -77609,11 +77765,13 @@
 
     const viewAllowed = typeof canViewView === 'function' ? canViewView(viewId, u) : true;
     const canCash = Boolean(typeof canViewHub === 'function' ? canViewHub('cashflow', u) : true);
-    const canViewBooks = Boolean(canCash && (typeof canViewHub === 'function' ? canViewHub('books', u) : true));
+    // Books = cash flow + the General Ledger hub (there is no 'books' hub id, so the old check always passed).
+    const canViewBooks = Boolean((u && isOwner(u)) || (canCash && (typeof canViewHub === 'function' ? canViewHub('ledger', u) : true)));
     const canExp = Boolean(typeof canViewView === 'function' ? canViewView('expenses', u) : true);
     const canPayroll = Boolean(typeof canViewHub === 'function' ? canViewHub('payroll', u) : true);
     const canSales = Boolean(typeof canViewView === 'function' ? canViewView('sales', u) : true);
     const canFleet = Boolean(typeof canViewHub === 'function' ? canViewHub('fleet', u) : true);
+    const canSnGuide = Boolean(typeof canViewView === 'function' ? canViewView('sentinels', u) : true);
 
     const rawViewTitle = scrubOutwardGuideText(
       (typeof document !== 'undefined' && document.getElementById('topbarTitle') && document.getElementById('topbarTitle').textContent)
@@ -77724,7 +77882,7 @@
 
     // 3. Extract live KPIs & domain insights tailored to the active view + industry
     const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
-    const items = typeof buildSentinelItems === 'function' ? buildSentinelItems() : [];
+    const items = (canSnGuide && typeof buildSentinelItems === 'function') ? buildSentinelItems() : [];
     const openSentinels = items.filter(it => it && it.severity && it.severity !== 'ok');
 
     let purposeEn = '';
@@ -77852,8 +78010,8 @@
         { labelEn: 'Operating Expenses', labelAr: 'المصاريف التشغيلية', labelFr: 'Charges d\'Exploitation', value: expVal, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Raw / Direct Cost', labelAr: 'تكلفة المواد المباشرة', labelFr: 'Coûts Directs / Matières', value: rawVal, sub: `${fmtNum(safeNum(kpi.raw_loads))} intakes`, selector: sections[0].selector },
         { labelEn: 'Net Open Payables (AP)', labelAr: 'ذمم الموردين الصافية', labelFr: 'Dettes Fournisseurs (AP)', value: apVal, sub: '3-Leg Reconciled', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Pending Price / Audit', labelAr: 'بانتظار التسعير / التدقيق', labelFr: 'En Attente de Prix', value: `${fmtNum(openSentinels.length)} alerts`, sub: 'Sentinel Watchdogs', selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Pending Price / Audit', labelAr: 'بانتظار التسعير / التدقيق', labelFr: 'En Attente de Prix', value: `${fmtNum(openSentinels.length)} alerts`, sub: 'Sentinel Watchdogs', selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `${coLabel} logged ${expVal} in operating expenses and ${rawVal} in direct procurement during ${range.label}.`,
         `3-Leg Supplier Payables (Raw Intake + Credit Vouchers + Recurring Accruals minus Settlements) stand at ${apVal}.`,
@@ -77895,8 +78053,8 @@
         { labelEn: 'Diesel Dispensed', labelAr: 'المازوت المصروف', labelFr: 'Gasoil Distribué', value: dieselL, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Active Fleet Units', labelAr: 'الآليات النشطة', labelFr: 'Unités de Flotte', value: `${fmtNum(eqCnt)} units`, sub: coLabel, selector: sections[0].selector },
         { labelEn: 'Open Workshop Bays', labelAr: 'أعطال الورشة المفتوحة', labelFr: 'Pannes Ouvertes', value: `${fmtNum(malfCnt)} open`, sub: 'Maintenance Queue', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Fleet Sentinel Alerts', labelAr: 'تنبيهات الأسطول', labelFr: 'Alertes Flotte', value: `${fmtNum(openSentinels.length)} active`, sub: 'Consumption & Burn', selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Fleet Sentinel Alerts', labelAr: 'تنبيهات الأسطول', labelFr: 'Alertes Flotte', value: `${fmtNum(openSentinels.length)} active`, sub: 'Consumption & Burn', selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `Fleet dispensed ${dieselL} of diesel across ${fmtNum(eqCnt)} tracked equipment units in ${range.label}.`,
         `Workshop register tracks ${fmtNum(malfCnt)} active malfunction tickets with parts, labor, and downtime cost attribution.`,
@@ -77976,7 +78134,7 @@
       // Universal fallback covering #overview, #daily_ops, #ledger, #statements, #pbi, #sentinels, #kiosks, #users, #contracts, #tables, and all industry views
       const revVal = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.sales_ttc)) : 'Restricted';
       const opProfVal = canViewBooks ? fmtUSD(safeNum(kpi.operating_profit)) : 'Restricted';
-      const cashVal = canCash ? (kpi.till_tracked === false ? 'Not Tracked Yet' : fmtUSD(safeNum(kpi.cash_till))) : 'Restricted';
+      const cashVal = canViewBooks ? (kpi.till_tracked === false ? 'Not Tracked Yet' : fmtUSD(safeNum(kpi.cash_till))) : 'Restricted';
       const tbVar = canViewBooks ? fmtUSD(Math.abs(safeNum(kpi.tb_check || 0))) : 'Restricted';
       purposeEn = `Live ${rawViewTitle} command surface for ${coLabel} (${ind}), uniting real-time operational registers, deterministic Class 1-7 accounting tie-outs, and interactive drill-downs across ${range.label}.`;
       purposeAr = `واجهة التحكم الحية لـ ${rawViewTitle} في ${coLabel} (${ind})، تجمع السجلات التشغيلية الفورية ومطابقة المحاسبة للفئات 1-7 والاستكشاف التفاعلي خلال ${range.label}.`;
@@ -77985,29 +78143,29 @@
         { labelEn: 'Scoped Revenue', labelAr: 'إيرادات النطاق', labelFr: 'Revenu Ciblé', value: revVal, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Operating Profit', labelAr: 'الربح التشغيلي', labelFr: 'Résultat d\'Exploitation', value: opProfVal, sub: coLabel, selector: sections[0].selector },
         { labelEn: 'Cash Till Balance', labelAr: 'رصيد صندوق النقد', labelFr: 'Solde Caisse', value: cashVal, sub: canViewBooks ? `TB Check: ${tbVar}` : 'Scoped Till', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Sentinel Watchdogs', labelAr: 'تنبيهات المراقبة الذكية', labelFr: 'Alertes Sentinelles', value: `${fmtNum(openSentinels.length)} open`, sub: `${sections.length} Page Sections`, selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Sentinel Watchdogs', labelAr: 'تنبيهات المراقبة الذكية', labelFr: 'Alertes Sentinelles', value: `${fmtNum(openSentinels.length)} open`, sub: `${sections.length} Page Sections`, selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `Viewing ${rawViewTitle} (${rawEyebrow}) for ${coLabel} across ${range.label}: Revenue ${revVal}, Operating Profit ${opProfVal}, and Cash Till ${cashVal}.`,
         `This page contains ${fmtNum(sections.length)} interactive operational ${sections.length === 1 ? 'section' : 'sections'}. Switch to the Interactive Tour tab to spotlight each section on screen.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `General Ledger & Trial Balance tie check is at ${tbVar} variance with ${fmtNum(openSentinels.length)} active Sentinel items flagged for review.`
-          : `${fmtNum(openSentinels.length)} operational items are currently highlighted for supervisor review on this view.`
-      ];
+          : `${fmtNum(openSentinels.length)} operational items are currently highlighted for supervisor review on this view.`)
+      ].filter(Boolean);
       bulletsAr = [
         `عرض ${rawViewTitle} (${rawEyebrow}) لـ ${coLabel} خلال ${range.label}: الإيرادات ${revVal}، الربح التشغيلي ${opProfVal}، وصندوق النقد ${cashVal}.`,
         `تتضمن هذه الصفحة ${fmtNum(sections.length)} أقسام تفاعلية حية. انتقل إلى تبويب الجولة التفاعلية لإبراز كل قسم مباشرة على الشاشة.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `فحص مطابقة الأستاذ العام وميزان المراجعة عند فرق ${tbVar} مع ${fmtNum(openSentinels.length)} تنبيهات نشطة للمراجعة.`
-          : `يوجد حاليا ${fmtNum(openSentinels.length)} بنود تشغيلية محددة للمراجعة في هذه الصفحة.`
-      ];
+          : `يوجد حاليا ${fmtNum(openSentinels.length)} بنود تشغيلية محددة للمراجعة في هذه الصفحة.`)
+      ].filter(Boolean);
       bulletsFr = [
         `Vue ${rawViewTitle} (${rawEyebrow}) pour ${coLabel} sur ${range.label} : Chiffre d'affaires ${revVal}, Résultat d'exploitation ${opProfVal} et Caisse ${cashVal}.`,
         `Cette page comporte ${fmtNum(sections.length)} ${sections.length === 1 ? 'section interactive' : 'sections interactives'}. Ouvrez l'onglet Visite Interactive pour mettre chaque section en évidence.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `Le cadrage de la balance générale affiche un écart de ${tbVar} avec ${fmtNum(openSentinels.length)} alertes Sentinelles ouvertes.`
-          : `${fmtNum(openSentinels.length)} éléments opérationnels sont signalés pour vérification sur cette vue.`
-      ];
+          : `${fmtNum(openSentinels.length)} éléments opérationnels sont signalés pour vérification sur cette vue.`)
+      ].filter(Boolean);
       promptChipsEn = [
         `What stands out on ${rawViewTitle} right now?`,
         `Summarize key risks and priorities for ${coLabel}`,
@@ -78030,8 +78188,8 @@
         { type: 'tour', labelEn: 'Start Section Tour', labelAr: 'بدء جولة الأقسام', labelFr: 'Lancer la Visite' },
         { type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' },
         { type: 'view', view: viewId === 'cashflow' ? 'overview' : 'cashflow', labelEn: viewId === 'cashflow' ? 'Executive Overview' : 'Cash Flow & Till', labelAr: viewId === 'cashflow' ? 'الملخص التنفيذي' : 'التدفق النقدي والصندوق', labelFr: viewId === 'cashflow' ? 'Vue Exécutive' : 'Trésorerie & Caisse' },
-        { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` }
-      ];
+        canSnGuide ? { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` } : null
+      ].filter(Boolean);
     } else if (!quickActions.some(q => q && q.type === 'whatif')) {
       quickActions.push({ type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' });
     }
@@ -92421,6 +92579,7 @@
             </div>
             <span class="hint" id="hint_amount"></span>
           </div>
+          ${pendEditRow ? '' : nearCopyAmtJumpHtml()}
           ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : 'placeholder="Supplier invoice or slip #"'), { id: 'wrap_f_reference' })}
           ${expNotesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
@@ -92474,6 +92633,7 @@
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
     ownerManuallyPicked: false, driverManual: false, settleLegManual: false, postAttempted: false,
     stagedOwnerDrivers: [], expItems: [], repairItems: [], attachments: [],
+    nearCopyPeekItems: [], domainNearCopyPeekItems: [],
     lastCompany: '', lastDate: '', lastCategory: null, lastSubcategory: '', initialSubcategory: '', expItem0Manual: false, catCache: null,
     lastTruck: '', lastExpTruck: '', lastWhItem: '', lastOilUnit: '', lastOilType: '',
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
@@ -94568,6 +94728,8 @@
         const dir = isOutHld ? 'Outflow' : 'Inflow';
         out.push({
           id: `hld_ic:${cr.id}`,
+          _raw: cr,
+          _bucket: 'hld_interactions',
           company: 'Bdeir Holding',
           date: cr.date,
           counterparty: isOutHld ? toCo : fromCo,
@@ -94604,6 +94766,8 @@
           out.push({
             id: `re_receipts:${r.id}`,
             _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 're_receipts',
             company: r.company || '4235 Company S.A.L',
             date: r.date,
             customer: r.tenant || '',
@@ -94624,6 +94788,8 @@
           out.push({
             id: `ins_billing:${r.id}`,
             _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 'ins_billing',
             company: r.company || 'Insurance Company',
             date: r.date,
             customer: r.client || '',
@@ -94970,6 +95136,20 @@
     return typoHit;
   }
 
+  function nearCopyPeekToken(row, explicitRef) {
+    const raw = (row && row._raw) || row || {};
+    const refStr = String(explicitRef || '').trim();
+    if (refStr) return refStr.length > 18 ? `${refStr.slice(0, 17)}…` : refStr;
+    const alt = String(raw.ticket_no || raw.tax_seq || raw.policy_no || raw.receipt_ref || raw.reference || raw.invoice || raw.code || raw.id || '').trim()
+      .replace(/^(?:re_receipts|ins_billing|extm|sister|receipts|hld_ic):/i, '');
+    if (!alt) return 'Entry';
+    return alt.length > 16 ? `${alt.slice(0, 15)}…` : alt;
+  }
+
+  function nearCopyPeekChipHtml(scope, idx, text) {
+    return `<button type="button" class="near-copy-peek-chip" data-nc-peek-scope="${esc(scope)}" data-nc-peek-idx="${Number(idx) || 0}" data-no-i18n="1" aria-haspopup="dialog" aria-expanded="false">${esc(text)}</button>`;
+  }
+
   // Shows (or hides) the confirm box under the form; a different match unticks it.
   function syncNearCopyBanner(crKey, hit) {
     const wrap = $('wrap_nearcopyok');
@@ -94982,11 +95162,13 @@
     // would put the English text back for a moment before it is translated again.
     const setHint = html => {
       if (!hint || hint.dataset.ncHtml === html) return;
+      if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'mfg');
       hint.innerHTML = html;
       hint.dataset.ncHtml = html;
     };
     if (!hit) {
       FORM_UI.lastNearCopySig = '';
+      FORM_UI.nearCopyPeekItems = [];
       wrap.hidden = true;
       if (cb) cb.checked = false;
       setHint('');
@@ -94999,6 +95181,7 @@
     }
     wrap.hidden = false;
     if (jump) jump.hidden = false;
+    FORM_UI.nearCopyPeekItems = [];
     const reasonMap = {
       sum: 'Same day and party, these entries add up to this amount',
       sum_gap: 'Same party, these entries one day apart add up to this amount',
@@ -95013,19 +95196,26 @@
     if (hint && hit.rows) {
       const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment', external_movements: 'External Movement' }[crKey] || 'Entry';
       const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
-      const parts = hit.rows.map(r => {
+      const parts = hit.rows.map((r, idx) => {
         const ref = cleanVoucherRef(r.invoice || r.reference);
-        return `${ref ? '#' + ref + ' ' : ''}${fmtUSD(nearCopySumUsd(r), 2)}`;
+        const chipTok = nearCopyPeekToken(r, ref);
+        const u = nearCopySumUsd(r);
+        FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
+        return nearCopyPeekChipHtml('mfg', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
       }).join(' + ');
-      const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
+      const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
+      const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint) {
       const r = hit.row;
       const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
       const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
+      const chipTok = nearCopyPeekToken(r, ref);
+      const u = nearCopyRowUsd(crKey, r);
+      FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
       const party = crKey === 'sales_tickets' ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
-      const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(nearCopyRowUsd(crKey, r), 2)].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`);
+      const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(u, 2)].filter(Boolean);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('mfg', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
     if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
       window.MFG_I18N.translateDom(wrap);
@@ -95061,6 +95251,11 @@
   function nearCopyAmtJumpHtml() {
     const ico = typeof ic === 'function' ? ic('warn') : '';
     return `<button type="button" class="near-copy-jump span-3" id="nearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
+  }
+
+  function domainNearCopyAmtJumpHtml() {
+    const ico = typeof ic === 'function' ? ic('warn') : '';
+    return `<button type="button" class="near-copy-jump ide-near-copy-jump" id="ideNearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
   }
 
   // Warn while typing (owner 2026-11-17): the second-copy check runs while the form is filled in, not only at Post, so
@@ -95195,6 +95390,8 @@
         if (Math.abs(u) > 0.005) {
           pool.push({
             id: `receipts:${r.id}`,
+            _raw: r,
+            _bucket: 'receipts',
             company: r.company,
             date: r.date,
             partyKey: nearCopyPartyKey(r.customer),
@@ -95225,7 +95422,10 @@
     const toks = nearCopyRefTokens(rec.id, rec.tax_seq, rec.seq_no, rec.policy_no, rec.receipt_ref, rec.reference, rec.book, rec.unit, rec.notes, rec.audit_flag);
     const mkPool = (rawArr, bkt, mapFn, defCo = '') => _domOverlayRows(rawArr, bkt, winDays, dtKey)
       .filter(r => !co || norm(r.company || defCo) === co)
-      .map(mapFn)
+      .map(r => {
+        const m = mapFn(r);
+        return m ? Object.assign(m, { _raw: r, _bucket: bkt }) : null;
+      })
       .filter(Boolean);
 
     if (formKey === 're_receipts') {
@@ -95356,7 +95556,7 @@
         const f = String(r.fromCo || r.company || '');
         const t = String(r.toCo || r.counterparty || r.party || '');
         return {
-          id: r.id, company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`,
+          id: r.id, _raw: r, _bucket: 'hld_interactions', company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`,
           partyLabel: `${f} to ${t}`, amount: Number(r.usd || r.amount || 0) || 0,
           ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
         };
@@ -95380,7 +95580,7 @@
         const t = String(r.counterparty || r.party || '');
         const u = Number(r.out_usd || r.amount || r.usd_amount || 0) || 0;
         if (f && t && Math.abs(u) > 0.005) {
-          pool.push({ id: `sister:${r.id}`, company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`, partyLabel: `${f} to ${t}`, amount: u, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes) });
+          pool.push({ id: `sister:${r.id}`, _raw: r, _bucket: 'hld_interactions', company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`, partyLabel: `${f} to ${t}`, amount: u, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes) });
         }
       }
       const sisterCat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
@@ -95420,7 +95620,7 @@
         const u = Math.round(Math.abs(usdRaw) * 100) / 100;
         if (u > 0.005) {
           pool.push({
-            id: `extm:${r.id}`, company: '', date: dSlice,
+            id: `extm:${r.id}`, _raw: r, _bucket: 'external_movements', company: '', date: dSlice,
             partyKey: `${nearCopyPartyKey(r.company)}|${nearCopyPartyKey(targetCo)}`,
             partyLabel: `${r.company} to ${targetCo}`, amount: u,
             ref: r.reference || r.id || '', refs: nearCopyRefTokens(r.id, r.reference, r.notes)
@@ -95487,16 +95687,20 @@
 
   function syncDomainNearCopyBanner(formKey, hit) {
     const wrap = $('wrap_ide_nearcopyok');
+    const jump = $('ideNearCopyAmtJump');
+    if (!hit && jump) jump.hidden = true;
     if (!wrap) return false;
     const cb = $('ide_nearcopyok');
     const hint = $('hint_ide_nearcopy');
     const setHint = html => {
       if (!hint || hint.dataset.ncHtml === html) return;
+      if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
       hint.innerHTML = html;
       hint.dataset.ncHtml = html;
     };
     if (!hit) {
       FORM_UI.lastDomainNearCopySig = '';
+      FORM_UI.domainNearCopyPeekItems = [];
       wrap.hidden = true;
       if (cb) cb.checked = false;
       setHint('');
@@ -95508,6 +95712,8 @@
       if (cb) cb.checked = false;
     }
     wrap.hidden = false;
+    if (jump) jump.hidden = false;
+    FORM_UI.domainNearCopyPeekItems = [];
     const label = DOMAIN_NEAR_COPY_LABELS[formKey] || 'Entry';
     const reasonMap = {
       sum: 'Same day and party, these entries add up to this amount',
@@ -95518,22 +95724,30 @@
     const reason = reasonMap[hit.reason] || reasonMap.sum_gap;
     if (hint && hit.rows) {
       const party = hit.row.partyLabel || hit.row.customer || hit.row.counterparty || hit.row.tenant || hit.row.client || '';
-      const parts = hit.rows.map(r => {
+      const parts = hit.rows.map((r, idx) => {
         const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
-        const u = nearCopySumUsd(r);
-        return `${ref ? '#' + ref + ' ' : ''}${fmtUSD(u, 2)}`;
+        const chipTok = nearCopyPeekToken(r, ref);
+        const u = Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
+        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
+        return nearCopyPeekChipHtml('dom', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
       }).join(' + ');
-      const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
+      const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
+      const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint && hit.row) {
       const r = hit.row;
       const party = r.partyLabel || r.customer || r.counterparty || r.tenant || r.client || '';
       const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
-      const u = _domRowAmt(formKey, r) || nearCopySumUsd(r);
-      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, ref ? `#${ref}` : '', u > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
+      const chipTok = nearCopyPeekToken(r, ref);
+      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
+      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
+      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, u > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
-    if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') window.MFG_I18N.translateDom(wrap);
+    if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(wrap);
+      if (jump) window.MFG_I18N.translateDom(jump);
+    }
     return true;
   }
 
@@ -110391,6 +110605,266 @@
     }, NEAR_COPY_LIVE_DELAY_MS);
   }
 
+  let _ncPeekAnchorEl = null;
+
+  function ensureNearCopyPeekPopover() {
+    let pop = $('nearCopyPeekPopover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.id = 'nearCopyPeekPopover';
+    pop.className = 'nc-peek-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'false');
+    pop.setAttribute('aria-label', 'Matched Entry Preview');
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    return pop;
+  }
+
+  function closeNearCopyPeekPopover(restoreFocus = false, onlyScope = '') {
+    const pop = $('nearCopyPeekPopover');
+    if (pop && onlyScope && pop.dataset.peekScope && pop.dataset.peekScope !== onlyScope) {
+      return false;
+    }
+    const prevAnchor = _ncPeekAnchorEl;
+    if (pop) {
+      pop.hidden = true;
+      pop.dataset.peekKey = '';
+      pop.dataset.peekScope = '';
+      pop.innerHTML = '';
+    }
+    _ncPeekAnchorEl = null;
+    document.querySelectorAll('.near-copy-peek-chip[aria-expanded="true"]').forEach(btn => {
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    if (restoreFocus && prevAnchor && prevAnchor.isConnected) {
+      try { prevAnchor.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  function positionNearCopyPeekPopover(pop, chipEl) {
+    if (!pop || !chipEl || !chipEl.isConnected) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 844;
+    const rect = chipEl.getBoundingClientRect();
+    const isRtl = typeof document !== 'undefined' && document.documentElement && document.documentElement.dir === 'rtl';
+    const popW = Math.min(360, Math.max(220, vw - 16), pop.offsetWidth || 360);
+    const popH = Math.min(440, pop.offsetHeight || 220);
+    let left = isRtl ? (rect.right - popW) : rect.left;
+    left = Math.max(8, Math.min(vw - popW - 8, left));
+    let top;
+    if (rect.top - popH - 8 >= 8) {
+      top = rect.top - popH - 8;
+    } else if (rect.bottom + popH + 8 <= vh - 8) {
+      top = rect.bottom + 8;
+    } else {
+      const aboveSpace = rect.top - 8;
+      const belowSpace = vh - rect.bottom - 8;
+      top = aboveSpace >= belowSpace
+        ? Math.max(8, rect.top - popH - 8)
+        : Math.max(8, Math.min(vh - popH - 8, rect.bottom + 8));
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function openNearCopyPeekPopover(scope, idx, chipEl) {
+    const items = scope === 'dom'
+      ? (FORM_UI.domainNearCopyPeekItems || [])
+      : (FORM_UI.nearCopyPeekItems || []);
+    const numIdx = Number(idx);
+    const item = Number.isInteger(numIdx) && numIdx >= 0 ? items[numIdx] : null;
+    if (!item || !item.raw) return false;
+
+    const pop = ensureNearCopyPeekPopover();
+    const peekKey = `${scope}:${numIdx}`;
+    if (!pop.hidden && pop.dataset.peekKey === peekKey) {
+      closeNearCopyPeekPopover(false);
+      return true;
+    }
+
+    document.querySelectorAll('.near-copy-peek-chip[aria-expanded="true"]').forEach(btn => {
+      btn.setAttribute('aria-expanded', 'false');
+    });
+
+    const raw = item.raw;
+    const usd = Number(
+      item.usd != null
+        ? item.usd
+        : (raw.usd_amount ?? raw.amount ?? raw.paid_usd ?? raw.gross_premium ?? raw.client_billed ?? raw.rent_usd ?? 0)
+    ) || 0;
+    const lbp = Number(raw.lbp_amount ?? raw.amount_lbp ?? raw.lbp ?? 0) || 0;
+    const rawDate = String(raw.date || raw.start_date || raw.receipt_date || raw.billing_date || raw.policy_date || '').slice(0, 10);
+    const repDate = String(raw.reporting_date || raw.rep_date || '').slice(0, 10);
+    const coLabel = (raw.from_company && raw.to_company)
+      ? `${raw.from_company} -> ${raw.to_company}`
+      : String(raw.company || '').trim();
+    const showCompany = Boolean(
+      coLabel && (
+        (raw.from_company && raw.to_company)
+        || typeof isSingleCorporationScope !== 'function'
+        || !isSingleCorporationScope()
+      )
+    );
+
+    const clientName = String(raw.client_name || raw.client || '').trim();
+    const insurerName = String(raw.insurer_name || raw.insurer || '').trim();
+    const cpCandidates = [
+      raw.customer, clientName, raw.tenant, raw.tenant_name, raw.buyer, raw.member,
+      raw.supplier, raw.contractor, raw.carrier, raw.site_owner, raw.site,
+      raw.staff, raw.staff_name, raw.counterparty, raw.partner, raw.lender,
+      insurerName, raw.party, (raw.from_company && raw.to_company) ? raw.to_company : ''
+    ].map(s => String(s || '').trim()).filter(Boolean);
+    let counterparty = cpCandidates[0] || '';
+    if (clientName && insurerName && norm(clientName) !== norm(insurerName)) {
+      counterparty = `${clientName} (${insurerName})`;
+    }
+    const headerTitle = counterparty || item.label || 'Entry';
+    const method = String(raw.method || raw.payment_method || raw.pay_method || raw.mode || raw.direction || raw.flow || '').trim();
+
+    const detailCandidates = [
+      raw.product,
+      raw.truck,
+      Number(raw.qty) > 0 ? `${fmtNum(raw.qty)} ${raw.uom || 'm³'}` : '',
+      (raw.site && norm(raw.site) !== norm(counterparty)) ? raw.site : '',
+      raw.unit_no || raw.unit || '',
+      raw.property_name || raw.property || '',
+      raw.lease_code || '',
+      raw.policy_no ? `Policy ${raw.policy_no}` : '',
+      raw.coverage_type || '',
+      raw.venue || '',
+      raw.category || '',
+      raw.description || '',
+      raw.reason || '',
+      raw.tax_seq ? `Tax #${raw.tax_seq}` : '',
+      (raw.ticket_no && String(raw.ticket_no).trim() !== String(item.chipTok || '').trim()) ? `Ticket #${raw.ticket_no}` : '',
+      cleanVoucherRef(raw.invoice || raw.reference || raw.receipt_ref) ? `Ref ${cleanVoucherRef(raw.invoice || raw.reference || raw.receipt_ref)}` : ''
+    ].map(s => String(s || '').trim()).filter(Boolean);
+    const seenDetails = new Set([norm(headerTitle), norm(counterparty), norm(method)]);
+    const detailsList = [];
+    for (const d of detailCandidates) {
+      const k = norm(d);
+      if (!k || seenDetails.has(k)) continue;
+      seenDetails.add(k);
+      detailsList.push(d);
+    }
+    const details = detailsList.join(' · ');
+    const enteredBy = String(raw.entered_by || raw.created_by || raw.logged_by || raw.recorded_by || raw.user || '').trim();
+    const notes = String(raw.notes || raw.note || raw.remarks || '').trim();
+
+    const rows = [];
+    if (rawDate) rows.push({ lbl: 'Date', val: fmtDateDMY(rawDate) });
+    if (repDate && repDate !== rawDate) rows.push({ lbl: 'Reporting Date', val: fmtDateDMY(repDate) });
+    if (showCompany) rows.push({ lbl: 'Company', val: coLabel });
+    if (counterparty) rows.push({ lbl: 'Counterparty', val: counterparty });
+    if (method) rows.push({ lbl: 'Method', val: method });
+    if (details) rows.push({ lbl: 'Details', val: details });
+    if (enteredBy) rows.push({ lbl: 'Entered By', val: enteredBy });
+    if (notes) rows.push({ lbl: 'Notes', val: notes });
+
+    let attCrKey = item.bucket || '';
+    if (scope === 'dom' && typeof inferDomainTblKey === 'function') {
+      const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : '';
+      attCrKey = inferDomainTblKey(activeInd, item.bucket, raw.id) || item.bucket || '';
+    }
+    let atts = typeof getRecordAttachmentsList === 'function' ? getRecordAttachmentsList(attCrKey, raw) : [];
+    if ((!atts || !atts.length) && item.bucket && item.bucket !== attCrKey && typeof getRecordAttachmentsList === 'function') {
+      atts = getRecordAttachmentsList(item.bucket, raw);
+    }
+    atts = Array.isArray(atts) ? atts : [];
+
+    const tokTxt = item.chipTok ? ` #${item.chipTok}` : '';
+    const amtHtml = `${Math.abs(usd) > 0.005 ? `<div class="nc-peek-amt" data-no-i18n="1">${esc(fmtUSD(usd, 2))}</div>` : ''}${Math.abs(lbp) >= 1 ? `<div class="nc-peek-lbp" data-no-i18n="1">${esc(fmtNum(Math.round(lbp)))} LBP</div>` : ''}`;
+    const gridHtml = rows.map(r => `<div class="nc-peek-lbl"><span>${esc(r.lbl)}</span></div><div class="nc-peek-val" data-no-i18n="1">${esc(r.val)}</div>`).join('');
+    let attsHtml = '';
+    if (atts.length) {
+      const attCards = atts.slice(0, 4).map((att, aIdx) => {
+        const fname = String(att.file_name || att.name || att.title || `Attachment ${aIdx + 1}`).trim();
+        const url = String(att.data_url || '').trim();
+        const mime = String(att.mime_type || att.type || '').trim();
+        const isSafeImg = Boolean(url) && (/^image\//i.test(mime) || /^data:image\//i.test(url))
+          && (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml)(?:;|,)/i.test(url) || /^(?:\.?\/|https?:)/i.test(url));
+        const media = isSafeImg
+          ? `<img class="nc-peek-att-thumb" src="${esc(url)}" alt="${esc(fname)}">`
+          : `${typeof ic === 'function' ? ic('receipt') : ''}`;
+        return `<div class="nc-peek-att-card">${media}<span data-no-i18n="1">${esc(fname)}</span></div>`;
+      }).join('');
+      const moreHtml = atts.length > 4
+        ? `<div class="nc-peek-att-card"><span data-no-i18n="1">+${atts.length - 4}</span></div>`
+        : '';
+      attsHtml = `<div class="nc-peek-atts"><div class="nc-peek-atts-hdr">${typeof ic === 'function' ? ic('receipt') : ''}<span>Attachments</span> <span data-no-i18n="1">(${atts.length})</span></div><div class="nc-peek-atts-list">${attCards}${moreHtml}</div></div>`;
+    }
+
+    pop.dataset.peekKey = peekKey;
+    pop.dataset.peekScope = scope;
+    pop.innerHTML = `<div class="nc-peek-hdr"><div class="nc-peek-hdr-main"><span class="nc-peek-kicker"><span>${esc(item.label || 'Entry')}</span><span data-no-i18n="1">${esc(tokTxt)}</span></span><div class="nc-peek-title" data-no-i18n="1">${esc(headerTitle)}</div></div><div class="nc-peek-amt-wrap">${amtHtml}</div><button type="button" class="nc-peek-close" id="ncPeekCloseBtn" aria-label="Close Preview" data-ui-tip="Close Preview">✕</button></div>${gridHtml ? `<div class="nc-peek-grid">${gridHtml}</div>` : ''}${attsHtml}`;
+
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(pop);
+    }
+
+    pop.style.visibility = 'hidden';
+    pop.hidden = false;
+    _ncPeekAnchorEl = chipEl || null;
+    if (chipEl) chipEl.setAttribute('aria-expanded', 'true');
+    positionNearCopyPeekPopover(pop, chipEl);
+    pop.style.visibility = '';
+    const closeBtn = $('ncPeekCloseBtn');
+    if (closeBtn) {
+      try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  let _ncPeekWired = false;
+  function wireNearCopyPeekPopover() {
+    if (_ncPeekWired || typeof document === 'undefined') return;
+    _ncPeekWired = true;
+    document.addEventListener('mousedown', ev => {
+      const chip = ev.target && ev.target.closest ? ev.target.closest('.near-copy-peek-chip') : null;
+      if (chip) ev.preventDefault();
+    });
+    document.addEventListener('click', ev => {
+      const t = ev.target && ev.target.closest ? ev.target : null;
+      if (!t) return;
+      const closeBtn = t.closest('#ncPeekCloseBtn');
+      if (closeBtn) {
+        ev.preventDefault();
+        closeNearCopyPeekPopover(true);
+        return;
+      }
+      const chip = t.closest('.near-copy-peek-chip');
+      if (chip) {
+        ev.preventDefault();
+        const scope = chip.getAttribute('data-nc-peek-scope') || 'mfg';
+        const idx = Number(chip.getAttribute('data-nc-peek-idx'));
+        openNearCopyPeekPopover(scope, idx, chip);
+        return;
+      }
+      const pop = $('nearCopyPeekPopover');
+      if (pop && !pop.hidden && !t.closest('#nearCopyPeekPopover')) {
+        closeNearCopyPeekPopover(false);
+      }
+    });
+    const repositionIfOpen = () => {
+      const pop = $('nearCopyPeekPopover');
+      if (!pop || pop.hidden) return;
+      if (!_ncPeekAnchorEl || !_ncPeekAnchorEl.isConnected) {
+        closeNearCopyPeekPopover(false);
+        return;
+      }
+      const rect = _ncPeekAnchorEl.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        closeNearCopyPeekPopover(false);
+        return;
+      }
+      positionNearCopyPeekPopover(pop, _ncPeekAnchorEl);
+    };
+    window.addEventListener('resize', repositionIfOpen);
+    document.addEventListener('scroll', repositionIfOpen, true);
+  }
+
   function wirePartyTypoHost(host, ctx) {
     if (!host) return;
     host._partyTypoCtx = ctx || {};
@@ -110429,15 +110903,16 @@
       }, 130);
     });
     host.addEventListener('mousedown', ev => {
-      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump') : null;
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip') : null;
       if (t) ev.preventDefault();
     });
     host.addEventListener('click', ev => {
-      const jumpBtn = ev.target && ev.target.closest ? ev.target.closest('#nearCopyAmtJump') : null;
+      const jumpBtn = ev.target && ev.target.closest ? ev.target.closest('#nearCopyAmtJump, #ideNearCopyAmtJump') : null;
       if (jumpBtn) {
         ev.preventDefault();
-        const ncWrap = $('wrap_nearcopyok');
-        const ncCb = $('f_nearcopyok');
+        const isDomJump = jumpBtn.id === 'ideNearCopyAmtJump';
+        const ncWrap = $(isDomJump ? 'wrap_ide_nearcopyok' : 'wrap_nearcopyok');
+        const ncCb = $(isDomJump ? 'ide_nearcopyok' : 'f_nearcopyok');
         if (ncWrap && !ncWrap.hidden) {
           try {
             ncWrap.scrollIntoView({ behavior: (typeof navigator !== 'undefined' && navigator.webdriver) ? 'auto' : 'smooth', block: 'center' });
@@ -116753,6 +117228,8 @@
         return;
       }
     }
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
+    FORM_UI.nearCopyPeekItems = [];
     hideEntryUnsavedPrompt();
     const editSpec = (prefill && typeof prefill === 'object' && prefill.editRecord && prefill.editRecord.row)
       ? prefill.editRecord
@@ -117155,7 +117632,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#nearCopyAmtJump, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -117673,6 +118150,8 @@
   function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
     cancelNearCopyLiveCheck();
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'mfg');
+    FORM_UI.nearCopyPeekItems = [];
     const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
     if (!force && isInteractiveClose && isEntryModalDirty()) {
       if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
@@ -170070,7 +170549,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, canSeeTaxBreakdown, canAccessTable, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -176172,6 +176651,8 @@
         lookupActiveTradingTariff,
         lookupActiveHoldingPartnerSplit,
         lookupActiveHoldingLoanRate,
+        canViewView,
+        activeUser,
         lookupActiveInsuranceAgreementRate,
         saveIndustryWorkflowPatch,
         getIndustryWorkflowPatch,
@@ -176394,6 +176875,12 @@
         if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.isOpen === 'function' && window.MFG_CMD_PALETTE.isOpen()) {
           e.preventDefault();
           window.MFG_CMD_PALETTE.close();
+          return;
+        }
+        const ncPop = $('nearCopyPeekPopover');
+        if (ncPop && !ncPop.hidden) {
+          e.preventDefault();
+          closeNearCopyPeekPopover(true);
           return;
         }
         const hc = $('roleHoverPreviewCard');
@@ -177393,6 +177880,7 @@
     });
 
     initZeroBlackBoxTooltips();
+    wireNearCopyPeekPopover();
     scheduleSeedHydration();
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (STATE.authed || isAutoTest) {

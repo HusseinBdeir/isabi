@@ -2963,7 +2963,10 @@
     const expMap = ctx.STATE.dailyOpsExpanded || {};
     const totalDispatched = Math.max(0, dm.salesSum.loads);
     const agreedPct = totalDispatched > 0 ? Math.round((dm.agreedSalesLoads / totalDispatched) * 100) : 100;
-    const totDiscAll = ctx.round2(dm.salesSum.discUsd + dm.rawSum.discUsd + dm.arDiscUsd + dm.apDiscUsd);
+    const p2Perms = resolveDopsPerms(ctx);
+    // AR/AP settlement discounts are treasury figures: counted only for seats that see the books.
+    const totDiscAll = ctx.round2(dm.salesSum.discUsd + dm.rawSum.discUsd + (p2Perms.canBooks ? (dm.arDiscUsd + dm.apDiscUsd) : 0));
+    if (lens === 'vat_jv' && !p2Perms.canTax && !p2Perms.canJv) lens = 'highlights';
 
     const topStripHtml = `
       <div class="dops-stat-strip-3 dops-substrip">
@@ -2976,8 +2979,8 @@
           <b>${fmtUSD(dm.rawSum.haulCost, 0)} <span class="dops-stat-muted">· Own ${fmtNum(dm.rawSum.ownLoads)} / Haulers ${fmtNum(dm.rawSum.haulerLoads)}</span></b>
         </div>
         <div class="dops-stat-box${dm.belowAgreedLoads > 0 ? ' tone-crit' : (dm.agreedSalesLoads > 0 ? ' tone-good' : '')}" data-dops-lens="deals:audit">
-          <small>Rate Compliance &amp; Tax</small>
-          <b>${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below (-${fmtUSD(dm.belowShortfallUsd, 0)})` : `${agreedPct}% Agreed (${dm.agreedSalesLoads}/${totalDispatched})`} <span class="dops-stat-muted">· Tax ${fmtUSD(dm.salesSum.vat, 0)}</span></b>
+          <small>${p2Perms.canTax ? 'Rate Compliance &amp; Tax' : 'Rate Compliance'}</small>
+          <b>${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below (-${fmtUSD(dm.belowShortfallUsd, 0)})` : `${agreedPct}% Agreed (${dm.agreedSalesLoads}/${totalDispatched})`}${p2Perms.canTax ? ` <span class="dops-stat-muted">· Tax ${fmtUSD(dm.salesSum.vat, 0)}</span>` : ''}</b>
         </div>
       </div>
     `;
@@ -3086,25 +3089,25 @@
       return `
         <div class="dops-card-body">
           <div class="dops-stat-strip-4">
-            <div class="dops-stat-box">
+            ${p2Perms.canTax ? `<div class="dops-stat-box">
               <small>Ticket 11% Tax</small>
               <b>${fmtUSD(dm.salesSum.vat, 0)}</b>
             </div>
             <div class="dops-stat-box${dm.dayVatInvoices.length ? ' tone-brass' : ''}">
               <small>Tax Invoices (${fmtNum(dm.dayVatInvoices.length)})</small>
               <b>${fmtUSD(dm.vatBilledTodayTtc, 0)}</b>
-            </div>
+            </div>` : ''}
             <div class="dops-stat-box">
               <small>Commissions</small>
               <b>${fmtUSD(dm.salesSum.commUsd, 0)}</b>
             </div>
             <div class="dops-stat-box">
-              <small>Discounts / Partner Splits</small>
-              <b>${fmtUSD(totDiscAll, 0)} / ${fmtUSD(dm.jvDistTodayUsd, 0)}</b>
+              <small>${p2Perms.canJv ? 'Discounts / Partner Splits' : 'Discounts'}</small>
+              <b>${fmtUSD(totDiscAll, 0)}${p2Perms.canJv ? ` / ${fmtUSD(dm.jvDistTodayUsd, 0)}` : ''}</b>
             </div>
           </div>
           <div class="dops-event-list">
-            ${dm.dayVatInvoices.map(vi => `
+            ${(p2Perms.canTax ? dm.dayVatInvoices : []).map(vi => `
               <div class="dops-event-item is-new-rule" data-dops-inspect-rkey="vat_invoices" data-dops-inspect-rid="${esc(String(vi.id || ''))}">
                 <div class="dops-event-left">
                   <span class="dops-kind rule">Tax Invoice #${esc(String(vi.invoice_no || ''))}</span>
@@ -3113,7 +3116,7 @@
                 <span class="dops-event-right">${fmtUSD(vi.total_ttc || 0, 0)}</span>
               </div>
             `).join('')}
-            ${dm.dayJvDists.map(jv => `
+            ${(p2Perms.canJv ? dm.dayJvDists : []).map(jv => `
               <div class="dops-event-item" data-dops-inspect-rkey="jv_distributions" data-dops-inspect-rid="${esc(String(jv.id || ''))}">
                 <div class="dops-event-left">
                   <span class="dops-kind raw">Partner Split</span>
@@ -3285,7 +3288,14 @@
     const canExp = owner || Boolean(!chkHub || chkHub('expenses', u));
     const canPayroll = owner || Boolean(!chkHub || chkHub('payroll', u));
     const canFullPnl = Boolean(canBooks && canExp);
-    return { canBooks, canExp, canPayroll, canFullPnl };
+    // Tax figures and partner (JV) splits follow the app's own rules (Entry seats see neither; owner 2026-11-20
+    // opened Daily Operations to Entry seats). Fail closed when the checks are not wired.
+    const chkTax = (ctx && typeof ctx.canSeeTaxBreakdown === 'function') ? ctx.canSeeTaxBreakdown : null;
+    const chkTable = (ctx && typeof ctx.canAccessTable === 'function') ? ctx.canAccessTable : null;
+    // No owner shortcut: canSeeTaxBreakdown already passes owners and refuses demo visitors.
+    const canTax = Boolean(chkTax && u && chkTax(u));
+    const canJv = Boolean(chkTable && u && chkTable('jv_distributions', u));
+    return { canBooks, canExp, canPayroll, canFullPnl, canTax, canJv };
   }
 
   function renderPanel3ExpensesPnl(ctx, dm, lens, isSingleCo) {
@@ -4287,6 +4297,8 @@
     return dm.stream.filter(row => {
       if (perms && !perms.canBooks && ['external', 'fx_loans', 'ar_ap'].includes(row.group)) return false;
       if (perms && !perms.canExp && row.group === 'expenses') return false;
+      if (perms && !perms.canTax && row.rkey === 'vat_invoices') return false;
+      if (perms && !perms.canJv && row.rkey === 'jv_distributions') return false;
       if (perms && !perms.canPayroll && row.group === 'team' && ['salaries', 'employments', 'freelance_entries', 'logistics_allowances'].includes(row.rkey)) return false;
       if (streamFilter === 'after_hours' && !row.isAfterHours) return false;
       else if (streamFilter === 'rep_shifted' && !row.isRepShifted) return false;
@@ -4379,7 +4391,8 @@
     const { STATE, esc, ic, fmtNum } = ctx;
     const perms = resolveDopsPerms(ctx);
     const commLens = STATE.dailyOpsCommLens || 'pulse';
-    const dealsLens = STATE.dailyOpsDealsLens || 'highlights';
+    const dealsLensRaw = STATE.dailyOpsDealsLens || 'highlights';
+    const dealsLens = (dealsLensRaw === 'vat_jv' && !perms.canTax && !perms.canJv) ? 'highlights' : dealsLensRaw;
     const expLens = STATE.dailyOpsExpLens || 'bills';
     const treasuryLens = STATE.dailyOpsTreasuryLens || 'bridge';
     const fuelLens = STATE.dailyOpsFuelLens || 'units';
@@ -4431,7 +4444,7 @@
               <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Quarry</button>
               <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules</button>
               <button type="button" class="dops-seg-btn${dm.belowAgreedLoads > 0 ? ' has-alert' : ''}${dealsLens === 'audit' ? ' active' : ''}" data-dops-lens="deals:audit">Audit</button>
-              <button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">Tax</button>
+              ${(perms.canTax || perms.canJv) ? `<button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">Tax</button>` : ''}
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="raw" data-ui-tip="Inspect quarry & agreement records">${fmtNum(rawCnt + agrCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="raw" data-ui-tip="New Raw Material Ticket" aria-label="New Raw Material Ticket">${ic('plus')}</button>
@@ -4810,7 +4823,7 @@
             <button type="button" class="dops-records-trigger" id="dopsOpenRecordsBtn" data-dops-open-drawer="all" data-ui-tip="Open discrete Day Records Drawer to search and inspect individual entries across all tables.">
               ${ic('ledger')}
               <span class="dops-rec-lbl">Records</span>
-              <span class="dops-records-trigger-cnt" id="dopsTotalRecordsCount">${fmtNum(dm.stream.length)}</span>
+              <span class="dops-records-trigger-cnt" id="dopsTotalRecordsCount">${fmtNum(filterDrawerRows(dm, 'all', '', perms).length)}</span>
             </button>
           </div>
         </div>

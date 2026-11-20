@@ -38,12 +38,17 @@ session holds it), and `pages` refuses a HEAD that does not contain origin/main 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
+import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import types
 import urllib.request
@@ -169,33 +174,95 @@ def stage_status() -> None:
         print(f"live site manifest   : not readable ({exc})")
 
 
-def stage_check() -> None:
-    E, D = mods()
-    env = D.build_env()
-    ok, acct = D.ensure_logged_in(env)
-    if not ok:
-        raise SystemExit(2)
-    r = D.run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--command", "SELECT COUNT(*) AS n FROM sales_tickets", "--json"], env, check=False)
-    print("D1 read exit:", r.returncode, (r.stdout or "").strip()[-220:].replace("\n", " "))
-    if r.returncode != 0:
-        print((r.stderr or "")[-400:])
-        raise SystemExit(3)
-    print("account id found:", bool(acct), "| live store updatedAt:", live_updated_at())
-    stage_status()
+def _file_sha10(path: Path) -> str:
+    return sha10(path.read_bytes()) if path.is_file() else ""
 
 
-def stage_commit(message: str = "") -> None:
-    """Release commit from blobs: the public manifest with the new seed hashes, and app/index.html pointing at it.
-    The seeds themselves are private (R2) and are not in this repository. The working tree is left as it is."""
-    if git(["diff", "--cached", "--name-only"]).stdout.strip():
-        raise SystemExit("ABORT: the isabi index has staged changes; a data release commits only its own two files")
-    core = _seed_file("core").read_bytes()
-    recs = _seed_file("records").read_bytes()
-    core_h, recs_h = sha10(core), sha10(recs)
-    hm = head_manifest()
-    if hm.get("coreHash") == core_h and hm.get("recordsHash") == recs_h:
-        print(f"Nothing to commit: HEAD already names core {core_h} / records {recs_h}")
+def _suite_stamp_path() -> Path:
+    E, _ = mods()
+    return E.OUT_DIR / "dataonly_suite_stamp.json"
+
+
+def _expected_suite_stamp(core_h: str, recs_h: str) -> dict:
+    return {
+        "coreHash": core_h,
+        "recordsHash": recs_h,
+        "industriesHash": _file_sha10(_seed_file("industries")),
+        "dbSha": _file_sha10(ISABI_APP / "data" / "mfg.db"),
+        "snapshotSha": _file_sha10(ISABI_APP / "data" / "mfg_snapshot.json"),
+        "isabiHead": head_sha(),
+        "isabiAppHead": git(["rev-parse", "HEAD"], cwd=ISABI_APP).stdout.strip(),
+        "shellVersion": shell_version(),
+    }
+
+
+def _extract_tar_bytes(tar_bytes: bytes, dest: Path, strip_prefix: str = "") -> None:
+    if not tar_bytes:
         return
+    dest_res = dest.resolve()
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tf:
+        for member in tf.getmembers():
+            if member.issym() or member.islnk():
+                raise SystemExit(f"ABORT: link entry not allowed in git archive: {member.name!r}")
+            raw_name = member.name or ""
+            if "\\" in raw_name or raw_name.startswith("/"):
+                raise SystemExit(f"ABORT: unsafe path in git archive: {member.name!r}")
+            rel = raw_name
+            while rel.startswith("./"):
+                rel = rel[2:]
+            if strip_prefix:
+                if not rel.startswith(strip_prefix):
+                    continue
+                rel = rel[len(strip_prefix):]
+            if not rel or rel == ".":
+                continue
+            raw_parts = [p for p in rel.split("/") if p]
+            if any(p == ".." for p in raw_parts) or os.path.isabs(rel):
+                raise SystemExit(f"ABORT: unsafe path in git archive: {member.name!r}")
+            norm_rel = os.path.normpath(rel)
+            if os.path.isabs(norm_rel) or norm_rel == ".." or norm_rel.startswith(".." + os.sep):
+                raise SystemExit(f"ABORT: unsafe path in git archive: {member.name!r}")
+            target = (dest_res / norm_rel).resolve()
+            if target != dest_res and not target.is_relative_to(dest_res):
+                raise SystemExit(f"ABORT: path escapes suite sandbox: {member.name!r}")
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif member.isreg():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                src_f = tf.extractfile(member)
+                if src_f is not None:
+                    with src_f:
+                        target.write_bytes(src_f.read())
+
+
+def _node_runtime() -> tuple[str, dict] | None:
+    env = dict(os.environ)
+    found = shutil.which("node")
+    if found:
+        return found, env
+    for c in (
+        os.path.join(os.path.expanduser("~"), ".local", "node", "node.exe"),
+        r"C:\Program Files\nodejs\node.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Microsoft VS Code", "Code.exe"),
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+    ):
+        if os.path.isfile(c):
+            if os.path.basename(c).lower() == "code.exe":
+                env["ELECTRON_RUN_AS_NODE"] = "1"
+            return c, env
+    return None
+
+
+def _run_node_suite(suite_cwd: Path) -> int:
+    rt = _node_runtime()
+    if rt is None:
+        raise SystemExit("ABORT: node runtime not found for build/verify_mfg.mjs (install Node or VS Code, or pass --skip-suite)")
+    node_exe, node_env = rt
+    r = subprocess.run([node_exe, "build/verify_mfg.mjs"], cwd=str(suite_cwd), env=node_env, check=False)
+    return int(r.returncode)
+
+
+def _build_candidate_manifest_and_index(hm: dict, core: bytes, recs: bytes, core_h: str, recs_h: str) -> tuple[dict, bytes, bytes, str]:
     snap_gen = ""
     try:
         with open(ISABI_APP / "data" / "mfg_snapshot.json", encoding="utf-8") as fh:
@@ -229,6 +296,99 @@ def stage_commit(message: str = "") -> None:
     if len(hits) != 1:
         raise SystemExit(f"ABORT: app/index.html references seed_manifest.js {len(hits)} times; expected 1")
     idx_bytes = INDEX_MANIFEST_RE.sub(lambda mo: mo.group(1) + b"&amp;d=" + core_h.encode("ascii"), old_idx)
+    return new_m, man_bytes, idx_bytes, snap_gen
+
+
+def run_desktop_suite_against_new_seed(skip_suite: bool = False) -> None:
+    if skip_suite:
+        print("[data-only] --skip-suite: skipping desktop regression suite gate.")
+        return
+    core = _seed_file("core").read_bytes()
+    recs = _seed_file("records").read_bytes()
+    core_h, recs_h = sha10(core), sha10(recs)
+    hm = head_manifest()
+    expected = _expected_suite_stamp(core_h, recs_h)
+    stamp_path = _suite_stamp_path()
+    if stamp_path.is_file():
+        try:
+            saved = json.loads(stamp_path.read_text(encoding="utf-8"))
+        except Exception:
+            saved = {}
+        if isinstance(saved, dict) and saved.get("passed") is True and all(saved.get(k) == expected[k] for k in expected):
+            print(f"[data-only] Desktop suite already passed for candidate seed {core_h}/{recs_h}; reusing stamp.")
+            return
+    _, man_bytes, idx_bytes, _ = _build_candidate_manifest_and_index(hm, core, recs, core_h, recs_h)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="isabi-dataonly-suite-"))
+    try:
+        app_arc = git(["archive", "--format=tar", "HEAD"], cwd=ISABI_APP, text=False, check=True).stdout
+        _extract_tar_bytes(app_arc, tmp_dir)
+        site_res = git(["archive", "--format=tar", "HEAD", "--", "app"], cwd=ISABI, text=False, check=False)
+        if site_res.returncode == 0 and site_res.stdout:
+            _extract_tar_bytes(site_res.stdout, tmp_dir, strip_prefix="app/")
+        # isabi/app/js/local_dev_roster.js is intentionally emptied (`[]`) by sync_app.py for public deploys;
+        # restore isabi-app's committed/local dev roster inside this disposable sandbox only so offline verify_mfg.mjs login works.
+        local_roster = ISABI_APP / "js" / "local_dev_roster.js"
+        if local_roster.is_file():
+            (tmp_dir / "js").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(local_roster, tmp_dir / "js" / "local_dev_roster.js")
+        else:
+            head_roster = git(["cat-file", "blob", "HEAD:js/local_dev_roster.js"], cwd=ISABI_APP, text=False, check=False)
+            if head_roster.returncode == 0 and head_roster.stdout:
+                (tmp_dir / "js").mkdir(parents=True, exist_ok=True)
+                (tmp_dir / "js" / "local_dev_roster.js").write_bytes(head_roster.stdout)
+        (tmp_dir / "data").mkdir(parents=True, exist_ok=True)
+        for fn in ("mfg.db", "mfg_snapshot.json", "industry_legacy_id_map.json"):
+            src_p = ISABI_APP / "data" / fn
+            if src_p.is_file():
+                shutil.copy2(src_p, tmp_dir / "data" / fn)
+        (tmp_dir / "js").mkdir(parents=True, exist_ok=True)
+        for seed_p in (ISABI_APP / "js").glob("seed_*.json"):
+            if seed_p.is_file():
+                shutil.copy2(seed_p, tmp_dir / "js" / seed_p.name)
+        (tmp_dir / "js" / "seed_manifest.js").write_bytes(man_bytes)
+        (tmp_dir / "index.html").write_bytes(idx_bytes)
+        print(f"[data-only] Running desktop suite (node build/verify_mfg.mjs) against candidate seed {core_h}/{recs_h}...", flush=True)
+        rc = _run_node_suite(tmp_dir)
+        if rc != 0:
+            raise SystemExit(f"ABORT: desktop suite (node build/verify_mfg.mjs) failed with exit {rc} against candidate seed {core_h}/{recs_h}")
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp_payload = {**expected, "passed": True, "ts": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        stamp_path.write_text(json.dumps(stamp_payload, indent=2), encoding="utf-8")
+        print(f"[data-only] Desktop suite passed and stamped for candidate seed {core_h}/{recs_h}.", flush=True)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def stage_check(skip_suite: bool = False) -> None:
+    E, D = mods()
+    env = D.build_env()
+    ok, acct = D.ensure_logged_in(env)
+    if not ok:
+        raise SystemExit(2)
+    r = D.run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--command", "SELECT COUNT(*) AS n FROM sales_tickets", "--json"], env, check=False)
+    print("D1 read exit:", r.returncode, (r.stdout or "").strip()[-220:].replace("\n", " "))
+    if r.returncode != 0:
+        print((r.stderr or "")[-400:])
+        raise SystemExit(3)
+    print("account id found:", bool(acct), "| live store updatedAt:", live_updated_at())
+    stage_status()
+    run_desktop_suite_against_new_seed(skip_suite=skip_suite)
+
+
+def stage_commit(message: str = "", skip_suite: bool = False) -> None:
+    """Release commit from blobs: the public manifest with the new seed hashes, and app/index.html pointing at it.
+    The seeds themselves are private (R2) and are not in this repository. The working tree is left as it is."""
+    if git(["diff", "--cached", "--name-only"]).stdout.strip():
+        raise SystemExit("ABORT: the isabi index has staged changes; a data release commits only its own two files")
+    core = _seed_file("core").read_bytes()
+    recs = _seed_file("records").read_bytes()
+    core_h, recs_h = sha10(core), sha10(recs)
+    hm = head_manifest()
+    if hm.get("coreHash") == core_h and hm.get("recordsHash") == recs_h:
+        print(f"Nothing to commit: HEAD already names core {core_h} / records {recs_h}")
+        return
+    run_desktop_suite_against_new_seed(skip_suite=skip_suite)
+    _, man_bytes, idx_bytes, snap_gen = _build_candidate_manifest_and_index(hm, core, recs, core_h, recs_h)
     staged = {}
     for path, data in (("app/js/seed_manifest.js", man_bytes), ("app/index.html", idx_bytes)):
         sha = git(["hash-object", "-w", "--stdin"], input_bytes=data).stdout.decode("ascii").strip()
@@ -507,11 +667,12 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Publish a Manufacturing data top-up without shipping the shell.")
+    ap = argparse.ArgumentParser(description="Publish a Manufacturing data top-up without shipping the shell.", allow_abbrev=False)
     ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "r2", "pages"])
     ap.add_argument("--message", default="", help="Commit / deployment message (default: derived from the seed date)")
     ap.add_argument("--keep", action="store_true", help="pages: keep the release worktree and bundle for inspection")
     ap.add_argument("--no-release-lock", action="store_true", help="upload / r2 / pages without the release lock (owner only)")
+    ap.add_argument("--skip-suite", action="store_true", help="check / commit: emergency bypass of the desktop suite gate")
     a = ap.parse_args()
     global NO_RELEASE_LOCK
     NO_RELEASE_LOCK = a.no_release_lock
@@ -521,9 +682,9 @@ def main() -> None:
     if a.stage == "status":
         stage_status()
     elif a.stage == "check":
-        stage_check()
+        stage_check(skip_suite=a.skip_suite)
     elif a.stage == "commit":
-        stage_commit(a.message)
+        stage_commit(a.message, skip_suite=a.skip_suite)
     elif a.stage == "export":
         stage_export()
     elif a.stage == "upload":

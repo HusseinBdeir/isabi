@@ -13385,6 +13385,9 @@
       "Tax Invoice": "فاتورة ضريبية",
       "Tax Invoices": "فواتير ضريبية",
       "Discounts / Partner Splits": "الحسومات / حصص الشركاء",
+      "Discounts": "الحسومات",
+      "No Exceptions": "بلا استثناءات",
+      "No shift exceptions recorded": "لا استثناءات مسجلة في المناوبة",
       "Joint Venture Partner": "شريك ائتلاف",
       "Partner Share": "حصة الشريك",
       "Quarry Loads": "نقلات الكسارة",
@@ -13644,7 +13647,13 @@
       "Net Earned Commission ($)": "صافي العمولة المكتسبة ($)",
       "Gross Commission minus Client Discount": "إجمالي العمولة ناقص حسم العميل",
       "GWP minus Gross Commission": "الأقساط المكتتبة ناقص إجمالي العمولة",
-      "Producer / Account Exec": "المُنتِج / مسؤول الحساب"
+      "Producer / Account Exec": "المُنتِج / مسؤول الحساب",
+      "Allocated to Open Invoices ($)": "المخصّص للفواتير المفتوحة ($)",
+      "Unallocated Credit ($)": "الرصيد الدائن غير المخصّص ($)",
+      "Entered By": "أُدخل بواسطة",
+      "Attachments": "المرفقات",
+      "Close Preview": "إغلاق المعاينة",
+      "Matched Entry Preview": "معاينة القيد المطابق"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -27011,6 +27020,9 @@
       "Tax Invoice": "Facture fiscale",
       "Tax Invoices": "Factures fiscales",
       "Discounts / Partner Splits": "Remises / Parts associés",
+      "Discounts": "Remises",
+      "No Exceptions": "Aucune exception",
+      "No shift exceptions recorded": "Aucune exception de poste enregistrée",
       "Joint Venture Partner": "Partenaire coentreprise",
       "Partner Share": "Part associé",
       "Quarry Loads": "Voyages carrière",
@@ -27270,7 +27282,13 @@
       "Net Earned Commission ($)": "Commission nette acquise ($)",
       "Gross Commission minus Client Discount": "Commission brute moins remise client",
       "GWP minus Gross Commission": "GWP moins commission brute",
-      "Producer / Account Exec": "Producteur / Chargé de compte"
+      "Producer / Account Exec": "Producteur / Chargé de compte",
+      "Allocated to Open Invoices ($)": "Alloué aux factures ouvertes ($)",
+      "Unallocated Credit ($)": "Crédit non alloué ($)",
+      "Entered By": "Saisi par",
+      "Attachments": "Pièces jointes",
+      "Close Preview": "Fermer l'aperçu",
+      "Matched Entry Preview": "Aperçu de l'écriture correspondante"
     }
   };
 
