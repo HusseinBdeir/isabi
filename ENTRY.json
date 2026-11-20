@@ -3,6 +3,12 @@
   "branch": "wt/entry-peek-fifo-dataonly",
   "sha": "e2c5beb81a4e63e47b4413fa4cf8fe4325b84804"
  },
+ "batch": {
+  "at": "2026-11-20T16:59:41Z",
+  "holder": "agy-99d16ac4",
+  "lockId": "c9c5962fa6464225ac1b7231aecaae9a",
+  "version": "19.6.404"
+ },
  "gates": [
   "isabi-app: node build/verify_near_copy.mjs",
   "isabi-app: node build/verify_changed_entries_ui.mjs",
