@@ -3,6 +3,12 @@
   "branch": "wt/steep-wear-all-recs",
   "sha": "21a26cdec46c58797fff025644dd00466971bfaf"
  },
+ "batch": {
+  "at": "2026-11-20T20:57:15Z",
+  "holder": "agy-efb59b71",
+  "lockId": "0aa815ba216f4b4c8705c7b52dbc9190",
+  "version": "19.6.406"
+ },
  "gates": [
   "isabi-app: node build/verify_steep_corridor_wear.mjs"
  ],
