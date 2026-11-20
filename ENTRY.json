@@ -1,0 +1,24 @@
+{
+ "app": {
+  "branch": "wt/rescue-failed-sessions",
+  "sha": "2d74f8f78376bf6b66e009d711c9dc4cddc26786"
+ },
+ "gates": [
+  "isabi-app: node build/verify_phase17.mjs",
+  "isabi-app: node build/verify_site_recs.mjs",
+  "isabi-app: node build/verify_phase5_workflow.mjs",
+  "isabi: node build/verify_web_push.mjs",
+  "isabi: python build/verify_export_runtime_tables.py"
+ ],
+ "holder": "THEO a00c0fe7 (rescue-failed-sessions)",
+ "id": "20261120T210905Z-4e4b8a28",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T21:09:05Z",
+ "seenAt": "2026-11-20T21:09:05Z",
+ "site": {
+  "branch": "wt/rescue-failed-sessions",
+  "sha": "7d4496b17762697c816ae619e584b0cd458aeec6"
+ },
+ "state": "waiting",
+ "summary": "Rescue 4 unshipped sessions (#1 Period Close, #2 Site Clean-up, #3a runtime D1 tables, #5 Approval Push coexistence)"
+}
