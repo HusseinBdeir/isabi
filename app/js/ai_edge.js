@@ -2139,21 +2139,26 @@
     }).filter(x => x.lbl && x.val);
 
     const k = (D && typeof D.getKPI === 'function') ? D.getKPI() : {};
-    const snItems = (D && typeof D.buildSentinelItems === 'function') ? D.buildSentinelItems() : [];
+    // Sentinel titles and ledger tie status only for seats that may open Sentinels (Entry seats see Daily
+    // Operations but not Sentinels or the ledger; fail closed when the check is not wired).
+    const canSn = Boolean(D && typeof D.canViewView === 'function' && D.canViewView('sentinels', typeof D.activeUser === 'function' ? D.activeUser() : undefined));
+    const snItems = (canSn && typeof D.buildSentinelItems === 'function') ? D.buildSentinelItems() : [];
     const openSn = snItems.filter(s => s && s.severity !== 'ok');
 
     const bullets = [];
     if (kpiPairs.length >= 2) {
       bullets.push(`${coLabel} recorded ${kpiPairs[0].lbl} of ${kpiPairs[0].val} alongside ${kpiPairs[1].lbl} of ${kpiPairs[1].val}.`);
     } else {
-      bullets.push(`${coLabel} period sales stand at ${fmtUSD(k.sales_ttc || 0, 0)} with trial balance variance locked at $0.00.`);
+      bullets.push(canSn
+        ? `${coLabel} period sales stand at ${fmtUSD(k.sales_ttc || 0, 0)} with trial balance variance locked at $0.00.`
+        : `${coLabel} period sales stand at ${fmtUSD(k.sales_ttc || 0, 0)}.`);
     }
     if (kpiPairs.length >= 4) {
       bullets.push(`Operational cost & margin telemetry: ${kpiPairs[2].lbl} at ${kpiPairs[2].val} and ${kpiPairs[3].lbl} at ${kpiPairs[3].val}.`);
     }
     if (openSn.length > 0) {
       bullets.push(`Attention focus: ${openSn.length} active audit rule${openSn.length === 1 ? '' : 's'} (${sanitizeOutward(openSn[0].title)}) flagged for supervisor sign-off.`);
-    } else {
+    } else if (canSn) {
       bullets.push(`Audit hygiene: 0 open Sentinel exceptions on this scope; all double-entry Classes 1-7 ties are clean.`);
     }
     return { coLabel, activeInd, bullets };
@@ -2163,6 +2168,8 @@
     if (!D || !D.STATE || D.STATE.view !== 'daily_ops') return;
     const stage = $('dailyOpsStage') || $('workspace');
     if (!stage || stage.querySelector('#dopsAiBriefBtn')) return;
+    // Restricted cockpit (e.g. Holding without the books): nothing to explain, so no AI brief button.
+    if (stage.querySelector('.dops-empty') && !stage.querySelector('.dops-kpi')) return;
     const ctrlBar = stage.querySelector('.dops-bar-controls') || stage.querySelector('.dops-top-bar') || stage.firstElementChild;
     if (!ctrlBar) return;
 

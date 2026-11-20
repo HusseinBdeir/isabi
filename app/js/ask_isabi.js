@@ -6001,7 +6001,10 @@
       }
     }
 
-    const allSnRaw = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    // Sentinel titles and "all clear" lines only for seats that may open Sentinels (Entry seats reach the
+    // Daily Operations briefing since 2026-11-20; fail closed when the check is not wired).
+    const canSnBrief = Boolean(_ctx && typeof _ctx.canViewView === 'function' && _ctx.canViewView('sentinels', user));
+    const allSnRaw = (canSnBrief && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
     const allSn = canViewBooks ? (allSnRaw || []) : (allSnRaw || []).filter(s => s && s.id !== 'S1');
     const openSn = allSn.filter(s => s && s.severity && s.severity !== 'ok');
     const critSn = openSn.filter(s => s.severity === 'crit');
@@ -6016,8 +6019,8 @@
     const netAbsMoney = formatSpokenMoney(Math.abs(dayNetCash), safeLang);
     const roundedRev = Math.round(dayRevUsd);
     const roundedNet = Math.round(dayNetCash);
-    const openCount = hoSnap ? Number(hoSnap.openSentinelCount || 0) : openSn.length;
-    const critCount = hoSnap ? Number(hoSnap.critSentinelCount || 0) : critSn.length;
+    const openCount = !canSnBrief ? 0 : (hoSnap ? Number(hoSnap.openSentinelCount || 0) : openSn.length);
+    const critCount = !canSnBrief ? 0 : (hoSnap ? Number(hoSnap.critSentinelCount || 0) : critSn.length);
     const absDeltaPct = Math.round(Math.abs(revDeltaPct));
 
     const sentences = [];
@@ -6045,6 +6048,8 @@
       }
       if (anomalyCount > 0 && topShiftPriority) {
         sentences.push(`أولوية تسليم المناوبة: ${topShiftPriority}${openCount > 0 ? `، إلى جانب ${openCount} تنبيهات رقابية نشطة` : ''}.`);
+      } else if (!canSnBrief) {
+        // No control-status line for seats that cannot open Sentinels.
       } else if (openCount === 0) {
         sentences.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
       } else if (openCount === 1) {
@@ -6076,6 +6081,8 @@
       }
       if (anomalyCount > 0 && topShiftPriority) {
         sentences.push(`Priorité de passation : ${topShiftPriority}${openCount > 0 ? `, ainsi que ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''}` : ''}.`);
+      } else if (!canSnBrief) {
+        // No control-status line for seats that cannot open Sentinels.
       } else if (openCount === 0) {
         sentences.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
       } else if (openCount === 1) {
@@ -6107,6 +6114,8 @@
       }
       if (anomalyCount > 0 && topShiftPriority) {
         sentences.push(`Top handover priority: ${topShiftPriority}${openCount > 0 ? `, alongside ${openCount} active Sentinel ${openCount === 1 ? 'flag' : 'flags'}` : ''}.`);
+      } else if (!canSnBrief) {
+        // No control-status line for seats that cannot open Sentinels.
       } else if (openCount === 0) {
         sentences.push('All Sentinel controls are clear with zero active flags.');
       } else if (openCount === 1) {
@@ -10650,7 +10659,7 @@
       dayOpProfit: (snap.canViewProfit != null ? snap.canViewProfit : snap.canViewBooks) ? snap.dayOpProfit : null,
       closingTillUsd: snap.canViewBooks ? snap.closingTillUsd : null,
       dayNetCash: snap.canViewBooks ? snap.dayNetCash : null,
-      pnlBridgeBalanced: Boolean(snap.pnlBridgeBalanced),
+      pnlBridgeBalanced: (snap.canViewProfit != null ? snap.canViewProfit : snap.canViewBooks) ? Boolean(snap.pnlBridgeBalanced) : undefined,
       pnlBridgeVarianceUsd: snap.pnlBridgeVarianceUsd || 0,
       vatRatePct: snap.vatRatePct,
       vatRegime: safeLang === 'ar' ? snap.vatRegimeAr : (safeLang === 'fr' ? snap.vatRegimeFr : snap.vatRegimeEn),

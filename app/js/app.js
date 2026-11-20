@@ -11971,7 +11971,8 @@
       if (view === 'kiosks') return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master || p.rights.read_ops);
       if (view === 'cashflow') return !!(p.rights.read_ops || p.rights.read_fin || p.rights.enter_accounting || p.rights.enter_dispatch || p.dashboards.dash_financial_gl || p.dashboards.dash_expenses_vat);
       if (view === 'overview' || view === 'pbi') return anyDash;
-      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_overview || p.dashboards.dash_executive || p.dashboards.dash_financial_gl);
+      // Entry seats on custom dashboard/statement tiers keep Daily Operations (owner 2026-11-20); true Custom roles unchanged.
+      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_overview || p.dashboards.dash_executive || p.dashboards.dash_financial_gl || (!/^Custom/i.test(role) && /Entry/i.test(role) && !/Sales/i.test(role)));
       if (view === 'statements') return anyStmt;
       if (view === 'payroll') return !!(p.rights.read_ops || p.rights.read_fin || p.dashboards.dash_payroll_hr || p.rights.enter_payroll_jv || p.rights.enter_master);
       if (view === 'ledger' || view === 'gl' || view === 'sentinels') return !!(p.rights.read_fin || p.dashboards.dash_financial_gl);
@@ -11985,7 +11986,10 @@
     if (view === 'overview' || view === 'pbi') return pbi !== 'none';
     if (view === 'expenses') return !/Sales/i.test(role);
     if (view === 'raw' || view === 'fleet' || view === 'suppliers' || view === 'ap' || view === 'payroll') return !/Sales/i.test(role);
-    if (view === 'daily_ops' || view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
+    // Daily Operations: Entry seats see the day they keyed (owner 2026-11-20); the cockpit,
+    // sibling cockpits and handover already mask profit, cash, till and books for non-finance seats.
+    if (view === 'daily_ops') return (pbi === 'full' || isOwner(u) || /Entry/i.test(role)) && !/Sales/i.test(role);
+    if (view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
     if (view === 'statements') return st !== 'none';
     return true;
   }
@@ -65866,12 +65870,19 @@
     const canViewExp = Boolean(isOwner(dopsUser) || canViewHub('expenses', dopsUser));
     const canViewDirect = Boolean(canViewBooks && canViewExp);
     const canViewProfit = canViewDirect;
+    // Holding's day is group treasury (per-company profit, partner splits): seats without the books get the
+    // restricted view, as the handover does (Entry seats reach Daily Operations since 2026-11-20).
+    if (!canViewBooks && ind === 'Holding & Treasury') {
+      return `<div class="dops-stage" id="dailyOpsStage"><div class="dops-empty"><strong>Restricted Treasury Scope</strong><p>Treasury and external cash flows require Cash Flow &amp; General Ledger permissions.</p></div></div>`;
+    }
 
     const ds0 = buildIndustryDomainDataset(ind, 0);
     const ds1 = buildIndustryDomainDataset(ind, 1);
     const ds2 = buildIndustryDomainDataset(ind, 2);
     const rawSentinels = buildSentinelItems();
-    const sentinels = canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1');
+    // Seats that cannot open Sentinels (Entry) get no alert titles or counts here.
+    const sibCanSn = canViewView('sentinels', dopsUser);
+    const sentinels = !sibCanSn ? [] : (canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1'));
     const openSn = sentinels.filter(s => s && s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
@@ -66244,7 +66255,7 @@
     });
     const sibPlantPop = JSON.stringify({
       title: `Workforce & Controls · ${targetDate}`,
-      badge: openSn.length > 0 ? `${openSn.length} Open` : 'All Clear',
+      badge: !sibCanSn ? `${fmtNum(empRows.length)} Staff` : (openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'),
       norm: sibPopNorm,
       rows: [
         { label: 'Active Staff', value: fmtNum(empRows.length), color: '#2356A8' },
@@ -66356,7 +66367,7 @@
           </div>
           <div class="dops-bar-controls">
             <div class="dops-att-strip" id="dopsAttentionStrip" role="group" aria-label="Needs Attention">
-              ${sibHasAtt ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">All Clear</span></span>`}
+              ${sibHasAtt ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">${sibCanSn ? 'All Clear' : 'No Exceptions'}</span></span>`}
               ${sibDayLoss ? `<button type="button" class="dops-att-chip crit" data-nav-jump="${canViewExp ? 'expenses' : 'ledger'}" data-ui-tip="Costs were higher than sales on this day. Click to see the cost breakdown.">${ic('warn')}<span class="dops-att-lbl">Day Loss</span><bdi class="dops-att-val">${fmtUSD(dayOpProfit, 0)}</bdi></button>` : ''}
               ${sibTillNeg ? `<button type="button" class="dops-att-chip crit" data-nav-jump="cashflow" data-ui-tip="The US dollar cash till is below zero as of this day. Click to review cash movements.">${ic('cashflow')}<span class="dops-att-lbl">Till Negative</span><bdi class="dops-att-val">${fmtUSD(closingTillUsd, 0)}</bdi></button>` : ''}
               ${sibSalesLow ? `<button type="button" class="dops-att-chip warn" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" data-ui-tip="Compared with the average of the last 7 active days">${ic('sales')}<span class="dops-att-lbl">Sales Below Usual</span><bdi class="dops-att-val">${sibSalesVs7}%</bdi></button>` : ''}
@@ -66450,7 +66461,7 @@
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" data-chart-pop="${esc(sibPlantPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Team &amp; Alerts</span>
-              <span class="dops-kpi-delta ${openSn.length > 0 ? 'warn' : 'good'}">${openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'}</span>
+              ${sibCanSn ? `<span class="dops-kpi-delta ${openSn.length > 0 ? 'warn' : 'good'}">${openSn.length > 0 ? `${openSn.length} Open` : 'All Clear'}</span>` : ''}
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(empRows.length)} Staff</span>
@@ -66647,7 +66658,7 @@
                 <h2 class="dops-card-title">${canViewProfit ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend'}</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>
+                ${sibCanSn ? `<button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>` : ''}
                 <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(p6EmpRows.length)}</button>
               </div>
             </div>
@@ -66662,7 +66673,7 @@
               </div>
               <div class="dops-digest-bar dops-workforce-foot">
                 <button type="button" class="dops-dpill" data-nav-jump="payroll">${ic('payroll')} ${fmtNum(empRows.length)} Staff</button>
-                <button type="button" class="dops-dpill${openSn.length > 0 ? ' warn' : ' good'}" data-nav-jump="sentinels">${ic(openSn.length > 0 ? 'warn' : 'check_circle')} ${fmtNum(openSn.length)} Alerts</button>
+                ${sibCanSn ? `<button type="button" class="dops-dpill${openSn.length > 0 ? ' warn' : ' good'}" data-nav-jump="sentinels">${ic(openSn.length > 0 ? 'warn' : 'check_circle')} ${fmtNum(openSn.length)} Alerts</button>` : ''}
                 ${canViewExp ? `<button type="button" class="dops-dpill" data-nav-jump="documents">${ic('expenses')} ${fmtNum(docRows.length)} Documents</button>` : ''}
               </div>
             </div>
@@ -76808,7 +76819,8 @@
       });
     }
 
-    const visibleSentinels = canViewBooks ? sentinels : sentinels.filter(s => s && s.id !== 'S1');
+    // Seats that cannot open Sentinels (Entry) get no alert titles in the handover or its spoken briefing.
+    const visibleSentinels = !canViewView('sentinels', u) ? [] : (canViewBooks ? sentinels : sentinels.filter(s => s && s.id !== 'S1'));
     const openSentinels = visibleSentinels.filter(s => s && s.severity && s.severity !== 'ok');
     const critSentinels = openSentinels.filter(s => s.severity === 'crit');
     if (openSentinels.length > 0 && anomalies.length === 0) {
@@ -76850,9 +76862,11 @@
 
     const anomalyCount = anomalies.length;
     const topAnom = anomalies[0] || null;
-    const topAnomalyEn = topAnom ? topAnom.en : 'All shift controls clear';
-    const topAnomalyAr = topAnom ? topAnom.ar : 'جميع ضوابط المناوبة سليمة';
-    const topAnomalyFr = topAnom ? topAnom.fr : 'Tous les contrôles du poste sont conformes';
+    // Seats that cannot open Sentinels get neutral wording: their "clear" covers shift checks only.
+    const hoCanSn = canViewView('sentinels', u);
+    const topAnomalyEn = topAnom ? topAnom.en : (hoCanSn ? 'All shift controls clear' : 'No shift exceptions recorded');
+    const topAnomalyAr = topAnom ? topAnom.ar : (hoCanSn ? 'جميع ضوابط المناوبة سليمة' : 'لا استثناءات مسجلة في المناوبة');
+    const topAnomalyFr = topAnom ? topAnom.fr : (hoCanSn ? 'Tous les contrôles du poste sont conformes' : 'Aucune exception de poste enregistrée');
 
     const priorLblEn = isCalendarYesterday ? 'vs Yesterday' : `vs ${priorDate || 'Prior Day'}`;
     const priorLblAr = isCalendarYesterday ? 'مقارنة بالأمس' : `مقارنة بـ ${priorDate || 'اليوم السابق'}`;
@@ -76923,17 +76937,17 @@
         valStr: hoTillOff ? 'Not Tracked Yet' : fmtUSD(closingTillRaw, 0),
         valAr: hoTillOff ? 'غير متتبَّع بعد' : fmtUSD(closingTillRaw, 0),
         valFr: hoTillOff ? 'Pas encore suivi' : fmtUSD(closingTillRaw, 0),
-        subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : 'Clear'}`,
-        subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : 'سليم'}`,
-        subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : 'Conforme'}`,
+        subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : (hoCanSn ? 'Clear' : 'No Exceptions')}`,
+        subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : (hoCanSn ? 'سليم' : 'بلا استثناءات')}`,
+        subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : (hoCanSn ? 'Conforme' : 'Aucune exception')}`,
         tone: anomalyCount > 0 || critSentinels.length > 0 ? 'warn' : 'ok'
       } : {
         labelEn: 'Shift Priorities',
         labelAr: 'أولويات تسليم المناوبة',
         labelFr: 'Priorités de passation',
-        valStr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} Open` : 'All Clear',
-        valAr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} مفتوحة` : 'سليمة بالكامل',
-        valFr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} ouverte(s)` : 'Tout conforme',
+        valStr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} Open` : (hoCanSn ? 'All Clear' : 'No Exceptions'),
+        valAr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} مفتوحة` : (hoCanSn ? 'سليمة بالكامل' : 'بلا استثناءات'),
+        valFr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} ouverte(s)` : (hoCanSn ? 'Tout conforme' : 'Aucune exception'),
         subEn: sanitizePlain(topAnomalyEn).slice(0, 44),
         subAr: sanitizePlain(topAnomalyAr).slice(0, 44),
         subFr: sanitizePlain(topAnomalyFr).slice(0, 44),
@@ -77017,9 +77031,9 @@
           : `Passation de poste (${companyFr} · ${targetDate}) : ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (Comptant ${fmtUSD(cashSalesUsd, 0)}, Crédit ${fmtUSD(creditSalesUsd, 0)}). Priorité équipe suivante : ${topAnomalyFr}.`)
     };
 
-    const statusBadgeEn = anomalyCount > 0 ? `${anomalyCount} Shift Priority` : (openSentinels.length > 0 ? `${openSentinels.length} Watchdogs` : 'Shift Clear');
-    const statusBadgeAr = anomalyCount > 0 ? `${anomalyCount} أولويات مناوبة` : (openSentinels.length > 0 ? `${openSentinels.length} تنبيهات` : 'مناوبة سليمة');
-    const statusBadgeFr = anomalyCount > 0 ? `${anomalyCount} priorité(s)` : (openSentinels.length > 0 ? `${openSentinels.length} alerte(s)` : 'Poste conforme');
+    const statusBadgeEn = anomalyCount > 0 ? `${anomalyCount} Shift Priority` : (openSentinels.length > 0 ? `${openSentinels.length} Watchdogs` : (hoCanSn ? 'Shift Clear' : 'No Exceptions'));
+    const statusBadgeAr = anomalyCount > 0 ? `${anomalyCount} أولويات مناوبة` : (openSentinels.length > 0 ? `${openSentinels.length} تنبيهات` : (hoCanSn ? 'مناوبة سليمة' : 'بلا استثناءات'));
+    const statusBadgeFr = anomalyCount > 0 ? `${anomalyCount} priorité(s)` : (openSentinels.length > 0 ? `${openSentinels.length} alerte(s)` : (hoCanSn ? 'Poste conforme' : 'Aucune exception'));
 
     const scopeKey = `dops_ho|${u ? u.id : 'anon'}|${canViewBooks ? 1 : 0}|${canViewExp ? 1 : 0}|${evalCoKey}|${targetInd}|${targetDate}|ah:${includeAfterHours ? 1 : 0}|rev:${Math.round(dayRevUsd * 100)}|prof:${canViewProfit ? Math.round(dayOpProfitRaw * 100) : 'np'}|till:${canViewBooks ? Math.round(closingTillRaw * 100) : 'nb'}|anom:${anomalyCount}|sn:${openSentinels.length}|${SEED._customRev || 0}:${STATE._customRev || 0}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}|${punchSig}`;
 
@@ -77063,8 +77077,10 @@
       dayOpProfit: canViewProfit ? dayOpProfitRaw : null,
       closingTillUsd: canViewBooks && !hoTillOff ? closingTillRaw : null,
       dayNetCash: canViewBooks ? dayNetCashRaw : null,
-      pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : tbBalanced,
+      // Ledger tie status stays with seats that see the books (Entry seats reach this handover since 2026-11-20).
+      pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : undefined,
       pnlBridgeVarianceUsd: (canViewProfit && !pnlBridgeBalanced) ? pnlBridgeDiff : 0,
+      canViewSentinels: canViewView('sentinels', u),
       vatRatePct,
       vatRegimeEn,
       vatRegimeAr,
@@ -77112,9 +77128,10 @@
         repShiftedCount,
         anomalyCount,
         topAnomaly: topAnomalyEn,
-        openSentinelCount: openSentinels.length,
+        // Unknown (not 0) for seats that cannot open Sentinels, so the AI never reads it as "no alerts".
+        openSentinelCount: canViewView('sentinels', u) ? openSentinels.length : undefined,
         vatRatePct,
-        pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : tbBalanced,
+        pnlBridgeBalanced: canViewProfit ? pnlBridgeBalanced : undefined,
         tbBalanced: canViewBooks ? tbBalanced : undefined
       }
     };
@@ -77609,11 +77626,13 @@
 
     const viewAllowed = typeof canViewView === 'function' ? canViewView(viewId, u) : true;
     const canCash = Boolean(typeof canViewHub === 'function' ? canViewHub('cashflow', u) : true);
-    const canViewBooks = Boolean(canCash && (typeof canViewHub === 'function' ? canViewHub('books', u) : true));
+    // Books = cash flow + the General Ledger hub (there is no 'books' hub id, so the old check always passed).
+    const canViewBooks = Boolean((u && isOwner(u)) || (canCash && (typeof canViewHub === 'function' ? canViewHub('ledger', u) : true)));
     const canExp = Boolean(typeof canViewView === 'function' ? canViewView('expenses', u) : true);
     const canPayroll = Boolean(typeof canViewHub === 'function' ? canViewHub('payroll', u) : true);
     const canSales = Boolean(typeof canViewView === 'function' ? canViewView('sales', u) : true);
     const canFleet = Boolean(typeof canViewHub === 'function' ? canViewHub('fleet', u) : true);
+    const canSnGuide = Boolean(typeof canViewView === 'function' ? canViewView('sentinels', u) : true);
 
     const rawViewTitle = scrubOutwardGuideText(
       (typeof document !== 'undefined' && document.getElementById('topbarTitle') && document.getElementById('topbarTitle').textContent)
@@ -77724,7 +77743,7 @@
 
     // 3. Extract live KPIs & domain insights tailored to the active view + industry
     const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
-    const items = typeof buildSentinelItems === 'function' ? buildSentinelItems() : [];
+    const items = (canSnGuide && typeof buildSentinelItems === 'function') ? buildSentinelItems() : [];
     const openSentinels = items.filter(it => it && it.severity && it.severity !== 'ok');
 
     let purposeEn = '';
@@ -77852,8 +77871,8 @@
         { labelEn: 'Operating Expenses', labelAr: 'المصاريف التشغيلية', labelFr: 'Charges d\'Exploitation', value: expVal, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Raw / Direct Cost', labelAr: 'تكلفة المواد المباشرة', labelFr: 'Coûts Directs / Matières', value: rawVal, sub: `${fmtNum(safeNum(kpi.raw_loads))} intakes`, selector: sections[0].selector },
         { labelEn: 'Net Open Payables (AP)', labelAr: 'ذمم الموردين الصافية', labelFr: 'Dettes Fournisseurs (AP)', value: apVal, sub: '3-Leg Reconciled', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Pending Price / Audit', labelAr: 'بانتظار التسعير / التدقيق', labelFr: 'En Attente de Prix', value: `${fmtNum(openSentinels.length)} alerts`, sub: 'Sentinel Watchdogs', selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Pending Price / Audit', labelAr: 'بانتظار التسعير / التدقيق', labelFr: 'En Attente de Prix', value: `${fmtNum(openSentinels.length)} alerts`, sub: 'Sentinel Watchdogs', selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `${coLabel} logged ${expVal} in operating expenses and ${rawVal} in direct procurement during ${range.label}.`,
         `3-Leg Supplier Payables (Raw Intake + Credit Vouchers + Recurring Accruals minus Settlements) stand at ${apVal}.`,
@@ -77895,8 +77914,8 @@
         { labelEn: 'Diesel Dispensed', labelAr: 'المازوت المصروف', labelFr: 'Gasoil Distribué', value: dieselL, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Active Fleet Units', labelAr: 'الآليات النشطة', labelFr: 'Unités de Flotte', value: `${fmtNum(eqCnt)} units`, sub: coLabel, selector: sections[0].selector },
         { labelEn: 'Open Workshop Bays', labelAr: 'أعطال الورشة المفتوحة', labelFr: 'Pannes Ouvertes', value: `${fmtNum(malfCnt)} open`, sub: 'Maintenance Queue', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Fleet Sentinel Alerts', labelAr: 'تنبيهات الأسطول', labelFr: 'Alertes Flotte', value: `${fmtNum(openSentinels.length)} active`, sub: 'Consumption & Burn', selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Fleet Sentinel Alerts', labelAr: 'تنبيهات الأسطول', labelFr: 'Alertes Flotte', value: `${fmtNum(openSentinels.length)} active`, sub: 'Consumption & Burn', selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `Fleet dispensed ${dieselL} of diesel across ${fmtNum(eqCnt)} tracked equipment units in ${range.label}.`,
         `Workshop register tracks ${fmtNum(malfCnt)} active malfunction tickets with parts, labor, and downtime cost attribution.`,
@@ -77976,7 +77995,7 @@
       // Universal fallback covering #overview, #daily_ops, #ledger, #statements, #pbi, #sentinels, #kiosks, #users, #contracts, #tables, and all industry views
       const revVal = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.sales_ttc)) : 'Restricted';
       const opProfVal = canViewBooks ? fmtUSD(safeNum(kpi.operating_profit)) : 'Restricted';
-      const cashVal = canCash ? (kpi.till_tracked === false ? 'Not Tracked Yet' : fmtUSD(safeNum(kpi.cash_till))) : 'Restricted';
+      const cashVal = canViewBooks ? (kpi.till_tracked === false ? 'Not Tracked Yet' : fmtUSD(safeNum(kpi.cash_till))) : 'Restricted';
       const tbVar = canViewBooks ? fmtUSD(Math.abs(safeNum(kpi.tb_check || 0))) : 'Restricted';
       purposeEn = `Live ${rawViewTitle} command surface for ${coLabel} (${ind}), uniting real-time operational registers, deterministic Class 1-7 accounting tie-outs, and interactive drill-downs across ${range.label}.`;
       purposeAr = `واجهة التحكم الحية لـ ${rawViewTitle} في ${coLabel} (${ind})، تجمع السجلات التشغيلية الفورية ومطابقة المحاسبة للفئات 1-7 والاستكشاف التفاعلي خلال ${range.label}.`;
@@ -77985,29 +78004,29 @@
         { labelEn: 'Scoped Revenue', labelAr: 'إيرادات النطاق', labelFr: 'Revenu Ciblé', value: revVal, sub: range.label, selector: sections[0].selector },
         { labelEn: 'Operating Profit', labelAr: 'الربح التشغيلي', labelFr: 'Résultat d\'Exploitation', value: opProfVal, sub: coLabel, selector: sections[0].selector },
         { labelEn: 'Cash Till Balance', labelAr: 'رصيد صندوق النقد', labelFr: 'Solde Caisse', value: cashVal, sub: canViewBooks ? `TB Check: ${tbVar}` : 'Scoped Till', selector: sections[Math.min(1, sections.length - 1)].selector },
-        { labelEn: 'Sentinel Watchdogs', labelAr: 'تنبيهات المراقبة الذكية', labelFr: 'Alertes Sentinelles', value: `${fmtNum(openSentinels.length)} open`, sub: `${sections.length} Page Sections`, selector: sections[0].selector }
-      ];
+        canSnGuide ? { labelEn: 'Sentinel Watchdogs', labelAr: 'تنبيهات المراقبة الذكية', labelFr: 'Alertes Sentinelles', value: `${fmtNum(openSentinels.length)} open`, sub: `${sections.length} Page Sections`, selector: sections[0].selector } : null
+      ].filter(Boolean);
       bulletsEn = [
         `Viewing ${rawViewTitle} (${rawEyebrow}) for ${coLabel} across ${range.label}: Revenue ${revVal}, Operating Profit ${opProfVal}, and Cash Till ${cashVal}.`,
         `This page contains ${fmtNum(sections.length)} interactive operational ${sections.length === 1 ? 'section' : 'sections'}. Switch to the Interactive Tour tab to spotlight each section on screen.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `General Ledger & Trial Balance tie check is at ${tbVar} variance with ${fmtNum(openSentinels.length)} active Sentinel items flagged for review.`
-          : `${fmtNum(openSentinels.length)} operational items are currently highlighted for supervisor review on this view.`
-      ];
+          : `${fmtNum(openSentinels.length)} operational items are currently highlighted for supervisor review on this view.`)
+      ].filter(Boolean);
       bulletsAr = [
         `عرض ${rawViewTitle} (${rawEyebrow}) لـ ${coLabel} خلال ${range.label}: الإيرادات ${revVal}، الربح التشغيلي ${opProfVal}، وصندوق النقد ${cashVal}.`,
         `تتضمن هذه الصفحة ${fmtNum(sections.length)} أقسام تفاعلية حية. انتقل إلى تبويب الجولة التفاعلية لإبراز كل قسم مباشرة على الشاشة.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `فحص مطابقة الأستاذ العام وميزان المراجعة عند فرق ${tbVar} مع ${fmtNum(openSentinels.length)} تنبيهات نشطة للمراجعة.`
-          : `يوجد حاليا ${fmtNum(openSentinels.length)} بنود تشغيلية محددة للمراجعة في هذه الصفحة.`
-      ];
+          : `يوجد حاليا ${fmtNum(openSentinels.length)} بنود تشغيلية محددة للمراجعة في هذه الصفحة.`)
+      ].filter(Boolean);
       bulletsFr = [
         `Vue ${rawViewTitle} (${rawEyebrow}) pour ${coLabel} sur ${range.label} : Chiffre d'affaires ${revVal}, Résultat d'exploitation ${opProfVal} et Caisse ${cashVal}.`,
         `Cette page comporte ${fmtNum(sections.length)} ${sections.length === 1 ? 'section interactive' : 'sections interactives'}. Ouvrez l'onglet Visite Interactive pour mettre chaque section en évidence.`,
-        canViewBooks
+        !canSnGuide ? null : (canViewBooks
           ? `Le cadrage de la balance générale affiche un écart de ${tbVar} avec ${fmtNum(openSentinels.length)} alertes Sentinelles ouvertes.`
-          : `${fmtNum(openSentinels.length)} éléments opérationnels sont signalés pour vérification sur cette vue.`
-      ];
+          : `${fmtNum(openSentinels.length)} éléments opérationnels sont signalés pour vérification sur cette vue.`)
+      ].filter(Boolean);
       promptChipsEn = [
         `What stands out on ${rawViewTitle} right now?`,
         `Summarize key risks and priorities for ${coLabel}`,
@@ -78030,8 +78049,8 @@
         { type: 'tour', labelEn: 'Start Section Tour', labelAr: 'بدء جولة الأقسام', labelFr: 'Lancer la Visite' },
         { type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' },
         { type: 'view', view: viewId === 'cashflow' ? 'overview' : 'cashflow', labelEn: viewId === 'cashflow' ? 'Executive Overview' : 'Cash Flow & Till', labelAr: viewId === 'cashflow' ? 'الملخص التنفيذي' : 'التدفق النقدي والصندوق', labelFr: viewId === 'cashflow' ? 'Vue Exécutive' : 'Trésorerie & Caisse' },
-        { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` }
-      ];
+        canSnGuide ? { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` } : null
+      ].filter(Boolean);
     } else if (!quickActions.some(q => q && q.type === 'whatif')) {
       quickActions.push({ type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' });
     }
@@ -170070,7 +170089,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, canSeeTaxBreakdown, canAccessTable, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -176172,6 +176191,8 @@
         lookupActiveTradingTariff,
         lookupActiveHoldingPartnerSplit,
         lookupActiveHoldingLoanRate,
+        canViewView,
+        activeUser,
         lookupActiveInsuranceAgreementRate,
         saveIndustryWorkflowPatch,
         getIndustryWorkflowPatch,
