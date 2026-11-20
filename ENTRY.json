@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/entry-daily-ops",
+  "sha": "047bc3a38107d09ab5a3c4db6c1c97ae8ba4ca24"
+ },
+ "gates": [
+  "isabi-app: node build/verify_entry_daily_ops.mjs",
+  "isabi-app: node build/verify_dops_handover.mjs"
+ ],
+ "holder": "THEO d5944226 (entry-daily-ops)",
+ "id": "20261120T153317Z-a2fbc233",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T15:33:17Z",
+ "seenAt": "2026-11-20T15:33:17Z",
+ "state": "waiting",
+ "summary": "Entry seats can open Daily Operations; profit, cash and till, ledger tie, tax invoices, partner splits and Sentinel status stay hidden from seats without those rights (cockpits, drawer, handover, briefings, Page Guide, AI)"
+}
