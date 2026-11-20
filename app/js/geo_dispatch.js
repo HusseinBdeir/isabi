@@ -8734,7 +8734,8 @@
         if (ctx && Array.isArray(ctx.geoSavePromises)) ctx.geoSavePromises.push(checkedP);
       }
     }
-    if (toast) toast(`Pinned ${cleanName}${region ? ' in zone ' + region : ''}`, 'ok');
+    // (a caller that may still take the save back, such as a schedule save waiting on its confirmation, says so)
+    if (toast && !(ctx && ctx.silentToast)) toast(`Pinned ${cleanName}${region ? ' in zone ' + region : ''}`, 'ok');
     return true;
   }
 

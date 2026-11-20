@@ -17848,7 +17848,12 @@
   // period that stays as its own entry. Read by the forms before a save and by the engine during it.
   // Tables the rule leaves alone: shift timings (their own ledger and backfill switch), the company fleet rows that
   // drive the truck logs (those logs have the rule already), and the shared registries matched by name.
-  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers', 'fx_rates', 'vat_rates']);
+  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers']);
+  // The currency and VAT rate tables sit with the shared registries, but a row there is a dated rate, not a name, and
+  // it feeds every money figure of all six industries: they follow the rule (owner 2026-11-20). Before, a rate saved
+  // from a later day with another value moved, and the days in between were re-read at the rate before it, or at the
+  // built-in 89,500 and 11% when there was none.
+  const CHRONO_KEEP_PERIOD_REGISTRY_RATES = new Set(['fx_rates', 'vat_rates']);
   function chronoKeptPeriodToastText(kp) {
     return kp ? `Earlier period kept to ${fmtDateDMY(kp.to)} · New entry from ${fmtDateDMY(kp.newFrom)}` : '';
   }
@@ -17857,7 +17862,8 @@
   // when a value field was changed, undefined when the caller cannot tell (the row's own fields then decide).
   function describeChronoKeptPeriod(crKey, savedRow, editOrig, hint) {
     if (!savedRow || !editOrig || !editOrig.id || editOrig.voided || savedRow._moveStart) return null;
-    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey) || (typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey])) return null;
+    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey)) return null;
+    if (!CHRONO_KEEP_PERIOD_REGISTRY_RATES.has(crKey) && typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey]) return null;
     // Filling in a row that was waiting for its figure (Salary Pending, Price Pending) completes that row: there is
     // no earlier period under an old value to keep.
     if (editOrig.salary_pending || editOrig.price_pending) return null;
@@ -18947,6 +18953,9 @@
     };
 
     let salesUpdated = 0, rawUpdated = 0;
+    // What the sweep re-priced, and the tickets it left because their price was typed (opts.impact = { rows, kept }):
+    // shown to the person after a save and after an undo
+    const mfgImpact = (opts && opts.impact && Array.isArray(opts.impact.rows) && Array.isArray(opts.impact.kept)) ? opts.impact : null;
 
     if (isSalesSide) {
       const checkMatLeg = isListRule || /^Sales/i.test(rtNew) || /^Sales/i.test(rtOld);
@@ -19042,6 +19051,10 @@
           rowChanged = true;
         }
         const capForTier = effCap > 0 ? effCap : (/^m/i.test(uom) ? nextQty : 0);
+        if (mfgImpact && checkMatLeg && (ovSet.has('f_unitprice') || nextPriceRule === 'Manual')) {
+          const typedTtc = round2(Number(s.total_ttc || 0));
+          mfgImpact.kept.push({ table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: typedTtc, to: typedTtc, delta: 0 });
+        }
 
         // 2) Material Sales Price (`Sales (Delivery)`, `Sales (Pickup)`, `List Price` fallback, or `$0.00` unpriced gap)
         if (checkMatLeg && !ovSet.has('f_unitprice') && nextPriceRule !== 'Manual') {
@@ -19178,6 +19191,7 @@
             Math.abs(origPriceS - round2(Math.max(0, origQtyS * origUpS + Number(s.tier_adj || 0) - origDiscS))) > 0.50
           );
           const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
+          const prevTtcS = round2(Number(s.total_ttc || 0));
 
           ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
 
@@ -19207,6 +19221,9 @@
           s.vat = (wasTax && ticketSign(s) !== 0) ? round2(s.total * getVatFraction(d)) : 0;
           s.total_ttc = round2(s.total + s.vat);
           salesUpdated++;
+          if (mfgImpact && Math.abs(Number(s.total_ttc || 0) - prevTtcS) >= 0.005) {
+            mfgImpact.rows.push({ table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: prevTtcS, to: round2(Number(s.total_ttc || 0)), delta: round2(Number(s.total_ttc || 0) - prevTtcS) });
+          }
           touchTicketInCustom('sales_tickets', s);
         }
       }
@@ -19296,6 +19313,10 @@
           rowChanged = true;
         }
         const capForTier = effCap > 0 ? effCap : (/^m/i.test(uom) ? nextQty : 0);
+        if (mfgImpact && checkPurchLeg && (ovSet.has('f_unitprice') || r.price_entered_manually)) {
+          const typedTot = round2(Number(r.total || 0));
+          mfgImpact.kept.push({ table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(r.site_owner || r.site || ''), from: typedTot, to: typedTot, delta: 0, kind: 'cost' });
+        }
 
         if (checkPurchLeg && !ovSet.has('f_unitprice') && !r.price_entered_manually) {
           if (pRule) {
@@ -19412,6 +19433,7 @@
         }
 
         if (rowChanged) {
+          const prevTotR = round2(Number(r.total || 0));
           ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
           r.site_owner = nextSiteOwner;
           r.qty = nextQty;
@@ -19433,6 +19455,9 @@
           r.trans_cost = isZeroSeparateHaul ? 0 : (r.trans_indiff ? round2(tuc) : round2(nextQty * tuc + Number(r.trans_tier_adj || 0)));
           r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
           rawUpdated++;
+          if (mfgImpact && Math.abs(Number(r.total || 0) - prevTotR) >= 0.005) {
+            mfgImpact.rows.push({ table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(r.site_owner || r.site || ''), from: prevTotR, to: round2(Number(r.total || 0)), delta: round2(Number(r.total || 0) - prevTotR), kind: 'cost' });
+          }
           touchTicketInCustom('raw_purchases', r);
         }
       }
@@ -54456,6 +54481,88 @@
     return (Array.isArray(rows) ? rows : []).filter(r => r && !r._split_kept);
   }
 
+  // The partner lines of a statement printed for a date range: each partner's schedule in force during the range, in
+  // date order, with that schedule's own share and amounts. A partner whose schedule changed inside the range gets one
+  // line per period. A schedule a save kept apart and the one that continues it carry the same pool and drawings
+  // (planSiblingChronoSplit), so only the last of them inside the range counts in a total (`counted`): the rule of
+  // holdingInForceRows, applied to the range. A partner with no schedule in force in the range gets one line at the
+  // charter default share, with no amounts. Returns null when there is no range or no schedule at all.
+  function holdingPartnerPeriodsInRange(rows, range) {
+    const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const from = String((range && range.from) || '').slice(0, 10);
+    const to = String((range && range.to) || '').slice(0, 10);
+    const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+    if (!isIso(from) || !isIso(to) || !list.length) return null;
+    const isoOr = (v, dflt) => { const s = String(v || '').slice(0, 10); return isIso(s) ? s : dflt; };
+    // Same reading of an empty start and an open end as lookupActiveHoldingPartnerSplit
+    const sdOf = r => isoOr(r.start_date, '1900-01-01');
+    const edOf = r => isoOr(r.end_date, '9999-12-31');
+    const byStart = (a, b) => (sdOf(a) < sdOf(b) ? -1 : (sdOf(a) > sdOf(b) ? 1 : 0));
+    const up = v => String(v || '').trim().toUpperCase();
+    const entKey = r => norm(String(r.entity || '').split('·')[0]);
+    // One partner is one series: the schedules the entry form treats as following one another (same pool, same name
+    // before any bracket), joined with the schedules a kept period links to them (the save that changes a share may
+    // also rename the partner or the pool)
+    const seriesKey = r => entKey(r) + '|' + norm(String(r.partner || '').split('(')[0]);
+    const root = new Map();
+    const find = k => { let x = k; while (root.get(x) !== x) x = root.get(x); return x; };
+    const byId = new Map();
+    list.forEach(r => {
+      const k = seriesKey(r);
+      if (!root.has(k)) root.set(k, k);
+      if (up(r.id)) byId.set(up(r.id), r);
+    });
+    list.forEach(r => {
+      const kept = r._continues_id ? byId.get(up(r._continues_id)) : null;
+      if (!kept) return;
+      const a = find(seriesKey(r)), b = find(seriesKey(kept));
+      if (a !== b) root.set(a, b);
+    });
+    const groups = new Map();
+    list.forEach(r => {
+      const k = find(seriesKey(r));
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    });
+    const inRange = r => sdOf(r) <= to && edOf(r) >= from;
+    // Every schedule that another schedule inside the range continues, whatever name either of them carries
+    const continued = new Set(list.filter(inRange).map(r => up(r._continues_id)).filter(Boolean));
+    const charterPct = new Map();
+    const lines = [];
+    groups.forEach(grp => {
+      const hits = grp.filter(inRange).sort(byStart);
+      if (!hits.length) {
+        // The name the partner carried nearest the range: its latest schedule begun by the end of the range, else its first
+        const sorted = grp.slice().sort(byStart);
+        // A partner whose schedules had all ended before the range has left the pool: no line (a charter share for
+        // them would be a share nobody holds, and could take the column past 100%)
+        if (sorted.every(r => edOf(r) < from)) return;
+        const head = sorted.filter(r => sdOf(r) <= to).pop() || sorted[0];
+        const ek = entKey(head);
+        // Asked for a day before any schedule can start, the lookup answers with the pool's charter default
+        if (!charterPct.has(ek)) charterPct.set(ek, Number((lookupActiveHoldingPartnerSplit(head.entity, head.partner, '0001-01-01') || {}).pct || 0));
+        lines.push({
+          partner: head.partner, role: head.entity || 'Partner Pool', sharePct: charterPct.get(ek),
+          opening: 0, draws: 0, allocatedOverhead: 0, closingBalance: 0,
+          scheduleId: '', periodFrom: '', periodTo: '', isFallback: true, counted: true
+        });
+        return;
+      }
+      hits.forEach(r => {
+        const rawEnd = String(r.end_date || '').trim();
+        lines.push({
+          partner: r.partner, role: r.entity || 'Partner Pool', sharePct: Number(r.pct || 0),
+          opening: Number(r.pool_usd || 0), draws: Number(r.drawn_usd || 0), allocatedOverhead: 0, closingBalance: Number(r.open_usd || 0),
+          scheduleId: String(r.id || ''), periodFrom: isoOr(r.start_date, ''),
+          // An end the app cannot read as a date is printed as it was typed
+          periodTo: isoOr(rawEnd, (rawEnd && !/^open$/i.test(rawEnd)) ? rawEnd : 'Open'),
+          isFallback: false, counted: !continued.has(up(r.id))
+        });
+      });
+    });
+    return lines;
+  }
+
   function renderHoldingPartners(submode = 'main') {
     const u = activeUser();
     const extList = filterRecords(SEED.records.external_movements || [], { ignoreCompany: true, includeGroupMfg: true });
@@ -69274,13 +69381,22 @@
           };
         }
         let errTxt = '';
+        let errCode = '';
+        let errRowId = '';
+        let errBucket = '';
         try {
           const j = await res.json();
           if (j && j.error) errTxt = String(j.error);
+          if (j && typeof j.code === 'string') errCode = j.code;
+          if (j && j.id != null) errRowId = String(j.id);
+          if (j && typeof j.bucket === 'string') errBucket = j.bucket;
         } catch (_) {}
         return {
           ok: false,
           status: res.status,
+          code: errCode,
+          conflictId: errRowId,
+          conflictBucket: errBucket,
           error: errTxt || (res.status === 401 || res.status === 403
             ? 'Permission denied: server rejected industry store update'
             : `HTTP ${res.status} saving industry domain store`)
@@ -70087,7 +70203,59 @@
     };
   }
 
-  function retroactiveBackfillInsuranceAgreement(agrObj, oldWindow = null) {
+  // ── What a re-pricing sweep touches (owner 2026-11-20) ─────────────────────────────────────────────────────────
+  // A rate change, and its undo, re-price only the records that stood at the schedule's figure before the change. A
+  // figure a person typed on a record stays as typed. Three passes share one walk of the records:
+  //   ctx.plan (a Map)      nothing is written; the Map receives what each record should carry under the schedules
+  //                         as they are now. Taken BEFORE a save or an undo changes the schedules: the baseline.
+  //   ctx.baseline (a Map)  that baseline, read while applying: a record away from it was typed and is left alone
+  //                         (so is a record the baseline does not know: nothing shows it followed the schedule).
+  //   ctx.impact            receives what was re-priced (`rows`) and what was left (`kept`), for the screen, and
+  //                         `typedAtNew`: the records a person had typed at exactly the figure the change brings.
+  //   ctx.skip (a Set)      on an undo: the `typedAtNew` of the change being undone. Those figures were typed, not
+  //                         given by the change, so its undo leaves them as well.
+  // A record whose figures do not move is never rewritten. A typed record is listed as kept only when the change
+  // moves what the schedule gives it (a sweep over the whole series does not list every typed record it passes).
+  function newSiblingRepriceImpact() { return { rows: [], kept: [], typedAtNew: [] }; }
+  const SIB_REPRICE_TOL = 0.005;
+  // True when the caller should write the record. `o`: { date, party, cmpCur, cmpNext, moneyCur, moneyNext }
+  // (cmp = the figure compared with the schedule: a rate, a share or an amount; money = what the screen shows).
+  function siblingRepriceStep(ctx, table, rec, o) {
+    const key = `${table}::${String((rec && rec.id) || '').trim().toUpperCase()}`;
+    if (ctx && ctx.plan) { ctx.plan.set(key, Number(o.cmpNext || 0)); return false; }
+    const cmpCur = Number(o.cmpCur || 0), cmpNext = Number(o.cmpNext || 0);
+    const moneyCur = round2(Number(o.moneyCur || 0)), moneyNext = round2(Number(o.moneyNext || 0));
+    const hasBase = Boolean(ctx && ctx.baseline);
+    const expected = hasBase ? ctx.baseline.get(key) : undefined;
+    // Away from the baseline (or unknown to it): a figure a person typed
+    const typed = hasBase && (expected === undefined || Math.abs(cmpCur - expected) >= SIB_REPRICE_TOL);
+    // Does this change move what the schedule gives the record?
+    const schedMoves = !hasBase || expected === undefined || Math.abs(expected - cmpNext) >= SIB_REPRICE_TOL;
+    if (Math.abs(cmpCur - cmpNext) < SIB_REPRICE_TOL && Math.abs(moneyCur - moneyNext) < SIB_REPRICE_TOL) {
+      if (typed && expected !== undefined && schedMoves && ctx.impact && Array.isArray(ctx.impact.typedAtNew)) ctx.impact.typedAtNew.push(key);
+      return false;
+    }
+    const row = {
+      table, id: String((rec && rec.id) || ''), date: String(o.date || '').slice(0, 10), party: String(o.party || ''),
+      from: moneyCur, to: moneyNext, delta: round2(moneyNext - moneyCur)
+    };
+    // 'cost': the figure shown is a cost that moves while the amount billed stays (left out of the net change)
+    if (o.kind) row.kind = String(o.kind);
+    if (hasBase) {
+      if (ctx.skip && ctx.skip.has(key)) {
+        if (schedMoves && ctx.impact) ctx.impact.kept.push(row);
+        return false;
+      }
+      if (typed) {
+        if (schedMoves && ctx.impact) ctx.impact.kept.push(row);
+        return false;
+      }
+    }
+    if (ctx && ctx.impact) ctx.impact.rows.push(row);
+    return true;
+  }
+
+  function retroactiveBackfillInsuranceAgreement(agrObj, oldWindow = null, ctx = null) {
     if (!agrObj || !agrObj.carrier || !agrObj.line) return 0;
     const minDateCandidates = [String(agrObj.start_date || '2026-01-01').slice(0, 10)];
     if (oldWindow && oldWindow.start_date) minDateCandidates.push(String(oldWindow.start_date).slice(0, 10));
@@ -70114,6 +70282,11 @@
       const disc = Math.min(Number(pol.discount_usd || 0), gComm);
       const netComm = round2(gComm - disc);
       const payable = round2(gwp - gComm);
+      if (!siblingRepriceStep(ctx, 'ins_policies', pol, {
+        date: pDate, party: pol.client || pol.carrier,
+        cmpCur: pol.comm_rate_pct, cmpNext: nextRate,
+        moneyCur: pol.gross_comm_usd, moneyNext: gComm
+      })) return;
       const patch = {
         comm_rate_pct: nextRate,
         gross_comm_usd: gComm,
@@ -70401,6 +70574,8 @@
     delete rec.updated_at; delete rec.updatedAt; delete rec.rev; delete rec._createdAt;
     delete rec._auto_closed_by_id; delete rec._prev_end_date; delete rec._prev_status; delete rec._handoff_succ_id;
     delete rec._pre_void_orig; delete rec._pre_void_edits;
+    // ... nor what the kept schedule's own change, or an undo, did to the records
+    delete rec._impact; delete rec._undo_impact;
     rec.voided = false;
     rec._scheduleVoided = false;
     rec.autoClosePriorId = closeIds[0] || '';
@@ -70713,14 +70888,374 @@
     return peers;
   }
 
-  function runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow) {
-    if (formKey === 'ins_agreements') return retroactiveBackfillInsuranceAgreement(schedRec, oldWindow);
-    if (formKey === 're_leases') return retroactiveBackfillRealEstateLease(schedRec, oldWindow);
-    if (formKey === 'trd_targets') return retroactiveBackfillTradingTariff(schedRec, oldWindow);
-    if (formKey === 'hsp_tariffs') return retroactiveBackfillHospitalityTariff(schedRec, oldWindow);
-    if (formKey === 'hld_partners') return retroactiveBackfillHoldingPartner(schedRec, oldWindow);
-    if (formKey === 'hld_loans') return retroactiveBackfillHoldingLoan(schedRec, oldWindow);
+  function runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, ctx = null) {
+    if (formKey === 'ins_agreements') return retroactiveBackfillInsuranceAgreement(schedRec, oldWindow, ctx);
+    if (formKey === 're_leases') return retroactiveBackfillRealEstateLease(schedRec, oldWindow, ctx);
+    if (formKey === 'trd_targets') return retroactiveBackfillTradingTariff(schedRec, oldWindow, ctx);
+    if (formKey === 'hsp_tariffs') return retroactiveBackfillHospitalityTariff(schedRec, oldWindow, ctx);
+    if (formKey === 'hld_partners') return retroactiveBackfillHoldingPartner(schedRec, oldWindow, ctx);
+    if (formKey === 'hld_loans') return retroactiveBackfillHoldingLoan(schedRec, oldWindow, ctx);
     return 0;
+  }
+  // What each record in the sweep should carry under the schedules as they are now. Call it BEFORE a save, an undo
+  // or a restore changes the schedules, then hand the Map to applySiblingReprice once they are changed.
+  function planSiblingReprice(formKey, schedRec, oldWindow) {
+    const plan = new Map();
+    try { runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, { plan }); } catch (_) {}
+    return plan;
+  }
+  // Re-prices the records that stood at the baseline and returns { rows, kept, typedAtNew } (see siblingRepriceStep).
+  // `skipKeys`: on an undo, the `typed_keys` the change being undone kept on its schedule.
+  function applySiblingReprice(formKey, schedRec, oldWindow, baseline, skipKeys) {
+    const impact = newSiblingRepriceImpact();
+    const skip = (Array.isArray(skipKeys) && skipKeys.length) ? new Set(skipKeys.map(String)) : null;
+    runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, { baseline: baseline || new Map(), impact, skip });
+    return impact;
+  }
+  // The impact in a few figures: what the confirmation shows, what the schedule keeps, and a signature that says
+  // whether a second pass (after the person confirmed) found the same thing
+  function summarizeSiblingRepriceImpact(impact) {
+    const rows = (impact && Array.isArray(impact.rows)) ? impact.rows : [];
+    const kept = (impact && Array.isArray(impact.kept)) ? impact.kept : [];
+    const billed = rows.filter(r => r.kind !== 'cost');
+    const costs = rows.filter(r => r.kind === 'cost');
+    const delta = round2(billed.reduce((a, r) => a + Number(r.delta || 0), 0));
+    const costDelta = round2(costs.reduce((a, r) => a + Number(r.delta || 0), 0));
+    const sig = rows.map(r => `${r.table}:${r.id}:${r.to}`).sort().join('|') + '#' + kept.map(r => `${r.table}:${r.id}`).sort().join('|');
+    return { n: rows.length, delta, costN: costs.length, costDelta, keptN: kept.length, sig };
+  }
+  // What a schedule row keeps of an impact (shown on the periods strip, also after an undo): the figures and the
+  // first records, not the whole list
+  function packSiblingRepriceImpact(impact, extra) {
+    const s = summarizeSiblingRepriceImpact(impact);
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const slim = r => ({ t: r.table, id: r.id, d: r.date, p: String(r.party || '').slice(0, 60), f: r.from, to: r.to, k: r.kind || undefined });
+    const packed = Object.assign({
+      at: new Date().toISOString(),
+      by: String(au.full_name || au.name || au.email || '').trim().slice(0, 120),
+      n: s.n, delta_usd: s.delta, cost_n: s.costN, cost_delta_usd: s.costDelta, kept_n: s.keptN,
+      rows: ((impact && impact.rows) || []).slice(0, 25).map(slim),
+      kept: ((impact && impact.kept) || []).slice(0, 25).map(slim)
+    }, extra || {});
+    // The records a person had typed at exactly this change's figure: its undo leaves them (siblingRepriceStep)
+    const typedKeys = (impact && Array.isArray(impact.typedAtNew)) ? impact.typedAtNew.slice(0, 500) : [];
+    if (typedKeys.length) packed.typed_keys = typedKeys;
+    return packed;
+  }
+  // What a schedule in force already carries of its last change (`_impact` of its row on this device; an undone row
+  // is not read). A save over that schedule leaves the typed figures it knows (`typed_keys`): its own when it is
+  // edited in place, the kept one's when the save starts a new period.
+  function siblingPriorImpact(formKey, rowId) {
+    const up = String(rowId || '').trim().toUpperCase();
+    if (!up) return null;
+    const own = (getIndustryCustomRowsStore()[formKey] || []).find(r => r && !r.voided && String(r.id || r.code || '').trim().toUpperCase() === up);
+    return (own && own._impact && typeof own._impact === 'object') ? own._impact : null;
+  }
+  const _sibTypedKeysOf = imp => ((imp && Array.isArray(imp.typed_keys)) ? imp.typed_keys.map(String) : []);
+  function siblingPriorTypedKeys(formKey, rowId) {
+    return _sibTypedKeysOf(siblingPriorImpact(formKey, rowId));
+  }
+  // Puts a save's impact on the schedule. A save that re-priced or left records, or that starts a new period
+  // (`extra.new_from`), carries its own impact. A save that moved nothing keeps what the schedule already carried
+  // (`prevImpact`: its last change still shows on the periods strip) and only adds to it the figures typed at
+  // exactly its rate, and `extra` (a restore's mark). `carryKeys`: the typed figures an in-place edit already knew.
+  // Returns whether anything was stamped.
+  function stampSiblingImpact(rec, impact, extra, carryKeys, prevImpact) {
+    if (!rec || !impact) return false;
+    if (!Array.isArray(impact.typedAtNew)) impact.typedAtNew = [];
+    (Array.isArray(carryKeys) ? carryKeys : []).forEach(k => { if (!impact.typedAtNew.includes(k)) impact.typedAtNew.push(k); });
+    const moved = impact.rows.length > 0 || impact.kept.length > 0;
+    if (moved || (extra && extra.new_from)) {
+      rec._impact = packSiblingRepriceImpact(impact, extra || null);
+      return true;
+    }
+    const prev = (prevImpact && typeof prevImpact === 'object') ? prevImpact : null;
+    if (!impact.typedAtNew.length && !extra) {
+      // nothing to add: the schedule keeps what it carried (the row merge keeps it; a copy built from another row is told)
+      if (prev) rec._impact = prev;
+      return false;
+    }
+    const next = prev ? Object.assign({}, prev) : packSiblingRepriceImpact(impact, null);
+    const keys = Array.from(new Set(_sibTypedKeysOf(prev).concat(impact.typedAtNew.map(String)))).slice(0, 500);
+    if (keys.length) next.typed_keys = keys;
+    if (extra) Object.assign(next, extra);
+    rec._impact = next;
+    return true;
+  }
+  const SIB_IMPACT_TABLE_LABELS = {
+    hsp_memberships: 'Membership', hsp_revenue: 'Chalet Revenue', re_invoicing: 'Rent Invoice', trd_sales: 'Sale',
+    trd_purchases: 'Import', ins_policies: 'Policy', hld_distributions: 'Partner Distribution',
+    hld_loan_accruals: 'Loan Interest', sales_tickets: 'Sales Ticket', raw_purchases: 'Raw Material Ticket'
+  };
+  const fmtImpactSigned = v => {
+    const n = round2(Number(v || 0));
+    return `${n > 0.004 ? '+' : (n < -0.004 ? '-' : '')}${fmtUSD(Math.abs(n), 2)}`;
+  };
+  // The records of an impact as a table (the confirmation and the periods strip share it). `rows` and `kept` are
+  // either live impact rows or the slim copies a schedule keeps.
+  function rateImpactRecordsTableHtml(rows, kept, total) {
+    const norm1 = r => ({
+      table: r.table || r.t, id: r.id, date: r.date || r.d, party: r.party || r.p,
+      from: Number(r.from != null ? r.from : r.f), to: Number(r.to), kind: r.kind || r.k || ''
+    });
+    const body = (list, isKept) => list.map(norm1).map(r => `
+      <tr class="${isKept ? 'is-kept' : ''}">
+        <td><span>${esc(SIB_IMPACT_TABLE_LABELS[r.table] || 'Record')}</span> <span class="mono" data-no-i18n="1">${esc(r.id)}</span></td>
+        <td class="mono" data-no-i18n="1">${esc(r.date ? fmtDateDMY(r.date) : '')}</td>
+        <td dir="auto" data-no-i18n="1">${esc(r.party || '')}</td>
+        <td class="r mono" data-no-i18n="1">${esc(fmtUSD(r.from, 2))}</td>
+        <td class="r mono" data-no-i18n="1">${isKept ? esc(fmtUSD(r.from, 2)) : esc(fmtUSD(r.to, 2))}</td>
+        <td class="r mono" data-no-i18n="1">${isKept ? '' : esc(fmtImpactSigned(r.to - r.from))}</td>
+        <td>${isKept ? '<span class="rate-impact-tag is-kept">Typed Price, Kept</span>' : (r.kind === 'cost' ? '<span class="rate-impact-tag">Cost</span>' : '')}</td>
+      </tr>`).join('');
+    const shown = (rows || []).length + (kept || []).length;
+    const more = Math.max(0, Number(total || 0) - shown);
+    return `
+      <div class="rate-impact-table-wrap">
+        <table class="rate-impact-table">
+          <thead><tr>
+            <th>Record</th><th>Date</th><th>Name</th><th class="r">Now</th><th class="r">After</th><th class="r">Difference</th><th></th>
+          </tr></thead>
+          <tbody>${body(rows || [], false)}${body(kept || [], true)}</tbody>
+        </table>
+        ${more > 0 ? `<div class="rate-impact-more"><span>More records not listed</span> <b data-no-i18n="1">${fmtNum(more, 0)}</b></div>` : ''}
+      </div>`;
+  }
+  // The figures of an impact as label and value pairs (each label is a phrase of its own, so it translates)
+  function rateImpactFactsHtml(sum, extra, datesOnly) {
+    const x = extra || {};
+    const fact = (label, val, cls) => `<div class="rate-impact-fact${cls ? ' ' + cls : ''}"><dt>${label}</dt><dd data-no-i18n="1">${esc(val)}</dd></div>`;
+    const facts = [];
+    if (x.newFrom) facts.push(fact('New Period Starts', fmtDateDMY(x.newFrom)));
+    if (x.keptTo) facts.push(fact('Earlier Period Stays Until', fmtDateDMY(x.keptTo)));
+    if (datesOnly) return `<dl class="rate-impact-facts">${facts.join('')}</dl>`;
+    facts.push(fact('Records Re-priced', fmtNum(sum.n - sum.costN, 0)));
+    if (sum.n - sum.costN > 0 || Math.abs(sum.delta) >= 0.005) facts.push(fact('Net Change', fmtImpactSigned(sum.delta), sum.delta < -0.004 ? 'is-neg' : (sum.delta > 0.004 ? 'is-pos' : '')));
+    if (sum.costN > 0) facts.push(fact('Costs Updated', `${fmtNum(sum.costN, 0)} (${fmtImpactSigned(sum.costDelta)})`));
+    facts.push(fact('Records Keeping a Typed Price', fmtNum(sum.keptN, 0), sum.keptN > 0 ? 'is-kept' : ''));
+    return `<dl class="rate-impact-facts">${facts.join('')}</dl>`;
+  }
+  // Shows what a rate change (mode 'save') or its undo (mode 'undo') does, before anything is written for good.
+  // Resolves true when the person confirms. `o`: { mode, impact, kept (the period a save keeps apart), isNew }
+  let _rateImpactFinish = null;          // settles the dialog that is open now
+  let _rateImpactOpenIsQuestion = false; // the open dialog asks (save, undo, new period) rather than reports
+  const _rateImpactAfter = [];           // reports waiting for an open question to be answered
+  function promptRateChangeImpact(o) {
+    const opt = o || {};
+    const impact = opt.impact || newSiblingRepriceImpact();
+    const sum = summarizeSiblingRepriceImpact(impact);
+    // Modes: 'save' and 'undo' ask before the change is written; 'period' asks before a save that starts a new
+    // period (its record impact is not known yet); 'result' and 'undo-result' report what was just done.
+    const isUndo = opt.mode === 'undo' || opt.mode === 'undo-result';
+    const isResult = opt.mode === 'result' || opt.mode === 'undo-result';
+    const isPeriodOnly = opt.mode === 'period';
+    const kept = opt.kept || null;
+    const title = isResult
+      ? (isUndo ? 'What This Undo Changed' : 'What This Save Changed')
+      : (isUndo
+        ? 'Undo This Rate Change?'
+        : (kept ? 'This Save Starts a New Period' : (sum.n > 0 ? 'This Save Re-prices Existing Records' : 'This Save Re-prices No Record')));
+    const lead = isResult
+      ? (isUndo
+        ? 'Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.'
+        : 'Records that follow this rate were re-priced. A price typed on a record stayed as typed.')
+      : (isUndo
+        ? 'Records that followed this rate go back to the rate before it. Amounts already paid or collected do not change.'
+        : (isPeriodOnly
+          ? 'The earlier period stays as it is, with its records. The new values apply from the new start date. To correct only the date, go back and change nothing but the date.'
+          : (kept
+            ? 'The earlier period stays as it is. The new values apply from the new start date. Amounts already paid or collected do not change.'
+            : 'Check what this save does before it is posted. Amounts already paid or collected do not change.')));
+    // One at a time. A report ('result') never takes the place of a question that is open: it waits its turn.
+    if (isResult && typeof _rateImpactFinish === 'function' && _rateImpactOpenIsQuestion) {
+      return new Promise(resolve => { _rateImpactAfter.push(() => promptRateChangeImpact(o).then(resolve)); });
+    }
+    return new Promise(resolve => {
+      // A question replaces whatever is open: an open report closes, an open question is answered Go Back (its
+      // caller is told, and its key listener goes with it)
+      if (typeof _rateImpactFinish === 'function') { try { _rateImpactFinish(false); } catch (_) {} }
+      _rateImpactOpenIsQuestion = !isResult;
+      const prior = document.getElementById('rateImpactModal');
+      if (prior) prior.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'rateImpactModal';
+      overlay.className = 'rate-impact-backdrop';
+      overlay.innerHTML = `
+        <div class="rate-impact-card" role="dialog" aria-modal="true" aria-labelledby="rateImpactTitle">
+          <div class="rate-impact-head">
+            <span class="rate-impact-eyebrow">${isUndo ? 'Undo' : 'Rate Change'}</span>
+            <h3 id="rateImpactTitle">${title}</h3>
+            <p class="rate-impact-lead">${lead}</p>
+          </div>
+          ${rateImpactFactsHtml(sum, kept ? { newFrom: kept.newFrom, keptTo: kept.to } : null, isPeriodOnly)}
+          ${sum.keptN > 0 ? '<p class="rate-impact-note">A price typed on a record is never changed by a rate change or by its undo.</p>' : ''}
+          ${(impact.rows.length || impact.kept.length) ? `
+            <details class="rate-impact-details" id="rateImpactDetails">
+              <summary><span>See the Records</span> <b data-no-i18n="1">(${fmtNum(impact.rows.length + impact.kept.length, 0)})</b></summary>
+              ${rateImpactRecordsTableHtml(impact.rows.slice(0, 60), impact.kept.slice(0, 40), impact.rows.length + impact.kept.length)}
+            </details>` : ''}
+          <div class="rate-impact-actions">
+            ${isResult ? '' : '<button type="button" class="btn btn-ghost" id="rateImpactBackBtn" data-ri="back">Go Back</button>'}
+            <button type="button" class="btn btn-primary" id="rateImpactOkBtn" data-ri="ok">${isResult ? 'Close' : (isUndo ? 'Undo Rate Change' : 'Post')}</button>
+          </div>
+        </div>`;
+      let settled = false;
+      const finish = val => {
+        if (settled) return;
+        settled = true;
+        const wasCurrent = _rateImpactFinish === finish;
+        if (wasCurrent) { _rateImpactFinish = null; _rateImpactOpenIsQuestion = false; }
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(Boolean(val));
+        // A report that waited for this dialog shows now (unless another dialog took its place meanwhile)
+        if (wasCurrent && _rateImpactAfter.length) {
+          const next = _rateImpactAfter.shift();
+          setTimeout(() => { try { next(); } catch (_) {} }, 0);
+        }
+      };
+      _rateImpactFinish = finish;
+      // Escape goes back. Tab stays inside the dialog (the page behind it, its Void and Post buttons included, is
+      // out of reach of the keyboard while the question is open).
+      const onKey = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); return; }
+        if (ev.key === 'Tab') {
+          const focusables = Array.from(overlay.querySelectorAll('button, summary, [tabindex]:not([tabindex="-1"])')).filter(el => !el.disabled && el.offsetParent !== null);
+          if (!focusables.length) { ev.preventDefault(); return; }
+          const first = focusables[0], last = focusables[focusables.length - 1];
+          const act = document.activeElement;
+          if (!overlay.contains(act)) { ev.preventDefault(); first.focus(); }
+          else if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+          else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+          return;
+        }
+        // Enter or Space on something behind the dialog does nothing while it is open
+        if ((ev.key === 'Enter' || ev.key === ' ') && !overlay.contains(document.activeElement)) { ev.preventDefault(); ev.stopPropagation(); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      overlay.addEventListener('click', ev => {
+        if (ev.target === overlay) { finish(false); return; }
+        const btn = ev.target.closest('[data-ri]');
+        if (btn) finish(btn.getAttribute('data-ri') === 'ok');
+      });
+      document.body.appendChild(overlay);
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(overlay);
+      }
+      const okBtn = overlay.querySelector('#rateImpactOkBtn');
+      if (okBtn) { try { okBtn.focus({ preventScroll: true }); } catch (_) {} }
+    });
+  }
+
+  // ── The periods of one schedule, as one strip (360 drawer; owner 2026-11-20) ─────────────────────────────────────
+  // Every period of the series in date order, with its rate and whether it is closed, in force, scheduled or undone,
+  // and under each one what its rate change (or its undo) did to the records. An undone change stays on the strip.
+  const _sibSeriesSig = (fk, r) => {
+    if (!r) return '';
+    const n = v => norm(String(v || ''));
+    if (fk === 'ins_agreements') return `${n(r.carrier)}|${normInsLineKey(r.line)}`;
+    if (fk === 're_leases') return `${String(r.property || '').trim().toUpperCase().slice(0, 14)}|${String(r.unit || '').trim().toUpperCase()}`;
+    if (fk === 'trd_targets') return `${n(r.company)}|${normTradingTariffCat(r.category || r.segment, r.company)}`;
+    if (fk === 'hsp_tariffs') return `${n(r.company)}|${n(r.tier)}`;
+    if (fk === 'hld_partners') return `${n(String(r.entity || '').split('·')[0])}|${n(String(r.partner || '').split('(')[0])}`;
+    if (fk === 'hld_loans') return `${n(r.company)}|${n(r.lender)}`;
+    return '';
+  };
+  const _sibRateLabel = (fk, r) => {
+    if (!r) return '';
+    const pct = v => `${fmtNum(Number(v || 0), 2).replace(/\.00$/, '')}%`;
+    if (fk === 'ins_agreements') return pct(r.new_bus_pct);
+    if (fk === 're_leases') return fmtUSD(Number(r.net_period_usd || 0), 2);
+    if (fk === 'trd_targets') return fmtUSD(Number(r.unit_net_usd != null ? r.unit_net_usd : (r.list_floor_usd || 0)), 2);
+    if (fk === 'hsp_tariffs') return fmtUSD(Number(r.seasonal_rate_usd || 0), 2);
+    if (fk === 'hld_partners') return pct(r.pct);
+    if (fk === 'hld_loans') return pct(r.apr_pct != null ? r.apr_pct : (r.interest_rate_pct != null ? r.interest_rate_pct : r.rate_apr_pct));
+    return '';
+  };
+  function listSiblingSchedulePeriods(fk, row, primaryId) {
+    if (!isSiblingChronoFormKey(fk) || !row) return [];
+    const selfUp = _sibUp(primaryId || row.id);
+    const sig = _sibSeriesSig(fk, row);
+    const live = getSiblingChronoPeersForRow(fk, row, primaryId || row.id).filter(p => p && !p.voided && !p._scheduleVoided && _sibSeriesSig(fk, p) === sig);
+    const self = siblingChronoRowById(fk, primaryId || row.id) || row;
+    const seen = new Set();
+    const out = [];
+    const push = (r, voided) => {
+      const up = _sibUp(r && (r.id || r.code));
+      if (!up || seen.has(up)) return;
+      seen.add(up);
+      out.push({ row: r, voided: Boolean(voided), isSelf: up === selfUp });
+    };
+    push(self, false);
+    live.forEach(p => push(p, false));
+    // Undone schedules of the same series stay on the strip (their tombstones are on the device)
+    (getIndustryCustomRowsStore()[fk] || []).forEach(r => {
+      if (r && r.voided && r._scheduleVoided && _sibSeriesSig(fk, r) === sig) push(r, true);
+    });
+    const today = todayISO();
+    out.forEach(p => {
+      const s = String(p.row.start_date || '').slice(0, 10);
+      const e = _siblingChronoEnd(p.row);
+      p.from = s;
+      p.to = e;
+      p.state = p.voided ? 'undone' : ((e && e < today) ? 'closed' : (s > today ? 'scheduled' : 'inforce'));
+    });
+    out.sort((a, b) => String(a.from).localeCompare(String(b.from)) || (a.voided ? 1 : 0) - (b.voided ? 1 : 0));
+    return out;
+  }
+  function siblingPeriodsStripHtml(fk, row, primaryId, canUndo) {
+    const periods = listSiblingSchedulePeriods(fk, row, primaryId);
+    const saysSomething = i => Boolean(i && (Number(i.n || 0) > 0 || Number(i.kept_n || 0) > 0));
+    if (periods.length < 2 && !(periods[0] && (saysSomething(periods[0].row._impact) || saysSomething(periods[0].row._undo_impact)))) return '';
+    const stateLbl = { closed: 'Closed', inforce: 'In Force', scheduled: 'Scheduled', undone: 'Undone' };
+    const liveOnes = periods.filter(p => !p.voided);
+    const latest = liveOnes[liveOnes.length - 1] || null;
+    const impactLine = (imp, isUndo) => {
+      if (!imp || typeof imp !== 'object') return '';
+      const billedN = Math.max(0, Number(imp.n || 0) - Number(imp.cost_n || 0));
+      // Nothing re-priced and nothing kept (only figures noted as typed at the rate): no line
+      if (!Number(imp.n || 0) && !Number(imp.kept_n || 0)) return '';
+      const bits = [];
+      bits.push(`<span class="ind-per-imp-part"><span>${isUndo ? 'Undo Put Back' : 'Re-priced'}</span> <b data-no-i18n="1">${fmtNum(billedN, 0)}</b></span>`);
+      if (Math.abs(Number(imp.delta_usd || 0)) >= 0.005) bits.push(`<span class="ind-per-imp-part"><span>Net Change</span> <b data-no-i18n="1">${esc(fmtImpactSigned(imp.delta_usd))}</b></span>`);
+      if (Number(imp.cost_n || 0) > 0) bits.push(`<span class="ind-per-imp-part"><span>Costs Updated</span> <b data-no-i18n="1">${fmtNum(imp.cost_n, 0)}</b></span>`);
+      if (Number(imp.kept_n || 0) > 0) bits.push(`<span class="ind-per-imp-part is-kept"><span>Typed Price Kept</span> <b data-no-i18n="1">${fmtNum(imp.kept_n, 0)}</b></span>`);
+      const when = imp.at ? fmtDateDMY(String(imp.at).slice(0, 10)) : '';
+      const hasRows = (Array.isArray(imp.rows) && imp.rows.length) || (Array.isArray(imp.kept) && imp.kept.length);
+      return `
+        <div class="ind-per-impact${isUndo ? ' is-undo' : ''}">
+          <div class="ind-per-imp-line">${bits.join('')}${when ? `<span class="ind-per-imp-when" data-no-i18n="1">${esc(when)}${imp.by ? ' · ' + esc(imp.by) : ''}</span>` : ''}</div>
+          ${hasRows ? `<details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0))}</details>` : ''}
+        </div>`;
+    };
+    return `
+      <div class="ind-periods-strip" id="indInspPeriodsStrip">
+        <div class="ind-periods-head">
+          <strong><span>Periods of This Schedule</span></strong>
+          <span class="badge badge-neutral" data-no-i18n="1">${periods.length}</span>
+        </div>
+        <ol class="ind-periods-list">
+          ${periods.map(p => {
+            const r = p.row;
+            // Undo sits on the latest period, in that period's own drawer (Open leads there from the other periods)
+            const undoHere = Boolean(canUndo && latest && p === latest && p.isSelf && !p.voided && (r._continues_id || liveOnes.length > 1));
+            return `
+            <li class="ind-period is-${p.state}${p.isSelf ? ' is-self' : ''}" data-period-id="${esc(String(r.id || ''))}">
+              <div class="ind-period-top">
+                <span class="ind-period-dates mono" data-no-i18n="1">${esc(p.from ? fmtDateDMY(p.from) : '')}</span>
+                <span class="ind-period-to">to</span>
+                <span class="ind-period-dates mono"${p.to ? ' data-no-i18n="1"' : ''}>${p.to ? esc(fmtDateDMY(p.to)) : 'Open'}</span>
+                <span class="ind-period-rate mono" data-no-i18n="1">${esc(_sibRateLabel(fk, r))}</span>
+                <span class="ind-period-state">${stateLbl[p.state]}</span>
+                ${p.isSelf ? '<span class="ind-period-here">This Record</span>' : (!p.voided ? `<button type="button" class="btn btn-xs btn-ghost" data-period-open="${esc(String(r.id || ''))}">Open</button>` : '')}
+                ${undoHere ? `<button type="button" class="btn btn-xs btn-outline ind-period-undo" data-period-undo="${esc(String(r.id || ''))}">Undo This Change</button>` : ''}
+              </div>
+              ${impactLine(r._impact, false)}
+              ${p.voided ? impactLine(r._undo_impact, true) : ''}
+            </li>`;
+          }).join('')}
+        </ol>
+      </div>`;
   }
 
   function lookupActiveHospitalityTariff(company, tierOrUnit, effDate) {
@@ -70773,7 +71308,7 @@
     };
   }
 
-  function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null) {
+  function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null, ctx = null) {
     if (!trfObj || !trfObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(trfObj, oldWindow);
     const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) : { membershipRows: [], tariffRows: [] };
@@ -70793,6 +71328,11 @@
       // What was paid stays as recorded (a re-price never rewrites money already received)
       const paid = round2(Number(m.paid_usd || 0));
       const bal = Math.max(0, round2(nextContract - paid));
+      if (!siblingRepriceStep(ctx, 'hsp_memberships', m, {
+        date: mDate, party: m.member || m.unit || m.tier,
+        cmpCur: m.contract_usd, cmpNext: nextContract,
+        moneyCur: m.contract_usd, moneyNext: nextContract
+      })) return;
       const patch = {
         contract_usd: nextContract,
         paid_usd: paid,
@@ -70817,6 +71357,11 @@
       const tot = round2(rooms * Number(hit.nightly_rate_usd || 560));
       const ht = round2(tot / 1.11);
       const vat = round2(tot - ht);
+      if (!siblingRepriceStep(ctx, 'hsp_revenue', rev, {
+        date: rDate, party: rev.outlet || rev.category,
+        cmpCur: rev.ttc_usd, cmpNext: tot,
+        moneyCur: rev.ttc_usd, moneyNext: tot
+      })) return;
       addIndustryCustomRow('hsp_revenue', Object.assign({}, rev, { ttc_usd: tot, ht_usd: ht, vat_usd: vat }), { skipCloudSync: true, skipEditTrail: true });
       syncedCount += 1;
     });
@@ -70885,7 +71430,7 @@
     };
   }
 
-  function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null) {
+  function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null, ctx = null) {
     if (!leaseObj || !leaseObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(leaseObj, oldWindow);
     const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : { invoices: [] };
@@ -70908,6 +71453,13 @@
       const tot = round2(net + vat);
       const col = round2(Number(inv.collected_usd || 0));
       const openAr = Math.max(0, round2(tot - col));
+      const invNetCur = Number(inv.net_usd != null ? inv.net_usd : (inv.base_usd || 0));
+      const invTotCur = Number(inv.amount_ttc_usd != null ? inv.amount_ttc_usd : (inv.ttc_usd != null ? inv.ttc_usd : invNetCur));
+      if (!siblingRepriceStep(ctx, 're_invoicing', inv, {
+        date: iDate, party: inv.tenant || inv.property,
+        cmpCur: invNetCur, cmpNext: net,
+        moneyCur: invTotCur, moneyNext: tot
+      })) return;
       const patch = {
         net_usd: net,
         base_usd: net,
@@ -70981,7 +71533,7 @@
     };
   }
 
-  function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null) {
+  function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null, ctx = null) {
     if (!tgtObj || !tgtObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(tgtObj, oldWindow);
     const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) : { salesRows: [], importRows: [] };
@@ -71000,6 +71552,16 @@
       const vat = round2(net * 0.11);
       const ttc = round2(net + vat);
       const cost = round2(qty * Number(hit.unit_cost_usd || 0));
+      // The sale follows the price list when its net stands at the list's; its cost then moves with the list too.
+      // A list change that moves only the cost shows the cost (the sale amount stays).
+      const slNetMoves = Math.abs(Number(sl.net_usd || 0) - net) >= SIB_REPRICE_TOL;
+      const slCostOnly = !slNetMoves && Math.abs(Number(sl.cost_usd || 0) - cost) >= SIB_REPRICE_TOL;
+      if (!siblingRepriceStep(ctx, 'trd_sales', sl, {
+        date: sDate, party: sl.customer || sl.category,
+        cmpCur: sl.net_usd, cmpNext: net,
+        moneyCur: slCostOnly ? sl.cost_usd : sl.ttc_usd, moneyNext: slCostOnly ? cost : ttc,
+        kind: slCostOnly ? 'cost' : ''
+      })) return;
       const patch = { net_usd: net, vat_usd: vat, ttc_usd: ttc, cost_usd: cost };
       if (customSalesIds.has(String(sl.id || '').trim().toUpperCase())) {
         addIndustryCustomRow('trd_sales', Object.assign({ id: sl.id }, patch), { skipCloudSync: true, skipEditTrail: true });
@@ -71017,6 +71579,12 @@
       const fob = round2(ord * Number(hit.fob_unit_usd || 0));
       const add = round2(fob * (Number(hit.landed_pct || 0) / 100));
       const tot = round2(fob + add);
+      if (!siblingRepriceStep(ctx, 'trd_purchases', im, {
+        date: iDate, party: im.supplier,
+        cmpCur: im.total_landed_usd, cmpNext: tot,
+        moneyCur: im.total_landed_usd, moneyNext: tot,
+        kind: 'cost'
+      })) return;
       const patch = { fob_usd: fob, landed_add_usd: add, total_landed_usd: tot };
       if (customImpIds.has(String(im.id || '').trim().toUpperCase())) {
         addIndustryCustomRow('trd_purchases', Object.assign({ id: im.id }, patch), { skipCloudSync: true, skipEditTrail: true });
@@ -71072,7 +71640,7 @@
     };
   }
 
-  function retroactiveBackfillHoldingPartner(prtObj, oldWindow = null) {
+  function retroactiveBackfillHoldingPartner(prtObj, oldWindow = null, ctx = null) {
     if (!prtObj || !prtObj.entity) return 0;
     const normEnt = s => norm(String(s || '').split('·')[0]);
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(prtObj, oldWindow);
@@ -71090,6 +71658,11 @@
       const ent = round2(pool * (Number(hit.pct || 0) / 100));
       const paid = round2(Number(dist.paid_usd || 0));
       const opn = Math.max(0, round2(ent - paid));
+      if (!siblingRepriceStep(ctx, 'hld_distributions', dist, {
+        date: dDate, party: dist.partner || dist.entity,
+        cmpCur: dist.pct, cmpNext: hit.pct,
+        moneyCur: dist.entitled_usd, moneyNext: ent
+      })) return;
       const patch = {
         pct: hit.pct,
         entitled_usd: ent,
@@ -71161,7 +71734,7 @@
     };
   }
 
-  function retroactiveBackfillHoldingLoan(loanObj, oldWindow = null) {
+  function retroactiveBackfillHoldingLoan(loanObj, oldWindow = null, ctx = null) {
     if (!loanObj) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(loanObj, oldWindow);
     const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { loanAccruals: [] };
@@ -71179,6 +71752,14 @@
       const yearFrac = ac.days != null ? (Math.max(1, Number(ac.days)) / 365) : 0.25;
       const aprVal = Number(hit.apr_pct != null ? hit.apr_pct : (hit.rate_apr_pct || 0));
       const interest = round2(prin * (aprVal / 100) * yearFrac);
+      const acAprCur = Number(ac.apr_pct != null ? ac.apr_pct : (ac.interest_rate_pct != null ? ac.interest_rate_pct : (ac.rate_apr_pct || 0)));
+      const acIntCur = Number(ac.accrued_usd != null ? ac.accrued_usd : (ac.interest_usd || 0));
+      if (!siblingRepriceStep(ctx, 'hld_loan_accruals', ac, {
+        date: aDate, party: ac.lender || loanObj.lender,
+        cmpCur: acAprCur, cmpNext: aprVal,
+        moneyCur: acIntCur, moneyNext: interest,
+        kind: 'cost'
+      })) return;
       const patch = {
         apr_pct: aprVal,
         interest_rate_pct: aprVal,
@@ -72766,6 +73347,10 @@
 
     formEl.onsubmit = async ev => {
       ev.preventDefault();
+      // True only for the run the form starts itself right after the person confirmed a rate change's impact: that
+      // run already passed the sign-off of the first run a moment ago, so it is not asked for again
+      const impactResubmit = formEl._rateImpactResubmit === true;
+      formEl._rateImpactResubmit = false;
       cancelDomainNearCopyLiveCheck();
       if (!isEditMode && !(spec.key === 'trd_receipts' ? canEnterForm('receipt') : canEnterAny())) {
         toast('Your seat cannot create new domain records', 'err');
@@ -72803,6 +73388,27 @@
         }
         if (split) { recId = rec.id; keptSplit = split.kept; }
         return { split };
+      };
+      // What this save re-priced and what it left as typed (schedule forms): shown before anything is sent
+      let domImpact = null;
+      // Shared by the six schedule forms. The baseline is read before the schedule changes; then the schedule is
+      // saved, the one before it closed, and only the records that stood at the baseline are re-priced.
+      const saveScheduleAndReprice = (formKey, rec, cState, oldWindow, afterSave, syncedLabel) => {
+        // Figures the schedule saved over already knows as typed (its own, or the kept one's when a new period starts)
+        const priorImp = siblingPriorImpact(formKey, keptSplit ? keptSplit.keptId : recId);
+        const priorTyped = _sibTypedKeysOf(priorImp);
+        const baseline = planSiblingReprice(formKey, rec, oldWindow);
+        addIndustryCustomRow(formKey, rec, { skipCloudSync: true });
+        syncSiblingCustomPredecessorsOnSave(formKey, recId, cState.closeIds, cState.closeDate);
+        // Rows a save adds of its own (a new lease's first invoice) are not in the baseline: they are never re-priced
+        if (typeof afterSave === 'function') afterSave();
+        domImpact = applySiblingReprice(formKey, rec, oldWindow, baseline, priorTyped);
+        const n = domImpact.rows.length;
+        // (a lease carries no such note: it never did)
+        if (n > 0 && 'backfill_status' in rec) rec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${n} ${typeof syncedLabel === 'function' ? syncedLabel(n) + ' ' : ''}Synced`;
+        stampSiblingImpact(rec, domImpact, keptSplit ? { kept_to: keptSplit.to, new_from: keptSplit.newFrom } : null, keptSplit ? [] : priorTyped, keptSplit ? null : priorImp);
+        if (n > 0 || rec._impact) addIndustryCustomRow(formKey, rec, { skipCloudSync: true });
+        return n;
       };
       const co = strVal('ide_company') || defCo;
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
@@ -72883,7 +73489,7 @@
             };
           }
         }
-        if (domStepSpec) {
+        if (domStepSpec && !impactResubmit) {
           const hasSyncLease = typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domStepSpec);
           if (!hasSyncLease) {
             const okStep = await window.MFG_STEP_UP.requireStepUpAuth(domStepSpec);
@@ -72986,13 +73592,7 @@
         const ks = applyKeptSplit('ins_agreements', agrRec, existingSelf, peers, 'Chronological Rate Guard');
         if (ks.error) return;
         if (ks.split) { cState = ks.split.cState; agrRec.prior_rate_pct = existingSelf.new_bus_pct; }
-        addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('ins_agreements', recId, cState.closeIds, cState.closeDate);
-        const syncedPols = retroactiveBackfillInsuranceAgreement(agrRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedPols > 0) {
-          agrRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedPols} ${syncedPols === 1 ? 'Policy' : 'Policies'} Synced`;
-          addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('ins_agreements', agrRec, cState, ks.split ? ks.split.oldWindow : existingSelf, null, n => (n === 1 ? 'Policy' : 'Policies'));
       } else if (spec.key === 'ins_billing') {
         const client = strVal('ide_client');
         if (!client) { showMsg('Policyholder / Client is required.', true); return; }
@@ -73100,9 +73700,8 @@
             leaseRec.status = dx <= 90 ? 'Expiring < 90d' : 'Active';
           }
         }
-        addIndustryCustomRow('re_leases', leaseRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('re_leases', recId, cState.closeIds, cState.closeDate);
-        if (!isEditMode) {
+        saveScheduleAndReprice('re_leases', leaseRec, cState, ks.split ? ks.split.oldWindow : existingSelf, () => {
+          if (isEditMode) return;
           addIndustryCustomRow('re_invoicing', {
             id: `INV-${recId}`,
             date: sd,
@@ -73121,8 +73720,7 @@
             status: 'Open',
             audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
           }, { skipCloudSync: true });
-        }
-        retroactiveBackfillRealEstateLease(leaseRec, ks.split ? ks.split.oldWindow : existingSelf);
+        });
       } else if (spec.key === 're_invoicing') {
         const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
@@ -73258,13 +73856,7 @@
         const ks = applyKeptSplit('trd_targets', tgtRec, existingSelf, peers, 'Chronological Price List Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('trd_targets', recId, cState.closeIds, cState.closeDate);
-        const syncedTrd = retroactiveBackfillTradingTariff(tgtRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedTrd > 0) {
-          tgtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedTrd} Synced`;
-          addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('trd_targets', tgtRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'trd_sales') {
         const net = numVal('ide_net');
         const vat = round2(net * 0.11);
@@ -73453,13 +74045,7 @@
         const ks = applyKeptSplit('hsp_tariffs', trfRec, existingSelf, peers, 'Chronological Tariff Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hsp_tariffs', recId, cState.closeIds, cState.closeDate);
-        const syncedHsp = retroactiveBackfillHospitalityTariff(trfRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedHsp > 0) {
-          trfRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedHsp} Synced`;
-          addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hsp_tariffs', trfRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hsp_revenue') {
         const catStr = strVal('ide_category') || 'Chalet Rental';
         const tot = numVal('ide_tot');
@@ -73609,13 +74195,7 @@
         const ks = applyKeptSplit('hld_partners', prtRec, existingSelf, peers, 'Chronological Schedule Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hld_partners', recId, cState.closeIds, cState.closeDate);
-        const syncedDist = retroactiveBackfillHoldingPartner(prtRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedDist > 0) {
-          prtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedDist} Synced`;
-          addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hld_partners', prtRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hld_loans') {
         const lender = strVal('ide_lender') || 'Central Shareholder Treasury Line';
         const sd = strVal('ide_start_date');
@@ -73657,13 +74237,7 @@
         const ks = applyKeptSplit('hld_loans', lnRec, existingSelf, peers, 'Chronological Facility Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hld_loans', recId, cState.closeIds, cState.closeDate);
-        const syncedAcc = retroactiveBackfillHoldingLoan(lnRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedAcc > 0) {
-          lnRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedAcc} Synced`;
-          addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hld_loans', lnRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hld_extended') {
         const party = strVal('ide_party');
         if (!party) { showMsg('Stakeholder / Counterparty is required.', true); return; }
@@ -73774,6 +74348,32 @@
         if (_activeDomainModalPostPromises === domainPostPromises) _activeDomainModalPostPromises = prevDomCollector;
       }
 
+      // A schedule save that starts a new period, re-prices records or leaves typed prices is shown to the person
+      // first (owner 2026-11-20): the stores go back as they were, the person reads what the save does and confirms,
+      // and the save then runs again from the form. Nothing was sent or synced in between. A second pass that finds
+      // something else (another device's change arrived) asks again.
+      if (isSiblingChronoFormKey(spec.key) && domImpact) {
+        const impSum = summarizeSiblingRepriceImpact(domImpact);
+        const impSig = `${spec.key}|${recId}|${keptSplit ? keptSplit.newFrom : ''}|${impSum.sig}`;
+        // Asked only when the save changes something: a new period, or at least one record re-priced. Typed prices
+        // that merely stay are noted on the schedule (its periods strip), without stopping the person.
+        if ((keptSplit || impSum.n > 0) && formEl._rateImpactOkSig !== impSig) {
+          STATE.industryCustomRows = prevModalCustomSnap;
+          saveIndustryCustomRowsStore({ skipServerPost: true });
+          STATE.industryRowEdits = prevModalEditsSnap;
+          saveIndustryRowEditStore(prevModalEditsSnap, { skipServerPost: true });
+          invalidateIndustryDomainCaches();
+          const okImpact = await promptRateChangeImpact({ mode: 'save', impact: domImpact, kept: keptSplit, isNew: !isEditMode });
+          if (!okImpact) return;
+          formEl._rateImpactOkSig = impSig;
+          formEl._rateImpactResubmit = true;
+          if (typeof formEl.requestSubmit === 'function') formEl.requestSubmit();
+          else formEl.dispatchEvent(new Event('submit', { cancelable: true }));
+          return;
+        }
+        formEl._rateImpactOkSig = '';
+      }
+
       if (spec.key !== 'hld_extended' && spec.key !== 'trd_receipts') {
         const modalForceRowIds = [`${spec.key}::${recId}`];
         if (spec.key === 're_leases' && !isEditMode) modalForceRowIds.push(`re_invoicing::INV-${recId}`);
@@ -73820,7 +74420,12 @@
           saveIndustryRowEditStore(prevModalEditsSnap, { skipServerPost: true });
           invalidateIndustryDomainCaches();
           if (typeof renderApp === 'function') renderApp();
-          toast(domReject.error || 'Permission denied: cannot save industry domain row', 'err');
+          // The id is held by a schedule saved and undone on another device: with the device copy back as it was,
+          // the server's schedules are read in, so pressing the button again saves under a free id
+          const domRejectTxt = isVoidedIdConflictRes(domReject)
+            ? await refreshAfterVoidedIdConflict(domReject)
+            : (domReject.error || 'Permission denied: cannot save industry domain row');
+          toast(domRejectTxt, 'err');
           return;
         }
       }
@@ -86065,6 +86670,7 @@
               ${inspDatalistsHtml}
               ${editableFieldsHtml}
             </div>
+            ${isChronoDomainRow ? siblingPeriodsStripHtml(resolvedDomainChrono.formKey, resolvedDomainChrono.prefill, primaryId, canVoid() && canManageSiblingChronoSchedule(resolvedDomainChrono.formKey)) : ''}
             ${domainGeoSpec ? (() => {
               const lockGeo = !allowDomainGeoEdit;
               const gpsLockBadge = lockGeo ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : '';
@@ -86423,6 +87029,8 @@
       inputs.forEach(inp => inp.addEventListener('input', wireDomainRules));
 
       const saveBtn = $('indInspSaveChangesBtn');
+      // The impact the person confirmed for this drawer's schedule save (see the chrono branch below)
+      let inspRateImpactOkSig = '';
       const runIndInspSave = async () => {
         if (!canModifyRecord()) {
           toast('Permission denied: Read-only seat', 'err');
@@ -86458,7 +87066,8 @@
         }
         const prevRowEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
         const prevCustomRowsSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-        const domGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
+        // (a schedule row with a pin takes the snapshot in every mode: Go Back on its impact confirmation needs it)
+        const domGeoRollbackSnap = ((hasServerApi() && !isDemoScopeActive()) || (isChronoDomainRow && domainGeoSpec))
           ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
           : null;
         const domPostPromises = [];
@@ -86475,7 +87084,7 @@
           if (domGeoRollbackSnap) domGeoRollbackSnap.restore(errTxt);
           else {
             if (typeof renderApp === 'function') renderApp();
-            toast(errTxt, 'err');
+            if (errTxt) toast(errTxt, 'err');
           }
         };
         const commitDomainInspectorSave = async (forceEditKeys = []) => {
@@ -86485,6 +87094,13 @@
             forceEditKeys
           });
           if (domStoreRes && !domStoreRes.networkErr && !domStoreRes.networkError && (domStoreRes.ok === false || Number(domStoreRes.status) >= 400)) {
+            // The id is held by a schedule saved and undone on another device: the device copy goes back first,
+            // then the server's schedules are read in, so pressing Save again takes a free id (one message)
+            if (isVoidedIdConflictRes(domStoreRes)) {
+              rollbackDomSave('');
+              toast(await refreshAfterVoidedIdConflict(domStoreRes), 'err');
+              return false;
+            }
             const errTxt = await extractServerRejectMsg(domStoreRes, 'Permission denied: save rejected by server');
             rollbackDomSave(errTxt);
             return false;
@@ -86637,7 +87253,7 @@
           } else if (dgs.hasPin && window.MFG_GEO && typeof window.MFG_GEO.persistLocationPin === 'function') {
             postedViaGeo = window.MFG_GEO.persistLocationPin(
               { targetType: 'site', siteId: matchSite.id, siteCategory: resolveSiteCategory(matchSite), name: matchSite.name, lat: dgs.lat, lng: dgs.lng, region: dgs.region || matchSite.region || '', industry: targetInd },
-              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, origSiteRow: origMatchSiteSnap, allowRegionOverwrite: canWriteGeoConfig(), skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises }
+              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, origSiteRow: origMatchSiteSnap, allowRegionOverwrite: canWriteGeoConfig(), skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises, silentToast: Boolean(isChronoDomainRow) }
             );
           } else if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
             window.MFG_GEO.hydrateSeedGeo(SEED, true);
@@ -86708,6 +87324,7 @@
           const prevDeferDomChrono = _deferIndustryDomainServerPost;
           let syncedCnt = 0;
           let cleanedEditKey = false;
+          let drawerImpact = null;
           _deferIndustryDomainServerPost = true;
           try {
             if (!textOnlyLock) {
@@ -86785,10 +87402,18 @@
             if (!drawerSplit && !prevCustList.some(r => r && String(r.id || r.code || '').trim() === String(upd.id || upd.code || '').trim())) {
               capturePreVoidEditTrail(origSched, upd, { at: new Date().toISOString() });
             }
+            // The baseline is read before the schedule changes: only the records that stood at it are re-priced
+            const drawerOldWin = drawerSplit ? drawerSplit.oldWindow : origSched;
+            // Figures the schedule saved over already knows as typed (its own, or the kept one's on a new period)
+            const drawerPriorImp = siblingPriorImpact(fk, drawerSplit ? drawerSplit.kept.keptId : (upd.id || primaryId));
+            const drawerPriorTyped = _sibTypedKeysOf(drawerPriorImp);
+            const drawerBaseline = planSiblingReprice(fk, upd, drawerOldWin);
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
             syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
-            syncedCnt = runDomainChronoScheduleBackfill(fk, upd, drawerSplit ? drawerSplit.oldWindow : origSched);
+            drawerImpact = applySiblingReprice(fk, upd, drawerOldWin, drawerBaseline, drawerPriorTyped);
+            syncedCnt = drawerImpact.rows.length;
             upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
+            stampSiblingImpact(upd, drawerImpact, drawerSplit ? { kept_to: drawerSplit.kept.to, new_from: drawerSplit.kept.newFrom } : null, drawerSplit ? [] : drawerPriorTyped, drawerSplit ? null : drawerPriorImp);
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true, skipEditTrail: true });
             if (upd.id) domForceRowIds.push(`${fk}::${upd.id}`);
             if (drawerSplit) (drawerSplit.kept.postIds || []).forEach(pid => domForceRowIds.push(`${fk}::${pid}`));
@@ -86803,6 +87428,27 @@
           } finally {
             _deferIndustryDomainServerPost = prevDeferDomChrono;
           }
+          // Shown to the person before anything is sent, as on the schedule form: the stores go back, the person
+          // confirms what the save does, and the save runs again. A map pin moved or cleared in the same save goes
+          // back with them (its sends are held until the save is committed; only a pin send that has already started,
+          // which this drawer never does for a schedule, lets the save through unasked).
+          if (drawerImpact && !domGeoPromises.length) {
+            const dSum = summarizeSiblingRepriceImpact(drawerImpact);
+            const dSig = `${fk}|${upd.id}|${drawerSplit ? drawerSplit.kept.newFrom : ''}|${dSum.sig}`;
+            if ((drawerSplit || dSum.n > 0) && inspRateImpactOkSig !== dSig) {
+              STATE.industryRowEdits = prevRowEditsSnap;
+              saveIndustryRowEditStore(prevRowEditsSnap, { skipServerPost: true });
+              STATE.industryCustomRows = prevCustomRowsSnap;
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              invalidateIndustryDomainCaches();
+              if (domGeoRollbackSnap && domainGeoSave && domainGeoSave.pinTouched) domGeoRollbackSnap.restore('');
+              const okImp = await promptRateChangeImpact({ mode: 'save', impact: drawerImpact, kept: drawerSplit ? drawerSplit.kept : null });
+              if (!okImp) return;
+              inspRateImpactOkSig = dSig;
+              return runIndInspSave();
+            }
+          }
+          inspRateImpactOkSig = '';
           if (!(await commitDomainInspectorSave(cleanedEditKey ? [editKey] : []))) return;
           closeRecordInspector();
           renderApp();
@@ -86909,7 +87555,11 @@
       };
 
       const voidBtn = $('indInspVoidRowBtn');
+      // One void at a time: a second press while the first waits (on its confirmation, its sign-off or the server)
+      // would run the same undo twice
+      let indInspVoidRunning = false;
       if (voidBtn) voidBtn.onclick = () => {
+        if (indInspVoidRunning) return;
         if (!canVoid()) {
           toast('Supervisor permission required to void records', 'err');
           return;
@@ -86953,10 +87603,13 @@
           _curVoidReasonEl.classList.remove('is-invalid');
           _curVoidReasonEl.removeAttribute('aria-invalid');
         }
+        // The impact the person confirmed for this undo (see the gate after the local void below)
+        let voidRateImpactOkSig = '';
         const execDomainVoid = async () => {
           const prevVoidEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
           const prevVoidCustomSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-          const domVoidGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
+          // (a schedule row with a pin takes the snapshot in every mode: Go Back on its undo confirmation needs it)
+          const domVoidGeoRollbackSnap = ((hasServerApi() && !isDemoScopeActive()) || (isChronoDomainRow && domainGeoSpec))
             ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
             : null;
           const domVoidGeoPromises = [];
@@ -86975,6 +87628,45 @@
             }
           };
           let wasCustom = false;
+          // Undo of a schedule: what it re-prices and what it leaves, and the sweep it runs, are worked out from the
+          // schedules as they stand BEFORE the void (the baseline), so only records that stood at the voided
+          // schedule's figure go back; a figure a person typed stays
+          let voidImpact = null;
+          let voidFk = '';
+          let voidOrigSched = null;
+          let voidSchedForSweep = null;
+          let voidSweep = null;
+          let voidBaseline = null;
+          let voidSkipKeys = [];
+          if (isChronoDomainRow) {
+            voidFk = resolvedDomainChrono.formKey;
+            voidOrigSched = Object.assign({}, resolvedDomainChrono.prefill);
+            delete voidOrigSched._editMode;
+            delete voidOrigSched._editKey;
+            const voidedUp = String(primaryId || '').trim().toUpperCase();
+            const voidedOwn = (getIndustryCustomRowsStore()[voidFk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
+            // A schedule a save kept apart (planSiblingChronoSplit) only ever priced the records of its own days: undoing
+            // it re-prices those days and leaves every other record as it was
+            const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || voidOrigSched._continues_id);
+            // The save re-priced up to the kept row's end as it was (a new entry may end before it): so does the undo
+            const laterSweepEnd = (a, b) => {
+              const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
+              const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
+              const m = eb && eb > ea ? eb : ea;
+              return m === '9999-12-31' ? 'Open' : m;
+            };
+            voidSweep = splitOwn
+              ? { start_date: String((voidedOwn && voidedOwn.start_date) || voidOrigSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || voidOrigSched._auto_closed_by_id)
+                // closed by a later schedule: that one priced its own days, the undo stops where it starts
+                ? ((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date || 'Open')
+                : laterSweepEnd((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || voidOrigSched._split_sweep_end) }
+              : { start_date: '1900-01-01', end_date: '9999-12-31' };
+            voidSchedForSweep = splitOwn ? Object.assign({}, voidOrigSched, voidSweep) : voidOrigSched;
+            voidBaseline = planSiblingReprice(voidFk, voidSchedForSweep, voidSweep);
+            // Figures a person had typed at exactly this schedule's rate when it was saved: not given by it, so left
+            const ownImp = (voidedOwn && voidedOwn._impact) || voidOrigSched._impact || null;
+            voidSkipKeys = (ownImp && Array.isArray(ownImp.typed_keys)) ? ownImp.typed_keys.slice() : [];
+          }
           const prevDeferDomVoid = _deferIndustryDomainServerPost;
           _deferIndustryDomainServerPost = true;
           try {
@@ -87041,30 +87733,18 @@
             };
             wasCustom = voidIndustryCustomRowById(primaryId, Object.assign({ skipCloudSync: true, skipRollback: true, skipServerPost: true }, voidMeta));
             if (isChronoDomainRow) {
-              const fk = resolvedDomainChrono.formKey;
-              const origSched = Object.assign({}, resolvedDomainChrono.prefill);
-              delete origSched._editMode;
-              delete origSched._editKey;
-              const voidedUp = String(primaryId || '').trim().toUpperCase();
-              const voidedOwn = (getIndustryCustomRowsStore()[fk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
-              voidSiblingChronoSchedule(fk, primaryId, origSched, voidMeta);
-              // A schedule a save kept apart (planSiblingChronoSplit) only ever priced the records of its own days: undoing
-              // it re-prices those days and leaves every other record as it was (a typed price before the split stays)
-              const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || origSched._continues_id);
-              // The save re-priced up to the kept row's end as it was (a new entry may end before it): so does the undo
-              const laterSweepEnd = (a, b) => {
-                const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
-                const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
-                const m = eb && eb > ea ? eb : ea;
-                return m === '9999-12-31' ? 'Open' : m;
-              };
-              const voidSweep = splitOwn
-                ? { start_date: String((voidedOwn && voidedOwn.start_date) || origSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || origSched._auto_closed_by_id)
-                  // closed by a later schedule: that one priced its own days, the undo stops where it starts
-                  ? ((voidedOwn && voidedOwn.end_date) || origSched.end_date || 'Open')
-                  : laterSweepEnd((voidedOwn && voidedOwn.end_date) || origSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || origSched._split_sweep_end) }
-                : { start_date: '1900-01-01', end_date: '9999-12-31' };
-              runDomainChronoScheduleBackfill(fk, splitOwn ? Object.assign({}, origSched, voidSweep) : origSched, voidSweep);
+              const fk = voidFk;
+              voidSiblingChronoSchedule(fk, primaryId, voidOrigSched, voidMeta);
+              voidImpact = applySiblingReprice(fk, voidSchedForSweep, voidSweep, voidBaseline, voidSkipKeys);
+              // The voided schedule keeps what its undo did: the periods strip shows it after the undo too
+              if (voidImpact.rows.length || voidImpact.kept.length || voidImpact.typedAtNew.length) {
+                const tombUp = String(primaryId || '').trim().toUpperCase();
+                const tomb = (getIndustryCustomRowsStore()[fk] || []).find(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === tombUp);
+                if (tomb) {
+                  tomb._undo_impact = packSiblingRepriceImpact(voidImpact);
+                  saveIndustryCustomRowsStore({ skipServerPost: true });
+                }
+              }
               if (store[editKey]) {
                 delete store[editKey];
                 saveIndustryRowEditStore(store, { skipServerPost: true });
@@ -87137,6 +87817,26 @@
           } finally {
             _deferIndustryDomainServerPost = prevDeferDomVoid;
           }
+          // An undo that re-prices records, or leaves typed prices, is shown to the person before anything is sent:
+          // the stores go back as they were, the person confirms, and the undo runs again. A pinned site the undo
+          // voided with the schedule goes back with them (its sends are held until the void is committed).
+          if (voidImpact && !domVoidGeoPromises.length) {
+            const vSum = summarizeSiblingRepriceImpact(voidImpact);
+            const vSig = `${voidFk}|${primaryId}|${vSum.sig}`;
+            if (vSum.n > 0 && voidRateImpactOkSig !== vSig) {
+              STATE.industryRowEdits = prevVoidEditsSnap;
+              saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
+              STATE.industryCustomRows = prevVoidCustomSnap;
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              invalidateIndustryDomainCaches();
+              if (domVoidGeoRollbackSnap && (domVoidSitePosts.length || domVoidDeferredGeoPushes.length)) domVoidGeoRollbackSnap.restore('');
+              const okUndo = await promptRateChangeImpact({ mode: 'undo', impact: voidImpact });
+              if (!okUndo) return;
+              voidRateImpactOkSig = vSig;
+              return execDomainVoid();
+            }
+          }
+          voidRateImpactOkSig = '';
           if (hasServerApi() && !isDemoScopeActive()) {
             const domVoidStoreRes = await postIndustryDomainStoreToLocalApi({ forceEditKeys: [editKey] });
             if (domVoidStoreRes && !domVoidStoreRes.networkErr && !domVoidStoreRes.networkError && (domVoidStoreRes.ok === false || Number(domVoidStoreRes.status) >= 400)) {
@@ -87177,18 +87877,47 @@
           company: STATE.company || 'WTC',
           industry: ind
         };
+        const runDomainVoidOnce = async () => {
+          if (indInspVoidRunning) return;
+          indInspVoidRunning = true;
+          try { await execDomainVoid(); } finally { indInspVoidRunning = false; }
+        };
         if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
           if (typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domVoidSpec)) {
-            execDomainVoid();
+            runDomainVoidOnce();
           } else {
+            // The sign-off counts as the void being under way: a second press does not open a second sign-off
+            indInspVoidRunning = true;
             window.MFG_STEP_UP.requireStepUpAuth(domVoidSpec).then(ok => {
-              if (ok) execDomainVoid();
-            });
+              indInspVoidRunning = false;
+              if (ok) runDomainVoidOnce();
+            }).catch(() => { indInspVoidRunning = false; });
           }
           return;
         }
-        execDomainVoid();
+        runDomainVoidOnce();
       };
+
+      // The periods strip: Open shows another period of the schedule; Undo This Change (on this record, when it is
+      // the latest period) runs the drawer's own void, so its reason rule, its sign-off and the impact confirmation
+      // all apply
+      const perStrip = $('indInspPeriodsStrip');
+      if (perStrip && isChronoDomainRow) {
+        perStrip.addEventListener('click', ev => {
+          const openBtn = ev.target.closest('[data-period-open]');
+          const undoBtn = ev.target.closest('[data-period-undo]');
+          if (!openBtn && !undoBtn) return;
+          ev.preventDefault();
+          if (undoBtn) {
+            if (voidBtn) voidBtn.click();
+            return;
+          }
+          const targetId = openBtn.getAttribute('data-period-open') || '';
+          if (!targetId) return;
+          closeRecordInspector();
+          openIndustryDomainInspectorById(resolvedDomainChrono.formKey, targetId, { ind, rowCompany });
+        });
+      }
 
       const pBtn = $('indInspPrintStmtBtn');
       if (pBtn) pBtn.onclick = () => {
@@ -114184,6 +114913,52 @@
     }
   }
 
+  // The server refused a schedule because the id it would take holds one saved and undone on another device
+  // (server.py and d1_store.js answer 409 with this code, and store nothing of the request)
+  const isVoidedIdConflictRes = r => Boolean(r && r.ok === false && Number(r.status) === 409 && r.code === 'voided_id_conflict');
+  // Call after the device copy is put back as it was. Reads the server's schedules into it, so the undone schedule
+  // is on this device and the next save takes a free id (nextSiblingChronoSplitId skips ids held on the device).
+  // Returns the one message to show: the screen is up to date, or the server's own words when it could not be read.
+  async function refreshAfterVoidedIdConflict(rejectRes) {
+    const notRead = String((rejectRes && rejectRes.error) || '') || 'This schedule was saved and undone on another device. Refresh the page and save again.';
+    if (!hasServerApi() || isDemoScopeActive()) return notRead;
+    let t = null;
+    try {
+      const ctrl = new AbortController();
+      t = setTimeout(() => ctrl.abort(), 8000);
+      const res = await edgeApiFetch('./api/industry_domain_store', { signal: ctrl.signal });
+      clearTimeout(t);
+      t = null;
+      if (!res || !res.ok) return notRead;
+      const d = await res.json().catch(() => null);
+      if (!d || d.ok === false || !d.industryCustomRows || typeof d.industryCustomRows !== 'object') return notRead;
+      // What is read in came from the server: nothing is sent back. (The merges send the whole device copy when they
+      // change it; a second press of Save while this read was on its way would have its unsaved changes sent along.)
+      let changed = false;
+      const prevDeferPull = _deferIndustryDomainServerPost;
+      _deferIndustryDomainServerPost = true;
+      try {
+        changed = mergeIndustryCustomRows(d.industryCustomRows);
+        if (d.industryRowEdits && mergeIndustryRowEdits(d.industryRowEdits)) changed = true;
+      } finally {
+        _deferIndustryDomainServerPost = prevDeferPull;
+      }
+      if (changed) saveLocalAuthAndRecords();
+      // Up to date only when the undone schedule the server named is now on this device, in the bucket it named
+      const wantId = String((rejectRes && rejectRes.conflictId) || '').trim().toUpperCase();
+      const wantBucket = String((rejectRes && rejectRes.conflictBucket) || '');
+      const store = getIndustryCustomRowsStore();
+      const onDevice = Boolean(wantId) && Object.keys(store).some(b => (!wantBucket || b === wantBucket) && Array.isArray(store[b])
+        && store[b].some(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === wantId));
+      if (!onDevice) return notRead;
+      if (typeof renderApp === 'function') renderApp();
+      return 'This schedule was saved and undone on another device. Your screen is now up to date: save again.';
+    } catch (_) {
+      if (t) clearTimeout(t);
+      return notRead;
+    }
+  }
+
   async function postRecordPairsChunked(pairs, concurrency = 8, opts = {}) {
     if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false, postedPairs: [], postedResults: [] };
     const dedup = [];
@@ -114463,6 +115238,23 @@
               saveModalEntry(nextOpts);
             }
           });
+          return;
+        }
+      }
+      // A dated row saved from a later day with another value starts a new period (the earlier one stays as its own
+      // entry). The person is told before anything is changed (owner 2026-11-20), and the save runs on their yes.
+      if (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig
+        && !(evOrOpts && !(evOrOpts instanceof Event) && evOrOpts._keptPeriodOk)) {
+        let keptPlanAsk = null;
+        try {
+          keptPlanAsk = describeChronoKeptPeriod(crKey, record, editCtx.orig, { userChangedValue: entryModalUserChangedValue() });
+        } catch (_) { keptPlanAsk = null; }
+        if (keptPlanAsk) {
+          STATE.saving = false;
+          if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+          const nextOptsKp = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
+          nextOptsKp._keptPeriodOk = true;
+          promptRateChangeImpact({ mode: 'period', kept: keptPlanAsk }).then(okKp => { if (okKp) saveModalEntry(nextOptsKp); });
           return;
         }
       }
@@ -115169,6 +115961,8 @@
       // Set when this save kept the earlier period on the row as it was and went on as a new entry (a later Start
       // Date with another value): `record` then carries a new id and is handled as an added entry from here on.
       let keptPeriodModal = null;
+      // What a price agreement save re-priced and which typed prices it left (shown once the save is through)
+      let mfgRateImpactModal = null;
       if (isEffModalTbl && record.start_date) {
         if ('date' in record) record.date = record.start_date;
         if (editOrigModal && _rowEndIso(editOrigModal) && !_rowEndIso(record)) {
@@ -115189,8 +115983,15 @@
       }
       applyCustomRecordsToSeed();
       if (isEffModalTbl || crKey === 'products') {
+        if (crKey === 'price_rules') mfgRateImpactModal = newSiblingRepriceImpact();
         backfillEffectiveLogChange(crKey, record, keptPeriodModal ? null : editOrigModal, extraApiPosts,
-          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '' });
+          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '', impact: mfgRateImpactModal });
+        // The agreement keeps what its save re-priced (sent with it): the record shows it later, also after an undo
+        if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.length)) {
+          record._impact = packSiblingRepriceImpact(mfgRateImpactModal, keptPeriodModal ? { kept_to: keptPeriodModal.to, new_from: keptPeriodModal.newFrom } : null);
+          const cImp = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(record.id)) : null;
+          if (cImp && cImp !== record) cImp._impact = record._impact;
+        }
         applyCustomRecordsToSeed();
       }
       if (backpayCtx) {
@@ -115379,6 +116180,9 @@
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
+      if (mfgRateImpactModal && mfgRateImpactModal.rows.length) {
+        promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
+      }
       renderApp();
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
         const _salRecCtx = buildSalaryVoucherReceiptContext(record);
@@ -116405,8 +117209,17 @@
       reopenedVoidPeers = reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
     }
     applyCustomRecordsToSeed();
+    // Undo of a price agreement: what it re-priced back and which typed prices it left, shown once the void is done
+    // and kept on the voided agreement
+    const mfgUndoImpact = crKey === 'price_rules' ? newSiblingRepriceImpact() : null;
     if (canModifyData() && voidedTarget && (isEffVoidTbl || crKey === 'products')) {
-      backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts, { touchedPeers: reopenedVoidPeers });
+      backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts, { touchedPeers: reopenedVoidPeers, impact: mfgUndoImpact });
+      if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.length)) {
+        voidedTarget._undo_impact = packSiblingRepriceImpact(mfgUndoImpact);
+        // every copy of the voided agreement carries it (the working row, the device copy, the one that is sent)
+        const cUndo = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(voidedTarget.id)) : null;
+        [r, seedRow, cUndo].forEach(x => { if (x && x !== voidedTarget) x._undo_impact = voidedTarget._undo_impact; });
+      }
       applyCustomRecordsToSeed();
     }
     if (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases') {
@@ -116420,6 +117233,9 @@
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
     toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
+    if (mfgUndoImpact && mfgUndoImpact.rows.length) {
+      promptRateChangeImpact({ mode: 'undo-result', impact: mfgUndoImpact });
+    }
 
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig());
     const metaVoid = { who, when };
@@ -116581,6 +117397,16 @@
         return false;
       }
     }
+    // Restoring a voided schedule puts its rate back in force. What each record should carry under the schedules as
+    // they stand now is read first: only the records that stand at it are re-priced, a typed figure stays.
+    const restoreSweepAll = { start_date: '1900-01-01', end_date: '9999-12-31' };
+    const restoreBaseline = (chronoTargetBucket && chronoCandRow)
+      ? planSiblingReprice(chronoTargetBucket, Object.assign({}, chronoCandRow, { voided: false }), restoreSweepAll)
+      : null;
+    // Figures a person had typed at exactly the rate the undo gave back (noted by the undo): the restore leaves them
+    const restoreSkipKeys = _sibTypedKeysOf(chronoCandRow && chronoCandRow._undo_impact);
+    // What the restore re-priced (shown once the schedule is back)
+    let restoreImpact = null;
 
     const isSyncTwinRow = row => Boolean(row && /^(system-topup|sharepoint top-up)/i.test(String(row.voided_by || '').trim()));
     const hasBlockedSyncTwinEdit = Boolean(
@@ -116721,9 +117547,13 @@
           restoredSchedRow.status = chronoSaveState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window';
           syncSiblingCustomPredecessorsOnSave(touchedChronoBucket, restoredSchedRow.id || primaryId, chronoSaveState.closeIds, chronoSaveState.closeDate);
         }
-        if (typeof runDomainChronoScheduleBackfill === 'function') {
-          try { runDomainChronoScheduleBackfill(touchedChronoBucket, restoredSchedRow, { start_date: '1900-01-01', end_date: '9999-12-31' }); } catch (_) {}
-        }
+        try {
+          restoreImpact = applySiblingReprice(touchedChronoBucket, restoredSchedRow, restoreSweepAll, restoreBaseline, restoreSkipKeys);
+          // In force again: the undo note goes (set empty, not removed, so a store that merges fields drops it too),
+          // and what the restore re-priced is kept on the schedule
+          restoredSchedRow._undo_impact = null;
+          stampSiblingImpact(restoredSchedRow, restoreImpact, { restored: true }, [], restoredSchedRow._impact);
+        } catch (_) {}
         const forceSet = new Set(forceRowIds);
         Object.keys(storeCustom).forEach(bk => {
           const curArr = Array.isArray(storeCustom[bk]) ? storeCustom[bk] : [];
@@ -116751,10 +117581,15 @@
     invalidateIndustryDomainCaches();
     renderApp();
     toast('✓ Record restored · ' + (primaryId || editKey), 'ok');
+    // What the restore re-priced is reported once the restore stands (after the server took it, where there is one)
+    const tellRestoreImpact = () => {
+      if (restoreImpact && restoreImpact.rows.length) promptRateChangeImpact({ mode: 'result', impact: restoreImpact });
+    };
 
     if (!hasServerApi() || isDemoScopeActive()) {
       saveLocalAuthAndRecords();
       syncWithCloud(true);
+      tellRestoreImpact();
       return true;
     }
 
@@ -116790,6 +117625,7 @@
     }
     saveLocalAuthAndRecords();
     syncWithCloud(true);
+    tellRestoreImpact();
     return true;
   }
 
@@ -125246,6 +126082,8 @@
       cancelModBtn.addEventListener('click', closeAndResetSiteModifyUi);
     }
     const saveModBtn = $('inspSaveModifyBtn');
+    // Set once the person has agreed that this save starts a new period (see the gate before the row is changed)
+    let inspKeptPeriodOk = false;
     if (saveModBtn && modDrawer) {
       saveModBtn.addEventListener('click', async () => {
         if (!canUseInspModify) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
@@ -125524,6 +126362,25 @@
             toast(inspFxGuard.reason, 'warn');
           }
         }
+        // A dated row saved from a later day with another value starts a new period (the earlier one stays as its
+        // own entry). The person is told before anything is changed (owner 2026-11-20); the save runs on their yes.
+        if (!inspKeptPeriodOk && row && isEffectiveSeriesTable(key, row)) {
+          let inspKpAsk = null;
+          try {
+            const inspChangedVal = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
+            inspKpAsk = describeChronoKeptPeriod(key, Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedVal });
+          } catch (_) { inspKpAsk = null; }
+          if (inspKpAsk) {
+            promptRateChangeImpact({ mode: 'period', kept: inspKpAsk }).then(okKp => {
+              if (!okKp) return;
+              inspKeptPeriodOk = true;
+              saveModBtn.click();
+            });
+            return;
+          }
+        }
+        inspKeptPeriodOk = false;
         const origRowSnap = Object.assign({}, row);
         const inspGeoTouched = key === 'sites' || key === 'regions' || key === 'customers' || key === 'suppliers';
         const inspRollbackSnap = (hasServerApi() && !isDemoScopeActive() && !window.__fastInspectorModifyTest)
@@ -126479,9 +127336,16 @@
             }
           }
           applyCustomRecordsToSeed();
+          // What a price agreement save re-priced and which typed prices it left (shown once the save is through)
+          const mfgRateImpactInsp = key === 'price_rules' ? newSiblingRepriceImpact() : null;
           if (isEffInspTbl || key === 'products') {
             backfillEffectiveLogChange(key, row, keptPeriodInsp ? null : origRowSnap, inspExtraPosts,
-              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '' });
+              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '', impact: mfgRateImpactInsp });
+            if (mfgRateImpactInsp && (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.length)) {
+              row._impact = packSiblingRepriceImpact(mfgRateImpactInsp, keptPeriodInsp ? { kept_to: keptPeriodInsp.to, new_from: keptPeriodInsp.newFrom } : null);
+              const cImpI = Array.isArray(STATE.customRecords[key]) ? STATE.customRecords[key].find(x => x && String(x.id) === String(row.id)) : null;
+              if (cImpI && cImpI !== row) cImpI._impact = row._impact;
+            }
             applyCustomRecordsToSeed();
           }
           let inspBackpayHit = null;
@@ -126552,6 +127416,9 @@
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
           if (keptPeriodInsp) toast(chronoKeptPeriodToastText(keptPeriodInsp), 'ok');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
+          if (mfgRateImpactInsp && mfgRateImpactInsp.rows.length) {
+            promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactInsp, kept: keptPeriodInsp });
+          }
         }
       });
     }
@@ -179007,8 +179874,13 @@
       const hldSched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerAgreements: [] };
       // The partners in force: a schedule kept apart by a save and the one that follows it are one partner
       const schedPartners = holdingInForceRows(hldSched.partnerAgreements);
+      // A statement for a date range reads each partner's schedule in force during that range, one line per period
+      // when the share changed inside it (partnerPeriods); `partners` then holds the lines a total counts. With no
+      // range the partners in force today, as before.
+      const partnerPeriods = (!isEmptyBounded && expRange) ? holdingPartnerPeriodsInRange(hldSched.partnerAgreements, expRange) : null;
       const partners = isEmptyBounded
         ? []
+        : partnerPeriods ? partnerPeriods.filter(l => l.counted)
         : (schedPartners.length
           ? schedPartners.map(p => ({
               partner: p.partner,
@@ -179042,9 +179914,12 @@
           net: p.openUsd,
           status: p.openUsd > 0 ? 'Open Leg' : 'Reconciled'
         })),
-        partners
+        partners,
+        partnerPeriods
       };
     },
+    // Gate hook: the partner lines of a date range for any list of schedules (reads only)
+    partnerPeriodsInRange: holdingPartnerPeriodsInRange,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     getIndustryGroups: typeof getIndustryGroups === 'function' ? getIndustryGroups : null,
@@ -179366,6 +180241,7 @@
     closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
     voidRecord: typeof voidRecord === 'function' ? voidRecord : null,
     restoreVoidedRecord: typeof restoreVoidedRecord === 'function' ? restoreVoidedRecord : null,
+    restoreVoidedIndustryDomainRow: typeof restoreVoidedIndustryDomainRow === 'function' ? restoreVoidedIndustryDomainRow : null,
     canEnterForm: typeof canEnterForm === 'function' ? canEnterForm : null,
     canAccessTable: typeof canAccessTable === 'function' ? canAccessTable : null,
     isAppRecord: typeof isAppRecord === 'function' ? isAppRecord : null,
