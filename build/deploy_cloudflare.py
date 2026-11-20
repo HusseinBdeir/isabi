@@ -952,11 +952,18 @@ def ping_indexnow() -> bool:
 
 
 def ensure_email_routing(token: str, acct_id: str, zid: str):
-    """Idempotently ensures Cloudflare Email Routing destination `hbdeir16@gmail.com` and rule `husseinbdeir@isabisystems.com` -> `hbdeir16@gmail.com`."""
+    """Idempotently ensures the Cloudflare Email Routing destination and the forwarding rule alias -> destination.
+
+    Both addresses come from the environment (ISABI_EMAIL_ROUTING_DEST, ISABI_EMAIL_ROUTING_ALIAS), set by the owner on
+    the PC that should check the routing; no address is kept in the repo. Unset: the step is skipped (the routing set up
+    in v19.6.245 stays as it is in Cloudflare)."""
     if not token or not acct_id or not zid:
         return
-    dest_email = "hbdeir16@gmail.com"
-    custom_email = "husseinbdeir@isabisystems.com"
+    dest_email = (os.environ.get("ISABI_EMAIL_ROUTING_DEST") or "").strip().lower()
+    custom_email = (os.environ.get("ISABI_EMAIL_ROUTING_ALIAS") or "").strip().lower()
+    if not dest_email or not custom_email:
+        print("Email Routing check skipped (set ISABI_EMAIL_ROUTING_DEST and ISABI_EMAIL_ROUTING_ALIAS to run it).")
+        return
 
     # 1. Ensure verified destination address exists on the Cloudflare account
     addrs_res = cf_api("GET", f"/accounts/{acct_id}/email/routing/addresses?per_page=50", token)
@@ -983,11 +990,11 @@ def ensure_email_routing(token: str, acct_id: str, zid: str):
                 "(isabisystems.com -> Email -> Email Routing -> Enable Email Routing)."
             )
 
-    # 3. Upsert active forwarding rule `husseinbdeir@isabisystems.com` -> `hbdeir16@gmail.com`
+    # 3. Upsert active forwarding rule alias -> destination
     rules_res = cf_api("GET", f"/zones/{zid}/email/routing/rules?per_page=50", token)
     rules = (rules_res.get("result") or []) if rules_res.get("success") else []
     rule_payload = {
-        "name": "Isabi Systems Principal Inbox (husseinbdeir@isabisystems.com)",
+        "name": f"Isabi Systems Principal Inbox ({custom_email})",
         "enabled": True,
         "matchers": [{"type": "literal", "field": "to", "value": custom_email}],
         "actions": [{"type": "forward", "value": [dest_email]}],
