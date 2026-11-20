@@ -5177,6 +5177,20 @@
     const k = h.kpis || {};
     const icRows = h.intercompany || [];
     const pRows = h.partners || [];
+    // With a date range: each partner's schedule in force during it, one line per period when the schedule changed
+    // inside the range (h.partnerPeriods), and a total that counts a pool once (h.partners). With no range the
+    // table is as it always was.
+    const pLines = (stmtRange && Array.isArray(h.partnerPeriods)) ? h.partnerPeriods : null;
+    // The period as its own pieces: the dates are left as they are, "to", "Open" and the no-schedule line translate
+    const pPeriodDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))
+      ? `<span data-no-i18n="1">${esc(`${v.slice(8, 10)}-${v.slice(5, 7)}-${v.slice(0, 4)}`)}</span>`
+      : `<span>${esc(v || 'Open')}</span>`);
+    const pPeriodHtml = p => (p.isFallback
+      ? '<span>No schedule in this period</span>'
+      : (p.periodFrom ? `${pPeriodDate(p.periodFrom)} <span>to</span> ${pPeriodDate(p.periodTo || 'Open')}` : pPeriodDate(p.periodTo || 'Open')));
+    const pSum = key => pRows.reduce((s, p) => s + Number(p[key] || 0), 0);
+    // A line the total leaves out (an earlier period of a schedule that goes on inside the range) is explained
+    const pHasEarlierPeriod = Boolean(pLines && pLines.some(p => p.counted === false));
     const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
     const winLbl = formatStmtWindowLabel(ctx);
     const winHdr = formatStmtWindowHeader(ctx);
@@ -5234,7 +5248,7 @@
         <thead>
           <tr>
             <th>Partner / Shareholder</th>
-            <th>Equity Role</th>
+            <th>Equity Role</th>${pLines ? '<th>Share Period</th>' : ''}
             <th class="num">Equity Share %</th>
             <th class="num">Opening Capital ($)</th>
             <th class="num">Distributions / Draws ($)</th>
@@ -5243,10 +5257,10 @@
           </tr>
         </thead>
         <tbody>
-          ${pRows.map(p => `
+          ${(pLines || pRows).map(p => `
             <tr>
               <td class="bold">${esc(p.partner || p.name || '-')}</td>
-              <td>${esc(p.role || 'Managing Shareholder')}</td>
+              <td>${esc(p.role || 'Managing Shareholder')}</td>${pLines ? `<td class="mono">${pPeriodHtml(p)}</td>` : ''}
               <td class="num">${fmtNum(p.sharePct || 0, 1)}%</td>
               <td class="num">${fmtUsd(p.opening || 0, 2)}</td>
               <td class="num">${fmtUsd(p.draws || p.distributions || 0, 2)}</td>
@@ -5254,8 +5268,18 @@
               <td class="num bold">${fmtUsd(p.closingBalance || p.balance || 0, 2)}</td>
             </tr>
           `).join('')}
-        </tbody>
-      </table>
+        </tbody>${pLines ? `
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="4">Total Partner Current Accounts</td>
+            <td class="num">${fmtUsd(pSum('opening'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('draws'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('allocatedOverhead'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('closingBalance'), 2)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>${pHasEarlierPeriod ? `
+      <div class="rdl-note-text">A partner's profit-share schedule changed during this period. Each period is on its own line with its dates. The total counts that partner once, on the latest line.</div>` : ''}
       ${renderDomainFieldPackGatePinsHtml('Holding & Treasury', 'rdlHoldingGatePinsSection', '3. Verified Subsidiary & HQ Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Group Chief Financial Officer / المدير المالي للمجموعة', 'Managing Shareholder / الشريك المفوض')}
       ${sheetFooterHtml(coKey, 1, 1)}
