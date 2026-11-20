@@ -12070,6 +12070,25 @@
       "Verified Site Gate Mini-Map": "خريطة مصغّرة لبوابة الموقع الموثقة",
       "Gate Pin QR Code": "رمز QR لإحداثي البوابة",
       "Brake Lining & Shoe Set": "طقم بطانات وفحمات المكابح",
+      "Haul Road Surface (Tyre Wear)": "سطح طريق النقل (تآكل الإطارات)",
+      "Auto-Detect (Unpaved for Quarry / Raw Sites)": "كشف تلقائي (غير معبد للمقالع والمواد الخام)",
+      "Unpaved / Loose Gravel (High Tyre Wear)": "غير معبد / حصى مفكك (تآكل إطارات مرتفع)",
+      "Paved Asphalt / Concrete Road": "طريق معبد بالإسفلت أو الباطون",
+      "Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.": "يكتشف تلقائياً مواقع المقالع والمواد الخام غير المعبدة لاحتساب تآكل إطارات الدفع.",
+      "Tyre Rotation & Alignment": "تدوير وميزانية الإطارات",
+      "Drive-Axle Tyre Replacement": "تبديل إطارات محور الدفع",
+      "Tyres & Alignment": "الإطارات والميزانية",
+      "Tyre & Quarry": "الإطارات والمقالع",
+      "Tyre Wear Due": "صيانة الإطارات مستحقة",
+      "Tyre Wear": "تآكل الإطارات",
+      "Brake": "المكابح",
+      "is overdue on weighted brake & retarder wear for steep downhill haulage to": "تجاوزت حد تآكل المكابح والريتاردر الموزون لمسار النزول الحاد إلى",
+      "Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.": "تنبيه استشاري فقط. يبقى الترحيل متاحاً إذا اعتمد المشرف أو الورشة الإرسال.",
+      "Switch to": "بدّل إلى",
+      "Drive-Axle Tyre Baseline": "خط أساس إطارات محور الدفع",
+      "Expense Invoice Reset": "تصفير بفاتورة مصاريف",
+      "steep/quarry": "منحدر/مقلع",
+      "steep": "منحدر",
       "Clear active filter slice and search query": "مسح الفلتر النشط ونص البحث",
       "Retarder & Drivetrain Inspection": "فحص المُبطئ وناقل الحركة",
       "Brake / Retarder Baseline": "مرجع المكابح والمُبطئ الأساسي",
@@ -25754,6 +25773,25 @@
       "Verified Site Gate Mini-Map": "Mini-carte GPS vérifiée du portail",
       "Gate Pin QR Code": "Code QR du point GPS",
       "Brake Lining & Shoe Set": "Jeu de garnitures & mâchoires de frein",
+      "Haul Road Surface (Tyre Wear)": "Revêtement de route (usure des pneus)",
+      "Auto-Detect (Unpaved for Quarry / Raw Sites)": "Détection auto (non asphalté pour carrières)",
+      "Unpaved / Loose Gravel (High Tyre Wear)": "Non asphalté / gravier (forte usure pneus)",
+      "Paved Asphalt / Concrete Road": "Route asphaltée / bétonnée",
+      "Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.": "Détecte automatiquement les carrières et sites non asphaltés pour pondérer l'usure des pneus.",
+      "Tyre Rotation & Alignment": "Permutation et parallélisme des pneus",
+      "Drive-Axle Tyre Replacement": "Remplacement pneus essieu moteur",
+      "Tyres & Alignment": "Pneus & parallélisme",
+      "Tyre & Quarry": "Pneus & carrière",
+      "Tyre Wear Due": "Usure pneus due",
+      "Tyre Wear": "Usure pneus",
+      "Brake": "Freins",
+      "is overdue on weighted brake & retarder wear for steep downhill haulage to": "dépasse le seuil pondéré d'usure des freins et ralentisseur pour la descente raide vers",
+      "Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.": "Avertissement consultatif uniquement. La validation reste possible si l'atelier ou le superviseur confirme.",
+      "Switch to": "Basculer vers",
+      "Drive-Axle Tyre Baseline": "Base pneus essieu moteur",
+      "Expense Invoice Reset": "Réinitialisation par facture",
+      "steep/quarry": "pente/carrière",
+      "steep": "pente",
       "Clear active filter slice and search query": "Effacer le filtre actif et la recherche",
       "Retarder & Drivetrain Inspection": "Inspection ralentisseur & transmission",
       "Brake / Retarder Baseline": "Référence freins & ralentisseur",
@@ -29471,6 +29509,12 @@
       return lang === 'ar'
         ? `${m[1]} طن-كم منحدرات (+${m[2]} كم تآكل)`
         : `${m[1]} t-km en pente (+${m[2]} km usure)`;
+    }
+    m = trimmed.match(/^([\d,]+)\s*unpaved quarry loads?\s*\(\+?([\d,]+)\s*tyre wear km\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} نقلة مقلع غير معبد (+${m[2]} كم تآكل إطارات)`
+        : `${m[1]} voyage(s) carrière non asphaltée (+${m[2]} km usure pneus)`;
     }
     m = trimmed.match(/^(.+?):\s*([\d,]+)\s*t-km\s*\(\+([\d,]+)\s*wear km\)$/i);
     if (m && depth < 3) {

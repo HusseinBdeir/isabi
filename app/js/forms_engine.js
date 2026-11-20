@@ -1458,6 +1458,15 @@
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
           <div class="form-field span-3" id="sitePriceAgreementsWrap" hidden></div>
+          ${isMfgForm ? fld('Haul Road Surface (Tyre Wear)', sel('f_site_surface', [
+            ['', 'Auto-Detect (Unpaved for Quarry / Raw Sites)'],
+            ['unpaved', 'Unpaved / Loose Gravel (High Tyre Wear)'],
+            ['paved', 'Paved Asphalt / Concrete Road']
+          ], ''), {
+            id: 'wrap_site_surface',
+            hint: 'Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.',
+            hintId: 'hint_site_surface'
+          }) : ''}
           ${fld('Site Status', sel('f_site_status', [['open', 'Open'], ['closed', 'Closed']], 'open'), {
             id: 'wrap_site_status',
             hidden: true,
@@ -1954,6 +1963,8 @@
         ['Differential / Axle Oil 85W-140', 'Differential / Axle Oil 85W-140'],
         ['Brake Lining & Shoe Set', 'Brake Lining & Shoe Set'],
         ['Retarder & Drivetrain Inspection', 'Retarder & Drivetrain Inspection'],
+        ['Tyre Rotation & Alignment', 'Tyre Rotation & Alignment'],
+        ['Drive-Axle Tyre Replacement', 'Drive-Axle Tyre Replacement'],
         ['Oil & Fuel Filter Service', 'Oil & Fuel Filter Service']
       ];
       return `

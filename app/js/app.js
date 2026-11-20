@@ -30855,7 +30855,7 @@
               <div class="unit-econ-kpi">
                 <span class="unit-econ-lbl">Added Brake &amp; Drivetrain Wear</span>
                 <b class="unit-econ-val ${swIdx.totals.extraWearKm > 0 ? 'warn' : ''}" data-no-i18n="1">+${fmtNum(swIdx.totals.extraWearKm, 0)} km</b>
-                <span class="unit-econ-sub"><span>Wear Factor</span> <span data-no-i18n="1">${thMult}x</span> · <span>Effective Avg</span> <span data-no-i18n="1">${swIdx.totals.avgMult.toFixed(2)}x</span></span>
+                <span class="unit-econ-sub"><span>Brake</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.brakeExtraWearKm || 0, 0)}</span> · <span>Climb</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.driveExtraWearKm || 0, 0)}</span> · <span>Tyre</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.tyreExtraWearKm || 0, 0)} km</span> · <span data-no-i18n="1">${thMult}x (${swIdx.totals.avgMult.toFixed(2)}x)</span></span>
               </div>
               <div class="unit-econ-kpi">
                 <span class="unit-econ-lbl">Units Due for Inspection</span>
@@ -30896,7 +30896,10 @@
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepLoads > 0 ? u.activeSteepLoads : ((fl && fl.steep_loads) || 0), 0)}</td>
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepM3 > 0 ? u.activeSteepM3 : ((fl && fl.steep_m3) || 0), 1)} m³</td>
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepTonKm > 0 ? u.activeSteepTonKm : ((fl && fl.steep_ton_km) || 0), 0)}</td>
-                        <td class="r mono" data-no-i18n="1">+${fmtNum(u.activeExtraWearKm > 0 ? u.activeExtraWearKm : ((fl && fl.extra_wear_km) || 0), 0)} km</td>
+                        <td class="r">
+                          <span class="mono" data-no-i18n="1">+${fmtNum(u.activeExtraWearKm > 0 ? u.activeExtraWearKm : (u.tyreExtraWearKm > 0 ? u.tyreExtraWearKm : ((fl && fl.extra_wear_km) || 0)), 0)} km</span>
+                          ${(u.brakeExtraWearKm > 0 || u.driveExtraWearKm > 0 || u.tyreExtraWearKm > 0) ? `<div class="mu" style="font-size:10px;line-height:1.25"><span>Brake</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.brakeExtraWearKm, 0)}</span> · <span>Climb</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.driveExtraWearKm, 0)}</span>${u.tyreExtraWearKm > 0 ? ` · <span>Tyre</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.tyreExtraWearKm, 0)}</span>` : ''}</div>` : ''}
+                        </td>
                         <td>${stBadge}</td>
                         ${canPostOil ? `<td>${u.isOwnFleet && u.isTruckUnit ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="oillog" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}" data-prefill-oil="${esc(resolveSteepWearServicePrefill(fl && fl.schedule_type))}">+ Log Service</button>` : '<span class="mu">-</span>'}</td>` : ''}
                       </tr>
@@ -34639,7 +34642,7 @@
       const oilLabel = r.oil_type || 'Engine Oil 15W-40';
       const catIt = resolveCatalogItem(oilLabel);
       const resolvedCat = (catIt && catIt.category)
-        || (/Brake|Clutch|Plateau|Retarder|Drivetrain/i.test(String(oilLabel)) ? 'Spare Parts' : 'Oils & Lubricants');
+        || (/Brake|Clutch|Plateau|Retarder|Drivetrain|Tyre|Tire|Alignment/i.test(String(oilLabel)) ? 'Spare Parts' : 'Oils & Lubricants');
       const it = ensureItem(oilLabel, { category: resolvedCat, uom: r.uom || (catIt && catIt.uom) || 'Litre', company: r.company });
       if (!it) return;
       it.usedInOilQty = round2(it.usedInOilQty + qty);
@@ -35027,12 +35030,34 @@
     return /brake|lining|shoe|retarder|فريم/i.test(String(s || ''));
   }
 
+  function isTyreServiceText(s) {
+    return /tyre|tire|wheel\s*align|tyre\s*rotat|tire\s*rotat|\bpneu\b|إطار|دولاب|كاوتشوك|ترصيص/i.test(String(s || ''));
+  }
+
   function isDriveOrGearText(s) {
-    return /clutch|plateau|gear|transmission|\batf\b|torque\s*converter|differential|axle|cardan|drivetrain|دبرياج|بلاطو|كردان/i.test(String(s || ''));
+    const str = String(s || '');
+    if (isTyreServiceText(str) && !/clutch|plateau|gearbox|\bgear\b|transmission|\batf\b|torque\s*converter|differential\s*\/\s*axle\s*oil|drivetrain|دبرياج|بلاطو|كردان/i.test(str)) {
+      return false;
+    }
+    return /clutch|plateau|gear|transmission|\batf\b|torque\s*converter|differential|axle|cardan|drivetrain|دبرياج|بلاطو|كردان/i.test(str);
   }
 
   function isDrivetrainOrBrakeServiceType(s) {
-    return /Brake|Retarder|Clutch|Plateau|Gear|Transmission|ATF|Torque\s*Converter|Differential|Axle|Drivetrain/i.test(String(s || ''));
+    const str = String(s || '');
+    if (isTyreServiceText(str) && !isBrakeOrRetarderText(str) && !isDriveOrGearText(str)) return false;
+    return /Brake|Retarder|Clutch|Plateau|Gear|Transmission|ATF|Torque\s*Converter|Differential|Axle|Drivetrain/i.test(str);
+  }
+
+  function classifyWearScheduleSubsystem(s) {
+    const isTyre = isTyreServiceText(s);
+    const isBrk = isBrakeOrRetarderText(s);
+    const isDrv = isDriveOrGearText(s);
+    if (isTyre && !isBrk && !isDrv) return 'tyre';
+    if (isBrk && isDrv) return 'both';
+    if (isBrk) return 'brake';
+    if (isDrv) return 'drive';
+    if (isTyre) return 'tyre';
+    return '';
   }
 
   const VALID_OIL_SELECT_TYPES = new Set([
@@ -35043,12 +35068,20 @@
     'Differential / Axle Oil 85W-140',
     'Brake Lining & Shoe Set',
     'Retarder & Drivetrain Inspection',
+    'Tyre Rotation & Alignment',
+    'Drive-Axle Tyre Replacement',
     'Oil & Fuel Filter Service'
   ]);
 
   function resolveSteepWearServicePrefill(scheduleType) {
     const s = String(scheduleType || '').trim();
     if (!s) return 'Brake Lining & Shoe Set';
+    if (isTyreServiceText(s)) {
+      if (VALID_OIL_SELECT_TYPES.has(s)) return s;
+      return /rotation|align/i.test(s) && !/replace|drive[\s-]*axle|baseline/i.test(s)
+        ? 'Tyre Rotation & Alignment'
+        : 'Drive-Axle Tyre Replacement';
+    }
     if (/Baseline$/i.test(s)) {
       return /Drivetrain|Gearbox/i.test(s) ? 'Retarder & Drivetrain Inspection' : 'Brake Lining & Shoe Set';
     }
@@ -35064,7 +35097,203 @@
   function isDrivetrainRepairOrPartRow(r) {
     if (!r || typeof r !== 'object') return false;
     const hay = [r.part_name, r.subsystem, r.items_summary, r.oil_type, r.notes].filter(Boolean).join(' ');
-    return /brake|lining|shoe|retarder|clutch|plateau|gearbox|transmission|\batf\b|differential|axle|cardan|drivetrain|فريم|دبرياج|بلاطو|كردان/i.test(hay);
+    return /brake|lining|shoe|retarder|clutch|plateau|gearbox|transmission|\batf\b|differential|axle|cardan|drivetrain|tyre|tire|alignment|rotation|فريم|دبرياج|بلاطو|كردان|إطار|دولاب/i.test(hay);
+  }
+
+  function _siteSurfaceSig() {
+    const seedSites = (SEED.records && SEED.records.sites) || [];
+    const custSites = (STATE.customRecords && STATE.customRecords.sites) || [];
+    const parts = [];
+    const scan = (arr, pfx) => {
+      for (let i = 0; i < arr.length; i++) {
+        const s = arr[i];
+        if (!s || s.voided) continue;
+        if (s._industry && s._industry !== 'Manufacturing') continue;
+        if (s.road_surface || pfx === 'c') {
+          parts.push(`${pfx}:${norm(s.name || s.site)}:${String(s.road_surface || '').toLowerCase()}:${s.includes_transport ? 1 : 0}:${s.supplier ? 1 : 0}:${s.customer ? 1 : 0}`);
+        }
+      }
+    };
+    scan(seedSites, 's');
+    scan(custSites, 'c');
+    return `${seedSites.length}:${custSites.length}:${parts.join(',')}`;
+  }
+
+  let _MFG_SITE_BY_NORM_CACHE = { sig: '', map: null };
+
+  function _findLatestMfgSiteObj(siteName, precomputedSurfSig = '') {
+    const ns = norm(siteName);
+    if (!ns) return null;
+    const custSites = (STATE.customRecords && STATE.customRecords.sites) || [];
+    const seedSites = (SEED.records && SEED.records.sites) || [];
+    if (!window.__MFG_SPEED_CACHES_OFF) {
+      const sSig = precomputedSurfSig || _siteSurfaceSig();
+      const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${sSig}`;
+      if (_MFG_SITE_BY_NORM_CACHE.sig !== cacheKey || !_MFG_SITE_BY_NORM_CACHE.map) {
+        const map = new Map();
+        const addRows = arr => {
+          for (let i = 0; i < arr.length; i++) {
+            const s = arr[i];
+            if (!s || s.voided) continue;
+            if (s._industry && s._industry !== 'Manufacturing') continue;
+            const k = norm(s.name || s.site);
+            if (k) map.set(k, s);
+          }
+        };
+        addRows(seedSites);
+        addRows(custSites);
+        _MFG_SITE_BY_NORM_CACHE = { sig: cacheKey, map };
+      }
+      return _MFG_SITE_BY_NORM_CACHE.map.get(ns) || null;
+    }
+    for (let i = custSites.length - 1; i >= 0; i--) {
+      const s = custSites[i];
+      if (!s || s.voided) continue;
+      if (s._industry && s._industry !== 'Manufacturing') continue;
+      if (norm(s.name || s.site) === ns) return s;
+    }
+    for (let i = seedSites.length - 1; i >= 0; i--) {
+      const s = seedSites[i];
+      if (!s || s.voided) continue;
+      if (s._industry && s._industry !== 'Manufacturing') continue;
+      if (norm(s.name || s.site) === ns) return s;
+    }
+    return null;
+  }
+
+  function _collectRawPurchaseSiteSet(coOpt) {
+    const set = new Set();
+    const canRaw = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    if (!canRaw) return set;
+    const scopeSlug = coOpt ? _coScopeSlugForWear(coOpt) : '';
+    const fOpts = { ignorePeriod: true, ignoreSearch: true, tableKey: 'raw_purchases' };
+    if (scopeSlug) fOpts.company = scopeSlug;
+    filterRecords((SEED.records && SEED.records.raw_purchases) || [], fOpts).forEach(t => {
+      if (!t || isRemovedTicket(t) || rawSign(t) <= 0 || !t.site) return;
+      set.add(norm(t.site));
+    });
+    return set;
+  }
+
+  function isUnpavedQuarrySite(siteName, coOpt, rawSiteSetOpt, precomputedSurfSig = '') {
+    const sNm = String(siteName || '').trim();
+    if (!sNm) return false;
+    const ns = norm(sNm);
+    const sObj = _findLatestMfgSiteObj(sNm, precomputedSurfSig);
+    const surf = sObj ? String(sObj.road_surface || '').trim().toLowerCase() : '';
+    if (surf === 'paved') return false;
+    if (surf === 'unpaved') return true;
+    if (sObj && !sObj.customer && (Boolean(sObj.supplier) || isSupplierDeliveredSite(sObj))) return true;
+    if (/quarry|crusher|\bpit\b|borrow|كسارة|مقلع|مقالع/i.test(sNm)) return true;
+    const rawSet = rawSiteSetOpt instanceof Set ? rawSiteSetOpt : _collectRawPurchaseSiteSet(coOpt);
+    return rawSet.has(ns);
+  }
+
+  function qualifiesExpenseForWearReset(r, extraText = '', amtOverride = null, parentForEq = false) {
+    if (!r || typeof r !== 'object') return null;
+    if (r.voided || r.voided_at || /^voided?$/i.test(String(r.status || ''))) return null;
+    if (typeof expenseSign === 'function' && expenseSign(r) <= 0) return null;
+    const dt = String(r.date || r.rep_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return null;
+    const eq = String(r.target_equipment || r.equipment || '').trim();
+    if (!eq) return null;
+    const alloc = String(r.allocation_mode || '').trim();
+    const disp = String(r.disposition || '').trim();
+    const isWhAlloc = Boolean(r.stored_in_warehouse) || /^(stored\s+in\s+)?warehouse$/i.test(alloc) || /warehouse/i.test(disp);
+    if (isWhAlloc) return null;
+    const hay = [r.category, r.subcategory, r.item_name, r.item_summary, r.description, r.notes, extraText].filter(Boolean).join(' ').trim();
+    if (!hay) return null;
+    if (/\btop[\s-]*up\b|تعبئة\s*نقص/i.test(hay)) return null;
+
+    const rawAmt = amtOverride != null ? amtOverride : (r.total_usd ?? r.total ?? r.amount ?? r.line_total ?? 0);
+    const amt = Math.abs(Number.isFinite(Number(rawAmt)) ? Number(rawAmt) : 0);
+    const isBrake = isBrakeOrRetarderText(hay);
+    const isDrive = isDriveOrGearText(hay);
+    const isTyre = isTyreServiceText(hay);
+    if (!isBrake && !isDrive && !isTyre) return null;
+
+    const hasNonFluidPartOrOverhaul = /lining|shoe|pad|disc|drum|plate|bearing|seal|clutch|plateau|gearbox|cardan|assembly|overhaul|replace|replacement|kit\b|set\b|pair\b|تبديل|طقم|كت|عمرة/i.test(hay);
+    if (amt <= 0 && !hasNonFluidPartOrOverhaul) return null;
+    const isMinorFluid = amt < 30 && !hasNonFluidPartOrOverhaul && /\b(fluid|oil|grease|spray|cleaner|زيت|سائل)\b/i.test(hay);
+    const isMinorPuncture = /patch|puncture|plug|valve|air\s*fill|flat\s*fix|رقعة|بنشر|نفخ/i.test(hay);
+
+    const brakeResetOk = Boolean(isBrake && !isMinorFluid);
+    const driveResetOk = Boolean(isDrive && !isMinorFluid);
+    const tyreResetOk = Boolean(isTyre && !isMinorPuncture && amt >= 80);
+    const tyreReplaceOk = Boolean(tyreResetOk && (amt >= 150 || /replace|replacement|new\s*tyre|new\s*tire|drive[\s-]*axle|x\s*[2468]|pair\b|set\b|تبديل|جديد/i.test(hay)));
+    if (!brakeResetOk && !driveResetOk && !tyreResetOk) return null;
+    return {
+      equipment: eq,
+      date: dt,
+      hay,
+      amount: amt,
+      brake: brakeResetOk,
+      drive: driveResetOk,
+      tyre: tyreResetOk,
+      tyreReplace: tyreReplaceOk
+    };
+  }
+
+  function _collectExpenseWearResets(filterOpts, canExp, canExpItems) {
+    const out = [];
+    if (!canExp && !canExpItems) return out;
+    const itemsByExpId = new Map();
+    const expItemsList = canExpItems
+      ? filterRecords((SEED.records && SEED.records.expense_items) || [], Object.assign({}, filterOpts, { tableKey: 'expense_items' }))
+      : [];
+    const parentMap = new Map();
+    const expList = canExp
+      ? filterRecords((SEED.records && SEED.records.expenses) || [], Object.assign({}, filterOpts, { tableKey: 'expenses' }))
+      : [];
+    expList.forEach(ex => {
+      if (ex && ex.id) parentMap.set(String(ex.id), ex);
+    });
+    expItemsList.forEach(it => {
+      if (!it || it.voided) return;
+      const pid = it.expense_id ? String(it.expense_id) : '';
+      if (pid) {
+        if (!itemsByExpId.has(pid)) itemsByExpId.set(pid, []);
+        itemsByExpId.get(pid).push(it);
+      }
+    });
+    expItemsList.forEach(it => {
+      if (!it || it.voided) return;
+      const pid = it.expense_id ? String(it.expense_id) : '';
+      const p = pid ? parentMap.get(pid) : null;
+      const siblings = pid ? (itemsByExpId.get(pid) || []) : [];
+      const allocLow = String(it.allocation_mode || '').trim().toLowerCase();
+      if (it.stored_in_warehouse || allocLow === 'warehouse' || allocLow === 'stored in warehouse') return;
+      const parentIsWh = Boolean(p && (p.stored_in_warehouse || /^(stored\s+in\s+)?warehouse$/i.test(String(p.allocation_mode || '').trim()) || /warehouse/i.test(String(p.disposition || ''))));
+      if (parentIsWh && (!allocLow || allocLow === 'same_equipment')) return;
+      const effEq = String(it.target_equipment || it.equipment || ((!allocLow || allocLow === 'same_equipment') ? ((p && p.equipment) || '') : '')).trim();
+      if (!effEq) return;
+      const effDate = it.date || (p && p.date) || '';
+      const effRepDate = it.rep_date || (p && p.rep_date) || '';
+      const inheritParentText = Boolean(p && siblings.length <= 1 && (!allocLow || allocLow === 'same_equipment'));
+      const parentHint = inheritParentText ? [p.category, p.subcategory, p.description].filter(Boolean).join(' ') : '';
+      const childAmt = it.line_total ?? it.total ?? it.amount ?? ((siblings.length <= 1 && p) ? (p.total_usd ?? p.total ?? p.amount) : null);
+      const res = qualifiesExpenseForWearReset(
+        Object.assign({}, it, {
+          date: effDate,
+          rep_date: effRepDate,
+          equipment: effEq,
+          target_equipment: effEq,
+          company: it.company || (p && p.company)
+        }),
+        parentHint,
+        childAmt,
+        Boolean(inheritParentText && p && p.for_equipment)
+      );
+      if (res) out.push(res);
+    });
+    expList.forEach(ex => {
+      if (!ex) return;
+      const children = ex.id ? (itemsByExpId.get(String(ex.id)) || []) : [];
+      if (children.length > 0) return;
+      const res = qualifiesExpenseForWearReset(ex, '');
+      if (res) out.push(res);
+    });
+    return out;
   }
 
   function _coScopeSlugForWear(coOpt) {
@@ -35099,8 +35328,11 @@
     const canOil = typeof canAccessTable !== 'function' || canAccessTable('equipment_oil_logs');
     const canRep = typeof canAccessTable !== 'function' || canAccessTable('equipment_repairs');
     const canPm = typeof canAccessTable !== 'function' || canAccessTable('part_movements');
+    const canExp = typeof canAccessTable !== 'function' || canAccessTable('expenses');
+    const canExpItems = typeof canAccessTable !== 'function' || canAccessTable('expense_items');
     const geoToken = _geoWearRevToken();
-    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${activeScope}|${refToday}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canSales ? 1 : 0}:${canRaw ? 1 : 0}:${canEquip ? 1 : 0}:${canOil ? 1 : 0}:${canRep ? 1 : 0}:${canPm ? 1 : 0}|s18:${ruleEnabled ? 1 : 0}:${minGradePct}:${minClimbM}:${wearFactorX}:${warnTonKm}|${geoToken}`;
+    const surfSig = _siteSurfaceSig();
+    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${activeScope}|${refToday}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canSales ? 1 : 0}:${canRaw ? 1 : 0}:${canEquip ? 1 : 0}:${canOil ? 1 : 0}:${canRep ? 1 : 0}:${canPm ? 1 : 0}:${canExp ? 1 : 0}:${canExpItems ? 1 : 0}|s18:${ruleEnabled ? 1 : 0}:${minGradePct}:${minClimbM}:${wearFactorX}:${warnTonKm}|${geoToken}|${surfSig}`;
 
     const cached = _STEEP_WEAR_IDX_MAP.get(activeScope);
     if (cached && cached.revKey === revKey) return cached;
@@ -35119,7 +35351,9 @@
         }
       });
     }
-    if (isNonMfg || (!canSales && !canRaw) || !steepVrKeys.size) {
+    const rawSiteSet = (!isNonMfg && canRaw) ? _collectRawPurchaseSiteSet(scopeCoRaw) : new Set();
+    const hasUnpavedSites = !isNonMfg && (((SEED.records && SEED.records.sites) || []).concat((STATE.customRecords && STATE.customRecords.sites) || []).some(s => s && !s.voided && (!s._industry || s._industry === 'Manufacturing') && (String(s.road_surface || '').toLowerCase() === 'unpaved' || (!s.road_surface && !s.customer && (Boolean(s.supplier) || isSupplierDeliveredSite(s) || /quarry|crusher|\bpit\b|borrow|كسارة|مقلع|مقالع/i.test(String(s.name || '')))))) || rawSiteSet.size > 0);
+    if (isNonMfg || (!canSales && !canRaw) || (!steepVrKeys.size && !hasUnpavedSites)) {
       const emptyOut = {
         revKey,
         ruleEnabled,
@@ -35129,7 +35363,7 @@
         corridors: [],
         units: [],
         byUnit,
-        totals: { steepLoads: 0, steepM3: 0, steepTons: 0, steepTonKm: 0, steepM3Km: 0, extraWearKm: 0, steepRouteKm: 0, avgMult: 1 }
+        totals: { steepLoads: 0, steepM3: 0, steepTons: 0, steepTonKm: 0, steepM3Km: 0, extraWearKm: 0, brakeExtraWearKm: 0, driveExtraWearKm: 0, tyreExtraWearKm: 0, tyreLoads: 0, unpavedQuarryLoads: 0, steepRouteKm: 0, avgMult: 1 }
       };
       if (_STEEP_WEAR_IDX_MAP.size >= 8) _STEEP_WEAR_IDX_MAP.clear();
       _STEEP_WEAR_IDX_MAP.set(activeScope, emptyOut);
@@ -35141,13 +35375,19 @@
 
     const lastBrakeSvcMap = new Map();
     const lastDriveSvcMap = new Map();
-    const bumpSubsystemSvc = (eqRaw, dtRaw, textHint) => {
+    const lastTyreSvcMap = new Map();
+    const bumpSubsystemSvc = (eqRaw, dtRaw, textHint, flagsOpt) => {
       const uk = norm(eqRaw);
       const dt = String(dtRaw || '').slice(0, 10);
       if (!uk || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) return;
-      const isBrk = isBrakeOrRetarderText(textHint);
-      const isDrv = isDriveOrGearText(textHint);
-      if (isBrk || !isDrv) {
+      const isTyr = flagsOpt ? Boolean(flagsOpt.tyre) : isTyreServiceText(textHint);
+      const isBrk = flagsOpt ? Boolean(flagsOpt.brake) : isBrakeOrRetarderText(textHint);
+      const isDrv = flagsOpt ? Boolean(flagsOpt.drive) : isDriveOrGearText(textHint);
+      if (isTyr) {
+        const prevT = lastTyreSvcMap.get(uk) || '';
+        if (!prevT || dt > prevT) lastTyreSvcMap.set(uk, dt);
+      }
+      if (isBrk || (!isDrv && !isTyr)) {
         const prevB = lastBrakeSvcMap.get(uk) || '';
         if (!prevB || dt > prevB) lastBrakeSvcMap.set(uk, dt);
       }
@@ -35160,7 +35400,9 @@
     if (canOil) {
       filterRecords((SEED.records && SEED.records.equipment_oil_logs) || [], Object.assign({}, filterOpts, { tableKey: 'equipment_oil_logs' })).forEach(log => {
         if (/top[-\s]*up/i.test(String(log.service_action || ''))) return;
-        if (isDrivetrainOrBrakeServiceType(log.oil_type)) bumpSubsystemSvc(log.equipment, log.date, log.oil_type);
+        if (isDrivetrainOrBrakeServiceType(log.oil_type) || isTyreServiceText(log.oil_type)) {
+          bumpSubsystemSvc(log.equipment, log.date, log.oil_type);
+        }
       });
     }
     if (canRep) {
@@ -35181,6 +35423,9 @@
         }
       });
     }
+    _collectExpenseWearResets(filterOpts, canExp, canExpItems).forEach(er => {
+      bumpSubsystemSvc(er.equipment, er.date, er.hay, er);
+    });
 
     const legMemo = new Map();
     const getSteepCorridor = (coRaw, siteRaw) => {
@@ -35191,26 +35436,30 @@
       if (legMemo.has(lk)) return legMemo.get(lk);
       const nCo = norm(co);
       const nSite = norm(site);
-      if (!steepVrKeys.has(`bu:${nCo}||site:${nSite}`) && !steepVrKeys.has(`site:${nSite}||bu:${nCo}`)) {
+      const isSteepCandidate = steepVrKeys.has(`bu:${nCo}||site:${nSite}`) || steepVrKeys.has(`site:${nSite}||bu:${nCo}`);
+      const isUnpaved = isUnpavedQuarrySite(site, co, rawSiteSet, surfSig);
+      if (!isSteepCandidate && !isUnpaved) {
         legMemo.set(lk, null);
         return null;
       }
       const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: site }, SEED, { roundTripIfAnyBu: true, skipFuel: true, industry: 'Manufacturing' });
-      if (!est || !est.verifiedRoute || !est.elevAvailable) {
+      const oneWayKm = Number((est && est.oneWayKm) || 0);
+      const roundTripKm = Number((est && est.roundTripKm) || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
+      if (!est || !(roundTripKm > 0)) {
         legMemo.set(lk, null);
         return null;
       }
-      const oneWayKm = Number(est.oneWayKm || 0);
-      const roundTripKm = Number(est.roundTripKm || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
-      const elevGainM = Math.max(0, Number(est.ascentM != null ? est.ascentM : est.elevGainM) || 0);
-      const elevDropM = Math.max(0, Number(est.descentM != null ? est.descentM : est.elevDropM) || 0);
+      const elevAvail = Boolean(est.verifiedRoute && est.elevAvailable);
+      const elevGainM = elevAvail ? Math.max(0, Number(est.ascentM != null ? est.ascentM : est.elevGainM) || 0) : 0;
+      const elevDropM = elevAvail ? Math.max(0, Number(est.descentM != null ? est.descentM : est.elevDropM) || 0) : 0;
       const maxElevM = Math.max(elevGainM, elevDropM);
-      const maxGradePct = Math.max(0, Number(est.maxGradePct) || 0);
-      if (!(roundTripKm > 0) || (maxGradePct < minGradePct && maxElevM < minClimbM)) {
+      const maxGradePct = elevAvail ? Math.max(0, Number(est.maxGradePct) || 0) : 0;
+      const isSteep = Boolean(elevAvail && (maxGradePct >= minGradePct || maxElevM >= minClimbM));
+      if (!isSteep && !isUnpaved) {
         legMemo.set(lk, null);
         return null;
       }
-      const hit = { key: lk, co, site, oneWayKm, roundTripKm, elevGainM, elevDropM, maxElevM, maxGradePct };
+      const hit = { key: lk, co, site, oneWayKm, roundTripKm, elevAvailable: elevAvail, elevGainM, elevDropM, maxElevM, maxGradePct, isSteep, isUnpaved };
       legMemo.set(lk, hit);
       return hit;
     };
@@ -35233,9 +35482,11 @@
         const ownershipLabel = isOwnFleet ? 'Own Fleet' : 'Hauler';
         const lastBrake = lastBrakeSvcMap.get(uk) || '';
         const lastDrive = lastDriveSvcMap.get(uk) || '';
+        const lastTyre = lastTyreSvcMap.get(uk) || '';
         const lastSvc = (lastBrake && lastDrive) ? (lastBrake >= lastDrive ? lastBrake : lastDrive) : (lastBrake || lastDrive || '');
         const effBrakeBase = lastBrake || defaultBaselineDate;
         const effDriveBase = lastDrive || defaultBaselineDate;
+        const effTyreBase = lastTyre || defaultBaselineDate;
         const baselineDate = effBrakeBase <= effDriveBase ? effBrakeBase : effDriveBase;
         u = {
           key: uk,
@@ -35249,11 +35500,14 @@
           lastDrivetrainSvcDate: lastSvc,
           lastBrakeSvcDate: lastBrake,
           lastDriveSvcDate: lastDrive,
+          lastTyreSvcDate: lastTyre,
           effBrakeBase,
           effDriveBase,
+          effTyreBase,
           baselineDate,
           trips: [],
           siteAgg: new Map(),
+          tyreSiteAgg: new Map(),
           totalSteepLoads: 0,
           totalSteepM3: 0,
           totalSteepTons: 0,
@@ -35278,11 +35532,19 @@
           driveSteepRouteKm: 0,
           driveSteepTonKm: 0,
           driveExtraWearKm: 0,
+          tyreLoads: 0,
+          tyreRouteKm: 0,
+          tyreTonKm: 0,
+          tyreExtraWearKm: 0,
+          unpavedQuarryLoads: 0,
           maxGradePct: 0,
           maxElevM: 0,
           topSite: '',
           topSiteGradePct: 0,
-          topSiteElevM: 0
+          topSiteElevM: 0,
+          topTyreSite: '',
+          topTyreSiteGradePct: 0,
+          topTyreSiteElevM: 0
         };
         byUnit.set(uk, u);
       }
@@ -35303,7 +35565,6 @@
       const rawTf = typeof resolveProductTonFactor === 'function' ? resolveProductTonFactor(prod, t.product) : 0;
       const tonFactor = rawTf > 0 ? rawTf : 1.6;
       const uomKey = _siteNbUomKey(t.uom || 'm3');
-      const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt }) || equipInfo(t.truck)) : null;
       let m3 = 0;
       let tons = 0;
       if (uomKey === 'm3') {
@@ -35313,6 +35574,7 @@
         tons = q;
         m3 = q / tonFactor;
       } else if (uomKey === 'load' || uomKey === 'truck') {
+        const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt }) || equipInfo(t.truck)) : null;
         const cap = Math.max(1, Number((eqInfoForCap && eqInfoForCap.capacity) || 12));
         m3 = q * cap;
         tons = m3 * tonFactor;
@@ -35324,8 +35586,30 @@
       const loadScale = Math.max(0.5, Math.min(1.6, tons / 20));
       const gradeRatio = Math.max(minGradePct > 0 ? (corr.maxGradePct / minGradePct) : 1, minClimbM > 0 ? (corr.maxElevM / minClimbM) : 1);
       const gradeScale = Math.max(1.0, Math.min(1.5, gradeRatio));
-      const tripMult = 1 + Math.max(0, wearFactorX - 1) * loadScale * gradeScale;
-      const extraWearKm = corr.roundTripKm * (tripMult - 1);
+      const tripMult = corr.isSteep ? (1 + Math.max(0, wearFactorX - 1) * loadScale * gradeScale) : 1;
+      const baseExtraWearKm = corr.isSteep ? (corr.roundTripKm * (tripMult - 1)) : 0;
+
+      // Directional loaded leg: sales Delivery runs plant -> site (climb = elevGainM, descent = elevDropM);
+      // raw Purchase runs loaded quarry -> plant (climb = elevDropM, descent = elevGainM).
+      const isRawLeg = sourceKind === 'raw';
+      const loadedClimbM = isRawLeg ? corr.elevDropM : corr.elevGainM;
+      const loadedDescentM = isRawLeg ? corr.elevGainM : corr.elevDropM;
+      const dirSteepFactor = dirM => {
+        if (!corr.isSteep) return 0;
+        if (!corr.elevAvailable) return 1;
+        if (minClimbM > 0 && dirM >= minClimbM) return 1;
+        if (minGradePct > 0 && corr.maxGradePct >= minGradePct && dirM >= minClimbM * 0.25) {
+          return Math.min(1, dirM / Math.max(1, minClimbM));
+        }
+        return 0;
+      };
+      const tripBrakeExtraKm = baseExtraWearKm * dirSteepFactor(loadedDescentM);
+      const tripDriveExtraKm = baseExtraWearKm * dirSteepFactor(loadedClimbM);
+      const extraWearKm = Math.max(tripBrakeExtraKm, tripDriveExtraKm);
+
+      const unpavedTyreFactor = corr.isUnpaved ? (0.6 * loadScale) : 0;
+      const steepTyreFactor = corr.isSteep ? (0.7 * (tripMult - 1)) : 0;
+      const tripTyreExtraKm = corr.roundTripKm * (steepTyreFactor + unpavedTyreFactor);
       const tonKm = tons * corr.roundTripKm;
       const m3Km = m3 * corr.roundTripKm;
 
@@ -35336,42 +35620,70 @@
         co,
         site: corr.site,
         source: sourceKind,
-        loads: 1,
+        isSteep: corr.isSteep,
+        isUnpaved: corr.isUnpaved,
+        loads: corr.isSteep ? 1 : 0,
         m3,
         tons,
         roundTripKm: corr.roundTripKm,
-        tonKm,
-        m3Km,
+        tonKm: corr.isSteep ? tonKm : 0,
+        m3Km: corr.isSteep ? m3Km : 0,
         extraWearKm,
+        brakeExtraWearKm: tripBrakeExtraKm,
+        driveExtraWearKm: tripDriveExtraKm,
+        tyreLoads: 1,
+        tyreTonKm: tonKm,
+        tyreRouteKm: corr.roundTripKm,
+        tyreExtraWearKm: tripTyreExtraKm,
+        unpavedLoads: corr.isUnpaved ? 1 : 0,
         maxGradePct: corr.maxGradePct,
         maxElevM: corr.maxElevM
       };
       u.trips.push(tr);
-      u.totalSteepLoads += 1;
-      u.totalSteepM3 += m3;
-      u.totalSteepTons += tons;
-      u.totalSteepRouteKm += corr.roundTripKm;
-      u.totalSteepTonKm += tonKm;
-      u.totalSteepM3Km += m3Km;
-      u.totalExtraWearKm += extraWearKm;
-      if (corr.maxGradePct > u.maxGradePct) u.maxGradePct = corr.maxGradePct;
-      if (corr.maxElevM > u.maxElevM) u.maxElevM = corr.maxElevM;
+      if (corr.isSteep) {
+        u.totalSteepLoads += 1;
+        u.totalSteepM3 += m3;
+        u.totalSteepTons += tons;
+        u.totalSteepRouteKm += corr.roundTripKm;
+        u.totalSteepTonKm += tonKm;
+        u.totalSteepM3Km += m3Km;
+        u.totalExtraWearKm += extraWearKm;
+        if (corr.maxGradePct > u.maxGradePct) u.maxGradePct = corr.maxGradePct;
+        if (corr.maxElevM > u.maxElevM) u.maxElevM = corr.maxElevM;
+      }
 
-      if (dt > u.effBrakeBase) {
+      const isBrakeActive = Boolean(corr.isSteep && dt > u.effBrakeBase && tripBrakeExtraKm > 0);
+      const isDriveActive = Boolean(corr.isSteep && dt > u.effDriveBase && tripDriveExtraKm > 0);
+      const isTyreActive = Boolean(dt > u.effTyreBase && tripTyreExtraKm > 0);
+      if (isBrakeActive) {
         u.brakeSteepLoads += 1;
         u.brakeSteepM3 += m3;
         u.brakeSteepRouteKm += corr.roundTripKm;
         u.brakeSteepTonKm += tonKm;
-        u.brakeExtraWearKm += extraWearKm;
+        u.brakeExtraWearKm += tripBrakeExtraKm;
       }
-      if (dt > u.effDriveBase) {
+      if (isDriveActive) {
         u.driveSteepLoads += 1;
         u.driveSteepM3 += m3;
         u.driveSteepRouteKm += corr.roundTripKm;
         u.driveSteepTonKm += tonKm;
-        u.driveExtraWearKm += extraWearKm;
+        u.driveExtraWearKm += tripDriveExtraKm;
       }
-      if (dt > u.baselineDate) {
+      if (isTyreActive) {
+        u.tyreLoads += 1;
+        u.tyreRouteKm += corr.roundTripKm;
+        u.tyreTonKm += tonKm;
+        u.tyreExtraWearKm += tripTyreExtraKm;
+        if (corr.isUnpaved) u.unpavedQuarryLoads += 1;
+        let tsAgg = u.tyreSiteAgg.get(corr.key);
+        if (!tsAgg) {
+          tsAgg = { site: corr.site, co, tonKm: 0, loads: 0, maxGradePct: corr.maxGradePct, maxElevM: corr.maxElevM };
+          u.tyreSiteAgg.set(corr.key, tsAgg);
+        }
+        tsAgg.tonKm += tonKm;
+        tsAgg.loads += 1;
+      }
+      if (corr.isSteep && (isBrakeActive || isDriveActive)) {
         u.activeSteepLoads += 1;
         u.activeSteepM3 += m3;
         u.activeSteepTons += tons;
@@ -35420,6 +35732,7 @@
     }
 
     let totLoads = 0, totM3 = 0, totTons = 0, totTonKm = 0, totM3Km = 0, totExtraKm = 0, totRouteKm = 0;
+    let totBrakeExtraKm = 0, totDriveExtraKm = 0, totTyreExtraKm = 0, totTyreLoads = 0, totUnpavedLoads = 0;
     const units = [];
     byUnit.forEach(u => {
       let bestSite = null;
@@ -35432,6 +35745,17 @@
         u.topSite = bestSite.site;
         u.topSiteGradePct = bestSite.maxGradePct;
         u.topSiteElevM = bestSite.maxElevM;
+      }
+      let bestTyreSite = null;
+      u.tyreSiteAgg.forEach(sAgg => {
+        if (!bestTyreSite || sAgg.tonKm > bestTyreSite.tonKm || (sAgg.tonKm === bestTyreSite.tonKm && sAgg.loads > bestTyreSite.loads)) {
+          bestTyreSite = sAgg;
+        }
+      });
+      if (bestTyreSite) {
+        u.topTyreSite = bestTyreSite.site;
+        u.topTyreSiteGradePct = bestTyreSite.maxGradePct;
+        u.topTyreSiteElevM = bestTyreSite.maxElevM;
       }
       u.activeSteepM3 = round1(u.activeSteepM3);
       u.activeSteepTons = round1(u.activeSteepTons);
@@ -35447,6 +35771,9 @@
       u.driveSteepRouteKm = round1(u.driveSteepRouteKm);
       u.driveSteepTonKm = round1(u.driveSteepTonKm);
       u.driveExtraWearKm = round1(u.driveExtraWearKm);
+      u.tyreRouteKm = round1(u.tyreRouteKm);
+      u.tyreTonKm = round1(u.tyreTonKm);
+      u.tyreExtraWearKm = round1(u.tyreExtraWearKm);
       u.totalSteepM3 = round1(u.totalSteepM3);
       u.totalSteepTons = round1(u.totalSteepTons);
       u.totalSteepTonKm = round1(u.totalSteepTonKm);
@@ -35459,11 +35786,18 @@
         totTonKm += u.activeSteepTonKm;
         totM3Km += u.activeSteepM3Km;
         totExtraKm += u.activeExtraWearKm;
+        totBrakeExtraKm += u.brakeExtraWearKm;
+        totDriveExtraKm += u.driveExtraWearKm;
         totRouteKm += u.activeSteepRouteKm;
+      }
+      if (u.tyreLoads > 0) {
+        totTyreExtraKm += u.tyreExtraWearKm;
+        totTyreLoads += u.tyreLoads;
+        totUnpavedLoads += u.unpavedQuarryLoads;
       }
       units.push(u);
     });
-    units.sort((a, b) => (b.activeSteepTonKm - a.activeSteepTonKm) || (b.totalSteepTonKm - a.totalSteepTonKm) || a.equipment.localeCompare(b.equipment));
+    units.sort((a, b) => (b.activeSteepTonKm - a.activeSteepTonKm) || (b.tyreExtraWearKm - a.tyreExtraWearKm) || (b.totalSteepTonKm - a.totalSteepTonKm) || a.equipment.localeCompare(b.equipment));
     const corridors = Array.from(corridorsMap.values()).sort((a, b) => b.tonKm - a.tonKm || b.loads - a.loads);
 
     const out = {
@@ -35482,6 +35816,11 @@
         steepTonKm: round1(totTonKm),
         steepM3Km: round1(totM3Km),
         extraWearKm: round1(totExtraKm),
+        brakeExtraWearKm: round1(totBrakeExtraKm),
+        driveExtraWearKm: round1(totDriveExtraKm),
+        tyreExtraWearKm: round1(totTyreExtraKm),
+        tyreLoads: totTyreLoads,
+        unpavedQuarryLoads: totUnpavedLoads,
         steepRouteKm: round1(totRouteKm),
         avgMult: totRouteKm > 0 ? round2((totRouteKm + totExtraKm) / totRouteKm) : 1
       }
@@ -35491,34 +35830,54 @@
     return out;
   }
 
-  function computeUnitSteepWearSince(unitName, sinceDateIso, coOpt) {
+  function computeUnitSteepWearSince(unitName, sinceDateIso, coOpt, subsystemOpt) {
     const idx = computeSteepCorridorWearIndex(coOpt);
     const u = idx.byUnit.get(norm(unitName));
     if (!u || !u.isOwnFleet || !u.isTruckUnit || !u.trips.length) {
       return {
         steepLoads: 0, steepM3: 0, steepTons: 0, steepRouteKm: 0, steepTonKm: 0, steepM3Km: 0,
-        extraWearKm: 0, maxGradePct: 0, maxElevM: 0, topSite: '', topCo: ''
+        extraWearKm: 0, brakeExtraWearKm: 0, driveExtraWearKm: 0, tyreExtraWearKm: 0,
+        tyreLoads: 0, tyreTonKm: 0, tyreRouteKm: 0, unpavedLoads: 0,
+        maxGradePct: 0, maxElevM: 0, topSite: '', topCo: '', topTyreSite: ''
       };
     }
     const cutoff = sinceDateIso ? String(sinceDateIso).slice(0, 10) : '';
-    let loads = 0, m3 = 0, tons = 0, routeKm = 0, tonKm = 0, m3Km = 0, extraKm = 0, maxGrade = 0, maxElev = 0;
+    let loads = 0, m3 = 0, tons = 0, routeKm = 0, tonKm = 0, m3Km = 0, extraKm = 0;
+    let brakeExtraKm = 0, driveExtraKm = 0, tyreExtraKm = 0, tyreLoads = 0, tyreTonKm = 0, tyreRouteKm = 0, unpavedLoads = 0;
+    let maxGrade = 0, maxElev = 0;
     const siteMap = new Map();
+    const tyreSiteMap = new Map();
     for (let i = 0; i < u.trips.length; i++) {
       const tr = u.trips[i];
       if (cutoff && tr.date <= cutoff) continue;
-      loads += tr.loads;
-      m3 += tr.m3;
-      tons += tr.tons;
-      routeKm += tr.roundTripKm;
-      tonKm += tr.tonKm;
-      m3Km += tr.m3Km;
-      extraKm += tr.extraWearKm;
-      if (tr.maxGradePct > maxGrade) maxGrade = tr.maxGradePct;
-      if (tr.maxElevM > maxElev) maxElev = tr.maxElevM;
-      const sk = `${tr.co}|${norm(tr.site)}`;
-      const sCur = siteMap.get(sk) || { site: tr.site, co: tr.co, tonKm: 0 };
-      sCur.tonKm += tr.tonKm;
-      siteMap.set(sk, sCur);
+      if (tr.isSteep) {
+        loads += tr.loads;
+        m3 += tr.m3;
+        tons += tr.tons;
+        routeKm += tr.roundTripKm;
+        tonKm += tr.tonKm;
+        m3Km += tr.m3Km;
+        extraKm += tr.extraWearKm;
+        brakeExtraKm += tr.brakeExtraWearKm;
+        driveExtraKm += tr.driveExtraWearKm;
+        if (tr.maxGradePct > maxGrade) maxGrade = tr.maxGradePct;
+        if (tr.maxElevM > maxElev) maxElev = tr.maxElevM;
+        const sk = `${tr.co}|${norm(tr.site)}`;
+        const sCur = siteMap.get(sk) || { site: tr.site, co: tr.co, tonKm: 0 };
+        sCur.tonKm += tr.tonKm;
+        siteMap.set(sk, sCur);
+      }
+      if (tr.tyreExtraWearKm > 0) {
+        tyreLoads += (tr.tyreLoads || 1);
+        tyreTonKm += (tr.tyreTonKm || 0);
+        tyreRouteKm += (tr.tyreRouteKm || 0);
+        tyreExtraKm += tr.tyreExtraWearKm;
+        unpavedLoads += (tr.unpavedLoads || 0);
+        const tsk = `${tr.co}|${norm(tr.site)}`;
+        const tsCur = tyreSiteMap.get(tsk) || { site: tr.site, co: tr.co, tonKm: 0 };
+        tsCur.tonKm += (tr.tyreTonKm || 0);
+        tyreSiteMap.set(tsk, tsCur);
+      }
     }
     let topSite = '';
     let topCo = '';
@@ -35526,6 +35885,18 @@
     siteMap.forEach(s => {
       if (s.tonKm > topTonKm) { topTonKm = s.tonKm; topSite = s.site; topCo = s.co; }
     });
+    let topTyreSite = '';
+    let topTyreTonKm = -1;
+    tyreSiteMap.forEach(s => {
+      if (s.tonKm > topTyreTonKm) { topTyreTonKm = s.tonKm; topTyreSite = s.site; }
+    });
+    const rExtra = subsystemOpt === 'brake'
+      ? brakeExtraKm
+      : (subsystemOpt === 'drive'
+        ? driveExtraKm
+        : (subsystemOpt === 'tyre'
+          ? tyreExtraKm
+          : (subsystemOpt === 'both' ? Math.max(brakeExtraKm, driveExtraKm) : extraKm)));
     return {
       steepLoads: loads,
       steepM3: round1(m3),
@@ -35533,11 +35904,19 @@
       steepRouteKm: round1(routeKm),
       steepTonKm: round1(tonKm),
       steepM3Km: round1(m3Km),
-      extraWearKm: round1(extraKm),
+      extraWearKm: round1(rExtra),
+      brakeExtraWearKm: round1(brakeExtraKm),
+      driveExtraWearKm: round1(driveExtraKm),
+      tyreExtraWearKm: round1(tyreExtraKm),
+      tyreLoads,
+      tyreTonKm: round1(tyreTonKm),
+      tyreRouteKm: round1(tyreRouteKm),
+      unpavedLoads,
       maxGradePct: maxGrade,
       maxElevM: maxElev,
       topSite,
-      topCo
+      topCo,
+      topTyreSite
     };
   }
 
@@ -35549,8 +35928,10 @@
     const canOil = typeof canAccessTable !== 'function' || canAccessTable('equipment_oil_logs');
     const canFuel = typeof canAccessTable !== 'function' || canAccessTable('fuel_intakes');
     const canRep = typeof canAccessTable !== 'function' || canAccessTable('equipment_repairs');
+    const canExp = typeof canAccessTable !== 'function' || canAccessTable('expenses');
+    const canExpItems = typeof canAccessTable !== 'function' || canAccessTable('expense_items');
     const s18Rev = `${isAlertRuleEnabled('S18') ? 1 : 0}:${getAlertParam('S18', 'min_grade_pct', 8)}:${getAlertParam('S18', 'min_climb_m', 250)}:${getAlertParam('S18', 'wear_factor_x', 2.5)}:${getAlertParam('S18', 'warn_ton_km', 15000)}`;
-    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${cacheScope}|${today}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canOil ? 1 : 0}:${canFuel ? 1 : 0}:${canRep ? 1 : 0}|s18:${s18Rev}|${_geoWearRevToken()}`;
+    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${cacheScope}|${today}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canOil ? 1 : 0}:${canFuel ? 1 : 0}:${canRep ? 1 : 0}:${canExp ? 1 : 0}:${canExpItems ? 1 : 0}|s18:${s18Rev}|${_geoWearRevToken()}|${_siteSurfaceSig()}`;
     const cached = _OIL_SERVICE_IDX_MAP.get(cacheScope);
     if (cached && cached.revKey === revKey) return cached;
     if (!scopeCo && _OIL_SERVICE_IDX && _OIL_SERVICE_IDX.revKey === revKey) return _OIL_SERVICE_IDX;
@@ -35560,6 +35941,7 @@
 
     // Latest meter reading per equipment across fuel_intakes, equipment_repairs, and equipment_oil_logs
     const metersByEq = new Map();
+    const meterHistoryByEq = new Map();
     const bumpMeter = (eqRaw, dtRaw, hrsRaw, odoRaw, coRaw) => {
       const k = norm(eqRaw);
       if (!k) return;
@@ -35570,16 +35952,43 @@
         metersByEq.set(k, m);
       }
       const hrs = Number(hrsRaw);
+      const odo = Number(odoRaw);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && ((Number.isFinite(hrs) && hrs > 0) || (Number.isFinite(odo) && odo > 0))) {
+        let hist = meterHistoryByEq.get(k);
+        if (!hist) { hist = []; meterHistoryByEq.set(k, hist); }
+        hist.push({ dt, hrs: Number.isFinite(hrs) && hrs > 0 ? hrs : null, odo: Number.isFinite(odo) && odo > 0 ? odo : null });
+      }
       if (Number.isFinite(hrs) && hrs > 0 && (m.hours == null || dt >= m.hoursDate || hrs > m.hours)) {
         m.hours = hrs;
         m.hoursDate = dt;
       }
-      const odo = Number(odoRaw);
       if (Number.isFinite(odo) && odo > 0 && (m.odometer == null || dt >= m.odoDate || odo > m.odometer)) {
         m.odometer = odo;
         m.km = odo;
         m.odoDate = dt;
       }
+    };
+    const meterAtOrBefore = (eqKey, maxDt, fallbackHrs, fallbackOdo) => {
+      const hist = meterHistoryByEq.get(eqKey);
+      let bestHrs = fallbackHrs;
+      let bestHrsDt = '';
+      let bestOdo = fallbackOdo;
+      let bestOdoDt = '';
+      if (hist && maxDt) {
+        for (let i = 0; i < hist.length; i++) {
+          const ev = hist[i];
+          if (ev.dt > maxDt) continue;
+          if (ev.hrs != null && (!bestHrsDt || ev.dt > bestHrsDt || (ev.dt === bestHrsDt && ev.hrs > (bestHrs || 0)))) {
+            bestHrs = ev.hrs;
+            bestHrsDt = ev.dt;
+          }
+          if (ev.odo != null && (!bestOdoDt || ev.dt > bestOdoDt || (ev.dt === bestOdoDt && ev.odo > (bestOdo || 0)))) {
+            bestOdo = ev.odo;
+            bestOdoDt = ev.dt;
+          }
+        }
+      }
+      return { hrs: bestHrs, odo: bestOdo };
     };
 
     if (canFuel) {
@@ -35599,6 +36008,27 @@
     if (canOil) {
       filterRecords((SEED.records && SEED.records.equipment_oil_logs) || [], Object.assign({}, filterOpts, { tableKey: 'equipment_oil_logs' })).forEach(o => {
         if (o && o.equipment) bumpMeter(o.equipment, o.date, o.hours_reading, o.odometer_km, o.company);
+      });
+    }
+
+    const expResetBrakeMap = new Map();
+    const expResetDriveMap = new Map();
+    const expResetTyreMap = new Map();
+    const expResetTyreReplaceMap = new Map();
+    const expResetBothMap = new Map();
+    if (canOil && (canExp || canExpItems)) {
+      _collectExpenseWearResets(filterOpts, canExp, canExpItems).forEach(er => {
+        const uk = norm(er.equipment);
+        if (!uk) return;
+        const bumpMap = (mp) => {
+          const prev = mp.get(uk);
+          if (!prev || er.date > prev.date) mp.set(uk, er);
+        };
+        if (er.brake) bumpMap(expResetBrakeMap);
+        if (er.drive) bumpMap(expResetDriveMap);
+        if (er.tyre) bumpMap(expResetTyreMap);
+        if (er.tyreReplace) bumpMap(expResetTyreReplaceMap);
+        if (er.brake && er.drive) bumpMap(expResetBothMap);
       });
     }
 
@@ -35625,31 +36055,46 @@
     latestByEqOil.forEach(log => {
       const eqKey = norm(log.equipment);
       const m = metersByEq.get(eqKey) || {};
-      const svcDate = String(log.date || '').slice(0, 10);
+      const wearSub = classifyWearScheduleSubsystem(log.oil_type);
+      const rawSvcDate = String(log.date || '').slice(0, 10);
+      const expHit = wearSub === 'brake'
+        ? expResetBrakeMap.get(eqKey)
+        : (wearSub === 'drive'
+          ? expResetDriveMap.get(eqKey)
+          : (wearSub === 'tyre'
+            ? (/replace/i.test(String(log.oil_type || '')) ? expResetTyreReplaceMap.get(eqKey) : expResetTyreMap.get(eqKey))
+            : (wearSub === 'both' ? expResetBothMap.get(eqKey) : null)));
+      const resetByExpense = Boolean(expHit && rawSvcDate && expHit.date > rawSvcDate);
+      const svcDate = resetByExpense ? expHit.date : rawSvcDate;
       const svcMs = svcDate ? Date.parse(svcDate + 'T00:00:00Z') : todayMs;
       const daysElapsed = Number.isFinite(svcMs) ? Math.max(0, Math.round((todayMs - svcMs) / 86400000)) : 0;
 
-      const svcHrs = log.hours_reading != null && Number(log.hours_reading) > 0 ? Number(log.hours_reading) : null;
+      const rawSvcHrs = log.hours_reading != null && Number(log.hours_reading) > 0 ? Number(log.hours_reading) : null;
+      const rawSvcOdo = log.odometer_km != null && Number(log.odometer_km) > 0 ? Number(log.odometer_km) : null;
+      const baseMeters = resetByExpense ? meterAtOrBefore(eqKey, svcDate, rawSvcHrs, rawSvcOdo) : { hrs: rawSvcHrs, odo: rawSvcOdo };
+      const svcHrs = baseMeters.hrs;
       const curHrs = m.hours != null ? m.hours : svcHrs;
       const hrsWorked = (svcHrs != null && curHrs != null) ? Math.max(0, round2(curHrs - svcHrs)) : null;
       const intHrs = Number(log.interval_hours || 0) > 0 ? Number(log.interval_hours) : null;
       const remHrs = (intHrs != null && hrsWorked != null) ? round2(intHrs - hrsWorked) : null;
       const pctHrs = (intHrs != null && hrsWorked != null) ? (hrsWorked / intHrs) * 100 : 0;
 
-      const svcOdo = log.odometer_km != null && Number(log.odometer_km) > 0 ? Number(log.odometer_km) : null;
+      const svcOdo = baseMeters.odo;
       const curOdo = m.odometer != null ? m.odometer : svcOdo;
       const kmDriven = (svcOdo != null && curOdo != null) ? Math.max(0, round2(curOdo - svcOdo)) : null;
       const intKm = Number(log.interval_km || 0) > 0 ? Number(log.interval_km) : null;
       const remKm = (intKm != null && kmDriven != null) ? round2(intKm - kmDriven) : null;
       const pctKm = (intKm != null && kmDriven != null) ? (kmDriven / intKm) * 100 : 0;
 
-      const isDrivetrainSched = isDrivetrainOrBrakeServiceType(log.oil_type);
+      const isTyreSched = wearSub === 'tyre';
+      const isDrivetrainSched = !isTyreSched && isDrivetrainOrBrakeServiceType(log.oil_type);
       const s18On = isAlertRuleEnabled('S18');
-      const sw = isDrivetrainSched ? computeUnitSteepWearSince(log.equipment, svcDate, scopeCo) : null;
-      const steepWearWeighted = Boolean(isDrivetrainSched && s18On && sw && sw.extraWearKm > 0);
+      const sw = (isDrivetrainSched || isTyreSched) ? computeUnitSteepWearSince(log.equipment, svcDate, scopeCo, wearSub) : null;
+      const steepWearWeighted = Boolean((isDrivetrainSched || isTyreSched) && s18On && sw && sw.extraWearKm > 0);
       const steepExtraWearKm = steepWearWeighted ? round2(sw.extraWearKm) : 0;
+      const baseRouteKm = isTyreSched ? ((sw && sw.tyreRouteKm) || 0) : ((sw && sw.steepRouteKm) || 0);
       const effWearKm = steepWearWeighted
-        ? (kmDriven != null ? round2(kmDriven + steepExtraWearKm) : round2(sw.steepRouteKm + steepExtraWearKm))
+        ? (kmDriven != null ? round2(kmDriven + steepExtraWearKm) : round2(baseRouteKm + steepExtraWearKm))
         : kmDriven;
       const remWearKm = (intKm != null && effWearKm != null) ? round2(intKm - effWearKm) : remKm;
       const pctWearKm = (intKm != null && effWearKm != null && intKm > 0) ? (effWearKm / intKm) * 100 : pctKm;
@@ -35680,11 +36125,12 @@
       if (hrsWorked != null && intHrs != null) trigParts.push(`${fmtNum(hrsWorked, 0)}/${fmtNum(intHrs, 0)} h (${remHrs >= 0 ? fmtNum(remHrs, 0) + ' h left' : fmtNum(Math.abs(remHrs), 0) + ' h overdue'})`);
       if (kmDriven != null && intKm != null) trigParts.push(`${fmtNum(kmDriven, 0)}/${fmtNum(intKm, 0)} km (${remKm >= 0 ? fmtNum(remKm, 0) + ' km left' : fmtNum(Math.abs(remKm), 0) + ' km overdue'})`);
       if (steepWearWeighted && intKm != null && effWearKm != null) {
-        trigParts.push(`${fmtNum(effWearKm, 0)}/${fmtNum(intKm, 0)} wear km (+${fmtNum(steepExtraWearKm, 0)} steep)`);
+        trigParts.push(`${fmtNum(effWearKm, 0)}/${fmtNum(intKm, 0)} wear km (+${fmtNum(steepExtraWearKm, 0)} ${isTyreSched ? 'steep/quarry' : 'steep'})`);
       } else if (steepWearWeighted && steepExtraWearKm > 0) {
-        trigParts.push(`+${fmtNum(steepExtraWearKm, 0)} steep wear km`);
+        trigParts.push(`+${fmtNum(steepExtraWearKm, 0)} ${isTyreSched ? 'steep/quarry' : 'steep'} wear km`);
       }
       if (intDays != null) trigParts.push(`${fmtNum(daysElapsed, 0)}/${fmtNum(intDays, 0)} d (${remDays >= 0 ? fmtNum(remDays, 0) + ' d left' : fmtNum(Math.abs(remDays), 0) + ' d overdue'})`);
+      if (resetByExpense) trigParts.push('Exp. reset');
 
       const item = {
         id: log.id || log.name,
@@ -35693,12 +36139,15 @@
         equipment: log.equipment,
         oil_type: log.oil_type || 'Engine Oil 15W-40',
         last_date: svcDate,
+        resetByExpense,
         qty: Number(log.qty || 0),
         uom: log.uom || 'Litre',
-        source: log.source || 'Plant Lube Bay',
+        source: resetByExpense ? 'Expense Invoice Reset' : (log.source || 'Plant Lube Bay'),
         svcHrs, curHrs, hrsWorked, intHrs, remHrs, nextDueHrs: (svcHrs != null && intHrs != null) ? round2(svcHrs + intHrs) : null,
         svcOdo, curOdo, kmDriven, intKm, remKm, nextDueKm: (svcOdo != null && intKm != null) ? round2(svcOdo + intKm) : null,
+        wearSub,
         isDrivetrainSched,
+        isTyreSched,
         steepWearWeighted,
         steepExtraWearKm,
         effWearKm,
@@ -35706,7 +36155,11 @@
         steepTonKm: sw ? round1(sw.steepTonKm) : 0,
         steepM3: sw ? round1(sw.steepM3) : 0,
         steepLoads: sw ? sw.steepLoads : 0,
+        tyreTonKm: sw ? round1(sw.tyreTonKm) : 0,
+        tyreLoads: sw ? (sw.tyreLoads || 0) : 0,
+        unpavedLoads: sw ? (sw.unpavedLoads || 0) : 0,
         topSteepSite: (sw && sw.topSite) || '',
+        topTyreSite: (sw && sw.topTyreSite) || '',
         daysElapsed, intDays, remDays,
         maxPct: round2(maxPct),
         trigger_summary: trigParts.join(' · ') || 'Scheduled',
@@ -35752,6 +36205,9 @@
         steepLoads: swIdx.totals.steepLoads,
         steepTonKm: swIdx.totals.steepTonKm,
         extraWearKm: swIdx.totals.extraWearKm,
+        brakeExtraWearKm: swIdx.totals.brakeExtraWearKm || 0,
+        driveExtraWearKm: swIdx.totals.driveExtraWearKm || 0,
+        tyreExtraWearKm: swIdx.totals.tyreExtraWearKm || 0,
         byUnitFlag: new Map(),
         flaggedUnits: []
       };
@@ -35764,7 +36220,7 @@
 
     swIdx.units.forEach(u => {
       if (!u.isOwnFleet || !u.isTruckUnit) return;
-      const unitScheds = (oilIdx.byUnit.get(u.key) || []).filter(s => s.isDrivetrainSched);
+      const unitScheds = (oilIdx.byUnit.get(u.key) || []).filter(s => s.isDrivetrainSched || s.isTyreSched);
       const weightedOver = unitScheds.filter(s => s.steepWearWeighted && s.steepExtraWearKm > 0 && (s.status === 'OVERDUE' || s.status === 'DUE SOON'));
       let bestRow = null;
       if (weightedOver.length) {
@@ -35779,11 +36235,14 @@
           company: top.company || u.company,
           ownership: u.ownership,
           top_corridor: top.topSteepSite || u.topSite || '-',
+          top_tyre_site: top.topTyreSite || u.topTyreSite || '',
           schedule_type: top.oil_type,
           last_service_date: top.last_date || u.lastDrivetrainSvcDate || '-',
-          steep_loads: top.steepLoads || u.activeSteepLoads,
-          steep_m3: top.steepM3 || u.activeSteepM3,
-          steep_ton_km: top.steepTonKm || u.activeSteepTonKm,
+          steep_loads: top.steepLoads || u.activeSteepLoads || 0,
+          steep_m3: top.steepM3 || u.activeSteepM3 || 0,
+          steep_ton_km: top.steepTonKm || u.activeSteepTonKm || 0,
+          tyre_loads: top.tyreLoads || u.tyreLoads || 0,
+          tyre_ton_km: top.tyreTonKm || u.tyreTonKm || 0,
           flat_km: top.kmDriven,
           extra_wear_km: top.steepExtraWearKm,
           eff_wear_km: top.effWearKm,
@@ -35870,6 +36329,9 @@
       steepLoads: swIdx.totals.steepLoads,
       steepTonKm: swIdx.totals.steepTonKm,
       extraWearKm: swIdx.totals.extraWearKm,
+      brakeExtraWearKm: swIdx.totals.brakeExtraWearKm || 0,
+      driveExtraWearKm: swIdx.totals.driveExtraWearKm || 0,
+      tyreExtraWearKm: swIdx.totals.tyreExtraWearKm || 0,
       byUnitFlag: flaggedMap,
       flaggedUnits
     };
@@ -35893,6 +36355,12 @@
       const u = swIdx.byUnit.get(uk);
       return Boolean(swSn.byUnitFlag.has(uk) || (u && u.isOwnFleet && u.isTruckUnit && u.activeSteepLoads > 0 && u.activeSteepTonKm > 0));
     };
+    const hasTyreWear = name => {
+      const uk = norm(name);
+      const u = swIdx.byUnit.get(uk);
+      const fl = swSn.byUnitFlag.get(uk);
+      return Boolean((u && u.isOwnFleet && u.isTruckUnit && u.tyreExtraWearKm > 0 && u.tyreLoads > 0) || (fl && isTyreServiceText(fl.schedule_type)));
+    };
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
     const isTruckEquip = e => Boolean(e && String(e.Equipment || '').trim()) && /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const equipAll = m.equipment || [];
@@ -35900,6 +36368,7 @@
     const transCount = equipAll.length - ownCount;
     const equipWithDefectsCount = equipAll.filter(e => getEquipmentHealth(e.Equipment).severityRank <= 3).length;
     const equipSteepCount = equipAll.filter(e => hasSteepWear(e.Equipment)).length;
+    const equipTyreCount = equipAll.filter(e => hasTyreWear(e.Equipment)).length;
     const equipBase = equipAll.filter(e => !STATE.search || Object.values(e).join(' ').toLowerCase().includes(STATE.search.toLowerCase()));
     const equipRows = sortRows(equipBase.filter(e => {
       if (STATE.chipFilter === 'own') return isOwnEquip(e);
@@ -35908,6 +36377,7 @@
       if (STATE.chipFilter === 'machinery') return !isTruckEquip(e);
       if (STATE.chipFilter === 'defects') return getEquipmentHealth(e.Equipment).severityRank <= 3;
       if (STATE.chipFilter === 'steep_wear') return hasSteepWear(e.Equipment);
+      if (STATE.chipFilter === 'tyre_wear') return hasTyreWear(e.Equipment);
       if (STATE.chipFilter === 'cost') return Number(e.total_cost || 0) > 0;
       if (STATE.chipFilter === 'diesel') return Number(e.diesel_litres || 0) > 0;
       if (STATE.chipFilter === 'app') {
@@ -35925,6 +36395,7 @@
       if (STATE.chipFilter === 'transporter') return !/^own/i.test(ce.ownership || '');
       if (STATE.chipFilter === 'defects') return getEquipmentHealth(ce.equipment, ce.company).severityRank <= 3;
       if (STATE.chipFilter === 'steep_wear') return hasSteepWear(ce.equipment);
+      if (STATE.chipFilter === 'tyre_wear') return hasTyreWear(ce.equipment);
       if (STATE.chipFilter === 'app') return isAppRecord(ce);
       return true;
     }), 'coeq', 'loads_hauled', 'desc');
@@ -35997,7 +36468,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search equipment, plate, type, ownership...')}
-            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('steep_wear', `Steep Wear (${equipSteepCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('steep_wear', `Steep Wear (${equipSteepCount})`)}${chip('tyre_wear', `Tyre &amp; Quarry (${equipTyreCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('fleet_maint')} Defects &amp; Parts</button>
@@ -36020,10 +36491,12 @@
                 const swFlagEq = swSn.byUnitFlag.get(ukEq) || null;
                 const swUnitEq = swIdx.byUnit.get(ukEq) || null;
                 const swBadgeHtml = swFlagEq
-                  ? `<span class="badge ${esc(swFlagEq.badgeCls)} tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(swFlagEq.schedule_type + ': ' + fmtNum(swFlagEq.steep_ton_km, 0) + ' t-km (+' + fmtNum(swFlagEq.extra_wear_km, 0) + ' wear km)')}">${ic('wrench')}<span>${esc(swFlagEq.status === 'OVERDUE' ? 'Brake Wear Due' : 'Steep Wear')}</span></span>`
+                  ? `<span class="badge ${esc(swFlagEq.badgeCls)} tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(swFlagEq.schedule_type + ': ' + fmtNum(swFlagEq.steep_ton_km, 0) + ' t-km (+' + fmtNum(swFlagEq.extra_wear_km, 0) + ' wear km)')}">${ic('wrench')}<span>${esc(swFlagEq.status === 'OVERDUE' ? (isTyreServiceText(swFlagEq.schedule_type) ? 'Tyre Wear Due' : 'Brake Wear Due') : (isTyreServiceText(swFlagEq.schedule_type) ? 'Tyre Wear' : 'Steep Wear'))}</span></span>`
                   : (swUnitEq && swUnitEq.activeSteepLoads > 0 && swUnitEq.isOwnFleet && swUnitEq.isTruckUnit
                     ? `<span class="badge badge-info tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(fmtNum(swUnitEq.activeSteepTonKm, 0) + ' steep t-km (+' + fmtNum(swUnitEq.activeExtraWearKm, 0) + ' wear km)')}">${ic('wrench')}<span>Steep Wear</span></span>`
-                    : '');
+                    : (swUnitEq && swUnitEq.unpavedQuarryLoads > 0 && swUnitEq.isOwnFleet && swUnitEq.isTruckUnit
+                      ? `<span class="badge badge-brass tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(fmtNum(swUnitEq.unpavedQuarryLoads, 0) + ' unpaved quarry loads (+' + fmtNum(swUnitEq.tyreExtraWearKm, 0) + ' tyre wear km)')}">${ic('wrench')}<span>Tyre &amp; Quarry</span></span>`
+                      : ''));
                 return `
                 <tr class="rrow" data-rkey="equipment" data-rid="${esc((equipInfo(e.Equipment) || {}).id || e.Equipment)}">
                   <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${renderEquipmentHealthBadge(e.Equipment, null, true)}${swBadgeHtml}${isTruckEquip(e) ? `<button type="button" class="fpnl-only-btn" style="margin-left:5px;padding:1px 6px;font-size:10px" data-fpnl-focus-unit="${esc(e.Equipment)}" data-ui-tip="Focus Truck Revenue &amp; Cost P&amp;L on ${esc(e.Equipment)}">P&amp;L</button>` : ''}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
@@ -36158,6 +36631,7 @@
       if (oilF === 'overdue') return s.status === 'OVERDUE';
       if (oilF === 'due_soon') return s.status === 'DUE SOON';
       if (oilF === 'drivetrain') return s.isDrivetrainSched;
+      if (oilF === 'tyres') return Boolean(s.isTyreSched);
       if (oilF === '15w40') return /15W-40|Engine/i.test(s.oil_type || '');
       if (oilF === 'hyd68') return /Hydraulic/i.test(s.oil_type || '');
       if (oilF === 'gear') return /Gear|ATF|Differential|Axle/i.test(s.oil_type || '');
@@ -36478,6 +36952,7 @@
             ${oChip('hyd68', `Hydraulic Oil 68 (${oilBase.filter(s => /Hydraulic/i.test(s.oil_type || '')).length})`)}
             ${oChip('gear', `Gear / ATF / Axle (${oilBase.filter(s => /Gear|ATF|Differential|Axle/i.test(s.oil_type || '')).length})`)}
             ${oChip('drivetrain', `Brake &amp; Drivetrain (${oilBase.filter(s => s.isDrivetrainSched).length})`)}
+            ${oChip('tyres', `Tyres &amp; Alignment (${oilBase.filter(s => s.isTyreSched).length})`)}
           </div>
         </div>
         <div class="table-wrap">
@@ -36496,8 +36971,11 @@
                 const kmTxt = (s.kmDriven != null && s.intKm != null)
                   ? `${fmtNum(s.kmDriven, 0)} / ${fmtNum(s.intKm, 0)} km (${s.remKm >= 0 ? fmtNum(s.remKm, 0) + 'km left' : fmtNum(Math.abs(s.remKm), 0) + 'km over'})`
                   : (s.curOdo != null ? `${fmtNum(s.curOdo, 0)} km` : 'N/A');
+                const wearTipTxt = (s.isTyreSched && !(s.steepTonKm > 0) && s.unpavedLoads > 0)
+                  ? `${fmtNum(s.unpavedLoads, 0)} unpaved quarry loads (+${fmtNum(s.steepExtraWearKm, 0)} tyre wear km)`
+                  : `Effective wear: ${fmtNum(s.effWearKm, 0)}${s.intKm ? ' / ' + fmtNum(s.intKm, 0) : ''} km (${fmtNum(s.steepTonKm, 0)} steep t-km)`;
                 const wearBadgeHtml = (s.steepWearWeighted && s.steepExtraWearKm > 0)
-                  ? `<div style="margin-top:2px"><span class="badge ${s.status === 'OVERDUE' ? 'badge-err' : 'badge-warn'}" data-ui-tip="${esc('Effective wear: ' + fmtNum(s.effWearKm, 0) + (s.intKm ? ' / ' + fmtNum(s.intKm, 0) : '') + ' km (' + fmtNum(s.steepTonKm, 0) + ' steep t-km)')}"><span data-no-i18n="1">+${fmtNum(s.steepExtraWearKm, 0)}</span> <span>wear km</span></span></div>`
+                  ? `<div style="margin-top:2px"><span class="badge ${s.status === 'OVERDUE' ? 'badge-err' : 'badge-warn'}" data-ui-tip="${esc(wearTipTxt)}"><span data-no-i18n="1">+${fmtNum(s.steepExtraWearKm, 0)}</span> <span>wear km</span></span></div>`
                   : '';
                 const dayTxt = s.intDays != null
                   ? `${fmtNum(s.daysElapsed, 0)} / ${fmtNum(s.intDays, 0)} d (${s.remDays >= 0 ? fmtNum(s.remDays, 0) + 'd left' : fmtNum(Math.abs(s.remDays), 0) + 'd over'})`
@@ -92952,6 +93430,7 @@
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
+          <div id="dispatchSteepBrakeWarnBanner" class="form-field span-3 pa-rec-banner warn dispatch-brake-warn-banner" role="status" aria-live="polite" hidden></div>
           ${fld('Payment Method *', sel('f_method', (STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets') ? [['Credit', 'Credit'], ['Cash', 'Cash'], ['Free', 'Free (Zero-Value)']] : [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to the Customer default (Cash or Credit)', hintId: 'hint_method', hint: '' })}
 
           ${secHdr('2. Quantities & Amounts')}
@@ -93041,6 +93520,7 @@
           ${fld('Truck *', inp('f_truck', 'text', pendRawEditRow ? (pendRawEditRow.truck || '') : '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', ...(pendRawEditRow ? { lockField: 'f_truck', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', pendRawEditRow ? (pendRawEditRow.truck_owner || '') : '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', hidden: true, lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', pendRawEditRow ? (pendRawEditRow.driver || '') : '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log - update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
+          <div id="dispatchSteepBrakeWarnBanner" class="form-field span-3 pa-rec-banner warn dispatch-brake-warn-banner" role="status" aria-live="polite" hidden></div>
 
           ${secHdr('2. Quantities & Costs')}
           <input type="hidden" id="f_raw_price_pending" value="0">
@@ -97404,6 +97884,193 @@
     });
   }
 
+  function _unitBrakeWearStatusForDispatch(unitName, company, swIdx, oilIdx, warnTonKm) {
+    const uk = norm(unitName);
+    if (!uk) return { overdue: false, pct: 0, extraKm: 0, scheduleType: '', effWearKm: null, intKm: null };
+    const unitScheds = (oilIdx && oilIdx.byUnit && oilIdx.byUnit.get(uk)) || [];
+    const brakeScheds = unitScheds.filter(s => isBrakeOrRetarderText(s.oil_type) && !isTyreServiceText(s.oil_type));
+    let worst = null;
+    for (let i = 0; i < brakeScheds.length; i++) {
+      const s = brakeScheds[i];
+      if (!worst || s.rank < worst.rank || (s.rank === worst.rank && (s.maxPct || 0) > (worst.maxPct || 0))) {
+        worst = s;
+      }
+    }
+    if (worst && worst.status === 'OVERDUE') {
+      return {
+        overdue: true,
+        pct: Math.max(100, Number(worst.maxPct || 100)),
+        extraKm: Number(worst.steepExtraWearKm || 0),
+        scheduleType: worst.oil_type || 'Brake Lining & Shoe Set',
+        effWearKm: worst.effWearKm,
+        intKm: worst.intKm
+      };
+    }
+    const u = swIdx && swIdx.byUnit && swIdx.byUnit.get(uk);
+    const hasExplicitBrakeKm = brakeScheds.some(s => Number(s.intKm || 0) > 0);
+    if (u && u.isOwnFleet && u.isTruckUnit && !hasExplicitBrakeKm && u.brakeSteepTonKm >= warnTonKm) {
+      return {
+        overdue: true,
+        pct: warnTonKm > 0 ? round1((u.brakeSteepTonKm / warnTonKm) * 100) : 100,
+        extraKm: Number(u.brakeExtraWearKm || 0),
+        scheduleType: 'Brake / Retarder Baseline',
+        effWearKm: round1((u.brakeSteepRouteKm || 0) + (u.brakeExtraWearKm || 0)),
+        intKm: null
+      };
+    }
+    return {
+      overdue: false,
+      pct: worst ? Number(worst.maxPct || 0) : (u && warnTonKm > 0 ? round1((u.brakeSteepTonKm / warnTonKm) * 100) : 0),
+      extraKm: worst ? Number(worst.steepExtraWearKm || 0) : (u ? Number(u.brakeExtraWearKm || 0) : 0),
+      scheduleType: worst ? (worst.oil_type || '') : '',
+      effWearKm: worst ? worst.effWearKm : null,
+      intKm: worst ? worst.intKm : null
+    };
+  }
+
+  function findLowestWearAvailableOwnTruck(company, excludeTruckName, refDate, ctxOpt = null) {
+    const co = canonTwBu(company || '');
+    if (!co || getActiveIndustry(co) !== 'Manufacturing') return null;
+    const swIdx = (ctxOpt && ctxOpt.swIdx) || computeSteepCorridorWearIndex(co);
+    const oilIdx = (ctxOpt && ctxOpt.oilIdx) || getOilServiceIndex(co);
+    const warnTonKm = (swIdx && swIdx.params && swIdx.params.warnTonKm) || Math.max(500, Number(getAlertParam('S18', 'warn_ton_km', 15000)) || 15000);
+    const rawList = typeof trucksForOwner === 'function' ? (trucksForOwner('', co, true) || []) : [];
+    const exclKey = norm(excludeTruckName || '');
+    const dt = String(refDate || todayISO()).slice(0, 10);
+    const freqIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    const truckFreq = (freqIdx && typeof freqIdx.forCol === 'function') ? freqIdx.forCol('truck') : null;
+    const candidates = [];
+    const seen = new Set();
+    for (let i = 0; i < rawList.length; i++) {
+      const name = String(rawList[i] || '').trim();
+      const nk = norm(name);
+      if (!nk || nk === exclKey || seen.has(nk)) continue;
+      seen.add(nk);
+      const eq = equipInfo(name, co, true, { date: dt }) || equipInfo(name, co, true);
+      if (!eq || !isOwnUnit(eq, co)) continue;
+      const coRow = typeof companyFleetRow === 'function' ? companyFleetRow(name, co) : null;
+      const eqSt = String((eq && eq.status) || (coRow && coRow.status) || '').trim();
+      if (/sold|retired|under\s*repair|out\s*of\s*service|scrapped|inactive/i.test(eqSt)) continue;
+      const h = typeof getEquipmentHealth === 'function' ? getEquipmentHealth(name, co) : null;
+      if (h && (h.severityRank === 0 || h.severityRank === 1 || h.severityRank === 6)) continue;
+      const unitScheds = (oilIdx && oilIdx.byUnit && oilIdx.byUnit.get(nk)) || [];
+      if (unitScheds.some(s => s && s.status === 'OVERDUE')) continue;
+      const bw = _unitBrakeWearStatusForDispatch(name, co, swIdx, oilIdx, warnTonKm);
+      if (bw.overdue) continue;
+      candidates.push({
+        truck: eq.name || name,
+        driver: eq.default_driver || '',
+        capacity: Number(eq.capacity || 0),
+        brakePct: bw.pct,
+        extraKm: bw.extraKm,
+        healthRank: h ? Number(h.severityRank || 0) : 5,
+        freq: truckFreq ? (truckFreq.get(nk) || truckFreq.get(norm(eq.name || name)) || 0) : 0
+      });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) =>
+      (a.brakePct - b.brakePct)
+      || (a.extraKm - b.extraKm)
+      || (b.healthRank - a.healthRank)
+      || (b.freq - a.freq)
+      || a.truck.localeCompare(b.truck)
+    );
+    return candidates[0];
+  }
+
+  function evaluateDispatchSteepBrakeWarning(formType, company, site, truckName, effDate, opts = {}) {
+    const co = canonTwBu(company || '');
+    const sNm = String(site || '').trim();
+    const tNm = String(truckName || '').trim();
+    if (!co || !sNm || !tNm) return null;
+    if (getActiveIndustry(co) !== 'Manufacturing') return null;
+    if (!isAlertRuleEnabled('S18')) return null;
+    if (opts && opts.isCoFleet === false) return null;
+    const eqObj = equipInfo(tNm, co, true, { date: effDate || todayISO() }) || equipInfo(tNm, co, false);
+    if (eqObj && !isOwnUnit(eqObj, co)) return null;
+    const geo = window.MFG_GEO;
+    if (!geo || typeof geo.estimateLegKm !== 'function') return null;
+    const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: sNm }, SEED, { roundTripIfAnyBu: true, skipFuel: true, industry: 'Manufacturing' });
+    if (!est || !est.verifiedRoute) return null;
+    const oneWayKm = Number(est.oneWayKm || 0);
+    const roundTripKm = Number(est.roundTripKm || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
+    if (!(roundTripKm > 0)) return null;
+    const isRawLeg = formType === 'raw';
+    const loadedClimbM = Math.max(0, Number(isRawLeg ? (est.descentM != null ? est.descentM : est.elevDropM) : (est.ascentM != null ? est.ascentM : est.elevGainM)) || 0);
+    const loadedDescentM = Math.max(0, Number(isRawLeg ? (est.ascentM != null ? est.ascentM : est.elevGainM) : (est.descentM != null ? est.descentM : est.elevDropM)) || 0);
+    const maxGradePct = Math.max(0, Number(est.maxGradePct) || 0);
+    const minGradePct = Math.max(1, Number(getAlertParam('S18', 'min_grade_pct', 8)) || 8);
+    const minClimbM = Math.max(25, Number(getAlertParam('S18', 'min_climb_m', 250)) || 250);
+    const isSteepBrakeLeg = Boolean((minClimbM > 0 && loadedDescentM >= minClimbM) || (minGradePct > 0 && maxGradePct >= minGradePct && (!est.elevAvailable || loadedDescentM >= minClimbM * 0.25 || loadedDescentM >= loadedClimbM)));
+    if (!isSteepBrakeLeg) return null;
+
+    const swIdx = computeSteepCorridorWearIndex(co);
+    const oilIdx = getOilServiceIndex(co);
+    const warnTonKm = (swIdx && swIdx.params && swIdx.params.warnTonKm) || Math.max(500, Number(getAlertParam('S18', 'warn_ton_km', 15000)) || 15000);
+    const bw = _unitBrakeWearStatusForDispatch(tNm, co, swIdx, oilIdx, warnTonKm);
+    if (!bw.overdue) return null;
+    const bestAlt = findLowestWearAvailableOwnTruck(co, (eqObj && eqObj.name) || tNm, effDate, { swIdx, oilIdx });
+    return {
+      active: true,
+      formType,
+      company: co,
+      site: sNm,
+      truck: (eqObj && eqObj.name) || tNm,
+      maxGradePct: round1(maxGradePct),
+      loadedDescentM: Math.round(loadedDescentM),
+      loadedClimbM: Math.round(loadedClimbM),
+      roundTripKm: round1(roundTripKm),
+      scheduleType: bw.scheduleType,
+      effWearKm: bw.effWearKm,
+      intKm: bw.intKm,
+      extraWearKm: round1(bw.extraKm),
+      suggestedTruck: bestAlt ? bestAlt.truck : '',
+      suggestedDriver: bestAlt ? bestAlt.driver : '',
+      suggestedBrakePct: bestAlt ? bestAlt.brakePct : null,
+      suggestedExtraKm: bestAlt ? round1(bestAlt.extraKm) : 0
+    };
+  }
+
+  function syncDispatchSteepBrakeWarning(formType, opts = {}) {
+    const banner = $('dispatchSteepBrakeWarnBanner');
+    if (!banner) return null;
+    const dispMode = (opts && opts.disp && opts.disp.mode) || FORM_UI.ticketDisposition || 'standard';
+    if (STATE.view === 'kiosks' || dispMode !== 'standard' || !opts || !opts.isCoFleet || !opts.site || !opts.truckName) {
+      banner.hidden = true;
+      banner.dataset.warnSig = '';
+      banner.innerHTML = '';
+      return null;
+    }
+    const res = evaluateDispatchSteepBrakeWarning(formType, opts.company, opts.site, opts.truckName, opts.effDate, { isCoFleet: true });
+    if (!res || !res.active) {
+      banner.hidden = true;
+      banner.dataset.warnSig = '';
+      banner.innerHTML = '';
+      return null;
+    }
+    const metricBits = `${res.maxGradePct.toFixed(1)}% · -${fmtNum(res.loadedDescentM, 0)}m${res.effWearKm != null ? ' · ' + fmtNum(res.effWearKm, 0) + (res.intKm ? '/' + fmtNum(res.intKm, 0) : '') + ' km' : ''}`;
+    const warnSig = `${formType}|${res.truck}|${res.site}|${metricBits}|${res.suggestedTruck || ''}`;
+    if (!banner.hidden && banner.dataset.warnSig === warnSig) return res;
+    banner.hidden = false;
+    banner.dataset.warnSig = warnSig;
+    banner.innerHTML = `
+      <span class="pa-rec-banner-ico">${ic('warn')}</span>
+      <div class="dispatch-brake-warn-body">
+        <div class="dispatch-brake-warn-title">
+          <b data-no-i18n="1">${esc(res.truck)}</b>
+          <span>is overdue on weighted brake &amp; retarder wear for steep downhill haulage to</span>
+          <b data-no-i18n="1">${esc(res.site)}</b>
+          <span class="mu" data-no-i18n="1">(${metricBits})</span>
+        </div>
+        <div class="dispatch-brake-warn-sub">
+          <span>Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.</span>
+        </div>
+      </div>
+      ${res.suggestedTruck ? `<button type="button" id="btnSwitchLowestWearTruck" class="dispatch-brake-swap-btn" data-switch-low-wear-truck="${esc(res.suggestedTruck)}"><span>Switch to</span> <b data-no-i18n="1">${esc(res.suggestedTruck)}</b></button>` : ''}
+    `;
+    return res;
+  }
+
   function recalcSales() {
     syncOriginDispatchUI('sales', true);
     const company = val('f_company');
@@ -98062,6 +98729,14 @@
       setText('calc_vat', (vatReg || vat > 0) ? fmtUSD(-vat, 2) : '$0.00');
       setText('calc_total', '$0.00 Net (' + fmtUSD(-ttc, 2) + ')');
     }
+    syncDispatchSteepBrakeWarning('sales', {
+      company,
+      isCoFleet: isCoFleet && isDelivery,
+      site,
+      truckName,
+      effDate: salesEffDate,
+      disp
+    });
     renderAdminLockBar();
     return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
       // Recorded on the ticket only while the transport price is the agreed one (a typed price carries no surcharge).
@@ -98653,6 +99328,14 @@
       setText('calc_qty', `-${fmtNum(qty, 2)} ${uom} (Net 0)`);
       setText('calc_total', '$0.00 Net (' + fmtUSD(-rawTot, 2) + ')');
     }
+    syncDispatchSteepBrakeWarning('raw', {
+      company,
+      isCoFleet: isCoFleet && !isSuppDeliv && !pendRawEditRowEarly,
+      site,
+      truckName,
+      effDate,
+      disp
+    });
     renderAdminLockBar();
     return { origin, disp, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, haulIsIndiff: effHaulIsIndiff, qty, up, tp, disc, mat, tr, rawTot, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard, pricePending: rawPricePending };
   }
@@ -104029,6 +104712,10 @@
         if (siteRegLbl) siteRegLbl.textContent = inclTrans ? 'Region (Optional · Supplier Delivers)' : 'Region *';
         const siteNameLbl = document.querySelector('#wrap_site_name .pa-fld-lbl');
         if (siteNameLbl) siteNameLbl.textContent = inclTrans ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *';
+        const surfSelEl = $('f_site_surface');
+        if (surfSelEl) {
+          surfSelEl.disabled = Boolean(editingSiteRec && !canWriteGeoConfig());
+        }
 
         const mTitle = $('modalTitle');
         if (mTitle && !STATE.editingPendingExpenseId) {
@@ -105727,11 +106414,21 @@
           const catOil = resolveCatalogItem(oilType);
           const defOilUom = (catOil && catOil.uom)
             ? catOil.uom
-            : (/Brake|Clutch|Retarder|Drivetrain|Filter/i.test(oilType) ? 'Set' : (/Grease/i.test(oilType) ? 'kg' : 'Litre'));
+            : (/Brake|Clutch|Retarder|Drivetrain|Filter|Tyre|Tire|Alignment/i.test(oilType) ? 'Set' : (/Grease/i.test(oilType) ? 'kg' : 'Litre'));
           if (/Hydraulic/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '1000';
             if ($('f_int_km')) $('f_int_km').value = '0';
             if ($('f_int_days')) $('f_int_days').value = '365';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
+          } else if (/Drive[\s-]*Axle.*(?:Tyre|Tire)|(?:Tyre|Tire).*Replac/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '0';
+            if ($('f_int_km')) $('f_int_km').value = '45000';
+            if ($('f_int_days')) $('f_int_days').value = '365';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
+          } else if (/Tyre|Tire|Alignment/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '0';
+            if ($('f_int_km')) $('f_int_km').value = '20000';
+            if ($('f_int_days')) $('f_int_days').value = '120';
             if ($('f_uom')) $('f_uom').value = defOilUom;
           } else if (/Brake/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '0';
@@ -109331,6 +110028,26 @@
           recalcForm();
           return;
         }
+        const switchLowWearBtn = ev.target && ev.target.closest ? ev.target.closest('[data-switch-low-wear-truck]') : null;
+        if (switchLowWearBtn) {
+          ev.preventDefault();
+          const targetTruck = String(switchLowWearBtn.getAttribute('data-switch-low-wear-truck') || '').trim();
+          if (targetTruck && $('f_truck')) {
+            const isTonMode = /^tons?$/i.test(String(val('f_uom') || '').trim());
+            const savedTonQty = (isTonMode && qtyEl()) ? String(qtyEl().value || '') : '';
+            $('f_truck').value = targetTruck;
+            FORM_UI.driverManual = false;
+            if (!isTonMode) FORM_UI.qtyManual = false;
+            recalcForm(true);
+            if (isTonMode && savedTonQty && qtyEl()) {
+              qtyEl().value = savedTonQty;
+              FORM_UI.qtyManual = true;
+              recalcForm(true);
+            }
+            toast(`Switched dispatch truck to ${targetTruck}`, 'ok');
+          }
+          return;
+        }
         const siteRulesCoBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rules-all-cos]') : null;
         if (siteRulesCoBtn) {
           ev.preventDefault();
@@ -112746,6 +113463,13 @@
       }
       // A cleared end date is deliberate: sync and the seed re-apply must not put the old one back
       const siteReopenFlag = (origSite && origSiteEnd && !siteEndVal) ? { _reopenedExplicitly: true } : (siteEndVal ? { _reopenedExplicitly: false } : {});
+      const rawSurfVal = $('f_site_surface') ? String(val('f_site_surface') || '').trim().toLowerCase() : '';
+      const surfVal = (rawSurfVal === 'paved' || rawSurfVal === 'unpaved') ? rawSurfVal : '';
+      const origHasSurf = Boolean(origSite && Object.prototype.hasOwnProperty.call(origSite, 'road_surface'));
+      const canMutateSurf = !(origSite && !canWriteGeoConfig());
+      const siteSurfacePatch = canMutateSurf
+        ? (surfVal ? { road_surface: surfVal } : (origHasSurf ? { road_surface: '' } : {}))
+        : (origHasSurf ? { road_surface: origSite.road_surface } : {});
       record = {
         ...base,
         name: nm,
@@ -112762,6 +113486,7 @@
         is_jv: isJvSite,
         status: siteStatusVal,
         end_date: siteEndVal,
+        ...siteSurfacePatch,
         ...siteReopenFlag,
         ...(isJvSite ? { jv_partner: jvPartnerVal, jv_share: round2(jvShareVal), jv_company: jvCoVal } : { jv_partner: '', jv_share: 0, jv_company: '' })
       };
@@ -118710,11 +119435,11 @@
           renderRepairItemsBuilderRows();
         }
       }
-      const pfOil = prefill.oilType || prefill.oil || '';
+      const pfOil = prefill.oilType || prefill.oil_type || prefill.oil || '';
       if (pfOil && $('f_oil_type')) {
         const selEl = $('f_oil_type');
         selEl.value = pfOil;
-        if (!selEl.value && isDrivetrainOrBrakeServiceType(pfOil)) {
+        if (!selEl.value && (isDrivetrainOrBrakeServiceType(pfOil) || isTyreServiceText(pfOil))) {
           selEl.value = resolveSteepWearServicePrefill(pfOil);
         }
         FORM_UI.lastOilType = '';
@@ -119900,6 +120625,10 @@
       setModalControlVal('f_site', row.name || row.site || '');
       setModalControlVal('f_lat', row.latitude != null && row.latitude !== '' ? row.latitude : '');
       setModalControlVal('f_lng', row.longitude != null && row.longitude !== '' ? row.longitude : '');
+      if ($('f_site_surface')) {
+        const rsLow = String(row.road_surface || '').trim().toLowerCase();
+        setModalControlVal('f_site_surface', rsLow === 'paved' ? 'paved' : (rsLow === 'unpaved' ? 'unpaved' : ''));
+      }
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
       if ($('wrap_site_status') && $('f_site_status')) {
         const rowEnd = row.end_date ? String(row.end_date).slice(0, 10) : '';
@@ -180361,6 +181090,9 @@
     computeUnitSteepWearSince: typeof computeUnitSteepWearSince === 'function' ? computeUnitSteepWearSince : null,
     getSteepWearSentinelData: typeof getSteepWearSentinelData === 'function' ? getSteepWearSentinelData : null,
     resolveSteepWearServicePrefill: typeof resolveSteepWearServicePrefill === 'function' ? resolveSteepWearServicePrefill : null,
+    isUnpavedQuarrySite: typeof isUnpavedQuarrySite === 'function' ? isUnpavedQuarrySite : null,
+    evaluateDispatchSteepBrakeWarning: typeof evaluateDispatchSteepBrakeWarning === 'function' ? evaluateDispatchSteepBrakeWarning : null,
+    findLowestWearAvailableOwnTruck: typeof findLowestWearAvailableOwnTruck === 'function' ? findLowestWearAvailableOwnTruck : null,
     getOilServiceIndex: typeof getOilServiceIndex === 'function' ? getOilServiceIndex : null,
     getWarehouseIndex: typeof getWarehouseIndex === 'function' ? getWarehouseIndex : null,
     getFormUi: () => FORM_UI
