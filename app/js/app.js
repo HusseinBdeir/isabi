@@ -30667,12 +30667,16 @@
         const corrRows = [];
 
         if (geo && typeof geo.estimateLegKm === 'function') {
+          // Only a pair with a verified route on file can become a row here, so the map is asked for the full
+          // estimate for those pairs alone (it used to be asked for every site of every company on each open).
+          const hasVr = (typeof geo.hasVerifiedRoutePair === 'function' && !window.__MFG_SPEED_CACHES_OFF) ? geo.hasVerifiedRoutePair : null;
           cos.forEach(co => {
             const fp = showUsd ? getLatestDieselPrice(co) : null;
             sitesPool.forEach(s => {
               const sn = norm(s.name);
               const pk = `${co}|${sn}`;
               if (!sn || seenPairs.has(pk)) return;
+              if (hasVr && !hasVr({ type: 'bu', name: co }, { type: 'site', name: s.name })) return;
               const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: s.name }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
               if (!est || !est.verifiedRoute || !(Number(est.oneWayKm) > 0)) return;
               seenPairs.add(pk);
@@ -99320,13 +99324,35 @@
         if (!fpByCo.has(co)) fpByCo.set(co, showUsd ? getLatestDieselPrice(co) : null);
         return fpByCo.get(co);
       };
+      // The route from a company's hub to a site, and the diesel its climb adds, depend on the company and the
+      // site only, never on the ticket. Each pair is worked out once per call: 15,000 delivery tickets go to a
+      // few hundred sites, and asking the map again for every ticket cost about 300 ms each time Sales or Fleet
+      // opened (found on v19.6.401). The answers live for this one call, so nothing can go stale.
+      // window.__MFG_SPEED_CACHES_OFF asks the map for every ticket again, as before, so the speed gate can
+      // require the same screen both ways.
+      const legBySite = new Map();
+      const keepLegs = !window.__MFG_SPEED_CACHES_OFF;
+      const legFor = (co, site) => {
+        const lk = `${co}\u0000${typeof site}\u0000${site}`;
+        if (keepLegs && legBySite.has(lk)) return legBySite.get(lk);
+        let leg = null;
+        const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: site }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
+        if (est && est.verifiedRoute && est.elevAvailable && Number(est.roundTripKm || est.oneWayKm) > 0) {
+          const gf = resolveRouteGradeFuel(co, est.roundTripKm || est.oneWayKm, est);
+          if (gf && gf.gradeAdjusted) leg = { est, gf };
+        }
+        if (keepLegs) legBySite.set(lk, leg);
+        return leg;
+      };
+      const fuelCoOk = new Map();
       salesPool.forEach(t => {
         const co = canonTwBu(t.company || 'WTC');
-        if (!isFuelCompanyAllowed(co)) return;
-        const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: t.site }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
-        if (!est || !est.verifiedRoute || !est.elevAvailable || !(Number(est.roundTripKm || est.oneWayKm) > 0)) return;
-        const gf = resolveRouteGradeFuel(co, est.roundTripKm || est.oneWayKm, est);
-        if (!gf || !gf.gradeAdjusted) return;
+        if (!fuelCoOk.has(co)) fuelCoOk.set(co, Boolean(isFuelCompanyAllowed(co)));
+        if (!fuelCoOk.get(co)) return;
+        const leg = legFor(co, t.site);
+        if (!leg) return;
+        const est = leg.est;
+        const gf = leg.gf;
         const q = Number(t.qty || 0);
         const rawUom = t.uom;
         const uomKey = (rawUom == null || rawUom === '') ? 'm3' : _siteNbUomKey(rawUom);
