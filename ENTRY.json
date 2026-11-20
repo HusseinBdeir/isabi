@@ -1,0 +1,19 @@
+{
+ "app": {
+  "branch": "wt/rate-impact-recs",
+  "sha": "65307a3f54df1a7db9e0c6001047a8679e91ee0e"
+ },
+ "gates": [
+  "isabi-app: node build/verify_rate_change_recs.mjs",
+  "isabi-app: node build/verify_statement_past_ranges.mjs",
+  "isabi-app: node build/verify_dated_log_keep_period.mjs",
+  "isabi-app: node build/verify_sidebar_subtab_opt.mjs"
+ ],
+ "holder": "THEO 5a74d592 (rate-impact-recs)",
+ "id": "20261120T225558Z-9b13ffdb",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T22:55:58Z",
+ "seenAt": "2026-11-20T22:55:58Z",
+ "state": "waiting",
+ "summary": "Rate changes: a Customer or Supplier Statement marked as sent keeps its records as they are (difference listed for the next statement), Manufacturing shows the tickets a price change re-prices before Post, Owner page Rate Changes with large-change and same-day-undo alerts, past date ranges read the schedule in force then (Holding dashboard, Real Estate rent roll, Statement 26)"
+}
