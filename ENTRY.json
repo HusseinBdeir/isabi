@@ -3,6 +3,12 @@
   "branch": "wt/topup-20261120",
   "sha": "52e77cee829bc13d9d494d6b7f26f210105f4d0f"
  },
+ "batch": {
+  "at": "2026-11-20T22:04:09Z",
+  "holder": "THEO 712e0473 (topup-20261120)",
+  "lockId": "713dab3329364f89b805fcf91f00a69c",
+  "version": "19.6.408"
+ },
  "gates": [
   "isabi-app: python build/verify_cashflow_rules.py",
   "isabi-app: node build/verify_i18n_templates.mjs",
