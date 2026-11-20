@@ -115,12 +115,50 @@ function getBeirutClockParts(now = new Date()) {
   }
 }
 
-async function ensureVapidKeypair(db) {
+async function readEnvVapidKeypair(env) {
+  const pubRaw = String((env && env.VAPID_PUBLIC_KEY) || '').trim();
+  const privRaw = String((env && env.VAPID_PRIVATE_KEY) || '').trim();
+  const subRaw = String((env && env.VAPID_SUBJECT) || '').trim();
+  if (!pubRaw || !privRaw || !subRaw || !/^(?:mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/i.test(subRaw)) return null;
+  const pubBytes = b64UrlDecode(pubRaw);
+  const privBytes = b64UrlDecode(privRaw);
+  if (pubBytes.length !== 65 || pubBytes[0] !== 0x04 || privBytes.length !== 32) return null;
+  try {
+    const x = b64UrlEncode(pubBytes.slice(1, 33));
+    const y = b64UrlEncode(pubBytes.slice(33, 65));
+    const d = b64UrlEncode(privBytes);
+    const privateJwk = { kty: 'EC', crv: 'P-256', x, y, d, ext: true };
+    const publicJwk = { kty: 'EC', crv: 'P-256', x, y, ext: true };
+    const privKey = await crypto.subtle.importKey('jwk', privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    const pubKey = await crypto.subtle.importKey('jwk', publicJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const probe = UTF8_ENC.encode('isabi-vapid-env-check');
+    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privKey, probe);
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pubKey, sig, probe);
+    if (!ok) return null;
+    return { publicKeyB64Url: b64UrlEncode(pubBytes), privateJwk, publicJwk, subject: subRaw, createdAt: 'env' };
+  } catch (_) {
+    return null;
+  }
+}
+
+function hasAnyEnvVapidSetting(env) {
+  if (!env || typeof env !== 'object') return false;
+  return Boolean(
+    String(env.VAPID_PUBLIC_KEY || '').trim() ||
+    String(env.VAPID_PRIVATE_KEY || '').trim() ||
+    String(env.VAPID_SUBJECT || '').trim()
+  );
+}
+
+async function ensureVapidKeypair(db, env) {
+  if (hasAnyEnvVapidSetting(env)) {
+    return await readEnvVapidKeypair(env);
+  }
   const existingRow = await readEdgeKvDoc(db, VAPID_KV_KEY);
   if (existingRow && existingRow.payload_json) {
     try {
       const parsed = JSON.parse(existingRow.payload_json);
-      if (parsed && parsed.publicKeyB64Url && parsed.privateJwk && parsed.publicJwk) {
+      if (parsed && parsed.publicKeyB64Url && parsed.privateJwk && parsed.privateJwk.d) {
         return parsed;
       }
     } catch (_) {}
@@ -160,7 +198,7 @@ async function buildVapidAuthHeader(endpointOrigin, vapid) {
   const payload = b64UrlEncode(UTF8_ENC.encode(JSON.stringify({
     aud: endpointOrigin,
     exp,
-    sub: 'mailto:ops@isabisystems.com'
+    sub: (vapid && vapid.subject) || 'mailto:ops@isabisystems.com'
   })));
   const signingInput = UTF8_ENC.encode(`${header}.${payload}`);
   const privKey = await crypto.subtle.importKey(
@@ -1526,16 +1564,17 @@ export async function handleDayClosePush(request, env, session, body) {
   const rl = await checkD1RateLimit(env, rlKey, isBuildTicket ? 20 : 30, 60, { failClosed: true });
   if (!rl.allowed) return jsonResponse({ ok: false, error: 'Rate limit reached for close-of-day push.' }, 429);
 
-  const vapid = await ensureVapidKeypair(env.DB);
+  const vapid = await ensureVapidKeypair(env.DB, env);
 
   if (request.method === 'GET') {
     const subsRow = await readEdgeKvDoc(env.DB, PUSH_SUBS_KV_KEY);
     const store = readSubsStoreObj(subsRow);
     const cfg = store.byUser[userId] || {};
     const subs = Array.isArray(cfg.subs) ? cfg.subs : [];
-    return jsonResponse({
+    return jsonResponse(Object.assign({
       ok: true,
-      vapidPublicKey: vapid.publicKeyB64Url,
+      enabled: Boolean(vapid),
+      vapidPublicKey: vapid ? vapid.publicKeyB64Url : '',
       subscribed: subs.length > 0,
       endpointCount: subs.length,
       closeHourBeirut: sanitizeCloseHour(cfg.closeHourBeirut),
@@ -1543,7 +1582,7 @@ export async function handleDayClosePush(request, env, session, body) {
       lang: sanitizeLang(cfg.lang),
       scopeKey: String(cfg.scopeKey || ''),
       lastSentDate: String(cfg.lastSentDate || '')
-    });
+    }, vapid ? {} : { reason: 'invalid_vapid_env' }));
   }
 
   if (request.method !== 'POST') {
@@ -1557,6 +1596,9 @@ export async function handleDayClosePush(request, env, session, body) {
   }
 
   if (op === 'subscribe') {
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, subscribed: false, stored: false, endpointCount: 0 });
+    }
     const sub = body && body.subscription;
     const epChk = validatePushEndpoint(sub && sub.endpoint);
     if (!epChk.ok) return jsonResponse({ ok: false, error: epChk.error }, 400);
@@ -1617,6 +1659,50 @@ export async function handleDayClosePush(request, env, session, body) {
     return jsonResponse({ ok: true, subscribed: true, endpointCount: resCas.payload.endpointCount });
   }
 
+  if (op === 'rotate') {
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, rotated: false, subscribed: false, endpointCount: 0 });
+    }
+    const sub = body && body.subscription;
+    const epChk = validatePushEndpoint(sub && sub.endpoint);
+    if (!epChk.ok) return jsonResponse({ ok: false, error: epChk.error }, 400);
+    const p256dh = b64UrlDecode(sub && sub.keys && sub.keys.p256dh);
+    const auth = b64UrlDecode(sub && sub.keys && sub.keys.auth);
+    if (p256dh.length !== 65 || p256dh[0] !== 0x04 || auth.length !== 16) {
+      return jsonResponse({ ok: false, error: 'Invalid Web Push subscription keys.' }, 400);
+    }
+    const repRaw = String((body && body.replaces) || '').trim();
+    const repChk = repRaw ? validatePushEndpoint(repRaw) : { ok: false, url: '' };
+    const repUrl = repChk.ok ? repChk.url : '';
+    const resCas = await mutateSubsStoreCas(env.DB, userId, (store, nowIso) => {
+      const cur = store.byUser[userId];
+      if (!cur || !Array.isArray(cur.subs) || !cur.subs.length) {
+        return { skipWrite: true, payload: { rotated: false, subscribed: false } };
+      }
+      const hadPrev = cur.subs.some(s => s && (s.endpoint === epChk.url || (repUrl && s.endpoint === repUrl)));
+      if (!hadPrev) {
+        return { skipWrite: true, payload: { rotated: false, subscribed: true } };
+      }
+      for (const [otherId, otherCfg] of Object.entries(store.byUser || {})) {
+        if (otherId === userId || !otherCfg || !Array.isArray(otherCfg.subs)) continue;
+        const beforeLen = otherCfg.subs.length;
+        otherCfg.subs = otherCfg.subs.filter(s => s && s.endpoint !== epChk.url);
+        if (otherCfg.subs.length !== beforeLen) otherCfg.updatedAt = nowIso;
+      }
+      const kept = cur.subs.filter(s => s && s.endpoint !== epChk.url && (!repUrl || s.endpoint !== repUrl));
+      kept.unshift({
+        endpoint: epChk.url,
+        keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) },
+        addedAt: nowIso
+      });
+      cur.subs = kept.slice(0, MAX_SUBS_PER_USER);
+      cur.updatedAt = nowIso;
+      return { payload: { rotated: true, subscribed: true, endpointCount: cur.subs.length } };
+    });
+    if (!resCas.ok) return resCas.response;
+    return jsonResponse({ ok: true, rotated: Boolean(resCas.payload.rotated), subscribed: Boolean(resCas.payload.subscribed), endpointCount: Number(resCas.payload.endpointCount || 0) });
+  }
+
   if (op === 'unsubscribe') {
     const endpoint = String((body && body.endpoint) || '').trim();
     const resCas = await mutateSubsStoreCas(env.DB, userId, (store, nowIso) => {
@@ -1663,6 +1749,9 @@ export async function handleDayClosePush(request, env, session, body) {
   }
 
   if (op === 'test') {
+    if (!vapid) {
+      return jsonResponse({ ok: false, enabled: false, delivered: 0, error: 'Web Push VAPID configuration is incomplete.' }, 503);
+    }
     const hasReqScope = Boolean(body && (Object.prototype.hasOwnProperty.call(body, 'scopeKey') || Object.prototype.hasOwnProperty.call(body, 'company')));
     let reqScopeKey = null;
     if (hasReqScope) {
@@ -1734,6 +1823,9 @@ export async function handleDayClosePush(request, env, session, body) {
     const effHour = (body && typeof body.hour === 'number' && Number.isFinite(body.hour) && body.hour >= 0 && body.hour <= 23)
       ? Math.floor(body.hour)
       : beirut.hour;
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, date: targetDate, beirutHour: effHour, sentUsers: 0, sentEndpoints: 0, hasMore: false });
+    }
     const maxBatch = Math.min(50, Math.max(1, Number(body && body.limit) || 25));
     const actor = isBuildTicket ? 'cron:day-close-push' : userId;
     const runToken = crypto.randomUUID();

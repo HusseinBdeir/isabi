@@ -294,6 +294,35 @@ def main() -> int:
             dc.check_checkout_not_behind_origin = orig_behind
             dc.ensure_logged_in = orig_ensure
 
+        # Case 13: Unmerged origin/wt/* older than WT_CLAIM_MAX_AGE_DAYS (7d) is ignored; <7d claim still blocks
+        _git(my_isabi, ["fetch", "-q", "origin"], git_env)
+        _git(my_isabi, ["reset", "-q", "--hard", "origin/main"], git_env)
+        _git(peer_app, ["fetch", "-q", "origin"], git_env)
+        _git(peer_app, ["checkout", "-q", "-b", "wt/stale-old-360", "origin/main"], git_env)
+        stale_env = dict(git_env, GIT_AUTHOR_DATE="2026-11-01T12:00:00Z", GIT_COMMITTER_DATE="2026-11-01T12:00:00Z")
+        _commit(peer_app, {"sw.js": _sw("v19.6.360"), "js/app.js": "// stale 360\n"}, "stale 360", stale_env)
+        _git(peer_app, ["push", "-q", "origin", "wt/stale-old-360"], git_env)
+
+        _git(peer_app, ["checkout", "-q", "-b", "wt/fresh-361", "origin/main"], git_env)
+        fresh_env = dict(git_env, GIT_AUTHOR_DATE="2026-11-19T12:00:00Z", GIT_COMMITTER_DATE="2026-11-19T12:00:00Z")
+        _commit(peer_app, {"sw.js": _sw("v19.6.361"), "js/app.js": "// fresh 361\n"}, "fresh 361", fresh_env)
+        _git(peer_app, ["push", "-q", "origin", "wt/fresh-361"], git_env)
+
+        os.environ["ISABI_VERSION_CLAIMS_NOW_UNIX"] = str(int(1795176000))  # 2026-11-20T12:00:00Z equivalent check below
+        try:
+            # Compute exact epoch for 2026-11-20T12:00:00Z via datetime
+            import datetime as _dt  # noqa: PLC0415
+            os.environ["ISABI_VERSION_CLAIMS_NOW_UNIX"] = str(int(_dt.datetime(2026, 11, 20, 12, 0, tzinfo=_dt.timezone.utc).timestamp()))
+            claims13 = dc.collect_unshipped_version_claims(my_isabi, env=git_env)
+            refs13 = [c["ref"] for c in claims13["claims"]]
+            check(
+                "origin/wt/stale-old-360" not in refs13 and "origin/wt/fresh-361" in refs13,
+                "case13-stale-gt7d-wt-ignored-fresh-kept",
+                f"refs={refs13}",
+            )
+        finally:
+            os.environ.pop("ISABI_VERSION_CLAIMS_NOW_UNIX", None)
+
     passed = sum(1 for ok, _ in RESULTS if ok)
     total = len(RESULTS)
     failed = [name for ok, name in RESULTS if not ok]
