@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/steep-wear-all-recs",
+  "sha": "21a26cdec46c58797fff025644dd00466971bfaf"
+ },
+ "gates": [
+  "isabi-app: node build/verify_steep_corridor_wear.mjs"
+ ],
+ "holder": "agy-efb59b71",
+ "id": "20261120T204024Z-5f55f009",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T20:40:24Z",
+ "seenAt": "2026-11-20T20:40:24Z",
+ "site": {
+  "branch": "wt/steep-wear-all-recs-site",
+  "sha": "4a4e0f557534cd6724d1d11cef2ad8a6ed551b5b"
+ },
+ "state": "waiting",
+ "summary": "Directional steep climb/descent wear split, unpaved quarry tyre weighting, expense resets, surface RBAC & dispatch brake warning"
+}
