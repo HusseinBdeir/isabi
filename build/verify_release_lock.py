@@ -266,6 +266,115 @@ def main() -> int:
                                         wf.find("- name: Deploy"), wf.find("release_lock.py release"))
         check(0 < i_acq < i_renew < i_dep < i_rel and "contents: write" in wf and wf.count("steps.lock.outputs.deploy == 'true'") >= 5,
               "workflow: takes the lock, renews it right before Deploy, gives it back; live steps gated on it")
+
+        # 16. prune (--days < 1 rejected; --dry deletes nothing; deletes >=7d merged/patch-equiv/shipped, keeps <7d, waiting/left_out/locked, and >=7d unmerged)
+        check(exits(RL.main, ["prune", "--days", "0"]) == 2, "prune --days 0 exits 2")
+        p_tmp = tmp / "prune-suite"
+        p_tmp.mkdir()
+        p_orig = p_tmp / "isabi-origin.git"
+        p_app_orig = p_tmp / "app-origin.git"
+        git(p_tmp, "init", "-q", "--bare", "-b", "main", str(p_orig))
+        git(p_tmp, "init", "-q", "--bare", "-b", "main", str(p_app_orig))
+        p_isabi = p_tmp / "isabi"
+        p_app = p_tmp / "isabi-app"
+        git(p_tmp, "clone", "-q", str(p_orig), str(p_isabi))
+        git(p_tmp, "clone", "-q", str(p_app_orig), str(p_app))
+
+        old_date = "2026-11-01T12:00:00Z"
+        recent_date = "2026-11-18T12:00:00Z"
+        os.environ[NOW] = "2026-11-20T12:00:00Z"
+
+        def timed_commit(repo: pathlib.Path, fname: str, content: str, date_iso: str) -> str:
+            (repo / fname).write_text(content, encoding="utf-8")
+            git(repo, "add", fname)
+            env_t = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                         GIT_COMMITTER_EMAIL="t@t", GIT_AUTHOR_DATE=date_iso, GIT_COMMITTER_DATE=date_iso)
+            subprocess.run(["git", "commit", "-q", "-m", fname], cwd=str(repo), env=env_t, check=True)
+            return git(repo, "rev-parse", "HEAD")
+
+        base_i = timed_commit(p_isabi, "base.txt", "base\n", old_date)
+        git(p_isabi, "push", "-q", "-u", "origin", "HEAD:main")
+        base_a = timed_commit(p_app, "base.txt", "base\n", old_date)
+        git(p_app, "push", "-q", "-u", "origin", "HEAD:main")
+
+        # isabi branches: (a) old merged, (b) old genuinely unmerged, (c) old waiting in queue
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-merged", base_i)
+        merged_i_sha = timed_commit(p_isabi, "m.txt", "m\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-merged")
+        git(p_isabi, "checkout", "-q", "main")
+        git(p_isabi, "merge", "-q", "--no-ff", "wt/old-merged", "-m", "merge old")
+        git(p_isabi, "push", "-q", "origin", "main")
+
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-unmerged", base_i)
+        timed_commit(p_isabi, "unm.txt", "unmerged\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-unmerged")
+
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-waiting", base_i)
+        wait_sha = timed_commit(p_isabi, "w.txt", "waiting\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-waiting")
+
+        # isabi-app branches: (a) old patch-equivalent, (b) old batch-shipped receipt, (c) recent merged
+        git(p_app, "checkout", "-q", "-b", "wt/old-cherry", base_a)
+        timed_commit(p_app, "cp.txt", "cherry\n", old_date)
+        git(p_app, "push", "-q", "origin", "wt/old-cherry")
+        git(p_app, "checkout", "-q", "main")
+        timed_commit(p_app, "cp.txt", "cherry\n", recent_date)
+        git(p_app, "push", "-q", "origin", "main")
+
+        git(p_app, "checkout", "-q", "-b", "wt/old-shipped", base_a)
+        ship_sha = timed_commit(p_app, "sh.txt", "shipped\n", old_date)
+        git(p_app, "push", "-q", "origin", "wt/old-shipped")
+
+        git(p_app, "checkout", "-q", "-b", "wt/recent-merged", base_a)
+        timed_commit(p_app, "rec.txt", "recent\n", recent_date)
+        git(p_app, "push", "-q", "origin", "wt/recent-merged")
+        git(p_app, "checkout", "-q", "main")
+        git(p_app, "merge", "-q", "--no-ff", "wt/recent-merged", "-m", "merge recent")
+        git(p_app, "push", "-q", "origin", "main")
+
+        # Put queue entries on p_isabi origin: one waiting (protects wt/old-waiting) and one shipped (allows wt/old-shipped)
+        import json as _json  # noqa: PLC0415
+        for qname, qobj in (
+            ("20261101T120000Z-wait1111", {"id": "20261101T120000Z-wait1111", "state": "waiting",
+                                           "site": {"branch": "wt/old-waiting", "sha": wait_sha}}),
+            ("20261101T120000Z-ship2222", {"id": "20261101T120000Z-ship2222", "state": "shipped",
+                                           "app": {"branch": "wt/old-shipped", "sha": ship_sha}}),
+        ):
+            qb = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(p_isabi),
+                                input=_json.dumps(qobj).encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qt = subprocess.run(["git", "mktree"], cwd=str(p_isabi),
+                                input=f"100644 blob {qb}\tENTRY.json\n".encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qc = git(p_isabi, "commit-tree", qt, "-m", qname)
+            git(p_isabi, "push", "-q", "origin", f"{qc}:refs/release-queue/{qname}")
+        git(p_isabi, "checkout", "-q", "main")
+        git(p_app, "checkout", "-q", "main")
+
+        rep_dry = RL.prune_stale_wt(p_isabi, days=7, dry=True)
+        dry_isabi = [x["branch"] for x in rep_dry["repos"][0]["would_delete"]]
+        dry_app = [x["branch"] for x in rep_dry["repos"][1]["would_delete"]]
+        check(dry_isabi == ["wt/old-merged"] and set(dry_app) == {"wt/old-cherry", "wt/old-shipped"}
+              and "wt/old-unmerged" in rep_dry["repos"][0]["kept_unmerged"]
+              and "wt/old-waiting" in rep_dry["repos"][0]["kept_protected"]
+              and "wt/recent-merged" in rep_dry["repos"][1]["kept_recent"],
+              "prune --dry identifies only >=7d merged/patch-equiv/shipped branches and protects unmerged/queued/recent")
+        # Confirm --dry made zero remote deletions
+        rem_before = git(p_isabi, "ls-remote", "--heads", "origin", "wt/*")
+        check("wt/old-merged" in rem_before, "prune --dry makes zero remote deletions")
+
+        rep_run = RL.prune_stale_wt(p_isabi, days=7, dry=False)
+        del_isabi = [x["branch"] for x in rep_run["repos"][0]["deleted"]]
+        del_app = [x["branch"] for x in rep_run["repos"][1]["deleted"]]
+        rem_isabi = git(p_isabi, "ls-remote", "--heads", "origin", "wt/*")
+        rem_app = git(p_app, "ls-remote", "--heads", "origin", "wt/*")
+        check(del_isabi == ["wt/old-merged"] and set(del_app) == {"wt/old-cherry", "wt/old-shipped"}
+              and "wt/old-merged" not in rem_isabi
+              and "wt/old-unmerged" in rem_isabi
+              and "wt/old-waiting" in rem_isabi
+              and "wt/old-cherry" not in rem_app
+              and "wt/old-shipped" not in rem_app
+              and "wt/recent-merged" in rem_app,
+              "prune --days 7 deletes old merged/cherry/shipped branches across both repos and leaves unmerged/queued/recent")
+        os.environ.pop(NOW, None)
     finally:
         for k in ("ISABI_RELEASE_LOCK", NOW):
             os.environ.pop(k, None)

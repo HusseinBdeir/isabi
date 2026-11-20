@@ -1675,6 +1675,9 @@ def _is_ancestor(
     return r.returncode == 0
 
 
+WT_CLAIM_MAX_AGE_DAYS = 7
+
+
 def collect_unshipped_version_claims(
     repo_dir: pathlib.Path = ISABI_ROOT,
     *,
@@ -1750,7 +1753,7 @@ def collect_unshipped_version_claims(
         r_head_ref = _run_git_cmd(["rev-parse", "-q", "--verify", "HEAD"], rdir, git_bin=git_bin, git_env=git_env)
         has_head = r_head_ref.returncode == 0
         r_refs = _run_git_cmd(
-            ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/origin/wt/"],
+            ["for-each-ref", "--format=%(refname) %(objectname) %(committerdate:unix)", "refs/remotes/origin/wt/"],
             rdir,
             git_bin=git_bin,
             git_env=git_env,
@@ -1762,20 +1765,32 @@ def collect_unshipped_version_claims(
 
         repo_main_txt = _git_blob_text(rdir, f"origin/main:{sw_rel}", git_bin=git_bin, git_env=git_env) if has_main_ref else None
         repo_main_ver = parse_shell_version(repo_main_txt) or main_ver
+        import time as _time  # noqa: PLC0415
+        try:
+            now_ts = float(os.environ.get("ISABI_VERSION_CLAIMS_NOW_UNIX") or _time.time())
+        except ValueError:
+            now_ts = _time.time()
+        max_age_s = WT_CLAIM_MAX_AGE_DAYS * 86400.0
 
         for line in (r_refs.stdout or "").splitlines():
-            parts = line.strip().split(maxsplit=1)
-            if len(parts) != 2:
+            parts = line.strip().split()
+            if len(parts) < 2:
                 continue
-            refname, sha = parts
-            if has_main_ref and _is_ancestor(rdir, sha, "refs/remotes/origin/main", git_bin=git_bin, git_env=git_env):
-                continue
+            refname, sha = parts[0], parts[1]
+            if len(parts) >= 3:
+                try:
+                    if (now_ts - int(parts[2])) > max_age_s:
+                        continue
+                except ValueError:
+                    pass
             wt_txt = _git_blob_text(rdir, f"{sha}:{sw_rel}", git_bin=git_bin, git_env=git_env)
             wt_ver = parse_shell_version(wt_txt)
             if wt_ver is None:
                 continue
             baseline = main_ver or repo_main_ver
             if baseline is not None and wt_ver <= baseline:
+                continue
+            if has_main_ref and _is_ancestor(rdir, sha, "refs/remotes/origin/main", git_bin=git_bin, git_env=git_env):
                 continue
             is_mine = bool(has_head and _is_ancestor(rdir, sha, "HEAD", git_bin=git_bin, git_env=git_env))
             claims.append({
