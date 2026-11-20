@@ -49,6 +49,7 @@ import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskPosVoidFeed, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import { handleResolveMapLink } from '../../_lib/map_link.js';
 import { handleDayClosePush } from '../../_lib/web_push.js';
+import { handlePushApi } from '../../_lib/approval_push.js';
 import {
   applyEdgeCors,
   canAccessCompany,
@@ -75,7 +76,8 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/changed_entries',
   '/device_unsent',
   '/industry_domain_store',
-  '/day-close-push'
+  '/day-close-push',
+  '/push/config'
 ]);
 
 const DEMO_AI_MAX_BYTES = 1572864; // 1.5 MB ceiling on unauthenticated Demo AI payloads
@@ -247,6 +249,7 @@ async function routeAppApi(context) {
       if (subPath === '/device_unsent') return jsonResponse({ ok: true, demo: true, devices: [] });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
       if (subPath === '/day-close-push') return jsonResponse({ ok: true, demo: true, subscribed: false, endpointCount: 0, vapidPublicKey: '', closeHourBeirut: 18, whatsappPhone: '', lang: 'en', scopeKey: '', lastSentDate: '' });
+      if (subPath === '/push/config') return jsonResponse({ ok: true, demo: true, enabled: false, publicKey: '', reason: 'demo' });
     }
     if (subPath === '/smart-scan' && request.method === 'POST' && body && body.phoneScanSid) {
       return handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError);
@@ -276,7 +279,11 @@ async function routeAppApi(context) {
     return handleVerifyOverride(request, env, session, body, url);
   }
   if (subPath === '/auth/override-requests' && (request.method === 'POST' || request.method === 'GET')) {
-    return handleOverrideRequests(request, env, session, body, url);
+    return handleOverrideRequests(request, env, session, body, url, context);
+  }
+  // Web Push for approval requests (config, subscribe, unsubscribe); shares D1 VAPID keypair or env VAPID_* vars.
+  if (parts[0] === 'push') {
+    return handlePushApi(request, env, session, body, subPath);
   }
   if (subPath === '/saved-views' && (request.method === 'POST' || request.method === 'GET')) {
     return handleSavedViews(request, env, session, body);

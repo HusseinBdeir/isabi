@@ -36,6 +36,7 @@ import {
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
+import { isWebPushConfigured, sendOverrideRequestPush } from './approval_push.js';
 import { validateBase64MediaDataUrl } from './gemini.js';
 import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.js';
 
@@ -1837,13 +1838,39 @@ function publicOverrideRequest(row, nowIso = new Date().toISOString()) {
   };
 }
 
-async function sweepExpiredOverrideRequests(db, nowIso) {
+// Web Push (functions/_lib/approval_push.js): tell eligible approvers about a new request, and close the
+// notification once it is decided, cancelled or expired. Runs after the response (context.waitUntil), is a
+// no-op until VAPID is configured (env vars or shared D1 keypair), and uses the same eligibility rule as the inbox above.
+function dispatchOverridePush(context, env, reqRow, kind) {
+  if (!reqRow || !isWebPushConfigured(env)) return null;
+  const db = env.DB;
+  const job = sendOverrideRequestPush(env, reqRow, kind, {
+    isEligible: (approverRow, callerRow, r) => isEligibleOverrideApprover(approverRow, r, callerRow),
+    loadUserRowById: (id) => loadUserRowById(db, id)
+  }).catch(() => null);
+  if (context && typeof context.waitUntil === 'function') {
+    try { context.waitUntil(job); } catch (_) {}
+  }
+  return job;
+}
+
+async function sweepExpiredOverrideRequests(db, nowIso, context = null, env = null) {
   try {
+    if (env && isWebPushConfigured(env)) {
+      // Expire row by row so each approver's open notification can be closed (bounded per call).
+      const res = await db.prepare(
+        "SELECT * FROM override_requests WHERE status = 'pending' AND expires_at <= ?1 ORDER BY expires_at LIMIT 25"
+      ).bind(nowIso).all();
+      for (const row of (res.results || [])) {
+        const r = await db.prepare("UPDATE override_requests SET status = 'expired' WHERE id = ?1 AND status = 'pending'").bind(row.id).run();
+        if (r && r.meta && Number(r.meta.changes || 0) === 1) dispatchOverridePush(context, env, Object.assign({}, row, { status: 'expired' }), 'closed');
+      }
+    }
     await db.prepare("UPDATE override_requests SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?1").bind(nowIso).run();
   } catch (_) {}
 }
 
-export async function handleOverrideRequests(request, env, session, body, url) {
+export async function handleOverrideRequests(request, env, session, body, url, context = null) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (isDemoHeader(request)) {
     return jsonResponse({ ok: false, error: 'Override approval API is disabled for demo sandbox headers.' }, 403);
@@ -1874,10 +1901,14 @@ export async function handleOverrideRequests(request, env, session, body, url) {
         const ap = await loadUserRowById(db, me);
         if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
       }
+      // The requester's wait poll is usually the first to see a request run out: close approvers' notifications.
+      if (String(row.status || '') === 'pending' && effectiveOverrideStatus(row, nowIso) === 'expired' && isWebPushConfigured(env)) {
+        await sweepExpiredOverrideRequests(db, nowIso, context, env);
+      }
       return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
     }
     if (String(qp.get('status') || '').trim() === 'pending') {
-      await sweepExpiredOverrideRequests(db, nowIso);
+      await sweepExpiredOverrideRequests(db, nowIso, context, env);
       const ap = await loadUserRowById(db, me);
       if (!isActiveUserRow(ap)) return jsonResponse({ ok: true, requests: [] });
       const res = await db.prepare(
@@ -1891,7 +1922,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       return jsonResponse({ ok: true, requests: out });
     }
     if (String(qp.get('mine') || '').trim() === '1') {
-      await sweepExpiredOverrideRequests(db, nowIso);
+      await sweepExpiredOverrideRequests(db, nowIso, context, env);
       const since = new Date(nowMs - 86400000).toISOString();
       const res = await db.prepare(
         'SELECT * FROM override_requests WHERE caller_user_id = ?1 AND created_at > ?2 ORDER BY created_at DESC LIMIT 20'
@@ -1961,6 +1992,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       }
       return jsonResponse({ ok: false, rate_limited: true, error: `You can send at most ${OVR_REQ_MAX_PER_HOUR} approval requests per hour.` }, 429);
     }
+    dispatchOverridePush(context, env, row, 'new');
     return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
   }
 
@@ -1983,6 +2015,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       ).bind(id, nowIso, me).run();
       if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return conflict();
       const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+      dispatchOverridePush(context, env, fresh || Object.assign({}, row, { status: 'cancelled' }), 'closed');
       return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
     }
 
@@ -2034,9 +2067,11 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       ]);
       const after = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
       if (!after || String(after.audit_id || '') !== auditId) return conflict();
+      dispatchOverridePush(context, env, after, 'closed');
       return jsonResponse({ ok: true, request: publicOverrideRequest(after, nowIso) });
     }
     const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+    dispatchOverridePush(context, env, fresh || Object.assign({}, row, { status: 'denied' }), 'closed');
     return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
   }
 
