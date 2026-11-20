@@ -1422,11 +1422,34 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
 
 # ------------------------------------------------------------------------------------------------------ status, CLI
 
+def _already_live(cwd: Path, entry: dict, deployed: list) -> str | None:
+    """For a stale waiting entry: the shell version live had to reach ("" for an isabi-only change) when all its
+    commits are on origin/main and there is evidence live has them (the same test a leader uses to mark it shipped);
+    None otherwise, or when that cannot be told. Read only: status never changes the line."""
+    if not any((entry.get(k) or {}).get("sha") for k in ("app", "site")):
+        return None
+    try:
+        if not _parts_on_main(cwd, entry):
+            return None
+        ok, bar = _live_evidence(cwd, entry, deployed)
+    except RL.LockError:  # offline, or the isabi-app checkout is missing: status still prints, unlabelled
+        return None
+    return bar if ok else None
+
+
 def status(cwd: Path = ISABI_ROOT) -> dict:
     lock_sha, lock = RL.read_remote_lock(cwd)
     line = read_line(cwd)
+    deployed = (lock.get("deployed") or []) if lock_sha else []
+    already = {}
+    for e in line:
+        if (e.get("state") == "waiting" and _is_stale(e)
+                and not (lock_sha and (e.get("batch") or {}).get("lockId") == lock.get("lockId"))):
+            bar = _already_live(cwd, e, deployed)
+            if bar is not None:
+                already[e["id"]] = bar
     return {"lock": lock if lock_sha else None, "held_here": bool(lock_sha) and RL.held_by_me(lock, cwd),
-            "line": [_pub(e) for e in line], "leading": _local_json(cwd, BATCH_FILE) or None}
+            "line": [_pub(e) for e in line], "leading": _local_json(cwd, BATCH_FILE) or None, "alreadyLive": already}
 
 
 def _print_status(st: dict) -> None:
@@ -1448,6 +1471,10 @@ def _print_status(st: dict) -> None:
             where = "UNREADABLE"
         elif lock and b.get("lockId") == lock.get("lockId"):
             where = f"in the batch being released as v{b.get('version') or '?'}"
+        elif e["id"] in (st.get("alreadyLive") or {}):
+            bar = st["alreadyLive"][e["id"]]
+            where = (f"STALE but ALREADY LIVE{(' (live serves v' + bar + ' or later)') if bar else ' (a recorded deploy has it)'}: "
+                     f"nothing left to ship; its session collects it with wait, or it clears itself after {DEAD_KEEP_DAYS} days")
         elif _is_stale(e):
             where = f"STALE: no sign of its session for {STALE_AFTER_MIN // 60} h; skipped until it joins again"
         else:
