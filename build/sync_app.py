@@ -90,6 +90,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_device_unsent.mjs", "node"),             # device reports of unsent entries: seat-owned rows, Owner-only list
     ("isabi", "build/verify_release_data_only.py", "python"),        # data-only release runs desktop suite against candidate bundle before commit
     ("isabi", "build/verify_speed_gate_wiring.py", "python"),        # the screen speed gate (SPEED_GATE below) runs on every sync
+    ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
 ]
 
 
@@ -124,7 +125,23 @@ def _node_runtime() -> tuple[str, dict] | None:
     return None
 
 
-def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str) -> None:
+def _warning_block(stdout: str) -> list[str]:
+    """The speed gate's "Warnings, not failed (N):" block: screens over the budget that did not fail."""
+    out: list[str] = []
+    grab = False
+    for line in (stdout or "").splitlines():
+        if line.startswith("Warnings, not failed"):
+            grab = True
+            out.append(line)
+            continue
+        if grab:
+            if not line.strip():
+                break
+            out.append(line)
+    return out
+
+
+def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, show_warnings: bool = False) -> None:
     roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
     script = os.path.join(roots[repo], *rel.split("/"))
     if not os.path.isfile(script):
@@ -155,6 +172,9 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str) 
             print(chk.stderr[-3000:], file=sys.stderr)
         raise SystemExit(chk.returncode or 1)
     print(f"OK: release gate {repo}/{rel}: {tail}")
+    if show_warnings:
+        for line in _warning_block(chk.stdout):
+            print(f"  {line}")
 
 
 def run_release_gates(*, skip_release_gates: bool = False) -> None:
@@ -172,7 +192,7 @@ def run_speed_gate(*, skip_reason: str = "") -> None:
         return
     print(f"Screen speed gate {repo}/{rel} (returns at once when nothing on screen changed; a full run takes 10 to 20 min) ...",
           flush=True)
-    _run_gate(repo, rel, interp, SPEED_GATE_TIMEOUT_S, '--skip-speed-gate "<reason>"')
+    _run_gate(repo, rel, interp, SPEED_GATE_TIMEOUT_S, '--skip-speed-gate "<reason>"', show_warnings=True)
 
 
 def verify_shell_version_parity() -> str:

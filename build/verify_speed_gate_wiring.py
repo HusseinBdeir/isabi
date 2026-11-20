@@ -43,11 +43,12 @@ def check(ok: bool, name: str, detail: str = "") -> None:
 
 calls: list[dict] = []
 next_rc = {"value": 0}
+fake_stdout_pass = "PASSED: test\n"
 
 
 def fake_run(cmd, **kw):
     calls.append({"cmd": [str(c) for c in cmd], "timeout": kw.get("timeout"), "cwd": kw.get("cwd")})
-    return subprocess.CompletedProcess(cmd, next_rc["value"], stdout="FAILED: 7/8 correctness checks\n" if next_rc["value"] else "PASSED: test\n", stderr="")
+    return subprocess.CompletedProcess(cmd, next_rc["value"], stdout="FAILED: 7/8 correctness checks\n" if next_rc["value"] else fake_stdout_pass, stderr="")
 
 
 def speed_calls() -> list[dict]:
@@ -102,6 +103,18 @@ with tempfile.TemporaryDirectory() as td:
             check(ok == want_ok, f"3 {' '.join(repr(x) for x in argv[1:])} is {'accepted' if want_ok else 'refused (a reason is required)'}", err.getvalue().strip()[-160:])
         a = sa.parse_cli_args(["--dry", "--skip-release-gates"])
         check(not a.skip_speed_gate, "3 --skip-release-gates alone does not set a speed-gate skip")
+
+        # 3b. a passing run with warnings shows the leader which screens were over the budget
+        calls.clear()
+        fake_stdout_pass = ("Fails (0):\n\nWarnings, not failed (2):\n  screen wtc / raw (repeat visit): this build 203 ms, baseline 199 ms\n"
+                            "  screen wtc / reg_regions (repeat visit): this build 172 ms\n\nPASSED: 10/10 correctness checks\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sa.run_speed_gate(skip_reason="")
+        txt = out.getvalue()
+        check("Warnings, not failed (2)" in txt and "wtc / raw" in txt and "wtc / reg_regions" in txt and "PASSED: 10/10" in txt,
+              "3 a pass with warnings prints the warned screens for the leader", txt.strip()[-300:])
+        fake_stdout_pass = "PASSED: test\n"
 
         # 4. a failing speed gate stops the sync with its output
         calls.clear()
