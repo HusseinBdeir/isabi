@@ -3,6 +3,12 @@
   "branch": "wt/entry-daily-ops",
   "sha": "047bc3a38107d09ab5a3c4db6c1c97ae8ba4ca24"
  },
+ "batch": {
+  "at": "2026-11-20T16:59:41Z",
+  "holder": "agy-99d16ac4",
+  "lockId": "c9c5962fa6464225ac1b7231aecaae9a",
+  "version": "19.6.404"
+ },
  "gates": [
   "isabi-app: node build/verify_entry_daily_ops.mjs",
   "isabi-app: node build/verify_dops_handover.mjs"
