@@ -1,0 +1,22 @@
+{
+ "app": {
+  "branch": "wt/entry-peek-fifo-dataonly",
+  "sha": "e2c5beb81a4e63e47b4413fa4cf8fe4325b84804"
+ },
+ "gates": [
+  "isabi-app: node build/verify_near_copy.mjs",
+  "isabi-app: node build/verify_changed_entries_ui.mjs",
+  "isabi: python build/verify_release_data_only.py"
+ ],
+ "holder": "agy-99d16ac4",
+ "id": "20261120T165722Z-5fc2870d",
+ "pc": "Theo",
+ "queuedAt": "2026-11-20T16:57:22Z",
+ "seenAt": "2026-11-20T16:57:22Z",
+ "site": {
+  "branch": "wt/entry-peek-fifo-dataonly",
+  "sha": "a69bee577b22d3d963d0ee524e0dc84151d026cf"
+ },
+ "state": "waiting",
+ "summary": "Entry peek popover, Trading/Insurance live FIFO preview, tall-form jump pointer, data-only desktop suite gate"
+}
