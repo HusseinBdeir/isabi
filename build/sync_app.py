@@ -2,7 +2,7 @@
 Ensures https://isabisystems.com/app/ serves the exact verified Command Center assets.
 
 Usage:
-  python build/sync_app.py [--dry] [--skip-release-gates] [--skip-i18n-audit]
+  python build/sync_app.py [--dry] [--skip-release-gates] [--skip-i18n-audit] [--skip-speed-gate "<reason>"]
 """
 import argparse
 import os
@@ -89,10 +89,21 @@ RELEASE_GATES = [
     ("isabi", "build/verify_web_push_unit.mjs", "node"),             # RFC 8291 / VAPID / CAS / sibling digest unit gate
     ("isabi", "build/verify_device_unsent.mjs", "node"),             # device reports of unsent entries: seat-owned rows, Owner-only list
     ("isabi", "build/verify_release_data_only.py", "python"),        # data-only release runs desktop suite against candidate bundle before commit
+    ("isabi", "build/verify_speed_gate_wiring.py", "python"),        # the screen speed gate (SPEED_GATE below) runs on every sync
+    ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
 ]
 
 
 GATE_TIMEOUT_S = 600   # a gate that hangs (e.g. OneDrive fetching a cloud-only workbook) stops the sync, not the PC
+
+# The screen speed gate (owner 2026-11-20, after v19.6.384 shipped Sales and Fleet at twice the 150 ms budget and stayed
+# live two days): runs after RELEASE_GATES on every sync. --skip-release-gates does not skip it (leaders pass that flag
+# after running the other gates by hand); only --skip-speed-gate "<reason>" does, and the reason is printed. The gate
+# itself returns at once when nothing on screen changed since origin/main or this exact commit already passed it, and
+# judges a slow screen side by side with origin/main, so a busy PC does not fail a release. A full run takes 10 to
+# 20 minutes on a loaded PC.
+SPEED_GATE = ("isabi-app", "build/verify_speed_budget.mjs", "node")
+SPEED_GATE_TIMEOUT_S = 2700
 
 
 def _node_runtime() -> tuple[str, dict] | None:
@@ -114,41 +125,74 @@ def _node_runtime() -> tuple[str, dict] | None:
     return None
 
 
+def _warning_block(stdout: str) -> list[str]:
+    """The speed gate's "Warnings, not failed (N):" block: screens over the budget that did not fail."""
+    out: list[str] = []
+    grab = False
+    for line in (stdout or "").splitlines():
+        if line.startswith("Warnings, not failed"):
+            grab = True
+            out.append(line)
+            continue
+        if grab:
+            if not line.strip():
+                break
+            out.append(line)
+    return out
+
+
+def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, show_warnings: bool = False) -> None:
+    roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
+    script = os.path.join(roots[repo], *rel.split("/"))
+    if not os.path.isfile(script):
+        print(f"SKIP: release gate {repo}/{rel} is not in this tree")
+        return
+    env = None
+    if interp == "python":
+        exe = sys.executable
+    else:
+        rt = _node_runtime()
+        if rt is None:
+            print(f"ERROR: release gate {repo}/{rel} needs Node.js, and none was found (PATH, ~/.local/node, "
+                  f"Program Files, VS Code). Install Node 22.5+ or pass {skip_hint} for this run.", file=sys.stderr)
+            raise SystemExit(1)
+        exe, env = rt
+    try:
+        chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             cwd=roots[repo], env=env, timeout=timeout_s, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        print(f"ERROR: release gate {repo}/{rel} did not finish within {timeout_s} s; sync stopped.", file=sys.stderr)
+        raise SystemExit(1)
+    tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
+    if chk.returncode != 0:
+        print(f"ERROR: release gate {repo}/{rel} failed (exit {chk.returncode}) in sync_app.py!", file=sys.stderr)
+        if chk.stdout:
+            print(chk.stdout[-6000:], file=sys.stderr)
+        if chk.stderr:
+            print(chk.stderr[-3000:], file=sys.stderr)
+        raise SystemExit(chk.returncode or 1)
+    print(f"OK: release gate {repo}/{rel}: {tail}")
+    if show_warnings:
+        for line in _warning_block(chk.stdout):
+            print(f"  {line}")
+
+
 def run_release_gates(*, skip_release_gates: bool = False) -> None:
     if skip_release_gates or os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1":
         print("WARN: release gates skipped (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)")
         return
-    roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
     for repo, rel, interp in RELEASE_GATES:
-        script = os.path.join(roots[repo], *rel.split("/"))
-        if not os.path.isfile(script):
-            print(f"SKIP: release gate {repo}/{rel} is not in this tree")
-            continue
-        env = None
-        if interp == "python":
-            exe = sys.executable
-        else:
-            rt = _node_runtime()
-            if rt is None:
-                print(f"ERROR: release gate {repo}/{rel} needs Node.js, and none was found (PATH, ~/.local/node, "
-                      "Program Files, VS Code). Install Node 22.5+ or pass --skip-release-gates for this run.", file=sys.stderr)
-                raise SystemExit(1)
-            exe, env = rt
-        try:
-            chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                 cwd=roots[repo], env=env, timeout=GATE_TIMEOUT_S, stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            print(f"ERROR: release gate {repo}/{rel} did not finish within {GATE_TIMEOUT_S} s; sync stopped.", file=sys.stderr)
-            raise SystemExit(1)
-        tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
-        if chk.returncode != 0:
-            print(f"ERROR: release gate {repo}/{rel} failed (exit {chk.returncode}) in sync_app.py!", file=sys.stderr)
-            if chk.stdout:
-                print(chk.stdout[-6000:], file=sys.stderr)
-            if chk.stderr:
-                print(chk.stderr[-3000:], file=sys.stderr)
-            raise SystemExit(chk.returncode or 1)
-        print(f"OK: release gate {repo}/{rel}: {tail}")
+        _run_gate(repo, rel, interp, GATE_TIMEOUT_S, "--skip-release-gates")
+
+
+def run_speed_gate(*, skip_reason: str = "") -> None:
+    repo, rel, interp = SPEED_GATE
+    if skip_reason:
+        print(f"WARN: screen speed gate {repo}/{rel} SKIPPED: {skip_reason}")
+        return
+    print(f"Screen speed gate {repo}/{rel} (returns at once when nothing on screen changed; a full run takes 10 to 20 min) ...",
+          flush=True)
+    _run_gate(repo, rel, interp, SPEED_GATE_TIMEOUT_S, '--skip-speed-gate "<reason>"', show_warnings=True)
 
 
 def verify_shell_version_parity() -> str:
@@ -224,7 +268,7 @@ def rederive_deployed_shell_ver(app_out: str | None = None) -> tuple[str, bool]:
     return m.group(1), write_deployed_shell_ver(m.group(1))
 
 
-def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool = False) -> int:
+def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool = False, skip_speed_gate: str = "") -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
         return 0
@@ -252,6 +296,7 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
         print(f"OK: functions/_lib/deployed_shell.js re-derived from the current app/sw.js (v{cur_ver})")
 
     run_release_gates(skip_release_gates=skip_release_gates)
+    run_speed_gate(skip_reason=skip_speed_gate)
 
     os.makedirs(APP_OUT, exist_ok=True)
     copied = 0
@@ -323,6 +368,13 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
     return copied
 
 
+def _speed_skip_reason(text: str) -> str:
+    reason = (text or "").strip()
+    if not reason:
+        raise argparse.ArgumentTypeError('a reason is required, e.g. --skip-speed-gate "passed by hand at 14:05 on this batch"')
+    return reason
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="build/sync_app.py",
@@ -339,7 +391,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-release-gates",
         action="store_true",
-        help="Skip offline RELEASE_GATES before syncing.",
+        help="Skip offline RELEASE_GATES before syncing (not the screen speed gate: see --skip-speed-gate).",
+    )
+    parser.add_argument(
+        "--skip-speed-gate",
+        metavar="REASON",
+        default=None,              # not "": argparse runs a string default through type=, which refuses a blank
+        type=_speed_skip_reason,
+        help="Skip the screen speed gate (isabi-app build/verify_speed_budget.mjs); the reason is required and printed.",
     )
     parser.add_argument(
         "--skip-i18n-audit",
@@ -404,13 +463,19 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         else f"Offline release gates -> RUN {len(RELEASE_GATES)} RELEASE_GATES checks"
     )
     ds_status = "unchanged" if ds_matches else f"UPDATE to v{ver}"
+    speed_step = (
+        f"Screen speed gate -> SKIP ({args.skip_speed_gate})"
+        if args.skip_speed_gate
+        else f"Screen speed gate -> RUN {SPEED_GATE[0]}/{SPEED_GATE[1]} (side by side with origin/main; not skipped by --skip-release-gates)"
+    )
 
     print(f"  Shell    : v{ver} (sw.js, index.html, manifest.json ?v= parity OK)")
     print("  Steps    :")
     print(f"    1. {i18n_step}")
     print(f"    2. {gates_step}")
+    print(f"    3. {speed_step}")
     print(
-        f"    3. Copy {file_count} public files to {APP_OUT}, stamp deployed_shell.js ({ds_status}), "
+        f"    4. Copy {file_count} public files to {APP_OUT}, stamp deployed_shell.js ({ds_status}), "
         "write empty local_dev_roster.js stub, remove retired seeds, and verify zero @bhfirms.com leaks"
     )
     return 0
@@ -423,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     sync_command_app(
         skip_release_gates=args.skip_release_gates,
         skip_i18n_audit=args.skip_i18n_audit,
+        skip_speed_gate=args.skip_speed_gate or "",
     )
     return 0
 

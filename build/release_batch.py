@@ -1205,6 +1205,8 @@ def _print_batch(cwd: Path, app: Path, batch: dict) -> None:
     print("Next, the usual release steps on this batch:")
     print(f"  1. gates above plus the browser gates the changes need (isabi-app: {app})")
     print(f"  2. in {cwd}: python build/sync_app.py, commit, python build/deploy_cloudflare.py ...")
+    print("     (sync_app.py also runs the screen speed gate, side by side with origin/main: up to 20 min when screen code"
+          " changed; --skip-release-gates does not skip it)")
     print("  3. push main: isabi-app (git push origin HEAD:main), then isabi (git push origin HEAD:main)")
     print("  4. python build/release_batch.py done")
     print('  A gate fails: python build/release_batch.py drop <entry> --reason "<gate>" --reset, then gate again.')
