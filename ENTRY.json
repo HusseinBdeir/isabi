@@ -3,6 +3,12 @@
   "branch": "wt/rescue-failed-sessions",
   "sha": "2d74f8f78376bf6b66e009d711c9dc4cddc26786"
  },
+ "batch": {
+  "at": "2026-11-20T21:18:53Z",
+  "holder": "THEO a00c0fe7 (rescue-failed-sessions)",
+  "lockId": "ecd1354f59d64739ad9ee4b612a8c0d6",
+  "version": "19.6.407"
+ },
  "gates": [
   "isabi-app: node build/verify_phase17.mjs",
   "isabi-app: node build/verify_site_recs.mjs",
