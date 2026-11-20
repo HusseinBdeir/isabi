@@ -3,6 +3,12 @@
   "branch": "wt/sidebar-click-speed",
   "sha": "2f5deb6da29af898362372c96f78a76de8b4e6d1"
  },
+ "batch": {
+  "at": "2026-11-20T23:00:35Z",
+  "holder": "THEO 5a74d592 (rate-impact-recs)",
+  "lockId": "018d057e53394af4a04390163e6a4e3c",
+  "version": "19.6.410"
+ },
  "gates": [
   "isabi-app: node build/verify_two_step_paint.mjs"
  ],
