@@ -141,14 +141,24 @@ async function readEnvVapidKeypair(env) {
   }
 }
 
+function hasAnyEnvVapidSetting(env) {
+  if (!env || typeof env !== 'object') return false;
+  return Boolean(
+    String(env.VAPID_PUBLIC_KEY || '').trim() ||
+    String(env.VAPID_PRIVATE_KEY || '').trim() ||
+    String(env.VAPID_SUBJECT || '').trim()
+  );
+}
+
 async function ensureVapidKeypair(db, env) {
-  const envPair = await readEnvVapidKeypair(env);
-  if (envPair) return envPair;
+  if (hasAnyEnvVapidSetting(env)) {
+    return await readEnvVapidKeypair(env);
+  }
   const existingRow = await readEdgeKvDoc(db, VAPID_KV_KEY);
   if (existingRow && existingRow.payload_json) {
     try {
       const parsed = JSON.parse(existingRow.payload_json);
-      if (parsed && parsed.publicKeyB64Url && parsed.privateJwk && parsed.publicJwk) {
+      if (parsed && parsed.publicKeyB64Url && parsed.privateJwk && parsed.privateJwk.d) {
         return parsed;
       }
     } catch (_) {}
@@ -1561,9 +1571,10 @@ export async function handleDayClosePush(request, env, session, body) {
     const store = readSubsStoreObj(subsRow);
     const cfg = store.byUser[userId] || {};
     const subs = Array.isArray(cfg.subs) ? cfg.subs : [];
-    return jsonResponse({
+    return jsonResponse(Object.assign({
       ok: true,
-      vapidPublicKey: vapid.publicKeyB64Url,
+      enabled: Boolean(vapid),
+      vapidPublicKey: vapid ? vapid.publicKeyB64Url : '',
       subscribed: subs.length > 0,
       endpointCount: subs.length,
       closeHourBeirut: sanitizeCloseHour(cfg.closeHourBeirut),
@@ -1571,7 +1582,7 @@ export async function handleDayClosePush(request, env, session, body) {
       lang: sanitizeLang(cfg.lang),
       scopeKey: String(cfg.scopeKey || ''),
       lastSentDate: String(cfg.lastSentDate || '')
-    });
+    }, vapid ? {} : { reason: 'invalid_vapid_env' }));
   }
 
   if (request.method !== 'POST') {
@@ -1585,6 +1596,9 @@ export async function handleDayClosePush(request, env, session, body) {
   }
 
   if (op === 'subscribe') {
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, subscribed: false, stored: false, endpointCount: 0 });
+    }
     const sub = body && body.subscription;
     const epChk = validatePushEndpoint(sub && sub.endpoint);
     if (!epChk.ok) return jsonResponse({ ok: false, error: epChk.error }, 400);
@@ -1646,6 +1660,9 @@ export async function handleDayClosePush(request, env, session, body) {
   }
 
   if (op === 'rotate') {
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, rotated: false, subscribed: false, endpointCount: 0 });
+    }
     const sub = body && body.subscription;
     const epChk = validatePushEndpoint(sub && sub.endpoint);
     if (!epChk.ok) return jsonResponse({ ok: false, error: epChk.error }, 400);
@@ -1732,6 +1749,9 @@ export async function handleDayClosePush(request, env, session, body) {
   }
 
   if (op === 'test') {
+    if (!vapid) {
+      return jsonResponse({ ok: false, enabled: false, delivered: 0, error: 'Web Push VAPID configuration is incomplete.' }, 503);
+    }
     const hasReqScope = Boolean(body && (Object.prototype.hasOwnProperty.call(body, 'scopeKey') || Object.prototype.hasOwnProperty.call(body, 'company')));
     let reqScopeKey = null;
     if (hasReqScope) {
@@ -1803,6 +1823,9 @@ export async function handleDayClosePush(request, env, session, body) {
     const effHour = (body && typeof body.hour === 'number' && Number.isFinite(body.hour) && body.hour >= 0 && body.hour <= 23)
       ? Math.floor(body.hour)
       : beirut.hour;
+    if (!vapid) {
+      return jsonResponse({ ok: true, enabled: false, date: targetDate, beirutHour: effHour, sentUsers: 0, sentEndpoints: 0, hasMore: false });
+    }
     const maxBatch = Math.min(50, Math.max(1, Number(body && body.limit) || 25));
     const actor = isBuildTicket ? 'cron:day-close-push' : userId;
     const runToken = crypto.randomUUID();

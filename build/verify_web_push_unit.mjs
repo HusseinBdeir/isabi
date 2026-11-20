@@ -804,6 +804,15 @@ try {
       dcGetEnv.status === 200 && dcGetEnv.json?.vapidPublicKey === envPubB64u &&
       dcTestEnv.status === 200 && dcTestEnv.json?.delivered === 1 && fetchLog.length === 1
     ), { dcGetEnv: dcGetEnv.json, dcTestEnv: dcTestEnv.json });
+
+    // Partial/incomplete env.VAPID_* disables day-close-push without falling back to D1 vapid_keypair_v1
+    delete env.VAPID_PRIVATE_KEY;
+    const dcGetPartial = await api('day-close-push', { method: 'GET', token: ownerTok });
+    const dcTestPartial = await api('day-close-push', { token: ownerTok, body: { op: 'test', company: 'wtc', targetDate: '2026-10-22', lang: 'en' } });
+    ok('partial env.VAPID_* returns enabled=false on GET and 503 on op:test instead of D1 fallback', Boolean(
+      dcGetPartial.status === 200 && dcGetPartial.json?.enabled === false && dcGetPartial.json?.vapidPublicKey === '' &&
+      dcTestPartial.status === 503 && dcTestPartial.json?.enabled === false
+    ), { dcGetPartial: dcGetPartial.json, dcTestPartial: dcTestPartial.json });
   } finally {
     delete env.VAPID_PUBLIC_KEY;
     delete env.VAPID_PRIVATE_KEY;
@@ -831,13 +840,18 @@ try {
     token: wtcSupTok,
     body: { industryRowEdits: { 'WF::hld_close_gate::hld': { company: 'Bdeir Holding', lockedUntil: '2026-10-31', rev: 1, updated_at: new Date().toISOString() } } }
   });
-  ok('WF::period_close allows Supervisor 200 write and denies Entry (403 write/purge) + cross-industry WF::hld_close_gate RLS 403', Boolean(
+  const supBookDeny403 = await api('industry_domain_store', {
+    token: wtcSupTok,
+    body: { industryRowEdits: { 'WF::mfg_accrual_cutoff::ACC-1': { company: 'WTC', industry: 'Manufacturing', amount: 500, rev: 1, updated_at: new Date().toISOString() } } }
+  });
+  ok('WF::period_close allows Supervisor 200 write and denies Entry (403 write/purge) + Supervisor 403 on booking WF + cross-industry WF::hld_close_gate RLS 403', Boolean(
     supCloseWrite.status === 200 && supCloseWrite.json?.ok === true &&
     storedWfPayload && storedWfPayload.lockedUntil === '2026-10-31' &&
     entryCloseWrite403.status === 403 &&
     entryClosePurge403.status === 403 &&
-    rlsHld403.status === 403
-  ), { supCloseWrite: supCloseWrite.json, storedWfPayload, st403: [entryCloseWrite403.status, entryClosePurge403.status, rlsHld403.status] });
+    rlsHld403.status === 403 &&
+    supBookDeny403.status === 403
+  ), { supCloseWrite: supCloseWrite.json, storedWfPayload, st403: [entryCloseWrite403.status, entryClosePurge403.status, rlsHld403.status, supBookDeny403.status], supBookDeny: supBookDeny403.json });
 } finally {
   globalThis.fetch = origFetch;
 }

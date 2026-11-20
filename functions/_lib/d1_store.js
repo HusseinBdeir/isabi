@@ -6373,7 +6373,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const [ek, rawEv] of Object.entries(editsMap)) {
     if (!ek || !rawEv || typeof rawEv !== 'object') continue;
     if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
-    const isPeriodCloseWf = /^WF::(period_close|hld_close_gate)::/i.test(ek);
+    const isPeriodLockWf = /^WF::(period_close|hld_close_gate)::/i.test(ek);
+    const isPeriodCloseWf = /^WF::(period_close|hld_close_gate|mfg_accrual_cutoff|hsp_membership_amort|re_deferred_rent_amort|trd_period_close|ins_renewal_binder)::/i.test(ek);
     if (isPeriodCloseWf && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to lock or reopen an accounting period.' }, 403);
     }
@@ -6429,7 +6430,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
-        const allowPeriodClose = Boolean(isPeriodCloseWf && perms.voidData && !gpsChanged);
+        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !gpsChanged);
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
@@ -6461,7 +6462,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
-        const allowPeriodClose = Boolean(isPeriodCloseWf && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
+        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
@@ -6530,7 +6531,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const rawEk of purgedEditKeys) {
     const ek = String(rawEk || '').trim();
     if (!ek || isServerOwnedRowEditKey(ek)) continue;
-    if (/^WF::(period_close|hld_close_gate)::/i.test(ek) && !perms.voidData) {
+    if (/^WF::(period_close|hld_close_gate|mfg_accrual_cutoff|hsp_membership_amort|re_deferred_rent_amort|trd_period_close|ins_renewal_binder)::/i.test(ek) && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to purge period-close locks.' }, 403);
     }
     const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();

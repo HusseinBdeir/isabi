@@ -588,6 +588,25 @@ console.log('\n[7] Coexistence: env.VAPID precedence, only_if_replaces, and Day-
   d1.exec("DELETE FROM edge_kv_store WHERE doc_key IN ('vapid_keypair_v1', 'day_close_push_subs_v1')");
   d1.db.prepare("INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('vapid_keypair_v1', ?, ?, 'system:vapid', 1)")
     .run(JSON.stringify({ publicKeyB64Url: altV.VAPID_PUBLIC_KEY, privateJwk: altV.jwk, createdAt: new Date().toISOString() }), new Date().toISOString());
+
+  // Partial/broken env.VAPID_* disables BOTH endpoints instead of silently splitting D1 fallback
+  setVapid({ VAPID_PUBLIC_KEY: V1.VAPID_PUBLIC_KEY });
+  const cfgPartial = await api('push/config', { method: 'GET', as: 't-sup-wtc' });
+  const dcPartial = await api('day-close-push', { method: 'GET', as: 't-sup-wtc' });
+  ok('partial env.VAPID_* disables BOTH push/config and day-close-push without splitting D1 fallback',
+    cfgPartial.status === 200 && cfgPartial.json.enabled === false && cfgPartial.json.publicKey === ''
+    && dcPartial.status === 200 && dcPartial.json.enabled === false && dcPartial.json.vapidPublicKey === '',
+    { cfgPartial: cfgPartial.json, dcPartial: dcPartial.json });
+
+  // Empty env causes both endpoints to fall back identically to D1 vapid_keypair_v1
+  setVapid(null);
+  const cfgKvSame = await api('push/config', { method: 'GET', as: 't-sup-wtc' });
+  const dcKvSame = await api('day-close-push', { method: 'GET', as: 't-sup-wtc' });
+  ok('empty env shares identical D1 vapid_keypair_v1 public key across both endpoints',
+    cfgKvSame.status === 200 && dcKvSame.status === 200
+    && cfgKvSame.json.publicKey === altV.VAPID_PUBLIC_KEY && dcKvSame.json.vapidPublicKey === altV.VAPID_PUBLIC_KEY,
+    { cfgKvSame: cfgKvSame.json, dcKvSame: dcKvSame.json });
+
   setVapid(VAPID_ON);
   const cfgEnv = await api('push/config', { method: 'GET', as: 't-sup-wtc' });
   const dcEnv = await api('day-close-push', { method: 'GET', as: 't-sup-wtc' });
@@ -683,6 +702,25 @@ console.log('\n[8] Period Close WF:: RBAC parity on industry_domain_store (negat
   ok('NEGATIVE: WF::hld_close_gate infers Holding & Treasury (not WF) and enforces RLS',
     rlsHld.status === 403,
     rlsHld.json);
+
+  for (const pref of ['mfg_accrual_cutoff', 'hsp_membership_amort', 're_deferred_rent_amort', 'trd_period_close', 'ins_renewal_binder']) {
+    const bk = `WF::${pref}::TEST-1`;
+    const w403 = await api('industry_domain_store', {
+      method: 'POST',
+      as: 't-entry-wtc',
+      body: { industryRowEdits: { [bk]: { company: 'WTC', industry: 'Manufacturing', rev: 1, updated_at: new Date().toISOString() } } }
+    });
+    const p403 = await api('industry_domain_store', {
+      method: 'POST',
+      as: 't-entry-wtc',
+      body: { purgedEditKeys: [bk] }
+    });
+    ok(`NEGATIVE: Entry seat receives 403 on ${pref} write and purge`,
+      w403.status === 403 && p403.status === 403
+      && /Supervisor or Owner/i.test(String(w403.json?.error || ''))
+      && /Supervisor or Owner/i.test(String(p403.json?.error || '')),
+      { w403: w403.json, p403: p403.json });
+  }
 }
 
 globalThis.fetch = realFetch;
