@@ -5,7 +5,7 @@
  * daily budgets on unauthenticated Showcase & Demo Sandbox surfaces.
  */
 
-import { checkD1RateLimit, checkSlidingRateLimit, getSessionSeatLens, hashClientIp, jsonResponse } from './security.js';
+import { canManageUsersSeat, checkD1RateLimit, checkSlidingRateLimit, getSessionSeatLens, hashClientIp, jsonResponse } from './security.js';
 
 const ALLOWED_GEMINI_MODELS = new Set([
   'gemini-4-hydrogen',
@@ -1056,53 +1056,68 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
     }
   }
 
+  const hasCred = !isAuthed && Boolean(
+    request && request.headers && (
+      request.headers.get('X-ISABI-Session') ||
+      request.headers.get('Authorization') ||
+      /(?:^|;\s*)isabi_edge_sess=/.test(String(request.headers.get('Cookie') || ''))
+    )
+  );
+  if (!isAuthed && hasCred) {
+    return new Response(JSON.stringify({ ok: false, error: 'Authentication required.' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    });
+  }
+  const isDemoReq = Boolean(request && request.headers && request.headers.get('X-ISABI-Demo') === '1');
+  if (!isAuthed && isDemoReq) {
+    try {
+      const origHdr = String((request && request.headers && request.headers.get('Origin')) || '').trim();
+      if (origHdr) {
+        const origHost = new URL(origHdr).host.toLowerCase();
+        const reqHost = new URL(request.url).host.toLowerCase();
+        if (origHost && reqHost && origHost !== reqHost) {
+          return new Response(JSON.stringify({ ok: false, error: 'Same-origin browser session required for Demo AI.' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+  const taskKind = String((body && body.task) || 'generic').trim().slice(0, 64);
+  if (taskKind === 'data_hygiene_aliases' && !isAuthed && !isDemoReq) {
+    return jsonResponse({ ok: false, code: 'auth_required', error: 'Authentication required.' }, 401);
+  }
+  if (taskKind === 'data_hygiene_aliases' && isAuthed && !canManageUsersSeat(session)) {
+    return jsonResponse({ ok: false, code: 'hygiene_rbac_denied', error: 'Owner or Supervisor seat required for Data Hygiene AI suggestions.' }, 403);
+  }
+  const dataUrl = String((body && body.dataUrl) || '').trim();
+  const declMime = String((body && body.mimeType) || '').toLowerCase().trim();
+  if (declMime && /svg|xml|html/i.test(declMime)) {
+    return jsonResponse({ ok: false, error: 'Unsupported media format.' }, 400);
+  }
+  if (dataUrl) {
+    const chk = validateBase64MediaDataUrl(dataUrl, { allowPdfAndHeic: true, declaredMime: declMime });
+    if (!chk.ok) return jsonResponse({ ok: false, error: chk.error }, chk.status || 400);
+  }
+
   const gemKey = resolveGeminiKey(env);
   if (!gemKey) {
     return jsonResponse({ ok: true, mode: 'local_hybrid', result: null });
   }
 
   try {
-    const taskKind = String((body && body.task) || 'generic').trim().slice(0, 64);
-    const hasCred = !isAuthed && Boolean(
-      request && request.headers && (
-        request.headers.get('X-ISABI-Session') ||
-        request.headers.get('Authorization') ||
-        /(?:^|;\s*)isabi_edge_sess=/.test(String(request.headers.get('Cookie') || ''))
-      )
-    );
-    if (!isAuthed && hasCred) {
-      return new Response(JSON.stringify({ ok: false, error: 'Authentication required.' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
-    }
-    const isDemoReq = Boolean(request && request.headers && request.headers.get('X-ISABI-Demo') === '1');
-    if (!isAuthed && isDemoReq) {
-      try {
-        const origHdr = String((request && request.headers && request.headers.get('Origin')) || '').trim();
-        if (origHdr) {
-          const origHost = new URL(origHdr).host.toLowerCase();
-          const reqHost = new URL(request.url).host.toLowerCase();
-          if (origHost && reqHost && origHost !== reqHost) {
-            return new Response(JSON.stringify({ ok: false, error: 'Same-origin browser session required for Demo AI.' }), {
-              status: 403,
-              headers: { 'Content-Type': 'application/json; charset=utf-8' }
-            });
-          }
-        }
-      } catch (_) {}
-    }
     const seatLens = getSessionSeatLens(isAuthed ? session : (isDemoReq ? { role: 'Full Access (Owner)', demoVisitor: true } : null));
     const maskedEdge = redactAiPayloadForSeat({ prompt: String((body && body.prompt) || '') }, seatLens);
     const promptText = maskedEdge.prompt.trim().slice(0, isAuthed ? 12000 : 4000);
     if (!promptText) return jsonResponse({ ok: true, mode: 'local_hybrid', result: null });
 
-    const dataUrl = String((body && body.dataUrl) || '');
-    const mimeType = String((body && body.mimeType) || 'image/jpeg').toLowerCase().trim();
+    const mimeType = declMime || (dataUrl.startsWith('data:') ? dataUrl.slice(5).split(';')[0].toLowerCase().trim() : 'image/jpeg');
     const parts = [{ text: promptText }];
     let hasVisionBin = false;
     const maxB64 = isAuthed ? 6000000 : 1600000;
-    if (dataUrl.includes(';base64,') && /^(image\/(jpeg|jpg|png|webp)|application\/pdf)$/i.test(mimeType)) {
+    if (dataUrl.includes(';base64,') && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(mimeType)) {
       const b64Part = dataUrl.split(';base64,')[1] || '';
       if (b64Part && b64Part.length < maxB64) {
         parts.push({ inlineData: { mimeType: mimeType === 'image/jpg' ? 'image/jpeg' : mimeType, data: b64Part } });
@@ -1148,6 +1163,24 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
     const gRes = await resp.json();
     const candTxt = extractCandidateText(gRes) || '{}';
     const parsedObj = extractFirstJsonObject(candTxt);
+    if (taskKind === 'data_hygiene_aliases' && parsedObj && Array.isArray(parsedObj.pairs) && Array.isArray(body && body.allowedNames)) {
+      const normName = v => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const allowedByNorm = new Map();
+      body.allowedNames.slice(0, 400).forEach(nm => {
+        const s = String(nm || '').trim();
+        const nk = normName(s);
+        if (nk && !allowedByNorm.has(nk)) allowedByNorm.set(nk, s);
+      });
+      parsedObj.pairs = parsedObj.pairs.filter(p => {
+        if (!p || typeof p !== 'object') return false;
+        const cExact = allowedByNorm.get(normName(p.canonical));
+        const aExact = allowedByNorm.get(normName(p.alias));
+        if (!cExact || !aExact || normName(cExact) === normName(aExact)) return false;
+        p.canonical = cExact;
+        p.alias = aExact;
+        return true;
+      });
+    }
     return jsonResponse({
       ok: true,
       mode: 'gemini_ai_edge',

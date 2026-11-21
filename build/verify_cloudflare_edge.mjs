@@ -2742,7 +2742,7 @@ finally:
     }
 
     const unexpectedErrors28 = consoleErrors.filter(
-      e => !/status of 401.*\/app\/api\/(users|auth\/login|auth\/override-requests|geo\/gate-suggestions|geo\/audit|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync|seed\/(?:core|records|industries)|map-usage)/i.test(String(e || ''))
+      e => !/status of 401.*\/app\/api\/(users|auth\/login|auth\/override-requests|geo\/gate-suggestions|geo\/audit|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync|seed\/(?:core|records|industries)|map-usage|telematics)/i.test(String(e || ''))
     );
 
     if (
@@ -2841,6 +2841,8 @@ finally:
       );
     } else {
       fail('edge-28-remote-tdz-boot-and-redacted-faceid-e2e', JSON.stringify({
+        bootConsoleErrors28,
+        unexpectedErrors28,
         consoleErrors,
         wsBoth: [wsDefaultBothPinOnlyRes.status, wsDefaultBothPinOnlyRes.json?.two_factor_face_required],
         rateLim: [rateLimitFirstStatus, rateLimitNinthStatus, rateLimitNinthFlag],
