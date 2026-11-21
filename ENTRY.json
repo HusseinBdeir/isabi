@@ -4,10 +4,10 @@
   "sha": "2f5deb6da29af898362372c96f78a76de8b4e6d1"
  },
  "batch": {
-  "at": "2026-11-20T23:00:35Z",
-  "holder": "THEO 5a74d592 (rate-impact-recs)",
-  "lockId": "018d057e53394af4a04390163e6a4e3c",
-  "version": "19.6.410"
+  "at": "2026-11-21T00:11:06Z",
+  "holder": "agy-106d51f9 (phone-peek-brief)",
+  "lockId": "adb3452226044f4388b7745c5d27f344",
+  "version": "19.6.411"
  },
  "gates": [
   "isabi-app: node build/verify_two_step_paint.mjs"
