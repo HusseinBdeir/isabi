@@ -18636,6 +18636,12 @@
       return { ok: false, error: tr('The statement needs an end date.') };
     }
     const key = buildStatementWatermarkKey(sp);
+    // Moving a mark to an earlier date frees the records after it: supervisor only, as removing it (the servers check the same).
+    const prevMark = getStatementWatermark(key);
+    const prevThrough = prevMark ? String(prevMark.confirmed_through || '').slice(0, 10) : '';
+    if (prevThrough && dt < prevThrough && !(typeof canVoid === 'function' && canVoid(u))) {
+      return { ok: false, error: tr('Only a supervisor can move a sent mark to an earlier date.') };
+    }
     const payload = {
       key,
       industry: canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing'),
@@ -70090,7 +70096,10 @@
     const demoGl = isDemoScopeActive();
     // The model's cash moves, month rows and payables are read through the seat's companies and book scope, so both
     // are part of the key: a cached model never serves another seat (LAN sign-out, Owner Impersonation) or book.
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}`;
+    // Holding reads its partner and facility schedules for the period picked, so the period is part of its key
+    const hldGlPr = ind === 'Holding & Treasury' ? periodRange() : null;
+    const hldGlPrKey = hldGlPr && hldGlPr.from && hldGlPr.to ? `${hldGlPr.from}~${hldGlPr.to}` : '';
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -70152,8 +70161,21 @@
       // A schedule a save kept apart (planSiblingChronoSplit) hands its balance to the new one: count it once
       const hldInForce = r => r && !r._split_kept;
       const hldAllowedSet = isOwner() ? null : new Set(allowedCompanyNames().map(n => norm(n)));
-      const facList = (hldSched.facilitySchedules || []).filter(r => hldInForce(r) && (!hldAllowedSet || hldAllowedSet.has(norm(r.company || 'Bdeir Holding'))));
-      const prtList = (hldSched.partnerAgreements || []).filter(r => hldInForce(r) && (!hldAllowedSet || hldAllowedSet.has(norm(r.entity || r.company || 'Bdeir Holding'))));
+      const facAllowed = r => !hldAllowedSet || hldAllowedSet.has(norm(r.company || 'Bdeir Holding'));
+      const prtAllowed = r => !hldAllowedSet || hldAllowedSet.has(norm(r.entity || r.company || 'Bdeir Holding'));
+      // With a period picked, the schedules in force during it, each facility and partner counted once on its latest
+      // schedule in the period (the dashboard's partner and facility pages and Statement 23 read the same). With no
+      // period, the schedules in force today, as before (owner 2026-11-21: a past period showed today's totals).
+      const facInRange = hldGlPrKey ? holdingSchedulesInRange((hldSched.facilitySchedules || []).filter(facAllowed), hldGlPr) : null;
+      const facList = facInRange
+        ? facInRange.filter(r => r._range_counted !== false)
+        : (hldSched.facilitySchedules || []).filter(r => hldInForce(r) && facAllowed(r));
+      const prtLinesInRange = hldGlPrKey
+        ? holdingPartnerPeriodsInRange((hldSched.partnerAgreements || []).filter(r => r && !r.voided && !r._scheduleVoided && prtAllowed(r)), hldGlPr)
+        : null;
+      const prtList = prtLinesInRange
+        ? prtLinesInRange.filter(l => l.counted && !l.isFallback).map(l => ({ entitled_usd: l.entitled, drawn_usd: l.draws }))
+        : hldGlPrKey ? [] : (hldSched.partnerAgreements || []).filter(r => hldInForce(r) && prtAllowed(r));
       const rowTouchesHld = r => Boolean(r && (!hldAllowedSet || hldAllowedSet.has(norm(r.fromCo)) || hldAllowedSet.has(norm(r.toCo)) || hldAllowedSet.has(norm(r.initiatorCo)) || (r.primaryRow && hldAllowedSet.has(norm(r.primaryRow.company))) || (r.mirrorRow && hldAllowedSet.has(norm(r.mirrorRow.company)))));
       const matchedRowsHld = hldAllowedSet ? (ic.matchedRows || []).filter(rowTouchesHld) : (ic.matchedRows || []);
       const openRowsHld = hldAllowedSet ? (ic.openRows || []).filter(rowTouchesHld) : (ic.openRows || []);
@@ -70650,6 +70672,27 @@
 
   let _deferIndustryDomainServerPost = false;
 
+  // The server left a sent statement mark or a Rate Changes mark as it was (this seat may not make that change): put
+  // the stored copy back on this device, so the screen shows what the server holds and the change is not sent again
+  function reloadRefusedIndustryMarks(refused) {
+    const keys = (Array.isArray(refused) ? refused : []).map(x => String((x && x.key) || '')).filter(k => /^WF::(statement_watermark|rate_change_(review|settings))::/i.test(k));
+    if (!keys.length || !hasServerApi()) return Promise.resolve(false);
+    return edgeApiFetch('./api/industry_domain_store').then(async res => {
+      const j = res && res.ok ? await res.json().catch(() => null) : null;
+      if (!j || !j.industryRowEdits || typeof j.industryRowEdits !== 'object') return false;
+      const store = getIndustryRowEditStore();
+      keys.forEach(k => {
+        const srv = j.industryRowEdits[k];
+        if (srv && typeof srv === 'object') store[k] = Object.assign({}, srv, { _revBumped: true });
+        else delete store[k];
+      });
+      STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
+      saveIndustryRowEditStore(store, { skipServerPost: true });
+      invalidateIndustryDomainCaches();
+      return true;
+    }).catch(() => false);
+  }
+
   function postIndustryDomainStoreToLocalApi(opts = {}) {
     if (!hasServerApi() || isDemoScopeActive()) return Promise.resolve({ ok: true, skipped: true });
     if (rosterIsServerHeld() && !STATE.authed) return Promise.resolve({ ok: true, skipped: true });
@@ -70726,6 +70769,7 @@
         if (!res) return { ok: true, networkErr: true };
         if (res.ok) {
           const okJson = await res.json().catch(() => null);
+          if (okJson && Array.isArray(okJson.refusedMarks) && okJson.refusedMarks.length) reloadRefusedIndustryMarks(okJson.refusedMarks);
           if (STATE._purgedIndustryLegacy) {
             if (sentRows.length) {
               const doneR = new Set(sentRows.map(x => x.bucket + '::' + x.row_id));
@@ -70752,6 +70796,7 @@
           if (j && typeof j.code === 'string') errCode = j.code;
           if (j && j.id != null) errRowId = String(j.id);
           if (j && typeof j.bucket === 'string') errBucket = j.bucket;
+          if (j && Array.isArray(j.refusedMarks) && j.refusedMarks.length) reloadRefusedIndustryMarks(j.refusedMarks);
         } catch (_) {}
         return {
           ok: false,

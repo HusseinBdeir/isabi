@@ -5548,12 +5548,12 @@
     const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
     const lRows = (d.leases || []).filter(l => coKey === 'Real Estate Group' || l.company === coKey);
     const rRows = (d.rentInvoices || []).filter(r => coKey === 'Real Estate Group' || !r.company || r.company === coKey);
-    // With a date range every lease period in it is listed, and the totals count each lease once: the period in force
-    // on the last day of the range (today for a range still running). A rent changed inside the range no longer adds
-    // the old and the new annual rent together. With no range the table is as it always was.
-    const lCounted = l => !stmtRange || l.counted !== false;
+    // Every lease period is listed, and the totals count each lease once: the period in force on the last day of the
+    // range (today for a range still running, and today with no range). A rent change no longer adds the old and the
+    // new annual rent together, with or without a range (no range used to add every period: owner 2026-11-21).
+    const lCounted = l => l.counted !== false;
     const lSum = key => lRows.filter(lCounted).reduce((s, l) => s + Number(l[key] || 0), 0);
-    const lHasUncounted = Boolean(stmtRange && lRows.some(l => !lCounted(l)));
+    const lHasUncounted = lRows.some(l => !lCounted(l));
     const rentTotal = lSum('annualTtcUsd');
     const winHdr = formatStmtWindowHeader(ctx, rRows, 'date');
     return `
@@ -5603,8 +5603,9 @@
             <td class="num" id="rdlReRentRollTotal">${fmtUsd(lSum('annualTtcUsd'), 2)}</td>
           </tr>
         </tfoot>
-      </table>${lHasUncounted ? `
-      <div class="rdl-note-text">A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.</div>` : ''}
+      </table>${lHasUncounted ? (stmtRange ? `
+      <div class="rdl-note-text">A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.</div>` : `
+      <div class="rdl-note-text">A lease that has ended or changed its rent stays listed in grey with its dates. The totals count each lease once, at the rent in force today.</div>`) : ''}
       <div class="rdl-section-hdr" style="margin-top:14px;">2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)</div>
       <table class="rdl-table">
         <thead>
@@ -7628,10 +7629,12 @@
       const k = d.kpis || {};
       const lRows = (d.leases || []).filter(l => effCoKey === 'Real Estate Group' || l.company === effCoKey);
       const rRows = (d.rentInvoices || []).filter(r => effCoKey === 'Real Estate Group' || !r.company || r.company === effCoKey);
-      const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
-      const vatTotal = lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
+      // Each lease once, at the period in force (same rule as the statement's totals): an ended or replaced period is not added
+      const lCountedRows = lRows.filter(l => l.counted !== false);
+      const rentTotal = lCountedRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+      const vatTotal = lCountedRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
       facts = {
-        activeLeases: lRows.length,
+        activeLeases: lCountedRows.length,
         annualContractedRentUsd: Math.round(rentTotal),
         annualVat11Usd: Math.round(vatTotal),
         occupiedUnits: Number(k.occupiedUnits || 0),
@@ -7642,7 +7645,7 @@
         rentInvoicesCount: rRows.length
       };
       kpis = [
-        mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lRows.length} active leases`, `${lRows.length} عقد فعال`, `${lRows.length} baux actifs`, 'pos'),
+        mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lCountedRows.length} active leases`, `${lCountedRows.length} عقد فعال`, `${lCountedRows.length} baux actifs`, 'pos'),
         mkKpi('occ', 'Portfolio Occupancy', 'نسبة الإشغال', 'Taux d’occupation', `${fmtNum(k.occupancyPct || 0, 1)}%`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} units`, `${fmtNum(k.occupiedUnits || 0, 0)} من ${fmtNum(k.totalUnits || 0, 0)} وحدة`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} lots`, 'ok'),
         mkKpi('col', 'Rent Collected', 'الإيجارات المحصلة', 'Loyers encaissés', canViewBooks ? fmtUsd(k.collectedUsd || 0, 0) : 'Restricted', `${rRows.length} VAT invoices`, `${rRows.length} فاتورة ضريبية`, `${rRows.length} factures TVA`),
         mkKpi('arr', 'Tenant Arrears', 'متأخرات المستأجرين', 'Arriérés locataires', canViewBooks ? fmtUsd(k.openArUsd || 0, 0) : 'Restricted', `11% VAT ${fmtUsd(vatTotal, 0)}`, `ضريبة 11% ${fmtUsd(vatTotal, 0)}`, `TVA 11% ${fmtUsd(vatTotal, 0)}`, Number(k.openArUsd || 0) > 0 ? 'neg' : 'ok')
