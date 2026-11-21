@@ -16,7 +16,7 @@
  "id": "20261120T224430Z-0ef3caa5",
  "pc": "Theo",
  "queuedAt": "2026-11-20T22:44:30Z",
- "seenAt": "2026-11-20T23:00:08Z",
+ "seenAt": "2026-11-21T00:07:36Z",
  "state": "waiting",
  "summary": "Sidebar taps answer at once: highlight in the next frame on a slow hub, first screen of a hub painted first (Chromium), Sentinels no longer redraws on an unchanged Maps quota refresh"
 }
