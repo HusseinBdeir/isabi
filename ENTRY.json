@@ -1,0 +1,21 @@
+{
+ "app": {
+  "branch": "wt/speed-3part",
+  "sha": "880d120183c3f392b6fc166fdda19d9aeb527f3b"
+ },
+ "gates": [
+  "isabi-app: node build/verify_speed_3part.mjs",
+  "isabi-app: node build/verify_two_step_paint.mjs"
+ ],
+ "holder": "agy-3e1e3497 (speed-3part)",
+ "id": "20261121T045526Z-7b6cfb30",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T04:55:26Z",
+ "seenAt": "2026-11-21T04:55:26Z",
+ "site": {
+  "branch": "wt/speed-3part",
+  "sha": "c0b59a018e4360f09321f89d314cf30d868c8b17"
+ },
+ "state": "waiting",
+ "summary": "3-part speed pass: ETag/coalesced sync, 25-row initial slice + full offscreen CSV + idle prewarm, subtab/dock highlight-first"
+}
