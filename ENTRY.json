@@ -3,6 +3,12 @@
   "branch": "wt/all-five-typo-hygiene-recs",
   "sha": "b29bb204836df1b72a6cbf89ea2620575f930b01"
  },
+ "batch": {
+  "at": "2026-11-21T10:29:31Z",
+  "holder": "THEO cb64e097 (all-5-typo-hygiene-recs)",
+  "lockId": "c43b69b82eee42c4b5d20963e91f19ab",
+  "version": "19.6.419"
+ },
  "gates": [
   "isabi-app: python build/audit_i18n.py",
   "isabi-app: python build/verify_public_names.py",
