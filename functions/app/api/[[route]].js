@@ -205,6 +205,11 @@ async function routeAppApi(context) {
   }
 
   const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';
+  const hasPresentedAuth = Boolean(
+    request.headers.get('X-ISABI-Session') ||
+    request.headers.get('Authorization') ||
+    /(?:^|;\s*)isabi_edge_sess=/.test(String(request.headers.get('Cookie') || ''))
+  );
   if (isDemoReq && subPath === '/telematics' && request.method === 'GET') {
     return handleTelematics(request, env, null, url, body);
   }
@@ -255,6 +260,9 @@ async function routeAppApi(context) {
       return handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError);
     }
     if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
+      if (rawSession || hasPresentedAuth) {
+        return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+      }
       if (!isSameOriginBrowserRequest(request, url, env)) {
         return jsonResponse({ ok: false, error: 'Same-origin browser session required for Demo AI.' }, 403);
       }

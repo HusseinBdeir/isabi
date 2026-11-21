@@ -9581,6 +9581,11 @@ export async function handleSync(request, env, session, body, _ctx) {
         } catch (_) {}
       }
     }
+    if (pKey === 'mfg_web_store' && isOwnerOrFullGroupSession(session) && incomingDoc.roleTabPolicies && typeof incomingDoc.roleTabPolicies === 'object') {
+      try {
+        await writeEdgeKvDoc(env.DB, 'role_tab_policies', JSON.stringify(incomingDoc.roleTabPolicies), newTs, updatedByStr);
+      } catch (_) {}
+    }
     if (legacyCandidates) {
       const legacyHitsTask = scheduleLegacyIdHits(env, _ctx, legacyCandidates, mfgLegacySignals);
       if (legacyHitsTask) await legacyHitsTask;
