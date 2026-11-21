@@ -3,12 +3,6 @@
   "branch": "wt/cross-bucket-ar-fifo-recs",
   "sha": "64fff6f1d0ace246dd708265e66e0b2f5116c852"
  },
- "batch": {
-  "at": "2026-11-21T02:17:37Z",
-  "holder": "f22c56fb-cross-bucket-ar-fifo",
-  "lockId": "a054086b4f094d4ba7a6e7021e42c15c",
-  "version": "19.6.412"
- },
  "gates": [
   "isabi-app: node build/verify_ar_fifo_sister_recs.mjs"
  ],
@@ -17,6 +11,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T02:17:22Z",
  "seenAt": "2026-11-21T02:17:22Z",
- "state": "waiting",
+ "shippedAt": "2026-11-21T02:35:46Z",
+ "shippedBy": "f22c56fb-cross-bucket-ar-fifo",
+ "shippedVersion": "19.6.412",
+ "state": "shipped",
  "summary": "Cross-bucket sister near-copy check, live trd_sales AR preview + credit notes, and 1-tap View Invoice Split FIFO popover"
 }
