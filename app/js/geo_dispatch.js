@@ -2924,6 +2924,7 @@
   }
 
   function estimateLegKm(fromSpec, toSpec, SEED, opts = {}) {
+    if (typeof window !== 'undefined' && typeof window.__MFG_LEG_CALLS === 'number') window.__MFG_LEG_CALLS++;
     if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) return null;
     const fromIsBu = fromSpec.type === 'bu';
     const anyBu = fromSpec.type === 'bu' || toSpec.type === 'bu';
@@ -7849,6 +7850,32 @@
     const pickModeActive = Boolean(STUDIO.mode === 'view' && STUDIO.shapelessPickRegion);
     if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks' && STUDIO.pinFilter !== 'unpinned') {
       const pinLife = getSiteLifecycleIndex(sites, SEED, STATE);
+      const canSeeSiteRules = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('price_rules'));
+      const canSeeRawRulesGeo = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('raw_purchases'));
+      let _siteRulesByNorm = null;
+      let _siteRulesRev = null;
+      const getSiteRulesCnt = siteName => {
+        if (!canSeeSiteRules) return 0;
+        const rev = (SEED && SEED._customRev) || 0;
+        if (!_siteRulesByNorm || _siteRulesRev !== rev) {
+          _siteRulesByNorm = new Map();
+          _siteRulesRev = rev;
+          const rawRulePool = (SEED && SEED.records && SEED.records.price_rules) || [];
+          const scopedRulePool = (ctx && typeof ctx.filterRecords === 'function')
+            ? ctx.filterRecords(rawRulePool, { ignorePeriod: true, ignoreSearch: true, tableKey: 'price_rules' })
+            : rawRulePool;
+          for (let i = 0; i < scopedRulePool.length; i++) {
+            const r = scopedRulePool[i];
+            if (!r || r.voided || r._multiIndustrySeed) continue;
+            const rt = String(r.rule_type || '').trim();
+            if (/^commission$/i.test(rt)) continue;
+            if (!canSeeRawRulesGeo && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rt)) continue;
+            const k = norm(r.site);
+            if (k) _siteRulesByNorm.set(k, (_siteRulesByNorm.get(k) || 0) + 1);
+          }
+        }
+        return _siteRulesByNorm.get(norm(siteName)) || 0;
+      };
       sites.forEach(s => {
         if (_isPinClearedFlag(s._pinCleared) || !isValidLatLngPair(s.latitude, s.longitude)) return;
         const lat = Number(s.latitude), lng = Number(s.longitude);
@@ -7876,27 +7903,19 @@
           interactive: !pickModeActive,
           zIndexOffset: pinLc.state === 'closed' ? -400 : (pinLc.state === 'dormant' ? -200 : 0)
         }).addTo(lg);
-        const lifeWord = pinLc.state === 'closed' ? 'Closed' : (pinLc.state === 'dormant' ? 'Dormant' : 'Active');
-        const lifeLine = `<div class="geo-pop-life is-${pinLc.state}">Status: <b>${lifeWord}</b>${pinLc.state === 'closed' && pinLc.endDate ? ` <span>(${esc(pinLc.endDate)})</span>` : ''}</div>${pinLc.lastDate ? `<div>Last Load: <b>${esc(pinLc.lastDate)}</b></div>` : ''}${pinLc.closesOn ? `<div>Closes: <b>${esc(pinLc.closesOn)}</b></div>` : ''}`;
-
-        const wtcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED) : null;
-        const bbcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED) : null;
-        const partyLines = [
-          s.supplier ? `<div>Site Owner: <b>${esc(s.supplier)}</b></div>` : '',
-          s.customer ? `<div>Linked Customer: <b>${esc(s.customer)}</b></div>` : ''
-        ].filter(Boolean).join('');
-        const canSeeSiteRules = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('price_rules'));
-        const canSeeRawRulesGeo = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('raw_purchases'));
-        const rawRulePool = (SEED && SEED.records && SEED.records.price_rules) || [];
-        const scopedRulePool = (canSeeSiteRules && ctx && typeof ctx.filterRecords === 'function')
-          ? ctx.filterRecords(rawRulePool, { ignorePeriod: true, ignoreSearch: true, tableKey: 'price_rules' })
-          : rawRulePool;
-        const siteRulesCnt = canSeeSiteRules
-          ? scopedRulePool.filter(r => r && !r.voided && !r._multiIndustrySeed && !/^commission$/i.test(String(r.rule_type || '').trim()) && (canSeeRawRulesGeo || !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())) && norm(r.site) === norm(s.name)).length
-          : 0;
-        const loadsLine = `<div>Loads: <b>${st.raw}</b> Raw · <b>${st.sales}</b> Delivery</div>${canSeeSiteRules ? `<div>Price Agreements: <b>${siteRulesCnt}</b></div>` : ''}`;
         if (!pickModeActive) {
-          marker.bindPopup(`
+          marker.bindPopup(() => {
+            const lifeWord = pinLc.state === 'closed' ? 'Closed' : (pinLc.state === 'dormant' ? 'Dormant' : 'Active');
+            const lifeLine = `<div class="geo-pop-life is-${pinLc.state}">Status: <b>${lifeWord}</b>${pinLc.state === 'closed' && pinLc.endDate ? ` <span>(${esc(pinLc.endDate)})</span>` : ''}</div>${pinLc.lastDate ? `<div>Last Load: <b>${esc(pinLc.lastDate)}</b></div>` : ''}${pinLc.closesOn ? `<div>Closes: <b>${esc(pinLc.closesOn)}</b></div>` : ''}`;
+            const wtcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED) : null;
+            const bbcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED) : null;
+            const partyLines = [
+              s.supplier ? `<div>Site Owner: <b>${esc(s.supplier)}</b></div>` : '',
+              s.customer ? `<div>Linked Customer: <b>${esc(s.customer)}</b></div>` : ''
+            ].filter(Boolean).join('');
+            const siteRulesCnt = getSiteRulesCnt(s.name);
+            const loadsLine = `<div>Loads: <b>${st.raw}</b> Raw · <b>${st.sales}</b> Delivery</div>${canSeeSiteRules ? `<div>Price Agreements: <b>${siteRulesCnt}</b></div>` : ''}`;
+            return `
           <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>
             <div style="color:#64748B">Region Zone: <b>${esc(s.region || s.geo_zone || 'Unassigned')}</b></div>
@@ -7913,7 +7932,8 @@
               ${(canMintDriverGateLinkNow() && canAccessGeoCompanyNow(s.company) && canAccessGeoIndustryNow(s._industry || activeInd)) ? `<button type="button" class="geo-mini-btn" data-popup-mint-gate="${esc(s.name)}" data-popup-mint-id="${esc(s.id || '')}" data-popup-mint-co="${esc(s.company || '')}" data-popup-mint-ind="${esc(s._industry || activeInd)}" data-popup-mint-cat="${esc(siteCat)}">Driver Gate Link</button>` : ''}
             </div>
           </div>
-        `);
+        `;
+          });
         }
       });
     }
@@ -14201,6 +14221,7 @@
     validateSiteInsideRegion,
     ensureRegionInSeed,
     estimateLegKm,
+    __internalLegCounter: true,
     hasVerifiedRoutePair,
     canEditPairKm,
     getConfigStamp: () => String(GEO_STORE.updatedAt || ''),

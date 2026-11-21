@@ -123274,16 +123274,180 @@
     );
   }
 
+  function isEligibleMobPeekTr(tr) {
+    if (!tr || tr.tagName !== 'TR' || !tr.isConnected) return false;
+    if (tr.hidden || (tr.style && tr.style.display === 'none') || tr.classList.contains('hidden')) return false;
+    if (tr.classList.contains('empty-row') || tr.classList.contains('total') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) return false;
+    if (tr.querySelector(':scope > td[colspan]')) return false;
+    if (tr.hasAttribute('data-jump-co') || !tr.closest) return false;
+    if (!tr.closest('.table-wrap, .table-scroll')) return false;
+    if (tr.closest('.ceo-scorecard-table, #inspectorBody, #entryModal, #indDomainEntryModal, #mobRowPeekSheet, #pocketBriefOverlay, .a4-sheet, .thermal-paper-roll')) return false;
+    try {
+      if (window.getComputedStyle(tr).display === 'none') return false;
+    } catch (_) {}
+    if (tr.matches('tr.rrow[data-rid]')) {
+      return Boolean(tr.getAttribute('data-rkey') && tr.getAttribute('data-rid'));
+    }
+    if (tr.hasAttribute('data-no-ind-inspect') || tr.hasAttribute('data-rid') || tr.hasAttribute('data-ar-row') || tr.hasAttribute('data-staff-row')) {
+      return false;
+    }
+    const isIndTarget = tr.hasAttribute('data-ind-inspect-row') || getActiveIndustry(STATE.company) !== 'Manufacturing';
+    if (!isIndTarget) return false;
+    const explorerWrap = tr.closest('#industryDomainTablesExplorer');
+    if (explorerWrap && explorerWrap.getAttribute('data-ind-tbl-active') === 'hld_extended_tbl' && tr.getAttribute('data-ind-row-id')) {
+      return true;
+    }
+    const visTds = Array.from(tr.querySelectorAll('td')).filter(tdEl => !tdEl.style || tdEl.style.display !== 'none');
+    return visTds.length >= 2;
+  }
+
   function shouldInterceptWithMobRowPeek(e, trEl) {
     if (!isMobPhoneViewport()) return false;
     if (isAnyKioskOrScanSurface()) return false;
     if (!e || (!e.isTrusted && !window.__MOB_PEEK_TAP)) return false;
-    if (!trEl || !trEl.closest) return false;
-    if (!trEl.closest('.table-wrap, .table-scroll')) return false;
-    if (trEl.classList.contains('empty-row') || trEl.querySelector(':scope > td[colspan]')) return false;
-    if (trEl.hasAttribute('data-jump-co') || trEl.closest('.ceo-scorecard-table')) return false;
-    if (trEl.closest('#inspectorBody, #entryModal, #indDomainEntryModal, #mobRowPeekSheet, #pocketBriefOverlay, .a4-sheet, .thermal-paper-roll')) return false;
-    return true;
+    return isEligibleMobPeekTr(trEl);
+  }
+
+  function collectMobPeekSiblingRows(trEl) {
+    if (!trEl || !trEl.closest) return [];
+    const tbody = trEl.closest('tbody');
+    if (!tbody) return [];
+    return Array.from(tbody.children).filter(el => el.tagName === 'TR' && isEligibleMobPeekTr(el));
+  }
+
+  function buildIndRowInspectOpts(indRow) {
+    if (!indRow || !indRow.closest) return null;
+    const tbl = indRow.closest('table');
+    if (!tbl) return null;
+    const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
+    const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+    const cells = visTds.map(cleanDomainCellText);
+    const matchCells = visTds.map(domainCellEnText);
+    if (cells.length < 2) return null;
+    if (indRow.getAttribute('data-ind-row-id')) {
+      cells[0] = indRow.getAttribute('data-ind-row-id');
+      matchCells[0] = cells[0];
+    }
+    const cardEl = indRow.closest('.panel-card, .panel');
+    const tableTitle = getDomainCardCanonicalTitle(cardEl);
+    return {
+      ind: getActiveIndustry(STATE.company),
+      headers,
+      cells,
+      matchCells,
+      tableTitle,
+      trEl: indRow,
+      domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
+      rowCompany: indRow.getAttribute('data-ind-row-co') || ''
+    };
+  }
+
+  function buildMobRowContextFromTr(trEl, triggerEl) {
+    if (!trEl || !trEl.closest) return null;
+    if (trEl.matches('tr.rrow[data-rid]')) {
+      return {
+        kind: 'rrow',
+        crKey: trEl.getAttribute('data-rkey'),
+        rid: trEl.getAttribute('data-rid'),
+        trEl,
+        triggerEl: triggerEl || trEl
+      };
+    }
+    const explorerWrap = trEl.closest('#industryDomainTablesExplorer');
+    const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
+    const rowIdAttr = trEl.getAttribute('data-ind-row-id') || '';
+    if (activeExplorerTbl === 'hld_extended_tbl' && rowIdAttr) {
+      return {
+        kind: 'rrow',
+        crKey: 'external_movements',
+        rid: rowIdAttr,
+        trEl,
+        triggerEl: triggerEl || trEl
+      };
+    }
+    const domInspectOpts = buildIndRowInspectOpts(trEl);
+    if (!domInspectOpts) return null;
+    return {
+      kind: 'indRow',
+      trEl,
+      inspectOpts: domInspectOpts,
+      triggerEl: triggerEl || trEl
+    };
+  }
+
+  function resolveLiveMobPeekState() {
+    const st = _mobRowPeekState;
+    if (!st) return null;
+    if (st.trEl && st.trEl.isConnected && isEligibleMobPeekTr(st.trEl)) {
+      const siblings = collectMobPeekSiblingRows(st.trEl);
+      return {
+        siblings,
+        curIdx: siblings.indexOf(st.trEl),
+        rowVanished: false
+      };
+    }
+    const ws = $('workspace');
+    const scopeRoot = (st.panelId && $(st.panelId)) || ws || document;
+    let liveTr = null;
+    if (st.crKey && st.rid && scopeRoot && scopeRoot.querySelector) {
+      const escKey = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.crKey) : st.crKey;
+      const escRid = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.rid) : st.rid;
+      liveTr = scopeRoot.querySelector(`tr.rrow[data-rkey="${escKey}"][data-rid="${escRid}"]`);
+      if (!liveTr && ws && scopeRoot !== ws) {
+        liveTr = ws.querySelector(`tr.rrow[data-rkey="${escKey}"][data-rid="${escRid}"]`);
+      }
+    }
+    if (!liveTr && st.indRowId && scopeRoot && scopeRoot.querySelector) {
+      const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.indRowId) : st.indRowId;
+      const tblSel = st.indRowTbl
+        ? `[data-ind-row-tbl="${(typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.indRowTbl) : st.indRowTbl}"][data-ind-row-id="${escId}"]`
+        : `[data-ind-row-id="${escId}"]`;
+      liveTr = scopeRoot.querySelector(`tr${tblSel}`);
+      if (!liveTr && ws && scopeRoot !== ws) {
+        liveTr = ws.querySelector(`tr${tblSel}`);
+      }
+    }
+    if (liveTr && isEligibleMobPeekTr(liveTr)) {
+      const siblings = collectMobPeekSiblingRows(liveTr);
+      return {
+        siblings,
+        curIdx: siblings.indexOf(liveTr),
+        rowVanished: false
+      };
+    }
+    let liveTbl = st.tableId ? $(st.tableId) : null;
+    if (!liveTbl && st.panelId && $(st.panelId)) {
+      liveTbl = $(st.panelId).querySelector('.table-wrap table, .table-scroll table');
+    }
+    if (!liveTbl && st.tableTitle && ws) {
+      const candTables = Array.from(ws.querySelectorAll('.table-wrap table, .table-scroll table'));
+      liveTbl = candTables.find(tbl => {
+        const card = tbl.closest('.panel-card, .panel');
+        return card && typeof getDomainCardCanonicalTitle === 'function' && getDomainCardCanonicalTitle(card) === st.tableTitle;
+      }) || candTables[0] || null;
+    }
+    const tbody = liveTbl ? liveTbl.querySelector('tbody') : null;
+    const siblings = tbody ? Array.from(tbody.children).filter(el => el.tagName === 'TR' && isEligibleMobPeekTr(el)) : [];
+    if (!st.rid && !st.indRowId && st.primaryTitle && siblings.length > 0 && siblings.length <= 200) {
+      const matchedIdx = siblings.findIndex(r => {
+        const rCtx = buildMobRowContextFromTr(r, r);
+        const rData = rCtx ? buildMobRowPeekData(rCtx) : null;
+        return Boolean(rData && rData.title === st.primaryTitle);
+      });
+      if (matchedIdx >= 0) {
+        return {
+          siblings,
+          curIdx: matchedIdx,
+          rowVanished: false
+        };
+      }
+    }
+    const rawLastIdx = Math.max(0, Number(st.lastIndex || 0));
+    return {
+      siblings,
+      curIdx: rawLastIdx,
+      rowVanished: true
+    };
   }
 
   function extractThEnText(th) {
@@ -123475,13 +123639,31 @@
       };
     }
 
+    const primaryTitle = String((pinnedField && pinnedField.text && pinnedField.text !== '-') ? pinnedField.text : '');
+    const tblMeta = (() => {
+      const card = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      return {
+        panelId: (card && card.id) ? String(card.id) : '',
+        tableId: tbl.id ? String(tbl.id) : '',
+        tableTitle: (card && typeof getDomainCardCanonicalTitle === 'function') ? String(getDomainCardCanonicalTitle(card) || '') : eyebrow,
+        ctxKind: ctx.kind,
+        crKey: ctx.kind === 'rrow' ? String(ctx.crKey || '') : '',
+        rid: ctx.kind === 'rrow' ? String(ctx.rid || '') : '',
+        indRowTbl: ctx.kind === 'indRow' ? String((trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || '') : '',
+        indRowId: String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || ''),
+        primaryTitle
+      };
+    })();
+
     return {
       eyebrow,
-      title: (pinnedField && pinnedField.text && pinnedField.text !== '-') ? pinnedField.text : eyebrow,
+      title: primaryTitle || eyebrow,
       fields,
       canEdit,
       onEdit,
       onInspect,
+      trEl,
+      tblMeta,
       triggerEl: ctx.triggerEl || trEl
     };
   }
@@ -123492,8 +123674,12 @@
     _mobRowPeekState = null;
     const editBtn = $('mobPeekEditBtn');
     const inspBtn = $('mobPeekInspectBtn');
+    const prevBtn = $('mobPeekPrevBtn');
+    const nextBtn = $('mobPeekNextBtn');
     if (editBtn) editBtn.onclick = null;
     if (inspBtn) inspBtn.onclick = null;
+    if (prevBtn) prevBtn.onclick = null;
+    if (nextBtn) nextBtn.onclick = null;
     if (bd) {
       if (opts && opts.purgeDom) {
         if (bd.parentNode) bd.parentNode.removeChild(bd);
@@ -123507,8 +123693,10 @@
     }
   }
 
-  function renderMobRowPeekSheet(data) {
+  function renderMobRowPeekSheet(data, opts = {}) {
     if (!data || typeof document === 'undefined') return null;
+    const isStep = Boolean(opts && opts.isStep);
+    const prevBtnId = (opts && opts.focusBtnId) || (isStep && document.activeElement ? document.activeElement.id : '');
     let bd = $('mobRowPeekBackdrop');
     if (!bd) {
       bd = document.createElement('div');
@@ -123528,6 +123716,15 @@
               <button type="button" class="modal-close-btn" id="mobPeekCloseBtn" aria-label="Close">✕</button>
             </div>
           </div>
+          <div class="mob-peek-nav" id="mobPeekNavBar" role="group" aria-label="Row navigation" hidden>
+            <button type="button" class="btn btn-outline-bar btn-sm mob-peek-step-btn" id="mobPeekPrevBtn">
+              <span class="mob-peek-step-arr" aria-hidden="true">‹</span><span>Previous</span>
+            </button>
+            <span class="mob-peek-pos" id="mobPeekPosLabel" data-no-i18n="1"></span>
+            <button type="button" class="btn btn-outline-bar btn-sm mob-peek-step-btn" id="mobPeekNextBtn">
+              <span>Next</span><span class="mob-peek-step-arr" aria-hidden="true">›</span>
+            </button>
+          </div>
           <div class="mob-peek-body" id="mobPeekBody">
             <dl class="mob-peek-fields" id="mobPeekFields"></dl>
           </div>
@@ -123543,26 +123740,57 @@
       if (sheet) {
         let touchY0 = 0;
         let touchX0 = 0;
-        let touchActive = false;
+        let swipeCloseArmed = false;
+        let swipeStepArmed = false;
         sheet.addEventListener('touchstart', ev => {
-          if (!ev.touches || ev.touches.length !== 1) return;
+          if (!ev.touches || ev.touches.length !== 1) {
+            swipeCloseArmed = false;
+            swipeStepArmed = false;
+            return;
+          }
+          const t0 = ev.touches[0];
+          touchY0 = t0.clientY;
+          touchX0 = t0.clientX;
           const bodyEl = $('mobPeekBody');
           const inGrab = Boolean(ev.target && ev.target.closest && ev.target.closest('.mob-peek-grab-wrap, .mob-peek-hdr'));
-          if (!inGrab && bodyEl && bodyEl.scrollTop > 2) return;
-          touchY0 = ev.touches[0].clientY;
-          touchX0 = ev.touches[0].clientX;
-          touchActive = true;
+          swipeCloseArmed = Boolean(inGrab || !bodyEl || bodyEl.scrollTop <= 2);
+          const vw = (typeof window !== 'undefined' && Number(window.innerWidth)) || 390;
+          const inEdgeZone = touchX0 < 28 || touchX0 > (vw - 28);
+          const inInteractive = Boolean(ev.target && ev.target.closest && ev.target.closest('button, a, input, select, textarea, .mob-peek-rel-pills'));
+          swipeStepArmed = Boolean(!inEdgeZone && !inInteractive);
         }, { passive: true });
         sheet.addEventListener('touchmove', ev => {
-          if (!touchActive || !ev.touches || ev.touches.length !== 1) return;
+          if (!ev.touches || ev.touches.length !== 1) return;
           const dy = ev.touches[0].clientY - touchY0;
           const dx = ev.touches[0].clientX - touchX0;
-          if (dy > 64 && Math.abs(dy) > Math.abs(dx) * 1.35) {
-            touchActive = false;
+          if (swipeCloseArmed && dy > 64 && Math.abs(dy) > Math.abs(dx) * 1.35) {
+            swipeCloseArmed = false;
+            swipeStepArmed = false;
             closeMobRowPeekSheet();
+            return;
+          }
+          if (swipeStepArmed && Math.abs(dy) > 36 && Math.abs(dy) > Math.abs(dx)) {
+            swipeStepArmed = false;
           }
         }, { passive: true });
-        sheet.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
+        sheet.addEventListener('touchend', ev => {
+          const armedStep = swipeStepArmed;
+          swipeCloseArmed = false;
+          swipeStepArmed = false;
+          if (!armedStep || !ev.changedTouches || !ev.changedTouches.length) return;
+          const tEnd = ev.changedTouches[0];
+          const dx = tEnd.clientX - touchX0;
+          const dy = tEnd.clientY - touchY0;
+          if (Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+            const delta = rtl ? (dx > 0 ? 1 : -1) : (dx < 0 ? 1 : -1);
+            stepMobRowPeek(delta, { via: 'swipe' });
+          }
+        }, { passive: true });
+        sheet.addEventListener('touchcancel', () => {
+          swipeCloseArmed = false;
+          swipeStepArmed = false;
+        }, { passive: true });
       }
     }
 
@@ -123570,6 +123798,10 @@
     const titleEl = $('mobPeekTitle');
     const editBtn = $('mobPeekEditBtn');
     const inspBtn = $('mobPeekInspectBtn');
+    const navBar = $('mobPeekNavBar');
+    const prevBtn = $('mobPeekPrevBtn');
+    const nextBtn = $('mobPeekNextBtn');
+    const posLbl = $('mobPeekPosLabel');
     const fieldsEl = $('mobPeekFields');
     const bodyEl = $('mobPeekBody');
     if (eyeEl) eyeEl.textContent = data.eyebrow || 'Record Summary';
@@ -123581,6 +123813,31 @@
     if (inspBtn) {
       inspBtn.onclick = data.onInspect || null;
     }
+
+    const trEl = data.trEl || null;
+    const siblings = trEl ? collectMobPeekSiblingRows(trEl) : [];
+    const curIdx = trEl ? siblings.indexOf(trEl) : -1;
+    const totalRows = siblings.length;
+    if (navBar) {
+      if (totalRows > 1 && curIdx >= 0) {
+        navBar.hidden = false;
+        if (posLbl) posLbl.textContent = `${curIdx + 1} / ${totalRows}`;
+        if (prevBtn) {
+          prevBtn.disabled = curIdx <= 0;
+          prevBtn.onclick = () => stepMobRowPeek(-1, { via: 'button', focusBtnId: 'mobPeekPrevBtn' });
+        }
+        if (nextBtn) {
+          nextBtn.disabled = curIdx >= totalRows - 1;
+          nextBtn.onclick = () => stepMobRowPeek(1, { via: 'button', focusBtnId: 'mobPeekNextBtn' });
+        }
+      } else {
+        navBar.hidden = true;
+        if (posLbl) posLbl.textContent = '';
+        if (prevBtn) { prevBtn.disabled = true; prevBtn.onclick = null; }
+        if (nextBtn) { nextBtn.disabled = true; nextBtn.onclick = null; }
+      }
+    }
+
     if (fieldsEl) {
       fieldsEl.innerHTML = data.fields.map((f, idx) => {
         let valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`;
@@ -123608,9 +123865,22 @@
     }
     if (bodyEl) bodyEl.scrollTop = 0;
 
+    const prevLastFocus = isStep && _mobRowPeekState ? _mobRowPeekState.lastFocus : null;
+    const meta = data.tblMeta || {};
     _mobRowPeekState = {
       data,
-      lastFocus: (document.activeElement && document.activeElement !== document.body) ? document.activeElement : (data.triggerEl || null)
+      trEl,
+      panelId: meta.panelId || '',
+      tableId: meta.tableId || '',
+      tableTitle: meta.tableTitle || '',
+      ctxKind: meta.ctxKind || '',
+      crKey: meta.crKey || '',
+      rid: meta.rid || '',
+      indRowTbl: meta.indRowTbl || '',
+      indRowId: meta.indRowId || '',
+      primaryTitle: meta.primaryTitle || '',
+      lastIndex: curIdx >= 0 ? curIdx : 0,
+      lastFocus: prevLastFocus || ((document.activeElement && document.activeElement !== document.body) ? document.activeElement : (data.triggerEl || null))
     };
     bd.hidden = false;
     bd.classList.add('open');
@@ -123619,17 +123889,60 @@
       try { window.MFG_I18N.translateDom(bd); } catch (_) {}
     }
     if (typeof ensureMobOverlayGlobalListeners === 'function') ensureMobOverlayGlobalListeners();
-    const closeBtn = $('mobPeekCloseBtn');
-    if (closeBtn && typeof closeBtn.focus === 'function') {
-      try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    if (isStep) {
+      let focusTarget = null;
+      if (prevBtnId === 'mobPeekPrevBtn' && prevBtn) {
+        focusTarget = !prevBtn.disabled ? prevBtn : (nextBtn && !nextBtn.disabled ? nextBtn : $('mobPeekCloseBtn'));
+      } else if (prevBtnId === 'mobPeekNextBtn' && nextBtn) {
+        focusTarget = !nextBtn.disabled ? nextBtn : (prevBtn && !prevBtn.disabled ? prevBtn : $('mobPeekCloseBtn'));
+      }
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        try { focusTarget.focus({ preventScroll: true }); } catch (_) {}
+      }
+    } else {
+      const closeBtn = $('mobPeekCloseBtn');
+      if (closeBtn && typeof closeBtn.focus === 'function') {
+        try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+      }
     }
     return bd;
+  }
+
+  function stepMobRowPeek(delta, opts = {}) {
+    if (!_mobRowPeekState || typeof document === 'undefined') return false;
+    const step = Number(delta) < 0 ? -1 : 1;
+    const resolved = resolveLiveMobPeekState();
+    if (!resolved || !resolved.siblings || !resolved.siblings.length) return false;
+    const siblings = resolved.siblings;
+    let targetIdx;
+    if (resolved.rowVanished) {
+      if (step < 0) {
+        if (resolved.curIdx <= 0) return false;
+        targetIdx = Math.min(siblings.length - 1, resolved.curIdx - 1);
+      } else {
+        if (resolved.curIdx >= siblings.length) return false;
+        targetIdx = Math.max(0, resolved.curIdx);
+      }
+    } else {
+      if (resolved.curIdx < 0) return false;
+      targetIdx = resolved.curIdx + step;
+      if (targetIdx < 0 || targetIdx >= siblings.length) return false;
+    }
+    const nextTr = siblings[targetIdx];
+    const nextCtx = buildMobRowContextFromTr(nextTr, nextTr);
+    if (!nextCtx) return false;
+    const nextData = buildMobRowPeekData(nextCtx);
+    if (!nextData) return false;
+    try {
+      nextTr.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } catch (_) {}
+    return Boolean(renderMobRowPeekSheet(nextData, Object.assign({}, opts, { isStep: true })));
   }
 
   function openMobRowPeekForRow(ctx) {
     const data = buildMobRowPeekData(ctx);
     if (!data) return false;
-    return Boolean(renderMobRowPeekSheet(data));
+    return Boolean(renderMobRowPeekSheet(data, { isStep: false }));
   }
 
   // ==========================================================================
@@ -142668,11 +142981,25 @@
     window.addEventListener('mfg:core-seed-ready', refreshOpenPocketBrief);
     window.addEventListener('mfg:records-seed-ready', refreshOpenPocketBrief);
     document.addEventListener('keydown', ev => {
-      if (ev.key !== 'Escape') return;
-      if (_mobRowPeekState) {
-        closeMobRowPeekSheet();
-      } else if (_pocketBriefOpen) {
-        closePocketBrief();
+      if (ev.key === 'Escape') {
+        if (_mobRowPeekState) {
+          closeMobRowPeekSheet();
+        } else if (_pocketBriefOpen) {
+          closePocketBrief();
+        }
+        return;
+      }
+      if (_mobRowPeekState && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+        const peekBd = $('mobRowPeekBackdrop');
+        if (!peekBd || peekBd.hidden) return;
+        if (document.querySelector('#recordInspector:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden])')) return;
+        if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+        const tTag = ev.target && ev.target.tagName ? ev.target.tagName : '';
+        if (/^(INPUT|TEXTAREA|SELECT)$/i.test(tTag)) return;
+        ev.preventDefault();
+        const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+        const step = ev.key === 'ArrowRight' ? (rtl ? -1 : 1) : (rtl ? 1 : -1);
+        stepMobRowPeek(step, { via: 'key' });
       }
     });
   }
@@ -142697,6 +143024,7 @@
       const hasLedger = typeof modelHasLedger === 'function' ? modelHasLedger() : true;
       const cashUsd = k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0);
       const netSales = k.net_sales != null ? k.net_sales : (k.gross_sales || 0);
+      const arChipFilter = Number(k.ar_60_plus || 0) > 0 ? 'overdue60' : (Number(k.ar_balance || 0) > 0 ? 'open_ar' : '');
       cards = [
         {
           label: 'Cash & Bank Till',
@@ -142709,8 +143037,18 @@
           tone: hasLedger ? 'good' : 'muted'
         },
         { label: 'Net Sales', val: fmtUSD(netSales, 0), valNoI18n: true, subLabel: 'Delivered Loads', subVal: fmtNum(k.loads || 0), jump: 'sales', tone: 'cobalt' },
-        { label: 'Open Receivables', val: fmtUSD(k.ar_balance || 0, 0), valNoI18n: true, subLabel: '60d+ Overdue', subVal: fmtUSD(k.ar_60_plus || 0, 0), jump: 'customers', tone: Number(k.ar_60_plus || 0) > 0 ? 'warn' : '' },
-        { label: 'Fleet & Tank', val: `${fmtNum(Math.round(Number(k.diesel_in_tank || 0)))} L`, valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(k.operating_profit || 0, 0) : '', jump: 'fleet', tone: '' }
+        {
+          label: 'Open Receivables',
+          val: fmtUSD(k.ar_balance || 0, 0),
+          valNoI18n: true,
+          subLabel: '60d+ Overdue',
+          subVal: fmtUSD(k.ar_60_plus || 0, 0),
+          jump: 'customers',
+          jumpOpts: arChipFilter ? { chipFilter: arChipFilter } : undefined,
+          scrollTarget: 'custPanel',
+          tone: Number(k.ar_60_plus || 0) > 0 ? 'warn' : ''
+        },
+        { label: 'Fleet & Tank', val: `${fmtNum(Math.round(Number(k.diesel_in_tank || 0)))} L`, valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(k.operating_profit || 0, 0) : '', jump: 'fleet', scrollTarget: 'dieselTankPanel', tone: '' }
       ];
     } else if (ind === 'Holding & Treasury') {
       const rollup = computeEnterpriseRollup();
@@ -142718,11 +143056,14 @@
       if (isOwner(u)) {
         const t = (rollup && rollup.totals) || {};
         const cashLabel = t.cash_partial ? 'Cash & Bank (Tracked Tills)' : 'Consolidated Cash & Bank';
+        const hldArView = canViewView('hld_entities', u) ? 'hld_entities' : (canViewView('hld_consolidation', u) ? 'hld_consolidation' : 'suppliers');
+        const hldArScroll = hldArView === 'hld_entities' ? 'hldEntitiesScorecardPanel' : (hldArView === 'hld_consolidation' ? 'hldConsolidatedPnlPanel' : '');
+        const icOpenCount = Number(ic.openCount || 0);
         cards = [
           { label: cashLabel, val: fmtUSD(t.cash_till || 0, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(((rollup && rollup.entities) || []).length), jump: 'cashflow', tone: 'good' },
           { label: 'Group Net Revenue', val: fmtUSD(t.net_sales || 0, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(t.operating_profit || 0, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
-          { label: 'Open Receivables', val: fmtUSD(t.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(t.ap_balance || 0, 0), jump: 'hld_loans', tone: '' },
-          { label: 'Intercompany Pairing', val: fmtUSD(ic.totalOpenUsd || 0, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(ic.openCount || 0), jump: 'hld_interactions', tone: Number(ic.openCount || 0) > 0 ? 'warn' : 'good' }
+          { label: 'Open Receivables', val: fmtUSD(t.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(t.ap_balance || 0, 0), jump: hldArView, scrollTarget: hldArScroll, tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(ic.totalOpenUsd || 0, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(icOpenCount), jump: 'hld_interactions', jumpOpts: icOpenCount > 0 ? { chipFilter: 'open' } : undefined, scrollTarget: 'hldInteractionsPanel', tone: icOpenCount > 0 ? 'warn' : 'good' }
         ];
       } else {
         const allowedNormSet = new Set(allowedCompanyNames(u).map(n => norm(n)));
@@ -142746,13 +143087,14 @@
         ));
         const pIcOpenCount = permittedOpenIc.length;
         const pIcOpenUsd = round2(permittedOpenIc.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        const supArView = canViewView('entities', u) ? 'entities' : (canViewView('hld_loans', u) ? 'hld_loans' : 'suppliers');
         cards = [
           anyTrackedCash
             ? { label: allTrackedCash ? 'Consolidated Cash & Bank' : 'Cash & Bank (Tracked Tills)', val: fmtUSD(pCashTill, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(permittedEnts.length), jump: 'cashflow', tone: 'good' }
             : { label: 'Cash & Bank Till', val: 'Not Tracked Yet', valNoI18n: false, subFixed: 'Pending Live Till', jump: 'cashflow', tone: 'muted' },
           { label: 'Group Net Revenue', val: fmtUSD(pNetSales, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(pOpProfit, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
-          { label: 'Open Receivables', val: fmtUSD(pAr, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(pAp, 0), jump: 'hld_loans', tone: '' },
-          { label: 'Intercompany Pairing', val: fmtUSD(pIcOpenUsd, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(pIcOpenCount), jump: 'hld_interactions', tone: pIcOpenCount > 0 ? 'warn' : 'good' }
+          { label: 'Open Receivables', val: fmtUSD(pAr, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(pAp, 0), jump: supArView, scrollTarget: supArView === 'entities' ? 'multiIndustryEntitiesPanel' : '', tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(pIcOpenUsd, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(pIcOpenCount), jump: 'hld_interactions', jumpOpts: pIcOpenCount > 0 ? { chipFilter: 'open' } : undefined, scrollTarget: 'hldInteractionsPanel', tone: pIcOpenCount > 0 ? 'warn' : 'good' }
         ];
       }
     } else {
@@ -142763,6 +143105,31 @@
       const revView = (spec && spec.slots && spec.slots[0] && spec.slots[0].view) || 'sales';
       const secView = (spec && spec.slots && spec.slots[1] && spec.slots[1].view) || revView;
       const opsView = (spec && spec.slots && spec.slots[2] && spec.slots[2].view) || revView;
+      let arCardJump = secView;
+      let arCardJumpOpts;
+      let arCardScroll = '';
+      if (ind === 'Hospitality & Resorts') {
+        arCardJump = canViewView('hsp_memberships', u) ? 'hsp_memberships' : revView;
+        if (arCardJump === 'hsp_memberships') {
+          if (Number(sib.ar_balance || 0) > 0) arCardJumpOpts = { chipFilter: 'partial' };
+          arCardScroll = 'hspMembershipsPanel';
+        }
+      } else if (ind === 'Automotive & Heavy Trading') {
+        arCardJump = canViewView('trd_receivables', u) ? 'trd_receivables' : (canViewView('trd_sales', u) ? 'trd_sales' : 'suppliers');
+        if (arCardJump === 'trd_receivables') {
+          if (Number(sib.ar_balance || 0) > 0) arCardJumpOpts = { chipFilter: 'gross_ar' };
+          arCardScroll = 'trdReceivablesPanel';
+        }
+      } else if (ind === 'Real Estate & Property') {
+        const reData = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ company: STATE.company, ignoreSearch: true }) : null;
+        const reSum = (reData && reData.summary) || {};
+        const salesArOnly = Number(reSum.openRentArUsd || 0) <= 0 && Number(reSum.salesOpenUsd || 0) > 0;
+        arCardJump = salesArOnly
+          ? (canViewView('re_sales', u) ? 're_sales' : revView)
+          : (canViewView('re_invoicing', u) ? 're_invoicing' : revView);
+      } else if (ind === 'Insurance & Brokerage') {
+        arCardJump = canViewView('ins_billing', u) ? 'ins_billing' : revView;
+      }
       cards = [
         {
           label: 'Cash & Bank Till',
@@ -142773,7 +143140,7 @@
           tone: cb.tracked ? 'good' : 'muted'
         },
         { label: 'Net Revenue', val: fmtUSD(sib.net_sales != null ? sib.net_sales : (sib.sales_ttc || 0), 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(sib.operating_profit || 0, 0) : '', jump: revView, tone: 'cobalt' },
-        { label: 'Open Receivables', val: fmtUSD(sib.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(sib.ap_balance || 0, 0), jump: secView, tone: Number(sib.ar_balance || 0) > 0 ? 'warn' : '' },
+        { label: 'Open Receivables', val: fmtUSD(sib.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(sib.ap_balance || 0, 0), jump: arCardJump, jumpOpts: arCardJumpOpts, scrollTarget: arCardScroll, tone: Number(sib.ar_balance || 0) > 0 ? 'warn' : '' },
         { label: 'Operational Volume', val: fmtNum(sib.loads || 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Gross Margin' : '', subVal: canSeePnlSummary ? fmtUSD(sib.gross_margin || 0, 0) : '', jump: opsView, tone: '' }
       ];
     }
@@ -142961,11 +143328,20 @@
       });
     }
 
+    const scrollAndFlashTarget = el => {
+      if (!el) return;
+      if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+      scrollWorkspaceTo(el, 8);
+      el.classList.remove('sn-panel-flash');
+      void el.offsetWidth;
+      el.classList.add('sn-panel-flash');
+    };
+
     const kpiGrid = $('pocketBriefKpiGrid');
     if (kpiGrid) {
       kpiGrid.hidden = !data.cards.length;
-      kpiGrid.innerHTML = data.cards.map(c => `
-        <button type="button" class="pb-kpi-card ${esc(c.tone || '')}" data-pb-jump="${esc(c.jump)}">
+      kpiGrid.innerHTML = data.cards.map((c, ci) => `
+        <button type="button" class="pb-kpi-card ${esc(c.tone || '')}" data-pb-card-idx="${ci}" data-pb-jump="${esc(c.jump)}">
           <span class="pb-kpi-lbl">${esc(c.label)}</span>
           <span class="pb-kpi-val"${c.valNoI18n ? ' data-no-i18n="1"' : ''}>${esc(c.val)}</span>
           <span class="pb-kpi-sub">${c.subLabel ? `<span>${esc(c.subLabel)}</span> ` : ''}<span${c.subVal ? ' data-no-i18n="1"' : ''}>${esc(c.subVal || c.subFixed || '')}</span></span>
@@ -142973,11 +143349,18 @@
       `).join('');
       kpiGrid.querySelectorAll('[data-pb-jump]').forEach(cardBtn => {
         cardBtn.addEventListener('click', () => {
-          const dest = cardBtn.getAttribute('data-pb-jump');
+          const ci = Number(cardBtn.getAttribute('data-pb-card-idx'));
+          const cardSpec = Number.isFinite(ci) ? data.cards[ci] : null;
+          const dest = (cardSpec && cardSpec.jump) || cardBtn.getAttribute('data-pb-jump');
           closePocketBrief({ restoreFocus: false });
           const u = activeUser();
           const target = (dest && canViewView(dest, u)) ? dest : defaultViewFor(u);
-          if (target) setView(target);
+          if (target) setView(target, (cardSpec && target === dest && cardSpec.jumpOpts) ? cardSpec.jumpOpts : undefined);
+          if (cardSpec && cardSpec.scrollTarget && target === dest) {
+            if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+            const stEl = $(cardSpec.scrollTarget);
+            if (stEl) scrollAndFlashTarget(stEl);
+          }
         });
       });
     }
@@ -143009,13 +143392,26 @@
             closePocketBrief({ restoreFocus: false });
             const u = activeUser();
             const target = canViewView('sentinels', u) ? 'sentinels' : (item && item.navView && canViewView(item.navView, u) ? item.navView : defaultViewFor(u));
-            if (target) setView(target);
-            if (item && item.scrollPanel && target === 'sentinels') {
-              setTimeout(() => {
-                const pel = $(item.scrollPanel);
-                if (pel && pel.scrollIntoView) pel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }, 80);
+            let viewOpts;
+            if (target === 'sentinels') {
+              STATE.sentinelFilter = 'all';
+              if (item && item.scrollPanel && item.scrollPanel.startsWith('snInd_') && STATE.indSentinelRuleFilter && STATE.indSentinelRuleFilter !== 'all' && STATE.indSentinelRuleFilter !== item.id) {
+                STATE.indSentinelRuleFilter = 'all';
+              }
+              if (item && item.padFilter) {
+                viewOpts = { salesPadFilter: item.padFilter };
+              }
+            } else if (target === 'expenses' && item && item.id === 'S2') {
+              viewOpts = { chipFilter: 'pending_price' };
             }
+            if (target) setView(target, viewOpts);
+            if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+            let hitEl = item && item.scrollPanel ? $(item.scrollPanel) : null;
+            if (!hitEl && target === 'sentinels' && item && item.id) {
+              const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(item.id) : item.id;
+              hitEl = document.querySelector(`#workspace [data-sn-card="${escId}"]`);
+            }
+            if (hitEl) scrollAndFlashTarget(hitEl);
           });
         });
       }
@@ -175288,6 +175684,8 @@
   // nothing is parked.
   var WS_LATER_CLASS = 'ws-later';
   var WS_LATER_MIN_ELEMENTS = 2500;     // smaller screens paint fast enough whole
+  var WS_LATER_MIN_PARK_SHARE = 0.30;   // skip parking when parked blocks hold under 30% of the screen's elements
+  var WS_LATER_HEADER_MAX_ELS = 180;    // when kids[0] is a compact banner/KPI strip, kids[1] starts on the first screen
   var WS_LATER_CHUNK_ELEMENTS = 3000;   // released per task, so a tap in between is not kept waiting
   var WS_LATER_FOLD_MARGIN = 160;       // px below the screen edge that still count as the first screen
   var WS_LATER_NEVER_SEL = 'video, canvas, iframe, [id*="map" i], [class*="map" i], [contenteditable="true"]';
@@ -175322,15 +175720,27 @@
     if (kids.length < 3) return false;
     const active = document.activeElement;
     if (active && container.contains(active)) return false;          // someone is typing in this screen
-    if (container.getElementsByTagName('*').length < WS_LATER_MIN_ELEMENTS) return false;
-    let parked = 0;
-    for (let i = 1; i < kids.length; i++) {
+    const kidEls = [];
+    let totalEls = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const cnt = kids[i].getElementsByTagName('*').length + 1;
+      kidEls.push(cnt);
+      totalEls += cnt;
+    }
+    if (totalEls < WS_LATER_MIN_ELEMENTS) return false;
+    const startIdx = kidEls[0] < WS_LATER_HEADER_MAX_ELS ? 2 : 1;
+    if (kids.length <= startIdx) return false;
+    const candidates = [];
+    let candidateEls = 0;
+    for (let i = startIdx; i < kids.length; i++) {
       const el = kids[i];
       if (el.hidden || el.matches(WS_LATER_NEVER_SEL) || el.querySelector(WS_LATER_NEVER_SEL)) continue;
-      el.classList.add(WS_LATER_CLASS);
-      parked++;
+      candidates.push(el);
+      candidateEls += kidEls[i];
     }
-    return parked > 0;
+    if (!candidates.length || candidateEls < totalEls * WS_LATER_MIN_PARK_SHARE) return false;
+    for (let i = 0; i < candidates.length; i++) candidates[i].classList.add(WS_LATER_CLASS);
+    return true;
   }
   // Step 2, when the screen is fully wired: the blocks that start on the first screen are released now, the
   // rest right after the first paint.
@@ -175341,14 +175751,20 @@
     const token = _wsLaterToken;
     const fold = Math.min(container.getBoundingClientRect().top + container.clientHeight, window.innerHeight || Infinity) + WS_LATER_FOLD_MARGIN;
     const waiting = [];
+    let waitingEls = 0;
     let belowFold = false;
     for (const el of kids) {
       if (!el.classList.contains(WS_LATER_CLASS)) continue;
       if (!belowFold && el.getBoundingClientRect().top < fold) { el.classList.remove(WS_LATER_CLASS); continue; }
       belowFold = true;
       waiting.push(el);
+      waitingEls += el.getElementsByTagName('*').length + 1;
     }
-    if (!waiting.length) return;
+    const totalEls = container.getElementsByTagName('*').length;
+    if (!waiting.length || waitingEls < totalEls * WS_LATER_MIN_PARK_SHARE) {
+      for (const el of waiting) el.classList.remove(WS_LATER_CLASS);
+      return;
+    }
     _wsLaterPending = true;
     let started = false;
     const step = () => {
@@ -175386,16 +175802,17 @@
   function scrollWorkspaceTo(el, padTop = 8) {
     if (!el) return;
     if (_wsLaterPending) releaseWorkspaceLaterBlocks();
+    const scrollBehavior = IS_AUTOMATED_TEST ? 'auto' : 'smooth';
     const ws = $('workspace');
     if (ws && ws.contains(el)) {
       const wsRect = ws.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
       const targetTop = Math.max(0, ws.scrollTop + (elRect.top - wsRect.top) - padTop);
-      ws.scrollTo({ top: targetTop, behavior: 'smooth' });
+      ws.scrollTo({ top: targetTop, behavior: scrollBehavior });
       lockShellScroll();
       return;
     }
-    try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+    try { el.scrollIntoView({ behavior: scrollBehavior, block: 'nearest' }); } catch (_) {}
     lockShellScroll();
   }
 
@@ -176818,28 +177235,8 @@
           openRecordFromTableRow('external_movements', rowIdAttr, indRow);
           return;
         }
-        const tbl = indRow.closest('table');
-        const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
-        const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
-        const cells = visTds.map(cleanDomainCellText);
-        const matchCells = visTds.map(domainCellEnText);
-        if (cells.length >= 2) {
-          if (indRow.getAttribute('data-ind-row-id')) {
-            cells[0] = indRow.getAttribute('data-ind-row-id');
-            matchCells[0] = cells[0];
-          }
-          const cardEl = indRow.closest('.panel-card, .panel');
-          const tableTitle = getDomainCardCanonicalTitle(cardEl);
-          const domInspectOpts = {
-            ind: getActiveIndustry(STATE.company),
-            headers,
-            cells,
-            matchCells,
-            tableTitle,
-            trEl: indRow,
-            domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
-            rowCompany: indRow.getAttribute('data-ind-row-co') || ''
-          };
+        const domInspectOpts = buildIndRowInspectOpts(indRow);
+        if (domInspectOpts) {
           if (shouldInterceptWithMobRowPeek(e, indRow)) {
             openMobRowPeekForRow({
               kind: 'indRow',
@@ -179981,10 +180378,11 @@
       STATE.expandedRegions = {};
       STATE.expandAllRegions = false;
       STATE.chipFilter = opts.chipFilter || 'all';
-      STATE.salesPadFilter = 'all';
+      STATE.salesPadFilter = opts.salesPadFilter || 'all';
       STATE.vatInvFilter = 'all';
       STATE.siteAllowStaffFilter = '';
       STATE.shown = {};
+      if (opts.salesPadFilter) STATE.shown.spad = PAGE;
       STATE.cfEntryMode = 'entries';
       STATE.cfBridgeMode = 'streams';
       STATE.cfFocusDate = '';
@@ -184649,6 +185047,7 @@
     isPocketBriefAutoEnabled,
     setPocketBriefAutoEnabled,
     openMobRowPeekForRow,
+    stepMobRowPeek,
     closeMobRowPeekSheet,
     getFormUi: () => FORM_UI
   };
