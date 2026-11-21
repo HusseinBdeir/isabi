@@ -64,6 +64,8 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
     ("isabi-app", "build/verify_meter_check.py", "python"),          # top-up reconcile: workbook quantity back on re-sized tickets, truck logs fresh from the workbooks
+    ("isabi-app", "build/verify_truck_log_reopen.py", "python"),     # top-up: a truck log the workbook leaves open and its loads bear out is not kept ended
+    ("isabi-app", "build/verify_close_twins.py", "python"),          # top-up reconcile: one-difference twins (Haj Ali's Extended side under WTC, stakeholder slips)
     ("isabi-app", "build/verify_cash_table_heal.py", "python"),      # top-up: every External / Conversion row has one app record
     ("isabi", "build/verify_gemini_tier_routing.mjs", "node"),       # semantic tier routing + Gemini 4 hygiene
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
