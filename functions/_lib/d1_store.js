@@ -9348,6 +9348,12 @@ export function isPushOwnedDoc(docKey) {
     || k.startsWith('day_close_push_subs_v1__part_');
 }
 
+async function computeSyncDocEtag(docObj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(docObj || {}));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
@@ -9388,7 +9394,24 @@ export async function handleSync(request, env, session, body, _ctx) {
       capMinShellVerForRead(rawDocObj);
     }
     const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
-    const getResp = { ok: true, edge: true, docs: { [targetKey]: docObj } };
+    const etag = await computeSyncDocEtag(docObj);
+    if (
+      targetKey === 'mfg_web_store' &&
+      !storeUnreadable &&
+      body &&
+      typeof body.ifNoneMatchEtag === 'string' &&
+      body.ifNoneMatchEtag &&
+      body.ifNoneMatchEtag === etag
+    ) {
+      return jsonResponse({
+        ok: true,
+        edge: true,
+        notModified: true,
+        etag,
+        updatedAt: String((docObj && docObj.updatedAt) || (row && row.updated_at) || '')
+      });
+    }
+    const getResp = { ok: true, edge: true, etag, docs: { [targetKey]: docObj } };
     if (storeUnreadable) getResp.storeUnreadable = true;
     return jsonResponse(getResp);
   }
