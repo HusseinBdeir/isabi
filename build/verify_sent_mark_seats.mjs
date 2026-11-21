@@ -93,6 +93,7 @@ const stored = ek => {
   return r ? Object.assign(JSON.parse(r.payload_json || '{}'), { _db_rev: r.rev, _db_voided: r.voided }) : null;
 };
 
+const J = JSON.stringify;
 let pass = 0, fail = 0;
 function ok(name, cond, detail) {
   if (cond) { pass++; console.log('  ok   ' + name); }
@@ -129,6 +130,30 @@ console.log('\n[sent statement mark: removing or moving it earlier]');
   ok('a finance seat cannot purge an active mark (403, mark kept)', r.status === 403 && Boolean(stored(MARK)), r);
   r = await post(FIN, { [MARK]: mark('2026-11-20', 3) });
   ok('a finance seat may move it later (2026-11-20)', r.status === 200 && stored(MARK).confirmed_through === '2026-11-20', r);
+}
+
+console.log('\n[sent statement mark: switching it off another way]');
+{
+  let r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { party_name: 'zzz' }) });
+  ok('a finance seat cannot file the mark under another party (403, party kept)', r.status === 403 && stored(MARK).party_name === 'ACME Trading', r);
+  for (const [fld, val] of [['company', 'BBConstruction'], ['party_type', 'supplier'], ['industry', 'trading']]) {
+    r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { [fld]: val }) });
+    ok(`a finance seat cannot change its ${fld} (403)`, r.status === 403 && stored(MARK)[fld] !== val, r);
+  }
+  for (const val of ['on', 'false', 2, 'yes']) {
+    r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { cleared: val }) });
+    ok(`a finance seat cannot switch it off with cleared=${JSON.stringify(val)} (refused or not written, still active)`,
+      (r.status === 403 || (r.status === 200 && r.json && r.json.edits === 0)) && stored(MARK).cleared === false, r);
+  }
+  r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { company: 'wtc' }) });
+  ok('re-typing the same company (wtc for WTC) is not a change of party', r.status === 200, r);
+  const otherM = 'MFG::Test Register::ROW-M1';
+  r = await post(FIN, { [MARK]: mark('2026-10-01', 5), [otherM]: { company: 'WTC', industry: 'Manufacturing', note: 'm', rev: 1 } });
+  ok('a refused mark inside a larger save: the rest is saved (200), the mark stays, and the answer names it',
+    r.status === 200 && Boolean(stored(otherM)) && stored(MARK).confirmed_through === '2026-11-20'
+    && J(((r.json || {}).refusedMarks || []).map(x => x.key)) === J([MARK]), r);
+  r = await post(FIN, { [MARK]: mark('2026-10-01', 5) });
+  ok('a refused mark on its own: 403 naming it', r.status === 403 && J(((r.json || {}).refusedMarks || []).map(x => x.key)) === J([MARK]), r);
 }
 
 console.log('\n[a mark sent back unchanged never blocks other edits]');
@@ -194,6 +219,28 @@ console.log('\n[/sync keeps the stored mark]');
   inc = { industryRowEdits: { [MARK]: mark('2026-11-15', 2), [REV]: review, [SET]: { usd: 1, rev: 2 } } };
   enforceGuardedWorkflowMarksOnSync(inc, prev, pSe);
   ok('sync: a Supervisor + Entry change to the alert amount goes back', inc.industryRowEdits[SET].usd === 2500, inc);
+  inc = { industryRowEdits: { [MARK]: mark('2026-11-15', 3, false, { party_name: 'zzz' }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pFin);
+  ok('sync: a finance seat\'s change of party goes back to the stored mark', inc.industryRowEdits[MARK].party_name === 'ACME Trading', inc);
+  inc = { industryRowEdits: { [MARK]: mark('2026-11-15', 3, false, { cleared: 'on' }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pFin);
+  ok('sync: a finance seat\'s cleared="on" goes back to the stored mark', inc.industryRowEdits[MARK].cleared === false, inc);
+  inc = { customRecords: {} };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pSe);
+  ok('sync: a Supervisor + Entry save with no row edits at all keeps the stored marks',
+    inc.industryRowEdits && inc.industryRowEdits[SET] && inc.industryRowEdits[SET].usd === 2500 && Boolean(inc.industryRowEdits[MARK]), inc);
+  inc = { customRecords: {} };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pOwn);
+  ok('sync: the Owner\'s save with no row edits is left as it is', !('industryRowEdits' in inc), inc);
+  // The table holds a later mark than the sync document (POST /industry_domain_store writes only the table)
+  const d1m = new Map([[MARK, mark('2026-12-31', 9)]]);
+  inc = { industryRowEdits: { [MARK]: mark('2026-11-20', 10) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pFin, d1m);
+  ok('sync: checked against the table row too: a finance seat cannot pull the table\'s 2026-12-31 mark back to 2026-11-20',
+    inc.industryRowEdits[MARK].confirmed_through === '2026-12-31', inc);
+  inc = { industryRowEdits: { [MARK]: mark('2026-12-31', 10) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prev, pFin, d1m);
+  ok('sync: ... and keeping the table\'s date passes', inc.industryRowEdits[MARK].confirmed_through === '2026-12-31' && inc.industryRowEdits[MARK].rev === 10, inc);
   inc = { industryRowEdits: { [MARK]: mark('', 3, true), [REV]: review, [SET]: { usd: 5000, rev: 2 } } };
   enforceGuardedWorkflowMarksOnSync(inc, prev, pOwn);
   ok('sync: the Owner removes the mark and changes the alert amount', inc.industryRowEdits[MARK].cleared === true && inc.industryRowEdits[SET].usd === 5000, inc);
@@ -205,7 +252,7 @@ console.log('\n[source]');
 {
   const src = readFileSync(new URL('../functions/_lib/d1_store.js', import.meta.url), 'utf8');
   ok('the /sync route calls the guard right after the role write locks',
-    /await enforceSyncRoleWriteLocks\(env\.DB, incomingDoc, prevDoc, session, syncAuditBlocked\);\s*\n\s*if \(session\) enforceGuardedWorkflowMarksOnSync\(incomingDoc, prevDoc, getSessionWritePerms\(session\)\);/.test(src));
+    /await enforceSyncRoleWriteLocks\(env\.DB, incomingDoc, prevDoc, session, syncAuditBlocked\);\s*\n\s*if \(session\) await enforceGuardedWorkflowMarksOnSyncDb\(env\.DB, incomingDoc, prevDoc, getSessionWritePerms\(session\)\);/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
