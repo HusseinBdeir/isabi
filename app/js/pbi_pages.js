@@ -8736,7 +8736,7 @@
         return true;
       });
       const sortedMoves = ctx.sortRows ? ctx.sortRows(filteredMoves, 'cf_moves', 'date', 'desc') : filteredMoves;
-      const shownMoves = sortedMoves.slice(0, ctx.shownCount ? ctx.shownCount('cf_moves') : 50);
+      const shownMoves = sortedMoves.slice(0, ctx.shownCount ? ctx.shownCount('cf_moves') : 25);
       let mvInUsd = 0, mvOutUsd = 0, mvLbpSum = 0;
       for (let i = 0; i < sortedMoves.length; i++) {
         mvInUsd += sortedMoves[i].in_usd;
@@ -8764,7 +8764,7 @@
         return true;
       });
       const sortedDaily = ctx.sortRows ? ctx.sortRows(filteredDaily, 'cf_daily', 'date', 'desc') : filteredDaily;
-      const shownDaily = sortedDaily.slice(0, ctx.shownCount ? ctx.shownCount('cf_daily') : 50);
+      const shownDaily = sortedDaily.slice(0, ctx.shownCount ? ctx.shownCount('cf_daily') : 25);
       let dyInUsd = 0, dyOutUsd = 0;
       for (let i = 0; i < sortedDaily.length; i++) {
         dyInUsd += sortedDaily[i].in_usd;
