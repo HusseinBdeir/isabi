@@ -139,5 +139,20 @@ i_rel, i_speed, i_copy = src.find("run_release_gates("), src.find("run_speed_gat
 check(0 <= i_rel < i_speed < i_copy, "5 sync_command_app runs RELEASE_GATES, then the speed gate, then copies files", f"{i_rel} {i_speed} {i_copy}")
 check("skip_speed_gate=args.skip_speed_gate" in inspect.getsource(sa.main), "5 main passes --skip-speed-gate through to sync_command_app")
 
+# 6. assemble.py forwards --skip-speed-gate to sync_command_app
+import assemble as asm  # noqa: E402
+for argv, want_ok in ((["--dry", "--skip-speed-gate", "ran by hand"], True), (["--dry", "--skip-speed-gate", "   "], False), (["--dry", "--skip-app-sync", "--skip-speed-gate", "x"], False)):
+    err = io.StringIO()
+    ok = True
+    with contextlib.redirect_stderr(err):
+        try:
+            a = asm.parse_cli_args(argv)
+            ok = a.skip_speed_gate == "ran by hand"
+        except SystemExit:
+            ok = False
+    check(ok == want_ok, f"6 assemble.py {' '.join(repr(x) for x in argv)} is {'accepted' if want_ok else 'refused'}", err.getvalue().strip()[-160:])
+asm_main_src = inspect.getsource(asm.main)
+check("skip_speed_gate=args.skip_speed_gate" in asm_main_src, "6 assemble.main forwards --skip-speed-gate to sync_command_app")
+
 print(f"\nverify_speed_gate_wiring: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

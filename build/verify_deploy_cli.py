@@ -206,6 +206,7 @@ def main() -> int:
                 "--force-app-sync",
                 "--skip-release-gates",
                 "--skip-i18n-audit",
+                "--skip-speed-gate",
             ),
         ),
         (
@@ -358,6 +359,8 @@ def main() -> int:
                 (["--skip-app-sync", "--force-app-sync"], "skip-app-sync+force-app-sync"),
                 (["--skip-app-sync", "--skip-release-gates"], "skip-app-sync+skip-release-gates"),
                 (["--skip-app-sync", "--skip-i18n-audit"], "skip-app-sync+skip-i18n-audit"),
+                (["--skip-app-sync", "--skip-speed-gate", "x"], "skip-app-sync+skip-speed-gate"),
+                (["--dry", "--skip-speed-gate", "   "], "blank-skip-speed-gate"),
             ),
         ),
     )
@@ -593,6 +596,7 @@ def main() -> int:
                 (["--dry"], "dry-default", "RUN sync_command_app()"),
                 (["--dry-run", "--skip-app-sync"], "dry-run-skip-sync", "SKIP (--skip-app-sync)"),
                 (["--dry", "--force-app-sync"], "dry-force-sync", "--force-app-sync"),
+                (["--dry", "--skip-speed-gate", "passed separately"], "dry-skip-speed-gate", "--skip-speed-gate='passed separately'"),
             ):
                 os.environ["ISABI_SKIP_APP_SYNC"] = "1" if label == "dry-force-sync" else "0"
                 buf = io.StringIO()

@@ -3,6 +3,7 @@
 Usage:
   python build/assemble.py [--dry] [--skip-app-sync | --force-app-sync]
                            [--skip-release-gates] [--skip-i18n-audit]
+                           [--skip-speed-gate "<reason>"]
 """
 import argparse
 import datetime
@@ -17,7 +18,7 @@ from part_styles import CSS
 from part_body import BODY
 from part_script import JS
 from part_faq import FAQ_JSONLD
-from sync_app import sync_command_app
+from sync_app import _speed_skip_reason, sync_command_app
 from audit_showcase_i18n import find_node_runtime, run_showcase_i18n_audit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -286,6 +287,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Forward --skip-i18n-audit to sync_command_app().",
     )
+    parser.add_argument(
+        "--skip-speed-gate",
+        metavar="REASON",
+        default=None,
+        type=_speed_skip_reason,
+        help="Forward --skip-speed-gate to sync_command_app() (a non-empty reason is required).",
+    )
     return parser
 
 
@@ -299,6 +307,7 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
                 (args.force_app_sync, "--force-app-sync"),
                 (args.skip_release_gates, "--skip-release-gates"),
                 (args.skip_i18n_audit, "--skip-i18n-audit"),
+                (bool(args.skip_speed_gate), "--skip-speed-gate"),
             )
             if enabled
         ]
@@ -366,6 +375,8 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
             mods.append("--skip-release-gates")
         if args.skip_i18n_audit:
             mods.append("--skip-i18n-audit")
+        if args.skip_speed_gate:
+            mods.append(f"--skip-speed-gate={args.skip_speed_gate!r}")
         mod_txt = f" ({', '.join(mods)})" if mods else ""
         print(f"    4. Command Center sync -> RUN sync_command_app(){mod_txt}")
     return 0
@@ -431,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
         sync_command_app(
             skip_release_gates=args.skip_release_gates,
             skip_i18n_audit=args.skip_i18n_audit,
+            skip_speed_gate=args.skip_speed_gate or "",
         )
 
     # The OneDrive Website\ mirror was retired 2026-11-13: GitHub + Cloudflare Pages hold the site.
