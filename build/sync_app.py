@@ -65,7 +65,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
     ("isabi-app", "build/verify_meter_check.py", "python"),          # top-up reconcile: workbook quantity back on re-sized tickets, truck logs fresh from the workbooks
     ("isabi-app", "build/verify_truck_log_reopen.py", "python"),     # top-up: a truck log the workbook leaves open and its loads bear out is not kept ended
-    ("isabi-app", "build/verify_close_twins.py", "python"),          # top-up reconcile: one-difference twins (Haj Ali's Extended side under WTC, stakeholder slips)
+    ("isabi-app", "build/verify_close_twins.py", "python"),          # top-up reconcile: one-difference twins (cross-entity Extended side under WTC, stakeholder slips)
     ("isabi-app", "build/verify_cash_table_heal.py", "python"),      # top-up: every External / Conversion row has one app record
     ("isabi", "build/verify_gemini_tier_routing.mjs", "node"),       # semantic tier routing + Gemini 4 hygiene
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
@@ -93,6 +93,8 @@ RELEASE_GATES = [
     ("isabi", "build/verify_release_data_only.py", "python"),        # data-only release runs desktop suite against candidate bundle before commit
     ("isabi", "build/verify_speed_gate_wiring.py", "python"),        # the screen speed gate (SPEED_GATE below) runs on every sync
     ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
+    ("isabi-app", "build/verify_public_names.py", "python"),         # no real person's name in public /app/ or isabi files
+    ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
 ]
 
 
@@ -149,7 +151,7 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
     if not os.path.isfile(script):
         print(f"SKIP: release gate {repo}/{rel} is not in this tree")
         return
-    env = None
+    env = dict(os.environ)
     if interp == "python":
         exe = sys.executable
     else:
@@ -159,6 +161,10 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
                   f"Program Files, VS Code). Install Node 22.5+ or pass {skip_hint} for this run.", file=sys.stderr)
             raise SystemExit(1)
         exe, env = rt
+    env["ISABI_ROOT"] = ISABI_ROOT
+    env["ISABI_APP_SRC"] = APP_SRC_ROOT
+    if rel == "build/verify_public_names.py":
+        env["ISABI_NAMES_REQUIRE_REPO"] = "1"
     try:
         chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace",
                              cwd=roots[repo], env=env, timeout=timeout_s, stdin=subprocess.DEVNULL)
