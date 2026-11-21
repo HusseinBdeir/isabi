@@ -1,4 +1,10 @@
 {
+ "batch": {
+  "at": "2026-11-21T11:37:37Z",
+  "holder": "THEO 12bea425 (r2-seed-hash-parity)",
+  "lockId": "0a72efb3e1864ad6b5ae12998a628ebc",
+  "version": "19.6.420"
+ },
  "gates": [
   "isabi: python build/verify_r2_seed_parity.py",
   "isabi: python build/verify_deploy_cli.py",
