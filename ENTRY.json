@@ -3,12 +3,6 @@
   "branch": "wt/sidebar-click-speed",
   "sha": "2f5deb6da29af898362372c96f78a76de8b4e6d1"
  },
- "batch": {
-  "at": "2026-11-21T00:11:06Z",
-  "holder": "agy-106d51f9 (phone-peek-brief)",
-  "lockId": "adb3452226044f4388b7745c5d27f344",
-  "version": "19.6.411"
- },
  "gates": [
   "isabi-app: node build/verify_two_step_paint.mjs"
  ],
@@ -17,6 +11,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-20T22:44:30Z",
  "seenAt": "2026-11-21T00:07:36Z",
- "state": "waiting",
+ "shippedAt": "2026-11-21T00:11:34Z",
+ "shippedBy": "an earlier release",
+ "shippedVersion": "19.6.410",
+ "state": "shipped",
  "summary": "Sidebar taps answer at once: highlight in the next frame on a slow hub, first screen of a hub painted first (Chromium), Sentinels no longer redraws on an unchanged Maps quota refresh"
 }
