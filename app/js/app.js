@@ -6995,6 +6995,9 @@
     if (ms && ms.classList.contains('mob-hubs-open')) {
       ms.classList.remove('mob-hubs-open');
     }
+    if (typeof closeMobRowPeekSheet === 'function') {
+      closeMobRowPeekSheet({ restoreFocus: false });
+    }
   }
 
   if (typeof window !== 'undefined') {
@@ -22655,6 +22658,9 @@
 
     return `
       ${renderChangedEntriesNoteHtml(getActiveChangedEntries())}
+      <div class="mob-pocket-brief-launch-bar"${canUsePocketBrief(activeUser()) ? '' : ' hidden'}>
+        <button type="button" class="btn btn-outline-bar mob-pocket-brief-launch-btn" id="overviewPocketBriefBtn" data-open-pocket-brief="1">${ic('sparkles')}<span>Morning Pocket Brief</span></button>
+      </div>
       <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE TELEMETRY KPIS -->
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
@@ -26861,7 +26867,7 @@
       })()
       : 'x';
     const swGeoSig = isNonMfgSn ? 'x' : _geoWearRevToken();
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -63844,10 +63850,39 @@
       const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
       const hldExps = filterRecords(SEED.records.expenses || [], { company: 'bdeirholding', strictBu: true, ignoreSearch: true });
       const hldExpTotal = round2(hldExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
-      const loans = filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true });
-      const openLegs = icRes.openCount || 0;
-      const openUsd = icRes.totalOpenUsd || 0;
-      const netImb = Math.abs(Number(icRes.netImbalanceUsd || 0));
+      const rawLoans = filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true });
+      const ownerSeat = isOwner();
+      let openLegs = icRes.openCount || 0;
+      let openUsd = icRes.totalOpenUsd || 0;
+      let matchedCnt = icRes.matchedCount || 0;
+      let matchedUsd = icRes.totalMatchedUsd || 0;
+      let reconPct = Number(icRes.reconRatePct || 0);
+      let netImb = Math.abs(Number(icRes.netImbalanceUsd || 0));
+      let pairCnt = (icRes.byPair || []).length;
+      let loans = rawLoans;
+      let groupScopeLbl = 'Bdeir Holding · Group';
+      if (!ownerSeat) {
+        const allowedNormSet = new Set(allowedCompanyNames().map(n => norm(n)));
+        const rowTouchesAllowed = r => Boolean(r && (
+          allowedNormSet.has(norm(r.fromCo)) ||
+          allowedNormSet.has(norm(r.toCo)) ||
+          allowedNormSet.has(norm(r.initiatorCo)) ||
+          (r.primaryRow && allowedNormSet.has(norm(r.primaryRow.company))) ||
+          (r.mirrorRow && allowedNormSet.has(norm(r.mirrorRow.company)))
+        ));
+        const openSlice = (icRes.openRows || []).filter(rowTouchesAllowed);
+        const matchedSlice = (icRes.matchedRows || []).filter(rowTouchesAllowed);
+        openLegs = openSlice.length;
+        openUsd = round2(openSlice.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        matchedCnt = matchedSlice.length;
+        matchedUsd = round2(matchedSlice.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        const totIc = matchedCnt + openLegs;
+        reconPct = totIc > 0 ? round2((matchedCnt / totIc) * 100) : 100;
+        netImb = Math.abs(round2(matchedSlice.concat(openSlice).reduce((s, r) => s + Number(r.varianceUsd || 0), 0)));
+        pairCnt = (icRes.byPair || []).filter(p => p && (allowedNormSet.has(norm(p.fromCo)) || allowedNormSet.has(norm(p.toCo)))).length;
+        loans = rawLoans.filter(r => r && allowedNormSet.has(norm(r.company || 'Bdeir Holding')));
+        groupScopeLbl = scopeLabel;
+      }
       const winDays = getAlertParam('ind_hld_01', 'window_days', 3);
       const driftTol = getAlertParam('ind_hld_02', 'drift_tol_usd', 1);
       const expCap = getAlertParam('ind_hld_03', 'overhead_cap_usd', 75000);
@@ -63861,7 +63896,7 @@
           detail: `${fmtNum(openLegs)} single-sided intercompany leg${openLegs === 1 ? '' : 's'} (${fmtUSD(openUsd, 2)}) awaiting mirror counter-entry across sister companies.`,
           severity: openLegs > 0 ? 'warn' : 'ok',
           badge: openLegs > 0 ? `${fmtNum(openLegs)} OPEN (${fmtUSD(openUsd, 0)})` : '100% PAIRED',
-          company: 'Bdeir Holding · Group',
+          company: groupScopeLbl,
           rawMetric: openLegs, rawSecondary: Math.round(openUsd),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_open_recon', navLabel: 'Open IC Queue'
         },
@@ -63869,11 +63904,11 @@
           id: 'H2', ruleId: 'ind_hld_02',
           code: 'Sister Corridor Drift',
           title: `Bilateral Sister Amount Drift Watchdog (< ${fmtUSD(driftTol, 2)} Tolerance)`,
-          detail: `Reconciled volume ${fmtUSD(icRes.totalMatchedUsd, 2)} across ${fmtNum(icRes.matchedCount)} pairs (${icRes.reconRatePct.toFixed(1)}%) · Net bilateral Out-minus-In imbalance: ${fmtUSD(netImb, 2)}.`,
+          detail: `Reconciled volume ${fmtUSD(matchedUsd, 2)} across ${fmtNum(matchedCnt)} pairs (${reconPct.toFixed(1)}%) · Net bilateral Out-minus-In imbalance: ${fmtUSD(netImb, 2)}.`,
           severity: netImb > driftTol ? 'warn' : 'ok',
           badge: netImb > driftTol ? `DRIFT ${fmtUSD(netImb, 0)}` : 'IN TOLERANCE',
-          company: 'Bdeir Holding · Group',
-          rawMetric: Math.round(netImb), rawSecondary: icRes.matchedCount,
+          company: groupScopeLbl,
+          rawMetric: Math.round(netImb), rawSecondary: matchedCnt,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_interactions', navLabel: 'Open Interactions'
         },
         {
@@ -63894,7 +63929,7 @@
           detail: `${fmtNum(facCnt)} central loan & facility agreements monitored across partner current accounts, sister facilities, and long-term borrowings.`,
           severity: facCnt > maxFac ? 'warn' : 'ok',
           badge: `${fmtNum(facCnt)} FACILITIES`,
-          company: 'Bdeir Holding',
+          company: groupScopeLbl,
           rawMetric: facCnt > maxFac ? facCnt : 0, rawSecondary: facCnt,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_loans', navLabel: 'Open Loans'
         },
@@ -63902,15 +63937,15 @@
           id: 'H5', ruleId: 'ind_hld_05',
           code: 'Sister Sub-Account Tie-Out',
           title: 'Consolidated Group Trial Balance & Sister Sub-Account Tie-Out',
-          detail: `All ${fmtNum(icRes.byPair.length)} directed sister-company corridors reconciled against Lebanese Chart of Accounts double-entry control accounts.`,
+          detail: `All ${fmtNum(pairCnt)} directed sister-company corridors reconciled against Lebanese Chart of Accounts double-entry control accounts.`,
           severity: 'ok',
           badge: '100% TIED',
-          company: 'Bdeir Holding · Group',
+          company: groupScopeLbl,
           rawMetric: 0, rawSecondary: 0,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_due_matrix', navLabel: 'Open Due Matrix'
         },
         buildMapsQuotaSentinelItem({ ruleId: 'ind_hld_06', itemId: 'H6', company: scopeLabel }),
-        buildIndOtClusterItem('H7', 'ind_hld_07', 'Bdeir Holding · Group')
+        buildIndOtClusterItem('H7', 'ind_hld_07', groupScopeLbl)
       ]);
     }
 
@@ -65198,6 +65233,9 @@
 
     return `
       ${sourceBehindHtml}
+      <div class="mob-pocket-brief-launch-bar"${canUsePocketBrief(activeUser()) ? '' : ' hidden'}>
+        <button type="button" class="btn btn-outline-bar mob-pocket-brief-launch-btn" id="overviewPocketBriefBtn" data-open-pocket-brief="1">${ic('sparkles')}<span>Morning Pocket Brief</span></button>
+      </div>
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
       </section>
@@ -69882,7 +69920,7 @@
     const demoGl = isDemoScopeActive();
     // The model's cash moves, month rows and payables are read through the seat's companies and book scope, so both
     // are part of the key: a cached model never serves another seat (LAN sign-out, Owner Impersonation) or book.
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}`;
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -69943,11 +69981,23 @@
       const hldSched = computeHoldingSchedules();
       // A schedule a save kept apart (planSiblingChronoSplit) hands its balance to the new one: count it once
       const hldInForce = r => r && !r._split_kept;
-      const liveFacPrin = round2((hldSched.facilitySchedules || []).filter(hldInForce).reduce((s, r) => s + Number(r.balance_usd || 0), 0));
-      const livePrtEnt = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
-      const livePrtDrw = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
-      const matched = dFloor(185000, ic.totalMatchedUsd || 0);
-      const openIc = dFloor(24500, ic.totalOpenUsd || 0);
+      const hldAllowedSet = isOwner() ? null : new Set(allowedCompanyNames().map(n => norm(n)));
+      const facList = (hldSched.facilitySchedules || []).filter(r => hldInForce(r) && (!hldAllowedSet || hldAllowedSet.has(norm(r.company || 'Bdeir Holding'))));
+      const prtList = (hldSched.partnerAgreements || []).filter(r => hldInForce(r) && (!hldAllowedSet || hldAllowedSet.has(norm(r.entity || r.company || 'Bdeir Holding'))));
+      const rowTouchesHld = r => Boolean(r && (!hldAllowedSet || hldAllowedSet.has(norm(r.fromCo)) || hldAllowedSet.has(norm(r.toCo)) || hldAllowedSet.has(norm(r.initiatorCo)) || (r.primaryRow && hldAllowedSet.has(norm(r.primaryRow.company))) || (r.mirrorRow && hldAllowedSet.has(norm(r.mirrorRow.company)))));
+      const matchedRowsHld = hldAllowedSet ? (ic.matchedRows || []).filter(rowTouchesHld) : (ic.matchedRows || []);
+      const openRowsHld = hldAllowedSet ? (ic.openRows || []).filter(rowTouchesHld) : (ic.openRows || []);
+      const matchedTotalHld = hldAllowedSet
+        ? round2(matchedRowsHld.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0))
+        : (ic.totalMatchedUsd || 0);
+      const openTotalHld = hldAllowedSet
+        ? round2(openRowsHld.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0))
+        : (ic.totalOpenUsd || 0);
+      const liveFacPrin = round2(facList.reduce((s, r) => s + Number(r.balance_usd || 0), 0));
+      const livePrtEnt = round2(prtList.reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
+      const livePrtDrw = round2(prtList.reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
+      const matched = dFloor(185000, matchedTotalHld);
+      const openIc = dFloor(24500, openTotalHld);
       const hqExp = dFloor(38400, kSnap.expenses || 0);
       const cash = dFloor(310000, kSnap.cash_till || 0);
       rawTb = [
@@ -122016,6 +122066,386 @@
     showRecordInspector(crKey, id);
   }
 
+  // ============================================================================
+  // MOBILE READ-FIRST ROW PEEK SHEET (<= 860px, trusted taps)
+  // ============================================================================
+  let _mobRowPeekState = null;
+
+  function isMobPhoneViewport() {
+    if (typeof window === 'undefined') return false;
+    if (window.matchMedia) return Boolean(window.matchMedia('(max-width: 860px)').matches);
+    return Number(window.innerWidth || 0) > 0 && Number(window.innerWidth || 0) <= 860;
+  }
+
+  function isAnyKioskOrScanSurface() {
+    if (STATE.kioskLocked) return true;
+    if (typeof document === 'undefined') return false;
+    const b = document.body;
+    const h = document.documentElement;
+    return Boolean(
+      (b && (b.classList.contains('kiosk-locked') || b.classList.contains('is-kiosks-view')))
+      || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))
+    );
+  }
+
+  function shouldInterceptWithMobRowPeek(e, trEl) {
+    if (!isMobPhoneViewport()) return false;
+    if (isAnyKioskOrScanSurface()) return false;
+    if (!e || (!e.isTrusted && !window.__MOB_PEEK_TAP)) return false;
+    if (!trEl || !trEl.closest) return false;
+    if (!trEl.closest('.table-wrap, .table-scroll')) return false;
+    if (trEl.classList.contains('empty-row') || trEl.querySelector(':scope > td[colspan]')) return false;
+    if (trEl.hasAttribute('data-jump-co') || trEl.closest('.ceo-scorecard-table')) return false;
+    if (trEl.closest('#inspectorBody, #entryModal, #indDomainEntryModal, #mobRowPeekSheet, #pocketBriefOverlay, .a4-sheet, .thermal-paper-roll')) return false;
+    return true;
+  }
+
+  function extractThEnText(th) {
+    if (!th) return '';
+    let out = '';
+    const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('[data-col-mgr-ui], .col-mgr-th-acts, .col-hdr-acts')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      out += (n.__enText !== undefined ? String(n.__enText) : String(n.nodeValue || ''));
+    }
+    return out.replace(/[\s\u25B2\u25BC▲▼]+$/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractTdCellCleanText(td) {
+    if (!td) return '';
+    let out = '';
+    const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      out += String(n.nodeValue || '');
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
+  function canMobPeekEditRrow(checkKey, row) {
+    if (!row || !row.id) return false;
+    if (checkKey === 'expenses' && typeof isPendingPriceExpense === 'function' && isPendingPriceExpense(row)) {
+      return Boolean(canModifyData() || canEnterForm('expense'));
+    }
+    if (checkKey === 'raw_purchases' && typeof isPendingPriceRaw === 'function' && isPendingPriceRaw(row)) {
+      return Boolean(canModifyData() || canEnterForm('raw'));
+    }
+    if (checkKey === 'employments' && typeof isPendingSalaryEmployment === 'function' && isPendingSalaryEmployment(row)) {
+      return Boolean(canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')));
+    }
+    return Boolean(canModifyRecord());
+  }
+
+  function buildMobRowPeekData(ctx) {
+    const trEl = ctx && ctx.trEl;
+    if (!trEl) return null;
+    const tbl = trEl.closest ? trEl.closest('table') : null;
+    if (!tbl) return null;
+    const headRow = tbl.querySelector('thead tr');
+    const ths = headRow ? Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD') : [];
+    const headerSpecs = [];
+    ths.forEach(th => {
+      const span = Math.max(1, Number(th.getAttribute('colspan') || 1));
+      const lbl = extractThEnText(th);
+      const isCb = Boolean(th.hasAttribute('data-row-sel-hdr') || th.querySelector('input[type="checkbox"], [data-row-sel]'));
+      for (let s = 0; s < span; s++) {
+        headerSpecs.push({ enLabel: lbl, isCheckbox: isCb && !lbl });
+      }
+    });
+    const hiddenSet = (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.getEffectiveHiddenCols === 'function')
+      ? window.MFG_TABLE_COLS.getEffectiveHiddenCols(tbl)
+      : new Set();
+    const tds = Array.from(trEl.children).filter(el => el.tagName === 'TD' || el.tagName === 'TH');
+    let excessInlineHidden = Math.max(0, tds.reduce((s, el) => s + Math.max(1, Number(el.getAttribute('colspan') || 1)), 0) - headerSpecs.length);
+    const fields = [];
+    let colCursor = 0;
+    tds.forEach(td => {
+      if (excessInlineHidden > 0 && td.style && td.style.display === 'none') {
+        excessInlineHidden -= 1;
+        return;
+      }
+      const span = Math.max(1, Number(td.getAttribute('colspan') || 1));
+      const cIdx = colCursor;
+      colCursor += span;
+      const hSpec = headerSpecs[cIdx] || { enLabel: '', isCheckbox: false };
+      if (hSpec.isCheckbox || td.hasAttribute('data-row-sel')) return;
+      if (td.classList.contains('col-mgr-hidden') || td.style.display === 'none' || hiddenSet.has(cIdx)) return;
+      try {
+        if (window.getComputedStyle(td).display === 'none') return;
+      } catch (_) {}
+      const rawText = extractTdCellCleanText(td);
+      const relLinks = [];
+      if (td.querySelectorAll) {
+        td.querySelectorAll('.rel-link[data-rel-key][data-rel-val]').forEach(el => {
+          const rk = String(el.getAttribute('data-rel-key') || '').trim();
+          const rv = String(el.getAttribute('data-rel-val') || '').trim();
+          const rt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+          if (rk && rv) relLinks.push({ key: rk, val: rv, text: rt || rv });
+        });
+      }
+      fields.push({
+        colIdx: cIdx,
+        label: hSpec.enLabel || 'Field',
+        text: rawText || '-',
+        relLinks
+      });
+    });
+    if (!fields.length) return null;
+
+    const pinCol = (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.getMobilePinnedCol === 'function')
+      ? window.MFG_TABLE_COLS.getMobilePinnedCol(tbl)
+      : -1;
+    const pinnedField = fields.find(f => f.colIdx === pinCol && f.text && f.text !== '-')
+      || fields.find(f => f.text && f.text !== '-' && !/^(date|tx\.?\s*date|rep\.?\s*date|co\.?|company|entity)/i.test(f.label))
+      || fields[0];
+    const cardEl = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+    let eyebrow = '';
+    if (cardEl && typeof getDomainCardCanonicalTitle === 'function') {
+      eyebrow = String(getDomainCardCanonicalTitle(cardEl) || '').trim();
+    }
+    if (!eyebrow && cardEl) {
+      const hEl = cardEl.querySelector('h3, h2, .panel-title');
+      if (hEl) eyebrow = extractThEnText(hEl);
+    }
+    if (!eyebrow) eyebrow = VIEW_TITLES[STATE.view] || 'Record Summary';
+
+    let canEdit = false;
+    let onEdit = null;
+    let onInspect = null;
+    if (ctx.kind === 'rrow') {
+      const crKey = ctx.crKey;
+      const rid = ctx.rid;
+      const wbAuditKey = trEl.getAttribute ? String(trEl.getAttribute('data-wb-audit-key') || '').trim() : '';
+      let checkKey = crKey;
+      let checkId = rid;
+      let row = resolveInspectorRecord(crKey, rid);
+      if (crKey === 'expense_items' && row) {
+        const parentExp = resolveInspectorRecord('expenses', row.expense_id || row.expense_ref);
+        if (parentExp) { checkKey = 'expenses'; checkId = parentExp.id; row = parentExp; }
+      } else if (crKey === 'repair_items' && row) {
+        const parentRep = resolveInspectorRecord('equipment_repairs', row.repair_id || row.repair_ref);
+        if (parentRep) { checkKey = 'equipment_repairs'; checkId = parentRep.id; row = parentRep; }
+      }
+      canEdit = Boolean(!wbAuditKey && shouldOpenEntryFormOnRowClick(checkKey, row, checkId, trEl) && canMobPeekEditRrow(checkKey, row));
+      onEdit = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openEntryModalForRecord(checkKey, checkId);
+      };
+      onInspect = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        if (wbAuditKey) {
+          showWeighbridgeAuditInspector(wbAuditKey, trEl);
+          return;
+        }
+        const isMasterRegistryRow = !trEl.closest || Boolean(trEl.closest('#tablesHubPanel, #univRegPanel, #custPanel, #supPanel, #glAutoPanel, #inspectorBody'));
+        if (!isMasterRegistryRow && row) {
+          const tableContext = resolveTableRowContext(trEl, crKey, rid, row);
+          if (tableContext) {
+            showRecordInspector(crKey, rid, { tableContext });
+            return;
+          }
+        }
+        showRecordInspector(crKey, rid);
+      };
+    } else if (ctx.kind === 'indRow') {
+      const opts = ctx.inspectOpts || {};
+      const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
+      const headers = Array.isArray(opts.headers) ? opts.headers : [];
+      const cells = Array.isArray(opts.cells) ? opts.cells : [];
+      const tableTitle = opts.tableTitle || eyebrow;
+      const primaryId = String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || cells[0] || '').trim();
+      const domainTblKey = opts.domainTblKey || (trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
+      const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
+      const tillOwned = primaryId ? isTillOwnedRowId(primaryId) : false;
+      const rowCo = String(opts.rowCompany || (trEl.getAttribute && trEl.getAttribute('data-ind-row-co')) || '').trim();
+      const resolved = (!tillOwned && primaryId && canModifyRecord() && !canModifyTextOnly() && typeof findDomainRecordPrefillForModal === 'function')
+        ? findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCo, editKey)
+        : null;
+      canEdit = Boolean(resolved && resolved.formKey);
+      onEdit = () => {
+        if (!resolved || !resolved.formKey) return;
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openIndustryDomainEntryModal(resolved.formKey, resolved.prefill);
+      };
+      onInspect = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openIndustryDomainInspector(opts);
+      };
+    }
+
+    return {
+      eyebrow,
+      title: (pinnedField && pinnedField.text && pinnedField.text !== '-') ? pinnedField.text : eyebrow,
+      fields,
+      canEdit,
+      onEdit,
+      onInspect,
+      triggerEl: ctx.triggerEl || trEl
+    };
+  }
+
+  function closeMobRowPeekSheet(opts = {}) {
+    const bd = $('mobRowPeekBackdrop');
+    const lastFocus = _mobRowPeekState && _mobRowPeekState.lastFocus;
+    _mobRowPeekState = null;
+    const editBtn = $('mobPeekEditBtn');
+    const inspBtn = $('mobPeekInspectBtn');
+    if (editBtn) editBtn.onclick = null;
+    if (inspBtn) inspBtn.onclick = null;
+    if (bd) {
+      if (opts && opts.purgeDom) {
+        if (bd.parentNode) bd.parentNode.removeChild(bd);
+      } else {
+        bd.classList.remove('open');
+        bd.hidden = true;
+      }
+    }
+    if ((!opts || opts.restoreFocus !== false) && lastFocus && lastFocus.isConnected && typeof lastFocus.focus === 'function') {
+      try { lastFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderMobRowPeekSheet(data) {
+    if (!data || typeof document === 'undefined') return null;
+    let bd = $('mobRowPeekBackdrop');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'mobRowPeekBackdrop';
+      bd.className = 'mob-peek-backdrop';
+      bd.innerHTML = `
+        <div id="mobRowPeekSheet" class="mob-peek-sheet" role="dialog" aria-modal="true" aria-labelledby="mobPeekTitle">
+          <div class="mob-peek-grab-wrap"><span class="mob-peek-grab" aria-hidden="true"></span></div>
+          <div class="mob-peek-hdr">
+            <div class="mob-peek-hdr-copy">
+              <div class="mob-peek-eyebrow" id="mobPeekEyebrow"></div>
+              <h2 class="mob-peek-title" id="mobPeekTitle" data-no-i18n="1"></h2>
+            </div>
+            <div class="mob-peek-hdr-acts">
+              <button type="button" class="btn btn-outline-bar btn-sm" id="mobPeekEditBtn" hidden>Edit</button>
+              <button type="button" class="btn btn-primary btn-sm" id="mobPeekInspectBtn">360° Inspector</button>
+              <button type="button" class="modal-close-btn" id="mobPeekCloseBtn" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div class="mob-peek-body" id="mobPeekBody">
+            <dl class="mob-peek-fields" id="mobPeekFields"></dl>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(bd);
+      bd.addEventListener('click', ev => {
+        if (ev.target === bd) closeMobRowPeekSheet();
+      });
+      const closeBtn = $('mobPeekCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', () => closeMobRowPeekSheet());
+      const sheet = $('mobRowPeekSheet');
+      if (sheet) {
+        let touchY0 = 0;
+        let touchX0 = 0;
+        let touchActive = false;
+        sheet.addEventListener('touchstart', ev => {
+          if (!ev.touches || ev.touches.length !== 1) return;
+          const bodyEl = $('mobPeekBody');
+          const inGrab = Boolean(ev.target && ev.target.closest && ev.target.closest('.mob-peek-grab-wrap, .mob-peek-hdr'));
+          if (!inGrab && bodyEl && bodyEl.scrollTop > 2) return;
+          touchY0 = ev.touches[0].clientY;
+          touchX0 = ev.touches[0].clientX;
+          touchActive = true;
+        }, { passive: true });
+        sheet.addEventListener('touchmove', ev => {
+          if (!touchActive || !ev.touches || ev.touches.length !== 1) return;
+          const dy = ev.touches[0].clientY - touchY0;
+          const dx = ev.touches[0].clientX - touchX0;
+          if (dy > 64 && Math.abs(dy) > Math.abs(dx) * 1.35) {
+            touchActive = false;
+            closeMobRowPeekSheet();
+          }
+        }, { passive: true });
+        sheet.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
+      }
+    }
+
+    const eyeEl = $('mobPeekEyebrow');
+    const titleEl = $('mobPeekTitle');
+    const editBtn = $('mobPeekEditBtn');
+    const inspBtn = $('mobPeekInspectBtn');
+    const fieldsEl = $('mobPeekFields');
+    const bodyEl = $('mobPeekBody');
+    if (eyeEl) eyeEl.textContent = data.eyebrow || 'Record Summary';
+    if (titleEl) titleEl.textContent = data.title || 'Record Peek';
+    if (editBtn) {
+      editBtn.hidden = !data.canEdit;
+      editBtn.onclick = data.canEdit && data.onEdit ? data.onEdit : null;
+    }
+    if (inspBtn) {
+      inspBtn.onclick = data.onInspect || null;
+    }
+    if (fieldsEl) {
+      fieldsEl.innerHTML = data.fields.map((f, idx) => {
+        let valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`;
+        if (f.relLinks && f.relLinks.length === 1 && norm(f.relLinks[0].text) === norm(f.text)) {
+          const rl = f.relLinks[0];
+          valHtml = `<button type="button" class="mob-peek-rel-btn" data-peek-rel-idx="${idx}" data-peek-rel-sub="0" data-no-i18n="1">${esc(f.text)}</button>`;
+        } else if (f.relLinks && f.relLinks.length >= 1) {
+          valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`
+            + `<span class="mob-peek-rel-pills">${f.relLinks.map((rl, si) => `<button type="button" class="mob-peek-rel-chip" data-peek-rel-idx="${idx}" data-peek-rel-sub="${si}" data-no-i18n="1">${esc(rl.text)}</button>`).join('')}</span>`;
+        }
+        return `<div class="mob-peek-row"><dt>${esc(f.label)}</dt><dd>${valHtml}</dd></div>`;
+      }).join('');
+      fieldsEl.querySelectorAll('[data-peek-rel-idx]').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const fi = Number(btn.getAttribute('data-peek-rel-idx'));
+          const si = Number(btn.getAttribute('data-peek-rel-sub') || 0);
+          const f = data.fields[fi];
+          const rl = f && f.relLinks && f.relLinks[si];
+          if (!rl) return;
+          closeMobRowPeekSheet({ restoreFocus: false });
+          showRecordInspector(rl.key, rl.val);
+        });
+      });
+    }
+    if (bodyEl) bodyEl.scrollTop = 0;
+
+    _mobRowPeekState = {
+      data,
+      lastFocus: (document.activeElement && document.activeElement !== document.body) ? document.activeElement : (data.triggerEl || null)
+    };
+    bd.hidden = false;
+    bd.classList.add('open');
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(bd); } catch (_) {}
+    }
+    if (typeof ensureMobOverlayGlobalListeners === 'function') ensureMobOverlayGlobalListeners();
+    const closeBtn = $('mobPeekCloseBtn');
+    if (closeBtn && typeof closeBtn.focus === 'function') {
+      try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return bd;
+  }
+
+  function openMobRowPeekForRow(ctx) {
+    const data = buildMobRowPeekData(ctx);
+    if (!data) return false;
+    return Boolean(renderMobRowPeekSheet(data));
+  }
+
   // ==========================================================================
   // POWER APPS ENTITY RECORD FORM, 4-CARD NAVY COCKPIT & RELATIONAL SUBGRIDS
   // (Parity with m12_forms.py, bhf_manufacturing.js, bhf_mfgCockpit.htm m283 & bhf_related_subgrids.py)
@@ -139155,6 +139585,7 @@
     if (prevInd !== nextInd && STATE.authed && !nextDemo && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
       try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     renderApp();
   }
 
@@ -139841,6 +140272,7 @@
           if (divLblEl) divLblEl.textContent = 'or sign in with Email & PIN';
         }
       }
+      if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(null);
       return;
     }
 
@@ -139892,6 +140324,7 @@
         }
       }
     }
+    if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(selUser);
   }
 
   function setAuthSeatDrawerOpen(open, opts = {}) {
@@ -140128,6 +140561,9 @@
     }
     closeEntryModal(true);
     closeRecordInspector();
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
+    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
+    if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(resolveSelectedAuthUser());
     if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       window.MFG_GEO.resetGeoStoreSession();
     }
@@ -140476,6 +140912,8 @@
     if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
     closeMobileTopSheets();
     closeEntryModal(true);
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
+    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
     }
@@ -140891,6 +141329,540 @@
       STATE.cashflowBehind = null;
       STATE.sourceBehind = null;
       STATE.changedEntries = null;
+    }
+    if (isMobPhoneViewport() && isPocketBriefAutoEnabled() && canUsePocketBrief(finalAuthedUser)) {
+      openPocketBrief({ fromLogin: true });
+    }
+    return true;
+  }
+
+  // ============================================================================
+  // MORNING POCKET BRIEF (PHONE-FIRST SNAPSHOT, OWNER & SUPERVISOR SEATS)
+  // ============================================================================
+  const POCKET_BRIEF_PREF_KEY = 'isabi_mfg_pocket_brief_v1';
+  let _pocketBriefOpen = false;
+  let _pocketBriefLastFocus = null;
+  let _pocketBriefLangWired = false;
+
+  function isPocketBriefAutoEnabled() {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(POCKET_BRIEF_PREF_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setPocketBriefAutoEnabled(on) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (on) localStorage.setItem(POCKET_BRIEF_PREF_KEY, '1');
+        else localStorage.removeItem(POCKET_BRIEF_PREF_KEY);
+      }
+    } catch (_) {}
+    syncAuthPocketBriefUi();
+  }
+
+  function canUsePocketBrief(u) {
+    const usr = u || activeUser();
+    if (!usr || usr._lockedPlaceholder || usr.status === 'Suspended') return false;
+    if (isAnyKioskOrScanSurface()) return false;
+    const roleStr = String(usr.role || '');
+    if (!(isOwner(usr) || /Supervisor/i.test(roleStr))) return false;
+    if (String(usr.pbi_access || '').toLowerCase() === 'none') return false;
+    return Boolean(typeof canViewView === 'function' ? canViewView('overview', usr) : true);
+  }
+
+  function syncAuthPocketBriefUi(selectedSeatOpt) {
+    if (typeof document === 'undefined') return;
+    const row = $('authPocketBriefRow');
+    const chk = $('authPocketBriefSwitch');
+    if (!row || !chk) return;
+    const isKiosk = isAnyKioskOrScanSurface();
+    const sel = selectedSeatOpt !== undefined ? selectedSeatOpt : (typeof resolveSelectedAuthUser === 'function' ? resolveSelectedAuthUser() : null);
+    const hideForSeat = Boolean(sel && !canUsePocketBrief(sel));
+    row.hidden = isKiosk || hideForSeat;
+    const on = isPocketBriefAutoEnabled();
+    chk.checked = on;
+    chk.setAttribute('aria-checked', on ? 'true' : 'false');
+    const cardAuto = $('pocketBriefAutoChk');
+    if (cardAuto) {
+      cardAuto.checked = on;
+      cardAuto.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+  }
+
+  function getPocketBriefScopeOptions(user) {
+    const allowedCos = getAllowedCompanyKeys(user);
+    const allowedSet = new Set(allowedCos);
+    const allowedNames = allowedCompanyNames(user);
+    const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
+    const catalog = getCompanyCatalog();
+    const indGroups = getIndustryGroups(catalog);
+    const freqIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    const coFreq = (freqIdx && freqIdx.company) ? freqIdx.company : null;
+
+    const rankedGroups = indGroups.map(g => {
+      const permittedCos = g.companies.filter(c => allowedNameSet.has(c.name.toLowerCase()));
+      const permittedFreq = (coFreq && coFreq.size)
+        ? permittedCos.reduce((s, c) => s + (coFreq.get(norm(c.name)) || 0), 0)
+        : (g.freq || 0);
+      return { ...g, permittedFreq };
+    }).sort((a, b) => (b.permittedFreq || 0) - (a.permittedFreq || 0));
+
+    const keys = [];
+    const pushKey = k => {
+      if (!k || keys.includes(k) || !allowedSet.has(k)) return;
+      if (k === DEMO_COMPANY_KEY && STATE.company !== DEMO_COMPANY_KEY && !isDemoSandboxSession()) return;
+      keys.push(k);
+    };
+    rankedGroups.forEach(g => {
+      if (g.id === 'Manufacturing') pushKey('manufacturing-group');
+      else if (indGroups.length >= 2) pushKey(`industry:${g.id}`);
+      const sortedCos = g.companies.slice().sort((a, b) => {
+        const fa = coFreq ? (coFreq.get(norm(a.name)) || 0) : 0;
+        const fb = coFreq ? (coFreq.get(norm(b.name)) || 0) : 0;
+        return fb - fa;
+      });
+      sortedCos.forEach(c => pushKey(c.key));
+    });
+    allowedCos.forEach(k => pushKey(k));
+    if (STATE.company && !keys.includes(STATE.company) && allowedSet.has(STATE.company)) {
+      keys.unshift(STATE.company);
+    }
+    return keys.map(coKey => {
+      let label = COMPANY_BU_MATCH[coKey] || COMPANY_LABELS[coKey] || coKey;
+      if (coKey === 'manufacturing-group') label = 'All Manufacturing';
+      else if (coKey === DEMO_COMPANY_KEY) label = 'Demo Company';
+      else if (coKey.startsWith('industry:')) label = `All ${coKey.slice(9)}`;
+      return { key: coKey, label };
+    });
+  }
+
+  function getPocketBriefPeriodLabel() {
+    const p = String(STATE.period || 'mtd');
+    const map = {
+      all: 'All-Time (2024-2030)',
+      today: 'Today',
+      yesterday: 'Yesterday',
+      wtd: 'This Week',
+      last_week: 'Last Week',
+      last_7d: 'Last 7 Days',
+      mtd: 'This Month (MTD)',
+      prev_m1: 'Last Month',
+      prev_m2: '2 Months Ago',
+      last_30d: 'Last 30 Days',
+      qtd: 'This Quarter (QTD)',
+      last_q: 'Last Quarter',
+      last_90d: 'Last 90 Days',
+      ytd: 'Year to Date (YTD)'
+    };
+    if (map[p]) return { text: map[p], isCustom: false };
+    const pr = typeof periodRange === 'function' ? periodRange() : null;
+    if (pr && pr.from && pr.to) return { text: `${pr.from} to ${pr.to}`, isCustom: true };
+    return { text: 'Month-to-Date', isCustom: false };
+  }
+
+  function ensureMobOverlayGlobalListeners() {
+    if (_pocketBriefLangWired || typeof window === 'undefined' || typeof document === 'undefined') return;
+    _pocketBriefLangWired = true;
+    window.addEventListener('mfg:lang-changed', () => {
+      if (_pocketBriefOpen) renderPocketBriefOverlayDom();
+      const peekBd = $('mobRowPeekBackdrop');
+      if (_mobRowPeekState && peekBd && !peekBd.hidden && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(peekBd); } catch (_) {}
+      }
+    });
+    const refreshOpenPocketBrief = () => {
+      if (!_pocketBriefOpen) return;
+      const bd = $('pocketBriefOverlay');
+      if (!bd || bd.hidden) return;
+      if (!canUsePocketBrief(activeUser())) closePocketBrief({ purgeDom: true, restoreFocus: false });
+      else renderPocketBriefOverlayDom();
+    };
+    window.addEventListener('mfg:core-seed-ready', refreshOpenPocketBrief);
+    window.addEventListener('mfg:records-seed-ready', refreshOpenPocketBrief);
+    document.addEventListener('keydown', ev => {
+      if (ev.key !== 'Escape') return;
+      if (_mobRowPeekState) {
+        closeMobRowPeekSheet();
+      } else if (_pocketBriefOpen) {
+        closePocketBrief();
+      }
+    });
+  }
+
+  function buildPocketBriefData() {
+    const u = activeUser();
+    const fullName = String((u && (u.full_name || u.name || u.email)) || 'Executive').trim();
+    const firstName = fullName.split(/\s+/)[0] || fullName;
+    const hr = new Date().getHours();
+    const greetingEn = hr < 12 ? 'Good Morning' : (hr < 17 ? 'Good Afternoon' : 'Good Evening');
+    const ind = getActiveIndustry(STATE.company) || 'Manufacturing';
+    const scopeOpts = getPocketBriefScopeOptions(u);
+    const activeScopeObj = scopeOpts.find(x => x.key === STATE.company) || { key: STATE.company, label: COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || ind };
+    const periodInfo = getPocketBriefPeriodLabel();
+    const seedLoading = Boolean(!SEED || !SEED._coreReady || !SEED._recordsReady);
+
+    const canViewBooks = isOwner(u) || canSeeTaxBreakdown(u);
+    const canSeePnlSummary = Boolean(canViewBooks && (isOwner(u) || canViewView('daily_ops', u) || canViewView('ledger', u)));
+    let cards = [];
+    if (ind === 'Manufacturing') {
+      const k = getKPI();
+      const hasLedger = typeof modelHasLedger === 'function' ? modelHasLedger() : true;
+      const cashUsd = k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0);
+      const netSales = k.net_sales != null ? k.net_sales : (k.gross_sales || 0);
+      cards = [
+        {
+          label: 'Cash & Bank Till',
+          val: hasLedger ? fmtUSD(cashUsd, 0) : 'Not Tracked Yet',
+          valNoI18n: hasLedger,
+          subLabel: hasLedger ? 'Receipts' : '',
+          subVal: hasLedger ? fmtUSD(k.receipts_total || 0, 0) : '',
+          subFixed: hasLedger ? '' : 'Pending Live Till',
+          jump: 'cashflow',
+          tone: hasLedger ? 'good' : 'muted'
+        },
+        { label: 'Net Sales', val: fmtUSD(netSales, 0), valNoI18n: true, subLabel: 'Delivered Loads', subVal: fmtNum(k.loads || 0), jump: 'sales', tone: 'cobalt' },
+        { label: 'Open Receivables', val: fmtUSD(k.ar_balance || 0, 0), valNoI18n: true, subLabel: '60d+ Overdue', subVal: fmtUSD(k.ar_60_plus || 0, 0), jump: 'customers', tone: Number(k.ar_60_plus || 0) > 0 ? 'warn' : '' },
+        { label: 'Fleet & Tank', val: `${fmtNum(Math.round(Number(k.diesel_in_tank || 0)))} L`, valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(k.operating_profit || 0, 0) : '', jump: 'fleet', tone: '' }
+      ];
+    } else if (ind === 'Holding & Treasury') {
+      const rollup = computeEnterpriseRollup();
+      const ic = (rollup && rollup.icRes) || {};
+      if (isOwner(u)) {
+        const t = (rollup && rollup.totals) || {};
+        const cashLabel = t.cash_partial ? 'Cash & Bank (Tracked Tills)' : 'Consolidated Cash & Bank';
+        cards = [
+          { label: cashLabel, val: fmtUSD(t.cash_till || 0, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(((rollup && rollup.entities) || []).length), jump: 'cashflow', tone: 'good' },
+          { label: 'Group Net Revenue', val: fmtUSD(t.net_sales || 0, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(t.operating_profit || 0, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
+          { label: 'Open Receivables', val: fmtUSD(t.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(t.ap_balance || 0, 0), jump: 'hld_loans', tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(ic.totalOpenUsd || 0, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(ic.openCount || 0), jump: 'hld_interactions', tone: Number(ic.openCount || 0) > 0 ? 'warn' : 'good' }
+        ];
+      } else {
+        const allowedNormSet = new Set(allowedCompanyNames(u).map(n => norm(n)));
+        const permittedEnts = ((rollup && rollup.entities) || []).filter(e => e && allowedNormSet.has(norm(e.name)));
+        const entHasTrackedCash = e => e.industry === 'Manufacturing'
+          ? (typeof modelHasLedger === 'function' ? modelHasLedger(e.key) : true)
+          : Boolean(siblingCashBook(e.industry).tracked);
+        const anyTrackedCash = permittedEnts.some(entHasTrackedCash);
+        const allTrackedCash = permittedEnts.length > 0 && permittedEnts.every(entHasTrackedCash);
+        const pCashTill = round2(permittedEnts.reduce((s, e) => s + (entHasTrackedCash(e) ? Number((e.k && e.k.cash_till) || 0) : 0), 0));
+        const pNetSales = round2(permittedEnts.reduce((s, e) => s + Number((e.k && (e.k.net_sales != null ? e.k.net_sales : e.k.gross_sales)) || 0), 0));
+        const pOpProfit = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.operating_profit) || 0), 0));
+        const pAr = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.ar_balance) || 0), 0));
+        const pAp = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.ap_balance) || 0), 0));
+        const permittedOpenIc = ((ic && Array.isArray(ic.openRows)) ? ic.openRows : []).filter(r => r && (
+          allowedNormSet.has(norm(r.fromCo)) ||
+          allowedNormSet.has(norm(r.toCo)) ||
+          allowedNormSet.has(norm(r.initiatorCo)) ||
+          (r.primaryRow && allowedNormSet.has(norm(r.primaryRow.company))) ||
+          (r.mirrorRow && allowedNormSet.has(norm(r.mirrorRow.company)))
+        ));
+        const pIcOpenCount = permittedOpenIc.length;
+        const pIcOpenUsd = round2(permittedOpenIc.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        cards = [
+          anyTrackedCash
+            ? { label: allTrackedCash ? 'Consolidated Cash & Bank' : 'Cash & Bank (Tracked Tills)', val: fmtUSD(pCashTill, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(permittedEnts.length), jump: 'cashflow', tone: 'good' }
+            : { label: 'Cash & Bank Till', val: 'Not Tracked Yet', valNoI18n: false, subFixed: 'Pending Live Till', jump: 'cashflow', tone: 'muted' },
+          { label: 'Group Net Revenue', val: fmtUSD(pNetSales, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(pOpProfit, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
+          { label: 'Open Receivables', val: fmtUSD(pAr, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(pAp, 0), jump: 'hld_loans', tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(pIcOpenUsd, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(pIcOpenCount), jump: 'hld_interactions', tone: pIcOpenCount > 0 ? 'warn' : 'good' }
+        ];
+      }
+    } else {
+      const baseKpi = getKPI();
+      const sib = getIndustryKpiSnapshot(ind, STATE.company, baseKpi) || {};
+      const cb = siblingCashBook(ind);
+      const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Hospitality & Resorts'];
+      const revView = (spec && spec.slots && spec.slots[0] && spec.slots[0].view) || 'sales';
+      const secView = (spec && spec.slots && spec.slots[1] && spec.slots[1].view) || revView;
+      const opsView = (spec && spec.slots && spec.slots[2] && spec.slots[2].view) || revView;
+      cards = [
+        {
+          label: 'Cash & Bank Till',
+          val: cb.tracked ? fmtUSD(sib.cash_till || 0, 0) : 'Not Tracked Yet',
+          valNoI18n: Boolean(cb.tracked),
+          subFixed: cb.tracked ? 'Tracked Till' : 'Pending Live Till',
+          jump: 'cashflow',
+          tone: cb.tracked ? 'good' : 'muted'
+        },
+        { label: 'Net Revenue', val: fmtUSD(sib.net_sales != null ? sib.net_sales : (sib.sales_ttc || 0), 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(sib.operating_profit || 0, 0) : '', jump: revView, tone: 'cobalt' },
+        { label: 'Open Receivables', val: fmtUSD(sib.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(sib.ap_balance || 0, 0), jump: secView, tone: Number(sib.ar_balance || 0) > 0 ? 'warn' : '' },
+        { label: 'Operational Volume', val: fmtNum(sib.loads || 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Gross Margin' : '', subVal: canSeePnlSummary ? fmtUSD(sib.gross_margin || 0, 0) : '', jump: opsView, tone: '' }
+      ];
+    }
+
+    cards = cards.filter(c => Boolean(c && c.jump && canViewView(c.jump, u)));
+
+    const allowSentinels = Boolean(canViewView('sentinels', u));
+    const allSn = allowSentinels && typeof buildSentinelItems === 'function' ? (buildSentinelItems() || []) : [];
+    const visibleSn = allowSentinels
+      ? allSn.filter(s => s && (canViewBooks || s.id !== 'S1') && (!s.navView || canViewView(s.navView, u)))
+      : [];
+    const flaggedSn = visibleSn.filter(s => s && (s.severity === 'crit' || s.severity === 'warn'));
+    flaggedSn.sort((a, b) => {
+      const ra = a.severity === 'crit' ? 0 : 1;
+      const rb = b.severity === 'crit' ? 0 : 1;
+      return ra - rb;
+    });
+    const topSentinels = flaggedSn.slice(0, 3);
+
+    return {
+      greetingEn,
+      firstName,
+      ind,
+      scopeOpts,
+      activeScope: activeScopeObj,
+      periodInfo,
+      seedLoading,
+      cards,
+      allowSentinels,
+      totalFlaggedCount: flaggedSn.length,
+      topSentinels
+    };
+  }
+
+  function buildPocketBriefSpeechText(data, langCode) {
+    const tr = str => {
+      const v = String(str || '').trim();
+      if (!v || langCode === 'en') return v;
+      if (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+        return window.MFG_I18N.t(v, langCode) || v;
+      }
+      return v;
+    };
+    const scopeSpeech = tr(data.activeScope && data.activeScope.label ? data.activeScope.label : '');
+    const kpiLine = (data.cards || []).map(c => `${tr(c.label)}: ${c.valNoI18n ? c.val : tr(c.val)}`).join('. ');
+    const topSnNames = (data.topSentinels || []).map(s => s.isCustom ? s.title : tr(s.title));
+    if (langCode === 'ar') {
+      const snPart = !data.allowSentinels
+        ? ''
+        : (data.totalFlaggedCount > 0
+          ? `يوجد ${data.totalFlaggedCount} تنبيهات رقابة نشطة، أبرزها ${topSnNames.join('، ')}.`
+          : 'جميع مؤشرات الرقابة سليمة ولا توجد تنبيهات مفتوحة.');
+      return [ `مرحباً ${data.firstName}. ملخص الجيب الصباحي لنطاق ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+    }
+    if (langCode === 'fr') {
+      const snPart = !data.allowSentinels
+        ? ''
+        : (data.totalFlaggedCount > 0
+          ? `${data.totalFlaggedCount} alertes Sentinelles ouvertes, notamment ${topSnNames.join(', ')}.`
+          : 'Toutes les sentinelles d audit sont conformes.');
+      return [ `Bonjour ${data.firstName}. Synthèse de poche pour ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+    }
+    const snPart = !data.allowSentinels
+      ? ''
+      : (data.totalFlaggedCount > 0
+        ? `${data.totalFlaggedCount} open Sentinel alerts, top priority ${topSnNames.join(', ')}.`
+        : 'All audit Sentinels are clear.');
+    return [ `${data.greetingEn} ${data.firstName}. Pocket brief for ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+  }
+
+  function closePocketBrief(opts = {}) {
+    _pocketBriefOpen = false;
+    if (window.MFG_ASK && typeof window.MFG_ASK.stopPocketBriefIfActive === 'function') {
+      window.MFG_ASK.stopPocketBriefIfActive();
+    }
+    const bd = $('pocketBriefOverlay');
+    const prevFocus = _pocketBriefLastFocus;
+    _pocketBriefLastFocus = null;
+    if (bd) {
+      if (opts && opts.purgeDom) {
+        if (bd.parentNode) bd.parentNode.removeChild(bd);
+      } else {
+        bd.classList.remove('open');
+        bd.hidden = true;
+      }
+    }
+    if ((!opts || opts.restoreFocus !== false) && prevFocus && prevFocus.isConnected && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderPocketBriefOverlayDom() {
+    if (typeof document === 'undefined' || !canUsePocketBrief(activeUser())) return null;
+    const data = buildPocketBriefData();
+    let bd = $('pocketBriefOverlay');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'pocketBriefOverlay';
+      bd.className = 'pocket-brief-backdrop';
+      bd.innerHTML = `
+        <div id="pocketBriefCard" class="pocket-brief-card" role="dialog" aria-modal="true" aria-labelledby="pocketBriefTitle">
+          <div class="pb-head">
+            <div class="pb-head-copy">
+              <div class="pb-eyebrow" id="pocketBriefEyebrow">Morning Pocket Brief</div>
+              <h2 class="pb-title" id="pocketBriefTitle"></h2>
+              <div class="pb-sub" id="pocketBriefSub"></div>
+            </div>
+            <div class="pb-head-acts">
+              <button type="button" class="btn btn-outline-bar btn-sm pb-listen-btn" id="pocketBriefListenBtn" data-pocket-brief-listen="1" aria-pressed="false">${ic('audio')}<span class="pb-lsn-lbl">Listen</span></button>
+              <button type="button" class="modal-close-btn" id="pocketBriefCloseBtn" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div class="pb-scope-bar" id="pocketBriefScopeBar" role="tablist" aria-label="Company scope"></div>
+          <div class="pb-kpis" id="pocketBriefKpiGrid"></div>
+          <section class="pb-sentinels" aria-label="Top Urgent Sentinels">
+            <div class="pb-sec-head">
+              <span class="pb-sec-title">Top Urgent Sentinels</span>
+              <span class="pb-sec-count badge badge-brass" id="pocketBriefSnCount" data-no-i18n="1"></span>
+            </div>
+            <div class="pb-sn-list" id="pocketBriefSentinels"></div>
+          </section>
+          <div class="pb-foot">
+            <label class="pb-auto-opt" for="pocketBriefAutoChk">
+              <input type="checkbox" id="pocketBriefAutoChk" />
+              <span>Show on phone sign-in</span>
+            </label>
+            <button type="button" class="btn btn-primary pb-enter-btn" id="pocketBriefEnterBtn">Enter Full App</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(bd);
+      bd.addEventListener('click', ev => {
+        if (ev.target === bd) closePocketBrief();
+      });
+      const closeBtn = $('pocketBriefCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', () => closePocketBrief());
+      const enterBtn = $('pocketBriefEnterBtn');
+      if (enterBtn) enterBtn.addEventListener('click', () => closePocketBrief());
+      const autoChk = $('pocketBriefAutoChk');
+      if (autoChk) {
+        autoChk.addEventListener('change', () => {
+          setPocketBriefAutoEnabled(Boolean(autoChk.checked));
+        });
+      }
+      const listenBtn = $('pocketBriefListenBtn');
+      if (listenBtn) {
+        listenBtn.addEventListener('click', () => {
+          const langCode = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+          const freshData = buildPocketBriefData();
+          const speech = buildPocketBriefSpeechText(freshData, langCode);
+          if (window.MFG_ASK && typeof window.MFG_ASK.speakPocketBrief === 'function') {
+            window.MFG_ASK.speakPocketBrief(speech, listenBtn, langCode);
+          }
+        });
+      }
+      ensureMobOverlayGlobalListeners();
+    }
+
+    const titleEl = $('pocketBriefTitle');
+    if (titleEl) {
+      titleEl.innerHTML = `<span>${esc(data.greetingEn)}</span> <span data-no-i18n="1">${esc(data.firstName)}</span>`;
+    }
+    const subEl = $('pocketBriefSub');
+    if (subEl) {
+      const pSpan = data.periodInfo.isCustom
+        ? `<span data-no-i18n="1">${esc(data.periodInfo.text)}</span>`
+        : `<span>${esc(data.periodInfo.text)}</span>`;
+      const loadHtml = data.seedLoading ? ' <span aria-hidden="true">·</span> <span class="pb-loading-pill">Loading live data...</span>' : '';
+      subEl.innerHTML = `<span>${esc(data.activeScope.label)}</span> <span aria-hidden="true">·</span> ${pSpan}${loadHtml}`;
+    }
+
+    const scopeBar = $('pocketBriefScopeBar');
+    if (scopeBar) {
+      scopeBar.innerHTML = data.scopeOpts.map(s => `<button type="button" class="pb-scope-pill${s.key === STATE.company ? ' is-active' : ''}" data-pb-scope="${esc(s.key)}" role="tab" aria-selected="${s.key === STATE.company ? 'true' : 'false'}">${esc(s.label)}</button>`).join('');
+      scopeBar.querySelectorAll('[data-pb-scope]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sk = btn.getAttribute('data-pb-scope');
+          if (!sk || sk === STATE.company) return;
+          if (window.MFG_ASK && typeof window.MFG_ASK.stopPocketBriefIfActive === 'function') {
+            window.MFG_ASK.stopPocketBriefIfActive();
+          }
+          selectCompanyScope(sk, true);
+          if (_pocketBriefOpen) renderPocketBriefOverlayDom();
+        });
+      });
+    }
+
+    const kpiGrid = $('pocketBriefKpiGrid');
+    if (kpiGrid) {
+      kpiGrid.hidden = !data.cards.length;
+      kpiGrid.innerHTML = data.cards.map(c => `
+        <button type="button" class="pb-kpi-card ${esc(c.tone || '')}" data-pb-jump="${esc(c.jump)}">
+          <span class="pb-kpi-lbl">${esc(c.label)}</span>
+          <span class="pb-kpi-val"${c.valNoI18n ? ' data-no-i18n="1"' : ''}>${esc(c.val)}</span>
+          <span class="pb-kpi-sub">${c.subLabel ? `<span>${esc(c.subLabel)}</span> ` : ''}<span${c.subVal ? ' data-no-i18n="1"' : ''}>${esc(c.subVal || c.subFixed || '')}</span></span>
+        </button>
+      `).join('');
+      kpiGrid.querySelectorAll('[data-pb-jump]').forEach(cardBtn => {
+        cardBtn.addEventListener('click', () => {
+          const dest = cardBtn.getAttribute('data-pb-jump');
+          closePocketBrief({ restoreFocus: false });
+          const u = activeUser();
+          const target = (dest && canViewView(dest, u)) ? dest : defaultViewFor(u);
+          if (target) setView(target);
+        });
+      });
+    }
+
+    const snCountEl = $('pocketBriefSnCount');
+    if (snCountEl) {
+      snCountEl.textContent = String(data.totalFlaggedCount);
+    }
+    const snListEl = $('pocketBriefSentinels');
+    const snSecEl = snListEl ? snListEl.closest('.pb-sentinels') : null;
+    if (snSecEl) snSecEl.hidden = !data.allowSentinels;
+    if (snListEl) {
+      if (!data.allowSentinels) {
+        snListEl.innerHTML = '';
+      } else if (!data.topSentinels.length) {
+        snListEl.innerHTML = `<div class="pb-sn-clear"><span class="pb-sn-clear-dot" aria-hidden="true"></span><span>All Audit Sentinels Clear</span></div>`;
+      } else {
+        snListEl.innerHTML = data.topSentinels.map((s, si) => `
+          <button type="button" class="pb-sn-row is-${esc(s.severity)}" data-pb-sn-idx="${si}">
+            <span class="pb-sn-sev">${esc(s.severity === 'crit' ? 'Critical' : 'Warning')}</span>
+            <span class="pb-sn-title"${s.isCustom ? ' data-no-i18n="1"' : ''}>${esc(s.title)}</span>
+            <span class="pb-sn-badge" data-no-i18n="1">${esc(s.badge || '')}</span>
+          </button>
+        `).join('');
+        snListEl.querySelectorAll('[data-pb-sn-idx]').forEach(rowBtn => {
+          rowBtn.addEventListener('click', () => {
+            const idx = Number(rowBtn.getAttribute('data-pb-sn-idx'));
+            const item = data.topSentinels[idx];
+            closePocketBrief({ restoreFocus: false });
+            const u = activeUser();
+            const target = canViewView('sentinels', u) ? 'sentinels' : (item && item.navView && canViewView(item.navView, u) ? item.navView : defaultViewFor(u));
+            if (target) setView(target);
+            if (item && item.scrollPanel && target === 'sentinels') {
+              setTimeout(() => {
+                const pel = $(item.scrollPanel);
+                if (pel && pel.scrollIntoView) pel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }, 80);
+            }
+          });
+        });
+      }
+    }
+
+    const cardAuto = $('pocketBriefAutoChk');
+    if (cardAuto) {
+      const on = isPocketBriefAutoEnabled();
+      cardAuto.checked = on;
+      cardAuto.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(bd); } catch (_) {}
+    }
+    return bd;
+  }
+
+  function openPocketBrief(opts = {}) {
+    if (!canUsePocketBrief(activeUser())) return false;
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (typeof closeMobileTopSheets === 'function') closeMobileTopSheets();
+    _pocketBriefLastFocus = (!opts || !opts.fromLogin) && document.activeElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null;
+    _pocketBriefOpen = true;
+    const bd = renderPocketBriefOverlayDom();
+    if (!bd) return false;
+    bd.hidden = false;
+    bd.classList.add('open');
+    const focusEl = $('pocketBriefEnterBtn') || $('pocketBriefCloseBtn');
+    if (focusEl && typeof focusEl.focus === 'function') {
+      try { focusEl.focus({ preventScroll: true }); } catch (_) {}
     }
     return true;
   }
@@ -173637,6 +174609,13 @@
         const uSec = $('unit_economics');
         if (uSec && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(uSec, 10);
       }
+      if (_pocketBriefOpen && $('pocketBriefOverlay') && !$('pocketBriefOverlay').hidden) {
+        if (!canUsePocketBrief(user)) {
+          closePocketBrief({ purgeDom: true, restoreFocus: false });
+        } else {
+          renderPocketBriefOverlayDom();
+        }
+      }
     } finally {
       if (window.MFG_I18N) {
         window.MFG_I18N.syncLangSwitchersDom();
@@ -174587,6 +175566,12 @@
         return;
       }
 
+      const openBriefBtn = t.closest('[data-open-pocket-brief]');
+      if (openBriefBtn && container.contains(openBriefBtn)) {
+        if (typeof openPocketBrief === 'function') openPocketBrief({ fromLogin: false });
+        return;
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -174602,6 +175587,16 @@
         const selObj = window.getSelection ? window.getSelection() : null;
         const sel = (selObj && selObj.anchorNode && rrow.contains(selObj.anchorNode)) ? String(selObj) : '';
         if (sel.length > 1) return;
+        if (shouldInterceptWithMobRowPeek(e, rrow)) {
+          openMobRowPeekForRow({
+            kind: 'rrow',
+            crKey: rrow.getAttribute('data-rkey'),
+            rid: rrow.getAttribute('data-rid'),
+            trEl: rrow,
+            triggerEl: t
+          });
+          return;
+        }
         openRecordFromTableRow(rrow.getAttribute('data-rkey'), rrow.getAttribute('data-rid'), rrow);
         return;
       }
@@ -174624,6 +175619,16 @@
         const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
         const rowIdAttr = indRow.getAttribute('data-ind-row-id') || '';
         if (activeExplorerTbl === 'hld_extended_tbl' && rowIdAttr) {
+          if (shouldInterceptWithMobRowPeek(e, indRow)) {
+            openMobRowPeekForRow({
+              kind: 'rrow',
+              crKey: 'external_movements',
+              rid: rowIdAttr,
+              trEl: indRow,
+              triggerEl: t
+            });
+            return;
+          }
           openRecordFromTableRow('external_movements', rowIdAttr, indRow);
           return;
         }
@@ -174639,7 +175644,7 @@
           }
           const cardEl = indRow.closest('.panel-card, .panel');
           const tableTitle = getDomainCardCanonicalTitle(cardEl);
-          openIndustryDomainInspector({
+          const domInspectOpts = {
             ind: getActiveIndustry(STATE.company),
             headers,
             cells,
@@ -174648,7 +175653,17 @@
             trEl: indRow,
             domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
             rowCompany: indRow.getAttribute('data-ind-row-co') || ''
-          });
+          };
+          if (shouldInterceptWithMobRowPeek(e, indRow)) {
+            openMobRowPeekForRow({
+              kind: 'indRow',
+              trEl: indRow,
+              inspectOpts: domInspectOpts,
+              triggerEl: t
+            });
+            return;
+          }
+          openIndustryDomainInspector(domInspectOpts);
           if (agrPillHit) {
             const relBox = $('indInspRelatedAgreementsBox');
             if (relBox) {
@@ -177726,6 +178741,7 @@
   }
   function setView(view, opts = {}) {
     _navAckToken = (_navAckToken || 0) + 1;
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
@@ -178231,6 +179247,13 @@
         e.stopPropagation();
         clearSelectedAuthSeat();
       });
+    }
+    const pbSwitch = $('authPocketBriefSwitch');
+    if (pbSwitch) {
+      pbSwitch.addEventListener('change', () => {
+        setPocketBriefAutoEnabled(Boolean(pbSwitch.checked));
+      });
+      syncAuthPocketBriefUi();
     }
     const selSeatBar = $('authSelectedSeatBar');
     if (selSeatBar) {
@@ -179454,6 +180477,9 @@
         renderApp,
         toast,
         closeRecordInspector,
+        canUsePocketBrief,
+        openPocketBrief,
+        closePocketBrief,
         getKPI,
         getModel,
         filterRecords,
@@ -182424,6 +183450,13 @@
     findLowestWearAvailableOwnTruck: typeof findLowestWearAvailableOwnTruck === 'function' ? findLowestWearAvailableOwnTruck : null,
     getOilServiceIndex: typeof getOilServiceIndex === 'function' ? getOilServiceIndex : null,
     getWarehouseIndex: typeof getWarehouseIndex === 'function' ? getWarehouseIndex : null,
+    canUsePocketBrief,
+    openPocketBrief,
+    closePocketBrief,
+    isPocketBriefAutoEnabled,
+    setPocketBriefAutoEnabled,
+    openMobRowPeekForRow,
+    closeMobRowPeekSheet,
     getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
@@ -182614,9 +183647,12 @@
         }
         console.error('Seed hydration error:', err);
         if (!useAuthedApi) {
+          SEED._coreReady = true;
           SEED._recordsReady = true;
           SEED._recordsLoadFailed = true;   // screens carry on; site closure and dormancy refuse to judge loads
           window.MFG_SEED = SEED;
+          try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+          safeRender();
         } else {
           const errMsg = String((err && err.message) || err || '');
           if (/\b(401|403)\b/.test(errMsg) && !_edgeSessionToken) {
@@ -182625,9 +183661,12 @@
             SEED._preAuthDeferred = true;
             openAuthGate();
           } else if (STATE.authed) {
+            SEED._coreReady = true;
             SEED._recordsReady = true;
             SEED._recordsLoadFailed = true;
             window.MFG_SEED = SEED;
+            try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+            safeRender();
           }
         }
       }

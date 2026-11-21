@@ -66,10 +66,12 @@
     activeAudioProgress: 0,
     activeSpeakBtn: null,
     activeSpeakTurnIdx: -1,
+    speakGen: 0,
     activeSpeakCtrl: null,
     activeSpeakCaption: '',
     activeBriefingScope: '',
     activePeriodSummaryScope: '',
+    activePocketBriefScope: '',
     periodPopoverOpen: false,
     periodPopoverAnchor: null,
     periodVarianceCache: new Map(),
@@ -4600,7 +4602,7 @@
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary') || btn.hasAttribute('data-page-guide-listen')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary') || btn.hasAttribute('data-page-guide-listen') || btn.hasAttribute('data-pocket-brief-listen')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
@@ -4612,16 +4614,17 @@
     const isInspBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-insp-summary'));
     const isSnBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-sn-summary'));
     const isPgBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-page-guide-listen'));
+    const isPbBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-pocket-brief-listen'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn || isPgBtn)
+    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn || isPgBtn || isPbBtn)
       ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
       : (isPeriodBtn
         ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
         : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
-    const lblCls = isPgBtn ? 'pg-lsn-lbl' : (isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl')))));
+    const lblCls = isPbBtn ? 'pb-lsn-lbl' : (isPgBtn ? 'pg-lsn-lbl' : (isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl'))))));
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4790,6 +4793,7 @@
         !_chatState.liveVoiceMode &&
         !_chatState.activeBriefingScope &&
         !_chatState.activePeriodSummaryScope &&
+        !_chatState.activePocketBriefScope &&
         !_chatState.activeStmtSummaryScope &&
         !_chatState.activePbiSummaryScope &&
         !_chatState.activeInspSummaryScope &&
@@ -4824,6 +4828,7 @@
   }
 
   function stopActivePlayback(opts = {}) {
+    _chatState.speakGen = (_chatState.speakGen || 0) + 1;
     if (_chatState.activeSpeakCtrl) {
       try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
       _chatState.activeSpeakCtrl = null;
@@ -4835,6 +4840,7 @@
     }
     _chatState.activeBriefingScope = '';
     _chatState.activePeriodSummaryScope = '';
+    _chatState.activePocketBriefScope = '';
     _chatState.activeStmtSummaryScope = '';
     _chatState.activePbiSummaryScope = '';
     _chatState.activeInspSummaryScope = '';
@@ -5518,16 +5524,19 @@
 
   function fallbackBrowserSpeech(plain, lang, btnEl) {
     if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
-      if (btnEl) resetSpeakButtonUi(btnEl);
+      stopActivePlayback();
+      if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
       return false;
     }
     try {
       const normalized = buildTtsPromptPayload(plain, lang);
       const chunks = splitSentencesForSpeech(normalized, 200);
       if (!chunks.length) {
-        if (btnEl) resetSpeakButtonUi(btnEl);
+        stopActivePlayback();
+        if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
         return false;
       }
+      const mySpeakGen = (_chatState.speakGen = (_chatState.speakGen || 0) + 1);
       const bcp = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
       _chatState.lastSpokenText = normalized;
       _chatState.activeSpeakCaption = normalized;
@@ -5548,10 +5557,12 @@
       let idx = 0;
       const wasDops = isExecBriefBtn(btnEl);
       const clearFallbackUi = (completedNaturally) => {
+        if (mySpeakGen !== _chatState.speakGen) return;
         const curBtn = _chatState.activeSpeakBtn || btnEl;
         _chatState.activeSpeakBtn = null;
         _chatState.activeBriefingScope = '';
         _chatState.activePeriodSummaryScope = '';
+        _chatState.activePocketBriefScope = '';
         _chatState.activeStmtSummaryScope = '';
         _chatState.activePbiSummaryScope = '';
         _chatState.activeInspSummaryScope = '';
@@ -5567,6 +5578,7 @@
       };
 
       const speakNextChunk = () => {
+        if (mySpeakGen !== _chatState.speakGen) return;
         if (idx >= chunks.length) {
           clearFallbackUi(true);
           return;
@@ -5578,15 +5590,21 @@
         _chatState.activeAudioProgress = (idx + 0.5) / chunks.length;
         syncInlineAudioPlayerBar();
         idx++;
-        utt.onend = () => speakNextChunk();
-        utt.onerror = () => clearFallbackUi(false);
+        utt.onend = () => {
+          if (mySpeakGen !== _chatState.speakGen) return;
+          speakNextChunk();
+        };
+        utt.onerror = () => {
+          if (mySpeakGen !== _chatState.speakGen) return;
+          clearFallbackUi(false);
+        };
         window.speechSynthesis.speak(utt);
       };
       speakNextChunk();
       return true;
     } catch (_) {
-      if (btnEl) resetSpeakButtonUi(btnEl);
-      syncInlineAudioPlayerBar();
+      stopActivePlayback();
+      if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
       return false;
     }
   }
@@ -5674,6 +5692,7 @@
 
     if (_chatState.voiceActive) cancelVoiceRecording();
     stopActivePlayback();
+    const mySpeakGen = _chatState.speakGen;
     _chatState.lastSpokenText = plain;
     _chatState.activeSpeakCaption = plain;
     _chatState.activeAudioProgress = 0.04;
@@ -5700,7 +5719,7 @@
 
     requestCloudOrLocalTtsUrl(plain, safeLang, ctrl.signal).then(blobUrl => {
       clearTimeout(timer);
-      if (ctrl.signal.aborted) return;
+      if (ctrl.signal.aborted || _chatState.speakGen !== mySpeakGen) return;
       _chatState.activeSpeakCtrl = null;
       const curBtn = _chatState.activeSpeakBtn || btnEl;
       if (blobUrl) {
@@ -5719,7 +5738,7 @@
         }
         syncInlineAudioPlayerBar();
         audioEl.ontimeupdate = () => {
-          if (_chatState.activeAudioEl !== audioEl) return;
+          if (_chatState.speakGen !== mySpeakGen || _chatState.activeAudioEl !== audioEl) return;
           const dur = Number(audioEl.duration || 0);
           if (dur > 0) {
             _chatState.activeAudioProgress = Math.min(1, audioEl.currentTime / dur);
@@ -5727,12 +5746,14 @@
           }
         };
         audioEl.onended = () => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           const endBtn = _chatState.activeSpeakBtn || curBtn;
           const wasBrief = isExecBriefBtn(endBtn);
           _chatState.activeSpeakBtn = null;
           _chatState.activeBriefingScope = '';
           _chatState.activePeriodSummaryScope = '';
+          _chatState.activePocketBriefScope = '';
           _chatState.activeStmtSummaryScope = '';
           _chatState.activePbiSummaryScope = '';
           _chatState.activeInspSummaryScope = '';
@@ -5747,10 +5768,12 @@
           if (!wasBrief) maybeResumeHandsFreeListening();
         };
         audioEl.onerror = () => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         };
         audioEl.play().catch(() => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         });
@@ -5759,7 +5782,7 @@
       }
     }).catch(() => {
       clearTimeout(timer);
-      if (ctrl.signal.aborted) return;
+      if (ctrl.signal.aborted || _chatState.speakGen !== mySpeakGen) return;
       _chatState.activeSpeakCtrl = null;
       fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || btnEl);
     });
@@ -7144,6 +7167,31 @@
     }
     if (_chatState.periodPopoverOpen) {
       closeCeoVariancePopover();
+    }
+  }
+
+  function speakPocketBrief(rawText, btnEl, langOverride) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('pocketBriefListenBtn') : null);
+    if ((targetBtn && _chatState.activeSpeakBtn === targetBtn) || (!targetBtn && _chatState.activePocketBriefScope)) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const cleanText = String(rawText || '').trim();
+    if (!cleanText) return { ok: false };
+    const lang = langOverride || (window.MFG_I18N && window.MFG_I18N.getLang ? window.MFG_I18N.getLang() : 'en') || 'en';
+    const ok = speakBotReply(cleanText, lang, targetBtn || null);
+    if (ok) {
+      _chatState.activePocketBriefScope = 'pocket-brief';
+      syncInlineAudioPlayerBar();
+    } else {
+      _chatState.activePocketBriefScope = '';
+    }
+    return { ok: Boolean(ok), stopped: false };
+  }
+
+  function stopPocketBriefIfActive() {
+    if (_chatState.activePocketBriefScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-pocket-brief-listen'))) {
+      stopActivePlayback();
     }
   }
 
@@ -13290,10 +13338,37 @@
     if (mobActSlot && mobNewBtn && mobNewBtn.parentNode !== mobActSlot) {
       mobActSlot.appendChild(mobNewBtn);
     }
+    let mobBriefBtn = document.getElementById('mobilePocketBriefBtn');
+    const briefAllowed = Boolean(!isKioskSurface && _ctx && typeof _ctx.canUsePocketBrief === 'function' && _ctx.canUsePocketBrief(_ctx.activeUser ? _ctx.activeUser() : null));
+    if (mobActSlot && briefAllowed && !mobBriefBtn) {
+      mobBriefBtn = document.createElement('button');
+      mobBriefBtn.type = 'button';
+      mobBriefBtn.id = 'mobilePocketBriefBtn';
+      mobBriefBtn.className = 'btn btn-outline-bar topbar-more-act-btn';
+      const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+      const ico = icons ? icons.svg('sparkle') : AI_SVGS.sparkle;
+      mobBriefBtn.innerHTML = `<span class="pb-more-ico" aria-hidden="true">${ico}</span> <span>Morning Pocket Brief</span>`;
+      mobBriefBtn.addEventListener('click', () => {
+        closeTopbarMoreMenus();
+        if (_ctx && typeof _ctx.openPocketBrief === 'function') {
+          _ctx.openPocketBrief({ fromLogin: false });
+        }
+      });
+      mobActSlot.appendChild(mobBriefBtn);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && langCode !== 'en') {
+        try { window.MFG_I18N.translateDom(mobBriefBtn); } catch (_) {}
+      }
+    } else if (mobBriefBtn && mobActSlot && mobBriefBtn.parentNode !== mobActSlot) {
+      mobActSlot.appendChild(mobBriefBtn);
+    }
+    if (mobBriefBtn) {
+      mobBriefBtn.hidden = !briefAllowed;
+    }
     if (mobActSec) {
       const scanVis = Boolean(mobScanBtn && !mobScanBtn.hidden && !isKioskSurface);
       const newVis = Boolean(mobNewBtn && !mobNewBtn.hidden);
-      mobActSec.hidden = !(scanVis || newVis);
+      const briefVis = Boolean(mobBriefBtn && !mobBriefBtn.hidden && !isKioskSurface);
+      mobActSec.hidden = !(scanVis || newVis || briefVis);
     }
     const mobLangSlot = document.getElementById('mobileMoreLangSlot');
     const mobLangBtn = document.getElementById('mobileLangBtn');
@@ -22232,6 +22307,8 @@
     closePeriodVariance: closeCeoVariancePopover,
     rebindPeriodSummaryButton,
     stopPeriodSummaryIfActive,
+    speakPocketBrief,
+    stopPocketBriefIfActive,
     buildStatementSummary,
     speakStatementSummary,
     requestStatementVariance: requestStatementVarianceCommentary,
@@ -22420,6 +22497,7 @@
       handsFreeVoice: Boolean(_chatState.handsFreeVoice),
       briefingScope: _chatState.activeBriefingScope || '',
       periodSummaryScope: _chatState.activePeriodSummaryScope || '',
+      pocketBriefScope: _chatState.activePocketBriefScope || '',
       periodPopoverOpen: Boolean(_chatState.periodPopoverOpen),
       stmtSummaryScope: _chatState.activeStmtSummaryScope || '',
       stmtPopoverOpen: Boolean(_chatState.stmtPopoverOpen),
