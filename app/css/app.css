@@ -1607,6 +1607,16 @@ a.system-showcase-btn .nav-ico {
   padding: 0 0 28px;
 }
 
+/* Two-step screen paint (js/app.js parkWorkspaceLaterBlocks): a block that starts below the first screen is
+   skipped by the browser for one frame, then released. It stays in the page the whole time. */
+#workspace > .ws-later {
+  content-visibility: hidden;
+  contain-intrinsic-height: 640px;
+}
+@media print {
+  #workspace > .ws-later { content-visibility: visible; }
+}
+
 /* Unified 6-Column KPI Surface Band (Exact Match to ISABI Sandbox .kpis) */
 .kpis {
   display: grid;
@@ -42962,6 +42972,95 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
 }
 .ind-per-imp-part b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .ind-per-imp-part.is-kept b { color: #C0892F; }
+/* Records on a statement marked as sent (left as they are; the difference goes on the next statement) */
+.ind-per-imp-part.is-sent b { color: #2356A8; }
+.rate-impact-fact.is-sent { border-color: rgba(35, 86, 168, 0.5); }
+.rate-impact-note.is-sent { border-color: rgba(35, 86, 168, 0.45); background: rgba(35, 86, 168, 0.08); }
+.rate-impact-tag.is-sent {
+  border-color: rgba(35, 86, 168, 0.55);
+  background: rgba(35, 86, 168, 0.1);
+  color: var(--ink);
+}
+.rate-impact-unbilled { color: #2356A8; font-weight: 700; }
+.rdl-sent-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 10px 0 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-inline-start: 4px solid #7A889B;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.rdl-sent-bar.is-sent { border-inline-start-color: #2356A8; background: rgba(35, 86, 168, 0.06); }
+.rdl-sent-ico { display: inline-flex; width: 18px; height: 18px; color: #2356A8; flex: 0 0 auto; }
+.rdl-sent-ico svg { width: 18px; height: 18px; }
+.rdl-sent-text { flex: 1 1 260px; min-width: 0; }
+.rdl-sent-sub { color: var(--muted); font-size: 11.5px; }
+.rdl-sent-by { color: var(--muted); }
+.rdl-sent-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.rdl-sent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #2356A8;
+  border-radius: 6px;
+  background: #2356A8;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rdl-sent-btn svg { width: 14px; height: 14px; }
+.rdl-sent-btn.is-ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+@media print { .rdl-sent-bar { display: none !important; } }
+/* Rate Changes (Owner page) */
+.rc-page { display: grid; gap: 12px; min-width: 0; }
+.rc-head-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.rc-title { margin: 0 0 4px; font-size: 18px; }
+.rc-lead { margin: 0; color: var(--muted); font-size: 12.5px; max-width: 640px; }
+.rc-threshold { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; }
+.rc-threshold-in { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
+.rc-threshold-in input { width: 96px; border: 0; background: transparent; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); padding: 4px 0; }
+.rc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.rc-kpi { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.rc-kpi-lbl { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 3px; }
+.rc-kpi b { font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rc-kpi.is-pos b { color: #1F7A4C; }
+.rc-kpi.is-neg b { color: #C96A22; }
+.rc-kpi.is-sent b { color: #2356A8; }
+.rc-kpi.is-alert { border-color: rgba(201, 106, 34, 0.6); }
+.rc-kpi.is-alert b { color: #C96A22; }
+.rc-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.rc-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.rc-chip b { font-variant-numeric: tabular-nums; color: var(--muted); }
+.rc-chip.on { border-color: var(--brass); background: rgba(192, 137, 47, 0.14); }
+.rc-chip.is-alerts.on { border-color: #C96A22; background: rgba(201, 106, 34, 0.12); }
+.rc-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rc-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.rc-table thead th { position: sticky; top: 0; background: var(--surface-2); text-align: start; padding: 7px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rc-table tbody td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rc-table .r { text-align: end; white-space: nowrap; }
+.rc-table tr.rc-recs td { padding-top: 0; }
+.rc-table tr.rc-recs .rate-impact-details { margin: 0; }
+.rc-table tr.has-alert td:first-child { box-shadow: inset 3px 0 0 #C96A22; }
+.rc-sub { color: var(--muted); font-size: 11.5px; }
+.rc-act { display: inline-block; padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.rc-act.is-change { border-color: #2356A8; color: #2356A8; }
+.rc-act.is-undo { border-color: #C96A22; color: #C96A22; }
+.rc-act.is-restore { border-color: #1F7A4C; color: #1F7A4C; }
+.rc-flag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; border: 1px solid #C96A22; color: #C96A22; background: rgba(201, 106, 34, 0.08); }
+.rc-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+@media (max-width: 860px) {
+  .rc-threshold-in input { width: 80px; }
+  .rc-table { font-size: 12px; }
+}
 .ind-per-impact.is-undo .ind-per-imp-line { color: #C96A22; }
 .ind-per-imp-when { margin-inline-start: auto; white-space: nowrap; }
 .ind-per-impact .rate-impact-details { margin: 6px 0 0; }

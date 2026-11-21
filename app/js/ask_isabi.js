@@ -3124,6 +3124,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     pbi: 'Dashboards & Reports',
     pbi_hub: 'Dashboards & Reports',
     statements: 'Printable Statements & SOA',

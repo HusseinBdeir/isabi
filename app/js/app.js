@@ -11371,7 +11371,19 @@
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
-    if (hubId === 'sentinels') return getApprovalsExceptionBadge(u) || getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'sentinels') {
+      const apB = getApprovalsExceptionBadge(u);
+      if (apB) return apB;
+      // Open Sentinel alerts and the Owner's open rate-change alerts add up on one badge (it opens the Sentinels
+      // page; the Rate Changes tab carries its own count)
+      const snB = getSentinelExceptionBadge(u, sentinelsOpen);
+      const rcB = getRateChangeExceptionBadge(u);
+      if (snB && rcB) {
+        const cnt = (parseInt(String(snB.text).replace(/[^\d]/g, ''), 10) || 0) + (parseInt(String(rcB.text).replace(/[^\d]/g, ''), 10) || 0);
+        return { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn', targetView: snB.targetView };
+      }
+      return snB || rcB;
+    }
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
     if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
@@ -11416,7 +11428,9 @@
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
         { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) },
         { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
-        { view: 'void_log', label: 'Void Log', icon: 'void_log' }
+        { view: 'void_log', label: 'Void Log', icon: 'void_log' },
+        // Owner only: every rate change and undo with its money impact (owner 2026-11-20)
+        { view: 'rate_changes', label: 'Rate Changes', icon: 'pricing', badgeFn: u => getRateChangeExceptionBadge(u) }
       ]
     },
     {
@@ -11952,6 +11966,7 @@
     if (view === 'approvals') return Boolean(u && u.status !== 'Suspended');
     // Void Log: strictly limited to Supervisors and Owners (never Custom/Entry/Sales/Viewer).
     if (view === 'void_log') return canViewVoidLog(u);
+    if (view === 'rate_changes') return canViewRateChanges(u);
     if (view === 'payroll_analytics') return canViewViewBaseline('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewViewBaseline('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewViewBaseline('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -12050,6 +12065,8 @@
 
   function isPageEnabledInPolicy(canonView, parentHubId, hp, u) {
     if (canonView === 'void_log' && !canViewVoidLog(u)) return false;
+    // Rate Changes is the Owner's page, whatever a seat's page list says
+    if (canonView === 'rate_changes') return canViewRateChanges(u);
     if (isSelfActiveAdminUsersCheck(canonView, u) || isSelfActiveAdminUsersCheck(parentHubId, u)) return true;
     const h = getHubDef(parentHubId);
     const effInd = effectiveIndustryForPerms();
@@ -12103,6 +12120,7 @@
     u = u || activeUser();
     if (view === 'coa_classes' || view === 'gl_automation') view = 'ledger';
     if (view === 'void_log' && !canViewVoidLog(u)) return false;
+    if (view === 'rate_changes') return canViewRateChanges(u);
     if (isSelfActiveAdminUsersCheck(view, u)) return true;
     const hp = getEffectiveHubPagePolicy(u);
     if (view === 'approvals') {
@@ -18606,13 +18624,13 @@
 
   function setStatementWatermark(spec) {
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    if (u && typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u))) {
-      return { ok: false, error: tr('Only authorized finance or supervisor seats can confirm statement watermarks.') };
+    if (!u || (typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u)))) {
+      return { ok: false, error: tr('Only a finance or supervisor seat can mark a statement as sent.') };
     }
     const sp = spec || {};
     const dt = String(sp.confirmedThrough || sp.confirmed_through || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
-      return { ok: false, error: tr('Valid statement end date (YYYY-MM-DD) is required.') };
+      return { ok: false, error: tr('The statement needs an end date.') };
     }
     const key = buildStatementWatermarkKey(sp);
     const payload = {
@@ -18638,8 +18656,8 @@
 
   function clearStatementWatermark(spec) {
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    if (u && typeof canVoid === 'function' && !canVoid(u)) {
-      return { ok: false, error: tr('Only supervisor seats can clear a confirmed statement watermark.') };
+    if (!u || (typeof canVoid === 'function' && !canVoid(u))) {
+      return { ok: false, error: tr('Only a supervisor can remove the sent mark.') };
     }
     const sp = spec || {};
     const key = typeof sp === 'string' ? sp : buildStatementWatermarkKey(sp);
@@ -18652,20 +18670,116 @@
       cleared_by: who,
       cleared_at: clearedAt
     };
+    // Only this statement's own mark: a group statement's mark (company ALL) stays until it is removed there
     saveIndustryWorkflowPatch('statement_watermark', key, clearPatch);
-    if (typeof sp === 'object' && sp) {
-      const indKey = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
-      const ptKey = norm(sp.partyType || 'customer') || 'customer';
-      const pnKey = norm(sp.partyName || 'all') || 'all';
-      const allKey = `${indKey}::all::${ptKey}::${pnKey}`;
-      if (allKey !== key && getStatementWatermark(allKey)) {
-        saveIndustryWorkflowPatch('statement_watermark', allKey, Object.assign({}, clearPatch, { key: allKey }));
-      }
-    }
     STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
     if (typeof syncWithCloud === 'function' && !(sp && sp.skipCloudSync)) syncWithCloud(true);
     return { ok: true, key };
   }
+
+  // ── A statement marked as sent locks its records (owner 2026-11-20) ─────────────────────────────────────────────
+  // Customer Statement (14) and Supplier Statement (16) can be marked as sent to the customer or supplier, through
+  // the statement's end date. From then on a rate change, its undo and a Void Log restore leave every record of that
+  // party dated on or before that day as it is: the record is listed (On a Sent Statement) with the difference the
+  // change would have made, so it can be billed or credited on the next statement. Nothing re-prices it.
+  // Stored as `WF::statement_watermark::<industry::company::party type::party>` in the industry row edit store
+  // (synced like every workflow mark); a statement printed for a whole group locks the party in every company.
+  const STMT_LOCK_TABLE_IND = {
+    sales_tickets: 'manufacturing', raw_purchases: 'manufacturing',
+    hsp_memberships: 'hospitality', hsp_revenue: 'hospitality', re_invoicing: 'realestate',
+    trd_sales: 'trading', trd_purchases: 'trading', ins_policies: 'insurance',
+    hld_distributions: 'holding', hld_loan_accruals: 'holding'
+  };
+  const _stmtLockAllCo = co => {
+    const s = norm(co || '');
+    return !s || s === 'all' || /group$/.test(s) || canonWatermarkCompany(co) === 'all';
+  };
+  let _stmtLockCache = null;
+  function statementLockIndex() {
+    const store = (typeof getIndustryRowEditStore === 'function' && getIndustryRowEditStore()) || {};
+    const rev = STATE._watermarkRev || 0;
+    const now = Date.now();
+    if (_stmtLockCache && _stmtLockCache.store === store && _stmtLockCache.rev === rev && now - _stmtLockCache.at < 3000) return _stmtLockCache.idx;
+    const idx = new Map();
+    Object.keys(store).forEach(k => {
+      if (!k.startsWith('WF::statement_watermark::')) return;
+      const w = store[k];
+      if (!w || typeof w !== 'object' || w.voided || w.cleared) return;
+      const through = String(w.confirmed_through || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(through)) return;
+      const party = norm(w.party_name || '');
+      if (!party || party === 'all') return;
+      const pt = norm(w.party_type || 'customer') === 'supplier' ? 'supplier' : 'customer';
+      const ind = canonWatermarkIndustry(w.industry || 'manufacturing');
+      const ik = `${ind}::${pt}::${party}`;
+      const ent = {
+        through, co: norm(w.company || ''), allCo: _stmtLockAllCo(w.company),
+        by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), party: String(w.party_name || ''), key: String(w.key || '')
+      };
+      if (!idx.has(ik)) idx.set(ik, []);
+      idx.get(ik).push(ent);
+    });
+    _stmtLockCache = { store, rev, at: now, idx };
+    return idx;
+  }
+  // The sent statement that holds a record, or null. `parties`: the name(s) on the record (a raw material ticket has
+  // the quarry and the hauler); `dates`: its dates (a ticket with a reporting date is held when either day is).
+  function statementLockFor(table, company, parties, dates, kind) {
+    const ind = STMT_LOCK_TABLE_IND[table];
+    if (!ind) return null;
+    const idx = statementLockIndex();
+    if (!idx.size) return null;
+    const pt = (kind === 'cost' || table === 'raw_purchases' || table === 'trd_purchases') ? 'supplier' : 'customer';
+    const ds = (Array.isArray(dates) ? dates : [dates]).map(x => String(x || '').slice(0, 10)).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
+    if (!ds.length) return null;
+    const day = ds.sort()[0];
+    const co = norm(company || '');
+    let best = null;
+    (Array.isArray(parties) ? parties : [parties]).forEach(pn => {
+      const list = idx.get(`${ind}::${pt}::${norm(pn || '')}`);
+      if (!list) return;
+      list.forEach(w => {
+        if (day > w.through) return;
+        if (!w.allCo && co && w.co !== co) return;
+        if (!best || w.through > best.through) best = w;
+      });
+    });
+    return best;
+  }
+  // For the statements page: the mark on one statement (exact party and scope), and marking or clearing it
+  function statementSentMark(spec) {
+    const sp = spec || {};
+    const w = getStatementWatermark(buildStatementWatermarkKey(sp));
+    if (w) return { through: String(w.confirmed_through).slice(0, 10), by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), balance: w.closing_balance_usd };
+    // A company's statement covered by the group's (company ALL): shown as sent, through the group's day
+    if (!_stmtLockAllCo(sp.company)) {
+      const grpName = { hospitality: 'Hospitality Group', trading: 'Trading Group', realestate: 'Real Estate Group' }[canonWatermarkIndustry(sp.industry || 'manufacturing')] || '';
+      const g = getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: 'ALL' })))
+        || (grpName ? getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: grpName }))) : null);
+      if (g) return { through: String(g.confirmed_through).slice(0, 10), by: String(g.confirmed_by || ''), at: String(g.confirmed_at || ''), balance: null, group: true };
+    }
+    return null;
+  }
+  window.MFG_STMT_LOCK = {
+    get: statementSentMark,
+    set: spec => {
+      const r = setStatementWatermark(spec);
+      _stmtLockCache = null;
+      toast(r.ok ? 'Statement marked as sent. A rate change or its undo now leaves these records as they are.' : r.error, r.ok ? 'ok' : 'err');
+      return r;
+    },
+    clear: spec => {
+      const r = clearStatementWatermark(spec);
+      _stmtLockCache = null;
+      toast(r.ok ? 'Sent mark removed from this statement.' : r.error, r.ok ? 'ok' : 'err');
+      return r;
+    },
+    lockFor: statementLockFor,
+    canMark: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && ((typeof canModifyData === 'function' && canModifyData(u)) || (typeof canVoid === 'function' && canVoid(u))); },
+    canClear: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && typeof canVoid === 'function' && canVoid(u); },
+    today: () => todayISO(),
+    industryKey: canonWatermarkIndustry
+  };
 
   function nextDayAfterIso(isoStr) {
     if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(isoStr).slice(0, 10))) return '';
@@ -19272,6 +19386,8 @@
     // What the sweep re-priced, and the tickets it left because their price was typed (opts.impact = { rows, kept }):
     // shown to the person after a save and after an undo
     const mfgImpact = (opts && opts.impact && Array.isArray(opts.impact.rows) && Array.isArray(opts.impact.kept)) ? opts.impact : null;
+    // opts.dryRun: nothing is written, the impact only lists what the save would do (the list shown before Post)
+    const bfDryRun = Boolean(opts && opts.dryRun);
 
     if (isSalesSide) {
       const checkMatLeg = isListRule || /^Sales/i.test(rtNew) || /^Sales/i.test(rtOld);
@@ -19508,6 +19624,23 @@
           );
           const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
           const prevTtcS = round2(Number(s.total_ttc || 0));
+          // A ticket on a statement marked as sent is left as it is, and a dry run (the list shown before Post)
+          // writes nothing: both work out what the ticket would carry and list it
+          const sentLockS = statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date]);
+          if (sentLockS || bfDryRun) {
+            const billQtyD = (origExtQtyS > 0 && (origUsedExtQty || Boolean(custObj && custObj.customer_declared_qty))) ? origExtQtyS : nextQty;
+            const tpD = isDelivery ? nextTp : 0;
+            const discD = Math.abs(Number(s.discount || 0));
+            const priceD = nextMatFlat ? round2(nextUp - discD) : round2(billQtyD * nextUp + nextTierAdj - discD);
+            const transD = isDelivery ? (nextTransFlat ? round2(tpD) : round2(billQtyD * tpD + nextTransTierAdj)) : 0;
+            const totD = round2(priceD + transD);
+            const ttcD = round2(totD + ((wasTax && ticketSign(s) !== 0) ? round2(totD * getVatFraction(d)) : 0));
+            if (mfgImpact && Math.abs(ttcD - prevTtcS) >= 0.005) {
+              const rowD = { table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: prevTtcS, to: ttcD, delta: round2(ttcD - prevTtcS) };
+              if (sentLockS) { rowD.lock = sentLockS.through; mfgImpact.kept.push(rowD); } else mfgImpact.rows.push(rowD);
+            }
+            continue;
+          }
 
           ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
 
@@ -19750,6 +19883,26 @@
 
         if (rowChanged) {
           const prevTotR = round2(Number(r.total || 0));
+          const discD = Math.abs(Number(r.discount || 0));
+          const tucD = isZeroSeparateHaul ? 0 : nextTuc;
+          const costD = nextMatFlat ? round2(nextUc - discD) : round2(nextQty * nextUc + nextTierAdj - discD);
+          const transD = isZeroSeparateHaul ? 0 : (nextTransFlat ? round2(tucD) : round2(nextQty * tucD + nextTransTierAdj));
+          const totD = round2(costD + transD);
+          // Held by the sent statement of the party whose leg moves: the quarry's for the material, the hauler's for
+          // the haulage (a ticket whose legs both stay, e.g. a quantity change, is held by either)
+          const matMovesR = Math.abs(costD - Number(r.cost || 0)) >= 0.005 || norm(nextSiteOwner) !== norm(r.site_owner || '');
+          const haulMovesR = Math.abs(transD - Number(r.trans_cost || 0)) >= 0.005;
+          const lockPartiesR = (matMovesR || haulMovesR)
+            ? [].concat(matMovesR ? [nextSiteOwner, r.site_owner] : [], haulMovesR ? [r.truck_owner] : [])
+            : [nextSiteOwner, r.site_owner, r.truck_owner];
+          const sentLockR = statementLockFor('raw_purchases', r.company, lockPartiesR, [d, r.date], 'cost');
+          if (sentLockR || bfDryRun) {
+            if (mfgImpact && Math.abs(totD - prevTotR) >= 0.005) {
+              const rowD = { table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(nextSiteOwner || r.site || ''), from: prevTotR, to: totD, delta: round2(totD - prevTotR), kind: 'cost' };
+              if (sentLockR) { rowD.lock = sentLockR.through; mfgImpact.kept.push(rowD); } else mfgImpact.rows.push(rowD);
+            }
+            continue;
+          }
           ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
           r.site_owner = nextSiteOwner;
           r.qty = nextQty;
@@ -19780,7 +19933,7 @@
       if (rawUpdated > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
     }
 
-    if (candidates.some(c => Boolean(c.site))) {
+    if (candidates.some(c => Boolean(c.site)) && !bfDryRun) {
       normalizeDistinctSiteCategories(SEED);
     }
     if (salesUpdated + rawUpdated > 0) {
@@ -19800,6 +19953,7 @@
     const pN = norm(prodRow.name);
     const salesRows = (SEED.records && SEED.records.sales_tickets) || [];
     let salesUpdated = 0;
+    let heldOnSentLp = 0;
     for (let i = 0; i < salesRows.length; i++) {
       const s = salesRows[i];
       if (!s || s.voided || s.removed_slip || isReturnTicket(s) || norm(s.product || '') !== pN) continue;
@@ -19813,6 +19967,9 @@
         ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] })
         : null;
       if (!activeSalesRule && Math.abs(Number(s.unit_price || 0) - newLp) > 1e-4) {
+        // A typed price stays, as with a price agreement change; so does a ticket on a statement marked as sent
+        if (String(s.price_rule || '') === 'Manual' || (Array.isArray(s.admin_overrides) && s.admin_overrides.includes('f_unitprice'))) continue;
+        if (statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date])) { heldOnSentLp++; continue; }
         ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
         s.unit_price = newLp;
         const qty = Number(s.qty || 0);
@@ -19837,7 +19994,87 @@
       if (SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
       SEED._customRev = (SEED._customRev || 0) + 1;
     }
-    return { salesUpdated };
+    // The person is told which tickets the list price left because their customer's statement was sent
+    // Shown after the save's own message (a toast replaces the one before it)
+    if (heldOnSentLp > 0) setTimeout(() => toast('The new list price was not applied to tickets on a statement already sent. Bill or credit the difference on the next statement.', 'warn'), 2200);
+    return { salesUpdated, heldOnSent: heldOnSentLp };
+  }
+
+  // ── The tickets a price agreement save would re-price, before Post (owner 2026-11-20) ───────────────────────────
+  // Manufacturing used to show them only after the save. This works the save out on the agreements alone (the row
+  // and the neighbours it closes or moves, as the save would), lists the tickets with a dry run that writes nothing,
+  // then puts every agreement row back exactly as it was (same objects, same values). Nothing is sent or synced.
+  // Returns { impact, kept } (kept: the earlier period a save from a later day keeps apart), or null.
+  function previewMfgPriceRuleImpact(record, editOrig, hint) {
+    if (!record || !SEED || !SEED.records) return null;
+    const tk = 'price_rules';
+    // Deep copies that keep every value as it was (undefined, NaN, dates); JSON only where structuredClone is missing
+    const deep = o => { try { return structuredClone(o); } catch (_) { return JSON.parse(JSON.stringify(o)); } };
+    const snap = arr => (Array.isArray(arr) ? { arr, refs: arr.slice(), json: arr.map(o => (o && typeof o === 'object') ? deep(o) : null) } : null);
+    const putBack = sn => {
+      if (!sn) return;
+      sn.arr.length = 0;
+      sn.refs.forEach((o, i) => {
+        if (o && typeof o === 'object' && sn.json[i] != null) {
+          Object.keys(o).forEach(k => { delete o[k]; });
+          Object.assign(o, sn.json[i]);
+        }
+        sn.arr.push(o);
+      });
+    };
+    const hadSeedArr = Array.isArray(SEED.records[tk]);
+    if (!hadSeedArr) SEED.records[tk] = [];
+    if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+    const seedSnap = snap(SEED.records[tk]);
+    const custSnap = snap(STATE.customRecords[tk]);
+    const prevKeptGlobal = _lastChronoKeptPeriod;
+    // What the engine counts as it goes: change counters and the first-seen copies of rows it would edit
+    const prevCustomRev = SEED._customRev;
+    const prevTableRev = SEED._tableRev ? Object.assign({}, SEED._tableRev) : null;
+    const archKeys = (SEED_ORIG_ARCHIVE[tk] instanceof Map) ? new Set(SEED_ORIG_ARCHIVE[tk].keys()) : null;
+    const impact = newSiblingRepriceImpact();
+    let kept = null;
+    try {
+      const rec = JSON.parse(JSON.stringify(record));
+      const orig = editOrig ? JSON.parse(JSON.stringify(editOrig)) : null;
+      // The row as the save stores it: over its own id where it exists, else added
+      const putRow = arr => {
+        const i = arr.findIndex(x => x && String(x.id) === String(rec.id));
+        if (i >= 0) Object.assign(arr[i], rec); else arr.unshift(Object.assign({}, rec));
+      };
+      putRow(STATE.customRecords[tk]);
+      putRow(SEED.records[tk]);
+      if (rec.start_date && isEffectiveSeriesTable(tk, rec)) {
+        if ('date' in rec) rec.date = rec.start_date;
+        const peers = syncChronologicalSeriesNeighbors(tk, rec, orig, [], hint) || [];
+        kept = _lastChronoKeptPeriod;
+        // Rows the save added or changed on the device copy are seen by the ticket pricing as the save would see them
+        const seedArr = SEED.records[tk];
+        STATE.customRecords[tk].forEach(c => {
+          if (!c || !c.id) return;
+          const s = seedArr.find(x => x && String(x.id) === String(c.id));
+          if (s) { if (s !== c) Object.assign(s, c); } else seedArr.unshift(c);
+        });
+        backfillPriceRuleToTickets(rec, kept ? null : orig, [], { touchedPeers: peers, notBefore: kept ? kept.newFrom : '', impact, dryRun: true });
+      } else {
+        backfillPriceRuleToTickets(rec, orig, [], { touchedPeers: [], impact, dryRun: true });
+      }
+    } catch (err) {
+      console.warn('[rate impact] preview not worked out', err);
+      return null;
+    } finally {
+      putBack(seedSnap);
+      putBack(custSnap);
+      if (!hadSeedArr && SEED.records[tk] && !SEED.records[tk].length) delete SEED.records[tk];
+      _lastChronoKeptPeriod = prevKeptGlobal;
+      SEED._customRev = prevCustomRev;
+      if (prevTableRev) SEED._tableRev = Object.assign(SEED._tableRev || {}, prevTableRev);
+      if (SEED_ORIG_ARCHIVE[tk] instanceof Map) {
+        if (!archKeys) delete SEED_ORIG_ARCHIVE[tk];
+        else Array.from(SEED_ORIG_ARCHIVE[tk].keys()).forEach(k => { if (!archKeys.has(k)) SEED_ORIG_ARCHIVE[tk].delete(k); });
+      }
+    }
+    return { impact, kept };
   }
 
   function backfillEmploymentToAttendance(empRow, origRow, extraApiPosts) {
@@ -20182,6 +20419,14 @@
     // For the headless gate only: the snapshot a save takes so a refused save can be put back
     rollbackSnapForCheck: tables => (window.__MFG_HEADLESS_TEST ? _captureLedgerAndGeoRollbackSnap(tables || [], false) : null),
     formChangedValueForCheck: () => (window.__MFG_HEADLESS_TEST ? entryModalUserChangedValue() : undefined),
+    // The tickets a price agreement save would re-price, worked out before Post; read by build/verify_rate_change_recs.mjs
+    previewPriceRule: (record, editOrig, hint) => previewMfgPriceRuleImpact(record, editOrig, hint),
+    // One record through the re-pricing step (sent statements, typed figures); for the headless gate only
+    repriceStepForCheck: (ctx, table, rec, o) => (window.__MFG_HEADLESS_TEST ? siblingRepriceStep(ctx, table, rec, o) : undefined),
+    summarizeImpact: impact => summarizeSiblingRepriceImpact(impact),
+    seedOrigKeysForCheck: tk => (window.__MFG_HEADLESS_TEST ? JSON.stringify((SEED_ORIG_ARCHIVE[tk] instanceof Map) ? Array.from(SEED_ORIG_ARCHIVE[tk].keys()).sort() : null) : ''),
+    rateChangeEvents: () => collectRateChangeEvents(),
+    rateChangeBadge: u => getRateChangeExceptionBadge(u, true),
     reopenOnVoid: reopenChronologicalSeriesOnVoid,
     resolveActive: resolveEffectiveSeriesRow,
     backfill: backfillEffectiveLogChange,
@@ -23811,7 +24056,7 @@
     };
   }
 
-  function renderMapsQuotaPanelHtml() {
+  function buildMapsQuotaPanelHtml() {
     const q = _getMapsQuotaSnapForUi();
     const th = q.thresholds || { warnPct: 50, tightPct: 80, fallbackPct: 95 };
     const rows = [
@@ -23912,13 +24157,40 @@
     `;
   }
 
+  // What the Maps quota card and the gate warm-up bar say right now, as text. A quota refresh arrives about
+  // half a second after every visit to Sentinels and used to redraw the whole screen (12,000 elements) and
+  // drop the Sentinel results even when it changed nothing. It now does either only when this text changed.
+  // (`var`: a screen can be drawn before this line has run while the file is still starting up.)
+  // The card's text plus the client policy (the Sentinel badge quotes its debounce, which the card does not).
+  // The screen keeps the signature of the card it was drawn with (renderMapsQuotaPanelHtml, during the draw
+  // itself, so a draw costs nothing extra); a refresh is compared only while that screen is open. On any
+  // other screen a refresh drops the Sentinel results as it always did.
+  var _mapsQuotaSigBuilt = null;    // set by the card as a screen is being drawn
+  var _mapsQuotaSigShown = null;    // the card the screen in front of the person was drawn with (null: no card)
+  function mapsQuotaSignatureFor(html) {
+    let policy = '';
+    try { policy = JSON.stringify((_getMapsQuotaSnapForUi() || {}).policy || {}); } catch (_) {}
+    return String(html) + '\u0001' + policy;
+  }
+  function renderMapsQuotaPanelHtml() {
+    const html = buildMapsQuotaPanelHtml();
+    _mapsQuotaSigBuilt = mapsQuotaSignatureFor(html);
+    return html;
+  }
+
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiMapsQuotaListenerWired) {
     window.__isabiMapsQuotaListenerWired = true;
     const _rerenderQuotaPanelView = () => {
       try {
+        const onView = Boolean(STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules'));
+        if (onView && _mapsQuotaSigShown && !window.__MFG_SPEED_CACHES_OFF) {
+          let sig = null;
+          try { sig = mapsQuotaSignatureFor(buildMapsQuotaPanelHtml()); } catch (_) { sig = null; }
+          if (sig !== null && sig === _mapsQuotaSigShown) return;   // the screen already says exactly this
+        }
         if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
         const modalOpen = ($('entryModal') && !$('entryModal').hidden) || ($('recordInspector') && !$('recordInspector').hidden);
-        if (!modalOpen && STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
+        if (!modalOpen && onView) {
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
           renderApp();
@@ -55337,7 +55609,7 @@
         if (!charterPct.has(ek)) charterPct.set(ek, Number((lookupActiveHoldingPartnerSplit(head.entity, head.partner, '0001-01-01') || {}).pct || 0));
         lines.push({
           partner: head.partner, role: head.entity || 'Partner Pool', sharePct: charterPct.get(ek),
-          opening: 0, draws: 0, allocatedOverhead: 0, closingBalance: 0,
+          opening: 0, draws: 0, allocatedOverhead: 0, closingBalance: 0, entitled: 0,
           scheduleId: '', periodFrom: '', periodTo: '', isFallback: true, counted: true
         });
         return;
@@ -55347,6 +55619,7 @@
         lines.push({
           partner: r.partner, role: r.entity || 'Partner Pool', sharePct: Number(r.pct || 0),
           opening: Number(r.pool_usd || 0), draws: Number(r.drawn_usd || 0), allocatedOverhead: 0, closingBalance: Number(r.open_usd || 0),
+          entitled: Number(r.entitled_usd || 0),
           scheduleId: String(r.id || ''), periodFrom: isoOr(r.start_date, ''),
           // An end the app cannot read as a date is printed as it was typed
           periodTo: isoOr(rawEnd, (rawEnd && !/^open$/i.test(rawEnd)) ? rawEnd : 'Open'),
@@ -55355,6 +55628,26 @@
       });
     });
     return lines;
+  }
+
+  // The facility schedules of a date range: each schedule in force during it, in date order. A schedule a save kept
+  // apart and the one that continues it carry the same principal and balance (planSiblingChronoSplit), so only the
+  // last of them inside the range counts in a total (`_range_counted`), as holdingPartnerPeriodsInRange does for
+  // partners. Returns null when there is no range.
+  function holdingSchedulesInRange(rows, range) {
+    const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const from = String((range && range.from) || '').slice(0, 10);
+    const to = String((range && range.to) || '').slice(0, 10);
+    if (!isIso(from) || !isIso(to)) return null;
+    const isoOr = (v, dflt) => { const s = String(v || '').slice(0, 10); return isIso(s) ? s : dflt; };
+    const sdOf = r => isoOr(r.start_date || r.date, '1900-01-01');
+    const edOf = r => isoOr(r.end_date, '9999-12-31');
+    const up = v => String(v || '').trim().toUpperCase();
+    const hits = (Array.isArray(rows) ? rows : [])
+      .filter(r => r && !r.voided && !r._scheduleVoided && sdOf(r) <= to && edOf(r) >= from)
+      .sort((a, b) => (sdOf(a) < sdOf(b) ? -1 : (sdOf(a) > sdOf(b) ? 1 : 0)));
+    const continued = new Set(hits.map(r => up(r._continues_id)).filter(Boolean));
+    return hits.map(r => Object.assign({}, r, { _range_counted: !continued.has(up(r.id)) }));
   }
 
   function renderHoldingPartners(submode = 'main') {
@@ -60948,7 +61241,18 @@
     const occupiedUnits = fProperties.reduce((s, r) => s + r.units_occupied, 0);
     const occupancyPct = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
-    const activeOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
+    // The rent roll of a range that ended before today: the leases in force on its last day, read from their dates. A
+    // lease's status says what it is today (a rent change closes the earlier period), so for a past range it would
+    // leave out the lease that was in force then and count nothing. A range that runs to today or later reads the
+    // status, as before. A lease period followed by a new rent is then counted once, at the rent of that day.
+    const reIso = v => { const s = String(v || '').trim().slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; };
+    const reTodayIso = todayISO();
+    const reAsOf = (rePm.pr && reIso(rePm.pr.to) && reIso(rePm.pr.to) < reTodayIso) ? reIso(rePm.pr.to) : '';
+    const leaseInForceOn = (r, d) => Boolean(r) && !r.voided && !r._scheduleVoided
+      && (reIso(r.start_date) || '1900-01-01') <= d && (reIso(r.end_date) || '9999-12-31') >= d;
+    const statusOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
+    const activeOpenLeases = reAsOf ? fLeases.filter(r => leaseInForceOn(r, reAsOf)) : statusOpenLeases;
+    const rentRollIds = new Set(activeOpenLeases.map(r => String((r && r.id) || '').trim().toUpperCase()));
     const contractedAnnualRentUsd = round2(activeOpenLeases.reduce((s, r) => s + Number(r.annual_ttc_usd || 0), 0));
     const contractedAnnualNetRentUsd = round2(activeOpenLeases.reduce((s, r) => {
       if (r.annual_net_usd != null) return s + Number(r.annual_net_usd || 0);
@@ -60974,7 +61278,7 @@
       const pName = String(l.property || '').trim();
       if (!pName) return;
       propHasLeaseRow.add(pName);
-      if (l.status === 'Closed Window') return;
+      if (!rentRollIds.has(String(l.id || '').trim().toUpperCase())) return;
       const netYr = l.annual_net_usd != null
         ? Number(l.annual_net_usd || 0)
         : (Number(l.vat_rate || 0) > 0 ? Number(l.annual_ttc_usd || 0) / 1.11 : Number(l.annual_ttc_usd || 0));
@@ -61012,7 +61316,7 @@
     const woActualUsd = fWorkorders.reduce((s, r) => s + r.actual_usd, 0);
     const unrechargedUsd = fRecharges.filter(r => r.status === 'Unrecharged').reduce((s, r) => s + r.total_recharge_usd, 0);
 
-    const expiringLeaseCount = activeOpenLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
+    const expiringLeaseCount = statusOpenLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
     const overdueInstalmentCount = fInstalments.filter(r => r.status === 'Overdue' || r.status === 'Due Soon').length;
     const vacantUnitCount = Math.max(0, totalUnits - occupiedUnits);
     const openWorkOrderCount = fWorkorders.filter(r => r.status !== 'Completed').length + fRecharges.filter(r => r.status === 'Unrecharged').length;
@@ -61022,6 +61326,9 @@
       properties: fProperties,
       units: fUnits,
       leases: fLeases,
+      // The leases the rent roll counts (in force on the last day of a past range; open by status otherwise)
+      rentRollIds,
+      rentRollAsOf: reAsOf,
       invoices: fInvoices,
       receipts: fReceipts,
       sales: fSales,
@@ -65176,6 +65483,34 @@
         const hldSched = computeHoldingSchedules();
         const basePartners = hldSched.partnerAgreements || [];
         const extdSum = computeHoldingExtendedSummary({ ignoreCompany: true, ignoreSearch: true, basis: 'tx' });
+        // With a period picked, the page reads each partner's schedule in force during it (one line per period when the
+        // share changed inside it), as Statement 23 does; the totals count a partner once, on its latest line. With no
+        // period, the schedules in force today, as before.
+        const prtLines = holdingPartnerPeriodsInRange(basePartners, periodRange());
+        if (prtLines) {
+          const counted = prtLines.filter(l => l.counted);
+          const lEnt = round2(counted.reduce((a, l) => a + Number(l.entitled || 0), 0));
+          const lOpn = round2(counted.reduce((a, l) => a + Number(l.closingBalance || 0), 0));
+          const lineId = l => l.scheduleId || 'No schedule in this period';
+          return {
+            kpis: [
+              { label: 'Extended Received / Took ($)', val: fmtUSD(extdSum.totRecUsd, 2), sub: `${fmtNum(extdSum.rows.length)} extended movements`, cls: 'crit' },
+              { label: 'Extended Gave ($)', val: fmtUSD(extdSum.totGaveUsd, 2), sub: 'Paid in & opening balances', cls: 'good' },
+              { label: 'Extended Difference / Owes ($)', val: fmtSignedUSD(extdSum.totOwesUsd, 2), sub: `LBP Owes: ${Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL'}`, cls: 'brass' },
+              { label: 'Active Partner Agreements', val: fmtNum(prtLines.filter(l => !l.isFallback).length), sub: '10-slot chronological matrix', cls: 'good' },
+              { label: 'Partner Entitled Share', val: fmtUSD(lEnt, 0), sub: 'Computed by effective date window', cls: 'brass' },
+              { label: 'Unpaid Partner Current Acct', val: fmtUSD(lOpn, 0), sub: 'Accrued balance payable', cls: lOpn > 0 ? 'warn' : 'good' }
+            ],
+            chartTitle: 'Extended Stakeholder Net Difference / Owes ($)',
+            bars: (extdSum.partyRows || []).slice(0, 8).map(p => ({ label: `${p.counterparty} (${p.entries_cnt})`, val: Math.max(1, Math.abs(Number(p.owes_usd || 0))), sub: `Took ${fmtUSD(p.rec_usd, 0)} · Gave ${fmtUSD(p.gave_usd, 0)} · Diff ${fmtSignedUSD(p.owes_usd, 2)}` })),
+            secondTitle: 'Partner Entitled Share by Subsidiary Pool ($)',
+            secondBars: prtLines.map(l => ({ label: `${l.role} · ${String(l.partner || '').split('(')[0].trim()}`, val: Number(l.entitled || 0), sub: `${Number(l.sharePct || 0).toFixed(1)}% split · Open ${fmtUSD(l.closingBalance, 0)}` })),
+            tableTitle: '10-Slot Shareholder & Partner Profit-Share Allocations Register',
+            headers: ['Agreement ID', 'Operating Scope', 'Partner / Slot Pool', 'Effective From', 'Effective To', 'Share %', 'Entitled ($)', 'Open Balance ($)'],
+            rows: prtLines.map(l => [lineId(l), l.role, l.partner, l.periodFrom || '-', l.periodTo || 'Open', `${Number(l.sharePct || 0).toFixed(1)}%`, fmtUSD(l.entitled, 0), fmtUSD(l.closingBalance, 0)]),
+            totals: ['Total Partner Splits', '5 Vertical Pools', `${prtLines.length} Agreements`, 'Chronological', '0 Overlaps', '100% Tied', fmtUSD(lEnt, 0), fmtUSD(lOpn, 0)]
+          };
+        }
         const totEnt = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
         const totOpn = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.open_usd || 0), 0));
         return {
@@ -65199,7 +65534,11 @@
       }
       if (pIdx === 3) {
         const hldSched = computeHoldingSchedules();
-        const schedRows = hldSched.facilitySchedules || [];
+        // With a period picked, the facility schedules in force during it (each APR period on its own line) and totals
+        // that count a facility once, on its latest schedule in the period; with no period, as before
+        const facPr = periodRange();
+        const facInRange = holdingSchedulesInRange(hldSched.facilitySchedules || [], facPr);
+        const schedRows = facInRange || hldSched.facilitySchedules || [];
         const demoBar = isDemoScopeActive();
         const loanRows = schedRows.concat((loans || []).slice(0, 8).map((l, idx) => {
           const prin = Number(l.principal || l.amount || l.usd_amount || (demoBar ? 45000 : 0));
@@ -65219,9 +65558,10 @@
             status: rep >= prin && prin > 0 ? 'Settled' : 'Active Facility'
           };
         }));
-        const totPrin = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.principal_usd || 0), 0));
-        const totRep = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
-        const totBal = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.balance_usd || 0), 0));
+        const facCounted = facInRange ? loanRows.filter(r => r._range_counted !== false) : holdingInForceRows(loanRows);
+        const totPrin = round2(facCounted.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
+        const totRep = round2(facCounted.reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
+        const totBal = round2(facCounted.reduce((a, r) => a + Number(r.balance_usd || 0), 0));
         return {
           kpis: [
             { label: 'Active Credit Facilities', val: fmtNum(loanRows.length), sub: 'Central treasury & subsidiary lines', cls: 'good' },
@@ -71053,6 +71393,16 @@
         return false;
       }
     }
+    // A record this change would re-price that sits on a statement marked as sent: left as it is, listed with the
+    // difference the change would have made (checked after the typed figures: those were never going to move). A
+    // statement may name the party with its company in front ("Blanca · Pool Bar"), so both names are looked up.
+    const lockCo = rec && (rec.company || rec.entity || rec.co);
+    const sentLock = statementLockFor(table, lockCo, [o.party, lockCo && o.party ? `${String(lockCo).split('·')[0].trim()} · ${o.party}` : ''], [o.date, rec && rec.date], o.kind);
+    if (sentLock) {
+      row.lock = sentLock.through;
+      if (ctx && ctx.impact) ctx.impact.kept.push(row);
+      return false;
+    }
     if (ctx && ctx.impact) ctx.impact.rows.push(row);
     return true;
   }
@@ -71718,32 +72068,82 @@
   // whether a second pass (after the person confirmed) found the same thing
   function summarizeSiblingRepriceImpact(impact) {
     const rows = (impact && Array.isArray(impact.rows)) ? impact.rows : [];
-    const kept = (impact && Array.isArray(impact.kept)) ? impact.kept : [];
+    const allKept = (impact && Array.isArray(impact.kept)) ? impact.kept : [];
+    // `kept` holds both: records with a typed price, and records on a statement marked as sent (`lock`)
+    const kept = allKept.filter(r => !(r.lock || r.l));
+    const locked = allKept.filter(r => r.lock || r.l);
     const billed = rows.filter(r => r.kind !== 'cost');
     const costs = rows.filter(r => r.kind === 'cost');
     const delta = round2(billed.reduce((a, r) => a + Number(r.delta || 0), 0));
     const costDelta = round2(costs.reduce((a, r) => a + Number(r.delta || 0), 0));
-    const sig = rows.map(r => `${r.table}:${r.id}:${r.to}`).sort().join('|') + '#' + kept.map(r => `${r.table}:${r.id}`).sort().join('|');
-    return { n: rows.length, delta, costN: costs.length, costDelta, keptN: kept.length, sig };
+    // What the change would have made on the sent statements' records (billed side; costs apart)
+    const lockedDelta = round2(locked.filter(r => (r.kind || r.k) !== 'cost').reduce((a, r) => a + (Number(r.to) - Number(r.from != null ? r.from : r.f)), 0));
+    const lockedCostDelta = round2(locked.filter(r => (r.kind || r.k) === 'cost').reduce((a, r) => a + (Number(r.to) - Number(r.from != null ? r.from : r.f)), 0));
+    const sig = rows.map(r => `${r.table}:${r.id}:${r.to}`).sort().join('|') + '#' + allKept.map(r => `${r.table}:${r.id}${r.lock ? '@' + r.lock : ''}`).sort().join('|');
+    return { n: rows.length, delta, costN: costs.length, costDelta, keptN: kept.length, lockedN: locked.length, lockedDelta, lockedCostDelta, sig };
   }
   // What a schedule row keeps of an impact (shown on the periods strip, also after an undo): the figures and the
   // first records, not the whole list
   function packSiblingRepriceImpact(impact, extra) {
     const s = summarizeSiblingRepriceImpact(impact);
     const au = (typeof activeUser === 'function' && activeUser()) || {};
-    const slim = r => ({ t: r.table, id: r.id, d: r.date, p: String(r.party || '').slice(0, 60), f: r.from, to: r.to, k: r.kind || undefined });
+    const slim = r => ({ t: r.table, id: r.id, d: r.date, p: String(r.party || '').slice(0, 60), f: r.from, to: r.to, k: r.kind || undefined, l: r.lock || undefined });
+    const allKept = (impact && impact.kept) || [];
     const packed = Object.assign({
       at: new Date().toISOString(),
       by: String(au.full_name || au.name || au.email || '').trim().slice(0, 120),
       n: s.n, delta_usd: s.delta, cost_n: s.costN, cost_delta_usd: s.costDelta, kept_n: s.keptN,
       rows: ((impact && impact.rows) || []).slice(0, 25).map(slim),
-      kept: ((impact && impact.kept) || []).slice(0, 25).map(slim)
+      // typed prices first, then the records on sent statements (each list capped on its own)
+      kept: allKept.filter(r => !r.lock).slice(0, 25).concat(allKept.filter(r => r.lock).slice(0, 25)).map(slim)
     }, extra || {});
+    if (s.lockedN) {
+      packed.locked_n = s.lockedN;
+      packed.locked_delta_usd = s.lockedDelta;
+      if (Math.abs(s.lockedCostDelta) >= 0.005) packed.locked_cost_delta_usd = s.lockedCostDelta;
+    }
     // The records a person had typed at exactly this change's figure: its undo leaves them (siblingRepriceStep)
     const typedKeys = (impact && Array.isArray(impact.typedAtNew)) ? impact.typedAtNew.slice(0, 500) : [];
     if (typedKeys.length) packed.typed_keys = typedKeys;
     return packed;
   }
+  // Every change, undo and restore a schedule went through, in figures only (`_impact_log`, last 40): `_impact` and
+  // `_undo_impact` keep only the latest, and the Owner's Rate Changes page lists them all. `action`: change|undo|restore
+  // The log the stored copies of a schedule already carry (the row being saved may be a fresh copy from the form)
+  function storedImpactLog(id, isMfg) {
+    const up = String(id || '').trim().toUpperCase();
+    if (!up) return [];
+    let best = [];
+    const consider = r => {
+      if (r && String(r.id || r.code || '').trim().toUpperCase() === up && Array.isArray(r._impact_log) && r._impact_log.length > best.length) best = r._impact_log;
+    };
+    if (isMfg) {
+      ((STATE.customRecords && STATE.customRecords.price_rules) || []).forEach(consider);
+      ((SEED && SEED.records && SEED.records.price_rules) || []).forEach(consider);
+    } else {
+      const st = (typeof getIndustryCustomRowsStore === 'function' && getIndustryCustomRowsStore()) || {};
+      Object.keys(st).forEach(b => { if (Array.isArray(st[b])) st[b].forEach(consider); });
+    }
+    return best;
+  }
+  function appendImpactLog(row, packed, action, isMfg) {
+    if (!row || !packed || typeof packed !== 'object') return null;
+    const at = String(packed.at || new Date().toISOString());
+    const own = Array.isArray(row._impact_log) ? row._impact_log : [];
+    const stored = storedImpactLog(row.id || row.code, isMfg);
+    const prev = stored.length > own.length ? stored : own;
+    if (prev.some(e => e && e.at === at && e.a === action)) return prev;
+    const ent = {
+      a: action, at, by: String(packed.by || '').slice(0, 120),
+      n: Number(packed.n || 0), d: Number(packed.delta_usd || 0), cn: Number(packed.cost_n || 0), cd: Number(packed.cost_delta_usd || 0),
+      k: Number(packed.kept_n || 0), l: Number(packed.locked_n || 0), ld: Number(packed.locked_delta_usd || 0)
+    };
+    if (packed.new_from) ent.nf = String(packed.new_from);
+    row._impact_log = prev.concat([ent]).slice(-40);
+    _rateChangeCache = null; _rateChangeRev++;
+    return row._impact_log;
+  }
+
   // What a schedule in force already carries of its last change (`_impact` of its row on this device; an undone row
   // is not read). A save over that schedule leaves the typed figures it knows (`typed_keys`): its own when it is
   // edited in place, the kept one's when the save starts a new period.
@@ -71769,6 +72169,7 @@
     const moved = impact.rows.length > 0 || impact.kept.length > 0;
     if (moved || (extra && extra.new_from)) {
       rec._impact = packSiblingRepriceImpact(impact, extra || null);
+      if (moved) appendImpactLog(rec, rec._impact, extra && extra.restored ? 'restore' : 'change', false);
       return true;
     }
     const prev = (prevImpact && typeof prevImpact === 'object') ? prevImpact : null;
@@ -71798,17 +72199,23 @@
   function rateImpactRecordsTableHtml(rows, kept, total) {
     const norm1 = r => ({
       table: r.table || r.t, id: r.id, date: r.date || r.d, party: r.party || r.p,
-      from: Number(r.from != null ? r.from : r.f), to: Number(r.to), kind: r.kind || r.k || ''
+      from: Number(r.from != null ? r.from : r.f), to: Number(r.to), kind: r.kind || r.k || '', lock: r.lock || r.l || ''
     });
+    // A record on a statement marked as sent stays at its figure; the difference column shows what the change
+    // would have made (to bill or credit on the next statement)
     const body = (list, isKept) => list.map(norm1).map(r => `
-      <tr class="${isKept ? 'is-kept' : ''}">
+      <tr class="${isKept ? (r.lock ? 'is-kept is-sent' : 'is-kept') : ''}">
         <td><span>${esc(SIB_IMPACT_TABLE_LABELS[r.table] || 'Record')}</span> <span class="mono" data-no-i18n="1">${esc(r.id)}</span></td>
         <td class="mono" data-no-i18n="1">${esc(r.date ? fmtDateDMY(r.date) : '')}</td>
         <td dir="auto" data-no-i18n="1">${esc(r.party || '')}</td>
         <td class="r mono" data-no-i18n="1">${esc(fmtUSD(r.from, 2))}</td>
         <td class="r mono" data-no-i18n="1">${isKept ? esc(fmtUSD(r.from, 2)) : esc(fmtUSD(r.to, 2))}</td>
-        <td class="r mono" data-no-i18n="1">${isKept ? '' : esc(fmtImpactSigned(r.to - r.from))}</td>
-        <td>${isKept ? '<span class="rate-impact-tag is-kept">Typed Price, Kept</span>' : (r.kind === 'cost' ? '<span class="rate-impact-tag">Cost</span>' : '')}</td>
+        <td class="r mono" data-no-i18n="1">${isKept ? (r.lock && Math.abs(r.to - r.from) >= 0.005 ? `<span class="rate-impact-unbilled">${esc(fmtImpactSigned(r.to - r.from))}</span>` : '') : esc(fmtImpactSigned(r.to - r.from))}</td>
+        <td>${isKept
+          ? (r.lock
+            ? `<span class="rate-impact-tag is-sent"><span>On a Sent Statement</span> <span data-no-i18n="1">${esc(fmtDateDMY(r.lock))}</span></span>`
+            : '<span class="rate-impact-tag is-kept">Typed Price, Kept</span>')
+          : (r.kind === 'cost' ? '<span class="rate-impact-tag">Cost</span>' : '')}</td>
       </tr>`).join('');
     const shown = (rows || []).length + (kept || []).length;
     const more = Math.max(0, Number(total || 0) - shown);
@@ -71835,6 +72242,11 @@
     if (sum.n - sum.costN > 0 || Math.abs(sum.delta) >= 0.005) facts.push(fact('Net Change', fmtImpactSigned(sum.delta), sum.delta < -0.004 ? 'is-neg' : (sum.delta > 0.004 ? 'is-pos' : '')));
     if (sum.costN > 0) facts.push(fact('Costs Updated', `${fmtNum(sum.costN, 0)} (${fmtImpactSigned(sum.costDelta)})`));
     facts.push(fact('Records Keeping a Typed Price', fmtNum(sum.keptN, 0), sum.keptN > 0 ? 'is-kept' : ''));
+    if (sum.lockedN > 0) {
+      facts.push(fact('Records on a Sent Statement, Left As They Are', fmtNum(sum.lockedN, 0), 'is-sent'));
+      if (Math.abs(sum.lockedDelta) >= 0.005) facts.push(fact('Difference to Bill or Credit Next Statement', fmtImpactSigned(sum.lockedDelta), 'is-sent'));
+      if (Math.abs(sum.lockedCostDelta || 0) >= 0.005) facts.push(fact('Cost Difference on Sent Supplier Statements', fmtImpactSigned(sum.lockedCostDelta), 'is-sent'));
+    }
     return `<dl class="rate-impact-facts">${facts.join('')}</dl>`;
   }
   // Shows what a rate change (mode 'save') or its undo (mode 'undo') does, before anything is written for good.
@@ -71891,6 +72303,7 @@
           </div>
           ${rateImpactFactsHtml(sum, kept ? { newFrom: kept.newFrom, keptTo: kept.to } : null, isPeriodOnly)}
           ${sum.keptN > 0 ? '<p class="rate-impact-note">A price typed on a record is never changed by a rate change or by its undo.</p>' : ''}
+          ${sum.lockedN > 0 ? '<p class="rate-impact-note is-sent">Records on a statement already sent to the customer or supplier are not changed. The difference is listed so it can go on the next statement.</p>' : ''}
           ${(impact.rows.length || impact.kept.length) ? `
             <details class="rate-impact-details" id="rateImpactDetails">
               <summary><span>See the Records</span> <b data-no-i18n="1">(${fmtNum(impact.rows.length + impact.kept.length, 0)})</b></summary>
@@ -71946,6 +72359,289 @@
       }
       const okBtn = overlay.querySelector('#rateImpactOkBtn');
       if (okBtn) { try { okBtn.focus({ preventScroll: true }); } catch (_) {} }
+    });
+  }
+
+  // ── Rate Changes: one Owner page for every rate change and undo (owner 2026-11-20) ───────────────────────────────
+  // Lists, across the six industries, each change to a price agreement or schedule that moved money, each undo and
+  // each restore, with what it did: records re-priced, net change, typed prices kept, records left on sent statements
+  // and the difference not billed. Read from what the schedules keep (`_impact`, `_undo_impact`), so a change still
+  // shows after its undo. Two alerts: a change that moved more than a set amount (Owner setting, $1,000 by default)
+  // and a change undone within a day. An alert stays on the Sentinels hub badge until the Owner marks it reviewed.
+  const RATE_CHANGE_TABLES = ['price_rules', 'hsp_tariffs', 're_leases', 'trd_targets', 'ins_agreements', 'hld_partners', 'hld_loans'];
+  const RATE_CHANGE_IND = {
+    price_rules: 'Manufacturing', hsp_tariffs: 'Hospitality', re_leases: 'Real Estate', trd_targets: 'Trading',
+    ins_agreements: 'Insurance', hld_partners: 'Holding', hld_loans: 'Holding'
+  };
+  // Industry order by frequency (hard rule 11)
+  const RATE_CHANGE_IND_ORDER = ['Manufacturing', 'Hospitality', 'Real Estate', 'Trading', 'Insurance', 'Holding'];
+  const RATE_CHANGE_KIND = {
+    price_rules: 'Price Agreement', hsp_tariffs: 'Tariff', re_leases: 'Lease Rent', trd_targets: 'Price Target',
+    ins_agreements: 'Commission Agreement', hld_partners: 'Partner Share', hld_loans: 'Loan Rate'
+  };
+  const RATE_CHANGE_DEFAULT_ALERT_USD = 1000;
+  const RATE_CHANGE_DAY_MS = 24 * 3600 * 1000;
+  function canViewRateChanges(u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!usr || usr.status === 'Suspended') return false;
+    return resolveCanonicalRoleKey(usr.role || '') === 'Full Access (Owner)';
+  }
+  function rateChangeAlertUsd() {
+    const w = (typeof getIndustryWorkflowPatch === 'function') ? getIndustryWorkflowPatch('rate_change_settings', 'alert') : null;
+    const v = w ? Number(w.usd) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : RATE_CHANGE_DEFAULT_ALERT_USD;
+  }
+  const _rcIso = v => { const t = Date.parse(String(v || '')); return Number.isFinite(t) ? t : NaN; };
+  function rateChangeScheduleLabel(fk, r) {
+    const j = arr => arr.map(x => String(x || '').trim()).filter(Boolean).join(' · ');
+    if (fk === 'price_rules') {
+      const rate = Number(r.unit_price ?? r.price ?? r.trans_unit_price ?? r.trans_price ?? 0);
+      return { name: j([r.rule_type, r.customer || r.supplier || r.site, r.product]), rate: rate ? fmtUSD(rate, 2) : '' };
+    }
+    const name = fk === 'ins_agreements' ? j([r.carrier, r.line])
+      : fk === 're_leases' ? j([r.property, r.unit, r.tenant])
+        : fk === 'trd_targets' ? j([r.category || r.segment])
+          : fk === 'hsp_tariffs' ? j([r.tier])
+            : fk === 'hld_partners' ? j([String(r.entity || '').split('·')[0], r.partner])
+              : j([r.lender]);
+    let rate = '';
+    try { rate = _sibRateLabel(fk, r); } catch (_) { rate = ''; }
+    return { name, rate };
+  }
+  // Every event, newest first. Each: { key, fk, industry, company, id, name, rate, action ('change'|'undo'|'restore'),
+  // at (ms), by, imp (the kept impact), quickUndo, big, alert, reviewed }
+  let _rateChangeCache = null;
+  function collectRateChangeEvents() {
+    const sibStore = (typeof getIndustryCustomRowsStore === 'function' && getIndustryCustomRowsStore()) || {};
+    const editStore = (typeof getIndustryRowEditStore === 'function' && getIndustryRowEditStore()) || {};
+    const prSeed = (SEED && SEED.records && Array.isArray(SEED.records.price_rules)) ? SEED.records.price_rules : [];
+    const prCust = (STATE.customRecords && Array.isArray(STATE.customRecords.price_rules)) ? STATE.customRecords.price_rules : [];
+    const sig = [prSeed.length, prCust.length, SEED && SEED._customRev, Object.keys(sibStore).map(k => (sibStore[k] || []).length).join('.'), Object.keys(editStore).length, STATE._watermarkRev || 0].join('|');
+    const now = Date.now();
+    if (_rateChangeCache && _rateChangeCache.sig === sig && _rateChangeCache.sibStore === sibStore && now - _rateChangeCache.at < 4000) return _rateChangeCache.events;
+    const alertUsd = rateChangeAlertUsd();
+    const events = [];
+    const seenEv = new Set();
+    const rowsOf = fk => {
+      if (fk !== 'price_rules') return (Array.isArray(sibStore[fk]) ? sibStore[fk] : []);
+      const byId = new Map();
+      prSeed.forEach(r => { if (r && r.id) byId.set(String(r.id), r); });
+      prCust.forEach(r => { if (r && r.id) byId.set(String(r.id), Object.assign({}, byId.get(String(r.id)) || {}, r)); });
+      return Array.from(byId.values());
+    };
+    RATE_CHANGE_TABLES.forEach(fk => {
+      rowsOf(fk).forEach(r => {
+        if (!r || typeof r !== 'object') return;
+        const id = String(r.id || r.code || '').trim();
+        if (!id) return;
+        const imp = (r._impact && typeof r._impact === 'object') ? r._impact : null;
+        const isUndone = fk === 'price_rules' ? Boolean(r.voided) : Boolean(r.voided && r._scheduleVoided);
+        const undoImp = (r._undo_impact && typeof r._undo_impact === 'object') ? r._undo_impact : null;
+        // The schedule's log (every change, undo and restore), plus what it carries from before the log existed
+        const log = (Array.isArray(r._impact_log) ? r._impact_log : []).filter(e => e && e.a && e.at).map(e => Object.assign({}, e));
+        const has = (a, at) => log.some(e => e.a === a && e.at === at);
+        const fromPacked = (a, p) => ({ a, at: String(p.at || ''), by: String(p.by || ''), n: Number(p.n || 0), d: Number(p.delta_usd || 0), cn: Number(p.cost_n || 0), cd: Number(p.cost_delta_usd || 0), k: Number(p.kept_n || 0), l: Number(p.locked_n || 0), ld: Number(p.locked_delta_usd || 0) });
+        if (imp && imp.at && !has(imp.restored ? 'restore' : 'change', String(imp.at))) log.push(fromPacked(imp.restored ? 'restore' : 'change', imp));
+        if (undoImp && undoImp.at && !has('undo', String(undoImp.at))) log.push(fromPacked('undo', undoImp));
+        if (isUndone && !undoImp && log.length && !log.some(e => e.a === 'undo') && r.voided_at) {
+          log.push({ a: 'undo', at: String(r.voided_at), by: String(r.voided_by || ''), n: 0, d: 0, cn: 0, cd: 0, k: 0, l: 0, ld: 0 });
+        }
+        if (!log.length) return;
+        log.sort((a, b) => (_rcIso(a.at) || 0) - (_rcIso(b.at) || 0));
+        // Undone within a day: an undo and the change it undid (the latest change or restore before it)
+        log.forEach((e, i) => {
+          if (e.a !== 'undo') return;
+          const ut = _rcIso(e.at);
+          for (let j = i - 1; j >= 0; j--) {
+            if (log[j].a === 'undo') break;
+            const ct = _rcIso(log[j].at);
+            if (Number.isFinite(ut) && Number.isFinite(ct) && ut >= ct && ut - ct < RATE_CHANGE_DAY_MS) { e.quick = true; log[j].quick = true; }
+            break;
+          }
+        });
+        const lbl = rateChangeScheduleLabel(fk, r);
+        const base = { fk, industry: RATE_CHANGE_IND[fk], company: String(r.company || r.entity || '').split('·')[0].trim(), id, name: lbl.name, rate: lbl.rate };
+        log.forEach(e => {
+          // A copy of a schedule (a new period built from it) may carry the same log: each event once
+          const ek = `${fk}::${e.a}::${e.at}`;
+          if (seenEv.has(ek)) return;
+          seenEv.add(ek);
+          // The records themselves are kept for the latest change and the latest undo only
+          const full = (imp && String(imp.at) === e.at && e.a !== 'undo') ? imp : ((undoImp && String(undoImp.at) === e.at && e.a === 'undo') ? undoImp : null);
+          const ev = {
+            n: e.n, delta_usd: e.d, cost_n: e.cn, cost_delta_usd: e.cd, kept_n: e.k, locked_n: e.l, locked_delta_usd: e.ld,
+            rows: full ? full.rows : null, kept: full ? full.kept : null
+          };
+          const moved = Math.max(Math.abs(e.d), Math.abs(e.cd), Math.abs(e.ld));
+          events.push(Object.assign({}, base, {
+            key: ek, action: e.a, at: _rcIso(e.at), by: e.by, imp: ev, big: moved >= alertUsd, quickUndo: Boolean(e.quick)
+          }));
+        });
+      });
+    });
+    events.forEach(e => {
+      e.alert = Boolean(e.big || e.quickUndo);
+      const rv = e.alert ? getIndustryWorkflowPatch('rate_change_review', e.key) : null;
+      e.reviewed = Boolean(rv && rv.reviewed_at);
+      e.reviewedBy = rv ? String(rv.reviewed_by || '') : '';
+    });
+    events.sort((a, b) => (Number.isFinite(b.at) ? b.at : 0) - (Number.isFinite(a.at) ? a.at : 0));
+    _rateChangeCache = { sig, sibStore, at: now, events };
+    return events;
+  }
+  // Open alerts of the last 30 days (Sentinels hub badge)
+  // The sidebar and tab badges never work the list out while a screen paints (performance budget): the count is
+  // worked out when the browser is idle and kept until a change, a review or the alert amount moves it (or a minute
+  // passes); the Rate Changes page refreshes it as it renders. `fresh`: work it out now (the gate).
+  let _rateChangeRev = 0;
+  const _rcBadgeState = { rev: -1, at: 0, n: 0, pending: false };
+  function countOpenRateChangeAlerts(events) {
+    const since = Date.now() - 30 * RATE_CHANGE_DAY_MS;
+    return (events || collectRateChangeEvents()).filter(e => e.alert && !e.reviewed && Number.isFinite(e.at) && e.at >= since).length;
+  }
+  function getRateChangeExceptionBadge(u, fresh) {
+    if (!canViewRateChanges(u)) return null;
+    let n = 0;
+    const st = _rcBadgeState;
+    if (fresh) {
+      try { n = countOpenRateChangeAlerts(); } catch (_) { n = 0; }
+    } else {
+      if ((st.rev !== _rateChangeRev || Date.now() - st.at > 60000) && !st.pending) {
+        st.pending = true;
+        const run = () => {
+          const rev = _rateChangeRev;
+          try { st.n = countOpenRateChangeAlerts(); } catch (_) { st.n = 0; }
+          st.rev = rev;
+          st.at = Date.now();
+          st.pending = false;
+        };
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 5000 });
+        else setTimeout(run, 1500);
+      }
+      n = st.n;
+    }
+    return n > 0 ? { text: `${fmtNum(n)} Alert${n === 1 ? '' : 's'}`, cls: 'warn', targetView: 'rate_changes' } : null;
+  }
+  function renderRateChangesView() {
+    const u = activeUser();
+    if (!canViewRateChanges(u)) return `<div class="card"><p class="muted">This page is for the Owner.</p></div>`;
+    const all = collectRateChangeEvents();
+    // The badges read the count worked out here
+    try { _rcBadgeState.n = countOpenRateChangeAlerts(all); _rcBadgeState.rev = _rateChangeRev; _rcBadgeState.at = Date.now(); } catch (_) {}
+    const fInd = RATE_CHANGE_IND_ORDER.includes(STATE.rateChangesInd) ? STATE.rateChangesInd : '';
+    const onlyAlerts = STATE.rateChangesOnlyAlerts === true;
+    const list = all.filter(e => (!fInd || e.industry === fInd) && (!onlyAlerts || e.alert));
+    const since = Date.now() - 30 * RATE_CHANGE_DAY_MS;
+    const recent = all.filter(e => Number.isFinite(e.at) && e.at >= since && (!fInd || e.industry === fInd));
+    const net30 = round2(recent.reduce((a, e) => a + Number((e.imp && e.imp.delta_usd) || 0), 0));
+    const openAlerts = all.filter(e => e.alert && !e.reviewed && (!fInd || e.industry === fInd)).length;
+    const unbilled = round2(recent.reduce((a, e) => a + Number((e.imp && e.imp.locked_delta_usd) || 0), 0));
+    const alertUsd = rateChangeAlertUsd();
+    const indCounts = {};
+    all.forEach(e => { indCounts[e.industry] = (indCounts[e.industry] || 0) + 1; });
+    const kpi = (lbl, val, cls) => `<div class="rc-kpi${cls ? ' ' + cls : ''}"><span class="rc-kpi-lbl">${lbl}</span><b data-no-i18n="1">${esc(val)}</b></div>`;
+    const actLbl = { change: 'Change', undo: 'Undo', restore: 'Restore' };
+    const shown = list.slice(0, 300);
+    const rowsHtml = shown.map((e, i) => {
+      const imp = e.imp || {};
+      const billedN = Math.max(0, Number(imp.n || 0) - Number(imp.cost_n || 0));
+      const alerts = [];
+      if (e.big) alerts.push('<span class="rc-flag is-big">Large Change</span>');
+      if (e.quickUndo) alerts.push('<span class="rc-flag is-quick">Undone Within a Day</span>');
+      const hasRecs = (Array.isArray(imp.rows) && imp.rows.length) || (Array.isArray(imp.kept) && imp.kept.length);
+      return `
+        <tr class="rc-row is-${e.action}${e.alert && !e.reviewed ? ' has-alert' : ''}">
+          <td class="mono" data-no-i18n="1">${Number.isFinite(e.at) ? esc(fmtDateDMY(new Date(e.at).toISOString().slice(0, 10))) + ' ' + esc(new Date(e.at).toISOString().slice(11, 16)) : ''}</td>
+          <td><span>${esc(e.industry)}</span>${e.company ? `<div class="rc-sub" data-no-i18n="1">${esc(e.company)}</div>` : ''}</td>
+          <td><span>${esc(RATE_CHANGE_KIND[e.fk] || 'Schedule')}</span><div class="rc-sub" dir="auto" data-no-i18n="1">${esc(e.name || e.id)}${e.rate ? ' · ' + esc(e.rate) : ''}</div></td>
+          <td><span class="rc-act is-${e.action}">${actLbl[e.action]}</span></td>
+          <td class="r mono" data-no-i18n="1">${fmtNum(billedN, 0)}${Number(imp.cost_n || 0) ? ` <span class="rc-sub">+${fmtNum(imp.cost_n, 0)}</span>` : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Math.abs(Number(imp.delta_usd || 0)) >= 0.005 ? esc(fmtImpactSigned(imp.delta_usd)) : ''}${Math.abs(Number(imp.cost_delta_usd || 0)) >= 0.005 ? `<div class="rc-sub">${esc(fmtImpactSigned(imp.cost_delta_usd))}</div>` : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Number(imp.kept_n || 0) ? fmtNum(imp.kept_n, 0) : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Number(imp.locked_n || 0) ? `${fmtNum(imp.locked_n, 0)}${Math.abs(Number(imp.locked_delta_usd || 0)) >= 0.005 ? ` <span class="rate-impact-unbilled">(${esc(fmtImpactSigned(imp.locked_delta_usd))})</span>` : ''}` : ''}</td>
+          <td dir="auto" data-no-i18n="1">${esc(e.by || '')}</td>
+          <td>${alerts.join(' ')}${e.alert ? (e.reviewed
+            ? `<div class="rc-sub"><span>Reviewed</span>${e.reviewedBy ? ` <span data-no-i18n="1">· ${esc(e.reviewedBy)}</span>` : ''}</div>`
+            : ` <button type="button" class="btn btn-xs btn-outline" data-rc-act="review" data-rc-key="${esc(encodeURIComponent(e.key))}">Mark Reviewed</button>`) : ''}</td>
+        </tr>
+        ${hasRecs ? `<tr class="rc-recs"><td colspan="10"><details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0) + Number(imp.locked_n || 0))}</details></td></tr>` : ''}`;
+    }).join('');
+    return `
+      <div class="rc-page" id="rateChangesPage">
+        <div class="card rc-head">
+          <div class="rc-head-top">
+            <div>
+              <h2 class="rc-title">Rate Changes</h2>
+              <p class="rc-lead">Every rate change and undo across the six industries, with the money it moved. An undone change stays listed.</p>
+            </div>
+            <label class="rc-threshold">
+              <span>Alert when a change moves more than</span>
+              <span class="rc-threshold-in"><span data-no-i18n="1">$</span><input type="number" min="1" step="1" inputmode="numeric" id="rcAlertUsdInput" value="${esc(String(Math.round(alertUsd)))}" aria-label="Alert amount in dollars"></span>
+            </label>
+          </div>
+          <div class="rc-kpis">
+            ${kpi('Changes, Last 30 Days', fmtNum(recent.filter(e => e.action !== 'undo').length, 0))}
+            ${kpi('Undos, Last 30 Days', fmtNum(recent.filter(e => e.action === 'undo').length, 0))}
+            ${kpi('Net Change, Last 30 Days', fmtImpactSigned(net30), net30 < -0.004 ? 'is-neg' : (net30 > 0.004 ? 'is-pos' : ''))}
+            ${kpi('Not Billed on Sent Statements', fmtImpactSigned(unbilled), Math.abs(unbilled) >= 0.005 ? 'is-sent' : '')}
+            ${kpi('Open Alerts', fmtNum(openAlerts, 0), openAlerts > 0 ? 'is-alert' : '')}
+          </div>
+          <div class="rc-filters" role="group" aria-label="Filter rate changes">
+            <button type="button" class="rc-chip${!fInd ? ' on' : ''}" data-rc-act="ind" data-rc-ind=""><span>All Industries</span> <b data-no-i18n="1">${fmtNum(all.length, 0)}</b></button>
+            ${RATE_CHANGE_IND_ORDER.filter(ind => indCounts[ind]).map(ind => `<button type="button" class="rc-chip${fInd === ind ? ' on' : ''}" data-rc-act="ind" data-rc-ind="${esc(ind)}"><span>${esc(ind)}</span> <b data-no-i18n="1">${fmtNum(indCounts[ind], 0)}</b></button>`).join('')}
+            <button type="button" class="rc-chip is-alerts${onlyAlerts ? ' on' : ''}" data-rc-act="alerts" aria-pressed="${onlyAlerts ? 'true' : 'false'}"><span>Alerts Only</span></button>
+          </div>
+        </div>
+        <div class="card rc-table-card">
+          ${shown.length ? `
+            <div class="rc-table-wrap">
+              <table class="rc-table">
+                <thead><tr>
+                  <th>When</th><th>Industry</th><th>Schedule</th><th>Action</th><th class="r">Re-priced</th><th class="r">Net Change</th>
+                  <th class="r">Typed Kept</th><th class="r">On Sent Statements</th><th>By</th><th>Alert</th>
+                </tr></thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+            ${list.length > shown.length ? `<div class="rate-impact-more"><span>More records not listed</span> <b data-no-i18n="1">${fmtNum(list.length - shown.length, 0)}</b></div>` : ''}`
+          : `<p class="rc-empty">${onlyAlerts ? 'No alert to review.' : 'No rate change has moved money yet.'}</p>`}
+        </div>
+      </div>`;
+  }
+  function wireRateChangesOnce() {
+    if (window.__rcWired) return;
+    window.__rcWired = true;
+    document.addEventListener('click', ev => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('#rateChangesPage [data-rc-act]') : null;
+      if (!btn) return;
+      const act = btn.getAttribute('data-rc-act');
+      if (act === 'ind') {
+        STATE.rateChangesInd = btn.getAttribute('data-rc-ind') || '';
+      } else if (act === 'alerts') {
+        STATE.rateChangesOnlyAlerts = !STATE.rateChangesOnlyAlerts;
+      } else if (act === 'review') {
+        if (!canViewRateChanges(activeUser())) return;
+        let key = '';
+        try { key = decodeURIComponent(btn.getAttribute('data-rc-key') || ''); } catch (_) { key = ''; }
+        if (!key) return;
+        const au = activeUser() || {};
+        saveIndustryWorkflowPatch('rate_change_review', key, { reviewed_at: new Date().toISOString(), reviewed_by: String(au.full_name || au.name || au.email || '').trim().slice(0, 120) });
+        _rateChangeCache = null; _rateChangeRev++;
+        if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      } else return;
+      ev.preventDefault();
+      renderApp();
+    });
+    document.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (!inp || inp.id !== 'rcAlertUsdInput' || !canViewRateChanges(activeUser())) return;
+      const v = Math.round(Number(inp.value));
+      if (!(v > 0)) { inp.value = String(Math.round(rateChangeAlertUsd())); return; }
+      saveIndustryWorkflowPatch('rate_change_settings', 'alert', { usd: v });
+      _rateChangeCache = null; _rateChangeRev++;
+      if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      toast('Alert amount saved.', 'ok');
+      renderApp();
     });
   }
 
@@ -72007,7 +72703,7 @@
   }
   function siblingPeriodsStripHtml(fk, row, primaryId, canUndo) {
     const periods = listSiblingSchedulePeriods(fk, row, primaryId);
-    const saysSomething = i => Boolean(i && (Number(i.n || 0) > 0 || Number(i.kept_n || 0) > 0));
+    const saysSomething = i => Boolean(i && (Number(i.n || 0) > 0 || Number(i.kept_n || 0) > 0 || Number(i.locked_n || 0) > 0));
     if (periods.length < 2 && !(periods[0] && (saysSomething(periods[0].row._impact) || saysSomething(periods[0].row._undo_impact)))) return '';
     const stateLbl = { closed: 'Closed', inforce: 'In Force', scheduled: 'Scheduled', undone: 'Undone' };
     const liveOnes = periods.filter(p => !p.voided);
@@ -72016,18 +72712,19 @@
       if (!imp || typeof imp !== 'object') return '';
       const billedN = Math.max(0, Number(imp.n || 0) - Number(imp.cost_n || 0));
       // Nothing re-priced and nothing kept (only figures noted as typed at the rate): no line
-      if (!Number(imp.n || 0) && !Number(imp.kept_n || 0)) return '';
+      if (!Number(imp.n || 0) && !Number(imp.kept_n || 0) && !Number(imp.locked_n || 0)) return '';
       const bits = [];
       bits.push(`<span class="ind-per-imp-part"><span>${isUndo ? 'Undo Put Back' : 'Re-priced'}</span> <b data-no-i18n="1">${fmtNum(billedN, 0)}</b></span>`);
       if (Math.abs(Number(imp.delta_usd || 0)) >= 0.005) bits.push(`<span class="ind-per-imp-part"><span>Net Change</span> <b data-no-i18n="1">${esc(fmtImpactSigned(imp.delta_usd))}</b></span>`);
       if (Number(imp.cost_n || 0) > 0) bits.push(`<span class="ind-per-imp-part"><span>Costs Updated</span> <b data-no-i18n="1">${fmtNum(imp.cost_n, 0)}</b></span>`);
       if (Number(imp.kept_n || 0) > 0) bits.push(`<span class="ind-per-imp-part is-kept"><span>Typed Price Kept</span> <b data-no-i18n="1">${fmtNum(imp.kept_n, 0)}</b></span>`);
+      if (Number(imp.locked_n || 0) > 0) bits.push(`<span class="ind-per-imp-part is-sent"><span>Left on Sent Statements</span> <b data-no-i18n="1">${fmtNum(imp.locked_n, 0)}${Math.abs(Number(imp.locked_delta_usd || 0)) >= 0.005 ? ' (' + esc(fmtImpactSigned(imp.locked_delta_usd)) + ')' : ''}</b></span>`);
       const when = imp.at ? fmtDateDMY(String(imp.at).slice(0, 10)) : '';
       const hasRows = (Array.isArray(imp.rows) && imp.rows.length) || (Array.isArray(imp.kept) && imp.kept.length);
       return `
         <div class="ind-per-impact${isUndo ? ' is-undo' : ''}">
           <div class="ind-per-imp-line">${bits.join('')}${when ? `<span class="ind-per-imp-when" data-no-i18n="1">${esc(when)}${imp.by ? ' · ' + esc(imp.by) : ''}</span>` : ''}</div>
-          ${hasRows ? `<details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0))}</details>` : ''}
+          ${hasRows ? `<details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0) + Number(imp.locked_n || 0))}</details>` : ''}
         </div>`;
     };
     return `
@@ -75159,7 +75856,7 @@
         const impSig = `${spec.key}|${recId}|${keptSplit ? keptSplit.newFrom : ''}|${impSum.sig}`;
         // Asked only when the save changes something: a new period, or at least one record re-priced. Typed prices
         // that merely stay are noted on the schedule (its periods strip), without stopping the person.
-        if ((keptSplit || impSum.n > 0) && formEl._rateImpactOkSig !== impSig) {
+        if ((keptSplit || impSum.n > 0 || impSum.lockedN > 0) && formEl._rateImpactOkSig !== impSig) {
           STATE.industryCustomRows = prevModalCustomSnap;
           saveIndustryCustomRowsStore({ skipServerPost: true });
           STATE.industryRowEdits = prevModalEditsSnap;
@@ -88237,7 +88934,7 @@
           if (drawerImpact && !domGeoPromises.length) {
             const dSum = summarizeSiblingRepriceImpact(drawerImpact);
             const dSig = `${fk}|${upd.id}|${drawerSplit ? drawerSplit.kept.newFrom : ''}|${dSum.sig}`;
-            if ((drawerSplit || dSum.n > 0) && inspRateImpactOkSig !== dSig) {
+            if ((drawerSplit || dSum.n > 0 || dSum.lockedN > 0) && inspRateImpactOkSig !== dSig) {
               STATE.industryRowEdits = prevRowEditsSnap;
               saveIndustryRowEditStore(prevRowEditsSnap, { skipServerPost: true });
               STATE.industryCustomRows = prevCustomRowsSnap;
@@ -88544,6 +89241,7 @@
                 const tomb = (getIndustryCustomRowsStore()[fk] || []).find(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === tombUp);
                 if (tomb) {
                   tomb._undo_impact = packSiblingRepriceImpact(voidImpact);
+                  appendImpactLog(tomb, tomb._undo_impact, 'undo', false);
                   saveIndustryCustomRowsStore({ skipServerPost: true });
                 }
               }
@@ -88625,7 +89323,7 @@
           if (voidImpact && !domVoidGeoPromises.length) {
             const vSum = summarizeSiblingRepriceImpact(voidImpact);
             const vSig = `${voidFk}|${primaryId}|${vSum.sig}`;
-            if (vSum.n > 0 && voidRateImpactOkSig !== vSig) {
+            if ((vSum.n > 0 || vSum.lockedN > 0) && voidRateImpactOkSig !== vSig) {
               STATE.industryRowEdits = prevVoidEditsSnap;
               saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
               STATE.industryCustomRows = prevVoidCustomSnap;
@@ -116316,6 +117014,32 @@
           return;
         }
       }
+      // A price agreement save shows the exact tickets it re-prices before Post, as the other five industries do
+      // (owner 2026-11-20): worked out on a dry run, nothing written. The save runs again on the person's yes; a
+      // second dry run that finds other tickets (another device's change arrived meanwhile) asks again.
+      if (crKey === 'price_rules') {
+        const askedSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
+        const editOrigAsk = (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : null;
+        let pv = null;
+        try {
+          pv = previewMfgPriceRuleImpact(record, editOrigAsk, editOrigAsk ? { userChangedValue: entryModalUserChangedValue() } : undefined);
+        } catch (_) { pv = null; }
+        if (pv) {
+          const pvSum = summarizeSiblingRepriceImpact(pv.impact);
+          // (no record id in it: a new entry may get a fresh id on each run of the save)
+          const pvSig = `${pv.kept ? pv.kept.newFrom : ''}|${pvSum.sig}`;
+          if ((pv.kept || pvSum.n > 0 || pvSum.lockedN > 0) && askedSig !== pvSig) {
+            STATE.saving = false;
+            if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+            const nextOptsRi = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
+            nextOptsRi._rateImpactSig = pvSig;
+            nextOptsRi._keptPeriodOk = true;
+            promptRateChangeImpact({ mode: 'save', impact: pv.impact, kept: pv.kept, isNew: !isEditingExisting })
+              .then(okRi => { if (okRi) saveModalEntry(nextOptsRi); });
+            return;
+          }
+        }
+      }
       // A dated row saved from a later day with another value starts a new period (the earlier one stays as its own
       // entry). The person is told before anything is changed (owner 2026-11-20), and the save runs on their yes.
       if (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig
@@ -117065,7 +117789,8 @@
         if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.length)) {
           record._impact = packSiblingRepriceImpact(mfgRateImpactModal, keptPeriodModal ? { kept_to: keptPeriodModal.to, new_from: keptPeriodModal.newFrom } : null);
           const cImp = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(record.id)) : null;
-          if (cImp && cImp !== record) cImp._impact = record._impact;
+          if (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock)) appendImpactLog(record, record._impact, 'change', true);
+          if (cImp && cImp !== record) { cImp._impact = record._impact; if (record._impact_log) cImp._impact_log = record._impact_log; }
         }
         applyCustomRecordsToSeed();
       }
@@ -117255,8 +117980,11 @@
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
-      if (mfgRateImpactModal && mfgRateImpactModal.rows.length) {
-        promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
+      if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock))) {
+        // Already shown before Post: the report comes back only when the save found something else
+        const shownSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
+        const doneSig = `${keptPeriodModal ? keptPeriodModal.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactModal).sig}`;
+        if (!shownSig || shownSig !== doneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
       }
       renderApp();
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
@@ -117888,6 +118616,7 @@
     applyCustomRecordsToSeed();
     const restoredRow = r || cleanSeed || archivedSeed;
     const isEffRestoredTbl = restoredRow ? isEffectiveSeriesTable(crKey, restoredRow) : false;
+    let mfgRestoreImpact = null;
     let touchedRestorePeers = [];
     if (canModifyData()) {
       if (restoredRow && isEffRestoredTbl && restoredRow.start_date) {
@@ -117895,7 +118624,22 @@
         applyCustomRecordsToSeed();
       }
       if (restoredRow && (isEffRestoredTbl || crKey === 'products')) {
-        backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers });
+        // A price agreement brought back: what it re-priced and which tickets it left (typed, or on a sent statement)
+        // is kept on it, logged for Rate Changes and shown once the restore is done
+        mfgRestoreImpact = crKey === 'price_rules' ? newSiblingRepriceImpact() : null;
+        backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers, impact: mfgRestoreImpact });
+        if (mfgRestoreImpact && (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.length)) {
+          restoredRow._impact = packSiblingRepriceImpact(mfgRestoreImpact, { restored: true });
+          restoredRow._undo_impact = null;
+          if (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.some(x => x && x.lock)) appendImpactLog(restoredRow, restoredRow._impact, 'restore', true);
+          const cRest = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(restoredRow.id)) : null;
+          [r, cleanSeed, archivedSeed, cRest].forEach(x => {
+            if (!x || x === restoredRow) return;
+            x._impact = restoredRow._impact;
+            x._undo_impact = null;
+            if (restoredRow._impact_log) x._impact_log = restoredRow._impact_log;
+          });
+        }
         applyCustomRecordsToSeed();
       }
     }
@@ -117903,6 +118647,9 @@
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
     toast(bpRestorePeers.length ? 'Record restored, with the back-pay rows of this salary voucher' : '✓ Record restored · ' + label, 'ok');
+    if (mfgRestoreImpact && (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.some(x => x && x.lock))) {
+      promptRateChangeImpact({ mode: 'result', impact: mfgRestoreImpact });
+    }
 
     const mainRestoreTarget = r || cleanSeed;
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig() && !siteSplitReset);
@@ -118293,7 +119040,8 @@
         voidedTarget._undo_impact = packSiblingRepriceImpact(mfgUndoImpact);
         // every copy of the voided agreement carries it (the working row, the device copy, the one that is sent)
         const cUndo = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(voidedTarget.id)) : null;
-        [r, seedRow, cUndo].forEach(x => { if (x && x !== voidedTarget) x._undo_impact = voidedTarget._undo_impact; });
+        if (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock)) appendImpactLog(voidedTarget, voidedTarget._undo_impact, 'undo', true);
+        [r, seedRow, cUndo].forEach(x => { if (x && x !== voidedTarget) { x._undo_impact = voidedTarget._undo_impact; if (voidedTarget._impact_log) x._impact_log = voidedTarget._impact_log; } });
       }
       applyCustomRecordsToSeed();
     }
@@ -118308,7 +119056,7 @@
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
     toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
-    if (mfgUndoImpact && mfgUndoImpact.rows.length) {
+    if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock))) {
       promptRateChangeImpact({ mode: 'undo-result', impact: mfgUndoImpact });
     }
 
@@ -118658,7 +119406,7 @@
     toast('✓ Record restored · ' + (primaryId || editKey), 'ok');
     // What the restore re-priced is reported once the restore stands (after the server took it, where there is one)
     const tellRestoreImpact = () => {
-      if (restoreImpact && restoreImpact.rows.length) promptRateChangeImpact({ mode: 'result', impact: restoreImpact });
+      if (restoreImpact && (restoreImpact.rows.length || restoreImpact.kept.some(x => x && x.lock))) promptRateChangeImpact({ mode: 'result', impact: restoreImpact });
     };
 
     if (!hasServerApi() || isDemoScopeActive()) {
@@ -127163,6 +127911,8 @@
     const saveModBtn = $('inspSaveModifyBtn');
     // Set once the person has agreed that this save starts a new period (see the gate before the row is changed)
     let inspKeptPeriodOk = false;
+    // The tickets a price agreement change re-prices, already shown and confirmed (its signature), see below
+    let inspRateImpactSig = '';
     if (saveModBtn && modDrawer) {
       saveModBtn.addEventListener('click', async () => {
         if (!canUseInspModify) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
@@ -127456,6 +128206,29 @@
           }
           if (inspFxGuard.tier === 'warn') {
             toast(inspFxGuard.reason, 'warn');
+          }
+        }
+        // A price agreement change shows the exact tickets it re-prices before it is saved (owner 2026-11-20), as
+        // the entry form does: a dry run, nothing written; the save runs on the person's yes
+        if (key === 'price_rules' && row && !window.__fastInspectorModifyTest) {
+          let pvI = null;
+          try {
+            const inspChangedValRi = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
+            pvI = previewMfgPriceRuleImpact(Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedValRi });
+          } catch (_) { pvI = null; }
+          if (pvI) {
+            const pvISum = summarizeSiblingRepriceImpact(pvI.impact);
+            const pvISig = `${pvI.kept ? pvI.kept.newFrom : ''}|${pvISum.sig}`;
+            if ((pvI.kept || pvISum.n > 0 || pvISum.lockedN > 0) && inspRateImpactSig !== pvISig) {
+              promptRateChangeImpact({ mode: 'save', impact: pvI.impact, kept: pvI.kept }).then(okRi => {
+                if (!okRi) return;
+                inspRateImpactSig = pvISig;
+                inspKeptPeriodOk = true;
+                saveModBtn.click();
+              });
+              return;
+            }
           }
         }
         // A dated row saved from a later day with another value starts a new period (the earlier one stays as its
@@ -128440,7 +129213,8 @@
             if (mfgRateImpactInsp && (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.length)) {
               row._impact = packSiblingRepriceImpact(mfgRateImpactInsp, keptPeriodInsp ? { kept_to: keptPeriodInsp.to, new_from: keptPeriodInsp.newFrom } : null);
               const cImpI = Array.isArray(STATE.customRecords[key]) ? STATE.customRecords[key].find(x => x && String(x.id) === String(row.id)) : null;
-              if (cImpI && cImpI !== row) cImpI._impact = row._impact;
+              if (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.some(x => x && x.lock)) appendImpactLog(row, row._impact, 'change', true);
+              if (cImpI && cImpI !== row) { cImpI._impact = row._impact; if (row._impact_log) cImpI._impact_log = row._impact_log; }
             }
             applyCustomRecordsToSeed();
           }
@@ -128512,8 +129286,12 @@
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
           if (keptPeriodInsp) toast(chronoKeptPeriodToastText(keptPeriodInsp), 'ok');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
-          if (mfgRateImpactInsp && mfgRateImpactInsp.rows.length) {
-            promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactInsp, kept: keptPeriodInsp });
+          // Already shown before the save: the report comes back only when the save found something else
+          const inspShownSig = inspRateImpactSig;
+          inspRateImpactSig = '';
+          if (mfgRateImpactInsp && (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.some(x => x && x.lock))) {
+            const inspDoneSig = `${keptPeriodInsp ? keptPeriodInsp.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactInsp).sig}`;
+            if (!inspShownSig || inspShownSig !== inspDoneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactInsp, kept: keptPeriodInsp });
           }
         }
       });
@@ -137489,6 +138267,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -137611,6 +138390,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -140140,7 +140920,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect', void_log: 'defect',
+      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect', void_log: 'defect', rate_changes: 'defect',
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
@@ -172336,8 +173116,118 @@
     } catch (_) {}
   }
 
+  // ---- Two-step screen paint ---------------------------------------------------------------------------
+  // A hub screen is 5,000 to 12,000 elements and about a fifth of them are on the first screen. When a screen
+  // opens at its top, the blocks that start below the first screen are parked (content-visibility: hidden:
+  // the browser skips their style, layout and paint), the first screen is painted, and the parked blocks are
+  // released straight after that paint. Every block is in the page the whole time, so nothing a person or a
+  // program can read is missing: only the browser's own work on the lower blocks moves one frame later.
+  // They are released at once on any key, pointer, wheel, touch or scroll, before printing, and whenever the
+  // workspace is scrolled to something. Never parked: a block holding the cursor, a map, a camera or a canvas.
+  // Off with window.__MFG_TWO_STEP_OFF (the speed gate compares both ways).
+  // `var`, not const or let: a screen can be drawn while this file is still starting up, before these lines
+  // have run (see build/verify_boot_saved_scope.mjs). Until they have, _wsLaterSupported is undefined and
+  // nothing is parked.
+  var WS_LATER_CLASS = 'ws-later';
+  var WS_LATER_MIN_ELEMENTS = 2500;     // smaller screens paint fast enough whole
+  var WS_LATER_CHUNK_ELEMENTS = 3000;   // released per task, so a tap in between is not kept waiting
+  var WS_LATER_FOLD_MARGIN = 160;       // px below the screen edge that still count as the first screen
+  var WS_LATER_NEVER_SEL = 'video, canvas, iframe, [id*="map" i], [class*="map" i], [contenteditable="true"]';
+  // Chromium only for now (Chrome, Edge, the Android tablets): the screen is wired while its lower blocks are
+  // parked, and only Chromium has been checked to answer a measurement inside a parked block as if it were
+  // drawn. iPhone, iPad and Safari keep the one-step paint until that is checked on a real device.
+  var _wsLaterSupported = (() => {
+    try {
+      const ua = String((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+      const chromium = /\b(Chrome|Chromium|Edg)\//.test(ua) && !/\b(iPhone|iPad|iPod)\b|CriOS|EdgiOS|FxiOS/.test(ua);
+      return chromium && typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('content-visibility', 'hidden') && typeof requestAnimationFrame === 'function';
+    } catch (_) { return false; }
+  })();
+  var _wsLaterToken = 0;
+  var _wsLaterPending = false;
+  function releaseWorkspaceLaterBlocks() {
+    _wsLaterToken = (_wsLaterToken || 0) + 1;
+    _wsLaterPending = false;
+    const ws = $('workspace');
+    if (!ws) return 0;
+    const parked = ws.getElementsByClassName('ws-later');
+    let n = 0;
+    while (parked.length) { parked[0].classList.remove('ws-later'); n++; }
+    return n;
+  }
+  // Step 1, straight after the new screen is in the page and before anything has measured it.
+  function parkWorkspaceLaterBlocks(container, opensAtTop) {
+    _wsLaterToken = (_wsLaterToken || 0) + 1;
+    _wsLaterPending = false;
+    if (!container || !opensAtTop || !_wsLaterSupported || window.__MFG_TWO_STEP_OFF || STATE.kioskLocked) return false;
+    const kids = container.children;
+    if (kids.length < 3) return false;
+    const active = document.activeElement;
+    if (active && container.contains(active)) return false;          // someone is typing in this screen
+    if (container.getElementsByTagName('*').length < WS_LATER_MIN_ELEMENTS) return false;
+    let parked = 0;
+    for (let i = 1; i < kids.length; i++) {
+      const el = kids[i];
+      if (el.hidden || el.matches(WS_LATER_NEVER_SEL) || el.querySelector(WS_LATER_NEVER_SEL)) continue;
+      el.classList.add(WS_LATER_CLASS);
+      parked++;
+    }
+    return parked > 0;
+  }
+  // Step 2, when the screen is fully wired: the blocks that start on the first screen are released now, the
+  // rest right after the first paint.
+  function settleWorkspaceLaterBlocks(container) {
+    if (!container || !_wsLaterSupported) return;
+    const kids = Array.from(container.children);
+    if (!kids.some(el => el.classList.contains(WS_LATER_CLASS))) return;
+    const token = _wsLaterToken;
+    const fold = Math.min(container.getBoundingClientRect().top + container.clientHeight, window.innerHeight || Infinity) + WS_LATER_FOLD_MARGIN;
+    const waiting = [];
+    let belowFold = false;
+    for (const el of kids) {
+      if (!el.classList.contains(WS_LATER_CLASS)) continue;
+      if (!belowFold && el.getBoundingClientRect().top < fold) { el.classList.remove(WS_LATER_CLASS); continue; }
+      belowFold = true;
+      waiting.push(el);
+    }
+    if (!waiting.length) return;
+    _wsLaterPending = true;
+    let started = false;
+    const step = () => {
+      if (token !== _wsLaterToken) return;                           // a newer screen or an early release took over
+      let n = 0;
+      while (waiting.length && n < WS_LATER_CHUNK_ELEMENTS) {
+        const el = waiting.shift();
+        n += el.getElementsByTagName('*').length + 1;
+        el.classList.remove(WS_LATER_CLASS);
+      }
+      if (waiting.length) setTimeout(step, 0);
+      else _wsLaterPending = false;
+    };
+    const start = () => { if (started) return; started = true; step(); };
+    requestAnimationFrame(() => setTimeout(start, 0));
+    setTimeout(start, 200);                                          // a tab in the background gets no frames
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiTwoStepWired) {
+    window.__isabiTwoStepWired = true;
+    const releaseNow = () => { if (_wsLaterPending) releaseWorkspaceLaterBlocks(); };
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => window.addEventListener(type, releaseNow, { capture: true, passive: true }));
+    // A scroll counts only when the workspace (or the page around it) has moved away from its top. Opening a
+    // screen from one that was scrolled down sends a scroll event of its own (back to 0), and so does the
+    // sub-tab bar when its sideways position is put back: neither is a person scrolling.
+    document.addEventListener('scroll', e => {
+      if (!_wsLaterPending) return;
+      const ws = $('workspace');
+      const t = (e.target === document || e.target === window) ? document.scrollingElement : e.target;
+      if (!ws || !t || (t !== ws && !(typeof t.contains === 'function' && t.contains(ws)))) return;
+      if (t.scrollTop > 0) releaseWorkspaceLaterBlocks();
+    }, { capture: true, passive: true });
+    window.addEventListener('beforeprint', () => { releaseWorkspaceLaterBlocks(); });
+  }
+
   function scrollWorkspaceTo(el, padTop = 8) {
     if (!el) return;
+    if (_wsLaterPending) releaseWorkspaceLaterBlocks();
     const ws = $('workspace');
     if (ws && ws.contains(el)) {
       const wsRect = ws.getBoundingClientRect();
@@ -172356,6 +173246,7 @@
   }
   function renderAppPass() {
     STATE.renderPending = false;
+    _mapsQuotaSigBuilt = null;
     const popEl = $('mfgChartPopover');
     if (popEl && !popEl.hidden) popEl.hidden = true;
     lockShellScroll();
@@ -172590,6 +173481,7 @@
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
       case 'void_log': wsHtml = window.MFG_VOID_LOG ? window.MFG_VOID_LOG.renderView() : ''; break;
+      case 'rate_changes': wireRateChangesOnce(); wsHtml = renderRateChangesView(); break;
       case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
       case 'sales': wsHtml = renderSales(); break;
       case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
@@ -172707,7 +173599,9 @@
         !KIOSK_ATT_STATE.nightSleep &&
         !(KIOSK_ATT_STATE.blackFrameStreak > 0)
       );
+      const wsOpensAtTop = !wsScrollSnap && container.scrollTop === 0;
       setContainerHtmlPreservingActiveInput(container, wsHtml);
+      parkWorkspaceLaterBlocks(container, wsOpensAtTop);
       settleChartRowsAtPageBottom(container, STATE.view);
       wireChartToolsOnce();
       try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
@@ -172752,6 +173646,8 @@
       if (_uiTipObserver && document.body) {
         _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
       }
+      _mapsQuotaSigShown = _mapsQuotaSigBuilt || null;
+      try { settleWorkspaceLaterBlocks(container); } catch (err) { releaseWorkspaceLaterBlocks(); console.warn('two-step paint', err); }
     }
   }
 
@@ -176816,7 +177712,20 @@
     setView(target);
   }
 
+  var _navAckToken = 0;   // a sidebar tap waiting for its frame (openHubAfterAck); any setView moves it on
+  // How long each screen took to build the last time it was opened on this device. A tap on a hub whose screen
+  // builds quickly opens it in the same call (the highlight-first frame would only add 16 ms to it); a hub
+  // that took longer, or has not been opened yet, shows the highlight first.
+  var _viewRenderMs = {};
+  var NAV_ACK_MIN_MS = 80;
+  function navAckWanted(hubId) {
+    let v = '';
+    try { v = hubId === 'univ_rates' ? '' : resolveHubView(hubId === 'master' ? 'univ_parties' : hubId, activeUser()); } catch (_) { v = ''; }
+    const ms = v && _viewRenderMs ? _viewRenderMs[v] : undefined;
+    return !(typeof ms === 'number' && ms < NAV_ACK_MIN_MS);
+  }
   function setView(view, opts = {}) {
+    _navAckToken = (_navAckToken || 0) + 1;
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
@@ -176915,7 +177824,9 @@
     _preModalWorkspaceScope = '';
     const ws = $('workspace');
     if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
+    const _buildT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
     renderApp();
+    if (_buildT0 && _viewRenderMs) _viewRenderMs[view] = performance.now() - _buildT0;
     if (_scrollPaySal) {
       const pPanel = $('paySalPanel');
       if (pPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(pPanel, 10);
@@ -177944,15 +178855,35 @@
     window.addEventListener('resize', followPinnedChartPop, { passive: true });
     window.MFG_CHART_POP = { close: closeChartPopover, isHeld: chartPopHeld };
 
+    // A tap on the sidebar shows at once: the highlight moves in the very next frame and the screen is built
+    // straight after it, so a screen that takes a moment to build never leaves the tap looking ignored.
+    // A hub whose screen built in under 80 ms last time opens in the same call instead (navAckWanted).
+    // Only for a person's own tap (a script that calls click() gets the screen in the same call, as before).
+    // Any change of screen in between (Back, Global Search, the phone dock) moves _navAckToken in setView, so
+    // the tap that was waiting for its frame is dropped and never undoes it.
+    const openHubAfterAck = (btn, hubId) => {
+      const token = ++_navAckToken;
+      document.querySelectorAll('#sidebarNav .nav-item.on, #railSystemBar button.rail-sys-btn.on').forEach(b => { if (b !== btn) b.classList.remove('on'); });
+      btn.classList.add('on');
+      let done = false;
+      const run = () => { if (done || token !== _navAckToken) return; done = true; clickHub(hubId); };
+      requestAnimationFrame(() => setTimeout(run, 0));
+      setTimeout(run, 80);                                           // a tab in the background gets no frames
+    };
     document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', e => {
       const pill = e.target && e.target.closest ? e.target.closest('.nav-pill[data-target-view]') : null;
       const tv = pill ? String(pill.getAttribute('data-target-view') || '').trim() : '';
       if (tv && canViewView(tv)) {
         e.stopPropagation();
+        _navAckToken++;
         setView(tv);
         return;
       }
-      clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'));
+      const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
+      const ackFirst = window.__MFG_NAV_ACK_FORCE || (e.isTrusted && !IS_AUTOMATED_TEST && !window.__MFG_NAV_ACK_OFF);
+      if (ackFirst && !STATE.kioskLocked && typeof requestAnimationFrame === 'function' && (window.__MFG_NAV_ACK_FORCE || navAckWanted(hubId))) { openHubAfterAck(btn, hubId); return; }
+      _navAckToken++;
+      clickHub(hubId);
     }));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
       const ms = $('mobileSubnav');
@@ -179688,7 +180619,11 @@
       resolveHubView: (hubId, u) => resolveHubView(hubId, u || activeUser()),
       clickHub: hubId => clickHub(hubId),
       setView: (view, opts) => setView(view, opts),
-      setRailWidth: (w, persist) => setRailWidth(w, persist)
+      setRailWidth: (w, persist) => setRailWidth(w, persist),
+      releaseLaterBlocks: () => releaseWorkspaceLaterBlocks(),
+      laterBlocksPending: () => _wsLaterPending,
+      navAckWanted: hubId => navAckWanted(hubId),
+      viewRenderMs: _viewRenderMs
     };
     window.__openModalForm = (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true });
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
@@ -181039,6 +181974,7 @@
     },
     // Gate hook: the partner lines of a date range for any list of schedules (reads only)
     partnerPeriodsInRange: holdingPartnerPeriodsInRange,
+    schedulesInRange: holdingSchedulesInRange,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     getIndustryGroups: typeof getIndustryGroups === 'function' ? getIndustryGroups : null,
@@ -181219,9 +182155,12 @@
             endDate: l.end_date || 'Open',
             annualBaseUsd: base,
             vatUsd: vat,
-            annualTtcUsd: ttc
+            annualTtcUsd: ttc,
+            // In the rent roll's total (a lease period that ended, or was followed by a new rent, is listed but not counted)
+            counted: Boolean(re.rentRollIds && re.rentRollIds.has(String(l.id || '').trim().toUpperCase()))
           };
         }),
+        rentRollAsOf: re.rentRollAsOf || '',
         rentInvoices: (re.invoices || []).map(r => ({
           invNo: r.id,
           company: r.company,

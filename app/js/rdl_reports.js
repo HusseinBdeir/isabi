@@ -4192,6 +4192,66 @@
   }
 
 
+  // ── Marked as sent (owner 2026-11-20) ────────────────────────────────────────────────────────────────────────────
+  // A Customer or Supplier Statement can be marked as sent through its end date. From then on a rate change, its undo
+  // or a restore leaves that party's records up to that day as they are (window.MFG_STMT_LOCK in app.js) and lists the
+  // difference for the next statement. The bar is on screen only, never printed or exported.
+  function sentStatementSpec(partyType, partyName, ctx) {
+    const p = ctx.rdl.params || {};
+    // A statement can only have shown what existed when it was sent: the mark never runs past today
+    const L = (typeof window !== 'undefined') ? window.MFG_STMT_LOCK : null;
+    const today = (L && typeof L.today === 'function') ? String(L.today() || '') : '';
+    let through = String(p.to || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(today) && through > today) through = today;
+    return {
+      industry: ctx.ind || 'Manufacturing',
+      company: ctx.co || 'ALL',
+      partyType,
+      partyName,
+      reportId: partyType === 'supplier' ? '16' : '14',
+      confirmedThrough: through
+    };
+  }
+  function sentStatementBarHtml(partyType, partyName, ctx, closingBal) {
+    const L = (typeof window !== 'undefined') ? window.MFG_STMT_LOCK : null;
+    if (!L || !partyName || partyName === 'ALL') return '';
+    const spec = sentStatementSpec(partyType, partyName, ctx);
+    const to = spec.confirmedThrough;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) return '';
+    const mark = L.get(spec);
+    const canMark = L.canMark();
+    const canClear = L.canClear();
+    const payload = esc(encodeURIComponent(JSON.stringify(Object.assign({}, spec, { closingBalanceUsd: Math.round(Number(closingBal || 0) * 100) / 100 }))));
+    const isCust = partyType !== 'supplier';
+    const markBtn = canMark
+      ? `<button type="button" class="rdl-sent-btn" data-stmt-sent="mark" data-stmt-sent-spec="${payload}">${ic('lock')}<span>${mark && !mark.group ? 'Move the Sent Mark To' : 'Mark as Sent Through'}</span> <b data-no-i18n="1">${esc(to)}</b></button>`
+      : '';
+    if (mark) {
+      const later = to > mark.through;
+      return `
+        <div class="rdl-sent-bar no-print is-sent" data-stmt-sent-bar="1">
+          <span class="rdl-sent-ico">${ic('lock')}</span>
+          <div class="rdl-sent-text">
+            <div><span>${isCust ? 'Sent to the customer through' : 'Sent to the supplier through'}</span> <b data-no-i18n="1">${esc(mark.through)}</b>${mark.by ? ` <span class="rdl-sent-by" data-no-i18n="1">· ${esc(mark.by)}</span>` : ''}</div>
+            <div class="rdl-sent-sub"><span>A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.</span></div>
+          </div>
+          <div class="rdl-sent-actions">
+            ${later ? markBtn : ''}
+            ${mark.group ? '<span class="rdl-sent-sub"><span>Marked on the group statement</span></span>' : (canClear ? `<button type="button" class="rdl-sent-btn is-ghost" data-stmt-sent="clear" data-stmt-sent-spec="${payload}"><span>Remove Sent Mark</span></button>` : '')}
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="rdl-sent-bar no-print" data-stmt-sent-bar="1">
+        <span class="rdl-sent-ico">${ic('lock')}</span>
+        <div class="rdl-sent-text">
+          <div><span>Not marked as sent</span></div>
+          <div class="rdl-sent-sub"><span>${isCust ? 'Once sent, mark it: a rate change or its undo then leaves this customer\'s records up to the end date as they are.' : 'Once sent, mark it: a rate change or its undo then leaves this supplier\'s records up to the end date as they are.'}</span></div>
+        </div>
+        <div class="rdl-sent-actions">${markBtn}</div>
+      </div>`;
+  }
+
   function render14CustomerStatement(meta, ctx) {
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
@@ -4233,6 +4293,7 @@
         ])}
       </div>
       ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Ready-Mix Concrete Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
+      ${sentStatementBarHtml('customer', custName, ctx, closingBal)}
 
       <table class="rdl-table">
         <thead>
@@ -4453,6 +4514,7 @@
         ])}
       </div>
       ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, dt.supSubtitle, 'Account Currency: Fresh USD', '')}
+      ${sentStatementBarHtml('supplier', supName, ctx, closingBal)}
 
       <table class="rdl-table">
         <thead>
@@ -5486,7 +5548,13 @@
     const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
     const lRows = (d.leases || []).filter(l => coKey === 'Real Estate Group' || l.company === coKey);
     const rRows = (d.rentInvoices || []).filter(r => coKey === 'Real Estate Group' || !r.company || r.company === coKey);
-    const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+    // With a date range every lease period in it is listed, and the totals count each lease once: the period in force
+    // on the last day of the range (today for a range still running). A rent changed inside the range no longer adds
+    // the old and the new annual rent together. With no range the table is as it always was.
+    const lCounted = l => !stmtRange || l.counted !== false;
+    const lSum = key => lRows.filter(lCounted).reduce((s, l) => s + Number(l[key] || 0), 0);
+    const lHasUncounted = Boolean(stmtRange && lRows.some(l => !lCounted(l)));
+    const rentTotal = lSum('annualTtcUsd');
     const winHdr = formatStmtWindowHeader(ctx, rRows, 'date');
     return `
       ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · ${winHdr}`)}
@@ -5515,7 +5583,7 @@
         </thead>
         <tbody>
           ${lRows.map(l => `
-            <tr>
+            <tr${lCounted(l) ? '' : ' class="rdl-row-not-counted" data-not-counted="1" style="opacity:.55"'}>
               <td class="mono bold">${esc(l.code)}</td>
               <td>${esc(l.company)}</td>
               <td>${esc(l.property)} · ${esc(l.unitCode)}</td>
@@ -5530,12 +5598,13 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="5">Total Contracted Rent Roll (إجمالي عقود الإيجار السنوية)</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualBaseUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(lSum('annualBaseUsd'), 2)}</td>
+            <td class="num">${fmtUsd(lSum('vatUsd'), 2)}</td>
+            <td class="num" id="rdlReRentRollTotal">${fmtUsd(lSum('annualTtcUsd'), 2)}</td>
           </tr>
         </tfoot>
-      </table>
+      </table>${lHasUncounted ? `
+      <div class="rdl-note-text">A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.</div>` : ''}
       <div class="rdl-section-hdr" style="margin-top:14px;">2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)</div>
       <table class="rdl-table">
         <thead>
@@ -8048,6 +8117,22 @@
         }
       });
     }
+
+    // Marked as sent (Customer and Supplier Statements)
+    root.querySelectorAll('[data-stmt-sent]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const L = window.MFG_STMT_LOCK;
+        if (!L) return;
+        let spec = null;
+        try { spec = JSON.parse(decodeURIComponent(btn.getAttribute('data-stmt-sent-spec') || '')); } catch (_) { spec = null; }
+        if (!spec) return;
+        const act = btn.getAttribute('data-stmt-sent');
+        const res = act === 'clear' ? L.clear(spec) : L.set(spec);
+        if (res && res.ok) rerenderFn();
+      });
+    });
 
     // Print & CSV buttons
     const printBtn = root.querySelector('#printStmtBtn');
