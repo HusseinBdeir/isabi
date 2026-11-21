@@ -643,43 +643,300 @@ def seed_remote_d1(
     save_edge_meta(meta)
 
 
-def upload_r2_private_seeds(env: dict, r2_enabled: bool, *, force_r2_seeds: bool = False):
-    if not r2_enabled:
-        print("WARN: R2 bucket `isabi-vault` unavailable; skipping private seed upload.")
-        return
-    app_js_dir = ISABI_ROOT.parent / "isabi-app" / "js"
-    if not app_js_dir.is_dir():
-        print(f"WARN: `{app_js_dir}` not present on this machine; skipping R2 private seed upload.")
-        return
-    meta = load_edge_meta()
-    r2_shas = dict(meta.get("r2_seed_shas") or {})
-    force_upload = force_r2_seeds
-    for kind in ("core", "records", "industries"):
-        src = app_js_dir / f"seed_{kind}.json"
-        if not src.is_file():
-            print(f"WARN: Missing private seed file `{src}`; skipping.")
-            continue
-        sha = file_sha256(src)
-        if not force_upload and r2_shas.get(kind) == sha:
-            print(f"R2 private seed `seeds/seed_{kind}.json` unchanged (0 uploads).")
-            continue
-        print(f"Uploading private operational seed `seeds/seed_{kind}.json` ({src.stat().st_size:,} B) to R2 `isabi-vault`...")
-        run_wrangler(
+SEED_KINDS: tuple[str, ...] = ("core", "records", "industries")
+SEED_HASH_KEY: dict[str, str] = {
+    "core": "coreHash",
+    "records": "recordsHash",
+    "industries": "industriesHash",
+}
+DEMO_SEED_HASH_KEY: dict[str, str] = {
+    "core": "demoCoreHash",
+    "records": "demoRecordsHash",
+    "industries": "demoIndustriesHash",
+}
+_SEED_HEX10_RE = re.compile(r"^[0-9a-f]{10}$")
+
+
+def parse_app_seed_manifest(text: str, source_label: str = "app/js/seed_manifest.js") -> dict:
+    marker = "__MFG_SEED_MANIFEST"
+    pos = (text or "").find(marker)
+    if pos < 0:
+        print(f"ERROR: `{source_label}` does not contain `__MFG_SEED_MANIFEST`.", file=sys.stderr)
+        raise SystemExit(2)
+    brace = text.find("{", pos + len(marker))
+    if brace < 0:
+        print(f"ERROR: `{source_label}` has no JSON object after `__MFG_SEED_MANIFEST`.", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(text[brace:])
+    except json.JSONDecodeError as ex:
+        print(f"ERROR: `{source_label}` contains invalid JSON in `__MFG_SEED_MANIFEST` ({ex}).", file=sys.stderr)
+        raise SystemExit(2) from ex
+    if not isinstance(parsed, dict):
+        print(f"ERROR: `{source_label}` `__MFG_SEED_MANIFEST` must be a JSON object.", file=sys.stderr)
+        raise SystemExit(2)
+    for kind in SEED_KINDS:
+        hkey = SEED_HASH_KEY[kind]
+        hval = str(parsed.get(hkey) or "")
+        if not _SEED_HEX10_RE.fullmatch(hval):
+            print(f"ERROR: `{source_label}` invalid `{hkey}` ({hval!r}); expected 10-char lowercase hex.", file=sys.stderr)
+            raise SystemExit(2)
+        api_key = f"api{kind.capitalize()}"
+        for ukey in (kind, api_key):
+            uval = str(parsed.get(ukey) or "")
+            if not uval.endswith(f"?d={hval}"):
+                print(
+                    f"ERROR: `{source_label}` `{ukey}`={uval!r} must end with `?d={hval}` matching `{hkey}`.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+    for kind in SEED_KINDS:
+        dhkey = DEMO_SEED_HASH_KEY[kind]
+        dhval = str(parsed.get(dhkey) or "")
+        if not _SEED_HEX10_RE.fullmatch(dhval):
+            print(f"ERROR: `{source_label}` invalid `{dhkey}` ({dhval!r}); expected 10-char lowercase hex.", file=sys.stderr)
+            raise SystemExit(2)
+        dukey = f"demo{kind.capitalize()}"
+        duval = str(parsed.get(dukey) or "")
+        if not duval.endswith(f"?d={dhval}"):
+            print(
+                f"ERROR: `{source_label}` `{dukey}`={duval!r} must end with `?d={dhval}` matching `{dhkey}`.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+    return parsed
+
+
+def verify_local_manifest_and_demo_bundle(repo_dir: pathlib.Path | None = None) -> dict:
+    root = repo_dir or ISABI_ROOT
+    man_path = root / "app" / "js" / "seed_manifest.js"
+    if not man_path.is_file():
+        print(f"ERROR: Missing `{man_path}`; sync Command Center bundle before deploying.", file=sys.stderr)
+        raise SystemExit(2)
+    manifest = parse_app_seed_manifest(man_path.read_text(encoding="utf-8"), str(man_path))
+    for kind in SEED_KINDS:
+        dhval = str(manifest[DEMO_SEED_HASH_KEY[kind]])
+        demo_path = root / "app" / "js" / f"seed_demo_{kind}.json"
+        if not demo_path.is_file():
+            print(f"ERROR: Missing `{demo_path}` referenced by `{DEMO_SEED_HASH_KEY[kind]}={dhval}`.", file=sys.stderr)
+            raise SystemExit(2)
+        got_demo = file_sha256(demo_path)[:10]
+        if got_demo != dhval:
+            print(
+                f"ERROR: `{demo_path}` SHA-256 ({got_demo}) disagrees with `{DEMO_SEED_HASH_KEY[kind]}` ({dhval}).",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+    idx_path = root / "app" / "index.html"
+    if idx_path.is_file():
+        idx_txt = idx_path.read_text(encoding="utf-8", errors="replace")
+        core_h = str(manifest["coreHash"])
+        for m_d in re.findall(r"js/seed_manifest\.js\?v=[0-9][0-9.]*(?:&amp;|&)d=([0-9a-fA-F]+)", idx_txt):
+            if m_d != core_h:
+                print(
+                    f"ERROR: `{idx_path}` embeds `seed_manifest.js?v=...&d={m_d}`, which disagrees with `coreHash={core_h}`.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+    return manifest
+
+
+def fetch_remote_r2_seed_sha10(env: dict, kind: str) -> str:
+    if kind not in SEED_KINDS:
+        raise ValueError(f"Unsupported seed kind: {kind!r}")
+    with tempfile.TemporaryDirectory(prefix="isabi-r2-seed-chk-") as td:
+        chk_path = pathlib.Path(td) / f"seed_{kind}.json"
+        r = run_wrangler(
             [
                 "r2",
                 "object",
-                "put",
+                "get",
                 f"isabi-vault/seeds/seed_{kind}.json",
-                f"--file={src}",
-                "--content-type=application/json",
+                f"--file={chk_path}",
                 "--remote",
             ],
             env,
-            check=True,
+            check=False,
         )
-        r2_shas[kind] = sha
-        meta["r2_seed_shas"] = r2_shas
-        save_edge_meta(meta)
+        if r.returncode != 0 or not chk_path.is_file() or chk_path.stat().st_size == 0:
+            reason = wrangler_failure_reason(r, 180)
+            print(
+                f"ERROR: Could not verify live R2 object `isabi-vault/seeds/seed_{kind}.json` ({reason}); "
+                "refusing to deploy Pages without confirming private R2 seed parity.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        return file_sha256(chk_path)[:10]
+
+
+def _read_origin_seed_manifest(repo_dir: pathlib.Path, env: dict) -> dict:
+    git_bin = shutil.which("git", path=env.get("PATH")) or "git"
+    blob = _git_blob_text(
+        repo_dir,
+        "refs/remotes/origin/main:app/js/seed_manifest.js",
+        git_bin=git_bin,
+        git_env=env,
+    )
+    if not blob:
+        return {}
+    try:
+        return parse_app_seed_manifest(blob, "origin/main:app/js/seed_manifest.js")
+    except SystemExit:
+        return {}
+
+
+def verify_r2_seed_parity_for_pages_only(env: dict, repo_dir: pathlib.Path | None = None) -> dict:
+    root = repo_dir or ISABI_ROOT
+    manifest = verify_local_manifest_and_demo_bundle(root)
+    origin_manifest = _read_origin_seed_manifest(root, env)
+    r2_shas = dict(load_edge_meta().get("r2_seed_shas") or {})
+
+    kinds_to_verify: list[tuple[str, str, str]] = []
+    for kind in SEED_KINDS:
+        hkey = SEED_HASH_KEY[kind]
+        want = str(manifest[hkey])
+        meta_sha = str(r2_shas.get(kind) or "")
+        if hkey not in origin_manifest:
+            kinds_to_verify.append((kind, want, "origin/main manifest unavailable"))
+        elif want != str(origin_manifest.get(hkey) or ""):
+            kinds_to_verify.append((kind, want, f"{hkey} changed vs origin/main ({origin_manifest.get(hkey)} -> {want})"))
+        elif meta_sha and meta_sha[:10] != want:
+            kinds_to_verify.append((kind, want, f"local edge meta `r2_seed_shas[{kind!r}]` ({meta_sha[:10]}) != {want}"))
+
+    if not kinds_to_verify:
+        print(
+            "OK: Private seed manifest hashes match origin/main "
+            f"(core={manifest['coreHash']}, records={manifest['recordsHash']}, industries={manifest['industriesHash']}); "
+            "R2 parity assumed."
+        )
+        return manifest
+
+    for kind, want, reason in kinds_to_verify:
+        got = fetch_remote_r2_seed_sha10(env, kind)
+        if got != want:
+            print(
+                f"ERROR: R2 private seed mismatch for `isabi-vault/seeds/seed_{kind}.json`: "
+                f"manifest expects `{want}` ({reason}), but live R2 holds `{got}`. "
+                "Upload the matching private seeds first with `python build/deploy_cloudflare.py` "
+                "(without `--pages-only`) or `python build/release_data_only.py r2`.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+    print(
+        "OK: Live R2 private seed hash parity verified for "
+        + ", ".join(f"{kind}={want}" for kind, want, _ in kinds_to_verify)
+        + "."
+    )
+    return manifest
+
+
+def _resolve_app_js_dir(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
+    root = repo_dir or ISABI_ROOT
+    env_src = (os.environ.get("ISABI_APP_SRC") or "").strip()
+    if env_src:
+        return pathlib.Path(env_src) / "js"
+    for name in ("isabi-app", "mfg-web"):
+        cand = root.parent / name / "js"
+        if cand.is_dir():
+            return cand
+    return root.parent / "isabi-app" / "js"
+
+
+def _validate_local_private_seed_hashes_if_present(
+    manifest: dict,
+    repo_dir: pathlib.Path | None = None,
+) -> pathlib.Path:
+    root = repo_dir or ISABI_ROOT
+    app_js_dir = _resolve_app_js_dir(root)
+    if not app_js_dir.is_dir():
+        return app_js_dir
+    for kind in SEED_KINDS:
+        hkey = SEED_HASH_KEY[kind]
+        want = str(manifest[hkey])
+        src = app_js_dir / f"seed_{kind}.json"
+        if src.is_file():
+            sha = file_sha256(src)
+            if sha[:10] != want:
+                print(
+                    f"ERROR: Local private seed `{src}` ({sha[:10]}) disagrees with `app/js/seed_manifest.js` "
+                    f"`{hkey}={want}`. Run `python build/sync_app.py` (or `release_data_only.py commit`) first.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+    return app_js_dir
+
+
+def upload_r2_private_seeds(env: dict, r2_enabled: bool, *, force_r2_seeds: bool = False):
+    manifest = verify_local_manifest_and_demo_bundle(ISABI_ROOT)
+    if not r2_enabled:
+        print("ERROR: R2 bucket `isabi-vault` unavailable; refusing to deploy Pages without private R2 seeds.", file=sys.stderr)
+        raise SystemExit(2)
+    origin_manifest = _read_origin_seed_manifest(ISABI_ROOT, env)
+    app_js_dir = _validate_local_private_seed_hashes_if_present(manifest, ISABI_ROOT)
+    meta = load_edge_meta()
+    r2_shas = dict(meta.get("r2_seed_shas") or {})
+    force_upload = force_r2_seeds
+
+    # Pass 1: validate all 3 seed kinds (local byte hashes or missing-local R2 snapshots) before any remote R2 write.
+    planned_actions: list[tuple[str, str, pathlib.Path | None, str, str]] = []
+    for kind in SEED_KINDS:
+        hkey = SEED_HASH_KEY[kind]
+        want = str(manifest[hkey])
+        src = (app_js_dir / f"seed_{kind}.json") if app_js_dir.is_dir() else None
+        if src is not None and src.is_file():
+            sha = file_sha256(src)
+            if sha[:10] != want:
+                print(
+                    f"ERROR: Local private seed `{src}` ({sha[:10]}) disagrees with `app/js/seed_manifest.js` "
+                    f"`{hkey}={want}`. Run `python build/sync_app.py` (or `release_data_only.py commit`) first.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+            if not force_upload and r2_shas.get(kind) == sha:
+                planned_actions.append(("skip_unchanged", kind, src, sha, want))
+            else:
+                planned_actions.append(("upload", kind, src, sha, want))
+        else:
+            meta_sha = str(r2_shas.get(kind) or "")
+            if want != str(origin_manifest.get(hkey) or "") or (meta_sha and meta_sha[:10] != want):
+                got = fetch_remote_r2_seed_sha10(env, kind)
+                if got != want:
+                    print(
+                        f"ERROR: Missing local `{app_js_dir / f'seed_{kind}.json'}` and live R2 `isabi-vault/seeds/seed_{kind}.json` "
+                        f"holds `{got}` instead of manifest `{hkey}={want}`; upload matching seeds before deploying.",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(2)
+                planned_actions.append(("verified_remote", kind, None, "", want))
+            else:
+                planned_actions.append(("skip_absent_unchanged", kind, None, "", want))
+
+    # Pass 2: perform R2 uploads only after all 3 kinds validated cleanly.
+    for action, kind, src, sha, want in planned_actions:
+        if action == "skip_unchanged":
+            print(f"R2 private seed `seeds/seed_{kind}.json` unchanged (0 uploads).")
+        elif action == "verified_remote":
+            print(f"Verified live R2 private seed `seeds/seed_{kind}.json` matches `{SEED_HASH_KEY[kind]}={want}` (no local upload source).")
+        elif action == "skip_absent_unchanged":
+            print(f"WARN: `{app_js_dir}` seed `{kind}` absent locally; manifest matches origin/main (`{want}`), skipping upload.")
+        elif action == "upload" and src is not None:
+            print(f"Uploading private operational seed `seeds/seed_{kind}.json` ({src.stat().st_size:,} B) to R2 `isabi-vault`...")
+            run_wrangler(
+                [
+                    "r2",
+                    "object",
+                    "put",
+                    f"isabi-vault/seeds/seed_{kind}.json",
+                    f"--file={src}",
+                    "--content-type=application/json",
+                    "--remote",
+                ],
+                env,
+                check=True,
+            )
+            r2_shas[kind] = sha
+            meta["r2_seed_shas"] = r2_shas
+            save_edge_meta(meta)
 
 
 def _b64url_nopad(raw_bytes: bytes) -> str:
@@ -1434,8 +1691,30 @@ def check_checkout_not_behind_origin(
     allow_behind_origin: bool = False,
     fetch: bool = True,
     env: dict | None = None,
+    on_abort=None,
 ) -> int:
     """Verify local HEAD includes origin/main so an unpulled checkout cannot roll back live deploys."""
+    try:
+        return _check_checkout_not_behind_origin_impl(
+            repo_dir,
+            allow_behind_origin=allow_behind_origin,
+            fetch=fetch,
+            env=env,
+        )
+    except BaseException:
+        if on_abort is not None:
+            on_abort()
+        raise
+
+
+def _check_checkout_not_behind_origin_impl(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    *,
+    allow_behind_origin: bool = False,
+    fetch: bool = True,
+    env: dict | None = None,
+) -> int:
+    """Implementation of checkout freshness check against origin/main."""
     if allow_behind_origin:
         print("WARN: Bypassing origin/main stale-checkout guard (--allow-behind-origin).")
         return 0
@@ -2106,7 +2385,7 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
     if mode == "full-deploy":
         steps.append("Ensure D1 (`isabi-ledger`), R2 (`isabi-vault`), wrangler.toml bindings, and Pages project (`isabi-systems`)")
         steps.append("Edge secrets -> " + ("ROTATE/UPLOAD, including a new live signing secret (signs everyone out)" if args.rotate_secrets else "upload only if SHA-256 changed; the live signing secret is kept (uploaded only when the project has none)"))
-        app_js_dir = ISABI_ROOT.parent / "isabi-app" / "js"
+        app_js_dir = _resolve_app_js_dir(ISABI_ROOT)
         r2_shas = dict(meta.get("r2_seed_shas") or {})
         if not app_js_dir.is_dir():
             steps.append(f"R2 private seeds -> SKIP (`{app_js_dir}` not present)")
@@ -2137,6 +2416,8 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         else:
             steps.append("D1 data seed -> DELTA (exports/d1_seed_manifest.json present)")
         steps.append("Migrate any legacy remote D1 users/edge_kv_store PINs to PBKDF2-SHA256")
+    if mode == "pages-only":
+        steps.append("Verify app/js/seed_manifest.js & R2 isabi-vault/seeds/seed_*.json hash parity when hashes differ from origin/main")
     steps.append("Stage allowlisted public bundle (`stage_pages_bundle.py`) and deploy Cloudflare Pages + Edge Functions")
     steps.append("Check remote active seat PINs are PBKDF2-SHA256 hashed")
     steps.append("Configure custom domains, DNS CNAMEs, edge 301 redirect, Email Routing & clean old preview deployments + purge cache")
@@ -2194,6 +2475,26 @@ def main(argv: list[str] | None = None):
     # The lock comes before the freshness check: once held, nobody else can deploy and then push main under us.
     import release_lock  # noqa: PLC0415
 
+    lock_bypassed = bool(
+        args.no_release_lock
+        or os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no")
+    )
+    had_lock_before = False
+    if not lock_bypassed:
+        try:
+            _lsha0, _linfo0 = release_lock.read_remote_lock(ISABI_ROOT)
+            had_lock_before = bool(_lsha0 and release_lock.held_by_me(_linfo0, ISABI_ROOT))
+        except release_lock.LockError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+            raise SystemExit(2) from None
+
+    def _release_new_lock_on_early_abort() -> None:
+        if not lock_bypassed and not had_lock_before:
+            try:
+                release_lock.release(ISABI_ROOT, quiet=True)
+            except Exception:
+                pass
+
     release_lock.require_release_lock(
         ISABI_ROOT,
         purpose="pages-only deploy" if args.pages_only else "full deploy",
@@ -2204,10 +2505,16 @@ def main(argv: list[str] | None = None):
         allow_behind_origin=args.allow_behind_origin,
         fetch=True,
         env=env,
+        on_abort=_release_new_lock_on_early_abort,
     )
-    ok, acct_id = ensure_logged_in(env, login=args.login)
-    if not ok:
-        sys.exit(2)
+    try:
+        ok, acct_id = ensure_logged_in(env, login=args.login)
+        if not ok:
+            sys.exit(2)
+    except BaseException:
+        _release_new_lock_on_early_abort()
+        raise
+
     def _claim_deploy(what: str) -> None:
         """Right before going live: still the lock holder, HEAD contains origin/main, HEAD recorded as the live deploy."""
         if args.no_release_lock:
@@ -2224,6 +2531,11 @@ def main(argv: list[str] | None = None):
         )
 
     if args.pages_only:
+        try:
+            verify_r2_seed_parity_for_pages_only(env, ISABI_ROOT)
+        except BaseException:
+            _release_new_lock_on_early_abort()
+            raise
         _claim_deploy("pages-only deploy")
         deploy_pages(env)
         warn_weak_seat_pins(env)
@@ -2236,20 +2548,27 @@ def main(argv: list[str] | None = None):
             ping_indexnow()
         print("\nPAGES + EDGE FUNCTIONS BUNDLE DEPLOYMENT COMPLETE!")
         return
-    d1_uuid = ensure_d1_database(env)
-    r2_ok = ensure_r2_bucket(env)
-    stamp_wrangler_toml(d1_uuid, r2_ok)
-    ensure_pages_project(env)
-    upload_secrets(env, rotate_secrets=args.rotate_secrets)
-    upload_r2_private_seeds(env, r2_ok, force_r2_seeds=args.force_r2_seeds)
-    seed_remote_d1(
-        env,
-        force_schema=args.force_schema,
-        skip_seed=args.skip_seed,
-        full_seed=args.full_seed,
-        require_delta=args.delta,
-    )
-    migrate_remote_d1_pins_to_pbkdf2(env)
+
+    try:
+        pre_manifest = verify_local_manifest_and_demo_bundle(ISABI_ROOT)
+        _validate_local_private_seed_hashes_if_present(pre_manifest, ISABI_ROOT)
+        d1_uuid = ensure_d1_database(env)
+        r2_ok = ensure_r2_bucket(env)
+        stamp_wrangler_toml(d1_uuid, r2_ok)
+        ensure_pages_project(env)
+        upload_secrets(env, rotate_secrets=args.rotate_secrets)
+        upload_r2_private_seeds(env, r2_ok, force_r2_seeds=args.force_r2_seeds)
+        seed_remote_d1(
+            env,
+            force_schema=args.force_schema,
+            skip_seed=args.skip_seed,
+            full_seed=args.full_seed,
+            require_delta=args.delta,
+        )
+        migrate_remote_d1_pins_to_pbkdf2(env)
+    except BaseException:
+        _release_new_lock_on_early_abort()
+        raise
     _claim_deploy("full deploy")
     deploy_pages(env)
     warn_weak_seat_pins(env)

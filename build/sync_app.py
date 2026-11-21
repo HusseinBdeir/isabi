@@ -5,6 +5,8 @@ Usage:
   python build/sync_app.py [--dry] [--skip-release-gates] [--skip-i18n-audit] [--skip-speed-gate "<reason>"]
 """
 import argparse
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -97,6 +99,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
     ("isabi-app", "build/verify_public_names.py", "python"),         # no real person's name in public /app/ or isabi files
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
+    ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
 ]
 
 
@@ -205,6 +208,135 @@ def run_speed_gate(*, skip_reason: str = "") -> None:
     _run_gate(repo, rel, interp, SPEED_GATE_TIMEOUT_S, '--skip-speed-gate "<reason>"', show_warnings=True)
 
 
+_SEED_HEX10_RE = re.compile(r"^[0-9a-f]{10}$")
+_SEED_MANIFEST_KINDS = (
+    ("core", "coreHash", "core", "apiCore", "seed_core.json"),
+    ("records", "recordsHash", "records", "apiRecords", "seed_records.json"),
+    ("industries", "industriesHash", "industries", "apiIndustries", "seed_industries.json"),
+)
+_DEMO_SEED_MANIFEST_KINDS = (
+    ("core", "demoCoreHash", "demoCore", "seed_demo_core.json"),
+    ("records", "demoRecordsHash", "demoRecords", "seed_demo_records.json"),
+    ("industries", "demoIndustriesHash", "demoIndustries", "seed_demo_industries.json"),
+)
+
+
+def parse_seed_manifest_text(text: str, label: str = "seed_manifest.js") -> dict:
+    marker = "__MFG_SEED_MANIFEST"
+    pos = text.find(marker)
+    if pos < 0:
+        raise SystemExit(f"ERROR: {label} does not contain __MFG_SEED_MANIFEST")
+    brace = text.find("{", pos + len(marker))
+    if brace < 0:
+        raise SystemExit(f"ERROR: {label} has no JSON object after __MFG_SEED_MANIFEST")
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(text[brace:])
+    except json.JSONDecodeError as ex:
+        raise SystemExit(f"ERROR: {label} contains invalid JSON in __MFG_SEED_MANIFEST ({ex})") from ex
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"ERROR: {label} __MFG_SEED_MANIFEST must decode to a JSON object")
+    return parsed
+
+
+def _file_sha10(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()[:10]
+
+
+def verify_seed_manifest_parity(
+    app_src_root: str = APP_SRC_ROOT,
+    isabi_root: str = ISABI_ROOT,
+    *,
+    check_git_origin: bool = True,
+) -> dict:
+    man_path = os.path.join(app_src_root, "js", "seed_manifest.js")
+    if not os.path.isfile(man_path):
+        raise SystemExit(f"ERROR: Missing js/seed_manifest.js in {app_src_root}")
+    with open(man_path, "r", encoding="utf-8") as fh:
+        manifest = parse_seed_manifest_text(fh.read(), man_path)
+
+    js_dir = os.path.join(app_src_root, "js")
+    for kind, hkey, url_key, api_key, fname in _SEED_MANIFEST_KINDS:
+        h = str(manifest.get(hkey) or "")
+        if not _SEED_HEX10_RE.fullmatch(h):
+            raise SystemExit(f"ERROR: {man_path} invalid {hkey}={h!r} (expected 10-char lowercase hex)")
+        for uk in (url_key, api_key):
+            uval = str(manifest.get(uk) or "")
+            if not uval.endswith(f"?d={h}"):
+                raise SystemExit(f"ERROR: {man_path} {uk}={uval!r} must end with ?d={h} matching {hkey}")
+        private_seed = os.path.join(js_dir, fname)
+        if os.path.isfile(private_seed):
+            got = _file_sha10(private_seed)
+            if got != h:
+                raise SystemExit(
+                    f"ERROR: Local private seed {private_seed} ({got}) != {hkey} ({h}) in {man_path}; "
+                    "run pack_seed_split.py / rebuild seeds before syncing."
+                )
+
+    for _dkind, dhkey, durl_key, dfname in _DEMO_SEED_MANIFEST_KINDS:
+        dh = str(manifest.get(dhkey) or "")
+        if not _SEED_HEX10_RE.fullmatch(dh):
+            raise SystemExit(f"ERROR: {man_path} invalid {dhkey}={dh!r} (expected 10-char lowercase hex)")
+        duval = str(manifest.get(durl_key) or "")
+        if not duval.endswith(f"?d={dh}"):
+            raise SystemExit(f"ERROR: {man_path} {durl_key}={duval!r} must end with ?d={dh} matching {dhkey}")
+        demo_seed = os.path.join(js_dir, dfname)
+        if not os.path.isfile(demo_seed):
+            raise SystemExit(f"ERROR: Missing demo seed {demo_seed} referenced by {dhkey}={dh}")
+        got_d = _file_sha10(demo_seed)
+        if got_d != dh:
+            raise SystemExit(
+                f"ERROR: Demo seed {demo_seed} ({got_d}) != {dhkey} ({dh}) in {man_path}; rebuild demo seeds before syncing."
+            )
+
+    idx_path = os.path.join(app_src_root, "index.html")
+    if os.path.isfile(idx_path):
+        with open(idx_path, "r", encoding="utf-8") as fh:
+            idx_txt = fh.read()
+        core_h = str(manifest["coreHash"])
+        for m_d in re.findall(r"js/seed_manifest\.js\?v=[0-9][0-9.]*(?:&amp;|&)d=([0-9a-fA-F]+)", idx_txt):
+            if m_d != core_h:
+                raise SystemExit(
+                    f"ERROR: {idx_path} embeds seed_manifest.js?v=...&d={m_d} which disagrees with coreHash={core_h}"
+                )
+
+    if check_git_origin:
+        chk = subprocess.run(
+            ["git", "cat-file", "blob", "refs/remotes/origin/main:app/js/seed_manifest.js"],
+            cwd=isabi_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=15,
+        )
+        if chk.returncode == 0 and chk.stdout:
+            try:
+                orig_man = parse_seed_manifest_text(chk.stdout, "origin/main:app/js/seed_manifest.js")
+            except SystemExit:
+                orig_man = {}
+            changed = [
+                f"{kind} ({orig_man.get(hkey, '?')} -> {manifest[hkey]})"
+                for kind, hkey, _, _, _ in _SEED_MANIFEST_KINDS
+                if orig_man.get(hkey) != manifest[hkey]
+            ]
+            if changed:
+                print(
+                    "NOTICE: Private seed hash(es) changed vs origin/main "
+                    f"({', '.join(changed)}); upload updated seeds to R2 "
+                    "(deploy_cloudflare.py or release_data_only.py r2) before --pages-only or git push deploy."
+                )
+
+    return manifest
+
+
 def verify_shell_version_parity() -> str:
     sw_path = os.path.join(APP_SRC_ROOT, "sw.js")
     idx_path = os.path.join(APP_SRC_ROOT, "index.html")
@@ -285,6 +417,8 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
 
     ver = verify_shell_version_parity()
     print(f"OK: Shell version parity verified (v{ver} across sw.js, index.html, manifest.json)")
+    man = verify_seed_manifest_parity(APP_SRC_ROOT, ISABI_ROOT, check_git_origin=True)
+    print(f"OK: Seed manifest parity verified (core={man['coreHash']} records={man['recordsHash']} industries={man['industriesHash']})")
 
     audit_script = os.path.join(APP_SRC_ROOT, "build", "audit_i18n.py")
     if os.path.isfile(audit_script) and not skip_i18n_audit and os.environ.get("ISABI_SKIP_I18N_AUDIT") != "1":
@@ -449,6 +583,10 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         return 0
 
     ver = verify_shell_version_parity()
+    seed_line = "Seed manifest -> missing js/seed_manifest.js"
+    if os.path.isfile(os.path.join(APP_SRC_ROOT, "js", "seed_manifest.js")):
+        man = verify_seed_manifest_parity(APP_SRC_ROOT, ISABI_ROOT, check_git_origin=False)
+        seed_line = f"core={man['coreHash']} records={man['recordsHash']} industries={man['industriesHash']} (demo parity OK)"
     file_count = _count_syncable_files(APP_SRC_ROOT)
     want_ds = render_deployed_shell_js(ver)
     try:
@@ -480,6 +618,7 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
     )
 
     print(f"  Shell    : v{ver} (sw.js, index.html, manifest.json ?v= parity OK)")
+    print(f"  Seeds    : {seed_line}")
     print("  Steps    :")
     print(f"    1. {i18n_step}")
     print(f"    2. {gates_step}")

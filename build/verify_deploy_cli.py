@@ -129,13 +129,16 @@ def main() -> int:
         "suggest_next_shell_version",
         "DEPLOY_GUARD_PATHS",
         "_parse_git_porcelain_z",
+        "parse_app_seed_manifest",
+        "verify_local_manifest_and_demo_bundle",
+        "verify_r2_seed_parity_for_pages_only",
     )
     for sym in required_dc_symbols:
         check(hasattr(dc, sym), f"dc-symbol-{sym}", f"missing {sym}")
 
     for mod_name, mod_obj, syms in (
         ("eds", eds, ("export_all", "fetch_live_cloud_store", "collect_target_rows", "promote_pending_manifest", "main")),
-        ("sa", sa, ("sync_command_app", "run_release_gates", "render_deployed_shell_js", "write_deployed_shell_ver", "rederive_deployed_shell_ver", "main")),
+        ("sa", sa, ("sync_command_app", "run_release_gates", "render_deployed_shell_js", "write_deployed_shell_ver", "rederive_deployed_shell_ver", "parse_seed_manifest_text", "verify_seed_manifest_parity", "main")),
         ("asm", asm, ("render_and_validate_showcase_html", "main")),
         ("spb", spb, ("stage_pages_bundle", "_validate_dest_dir", "check_deployed_shell_ver", "count_stageable_files", "ROOT_ALLOWLIST", "main")),
         ("mli", mli, ("build_cover_html", "build_preview_html", "render_html", "resolve_browser_bin", "main")),
