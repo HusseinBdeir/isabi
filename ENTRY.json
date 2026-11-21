@@ -3,6 +3,12 @@
   "branch": "wt/workbook-display",
   "sha": "98f45b93f5ef5f39925ebd2f642a90d2216aee4a"
  },
+ "batch": {
+  "at": "2026-11-21T03:19:13Z",
+  "holder": "THEO 96b2bb5b (workbook-display)",
+  "lockId": "8a475329be5d4bd5b0e4edf60a0c5c70",
+  "version": "19.6.414"
+ },
  "gates": [
   "isabi-app: python build/verify_truck_log_reopen.py",
   "isabi-app: python build/verify_close_twins.py"
