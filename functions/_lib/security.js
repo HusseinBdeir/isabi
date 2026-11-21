@@ -584,7 +584,7 @@ export async function verifyActiveEdgeSession(session, env) {
     if (!sub && !email) return null;
 
     const uRow = await env.DB.prepare(
-      'SELECT id, status, role, companies, pbi_access, statements_access, custom_perms FROM users WHERE id = ?1 OR lower(email) = ?2 LIMIT 1'
+      'SELECT * FROM users WHERE id = ?1 OR lower(email) = ?2 LIMIT 1'
     ).bind(sub, email).first();
 
     if (!uRow) {
@@ -593,7 +593,28 @@ export async function verifyActiveEdgeSession(session, env) {
       return session;
     }
 
-    if (String(uRow.status || 'Active') === 'Suspended') return null;
+    const uStatus = String(uRow.status || 'Active').trim().toLowerCase();
+    if (uStatus === 'suspended' || uStatus === 'locked' || Number(uRow.locked || 0) === 1 || uRow.locked === true || Number(uRow.kioskLocked || 0) === 1 || uRow.kioskLocked === true) return null;
+
+    let roleTabPolicies = null;
+    try {
+      const rtpRow = await env.DB.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'role_tab_policies' LIMIT 1").first();
+      if (rtpRow && rtpRow.payload_json) {
+        const parsed = JSON.parse(rtpRow.payload_json);
+        if (parsed && !Array.isArray(parsed) && typeof parsed === 'object' && Object.keys(parsed).length > 0) roleTabPolicies = parsed;
+      }
+      if (!roleTabPolicies) {
+        const storeRow = await env.DB.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store' LIMIT 1").first();
+        if (storeRow && storeRow.payload_json) {
+          const parsedStore = JSON.parse(storeRow.payload_json);
+          if (parsedStore && parsedStore.roleTabPolicies && !Array.isArray(parsedStore.roleTabPolicies) && typeof parsedStore.roleTabPolicies === 'object' && Object.keys(parsedStore.roleTabPolicies).length > 0) {
+            roleTabPolicies = parsedStore.roleTabPolicies;
+          }
+        }
+      }
+    } catch (_) {
+      roleTabPolicies = null;
+    }
 
     return Object.assign({}, session, {
       sub: uRow.id || session.sub,
@@ -601,7 +622,8 @@ export async function verifyActiveEdgeSession(session, env) {
       companies: uRow.companies != null ? uRow.companies : session.companies,
       pbi: uRow.pbi_access != null ? uRow.pbi_access : session.pbi,
       stmts: uRow.statements_access != null ? uRow.statements_access : session.stmts,
-      custom_perms: uRow.custom_perms != null ? uRow.custom_perms : (session.custom_perms || '')
+      custom_perms: uRow.custom_perms != null ? uRow.custom_perms : (session.custom_perms || ''),
+      ...(roleTabPolicies ? { roleTabPolicies } : {})
     });
   } catch (_) {
     return null;
@@ -874,4 +896,284 @@ export async function verifyDriverGateToken(rawToken, env) {
   } catch (_) {
     return { ok: false, status: 403, code: 'invalid_token', error: 'Invalid driver gate link token.' };
   }
+}
+
+// ---- Unified Server-Side Seat Lens (1:1 mirror of isabi-app/js/app.js seatLens) -------------------------------------
+const SEAT_ROLE_PRESETS = Object.freeze({
+  'Full Access (Owner)': Object.freeze({ read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_text: true, modify_data: true, void_data: true, manage_users: true }),
+  'Supervisor + Entry': Object.freeze({ read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_text: true, modify_data: true, void_data: true, manage_users: false }),
+  'Supervisor': Object.freeze({ read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: true, manage_users: false }),
+  'Entry': Object.freeze({ read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_text: true, modify_data: false, void_data: false, manage_users: false }),
+  'Sales': Object.freeze({ read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: false, manage_users: false }),
+  'Custom': Object.freeze({ read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_text: true, modify_data: true, void_data: true, manage_users: false }),
+  'Viewer': Object.freeze({ read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: false, manage_users: false })
+});
+
+const SEAT_DASH_IDS = ['dash_overview', 'dash_commercial', 'dash_plant_fleet', 'dash_expenses_vat', 'dash_payroll_hr', 'dash_financial_gl'];
+const SEAT_RIGHT_IDS = ['read_ops', 'read_fin', 'enter_dispatch', 'enter_accounting', 'enter_master', 'enter_payroll_jv', 'modify_text', 'modify_data', 'void_data', 'manage_users'];
+const SEAT_HUB_TABS = Object.freeze({
+  cashflow: ['cashflow', 'external', 'ledger_treasury', 'conversions'],
+  ledger: ['ledger', 'coa_classes', 'gl_automation'],
+  expenses: ['expenses', 'suppliers', 'documents', 'recurring_expenses'],
+  payroll: ['payroll', 'payroll_attendance', 'payroll_contracts', 'workforce_map', 'payroll_allowances'],
+  sentinels: ['sentinels', 'alert_rules', 'approvals', 'void_log']
+});
+
+function resolveCanonicalSeatRoleKey(roleStr) {
+  const r = String(roleStr || '').trim();
+  if (/^Custom/i.test(r)) return 'Custom';
+  if (/Owner|Full Access|Admin/i.test(r)) return 'Full Access (Owner)';
+  if (/Supervisor\s*\+\s*Entry/i.test(r)) return 'Supervisor + Entry';
+  if (/Supervisor/i.test(r)) return 'Supervisor';
+  if (/Sales/i.test(r)) return 'Sales';
+  if (/Entry/i.test(r)) return 'Entry';
+  if (/Viewer|Read/i.test(r)) return 'Viewer';
+  return 'Viewer';
+}
+
+function parseSeatCustomPerms(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  return (typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+}
+
+function resolveSeatDashboards(pbiTier, roleKey, customDash) {
+  if (pbiTier === 'custom' && customDash && typeof customDash === 'object' && !Array.isArray(customDash)) {
+    const out = {};
+    for (const id of SEAT_DASH_IDS) out[id] = Boolean(customDash[id]);
+    return out;
+  }
+  if (pbiTier === 'none') {
+    return { dash_overview: false, dash_commercial: false, dash_plant_fleet: false, dash_expenses_vat: false, dash_payroll_hr: false, dash_financial_gl: false };
+  }
+  if (pbiTier === 'full' || roleKey === 'Full Access (Owner)') {
+    return { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true };
+  }
+  if (roleKey === 'Sales') {
+    return { dash_overview: true, dash_commercial: true, dash_plant_fleet: false, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false };
+  }
+  return { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: false };
+}
+
+export function getSessionSeatLens(session, roleTabPoliciesArg = null) {
+  if (!session || String(session.status || '') === 'Suspended' || session.kioskLocked || session.locked) {
+    return {
+      owner: false,
+      books: false,
+      cashflow: false,
+      ledger: false,
+      expenses: false,
+      profit: false,
+      tax: false,
+      partnerSplits: false,
+      payroll: false,
+      payrollDollars: false,
+      sentinels: false,
+      canSignOffSentinels: false,
+      voidLog: false
+    };
+  }
+  const roleStr = String(session.role || '');
+  const roleKey = resolveCanonicalSeatRoleKey(roleStr);
+  const presetRights = SEAT_ROLE_PRESETS[roleKey] || SEAT_ROLE_PRESETS.Viewer;
+  const rawCustom = parseSeatCustomPerms(session.custom_perms);
+  const isCustomRole = roleKey === 'Custom';
+  const rawPbi = session.pbi_access != null ? session.pbi_access : session.pbi;
+  const rawStmts = session.statements_access != null ? session.statements_access : session.stmts;
+  const pbiTier = String(rawPbi || (isCustomRole ? 'custom' : 'partial')).toLowerCase();
+  const stTier = String(rawStmts || (isCustomRole ? 'custom' : 'partial')).toLowerCase();
+  const owner = /Owner/i.test(roleStr);
+
+  const dashboards = (isCustomRole || pbiTier === 'custom') && rawCustom.dashboards && typeof rawCustom.dashboards === 'object'
+    ? resolveSeatDashboards('custom', roleKey, rawCustom.dashboards)
+    : resolveSeatDashboards(pbiTier, roleKey, null);
+
+  const rights = {};
+  const hasExplicitCustomRights = isCustomRole && rawCustom.rights && typeof rawCustom.rights === 'object' && !Array.isArray(rawCustom.rights) && Object.keys(rawCustom.rights).length > 0;
+  for (const rId of SEAT_RIGHT_IDS) {
+    if (hasExplicitCustomRights) {
+      rights[rId] = rId === 'read_ops'
+        ? (Object.prototype.hasOwnProperty.call(rawCustom.rights, 'read_ops') ? Boolean(rawCustom.rights.read_ops) : true)
+        : Boolean(rawCustom.rights[rId]);
+    } else if (isCustomRole && rawCustom.rights && Object.prototype.hasOwnProperty.call(rawCustom.rights, rId)) {
+      rights[rId] = Boolean(rawCustom.rights[rId]);
+    } else if (rId === 'modify_text' && rawCustom.rights && typeof rawCustom.rights.modify_text === 'boolean') {
+      rights[rId] = Boolean(rawCustom.rights.modify_text);
+    } else {
+      rights[rId] = Boolean(presetRights[rId]);
+    }
+  }
+  if (rights.modify_data) rights.modify_text = true;
+  if (dashboards.dash_financial_gl) rights.read_fin = true;
+
+  const customMode = /^Custom/i.test(roleStr) || pbiTier === 'custom' || stTier === 'custom';
+  const isSales = /Sales/i.test(roleStr);
+  const tax = !session.demoVisitor && (owner || Boolean(rights.read_fin));
+  const voidLog = roleKey === 'Full Access (Owner)' || roleKey === 'Supervisor' || roleKey === 'Supervisor + Entry';
+
+  const canAccessTbl = tbl => {
+    const finOnly = tbl === 'jv_partnerships' || tbl === 'jv_distributions' || tbl === 'gl_accounts';
+    const treasury = tbl === 'external_movements' || tbl === 'loans' || tbl === 'loan_settlements' || tbl === 'conversions';
+    const payrollTbl = tbl === 'salaries';
+    if (/^Custom/i.test(roleStr) || pbiTier === 'custom') {
+      if (rawCustom.tables && typeof rawCustom.tables[tbl] === 'boolean' && rawCustom.tables[tbl] === false) return false;
+      if (finOnly) return Boolean(rights.read_fin || dashboards.dash_financial_gl || rights.enter_payroll_jv || (tbl === 'gl_accounts' && rights.enter_master));
+      if (treasury) return Boolean(rights.read_ops || rights.read_fin || dashboards.dash_financial_gl || dashboards.dash_expenses_vat || rights.enter_accounting || rights.enter_payroll_jv);
+      if (payrollTbl) return Boolean(rights.read_ops || rights.read_fin || dashboards.dash_payroll_hr || rights.enter_payroll_jv || rights.enter_master);
+      return Boolean(rights.read_ops || rights.read_fin);
+    }
+    if (pbiTier === 'full' || owner) return true;
+    if (isSales) return false;
+    return !finOnly;
+  };
+
+  const viewBaseline = view => {
+    if (view === 'coa_classes' || view === 'gl_automation') return viewBaseline('ledger');
+    if (view === 'suppliers' || view === 'ap') return customMode ? Boolean(rights.read_ops || dashboards.dash_plant_fleet || rights.enter_dispatch) : !isSales;
+    if (view === 'recurring_expenses' || view === 'documents') return viewBaseline('expenses') || viewBaseline('sales');
+    if (view === 'external') return viewBaseline('cashflow') && canAccessTbl('external_movements');
+    if (view === 'ledger_treasury') return viewBaseline('cashflow') && (canAccessTbl('loans') || (customMode ? Boolean(dashboards.dash_financial_gl) : (pbiTier === 'full' || owner)));
+    if (view === 'conversions') return viewBaseline('cashflow') && canAccessTbl('conversions');
+    if (view === 'payroll_attendance' || view === 'payroll_contracts' || view === 'workforce_map' || view === 'payroll_allowances') return viewBaseline('payroll');
+    if (view === 'alert_rules') return viewBaseline('sentinels');
+    if (view === 'approvals') return true;
+    if (view === 'void_log') return voidLog;
+    if (customMode) {
+      const anyDash = Object.values(dashboards).some(Boolean);
+      if (view === 'cashflow') return Boolean(rights.read_ops || rights.read_fin || rights.enter_accounting || rights.enter_dispatch || dashboards.dash_financial_gl || dashboards.dash_expenses_vat);
+      if (view === 'payroll') return Boolean(rights.read_ops || rights.read_fin || dashboards.dash_payroll_hr || rights.enter_payroll_jv || rights.enter_master);
+      if (view === 'ledger' || view === 'gl' || view === 'sentinels') return Boolean(rights.read_fin || dashboards.dash_financial_gl);
+      if (view === 'expenses') return Boolean(rights.read_ops || dashboards.dash_expenses_vat || rights.enter_accounting);
+      if (view === 'sales') return Boolean(rights.read_ops || rights.read_fin || anyDash);
+      return true;
+    }
+    if (view === 'cashflow' || view === 'expenses' || view === 'payroll') return !isSales;
+    if (view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbiTier === 'full' || owner) && !isSales;
+    return true;
+  };
+
+  const hubBaseline = hubId => {
+    if (hubId === 'sentinels') return viewBaseline('sentinels') || voidLog;
+    if (hubId === 'expenses') return viewBaseline('expenses') || viewBaseline('suppliers');
+    const tabs = SEAT_HUB_TABS[hubId] || [hubId];
+    return tabs.some(t => viewBaseline(t));
+  };
+
+  const rpMap = (roleTabPoliciesArg && typeof roleTabPoliciesArg === 'object')
+    ? roleTabPoliciesArg
+    : ((session && session.roleTabPolicies && typeof session.roleTabPolicies === 'object') ? session.roleTabPolicies : null);
+  const rolePol = (rpMap && rpMap.customized && (rpMap.hubs || rpMap.pages))
+    ? rpMap
+    : (rpMap && rpMap[roleKey] && rpMap[roleKey].customized && (rpMap[roleKey].hubs || rpMap[roleKey].pages) ? rpMap[roleKey] : null);
+
+  const hp = (rawCustom && rawCustom.hubPagesCustomized && (rawCustom.hubs || rawCustom.pages))
+    ? {
+        customized: true,
+        selectAll: Boolean(rawCustom.hubPagesSelectAll),
+        hubs: (rawCustom.hubs && typeof rawCustom.hubs === 'object') ? rawCustom.hubs : {},
+        pages: (rawCustom.pages && typeof rawCustom.pages === 'object') ? rawCustom.pages : {}
+      }
+    : (rolePol
+        ? {
+            customized: true,
+            selectAll: Boolean(rolePol.selectAll),
+            hubs: (rolePol.hubs && typeof rolePol.hubs === 'object') ? rolePol.hubs : {},
+            pages: (rolePol.pages && typeof rolePol.pages === 'object') ? rolePol.pages : {}
+          }
+        : null);
+
+  const isHubPolicyEnabled = hubId => {
+    if (!hp || !hp.customized) return hubBaseline(hubId);
+    if (hp.selectAll) return true;
+    if (Object.prototype.hasOwnProperty.call(hp.hubs, hubId)) return Boolean(hp.hubs[hubId]);
+    return hubBaseline(hubId);
+  };
+
+  const isPagePolicyEnabled = (canonView, parentHubId) => {
+    if (canonView === 'void_log' && !voidLog) return false;
+    if (!hp || !hp.customized) return viewBaseline(canonView);
+    if (!isHubPolicyEnabled(parentHubId)) return false;
+    if (hp.selectAll) return true;
+    if (Object.prototype.hasOwnProperty.call(hp.pages, canonView)) return Boolean(hp.pages[canonView]);
+    const tabs = SEAT_HUB_TABS[parentHubId] || [];
+    const anyExplicitSibling = tabs.some(t => Object.prototype.hasOwnProperty.call(hp.pages, t));
+    if (anyExplicitSibling) {
+      if (canonView === 'void_log' && voidLog) return tabs.some(t => t !== 'void_log' && Boolean(hp.pages[t]));
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(hp.hubs, parentHubId) && hp.hubs[parentHubId]) return true;
+    return viewBaseline(canonView);
+  };
+
+  const canViewFn = view => {
+    if (hp && hp.customized) {
+      const parentMap = {
+        cashflow: 'cashflow', external: 'cashflow', ledger_treasury: 'cashflow', conversions: 'cashflow',
+        ledger: 'ledger', coa_classes: 'ledger', gl_automation: 'ledger',
+        expenses: 'expenses', suppliers: 'expenses', documents: 'expenses', recurring_expenses: 'expenses',
+        payroll: 'payroll', payroll_attendance: 'payroll', payroll_contracts: 'payroll', workforce_map: 'payroll', payroll_allowances: 'payroll',
+        sentinels: 'sentinels', alert_rules: 'sentinels', approvals: 'sentinels', void_log: 'sentinels'
+      };
+      const parent = parentMap[view];
+      if (parent) {
+        if (view === 'approvals') return Object.prototype.hasOwnProperty.call(hp.pages, 'approvals') ? Boolean(hp.pages.approvals) : true;
+        return isPagePolicyEnabled(view, parent);
+      }
+    }
+    return viewBaseline(view);
+  };
+
+  const canHubFn = hubId => {
+    if (hp && hp.customized) {
+      if (!isHubPolicyEnabled(hubId)) return false;
+      const tabs = SEAT_HUB_TABS[hubId] || [];
+      if (!tabs.length) return true;
+      return tabs.some(v => (hubId !== 'sentinels' || v !== 'approvals') && isPagePolicyEnabled(v, hubId));
+    }
+    return hubBaseline(hubId);
+  };
+
+  const cashflow = Boolean(owner || canHubFn('cashflow'));
+  const ledger = Boolean(owner || canHubFn('ledger'));
+  const books = Boolean(cashflow && ledger);
+  const expenses = Boolean(owner || canHubFn('expenses'));
+  const profit = Boolean(books && expenses);
+  const partnerSplits = Boolean(canAccessTbl('jv_distributions'));
+  const payroll = Boolean(owner || canHubFn('payroll'));
+  let payrollDollars = true;
+  if (!owner) {
+    if (isSales || !canAccessTbl('salaries') || (!canViewFn('payroll') && !canViewFn('payroll_attendance'))) {
+      payrollDollars = false;
+    } else if (/^Custom/i.test(roleStr) || pbiTier === 'custom') {
+      payrollDollars = Boolean(rights.read_fin || rights.enter_payroll_jv || dashboards.dash_payroll_hr);
+    }
+  }
+  const sentinels = Boolean(owner || canViewFn('sentinels'));
+  const canSignOffSentinels = Boolean(
+    sentinels &&
+    (roleKey === 'Full Access (Owner)' || roleKey === 'Supervisor' || roleKey === 'Supervisor + Entry' || (roleKey === 'Custom' && (/director|cfo|audit/i.test(roleStr) || pbiTier === 'full')))
+  );
+
+  return {
+    owner,
+    books,
+    cashflow,
+    ledger,
+    expenses,
+    profit,
+    tax,
+    partnerSplits,
+    payroll,
+    payrollDollars,
+    sentinels,
+    canSignOffSentinels,
+    voidLog
+  };
 }

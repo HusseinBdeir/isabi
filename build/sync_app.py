@@ -66,6 +66,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_meter_check.py", "python"),          # top-up reconcile: workbook quantity back on re-sized tickets, truck logs fresh from the workbooks
     ("isabi-app", "build/verify_cash_table_heal.py", "python"),      # top-up: every External / Conversion row has one app record
     ("isabi", "build/verify_gemini_tier_routing.mjs", "node"),       # semantic tier routing + Gemini 4 hygiene
+    ("isabi", "build/verify_seat_ai_mask_edge.mjs", "node"),         # zero canViewHub('books'), 12-seat JS/Python parity, Edge & server.py AI mask
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
     ("isabi-app", "build/verify_face_or_pin_local.py", "python"),    # server.py sign-in: Face ID or PIN, never both
     ("isabi-app", "build/verify_records_rbac_parity.py", "python"),  # Local server.py vs Edge d1_store.js /api/records RBAC & DDL parity
