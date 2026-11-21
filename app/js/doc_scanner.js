@@ -1227,7 +1227,13 @@
     qrStatus: 'waiting',
     qrPollTimer: null,
     qrBc: null,
-    receivedPageIds: new Set()
+    receivedPageIds: new Set(),
+    precheckResult: null,
+    precheckBusy: false,
+    precheckAck: false,
+    precheckOverrides: {},
+    precheckSig: '',
+    precheckGen: 0
   };
 
   function defaultEnhanceForPreset(preset) {
@@ -1629,6 +1635,11 @@
               <span class="doc-cam-guide-msg">Hold receipt, delivery ticket, or slip inside window (document only)</span>
             </div>
             <img id="docCamPreviewImg" class="doc-cam-preview-img" alt="Cropped document scan preview" hidden>
+            <div class="kiosk-cam-standby-card doc-cam-warmup-card doc-cam-pdf-card" id="docCamPdfCard" hidden>
+              <div class="kiosk-cam-standby-ico">${ic('file')}</div>
+              <strong id="docCamPdfTitle" data-no-i18n="1"></strong>
+              <p>PDF document ready to attach and pre-check.</p>
+            </div>
             <div class="kiosk-cam-standby-card doc-cam-warmup-card" id="docCamWarmupCard">
               <div class="kiosk-cam-standby-ico">${ic('scan_doc')}</div>
               <strong>Starting Document Scanner...</strong>
@@ -1647,6 +1658,8 @@
           </div>
 
           <div class="doc-cam-batch-tray" id="docCamBatchTray" hidden></div>
+
+          <div id="docCamPrecheckStrip" class="doc-cam-precheck-strip" hidden></div>
 
           <div class="doc-cam-foot">
             <div class="doc-cam-foot-left">
@@ -1711,7 +1724,108 @@
     canvasEl.addEventListener('touchend', onUp);
   }
 
-  function syncModalUi() {
+  function resetCameraPrecheck() {
+    S.precheckResult = null;
+    S.precheckBusy = false;
+    S.precheckAck = false;
+    S.precheckOverrides = {};
+    S.precheckSig = '';
+    S.precheckGen = (S.precheckGen || 0) + 1;
+    const strip = $('docCamPrecheckStrip');
+    if (strip) {
+      strip.hidden = true;
+      strip.innerHTML = '';
+    }
+  }
+
+  function renderDocCamPrecheckStrip() {
+    const strip = $('docCamPrecheckStrip');
+    if (!strip) return;
+    const isPrev = S.mode === 'preview' && S.pages.length > 0;
+    const res = S.precheckResult;
+    if (!isPrev || !res || !res.hasWarning) {
+      strip.hidden = true;
+      strip.innerHTML = '';
+      return;
+    }
+    const btnsHtml = (res.partyWarnings || []).map((pw, idx) => `
+      <button type="button" class="btn btn-primary btn-sm" data-cam-precheck-use-idx="${idx}"><span>Use</span> <b data-no-i18n="1">${esc(pw.suggested)}</b></button>
+    `).join('');
+    strip.hidden = false;
+    strip.innerHTML = `
+      <div class="doc-cam-precheck-row">
+        <strong>${ic('warn')} Pre-Check Hold: Review Before Attaching</strong>
+        ${S.precheckAck ? '<span class="badge badge-neutral">Acknowledged</span>' : ''}
+      </div>
+      ${((res.summaryItems && res.summaryItems.length) ? res.summaryItems : (res.summaryLines || [])).map(it => {
+        const html = (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.renderPrecheckItemHtml === 'function')
+          ? window.MFG_SMART_SCAN.renderPrecheckItemHtml(it)
+          : `<span data-no-i18n="1">${esc(String((it && it.text) || it || '').replace(/\u2014/g, ' - '))}</span>`;
+        return `<div class="doc-cam-precheck-line">${html}</div>`;
+      }).join('')}
+      <div class="doc-cam-precheck-acts">
+        ${btnsHtml}
+        ${S.precheckAck ? '' : '<button type="button" class="btn btn-ghost-bar btn-sm" id="docCamPrecheckKeepBtn">Keep as Scanned</button>'}
+      </div>
+    `;
+    strip.querySelectorAll('[data-cam-precheck-use-idx]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const idx = Number(btn.getAttribute('data-cam-precheck-use-idx'));
+        const pw = (res.partyWarnings || [])[idx];
+        if (!pw) return;
+        S.precheckOverrides[pw.targetKey] = pw.suggested;
+        S.precheckAck = false;
+        await runCameraPreviewPrecheck(true, true, { explicit: true });
+      });
+    });
+    const keepBtn = strip.querySelector('#docCamPrecheckKeepBtn');
+    if (keepBtn) {
+      keepBtn.addEventListener('click', () => {
+        S.precheckAck = true;
+        syncModalUi();
+      });
+    }
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+      window.MFG_I18N.translateDom(strip);
+    }
+  }
+
+  async function runCameraPreviewPrecheck(force = false, keepOverrides = false, opts = {}) {
+    if (!S.enablePrecheck && !(opts && opts.explicit)) return null;
+    if (!S.pages.length) return S.precheckResult;
+    const api = window.MFG_SMART_SCAN;
+    if (!api || typeof api.precheckCapturedPages !== 'function') return null;
+    const files = S.pages.map(p => p && p.file).filter(Boolean);
+    if (!files.length) return null;
+    const sig = files.map(f => `${f.name || ''}:${f.size || 0}:${f._extractedText ? f._extractedText.length : 0}`).join('|');
+    if (!force && S.precheckSig === sig) return S.precheckResult;
+    S.precheckSig = sig;
+    S.precheckAck = false;
+    if (!keepOverrides) S.precheckOverrides = {};
+    const myGen = ++S.precheckGen;
+    S.precheckBusy = true;
+    const confirmPreBtn = $('docCamConfirmBtn');
+    if (confirmPreBtn && S.mode === 'preview') confirmPreBtn.disabled = true;
+    try {
+      const res = await api.precheckCapturedPages(files, { partyOverrides: S.precheckOverrides });
+      if (myGen !== S.precheckGen) return null;
+      S.precheckResult = res || null;
+    } catch (_) {
+      if (myGen === S.precheckGen) S.precheckResult = null;
+    } finally {
+      if (myGen === S.precheckGen) {
+        S.precheckBusy = false;
+        const btnNow = $('docCamConfirmBtn');
+        if (btnNow) btnNow.disabled = false;
+      }
+    }
+    if (S.open && S.mode === 'preview' && myGen === S.precheckGen) {
+      syncModalUi({ skipAutoPrecheck: true });
+    }
+    return S.precheckResult;
+  }
+
+  function syncModalUi(opts = {}) {
     const stg = $('docCamStage');
     const qrPanel = $('docCamQrPanel');
     const topDeck = $('docCamTopDeck');
@@ -1739,6 +1853,8 @@
     const isPrev = S.mode === 'preview' && Boolean(activePage);
     const isAdj = S.mode === 'adjust_crop' && Boolean(activePage);
     const isCam = S.mode === 'camera';
+    const isPdfPg = Boolean(activePage && activePage.file && (/\.pdf$/i.test(activePage.file.name || '') || /application\/pdf/i.test(activePage.file.type || '')));
+    const hasEditableCanvas = Boolean(activePage && activePage.rawCanvas && !isPdfPg);
 
     if (qrPanel) qrPanel.hidden = !isQr;
     if (stg) {
@@ -1751,7 +1867,7 @@
     const cardSubBar = $('docCamCardSubBar');
     if (cardSubBar) cardSubBar.hidden = !(isCam && (S.preset === 'card' || S.preset === 'vin'));
     if (liveTools) liveTools.hidden = !isCam;
-    if (enhDeck) enhDeck.hidden = !(isPrev || isAdj);
+    if (enhDeck) enhDeck.hidden = !((isPrev || isAdj) && hasEditableCanvas);
     if (qrBtn) qrBtn.classList.toggle('active', isQr);
 
     document.querySelectorAll('#docCamPresetBar [data-doc-preset]').forEach(b => {
@@ -1789,10 +1905,10 @@
     if (vid) vid.hidden = !(isCam && S.camLive);
 
     if (prevImg) {
-      if (isPrev && activePage) {
+      if (isPrev && activePage && !isPdfPg) {
         prevImg.src = activePage.previewUrl || '';
         prevImg.hidden = false;
-      } else if (isAdj && activePage && activePage.rawPreviewUrl) {
+      } else if (isAdj && activePage && activePage.rawPreviewUrl && !isPdfPg) {
         prevImg.src = activePage.rawPreviewUrl;
         prevImg.hidden = false;
         prevImg.style.maxWidth = '100%';
@@ -1811,6 +1927,15 @@
         prevImg.style.objectFit = '';
       }
     }
+    const pdfCard = $('docCamPdfCard');
+    if (pdfCard) {
+      const showPdfCard = Boolean((isPrev || isAdj) && isPdfPg);
+      pdfCard.hidden = !showPdfCard;
+      const pdfTitle = $('docCamPdfTitle');
+      if (pdfTitle && showPdfCard) {
+        pdfTitle.textContent = String((activePage && activePage.file && activePage.file.name) || 'Document.pdf');
+      }
+    }
 
     if (ov) {
       ov.classList.toggle('is-interactive', isAdj);
@@ -1827,17 +1952,19 @@
         b.classList.toggle('active', b.getAttribute('data-doc-enhance') === (activePage.enhanceMode || 'clean'));
       });
     }
-    if (adjBtn) adjBtn.hidden = !isPrev;
+    if (adjBtn) adjBtn.hidden = !(isPrev && hasEditableCanvas);
     if (applyCropBtn) applyCropBtn.hidden = !isAdj;
 
     if (snapBtn) snapBtn.hidden = !isCam || Boolean(fb && !fb.hidden);
     if (retakeBtn) retakeBtn.hidden = !(isPrev || isAdj);
     if (addMoreBtn) addMoreBtn.hidden = !(isPrev && pageCnt >= 1 && pageCnt < 8);
+    const hasUnackedPrecheck = Boolean(isPrev && S.precheckResult && S.precheckResult.hasWarning && !S.precheckAck);
     if (confirmBtn) {
       confirmBtn.hidden = !(pageCnt >= 1 && (isPrev || isQr || isCam));
-      confirmBtn.innerHTML = pageCnt > 1
-        ? `${ic('check')} Attach ${pageCnt} Scans`
-        : `${ic('check')} Attach Scan`;
+      confirmBtn.disabled = Boolean(isPrev && S.precheckBusy);
+      confirmBtn.innerHTML = hasUnackedPrecheck
+        ? (pageCnt > 1 ? `${ic('warn')} Attach ${pageCnt} Scans Anyway` : `${ic('warn')} Attach Anyway`)
+        : (pageCnt > 1 ? `${ic('check')} Attach ${pageCnt} Scans` : `${ic('check')} Attach Scan`);
     }
     if (switchBtn) {
       const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -1873,13 +2000,15 @@
         tray.innerHTML = '';
       } else {
         tray.hidden = false;
-        tray.innerHTML = S.pages.map((p, idx) => `
+        tray.innerHTML = S.pages.map((p, idx) => {
+          const pPdf = Boolean(p && p.file && (/\.pdf$/i.test(p.file.name || '') || /application\/pdf/i.test(p.file.type || '')));
+          return `
           <div class="doc-cam-batch-chip ${idx === S.activeIdx ? 'active' : ''}" data-doc-pick-idx="${idx}">
-            ${p.previewUrl ? `<img src="${esc(p.previewUrl)}" alt="Page ${idx + 1}">` : ''}
+            ${pPdf ? '<span style="font-size:11px;font-weight:800;letter-spacing:.04em">PDF</span>' : (p.previewUrl ? `<img src="${esc(p.previewUrl)}" alt="Page ${idx + 1}">` : '')}
             <span>Page ${idx + 1}</span>
             <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" aria-label="Remove page ${idx + 1}">✕</button>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
         tray.querySelectorAll('[data-doc-pick-idx]').forEach(chip => {
           chip.addEventListener('click', ev => {
             if (ev.target && ev.target.closest('[data-doc-remove-idx]')) return;
@@ -1899,6 +2028,7 @@
             const removed = S.pages.splice(idx, 1)[0];
             if (removed && removed.previewUrl) { try { URL.revokeObjectURL(removed.previewUrl); } catch (_) {} }
             if (removed && removed.rawPreviewUrl) { try { URL.revokeObjectURL(removed.rawPreviewUrl); } catch (_) {} }
+            resetCameraPrecheck();
             if (!S.pages.length) {
               S.activeIdx = -1;
               if (S.mode !== 'qr') startLocalCameraStream();
@@ -1910,6 +2040,13 @@
           });
         });
       }
+    }
+    if (isPrev && pageCnt > 0) {
+      renderDocCamPrecheckStrip();
+      if (!opts || !opts.skipAutoPrecheck) runCameraPreviewPrecheck();
+    } else {
+      const strip = $('docCamPrecheckStrip');
+      if (strip) { strip.hidden = true; strip.innerHTML = ''; }
     }
     const modalEl = $('docCameraModal');
     if (modalEl && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
@@ -2166,7 +2303,8 @@
       pushPhoneRelayState(S.qrSid, S.qrTok, { op: 'clear' }).catch(() => {});
       S.mode = 'preview';
       showToast(added === 1 ? 'Received cropped scan from phone!' : `Received ${added} cropped scans from phone!`, 'ok');
-      syncModalUi();
+      syncModalUi({ skipAutoPrecheck: true });
+      await runCameraPreviewPrecheck(true);
     }
   }
 
@@ -2354,6 +2492,7 @@
       S.replaceOnSnap = true;
       S.awaitingPageTurn = false;
       S.lastAutoSnapSig = null;
+      resetCameraPrecheck();
       startLocalCameraStream();
     });
     $('docCamAddMoreBtn').addEventListener('click', () => {
@@ -2410,15 +2549,59 @@
       const picked = nativeInp.files ? Array.from(nativeInp.files) : [];
       nativeInp.value = '';
       if (!picked.length) return;
-      const outFiles = S.pages.map(p => p.file).filter(Boolean).concat(picked);
-      const cb = S.onCapture;
-      closeDocumentScanner();
-      if (typeof cb === 'function') await cb(outFiles, 'Camera Scan');
+      stopCameraTracks();
+      stopQrPolling();
+      for (let i = 0; i < picked.length && S.pages.length < 8; i++) {
+        const pf = picked[i];
+        if (!pf) continue;
+        const pUrl = URL.createObjectURL(pf);
+        S.pages.push({
+          rawCanvas: null,
+          rawPreviewUrl: pUrl,
+          quadNorm: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }],
+          rotation: 0,
+          enhanceMode: 'color',
+          file: pf,
+          previewUrl: pUrl
+        });
+        S.activeIdx = S.pages.length - 1;
+      }
+      S.mode = 'preview';
+      syncModalUi({ skipAutoPrecheck: true });
+      await runCameraPreviewPrecheck(true);
     });
 
     $('docCamConfirmBtn').addEventListener('click', async () => {
       const outFiles = S.pages.map(p => p.file).filter(Boolean);
       if (!outFiles.length) return;
+      if (S.precheckBusy) return;
+      const curSig = outFiles.map(f => `${f.name || ''}:${f.size || 0}:${f._extractedText ? f._extractedText.length : 0}`).join('|');
+      const hadPreviewStrip = Boolean(S.mode === 'preview' && S.precheckSig === curSig);
+      if (!hadPreviewStrip && S.enablePrecheck) {
+        const res = await runCameraPreviewPrecheck(true);
+        if (res && res.hasWarning) {
+          stopCameraTracks();
+          S.mode = 'preview';
+          S.precheckAck = false;
+          syncModalUi();
+          return;
+        }
+      }
+      const overrides = (S.precheckOverrides && Object.keys(S.precheckOverrides).length)
+        ? Object.assign({}, S.precheckOverrides)
+        : null;
+      const ackSig = (S.precheckResult && S.precheckResult.hasWarning && S.precheckResult.warnSig)
+        ? String(S.precheckResult.warnSig)
+        : '';
+      const acked = Boolean(ackSig);
+      outFiles.forEach(f => {
+        if (!f || typeof f !== 'object') return;
+        if (overrides) f._ssPrecheckOverrides = Object.assign({}, overrides);
+        if (acked) {
+          f._ssPrecheckAck = true;
+          f._ssPrecheckAckSig = ackSig;
+        }
+      });
       const cb = S.onCapture;
       closeDocumentScanner();
       if (typeof cb === 'function') await cb(outFiles, 'Camera Scan');
@@ -2441,7 +2624,9 @@
 
   function closeDocumentScanner() {
     S.open = false;
+    S.enablePrecheck = false;
     S.onCapture = null;
+    resetCameraPrecheck();
     stopQrPolling();
     stopCameraTracks();
     revokeAllPageUrls();
@@ -2459,7 +2644,9 @@
   function openDocumentScanner(onCaptureFiles, opts = {}) {
     const modal = ensureModalDom();
     revokeAllPageUrls();
+    resetCameraPrecheck();
     S.open = true;
+    S.enablePrecheck = Boolean(opts && opts.enablePrecheck);
     S.mode = 'camera';
     S.pages = [];
     S.activeIdx = -1;
@@ -3709,7 +3896,18 @@
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',
-    '3x': '3×'
+    '3x': '3×',
+    'Pre-Check Hold: Review Before Attaching': 'تنبيه تدقيق مسبق: راجع قبل الإرفاق',
+    'Keep as Scanned': 'الإبقاء كما في المسح',
+    'Attach Anyway': 'إرفاق على أي حال',
+    'Attach 2 Scans Anyway': 'إرفاق مسحين على أي حال',
+    'Attach 3 Scans Anyway': 'إرفاق 3 مسوحات على أي حال',
+    'Attach 4 Scans Anyway': 'إرفاق 4 مسوحات على أي حال',
+    'Attach 5 Scans Anyway': 'إرفاق 5 مسوحات على أي حال',
+    'Attach 6 Scans Anyway': 'إرفاق 6 مسوحات على أي حال',
+    'Attach 7 Scans Anyway': 'إرفاق 7 مسوحات على أي حال',
+    'Attach 8 Scans Anyway': 'إرفاق 8 مسوحات على أي حال',
+    'Acknowledged': 'تمت المراجعة'
   };
 
   const SCANNER_DICT_FR = {
@@ -3859,7 +4057,18 @@
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',
-    '3x': '3×'
+    '3x': '3×',
+    'Pre-Check Hold: Review Before Attaching': 'Vérification préalable : contrôler avant de joindre',
+    'Keep as Scanned': 'Conserver tel que scanné',
+    'Attach Anyway': 'Joindre quand même',
+    'Attach 2 Scans Anyway': 'Joindre 2 scans quand même',
+    'Attach 3 Scans Anyway': 'Joindre 3 scans quand même',
+    'Attach 4 Scans Anyway': 'Joindre 4 scans quand même',
+    'Attach 5 Scans Anyway': 'Joindre 5 scans quand même',
+    'Attach 6 Scans Anyway': 'Joindre 6 scans quand même',
+    'Attach 7 Scans Anyway': 'Joindre 7 scans quand même',
+    'Attach 8 Scans Anyway': 'Joindre 8 scans quand même',
+    'Acknowledged': 'Vérifié'
   };
 
   function registerScannerI18n() {
@@ -3902,6 +4111,8 @@
     checkQrRemoteOnce,
     snapCanvasForBatchTest,
     registerScannerI18n,
+    syncModalUi,
+    runPreviewPrecheck: () => runCameraPreviewPrecheck(true, false, { explicit: true }),
     state: () => S,
     _toast: null
   };

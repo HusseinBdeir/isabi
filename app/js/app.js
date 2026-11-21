@@ -701,6 +701,7 @@
     indTablesSearch: '',
     sentinelReviews: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_sentinel_reviews_v1', null) : null) || {},
     alertRules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_alert_rules_v1', null) : null) || { overrides: {}, custom: [] },
+    partyHygiene: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_party_hygiene_v1', null) : null) || { rules: {} },
     roleTabPolicies: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_role_tab_policies_v1', null) : null) || {},
     permHubScopeMode: 'role',
     permHubIndFilter: '',
@@ -26004,6 +26005,142 @@
     }
     if (changed) invalidateAlertRuleCaches();
     return changed;
+  }
+
+  function ensurePartyHygieneState() {
+    if (!STATE.partyHygiene || typeof STATE.partyHygiene !== 'object') {
+      STATE.partyHygiene = { rules: {} };
+    }
+    if (!STATE.partyHygiene.rules || typeof STATE.partyHygiene.rules !== 'object') {
+      STATE.partyHygiene.rules = {};
+    }
+    return STATE.partyHygiene;
+  }
+
+  function canManageDataHygiene() {
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    if (!u) return false;
+    if (typeof isOwner === 'function' && isOwner(u)) return true;
+    const role = String(u.role || '').trim();
+    const uid = String(u.id || '').trim();
+    return role === 'Owner' || role === 'Supervisor' || role === 'Supervisor + Entry' || uid === 'u1' || uid === 'u2';
+  }
+
+  function partyHygieneRuleKey(ind, kind, aliasName) {
+    const indStr = String(ind || 'Manufacturing').trim() || 'Manufacturing';
+    const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
+    const aNorm = norm(aliasName || '').replace(/\s+/g, ' ');
+    return aNorm ? `${indStr}::${kStr}::${aNorm}` : '';
+  }
+
+  function getPartyHygieneRules(explicitInd, explicitKind) {
+    const st = ensurePartyHygieneState();
+    const out = {};
+    const wantInd = explicitInd ? String(explicitInd).trim() : '';
+    const wantKind = explicitKind ? String(explicitKind).trim().toLowerCase() : '';
+    Object.entries(st.rules || {}).forEach(([k, v]) => {
+      if (!v || typeof v !== 'object') return;
+      if (wantInd && String(v.industry || '') !== wantInd) return;
+      if (wantKind && String(v.kind || '').toLowerCase() !== wantKind) return;
+      out[k] = v;
+    });
+    return out;
+  }
+
+  function invalidatePartyHygieneCaches() {
+    try {
+      const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+      if (fIdx && fIdx._partyTypoPools) fIdx._partyTypoPools.clear();
+    } catch (_) {}
+  }
+
+  function savePartyHygieneDecision({ industry, kind, alias, canonical, status, source, reason } = {}) {
+    if (!canManageDataHygiene()) return null;
+    const st = ensurePartyHygieneState();
+    const indStr = String(industry || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing')).trim() || 'Manufacturing';
+    const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
+    const aliasStr = String(alias || '').trim();
+    const canonStr = String(canonical || '').trim();
+    const rk = partyHygieneRuleKey(indStr, kStr, aliasStr);
+    if (!rk || !canonStr) return null;
+    const u = typeof activeUser === 'function' ? activeUser() : {};
+    const nextStatus = status === 'dismissed' ? 'dismissed' : (status === 'undone' ? 'undone' : 'confirmed');
+    const ruleObj = {
+      key: rk,
+      industry: indStr,
+      kind: kStr,
+      alias: aliasStr,
+      canonical: canonStr,
+      status: nextStatus,
+      source: String(source || 'deterministic'),
+      reason: String(reason || '').slice(0, 180),
+      updated_at: new Date().toISOString(),
+      updated_by: String((u && (u.email || u.full_name)) || 'owner')
+    };
+    st.rules[rk] = ruleObj;
+    invalidatePartyHygieneCaches();
+    saveLocalAuthAndRecords();
+    if (typeof isDemoScopeActive === 'function' && !isDemoScopeActive()) {
+      syncWithCloud(true);
+    }
+    return ruleObj;
+  }
+
+  function comparePartyHygieneTs(a, b) {
+    const sa = String(a || '');
+    const sb = String(b || '');
+    const ma = sa ? Date.parse(sa) : NaN;
+    const mb = sb ? Date.parse(sb) : NaN;
+    if (Number.isFinite(ma) && Number.isFinite(mb)) return ma < mb ? -1 : (ma > mb ? 1 : 0);
+    if (Number.isFinite(ma) !== Number.isFinite(mb)) return Number.isFinite(ma) ? 1 : -1;
+    return sa < sb ? -1 : (sa > sb ? 1 : 0);
+  }
+
+  function mergePartyHygiene(incoming) {
+    if (!incoming || typeof incoming !== 'object') return false;
+    const st = ensurePartyHygieneState();
+    const inRules = incoming.rules && typeof incoming.rules === 'object' ? incoming.rules : {};
+    let changed = false;
+    Object.entries(inRules).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      const ex = st.rules[rk];
+      if (!ex || comparePartyHygieneTs(rv.updated_at, ex.updated_at) > 0) {
+        st.rules[rk] = Object.assign({}, rv);
+        changed = true;
+      }
+    });
+    if (changed) invalidatePartyHygieneCaches();
+    return changed;
+  }
+
+  function resolveConfirmedPartyAlias(kind, rawName, company, explicitInd) {
+    const aliasNorm = norm(rawName || '').replace(/\s+/g, ' ');
+    if (!aliasNorm) return '';
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const indStr = explicitInd || (company && hasIndFn ? inferIndustryForCompany(company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company) : 'Manufacturing') || 'Manufacturing';
+    const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
+    const st = ensurePartyHygieneState();
+    const rk = partyHygieneRuleKey(indStr, kStr, rawName);
+    const rule = rk ? st.rules[rk] : null;
+    if (rule && rule.status === 'confirmed' && rule.canonical && norm(rule.canonical).replace(/\s+/g, ' ') !== aliasNorm) {
+      return String(rule.canonical).trim();
+    }
+    return '';
+  }
+
+  function isPartyHygieneDismissed(kind, nameA, nameB, company, explicitInd) {
+    const na = norm(nameA || '').replace(/\s+/g, ' ');
+    const nb = norm(nameB || '').replace(/\s+/g, ' ');
+    if (!na || !nb) return false;
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const indStr = explicitInd || (company && hasIndFn ? inferIndustryForCompany(company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company) : 'Manufacturing') || 'Manufacturing';
+    const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
+    const st = ensurePartyHygieneState();
+    const rA = st.rules[partyHygieneRuleKey(indStr, kStr, nameA)];
+    if (rA && rA.status === 'dismissed' && norm(rA.canonical).replace(/\s+/g, ' ') === nb) return true;
+    const rB = st.rules[partyHygieneRuleKey(indStr, kStr, nameB)];
+    if (rB && rB.status === 'dismissed' && norm(rB.canonical).replace(/\s+/g, ' ') === na) return true;
+    return false;
   }
 
   function getActiveCustomAlertRules() {
@@ -74929,6 +75066,9 @@
   function closeIndustryDomainEntryModal() {
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetDomainScanState === 'function') {
+      window.MFG_SMART_SCAN.resetDomainScanState();
+    }
     FORM_UI.domainNearCopyPeekItems = [];
     FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
@@ -74999,6 +75139,9 @@
     const curMatch = COMPANY_BU_MATCH[STATE.company];
     const defCo = (prefill && prefill.company) || (curMatch && entityOptions.includes(curMatch) ? curMatch : entityOptions[0]);
     const today = (typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06';
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetDomainScanState === 'function') {
+      window.MFG_SMART_SCAN.resetDomainScanState();
+    }
 
     let modal = $('indDomainEntryModal');
     if (!modal) {
@@ -76351,7 +76494,7 @@
       });
       syncHldLoanChrono();
     }
-    const isNearCopyDomainKey = ['ins_policies', 'ins_billing', 'ins_remittances', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hld_extended', 'hld_interactions'].includes(spec.key);
+    const isNearCopyDomainKey = Boolean(DOMAIN_NEAR_COPY_SPECS[spec.key]);
     const buildDomCand = () => {
       if (!isNearCopyDomainKey) return null;
       const ridNow = strVal('ide_id') || strVal('ide_code') || '';
@@ -76363,7 +76506,8 @@
         const bRaw = numVal('ide_billed');
         return { id: ridNow, company: coNow, date: dtNow, client: strVal('ide_client'), policy_no: strVal('ide_policy_no'), client_billed_4112_usd: bRaw > 0.005 ? bRaw : 0, collected_usd: colN, receipt_ref: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
-      if (spec.key === 'ins_remittances') return { id: ridNow, company: 'Insurance Company', date: dtNow, next_due: strVal('ide_due'), carrier: strVal('ide_carrier'), settled_to_carrier_usd: Math.max(0, round2(numVal('ide_settled'))) };
+      if (spec.key === 'ins_claims') return { id: ridNow, company: 'Insurance Company', date: dtNow, loss_date: dtNow, policy_no: strVal('ide_policy_no'), client: strVal('ide_client'), claimed_usd: numVal('ide_claimed') };
+      if (spec.key === 'ins_remittances') return { id: ridNow, company: 'Insurance Company', date: strVal('ide_due') || dtNow, next_due: strVal('ide_due') || dtNow, carrier: strVal('ide_carrier'), gross_prem_usd: numVal('ide_gwp'), settled_to_carrier_usd: Math.max(0, round2(numVal('ide_settled'))) };
       if (spec.key === 're_invoicing') {
         const netN = numVal('ide_net');
         const vatN = /4235/i.test(coNow) ? round2(netN * 0.11) : 0;
@@ -76371,6 +76515,7 @@
       }
       if (spec.key === 're_receipts') return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), method: strVal('ide_method'), gross_usd: numVal('ide_gross'), allocated_inv_usd: numVal('ide_allocated'), deposit_gl4196_usd: numVal('ide_deposit'), audit_flag: strVal('ide_notes') };
       if (spec.key === 're_sales') return { id: ridNow, company: coNow, date: dtNow, buyer: strVal('ide_buyer'), unit: strVal('ide_unit'), contract_usd: numVal('ide_contract'), paid_usd: numVal('ide_paid') };
+      if (spec.key === 're_workorders') return { id: ridNow, company: coNow, date: dtNow, contractor: strVal('ide_contractor'), property: strVal('ide_property'), budget_usd: numVal('ide_budget'), actual_usd: numVal('ide_actual') };
       if (spec.key === 'trd_sales') {
         const netN = numVal('ide_net');
         return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), book: strVal('ide_book'), ttc_usd: round2(netN * 1.11) };
@@ -76382,8 +76527,12 @@
         const amtN = round2(usdN + (lbpN / fxN));
         return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), method: strVal('ide_method') || 'Payment', amount: amtN, usd_amount: usdN, lbp_amount: lbpN, discount: round2(numVal('ide_discount')), reference: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
+      if (spec.key === 'trd_purchases') {
+        const fobN = numVal('ide_fob');
+        return { id: ridNow, company: coNow, date: dtNow, supplier: strVal('ide_supplier'), container_bl: strVal('ide_bl'), fob_usd: fobN, total_landed_usd: round2(fobN + numVal('ide_landed_add')) };
+      }
       if (spec.key === 'hsp_revenue') return { id: ridNow, company: coNow, date: dtNow, outlet: strVal('ide_outlet'), category: strVal('ide_category'), ttc_usd: numVal('ide_tot'), method: strVal('ide_method'), notes: strVal('ide_notes') };
-      if (spec.key === 'hsp_pos') return { id: ridNow, company: coNow, date: dtNow, terminal: strVal('ide_terminal'), shift: strVal('ide_shift'), pos_billed_ttc: numVal('ide_billed') };
+      if (spec.key === 'hsp_pos') return { id: ridNow, company: coNow, date: dtNow, terminal: strVal('ide_terminal'), shift: strVal('ide_shift'), cashier: strVal('ide_cashier'), pos_billed_ttc: numVal('ide_billed') };
       if (spec.key === 'hsp_memberships') return { id: ridNow, company: coNow, date: strVal('ide_start_date') || dtNow, start_date: strVal('ide_start_date') || dtNow, member: strVal('ide_member'), unit: strVal('ide_unit'), season: strVal('ide_season'), contract_usd: numVal('ide_contract'), paid_usd: numVal('ide_paid') };
       if (spec.key === 'hld_extended') {
         const dirE = strVal('ide_direction') || 'Outflow';
@@ -76392,7 +76541,8 @@
         const lE = isCfgE ? Math.round(numVal('ide_lbp')) : Math.max(0, Math.round(numVal('ide_lbp')));
         const fxE = getLbpFxRate(dtNow) || 89500;
         const totE = round2(uE + (lE / fxE));
-        return { id: ridNow, company: 'Bdeir Holding', kind: 'Extended', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: ridNow, notes: strVal('ide_notes') };
+        const editRef = (isEditMode && prefill && prefill.reference) ? String(prefill.reference) : ridNow;
+        return { id: ridNow, company: 'Bdeir Holding', kind: 'Extended', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: editRef, notes: strVal('ide_notes') };
       }
       if (spec.key === 'hld_interactions') return { id: ridNow, date: dtNow, fromCo: strVal('ide_from'), toCo: strVal('ide_to'), usd: numVal('ide_usd'), method: strVal('ide_method'), notes: strVal('ide_notes') };
       return null;
@@ -76434,7 +76584,7 @@
     const ideNcCb = $('ide_nearcopyok');
     if (ideNcCb) ideNcCb.addEventListener('change', () => { if (ideNcCb.checked) showMsg(''); });
     if (isEditMode) {
-      bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender').forEach(el => {
+      bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender, #ide_property, #ide_outlet, #ide_cashier, #ide_producer').forEach(el => {
         el.dataset.partyInitVal = String(el.value || '');
       });
     }
@@ -76530,7 +76680,10 @@
       domPostAttempted = true;
       const domNcd = runDomainNearCopyCheck();
       if (domNcd && domNcd.block) {
+        const cbNc = $('ide_nearcopyok');
+        if (cbNc) { try { cbNc.focus({ preventScroll: false }); } catch (_) {} }
         showMsg('Possible second copy of an entry already in ISABI. Check the entry shown under the form, then tick the box to post anyway.', true);
+        toast('Possible duplicate or split total detected - review or confirm to post', 'err');
         return;
       }
       const domNearCopyLink = (domNcd && domNcd.nearCopyOf !== undefined) ? { near_copy_of: domNcd.nearCopyOf } : {};
@@ -76662,7 +76815,8 @@
           deductible_usd: numVal('ide_deductible'),
           approved_usd: numVal('ide_approved'),
           paid_by_insurer_usd: 0,
-          status: numVal('ide_approved') > 0 ? 'Approved · Awaiting Release' : 'FNOL · Survey Open'
+          status: numVal('ide_approved') > 0 ? 'Approved · Awaiting Release' : 'FNOL · Survey Open',
+          ...domNearCopyLink
         });
       } else if (spec.key === 'ins_agreements') {
         const carrier = strVal('ide_carrier');
@@ -76921,7 +77075,8 @@
           budget_usd: numVal('ide_budget'),
           actual_usd: actual,
           rechargeable: rech,
-          status: 'In Progress'
+          status: 'In Progress',
+          ...domNearCopyLink
         });
       } else if (spec.key === 'trd_targets') {
         const cat = normTradingTariffCat(strVal('ide_category') || 'Heavy Truck Sale');
@@ -77086,7 +77241,8 @@
           fob_usd: fob,
           landed_add_usd: add,
           total_landed_usd: round2(fob + add),
-          status: ord > rec ? 'Partial Arrival · Backorder' : 'Cleared & Costed'
+          status: ord > rec ? 'Partial Arrival · Backorder' : 'Cleared & Costed',
+          ...domNearCopyLink
         });
       } else if (spec.key === 'trd_trucks') {
         const fob = numVal('ide_fob');
@@ -77387,7 +77543,7 @@
           amount: totUsd,
           principal: totUsd,
           settled_amount: totUsd,
-          reference: recId,
+          reference: (isEditMode && prefill && prefill.reference) ? String(prefill.reference) : recId,
           notes,
           source: 'app',
           voided: false,
@@ -77704,7 +77860,7 @@
             await window.MFG_SMART_SCAN.scanIntoDomainModal(batch, { captureMethod: method || 'Camera Scan' });
             syncIndMobAiUi();
           }
-        });
+        }, { enablePrecheck: true });
       });
     }
     if (scanRunSampleBtn) {
@@ -99129,7 +99285,7 @@
       const out = [];
       const reRcts = (SEED && SEED.industryLive && SEED.industryLive.realestate && SEED.industryLive.realestate.receipts) || [];
       ov(reRcts, 're_receipts').forEach(r => {
-        const g = Number(r.gross_usd || 0) || 0;
+        const g = Number(r.gross_usd != null ? r.gross_usd : (r.amount_usd != null ? r.amount_usd : (r.usd || 0))) || 0;
         if (g > 0.005 && passCoDate(r.company, r.date, '4235 Company S.A.L')) {
           out.push({
             id: `re_receipts:${r.id}`,
@@ -99192,7 +99348,61 @@
 
   // The existing entry (or entries) the record looks like a second copy of, or null.
   function findNearCopyEntry(crKey, rec) {
-    return findNearCopySingleEntry(crKey, rec) || findNearCopySumEntry(crKey, rec);
+    const hit = findNearCopySingleEntry(crKey, rec) || findNearCopySumEntry(crKey, rec);
+    if (hit) return hit;
+    if (crKey === 'receipts' && rec && rec.company && !rec.price_pending && !rec.group_transfer_id && nearCopySumClass('receipts', rec) === 'paid' && nearCopySumUsd(rec) > 0.005 && typeof inferIndustryForCompany === 'function') {
+      const ind = inferIndustryForCompany(rec.company);
+      const domKey = ind === 'Real Estate & Property'
+        ? 're_receipts'
+        : (ind === 'Automotive & Heavy Trading' ? 'trd_receipts' : (ind === 'Insurance & Brokerage' ? 'ins_billing' : ''));
+      if (domKey && typeof findDomainNearCopyEntry === 'function') {
+        const usdAmt = nearCopySumUsd(rec);
+        const domRec = {
+          id: rec.id || '',
+          company: rec.company,
+          date: rec.date || '',
+          tenant: rec.customer || '',
+          customer: rec.customer || '',
+          client: rec.customer || '',
+          reference: rec.reference || rec.invoice || '',
+          gross_usd: usdAmt,
+          settled_usd: usdAmt,
+          client_billed_4112_usd: usdAmt,
+          collected_usd: usdAmt,
+          amount_usd: usdAmt,
+          usd: usdAmt
+        };
+        const domHit = findDomainNearCopyEntry(domKey, domRec, { _fromNearCopy: true });
+        if (domHit) {
+          const mapDomRow = m => {
+            if (!m) return { id: '', date: rec.date, company: rec.company, customer: rec.customer || '', reference: '', amount: usdAmt };
+            const raw = (m && (m._raw || m.rawRow) && typeof (m._raw || m.rawRow) === 'object') ? (m._raw || m.rawRow) : m;
+            return {
+              id: m._srcId || raw.id || raw.code || m.id || '',
+              date: raw.date || m.date || raw.due_date || raw.promise_date || rec.date,
+              company: m.company || raw.company || rec.company,
+              customer: raw.tenant || raw.customer || raw.client || raw.insured || m.partyLabel || m.partyRaw || rec.customer || '',
+              reference: m.ref || raw.reference || raw.receipt_ref || raw.policy_no || raw.id || '',
+              amount: Number(m.amount != null ? m.amount : _domRowAmt(domKey, raw)) || 0,
+              _raw: raw,
+              rawRow: raw,
+              _bucket: m._bucket || domKey,
+              _srcLabel: m._srcLabel || DOMAIN_NEAR_COPY_LABELS[domKey] || 'Entry'
+            };
+          };
+          const mappedRow = mapDomRow(domHit.row);
+          const mappedRows = (Array.isArray(domHit.rows) && domHit.rows.length >= 2) ? domHit.rows.map(mapDomRow) : undefined;
+          return {
+            row: mappedRow,
+            rows: mappedRows,
+            day: domHit.day || mappedRow.date,
+            reason: domHit.reason,
+            typoParty: domHit.typoParty || ''
+          };
+        }
+      }
+    }
+    return null;
   }
 
   // One payment already booked as several rows (owner idea 2026-11-17). Live case: Sample Supplies, $1,000 keyed in the
@@ -99244,14 +99454,26 @@
     return false;
   }
 
-  // Matches 1-letter key typos AND single missing/extra spaces ("SampleSupplies" vs "Sample Supplies").
+  // Matches 1-letter key typos AND single missing/extra spaces ("SampleSupplies" vs "Sample Supplies"),
+  // excluding enumerated 1-char designators or middle/surname initials ("Quarry A" vs "Quarry B", "Maya S." vs "Maya K.").
   function partyNameOneLetterOff(rawA, rawB) {
     const ka = nearCopyPartyKey(rawA);
     const kb = nearCopyPartyKey(rawB);
     if (!ka || !kb) return false;
-    if (ka !== kb) return partyKeyOneLetterOff(ka, kb);
     const wa = partyWordsKey(rawA);
     const wb = partyWordsKey(rawB);
+    if (ka !== kb) {
+      if (wa && wb) {
+        const ta = wa.split(' ');
+        const tb = wb.split(' ');
+        if (ta.length >= 2 && ta.length === tb.length) {
+          const diffs = [];
+          for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) diffs.push(i);
+          if (diffs.length > 0 && diffs.every(i => ta[i].length === 1 && tb[i].length === 1)) return false;
+        }
+      }
+      return partyKeyOneLetterOff(ka, kb);
+    }
     if (!wa || !wb || wa === wb || Math.min(ka.length, kb.length) < 4 || Math.abs(wa.length - wb.length) !== 1) return false;
     const lo = wa.length < wb.length ? wa : wb;
     const hi = wa.length < wb.length ? wb : wa;
@@ -99261,11 +99483,13 @@
     return false;
   }
 
-  // True when `rawName` is an independent active party in the Universal Customer/Supplier master for `company`'s industry.
+  // True when `rawName` is an independent active party/site/staff in the Universal master for `company`'s industry.
   function isExactMasterParty(partyKind, rawName, company) {
     const key = nearCopyPartyKey(rawName);
     if (!key) return false;
-    const crKey = partyKind === 'customer' ? 'customers' : 'suppliers';
+    const crKey = partyKind === 'customer'
+      ? 'customers'
+      : (partyKind === 'site' ? 'sites' : (partyKind === 'staff' ? 'staff_members' : 'suppliers'));
     const rows = nearCopyPool(crKey);
     const hasIndFn = typeof inferIndustryForCompany === 'function';
     const targetInd = hasIndFn
@@ -99281,17 +99505,17 @@
         if (r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) continue;
       } else {
         const rowInd = r._industry || (hasIndFn && r.company ? inferIndustryForCompany(r.company) : '');
-        if (rowInd !== targetInd) continue;
+        if (rowInd && rowInd !== targetInd) continue;
       }
-      const rName = r.name || (partyKind === 'customer' ? r.Customer : r.Supplier) || '';
+      const rName = r.name || (partyKind === 'customer' ? r.Customer : (partyKind === 'site' ? (r.Site || r.site) : (partyKind === 'staff' ? (r.full_name || r.Staff || r.staff_name) : r.Supplier))) || '';
       if (rName && nearCopyPartyKey(rName) === key) return true;
     }
     return false;
   }
 
   // Returns the highest-ranked (caller-ordered) candidate that is 1 letter off `rawName`, or null if `rawName` matches
-  // an existing candidate exactly or has no 1-letter-off neighbour.
-  function findNearPartyMatch(rawName, candidates) {
+  // an existing candidate exactly, is dismissed via Data Hygiene, or has no 1-letter-off neighbour.
+  function findNearPartyMatch(rawName, candidates, opts = null) {
     const w = partyWordsKey(rawName);
     const k = nearCopyPartyKey(rawName);
     const n = norm(rawName);
@@ -99300,9 +99524,13 @@
       const c = candidates[i];
       if (c && (norm(c) === n || partyWordsKey(c) === w)) return null;
     }
+    const checkDismissed = opts && opts.kind && typeof isPartyHygieneDismissed === 'function';
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
-      if (c && partyNameOneLetterOff(rawName, c)) return c;
+      if (c && partyNameOneLetterOff(rawName, c)) {
+        if (checkDismissed && isPartyHygieneDismissed(opts.kind, rawName, c, opts.company, opts.ind)) continue;
+        return c;
+      }
     }
     return null;
   }
@@ -99412,7 +99640,7 @@
     if (!day || !co || !cls || !party || !(amt > 0.005)) return null;
     const days = [day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
-    const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'counterparty') && party.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
+    const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'staff' || pk === 'counterparty') && party.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
     const closeByParty = checkTypo ? new Map() : null;
     const isExtExtended = crKey === 'external_movements' && (/^extended$/i.test(String(rec.kind || '')) || /^Extended\./i.test(String(rec.notes || '')));
     const rows = nearCopyPool(crKey, { winDays: new Set(days), co, skipOpSister: isExtExtended });
@@ -99436,7 +99664,8 @@
       if (!rp) continue;
       if (rp === party) {
         bucket.push(r);
-      } else if (closeByParty && partyKeyOneLetterOff(party, rp)) {
+      } else if (closeByParty && partyNameOneLetterOff(rec[pk], r[pk])
+        && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(pk, rec[pk], r[pk], rec.company))) {
         let pDays = closeByParty.get(rp);
         if (!pDays) {
           pDays = new Map(days.map(d => [d, []]));
@@ -99485,7 +99714,7 @@
     const recParty = crKey === 'sales_tickets' ? norm(rawRecParty) : (crKey === 'raw_purchases' ? norm(rawRecParty) : normSupPayable(rawRecParty));
     if (!recParty) return null;
     const recPartyCompact = nearCopyPartyKey(rawRecParty);
-    const typoKind = crKey === 'sales_tickets' ? 'customer' : (crKey === 'expenses' ? 'supplier' : '');
+    const typoKind = crKey === 'sales_tickets' ? 'customer' : (crKey === 'raw_purchases' ? (rec.site ? 'site' : 'supplier') : (crKey === 'expenses' ? 'supplier' : ''));
     const allowTypo = Boolean(typoKind && recPartyCompact.length >= 4 && !isExactMasterParty(typoKind, rawRecParty, rec.company));
     const recInv = normTicketNo(cleanVoucherRef(rec.invoice || rec.reference));
     const rows = nearCopyPool(crKey);
@@ -99505,7 +99734,10 @@
         const rawRowParty = crKey === 'sales_tickets' ? (r.customer || '') : (r.site || r.site_owner || '');
         const party = norm(rawRowParty);
         const exactParty = party === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowParty) === recPartyCompact);
-        const typoParty = !exactParty && allowTypo && Boolean(rawRowParty) && partyNameOneLetterOff(rawRecParty, rawRowParty);
+        const rawOwnerMatch = crKey !== 'raw_purchases' || !rec.site_owner || !r.site_owner || norm(rec.site_owner) === norm(r.site_owner) || partyNameOneLetterOff(rec.site_owner, r.site_owner);
+        const typoParty = !exactParty && allowTypo && rawOwnerMatch && Boolean(rawRowParty)
+          && partyNameOneLetterOff(rawRecParty, rawRowParty)
+          && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoKind, rawRecParty, rawRowParty, rec.company));
         if (!exactParty && !typoParty) continue;
         const rTruck = digits(r.truck);
         if (recTruck && rTruck && recTruck !== rTruck) continue;
@@ -99519,7 +99751,9 @@
       if (r.price_pending) continue;
       const rawRowSup = r.supplier || '';
       const exactSup = normSupPayable(rawRowSup) === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowSup) === recPartyCompact);
-      const typoSup = !exactSup && allowTypo && Boolean(rawRowSup) && partyNameOneLetterOff(rawRecParty, rawRowSup);
+      const typoSup = !exactSup && allowTypo && Boolean(rawRowSup)
+        && partyNameOneLetterOff(rawRecParty, rawRowSup)
+        && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed('supplier', rawRecParty, rawRowSup, rec.company));
       if (!exactSup && !typoSup) continue;
       if (rec.equipment && r.equipment && norm(rec.equipment) !== norm(r.equipment)) continue;
       const rInv = normTicketNo(cleanVoucherRef(r.invoice || r.reference));
@@ -99587,9 +99821,13 @@
       sister_sum: 'Same day and party, entries on another form add up to this amount',
       sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount',
       ticket: 'Same day, party, truck and amount, ticket number one digit apart',
-      ticket_typo: 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
+      ticket_typo: crKey === 'raw_purchases'
+        ? ((hit.row && hit.row.site) ? 'Same day, similar site name, same truck and amount, ticket number one digit apart' : 'Same day, similar supplier name, same truck and amount, ticket number one digit apart')
+        : 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
       vat: 'Same day and supplier, amount differs by exactly the 11% VAT',
-      vat_typo: 'Same day and similar supplier name, amount differs by exactly the 11% VAT'
+      vat_typo: 'Same day and similar supplier name, amount differs by exactly the 11% VAT',
+      same_amt: 'Same day, party and amount already logged',
+      same_amt_typo: 'Same day and amount under a similar name already logged'
     };
     const reason = reasonMap[hit.reason] || '';
     if (hint && hit.rows) {
@@ -99612,12 +99850,12 @@
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span>${headHtml}<span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint) {
       const r = hit.row;
-      const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
-      const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
+      const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : (crKey === 'receipts' ? ((r && r._srcLabel) || 'Customer Receipt') : 'Expense'));
+      const ref = (crKey === 'expenses' || crKey === 'receipts') ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
       const chipTok = nearCopyPeekToken(r, ref);
-      const u = nearCopyRowUsd(crKey, r);
-      FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
-      const party = crKey === 'sales_tickets' ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
+      const u = crKey === 'receipts' ? nearCopySumUsd(r) : nearCopyRowUsd(crKey, r);
+      FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && (r._raw || r.rawRow)) || r, label, chipTok, usd: u });
+      const party = (crKey === 'sales_tickets' || crKey === 'receipts') ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
       const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(u, 2)].filter(Boolean);
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('mfg', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
@@ -99700,26 +99938,109 @@
     re_receipts: 'Tenant Receipt',
     re_invoicing: 'Rent Invoice',
     re_sales: 'Property Deed Sale',
+    re_workorders: 'Work Order',
     trd_receipts: 'Invoice Receipt',
     trd_sales: 'Sales Invoice',
+    trd_purchases: 'Import File',
     hsp_revenue: 'Venue Daily Revenue',
     hsp_pos: 'POS Shift Close',
     hsp_memberships: 'Seasonal Membership',
     ins_billing: 'Client Receipt',
     ins_policies: 'Insurance Policy',
+    ins_claims: 'Claim File',
     ins_remittances: 'Carrier Bordereau',
     hld_extended: 'Extended Entry',
     hld_interactions: 'Sister Transfer'
   };
 
+  const DOMAIN_NEAR_COPY_SPECS = {
+    re_invoicing: { ind: 'Real Estate & Property', label: 'Rent Invoice', partyFields: ['tenant'], typoKind: 'customer', refFields: ['tax_seq', 'seq_no', 'id'], dateFields: ['date'], usdFields: ['amount_ttc_usd', 'ttc_usd', 'net_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    re_receipts: { ind: 'Real Estate & Property', label: 'Tenant Receipt', partyFields: ['tenant'], typoKind: 'customer', refFields: ['reference', 'linked_invoice', 'id'], dateFields: ['date'], usdFields: ['gross_usd', 'amount_usd', 'collected_usd', 'usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    re_sales: { ind: 'Real Estate & Property', label: 'Property Deed Sale', partyFields: ['buyer'], typoKind: 'customer', refFields: ['id'], dateFields: ['date'], usdFields: ['paid_usd', 'contract_usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    re_workorders: { ind: 'Real Estate & Property', label: 'Work Order', partyFields: ['contractor'], typoKind: 'supplier', refFields: ['id'], dateFields: ['date'], usdFields: ['actual_usd', 'budget_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    trd_sales: { ind: 'Automotive & Heavy Trading', label: 'Sales Invoice', partyFields: ['customer'], typoKind: 'customer', refFields: ['book', 'seq', 'id'], dateFields: ['date'], usdFields: ['ttc_usd', 'net_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: false },
+    trd_receipts: { ind: 'Automotive & Heavy Trading', label: 'Invoice Receipt', partyFields: ['customer'], typoKind: 'customer', refFields: ['reference', 'invoice', 'id'], dateFields: ['date', 'promise_date'], usdFields: ['amount', 'usd_amount', 'settled_usd', 'amount_usd', 'promise_usd', 'usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    trd_purchases: { ind: 'Automotive & Heavy Trading', label: 'Import File', partyFields: ['supplier'], typoKind: 'supplier', refFields: ['container_bl', 'id'], dateFields: ['date'], usdFields: ['total_landed_usd', 'fob_usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    hsp_pos: { ind: 'Hospitality & Resorts', label: 'POS Shift Close', partyFields: ['cashier', 'terminal', 'company'], typoKind: 'staff', refFields: ['id', 'terminal'], dateFields: ['date'], usdFields: ['pos_billed_ttc', 'billed_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    hsp_revenue: { ind: 'Hospitality & Resorts', label: 'Venue Daily Revenue', partyFields: ['outlet', 'company'], typoKind: 'site', refFields: ['id'], dateFields: ['date'], usdFields: ['ttc_usd', 'ht_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: false },
+    hsp_memberships: { ind: 'Hospitality & Resorts', label: 'Seasonal Membership', partyFields: ['member'], typoKind: 'customer', refFields: ['id'], dateFields: ['start_date', 'date'], usdFields: ['paid_usd', 'contract_usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    ins_policies: { ind: 'Insurance & Brokerage', label: 'Insurance Policy', partyFields: ['client', 'insured'], typoKind: 'customer', refFields: ['policy_no', 'id'], dateFields: ['date', 'start_date'], usdFields: ['gross_prem_usd', 'gwp_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    ins_billing: { ind: 'Insurance & Brokerage', label: 'Client Receipt', partyFields: ['client', 'insured'], typoKind: 'customer', refFields: ['receipt_ref', 'policy_no', 'id'], dateFields: ['date', 'due_date'], usdFields: ['collected_usd', 'paid_usd', 'amount_usd', 'billed_usd', 'client_billed_4112_usd', 'gross_prem_usd'], vatEligible: true, allowMultiRow: true, allowSameAmtKeyboard: true },
+    ins_claims: { ind: 'Insurance & Brokerage', label: 'Claim File', partyFields: ['client', 'insured'], typoKind: 'customer', refFields: ['policy_no', 'id'], dateFields: ['loss_date', 'date'], usdFields: ['claimed_usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    ins_remittances: { ind: 'Insurance & Brokerage', label: 'Carrier Bordereau', partyFields: ['carrier'], typoKind: 'supplier', refFields: ['id'], dateFields: ['next_due', 'due_date', 'date'], usdFields: ['gross_prem_usd', 'net_payable_4017_usd', 'settled_to_carrier_usd'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true },
+    hld_extended: { ind: 'Holding & Treasury', label: 'Extended Entry', partyFields: ['counterparty', 'party', 'lender', 'name'], typoKind: 'counterparty', refFields: ['reference', 'id'], dateFields: ['date'], usdFields: ['amount', 'usd_amount', 'principal'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true, checkDirection: true },
+    hld_interactions: { ind: 'Holding & Treasury', label: 'Sister Transfer', partyFields: ['toCo', 'fromCo', 'counterparty', 'party'], typoKind: 'counterparty', refFields: ['id'], dateFields: ['date'], usdFields: ['usd', 'out_usd', 'amount', 'usd_amount'], vatEligible: false, allowMultiRow: true, allowSameAmtKeyboard: true }
+  };
+
+  const _domSafeRound2 = n => (typeof round2 === 'function' ? round2(n) : Math.round(Number(n || 0) * 100) / 100);
+
+  function _domPickFirst(obj, keys) {
+    if (!obj || typeof obj !== 'object') return '';
+    for (let i = 0; i < (keys || []).length; i++) {
+      const v = obj[keys[i]];
+      if (v != null && String(v).trim() !== '') return v;
+    }
+    return '';
+  }
+
+  function _domRefDigits(spec, obj) {
+    if (!obj || typeof obj !== 'object') return '';
+    const refKeys = (spec && spec.refFields) || ['id'];
+    for (let i = 0; i < refKeys.length; i++) {
+      const raw = obj[refKeys[i]];
+      if (raw == null || String(raw).trim() === '') continue;
+      const matches = String(raw).match(/\d{4,}/g);
+      if (matches && matches.length) return matches[matches.length - 1];
+    }
+    return '';
+  }
+
+  function _domRowAmt(formKey, x) {
+    if (!x) return 0;
+    if (formKey === 're_receipts') return Number(x.gross_usd != null ? x.gross_usd : (x.amount_usd != null ? x.amount_usd : (x.collected_usd != null ? x.collected_usd : (x.usd || 0)))) || 0;
+    if (formKey === 're_invoicing') return Number(x.amount_ttc_usd != null ? x.amount_ttc_usd : (x.ttc_usd != null ? x.ttc_usd : (x.net_usd || 0))) || 0;
+    if (formKey === 're_sales' || formKey === 'hsp_memberships') {
+      const pU = Number(x.paid_usd || 0) || 0;
+      return pU > 0.005 ? pU : (Number(x.contract_usd || 0) || 0);
+    }
+    if (formKey === 're_workorders') {
+      const aU = Number(x.actual_usd || 0) || 0;
+      return aU > 0.005 ? aU : (Number(x.budget_usd || 0) || 0);
+    }
+    if (formKey === 'trd_sales' || formKey === 'hsp_revenue') return Number(x.ttc_usd != null ? x.ttc_usd : (x.ht_usd || 0)) || 0;
+    if (formKey === 'trd_receipts') return Number(x.amount != null ? x.amount : (x.usd_amount != null ? x.usd_amount : (x.settled_usd != null ? x.settled_usd : (x.amount_usd != null ? x.amount_usd : (x.promise_usd != null ? x.promise_usd : (x.usd || 0)))))) || 0;
+    if (formKey === 'trd_purchases') {
+      const tL = Number(x.total_landed_usd || 0) || 0;
+      return tL > 0.005 ? tL : (Number(x.fob_usd || 0) || 0);
+    }
+    if (formKey === 'hsp_pos') {
+      if (x.pos_billed_ttc != null) return Number(x.pos_billed_ttc) || 0;
+      if (x.billed_usd != null) return Number(x.billed_usd) || 0;
+      return ((Number(x.cash_usd || 0) || 0) + (Number(x.card_whish_usd || 0) || 0));
+    }
+    if (formKey === 'ins_billing') {
+      if (x.collected_usd != null) return Number(x.collected_usd) || 0;
+      return Number(x.paid_usd != null ? x.paid_usd : (x.amount_usd != null ? x.amount_usd : (x.billed_usd != null ? x.billed_usd : (x.client_billed_4112_usd != null ? x.client_billed_4112_usd : (x.gross_prem_usd || 0))))) || 0;
+    }
+    if (formKey === 'ins_policies') return Number(x.gross_prem_usd != null ? x.gross_prem_usd : (x.gwp_usd || 0)) || 0;
+    if (formKey === 'ins_claims') return Number(x.claimed_usd || 0) || 0;
+    if (formKey === 'ins_remittances') return Number(x.gross_prem_usd != null ? x.gross_prem_usd : (x.net_payable_4017_usd != null ? x.net_payable_4017_usd : (x.settled_to_carrier_usd || 0))) || 0;
+    if (formKey === 'hld_interactions') return Number(x.usd != null ? x.usd : (x.out_usd != null ? x.out_usd : (x.amount != null ? x.amount : (x.usd_amount || 0)))) || 0;
+    if (formKey === 'hld_extended') return typeof nearCopySumUsd === 'function' ? Math.abs(nearCopySumUsd(x)) : (Number(x.amount || x.usd_amount || 0) || 0);
+    return Number(x.amount || 0) || 0;
+  }
+
   function _domOverlayRows(baseRows, bucket, winDays, dtKey) {
     const arr = Array.isArray(baseRows) ? baseRows : [];
+    const demoActive = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
     const cust = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows(bucket) : [];
-    const custActive = cust.filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided);
+    const custActive = cust.filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided && (demoActive || !r._demoSpineRow));
     const voidedCustIds = _rawVoidedDomainIds(bucket);
-    const baseFiltered = (winDays && !custActive.length)
-      ? arr.filter(r => r && winDays.has(String(r[dtKey] || r.date || '').slice(0, 10)))
-      : arr.slice();
+    const hasRowDate = r => {
+      const ds = String(r[dtKey] || r.date || r.loss_date || r.next_due || r.due_date || r.promise_date || '').slice(0, 10);
+      return !winDays || winDays.has(ds);
+    };
+    const baseFiltered = (winDays && !custActive.length) ? arr.filter(r => r && (demoActive || !r._demoSpineRow) && hasRowDate(r)) : arr.filter(r => r && (demoActive || !r._demoSpineRow));
     const baseClean = voidedCustIds.size
       ? baseFiltered.filter(r => r && !voidedCustIds.has(String(r.id || r.code || '').trim().toUpperCase()))
       : baseFiltered;
@@ -99729,13 +100050,13 @@
     const out = [];
     for (let i = 0; i < merged.length; i++) {
       let r = merged[i];
-      if (!r || r.voided || r.voided_at || r._scheduleVoided) continue;
+      if (!r || r.voided || r.voided_at || r._scheduleVoided || (!demoActive && r._demoSpineRow)) continue;
       if (typeof getIndustryWorkflowPatch === 'function' && r.id) {
         const wp = getIndustryWorkflowPatch(bucket, r.id);
         if (wp) r = Object.assign({}, r, wp);
         if (r.voided || r.voided_at || r._scheduleVoided) continue;
       }
-      if (!winDays || winDays.has(String(r[dtKey] || r.date || '').slice(0, 10))) out.push(r);
+      if (hasRowDate(r)) out.push(r);
     }
     return out;
   }
@@ -99754,29 +100075,133 @@
     return false;
   }
 
-  function _findDomSumByPool(pool, targetDay, targetCo, targetPartyKey, targetAmt, toks, recId, origId, targetScopeKey) {
+  function _domFormatHit(hit, extraFields = {}) {
+    if (!hit) return null;
+    const rowsArr = Array.isArray(hit.rows) ? hit.rows : (hit.row ? [hit.row] : []);
+    const primary = hit.row || rowsArr[0] || null;
+    const ids = rowsArr.map(r => String((r && (r._srcId || r.id || r.code)) || '')).filter(Boolean).sort().join(',');
+    const sumVal = hit.sumUsd != null ? _domSafeRound2(hit.sumUsd) : _domSafeRound2(rowsArr.reduce((s, x) => s + Number((x && (x.amount ?? x.usd)) || 0), 0));
+    return Object.assign({
+      reason: hit.reason || 'sum',
+      row: primary,
+      rows: Array.isArray(hit.rows) ? hit.rows : undefined,
+      match: primary,
+      matches: rowsArr,
+      matchCount: rowsArr.length,
+      sumUsd: sumVal,
+      gapUsd: String(hit.reason || '').includes('gap') ? 1 : 0,
+      day: hit.day || (primary ? String(primary.date || primary.start_date || '').slice(0, 10) : ''),
+      typoParty: hit.typoParty || '',
+      nearCopyOf: ids
+    }, extraFields);
+  }
+
+  function _findDomSumByPool(pool, targetDay, targetCo, targetPartyKey, targetAmt, toks, recId, origId, targetScopeKey, typoCtx) {
     if (!targetDay || !targetPartyKey || !(targetAmt > 0.005)) return null;
     const days = [targetDay, nearCopyShiftDay(targetDay, -1), nearCopyShiftDay(targetDay, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
+    const allowTypo = Boolean(typoCtx && typoCtx.allowTypo && typoCtx.rawRecParty);
+    const closeByParty = allowTypo ? new Map() : null;
     const seen = new Set();
     for (let i = 0; i < pool.length; i++) {
       const c = pool[i];
       if (!c || c.voided || c._absorbedSeedTwin) continue;
-      const bucket = byDay.get(String(c.date || '').slice(0, 10));
+      const cDay = String(c.date || '').slice(0, 10);
+      const bucket = byDay.get(cDay);
       if (!bucket) continue;
-      if (targetCo && norm(c.company || '') !== targetCo) continue;
+      if (targetCo && c.company && norm(c.company || '') !== targetCo) continue;
       if (_domIsSelfId(c.id, recId, origId)) continue;
       if (targetScopeKey != null && c.scopeKey !== targetScopeKey) continue;
-      if (c.partyKey !== targetPartyKey) continue;
       if (!(Math.abs(Number(c.amount || 0)) > 0.005)) continue;
       if (c.id) {
         const uidKey = String(c.id).trim().toUpperCase();
         if (seen.has(uidKey)) continue;
         seen.add(uidKey);
       }
-      bucket.push(c);
+      if (c.partyKey === targetPartyKey) {
+        bucket.push(c);
+      } else if (closeByParty && c.partyRaw && typeof partyNameOneLetterOff === 'function' && partyNameOneLetterOff(typoCtx.rawRecParty, c.partyRaw)
+        && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoCtx.typoKind || 'customer', typoCtx.rawRecParty, c.partyRaw, typoCtx.recCo || '', typoCtx.ind || ''))) {
+        let pEntry = closeByParty.get(c.partyKey);
+        if (!pEntry) {
+          pEntry = { label: c.partyRaw, days: new Map(days.map(d => [d, []])) };
+          closeByParty.set(c.partyKey, pEntry);
+        }
+        pEntry.days.get(cDay).push(c);
+      }
     }
-    return _findNearCopySumGroup(days, byDay, targetAmt, 0, false, toks, x => x.refs);
+    const exactHit = _findNearCopySumGroup(days, byDay, targetAmt, 0, false, toks, x => x.refs, 'sum', 'sum_gap');
+    if (exactHit) return _domFormatHit(exactHit);
+    if (closeByParty && closeByParty.size) {
+      const countRows = dm => { let n = 0; dm.forEach(arr => { n += arr.length; }); return n; };
+      const ranked = Array.from(closeByParty.values()).sort((a, b) => countRows(b.days) - countRows(a.days));
+      for (const entry of ranked) {
+        const tHit = _findNearCopySumGroup(days, entry.days, targetAmt, 0, false, toks, x => x.refs, 'sum_typo', 'sum_gap_typo');
+        if (tHit) return _domFormatHit(tHit, { typoParty: entry.label });
+      }
+    }
+    return null;
+  }
+
+  function _findDomSingleOrTypoHit(spec, pool, targetDay, targetCo, recPartyRaw, recAmt, recRefDigits, recId, origId, opts = {}) {
+    if (!targetDay || !(recAmt > 0.005) || !pool.length) return null;
+    const fromScan = Boolean(opts.fromScan);
+    const recPartyKey = opts.partyKeyOverride != null ? opts.partyKeyOverride : nearCopyPartyKey(recPartyRaw);
+    if (!recPartyKey) return null;
+    const typoKind = opts.typoKind || spec.typoKind || 'customer';
+    const allowTypo = opts.disableTypo ? false : (recPartyKey.length >= 4 && !(typeof isExactMasterParty === 'function' && isExactMasterParty(typoKind, recPartyRaw, opts.recCoRaw || '')));
+    const allowExactSameAmt = opts.forceSameAmt != null ? opts.forceSameAmt : (Boolean(spec.allowSameAmtKeyboard) || fromScan);
+    const seen = new Set();
+    let bestTypo = null;
+
+    for (let i = 0; i < pool.length; i++) {
+      const c = pool[i];
+      if (!c || c.voided || c._absorbedSeedTwin || c._crossScreenSister) continue;
+      if (String(c.date || '').slice(0, 10) !== targetDay) continue;
+      if (targetCo && c.company && norm(c.company || '') !== targetCo) continue;
+      if (_domIsSelfId(c.id, recId, origId)) continue;
+      if (opts.scopeKey != null && c.scopeKey !== opts.scopeKey) continue;
+      if (!(Math.abs(Number(c.amount || 0)) > 0.005)) continue;
+      if (c.id) {
+        const uidKey = String(c.id).trim().toUpperCase();
+        if (seen.has(uidKey)) continue;
+        seen.add(uidKey);
+      }
+      const cPartyRaw = String(c.partyRaw || c.partyLabel || '').trim();
+      const cPartyKey = opts.rowPartyKeyFn ? opts.rowPartyKeyFn(c) : c.partyKey;
+      const isExact = Boolean(cPartyKey && cPartyKey === recPartyKey);
+      const isTypo = !isExact && allowTypo && Boolean(cPartyRaw) && typeof partyNameOneLetterOff === 'function' && partyNameOneLetterOff(recPartyRaw, cPartyRaw)
+        && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoKind, recPartyRaw, cPartyRaw, opts.recCoRaw || '', spec.ind || ''));
+      if (!isExact && !isTypo) continue;
+
+      const cAmt = Number(c.amount || 0);
+      const cRefDigits = c.refDigits != null ? c.refDigits : _domRefDigits(spec, c.rawRow || c);
+      let reason = '';
+      if (recRefDigits && cRefDigits && recRefDigits !== cRefDigits && typeof ticketNoOneSlip === 'function' && ticketNoOneSlip(recRefDigits, cRefDigits) && Math.abs(cAmt - recAmt) <= 1.0) {
+        reason = isTypo ? 'ticket_typo' : 'ticket';
+      } else if (spec.vatEligible && typeof amountsVatApart === 'function' && amountsVatApart(recAmt, cAmt)) {
+        reason = isTypo ? 'vat_typo' : 'vat';
+      } else if ((isTypo || allowExactSameAmt) && Math.abs(cAmt - recAmt) <= 0.005) {
+        reason = isTypo ? 'same_amt_typo' : 'same_amt';
+      }
+      if (!reason) continue;
+
+      const hit = {
+        reason,
+        row: c,
+        match: c,
+        matches: [c],
+        matchCount: 1,
+        sumUsd: _domSafeRound2(cAmt),
+        gapUsd: 0,
+        day: targetDay,
+        typoParty: isTypo ? cPartyRaw : '',
+        nearCopyOf: String(c._srcId || c.id || '')
+      };
+      if (isExact) return hit;
+      if (!bestTypo) bestTypo = hit;
+    }
+    return bestTypo;
   }
 
   function _appendSharedReceiptPoolRows(pool, winDays, co) {
@@ -99798,12 +100223,15 @@
             id: `receipts:${r.id}`,
             _raw: r,
             _bucket: 'receipts',
+            _srcId: String(r.id || ''),
+            rawRow: r,
             company: r.company,
             date: r.date,
+            partyRaw: String(r.customer || '').trim(),
             partyKey: nearCopyPartyKey(r.customer),
             partyLabel: r.customer,
             amount: u,
-            ref: cleanVoucherRef(r.invoice || r.reference) || r.id,
+            ref: (typeof cleanVoucherRef === 'function' ? cleanVoucherRef(r.invoice || r.reference) : '') || r.id,
             refs: nearCopyRefTokens(r.id, r.invoice, r.reference)
           });
         }
@@ -99839,12 +100267,15 @@
         if (!(Math.abs(u) > 0.005)) continue;
         pool.push({
           id: `extm:${r.id}`,
+          _srcId: String(r.id || ''),
           _raw: r,
+          rawRow: r,
           _bucket: 'external_movements',
           _crossScreenSister: true,
           _srcLabel: 'External Movement',
           company: r.company || '',
           date: dSlice,
+          partyRaw: cp,
           partyKey: nearCopyPartyKey(cp),
           partyLabel: cp,
           amount: Math.round(u * 100) / 100,
@@ -99858,19 +100289,30 @@
     scanArr(seedExt);
   }
 
-  function findDomainNearCopyEntry(formKey, rec, origId = '') {
-    if (!rec || !formKey) return null;
-    if (formKey === 'trd_receipts') return findNearCopyEntry('receipts', rec);
-    if (formKey === 'hld_extended') return findNearCopyEntry('external_movements', Object.assign({ kind: 'Extended' }, rec));
+  function findDomainNearCopyEntry(formKey, rec, origIdOrOpts = '') {
+    const spec = DOMAIN_NEAR_COPY_SPECS[formKey];
+    if (!spec || !rec || !formKey || rec.voided || rec.voided_at) return null;
+    const opts = (origIdOrOpts && typeof origIdOrOpts === 'object') ? origIdOrOpts : { origId: String(origIdOrOpts || '') };
+    const origId = String(opts.origId || rec.origId || '');
+    const fromScan = Boolean(opts.fromScan);
+    const _fromNearCopy = Boolean(opts._fromNearCopy);
+
+    if (formKey === 'hld_extended' && !fromScan && typeof findNearCopyEntry === 'function') {
+      const passRec = (origId && !rec.id) ? Object.assign({}, rec, { id: origId }) : rec;
+      const extHit = findNearCopyEntry('external_movements', passRec);
+      if (extHit) return extHit;
+    }
     const live = (SEED && SEED.industryLive) || {};
-    const dtKey = formKey === 'hsp_memberships' ? 'start_date' : 'date';
-    const day = String(rec[dtKey] || rec.date || '').slice(0, 10);
+    const dtKey = formKey === 'hsp_memberships' ? 'start_date' : (formKey === 'ins_claims' ? 'loss_date' : (formKey === 'ins_remittances' ? 'next_due' : 'date'));
+    const day = String(_domPickFirst(rec, spec.dateFields) || '').slice(0, 10);
     if (!day) return null;
     const winDays = new Set([day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean));
     if (!winDays.size) return null;
-    const co = norm(rec.company || '');
+    const recCoRaw = String(rec.company || rec.fromCo || rec.entity || '').trim();
+    const co = norm(recCoRaw);
     const recId = rec.id ? String(rec.id) : '';
-    const toks = nearCopyRefTokens(rec.id, rec.tax_seq, rec.seq_no, rec.policy_no, rec.receipt_ref, rec.reference, rec.book, rec.unit, rec.notes, rec.audit_flag);
+    const toks = nearCopyRefTokens(rec.id, rec.tax_seq, rec.seq_no, rec.policy_no, rec.receipt_ref, rec.reference, rec.book, rec.unit, rec.container_bl, rec.notes, rec.audit_flag);
+    const recRefNum = _domRefDigits(spec, rec);
     const mkPool = (rawArr, bkt, mapFn, defCo = '') => _domOverlayRows(rawArr, bkt, winDays, dtKey)
       .filter(r => !co || norm(r.company || defCo) === co)
       .map(r => {
@@ -99879,75 +100321,150 @@
       })
       .filter(Boolean);
 
+    const runStdPool = (pool, partyRaw, amt, typoKind, extraOpts = {}) => {
+      if (!(amt > 0.005)) return null;
+      const pKey = nearCopyPartyKey(partyRaw);
+      if (!pKey) return null;
+      const typoCtx = { allowTypo: pKey.length >= 4 && !(typeof isExactMasterParty === 'function' && isExactMasterParty(typoKind, partyRaw, recCoRaw)), rawRecParty: partyRaw, typoKind, recCo: recCoRaw, ind: spec.ind };
+      const singleExact = _findDomSingleOrTypoHit(spec, pool, day, co, partyRaw, amt, recRefNum, recId, origId, Object.assign({ fromScan, recCoRaw, typoKind, disableTypo: true }, extraOpts));
+      if (singleExact) return singleExact;
+      const multiHit = spec.allowMultiRow ? _findDomSumByPool(pool, day, co, pKey, amt, toks, recId, origId, null, Object.assign({}, typoCtx, { allowTypo: false })) : null;
+      if (multiHit) return multiHit;
+      const singleTypo = _findDomSingleOrTypoHit(spec, pool, day, co, partyRaw, amt, recRefNum, recId, origId, Object.assign({ fromScan, recCoRaw, typoKind }, extraOpts));
+      if (singleTypo) return singleTypo;
+      return spec.allowMultiRow ? _findDomSumByPool(pool, day, co, pKey, amt, toks, recId, origId, null, typoCtx) : null;
+    };
+
     if (formKey === 're_receipts') {
-      const amt = Number(rec.gross_usd || 0) || 0;
-      const party = nearCopyPartyKey(rec.tenant);
+      const amt = _domRowAmt('re_receipts', rec);
+      const partyRaw = String(rec.tenant || '').trim();
       const reBase = (live.realestate && live.realestate.receipts) || [];
-      const pool = mkPool(reBase, 're_receipts', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.tenant),
-        partyLabel: r.tenant, amount: Number(r.gross_usd || 0) || 0, ref: r.reference || r.id || '',
-        refs: nearCopyRefTokens(r.id, r.reference, r.audit_flag, r.linked_invoice)
-      }));
-      _appendSharedReceiptPoolRows(pool, winDays, co);
-      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      const pool = mkPool(reBase, 're_receipts', r => {
+        const rAmt = _domRowAmt('re_receipts', r);
+        if (!(rAmt > 0.005)) return null;
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+          partyRaw: String(r.tenant || '').trim(), partyKey: nearCopyPartyKey(r.tenant), partyLabel: r.tenant,
+          amount: rAmt, ref: r.reference || r.id || '', refs: nearCopyRefTokens(r.id, r.reference, r.audit_flag, r.linked_invoice)
+        };
+      });
+      if (!_fromNearCopy) {
+        _appendSharedReceiptPoolRows(pool, winDays, co);
+        _appendExternalSisterPoolRows(pool, 'in', winDays, co);
+      }
+      return runStdPool(pool, partyRaw, amt, 'customer');
     }
 
     if (formKey === 're_invoicing') {
-      const amt = Number(rec.amount_ttc_usd != null ? rec.amount_ttc_usd : (rec.ttc_usd || 0)) || 0;
-      const party = nearCopyPartyKey(rec.tenant);
+      const amt = _domRowAmt('re_invoicing', rec);
+      const partyRaw = String(rec.tenant || '').trim();
       const pool = mkPool(live.realestate && live.realestate.invoices, 're_invoicing', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.tenant),
-        partyLabel: r.tenant, amount: Number(r.amount_ttc_usd != null ? r.amount_ttc_usd : (r.ttc_usd || 0)) || 0,
-        ref: r.tax_seq || r.id || '', refs: nearCopyRefTokens(r.id, r.tax_seq, r.seq_no, r.audit_note)
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyRaw: String(r.tenant || '').trim(), partyKey: nearCopyPartyKey(r.tenant), partyLabel: r.tenant,
+        amount: _domRowAmt('re_invoicing', r), ref: r.tax_seq || r.id || '', refs: nearCopyRefTokens(r.id, r.tax_seq, r.seq_no, r.audit_note)
       }));
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      return runStdPool(pool, partyRaw, amt, 'customer');
     }
 
     if (formKey === 're_sales') {
-      const amt = Number(rec.paid_usd || rec.contract_usd || 0) || 0;
-      const party = nearCopyPartyKey(rec.buyer);
+      const amt = _domRowAmt('re_sales', rec);
+      const partyRaw = String(rec.buyer || '').trim();
       const pool = mkPool(live.realestate && live.realestate.sales, 're_sales', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.buyer),
-        partyLabel: r.buyer, amount: Number(r.paid_usd || r.contract_usd || 0) || 0,
-        ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.deed_status)
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyRaw: String(r.buyer || '').trim(), partyKey: nearCopyPartyKey(r.buyer), partyLabel: r.buyer,
+        amount: _domRowAmt('re_sales', r), ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.deed_status)
       }));
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      return runStdPool(pool, partyRaw, amt, 'customer');
+    }
+
+    if (formKey === 're_workorders') {
+      const amt = _domRowAmt('re_workorders', rec);
+      const partyRaw = String(rec.contractor || '').trim();
+      const pool = mkPool(live.realestate && live.realestate.workorders, 're_workorders', r => ({
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyRaw: String(r.contractor || '').trim(), partyKey: nearCopyPartyKey(r.contractor), partyLabel: r.contractor,
+        amount: _domRowAmt('re_workorders', r), ref: r.id || '', refs: nearCopyRefTokens(r.id, r.property, r.unit)
+      }));
+      return runStdPool(pool, partyRaw, amt, 'supplier');
     }
 
     if (formKey === 'trd_sales') {
-      const rawAmt = Number(rec.ttc_usd || 0) || 0;
+      const rawAmt = _domRowAmt('trd_sales', rec);
       if (!(Math.abs(rawAmt) > 0.005)) return null;
       const isNeg = rawAmt < -0.005;
       const amt = Math.abs(rawAmt);
-      const party = nearCopyPartyKey(rec.customer);
+      const partyRaw = String(rec.customer || '').trim();
       const pool = mkPool(live.trading && live.trading.salesRows, 'trd_sales', r => {
-        const rTtc = Number(r.ttc_usd || 0) || 0;
+        const rTtc = _domRowAmt('trd_sales', r);
         if (isNeg ? !(rTtc < -0.005) : !(rTtc > 0.005)) return null;
         return {
-          id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.customer),
-          partyLabel: r.customer, amount: Math.abs(rTtc), _signedAmt: rTtc,
-          ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+          partyRaw: String(r.customer || '').trim(), partyKey: nearCopyPartyKey(r.customer), partyLabel: r.customer,
+          amount: Math.abs(rTtc), _signedAmt: rTtc, ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
         };
       });
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      return runStdPool(pool, partyRaw, amt, 'customer');
+    }
+
+    if (formKey === 'trd_receipts') {
+      const amt = _domRowAmt('trd_receipts', rec);
+      const partyRaw = String(rec.customer || '').trim();
+      const partyKey = nearCopyPartyKey(partyRaw);
+      if (!partyKey || !(amt > 0.005)) return null;
+      if (!_fromNearCopy && typeof findNearCopySingleEntry === 'function' && typeof findNearCopySumEntry === 'function') {
+        const rRec = Object.assign({}, rec, { id: recId || origId || '' });
+        const coreHit = findNearCopySingleEntry('receipts', rRec) || findNearCopySumEntry('receipts', rRec);
+        if (coreHit) return coreHit;
+      }
+      const pool = mkPool(live.trading && live.trading.receivableRows, 'trd_receipts', r => {
+        const rAmt = _domRowAmt('trd_receipts', r);
+        if (!(rAmt > 0.005)) return null;
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: String(r.date || r.promise_date || '').slice(0, 10),
+          partyRaw: String(r.customer || '').trim(), partyKey: nearCopyPartyKey(r.customer), partyLabel: r.customer,
+          amount: rAmt, ref: r.reference || r.id || '', refs: nearCopyRefTokens(r.id, r.reference, r.invoice)
+        };
+      });
+      if (!_fromNearCopy) {
+        _appendSharedReceiptPoolRows(pool, winDays, co);
+        _appendExternalSisterPoolRows(pool, 'in', winDays, co);
+      }
+      return runStdPool(pool, partyRaw, amt, 'customer');
+    }
+
+    if (formKey === 'trd_purchases') {
+      const amt = _domRowAmt('trd_purchases', rec);
+      const partyRaw = String(rec.supplier || '').trim();
+      const pool = mkPool(live.trading && live.trading.importRows, 'trd_purchases', r => ({
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyRaw: String(r.supplier || '').trim(), partyKey: nearCopyPartyKey(r.supplier), partyLabel: r.supplier,
+        amount: _domRowAmt('trd_purchases', r), ref: r.container_bl || r.id || '', refs: nearCopyRefTokens(r.id, r.container_bl)
+      }));
+      return runStdPool(pool, partyRaw, amt, 'supplier');
     }
 
     if (formKey === 'hsp_revenue') {
-      const amt = Number(rec.ttc_usd || 0) || 0;
+      const amt = _domRowAmt('hsp_revenue', rec);
+      if (!(amt > 0.005)) return null;
       const resortKey = nearCopyPartyKey(rec.company);
-      const outScope = nearCopyPartyKey(rec.outlet);
-      const pool = mkPool(live.hospitality && live.hospitality.venueRows, 'hsp_revenue', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.outlet),
-        partyLabel: r.outlet || r.company, amount: Number(r.ttc_usd || 0) || 0,
-        ref: r.outlet || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
+      const outRaw = String(rec.outlet || '').trim();
+      const outScope = nearCopyPartyKey(outRaw);
+      const pool = mkPool(live.hospitality && (live.hospitality.venueRows || live.hospitality.revenueRows), 'hsp_revenue', r => ({
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.outlet),
+        partyRaw: String(r.outlet || '').trim(), partyLabel: r.outlet || r.company,
+        amount: _domRowAmt('hsp_revenue', r), ref: r.outlet || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
       }));
       if (outScope) {
-        const outHit = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, outScope);
-        if (outHit) return outHit;
+        const outSingle = _findDomSingleOrTypoHit(spec, pool, day, co, outRaw, amt, recRefNum, recId, origId, {
+          fromScan, recCoRaw, typoKind: 'site', partyKeyOverride: outScope, rowPartyKeyFn: x => x.scopeKey, disableTypo: true
+        });
+        if (outSingle) return outSingle;
+        const outSum = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, outScope);
+        if (outSum) return outSum;
       }
-      const resHit = _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
-      if (resHit) return resHit;
+      const resortSum = _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      if (resortSum) return resortSum;
       const extPool = [];
       _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
       if (extPool.length) {
@@ -99958,42 +100475,73 @@
         const extResHit = _findDomSumByPool(extPool, day, co, resortKey, amt, toks, recId, origId, null);
         if (extResHit) return extResHit;
       }
+      if (outScope) {
+        return _findDomSingleOrTypoHit(spec, pool, day, co, outRaw, amt, recRefNum, recId, origId, {
+          fromScan, recCoRaw, typoKind: 'site', partyKeyOverride: outScope, rowPartyKeyFn: x => x.scopeKey
+        });
+      }
       return null;
     }
 
     if (formKey === 'hsp_pos') {
-      const amt = Number(rec.pos_billed_ttc != null ? rec.pos_billed_ttc : ((Number(rec.cash_usd || 0) || 0) + (Number(rec.card_whish_usd || 0) || 0))) || 0;
+      const amt = _domRowAmt('hsp_pos', rec);
+      if (!(amt > 0.005)) return null;
       const resortKey = nearCopyPartyKey(rec.company);
       const termScope = nearCopyPartyKey(rec.terminal);
+      const cashierRaw = String(rec.cashier || '').trim();
+      const cashierKey = nearCopyPartyKey(cashierRaw);
       const pool = mkPool(live.hospitality && live.hospitality.posRows, 'hsp_pos', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.terminal),
-        partyLabel: r.terminal || r.company,
-        amount: Number(r.pos_billed_ttc != null ? r.pos_billed_ttc : ((Number(r.cash_usd || 0) || 0) + (Number(r.card_whish_usd || 0) || 0))) || 0,
-        ref: r.terminal || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
+        id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
+        partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.terminal),
+        cashierRaw: String(r.cashier || '').trim(), cashierKey: nearCopyPartyKey(r.cashier || ''),
+        partyRaw: String(r.cashier || r.terminal || r.company || '').trim(),
+        partyLabel: r.cashier || r.terminal || r.company,
+        amount: _domRowAmt('hsp_pos', r), ref: r.terminal || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
       }));
-      if (termScope) {
-        const tHit = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, termScope);
-        if (tHit) return tHit;
+      if (cashierKey) {
+        const cashExact = _findDomSingleOrTypoHit(spec, pool, day, co, cashierRaw, amt, recRefNum, recId, origId, {
+          fromScan, recCoRaw, typoKind: 'staff', partyKeyOverride: cashierKey, rowPartyKeyFn: x => x.cashierKey, disableTypo: true
+        });
+        if (cashExact) return cashExact;
       }
-      return _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      if (termScope) {
+        const termSingle = _findDomSingleOrTypoHit(spec, pool, day, co, String(rec.terminal || ''), amt, recRefNum, recId, origId, {
+          fromScan, recCoRaw, typoKind: 'staff', partyKeyOverride: termScope, rowPartyKeyFn: x => x.scopeKey, disableTypo: true
+        });
+        if (termSingle) return termSingle;
+        const termSum = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, termScope);
+        if (termSum) return termSum;
+      }
+      const resortSum = _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      if (resortSum) return resortSum;
+      if (cashierKey) {
+        return _findDomSingleOrTypoHit(spec, pool, day, co, cashierRaw, amt, recRefNum, recId, origId, {
+          fromScan, recCoRaw, typoKind: 'staff', partyKeyOverride: cashierKey, rowPartyKeyFn: x => x.cashierKey
+        });
+      }
+      return null;
     }
 
     if (formKey === 'hsp_memberships') {
-      const amt = Number(rec.paid_usd || rec.contract_usd || 0) || 0;
-      const party = nearCopyPartyKey(rec.member);
-      const pool = mkPool(live.hospitality && live.hospitality.membershipRows, 'hsp_memberships', r => ({
-        id: r.id, company: r.company, date: r.start_date || r.date, partyKey: nearCopyPartyKey(r.member),
-        partyLabel: r.member, amount: Number(r.paid_usd || r.contract_usd || 0) || 0,
-        ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.season, r.notes)
-      }));
-      const sameHit = _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
-      if (sameHit) return sameHit;
+      if (rec.paid_usd != null && Number(rec.paid_usd) <= 0.005) return null;
+      const amt = _domRowAmt('hsp_memberships', rec);
+      const partyRaw = String(rec.member || '').trim();
+      const pool = mkPool(live.hospitality && live.hospitality.membershipRows, 'hsp_memberships', r => {
+        if (r.paid_usd != null && Number(r.paid_usd) <= 0.005) return null;
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.start_date || r.date,
+          partyRaw: String(r.member || '').trim(), partyKey: nearCopyPartyKey(r.member), partyLabel: r.member,
+          amount: _domRowAmt('hsp_memberships', r), ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.season, r.notes)
+        };
+      });
+      const stdHit = runStdPool(pool, partyRaw, amt, 'customer');
+      if (stdHit) return stdHit;
       const paidAmt = Number(rec.paid_usd || 0) || 0;
       if (paidAmt > 0.005) {
         const extPool = [];
         _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
         if (extPool.length) {
-          const extHit = _findDomSumByPool(extPool, day, co, party, paidAmt, toks, recId, origId, null);
+          const extHit = _findDomSumByPool(extPool, day, co, nearCopyPartyKey(partyRaw), paidAmt, toks, recId, origId, null);
           if (extHit) return extHit;
         }
       }
@@ -100001,69 +100549,108 @@
     }
 
     if (formKey === 'ins_billing') {
-      const amt = Number(rec.collected_usd != null ? rec.collected_usd : (rec.paid_usd || 0)) || 0;
+      if (rec.collected_usd != null && Number(rec.collected_usd) <= 0.005) return null;
+      const amt = _domRowAmt('ins_billing', rec);
       if (!(amt > 0.005)) return null;
-      const party = nearCopyPartyKey(rec.client || rec.insured);
+      const partyRaw = String(rec.client || rec.insured || '').trim();
       const pool = mkPool(live.insurance && live.insurance.billing, 'ins_billing', r => {
-        const cAmt = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd || 0)) || 0;
+        if (r.collected_usd != null && Number(r.collected_usd) <= 0.005) return null;
+        const cAmt = _domRowAmt('ins_billing', r);
         if (!(cAmt > 0.005)) return null;
+        const cl = String(r.client || r.insured || '').trim();
         return {
-          id: r.id, company: r.company || 'Insurance Company', date: r.date, partyKey: nearCopyPartyKey(r.client || r.insured),
-          partyLabel: r.client || r.insured, amount: cAmt, ref: r.receipt_ref || r.id || '',
-          refs: nearCopyRefTokens(r.id, r.receipt_ref, r.policy_no, r.notes)
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company || 'Insurance Company', date: r.date || r.due_date,
+          partyRaw: cl, partyKey: nearCopyPartyKey(cl), partyLabel: cl, amount: cAmt,
+          ref: r.receipt_ref || r.id || '', refs: nearCopyRefTokens(r.id, r.receipt_ref, r.policy_no, r.notes)
         };
       }, 'Insurance Company');
-      _appendSharedReceiptPoolRows(pool, winDays, co);
-      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
-    }
-
-    if (formKey === 'ins_remittances') {
-      const amt = Number(rec.settled_to_carrier_usd || 0) || 0;
-      if (!(amt > 0.005)) return null;
-      const party = nearCopyPartyKey(rec.carrier);
-      const pool = _domOverlayRows(live.insurance && live.insurance.remittances, 'ins_remittances', null, 'date')
-        .filter(r => {
-          const rDate = String(r.date || r.next_due || '').slice(0, 10);
-          return winDays.has(rDate) && (!co || norm(r.company || 'Insurance Company') === co);
-        })
-        .map(r => {
-          const sAmt = Number(r.settled_to_carrier_usd || 0) || 0;
-          if (!(sAmt > 0.005)) return null;
-          return {
-            id: r.id, _raw: r, _bucket: 'ins_remittances', company: r.company || 'Insurance Company',
-            date: String(r.date || r.next_due || '').slice(0, 10), partyKey: nearCopyPartyKey(r.carrier),
-            partyLabel: r.carrier, amount: sAmt, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.gl_payable, r.next_due)
-          };
-        })
-        .filter(Boolean);
-      _appendExternalSisterPoolRows(pool, 'out', winDays, co);
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      if (!_fromNearCopy) {
+        _appendSharedReceiptPoolRows(pool, winDays, co);
+        _appendExternalSisterPoolRows(pool, 'in', winDays, co);
+      }
+      return runStdPool(pool, partyRaw, amt, 'customer');
     }
 
     if (formKey === 'ins_policies') {
-      const amt = Number(rec.gross_prem_usd != null ? rec.gross_prem_usd : (rec.gwp_usd || 0)) || 0;
-      const party = nearCopyPartyKey(rec.client || rec.insured);
-      const pool = mkPool(live.insurance && live.insurance.policies, 'ins_policies', r => ({
-        id: r.id, company: r.company || 'Insurance Company', date: r.date || r.start_date, partyKey: nearCopyPartyKey(r.client || r.insured),
-        partyLabel: r.client || r.insured, amount: Number(r.gross_prem_usd != null ? r.gross_prem_usd : (r.gwp_usd || 0)) || 0,
-        ref: r.policy_no || r.id || '', refs: nearCopyRefTokens(r.id, r.policy_no)
-      }), 'Insurance Company');
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      const amt = _domRowAmt('ins_policies', rec);
+      const partyRaw = String(rec.client || rec.insured || '').trim();
+      const pool = mkPool(live.insurance && live.insurance.policies, 'ins_policies', r => {
+        const cl = String(r.client || r.insured || '').trim();
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company || 'Insurance Company', date: r.date || r.start_date,
+          partyRaw: cl, partyKey: nearCopyPartyKey(cl), partyLabel: cl, amount: _domRowAmt('ins_policies', r),
+          ref: r.policy_no || r.id || '', refs: nearCopyRefTokens(r.id, r.policy_no)
+        };
+      }, 'Insurance Company');
+      return runStdPool(pool, partyRaw, amt, 'customer');
+    }
+
+    if (formKey === 'ins_claims') {
+      const amt = _domRowAmt('ins_claims', rec);
+      const partyRaw = String(rec.client || rec.insured || '').trim();
+      const pool = mkPool(live.insurance && live.insurance.claims, 'ins_claims', r => {
+        const cl = String(r.client || r.insured || '').trim();
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company || 'Insurance Company', date: r.loss_date || r.date,
+          partyRaw: cl, partyKey: nearCopyPartyKey(cl), partyLabel: cl, amount: _domRowAmt('ins_claims', r),
+          ref: r.policy_no || r.id || '', refs: nearCopyRefTokens(r.id, r.policy_no)
+        };
+      }, 'Insurance Company');
+      return runStdPool(pool, partyRaw, amt, 'customer');
+    }
+
+    if (formKey === 'ins_remittances') {
+      const amt = _domRowAmt('ins_remittances', rec);
+      const partyRaw = String(rec.carrier || '').trim();
+      const pool = mkPool(live.insurance && live.insurance.remittances, 'ins_remittances', r => {
+        const car = String(r.carrier || '').trim();
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company || 'Insurance Company', date: r.date || r.next_due || r.due_date,
+          partyRaw: car, partyKey: nearCopyPartyKey(car), partyLabel: car, amount: _domRowAmt('ins_remittances', r),
+          ref: r.id || '', refs: nearCopyRefTokens(r.id, r.gl_payable, r.next_due)
+        };
+      }, 'Insurance Company');
+      _appendExternalSisterPoolRows(pool, 'out', winDays, co);
+      return runStdPool(pool, partyRaw, amt, 'supplier');
+    }
+
+    if (formKey === 'hld_extended') {
+      const amt = _domRowAmt('hld_extended', rec);
+      const partyRaw = String(rec.counterparty || rec.party || rec.lender || rec.name || '').trim();
+      const recFlow = String(rec.direction || rec.flow || rec.method || '').trim().toLowerCase();
+      const recIsIn = /in|gave|repay|credit|receipt/.test(recFlow);
+      const rawMovs = [
+        ...((STATE && STATE.customRecords && STATE.customRecords.external_movements) || []),
+        ...((SEED && SEED.records && SEED.records.external_movements) || [])
+      ];
+      const pool = rawMovs.filter(r => r && !r.voided && !r.voided_at && !r._absorbedSeedTwin && winDays.has(String(r.date || '').slice(0, 10))).map(r => {
+        const rFlow = String(r.direction || r.flow || r.method || '').trim().toLowerCase();
+        if (recFlow && rFlow && (/in|gave|repay|credit|receipt/.test(rFlow) !== recIsIn)) return null;
+        const cp = String(r.counterparty || r.party || r.lender || r.name || '').trim();
+        const rAmt = _domRowAmt('hld_extended', r);
+        if (!cp || !(rAmt > 0.005)) return null;
+        return {
+          id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company || 'Bdeir Holding', date: r.date,
+          partyRaw: cp, partyKey: nearCopyPartyKey(cp), partyLabel: cp, amount: rAmt,
+          ref: r.reference || r.id || '', refs: nearCopyRefTokens(r.id, r.reference, r.notes)
+        };
+      }).filter(Boolean);
+      return runStdPool(pool, partyRaw, amt, 'counterparty');
     }
 
     if (formKey === 'hld_interactions') {
       const fromC = String(rec.fromCo || rec.company || '');
       const toC = String(rec.toCo || rec.counterparty || rec.party || '');
       const pairKey = `${nearCopyPartyKey(fromC)}|${nearCopyPartyKey(toC)}`;
-      const amt = Number(rec.usd || rec.amount || 0) || 0;
+      const amt = _domRowAmt('hld_interactions', rec);
       const pool = _domOverlayRows([], 'hld_interactions', winDays, dtKey).map(r => {
         if (String(r.side || '').toLowerCase() === 'in') return null;
         const f = String(r.fromCo || r.company || '');
         const t = String(r.toCo || r.counterparty || r.party || '');
         return {
-          id: r.id, _raw: r, _bucket: 'hld_interactions', company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`,
-          partyLabel: `${f} to ${t}`, amount: Number(r.usd || r.amount || 0) || 0,
+          id: r.id, _raw: r, _bucket: 'hld_interactions', _srcId: String(r.id || ''), rawRow: r, company: '', date: r.date,
+          partyRaw: `${f} to ${t}`, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`,
+          partyLabel: `${f} to ${t}`, amount: _domRowAmt('hld_interactions', r),
           ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
         };
       }).filter(Boolean);
@@ -100086,13 +100673,13 @@
         const t = String(r.counterparty || r.party || '');
         const u = Number(r.out_usd || r.amount || r.usd_amount || 0) || 0;
         if (f && t && Math.abs(u) > 0.005) {
-          pool.push({ id: `sister:${r.id}`, _raw: r, _bucket: 'hld_interactions', company: '', date: r.date, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`, partyLabel: `${f} to ${t}`, amount: u, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes) });
+          pool.push({ id: `sister:${r.id}`, _raw: r, _bucket: 'hld_interactions', _srcId: String(r.id || ''), rawRow: r, company: '', date: r.date, partyRaw: `${f} to ${t}`, partyKey: `${nearCopyPartyKey(f)}|${nearCopyPartyKey(t)}`, partyLabel: `${f} to ${t}`, amount: u, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.notes) });
         }
       }
       const sisterCat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
       const extMovs = [
-        ...((STATE.customRecords && STATE.customRecords.external_movements) || []),
-        ...((SEED.records && SEED.records.external_movements) || [])
+        ...((STATE && STATE.customRecords && STATE.customRecords.external_movements) || []),
+        ...((SEED && SEED.records && SEED.records.external_movements) || [])
       ];
       const seenExtMov = new Set();
       for (let i = 0; i < extMovs.length; i++) {
@@ -100126,38 +100713,33 @@
         const u = Math.round(Math.abs(usdRaw) * 100) / 100;
         if (u > 0.005) {
           pool.push({
-            id: `extm:${r.id}`, _raw: r, _bucket: 'external_movements', company: '', date: dSlice,
+            id: `extm:${r.id}`, _raw: r, _bucket: 'external_movements', _srcId: String(r.id || ''), rawRow: r, company: '', date: dSlice,
+            partyRaw: `${r.company} to ${targetCo}`,
             partyKey: `${nearCopyPartyKey(r.company)}|${nearCopyPartyKey(targetCo)}`,
             partyLabel: `${r.company} to ${targetCo}`, amount: u,
             ref: r.reference || r.id || '', refs: nearCopyRefTokens(r.id, r.reference, r.notes)
           });
         }
       }
+      const icSingle = _findDomSingleOrTypoHit(spec, pool, day, '', `${fromC} to ${toC}`, amt, recRefNum, recId, origId, {
+        fromScan, partyKeyOverride: pairKey, disableTypo: true
+      });
+      if (icSingle) return icSingle;
       return _findDomSumByPool(pool, day, '', pairKey, amt, toks, recId, origId, null);
     }
     return null;
   }
+  if (typeof window !== 'undefined') window.__mfgFindDomainNearCopyEntry = findDomainNearCopyEntry;
 
   function domainNearCopySig(formKey, hit) {
     return `${formKey}|${nearCopyHitId(hit)}|${hit.reason}`;
   }
 
-  function _domRowAmt(formKey, x) {
-    if (!x) return 0;
-    if (formKey === 're_receipts') return Number(x.gross_usd || 0) || 0;
-    if (formKey === 're_invoicing') return Number(x.amount_ttc_usd != null ? x.amount_ttc_usd : (x.ttc_usd || 0)) || 0;
-    if (formKey === 're_sales' || formKey === 'hsp_memberships') return Number(x.paid_usd || x.contract_usd || 0) || 0;
-    if (formKey === 'trd_sales' || formKey === 'hsp_revenue') return Number(x.ttc_usd || 0) || 0;
-    if (formKey === 'hsp_pos') return Number(x.pos_billed_ttc != null ? x.pos_billed_ttc : ((Number(x.cash_usd || 0) || 0) + (Number(x.card_whish_usd || 0) || 0))) || 0;
-    if (formKey === 'ins_billing') return Number(x.collected_usd != null ? x.collected_usd : (x.paid_usd || 0)) || 0;
-    if (formKey === 'ins_policies') return Number(x.gross_prem_usd != null ? x.gross_prem_usd : (x.gwp_usd || 0)) || 0;
-    if (formKey === 'ins_remittances') return Number(x.settled_to_carrier_usd || 0) || 0;
-    if (formKey === 'hld_interactions') return Number(x.usd || x.amount || 0) || 0;
-    return Number(x.amount || 0) || 0;
-  }
-
   function domainNearCopyDecision(formKey, rec, orig, ticked) {
-    if (formKey === 'trd_receipts') return nearCopyDecision('receipts', rec, orig, ticked);
+    if (formKey === 'trd_receipts') {
+      const coreDec = nearCopyDecision('receipts', rec, orig, ticked);
+      if (coreDec && (coreDec.hit || coreDec.block || coreDec.nearCopyOf !== undefined)) return coreDec;
+    }
     if (formKey === 'hld_extended') return nearCopyDecision('external_movements', Object.assign({ kind: 'Extended' }, rec), orig, ticked);
     const o = orig || null;
     const origId = o && (o.id || o.code) ? String(o.id || o.code) : '';
@@ -100165,16 +100747,18 @@
       if (!x) return '';
       if (formKey === 're_receipts' || formKey === 're_invoicing') return norm(x.tenant || '');
       if (formKey === 're_sales') return norm(x.buyer || '');
-      if (formKey === 'trd_sales') return norm(x.customer || '');
+      if (formKey === 're_workorders') return norm(x.contractor || '');
+      if (formKey === 'trd_sales' || formKey === 'trd_receipts') return norm(x.customer || '');
+      if (formKey === 'trd_purchases') return norm(x.supplier || '');
       if (formKey === 'hsp_revenue') return `${norm(x.outlet || '')}|${norm(x.category || '')}`;
-      if (formKey === 'hsp_pos') return `${norm(x.terminal || '')}|${norm(x.shift || '')}`;
+      if (formKey === 'hsp_pos') return `${norm(x.terminal || '')}|${norm(x.shift || '')}|${norm(x.cashier || '')}`;
       if (formKey === 'hsp_memberships') return norm(x.member || '');
-      if (formKey === 'ins_billing' || formKey === 'ins_policies') return norm(x.client || x.insured || '');
+      if (formKey === 'ins_billing' || formKey === 'ins_policies' || formKey === 'ins_claims') return norm(x.client || x.insured || '');
       if (formKey === 'ins_remittances') return norm(x.carrier || '');
       if (formKey === 'hld_interactions') return `${norm(x.fromCo || x.company || '')}|${norm(x.toCo || x.counterparty || '')}`;
       return '';
     };
-    const dtKey = formKey === 'hsp_memberships' ? 'start_date' : 'date';
+    const dtKey = formKey === 'hsp_memberships' ? 'start_date' : (formKey === 'ins_claims' ? 'loss_date' : (formKey === 'ins_remittances' ? 'next_due' : 'date'));
     const identityChanged = !o
       || norm(String(rec.company ?? '')) !== norm(String(o.company ?? ''))
       || norm(String(rec[dtKey] ?? rec.date ?? '')) !== norm(String(o[dtKey] ?? o.date ?? ''))
@@ -100183,13 +100767,18 @@
       || norm(String(rec.policy_no ?? '')) !== norm(String(o.policy_no ?? ''))
       || norm(String(rec.tax_seq ?? '')) !== norm(String(o.tax_seq ?? ''))
       || norm(String(rec.receipt_ref ?? '')) !== norm(String(o.receipt_ref ?? ''))
+      || norm(String(rec.container_bl ?? '')) !== norm(String(o.container_bl ?? ''))
+      || norm(String(rec.reference ?? '')) !== norm(String(o.reference ?? ''))
+      || norm(String(rec.book ?? '')) !== norm(String(o.book ?? ''))
+      || norm(String(rec.seq ?? '')) !== norm(String(o.seq ?? ''))
       || Math.abs(_domRowAmt(formKey, rec) - _domRowAmt(formKey, o)) >= 0.005;
     if (!identityChanged) return { hit: null, block: false };
     const hit = findDomainNearCopyEntry(formKey, rec, origId);
-    const savedLink = o && o.near_copy_of ? String(o.near_copy_of).split(',').map(s => s.trim()).sort().join(',') : '';
-    if (hit && savedLink && savedLink === nearCopyHitId(hit)) return { hit: null, block: false };
+    const savedLink = o && o.near_copy_of ? String(o.near_copy_of).split(',').map(s => s.trim()).filter(Boolean).sort().join(',') : '';
+    const hitLink = hit ? nearCopyHitId(hit) : '';
+    if (hit && savedLink && savedLink === hitLink) return { hit: null, block: false };
     const isTicked = hit ? (typeof ticked === 'function' ? Boolean(ticked(hit)) : Boolean(ticked)) : false;
-    if (hit) return isTicked ? { hit, block: false, nearCopyOf: nearCopyHitId(hit) } : { hit, block: true };
+    if (hit) return isTicked ? { hit, block: false, nearCopyOf: hitLink } : { hit, block: true };
     return (o && o.near_copy_of) ? { hit: null, block: false, nearCopyOf: '' } : { hit: null, block: false };
   }
 
@@ -100209,14 +100798,16 @@
     if (!hit) {
       FORM_UI.lastDomainNearCopySig = '';
       FORM_UI.domainNearCopyPeekItems = [];
+      wrap.dataset.ncSig = '';
       wrap.hidden = true;
       if (cb) cb.checked = false;
       setHint('');
       return true;
     }
     const sig = domainNearCopySig(formKey, hit);
-    if (FORM_UI.lastDomainNearCopySig !== sig) {
+    if (FORM_UI.lastDomainNearCopySig !== sig || wrap.dataset.ncSig !== sig) {
       FORM_UI.lastDomainNearCopySig = sig;
+      wrap.dataset.ncSig = sig;
       if (cb) cb.checked = false;
     }
     wrap.hidden = false;
@@ -100231,18 +100822,24 @@
       sister: 'Same day and party, already recorded on another form',
       sister_gap: 'Same party, recorded one day apart on another form',
       sister_sum: 'Same day and party, entries on another form add up to this amount',
-      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount'
+      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount',
+      ticket: 'Same day and amount with reference number one slip apart',
+      ticket_typo: 'Same day and amount under a similar name with reference one slip apart',
+      vat: 'Same day and party, amount differs by 11% VAT',
+      vat_typo: 'Same day under a similar name, amount differs by 11% VAT',
+      same_amt: 'Same day, party and amount already logged',
+      same_amt_typo: 'Same day and amount under a similar name already logged'
     };
     const reason = reasonMap[hit.reason] || reasonMap.sum_gap;
     if (hint && hit.rows) {
-      const party = hit.row.partyLabel || hit.row.customer || hit.row.counterparty || hit.row.tenant || hit.row.client || '';
+      const party = hit.typoParty || hit.row.partyLabel || hit.row.customer || hit.row.counterparty || hit.row.tenant || hit.row.client || '';
       const headLabel = (hit.rows[0] && hit.rows[0]._srcLabel) || baseLabel;
       const parts = hit.rows.map((r, idx) => {
-        const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
+        const ref = r.ref || (typeof cleanVoucherRef === 'function' ? cleanVoucherRef(r.invoice || r.reference) : '');
         const chipTok = nearCopyPeekToken(r, ref);
         const u = Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
         const rLabel = (r && r._srcLabel) || baseLabel;
-        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && (r._raw || r.rawRow)) || r, label: rLabel, chipTok, usd: u });
         return nearCopyPeekChipHtml('dom', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
       }).join(' + ');
       const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
@@ -100250,12 +100847,13 @@
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(headLabel)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint && hit.row) {
       const r = hit.row;
-      const party = r.partyLabel || r.customer || r.counterparty || r.tenant || r.client || '';
-      const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
+      const party = hit.typoParty || r.partyLabel || r.partyRaw || r.customer || r.counterparty || r.tenant || r.client || r.contractor || r.supplier || r.carrier || r.member || r.buyer || '';
+      const ref = r.ref || (typeof cleanVoucherRef === 'function' ? cleanVoucherRef(r.invoice || r.reference) : '');
       const chipTok = nearCopyPeekToken(r, ref);
       const rLabel = (r && r._srcLabel) || baseLabel;
-      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
-      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+      const rawRef = (r && (r._raw || r.rawRow)) || r;
+      const u = _domRowAmt(formKey, rawRef) || Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
+      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: rawRef, label: rLabel, chipTok, usd: u });
       const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, Math.abs(u) > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
       setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(rLabel)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
@@ -115037,12 +115635,14 @@
     return dup;
   }
 
-  // ---- misspelled party name check (1 letter off existing customer/supplier/counterparty) ----
+  // ---- misspelled party/site/staff name check (1 letter off existing or confirmed Data Hygiene alias) ----
   const ENTRY_PARTY_FIELD_KINDS = {
     f_customer: 'customer',
     f_supplier: 'supplier',
     f_siteowner: 'supplier',
-    f_truckowner: 'truck_owner'
+    f_truckowner: 'truck_owner',
+    f_site: 'site',
+    f_staff: 'staff'
   };
   const DOMAIN_PARTY_FIELD_KINDS = {
     ide_client: 'customer',
@@ -115055,7 +115655,11 @@
     ide_carrier: 'supplier',
     ide_party: 'counterparty',
     ide_partner: 'counterparty',
-    ide_lender: 'counterparty'
+    ide_lender: 'counterparty',
+    ide_property: 'site',
+    ide_outlet: 'site',
+    ide_cashier: 'staff',
+    ide_producer: 'staff'
   };
 
   function resolvePartyFieldKind(el, isDomainModal, modalForm) {
@@ -115086,7 +115690,7 @@
     const ind = opts.ind || (hasIndFn ? inferIndustryForCompany(company || STATE.company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company || STATE.company) : 'Manufacturing') || 'Manufacturing';
     const demoActive = typeof isDemoScopeActive === 'function' ? isDemoScopeActive() : false;
     const modalForm = String(opts.modalForm || '');
-    const isRegEdit = modalForm === 'customer' || modalForm === 'supplier';
+    const isRegEdit = !opts.isDomainModal && (modalForm === 'customer' || modalForm === 'supplier' || modalForm === 'site' || modalForm === 'staff');
     const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
     if (fIdx && !fIdx._partyTypoPools) fIdx._partyTypoPools = new Map();
     const dlId = (demoActive && inputEl && inputEl.list && inputEl.list.id) ? inputEl.list.id : '';
@@ -115096,7 +115700,17 @@
     }
 
     const out = [];
-    const push = v => { if (v && typeof v === 'string') { const s = v.trim(); if (s) out.push(s); } };
+    const localCounts = new Map();
+    const push = v => {
+      if (v && typeof v === 'string') {
+        const s = v.trim();
+        if (s) {
+          out.push(s);
+          const nk = norm(s);
+          if (nk) localCounts.set(nk, (localCounts.get(nk) || 0) + 1);
+        }
+      }
+    };
     const isMfg = ind === 'Manufacturing';
     const recs = (SEED && SEED.records) || {};
     const custRecs = (STATE && STATE.customRecords) || (SEED && SEED.customRecords) || {};
@@ -115120,20 +115734,34 @@
       return b.length ? a.concat(b) : a;
     };
 
+    const rankList = (baseMap) => {
+      const mergedMap = new Map(baseMap || []);
+      localCounts.forEach((cnt, nk) => {
+        if (!mergedMap.has(nk)) mergedMap.set(nk, cnt);
+        else mergedMap.set(nk, mergedMap.get(nk) + (cnt * 0.05));
+      });
+      return typeof uniqSorted === 'function' ? uniqSorted(out, mergedMap) : Array.from(new Set(out));
+    };
+
     if (isRegEdit) {
-      const tbl = modalForm === 'customer' ? 'customers' : 'suppliers';
+      const regTblMap = { customer: 'customers', supplier: 'suppliers', site: 'sites', staff: 'staff_members' };
+      const tbl = regTblMap[modalForm] || 'suppliers';
       allRowsFor(tbl).forEach(r => {
         if (!matchScopeRow(r)) return;
         if (typeof isSelfEditingRow === 'function' && isSelfEditingRow(r, tbl)) return;
-        push(r.name || r.Customer || r.Supplier);
+        push(r.name || r.Customer || r.Supplier || r.Site || r.site || r.full_name || r.Staff || r.staff_name);
       });
-      const fMap = fIdx ? (modalForm === 'customer' ? fIdx.customer : fIdx.supplier) : null;
-      return typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : out;
+      const fMap = fIdx
+        ? (modalForm === 'customer' ? fIdx.customer : (modalForm === 'site' ? fIdx.site : (modalForm === 'staff' ? fIdx.staff : fIdx.supplier)))
+        : null;
+      return rankList(fMap);
     }
 
     const wantCust = partyKind === 'customer' || partyKind === 'truck_owner';
     const wantSup = partyKind === 'supplier' || partyKind === 'truck_owner';
     const wantCp = partyKind === 'counterparty';
+    const wantSite = partyKind === 'site';
+    const wantStaff = partyKind === 'staff';
 
     if (wantCust) {
       allRowsFor('customers').forEach(c => { if (matchScopeRow(c)) push(c.name || c.Customer); });
@@ -115164,6 +115792,24 @@
       allRowsFor('equipment').forEach(e => { if (e && !e.voided && !e._multiIndustrySeed) push(e.supplier); });
       allRowsFor('drivers').forEach(d => { if (d && !d.voided && !d._multiIndustrySeed) push(d.truck_owner); });
       allRowsFor('sales_tickets').forEach(r => { if (matchScopeRow(r)) push(r.truck_owner); });
+    }
+    if (wantSite) {
+      allRowsFor('sites').forEach(s => { if (matchScopeRow(s)) push(s.name || s.Site || s.site); });
+      if (isMfg && SEED && SEED.models) {
+        ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].forEach(mk => {
+          const m = SEED.models[mk];
+          if (m && Array.isArray(m.sites)) m.sites.forEach(s => push(s && (s.Site || s.name)));
+        });
+        ['sales_tickets', 'raw_purchases', 'price_rules', 'overtime_rates', 'jv_partnerships', 'logistics_allowances'].forEach(tk => {
+          allRowsFor(tk).forEach(r => { if (matchScopeRow(r)) push(r.site); });
+        });
+      }
+    }
+    if (wantStaff) {
+      allRowsFor('staff_members').forEach(s => { if (matchScopeRow(s)) push(s.name || s.full_name || s.Staff || s.staff_name); });
+      ['salaries', 'attendance', 'payroll_attendance', 'employments', 'freelance_sheets', 'freelance_entries', 'logistics_allowances', 'staff_assignments'].forEach(tk => {
+        allRowsFor(tk).forEach(r => { if (matchScopeRow(r)) push(r.staff || r.employee || r.name); });
+      });
     }
 
     if (!isMfg) {
@@ -115229,19 +115875,32 @@
         if (wantSup) {
           walkLive(h.maintRows, ['vendor']);
         }
+        if (wantSite) {
+          walkLive(h.venueRows || h.revenueRows, ['outlet', 'venue']);
+          walkCustom(['hsp_revenue'], ['outlet', 'venue']);
+        }
+        if (wantStaff) {
+          walkLive(h.posRows, ['cashier']);
+          walkCustom(['hsp_pos'], ['cashier']);
+        }
       } else if (ind === 'Automotive & Heavy Trading') {
         const t = live.trading || {};
         if (wantCust) {
           walkLive(t.salesRows, ['customer']);
           walkLive(t.receivableRows, ['customer']);
           walkLive(t.serialUnits, ['buyer']);
-          walkCustom(['trd_sales'], ['customer']);
+          walkCustom(['trd_sales', 'trd_receipts'], ['customer']);
         }
         if (wantSup) {
           walkLive(t.importRows, ['supplier']);
           walkLive(t.grnRows, ['supplier']);
           walkLive(t.targetRows, ['supplier']);
           walkCustom(['trd_purchases', 'trd_targets'], ['supplier']);
+        }
+        if (wantSite) {
+          walkLive(t.serialUnits, ['warehouse']);
+          walkLive(t.stockRows, ['warehouse']);
+          walkCustom(['trd_trucks', 'trd_stock'], ['warehouse']);
         }
       } else if (ind === 'Real Estate & Property') {
         const re = live.realestate || {};
@@ -115251,11 +115910,20 @@
           walkLive(re.receipts, ['tenant']);
           walkLive(re.units, ['tenant']);
           walkLive(re.sales, ['buyer']);
-          walkCustom(['re_leases', 're_invoicing', 're_sales'], ['tenant', 'buyer']);
+          walkCustom(['re_leases', 're_invoicing', 're_receipts', 're_sales'], ['tenant', 'buyer']);
         }
         if (wantSup) {
           walkLive(re.workorders, ['contractor']);
           walkCustom(['re_workorders'], ['contractor']);
+        }
+        if (wantSite) {
+          walkLive(re.properties, ['name', 'property']);
+          walkLive(re.leases, ['property']);
+          walkLive(re.invoices, ['property']);
+          walkLive(re.units, ['property']);
+          walkLive(re.sales, ['property']);
+          walkLive(re.workorders, ['property']);
+          walkCustom(['re_leases', 're_invoicing', 're_receipts', 're_sales', 're_workorders'], ['property']);
         }
       } else if (ind === 'Insurance & Brokerage') {
         const ins = live.insurance || {};
@@ -115265,7 +115933,7 @@
           walkLive(ins.claims, ['client']);
           walkLive(ins.items, ['client']);
           walkLive(ins.renewals, ['client']);
-          walkCustom(['ins_policies', 'ins_claims'], ['client']);
+          walkCustom(['ins_policies', 'ins_billing', 'ins_claims'], ['client']);
         }
         if (wantSup) {
           walkLive(ins.policies, ['carrier']);
@@ -115276,7 +115944,11 @@
           walkLive(ins.remittances, ['carrier']);
           walkLive(ins.renewals, ['carrier']);
           walkLive(ins.statements, ['carrier']);
-          walkCustom(['ins_policies', 'ins_claims', 'ins_agreements', 'ins_remittances'], ['carrier']);
+          walkCustom(['ins_policies', 'ins_billing', 'ins_claims', 'ins_agreements', 'ins_remittances'], ['carrier']);
+        }
+        if (wantStaff) {
+          walkLive(ins.policies, ['producer']);
+          walkCustom(['ins_policies'], ['producer']);
         }
       }
       if (demoActive && inputEl && inputEl.list) {
@@ -115289,9 +115961,11 @@
           ? fIdx.customer
           : (partyKind === 'truck_owner'
               ? fIdx.truckOwner
-              : (partyKind === 'counterparty' ? fIdx.counterparty : fIdx.supplier)))
+              : (partyKind === 'counterparty'
+                  ? fIdx.counterparty
+                  : (partyKind === 'site' ? fIdx.site : (partyKind === 'staff' ? fIdx.staff : fIdx.supplier)))))
       : null;
-    const ranked = typeof uniqSorted === 'function' ? uniqSorted(out, fMap) : Array.from(new Set(out));
+    const ranked = rankList(fMap);
     if (cacheKey && fIdx) fIdx._partyTypoPools.set(cacheKey, ranked);
     return ranked;
   }
@@ -115299,7 +115973,7 @@
   function syncPartyTypoForInput(el, ctx = {}) {
     if (!el || !el.id) return false;
     const isDom = Boolean(ctx.isDomainModal);
-    const modalForm = typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || '');
+    const modalForm = isDom ? '' : (typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || ''));
     const kind = resolvePartyFieldKind(el, isDom, modalForm);
     if (!kind) return false;
     const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
@@ -115319,15 +115993,33 @@
     const isEdit = typeof ctx.isEditMode === 'function' ? ctx.isEditMode() : Boolean(ctx.isEditMode);
     const initRaw = el.dataset.partyInitVal !== undefined ? el.dataset.partyInitVal : el.dataset.initVal;
     if (isEdit && initRaw !== undefined && norm(rawVal) === norm(initRaw)) { hideBar(); return false; }
-    if (!isDom && (modalForm === 'customer' || modalForm === 'supplier') && wrap.querySelector('.univ-dup-hint')) {
+    if (!isDom && (modalForm === 'customer' || modalForm === 'supplier' || modalForm === 'site' || modalForm === 'staff') && wrap.querySelector('.univ-dup-hint')) {
       hideBar();
       return false;
     }
+    if (!isDom && (modalForm === 'staff' || modalForm === 'employment' || modalForm === 'freelance')) {
+      const sameBox = ['staffSameNameBox', 'empSameNameBox', 'staffDupBanner'].map(id => $(id)).find(el => el && !el.hidden);
+      if (sameBox) {
+        hideBar();
+        return false;
+      }
+    }
     const co = typeof ctx.getCo === 'function' ? ctx.getCo() : (val('f_company') || '');
     const ind = typeof ctx.getInd === 'function' ? ctx.getInd() : '';
-    const candidates = getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom });
-    const match = findNearPartyMatch(rawVal, candidates);
+    const aliasKind = kind === 'truck_owner' ? 'supplier' : kind;
+    const aliasMatch = typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias(aliasKind, rawVal, co, ind) : '';
+    const candidates = aliasMatch ? [] : getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom });
+    const match = aliasMatch || findNearPartyMatch(rawVal, candidates, { kind: aliasKind, company: co, ind });
     if (!match) { hideBar(); return false; }
+
+    const lblKind = kind === 'customer'
+      ? 'customer'
+      : (kind === 'counterparty' ? 'counterparty' : (kind === 'site' ? 'site' : (kind === 'staff' ? 'staff' : 'supplier')));
+    const dismissSig = `${lblKind}|${norm(rawVal)}|${match}`;
+    if (el._partyTypoDismissedSig && el._partyTypoDismissedSig === dismissSig) {
+      hideBar();
+      return false;
+    }
 
     if (!bar) {
       bar = document.createElement('div');
@@ -115336,15 +116028,28 @@
       bar.setAttribute('data-party-typo-for', el.id);
       wrap.appendChild(bar);
     }
-    const lblKind = kind === 'customer' ? 'customer' : (kind === 'counterparty' ? 'counterparty' : 'supplier');
-    const sig = `${lblKind}|${match}`;
+    const isAliasHit = Boolean(aliasMatch);
+    const sig = `${isAliasHit ? 'alias' : 'typo'}|${lblKind}|${match}|${dismissSig}`;
     bar.dataset.typedNorm = norm(rawVal);
     if (bar.dataset.matchSig !== sig) {
       bar.dataset.matchSig = sig;
-      const lbl = lblKind === 'customer'
-        ? 'One letter off existing customer:'
-        : (lblKind === 'counterparty' ? 'One letter off existing counterparty:' : 'One letter off existing supplier:');
-      bar.innerHTML = `<span class="party-typo-msg">${ic('warn')}<span>${esc(lbl)}</span> <b data-no-i18n="1">${esc(match)}</b></span><button type="button" class="party-typo-use-btn" data-use-party-field="${esc(el.id)}" data-use-party-name="${esc(match)}"><span>Use</span> <b data-no-i18n="1">${esc(match)}</b></button>`;
+      const lblMap = isAliasHit
+        ? {
+            customer: 'Known alias of existing customer:',
+            counterparty: 'Known alias of existing counterparty:',
+            site: 'Known alias of existing site:',
+            staff: 'Known alias of existing staff member:',
+            supplier: 'Known alias of existing supplier:'
+          }
+        : {
+            customer: 'One letter off existing customer:',
+            counterparty: 'One letter off existing counterparty:',
+            site: 'One letter off existing site:',
+            staff: 'One letter off existing staff member:',
+            supplier: 'One letter off existing supplier:'
+          };
+      const lbl = lblMap[lblKind] || lblMap.supplier;
+      bar.innerHTML = `<span class="party-typo-msg">${ic('warn')}<span>${esc(lbl)}</span> <b data-no-i18n="1">${esc(match)}</b></span><span class="party-typo-actions"><button type="button" class="party-typo-use-btn" data-use-party-field="${esc(el.id)}" data-use-party-name="${esc(match)}"><span>Use</span> <b data-no-i18n="1">${esc(match)}</b></button><button type="button" class="party-typo-keep-btn" data-keep-party-field="${esc(el.id)}" data-keep-party-sig="${esc(dismissSig)}"><span>Keep as new name</span></button></span>`;
       if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
         window.MFG_I18N.translateDom(bar);
       }
@@ -115357,8 +116062,8 @@
     if (!host || !host.isConnected) return;
     const effCtx = ctx || host._partyTypoCtx || {};
     const selStr = effCtx.isDomainModal
-      ? '#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender'
-      : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner';
+      ? '#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender, #ide_property, #ide_outlet, #ide_cashier, #ide_producer'
+      : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner, #f_site, #f_staff';
     host.querySelectorAll(selStr).forEach(el => syncPartyTypoForInput(el, effCtx));
   }
 
@@ -115857,7 +116562,7 @@
       }, 130);
     });
     host.addEventListener('mousedown', ev => {
-      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ideFifoSplitBtn') : null;
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, .party-typo-keep-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ideFifoSplitBtn') : null;
       if (t) ev.preventDefault();
     });
     host.addEventListener('click', ev => {
@@ -115882,6 +116587,24 @@
         }
         return;
       }
+      const keepBtn = ev.target && ev.target.closest ? ev.target.closest('[data-keep-party-field]') : null;
+      if (keepBtn) {
+        ev.preventDefault();
+        const fid = keepBtn.getAttribute('data-keep-party-field') || '';
+        const keepSig = keepBtn.getAttribute('data-keep-party-sig') || '';
+        const inpEl = (fid && (host.querySelector('#' + fid) || $(fid))) || null;
+        if (inpEl) {
+          inpEl._partyTypoDismissedSig = keepSig || 'dismissed';
+          const curBar = keepBtn.closest('.party-typo-bar');
+          if (curBar) {
+            curBar.hidden = true;
+            curBar.dataset.matchSig = '';
+            curBar.dataset.typedNorm = '';
+          }
+          try { inpEl.focus({ preventScroll: true }); } catch (_) {}
+        }
+        return;
+      }
       const useBtn = ev.target && ev.target.closest ? ev.target.closest('[data-use-party-field]') : null;
       if (!useBtn) return;
       ev.preventDefault();
@@ -115889,6 +116612,7 @@
       const nextName = useBtn.getAttribute('data-use-party-name') || '';
       const inpEl = (fid && (host.querySelector('#' + fid) || $(fid))) || null;
       if (!inpEl || !nextName) return;
+      inpEl._partyTypoDismissedSig = '';
       const curBar = useBtn.closest('.party-typo-bar');
       if (curBar) {
         curBar.hidden = true;
@@ -122765,7 +123489,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .party-typo-keep-btn, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -133005,6 +133729,7 @@
       }
       appStoreSetRaw('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
       appStoreSetRaw('isabi_mfg_alert_rules_v1', JSON.stringify(STATE.alertRules || { overrides: {}, custom: [] }));
+      appStoreSetRaw('isabi_mfg_party_hygiene_v1', JSON.stringify(STATE.partyHygiene || { rules: {} }));
       appStoreSetRaw('isabi_mfg_role_tab_policies_v1', JSON.stringify(STATE.roleTabPolicies || {}));
       appStoreSetRaw('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
       appStoreSetRaw('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
@@ -134781,6 +135506,7 @@
       workSchedules: STATE.workSchedules || { shiftTypes: [], staffRules: {} },
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
+      partyHygiene: STATE.partyHygiene || { rules: {} },
       roleTabPolicies: STATE.roleTabPolicies || {},
       faceSettings: STATE.faceSettings,
       lbpFxRate: getLbpFxRate(),
@@ -137443,6 +138169,7 @@
     if (remote.workSchedules && mergeWorkSchedules(remote.workSchedules)) { changed = true; }
     if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
     if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
+    if (remote.partyHygiene && mergePartyHygiene(remote.partyHygiene)) { changed = true; }
     if (remote.roleTabPolicies && mergeRoleTabPolicies(remote.roleTabPolicies)) { changed = true; }
     if (!isPushing && !remote._scopedForSession && STATE.roleTabPolicies && typeof STATE.roleTabPolicies === 'object') {
       const remRtp = (remote.roleTabPolicies && typeof remote.roleTabPolicies === 'object') ? remote.roleTabPolicies : {};
@@ -137922,6 +138649,43 @@
           if (!cr || !cr.id) return;
           const remRow = remCustMap.get(String(cr.id));
           if (!remRow || String(cr.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
+        });
+      }
+      if (!pushChanges && canManageDataHygiene() && STATE.partyHygiene && STATE.partyHygiene.rules) {
+        const remPh = (remote.partyHygiene && remote.partyHygiene.rules) ? remote.partyHygiene.rules : {};
+        const canonPhInd = v => {
+          const s = String(v || '').trim().toLowerCase();
+          if (!s) return 'manufacturing';
+          if (/real.?estate|propert|4235/.test(s)) return 'realestate';
+          if (/holding|treasury/.test(s)) return 'holding';
+          if (/hospit|resort|blanca|una|palms|voile|platinum/.test(s)) return 'hospitality';
+          if (/trad|auto|shacman|korri/.test(s)) return 'trading';
+          if (/insur|broker/.test(s)) return 'insurance';
+          if (/manufactur|wtc|bbconstruction|bbc|lions/.test(s)) return 'manufacturing';
+          return norm(s);
+        };
+        const scopedAllowedPhInds = (() => {
+          if (!isScopedRemote) return null;
+          const set = new Set();
+          parseUserCompanies(auSync).forEach(nm => {
+            const ci = canonPhInd(inferIndustryForCompany(nm) || nm);
+            if (ci) set.add(ci);
+          });
+          return set;
+        })();
+        const allowedPhKinds = new Set(['customer', 'supplier', 'site', 'staff', 'counterparty']);
+        const allowedPhStatuses = new Set(['confirmed', 'dismissed', 'undone']);
+        Object.entries(STATE.partyHygiene.rules || {}).forEach(([rk, rv]) => {
+          if (!rv || typeof rv !== 'object') return;
+          const kind = String(rv.kind || '').trim().toLowerCase();
+          const status = String(rv.status || '').trim().toLowerCase();
+          const ind = String(rv.industry || 'Manufacturing').trim() || 'Manufacturing';
+          if (!allowedPhKinds.has(kind) || !allowedPhStatuses.has(status)) return;
+          const expRk = partyHygieneRuleKey(ind, kind, rv.alias || '');
+          if (!expRk || rk !== expRk) return;
+          if (scopedAllowedPhInds && !scopedAllowedPhInds.has(canonPhInd(ind))) return;
+          const remRow = remPh[rk];
+          if (!remRow || comparePartyHygieneTs(rv.updated_at, remRow.updated_at) > 0) pushChanges = true;
         });
       }
 
@@ -141990,7 +142754,7 @@
   let _demoCompanyIndPromise = null;
   let _preloadedDemoBundle = null;
   let _demoCompanyPrevRealCo = 'manufacturing-group';
-  const _demoCompanySandboxStores = { customRecords: {}, industryCustomRows: {}, industryRowEdits: {} };
+  const _demoCompanySandboxStores = { customRecords: {}, industryCustomRows: {}, industryRowEdits: {}, partyHygiene: { rules: {} } };
 
   async function buildStandaloneDemoBundle(coreJson, recJson, indJson) {
     const tmpSeed = { models: {}, records: {}, sentinels: [] };
@@ -142130,6 +142894,7 @@
         industryRowEdits: STATE.industryRowEdits,
         pendingCloudPush: Boolean(STATE.pendingCloudPush),
         sentinelReviews: JSON.parse(JSON.stringify(STATE.sentinelReviews || {})),
+        partyHygiene: JSON.parse(JSON.stringify(STATE.partyHygiene || { rules: {} })),
         stepUpAudits: Array.isArray(STATE.stepUpAudits) ? JSON.parse(JSON.stringify(STATE.stepUpAudits)) : []
       };
 
@@ -142138,6 +142903,8 @@
       STATE.customRecords = _demoCompanySandboxStores.customRecords || {};
       STATE.industryCustomRows = _demoCompanySandboxStores.industryCustomRows || {};
       STATE.industryRowEdits = _demoCompanySandboxStores.industryRowEdits || {};
+      STATE.partyHygiene = _demoCompanySandboxStores.partyHygiene || { rules: {} };
+      invalidatePartyHygieneCaches();
       STATE.pendingCloudPush = false;
       _demoCompanySandboxActive = true;
       resetCloudSyncEtagCache();
@@ -142190,6 +142957,7 @@
       _demoCompanySandboxStores.customRecords = STATE.customRecords || {};
       _demoCompanySandboxStores.industryCustomRows = STATE.industryCustomRows || {};
       _demoCompanySandboxStores.industryRowEdits = STATE.industryRowEdits || {};
+      _demoCompanySandboxStores.partyHygiene = STATE.partyHygiene || { rules: {} };
       if (_demoCompanySandboxSeed) {
         const sbxVoid = {};
         Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => {
@@ -142232,6 +143000,8 @@
       STATE.industryRowEdits = _demoCompanyLiveSnap.industryRowEdits;
       STATE.pendingCloudPush = Boolean(_demoCompanyLiveSnap.pendingCloudPush);
       STATE.sentinelReviews = _demoCompanyLiveSnap.sentinelReviews;
+      STATE.partyHygiene = _demoCompanyLiveSnap.partyHygiene || { rules: {} };
+      invalidatePartyHygieneCaches();
       STATE.stepUpAudits = _demoCompanyLiveSnap.stepUpAudits;
 
       _demoSanitizedActive = false;
@@ -143422,6 +144192,9 @@
     if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.clearLease === 'function') {
       window.MFG_STEP_UP.clearLease();
     }
+    if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.clearSessionCache === 'function') {
+      window.MFG_TELEMATICS.clearSessionCache();
+    }
     // A signed-out screen keeps no other seat's unlock requests or saved views. Reset first, while the
     // session can still cancel a waiting request (idle lock or expiry reach here without signOut).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
@@ -143679,6 +144452,8 @@
       _demoCompanySandboxStores.customRecords = {};
       _demoCompanySandboxStores.industryCustomRows = {};
       _demoCompanySandboxStores.industryRowEdits = {};
+      _demoCompanySandboxStores.partyHygiene = { rules: {} };
+      invalidatePartyHygieneCaches();
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
           const k = sessionStorage.key(i);
@@ -143735,12 +144510,21 @@
       try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
       try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
+        try { window.MFG_AI_EDGE.resetTransientDemoInputs(); } catch (_) {}
+      }
+      if (rosterIsServerHeld() || hasServerApi() || IS_LOCAL || IS_AUTOMATED_TEST) {
+        STATE.partyHygiene = { rules: {} };
+        invalidatePartyHygieneCaches();
+        try { appStoreRemoveRaw('isabi_mfg_party_hygiene_v1'); } catch (_) {}
+      }
       if (rosterIsServerHeld()) {
         STATE.users = [];
         STATE.activeUserIdx = 0;
         STATE.customRecords = {};
         STATE.industryCustomRows = {};
         STATE.industryRowEdits = {};
+        STATE.partyHygiene = { rules: {} };
         STATE._purgedIndustryLegacy = { rows: [], editKeys: [] };
         _usersApiHydratedOnce = false;
         _usersHydrateInFlight = null;
@@ -143748,6 +144532,7 @@
         try { appStoreRemoveRaw('isabi_mfg_users_v2'); } catch (_) {}
         try { appStoreRemoveRaw('isabi_mfg_ind_custom_rows_v1'); } catch (_) {}
         try { appStoreRemoveRaw('isabi_mfg_ind_row_edits_v1'); } catch (_) {}
+        try { appStoreRemoveRaw('isabi_mfg_party_hygiene_v1'); } catch (_) {}
         SEED.records = {};
         SEED.models = {};
         setPrivateNameBook(null);
@@ -183810,6 +184595,7 @@
         STATE,
         SEED,
         COMPANY_KEY_BY_NAME,
+        DOMAIN_NEAR_COPY_LABELS,
         getFormUi: () => FORM_UI,
         getFreqIndex,
         getLbpFxRate,
@@ -183843,6 +184629,16 @@
         resolveCanonicalEquipmentName,
         resolveCatalogItem,
         isSupplierIvaForCompany,
+        findNearCopyEntry,
+        findDomainNearCopyEntry,
+        findNearPartyMatch,
+        getScopedPartyCandidates,
+        resolveConfirmedPartyAlias,
+        isPartyHygieneDismissed,
+        nearCopyRowUsd,
+        nearCopySumUsd,
+        fmtDateDMY,
+        fmtUSD,
         toast
       });
     }
@@ -183856,6 +184652,9 @@
         todayISO,
         defaultEntryCompany,
         allowedCompanyNames,
+        getCompanyCatalog,
+        activeUser,
+        isDemoScopeActive,
         getActiveIndustry,
         canEnterForm,
         canEnterAny,
@@ -183866,6 +184665,12 @@
         canModifyTextOnly,
         isFieldAdminUnlocked,
         canVoid,
+        canManageDataHygiene,
+        getPartyHygieneRules,
+        savePartyHygieneDecision,
+        resolveConfirmedPartyAlias,
+        isPartyHygieneDismissed,
+        getScopedPartyCandidates,
         openEntryModal,
         openIndustryDomainEntryModal,
         recalcForm,
@@ -186787,6 +187592,21 @@
     openMobRowPeekForRow,
     stepMobRowPeek,
     closeMobRowPeekSheet,
+    getScopedPartyCandidates: typeof getScopedPartyCandidates === 'function' ? getScopedPartyCandidates : null,
+    findNearPartyMatch: typeof findNearPartyMatch === 'function' ? findNearPartyMatch : null,
+    findDomainNearCopyEntry: typeof findDomainNearCopyEntry === 'function' ? findDomainNearCopyEntry : null,
+    domainNearCopyDecision: typeof domainNearCopyDecision === 'function' ? domainNearCopyDecision : null,
+    comparePartyHygieneTs: typeof comparePartyHygieneTs === 'function' ? comparePartyHygieneTs : null,
+    doSync: typeof doSync === 'function' ? doSync : null,
+    waitForSyncIdle: async () => {
+      for (let i = 0; i < 12 && syncInFlight; i++) {
+        try { await syncInFlight; } catch (_) {}
+        await new Promise(r => setTimeout(r, 25));
+      }
+    },
+    savePartyHygieneDecision: typeof savePartyHygieneDecision === 'function' ? savePartyHygieneDecision : null,
+    getPartyHygieneRules: typeof getPartyHygieneRules === 'function' ? getPartyHygieneRules : null,
+    resolveConfirmedPartyAlias: typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias : null,
     getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);

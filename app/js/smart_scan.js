@@ -17,12 +17,17 @@
 
   const SCAN_STATE = {
     busy: false,
+    entryScanGen: 0,
+    domScanGen: 0,
     progressMsg: '',
     lastScan: null,       // { fileMeta, attObj, attObjs, stitchedDataUrl, activePageIdx, extractedText, parsed, matched, appliedForm, appliedIndTpl, filledFields, warnFields, warnings, altForms, engineLabel }
+    pendingPrecheckBundle: null,
+    pendingDomainPrecheck: null,
     splitOpen: false,
     imgRotateDeg: 0,
     sampleMenuOpen: false,
     suppressResetOnModalSwitch: false,
+    suppressDomResetOnSwitch: false,
     blobPreviewUrl: ''
   };
 
@@ -2627,13 +2632,622 @@
     return [inputFilesOrAtt];
   }
 
+  // ==================== REC 5: CAMERA & SMART SCAN PRE-CHECK ENGINE ====================
+  const PRECHECK_FORM_TO_CR = {
+    sales: 'sales_tickets',
+    raw: 'raw_purchases',
+    expense: 'expenses',
+    settlement: 'settlements',
+    receipt: 'receipts',
+    salary: 'salaries'
+  };
+
+  const DOM_PRECHECK_PARTY_FIELDS = {
+    ide_client: 'customer',
+    ide_tenant: 'customer',
+    ide_buyer: 'customer',
+    ide_customer: 'customer',
+    ide_member: 'customer',
+    ide_supplier: 'supplier',
+    ide_contractor: 'supplier',
+    ide_carrier: 'supplier',
+    ide_party: 'counterparty',
+    ide_partner: 'counterparty',
+    ide_lender: 'counterparty',
+    ide_property: 'site',
+    ide_outlet: 'site',
+    ide_cashier: 'staff',
+    ide_producer: 'staff'
+  };
+
+  function computePrecheckWarnSig(pre) {
+    if (!pre || !pre.hasWarning) return '';
+    const pwPart = (pre.partyWarnings || [])
+      .map(w => `${w.targetKey || ''}:${norm(w.raw || '')}->${norm(w.suggested || '')}`)
+      .sort()
+      .join(';');
+    let ncPart = '';
+    if (pre.nearCopyHit) {
+      const h = pre.nearCopyHit;
+      const rows = Array.isArray(h.rows) ? h.rows : (Array.isArray(h.matches) ? h.matches : (h.row ? [h.row] : []));
+      const ids = rows.map(r => String((r && (r._srcId || r.id || r.code)) || '')).filter(Boolean).sort().join(',');
+      ncPart = `${h.reason || ''}:${h.day || ''}:${ids || Number(h.sumUsd || 0).toFixed(2)}`;
+    }
+    return [pwPart, ncPart].filter(Boolean).join('||');
+  }
+
+  function collectCarriedPrecheckFlags(items) {
+    const overrides = {};
+    let ack = false;
+    let ackSig = '';
+    (items || []).forEach(it => {
+      if (!it || typeof it !== 'object') return;
+      if (it._ssPrecheckAck) ack = true;
+      if (it._ssPrecheckAckSig && !ackSig) ackSig = String(it._ssPrecheckAckSig);
+      if (it._ssPrecheckOverrides && typeof it._ssPrecheckOverrides === 'object') {
+        Object.assign(overrides, it._ssPrecheckOverrides);
+      }
+    });
+    return { overrides, ack, ackSig };
+  }
+
+  function precheckKindLabel(kind) {
+    const k = String(kind || '').trim().toLowerCase();
+    if (k === 'staff') return 'staff member';
+    if (k === 'customer' || k === 'supplier' || k === 'site' || k === 'counterparty') return k;
+    return 'counterparty';
+  }
+
+  function precheckFormLabelKey(tf) {
+    return {
+      sales: 'Sales Ticket',
+      raw: 'Raw Material Ticket',
+      receipt: 'Customer Receipt',
+      expense: 'Expense',
+      settlement: 'Supplier Payment',
+      salary: 'Salary Payment',
+      external: 'External Movement'
+    }[String(tf || '')] || 'Entry';
+  }
+
+  function buildPrecheckNearCopySpec(hit, labelKey) {
+    if (!hit) return null;
+    const rMap = {
+      sum: 'Split match: existing rows on the same day add up to this amount',
+      sum_gap: 'Split match: existing rows one day apart add up to this amount',
+      sum_typo: 'Split typo match: rows under a similar name add up to this amount',
+      sum_gap_typo: 'Split typo match: rows one day apart under a similar name add up to this amount',
+      ticket: 'Duplicate slip warning: same day, amount and 1-digit-apart ticket',
+      ticket_typo: 'Duplicate slip + typo warning: similar name and 1-digit-apart ticket',
+      vat: '11% VAT duplicate warning: same day, party and VAT-related amount',
+      vat_typo: '11% VAT + typo warning: similar name and VAT-related amount',
+      same_amt: 'Duplicate warning: same day, party and amount already logged',
+      same_amt_typo: 'Duplicate + typo warning: same day and amount under a similar name'
+    };
+    const reasonKey = rMap[hit.reason] || 'Possible duplicate or split match detected';
+    const dayStr = hit.day ? ((D && D.fmtDateDMY) ? D.fmtDateDMY(hit.day) : hit.day) : '';
+    const rowSample = hit.row || hit.match || (Array.isArray(hit.rows) && hit.rows[0]) || (Array.isArray(hit.matches) && hit.matches[0]) || null;
+    const sumVal = hit.sumUsd != null ? Number(hit.sumUsd) : (rowSample && D && D.nearCopySumUsd ? D.nearCopySumUsd(rowSample) : 0);
+    const amtStr = sumVal > 0 && D && D.fmtUSD ? D.fmtUSD(sumVal, 2) : '';
+    const partyStr = hit.typoParty || (rowSample && (rowSample.customer || rowSample.supplier || rowSample.site || rowSample.staff || rowSample.tenant || rowSample.client || rowSample.buyer || rowSample.counterparty)) || '';
+    const lblKey = labelKey || 'Entry';
+    const metaStr = [dayStr, partyStr, amtStr].filter(Boolean).join(' · ');
+    const bits = [lblKey, dayStr, partyStr, amtStr].filter(Boolean).join(' · ');
+    return {
+      type: 'near_copy',
+      reasonKey,
+      labelKey: lblKey,
+      metaStr,
+      text: bits ? `${reasonKey} (${bits})` : reasonKey
+    };
+  }
+
+  function formatPrecheckNearCopyLine(hit, labelPrefix) {
+    const spec = buildPrecheckNearCopySpec(hit, labelPrefix);
+    return spec ? spec.text : '';
+  }
+
+  function renderPrecheckItemHtml(it) {
+    if (!it) return '';
+    if (typeof it === 'string') {
+      const clean = sanitizeOutwardText(it);
+      return clean ? `<span data-no-i18n="1">${esc(clean)}</span>` : '';
+    }
+    if (it.type === 'party') {
+      return `<span>${esc(it.prefixKey)}</span> <b data-no-i18n="1">&quot;${esc(sanitizeOutwardText(it.raw))}&quot;</b> <span>${esc(it.connectorKey)}</span> <b data-no-i18n="1">&quot;${esc(sanitizeOutwardText(it.suggested))}&quot;</b>`;
+    }
+    if (it.type === 'near_copy') {
+      const meta = sanitizeOutwardText(it.metaStr || '');
+      const lbl = it.labelKey ? `<span>${esc(it.labelKey)}</span>` : '';
+      const sep = (it.labelKey && meta) ? '<span data-no-i18n="1"> · </span>' : '';
+      const tail = meta ? `<span data-no-i18n="1">${esc(meta)}</span>` : '';
+      return `<span>${esc(it.reasonKey)}</span><span data-no-i18n="1"> (</span>${lbl}${sep}${tail}<span data-no-i18n="1">)</span>`;
+    }
+    return `<span data-no-i18n="1">${esc(sanitizeOutwardText(it.text || ''))}</span>`;
+  }
+
+  function inspectPartyPrecheck(kind, rawVal, co, ind, targetKey, fieldLabel) {
+    const rawStr = String(rawVal || '').trim();
+    if (!rawStr || !D) return null;
+    const kindLbl = precheckKindLabel(kind);
+    const aliasCanon = (typeof D.resolveConfirmedPartyAlias === 'function')
+      ? D.resolveConfirmedPartyAlias(kind, rawStr, co, ind)
+      : '';
+    if (aliasCanon && norm(aliasCanon) !== norm(rawStr)) {
+      const prefixKey = `Known alias of existing ${kindLbl}:`;
+      return {
+        type: 'party',
+        kind,
+        targetKey,
+        fieldLabel,
+        raw: rawStr,
+        suggested: aliasCanon,
+        isAlias: true,
+        prefixKey,
+        connectorKey: 'maps to',
+        text: `${prefixKey} "${rawStr}" maps to "${aliasCanon}"`
+      };
+    }
+    const candidates = (typeof D.getScopedPartyCandidates === 'function')
+      ? D.getScopedPartyCandidates(kind, co, null, { ind })
+      : [];
+    const nearMatch = (typeof D.findNearPartyMatch === 'function')
+      ? D.findNearPartyMatch(rawStr, candidates, { kind, company: co, ind })
+      : null;
+    if (nearMatch && norm(nearMatch) !== norm(rawStr)) {
+      const prefixKey = `One letter off existing ${kindLbl}:`;
+      return {
+        type: 'party',
+        kind,
+        targetKey,
+        fieldLabel,
+        raw: rawStr,
+        suggested: nearMatch,
+        isAlias: false,
+        prefixKey,
+        connectorKey: 'matches',
+        text: `${prefixKey} "${rawStr}", matches "${nearMatch}"`
+      };
+    }
+    return null;
+  }
+
+  function applyPrecheckOverrideToBundle(scanBundle, overrideKey, canonical) {
+    if (!scanBundle || !overrideKey || !canonical) return;
+    const p = scanBundle.parsed || {};
+    const m = scanBundle.matched || {};
+    const tf = p.formType || 'expense';
+    if (overrideKey === 'customer') {
+      p.customer = canonical;
+      m.customer = canonical;
+      m.customerKnown = true;
+      if (Array.isArray(m.warnings)) {
+        m.warnings = m.warnings.filter(w => !w || w.kind !== 'unknown_customer');
+      }
+      if (['sales', 'receipt'].includes(tf)) {
+        m.counterparty = canonical;
+        if (p.counterparty) p.counterparty = canonical;
+      }
+    } else if (overrideKey === 'supplier') {
+      p.supplier = canonical;
+      m.supplier = canonical;
+      m.supplierKnown = true;
+      if (Array.isArray(m.warnings)) {
+        m.warnings = m.warnings.filter(w => !w || w.kind !== 'unknown_supplier');
+      }
+      if (['expense', 'settlement', 'raw'].includes(tf)) {
+        m.counterparty = canonical;
+        if (p.counterparty) p.counterparty = canonical;
+      }
+    } else if (overrideKey === 'site') {
+      p.site = canonical;
+      m.site = canonical;
+      m.siteKnown = true;
+    } else if (overrideKey === 'staff') {
+      p.staff = canonical;
+      m.staff = canonical;
+      m.staffKnown = true;
+    }
+  }
+
+  function restoreRawParsedForUnoverriddenWarnings(scanBundle, partyWarnings, overridesMap) {
+    if (!scanBundle || !Array.isArray(partyWarnings) || !partyWarnings.length) return;
+    const p = scanBundle.parsed || {};
+    const m = scanBundle.matched || {};
+    const tf = p.formType || 'expense';
+    partyWarnings.forEach(pw => {
+      const tk = pw && pw.targetKey;
+      if (!tk) return;
+      if (overridesMap && overridesMap[tk]) return;
+      const rawVal = String((pw && pw.raw) || p[tk] || '').trim();
+      if (!rawVal) return;
+      p[tk] = rawVal;
+      m[tk] = rawVal;
+      m[tk + 'Known'] = false;
+      if ((tk === 'supplier' && ['expense', 'settlement', 'raw'].includes(tf)) || (tk === 'customer' && ['sales', 'receipt'].includes(tf))) {
+        m.counterparty = rawVal;
+        if (p.counterparty) p.counterparty = rawVal;
+      }
+    });
+  }
+
+  function findScanExactDuplicate(crKey, candRec) {
+    if (!D || !crKey || !candRec) return null;
+    const day = String(candRec.date || '').slice(0, 10);
+    const co = norm(candRec.company || '');
+    const amt = Number(candRec.total_ttc || candRec.total || candRec.amount || 0);
+    if (!day || !co || !(amt > 0.005)) return null;
+    const pk = crKey === 'sales_tickets' || crKey === 'receipts'
+      ? 'customer'
+      : (crKey === 'raw_purchases' ? 'site' : (crKey === 'salaries' ? 'staff' : 'supplier'));
+    const rawParty = String(candRec[pk] || (pk === 'site' ? candRec.supplier : '') || '').trim();
+    const partyKey = rawParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+    if (!partyKey) return null;
+    const pool = [].concat(
+      (D.SEED && D.SEED.records && Array.isArray(D.SEED.records[crKey])) ? D.SEED.records[crKey] : [],
+      (D.STATE && D.STATE.customRecords && Array.isArray(D.STATE.customRecords[crKey])) ? D.STATE.customRecords[crKey] : []
+    );
+    const seen = new Set();
+    let typoMatch = null;
+    for (let i = 0; i < pool.length; i++) {
+      const r = pool[i];
+      if (!r || r.voided || r.voided_at || r.price_pending || r._absorbedSeedTwin) continue;
+      if (String(r.date || '').slice(0, 10) !== day) continue;
+      if (norm(r.company || '') !== co) continue;
+      if (r.id) {
+        const rid = String(r.id);
+        if (seen.has(rid)) continue;
+        seen.add(rid);
+      }
+      const rAmt = Number(r.total_ttc != null ? r.total_ttc : (r.total != null ? r.total : (r.amount != null ? r.amount : 0)));
+      if (!(Math.abs(rAmt - amt) <= 0.02)) continue;
+      const rRawParty = String(r[pk] || (pk === 'site' ? (r.site_owner || r.supplier) : '') || '').trim();
+      const rKey = rRawParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+      if (!rKey) continue;
+      if (rKey === partyKey) {
+        return { reason: 'same_amt', row: r, match: r, matches: [r], matchCount: 1, sumUsd: rAmt, day };
+      }
+      if (!typoMatch && typeof D.findNearPartyMatch === 'function') {
+        const matched = D.findNearPartyMatch(rawParty, [rRawParty], { kind: pk === 'site' ? 'site' : (pk === 'staff' ? 'staff' : pk), company: candRec.company });
+        if (matched) {
+          typoMatch = { reason: 'same_amt_typo', row: r, match: r, matches: [r], matchCount: 1, sumUsd: rAmt, day, typoParty: rRawParty };
+        }
+      }
+    }
+    return typoMatch;
+  }
+
+  function evaluateScanPrecheck(scanBundle) {
+    const empty = { hasWarning: false, nearCopyHit: null, crKey: '', partyWarnings: [], summaryItems: [], summaryLines: [] };
+    if (!D || !scanBundle || !scanBundle.parsed) return empty;
+    const p = scanBundle.parsed;
+    const m = scanBundle.matched || {};
+    const tf = p.formType || 'expense';
+    const co = (m.targetCompany || p.company || (D.defaultEntryCompany ? D.defaultEntryCompany() : 'WTC'));
+    const coKey = (D.COMPANY_KEY_BY_NAME && D.COMPANY_KEY_BY_NAME[co]) || '';
+    const ind = (D.getActiveIndustry ? D.getActiveIndustry(coKey || co) : 'Manufacturing') || 'Manufacturing';
+
+    const partyWarnings = [];
+    const seenWarn = new Set();
+    const checkField = (kind, rawVal, targetKey, lbl) => {
+      const hit = inspectPartyPrecheck(kind, rawVal, co, ind, targetKey, lbl);
+      if (hit && !seenWarn.has(`${targetKey}|${norm(hit.suggested)}`)) {
+        seenWarn.add(`${targetKey}|${norm(hit.suggested)}`);
+        partyWarnings.push(hit);
+      }
+    };
+
+    const rawCust = p.customer || (['sales', 'receipt'].includes(tf) ? p.counterparty : '');
+    const rawSup = p.supplier || (['expense', 'settlement', 'raw'].includes(tf) ? p.counterparty : '');
+    if (rawCust) checkField('customer', rawCust, 'customer', 'customer');
+    if (rawSup) checkField('supplier', rawSup, 'supplier', 'supplier');
+    if (p.site) checkField('site', p.site, 'site', 'site');
+    if (p.staff) checkField('staff', p.staff, 'staff', 'staff');
+
+    const crKey = PRECHECK_FORM_TO_CR[tf] || '';
+    let nearCopyHit = null;
+    if (crKey && typeof D.findNearCopyEntry === 'function') {
+      const todayStr = (D.todayISO && D.todayISO()) || new Date().toISOString().slice(0, 10);
+      const tktDigits = String(p.reference || '').replace(/[^0-9]/g, '');
+      const candRec = {
+        date: p.date || todayStr,
+        company: co,
+        method: p.paymentMethod || (tf === 'settlement' ? 'Payment' : (tf === 'receipt' ? 'Payment' : 'Cash')),
+        ticket_no: tktDigits || p.reference || '',
+        reference: p.reference || '',
+        invoice: p.reference || '',
+        truck: m.equipment || p.equipment || '',
+        customer: rawCust || m.customer || '',
+        supplier: rawSup || m.supplier || '',
+        site: p.site || m.site || '',
+        staff: p.staff || m.staff || '',
+        total_ttc: Number(p.totalAmount || 0),
+        total: Number(p.netAmount || p.totalAmount || 0),
+        amount: Number(p.totalAmount || 0),
+        lbp_amount: Number(p.lbpAmount || 0)
+      };
+      nearCopyHit = D.findNearCopyEntry(crKey, candRec);
+      if (!nearCopyHit) {
+        nearCopyHit = findScanExactDuplicate(crKey, candRec);
+      }
+    }
+
+    const summaryItems = partyWarnings.slice();
+    const ncSpec = nearCopyHit ? buildPrecheckNearCopySpec(nearCopyHit, precheckFormLabelKey(tf)) : null;
+    if (ncSpec) summaryItems.push(ncSpec);
+    const summaryLines = summaryItems.map(it => it.text);
+    const nearCopyLine = ncSpec ? ncSpec.text : '';
+    const hasWarn = Boolean(nearCopyHit || partyWarnings.length);
+    return {
+      hasWarning: hasWarn,
+      nearCopyHit,
+      nearCopyLine,
+      crKey,
+      partyWarnings,
+      summaryItems,
+      summaryLines,
+      warnSig: computePrecheckWarnSig({ hasWarning: hasWarn, partyWarnings, nearCopyHit })
+    };
+  }
+
+  function evaluateDomainScanPrecheck(extraction) {
+    const empty = { hasWarning: false, nearCopyHit: null, nearCopyLine: '', formKey: '', partyWarnings: [], summaryItems: [], summaryLines: [] };
+    if (!D || !extraction || !extraction.fields) return empty;
+    const f = extraction.fields || {};
+    const formKey = String(extraction.formKey || '');
+    const co = String(extraction.company || (D.defaultEntryCompany ? D.defaultEntryCompany() : '') || '');
+    const ind = String(extraction.ind || (D.getActiveIndustry ? D.getActiveIndustry() : 'Manufacturing') || 'Manufacturing');
+
+    const partyWarnings = [];
+    const seen = new Set();
+    Object.entries(DOM_PRECHECK_PARTY_FIELDS).forEach(([fid, kind]) => {
+      const rawVal = f[fid];
+      if (!rawVal) return;
+      const lbl = kind === 'site' ? 'site' : (kind === 'staff' ? 'staff' : (kind === 'customer' ? 'customer' : (kind === 'counterparty' ? 'counterparty' : 'supplier')));
+      const hit = inspectPartyPrecheck(kind, rawVal, co, ind, fid, lbl);
+      if (hit && !seen.has(`${fid}|${norm(hit.suggested)}`)) {
+        seen.add(`${fid}|${norm(hit.suggested)}`);
+        partyWarnings.push(hit);
+      }
+    });
+
+    let nearCopyHit = null;
+    if (formKey && typeof D.findDomainNearCopyEntry === 'function') {
+      const todayStr = (D.todayISO && D.todayISO()) || new Date().toISOString().slice(0, 10);
+      const netVal = Number(f.ide_net || 0);
+      const ttcFromNet = netVal > 0 ? (/4235/i.test(co) || formKey === 'trd_sales' ? round2(netVal * 1.11) : netVal) : 0;
+      const hldCp = f.ide_party || f.ide_partner || f.ide_lender || '';
+      const hasVal = v => v != null && String(v).trim() !== '';
+      const candDom = {
+        id: f.ide_id || '',
+        company: co,
+        date: f.ide_date || todayStr,
+        due_date: f.ide_due || f.ide_date || todayStr,
+        promise_date: f.ide_due || f.ide_date || todayStr,
+        start_date: f.ide_start_date || f.ide_date || todayStr,
+        loss_date: f.ide_date || todayStr,
+        next_due: f.ide_due || f.ide_date || todayStr,
+        tax_seq: f.ide_tax_seq || '',
+        reference: f.ide_ref || f.ide_id || '',
+        policy_no: f.ide_policy_no || '',
+        book: f.ide_book || '',
+        chassis: f.ide_chassis || '',
+        tenant: f.ide_tenant || '',
+        buyer: f.ide_buyer || '',
+        customer: f.ide_customer || '',
+        client: f.ide_client || '',
+        member: f.ide_member || '',
+        supplier: f.ide_supplier || '',
+        contractor: f.ide_contractor || '',
+        carrier: f.ide_carrier || '',
+        property: f.ide_property || '',
+        outlet: f.ide_outlet || '',
+        cashier: f.ide_cashier || '',
+        terminal: f.ide_terminal || '',
+        party: hldCp,
+        counterparty: hldCp,
+        partner: f.ide_partner || hldCp,
+        lender: f.ide_lender || hldCp,
+        toCo: f.ide_to || '',
+        fromCo: f.ide_from || '',
+        net_usd: netVal,
+        ttc_usd: Number(f.ide_tot || ttcFromNet || 0),
+        amount_ttc_usd: Number(f.ide_tot || ttcFromNet || 0),
+        pos_billed_ttc: Number(f.ide_billed || 0),
+        gross_prem_usd: Number(f.ide_gwp != null ? f.ide_gwp : (f.ide_billed || 0)),
+        client_billed_4112_usd: Number(f.ide_billed != null ? f.ide_billed : (f.ide_gwp || f.ide_tot || 0)),
+        ...((hasVal(f.ide_collected) || hasVal(f.ide_paid) || hasVal(f.ide_tot)) ? { collected_usd: Number(hasVal(f.ide_collected) ? f.ide_collected : (hasVal(f.ide_paid) ? f.ide_paid : f.ide_tot)) } : {}),
+        settled_usd: Number(f.ide_amount || f.ide_tot || f.ide_paid || 0),
+        gross_usd: Number(f.ide_gross || f.ide_tot || f.ide_paid || 0),
+        contract_usd: Number(f.ide_contract || 0),
+        ...((hasVal(f.ide_paid) || hasVal(f.ide_collected)) ? { paid_usd: Number(hasVal(f.ide_paid) ? f.ide_paid : f.ide_collected) } : {}),
+        actual_usd: Number(f.ide_actual || 0),
+        budget_usd: Number(f.ide_budget || 0),
+        fob_usd: Number(f.ide_fob || 0),
+        total_landed_usd: Number(f.ide_fob || 0) + Number(f.ide_landed_add || 0),
+        claimed_usd: Number(f.ide_claimed || 0),
+        usd: Number(f.ide_usd || 0),
+        usd_amount: Number(f.ide_usd || f.ide_amount || f.ide_gross || 0),
+        lbp_amount: Number(f.ide_lbp || 0),
+        amount: Number(f.ide_usd || f.ide_amount || f.ide_gross || 0),
+        flow: f.ide_direction || 'Outflow'
+      };
+      nearCopyHit = D.findDomainNearCopyEntry(formKey, candDom, { fromScan: true });
+    }
+
+    const domLabels = (D && D.DOMAIN_NEAR_COPY_LABELS) || {};
+    const summaryItems = partyWarnings.slice();
+    const ncSpec = nearCopyHit ? buildPrecheckNearCopySpec(nearCopyHit, domLabels[formKey] || 'Entry') : null;
+    if (ncSpec) summaryItems.push(ncSpec);
+    const summaryLines = summaryItems.map(it => it.text);
+    const nearCopyLine = ncSpec ? ncSpec.text : '';
+    const hasDomWarn = Boolean(nearCopyHit || partyWarnings.length);
+    return {
+      hasWarning: hasDomWarn,
+      nearCopyHit,
+      nearCopyLine,
+      formKey,
+      partyWarnings,
+      summaryItems,
+      summaryLines,
+      warnSig: computePrecheckWarnSig({ hasWarning: hasDomWarn, partyWarnings, nearCopyHit })
+    };
+  }
+
+  async function precheckCapturedPages(inputFilesOrAtt, opts = {}) {
+    const empty = { hasWarning: false, mode: 'entry', nearCopyHit: null, partyWarnings: [], summaryItems: [], summaryLines: [] };
+    if (!D) return empty;
+    const rawItems = expandInputToScanBatch(inputFilesOrAtt);
+    if (!rawItems.length) return empty;
+    try {
+      const pageEntries = [];
+      let primaryFileName = '';
+      for (let i = 0; i < rawItems.length; i++) {
+        const pair = await normalizeSingleScanItem(rawItems[i], 'Camera Pre-Check', i);
+        if (!pair.attObj) continue;
+        const pName = pair.attObj.file_name || `Page_${i + 1}`;
+        if (!primaryFileName) primaryFileName = pName;
+        if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: pair.fileObj._extractedText });
+          continue;
+        }
+        const isPdfPair = /\.pdf$/i.test(pName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+        if (isPdfPair && pair.fileObj) {
+          const ab = await pair.fileObj.arrayBuffer();
+          const pdfPages = await extractPdfPagesTextClient(ab);
+          if (pdfPages.length > 1) {
+            pdfPages.forEach((pt, pIdx) => pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${pName} (p.${pIdx + 1})`, text: pt }));
+            continue;
+          }
+        }
+        const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(pName) ||
+          /svg|pdf|text|json|xml|word|sheet/i.test(pair.attObj.mime_type || '');
+        const txt = (!isHeadlessEnv() || isTextBearing)
+          ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
+          : '';
+        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
+      }
+      const totalPages = Math.max(1, pageEntries.length);
+      const combinedText = totalPages > 1
+        ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
+        : String((pageEntries[0] && pageEntries[0].text) || '');
+
+      const indModal = $('indDomainEntryModal');
+      const isDomOpen = opts.mode === 'domain' || Boolean(indModal && !indModal.hidden && indModal._currentDomainSpec);
+      if (isDomOpen) {
+        const curSpec = indModal && indModal._currentDomainSpec ? indModal._currentDomainSpec : null;
+        const detBundle = deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName);
+        if (!detBundle || !Object.keys(detBundle.fields || {}).length) return Object.assign({}, empty, { mode: 'domain' });
+        if (opts && opts.partyOverrides && typeof opts.partyOverrides === 'object') {
+          Object.entries(opts.partyOverrides).forEach(([k, v]) => {
+            if (v) detBundle.fields[k] = v;
+          });
+        }
+        const extObj = {
+          ind: (curSpec && curSpec.ind) || '',
+          formKey: (curSpec && curSpec.key) || detBundle.formKey || '',
+          company: detBundle.company || (($('ide_company') && $('ide_company').value) || ''),
+          fields: detBundle.fields
+        };
+        return Object.assign({ mode: 'domain' }, evaluateDomainScanPrecheck(extObj));
+      }
+
+      const detParsed = synthesizeMultiPageDeterministic(pageEntries, combinedText, primaryFileName);
+      const matched = groundExtractedEntities(detParsed, combinedText);
+      const entryBundle = { parsed: detParsed, matched, extractedText: combinedText };
+      if (opts && opts.partyOverrides && typeof opts.partyOverrides === 'object') {
+        Object.entries(opts.partyOverrides).forEach(([k, v]) => {
+          if (v) applyPrecheckOverrideToBundle(entryBundle, k, v);
+        });
+      }
+      return Object.assign({ mode: 'entry' }, evaluateScanPrecheck(entryBundle));
+    } catch (_) {
+      return empty;
+    }
+  }
+
+  function renderIndPrecheckBanner(extraction, precheck) {
+    const bar = $('indEntrySmartScanBar');
+    const oldBanner = $('indEntryPrecheckBanner');
+    if (oldBanner) oldBanner.remove();
+    if (!bar || !extraction || !precheck || !precheck.hasWarning) {
+      SCAN_STATE.pendingDomainPrecheck = null;
+      return null;
+    }
+    SCAN_STATE.pendingDomainPrecheck = { extraction, precheck };
+    const banner = document.createElement('div');
+    banner.id = 'indEntryPrecheckBanner';
+    banner.className = 'ss-precheck-banner';
+    const pwButtonsHtml = (precheck.partyWarnings || []).map((pw, idx) => `
+      <button type="button" class="btn btn-primary btn-sm" data-ind-precheck-use="${idx}"><span>Use</span> <b data-no-i18n="1">${esc(pw.suggested)}</b></button>
+    `).join('');
+    banner.innerHTML = `
+      <div class="ss-precheck-head">
+        <span>${ic('warn')} Pre-Check Hold: Review Before Filling Domain Form</span>
+      </div>
+      <div class="ss-precheck-lines">
+        ${((precheck.summaryItems && precheck.summaryItems.length) ? precheck.summaryItems : (precheck.summaryLines || [])).map(it => `<div class="ss-precheck-line">${renderPrecheckItemHtml(it)}</div>`).join('')}
+      </div>
+      <div class="ss-precheck-actions">
+        ${pwButtonsHtml}
+        <button type="button" class="btn btn-outline-bar btn-sm" id="indPrecheckApplyBtn">Fill Form Anyway</button>
+        <button type="button" class="btn btn-ghost-bar btn-sm" id="indPrecheckDiscardBtn">Discard Scan</button>
+      </div>
+    `;
+    bar.insertAdjacentElement('afterend', banner);
+    banner.querySelectorAll('[data-ind-precheck-use]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-ind-precheck-use'));
+        const pw = (precheck.partyWarnings || [])[idx];
+        if (!pw || !extraction.fields) return;
+        extraction.fields[pw.targetKey] = pw.suggested;
+        const nextPre = evaluateDomainScanPrecheck(extraction);
+        if (nextPre.hasWarning) {
+          renderIndPrecheckBanner(extraction, nextPre);
+        } else {
+          banner.remove();
+          SCAN_STATE.pendingDomainPrecheck = null;
+          applyDomainExtractionToModal(extraction);
+        }
+      });
+    });
+    const appBtn = banner.querySelector('#indPrecheckApplyBtn');
+    if (appBtn) {
+      appBtn.addEventListener('click', () => {
+        banner.remove();
+        SCAN_STATE.pendingDomainPrecheck = null;
+        applyDomainExtractionToModal(extraction);
+      });
+    }
+    const disBtn = banner.querySelector('#indPrecheckDiscardBtn');
+    if (disBtn) {
+      disBtn.addEventListener('click', () => {
+        banner.remove();
+        SCAN_STATE.pendingDomainPrecheck = null;
+        const badge = $('indEntryScanStatusBadge');
+        if (badge) {
+          badge.innerHTML = '<span>Scan discarded during pre-check; form fields unchanged.</span>';
+          if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+            window.MFG_I18N.translateDom(badge);
+          }
+        }
+      });
+    }
+    if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+      window.MFG_I18N.translateDom(banner);
+    }
+    return banner;
+  }
+
   // ==================== MAIN SCAN ORCHESTRATOR (SINGLE & MULTI-PAGE 1..N) ====================
   async function scanFileOrAttachment(inputFileOrAtt, captureMethod = 'AI Smart Scan') {
     if (!D || SCAN_STATE.busy) return null;
     const rawItems = expandInputToScanBatch(inputFileOrAtt);
     if (!rawItems.length) return null;
+    const carriedPrecheck = collectCarriedPrecheckFlags(rawItems);
 
     SCAN_STATE.busy = true;
+    SCAN_STATE.pendingPrecheckBundle = null;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
     SCAN_STATE.progressMsg = rawItems.length > 1
@@ -2643,8 +3257,13 @@
     // Ensure #entryModal is open so user immediately sees live progress
     const modal = $('entryModal');
     if (!modal || modal.hidden) {
-      const initForm = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
-      D.openEntryModal(D.canEnterForm && !D.canEnterForm(initForm) ? 'sales' : initForm);
+      SCAN_STATE.suppressResetOnModalSwitch = true;
+      try {
+        const initForm = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
+        D.openEntryModal(D.canEnterForm && !D.canEnterForm(initForm) ? 'sales' : initForm);
+      } finally {
+        SCAN_STATE.suppressResetOnModalSwitch = false;
+      }
     } else {
       renderSmartScanBarDom();
     }
@@ -2656,7 +3275,11 @@
       syncEntryMobAiQuickBarUi(liveScanModal);
     }
 
+    const scanGen = (SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1);
+    const isEntryScanCurrent = () => SCAN_STATE.entryScanGen === scanGen && Boolean($('entryModal') && !$('entryModal').hidden);
+
     const updateStatus = msg => {
+      if (!isEntryScanCurrent()) return;
       SCAN_STATE.progressMsg = sanitizeOutwardText(msg);
       renderSmartScanBarDom();
     };
@@ -2666,24 +3289,33 @@
       if (D.SEED && !D.SEED._recordsReady) {
         for (let w = 0; w < 40 && !D.SEED._recordsReady; w++) {
           await new Promise(r => setTimeout(r, 50));
+          if (!isEntryScanCurrent()) return null;
         }
       }
 
       const normPairs = [];
       const pageEntries = [];
       for (let i = 0; i < rawItems.length; i++) {
+        if (!isEntryScanCurrent()) return null;
         if (rawItems.length > 1) {
           updateStatus(`Extracting page ${i + 1} of ${rawItems.length}...`);
         }
         const pair = await normalizeSingleScanItem(rawItems[i], captureMethod, i);
+        if (!isEntryScanCurrent()) return null;
         if (!pair.attObj) continue;
         normPairs.push(pair);
 
         const fName = pair.attObj.file_name || `Page_${i + 1}`;
+        if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pair.fileObj._extractedText });
+          continue;
+        }
         const isPdfPair = /\.pdf$/i.test(fName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
         if (isPdfPair && pair.fileObj) {
           const ab = await pair.fileObj.arrayBuffer();
+          if (!isEntryScanCurrent()) return null;
           const pdfPages = await extractPdfPagesTextClient(ab);
+          if (!isEntryScanCurrent()) return null;
           if (pdfPages.length > 1) {
             pdfPages.forEach((pt, pIdx) => {
               pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${fName} (p.${pIdx + 1})`, text: pt });
@@ -2692,6 +3324,7 @@
           }
         }
         const pageTxt = await extractAnyDocumentText(pair.fileObj, pair.attObj, rawItems.length === 1 ? updateStatus : () => {});
+        if (!isEntryScanCurrent()) return null;
         pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pageTxt });
       }
 
@@ -2706,6 +3339,7 @@
       if (attObjs.length > 1) {
         updateStatus(`Stitching ${attObjs.length} pages & synthesizing cross-page entries...`);
         stitchedVisionAtt = await stitchMultiPageVisionSheet(attObjs);
+        if (!isEntryScanCurrent()) return null;
       } else {
         updateStatus('Classifying entry tab & matching ISABI registries...');
       }
@@ -2724,8 +3358,10 @@
         pageCount: totalPages,
         companies: prelimScope.companies.slice(0, 16)
       });
+      if (!isEntryScanCurrent()) return null;
       if (!aiResult && !isBuiltInSample) {
         aiResult = await tryCloudAiStructuredParse(combinedText, prelimScope, visionTargetAtt, totalPages);
+        if (!isEntryScanCurrent()) return null;
       }
 
       const mergedParsed = mergeParsedResults(detParsed, aiResult && aiResult.parsed);
@@ -2747,9 +3383,30 @@
         warnFields: []
       };
 
+      Object.entries(carriedPrecheck.overrides || {}).forEach(([okKey, okVal]) => {
+        applyPrecheckOverrideToBundle(scanBundle, okKey, okVal);
+      });
+
+      const runPrecheckGate = captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK);
+      const precheck = runPrecheckGate ? evaluateScanPrecheck(scanBundle) : { hasWarning: false, partyWarnings: [], summaryLines: [], warnSig: '' };
+      if (!isEntryScanCurrent()) return null;
       SCAN_STATE.busy = false;
       SCAN_STATE.progressMsg = '';
+      const ackMatches = Boolean(carriedPrecheck.ack && carriedPrecheck.ackSig && precheck.warnSig && carriedPrecheck.ackSig === precheck.warnSig);
+      if (precheck.hasWarning && !ackMatches) {
+        scanBundle.precheck = precheck;
+        SCAN_STATE.pendingPrecheckBundle = scanBundle;
+        SCAN_STATE.lastScan = scanBundle;
+        renderSmartScanBarDom();
+        return scanBundle;
+      }
+
+      if (precheck.hasWarning && ackMatches) {
+        restoreRawParsedForUnoverriddenWarnings(scanBundle, precheck.partyWarnings, carriedPrecheck.overrides);
+      }
+      SCAN_STATE.pendingPrecheckBundle = null;
       await applyScanToModal(scanBundle);
+      if (!isEntryScanCurrent()) return null;
 
       if (D.toast) {
         const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[scanBundle.appliedForm]) || scanBundle.appliedForm;
@@ -2758,10 +3415,13 @@
       }
       return scanBundle;
     } catch (err) {
-      SCAN_STATE.busy = false;
-      SCAN_STATE.progressMsg = '';
-      renderSmartScanBarDom();
-      if (D.toast) D.toast('Could not scan file: ' + sanitizeOutwardText((err && err.message) || 'Unknown error'), 'err');
+      if (SCAN_STATE.entryScanGen === scanGen) {
+        SCAN_STATE.busy = false;
+        SCAN_STATE.pendingPrecheckBundle = null;
+        SCAN_STATE.progressMsg = '';
+        renderSmartScanBarDom();
+        if (D.toast) D.toast('Could not scan file: ' + sanitizeOutwardText((err && err.message) || 'Unknown error'), 'err');
+      }
       return null;
     }
   }
@@ -2979,7 +3639,8 @@
   }
 
   function renderSmartScanBarHtml() {
-    const scan = SCAN_STATE.lastScan;
+    const pendingBundle = SCAN_STATE.pendingPrecheckBundle;
+    const scan = pendingBundle ? null : SCAN_STATE.lastScan;
     const hasResult = Boolean(scan && !SCAN_STATE.busy);
 
     const sampleMenuHtml = SCAN_STATE.sampleMenuOpen ? `
@@ -3000,6 +3661,27 @@
         <div class="ss-progress-row" id="ssProgressRow">
           <span class="ss-pulse-dot" aria-hidden="true"></span>
           <span>${esc(SCAN_STATE.progressMsg || 'Analyzing document and filling fields...')}</span>
+        </div>
+      `;
+    } else if (pendingBundle && pendingBundle.precheck && pendingBundle.precheck.hasWarning) {
+      const pre = pendingBundle.precheck;
+      const pwBtns = (pre.partyWarnings || []).map((pw, idx) => `
+        <button type="button" class="btn btn-primary btn-sm" data-ss-precheck-use="${idx}"><span>Use</span> <b data-no-i18n="1">${esc(pw.suggested)}</b></button>
+      `).join('');
+      reviewHtml = `
+        <div class="ss-precheck-banner" id="ssPrecheckBanner">
+          <div class="ss-precheck-head">
+            <span>${ic('warn')} Pre-Check Hold: Review Before Filling Form</span>
+            <span class="ss-stat-pill is-form">${esc(buildFormDisplayLabel((pendingBundle.parsed && pendingBundle.parsed.formType) || 'expense'))}</span>
+          </div>
+          <div class="ss-precheck-lines">
+            ${((pre.summaryItems && pre.summaryItems.length) ? pre.summaryItems : (pre.summaryLines || [])).map(it => `<div class="ss-precheck-line">${renderPrecheckItemHtml(it)}</div>`).join('')}
+          </div>
+          <div class="ss-precheck-actions">
+            ${pwBtns}
+            <button type="button" class="btn btn-outline-bar btn-sm" id="ssPrecheckApplyBtn">Fill Form Anyway</button>
+            <button type="button" class="btn btn-ghost-bar btn-sm" id="ssPrecheckDiscardBtn">Discard Scan</button>
+          </div>
         </div>
       `;
     } else if (hasResult) {
@@ -3080,9 +3762,12 @@
     bar.classList.toggle('has-result', Boolean(SCAN_STATE.lastScan && !SCAN_STATE.busy));
     bar.innerHTML = renderSmartScanBarHtml();
     wireSmartScanBarEvents(bar);
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(bar);
+    }
     const modal = $('entryModal');
     if (modal) {
-      const scanActive = Boolean(SCAN_STATE.busy || SCAN_STATE.lastScan || SCAN_STATE.sampleMenuOpen);
+      const scanActive = Boolean(SCAN_STATE.busy || SCAN_STATE.lastScan || SCAN_STATE.pendingPrecheckBundle || SCAN_STATE.sampleMenuOpen);
       const prevAuto = Boolean(modal._mobScanAutoExpanded);
       modal._mobScanAutoExpanded = scanActive;
       if (scanActive && !prevAuto) {
@@ -3125,7 +3810,7 @@
             const list = Array.isArray(captured) ? captured : (captured && captured.length ? Array.from(captured) : (captured ? [captured] : []));
             if (!list.length) return;
             await scanFileOrAttachment(list, 'Live Camera Smart Scan');
-          });
+          }, { enablePrecheck: true });
         } else {
           cInp.click();
         }
@@ -3185,6 +3870,55 @@
         const rowIdx = Number(btn.getAttribute('data-ss-reg-row') || 0);
         if (D && typeof D.openQuickExpenseCatalogDrawer === 'function') {
           D.openQuickExpenseCatalogDrawer(itemName, rowIdx);
+        }
+      });
+    });
+
+    const preApplyBtn = bar.querySelector('#ssPrecheckApplyBtn');
+    if (preApplyBtn) {
+      preApplyBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const b = SCAN_STATE.pendingPrecheckBundle;
+        SCAN_STATE.pendingPrecheckBundle = null;
+        if (b) {
+          restoreRawParsedForUnoverriddenWarnings(b, b.precheck && b.precheck.partyWarnings, null);
+          await applyScanToModal(b);
+          if (D.toast) {
+            const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[b.appliedForm]) || b.appliedForm;
+            D.toast(`Smart Scan filled ${b.filledFields.length} field${b.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
+          }
+        }
+      });
+    }
+    const preDisBtn = bar.querySelector('#ssPrecheckDiscardBtn');
+    if (preDisBtn) {
+      preDisBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        SCAN_STATE.pendingPrecheckBundle = null;
+        SCAN_STATE.lastScan = null;
+        renderSmartScanBarDom();
+        if (D && D.toast) D.toast('Scan discarded during pre-check; form fields unchanged.', 'ok');
+      });
+    }
+    bar.querySelectorAll('[data-ss-precheck-use]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const b = SCAN_STATE.pendingPrecheckBundle;
+        const idx = Number(btn.getAttribute('data-ss-precheck-use'));
+        const pw = b && b.precheck && (b.precheck.partyWarnings || [])[idx];
+        if (!b || !pw) return;
+        applyPrecheckOverrideToBundle(b, pw.targetKey, pw.suggested);
+        const nextPre = evaluateScanPrecheck(b);
+        if (nextPre.hasWarning) {
+          b.precheck = nextPre;
+          renderSmartScanBarDom();
+        } else {
+          SCAN_STATE.pendingPrecheckBundle = null;
+          await applyScanToModal(b);
+          if (D.toast) {
+            const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[b.appliedForm]) || b.appliedForm;
+            D.toast(`Smart Scan filled ${b.filledFields.length} field${b.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
+          }
         }
       });
     });
@@ -3344,9 +4078,12 @@
 
   function resetModalState() {
     if (SCAN_STATE.suppressResetOnModalSwitch) return;
+    SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1;
     SCAN_STATE.busy = false;
     SCAN_STATE.progressMsg = '';
     SCAN_STATE.lastScan = null;
+    SCAN_STATE.pendingPrecheckBundle = null;
+    SCAN_STATE.pendingDomainPrecheck = null;
     SCAN_STATE.splitOpen = false;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
@@ -3364,6 +4101,14 @@
         w.classList.remove('ss-field-filled', 'ss-field-check');
       });
     }
+  }
+
+  function resetDomainScanState() {
+    if (SCAN_STATE.suppressDomResetOnSwitch) return;
+    SCAN_STATE.domScanGen = (SCAN_STATE.domScanGen || 0) + 1;
+    SCAN_STATE.pendingDomainPrecheck = null;
+    const oldBanner = $('indEntryPrecheckBanner');
+    if (oldBanner) oldBanner.remove();
   }
 
   // ==================== TOPBAR & DOCUMENT VAULT BUTTONS ====================
@@ -3841,7 +4586,12 @@
     const curSpecKey = modal && modal._currentDomainSpec ? modal._currentDomainSpec.key : '';
     if (!modal || modal.hidden || (sampleOrExt.formKey && curSpecKey !== sampleOrExt.formKey)) {
       if (typeof D.openIndustryDomainEntryModal === 'function') {
-        D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
+        SCAN_STATE.suppressDomResetOnSwitch = true;
+        try {
+          D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
+        } finally {
+          SCAN_STATE.suppressDomResetOnSwitch = false;
+        }
       }
     }
     const coSel = $('ide_company');
@@ -3873,7 +4623,18 @@
     const fIdx = (D && typeof D.getFreqIndex === 'function') ? D.getFreqIndex() : null;
     let appliedCount = 0;
     orderedEntries.forEach(([fId, rawVal]) => {
-      const el = $(fId);
+      let el = $(fId);
+      if (!el) {
+        const fbMap = {
+          ide_tot: ['ide_gross', 'ide_amount', 'ide_collected'],
+          ide_paid: ['ide_collected', 'ide_amount'],
+          ide_gwp: ['ide_billed']
+        };
+        const fb = fbMap[fId] || [];
+        for (let fi = 0; fi < fb.length; fi++) {
+          if ($(fb[fi])) { el = $(fb[fi]); break; }
+        }
+      }
       if (!el) return;
       let valToSet = String(rawVal ?? '');
       if (fIdx && typeof fIdx.forCol === 'function' && (fId === 'ide_client' || fId === 'ide_tenant' || fId === 'ide_customer')) {
@@ -3991,6 +4752,7 @@
 
   async function scanIntoDomainModal(filesOrAtt, opts = {}) {
     const batch = expandInputToScanBatch(filesOrAtt);
+    const carriedPrecheck = collectCarriedPrecheckFlags(batch);
     const firstItem = batch[0] || null;
     const fName = String((firstItem && (firstItem.name || firstItem.file_name)) || '').toLowerCase();
     let sample = DOMAIN_SAMPLE_SCANS[0];
@@ -4005,20 +4767,38 @@
 
     const liveModal = $('indDomainEntryModal');
     const curSpec = liveModal && !liveModal.hidden && liveModal._currentDomainSpec ? liveModal._currentDomainSpec : null;
+    const domGen = (SCAN_STATE.domScanGen = (SCAN_STATE.domScanGen || 0) + 1);
+    const wasOpenAtStart = Boolean(liveModal && !liveModal.hidden);
+    const startSpecKey = curSpec ? curSpec.key : '';
+    const isDomScanCurrent = () => {
+      if (SCAN_STATE.domScanGen !== domGen) return false;
+      const m = $('indDomainEntryModal');
+      if (wasOpenAtStart && (!m || m.hidden)) return false;
+      if (startSpecKey && m && m._currentDomainSpec && m._currentDomainSpec.key !== startSpecKey) return false;
+      return true;
+    };
     const rawFiles = batch.filter(it => typeof Blob !== 'undefined' && it instanceof Blob);
 
     // Extract text & normalized attachments across all 1..N pages (works online, offline & headlessly)
     const normPairs = [];
     const pageEntries = [];
     for (let i = 0; i < batch.length; i++) {
+      if (!isDomScanCurrent()) return null;
       const pair = await normalizeSingleScanItem(batch[i], opts.captureMethod || 'AI Smart Scan', i);
+      if (!isDomScanCurrent()) return null;
       if (!pair.attObj) continue;
       normPairs.push(pair);
       const pName = pair.attObj.file_name || `Page_${i + 1}`;
+      if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: pair.fileObj._extractedText });
+        continue;
+      }
       const isPdfPair = /\.pdf$/i.test(pName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
       if (isPdfPair && pair.fileObj) {
         const ab = await pair.fileObj.arrayBuffer();
+        if (!isDomScanCurrent()) return null;
         const pdfPages = await extractPdfPagesTextClient(ab);
+        if (!isDomScanCurrent()) return null;
         if (pdfPages.length > 1) {
           pdfPages.forEach((pt, pIdx) => pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${pName} (p.${pIdx + 1})`, text: pt }));
           continue;
@@ -4030,6 +4810,7 @@
       const txt = (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)
         ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
         : '';
+      if (!isDomScanCurrent()) return null;
       pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
     }
 
@@ -4040,6 +4821,7 @@
 
     const primaryFileName = (normPairs[0] && normPairs[0].attObj && normPairs[0].attObj.file_name) || fName || sample.fileName;
     const detBundle = deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName);
+    let finalExt = null;
 
     const canRunLiveVision = (!isHeadlessEnv() || window.__MFG_TEST_LIVE_AI) &&
       (typeof navigator === 'undefined' || navigator.onLine !== false) &&
@@ -4055,6 +4837,7 @@
       try {
         const attObjs = normPairs.map(p => p.attObj);
         const stitchedAtt = attObjs.length > 1 ? await stitchMultiPageVisionSheet(attObjs) : attObjs[0];
+        if (!isDomScanCurrent()) return null;
         const inlinePart = extractVisionInlinePart(stitchedAtt);
 
         const fieldSchema = [];
@@ -4112,8 +4895,10 @@
               body: JSON.stringify(reqBody),
               signal: ctrl.signal
             });
+            if (!isDomScanCurrent()) return null;
             if (res.ok) {
               const j = await res.json();
+              if (!isDomScanCurrent()) return null;
               aiDom = (j && j.result && typeof j.result === 'object')
                 ? j.result
                 : extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
@@ -4124,8 +4909,7 @@
           }
         }
         if (aiDom && aiDom.fields && typeof aiDom.fields === 'object' && Object.keys(aiDom.fields).length > 0) {
-          const mergedFields = Object.assign({}, (detBundle && detBundle.fields) || {}, aiDom.fields);
-          return applyDomainExtractionToModal({
+          finalExt = {
             ind: (curSpec && curSpec.ind) || sample.ind,
             formKey: (curSpec && curSpec.key) || (detBundle && detBundle.formKey) || sample.formKey,
             company: aiDom.company || (detBundle && detBundle.company) || (($('ide_company') && $('ide_company').value) || sample.company),
@@ -4135,14 +4919,14 @@
             pageCount: totalPages,
             vinAudit: detBundle && detBundle.vinAudit,
             captureMethod: opts.captureMethod || 'AI Smart Scan',
-            fields: mergedFields
-          });
+            fields: Object.assign({}, (detBundle && detBundle.fields) || {}, aiDom.fields)
+          };
         }
       } catch (_) {}
     }
 
-    if (detBundle && Object.keys(detBundle.fields).length > 0) {
-      return applyDomainExtractionToModal({
+    if (!finalExt && detBundle && Object.keys(detBundle.fields).length > 0) {
+      finalExt = {
         ind: (curSpec && curSpec.ind) || sample.ind,
         formKey: (curSpec && curSpec.key) || detBundle.formKey || sample.formKey,
         company: detBundle.company || (($('ide_company') && $('ide_company').value) || sample.company),
@@ -4152,18 +4936,45 @@
         pageCount: totalPages,
         vinAudit: detBundle.vinAudit,
         captureMethod: opts.captureMethod || 'AI Smart Scan',
-        fields: detBundle.fields
+        fields: Object.assign({}, detBundle.fields)
+      };
+    }
+
+    if (!finalExt) {
+      finalExt = Object.assign({}, sample, {
+        formKey: (curSpec && curSpec.key) || sample.formKey,
+        fileName: primaryFileName,
+        rawFiles,
+        pageCount: totalPages,
+        captureMethod: opts.captureMethod || 'AI Smart Scan',
+        fields: Object.assign({}, sample.fields || {})
       });
     }
 
-    const customExt = Object.assign({}, sample, {
-      formKey: (curSpec && curSpec.key) || sample.formKey,
-      fileName: primaryFileName,
-      rawFiles,
-      pageCount: totalPages,
-      captureMethod: opts.captureMethod || 'AI Smart Scan'
-    });
-    return applyDomainExtractionToModal(customExt);
+    if (finalExt.fields && carriedPrecheck.overrides) {
+      Object.entries(carriedPrecheck.overrides).forEach(([okKey, okVal]) => {
+        if (!okVal) return;
+        if (okKey in finalExt.fields) {
+          finalExt.fields[okKey] = okVal;
+        } else {
+          Object.entries(DOM_PRECHECK_PARTY_FIELDS).forEach(([fid, pKind]) => {
+            if (pKind === okKey && fid in finalExt.fields) finalExt.fields[fid] = okVal;
+          });
+        }
+      });
+    }
+
+    if (!isDomScanCurrent()) return null;
+    const runDomPre = opts.captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK);
+    const domPrecheck = runDomPre ? evaluateDomainScanPrecheck(finalExt) : { hasWarning: false, warnSig: '' };
+    const domAckMatches = Boolean(carriedPrecheck.ack && carriedPrecheck.ackSig && domPrecheck.warnSig && carriedPrecheck.ackSig === domPrecheck.warnSig);
+    if (domPrecheck.hasWarning && !domAckMatches) {
+      renderIndPrecheckBanner(finalExt, domPrecheck);
+      return { ok: true, heldPrecheck: true, precheck: domPrecheck, formKey: finalExt.formKey };
+    }
+    const oldBanner = $('indEntryPrecheckBanner');
+    if (oldBanner) oldBanner.remove();
+    return applyDomainExtractionToModal(finalExt);
   }
 
   // ==================== BILINGUAL IDENTITY SCAN & FATHER'S NAME BACKFILL ====================
@@ -5677,8 +6488,13 @@
     mountOnDocumentPreviewModal,
     syncWorkspaceButtons,
     resetModalState,
+    resetDomainScanState,
     openSmartScanEntryDesk,
     scanFileOrAttachment,
+    evaluateScanPrecheck,
+    evaluateDomainScanPrecheck,
+    precheckCapturedPages,
+    renderPrecheckItemHtml,
     runSampleScanById,
     runDomainSampleScan,
     scanIntoDomainModal,

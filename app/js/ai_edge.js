@@ -99,7 +99,14 @@
     hldBoardBrief: null,
     boardAudioEl: null,
     boardAudioSrc: '',
-    boardSpeaking: false
+    boardSpeaking: false,
+    hygieneAiSuggestions: {},
+    hygieneBusy: false,
+    hygieneReqGen: 0,
+    hygieneShowResolved: false,
+    hygieneCollapsed: false,
+    hygieneLastStatus: '',
+    hygieneLastStatusSpec: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -475,13 +482,13 @@
         const res = await edgeFetch(`${base}/api/ai-edge`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(Object.assign({
             task: String(task || 'generic'),
             prompt: cleanPrompt,
             dataUrl: dataUrl || '',
             mimeType: mimeType || '',
             tier: intentTier
-          }),
+          }, (opts && Array.isArray(opts.allowedNames)) ? { allowedNames: opts.allowedNames.slice(0, 400) } : {})),
           signal: ctrl.signal
         });
         if (res && res.ok) {
@@ -6176,10 +6183,35 @@
   }
 
   let _lastDemoScopeMode = null;
+  let _lastHygieneCtxKey = null;
+  let _lastHygieneView = null;
+
+  function getHygieneScopeKey() {
+    const isDemo = (D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive()) || demoOnly(true, false);
+    const au = (D && typeof D.activeUser === 'function') ? D.activeUser() : null;
+    const uid = au ? String(au.id || '') : '';
+    const coScope = (D && D.STATE) ? String(D.STATE.company || D.STATE.companyScope || '') : '';
+    const ind = (D && typeof D.getActiveIndustry === 'function') ? String(D.getActiveIndustry(coScope) || '') : '';
+    return `${isDemo ? '1' : '0'}|${uid}|${coScope}|${ind}`;
+  }
 
   function syncAllSurfacesNow() {
     if (!D || !D.STATE) return;
     const curDemoMode = demoOnly(true, false);
+    const curHygieneCtx = getHygieneScopeKey();
+    const curHygieneView = String(D.STATE.view || '');
+    if ((_lastDemoScopeMode !== null && _lastDemoScopeMode !== curDemoMode) || (_lastHygieneCtxKey !== null && _lastHygieneCtxKey !== curHygieneCtx)) {
+      EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
+      EDGE_STATE.hygieneBusy = false;
+      EDGE_STATE.hygieneAiSuggestions = {};
+      EDGE_STATE.hygieneLastStatus = '';
+      EDGE_STATE.hygieneLastStatusSpec = null;
+    } else if (_lastHygieneView !== null && _lastHygieneView !== curHygieneView) {
+      EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
+      EDGE_STATE.hygieneBusy = false;
+      EDGE_STATE.hygieneLastStatus = '';
+      EDGE_STATE.hygieneLastStatusSpec = null;
+    }
     if (_lastDemoScopeMode !== null && _lastDemoScopeMode !== curDemoMode) {
       EDGE_STATE.insReconRows = null;
       EDGE_STATE.insReconText = '';
@@ -6197,10 +6229,21 @@
       EDGE_STATE.batchRawText = '';
       EDGE_STATE.batchRows = [];
       resetCloseStudioState();
+      EDGE_STATE.hygieneAiSuggestions = {};
+      EDGE_STATE.hygieneLastStatus = '';
+      EDGE_STATE.hygieneLastStatusSpec = null;
     }
     _lastDemoScopeMode = curDemoMode;
+    _lastHygieneCtxKey = curHygieneCtx;
+    _lastHygieneView = curHygieneView;
     const v = D.STATE.view;
     if (['sentinels', 'alert_rules'].includes(v)) mountBehavioralSentinelPanel();
+    if (['reg_suppliers', 'reg_customers', 'reg_sites', 'reg_staff'].includes(v)) {
+      mountDataHygienePanel();
+    } else {
+      const staleDh = $('dataHygienePanel');
+      if (staleDh) staleDh.remove();
+    }
     if (['expenses', 'suppliers', 'raw', 'raw_pricing', 'raw_jv'].includes(v)) mountMfgStatementReconPanel();
     if (['hsp_pos', 'hsp_revenue', 'hsp_memberships', 'hsp_packages', 'hsp_tariffs'].includes(v)) mountHospitalitySettlementPanel();
     if (['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 're_workorders', 're_recharges'].includes(v)) mountRealEstateCamDepositPanel();
@@ -6353,6 +6396,11 @@
     if (EDGE_STATE.dopsBriefCache && typeof EDGE_STATE.dopsBriefCache.clear === 'function') {
       EDGE_STATE.dopsBriefCache.clear();
     }
+    EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
+    EDGE_STATE.hygieneBusy = false;
+    EDGE_STATE.hygieneAiSuggestions = {};
+    EDGE_STATE.hygieneLastStatus = '';
+    EDGE_STATE.hygieneLastStatusSpec = null;
   }
 
   // ==================== DRAFT AGREEMENT ROWS FROM A QUOTE (hard rule 15) ====================
@@ -8986,6 +9034,570 @@
     return modal;
   }
 
+  // ==================== REC 4: DATA HYGIENE CROSS-SCRIPT ALIAS CLUSTERING + AI EDGE ====================
+  const DH_VIEW_SPEC = {
+    reg_suppliers: { kind: 'supplier', tbl: 'suppliers', title: 'Data Hygiene: Supplier Alias & Transliteration Clusters' },
+    reg_customers: { kind: 'customer', tbl: 'customers', title: 'Data Hygiene: Customer Alias & Transliteration Clusters' },
+    reg_sites: { kind: 'site', tbl: 'sites', title: 'Data Hygiene: Site Alias & Transliteration Clusters' },
+    reg_staff: { kind: 'staff', tbl: 'staff_members', title: 'Data Hygiene: Staff Alias & Transliteration Clusters' }
+  };
+
+  const DH_STOPWORDS = new Set([
+    'el', 'al', 'l', 'la', 'le', 'les', 'de', 'du', 'des', 'sal', 'sarl', 'llc',
+    'co', 'company', 'est', 'ets', 'inc', 'ltd', 'and', 'for', 'the'
+  ]);
+
+  const DH_AR_CHAR = {
+    '\u0627': 'a', '\u0623': 'a', '\u0625': 'i', '\u0622': 'a', '\u0621': 'a', '\u0624': 'w', '\u0626': 'y',
+    '\u0628': 'b', '\u062A': 't', '\u062B': 'th', '\u062C': 'j', '\u062D': 'h', '\u062E': 'kh',
+    '\u062F': 'd', '\u0630': 'z', '\u0631': 'r', '\u0632': 'z', '\u0633': 's', '\u0634': 'sh',
+    '\u0635': 's', '\u0636': 'd', '\u0637': 't', '\u0638': 'z', '\u0639': 'a', '\u063A': 'gh',
+    '\u0641': 'f', '\u0642': 'k', '\u0643': 'k', '\u0644': 'l', '\u0645': 'm', '\u0646': 'n',
+    '\u0647': 'h', '\u0629': 'a', '\u0648': 'w', '\u064A': 'y', '\u0649': 'a'
+  };
+
+  function dhNormBasic(raw) {
+    return String(raw == null ? '' : raw).trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function dhAlphaTokens(raw) {
+    return dhNormBasic(raw)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f\u0640\u064B-\u065F]/g, '')
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function dhIsSingleCharDesignatorPair(rawA, rawB) {
+    const ta = dhAlphaTokens(rawA);
+    const tb = dhAlphaTokens(rawB);
+    if (ta.length >= 2 && ta.length === tb.length) {
+      const diffs = [];
+      for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) diffs.push(i);
+      if (diffs.length > 0 && diffs.every(i => ta[i].length === 1 && tb[i].length === 1)) return true;
+    }
+    return false;
+  }
+
+  function buildTransliterationSkeleton(rawName) {
+    let s = normalizeDigits(String(rawName == null ? '' : rawName))
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f\u0640\u064B-\u065F]/g, '')
+      .trim()
+      .toLowerCase();
+    if (!s) return '';
+
+    // Strip Arabic definite article Al-/El- ("ال") on Arabic tokens with >= 3 trailing chars
+    s = s.replace(/(^|[\s\-\/])\u0627\u0644(?=[\u0621-\u064A]{3,})/g, '$1');
+
+    // Transliterate Arabic letters while keeping Latin alphanumerics intact
+    let xlat = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (DH_AR_CHAR[ch] !== undefined) xlat += DH_AR_CHAR[ch];
+      else xlat += ch;
+    }
+
+    const rawToks = xlat
+      .replace(/[^a-z0-9\s]+/g, ' ')
+      .split(/\s+/)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const nonStop = rawToks.filter(t => !DH_STOPWORDS.has(t));
+    const activeToks = nonStop.length ? nonStop : rawToks;
+
+    const mappedToks = [];
+    for (let i = 0; i < activeToks.length; i++) {
+      let tok = activeToks[i];
+      if (/^\d+$/.test(tok)) {
+        mappedToks.push(tok);
+        continue;
+      }
+      // Normalize Franco-Arabic and French orthography before stripping interior vowels
+      tok = tok
+        .replace(/ou/g, 'w')
+        .replace(/oo/g, 'w')
+        .replace(/ch/g, 'sh')
+        .replace(/ph/g, 'f')
+        .replace(/qu/g, 'k')
+        .replace(/ck/g, 'k')
+        .replace(/q/g, 'k')
+        .replace(/c(?=[eiy])/g, 's')
+        .replace(/c(?!h)/g, 'k')
+        .replace(/(.)\1+/g, '$1');
+      if (tok.length > 3) tok = tok.replace(/[eh]+$/, '');
+      if (tok.length >= 2) {
+        const first = tok[0];
+        const tail = tok.slice(1).replace(/[aeiouyw]+/g, '');
+        tok = (first + tail).replace(/(.)\1+/g, '$1');
+      }
+      if (tok) mappedToks.push(tok);
+    }
+    const joined = mappedToks.join('');
+    const alphaOnly = joined.replace(/\d+/g, '');
+    return alphaOnly.length >= 4 ? joined : '';
+  }
+
+  function dhFreqScoreMap(kind) {
+    const fIdx = (D && typeof D.getFreqIndex === 'function') ? D.getFreqIndex() : null;
+    if (!fIdx) return new Map();
+    if (kind === 'customer') return fIdx.customer || new Map();
+    if (kind === 'site') return fIdx.site || new Map();
+    if (kind === 'staff') return fIdx.staff || new Map();
+    return fIdx.supplier || new Map();
+  }
+
+  function dhCollectScopedNames(kind, regView) {
+    const co = (D && D.STATE && D.STATE.company) || '';
+    const ind = (D && typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(co) : 'Manufacturing';
+    let list = [];
+    if (D && typeof D.getScopedPartyCandidates === 'function') {
+      list = D.getScopedPartyCandidates(kind, co, null, { ind }) || [];
+    }
+    if (!list.length && D && D.SEED && D.SEED.records) {
+      const tbl = (DH_VIEW_SPEC[regView] && DH_VIEW_SPEC[regView].tbl) || 'suppliers';
+      const rows = (D.SEED.records[tbl] || []).concat((D.STATE && D.STATE.customRecords && D.STATE.customRecords[tbl]) || []);
+      rows.forEach(r => {
+        if (!r || r.voided || r.voided_at) return;
+        const nm = r.name || r.Customer || r.Supplier || r.Site || r.full_name || r.Staff || '';
+        if (nm) list.push(String(nm).trim());
+      });
+    }
+    const byNorm = new Map();
+    list.forEach(raw => {
+      const s = String(raw || '').trim();
+      const nk = dhNormBasic(s);
+      if (s && nk && !byNorm.has(nk)) byNorm.set(nk, s);
+    });
+    return Array.from(byNorm.values());
+  }
+
+  function dhRuleKey(ind, kind, aliasName) {
+    return `${String(ind || 'Manufacturing').trim()}::${String(kind || 'supplier').trim().toLowerCase()}::${dhNormBasic(aliasName)}`;
+  }
+
+  function computeDataHygieneClusters(regView) {
+    const viewKey = String(regView || (D && D.STATE && D.STATE.view) || '');
+    const spec = DH_VIEW_SPEC[viewKey];
+    if (!spec || !D) {
+      return { view: viewKey, kind: '', industry: '', title: '', pending: [], resolved: [], exactCount: 0, candidatesScanned: 0 };
+    }
+    const ind = (typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+    const names = dhCollectScopedNames(spec.kind, viewKey);
+    const freqMap = dhFreqScoreMap(spec.kind);
+    const scoreOf = nm => Number(freqMap.get(dhNormBasic(nm)) || 0);
+    const orderedNames = names.slice().sort((a, b) => scoreOf(b) - scoreOf(a));
+
+    const buckets = new Map();
+    orderedNames.forEach(nm => {
+      const skel = buildTransliterationSkeleton(nm);
+      if (!skel) return;
+      let arr = buckets.get(skel);
+      if (!arr) {
+        arr = [];
+        buckets.set(skel, arr);
+      }
+      arr.push(nm);
+    });
+
+    const rulesStore = (D && typeof D.getPartyHygieneRules === 'function')
+      ? D.getPartyHygieneRules(ind, spec.kind)
+      : {};
+
+    const symPairKey = (a, b) => [dhNormBasic(a), dhNormBasic(b)].sort().join('|');
+    const pairMap = new Map();
+    const pushPair = (canonName, aliasName, source, reason, skelKey) => {
+      const ca = String(canonName || '').trim();
+      const al = String(aliasName || '').trim();
+      if (!ca || !al) return;
+      if (dhNormBasic(ca) === dhNormBasic(al)) return;
+      if (dhIsSingleCharDesignatorPair(ca, al)) return;
+      const digA = normalizeDigits(ca).replace(/\D+/g, '');
+      const digB = normalizeDigits(al).replace(/\D+/g, '');
+      if (digA !== digB) return;
+
+      // Always choose higher MFG_FREQ count as canonical (Hard Rule 11)
+      let topCanon = ca;
+      let subAlias = al;
+      if (scoreOf(subAlias) > scoreOf(topCanon)) {
+        topCanon = al;
+        subAlias = ca;
+      }
+      const pk = symPairKey(topCanon, subAlias);
+      if (pairMap.has(pk)) return;
+      const rSub = rulesStore[dhRuleKey(ind, spec.kind, subAlias)] || null;
+      const rTop = rulesStore[dhRuleKey(ind, spec.kind, topCanon)] || null;
+      const matchesPartner = (r, partnerName) => Boolean(r && (r.status === 'confirmed' || r.status === 'dismissed') && dhNormBasic(r.canonical) === dhNormBasic(partnerName));
+      const ruleObj = matchesPartner(rSub, topCanon) ? rSub : (matchesPartner(rTop, subAlias) ? rTop : null);
+      pairMap.set(pk, {
+        canonical: ruleObj ? (ruleObj.canonical || topCanon) : topCanon,
+        alias: ruleObj ? (ruleObj.alias || subAlias) : subAlias,
+        canonFreq: scoreOf(topCanon),
+        aliasFreq: scoreOf(subAlias),
+        skeleton: skelKey || '',
+        source: source || 'deterministic',
+        reason: sanitizeOutward(reason || 'Phonetic / transliteration match'),
+        rule: ruleObj,
+        status: (ruleObj && (ruleObj.status === 'confirmed' || ruleObj.status === 'dismissed')) ? ruleObj.status : 'pending'
+      });
+    };
+
+    buckets.forEach((arr, skelKey) => {
+      if (!arr || arr.length < 2) return;
+      const canon = arr[0];
+      for (let i = 1; i < arr.length; i++) {
+        pushPair(canon, arr[i], 'deterministic', `Phonetic / cross-script skeleton "${skelKey}"`, skelKey);
+      }
+    });
+
+    const aiList = (EDGE_STATE.hygieneAiSuggestions && Array.isArray(EDGE_STATE.hygieneAiSuggestions[`${ind}|${spec.kind}`]))
+      ? EDGE_STATE.hygieneAiSuggestions[`${ind}|${spec.kind}`]
+      : [];
+    const exactNameByNorm = new Map(orderedNames.map(nm => [dhNormBasic(nm), nm]));
+    aiList.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const cExact = exactNameByNorm.get(dhNormBasic(item.canonical));
+      const aExact = exactNameByNorm.get(dhNormBasic(item.alias));
+      if (!cExact || !aExact) return;
+      pushPair(cExact, aExact, 'ai', item.reason || 'Cross-script AI match', 'ai');
+    });
+
+    const pending = [];
+    const resolved = [];
+    pairMap.forEach(entry => {
+      if (entry.status === 'pending') pending.push(entry);
+      else resolved.push(entry);
+    });
+    Object.values(rulesStore || {}).forEach(rv => {
+      if (!rv || typeof rv !== 'object' || (rv.status !== 'confirmed' && rv.status !== 'dismissed')) return;
+      const pk = symPairKey(rv.canonical, rv.alias);
+      if (!pairMap.has(pk)) {
+        resolved.push({
+          canonical: rv.canonical,
+          alias: rv.alias,
+          canonFreq: scoreOf(rv.canonical),
+          aliasFreq: scoreOf(rv.alias),
+          skeleton: 'saved',
+          source: rv.source || 'deterministic',
+          reason: sanitizeOutward(rv.reason || 'Saved alias decision'),
+          rule: rv,
+          status: rv.status
+        });
+      }
+    });
+
+    return {
+      view: viewKey,
+      kind: spec.kind,
+      industry: ind,
+      title: spec.title,
+      pending,
+      resolved,
+      exactNameSetSize: orderedNames.length
+    };
+  }
+
+  function renderDhReasonHtml(item) {
+    const raw = sanitizeOutward((item && item.reason) || '');
+    if (item && item.skeleton && item.skeleton !== 'ai' && item.skeleton !== 'saved') {
+      return `<span>Phonetic / cross-script skeleton</span> <span data-no-i18n="1">&quot;${esc(sanitizeOutward(item.skeleton))}&quot;</span>`;
+    }
+    if (item && item.source === 'ai') {
+      if (!raw || /^Cross-script AI match$/i.test(raw) || /^AI transliteration match$/i.test(raw)) {
+        return '<span>Cross-script AI match</span>';
+      }
+      return `<span>Cross-script AI match</span><span data-no-i18n="1"> · ${esc(raw)}</span>`;
+    }
+    if (item && item.skeleton === 'saved') {
+      if (!raw || /^Saved alias decision$/i.test(raw)) {
+        return '<span>Saved alias decision</span>';
+      }
+      const skMatch = /^Phonetic \/ cross-script skeleton "([^"]+)"$/i.exec(raw);
+      if (skMatch) {
+        return `<span>Phonetic / cross-script skeleton</span> <span data-no-i18n="1">&quot;${esc(skMatch[1])}&quot;</span>`;
+      }
+      return `<span>Saved alias decision</span><span data-no-i18n="1"> · ${esc(raw)}</span>`;
+    }
+    if (!raw || /^Phonetic \/ transliteration match$/i.test(raw)) {
+      return '<span>Phonetic / transliteration match</span>';
+    }
+    return `<span data-no-i18n="1">${esc(raw)}</span>`;
+  }
+
+  function renderDhStatusHtml(spec, fallbackTxt) {
+    if (spec && typeof spec === 'object') {
+      if (spec.type === 'key' && spec.key) return `<span>${esc(spec.key)}</span>`;
+      if (spec.type === 'ai_count') return `<b data-no-i18n="1">${Number(spec.count || 0)}</b> <span>AI-grounded alias candidate(s) ready for review.</span>`;
+      if (spec.type === 'confirm') {
+        return `<span>Confirmed Alias</span><span data-no-i18n="1">: </span><b data-no-i18n="1">${esc(spec.alias || '')}</b> <span>maps to</span> <b data-no-i18n="1">${esc(spec.canonical || '')}</b><span data-no-i18n="1"> (</span><span>forms only; historical balances unchanged</span><span data-no-i18n="1">).</span>`;
+      }
+      if (spec.type === 'dismiss') {
+        return `<span>Kept Separate</span><span data-no-i18n="1">: </span><b data-no-i18n="1">${esc(spec.alias || '')}</b><span data-no-i18n="1"> / </span><b data-no-i18n="1">${esc(spec.canonical || '')}</b><span data-no-i18n="1"> (</span><span>will not be flagged together</span><span data-no-i18n="1">).</span>`;
+      }
+      if (spec.type === 'undo') {
+        return `<span>Restored pair for review</span><span data-no-i18n="1">: </span><b data-no-i18n="1">${esc(spec.alias || '')}</b><span data-no-i18n="1"> / </span><b data-no-i18n="1">${esc(spec.canonical || '')}</b><span data-no-i18n="1">.</span>`;
+      }
+    }
+    const clean = sanitizeOutward(fallbackTxt || '');
+    return clean ? `<span data-no-i18n="1">${esc(clean)}</span>` : '';
+  }
+
+  async function runDataHygieneAiSuggest(regView) {
+    const viewKey = String(regView || (D && D.STATE && D.STATE.view) || '');
+    const spec = DH_VIEW_SPEC[viewKey];
+    if (!spec || !D || !D.canManageDataHygiene || !D.canManageDataHygiene()) return null;
+    if (EDGE_STATE.hygieneBusy) return null;
+
+    const startGen = (EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1);
+    const startCtx = getHygieneScopeKey();
+    const isStillCurrent = () => EDGE_STATE.hygieneReqGen === startGen
+      && getHygieneScopeKey() === startCtx
+      && Boolean(D && D.STATE && String(D.STATE.view || '') === viewKey)
+      && Boolean(D && D.canManageDataHygiene && D.canManageDataHygiene());
+    const ind = (typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+    const names = dhCollectScopedNames(spec.kind, viewKey);
+    const freqMap = dhFreqScoreMap(spec.kind);
+    const scoreOf = nm => Number(freqMap.get(dhNormBasic(nm)) || 0);
+    const orderedNames = names.slice().sort((a, b) => scoreOf(b) - scoreOf(a));
+    const exactNameByNorm = new Map(orderedNames.map(nm => [dhNormBasic(nm), nm]));
+
+    EDGE_STATE.hygieneBusy = true;
+    EDGE_STATE.hygieneLastStatusSpec = { type: 'key', key: 'Asking ISABI AI for Arabic / French / English alias candidates...' };
+    EDGE_STATE.hygieneLastStatus = 'Asking ISABI AI for Arabic / French / English alias candidates...';
+    mountDataHygienePanel();
+    try {
+      const sampleNames = orderedNames.slice(0, 120);
+      const prompt = [
+        `Inspect this ${ind} ${spec.kind} registry and identify pairs that refer to the SAME physical counterparty, site, or person spelled differently across Arabic, French, and English.`,
+        'Rules: Return ONLY valid JSON {"pairs":[{"canonical":"...","alias":"...","reason":"short phrase"}]}. Both "canonical" and "alias" MUST match exact strings from the Registry List below. Never invent names. Never merge distinct numbered entities (Site 1 vs Site 2, Quarry A vs Quarry B). Zero em-dashes.',
+        'Registry List:',
+        sampleNames.map((n, idx) => `${idx + 1}. ${n} (freq:${Math.round(scoreOf(n))})`).join('\n')
+      ].join('\n');
+
+      let rawResult = null;
+      if (typeof window !== 'undefined' && typeof window.__MFG_TEST_HYGIENE_AI_MOCK === 'function') {
+        rawResult = await window.__MFG_TEST_HYGIENE_AI_MOCK({ view: viewKey, industry: ind, kind: spec.kind, names: orderedNames });
+      } else {
+        rawResult = await callAiEdgeJson('data_hygiene_aliases', prompt, '', '', { tier: 'fast', timeoutMs: 7500, allowedNames: sampleNames });
+      }
+      if (!isStillCurrent()) return null;
+      const rawPairs = (rawResult && Array.isArray(rawResult.pairs)) ? rawResult.pairs : [];
+      const grounded = [];
+      const seenPk = new Set();
+      rawPairs.forEach(p => {
+        if (!p || typeof p !== 'object') return;
+        const cExact = exactNameByNorm.get(dhNormBasic(p.canonical));
+        const aExact = exactNameByNorm.get(dhNormBasic(p.alias));
+        if (!cExact || !aExact || dhNormBasic(cExact) === dhNormBasic(aExact)) return;
+        if (dhIsSingleCharDesignatorPair(cExact, aExact)) return;
+        const digA = normalizeDigits(cExact).replace(/\D+/g, '');
+        const digB = normalizeDigits(aExact).replace(/\D+/g, '');
+        if (digA !== digB) return;
+        let topCanon = cExact;
+        let subAlias = aExact;
+        if (scoreOf(subAlias) > scoreOf(topCanon)) {
+          topCanon = aExact;
+          subAlias = cExact;
+        }
+        const pk = `${dhNormBasic(topCanon)}|${dhNormBasic(subAlias)}`;
+        if (seenPk.has(pk)) return;
+        seenPk.add(pk);
+        grounded.push({
+          canonical: topCanon,
+          alias: subAlias,
+          reason: sanitizeOutward(p.reason || 'Cross-script AI match').slice(0, 120)
+        });
+      });
+      EDGE_STATE.hygieneAiSuggestions[`${ind}|${spec.kind}`] = grounded;
+      if (grounded.length) {
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'ai_count', count: grounded.length };
+        EDGE_STATE.hygieneLastStatus = `${grounded.length} AI-grounded alias candidate(s) ready for review.`;
+      } else if (rawPairs.length) {
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'key', key: 'No new grounded AI aliases beyond current registry names.' };
+        EDGE_STATE.hygieneLastStatus = 'No new grounded AI aliases beyond current registry names.';
+      } else {
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'key', key: 'Local phonetic scanner active (AI relay returned no additional aliases).' };
+        EDGE_STATE.hygieneLastStatus = 'Local phonetic scanner active (AI relay returned no additional aliases).';
+      }
+      return grounded;
+    } catch (_) {
+      if (!isStillCurrent()) return null;
+      EDGE_STATE.hygieneLastStatusSpec = { type: 'key', key: 'AI edge offline; showing local phonetic & cross-script clusters.' };
+      EDGE_STATE.hygieneLastStatus = 'AI edge offline; showing local phonetic & cross-script clusters.';
+      return null;
+    } finally {
+      if (EDGE_STATE.hygieneReqGen === startGen) {
+        EDGE_STATE.hygieneBusy = false;
+        if (isStillCurrent()) mountDataHygienePanel();
+      }
+    }
+  }
+
+  function mountDataHygienePanel() {
+    const viewKey = (D && D.STATE && D.STATE.view) || '';
+    const spec = DH_VIEW_SPEC[viewKey];
+    const oldPanel = $('dataHygienePanel');
+    if (!spec || !D || typeof D.canManageDataHygiene !== 'function' || !D.canManageDataHygiene()) {
+      if (oldPanel) oldPanel.remove();
+      return null;
+    }
+    const hostPanel = viewKey === 'reg_sites' ? ($('sitesRegPanel') || $('univRegPanel')) : $('univRegPanel');
+    if (!hostPanel) {
+      if (oldPanel) oldPanel.remove();
+      return null;
+    }
+
+    const data = computeDataHygieneClusters(viewKey);
+    const pendingCnt = data.pending.length;
+    const resolvedCnt = data.resolved.length;
+
+    const panel = oldPanel || document.createElement('div');
+    panel.id = 'dataHygienePanel';
+    panel.className = 'aie-hygiene-panel';
+    panel.setAttribute('data-dh-view', viewKey);
+    panel.setAttribute('data-dh-kind', data.kind);
+
+    const rowsHtml = data.pending.length
+      ? data.pending.slice(0, 30).map((item, idx) => `
+          <div class="aie-dh-row" data-dh-row="${idx}">
+            <div class="aie-dh-pair">
+              <span class="aie-dh-canon" data-no-i18n="1">${esc(item.canonical)}</span>
+              <span class="aie-dh-meta">matches</span>
+              <span class="aie-dh-alias" data-no-i18n="1">${esc(item.alias)}</span>
+              <span class="aie-dh-meta"><span data-no-i18n="1">(</span><span class="aie-dh-src">${item.source === 'ai' ? 'AI Edge' : 'Local'}</span><span data-no-i18n="1"> · </span>${renderDhReasonHtml(item)}<span data-no-i18n="1">)</span></span>
+            </div>
+            <div class="aie-dh-row-btns">
+              <button type="button" class="btn btn-primary btn-sm" data-dh-confirm="${idx}">Confirm Alias</button>
+              <button type="button" class="btn btn-ghost-bar btn-sm" data-dh-dismiss="${idx}">Keep Separate</button>
+            </div>
+          </div>
+        `).join('')
+      : '<div class="aie-dh-empty">No unreviewed transliteration or phonetic alias clusters detected in this scope.</div>';
+
+    const resolvedHtml = (EDGE_STATE.hygieneShowResolved && resolvedCnt > 0)
+      ? `<div class="aie-dh-list" id="dhResolvedList">${data.resolved.slice(0, 40).map((item, idx) => `
+          <div class="aie-dh-row" data-dh-res-row="${idx}">
+            <div class="aie-dh-pair">
+              <span class="aie-dh-canon" data-no-i18n="1">${esc(item.canonical)}</span>
+              <span class="aie-dh-meta">${item.status === 'confirmed' ? 'Confirmed Alias' : 'Kept Separate'}</span>
+              <span class="aie-dh-alias" data-no-i18n="1">${esc(item.alias)}</span>
+            </div>
+            <div class="aie-dh-row-btns">
+              <button type="button" class="btn btn-ghost-bar btn-sm" data-dh-undo="${idx}">Undo</button>
+            </div>
+          </div>
+        `).join('')}</div>`
+      : '';
+
+    const statusHtml = renderDhStatusHtml(EDGE_STATE.hygieneLastStatusSpec, EDGE_STATE.hygieneLastStatus);
+    panel.innerHTML = `
+      <div class="aie-dh-head">
+        <div class="aie-dh-title-wrap">
+          <span class="aie-pill">${ic('sparkles')} <span>Data Hygiene</span></span>
+          <span class="aie-dh-title">${esc(spec.title)}</span>
+          <span class="aie-dh-sub" id="dhCountBadge"><span data-no-i18n="1">${pendingCnt} </span><span>pending</span><span data-no-i18n="1"> · ${resolvedCnt} </span><span>reviewed</span></span>
+        </div>
+        <div class="aie-dh-actions">
+          <button type="button" class="aie-btn is-brass" id="dhAskAiBtn" ${EDGE_STATE.hygieneBusy ? 'disabled' : ''}>${ic('sparkles')} <span>${EDGE_STATE.hygieneBusy ? 'Checking...' : 'Ask ISABI AI'}</span></button>
+          ${resolvedCnt > 0 ? `<button type="button" class="aie-btn" id="dhToggleResolvedBtn"><span>${EDGE_STATE.hygieneShowResolved ? 'Hide Reviewed' : 'Reviewed Rules'}</span> <span data-no-i18n="1">(${resolvedCnt})</span></button>` : ''}
+          <button type="button" class="aie-btn" id="dhCollapseBtn">${EDGE_STATE.hygieneCollapsed ? 'Expand' : 'Collapse'}</button>
+        </div>
+      </div>
+      ${statusHtml ? `<div class="aie-dh-meta" id="dhStatusLine" style="margin-top:6px">${statusHtml}</div>` : ''}
+      ${EDGE_STATE.hygieneCollapsed ? '' : `<div class="aie-dh-list" id="dhPendingList">${rowsHtml}</div>${resolvedHtml}`}
+    `;
+
+    const tableWrap = hostPanel.querySelector(':scope > .table-wrap') || hostPanel.querySelector('.table-wrap');
+    if (tableWrap && panel.parentElement !== hostPanel) {
+      hostPanel.insertBefore(panel, tableWrap);
+    } else if (!panel.isConnected) {
+      hostPanel.appendChild(panel);
+    }
+
+    const askBtn = $('dhAskAiBtn');
+    if (askBtn) {
+      askBtn.onclick = () => runDataHygieneAiSuggest(viewKey);
+    }
+    const togBtn = $('dhToggleResolvedBtn');
+    if (togBtn) {
+      togBtn.onclick = () => {
+        EDGE_STATE.hygieneShowResolved = !EDGE_STATE.hygieneShowResolved;
+        mountDataHygienePanel();
+      };
+    }
+    const colBtn = $('dhCollapseBtn');
+    if (colBtn) {
+      colBtn.onclick = () => {
+        EDGE_STATE.hygieneCollapsed = !EDGE_STATE.hygieneCollapsed;
+        mountDataHygienePanel();
+      };
+    }
+    panel.querySelectorAll('[data-dh-confirm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-dh-confirm'));
+        const item = data.pending[idx];
+        if (!item || !D.savePartyHygieneDecision) return;
+        D.savePartyHygieneDecision({
+          industry: data.industry,
+          kind: data.kind,
+          alias: item.alias,
+          canonical: item.canonical,
+          status: 'confirmed',
+          source: item.source,
+          reason: item.reason
+        });
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'confirm', alias: item.alias, canonical: item.canonical };
+        EDGE_STATE.hygieneLastStatus = `Confirmed Alias: ${item.alias} maps to ${item.canonical} (forms only; historical balances unchanged).`;
+        mountDataHygienePanel();
+      });
+    });
+    panel.querySelectorAll('[data-dh-dismiss]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-dh-dismiss'));
+        const item = data.pending[idx];
+        if (!item || !D.savePartyHygieneDecision) return;
+        D.savePartyHygieneDecision({
+          industry: data.industry,
+          kind: data.kind,
+          alias: item.alias,
+          canonical: item.canonical,
+          status: 'dismissed',
+          source: item.source,
+          reason: item.reason
+        });
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'dismiss', alias: item.alias, canonical: item.canonical };
+        EDGE_STATE.hygieneLastStatus = `Kept Separate: ${item.alias} / ${item.canonical} (will not be flagged together).`;
+        mountDataHygienePanel();
+      });
+    });
+    panel.querySelectorAll('[data-dh-undo]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-dh-undo'));
+        const item = data.resolved[idx];
+        if (!item || !D.savePartyHygieneDecision) return;
+        D.savePartyHygieneDecision({
+          industry: data.industry,
+          kind: data.kind,
+          alias: item.alias,
+          canonical: item.canonical,
+          status: 'undone',
+          source: item.source,
+          reason: 'Reopened for review'
+        });
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'undo', alias: item.alias, canonical: item.canonical };
+        EDGE_STATE.hygieneLastStatus = `Restored pair for review: ${item.alias} / ${item.canonical}.`;
+        mountDataHygienePanel();
+      });
+    });
+
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(panel);
+    }
+    return panel;
+  }
+
   window.MFG_AI_EDGE = {
     parseQuoteText,
     sanitizeQuoteRows,
@@ -8993,6 +9605,10 @@
     resetTransientDemoInputs,
     init,
     syncAllSurfacesNow,
+    buildTransliterationSkeleton,
+    computeDataHygieneClusters,
+    runDataHygieneAiSuggest,
+    mountDataHygienePanel,
     semanticSimilarity,
     crossScriptTokens,
     rankCandidatesByScoreAndFreq,

@@ -30,6 +30,7 @@
   const _histCache = new Map();
   const _fetchedTurnaroundDates = new Map();
   const _inflightTurnaroundDates = new Set();
+  const _turnaroundAborts = new Set();
 
   let _pollTimer = null;
   let _ageTimer = null;
@@ -196,10 +197,20 @@
     ];
   }
 
-  function getSeatIdentitySig() {
+  function isLiveSessionAuthed() {
+    if (isDemoActive()) return true;
+    const st = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : null;
+    if (st && st.authed === false) return false;
     const u = _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
-    const uid = u ? String(u.id || u.email || 'anon').toLowerCase() : 'anon';
-    const cos = _ctx && typeof _ctx.allowedCompanyNames === 'function' ? (_ctx.allowedCompanyNames() || []).join(',') : '';
+    if (!u || u.id === 'u-locked') return false;
+    return true;
+  }
+
+  function getSeatIdentitySig() {
+    const authed = isLiveSessionAuthed();
+    const u = authed && _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
+    const uid = (u && u.id !== 'u-locked') ? String(u.id || u.email || 'anon').toLowerCase() : 'anon';
+    const cos = authed && _ctx && typeof _ctx.allowedCompanyNames === 'function' ? (_ctx.allowedCompanyNames() || []).join(',') : '';
     return `${uid}|${isDemoActive() ? 'demo' : 'live'}|${cos}`;
   }
 
@@ -213,6 +224,8 @@
     if (_lastScopeSig && _lastScopeSig !== baseSig) {
       if (_snapAbort) { try { _snapAbort.abort(); } catch (_) {} _snapAbort = null; }
       if (_histAbort) { try { _histAbort.abort(); } catch (_) {} _histAbort = null; }
+      for (const c of _turnaroundAborts) { try { c.abort(); } catch (_) {} }
+      _turnaroundAborts.clear();
       _inflightSnapPromise = null;
       _inflightHistPromise = null;
       _snapStore = { scopeBase: baseSig, fetchedAt: '', units: [], geofences: [], demo: isDemoActive(), fallback: false, stale: false, receivedAtMs: 0, skewMs: 0, loading: false, error: '', errorKind: '' };
@@ -247,9 +260,10 @@
   function canSeatAccessCompany(unitCo) {
     if (!unitCo) return false;
     if (isDemoActive()) return true;
+    if (!isLiveSessionAuthed()) return false;
     if (!_ctx || typeof _ctx.allowedCompanyNames !== 'function') return false;
     const u = typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
-    if (!u) return false;
+    if (!u || u.id === 'u-locked') return false;
     const allowed = _ctx.allowedCompanyNames() || [];
     const target = _canonTelematicsCompanyAlnum(unitCo);
     return allowed.some(c => _canonTelematicsCompanyAlnum(c) === target);
@@ -480,8 +494,7 @@
 
   async function fetchSnapshot(opts = {}) {
     ensureSeatScopeFresh();
-    const u = _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
-    if (!u && !isDemoActive()) return null;
+    if (!isLiveSessionAuthed()) return null;
     if (!hasLiveApi()) {
       _snapStore.units = buildOfflineFallbackUnits().map(u => Object.assign({}, u, { _fallback: true }));
       _snapStore.demo = isDemoActive();
@@ -606,6 +619,7 @@
 
   async function fetchUnitHistory(deviceId, fromDate, toDate) {
     ensureSeatScopeFresh();
+    if (!isLiveSessionAuthed()) return null;
     const devId = Number(deviceId || 0);
     const fDate = String(fromDate || todayIso()).slice(0, 10);
     const tDate = String(toDate || fDate).slice(0, 10);
@@ -639,7 +653,11 @@
         const qs = `action=history&device_id=${encodeURIComponent(devId)}&from_date=${encodeURIComponent(fDate)}&to_date=${encodeURIComponent(tDate)}`;
         const res = await fetcher(`${base}/api/telematics?${qs}`, { signal: ctrl.signal });
         if (_histAbort === ctrl) UI_STATE.reconBusy = false;
-        if (_histAbort !== ctrl || reqSig !== getSeatIdentitySig()) return null;
+        if (_histAbort !== ctrl || reqSig !== getSeatIdentitySig() || !isLiveSessionAuthed()) return null;
+        if (res && (res.status === 401 || res.status === 403)) {
+          _snapStore.errorKind = 'auth';
+          return null;
+        }
         if (!res || !res.ok) {
           const fallback = buildFallbackHistory(unit, devId, fDate, tDate);
           _histCache.set(cacheKey, fallback);
@@ -659,7 +677,7 @@
       } catch (err) {
         if (_histAbort === ctrl) UI_STATE.reconBusy = false;
         if (err && err.name === 'AbortError') return null;
-        if (_histAbort === ctrl && reqSig === getSeatIdentitySig()) {
+        if (_histAbort === ctrl && reqSig === getSeatIdentitySig() && isLiveSessionAuthed()) {
           const fallback = buildFallbackHistory(unit, devId, fDate, tDate);
           _histCache.set(cacheKey, fallback);
           if (_ctx && typeof _ctx.rerenderWorkspace === 'function') _ctx.rerenderWorkspace();
@@ -680,8 +698,7 @@
   async function ensureTurnaroundHistoryForDate(dateIso, opts = {}) {
     ensureSeatScopeFresh();
     if (!hasLiveApi() || isDemoActive()) return 0;
-    const u = _ctx && typeof _ctx.activeUser === 'function' ? _ctx.activeUser() : null;
-    if (!u) return 0;
+    if (!isLiveSessionAuthed()) return 0;
     const dStr = String(dateIso || todayIso()).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dStr) || dStr > todayIso()) return 0;
     const reqSig = getSeatIdentitySig();
@@ -694,11 +711,13 @@
     if (!opts.force && prev && (!isToday || (Date.now() - prev.ts) < TODAY_TTL_MS)) return 0;
 
     _inflightTurnaroundDates.add(dateKey);
+    const taCtrl = new AbortController();
+    _turnaroundAborts.add(taCtrl);
     try {
       if (!Array.isArray(_snapStore.units) || !_snapStore.units.length || _snapStore.scopeBase !== reqSig) {
         await fetchSnapshot({ silent: true });
       }
-      if (reqSig !== getSeatIdentitySig() || _snapStore.fallback) {
+      if (!isLiveSessionAuthed() || taCtrl.signal.aborted || reqSig !== getSeatIdentitySig() || _snapStore.fallback || _snapStore.errorKind === 'auth' || !Array.isArray(_snapStore.units) || !_snapStore.units.length) {
         _fetchedTurnaroundDates.delete(dateKey);
         return 0;
       }
@@ -722,7 +741,7 @@
       let changed = false;
       let allSucceeded = true;
       for (const unit of toFetch) {
-        if (reqSig !== getSeatIdentitySig()) {
+        if (!isLiveSessionAuthed() || taCtrl.signal.aborted || reqSig !== getSeatIdentitySig()) {
           allSucceeded = false;
           break;
         }
@@ -731,8 +750,8 @@
         if (!refreshToday && _histCache.has(cacheKey)) continue;
         try {
           const qs = `action=history&device_id=${encodeURIComponent(devId)}&from_date=${encodeURIComponent(dStr)}&to_date=${encodeURIComponent(dStr)}`;
-          const res = await fetcher(`${base}/api/telematics?${qs}`);
-          if (reqSig !== getSeatIdentitySig()) {
+          const res = await fetcher(`${base}/api/telematics?${qs}`, { signal: taCtrl.signal });
+          if (!isLiveSessionAuthed() || taCtrl.signal.aborted || reqSig !== getSeatIdentitySig()) {
             allSucceeded = false;
             break;
           }
@@ -750,9 +769,11 @@
             }
           } else {
             allSucceeded = false;
+            if (res && (res.status === 401 || res.status === 403)) break;
           }
         } catch (_) {
           allSucceeded = false;
+          if (!isLiveSessionAuthed() || taCtrl.signal.aborted) break;
         }
       }
       if (allSucceeded && reqSig === getSeatIdentitySig()) {
@@ -777,6 +798,7 @@
       _fetchedTurnaroundDates.delete(dateKey);
       return 0;
     } finally {
+      _turnaroundAborts.delete(taCtrl);
       _inflightTurnaroundDates.delete(dateKey);
     }
   }
@@ -2572,7 +2594,7 @@
   }
 
   function startOrSyncAutoPoll() {
-    if (isHeadlessEnv()) {
+    if (isHeadlessEnv() || !isLiveSessionAuthed()) {
       stopAutoPoll();
       return;
     }
@@ -3619,6 +3641,8 @@
   function clearSessionCache() {
     if (_snapAbort) { try { _snapAbort.abort(); } catch (_) {} _snapAbort = null; }
     if (_histAbort) { try { _histAbort.abort(); } catch (_) {} _histAbort = null; }
+    for (const c of _turnaroundAborts) { try { c.abort(); } catch (_) {} }
+    _turnaroundAborts.clear();
     _inflightSnapPromise = null;
     _inflightHistPromise = null;
     stopAutoPoll();

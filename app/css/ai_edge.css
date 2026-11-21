@@ -922,3 +922,123 @@
     display: none !important;
   }
 }
+
+/* Data Hygiene Alias Clustering Panel inside Universal Registry Panels */
+.aie-hygiene-panel {
+  margin: 0 0 12px 0;
+  padding: 11px 14px;
+  border-radius: 9px;
+  border: 1px solid #DECFA8;
+  border-inline-start: 4px solid #B88228;
+  background: #FAF7F0;
+  color: #281D15;
+}
+:root[data-theme="dark"] .aie-hygiene-panel {
+  background: #221A14;
+  border-color: rgba(217, 165, 74, 0.36);
+  color: #FAF6EE;
+}
+.aie-dh-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+.aie-dh-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.aie-dh-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #5E4316;
+}
+:root[data-theme="dark"] .aie-dh-title {
+  color: #FDE68A;
+}
+.aie-dh-sub {
+  font-size: 11.5px;
+  color: #6E512D;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .aie-dh-sub {
+  color: #D6CFC2;
+}
+.aie-dh-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.aie-dh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.aie-dh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid #E5DEC9;
+  background: #FFFFFF;
+}
+:root[data-theme="dark"] .aie-dh-row {
+  background: #1B140F;
+  border-color: rgba(250, 246, 238, 0.14);
+}
+.aie-dh-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
+}
+.aie-dh-canon {
+  font-weight: 800;
+  color: #281D15;
+}
+:root[data-theme="dark"] .aie-dh-canon {
+  color: #FEF3C7;
+}
+.aie-dh-alias {
+  font-weight: 700;
+  color: #9A3412;
+  background: rgba(201, 106, 34, 0.10);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+:root[data-theme="dark"] .aie-dh-alias {
+  color: #FDBA74;
+  background: rgba(240, 144, 69, 0.18);
+}
+.aie-dh-meta {
+  font-size: 11px;
+  color: #6E512D;
+}
+:root[data-theme="dark"] .aie-dh-meta {
+  color: #C8BFA8;
+}
+.aie-dh-row-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+}
+.aie-dh-empty {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: #6E512D;
+}
+:root[data-theme="dark"] .aie-dh-empty {
+  color: #D6CFC2;
+}
