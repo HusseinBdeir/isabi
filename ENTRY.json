@@ -3,12 +3,6 @@
   "branch": "wt/seat-lens-overview-books",
   "sha": "d027ee5fba156aee21f59b83288621ce3750f7ca"
  },
- "batch": {
-  "at": "2026-11-21T07:59:36Z",
-  "holder": "THEO a5b5a094 (seat-lens-overview-books)",
-  "lockId": "d205fe1b1e2d413cbf7866ca702a8e0a",
-  "version": "19.6.418"
- },
  "gates": [
   "isabi: node build/verify_seat_ai_mask_edge.mjs",
   "isabi-app: node build/verify_seat_lens_and_overview.mjs"
@@ -18,10 +12,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T07:59:16Z",
  "seenAt": "2026-11-21T07:59:16Z",
+ "shippedAt": "2026-11-21T08:23:36Z",
+ "shippedBy": "THEO a5b5a094 (seat-lens-overview-books)",
+ "shippedVersion": "19.6.418",
  "site": {
   "branch": "wt/seat-lens-overview-books",
   "sha": "4368437a80543210000a26348a2bdc07115a1e61"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Seat lens (seatLens) unifies books, profit, tax, partner-split, payroll-USD and Sentinel permissions across Executive Overview, PBI, Statements, Tables, 360 Inspector, sibling hubs and Pocket Brief, hardens books hub checks, and enforces Edge and SQLite AI redaction on /api/ask, /api/ai-edge and /api/tts"
 }
