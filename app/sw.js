@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.404';
+const SHELL_CACHE = 'isabi-mfg-v19.6.417';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,53 +8,53 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.404',
-  './css/geo_dispatch.css?v=19.6.404',
-  './css/daily_ops.css?v=19.6.404',
-  './css/ask_isabi.css?v=19.6.404',
-  './css/fleet_pnl.css?v=19.6.404',
-  './css/smart_scan.css?v=19.6.404',
-  './css/doc_scanner.css?v=19.6.404',
-  './css/ai_edge.css?v=19.6.404',
-  './css/telematics.css?v=19.6.404',
-  './css/step_up_auth.css?v=19.6.404',
-  './css/command_palette.css?v=19.6.404',
-  './css/workflow.css?v=19.6.404',
-  './js/face.js?v=19.6.404',
-  './js/endpoints.js?v=19.6.404',
-  './js/seed_manifest.js?v=19.6.404',
-  './js/icons.js?v=19.6.404',
-  './js/geo_dispatch.js?v=19.6.404',
-  './js/forms_engine.js?v=19.6.404',
-  './js/pbi_pages.js?v=19.6.404',
-  './js/rdl_reports.js?v=19.6.404',
-  './js/kiosk_print.js?v=19.6.404',
-  './js/table_columns.js?v=19.6.404',
-  './js/daily_ops.js?v=19.6.404',
-  './js/i18n.js?v=19.6.404',
-  './js/ask_isabi.js?v=19.6.404',
-  './js/fleet_pnl.js?v=19.6.404',
-  './js/doc_scanner.js?v=19.6.404',
-  './js/smart_scan.js?v=19.6.404',
-  './js/ai_edge.js?v=19.6.404',
-  './js/telematics.js?v=19.6.404',
-  './js/local_dev_roster.js?v=19.6.404',
-  './js/step_up_auth.js?v=19.6.404',
-  './js/command_palette.js?v=19.6.404',
-  './js/a11y_dialog.js?v=19.6.404',
-  './js/approvals.js?v=19.6.404',
-  './js/void_log.js?v=19.6.404',
-  './js/saved_views.js?v=19.6.404',
-  './js/app.js?v=19.6.404',
-  './manifest.json?v=19.6.404',
-  './favicon.ico?v=19.6.404',
-  './favicon-dark.ico?v=19.6.404',
-  './icon.svg?v=19.6.404',
-  './icon-dark.svg?v=19.6.404',
-  './icon-180.png?v=19.6.404',
-  './icon-192.png?v=19.6.404',
-  './icon-512.png?v=19.6.404',
-  './icon-512-maskable.png?v=19.6.404'
+  './css/app.css?v=19.6.417',
+  './css/geo_dispatch.css?v=19.6.417',
+  './css/daily_ops.css?v=19.6.417',
+  './css/ask_isabi.css?v=19.6.417',
+  './css/fleet_pnl.css?v=19.6.417',
+  './css/smart_scan.css?v=19.6.417',
+  './css/doc_scanner.css?v=19.6.417',
+  './css/ai_edge.css?v=19.6.417',
+  './css/telematics.css?v=19.6.417',
+  './css/step_up_auth.css?v=19.6.417',
+  './css/command_palette.css?v=19.6.417',
+  './css/workflow.css?v=19.6.417',
+  './js/face.js?v=19.6.417',
+  './js/endpoints.js?v=19.6.417',
+  './js/seed_manifest.js?v=19.6.417',
+  './js/icons.js?v=19.6.417',
+  './js/geo_dispatch.js?v=19.6.417',
+  './js/forms_engine.js?v=19.6.417',
+  './js/pbi_pages.js?v=19.6.417',
+  './js/rdl_reports.js?v=19.6.417',
+  './js/kiosk_print.js?v=19.6.417',
+  './js/table_columns.js?v=19.6.417',
+  './js/daily_ops.js?v=19.6.417',
+  './js/i18n.js?v=19.6.417',
+  './js/ask_isabi.js?v=19.6.417',
+  './js/fleet_pnl.js?v=19.6.417',
+  './js/doc_scanner.js?v=19.6.417',
+  './js/smart_scan.js?v=19.6.417',
+  './js/ai_edge.js?v=19.6.417',
+  './js/telematics.js?v=19.6.417',
+  './js/local_dev_roster.js?v=19.6.417',
+  './js/step_up_auth.js?v=19.6.417',
+  './js/command_palette.js?v=19.6.417',
+  './js/a11y_dialog.js?v=19.6.417',
+  './js/approvals.js?v=19.6.417',
+  './js/void_log.js?v=19.6.417',
+  './js/saved_views.js?v=19.6.417',
+  './js/app.js?v=19.6.417',
+  './manifest.json?v=19.6.417',
+  './favicon.ico?v=19.6.417',
+  './favicon-dark.ico?v=19.6.417',
+  './icon.svg?v=19.6.417',
+  './icon-dark.svg?v=19.6.417',
+  './icon-180.png?v=19.6.417',
+  './icon-192.png?v=19.6.417',
+  './icon-512.png?v=19.6.417',
+  './icon-512-maskable.png?v=19.6.417'
 ];
 
 // Face ID engine + weights (about 13.7 MB): warmed for offline use only on a device that uses Face ID
@@ -549,49 +549,249 @@ self.addEventListener('message', event => {
   );
 });
 
+// ---------------------------------------------------------------- Web Push: Day-Close + Approvals Inbox
+// Day-Close notifications carry tag `isabi-day-close*` (or `./#daily_ops` url) without an approval `kind`.
+// Approval request payloads come from the Edge (functions/_lib/approval_push.js): { kind: 'apv_new' | 'apv_closed',
+// id, tag, title, body, badge, lang, expires_at }. Every push shows one notification: iOS revokes a subscription
+// that receives pushes without one, so neither branch ever returns early. A closed approval arrives as a quiet
+// 'apv_closed' with the same tag, replacing the banner; APV_SYNC closes stale ones.
+const APV_TAG_RE = /^apv-[A-Za-z0-9_-]{1,90}$/;
+const APV_KINDS = { apv_new: 1, apv_closed: 1 };
+
+function apvAppUrl(hash) {
+  const base = (self.registration && self.registration.scope) || self.location.href;
+  return new URL('./' + (hash || ''), base).href;
+}
+
+function apvSetBadge(n) {
+  try {
+    const nav = self.navigator;
+    if (!nav) return Promise.resolve();
+    if (n > 0 && nav.setAppBadge) return nav.setAppBadge(n).catch(() => {});
+    if (nav.clearAppBadge) return nav.clearAppBadge().catch(() => {});
+  } catch (_) {}
+  return Promise.resolve();
+}
+
+// Requests this device already saw closed (newest 60), so a late "Approval needed" for one of them is shown
+// as closed instead (a push is never dropped: it is still shown, just quietly). Kept outside the isabi-mfg-*
+// caches, which activate prunes.
+const APV_STATE_CACHE = 'isabi-apv-v1';
+const APV_CLOSED_TITLE = { en: 'Request closed', ar: 'أُغلق الطلب', fr: 'Demande clôturée' };
+
+async function apvClosedIds(add) {
+  try {
+    const cache = await caches.open(APV_STATE_CACHE);
+    const key = apvAppUrl('__apv_closed.json');
+    const hit = await cache.match(key);
+    let ids = [];
+    try { ids = hit ? await hit.json() : []; } catch (_) { ids = []; }
+    if (!Array.isArray(ids)) ids = [];
+    if (add && !ids.includes(add)) {
+      ids.push(add);
+      ids = ids.slice(-60);
+      await cache.put(key, new Response(JSON.stringify(ids), { headers: { 'Content-Type': 'application/json' } }));
+    }
+    return ids;
+  } catch (_) {
+    return [];
+  }
+}
+
+async function showApprovalPush(d) {
+  let kind = String(d.kind || '');
+  const id = String(d.id || '');
+  let closed = kind === 'apv_closed';
+  if (id) {
+    const ids = await apvClosedIds(closed ? id : '');
+    if (!closed && kind === 'apv_new' && ids.includes(id)) { closed = true; kind = 'apv_closed'; d = Object.assign({}, d, { title: APV_CLOSED_TITLE[d.lang] || APV_CLOSED_TITLE.en, body: '' }); }
+  }
+  const tag = APV_TAG_RE.test(String(d.tag || '')) ? String(d.tag) : 'apv-notice';
+  const title = String(d.title || 'Approval needed').slice(0, 80);
+  const opts = {
+    body: String(d.body || '').slice(0, 240),
+    tag,
+    renotify: !closed,
+    silent: closed,
+    icon: apvAppUrl('icon-192.png'),
+    badge: apvAppUrl('icon-192.png'),
+    lang: d.lang === 'ar' || d.lang === 'fr' ? d.lang : 'en',
+    dir: d.lang === 'ar' ? 'rtl' : 'ltr',
+    data: { kind, id: String(d.id || ''), expires_at: String(d.expires_at || '') }
+  };
+  try {
+    await self.registration.showNotification(title, opts);
+  } catch (_) {
+    try { await self.registration.showNotification(title, { body: opts.body, tag }); } catch (__) {}
+  }
+  // A banner for a request whose 10 minutes ran out is no longer actionable.
+  try {
+    const now = Date.now();
+    const list = await self.registration.getNotifications();
+    for (const n of list) {
+      const nd = n.data || {};
+      const ex = Date.parse(nd.expires_at || '');
+      if (n.tag !== tag && nd.kind === 'apv_new' && ex && ex < now) n.close();
+    }
+  } catch (_) {}
+  if (typeof d.badge === 'number') await apvSetBadge(d.badge);
+}
+
 self.addEventListener('push', event => {
   event.waitUntil((async () => {
-    let data = {};
+    let parsed = {};
     try {
-      data = event && event.data ? event.data.json() : {};
+      parsed = event && event.data ? event.data.json() : {};
     } catch (_) {
-      try { data = { body: event && event.data ? event.data.text() : '' }; } catch (_2) { data = {}; }
+      try { parsed = { body: event && event.data ? event.data.text() : '' }; } catch (_2) { parsed = {}; }
     }
-    const title = String(data.title || 'ISABI Command Center');
-    const options = {
-      body: String(data.body || ''),
-      icon: './icon-192.png',
-      badge: './icon-192.png',
-      tag: String(data.tag || 'isabi-day-close'),
-      renotify: true,
-      data: { url: String(data.url || './#daily_ops') }
-    };
-    await self.registration.showNotification(title, options);
+    const data = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    const isDayClose = !Object.prototype.hasOwnProperty.call(APV_KINDS, data.kind)
+      && (String(data.tag || '').startsWith('isabi-day-close') || String(data.url || '').includes('daily_ops'));
+    if (isDayClose) {
+      const title = String(data.title || 'ISABI Command Center').slice(0, 80);
+      const tag = String(data.tag || 'isabi-day-close');
+      const options = {
+        body: String(data.body || '').slice(0, 240),
+        icon: './icon-192.png',
+        badge: './icon-192.png',
+        tag,
+        renotify: true,
+        data: { url: String(data.url || './#daily_ops') }
+      };
+      try {
+        await self.registration.showNotification(title, options);
+      } catch (_) {
+        try { await self.registration.showNotification(title, { body: options.body, tag }); } catch (__) {}
+      }
+      return;
+    }
+    await showApprovalPush(data);
   })());
 });
 
 self.addEventListener('notificationclick', event => {
-  if (event.notification && typeof event.notification.close === 'function') event.notification.close();
-  const targetRel = (event.notification && event.notification.data && event.notification.data.url) || './#daily_ops';
-  const appScope = new URL('./', self.location.href).href;
-  let targetUrl = new URL('./#daily_ops', self.location.href).href;
-  try {
-    const parsed = new URL(targetRel, self.location.href);
-    if (parsed.origin === self.location.origin && parsed.href.startsWith(appScope)) targetUrl = parsed.href;
-  } catch (_) {}
-  event.waitUntil((async () => {
-    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of allClients) {
-      if (c && c.url && c.url.startsWith(appScope)) {
-        try {
-          if ('navigate' in c && typeof c.navigate === 'function') await c.navigate(targetUrl);
-        } catch (_) {}
-        try { if (typeof c.focus === 'function') await c.focus(); } catch (_) {}
-        return;
+  const n = event.notification;
+  const nd = (n && n.data) || {};
+  const tag = String((n && n.tag) || '');
+  if (n && typeof n.close === 'function') n.close();
+  const isApprovalClick = APV_TAG_RE.test(tag)
+    || tag === 'apv-notice'
+    || Object.prototype.hasOwnProperty.call(APV_KINDS, nd.kind)
+    || Object.prototype.hasOwnProperty.call(nd, 'id');
+  if (!isApprovalClick) {
+    const targetRel = nd.url || './#daily_ops';
+    const appScope = new URL('./', self.location.href).href;
+    let targetUrl = new URL('./#daily_ops', self.location.href).href;
+    try {
+      const parsed = new URL(targetRel, self.location.href);
+      if (parsed.origin === self.location.origin && parsed.href.startsWith(appScope)) targetUrl = parsed.href;
+    } catch (_) {}
+    event.waitUntil((async () => {
+      const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const c of allClients) {
+        if (c && c.url && c.url.startsWith(appScope)) {
+          try {
+            if ('navigate' in c && typeof c.navigate === 'function') await c.navigate(targetUrl);
+          } catch (_) {}
+          try { if (typeof c.focus === 'function') await c.focus(); } catch (_) {}
+          return;
+        }
       }
+      if (self.clients && typeof self.clients.openWindow === 'function') {
+        try { await self.clients.openWindow(targetUrl); } catch (_) {}
+      }
+    })().catch(() => {}));
+    return;
+  }
+  event.waitUntil((async () => {
+    const scopePath = new URL((self.registration && self.registration.scope) || './', self.location.href).pathname;
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find(c => { try { return new URL(c.url).pathname.startsWith(scopePath); } catch (_) { return false; } });
+    if (win) {
+      try { await win.focus(); } catch (_) {}
+      try { win.postMessage({ type: 'APV_OPEN', id: String(nd.id || '') }); } catch (_) {}
+      return;
     }
-    if (self.clients && typeof self.clients.openWindow === 'function') {
-      try { await self.clients.openWindow(targetUrl); } catch (_) {}
+    // Always the app's own inbox, never an address taken from the message.
+    if (self.clients.openWindow) await self.clients.openWindow(apvAppUrl('#approvals'));
+  })().catch(() => {}));
+});
+
+self.addEventListener('message', event => {
+  const d = event.data || {};
+  if (d.type !== 'APV_SYNC') return;
+  const keep = new Set((Array.isArray(d.pending) ? d.pending : []).map(String));
+  event.waitUntil((async () => {
+    const list = await self.registration.getNotifications();
+    for (const n of list) {
+      if (!APV_TAG_RE.test(String(n.tag || '')) && n.tag !== 'apv-notice') continue;
+      const id = String((n.data && n.data.id) || String(n.tag).slice(4));
+      if (!keep.has(id)) n.close();
     }
-  })());
+    await apvSetBadge(Math.max(0, Number(d.count) || 0));
+  })().catch(() => {}));
+});
+
+// The browser replaced the subscription (key refresh by the push service): register the new one for the
+// signed-in seat. The app re-sends it with the language at its next start-up anyway.
+function apvB64u(buf) {
+  const u8 = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function apvKeyBytes(b64u) {
+  const raw = String(b64u || '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(raw + '==='.slice((raw.length + 3) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil((async () => {
+    const old = event.oldSubscription;
+    // The current server key (it may have been rotated since the old subscription was made).
+    let pubKey = '';
+    try {
+      const cfgRes = await fetch(apvAppUrl('api/push/config'), { credentials: 'same-origin', cache: 'no-store' });
+      const cfg = cfgRes.ok ? await cfgRes.json() : null;
+      if (cfg && cfg.enabled && cfg.publicKey) pubKey = String(cfg.publicKey);
+    } catch (_) {}
+    if (!pubKey) {
+      try {
+        const dcRes = await fetch(apvAppUrl('api/day-close-push'), { credentials: 'same-origin', cache: 'no-store' });
+        const dcCfg = dcRes.ok ? await dcRes.json() : null;
+        if (dcCfg && dcCfg.vapidPublicKey) pubKey = String(dcCfg.vapidPublicKey);
+      } catch (_) {}
+    }
+    if (!pubKey) return;
+    let sub = event.newSubscription;
+    const subKey = sub && sub.options && sub.options.applicationServerKey ? apvB64u(sub.options.applicationServerKey) : '';
+    let usedKey = subKey;
+    if (!sub || (subKey && subKey !== pubKey)) {
+      if (sub) { try { await sub.unsubscribe(); } catch (_) {} }
+      usedKey = pubKey;
+      sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: apvKeyBytes(pubKey) });
+    }
+    const j = sub.toJSON();
+    const oldEp = (old && old.endpoint) || '';
+    // No language here: the server keeps the one stored with the subscription this one replaces.
+    // only_if_replaces ensures Day-Close-only seats are not silently enrolled into Approvals Push.
+    await fetch(apvAppUrl('api/push/subscribe'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys, server_key: usedKey || pubKey, replaces: oldEp, only_if_replaces: true })
+    }).catch(() => {});
+    if (oldEp) {
+      await fetch(apvAppUrl('api/day-close-push'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'rotate', subscription: j, replaces: oldEp })
+      }).catch(() => {});
+    }
+  })().catch(() => {}));
 });

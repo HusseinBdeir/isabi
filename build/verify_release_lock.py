@@ -266,10 +266,265 @@ def main() -> int:
                                         wf.find("- name: Deploy"), wf.find("release_lock.py release"))
         check(0 < i_acq < i_renew < i_dep < i_rel and "contents: write" in wf and wf.count("steps.lock.outputs.deploy == 'true'") >= 5,
               "workflow: takes the lock, renews it right before Deploy, gives it back; live steps gated on it")
+
+        # 16. prune (--days < 1 rejected; --dry deletes nothing; deletes >=7d merged/patch-equiv/shipped, keeps <7d, waiting/left_out/locked, and >=7d unmerged)
+        check(exits(RL.main, ["prune", "--days", "0"]) == 2, "prune --days 0 exits 2")
+        p_tmp = tmp / "prune-suite"
+        p_tmp.mkdir()
+        p_orig = p_tmp / "isabi-origin.git"
+        p_app_orig = p_tmp / "app-origin.git"
+        git(p_tmp, "init", "-q", "--bare", "-b", "main", str(p_orig))
+        git(p_tmp, "init", "-q", "--bare", "-b", "main", str(p_app_orig))
+        p_isabi = p_tmp / "isabi"
+        p_app = p_tmp / "isabi-app"
+        git(p_tmp, "clone", "-q", str(p_orig), str(p_isabi))
+        git(p_tmp, "clone", "-q", str(p_app_orig), str(p_app))
+
+        old_date = "2026-11-01T12:00:00Z"
+        recent_date = "2026-11-18T12:00:00Z"
+        os.environ[NOW] = "2026-11-20T12:00:00Z"
+
+        def timed_commit(repo: pathlib.Path, fname: str, content: str, date_iso: str) -> str:
+            (repo / fname).write_text(content, encoding="utf-8")
+            git(repo, "add", fname)
+            env_t = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                         GIT_COMMITTER_EMAIL="t@t", GIT_AUTHOR_DATE=date_iso, GIT_COMMITTER_DATE=date_iso)
+            subprocess.run(["git", "commit", "-q", "-m", fname], cwd=str(repo), env=env_t, check=True)
+            return git(repo, "rev-parse", "HEAD")
+
+        base_i = timed_commit(p_isabi, "base.txt", "base\n", old_date)
+        git(p_isabi, "push", "-q", "-u", "origin", "HEAD:main")
+        base_a = timed_commit(p_app, "base.txt", "base\n", old_date)
+        git(p_app, "push", "-q", "-u", "origin", "HEAD:main")
+
+        # isabi branches: (a) old merged, (b) old genuinely unmerged, (c) old waiting in queue
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-merged", base_i)
+        merged_i_sha = timed_commit(p_isabi, "m.txt", "m\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-merged")
+        git(p_isabi, "checkout", "-q", "main")
+        git(p_isabi, "merge", "-q", "--no-ff", "wt/old-merged", "-m", "merge old")
+        git(p_isabi, "push", "-q", "origin", "main")
+
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-unmerged", base_i)
+        timed_commit(p_isabi, "unm.txt", "unmerged\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-unmerged")
+
+        git(p_isabi, "checkout", "-q", "-b", "wt/old-waiting", base_i)
+        wait_sha = timed_commit(p_isabi, "w.txt", "waiting\n", old_date)
+        git(p_isabi, "push", "-q", "origin", "wt/old-waiting")
+
+        # isabi-app branches: (a) old patch-equivalent, (b) old batch-shipped receipt, (c) recent merged
+        git(p_app, "checkout", "-q", "-b", "wt/old-cherry", base_a)
+        timed_commit(p_app, "cp.txt", "cherry\n", old_date)
+        git(p_app, "push", "-q", "origin", "wt/old-cherry")
+        git(p_app, "checkout", "-q", "main")
+        timed_commit(p_app, "cp.txt", "cherry\n", recent_date)
+        git(p_app, "push", "-q", "origin", "main")
+
+        git(p_app, "checkout", "-q", "-b", "wt/old-shipped", base_a)
+        ship_sha = timed_commit(p_app, "sh.txt", "shipped\n", old_date)
+        git(p_app, "push", "-q", "origin", "wt/old-shipped")
+
+        git(p_app, "checkout", "-q", "-b", "wt/recent-merged", base_a)
+        timed_commit(p_app, "rec.txt", "recent\n", recent_date)
+        git(p_app, "push", "-q", "origin", "wt/recent-merged")
+        git(p_app, "checkout", "-q", "main")
+        git(p_app, "merge", "-q", "--no-ff", "wt/recent-merged", "-m", "merge recent")
+        git(p_app, "push", "-q", "origin", "main")
+
+        # Put queue entries on p_isabi origin: one waiting (protects wt/old-waiting) and one shipped (allows wt/old-shipped)
+        import json as _json  # noqa: PLC0415
+        for qname, qobj in (
+            ("20261101T120000Z-wait1111", {"id": "20261101T120000Z-wait1111", "state": "waiting",
+                                           "site": {"branch": "wt/old-waiting", "sha": wait_sha}}),
+            ("20261101T120000Z-ship2222", {"id": "20261101T120000Z-ship2222", "state": "shipped",
+                                           "app": {"branch": "wt/old-shipped", "sha": ship_sha}}),
+        ):
+            qb = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(p_isabi),
+                                input=_json.dumps(qobj).encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qt = subprocess.run(["git", "mktree"], cwd=str(p_isabi),
+                                input=f"100644 blob {qb}\tENTRY.json\n".encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qc = git(p_isabi, "commit-tree", qt, "-m", qname)
+            git(p_isabi, "push", "-q", "origin", f"{qc}:refs/release-queue/{qname}")
+        git(p_isabi, "checkout", "-q", "main")
+        git(p_app, "checkout", "-q", "main")
+
+        rep_dry = RL.prune_stale_wt(p_isabi, days=7, dry=True)
+        dry_isabi = [x["branch"] for x in rep_dry["repos"][0]["would_delete"]]
+        dry_app = [x["branch"] for x in rep_dry["repos"][1]["would_delete"]]
+        check(dry_isabi == ["wt/old-merged"] and set(dry_app) == {"wt/old-cherry", "wt/old-shipped"}
+              and "wt/old-unmerged" in rep_dry["repos"][0]["kept_unmerged"]
+              and "wt/old-waiting" in rep_dry["repos"][0]["kept_protected"]
+              and "wt/recent-merged" in rep_dry["repos"][1]["kept_recent"],
+              "prune --dry identifies only >=7d merged/patch-equiv/shipped branches and protects unmerged/queued/recent")
+        # Confirm --dry made zero remote deletions
+        rem_before = git(p_isabi, "ls-remote", "--heads", "origin", "wt/*")
+        check("wt/old-merged" in rem_before, "prune --dry makes zero remote deletions")
+
+        rep_run = RL.prune_stale_wt(p_isabi, days=7, dry=False)
+        del_isabi = [x["branch"] for x in rep_run["repos"][0]["deleted"]]
+        del_app = [x["branch"] for x in rep_run["repos"][1]["deleted"]]
+        rem_isabi = git(p_isabi, "ls-remote", "--heads", "origin", "wt/*")
+        rem_app = git(p_app, "ls-remote", "--heads", "origin", "wt/*")
+        check(del_isabi == ["wt/old-merged"] and set(del_app) == {"wt/old-cherry", "wt/old-shipped"}
+              and "wt/old-merged" not in rem_isabi
+              and "wt/old-unmerged" in rem_isabi
+              and "wt/old-waiting" in rem_isabi
+              and "wt/old-cherry" not in rem_app
+              and "wt/old-shipped" not in rem_app
+              and "wt/recent-merged" in rem_app,
+              "prune --days 7 deletes old merged/cherry/shipped branches across both repos and leaves unmerged/queued/recent")
+        os.environ.pop(NOW, None)
     finally:
         for k in ("ISABI_RELEASE_LOCK", NOW):
             os.environ.pop(k, None)
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # 17. Stalled wt/* rescue radar (`stalled_wt_branches` / `stalled --hours 24 --json`) across isabi + isabi-app
+    tmp2 = pathlib.Path(tempfile.mkdtemp(prefix="isabi-stalled-wt-"))
+    try:
+        def timed_commit_on(repo: pathlib.Path, fname: str, text: str, when: str, msg: str = "") -> str:
+            target = repo / fname
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            git(repo, "add", fname)
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                       GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
+            subprocess.run(["git", "commit", "-q", "-m", msg or fname], cwd=str(repo), input="", capture_output=True, text=True, check=True, env=env)
+            return git(repo, "rev-parse", "HEAD")
+
+        orig_i = tmp2 / "origin-isabi.git"
+        orig_a = tmp2 / "origin-app.git"
+        git(tmp2, "init", "-q", "--bare", "-b", "main", str(orig_i))
+        git(tmp2, "init", "-q", "--bare", "-b", "main", str(orig_a))
+        s_i, s_a = tmp2 / "seed-i", tmp2 / "seed-a"
+        git(tmp2, "clone", "-q", str(orig_i), str(s_i))
+        git(tmp2, "clone", "-q", str(orig_a), str(s_a))
+        base_is = timed_commit_on(s_i, "base.txt", "base\n", "2026-11-10T10:00:00Z")
+        git(s_i, "push", "-q", "origin", "HEAD:main")
+        base_as = timed_commit_on(s_a, "js/app.js", "const a=1;\n", "2026-11-10T10:00:00Z")
+        git(s_a, "push", "-q", "origin", "HEAD:main")
+
+        p_is = tmp2 / "pair" / "isabi"
+        p_ap = tmp2 / "pair" / "isabi-app"
+        git(tmp2, "clone", "-q", str(orig_i), str(p_is))
+        git(tmp2, "clone", "-q", str(orig_a), str(p_ap))
+
+        os.environ[NOW] = "2026-11-20T12:00:00Z"
+        old_36h = "2026-11-19T00:00:00Z"
+        recent_2h = "2026-11-20T10:00:00Z"
+
+        # isabi branches: (a) true stalled >24h, (b) fresh 2h, (c) old batch-shipped commit on main (must NOT false-positive!),
+        # (d) old waiting queue with fresh <=180m heartbeat, (e) old waiting queue with stale >180m heartbeat, (f) old active lock branch
+        git(p_is, "checkout", "-q", "-b", "wt/stalled-real", base_is)
+        timed_commit_on(p_is, "feat.txt", "real work\n", old_36h, "Add real site fix")
+        git(p_is, "push", "-q", "origin", "wt/stalled-real")
+
+        git(p_is, "checkout", "-q", "-b", "wt/recent-wip", base_is)
+        timed_commit_on(p_is, "wip.txt", "wip\n", recent_2h, "Active session wip")
+        git(p_is, "push", "-q", "origin", "wt/recent-wip")
+
+        git(p_is, "checkout", "-q", "-b", "wt/batch-landed", base_is)
+        batch_sha = timed_commit_on(p_is, "batch.txt", "batch\n", old_36h, "Shipped via batch")
+        git(p_is, "push", "-q", "origin", "wt/batch-landed")
+        git(p_is, "checkout", "-q", "main")
+        timed_commit_on(p_is, "batch.txt", "batch-v2\n", recent_2h, f"batch: some fix (session; wt/batch-landed {batch_sha[:7]})")
+        git(p_is, "push", "-q", "origin", "main")
+
+        git(p_is, "checkout", "-q", "-b", "wt/q-fresh", base_is)
+        q_fresh_sha = timed_commit_on(p_is, "qf.txt", "qf\n", old_36h)
+        git(p_is, "push", "-q", "origin", "wt/q-fresh")
+
+        git(p_is, "checkout", "-q", "-b", "wt/q-stale", base_is)
+        q_stale_sha = timed_commit_on(p_is, "qs.txt", "qs\n", old_36h, "Dead session queue entry")
+        git(p_is, "push", "-q", "origin", "wt/q-stale")
+
+        git(p_is, "checkout", "-q", "-b", "wt/active-lock", base_is)
+        timed_commit_on(p_is, "lk.txt", "lk\n", old_36h)
+        git(p_is, "push", "-q", "origin", "wt/active-lock")
+
+        git(p_is, "checkout", "-q", "-b", "wt/batch-active", base_is)
+        bat_site_sha = timed_commit_on(p_is, "bat.txt", "bat\n", old_36h, "Batch active site branch")
+        git(p_is, "push", "-q", "origin", "wt/batch-active")
+
+        # False-positive regressions: (g) isabi app/*-only sync branch, (h) branch named in a main commit body,
+        # (i) branch whose non-shell commits already landed via rebase onto main + a local shell bump commit
+        git(p_is, "checkout", "-q", "-b", "wt/app-only-site", base_is)
+        timed_commit_on(p_is, "app/index.html", "<html>sync</html>\n", old_36h, "Synced app only")
+        git(p_is, "push", "-q", "origin", "wt/app-only-site")
+
+        git(p_is, "checkout", "-q", "-b", "wt/body-mentioned", base_is)
+        timed_commit_on(p_is, "bm.txt", "bm1\n", old_36h, "Body trail commit")
+        git(p_is, "push", "-q", "origin", "wt/body-mentioned")
+        git(p_is, "checkout", "-q", "main")
+        timed_commit_on(p_is, "bm.txt", "bm2\n", recent_2h, "v19.6.300: landed manually\n\nCherry-picked from wt/body-mentioned.")
+        git(p_is, "push", "-q", "origin", "main")
+
+        # isabi-app branches: (a) true stalled >24h, (b) generated-only diff, (c) rebased subjects + shell bump,
+        # (d) active-lock appBranch, (e) batch-active queued branch
+        git(p_ap, "checkout", "-q", "-b", "wt/app-stalled", base_as)
+        timed_commit_on(p_ap, "js/app.js", "const a=2;\n", old_36h, "App stalled fix")
+        git(p_ap, "push", "-q", "origin", "wt/app-stalled")
+
+        git(p_ap, "checkout", "-q", "-b", "wt/app-active-lock", base_as)
+        timed_commit_on(p_ap, "js/app.js", "const al=1;\n", old_36h, "App active lock branch")
+        git(p_ap, "push", "-q", "origin", "wt/app-active-lock")
+
+        git(p_ap, "checkout", "-q", "-b", "wt/app-batch-active", base_as)
+        bat_app_sha = timed_commit_on(p_ap, "js/app.js", "const ba=1;\n", old_36h, "App batch active branch")
+        git(p_ap, "push", "-q", "origin", "wt/app-batch-active")
+
+        git(p_ap, "checkout", "-q", "-b", "wt/gen-only", base_as)
+        timed_commit_on(p_ap, "js/seed_manifest.js", "// stamp v1\n", old_36h, "Generated stamp only")
+        git(p_ap, "push", "-q", "origin", "wt/gen-only")
+
+        git(p_ap, "checkout", "-q", "-b", "wt/rebased-subj", base_as)
+        timed_commit_on(p_ap, "rb.txt", "rb1\n", old_36h, "Add rebased feature X")
+        timed_commit_on(p_ap, "sw.js", "// v19.6.314\n", old_36h, "v19.6.314: shell version (local)")
+        git(p_ap, "push", "-q", "origin", "wt/rebased-subj")
+        git(p_ap, "checkout", "-q", "main")
+        timed_commit_on(p_ap, "rb.txt", "rb1-conflict-edited\n", recent_2h, "Add rebased feature X")
+        git(p_ap, "push", "-q", "origin", "main")
+
+        # Put queue entries (incl. stale >180m heartbeat batch entry), take real production lock on wt/active-lock + wt/app-active-lock,
+        # attach batch entry via renew(extra={"batch": [...]}), then switch back to main before inspecting.
+        import json as _json  # noqa: PLC0415
+        for qname, qobj in (
+            ("20261120T110000Z-fres", {"id": "20261120T110000Z-fres", "state": "waiting", "seenAt": "2026-11-20T11:10:00Z",
+                                       "site": {"branch": "wt/q-fresh", "sha": q_fresh_sha}}),
+            ("20261120T050000Z-stal", {"id": "20261120T050000Z-stal", "state": "waiting", "seenAt": "2026-11-20T05:00:00Z",
+                                       "site": {"branch": "wt/q-stale", "sha": q_stale_sha}}),
+            ("20261120T050000Z-batc", {"id": "20261120T050000Z-batc", "state": "waiting", "seenAt": "2026-11-20T05:00:00Z",
+                                       "site": {"branch": "wt/batch-active", "sha": bat_site_sha},
+                                       "app": {"branch": "wt/app-batch-active", "sha": bat_app_sha}}),
+        ):
+            qb = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(p_is),
+                                input=_json.dumps(qobj).encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qt = subprocess.run(["git", "mktree"], cwd=str(p_is),
+                                input=f"100644 blob {qb}\tENTRY.json\n".encode("utf-8"), capture_output=True, check=True).stdout.decode().strip()
+            qc = git(p_is, "commit-tree", qt, "-m", qname)
+            git(p_is, "push", "-q", "origin", f"{qc}:refs/release-queue/{qname}")
+
+        git(p_is, "checkout", "-q", "wt/active-lock")
+        git(p_ap, "checkout", "-q", "wt/app-active-lock")
+        RL.acquire(p_is, holder="sess-lock", version="v19.6.999", purpose="test lock", quiet=True)
+        RL.renew(p_is, quiet=True, extra={"batch": ["20261120T050000Z-batc"]})
+        git(p_is, "checkout", "-q", "main")
+        git(p_ap, "checkout", "-q", "main")
+
+        st_rep = RL.stalled_wt_branches(p_is, hours=24)
+        st_pairs = {(it["repo"], it["branch"]): it for it in st_rep["items"]}
+        check(
+            set(st_pairs.keys()) == {("isabi", "wt/stalled-real"), ("isabi", "wt/q-stale"), ("isabi-app", "wt/app-stalled")}
+            and st_pairs[("isabi", "wt/stalled-real")]["ageHours"] == 36.0
+            and st_pairs[("isabi", "wt/stalled-real")]["ahead"] == 1
+            and st_rep["stalledCount"] == 3,
+            f"stalled detects unshipped >24h across isabi & isabi-app, skips batch/recent/gen-only/fresh-queue/active-lock (got {sorted(st_pairs.keys())})"
+        )
+    finally:
+        for k in ("ISABI_RELEASE_LOCK", NOW):
+            os.environ.pop(k, None)
+        shutil.rmtree(tmp2, ignore_errors=True)
 
     failed = [n for ok, n in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} checks passed")

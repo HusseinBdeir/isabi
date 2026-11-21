@@ -31,7 +31,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb1', '360676'],
     plate_no: '360676',
     company: 'WTC',
-    driver: 'Majed Karam',
+    driver: '',
     vehicle_model: 'Shacman X3000',
     tracker_model: 'FMC150',
     tank_cap_l: 400,
@@ -44,7 +44,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb3', '358599'],
     plate_no: '358599',
     company: 'WTC',
-    driver: 'Khalife',
+    driver: '',
     vehicle_model: 'Shacman X3000',
     tracker_model: 'FMC150',
     tank_cap_l: 400,
@@ -57,7 +57,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb4', '358943', '358943w'],
     plate_no: '358943',
     company: 'WTC',
-    driver: 'Wissam Mlaab',
+    driver: '',
     vehicle_model: 'Shacman F3000',
     tracker_model: 'FMC150',
     tank_cap_l: 380,
@@ -70,7 +70,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb7', '364656'],
     plate_no: '364656',
     company: 'WTC',
-    driver: 'Mohamad Habib',
+    driver: '',
     vehicle_model: 'Shacman X3000',
     tracker_model: 'FMC150',
     tank_cap_l: 400,
@@ -83,7 +83,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb8', '354578'],
     plate_no: '354578',
     company: 'WTC',
-    driver: 'Hussein Saleh',
+    driver: '',
     vehicle_model: 'Shacman X3000',
     tracker_model: 'FMC150',
     tank_cap_l: 400,
@@ -96,7 +96,7 @@ export const VT_DEVICE_MAP = {
     aliases: ['tb9', '364168'],
     plate_no: '364168',
     company: 'WTC',
-    driver: 'Ali Saleh',
+    driver: '',
     vehicle_model: 'Shacman X3000',
     tracker_model: 'FMC150',
     tank_cap_l: 400,
@@ -247,11 +247,16 @@ export function normalizeDevice(item, geofences = [], dbEquipMap = null) {
   let equipment = pinned ? pinned.equipment : '';
   let plateNo = pinned ? pinned.plate_no : '';
   let company = pinned ? pinned.company : 'WTC';
+  // Pinned trucks carry no driver name in this public file: it comes from the equipment register (D1) when
+  // the plate is there, else the signed-in client fills it from its private name book.
   let driver = pinned ? pinned.driver : '';
   let tankCapL = pinned ? pinned.tank_cap_l : 400;
   let trackerModel = pinned ? pinned.tracker_model : String(traccar.protocol || 'GPS').toUpperCase();
   let vehicleModel = pinned ? pinned.vehicle_model : 'Heavy Truck';
 
+  if (pinned && !driver && dbEquipMap && plateNo && dbEquipMap.has(plateNo)) {
+    driver = dbEquipMap.get(plateNo).driver || '';
+  }
   if (!pinned) {
     const namePlateMatch = rawName.match(/\b(\d{5,7})\b/);
     const candPlate = (namePlateMatch && namePlateMatch[1]) || String(devData.plate_number || '').replace(/\D+/g, '');

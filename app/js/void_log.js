@@ -1111,7 +1111,7 @@
         date: yesterdayIso,
         summary: 'SP-771 · Workbook Reconciliation Match',
         refCode: 'SP-771',
-        partyName: 'Mega Beton',
+        partyName: 'Sample Concrete Co',
         partyRelKey: 'customers',
         partyInRegistry: true,
         detailLine: 'Matched against updated workbook row',

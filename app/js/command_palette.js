@@ -411,7 +411,7 @@
     hld_open_ic_tbl: 'intercompany sister transfer due from due to repayment elimination inter-sociétés société sœur تحويلات بين الشركات الشقيقة ذمم شقيقة تسديد',
     hld_pairs_tbl: 'intercompany matrix sister balances netting paire sociétés matrice مصفوفة الشركات الشقيقة مطابقة الأرصدة',
     hld_partners_tbl: 'partner split shareholder equity profit share agreement associé actionnaire quote-part شراكة حصص الشركاء توزيع الأرباح مساهمين',
-    hld_extended_tbl: 'stakeholder haj mohamad external ledger partner current account compte courant associé دفتر المساهمين حساب جاري شريك',
+    hld_extended_tbl: 'stakeholder external ledger partner current account compte courant associé دفتر المساهمين حساب جاري شريك',
     hld_loans_tbl: 'holding loan credit line bank facility interest rate ligne crédit prêt groupe قروض القابضة تسهيلات ائتمانية فائدة',
 
     hsp_rev_tbl: 'hospitality resort chalet beach cabana gate admission restaurant venue close hôtel plage bungalow entrée إيرادات المنتجع شاليه شاليهات شاطئ دخولية مطعم إقفال يومي',

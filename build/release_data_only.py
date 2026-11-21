@@ -66,7 +66,7 @@ INDEX_MANIFEST_RE = re.compile(rb"(js/seed_manifest\.js\?v=[0-9][0-9.]*)(?:&amp;
 STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"?([A-Za-z0-9_]+)\"?", re.I)
 # store document, sign-in sessions, seats and PINs, plus the Edge runtime tables (export_d1_seed.EDGE_RUNTIME_TABLES):
 # remote override requests, the override audit trail, geo audit / gate suggestion logs and per-seat saved views
-EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit", "geo_audit_log", "geo_gate_suggestions"}
+EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit", "geo_audit_log", "geo_gate_suggestions", "push_subscriptions"}
 NO_RELEASE_LOCK = False  # set from --no-release-lock in main()
 
 
@@ -359,7 +359,22 @@ def run_desktop_suite_against_new_seed(skip_suite: bool = False) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def require_current_namebook(core_bytes: bytes) -> None:
+    """Since v19.6.270 the private seed carries the private name book (`namebook`, from isabi-app
+    build/private_namebook.json). A seed packed without it would switch off every rule that reads real names on
+    live, so a data release refuses it."""
+    book_path = ISABI_APP / "build" / "private_namebook.json"
+    if not book_path.exists():
+        return
+    want = {k: v for k, v in json.loads(book_path.read_text(encoding="utf-8")).items() if not k.startswith("_")}
+    have = json.loads(core_bytes.decode("utf-8")).get("namebook")
+    if have != want:
+        raise SystemExit("ABORT: isabi-app/js/seed_core.json carries " + ("no" if have is None else "an out-of-date")
+                         + " `namebook`; repack it with build/pack_seed_split.py (it must match build/private_namebook.json).")
+
+
 def stage_check(skip_suite: bool = False) -> None:
+    require_current_namebook(_seed_file("core").read_bytes())
     E, D = mods()
     env = D.build_env()
     ok, acct = D.ensure_logged_in(env)
@@ -382,6 +397,7 @@ def stage_commit(message: str = "", skip_suite: bool = False) -> None:
         raise SystemExit("ABORT: the isabi index has staged changes; a data release commits only its own two files")
     core = _seed_file("core").read_bytes()
     recs = _seed_file("records").read_bytes()
+    require_current_namebook(core)
     core_h, recs_h = sha10(core), sha10(recs)
     hm = head_manifest()
     if hm.get("coreHash") == core_h and hm.get("recordsHash") == recs_h:

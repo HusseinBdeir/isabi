@@ -147,6 +147,9 @@ const appJsSrcDir = [
   path.resolve(ROOT, '..', '..', 'isabi-app', 'js'),
   path.join(os.homedir(), 'bhfirms', 'isabi-app', 'js')
 ].find(p => fs.existsSync(path.join(p, 'seed_core.json'))) || path.resolve(ROOT, '..', 'isabi-app', 'js');
+const TEST_SEATS_PATH = path.resolve(appJsSrcDir, '..', 'build', 'test_seats.json');
+const TEST_SEATS = fs.existsSync(TEST_SEATS_PATH) ? JSON.parse(fs.readFileSync(TEST_SEATS_PATH, 'utf8')) : {};
+const ENTRY_TEST_EMAIL = String(process.env.ISABI_TEST_ENTRY_EMAIL || TEST_SEATS.entry_email || 'entry@example.invalid').trim();
 for (const kind of ['core', 'records', 'industries']) {
   const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
   if (fs.existsSync(seedFile)) {
@@ -293,7 +296,7 @@ async function main() {
     const stRes = await httpReq('GET', '/app/api/status');
     const badLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '9999', method: 'PIN' });
     const ownerLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN', device: 'Verify Suite' });
-    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: 'sabahkassab@bhfirms.com', pin: '3333', method: 'PIN', device: 'Verify Suite' });
+    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: ENTRY_TEST_EMAIL, pin: '3333', method: 'PIN', device: 'Verify Suite' });
     const ownerToken = ownerLogin.json?.token || '';
     const entryToken = entryLogin.json?.token || '';
     const setCookieHdr = String(ownerLogin.headers['set-cookie'] || '');
@@ -679,7 +682,7 @@ async function main() {
     docTamper.customRecords.expenses.push({ id: 'exp-tamper-blanca', company: 'Blanca', date: '2026-11-08', amount: 9999 });
     if (Array.isArray(docTamper.users)) {
       docTamper.users = docTamper.users.map(u =>
-        String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com'
+        String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase()
           ? Object.assign({}, u, { role: 'Full Access (Owner)', companies: 'All' })
           : u
       );
@@ -695,7 +698,7 @@ async function main() {
     const bbcStillIntact = (checkBbcUntouched.json?.rows || []).some(r => r.id === bbcId && r.company === 'BBConstruction' && Number(r.total) === Number(bbcRow.total));
     const postTamperStore = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const ptDoc = postTamperStore.json?.docs?.mfg_web_store || {};
-    const sabahSeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
+    const entrySeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase());
     const blancaInjected = (ptDoc.customRecords?.expenses || []).some(r => r.id === 'exp-tamper-blanca');
 
     // Step 4: Hard-remove `exp-dirty-diff-0` AND stable-seed override `ex_a1b2c3d4e5f6` from `customRecords.expenses`;
@@ -722,8 +725,8 @@ async function main() {
       row0InD1?.code === 'EXP-MODIFIED-CODE-999' &&
       bbcStillIntact &&
       !blancaInjected &&
-      sabahSeat &&
-      !String(sabahSeat.role || '').includes('Owner') &&
+      entrySeat &&
+      !String(entrySeat.role || '').includes('Owner') &&
       ms4.voidedRemoved >= 1 &&
       row0Voided?.voided === true &&
       seedOvrRow &&
@@ -735,7 +738,7 @@ async function main() {
       );
     } else {
       fail('edge-15-dirty-row-only-sync-void-and-lateral-rls', JSON.stringify({
-        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, sabahRole: sabahSeat?.role, ms4, voided: row0Voided?.voided
+        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, entryRole: entrySeat?.role, ms4, voided: row0Voided?.voided
       }));
     }
 
@@ -1049,15 +1052,15 @@ finally:
     // Entry self-POST privilege lock + weak PIN reject + single-BU Supervisor cross-BU/Owner escalation block
     const weakPinAttempt17 = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        email: ENTRY_TEST_EMAIL,
+        full_name: 'Entry Test Seat',
         pin_code: '0000'
       }
     }, { 'X-ISABI-Session': entryToken });
     const entrySelfEscalate = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        email: ENTRY_TEST_EMAIL,
+        full_name: 'Entry Test Seat',
         role: 'Full Access (Owner)',
         companies: 'All',
         pin_redacted: true,
@@ -1067,9 +1070,9 @@ finally:
       }
     }, { 'X-ISABI-Session': entryToken });
     const usersAfterSelf = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
-    const sabahAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
-    const sabahPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+    const entryAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase());
+    const entryPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
+      email: ENTRY_TEST_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1138,11 +1141,14 @@ finally:
       weakPinAttempt17.status === 400 &&
       entrySelfEscalate.status === 200 &&
       entrySelfEscalate.json?.lockedPrivileges === true &&
-      sabahAfterSelf?.role === 'Entry' &&
-      sabahAfterSelf?.companies === 'WTC' &&
-      sabahAfterSelf?.pin_code === undefined &&
-      sabahAfterSelf?.pin_redacted === true &&
-      sabahPinStill3333.status === 200 &&
+      entryAfterSelf?.role === 'Entry' &&
+      entryAfterSelf?.companies === 'WTC' &&
+      entryAfterSelf?.pin_code === undefined &&
+      entryAfterSelf?.pin_redacted === true &&
+      entryAfterSelf?.custom_perms === null &&
+      entryPinStill3333.status === 200 &&
+      entryPinStill3333.json?.user?.custom_perms === null &&
+      bbcSupLogin.json?.user?.custom_perms === null &&
       supEditOwner.status === 403 &&
       supGrantOutScope.status === 403 &&
       faceNoVec.status === 401 &&
@@ -1172,7 +1178,7 @@ finally:
         evilCors: evilCookiePost.headers['access-control-allow-origin'],
         goodCors: goodOriginGet.headers['access-control-allow-origin'],
         weakPin: weakPinAttempt17.status,
-        entrySelf: [entrySelfEscalate.status, sabahAfterSelf?.pin_code, sabahAfterSelf?.pin_redacted, sabahPinStill3333.status],
+        entrySelf: [entrySelfEscalate.status, entryAfterSelf?.pin_code, entryAfterSelf?.pin_redacted, entryPinStill3333.status],
         supEditOwner: supEditOwner.status,
         supGrantOutScope: supGrantOutScope.status,
         face: [faceNoVec.status, faceWrongVec.status, faceNoPin.status, faceGoodVec.status, faceGoodVec.json?.user?.pin_code]
@@ -1694,7 +1700,7 @@ finally:
       face_descriptor: vecNear
     }, { 'X-ISABI-Session': ownerToken });
     const logoutLogin = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1923,12 +1929,12 @@ finally:
     });
     const tempOwnerTok26 = String(tempOwnerLogin26.json?.token || '');
     const impersBeforeLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
     const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     const sidlessOwnerTok = mintTestJwt({
@@ -1941,7 +1947,7 @@ finally:
       'X-ISABI-Session': sidlessOwnerTok
     });
     const sidlessImpersRes = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': sidlessOwnerTok });
     await httpReq('POST', '/app/api/users', {
@@ -3431,7 +3437,7 @@ finally:
     }
     const e34OvAnon = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' });
     const e34OvDemo = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Demo': '1' });
-    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: 'sabahkassab@bhfirms.com', pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: ENTRY_TEST_EMAIL, pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvCrossBu = await httpReq('POST', '/app/api/auth/verify-override', { email: 'site.bbc@bhfirms.com', pin: '6666', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34Ov2401 = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '2401', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvOk = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_tab: 'sales', field_id: 'f_price', record_id: 'ST-TEST-1' }, { 'X-ISABI-Session': entryToken });
@@ -3686,14 +3692,14 @@ finally:
     const e36UsersOwner = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const e36EntrySelfOnly = Array.isArray(e36UsersEntry.json?.users) &&
       e36UsersEntry.json.users.length === 1 &&
-      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === 'sabahkassab@bhfirms.com' &&
+      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase() &&
       e36UsersEntry.json.users[0]?.pin_code === undefined &&
       e36UsersEntry.json.users[0]?.face_samples === undefined;
     const e36OwnerRedacted = Array.isArray(e36UsersOwner.json?.users) &&
       e36UsersOwner.json.users.length >= 10 &&
       e36UsersOwner.json.users.every(u => u && u.pin_code === undefined && u.face_samples === undefined);
     const e36EntryTakeoverU1 = await httpReq('POST', '/app/api/users', {
-      user: { id: 'u1', email: 'sabahkassab@bhfirms.com', full_name: 'Sabah Takeover', role: 'Full Access (Owner)', companies: '*' }
+      user: { id: 'u1', email: ENTRY_TEST_EMAIL, full_name: 'Entry Takeover', role: 'Full Access (Owner)', companies: '*' }
     }, { 'X-ISABI-Session': entryToken });
 
     // Strict CORS on OPTIONS across /app/api/ask, /app/api/kiosk/verify, and /api/status
@@ -4134,7 +4140,7 @@ finally:
       report_date: '2026-11-13',
       cutoff: '2026-11-12',
       core_hash: 'testcore01',
-      companies: [{ company: 'WTC', company_key: 'wtc', cutoff: '2026-11-12', edited_day_count: 1, edited_net_usd: -1100.0, edited_net_lbp: 0, added_day_count: 0, edited_days: [{ date: '2026-08-24', diff_in_usd: 0, diff_out_usd: 1100.0, diff_net_usd: -1100.0, diff_net_lbp: 0, parties: ['Haj Ibrahim'] }] }]
+      companies: [{ company: 'WTC', company_key: 'wtc', cutoff: '2026-11-12', edited_day_count: 1, edited_net_usd: -1100.0, edited_net_lbp: 0, added_day_count: 0, edited_days: [{ date: '2026-08-24', diff_in_usd: 0, diff_out_usd: 1100.0, diff_net_usd: -1100.0, diff_net_lbp: 0, parties: ['Sample Concrete Co'] }] }]
     };
     const cbOwnerPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: cbNoticeSample }, { 'X-ISABI-Session': ownerToken });
     const cbOwnerGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
@@ -4234,7 +4240,7 @@ finally:
     const ceSyncPatch = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { changed_entries: { status: 'ok' } } }, { 'X-ISABI-Session': ownerToken });
     const ceTooBig = await httpReq('POST', '/app/api/changed_entries', { changed_entries: { status: 'ok', pad: 'x'.repeat(35000) } }, { 'X-ISABI-Session': ownerToken });
     const ceWrongWrap = await httpReq('POST', '/app/api/changed_entries', { source_behind: null }, { 'X-ISABI-Session': ownerToken });
-    const ceSample = { status: 'ok', until: '2026-11-17', core_hash: 'testcore01', listed_count: 1, items: [{ kind: 'edit', table: 'expenses', company: 'BBConstruction', date: '2026-10-30', party: 'Rabih Tannous', old_usd: 9200, new_usd: 700, fields: ['amount'] }] };
+    const ceSample = { status: 'ok', until: '2026-11-17', core_hash: 'testcore01', listed_count: 1, items: [{ kind: 'edit', table: 'expenses', company: 'BBConstruction', date: '2026-10-30', party: 'Phoenicia Logistics SAL', old_usd: 9200, new_usd: 700, fields: ['amount'] }] };
     const ceOwnerPost = await httpReq('POST', '/app/api/changed_entries', { changed_entries: ceSample }, { 'X-ISABI-Session': ownerToken });
     const ceOwnerGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Session': ownerToken });
     const sbAfterCe = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': ownerToken });
@@ -4247,7 +4253,7 @@ finally:
       ceSupGet.status === 403 && ceSupPost.status === 403 &&
       ceSyncGet.status === 403 && ceSyncPatch.status === 403 &&
       ceTooBig.status === 413 && ceWrongWrap.status === 400 &&
-      ceOwnerPost.status === 200 && ceOwnerGet.json?.changed_entries?.items?.[0]?.party === 'Rabih Tannous' &&
+      ceOwnerPost.status === 200 && ceOwnerGet.json?.changed_entries?.items?.[0]?.party === 'Phoenicia Logistics SAL' &&
       sbAfterCe.json?.source_behind === null &&
       ceClearPost.status === 200 && ceClearGet.json?.changed_entries === null &&
       cbAfterCe.json?.cashflow_behind?.core_hash === 'testcore01'
@@ -6378,6 +6384,107 @@ finally:
         dom403: [e48OwnDomTopup403.status, e48OwnEditTopup403.status, e48SupDomTopup403.status, e48SupEditTopup403.status],
         domSeedSt: e48DomWbSeed.status, domWbSt: e48SupDomWbRestore.status, domWbAfter: e48DomWbAfter, editWbAfter: e48EditWbAfter
       }).slice(0, 800));
+    }
+
+    // 48c. A dated schedule's id reached on two devices (/industry_domain_store, 1:1 with isabi-app server.py and its
+    //      gate verify_dated_log_server_save.mjs 38, 45-48). Device A saves a tariff from a later day and undoes it:
+    //      the voided row stays under "<id>-YYYYMMDD". Device B then posts its own live row under that id: refused
+    //      whole (409 voided_id_conflict), where the answer used to be OK with the voided row kept.
+    const e48cDom = body => httpReq('POST', '/app/api/industry_domain_store', body, { 'X-ISABI-Session': ownerToken });
+    const e48cRow = async (bk, id) => {
+      const g = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+      return ((g.json?.industryCustomRows || {})[bk] || []).find(r => r && r.id === id) || null;
+    };
+    // Stamps as a device writes them (this PC's clock, as the local Edge's)
+    const e48cNow = () => new Date().toISOString();
+    const e48cAgo = sec => new Date(Date.now() - sec * 1000).toISOString();
+    const e48cMadeA = e48cAgo(600);
+    const e48cId = 'TRF-E48C-20261201';
+    const e48cA = { id: e48cId, company: 'Blanca', tier: 'E48C Cabana', season: 'E48C', start_date: '2026-12-01', end_date: 'Open', nightly_rate_usd: 480, _continues_id: 'TRF-E48C', _createdAt: e48cMadeA };
+    const e48cLiveA = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { rev: 1, updated_at: e48cMadeA })] } });
+    const e48cTombBody = Object.assign({}, e48cA, { voided: true, _scheduleVoided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() });
+    const e48cVoidA = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTombBody] } });
+    const e48cTomb = await e48cRow('hsp_tariffs', e48cId);
+    await sleep(30);
+    // Device B: the same id, live, made after the void, with another good row in the same request
+    const e48cMadeB = e48cNow();
+    const e48cB = Object.assign({}, e48cA, { nightly_rate_usd: 490, _createdAt: e48cMadeB, rev: 1, updated_at: e48cMadeB });
+    const e48cClash = await e48cDom({ industryCustomRows: { hsp_tariffs: [
+      { id: 'TRF-E48C-HALF', company: 'Blanca', tier: 'E48C Cabana Half', season: 'E48C', start_date: '2027-01-01', end_date: 'Open', nightly_rate_usd: 100, _createdAt: e48cMadeB, rev: 1, updated_at: e48cMadeB },
+      e48cB
+    ] } });
+    const e48cAfterClash = await e48cRow('hsp_tariffs', e48cId);
+    const e48cHalf = await e48cRow('hsp_tariffs', 'TRF-E48C-HALF');
+    // Left as it was: the same voided row again; a device's own older live copy of it (same stamp, or none); a row
+    // keyed under that id in the form (no _continues_id); a row made before the void
+    const e48cSame = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTomb || e48cTombBody] } });
+    const e48cOlder = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { nightly_rate_usd: 999, rev: 1, updated_at: e48cMadeA })] } });
+    const e48cNoStampRow = Object.assign({}, e48cA, { nightly_rate_usd: 998, rev: 1, updated_at: e48cMadeA });
+    delete e48cNoStampRow._createdAt;
+    const e48cNoStamp = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cNoStampRow] } });
+    const e48cTypedRow = Object.assign({}, e48cB, { nightly_rate_usd: 996 });
+    delete e48cTypedRow._continues_id;
+    const e48cTyped = await e48cDom({ industryCustomRows: { hsp_tariffs: [e48cTypedRow] } });
+    const e48cBefore = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cB, { nightly_rate_usd: 995, _createdAt: e48cAgo(300) })] } });
+    // Another device's voided copy with other values and its own void time, written over the stored voided row:
+    // the time it was first voided stays (the refusal reads it)
+    const e48cVoidedOver = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTomb || e48cTombBody, { notes: 'Voided copy from another device', voided_at: '2099-01-01T00:00:00.000Z' })] } });
+    const e48cAfterOlder = await e48cRow('hsp_tariffs', e48cId);
+    // Another bucket is not refused (answered OK, the voided row kept, as before)
+    const e48cMem = { id: 'MEM-E48C-TOMB', company: 'Blanca', unit: 'E48C Cabana', member: 'E48C Member', start_date: '2026-07-01', end_date: '2026-07-31', contract_usd: 100, _continues_id: 'MEM-E48C', _createdAt: e48cMadeA };
+    const e48cMem1 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { rev: 1, updated_at: e48cMadeA })] } });
+    const e48cMem2 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { voided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() })] } });
+    await sleep(30);
+    const e48cMem3 = await e48cDom({ industryCustomRows: { hsp_memberships: [Object.assign({}, e48cMem, { contract_usd: 200, _createdAt: e48cNow(), rev: 1, updated_at: e48cNow() })] } });
+    const e48cMemAfter = await e48cRow('hsp_memberships', 'MEM-E48C-TOMB');
+    // The other order: B's schedule stored first, A's same save over it (both live), then A's undo. B still holds its
+    // own live copy and sends it with every save: made before the void, so not refused. One made after the void is.
+    const e48cTwinId = 'TRF-E48C-TWIN-20261201';
+    const e48cTwinB0 = e48cAgo(240);
+    const e48cTwinA0 = e48cAgo(120);
+    const e48cTwin = { id: e48cTwinId, company: 'Blanca', tier: 'E48C Cabana Twin', season: 'E48C', start_date: '2026-12-01', end_date: 'Open', nightly_rate_usd: 810, _continues_id: 'TRF-E48C-TWIN' };
+    const e48cTwin1 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { _createdAt: e48cTwinB0, rev: 1, updated_at: e48cTwinB0 })] } });
+    const e48cTwin2 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 820, _createdAt: e48cTwinA0, rev: 1, updated_at: e48cTwinA0 })] } });
+    const e48cTwin3 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 820, _createdAt: e48cTwinA0, voided: true, _scheduleVoided: true, void_reason: 'gate undo', rev: 2, updated_at: e48cNow() })] } });
+    const e48cTwinTomb = await e48cRow('hsp_tariffs', e48cTwinId);
+    const e48cTwin4 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { _createdAt: e48cTwinB0, rev: 1, updated_at: e48cTwinB0 })] } });
+    const e48cTwinAfter4 = await e48cRow('hsp_tariffs', e48cTwinId);
+    await sleep(30);
+    const e48cTwin5 = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cTwin, { nightly_rate_usd: 830, _createdAt: e48cNow(), rev: 1, updated_at: e48cNow() })] } });
+    const e48cTwinAfter5 = await e48cRow('hsp_tariffs', e48cTwinId);
+    // Device B saves again under the next free id; then the voided row is restored (live, a higher rev)
+    const e48cNext = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cB, { id: e48cId + '-2' })] } });
+    const e48cNextAfter = await e48cRow('hsp_tariffs', e48cId + '-2');
+    const e48cRestore = await e48cDom({ industryCustomRows: { hsp_tariffs: [Object.assign({}, e48cA, { voided: false, _scheduleVoided: false, restored_at: e48cNow(), rev: 3, updated_at: e48cNow() })] } });
+    const e48cRestored = await e48cRow('hsp_tariffs', e48cId);
+    const e48cOk = Boolean(
+      e48cLiveA.status === 200 && e48cVoidA.status === 200 && e48cTomb && e48cTomb.voided === true && Number(e48cTomb.rev) === 2 &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(String(e48cTomb.voided_at || '')) &&
+      e48cClash.status === 409 && e48cClash.json?.ok === false && e48cClash.json?.code === 'voided_id_conflict' && e48cClash.json?.id === e48cId &&
+      e48cClash.json?.bucket === 'hsp_tariffs' && /saved and undone on another device/.test(String(e48cClash.json?.error || '')) &&
+      e48cAfterClash && e48cAfterClash.voided === true && Number(e48cAfterClash.nightly_rate_usd) === 480 && Number(e48cAfterClash.rev) === 2 && !e48cHalf &&
+      e48cSame.status === 200 && e48cSame.json?.ok === true && e48cOlder.status === 200 && e48cNoStamp.status === 200 && e48cTyped.status === 200 && e48cBefore.status === 200 &&
+      e48cAfterOlder && e48cAfterOlder.voided === true && Number(e48cAfterOlder.nightly_rate_usd) === 480 &&
+      e48cVoidedOver.status === 200 && e48cAfterOlder.notes === 'Voided copy from another device' && e48cAfterOlder.voided_at === e48cTomb.voided_at &&
+      e48cMem1.status === 200 && e48cMem2.status === 200 && e48cMem3.status === 200 && e48cMemAfter && e48cMemAfter.voided === true && Number(e48cMemAfter.contract_usd) === 100 &&
+      e48cTwin1.status === 200 && e48cTwin2.status === 200 && e48cTwin3.status === 200 && e48cTwinTomb && e48cTwinTomb.voided === true && e48cTwinTomb._createdAt === e48cTwinA0 &&
+      e48cTwin4.status === 200 && e48cTwin4.json?.ok === true && e48cTwinAfter4 && e48cTwinAfter4.voided === true && Number(e48cTwinAfter4.nightly_rate_usd) === 820 &&
+      e48cTwin5.status === 409 && e48cTwin5.json?.code === 'voided_id_conflict' && e48cTwin5.json?.id === e48cTwinId && e48cTwinAfter5 && e48cTwinAfter5.voided === true && Number(e48cTwinAfter5.nightly_rate_usd) === 820 &&
+      e48cNext.status === 200 && e48cNextAfter && !e48cNextAfter.voided && Number(e48cNextAfter.nightly_rate_usd) === 490 &&
+      e48cRestore.status === 200 && e48cRestored && !e48cRestored.voided && Number(e48cRestored.rev) === 3
+    );
+    if (e48cOk) {
+      pass('edge-48c-voided-schedule-id-conflict', 'live schedule kept apart by a save, made after another device\'s same-id schedule was voided = 409 voided_id_conflict, nothing of the request stored; same voided row again, a device\'s own older copy (same or no first-made stamp), a row keyed under that id in the form, a row made before the void (incl. the stored-first then overwritten order) and other buckets answered OK as before; a voided copy written over the voided row keeps the time it was first voided; next free id and Void Log restore (higher rev) accepted');
+    } else {
+      fail('edge-48c-voided-schedule-id-conflict', JSON.stringify({
+        seed: [e48cLiveA.status, e48cVoidA.status, e48cTomb && [e48cTomb.voided, e48cTomb.rev, e48cTomb.voided_at]],
+        clash: [e48cClash.status, e48cClash.json], afterClash: e48cAfterClash && [e48cAfterClash.voided, e48cAfterClash.nightly_rate_usd, e48cAfterClash.rev], half: Boolean(e48cHalf),
+        same: [e48cSame.status, e48cOlder.status, e48cNoStamp.status, e48cTyped.status, e48cBefore.status, e48cVoidedOver.status], afterOlder: e48cAfterOlder && [e48cAfterOlder.voided, e48cAfterOlder.nightly_rate_usd, e48cAfterOlder.notes, e48cAfterOlder.voided_at],
+        mem: [e48cMem1.status, e48cMem2.status, e48cMem3.status, e48cMemAfter && [e48cMemAfter.voided, e48cMemAfter.contract_usd]],
+        twin: [e48cTwin1.status, e48cTwin2.status, e48cTwin3.status, e48cTwin4.status, e48cTwin5.status, e48cTwin5.json?.code, e48cTwinAfter5 && [e48cTwinAfter5.voided, e48cTwinAfter5.nightly_rate_usd]],
+        next: [e48cNext.status, e48cNextAfter && [e48cNextAfter.voided, e48cNextAfter.nightly_rate_usd]],
+        restore: [e48cRestore.status, e48cRestored && [e48cRestored.voided, e48cRestored.rev]]
+      }).slice(0, 1600));
     }
 
     // 49. /app/api/records RBAC Parity for items, gl_accounts, equipment_oil_logs & sales_tickets

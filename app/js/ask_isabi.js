@@ -66,10 +66,12 @@
     activeAudioProgress: 0,
     activeSpeakBtn: null,
     activeSpeakTurnIdx: -1,
+    speakGen: 0,
     activeSpeakCtrl: null,
     activeSpeakCaption: '',
     activeBriefingScope: '',
     activePeriodSummaryScope: '',
+    activePocketBriefScope: '',
     periodPopoverOpen: false,
     periodPopoverAnchor: null,
     periodVarianceCache: new Map(),
@@ -764,7 +766,7 @@
       .filter(w => w.length >= 3 && !/^\d+$/.test(w) && !genericStop.has(w) && !coNameSet.has(w));
     if (!contentWords.length && !explicitCounterparty && !explicitProduct && !explicitStaff) return null;
 
-    // 2 & 3. Customer & Supplier Counterparty Match (with Dual-Role Disambiguation for Dabousi, Haj Ibrahim, etc.)
+    // 2 & 3. Customer & Supplier Counterparty Match (with Dual-Role Disambiguation for parties that are both customer and supplier)
     const explicitCust = /\b(customer|client|buyer|receivable|ar\b|owe\s+us)\b/i.test(cleanQ);
     const explicitSup = /\b(supplier|vendor|quarry|pit|hauler|payable|ap\b|owed\s+to|settlement)\b/i.test(cleanQ);
 
@@ -2482,9 +2484,9 @@
         answer: 'Across the 2-month post-cutover audit (Aug 24 - Oct 23, 2026), Bdeir trucks <b>TB1 (360676)</b>, <b>Tb7 (364656)</b>, and <b>Tb9 (364168)</b> completed <b>999 trips</b> (748 WTC + 251 BBConstruction · <b>28,440.2 m³</b>). Recorded ledger transport revenue is <b>$46,124.02</b> against <b>$44,378.48</b> in de-duplicated operating costs (Net <b>+$1,745.54</b> · 3.8%). Unbundling the 165 external/partner $0.00 trips adds <b>+$16,896.40</b> for a Strict Adjusted P&L of <b>$63,020.42</b> revenue and <b>+$18,641.94</b> net profit (29.6%), or <b>$68,952.42</b> revenue and <b>+$24,573.94</b> net profit (35.6%) at full commercial benchmark across all 265 $0.00 trips.',
         headers: ['Truck & Owner', 'Trips (Paid / $0)', 'Recorded Rev', 'Strict Adj Rev', 'Total Cost', 'Recorded / Strict Net'],
         rows: [
-          ['TB1 · 360676 (Karim Bdeir)', '365 (251 / 114 $0)', '$19,687.00', '$29,277.80', '$16,904.89', '+$2,782.11 / +$12,372.91'],
-          ['Tb7 · 364656 (Hussein Bdeir)', '282 (205 / 77 $0)', '$11,965.51', '$15,503.91', '$13,342.07', '-$1,376.56 / +$2,161.84'],
-          ['Tb9 · 364168 (Jad Bdeir)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
+          ['TB1 · 360676 (Partner Truck)', '365 (251 / 114 $0)', '$19,687.00', '$29,277.80', '$16,904.89', '+$2,782.11 / +$12,372.91'],
+          ['Tb7 · 364656 (Partner Truck)', '282 (205 / 77 $0)', '$11,965.51', '$15,503.91', '$13,342.07', '-$1,376.56 / +$2,161.84'],
+          ['Tb9 · 364168 (Partner Truck)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
         ],
         total: ['Fleet Total (3 Trucks)', '+$1,745.54 Recorded / +$18,641.94 Strict Adj'],
         promptText: 'Open Fleet & Running Costs to inspect all 6 tabs (Executive P&L, 265 Zero-Haulage Audit, 108 Routes Explorer, Diesel De-Dup & 85 Repair Bills, 172 Overtime Trips, and 4 Reconciliation Findings).',
@@ -3124,6 +3126,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     pbi: 'Dashboards & Reports',
     pbi_hub: 'Dashboards & Reports',
     statements: 'Printable Statements & SOA',
@@ -4599,7 +4602,7 @@
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary') || btn.hasAttribute('data-page-guide-listen')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary') || btn.hasAttribute('data-page-guide-listen') || btn.hasAttribute('data-pocket-brief-listen')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
@@ -4611,16 +4614,17 @@
     const isInspBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-insp-summary'));
     const isSnBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-sn-summary'));
     const isPgBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-page-guide-listen'));
+    const isPbBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-pocket-brief-listen'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn || isPgBtn)
+    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn || isPgBtn || isPbBtn)
       ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
       : (isPeriodBtn
         ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
         : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
-    const lblCls = isPgBtn ? 'pg-lsn-lbl' : (isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl')))));
+    const lblCls = isPbBtn ? 'pb-lsn-lbl' : (isPgBtn ? 'pg-lsn-lbl' : (isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl'))))));
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4789,6 +4793,7 @@
         !_chatState.liveVoiceMode &&
         !_chatState.activeBriefingScope &&
         !_chatState.activePeriodSummaryScope &&
+        !_chatState.activePocketBriefScope &&
         !_chatState.activeStmtSummaryScope &&
         !_chatState.activePbiSummaryScope &&
         !_chatState.activeInspSummaryScope &&
@@ -4823,6 +4828,7 @@
   }
 
   function stopActivePlayback(opts = {}) {
+    _chatState.speakGen = (_chatState.speakGen || 0) + 1;
     if (_chatState.activeSpeakCtrl) {
       try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
       _chatState.activeSpeakCtrl = null;
@@ -4834,6 +4840,7 @@
     }
     _chatState.activeBriefingScope = '';
     _chatState.activePeriodSummaryScope = '';
+    _chatState.activePocketBriefScope = '';
     _chatState.activeStmtSummaryScope = '';
     _chatState.activePbiSummaryScope = '';
     _chatState.activeInspSummaryScope = '';
@@ -5517,16 +5524,19 @@
 
   function fallbackBrowserSpeech(plain, lang, btnEl) {
     if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
-      if (btnEl) resetSpeakButtonUi(btnEl);
+      stopActivePlayback();
+      if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
       return false;
     }
     try {
       const normalized = buildTtsPromptPayload(plain, lang);
       const chunks = splitSentencesForSpeech(normalized, 200);
       if (!chunks.length) {
-        if (btnEl) resetSpeakButtonUi(btnEl);
+        stopActivePlayback();
+        if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
         return false;
       }
+      const mySpeakGen = (_chatState.speakGen = (_chatState.speakGen || 0) + 1);
       const bcp = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
       _chatState.lastSpokenText = normalized;
       _chatState.activeSpeakCaption = normalized;
@@ -5547,10 +5557,12 @@
       let idx = 0;
       const wasDops = isExecBriefBtn(btnEl);
       const clearFallbackUi = (completedNaturally) => {
+        if (mySpeakGen !== _chatState.speakGen) return;
         const curBtn = _chatState.activeSpeakBtn || btnEl;
         _chatState.activeSpeakBtn = null;
         _chatState.activeBriefingScope = '';
         _chatState.activePeriodSummaryScope = '';
+        _chatState.activePocketBriefScope = '';
         _chatState.activeStmtSummaryScope = '';
         _chatState.activePbiSummaryScope = '';
         _chatState.activeInspSummaryScope = '';
@@ -5566,6 +5578,7 @@
       };
 
       const speakNextChunk = () => {
+        if (mySpeakGen !== _chatState.speakGen) return;
         if (idx >= chunks.length) {
           clearFallbackUi(true);
           return;
@@ -5577,15 +5590,21 @@
         _chatState.activeAudioProgress = (idx + 0.5) / chunks.length;
         syncInlineAudioPlayerBar();
         idx++;
-        utt.onend = () => speakNextChunk();
-        utt.onerror = () => clearFallbackUi(false);
+        utt.onend = () => {
+          if (mySpeakGen !== _chatState.speakGen) return;
+          speakNextChunk();
+        };
+        utt.onerror = () => {
+          if (mySpeakGen !== _chatState.speakGen) return;
+          clearFallbackUi(false);
+        };
         window.speechSynthesis.speak(utt);
       };
       speakNextChunk();
       return true;
     } catch (_) {
-      if (btnEl) resetSpeakButtonUi(btnEl);
-      syncInlineAudioPlayerBar();
+      stopActivePlayback();
+      if (btnEl && btnEl.isConnected) resetSpeakButtonUi(btnEl);
       return false;
     }
   }
@@ -5673,6 +5692,7 @@
 
     if (_chatState.voiceActive) cancelVoiceRecording();
     stopActivePlayback();
+    const mySpeakGen = _chatState.speakGen;
     _chatState.lastSpokenText = plain;
     _chatState.activeSpeakCaption = plain;
     _chatState.activeAudioProgress = 0.04;
@@ -5699,7 +5719,7 @@
 
     requestCloudOrLocalTtsUrl(plain, safeLang, ctrl.signal).then(blobUrl => {
       clearTimeout(timer);
-      if (ctrl.signal.aborted) return;
+      if (ctrl.signal.aborted || _chatState.speakGen !== mySpeakGen) return;
       _chatState.activeSpeakCtrl = null;
       const curBtn = _chatState.activeSpeakBtn || btnEl;
       if (blobUrl) {
@@ -5718,7 +5738,7 @@
         }
         syncInlineAudioPlayerBar();
         audioEl.ontimeupdate = () => {
-          if (_chatState.activeAudioEl !== audioEl) return;
+          if (_chatState.speakGen !== mySpeakGen || _chatState.activeAudioEl !== audioEl) return;
           const dur = Number(audioEl.duration || 0);
           if (dur > 0) {
             _chatState.activeAudioProgress = Math.min(1, audioEl.currentTime / dur);
@@ -5726,12 +5746,14 @@
           }
         };
         audioEl.onended = () => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           const endBtn = _chatState.activeSpeakBtn || curBtn;
           const wasBrief = isExecBriefBtn(endBtn);
           _chatState.activeSpeakBtn = null;
           _chatState.activeBriefingScope = '';
           _chatState.activePeriodSummaryScope = '';
+          _chatState.activePocketBriefScope = '';
           _chatState.activeStmtSummaryScope = '';
           _chatState.activePbiSummaryScope = '';
           _chatState.activeInspSummaryScope = '';
@@ -5746,10 +5768,12 @@
           if (!wasBrief) maybeResumeHandsFreeListening();
         };
         audioEl.onerror = () => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         };
         audioEl.play().catch(() => {
+          if (_chatState.speakGen !== mySpeakGen) return;
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         });
@@ -5758,7 +5782,7 @@
       }
     }).catch(() => {
       clearTimeout(timer);
-      if (ctrl.signal.aborted) return;
+      if (ctrl.signal.aborted || _chatState.speakGen !== mySpeakGen) return;
       _chatState.activeSpeakCtrl = null;
       fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || btnEl);
     });
@@ -7143,6 +7167,31 @@
     }
     if (_chatState.periodPopoverOpen) {
       closeCeoVariancePopover();
+    }
+  }
+
+  function speakPocketBrief(rawText, btnEl, langOverride) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('pocketBriefListenBtn') : null);
+    if ((targetBtn && _chatState.activeSpeakBtn === targetBtn) || (!targetBtn && _chatState.activePocketBriefScope)) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const cleanText = String(rawText || '').trim();
+    if (!cleanText) return { ok: false };
+    const lang = langOverride || (window.MFG_I18N && window.MFG_I18N.getLang ? window.MFG_I18N.getLang() : 'en') || 'en';
+    const ok = speakBotReply(cleanText, lang, targetBtn || null);
+    if (ok) {
+      _chatState.activePocketBriefScope = 'pocket-brief';
+      syncInlineAudioPlayerBar();
+    } else {
+      _chatState.activePocketBriefScope = '';
+    }
+    return { ok: Boolean(ok), stopped: false };
+  }
+
+  function stopPocketBriefIfActive() {
+    if (_chatState.activePocketBriefScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-pocket-brief-listen'))) {
+      stopActivePlayback();
     }
   }
 
@@ -11887,7 +11936,15 @@
               const existingSub = effReg && effReg.pushManager ? await effReg.pushManager.getSubscription().catch(() => null) : null;
               if (existingSub) {
                 if (existingSub.endpoint) ep = String(existingSub.endpoint);
-                try { await existingSub.unsubscribe(); } catch (_) {}
+                const apvActive = Boolean(
+                  typeof window !== 'undefined' &&
+                  window.MFG_APPROVALS &&
+                  typeof window.MFG_APPROVALS.isApprovalPushActive === 'function' &&
+                  window.MFG_APPROVALS.isApprovalPushActive()
+                );
+                if (!apvActive) {
+                  try { await existingSub.unsubscribe(); } catch (_) {}
+                }
               }
             }
             _chatState.activePushEndpoint = '';
@@ -13281,10 +13338,37 @@
     if (mobActSlot && mobNewBtn && mobNewBtn.parentNode !== mobActSlot) {
       mobActSlot.appendChild(mobNewBtn);
     }
+    let mobBriefBtn = document.getElementById('mobilePocketBriefBtn');
+    const briefAllowed = Boolean(!isKioskSurface && _ctx && typeof _ctx.canUsePocketBrief === 'function' && _ctx.canUsePocketBrief(_ctx.activeUser ? _ctx.activeUser() : null));
+    if (mobActSlot && briefAllowed && !mobBriefBtn) {
+      mobBriefBtn = document.createElement('button');
+      mobBriefBtn.type = 'button';
+      mobBriefBtn.id = 'mobilePocketBriefBtn';
+      mobBriefBtn.className = 'btn btn-outline-bar topbar-more-act-btn';
+      const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+      const ico = icons ? icons.svg('sparkle') : AI_SVGS.sparkle;
+      mobBriefBtn.innerHTML = `<span class="pb-more-ico" aria-hidden="true">${ico}</span> <span>Morning Pocket Brief</span>`;
+      mobBriefBtn.addEventListener('click', () => {
+        closeTopbarMoreMenus();
+        if (_ctx && typeof _ctx.openPocketBrief === 'function') {
+          _ctx.openPocketBrief({ fromLogin: false });
+        }
+      });
+      mobActSlot.appendChild(mobBriefBtn);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && langCode !== 'en') {
+        try { window.MFG_I18N.translateDom(mobBriefBtn); } catch (_) {}
+      }
+    } else if (mobBriefBtn && mobActSlot && mobBriefBtn.parentNode !== mobActSlot) {
+      mobActSlot.appendChild(mobBriefBtn);
+    }
+    if (mobBriefBtn) {
+      mobBriefBtn.hidden = !briefAllowed;
+    }
     if (mobActSec) {
       const scanVis = Boolean(mobScanBtn && !mobScanBtn.hidden && !isKioskSurface);
       const newVis = Boolean(mobNewBtn && !mobNewBtn.hidden);
-      mobActSec.hidden = !(scanVis || newVis);
+      const briefVis = Boolean(mobBriefBtn && !mobBriefBtn.hidden && !isKioskSurface);
+      mobActSec.hidden = !(scanVis || newVis || briefVis);
     }
     const mobLangSlot = document.getElementById('mobileMoreLangSlot');
     const mobLangBtn = document.getElementById('mobileLangBtn');
@@ -20546,8 +20630,41 @@
   }
 
 
+  function isDayClosePushActiveOnDevice() {
+    return Boolean(
+      _chatState.activePushEndpoint ||
+      (_chatState.closeDigestServerState && _chatState.closeDigestServerState.subscribed)
+    );
+  }
+
+  async function checkDayClosePushSubscribed() {
+    if (_chatState.activePushEndpoint) return true;
+    const srv = _chatState.closeDigestServerState;
+    if (srv && typeof srv === 'object' && 'subscribed' in srv) {
+      return Boolean(srv.subscribed);
+    }
+    if (typeof navigator !== 'undefined' && navigator.webdriver && window.__ISABI_TEST_PUSH !== true) {
+      return false;
+    }
+    const fetchFn = (typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || (typeof fetch === 'function' ? fetch : null);
+    if (!fetchFn) return false;
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    try {
+      const res = await fetchFn('./api/day-close-push', { credentials: 'same-origin' });
+      if (!res || !res.ok) return false;
+      const j = await res.json().catch(() => null);
+      if (j && typeof j === 'object' && reqEpoch === (_chatState.sessionEpoch || 0)) {
+        _chatState.closeDigestServerState = j;
+      }
+      return Boolean(j && j.subscribed);
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function unsubscribePushOnSignOut(opts = {}) {
     const tok = (opts && opts.token) ? String(opts.token) : '';
+    const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);
     let ep = String(_chatState.activePushEndpoint || '');
     try {
       const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
@@ -20571,7 +20688,7 @@
         : null;
       if (sub) {
         if (!ep && sub.endpoint) ep = String(sub.endpoint);
-        if (typeof sub.unsubscribe === 'function') {
+        if (!deferBrowserUnsub && typeof sub.unsubscribe === 'function') {
           await Promise.resolve(sub.unsubscribe()).catch(() => {});
         }
       }
@@ -22190,6 +22307,8 @@
     closePeriodVariance: closeCeoVariancePopover,
     rebindPeriodSummaryButton,
     stopPeriodSummaryIfActive,
+    speakPocketBrief,
+    stopPocketBriefIfActive,
     buildStatementSummary,
     speakStatementSummary,
     requestStatementVariance: requestStatementVarianceCommentary,
@@ -22378,6 +22497,7 @@
       handsFreeVoice: Boolean(_chatState.handsFreeVoice),
       briefingScope: _chatState.activeBriefingScope || '',
       periodSummaryScope: _chatState.activePeriodSummaryScope || '',
+      pocketBriefScope: _chatState.activePocketBriefScope || '',
       periodPopoverOpen: Boolean(_chatState.periodPopoverOpen),
       stmtSummaryScope: _chatState.activeStmtSummaryScope || '',
       stmtPopoverOpen: Boolean(_chatState.stmtPopoverOpen),
@@ -22428,6 +22548,8 @@
     }),
     syncScope: syncHeaderAndChips,
     unsubscribePushOnSignOut,
+    isDayClosePushActiveOnDevice,
+    checkDayClosePushSubscribed,
     answer: answerHtmlSnapshot,
     answerQuestion,
     getState: () => ({

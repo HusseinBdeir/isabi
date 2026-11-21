@@ -1336,8 +1336,10 @@
         if (siteName) entry.sites.add(String(siteName).trim());
         if (Number(pct) > 0) entry.pct = Number(pct);
       };
-      addJvSiteRef('Assaf', 'Jiyeh JV', 50);
-      addJvSiteRef('Assaf', 'Halat JV', 50);
+      // The JV partner's name and its sites come from the private name book (signed-in seats only).
+      const nbBook = (window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.get === 'function') ? window.MFG_NAMEBOOK.get() : {};
+      const nbJvPartner = String(nbBook.jv_partner || '').trim();
+      if (nbJvPartner) (Array.isArray(nbBook.jv_sites) ? nbBook.jv_sites : []).forEach(sn => addJvSiteRef(nbJvPartner, sn, 50));
       ((rec.jv_partnerships || [])).forEach(j => {
         if (j && !j.voided) addJvSiteRef(j.partner || j.counterparty, j.site, j.percentage ?? j.share_pct);
       });
@@ -1357,7 +1359,8 @@
       ((rec.suppliers || [])).forEach(s => {
         if (!s || s.voided || !s.name) return;
         const catStr = [s.category, s.category1, s.category2, s.category3].filter(Boolean).join(' ');
-        if (/raw\s*material|quarry|site|assaf/i.test(catStr) || /assaf/i.test(s.name)) {
+        const nbJvLow = nbJvPartner.toLowerCase();
+        if (/raw\s*material|quarry|site/i.test(catStr) || (nbJvLow && (catStr.toLowerCase().includes(nbJvLow) || String(s.name).toLowerCase().includes(nbJvLow)))) {
           rawSupSet.add(String(s.name).trim().toLowerCase());
         }
       });
@@ -1458,6 +1461,15 @@
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
           <div class="form-field span-3" id="sitePriceAgreementsWrap" hidden></div>
+          ${isMfgForm ? fld('Haul Road Surface (Tyre Wear)', sel('f_site_surface', [
+            ['', 'Auto-Detect (Unpaved for Quarry / Raw Sites)'],
+            ['unpaved', 'Unpaved / Loose Gravel (High Tyre Wear)'],
+            ['paved', 'Paved Asphalt / Concrete Road']
+          ], ''), {
+            id: 'wrap_site_surface',
+            hint: 'Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.',
+            hintId: 'hint_site_surface'
+          }) : ''}
           ${fld('Site Status', sel('f_site_status', [['open', 'Open'], ['closed', 'Closed']], 'open'), {
             id: 'wrap_site_status',
             hidden: true,
@@ -1954,6 +1966,8 @@
         ['Differential / Axle Oil 85W-140', 'Differential / Axle Oil 85W-140'],
         ['Brake Lining & Shoe Set', 'Brake Lining & Shoe Set'],
         ['Retarder & Drivetrain Inspection', 'Retarder & Drivetrain Inspection'],
+        ['Tyre Rotation & Alignment', 'Tyre Rotation & Alignment'],
+        ['Drive-Axle Tyre Replacement', 'Drive-Axle Tyre Replacement'],
         ['Oil & Fuel Filter Service', 'Oil & Fuel Filter Service']
       ];
       return `
@@ -2253,6 +2267,7 @@
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${(typeof window !== 'undefined' && typeof window.nearCopyAmtJumpHtml === 'function') ? window.nearCopyAmtJumpHtml() : ''}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
           <div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>
@@ -2522,8 +2537,8 @@
     if (fType === 'external') {
       const isExtdMode = Boolean(ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'extended');
       const baseParties = isExtdMode
-        ? ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms', 'Haj Ali', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Voile', 'Bdeir Holding']
-        : ['Haj Ali', 'Haj Mohamad', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'George', 'Bdeir Holding'];
+        ? ((window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.list === 'function') ? window.MFG_NAMEBOOK.list('extended_parties') : []).concat(['Blanca', 'Palms', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Voile', 'Bdeir Holding'])
+        : ((window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.list === 'function') ? window.MFG_NAMEBOOK.list('extended_parties') : []).concat(['WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'Bdeir Holding']);
       let cpFreqMap = fIdx && fIdx.counterparty;
       if (isExtdMode) {
         cpFreqMap = new Map();
@@ -2552,6 +2567,7 @@
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', isCfgEdit ? 'step="0.01"' : 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', isCfgEdit ? 'step="1000"' : 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${(typeof window !== 'undefined' && typeof window.nearCopyAmtJumpHtml === 'function') ? window.nearCopyAmtJumpHtml() : ''}
           ${fld('Reference', inp('f_reference', 'text', ''))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
           <div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>

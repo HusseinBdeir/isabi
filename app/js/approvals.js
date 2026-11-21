@@ -208,6 +208,8 @@
       if (changed && !typing && !document.querySelector('#apvInbox [data-apv-busy="1"]')) D.render();
     }
     if (D.refreshNavBadges) D.refreshNavBadges();
+    syncServiceWorker();
+    if (pushCfgGen !== gen && canApprove()) initPushForSeat();
   }
 
   function schedulePoll() {
@@ -475,6 +477,346 @@
     cancelRequest(a.id);
   }
 
+  // ------------------------------------------------------------------ Web Push: "Notify me on this device"
+  // An approver whose app is closed still learns that someone is waiting. The server (./api/push/*) sends
+  // only once the owner has set the VAPID key; until then config says { enabled: false } and an Owner sees
+  // one line saying so. Permission is asked only from the tap. The choice is kept per seat on this device
+  // (isabi_mfg_push_pref_v1) and re-applied silently at start-up while permission stays granted.
+  // Demo scopes and headless tests make no push calls (window.__ISABI_TEST_PUSH opts a test back in).
+  const PUSH_API = './api/push';
+  const PUSH_PREF_KEY = 'isabi_mfg_push_pref_v1';
+  let pushCfg = null;
+  let pushCfgGen = -1;
+  let pushSyncGen = -1;
+  let pushBusy = false;
+  let pushOn = false;
+  let pushEndpoint = '';
+
+  function pushTestMode() {
+    return Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || window.__MFG_HEADLESS_TEST);
+  }
+  function pushCallsAllowed() {
+    return serverReady() && (!pushTestMode() || window.__ISABI_TEST_PUSH === true);
+  }
+  function pushSupported() {
+    return Boolean(typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext !== false);
+  }
+  function isIosDevice() {
+    const ua = String(navigator.userAgent || '');
+    return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+  }
+  function isStandaloneApp() {
+    try { return navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; } catch (_) { return false; }
+  }
+  function seatKey() {
+    const u = D && D.activeUser();
+    return u ? String(u.id || u.email || '') : '';
+  }
+  function prefAll() {
+    try { const o = JSON.parse(localStorage.getItem(PUSH_PREF_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (_) { return {}; }
+  }
+  function prefGet(seat) { return seat ? prefAll()[seat] || '' : ''; }
+  function prefSet(seat, v) {
+    if (!seat) return;
+    try { const o = prefAll(); o[seat] = v; localStorage.setItem(PUSH_PREF_KEY, JSON.stringify(o)); } catch (_) { /* private mode */ }
+  }
+  function b64uToBytes(s) {
+    const raw = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(raw + '==='.slice((raw.length + 3) % 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function sameServerKey(sub, publicKey) {
+    try {
+      const k = sub && sub.options && sub.options.applicationServerKey;
+      if (!k) return true;
+      const a = new Uint8Array(k);
+      const b = b64uToBytes(publicKey);
+      return a.length === b.length && a.every((x, i) => x === b[i]);
+    } catch (_) { return true; }
+  }
+  function swRegistration(ms) {
+    if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+    return Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), ms || 8000))]).catch(() => null);
+  }
+
+  // What the control shows, from plain inputs (the gate calls this directly).
+  function pushControlState(o) {
+    if (!o || !o.approver || !o.live || o.blockedCalls || !o.cfg) return 'hidden';
+    if (!o.cfg.enabled) return (o.cfg.reason === 'not_configured' && o.isOwner) ? 'setup' : 'hidden';
+    if (o.ios && !o.standalone) return 'ios_home';
+    if (!o.supported) return 'unsupported';
+    if (o.permission === 'denied') return 'blocked';
+    if (o.busy) return 'busy';
+    return o.on ? 'on' : 'off';
+  }
+  function currentPushState() {
+    const u = D && D.activeUser();
+    return pushControlState({
+      approver: canApprove(u),
+      live: serverReady(),
+      blockedCalls: !pushCallsAllowed(),
+      cfg: pushCfg,
+      isOwner: Boolean((pushCfg && pushCfg.can_setup) || /owner/i.test(String((u && u.role) || ''))),
+      ios: isIosDevice(),
+      standalone: isStandaloneApp(),
+      supported: pushSupported(),
+      permission: ('Notification' in window) ? Notification.permission : 'default',
+      busy: pushBusy,
+      on: pushOn
+    });
+  }
+  function renderPushControl(state) {
+    const st = state || 'hidden';
+    const note = (txt, cls) => `<span class="apv-push-note${cls ? ' ' + cls : ''}">${ic('bell')}<span>${esc(txt)}</span></span>`;
+    let inner = '';
+    if (st === 'setup') inner = note('Phone notifications are not set up yet.');
+    else if (st === 'ios_home') inner = note('On iPhone or iPad, add the app to the Home Screen first (iOS 16.4 or later), then open it from there.');
+    else if (st === 'unsupported') inner = note('This browser cannot show notifications.');
+    else if (st === 'blocked') inner = note('Notifications are blocked for this site in the browser settings.', 'warn');
+    else if (st === 'on') inner = `${note('Notifications are on for this device.', 'ok')}<button type="button" class="btn btn-ghost-bar" data-apv-push="off">Turn Off</button>`;
+    else if (st === 'off' || st === 'busy') {
+      inner = `<button type="button" class="btn btn-ghost-bar" data-apv-push="on"${st === 'busy' ? ' disabled aria-busy="true"' : ''}>${ic('bell')} Notify me on this device</button>`;
+    }
+    return `<div id="apvPushCtl" class="apv-push" data-push-state="${esc(st)}"${st === 'hidden' ? ' hidden' : ''}>${inner}</div>`;
+  }
+  function refreshPushUi() {
+    const el = document.getElementById('apvPushCtl');
+    if (!el) return;
+    const st = currentPushState();
+    if (el.getAttribute('data-push-state') === st) return;
+    el.outerHTML = renderPushControl(st);
+  }
+
+  function bytesToB64u(buf) {
+    const u8 = new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  async function postSubscribe(sub) {
+    const j = sub.toJSON ? sub.toJSON() : {};
+    const payload = { endpoint: j.endpoint || sub.endpoint, keys: j.keys || {}, lang: lang() };
+    // The key this subscription was made with: the server refuses to store one made under an older key.
+    try { if (sub.options && sub.options.applicationServerKey) payload.server_key = bytesToB64u(sub.options.applicationServerKey); } catch (_) { /* older browsers */ }
+    const { res, j: out } = await apiJson(`${PUSH_API}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return Boolean(res && res.ok && out.ok && out.stored !== false);
+  }
+
+  async function ensureSubscription(reg) {
+    let sub = await reg.pushManager.getSubscription();
+    // A subscription made under an older server key would be refused by the push service: replace it.
+    if (sub && !sameServerKey(sub, pushCfg.publicKey)) { try { await sub.unsubscribe(); } catch (_) { /* gone */ } sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(pushCfg.publicKey) });
+    return sub;
+  }
+
+  function isApprovalPushActive() {
+    if (pushOn) return true;
+    const permOk = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    return Boolean(
+      canApprove() &&
+      pushCallsAllowed() &&
+      pushCfg && pushCfg.enabled &&
+      pushSupported() &&
+      permOk &&
+      prefGet(seatKey()) === 'on'
+    );
+  }
+
+  async function peerDayCloseActive() {
+    try {
+      if (window.MFG_ASK && typeof window.MFG_ASK.checkDayClosePushSubscribed === 'function') {
+        return Boolean(await window.MFG_ASK.checkDayClosePushSubscribed());
+      }
+    } catch (_) {}
+    try {
+      if (window.MFG_ASK && typeof window.MFG_ASK.isDayClosePushActiveOnDevice === 'function') {
+        return Boolean(window.MFG_ASK.isDayClosePushActiveOnDevice());
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  // Start-up and sign-in: read the server setting once per seat, then re-subscribe silently if this seat had
+  // notifications on here and the browser still allows them.
+  async function initPushForSeat() {
+    if (!pushCallsAllowed() || !canApprove()) return;
+    const g = gen;
+    if (pushCfgGen !== g) {
+      pushCfgGen = g;
+      try {
+        const { res, j } = await apiJson(`${PUSH_API}/config`);
+        if (g !== gen) return;
+        pushCfg = (res && res.ok && j.ok)
+          ? { enabled: Boolean(j.enabled && j.publicKey), publicKey: String(j.publicKey || ''), reason: String(j.reason || ''), can_setup: Boolean(j.can_setup) }
+          : null;
+      } catch (_) {
+        // Offline: read it again on the next poll.
+        if (g === gen) { pushCfg = null; pushCfgGen = -1; }
+      }
+      refreshPushUi();
+    }
+    if (pushSyncGen === g || !pushCfg || !pushCfg.enabled) return;
+    pushSyncGen = g;
+    const seat = seatKey();
+    if (!pushSupported() || (isIosDevice() && !isStandaloneApp())) return;
+    if (prefGet(seat) !== 'on') {
+      // This seat has not turned notifications on here, so a subscription left in this browser belongs to an
+      // earlier seat (for example one whose session simply ran out): drop it unless Day-Close Push is active here.
+      try {
+        const reg = await swRegistration(3000);
+        const old = reg ? await reg.pushManager.getSubscription() : null;
+        if (old && g === gen && !(await peerDayCloseActive())) await old.unsubscribe();
+      } catch (_) { /* nothing to drop */ }
+      return;
+    }
+    if (Notification.permission !== 'granted') return;
+    try {
+      const reg = await swRegistration();
+      if (!reg || g !== gen) return;
+      const sub = await ensureSubscription(reg);
+      if (g !== gen) return;
+      const okSub = await postSubscribe(sub);
+      if (g !== gen) return;
+      pushOn = okSub;
+      pushEndpoint = okSub ? sub.endpoint : '';
+    } catch (_) { /* stays off; the tap can try again */ }
+    refreshPushUi();
+  }
+
+  async function enablePush() {
+    if (pushBusy || !pushCallsAllowed() || !pushCfg || !pushCfg.enabled) return;
+    const g = gen;
+    const seat = seatKey();
+    pushBusy = true;
+    refreshPushUi();
+    try {
+      // Asked only here, from the tap.
+      let perm = Notification.permission;
+      if (perm === 'default') perm = await Notification.requestPermission();
+      if (perm !== 'granted') { D.toast('Notifications were not allowed on this device.', 'err'); return; }
+      const reg = await swRegistration();
+      if (!reg) { D.toast('Could not turn on notifications. Try again.', 'err'); return; }
+      const sub = await ensureSubscription(reg);
+      if (g !== gen) return;
+      if (await postSubscribe(sub)) {
+        if (g !== gen) return;
+        prefSet(seat, 'on');
+        pushOn = true;
+        pushEndpoint = sub.endpoint;
+        pushSyncGen = g;
+        syncServiceWorker();
+        D.toast('Notifications are on for this device.', 'ok');
+      } else {
+        D.toast('Could not turn on notifications. Try again.', 'err');
+      }
+    } catch (_) {
+      D.toast('Could not turn on notifications. Try again.', 'err');
+    } finally {
+      pushBusy = false;
+      refreshPushUi();
+    }
+  }
+
+  async function disablePush() {
+    if (pushBusy) return;
+    pushBusy = true;
+    refreshPushUi();
+    const seat = seatKey();
+    try {
+      const reg = await swRegistration(3000);
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      const ep = (sub && sub.endpoint) || pushEndpoint;
+      if (ep && pushCallsAllowed()) {
+        await apiJson(`${PUSH_API}/unsubscribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: ep }) }).catch(() => null);
+      }
+      if (sub && !(await peerDayCloseActive())) { try { await sub.unsubscribe(); } catch (_) { /* gone */ } }
+      prefSet(seat, 'off');
+      pushOn = false;
+      pushEndpoint = '';
+      setBadge(0);
+      D.toast('Notifications turned off for this device.', 'ok');
+    } finally {
+      pushBusy = false;
+      refreshPushUi();
+    }
+  }
+
+  // Sign-out (called before the logout request, while the session can still remove the row). The browser
+  // subscription is dropped unless deferred to the caller's coordinated sign-out cleanup. The seat's choice is kept for its next sign-in here.
+  async function pushSignOut(opts = {}) {
+    const ep = pushEndpoint;
+    pushEndpoint = '';
+    pushOn = false;
+    // Close the approval banners already on this device (they name the requester) and clear the icon badge.
+    try {
+      const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (c) c.postMessage({ type: 'APV_SYNC', pending: [], count: 0 });
+    } catch (_) { /* no controller */ }
+    const tok = (opts && opts.token) ? String(opts.token) : '';
+    const allowed = opts && 'serverApi' in opts ? Boolean(opts.serverApi) : pushCallsAllowed();
+    const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);
+    const sk = (opts && opts.seatId) ? String(opts.seatId) : seatKey();
+    const hasPrefOn = Boolean(allowed && pushSupported() && prefGet(sk) === 'on');
+    setBadge(0);
+    if (!ep && !hasPrefOn) return;
+    const postUnsub = targetEp => {
+      if (!targetEp || !allowed) return Promise.resolve();
+      const hdrs = { 'Content-Type': 'application/json' };
+      if (tok) {
+        hdrs['X-ISABI-Session'] = tok;
+        if (typeof fetch === 'function') {
+          return fetch(`${PUSH_API}/unsubscribe`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: hdrs,
+            body: JSON.stringify({ endpoint: targetEp })
+          }).catch(() => {});
+        }
+      }
+      return apiJson(`${PUSH_API}/unsubscribe`, { method: 'POST', headers: hdrs, body: JSON.stringify({ endpoint: targetEp }) }).catch(() => {});
+    };
+    const jobs = [];
+    if (ep) jobs.push(postUnsub(ep));
+    jobs.push((async () => {
+      try {
+        const reg = await swRegistration(600);
+        const s = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+        if (!s) return;
+        if (!ep && allowed && s.endpoint) await postUnsub(s.endpoint);
+        if (!deferBrowserUnsub) await s.unsubscribe().catch(() => {});
+      } catch (_) {}
+    })());
+    await Promise.allSettled(jobs);
+  }
+
+  function setBadge(n) {
+    try {
+      if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(() => {});
+      else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+    } catch (_) { /* not supported */ }
+  }
+
+  // While the app polls, the Service Worker closes notifications for requests that are no longer waiting
+  // and the app icon shows how many are.
+  function syncServiceWorker() {
+    if (!pushOn) return;
+    const now = Date.now();
+    const live = pending.filter(r => r && r.status === 'pending' && Date.parse(r.expires_at || '') > now);
+    setBadge(live.length);
+    try {
+      const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (c) c.postMessage({ type: 'APV_SYNC', pending: live.map(r => r.id), count: live.length });
+    } catch (_) { /* no controller yet */ }
+  }
+
   // ------------------------------------------------------------------ inbox view
   function statusPill(st) {
     const map = {
@@ -710,11 +1052,15 @@
         : 'Items that wait on a decision in your companies. Requests you send appear below with their outcome.')
       : 'Items that wait on a decision in your companies. Live approvals require a signed-in workspace connection.';
     if (live && !primed) setTimeout(() => refresh({ silent: true }), 0);
+    if (live && approver && pushCfgGen !== gen) setTimeout(() => initPushForSeat(), 0);
     return `
       <div class="apv-inbox" id="apvInbox">
         <div class="apv-head panel-card">
           <div class="apv-head-title">${ic('approvals')}<div><h2>Approvals Inbox</h2><p>${esc(intro)}</p></div></div>
-          ${live ? `<button type="button" class="btn btn-ghost-bar" data-apv-refresh="1">${ic('rotate')} Refresh</button>` : ''}
+          <div class="apv-head-acts">
+            ${live && approver ? renderPushControl(currentPushState()) : ''}
+            ${live ? `<button type="button" class="btn btn-ghost-bar" data-apv-refresh="1">${ic('rotate')} Refresh</button>` : ''}
+          </div>
         </div>
         ${(live || isDemo) && approverGate ? renderGateSuggestions() : ''}
         ${live && approver ? renderRequests() : ''}
@@ -766,11 +1112,28 @@
       const sl = e.target.closest('[data-apv-salary]');
       if (sl) { D.openPendingSalaryModal(sl.getAttribute('data-apv-salary')); return; }
       if (e.target.closest('[data-apv-sentinels]')) { D.setView('sentinels'); return; }
+      const pb = e.target.closest('[data-apv-push]');
+      if (pb) { if (pb.getAttribute('data-apv-push') === 'on') enablePush(); else disablePush(); return; }
       if (e.target.closest('[data-apv-refresh]')) refresh();
     });
     document.addEventListener('visibilitychange', () => {
       const onInbox = D && D.STATE && D.STATE.view === 'approvals';
       if (document.visibilityState === 'visible' && serverReady() && (canApprove() || canApproveGatePins() || onInbox)) refresh({ silent: false });
+    });
+    // A tapped notification (sw.js notificationclick) opens the inbox in the window it focused.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', e => {
+        const d = e && e.data;
+        if (!d || d.type !== 'APV_OPEN' || !D || !D.STATE || !D.STATE.authed) return;
+        if (D.STATE.view !== 'approvals') D.setView('approvals');
+        if (serverReady()) refresh({ silent: true });
+      });
+    }
+    // The notification text is built on the server in the language stored with the subscription.
+    window.addEventListener('mfg:lang-changed', () => {
+      if (!pushOn || !pushCallsAllowed()) return;
+      swRegistration(3000).then(reg => (reg ? reg.pushManager.getSubscription() : null))
+        .then(sub => (sub ? postSubscribe(sub) : null)).catch(() => {});
     });
   }
 
@@ -797,9 +1160,22 @@
     lastSig = '';
     seenIds = new Set();
     hideLiveCard();
+    // Push state belongs to the seat: the next seat reads the setting and its own choice again.
+    pushCfg = null;
+    pushCfgGen = -1;
+    pushSyncGen = -1;
+    pushOn = false;
+    pushEndpoint = '';
+    pushBusy = false;
     if (D && D.refreshNavBadges) D.refreshNavBadges();
     if (serverReady()) refresh({ silent: true, noRender: true });
   }
 
-  window.MFG_APPROVALS = { init, reset, renderView, canApprove, canApproveGatePins, pendingRequestCount, requestOverride, cancelRequest, cancelActive, refresh };
+  window.MFG_APPROVALS = {
+    init, reset, renderView, canApprove, canApproveGatePins, pendingRequestCount, requestOverride, cancelRequest, cancelActive, refresh,
+    pushSignOut, isApprovalPushActive,
+    // Read-only views for the gate (no network): the control's state machine and its markup.
+    pushControlState, renderPushControl, currentPushState,
+    _pushDebug: () => ({ cfg: pushCfg, on: pushOn, hasEndpoint: Boolean(pushEndpoint), callsAllowed: pushCallsAllowed() })
+  };
 })();

@@ -22,8 +22,10 @@
   // tableId -> { hiddenCols: Set<number>, shownCols: Set<number>, colWidths: Map<number, number>, baseWidths: number[] }
   const TABLE_COL_STATE = new Map();
   const DYNAMIC_HIDE_CSS = new Map();
+  const MOB_PIN_CSS = new Map();
   let batchingDynHide = false;
   let lastDynCssText = '';
+  let lastMobPinCssText = '';
   let currentScopeSig = '';
   let currentSingleCorp = false;
   let openPopoverTableId = '';
@@ -67,6 +69,130 @@
     stEl.textContent = nextCss;
   }
 
+  function flushMobilePinCss() {
+    if (typeof document === 'undefined' || !document.head) return;
+    const rules = Array.from(MOB_PIN_CSS.values());
+    const nextCss = rules.length ? `@media (max-width: 860px) {\n${rules.join('\n')}\n}` : '';
+    if (nextCss === lastMobPinCssText && (!nextCss || document.getElementById('mfg-col-mgr-mob-pin'))) return;
+    lastMobPinCssText = nextCss;
+    let stEl = document.getElementById('mfg-col-mgr-mob-pin');
+    if (!nextCss) {
+      if (stEl) stEl.textContent = '';
+      return;
+    }
+    if (!stEl) {
+      stEl = document.createElement('style');
+      stEl.id = 'mfg-col-mgr-mob-pin';
+      document.head.appendChild(stEl);
+    }
+    stEl.textContent = nextCss;
+  }
+
+  function resolveMobilePinnedColIndex(table, labels, hiddenSet) {
+    if (!table || !table.closest || !table.closest('.table-wrap, .table-scroll')) return -1;
+    if (table.closest('.a4-sheet, .thermal-paper-roll, #mfgChartPopover, #colFilterPopover, #mobRowPeekSheet')) return -1;
+    if (table.classList.contains('rdl-table') || table.classList.contains('ceo-scorecard-table') || table.hasAttribute('data-no-mob-pin')) return -1;
+    if (table.id === 'kioskRecentTable' || table.id === 'kioskAttFeedTable') return -1;
+    const headRow = table.querySelector('thead tr');
+    if (!headRow) return -1;
+    const ths = Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD');
+    if (ths.length < 3 || ths.some(th => Number(th.getAttribute('colspan') || 1) > 1)) return -1;
+    const visCols = [];
+    for (let c = 0; c < labels.length; c++) {
+      if (!hiddenSet.has(c)) visCols.push(c);
+    }
+    if (visCols.length < 3) return -1;
+    const isDateCol = ci => {
+      const th = ths[ci];
+      const lbl = String(labels[ci] || '').trim();
+      const sortKey = th ? String(th.getAttribute('data-sort-key') || '').trim().toLowerCase() : '';
+      return /^(date|tx\.?\s*date|rep\.?\s*date|transaction\s*date|reporting\s*date|day|time|التاريخ|تاريخ(?:\s+\S+)?|اليوم|الوقت|date\s*(?:op\.|rep\.|facture|échéance|effet)?)$/i.test(lbl)
+        || ['date', 'tx_date', 'rep_date', 'effective_from', 'due_date', 'loss_date'].includes(sortKey);
+    };
+    const isCoCol = ci => {
+      const th = ths[ci];
+      const lbl = String(labels[ci] || '').trim();
+      const sortKey = th ? String(th.getAttribute('data-sort-key') || '').trim().toLowerCase() : '';
+      return /^(co\.?|company|bu|resort|entity|venue|subsidiary|الشركة|الكيان|المنتجع|الفرع|المؤسسة|société|entité|complexe|entreprise)$/i.test(lbl)
+        || ['company', 'bu', 'entity', 'resort'].includes(sortKey);
+    };
+    const isNumCol = ci => {
+      const th = ths[ci];
+      return Boolean(th && (th.classList.contains('r') || th.classList.contains('n')));
+    };
+    const isBlankOrCbCol = ci => {
+      const th = ths[ci];
+      const lbl = String(labels[ci] || '').trim();
+      return !lbl || /^Column \d+$/i.test(lbl) || Boolean(th && (th.hasAttribute('data-row-sel-hdr') || th.querySelector('input[type="checkbox"], [data-row-sel]')));
+    };
+    if (visCols.length >= 3) {
+      const scan = visCols.slice(0, 3);
+      for (let i = 0; i < scan.length; i++) {
+        const ci = scan[i];
+        if (!isBlankOrCbCol(ci) && !isDateCol(ci) && !isCoCol(ci) && !isNumCol(ci)) return ci;
+      }
+    }
+    const firstLabeled = visCols.find(ci => !isBlankOrCbCol(ci));
+    return firstLabeled !== undefined ? firstLabeled : visCols[0];
+  }
+
+  function syncMobilePinnedColumn(table, tableId, labels, hiddenSet, useFastNth) {
+    if (!table || !tableId) return -1;
+    const pinCol = resolveMobilePinnedColIndex(table, labels, hiddenSet);
+    if (pinCol < 0) {
+      delete table.dataset.mobPinCol;
+      if (MOB_PIN_CSS.delete(tableId) && !batchingDynHide) flushMobilePinCss();
+      return -1;
+    }
+    table.dataset.mobPinCol = String(pinCol);
+    const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(tableId) : tableId.replace(/"/g, '\\"');
+    const headColSel = useFastNth ? `:nth-child(${pinCol + 1})` : `[data-col-start="${pinCol}"]`;
+    let bodyPinCol = pinCol;
+    if (useFastNth) {
+      const sampleTr = table.querySelector('tbody tr:not(.total):not(.total-row):not(.totals-row)');
+      if (sampleTr && sampleTr.children.length > labels.length) {
+        let rem = sampleTr.children.length - labels.length;
+        let logi = 0;
+        for (let di = 0; di < sampleTr.children.length; di++) {
+          const cel = sampleTr.children[di];
+          if (rem > 0 && cel.style && cel.style.display === 'none') {
+            rem -= 1;
+            continue;
+          }
+          if (logi === pinCol) {
+            bodyPinCol = di;
+            break;
+          }
+          logi += 1;
+        }
+      }
+    }
+    const bodyColSel = useFastNth ? `:nth-child(${bodyPinCol + 1})` : `[data-col-start="${pinCol}"]`;
+    const tRoot = `body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]`;
+    const headSel = `${tRoot} > thead > tr > th${headColSel}:not([colspan])`;
+    const bodyTdSel = `${tRoot} > tbody > tr > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr > th${bodyColSel}:not([colspan])`;
+    const bodyCapSel = `body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > tbody > tr > td${bodyColSel}:not([colspan]):not(.tbl-col-resized), body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > tbody > tr > th${bodyColSel}:not([colspan]):not(.tbl-col-resized)`;
+    const headCapSel = `body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > thead > tr > th${headColSel}:not([colspan]):not(.tbl-col-resized)`;
+    const hoverSel = `${tRoot} > tbody > tr:hover > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr:hover > th${bodyColSel}:not([colspan])`;
+    const selRowSel = `${tRoot} > tbody > tr.is-row-selected > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.is-row-selected > th${bodyColSel}:not([colspan])`;
+    const voidRowSel = `${tRoot} > tbody > tr.is-voided > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.row-voided > td${bodyColSel}:not([colspan])`;
+    const rtlHeadSel = `[dir="rtl"] ${headSel}`;
+    const rtlBodySel = `[dir="rtl"] ${tRoot} > tbody > tr > td${bodyColSel}:not([colspan]), [dir="rtl"] ${tRoot} > tbody > tr > th${bodyColSel}:not([colspan])`;
+    MOB_PIN_CSS.set(tableId, [
+      `  ${headSel} { position: sticky; inset-inline-start: 0; z-index: 6; background-color: var(--surface-2); border-inline-end: 1px solid var(--line-strong); box-shadow: 2px 0 5px -2px rgba(15, 30, 56, 0.10), 0 -2px 0 0 var(--surface-2), 0 1px 0 var(--line); }`,
+      `  ${bodyTdSel} { position: sticky; inset-inline-start: 0; z-index: 2; background-color: var(--surface); border-inline-end: 1px solid var(--line-strong); box-shadow: 2px 0 5px -2px rgba(15, 30, 56, 0.10); }`,
+      `  ${headCapSel} { max-width: min(148px, 37vw); }`,
+      `  ${bodyCapSel} { max-width: min(148px, 37vw); overflow: hidden; text-overflow: ellipsis; }`,
+      `  ${hoverSel} { background-color: color-mix(in srgb, var(--brass) 5%, var(--surface)); }`,
+      `  ${selRowSel} { background-color: color-mix(in srgb, var(--brass) 13%, var(--surface)) !important; }`,
+      `  ${voidRowSel} { background-color: var(--surface-2); }`,
+      `  ${rtlHeadSel} { left: auto; right: 0; box-shadow: -2px 0 5px -2px rgba(15, 30, 56, 0.10), 0 -2px 0 0 var(--surface-2), 0 1px 0 var(--line); }`,
+      `  ${rtlBodySel} { left: auto; right: 0; box-shadow: -2px 0 5px -2px rgba(15, 30, 56, 0.10); }`
+    ].join('\n'));
+    if (!batchingDynHide) flushMobilePinCss();
+    return pinCol;
+  }
+
   const ICONS = {
     cols: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.8"/><line x1="6" y1="2.5" x2="6" y2="13.5"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5"/></svg>',
     reset: '<svg viewBox="0 0 16 16" width="11.5" height="11.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9L2.5 5.8"/><polyline points="2.5 2.4 2.5 5.8 5.9 5.8"/></svg>',
@@ -85,7 +211,7 @@
       'table.ledger-table th.tbl-first-vis-cell, table.ledger-table td.tbl-first-vis-cell { padding-left: 12px; }',
       'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-left: 14px; }',
       'tr.rrow td.tbl-first-vis-cell { position: relative; }',
-      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 3; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
+      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 1; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
       '.ledger-table tbody td.tbl-first-vis-cell.td-has-inline-act u.row-sel-dot { position: static; right: auto; top: auto; transform: none; margin-left: 4px; vertical-align: middle; box-shadow: none; }',
       'td.tbl-first-vis-cell.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }',
       '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-left: 3px; }'
@@ -181,7 +307,8 @@
     const pId = (hostPanel && hostPanel.id) ? hostPanel.id : 'panel';
     const titleEl = hostPanel ? hostPanel.querySelector('.pbi-panel-title, .panel-title, .ph h3, h3') : null;
     const tSlug = titleEl ? slug(titleEl.textContent) : ('idx_' + idx);
-    table.dataset.colMgrId = `tbl_${pId}_${tSlug}`;
+    const multiInHost = hostPanel && hostPanel.querySelectorAll('table').length > 1;
+    table.dataset.colMgrId = multiInHost ? `tbl_${pId}_${tSlug}_${idx}` : `tbl_${pId}_${tSlug}`;
     return table.dataset.colMgrId;
   }
 
@@ -246,11 +373,23 @@
   function indexTableCells(table) {
     if (table._cellsIndexed) return;
     table._cellsIndexed = true;
+    const headRow = table.querySelector('thead tr');
+    const headColCount = headRow
+      ? Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD').reduce((s, el) => s + Math.max(1, Number(el.getAttribute('colspan') || 1)), 0)
+      : 0;
     const rows = Array.from(table.querySelectorAll('thead tr, tbody tr, tfoot tr'));
     rows.forEach(tr => {
+      const cells = Array.from(tr.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD');
+      const isTbody = Boolean(tr.parentElement && tr.parentElement.tagName === 'TBODY');
+      const totalSpan = cells.reduce((s, el) => s + Math.max(1, Number(el.getAttribute('colspan') || 1)), 0);
+      let excessHidden = (isTbody && headColCount > 0 && totalSpan > headColCount) ? (totalSpan - headColCount) : 0;
       let colCursor = 0;
-      Array.from(tr.children).forEach(cell => {
-        if (cell.tagName !== 'TH' && cell.tagName !== 'TD') return;
+      cells.forEach(cell => {
+        if (excessHidden > 0 && cell.style && cell.style.display === 'none') {
+          excessHidden -= 1;
+          cell.removeAttribute('data-col-start');
+          return;
+        }
         let origSpan = Number(cell.getAttribute('data-col-orig-span') || 0);
         if (!origSpan || origSpan < 1) {
           origSpan = Math.max(1, Number(cell.getAttribute('colspan') || 1));
@@ -373,6 +512,8 @@
     const st = getOrCreateState(tableId, false);
     const { eff: hiddenSet } = computeEffectiveHidden(table, st, colCount, labels);
     const widthMap = (st && st.colWidths) ? st.colWidths : new Map();
+    const useFastNth = canUseCssHideFastPath(table, colCount, widthMap);
+    syncMobilePinnedColumn(table, tableId, labels, hiddenSet, useFastNth || !table._cellsIndexed);
 
     if (hiddenSet.size === 0 && widthMap.size === 0 && !table._hadColCustom) {
       if (DYNAMIC_HIDE_CSS.delete(tableId) && !batchingDynHide) flushDynamicHideCss();
@@ -391,7 +532,7 @@
 
     // Fast-path when no custom column widths are active: hide body columns via scoped :nth-child CSS
     // instead of indexing & mutating classLists on tens of thousands of <td> cells.
-    if (canUseCssHideFastPath(table, colCount, widthMap)) {
+    if (useFastNth) {
       const headRow = table.querySelector('thead tr');
       let ci = 0;
       for (let i = 0; i < headRow.children.length; i++) {
@@ -507,6 +648,7 @@
       flushDynamicHideCss();
     }
     indexTableCells(table);
+    syncMobilePinnedColumn(table, tableId, labels, hiddenSet, false);
 
     // 1. Apply column visibility & adjust colspans across thead, tbody, tfoot
     const allRows = Array.from(table.querySelectorAll('thead tr, tbody tr, tfoot tr'));
@@ -722,11 +864,18 @@
   function resetAllTablesToDefault() {
     TABLE_COL_STATE.clear();
     DYNAMIC_HIDE_CSS.clear();
+    MOB_PIN_CSS.clear();
     openPopoverTableId = '';
-    document.querySelectorAll('table[data-col-mgr-id]').forEach(table => {
-      applyTableColumnState(table);
-    });
-    flushDynamicHideCss();
+    batchingDynHide = true;
+    try {
+      document.querySelectorAll('table[data-col-mgr-id]').forEach(table => {
+        applyTableColumnState(table);
+      });
+    } finally {
+      batchingDynHide = false;
+      flushDynamicHideCss();
+      flushMobilePinCss();
+    }
   }
 
   function renderPopoverInnerHtml(table) {
@@ -1271,6 +1420,7 @@
         // User navigated to a different view / company / table / system view -> automatically revert back to default
         TABLE_COL_STATE.clear();
         DYNAMIC_HIDE_CSS.clear();
+        MOB_PIN_CSS.clear();
         openPopoverTableId = '';
       }
       currentScopeSig = nextSig;
@@ -1285,14 +1435,31 @@
       return Boolean(t.querySelector('thead tr th'));
     });
 
+    const dataTables = Array.from(root.querySelectorAll('table.data-table')).filter(t => {
+      if (t.classList.contains('ledger-table') || t.classList.contains('m-grid') || t.classList.contains('rdl-table')) return false;
+      if (t.id === 'kioskRecentTable' || t.id === 'kioskAttFeedTable') return false;
+      if (t.hasAttribute('data-no-mob-pin') || t.classList.contains('ceo-scorecard-table')) return false;
+      if (t.closest('.modal-card, #mobRowPeekSheet, #pocketBriefOverlay, .thermal-paper-roll, .a4-sheet')) return false;
+      if (!t.closest('.table-wrap, .table-scroll')) return false;
+      return Boolean(t.querySelector('thead tr th'));
+    });
+
     batchingDynHide = true;
     try {
       tables.forEach((table, idx) => {
         mountTableControls(table, idx);
       });
+      dataTables.forEach((table, dIdx) => {
+        const tableId = getTableId(table, tables.length + dIdx);
+        const labels = extractHeaderLabels(table);
+        if (labels.length >= 3) {
+          syncMobilePinnedColumn(table, tableId, labels, new Set(), true);
+        }
+      });
     } finally {
       batchingDynHide = false;
       flushDynamicHideCss();
+      flushMobilePinCss();
     }
     enhanceToolbarStructure(root);
   }
@@ -1308,7 +1475,10 @@
     exportLayout,
     importLayout,
     isSingleCorporationScope,
+    getMobilePinnedCol: table => (table && table.dataset && table.dataset.mobPinCol !== undefined && table.dataset.mobPinCol !== '') ? Number(table.dataset.mobPinCol) : -1,
     getStateForTable: table => table ? getOrCreateState(table.dataset.colMgrId, false) : null,
-    getEffectiveHiddenCols: table => table ? computeEffectiveHidden(table, getOrCreateState(table.dataset.colMgrId, false), extractHeaderLabels(table).length).eff : new Set()
+    getEffectiveHiddenCols: table => (table && table.matches && table.matches('table.ledger-table, table.m-grid, table.rdl-table'))
+      ? computeEffectiveHidden(table, getOrCreateState(table.dataset.colMgrId, false), extractHeaderLabels(table).length).eff
+      : new Set()
   };
 })();

@@ -14,6 +14,15 @@
 .apv-head-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1 1 320px; }
 .apv-head-title > svg { width: 22px; height: 22px; flex: 0 0 auto; color: var(--brass-strong, var(--brass)); margin-top: 2px; }
 .apv-head h2 { margin: 0; font-size: 16px; color: var(--ink); }
+.apv-head-acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.apv-push { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.apv-push[hidden] { display: none !important; }
+.apv-push .btn svg, .apv-push-note > svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.apv-push-note { display: inline-flex; align-items: flex-start; gap: 6px; font-size: 12px; line-height: 1.45; color: var(--ink-2); min-width: 0; max-width: 420px; overflow-wrap: anywhere; }
+.apv-push-note > svg { margin-top: 1px; color: var(--muted); }
+.apv-push-note.ok { color: var(--good, #1F7A4C); font-weight: 600; }
+.apv-push-note.ok > svg { color: currentColor; }
+.apv-push-note.warn { color: var(--warn); }
 .apv-head p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
 .apv-section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
 .apv-section .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }

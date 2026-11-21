@@ -679,6 +679,36 @@ def main() -> int:  # noqa: PLR0915
               and RB._live_evidence(C, eSO, [{"sha": git(B, "rev-parse", "HEAD")}])[0] is True,
               "the next leader deploys it; a recorded deploy that contains the change is the evidence")
 
+        # 13g2. status labels a quiet entry whose change is already on main and live; it only reads, never clears
+        feature(appC, "wt/sl", {"js/sl.js": "sl\n"})
+        tick()
+        eSL = quiet(RB.join, C, holder="session C", summary="SL, pushed by hand", app_branch="wt/sl")
+        feature(appD, "wt/sq", {"js/sq.js": "sq\n"})
+        tick()
+        eSQ = quiet(RB.join, D, holder="session D", summary="SQ, not on main", app_branch="wt/sq")
+        git(appC, "push", "-q", "origin", "wt/sl:main")  # its session pushed isabi-app main itself (live serves it), then went quiet
+        fresh = RB.status(A)
+        for quiet_one in (eSL, eSQ):  # last seen four hours ago (the clock stays put: 13i counts hours from the releases above)
+            RB._set_fields(A, quiet_one["id"], {"seenAt": RL._iso(RL._now() - dt.timedelta(hours=4))})
+        st_sl = RB.status(A)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            RB._print_status(st_sl)
+        rows = {ln.split("]")[0].split("[")[-1]: ln for ln in buf.getvalue().splitlines() if "[" in ln}
+        check(eSL["id"] not in fresh["alreadyLive"] and list(st_sl["alreadyLive"]) == [eSL["id"]] and st_sl["alreadyLive"][eSL["id"]]
+              and "ALREADY LIVE" in rows.get(eSL["id"], "") and "STALE: no sign" in rows.get(eSQ["id"], "")
+              and entry(A, eSL["id"]).get("state") == "waiting" and line_ids(A, "waiting") == [eSL["id"], eSQ["id"]],
+              "status labels a quiet entry already on main and live as ALREADY LIVE, leaves a quiet unshipped one STALE, changes nothing")
+        live_was = os.environ[LIVE]
+        os.environ[LIVE] = "19.6.100"
+        behind = RB.status(A)["alreadyLive"]
+        os.environ[LIVE] = "unreadable"
+        unreadable = RB.status(A)["alreadyLive"]
+        os.environ[LIVE] = live_was
+        check(behind == {} and unreadable == {}, "on main is not live: no label while live serves an older version or cannot be read")
+        quiet(RB.leave, C, eSL["id"])
+        quiet(RB.leave, D, eSQ["id"])
+
         # 13h. two takes at once in one worktree: only one builds the batch, and the other does not give the lock away
         feature(appB, "wt/g1", {"js/g1.js": "g1\n"})
         tick()

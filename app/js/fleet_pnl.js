@@ -14,25 +14,36 @@
 (function () {
   'use strict';
 
+  // Owners and drivers of the partner trucks come from the private name book (session seed):
+  // `truck_people`, `truck_cohorts` and `driver_truck_hints`. This public file keeps neutral labels only.
+  function nbMap(key) {
+    var b = window.MFG_NAMEBOOK;
+    return (b && typeof b.map === 'function') ? b.map(key) : {};
+  }
+  function nbList(key) {
+    var b = window.MFG_NAMEBOOK;
+    return (b && typeof b.list === 'function') ? b.list(key) : [];
+  }
+
   var TRUCK_META = {
     TB1: {
-      code: 'TB1', displayCode: 'TB1', plate: '360676', owner: 'Karim Bdeir',
-      driver: 'Majed Karam / Ahmad Hamoud', driverShort: 'Majed Karam',
+      code: 'TB1', displayCode: 'TB1', plate: '360676', owner: 'Partner Truck',
+      driver: 'Assigned Driver', driverShort: 'Driver',
       color: '#1D4ED8', bg: 'rgba(29, 78, 216, 0.08)', border: 'rgba(29, 78, 216, 0.28)'
     },
     Tb7: {
-      code: 'Tb7', displayCode: 'Tb7', plate: '364656', owner: 'Hussein Bdeir',
-      driver: 'Mohamad Habib', driverShort: 'Mohamad Habib',
+      code: 'Tb7', displayCode: 'Tb7', plate: '364656', owner: 'Partner Truck',
+      driver: 'Assigned Driver', driverShort: 'Driver',
       color: '#0F766E', bg: 'rgba(15, 118, 110, 0.08)', border: 'rgba(15, 118, 110, 0.28)'
     },
     Tb9: {
-      code: 'Tb9', displayCode: 'Tb9', plate: '364168', owner: 'Jad Bdeir',
-      driver: 'Ali Saleh', driverShort: 'Ali Saleh',
+      code: 'Tb9', displayCode: 'Tb9', plate: '364168', owner: 'Partner Truck',
+      driver: 'Assigned Driver', driverShort: 'Driver',
       color: '#B45309', bg: 'rgba(180, 83, 9, 0.08)', border: 'rgba(180, 83, 9, 0.28)'
     },
     TB8: {
       code: 'TB8', displayCode: 'TB8', plate: '360678', owner: 'WTC Fleet',
-      driver: 'Ibrahim / WTC Pool', driverShort: 'WTC Pool',
+      driver: 'WTC Pool Driver', driverShort: 'WTC Pool',
       color: '#4338CA', bg: 'rgba(67, 56, 202, 0.08)', border: 'rgba(67, 56, 202, 0.28)'
     },
     Tb4: {
@@ -56,9 +67,16 @@
     { id: 'bdeir3', label: 'Bdeir Fleet (3: TB1 · Tb7 · Tb9)', trucks: ['TB1', 'Tb7', 'Tb9'] },
     { id: 'wtc4', label: 'WTC Own Trucks (4: TB8 · Tb4 · TB3 · Tb2)', trucks: ['TB8', 'Tb4', 'TB3', 'Tb2'] },
     { id: 'core7', label: 'Core 7 Trucks', trucks: ['Tb7', 'Tb9', 'TB1', 'TB8', 'Tb4', 'TB3', 'Tb2'] },
-    { id: 'afif', label: 'Afif & Ibrahim Bdeir', trucks: ['Afif Bdeir', 'Ibrahim Bdeir'] },
     { id: 'top10', label: 'Top Active Haulers', trucks: [] }
   ];
+  // Built-in cohorts plus any named hauler cohorts from the private name book (inserted before Top 10).
+  function getCohorts() {
+    var extra = nbList('truck_cohorts').filter(function (c) {
+      return c && c.id && c.label && Array.isArray(c.trucks) && !COHORTS.some(function (b) { return b.id === c.id; });
+    });
+    if (!extra.length) return COHORTS;
+    return COHORTS.slice(0, COHORTS.length - 1).concat(extra, COHORTS.slice(COHORTS.length - 1));
+  }
 
   var STATE = {
     mode: 'strict',         // 'recorded' | 'strict' | 'full'
@@ -142,7 +160,13 @@
 
   function getTruckMeta(code) {
     var c = normTruckCode(code);
-    if (TRUCK_META[c]) return TRUCK_META[c];
+    if (TRUCK_META[c]) {
+      var ppl = nbMap('truck_people')[c];
+      if (!ppl || typeof ppl !== 'object') return TRUCK_META[c];
+      var merged = Object.assign({}, TRUCK_META[c]);
+      ['owner', 'driver', 'driverShort'].forEach(function (k) { if (ppl[k]) merged[k] = String(ppl[k]); });
+      return merged;
+    }
     var palette = ['#2563EB', '#0D9488', '#D97706', '#7C3AED', '#DB2777', '#0284C7', '#4F46E5'];
     var h = 0;
     for (var i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) % palette.length;
@@ -238,9 +262,16 @@
       if (byEq) return byEq;
     }
     var d = String(driverName || '').toLowerCase();
-    if (d.indexOf('habib') >= 0) return 'Tb7';
-    if (d.indexOf('ali saleh') >= 0) return 'Tb9';
-    if (d.indexOf('majed') >= 0 || d.indexOf('karam') >= 0 || d.indexOf('hamoud') >= 0 || d.indexOf('hammoud') >= 0) return 'TB1';
+    if (!d) return '';
+    var hints = nbList('driver_truck_hints');
+    for (var i = 0; i < hints.length; i++) {
+      var h = hints[i];
+      if (!h || !h.truck || !Array.isArray(h.match)) continue;
+      for (var j = 0; j < h.match.length; j++) {
+        var m = String(h.match[j] || '').toLowerCase();
+        if (m && d.indexOf(m) >= 0) return h.truck;
+      }
+    }
     return '';
   }
 
@@ -1028,7 +1059,7 @@
 
   function renderTruckFilterBar(model, ds) {
     var sel = selectedTruckCodes();
-    var cohortHtml = COHORTS.map(function (c) {
+    var cohortHtml = getCohorts().map(function (c) {
       var active = STATE.cohort === c.id ? ' active' : '';
       return '<button type="button" class="fpnl-cohort-pill' + active + '" data-fpnl-cohort="' + esc(c.id) + '"><span>' + esc(c.label) + '</span></button>';
     }).join('');
@@ -2097,7 +2128,7 @@
         STATE.cohort = cid;
         STATE.focusedTruck = 'ALL';
         var ds = getActiveDataset();
-        var found = COHORTS.filter(function (c) { return c.id === cid; })[0];
+        var found = getCohorts().filter(function (c) { return c.id === cid; })[0];
         if (found && found.trucks && found.trucks.length) {
           STATE.selectedTrucks = found.trucks.slice();
         } else {

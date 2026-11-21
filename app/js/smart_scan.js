@@ -163,7 +163,7 @@
         date: '2026-10-20',
         company: 'WTC',
         partyRole: 'Site Owner',
-        counterparty: 'Awad',
+        counterparty: 'Walid Azar',
         metaLine1: 'Site: Sibline · Material Product: Raml Bab Thani',
         metaLine2: 'Truck: 353387 · Transported By: Company fleet',
         lines: [
@@ -3498,7 +3498,7 @@
         ide_id: 'LSE-4235-992',
         ide_property: '4235 Msaytbeh Commercial Center',
         ide_unit: 'Floor 4 Medical Suite (260 m2)',
-        ide_tenant: 'Mazen (Unesco Pharmacy)',
+        ide_tenant: 'Cedar Pharmacy',
         ide_start_date: '2026-11-01',
         ide_end_date: '2029-10-31',
         ide_freq: 'Quarterly',
@@ -4167,35 +4167,48 @@
   }
 
   // ==================== BILINGUAL IDENTITY SCAN & FATHER'S NAME BACKFILL ====================
-  const AR_TO_LATIN_WORDS = {
-    'محمد': 'Mohamad', 'احمد': 'Ahmad', 'أحمد': 'Ahmad', 'علي': 'Ali', 'حسين': 'Hussein',
-    'حسن': 'Hassan', 'عباس': 'Abbas', 'مهدي': 'Mahdi', 'مصطفى': 'Mostafa', 'محمود': 'Mahmoud',
+  const BASE_AR_TO_LATIN_WORDS = {
+    'علي': 'Ali', 'حسين': 'Hussein', 'حسن': 'Hassan', 'عباس': 'Abbas', 'محمود': 'Mahmoud',
     'ابراهيم': 'Ibrahim', 'إبراهيم': 'Ibrahim', 'خليل': 'Khalil', 'بلال': 'Bilal', 'خزعل': 'Khazaal',
-    'يوسف': 'Youssef', 'شربل': 'Charbel', 'ايلي': 'Elie', 'إيلي': 'Elie', 'جورج': 'Georges',
-    'مارك': 'Mark', 'طوني': 'Tony', 'فادي': 'Fadi', 'شادي': 'Chadi', 'رامي': 'Rami',
-    'سامي': 'Sami', 'وسام': 'Wissam', 'ربيع': 'Rabea', 'ماجد': 'Majed', 'ماهر': 'Maher',
-    'كريم': 'Karim', 'طارق': 'Tarek', 'زياد': 'Ziad', 'وليد': 'Walid', 'خالد': 'Khaled',
-    'سمير': 'Samir', 'عمر': 'Omar', 'غسان': 'Ghassan', 'عادل': 'Adel', 'جهاد': 'Jihad',
-    'منصور': 'Mansour', 'سعيد': 'Said', 'نبيل': 'Nabil', 'فيصل': 'Faisal', 'شريف': 'Sharif',
-    'جمال': 'Jamal', 'عماد': 'Imad', 'جاسم': 'Jasem', 'رياض': 'Riyad', 'أيمن': 'Ayman',
-    'ايمن': 'Ayman', 'موفق': 'Mwafak', 'ياسين': 'Yassin', 'سهيب': 'Soheib', 'رشاد': 'Rashad',
+    'يوسف': 'Youssef', 'جورج': 'Georges', 'مارك': 'Mark', 'فادي': 'Fadi', 'شادي': 'Chadi',
+    'رامي': 'Rami', 'ربيع': 'Rabea', 'كريم': 'Karim', 'طارق': 'Tarek', 'زياد': 'Ziad',
+    'وليد': 'Walid', 'سمير': 'Samir', 'غسان': 'Ghassan', 'منصور': 'Mansour', 'سعيد': 'Said',
+    'نبيل': 'Nabil', 'فيصل': 'Faisal', 'ياسين': 'Yassin', 'سهيب': 'Soheib',
     'منال': 'Manal', 'زينب': 'Zeinab', 'فاطمة': 'Fatima', 'مريم': 'Mariam', 'نور': 'Nour',
     'سارة': 'Sara', 'ايه': 'Aya', 'آية': 'Aya', 'صباح': 'Sabah',
-    'بدوي': 'Badawi', 'مرتضى': 'Mortada', 'صالح': 'Saleh', 'سلامة': 'Salameh', 'حمود': 'Hammoud',
-    'نجدي': 'Najdi', 'حرب': 'Harb', 'كرم': 'Karam', 'حداد': 'Hadad', 'قسيس': 'Kassis',
-    'خميس': 'Khames', 'زهرة': 'Zahra', 'اسماعيل': 'Ismail', 'إسماعيل': 'Ismail', 'عبدالله': 'Abdallah',
-    'دخلول': 'Dakhloul', 'مغسل': 'Maghsal', 'ملاعب': 'Mlaab', 'ركين': 'Rkein', 'حبيب': 'Habib',
-    'سلوم': 'Saloum', 'ناصر': 'Nasser', 'نصار': 'Nassar', 'كصّاب': 'Kassab', 'كساب': 'Kassab', 'عواد': 'Awad',
-    'موسى': 'Moussa', 'عيسى': 'Issa', 'نعمة': 'Naameh', 'مشعل': 'Mashaal', 'جعويك': 'Jaawik',
-    'الشريف': 'Al Sharif', 'المرتضى': 'Al Mortada', 'الحاج': 'Al Hajj', 'اللطيف': 'Al Latif',
-    'ال': 'Al', 'ابو': 'Abou', 'أبو': 'Abou', 'عبد': 'Abed', 'علاء': 'Ala', 'الدين': 'Eddine', 'تيه': 'Tayeh'
+    'حرب': 'Harb', 'كرم': 'Karam', 'حداد': 'Hadad', 'قسيس': 'Kassis', 'خميس': 'Khames',
+    'ال': 'Al', 'ابو': 'Abou', 'أبو': 'Abou', 'علاء': 'Ala', 'الدين': 'Eddine', 'تيه': 'Tayeh'
   };
 
-  const LATIN_TO_AR_WORDS = Object.create(null);
-  Object.keys(AR_TO_LATIN_WORDS).forEach(arW => {
-    const k = String(AR_TO_LATIN_WORDS[arW] || '').toLowerCase();
-    if (k && !LATIN_TO_AR_WORDS[k]) LATIN_TO_AR_WORDS[k] = arW;
-  });
+  let _nbCacheSrc = null;
+  let _nbCacheArToLat = null;
+  let _nbCacheLatToAr = null;
+  let _nbCachePatSet = null;
+  const _EMPTY_NB_OBJ = Object.freeze({});
+  function _refreshNameBookTables() {
+    const book = (typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.get === 'function')
+      ? (window.MFG_NAMEBOOK.get() || _EMPTY_NB_OBJ)
+      : _EMPTY_NB_OBJ;
+    if (book === _nbCacheSrc && _nbCacheArToLat && _nbCacheLatToAr && _nbCachePatSet) return;
+    _nbCacheSrc = book;
+    const arMap = Object.assign({}, BASE_AR_TO_LATIN_WORDS);
+    const privAr = book && typeof book.ar_latin_words === 'object' && book.ar_latin_words ? book.ar_latin_words : null;
+    if (privAr) Object.assign(arMap, privAr);
+    const latMap = Object.create(null);
+    Object.keys(arMap).forEach(arW => {
+      const k = String(arMap[arW] || '').toLowerCase();
+      if (k && !latMap[k]) latMap[k] = arW;
+    });
+    const patSet = new Set(BASE_COMPOUND_PATRONYMIC_BLOCK);
+    const privPat = Array.isArray(book && book.patronymic_tokens) ? book.patronymic_tokens : null;
+    if (privPat) privPat.forEach(t => { if (t) patSet.add(String(t).toLowerCase()); });
+    _nbCacheArToLat = arMap;
+    _nbCacheLatToAr = latMap;
+    _nbCachePatSet = patSet;
+  }
+  function getArToLatinWords() { _refreshNameBookTables(); return _nbCacheArToLat; }
+  function getLatinToArWords() { _refreshNameBookTables(); return _nbCacheLatToAr; }
+  function isCompoundPatronymicToken(tok) { _refreshNameBookTables(); return _nbCachePatSet.has(tok); }
 
   const AR_CHAR_MAP = {
     'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'aa', 'ب': 'b', 'ت': 't', 'ث': 'th',
@@ -4229,9 +4242,9 @@
     { latin: 'French', ar: 'فرنسي', rx: /(فرنس(?:ي|يه|ية)|french|fran[cç]ais(?:e)?)/i }
   ];
 
-  const COMPOUND_PATRONYMIC_BLOCK = new Set([
-    'al', 'el', 'ul', 'il', 'abou', 'abu', 'abo', 'abi', 'abed', 'abd', 'abdel', 'abdul',
-    'ben', 'bin', 'bint', 'ibn', 'oum', 'um', 'umm', 'ala', 'alaa', 'eddine', 'eldine', 'aldin', 'eldin',
+  const BASE_COMPOUND_PATRONYMIC_BLOCK = new Set([
+    'al', 'el', 'ul', 'il', 'abou', 'abu', 'abo', 'abi', 'abd', 'abdel', 'abdul',
+    'ben', 'bin', 'bint', 'ibn', 'oum', 'um', 'umm', 'ala', 'eddine', 'eldine', 'aldin', 'eldin',
     'din', 'deen', 'allah', 'oulah', 'st', 'saint', 'de', 'la', 'del', 'da', 'di', 'van', 'von',
     'driver', 'worker', 'staff', 'chef', 'eng', 'dr', 'mr', 'mrs', 'ms',
     'ال', 'ابو', 'أبو', 'ابي', 'أبي', 'ام', 'أم', 'عبد', 'بن', 'بنت', 'ابن', 'علاء', 'الدين', 'الله'
@@ -4266,15 +4279,16 @@
     if (!clean) return '';
     if (!hasArabicScript(clean)) return titleCaseLatin(clean);
     const words = clean.split(/\s+/).filter(Boolean);
+    const arToLatin = getArToLatinWords();
     const out = [];
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
       const noDiac = w.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ة');
-      if (AR_TO_LATIN_WORDS[w]) { out.push(AR_TO_LATIN_WORDS[w]); continue; }
-      if (AR_TO_LATIN_WORDS[noDiac]) { out.push(AR_TO_LATIN_WORDS[noDiac]); continue; }
+      if (arToLatin[w]) { out.push(arToLatin[w]); continue; }
+      if (arToLatin[noDiac]) { out.push(arToLatin[noDiac]); continue; }
       if (w.startsWith('ال') && w.length > 3) {
         const tail = w.slice(2);
-        const mappedTail = AR_TO_LATIN_WORDS[tail] || transliterateArabicNameToLatin(tail);
+        const mappedTail = arToLatin[tail] || transliterateArabicNameToLatin(tail);
         if (mappedTail) { out.push('Al ' + mappedTail); continue; }
       }
       let buf = '';
@@ -4294,12 +4308,13 @@
     if (!clean) return '';
     if (hasArabicScript(clean)) return cleanArabicRaw(clean);
     const words = clean.split(/\s+/).filter(Boolean);
+    const latinToAr = getLatinToArWords();
     const out = [];
     for (const w of words) {
       const cleanW = w.replace(/[^A-Za-z'-]/g, '');
       if (!cleanW) continue;
       const lw = cleanW.toLowerCase();
-      if (LATIN_TO_AR_WORDS[lw]) { out.push(LATIN_TO_AR_WORDS[lw]); continue; }
+      if (latinToAr[lw]) { out.push(latinToAr[lw]); continue; }
       let idx = 0;
       let arBuf = '';
       while (idx < lw.length) {
@@ -4858,14 +4873,14 @@
           <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الجمهورية اللبنانية - وزارة العمل - بطاقة إجازة عمل</text>
           <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#FEF3C7">Ministry of Labour - Work Permit Card</text>
           <text x="604" y="98" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1F2937">الاسم الكامل: طارق منصور</text>
-          <text x="604" y="126" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">اسم الأب: عادل</text>
+          <text x="604" y="126" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">اسم الأب: سليم</text>
           <text x="604" y="154" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">تاريخ الولادة: 1991-05-18</text>
           <text x="604" y="182" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">الجنسية: سوري</text>
           <text x="604" y="210" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#92400E">رقم إجازة العمل: WP-2026-4418</text>
           <text x="604" y="236" text-anchor="end" font-family="monospace" font-size="13" fill="#B91C1C">تاريخ الانتهاء: 2026-12-05</text>
           <line x1="36" y1="254" x2="604" y2="254" stroke="#E5E7EB"/>
           <text x="36" y="284" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Tariq Mansour</text>
-          <text x="36" y="308" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Adel</text>
+          <text x="36" y="308" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Salim</text>
           <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Syrian</text>
           <text x="36" y="356" font-family="monospace" font-size="12.5" fill="#92400E">Work Permit No: WP-2026-4418</text>
           <text x="36" y="380" font-family="monospace" font-size="12.5" fill="#B91C1C">Work Permit Expiry: 2026-12-05</text>
@@ -4877,14 +4892,14 @@
           <rect x="0" y="0" width="640" height="62" rx="14" fill="#115E59"/>
           <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">المديرية العامة للأمن العام - بطاقة إقامة</text>
           <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#CCFBF1">General Security - Residency Permit</text>
-          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">الاسم الكامل: مازن حسن</text>
-          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: فؤاد</text>
+          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">الاسم الكامل: زياد خليل</text>
+          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: كريم</text>
           <text x="604" y="162" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">الجنسية: مصري</text>
           <text x="604" y="194" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#0F766E">رقم الإقامة: RP-2026-9912</text>
           <text x="604" y="222" text-anchor="end" font-family="monospace" font-size="13" fill="#B91C1C">انتهاء الإقامة: 2026-12-12</text>
           <line x1="36" y1="248" x2="604" y2="248" stroke="#CBD5E1"/>
-          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Mazen Hassan</text>
-          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Fouad</text>
+          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Ziad Khalil</text>
+          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Karim</text>
           <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Egyptian</text>
           <text x="36" y="358" font-family="monospace" font-size="12.5" fill="#0F766E">Residency Permit No: RP-2026-9912</text>
           <text x="36" y="382" font-family="monospace" font-size="12.5" fill="#B91C1C">Residency Expiry: 2026-12-12</text>
@@ -4896,14 +4911,14 @@
           <rect x="0" y="0" width="640" height="62" rx="14" fill="#1E3A8A"/>
           <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الصندوق الوطني للضمان الاجتماعي - بطاقة المضمون</text>
           <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#DBEAFE">National Social Security Fund (NSSF) - Lebanon</text>
-          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">اسم المضمون وشهرته: بلال بدوي</text>
-          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: خزعل</text>
+          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">اسم المضمون وشهرته: بلال كرم</text>
+          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: نبيل</text>
           <text x="604" y="162" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">تاريخ الولادة: ١٤/٠٣/١٩٨٩</text>
           <text x="604" y="192" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">الجنسية: لبناني</text>
           <text x="604" y="222" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#1E40AF">رقم التسجيل: 882419-03</text>
           <line x1="36" y1="248" x2="604" y2="248" stroke="#CBD5E1"/>
-          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Bilal Badawi</text>
-          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Khazaal</text>
+          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Bilal Karam</text>
+          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Nabil</text>
           <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">DOB: 14/03/1989</text>
           <text x="36" y="358" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Lebanese</text>
           <text x="36" y="382" font-family="monospace" font-size="12.5" fill="#475569">NSSF No: 882419-03</text>
@@ -4919,14 +4934,14 @@
           <path d="M52 198 C52 168 124 168 124 198" fill="#B8AA96"/>
           <text x="606" y="102" text-anchor="end" font-family="sans-serif" font-size="15.5" font-weight="700" fill="#1F1914">الاسم: رامي</text>
           <text x="606" y="130" text-anchor="end" font-family="sans-serif" font-size="15.5" font-weight="700" fill="#1F1914">الشهرة: قسيس</text>
-          <text x="606" y="158" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأب: محمد</text>
-          <text x="606" y="186" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأم وشهرتها: زينب صالح</text>
+          <text x="606" y="158" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأب: نبيل</text>
+          <text x="606" y="186" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأم وشهرتها: مريم منصور</text>
           <text x="606" y="214" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">تاريخ الولادة: ٢٢/٠٧/١٩٩٢</text>
           <text x="606" y="242" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">الجنسية: لبناني</text>
           <text x="606" y="268" text-anchor="end" font-family="monospace" font-size="13" font-weight="700" fill="#8C5E14">رقم الهوية: 0004918275</text>
           <line x1="32" y1="286" x2="606" y2="286" stroke="#DED6C8"/>
           <text x="32" y="314" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#1F1914">Full Name: Rami Kassis</text>
-          <text x="32" y="338" font-family="sans-serif" font-size="13" fill="#3B3128">Father's Name: Mohamad</text>
+          <text x="32" y="338" font-family="sans-serif" font-size="13" fill="#3B3128">Father's Name: Nabil</text>
           <text x="32" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">DOB: 22/07/1992</text>
           <text x="270" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">Nationality: Lebanese</text>
         </svg>`;
@@ -5112,7 +5127,7 @@
     }
     const lowTokens = norm(s).split(/\s+/).filter(Boolean);
     if (!lowTokens.length || lowTokens.length > 3) return '';
-    if (lowTokens.every(t => COMPOUND_PATRONYMIC_BLOCK.has(t))) return '';
+    if (lowTokens.every(t => isCompoundPatronymicToken(t))) return '';
     if (/^(wtc|bbco|bbconstruction|lions|lions transport|la una|blanca|palms|voile|platinum|korri|korri auto|shacman|properties|bdeir holding|driver|staff|pending|open|current|ended|active|monthly|daily|male|female)$/i.test(s)) {
       return '';
     }
@@ -5126,7 +5141,7 @@
     const tokens = lat.split(/\s+/).filter(Boolean);
     if (tokens.length < 3 || baseTokens.length < 2) return null;
     const normToks = tokens.map(t => norm(t));
-    if (normToks.some(t => COMPOUND_PATRONYMIC_BLOCK.has(t))) return null;
+    if (normToks.some(t => isCompoundPatronymicToken(t))) return null;
     const firstSim = jaroWinklerSim(baseTokens[0], tokens[0]);
     const lastSim = jaroWinklerSim(baseTokens[baseTokens.length - 1], tokens[tokens.length - 1]);
     if (firstSim < 0.86 || lastSim < 0.86) return null;
@@ -5536,7 +5551,7 @@
       }
       if (sm.notes || sm.reference) inspectOperationalRow(sm, rawName, 'Staff Profile');
 
-      // 3. Historical / cross-record 3-part name match (e.g. Bilal Badawi -> Bilal Khazaal Badawi)
+      // 3. Historical / cross-record 3-part name match (e.g. Bilal Karam -> Bilal Nabil Karam)
       if (baseTokens.length === 2) {
         for (const mc of multiNameCorpus) {
           if (mc.company && smCo && norm(mc.company) !== norm(smCo)) continue;

@@ -36,6 +36,7 @@ import {
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
+import { isWebPushConfigured, sendOverrideRequestPush } from './approval_push.js';
 import { validateBase64MediaDataUrl } from './gemini.js';
 import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.js';
 
@@ -91,6 +92,109 @@ export function isServerOwnedCustomRow(bucket, rowId) {
 // targets a server-owned till close row is not stored either, so it cannot restate the till's totals.
 export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
+}
+
+// Sent statement marks and the Owner's Rate Changes marks: who may change them (owner 2026-11-21).
+// Same rule as the app (setStatementWatermark / clearStatementWatermark / canViewRateChanges) and as
+// _guarded_workflow_mark_error in isabi-app/server.py. Checked only when a write changes the mark.
+const STMT_SENT_MARK_RE = /^WF::statement_watermark::/i;
+const RATE_CHANGE_OWNER_MARK_RE = /^WF::rate_change_(?:review|settings)::/i;
+
+export function isGuardedWorkflowMarkKey(editKey) {
+  const k = String(editKey || '');
+  return STMT_SENT_MARK_RE.test(k) || RATE_CHANGE_OWNER_MARK_RE.test(k);
+}
+
+// The app reads `cleared` and `voided` as JavaScript truthy values (statementLockIndex): so does this check
+function stmtMarkActiveThrough(obj) {
+  if (!obj || typeof obj !== 'object' || obj.voided || obj.cleared) return '';
+  const d = String(obj.confirmed_through || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+}
+
+// What a mark locks: the party, its type, the industry and the company (the app files a mark under these fields,
+// not under its key). Compared exactly as the app's norm() reads them (trim, lower case, inner spacing kept), so a
+// re-mark that only re-types the company's case matches and any other difference counts as another party.
+function stmtMarkIdentity(obj) {
+  const o = obj && typeof obj === 'object' ? obj : {};
+  const n = v => String(v == null ? '' : v).trim().toLowerCase();
+  const co = n(o.company);
+  const allCo = !co || co === 'all' || co === 'group' || co === 'all companies' || co === 'consolidated' || co === 'manufacturing-group' || /group$/.test(co);
+  return [n(o.party_name), n(o.party_type) === 'supplier' ? 'supplier' : 'customer', n(o.industry) || 'manufacturing', allCo ? 'all' : co].join('|');
+}
+
+// '' when the seat may make this change to the mark, else the refusal text. nextObj null = removed.
+export function guardedWorkflowMarkError(editKey, prevObj, nextObj, perms) {
+  const k = String(editKey || '');
+  const p = perms || {};
+  if (RATE_CHANGE_OWNER_MARK_RE.test(k)) {
+    return p.roleKey === 'Full Access (Owner)' ? '' : 'Only the Owner can review rate changes or change the alert amount.';
+  }
+  if (STMT_SENT_MARK_RE.test(k)) {
+    if (!p.modifyData && !p.voidData) return 'Only a finance or supervisor seat can mark a statement as sent.';
+    if (p.voidData) return '';
+    const was = stmtMarkActiveThrough(prevObj);
+    if (!was) return '';
+    const now = nextObj ? stmtMarkActiveThrough(nextObj) : '';
+    // Removing it, moving it earlier, or filing it under another party or company all free the records it locks
+    if (!now || now < was || stmtMarkIdentity(prevObj) !== stmtMarkIdentity(nextObj)) {
+      return 'Only a supervisor can remove a sent mark or move it to an earlier date.';
+    }
+  }
+  return '';
+}
+
+// /sync: a change to one of these marks the seat may not make keeps the stored mark (a new one is dropped). The
+// stored mark is the D1 row and the copy in the sync document (`d1Map`, edit key -> row object): the change must pass
+// against both (POST /industry_domain_store writes only the table), and the later of the two is put back.
+export function enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, perms, d1Map = null) {
+  if (!incomingDoc || typeof incomingDoc !== 'object') return incomingDoc;
+  const prevIre = (prevDoc && prevDoc.industryRowEdits && typeof prevDoc.industryRowEdits === 'object') ? prevDoc.industryRowEdits : {};
+  // A save that leaves the row edits out would store the document without them, and the table copy would then drop
+  // every mark: for any seat but the Owner, a missing store means unchanged
+  if ((!incomingDoc.industryRowEdits || typeof incomingDoc.industryRowEdits !== 'object')) {
+    if ((perms || {}).roleKey === 'Full Access (Owner)') return incomingDoc;
+    if (Object.keys(prevIre).length) incomingDoc.industryRowEdits = Object.assign({}, prevIre);
+    else return incomingDoc;
+  }
+  const inc = incomingDoc.industryRowEdits;
+  const dm = d1Map instanceof Map ? d1Map : new Map();
+  const keys = new Set([...Object.keys(prevIre), ...Object.keys(inc), ...dm.keys()]);
+  for (const ek of keys) {
+    if (!isGuardedWorkflowMarkKey(ek)) continue;
+    const kv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+    const db = dm.get(ek) || null;
+    const iv = inc[ek] && typeof inc[ek] === 'object' ? inc[ek] : null;
+    const bases = [db, kv].filter(Boolean);
+    if (!bases.length && !iv) continue;
+    if (iv && bases.length && bases.every(b => stableRowSig(b) === stableRowSig(iv))) continue;
+    const refused = bases.length
+      ? bases.some(b => guardedWorkflowMarkError(ek, b, iv, perms))
+      : Boolean(guardedWorkflowMarkError(ek, null, iv, perms));
+    if (!refused) continue;
+    const keep = bases.length ? pickSyncBase(db, kv) : null;
+    if (keep) inc[ek] = keep;
+    else delete inc[ek];
+  }
+  return incomingDoc;
+}
+
+// The same, reading the D1 rows of every guarded key first
+export async function enforceGuardedWorkflowMarksOnSyncDb(db, incomingDoc, prevDoc, perms) {
+  const d1Map = new Map();
+  if (db && incomingDoc && typeof incomingDoc === 'object') {
+    try {
+      const res = await db.prepare("SELECT edit_key, voided, payload_json FROM industry_row_edits WHERE edit_key LIKE 'WF::statement_watermark::%' OR edit_key LIKE 'WF::rate_change_%'").all();
+      for (const r of (res && res.results) || []) {
+        const ek = String(r.edit_key || '');
+        if (!isGuardedWorkflowMarkKey(ek)) continue;
+        const obj = safeJsonParse(r.payload_json, {});
+        if (Number(r.voided || 0)) obj.voided = true;
+        d1Map.set(ek, obj);
+      }
+    } catch (_) {}
+  }
+  return enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, perms, d1Map);
 }
 
 function createPurgeOverrideAccumulator() {
@@ -808,7 +912,9 @@ function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   if (!validSamples.length && d.face_updated_at) d.face_cleared = true;
   else delete d.face_cleared;
   d.custom_perms = safeJsonParse(d.custom_perms, null);
-  if (d.custom_perms && typeof d.custom_perms !== 'object') d.custom_perms = null;
+  if (!d.custom_perms || typeof d.custom_perms !== 'object' || Array.isArray(d.custom_perms) || !Object.keys(d.custom_perms).length) {
+    d.custom_perms = null;
+  }
   // Never expose raw 128-d biometric vectors over HTTP; keep verification strictly server-side
   d.face_redacted = Boolean(d.face_enrolled);
   delete d.face_samples;
@@ -1837,13 +1943,39 @@ function publicOverrideRequest(row, nowIso = new Date().toISOString()) {
   };
 }
 
-async function sweepExpiredOverrideRequests(db, nowIso) {
+// Web Push (functions/_lib/approval_push.js): tell eligible approvers about a new request, and close the
+// notification once it is decided, cancelled or expired. Runs after the response (context.waitUntil), is a
+// no-op until VAPID is configured (env vars or shared D1 keypair), and uses the same eligibility rule as the inbox above.
+function dispatchOverridePush(context, env, reqRow, kind) {
+  if (!reqRow || !isWebPushConfigured(env)) return null;
+  const db = env.DB;
+  const job = sendOverrideRequestPush(env, reqRow, kind, {
+    isEligible: (approverRow, callerRow, r) => isEligibleOverrideApprover(approverRow, r, callerRow),
+    loadUserRowById: (id) => loadUserRowById(db, id)
+  }).catch(() => null);
+  if (context && typeof context.waitUntil === 'function') {
+    try { context.waitUntil(job); } catch (_) {}
+  }
+  return job;
+}
+
+async function sweepExpiredOverrideRequests(db, nowIso, context = null, env = null) {
   try {
+    if (env && isWebPushConfigured(env)) {
+      // Expire row by row so each approver's open notification can be closed (bounded per call).
+      const res = await db.prepare(
+        "SELECT * FROM override_requests WHERE status = 'pending' AND expires_at <= ?1 ORDER BY expires_at LIMIT 25"
+      ).bind(nowIso).all();
+      for (const row of (res.results || [])) {
+        const r = await db.prepare("UPDATE override_requests SET status = 'expired' WHERE id = ?1 AND status = 'pending'").bind(row.id).run();
+        if (r && r.meta && Number(r.meta.changes || 0) === 1) dispatchOverridePush(context, env, Object.assign({}, row, { status: 'expired' }), 'closed');
+      }
+    }
     await db.prepare("UPDATE override_requests SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?1").bind(nowIso).run();
   } catch (_) {}
 }
 
-export async function handleOverrideRequests(request, env, session, body, url) {
+export async function handleOverrideRequests(request, env, session, body, url, context = null) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (isDemoHeader(request)) {
     return jsonResponse({ ok: false, error: 'Override approval API is disabled for demo sandbox headers.' }, 403);
@@ -1874,10 +2006,14 @@ export async function handleOverrideRequests(request, env, session, body, url) {
         const ap = await loadUserRowById(db, me);
         if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
       }
+      // The requester's wait poll is usually the first to see a request run out: close approvers' notifications.
+      if (String(row.status || '') === 'pending' && effectiveOverrideStatus(row, nowIso) === 'expired' && isWebPushConfigured(env)) {
+        await sweepExpiredOverrideRequests(db, nowIso, context, env);
+      }
       return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
     }
     if (String(qp.get('status') || '').trim() === 'pending') {
-      await sweepExpiredOverrideRequests(db, nowIso);
+      await sweepExpiredOverrideRequests(db, nowIso, context, env);
       const ap = await loadUserRowById(db, me);
       if (!isActiveUserRow(ap)) return jsonResponse({ ok: true, requests: [] });
       const res = await db.prepare(
@@ -1891,7 +2027,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       return jsonResponse({ ok: true, requests: out });
     }
     if (String(qp.get('mine') || '').trim() === '1') {
-      await sweepExpiredOverrideRequests(db, nowIso);
+      await sweepExpiredOverrideRequests(db, nowIso, context, env);
       const since = new Date(nowMs - 86400000).toISOString();
       const res = await db.prepare(
         'SELECT * FROM override_requests WHERE caller_user_id = ?1 AND created_at > ?2 ORDER BY created_at DESC LIMIT 20'
@@ -1961,6 +2097,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       }
       return jsonResponse({ ok: false, rate_limited: true, error: `You can send at most ${OVR_REQ_MAX_PER_HOUR} approval requests per hour.` }, 429);
     }
+    dispatchOverridePush(context, env, row, 'new');
     return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
   }
 
@@ -1983,6 +2120,7 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       ).bind(id, nowIso, me).run();
       if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return conflict();
       const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+      dispatchOverridePush(context, env, fresh || Object.assign({}, row, { status: 'cancelled' }), 'closed');
       return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
     }
 
@@ -2034,9 +2172,11 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       ]);
       const after = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
       if (!after || String(after.audit_id || '') !== auditId) return conflict();
+      dispatchOverridePush(context, env, after, 'closed');
       return jsonResponse({ ok: true, request: publicOverrideRequest(after, nowIso) });
     }
     const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+    dispatchOverridePush(context, env, fresh || Object.assign({}, row, { status: 'denied' }), 'closed');
     return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
   }
 
@@ -3178,6 +3318,30 @@ function stripRegionZoneFields(targetObj) {
   return targetObj;
 }
 
+function normSiteRoadSurface(val) {
+  const s = String(val || '').trim().toLowerCase();
+  return (s === 'paved' || s === 'unpaved') ? s : '';
+}
+
+function hasSiteSurfaceMutation(canonTable, baseObj, nextObj) {
+  if (canonTable !== 'sites') return false;
+  const a = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  const b = (nextObj && typeof nextObj === 'object') ? nextObj : {};
+  if (!Object.prototype.hasOwnProperty.call(b, 'road_surface')) return false;
+  return normSiteRoadSurface(a.road_surface) !== normSiteRoadSurface(b.road_surface);
+}
+
+function restoreSiteSurfaceFromBase(targetObj, baseObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  if (Object.prototype.hasOwnProperty.call(base, 'road_surface') && base.road_surface !== undefined) {
+    targetObj.road_surface = base.road_surface;
+  } else {
+    delete targetObj.road_surface;
+  }
+  return targetObj;
+}
+
 function restoreVoidFieldsFromBase(targetObj, baseObj) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
@@ -3219,6 +3383,46 @@ function applyExplicitVoidReason(targetObj, incomingObj) {
 function isSyncTwinVoidBy(obj) {
   if (!obj || typeof obj !== 'object') return false;
   return /^(system-topup|sharepoint top-up)/i.test(String(obj.voided_by || obj.voidedBy || '').trim());
+}
+
+// The other five industries' dated schedules. A save from a later Start Date with another value keeps the row and adds
+// a new schedule under the id "<keptId>-YYYYMMDD" (app.js planSiblingChronoSplit), so two devices that have not synced
+// reach the same id on their own. Kept 1:1 with _SCHEDULE_SPLIT_BUCKETS in isabi-app/server.py.
+const SCHEDULE_SPLIT_BUCKETS = new Set(['hsp_tariffs', 're_leases', 'trd_targets', 'ins_agreements', 'hld_partners', 'hld_loans']);
+const VOIDED_ID_CONFLICT_CODE = 'voided_id_conflict';
+const VOIDED_ID_CONFLICT_ERROR = 'This schedule was saved and undone on another device. Refresh the page and save again.';
+
+// The stamp format both the app (Date.toISOString) and the two servers write: fixed width, so it compares as text
+const ISO_MS_Z_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
+const ASCII_ALNUM_RE = /[A-Za-z0-9]/;
+
+// A live schedule that a save kept apart, posted under an id whose stored row is another one's voided row. Only called
+// where the stored row is voided, the incoming one is live and its rev is not higher (a restore from the Void Log
+// raises the rev and never gets here). All of these must hold, or the row is left to the merge as before:
+// - the bucket is one of the six dated schedules;
+// - the incoming row was made by such a save (`_continues_id`, set by planSiblingChronoSplit): its id was worked out
+//   by the device, and the app gives the next save another id. A row keyed under an id typed in the form, or a device
+//   copy of a workbook row, is the same record on every device and is not judged here;
+// - the two rows were made separately: `_createdAt` is stamped once when a row is first made on a device and is
+//   carried by every later copy of it, its void included. A device sending its own older copy of the voided row
+//   carries the same stamp and is not a reuse;
+// - the incoming row was made after the stored one was voided (`voided_at`, stamped by the server when the void
+//   arrived). A live copy made before that is an older copy the device still holds and sends with every save,
+//   whatever its stamp (two devices can each have made the row before one of them undid it).
+// A field that is missing, not text or not in the stamp format means the row is not judged. Text is compared as it
+// is (no trimming), so this and server.py decide alike.
+function isVoidedScheduleIdReuse(bucket, exObj, inc) {
+  if (!SCHEDULE_SPLIT_BUCKETS.has(String(bucket || ''))) return false;
+  if (!exObj || typeof exObj !== 'object' || Array.isArray(exObj) || !inc || typeof inc !== 'object' || Array.isArray(inc)) return false;
+  const cont = inc._continues_id;
+  if (typeof cont !== 'string' || !ASCII_ALNUM_RE.test(cont)) return false;
+  const exMade = exObj._createdAt;
+  const incMade = inc._createdAt;
+  const voidedAt = exObj.voided_at;
+  for (const stamp of [exMade, incMade, voidedAt]) {
+    if (typeof stamp !== 'string' || !ISO_MS_Z_RE.test(stamp)) return false;
+  }
+  return exMade !== incMade && incMade > voidedAt;
 }
 
 function sanitizeIncomingTwinKeys(targetObj, baseObj, session, perms) {
@@ -3928,6 +4132,7 @@ export async function handleRecordsPost(request, env, session, body) {
       (wasVoid !== nowVoid || voidNoteChanged)
       && !hasExplicitGpsKeyInPayload(record)
       && !hasExplicitRegionZoneKeyInPayload(record)
+      && !hasSiteSurfaceMutation(canonTable, exHydrated, record)
       && !hasNonVoidFieldChange(exHydrated, record)
     );
     recordToWrite = Object.assign({}, exHydrated, record);
@@ -3940,16 +4145,18 @@ export async function handleRecordsPost(request, env, session, body) {
       }
       restoreGpsFieldsFromBase(recordToWrite, exHydrated);
       restoreRegionZoneFieldsFromBase(recordToWrite, exHydrated);
+      restoreSiteSurfaceFromBase(recordToWrite, exHydrated);
     }
     const gpsChanged = hasGpsFieldMutation(exHydrated, recordToWrite);
     const regionZoneChanged = hasRegionZoneMutation(exHydrated, recordToWrite);
+    const surfaceChanged = hasSiteSurfaceMutation(canonTable, exHydrated, recordToWrite);
     const missingPinFill = isInitialMissingSitePinFill(canonTable, exHydrated, recordToWrite, perms);
     const allowUnpinnedPinAdd = !missingPinFill && isInitialUnpinnedSitePinAddition(canonTable, exHydrated, recordToWrite, perms);
     const canEditTbl = canEditExistingTableRecord(perms, canonTable);
     const allowVoidTbl = perms.roleKey === 'Supervisor' || canCreateTableRecord(perms, canonTable);
     const allowVoidOnly = Boolean(
       perms.voidData && allowVoidTbl && (wasVoid !== nowVoid || voidNoteChanged)
-      && !gpsChanged && !regionZoneChanged
+      && !gpsChanged && !regionZoneChanged && !surfaceChanged
       && !hasNonVoidFieldChange(exHydrated, recordToWrite)
     );
     if (missingPinFill) {
@@ -3957,6 +4164,9 @@ export async function handleRecordsPost(request, env, session, body) {
     } else if (allowUnpinnedPinAdd) {
       if (!perms.canWriteGeoConfig && regionZoneChanged) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.', 'region');
+      }
+      if (!perms.canWriteGeoConfig && surfaceChanged) {
+        return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify haul road surface.', 'site');
       }
       applyCanonSiteLatLngAliases(recordToWrite);
       recordToWrite._pinCleared = false;
@@ -3968,6 +4178,9 @@ export async function handleRecordsPost(request, env, session, body) {
       }
       if (!perms.canWriteGeoConfig && regionZoneChanged) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.', 'region');
+      }
+      if (!perms.canWriteGeoConfig && surfaceChanged) {
+        return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify haul road surface.', 'site');
       }
       if ((!canEditTbl || (!perms.modifyText && !perms.modifyData)) && !allowVoidOnly) {
         const denyMsg = !canEditTbl
@@ -4369,16 +4582,18 @@ function inferDomainIndustry(obj, keyHint = '') {
   }
   const hint = String(keyHint || '').trim();
   if (hint.includes('::')) {
-    const head = hint.split('::', 1)[0].trim();
-    if (head) {
-      const hl = head.toLowerCase();
-      if (hl === 'hsp' || hl === 'resort' || hl === 'resorts') return 'Hospitality & Resorts';
-      if (hl === 'hld' || hl === 'holding') return 'Holding & Treasury';
-      if (hl === 'trd' || hl === 'trading') return 'Automotive & Heavy Trading';
-      if (hl === 'res' || hl === 'realestate' || hl === 'real_estate' || hl === 'prop' || hl === 'properties') return 'Real Estate & Property';
-      if (hl === 'ins' || hl === 'insurance') return 'Insurance & Brokerage';
-      if (hl === 'mfg' || hl === 'manufacturing') return 'Manufacturing';
-      const byHead = canonGeoIndustryKey(head);
+    const parts = hint.split('::');
+    const head = parts[0].trim();
+    const effHead = (head.toLowerCase() === 'wf' && parts.length > 1) ? String(parts[1] || '').trim() : head;
+    if (effHead) {
+      const hl = effHead.toLowerCase();
+      if (hl.startsWith('hsp') || hl === 'resort' || hl === 'resorts') return 'Hospitality & Resorts';
+      if (hl.startsWith('hld') || hl === 'holding') return 'Holding & Treasury';
+      if (hl.startsWith('trd') || hl === 'trading') return 'Automotive & Heavy Trading';
+      if (hl.startsWith('res') || hl.startsWith('re_') || hl === 'realestate' || hl === 'real_estate' || hl === 'prop' || hl === 'properties') return 'Real Estate & Property';
+      if (hl.startsWith('ins') || hl === 'insurance') return 'Insurance & Brokerage';
+      if (hl.startsWith('mfg') || hl === 'manufacturing') return 'Manufacturing';
+      const byHead = canonGeoIndustryKey(effHead);
       if (byHead) return byHead;
     }
   }
@@ -6142,6 +6357,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   let savedRows = 0;
   let savedEdits = 0;
   let ignoredServerOwned = 0;   // rows and patches aimed at server-totalled till close rows
+  // Sent statement and Rate Changes marks this seat may not change: left as stored and named in the answer, so one
+  // refused mark never holds up the device's other saves (the app reloads the stored copy of each)
+  const refusedMarks = [];
   let rlsSkipped = 0;
 
   const pendingRowWrites = [];
@@ -6204,7 +6422,15 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
           return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
         }
-        if (exVoid && !incVoid && exRev >= incRev) continue;
+        if (exVoid && !incVoid && exRev >= incRev) {
+          // Another device saved a schedule under this id and undid it; this one, made on a device that never saw
+          // it, would be dropped here while the answer says OK. Refused instead, before anything in the request
+          // is written.
+          if (isVoidedScheduleIdReuse(bucket, exObj, r)) {
+            return jsonResponse({ ok: false, error: VOIDED_ID_CONFLICT_ERROR, code: VOIDED_ID_CONFLICT_CODE, bucket: String(bucket), id: rid }, 409);
+          }
+          continue;
+        }
         if (exRev > incRev && !(incVoid && !exVoid)) continue;
         if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
           return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
@@ -6288,6 +6514,13 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const [ek, rawEv] of Object.entries(editsMap)) {
     if (!ek || !rawEv || typeof rawEv !== 'object') continue;
     if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
+    const isPeriodLockWf = /^WF::(period_close|hld_close_gate)::/i.test(ek);
+    const isPeriodCloseWf = /^WF::(period_close|hld_close_gate|mfg_accrual_cutoff|hsp_membership_amort|re_deferred_rent_amort|trd_period_close|ins_renewal_binder)::/i.test(ek);
+    if (isPeriodCloseWf && !perms.voidData) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to lock or reopen an accounting period.' }, 403);
+    }
+    const isGuardedMark = isGuardedWorkflowMarkKey(ek);
+    const isStmtMark = STMT_SENT_MARK_RE.test(ek);
     if (!validateRecordGpsCoords(rawEv)) {
       return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
     }
@@ -6321,6 +6554,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (exVoid && !incVoid && exRev >= incRev) continue;
       if (exRev > incRev && !(incVoid && !exVoid)) continue;
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(exVoid) }), ev, perms);
+        if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+      }
       if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
       }
@@ -6340,7 +6577,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
-        if (!allowVoidOnly) {
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !gpsChanged);
+        if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
         if (voidNoteChanged) {
@@ -6363,6 +6601,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (ev) pendingDomainGeoAudits.push(ev);
       }
     } else {
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, null, ev, perms);
+        if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+      }
       if (!perms.voidData && Boolean(incVoid)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void domain records.' }, 403);
       }
@@ -6371,7 +6613,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
-        if (!allowVoidOnly) {
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
+        if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
       }
@@ -6439,9 +6682,16 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   for (const rawEk of purgedEditKeys) {
     const ek = String(rawEk || '').trim();
     if (!ek || isServerOwnedRowEditKey(ek)) continue;
+    if (/^WF::(period_close|hld_close_gate|mfg_accrual_cutoff|hsp_membership_amort|re_deferred_rent_amort|trd_period_close|ins_renewal_binder)::/i.test(ek) && !perms.voidData) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to purge period-close locks.' }, 403);
+    }
     const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
     const exObj = safeJsonParse(ex.payload_json, {});
+    if (isGuardedWorkflowMarkKey(ek)) {
+      const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(Number(ex.voided || 0)) }), null, perms);
+      if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+    }
     const exCoEd = canonicalizeCompanyName((exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
     const exIndEd = inferDomainIndustry(exObj, ek);
     if (restrictRls) {
@@ -6479,6 +6729,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     rlsSkipped > 0
   ) {
     return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity domain write.' }, 403);
+  }
+  if (refusedMarks.length && !pendingRowWrites.length && !pendingEditWrites.length && !pendingPurgeRows.length && !pendingPurgeEdits.length) {
+    return jsonResponse({ ok: false, error: refusedMarks[0].error, refusedMarks }, 403);
   }
 
   for (const args of pendingRowWrites) {
@@ -6532,6 +6785,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     deletedLegacyRows,
     deletedLegacyEdits,
     ignoredServerOwned,
+    ...(refusedMarks.length ? { refusedMarks } : {}),
     ...(rollbackToken ? { rollbackToken } : {})
   });
 }
@@ -8249,10 +8503,11 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           (wasVoid !== Boolean(sanIr.voided) || voidNoteChanged)
           && !hasExplicitGpsKeyInPayload(sanIr)
           && !hasExplicitRegionZoneKeyInPayload(sanIr)
+          && !hasSiteSurfaceMutation(canonTable, pr, sanIr)
           && !hasNonVoidFieldChange(pr, sanIr)
         );
         const mergedIr = isSparsePureVoid
-          ? restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr)
+          ? restoreSiteSurfaceFromBase(restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr), pr)
           : sanIr;
         if (isSparsePureVoid && voidNoteChanged) {
           applyExplicitVoidReason(mergedIr, sanIr);
@@ -8273,6 +8528,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             && (wasVoid !== Boolean(mergedIr.voided) || (wasVoid && Boolean(mergedIr.voided) && hasVoidReasonChange(pr, mergedIr)))
             && !hasGpsFieldMutation(pr, mergedIr)
             && !hasRegionZoneMutation(pr, mergedIr)
+            && !hasSiteSurfaceMutation(canonTable, pr, mergedIr)
             && !hasNonVoidFieldChange(pr, mergedIr)
           );
           if (allowVoidOnly) {
@@ -8387,6 +8643,22 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               });
             }
             restoreRegionZoneFieldsFromBase(mergedIr, pr);
+          }
+          if (hasSiteSurfaceMutation(canonTable, pr, mergedIr)) {
+            if (Array.isArray(auditOut)) {
+              auditOut.push({
+                outcome: 'blocked_403',
+                action: 'blocked_403',
+                source: 'sync',
+                industry: String(mergedIr._industry || pr._industry || 'manufacturing'),
+                company: String(mergedIr.company || pr.company || ''),
+                target_type: 'site',
+                target_id: rid,
+                target_label: String(mergedIr.name || pr.name || canonTable),
+                detail: { table: canonTable, error: 'Unauthorized road surface mutation reverted on sync' }
+              });
+            }
+            restoreSiteSurfaceFromBase(mergedIr, pr);
           }
         }
         outList.push(mergedIr);
@@ -9078,6 +9350,12 @@ export function isPushOwnedDoc(docKey) {
     || k.startsWith('day_close_push_subs_v1__part_');
 }
 
+async function computeSyncDocEtag(docObj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(docObj || {}));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
@@ -9118,7 +9396,24 @@ export async function handleSync(request, env, session, body, _ctx) {
       capMinShellVerForRead(rawDocObj);
     }
     const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
-    const getResp = { ok: true, edge: true, docs: { [targetKey]: docObj } };
+    const etag = await computeSyncDocEtag(docObj);
+    if (
+      targetKey === 'mfg_web_store' &&
+      !storeUnreadable &&
+      body &&
+      typeof body.ifNoneMatchEtag === 'string' &&
+      body.ifNoneMatchEtag &&
+      body.ifNoneMatchEtag === etag
+    ) {
+      return jsonResponse({
+        ok: true,
+        edge: true,
+        notModified: true,
+        etag,
+        updatedAt: String((docObj && docObj.updatedAt) || (row && row.updated_at) || '')
+      });
+    }
+    const getResp = { ok: true, edge: true, etag, docs: { [targetKey]: docObj } };
     if (storeUnreadable) getResp.storeUnreadable = true;
     return jsonResponse(getResp);
   }
@@ -9197,6 +9492,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     const syncAuditBlocked = [];
     if (pKey === 'mfg_web_store') {
       await enforceSyncRoleWriteLocks(env.DB, incomingDoc, prevDoc, session, syncAuditBlocked);
+      if (session) await enforceGuardedWorkflowMarksOnSyncDb(env.DB, incomingDoc, prevDoc, getSessionWritePerms(session));
       for (const blkEv of syncAuditBlocked) {
         try {
           await recordGeoAuditEvent(env.DB, request, session, blkEv);

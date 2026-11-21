@@ -127,7 +127,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   const colsBefore = d1.rows('PRAGMA table_info(staff_members)').map(c => c.name);
   const r = await postRec(env, 'staff_members', {
     id: 'sm-mig-1',
-    name: 'Ali Mansour',
+    name: 'Ziad Khoury',
     father_name: 'Hassan',
     company: 'WTC',
     role: 'Driver',
@@ -140,7 +140,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
     !colsBefore.includes('father_name') && colsAfter.includes('father_name') && r.status === 200 && r.json.ok === true,
     { colsBefore, colsAfter, r });
   ok('1b. father_name persists and hydrates cleanly on GET /api/records',
-    saved && saved.name === 'Ali Mansour' && saved.father_name === 'Hassan' && saved.company === 'WTC',
+    saved && saved.name === 'Ziad Khoury' && saved.father_name === 'Hassan' && saved.company === 'WTC',
     saved);
 }
 
@@ -317,7 +317,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   // Edit own contract in place -> 200; rename or move company onto another active person -> 409
   await postRec(env, 'employments', {
     id: 'emp-edit-src',
-    staff: 'Samer Moussa',
+    staff: 'Karim Khoury',
     company: 'WTC',
     type: 'Staff',
     status: 'Active',
@@ -333,7 +333,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   });
   const editSame = await postRec(env, 'employments', {
     id: 'emp-edit-src',
-    staff: 'Samer Moussa',
+    staff: 'Karim Khoury',
     company: 'WTC',
     type: 'Staff',
     status: 'Active',
@@ -462,13 +462,13 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
 {
   const { env } = freshEnv(false);
 
-  const rArch = await postRec(env, 'staff_members', { id: 'sm-reg-arch', name: 'Maroun Inactive', company: 'WTC', status: 'Active', archived: true });
-  const rClos = await postRec(env, 'staff_members', { id: 'sm-reg-clos', name: 'Maroun Inactive', company: 'WTC', status: 'Closed' });
-  const rTerm = await postRec(env, 'staff_members', { id: 'sm-reg-term', name: 'Maroun Inactive', company: 'WTC', status: 'Terminated' });
-  const rInac = await postRec(env, 'staff_members', { id: 'sm-reg-inac', name: 'Maroun Inactive', company: 'WTC', status: 'Inactive' });
-  const rCanc = await postRec(env, 'staff_members', { id: 'sm-reg-canc', name: 'Maroun Inactive', company: 'WTC', status: 'Cancelled' });
-  const rAct = await postRec(env, 'staff_members', { id: 'sm-reg-act1', name: 'Maroun Inactive', company: 'WTC', status: 'Active' });
-  const rDup = await postRec(env, 'staff_members', { id: 'sm-reg-act2', name: 'Maroun Inactive', company: 'WTC', status: 'Active' });
+  const rArch = await postRec(env, 'staff_members', { id: 'sm-reg-arch', name: 'Nader Inactive', company: 'WTC', status: 'Active', archived: true });
+  const rClos = await postRec(env, 'staff_members', { id: 'sm-reg-clos', name: 'Nader Inactive', company: 'WTC', status: 'Closed' });
+  const rTerm = await postRec(env, 'staff_members', { id: 'sm-reg-term', name: 'Nader Inactive', company: 'WTC', status: 'Terminated' });
+  const rInac = await postRec(env, 'staff_members', { id: 'sm-reg-inac', name: 'Nader Inactive', company: 'WTC', status: 'Inactive' });
+  const rCanc = await postRec(env, 'staff_members', { id: 'sm-reg-canc', name: 'Nader Inactive', company: 'WTC', status: 'Cancelled' });
+  const rAct = await postRec(env, 'staff_members', { id: 'sm-reg-act1', name: 'Nader Inactive', company: 'WTC', status: 'Active' });
+  const rDup = await postRec(env, 'staff_members', { id: 'sm-reg-act2', name: 'Nader Inactive', company: 'WTC', status: 'Active' });
   ok('5a. archived and closed/terminated/inactive/cancelled staff_members rows never block an active entry; 2nd active does (409)',
     rArch.status === 200 && rClos.status === 200 && rTerm.status === 200 && rInac.status === 200 && rCanc.status === 200
     && rAct.status === 200 && rDup.status === 409 && rDup.json.code === 'same_name_conflict',
@@ -515,7 +515,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   // 5e. Inserting a duplicate active row carrying salary_pending: true without same_person_confirmed: true -> 409 across all 3 tables
   const rPendEmp = await postRec(env, 'employments', { id: 'emp-dup-pend', staff: 'Fadi Guard', company: 'WTC', type: 'Staff', status: 'Active', start_date: '2026-11-15', salary_pending: true });
   const rPendFl = await postRec(env, 'freelance_entries', { id: 'fl-dup-pend', staff: 'Fadi Guard', company: 'WTC', date: '2026-11-15', salary_pending: true, amount: 0 });
-  const rPendSm = await postRec(env, 'staff_members', { id: 'sm-dup-pend', name: 'Maroun Inactive', company: 'WTC', status: 'Active', salary_pending: true });
+  const rPendSm = await postRec(env, 'staff_members', { id: 'sm-dup-pend', name: 'Nader Inactive', company: 'WTC', status: 'Active', salary_pending: true });
   ok('5e. Duplicate active inserts with salary_pending: true without same_person_confirmed return 409',
     rPendEmp.status === 409 && rPendEmp.json.code === 'same_name_conflict'
     && rPendFl.status === 409 && rPendFl.json.code === 'same_name_conflict'
@@ -525,7 +525,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   // 5f. Reactivating an Ended/archived row onto an existing active homonym without same_person_confirmed -> 409; with same_person_confirmed -> 200
   const rSeedEnd = await postRec(env, 'employments', { id: 'emp-react-ended', staff: 'Fadi Guard', company: 'WTC', type: 'Staff', status: 'Ended', start_date: '2024-01-01', end_date: '2024-12-31' });
   const rReactEmp = await postRec(env, 'employments', { id: 'emp-react-ended', staff: 'Fadi Guard', company: 'WTC', type: 'Staff', status: 'Active', start_date: '2024-01-01', end_date: '' });
-  const rReactSm = await postRec(env, 'staff_members', { id: 'sm-reg-arch', name: 'Maroun Inactive', company: 'WTC', status: 'Active', archived: false });
+  const rReactSm = await postRec(env, 'staff_members', { id: 'sm-reg-arch', name: 'Nader Inactive', company: 'WTC', status: 'Active', archived: false });
   const rReactEmpOk = await postRec(env, 'employments', { id: 'emp-react-ended', staff: 'Fadi Guard', company: 'WTC', type: 'Staff', status: 'Active', start_date: '2024-01-01', end_date: '', same_person_confirmed: true });
   ok('5f. Reactivating Ended employment or archived staff_members onto an active homonym returns 409 unless confirmed',
     rSeedEnd.status === 200
@@ -655,7 +655,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
     const syncSamp = await callKiosk({
       op: 'sync',
       site: 'LAUNA',
-      staff: [{ id: 'sm-samp-1', name: 'Rami Sample Edge', fatherName: 'Adel' }],
+      staff: [{ id: 'sm-samp-1', name: 'Rami Sample Edge', fatherName: 'Salim' }],
       faces: [
         { id: 'sm-samp-1:1', staffId: 'sm-samp-1', sample: 'abc', descriptor: vec(1) },
         { id: 'sm-samp-1:2', staffId: 'sm-samp-1', sample: null, descriptor: vec(2) },
@@ -677,10 +677,10 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
     const envId = freshEnv().env;
     const pCreate = await postRec(envId, 'staff_members', {
       id: 'sm-id-rt-1',
-      name: 'Bilal Khazaal Badawi',
-      full_name_ar: 'بلال خزعل بدوي',
-      father_name: 'Khazaal',
-      father_name_ar: 'خزعل',
+      name: 'Bilal Nabil Karam',
+      full_name_ar: 'بلال نبيل كرم',
+      father_name: 'Nabil',
+      father_name_ar: 'نبيل',
       dob: '1992-04-15',
       nationality: 'Lebanese',
       nationality_ar: 'لبناني',
@@ -715,7 +715,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
     const r2 = byId.get('sm-id-rt-2');
     ok('5k. staff_members bilingual/ID fields (full_name_ar, father_name_ar, dob, nationality, nationality_ar, reference, id_doc_kind) round-trip through D1 POST + GET and backfill update',
       pCreate.status === 200 && pMissing.status === 200 && pBackfill.status === 200 && rd.status === 200
-      && r1 && r1.father_name === 'Khazaal' && r1.full_name_ar === 'بلال خزعل بدوي' && r1.father_name_ar === 'خزعل'
+      && r1 && r1.father_name === 'Nabil' && r1.full_name_ar === 'بلال نبيل كرم' && r1.father_name_ar === 'نبيل'
       && r1.dob === '1992-04-15' && r1.nationality === 'Lebanese' && r1.nationality_ar === 'لبناني'
       && r1.reference === '0009182736' && r1.id_doc_kind === 'lebanese_id'
       && r2 && r2.father_name === 'Joseph' && r2.full_name_ar === 'سمير جوزيف حداد' && r2.father_name_ar === 'جوزيف'

@@ -909,7 +909,7 @@
       "Alerts": "تنبيهات",
       "Alerts & Thresholds": "قواعد التنبيه والحدود",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "ينبّه الإدارة عندما تصل فروقات العدادات أو إيصالات المازوت غير الموزعة أو فروقات الخزان إلى 5% أو أكثر من إجمالي استهلاك الشركة في الفترة المحددة.",
-      "Ali Mansour (WTC Scale)": "علي منصور (قبان WTC)",
+      "Rami Haddad (WTC Scale)": "رامي حداد (قبان WTC)",
       "Align 17-character VIN or chassis plate inside narrow strip": "ضع لوحة رقم الشاسيه (17 خانة) داخل الشريط الضيق",
       "All": "الكل",
       "All 108 Routes Explorer": "مستكشف جميع المسارات (108)",
@@ -4170,8 +4170,7 @@
       "Holding Briefing": "ملخص القابضة والخزينة",
       "Holding Entity": "الكيان القابض",
       "Holding Entity *": "الشركة القابضة *",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Counterparties)": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة (الحاج محمد والأطراف المقابلة)",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Stakeholders)": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة (الحاج محمد وأصحاب المصلحة)",
+      "Holding Extended Stakeholder Ledger": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة",
       "Holding Extended Stakeholder Ledger (Received vs Gave & Difference)": "دفتر أصحاب المصلحة الممتدة في القابضة (المسحوب مقابل المدفوع والفرق)",
       "Holding HQ Overhead": "نفقات الإدارة العامة للقابضة",
       "Holding Loans & Treasury Audit": "تدقيق قروض وخزينة القابضة",
@@ -7862,6 +7861,7 @@
       "Routes & Corridors": "المسارات وخطوط النقل",
       "Routes Explorer": "مستكشف المسارات",
       "Routing / Equipment": "التوجيه / الآلية",
+      "Row navigation": "التنقل بين الصفوف",
       "Rows": "السطور",
       "Rows per page": "السطور في الصفحة",
       "Rubber Screen Mesh": "شبك غربال مطاطي",
@@ -8924,7 +8924,10 @@
       "Supervisor Override": "تجاوز المشرف",
       "Supervisor Override: Reprice Confirmed History": "تجاوز المشرف: إعادة تسعير السجل المؤكد",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "إلغاء المشرف: إيصال حُرّر بالخطأ (0 كم · يحتفظ بالرقم التسلسلي في دفتر الـ 25 إيصالاً)",
+      "Supervisor or Owner permission is required to lock or reopen an accounting period": "تتطلب عملية إقفال الفترة المحاسبية أو إعادة فتحها صلاحية مشرف أو مالك",
       "Supervisor or Owner permission is required to reopen a sealed period": "يتطلب إعادة فتح فترة مقفلة صلاحية مشرف أو مالك",
+      "Owner or all-entity permission is required to lock or reopen all 14 entities": "تتطلب عملية إقفال جميع الشركات الـ 14 أو إعادة فتحها صلاحية المالك أو الوصول الكامل",
+      "Period close entries require data-entry and Supervisor or Owner permission": "تتطلب قيود إقفال الفترة صلاحية إدخال البيانات مع صلاحية مشرف أو مالك",
       "Supervisor permission required to manage chronological rate schedules": "صلاحية المشرف مطلوبة لإدارة جداول الأسعار الزمنية",
       "Supervisor rights are required to override a confirmed statement watermark.": "تتطلب عملية تجاوز تاريخ الكشف المؤكد صلاحيات مشرف.",
       "Supervisor seat does not have access to this company.": "مقعد المشرف لا يملك صلاحية الوصول إلى هذه الشركة.",
@@ -10533,7 +10536,7 @@
       "Father": "الأب",
       "Father Name": "اسم الأب",
       "Father:": "الأب:",
-      "e.g. Mohammad": "مثلاً: محمد",
+      "e.g. Nabil": "مثلاً: نبيل",
       "Locked to the father's name recorded on onboarding": "مقفل على اسم الأب المسجّل عند التعيين",
       "Please update to the latest ISABI app version before syncing changes.": "يرجى التحديث إلى أحدث إصدار من تطبيق ISABI قبل مزامنة التغييرات.",
       "Duplicate active staff name blocked by server.": "تم حظر تكرار اسم الموظف النشط من الخادم.",
@@ -12070,6 +12073,25 @@
       "Verified Site Gate Mini-Map": "خريطة مصغّرة لبوابة الموقع الموثقة",
       "Gate Pin QR Code": "رمز QR لإحداثي البوابة",
       "Brake Lining & Shoe Set": "طقم بطانات وفحمات المكابح",
+      "Haul Road Surface (Tyre Wear)": "سطح طريق النقل (تآكل الإطارات)",
+      "Auto-Detect (Unpaved for Quarry / Raw Sites)": "كشف تلقائي (غير معبد للمقالع والمواد الخام)",
+      "Unpaved / Loose Gravel (High Tyre Wear)": "غير معبد / حصى مفكك (تآكل إطارات مرتفع)",
+      "Paved Asphalt / Concrete Road": "طريق معبد بالإسفلت أو الباطون",
+      "Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.": "يكتشف تلقائياً مواقع المقالع والمواد الخام غير المعبدة لاحتساب تآكل إطارات الدفع.",
+      "Tyre Rotation & Alignment": "تدوير وميزانية الإطارات",
+      "Drive-Axle Tyre Replacement": "تبديل إطارات محور الدفع",
+      "Tyres & Alignment": "الإطارات والميزانية",
+      "Tyre & Quarry": "الإطارات والمقالع",
+      "Tyre Wear Due": "صيانة الإطارات مستحقة",
+      "Tyre Wear": "تآكل الإطارات",
+      "Brake": "المكابح",
+      "is overdue on weighted brake & retarder wear for steep downhill haulage to": "تجاوزت حد تآكل المكابح والريتاردر الموزون لمسار النزول الحاد إلى",
+      "Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.": "تنبيه استشاري فقط. يبقى الترحيل متاحاً إذا اعتمد المشرف أو الورشة الإرسال.",
+      "Switch to": "بدّل إلى",
+      "Drive-Axle Tyre Baseline": "خط أساس إطارات محور الدفع",
+      "Expense Invoice Reset": "تصفير بفاتورة مصاريف",
+      "steep/quarry": "منحدر/مقلع",
+      "steep": "منحدر",
       "Clear active filter slice and search query": "مسح الفلتر النشط ونص البحث",
       "Retarder & Drivetrain Inspection": "فحص المُبطئ وناقل الحركة",
       "Brake / Retarder Baseline": "مرجع المكابح والمُبطئ الأساسي",
@@ -13653,7 +13675,288 @@
       "Entered By": "أُدخل بواسطة",
       "Attachments": "المرفقات",
       "Close Preview": "إغلاق المعاينة",
-      "Matched Entry Preview": "معاينة القيد المطابق"
+      "Matched Entry Preview": "معاينة القيد المطابق",
+      "Share Period": "فترة الحصة",
+      "No schedule in this period": "لا يوجد جدول توزيع في هذه الفترة",
+      "Total Partner Current Accounts": "إجمالي الحسابات الجارية للشركاء",
+      "A partner's profit-share schedule changed during this period. Each period is on its own line with its dates. The total counts that partner once, on the latest line.": "تغيّر جدول توزيع الأرباح لأحد الشركاء خلال هذه الفترة. تظهر كل فترة في سطر مستقل مع تواريخها. يحتسب الإجمالي هذا الشريك مرة واحدة، بحسب السطر الأحدث.",
+      "Membership": "عضوية",
+      "Chalet Revenue": "إيراد الشاليهات",
+      "Import": "استيراد",
+      "Policy": "بوليصة",
+      "Partner Distribution": "توزيع أرباح الشريك",
+      "Loan Interest": "فائدة القرض",
+      "Typed Price, Kept": "سعر مُدخل يدوياً، بقي كما هو",
+      "Now": "الآن",
+      "After": "بعد",
+      "Difference": "الفرق",
+      "More records not listed": "سجلات أخرى غير معروضة",
+      "New Period Starts": "بداية الفترة الجديدة",
+      "Earlier Period Stays Until": "الفترة السابقة تبقى حتى",
+      "Records Re-priced": "سجلات أُعيد تسعيرها",
+      "Net Change": "صافي التغيير",
+      "Costs Updated": "تكاليف مُحدَّثة",
+      "Records Keeping a Typed Price": "سجلات تحتفظ بسعر مُدخل يدوياً",
+      "What This Undo Changed": "ما الذي غيّره هذا التراجع",
+      "What This Save Changed": "ما الذي غيّره هذا الحفظ",
+      "Undo This Rate Change?": "التراجع عن تغيير السعر هذا؟",
+      "This Save Starts a New Period": "هذا الحفظ يبدأ فترة جديدة",
+      "This Save Re-prices Existing Records": "هذا الحفظ يعيد تسعير سجلات موجودة",
+      "This Save Re-prices No Record": "هذا الحفظ لا يعيد تسعير أي سجل",
+      "Records that followed this rate go back to the rate before it. Amounts already paid or collected do not change.": "السجلات التي كانت تتبع هذا السعر تعود إلى السعر السابق له. المبالغ المدفوعة أو المحصّلة لا تتغير.",
+      "The earlier period stays as it is, with its records. The new values apply from the new start date. To correct only the date, go back and change nothing but the date.": "الفترة السابقة تبقى كما هي مع سجلاتها. القيم الجديدة تُطبَّق من تاريخ البدء الجديد. لتصحيح التاريخ فقط، ارجع وغيّر التاريخ وحده.",
+      "The earlier period stays as it is. The new values apply from the new start date. Amounts already paid or collected do not change.": "الفترة السابقة تبقى كما هي. القيم الجديدة تُطبَّق من تاريخ البدء الجديد. المبالغ المدفوعة أو المحصّلة لا تتغير.",
+      "Check what this save does before it is posted. Amounts already paid or collected do not change.": "راجع ما يفعله هذا الحفظ قبل ترحيله. المبالغ المدفوعة أو المحصّلة لا تتغير.",
+      "A price typed on a record is never changed by a rate change or by its undo.": "السعر المُدخل يدوياً على سجل لا يتغير أبداً بتغيير السعر أو بالتراجع عنه.",
+      "See the Records": "عرض السجلات",
+      "Go Back": "رجوع",
+      "Undo Rate Change": "التراجع عن تغيير السعر",
+      "Rate Change": "تغيير السعر",
+      "Periods of This Schedule": "فترات هذا الجدول",
+      "Scheduled": "مجدول",
+      "Undone": "تم التراجع عنه",
+      "This Record": "هذا السجل",
+      "Undo This Change": "التراجع عن هذا التغيير",
+      "to": "إلى",
+      "Undo Put Back": "أعاد التراجع",
+      "Re-priced": "أُعيد تسعيره",
+      "Typed Price Kept": "سعر مُدخل بقي كما هو",
+      "Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.": "السجلات التي كانت تتبع هذا السعر عادت إلى السعر السابق له. السعر المُدخل يدوياً على السجل بقي كما هو.",
+      "Records that follow this rate were re-priced. A price typed on a record stayed as typed.": "أُعيد تسعير السجلات التي تتبع هذا السعر. السعر المُدخل يدوياً على السجل بقي كما هو.",
+      "This schedule was saved and undone on another device. Your screen is now up to date: save again.": "تم حفظ هذا الجدول ثم التراجع عنه على جهاز آخر. شاشتك محدّثة الآن: احفظ مرة أخرى.",
+      "This schedule was saved and undone on another device. Refresh the page and save again.": "تم حفظ هذا الجدول ثم التراجع عنه على جهاز آخر. حدّث الصفحة واحفظ مرة أخرى.",
+      "Lock the month, book estimates for unpriced items and send balance letters": "إقفال الشهر وتسجيل تقديرات للبنود غير المسعّرة وإرسال رسائل مصادقة الأرصدة",
+      "Month-End Close": "إقفال نهاية الشهر",
+      "Month Locked": "الشهر مقفل",
+      "Estimates for Unpriced Items": "تقديرات البنود غير المسعّرة",
+      "Estimates Reverse On": "تاريخ عكس التقديرات",
+      "Tickets Reported in Another Month": "بطاقات مسجّلة في شهر آخر",
+      "Books Out of Balance": "فرق توازن الدفاتر",
+      "Locked Through": "مقفل حتى",
+      "Month to Close": "الشهر المطلوب إقفاله",
+      "Hide Month-End Close": "إخفاء إقفال نهاية الشهر",
+      "Open Month-End Close": "فتح إقفال نهاية الشهر",
+      "Companies Covered": "الشركات المشمولة",
+      "Entries in the closed month are locked": "القيود في الشهر المقفل مقفلة",
+      "Ready to lock entries in the closed month": "جاهز لإقفال القيود في الشهر المنتهي",
+      "AI Check Before Closing": "فحص ذكي قبل الإقفال",
+      "Balance Confirmation Letters": "رسائل مصادقة الأرصدة",
+      "+ Book Estimates": "+ تسجيل التقديرات",
+      "Lock Month Through": "إقفال الشهر حتى",
+      "Spread season memberships over the days used, lock stock counts and review food and bar losses": "توزيع اشتراكات الموسم على الأيام المستخدمة وإقفال جرد المخزون ومراجعة خسائر المطبخ والبار",
+      "Count the rent earned this month, lock the VAT month and prepare lease renewals": "احتساب الإيجار المكتسب هذا الشهر وإقفال شهر الضريبة وتحضير تجديد العقود",
+      "Leases Up for Renewal": "عقود مستحقة التجديد",
+      "Finance cost on unsold trucks, buyer deposits held and a reserve for slow-moving parts": "كلفة تمويل الشاحنات غير المباعة ودفعات الزبائن المحتفظ بها ومؤونة لقطع الغيار بطيئة الحركة",
+      "Finance Cost on Unsold Trucks": "كلفة تمويل الشاحنات غير المباعة",
+      "Slow-Moving Parts Reserve": "مؤونة القطع بطيئة الحركة",
+      "Parts to Reorder": "قطع يجب إعادة طلبها",
+      "Policies renewing soon, lock the insurer statement month and hold back commission at risk": "بوالص تتجدد قريباً وإقفال شهر كشف شركة التأمين وحجز العمولة المعرضة للاسترداد",
+      "Premiums Renewing Soon": "أقساط تتجدد قريباً",
+      "Commission Held Back": "العمولة المحجوزة",
+      "Group Month Locked (14/14)": "شهر المجموعة مقفل (14/14)",
+      "Group Month-End Close": "إقفال نهاية الشهر للمجموعة",
+      "Check that every company balances, lock the month for the whole group and brief the board": "التحقق من توازن كل شركة وإقفال الشهر للمجموعة كاملة وإطلاع مجلس الإدارة",
+      "Companies Out of Balance": "فرق توازن الشركات",
+      "Locked through": "مقفل حتى",
+      "Partly locked through": "مقفل جزئياً حتى",
+      "Entries dated on or before this day are locked. Reopen the month from General Ledger.": "القيود المؤرخة في هذا اليوم أو قبله مقفلة. أعد فتح الشهر من دفتر الأستاذ العام.",
+      "Nothing pending to estimate for this month": "لا توجد بنود معلّقة لتقديرها هذا الشهر",
+      "resorts skipped: that month is already locked": "منتجعات تم تخطيها: هذا الشهر مقفل مسبقاً",
+      "That month is already locked. Reopen it from General Ledger first.": "هذا الشهر مقفل مسبقاً. أعد فتحه أولاً من دفتر الأستاذ العام.",
+      "Nothing to book for this month": "لا يوجد ما يُسجّل لهذا الشهر",
+      "Choose Korri Auto or Shacman before booking": "اختر Korri Auto أو Shacman قبل التسجيل",
+      "resorts skipped: a later month is already booked": "منتجعات تم تخطيها: تم تسجيل شهر لاحق مسبقاً",
+      "Not Due for Renewal": "غير مستحق للتجديد",
+      "Region Zone:": "المنطقة:",
+      "Inside Region Zone:": "داخل المنطقة:",
+      "Measure KM": "قياس الكيلومترات",
+      "Move Pin": "نقل الدبوس",
+      "Close popup": "إغلاق النافذة",
+      "No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.": "لا توجد اتفاقية سعر مبيعات (تسليم) تشمل هذا الزبون والمنتج والموقع في هذا التاريخ. أضف الاتفاقية أولاً ثم سجّل الإيصال.",
+      "No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.": "لا توجد اتفاقية سعر شراء تشمل هذا الموقع وهذه المادة في هذا التاريخ. أضف اتفاقية (يُسمح باتفاقية بقيمة 0$) أو سجّل الإيصال بسعر معلّق.",
+      "No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.": "لا توجد اتفاقية مبيعات (تسليم) لهذا الزبون وهذا الموقع في هذا التاريخ. أضف واحدة قبل التسجيل.",
+      "No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.": "لا توجد اتفاقية سعر شراء لهذا الموقع وهذه المادة في هذا التاريخ. أضف واحدة (يُسمح بـ 0$) أو انتقل إلى سعر معلّق.",
+      "Site Clean-up": "تنظيف المواقع",
+      "Clean Up Sites": "تنظيف المواقع",
+      "Review dormant sites that still hold price agreements, and sites never used, then close them in one step": "راجع المواقع الخاملة التي ما زالت عليها اتفاقيات أسعار والمواقع غير المستخدمة، ثم أغلقها بخطوة واحدة",
+      "Dormant with Open Agreements": "خاملة مع اتفاقيات مفتوحة",
+      "Never Used": "غير مستخدمة أبداً",
+      "No loads and no price agreements": "لا نقلات ولا اتفاقيات أسعار",
+      "Open Agreements": "الاتفاقيات المفتوحة",
+      "Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.": "إغلاق الموقع ينهي اتفاقيات الأسعار المفتوحة عليه اليوم. إعادة فتحه من تعديل الموقع تعيدها.",
+      "Nothing to clean up.": "لا يوجد ما يحتاج إلى تنظيف.",
+      "No loads": "لا نقلات",
+      "Has loads after today": "لديه نقلات بعد اليوم",
+      "Agreements of a company your seat cannot change": "اتفاقيات لشركة لا يمكن لمقعدك تعديلها",
+      "Your seat cannot close sites.": "لا يمكن لمقعدك إغلاق المواقع.",
+      "Already closed": "مغلق مسبقاً",
+      "Notify me on this device": "نبّهني على هذا الجهاز",
+      "Notifications are on for this device.": "التنبيهات مفعّلة على هذا الجهاز.",
+      "Turn Off": "إيقاف",
+      "Phone notifications are not set up yet.": "تنبيهات الهاتف غير مُعدّة بعد.",
+      "This browser cannot show notifications.": "هذا المتصفح لا يستطيع عرض التنبيهات.",
+      "Notifications are blocked for this site in the browser settings.": "التنبيهات محظورة لهذا الموقع في إعدادات المتصفح.",
+      "On iPhone or iPad, add the app to the Home Screen first (iOS 16.4 or later), then open it from there.": "على iPhone أو iPad، أضف التطبيق إلى الشاشة الرئيسية أولاً (iOS 16.4 أو أحدث)، ثم افتحه من هناك.",
+      "Notifications were not allowed on this device.": "لم يُسمح بالتنبيهات على هذا الجهاز.",
+      "Could not turn on notifications. Try again.": "تعذّر تفعيل التنبيهات. حاول مرة أخرى.",
+      "Notifications turned off for this device.": "تم إيقاف التنبيهات على هذا الجهاز.",
+      "A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.": "يبقى عقد الإيجار الذي انتهى أو تغيّر بدله خلال هذه الفترة مدرجاً باللون الرمادي مع تواريخه. تحتسب المجاميع كل عقد مرة واحدة، بالبدل الساري في اليوم الأخير من الفترة، أو اليوم إذا لم تنتهِ الفترة بعد.",
+      "Statement marked as sent. A rate change or its undo now leaves these records as they are.": "تم تعليم الكشف كمُرسَل. أي تغيير في السعر أو التراجع عنه يترك هذه القيود كما هي الآن.",
+      "Sent mark removed from this statement.": "أُزيلت علامة الإرسال عن هذا الكشف.",
+      "SENT MARK REMOVED FROM THIS STATEMENT.": "أُزيلت علامة الإرسال عن هذا الكشف.",
+      "Only a finance or supervisor seat can mark a statement as sent.": "فقط مقعد المالية أو المشرف يمكنه تعليم الكشف كمُرسَل.",
+      "The statement needs an end date.": "يحتاج الكشف إلى تاريخ نهاية.",
+      "THE STATEMENT NEEDS AN END DATE.": "يحتاج الكشف إلى تاريخ نهاية.",
+      "Only a supervisor can remove the sent mark.": "فقط المشرف يمكنه إزالة علامة الإرسال.",
+      "Only a supervisor can move a sent mark to an earlier date.": "فقط المشرف يمكنه نقل علامة الإرسال إلى تاريخ أسبق.",
+      "Only a supervisor can remove a sent mark or move it to an earlier date.": "فقط المشرف يمكنه إزالة علامة الإرسال أو نقلها إلى تاريخ أسبق.",
+      "Only the Owner can review rate changes or change the alert amount.": "فقط المالك يمكنه مراجعة تغييرات الأسعار أو تعديل مبلغ التنبيه.",
+      "A lease that has ended or changed its rent stays listed in grey with its dates. The totals count each lease once, at the rent in force today.": "يبقى عقد الإيجار الذي انتهى أو تغيّر بدله مدرجاً باللون الرمادي مع تواريخه. تحتسب المجاميع كل عقد مرة واحدة، بالبدل الساري اليوم.",
+      "On a Sent Statement": "على كشف مُرسَل",
+      "ON A SENT STATEMENT": "على كشف مُرسَل",
+      "Records on a Sent Statement, Left As They Are": "قيود على كشف مُرسَل، بقيت كما هي",
+      "Difference to Bill or Credit Next Statement": "فرق يُفوتَر أو يُقيَّد دائناً في الكشف التالي",
+      "Cost Difference on Sent Supplier Statements": "فرق الكلفة على كشوف الموردين المُرسَلة",
+      "Records on a statement already sent to the customer or supplier are not changed. The difference is listed so it can go on the next statement.": "القيود الموجودة على كشف أُرسل إلى الزبون أو المورد لا تتغير. يُدرج الفرق لكي يُضاف إلى الكشف التالي.",
+      "Left on Sent Statements": "بقيت على كشوف مُرسَلة",
+      "LEFT ON SENT STATEMENTS": "بقيت على كشوف مُرسَلة",
+      "Rate Changes": "تغييرات الأسعار",
+      "RATE CHANGES": "تغييرات الأسعار",
+      "This page is for the Owner.": "هذه الصفحة مخصصة للمالك.",
+      "THIS PAGE IS FOR THE OWNER.": "هذه الصفحة مخصصة للمالك.",
+      "Large Change": "تغيير كبير",
+      "LARGE CHANGE": "تغيير كبير",
+      "Undone Within a Day": "أُلغي خلال يوم",
+      "UNDONE WITHIN A DAY": "أُلغي خلال يوم",
+      "CHANGE": "تغيير",
+      "UNDO": "تراجع",
+      "RESTORE": "استعادة",
+      "Reviewed": "تمت المراجعة",
+      "REVIEWED": "تمت المراجعة",
+      "Mark Reviewed": "تعليم كمُراجَع",
+      "MARK REVIEWED": "تعليم كمُراجَع",
+      "Every rate change and undo across the six industries, with the money it moved. An undone change stays listed.": "كل تغيير في الأسعار وكل تراجع عنه في القطاعات الستة، مع المبالغ التي حرّكها. يبقى التغيير الملغى ظاهراً في القائمة.",
+      "Alert when a change moves more than": "نبّه عندما يحرّك التغيير أكثر من",
+      "ALERT WHEN A CHANGE MOVES MORE THAN": "نبّه عندما يحرّك التغيير أكثر من",
+      "Alert amount in dollars": "مبلغ التنبيه بالدولار",
+      "ALERT AMOUNT IN DOLLARS": "مبلغ التنبيه بالدولار",
+      "Changes, Last 30 Days": "التغييرات، آخر 30 يوماً",
+      "CHANGES, LAST 30 DAYS": "التغييرات، آخر 30 يوماً",
+      "Undos, Last 30 Days": "التراجعات، آخر 30 يوماً",
+      "UNDOS, LAST 30 DAYS": "التراجعات، آخر 30 يوماً",
+      "Net Change, Last 30 Days": "صافي التغيير، آخر 30 يوماً",
+      "NET CHANGE, LAST 30 DAYS": "صافي التغيير، آخر 30 يوماً",
+      "Not Billed on Sent Statements": "غير مفوتر على الكشوف المُرسَلة",
+      "NOT BILLED ON SENT STATEMENTS": "غير مفوتر على الكشوف المُرسَلة",
+      "OPEN ALERTS": "تنبيهات مفتوحة",
+      "Filter rate changes": "تصفية تغييرات الأسعار",
+      "FILTER RATE CHANGES": "تصفية تغييرات الأسعار",
+      "ALL INDUSTRIES": "كل القطاعات",
+      "Alerts Only": "التنبيهات فقط",
+      "ALERTS ONLY": "التنبيهات فقط",
+      "When": "متى",
+      "WHEN": "متى",
+      "SCHEDULE": "الجدول",
+      "RE-PRICED": "أُعيد تسعيرها",
+      "Typed Kept": "المُدخل يدوياً بقي",
+      "TYPED KEPT": "المُدخل يدوياً بقي",
+      "On Sent Statements": "على كشوف مُرسَلة",
+      "ON SENT STATEMENTS": "على كشوف مُرسَلة",
+      "By": "بواسطة",
+      "BY": "بواسطة",
+      "ALERT": "تنبيه",
+      "No alert to review.": "لا يوجد تنبيه للمراجعة.",
+      "NO ALERT TO REVIEW.": "لا يوجد تنبيه للمراجعة.",
+      "No rate change has moved money yet.": "لم يحرّك أي تغيير في الأسعار مبالغ بعد.",
+      "NO RATE CHANGE HAS MOVED MONEY YET.": "لم يحرّك أي تغيير في الأسعار مبالغ بعد.",
+      "Alert amount saved.": "تم حفظ مبلغ التنبيه.",
+      "ALERT AMOUNT SAVED.": "تم حفظ مبلغ التنبيه.",
+      "PRICE AGREEMENT": "اتفاقية سعر",
+      "Tariff": "تعرفة",
+      "TARIFF": "تعرفة",
+      "Lease Rent": "إيجار العقد",
+      "LEASE RENT": "إيجار العقد",
+      "Price Target": "سعر مستهدف",
+      "PRICE TARGET": "سعر مستهدف",
+      "COMMISSION AGREEMENT": "اتفاقية عمولة",
+      "PARTNER SHARE": "حصة الشريك",
+      "Loan Rate": "فائدة القرض",
+      "LOAN RATE": "فائدة القرض",
+      "1 Alert": "تنبيه واحد",
+      "1 ALERT": "تنبيه واحد",
+      "Move the Sent Mark To": "انقل علامة الإرسال إلى",
+      "MOVE THE SENT MARK TO": "انقل علامة الإرسال إلى",
+      "Mark as Sent Through": "علّمه كمُرسَل حتى",
+      "MARK AS SENT THROUGH": "علّمه كمُرسَل حتى",
+      "Sent to the customer through": "أُرسل إلى الزبون حتى",
+      "SENT TO THE CUSTOMER THROUGH": "أُرسل إلى الزبون حتى",
+      "Sent to the supplier through": "أُرسل إلى المورد حتى",
+      "SENT TO THE SUPPLIER THROUGH": "أُرسل إلى المورد حتى",
+      "A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.": "أي تغيير في السعر أو التراجع عنه يترك القيود حتى ذلك اليوم كما هي، ويُدرج الفرق للكشف التالي.",
+      "Remove Sent Mark": "أزل علامة الإرسال",
+      "REMOVE SENT MARK": "أزل علامة الإرسال",
+      "Not marked as sent": "غير مُعلَّم كمُرسَل",
+      "NOT MARKED AS SENT": "غير مُعلَّم كمُرسَل",
+      "Once sent, mark it: a rate change or its undo then leaves this customer's records up to the end date as they are.": "بعد إرساله علّمه: عندها يترك أي تغيير في السعر أو التراجع عنه قيود هذا الزبون حتى تاريخ النهاية كما هي.",
+      "Once sent, mark it: a rate change or its undo then leaves this supplier's records up to the end date as they are.": "بعد إرساله علّمه: عندها يترك أي تغيير في السعر أو التراجع عنه قيود هذا المورد حتى تاريخ النهاية كما هي.",
+      "Marked on the group statement": "مُعلَّم على كشف المجموعة",
+      "The new list price was not applied to tickets on a statement already sent. Bill or credit the difference on the next statement.": "لم يُطبَّق سعر اللائحة الجديد على البطاقات الموجودة على كشف أُرسل مسبقاً. فوتر الفرق أو قيّده دائناً في الكشف التالي.",
+      "Morning Pocket Brief": "ملخص الجيب الصباحي",
+      "4-card snapshot & top Sentinels on phone sign-in": "ملخص من 4 بطاقات وأهم تنبيهات الرقابة عند الدخول من الهاتف",
+      "Show on phone sign-in": "إظهار عند الدخول من الهاتف",
+      "Loading live data...": "جارٍ تحميل البيانات الحية...",
+      "Enter Full App": "الدخول إلى التطبيق الكامل",
+      "360° Inspector": "الفاحص الشامل 360°",
+      "Top Urgent Sentinels": "أهم تنبيهات الرقابة العاجلة",
+      "All Audit Sentinels Clear": "جميع مؤشرات الرقابة سليمة",
+      "Good Morning": "صباح الخير",
+      "Good Afternoon": "مساء الخير",
+      "Good Evening": "مساء الخير",
+      "Record Summary": "ملخص السجل",
+      "Record Peek": "معاينة السجل",
+      "Cash & Bank Till": "النقد وصندوق المصرف",
+      "Delivered Loads": "النقلات المسلّمة",
+      "60d+ Overdue": "متأخرات +60 يوماً",
+      "Group Entities": "شركات المجموعة",
+      "Group Net Revenue": "صافي إيرادات المجموعة",
+      "Unpaired Legs": "أطراف غير مطابقة",
+      "Tracked Till": "صندوق متتبَّع",
+      "Pending Live Till": "بانتظار ربط الصندوق الحي",
+      "Net Revenue": "صافي الإيرادات",
+      "Operational Volume": "حجم العمليات",
+      "Month-to-Date": "منذ بداية الشهر",
+      "View Invoice Split": "عرض توزيع الفواتير",
+      "FIFO Invoice Split": "توزيع FIFO للفواتير",
+      "FIFO Invoice Allocation Split": "تفصيل توزيع السداد حسب الأقدمية FIFO",
+      "Close Invoice Split": "إغلاق توزيع الفواتير",
+      "Open Before": "الرصيد قبل السداد",
+      "Settled Now": "المسدد الآن",
+      "Open After": "المتبقي بعد السداد",
+      "Cleared": "مسددة بالكامل",
+      "Prior Carried Balance": "رصيد مدوّر سابق",
+      "Current Debit Note": "إشعار مدين حالي",
+      "Advance / Excess Allocation": "دفعة مقدمة / تخصيص فائض",
+      "Total Allocated": "إجمالي المخصّص",
+      "Unallocated Credit": "الرصيد الدائن غير المخصّص",
+      "Remaining Open AR": "الذمم المدينة المتبقية",
+      "Customer Open AR Impact": "الأثر على الذمم المدينة المفتوحة للعميل",
+      "Current Unapplied Advance": "الدفعة المقدمة غير المطبّقة الحالية",
+      "This Invoice": "هذه الفاتورة",
+      "This Credit Note": "هذا الإشعار الدائن",
+      "Projected Open AR": "الذمم المدينة المتوقعة",
+      "Projected Advance": "الرصيد الدائن المتوقع",
+      "Credit limit warning": "تنبيه حد الائتمان",
+      "Use negative (-) for credit notes": "استخدم الإشارة السالبة (-) للإشعارات الدائنة",
+      "Net Sale Amount ($) cannot be zero (use negative for credit notes).": "صافي مبلغ البيع ($) لا يمكن أن يكون صفراً (استخدم السالب للإشعار الدائن).",
+      "Remittance Date *": "تاريخ الحوالة *",
+      "Remittance Date": "تاريخ الحوالة",
+      "Same day and party, already recorded on another form": "نفس اليوم والطرف، مسجل مسبقاً في نموذج آخر",
+      "Same party, recorded one day apart on another form": "نفس الطرف، مسجل بفارق يوم واحد في نموذج آخر",
+      "Same day and party, entries on another form add up to this amount": "نفس اليوم والطرف، قيود في نموذج آخر يساوي مجموعها هذا المبلغ",
+      "One day apart, same party, entries on another form add up to this amount": "بفارق يوم واحد ولنفس الطرف، قيود في نموذج آخر يساوي مجموعها هذا المبلغ",
+      "Capitalized Landed Cost ($) cannot be negative on a positive sale.": "لا يمكن أن تكون التكلفة الرأسمالية المحمّلة ($) سالبة في فاتورة بيع موجبة.",
+      "Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).": "لا يمكن أن تكون التكلفة الرأسمالية المحمّلة ($) موجبة في إشعار دائن (أدخل 0 أو قيداً عكسياً سالباً).",
+      "Credit Note · Entered via Smart Register": "إشعار دائن · مُدخل عبر السجل الذكي"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -14544,7 +14847,7 @@
       "Alerts": "Alertes",
       "Alerts & Thresholds": "Règles d'Alerte & Seuils",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "Alerte la direction dès que les écarts compteurs, bons non imputés ou écarts de cuve atteignent 5 % ou plus du gasoil consommé sur la période.",
-      "Ali Mansour (WTC Scale)": "Ali Mansour (Bascule WTC)",
+      "Rami Haddad (WTC Scale)": "Rami Haddad (Bascule WTC)",
       "Align 17-character VIN or chassis plate inside narrow strip": "Alignez la plaque VIN à 17 caractères dans la bande étroite",
       "All": "Tout",
       "All 108 Routes Explorer": "Explorateur des 108 Itinéraires",
@@ -17805,8 +18108,7 @@
       "Holding Briefing": "Synthèse Holding & Trésorerie",
       "Holding Entity": "Entité Holding",
       "Holding Entity *": "Entité Holding *",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Counterparties)": "Grand livre étendu des parties prenantes Holding (Haj Mohamad et contreparties)",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Stakeholders)": "Grand livre étendu des parties prenantes Holding (Haj Mohamad et parties prenantes)",
+      "Holding Extended Stakeholder Ledger": "Grand livre étendu des parties prenantes Holding",
       "Holding Extended Stakeholder Ledger (Received vs Gave & Difference)": "Grand livre Extended Holding (Prélevé vs Versé et Différence)",
       "Holding HQ Overhead": "Frais généraux du siège Holding",
       "Holding Loans & Treasury Audit": "Audit prêts et trésorerie Holding",
@@ -21497,6 +21799,7 @@
       "Routes & Corridors": "Itinéraires & Corridors",
       "Routes Explorer": "Explorateur d'Itinéraires",
       "Routing / Equipment": "Affectation / Engin",
+      "Row navigation": "Navigation par ligne",
       "Rows": "Lignes",
       "Rows per page": "Lignes par page",
       "Rubber Screen Mesh": "Toile de Criblage Caoutchouc",
@@ -22559,7 +22862,10 @@
       "Supervisor Override": "Dérogation Superviseur",
       "Supervisor Override: Reprice Confirmed History": "Dérogation Superviseur : revaloriser l'historique confirmé",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "Retrait Superviseur : bon créé par erreur (0 KM · conserve le N° dans le carnet de 25)",
+      "Supervisor or Owner permission is required to lock or reopen an accounting period": "L'autorisation d'un superviseur ou du propriétaire est requise pour verrouiller ou rouvrir une période comptable",
       "Supervisor or Owner permission is required to reopen a sealed period": "L autorisation d un superviseur ou proprietaire est requise pour rouvrir une periode scellee",
+      "Owner or all-entity permission is required to lock or reopen all 14 entities": "L'autorisation du propriétaire ou l'accès complet est requis pour verrouiller ou rouvrir les 14 entités",
+      "Period close entries require data-entry and Supervisor or Owner permission": "Les écritures de clôture requièrent le droit de saisie et l'autorisation d'un superviseur ou du propriétaire",
       "Supervisor permission required to manage chronological rate schedules": "Autorisation Superviseur requise pour gérer les grilles tarifaires chronologiques",
       "Supervisor rights are required to override a confirmed statement watermark.": "Les droits Superviseur sont requis pour outrepasser la date jalon d'un relevé confirmé.",
       "Supervisor seat does not have access to this company.": "Le poste superviseur n’a pas accès à cette société.",
@@ -24168,7 +24474,7 @@
       "Father": "Père",
       "Father Name": "Nom du père",
       "Father:": "Père :",
-      "e.g. Mohammad": "ex. Mohammad",
+      "e.g. Nabil": "ex. Nabil",
       "Locked to the father's name recorded on onboarding": "Verrouillé sur le nom du père enregistré à l'embauche",
       "Please update to the latest ISABI app version before syncing changes.": "Veuillez mettre à jour vers la dernière version de l'application ISABI avant de synchroniser les modifications.",
       "Duplicate active staff name blocked by server.": "Nom d'employé actif en double bloqué par le serveur.",
@@ -25705,6 +26011,25 @@
       "Verified Site Gate Mini-Map": "Mini-carte GPS vérifiée du portail",
       "Gate Pin QR Code": "Code QR du point GPS",
       "Brake Lining & Shoe Set": "Jeu de garnitures & mâchoires de frein",
+      "Haul Road Surface (Tyre Wear)": "Revêtement de route (usure des pneus)",
+      "Auto-Detect (Unpaved for Quarry / Raw Sites)": "Détection auto (non asphalté pour carrières)",
+      "Unpaved / Loose Gravel (High Tyre Wear)": "Non asphalté / gravier (forte usure pneus)",
+      "Paved Asphalt / Concrete Road": "Route asphaltée / bétonnée",
+      "Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.": "Détecte automatiquement les carrières et sites non asphaltés pour pondérer l'usure des pneus.",
+      "Tyre Rotation & Alignment": "Permutation et parallélisme des pneus",
+      "Drive-Axle Tyre Replacement": "Remplacement pneus essieu moteur",
+      "Tyres & Alignment": "Pneus & parallélisme",
+      "Tyre & Quarry": "Pneus & carrière",
+      "Tyre Wear Due": "Usure pneus due",
+      "Tyre Wear": "Usure pneus",
+      "Brake": "Freins",
+      "is overdue on weighted brake & retarder wear for steep downhill haulage to": "dépasse le seuil pondéré d'usure des freins et ralentisseur pour la descente raide vers",
+      "Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.": "Avertissement consultatif uniquement. La validation reste possible si l'atelier ou le superviseur confirme.",
+      "Switch to": "Basculer vers",
+      "Drive-Axle Tyre Baseline": "Base pneus essieu moteur",
+      "Expense Invoice Reset": "Réinitialisation par facture",
+      "steep/quarry": "pente/carrière",
+      "steep": "pente",
       "Clear active filter slice and search query": "Effacer le filtre actif et la recherche",
       "Retarder & Drivetrain Inspection": "Inspection ralentisseur & transmission",
       "Brake / Retarder Baseline": "Référence freins & ralentisseur",
@@ -27288,7 +27613,288 @@
       "Entered By": "Saisi par",
       "Attachments": "Pièces jointes",
       "Close Preview": "Fermer l'aperçu",
-      "Matched Entry Preview": "Aperçu de l'écriture correspondante"
+      "Matched Entry Preview": "Aperçu de l'écriture correspondante",
+      "Share Period": "Période de la quote-part",
+      "No schedule in this period": "Aucun barème sur cette période",
+      "Total Partner Current Accounts": "Total des comptes courants des associés",
+      "A partner's profit-share schedule changed during this period. Each period is on its own line with its dates. The total counts that partner once, on the latest line.": "Le barème de quote-part d'un associé a changé pendant cette période. Chaque période figure sur sa propre ligne avec ses dates. Le total compte cet associé une seule fois, sur la ligne la plus récente.",
+      "Membership": "Adhésion",
+      "Chalet Revenue": "Revenu des chalets",
+      "Import": "Importation",
+      "Policy": "Police",
+      "Partner Distribution": "Distribution au partenaire",
+      "Loan Interest": "Intérêts du prêt",
+      "Typed Price, Kept": "Prix saisi, conservé",
+      "Now": "Actuel",
+      "After": "Après",
+      "Difference": "Écart",
+      "More records not listed": "Autres enregistrements non affichés",
+      "New Period Starts": "Début de la nouvelle période",
+      "Earlier Period Stays Until": "La période précédente reste jusqu'au",
+      "Records Re-priced": "Enregistrements retarifés",
+      "Net Change": "Variation nette",
+      "Costs Updated": "Coûts mis à jour",
+      "Records Keeping a Typed Price": "Enregistrements gardant un prix saisi",
+      "What This Undo Changed": "Ce que cette annulation a modifié",
+      "What This Save Changed": "Ce que cet enregistrement a modifié",
+      "Undo This Rate Change?": "Annuler ce changement de tarif ?",
+      "This Save Starts a New Period": "Cet enregistrement ouvre une nouvelle période",
+      "This Save Re-prices Existing Records": "Cet enregistrement retarife des enregistrements existants",
+      "This Save Re-prices No Record": "Cet enregistrement ne retarife aucun enregistrement",
+      "Records that followed this rate go back to the rate before it. Amounts already paid or collected do not change.": "Les enregistrements qui suivaient ce tarif reviennent au tarif précédent. Les montants déjà payés ou encaissés ne changent pas.",
+      "The earlier period stays as it is, with its records. The new values apply from the new start date. To correct only the date, go back and change nothing but the date.": "La période précédente reste telle quelle, avec ses enregistrements. Les nouvelles valeurs s'appliquent à partir de la nouvelle date de début. Pour corriger seulement la date, revenez en arrière et ne modifiez que la date.",
+      "The earlier period stays as it is. The new values apply from the new start date. Amounts already paid or collected do not change.": "La période précédente reste telle quelle. Les nouvelles valeurs s'appliquent à partir de la nouvelle date de début. Les montants déjà payés ou encaissés ne changent pas.",
+      "Check what this save does before it is posted. Amounts already paid or collected do not change.": "Vérifiez ce que fait cet enregistrement avant de le valider. Les montants déjà payés ou encaissés ne changent pas.",
+      "A price typed on a record is never changed by a rate change or by its undo.": "Un prix saisi sur un enregistrement n'est jamais modifié par un changement de tarif ni par son annulation.",
+      "See the Records": "Voir les enregistrements",
+      "Go Back": "Retour",
+      "Undo Rate Change": "Annuler le changement de tarif",
+      "Rate Change": "Changement de tarif",
+      "Periods of This Schedule": "Périodes de ce barème",
+      "Scheduled": "Planifié",
+      "Undone": "Annulé",
+      "This Record": "Cet enregistrement",
+      "Undo This Change": "Annuler ce changement",
+      "to": "au",
+      "Undo Put Back": "L'annulation a rétabli",
+      "Re-priced": "Retarifés",
+      "Typed Price Kept": "Prix saisi conservé",
+      "Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.": "Les enregistrements qui suivaient ce tarif sont revenus au tarif précédent. Un prix saisi sur un enregistrement est resté tel quel.",
+      "Records that follow this rate were re-priced. A price typed on a record stayed as typed.": "Les enregistrements qui suivent ce tarif ont été retarifés. Un prix saisi sur un enregistrement est resté tel quel.",
+      "This schedule was saved and undone on another device. Your screen is now up to date: save again.": "Ce barème a été enregistré puis annulé sur un autre appareil. Votre écran est maintenant à jour : enregistrez de nouveau.",
+      "This schedule was saved and undone on another device. Refresh the page and save again.": "Ce barème a été enregistré puis annulé sur un autre appareil. Actualisez la page et enregistrez de nouveau.",
+      "Lock the month, book estimates for unpriced items and send balance letters": "Clôturer le mois, comptabiliser des estimations pour les éléments non chiffrés et envoyer les lettres de confirmation de solde",
+      "Month-End Close": "Clôture de fin de mois",
+      "Month Locked": "Mois clôturé",
+      "Estimates for Unpriced Items": "Estimations des éléments non chiffrés",
+      "Estimates Reverse On": "Extourne des estimations le",
+      "Tickets Reported in Another Month": "Bons déclarés sur un autre mois",
+      "Books Out of Balance": "Écart d'équilibre des livres",
+      "Locked Through": "Clôturé jusqu'au",
+      "Month to Close": "Mois à clôturer",
+      "Hide Month-End Close": "Masquer la clôture de fin de mois",
+      "Open Month-End Close": "Ouvrir la clôture de fin de mois",
+      "Companies Covered": "Sociétés concernées",
+      "Entries in the closed month are locked": "Les écritures du mois clôturé sont verrouillées",
+      "Ready to lock entries in the closed month": "Prêt à verrouiller les écritures du mois écoulé",
+      "AI Check Before Closing": "Vérification IA avant clôture",
+      "Balance Confirmation Letters": "Lettres de confirmation de solde",
+      "+ Book Estimates": "+ Comptabiliser les estimations",
+      "Lock Month Through": "Clôturer le mois jusqu'au",
+      "Spread season memberships over the days used, lock stock counts and review food and bar losses": "Répartir les abonnements de saison sur les jours utilisés, figer les inventaires et revoir les pertes cuisine et bar",
+      "Count the rent earned this month, lock the VAT month and prepare lease renewals": "Calculer le loyer acquis ce mois, clôturer le mois de TVA et préparer les renouvellements de baux",
+      "Leases Up for Renewal": "Baux à renouveler",
+      "Finance cost on unsold trucks, buyer deposits held and a reserve for slow-moving parts": "Coût de financement des camions invendus, acomptes clients détenus et provision pour pièces à rotation lente",
+      "Finance Cost on Unsold Trucks": "Coût de financement des camions invendus",
+      "Slow-Moving Parts Reserve": "Provision pièces à rotation lente",
+      "Parts to Reorder": "Pièces à recommander",
+      "Policies renewing soon, lock the insurer statement month and hold back commission at risk": "Polices à renouveler bientôt, clôturer le mois du relevé assureur et retenir la commission à risque",
+      "Premiums Renewing Soon": "Primes à renouveler bientôt",
+      "Commission Held Back": "Commission retenue",
+      "Group Month Locked (14/14)": "Mois du groupe clôturé (14/14)",
+      "Group Month-End Close": "Clôture de fin de mois du groupe",
+      "Check that every company balances, lock the month for the whole group and brief the board": "Vérifier l'équilibre de chaque société, clôturer le mois pour tout le groupe et informer le conseil",
+      "Companies Out of Balance": "Écart d'équilibre des sociétés",
+      "Locked through": "Clôturé jusqu'au",
+      "Partly locked through": "Partiellement clôturé jusqu'au",
+      "Entries dated on or before this day are locked. Reopen the month from General Ledger.": "Les écritures datées de ce jour ou avant sont verrouillées. Rouvrez le mois depuis le Grand livre.",
+      "Nothing pending to estimate for this month": "Aucun élément en attente à estimer pour ce mois",
+      "resorts skipped: that month is already locked": "complexes ignorés : ce mois est déjà clôturé",
+      "That month is already locked. Reopen it from General Ledger first.": "Ce mois est déjà clôturé. Rouvrez-le d'abord depuis le Grand livre.",
+      "Nothing to book for this month": "Rien à comptabiliser pour ce mois",
+      "Choose Korri Auto or Shacman before booking": "Choisissez Korri Auto ou Shacman avant de comptabiliser",
+      "resorts skipped: a later month is already booked": "complexes ignorés : un mois ultérieur est déjà comptabilisé",
+      "Not Due for Renewal": "Pas encore à renouveler",
+      "Region Zone:": "Zone de région :",
+      "Inside Region Zone:": "Dans la zone de région :",
+      "Measure KM": "Mesurer les km",
+      "Move Pin": "Déplacer l'épingle",
+      "Close popup": "Fermer la fenêtre",
+      "No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.": "Aucun accord de prix Ventes (Livraison) ne couvre ce client, ce produit et ce site à cette date. Ajoutez d'abord l'accord, puis enregistrez le bon.",
+      "No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.": "Aucun accord de prix d'achat ne couvre ce site et cette matière à cette date. Ajoutez-en un (un accord à 0 $ est permis) ou enregistrez le bon en Prix en attente.",
+      "No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.": "Aucun accord Ventes (Livraison) pour ce client et ce site à cette date. Ajoutez-en un avant d'enregistrer.",
+      "No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.": "Aucun accord de prix d'achat pour ce site et cette matière à cette date. Ajoutez-en un (0 $ permis) ou passez en Prix en attente.",
+      "Site Clean-up": "Nettoyage des sites",
+      "Clean Up Sites": "Nettoyer les sites",
+      "Review dormant sites that still hold price agreements, and sites never used, then close them in one step": "Passez en revue les sites dormants qui ont encore des accords de prix et les sites jamais utilisés, puis fermez-les en une seule étape",
+      "Dormant with Open Agreements": "Dormants avec accords ouverts",
+      "Never Used": "Jamais utilisés",
+      "No loads and no price agreements": "Aucun voyage et aucun accord de prix",
+      "Open Agreements": "Accords ouverts",
+      "Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.": "Fermer un site met fin aujourd'hui à ses accords de prix ouverts. Le rouvrir dans Modifier le site les rétablit.",
+      "Nothing to clean up.": "Rien à nettoyer.",
+      "No loads": "Aucun voyage",
+      "Has loads after today": "A des voyages après aujourd'hui",
+      "Agreements of a company your seat cannot change": "Accords d'une société que votre poste ne peut pas modifier",
+      "Your seat cannot close sites.": "Votre poste ne peut pas fermer de sites.",
+      "Already closed": "Déjà fermé",
+      "Notify me on this device": "M'avertir sur cet appareil",
+      "Notifications are on for this device.": "Les notifications sont activées sur cet appareil.",
+      "Turn Off": "Désactiver",
+      "Phone notifications are not set up yet.": "Les notifications sur téléphone ne sont pas encore configurées.",
+      "This browser cannot show notifications.": "Ce navigateur ne peut pas afficher de notifications.",
+      "Notifications are blocked for this site in the browser settings.": "Les notifications sont bloquées pour ce site dans les réglages du navigateur.",
+      "On iPhone or iPad, add the app to the Home Screen first (iOS 16.4 or later), then open it from there.": "Sur iPhone ou iPad, ajoutez d'abord l'application à l'écran d'accueil (iOS 16.4 ou ultérieur), puis ouvrez-la depuis celui-ci.",
+      "Notifications were not allowed on this device.": "Les notifications n'ont pas été autorisées sur cet appareil.",
+      "Could not turn on notifications. Try again.": "Impossible d'activer les notifications. Réessayez.",
+      "Notifications turned off for this device.": "Notifications désactivées sur cet appareil.",
+      "A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.": "Un bail terminé ou dont le loyer a changé pendant cette période reste listé en gris avec ses dates. Les totaux comptent chaque bail une seule fois, au loyer en vigueur le dernier jour de la période, ou aujourd'hui si la période n'est pas terminée.",
+      "Statement marked as sent. A rate change or its undo now leaves these records as they are.": "Relevé marqué comme envoyé. Un changement de tarif ou son annulation laisse désormais ces écritures telles quelles.",
+      "Sent mark removed from this statement.": "Marque d'envoi retirée de ce relevé.",
+      "SENT MARK REMOVED FROM THIS STATEMENT.": "MARQUE D'ENVOI RETIRÉE DE CE RELEVÉ.",
+      "Only a finance or supervisor seat can mark a statement as sent.": "Seul un poste finance ou superviseur peut marquer un relevé comme envoyé.",
+      "The statement needs an end date.": "Le relevé doit avoir une date de fin.",
+      "THE STATEMENT NEEDS AN END DATE.": "LE RELEVÉ DOIT AVOIR UNE DATE DE FIN.",
+      "Only a supervisor can remove the sent mark.": "Seul un superviseur peut retirer la marque d'envoi.",
+      "Only a supervisor can move a sent mark to an earlier date.": "Seul un superviseur peut ramener la marque d'envoi à une date antérieure.",
+      "Only a supervisor can remove a sent mark or move it to an earlier date.": "Seul un superviseur peut retirer la marque d'envoi ou la ramener à une date antérieure.",
+      "Only the Owner can review rate changes or change the alert amount.": "Seul le propriétaire peut valider les changements de tarif ou modifier le montant d'alerte.",
+      "A lease that has ended or changed its rent stays listed in grey with its dates. The totals count each lease once, at the rent in force today.": "Un bail terminé ou dont le loyer a changé reste listé en gris avec ses dates. Les totaux comptent chaque bail une seule fois, au loyer en vigueur aujourd'hui.",
+      "On a Sent Statement": "Sur un relevé envoyé",
+      "ON A SENT STATEMENT": "SUR UN RELEVÉ ENVOYÉ",
+      "Records on a Sent Statement, Left As They Are": "Écritures sur un relevé envoyé, laissées telles quelles",
+      "Difference to Bill or Credit Next Statement": "Écart à facturer ou créditer au prochain relevé",
+      "Cost Difference on Sent Supplier Statements": "Écart de coût sur les relevés fournisseurs envoyés",
+      "Records on a statement already sent to the customer or supplier are not changed. The difference is listed so it can go on the next statement.": "Les écritures d'un relevé déjà envoyé au client ou au fournisseur ne changent pas. L'écart est listé pour figurer sur le prochain relevé.",
+      "Left on Sent Statements": "Laissées sur relevés envoyés",
+      "LEFT ON SENT STATEMENTS": "LAISSÉES SUR RELEVÉS ENVOYÉS",
+      "Rate Changes": "Changements de tarif",
+      "RATE CHANGES": "CHANGEMENTS DE TARIF",
+      "This page is for the Owner.": "Cette page est réservée au propriétaire.",
+      "THIS PAGE IS FOR THE OWNER.": "CETTE PAGE EST RÉSERVÉE AU PROPRIÉTAIRE.",
+      "Large Change": "Changement important",
+      "LARGE CHANGE": "CHANGEMENT IMPORTANT",
+      "Undone Within a Day": "Annulé en moins d'un jour",
+      "UNDONE WITHIN A DAY": "ANNULÉ EN MOINS D'UN JOUR",
+      "CHANGE": "CHANGEMENT",
+      "UNDO": "ANNULATION",
+      "RESTORE": "RESTAURATION",
+      "Reviewed": "Vérifié",
+      "REVIEWED": "VÉRIFIÉ",
+      "Mark Reviewed": "Marquer vérifié",
+      "MARK REVIEWED": "MARQUER VÉRIFIÉ",
+      "Every rate change and undo across the six industries, with the money it moved. An undone change stays listed.": "Chaque changement de tarif et chaque annulation dans les six secteurs, avec les montants qu'ils ont modifiés. Un changement annulé reste listé.",
+      "Alert when a change moves more than": "Alerter quand un changement dépasse",
+      "ALERT WHEN A CHANGE MOVES MORE THAN": "ALERTER QUAND UN CHANGEMENT DÉPASSE",
+      "Alert amount in dollars": "Montant d'alerte en dollars",
+      "ALERT AMOUNT IN DOLLARS": "MONTANT D'ALERTE EN DOLLARS",
+      "Changes, Last 30 Days": "Changements, 30 derniers jours",
+      "CHANGES, LAST 30 DAYS": "CHANGEMENTS, 30 DERNIERS JOURS",
+      "Undos, Last 30 Days": "Annulations, 30 derniers jours",
+      "UNDOS, LAST 30 DAYS": "ANNULATIONS, 30 DERNIERS JOURS",
+      "Net Change, Last 30 Days": "Variation nette, 30 derniers jours",
+      "NET CHANGE, LAST 30 DAYS": "VARIATION NETTE, 30 DERNIERS JOURS",
+      "Not Billed on Sent Statements": "Non facturé sur relevés envoyés",
+      "NOT BILLED ON SENT STATEMENTS": "NON FACTURÉ SUR RELEVÉS ENVOYÉS",
+      "OPEN ALERTS": "ALERTES OUVERTES",
+      "Filter rate changes": "Filtrer les changements de tarif",
+      "FILTER RATE CHANGES": "FILTRER LES CHANGEMENTS DE TARIF",
+      "ALL INDUSTRIES": "TOUS LES SECTEURS",
+      "Alerts Only": "Alertes seulement",
+      "ALERTS ONLY": "ALERTES SEULEMENT",
+      "When": "Quand",
+      "WHEN": "QUAND",
+      "SCHEDULE": "BARÈME",
+      "RE-PRICED": "RETARIFÉES",
+      "Typed Kept": "Saisis conservés",
+      "TYPED KEPT": "SAISIS CONSERVÉS",
+      "On Sent Statements": "Sur relevés envoyés",
+      "ON SENT STATEMENTS": "SUR RELEVÉS ENVOYÉS",
+      "By": "Par",
+      "BY": "PAR",
+      "ALERT": "ALERTE",
+      "No alert to review.": "Aucune alerte à vérifier.",
+      "NO ALERT TO REVIEW.": "AUCUNE ALERTE À VÉRIFIER.",
+      "No rate change has moved money yet.": "Aucun changement de tarif n'a encore modifié de montant.",
+      "NO RATE CHANGE HAS MOVED MONEY YET.": "AUCUN CHANGEMENT DE TARIF N'A ENCORE MODIFIÉ DE MONTANT.",
+      "Alert amount saved.": "Montant d'alerte enregistré.",
+      "ALERT AMOUNT SAVED.": "MONTANT D'ALERTE ENREGISTRÉ.",
+      "PRICE AGREEMENT": "ACCORD DE PRIX",
+      "Tariff": "Tarif",
+      "TARIFF": "TARIF",
+      "Lease Rent": "Loyer du bail",
+      "LEASE RENT": "LOYER DU BAIL",
+      "Price Target": "Prix cible",
+      "PRICE TARGET": "PRIX CIBLE",
+      "COMMISSION AGREEMENT": "ACCORD DE COMMISSION",
+      "PARTNER SHARE": "PART DE L'ASSOCIÉ",
+      "Loan Rate": "Taux du prêt",
+      "LOAN RATE": "TAUX DU PRÊT",
+      "1 Alert": "1 alerte",
+      "1 ALERT": "1 ALERTE",
+      "Move the Sent Mark To": "Déplacer la marque d'envoi au",
+      "MOVE THE SENT MARK TO": "DÉPLACER LA MARQUE D'ENVOI AU",
+      "Mark as Sent Through": "Marquer comme envoyé jusqu'au",
+      "MARK AS SENT THROUGH": "MARQUER COMME ENVOYÉ JUSQU'AU",
+      "Sent to the customer through": "Envoyé au client jusqu'au",
+      "SENT TO THE CUSTOMER THROUGH": "ENVOYÉ AU CLIENT JUSQU'AU",
+      "Sent to the supplier through": "Envoyé au fournisseur jusqu'au",
+      "SENT TO THE SUPPLIER THROUGH": "ENVOYÉ AU FOURNISSEUR JUSQU'AU",
+      "A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.": "Un changement de tarif ou son annulation laisse les écritures jusqu'à ce jour telles quelles et liste l'écart pour le prochain relevé.",
+      "Remove Sent Mark": "Retirer la marque d'envoi",
+      "REMOVE SENT MARK": "RETIRER LA MARQUE D'ENVOI",
+      "Not marked as sent": "Non marqué comme envoyé",
+      "NOT MARKED AS SENT": "NON MARQUÉ COMME ENVOYÉ",
+      "Once sent, mark it: a rate change or its undo then leaves this customer's records up to the end date as they are.": "Une fois envoyé, marquez-le : un changement de tarif ou son annulation laisse alors les écritures de ce client jusqu'à la date de fin telles quelles.",
+      "Once sent, mark it: a rate change or its undo then leaves this supplier's records up to the end date as they are.": "Une fois envoyé, marquez-le : un changement de tarif ou son annulation laisse alors les écritures de ce fournisseur jusqu'à la date de fin telles quelles.",
+      "Marked on the group statement": "Marqué sur le relevé du groupe",
+      "The new list price was not applied to tickets on a statement already sent. Bill or credit the difference on the next statement.": "Le nouveau prix catalogue n'a pas été appliqué aux bons d'un relevé déjà envoyé. Facturez ou créditez l'écart au prochain relevé.",
+      "Morning Pocket Brief": "Synthèse de poche du matin",
+      "4-card snapshot & top Sentinels on phone sign-in": "Aperçu en 4 cartes et principales Sentinelles à la connexion mobile",
+      "Show on phone sign-in": "Afficher à la connexion mobile",
+      "Loading live data...": "Chargement des données en direct...",
+      "Enter Full App": "Ouvrir l'application complète",
+      "360° Inspector": "Inspecteur 360°",
+      "Top Urgent Sentinels": "Sentinelles urgentes prioritaires",
+      "All Audit Sentinels Clear": "Toutes les Sentinelles d'audit sont conformes",
+      "Good Morning": "Bonjour",
+      "Good Afternoon": "Bon après-midi",
+      "Good Evening": "Bonsoir",
+      "Record Summary": "Résumé de l'enregistrement",
+      "Record Peek": "Aperçu de l'enregistrement",
+      "Cash & Bank Till": "Caisse & Banque",
+      "Delivered Loads": "Chargements livrés",
+      "60d+ Overdue": "Impayés 60j+",
+      "Group Entities": "Entités du groupe",
+      "Group Net Revenue": "Chiffre d'affaires net du groupe",
+      "Unpaired Legs": "Écritures non rapprochées",
+      "Tracked Till": "Caisse suivie",
+      "Pending Live Till": "En attente de caisse en direct",
+      "Net Revenue": "Revenu net",
+      "Operational Volume": "Volume opérationnel",
+      "Month-to-Date": "Cumul mensuel",
+      "View Invoice Split": "Voir la ventilation par facture",
+      "FIFO Invoice Split": "Ventilation FIFO des factures",
+      "FIFO Invoice Allocation Split": "Détail d'affectation FIFO des factures",
+      "Close Invoice Split": "Fermer la ventilation des factures",
+      "Open Before": "Ouvert avant",
+      "Settled Now": "Réglé maintenant",
+      "Open After": "Reste ouvert",
+      "Cleared": "Soldée",
+      "Prior Carried Balance": "Solde reporté antérieur",
+      "Current Debit Note": "Note de débit actuelle",
+      "Advance / Excess Allocation": "Avance / Affectation excédentaire",
+      "Total Allocated": "Total alloué",
+      "Unallocated Credit": "Crédit non alloué",
+      "Remaining Open AR": "Encours client restant",
+      "Customer Open AR Impact": "Impact sur l'encours client ouvert",
+      "Current Unapplied Advance": "Avance non affectée actuelle",
+      "This Invoice": "Cette facture",
+      "This Credit Note": "Cet avoir",
+      "Projected Open AR": "Encours client projeté",
+      "Projected Advance": "Avance projetée",
+      "Credit limit warning": "Alerte limite de crédit",
+      "Use negative (-) for credit notes": "Utiliser un montant négatif (-) pour les avoirs",
+      "Net Sale Amount ($) cannot be zero (use negative for credit notes).": "Le montant net de vente ($) ne peut pas être nul (utilisez un signe négatif pour les avoirs).",
+      "Remittance Date *": "Date de bordereau *",
+      "Remittance Date": "Date de bordereau",
+      "Same day and party, already recorded on another form": "Même jour et même tiers, déjà saisi dans un autre formulaire",
+      "Same party, recorded one day apart on another form": "Même tiers, saisi à un jour d'écart dans un autre formulaire",
+      "Same day and party, entries on another form add up to this amount": "Même jour et même tiers, des écritures d'un autre formulaire totalisent ce montant",
+      "One day apart, same party, entries on another form add up to this amount": "À un jour d'écart et pour le même tiers, des écritures d'un autre formulaire totalisent ce montant",
+      "Capitalized Landed Cost ($) cannot be negative on a positive sale.": "Le coût d'achat capitalisé ($) ne peut pas être négatif sur une vente positive.",
+      "Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).": "Le coût d'achat capitalisé ($) ne peut pas être positif sur un avoir (saisissez 0 ou une contre-passation négative).",
+      "Credit Note · Entered via Smart Register": "Avoir · Saisi via le registre intelligent"
     }
   };
 
@@ -27837,9 +28443,39 @@
   ]);
 
   let _properNounSet = null;
-  let _properNounSeedCount = -1;
+  let _properNounSeedTotal = -1;
+  let _properNounNbObj = undefined;
 
-  function buildProperNounSet() {
+  const PROPER_NOUN_SEED_TABLES = [
+    'customers', 'suppliers', 'staff_members', 'employments', 'drivers', 'sites', 'regions',
+    'products', 'items', 'equipment', 'users', 'bank_accounts',
+    'cash_movements', 'external_movements',
+    're_properties', 're_tenants', 're_leases', 're_sales',
+    'ins_carriers', 'ins_policies', 'ins_claims',
+    'trd_skus', 'trd_shipments', 'hld_loans', 'hsp_memberships'
+  ];
+
+  function countProperNounSeedTotal() {
+    let total = 0;
+    try {
+      const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
+      const recs = (seed && seed.records) ? seed.records : null;
+      if (recs) {
+        for (let ti = 0; ti < PROPER_NOUN_SEED_TABLES.length; ti++) {
+          const arr = recs[PROPER_NOUN_SEED_TABLES[ti]];
+          if (Array.isArray(arr)) total += arr.length;
+        }
+      }
+      const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && Array.isArray(window.MFG_ENTERPRISE.companies))
+        ? window.MFG_ENTERPRISE.companies : null;
+      if (ent) total += ent.length;
+    } catch (_) {
+      return 0;
+    }
+    return total;
+  }
+
+  function buildProperNounSet(seedTotal, seedNbObj) {
     const s = new Set([
       'wtc', 'bbconstruction', 'lions transport', 'lions', 'bdeir holding', 'bdeir',
       'blanca', 'la una', 'launa', 'palms', 'voile', 'platinum', 'platinum executive suites',
@@ -27847,51 +28483,38 @@
       'properties', '4235 company s.a.l', '4235 s.a.l', '4235', 'insurance company', 'bdeir insurance brokerage',
       'allianz', 'allianz sna', 'axa', 'axa middle', 'axa middle east', 'bankers', 'bankers assurance', 'bankers ass',
       'arope', 'arope insurance', 'medgulf', 'libano-suisse', 'whish', 'rawbt', 'isabi', 'isabi systems',
-      'hussein bdeir', 'karim bdeir', 'jad bdeir', 'afif bdeir', 'afif & ibrahim bdeir', 'haj ibrahim',
-      'tarek farah', 'maya nassar', 'nadine khoury', 'rami haddad', 'sabah kassab', 'aya hammoud',
-      'mark abou tayeh', 'mohamad rammal', 'hatem saab', 'samaan al hayek', 'chadi haj hassan', 'ali klait',
-      'ghassan abou ghader', 'abdullah zahra', 'al razan company', 'al-rida trading co.', 'cedar coast developers sal',
-      'beirut diagnostic partners l', 'khoury international holding', 'infinitas sal', 'infinitas', 'mazen',
-      'hoda harkous', 'dr sara abed latif', 'mohamad ali fawz', 'nadia khoury', 'karim haddad', 'cedar trading sal',
-      'phoenicia logis', 'kansoun brothers co.', 'majbal araco', 'majbal araco jiyeh', 'majed terro', 'mega beton',
-      'soime choueifat', 'soime dawra', 'sabeh beton choueifat', 'dabousi', 'dabousi ghrbal', 'bsalim', 'jiyeh',
+      // Real people and outside parties are not listed here (this file is public): they come from the seed
+      // tables below and from the private name book (`window.MFG_NAMEBOOK.properNouns()`), signed-in only.
+      'tarek farah', 'maya nassar', 'nadine khoury', 'rami haddad',
+      'al-rida trading co.', 'cedar coast developers sal',
+      'beirut diagnostic partners l', 'khoury international holding',
+      'cedar pharmacy', 'meridian consulting sal', 'nabil khoury', 'maya abi saab', 'dr. nadine maalouf', 'fadi rizk',
+      'phoenicia logis', 'bsalim', 'jiyeh',
       'jiyeh jv', 'halat jv', 'tyre jv', 'sibline', 'choueifat', 'dawra', 'beirut', 'bashoura', 'jdaide',
       'aawkar', 'fanar', 'sinai', 'south', 'jnoub', 'nabatieh', 'naher l mot', 'halat /nahr el mot',
-      'spinneys mar elias', 'radwan sidani', 'chhab', 'goulf', 'natgaz', 'ramel mrml', 'trab mrml', 'sakher',
-      'bodra', 'bahes', 'mghasal', 'miran', 'bleupool', 'aluminium',
+      'spinneys mar elias', 'goulf', 'natgaz', 'ramel mrml', 'trab mrml', 'sakher',
+      'bodra', 'bahes', 'mghasal', 'aluminium',
       'mina el hosn', 'marina tower', 'nabatieh el tahta', 'kaakaayit al snoubar', 'chiah', 'msaytbeh',
       'ras beirut', 'hamra pavillon', 'mazraa', 'qrouh', 'baghdad mansour commercial unit (iraq)',
       'cannes croisette luxury residence (france)', 'caterpillar 650kva banquet gen #1',
       'cummins 250kva silent gen + hybrid inverter', 'perkins 500kva prime gen #1 + 180kwp solar',
       'mtu 550kva twin redundant power plant', 'ballroom acoustic dimmers & chiller ahu #3',
       'world trading & construction company', 'world trading & construction',
-      'karim mansour', 'ali mansour', 'rami kassis', 'ghassanieh',
+      'karim mansour', 'rami kassis', 'ghassanieh',
       'blanca beach resort', 'la una resort', 'palms resort', 'voile resort', 'platinum hospitality',
       'korri auto sal', 'shacman lebanon sal', '4235 company s.a.l (msaytbeh commercial)',
       'bankers assurance sal', 'man enterprise', 'holcim liban', 'ipt diesel supply',
-      'arabian construction co.', 'dahr el baidar quarry', 'agrimount', 'haj', 'sheikh rabih',
-      'jad', 'ghafar saloum', 'mahmoud al mortada', 'mwafak', 'liwaa harb', 'yasser',
-      'ayman mousa', 'sultan', 'awad', 'hussein saleh', 'bechara srouji for contracting s.a.l',
-      'majed karam', 'khalife', 'wissam mlaab', 'mohamad habib', 'ali saleh',
+      'arabian construction co.', 'dahr el baidar quarry', 'haj',
       'shacman x3000', 'shacman f3000', 'hino 500', 'fmc150', 'fmc920'
     ]);
     try {
       const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
       const recs = (seed && seed.records) ? seed.records : null;
-      let count = 0;
       if (recs) {
-        const tables = [
-          'customers', 'suppliers', 'staff_members', 'employments', 'drivers', 'sites', 'regions',
-          'products', 'items', 'equipment', 'users', 'bank_accounts',
-          'cash_movements', 'external_movements',
-          're_properties', 're_tenants', 're_leases', 're_sales',
-          'ins_carriers', 'ins_policies', 'ins_claims',
-          'trd_skus', 'trd_shipments', 'hld_loans', 'hsp_memberships'
-        ];
+        const tables = PROPER_NOUN_SEED_TABLES;
         for (let ti = 0; ti < tables.length; ti++) {
           const arr = recs[tables[ti]];
           if (!Array.isArray(arr)) continue;
-          count += arr.length;
           for (let i = 0; i < arr.length; i++) {
             const r = arr[i];
             if (!r || typeof r !== 'object') continue;
@@ -27909,17 +28532,40 @@
       const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && Array.isArray(window.MFG_ENTERPRISE.companies))
         ? window.MFG_ENTERPRISE.companies : null;
       if (ent) {
-        count += ent.length;
         for (let i = 0; i < ent.length; i++) {
           const c = ent[i];
           if (c && c.name) s.add(String(c.name).trim().toLowerCase());
           if (c && c.shortName) s.add(String(c.shortName).trim().toLowerCase());
         }
       }
-      _properNounSeedCount = count;
+      const nbook = (typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.properNouns === 'function')
+        ? window.MFG_NAMEBOOK.properNouns() : [];
+      for (let i = 0; i < nbook.length; i++) s.add(nbook[i]);
+      const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK) ? window.MFG_NAMEBOOK : null;
+      _properNounSeedTotal = seedTotal !== undefined ? seedTotal : countProperNounSeedTotal();
+      _properNounNbObj = seedNbObj !== undefined ? seedNbObj : ((nb && nb.loaded && typeof nb.get === 'function') ? nb.get() : null);
     } catch (_) {}
     _properNounSet = s;
     return s;
+  }
+
+  function ensureProperNounSetFresh() {
+    let total = 0;
+    let nbObj = null;
+    try {
+      total = countProperNounSeedTotal();
+      const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK) ? window.MFG_NAMEBOOK : null;
+      nbObj = (nb && nb.loaded && typeof nb.get === 'function') ? nb.get() : null;
+    } catch (_) {
+      total = 0;
+      nbObj = null;
+    }
+    if (!_properNounSet || total !== _properNounSeedTotal || nbObj !== _properNounNbObj) {
+      buildProperNounSet(total, nbObj);
+      if (typeof STR_CACHE === 'object' && STR_CACHE) {
+        Object.keys(STR_CACHE).forEach(k => { if (STR_CACHE[k] && typeof STR_CACHE[k].clear === 'function') STR_CACHE[k].clear(); });
+      }
+    }
   }
 
   function isProperNounOrInvariant(str) {
@@ -27939,16 +28585,14 @@
     if (/^(PLOT-|INTL-|WO-|IMP-|ALZ-|AXA-|BNK-|MGF-|CLM-|SU-|TRIP-|KA-\d{4}-)/i.test(t)) return true;
     if (/^\d{4}-\d{2}(?:-\d{2})?$/.test(t)) return true;
 
-    const curCount = (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records && Array.isArray(window.MFG_SEED.records.customers))
-      ? window.MFG_SEED.records.customers.length : 0;
-    if (!_properNounSet || curCount !== _properNounSeedCount) buildProperNounSet();
+    ensureProperNounSetFresh();
 
     const low = t.toLowerCase();
     if (_properNounSet.has(low)) return true;
     // Strip trailing "(WTC)" / "(BBC)" / "(2)" / "(Abu Khalil)" on proper nouns
     const baseMatch = t.match(/^(.+?)\s*\(([^()]+)\)$/);
     if (baseMatch && _properNounSet.has(baseMatch[1].trim().toLowerCase())) return true;
-    // Comma-separated list of proper nouns / plate numbers (e.g. "TB3, Tb4, Tb2" or "363587, Mohamad Rammal, 357222")
+    // Comma-separated list of proper nouns / plate numbers (e.g. "TB3, Tb4, Tb2" or "363587, Rami Haddad, 357222")
     if (t.includes(',')) {
       const parts = t.split(',').map(x => x.trim()).filter(Boolean);
       if (parts.length >= 2 && parts.every(p => !/[A-Za-z]/.test(p) || _properNounSet.has(p.toLowerCase()) || /^(Tb?\d+|\d+)$/i.test(p))) {
@@ -29374,6 +30018,12 @@
         ? `${m[1]} طن-كم منحدرات (+${m[2]} كم تآكل)`
         : `${m[1]} t-km en pente (+${m[2]} km usure)`;
     }
+    m = trimmed.match(/^([\d,]+)\s*unpaved quarry loads?\s*\(\+?([\d,]+)\s*tyre wear km\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} نقلة مقلع غير معبد (+${m[2]} كم تآكل إطارات)`
+        : `${m[1]} voyage(s) carrière non asphaltée (+${m[2]} km usure pneus)`;
+    }
     m = trimmed.match(/^(.+?):\s*([\d,]+)\s*t-km\s*\(\+([\d,]+)\s*wear km\)$/i);
     if (m && depth < 3) {
       const lhs = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
@@ -30573,6 +31223,12 @@
         ? `العقد النشط براتب قيد التحديد (${m[1]}) · مدفوع كسلفة (${advAmt}) لحين إدخال الراتب النهائي`
         : `Contrat actif avec salaire en attente (${m[1]}) · Versé en avance (${advAmt}) jusqu'à saisie du salaire final`;
     }
+    m = trimmed.match(/^Only\s+([\d.,]+)\s+L for\s+(\$[\d.,]+)\s+\((\$[\d.,]+)\s*\/\s*L\):\s*type the litres delivered, the diesel tank counts this quantity$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `فقط ${m[1]} ليتر مقابل ${m[2]} (${m[3]} / ليتر): أدخل عدد الليترات المسلّمة، فخزان المازوت يحتسب هذه الكمية`
+        : `Seulement ${m[1]} L pour ${m[2]} (${m[3]} / L) : saisissez les litres livrés, le réservoir de gasoil compte cette quantité`;
+    }
     m = trimmed.match(/^Future Advance\s*\(([^)]+)\)$/i);
     if (m) {
       return lang === 'ar' ? `سلفة مسبقة (${translatePayrollPeriodRef(m[1], 'ar')})` : `Avance Anticipée (${translatePayrollPeriodRef(m[1], 'fr')})`;
@@ -31372,6 +32028,44 @@
     // period stays on the row as it was and the save goes on as a new entry (v19.6.390)
     m = trimmed.match(/^Earlier period kept to\s+(\S+)\s+·\s+New entry from\s+(\S+)$/i);
     if (m) return lang === 'ar' ? `أُبقيت الفترة السابقة حتى ${m[1]} · قيد جديد من ${m[2]}` : `Période précédente conservée jusqu'au ${m[1]} · Nouvelle entrée à partir du ${m[2]}`;
+
+    // Site clean-up (bulk close of dormant and never-used sites)
+    m = trimmed.match(/^(\d+)\s+sites? closed\s*·\s*(\d+)\s+price agreements?\s+ended on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أُغلق ${m[1]} من المواقع · وأُنهيت ${m[2]} من اتفاقيات الأسعار في ${m[3]}` : `${m[1]} site(s) fermé(s) · ${m[2]} accord(s) de prix clôturé(s) le ${m[3]}`;
+    m = trimmed.match(/^Close\s+(\d+)\s+selected sites?$/i);
+    if (m) return lang === 'ar' ? `إغلاق ${m[1]} من المواقع المحددة` : `Fermer ${m[1]} site(s) sélectionné(s)`;
+    m = trimmed.match(/^(\d+)\s+sites?\s*·\s*(\d+)\s+open price agreements?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من المواقع · ${m[2]} من اتفاقيات الأسعار المفتوحة` : `${m[1]} site(s) · ${m[2]} accord(s) de prix ouvert(s)`;
+
+    // Save toast of any edited record: "<Record> updated · <name>[ · <closure note>]"
+    // Record labels only (letters, spaces, & / ( ) -): toasts such as "✓ Seat updated · ..." keep their own handling
+    m = trimmed.match(/^([A-Z][A-Za-z &/()-]{1,40}?)\s+updated\s+·\s+(.+)$/);
+    if (m && depth < 3) {
+      const label = translateCore(m[1].trim(), lang, depth + 1);
+      const parts = m[2].split(/\s+·\s+/);
+      const rest = [parts[0]].concat(parts.slice(1).map(p => translateCore(p.trim(), lang, depth + 1))).join(' · ');
+      return lang === 'ar' ? `تم تحديث ${label} · ${rest}` : `${label} mis à jour · ${rest}`;
+    }
+    // APP badge tooltip
+    m = trimmed.match(/^Entered in this web app(?:\s+by\s+(.+?))?(?:\s+·\s+(.+))?$/);
+    if (m) {
+      const by = m[1] ? (lang === 'ar' ? ` بواسطة ${m[1]}` : ` par ${m[1]}`) : '';
+      const at = m[2] ? ` · ${m[2]}` : '';
+      return lang === 'ar' ? `أُدخل في تطبيق الويب هذا${by}${at}` : `Saisi dans cette application web${by}${at}`;
+    }
+    // Map pin popup distances
+    m = trimmed.match(/^\(RT\s+([\d.,]+)\s+km\)$/);
+    if (m) return lang === 'ar' ? `(ذهاب وإياب ${m[1]} كم)` : `(A/R ${m[1]} km)`;
+    m = trimmed.match(/^From\s+(WTC|BBConstruction|Lions Transport):$/);
+    if (m) return lang === 'ar' ? `من ${m[1]}:` : `Depuis ${m[1]} :`;
+    // Site form pin preview: "[Region: X · ]From WTC: One-Way N km · Round-Trip M km" and "[Region: X · ]lat, lng"
+    m = trimmed.match(/^(?:Region:\s+(.+?)\s+·\s+)?From\s+(WTC|BBConstruction|Lions Transport):\s+One-Way\s+([\d.,]+)\s+km\s+·\s+Round-Trip\s+([\d.,]+)\s+km$/);
+    if (m) {
+      const reg = m[1] ? (lang === 'ar' ? `المنطقة: ${m[1]} · ` : `Région : ${m[1]} · `) : '';
+      return lang === 'ar' ? `${reg}من ${m[2]}: ذهاب ${m[3]} كم · ذهاب وإياب ${m[4]} كم` : `${reg}Depuis ${m[2]} : aller ${m[3]} km · aller-retour ${m[4]} km`;
+    }
+    m = trimmed.match(/^Region:\s+(.+?)\s+·\s+(-?[\d.]+,\s*-?[\d.]+)$/);
+    if (m) return lang === 'ar' ? `المنطقة: ${m[1]} · ${m[2]}` : `Région : ${m[1]} · ${m[2]}`;
 
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;
@@ -32761,7 +33455,8 @@
     }
 
     // Daily Operations spelled-out phrases & Close-of-Day Digest (v19.6.378+)
-    m = trimmed.match(/^Material\s+(\$[\d.,]+)\s*·\s*Haulage\s+(\$[\d.,]+)$/i);
+    // A material figure can be negative (a quarry that pays the company per load, WTC 2026-11-20 quarry rebate).
+    m = trimmed.match(/^Material\s+([-−]?\$[\d.,]+)\s*·\s*Haulage\s+([-−]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `المواد ${m[1]} · النقل ${m[2]}` : `Matériau ${m[1]} · Transport ${m[2]}`;
 
     m = trimmed.match(/^Own\s+([\d,]+)\s*·\s*Haulers\s+([\d,]+)(?:\s*\((.+)\))?$/i);
@@ -33335,6 +34030,7 @@
 
   function evalCached(trimmed, lang) {
     if (!trimmed || lang === 'en') return { out: trimmed, ok: true };
+    ensureProperNounSetFresh();
     let cache = STR_CACHE[lang];
     if (!cache) {
       cache = new Map();

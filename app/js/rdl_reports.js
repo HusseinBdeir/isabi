@@ -4192,6 +4192,66 @@
   }
 
 
+  // ── Marked as sent (owner 2026-11-20) ────────────────────────────────────────────────────────────────────────────
+  // A Customer or Supplier Statement can be marked as sent through its end date. From then on a rate change, its undo
+  // or a restore leaves that party's records up to that day as they are (window.MFG_STMT_LOCK in app.js) and lists the
+  // difference for the next statement. The bar is on screen only, never printed or exported.
+  function sentStatementSpec(partyType, partyName, ctx) {
+    const p = ctx.rdl.params || {};
+    // A statement can only have shown what existed when it was sent: the mark never runs past today
+    const L = (typeof window !== 'undefined') ? window.MFG_STMT_LOCK : null;
+    const today = (L && typeof L.today === 'function') ? String(L.today() || '') : '';
+    let through = String(p.to || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(today) && through > today) through = today;
+    return {
+      industry: ctx.ind || 'Manufacturing',
+      company: ctx.co || 'ALL',
+      partyType,
+      partyName,
+      reportId: partyType === 'supplier' ? '16' : '14',
+      confirmedThrough: through
+    };
+  }
+  function sentStatementBarHtml(partyType, partyName, ctx, closingBal) {
+    const L = (typeof window !== 'undefined') ? window.MFG_STMT_LOCK : null;
+    if (!L || !partyName || partyName === 'ALL') return '';
+    const spec = sentStatementSpec(partyType, partyName, ctx);
+    const to = spec.confirmedThrough;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) return '';
+    const mark = L.get(spec);
+    const canMark = L.canMark();
+    const canClear = L.canClear();
+    const payload = esc(encodeURIComponent(JSON.stringify(Object.assign({}, spec, { closingBalanceUsd: Math.round(Number(closingBal || 0) * 100) / 100 }))));
+    const isCust = partyType !== 'supplier';
+    const markBtn = canMark
+      ? `<button type="button" class="rdl-sent-btn" data-stmt-sent="mark" data-stmt-sent-spec="${payload}">${ic('lock')}<span>${mark && !mark.group ? 'Move the Sent Mark To' : 'Mark as Sent Through'}</span> <b data-no-i18n="1">${esc(to)}</b></button>`
+      : '';
+    if (mark) {
+      const later = to > mark.through;
+      return `
+        <div class="rdl-sent-bar no-print is-sent" data-stmt-sent-bar="1">
+          <span class="rdl-sent-ico">${ic('lock')}</span>
+          <div class="rdl-sent-text">
+            <div><span>${isCust ? 'Sent to the customer through' : 'Sent to the supplier through'}</span> <b data-no-i18n="1">${esc(mark.through)}</b>${mark.by ? ` <span class="rdl-sent-by" data-no-i18n="1">· ${esc(mark.by)}</span>` : ''}</div>
+            <div class="rdl-sent-sub"><span>A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.</span></div>
+          </div>
+          <div class="rdl-sent-actions">
+            ${later ? markBtn : ''}
+            ${mark.group ? '<span class="rdl-sent-sub"><span>Marked on the group statement</span></span>' : (canClear ? `<button type="button" class="rdl-sent-btn is-ghost" data-stmt-sent="clear" data-stmt-sent-spec="${payload}"><span>Remove Sent Mark</span></button>` : '')}
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="rdl-sent-bar no-print" data-stmt-sent-bar="1">
+        <span class="rdl-sent-ico">${ic('lock')}</span>
+        <div class="rdl-sent-text">
+          <div><span>Not marked as sent</span></div>
+          <div class="rdl-sent-sub"><span>${isCust ? 'Once sent, mark it: a rate change or its undo then leaves this customer\'s records up to the end date as they are.' : 'Once sent, mark it: a rate change or its undo then leaves this supplier\'s records up to the end date as they are.'}</span></div>
+        </div>
+        <div class="rdl-sent-actions">${markBtn}</div>
+      </div>`;
+  }
+
   function render14CustomerStatement(meta, ctx) {
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
@@ -4233,6 +4293,7 @@
         ])}
       </div>
       ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Ready-Mix Concrete Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
+      ${sentStatementBarHtml('customer', custName, ctx, closingBal)}
 
       <table class="rdl-table">
         <thead>
@@ -4330,7 +4391,7 @@
         const lastDateByNorm = new Map();
         bySup.forEach((g, s) => {
           const nk = String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const ck = nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+          const ck = window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.canonKey(nk) : nk;
           const prev = lastDateByNorm.get(ck) || '';
           if (g.lastDate && g.lastDate > prev) lastDateByNorm.set(ck, g.lastDate);
         });
@@ -4453,6 +4514,7 @@
         ])}
       </div>
       ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, dt.supSubtitle, 'Account Currency: Fresh USD', '')}
+      ${sentStatementBarHtml('supplier', supName, ctx, closingBal)}
 
       <table class="rdl-table">
         <thead>
@@ -5177,6 +5239,20 @@
     const k = h.kpis || {};
     const icRows = h.intercompany || [];
     const pRows = h.partners || [];
+    // With a date range: each partner's schedule in force during it, one line per period when the schedule changed
+    // inside the range (h.partnerPeriods), and a total that counts a pool once (h.partners). With no range the
+    // table is as it always was.
+    const pLines = (stmtRange && Array.isArray(h.partnerPeriods)) ? h.partnerPeriods : null;
+    // The period as its own pieces: the dates are left as they are, "to", "Open" and the no-schedule line translate
+    const pPeriodDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))
+      ? `<span data-no-i18n="1">${esc(`${v.slice(8, 10)}-${v.slice(5, 7)}-${v.slice(0, 4)}`)}</span>`
+      : `<span>${esc(v || 'Open')}</span>`);
+    const pPeriodHtml = p => (p.isFallback
+      ? '<span>No schedule in this period</span>'
+      : (p.periodFrom ? `${pPeriodDate(p.periodFrom)} <span>to</span> ${pPeriodDate(p.periodTo || 'Open')}` : pPeriodDate(p.periodTo || 'Open')));
+    const pSum = key => pRows.reduce((s, p) => s + Number(p[key] || 0), 0);
+    // A line the total leaves out (an earlier period of a schedule that goes on inside the range) is explained
+    const pHasEarlierPeriod = Boolean(pLines && pLines.some(p => p.counted === false));
     const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
     const winLbl = formatStmtWindowLabel(ctx);
     const winHdr = formatStmtWindowHeader(ctx);
@@ -5234,7 +5310,7 @@
         <thead>
           <tr>
             <th>Partner / Shareholder</th>
-            <th>Equity Role</th>
+            <th>Equity Role</th>${pLines ? '<th>Share Period</th>' : ''}
             <th class="num">Equity Share %</th>
             <th class="num">Opening Capital ($)</th>
             <th class="num">Distributions / Draws ($)</th>
@@ -5243,10 +5319,10 @@
           </tr>
         </thead>
         <tbody>
-          ${pRows.map(p => `
+          ${(pLines || pRows).map(p => `
             <tr>
               <td class="bold">${esc(p.partner || p.name || '-')}</td>
-              <td>${esc(p.role || 'Managing Shareholder')}</td>
+              <td>${esc(p.role || 'Managing Shareholder')}</td>${pLines ? `<td class="mono">${pPeriodHtml(p)}</td>` : ''}
               <td class="num">${fmtNum(p.sharePct || 0, 1)}%</td>
               <td class="num">${fmtUsd(p.opening || 0, 2)}</td>
               <td class="num">${fmtUsd(p.draws || p.distributions || 0, 2)}</td>
@@ -5254,8 +5330,18 @@
               <td class="num bold">${fmtUsd(p.closingBalance || p.balance || 0, 2)}</td>
             </tr>
           `).join('')}
-        </tbody>
-      </table>
+        </tbody>${pLines ? `
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="4">Total Partner Current Accounts</td>
+            <td class="num">${fmtUsd(pSum('opening'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('draws'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('allocatedOverhead'), 2)}</td>
+            <td class="num">${fmtUsd(pSum('closingBalance'), 2)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>${pHasEarlierPeriod ? `
+      <div class="rdl-note-text">A partner's profit-share schedule changed during this period. Each period is on its own line with its dates. The total counts that partner once, on the latest line.</div>` : ''}
       ${renderDomainFieldPackGatePinsHtml('Holding & Treasury', 'rdlHoldingGatePinsSection', '3. Verified Subsidiary & HQ Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Group Chief Financial Officer / المدير المالي للمجموعة', 'Managing Shareholder / الشريك المفوض')}
       ${sheetFooterHtml(coKey, 1, 1)}
@@ -5462,7 +5548,13 @@
     const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
     const lRows = (d.leases || []).filter(l => coKey === 'Real Estate Group' || l.company === coKey);
     const rRows = (d.rentInvoices || []).filter(r => coKey === 'Real Estate Group' || !r.company || r.company === coKey);
-    const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+    // Every lease period is listed, and the totals count each lease once: the period in force on the last day of the
+    // range (today for a range still running, and today with no range). A rent change no longer adds the old and the
+    // new annual rent together, with or without a range (no range used to add every period: owner 2026-11-21).
+    const lCounted = l => l.counted !== false;
+    const lSum = key => lRows.filter(lCounted).reduce((s, l) => s + Number(l[key] || 0), 0);
+    const lHasUncounted = lRows.some(l => !lCounted(l));
+    const rentTotal = lSum('annualTtcUsd');
     const winHdr = formatStmtWindowHeader(ctx, rRows, 'date');
     return `
       ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · ${winHdr}`)}
@@ -5491,7 +5583,7 @@
         </thead>
         <tbody>
           ${lRows.map(l => `
-            <tr>
+            <tr${lCounted(l) ? '' : ' class="rdl-row-not-counted" data-not-counted="1" style="opacity:.55"'}>
               <td class="mono bold">${esc(l.code)}</td>
               <td>${esc(l.company)}</td>
               <td>${esc(l.property)} · ${esc(l.unitCode)}</td>
@@ -5506,12 +5598,14 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="5">Total Contracted Rent Roll (إجمالي عقود الإيجار السنوية)</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualBaseUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(lSum('annualBaseUsd'), 2)}</td>
+            <td class="num">${fmtUsd(lSum('vatUsd'), 2)}</td>
+            <td class="num" id="rdlReRentRollTotal">${fmtUsd(lSum('annualTtcUsd'), 2)}</td>
           </tr>
         </tfoot>
-      </table>
+      </table>${lHasUncounted ? (stmtRange ? `
+      <div class="rdl-note-text">A lease that ended or changed its rent during this period stays listed in grey with its dates. The totals count each lease once, at the rent in force on the last day of the period, or today if the period has not ended.</div>` : `
+      <div class="rdl-note-text">A lease that has ended or changed its rent stays listed in grey with its dates. The totals count each lease once, at the rent in force today.</div>`) : ''}
       <div class="rdl-section-hdr" style="margin-top:14px;">2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)</div>
       <table class="rdl-table">
         <thead>
@@ -7535,10 +7629,12 @@
       const k = d.kpis || {};
       const lRows = (d.leases || []).filter(l => effCoKey === 'Real Estate Group' || l.company === effCoKey);
       const rRows = (d.rentInvoices || []).filter(r => effCoKey === 'Real Estate Group' || !r.company || r.company === effCoKey);
-      const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
-      const vatTotal = lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
+      // Each lease once, at the period in force (same rule as the statement's totals): an ended or replaced period is not added
+      const lCountedRows = lRows.filter(l => l.counted !== false);
+      const rentTotal = lCountedRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+      const vatTotal = lCountedRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
       facts = {
-        activeLeases: lRows.length,
+        activeLeases: lCountedRows.length,
         annualContractedRentUsd: Math.round(rentTotal),
         annualVat11Usd: Math.round(vatTotal),
         occupiedUnits: Number(k.occupiedUnits || 0),
@@ -7549,7 +7645,7 @@
         rentInvoicesCount: rRows.length
       };
       kpis = [
-        mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lRows.length} active leases`, `${lRows.length} عقد فعال`, `${lRows.length} baux actifs`, 'pos'),
+        mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lCountedRows.length} active leases`, `${lCountedRows.length} عقد فعال`, `${lCountedRows.length} baux actifs`, 'pos'),
         mkKpi('occ', 'Portfolio Occupancy', 'نسبة الإشغال', 'Taux d’occupation', `${fmtNum(k.occupancyPct || 0, 1)}%`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} units`, `${fmtNum(k.occupiedUnits || 0, 0)} من ${fmtNum(k.totalUnits || 0, 0)} وحدة`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} lots`, 'ok'),
         mkKpi('col', 'Rent Collected', 'الإيجارات المحصلة', 'Loyers encaissés', canViewBooks ? fmtUsd(k.collectedUsd || 0, 0) : 'Restricted', `${rRows.length} VAT invoices`, `${rRows.length} فاتورة ضريبية`, `${rRows.length} factures TVA`),
         mkKpi('arr', 'Tenant Arrears', 'متأخرات المستأجرين', 'Arriérés locataires', canViewBooks ? fmtUsd(k.openArUsd || 0, 0) : 'Restricted', `11% VAT ${fmtUsd(vatTotal, 0)}`, `ضريبة 11% ${fmtUsd(vatTotal, 0)}`, `TVA 11% ${fmtUsd(vatTotal, 0)}`, Number(k.openArUsd || 0) > 0 ? 'neg' : 'ok')
@@ -8024,6 +8120,22 @@
         }
       });
     }
+
+    // Marked as sent (Customer and Supplier Statements)
+    root.querySelectorAll('[data-stmt-sent]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const L = window.MFG_STMT_LOCK;
+        if (!L) return;
+        let spec = null;
+        try { spec = JSON.parse(decodeURIComponent(btn.getAttribute('data-stmt-sent-spec') || '')); } catch (_) { spec = null; }
+        if (!spec) return;
+        const act = btn.getAttribute('data-stmt-sent');
+        const res = act === 'clear' ? L.clear(spec) : L.set(spec);
+        if (res && res.ok) rerenderFn();
+      });
+    });
 
     // Print & CSV buttons
     const printBtn = root.querySelector('#printStmtBtn');

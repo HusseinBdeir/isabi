@@ -136,46 +136,51 @@
   }
 
   // Offline / Static Harness Fallback Units (strictly filtered through seat RLS & BU scope before exposure; sanitized in Demo Sandbox)
+  // Real driver names come from the private name book (session seed), never from this public file.
+  function nbTeleDriver(code) {
+    const nb = (window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function') ? window.MFG_NAMEBOOK.map('telematics_drivers') : {};
+    return String(nb[code] || '').trim() || ('Driver ' + code);
+  }
   function buildOfflineFallbackUnits() {
     const demo = isDemoActive();
     return [
       {
-        device_id: 19130, equipment: 'TB1', aliases: ['tb1', '360676'], plate_no: '360676', company: 'WTC', driver: demo ? 'Demo Driver 1' : 'Majed Karam',
+        device_id: 19130, equipment: 'TB1', aliases: ['tb1', '360676'], plate_no: '360676', company: 'WTC', driver: demo ? 'Demo Driver 1' : nbTeleDriver('TB1'),
         vehicle_model: 'Shacman X3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: true,
         status_code: 'parked', status_label: 'Parked', lat: 33.6308, lng: 35.4265, speed_kph: 0, acc_on: false,
         odometer_km: 38246.4, engine_hours: 1842.5, tank_litres: 244, tank_cap_l: 400, tank_pct: 61,
         ecu_fuel_total_l: 25630.5, ext_power_v: 25.7, zone_name: 'Sibline Plant & Quarry', stop_duration: '1h 12m', milestone_alert: ''
       },
       {
-        device_id: 17733, equipment: 'TB3', aliases: ['tb3', '358599'], plate_no: '358599', company: 'WTC', driver: demo ? 'Demo Driver 2' : 'Khalife',
+        device_id: 17733, equipment: 'TB3', aliases: ['tb3', '358599'], plate_no: '358599', company: 'WTC', driver: demo ? 'Demo Driver 2' : nbTeleDriver('TB3'),
         vehicle_model: 'Shacman X3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: true,
         status_code: 'parked', status_label: 'Parked', lat: 33.8403, lng: 35.4919, speed_kph: 0, acc_on: false,
         odometer_km: 345651.3, engine_hours: 1658.3, tank_litres: 184, tank_cap_l: 400, tank_pct: 46,
         ecu_fuel_total_l: 193407.4, ext_power_v: 25.6, zone_name: 'Choueifat Main Yard', stop_duration: '6h 16m', milestone_alert: ''
       },
       {
-        device_id: 18460, equipment: 'Tb4', aliases: ['tb4', '358943', '358943w'], plate_no: '358943', company: 'WTC', driver: demo ? 'Demo Driver 3' : 'Wissam Mlaab',
+        device_id: 18460, equipment: 'Tb4', aliases: ['tb4', '358943', '358943w'], plate_no: '358943', company: 'WTC', driver: demo ? 'Demo Driver 3' : nbTeleDriver('Tb4'),
         vehicle_model: 'Shacman F3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: false,
         status_code: 'power_cut', status_label: '0V Power Cut', lat: 33.6320, lng: 35.4261, speed_kph: 0, acc_on: false,
         odometer_km: 365228.1, engine_hours: 3890.1, tank_litres: 186.2, tank_cap_l: 380, tank_pct: 49,
         ecu_fuel_total_l: null, ext_power_v: 0, zone_name: 'Sibline Plant & Quarry', stop_duration: '27h 30m', milestone_alert: ''
       },
       {
-        device_id: 18595, equipment: 'Tb7', aliases: ['tb7', '364656'], plate_no: '364656', company: 'WTC', driver: demo ? 'Demo Driver 4' : 'Mohamad Habib',
+        device_id: 18595, equipment: 'Tb7', aliases: ['tb7', '364656'], plate_no: '364656', company: 'WTC', driver: demo ? 'Demo Driver 4' : nbTeleDriver('Tb7'),
         vehicle_model: 'Shacman X3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: true,
         status_code: 'moving', status_label: 'Moving', lat: 33.7613, lng: 35.4588, speed_kph: 72, acc_on: true,
         odometer_km: 499915.6, engine_hours: 5412.0, tank_litres: 192, tank_cap_l: 400, tank_pct: 48,
         ecu_fuel_total_l: 420256.2, ext_power_v: 27.6, zone_name: 'Damour Coastal Corridor', stop_duration: '0s', milestone_alert: 'Approaching 500,000 km major overhaul'
       },
       {
-        device_id: 18553, equipment: 'TB8', aliases: ['tb8', '354578'], plate_no: '354578', company: 'WTC', driver: demo ? 'Demo Driver 5' : 'Hussein Saleh',
+        device_id: 18553, equipment: 'TB8', aliases: ['tb8', '354578'], plate_no: '354578', company: 'WTC', driver: demo ? 'Demo Driver 5' : nbTeleDriver('TB8'),
         vehicle_model: 'Shacman X3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: true,
         status_code: 'parked', status_label: 'Parked', lat: 33.8404, lng: 35.4920, speed_kph: 0, acc_on: false,
         odometer_km: 317490.7, engine_hours: 3115.4, tank_litres: 260, tank_cap_l: 400, tank_pct: 65,
         ecu_fuel_total_l: 283815.2, ext_power_v: 25.8, zone_name: 'Choueifat Main Yard', stop_duration: '5h 42m', milestone_alert: ''
       },
       {
-        device_id: 18571, equipment: 'Tb9', aliases: ['tb9', '364168'], plate_no: '354168'.replace('354168', '364168'), company: 'WTC', driver: demo ? 'Demo Driver 6' : 'Ali Saleh',
+        device_id: 18571, equipment: 'Tb9', aliases: ['tb9', '364168'], plate_no: '354168'.replace('354168', '364168'), company: 'WTC', driver: demo ? 'Demo Driver 6' : nbTeleDriver('Tb9'),
         vehicle_model: 'Shacman X3000', tracker_model: 'FMC150', has_can_fuel: true, has_ecu_io83: true,
         status_code: 'parked', status_label: 'Parked', lat: 33.8402, lng: 35.4918, speed_kph: 0, acc_on: false,
         odometer_km: 453408.4, engine_hours: 3540.8, tank_litres: 196, tank_cap_l: 400, tank_pct: 49,
@@ -296,7 +301,15 @@
       }
     }
     const filtered = (pool || []).filter(u => u && canSeatAccessCompany(u.company) && companyMatchesScope(u.company, scope));
-    return filtered.map(enrichUnitWithIsabiGeo);
+    // The Edge sends no driver name for the pinned trucks (its code is public); fill it from the private name book.
+    const nbDrivers = (window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function') ? window.MFG_NAMEBOOK.map('telematics_drivers') : {};
+    return filtered.map(u => {
+      if (!u.driver) {
+        const d = String(nbDrivers[u.equipment] || '').trim();
+        if (d) u = Object.assign({}, u, { driver: d });
+      }
+      return enrichUnitWithIsabiGeo(u);
+    });
   }
 
   function summarizeUnits(units) {

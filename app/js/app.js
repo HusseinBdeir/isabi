@@ -22,6 +22,142 @@
   SEED.models = SEED.models || {};
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
+  // Private name book (v19.6.266): real people's names that rules need (name variants, driver aliases, truck
+  // owners and drivers, Holding stakeholders, named site pins, the JV partner) never sit in this public file.
+  // They come with the session-authenticated private seed (`seed_core.json` key `namebook`, built from
+  // `build/private_namebook.json`), and read as empty in the public demo and in Demo Company.
+  let _privateNameBook = null;
+  let _compiledRealSrc = null;
+  let _compiledRealNb = null;
+  const _nbNorm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+  const EMPTY_NB_OBJ = Object.freeze({});
+  const EMPTY_NB_ARR = Object.freeze([]);
+  const EMPTY_NB_MAP = new Map();
+  const EMPTY_COMPILED_NB = Object.freeze({
+    raw: EMPTY_NB_OBJ,
+    canonMap: EMPTY_NB_MAP,
+    displayMap: EMPTY_NB_MAP,
+    variantsMap: EMPTY_NB_MAP,
+    ownerFamilySet: new Set(),
+    seniorSet: new Set(),
+    properNounsList: EMPTY_NB_ARR
+  });
+  function compileNameBook(nb) {
+    const canonMap = new Map();
+    const displayMap = new Map();
+    const variantsMap = new Map();
+    const al = (nb && nb.party_aliases && typeof nb.party_aliases === 'object') ? nb.party_aliases : EMPTY_NB_OBJ;
+    for (const [k, v] of Object.entries(al)) {
+      const kn = _nbNorm(k);
+      const vn = _nbNorm(v);
+      if (kn && vn) canonMap.set(kn, vn);
+      const vs = String(v == null ? '' : v).trim();
+      if (vs) {
+        if (kn) displayMap.set(kn, vs);
+        if (vn && !displayMap.has(vn)) displayMap.set(vn, vs);
+      }
+      if (vn && kn && kn !== vn) {
+        let arr = variantsMap.get(vn);
+        if (!arr) { arr = []; variantsMap.set(vn, arr); }
+        arr.push(k);
+      }
+    }
+    const ownerFamilySet = new Set();
+    (Array.isArray(nb.owner_family) ? nb.owner_family : EMPTY_NB_ARR).forEach(n => {
+      const kn = _nbNorm(n);
+      if (kn) ownerFamilySet.add(kn);
+    });
+    const seniorSet = new Set();
+    (Array.isArray(nb.senior_people) ? nb.senior_people : EMPTY_NB_ARR).forEach(n => {
+      const kn = _nbNorm(n);
+      if (kn) seniorSet.add(kn);
+    });
+    const properNounsList = [];
+    const addPn = v => { if (typeof v === 'string' && v.trim()) properNounsList.push(v.trim().toLowerCase()); };
+    for (const [k, v] of Object.entries(al)) { addPn(k); addPn(v); }
+    (nb.owner_family || EMPTY_NB_ARR).forEach(addPn);
+    (nb.extended_parties || EMPTY_NB_ARR).forEach(addPn);
+    (nb.proper_nouns || EMPTY_NB_ARR).forEach(addPn);
+    const drvAl = (nb.driver_aliases && typeof nb.driver_aliases === 'object' && !Array.isArray(nb.driver_aliases)) ? nb.driver_aliases : EMPTY_NB_OBJ;
+    for (const [k, v] of Object.entries(drvAl)) { addPn(k); addPn(v); }
+    Object.values(nb.truck_people || EMPTY_NB_OBJ).forEach(t => { if (t) { addPn(t.owner); addPn(t.driver); addPn(t.driverShort); } });
+    Object.values(nb.telematics_drivers || EMPTY_NB_OBJ).forEach(addPn);
+    addPn(nb.jv_partner);
+    return { raw: nb, canonMap, displayMap, variantsMap, ownerFamilySet, seniorSet, properNounsList };
+  }
+  function setPrivateNameBook(next) {
+    _privateNameBook = (next && typeof next === 'object' && !Array.isArray(next)) ? next : null;
+    if (!_privateNameBook) {
+      _compiledRealSrc = null;
+      _compiledRealNb = null;
+    }
+  }
+  function compiledNameBook() {
+    if (!_privateNameBook || isDemoScopeActive()) return EMPTY_COMPILED_NB;
+    if (_compiledRealSrc !== _privateNameBook || !_compiledRealNb) {
+      _compiledRealSrc = _privateNameBook;
+      _compiledRealNb = compileNameBook(_privateNameBook);
+    }
+    return _compiledRealNb;
+  }
+  function nameBook() {
+    return compiledNameBook().raw;
+  }
+  window.MFG_NAMEBOOK = {
+    get: nameBook,
+    // True once the private seed's book has arrived in this session (false in demo scopes and before load).
+    get loaded() { return Boolean(_privateNameBook) && !isDemoScopeActive(); },
+    // Fast path when caller already holds whitespace-collapsed lowercase `norm(s)`.
+    canonNorm(n) {
+      if (!n) return '';
+      const cm = compiledNameBook().canonMap;
+      return (cm.size && cm.get(n)) || n;
+    },
+    // Canonical key of a name variant ("<variant>" -> "<canonical>"); any other name comes back exactly as
+    // norm() gives it (trimmed, lower case), so keys built elsewhere with norm() still match.
+    canonKey(s) {
+      const raw = String(s == null ? '' : s).trim().toLowerCase();
+      if (!raw) return '';
+      const cm = compiledNameBook().canonMap;
+      if (!cm.size) return raw;
+      return cm.get(raw) || ((raw.includes('  ') || /[^\S ]/.test(raw)) ? cm.get(_nbNorm(raw)) : undefined) || raw;
+    },
+    // Display form for a canonical key, when the book has one.
+    display(s) {
+      const dm = compiledNameBook().displayMap;
+      return dm.size ? (dm.get(_nbNorm(s)) || '') : '';
+    },
+    // Every other spelling that maps to this canonical key.
+    variantsOf(s) {
+      const vm = compiledNameBook().variantsMap;
+      const arr = vm.size ? vm.get(_nbNorm(s)) : null;
+      return arr ? arr.slice() : [];
+    },
+    isOwnerFamily(s) {
+      const k = _nbNorm(s);
+      return !!k && compiledNameBook().ownerFamilySet.has(k);
+    },
+    isSeniorPerson(s) {
+      const k = _nbNorm(s);
+      return !!k && compiledNameBook().seniorSet.has(k);
+    },
+    jvPartner(fallback) {
+      const p = String(nameBook().jv_partner || '').trim();
+      return p || (fallback == null ? 'JV Partner' : fallback);
+    },
+    list(key) {
+      const v = nameBook()[key];
+      return Array.isArray(v) ? v.slice() : [];
+    },
+    map(key) {
+      const v = nameBook()[key];
+      return (v && typeof v === 'object' && !Array.isArray(v)) ? v : EMPTY_NB_OBJ;
+    },
+    // Names the i18n audit treats as proper nouns (never translated).
+    properNouns() {
+      return compiledNameBook().properNounsList.slice();
+    }
+  };
   const SEED_RECORD_KEYS = [
     'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'recurring_expenses', 'expense_items', 'warehouse_movements',
     'receipts', 'settlements', 'salaries',
@@ -61,6 +197,8 @@
   const CLOUD_DOC_KEY = CLOUD_CFG.docKey || 'mfg_web_store';
 
   const PARAMS = new URLSearchParams(location.search);
+  const PARAM_AUTOLOGIN_1 = PARAMS.get('autologin') === '1';
+  const PARAM_DEMO_1 = PARAMS.get('demo') === '1';
   const IS_LOCAL = !window.__ISABI_SIMULATE_REMOTE_HOST && /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname);
   // Demo mode = the 1-click seat simulator shows PINs. Only on the local server.py host or with ?demo=1.
   const IS_DEMO = PARAMS.get('demo') !== '0' && (IS_LOCAL || PARAMS.get('demo') === '1');
@@ -98,10 +236,10 @@
   }
   const DEMO_COMPANY_KEY = 'democompany';
   function isDemoSandboxSession() {
-    if (Boolean((_stateRef && _stateRef.demoVisitor) || PARAMS.get('autologin') === '1')) {
+    if (Boolean((_stateRef && _stateRef.demoVisitor) || PARAM_AUTOLOGIN_1)) {
       return true;
     }
-    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
+    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAM_DEMO_1;
   }
   function isDemoScopeActive() {
     return Boolean(isDemoSandboxSession() || (_stateRef && _stateRef.company === DEMO_COMPANY_KEY));
@@ -187,7 +325,7 @@
   const DEFAULT_VAT_RATE = 0.11;
   const DAY_SHIFT_FROM = 6 * 60;   // m48: Day shift 06:00–17:59, Night otherwise
   const DAY_SHIFT_TO = 17 * 60 + 59;
-  const PAGE = 65;
+  const PAGE = 25;
   const SEED_DATE = String(SEED.generated_at || '').slice(0, 10) || todayISO();
 
   const DEFAULT_FACE_SEEDS = {};
@@ -453,23 +591,9 @@
     kioskUnlockPromptOpen: false,
     kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
     staffBiometrics: (() => {
+      // Named one-off repairs of saved enrolments now live in the private name book (`bio_quarantine`)
+      // and run once the private seed has loaded (applyBioQuarantineToLocal).
       const rawBio = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {};
-      if (rawBio && typeof rawBio === 'object') {
-        const ab = rawBio['abdallah ismail'];
-        if (ab && String(ab.face_updated_at || '').startsWith('2026-10-31T10:19:')) {
-          rawBio['abdallah ismail'] = Object.assign({}, ab, {
-            face_samples: [],
-            face_thumbs: [],
-            face_cleared: true,
-            face_updated_at: '2026-10-31T11:00:00.000Z',
-            updated_at: '2026-10-31T11:00:00.000Z'
-          });
-        }
-        const ah = rawBio['ahmad'];
-        if (ah && (!Array.isArray(ah.face_samples) || !ah.face_samples.length) && !ah.pin_code) {
-          delete rawBio['ahmad'];
-        }
-      }
       return rawBio;
     })(),
     workSchedules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_work_sched_v1', null) : null) || { shiftTypes: [], staffRules: {} },
@@ -5124,7 +5248,7 @@
 
   function normSupPayable(s) {
     const n = norm(s);
-    return n === 'kareem bdeir' ? 'karim bdeir' : n;
+    return window.MFG_NAMEBOOK.canonNorm(n);
   }
 
   function isSupplierIvaForCompany(supplierName, companyName, seedObj) {
@@ -6910,6 +7034,7 @@
     saveFilterState();
     renderApp();
     if (_dateFacState.open) renderDateFacilitatorPopover();
+    if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('period');
   }
 
   function syncTopbarDateControls() {
@@ -6994,6 +7119,9 @@
     const ms = $('mobileSubnav');
     if (ms && ms.classList.contains('mob-hubs-open')) {
       ms.classList.remove('mob-hubs-open');
+    }
+    if (typeof closeMobRowPeekSheet === 'function') {
+      closeMobRowPeekSheet({ restoreFocus: false });
     }
   }
 
@@ -7997,6 +8125,13 @@
   // The rows each register's filters and column filters show (sorted, before paging), for its Chart view.
   const _tableShownRows = {};
   const _regPanelRows = {};
+  const _shownSliceMeta = {};
+  function sliceShown(view, list) {
+    const src = Array.isArray(list) ? list : [];
+    const lim = shownCount(view);
+    if (view) _shownSliceMeta[view] = { len: src.length, lim };
+    return src.slice(0, lim);
+  }
   // Bar drill from a register's chart: clicking a bar (or a month) keeps only that bar's rows in the
   // register. The test is the chart's own grouping rule (same value function, same Yes / No and (Blank)
   // labels, same YYYY-MM month), so the rows listed always add up to the bar that was clicked. Kept per
@@ -8694,7 +8829,7 @@
         : `(${fmtNum(filteredLen)})`;
     }
     const v = String(view || '');
-    const base = (v === 'pay_staff' || v === 'pay_emp' || v === 'univ_reg' || v.startsWith('ureg_') || v === 'tbl_staff_members' || v === 'tbl_employments') ? 150 : PAGE;
+    const base = (v === 'pay_staff' || v === 'pay_emp' || v === 'pay_att_sum' || v === 'univ_reg' || v.startsWith('ureg_') || v === 'tbl_staff_members' || v === 'tbl_employments') ? 150 : PAGE;
     return STATE.shown[view] || base;
   }
 
@@ -9741,6 +9876,34 @@
     return `<div class="cf-behind-note mfg-changed-entries-note" id="mfgChangedEntriesNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Edited in Workbook</span></span> <span class="cf-behind-items">${leadHtml}${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span> <span class="cf-behind-tail"><span>Included in the last update</span></span></div>`;
   }
 
+  function _extractDetachedCellText(node) {
+    if (!node) return '';
+    let out = '';
+    const walk = cur => {
+      if (!cur) return;
+      if (cur.nodeType === 3) {
+        out += cur.nodeValue || '';
+        return;
+      }
+      if (cur.nodeType !== 1) return;
+      const tag = cur.tagName;
+      if (tag === 'STYLE' || tag === 'SCRIPT' || cur.hidden) return;
+      if (cur.style && cur.style.display === 'none') return;
+      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill'))) return;
+      if (tag === 'BR') { out += ' '; return; }
+      const isBlock = tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'SMALL' || tag === 'TR' || tag === 'SECTION' || tag === 'BLOCKQUOTE' || /^H[1-6]$/.test(tag);
+      if (isBlock) out += ' ';
+      for (let c = cur.firstChild; c; c = c.nextSibling) walk(c);
+      if (isBlock) out += ' ';
+    };
+    walk(node);
+    return out;
+  }
+
+  function _csvQuoteCell(txt) {
+    return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
+  }
+
   function tableToCsv(table) {
     return Array.from(table.querySelectorAll('tr')).map(tr =>
       Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
@@ -9752,9 +9915,48 @@
             clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill').forEach(n => n.remove());
             txt = clone.textContent;
           }
-          return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
+          return _csvQuoteCell(txt);
         }).join(',')
     ).join('\r\n');
+  }
+
+  function tableToCsvFromFullBody(liveTable, tmpTable, bodyVis) {
+    const lines = [];
+    const liveHeadRows = liveTable ? Array.from(liveTable.querySelectorAll('thead tr')) : [];
+    liveHeadRows.forEach(tr => {
+      const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+        .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+        .map(td => _csvQuoteCell(td.innerText));
+      if (cells.length) lines.push(cells.join(','));
+    });
+    const tbody = tmpTable ? ((tmpTable.tBodies && tmpTable.tBodies[0]) || tmpTable.querySelector('tbody')) : null;
+    const bodyRows = tbody ? tbody.rows : (tmpTable ? tmpTable.querySelectorAll('tbody tr') : []);
+    for (let ri = 0; ri < bodyRows.length; ri++) {
+      const tr = bodyRows[ri];
+      const kids = tr.children;
+      const useMask = Array.isArray(bodyVis) && kids.length === bodyVis.length && !tr.querySelector('[colspan]');
+      const rowCells = [];
+      for (let ci = 0; ci < kids.length; ci++) {
+        const td = kids[ci];
+        if (td.tagName !== 'TD' && td.tagName !== 'TH') continue;
+        if (useMask) {
+          if (bodyVis[ci] === false) continue;
+        } else {
+          if (td.classList.contains('tbl-col-hidden')) continue;
+          if (!td.hasAttribute('colspan') && td.style && td.style.display === 'none') continue;
+        }
+        rowCells.push(_csvQuoteCell(_extractDetachedCellText(td)));
+      }
+      if (rowCells.length) lines.push(rowCells.join(','));
+    }
+    const liveFootRows = liveTable ? Array.from(liveTable.querySelectorAll('tfoot tr')) : [];
+    liveFootRows.forEach(tr => {
+      const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+        .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+        .map(td => _csvQuoteCell(td.innerText));
+      if (cells.length) lines.push(cells.join(','));
+    });
+    return lines.join('\r\n');
   }
 
   function downloadCsv(name, csv) {
@@ -11371,7 +11573,19 @@
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
-    if (hubId === 'sentinels') return getApprovalsExceptionBadge(u) || getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'sentinels') {
+      const apB = getApprovalsExceptionBadge(u);
+      if (apB) return apB;
+      // Open Sentinel alerts and the Owner's open rate-change alerts add up on one badge (it opens the Sentinels
+      // page; the Rate Changes tab carries its own count)
+      const snB = getSentinelExceptionBadge(u, sentinelsOpen);
+      const rcB = getRateChangeExceptionBadge(u);
+      if (snB && rcB) {
+        const cnt = (parseInt(String(snB.text).replace(/[^\d]/g, ''), 10) || 0) + (parseInt(String(rcB.text).replace(/[^\d]/g, ''), 10) || 0);
+        return { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn', targetView: snB.targetView };
+      }
+      return snB || rcB;
+    }
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
     if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
@@ -11416,7 +11630,9 @@
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
         { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) },
         { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
-        { view: 'void_log', label: 'Void Log', icon: 'void_log' }
+        { view: 'void_log', label: 'Void Log', icon: 'void_log' },
+        // Owner only: every rate change and undo with its money impact (owner 2026-11-20)
+        { view: 'rate_changes', label: 'Rate Changes', icon: 'pricing', badgeFn: u => getRateChangeExceptionBadge(u) }
       ]
     },
     {
@@ -11952,6 +12168,7 @@
     if (view === 'approvals') return Boolean(u && u.status !== 'Suspended');
     // Void Log: strictly limited to Supervisors and Owners (never Custom/Entry/Sales/Viewer).
     if (view === 'void_log') return canViewVoidLog(u);
+    if (view === 'rate_changes') return canViewRateChanges(u);
     if (view === 'payroll_analytics') return canViewViewBaseline('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewViewBaseline('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewViewBaseline('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -12050,6 +12267,8 @@
 
   function isPageEnabledInPolicy(canonView, parentHubId, hp, u) {
     if (canonView === 'void_log' && !canViewVoidLog(u)) return false;
+    // Rate Changes is the Owner's page, whatever a seat's page list says
+    if (canonView === 'rate_changes') return canViewRateChanges(u);
     if (isSelfActiveAdminUsersCheck(canonView, u) || isSelfActiveAdminUsersCheck(parentHubId, u)) return true;
     const h = getHubDef(parentHubId);
     const effInd = effectiveIndustryForPerms();
@@ -12103,6 +12322,7 @@
     u = u || activeUser();
     if (view === 'coa_classes' || view === 'gl_automation') view = 'ledger';
     if (view === 'void_log' && !canViewVoidLog(u)) return false;
+    if (view === 'rate_changes') return canViewRateChanges(u);
     if (isSelfActiveAdminUsersCheck(view, u)) return true;
     const hp = getEffectiveHubPagePolicy(u);
     if (view === 'approvals') {
@@ -13237,8 +13457,7 @@
   }
   function normOwnerName(s) {
     const n = norm(s);
-    if (n === 'kareem bdeir') return 'karim bdeir';
-    return n;
+    return n ? window.MFG_NAMEBOOK.canonNorm(n) : n;
   }
   function companyFleetRow(name, company) {
     const n = norm(name);
@@ -13658,7 +13877,7 @@
         s.jv_company = jpMeta.company || s.jv_company || s.company || 'WTC';
       }
       if (s.is_jv || s.jv) {
-        if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || 'Assaf';
+        if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || window.MFG_NAMEBOOK.jvPartner();
         if (!(Number(s.jv_share) > 0)) s.jv_share = (jpMeta && jpMeta.share) || 50;
         if (!s.jv_company) s.jv_company = (jpMeta && jpMeta.company) || s.company || 'WTC';
         if (s.includes_transport === undefined) {
@@ -14131,7 +14350,7 @@
     return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().split(' ').filter(Boolean);
   }
   // One key per real customer: legal suffixes, generic plant words and the site's own name are dropped,
-  // so "Sabeh Beton", "Sabeh Beton S.R.L" and "sabeh Beton Choueifat" count once on site Choueifat.
+  // so "Cedar Beton", "Cedar Beton S.R.L" and "cedar Beton Choueifat" count once on site Choueifat.
   function areaSiteCustomerKey(customer, siteName) {
     const siteTok = new Set(_areaSiteTokens(siteName));
     const all = _areaSiteTokens(customer);
@@ -15279,9 +15498,291 @@
     box.hidden = lines.length === 0;
   }
 
+  // ==================== SITE CLEAN-UP (bulk Close Site) ====================
+  // Two reviewed lists of Manufacturing sites: Dormant sites that still hold open price agreements, and sites that
+  // never had a load and hold no agreement (registry noise such as "Unknown", "All", "canceled"). Close Selected
+  // applies the Edit Site closure to each row: status Closed, end date today, and every agreement already in force
+  // ends the same day through applySiteAgreementClosure, so reopening a site in Edit Site restores them.
+  // Deterministic, no AI. Sites created in the last 90 days and sites with a load after the end date are never offered.
+  const SITE_CLEANUP = { sel: new Set(), busy: false, cand: null };
+  function canUseSiteCleanup(u) {
+    u = u || activeUser();
+    return Boolean(u && canModifyData(u) && canEnterForm('site', u));
+  }
+  function getSiteCleanupCandidates(opts = {}) {
+    const today = String(opts.today || todayISO()).slice(0, 10);
+    const out = { ready: siteLoadsReady(), today, dormant: [], unused: [], agreements: 0 };
+    const G = window.MFG_GEO;
+    if (!out.ready || !G || typeof G.getSiteLifecycle !== 'function' || typeof G.getUnifiedSiteStats !== 'function') return out;
+    const stats = G.getUnifiedSiteStats(SEED, STATE);
+    const rulesBySite = new Map();
+    const seenR = new Set();
+    ((STATE.customRecords && STATE.customRecords.price_rules) || []).concat((SEED.records && SEED.records.price_rules) || []).forEach(r => {
+      if (!r || !r.site) return;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seenR.has(rid)) return;
+        seenR.add(rid);
+      }
+      if (r.voided || r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return;
+      const k = norm(r.site);
+      let e = rulesBySite.get(k);
+      if (!e) { e = { any: 0, open: 0 }; rulesBySite.set(k, e); }
+      e.any += 1;
+      const s0 = String(r.start_date || '').slice(0, 10);
+      const e0 = String(r.end_date || '').slice(0, 10);
+      if ((!s0 || s0 <= today) && (!e0 || e0 >= today)) e.open += 1;
+    });
+    const seenS = new Set();
+    const allSites = (SEED.records && SEED.records.sites) || [];
+    // An area site whose customers moved to their own sites keeps no loads or agreements of its own at read time,
+    // yet Move Back would bring them back: never offer it as never used
+    const splitSources = new Set(allSites.filter(x => x && !x.voided && x.split_from).map(x => norm(x.split_from)));
+    allSites.forEach(s => {
+      if (!s || s.voided || !s.name || !isSiteRowMfg(s)) return;
+      const k = norm(s.name);
+      if (!k || seenS.has(k) || splitSources.has(k)) return;
+      seenS.add(k);
+      const lc = G.getSiteLifecycle(s, SEED, STATE, { stats, today });
+      // A site whose end date is set (closing today or later) is already handled: its last open day is the end date
+      if (!lc || lc.state !== 'dormant' || !lc.activityKnown || lc.isNew || lc.closesOn) return;
+      const st = stats.byNorm.get(k);
+      const loads = st ? (Number(st.total) || 0) : 0;
+      const ag = rulesBySite.get(k) || { any: 0, open: 0 };
+      const isDormantOpen = ag.open > 0;
+      const isUnused = !isDormantOpen && !lc.lastDate && loads === 0 && ag.any === 0;
+      if (!isDormantOpen && !isUnused) return;
+      let blocked = '';
+      const lastLd = (st && st.lastDate) || '';
+      if (lastLd && lastLd > today) {
+        blocked = 'Has loads after today';
+      } else {
+        const plan = planSiteAgreementClosure(Object.assign({}, s, { status: 'Closed', end_date: today }), { altNames: [s.name] });
+        if (plan.outOfScope > 0) blocked = 'Agreements of a company your seat cannot change';
+      }
+      const row = { key: k, id: String(s.id || ''), name: s.name, region: s.region || s.geo_zone || '', lastDate: lc.lastDate || '', loads, open: ag.open, blocked };
+      if (isDormantOpen) {
+        out.dormant.push(row);
+        out.agreements += ag.open;
+      } else {
+        out.unused.push(row);
+      }
+    });
+    const cmpStr = (x, y) => { const a = String(x || ''); const b = String(y || ''); return a < b ? -1 : (a > b ? 1 : 0); };
+    out.dormant.sort((a, b) => (b.open - a.open) || cmpStr(a.lastDate, b.lastDate) || cmpStr(a.name, b.name));
+    out.unused.sort((a, b) => cmpStr(a.name, b.name));
+    return out;
+  }
+
+  // Close the given sites (by name) as of endDate. Same writes as an Edit Site closure, batched into one sync.
+  async function closeSitesInBulk(siteNames, endDate, opts = {}) {
+    const res = { closed: 0, ended: 0, skipped: [], closedNames: [], pairs: [] };
+    const end = String(endDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) { res.error = 'Enter a valid end date.'; return res; }
+    if (!siteLoadsReady()) { res.error = SEED._recordsLoadFailed ? 'Ticket records did not load. Reload the page to close a site.' : 'Loads are still loading. Try again in a moment.'; return res; }
+    if (!opts.skipSeatCheck && !canUseSiteCleanup()) { res.error = 'Your seat cannot close sites.'; return res; }
+    const who = activeUser() || {};
+    const stampIso = new Date().toISOString();
+    const extraApiPosts = [];
+    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const want = new Set((siteNames || []).map(n => norm(n)).filter(Boolean));
+    const done = new Set();
+    // Fresh last-load dates for the wanted sites in one pass over the tickets (later of date and reporting date)
+    const lastByNorm = new Map();
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      [SEED.records && SEED.records[tk], STATE.customRecords && STATE.customRecords[tk]].forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const t = arr[i];
+          if (!t || t.voided || !t.site) continue;
+          const nk = norm(t.site);
+          if (!want.has(nk)) continue;
+          const d1 = String(t.date || '').slice(0, 10);
+          const d2 = String(t.rep_date || '').slice(0, 10);
+          let best = lastByNorm.get(nk) || '';
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d1) && d1 > best) best = d1;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d2) && d2 > best) best = d2;
+          if (best) lastByNorm.set(nk, best);
+        }
+      });
+    });
+    ((SEED.records && SEED.records.sites) || []).forEach(orig => {
+      if (!orig || orig.voided || !orig.name || !isSiteRowMfg(orig)) return;
+      const k = norm(orig.name);
+      if (!want.has(k) || done.has(k)) return;
+      done.add(k);
+      if (window.MFG_GEO && typeof window.MFG_GEO.isSiteRecordClosedOn === 'function' && window.MFG_GEO.isSiteRecordClosedOn(orig, end)) {
+        res.skipped.push({ name: orig.name, why: 'Already closed' });
+        return;
+      }
+      const lastLd = lastByNorm.get(k) || '';
+      if (lastLd && end < lastLd) {
+        res.skipped.push({ name: orig.name, why: `The site has loads up to ${lastLd}. The end date must be on or after it.` });
+        return;
+      }
+      const plan = planSiteAgreementClosure(Object.assign({}, orig, { status: 'Closed', end_date: end }), { altNames: [orig.name] });
+      if (plan.outOfScope > 0) {
+        res.skipped.push({ name: orig.name, why: 'Agreements of a company your seat cannot change' });
+        return;
+      }
+      const seedOrigSnap = !isAppRecord(orig) ? captureSeedOrigSnapshot('sites', orig) : null;
+      const patch = { status: 'Closed', end_date: end, _reopenedExplicitly: false, modified_at: stampIso };
+      if (who.email) patch.modified_by = who.email;
+      const record = Object.assign({}, orig, patch);
+      if (seedOrigSnap && !record._seed_orig) record._seed_orig = buildSeedOrigMeta(seedOrigSnap);
+      const applied = applySiteAgreementClosure(record, orig, extraApiPosts);
+      const cIdx = record.id != null ? STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(record.id)) : -1;
+      if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], record);
+      else STATE.customRecords.sites.unshift(Object.assign({}, record));
+      Object.assign(orig, patch);
+      if (record._seed_orig && !orig._seed_orig) orig._seed_orig = record._seed_orig;
+      extraApiPosts.push(['sites', Object.assign({}, record)]);
+      res.closed += 1;
+      res.ended += applied.ending;
+      res.closedNames.push(orig.name);
+    });
+    if (!res.closed) return res;
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.sites = (SEED._tableRev.sites || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _filterRecordsWeakCache = new WeakMap();
+    applyCustomRecordsToSeed();
+    normalizeDistinctSiteCategories(SEED);
+    stampBatchModifiedAt(extraApiPosts, null, null);
+    res.pairs = extraApiPosts;
+    if (opts.noPersist) return res;
+    saveLocalAuthAndRecords();
+    renderApp();
+    await postRecordPairsChunked(extraApiPosts);
+    syncWithCloud(true);
+    return res;
+  }
+
+  function ensureSiteCleanupModal() {
+    let modal = $('siteCleanupModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'siteCleanupModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="modal-card site-cleanup-card" role="dialog" aria-modal="true" aria-labelledby="siteCleanupTitle"><div class="modal-header"><div><span class="modal-eyebrow">Sites &amp; Regions</span><h2 id="siteCleanupTitle">Site Clean-up</h2></div><button type="button" class="modal-close-btn" data-sc-dismiss="1" aria-label="Close">✕</button></div><div class="modal-body" id="siteCleanupBody"></div></div>';
+    document.body.appendChild(modal);
+    if (typeof wireBackdropDismiss === 'function') wireBackdropDismiss(modal, closeSiteCleanupModal);
+    modal.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); closeSiteCleanupModal(); } });
+    modal.addEventListener('click', ev => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-sc-dismiss]')) { ev.preventDefault(); closeSiteCleanupModal(); return; }
+      if (t.closest('[data-sc-run]')) { ev.preventDefault(); runSiteCleanupClose(); }
+    });
+    modal.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (!inp || SITE_CLEANUP.busy) return;
+      const pick = inp.getAttribute && inp.getAttribute('data-sc-pick');
+      const all = inp.getAttribute && inp.getAttribute('data-sc-all');
+      const cand = SITE_CLEANUP.cand;
+      if (pick) {
+        if (inp.checked) SITE_CLEANUP.sel.add(pick); else SITE_CLEANUP.sel.delete(pick);
+      } else if (all && cand) {
+        (cand[all] || []).forEach(r => {
+          if (r.blocked) return;
+          if (inp.checked) SITE_CLEANUP.sel.add(r.key); else SITE_CLEANUP.sel.delete(r.key);
+        });
+      } else {
+        return;
+      }
+      renderSiteCleanupModal();
+    });
+    return modal;
+  }
+  function closeSiteCleanupModal() {
+    if (SITE_CLEANUP.busy) return;
+    const modal = $('siteCleanupModal');
+    if (modal) modal.hidden = true;
+  }
+  function openSiteCleanupModal() {
+    if (!canUseSiteCleanup()) { toast('Your seat cannot close sites.', 'err'); return; }
+    SITE_CLEANUP.cand = getSiteCleanupCandidates();
+    SITE_CLEANUP.sel = new Set();
+    const modal = ensureSiteCleanupModal();
+    modal.hidden = false;
+    renderSiteCleanupModal();
+  }
+  function siteCleanupGroupHtml(grp, title, sub, rows) {
+    const pickable = rows.filter(r => !r.blocked);
+    const allOn = pickable.length > 0 && pickable.every(r => SITE_CLEANUP.sel.has(r.key));
+    const isDormant = grp === 'dormant';
+    const body = rows.map(r => {
+      const on = !r.blocked && SITE_CLEANUP.sel.has(r.key);
+      return `<tr class="${r.blocked ? 'is-blocked' : ''}"${r.blocked ? ` data-ui-tip="${esc(r.blocked)}"` : ''}>
+        <td class="sc-chk"><input type="checkbox" data-sc-pick="${esc(r.key)}"${on ? ' checked' : ''}${r.blocked ? ' disabled' : ''} aria-label="${esc(r.name)}"></td>
+        <td class="sc-name">${esc(r.name)}${r.blocked ? ` <span class="sc-blocked">${esc(r.blocked)}</span>` : ''}</td>
+        <td>${esc(r.region || '-')}</td>
+        <td class="mono">${r.lastDate ? esc(r.lastDate) : 'No loads'}</td>
+        ${isDormant ? `<td class="num">${fmtNum(r.open, 0)}</td>` : ''}
+      </tr>`;
+    }).join('');
+    return `<section class="sc-group" data-sc-group="${grp}">
+      <div class="sc-group-head">
+        <div><h3>${esc(title)}</h3><div class="sc-group-sub">${sub}</div></div>
+        ${pickable.length ? `<label class="sc-all"><input type="checkbox" data-sc-all="${grp}"${allOn ? ' checked' : ''}> <span>Select All</span></label>` : ''}
+      </div>
+      ${rows.length ? `<div class="sc-tbl-wrap"><table class="sc-tbl"><thead><tr><th class="sc-chk"><span class="sr-only">Select</span></th><th>Site</th><th>Region</th><th>Last Load</th>${isDormant ? '<th class="num">Open Agreements</th>' : ''}</tr></thead><tbody>${body}</tbody></table></div>` : '<div class="sc-empty">Nothing to clean up.</div>'}
+    </section>`;
+  }
+  function renderSiteCleanupModal() {
+    const bodyEl = $('siteCleanupBody');
+    const cand = SITE_CLEANUP.cand;
+    if (!bodyEl || !cand) return;
+    if (!cand.ready) {
+      bodyEl.innerHTML = `<div class="sc-empty">${SEED._recordsLoadFailed ? 'Ticket records did not load. Reload the page to close a site.' : 'Loads are still loading. Try again in a moment.'}</div>`;
+      return;
+    }
+    const nSel = SITE_CLEANUP.sel.size;
+    bodyEl.innerHTML = `
+      <p class="sc-intro">Closing a site ends its open price agreements today. Reopening it in Edit Site restores them.</p>
+      ${siteCleanupGroupHtml('dormant', 'Dormant with Open Agreements', `${cand.dormant.length} ${cand.dormant.length === 1 ? 'site' : 'sites'} · ${cand.agreements} open price ${cand.agreements === 1 ? 'agreement' : 'agreements'}`, cand.dormant)}
+      ${siteCleanupGroupHtml('unused', 'Never Used', 'No loads and no price agreements', cand.unused)}
+      <div class="sc-foot">
+        <button type="button" class="btn btn-outline-bar" data-sc-dismiss="1">Cancel</button>
+        <button type="button" class="btn btn-brass" data-sc-run="1"${nSel && !SITE_CLEANUP.busy ? '' : ' disabled'}>Close ${nSel} selected ${nSel === 1 ? 'site' : 'sites'}</button>
+      </div>`;
+  }
+  async function runSiteCleanupClose() {
+    if (SITE_CLEANUP.busy || !SITE_CLEANUP.cand || !SITE_CLEANUP.sel.size) return;
+    const pool = SITE_CLEANUP.cand.dormant.concat(SITE_CLEANUP.cand.unused);
+    const names = pool.filter(r => !r.blocked && SITE_CLEANUP.sel.has(r.key)).map(r => r.name);
+    if (!names.length) return;
+    SITE_CLEANUP.busy = true;
+    renderSiteCleanupModal();
+    let res = null;
+    try {
+      res = await closeSitesInBulk(names, todayISO());
+    } finally {
+      SITE_CLEANUP.busy = false;
+    }
+    if (res && res.error) { toast(res.error, 'err'); renderSiteCleanupModal(); return; }
+    toast(`${res.closed} ${res.closed === 1 ? 'site' : 'sites'} closed · ${res.ended} price ${res.ended === 1 ? 'agreement' : 'agreements'} ended on ${todayISO()}`, 'ok');
+    if (res.skipped.length) {
+      // Translate each reason on its own: the joined line never matches a dictionary entry
+      const trS = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+      toast(res.skipped.map(s => `${s.name}: ${trS(s.why)}`).join(' · '), 'warn');
+    }
+    closeSiteCleanupModal();
+  }
+  if (typeof window !== 'undefined') {
+    window.MFG_SITE_CLEANUP = { canUse: canUseSiteCleanup, candidates: getSiteCleanupCandidates, closeSites: closeSitesInBulk, open: openSiteCleanupModal };
+    document.addEventListener('click', ev => {
+      const b = ev.target && ev.target.closest ? ev.target.closest('[data-site-cleanup-open]') : null;
+      if (!b) return;
+      ev.preventDefault();
+      openSiteCleanupModal();
+    });
+  }
+
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
     if (!siteRow || !siteRow.name || !siteRow.is_jv) return;
-    const partner = String(siteRow.jv_partner || 'Assaf').trim() || 'Assaf';
+    const partner = String(siteRow.jv_partner || window.MFG_NAMEBOOK.jvPartner()).trim() || window.MFG_NAMEBOOK.jvPartner();
     const share = Math.max(1, Math.min(99, round2(Number(siteRow.jv_share) || 50)));
     const coShare = round2(100 - share);
     const co = String(siteRow.jv_company || siteRow.company || defaultEntryCompany() || 'WTC').trim() || 'WTC';
@@ -17357,6 +17858,40 @@
   function listPriceRule(company, product, date) {
     return findRule({ company, product, date, listPrice: true, types: ['List Price'] });
   }
+  // Posting rule (owner decision 2026-11-12): a Delivery sale needs a Sales (Delivery) agreement in force for the
+  // customer at that site (product line or product-less transport line), and a raw material ticket needs a
+  // Purchase Price (Site) agreement in force ($0 counts) or must be posted as Price Pending. List Price is no
+  // longer a silent fallback for either. Edits that keep the priced keys unchanged are not re-checked, so
+  // historical tickets stay editable. Returns '' when the ticket may post, else the error text.
+  const TICKET_AGREEMENT_ERR_SALES = 'No Sales (Delivery) price agreement covers this customer, product and site on this date. Add the agreement first, then post the ticket.';
+  const TICKET_AGREEMENT_ERR_RAW = 'No purchase price agreement covers this site and material on this date. Add one (a $0 agreement is allowed) or post the ticket as Price Pending.';
+  function ticketAgreementKeysUnchanged(kind, q, orig) {
+    if (!orig) return false;
+    const same = (a, b) => norm(a || '') === norm(b || '');
+    const d10 = v => String(v || '').slice(0, 10);
+    const base = same(q.company, orig.company) && same(q.product, orig.product) && same(q.site, orig.site) &&
+      d10(q.date) === d10(orig.date) && d10(q.repDate || q.date) === d10(orig.rep_date || orig.date);
+    if (!base) return false;
+    if (kind === 'sales') return same(q.customer, orig.customer) && String(q.saleType || '') === String(orig.sale_type || 'Delivery');
+    return same(q.owner, orig.site_owner);
+  }
+  function ticketAgreementCheck(kind, q) {
+    if (!q || q.isReturn || q.isRemove) return '';
+    if (q.orig && ticketAgreementKeysUnchanged(kind, q, q.orig)) return '';
+    const date = q.effDate || q.repDate || q.date || todayISO();
+    if (kind === 'sales') {
+      if (q.saleType !== 'Delivery' || !q.customer || !q.site) return '';
+      const r = findRule({ company: q.company, customer: q.customer, product: q.product || '', site: q.site, date, types: ['Sales (Delivery)'] });
+      return r ? '' : TICKET_AGREEMENT_ERR_SALES;
+    }
+    if (kind === 'raw') {
+      if (q.pricePending || !q.product || !(q.owner || q.site)) return '';
+      const r = findRule({ company: q.company, supplier: q.owner, site: q.site, product: q.product, date, types: ['Purchase Price (Site)'] });
+      return r ? '' : TICKET_AGREEMENT_ERR_RAW;
+    }
+    return '';
+  }
+  if (typeof window !== 'undefined') window.MFG_TICKET_AGREEMENT = { check: ticketAgreementCheck, ERR_SALES: TICKET_AGREEMENT_ERR_SALES, ERR_RAW: TICKET_AGREEMENT_ERR_RAW };
   function resolveAgreementTruckSize(q) {
     const trkRow = q.truckRow || null;
     const tNameN = norm(trkRow && trkRow.name);
@@ -17848,7 +18383,12 @@
   // period that stays as its own entry. Read by the forms before a save and by the engine during it.
   // Tables the rule leaves alone: shift timings (their own ledger and backfill switch), the company fleet rows that
   // drive the truck logs (those logs have the rule already), and the shared registries matched by name.
-  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers', 'fx_rates', 'vat_rates']);
+  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers']);
+  // The currency and VAT rate tables sit with the shared registries, but a row there is a dated rate, not a name, and
+  // it feeds every money figure of all six industries: they follow the rule (owner 2026-11-20). Before, a rate saved
+  // from a later day with another value moved, and the days in between were re-read at the rate before it, or at the
+  // built-in 89,500 and 11% when there was none.
+  const CHRONO_KEEP_PERIOD_REGISTRY_RATES = new Set(['fx_rates', 'vat_rates']);
   function chronoKeptPeriodToastText(kp) {
     return kp ? `Earlier period kept to ${fmtDateDMY(kp.to)} · New entry from ${fmtDateDMY(kp.newFrom)}` : '';
   }
@@ -17857,7 +18397,8 @@
   // when a value field was changed, undefined when the caller cannot tell (the row's own fields then decide).
   function describeChronoKeptPeriod(crKey, savedRow, editOrig, hint) {
     if (!savedRow || !editOrig || !editOrig.id || editOrig.voided || savedRow._moveStart) return null;
-    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey) || (typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey])) return null;
+    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey)) return null;
+    if (!CHRONO_KEEP_PERIOD_REGISTRY_RATES.has(crKey) && typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey]) return null;
     // Filling in a row that was waiting for its figure (Salary Pending, Price Pending) completes that row: there is
     // no earlier period under an old value to keep.
     if (editOrig.salary_pending || editOrig.price_pending) return null;
@@ -18284,15 +18825,21 @@
 
   function setStatementWatermark(spec) {
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    if (u && typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u))) {
-      return { ok: false, error: tr('Only authorized finance or supervisor seats can confirm statement watermarks.') };
+    if (!u || (typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u)))) {
+      return { ok: false, error: tr('Only a finance or supervisor seat can mark a statement as sent.') };
     }
     const sp = spec || {};
     const dt = String(sp.confirmedThrough || sp.confirmed_through || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
-      return { ok: false, error: tr('Valid statement end date (YYYY-MM-DD) is required.') };
+      return { ok: false, error: tr('The statement needs an end date.') };
     }
     const key = buildStatementWatermarkKey(sp);
+    // Moving a mark to an earlier date frees the records after it: supervisor only, as removing it (the servers check the same).
+    const prevMark = getStatementWatermark(key);
+    const prevThrough = prevMark ? String(prevMark.confirmed_through || '').slice(0, 10) : '';
+    if (prevThrough && dt < prevThrough && !(typeof canVoid === 'function' && canVoid(u))) {
+      return { ok: false, error: tr('Only a supervisor can move a sent mark to an earlier date.') };
+    }
     const payload = {
       key,
       industry: canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing'),
@@ -18316,8 +18863,8 @@
 
   function clearStatementWatermark(spec) {
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    if (u && typeof canVoid === 'function' && !canVoid(u)) {
-      return { ok: false, error: tr('Only supervisor seats can clear a confirmed statement watermark.') };
+    if (!u || (typeof canVoid === 'function' && !canVoid(u))) {
+      return { ok: false, error: tr('Only a supervisor can remove the sent mark.') };
     }
     const sp = spec || {};
     const key = typeof sp === 'string' ? sp : buildStatementWatermarkKey(sp);
@@ -18330,20 +18877,116 @@
       cleared_by: who,
       cleared_at: clearedAt
     };
+    // Only this statement's own mark: a group statement's mark (company ALL) stays until it is removed there
     saveIndustryWorkflowPatch('statement_watermark', key, clearPatch);
-    if (typeof sp === 'object' && sp) {
-      const indKey = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
-      const ptKey = norm(sp.partyType || 'customer') || 'customer';
-      const pnKey = norm(sp.partyName || 'all') || 'all';
-      const allKey = `${indKey}::all::${ptKey}::${pnKey}`;
-      if (allKey !== key && getStatementWatermark(allKey)) {
-        saveIndustryWorkflowPatch('statement_watermark', allKey, Object.assign({}, clearPatch, { key: allKey }));
-      }
-    }
     STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
     if (typeof syncWithCloud === 'function' && !(sp && sp.skipCloudSync)) syncWithCloud(true);
     return { ok: true, key };
   }
+
+  // ── A statement marked as sent locks its records (owner 2026-11-20) ─────────────────────────────────────────────
+  // Customer Statement (14) and Supplier Statement (16) can be marked as sent to the customer or supplier, through
+  // the statement's end date. From then on a rate change, its undo and a Void Log restore leave every record of that
+  // party dated on or before that day as it is: the record is listed (On a Sent Statement) with the difference the
+  // change would have made, so it can be billed or credited on the next statement. Nothing re-prices it.
+  // Stored as `WF::statement_watermark::<industry::company::party type::party>` in the industry row edit store
+  // (synced like every workflow mark); a statement printed for a whole group locks the party in every company.
+  const STMT_LOCK_TABLE_IND = {
+    sales_tickets: 'manufacturing', raw_purchases: 'manufacturing',
+    hsp_memberships: 'hospitality', hsp_revenue: 'hospitality', re_invoicing: 'realestate',
+    trd_sales: 'trading', trd_purchases: 'trading', ins_policies: 'insurance',
+    hld_distributions: 'holding', hld_loan_accruals: 'holding'
+  };
+  const _stmtLockAllCo = co => {
+    const s = norm(co || '');
+    return !s || s === 'all' || /group$/.test(s) || canonWatermarkCompany(co) === 'all';
+  };
+  let _stmtLockCache = null;
+  function statementLockIndex() {
+    const store = (typeof getIndustryRowEditStore === 'function' && getIndustryRowEditStore()) || {};
+    const rev = STATE._watermarkRev || 0;
+    const now = Date.now();
+    if (_stmtLockCache && _stmtLockCache.store === store && _stmtLockCache.rev === rev && now - _stmtLockCache.at < 3000) return _stmtLockCache.idx;
+    const idx = new Map();
+    Object.keys(store).forEach(k => {
+      if (!k.startsWith('WF::statement_watermark::')) return;
+      const w = store[k];
+      if (!w || typeof w !== 'object' || w.voided || w.cleared) return;
+      const through = String(w.confirmed_through || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(through)) return;
+      const party = norm(w.party_name || '');
+      if (!party || party === 'all') return;
+      const pt = norm(w.party_type || 'customer') === 'supplier' ? 'supplier' : 'customer';
+      const ind = canonWatermarkIndustry(w.industry || 'manufacturing');
+      const ik = `${ind}::${pt}::${party}`;
+      const ent = {
+        through, co: norm(w.company || ''), allCo: _stmtLockAllCo(w.company),
+        by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), party: String(w.party_name || ''), key: String(w.key || '')
+      };
+      if (!idx.has(ik)) idx.set(ik, []);
+      idx.get(ik).push(ent);
+    });
+    _stmtLockCache = { store, rev, at: now, idx };
+    return idx;
+  }
+  // The sent statement that holds a record, or null. `parties`: the name(s) on the record (a raw material ticket has
+  // the quarry and the hauler); `dates`: its dates (a ticket with a reporting date is held when either day is).
+  function statementLockFor(table, company, parties, dates, kind) {
+    const ind = STMT_LOCK_TABLE_IND[table];
+    if (!ind) return null;
+    const idx = statementLockIndex();
+    if (!idx.size) return null;
+    const pt = (kind === 'cost' || table === 'raw_purchases' || table === 'trd_purchases') ? 'supplier' : 'customer';
+    const ds = (Array.isArray(dates) ? dates : [dates]).map(x => String(x || '').slice(0, 10)).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
+    if (!ds.length) return null;
+    const day = ds.sort()[0];
+    const co = norm(company || '');
+    let best = null;
+    (Array.isArray(parties) ? parties : [parties]).forEach(pn => {
+      const list = idx.get(`${ind}::${pt}::${norm(pn || '')}`);
+      if (!list) return;
+      list.forEach(w => {
+        if (day > w.through) return;
+        if (!w.allCo && co && w.co !== co) return;
+        if (!best || w.through > best.through) best = w;
+      });
+    });
+    return best;
+  }
+  // For the statements page: the mark on one statement (exact party and scope), and marking or clearing it
+  function statementSentMark(spec) {
+    const sp = spec || {};
+    const w = getStatementWatermark(buildStatementWatermarkKey(sp));
+    if (w) return { through: String(w.confirmed_through).slice(0, 10), by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), balance: w.closing_balance_usd };
+    // A company's statement covered by the group's (company ALL): shown as sent, through the group's day
+    if (!_stmtLockAllCo(sp.company)) {
+      const grpName = { hospitality: 'Hospitality Group', trading: 'Trading Group', realestate: 'Real Estate Group' }[canonWatermarkIndustry(sp.industry || 'manufacturing')] || '';
+      const g = getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: 'ALL' })))
+        || (grpName ? getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: grpName }))) : null);
+      if (g) return { through: String(g.confirmed_through).slice(0, 10), by: String(g.confirmed_by || ''), at: String(g.confirmed_at || ''), balance: null, group: true };
+    }
+    return null;
+  }
+  window.MFG_STMT_LOCK = {
+    get: statementSentMark,
+    set: spec => {
+      const r = setStatementWatermark(spec);
+      _stmtLockCache = null;
+      toast(r.ok ? 'Statement marked as sent. A rate change or its undo now leaves these records as they are.' : r.error, r.ok ? 'ok' : 'err');
+      return r;
+    },
+    clear: spec => {
+      const r = clearStatementWatermark(spec);
+      _stmtLockCache = null;
+      toast(r.ok ? 'Sent mark removed from this statement.' : r.error, r.ok ? 'ok' : 'err');
+      return r;
+    },
+    lockFor: statementLockFor,
+    canMark: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && ((typeof canModifyData === 'function' && canModifyData(u)) || (typeof canVoid === 'function' && canVoid(u))); },
+    canClear: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && typeof canVoid === 'function' && canVoid(u); },
+    today: () => todayISO(),
+    industryKey: canonWatermarkIndustry
+  };
 
   function nextDayAfterIso(isoStr) {
     if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(isoStr).slice(0, 10))) return '';
@@ -18947,6 +19590,11 @@
     };
 
     let salesUpdated = 0, rawUpdated = 0;
+    // What the sweep re-priced, and the tickets it left because their price was typed (opts.impact = { rows, kept }):
+    // shown to the person after a save and after an undo
+    const mfgImpact = (opts && opts.impact && Array.isArray(opts.impact.rows) && Array.isArray(opts.impact.kept)) ? opts.impact : null;
+    // opts.dryRun: nothing is written, the impact only lists what the save would do (the list shown before Post)
+    const bfDryRun = Boolean(opts && opts.dryRun);
 
     if (isSalesSide) {
       const checkMatLeg = isListRule || /^Sales/i.test(rtNew) || /^Sales/i.test(rtOld);
@@ -19042,6 +19690,10 @@
           rowChanged = true;
         }
         const capForTier = effCap > 0 ? effCap : (/^m/i.test(uom) ? nextQty : 0);
+        if (mfgImpact && checkMatLeg && (ovSet.has('f_unitprice') || nextPriceRule === 'Manual')) {
+          const typedTtc = round2(Number(s.total_ttc || 0));
+          mfgImpact.kept.push({ table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: typedTtc, to: typedTtc, delta: 0 });
+        }
 
         // 2) Material Sales Price (`Sales (Delivery)`, `Sales (Pickup)`, `List Price` fallback, or `$0.00` unpriced gap)
         if (checkMatLeg && !ovSet.has('f_unitprice') && nextPriceRule !== 'Manual') {
@@ -19178,6 +19830,24 @@
             Math.abs(origPriceS - round2(Math.max(0, origQtyS * origUpS + Number(s.tier_adj || 0) - origDiscS))) > 0.50
           );
           const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
+          const prevTtcS = round2(Number(s.total_ttc || 0));
+          // A ticket on a statement marked as sent is left as it is, and a dry run (the list shown before Post)
+          // writes nothing: both work out what the ticket would carry and list it
+          const sentLockS = statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date]);
+          if (sentLockS || bfDryRun) {
+            const billQtyD = (origExtQtyS > 0 && (origUsedExtQty || Boolean(custObj && custObj.customer_declared_qty))) ? origExtQtyS : nextQty;
+            const tpD = isDelivery ? nextTp : 0;
+            const discD = Math.abs(Number(s.discount || 0));
+            const priceD = nextMatFlat ? round2(nextUp - discD) : round2(billQtyD * nextUp + nextTierAdj - discD);
+            const transD = isDelivery ? (nextTransFlat ? round2(tpD) : round2(billQtyD * tpD + nextTransTierAdj)) : 0;
+            const totD = round2(priceD + transD);
+            const ttcD = round2(totD + ((wasTax && ticketSign(s) !== 0) ? round2(totD * getVatFraction(d)) : 0));
+            if (mfgImpact && Math.abs(ttcD - prevTtcS) >= 0.005) {
+              const rowD = { table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: prevTtcS, to: ttcD, delta: round2(ttcD - prevTtcS) };
+              if (sentLockS) { rowD.lock = sentLockS.through; mfgImpact.kept.push(rowD); } else mfgImpact.rows.push(rowD);
+            }
+            continue;
+          }
 
           ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
 
@@ -19207,6 +19877,9 @@
           s.vat = (wasTax && ticketSign(s) !== 0) ? round2(s.total * getVatFraction(d)) : 0;
           s.total_ttc = round2(s.total + s.vat);
           salesUpdated++;
+          if (mfgImpact && Math.abs(Number(s.total_ttc || 0) - prevTtcS) >= 0.005) {
+            mfgImpact.rows.push({ table: 'sales_tickets', id: String(s.ticket_no || s.name || s.id || ''), date: d, party: String(s.customer || ''), from: prevTtcS, to: round2(Number(s.total_ttc || 0)), delta: round2(Number(s.total_ttc || 0) - prevTtcS) });
+          }
           touchTicketInCustom('sales_tickets', s);
         }
       }
@@ -19296,6 +19969,10 @@
           rowChanged = true;
         }
         const capForTier = effCap > 0 ? effCap : (/^m/i.test(uom) ? nextQty : 0);
+        if (mfgImpact && checkPurchLeg && (ovSet.has('f_unitprice') || r.price_entered_manually)) {
+          const typedTot = round2(Number(r.total || 0));
+          mfgImpact.kept.push({ table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(r.site_owner || r.site || ''), from: typedTot, to: typedTot, delta: 0, kind: 'cost' });
+        }
 
         if (checkPurchLeg && !ovSet.has('f_unitprice') && !r.price_entered_manually) {
           if (pRule) {
@@ -19412,6 +20089,27 @@
         }
 
         if (rowChanged) {
+          const prevTotR = round2(Number(r.total || 0));
+          const discD = Math.abs(Number(r.discount || 0));
+          const tucD = isZeroSeparateHaul ? 0 : nextTuc;
+          const costD = nextMatFlat ? round2(nextUc - discD) : round2(nextQty * nextUc + nextTierAdj - discD);
+          const transD = isZeroSeparateHaul ? 0 : (nextTransFlat ? round2(tucD) : round2(nextQty * tucD + nextTransTierAdj));
+          const totD = round2(costD + transD);
+          // Held by the sent statement of the party whose leg moves: the quarry's for the material, the hauler's for
+          // the haulage (a ticket whose legs both stay, e.g. a quantity change, is held by either)
+          const matMovesR = Math.abs(costD - Number(r.cost || 0)) >= 0.005 || norm(nextSiteOwner) !== norm(r.site_owner || '');
+          const haulMovesR = Math.abs(transD - Number(r.trans_cost || 0)) >= 0.005;
+          const lockPartiesR = (matMovesR || haulMovesR)
+            ? [].concat(matMovesR ? [nextSiteOwner, r.site_owner] : [], haulMovesR ? [r.truck_owner] : [])
+            : [nextSiteOwner, r.site_owner, r.truck_owner];
+          const sentLockR = statementLockFor('raw_purchases', r.company, lockPartiesR, [d, r.date], 'cost');
+          if (sentLockR || bfDryRun) {
+            if (mfgImpact && Math.abs(totD - prevTotR) >= 0.005) {
+              const rowD = { table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(nextSiteOwner || r.site || ''), from: prevTotR, to: totD, delta: round2(totD - prevTotR), kind: 'cost' };
+              if (sentLockR) { rowD.lock = sentLockR.through; mfgImpact.kept.push(rowD); } else mfgImpact.rows.push(rowD);
+            }
+            continue;
+          }
           ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
           r.site_owner = nextSiteOwner;
           r.qty = nextQty;
@@ -19433,13 +20131,16 @@
           r.trans_cost = isZeroSeparateHaul ? 0 : (r.trans_indiff ? round2(tuc) : round2(nextQty * tuc + Number(r.trans_tier_adj || 0)));
           r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
           rawUpdated++;
+          if (mfgImpact && Math.abs(Number(r.total || 0) - prevTotR) >= 0.005) {
+            mfgImpact.rows.push({ table: 'raw_purchases', id: String(r.ticket_no || r.name || r.id || ''), date: d, party: String(r.site_owner || r.site || ''), from: prevTotR, to: round2(Number(r.total || 0)), delta: round2(Number(r.total || 0) - prevTotR), kind: 'cost' });
+          }
           touchTicketInCustom('raw_purchases', r);
         }
       }
       if (rawUpdated > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
     }
 
-    if (candidates.some(c => Boolean(c.site))) {
+    if (candidates.some(c => Boolean(c.site)) && !bfDryRun) {
       normalizeDistinctSiteCategories(SEED);
     }
     if (salesUpdated + rawUpdated > 0) {
@@ -19459,6 +20160,7 @@
     const pN = norm(prodRow.name);
     const salesRows = (SEED.records && SEED.records.sales_tickets) || [];
     let salesUpdated = 0;
+    let heldOnSentLp = 0;
     for (let i = 0; i < salesRows.length; i++) {
       const s = salesRows[i];
       if (!s || s.voided || s.removed_slip || isReturnTicket(s) || norm(s.product || '') !== pN) continue;
@@ -19472,6 +20174,9 @@
         ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] })
         : null;
       if (!activeSalesRule && Math.abs(Number(s.unit_price || 0) - newLp) > 1e-4) {
+        // A typed price stays, as with a price agreement change; so does a ticket on a statement marked as sent
+        if (String(s.price_rule || '') === 'Manual' || (Array.isArray(s.admin_overrides) && s.admin_overrides.includes('f_unitprice'))) continue;
+        if (statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date])) { heldOnSentLp++; continue; }
         ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
         s.unit_price = newLp;
         const qty = Number(s.qty || 0);
@@ -19496,7 +20201,87 @@
       if (SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
       SEED._customRev = (SEED._customRev || 0) + 1;
     }
-    return { salesUpdated };
+    // The person is told which tickets the list price left because their customer's statement was sent
+    // Shown after the save's own message (a toast replaces the one before it)
+    if (heldOnSentLp > 0) setTimeout(() => toast('The new list price was not applied to tickets on a statement already sent. Bill or credit the difference on the next statement.', 'warn'), 2200);
+    return { salesUpdated, heldOnSent: heldOnSentLp };
+  }
+
+  // ── The tickets a price agreement save would re-price, before Post (owner 2026-11-20) ───────────────────────────
+  // Manufacturing used to show them only after the save. This works the save out on the agreements alone (the row
+  // and the neighbours it closes or moves, as the save would), lists the tickets with a dry run that writes nothing,
+  // then puts every agreement row back exactly as it was (same objects, same values). Nothing is sent or synced.
+  // Returns { impact, kept } (kept: the earlier period a save from a later day keeps apart), or null.
+  function previewMfgPriceRuleImpact(record, editOrig, hint) {
+    if (!record || !SEED || !SEED.records) return null;
+    const tk = 'price_rules';
+    // Deep copies that keep every value as it was (undefined, NaN, dates); JSON only where structuredClone is missing
+    const deep = o => { try { return structuredClone(o); } catch (_) { return JSON.parse(JSON.stringify(o)); } };
+    const snap = arr => (Array.isArray(arr) ? { arr, refs: arr.slice(), json: arr.map(o => (o && typeof o === 'object') ? deep(o) : null) } : null);
+    const putBack = sn => {
+      if (!sn) return;
+      sn.arr.length = 0;
+      sn.refs.forEach((o, i) => {
+        if (o && typeof o === 'object' && sn.json[i] != null) {
+          Object.keys(o).forEach(k => { delete o[k]; });
+          Object.assign(o, sn.json[i]);
+        }
+        sn.arr.push(o);
+      });
+    };
+    const hadSeedArr = Array.isArray(SEED.records[tk]);
+    if (!hadSeedArr) SEED.records[tk] = [];
+    if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+    const seedSnap = snap(SEED.records[tk]);
+    const custSnap = snap(STATE.customRecords[tk]);
+    const prevKeptGlobal = _lastChronoKeptPeriod;
+    // What the engine counts as it goes: change counters and the first-seen copies of rows it would edit
+    const prevCustomRev = SEED._customRev;
+    const prevTableRev = SEED._tableRev ? Object.assign({}, SEED._tableRev) : null;
+    const archKeys = (SEED_ORIG_ARCHIVE[tk] instanceof Map) ? new Set(SEED_ORIG_ARCHIVE[tk].keys()) : null;
+    const impact = newSiblingRepriceImpact();
+    let kept = null;
+    try {
+      const rec = JSON.parse(JSON.stringify(record));
+      const orig = editOrig ? JSON.parse(JSON.stringify(editOrig)) : null;
+      // The row as the save stores it: over its own id where it exists, else added
+      const putRow = arr => {
+        const i = arr.findIndex(x => x && String(x.id) === String(rec.id));
+        if (i >= 0) Object.assign(arr[i], rec); else arr.unshift(Object.assign({}, rec));
+      };
+      putRow(STATE.customRecords[tk]);
+      putRow(SEED.records[tk]);
+      if (rec.start_date && isEffectiveSeriesTable(tk, rec)) {
+        if ('date' in rec) rec.date = rec.start_date;
+        const peers = syncChronologicalSeriesNeighbors(tk, rec, orig, [], hint) || [];
+        kept = _lastChronoKeptPeriod;
+        // Rows the save added or changed on the device copy are seen by the ticket pricing as the save would see them
+        const seedArr = SEED.records[tk];
+        STATE.customRecords[tk].forEach(c => {
+          if (!c || !c.id) return;
+          const s = seedArr.find(x => x && String(x.id) === String(c.id));
+          if (s) { if (s !== c) Object.assign(s, c); } else seedArr.unshift(c);
+        });
+        backfillPriceRuleToTickets(rec, kept ? null : orig, [], { touchedPeers: peers, notBefore: kept ? kept.newFrom : '', impact, dryRun: true });
+      } else {
+        backfillPriceRuleToTickets(rec, orig, [], { touchedPeers: [], impact, dryRun: true });
+      }
+    } catch (err) {
+      console.warn('[rate impact] preview not worked out', err);
+      return null;
+    } finally {
+      putBack(seedSnap);
+      putBack(custSnap);
+      if (!hadSeedArr && SEED.records[tk] && !SEED.records[tk].length) delete SEED.records[tk];
+      _lastChronoKeptPeriod = prevKeptGlobal;
+      SEED._customRev = prevCustomRev;
+      if (prevTableRev) SEED._tableRev = Object.assign(SEED._tableRev || {}, prevTableRev);
+      if (SEED_ORIG_ARCHIVE[tk] instanceof Map) {
+        if (!archKeys) delete SEED_ORIG_ARCHIVE[tk];
+        else Array.from(SEED_ORIG_ARCHIVE[tk].keys()).forEach(k => { if (!archKeys.has(k)) SEED_ORIG_ARCHIVE[tk].delete(k); });
+      }
+    }
+    return { impact, kept };
   }
 
   function backfillEmploymentToAttendance(empRow, origRow, extraApiPosts) {
@@ -19841,6 +20626,14 @@
     // For the headless gate only: the snapshot a save takes so a refused save can be put back
     rollbackSnapForCheck: tables => (window.__MFG_HEADLESS_TEST ? _captureLedgerAndGeoRollbackSnap(tables || [], false) : null),
     formChangedValueForCheck: () => (window.__MFG_HEADLESS_TEST ? entryModalUserChangedValue() : undefined),
+    // The tickets a price agreement save would re-price, worked out before Post; read by build/verify_rate_change_recs.mjs
+    previewPriceRule: (record, editOrig, hint) => previewMfgPriceRuleImpact(record, editOrig, hint),
+    // One record through the re-pricing step (sent statements, typed figures); for the headless gate only
+    repriceStepForCheck: (ctx, table, rec, o) => (window.__MFG_HEADLESS_TEST ? siblingRepriceStep(ctx, table, rec, o) : undefined),
+    summarizeImpact: impact => summarizeSiblingRepriceImpact(impact),
+    seedOrigKeysForCheck: tk => (window.__MFG_HEADLESS_TEST ? JSON.stringify((SEED_ORIG_ARCHIVE[tk] instanceof Map) ? Array.from(SEED_ORIG_ARCHIVE[tk].keys()).sort() : null) : ''),
+    rateChangeEvents: () => collectRateChangeEvents(),
+    rateChangeBadge: u => getRateChangeExceptionBadge(u, true),
     reopenOnVoid: reopenChronologicalSeriesOnVoid,
     resolveActive: resolveEffectiveSeriesRow,
     backfill: backfillEffectiveLogChange,
@@ -22069,6 +22862,9 @@
 
     return `
       ${renderChangedEntriesNoteHtml(getActiveChangedEntries())}
+      <div class="mob-pocket-brief-launch-bar"${canUsePocketBrief(activeUser()) ? '' : ' hidden'}>
+        <button type="button" class="btn btn-outline-bar mob-pocket-brief-launch-btn" id="overviewPocketBriefBtn" data-open-pocket-brief="1">${ic('sparkles')}<span>Morning Pocket Brief</span></button>
+      </div>
       <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE TELEMETRY KPIS -->
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
@@ -23470,7 +24266,7 @@
     };
   }
 
-  function renderMapsQuotaPanelHtml() {
+  function buildMapsQuotaPanelHtml() {
     const q = _getMapsQuotaSnapForUi();
     const th = q.thresholds || { warnPct: 50, tightPct: 80, fallbackPct: 95 };
     const rows = [
@@ -23571,13 +24367,40 @@
     `;
   }
 
+  // What the Maps quota card and the gate warm-up bar say right now, as text. A quota refresh arrives about
+  // half a second after every visit to Sentinels and used to redraw the whole screen (12,000 elements) and
+  // drop the Sentinel results even when it changed nothing. It now does either only when this text changed.
+  // (`var`: a screen can be drawn before this line has run while the file is still starting up.)
+  // The card's text plus the client policy (the Sentinel badge quotes its debounce, which the card does not).
+  // The screen keeps the signature of the card it was drawn with (renderMapsQuotaPanelHtml, during the draw
+  // itself, so a draw costs nothing extra); a refresh is compared only while that screen is open. On any
+  // other screen a refresh drops the Sentinel results as it always did.
+  var _mapsQuotaSigBuilt = null;    // set by the card as a screen is being drawn
+  var _mapsQuotaSigShown = null;    // the card the screen in front of the person was drawn with (null: no card)
+  function mapsQuotaSignatureFor(html) {
+    let policy = '';
+    try { policy = JSON.stringify((_getMapsQuotaSnapForUi() || {}).policy || {}); } catch (_) {}
+    return String(html) + '\u0001' + policy;
+  }
+  function renderMapsQuotaPanelHtml() {
+    const html = buildMapsQuotaPanelHtml();
+    _mapsQuotaSigBuilt = mapsQuotaSignatureFor(html);
+    return html;
+  }
+
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiMapsQuotaListenerWired) {
     window.__isabiMapsQuotaListenerWired = true;
     const _rerenderQuotaPanelView = () => {
       try {
+        const onView = Boolean(STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules'));
+        if (onView && _mapsQuotaSigShown && !window.__MFG_SPEED_CACHES_OFF) {
+          let sig = null;
+          try { sig = mapsQuotaSignatureFor(buildMapsQuotaPanelHtml()); } catch (_) { sig = null; }
+          if (sig !== null && sig === _mapsQuotaSigShown) return;   // the screen already says exactly this
+        }
         if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
         const modalOpen = ($('entryModal') && !$('entryModal').hidden) || ($('recordInspector') && !$('recordInspector').hidden);
-        if (!modalOpen && STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
+        if (!modalOpen && onView) {
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
           renderApp();
@@ -26248,7 +27071,7 @@
       })()
       : 'x';
     const swGeoSig = isNonMfgSn ? 'x' : _geoWearRevToken();
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -28515,18 +29338,19 @@
   // ==========================================================================
   // VIEW 04: MATERIAL & TRANSPORTATION (QUARRY INTAKE + 3RD-PARTY HAULAGE + SUPPLIER & SITE BALANCES)
   // ==========================================================================
-  function renderRaw() {
+  function renderRaw(opts) {
+    const warmOnly = Boolean(opts && opts.warmOnly);
     const m = getModel();
-    const qRaw = STATE.search.trim().toLowerCase();
-    const base = filterRecords(SEED.records.raw_purchases);
+    const qRaw = warmOnly ? '' : STATE.search.trim().toLowerCase();
+    const base = filterRecords(SEED.records.raw_purchases, warmOnly ? { ignoreSearch: true } : undefined);
     const rawRevKey = `${SEED._customRev || 0}|${_WIN_REV}`;
-    if (base._pendingRawKey !== rawRevKey) {
+    if (!warmOnly && base._pendingRawKey !== rawRevKey) {
       base._pendingRawCnt = base.filter(isPendingPriceRaw).length;
       base._otRawCnt = base.filter(r => !!(r && r.overtime)).length;
       base._bundledRawCnt = base.filter(isBundledRawTicket).length;
       base._pendingRawKey = rawRevKey;
     }
-    const pendingRawCnt = base._pendingRawCnt;
+    const pendingRawCnt = base._pendingRawCnt || 0;
     const otRawBaseCnt = base._otRawCnt || 0;
     const bundledRawBaseCnt = base._bundledRawCnt || 0;
     const rawChipPred = r => {
@@ -28540,19 +29364,21 @@
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
     };
-    const filteredRaw = _getChipFilteredRows(base, `raw:${STATE.chipFilter}`, rawChipPred);
-    const rows = sortRows(filteredRaw, 'raw', 'date', 'desc');
-    const shown = rows.slice(0, shownCount('raw'));
+    const rawChipKey = warmOnly ? 'all' : STATE.chipFilter;
+    const filteredRaw = _getChipFilteredRows(base, `raw:${rawChipKey}`, rawChipPred);
+    const rows = warmOnly ? filteredRaw : sortRows(filteredRaw, 'raw', 'date', 'desc');
+    const shown = warmOnly ? [] : rows.slice(0, shownCount('raw'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const supChip = (key, label) => `<button type="button" class="filter-chip ${STATE.rawSupFilter === key ? 'active' : ''}" data-rawsup-chip="${esc(key)}">${label}</button>`;
     const shChip = (key, label) => `<button type="button" class="filter-chip ${STATE.salesHaulFilter === key ? 'active' : ''}" data-saleshaul-chip="${esc(key)}">${label}</button>`;
     const siteChip = (key, label) => `<button type="button" class="filter-chip ${STATE.rawSiteFilter === key ? 'active' : ''}" data-rawsite-chip="${esc(key)}">${label}</button>`;
 
     // Same as Sales: with column filters or a chart drill on, the cards and TOTAL add up the rows listed.
-    const rawFilt = hasActiveColFilters('raw');
+    const rawFilt = !warmOnly && hasActiveColFilters('raw');
     const rawAggSrc = rawFilt ? rows : filteredRaw;
     const rawAggKey = rawFilt ? `${rawRevKey}|${regFilterSig('raw')}` : rawRevKey;
-    let rAgg = filteredRaw._rawAgg && filteredRaw._rawAgg.key === rawAggKey ? filteredRaw._rawAgg : null;
+    const useRawAggCache = !window.__MFG_SPEED_CACHES_OFF && filteredRaw;
+    let rAgg = (useRawAggCache && filteredRaw._rawAgg && filteredRaw._rawAgg.key === rawAggKey) ? filteredRaw._rawAgg : null;
     if (!rAgg) {
       let _sumQty = 0, _sumTons = 0, _sumMat = 0, _sumHaul = 0, _sumTot = 0;
       const _byCo = {
@@ -28620,7 +29446,7 @@
         exQLoads: _exQLoads, exQQty: _exQQty, exQTons: _exQTons, exQMat: _exQMat, exQHaul: _exQHaul,
         rawSiteMap: _rawSiteMap, rawProdMap: _rawProdMap, rawHaulerSet: _rawHaulerSet, rawTruckSet: _rawTruckSet
       };
-      Object.defineProperty(filteredRaw, '_rawAgg', { value: rAgg, configurable: true });
+      if (useRawAggCache) Object.defineProperty(filteredRaw, '_rawAgg', { value: rAgg, configurable: true });
     }
     const { sumQty, sumTons, sumMat, sumHaul, sumTot, byCo, fleetRawLoads, thirdRawLoads, otRawLoads, rawSiteMap, rawProdMap, rawTruckSet } = rAgg;
     const rawHaulerSet = new Set(rAgg.rawHaulerSet);
@@ -28636,7 +29462,7 @@
 
     const rawScopeKey = `${SEED._customRev || 0}|${_WIN_REV}|${_getArrUid(scopeRaws)}:${scopeRaws.length}|${_getArrUid(scopeSales)}:${scopeSales.length}|${_getArrUid(scopeSettles)}:${scopeSettles.length}|${(SEED.records.suppliers || []).length}|${(SEED.records.sites || []).length}`;
     if (!SEED._rawScopeReconCache) SEED._rawScopeReconCache = new Map();
-    let rawRecon = SEED._rawScopeReconCache.get(rawScopeKey);
+    let rawRecon = window.__MFG_SPEED_CACHES_OFF ? null : SEED._rawScopeReconCache.get(rawScopeKey);
     if (!rawRecon) {
       let totalSalesHaulAll = 0;
       let wtcSalesHaulAll = 0;
@@ -28661,8 +29487,7 @@
       });
       const normSupKey = name => {
         const k = norm(name);
-        if (k === 'kareem bdeir') return 'karim bdeir';
-        return k;
+        return k ? window.MFG_NAMEBOOK.canonNorm(k) : k;
       };
       const siteCanon = new Map();
       const jvSiteKeys = new Set();
@@ -28685,7 +29510,7 @@
         if (!nk) return null;
         let o = supAgg.get(nk);
         if (!o) {
-          const disp = supCanon.get(nk) || (nk === 'karim bdeir' ? 'Karim Bdeir' : String(rawName).trim());
+          const disp = supCanon.get(nk) || window.MFG_NAMEBOOK.display(nk) || String(rawName).trim();
           o = {
             supplier: disp,
             raw_loads: 0,
@@ -28877,9 +29702,12 @@
         bbcSalesHaulAll,
         scopeHaulers
       };
-      if (SEED._rawScopeReconCache.size > 16) SEED._rawScopeReconCache.clear();
-      SEED._rawScopeReconCache.set(rawScopeKey, rawRecon);
+      if (!window.__MFG_SPEED_CACHES_OFF) {
+        if (SEED._rawScopeReconCache.size > 16) SEED._rawScopeReconCache.clear();
+        SEED._rawScopeReconCache.set(rawScopeKey, rawRecon);
+      }
     }
+    if (warmOnly) return '';
 
     wtcR.salesHaul = rawRecon.wtcSalesHaulAll;
     bbcR.salesHaul = rawRecon.bbcSalesHaulAll;
@@ -30830,7 +31658,7 @@
               <div class="unit-econ-kpi">
                 <span class="unit-econ-lbl">Added Brake &amp; Drivetrain Wear</span>
                 <b class="unit-econ-val ${swIdx.totals.extraWearKm > 0 ? 'warn' : ''}" data-no-i18n="1">+${fmtNum(swIdx.totals.extraWearKm, 0)} km</b>
-                <span class="unit-econ-sub"><span>Wear Factor</span> <span data-no-i18n="1">${thMult}x</span> · <span>Effective Avg</span> <span data-no-i18n="1">${swIdx.totals.avgMult.toFixed(2)}x</span></span>
+                <span class="unit-econ-sub"><span>Brake</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.brakeExtraWearKm || 0, 0)}</span> · <span>Climb</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.driveExtraWearKm || 0, 0)}</span> · <span>Tyre</span> <span data-no-i18n="1">+${fmtNum(swIdx.totals.tyreExtraWearKm || 0, 0)} km</span> · <span data-no-i18n="1">${thMult}x (${swIdx.totals.avgMult.toFixed(2)}x)</span></span>
               </div>
               <div class="unit-econ-kpi">
                 <span class="unit-econ-lbl">Units Due for Inspection</span>
@@ -30871,7 +31699,10 @@
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepLoads > 0 ? u.activeSteepLoads : ((fl && fl.steep_loads) || 0), 0)}</td>
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepM3 > 0 ? u.activeSteepM3 : ((fl && fl.steep_m3) || 0), 1)} m³</td>
                         <td class="r mono" data-no-i18n="1">${fmtNum(u.activeSteepTonKm > 0 ? u.activeSteepTonKm : ((fl && fl.steep_ton_km) || 0), 0)}</td>
-                        <td class="r mono" data-no-i18n="1">+${fmtNum(u.activeExtraWearKm > 0 ? u.activeExtraWearKm : ((fl && fl.extra_wear_km) || 0), 0)} km</td>
+                        <td class="r">
+                          <span class="mono" data-no-i18n="1">+${fmtNum(u.activeExtraWearKm > 0 ? u.activeExtraWearKm : (u.tyreExtraWearKm > 0 ? u.tyreExtraWearKm : ((fl && fl.extra_wear_km) || 0)), 0)} km</span>
+                          ${(u.brakeExtraWearKm > 0 || u.driveExtraWearKm > 0 || u.tyreExtraWearKm > 0) ? `<div class="mu" style="font-size:10px;line-height:1.25"><span>Brake</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.brakeExtraWearKm, 0)}</span> · <span>Climb</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.driveExtraWearKm, 0)}</span>${u.tyreExtraWearKm > 0 ? ` · <span>Tyre</span> <span class="mono" data-no-i18n="1">+${fmtNum(u.tyreExtraWearKm, 0)}</span>` : ''}</div>` : ''}
+                        </td>
                         <td>${stBadge}</td>
                         ${canPostOil ? `<td>${u.isOwnFleet && u.isTruckUnit ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="oillog" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}" data-prefill-oil="${esc(resolveSteepWearServicePrefill(fl && fl.schedule_type))}">+ Log Service</button>` : '<span class="mu">-</span>'}</td>` : ''}
                       </tr>
@@ -34614,7 +35445,7 @@
       const oilLabel = r.oil_type || 'Engine Oil 15W-40';
       const catIt = resolveCatalogItem(oilLabel);
       const resolvedCat = (catIt && catIt.category)
-        || (/Brake|Clutch|Plateau|Retarder|Drivetrain/i.test(String(oilLabel)) ? 'Spare Parts' : 'Oils & Lubricants');
+        || (/Brake|Clutch|Plateau|Retarder|Drivetrain|Tyre|Tire|Alignment/i.test(String(oilLabel)) ? 'Spare Parts' : 'Oils & Lubricants');
       const it = ensureItem(oilLabel, { category: resolvedCat, uom: r.uom || (catIt && catIt.uom) || 'Litre', company: r.company });
       if (!it) return;
       it.usedInOilQty = round2(it.usedInOilQty + qty);
@@ -35002,12 +35833,34 @@
     return /brake|lining|shoe|retarder|فريم/i.test(String(s || ''));
   }
 
+  function isTyreServiceText(s) {
+    return /tyre|tire|wheel\s*align|tyre\s*rotat|tire\s*rotat|\bpneu\b|إطار|دولاب|كاوتشوك|ترصيص/i.test(String(s || ''));
+  }
+
   function isDriveOrGearText(s) {
-    return /clutch|plateau|gear|transmission|\batf\b|torque\s*converter|differential|axle|cardan|drivetrain|دبرياج|بلاطو|كردان/i.test(String(s || ''));
+    const str = String(s || '');
+    if (isTyreServiceText(str) && !/clutch|plateau|gearbox|\bgear\b|transmission|\batf\b|torque\s*converter|differential\s*\/\s*axle\s*oil|drivetrain|دبرياج|بلاطو|كردان/i.test(str)) {
+      return false;
+    }
+    return /clutch|plateau|gear|transmission|\batf\b|torque\s*converter|differential|axle|cardan|drivetrain|دبرياج|بلاطو|كردان/i.test(str);
   }
 
   function isDrivetrainOrBrakeServiceType(s) {
-    return /Brake|Retarder|Clutch|Plateau|Gear|Transmission|ATF|Torque\s*Converter|Differential|Axle|Drivetrain/i.test(String(s || ''));
+    const str = String(s || '');
+    if (isTyreServiceText(str) && !isBrakeOrRetarderText(str) && !isDriveOrGearText(str)) return false;
+    return /Brake|Retarder|Clutch|Plateau|Gear|Transmission|ATF|Torque\s*Converter|Differential|Axle|Drivetrain/i.test(str);
+  }
+
+  function classifyWearScheduleSubsystem(s) {
+    const isTyre = isTyreServiceText(s);
+    const isBrk = isBrakeOrRetarderText(s);
+    const isDrv = isDriveOrGearText(s);
+    if (isTyre && !isBrk && !isDrv) return 'tyre';
+    if (isBrk && isDrv) return 'both';
+    if (isBrk) return 'brake';
+    if (isDrv) return 'drive';
+    if (isTyre) return 'tyre';
+    return '';
   }
 
   const VALID_OIL_SELECT_TYPES = new Set([
@@ -35018,12 +35871,20 @@
     'Differential / Axle Oil 85W-140',
     'Brake Lining & Shoe Set',
     'Retarder & Drivetrain Inspection',
+    'Tyre Rotation & Alignment',
+    'Drive-Axle Tyre Replacement',
     'Oil & Fuel Filter Service'
   ]);
 
   function resolveSteepWearServicePrefill(scheduleType) {
     const s = String(scheduleType || '').trim();
     if (!s) return 'Brake Lining & Shoe Set';
+    if (isTyreServiceText(s)) {
+      if (VALID_OIL_SELECT_TYPES.has(s)) return s;
+      return /rotation|align/i.test(s) && !/replace|drive[\s-]*axle|baseline/i.test(s)
+        ? 'Tyre Rotation & Alignment'
+        : 'Drive-Axle Tyre Replacement';
+    }
     if (/Baseline$/i.test(s)) {
       return /Drivetrain|Gearbox/i.test(s) ? 'Retarder & Drivetrain Inspection' : 'Brake Lining & Shoe Set';
     }
@@ -35039,7 +35900,203 @@
   function isDrivetrainRepairOrPartRow(r) {
     if (!r || typeof r !== 'object') return false;
     const hay = [r.part_name, r.subsystem, r.items_summary, r.oil_type, r.notes].filter(Boolean).join(' ');
-    return /brake|lining|shoe|retarder|clutch|plateau|gearbox|transmission|\batf\b|differential|axle|cardan|drivetrain|فريم|دبرياج|بلاطو|كردان/i.test(hay);
+    return /brake|lining|shoe|retarder|clutch|plateau|gearbox|transmission|\batf\b|differential|axle|cardan|drivetrain|tyre|tire|alignment|rotation|فريم|دبرياج|بلاطو|كردان|إطار|دولاب/i.test(hay);
+  }
+
+  function _siteSurfaceSig() {
+    const seedSites = (SEED.records && SEED.records.sites) || [];
+    const custSites = (STATE.customRecords && STATE.customRecords.sites) || [];
+    const parts = [];
+    const scan = (arr, pfx) => {
+      for (let i = 0; i < arr.length; i++) {
+        const s = arr[i];
+        if (!s || s.voided) continue;
+        if (s._industry && s._industry !== 'Manufacturing') continue;
+        if (s.road_surface || pfx === 'c') {
+          parts.push(`${pfx}:${norm(s.name || s.site)}:${String(s.road_surface || '').toLowerCase()}:${s.includes_transport ? 1 : 0}:${s.supplier ? 1 : 0}:${s.customer ? 1 : 0}`);
+        }
+      }
+    };
+    scan(seedSites, 's');
+    scan(custSites, 'c');
+    return `${seedSites.length}:${custSites.length}:${parts.join(',')}`;
+  }
+
+  let _MFG_SITE_BY_NORM_CACHE = { sig: '', map: null };
+
+  function _findLatestMfgSiteObj(siteName, precomputedSurfSig = '') {
+    const ns = norm(siteName);
+    if (!ns) return null;
+    const custSites = (STATE.customRecords && STATE.customRecords.sites) || [];
+    const seedSites = (SEED.records && SEED.records.sites) || [];
+    if (!window.__MFG_SPEED_CACHES_OFF) {
+      const sSig = precomputedSurfSig || _siteSurfaceSig();
+      const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${sSig}`;
+      if (_MFG_SITE_BY_NORM_CACHE.sig !== cacheKey || !_MFG_SITE_BY_NORM_CACHE.map) {
+        const map = new Map();
+        const addRows = arr => {
+          for (let i = 0; i < arr.length; i++) {
+            const s = arr[i];
+            if (!s || s.voided) continue;
+            if (s._industry && s._industry !== 'Manufacturing') continue;
+            const k = norm(s.name || s.site);
+            if (k) map.set(k, s);
+          }
+        };
+        addRows(seedSites);
+        addRows(custSites);
+        _MFG_SITE_BY_NORM_CACHE = { sig: cacheKey, map };
+      }
+      return _MFG_SITE_BY_NORM_CACHE.map.get(ns) || null;
+    }
+    for (let i = custSites.length - 1; i >= 0; i--) {
+      const s = custSites[i];
+      if (!s || s.voided) continue;
+      if (s._industry && s._industry !== 'Manufacturing') continue;
+      if (norm(s.name || s.site) === ns) return s;
+    }
+    for (let i = seedSites.length - 1; i >= 0; i--) {
+      const s = seedSites[i];
+      if (!s || s.voided) continue;
+      if (s._industry && s._industry !== 'Manufacturing') continue;
+      if (norm(s.name || s.site) === ns) return s;
+    }
+    return null;
+  }
+
+  function _collectRawPurchaseSiteSet(coOpt) {
+    const set = new Set();
+    const canRaw = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    if (!canRaw) return set;
+    const scopeSlug = coOpt ? _coScopeSlugForWear(coOpt) : '';
+    const fOpts = { ignorePeriod: true, ignoreSearch: true, tableKey: 'raw_purchases' };
+    if (scopeSlug) fOpts.company = scopeSlug;
+    filterRecords((SEED.records && SEED.records.raw_purchases) || [], fOpts).forEach(t => {
+      if (!t || isRemovedTicket(t) || rawSign(t) <= 0 || !t.site) return;
+      set.add(norm(t.site));
+    });
+    return set;
+  }
+
+  function isUnpavedQuarrySite(siteName, coOpt, rawSiteSetOpt, precomputedSurfSig = '') {
+    const sNm = String(siteName || '').trim();
+    if (!sNm) return false;
+    const ns = norm(sNm);
+    const sObj = _findLatestMfgSiteObj(sNm, precomputedSurfSig);
+    const surf = sObj ? String(sObj.road_surface || '').trim().toLowerCase() : '';
+    if (surf === 'paved') return false;
+    if (surf === 'unpaved') return true;
+    if (sObj && !sObj.customer && (Boolean(sObj.supplier) || isSupplierDeliveredSite(sObj))) return true;
+    if (/quarry|crusher|\bpit\b|borrow|كسارة|مقلع|مقالع/i.test(sNm)) return true;
+    const rawSet = rawSiteSetOpt instanceof Set ? rawSiteSetOpt : _collectRawPurchaseSiteSet(coOpt);
+    return rawSet.has(ns);
+  }
+
+  function qualifiesExpenseForWearReset(r, extraText = '', amtOverride = null, parentForEq = false) {
+    if (!r || typeof r !== 'object') return null;
+    if (r.voided || r.voided_at || /^voided?$/i.test(String(r.status || ''))) return null;
+    if (typeof expenseSign === 'function' && expenseSign(r) <= 0) return null;
+    const dt = String(r.date || r.rep_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return null;
+    const eq = String(r.target_equipment || r.equipment || '').trim();
+    if (!eq) return null;
+    const alloc = String(r.allocation_mode || '').trim();
+    const disp = String(r.disposition || '').trim();
+    const isWhAlloc = Boolean(r.stored_in_warehouse) || /^(stored\s+in\s+)?warehouse$/i.test(alloc) || /warehouse/i.test(disp);
+    if (isWhAlloc) return null;
+    const hay = [r.category, r.subcategory, r.item_name, r.item_summary, r.description, r.notes, extraText].filter(Boolean).join(' ').trim();
+    if (!hay) return null;
+    if (/\btop[\s-]*up\b|تعبئة\s*نقص/i.test(hay)) return null;
+
+    const rawAmt = amtOverride != null ? amtOverride : (r.total_usd ?? r.total ?? r.amount ?? r.line_total ?? 0);
+    const amt = Math.abs(Number.isFinite(Number(rawAmt)) ? Number(rawAmt) : 0);
+    const isBrake = isBrakeOrRetarderText(hay);
+    const isDrive = isDriveOrGearText(hay);
+    const isTyre = isTyreServiceText(hay);
+    if (!isBrake && !isDrive && !isTyre) return null;
+
+    const hasNonFluidPartOrOverhaul = /lining|shoe|pad|disc|drum|plate|bearing|seal|clutch|plateau|gearbox|cardan|assembly|overhaul|replace|replacement|kit\b|set\b|pair\b|تبديل|طقم|كت|عمرة/i.test(hay);
+    if (amt <= 0 && !hasNonFluidPartOrOverhaul) return null;
+    const isMinorFluid = amt < 30 && !hasNonFluidPartOrOverhaul && /\b(fluid|oil|grease|spray|cleaner|زيت|سائل)\b/i.test(hay);
+    const isMinorPuncture = /patch|puncture|plug|valve|air\s*fill|flat\s*fix|رقعة|بنشر|نفخ/i.test(hay);
+
+    const brakeResetOk = Boolean(isBrake && !isMinorFluid);
+    const driveResetOk = Boolean(isDrive && !isMinorFluid);
+    const tyreResetOk = Boolean(isTyre && !isMinorPuncture && amt >= 80);
+    const tyreReplaceOk = Boolean(tyreResetOk && (amt >= 150 || /replace|replacement|new\s*tyre|new\s*tire|drive[\s-]*axle|x\s*[2468]|pair\b|set\b|تبديل|جديد/i.test(hay)));
+    if (!brakeResetOk && !driveResetOk && !tyreResetOk) return null;
+    return {
+      equipment: eq,
+      date: dt,
+      hay,
+      amount: amt,
+      brake: brakeResetOk,
+      drive: driveResetOk,
+      tyre: tyreResetOk,
+      tyreReplace: tyreReplaceOk
+    };
+  }
+
+  function _collectExpenseWearResets(filterOpts, canExp, canExpItems) {
+    const out = [];
+    if (!canExp && !canExpItems) return out;
+    const itemsByExpId = new Map();
+    const expItemsList = canExpItems
+      ? filterRecords((SEED.records && SEED.records.expense_items) || [], Object.assign({}, filterOpts, { tableKey: 'expense_items' }))
+      : [];
+    const parentMap = new Map();
+    const expList = canExp
+      ? filterRecords((SEED.records && SEED.records.expenses) || [], Object.assign({}, filterOpts, { tableKey: 'expenses' }))
+      : [];
+    expList.forEach(ex => {
+      if (ex && ex.id) parentMap.set(String(ex.id), ex);
+    });
+    expItemsList.forEach(it => {
+      if (!it || it.voided) return;
+      const pid = it.expense_id ? String(it.expense_id) : '';
+      if (pid) {
+        if (!itemsByExpId.has(pid)) itemsByExpId.set(pid, []);
+        itemsByExpId.get(pid).push(it);
+      }
+    });
+    expItemsList.forEach(it => {
+      if (!it || it.voided) return;
+      const pid = it.expense_id ? String(it.expense_id) : '';
+      const p = pid ? parentMap.get(pid) : null;
+      const siblings = pid ? (itemsByExpId.get(pid) || []) : [];
+      const allocLow = String(it.allocation_mode || '').trim().toLowerCase();
+      if (it.stored_in_warehouse || allocLow === 'warehouse' || allocLow === 'stored in warehouse') return;
+      const parentIsWh = Boolean(p && (p.stored_in_warehouse || /^(stored\s+in\s+)?warehouse$/i.test(String(p.allocation_mode || '').trim()) || /warehouse/i.test(String(p.disposition || ''))));
+      if (parentIsWh && (!allocLow || allocLow === 'same_equipment')) return;
+      const effEq = String(it.target_equipment || it.equipment || ((!allocLow || allocLow === 'same_equipment') ? ((p && p.equipment) || '') : '')).trim();
+      if (!effEq) return;
+      const effDate = it.date || (p && p.date) || '';
+      const effRepDate = it.rep_date || (p && p.rep_date) || '';
+      const inheritParentText = Boolean(p && siblings.length <= 1 && (!allocLow || allocLow === 'same_equipment'));
+      const parentHint = inheritParentText ? [p.category, p.subcategory, p.description].filter(Boolean).join(' ') : '';
+      const childAmt = it.line_total ?? it.total ?? it.amount ?? ((siblings.length <= 1 && p) ? (p.total_usd ?? p.total ?? p.amount) : null);
+      const res = qualifiesExpenseForWearReset(
+        Object.assign({}, it, {
+          date: effDate,
+          rep_date: effRepDate,
+          equipment: effEq,
+          target_equipment: effEq,
+          company: it.company || (p && p.company)
+        }),
+        parentHint,
+        childAmt,
+        Boolean(inheritParentText && p && p.for_equipment)
+      );
+      if (res) out.push(res);
+    });
+    expList.forEach(ex => {
+      if (!ex) return;
+      const children = ex.id ? (itemsByExpId.get(String(ex.id)) || []) : [];
+      if (children.length > 0) return;
+      const res = qualifiesExpenseForWearReset(ex, '');
+      if (res) out.push(res);
+    });
+    return out;
   }
 
   function _coScopeSlugForWear(coOpt) {
@@ -35074,8 +36131,11 @@
     const canOil = typeof canAccessTable !== 'function' || canAccessTable('equipment_oil_logs');
     const canRep = typeof canAccessTable !== 'function' || canAccessTable('equipment_repairs');
     const canPm = typeof canAccessTable !== 'function' || canAccessTable('part_movements');
+    const canExp = typeof canAccessTable !== 'function' || canAccessTable('expenses');
+    const canExpItems = typeof canAccessTable !== 'function' || canAccessTable('expense_items');
     const geoToken = _geoWearRevToken();
-    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${activeScope}|${refToday}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canSales ? 1 : 0}:${canRaw ? 1 : 0}:${canEquip ? 1 : 0}:${canOil ? 1 : 0}:${canRep ? 1 : 0}:${canPm ? 1 : 0}|s18:${ruleEnabled ? 1 : 0}:${minGradePct}:${minClimbM}:${wearFactorX}:${warnTonKm}|${geoToken}`;
+    const surfSig = _siteSurfaceSig();
+    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${activeScope}|${refToday}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canSales ? 1 : 0}:${canRaw ? 1 : 0}:${canEquip ? 1 : 0}:${canOil ? 1 : 0}:${canRep ? 1 : 0}:${canPm ? 1 : 0}:${canExp ? 1 : 0}:${canExpItems ? 1 : 0}|s18:${ruleEnabled ? 1 : 0}:${minGradePct}:${minClimbM}:${wearFactorX}:${warnTonKm}|${geoToken}|${surfSig}`;
 
     const cached = _STEEP_WEAR_IDX_MAP.get(activeScope);
     if (cached && cached.revKey === revKey) return cached;
@@ -35094,7 +36154,9 @@
         }
       });
     }
-    if (isNonMfg || (!canSales && !canRaw) || !steepVrKeys.size) {
+    const rawSiteSet = (!isNonMfg && canRaw) ? _collectRawPurchaseSiteSet(scopeCoRaw) : new Set();
+    const hasUnpavedSites = !isNonMfg && (((SEED.records && SEED.records.sites) || []).concat((STATE.customRecords && STATE.customRecords.sites) || []).some(s => s && !s.voided && (!s._industry || s._industry === 'Manufacturing') && (String(s.road_surface || '').toLowerCase() === 'unpaved' || (!s.road_surface && !s.customer && (Boolean(s.supplier) || isSupplierDeliveredSite(s) || /quarry|crusher|\bpit\b|borrow|كسارة|مقلع|مقالع/i.test(String(s.name || '')))))) || rawSiteSet.size > 0);
+    if (isNonMfg || (!canSales && !canRaw) || (!steepVrKeys.size && !hasUnpavedSites)) {
       const emptyOut = {
         revKey,
         ruleEnabled,
@@ -35104,7 +36166,7 @@
         corridors: [],
         units: [],
         byUnit,
-        totals: { steepLoads: 0, steepM3: 0, steepTons: 0, steepTonKm: 0, steepM3Km: 0, extraWearKm: 0, steepRouteKm: 0, avgMult: 1 }
+        totals: { steepLoads: 0, steepM3: 0, steepTons: 0, steepTonKm: 0, steepM3Km: 0, extraWearKm: 0, brakeExtraWearKm: 0, driveExtraWearKm: 0, tyreExtraWearKm: 0, tyreLoads: 0, unpavedQuarryLoads: 0, steepRouteKm: 0, avgMult: 1 }
       };
       if (_STEEP_WEAR_IDX_MAP.size >= 8) _STEEP_WEAR_IDX_MAP.clear();
       _STEEP_WEAR_IDX_MAP.set(activeScope, emptyOut);
@@ -35116,13 +36178,19 @@
 
     const lastBrakeSvcMap = new Map();
     const lastDriveSvcMap = new Map();
-    const bumpSubsystemSvc = (eqRaw, dtRaw, textHint) => {
+    const lastTyreSvcMap = new Map();
+    const bumpSubsystemSvc = (eqRaw, dtRaw, textHint, flagsOpt) => {
       const uk = norm(eqRaw);
       const dt = String(dtRaw || '').slice(0, 10);
       if (!uk || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) return;
-      const isBrk = isBrakeOrRetarderText(textHint);
-      const isDrv = isDriveOrGearText(textHint);
-      if (isBrk || !isDrv) {
+      const isTyr = flagsOpt ? Boolean(flagsOpt.tyre) : isTyreServiceText(textHint);
+      const isBrk = flagsOpt ? Boolean(flagsOpt.brake) : isBrakeOrRetarderText(textHint);
+      const isDrv = flagsOpt ? Boolean(flagsOpt.drive) : isDriveOrGearText(textHint);
+      if (isTyr) {
+        const prevT = lastTyreSvcMap.get(uk) || '';
+        if (!prevT || dt > prevT) lastTyreSvcMap.set(uk, dt);
+      }
+      if (isBrk || (!isDrv && !isTyr)) {
         const prevB = lastBrakeSvcMap.get(uk) || '';
         if (!prevB || dt > prevB) lastBrakeSvcMap.set(uk, dt);
       }
@@ -35135,7 +36203,9 @@
     if (canOil) {
       filterRecords((SEED.records && SEED.records.equipment_oil_logs) || [], Object.assign({}, filterOpts, { tableKey: 'equipment_oil_logs' })).forEach(log => {
         if (/top[-\s]*up/i.test(String(log.service_action || ''))) return;
-        if (isDrivetrainOrBrakeServiceType(log.oil_type)) bumpSubsystemSvc(log.equipment, log.date, log.oil_type);
+        if (isDrivetrainOrBrakeServiceType(log.oil_type) || isTyreServiceText(log.oil_type)) {
+          bumpSubsystemSvc(log.equipment, log.date, log.oil_type);
+        }
       });
     }
     if (canRep) {
@@ -35156,6 +36226,9 @@
         }
       });
     }
+    _collectExpenseWearResets(filterOpts, canExp, canExpItems).forEach(er => {
+      bumpSubsystemSvc(er.equipment, er.date, er.hay, er);
+    });
 
     const legMemo = new Map();
     const getSteepCorridor = (coRaw, siteRaw) => {
@@ -35166,26 +36239,30 @@
       if (legMemo.has(lk)) return legMemo.get(lk);
       const nCo = norm(co);
       const nSite = norm(site);
-      if (!steepVrKeys.has(`bu:${nCo}||site:${nSite}`) && !steepVrKeys.has(`site:${nSite}||bu:${nCo}`)) {
+      const isSteepCandidate = steepVrKeys.has(`bu:${nCo}||site:${nSite}`) || steepVrKeys.has(`site:${nSite}||bu:${nCo}`);
+      const isUnpaved = isUnpavedQuarrySite(site, co, rawSiteSet, surfSig);
+      if (!isSteepCandidate && !isUnpaved) {
         legMemo.set(lk, null);
         return null;
       }
       const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: site }, SEED, { roundTripIfAnyBu: true, skipFuel: true, industry: 'Manufacturing' });
-      if (!est || !est.verifiedRoute || !est.elevAvailable) {
+      const oneWayKm = Number((est && est.oneWayKm) || 0);
+      const roundTripKm = Number((est && est.roundTripKm) || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
+      if (!est || !(roundTripKm > 0)) {
         legMemo.set(lk, null);
         return null;
       }
-      const oneWayKm = Number(est.oneWayKm || 0);
-      const roundTripKm = Number(est.roundTripKm || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
-      const elevGainM = Math.max(0, Number(est.ascentM != null ? est.ascentM : est.elevGainM) || 0);
-      const elevDropM = Math.max(0, Number(est.descentM != null ? est.descentM : est.elevDropM) || 0);
+      const elevAvail = Boolean(est.verifiedRoute && est.elevAvailable);
+      const elevGainM = elevAvail ? Math.max(0, Number(est.ascentM != null ? est.ascentM : est.elevGainM) || 0) : 0;
+      const elevDropM = elevAvail ? Math.max(0, Number(est.descentM != null ? est.descentM : est.elevDropM) || 0) : 0;
       const maxElevM = Math.max(elevGainM, elevDropM);
-      const maxGradePct = Math.max(0, Number(est.maxGradePct) || 0);
-      if (!(roundTripKm > 0) || (maxGradePct < minGradePct && maxElevM < minClimbM)) {
+      const maxGradePct = elevAvail ? Math.max(0, Number(est.maxGradePct) || 0) : 0;
+      const isSteep = Boolean(elevAvail && (maxGradePct >= minGradePct || maxElevM >= minClimbM));
+      if (!isSteep && !isUnpaved) {
         legMemo.set(lk, null);
         return null;
       }
-      const hit = { key: lk, co, site, oneWayKm, roundTripKm, elevGainM, elevDropM, maxElevM, maxGradePct };
+      const hit = { key: lk, co, site, oneWayKm, roundTripKm, elevAvailable: elevAvail, elevGainM, elevDropM, maxElevM, maxGradePct, isSteep, isUnpaved };
       legMemo.set(lk, hit);
       return hit;
     };
@@ -35208,9 +36285,11 @@
         const ownershipLabel = isOwnFleet ? 'Own Fleet' : 'Hauler';
         const lastBrake = lastBrakeSvcMap.get(uk) || '';
         const lastDrive = lastDriveSvcMap.get(uk) || '';
+        const lastTyre = lastTyreSvcMap.get(uk) || '';
         const lastSvc = (lastBrake && lastDrive) ? (lastBrake >= lastDrive ? lastBrake : lastDrive) : (lastBrake || lastDrive || '');
         const effBrakeBase = lastBrake || defaultBaselineDate;
         const effDriveBase = lastDrive || defaultBaselineDate;
+        const effTyreBase = lastTyre || defaultBaselineDate;
         const baselineDate = effBrakeBase <= effDriveBase ? effBrakeBase : effDriveBase;
         u = {
           key: uk,
@@ -35224,11 +36303,14 @@
           lastDrivetrainSvcDate: lastSvc,
           lastBrakeSvcDate: lastBrake,
           lastDriveSvcDate: lastDrive,
+          lastTyreSvcDate: lastTyre,
           effBrakeBase,
           effDriveBase,
+          effTyreBase,
           baselineDate,
           trips: [],
           siteAgg: new Map(),
+          tyreSiteAgg: new Map(),
           totalSteepLoads: 0,
           totalSteepM3: 0,
           totalSteepTons: 0,
@@ -35253,11 +36335,19 @@
           driveSteepRouteKm: 0,
           driveSteepTonKm: 0,
           driveExtraWearKm: 0,
+          tyreLoads: 0,
+          tyreRouteKm: 0,
+          tyreTonKm: 0,
+          tyreExtraWearKm: 0,
+          unpavedQuarryLoads: 0,
           maxGradePct: 0,
           maxElevM: 0,
           topSite: '',
           topSiteGradePct: 0,
-          topSiteElevM: 0
+          topSiteElevM: 0,
+          topTyreSite: '',
+          topTyreSiteGradePct: 0,
+          topTyreSiteElevM: 0
         };
         byUnit.set(uk, u);
       }
@@ -35278,7 +36368,6 @@
       const rawTf = typeof resolveProductTonFactor === 'function' ? resolveProductTonFactor(prod, t.product) : 0;
       const tonFactor = rawTf > 0 ? rawTf : 1.6;
       const uomKey = _siteNbUomKey(t.uom || 'm3');
-      const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt }) || equipInfo(t.truck)) : null;
       let m3 = 0;
       let tons = 0;
       if (uomKey === 'm3') {
@@ -35288,6 +36377,7 @@
         tons = q;
         m3 = q / tonFactor;
       } else if (uomKey === 'load' || uomKey === 'truck') {
+        const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt }) || equipInfo(t.truck)) : null;
         const cap = Math.max(1, Number((eqInfoForCap && eqInfoForCap.capacity) || 12));
         m3 = q * cap;
         tons = m3 * tonFactor;
@@ -35299,8 +36389,30 @@
       const loadScale = Math.max(0.5, Math.min(1.6, tons / 20));
       const gradeRatio = Math.max(minGradePct > 0 ? (corr.maxGradePct / minGradePct) : 1, minClimbM > 0 ? (corr.maxElevM / minClimbM) : 1);
       const gradeScale = Math.max(1.0, Math.min(1.5, gradeRatio));
-      const tripMult = 1 + Math.max(0, wearFactorX - 1) * loadScale * gradeScale;
-      const extraWearKm = corr.roundTripKm * (tripMult - 1);
+      const tripMult = corr.isSteep ? (1 + Math.max(0, wearFactorX - 1) * loadScale * gradeScale) : 1;
+      const baseExtraWearKm = corr.isSteep ? (corr.roundTripKm * (tripMult - 1)) : 0;
+
+      // Directional loaded leg: sales Delivery runs plant -> site (climb = elevGainM, descent = elevDropM);
+      // raw Purchase runs loaded quarry -> plant (climb = elevDropM, descent = elevGainM).
+      const isRawLeg = sourceKind === 'raw';
+      const loadedClimbM = isRawLeg ? corr.elevDropM : corr.elevGainM;
+      const loadedDescentM = isRawLeg ? corr.elevGainM : corr.elevDropM;
+      const dirSteepFactor = dirM => {
+        if (!corr.isSteep) return 0;
+        if (!corr.elevAvailable) return 1;
+        if (minClimbM > 0 && dirM >= minClimbM) return 1;
+        if (minGradePct > 0 && corr.maxGradePct >= minGradePct && dirM >= minClimbM * 0.25) {
+          return Math.min(1, dirM / Math.max(1, minClimbM));
+        }
+        return 0;
+      };
+      const tripBrakeExtraKm = baseExtraWearKm * dirSteepFactor(loadedDescentM);
+      const tripDriveExtraKm = baseExtraWearKm * dirSteepFactor(loadedClimbM);
+      const extraWearKm = Math.max(tripBrakeExtraKm, tripDriveExtraKm);
+
+      const unpavedTyreFactor = corr.isUnpaved ? (0.6 * loadScale) : 0;
+      const steepTyreFactor = corr.isSteep ? (0.7 * (tripMult - 1)) : 0;
+      const tripTyreExtraKm = corr.roundTripKm * (steepTyreFactor + unpavedTyreFactor);
       const tonKm = tons * corr.roundTripKm;
       const m3Km = m3 * corr.roundTripKm;
 
@@ -35311,42 +36423,70 @@
         co,
         site: corr.site,
         source: sourceKind,
-        loads: 1,
+        isSteep: corr.isSteep,
+        isUnpaved: corr.isUnpaved,
+        loads: corr.isSteep ? 1 : 0,
         m3,
         tons,
         roundTripKm: corr.roundTripKm,
-        tonKm,
-        m3Km,
+        tonKm: corr.isSteep ? tonKm : 0,
+        m3Km: corr.isSteep ? m3Km : 0,
         extraWearKm,
+        brakeExtraWearKm: tripBrakeExtraKm,
+        driveExtraWearKm: tripDriveExtraKm,
+        tyreLoads: 1,
+        tyreTonKm: tonKm,
+        tyreRouteKm: corr.roundTripKm,
+        tyreExtraWearKm: tripTyreExtraKm,
+        unpavedLoads: corr.isUnpaved ? 1 : 0,
         maxGradePct: corr.maxGradePct,
         maxElevM: corr.maxElevM
       };
       u.trips.push(tr);
-      u.totalSteepLoads += 1;
-      u.totalSteepM3 += m3;
-      u.totalSteepTons += tons;
-      u.totalSteepRouteKm += corr.roundTripKm;
-      u.totalSteepTonKm += tonKm;
-      u.totalSteepM3Km += m3Km;
-      u.totalExtraWearKm += extraWearKm;
-      if (corr.maxGradePct > u.maxGradePct) u.maxGradePct = corr.maxGradePct;
-      if (corr.maxElevM > u.maxElevM) u.maxElevM = corr.maxElevM;
+      if (corr.isSteep) {
+        u.totalSteepLoads += 1;
+        u.totalSteepM3 += m3;
+        u.totalSteepTons += tons;
+        u.totalSteepRouteKm += corr.roundTripKm;
+        u.totalSteepTonKm += tonKm;
+        u.totalSteepM3Km += m3Km;
+        u.totalExtraWearKm += extraWearKm;
+        if (corr.maxGradePct > u.maxGradePct) u.maxGradePct = corr.maxGradePct;
+        if (corr.maxElevM > u.maxElevM) u.maxElevM = corr.maxElevM;
+      }
 
-      if (dt > u.effBrakeBase) {
+      const isBrakeActive = Boolean(corr.isSteep && dt > u.effBrakeBase && tripBrakeExtraKm > 0);
+      const isDriveActive = Boolean(corr.isSteep && dt > u.effDriveBase && tripDriveExtraKm > 0);
+      const isTyreActive = Boolean(dt > u.effTyreBase && tripTyreExtraKm > 0);
+      if (isBrakeActive) {
         u.brakeSteepLoads += 1;
         u.brakeSteepM3 += m3;
         u.brakeSteepRouteKm += corr.roundTripKm;
         u.brakeSteepTonKm += tonKm;
-        u.brakeExtraWearKm += extraWearKm;
+        u.brakeExtraWearKm += tripBrakeExtraKm;
       }
-      if (dt > u.effDriveBase) {
+      if (isDriveActive) {
         u.driveSteepLoads += 1;
         u.driveSteepM3 += m3;
         u.driveSteepRouteKm += corr.roundTripKm;
         u.driveSteepTonKm += tonKm;
-        u.driveExtraWearKm += extraWearKm;
+        u.driveExtraWearKm += tripDriveExtraKm;
       }
-      if (dt > u.baselineDate) {
+      if (isTyreActive) {
+        u.tyreLoads += 1;
+        u.tyreRouteKm += corr.roundTripKm;
+        u.tyreTonKm += tonKm;
+        u.tyreExtraWearKm += tripTyreExtraKm;
+        if (corr.isUnpaved) u.unpavedQuarryLoads += 1;
+        let tsAgg = u.tyreSiteAgg.get(corr.key);
+        if (!tsAgg) {
+          tsAgg = { site: corr.site, co, tonKm: 0, loads: 0, maxGradePct: corr.maxGradePct, maxElevM: corr.maxElevM };
+          u.tyreSiteAgg.set(corr.key, tsAgg);
+        }
+        tsAgg.tonKm += tonKm;
+        tsAgg.loads += 1;
+      }
+      if (corr.isSteep && (isBrakeActive || isDriveActive)) {
         u.activeSteepLoads += 1;
         u.activeSteepM3 += m3;
         u.activeSteepTons += tons;
@@ -35395,6 +36535,7 @@
     }
 
     let totLoads = 0, totM3 = 0, totTons = 0, totTonKm = 0, totM3Km = 0, totExtraKm = 0, totRouteKm = 0;
+    let totBrakeExtraKm = 0, totDriveExtraKm = 0, totTyreExtraKm = 0, totTyreLoads = 0, totUnpavedLoads = 0;
     const units = [];
     byUnit.forEach(u => {
       let bestSite = null;
@@ -35407,6 +36548,17 @@
         u.topSite = bestSite.site;
         u.topSiteGradePct = bestSite.maxGradePct;
         u.topSiteElevM = bestSite.maxElevM;
+      }
+      let bestTyreSite = null;
+      u.tyreSiteAgg.forEach(sAgg => {
+        if (!bestTyreSite || sAgg.tonKm > bestTyreSite.tonKm || (sAgg.tonKm === bestTyreSite.tonKm && sAgg.loads > bestTyreSite.loads)) {
+          bestTyreSite = sAgg;
+        }
+      });
+      if (bestTyreSite) {
+        u.topTyreSite = bestTyreSite.site;
+        u.topTyreSiteGradePct = bestTyreSite.maxGradePct;
+        u.topTyreSiteElevM = bestTyreSite.maxElevM;
       }
       u.activeSteepM3 = round1(u.activeSteepM3);
       u.activeSteepTons = round1(u.activeSteepTons);
@@ -35422,6 +36574,9 @@
       u.driveSteepRouteKm = round1(u.driveSteepRouteKm);
       u.driveSteepTonKm = round1(u.driveSteepTonKm);
       u.driveExtraWearKm = round1(u.driveExtraWearKm);
+      u.tyreRouteKm = round1(u.tyreRouteKm);
+      u.tyreTonKm = round1(u.tyreTonKm);
+      u.tyreExtraWearKm = round1(u.tyreExtraWearKm);
       u.totalSteepM3 = round1(u.totalSteepM3);
       u.totalSteepTons = round1(u.totalSteepTons);
       u.totalSteepTonKm = round1(u.totalSteepTonKm);
@@ -35434,11 +36589,18 @@
         totTonKm += u.activeSteepTonKm;
         totM3Km += u.activeSteepM3Km;
         totExtraKm += u.activeExtraWearKm;
+        totBrakeExtraKm += u.brakeExtraWearKm;
+        totDriveExtraKm += u.driveExtraWearKm;
         totRouteKm += u.activeSteepRouteKm;
+      }
+      if (u.tyreLoads > 0) {
+        totTyreExtraKm += u.tyreExtraWearKm;
+        totTyreLoads += u.tyreLoads;
+        totUnpavedLoads += u.unpavedQuarryLoads;
       }
       units.push(u);
     });
-    units.sort((a, b) => (b.activeSteepTonKm - a.activeSteepTonKm) || (b.totalSteepTonKm - a.totalSteepTonKm) || a.equipment.localeCompare(b.equipment));
+    units.sort((a, b) => (b.activeSteepTonKm - a.activeSteepTonKm) || (b.tyreExtraWearKm - a.tyreExtraWearKm) || (b.totalSteepTonKm - a.totalSteepTonKm) || a.equipment.localeCompare(b.equipment));
     const corridors = Array.from(corridorsMap.values()).sort((a, b) => b.tonKm - a.tonKm || b.loads - a.loads);
 
     const out = {
@@ -35457,6 +36619,11 @@
         steepTonKm: round1(totTonKm),
         steepM3Km: round1(totM3Km),
         extraWearKm: round1(totExtraKm),
+        brakeExtraWearKm: round1(totBrakeExtraKm),
+        driveExtraWearKm: round1(totDriveExtraKm),
+        tyreExtraWearKm: round1(totTyreExtraKm),
+        tyreLoads: totTyreLoads,
+        unpavedQuarryLoads: totUnpavedLoads,
         steepRouteKm: round1(totRouteKm),
         avgMult: totRouteKm > 0 ? round2((totRouteKm + totExtraKm) / totRouteKm) : 1
       }
@@ -35466,34 +36633,54 @@
     return out;
   }
 
-  function computeUnitSteepWearSince(unitName, sinceDateIso, coOpt) {
+  function computeUnitSteepWearSince(unitName, sinceDateIso, coOpt, subsystemOpt) {
     const idx = computeSteepCorridorWearIndex(coOpt);
     const u = idx.byUnit.get(norm(unitName));
     if (!u || !u.isOwnFleet || !u.isTruckUnit || !u.trips.length) {
       return {
         steepLoads: 0, steepM3: 0, steepTons: 0, steepRouteKm: 0, steepTonKm: 0, steepM3Km: 0,
-        extraWearKm: 0, maxGradePct: 0, maxElevM: 0, topSite: '', topCo: ''
+        extraWearKm: 0, brakeExtraWearKm: 0, driveExtraWearKm: 0, tyreExtraWearKm: 0,
+        tyreLoads: 0, tyreTonKm: 0, tyreRouteKm: 0, unpavedLoads: 0,
+        maxGradePct: 0, maxElevM: 0, topSite: '', topCo: '', topTyreSite: ''
       };
     }
     const cutoff = sinceDateIso ? String(sinceDateIso).slice(0, 10) : '';
-    let loads = 0, m3 = 0, tons = 0, routeKm = 0, tonKm = 0, m3Km = 0, extraKm = 0, maxGrade = 0, maxElev = 0;
+    let loads = 0, m3 = 0, tons = 0, routeKm = 0, tonKm = 0, m3Km = 0, extraKm = 0;
+    let brakeExtraKm = 0, driveExtraKm = 0, tyreExtraKm = 0, tyreLoads = 0, tyreTonKm = 0, tyreRouteKm = 0, unpavedLoads = 0;
+    let maxGrade = 0, maxElev = 0;
     const siteMap = new Map();
+    const tyreSiteMap = new Map();
     for (let i = 0; i < u.trips.length; i++) {
       const tr = u.trips[i];
       if (cutoff && tr.date <= cutoff) continue;
-      loads += tr.loads;
-      m3 += tr.m3;
-      tons += tr.tons;
-      routeKm += tr.roundTripKm;
-      tonKm += tr.tonKm;
-      m3Km += tr.m3Km;
-      extraKm += tr.extraWearKm;
-      if (tr.maxGradePct > maxGrade) maxGrade = tr.maxGradePct;
-      if (tr.maxElevM > maxElev) maxElev = tr.maxElevM;
-      const sk = `${tr.co}|${norm(tr.site)}`;
-      const sCur = siteMap.get(sk) || { site: tr.site, co: tr.co, tonKm: 0 };
-      sCur.tonKm += tr.tonKm;
-      siteMap.set(sk, sCur);
+      if (tr.isSteep) {
+        loads += tr.loads;
+        m3 += tr.m3;
+        tons += tr.tons;
+        routeKm += tr.roundTripKm;
+        tonKm += tr.tonKm;
+        m3Km += tr.m3Km;
+        extraKm += tr.extraWearKm;
+        brakeExtraKm += tr.brakeExtraWearKm;
+        driveExtraKm += tr.driveExtraWearKm;
+        if (tr.maxGradePct > maxGrade) maxGrade = tr.maxGradePct;
+        if (tr.maxElevM > maxElev) maxElev = tr.maxElevM;
+        const sk = `${tr.co}|${norm(tr.site)}`;
+        const sCur = siteMap.get(sk) || { site: tr.site, co: tr.co, tonKm: 0 };
+        sCur.tonKm += tr.tonKm;
+        siteMap.set(sk, sCur);
+      }
+      if (tr.tyreExtraWearKm > 0) {
+        tyreLoads += (tr.tyreLoads || 1);
+        tyreTonKm += (tr.tyreTonKm || 0);
+        tyreRouteKm += (tr.tyreRouteKm || 0);
+        tyreExtraKm += tr.tyreExtraWearKm;
+        unpavedLoads += (tr.unpavedLoads || 0);
+        const tsk = `${tr.co}|${norm(tr.site)}`;
+        const tsCur = tyreSiteMap.get(tsk) || { site: tr.site, co: tr.co, tonKm: 0 };
+        tsCur.tonKm += (tr.tyreTonKm || 0);
+        tyreSiteMap.set(tsk, tsCur);
+      }
     }
     let topSite = '';
     let topCo = '';
@@ -35501,6 +36688,18 @@
     siteMap.forEach(s => {
       if (s.tonKm > topTonKm) { topTonKm = s.tonKm; topSite = s.site; topCo = s.co; }
     });
+    let topTyreSite = '';
+    let topTyreTonKm = -1;
+    tyreSiteMap.forEach(s => {
+      if (s.tonKm > topTyreTonKm) { topTyreTonKm = s.tonKm; topTyreSite = s.site; }
+    });
+    const rExtra = subsystemOpt === 'brake'
+      ? brakeExtraKm
+      : (subsystemOpt === 'drive'
+        ? driveExtraKm
+        : (subsystemOpt === 'tyre'
+          ? tyreExtraKm
+          : (subsystemOpt === 'both' ? Math.max(brakeExtraKm, driveExtraKm) : extraKm)));
     return {
       steepLoads: loads,
       steepM3: round1(m3),
@@ -35508,11 +36707,19 @@
       steepRouteKm: round1(routeKm),
       steepTonKm: round1(tonKm),
       steepM3Km: round1(m3Km),
-      extraWearKm: round1(extraKm),
+      extraWearKm: round1(rExtra),
+      brakeExtraWearKm: round1(brakeExtraKm),
+      driveExtraWearKm: round1(driveExtraKm),
+      tyreExtraWearKm: round1(tyreExtraKm),
+      tyreLoads,
+      tyreTonKm: round1(tyreTonKm),
+      tyreRouteKm: round1(tyreRouteKm),
+      unpavedLoads,
       maxGradePct: maxGrade,
       maxElevM: maxElev,
       topSite,
-      topCo
+      topCo,
+      topTyreSite
     };
   }
 
@@ -35524,8 +36731,10 @@
     const canOil = typeof canAccessTable !== 'function' || canAccessTable('equipment_oil_logs');
     const canFuel = typeof canAccessTable !== 'function' || canAccessTable('fuel_intakes');
     const canRep = typeof canAccessTable !== 'function' || canAccessTable('equipment_repairs');
+    const canExp = typeof canAccessTable !== 'function' || canAccessTable('expenses');
+    const canExpItems = typeof canAccessTable !== 'function' || canAccessTable('expense_items');
     const s18Rev = `${isAlertRuleEnabled('S18') ? 1 : 0}:${getAlertParam('S18', 'min_grade_pct', 8)}:${getAlertParam('S18', 'min_climb_m', 250)}:${getAlertParam('S18', 'wear_factor_x', 2.5)}:${getAlertParam('S18', 'warn_ton_km', 15000)}`;
-    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${cacheScope}|${today}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canOil ? 1 : 0}:${canFuel ? 1 : 0}:${canRep ? 1 : 0}|s18:${s18Rev}|${_geoWearRevToken()}`;
+    const revKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${SEED._recordsReady ? 1 : 0}|${cacheScope}|${today}|${_ALERT_RULES_REV || 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|${canOil ? 1 : 0}:${canFuel ? 1 : 0}:${canRep ? 1 : 0}:${canExp ? 1 : 0}:${canExpItems ? 1 : 0}|s18:${s18Rev}|${_geoWearRevToken()}|${_siteSurfaceSig()}`;
     const cached = _OIL_SERVICE_IDX_MAP.get(cacheScope);
     if (cached && cached.revKey === revKey) return cached;
     if (!scopeCo && _OIL_SERVICE_IDX && _OIL_SERVICE_IDX.revKey === revKey) return _OIL_SERVICE_IDX;
@@ -35535,6 +36744,7 @@
 
     // Latest meter reading per equipment across fuel_intakes, equipment_repairs, and equipment_oil_logs
     const metersByEq = new Map();
+    const meterHistoryByEq = new Map();
     const bumpMeter = (eqRaw, dtRaw, hrsRaw, odoRaw, coRaw) => {
       const k = norm(eqRaw);
       if (!k) return;
@@ -35545,16 +36755,43 @@
         metersByEq.set(k, m);
       }
       const hrs = Number(hrsRaw);
+      const odo = Number(odoRaw);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && ((Number.isFinite(hrs) && hrs > 0) || (Number.isFinite(odo) && odo > 0))) {
+        let hist = meterHistoryByEq.get(k);
+        if (!hist) { hist = []; meterHistoryByEq.set(k, hist); }
+        hist.push({ dt, hrs: Number.isFinite(hrs) && hrs > 0 ? hrs : null, odo: Number.isFinite(odo) && odo > 0 ? odo : null });
+      }
       if (Number.isFinite(hrs) && hrs > 0 && (m.hours == null || dt >= m.hoursDate || hrs > m.hours)) {
         m.hours = hrs;
         m.hoursDate = dt;
       }
-      const odo = Number(odoRaw);
       if (Number.isFinite(odo) && odo > 0 && (m.odometer == null || dt >= m.odoDate || odo > m.odometer)) {
         m.odometer = odo;
         m.km = odo;
         m.odoDate = dt;
       }
+    };
+    const meterAtOrBefore = (eqKey, maxDt, fallbackHrs, fallbackOdo) => {
+      const hist = meterHistoryByEq.get(eqKey);
+      let bestHrs = fallbackHrs;
+      let bestHrsDt = '';
+      let bestOdo = fallbackOdo;
+      let bestOdoDt = '';
+      if (hist && maxDt) {
+        for (let i = 0; i < hist.length; i++) {
+          const ev = hist[i];
+          if (ev.dt > maxDt) continue;
+          if (ev.hrs != null && (!bestHrsDt || ev.dt > bestHrsDt || (ev.dt === bestHrsDt && ev.hrs > (bestHrs || 0)))) {
+            bestHrs = ev.hrs;
+            bestHrsDt = ev.dt;
+          }
+          if (ev.odo != null && (!bestOdoDt || ev.dt > bestOdoDt || (ev.dt === bestOdoDt && ev.odo > (bestOdo || 0)))) {
+            bestOdo = ev.odo;
+            bestOdoDt = ev.dt;
+          }
+        }
+      }
+      return { hrs: bestHrs, odo: bestOdo };
     };
 
     if (canFuel) {
@@ -35574,6 +36811,27 @@
     if (canOil) {
       filterRecords((SEED.records && SEED.records.equipment_oil_logs) || [], Object.assign({}, filterOpts, { tableKey: 'equipment_oil_logs' })).forEach(o => {
         if (o && o.equipment) bumpMeter(o.equipment, o.date, o.hours_reading, o.odometer_km, o.company);
+      });
+    }
+
+    const expResetBrakeMap = new Map();
+    const expResetDriveMap = new Map();
+    const expResetTyreMap = new Map();
+    const expResetTyreReplaceMap = new Map();
+    const expResetBothMap = new Map();
+    if (canOil && (canExp || canExpItems)) {
+      _collectExpenseWearResets(filterOpts, canExp, canExpItems).forEach(er => {
+        const uk = norm(er.equipment);
+        if (!uk) return;
+        const bumpMap = (mp) => {
+          const prev = mp.get(uk);
+          if (!prev || er.date > prev.date) mp.set(uk, er);
+        };
+        if (er.brake) bumpMap(expResetBrakeMap);
+        if (er.drive) bumpMap(expResetDriveMap);
+        if (er.tyre) bumpMap(expResetTyreMap);
+        if (er.tyreReplace) bumpMap(expResetTyreReplaceMap);
+        if (er.brake && er.drive) bumpMap(expResetBothMap);
       });
     }
 
@@ -35600,31 +36858,46 @@
     latestByEqOil.forEach(log => {
       const eqKey = norm(log.equipment);
       const m = metersByEq.get(eqKey) || {};
-      const svcDate = String(log.date || '').slice(0, 10);
+      const wearSub = classifyWearScheduleSubsystem(log.oil_type);
+      const rawSvcDate = String(log.date || '').slice(0, 10);
+      const expHit = wearSub === 'brake'
+        ? expResetBrakeMap.get(eqKey)
+        : (wearSub === 'drive'
+          ? expResetDriveMap.get(eqKey)
+          : (wearSub === 'tyre'
+            ? (/replace/i.test(String(log.oil_type || '')) ? expResetTyreReplaceMap.get(eqKey) : expResetTyreMap.get(eqKey))
+            : (wearSub === 'both' ? expResetBothMap.get(eqKey) : null)));
+      const resetByExpense = Boolean(expHit && rawSvcDate && expHit.date > rawSvcDate);
+      const svcDate = resetByExpense ? expHit.date : rawSvcDate;
       const svcMs = svcDate ? Date.parse(svcDate + 'T00:00:00Z') : todayMs;
       const daysElapsed = Number.isFinite(svcMs) ? Math.max(0, Math.round((todayMs - svcMs) / 86400000)) : 0;
 
-      const svcHrs = log.hours_reading != null && Number(log.hours_reading) > 0 ? Number(log.hours_reading) : null;
+      const rawSvcHrs = log.hours_reading != null && Number(log.hours_reading) > 0 ? Number(log.hours_reading) : null;
+      const rawSvcOdo = log.odometer_km != null && Number(log.odometer_km) > 0 ? Number(log.odometer_km) : null;
+      const baseMeters = resetByExpense ? meterAtOrBefore(eqKey, svcDate, rawSvcHrs, rawSvcOdo) : { hrs: rawSvcHrs, odo: rawSvcOdo };
+      const svcHrs = baseMeters.hrs;
       const curHrs = m.hours != null ? m.hours : svcHrs;
       const hrsWorked = (svcHrs != null && curHrs != null) ? Math.max(0, round2(curHrs - svcHrs)) : null;
       const intHrs = Number(log.interval_hours || 0) > 0 ? Number(log.interval_hours) : null;
       const remHrs = (intHrs != null && hrsWorked != null) ? round2(intHrs - hrsWorked) : null;
       const pctHrs = (intHrs != null && hrsWorked != null) ? (hrsWorked / intHrs) * 100 : 0;
 
-      const svcOdo = log.odometer_km != null && Number(log.odometer_km) > 0 ? Number(log.odometer_km) : null;
+      const svcOdo = baseMeters.odo;
       const curOdo = m.odometer != null ? m.odometer : svcOdo;
       const kmDriven = (svcOdo != null && curOdo != null) ? Math.max(0, round2(curOdo - svcOdo)) : null;
       const intKm = Number(log.interval_km || 0) > 0 ? Number(log.interval_km) : null;
       const remKm = (intKm != null && kmDriven != null) ? round2(intKm - kmDriven) : null;
       const pctKm = (intKm != null && kmDriven != null) ? (kmDriven / intKm) * 100 : 0;
 
-      const isDrivetrainSched = isDrivetrainOrBrakeServiceType(log.oil_type);
+      const isTyreSched = wearSub === 'tyre';
+      const isDrivetrainSched = !isTyreSched && isDrivetrainOrBrakeServiceType(log.oil_type);
       const s18On = isAlertRuleEnabled('S18');
-      const sw = isDrivetrainSched ? computeUnitSteepWearSince(log.equipment, svcDate, scopeCo) : null;
-      const steepWearWeighted = Boolean(isDrivetrainSched && s18On && sw && sw.extraWearKm > 0);
+      const sw = (isDrivetrainSched || isTyreSched) ? computeUnitSteepWearSince(log.equipment, svcDate, scopeCo, wearSub) : null;
+      const steepWearWeighted = Boolean((isDrivetrainSched || isTyreSched) && s18On && sw && sw.extraWearKm > 0);
       const steepExtraWearKm = steepWearWeighted ? round2(sw.extraWearKm) : 0;
+      const baseRouteKm = isTyreSched ? ((sw && sw.tyreRouteKm) || 0) : ((sw && sw.steepRouteKm) || 0);
       const effWearKm = steepWearWeighted
-        ? (kmDriven != null ? round2(kmDriven + steepExtraWearKm) : round2(sw.steepRouteKm + steepExtraWearKm))
+        ? (kmDriven != null ? round2(kmDriven + steepExtraWearKm) : round2(baseRouteKm + steepExtraWearKm))
         : kmDriven;
       const remWearKm = (intKm != null && effWearKm != null) ? round2(intKm - effWearKm) : remKm;
       const pctWearKm = (intKm != null && effWearKm != null && intKm > 0) ? (effWearKm / intKm) * 100 : pctKm;
@@ -35655,11 +36928,12 @@
       if (hrsWorked != null && intHrs != null) trigParts.push(`${fmtNum(hrsWorked, 0)}/${fmtNum(intHrs, 0)} h (${remHrs >= 0 ? fmtNum(remHrs, 0) + ' h left' : fmtNum(Math.abs(remHrs), 0) + ' h overdue'})`);
       if (kmDriven != null && intKm != null) trigParts.push(`${fmtNum(kmDriven, 0)}/${fmtNum(intKm, 0)} km (${remKm >= 0 ? fmtNum(remKm, 0) + ' km left' : fmtNum(Math.abs(remKm), 0) + ' km overdue'})`);
       if (steepWearWeighted && intKm != null && effWearKm != null) {
-        trigParts.push(`${fmtNum(effWearKm, 0)}/${fmtNum(intKm, 0)} wear km (+${fmtNum(steepExtraWearKm, 0)} steep)`);
+        trigParts.push(`${fmtNum(effWearKm, 0)}/${fmtNum(intKm, 0)} wear km (+${fmtNum(steepExtraWearKm, 0)} ${isTyreSched ? 'steep/quarry' : 'steep'})`);
       } else if (steepWearWeighted && steepExtraWearKm > 0) {
-        trigParts.push(`+${fmtNum(steepExtraWearKm, 0)} steep wear km`);
+        trigParts.push(`+${fmtNum(steepExtraWearKm, 0)} ${isTyreSched ? 'steep/quarry' : 'steep'} wear km`);
       }
       if (intDays != null) trigParts.push(`${fmtNum(daysElapsed, 0)}/${fmtNum(intDays, 0)} d (${remDays >= 0 ? fmtNum(remDays, 0) + ' d left' : fmtNum(Math.abs(remDays), 0) + ' d overdue'})`);
+      if (resetByExpense) trigParts.push('Exp. reset');
 
       const item = {
         id: log.id || log.name,
@@ -35668,12 +36942,15 @@
         equipment: log.equipment,
         oil_type: log.oil_type || 'Engine Oil 15W-40',
         last_date: svcDate,
+        resetByExpense,
         qty: Number(log.qty || 0),
         uom: log.uom || 'Litre',
-        source: log.source || 'Plant Lube Bay',
+        source: resetByExpense ? 'Expense Invoice Reset' : (log.source || 'Plant Lube Bay'),
         svcHrs, curHrs, hrsWorked, intHrs, remHrs, nextDueHrs: (svcHrs != null && intHrs != null) ? round2(svcHrs + intHrs) : null,
         svcOdo, curOdo, kmDriven, intKm, remKm, nextDueKm: (svcOdo != null && intKm != null) ? round2(svcOdo + intKm) : null,
+        wearSub,
         isDrivetrainSched,
+        isTyreSched,
         steepWearWeighted,
         steepExtraWearKm,
         effWearKm,
@@ -35681,7 +36958,11 @@
         steepTonKm: sw ? round1(sw.steepTonKm) : 0,
         steepM3: sw ? round1(sw.steepM3) : 0,
         steepLoads: sw ? sw.steepLoads : 0,
+        tyreTonKm: sw ? round1(sw.tyreTonKm) : 0,
+        tyreLoads: sw ? (sw.tyreLoads || 0) : 0,
+        unpavedLoads: sw ? (sw.unpavedLoads || 0) : 0,
         topSteepSite: (sw && sw.topSite) || '',
+        topTyreSite: (sw && sw.topTyreSite) || '',
         daysElapsed, intDays, remDays,
         maxPct: round2(maxPct),
         trigger_summary: trigParts.join(' · ') || 'Scheduled',
@@ -35727,6 +37008,9 @@
         steepLoads: swIdx.totals.steepLoads,
         steepTonKm: swIdx.totals.steepTonKm,
         extraWearKm: swIdx.totals.extraWearKm,
+        brakeExtraWearKm: swIdx.totals.brakeExtraWearKm || 0,
+        driveExtraWearKm: swIdx.totals.driveExtraWearKm || 0,
+        tyreExtraWearKm: swIdx.totals.tyreExtraWearKm || 0,
         byUnitFlag: new Map(),
         flaggedUnits: []
       };
@@ -35739,7 +37023,7 @@
 
     swIdx.units.forEach(u => {
       if (!u.isOwnFleet || !u.isTruckUnit) return;
-      const unitScheds = (oilIdx.byUnit.get(u.key) || []).filter(s => s.isDrivetrainSched);
+      const unitScheds = (oilIdx.byUnit.get(u.key) || []).filter(s => s.isDrivetrainSched || s.isTyreSched);
       const weightedOver = unitScheds.filter(s => s.steepWearWeighted && s.steepExtraWearKm > 0 && (s.status === 'OVERDUE' || s.status === 'DUE SOON'));
       let bestRow = null;
       if (weightedOver.length) {
@@ -35754,11 +37038,14 @@
           company: top.company || u.company,
           ownership: u.ownership,
           top_corridor: top.topSteepSite || u.topSite || '-',
+          top_tyre_site: top.topTyreSite || u.topTyreSite || '',
           schedule_type: top.oil_type,
           last_service_date: top.last_date || u.lastDrivetrainSvcDate || '-',
-          steep_loads: top.steepLoads || u.activeSteepLoads,
-          steep_m3: top.steepM3 || u.activeSteepM3,
-          steep_ton_km: top.steepTonKm || u.activeSteepTonKm,
+          steep_loads: top.steepLoads || u.activeSteepLoads || 0,
+          steep_m3: top.steepM3 || u.activeSteepM3 || 0,
+          steep_ton_km: top.steepTonKm || u.activeSteepTonKm || 0,
+          tyre_loads: top.tyreLoads || u.tyreLoads || 0,
+          tyre_ton_km: top.tyreTonKm || u.tyreTonKm || 0,
           flat_km: top.kmDriven,
           extra_wear_km: top.steepExtraWearKm,
           eff_wear_km: top.effWearKm,
@@ -35845,6 +37132,9 @@
       steepLoads: swIdx.totals.steepLoads,
       steepTonKm: swIdx.totals.steepTonKm,
       extraWearKm: swIdx.totals.extraWearKm,
+      brakeExtraWearKm: swIdx.totals.brakeExtraWearKm || 0,
+      driveExtraWearKm: swIdx.totals.driveExtraWearKm || 0,
+      tyreExtraWearKm: swIdx.totals.tyreExtraWearKm || 0,
       byUnitFlag: flaggedMap,
       flaggedUnits
     };
@@ -35868,6 +37158,12 @@
       const u = swIdx.byUnit.get(uk);
       return Boolean(swSn.byUnitFlag.has(uk) || (u && u.isOwnFleet && u.isTruckUnit && u.activeSteepLoads > 0 && u.activeSteepTonKm > 0));
     };
+    const hasTyreWear = name => {
+      const uk = norm(name);
+      const u = swIdx.byUnit.get(uk);
+      const fl = swSn.byUnitFlag.get(uk);
+      return Boolean((u && u.isOwnFleet && u.isTruckUnit && u.tyreExtraWearKm > 0 && u.tyreLoads > 0) || (fl && isTyreServiceText(fl.schedule_type)));
+    };
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
     const isTruckEquip = e => Boolean(e && String(e.Equipment || '').trim()) && /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const equipAll = m.equipment || [];
@@ -35875,6 +37171,7 @@
     const transCount = equipAll.length - ownCount;
     const equipWithDefectsCount = equipAll.filter(e => getEquipmentHealth(e.Equipment).severityRank <= 3).length;
     const equipSteepCount = equipAll.filter(e => hasSteepWear(e.Equipment)).length;
+    const equipTyreCount = equipAll.filter(e => hasTyreWear(e.Equipment)).length;
     const equipBase = equipAll.filter(e => !STATE.search || Object.values(e).join(' ').toLowerCase().includes(STATE.search.toLowerCase()));
     const equipRows = sortRows(equipBase.filter(e => {
       if (STATE.chipFilter === 'own') return isOwnEquip(e);
@@ -35883,6 +37180,7 @@
       if (STATE.chipFilter === 'machinery') return !isTruckEquip(e);
       if (STATE.chipFilter === 'defects') return getEquipmentHealth(e.Equipment).severityRank <= 3;
       if (STATE.chipFilter === 'steep_wear') return hasSteepWear(e.Equipment);
+      if (STATE.chipFilter === 'tyre_wear') return hasTyreWear(e.Equipment);
       if (STATE.chipFilter === 'cost') return Number(e.total_cost || 0) > 0;
       if (STATE.chipFilter === 'diesel') return Number(e.diesel_litres || 0) > 0;
       if (STATE.chipFilter === 'app') {
@@ -35900,6 +37198,7 @@
       if (STATE.chipFilter === 'transporter') return !/^own/i.test(ce.ownership || '');
       if (STATE.chipFilter === 'defects') return getEquipmentHealth(ce.equipment, ce.company).severityRank <= 3;
       if (STATE.chipFilter === 'steep_wear') return hasSteepWear(ce.equipment);
+      if (STATE.chipFilter === 'tyre_wear') return hasTyreWear(ce.equipment);
       if (STATE.chipFilter === 'app') return isAppRecord(ce);
       return true;
     }), 'coeq', 'loads_hauled', 'desc');
@@ -35972,7 +37271,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search equipment, plate, type, ownership...')}
-            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('steep_wear', `Steep Wear (${equipSteepCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('steep_wear', `Steep Wear (${equipSteepCount})`)}${chip('tyre_wear', `Tyre &amp; Quarry (${equipTyreCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('fleet_maint')} Defects &amp; Parts</button>
@@ -35995,10 +37294,12 @@
                 const swFlagEq = swSn.byUnitFlag.get(ukEq) || null;
                 const swUnitEq = swIdx.byUnit.get(ukEq) || null;
                 const swBadgeHtml = swFlagEq
-                  ? `<span class="badge ${esc(swFlagEq.badgeCls)} tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(swFlagEq.schedule_type + ': ' + fmtNum(swFlagEq.steep_ton_km, 0) + ' t-km (+' + fmtNum(swFlagEq.extra_wear_km, 0) + ' wear km)')}">${ic('wrench')}<span>${esc(swFlagEq.status === 'OVERDUE' ? 'Brake Wear Due' : 'Steep Wear')}</span></span>`
+                  ? `<span class="badge ${esc(swFlagEq.badgeCls)} tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(swFlagEq.schedule_type + ': ' + fmtNum(swFlagEq.steep_ton_km, 0) + ' t-km (+' + fmtNum(swFlagEq.extra_wear_km, 0) + ' wear km)')}">${ic('wrench')}<span>${esc(swFlagEq.status === 'OVERDUE' ? (isTyreServiceText(swFlagEq.schedule_type) ? 'Tyre Wear Due' : 'Brake Wear Due') : (isTyreServiceText(swFlagEq.schedule_type) ? 'Tyre Wear' : 'Steep Wear'))}</span></span>`
                   : (swUnitEq && swUnitEq.activeSteepLoads > 0 && swUnitEq.isOwnFleet && swUnitEq.isTruckUnit
                     ? `<span class="badge badge-info tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(fmtNum(swUnitEq.activeSteepTonKm, 0) + ' steep t-km (+' + fmtNum(swUnitEq.activeExtraWearKm, 0) + ' wear km)')}">${ic('wrench')}<span>Steep Wear</span></span>`
-                    : '');
+                    : (swUnitEq && swUnitEq.unpavedQuarryLoads > 0 && swUnitEq.isOwnFleet && swUnitEq.isTruckUnit
+                      ? `<span class="badge badge-brass tkt-ot-badge has-ico" style="margin-left:5px;font-size:9.5px" data-ui-tip="${esc(fmtNum(swUnitEq.unpavedQuarryLoads, 0) + ' unpaved quarry loads (+' + fmtNum(swUnitEq.tyreExtraWearKm, 0) + ' tyre wear km)')}">${ic('wrench')}<span>Tyre &amp; Quarry</span></span>`
+                      : ''));
                 return `
                 <tr class="rrow" data-rkey="equipment" data-rid="${esc((equipInfo(e.Equipment) || {}).id || e.Equipment)}">
                   <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${renderEquipmentHealthBadge(e.Equipment, null, true)}${swBadgeHtml}${isTruckEquip(e) ? `<button type="button" class="fpnl-only-btn" style="margin-left:5px;padding:1px 6px;font-size:10px" data-fpnl-focus-unit="${esc(e.Equipment)}" data-ui-tip="Focus Truck Revenue &amp; Cost P&amp;L on ${esc(e.Equipment)}">P&amp;L</button>` : ''}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
@@ -36054,7 +37355,7 @@
               </tr>
             </thead>
             <tbody>
-              ${coEquipRows.slice(0, shownCount('coeq')).map(ce => {
+              ${sliceShown('coeq', coEquipRows).map(ce => {
                 const eqH = getEquipmentHealth(ce.equipment, ce.company);
                 const statusBadgeCls = eqH.severityRank === 0 ? 'badge-err' : (eqH.severityRank <= 2 ? 'badge-warn' : (/active/i.test(ce.status || 'Active') && !ce.end_date ? 'badge-ok' : 'badge-warn'));
                 const statusLabel = eqH.severityRank <= 2 && /active/i.test(ce.status || 'Active') ? `${ce.status || 'Active'} · ${eqH.shortBadge}` : (ce.status || 'Active');
@@ -36133,6 +37434,7 @@
       if (oilF === 'overdue') return s.status === 'OVERDUE';
       if (oilF === 'due_soon') return s.status === 'DUE SOON';
       if (oilF === 'drivetrain') return s.isDrivetrainSched;
+      if (oilF === 'tyres') return Boolean(s.isTyreSched);
       if (oilF === '15w40') return /15W-40|Engine/i.test(s.oil_type || '');
       if (oilF === 'hyd68') return /Hydraulic/i.test(s.oil_type || '');
       if (oilF === 'gear') return /Gear|ATF|Differential|Axle/i.test(s.oil_type || '');
@@ -36453,6 +37755,7 @@
             ${oChip('hyd68', `Hydraulic Oil 68 (${oilBase.filter(s => /Hydraulic/i.test(s.oil_type || '')).length})`)}
             ${oChip('gear', `Gear / ATF / Axle (${oilBase.filter(s => /Gear|ATF|Differential|Axle/i.test(s.oil_type || '')).length})`)}
             ${oChip('drivetrain', `Brake &amp; Drivetrain (${oilBase.filter(s => s.isDrivetrainSched).length})`)}
+            ${oChip('tyres', `Tyres &amp; Alignment (${oilBase.filter(s => s.isTyreSched).length})`)}
           </div>
         </div>
         <div class="table-wrap">
@@ -36471,8 +37774,11 @@
                 const kmTxt = (s.kmDriven != null && s.intKm != null)
                   ? `${fmtNum(s.kmDriven, 0)} / ${fmtNum(s.intKm, 0)} km (${s.remKm >= 0 ? fmtNum(s.remKm, 0) + 'km left' : fmtNum(Math.abs(s.remKm), 0) + 'km over'})`
                   : (s.curOdo != null ? `${fmtNum(s.curOdo, 0)} km` : 'N/A');
+                const wearTipTxt = (s.isTyreSched && !(s.steepTonKm > 0) && s.unpavedLoads > 0)
+                  ? `${fmtNum(s.unpavedLoads, 0)} unpaved quarry loads (+${fmtNum(s.steepExtraWearKm, 0)} tyre wear km)`
+                  : `Effective wear: ${fmtNum(s.effWearKm, 0)}${s.intKm ? ' / ' + fmtNum(s.intKm, 0) : ''} km (${fmtNum(s.steepTonKm, 0)} steep t-km)`;
                 const wearBadgeHtml = (s.steepWearWeighted && s.steepExtraWearKm > 0)
-                  ? `<div style="margin-top:2px"><span class="badge ${s.status === 'OVERDUE' ? 'badge-err' : 'badge-warn'}" data-ui-tip="${esc('Effective wear: ' + fmtNum(s.effWearKm, 0) + (s.intKm ? ' / ' + fmtNum(s.intKm, 0) : '') + ' km (' + fmtNum(s.steepTonKm, 0) + ' steep t-km)')}"><span data-no-i18n="1">+${fmtNum(s.steepExtraWearKm, 0)}</span> <span>wear km</span></span></div>`
+                  ? `<div style="margin-top:2px"><span class="badge ${s.status === 'OVERDUE' ? 'badge-err' : 'badge-warn'}" data-ui-tip="${esc(wearTipTxt)}"><span data-no-i18n="1">+${fmtNum(s.steepExtraWearKm, 0)}</span> <span>wear km</span></span></div>`
                   : '';
                 const dayTxt = s.intDays != null
                   ? `${fmtNum(s.daysElapsed, 0)} / ${fmtNum(s.intDays, 0)} d (${s.remDays >= 0 ? fmtNum(s.remDays, 0) + 'd left' : fmtNum(Math.abs(s.remDays), 0) + 'd over'})`
@@ -36956,7 +38262,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${coDriversRows.slice(0, shownCount('codrv')).map(cd => `
+                ${sliceShown('codrv', coDriversRows).map(cd => `
                   <tr class="rrow" data-rkey="company_drivers" data-rid="${esc(cd.id || cd.driver)}">
                     <td><strong>${relLink('drivers', cd.driver, cd.driver, true)}</strong>${appCell(cd, 'company_drivers')}</td>
                     <td>${coBadge(cd.company)}</td>
@@ -36990,7 +38296,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${otRateRows.slice(0, shownCount('otrate')).map(or => `
+                ${sliceShown('otrate', otRateRows).map(or => `
                   <tr class="rrow" data-rkey="overtime_rates" data-rid="${esc(or.id || or.name)}">
                     <td class="mono"><strong>${esc(or.name || '—')}</strong>${appCell(or, 'overtime_rates')}</td>
                     <td>${coBadge(or.company)}</td>
@@ -38068,7 +39374,7 @@
           if (db !== da) return db.localeCompare(da);
           return Number(b.invoice_no || 0) - Number(a.invoice_no || 0);
         });
-    const shownVat = vatRows.slice(0, shownCount('vatinv'));
+    const shownVat = sliceShown('vatinv', vatRows);
     const vatChip = (kKey, lbl) => `<button type="button" class="filter-chip ${vatFilter === kKey ? 'active' : ''}" data-vatinv-chip="${esc(kKey)}">${lbl}</button>`;
     const totVatNet = vatRows.reduce((s, r) => s + Number(r.net_amount || 0), 0);
     const totVatAmt = vatRows.reduce((s, r) => s + Number(r.vat_amount || 0), 0);
@@ -48260,58 +49566,20 @@
   // ==========================================================================
   // VIEW 9A-2: DAILY PLANT, EXTERNAL FACTORIES & WORKFORCE MACHINE MAP
   // ==========================================================================
-  const WF_DRV_ALIASES = {
-    'abdallah smael': 'Abdallah Ismail',
-    'abdallah ismail': 'Abdallah Ismail',
-    'abdallah maghsal': 'Abdallah Ismail',
-    'ali najdeh': 'Ali Najdi',
-    'ali najdi': 'Ali Najdi',
-    'maher kadour': 'Maher Kadour',
-    'ibrahim mortada': 'Ibrahim Mortada',
-    'khalil al sharif': 'Khalil Al Sharif',
-    'ghafar saloum': 'Ghafar Saloum',
-    'ghafar': 'Ghafar Saloum',
-    'hussein saleh': 'Hussein Saleh',
-    'ali el hajj': 'Ali el Hajj',
-    'ali haj': 'Ali el Hajj',
-    'mohamad habib': 'Mohamad Habib',
-    'ali saleh': 'Ali Saleh',
-    'ismael': 'Ismael',
-    'ismail': 'Ismael',
-    'naameh najdi': 'Naameh Najdi',
-    'mashaal habib': 'Mashaal Habib',
-    'mashaal': 'Mashaal Habib',
-    'mahmoud shiref': 'mahmoud shiref',
-    'mohamad shiref': 'mahmoud shiref',
-    'jasim': 'jasim',
-    'jasem': 'jasim',
-    'abo nidal': 'abo nidal',
-    'rashad zahra': 'Rashad Zahra',
-    'awad': 'Awad',
-    'sultan': 'Sultan',
-    'mwafak': 'Mwafak',
-    'yasser': 'yasser mortada',
-    'yasser mortada': 'yasser mortada',
-    'ahmad jaawik': 'Ahmad jaawik',
-    'mosaed': 'Mosaed',
-    'majed karam': 'Majed Karam',
-    'mahmoud al mortada': 'Mahmoud Al Mortada',
-    'mahmoud sahi': 'Mahmoud Alsahe',
-    'mahmoud alsahe': 'Mahmoud Alsahe',
-    'imad': 'Imad Dakhloul',
-    'imad dakhloul': 'Imad Dakhloul'
-  };
+  // Driver spelling variants -> canonical driver name: private name book (driver_aliases), never this public file.
+  function wfDrvAliases() { return window.MFG_NAMEBOOK.map('driver_aliases'); }
 
   function resolveStaffEquipmentSitesInfo(staffName, company, onDate) {
     const raw = String(staffName || '').trim();
     const empty = { hasConnection: false, staff: raw, primaryEquipment: '', primarySite: '', registeredUnits: [], siteLogs: [] };
     if (!raw || !SEED.records) return empty;
+    const drvAl = wfDrvAliases();
     const rawNorm = norm(raw);
-    const canon = WF_DRV_ALIASES[rawNorm] || raw;
+    const canon = drvAl[rawNorm] || raw;
     const canonNorm = norm(canon);
     const aliasSet = new Set([rawNorm, canonNorm]);
-    Object.keys(WF_DRV_ALIASES).forEach(k => {
-      const targetNorm = norm(WF_DRV_ALIASES[k]);
+    Object.keys(drvAl).forEach(k => {
+      const targetNorm = norm(drvAl[k]);
       if (targetNorm === rawNorm || targetNorm === canonNorm) aliasSet.add(norm(k));
     });
     const rawStem = normStaffStem(raw);
@@ -48324,7 +49592,7 @@
       const n = norm(nameVal);
       if (!n) return false;
       if (aliasSet.has(n)) return true;
-      const mapped = WF_DRV_ALIASES[n];
+      const mapped = drvAl[n];
       if (mapped && aliasSet.has(norm(mapped))) return true;
       if (multiTokenStems.size) {
         const st = normStaffStem(nameVal);
@@ -48522,7 +49790,7 @@
     if (!ce) return false;
     if (ce.is_company_fleet === true) return true;
     if (/^(own|rent)/i.test(String(ce.ownership || '').trim())) return true;
-    if (/^(karim|kareem|hussein|jad)\s+bdeir$/i.test(String(ce.supplier || '').trim())) return true;
+    if (window.MFG_NAMEBOOK.isOwnerFamily(ce.supplier)) return true;
     if (/^(tb\d+|sb\d+|pb\d+|mb\d+|mbs\d+|shacman|danbar|maghsal|caterpillar|e6225f|baldouzar|mowaled|mwaled|325\s*cat|2\d0\s*volvo|pickup)/i.test(String(ce.equipment || ce.name || '').trim())) return true;
     return false;
   }
@@ -48685,7 +49953,7 @@
       empScoped.forEach(e => {
         if (!e || e.voided) return;
         const rawName = String(e.staff || e.name || '').trim();
-        const canonName = WF_DRV_ALIASES[norm(rawName)] || rawName;
+        const canonName = wfDrvAliases()[norm(rawName)] || rawName;
         const k = norm(canonName);
         if (!k) return;
         const isCurrent = (!e.end_date || String(e.end_date) >= latestOpDate) && String(e.status || 'Active') !== 'Ended';
@@ -48719,7 +49987,7 @@
           aliasToStaffKey.set(sk, sk);
           info.aliases.forEach(a => { if (a) aliasToStaffKey.set(a, sk); });
         }
-        Object.entries(WF_DRV_ALIASES).forEach(([al, targetName]) => {
+        Object.entries(wfDrvAliases()).forEach(([al, targetName]) => {
           const tk = norm(targetName);
           if (staffCatalog.has(tk)) {
             aliasToStaffKey.set(norm(al), tk);
@@ -48732,7 +50000,7 @@
       coDrvScoped.forEach(cd => {
         if (!cd || cd.voided) return;
         const drvRaw = String(cd.driver || '').trim();
-        const stfRaw = String(cd.staff || WF_DRV_ALIASES[norm(drvRaw)] || drvRaw).trim();
+        const stfRaw = String(cd.staff || wfDrvAliases()[norm(drvRaw)] || drvRaw).trim();
         const existingKey = aliasToStaffKey.get(norm(stfRaw)) || aliasToStaffKey.get(norm(drvRaw));
         if (existingKey && staffCatalog.has(existingKey)) {
           const sObj = staffCatalog.get(existingKey);
@@ -48764,7 +50032,7 @@
         if (!n) return '';
         const hit = aliasToStaffKey.get(n);
         if (hit) return hit;
-        const viaMap = WF_DRV_ALIASES[n];
+        const viaMap = wfDrvAliases()[n];
         if (viaMap) {
           const vk = norm(viaMap);
           if (staffCatalog.has(vk)) return vk;
@@ -48922,7 +50190,7 @@
           if (!ek || isWfNonMachineBucket(eqName)) continue;
           const mInfo = machineCatalog.get(ek);
           const eqMaster = eqMasterByKey.get(ek);
-          const isCompanyUnit = Boolean(mInfo || (eqMaster && (/^(own|rent)/i.test(eqMaster.ownership || '') || /^(karim|kareem|hussein|jad)\s+bdeir$/i.test(eqMaster.supplier || ''))));
+          const isCompanyUnit = Boolean(mInfo || (eqMaster && (/^(own|rent)/i.test(eqMaster.ownership || '') || window.MFG_NAMEBOOK.isOwnerFamily(eqMaster.supplier))));
           if (!isCompanyUnit) continue;
 
           const isLube = !/diesel|mazout|petrol/i.test(String(f.item || f.fuel_type || 'Diesel'));
@@ -51436,9 +52704,9 @@
       { cat: 'Currency Conversions (USD ↔ LBP)', chipKey: 'cf_fx', inU: l2uRow.to_amt, outU: u2lRow.from_amt, inL: u2lRow.to_amt, outL: l2uRow.from_amt }
     ];
 
-    const salesShown = filtName(tSales.rows || []).slice(0, shownCount('cf_sales_t'));
-    const expsShown = filtName(tExps.rows || []).slice(0, shownCount('cf_exps_t'));
-    const borShown = filtName(tBor.rows || []).slice(0, shownCount('cf_bor_t'));
+    const salesShown = sliceShown('cf_sales_t', filtName(tSales.rows || []));
+    const expsShown = sliceShown('cf_exps_t', filtName(tExps.rows || []));
+    const borShown = sliceShown('cf_bor_t', filtName(tBor.rows || []));
     // What the TOTAL carries but no borrower row does (BBConstruction's LL cash in that its workbook model does not
     // split by borrower): one line, so the rows add up to the TOTAL. Hidden while a name search is typed.
     const borRem = (() => {
@@ -51452,8 +52720,8 @@
       o.show = !q && (Math.abs(o.rec_usd) >= 1 || Math.abs(o.paid_usd) >= 1 || Math.abs(o.rec_lbp) >= 100000 || Math.abs(o.paid_lbp) >= 100000);
       return o;
     })();
-    const salShown = filtName(tSal.rows || []).slice(0, shownCount('cf_sal_t'));
-    const extShown = filtName(tExt.rows || []).slice(0, shownCount('cf_ext_t'));
+    const salShown = sliceShown('cf_sal_t', filtName(tSal.rows || []));
+    const extShown = sliceShown('cf_ext_t', filtName(tExt.rows || []));
     const extdShown = filtName(tExtd.rows || []);
 
     const fmtYmHuman = ym => {
@@ -54454,6 +55722,109 @@
 
   function holdingInForceRows(rows) {
     return (Array.isArray(rows) ? rows : []).filter(r => r && !r._split_kept);
+  }
+
+  // The partner lines of a statement printed for a date range: each partner's schedule in force during the range, in
+  // date order, with that schedule's own share and amounts. A partner whose schedule changed inside the range gets one
+  // line per period. A schedule a save kept apart and the one that continues it carry the same pool and drawings
+  // (planSiblingChronoSplit), so only the last of them inside the range counts in a total (`counted`): the rule of
+  // holdingInForceRows, applied to the range. A partner with no schedule in force in the range gets one line at the
+  // charter default share, with no amounts. Returns null when there is no range or no schedule at all.
+  function holdingPartnerPeriodsInRange(rows, range) {
+    const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const from = String((range && range.from) || '').slice(0, 10);
+    const to = String((range && range.to) || '').slice(0, 10);
+    const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+    if (!isIso(from) || !isIso(to) || !list.length) return null;
+    const isoOr = (v, dflt) => { const s = String(v || '').slice(0, 10); return isIso(s) ? s : dflt; };
+    // Same reading of an empty start and an open end as lookupActiveHoldingPartnerSplit
+    const sdOf = r => isoOr(r.start_date, '1900-01-01');
+    const edOf = r => isoOr(r.end_date, '9999-12-31');
+    const byStart = (a, b) => (sdOf(a) < sdOf(b) ? -1 : (sdOf(a) > sdOf(b) ? 1 : 0));
+    const up = v => String(v || '').trim().toUpperCase();
+    const entKey = r => norm(String(r.entity || '').split('·')[0]);
+    // One partner is one series: the schedules the entry form treats as following one another (same pool, same name
+    // before any bracket), joined with the schedules a kept period links to them (the save that changes a share may
+    // also rename the partner or the pool)
+    const seriesKey = r => entKey(r) + '|' + norm(String(r.partner || '').split('(')[0]);
+    const root = new Map();
+    const find = k => { let x = k; while (root.get(x) !== x) x = root.get(x); return x; };
+    const byId = new Map();
+    list.forEach(r => {
+      const k = seriesKey(r);
+      if (!root.has(k)) root.set(k, k);
+      if (up(r.id)) byId.set(up(r.id), r);
+    });
+    list.forEach(r => {
+      const kept = r._continues_id ? byId.get(up(r._continues_id)) : null;
+      if (!kept) return;
+      const a = find(seriesKey(r)), b = find(seriesKey(kept));
+      if (a !== b) root.set(a, b);
+    });
+    const groups = new Map();
+    list.forEach(r => {
+      const k = find(seriesKey(r));
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    });
+    const inRange = r => sdOf(r) <= to && edOf(r) >= from;
+    // Every schedule that another schedule inside the range continues, whatever name either of them carries
+    const continued = new Set(list.filter(inRange).map(r => up(r._continues_id)).filter(Boolean));
+    const charterPct = new Map();
+    const lines = [];
+    groups.forEach(grp => {
+      const hits = grp.filter(inRange).sort(byStart);
+      if (!hits.length) {
+        // The name the partner carried nearest the range: its latest schedule begun by the end of the range, else its first
+        const sorted = grp.slice().sort(byStart);
+        // A partner whose schedules had all ended before the range has left the pool: no line (a charter share for
+        // them would be a share nobody holds, and could take the column past 100%)
+        if (sorted.every(r => edOf(r) < from)) return;
+        const head = sorted.filter(r => sdOf(r) <= to).pop() || sorted[0];
+        const ek = entKey(head);
+        // Asked for a day before any schedule can start, the lookup answers with the pool's charter default
+        if (!charterPct.has(ek)) charterPct.set(ek, Number((lookupActiveHoldingPartnerSplit(head.entity, head.partner, '0001-01-01') || {}).pct || 0));
+        lines.push({
+          partner: head.partner, role: head.entity || 'Partner Pool', sharePct: charterPct.get(ek),
+          opening: 0, draws: 0, allocatedOverhead: 0, closingBalance: 0, entitled: 0,
+          scheduleId: '', periodFrom: '', periodTo: '', isFallback: true, counted: true
+        });
+        return;
+      }
+      hits.forEach(r => {
+        const rawEnd = String(r.end_date || '').trim();
+        lines.push({
+          partner: r.partner, role: r.entity || 'Partner Pool', sharePct: Number(r.pct || 0),
+          opening: Number(r.pool_usd || 0), draws: Number(r.drawn_usd || 0), allocatedOverhead: 0, closingBalance: Number(r.open_usd || 0),
+          entitled: Number(r.entitled_usd || 0),
+          scheduleId: String(r.id || ''), periodFrom: isoOr(r.start_date, ''),
+          // An end the app cannot read as a date is printed as it was typed
+          periodTo: isoOr(rawEnd, (rawEnd && !/^open$/i.test(rawEnd)) ? rawEnd : 'Open'),
+          isFallback: false, counted: !continued.has(up(r.id))
+        });
+      });
+    });
+    return lines;
+  }
+
+  // The facility schedules of a date range: each schedule in force during it, in date order. A schedule a save kept
+  // apart and the one that continues it carry the same principal and balance (planSiblingChronoSplit), so only the
+  // last of them inside the range counts in a total (`_range_counted`), as holdingPartnerPeriodsInRange does for
+  // partners. Returns null when there is no range.
+  function holdingSchedulesInRange(rows, range) {
+    const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const from = String((range && range.from) || '').slice(0, 10);
+    const to = String((range && range.to) || '').slice(0, 10);
+    if (!isIso(from) || !isIso(to)) return null;
+    const isoOr = (v, dflt) => { const s = String(v || '').slice(0, 10); return isIso(s) ? s : dflt; };
+    const sdOf = r => isoOr(r.start_date || r.date, '1900-01-01');
+    const edOf = r => isoOr(r.end_date, '9999-12-31');
+    const up = v => String(v || '').trim().toUpperCase();
+    const hits = (Array.isArray(rows) ? rows : [])
+      .filter(r => r && !r.voided && !r._scheduleVoided && sdOf(r) <= to && edOf(r) >= from)
+      .sort((a, b) => (sdOf(a) < sdOf(b) ? -1 : (sdOf(a) > sdOf(b) ? 1 : 0)));
+    const continued = new Set(hits.map(r => up(r._continues_id)).filter(Boolean));
+    return hits.map(r => Object.assign({}, r, { _range_counted: !continued.has(up(r.id)) }));
   }
 
   function renderHoldingPartners(submode = 'main') {
@@ -58046,7 +59417,82 @@
     const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : industryDemoRows(fallback);
 
     // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
-    const rawSalesRows = mergeCustomOverSeededRows(pickTrd('salesRows', [
+    const voidedTrdSalesIds = typeof _rawVoidedDomainIds === 'function' ? _rawVoidedDomainIds('trd_sales') : new Set();
+    const trdEditsMap = (STATE && STATE.industryRowEdits) || {};
+    const trdSaleCellEditsById = new Map();
+    Object.keys(trdEditsMap).forEach(ek => {
+      if (!ek.startsWith('Automotive & Heavy Trading::')) return;
+      const ev = trdEditsMap[ek];
+      if (!ev || typeof ev !== 'object') return;
+      const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
+      if (snapTbl && snapTbl !== 'trd_sales') return;
+      const parts = ek.split('::');
+      if (parts.length < 3) return;
+      if (/receiv|target|import|landed|grn|showroom|vin|warranty|stock|movement|recon/i.test(String(parts[1] || ''))) return;
+      const pidUp = String(parts.slice(2).join('::') || '').trim().toUpperCase();
+      if (pidUp) trdSaleCellEditsById.set(pidUp, ev);
+    });
+    const applyTrdSaleCellOverride = (rowObj, idUp) => {
+      const ev = idUp ? trdSaleCellEditsById.get(idUp) : null;
+      if (!ev) return rowObj;
+      if (ev.voided || ev.voided_at || ev._scheduleVoided) return null;
+      if (!Array.isArray(ev.headers) || !Array.isArray(ev.cells)) return rowObj;
+      const origNet = round2(Number(rowObj.net_usd || 0) || 0);
+      const origVat = round2(Number(rowObj.vat_usd || 0) || 0);
+      const origTtc = round2(Number(rowObj.ttc_usd || 0) || 0);
+      const out = Object.assign({}, rowObj);
+      let netEdited = false, vatEdited = false, ttcEdited = false;
+      for (let ci = 0; ci < ev.headers.length; ci++) {
+        const hdr = String(ev.headers[ci] || '').trim().toLowerCase();
+        const rawCell = ev.cells[ci];
+        const cell = rawCell == null ? '' : String(rawCell).trim();
+        if (!hdr) continue;
+        if (hdr.includes('date')) {
+          if (/^\d{4}-\d{2}-\d{2}/.test(cell)) out.date = cell.slice(0, 10);
+        } else if (hdr.includes('customer')) {
+          if (cell) out.customer = cell;
+        } else if (hdr.includes('entity') || hdr.includes('company')) {
+          if (cell) out.company = cell;
+        } else if (hdr.includes('payment') || hdr.includes('term')) {
+          if (cell) out.payment_term = cell;
+        } else if (hdr.includes('net') && !hdr.includes('margin')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.net_usd = round2(n); netEdited = true; }
+        } else if (hdr.includes('vat') && !hdr.includes('flag') && !hdr.includes('status')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.vat_usd = round2(n); vatEdited = true; }
+        } else if (hdr.includes('ttc') || hdr.includes('total') || hdr.includes('invoiced') || /^sale(?:s)?\b/.test(hdr)) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.ttc_usd = round2(n); ttcEdited = true; }
+        } else if (hdr.includes('cost') || hdr.includes('cogs')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) out.cost_usd = round2(n);
+        }
+      }
+      const netChanged = netEdited && Math.abs(out.net_usd - origNet) >= 0.005;
+      const vatChanged = vatEdited && Math.abs(out.vat_usd - origVat) >= 0.005;
+      const ttcChanged = ttcEdited && Math.abs(out.ttc_usd - origTtc) >= 0.005;
+      if (netChanged && !ttcChanged) {
+        if (!vatChanged) out.vat_usd = round2((Number(out.net_usd || 0) || 0) * 0.11);
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (vatChanged && !netChanged) {
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (ttcChanged && !netChanged && !vatChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      } else if (ttcChanged && !netChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        if (!vatChanged) out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      } else if (netEdited && !ttcEdited) {
+        if (!vatEdited) out.vat_usd = round2((Number(out.net_usd || 0) || 0) * 0.11);
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (ttcEdited && !netEdited && !vatChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      }
+      return out;
+    };
+    const baseSalesArr = pickTrd('salesRows', [
       { id: 'INV-SH-2026-019', book: 'BK-SH-2026-01', seq: 19, date: '2026-10-28', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', category: 'Heavy Truck Sale', item: 'Shacman X3000 6x4 Tractor Head (WP12.430E201)', chassis: 'LZGJLDR44PX019281', qty: 2, net_usd: 158000, vat_usd: 17380, ttc_usd: 175380, cost_usd: 131200, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-020', book: 'BK-SH-2026-01', seq: 20, date: '2026-10-30', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', category: 'Heavy Truck Sale', item: 'Shacman F3000 8x4 Heavy Tipper 380HP', chassis: 'LZGJLDR44PX019288', qty: 1, net_usd: 92000, vat_usd: 10120, ttc_usd: 102120, cost_usd: 75400, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-018', book: 'BK-SH-2026-01', seq: 18, date: '2026-10-24', company: 'Shacman', customer: 'Mediterranean Haulage Group', category: 'Heavy Truck Sale', item: 'Shacman M3000 6x4 Transit Concrete Mixer 10m³', chassis: 'LZGJLDR44PX019274', qty: 2, net_usd: 184000, vat_usd: 20240, ttc_usd: 204240, cost_usd: 151000, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
@@ -58055,13 +59501,37 @@
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
-    ]), getIndustryCustomRows('trd_sales')).map(rawR => {
+    ]);
+    const seededTrdSaleById = new Map();
+    for (let si = 0; si < baseSalesArr.length; si++) {
+      const sr = baseSalesArr[si];
+      if (!sr || !sr.id) continue;
+      const sidUp = String(sr.id).trim().toUpperCase();
+      const srIsGap = Boolean(sr.is_gap || sidUp === 'PH-KA-2026-D02' || sidUp.startsWith('PH-KA-2026-D02-'));
+      if (!srIsGap && !sr.voided && !sr.voided_at && !/^cash$/i.test(String(sr.payment_term || ''))) {
+        seededTrdSaleById.set(sidUp, {
+          id: sidUp,
+          company: canonCompany(sr.company) || String(sr.company || '').trim(),
+          customer: String(sr.customer || '').trim(),
+          date: String(sr.date || '').slice(0, 10),
+          ttc: round2(Number(sr.ttc_usd || 0) || 0)
+        });
+      }
+    }
+    const rawSalesRows = [];
+    mergeCustomOverSeededRows(baseSalesArr, getIndustryCustomRows('trd_sales')).forEach(rawR => {
+      if (!rawR) return;
+      const ridUp = String(rawR.id || '').trim().toUpperCase();
+      if (ridUp && voidedTrdSalesIds.has(ridUp)) return;
       const wp = getIndustryWorkflowPatch('trd_sales', rawR.id);
-      const r = wp ? Object.assign({}, rawR, wp) : rawR;
-      const margin_usd = round2(r.ttc_usd - r.cost_usd);
-      const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
+      let r = wp ? Object.assign({}, rawR, wp) : Object.assign({}, rawR);
+      if (r.voided || r.voided_at) return;
+      r = applyTrdSaleCellOverride(r, ridUp);
+      if (!r || r.voided || r.voided_at) return;
+      const margin_usd = round2(Number(r.ttc_usd || 0) - Number(r.cost_usd || 0));
+      const margin_pct = Number(r.ttc_usd || 0) > 0 ? round2((margin_usd / Number(r.ttc_usd || 0)) * 100) : 0;
       const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02' || String(r.id || '').startsWith('PH-KA-2026-D02-'));
-      return { ...r, margin_usd, margin_pct, is_gap };
+      rawSalesRows.push({ ...r, margin_usd, margin_pct, is_gap });
     });
 
     // 2. Receivables, Customer Advances & Collection Promises
@@ -58077,6 +59547,76 @@
       ...r,
       net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
     }));
+    const applyTrdInvoiceDelta = (coRaw, custNameRaw, deltaTtc, refId, refDate) => {
+      const custName = String(custNameRaw || '').trim();
+      const d = round2(Number(deltaTtc || 0) || 0);
+      if (!custName || !(Math.abs(d) > 0.005)) return;
+      const rCo = canonCompany(coRaw) || String(coRaw || '').trim();
+      if (rCo !== 'Shacman' && rCo !== 'Korri Auto') return;
+      const hitIdx = rawReceivableRows.findIndex(x => x && (canonCompany(x.company) || String(x.company || '').trim()) === rCo && norm(x.customer) === norm(custName));
+      if (hitIdx >= 0) {
+        const curRow = rawReceivableRows[hitIdx];
+        const nextInv = round2((Number(curRow.invoiced_ttc || 0) || 0) + d);
+        const settledUsd = Number(curRow.settled_usd || 0) || 0;
+        const nextGross = Math.max(0, round2(nextInv - settledUsd));
+        const nextAdv = Math.max(0, round2(settledUsd - nextInv));
+        const nextStatus = nextAdv > 0.005
+          ? 'Customer Advance (Credit)'
+          : (nextGross <= 0.005 ? 'Settled' : (curRow.status && !/settled|advance/i.test(curRow.status) ? curRow.status : 'Open'));
+        rawReceivableRows[hitIdx] = Object.assign({}, curRow, {
+          invoiced_ttc: nextInv,
+          gross_ar_usd: nextGross,
+          advance_usd: nextAdv,
+          net_ar_usd: round2(nextGross - nextAdv),
+          dso_days: nextGross <= 0.005 ? 0 : (curRow.dso_days || 1),
+          status: nextStatus
+        });
+      } else {
+        const nextGross = Math.max(0, d);
+        const nextAdv = Math.max(0, round2(-d));
+        rawReceivableRows.unshift({
+          id: refId ? `AR-${refId}` : `AR-INV-${rawReceivableRows.length + 1}`,
+          company: rCo,
+          customer: custName,
+          invoiced_ttc: d,
+          settled_usd: 0,
+          gross_ar_usd: nextGross,
+          advance_usd: nextAdv,
+          net_ar_usd: d,
+          dso_days: nextGross > 0.005 ? 1 : 0,
+          promise_date: String(refDate || ''),
+          promise_usd: 0,
+          status: nextAdv > 0.005 ? 'Customer Advance (Credit)' : 'Open'
+        });
+      }
+    };
+    const activeTrdSaleIds = new Set();
+    rawSalesRows.forEach(r => {
+      if (!r) return;
+      const ridUp = String(r.id || '').trim().toUpperCase();
+      if (ridUp) activeTrdSaleIds.add(ridUp);
+      const isCreditNow = !r.is_gap && !r.voided && !r.voided_at && !/^cash$/i.test(String(r.payment_term || ''));
+      const coNow = canonCompany(r.company) || String(r.company || '').trim();
+      const custNow = String(r.customer || '').trim();
+      const ttcNow = round2(Number(r.ttc_usd || 0) || 0);
+      const seedMeta = ridUp ? seededTrdSaleById.get(ridUp) : null;
+      if (seedMeta) {
+        if (isCreditNow && seedMeta.company === coNow && norm(seedMeta.customer) === norm(custNow)) {
+          const diff = round2(ttcNow - seedMeta.ttc);
+          if (Math.abs(diff) > 0.005) applyTrdInvoiceDelta(coNow, custNow, diff, r.id, r.date);
+        } else {
+          applyTrdInvoiceDelta(seedMeta.company, seedMeta.customer, -seedMeta.ttc, seedMeta.id, seedMeta.date);
+          if (isCreditNow) applyTrdInvoiceDelta(coNow, custNow, ttcNow, r.id, r.date);
+        }
+      } else if (isCreditNow) {
+        applyTrdInvoiceDelta(coNow, custNow, ttcNow, r.id, r.date);
+      }
+    });
+    seededTrdSaleById.forEach((seedMeta, sidUp) => {
+      if (!activeTrdSaleIds.has(sidUp)) {
+        applyTrdInvoiceDelta(seedMeta.company, seedMeta.customer, -seedMeta.ttc, seedMeta.id, seedMeta.date);
+      }
+    });
     const seedRcpts = (SEED && SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
     const curCustRev = (SEED && SEED._customRev) || 0;
     const curRcptTblRev = (SEED && SEED._tableRev && SEED._tableRev.receipts) || 0;
@@ -59711,7 +61251,7 @@
   ];
 
   function sliceRows(view, list) {
-    return (list || []).slice(0, shownCount(view));
+    return sliceShown(view, list);
   }
 
   let _reOpsCache = null;
@@ -59724,7 +61264,7 @@
     const demoActive = isDemoScopeActive();
     const rePm = industryPeriodMatcher(opts);
     const sig = `${activeCo}|${demoActive ? 1 : 0}|${ignoreRls ? 1 : 0}|${rePm.sig}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
-    if (!ignoreSearch && !ignoreRls && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
+    if (!ignoreSearch && !ignoreRls && !opts.excludeReceiptId && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
       if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return industryDemoRows(fallback);
@@ -59761,12 +61301,12 @@
     ]);
 
     const units = pickRe('units', [
-      { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Unesco Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Mazen (Unesco Pharmacy)', annual_rent_usd: 55500, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Infinitas S.A.L', annual_rent_usd: 77700, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Mohamad Ali Fawz', annual_rent_usd: 99900, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-1C', code: '4235-1C', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1C Executive Wing', floor: 'Floor 1', type: 'Executive Office', area_sqm: 185, tenant: 'Hoda / Maha Harkous', annual_rent_usd: 26000, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-2A', code: '4235-2A-CLINIC', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Clinic Suite 2A', floor: 'Floor 2', type: 'Medical Clinic', area_sqm: 140, tenant: 'DR Sara Abed Latif', annual_rent_usd: 24000, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-ANX', code: '4235-GF-ANNEX', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Annex Ground Retail', floor: 'Ground Floor', type: 'Retail Unit', area_sqm: 95, tenant: 'Ayman Baz', annual_rent_usd: 18000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Cedar Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Cedar Pharmacy', annual_rent_usd: 55500, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Meridian Consulting SAL', annual_rent_usd: 77700, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Nabil Khoury', annual_rent_usd: 99900, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1C', code: '4235-1C', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1C Executive Wing', floor: 'Floor 1', type: 'Executive Office', area_sqm: 185, tenant: 'Maya Abi Saab', annual_rent_usd: 26000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-2A', code: '4235-2A-CLINIC', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Clinic Suite 2A', floor: 'Floor 2', type: 'Medical Clinic', area_sqm: 140, tenant: 'Dr. Nadine Maalouf', annual_rent_usd: 24000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-ANX', code: '4235-GF-ANNEX', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Annex Ground Retail', floor: 'Ground Floor', type: 'Retail Unit', area_sqm: 95, tenant: 'Fadi Rizk', annual_rent_usd: 18000, occupancy: 'Occupied' },
       { id: 'UNIT-4235-2E', code: '4235-2E-FITOUT', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Floor 2 East Medical Suite', floor: 'Floor 2', type: 'Medical Office', area_sqm: 210, tenant: 'Vacant (MEP Fit-Out)', annual_rent_usd: 0, occupancy: 'Under Fit-Out' },
       { id: 'UNIT-MARINA-01', code: 'MH-1354-GF01', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit_name: 'Marina Showroom & Duplex Suite', floor: 'GF & Mezzanine', type: 'Luxury Showroom', area_sqm: 310, tenant: 'Levant Luxury Retail SAL', annual_rent_usd: 96000, occupancy: 'Occupied' },
       { id: 'UNIT-HAMRA-01', code: 'RB-776-F12', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit_name: 'Hamra Pavillon Floors 1-2', floor: 'Floors 1-2', type: 'Medical & Diagnostics', area_sqm: 540, tenant: 'Hamra Medical & Diagnostics', annual_rent_usd: 78000, occupancy: 'Occupied' },
@@ -59777,12 +61317,12 @@
     ]);
 
     const leases = pickRe('leases', [
-      { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Mazen (Unesco Pharmacy)', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Infinitas S.A.L', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Mohamad Ali Fawz', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
-      { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Hoda / Maha Harkous', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'DR Sara Abed Latif', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
-      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Ayman Baz', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (Renewal Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
+      { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Cedar Pharmacy', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Meridian Consulting SAL', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Nabil Khoury', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
+      { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Maya Abi Saab', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'Dr. Nadine Maalouf', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
+      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Fadi Rizk', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (Renewal Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
       { id: 'LSE-PROP-007', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01 (310 m²)', tenant: 'Levant Luxury Retail SAL', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 24000, vat_rate: 0, ttc_period_usd: 24000, annual_ttc_usd: 96000, deposit_usd: 24000, escalation: '5-Yr Prime Solidere Index', days_to_expiry: 1150, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-008', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Floors 1-2 (540 m²)', tenant: 'Hamra Medical & Diagnostics', start_date: '2024-07-01', end_date: '2029-06-30', frequency: 'Quarterly', net_period_usd: 19500, vat_rate: 0, ttc_period_usd: 19500, annual_ttc_usd: 78000, deposit_usd: 19500, escalation: '5-Yr Clinical Escalation (+6% Yr 3)', days_to_expiry: 965, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-009', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit: 'Commercial Hall A (480 m²)', tenant: 'Mazraa Commercial Logistics', start_date: '2025-01-01', end_date: '2027-12-31', frequency: 'Quarterly', net_period_usd: 13500, vat_rate: 0, ttc_period_usd: 13500, annual_ttc_usd: 54000, deposit_usd: 13500, escalation: '3-Yr Commercial Lease', days_to_expiry: 420, unbilled_periods: 0, status: 'Active' },
@@ -59790,25 +61330,25 @@
     ]);
 
     const invoices = pickRe('invoices', [
-      { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
-      { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
-      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
-      { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
-      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
-      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
-      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-FAWZ', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
-      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Hoda / Maha Harkous', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
+      { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
+      { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
+      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
+      { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
+      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
+      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
+      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-NKH', property: '4235 Msaytbeh Commercial Center', tenant: 'Nabil Khoury', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
+      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Maya Abi Saab', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
       { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
       { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
       { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
     ]);
 
     const receipts = pickRe('receipts', [
-      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 invoice)', status: 'Swap Audit' },
-      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 invoice)', status: 'Swap Audit' },
-      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
-      { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Hoda / Maha Harkous', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
-      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
+      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Cedar Pharmacy', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Cedar Pharmacy (matches Meridian Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Meridian Consulting SAL', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Meridian (matches Cedar Pharmacy Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Nabil Khoury', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
+      { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Maya Abi Saab', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
+      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'Dr. Nadine Maalouf', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
       { id: 'RCT-PROP-106', date: '2026-07-03', company: 'Properties', tenant: 'Levant Luxury Retail SAL', property: '1354/50 Mina el Hosn (Marina Tower)', type: 'Quarterly Rent Settlement', method: 'Bank Transfer USD', gross_usd: 96000, allocated_inv_usd: 72000, unallocated_adv_usd: 24000, deposit_gl4196_usd: 24000, audit_flag: 'Solidere showroom annual wire', status: 'Allocated' },
       { id: 'RCT-PROP-107', date: '2026-07-12', company: 'Properties', tenant: 'Hamra Medical & Diagnostics', property: '776 Ras Beirut (Hamra Pavillon)', type: 'Partial Rent Tranche', method: 'Bank Transfer USD', gross_usd: 51000, allocated_inv_usd: 51000, unallocated_adv_usd: 0, deposit_gl4196_usd: 19500, audit_flag: '$7,500 Q3 balance outstanding', status: 'Allocated' }
     ]);
@@ -59860,9 +61400,9 @@
     ]);
 
     const recharges = pickRe('recharges', [
-      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
-      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
-      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
+      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Nabil Khoury', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
       { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
       { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
     ]);
@@ -59906,11 +61446,12 @@
       activeReInv.push(cur);
     });
     invoices.length = 0; invoices.push(...activeReInv);
+    const exclReRctIdUp = opts.excludeReceiptId ? String(opts.excludeReceiptId).trim().toUpperCase() : '';
     const activeReRct = [];
     receipts.forEach(r => {
       if (!r) return;
       const ridUp = String(r.id || '').trim().toUpperCase();
-      if (ridUp && voidedReRct.has(ridUp)) return;
+      if (ridUp && (voidedReRct.has(ridUp) || (exclReRctIdUp && ridUp === exclReRctIdUp))) return;
       const p = getIndustryWorkflowPatch('re_receipts', r.id);
       const cur = Object.assign({}, r, p || {});
       if (cur.voided || cur.voided_at) return;
@@ -60047,7 +61588,18 @@
     const occupiedUnits = fProperties.reduce((s, r) => s + r.units_occupied, 0);
     const occupancyPct = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
-    const activeOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
+    // The rent roll of a range that ended before today: the leases in force on its last day, read from their dates. A
+    // lease's status says what it is today (a rent change closes the earlier period), so for a past range it would
+    // leave out the lease that was in force then and count nothing. A range that runs to today or later reads the
+    // status, as before. A lease period followed by a new rent is then counted once, at the rent of that day.
+    const reIso = v => { const s = String(v || '').trim().slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; };
+    const reTodayIso = todayISO();
+    const reAsOf = (rePm.pr && reIso(rePm.pr.to) && reIso(rePm.pr.to) < reTodayIso) ? reIso(rePm.pr.to) : '';
+    const leaseInForceOn = (r, d) => Boolean(r) && !r.voided && !r._scheduleVoided
+      && (reIso(r.start_date) || '1900-01-01') <= d && (reIso(r.end_date) || '9999-12-31') >= d;
+    const statusOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
+    const activeOpenLeases = reAsOf ? fLeases.filter(r => leaseInForceOn(r, reAsOf)) : statusOpenLeases;
+    const rentRollIds = new Set(activeOpenLeases.map(r => String((r && r.id) || '').trim().toUpperCase()));
     const contractedAnnualRentUsd = round2(activeOpenLeases.reduce((s, r) => s + Number(r.annual_ttc_usd || 0), 0));
     const contractedAnnualNetRentUsd = round2(activeOpenLeases.reduce((s, r) => {
       if (r.annual_net_usd != null) return s + Number(r.annual_net_usd || 0);
@@ -60073,7 +61625,7 @@
       const pName = String(l.property || '').trim();
       if (!pName) return;
       propHasLeaseRow.add(pName);
-      if (l.status === 'Closed Window') return;
+      if (!rentRollIds.has(String(l.id || '').trim().toUpperCase())) return;
       const netYr = l.annual_net_usd != null
         ? Number(l.annual_net_usd || 0)
         : (Number(l.vat_rate || 0) > 0 ? Number(l.annual_ttc_usd || 0) / 1.11 : Number(l.annual_ttc_usd || 0));
@@ -60111,7 +61663,7 @@
     const woActualUsd = fWorkorders.reduce((s, r) => s + r.actual_usd, 0);
     const unrechargedUsd = fRecharges.filter(r => r.status === 'Unrecharged').reduce((s, r) => s + r.total_recharge_usd, 0);
 
-    const expiringLeaseCount = activeOpenLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
+    const expiringLeaseCount = statusOpenLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
     const overdueInstalmentCount = fInstalments.filter(r => r.status === 'Overdue' || r.status === 'Due Soon').length;
     const vacantUnitCount = Math.max(0, totalUnits - occupiedUnits);
     const openWorkOrderCount = fWorkorders.filter(r => r.status !== 'Completed').length + fRecharges.filter(r => r.status === 'Unrecharged').length;
@@ -60121,6 +61673,9 @@
       properties: fProperties,
       units: fUnits,
       leases: fLeases,
+      // The leases the rent roll counts (in force on the last day of a past range; open by status otherwise)
+      rentRollIds,
+      rentRollAsOf: reAsOf,
       invoices: fInvoices,
       receipts: fReceipts,
       sales: fSales,
@@ -60438,7 +61993,7 @@
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">Cross-Tenant Swap Watch</div>
               <div class="kpi-val mono" style="font-size:18px">$5,550 Diff</div>
-              <div class="kpi-sub">2026-05-05 Mazen $19,425 vs Infinitas $13,875</div>
+              <div class="kpi-sub">2026-05-05 Cedar Pharmacy $19,425 vs Meridian $13,875</div>
             </div>
           </div>
       </div>
@@ -61273,7 +62828,7 @@
       { id: 'BNK-WC-2026-07741', company: co, date: '2026-05-12', expiry: '2027-05-11', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', product: 'Industrial Workmen Compensation', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 2400000, gross_prem_usd: 11200, comm_rate_pct: 15.0, gross_comm_usd: 1680, discount_usd: 0, discount_reason: '', net_comm_usd: 1680, policy_fee_usd: 30, net_payable_4017_usd: 9520, status: 'Active' },
       { id: 'ALZ-LIFE-2026-60215', company: co, date: '2026-06-01', expiry: '2027-05-31', client: 'Bdeir Executive Key-Man Protection', carrier: 'Allianz SNA', line: 'LIFE · Life', product: 'Corporate Key-Person Term Life', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 3000000, gross_prem_usd: 9600, comm_rate_pct: 12.0, gross_comm_usd: 1152, discount_usd: 0, discount_reason: '', net_comm_usd: 1152, policy_fee_usd: 25, net_payable_4017_usd: 8448, status: 'Active' },
       { id: 'ARP-MOT-2026-10912', company: co, date: '2026-06-19', expiry: '2027-06-18', client: 'Dr. Nabil Khoury (Porsche Cayenne)', carrier: 'Arope Insurance', line: 'MOT · Motor', product: 'Motor All-Risk Prestige VIP', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 135000, gross_prem_usd: 4250, comm_rate_pct: 20.0, gross_comm_usd: 850, discount_usd: 75, discount_reason: 'VIP medical+motor bundle courtesy', net_comm_usd: 775, policy_fee_usd: 20, net_payable_4017_usd: 3400, status: 'Active' },
-      { id: 'POL-20251105-RAMISAAB-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Rami Saab (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
+      { id: 'POL-20251105-OMARSINNO-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Omar Sinno (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
       { id: 'END-2026-MGF-52077-A', company: co, date: '2026-07-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (+14 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Endorsement · Mid-Term Census Addition', producer: 'Carla Moubarak', type: 'Endorsement (+)', sum_insured_usd: 700000, gross_prem_usd: 6400, comm_rate_pct: 10.5, gross_comm_usd: 672, discount_usd: 0, discount_reason: '', net_comm_usd: 672, policy_fee_usd: 10, net_payable_4017_usd: 5728, status: 'Endorsed' },
       { id: 'END-2026-BNK-08510-A', company: co, date: '2026-08-05', expiry: '2027-01-31', client: 'Unipak Tissue Mill (Solar Roof Ext.)', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Endorsement · 1.2MW Solar Array Cover', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 950000, gross_prem_usd: 2850, comm_rate_pct: 17.5, gross_comm_usd: 499, discount_usd: 0, discount_reason: '', net_comm_usd: 499, policy_fee_usd: 15, net_payable_4017_usd: 2351, status: 'Endorsed' },
       { id: 'END-2026-ALZ-12801-A', company: co, date: '2026-09-02', expiry: '2027-02-17', client: 'Transmed Distribution (+2 Reefer Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Endorsement · Fleet Vehicle Addition', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 88000, gross_prem_usd: 3100, comm_rate_pct: 18.0, gross_comm_usd: 558, discount_usd: 0, discount_reason: '', net_comm_usd: 558, policy_fee_usd: 0, net_payable_4017_usd: 2542, status: 'Endorsed' },
@@ -61281,7 +62836,7 @@
     ]);
 
     const renewals = pickIns('renewals', [
-      { id: 'REN-2026-11-001', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
+      { id: 'REN-2026-11-001', policy_no: 'POL-20251105-OMARSINNO-001', company: co, client: 'Omar Sinno', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
       { id: 'REN-2026-11-002', policy_no: 'MGF-MED-2025-49102', company: co, client: 'Levant Beverage Bottling (42 Lives)', carrier: 'MedGulf', line: 'MED · Medical', expiry_date: '2026-11-24', days_left: 18, bucket: '0–30 Days', expiring_prem_usd: 38400, quoted_renewal_usd: 41200, producer: 'Carla Moubarak', stage: 'Loss-Ratio Review (64%)', status: 'Due for renewal' },
       { id: 'REN-2026-12-003', policy_no: 'BNK-PAR-2025-07119', company: co, client: 'Bekaa Cold Storage Warehouses', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2026-12-12', days_left: 36, bucket: '31–60 Days', expiring_prem_usd: 14800, quoted_renewal_usd: 14800, producer: 'Joseph Khalil', stage: 'Surveyor Inspection Booked', status: 'Due for renewal' },
       { id: 'REN-2026-12-004', policy_no: 'ALZ-MOT-2025-11408', company: co, client: 'Cedar Logistics Heavy Haulage (9 Trucks)', carrier: 'Allianz SNA', line: 'MOT · Motor', expiry_date: '2026-12-20', days_left: 44, bucket: '31–60 Days', expiring_prem_usd: 16200, quoted_renewal_usd: 15800, producer: 'Joseph Khalil', stage: 'Renewal Terms Requested', status: 'Due for renewal' },
@@ -61299,7 +62854,7 @@
       { id: 'ITM-ENG-44102-01', policy_no: 'AXA-ENG-2026-44102', company: co, client: 'MAN Enterprise Contracting', category: 'Contractors All Risks (CAR)', identifier: 'District S Tower Excavation & Crane Plant', location_or_vin: 'Beirut Central District · Sector 44', sum_insured_usd: 8500000, deductible_usd: 10000, annual_prem_usd: 21500, status: 'Covered' },
       { id: 'ITM-MAR-31044-01', policy_no: 'AXA-MAR-2026-31044', company: co, client: 'Khalil Fattal & Fils', category: 'Marine Cargo Open Cover', identifier: 'FMCG & Pharma Container Shipments', location_or_vin: 'Med / Europe Ports to Beirut Port', sum_insured_usd: 4020000, deductible_usd: 1500, annual_prem_usd: 16000, status: 'Covered' },
       { id: 'ITM-MOT-10912-01', policy_no: 'ARP-MOT-2026-10912', company: co, client: 'Dr. Nabil Khoury', category: 'Motor Prestige VIP', identifier: '2025 Porsche Cayenne Coupe AWD', location_or_vin: 'VIN WP1ZZZ9Y8SDA41092 · Plate B-88412', sum_insured_usd: 135000, deductible_usd: 500, annual_prem_usd: 4250, status: 'Covered' },
-      { id: 'ITM-MOT-RAMI-01', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
+      { id: 'ITM-MOT-OS-01', policy_no: 'POL-20251105-OMARSINNO-001', company: co, client: 'Omar Sinno', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
     ]);
 
     const billing = pickIns('billing', [
@@ -61781,7 +63336,7 @@
         <div class="kpi-card">
           <div class="kpi-lbl">90-Day Renewal Pipeline</div>
           <div class="kpi-val mono warn">${fmtNum(s.dueRenewals90dCount)} Due · ${fmtPct(s.retentionPct, 1)}</div>
-          <div class="kpi-sub">${fmtNum(s.expiredUnrenewedCount)} expired unrenewed · Rami Saab BMW X5 in 22d</div>
+          <div class="kpi-sub">${fmtNum(s.expiredUnrenewedCount)} expired unrenewed · Omar Sinno BMW X5 in 22d</div>
         </div>
       </div>
     `;
@@ -62232,7 +63787,7 @@
                   <td class="r mono">${fmtUSD(r.collected_usd, 0)}</td>
                   <td class="r mono ${r.open_ar_4112_usd > 0 ? 'warn' : ''}"><strong>${fmtUSD(r.open_ar_4112_usd, 0)}</strong></td>
                   <td class="mono">${esc(r.receipt_ref)}</td>
-                  <td><span class="badge ${(r.status === 'Paid' || r.status === 'Receipt Applied') ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${(r.status === 'Paid' || r.status === 'Receipt Applied') ? 'badge-good' : (String(r.status || '').includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status || 'Open')}</span></td>
                 </tr>
               `).join('') : emptyRow(10, 'No premium billing records match current filter')}
               ${showMoreRow('ins_billing', filteredBil.length, 10)}
@@ -62636,10 +64191,39 @@
       const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
       const hldExps = filterRecords(SEED.records.expenses || [], { company: 'bdeirholding', strictBu: true, ignoreSearch: true });
       const hldExpTotal = round2(hldExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
-      const loans = filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true });
-      const openLegs = icRes.openCount || 0;
-      const openUsd = icRes.totalOpenUsd || 0;
-      const netImb = Math.abs(Number(icRes.netImbalanceUsd || 0));
+      const rawLoans = filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true });
+      const ownerSeat = isOwner();
+      let openLegs = icRes.openCount || 0;
+      let openUsd = icRes.totalOpenUsd || 0;
+      let matchedCnt = icRes.matchedCount || 0;
+      let matchedUsd = icRes.totalMatchedUsd || 0;
+      let reconPct = Number(icRes.reconRatePct || 0);
+      let netImb = Math.abs(Number(icRes.netImbalanceUsd || 0));
+      let pairCnt = (icRes.byPair || []).length;
+      let loans = rawLoans;
+      let groupScopeLbl = 'Bdeir Holding · Group';
+      if (!ownerSeat) {
+        const allowedNormSet = new Set(allowedCompanyNames().map(n => norm(n)));
+        const rowTouchesAllowed = r => Boolean(r && (
+          allowedNormSet.has(norm(r.fromCo)) ||
+          allowedNormSet.has(norm(r.toCo)) ||
+          allowedNormSet.has(norm(r.initiatorCo)) ||
+          (r.primaryRow && allowedNormSet.has(norm(r.primaryRow.company))) ||
+          (r.mirrorRow && allowedNormSet.has(norm(r.mirrorRow.company)))
+        ));
+        const openSlice = (icRes.openRows || []).filter(rowTouchesAllowed);
+        const matchedSlice = (icRes.matchedRows || []).filter(rowTouchesAllowed);
+        openLegs = openSlice.length;
+        openUsd = round2(openSlice.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        matchedCnt = matchedSlice.length;
+        matchedUsd = round2(matchedSlice.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        const totIc = matchedCnt + openLegs;
+        reconPct = totIc > 0 ? round2((matchedCnt / totIc) * 100) : 100;
+        netImb = Math.abs(round2(matchedSlice.concat(openSlice).reduce((s, r) => s + Number(r.varianceUsd || 0), 0)));
+        pairCnt = (icRes.byPair || []).filter(p => p && (allowedNormSet.has(norm(p.fromCo)) || allowedNormSet.has(norm(p.toCo)))).length;
+        loans = rawLoans.filter(r => r && allowedNormSet.has(norm(r.company || 'Bdeir Holding')));
+        groupScopeLbl = scopeLabel;
+      }
       const winDays = getAlertParam('ind_hld_01', 'window_days', 3);
       const driftTol = getAlertParam('ind_hld_02', 'drift_tol_usd', 1);
       const expCap = getAlertParam('ind_hld_03', 'overhead_cap_usd', 75000);
@@ -62653,7 +64237,7 @@
           detail: `${fmtNum(openLegs)} single-sided intercompany leg${openLegs === 1 ? '' : 's'} (${fmtUSD(openUsd, 2)}) awaiting mirror counter-entry across sister companies.`,
           severity: openLegs > 0 ? 'warn' : 'ok',
           badge: openLegs > 0 ? `${fmtNum(openLegs)} OPEN (${fmtUSD(openUsd, 0)})` : '100% PAIRED',
-          company: 'Bdeir Holding · Group',
+          company: groupScopeLbl,
           rawMetric: openLegs, rawSecondary: Math.round(openUsd),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_open_recon', navLabel: 'Open IC Queue'
         },
@@ -62661,11 +64245,11 @@
           id: 'H2', ruleId: 'ind_hld_02',
           code: 'Sister Corridor Drift',
           title: `Bilateral Sister Amount Drift Watchdog (< ${fmtUSD(driftTol, 2)} Tolerance)`,
-          detail: `Reconciled volume ${fmtUSD(icRes.totalMatchedUsd, 2)} across ${fmtNum(icRes.matchedCount)} pairs (${icRes.reconRatePct.toFixed(1)}%) · Net bilateral Out-minus-In imbalance: ${fmtUSD(netImb, 2)}.`,
+          detail: `Reconciled volume ${fmtUSD(matchedUsd, 2)} across ${fmtNum(matchedCnt)} pairs (${reconPct.toFixed(1)}%) · Net bilateral Out-minus-In imbalance: ${fmtUSD(netImb, 2)}.`,
           severity: netImb > driftTol ? 'warn' : 'ok',
           badge: netImb > driftTol ? `DRIFT ${fmtUSD(netImb, 0)}` : 'IN TOLERANCE',
-          company: 'Bdeir Holding · Group',
-          rawMetric: Math.round(netImb), rawSecondary: icRes.matchedCount,
+          company: groupScopeLbl,
+          rawMetric: Math.round(netImb), rawSecondary: matchedCnt,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_interactions', navLabel: 'Open Interactions'
         },
         {
@@ -62686,7 +64270,7 @@
           detail: `${fmtNum(facCnt)} central loan & facility agreements monitored across partner current accounts, sister facilities, and long-term borrowings.`,
           severity: facCnt > maxFac ? 'warn' : 'ok',
           badge: `${fmtNum(facCnt)} FACILITIES`,
-          company: 'Bdeir Holding',
+          company: groupScopeLbl,
           rawMetric: facCnt > maxFac ? facCnt : 0, rawSecondary: facCnt,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_loans', navLabel: 'Open Loans'
         },
@@ -62694,15 +64278,15 @@
           id: 'H5', ruleId: 'ind_hld_05',
           code: 'Sister Sub-Account Tie-Out',
           title: 'Consolidated Group Trial Balance & Sister Sub-Account Tie-Out',
-          detail: `All ${fmtNum(icRes.byPair.length)} directed sister-company corridors reconciled against Lebanese Chart of Accounts double-entry control accounts.`,
+          detail: `All ${fmtNum(pairCnt)} directed sister-company corridors reconciled against Lebanese Chart of Accounts double-entry control accounts.`,
           severity: 'ok',
           badge: '100% TIED',
-          company: 'Bdeir Holding · Group',
+          company: groupScopeLbl,
           rawMetric: 0, rawSecondary: 0,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_due_matrix', navLabel: 'Open Due Matrix'
         },
         buildMapsQuotaSentinelItem({ ruleId: 'ind_hld_06', itemId: 'H6', company: scopeLabel }),
-        buildIndOtClusterItem('H7', 'ind_hld_07', 'Bdeir Holding · Group')
+        buildIndOtClusterItem('H7', 'ind_hld_07', groupScopeLbl)
       ]);
     }
 
@@ -63990,6 +65574,9 @@
 
     return `
       ${sourceBehindHtml}
+      <div class="mob-pocket-brief-launch-bar"${canUsePocketBrief(activeUser()) ? '' : ' hidden'}>
+        <button type="button" class="btn btn-outline-bar mob-pocket-brief-launch-btn" id="overviewPocketBriefBtn" data-open-pocket-brief="1">${ic('sparkles')}<span>Morning Pocket Brief</span></button>
+      </div>
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
       </section>
@@ -64275,6 +65862,34 @@
         const hldSched = computeHoldingSchedules();
         const basePartners = hldSched.partnerAgreements || [];
         const extdSum = computeHoldingExtendedSummary({ ignoreCompany: true, ignoreSearch: true, basis: 'tx' });
+        // With a period picked, the page reads each partner's schedule in force during it (one line per period when the
+        // share changed inside it), as Statement 23 does; the totals count a partner once, on its latest line. With no
+        // period, the schedules in force today, as before.
+        const prtLines = holdingPartnerPeriodsInRange(basePartners, periodRange());
+        if (prtLines) {
+          const counted = prtLines.filter(l => l.counted);
+          const lEnt = round2(counted.reduce((a, l) => a + Number(l.entitled || 0), 0));
+          const lOpn = round2(counted.reduce((a, l) => a + Number(l.closingBalance || 0), 0));
+          const lineId = l => l.scheduleId || 'No schedule in this period';
+          return {
+            kpis: [
+              { label: 'Extended Received / Took ($)', val: fmtUSD(extdSum.totRecUsd, 2), sub: `${fmtNum(extdSum.rows.length)} extended movements`, cls: 'crit' },
+              { label: 'Extended Gave ($)', val: fmtUSD(extdSum.totGaveUsd, 2), sub: 'Paid in & opening balances', cls: 'good' },
+              { label: 'Extended Difference / Owes ($)', val: fmtSignedUSD(extdSum.totOwesUsd, 2), sub: `LBP Owes: ${Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL'}`, cls: 'brass' },
+              { label: 'Active Partner Agreements', val: fmtNum(prtLines.filter(l => !l.isFallback).length), sub: '10-slot chronological matrix', cls: 'good' },
+              { label: 'Partner Entitled Share', val: fmtUSD(lEnt, 0), sub: 'Computed by effective date window', cls: 'brass' },
+              { label: 'Unpaid Partner Current Acct', val: fmtUSD(lOpn, 0), sub: 'Accrued balance payable', cls: lOpn > 0 ? 'warn' : 'good' }
+            ],
+            chartTitle: 'Extended Stakeholder Net Difference / Owes ($)',
+            bars: (extdSum.partyRows || []).slice(0, 8).map(p => ({ label: `${p.counterparty} (${p.entries_cnt})`, val: Math.max(1, Math.abs(Number(p.owes_usd || 0))), sub: `Took ${fmtUSD(p.rec_usd, 0)} · Gave ${fmtUSD(p.gave_usd, 0)} · Diff ${fmtSignedUSD(p.owes_usd, 2)}` })),
+            secondTitle: 'Partner Entitled Share by Subsidiary Pool ($)',
+            secondBars: prtLines.map(l => ({ label: `${l.role} · ${String(l.partner || '').split('(')[0].trim()}`, val: Number(l.entitled || 0), sub: `${Number(l.sharePct || 0).toFixed(1)}% split · Open ${fmtUSD(l.closingBalance, 0)}` })),
+            tableTitle: '10-Slot Shareholder & Partner Profit-Share Allocations Register',
+            headers: ['Agreement ID', 'Operating Scope', 'Partner / Slot Pool', 'Effective From', 'Effective To', 'Share %', 'Entitled ($)', 'Open Balance ($)'],
+            rows: prtLines.map(l => [lineId(l), l.role, l.partner, l.periodFrom || '-', l.periodTo || 'Open', `${Number(l.sharePct || 0).toFixed(1)}%`, fmtUSD(l.entitled, 0), fmtUSD(l.closingBalance, 0)]),
+            totals: ['Total Partner Splits', '5 Vertical Pools', `${prtLines.length} Agreements`, 'Chronological', '0 Overlaps', '100% Tied', fmtUSD(lEnt, 0), fmtUSD(lOpn, 0)]
+          };
+        }
         const totEnt = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
         const totOpn = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.open_usd || 0), 0));
         return {
@@ -64298,7 +65913,11 @@
       }
       if (pIdx === 3) {
         const hldSched = computeHoldingSchedules();
-        const schedRows = hldSched.facilitySchedules || [];
+        // With a period picked, the facility schedules in force during it (each APR period on its own line) and totals
+        // that count a facility once, on its latest schedule in the period; with no period, as before
+        const facPr = periodRange();
+        const facInRange = holdingSchedulesInRange(hldSched.facilitySchedules || [], facPr);
+        const schedRows = facInRange || hldSched.facilitySchedules || [];
         const demoBar = isDemoScopeActive();
         const loanRows = schedRows.concat((loans || []).slice(0, 8).map((l, idx) => {
           const prin = Number(l.principal || l.amount || l.usd_amount || (demoBar ? 45000 : 0));
@@ -64318,9 +65937,10 @@
             status: rep >= prin && prin > 0 ? 'Settled' : 'Active Facility'
           };
         }));
-        const totPrin = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.principal_usd || 0), 0));
-        const totRep = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
-        const totBal = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.balance_usd || 0), 0));
+        const facCounted = facInRange ? loanRows.filter(r => r._range_counted !== false) : holdingInForceRows(loanRows);
+        const totPrin = round2(facCounted.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
+        const totRep = round2(facCounted.reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
+        const totBal = round2(facCounted.reduce((a, r) => a + Number(r.balance_usd || 0), 0));
         return {
           kpis: [
             { label: 'Active Credit Facilities', val: fmtNum(loanRows.length), sub: 'Central treasury & subsidiary lines', cls: 'good' },
@@ -66963,7 +68583,7 @@
       // Venue rows are taken whole ("Cash & Card", POS); the card share must be split out before the till can be tracked.
       'Hospitality & Resorts': { tracked: false, missing: ['Salaries', 'Supplier Payments', 'Partner Payouts', 'Most Expenses', 'Cash vs Card Split'] },
       'Automotive & Heavy Trading': { tracked: false, missing: ['Customer Receipts', 'Supplier Payments', 'Salaries'] },
-      // Some receipts and works are bank wires (the Iraq remittance ledger): split bank from cash before tracking.
+      // Some receipts and works are bank wires (the overseas remittance ledger): split bank from cash before tracking.
       'Real Estate & Property': { tracked: false, missing: ['Expenses', 'Salaries', 'Bank vs Cash Split'] },
       'Insurance & Brokerage': { tracked: false, missing: ['Insurer Remittance Dates'] }
     };
@@ -67402,14 +69022,14 @@
       mk('mi-domdoc-trd-pdi-2', 'DOC-KOR-108', '2026-09-25', 'Korri Auto', 'Automotive & Heavy Trading', 'Equipment & Permit Document', 'Lowbed Hydraulic Valve Warranty Diagnostic Report · WAR-KA-2026-065', 'Al-Ghazieh Service Bay', 'WAR-KA-2026-065', 'trd_warranty', 'WAR-KA-2026-065', 'WAR-KA-2026-065', 660, 'KorriAuto_WAR_065_Diagnostic_Sheet.svg', 'Camera Scan', 'Signed supplier warranty bench test and replacement authorization'),
 
       // 4. Real Estate & Property: Registered Lease PDFs, Municipal Rental Tax & Official 4235 VAT Receipts
-      mk('mi-domdoc-re-lse-1', 'DOC-4235-104', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Commercial Lease Contract PDF · LSE-4235-001', 'Mazen (Unesco Pharmacy)', 'LSE-4235-001', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 55500, '4235_LSE_001_Signed_Lease_Contract.svg', 'File Upload', 'Municipally registered commercial pharmacy lease contract with 11% VAT clause'),
+      mk('mi-domdoc-re-lse-1', 'DOC-4235-104', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Commercial Lease Contract PDF · LSE-4235-001', 'Cedar Pharmacy', 'LSE-4235-001', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 55500, '4235_LSE_001_Signed_Lease_Contract.svg', 'File Upload', 'Municipally registered commercial pharmacy lease contract with 11% VAT clause'),
       mk('mi-domdoc-re-lse-1b', 'DOC-4235-105', '2026-02-10', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Beirut Municipality Rental Tax Registration Receipt · LSE-4235-001', 'Municipality of Beirut · Msaytbeh', 'MUN-4235-2026-01', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 2775, '4235_LSE_001_Municipal_Tax_Receipt.svg', 'Camera Scan', 'Official municipal lease registration stamp and tax clearance'),
-      mk('mi-domdoc-re-lse-2', 'DOC-4235-106', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Anchor Commercial Lease PDF · LSE-4235-002', 'Infinitas S.A.L', 'LSE-4235-002', 're_leases', 'LSE-4235-002', 'LSE-4235-002', 77700, '4235_LSE_002_Infinitas_Lease_PDF.svg', 'File Upload', 'Executed anchor commercial lease contract at 4235 Msaytbeh Center'),
+      mk('mi-domdoc-re-lse-2', 'DOC-4235-106', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Anchor Commercial Lease PDF · LSE-4235-002', 'Meridian Consulting SAL', 'LSE-4235-002', 're_leases', 'LSE-4235-002', 'LSE-4235-002', 77700, '4235_LSE_002_Meridian_Lease_PDF.svg', 'File Upload', 'Executed anchor commercial lease contract at 4235 Msaytbeh Center'),
       mk('mi-domdoc-re-lse-3', 'DOC-PRP-104', '2026-01-01', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Marina Tower Luxury Showroom Lease PDF · LSE-PROP-007', 'Levant Luxury Retail SAL', 'LSE-PROP-007', 're_leases', 'LSE-PROP-007', 'LSE-PROP-007', 96000, 'Properties_LSE_PROP_007_Marina_Lease.svg', 'File Upload', 'Signed Mina el Hosn showroom lease contract and bank guarantee annex'),
       mk('mi-domdoc-re-lse-4', 'DOC-PRP-106', '2026-01-15', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Hamra Pavillon Medical Floors Lease PDF · LSE-PROP-008', 'Hamra Medical & Diagnostics', 'LSE-PROP-008', 're_leases', 'LSE-PROP-008', 'LSE-PROP-008', 78000, 'Properties_LSE_PROP_008_Hamra_Lease.svg', 'File Upload', 'Registered medical center commercial lease contract'),
-      mk('mi-domdoc-re-inv-1', 'DOC-4235-107', '2026-05-01', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Official 4235 S.A.L 11% VAT Tax Invoice Scan · INV-4235-010', 'Infinitas S.A.L', 'INV-2026-Q2-INF', 're_invoicing', 'INV-4235-010', 'INV-4235-010', 19425, '4235_INV_010_Official_VAT_Invoice.svg', 'Camera Scan', 'Pre-numbered statutory 11% VAT commercial rent invoice'),
+      mk('mi-domdoc-re-inv-1', 'DOC-4235-107', '2026-05-01', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Official 4235 S.A.L 11% VAT Tax Invoice Scan · INV-4235-010', 'Meridian Consulting SAL', 'INV-2026-Q2-INF', 're_invoicing', 'INV-4235-010', 'INV-4235-010', 19425, '4235_INV_010_Official_VAT_Invoice.svg', 'Camera Scan', 'Pre-numbered statutory 11% VAT commercial rent invoice'),
       mk('mi-domdoc-re-inv-2', 'DOC-PRP-107', '2026-07-01', 'Properties', 'Real Estate & Property', 'Invoice & Bill', 'Marina Showroom Q3 Rent Debit Note · INV-PROP-013', 'Levant Luxury Retail SAL', 'INV-2026-Q3-MAR', 're_invoicing', 'INV-PROP-013', 'INV-PROP-013', 24000, 'Properties_INV_013_Rent_Debit_Note.svg', 'File Upload', 'Signed quarterly showroom rent debit note (0% VAT non-corporate entity)'),
-      mk('mi-domdoc-re-rct-1', 'DOC-4235-108', '2026-05-05', '4235 Company S.A.L', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Tenant Bank Transfer Credit Advice · RCT-4235-101', 'Mazen (Unesco Pharmacy)', 'BNK-4235-0505', 're_receipts', 'RCT-4235-101', 'RCT-4235-101', 19425, '4235_RCT_101_Tenant_Wire_Receipt.svg', 'File Upload', 'Fresh USD wire transfer slip flagged in Q2 cross-tenant swap audit'),
+      mk('mi-domdoc-re-rct-1', 'DOC-4235-108', '2026-05-05', '4235 Company S.A.L', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Tenant Bank Transfer Credit Advice · RCT-4235-101', 'Cedar Pharmacy', 'BNK-4235-0505', 're_receipts', 'RCT-4235-101', 'RCT-4235-101', 19425, '4235_RCT_101_Tenant_Wire_Receipt.svg', 'File Upload', 'Fresh USD wire transfer slip flagged in Q2 cross-tenant swap audit'),
       mk('mi-domdoc-re-rct-2', 'DOC-PRP-105', '2026-07-03', 'Properties', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Quarterly Rent & Security Deposit Wire Slip · RCT-PROP-106', 'Levant Luxury Retail SAL', 'BNK-PROP-0703', 're_receipts', 'RCT-PROP-106', 'RCT-PROP-106', 96000, 'Properties_RCT_106_Marina_Wire_Slip.svg', 'File Upload', 'Escrow bank confirmation for Marina Tower showroom rent and deposit'),
 
       // 5. Insurance & Brokerage: Carrier Bordereau PDFs, Commission Recon Statements & FNOL Claim Photo Packs
@@ -67561,7 +69181,7 @@
           { name: 'Boecker Food Safety & Hygiene', role: 'Sanitation & HACCP', cat: 'Sanitation and Pest Control', subcat: 'Kitchen Hygiene', iva: true, mof: '449102-601', phone: '+961 1 281 777', expAmt: 3600, recAmt: 650, recItem: 'Resort Kitchen HACCP & Pest Control Contract' }
         ],
         customers: [
-          { name: 'VIP Cabana Member — Dr. Mazen Saab', mof: '774120-601', phone: '+961 3 221 900', sales: 48000, ar: 9500 },
+          { name: 'VIP Cabana Member — Dr. Karim Saab', mof: '774120-601', phone: '+961 3 221 900', sales: 48000, ar: 9500 },
           { name: 'Corporate Sunset Gala — MEA', mof: '100291-601', phone: '+961 1 629 999', sales: 36500, ar: 7200 }
         ],
         sites: ['Blanca Beachfront & Infinity Pool Deck', 'Blanca Central Commissary & Cellar'],
@@ -67694,7 +69314,7 @@
           { name: 'PLT-GEN-01 (Volvo Penta 400kVA Standby)', plate: 'GEN-PLT-01', type: 'Generator', cap: 400 }
         ],
         staff: [
-          { name: 'Walid Kassab', role: 'Banquet & Events Director', cat: 'Management & Admin', sal: 2300, phone: '+961 3 518 720' },
+          { name: 'Walid Haddad', role: 'Banquet & Events Director', cat: 'Management & Admin', sal: 2300, phone: '+961 3 518 720' },
           { name: 'Samar Aoun', role: 'Executive Housekeeping Lead', cat: 'Site & Operations', sal: 1300, phone: '+961 70 614 390' }
         ]
       },
@@ -67752,7 +69372,7 @@
           { name: 'SHC-REC-01 (Shacman 6x4 Heavy Recovery Truck)', plate: 'M-519204', type: 'Truck', cap: 30 }
         ],
         staff: [
-          { name: 'Mazen Dirani', role: 'Heavy Truck PDI & Warranty Chief', cat: 'Maintenance & Workshop', sal: 2250, phone: '+961 3 884 120' },
+          { name: 'Samir Dirani', role: 'Heavy Truck PDI & Warranty Chief', cat: 'Maintenance & Workshop', sal: 2250, phone: '+961 3 884 120' },
           { name: 'Youssef Berro', role: 'Commercial Fleet Sales Executive', cat: 'Site & Operations', sal: 1800, phone: '+961 71 445 902' }
         ]
       },
@@ -68641,7 +70261,10 @@
     const demoGl = isDemoScopeActive();
     // The model's cash moves, month rows and payables are read through the seat's companies and book scope, so both
     // are part of the key: a cached model never serves another seat (LAN sign-out, Owner Impersonation) or book.
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}`;
+    // Holding reads its partner and facility schedules for the period picked, so the period is part of its key
+    const hldGlPr = ind === 'Holding & Treasury' ? periodRange() : null;
+    const hldGlPrKey = hldGlPr && hldGlPr.from && hldGlPr.to ? `${hldGlPr.from}~${hldGlPr.to}` : '';
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -68702,11 +70325,36 @@
       const hldSched = computeHoldingSchedules();
       // A schedule a save kept apart (planSiblingChronoSplit) hands its balance to the new one: count it once
       const hldInForce = r => r && !r._split_kept;
-      const liveFacPrin = round2((hldSched.facilitySchedules || []).filter(hldInForce).reduce((s, r) => s + Number(r.balance_usd || 0), 0));
-      const livePrtEnt = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
-      const livePrtDrw = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
-      const matched = dFloor(185000, ic.totalMatchedUsd || 0);
-      const openIc = dFloor(24500, ic.totalOpenUsd || 0);
+      const hldAllowedSet = isOwner() ? null : new Set(allowedCompanyNames().map(n => norm(n)));
+      const facAllowed = r => !hldAllowedSet || hldAllowedSet.has(norm(r.company || 'Bdeir Holding'));
+      const prtAllowed = r => !hldAllowedSet || hldAllowedSet.has(norm(r.entity || r.company || 'Bdeir Holding'));
+      // With a period picked, the schedules in force during it, each facility and partner counted once on its latest
+      // schedule in the period (the dashboard's partner and facility pages and Statement 23 read the same). With no
+      // period, the schedules in force today, as before (owner 2026-11-21: a past period showed today's totals).
+      const facInRange = hldGlPrKey ? holdingSchedulesInRange((hldSched.facilitySchedules || []).filter(facAllowed), hldGlPr) : null;
+      const facList = facInRange
+        ? facInRange.filter(r => r._range_counted !== false)
+        : (hldSched.facilitySchedules || []).filter(r => hldInForce(r) && facAllowed(r));
+      const prtLinesInRange = hldGlPrKey
+        ? holdingPartnerPeriodsInRange((hldSched.partnerAgreements || []).filter(r => r && !r.voided && !r._scheduleVoided && prtAllowed(r)), hldGlPr)
+        : null;
+      const prtList = prtLinesInRange
+        ? prtLinesInRange.filter(l => l.counted && !l.isFallback).map(l => ({ entitled_usd: l.entitled, drawn_usd: l.draws }))
+        : hldGlPrKey ? [] : (hldSched.partnerAgreements || []).filter(r => hldInForce(r) && prtAllowed(r));
+      const rowTouchesHld = r => Boolean(r && (!hldAllowedSet || hldAllowedSet.has(norm(r.fromCo)) || hldAllowedSet.has(norm(r.toCo)) || hldAllowedSet.has(norm(r.initiatorCo)) || (r.primaryRow && hldAllowedSet.has(norm(r.primaryRow.company))) || (r.mirrorRow && hldAllowedSet.has(norm(r.mirrorRow.company)))));
+      const matchedRowsHld = hldAllowedSet ? (ic.matchedRows || []).filter(rowTouchesHld) : (ic.matchedRows || []);
+      const openRowsHld = hldAllowedSet ? (ic.openRows || []).filter(rowTouchesHld) : (ic.openRows || []);
+      const matchedTotalHld = hldAllowedSet
+        ? round2(matchedRowsHld.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0))
+        : (ic.totalMatchedUsd || 0);
+      const openTotalHld = hldAllowedSet
+        ? round2(openRowsHld.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0))
+        : (ic.totalOpenUsd || 0);
+      const liveFacPrin = round2(facList.reduce((s, r) => s + Number(r.balance_usd || 0), 0));
+      const livePrtEnt = round2(prtList.reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
+      const livePrtDrw = round2(prtList.reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
+      const matched = dFloor(185000, matchedTotalHld);
+      const openIc = dFloor(24500, openTotalHld);
       const hqExp = dFloor(38400, kSnap.expenses || 0);
       const cash = dFloor(310000, kSnap.cash_till || 0);
       rawTb = [
@@ -68757,7 +70405,7 @@
         makeVoucherPair('2026-10-25', coLbl, 'HSP-4515-03', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', '4515', 'Resort Partner Profit-Share Pool', 'Resort Co-Investors Pool', 'Monthly resort net operating profit split allocation', demoGl ? 36000 : s.totalPartnerPool)
       );
     } else if (ind === 'Automotive & Heavy Trading') {
-      const trd = computeTradingOperations({ ignoreSearch: true, company: rawKey });
+      const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true, company: rawKey });
       const s = trd.summary;
       const salesNet = dFloor(410000, s.totalSalesNet);
       const salesVat = dFloor(32000, s.totalSalesTtc - s.totalSalesNet);
@@ -69104,7 +70752,7 @@
   const INDUSTRY_QUICK_ENTRY_TEMPLATES = {
     'Holding & Treasury': [
       { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer', title: 'New Intercompany Sister Transfer', prefill: { party: 'WTC', notes: 'Intercompany transfer (voucher match)' } },
-      { id: 'hld_extd', form: 'extended', label: 'Extended Entry', title: 'New Extended Stakeholder Entry', prefill: { co: 'Bdeir Holding', extkind: 'Extended', party: 'Haj Mohamad', notes: 'Extended stakeholder ledger movement' } },
+      { id: 'hld_extd', form: 'extended', label: 'Extended Entry', title: 'New Extended Stakeholder Entry', prefill: { co: 'Bdeir Holding', extkind: 'Extended', notes: 'Extended stakeholder ledger movement' } },
       { id: 'hld_split', form: 'jv', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
       { id: 'hld_loan', form: 'treasury', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
       { id: 'hld_exp', form: 'expense', label: 'Holding Shared Expense', title: 'New Holding Corporate Overhead Voucher', prefill: { notes: 'HQ shared services & statutory advisory' } }
@@ -69174,12 +70822,41 @@
     if (b.startsWith('hld_')) return 'Holding & Treasury';
     if (b.startsWith('hsp_')) return 'Hospitality & Resorts';
     if (b.startsWith('trd_')) return 'Automotive & Heavy Trading';
-    if (b.startsWith('re_')) return 'Real Estate & Property';
+    if (b.startsWith('re_') || b.startsWith('res_')) return 'Real Estate & Property';
     if (b.startsWith('ins_')) return 'Insurance & Brokerage';
+    if (b.startsWith('mfg_')) return 'Manufacturing';
     return (r && (r._industry || r.ind || r.industry)) || '';
   }
 
+  function _inferEditKeyIndustry(ek, entry) {
+    const parts = String(ek || '').split('::');
+    const head = parts[0] || '';
+    if (/^WF$/i.test(head)) return _inferIndBucketName(parts[1] || '', entry);
+    return (entry && (entry._industry || entry.ind || entry.industry)) || head || '';
+  }
+
   let _deferIndustryDomainServerPost = false;
+
+  // The server left a sent statement mark or a Rate Changes mark as it was (this seat may not make that change): put
+  // the stored copy back on this device, so the screen shows what the server holds and the change is not sent again
+  function reloadRefusedIndustryMarks(refused) {
+    const keys = (Array.isArray(refused) ? refused : []).map(x => String((x && x.key) || '')).filter(k => /^WF::(statement_watermark|rate_change_(review|settings))::/i.test(k));
+    if (!keys.length || !hasServerApi()) return Promise.resolve(false);
+    return edgeApiFetch('./api/industry_domain_store').then(async res => {
+      const j = res && res.ok ? await res.json().catch(() => null) : null;
+      if (!j || !j.industryRowEdits || typeof j.industryRowEdits !== 'object') return false;
+      const store = getIndustryRowEditStore();
+      keys.forEach(k => {
+        const srv = j.industryRowEdits[k];
+        if (srv && typeof srv === 'object') store[k] = Object.assign({}, srv, { _revBumped: true });
+        else delete store[k];
+      });
+      STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
+      saveIndustryRowEditStore(store, { skipServerPost: true });
+      invalidateIndustryDomainCaches();
+      return true;
+    }).catch(() => false);
+  }
 
   function postIndustryDomainStoreToLocalApi(opts = {}) {
     if (!hasServerApi() || isDemoScopeActive()) return Promise.resolve({ ok: true, skipped: true });
@@ -69220,7 +70897,7 @@
             nextEdits[ek] = entry;
             return;
           }
-          const indNm = (entry && (entry.ind || entry.industry)) || String(ek || '').split('::')[0] || '';
+          const indNm = _inferEditKeyIndustry(ek, entry);
           if (indNm && !canAccessGeoIndustry(indNm)) return;
           const coRaw = String((entry && (entry.company || entry.fromCo || entry.resort || entry.entity)) || '').trim();
           if (coRaw && !canAccessGeoCompany(coRaw)) return;
@@ -69240,7 +70917,7 @@
         });
         sentEdits = sentEdits.filter(k => {
           if (forceEditSet.has(k)) return true;
-          const indNm = String(k || '').split('::')[0] || '';
+          const indNm = _inferEditKeyIndustry(k, null);
           return !indNm || canAccessGeoIndustry(indNm);
         });
       }
@@ -69257,6 +70934,7 @@
         if (!res) return { ok: true, networkErr: true };
         if (res.ok) {
           const okJson = await res.json().catch(() => null);
+          if (okJson && Array.isArray(okJson.refusedMarks) && okJson.refusedMarks.length) reloadRefusedIndustryMarks(okJson.refusedMarks);
           if (STATE._purgedIndustryLegacy) {
             if (sentRows.length) {
               const doneR = new Set(sentRows.map(x => x.bucket + '::' + x.row_id));
@@ -69274,13 +70952,23 @@
           };
         }
         let errTxt = '';
+        let errCode = '';
+        let errRowId = '';
+        let errBucket = '';
         try {
           const j = await res.json();
           if (j && j.error) errTxt = String(j.error);
+          if (j && typeof j.code === 'string') errCode = j.code;
+          if (j && j.id != null) errRowId = String(j.id);
+          if (j && typeof j.bucket === 'string') errBucket = j.bucket;
+          if (j && Array.isArray(j.refusedMarks) && j.refusedMarks.length) reloadRefusedIndustryMarks(j.refusedMarks);
         } catch (_) {}
         return {
           ok: false,
           status: res.status,
+          code: errCode,
+          conflictId: errRowId,
+          conflictBucket: errBucket,
           error: errTxt || (res.status === 401 || res.status === 403
             ? 'Permission denied: server rejected industry store update'
             : `HTTP ${res.status} saving industry domain store`)
@@ -70087,7 +71775,69 @@
     };
   }
 
-  function retroactiveBackfillInsuranceAgreement(agrObj, oldWindow = null) {
+  // ── What a re-pricing sweep touches (owner 2026-11-20) ─────────────────────────────────────────────────────────
+  // A rate change, and its undo, re-price only the records that stood at the schedule's figure before the change. A
+  // figure a person typed on a record stays as typed. Three passes share one walk of the records:
+  //   ctx.plan (a Map)      nothing is written; the Map receives what each record should carry under the schedules
+  //                         as they are now. Taken BEFORE a save or an undo changes the schedules: the baseline.
+  //   ctx.baseline (a Map)  that baseline, read while applying: a record away from it was typed and is left alone
+  //                         (so is a record the baseline does not know: nothing shows it followed the schedule).
+  //   ctx.impact            receives what was re-priced (`rows`) and what was left (`kept`), for the screen, and
+  //                         `typedAtNew`: the records a person had typed at exactly the figure the change brings.
+  //   ctx.skip (a Set)      on an undo: the `typedAtNew` of the change being undone. Those figures were typed, not
+  //                         given by the change, so its undo leaves them as well.
+  // A record whose figures do not move is never rewritten. A typed record is listed as kept only when the change
+  // moves what the schedule gives it (a sweep over the whole series does not list every typed record it passes).
+  function newSiblingRepriceImpact() { return { rows: [], kept: [], typedAtNew: [] }; }
+  const SIB_REPRICE_TOL = 0.005;
+  // True when the caller should write the record. `o`: { date, party, cmpCur, cmpNext, moneyCur, moneyNext }
+  // (cmp = the figure compared with the schedule: a rate, a share or an amount; money = what the screen shows).
+  function siblingRepriceStep(ctx, table, rec, o) {
+    const key = `${table}::${String((rec && rec.id) || '').trim().toUpperCase()}`;
+    if (ctx && ctx.plan) { ctx.plan.set(key, Number(o.cmpNext || 0)); return false; }
+    const cmpCur = Number(o.cmpCur || 0), cmpNext = Number(o.cmpNext || 0);
+    const moneyCur = round2(Number(o.moneyCur || 0)), moneyNext = round2(Number(o.moneyNext || 0));
+    const hasBase = Boolean(ctx && ctx.baseline);
+    const expected = hasBase ? ctx.baseline.get(key) : undefined;
+    // Away from the baseline (or unknown to it): a figure a person typed
+    const typed = hasBase && (expected === undefined || Math.abs(cmpCur - expected) >= SIB_REPRICE_TOL);
+    // Does this change move what the schedule gives the record?
+    const schedMoves = !hasBase || expected === undefined || Math.abs(expected - cmpNext) >= SIB_REPRICE_TOL;
+    if (Math.abs(cmpCur - cmpNext) < SIB_REPRICE_TOL && Math.abs(moneyCur - moneyNext) < SIB_REPRICE_TOL) {
+      if (typed && expected !== undefined && schedMoves && ctx.impact && Array.isArray(ctx.impact.typedAtNew)) ctx.impact.typedAtNew.push(key);
+      return false;
+    }
+    const row = {
+      table, id: String((rec && rec.id) || ''), date: String(o.date || '').slice(0, 10), party: String(o.party || ''),
+      from: moneyCur, to: moneyNext, delta: round2(moneyNext - moneyCur)
+    };
+    // 'cost': the figure shown is a cost that moves while the amount billed stays (left out of the net change)
+    if (o.kind) row.kind = String(o.kind);
+    if (hasBase) {
+      if (ctx.skip && ctx.skip.has(key)) {
+        if (schedMoves && ctx.impact) ctx.impact.kept.push(row);
+        return false;
+      }
+      if (typed) {
+        if (schedMoves && ctx.impact) ctx.impact.kept.push(row);
+        return false;
+      }
+    }
+    // A record this change would re-price that sits on a statement marked as sent: left as it is, listed with the
+    // difference the change would have made (checked after the typed figures: those were never going to move). A
+    // statement may name the party with its company in front ("Blanca · Pool Bar"), so both names are looked up.
+    const lockCo = rec && (rec.company || rec.entity || rec.co);
+    const sentLock = statementLockFor(table, lockCo, [o.party, lockCo && o.party ? `${String(lockCo).split('·')[0].trim()} · ${o.party}` : ''], [o.date, rec && rec.date], o.kind);
+    if (sentLock) {
+      row.lock = sentLock.through;
+      if (ctx && ctx.impact) ctx.impact.kept.push(row);
+      return false;
+    }
+    if (ctx && ctx.impact) ctx.impact.rows.push(row);
+    return true;
+  }
+
+  function retroactiveBackfillInsuranceAgreement(agrObj, oldWindow = null, ctx = null) {
     if (!agrObj || !agrObj.carrier || !agrObj.line) return 0;
     const minDateCandidates = [String(agrObj.start_date || '2026-01-01').slice(0, 10)];
     if (oldWindow && oldWindow.start_date) minDateCandidates.push(String(oldWindow.start_date).slice(0, 10));
@@ -70114,6 +71864,11 @@
       const disc = Math.min(Number(pol.discount_usd || 0), gComm);
       const netComm = round2(gComm - disc);
       const payable = round2(gwp - gComm);
+      if (!siblingRepriceStep(ctx, 'ins_policies', pol, {
+        date: pDate, party: pol.client || pol.carrier,
+        cmpCur: pol.comm_rate_pct, cmpNext: nextRate,
+        moneyCur: pol.gross_comm_usd, moneyNext: gComm
+      })) return;
       const patch = {
         comm_rate_pct: nextRate,
         gross_comm_usd: gComm,
@@ -70401,6 +72156,8 @@
     delete rec.updated_at; delete rec.updatedAt; delete rec.rev; delete rec._createdAt;
     delete rec._auto_closed_by_id; delete rec._prev_end_date; delete rec._prev_status; delete rec._handoff_succ_id;
     delete rec._pre_void_orig; delete rec._pre_void_edits;
+    // ... nor what the kept schedule's own change, or an undo, did to the records
+    delete rec._impact; delete rec._undo_impact;
     rec.voided = false;
     rec._scheduleVoided = false;
     rec.autoClosePriorId = closeIds[0] || '';
@@ -70713,14 +72470,721 @@
     return peers;
   }
 
-  function runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow) {
-    if (formKey === 'ins_agreements') return retroactiveBackfillInsuranceAgreement(schedRec, oldWindow);
-    if (formKey === 're_leases') return retroactiveBackfillRealEstateLease(schedRec, oldWindow);
-    if (formKey === 'trd_targets') return retroactiveBackfillTradingTariff(schedRec, oldWindow);
-    if (formKey === 'hsp_tariffs') return retroactiveBackfillHospitalityTariff(schedRec, oldWindow);
-    if (formKey === 'hld_partners') return retroactiveBackfillHoldingPartner(schedRec, oldWindow);
-    if (formKey === 'hld_loans') return retroactiveBackfillHoldingLoan(schedRec, oldWindow);
+  function runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, ctx = null) {
+    if (formKey === 'ins_agreements') return retroactiveBackfillInsuranceAgreement(schedRec, oldWindow, ctx);
+    if (formKey === 're_leases') return retroactiveBackfillRealEstateLease(schedRec, oldWindow, ctx);
+    if (formKey === 'trd_targets') return retroactiveBackfillTradingTariff(schedRec, oldWindow, ctx);
+    if (formKey === 'hsp_tariffs') return retroactiveBackfillHospitalityTariff(schedRec, oldWindow, ctx);
+    if (formKey === 'hld_partners') return retroactiveBackfillHoldingPartner(schedRec, oldWindow, ctx);
+    if (formKey === 'hld_loans') return retroactiveBackfillHoldingLoan(schedRec, oldWindow, ctx);
     return 0;
+  }
+  // What each record in the sweep should carry under the schedules as they are now. Call it BEFORE a save, an undo
+  // or a restore changes the schedules, then hand the Map to applySiblingReprice once they are changed.
+  function planSiblingReprice(formKey, schedRec, oldWindow) {
+    const plan = new Map();
+    try { runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, { plan }); } catch (_) {}
+    return plan;
+  }
+  // Re-prices the records that stood at the baseline and returns { rows, kept, typedAtNew } (see siblingRepriceStep).
+  // `skipKeys`: on an undo, the `typed_keys` the change being undone kept on its schedule.
+  function applySiblingReprice(formKey, schedRec, oldWindow, baseline, skipKeys) {
+    const impact = newSiblingRepriceImpact();
+    const skip = (Array.isArray(skipKeys) && skipKeys.length) ? new Set(skipKeys.map(String)) : null;
+    runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow, { baseline: baseline || new Map(), impact, skip });
+    return impact;
+  }
+  // The impact in a few figures: what the confirmation shows, what the schedule keeps, and a signature that says
+  // whether a second pass (after the person confirmed) found the same thing
+  function summarizeSiblingRepriceImpact(impact) {
+    const rows = (impact && Array.isArray(impact.rows)) ? impact.rows : [];
+    const allKept = (impact && Array.isArray(impact.kept)) ? impact.kept : [];
+    // `kept` holds both: records with a typed price, and records on a statement marked as sent (`lock`)
+    const kept = allKept.filter(r => !(r.lock || r.l));
+    const locked = allKept.filter(r => r.lock || r.l);
+    const billed = rows.filter(r => r.kind !== 'cost');
+    const costs = rows.filter(r => r.kind === 'cost');
+    const delta = round2(billed.reduce((a, r) => a + Number(r.delta || 0), 0));
+    const costDelta = round2(costs.reduce((a, r) => a + Number(r.delta || 0), 0));
+    // What the change would have made on the sent statements' records (billed side; costs apart)
+    const lockedDelta = round2(locked.filter(r => (r.kind || r.k) !== 'cost').reduce((a, r) => a + (Number(r.to) - Number(r.from != null ? r.from : r.f)), 0));
+    const lockedCostDelta = round2(locked.filter(r => (r.kind || r.k) === 'cost').reduce((a, r) => a + (Number(r.to) - Number(r.from != null ? r.from : r.f)), 0));
+    const sig = rows.map(r => `${r.table}:${r.id}:${r.to}`).sort().join('|') + '#' + allKept.map(r => `${r.table}:${r.id}${r.lock ? '@' + r.lock : ''}`).sort().join('|');
+    return { n: rows.length, delta, costN: costs.length, costDelta, keptN: kept.length, lockedN: locked.length, lockedDelta, lockedCostDelta, sig };
+  }
+  // What a schedule row keeps of an impact (shown on the periods strip, also after an undo): the figures and the
+  // first records, not the whole list
+  function packSiblingRepriceImpact(impact, extra) {
+    const s = summarizeSiblingRepriceImpact(impact);
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const slim = r => ({ t: r.table, id: r.id, d: r.date, p: String(r.party || '').slice(0, 60), f: r.from, to: r.to, k: r.kind || undefined, l: r.lock || undefined });
+    const allKept = (impact && impact.kept) || [];
+    const packed = Object.assign({
+      at: new Date().toISOString(),
+      by: String(au.full_name || au.name || au.email || '').trim().slice(0, 120),
+      n: s.n, delta_usd: s.delta, cost_n: s.costN, cost_delta_usd: s.costDelta, kept_n: s.keptN,
+      rows: ((impact && impact.rows) || []).slice(0, 25).map(slim),
+      // typed prices first, then the records on sent statements (each list capped on its own)
+      kept: allKept.filter(r => !r.lock).slice(0, 25).concat(allKept.filter(r => r.lock).slice(0, 25)).map(slim)
+    }, extra || {});
+    if (s.lockedN) {
+      packed.locked_n = s.lockedN;
+      packed.locked_delta_usd = s.lockedDelta;
+      if (Math.abs(s.lockedCostDelta) >= 0.005) packed.locked_cost_delta_usd = s.lockedCostDelta;
+    }
+    // The records a person had typed at exactly this change's figure: its undo leaves them (siblingRepriceStep)
+    const typedKeys = (impact && Array.isArray(impact.typedAtNew)) ? impact.typedAtNew.slice(0, 500) : [];
+    if (typedKeys.length) packed.typed_keys = typedKeys;
+    return packed;
+  }
+  // Every change, undo and restore a schedule went through, in figures only (`_impact_log`, last 40): `_impact` and
+  // `_undo_impact` keep only the latest, and the Owner's Rate Changes page lists them all. `action`: change|undo|restore
+  // The log the stored copies of a schedule already carry (the row being saved may be a fresh copy from the form)
+  function storedImpactLog(id, isMfg) {
+    const up = String(id || '').trim().toUpperCase();
+    if (!up) return [];
+    let best = [];
+    const consider = r => {
+      if (r && String(r.id || r.code || '').trim().toUpperCase() === up && Array.isArray(r._impact_log) && r._impact_log.length > best.length) best = r._impact_log;
+    };
+    if (isMfg) {
+      ((STATE.customRecords && STATE.customRecords.price_rules) || []).forEach(consider);
+      ((SEED && SEED.records && SEED.records.price_rules) || []).forEach(consider);
+    } else {
+      const st = (typeof getIndustryCustomRowsStore === 'function' && getIndustryCustomRowsStore()) || {};
+      Object.keys(st).forEach(b => { if (Array.isArray(st[b])) st[b].forEach(consider); });
+    }
+    return best;
+  }
+  function appendImpactLog(row, packed, action, isMfg) {
+    if (!row || !packed || typeof packed !== 'object') return null;
+    const at = String(packed.at || new Date().toISOString());
+    const own = Array.isArray(row._impact_log) ? row._impact_log : [];
+    const stored = storedImpactLog(row.id || row.code, isMfg);
+    const prev = stored.length > own.length ? stored : own;
+    if (prev.some(e => e && e.at === at && e.a === action)) return prev;
+    const ent = {
+      a: action, at, by: String(packed.by || '').slice(0, 120),
+      n: Number(packed.n || 0), d: Number(packed.delta_usd || 0), cn: Number(packed.cost_n || 0), cd: Number(packed.cost_delta_usd || 0),
+      k: Number(packed.kept_n || 0), l: Number(packed.locked_n || 0), ld: Number(packed.locked_delta_usd || 0)
+    };
+    if (packed.new_from) ent.nf = String(packed.new_from);
+    row._impact_log = prev.concat([ent]).slice(-40);
+    _rateChangeCache = null; _rateChangeRev++;
+    return row._impact_log;
+  }
+
+  // What a schedule in force already carries of its last change (`_impact` of its row on this device; an undone row
+  // is not read). A save over that schedule leaves the typed figures it knows (`typed_keys`): its own when it is
+  // edited in place, the kept one's when the save starts a new period.
+  function siblingPriorImpact(formKey, rowId) {
+    const up = String(rowId || '').trim().toUpperCase();
+    if (!up) return null;
+    const own = (getIndustryCustomRowsStore()[formKey] || []).find(r => r && !r.voided && String(r.id || r.code || '').trim().toUpperCase() === up);
+    return (own && own._impact && typeof own._impact === 'object') ? own._impact : null;
+  }
+  const _sibTypedKeysOf = imp => ((imp && Array.isArray(imp.typed_keys)) ? imp.typed_keys.map(String) : []);
+  function siblingPriorTypedKeys(formKey, rowId) {
+    return _sibTypedKeysOf(siblingPriorImpact(formKey, rowId));
+  }
+  // Puts a save's impact on the schedule. A save that re-priced or left records, or that starts a new period
+  // (`extra.new_from`), carries its own impact. A save that moved nothing keeps what the schedule already carried
+  // (`prevImpact`: its last change still shows on the periods strip) and only adds to it the figures typed at
+  // exactly its rate, and `extra` (a restore's mark). `carryKeys`: the typed figures an in-place edit already knew.
+  // Returns whether anything was stamped.
+  function stampSiblingImpact(rec, impact, extra, carryKeys, prevImpact) {
+    if (!rec || !impact) return false;
+    if (!Array.isArray(impact.typedAtNew)) impact.typedAtNew = [];
+    (Array.isArray(carryKeys) ? carryKeys : []).forEach(k => { if (!impact.typedAtNew.includes(k)) impact.typedAtNew.push(k); });
+    const moved = impact.rows.length > 0 || impact.kept.length > 0;
+    if (moved || (extra && extra.new_from)) {
+      rec._impact = packSiblingRepriceImpact(impact, extra || null);
+      if (moved) appendImpactLog(rec, rec._impact, extra && extra.restored ? 'restore' : 'change', false);
+      return true;
+    }
+    const prev = (prevImpact && typeof prevImpact === 'object') ? prevImpact : null;
+    if (!impact.typedAtNew.length && !extra) {
+      // nothing to add: the schedule keeps what it carried (the row merge keeps it; a copy built from another row is told)
+      if (prev) rec._impact = prev;
+      return false;
+    }
+    const next = prev ? Object.assign({}, prev) : packSiblingRepriceImpact(impact, null);
+    const keys = Array.from(new Set(_sibTypedKeysOf(prev).concat(impact.typedAtNew.map(String)))).slice(0, 500);
+    if (keys.length) next.typed_keys = keys;
+    if (extra) Object.assign(next, extra);
+    rec._impact = next;
+    return true;
+  }
+  const SIB_IMPACT_TABLE_LABELS = {
+    hsp_memberships: 'Membership', hsp_revenue: 'Chalet Revenue', re_invoicing: 'Rent Invoice', trd_sales: 'Sale',
+    trd_purchases: 'Import', ins_policies: 'Policy', hld_distributions: 'Partner Distribution',
+    hld_loan_accruals: 'Loan Interest', sales_tickets: 'Sales Ticket', raw_purchases: 'Raw Material Ticket'
+  };
+  const fmtImpactSigned = v => {
+    const n = round2(Number(v || 0));
+    return `${n > 0.004 ? '+' : (n < -0.004 ? '-' : '')}${fmtUSD(Math.abs(n), 2)}`;
+  };
+  // The records of an impact as a table (the confirmation and the periods strip share it). `rows` and `kept` are
+  // either live impact rows or the slim copies a schedule keeps.
+  function rateImpactRecordsTableHtml(rows, kept, total) {
+    const norm1 = r => ({
+      table: r.table || r.t, id: r.id, date: r.date || r.d, party: r.party || r.p,
+      from: Number(r.from != null ? r.from : r.f), to: Number(r.to), kind: r.kind || r.k || '', lock: r.lock || r.l || ''
+    });
+    // A record on a statement marked as sent stays at its figure; the difference column shows what the change
+    // would have made (to bill or credit on the next statement)
+    const body = (list, isKept) => list.map(norm1).map(r => `
+      <tr class="${isKept ? (r.lock ? 'is-kept is-sent' : 'is-kept') : ''}">
+        <td><span>${esc(SIB_IMPACT_TABLE_LABELS[r.table] || 'Record')}</span> <span class="mono" data-no-i18n="1">${esc(r.id)}</span></td>
+        <td class="mono" data-no-i18n="1">${esc(r.date ? fmtDateDMY(r.date) : '')}</td>
+        <td dir="auto" data-no-i18n="1">${esc(r.party || '')}</td>
+        <td class="r mono" data-no-i18n="1">${esc(fmtUSD(r.from, 2))}</td>
+        <td class="r mono" data-no-i18n="1">${isKept ? esc(fmtUSD(r.from, 2)) : esc(fmtUSD(r.to, 2))}</td>
+        <td class="r mono" data-no-i18n="1">${isKept ? (r.lock && Math.abs(r.to - r.from) >= 0.005 ? `<span class="rate-impact-unbilled">${esc(fmtImpactSigned(r.to - r.from))}</span>` : '') : esc(fmtImpactSigned(r.to - r.from))}</td>
+        <td>${isKept
+          ? (r.lock
+            ? `<span class="rate-impact-tag is-sent"><span>On a Sent Statement</span> <span data-no-i18n="1">${esc(fmtDateDMY(r.lock))}</span></span>`
+            : '<span class="rate-impact-tag is-kept">Typed Price, Kept</span>')
+          : (r.kind === 'cost' ? '<span class="rate-impact-tag">Cost</span>' : '')}</td>
+      </tr>`).join('');
+    const shown = (rows || []).length + (kept || []).length;
+    const more = Math.max(0, Number(total || 0) - shown);
+    return `
+      <div class="rate-impact-table-wrap">
+        <table class="rate-impact-table">
+          <thead><tr>
+            <th>Record</th><th>Date</th><th>Name</th><th class="r">Now</th><th class="r">After</th><th class="r">Difference</th><th></th>
+          </tr></thead>
+          <tbody>${body(rows || [], false)}${body(kept || [], true)}</tbody>
+        </table>
+        ${more > 0 ? `<div class="rate-impact-more"><span>More records not listed</span> <b data-no-i18n="1">${fmtNum(more, 0)}</b></div>` : ''}
+      </div>`;
+  }
+  // The figures of an impact as label and value pairs (each label is a phrase of its own, so it translates)
+  function rateImpactFactsHtml(sum, extra, datesOnly) {
+    const x = extra || {};
+    const fact = (label, val, cls) => `<div class="rate-impact-fact${cls ? ' ' + cls : ''}"><dt>${label}</dt><dd data-no-i18n="1">${esc(val)}</dd></div>`;
+    const facts = [];
+    if (x.newFrom) facts.push(fact('New Period Starts', fmtDateDMY(x.newFrom)));
+    if (x.keptTo) facts.push(fact('Earlier Period Stays Until', fmtDateDMY(x.keptTo)));
+    if (datesOnly) return `<dl class="rate-impact-facts">${facts.join('')}</dl>`;
+    facts.push(fact('Records Re-priced', fmtNum(sum.n - sum.costN, 0)));
+    if (sum.n - sum.costN > 0 || Math.abs(sum.delta) >= 0.005) facts.push(fact('Net Change', fmtImpactSigned(sum.delta), sum.delta < -0.004 ? 'is-neg' : (sum.delta > 0.004 ? 'is-pos' : '')));
+    if (sum.costN > 0) facts.push(fact('Costs Updated', `${fmtNum(sum.costN, 0)} (${fmtImpactSigned(sum.costDelta)})`));
+    facts.push(fact('Records Keeping a Typed Price', fmtNum(sum.keptN, 0), sum.keptN > 0 ? 'is-kept' : ''));
+    if (sum.lockedN > 0) {
+      facts.push(fact('Records on a Sent Statement, Left As They Are', fmtNum(sum.lockedN, 0), 'is-sent'));
+      if (Math.abs(sum.lockedDelta) >= 0.005) facts.push(fact('Difference to Bill or Credit Next Statement', fmtImpactSigned(sum.lockedDelta), 'is-sent'));
+      if (Math.abs(sum.lockedCostDelta || 0) >= 0.005) facts.push(fact('Cost Difference on Sent Supplier Statements', fmtImpactSigned(sum.lockedCostDelta), 'is-sent'));
+    }
+    return `<dl class="rate-impact-facts">${facts.join('')}</dl>`;
+  }
+  // Shows what a rate change (mode 'save') or its undo (mode 'undo') does, before anything is written for good.
+  // Resolves true when the person confirms. `o`: { mode, impact, kept (the period a save keeps apart), isNew }
+  let _rateImpactFinish = null;          // settles the dialog that is open now
+  let _rateImpactOpenIsQuestion = false; // the open dialog asks (save, undo, new period) rather than reports
+  const _rateImpactAfter = [];           // reports waiting for an open question to be answered
+  function promptRateChangeImpact(o) {
+    const opt = o || {};
+    const impact = opt.impact || newSiblingRepriceImpact();
+    const sum = summarizeSiblingRepriceImpact(impact);
+    // Modes: 'save' and 'undo' ask before the change is written; 'period' asks before a save that starts a new
+    // period (its record impact is not known yet); 'result' and 'undo-result' report what was just done.
+    const isUndo = opt.mode === 'undo' || opt.mode === 'undo-result';
+    const isResult = opt.mode === 'result' || opt.mode === 'undo-result';
+    const isPeriodOnly = opt.mode === 'period';
+    const kept = opt.kept || null;
+    const title = isResult
+      ? (isUndo ? 'What This Undo Changed' : 'What This Save Changed')
+      : (isUndo
+        ? 'Undo This Rate Change?'
+        : (kept ? 'This Save Starts a New Period' : (sum.n > 0 ? 'This Save Re-prices Existing Records' : 'This Save Re-prices No Record')));
+    const lead = isResult
+      ? (isUndo
+        ? 'Records that followed this rate went back to the rate before it. A price typed on a record stayed as typed.'
+        : 'Records that follow this rate were re-priced. A price typed on a record stayed as typed.')
+      : (isUndo
+        ? 'Records that followed this rate go back to the rate before it. Amounts already paid or collected do not change.'
+        : (isPeriodOnly
+          ? 'The earlier period stays as it is, with its records. The new values apply from the new start date. To correct only the date, go back and change nothing but the date.'
+          : (kept
+            ? 'The earlier period stays as it is. The new values apply from the new start date. Amounts already paid or collected do not change.'
+            : 'Check what this save does before it is posted. Amounts already paid or collected do not change.')));
+    // One at a time. A report ('result') never takes the place of a question that is open: it waits its turn.
+    if (isResult && typeof _rateImpactFinish === 'function' && _rateImpactOpenIsQuestion) {
+      return new Promise(resolve => { _rateImpactAfter.push(() => promptRateChangeImpact(o).then(resolve)); });
+    }
+    return new Promise(resolve => {
+      // A question replaces whatever is open: an open report closes, an open question is answered Go Back (its
+      // caller is told, and its key listener goes with it)
+      if (typeof _rateImpactFinish === 'function') { try { _rateImpactFinish(false); } catch (_) {} }
+      _rateImpactOpenIsQuestion = !isResult;
+      const prior = document.getElementById('rateImpactModal');
+      if (prior) prior.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'rateImpactModal';
+      overlay.className = 'rate-impact-backdrop';
+      overlay.innerHTML = `
+        <div class="rate-impact-card" role="dialog" aria-modal="true" aria-labelledby="rateImpactTitle">
+          <div class="rate-impact-head">
+            <span class="rate-impact-eyebrow">${isUndo ? 'Undo' : 'Rate Change'}</span>
+            <h3 id="rateImpactTitle">${title}</h3>
+            <p class="rate-impact-lead">${lead}</p>
+          </div>
+          ${rateImpactFactsHtml(sum, kept ? { newFrom: kept.newFrom, keptTo: kept.to } : null, isPeriodOnly)}
+          ${sum.keptN > 0 ? '<p class="rate-impact-note">A price typed on a record is never changed by a rate change or by its undo.</p>' : ''}
+          ${sum.lockedN > 0 ? '<p class="rate-impact-note is-sent">Records on a statement already sent to the customer or supplier are not changed. The difference is listed so it can go on the next statement.</p>' : ''}
+          ${(impact.rows.length || impact.kept.length) ? `
+            <details class="rate-impact-details" id="rateImpactDetails">
+              <summary><span>See the Records</span> <b data-no-i18n="1">(${fmtNum(impact.rows.length + impact.kept.length, 0)})</b></summary>
+              ${rateImpactRecordsTableHtml(impact.rows.slice(0, 60), impact.kept.slice(0, 40), impact.rows.length + impact.kept.length)}
+            </details>` : ''}
+          <div class="rate-impact-actions">
+            ${isResult ? '' : '<button type="button" class="btn btn-ghost" id="rateImpactBackBtn" data-ri="back">Go Back</button>'}
+            <button type="button" class="btn btn-primary" id="rateImpactOkBtn" data-ri="ok">${isResult ? 'Close' : (isUndo ? 'Undo Rate Change' : 'Post')}</button>
+          </div>
+        </div>`;
+      let settled = false;
+      const finish = val => {
+        if (settled) return;
+        settled = true;
+        const wasCurrent = _rateImpactFinish === finish;
+        if (wasCurrent) { _rateImpactFinish = null; _rateImpactOpenIsQuestion = false; }
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(Boolean(val));
+        // A report that waited for this dialog shows now (unless another dialog took its place meanwhile)
+        if (wasCurrent && _rateImpactAfter.length) {
+          const next = _rateImpactAfter.shift();
+          setTimeout(() => { try { next(); } catch (_) {} }, 0);
+        }
+      };
+      _rateImpactFinish = finish;
+      // Escape goes back. Tab stays inside the dialog (the page behind it, its Void and Post buttons included, is
+      // out of reach of the keyboard while the question is open).
+      const onKey = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); return; }
+        if (ev.key === 'Tab') {
+          const focusables = Array.from(overlay.querySelectorAll('button, summary, [tabindex]:not([tabindex="-1"])')).filter(el => !el.disabled && el.offsetParent !== null);
+          if (!focusables.length) { ev.preventDefault(); return; }
+          const first = focusables[0], last = focusables[focusables.length - 1];
+          const act = document.activeElement;
+          if (!overlay.contains(act)) { ev.preventDefault(); first.focus(); }
+          else if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+          else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+          return;
+        }
+        // Enter or Space on something behind the dialog does nothing while it is open
+        if ((ev.key === 'Enter' || ev.key === ' ') && !overlay.contains(document.activeElement)) { ev.preventDefault(); ev.stopPropagation(); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      overlay.addEventListener('click', ev => {
+        if (ev.target === overlay) { finish(false); return; }
+        const btn = ev.target.closest('[data-ri]');
+        if (btn) finish(btn.getAttribute('data-ri') === 'ok');
+      });
+      document.body.appendChild(overlay);
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(overlay);
+      }
+      const okBtn = overlay.querySelector('#rateImpactOkBtn');
+      if (okBtn) { try { okBtn.focus({ preventScroll: true }); } catch (_) {} }
+    });
+  }
+
+  // ── Rate Changes: one Owner page for every rate change and undo (owner 2026-11-20) ───────────────────────────────
+  // Lists, across the six industries, each change to a price agreement or schedule that moved money, each undo and
+  // each restore, with what it did: records re-priced, net change, typed prices kept, records left on sent statements
+  // and the difference not billed. Read from what the schedules keep (`_impact`, `_undo_impact`), so a change still
+  // shows after its undo. Two alerts: a change that moved more than a set amount (Owner setting, $1,000 by default)
+  // and a change undone within a day. An alert stays on the Sentinels hub badge until the Owner marks it reviewed.
+  const RATE_CHANGE_TABLES = ['price_rules', 'hsp_tariffs', 're_leases', 'trd_targets', 'ins_agreements', 'hld_partners', 'hld_loans'];
+  const RATE_CHANGE_IND = {
+    price_rules: 'Manufacturing', hsp_tariffs: 'Hospitality', re_leases: 'Real Estate', trd_targets: 'Trading',
+    ins_agreements: 'Insurance', hld_partners: 'Holding', hld_loans: 'Holding'
+  };
+  // Industry order by frequency (hard rule 11)
+  const RATE_CHANGE_IND_ORDER = ['Manufacturing', 'Hospitality', 'Real Estate', 'Trading', 'Insurance', 'Holding'];
+  const RATE_CHANGE_KIND = {
+    price_rules: 'Price Agreement', hsp_tariffs: 'Tariff', re_leases: 'Lease Rent', trd_targets: 'Price Target',
+    ins_agreements: 'Commission Agreement', hld_partners: 'Partner Share', hld_loans: 'Loan Rate'
+  };
+  const RATE_CHANGE_DEFAULT_ALERT_USD = 1000;
+  const RATE_CHANGE_DAY_MS = 24 * 3600 * 1000;
+  function canViewRateChanges(u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!usr || usr.status === 'Suspended') return false;
+    return resolveCanonicalRoleKey(usr.role || '') === 'Full Access (Owner)';
+  }
+  function rateChangeAlertUsd() {
+    const w = (typeof getIndustryWorkflowPatch === 'function') ? getIndustryWorkflowPatch('rate_change_settings', 'alert') : null;
+    const v = w ? Number(w.usd) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : RATE_CHANGE_DEFAULT_ALERT_USD;
+  }
+  const _rcIso = v => { const t = Date.parse(String(v || '')); return Number.isFinite(t) ? t : NaN; };
+  function rateChangeScheduleLabel(fk, r) {
+    const j = arr => arr.map(x => String(x || '').trim()).filter(Boolean).join(' · ');
+    if (fk === 'price_rules') {
+      const rate = Number(r.unit_price ?? r.price ?? r.trans_unit_price ?? r.trans_price ?? 0);
+      return { name: j([r.rule_type, r.customer || r.supplier || r.site, r.product]), rate: rate ? fmtUSD(rate, 2) : '' };
+    }
+    const name = fk === 'ins_agreements' ? j([r.carrier, r.line])
+      : fk === 're_leases' ? j([r.property, r.unit, r.tenant])
+        : fk === 'trd_targets' ? j([r.category || r.segment])
+          : fk === 'hsp_tariffs' ? j([r.tier])
+            : fk === 'hld_partners' ? j([String(r.entity || '').split('·')[0], r.partner])
+              : j([r.lender]);
+    let rate = '';
+    try { rate = _sibRateLabel(fk, r); } catch (_) { rate = ''; }
+    return { name, rate };
+  }
+  // Every event, newest first. Each: { key, fk, industry, company, id, name, rate, action ('change'|'undo'|'restore'),
+  // at (ms), by, imp (the kept impact), quickUndo, big, alert, reviewed }
+  let _rateChangeCache = null;
+  function collectRateChangeEvents() {
+    const sibStore = (typeof getIndustryCustomRowsStore === 'function' && getIndustryCustomRowsStore()) || {};
+    const editStore = (typeof getIndustryRowEditStore === 'function' && getIndustryRowEditStore()) || {};
+    const prSeed = (SEED && SEED.records && Array.isArray(SEED.records.price_rules)) ? SEED.records.price_rules : [];
+    const prCust = (STATE.customRecords && Array.isArray(STATE.customRecords.price_rules)) ? STATE.customRecords.price_rules : [];
+    const sig = [prSeed.length, prCust.length, SEED && SEED._customRev, Object.keys(sibStore).map(k => (sibStore[k] || []).length).join('.'), Object.keys(editStore).length, STATE._watermarkRev || 0].join('|');
+    const now = Date.now();
+    if (_rateChangeCache && _rateChangeCache.sig === sig && _rateChangeCache.sibStore === sibStore && now - _rateChangeCache.at < 4000) return _rateChangeCache.events;
+    const alertUsd = rateChangeAlertUsd();
+    const events = [];
+    const seenEv = new Set();
+    const rowsOf = fk => {
+      if (fk !== 'price_rules') return (Array.isArray(sibStore[fk]) ? sibStore[fk] : []);
+      const byId = new Map();
+      prSeed.forEach(r => { if (r && r.id) byId.set(String(r.id), r); });
+      prCust.forEach(r => { if (r && r.id) byId.set(String(r.id), Object.assign({}, byId.get(String(r.id)) || {}, r)); });
+      return Array.from(byId.values());
+    };
+    RATE_CHANGE_TABLES.forEach(fk => {
+      rowsOf(fk).forEach(r => {
+        if (!r || typeof r !== 'object') return;
+        const id = String(r.id || r.code || '').trim();
+        if (!id) return;
+        const imp = (r._impact && typeof r._impact === 'object') ? r._impact : null;
+        const isUndone = fk === 'price_rules' ? Boolean(r.voided) : Boolean(r.voided && r._scheduleVoided);
+        const undoImp = (r._undo_impact && typeof r._undo_impact === 'object') ? r._undo_impact : null;
+        // The schedule's log (every change, undo and restore), plus what it carries from before the log existed
+        const log = (Array.isArray(r._impact_log) ? r._impact_log : []).filter(e => e && e.a && e.at).map(e => Object.assign({}, e));
+        const has = (a, at) => log.some(e => e.a === a && e.at === at);
+        const fromPacked = (a, p) => ({ a, at: String(p.at || ''), by: String(p.by || ''), n: Number(p.n || 0), d: Number(p.delta_usd || 0), cn: Number(p.cost_n || 0), cd: Number(p.cost_delta_usd || 0), k: Number(p.kept_n || 0), l: Number(p.locked_n || 0), ld: Number(p.locked_delta_usd || 0) });
+        if (imp && imp.at && !has(imp.restored ? 'restore' : 'change', String(imp.at))) log.push(fromPacked(imp.restored ? 'restore' : 'change', imp));
+        if (undoImp && undoImp.at && !has('undo', String(undoImp.at))) log.push(fromPacked('undo', undoImp));
+        if (isUndone && !undoImp && log.length && !log.some(e => e.a === 'undo') && r.voided_at) {
+          log.push({ a: 'undo', at: String(r.voided_at), by: String(r.voided_by || ''), n: 0, d: 0, cn: 0, cd: 0, k: 0, l: 0, ld: 0 });
+        }
+        if (!log.length) return;
+        log.sort((a, b) => (_rcIso(a.at) || 0) - (_rcIso(b.at) || 0));
+        // Undone within a day: an undo and the change it undid (the latest change or restore before it)
+        log.forEach((e, i) => {
+          if (e.a !== 'undo') return;
+          const ut = _rcIso(e.at);
+          for (let j = i - 1; j >= 0; j--) {
+            if (log[j].a === 'undo') break;
+            const ct = _rcIso(log[j].at);
+            if (Number.isFinite(ut) && Number.isFinite(ct) && ut >= ct && ut - ct < RATE_CHANGE_DAY_MS) { e.quick = true; log[j].quick = true; }
+            break;
+          }
+        });
+        const lbl = rateChangeScheduleLabel(fk, r);
+        const base = { fk, industry: RATE_CHANGE_IND[fk], company: String(r.company || r.entity || '').split('·')[0].trim(), id, name: lbl.name, rate: lbl.rate };
+        log.forEach(e => {
+          // A copy of a schedule (a new period built from it) may carry the same log: each event once
+          const ek = `${fk}::${e.a}::${e.at}`;
+          if (seenEv.has(ek)) return;
+          seenEv.add(ek);
+          // The records themselves are kept for the latest change and the latest undo only
+          const full = (imp && String(imp.at) === e.at && e.a !== 'undo') ? imp : ((undoImp && String(undoImp.at) === e.at && e.a === 'undo') ? undoImp : null);
+          const ev = {
+            n: e.n, delta_usd: e.d, cost_n: e.cn, cost_delta_usd: e.cd, kept_n: e.k, locked_n: e.l, locked_delta_usd: e.ld,
+            rows: full ? full.rows : null, kept: full ? full.kept : null
+          };
+          const moved = Math.max(Math.abs(e.d), Math.abs(e.cd), Math.abs(e.ld));
+          events.push(Object.assign({}, base, {
+            key: ek, action: e.a, at: _rcIso(e.at), by: e.by, imp: ev, big: moved >= alertUsd, quickUndo: Boolean(e.quick)
+          }));
+        });
+      });
+    });
+    events.forEach(e => {
+      e.alert = Boolean(e.big || e.quickUndo);
+      const rv = e.alert ? getIndustryWorkflowPatch('rate_change_review', e.key) : null;
+      e.reviewed = Boolean(rv && rv.reviewed_at);
+      e.reviewedBy = rv ? String(rv.reviewed_by || '') : '';
+    });
+    events.sort((a, b) => (Number.isFinite(b.at) ? b.at : 0) - (Number.isFinite(a.at) ? a.at : 0));
+    _rateChangeCache = { sig, sibStore, at: now, events };
+    return events;
+  }
+  // Open alerts of the last 30 days (Sentinels hub badge)
+  // The sidebar and tab badges never work the list out while a screen paints (performance budget): the count is
+  // worked out when the browser is idle and kept until a change, a review or the alert amount moves it (or a minute
+  // passes); the Rate Changes page refreshes it as it renders. `fresh`: work it out now (the gate).
+  let _rateChangeRev = 0;
+  const _rcBadgeState = { rev: -1, at: 0, n: 0, pending: false };
+  function countOpenRateChangeAlerts(events) {
+    const since = Date.now() - 30 * RATE_CHANGE_DAY_MS;
+    return (events || collectRateChangeEvents()).filter(e => e.alert && !e.reviewed && Number.isFinite(e.at) && e.at >= since).length;
+  }
+  function getRateChangeExceptionBadge(u, fresh) {
+    if (!canViewRateChanges(u)) return null;
+    let n = 0;
+    const st = _rcBadgeState;
+    if (fresh) {
+      try { n = countOpenRateChangeAlerts(); } catch (_) { n = 0; }
+    } else {
+      if ((st.rev !== _rateChangeRev || Date.now() - st.at > 60000) && !st.pending) {
+        st.pending = true;
+        const run = () => {
+          const rev = _rateChangeRev;
+          try { st.n = countOpenRateChangeAlerts(); } catch (_) { st.n = 0; }
+          st.rev = rev;
+          st.at = Date.now();
+          st.pending = false;
+        };
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 5000 });
+        else setTimeout(run, 1500);
+      }
+      n = st.n;
+    }
+    return n > 0 ? { text: `${fmtNum(n)} Alert${n === 1 ? '' : 's'}`, cls: 'warn', targetView: 'rate_changes' } : null;
+  }
+  function renderRateChangesView() {
+    const u = activeUser();
+    if (!canViewRateChanges(u)) return `<div class="card"><p class="muted">This page is for the Owner.</p></div>`;
+    const all = collectRateChangeEvents();
+    // The badges read the count worked out here
+    try { _rcBadgeState.n = countOpenRateChangeAlerts(all); _rcBadgeState.rev = _rateChangeRev; _rcBadgeState.at = Date.now(); } catch (_) {}
+    const fInd = RATE_CHANGE_IND_ORDER.includes(STATE.rateChangesInd) ? STATE.rateChangesInd : '';
+    const onlyAlerts = STATE.rateChangesOnlyAlerts === true;
+    const list = all.filter(e => (!fInd || e.industry === fInd) && (!onlyAlerts || e.alert));
+    const since = Date.now() - 30 * RATE_CHANGE_DAY_MS;
+    const recent = all.filter(e => Number.isFinite(e.at) && e.at >= since && (!fInd || e.industry === fInd));
+    const net30 = round2(recent.reduce((a, e) => a + Number((e.imp && e.imp.delta_usd) || 0), 0));
+    const openAlerts = all.filter(e => e.alert && !e.reviewed && (!fInd || e.industry === fInd)).length;
+    const unbilled = round2(recent.reduce((a, e) => a + Number((e.imp && e.imp.locked_delta_usd) || 0), 0));
+    const alertUsd = rateChangeAlertUsd();
+    const indCounts = {};
+    all.forEach(e => { indCounts[e.industry] = (indCounts[e.industry] || 0) + 1; });
+    const kpi = (lbl, val, cls) => `<div class="rc-kpi${cls ? ' ' + cls : ''}"><span class="rc-kpi-lbl">${lbl}</span><b data-no-i18n="1">${esc(val)}</b></div>`;
+    const actLbl = { change: 'Change', undo: 'Undo', restore: 'Restore' };
+    const shown = list.slice(0, 300);
+    const rowsHtml = shown.map((e, i) => {
+      const imp = e.imp || {};
+      const billedN = Math.max(0, Number(imp.n || 0) - Number(imp.cost_n || 0));
+      const alerts = [];
+      if (e.big) alerts.push('<span class="rc-flag is-big">Large Change</span>');
+      if (e.quickUndo) alerts.push('<span class="rc-flag is-quick">Undone Within a Day</span>');
+      const hasRecs = (Array.isArray(imp.rows) && imp.rows.length) || (Array.isArray(imp.kept) && imp.kept.length);
+      return `
+        <tr class="rc-row is-${e.action}${e.alert && !e.reviewed ? ' has-alert' : ''}">
+          <td class="mono" data-no-i18n="1">${Number.isFinite(e.at) ? esc(fmtDateDMY(new Date(e.at).toISOString().slice(0, 10))) + ' ' + esc(new Date(e.at).toISOString().slice(11, 16)) : ''}</td>
+          <td><span>${esc(e.industry)}</span>${e.company ? `<div class="rc-sub" data-no-i18n="1">${esc(e.company)}</div>` : ''}</td>
+          <td><span>${esc(RATE_CHANGE_KIND[e.fk] || 'Schedule')}</span><div class="rc-sub" dir="auto" data-no-i18n="1">${esc(e.name || e.id)}${e.rate ? ' · ' + esc(e.rate) : ''}</div></td>
+          <td><span class="rc-act is-${e.action}">${actLbl[e.action]}</span></td>
+          <td class="r mono" data-no-i18n="1">${fmtNum(billedN, 0)}${Number(imp.cost_n || 0) ? ` <span class="rc-sub">+${fmtNum(imp.cost_n, 0)}</span>` : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Math.abs(Number(imp.delta_usd || 0)) >= 0.005 ? esc(fmtImpactSigned(imp.delta_usd)) : ''}${Math.abs(Number(imp.cost_delta_usd || 0)) >= 0.005 ? `<div class="rc-sub">${esc(fmtImpactSigned(imp.cost_delta_usd))}</div>` : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Number(imp.kept_n || 0) ? fmtNum(imp.kept_n, 0) : ''}</td>
+          <td class="r mono" data-no-i18n="1">${Number(imp.locked_n || 0) ? `${fmtNum(imp.locked_n, 0)}${Math.abs(Number(imp.locked_delta_usd || 0)) >= 0.005 ? ` <span class="rate-impact-unbilled">(${esc(fmtImpactSigned(imp.locked_delta_usd))})</span>` : ''}` : ''}</td>
+          <td dir="auto" data-no-i18n="1">${esc(e.by || '')}</td>
+          <td>${alerts.join(' ')}${e.alert ? (e.reviewed
+            ? `<div class="rc-sub"><span>Reviewed</span>${e.reviewedBy ? ` <span data-no-i18n="1">· ${esc(e.reviewedBy)}</span>` : ''}</div>`
+            : ` <button type="button" class="btn btn-xs btn-outline" data-rc-act="review" data-rc-key="${esc(encodeURIComponent(e.key))}">Mark Reviewed</button>`) : ''}</td>
+        </tr>
+        ${hasRecs ? `<tr class="rc-recs"><td colspan="10"><details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0) + Number(imp.locked_n || 0))}</details></td></tr>` : ''}`;
+    }).join('');
+    return `
+      <div class="rc-page" id="rateChangesPage">
+        <div class="card rc-head">
+          <div class="rc-head-top">
+            <div>
+              <h2 class="rc-title">Rate Changes</h2>
+              <p class="rc-lead">Every rate change and undo across the six industries, with the money it moved. An undone change stays listed.</p>
+            </div>
+            <label class="rc-threshold">
+              <span>Alert when a change moves more than</span>
+              <span class="rc-threshold-in"><span data-no-i18n="1">$</span><input type="number" min="1" step="1" inputmode="numeric" id="rcAlertUsdInput" value="${esc(String(Math.round(alertUsd)))}" aria-label="Alert amount in dollars"></span>
+            </label>
+          </div>
+          <div class="rc-kpis">
+            ${kpi('Changes, Last 30 Days', fmtNum(recent.filter(e => e.action !== 'undo').length, 0))}
+            ${kpi('Undos, Last 30 Days', fmtNum(recent.filter(e => e.action === 'undo').length, 0))}
+            ${kpi('Net Change, Last 30 Days', fmtImpactSigned(net30), net30 < -0.004 ? 'is-neg' : (net30 > 0.004 ? 'is-pos' : ''))}
+            ${kpi('Not Billed on Sent Statements', fmtImpactSigned(unbilled), Math.abs(unbilled) >= 0.005 ? 'is-sent' : '')}
+            ${kpi('Open Alerts', fmtNum(openAlerts, 0), openAlerts > 0 ? 'is-alert' : '')}
+          </div>
+          <div class="rc-filters" role="group" aria-label="Filter rate changes">
+            <button type="button" class="rc-chip${!fInd ? ' on' : ''}" data-rc-act="ind" data-rc-ind=""><span>All Industries</span> <b data-no-i18n="1">${fmtNum(all.length, 0)}</b></button>
+            ${RATE_CHANGE_IND_ORDER.filter(ind => indCounts[ind]).map(ind => `<button type="button" class="rc-chip${fInd === ind ? ' on' : ''}" data-rc-act="ind" data-rc-ind="${esc(ind)}"><span>${esc(ind)}</span> <b data-no-i18n="1">${fmtNum(indCounts[ind], 0)}</b></button>`).join('')}
+            <button type="button" class="rc-chip is-alerts${onlyAlerts ? ' on' : ''}" data-rc-act="alerts" aria-pressed="${onlyAlerts ? 'true' : 'false'}"><span>Alerts Only</span></button>
+          </div>
+        </div>
+        <div class="card rc-table-card">
+          ${shown.length ? `
+            <div class="rc-table-wrap">
+              <table class="rc-table">
+                <thead><tr>
+                  <th>When</th><th>Industry</th><th>Schedule</th><th>Action</th><th class="r">Re-priced</th><th class="r">Net Change</th>
+                  <th class="r">Typed Kept</th><th class="r">On Sent Statements</th><th>By</th><th>Alert</th>
+                </tr></thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+            ${list.length > shown.length ? `<div class="rate-impact-more"><span>More records not listed</span> <b data-no-i18n="1">${fmtNum(list.length - shown.length, 0)}</b></div>` : ''}`
+          : `<p class="rc-empty">${onlyAlerts ? 'No alert to review.' : 'No rate change has moved money yet.'}</p>`}
+        </div>
+      </div>`;
+  }
+  function wireRateChangesOnce() {
+    if (window.__rcWired) return;
+    window.__rcWired = true;
+    document.addEventListener('click', ev => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('#rateChangesPage [data-rc-act]') : null;
+      if (!btn) return;
+      const act = btn.getAttribute('data-rc-act');
+      if (act === 'ind') {
+        STATE.rateChangesInd = btn.getAttribute('data-rc-ind') || '';
+      } else if (act === 'alerts') {
+        STATE.rateChangesOnlyAlerts = !STATE.rateChangesOnlyAlerts;
+      } else if (act === 'review') {
+        if (!canViewRateChanges(activeUser())) return;
+        let key = '';
+        try { key = decodeURIComponent(btn.getAttribute('data-rc-key') || ''); } catch (_) { key = ''; }
+        if (!key) return;
+        const au = activeUser() || {};
+        saveIndustryWorkflowPatch('rate_change_review', key, { reviewed_at: new Date().toISOString(), reviewed_by: String(au.full_name || au.name || au.email || '').trim().slice(0, 120) });
+        _rateChangeCache = null; _rateChangeRev++;
+        if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      } else return;
+      ev.preventDefault();
+      renderApp();
+    });
+    document.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (!inp || inp.id !== 'rcAlertUsdInput' || !canViewRateChanges(activeUser())) return;
+      const v = Math.round(Number(inp.value));
+      if (!(v > 0)) { inp.value = String(Math.round(rateChangeAlertUsd())); return; }
+      saveIndustryWorkflowPatch('rate_change_settings', 'alert', { usd: v });
+      _rateChangeCache = null; _rateChangeRev++;
+      if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      toast('Alert amount saved.', 'ok');
+      renderApp();
+    });
+  }
+
+  // ── The periods of one schedule, as one strip (360 drawer; owner 2026-11-20) ─────────────────────────────────────
+  // Every period of the series in date order, with its rate and whether it is closed, in force, scheduled or undone,
+  // and under each one what its rate change (or its undo) did to the records. An undone change stays on the strip.
+  const _sibSeriesSig = (fk, r) => {
+    if (!r) return '';
+    const n = v => norm(String(v || ''));
+    if (fk === 'ins_agreements') return `${n(r.carrier)}|${normInsLineKey(r.line)}`;
+    if (fk === 're_leases') return `${String(r.property || '').trim().toUpperCase().slice(0, 14)}|${String(r.unit || '').trim().toUpperCase()}`;
+    if (fk === 'trd_targets') return `${n(r.company)}|${normTradingTariffCat(r.category || r.segment, r.company)}`;
+    if (fk === 'hsp_tariffs') return `${n(r.company)}|${n(r.tier)}`;
+    if (fk === 'hld_partners') return `${n(String(r.entity || '').split('·')[0])}|${n(String(r.partner || '').split('(')[0])}`;
+    if (fk === 'hld_loans') return `${n(r.company)}|${n(r.lender)}`;
+    return '';
+  };
+  const _sibRateLabel = (fk, r) => {
+    if (!r) return '';
+    const pct = v => `${fmtNum(Number(v || 0), 2).replace(/\.00$/, '')}%`;
+    if (fk === 'ins_agreements') return pct(r.new_bus_pct);
+    if (fk === 're_leases') return fmtUSD(Number(r.net_period_usd || 0), 2);
+    if (fk === 'trd_targets') return fmtUSD(Number(r.unit_net_usd != null ? r.unit_net_usd : (r.list_floor_usd || 0)), 2);
+    if (fk === 'hsp_tariffs') return fmtUSD(Number(r.seasonal_rate_usd || 0), 2);
+    if (fk === 'hld_partners') return pct(r.pct);
+    if (fk === 'hld_loans') return pct(r.apr_pct != null ? r.apr_pct : (r.interest_rate_pct != null ? r.interest_rate_pct : r.rate_apr_pct));
+    return '';
+  };
+  function listSiblingSchedulePeriods(fk, row, primaryId) {
+    if (!isSiblingChronoFormKey(fk) || !row) return [];
+    const selfUp = _sibUp(primaryId || row.id);
+    const sig = _sibSeriesSig(fk, row);
+    const live = getSiblingChronoPeersForRow(fk, row, primaryId || row.id).filter(p => p && !p.voided && !p._scheduleVoided && _sibSeriesSig(fk, p) === sig);
+    const self = siblingChronoRowById(fk, primaryId || row.id) || row;
+    const seen = new Set();
+    const out = [];
+    const push = (r, voided) => {
+      const up = _sibUp(r && (r.id || r.code));
+      if (!up || seen.has(up)) return;
+      seen.add(up);
+      out.push({ row: r, voided: Boolean(voided), isSelf: up === selfUp });
+    };
+    push(self, false);
+    live.forEach(p => push(p, false));
+    // Undone schedules of the same series stay on the strip (their tombstones are on the device)
+    (getIndustryCustomRowsStore()[fk] || []).forEach(r => {
+      if (r && r.voided && r._scheduleVoided && _sibSeriesSig(fk, r) === sig) push(r, true);
+    });
+    const today = todayISO();
+    out.forEach(p => {
+      const s = String(p.row.start_date || '').slice(0, 10);
+      const e = _siblingChronoEnd(p.row);
+      p.from = s;
+      p.to = e;
+      p.state = p.voided ? 'undone' : ((e && e < today) ? 'closed' : (s > today ? 'scheduled' : 'inforce'));
+    });
+    out.sort((a, b) => String(a.from).localeCompare(String(b.from)) || (a.voided ? 1 : 0) - (b.voided ? 1 : 0));
+    return out;
+  }
+  function siblingPeriodsStripHtml(fk, row, primaryId, canUndo) {
+    const periods = listSiblingSchedulePeriods(fk, row, primaryId);
+    const saysSomething = i => Boolean(i && (Number(i.n || 0) > 0 || Number(i.kept_n || 0) > 0 || Number(i.locked_n || 0) > 0));
+    if (periods.length < 2 && !(periods[0] && (saysSomething(periods[0].row._impact) || saysSomething(periods[0].row._undo_impact)))) return '';
+    const stateLbl = { closed: 'Closed', inforce: 'In Force', scheduled: 'Scheduled', undone: 'Undone' };
+    const liveOnes = periods.filter(p => !p.voided);
+    const latest = liveOnes[liveOnes.length - 1] || null;
+    const impactLine = (imp, isUndo) => {
+      if (!imp || typeof imp !== 'object') return '';
+      const billedN = Math.max(0, Number(imp.n || 0) - Number(imp.cost_n || 0));
+      // Nothing re-priced and nothing kept (only figures noted as typed at the rate): no line
+      if (!Number(imp.n || 0) && !Number(imp.kept_n || 0) && !Number(imp.locked_n || 0)) return '';
+      const bits = [];
+      bits.push(`<span class="ind-per-imp-part"><span>${isUndo ? 'Undo Put Back' : 'Re-priced'}</span> <b data-no-i18n="1">${fmtNum(billedN, 0)}</b></span>`);
+      if (Math.abs(Number(imp.delta_usd || 0)) >= 0.005) bits.push(`<span class="ind-per-imp-part"><span>Net Change</span> <b data-no-i18n="1">${esc(fmtImpactSigned(imp.delta_usd))}</b></span>`);
+      if (Number(imp.cost_n || 0) > 0) bits.push(`<span class="ind-per-imp-part"><span>Costs Updated</span> <b data-no-i18n="1">${fmtNum(imp.cost_n, 0)}</b></span>`);
+      if (Number(imp.kept_n || 0) > 0) bits.push(`<span class="ind-per-imp-part is-kept"><span>Typed Price Kept</span> <b data-no-i18n="1">${fmtNum(imp.kept_n, 0)}</b></span>`);
+      if (Number(imp.locked_n || 0) > 0) bits.push(`<span class="ind-per-imp-part is-sent"><span>Left on Sent Statements</span> <b data-no-i18n="1">${fmtNum(imp.locked_n, 0)}${Math.abs(Number(imp.locked_delta_usd || 0)) >= 0.005 ? ' (' + esc(fmtImpactSigned(imp.locked_delta_usd)) + ')' : ''}</b></span>`);
+      const when = imp.at ? fmtDateDMY(String(imp.at).slice(0, 10)) : '';
+      const hasRows = (Array.isArray(imp.rows) && imp.rows.length) || (Array.isArray(imp.kept) && imp.kept.length);
+      return `
+        <div class="ind-per-impact${isUndo ? ' is-undo' : ''}">
+          <div class="ind-per-imp-line">${bits.join('')}${when ? `<span class="ind-per-imp-when" data-no-i18n="1">${esc(when)}${imp.by ? ' · ' + esc(imp.by) : ''}</span>` : ''}</div>
+          ${hasRows ? `<details class="rate-impact-details"><summary><span>See the Records</span></summary>${rateImpactRecordsTableHtml(imp.rows || [], imp.kept || [], Number(imp.n || 0) + Number(imp.kept_n || 0) + Number(imp.locked_n || 0))}</details>` : ''}
+        </div>`;
+    };
+    return `
+      <div class="ind-periods-strip" id="indInspPeriodsStrip">
+        <div class="ind-periods-head">
+          <strong><span>Periods of This Schedule</span></strong>
+          <span class="badge badge-neutral" data-no-i18n="1">${periods.length}</span>
+        </div>
+        <ol class="ind-periods-list">
+          ${periods.map(p => {
+            const r = p.row;
+            // Undo sits on the latest period, in that period's own drawer (Open leads there from the other periods)
+            const undoHere = Boolean(canUndo && latest && p === latest && p.isSelf && !p.voided && (r._continues_id || liveOnes.length > 1));
+            return `
+            <li class="ind-period is-${p.state}${p.isSelf ? ' is-self' : ''}" data-period-id="${esc(String(r.id || ''))}">
+              <div class="ind-period-top">
+                <span class="ind-period-dates mono" data-no-i18n="1">${esc(p.from ? fmtDateDMY(p.from) : '')}</span>
+                <span class="ind-period-to">to</span>
+                <span class="ind-period-dates mono"${p.to ? ' data-no-i18n="1"' : ''}>${p.to ? esc(fmtDateDMY(p.to)) : 'Open'}</span>
+                <span class="ind-period-rate mono" data-no-i18n="1">${esc(_sibRateLabel(fk, r))}</span>
+                <span class="ind-period-state">${stateLbl[p.state]}</span>
+                ${p.isSelf ? '<span class="ind-period-here">This Record</span>' : (!p.voided ? `<button type="button" class="btn btn-xs btn-ghost" data-period-open="${esc(String(r.id || ''))}">Open</button>` : '')}
+                ${undoHere ? `<button type="button" class="btn btn-xs btn-outline ind-period-undo" data-period-undo="${esc(String(r.id || ''))}">Undo This Change</button>` : ''}
+              </div>
+              ${impactLine(r._impact, false)}
+              ${p.voided ? impactLine(r._undo_impact, true) : ''}
+            </li>`;
+          }).join('')}
+        </ol>
+      </div>`;
   }
 
   function lookupActiveHospitalityTariff(company, tierOrUnit, effDate) {
@@ -70773,7 +73237,7 @@
     };
   }
 
-  function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null) {
+  function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null, ctx = null) {
     if (!trfObj || !trfObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(trfObj, oldWindow);
     const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) : { membershipRows: [], tariffRows: [] };
@@ -70793,6 +73257,11 @@
       // What was paid stays as recorded (a re-price never rewrites money already received)
       const paid = round2(Number(m.paid_usd || 0));
       const bal = Math.max(0, round2(nextContract - paid));
+      if (!siblingRepriceStep(ctx, 'hsp_memberships', m, {
+        date: mDate, party: m.member || m.unit || m.tier,
+        cmpCur: m.contract_usd, cmpNext: nextContract,
+        moneyCur: m.contract_usd, moneyNext: nextContract
+      })) return;
       const patch = {
         contract_usd: nextContract,
         paid_usd: paid,
@@ -70817,6 +73286,11 @@
       const tot = round2(rooms * Number(hit.nightly_rate_usd || 560));
       const ht = round2(tot / 1.11);
       const vat = round2(tot - ht);
+      if (!siblingRepriceStep(ctx, 'hsp_revenue', rev, {
+        date: rDate, party: rev.outlet || rev.category,
+        cmpCur: rev.ttc_usd, cmpNext: tot,
+        moneyCur: rev.ttc_usd, moneyNext: tot
+      })) return;
       addIndustryCustomRow('hsp_revenue', Object.assign({}, rev, { ttc_usd: tot, ht_usd: ht, vat_usd: vat }), { skipCloudSync: true, skipEditTrail: true });
       syncedCount += 1;
     });
@@ -70885,7 +73359,7 @@
     };
   }
 
-  function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null) {
+  function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null, ctx = null) {
     if (!leaseObj || !leaseObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(leaseObj, oldWindow);
     const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : { invoices: [] };
@@ -70908,6 +73382,13 @@
       const tot = round2(net + vat);
       const col = round2(Number(inv.collected_usd || 0));
       const openAr = Math.max(0, round2(tot - col));
+      const invNetCur = Number(inv.net_usd != null ? inv.net_usd : (inv.base_usd || 0));
+      const invTotCur = Number(inv.amount_ttc_usd != null ? inv.amount_ttc_usd : (inv.ttc_usd != null ? inv.ttc_usd : invNetCur));
+      if (!siblingRepriceStep(ctx, 're_invoicing', inv, {
+        date: iDate, party: inv.tenant || inv.property,
+        cmpCur: invNetCur, cmpNext: net,
+        moneyCur: invTotCur, moneyNext: tot
+      })) return;
       const patch = {
         net_usd: net,
         base_usd: net,
@@ -70981,7 +73462,7 @@
     };
   }
 
-  function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null) {
+  function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null, ctx = null) {
     if (!tgtObj || !tgtObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(tgtObj, oldWindow);
     const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) : { salesRows: [], importRows: [] };
@@ -71000,6 +73481,16 @@
       const vat = round2(net * 0.11);
       const ttc = round2(net + vat);
       const cost = round2(qty * Number(hit.unit_cost_usd || 0));
+      // The sale follows the price list when its net stands at the list's; its cost then moves with the list too.
+      // A list change that moves only the cost shows the cost (the sale amount stays).
+      const slNetMoves = Math.abs(Number(sl.net_usd || 0) - net) >= SIB_REPRICE_TOL;
+      const slCostOnly = !slNetMoves && Math.abs(Number(sl.cost_usd || 0) - cost) >= SIB_REPRICE_TOL;
+      if (!siblingRepriceStep(ctx, 'trd_sales', sl, {
+        date: sDate, party: sl.customer || sl.category,
+        cmpCur: sl.net_usd, cmpNext: net,
+        moneyCur: slCostOnly ? sl.cost_usd : sl.ttc_usd, moneyNext: slCostOnly ? cost : ttc,
+        kind: slCostOnly ? 'cost' : ''
+      })) return;
       const patch = { net_usd: net, vat_usd: vat, ttc_usd: ttc, cost_usd: cost };
       if (customSalesIds.has(String(sl.id || '').trim().toUpperCase())) {
         addIndustryCustomRow('trd_sales', Object.assign({ id: sl.id }, patch), { skipCloudSync: true, skipEditTrail: true });
@@ -71017,6 +73508,12 @@
       const fob = round2(ord * Number(hit.fob_unit_usd || 0));
       const add = round2(fob * (Number(hit.landed_pct || 0) / 100));
       const tot = round2(fob + add);
+      if (!siblingRepriceStep(ctx, 'trd_purchases', im, {
+        date: iDate, party: im.supplier,
+        cmpCur: im.total_landed_usd, cmpNext: tot,
+        moneyCur: im.total_landed_usd, moneyNext: tot,
+        kind: 'cost'
+      })) return;
       const patch = { fob_usd: fob, landed_add_usd: add, total_landed_usd: tot };
       if (customImpIds.has(String(im.id || '').trim().toUpperCase())) {
         addIndustryCustomRow('trd_purchases', Object.assign({ id: im.id }, patch), { skipCloudSync: true, skipEditTrail: true });
@@ -71072,7 +73569,7 @@
     };
   }
 
-  function retroactiveBackfillHoldingPartner(prtObj, oldWindow = null) {
+  function retroactiveBackfillHoldingPartner(prtObj, oldWindow = null, ctx = null) {
     if (!prtObj || !prtObj.entity) return 0;
     const normEnt = s => norm(String(s || '').split('·')[0]);
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(prtObj, oldWindow);
@@ -71090,6 +73587,11 @@
       const ent = round2(pool * (Number(hit.pct || 0) / 100));
       const paid = round2(Number(dist.paid_usd || 0));
       const opn = Math.max(0, round2(ent - paid));
+      if (!siblingRepriceStep(ctx, 'hld_distributions', dist, {
+        date: dDate, party: dist.partner || dist.entity,
+        cmpCur: dist.pct, cmpNext: hit.pct,
+        moneyCur: dist.entitled_usd, moneyNext: ent
+      })) return;
       const patch = {
         pct: hit.pct,
         entitled_usd: ent,
@@ -71161,7 +73663,7 @@
     };
   }
 
-  function retroactiveBackfillHoldingLoan(loanObj, oldWindow = null) {
+  function retroactiveBackfillHoldingLoan(loanObj, oldWindow = null, ctx = null) {
     if (!loanObj) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(loanObj, oldWindow);
     const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { loanAccruals: [] };
@@ -71179,6 +73681,14 @@
       const yearFrac = ac.days != null ? (Math.max(1, Number(ac.days)) / 365) : 0.25;
       const aprVal = Number(hit.apr_pct != null ? hit.apr_pct : (hit.rate_apr_pct || 0));
       const interest = round2(prin * (aprVal / 100) * yearFrac);
+      const acAprCur = Number(ac.apr_pct != null ? ac.apr_pct : (ac.interest_rate_pct != null ? ac.interest_rate_pct : (ac.rate_apr_pct || 0)));
+      const acIntCur = Number(ac.accrued_usd != null ? ac.accrued_usd : (ac.interest_usd || 0));
+      if (!siblingRepriceStep(ctx, 'hld_loan_accruals', ac, {
+        date: aDate, party: ac.lender || loanObj.lender,
+        cmpCur: acAprCur, cmpNext: aprVal,
+        moneyCur: acIntCur, moneyNext: interest,
+        kind: 'cost'
+      })) return;
       const patch = {
         apr_pct: aprVal,
         interest_rate_pct: aprVal,
@@ -71271,14 +73781,14 @@
   function previewTradingReceiptFifo({ company, customer, method, totalSettledUsd, cashAmountUsd = null, editRow = null } = {}) {
     const settleNow = round2(Number(totalSettledUsd || 0) || 0);
     if (!customer || !(settleNow > 0.005) || (cashAmountUsd != null && !(Number(cashAmountUsd) > 0.005))) {
-      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const rCo = canonCompany(company) || String(company || '').trim();
     const probeCand = { company: rCo, customer, method: method || 'Payment', amount: settleNow };
     const kNow = typeof receiptKind === 'function' ? receiptKind(probeCand) : 'Settlement';
     if ((typeof isArSettlingReceipt === 'function' && !isArSettlingReceipt(probeCand))
       || kNow === 'Excluded' || kNow === 'Customer invoice' || kNow === 'Rent & Barter') {
-      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const trdOps = typeof computeTradingOperations === 'function'
       ? computeTradingOperations({ company: rCo || company, ignoreSearch: true, ignoreRls: true, ignorePeriod: true })
@@ -71311,14 +73821,152 @@
       }
     }
     let openBeforeUsd = 0;
+    let invTtc = 0;
+    let otherSettled = 0;
     if (hitRow) {
-      const invTtc = Number(hitRow.invoiced_ttc || 0) || 0;
-      const otherSettled = round2((Number(hitRow.settled_usd || 0) || 0) - priorSelfSettle);
+      invTtc = Number(hitRow.invoiced_ttc || 0) || 0;
+      otherSettled = round2((Number(hitRow.settled_usd || 0) || 0) - priorSelfSettle);
       openBeforeUsd = Math.max(0, round2(invTtc - otherSettled));
     }
     const allocatedUsd = round2(Math.min(settleNow, openBeforeUsd));
     const unallocatedUsd = Math.max(0, round2(settleNow - allocatedUsd));
-    return { openBeforeUsd, allocatedUsd, unallocatedUsd };
+    const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - allocatedUsd));
+    const splitRows = [];
+    if (allocatedUsd > 0.005 && hitRow && invTtc > 0.005) {
+      const custN = norm(customer);
+      const posSales = ((trdOps && Array.isArray(trdOps.salesRows)) ? trdOps.salesRows : [])
+        .filter(r => r && !r.voided && !r.voided_at && !r.is_gap && !/^cash$/i.test(String(r.payment_term || ''))
+          && (canonCompany(r.company) || String(r.company || '').trim()) === rCo
+          && norm(r.customer || '') === custN
+          && Number(r.ttc_usd || 0) > 0.005)
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')))
+        .map(r => ({
+          id: String(r.id || 'INV'),
+          date: String(r.date || '').slice(0, 10),
+          label: r.book ? String(r.book) : (r.item ? String(r.item) : ''),
+          origUsd: round2(Number(r.ttc_usd || 0))
+        }));
+      const posSum = round2(posSales.reduce((s, x) => s + x.origUsd, 0));
+      const carryDiff = round2(invTtc - posSum);
+      const fifoQueue = [];
+      if (carryDiff > 0.005) {
+        fifoQueue.push({ id: 'PRIOR-BAL', date: '', label: 'Prior Carried Balance', origUsd: carryDiff, isPrior: true });
+      }
+      posSales.forEach(x => fifoQueue.push(x));
+      if (carryDiff < -0.005) {
+        let credRem = round2(Math.abs(carryDiff));
+        for (let i = fifoQueue.length - 1; i >= 0 && credRem > 0.005; i--) {
+          const takeCr = round2(Math.min(credRem, fifoQueue[i].origUsd));
+          fifoQueue[i].origUsd = round2(fifoQueue[i].origUsd - takeCr);
+          credRem = round2(credRem - takeCr);
+        }
+      }
+      let priorRem = Math.max(0, round2(otherSettled));
+      let allocRem = allocatedUsd;
+      for (let i = 0; i < fifoQueue.length && allocRem > 0.005; i++) {
+        const qItem = fifoQueue[i];
+        if (!(qItem.origUsd > 0.005)) continue;
+        const absorbedPrior = priorRem > 0.005 ? round2(Math.min(priorRem, qItem.origUsd)) : 0;
+        priorRem = round2(priorRem - absorbedPrior);
+        const itemOpenBefore = round2(qItem.origUsd - absorbedPrior);
+        if (!(itemOpenBefore > 0.005)) continue;
+        const settledHere = round2(Math.min(allocRem, itemOpenBefore));
+        const itemOpenAfter = Math.max(0, round2(itemOpenBefore - settledHere));
+        allocRem = round2(allocRem - settledHere);
+        splitRows.push({
+          id: qItem.id,
+          date: qItem.date,
+          label: qItem.label,
+          isPrior: Boolean(qItem.isPrior),
+          openBeforeUsd: itemOpenBefore,
+          settledNowUsd: settledHere,
+          openAfterUsd: itemOpenAfter,
+          status: itemOpenAfter <= 0.005 ? 'Cleared' : 'Partial'
+        });
+      }
+    }
+    return { openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
+  }
+
+  function lookupTradingCustomerCreditLimit(customer, company, asOfDate) {
+    const custN = norm(customer || '');
+    if (!custN) return 0;
+    const rCo = canonCompany(company) || String(company || '').trim();
+    if (typeof creditTermsForCustomer === 'function') {
+      const activeCt = creditTermsForCustomer(customer, rCo || company, asOfDate || (typeof todayISO === 'function' ? todayISO() : '2026-11-06'));
+      if (activeCt && Number(activeCt.credit_limit || 0) > 0.005) {
+        return round2(Number(activeCt.credit_limit));
+      }
+    }
+    const custRows = (SEED && SEED.records && Array.isArray(SEED.records.customers)) ? SEED.records.customers : [];
+    let bestAny = 0;
+    for (let i = 0; i < custRows.length; i++) {
+      const c = custRows[i];
+      if (!c || c.voided || norm(c.name || '') !== custN) continue;
+      const lim = Number(c.credit_limit || 0) || 0;
+      if (!(lim > 0.005)) continue;
+      const cCo = c.company ? (canonCompany(c.company) || String(c.company || '').trim()) : '';
+      if (rCo && cCo === rCo) return round2(lim);
+      if (!bestAny) bestAny = round2(lim);
+    }
+    return bestAny;
+  }
+
+  function previewTradingSaleArImpact({ company, customer, netUsd = 0, ttcUsd = null, paymentTerm = 'Credit', editRow = null, date = '' } = {}) {
+    const rCo = canonCompany(company) || String(company || '').trim();
+    const custN = norm(customer || '');
+    const thisTtc = round2(Number(ttcUsd != null ? ttcUsd : round2((Number(netUsd || 0) || 0) * 1.11)) || 0);
+    const isCredit = !/^cash$/i.test(String(paymentTerm || 'Credit').trim());
+    const effectTtc = isCredit ? thisTtc : 0;
+    if (!custN) {
+      return {
+        currentOpenArUsd: 0,
+        currentAdvanceUsd: 0,
+        thisTtc,
+        effectTtc,
+        isCredit,
+        isCreditNote: thisTtc < -0.005,
+        projectedOpenArUsd: Math.max(0, effectTtc),
+        projectedAdvanceUsd: Math.max(0, round2(-effectTtc)),
+        creditLimitUsd: 0,
+        creditLimitExceeded: false
+      };
+    }
+    const trdOps = typeof computeTradingOperations === 'function'
+      ? computeTradingOperations({ company: rCo || company, ignoreSearch: true, ignoreRls: true, ignorePeriod: true })
+      : null;
+    const arRows = (trdOps && Array.isArray(trdOps.receivableRows)) ? trdOps.receivableRows : [];
+    const hitRow = arRows.find(x => x && (canonCompany(x.company) || String(x.company || '').trim()) === rCo && norm(x.customer) === custN) || null;
+    let invoicedBefore = hitRow ? round2(Number(hitRow.invoiced_ttc || 0) || 0) : 0;
+    const settledBefore = hitRow ? round2(Number(hitRow.settled_usd || 0) || 0) : 0;
+    if (editRow && editRow._editMode && editRow.id) {
+      const editIdUp = String(editRow.id).trim().toUpperCase();
+      const origLive = ((trdOps && Array.isArray(trdOps.salesRows)) ? trdOps.salesRows : []).find(s => s && String(s.id || '').trim().toUpperCase() === editIdUp) || editRow;
+      const origIsCredit = origLive && !origLive.is_gap && !origLive.voided && !origLive.voided_at && !/^cash$/i.test(String(origLive.payment_term || ''));
+      const origCo = origLive ? (canonCompany(origLive.company) || String(origLive.company || '').trim()) : '';
+      if (origIsCredit && origCo === rCo && norm(origLive.customer || '') === custN) {
+        invoicedBefore = round2(invoicedBefore - (Number(origLive.ttc_usd || 0) || 0));
+      }
+    }
+    const currentOpenArUsd = Math.max(0, round2(invoicedBefore - settledBefore));
+    const currentAdvanceUsd = Math.max(0, round2(settledBefore - invoicedBefore));
+    const invoicedAfter = round2(invoicedBefore + effectTtc);
+    const projectedOpenArUsd = Math.max(0, round2(invoicedAfter - settledBefore));
+    const projectedAdvanceUsd = Math.max(0, round2(settledBefore - invoicedAfter));
+    const creditLimitUsd = lookupTradingCustomerCreditLimit(customer, rCo || company, date || (editRow && editRow.date));
+    const creditLimitExceeded = Boolean(isCredit && creditLimitUsd > 0.005 && projectedOpenArUsd > creditLimitUsd + 0.005);
+    return {
+      currentOpenArUsd,
+      currentAdvanceUsd,
+      thisTtc,
+      effectTtc,
+      isCredit,
+      isCreditNote: thisTtc < -0.005,
+      projectedOpenArUsd,
+      projectedAdvanceUsd,
+      creditLimitUsd,
+      creditLimitExceeded
+    };
   }
 
   function previewInsuranceBillingFifo({ company, client, policyNo, billedUsd, collectedUsd, editRow = null } = {}) {
@@ -71342,32 +73990,130 @@
       const allocatedUsd = round2(Math.min(ownNeed, col));
       const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
       const remainingOpenArUsd = Math.max(0, round2(ownNeed - allocatedUsd));
-      return { mode: 'billing', openBeforeUsd: ownNeed, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+      const splitRows = allocatedUsd > 0.005 ? [{
+        id: editIdUp || String(policyNo || 'THIS-DN'),
+        date: String((editRow && editRow.date) || ''),
+        label: policyNo ? String(policyNo) : 'Current Debit Note',
+        isUiLabel: !policyNo,
+        openBeforeUsd: ownNeed,
+        settledNowUsd: allocatedUsd,
+        openAfterUsd: remainingOpenArUsd,
+        status: remainingOpenArUsd <= 0.005 ? 'Cleared' : 'Partial'
+      }] : [];
+      return { mode: 'billing', openBeforeUsd: ownNeed, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
     }
-    if (!cliNorm) return { mode: 'receipt', openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: col, remainingOpenArUsd: 0 };
+    if (!cliNorm) return { mode: 'receipt', openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: col, remainingOpenArUsd: 0, splitRows: [] };
     const insOps = typeof computeInsuranceOperations === 'function'
       ? computeInsuranceOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeBillingId: editIdUp })
       : null;
     const allBilling = (insOps && Array.isArray(insOps.billing)) ? insOps.billing : [];
-    const openBeforeUsd = round2(allBilling
+    const rcPol = String(policyNo || '').trim().toUpperCase();
+    const openDns = allBilling
       .filter(dn => dn && !dn._isClientReceipt
         && (!editIdUp || String(dn.id || '').trim().toUpperCase() !== editIdUp)
         && Number(dn.client_billed_4112_usd || 0) > 0.005
         && Number(dn.open_ar_4112_usd || 0) > 0.005
         && norm(dn.company || 'Insurance Company') === coNorm
         && norm(dn.client || dn.insured || '') === cliNorm)
-      .reduce((s, dn) => s + Number(dn.open_ar_4112_usd || 0), 0));
+      .sort((a, b) => {
+        const aPolMatch = rcPol && String(a.policy_no || '').trim().toUpperCase() === rcPol ? 1 : 0;
+        const bPolMatch = rcPol && String(b.policy_no || '').trim().toUpperCase() === rcPol ? 1 : 0;
+        if (aPolMatch !== bPolMatch) return bPolMatch - aPolMatch;
+        return String(a.due_date || a.date || '').localeCompare(String(b.due_date || b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''));
+      });
+    const openBeforeUsd = round2(openDns.reduce((s, dn) => s + Number(dn.open_ar_4112_usd || 0), 0));
     const allocatedUsd = round2(Math.min(col, openBeforeUsd));
     const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
     const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - allocatedUsd));
-    return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+    const splitRows = [];
+    let rem = allocatedUsd;
+    for (let i = 0; i < openDns.length && rem > 0.005; i++) {
+      const dn = openDns[i];
+      const dnOpen = round2(Number(dn.open_ar_4112_usd || 0));
+      if (!(dnOpen > 0.005)) continue;
+      const settledHere = round2(Math.min(rem, dnOpen));
+      const openAfter = Math.max(0, round2(dnOpen - settledHere));
+      rem = round2(rem - settledHere);
+      splitRows.push({
+        id: String(dn.id || 'DN'),
+        date: String(dn.date || '').slice(0, 10),
+        label: dn.policy_no ? String(dn.policy_no) : '',
+        openBeforeUsd: dnOpen,
+        settledNowUsd: settledHere,
+        openAfterUsd: openAfter,
+        status: openAfter <= 0.005 ? 'Cleared' : 'Partial'
+      });
+    }
+    return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
+  }
+
+  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
+    const gross = Math.max(0, round2(Number(grossUsd || 0) || 0));
+    const dep = Math.max(0, round2(Number(depositUsd || 0) || 0));
+    const coNorm = norm(company || '4235 Company S.A.L');
+    const tenNorm = norm(tenant || '');
+    const rType = String(receiptType || 'Period Rent Settlement').trim();
+    const editIdUp = (editRow && editRow._editMode && editRow.id) ? String(editRow.id).trim().toUpperCase() : '';
+    const skipAuto = rType === 'Security Deposit' || rType === 'Advance Rent Tranche';
+    const reOps = (tenNorm && typeof computeRealEstateOperations === 'function')
+      ? computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: editIdUp })
+      : null;
+    const openInvs = ((reOps && Array.isArray(reOps.invoices)) ? reOps.invoices : [])
+      .filter(inv => inv && norm(inv.company || '') === coNorm && norm(inv.tenant || '') === tenNorm && Number(inv.open_ar_usd || 0) > 0.005)
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+    const openBeforeUsd = round2(openInvs.reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
+    let allocatedUsd = 0;
+    if (allocatedInputUsd != null) {
+      allocatedUsd = Math.max(0, round2(Number(allocatedInputUsd || 0) || 0));
+    } else if (!skipAuto && tenNorm) {
+      allocatedUsd = round2(Math.min(Math.max(0, round2(gross - dep)), openBeforeUsd));
+    }
+    const unallocatedUsd = Math.max(0, round2(gross - allocatedUsd - dep));
+    const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - Math.min(allocatedUsd, openBeforeUsd)));
+    const splitRows = [];
+    if (allocatedUsd > 0.005) {
+      let rem = allocatedUsd;
+      for (let i = 0; i < openInvs.length && rem > 0.005; i++) {
+        const inv = openInvs[i];
+        const invOpen = round2(Math.max(0, Number(inv.open_ar_usd || 0)));
+        if (!(invOpen > 0.005)) continue;
+        const settledHere = round2(Math.min(rem, invOpen));
+        const openAfter = Math.max(0, round2(invOpen - settledHere));
+        rem = round2(rem - settledHere);
+        splitRows.push({
+          id: String(inv.id || 'INV'),
+          date: String(inv.date || '').slice(0, 10),
+          label: inv.tax_seq ? String(inv.tax_seq) : (inv.period ? String(inv.period) : ''),
+          openBeforeUsd: invOpen,
+          settledNowUsd: settledHere,
+          openAfterUsd: openAfter,
+          status: openAfter <= 0.005 ? 'Cleared' : 'Partial'
+        });
+      }
+      if (rem > 0.005) {
+        splitRows.push({
+          id: 'ADV-ALLOC',
+          date: '',
+          label: 'Advance / Excess Allocation',
+          isPrior: false,
+          isUiLabel: true,
+          openBeforeUsd: rem,
+          settledNowUsd: rem,
+          openAfterUsd: 0,
+          status: 'Cleared'
+        });
+      }
+    }
+    return { openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
   }
 
   function closeIndustryDomainEntryModal() {
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
     FORM_UI.domainNearCopyPeekItems = [];
+    FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
       window.MFG_AI_EDGE.stopVoiceCapture();
     }
@@ -71376,7 +74122,9 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -71472,6 +74220,7 @@
     const idLockAttr = isEditMode ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
 
     const coSelectHtml = `<select id="ide_company" data-plain-options="1" style="${inpStyle}">${entityOptions.map(c => `<option value="${esc(c)}" ${c === defCo ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    const domainFifoSplitBtnHtml = () => `<button type="button" class="ide-fifo-split-btn" id="ideFifoSplitBtn" aria-haspopup="dialog" aria-expanded="false" hidden>${typeof ic === 'function' ? ic('receipt') : ''}<span>View Invoice Split</span></button>`;
 
     let fieldsHtml = '';
     let datalistsHtml = '';
@@ -71538,7 +74287,7 @@
         ${fldWrap('Client Billed ($)', `<input type="number" id="ide_billed" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defBilled)}" placeholder="0.00">`)}
         ${fldWrap('Collected Now ($) *', `<input type="number" id="ide_collected" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defCollected)}" placeholder="0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_ins_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_ins_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_ins_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Open Client AR ($)', `<input type="text" id="ide_open_ar" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Receipt Ref', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.receipt_ref || '')}" placeholder="Cheque / transfer ref...">`)}
@@ -71585,6 +74334,7 @@
       const remCarriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
       fieldsHtml = `
         ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Remittance Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
         ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : (prefill.broker_comm_7063_usd != null ? prefill.broker_comm_7063_usd : '2250'))}">`)}
@@ -71593,7 +74343,7 @@
         ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="${esc(prefill.next_due || prefill.due_date || '2026-11-30')}">`)}
       `;
     } else if (spec.key === 're_leases') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
       // Live leases are billed "Yearly": the form's Annual (else the select fell back to Quarterly on every edit)
       const defFreq = /^(yearly|annually)$/i.test(String(prefill.frequency || '').trim()) ? 'Annual' : (prefill.frequency || 'Quarterly');
@@ -71619,10 +74369,10 @@
         ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="${esc(prefill.escalation || '3-Yr Commercial (+8% Yr 4)')}">`)}
       `;
     } else if (spec.key === 're_invoicing') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
       const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
-      const defTenant = prefill.tenant || tenants[0] || 'Mazen (Unesco Pharmacy)';
+      const defTenant = prefill.tenant || tenants[0] || 'Cedar Pharmacy';
       const defDate = prefill.date || today;
       const initLeaseHit = lookupActiveRealEstateLeaseRate(defCo, defProp, defTenant, defDate);
       const defNet = prefill.net_usd != null ? prefill.net_usd : initLeaseHit.net_period_usd;
@@ -71649,10 +74399,10 @@
       const tenants = freqRankCandidates('customer', []
         .concat((reOpsForDl && reOpsForDl.receipts || []).map(r => r && r.tenant))
         .concat((reOpsForDl && reOpsForDl.leases || []).map(r => r && r.tenant))
-        .concat(['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Hoda / Maha Harkous', 'DR Sara Abed Latif', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']));
+        .concat(['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Maya Abi Saab', 'Dr. Nadia Frem', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']));
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '776 Ras Beirut (Hamra Pavillon)', '915 & 2557 Mazraa Commercial Complex']);
       const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
-      const defTenant = prefill.tenant || tenants[0] || 'Mazen (Unesco Pharmacy)';
+      const defTenant = prefill.tenant || tenants[0] || 'Cedar Pharmacy';
       const defType = prefill.type || 'Period Rent Settlement';
       const defMethod = prefill.method || 'Bank Transfer USD';
       const rTypes = ['Period Rent Settlement', 'Advance Rent Tranche', 'Security Deposit', 'Partial Rent Tranche', 'Annual Advance Settlement'];
@@ -71671,7 +74421,7 @@
         ${fldWrap('Payment Method', `<select id="ide_method" data-plain-options="1" style="${inpStyle}">${rMethods.map(m => `<option value="${esc(m)}" ${m === defMethod ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`)}
+        ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Security Deposit ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_gl4196_usd != null ? prefill.deposit_gl4196_usd : '0')}">`)}
         ${fldWrap('Unallocated Advance ($)', `<input type="text" id="ide_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Reference / Note', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.audit_flag || prefill.notes || '')}" placeholder="Transfer / cheque / invoice ref...">`)}
@@ -71741,12 +74491,33 @@
         ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || (/Korri/i.test(defCo) ? 'Weichai OEMInjector & Clutch Kit' : 'Shacman F3000 6x4 Dump Truck 340HP'))}">`)}
         ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || (/Korri/i.test(defCo) ? 'WH-AL-GHAZIEH' : 'LZGJLDR41PX019301'))}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
         ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defQty)}">`)}
-        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span><span class="ide-net-crnote-hint">Use negative (-) for credit notes</span>`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defCost)}">`)}
+        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="0.01" style="${inpStyle}" value="${esc(defCost)}">`)}
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
+        <div class="trd-ar-preview-card" id="ideTrdArPreviewCard">
+          <div class="trd-ar-preview-hdr">
+            <span class="trd-ar-preview-title">Customer Open AR Impact</span>
+            <span class="trd-ar-preview-cust" id="ideTrdArPreviewCust" data-no-i18n="1">${esc(prefill.customer || custs[0] || '')}</span>
+          </div>
+          <div class="trd-ar-preview-grid">
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArCurLbl">Current Open AR</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArCurVal" data-no-i18n="1">$0.00</span>
+            </div>
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArDocLbl">This Invoice</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArDocVal" data-no-i18n="1">$0.00</span>
+            </div>
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArProjLbl">Projected Open AR</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArProjVal" data-no-i18n="1">$0.00</span>
+            </div>
+          </div>
+          <div class="trd-ar-limit-warn" id="ideTrdArLimitWarn" role="status" hidden></div>
+        </div>
       `;
     } else if (spec.key === 'trd_receipts') {
       const trdOpsForDl = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
@@ -71768,7 +74539,7 @@
         ${fldWrap('Settlement Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
         ${fldWrap('Total Settled ($)', `<input type="text" id="ide_total_settled" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_trd_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Reference', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.reference || '')}" placeholder="Cheque / transfer / receipt no.">`)}
         ${fldWrap('Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || '')}" placeholder="Optional settlement note...">`)}
@@ -71960,8 +74731,8 @@
         ${fldWrap('Quarterly Interest & Balance', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
     } else if (spec.key === 'hld_extended') {
-      const extdParties = freqRankCandidates('counterparty', ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms'].concat(((SEED.records && SEED.records.external_movements) || []).filter(r => /^extended$/i.test(String(r.kind || ''))).map(r => r.counterparty || r.name)));
-      const defParty = prefill.counterparty || prefill.party || extdParties[0] || 'Haj Mohamad';
+      const extdParties = freqRankCandidates('counterparty', window.MFG_NAMEBOOK.list('extended_parties').concat(['Blanca', 'Palms']).concat(((SEED.records && SEED.records.external_movements) || []).filter(r => /^extended$/i.test(String(r.kind || ''))).map(r => r.counterparty || r.name)));
+      const defParty = prefill.counterparty || prefill.party || extdParties[0] || '';
       const rawPrefDir = String(prefill.flow || prefill.direction || prefill.method || '').trim();
       const isCfgPref = Boolean(isEditMode && /^config$/i.test(rawPrefDir));
       const defDir = isCfgPref ? 'Config' : (rawPrefDir ? (/out|withdraw|paid|took/i.test(rawPrefDir) ? 'Outflow' : 'Inflow') : 'Outflow');
@@ -72124,6 +74895,34 @@
       msgEl.style.color = isErr ? 'var(--crit,#DC2626)' : '#0f766e';
       msgEl.textContent = txt;
     };
+    const syncFifoSplitBtn = (fifoObj, partyLabel, formKeyNow) => {
+      const btn = $('ideFifoSplitBtn');
+      const rows = (fifoObj && Array.isArray(fifoObj.splitRows)) ? fifoObj.splitRows : [];
+      const hasSplit = Boolean(fifoObj && Number(fifoObj.allocatedUsd || 0) > 0.005 && rows.length > 0);
+      if (!hasSplit) {
+        FORM_UI.domainFifoSplitPreview = null;
+        if (btn) { btn.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+        if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
+        return;
+      }
+      const nextSig = `${formKeyNow}|${partyLabel}|${fifoObj.allocatedUsd}|${rows.map(r => `${r.id}:${r.settledNowUsd}`).join(',')}`;
+      const prevSig = FORM_UI.domainFifoSplitPreview ? FORM_UI.domainFifoSplitPreview.sig : '';
+      FORM_UI.domainFifoSplitPreview = {
+        sig: nextSig,
+        formKey: formKeyNow,
+        partyLabel: String(partyLabel || '').trim(),
+        fifo: fifoObj
+      };
+      if (prevSig && prevSig !== nextSig && typeof closeFifoSplitPeekPopover === 'function') {
+        closeFifoSplitPeekPopover(false);
+      }
+      if (btn) {
+        btn.hidden = false;
+        if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(btn);
+        }
+      }
+    };
 
     const recalcLive = () => {
       showMsg('');
@@ -72145,9 +74944,10 @@
         const col = Math.max(0, numVal('ide_collected'));
         const billedRaw = numVal('ide_billed');
         const billed = billedRaw > 0.005 ? billedRaw : 0;
+        const insClient = strVal('ide_client');
         const fifoIns = previewInsuranceBillingFifo({
           company: strVal('ide_company') || defCo,
-          client: strVal('ide_client'),
+          client: insClient,
           policyNo: strVal('ide_policy_no'),
           billedUsd: billed,
           collectedUsd: col,
@@ -72156,6 +74956,7 @@
         if ($('ide_ins_allocated')) $('ide_ins_allocated').value = fmtUSD(fifoIns.allocatedUsd, 2);
         if ($('ide_ins_unallocated')) $('ide_ins_unallocated').value = fmtUSD(fifoIns.unallocatedUsd, 2);
         if ($('ide_open_ar')) $('ide_open_ar').value = fmtUSD(fifoIns.remainingOpenArUsd, 2);
+        syncFifoSplitBtn(fifoIns, insClient, 'ins_billing');
       } else if (spec.key === 'ins_remittances') {
         const pay = round2(numVal('ide_gwp') - numVal('ide_comm') - numVal('ide_settled'));
         if ($('ide_payable')) $('ide_payable').value = fmtUSD(Math.max(0, pay), 2);
@@ -72190,16 +74991,19 @@
         const coR = strVal('ide_company') || defCo;
         const tenR = strVal('ide_tenant');
         const rType = strVal('ide_type') || 'Period Rent Settlement';
-        let alloc = 0;
-        if (allocRaw !== '') {
-          alloc = Math.max(0, round2(numVal('ide_allocated')));
-        } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && tenR && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true });
-          const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(coR) && norm(inv.tenant || '') === norm(tenR)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          const priorSelf = (isEditMode && prefill && norm(prefill.company || '') === norm(coR) && norm(prefill.tenant || '') === norm(tenR)) ? Math.max(0, Number(prefill.allocated_inv_usd || 0)) : 0;
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), round2(openAr + priorSelf)));
-        }
+        const allocIn = allocRaw !== '' ? Math.max(0, round2(numVal('ide_allocated'))) : null;
+        const fifoRe = previewRealEstateReceiptFifo({
+          company: coR,
+          tenant: tenR,
+          receiptType: rType,
+          grossUsd: gross,
+          allocatedInputUsd: allocIn,
+          depositUsd: dep,
+          editRow: isEditMode ? prefill : null
+        });
+        const alloc = fifoRe.allocatedUsd;
         if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - alloc - dep)), 2);
+        syncFifoSplitBtn(fifoRe, tenR, 're_receipts');
         if (gross > 0 && dep > gross + 0.005) {
           showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true);
           return false;
@@ -72216,9 +75020,10 @@
         const totAmt = round2(usd + (lbp / fx));
         const settledTot = round2(totAmt + disc);
         if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(settledTot, 2);
+        const trdCust = strVal('ide_customer');
         const fifoTrd = previewTradingReceiptFifo({
           company: strVal('ide_company') || defCo,
-          customer: strVal('ide_customer'),
+          customer: trdCust,
           method: strVal('ide_method') || 'Payment',
           totalSettledUsd: settledTot,
           cashAmountUsd: totAmt,
@@ -72226,6 +75031,7 @@
         });
         if ($('ide_trd_allocated')) $('ide_trd_allocated').value = fmtUSD(fifoTrd.allocatedUsd, 2);
         if ($('ide_trd_unallocated')) $('ide_trd_unallocated').value = fmtUSD(fifoTrd.unallocatedUsd, 2);
+        syncFifoSplitBtn(fifoTrd, trdCust, 'trd_receipts');
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
@@ -72262,6 +75068,62 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(tot, 2);
         if ($('ide_margin')) $('ide_margin').value = `${fmtUSD(mUsd, 2)} (${mPct.toFixed(1)}%)`;
+        const trdCustName = strVal('ide_customer');
+        const arPv = previewTradingSaleArImpact({
+          company: strVal('ide_company') || defCo,
+          customer: trdCustName,
+          netUsd: net,
+          ttcUsd: tot,
+          paymentTerm: (isEditMode && prefill && prefill.payment_term) ? prefill.payment_term : 'Credit',
+          editRow: isEditMode ? prefill : null,
+          date: strVal('ide_date') || today
+        });
+        const setPvLbl = (el, enKey) => {
+          if (!el || el.dataset.enKey === enKey) return;
+          el.dataset.enKey = enKey;
+          if (el.firstChild && el.firstChild.nodeType === 3) {
+            try { delete el.firstChild.__enText; } catch (_) {}
+          }
+          el.textContent = enKey;
+        };
+        if ($('ideTrdArPreviewCust')) $('ideTrdArPreviewCust').textContent = trdCustName || '-';
+        setPvLbl($('ideTrdArCurLbl'), arPv.currentAdvanceUsd > 0.005 ? 'Current Unapplied Advance' : 'Current Open AR');
+        if ($('ideTrdArCurVal')) {
+          $('ideTrdArCurVal').textContent = fmtUSD(arPv.currentAdvanceUsd > 0.005 ? arPv.currentAdvanceUsd : arPv.currentOpenArUsd, 2);
+          $('ideTrdArCurVal').classList.toggle('is-credit', arPv.currentAdvanceUsd > 0.005);
+        }
+        setPvLbl($('ideTrdArDocLbl'), arPv.isCreditNote ? 'This Credit Note' : 'This Invoice');
+        if ($('ideTrdArDocVal')) {
+          $('ideTrdArDocVal').textContent = fmtUSD(arPv.thisTtc, 2);
+          $('ideTrdArDocVal').classList.toggle('is-credit', arPv.isCreditNote);
+        }
+        setPvLbl($('ideTrdArProjLbl'), arPv.projectedAdvanceUsd > 0.005 ? 'Projected Advance' : 'Projected Open AR');
+        if ($('ideTrdArProjVal')) {
+          $('ideTrdArProjVal').textContent = fmtUSD(arPv.projectedAdvanceUsd > 0.005 ? arPv.projectedAdvanceUsd : arPv.projectedOpenArUsd, 2);
+          $('ideTrdArProjVal').classList.toggle('is-credit', arPv.projectedAdvanceUsd > 0.005);
+          $('ideTrdArProjVal').classList.toggle('is-warn', Boolean(arPv.creditLimitExceeded));
+        }
+        const warnEl = $('ideTrdArLimitWarn');
+        if (warnEl) {
+          if (arPv.creditLimitExceeded) {
+            const warnHtml = `<span>Credit limit warning</span><span data-no-i18n="1">: </span><span>Projected Open AR</span><span data-no-i18n="1"> ${esc(fmtUSD(arPv.projectedOpenArUsd, 2))} &gt; ${esc(fmtUSD(arPv.creditLimitUsd, 2))}</span>`;
+            warnEl.hidden = false;
+            if (warnEl.dataset.warnHtml !== warnHtml) {
+              warnEl.innerHTML = warnHtml;
+              warnEl.dataset.warnHtml = warnHtml;
+            }
+          } else {
+            warnEl.hidden = true;
+            if (warnEl.dataset.warnHtml) {
+              warnEl.innerHTML = '';
+              warnEl.dataset.warnHtml = '';
+            }
+          }
+        }
+        const cardEl = $('ideTrdArPreviewCard');
+        if (cardEl && typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(cardEl);
+        }
         if (tot > 0 && mPct < 16) {
           showMsg(`Low-Margin Watch: Invoice margin ${mPct.toFixed(1)}% is below the 16.0% floor.`, false);
         }
@@ -72491,11 +75353,13 @@
       });
       syncTrdChronoBounds();
     } else if (spec.key === 'trd_sales') {
-      const syncTrdSaleTariff = () => {
+      const syncTrdSaleTariff = ev => {
         const hit = lookupActiveTradingTariff(strVal('ide_company'), strVal('ide_category'), strVal('ide_date') || today);
         const qty = Math.max(1, Math.round(numVal('ide_qty') || 1));
-        if ($('ide_net')) $('ide_net').value = String(round2(qty * hit.unit_net_usd));
-        if ($('ide_cost')) $('ide_cost').value = String(round2(qty * hit.unit_cost_usd));
+        const curNet = numVal('ide_net');
+        const keepCrNote = curNet < -0.005 || numVal('ide_cost') < -0.005;
+        if ($('ide_net') && !keepCrNote) $('ide_net').value = String(round2(qty * hit.unit_net_usd));
+        if ($('ide_cost') && !keepCrNote) $('ide_cost').value = String(round2(qty * hit.unit_cost_usd));
         const hintEl = $('ideRateSourceHint');
         if (hintEl) {
           hintEl.textContent = hit.isFallback
@@ -72668,7 +75532,7 @@
       });
       syncHldLoanChrono();
     }
-    const isNearCopyDomainKey = ['ins_policies', 'ins_billing', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hld_extended', 'hld_interactions'].includes(spec.key);
+    const isNearCopyDomainKey = ['ins_policies', 'ins_billing', 'ins_remittances', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hld_extended', 'hld_interactions'].includes(spec.key);
     const buildDomCand = () => {
       if (!isNearCopyDomainKey) return null;
       const ridNow = strVal('ide_id') || strVal('ide_code') || '';
@@ -72680,6 +75544,7 @@
         const bRaw = numVal('ide_billed');
         return { id: ridNow, company: coNow, date: dtNow, client: strVal('ide_client'), policy_no: strVal('ide_policy_no'), client_billed_4112_usd: bRaw > 0.005 ? bRaw : 0, collected_usd: colN, receipt_ref: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
+      if (spec.key === 'ins_remittances') return { id: ridNow, company: 'Insurance Company', date: dtNow, next_due: strVal('ide_due'), carrier: strVal('ide_carrier'), settled_to_carrier_usd: Math.max(0, round2(numVal('ide_settled'))) };
       if (spec.key === 're_invoicing') {
         const netN = numVal('ide_net');
         const vatN = /4235/i.test(coNow) ? round2(netN * 0.11) : 0;
@@ -72708,7 +75573,7 @@
         const lE = isCfgE ? Math.round(numVal('ide_lbp')) : Math.max(0, Math.round(numVal('ide_lbp')));
         const fxE = getLbpFxRate(dtNow) || 89500;
         const totE = round2(uE + (lE / fxE));
-        return { id: ridNow, company: 'Bdeir Holding', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: ridNow, notes: strVal('ide_notes') };
+        return { id: ridNow, company: 'Bdeir Holding', kind: 'Extended', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: ridNow, notes: strVal('ide_notes') };
       }
       if (spec.key === 'hld_interactions') return { id: ridNow, date: dtNow, fromCo: strVal('ide_from'), toCo: strVal('ide_to'), usd: numVal('ide_usd'), method: strVal('ide_method'), notes: strVal('ide_notes') };
       return null;
@@ -72766,6 +75631,10 @@
 
     formEl.onsubmit = async ev => {
       ev.preventDefault();
+      // True only for the run the form starts itself right after the person confirmed a rate change's impact: that
+      // run already passed the sign-off of the first run a moment ago, so it is not asked for again
+      const impactResubmit = formEl._rateImpactResubmit === true;
+      formEl._rateImpactResubmit = false;
       cancelDomainNearCopyLiveCheck();
       if (!isEditMode && !(spec.key === 'trd_receipts' ? canEnterForm('receipt') : canEnterAny())) {
         toast('Your seat cannot create new domain records', 'err');
@@ -72803,6 +75672,27 @@
         }
         if (split) { recId = rec.id; keptSplit = split.kept; }
         return { split };
+      };
+      // What this save re-priced and what it left as typed (schedule forms): shown before anything is sent
+      let domImpact = null;
+      // Shared by the six schedule forms. The baseline is read before the schedule changes; then the schedule is
+      // saved, the one before it closed, and only the records that stood at the baseline are re-priced.
+      const saveScheduleAndReprice = (formKey, rec, cState, oldWindow, afterSave, syncedLabel) => {
+        // Figures the schedule saved over already knows as typed (its own, or the kept one's when a new period starts)
+        const priorImp = siblingPriorImpact(formKey, keptSplit ? keptSplit.keptId : recId);
+        const priorTyped = _sibTypedKeysOf(priorImp);
+        const baseline = planSiblingReprice(formKey, rec, oldWindow);
+        addIndustryCustomRow(formKey, rec, { skipCloudSync: true });
+        syncSiblingCustomPredecessorsOnSave(formKey, recId, cState.closeIds, cState.closeDate);
+        // Rows a save adds of its own (a new lease's first invoice) are not in the baseline: they are never re-priced
+        if (typeof afterSave === 'function') afterSave();
+        domImpact = applySiblingReprice(formKey, rec, oldWindow, baseline, priorTyped);
+        const n = domImpact.rows.length;
+        // (a lease carries no such note: it never did)
+        if (n > 0 && 'backfill_status' in rec) rec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${n} ${typeof syncedLabel === 'function' ? syncedLabel(n) + ' ' : ''}Synced`;
+        stampSiblingImpact(rec, domImpact, keptSplit ? { kept_to: keptSplit.to, new_from: keptSplit.newFrom } : null, keptSplit ? [] : priorTyped, keptSplit ? null : priorImp);
+        if (n > 0 || rec._impact) addIndustryCustomRow(formKey, rec, { skipCloudSync: true });
+        return n;
       };
       const co = strVal('ide_company') || defCo;
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
@@ -72883,7 +75773,7 @@
             };
           }
         }
-        if (domStepSpec) {
+        if (domStepSpec && !impactResubmit) {
           const hasSyncLease = typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domStepSpec);
           if (!hasSyncLease) {
             const okStep = await window.MFG_STEP_UP.requireStepUpAuth(domStepSpec);
@@ -72986,13 +75876,7 @@
         const ks = applyKeptSplit('ins_agreements', agrRec, existingSelf, peers, 'Chronological Rate Guard');
         if (ks.error) return;
         if (ks.split) { cState = ks.split.cState; agrRec.prior_rate_pct = existingSelf.new_bus_pct; }
-        addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('ins_agreements', recId, cState.closeIds, cState.closeDate);
-        const syncedPols = retroactiveBackfillInsuranceAgreement(agrRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedPols > 0) {
-          agrRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedPols} ${syncedPols === 1 ? 'Policy' : 'Policies'} Synced`;
-          addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('ins_agreements', agrRec, cState, ks.split ? ks.split.oldWindow : existingSelf, null, n => (n === 1 ? 'Policy' : 'Policies'));
       } else if (spec.key === 'ins_billing') {
         const client = strVal('ide_client');
         if (!client) { showMsg('Policyholder / Client is required.', true); return; }
@@ -73032,6 +75916,7 @@
         const pay = Math.max(0, round2(gwp - comm - settled));
         addIndustryCustomRow('ins_remittances', {
           id: recId,
+          date: strVal('ide_date') || today,
           carrier: strVal('ide_carrier') || 'MedGulf',
           company: 'Insurance Company',
           gl_payable: `${strVal('ide_carrier') || 'Carrier'} Account`,
@@ -73042,7 +75927,8 @@
           client_cash_held_usd: pay,
           settlement_mode: 'Net of Commission (Bordereau)',
           next_due: strVal('ide_due') || '2026-11-30',
-          status: pay === 0 ? 'Settled' : 'Covered by Cash'
+          status: pay === 0 ? 'Settled' : 'Covered by Cash',
+          ...domNearCopyLink
         });
       } else if (spec.key === 're_leases') {
         const tenant = strVal('ide_tenant');
@@ -73100,9 +75986,8 @@
             leaseRec.status = dx <= 90 ? 'Expiring < 90d' : 'Active';
           }
         }
-        addIndustryCustomRow('re_leases', leaseRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('re_leases', recId, cState.closeIds, cState.closeDate);
-        if (!isEditMode) {
+        saveScheduleAndReprice('re_leases', leaseRec, cState, ks.split ? ks.split.oldWindow : existingSelf, () => {
+          if (isEditMode) return;
           addIndustryCustomRow('re_invoicing', {
             id: `INV-${recId}`,
             date: sd,
@@ -73121,8 +76006,7 @@
             status: 'Open',
             audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
           }, { skipCloudSync: true });
-        }
-        retroactiveBackfillRealEstateLease(leaseRec, ks.split ? ks.split.oldWindow : existingSelf);
+        });
       } else if (spec.key === 're_invoicing') {
         const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
@@ -73162,10 +76046,9 @@
           alloc = Math.max(0, round2(numVal('ide_allocated')));
           if (round2(alloc + dep) > gross + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
         } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true });
+          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' });
           const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          const priorSelf = (isEditMode && prefill && norm(prefill.company || '') === norm(co) && norm(prefill.tenant || '') === norm(tenant)) ? Math.max(0, Number(prefill.allocated_inv_usd || 0)) : 0;
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), round2(openAr + priorSelf)));
+          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), openAr));
         }
         const unalloc = Math.max(0, round2(gross - alloc - dep));
         const nts = strVal('ide_notes') || '';
@@ -73258,24 +76141,23 @@
         const ks = applyKeptSplit('trd_targets', tgtRec, existingSelf, peers, 'Chronological Price List Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('trd_targets', recId, cState.closeIds, cState.closeDate);
-        const syncedTrd = retroactiveBackfillTradingTariff(tgtRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedTrd > 0) {
-          tgtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedTrd} Synced`;
-          addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('trd_targets', tgtRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'trd_sales') {
         const net = numVal('ide_net');
+        if (Math.abs(net) < 0.01) { showMsg('Net Sale Amount ($) cannot be zero (use negative for credit notes).', true); return; }
         const vat = round2(net * 0.11);
         const tot = round2(net + vat);
         const cost = numVal('ide_cost');
+        if (net > 0 && cost < 0) { showMsg('Capitalized Landed Cost ($) cannot be negative on a positive sale.', true); return; }
+        if (net < 0 && cost > 0) { showMsg('Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).', true); return; }
         const vin = strVal('ide_chassis') || 'WH-SHOWROOM';
         const qty = (vin.length >= 6 && !/^(parts|wh-)/i.test(vin)) ? 1 : Math.max(1, Math.round(numVal('ide_qty')));
+        const preservedSeq = (isEditMode && prefill && prefill.seq != null && prefill.seq !== '') ? prefill.seq : 99;
+        const preservedTerm = (isEditMode && prefill && prefill.payment_term) ? prefill.payment_term : 'Credit';
         addIndustryCustomRow('trd_sales', {
           id: recId,
           book: strVal('ide_book') || 'BK-SH-2026-01',
-          seq: 99,
+          seq: preservedSeq,
           date: strVal('ide_date') || today,
           company: co,
           customer: strVal('ide_customer') || 'Commercial Customer',
@@ -73287,8 +76169,9 @@
           vat_usd: vat,
           ttc_usd: tot,
           cost_usd: cost,
+          payment_term: preservedTerm,
           vat_flag: '11% Official VAT',
-          book_status: 'Entered via Smart Register',
+          book_status: net < 0 ? 'Credit Note · Entered via Smart Register' : 'Entered via Smart Register',
           ...domNearCopyLink
         });
       } else if (spec.key === 'trd_receipts') {
@@ -73453,13 +76336,7 @@
         const ks = applyKeptSplit('hsp_tariffs', trfRec, existingSelf, peers, 'Chronological Tariff Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hsp_tariffs', recId, cState.closeIds, cState.closeDate);
-        const syncedHsp = retroactiveBackfillHospitalityTariff(trfRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedHsp > 0) {
-          trfRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedHsp} Synced`;
-          addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hsp_tariffs', trfRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hsp_revenue') {
         const catStr = strVal('ide_category') || 'Chalet Rental';
         const tot = numVal('ide_tot');
@@ -73609,13 +76486,7 @@
         const ks = applyKeptSplit('hld_partners', prtRec, existingSelf, peers, 'Chronological Schedule Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hld_partners', recId, cState.closeIds, cState.closeDate);
-        const syncedDist = retroactiveBackfillHoldingPartner(prtRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedDist > 0) {
-          prtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedDist} Synced`;
-          addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hld_partners', prtRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hld_loans') {
         const lender = strVal('ide_lender') || 'Central Shareholder Treasury Line';
         const sd = strVal('ide_start_date');
@@ -73657,13 +76528,7 @@
         const ks = applyKeptSplit('hld_loans', lnRec, existingSelf, peers, 'Chronological Facility Guard');
         if (ks.error) return;
         if (ks.split) cState = ks.split.cState;
-        addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
-        syncSiblingCustomPredecessorsOnSave('hld_loans', recId, cState.closeIds, cState.closeDate);
-        const syncedAcc = retroactiveBackfillHoldingLoan(lnRec, ks.split ? ks.split.oldWindow : existingSelf);
-        if (syncedAcc > 0) {
-          lnRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedAcc} Synced`;
-          addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
-        }
+        saveScheduleAndReprice('hld_loans', lnRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'hld_extended') {
         const party = strVal('ide_party');
         if (!party) { showMsg('Stakeholder / Counterparty is required.', true); return; }
@@ -73774,6 +76639,32 @@
         if (_activeDomainModalPostPromises === domainPostPromises) _activeDomainModalPostPromises = prevDomCollector;
       }
 
+      // A schedule save that starts a new period, re-prices records or leaves typed prices is shown to the person
+      // first (owner 2026-11-20): the stores go back as they were, the person reads what the save does and confirms,
+      // and the save then runs again from the form. Nothing was sent or synced in between. A second pass that finds
+      // something else (another device's change arrived) asks again.
+      if (isSiblingChronoFormKey(spec.key) && domImpact) {
+        const impSum = summarizeSiblingRepriceImpact(domImpact);
+        const impSig = `${spec.key}|${recId}|${keptSplit ? keptSplit.newFrom : ''}|${impSum.sig}`;
+        // Asked only when the save changes something: a new period, or at least one record re-priced. Typed prices
+        // that merely stay are noted on the schedule (its periods strip), without stopping the person.
+        if ((keptSplit || impSum.n > 0 || impSum.lockedN > 0) && formEl._rateImpactOkSig !== impSig) {
+          STATE.industryCustomRows = prevModalCustomSnap;
+          saveIndustryCustomRowsStore({ skipServerPost: true });
+          STATE.industryRowEdits = prevModalEditsSnap;
+          saveIndustryRowEditStore(prevModalEditsSnap, { skipServerPost: true });
+          invalidateIndustryDomainCaches();
+          const okImpact = await promptRateChangeImpact({ mode: 'save', impact: domImpact, kept: keptSplit, isNew: !isEditMode });
+          if (!okImpact) return;
+          formEl._rateImpactOkSig = impSig;
+          formEl._rateImpactResubmit = true;
+          if (typeof formEl.requestSubmit === 'function') formEl.requestSubmit();
+          else formEl.dispatchEvent(new Event('submit', { cancelable: true }));
+          return;
+        }
+        formEl._rateImpactOkSig = '';
+      }
+
       if (spec.key !== 'hld_extended' && spec.key !== 'trd_receipts') {
         const modalForceRowIds = [`${spec.key}::${recId}`];
         if (spec.key === 're_leases' && !isEditMode) modalForceRowIds.push(`re_invoicing::INV-${recId}`);
@@ -73820,7 +76711,12 @@
           saveIndustryRowEditStore(prevModalEditsSnap, { skipServerPost: true });
           invalidateIndustryDomainCaches();
           if (typeof renderApp === 'function') renderApp();
-          toast(domReject.error || 'Permission denied: cannot save industry domain row', 'err');
+          // The id is held by a schedule saved and undone on another device: with the device copy back as it was,
+          // the server's schedules are read in, so pressing the button again saves under a free id
+          const domRejectTxt = isVoidedIdConflictRes(domReject)
+            ? await refreshAfterVoidedIdConflict(domReject)
+            : (domReject.error || 'Permission denied: cannot save industry domain row');
+          toast(domRejectTxt, 'err');
           return;
         }
       }
@@ -85851,7 +88747,7 @@
     if (titleEl) titleEl.textContent = `${primaryId} · ${secondaryLbl}`;
 
     const inspCatPool = {
-      party: freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Khoury Family Trust']),
+      party: freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Khoury Family Trust']),
       carrier: freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']),
       supplier: freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'MEP Tech Engineering SAL']),
       site: freqRankCandidates('site', ['Main Showroom', 'Bchamoun Yard', 'Bonded Yard', 'Al Ghazieh', 'Workshop', '4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)'])
@@ -86065,6 +88961,7 @@
               ${inspDatalistsHtml}
               ${editableFieldsHtml}
             </div>
+            ${isChronoDomainRow ? siblingPeriodsStripHtml(resolvedDomainChrono.formKey, resolvedDomainChrono.prefill, primaryId, canVoid() && canManageSiblingChronoSchedule(resolvedDomainChrono.formKey)) : ''}
             ${domainGeoSpec ? (() => {
               const lockGeo = !allowDomainGeoEdit;
               const gpsLockBadge = lockGeo ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : '';
@@ -86340,7 +89237,7 @@
       const msgEl = $('indInspValidationMsg');
       const badgeEl = $('indInspRuleStatusBadge');
 
-      const wireDomainRules = () => {
+      const wireDomainRules = ev => {
         if (textOnlyLock) return;
         if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
         if (badgeEl) { badgeEl.className = 'badge badge-good'; badgeEl.textContent = 'Live Domain Guardrails Active'; }
@@ -86408,6 +89305,38 @@
               msgEl.textContent = 'Trading Serial VIN Rule: Serialized Heavy Truck & Vehicle VIN rows enforce Qty = 1.';
             }
           }
+          const srcEl = (ev && ev.target) || document.activeElement;
+          const netInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /^net\b/.test(k) && !/\bar\b/.test(k); });
+          const vatInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /\bvat\b/.test(k) && !/flag|status/.test(k); });
+          const totInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /^(?:sale(?:s)?|total|ttc|invoiced)\b/.test(k) && !/landed/.test(k); });
+          const costInp = findInp(/cost|cogs/);
+          const marginInp = inputs.find(el => /gross margin|margin\b/.test(el.getAttribute('data-ind-edit-col') || ''));
+          if (netInp && srcEl === netInp) {
+            const netV = parseNumVal(netInp.value);
+            const vatV = round2(netV * 0.11);
+            const totV = round2(netV + vatV);
+            if (vatInp && document.activeElement !== vatInp) vatInp.value = fmtUSD(vatV, 2);
+            if (totInp && document.activeElement !== totInp) totInp.value = fmtUSD(totV, 2);
+          } else if (totInp && srcEl === totInp) {
+            const totV = parseNumVal(totInp.value);
+            const netV = round2(totV / 1.11);
+            const vatV = round2(totV - netV);
+            if (netInp && document.activeElement !== netInp) netInp.value = fmtUSD(netV, 2);
+            if (vatInp && document.activeElement !== vatInp) vatInp.value = fmtUSD(vatV, 2);
+          } else if (vatInp && srcEl === vatInp && netInp && totInp) {
+            const totV = round2(parseNumVal(netInp.value) + parseNumVal(vatInp.value));
+            if (document.activeElement !== totInp) totInp.value = fmtUSD(totV, 2);
+          }
+          if (totInp && costInp && marginInp && (srcEl === netInp || srcEl === totInp || srcEl === vatInp || srcEl === costInp)) {
+            const totNow = parseNumVal(totInp.value);
+            const costNow = parseNumVal(costInp.value);
+            const mUsd = round2(totNow - costNow);
+            const mPct = totNow > 0.005 ? round2((mUsd / totNow) * 100) : 0;
+            const mCol = marginInp.getAttribute('data-ind-edit-col') || '';
+            if (document.activeElement !== marginInp) {
+              marginInp.value = mCol.includes('$') ? `${fmtUSD(mUsd, 2)} (${mPct.toFixed(1)}%)` : `${mPct.toFixed(1)}%`;
+            }
+          }
         }
 
         const updatedCells = inputs.map(el => el.value.trim());
@@ -86423,6 +89352,8 @@
       inputs.forEach(inp => inp.addEventListener('input', wireDomainRules));
 
       const saveBtn = $('indInspSaveChangesBtn');
+      // The impact the person confirmed for this drawer's schedule save (see the chrono branch below)
+      let inspRateImpactOkSig = '';
       const runIndInspSave = async () => {
         if (!canModifyRecord()) {
           toast('Permission denied: Read-only seat', 'err');
@@ -86458,7 +89389,8 @@
         }
         const prevRowEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
         const prevCustomRowsSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-        const domGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
+        // (a schedule row with a pin takes the snapshot in every mode: Go Back on its impact confirmation needs it)
+        const domGeoRollbackSnap = ((hasServerApi() && !isDemoScopeActive()) || (isChronoDomainRow && domainGeoSpec))
           ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
           : null;
         const domPostPromises = [];
@@ -86475,7 +89407,7 @@
           if (domGeoRollbackSnap) domGeoRollbackSnap.restore(errTxt);
           else {
             if (typeof renderApp === 'function') renderApp();
-            toast(errTxt, 'err');
+            if (errTxt) toast(errTxt, 'err');
           }
         };
         const commitDomainInspectorSave = async (forceEditKeys = []) => {
@@ -86485,6 +89417,13 @@
             forceEditKeys
           });
           if (domStoreRes && !domStoreRes.networkErr && !domStoreRes.networkError && (domStoreRes.ok === false || Number(domStoreRes.status) >= 400)) {
+            // The id is held by a schedule saved and undone on another device: the device copy goes back first,
+            // then the server's schedules are read in, so pressing Save again takes a free id (one message)
+            if (isVoidedIdConflictRes(domStoreRes)) {
+              rollbackDomSave('');
+              toast(await refreshAfterVoidedIdConflict(domStoreRes), 'err');
+              return false;
+            }
             const errTxt = await extractServerRejectMsg(domStoreRes, 'Permission denied: save rejected by server');
             rollbackDomSave(errTxt);
             return false;
@@ -86637,7 +89576,7 @@
           } else if (dgs.hasPin && window.MFG_GEO && typeof window.MFG_GEO.persistLocationPin === 'function') {
             postedViaGeo = window.MFG_GEO.persistLocationPin(
               { targetType: 'site', siteId: matchSite.id, siteCategory: resolveSiteCategory(matchSite), name: matchSite.name, lat: dgs.lat, lng: dgs.lng, region: dgs.region || matchSite.region || '', industry: targetInd },
-              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, origSiteRow: origMatchSiteSnap, allowRegionOverwrite: canWriteGeoConfig(), skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises }
+              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, origSiteRow: origMatchSiteSnap, allowRegionOverwrite: canWriteGeoConfig(), skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises, silentToast: Boolean(isChronoDomainRow) }
             );
           } else if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
             window.MFG_GEO.hydrateSeedGeo(SEED, true);
@@ -86708,6 +89647,7 @@
           const prevDeferDomChrono = _deferIndustryDomainServerPost;
           let syncedCnt = 0;
           let cleanedEditKey = false;
+          let drawerImpact = null;
           _deferIndustryDomainServerPost = true;
           try {
             if (!textOnlyLock) {
@@ -86785,10 +89725,18 @@
             if (!drawerSplit && !prevCustList.some(r => r && String(r.id || r.code || '').trim() === String(upd.id || upd.code || '').trim())) {
               capturePreVoidEditTrail(origSched, upd, { at: new Date().toISOString() });
             }
+            // The baseline is read before the schedule changes: only the records that stood at it are re-priced
+            const drawerOldWin = drawerSplit ? drawerSplit.oldWindow : origSched;
+            // Figures the schedule saved over already knows as typed (its own, or the kept one's on a new period)
+            const drawerPriorImp = siblingPriorImpact(fk, drawerSplit ? drawerSplit.kept.keptId : (upd.id || primaryId));
+            const drawerPriorTyped = _sibTypedKeysOf(drawerPriorImp);
+            const drawerBaseline = planSiblingReprice(fk, upd, drawerOldWin);
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
             syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
-            syncedCnt = runDomainChronoScheduleBackfill(fk, upd, drawerSplit ? drawerSplit.oldWindow : origSched);
+            drawerImpact = applySiblingReprice(fk, upd, drawerOldWin, drawerBaseline, drawerPriorTyped);
+            syncedCnt = drawerImpact.rows.length;
             upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
+            stampSiblingImpact(upd, drawerImpact, drawerSplit ? { kept_to: drawerSplit.kept.to, new_from: drawerSplit.kept.newFrom } : null, drawerSplit ? [] : drawerPriorTyped, drawerSplit ? null : drawerPriorImp);
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true, skipEditTrail: true });
             if (upd.id) domForceRowIds.push(`${fk}::${upd.id}`);
             if (drawerSplit) (drawerSplit.kept.postIds || []).forEach(pid => domForceRowIds.push(`${fk}::${pid}`));
@@ -86803,6 +89751,27 @@
           } finally {
             _deferIndustryDomainServerPost = prevDeferDomChrono;
           }
+          // Shown to the person before anything is sent, as on the schedule form: the stores go back, the person
+          // confirms what the save does, and the save runs again. A map pin moved or cleared in the same save goes
+          // back with them (its sends are held until the save is committed; only a pin send that has already started,
+          // which this drawer never does for a schedule, lets the save through unasked).
+          if (drawerImpact && !domGeoPromises.length) {
+            const dSum = summarizeSiblingRepriceImpact(drawerImpact);
+            const dSig = `${fk}|${upd.id}|${drawerSplit ? drawerSplit.kept.newFrom : ''}|${dSum.sig}`;
+            if ((drawerSplit || dSum.n > 0 || dSum.lockedN > 0) && inspRateImpactOkSig !== dSig) {
+              STATE.industryRowEdits = prevRowEditsSnap;
+              saveIndustryRowEditStore(prevRowEditsSnap, { skipServerPost: true });
+              STATE.industryCustomRows = prevCustomRowsSnap;
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              invalidateIndustryDomainCaches();
+              if (domGeoRollbackSnap && domainGeoSave && domainGeoSave.pinTouched) domGeoRollbackSnap.restore('');
+              const okImp = await promptRateChangeImpact({ mode: 'save', impact: drawerImpact, kept: drawerSplit ? drawerSplit.kept : null });
+              if (!okImp) return;
+              inspRateImpactOkSig = dSig;
+              return runIndInspSave();
+            }
+          }
+          inspRateImpactOkSig = '';
           if (!(await commitDomainInspectorSave(cleanedEditKey ? [editKey] : []))) return;
           closeRecordInspector();
           renderApp();
@@ -86890,6 +89859,8 @@
         // The cell rewrite above clears the first cell's agreement pill; recount with the saved values.
         applyIndustryRelatedAgreementPills($('workspace'));
         closeRecordInspector();
+        invalidateIndustryDomainCaches();
+        if (typeof renderApp === 'function') renderApp();
         syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
       };
@@ -86909,7 +89880,11 @@
       };
 
       const voidBtn = $('indInspVoidRowBtn');
+      // One void at a time: a second press while the first waits (on its confirmation, its sign-off or the server)
+      // would run the same undo twice
+      let indInspVoidRunning = false;
       if (voidBtn) voidBtn.onclick = () => {
+        if (indInspVoidRunning) return;
         if (!canVoid()) {
           toast('Supervisor permission required to void records', 'err');
           return;
@@ -86953,10 +89928,13 @@
           _curVoidReasonEl.classList.remove('is-invalid');
           _curVoidReasonEl.removeAttribute('aria-invalid');
         }
+        // The impact the person confirmed for this undo (see the gate after the local void below)
+        let voidRateImpactOkSig = '';
         const execDomainVoid = async () => {
           const prevVoidEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
           const prevVoidCustomSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-          const domVoidGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
+          // (a schedule row with a pin takes the snapshot in every mode: Go Back on its undo confirmation needs it)
+          const domVoidGeoRollbackSnap = ((hasServerApi() && !isDemoScopeActive()) || (isChronoDomainRow && domainGeoSpec))
             ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
             : null;
           const domVoidGeoPromises = [];
@@ -86975,6 +89953,45 @@
             }
           };
           let wasCustom = false;
+          // Undo of a schedule: what it re-prices and what it leaves, and the sweep it runs, are worked out from the
+          // schedules as they stand BEFORE the void (the baseline), so only records that stood at the voided
+          // schedule's figure go back; a figure a person typed stays
+          let voidImpact = null;
+          let voidFk = '';
+          let voidOrigSched = null;
+          let voidSchedForSweep = null;
+          let voidSweep = null;
+          let voidBaseline = null;
+          let voidSkipKeys = [];
+          if (isChronoDomainRow) {
+            voidFk = resolvedDomainChrono.formKey;
+            voidOrigSched = Object.assign({}, resolvedDomainChrono.prefill);
+            delete voidOrigSched._editMode;
+            delete voidOrigSched._editKey;
+            const voidedUp = String(primaryId || '').trim().toUpperCase();
+            const voidedOwn = (getIndustryCustomRowsStore()[voidFk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
+            // A schedule a save kept apart (planSiblingChronoSplit) only ever priced the records of its own days: undoing
+            // it re-prices those days and leaves every other record as it was
+            const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || voidOrigSched._continues_id);
+            // The save re-priced up to the kept row's end as it was (a new entry may end before it): so does the undo
+            const laterSweepEnd = (a, b) => {
+              const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
+              const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
+              const m = eb && eb > ea ? eb : ea;
+              return m === '9999-12-31' ? 'Open' : m;
+            };
+            voidSweep = splitOwn
+              ? { start_date: String((voidedOwn && voidedOwn.start_date) || voidOrigSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || voidOrigSched._auto_closed_by_id)
+                // closed by a later schedule: that one priced its own days, the undo stops where it starts
+                ? ((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date || 'Open')
+                : laterSweepEnd((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || voidOrigSched._split_sweep_end) }
+              : { start_date: '1900-01-01', end_date: '9999-12-31' };
+            voidSchedForSweep = splitOwn ? Object.assign({}, voidOrigSched, voidSweep) : voidOrigSched;
+            voidBaseline = planSiblingReprice(voidFk, voidSchedForSweep, voidSweep);
+            // Figures a person had typed at exactly this schedule's rate when it was saved: not given by it, so left
+            const ownImp = (voidedOwn && voidedOwn._impact) || voidOrigSched._impact || null;
+            voidSkipKeys = (ownImp && Array.isArray(ownImp.typed_keys)) ? ownImp.typed_keys.slice() : [];
+          }
           const prevDeferDomVoid = _deferIndustryDomainServerPost;
           _deferIndustryDomainServerPost = true;
           try {
@@ -87041,30 +90058,19 @@
             };
             wasCustom = voidIndustryCustomRowById(primaryId, Object.assign({ skipCloudSync: true, skipRollback: true, skipServerPost: true }, voidMeta));
             if (isChronoDomainRow) {
-              const fk = resolvedDomainChrono.formKey;
-              const origSched = Object.assign({}, resolvedDomainChrono.prefill);
-              delete origSched._editMode;
-              delete origSched._editKey;
-              const voidedUp = String(primaryId || '').trim().toUpperCase();
-              const voidedOwn = (getIndustryCustomRowsStore()[fk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
-              voidSiblingChronoSchedule(fk, primaryId, origSched, voidMeta);
-              // A schedule a save kept apart (planSiblingChronoSplit) only ever priced the records of its own days: undoing
-              // it re-prices those days and leaves every other record as it was (a typed price before the split stays)
-              const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || origSched._continues_id);
-              // The save re-priced up to the kept row's end as it was (a new entry may end before it): so does the undo
-              const laterSweepEnd = (a, b) => {
-                const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
-                const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
-                const m = eb && eb > ea ? eb : ea;
-                return m === '9999-12-31' ? 'Open' : m;
-              };
-              const voidSweep = splitOwn
-                ? { start_date: String((voidedOwn && voidedOwn.start_date) || origSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || origSched._auto_closed_by_id)
-                  // closed by a later schedule: that one priced its own days, the undo stops where it starts
-                  ? ((voidedOwn && voidedOwn.end_date) || origSched.end_date || 'Open')
-                  : laterSweepEnd((voidedOwn && voidedOwn.end_date) || origSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || origSched._split_sweep_end) }
-                : { start_date: '1900-01-01', end_date: '9999-12-31' };
-              runDomainChronoScheduleBackfill(fk, splitOwn ? Object.assign({}, origSched, voidSweep) : origSched, voidSweep);
+              const fk = voidFk;
+              voidSiblingChronoSchedule(fk, primaryId, voidOrigSched, voidMeta);
+              voidImpact = applySiblingReprice(fk, voidSchedForSweep, voidSweep, voidBaseline, voidSkipKeys);
+              // The voided schedule keeps what its undo did: the periods strip shows it after the undo too
+              if (voidImpact.rows.length || voidImpact.kept.length || voidImpact.typedAtNew.length) {
+                const tombUp = String(primaryId || '').trim().toUpperCase();
+                const tomb = (getIndustryCustomRowsStore()[fk] || []).find(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === tombUp);
+                if (tomb) {
+                  tomb._undo_impact = packSiblingRepriceImpact(voidImpact);
+                  appendImpactLog(tomb, tomb._undo_impact, 'undo', false);
+                  saveIndustryCustomRowsStore({ skipServerPost: true });
+                }
+              }
               if (store[editKey]) {
                 delete store[editKey];
                 saveIndustryRowEditStore(store, { skipServerPost: true });
@@ -87137,6 +90143,26 @@
           } finally {
             _deferIndustryDomainServerPost = prevDeferDomVoid;
           }
+          // An undo that re-prices records, or leaves typed prices, is shown to the person before anything is sent:
+          // the stores go back as they were, the person confirms, and the undo runs again. A pinned site the undo
+          // voided with the schedule goes back with them (its sends are held until the void is committed).
+          if (voidImpact && !domVoidGeoPromises.length) {
+            const vSum = summarizeSiblingRepriceImpact(voidImpact);
+            const vSig = `${voidFk}|${primaryId}|${vSum.sig}`;
+            if ((vSum.n > 0 || vSum.lockedN > 0) && voidRateImpactOkSig !== vSig) {
+              STATE.industryRowEdits = prevVoidEditsSnap;
+              saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
+              STATE.industryCustomRows = prevVoidCustomSnap;
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              invalidateIndustryDomainCaches();
+              if (domVoidGeoRollbackSnap && (domVoidSitePosts.length || domVoidDeferredGeoPushes.length)) domVoidGeoRollbackSnap.restore('');
+              const okUndo = await promptRateChangeImpact({ mode: 'undo', impact: voidImpact });
+              if (!okUndo) return;
+              voidRateImpactOkSig = vSig;
+              return execDomainVoid();
+            }
+          }
+          voidRateImpactOkSig = '';
           if (hasServerApi() && !isDemoScopeActive()) {
             const domVoidStoreRes = await postIndustryDomainStoreToLocalApi({ forceEditKeys: [editKey] });
             if (domVoidStoreRes && !domVoidStoreRes.networkErr && !domVoidStoreRes.networkError && (domVoidStoreRes.ok === false || Number(domVoidStoreRes.status) >= 400)) {
@@ -87177,18 +90203,47 @@
           company: STATE.company || 'WTC',
           industry: ind
         };
+        const runDomainVoidOnce = async () => {
+          if (indInspVoidRunning) return;
+          indInspVoidRunning = true;
+          try { await execDomainVoid(); } finally { indInspVoidRunning = false; }
+        };
         if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
           if (typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domVoidSpec)) {
-            execDomainVoid();
+            runDomainVoidOnce();
           } else {
+            // The sign-off counts as the void being under way: a second press does not open a second sign-off
+            indInspVoidRunning = true;
             window.MFG_STEP_UP.requireStepUpAuth(domVoidSpec).then(ok => {
-              if (ok) execDomainVoid();
-            });
+              indInspVoidRunning = false;
+              if (ok) runDomainVoidOnce();
+            }).catch(() => { indInspVoidRunning = false; });
           }
           return;
         }
-        execDomainVoid();
+        runDomainVoidOnce();
       };
+
+      // The periods strip: Open shows another period of the schedule; Undo This Change (on this record, when it is
+      // the latest period) runs the drawer's own void, so its reason rule, its sign-off and the impact confirmation
+      // all apply
+      const perStrip = $('indInspPeriodsStrip');
+      if (perStrip && isChronoDomainRow) {
+        perStrip.addEventListener('click', ev => {
+          const openBtn = ev.target.closest('[data-period-open]');
+          const undoBtn = ev.target.closest('[data-period-undo]');
+          if (!openBtn && !undoBtn) return;
+          ev.preventDefault();
+          if (undoBtn) {
+            if (voidBtn) voidBtn.click();
+            return;
+          }
+          const targetId = openBtn.getAttribute('data-period-open') || '';
+          if (!targetId) return;
+          closeRecordInspector();
+          openIndustryDomainInspectorById(resolvedDomainChrono.formKey, targetId, { ind, rowCompany });
+        });
+      }
 
       const pBtn = $('indInspPrintStmtBtn');
       if (pBtn) pBtn.onclick = () => {
@@ -87401,7 +90456,7 @@
       if (STATE.chipFilter === 'app') return isAppRecord(v);
       return true;
     }), 'vatinv', 'date', 'desc');
-    const shownVat = vatRows.slice(0, shownCount('vatinv'));
+    const shownVat = sliceShown('vatinv', vatRows);
     const credRows = sortRows(credBase, 'credterm', 'ar_balance', 'desc');
     const shownCred = credRows.slice(0, shownCount('credterm'));
 
@@ -88079,7 +91134,7 @@
       if (openSideFilter === 'lends') return !isBorrowSide(l);
       return true;
     }).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || getLoanOpenAmt(b) - getLoanOpenAmt(a));
-    const shownOpenClosing = openClosingRows.slice(0, shownCount('tr_open_close'));
+    const shownOpenClosing = sliceShown('tr_open_close', openClosingRows);
     const sumOpenClosingPrin = round2(openClosingRows.reduce((a, l) => a + Number(l.principal || 0), 0));
     const sumOpenClosingSet = round2(openClosingRows.reduce((a, l) => a + Number(l.settled_amount || 0), 0));
     const sumOpenClosingBal = round2(openClosingRows.reduce((a, l) => a + getLoanOpenAmt(l), 0));
@@ -90035,7 +93090,7 @@
           <div class="form-grid-3">
             <div class="form-field">
               <label for="nu_name">Full Name *</label>
-              <input type="text" id="nu_name" value="${esc(editUser ? editUser.full_name : '')}" placeholder="e.g. Ali Mansour (WTC Scale)" autocomplete="off">
+              <input type="text" id="nu_name" value="${esc(editUser ? editUser.full_name : '')}" placeholder="e.g. Rami Haddad (WTC Scale)" autocomplete="off">
             </div>
             <div class="form-field">
               <label for="nu_email">Email Address (Login ID) *</label>
@@ -92223,6 +95278,7 @@
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
+          <div id="dispatchSteepBrakeWarnBanner" class="form-field span-3 pa-rec-banner warn dispatch-brake-warn-banner" role="status" aria-live="polite" hidden></div>
           ${fld('Payment Method *', sel('f_method', (STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets') ? [['Credit', 'Credit'], ['Cash', 'Cash'], ['Free', 'Free (Zero-Value)']] : [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to the Customer default (Cash or Credit)', hintId: 'hint_method', hint: '' })}
 
           ${secHdr('2. Quantities & Amounts')}
@@ -92312,6 +95368,7 @@
           ${fld('Truck *', inp('f_truck', 'text', pendRawEditRow ? (pendRawEditRow.truck || '') : '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', ...(pendRawEditRow ? { lockField: 'f_truck', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', pendRawEditRow ? (pendRawEditRow.truck_owner || '') : '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', hidden: true, lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', pendRawEditRow ? (pendRawEditRow.driver || '') : '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log - update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
+          <div id="dispatchSteepBrakeWarnBanner" class="form-field span-3 pa-rec-banner warn dispatch-brake-warn-banner" role="status" aria-live="polite" hidden></div>
 
           ${secHdr('2. Quantities & Costs')}
           <input type="hidden" id="f_raw_price_pending" value="0">
@@ -92358,6 +95415,7 @@
           ${fld('Payment Method *', sel('f_method', [['Payment', 'Payment'], ['Barter', 'Barter'], ['VAT', 'VAT 11% receipt'], ['Rent', 'Rent offset'], ['VATRent', 'VAT on rent']], 'Payment'))}
           ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
           ${fld('Settlement Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
+          ${nearCopyAmtJumpHtml()}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
@@ -92611,6 +95669,7 @@
         ], 'expense'), { id: 'wrap_f_payable_leg', hintId: 'hint_payable_leg', hint: '' })}
         ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
         ${fld('Difference / Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'))}
+        ${nearCopyAmtJumpHtml()}
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
         <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
@@ -94656,10 +97715,18 @@
     const edits = (STATE && STATE.industryRowEdits) || {};
     const prefix = `WF::${bucket}::`;
     Object.keys(edits).forEach(k => {
-      if (!k.startsWith(prefix)) return;
       const ev = edits[k];
       if (!ev || !(ev.voided || ev.voided_at || ev._scheduleVoided)) return;
-      const rowId = String(k.slice(prefix.length) || '').trim();
+      let rowId = '';
+      if (k.startsWith(prefix)) {
+        rowId = String(k.slice(prefix.length) || '').trim();
+      } else {
+        const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
+        const parts = k.split('::');
+        if (parts.length >= 3 && (snapTbl === bucket || parts[1] === bucket)) {
+          rowId = String(parts.slice(2).join('::') || '').trim();
+        }
+      }
       if (!rowId) return;
       voided.add(rowId.toUpperCase());
       const upId = String(legFn(rowId) || '').trim();
@@ -94685,7 +97752,86 @@
     return expanded;
   }
 
-  function nearCopySiblingPool(crKey) {
+  function nearCopySiblingPool(crKey, filter = null) {
+    const winDays = filter && filter.winDays ? filter.winDays : null;
+    const coFilter = filter && filter.co ? norm(filter.co) : '';
+    const passCoDate = (rawCo, rawDt, defCo = '') => {
+      if (winDays) {
+        const d = String(rawDt || '').slice(0, 10);
+        if (!d || !winDays.has(d)) return false;
+      }
+      if (coFilter) {
+        const effCo = String(rawCo || defCo || '');
+        if (norm(effCo) !== coFilter) return false;
+      }
+      return true;
+    };
+    const ov = (base, bkt) => {
+      const cust = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows(bkt) : [];
+      const voidIds = _rawVoidedDomainIds(bkt);
+      const cleanBase = Array.isArray(base)
+        ? (voidIds.size ? base.filter(r => r && !voidIds.has(String(r.id || r.code || '').trim().toUpperCase())) : base.slice())
+        : [];
+      const merged = typeof mergeCustomOverSeededRows === 'function' ? mergeCustomOverSeededRows(cleanBase, cust) : cleanBase.concat(cust);
+      return merged.map(r => {
+        const wp = (typeof getIndustryWorkflowPatch === 'function' && r && r.id) ? getIndustryWorkflowPatch(bkt, r.id) : null;
+        return wp ? Object.assign({}, r, wp) : r;
+      }).filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided);
+    };
+    const scanSpineTable = (tblKey, cb) => {
+      const custArr = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords[tblKey])) ? STATE.customRecords[tblKey] : [];
+      const seedArr = (SEED && SEED.records && Array.isArray(SEED.records[tblKey])) ? SEED.records[tblKey] : [];
+      const seen = new Set();
+      const visit = arr => {
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r) continue;
+          const rid = String(r.id || '').trim();
+          if (rid && seen.has(rid)) continue;
+          if (rid) seen.add(rid);
+          if (r.voided || r.voided_at || r._absorbedSeedTwin || r._scheduleVoided || r.price_pending || r.group_transfer_id) continue;
+          cb(r);
+        }
+      };
+      visit(custArr);
+      visit(seedArr);
+    };
+    const extMovSisterPool = (wantDir, outMode) => {
+      const out = [];
+      scanSpineTable('external_movements', r => {
+        if (/^extended$/i.test(String(r.kind || '')) || /^Extended\./i.test(String(r.notes || ''))) return;
+        const dirStr = String(r.direction || r.flow || r.method || '').trim();
+        if (/^(?:config|remove|adjusted)$/i.test(dirStr)) return;
+        const dirCls = /out/i.test(dirStr) ? 'out' : (/in/i.test(dirStr) ? 'in' : '');
+        if (dirCls !== wantDir) return;
+        if (!passCoDate(r.company, r.date, '')) return;
+        const cp = String(r.counterparty || r.party || '').trim();
+        if (!cp) return;
+        const lbpRaw = Number(r.lbp_amount || 0) || 0;
+        const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || r.principal || 0))) || 0;
+        const amtRaw = Number(r.amount != null ? r.amount : (r.principal != null ? r.principal : usdRaw)) || 0;
+        const baseObj = {
+          id: `extm:${r.id}`,
+          _srcId: String(r.id || ''),
+          _raw: r,
+          _bucket: 'external_movements',
+          _crossScreenSister: true,
+          _srcLabel: 'External Movement',
+          company: r.company || '',
+          date: String(r.date || '').slice(0, 10),
+          amount: amtRaw,
+          usd_amount: usdRaw,
+          lbp_amount: lbpRaw,
+          reference: r.reference || r.id || '',
+          notes: r.notes || ''
+        };
+        if (outMode === 'receipts') out.push({ ...baseObj, customer: cp, method: 'Payment' });
+        else if (outMode === 'settlements') out.push({ ...baseObj, supplier: cp, method: 'Payment' });
+        else if (outMode === 'expenses') out.push({ ...baseObj, supplier: cp, method: 'Cash' });
+      });
+      return out;
+    };
+
     if (crKey === 'external_movements') {
       const hld = SEED && SEED.industryLive && SEED.industryLive.holding;
       const legs = (hld && Array.isArray(hld.sisterExternalLegs)) ? hld.sisterExternalLegs : [];
@@ -94699,12 +97845,14 @@
         const wp = (typeof getIndustryWorkflowPatch === 'function' && r.id) ? getIndustryWorkflowPatch('hld_interactions', r.id) : null;
         if (wp) r = Object.assign({}, r, wp);
         if (r.voided || r.voided_at || r._scheduleVoided) continue;
+        const rowCo = r.company || 'Bdeir Holding';
+        if (!passCoDate(rowCo, r.date, 'Bdeir Holding')) continue;
         const dir = String(r.direction || r.flow || r.method || '').trim();
         const usdVal = Number(r.usd_amount != null ? r.usd_amount : (r.currency === 'LBP' ? 0 : (r.amount || r.in_usd || r.out_usd || 0))) || 0;
         const amtVal = Number(r.amount != null ? r.amount : (r.in_usd || r.out_usd || usdVal)) || 0;
         out.push({
           ...r,
-          company: r.company || 'Bdeir Holding',
+          company: rowCo,
           counterparty: r.counterparty || r.party || '',
           direction: dir,
           flow: dir,
@@ -94718,6 +97866,7 @@
       for (let i = 0; i < custIc.length; i++) {
         const cr = custIc[i];
         if (!cr || cr.voided || cr.voided_at || cr._scheduleVoided) continue;
+        if (!passCoDate('Bdeir Holding', cr.date, 'Bdeir Holding')) continue;
         const fromCo = String(cr.fromCo || cr.company || '').trim();
         const toCo = String(cr.toCo || cr.counterparty || cr.party || '').trim();
         const usdVal = Number(cr.usd != null ? cr.usd : (cr.amount || 0)) || 0;
@@ -94743,26 +97892,172 @@
           notes: cr.notes || ''
         });
       }
+      if (!(filter && filter.skipOpSister)) {
+        const indLive = (SEED && SEED.industryLive) || {};
+        scanSpineTable('receipts', r => {
+          if (NEAR_COPY_SUM_NOT_PAID.includes(String(r.method || '').trim())) return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.customer || '').trim();
+          if (!cp) return;
+          const isTrd = /shacman|korri/i.test(String(r.company || ''));
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || 0))) || 0;
+          const amtRaw = Number(r.amount != null ? r.amount : usdRaw) || 0;
+          out.push({
+            id: `${isTrd ? 'trd_receipts' : 'receipts'}:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: isTrd ? 'trd_receipts' : 'receipts',
+            _crossScreenSister: true,
+            _srcLabel: isTrd ? 'Invoice Receipt' : 'Customer Receipt',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Inflow',
+            flow: 'Inflow',
+            method: 'Inflow',
+            amount: amtRaw,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        scanSpineTable('settlements', r => {
+          if (NEAR_COPY_SUM_NOT_PAID.includes(String(r.method || '').trim())) return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.supplier || '').trim();
+          if (!cp) return;
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || 0))) || 0;
+          const amtRaw = Number(r.amount != null ? r.amount : usdRaw) || 0;
+          out.push({
+            id: `settlements:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 'settlements',
+            _crossScreenSister: true,
+            _srcLabel: 'Supplier Payment',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Outflow',
+            flow: 'Outflow',
+            method: 'Outflow',
+            amount: amtRaw,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        scanSpineTable('expenses', r => {
+          const m = String(r.method || '').trim();
+          if (m !== 'Cash' && m !== 'Cash VAT Dis') return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.supplier || '').trim();
+          if (!cp) return;
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const baseAmt = r.amount != null ? Number(r.amount) : (Number(r.total_ttc != null ? r.total_ttc : (r.total || 0)) || 0);
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : baseAmt)) || 0;
+          out.push({
+            id: `expenses:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 'expenses',
+            _crossScreenSister: true,
+            _srcLabel: 'Cash Expense',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Outflow',
+            flow: 'Outflow',
+            method: 'Outflow',
+            amount: baseAmt,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.invoice || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        ov((indLive.realestate && indLive.realestate.receipts) || [], 're_receipts').forEach(r => {
+          const g = Number(r.gross_usd || 0) || 0;
+          if (!(g > 0.005) || !passCoDate(r.company, r.date, '4235 Company S.A.L') || !r.tenant) return;
+          out.push({
+            id: `re_receipts:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 're_receipts',
+            _crossScreenSister: true, _srcLabel: 'Tenant Receipt',
+            company: r.company || '4235 Company S.A.L', date: String(r.date || '').slice(0, 10),
+            counterparty: r.tenant, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: g, usd_amount: g, lbp_amount: 0,
+            invoice: r.linked_invoice || '', reference: r.reference || r.id || '', notes: r.audit_flag || r.notes || ''
+          });
+        });
+        ov((indLive.insurance && indLive.insurance.billing) || [], 'ins_billing').forEach(r => {
+          const col = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd || 0)) || 0;
+          if (!(col > 0.005) || !passCoDate(r.company, r.date, 'Insurance Company')) return;
+          const cp = String(r.client || r.insured || '').trim();
+          if (!cp) return;
+          out.push({
+            id: `ins_billing:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'ins_billing',
+            _crossScreenSister: true, _srcLabel: 'Client Receipt',
+            company: r.company || 'Insurance Company', date: String(r.date || '').slice(0, 10),
+            counterparty: cp, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: col, usd_amount: col, lbp_amount: 0,
+            invoice: r.policy_no || '', reference: r.receipt_ref || r.id || '', notes: r.notes || ''
+          });
+        });
+        ov((indLive.insurance && indLive.insurance.remittances) || [], 'ins_remittances').forEach(r => {
+          const setAmt = Number(r.settled_to_carrier_usd || 0) || 0;
+          const rDate = String(r.date || r.next_due || '').slice(0, 10);
+          if (!(setAmt > 0.005) || !passCoDate(r.company, rDate, 'Insurance Company') || !r.carrier) return;
+          out.push({
+            id: `ins_remittances:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'ins_remittances',
+            _crossScreenSister: true, _srcLabel: 'Carrier Bordereau',
+            company: r.company || 'Insurance Company', date: rDate,
+            counterparty: r.carrier, direction: 'Outflow', flow: 'Outflow', method: 'Outflow',
+            amount: setAmt, usd_amount: setAmt, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.settlement_mode || ''
+          });
+        });
+        ov((indLive.hospitality && indLive.hospitality.venueRows) || [], 'hsp_revenue').forEach(r => {
+          const ttc = Number(r.ttc_usd || 0) || 0;
+          if (!(ttc > 0.005) || !passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.outlet || r.company || '').trim();
+          if (!cp) return;
+          out.push({
+            id: `hsp_revenue:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'hsp_revenue',
+            _crossScreenSister: true, _srcLabel: 'Venue Daily Revenue',
+            company: r.company || '', date: String(r.date || '').slice(0, 10),
+            counterparty: cp, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: ttc, usd_amount: ttc, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.notes || ''
+          });
+        });
+        ov((indLive.hospitality && indLive.hospitality.membershipRows) || [], 'hsp_memberships').forEach(r => {
+          const paid = Number(r.paid_usd || 0) || 0;
+          const rDate = String(r.start_date || r.date || '').slice(0, 10);
+          if (!(paid > 0.005) || !passCoDate(r.company, rDate, '') || !r.member) return;
+          out.push({
+            id: `hsp_memberships:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'hsp_memberships',
+            _crossScreenSister: true, _srcLabel: 'Seasonal Membership',
+            company: r.company || '', date: rDate,
+            counterparty: r.member, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: paid, usd_amount: paid, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.unit || ''
+          });
+        });
+      }
       return out;
     }
     if (crKey === 'receipts') {
       const out = [];
-      const ov = (base, bkt) => {
-        const cust = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows(bkt) : [];
-        const voidIds = _rawVoidedDomainIds(bkt);
-        const cleanBase = Array.isArray(base)
-          ? (voidIds.size ? base.filter(r => r && !voidIds.has(String(r.id || r.code || '').trim().toUpperCase())) : base.slice())
-          : [];
-        const merged = typeof mergeCustomOverSeededRows === 'function' ? mergeCustomOverSeededRows(cleanBase, cust) : cleanBase.concat(cust);
-        return merged.map(r => {
-          const wp = (typeof getIndustryWorkflowPatch === 'function' && r && r.id) ? getIndustryWorkflowPatch(bkt, r.id) : null;
-          return wp ? Object.assign({}, r, wp) : r;
-        }).filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided);
-      };
       const reRcts = (SEED && SEED.industryLive && SEED.industryLive.realestate && SEED.industryLive.realestate.receipts) || [];
       ov(reRcts, 're_receipts').forEach(r => {
         const g = Number(r.gross_usd || 0) || 0;
-        if (g > 0.005) {
+        if (g > 0.005 && passCoDate(r.company, r.date, '4235 Company S.A.L')) {
           out.push({
             id: `re_receipts:${r.id}`,
             _srcId: String(r.id || ''),
@@ -94784,7 +98079,7 @@
       const insBill = (SEED && SEED.industryLive && SEED.industryLive.insurance && SEED.industryLive.insurance.billing) || [];
       ov(insBill, 'ins_billing').forEach(r => {
         const col = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd || 0)) || 0;
-        if (col > 0.005) {
+        if (col > 0.005 && passCoDate(r.company, r.date, 'Insurance Company')) {
           out.push({
             id: `ins_billing:${r.id}`,
             _srcId: String(r.id || ''),
@@ -94803,16 +98098,22 @@
           });
         }
       });
+      if (!(filter && filter.skipOpSister)) {
+        extMovSisterPool('in', 'receipts').forEach(x => out.push(x));
+      }
       return out;
+    }
+    if ((crKey === 'settlements' || crKey === 'expenses') && !(filter && filter.skipOpSister)) {
+      return extMovSisterPool('out', crKey);
     }
     return [];
   }
 
-  function nearCopyPool(crKey) {
+  function nearCopyPool(crKey, filter = null) {
     const seedRows = (SEED.records && SEED.records[crKey]) || [];
     const customRows = (STATE.customRecords && STATE.customRecords[crKey]) || [];
     const base = customRows.length ? seedRows.concat(customRows) : seedRows;
-    const extra = nearCopySiblingPool(crKey);
+    const extra = nearCopySiblingPool(crKey, filter);
     return extra.length ? base.concat(extra) : base;
   }
 
@@ -94821,7 +98122,7 @@
     return findNearCopySingleEntry(crKey, rec) || findNearCopySumEntry(crKey, rec);
   }
 
-  // One payment already booked as several rows (owner idea 2026-11-17). Live case: Star Solutions, $1,000 keyed in the
+  // One payment already booked as several rows (owner idea 2026-11-17). Live case: Sample Supplies, $1,000 keyed in the
   // app on 17 Nov, already in the workbook on 16 Nov as Payment #1341 $889.78 + VAT #1342 $110.22. Same rules as the
   // top-up's several-row matcher (build/reconcile_cloud_store.py find_sum_twin_group, gap_sum_twin_groups): same company,
   // party and kind of money; every row of that party that day adds up to the entry, or the rows whose invoice or
@@ -94844,7 +98145,7 @@
   }
 
   // Two compact party keys differing by one non-digit typo (or adjacent non-digit swap), never digit-only numbers
-  // ("Store 1" vs "Store 2", "Amtrac" vs "Amtrac 1") or short first-letter names ("Sami" vs "Rami").
+  // ("Store 1" vs "Store 2", "SampleCo" vs "SampleCo 1") or short first-letter names ("Tarek" vs "Rami").
   function partyKeyOneLetterOff(a, b) {
     if (!a || !b || a === b || Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
     if (a.length === b.length) {
@@ -94870,7 +98171,7 @@
     return false;
   }
 
-  // Matches 1-letter key typos AND single missing/extra spaces ("StarSolutions" vs "Star Solutions").
+  // Matches 1-letter key typos AND single missing/extra spaces ("SampleSupplies" vs "Sample Supplies").
   function partyNameOneLetterOff(rawA, rawB) {
     const ka = nearCopyPartyKey(rawA);
     const kb = nearCopyPartyKey(rawB);
@@ -94983,8 +98284,13 @@
   function _findNearCopySumGroup(days, byDay, recAmt, recLbp, recPoundsOnly, toks, getRefs, sameReason = 'sum', gapReason = 'sum_gap') {
     const lbpOf = x => Number(x.lbp_amount || 0) || 0;
     const poundsOnly = x => lbpOf(x) > 1 && !((Number(x.usd_amount || 0) || 0) > 0.005);
-    const addsUp = g => {
-      if (g.length < 2) return false;
+    const allowSingleSis = sameReason === 'sum' || sameReason === 'sister';
+    const addsUp = (g, allowOneSis = false) => {
+      if (!g || !g.length) return false;
+      if (g.length < 2 && !(allowOneSis && g.length === 1 && g[0] && g[0]._crossScreenSister)) return false;
+      if (g.some(x => x && x._crossScreenSister)) {
+        return Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - recAmt) < NEAR_COPY_SUM_USD_TOL;
+      }
       const lbpOff = Math.abs(g.reduce((s, x) => s + lbpOf(x), 0) - recLbp) < NEAR_COPY_SUM_LBP_TOL;
       if (recPoundsOnly && g.every(poundsOnly)) return lbpOff;
       return lbpOff && Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - recAmt) < NEAR_COPY_SUM_USD_TOL;
@@ -94992,21 +98298,36 @@
     for (let di = 0; di < days.length; di++) {
       const d = days[di];
       const cands = byDay.get(d);
-      let group = addsUp(cands) ? cands : null;
+      if (!cands || !cands.length) continue;
+      let group = addsUp(cands, allowSingleSis) ? cands : null;
       if (!group && toks.size) {
         const named = cands.filter(x => {
           const rToks = getRefs(x);
           for (const t of rToks) if (toks.has(t)) return true;
           return false;
         });
-        if (addsUp(named)) group = named;
+        if (addsUp(named, allowSingleSis)) group = named;
       }
-      if (group) return { row: group[0], rows: group.slice(), day: d, reason: di === 0 ? sameReason : gapReason };
+      if (!group && allowSingleSis) {
+        const sisRows = cands.filter(x => x && x._crossScreenSister);
+        const singleSis = sisRows.find(x => addsUp([x], true));
+        if (singleSis) {
+          group = [singleSis];
+        } else if (sisRows.length >= 2 && addsUp(sisRows, true)) {
+          group = sisRows;
+        }
+      }
+      if (group) {
+        const allSis = group.every(x => x && x._crossScreenSister);
+        const effSame = allSis ? (group.length === 1 ? 'sister' : 'sister_sum') : sameReason;
+        const effGap = allSis ? (group.length === 1 ? 'sister_gap' : 'sister_sum_gap') : gapReason;
+        return { row: group[0], rows: group.slice(), day: d, reason: di === 0 ? effSame : effGap };
+      }
     }
     return null;
   }
 
-  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' }, or null.
+  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' | 'sister' | 'sister_gap' | 'sister_sum' | 'sister_sum_gap' }, or null.
   function findNearCopySumEntry(crKey, rec) {
     const pk = NEAR_COPY_SUM_PARTY[crKey];
     if (!pk || !rec || rec.price_pending || rec.group_transfer_id || rec.backpay_voucher || rec._backpay_lines) return null;
@@ -95020,7 +98341,8 @@
     const byDay = new Map(days.map(d => [d, []]));
     const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'counterparty') && party.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
     const closeByParty = checkTypo ? new Map() : null;
-    const rows = nearCopyPool(crKey);
+    const isExtExtended = crKey === 'external_movements' && (/^extended$/i.test(String(rec.kind || '')) || /^Extended\./i.test(String(rec.notes || '')));
+    const rows = nearCopyPool(crKey, { winDays: new Set(days), co, skipOpSister: isExtExtended });
     const seen = new Set();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -95029,7 +98351,7 @@
       const rDay = String(r.date || '').slice(0, 10);
       const bucket = byDay.get(rDay);
       if (!bucket || norm(r.company || '') !== co) continue;
-      if (rec.id && ((r.id && String(r.id) === String(rec.id)) || (r._srcId && String(r._srcId) === String(rec.id)))) continue;
+      if (rec.id && ((r.id && String(r.id) === String(rec.id)) || (r._srcId && String(r._srcId) === String(rec.id)) || (r._raw && r._raw.id && String(r._raw.id) === String(rec.id)))) continue;
       if (isSelfEditingRow(r, crKey)) continue;
       if (r.id) {
         if (seen.has(String(r.id))) continue;
@@ -95141,7 +98463,7 @@
     const refStr = String(explicitRef || '').trim();
     if (refStr) return refStr.length > 18 ? `${refStr.slice(0, 17)}…` : refStr;
     const alt = String(raw.ticket_no || raw.tax_seq || raw.policy_no || raw.receipt_ref || raw.reference || raw.invoice || raw.code || raw.id || '').trim()
-      .replace(/^(?:re_receipts|ins_billing|extm|sister|receipts|hld_ic):/i, '');
+      .replace(/^(?:re_receipts|ins_billing|ins_remittances|extm|sister|receipts|trd_receipts|settlements|expenses|hsp_revenue|hsp_memberships|hld_ic):/i, '');
     if (!alt) return 'Entry';
     return alt.length > 16 ? `${alt.slice(0, 15)}…` : alt;
   }
@@ -95187,6 +98509,10 @@
       sum_gap: 'Same party, these entries one day apart add up to this amount',
       sum_typo: 'Same day, entries under a similar name add up to this amount',
       sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      sister: 'Same day and party, already recorded on another form',
+      sister_gap: 'Same party, recorded one day apart on another form',
+      sister_sum: 'Same day and party, entries on another form add up to this amount',
+      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount',
       ticket: 'Same day, party, truck and amount, ticket number one digit apart',
       ticket_typo: 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
       vat: 'Same day and supplier, amount differs by exactly the 11% VAT',
@@ -95194,18 +98520,23 @@
     };
     const reason = reasonMap[hit.reason] || '';
     if (hint && hit.rows) {
-      const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment', external_movements: 'External Movement' }[crKey] || 'Entry';
+      const defLabel = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment', external_movements: 'External Movement' }[crKey] || 'Entry';
+      const firstLabel = (hit.rows[0] && hit.rows[0]._srcLabel) || defLabel;
+      const mixedLabels = hit.rows.some(r => ((r && r._srcLabel) || defLabel) !== firstLabel);
       const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
       const parts = hit.rows.map((r, idx) => {
         const ref = cleanVoucherRef(r.invoice || r.reference);
         const chipTok = nearCopyPeekToken(r, ref);
         const u = nearCopySumUsd(r);
-        FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
-        return nearCopyPeekChipHtml('mfg', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
+        const rLabel = (r && r._srcLabel) || defLabel;
+        FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+        const chipHtml = nearCopyPeekChipHtml('mfg', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
+        return mixedLabels ? `<span>${esc(rLabel)}</span><span data-no-i18n="1"> ${chipHtml}</span>` : chipHtml;
       }).join(' + ');
       const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
       const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
+      const headHtml = mixedLabels ? '' : `<span>${esc(firstLabel)}</span>`;
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span>${headHtml}<span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint) {
       const r = hit.row;
       const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
@@ -95252,6 +98583,7 @@
     const ico = typeof ic === 'function' ? ic('warn') : '';
     return `<button type="button" class="near-copy-jump span-3" id="nearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
   }
+  if (typeof window !== 'undefined') window.nearCopyAmtJumpHtml = nearCopyAmtJumpHtml;
 
   function domainNearCopyAmtJumpHtml() {
     const ico = typeof ic === 'function' ? ic('warn') : '';
@@ -95302,6 +98634,7 @@
     hsp_memberships: 'Seasonal Membership',
     ins_billing: 'Client Receipt',
     ins_policies: 'Insurance Policy',
+    ins_remittances: 'Carrier Bordereau',
     hld_extended: 'Extended Entry',
     hld_interactions: 'Sister Transfer'
   };
@@ -95335,7 +98668,7 @@
   }
 
   function _domIsSelfId(rowId, recId, origId) {
-    const stripPoolPrefix = v => String(v || '').trim().toUpperCase().replace(/^(?:RE_RECEIPTS|INS_BILLING|EXTM|SISTER|RECEIPTS):/, '');
+    const stripPoolPrefix = v => String(v || '').trim().toUpperCase().replace(/^(?:RE_RECEIPTS|INS_BILLING|INS_REMITTANCES|EXTM|SISTER|RECEIPTS|TRD_RECEIPTS|SETTLEMENTS|EXPENSES|HSP_REVENUE|HSP_MEMBERSHIPS|HLD_IC):/, '');
     const chk = [recId, origId].filter(Boolean).map(v => stripPoolPrefix(v)).filter(Boolean);
     if (!chk.length || !rowId) return false;
     const rawUp = String(rowId).trim().toUpperCase();
@@ -95407,10 +98740,55 @@
     scanArr(seedR);
   }
 
+  function _appendExternalSisterPoolRows(pool, wantDir, winDays, co) {
+    const custExt = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.external_movements)) ? STATE.customRecords.external_movements : [];
+    const seedExt = (SEED && SEED.records && Array.isArray(SEED.records.external_movements)) ? SEED.records.external_movements : [];
+    const seen = new Set();
+    const scanArr = arr => {
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        const rid = String(r.id || '').trim();
+        if (rid && seen.has(rid)) continue;
+        if (rid) seen.add(rid);
+        if (r.voided || r.voided_at || r._absorbedSeedTwin || r._scheduleVoided || r.price_pending || r.group_transfer_id) continue;
+        if (/^extended$/i.test(String(r.kind || '')) || /^Extended\./i.test(String(r.notes || ''))) continue;
+        const dirStr = String(r.direction || r.flow || r.method || '').trim();
+        if (/^(?:config|remove|adjusted)$/i.test(dirStr)) continue;
+        const dirCls = /out/i.test(dirStr) ? 'out' : (/in/i.test(dirStr) ? 'in' : '');
+        if (dirCls !== wantDir) continue;
+        const dSlice = String(r.date || '').slice(0, 10);
+        if (winDays && !winDays.has(dSlice)) continue;
+        if (co && norm(r.company || '') !== co) continue;
+        const cp = String(r.counterparty || r.party || '').trim();
+        if (!cp) continue;
+        const u = nearCopySumUsd(r);
+        if (!(Math.abs(u) > 0.005)) continue;
+        pool.push({
+          id: `extm:${r.id}`,
+          _raw: r,
+          _bucket: 'external_movements',
+          _crossScreenSister: true,
+          _srcLabel: 'External Movement',
+          company: r.company || '',
+          date: dSlice,
+          partyKey: nearCopyPartyKey(cp),
+          partyLabel: cp,
+          amount: Math.round(u * 100) / 100,
+          lbp_amount: 0,
+          ref: r.reference || r.id || '',
+          refs: nearCopyRefTokens(r.id, r.reference, r.notes)
+        });
+      }
+    };
+    scanArr(custExt);
+    scanArr(seedExt);
+  }
+
   function findDomainNearCopyEntry(formKey, rec, origId = '') {
     if (!rec || !formKey) return null;
     if (formKey === 'trd_receipts') return findNearCopyEntry('receipts', rec);
-    if (formKey === 'hld_extended') return findNearCopyEntry('external_movements', rec);
+    if (formKey === 'hld_extended') return findNearCopyEntry('external_movements', Object.assign({ kind: 'Extended' }, rec));
     const live = (SEED && SEED.industryLive) || {};
     const dtKey = formKey === 'hsp_memberships' ? 'start_date' : 'date';
     const day = String(rec[dtKey] || rec.date || '').slice(0, 10);
@@ -95438,6 +98816,7 @@
         refs: nearCopyRefTokens(r.id, r.reference, r.audit_flag, r.linked_invoice)
       }));
       _appendSharedReceiptPoolRows(pool, winDays, co);
+      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -95464,13 +98843,20 @@
     }
 
     if (formKey === 'trd_sales') {
-      const amt = Number(rec.ttc_usd || 0) || 0;
+      const rawAmt = Number(rec.ttc_usd || 0) || 0;
+      if (!(Math.abs(rawAmt) > 0.005)) return null;
+      const isNeg = rawAmt < -0.005;
+      const amt = Math.abs(rawAmt);
       const party = nearCopyPartyKey(rec.customer);
-      const pool = mkPool(live.trading && live.trading.salesRows, 'trd_sales', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.customer),
-        partyLabel: r.customer, amount: Number(r.ttc_usd || 0) || 0,
-        ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
-      }));
+      const pool = mkPool(live.trading && live.trading.salesRows, 'trd_sales', r => {
+        const rTtc = Number(r.ttc_usd || 0) || 0;
+        if (isNeg ? !(rTtc < -0.005) : !(rTtc > 0.005)) return null;
+        return {
+          id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.customer),
+          partyLabel: r.customer, amount: Math.abs(rTtc), _signedAmt: rTtc,
+          ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
+        };
+      });
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -95487,7 +98873,19 @@
         const outHit = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, outScope);
         if (outHit) return outHit;
       }
-      return _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      const resHit = _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      if (resHit) return resHit;
+      const extPool = [];
+      _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
+      if (extPool.length) {
+        if (outScope) {
+          const extOutHit = _findDomSumByPool(extPool, day, co, outScope, amt, toks, recId, origId, null);
+          if (extOutHit) return extOutHit;
+        }
+        const extResHit = _findDomSumByPool(extPool, day, co, resortKey, amt, toks, recId, origId, null);
+        if (extResHit) return extResHit;
+      }
+      return null;
     }
 
     if (formKey === 'hsp_pos') {
@@ -95515,7 +98913,18 @@
         partyLabel: r.member, amount: Number(r.paid_usd || r.contract_usd || 0) || 0,
         ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.season, r.notes)
       }));
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      const sameHit = _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      if (sameHit) return sameHit;
+      const paidAmt = Number(rec.paid_usd || 0) || 0;
+      if (paidAmt > 0.005) {
+        const extPool = [];
+        _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
+        if (extPool.length) {
+          const extHit = _findDomSumByPool(extPool, day, co, party, paidAmt, toks, recId, origId, null);
+          if (extHit) return extHit;
+        }
+      }
+      return null;
     }
 
     if (formKey === 'ins_billing') {
@@ -95532,6 +98941,30 @@
         };
       }, 'Insurance Company');
       _appendSharedReceiptPoolRows(pool, winDays, co);
+      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
+      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+    }
+
+    if (formKey === 'ins_remittances') {
+      const amt = Number(rec.settled_to_carrier_usd || 0) || 0;
+      if (!(amt > 0.005)) return null;
+      const party = nearCopyPartyKey(rec.carrier);
+      const pool = _domOverlayRows(live.insurance && live.insurance.remittances, 'ins_remittances', null, 'date')
+        .filter(r => {
+          const rDate = String(r.date || r.next_due || '').slice(0, 10);
+          return winDays.has(rDate) && (!co || norm(r.company || 'Insurance Company') === co);
+        })
+        .map(r => {
+          const sAmt = Number(r.settled_to_carrier_usd || 0) || 0;
+          if (!(sAmt > 0.005)) return null;
+          return {
+            id: r.id, _raw: r, _bucket: 'ins_remittances', company: r.company || 'Insurance Company',
+            date: String(r.date || r.next_due || '').slice(0, 10), partyKey: nearCopyPartyKey(r.carrier),
+            partyLabel: r.carrier, amount: sAmt, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.gl_payable, r.next_due)
+          };
+        })
+        .filter(Boolean);
+      _appendExternalSisterPoolRows(pool, 'out', winDays, co);
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -95645,13 +99078,14 @@
     if (formKey === 'hsp_pos') return Number(x.pos_billed_ttc != null ? x.pos_billed_ttc : ((Number(x.cash_usd || 0) || 0) + (Number(x.card_whish_usd || 0) || 0))) || 0;
     if (formKey === 'ins_billing') return Number(x.collected_usd != null ? x.collected_usd : (x.paid_usd || 0)) || 0;
     if (formKey === 'ins_policies') return Number(x.gross_prem_usd != null ? x.gross_prem_usd : (x.gwp_usd || 0)) || 0;
+    if (formKey === 'ins_remittances') return Number(x.settled_to_carrier_usd || 0) || 0;
     if (formKey === 'hld_interactions') return Number(x.usd || x.amount || 0) || 0;
     return Number(x.amount || 0) || 0;
   }
 
   function domainNearCopyDecision(formKey, rec, orig, ticked) {
     if (formKey === 'trd_receipts') return nearCopyDecision('receipts', rec, orig, ticked);
-    if (formKey === 'hld_extended') return nearCopyDecision('external_movements', rec, orig, ticked);
+    if (formKey === 'hld_extended') return nearCopyDecision('external_movements', Object.assign({ kind: 'Extended' }, rec), orig, ticked);
     const o = orig || null;
     const origId = o && (o.id || o.code) ? String(o.id || o.code) : '';
     const partyOf = x => {
@@ -95663,6 +99097,7 @@
       if (formKey === 'hsp_pos') return `${norm(x.terminal || '')}|${norm(x.shift || '')}`;
       if (formKey === 'hsp_memberships') return norm(x.member || '');
       if (formKey === 'ins_billing' || formKey === 'ins_policies') return norm(x.client || x.insured || '');
+      if (formKey === 'ins_remittances') return norm(x.carrier || '');
       if (formKey === 'hld_interactions') return `${norm(x.fromCo || x.company || '')}|${norm(x.toCo || x.counterparty || '')}`;
       return '';
     };
@@ -95714,35 +99149,42 @@
     wrap.hidden = false;
     if (jump) jump.hidden = false;
     FORM_UI.domainNearCopyPeekItems = [];
-    const label = DOMAIN_NEAR_COPY_LABELS[formKey] || 'Entry';
+    const baseLabel = DOMAIN_NEAR_COPY_LABELS[formKey] || 'Entry';
     const reasonMap = {
       sum: 'Same day and party, these entries add up to this amount',
       sum_gap: 'Same party, these entries one day apart add up to this amount',
       sum_typo: 'Same day, entries under a similar name add up to this amount',
       sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      sister: 'Same day and party, already recorded on another form',
+      sister_gap: 'Same party, recorded one day apart on another form',
+      sister_sum: 'Same day and party, entries on another form add up to this amount',
+      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount'
     };
     const reason = reasonMap[hit.reason] || reasonMap.sum_gap;
     if (hint && hit.rows) {
       const party = hit.row.partyLabel || hit.row.customer || hit.row.counterparty || hit.row.tenant || hit.row.client || '';
+      const headLabel = (hit.rows[0] && hit.rows[0]._srcLabel) || baseLabel;
       const parts = hit.rows.map((r, idx) => {
         const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
         const chipTok = nearCopyPeekToken(r, ref);
-        const u = Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
-        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
+        const u = Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
+        const rLabel = (r && r._srcLabel) || baseLabel;
+        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
         return nearCopyPeekChipHtml('dom', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
       }).join(' + ');
       const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
       const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(headLabel)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint && hit.row) {
       const r = hit.row;
       const party = r.partyLabel || r.customer || r.counterparty || r.tenant || r.client || '';
       const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
       const chipTok = nearCopyPeekToken(r, ref);
-      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
-      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
-      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, u > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
+      const rLabel = (r && r._srcLabel) || baseLabel;
+      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
+      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, Math.abs(u) > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(rLabel)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
     if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
       window.MFG_I18N.translateDom(wrap);
@@ -96145,7 +99587,7 @@
             bJvRaw.set(sitK, {
               site: r.site,
               isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
-              partner: (sObj && sObj.jv_partner) || 'Assaf',
+              partner: (sObj && sObj.jv_partner) || window.MFG_NAMEBOOK.jvPartner(),
               sharePct: (sObj && Number(sObj.jv_share) > 0) ? Number(sObj.jv_share) : 50,
               siteOwner: (sObj && sObj.supplier) || '',
               rawMatUsd: 0,
@@ -96180,7 +99622,7 @@
         jvBySite.set(sitK, {
           site: s.name,
           isJv: Boolean(s.is_jv || s.jv),
-          partner: sJvPartner || 'Assaf',
+          partner: sJvPartner || window.MFG_NAMEBOOK.jvPartner(),
           sharePct: sJvShare,
           siteOwner: s.supplier || '',
           rawMatUsd: 0,
@@ -96221,7 +99663,7 @@
       } else if (amt > 0) {
         // Fallback: allocate general partner distributions across JV sites proportionally or track on primary JV site
         jvBySite.forEach(jb => {
-          if (jb.isJv && (!j.site || norm(jb.partner) === norm(j.partner || j.counterparty || 'Assaf'))) {
+          if (jb.isJv && (!j.site || norm(jb.partner) === norm(j.partner || j.counterparty || window.MFG_NAMEBOOK.jvPartner()))) {
             jb.distributedUsd = round2(jb.distributedUsd + amt);
             jb.distCount += 1;
           }
@@ -96675,6 +100117,193 @@
     });
   }
 
+  function _unitBrakeWearStatusForDispatch(unitName, company, swIdx, oilIdx, warnTonKm) {
+    const uk = norm(unitName);
+    if (!uk) return { overdue: false, pct: 0, extraKm: 0, scheduleType: '', effWearKm: null, intKm: null };
+    const unitScheds = (oilIdx && oilIdx.byUnit && oilIdx.byUnit.get(uk)) || [];
+    const brakeScheds = unitScheds.filter(s => isBrakeOrRetarderText(s.oil_type) && !isTyreServiceText(s.oil_type));
+    let worst = null;
+    for (let i = 0; i < brakeScheds.length; i++) {
+      const s = brakeScheds[i];
+      if (!worst || s.rank < worst.rank || (s.rank === worst.rank && (s.maxPct || 0) > (worst.maxPct || 0))) {
+        worst = s;
+      }
+    }
+    if (worst && worst.status === 'OVERDUE') {
+      return {
+        overdue: true,
+        pct: Math.max(100, Number(worst.maxPct || 100)),
+        extraKm: Number(worst.steepExtraWearKm || 0),
+        scheduleType: worst.oil_type || 'Brake Lining & Shoe Set',
+        effWearKm: worst.effWearKm,
+        intKm: worst.intKm
+      };
+    }
+    const u = swIdx && swIdx.byUnit && swIdx.byUnit.get(uk);
+    const hasExplicitBrakeKm = brakeScheds.some(s => Number(s.intKm || 0) > 0);
+    if (u && u.isOwnFleet && u.isTruckUnit && !hasExplicitBrakeKm && u.brakeSteepTonKm >= warnTonKm) {
+      return {
+        overdue: true,
+        pct: warnTonKm > 0 ? round1((u.brakeSteepTonKm / warnTonKm) * 100) : 100,
+        extraKm: Number(u.brakeExtraWearKm || 0),
+        scheduleType: 'Brake / Retarder Baseline',
+        effWearKm: round1((u.brakeSteepRouteKm || 0) + (u.brakeExtraWearKm || 0)),
+        intKm: null
+      };
+    }
+    return {
+      overdue: false,
+      pct: worst ? Number(worst.maxPct || 0) : (u && warnTonKm > 0 ? round1((u.brakeSteepTonKm / warnTonKm) * 100) : 0),
+      extraKm: worst ? Number(worst.steepExtraWearKm || 0) : (u ? Number(u.brakeExtraWearKm || 0) : 0),
+      scheduleType: worst ? (worst.oil_type || '') : '',
+      effWearKm: worst ? worst.effWearKm : null,
+      intKm: worst ? worst.intKm : null
+    };
+  }
+
+  function findLowestWearAvailableOwnTruck(company, excludeTruckName, refDate, ctxOpt = null) {
+    const co = canonTwBu(company || '');
+    if (!co || getActiveIndustry(co) !== 'Manufacturing') return null;
+    const swIdx = (ctxOpt && ctxOpt.swIdx) || computeSteepCorridorWearIndex(co);
+    const oilIdx = (ctxOpt && ctxOpt.oilIdx) || getOilServiceIndex(co);
+    const warnTonKm = (swIdx && swIdx.params && swIdx.params.warnTonKm) || Math.max(500, Number(getAlertParam('S18', 'warn_ton_km', 15000)) || 15000);
+    const rawList = typeof trucksForOwner === 'function' ? (trucksForOwner('', co, true) || []) : [];
+    const exclKey = norm(excludeTruckName || '');
+    const dt = String(refDate || todayISO()).slice(0, 10);
+    const freqIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    const truckFreq = (freqIdx && typeof freqIdx.forCol === 'function') ? freqIdx.forCol('truck') : null;
+    const candidates = [];
+    const seen = new Set();
+    for (let i = 0; i < rawList.length; i++) {
+      const name = String(rawList[i] || '').trim();
+      const nk = norm(name);
+      if (!nk || nk === exclKey || seen.has(nk)) continue;
+      seen.add(nk);
+      const eq = equipInfo(name, co, true, { date: dt }) || equipInfo(name, co, true);
+      if (!eq || !isOwnUnit(eq, co)) continue;
+      const coRow = typeof companyFleetRow === 'function' ? companyFleetRow(name, co) : null;
+      const eqSt = String((eq && eq.status) || (coRow && coRow.status) || '').trim();
+      if (/sold|retired|under\s*repair|out\s*of\s*service|scrapped|inactive/i.test(eqSt)) continue;
+      const h = typeof getEquipmentHealth === 'function' ? getEquipmentHealth(name, co) : null;
+      if (h && (h.severityRank === 0 || h.severityRank === 1 || h.severityRank === 6)) continue;
+      const unitScheds = (oilIdx && oilIdx.byUnit && oilIdx.byUnit.get(nk)) || [];
+      if (unitScheds.some(s => s && s.status === 'OVERDUE')) continue;
+      const bw = _unitBrakeWearStatusForDispatch(name, co, swIdx, oilIdx, warnTonKm);
+      if (bw.overdue) continue;
+      candidates.push({
+        truck: eq.name || name,
+        driver: eq.default_driver || '',
+        capacity: Number(eq.capacity || 0),
+        brakePct: bw.pct,
+        extraKm: bw.extraKm,
+        healthRank: h ? Number(h.severityRank || 0) : 5,
+        freq: truckFreq ? (truckFreq.get(nk) || truckFreq.get(norm(eq.name || name)) || 0) : 0
+      });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) =>
+      (a.brakePct - b.brakePct)
+      || (a.extraKm - b.extraKm)
+      || (b.healthRank - a.healthRank)
+      || (b.freq - a.freq)
+      || a.truck.localeCompare(b.truck)
+    );
+    return candidates[0];
+  }
+
+  function evaluateDispatchSteepBrakeWarning(formType, company, site, truckName, effDate, opts = {}) {
+    const co = canonTwBu(company || '');
+    const sNm = String(site || '').trim();
+    const tNm = String(truckName || '').trim();
+    if (!co || !sNm || !tNm) return null;
+    if (getActiveIndustry(co) !== 'Manufacturing') return null;
+    if (!isAlertRuleEnabled('S18')) return null;
+    if (opts && opts.isCoFleet === false) return null;
+    const eqObj = equipInfo(tNm, co, true, { date: effDate || todayISO() }) || equipInfo(tNm, co, false);
+    if (eqObj && !isOwnUnit(eqObj, co)) return null;
+    const geo = window.MFG_GEO;
+    if (!geo || typeof geo.estimateLegKm !== 'function') return null;
+    const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: sNm }, SEED, { roundTripIfAnyBu: true, skipFuel: true, industry: 'Manufacturing' });
+    if (!est || !est.verifiedRoute) return null;
+    const oneWayKm = Number(est.oneWayKm || 0);
+    const roundTripKm = Number(est.roundTripKm || 0) > 0 ? Number(est.roundTripKm) : (oneWayKm > 0 ? round1(oneWayKm * 2) : 0);
+    if (!(roundTripKm > 0)) return null;
+    const isRawLeg = formType === 'raw';
+    const loadedClimbM = Math.max(0, Number(isRawLeg ? (est.descentM != null ? est.descentM : est.elevDropM) : (est.ascentM != null ? est.ascentM : est.elevGainM)) || 0);
+    const loadedDescentM = Math.max(0, Number(isRawLeg ? (est.ascentM != null ? est.ascentM : est.elevGainM) : (est.descentM != null ? est.descentM : est.elevDropM)) || 0);
+    const maxGradePct = Math.max(0, Number(est.maxGradePct) || 0);
+    const minGradePct = Math.max(1, Number(getAlertParam('S18', 'min_grade_pct', 8)) || 8);
+    const minClimbM = Math.max(25, Number(getAlertParam('S18', 'min_climb_m', 250)) || 250);
+    const isSteepBrakeLeg = Boolean((minClimbM > 0 && loadedDescentM >= minClimbM) || (minGradePct > 0 && maxGradePct >= minGradePct && (!est.elevAvailable || loadedDescentM >= minClimbM * 0.25 || loadedDescentM >= loadedClimbM)));
+    if (!isSteepBrakeLeg) return null;
+
+    const swIdx = computeSteepCorridorWearIndex(co);
+    const oilIdx = getOilServiceIndex(co);
+    const warnTonKm = (swIdx && swIdx.params && swIdx.params.warnTonKm) || Math.max(500, Number(getAlertParam('S18', 'warn_ton_km', 15000)) || 15000);
+    const bw = _unitBrakeWearStatusForDispatch(tNm, co, swIdx, oilIdx, warnTonKm);
+    if (!bw.overdue) return null;
+    const bestAlt = findLowestWearAvailableOwnTruck(co, (eqObj && eqObj.name) || tNm, effDate, { swIdx, oilIdx });
+    return {
+      active: true,
+      formType,
+      company: co,
+      site: sNm,
+      truck: (eqObj && eqObj.name) || tNm,
+      maxGradePct: round1(maxGradePct),
+      loadedDescentM: Math.round(loadedDescentM),
+      loadedClimbM: Math.round(loadedClimbM),
+      roundTripKm: round1(roundTripKm),
+      scheduleType: bw.scheduleType,
+      effWearKm: bw.effWearKm,
+      intKm: bw.intKm,
+      extraWearKm: round1(bw.extraKm),
+      suggestedTruck: bestAlt ? bestAlt.truck : '',
+      suggestedDriver: bestAlt ? bestAlt.driver : '',
+      suggestedBrakePct: bestAlt ? bestAlt.brakePct : null,
+      suggestedExtraKm: bestAlt ? round1(bestAlt.extraKm) : 0
+    };
+  }
+
+  function syncDispatchSteepBrakeWarning(formType, opts = {}) {
+    const banner = $('dispatchSteepBrakeWarnBanner');
+    if (!banner) return null;
+    const dispMode = (opts && opts.disp && opts.disp.mode) || FORM_UI.ticketDisposition || 'standard';
+    if (STATE.view === 'kiosks' || dispMode !== 'standard' || !opts || !opts.isCoFleet || !opts.site || !opts.truckName) {
+      banner.hidden = true;
+      banner.dataset.warnSig = '';
+      banner.innerHTML = '';
+      return null;
+    }
+    const res = evaluateDispatchSteepBrakeWarning(formType, opts.company, opts.site, opts.truckName, opts.effDate, { isCoFleet: true });
+    if (!res || !res.active) {
+      banner.hidden = true;
+      banner.dataset.warnSig = '';
+      banner.innerHTML = '';
+      return null;
+    }
+    const metricBits = `${res.maxGradePct.toFixed(1)}% · -${fmtNum(res.loadedDescentM, 0)}m${res.effWearKm != null ? ' · ' + fmtNum(res.effWearKm, 0) + (res.intKm ? '/' + fmtNum(res.intKm, 0) : '') + ' km' : ''}`;
+    const warnSig = `${formType}|${res.truck}|${res.site}|${metricBits}|${res.suggestedTruck || ''}`;
+    if (!banner.hidden && banner.dataset.warnSig === warnSig) return res;
+    banner.hidden = false;
+    banner.dataset.warnSig = warnSig;
+    banner.innerHTML = `
+      <span class="pa-rec-banner-ico">${ic('warn')}</span>
+      <div class="dispatch-brake-warn-body">
+        <div class="dispatch-brake-warn-title">
+          <b data-no-i18n="1">${esc(res.truck)}</b>
+          <span>is overdue on weighted brake &amp; retarder wear for steep downhill haulage to</span>
+          <b data-no-i18n="1">${esc(res.site)}</b>
+          <span class="mu" data-no-i18n="1">(${metricBits})</span>
+        </div>
+        <div class="dispatch-brake-warn-sub">
+          <span>Advisory warning only. Posting stays unlocked if workshop or supervisor clears dispatch.</span>
+        </div>
+      </div>
+      ${res.suggestedTruck ? `<button type="button" id="btnSwitchLowestWearTruck" class="dispatch-brake-swap-btn" data-switch-low-wear-truck="${esc(res.suggestedTruck)}"><span>Switch to</span> <b data-no-i18n="1">${esc(res.suggestedTruck)}</b></button>` : ''}
+    `;
+    return res;
+  }
+
   function recalcSales() {
     syncOriginDispatchUI('sales', true);
     const company = val('f_company');
@@ -97103,6 +100732,12 @@
       setText('lbl_pricelock', isFieldAdminUnlocked('f_unitprice') ? 'ADMIN OVERRIDE' : 'MANUAL');
       setHint('hint_price', rule ? `Overrides ${rule.rule_type || 'agreement'} (${fmtUSD(agreedMatRate, 2)})` : 'Manual / Admin-unlocked unit price', rule ? 'warn' : '');
     }
+    if (isDelivery && !isUnreg && customer && site && !FORM_UI.hydrating) {
+      const editOrigS = STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets' ? STATE.editingRecord.orig : null;
+      if (ticketAgreementCheck('sales', { company, customer, product, site, saleType, date, repDate: val('f_repdate') || date, effDate, orig: editOrigS })) {
+        setHint('hint_price', 'No Sales (Delivery) agreement for this customer and site on this date. Add one before posting.', FORM_UI.postAttempted ? 'crit' : 'warn');
+      }
+    }
 
     if (tpEl) {
       if (!isDelivery) {
@@ -97333,6 +100968,14 @@
       setText('calc_vat', (vatReg || vat > 0) ? fmtUSD(-vat, 2) : '$0.00');
       setText('calc_total', '$0.00 Net (' + fmtUSD(-ttc, 2) + ')');
     }
+    syncDispatchSteepBrakeWarning('sales', {
+      company,
+      isCoFleet: isCoFleet && isDelivery,
+      site,
+      truckName,
+      effDate: salesEffDate,
+      disp
+    });
     renderAdminLockBar();
     return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
       // Recorded on the ticket only while the transport price is the agreed one (a typed price carries no surcharge).
@@ -97802,6 +101445,12 @@
       setText('lbl_pricelock', isFieldAdminUnlocked('f_unitprice') ? 'ADMIN OVERRIDE' : 'MANUAL');
       setHint('hint_price', rule ? `Overrides ${rule.rule_type || 'agreement'} (${fmtUSD(agreedMatCost, 2)})` : '', rule ? 'warn' : '');
     }
+    if (!pendRawEditRow && !rawPricePending && product && (owner || site) && !FORM_UI.hydrating) {
+      const editOrigR = STATE.editingRecord && STATE.editingRecord.crKey === 'raw_purchases' ? STATE.editingRecord.orig : null;
+      if (ticketAgreementCheck('raw', { company, owner, product, site, pricePending: false, date, repDate: val('f_repdate') || date, effDate, orig: editOrigR })) {
+        setHint('hint_price', 'No purchase price agreement for this site and material on this date. Add one ($0 is allowed) or switch to Price Pending.', FORM_UI.postAttempted ? 'crit' : 'warn');
+      }
+    }
 
     if (tpEl) {
       if (!is3PHauler) {
@@ -97901,7 +101550,7 @@
         rawStrip.hidden = false;
         rawStrip.className = 'att-contract-strip';
         rawStrip.innerHTML = `
-          <div><strong>${esc(site || owner || truckName)}</strong> <span class="badge ${isJv ? 'badge-brass' : (isSuppDeliv ? 'badge-brass' : 'badge-info')}">${isJv ? 'JV 50/50 Site · Partner ' + esc((jvInfo && jvInfo.partner) || 'Assaf') : (isSuppDeliv ? 'Bundled · Mat + Trans Included' : 'Quarry Intake')}</span></div>
+          <div><strong>${esc(site || owner || truckName)}</strong> <span class="badge ${isJv ? 'badge-brass' : (isSuppDeliv ? 'badge-brass' : 'badge-info')}">${isJv ? 'JV 50/50 Site · Partner ' + esc((jvInfo && jvInfo.partner) || window.MFG_NAMEBOOK.jvPartner()) : (isSuppDeliv ? 'Bundled · Mat + Trans Included' : 'Quarry Intake')}</span></div>
           <div class="att-contract-metrics">
             ${owner ? `<span><small>Leg 1 Payee (${esc(owner)})</small><b>${ap != null ? 'Open AP ' + fmtUSD(ap, 0) : 'Direct Site Payee'}</b></span>` : ''}
             ${isSuppDeliv ? `<span><small>Transport</small><b>Included in Material Price (Split Unknown)</b></span>` : (is3PHauler && truckOwner ? `<span><small>Leg 2 Hauler (${esc(truckOwner)})</small><b>${haulAp != null ? 'Open AP ' + fmtUSD(haulAp, 0) : '3P Hauler'}</b></span>` : `<span><small>Transport</small><b>${esc(company)} Fleet ($0 3P AP)</b></span>`)}
@@ -97924,6 +101573,14 @@
       setText('calc_qty', `-${fmtNum(qty, 2)} ${uom} (Net 0)`);
       setText('calc_total', '$0.00 Net (' + fmtUSD(-rawTot, 2) + ')');
     }
+    syncDispatchSteepBrakeWarning('raw', {
+      company,
+      isCoFleet: isCoFleet && !isSuppDeliv && !pendRawEditRowEarly,
+      site,
+      truckName,
+      effDate,
+      disp
+    });
     renderAdminLockBar();
     return { origin, disp, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, haulIsIndiff: effHaulIsIndiff, qty, up, tp, disc, mat, tr, rawTot, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard, pricePending: rawPricePending };
   }
@@ -98768,6 +102425,10 @@
       setHint('hint_qty', isBulkTankRefill && qty > 0 ? `${fmtNum(qty, 0)} L already received in ${val('f_company') || 'WTC'} Diesel Tank` : '', 'ok');
     } else if (pricePending && !(qty > 0)) {
       setHint('hint_qty', isBulkTankRefill ? 'Enter delivered Litres (L) from delivery slip' : 'Enter quantity received', FORM_UI.postAttempted ? 'crit' : 'warn');
+    } else if (isBulkTankRefill && qty > 0 && qty < 100 && amount / qty > 3) {
+      // Owner 2026-11-21: 84 BBConstruction deliveries were typed as Quantity 1 with only the amount, and the tank lost
+      // about 200,000 L. Diesel never costs above $3 / L, so a dearer litre is a quantity left at 1. A warning, not a block.
+      setHint('hint_qty', `Only ${fmtNum(qty, qty % 1 ? 2 : 0)} L for ${fmtUSD(amount, 2)} (${fmtUSD(amount / qty, 2)} / L): type the litres delivered, the diesel tank counts this quantity`, 'warn');
     } else if (isBulkTankRefill && qty > 0) {
       setHint('hint_qty', `+${fmtNum(qty, 0)} L added to ${val('f_company') || 'WTC'} Diesel Tank`, 'ok');
     } else {
@@ -103300,6 +106961,10 @@
         if (siteRegLbl) siteRegLbl.textContent = inclTrans ? 'Region (Optional · Supplier Delivers)' : 'Region *';
         const siteNameLbl = document.querySelector('#wrap_site_name .pa-fld-lbl');
         if (siteNameLbl) siteNameLbl.textContent = inclTrans ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *';
+        const surfSelEl = $('f_site_surface');
+        if (surfSelEl) {
+          surfSelEl.disabled = Boolean(editingSiteRec && !canWriteGeoConfig());
+        }
 
         const mTitle = $('modalTitle');
         if (mTitle && !STATE.editingPendingExpenseId) {
@@ -104717,7 +108382,7 @@
             jvStrip.innerHTML = `
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <strong>${esc((jvPos && jvPos.site) || site || 'JV Site')}</strong>
-                <span class="badge ${jvPos && jvPos.isJv ? 'badge-brass' : 'badge-info'}">${jvPos && jvPos.isJv ? 'Active 50/50 JV Site' : 'Site Ledger'} · Partner: ${esc(val('f_counterparty') || (jvPos && jvPos.partner) || 'Assaf')}</span>
+                <span class="badge ${jvPos && jvPos.isJv ? 'badge-brass' : 'badge-info'}">${jvPos && jvPos.isJv ? 'Active 50/50 JV Site' : 'Site Ledger'} · Partner: ${esc(val('f_counterparty') || (jvPos && jvPos.partner) || window.MFG_NAMEBOOK.jvPartner())}</span>
                 ${isAdvDist ? `<span class="badge badge-warn">Advance Distribution (+${fmtUSD(Math.abs(remAfter), 2)} over Accrued)</span>` : ''}
                 ${jvt === 'distribution' && remBefore > 0.01 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${remBefore.toFixed(2)}">Pay Remaining (${fmtUSD(remBefore, 2)})</button>` : ''}
               </div>
@@ -104998,11 +108663,21 @@
           const catOil = resolveCatalogItem(oilType);
           const defOilUom = (catOil && catOil.uom)
             ? catOil.uom
-            : (/Brake|Clutch|Retarder|Drivetrain|Filter/i.test(oilType) ? 'Set' : (/Grease/i.test(oilType) ? 'kg' : 'Litre'));
+            : (/Brake|Clutch|Retarder|Drivetrain|Filter|Tyre|Tire|Alignment/i.test(oilType) ? 'Set' : (/Grease/i.test(oilType) ? 'kg' : 'Litre'));
           if (/Hydraulic/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '1000';
             if ($('f_int_km')) $('f_int_km').value = '0';
             if ($('f_int_days')) $('f_int_days').value = '365';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
+          } else if (/Drive[\s-]*Axle.*(?:Tyre|Tire)|(?:Tyre|Tire).*Replac/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '0';
+            if ($('f_int_km')) $('f_int_km').value = '45000';
+            if ($('f_int_days')) $('f_int_days').value = '365';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
+          } else if (/Tyre|Tire|Alignment/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '0';
+            if ($('f_int_km')) $('f_int_km').value = '20000';
+            if ($('f_int_days')) $('f_int_days').value = '120';
             if ($('f_uom')) $('f_uom').value = defOilUom;
           } else if (/Brake/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '0';
@@ -108602,6 +112277,26 @@
           recalcForm();
           return;
         }
+        const switchLowWearBtn = ev.target && ev.target.closest ? ev.target.closest('[data-switch-low-wear-truck]') : null;
+        if (switchLowWearBtn) {
+          ev.preventDefault();
+          const targetTruck = String(switchLowWearBtn.getAttribute('data-switch-low-wear-truck') || '').trim();
+          if (targetTruck && $('f_truck')) {
+            const isTonMode = /^tons?$/i.test(String(val('f_uom') || '').trim());
+            const savedTonQty = (isTonMode && qtyEl()) ? String(qtyEl().value || '') : '';
+            $('f_truck').value = targetTruck;
+            FORM_UI.driverManual = false;
+            if (!isTonMode) FORM_UI.qtyManual = false;
+            recalcForm(true);
+            if (isTonMode && savedTonQty && qtyEl()) {
+              qtyEl().value = savedTonQty;
+              FORM_UI.qtyManual = true;
+              recalcForm(true);
+            }
+            toast(`Switched dispatch truck to ${targetTruck}`, 'ok');
+          }
+          return;
+        }
         const siteRulesCoBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rules-all-cos]') : null;
         if (siteRulesCoBtn) {
           ev.preventDefault();
@@ -110670,6 +114365,7 @@
   }
 
   function openNearCopyPeekPopover(scope, idx, chipEl) {
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     const items = scope === 'dom'
       ? (FORM_UI.domainNearCopyPeekItems || [])
       : (FORM_UI.nearCopyPeekItems || []);
@@ -110865,6 +114561,191 @@
     document.addEventListener('scroll', repositionIfOpen, true);
   }
 
+  let _fifoPeekAnchorEl = null;
+
+  function ensureFifoSplitPeekPopover() {
+    let pop = $('fifoSplitPeekPopover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.id = 'fifoSplitPeekPopover';
+    pop.className = 'fifo-split-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'false');
+    pop.setAttribute('aria-label', 'FIFO Invoice Allocation Split');
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    return pop;
+  }
+
+  function closeFifoSplitPeekPopover(restoreFocus = false) {
+    const pop = $('fifoSplitPeekPopover');
+    const prevAnchor = _fifoPeekAnchorEl;
+    if (pop) {
+      pop.hidden = true;
+      pop.innerHTML = '';
+    }
+    _fifoPeekAnchorEl = null;
+    const btn = $('ideFifoSplitBtn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && prevAnchor && prevAnchor.isConnected) {
+      try { prevAnchor.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  function positionFifoSplitPeekPopover(pop, btnEl) {
+    if (!pop || !btnEl || !btnEl.isConnected) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 844;
+    const rect = btnEl.getBoundingClientRect();
+    const isRtl = typeof document !== 'undefined' && document.documentElement && document.documentElement.dir === 'rtl';
+    const popW = Math.min(440, Math.max(240, vw - 16), pop.offsetWidth || 440);
+    const popH = Math.min(460, pop.offsetHeight || 260);
+    let left = isRtl ? (rect.right - popW) : rect.left;
+    left = Math.max(8, Math.min(vw - popW - 8, left));
+    let top;
+    if (rect.top - popH - 8 >= 8) {
+      top = rect.top - popH - 8;
+    } else if (rect.bottom + popH + 8 <= vh - 8) {
+      top = rect.bottom + 8;
+    } else {
+      const aboveSpace = rect.top - 8;
+      const belowSpace = vh - rect.bottom - 8;
+      top = aboveSpace >= belowSpace
+        ? Math.max(8, rect.top - popH - 8)
+        : Math.max(8, Math.min(vh - popH - 8, rect.bottom + 8));
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function openFifoSplitPeekPopover(btnEl) {
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
+    const pv = FORM_UI.domainFifoSplitPreview;
+    const splitRows = (pv && pv.fifo && Array.isArray(pv.fifo.splitRows)) ? pv.fifo.splitRows : [];
+    if (!splitRows.length) return false;
+
+    const pop = ensureFifoSplitPeekPopover();
+    if (!pop.hidden) {
+      closeFifoSplitPeekPopover(false);
+      return true;
+    }
+
+    const fifo = pv.fifo;
+    const bodyRowsHtml = splitRows.map(sr => {
+      const invCellBody = sr.isPrior
+        ? '<span>Prior Carried Balance</span>'
+        : `<strong data-no-i18n="1">${esc(sr.id)}</strong>${sr.label ? `<div ${sr.isUiLabel ? '' : 'data-no-i18n="1" '}style="font-size:10px;color:var(--mu,#5B6B82)"><span>${esc(sr.label)}</span></div>` : ''}`;
+      const stTxt = sr.status === 'Cleared' ? 'Cleared' : 'Partial';
+      const stCls = sr.status === 'Cleared' ? 'good' : 'warn';
+      return `
+        <tr>
+          <td>${invCellBody}</td>
+          <td class="mono" data-no-i18n="1">${esc(sr.date ? fmtDateDMY(sr.date) : '-')}</td>
+          <td class="r mono" data-no-i18n="1">${esc(fmtUSD(sr.openBeforeUsd, 2))}</td>
+          <td class="r mono" data-no-i18n="1"><strong>${esc(fmtUSD(sr.settledNowUsd, 2))}</strong></td>
+          <td class="r mono" data-no-i18n="1">${esc(fmtUSD(sr.openAfterUsd, 2))}</td>
+          <td><span class="${stCls}">${esc(stTxt)}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    const footParts = [
+      `<div><span>Total Allocated</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.allocatedUsd, 2))}</strong></span></div>`,
+      Number(fifo.unallocatedUsd || 0) > 0.005 ? `<div><span>Unallocated Credit</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.unallocatedUsd, 2))}</strong></span></div>` : '',
+      fifo.remainingOpenArUsd != null ? `<div><span>Remaining Open AR</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.remainingOpenArUsd, 2))}</strong></span></div>` : ''
+    ].filter(Boolean).join('');
+
+    pop.innerHTML = `
+      <div class="nc-peek-hdr">
+        <div class="nc-peek-hdr-main">
+          <span class="nc-peek-kicker"><span>FIFO Invoice Split</span></span>
+          <div class="nc-peek-title" data-no-i18n="1">${esc(pv.partyLabel || '-')}</div>
+        </div>
+        <div class="nc-peek-amt-wrap"><div class="nc-peek-amt" data-no-i18n="1">${esc(fmtUSD(fifo.allocatedUsd, 2))}</div></div>
+        <button type="button" class="nc-peek-close" id="fifoSplitPeekCloseBtn" aria-label="Close Invoice Split" data-ui-tip="Close Invoice Split">✕</button>
+      </div>
+      <div class="fifo-split-tbl-wrap">
+        <table class="fifo-split-tbl">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Date</th>
+              <th class="r">Open Before</th>
+              <th class="r">Settled Now</th>
+              <th class="r">Open After</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${bodyRowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="fifo-split-foot">${footParts}</div>
+    `;
+
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(pop);
+    }
+
+    pop.style.visibility = 'hidden';
+    pop.hidden = false;
+    _fifoPeekAnchorEl = btnEl || $('ideFifoSplitBtn') || null;
+    if (_fifoPeekAnchorEl) _fifoPeekAnchorEl.setAttribute('aria-expanded', 'true');
+    positionFifoSplitPeekPopover(pop, _fifoPeekAnchorEl);
+    pop.style.visibility = '';
+    const closeBtn = $('fifoSplitPeekCloseBtn');
+    if (closeBtn) {
+      try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  let _fifoPeekWired = false;
+  function wireFifoSplitPeekPopover() {
+    if (_fifoPeekWired || typeof document === 'undefined') return;
+    _fifoPeekWired = true;
+    document.addEventListener('mousedown', ev => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('#ideFifoSplitBtn') : null;
+      if (btn) ev.preventDefault();
+    });
+    document.addEventListener('click', ev => {
+      const t = ev.target && ev.target.closest ? ev.target : null;
+      if (!t) return;
+      const closeBtn = t.closest('#fifoSplitPeekCloseBtn');
+      if (closeBtn) {
+        ev.preventDefault();
+        closeFifoSplitPeekPopover(true);
+        return;
+      }
+      const splitBtn = t.closest('#ideFifoSplitBtn');
+      if (splitBtn) {
+        ev.preventDefault();
+        openFifoSplitPeekPopover(splitBtn);
+        return;
+      }
+      const pop = $('fifoSplitPeekPopover');
+      if (pop && !pop.hidden && !t.closest('#fifoSplitPeekPopover')) {
+        closeFifoSplitPeekPopover(false);
+      }
+    });
+    const repositionIfOpen = () => {
+      const pop = $('fifoSplitPeekPopover');
+      if (!pop || pop.hidden) return;
+      if (!_fifoPeekAnchorEl || !_fifoPeekAnchorEl.isConnected) {
+        closeFifoSplitPeekPopover(false);
+        return;
+      }
+      const rect = _fifoPeekAnchorEl.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        closeFifoSplitPeekPopover(false);
+        return;
+      }
+      positionFifoSplitPeekPopover(pop, _fifoPeekAnchorEl);
+    };
+    window.addEventListener('resize', repositionIfOpen);
+    document.addEventListener('scroll', repositionIfOpen, true);
+  }
+
   function wirePartyTypoHost(host, ctx) {
     if (!host) return;
     host._partyTypoCtx = ctx || {};
@@ -110903,7 +114784,7 @@
       }, 130);
     });
     host.addEventListener('mousedown', ev => {
-      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip') : null;
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ideFifoSplitBtn') : null;
       if (t) ev.preventDefault();
     });
     host.addEventListener('click', ev => {
@@ -111120,6 +115001,12 @@
               addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
             }
           }
+          const agrErrS = ticketAgreementCheck('sales', {
+            company, customer: c.customer, product: c.product, site: c.site, saleType: c.saleType,
+            date, repDate, effDate: (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date,
+            orig: editCtx && editCtx.crKey === 'sales_tickets' ? editCtx.orig : null
+          });
+          if (agrErrS) addErr(c.product ? 'f_customer' : 'f_site', agrErrS);
           const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
           if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
           if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
@@ -111313,6 +115200,12 @@
               addErr('f_qty', c.tonGuard.hint);
             }
             if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
+            const agrErrR = ticketAgreementCheck('raw', {
+              company, owner: c.owner, product: c.product, site: c.site, pricePending: Boolean(c.pricePending),
+              date, repDate, effDate: (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date,
+              orig: editCtx && editCtx.crKey === 'raw_purchases' ? editCtx.orig : null
+            });
+            if (agrErrR) addErr('f_unitprice', agrErrR);
           }
           if (!isSuppDeliv && !val('f_truck')) addErr('f_truck', 'Truck is required.');
           if (!isSuppDeliv && !val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
@@ -111940,12 +115833,14 @@
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED, undefined, { recordsOnly: true });
         if (hitReg && hitReg.name) siteReg = hitReg.name;
       }
-      if (!inclTrans && !siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
+      const origHadNoRegion = Boolean(origSite && !String(origSite.region || origSite.geo_zone || '').trim());
+      if (!inclTrans && !siteReg && !origHadNoRegion && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
         const pHit = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
         if (pHit && pHit.region) siteReg = pHit.region;
       }
       const isMfgSiteSave = getActiveIndustry() === 'Manufacturing';
-      if (!siteReg && !inclTrans) {
+      const allowBlankLegacyEditRegion = Boolean(origHadNoRegion);
+      if (!siteReg && !inclTrans && !allowBlankLegacyEditRegion) {
         addErr('f_region', isMfgSiteSave
           ? 'Region is required when hauling in our trucks or 3rd-party haulers (or select Bundled Supplier Material + Transport).'
           : 'Region is required. Select a Region or click inside a zone on the map.');
@@ -111955,7 +115850,7 @@
           regionName: siteReg,
           lat: siteLat,
           lng: siteLng,
-          allowMissingRegion: inclTrans
+          allowMissingRegion: inclTrans || allowBlankLegacyEditRegion
         }, SEED);
         if (!geoCheck.ok) {
           addErr(geoCheck.field || 'f_region', geoCheck.reason);
@@ -112017,6 +115912,13 @@
       }
       // A cleared end date is deliberate: sync and the seed re-apply must not put the old one back
       const siteReopenFlag = (origSite && origSiteEnd && !siteEndVal) ? { _reopenedExplicitly: true } : (siteEndVal ? { _reopenedExplicitly: false } : {});
+      const rawSurfVal = $('f_site_surface') ? String(val('f_site_surface') || '').trim().toLowerCase() : '';
+      const surfVal = (rawSurfVal === 'paved' || rawSurfVal === 'unpaved') ? rawSurfVal : '';
+      const origHasSurf = Boolean(origSite && Object.prototype.hasOwnProperty.call(origSite, 'road_surface'));
+      const canMutateSurf = !(origSite && !canWriteGeoConfig());
+      const siteSurfacePatch = canMutateSurf
+        ? (surfVal ? { road_surface: surfVal } : (origHasSurf ? { road_surface: '' } : {}))
+        : (origHasSurf ? { road_surface: origSite.road_surface } : {});
       record = {
         ...base,
         name: nm,
@@ -112033,6 +115935,7 @@
         is_jv: isJvSite,
         status: siteStatusVal,
         end_date: siteEndVal,
+        ...siteSurfacePatch,
         ...siteReopenFlag,
         ...(isJvSite ? { jv_partner: jvPartnerVal, jv_share: round2(jvShareVal), jv_company: jvCoVal } : { jv_partner: '', jv_share: 0, jv_company: '' })
       };
@@ -114184,6 +118087,52 @@
     }
   }
 
+  // The server refused a schedule because the id it would take holds one saved and undone on another device
+  // (server.py and d1_store.js answer 409 with this code, and store nothing of the request)
+  const isVoidedIdConflictRes = r => Boolean(r && r.ok === false && Number(r.status) === 409 && r.code === 'voided_id_conflict');
+  // Call after the device copy is put back as it was. Reads the server's schedules into it, so the undone schedule
+  // is on this device and the next save takes a free id (nextSiblingChronoSplitId skips ids held on the device).
+  // Returns the one message to show: the screen is up to date, or the server's own words when it could not be read.
+  async function refreshAfterVoidedIdConflict(rejectRes) {
+    const notRead = String((rejectRes && rejectRes.error) || '') || 'This schedule was saved and undone on another device. Refresh the page and save again.';
+    if (!hasServerApi() || isDemoScopeActive()) return notRead;
+    let t = null;
+    try {
+      const ctrl = new AbortController();
+      t = setTimeout(() => ctrl.abort(), 8000);
+      const res = await edgeApiFetch('./api/industry_domain_store', { signal: ctrl.signal });
+      clearTimeout(t);
+      t = null;
+      if (!res || !res.ok) return notRead;
+      const d = await res.json().catch(() => null);
+      if (!d || d.ok === false || !d.industryCustomRows || typeof d.industryCustomRows !== 'object') return notRead;
+      // What is read in came from the server: nothing is sent back. (The merges send the whole device copy when they
+      // change it; a second press of Save while this read was on its way would have its unsaved changes sent along.)
+      let changed = false;
+      const prevDeferPull = _deferIndustryDomainServerPost;
+      _deferIndustryDomainServerPost = true;
+      try {
+        changed = mergeIndustryCustomRows(d.industryCustomRows);
+        if (d.industryRowEdits && mergeIndustryRowEdits(d.industryRowEdits)) changed = true;
+      } finally {
+        _deferIndustryDomainServerPost = prevDeferPull;
+      }
+      if (changed) saveLocalAuthAndRecords();
+      // Up to date only when the undone schedule the server named is now on this device, in the bucket it named
+      const wantId = String((rejectRes && rejectRes.conflictId) || '').trim().toUpperCase();
+      const wantBucket = String((rejectRes && rejectRes.conflictBucket) || '');
+      const store = getIndustryCustomRowsStore();
+      const onDevice = Boolean(wantId) && Object.keys(store).some(b => (!wantBucket || b === wantBucket) && Array.isArray(store[b])
+        && store[b].some(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === wantId));
+      if (!onDevice) return notRead;
+      if (typeof renderApp === 'function') renderApp();
+      return 'This schedule was saved and undone on another device. Your screen is now up to date: save again.';
+    } catch (_) {
+      if (t) clearTimeout(t);
+      return notRead;
+    }
+  }
+
   async function postRecordPairsChunked(pairs, concurrency = 8, opts = {}) {
     if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false, postedPairs: [], postedResults: [] };
     const dedup = [];
@@ -114463,6 +118412,49 @@
               saveModalEntry(nextOpts);
             }
           });
+          return;
+        }
+      }
+      // A price agreement save shows the exact tickets it re-prices before Post, as the other five industries do
+      // (owner 2026-11-20): worked out on a dry run, nothing written. The save runs again on the person's yes; a
+      // second dry run that finds other tickets (another device's change arrived meanwhile) asks again.
+      if (crKey === 'price_rules') {
+        const askedSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
+        const editOrigAsk = (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : null;
+        let pv = null;
+        try {
+          pv = previewMfgPriceRuleImpact(record, editOrigAsk, editOrigAsk ? { userChangedValue: entryModalUserChangedValue() } : undefined);
+        } catch (_) { pv = null; }
+        if (pv) {
+          const pvSum = summarizeSiblingRepriceImpact(pv.impact);
+          // (no record id in it: a new entry may get a fresh id on each run of the save)
+          const pvSig = `${pv.kept ? pv.kept.newFrom : ''}|${pvSum.sig}`;
+          if ((pv.kept || pvSum.n > 0 || pvSum.lockedN > 0) && askedSig !== pvSig) {
+            STATE.saving = false;
+            if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+            const nextOptsRi = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
+            nextOptsRi._rateImpactSig = pvSig;
+            nextOptsRi._keptPeriodOk = true;
+            promptRateChangeImpact({ mode: 'save', impact: pv.impact, kept: pv.kept, isNew: !isEditingExisting })
+              .then(okRi => { if (okRi) saveModalEntry(nextOptsRi); });
+            return;
+          }
+        }
+      }
+      // A dated row saved from a later day with another value starts a new period (the earlier one stays as its own
+      // entry). The person is told before anything is changed (owner 2026-11-20), and the save runs on their yes.
+      if (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig
+        && !(evOrOpts && !(evOrOpts instanceof Event) && evOrOpts._keptPeriodOk)) {
+        let keptPlanAsk = null;
+        try {
+          keptPlanAsk = describeChronoKeptPeriod(crKey, record, editCtx.orig, { userChangedValue: entryModalUserChangedValue() });
+        } catch (_) { keptPlanAsk = null; }
+        if (keptPlanAsk) {
+          STATE.saving = false;
+          if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+          const nextOptsKp = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
+          nextOptsKp._keptPeriodOk = true;
+          promptRateChangeImpact({ mode: 'period', kept: keptPlanAsk }).then(okKp => { if (okKp) saveModalEntry(nextOptsKp); });
           return;
         }
       }
@@ -115169,6 +119161,8 @@
       // Set when this save kept the earlier period on the row as it was and went on as a new entry (a later Start
       // Date with another value): `record` then carries a new id and is handled as an added entry from here on.
       let keptPeriodModal = null;
+      // What a price agreement save re-priced and which typed prices it left (shown once the save is through)
+      let mfgRateImpactModal = null;
       if (isEffModalTbl && record.start_date) {
         if ('date' in record) record.date = record.start_date;
         if (editOrigModal && _rowEndIso(editOrigModal) && !_rowEndIso(record)) {
@@ -115189,8 +119183,16 @@
       }
       applyCustomRecordsToSeed();
       if (isEffModalTbl || crKey === 'products') {
+        if (crKey === 'price_rules') mfgRateImpactModal = newSiblingRepriceImpact();
         backfillEffectiveLogChange(crKey, record, keptPeriodModal ? null : editOrigModal, extraApiPosts,
-          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '' });
+          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '', impact: mfgRateImpactModal });
+        // The agreement keeps what its save re-priced (sent with it): the record shows it later, also after an undo
+        if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.length)) {
+          record._impact = packSiblingRepriceImpact(mfgRateImpactModal, keptPeriodModal ? { kept_to: keptPeriodModal.to, new_from: keptPeriodModal.newFrom } : null);
+          const cImp = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(record.id)) : null;
+          if (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock)) appendImpactLog(record, record._impact, 'change', true);
+          if (cImp && cImp !== record) { cImp._impact = record._impact; if (record._impact_log) cImp._impact_log = record._impact_log; }
+        }
         applyCustomRecordsToSeed();
       }
       if (backpayCtx) {
@@ -115379,6 +119381,12 @@
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
+      if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock))) {
+        // Already shown before Post: the report comes back only when the save found something else
+        const shownSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
+        const doneSig = `${keptPeriodModal ? keptPeriodModal.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactModal).sig}`;
+        if (!shownSig || shownSig !== doneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
+      }
       renderApp();
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
         const _salRecCtx = buildSalaryVoucherReceiptContext(record);
@@ -116009,6 +120017,7 @@
     applyCustomRecordsToSeed();
     const restoredRow = r || cleanSeed || archivedSeed;
     const isEffRestoredTbl = restoredRow ? isEffectiveSeriesTable(crKey, restoredRow) : false;
+    let mfgRestoreImpact = null;
     let touchedRestorePeers = [];
     if (canModifyData()) {
       if (restoredRow && isEffRestoredTbl && restoredRow.start_date) {
@@ -116016,7 +120025,22 @@
         applyCustomRecordsToSeed();
       }
       if (restoredRow && (isEffRestoredTbl || crKey === 'products')) {
-        backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers });
+        // A price agreement brought back: what it re-priced and which tickets it left (typed, or on a sent statement)
+        // is kept on it, logged for Rate Changes and shown once the restore is done
+        mfgRestoreImpact = crKey === 'price_rules' ? newSiblingRepriceImpact() : null;
+        backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers, impact: mfgRestoreImpact });
+        if (mfgRestoreImpact && (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.length)) {
+          restoredRow._impact = packSiblingRepriceImpact(mfgRestoreImpact, { restored: true });
+          restoredRow._undo_impact = null;
+          if (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.some(x => x && x.lock)) appendImpactLog(restoredRow, restoredRow._impact, 'restore', true);
+          const cRest = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(restoredRow.id)) : null;
+          [r, cleanSeed, archivedSeed, cRest].forEach(x => {
+            if (!x || x === restoredRow) return;
+            x._impact = restoredRow._impact;
+            x._undo_impact = null;
+            if (restoredRow._impact_log) x._impact_log = restoredRow._impact_log;
+          });
+        }
         applyCustomRecordsToSeed();
       }
     }
@@ -116024,6 +120048,9 @@
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
     toast(bpRestorePeers.length ? 'Record restored, with the back-pay rows of this salary voucher' : '✓ Record restored · ' + label, 'ok');
+    if (mfgRestoreImpact && (mfgRestoreImpact.rows.length || mfgRestoreImpact.kept.some(x => x && x.lock))) {
+      promptRateChangeImpact({ mode: 'result', impact: mfgRestoreImpact });
+    }
 
     const mainRestoreTarget = r || cleanSeed;
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig() && !siteSplitReset);
@@ -116405,8 +120432,18 @@
       reopenedVoidPeers = reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
     }
     applyCustomRecordsToSeed();
+    // Undo of a price agreement: what it re-priced back and which typed prices it left, shown once the void is done
+    // and kept on the voided agreement
+    const mfgUndoImpact = crKey === 'price_rules' ? newSiblingRepriceImpact() : null;
     if (canModifyData() && voidedTarget && (isEffVoidTbl || crKey === 'products')) {
-      backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts, { touchedPeers: reopenedVoidPeers });
+      backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts, { touchedPeers: reopenedVoidPeers, impact: mfgUndoImpact });
+      if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.length)) {
+        voidedTarget._undo_impact = packSiblingRepriceImpact(mfgUndoImpact);
+        // every copy of the voided agreement carries it (the working row, the device copy, the one that is sent)
+        const cUndo = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey].find(x => x && String(x.id) === String(voidedTarget.id)) : null;
+        if (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock)) appendImpactLog(voidedTarget, voidedTarget._undo_impact, 'undo', true);
+        [r, seedRow, cUndo].forEach(x => { if (x && x !== voidedTarget) { x._undo_impact = voidedTarget._undo_impact; if (voidedTarget._impact_log) x._impact_log = voidedTarget._impact_log; } });
+      }
       applyCustomRecordsToSeed();
     }
     if (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases') {
@@ -116420,6 +120457,9 @@
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
     toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
+    if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock))) {
+      promptRateChangeImpact({ mode: 'undo-result', impact: mfgUndoImpact });
+    }
 
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig());
     const metaVoid = { who, when };
@@ -116581,6 +120621,16 @@
         return false;
       }
     }
+    // Restoring a voided schedule puts its rate back in force. What each record should carry under the schedules as
+    // they stand now is read first: only the records that stand at it are re-priced, a typed figure stays.
+    const restoreSweepAll = { start_date: '1900-01-01', end_date: '9999-12-31' };
+    const restoreBaseline = (chronoTargetBucket && chronoCandRow)
+      ? planSiblingReprice(chronoTargetBucket, Object.assign({}, chronoCandRow, { voided: false }), restoreSweepAll)
+      : null;
+    // Figures a person had typed at exactly the rate the undo gave back (noted by the undo): the restore leaves them
+    const restoreSkipKeys = _sibTypedKeysOf(chronoCandRow && chronoCandRow._undo_impact);
+    // What the restore re-priced (shown once the schedule is back)
+    let restoreImpact = null;
 
     const isSyncTwinRow = row => Boolean(row && /^(system-topup|sharepoint top-up)/i.test(String(row.voided_by || '').trim()));
     const hasBlockedSyncTwinEdit = Boolean(
@@ -116721,9 +120771,13 @@
           restoredSchedRow.status = chronoSaveState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window';
           syncSiblingCustomPredecessorsOnSave(touchedChronoBucket, restoredSchedRow.id || primaryId, chronoSaveState.closeIds, chronoSaveState.closeDate);
         }
-        if (typeof runDomainChronoScheduleBackfill === 'function') {
-          try { runDomainChronoScheduleBackfill(touchedChronoBucket, restoredSchedRow, { start_date: '1900-01-01', end_date: '9999-12-31' }); } catch (_) {}
-        }
+        try {
+          restoreImpact = applySiblingReprice(touchedChronoBucket, restoredSchedRow, restoreSweepAll, restoreBaseline, restoreSkipKeys);
+          // In force again: the undo note goes (set empty, not removed, so a store that merges fields drops it too),
+          // and what the restore re-priced is kept on the schedule
+          restoredSchedRow._undo_impact = null;
+          stampSiblingImpact(restoredSchedRow, restoreImpact, { restored: true }, [], restoredSchedRow._impact);
+        } catch (_) {}
         const forceSet = new Set(forceRowIds);
         Object.keys(storeCustom).forEach(bk => {
           const curArr = Array.isArray(storeCustom[bk]) ? storeCustom[bk] : [];
@@ -116751,10 +120805,15 @@
     invalidateIndustryDomainCaches();
     renderApp();
     toast('✓ Record restored · ' + (primaryId || editKey), 'ok');
+    // What the restore re-priced is reported once the restore stands (after the server took it, where there is one)
+    const tellRestoreImpact = () => {
+      if (restoreImpact && (restoreImpact.rows.length || restoreImpact.kept.some(x => x && x.lock))) promptRateChangeImpact({ mode: 'result', impact: restoreImpact });
+    };
 
     if (!hasServerApi() || isDemoScopeActive()) {
       saveLocalAuthAndRecords();
       syncWithCloud(true);
+      tellRestoreImpact();
       return true;
     }
 
@@ -116790,6 +120849,7 @@
     }
     saveLocalAuthAndRecords();
     syncWithCloud(true);
+    tellRestoreImpact();
     return true;
   }
 
@@ -117632,7 +121692,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -117874,11 +121934,11 @@
           renderRepairItemsBuilderRows();
         }
       }
-      const pfOil = prefill.oilType || prefill.oil || '';
+      const pfOil = prefill.oilType || prefill.oil_type || prefill.oil || '';
       if (pfOil && $('f_oil_type')) {
         const selEl = $('f_oil_type');
         selEl.value = pfOil;
-        if (!selEl.value && isDrivetrainOrBrakeServiceType(pfOil)) {
+        if (!selEl.value && (isDrivetrainOrBrakeServiceType(pfOil) || isTyreServiceText(pfOil))) {
           selEl.value = resolveSteepWearServicePrefill(pfOil);
         }
         FORM_UI.lastOilType = '';
@@ -119064,6 +123124,10 @@
       setModalControlVal('f_site', row.name || row.site || '');
       setModalControlVal('f_lat', row.latitude != null && row.latitude !== '' ? row.latitude : '');
       setModalControlVal('f_lng', row.longitude != null && row.longitude !== '' ? row.longitude : '');
+      if ($('f_site_surface')) {
+        const rsLow = String(row.road_surface || '').trim().toLowerCase();
+        setModalControlVal('f_site_surface', rsLow === 'paved' ? 'paved' : (rsLow === 'unpaved' ? 'unpaved' : ''));
+      }
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
       if ($('wrap_site_status') && $('f_site_status')) {
         const rowEnd = row.end_date ? String(row.end_date).slice(0, 10) : '';
@@ -119351,6 +123415,699 @@
       }
     }
     showRecordInspector(crKey, id);
+  }
+
+  // ============================================================================
+  // MOBILE READ-FIRST ROW PEEK SHEET (<= 860px, trusted taps)
+  // ============================================================================
+  let _mobRowPeekState = null;
+
+  function isMobPhoneViewport() {
+    if (typeof window === 'undefined') return false;
+    if (window.matchMedia) return Boolean(window.matchMedia('(max-width: 860px)').matches);
+    return Number(window.innerWidth || 0) > 0 && Number(window.innerWidth || 0) <= 860;
+  }
+
+  function isAnyKioskOrScanSurface() {
+    if (STATE.kioskLocked) return true;
+    if (typeof document === 'undefined') return false;
+    const b = document.body;
+    const h = document.documentElement;
+    return Boolean(
+      (b && (b.classList.contains('kiosk-locked') || b.classList.contains('is-kiosks-view')))
+      || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))
+    );
+  }
+
+  function isEligibleMobPeekTr(tr) {
+    if (!tr || tr.tagName !== 'TR' || !tr.isConnected) return false;
+    if (tr.hidden || (tr.style && tr.style.display === 'none') || tr.classList.contains('hidden')) return false;
+    if (tr.classList.contains('empty-row') || tr.classList.contains('total') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) return false;
+    if (tr.querySelector(':scope > td[colspan]')) return false;
+    if (tr.hasAttribute('data-jump-co') || !tr.closest) return false;
+    if (!tr.closest('.table-wrap, .table-scroll')) return false;
+    if (tr.closest('.ceo-scorecard-table, #inspectorBody, #entryModal, #indDomainEntryModal, #mobRowPeekSheet, #pocketBriefOverlay, .a4-sheet, .thermal-paper-roll')) return false;
+    try {
+      if (window.getComputedStyle(tr).display === 'none') return false;
+    } catch (_) {}
+    if (tr.matches('tr.rrow[data-rid]')) {
+      return Boolean(tr.getAttribute('data-rkey') && tr.getAttribute('data-rid'));
+    }
+    if (tr.hasAttribute('data-no-ind-inspect') || tr.hasAttribute('data-rid') || tr.hasAttribute('data-ar-row') || tr.hasAttribute('data-staff-row')) {
+      return false;
+    }
+    const isIndTarget = tr.hasAttribute('data-ind-inspect-row') || getActiveIndustry(STATE.company) !== 'Manufacturing';
+    if (!isIndTarget) return false;
+    const explorerWrap = tr.closest('#industryDomainTablesExplorer');
+    if (explorerWrap && explorerWrap.getAttribute('data-ind-tbl-active') === 'hld_extended_tbl' && tr.getAttribute('data-ind-row-id')) {
+      return true;
+    }
+    const visTds = Array.from(tr.querySelectorAll('td')).filter(tdEl => !tdEl.style || tdEl.style.display !== 'none');
+    return visTds.length >= 2;
+  }
+
+  function shouldInterceptWithMobRowPeek(e, trEl) {
+    if (!isMobPhoneViewport()) return false;
+    if (isAnyKioskOrScanSurface()) return false;
+    if (!e || (!e.isTrusted && !window.__MOB_PEEK_TAP)) return false;
+    return isEligibleMobPeekTr(trEl);
+  }
+
+  function collectMobPeekSiblingRows(trEl) {
+    if (!trEl || !trEl.closest) return [];
+    const tbody = trEl.closest('tbody');
+    if (!tbody) return [];
+    return Array.from(tbody.children).filter(el => el.tagName === 'TR' && isEligibleMobPeekTr(el));
+  }
+
+  function buildIndRowInspectOpts(indRow) {
+    if (!indRow || !indRow.closest) return null;
+    const tbl = indRow.closest('table');
+    if (!tbl) return null;
+    const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
+    const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+    const cells = visTds.map(cleanDomainCellText);
+    const matchCells = visTds.map(domainCellEnText);
+    if (cells.length < 2) return null;
+    if (indRow.getAttribute('data-ind-row-id')) {
+      cells[0] = indRow.getAttribute('data-ind-row-id');
+      matchCells[0] = cells[0];
+    }
+    const cardEl = indRow.closest('.panel-card, .panel');
+    const tableTitle = getDomainCardCanonicalTitle(cardEl);
+    return {
+      ind: getActiveIndustry(STATE.company),
+      headers,
+      cells,
+      matchCells,
+      tableTitle,
+      trEl: indRow,
+      domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
+      rowCompany: indRow.getAttribute('data-ind-row-co') || ''
+    };
+  }
+
+  function buildMobRowContextFromTr(trEl, triggerEl) {
+    if (!trEl || !trEl.closest) return null;
+    if (trEl.matches('tr.rrow[data-rid]')) {
+      return {
+        kind: 'rrow',
+        crKey: trEl.getAttribute('data-rkey'),
+        rid: trEl.getAttribute('data-rid'),
+        trEl,
+        triggerEl: triggerEl || trEl
+      };
+    }
+    const explorerWrap = trEl.closest('#industryDomainTablesExplorer');
+    const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
+    const rowIdAttr = trEl.getAttribute('data-ind-row-id') || '';
+    if (activeExplorerTbl === 'hld_extended_tbl' && rowIdAttr) {
+      return {
+        kind: 'rrow',
+        crKey: 'external_movements',
+        rid: rowIdAttr,
+        trEl,
+        triggerEl: triggerEl || trEl
+      };
+    }
+    const domInspectOpts = buildIndRowInspectOpts(trEl);
+    if (!domInspectOpts) return null;
+    return {
+      kind: 'indRow',
+      trEl,
+      inspectOpts: domInspectOpts,
+      triggerEl: triggerEl || trEl
+    };
+  }
+
+  function resolveLiveMobPeekState() {
+    const st = _mobRowPeekState;
+    if (!st) return null;
+    if (st.trEl && st.trEl.isConnected && isEligibleMobPeekTr(st.trEl)) {
+      const siblings = collectMobPeekSiblingRows(st.trEl);
+      return {
+        siblings,
+        curIdx: siblings.indexOf(st.trEl),
+        rowVanished: false
+      };
+    }
+    const ws = $('workspace');
+    const scopeRoot = (st.panelId && $(st.panelId)) || ws || document;
+    let liveTr = null;
+    if (st.crKey && st.rid && scopeRoot && scopeRoot.querySelector) {
+      const escKey = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.crKey) : st.crKey;
+      const escRid = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.rid) : st.rid;
+      liveTr = scopeRoot.querySelector(`tr.rrow[data-rkey="${escKey}"][data-rid="${escRid}"]`);
+      if (!liveTr && ws && scopeRoot !== ws) {
+        liveTr = ws.querySelector(`tr.rrow[data-rkey="${escKey}"][data-rid="${escRid}"]`);
+      }
+    }
+    if (!liveTr && st.indRowId && scopeRoot && scopeRoot.querySelector) {
+      const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.indRowId) : st.indRowId;
+      const tblSel = st.indRowTbl
+        ? `[data-ind-row-tbl="${(typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(st.indRowTbl) : st.indRowTbl}"][data-ind-row-id="${escId}"]`
+        : `[data-ind-row-id="${escId}"]`;
+      liveTr = scopeRoot.querySelector(`tr${tblSel}`);
+      if (!liveTr && ws && scopeRoot !== ws) {
+        liveTr = ws.querySelector(`tr${tblSel}`);
+      }
+    }
+    if (liveTr && isEligibleMobPeekTr(liveTr)) {
+      const siblings = collectMobPeekSiblingRows(liveTr);
+      return {
+        siblings,
+        curIdx: siblings.indexOf(liveTr),
+        rowVanished: false
+      };
+    }
+    let liveTbl = st.tableId ? $(st.tableId) : null;
+    if (!liveTbl && st.panelId && $(st.panelId)) {
+      liveTbl = $(st.panelId).querySelector('.table-wrap table, .table-scroll table');
+    }
+    if (!liveTbl && st.tableTitle && ws) {
+      const candTables = Array.from(ws.querySelectorAll('.table-wrap table, .table-scroll table'));
+      liveTbl = candTables.find(tbl => {
+        const card = tbl.closest('.panel-card, .panel');
+        return card && typeof getDomainCardCanonicalTitle === 'function' && getDomainCardCanonicalTitle(card) === st.tableTitle;
+      }) || candTables[0] || null;
+    }
+    const tbody = liveTbl ? liveTbl.querySelector('tbody') : null;
+    const siblings = tbody ? Array.from(tbody.children).filter(el => el.tagName === 'TR' && isEligibleMobPeekTr(el)) : [];
+    if (!st.rid && !st.indRowId && st.primaryTitle && siblings.length > 0 && siblings.length <= 200) {
+      const matchedIdx = siblings.findIndex(r => {
+        const rCtx = buildMobRowContextFromTr(r, r);
+        const rData = rCtx ? buildMobRowPeekData(rCtx) : null;
+        return Boolean(rData && rData.title === st.primaryTitle);
+      });
+      if (matchedIdx >= 0) {
+        return {
+          siblings,
+          curIdx: matchedIdx,
+          rowVanished: false
+        };
+      }
+    }
+    const rawLastIdx = Math.max(0, Number(st.lastIndex || 0));
+    return {
+      siblings,
+      curIdx: rawLastIdx,
+      rowVanished: true
+    };
+  }
+
+  function extractThEnText(th) {
+    if (!th) return '';
+    let out = '';
+    const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('[data-col-mgr-ui], .col-mgr-th-acts, .col-hdr-acts')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      out += (n.__enText !== undefined ? String(n.__enText) : String(n.nodeValue || ''));
+    }
+    return out.replace(/[\s\u25B2\u25BC▲▼]+$/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractTdCellCleanText(td) {
+    if (!td) return '';
+    let out = '';
+    const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      out += String(n.nodeValue || '');
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
+  function canMobPeekEditRrow(checkKey, row) {
+    if (!row || !row.id) return false;
+    if (checkKey === 'expenses' && typeof isPendingPriceExpense === 'function' && isPendingPriceExpense(row)) {
+      return Boolean(canModifyData() || canEnterForm('expense'));
+    }
+    if (checkKey === 'raw_purchases' && typeof isPendingPriceRaw === 'function' && isPendingPriceRaw(row)) {
+      return Boolean(canModifyData() || canEnterForm('raw'));
+    }
+    if (checkKey === 'employments' && typeof isPendingSalaryEmployment === 'function' && isPendingSalaryEmployment(row)) {
+      return Boolean(canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')));
+    }
+    return Boolean(canModifyRecord());
+  }
+
+  function buildMobRowPeekData(ctx) {
+    const trEl = ctx && ctx.trEl;
+    if (!trEl) return null;
+    const tbl = trEl.closest ? trEl.closest('table') : null;
+    if (!tbl) return null;
+    const headRow = tbl.querySelector('thead tr');
+    const ths = headRow ? Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD') : [];
+    const headerSpecs = [];
+    ths.forEach(th => {
+      const span = Math.max(1, Number(th.getAttribute('colspan') || 1));
+      const lbl = extractThEnText(th);
+      const isCb = Boolean(th.hasAttribute('data-row-sel-hdr') || th.querySelector('input[type="checkbox"], [data-row-sel]'));
+      for (let s = 0; s < span; s++) {
+        headerSpecs.push({ enLabel: lbl, isCheckbox: isCb && !lbl });
+      }
+    });
+    const hiddenSet = (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.getEffectiveHiddenCols === 'function')
+      ? window.MFG_TABLE_COLS.getEffectiveHiddenCols(tbl)
+      : new Set();
+    const tds = Array.from(trEl.children).filter(el => el.tagName === 'TD' || el.tagName === 'TH');
+    let excessInlineHidden = Math.max(0, tds.reduce((s, el) => s + Math.max(1, Number(el.getAttribute('colspan') || 1)), 0) - headerSpecs.length);
+    const fields = [];
+    let colCursor = 0;
+    tds.forEach(td => {
+      if (excessInlineHidden > 0 && td.style && td.style.display === 'none') {
+        excessInlineHidden -= 1;
+        return;
+      }
+      const span = Math.max(1, Number(td.getAttribute('colspan') || 1));
+      const cIdx = colCursor;
+      colCursor += span;
+      const hSpec = headerSpecs[cIdx] || { enLabel: '', isCheckbox: false };
+      if (hSpec.isCheckbox || td.hasAttribute('data-row-sel')) return;
+      if (td.classList.contains('col-mgr-hidden') || td.style.display === 'none' || hiddenSet.has(cIdx)) return;
+      try {
+        if (window.getComputedStyle(td).display === 'none') return;
+      } catch (_) {}
+      const rawText = extractTdCellCleanText(td);
+      const relLinks = [];
+      if (td.querySelectorAll) {
+        td.querySelectorAll('.rel-link[data-rel-key][data-rel-val]').forEach(el => {
+          const rk = String(el.getAttribute('data-rel-key') || '').trim();
+          const rv = String(el.getAttribute('data-rel-val') || '').trim();
+          const rt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+          if (rk && rv) relLinks.push({ key: rk, val: rv, text: rt || rv });
+        });
+      }
+      fields.push({
+        colIdx: cIdx,
+        label: hSpec.enLabel || 'Field',
+        text: rawText || '-',
+        relLinks
+      });
+    });
+    if (!fields.length) return null;
+
+    const pinCol = (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.getMobilePinnedCol === 'function')
+      ? window.MFG_TABLE_COLS.getMobilePinnedCol(tbl)
+      : -1;
+    const pinnedField = fields.find(f => f.colIdx === pinCol && f.text && f.text !== '-')
+      || fields.find(f => f.text && f.text !== '-' && !/^(date|tx\.?\s*date|rep\.?\s*date|co\.?|company|entity)/i.test(f.label))
+      || fields[0];
+    const cardEl = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+    let eyebrow = '';
+    if (cardEl && typeof getDomainCardCanonicalTitle === 'function') {
+      eyebrow = String(getDomainCardCanonicalTitle(cardEl) || '').trim();
+    }
+    if (!eyebrow && cardEl) {
+      const hEl = cardEl.querySelector('h3, h2, .panel-title');
+      if (hEl) eyebrow = extractThEnText(hEl);
+    }
+    if (!eyebrow) eyebrow = VIEW_TITLES[STATE.view] || 'Record Summary';
+
+    let canEdit = false;
+    let onEdit = null;
+    let onInspect = null;
+    if (ctx.kind === 'rrow') {
+      const crKey = ctx.crKey;
+      const rid = ctx.rid;
+      const wbAuditKey = trEl.getAttribute ? String(trEl.getAttribute('data-wb-audit-key') || '').trim() : '';
+      let checkKey = crKey;
+      let checkId = rid;
+      let row = resolveInspectorRecord(crKey, rid);
+      if (crKey === 'expense_items' && row) {
+        const parentExp = resolveInspectorRecord('expenses', row.expense_id || row.expense_ref);
+        if (parentExp) { checkKey = 'expenses'; checkId = parentExp.id; row = parentExp; }
+      } else if (crKey === 'repair_items' && row) {
+        const parentRep = resolveInspectorRecord('equipment_repairs', row.repair_id || row.repair_ref);
+        if (parentRep) { checkKey = 'equipment_repairs'; checkId = parentRep.id; row = parentRep; }
+      }
+      canEdit = Boolean(!wbAuditKey && shouldOpenEntryFormOnRowClick(checkKey, row, checkId, trEl) && canMobPeekEditRrow(checkKey, row));
+      onEdit = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openEntryModalForRecord(checkKey, checkId);
+      };
+      onInspect = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        if (wbAuditKey) {
+          showWeighbridgeAuditInspector(wbAuditKey, trEl);
+          return;
+        }
+        const isMasterRegistryRow = !trEl.closest || Boolean(trEl.closest('#tablesHubPanel, #univRegPanel, #custPanel, #supPanel, #glAutoPanel, #inspectorBody'));
+        if (!isMasterRegistryRow && row) {
+          const tableContext = resolveTableRowContext(trEl, crKey, rid, row);
+          if (tableContext) {
+            showRecordInspector(crKey, rid, { tableContext });
+            return;
+          }
+        }
+        showRecordInspector(crKey, rid);
+      };
+    } else if (ctx.kind === 'indRow') {
+      const opts = ctx.inspectOpts || {};
+      const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
+      const headers = Array.isArray(opts.headers) ? opts.headers : [];
+      const cells = Array.isArray(opts.cells) ? opts.cells : [];
+      const tableTitle = opts.tableTitle || eyebrow;
+      const primaryId = String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || cells[0] || '').trim();
+      const domainTblKey = opts.domainTblKey || (trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
+      const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
+      const tillOwned = primaryId ? isTillOwnedRowId(primaryId) : false;
+      const rowCo = String(opts.rowCompany || (trEl.getAttribute && trEl.getAttribute('data-ind-row-co')) || '').trim();
+      const resolved = (!tillOwned && primaryId && canModifyRecord() && !canModifyTextOnly() && typeof findDomainRecordPrefillForModal === 'function')
+        ? findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCo, editKey)
+        : null;
+      canEdit = Boolean(resolved && resolved.formKey);
+      onEdit = () => {
+        if (!resolved || !resolved.formKey) return;
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openIndustryDomainEntryModal(resolved.formKey, resolved.prefill);
+      };
+      onInspect = () => {
+        closeMobRowPeekSheet({ restoreFocus: false });
+        openIndustryDomainInspector(opts);
+      };
+    }
+
+    const primaryTitle = String((pinnedField && pinnedField.text && pinnedField.text !== '-') ? pinnedField.text : '');
+    const tblMeta = (() => {
+      const card = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      return {
+        panelId: (card && card.id) ? String(card.id) : '',
+        tableId: tbl.id ? String(tbl.id) : '',
+        tableTitle: (card && typeof getDomainCardCanonicalTitle === 'function') ? String(getDomainCardCanonicalTitle(card) || '') : eyebrow,
+        ctxKind: ctx.kind,
+        crKey: ctx.kind === 'rrow' ? String(ctx.crKey || '') : '',
+        rid: ctx.kind === 'rrow' ? String(ctx.rid || '') : '',
+        indRowTbl: ctx.kind === 'indRow' ? String((trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || '') : '',
+        indRowId: String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || ''),
+        primaryTitle
+      };
+    })();
+
+    return {
+      eyebrow,
+      title: primaryTitle || eyebrow,
+      fields,
+      canEdit,
+      onEdit,
+      onInspect,
+      trEl,
+      tblMeta,
+      triggerEl: ctx.triggerEl || trEl
+    };
+  }
+
+  function closeMobRowPeekSheet(opts = {}) {
+    const bd = $('mobRowPeekBackdrop');
+    const lastFocus = _mobRowPeekState && _mobRowPeekState.lastFocus;
+    _mobRowPeekState = null;
+    const editBtn = $('mobPeekEditBtn');
+    const inspBtn = $('mobPeekInspectBtn');
+    const prevBtn = $('mobPeekPrevBtn');
+    const nextBtn = $('mobPeekNextBtn');
+    if (editBtn) editBtn.onclick = null;
+    if (inspBtn) inspBtn.onclick = null;
+    if (prevBtn) prevBtn.onclick = null;
+    if (nextBtn) nextBtn.onclick = null;
+    if (bd) {
+      if (opts && opts.purgeDom) {
+        if (bd.parentNode) bd.parentNode.removeChild(bd);
+      } else {
+        bd.classList.remove('open');
+        bd.hidden = true;
+      }
+    }
+    if ((!opts || opts.restoreFocus !== false) && lastFocus && lastFocus.isConnected && typeof lastFocus.focus === 'function') {
+      try { lastFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderMobRowPeekSheet(data, opts = {}) {
+    if (!data || typeof document === 'undefined') return null;
+    const isStep = Boolean(opts && opts.isStep);
+    const prevBtnId = (opts && opts.focusBtnId) || (isStep && document.activeElement ? document.activeElement.id : '');
+    let bd = $('mobRowPeekBackdrop');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'mobRowPeekBackdrop';
+      bd.className = 'mob-peek-backdrop';
+      bd.innerHTML = `
+        <div id="mobRowPeekSheet" class="mob-peek-sheet" role="dialog" aria-modal="true" aria-labelledby="mobPeekTitle">
+          <div class="mob-peek-grab-wrap"><span class="mob-peek-grab" aria-hidden="true"></span></div>
+          <div class="mob-peek-hdr">
+            <div class="mob-peek-hdr-copy">
+              <div class="mob-peek-eyebrow" id="mobPeekEyebrow"></div>
+              <h2 class="mob-peek-title" id="mobPeekTitle" data-no-i18n="1"></h2>
+            </div>
+            <div class="mob-peek-hdr-acts">
+              <button type="button" class="btn btn-outline-bar btn-sm" id="mobPeekEditBtn" hidden>Edit</button>
+              <button type="button" class="btn btn-primary btn-sm" id="mobPeekInspectBtn">360° Inspector</button>
+              <button type="button" class="modal-close-btn" id="mobPeekCloseBtn" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div class="mob-peek-nav" id="mobPeekNavBar" role="group" aria-label="Row navigation" hidden>
+            <button type="button" class="btn btn-outline-bar btn-sm mob-peek-step-btn" id="mobPeekPrevBtn">
+              <span class="mob-peek-step-arr" aria-hidden="true">‹</span><span>Previous</span>
+            </button>
+            <span class="mob-peek-pos" id="mobPeekPosLabel" data-no-i18n="1"></span>
+            <button type="button" class="btn btn-outline-bar btn-sm mob-peek-step-btn" id="mobPeekNextBtn">
+              <span>Next</span><span class="mob-peek-step-arr" aria-hidden="true">›</span>
+            </button>
+          </div>
+          <div class="mob-peek-body" id="mobPeekBody">
+            <dl class="mob-peek-fields" id="mobPeekFields"></dl>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(bd);
+      bd.addEventListener('click', ev => {
+        if (ev.target === bd) closeMobRowPeekSheet();
+      });
+      const closeBtn = $('mobPeekCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', () => closeMobRowPeekSheet());
+      const sheet = $('mobRowPeekSheet');
+      if (sheet) {
+        let touchY0 = 0;
+        let touchX0 = 0;
+        let swipeCloseArmed = false;
+        let swipeStepArmed = false;
+        sheet.addEventListener('touchstart', ev => {
+          if (!ev.touches || ev.touches.length !== 1) {
+            swipeCloseArmed = false;
+            swipeStepArmed = false;
+            return;
+          }
+          const t0 = ev.touches[0];
+          touchY0 = t0.clientY;
+          touchX0 = t0.clientX;
+          const bodyEl = $('mobPeekBody');
+          const inGrab = Boolean(ev.target && ev.target.closest && ev.target.closest('.mob-peek-grab-wrap, .mob-peek-hdr'));
+          swipeCloseArmed = Boolean(inGrab || !bodyEl || bodyEl.scrollTop <= 2);
+          const vw = (typeof window !== 'undefined' && Number(window.innerWidth)) || 390;
+          const inEdgeZone = touchX0 < 28 || touchX0 > (vw - 28);
+          const inInteractive = Boolean(ev.target && ev.target.closest && ev.target.closest('button, a, input, select, textarea, .mob-peek-rel-pills'));
+          swipeStepArmed = Boolean(!inEdgeZone && !inInteractive);
+        }, { passive: true });
+        sheet.addEventListener('touchmove', ev => {
+          if (!ev.touches || ev.touches.length !== 1) return;
+          const dy = ev.touches[0].clientY - touchY0;
+          const dx = ev.touches[0].clientX - touchX0;
+          if (swipeCloseArmed && dy > 64 && Math.abs(dy) > Math.abs(dx) * 1.35) {
+            swipeCloseArmed = false;
+            swipeStepArmed = false;
+            closeMobRowPeekSheet();
+            return;
+          }
+          if (swipeStepArmed && Math.abs(dy) > 36 && Math.abs(dy) > Math.abs(dx)) {
+            swipeStepArmed = false;
+          }
+        }, { passive: true });
+        sheet.addEventListener('touchend', ev => {
+          const armedStep = swipeStepArmed;
+          swipeCloseArmed = false;
+          swipeStepArmed = false;
+          if (!armedStep || !ev.changedTouches || !ev.changedTouches.length) return;
+          const tEnd = ev.changedTouches[0];
+          const dx = tEnd.clientX - touchX0;
+          const dy = tEnd.clientY - touchY0;
+          if (Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+            const delta = rtl ? (dx > 0 ? 1 : -1) : (dx < 0 ? 1 : -1);
+            stepMobRowPeek(delta, { via: 'swipe' });
+          }
+        }, { passive: true });
+        sheet.addEventListener('touchcancel', () => {
+          swipeCloseArmed = false;
+          swipeStepArmed = false;
+        }, { passive: true });
+      }
+    }
+
+    const eyeEl = $('mobPeekEyebrow');
+    const titleEl = $('mobPeekTitle');
+    const editBtn = $('mobPeekEditBtn');
+    const inspBtn = $('mobPeekInspectBtn');
+    const navBar = $('mobPeekNavBar');
+    const prevBtn = $('mobPeekPrevBtn');
+    const nextBtn = $('mobPeekNextBtn');
+    const posLbl = $('mobPeekPosLabel');
+    const fieldsEl = $('mobPeekFields');
+    const bodyEl = $('mobPeekBody');
+    if (eyeEl) eyeEl.textContent = data.eyebrow || 'Record Summary';
+    if (titleEl) titleEl.textContent = data.title || 'Record Peek';
+    if (editBtn) {
+      editBtn.hidden = !data.canEdit;
+      editBtn.onclick = data.canEdit && data.onEdit ? data.onEdit : null;
+    }
+    if (inspBtn) {
+      inspBtn.onclick = data.onInspect || null;
+    }
+
+    const trEl = data.trEl || null;
+    const siblings = trEl ? collectMobPeekSiblingRows(trEl) : [];
+    const curIdx = trEl ? siblings.indexOf(trEl) : -1;
+    const totalRows = siblings.length;
+    if (navBar) {
+      if (totalRows > 1 && curIdx >= 0) {
+        navBar.hidden = false;
+        if (posLbl) posLbl.textContent = `${curIdx + 1} / ${totalRows}`;
+        if (prevBtn) {
+          prevBtn.disabled = curIdx <= 0;
+          prevBtn.onclick = () => stepMobRowPeek(-1, { via: 'button', focusBtnId: 'mobPeekPrevBtn' });
+        }
+        if (nextBtn) {
+          nextBtn.disabled = curIdx >= totalRows - 1;
+          nextBtn.onclick = () => stepMobRowPeek(1, { via: 'button', focusBtnId: 'mobPeekNextBtn' });
+        }
+      } else {
+        navBar.hidden = true;
+        if (posLbl) posLbl.textContent = '';
+        if (prevBtn) { prevBtn.disabled = true; prevBtn.onclick = null; }
+        if (nextBtn) { nextBtn.disabled = true; nextBtn.onclick = null; }
+      }
+    }
+
+    if (fieldsEl) {
+      fieldsEl.innerHTML = data.fields.map((f, idx) => {
+        let valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`;
+        if (f.relLinks && f.relLinks.length === 1 && norm(f.relLinks[0].text) === norm(f.text)) {
+          const rl = f.relLinks[0];
+          valHtml = `<button type="button" class="mob-peek-rel-btn" data-peek-rel-idx="${idx}" data-peek-rel-sub="0" data-no-i18n="1">${esc(f.text)}</button>`;
+        } else if (f.relLinks && f.relLinks.length >= 1) {
+          valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`
+            + `<span class="mob-peek-rel-pills">${f.relLinks.map((rl, si) => `<button type="button" class="mob-peek-rel-chip" data-peek-rel-idx="${idx}" data-peek-rel-sub="${si}" data-no-i18n="1">${esc(rl.text)}</button>`).join('')}</span>`;
+        }
+        return `<div class="mob-peek-row"><dt>${esc(f.label)}</dt><dd>${valHtml}</dd></div>`;
+      }).join('');
+      fieldsEl.querySelectorAll('[data-peek-rel-idx]').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const fi = Number(btn.getAttribute('data-peek-rel-idx'));
+          const si = Number(btn.getAttribute('data-peek-rel-sub') || 0);
+          const f = data.fields[fi];
+          const rl = f && f.relLinks && f.relLinks[si];
+          if (!rl) return;
+          closeMobRowPeekSheet({ restoreFocus: false });
+          showRecordInspector(rl.key, rl.val);
+        });
+      });
+    }
+    if (bodyEl) bodyEl.scrollTop = 0;
+
+    const prevLastFocus = isStep && _mobRowPeekState ? _mobRowPeekState.lastFocus : null;
+    const meta = data.tblMeta || {};
+    _mobRowPeekState = {
+      data,
+      trEl,
+      panelId: meta.panelId || '',
+      tableId: meta.tableId || '',
+      tableTitle: meta.tableTitle || '',
+      ctxKind: meta.ctxKind || '',
+      crKey: meta.crKey || '',
+      rid: meta.rid || '',
+      indRowTbl: meta.indRowTbl || '',
+      indRowId: meta.indRowId || '',
+      primaryTitle: meta.primaryTitle || '',
+      lastIndex: curIdx >= 0 ? curIdx : 0,
+      lastFocus: prevLastFocus || ((document.activeElement && document.activeElement !== document.body) ? document.activeElement : (data.triggerEl || null))
+    };
+    bd.hidden = false;
+    bd.classList.add('open');
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(bd); } catch (_) {}
+    }
+    if (typeof ensureMobOverlayGlobalListeners === 'function') ensureMobOverlayGlobalListeners();
+    if (isStep) {
+      let focusTarget = null;
+      if (prevBtnId === 'mobPeekPrevBtn' && prevBtn) {
+        focusTarget = !prevBtn.disabled ? prevBtn : (nextBtn && !nextBtn.disabled ? nextBtn : $('mobPeekCloseBtn'));
+      } else if (prevBtnId === 'mobPeekNextBtn' && nextBtn) {
+        focusTarget = !nextBtn.disabled ? nextBtn : (prevBtn && !prevBtn.disabled ? prevBtn : $('mobPeekCloseBtn'));
+      }
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        try { focusTarget.focus({ preventScroll: true }); } catch (_) {}
+      }
+    } else {
+      const closeBtn = $('mobPeekCloseBtn');
+      if (closeBtn && typeof closeBtn.focus === 'function') {
+        try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }
+    return bd;
+  }
+
+  function stepMobRowPeek(delta, opts = {}) {
+    if (!_mobRowPeekState || typeof document === 'undefined') return false;
+    const step = Number(delta) < 0 ? -1 : 1;
+    const resolved = resolveLiveMobPeekState();
+    if (!resolved || !resolved.siblings || !resolved.siblings.length) return false;
+    const siblings = resolved.siblings;
+    let targetIdx;
+    if (resolved.rowVanished) {
+      if (step < 0) {
+        if (resolved.curIdx <= 0) return false;
+        targetIdx = Math.min(siblings.length - 1, resolved.curIdx - 1);
+      } else {
+        if (resolved.curIdx >= siblings.length) return false;
+        targetIdx = Math.max(0, resolved.curIdx);
+      }
+    } else {
+      if (resolved.curIdx < 0) return false;
+      targetIdx = resolved.curIdx + step;
+      if (targetIdx < 0 || targetIdx >= siblings.length) return false;
+    }
+    const nextTr = siblings[targetIdx];
+    const nextCtx = buildMobRowContextFromTr(nextTr, nextTr);
+    if (!nextCtx) return false;
+    const nextData = buildMobRowPeekData(nextCtx);
+    if (!nextData) return false;
+    try {
+      nextTr.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } catch (_) {}
+    return Boolean(renderMobRowPeekSheet(nextData, Object.assign({}, opts, { isStep: true })));
+  }
+
+  function openMobRowPeekForRow(ctx) {
+    const data = buildMobRowPeekData(ctx);
+    if (!data) return false;
+    return Boolean(renderMobRowPeekSheet(data, { isStep: false }));
   }
 
   // ==========================================================================
@@ -119674,7 +124431,7 @@
       const isBundledSt = isSupplierDeliveredSite(row);
       const rulesCnt = activeRulesCountFor('site', row.name);
       const supplyTxt = row.is_jv
-        ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
+        ? `Active JV (Partner: ${row.jv_partner || window.MFG_NAMEBOOK.jvPartner()} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
         : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Standard Region Site (Separate Haulage)');
       const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
       const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
@@ -120787,7 +125544,7 @@
       const staffKeys = new Set([staffNorm]);
       const addAliasKey = v => { const k = String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (k) staffKeys.add(k); };
       addAliasKey(staff);
-      Object.entries(WF_DRV_ALIASES).forEach(([a, b]) => {
+      Object.entries(wfDrvAliases()).forEach(([a, b]) => {
         const ka = a.toLowerCase().replace(/[^a-z0-9]/g, '');
         const kb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (staffKeys.has(ka) || staffKeys.has(kb)) { staffKeys.add(ka); staffKeys.add(kb); }
@@ -124167,7 +128924,7 @@
               </div>
               <div class="form-field">
                 <label for="insp_tw_own">Truck Owner *</label>
-                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || (/^(own|company)/i.test(targetEqRow.ownership || '') ? inspDefaultTwCo : ''))}" placeholder="e.g. Hussein Bdeir, Karim Bdeir, WTC" autocomplete="off">
+                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || (/^(own|company)/i.test(targetEqRow.ownership || '') ? inspDefaultTwCo : ''))}" placeholder="e.g. Rami Haddad, WTC" autocomplete="off">
               </div>
               <div class="form-field">
                 <label for="insp_tw_drv">Active / Substitute Driver *</label>
@@ -125246,6 +130003,10 @@
       cancelModBtn.addEventListener('click', closeAndResetSiteModifyUi);
     }
     const saveModBtn = $('inspSaveModifyBtn');
+    // Set once the person has agreed that this save starts a new period (see the gate before the row is changed)
+    let inspKeptPeriodOk = false;
+    // The tickets a price agreement change re-prices, already shown and confirmed (its signature), see below
+    let inspRateImpactSig = '';
     if (saveModBtn && modDrawer) {
       saveModBtn.addEventListener('click', async () => {
         if (!canUseInspModify) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
@@ -125508,6 +130269,23 @@
             pendingUpdates.region = resolvedReg;
           }
         }
+        // Posting rule on a modified ticket: same check as the entry form when a priced key moves (owner decision 2026-11-12)
+        if ((key === 'sales_tickets' || key === 'raw_purchases') && ['customer', 'product', 'site', 'site_owner', 'sale_type', 'date', 'rep_date', 'company', 'unit_cost', 'price_pending'].some(k => k in pendingUpdates)) {
+          const cand = Object.assign({}, row, pendingUpdates);
+          const isSalesT = key === 'sales_tickets';
+          const candPending = !isSalesT && Boolean('price_pending' in pendingUpdates ? pendingUpdates.price_pending : row.price_pending) && !(Number(pendingUpdates.unit_cost) > 0);
+          const agrErrI = ticketAgreementCheck(isSalesT ? 'sales' : 'raw', {
+            company: cand.company, customer: cand.customer, product: cand.product, site: cand.site, owner: cand.site_owner,
+            saleType: cand.sale_type || 'Delivery', pricePending: candPending,
+            date: cand.date, repDate: cand.rep_date || cand.date, effDate: cand.rep_date || cand.date,
+            isReturn: isReturnTicket(row), isRemove: isRemovedTicket(row),
+            orig: row
+          });
+          if (agrErrI) {
+            toast(agrErrI, 'err');
+            return;
+          }
+        }
         if (key === 'conversions' && ('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates || 'exchange_rate' in pendingUpdates)) {
           const nextUsd = round2(Number(('usd_amount' in pendingUpdates) ? pendingUpdates.usd_amount : (row.usd_amount || row.amount || 0)));
           const nextLbp = Math.round(Number(('lbp_amount' in pendingUpdates) ? pendingUpdates.lbp_amount : (row.lbp_amount || 0)));
@@ -125524,6 +130302,48 @@
             toast(inspFxGuard.reason, 'warn');
           }
         }
+        // A price agreement change shows the exact tickets it re-prices before it is saved (owner 2026-11-20), as
+        // the entry form does: a dry run, nothing written; the save runs on the person's yes
+        if (key === 'price_rules' && row && !window.__fastInspectorModifyTest) {
+          let pvI = null;
+          try {
+            const inspChangedValRi = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
+            pvI = previewMfgPriceRuleImpact(Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedValRi });
+          } catch (_) { pvI = null; }
+          if (pvI) {
+            const pvISum = summarizeSiblingRepriceImpact(pvI.impact);
+            const pvISig = `${pvI.kept ? pvI.kept.newFrom : ''}|${pvISum.sig}`;
+            if ((pvI.kept || pvISum.n > 0 || pvISum.lockedN > 0) && inspRateImpactSig !== pvISig) {
+              promptRateChangeImpact({ mode: 'save', impact: pvI.impact, kept: pvI.kept }).then(okRi => {
+                if (!okRi) return;
+                inspRateImpactSig = pvISig;
+                inspKeptPeriodOk = true;
+                saveModBtn.click();
+              });
+              return;
+            }
+          }
+        }
+        // A dated row saved from a later day with another value starts a new period (the earlier one stays as its
+        // own entry). The person is told before anything is changed (owner 2026-11-20); the save runs on their yes.
+        if (!inspKeptPeriodOk && row && isEffectiveSeriesTable(key, row)) {
+          let inspKpAsk = null;
+          try {
+            const inspChangedVal = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
+            inspKpAsk = describeChronoKeptPeriod(key, Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedVal });
+          } catch (_) { inspKpAsk = null; }
+          if (inspKpAsk) {
+            promptRateChangeImpact({ mode: 'period', kept: inspKpAsk }).then(okKp => {
+              if (!okKp) return;
+              inspKeptPeriodOk = true;
+              saveModBtn.click();
+            });
+            return;
+          }
+        }
+        inspKeptPeriodOk = false;
         const origRowSnap = Object.assign({}, row);
         const inspGeoTouched = key === 'sites' || key === 'regions' || key === 'customers' || key === 'suppliers';
         const inspRollbackSnap = (hasServerApi() && !isDemoScopeActive() && !window.__fastInspectorModifyTest)
@@ -126479,9 +131299,17 @@
             }
           }
           applyCustomRecordsToSeed();
+          // What a price agreement save re-priced and which typed prices it left (shown once the save is through)
+          const mfgRateImpactInsp = key === 'price_rules' ? newSiblingRepriceImpact() : null;
           if (isEffInspTbl || key === 'products') {
             backfillEffectiveLogChange(key, row, keptPeriodInsp ? null : origRowSnap, inspExtraPosts,
-              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '' });
+              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '', impact: mfgRateImpactInsp });
+            if (mfgRateImpactInsp && (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.length)) {
+              row._impact = packSiblingRepriceImpact(mfgRateImpactInsp, keptPeriodInsp ? { kept_to: keptPeriodInsp.to, new_from: keptPeriodInsp.newFrom } : null);
+              const cImpI = Array.isArray(STATE.customRecords[key]) ? STATE.customRecords[key].find(x => x && String(x.id) === String(row.id)) : null;
+              if (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.some(x => x && x.lock)) appendImpactLog(row, row._impact, 'change', true);
+              if (cImpI && cImpI !== row) { cImpI._impact = row._impact; if (row._impact_log) cImpI._impact_log = row._impact_log; }
+            }
             applyCustomRecordsToSeed();
           }
           let inspBackpayHit = null;
@@ -126552,6 +131380,13 @@
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
           if (keptPeriodInsp) toast(chronoKeptPeriodToastText(keptPeriodInsp), 'ok');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
+          // Already shown before the save: the report comes back only when the save found something else
+          const inspShownSig = inspRateImpactSig;
+          inspRateImpactSig = '';
+          if (mfgRateImpactInsp && (mfgRateImpactInsp.rows.length || mfgRateImpactInsp.kept.some(x => x && x.lock))) {
+            const inspDoneSig = `${keptPeriodInsp ? keptPeriodInsp.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactInsp).sig}`;
+            if (!inspShownSig || inspShownSig !== inspDoneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactInsp, kept: keptPeriodInsp });
+          }
         }
       });
     }
@@ -128565,6 +133400,40 @@
     return changed;
   }
 
+  // `bio_quarantine` rules from the private name book: { name, face_updated_prefix } clears a known-bad
+  // enrolment; { name, drop_if_empty: true } drops an empty placeholder record.
+  function bioQuarantineHit(key, rec) {
+    if (!rec || typeof rec !== 'object') return '';
+    const rules = window.MFG_NAMEBOOK.list('bio_quarantine');
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      if (!r || _nbNorm(r.name) !== key) continue;
+      if (r.face_updated_prefix && String(rec.face_updated_at || '').startsWith(String(r.face_updated_prefix))) return 'clear';
+      if (r.drop_if_empty && (!Array.isArray(rec.face_samples) || !rec.face_samples.length) && !rec.pin_code) return 'drop';
+    }
+    return '';
+  }
+  function applyBioQuarantineToLocal() {
+    const bio = STATE && STATE.staffBiometrics;
+    if (!bio || typeof bio !== 'object') return;
+    let changed = false;
+    Object.keys(bio).forEach(k => {
+      const hit = bioQuarantineHit(_nbNorm(k), bio[k]);
+      if (hit) changed = true;
+      if (hit === 'drop') delete bio[k];
+      else if (hit === 'clear') {
+        const rule = window.MFG_NAMEBOOK.list('bio_quarantine').find(r => r && _nbNorm(r.name) === _nbNorm(k)) || {};
+        const ts = String(rule.cleared_at || new Date().toISOString());
+        bio[k] = Object.assign({}, bio[k], { face_samples: [], face_thumbs: [], face_cleared: true, face_updated_at: ts, updated_at: ts });
+      }
+    });
+    // Save the repair and send it to the cloud copy, like a manual Face ID clear, so it holds on every device.
+    if (changed) {
+      saveLocalAuthAndRecords();
+      if (STATE.authed && !IS_AUTOMATED_TEST) syncWithCloud(true);
+    }
+  }
+
   function mergeStaffBiometrics(remoteMap) {
     if (!remoteMap || typeof remoteMap !== 'object') return false;
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
@@ -128573,8 +133442,7 @@
       if (!inc || typeof inc !== 'object') return;
       const key = norm(inc.name || rk);
       if (!key) return;
-      if (key === 'abdallah ismail' && String(inc.face_updated_at || '').startsWith('2026-10-31T10:19:')) return;
-      if (key === 'ahmad' && (!Array.isArray(inc.face_samples) || !inc.face_samples.length) && !inc.pin_code) return;
+      if (bioQuarantineHit(key, inc)) return;
       const cur = STATE.staffBiometrics[key];
       const inTs = String(inc.updated_at || inc.face_updated_at || '');
       const curTs = cur ? String(cur.updated_at || cur.face_updated_at || '') : '';
@@ -129083,7 +133951,7 @@
   const REG_CHART_TOP_N = 12;
   function getRegisterRowsMeta(view, panel) {
     if (view && Array.isArray(_tableShownRows[view])) {
-      return { rows: _tableShownRows[view], limit: Number(shownCount(view)) || 0, sortView: view };
+      return { rows: _tableShownRows[view], limit: Number(shownCount(view)) || 0, sortView: view, shownKey: view };
     }
     const id = (panel && panel.id) ? panel.id : view;
     const entry = id ? _regPanelRows[id] : null;
@@ -129091,7 +133959,8 @@
       return {
         rows: entry.rows,
         limit: entry.shownKey ? (Number(shownCount(entry.shownKey)) || 0) : 0,
-        sortView: ''
+        sortView: '',
+        shownKey: entry.shownKey || ''
       };
     }
     return null;
@@ -130739,7 +135608,17 @@
   let syncInFlight = null;
   let _cloudRetryTimer = null;
   let _lastCloudSyncStartedAt = 0;
+  let _lastUserNavAt = 0;
   let _localPushSeq = 0;
+  let _lastSyncedMfgEtag = '';
+  let _lastSyncedMfgScopeKey = '';
+  let _lastVerifiedPushSeq = -1;
+  let _savedLocalAfterSyncOnce = false;
+  function resetCloudSyncEtagCache() {
+    _lastSyncedMfgEtag = '';
+    _lastSyncedMfgScopeKey = '';
+    _lastVerifiedPushSeq = -1;
+  }
   try {
     if (!IS_AUTOMATED_TEST && appStoreGetRaw(CLOUD_PENDING_PUSH_KEY) === '1') {
       STATE.pendingCloudPush = true;
@@ -131513,14 +136392,19 @@
 
   function applyServerUsersPayload(usersArr, payloadObj) {
     if (!isDemoSandboxSession() && rosterIsServerHeld() && !STATE.authed) return false;
+    const wasHydratedBefore = _usersApiHydratedOnce;
     _usersApiHydratedOnce = true;
     if (payloadObj && payloadObj.faceSettings && typeof payloadObj.faceSettings === 'object') {
       const rFs = payloadObj.faceSettings;
       const rFsTs = String(rFs.updated_at || '');
       const lFsTs = String((STATE.faceSettings && STATE.faceSettings.updated_at) || '');
       if (!lFsTs || !rFsTs || rFsTs >= lFsTs) {
-        STATE.faceSettings = Object.assign({}, STATE.faceSettings || {}, rFs, { sound: false });
-        try { appStoreSetRaw('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings)); } catch (_) {}
+        const prevFsJson = JSON.stringify(STATE.faceSettings || {});
+        const nextFs = Object.assign({}, STATE.faceSettings || {}, rFs, { sound: false });
+        STATE.faceSettings = nextFs;
+        if (!wasHydratedBefore || JSON.stringify(nextFs) !== prevFsJson) {
+          try { appStoreSetRaw('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings)); } catch (_) {}
+        }
       }
     }
     if (!Array.isArray(usersArr) || !usersArr.length) {
@@ -131529,6 +136413,7 @@
       }
       return false;
     }
+    const prevUsersJson = wasHydratedBefore ? JSON.stringify(STATE.users || []) : '';
     const merged = STATE.users.map(u => Object.assign({}, u));
     usersArr.forEach(u => {
       if (!u || !u.email) return;
@@ -131537,18 +136422,21 @@
       else merged.push(mergeUserRow(null, u));
     });
     STATE.users = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
-    try {
-      const storedUsers = rosterIsServerHeld()
-        ? STATE.users.map(u => {
-            const c = Object.assign({}, u);
-            delete c.pin_code;
-            delete c._verifiedPin;
-            c.pin_redacted = true;
-            return c;
-          })
-        : STATE.users;
-      appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(storedUsers));
-    } catch (_) {}
+    const usersChanged = !wasHydratedBefore || JSON.stringify(STATE.users) !== prevUsersJson;
+    if (usersChanged) {
+      try {
+        const storedUsers = rosterIsServerHeld()
+          ? STATE.users.map(u => {
+              const c = Object.assign({}, u);
+              delete c.pin_code;
+              delete c._verifiedPin;
+              c.pin_redacted = true;
+              return c;
+            })
+          : STATE.users;
+        appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(storedUsers));
+      } catch (_) {}
+    }
     const prevV = STATE.view, prevC = STATE.company;
     applyUserRlsAndPermissions();
     if (!STATE.authed) {
@@ -131620,116 +136508,56 @@
       }
     }
 
-    // 1. Relational SQLite / Cloudflare D1 Edge API
+    // 1. Relational SQLite / Cloudflare D1 Edge API (parallel auxiliary pulls + coalesced local save)
     if (hasServerApi()) {
-      try {
-        if (!isDemoSandboxSession() && (!rosterIsServerHeld() || STATE.authed)) {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 6000);
-          const rLocal = await edgeApiFetch('./api/users', { signal: ctrl.signal });
+      const auxFetchJson = async (url, timeoutMs = 5000) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+          const r = await edgeApiFetch(url, { signal: ctrl.signal });
+          return (r && r.ok) ? await r.json().catch(() => null) : null;
+        } catch (_) {
+          return null;
+        } finally {
           clearTimeout(t);
-          if (abortedByAuthChange()) return;
-          if (rLocal.ok) {
-            const dLocal = await rLocal.json();
-            if (abortedByAuthChange()) return;
-            if (Array.isArray(dLocal.users)) {
-              applyServerUsersPayload(dLocal.users, dLocal);
-            }
-          }
         }
+      };
+      try {
+        const fetchUsers = !isDemoSandboxSession() && (!rosterIsServerHeld() || STATE.authed);
+        const fetchSubStores = !isEdgeActive || STATE.authed || isDemoSandboxSession();
+        const fetchWsGeo = Boolean(fetchSubStores && (STATE.authed || isDemoSandboxSession()));
+        const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()));
+        const [dLocal, dSr, dAr, dSb, dWs, dGeo, dId] = await Promise.all([
+          fetchUsers ? auxFetchJson('./api/users', 6000) : Promise.resolve(null),
+          fetchSubStores ? auxFetchJson('./api/sentinel_reviews', 5000) : Promise.resolve(null),
+          fetchSubStores ? auxFetchJson('./api/alert_rules', 5000) : Promise.resolve(null),
+          fetchSubStores ? auxFetchJson('./api/staff_biometrics', 5000) : Promise.resolve(null),
+          fetchWsGeo ? auxFetchJson('./api/work_schedules', 5000) : Promise.resolve(null),
+          fetchWsGeo ? auxFetchJson('./api/geo_config', 5000) : Promise.resolve(null),
+          fetchSubStores ? auxFetchJson('./api/industry_domain_store', 5000) : Promise.resolve(null),
+          fetchOwnerNotices ? loadCashflowBehindNotice().catch(() => false) : Promise.resolve(false),
+          fetchOwnerNotices ? loadDevicesHolding().catch(() => false) : Promise.resolve(false)
+        ]);
         if (abortedByAuthChange()) return;
-        if (!isEdgeActive || STATE.authed || isDemoSandboxSession()) {
-          const ctrlSr = new AbortController();
-          const tSr = setTimeout(() => ctrlSr.abort(), 5000);
-          const rSr = await edgeApiFetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
-          clearTimeout(tSr);
-          if (abortedByAuthChange()) return;
-          if (rSr.ok) {
-            const dSr = await rSr.json();
-            if (abortedByAuthChange()) return;
-            if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) {
-              saveLocalAuthAndRecords();
-            }
-          }
-          if (abortedByAuthChange()) return;
-          const ctrlAr = new AbortController();
-          const tAr = setTimeout(() => ctrlAr.abort(), 5000);
-          const rAr = await edgeApiFetch('./api/alert_rules', { signal: ctrlAr.signal });
-          clearTimeout(tAr);
-          if (abortedByAuthChange()) return;
-          if (rAr.ok) {
-            const dAr = await rAr.json();
-            if (abortedByAuthChange()) return;
-            if (dAr && mergeAlertRules(dAr)) {
-              saveLocalAuthAndRecords();
-            }
-          }
-          if (abortedByAuthChange()) return;
-          const ctrlSb = new AbortController();
-          const tSb = setTimeout(() => ctrlSb.abort(), 5000);
-          const rSb = await edgeApiFetch('./api/staff_biometrics', { signal: ctrlSb.signal });
-          clearTimeout(tSb);
-          if (abortedByAuthChange()) return;
-          if (rSb.ok) {
-            const dSb = await rSb.json();
-            if (abortedByAuthChange()) return;
-            if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) {
-              saveLocalAuthAndRecords();
-            }
-          }
-          if (abortedByAuthChange()) return;
-          if (STATE.authed || isDemoSandboxSession()) {
-            const ctrlWs = new AbortController();
-            const tWs = setTimeout(() => ctrlWs.abort(), 5000);
-            const rWs = await edgeApiFetch('./api/work_schedules', { signal: ctrlWs.signal });
-            clearTimeout(tWs);
-            if (abortedByAuthChange()) return;
-            if (rWs.ok) {
-              const dWs = await rWs.json();
-              if (abortedByAuthChange()) return;
-              if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) {
-                saveLocalAuthAndRecords();
-              }
-            }
-            if (abortedByAuthChange()) return;
-            const ctrlGeo = new AbortController();
-            const tGeo = setTimeout(() => ctrlGeo.abort(), 5000);
-            const rGeo = await edgeApiFetch('./api/geo_config', { signal: ctrlGeo.signal });
-            clearTimeout(tGeo);
-            if (abortedByAuthChange()) return;
-            if (rGeo.ok) {
-              const dGeo = await rGeo.json();
-              if (abortedByAuthChange()) return;
-              if (dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
-                if (window.MFG_GEO.importGeoConfig(dGeo.config)) {
-                  if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
-                  safeRender();
-                }
-              }
-            }
-          }
-          if (abortedByAuthChange()) return;
-          const ctrlId = new AbortController();
-          const tId = setTimeout(() => ctrlId.abort(), 5000);
-          const rId = await edgeApiFetch('./api/industry_domain_store', { signal: ctrlId.signal });
-          clearTimeout(tId);
-          if (abortedByAuthChange()) return;
-          if (rId.ok) {
-            const dId = await rId.json();
-            if (abortedByAuthChange()) return;
-            let idChanged = false;
-            if (dId && dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) idChanged = true;
-            if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
-            if (idChanged) saveLocalAuthAndRecords();
-          }
-          if (abortedByAuthChange()) return;
-          if (STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser())) {
-            await loadCashflowBehindNotice();
-            if (abortedByAuthChange()) return;
-            await loadDevicesHolding();
-            if (abortedByAuthChange()) return;
+        if (dLocal && Array.isArray(dLocal.users)) {
+          applyServerUsersPayload(dLocal.users, dLocal);
+        }
+        let auxLocalChanged = false;
+        if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) auxLocalChanged = true;
+        if (dAr && mergeAlertRules(dAr)) auxLocalChanged = true;
+        if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) auxLocalChanged = true;
+        if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) auxLocalChanged = true;
+        if (dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
+          if (window.MFG_GEO.importGeoConfig(dGeo.config)) {
+            if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
+            safeRender();
           }
         }
+        if (dId) {
+          if (dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) auxLocalChanged = true;
+          if (dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) auxLocalChanged = true;
+        }
+        if (auxLocalChanged) saveLocalAuthAndRecords();
       } catch (_) { /* API not reachable */ }
     }
 
@@ -131754,33 +136582,70 @@
         if (abortedByAuthChange()) return;
       }
       const seqAtSyncStart = _localPushSeq;
-      let getRes = null;
-      const ctrlE = new AbortController();
-      const timerE = setTimeout(() => ctrlE.abort(), 15000);
-      try {
-        const rE = await edgeApiFetch('./api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'get_mfg', doc: CLOUD_DOC_KEY }),
-          signal: ctrlE.signal
-        });
-        clearTimeout(timerE);
-        if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
-          getRes = rE;
-        } else if (rE.status === 401 || rE.status === 403) {
+      const auSyncScope = activeUser();
+      const curSyncScopeKey = `${_authSessionEpoch}|${norm((auSyncScope && auSyncScope.email) || '')}|${String((auSyncScope && auSyncScope.role) || '')}|${String((auSyncScope && auSyncScope.companies) || '')}|${window.__MFG_SHELL_VER || ''}`;
+      const canSendEtag = Boolean(
+        _lastSyncedMfgEtag &&
+        _lastSyncedMfgScopeKey === curSyncScopeKey &&
+        !pushChanges &&
+        !STATE.pendingCloudPush &&
+        !STATE.pushAfterSync &&
+        !_unsentSinceMs &&
+        !(Number(STATE._legacyPosUpgrades) > 0) &&
+        seqAtSyncStart === _lastVerifiedPushSeq
+      );
+      const fetchGetMfg = async useEtag => {
+        const ctrlE = new AbortController();
+        const timerE = setTimeout(() => ctrlE.abort(), 15000);
+        const reqBody = { op: 'get_mfg', doc: CLOUD_DOC_KEY };
+        if (useEtag && _lastSyncedMfgEtag) reqBody.ifNoneMatchEtag = _lastSyncedMfgEtag;
+        try {
+          const rE = await edgeApiFetch('./api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody),
+            signal: ctrlE.signal
+          });
+          clearTimeout(timerE);
+          if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
+            return await rE.json();
+          }
+          if (rE.status === 401 || rE.status === 403) {
+            return { _authDenied: true };
+          }
+          throw new Error('edge sync ' + rE.status);
+        } catch (errE) {
+          clearTimeout(timerE);
+          throw errE;
+        }
+      };
+
+      let store = await fetchGetMfg(canSendEtag);
+      if (abortedByAuthChange()) return;
+      if (store && store._authDenied) {
+        STATE.cloudStatus = '● Sign-in required';
+        updateCloudBadges();
+        return;
+      }
+      if (store && store.notModified === true) {
+        if (canSendEtag && _localPushSeq === seqAtSyncStart && !STATE.pushAfterSync && !STATE.pendingCloudPush) {
+          STATE.cloudStatus = '● Cloud Live';
+          if (store.updatedAt) STATE.cloudUpdatedAt = store.updatedAt;
+          noteCloudInSync();
+          updateCloudBadges();
+          return;
+        }
+        // Local mutations landed while the conditional check was in flight: fetch full doc so merge + CAS push run cleanly.
+        resetCloudSyncEtagCache();
+        store = await fetchGetMfg(false);
+        if (abortedByAuthChange()) return;
+        if (store && store._authDenied) {
           STATE.cloudStatus = '● Sign-in required';
           updateCloudBadges();
           return;
-        } else {
-          throw new Error('edge sync ' + rE.status);
         }
-      } catch (errE) {
-        clearTimeout(timerE);
-        throw errE;
       }
 
-      const store = await getRes.json();
-      if (abortedByAuthChange()) return;
       const docs = (store && store.docs) || store || {};
       const remote = docs[CLOUD_DOC_KEY] || (store && store.customRecords ? store : {});
       const isScopedRemote = Boolean(remote && remote._scopedForSession);
@@ -131810,8 +136675,17 @@
       const mRes = mergeRemoteMfgDoc(remote, Boolean(pushChanges));
       let changed = mRes.changed;
       if (mRes.needPush) pushChanges = true;
+      const needReverseDiffScan = !pushChanges && (
+        !store || !store.etag ||
+        String(store.etag) !== _lastSyncedMfgEtag ||
+        _lastSyncedMfgScopeKey !== curSyncScopeKey ||
+        seqAtSyncStart !== _lastVerifiedPushSeq ||
+        _localPushSeq !== seqAtSyncStart ||
+        Boolean(_unsentSinceMs) ||
+        (Number(STATE._legacyPosUpgrades) || 0) > 0
+      );
       // anything only we hold -> push (scoped to allowed BUs when remote._scopedForSession is active)
-      if (!pushChanges && Array.isArray(STATE.kioskPunches) && STATE.kioskPunches.length) {
+      if (needReverseDiffScan && Array.isArray(STATE.kioskPunches) && STATE.kioskPunches.length) {
         const remMap = new Map(sanitizeKioskPunchesList(remote.kioskPunches).map(p => [String(p.id), p]));
         sanitizeKioskPunchesList(STATE.kioskPunches).forEach(p => {
           if (!canPushCo(p && p.company)) return;
@@ -131819,7 +136693,7 @@
           if (!rp || Number(p.rev || 0) > Number(rp.rev || 0) || Boolean(p.voided) !== Boolean(rp.voided)) pushChanges = true;
         });
       }
-      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.staffBiometrics && Object.keys(STATE.staffBiometrics).length) {
+      if (needReverseDiffScan && !pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.staffBiometrics && Object.keys(STATE.staffBiometrics).length) {
         const remBio = remote.staffBiometrics || {};
         Object.entries(STATE.staffBiometrics).forEach(([bk, bv]) => {
           if (!canPushCo(bv && bv.company)) return;
@@ -131827,7 +136701,7 @@
           if (!rb || String((bv && bv.updated_at) || '') > String(rb.updated_at || '')) pushChanges = true;
         });
       }
-      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.workSchedules) {
+      if (needReverseDiffScan && !pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.workSchedules) {
         const remWs = remote.workSchedules || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} };
         const remStMap = new Map((remWs.shiftTypes || []).filter(s => s && s.id).map(s => [`${norm(s.company || 'All BUs')}|${String(s.id)}`, s]));
         (STATE.workSchedules.shiftTypes || []).forEach(st => {
@@ -131854,7 +136728,7 @@
           if (!rr || String((rv && rv.updated_at) || '') > String(rr.updated_at || '')) pushChanges = true;
         });
       }
-      if (!pushChanges && remote.customRecords) {
+      if (needReverseDiffScan && !pushChanges && remote.customRecords) {
         const remCr = remote.customRecords || {};
         const allCrCheckKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
         allCrCheckKeys.forEach(k => {
@@ -131875,7 +136749,7 @@
           });
         });
       }
-      if (!pushChanges) {
+      if (needReverseDiffScan && !pushChanges) {
         const remIndEdits = remote.industryRowEdits || {};
         const myIndEdits = getIndustryRowEditStore();
         Object.entries(myIndEdits).forEach(([ek, ev]) => {
@@ -131902,7 +136776,7 @@
           });
         });
       }
-      if (!pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
+      if (needReverseDiffScan && !pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
         const remSr = remote.sentinelReviews || {};
         Object.entries(STATE.sentinelReviews).forEach(([rk, rv]) => {
           if (isScopedRemote && rv && rv.company && !canPushCo(rv.company)) return;
@@ -131910,7 +136784,7 @@
           if (!remRow || String(rv.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
         });
       }
-      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.alertRules) {
+      if (needReverseDiffScan && !pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.alertRules) {
         const remAr = remote.alertRules || { overrides: {}, custom: [] };
         const remOv = remAr.overrides || {};
         Object.entries(STATE.alertRules.overrides || {}).forEach(([rk, rv]) => {
@@ -131925,7 +136799,10 @@
         });
       }
 
-      saveLocalAuthAndRecords();
+      if (changed || pushChanges || !_savedLocalAfterSyncOnce) {
+        saveLocalAuthAndRecords();
+        _savedLocalAfterSyncOnce = true;
+      }
       STATE.cloudStatus = '● Cloud Live';
       STATE.cloudUpdatedAt = remote.updatedAt || '';
       // An unreported positional-id upgrade is itself a reason to push: otherwise a device whose upgrade left its
@@ -131933,6 +136810,7 @@
       if (!pushChanges && (Number(STATE._legacyPosUpgrades) || 0) > 0) pushChanges = true;
 
       if (pushChanges || !docs[CLOUD_DOC_KEY]) {
+        resetCloudSyncEtagCache();
         setPendingCloudPush(true);
         let expectedUpdatedAt = docs[CLOUD_DOC_KEY] ? String(remote.updatedAt || '') : '';
         let casSucceeded = false;
@@ -132023,9 +136901,17 @@
         // Nothing to push and nothing changed here meanwhile: the cloud holds everything (a wait left behind by a
         // refused push ends here, once the refusal is gone).
         noteCloudInSync();
+        if (store && store.etag) {
+          _lastSyncedMfgEtag = String(store.etag);
+          _lastSyncedMfgScopeKey = curSyncScopeKey;
+          _lastVerifiedPushSeq = seqAtSyncStart;
+        }
       }
       updateCloudBadges();
-      if (changed) safeRender();
+      if (changed) {
+        safeRender();
+        if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('sync');
+      }
     } catch (_) {
       if (abortedByAuthChange()) return;
       STATE.cloudStatus = navigator.onLine ? '● Relay unreachable' : '● Offline Cache';
@@ -135526,6 +140412,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -135648,6 +140535,7 @@
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
     void_log: 'Void Log',
+    rate_changes: 'Rate Changes',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -136126,6 +141014,8 @@
       STATE.industryRowEdits = _demoCompanySandboxStores.industryRowEdits || {};
       STATE.pendingCloudPush = false;
       _demoCompanySandboxActive = true;
+      resetCloudSyncEtagCache();
+      if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
         window.MFG_AI_EDGE.resetTransientDemoInputs();
       }
@@ -136222,6 +141112,8 @@
       _demoSanitizeBackup = null;
       _demoCompanySandboxActive = false;
       _demoCompanyLiveSnap = null;
+      resetCloudSyncEtagCache();
+      if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
 
       if (SEED._industryLegacyIdMap && typeof upgradeLegacyIndustryStores === 'function') {
         upgradeLegacyIndustryStores();
@@ -136412,7 +141304,9 @@
     if (prevInd !== nextInd && STATE.authed && !nextDemo && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
       try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     renderApp();
+    if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('scope');
   }
 
   let _companySwitchUiSig = '';
@@ -137098,6 +141992,7 @@
           if (divLblEl) divLblEl.textContent = 'or sign in with Email & PIN';
         }
       }
+      if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(null);
       return;
     }
 
@@ -137149,6 +142044,7 @@
         }
       }
     }
+    if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(selUser);
   }
 
   function setAuthSeatDrawerOpen(open, opts = {}) {
@@ -137385,6 +142281,9 @@
     }
     closeEntryModal(true);
     closeRecordInspector();
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
+    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
+    if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(resolveSelectedAuthUser());
     if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       window.MFG_GEO.resetGeoStoreSession();
     }
@@ -137413,6 +142312,9 @@
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
+    resetCloudSyncEtagCache();
+    _savedLocalAfterSyncOnce = false;
+    if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
     FACE_STATE.pending2faUser = null;
@@ -137435,6 +142337,7 @@
       if (!SEED._recordsReady) {
         SEED.records = {};
         SEED.models = {};
+        setPrivateNameBook(null);
         SEED.industryLive = null;
         SEED._coreReady = false;
         SEED._preAuthDeferred = true;
@@ -137514,14 +142417,18 @@
     document.body.classList.remove('locked');
     setAuthStreak(0, 3);
     resetLivenessState();
+    resetCloudSyncEtagCache();
     if (hasServerApi() && !isDemoSandboxSession()) {
       hydrateServerUsersOnce();
     }
     try { window.dispatchEvent(new CustomEvent('mfg:auth-gate-closed')); } catch (_) {}
     if (!SEED._recordsReady) {
       hydrateSeedData();
-    } else if (!isDemoScopeActive() && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
-      try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
+    } else {
+      if (!isDemoScopeActive() && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
+        try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
+      }
+      if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('auth');
     }
     const shouldKeepNonAuthCam = () => Boolean(
       FACE_STATE.enrolCamActive ||
@@ -137590,6 +142497,12 @@
   function signOut() {
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
+    // Stop approval notifications cleanly: demo cleanup runs locally; live sessions await server unsub before logout.
+    if (isDemoSandboxSession()) {
+      if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.pushSignOut === 'function') {
+        window.MFG_APPROVALS.pushSignOut({ serverApi: false });
+      }
+    }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -137606,6 +142519,9 @@
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
+    resetCloudSyncEtagCache();
+    _savedLocalAfterSyncOnce = false;
+    if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
     _WF_AUDIT_KEPT.clear();
     _PAY_WS_AUDIT_KEPT.clear();
     _PAY_BIO_SUM_KEPT.clear();
@@ -137644,27 +142560,41 @@
         }
       } catch (_) {}
       const logoutTok = _edgeSessionToken || '';
+      const serverOn = hasServerApi();
+      const logoutSeat = (() => {
+        try { const u = activeUser(); return u ? String(u.id || u.email || '') : ''; } catch (_) { return ''; }
+      })();
       const sendLogout = () => {
-        if (!hasServerApi()) return;
+        if (!serverOn) return;
         try {
           const hdrs = {};
           if (logoutTok) hdrs['X-ISABI-Session'] = logoutTok;
           fetch('./api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: hdrs }).catch(() => {});
         } catch (_) {}
       };
-      if (window.MFG_ASK && typeof window.MFG_ASK.unsubscribePushOnSignOut === 'function') {
-        try {
-          const unsubP = window.MFG_ASK.unsubscribePushOnSignOut({ token: logoutTok, serverApi: hasServerApi() });
-          Promise.race([
-            Promise.resolve(unsubP),
-            new Promise(r => setTimeout(r, 800))
-          ]).finally(sendLogout);
-        } catch (_) {
-          sendLogout();
+      const pushCleanup = (async () => {
+        const unsubs = [];
+        if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.pushSignOut === 'function') {
+          unsubs.push(Promise.resolve().then(() => window.MFG_APPROVALS.pushSignOut({ token: logoutTok, serverApi: serverOn, deferBrowserUnsub: true, seatId: logoutSeat })));
         }
-      } else {
-        sendLogout();
-      }
+        if (window.MFG_ASK && typeof window.MFG_ASK.unsubscribePushOnSignOut === 'function') {
+          unsubs.push(Promise.resolve().then(() => window.MFG_ASK.unsubscribePushOnSignOut({ token: logoutTok, serverApi: serverOn, deferBrowserUnsub: true })));
+        }
+        if (unsubs.length) await Promise.allSettled(unsubs);
+        try {
+          const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
+          const reg = sw && typeof sw.getRegistration === 'function'
+            ? await Promise.race([sw.getRegistration('./').catch(() => null), new Promise(r => setTimeout(() => r(null), 300))])
+            : null;
+          const sub = reg && reg.pushManager && typeof reg.pushManager.getSubscription === 'function'
+            ? await Promise.resolve(reg.pushManager.getSubscription()).catch(() => null)
+            : null;
+          if (sub && typeof sub.unsubscribe === 'function') {
+            await Promise.resolve(sub.unsubscribe()).catch(() => {});
+          }
+        } catch (_) {}
+      })();
+      Promise.race([pushCleanup, new Promise(r => setTimeout(r, 800))]).finally(sendLogout);
       setEdgeSessionToken('');
       _edgeCookieAuthed = false;
       purgePrivateSeedCachesOnLogout();
@@ -137694,6 +142624,8 @@
         try { appStoreRemoveRaw('isabi_mfg_ind_row_edits_v1'); } catch (_) {}
         SEED.records = {};
         SEED.models = {};
+        setPrivateNameBook(null);
+        _seedHydrationGen++;
         SEED.industryLive = null;
         SEED._coreReady = false;
         SEED._recordsReady = false;
@@ -137713,6 +142645,8 @@
     if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
     closeMobileTopSheets();
     closeEntryModal(true);
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
+    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
     }
@@ -137726,6 +142660,11 @@
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
     openAuthGate('');
+    // A server-held seat's private seed was dropped above: wait for the next sign-in in this tab and load it
+    // again (without this, a second sign-in without a reload showed an empty workspace and no name book).
+    if (rosterIsServerHeld() && !isDemoSandboxSession() && !STATE.authed) {
+      try { hydrateSeedData(); } catch (_) {}
+    }
   }
 
   function authError(msg, opts = {}) {
@@ -138129,6 +143068,623 @@
       STATE.sourceBehind = null;
       STATE.changedEntries = null;
     }
+    if (isMobPhoneViewport() && isPocketBriefAutoEnabled() && canUsePocketBrief(finalAuthedUser)) {
+      openPocketBrief({ fromLogin: true });
+    }
+    return true;
+  }
+
+  // ============================================================================
+  // MORNING POCKET BRIEF (PHONE-FIRST SNAPSHOT, OWNER & SUPERVISOR SEATS)
+  // ============================================================================
+  const POCKET_BRIEF_PREF_KEY = 'isabi_mfg_pocket_brief_v1';
+  let _pocketBriefOpen = false;
+  let _pocketBriefLastFocus = null;
+  let _pocketBriefLangWired = false;
+
+  function isPocketBriefAutoEnabled() {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(POCKET_BRIEF_PREF_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setPocketBriefAutoEnabled(on) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (on) localStorage.setItem(POCKET_BRIEF_PREF_KEY, '1');
+        else localStorage.removeItem(POCKET_BRIEF_PREF_KEY);
+      }
+    } catch (_) {}
+    syncAuthPocketBriefUi();
+  }
+
+  function canUsePocketBrief(u) {
+    const usr = u || activeUser();
+    if (!usr || usr._lockedPlaceholder || usr.status === 'Suspended') return false;
+    if (isAnyKioskOrScanSurface()) return false;
+    const roleStr = String(usr.role || '');
+    if (!(isOwner(usr) || /Supervisor/i.test(roleStr))) return false;
+    if (String(usr.pbi_access || '').toLowerCase() === 'none') return false;
+    return Boolean(typeof canViewView === 'function' ? canViewView('overview', usr) : true);
+  }
+
+  function syncAuthPocketBriefUi(selectedSeatOpt) {
+    if (typeof document === 'undefined') return;
+    const row = $('authPocketBriefRow');
+    const chk = $('authPocketBriefSwitch');
+    if (!row || !chk) return;
+    const isKiosk = isAnyKioskOrScanSurface();
+    const sel = selectedSeatOpt !== undefined ? selectedSeatOpt : (typeof resolveSelectedAuthUser === 'function' ? resolveSelectedAuthUser() : null);
+    const hideForSeat = Boolean(sel && !canUsePocketBrief(sel));
+    row.hidden = isKiosk || hideForSeat;
+    const on = isPocketBriefAutoEnabled();
+    chk.checked = on;
+    chk.setAttribute('aria-checked', on ? 'true' : 'false');
+    const cardAuto = $('pocketBriefAutoChk');
+    if (cardAuto) {
+      cardAuto.checked = on;
+      cardAuto.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+  }
+
+  function getPocketBriefScopeOptions(user) {
+    const allowedCos = getAllowedCompanyKeys(user);
+    const allowedSet = new Set(allowedCos);
+    const allowedNames = allowedCompanyNames(user);
+    const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
+    const catalog = getCompanyCatalog();
+    const indGroups = getIndustryGroups(catalog);
+    const freqIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    const coFreq = (freqIdx && freqIdx.company) ? freqIdx.company : null;
+
+    const rankedGroups = indGroups.map(g => {
+      const permittedCos = g.companies.filter(c => allowedNameSet.has(c.name.toLowerCase()));
+      const permittedFreq = (coFreq && coFreq.size)
+        ? permittedCos.reduce((s, c) => s + (coFreq.get(norm(c.name)) || 0), 0)
+        : (g.freq || 0);
+      return { ...g, permittedFreq };
+    }).sort((a, b) => (b.permittedFreq || 0) - (a.permittedFreq || 0));
+
+    const keys = [];
+    const pushKey = k => {
+      if (!k || keys.includes(k) || !allowedSet.has(k)) return;
+      if (k === DEMO_COMPANY_KEY && STATE.company !== DEMO_COMPANY_KEY && !isDemoSandboxSession()) return;
+      keys.push(k);
+    };
+    rankedGroups.forEach(g => {
+      if (g.id === 'Manufacturing') pushKey('manufacturing-group');
+      else if (indGroups.length >= 2) pushKey(`industry:${g.id}`);
+      const sortedCos = g.companies.slice().sort((a, b) => {
+        const fa = coFreq ? (coFreq.get(norm(a.name)) || 0) : 0;
+        const fb = coFreq ? (coFreq.get(norm(b.name)) || 0) : 0;
+        return fb - fa;
+      });
+      sortedCos.forEach(c => pushKey(c.key));
+    });
+    allowedCos.forEach(k => pushKey(k));
+    if (STATE.company && !keys.includes(STATE.company) && allowedSet.has(STATE.company)) {
+      keys.unshift(STATE.company);
+    }
+    return keys.map(coKey => {
+      let label = COMPANY_BU_MATCH[coKey] || COMPANY_LABELS[coKey] || coKey;
+      if (coKey === 'manufacturing-group') label = 'All Manufacturing';
+      else if (coKey === DEMO_COMPANY_KEY) label = 'Demo Company';
+      else if (coKey.startsWith('industry:')) label = `All ${coKey.slice(9)}`;
+      return { key: coKey, label };
+    });
+  }
+
+  function getPocketBriefPeriodLabel() {
+    const p = String(STATE.period || 'mtd');
+    const map = {
+      all: 'All-Time (2024-2030)',
+      today: 'Today',
+      yesterday: 'Yesterday',
+      wtd: 'This Week',
+      last_week: 'Last Week',
+      last_7d: 'Last 7 Days',
+      mtd: 'This Month (MTD)',
+      prev_m1: 'Last Month',
+      prev_m2: '2 Months Ago',
+      last_30d: 'Last 30 Days',
+      qtd: 'This Quarter (QTD)',
+      last_q: 'Last Quarter',
+      last_90d: 'Last 90 Days',
+      ytd: 'Year to Date (YTD)'
+    };
+    if (map[p]) return { text: map[p], isCustom: false };
+    const pr = typeof periodRange === 'function' ? periodRange() : null;
+    if (pr && pr.from && pr.to) return { text: `${pr.from} to ${pr.to}`, isCustom: true };
+    return { text: 'Month-to-Date', isCustom: false };
+  }
+
+  function ensureMobOverlayGlobalListeners() {
+    if (_pocketBriefLangWired || typeof window === 'undefined' || typeof document === 'undefined') return;
+    _pocketBriefLangWired = true;
+    window.addEventListener('mfg:lang-changed', () => {
+      if (_pocketBriefOpen) renderPocketBriefOverlayDom();
+      const peekBd = $('mobRowPeekBackdrop');
+      if (_mobRowPeekState && peekBd && !peekBd.hidden && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(peekBd); } catch (_) {}
+      }
+    });
+    const refreshOpenPocketBrief = () => {
+      if (!_pocketBriefOpen) return;
+      const bd = $('pocketBriefOverlay');
+      if (!bd || bd.hidden) return;
+      if (!canUsePocketBrief(activeUser())) closePocketBrief({ purgeDom: true, restoreFocus: false });
+      else renderPocketBriefOverlayDom();
+    };
+    window.addEventListener('mfg:core-seed-ready', refreshOpenPocketBrief);
+    window.addEventListener('mfg:records-seed-ready', refreshOpenPocketBrief);
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') {
+        if (_mobRowPeekState) {
+          closeMobRowPeekSheet();
+        } else if (_pocketBriefOpen) {
+          closePocketBrief();
+        }
+        return;
+      }
+      if (_mobRowPeekState && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+        const peekBd = $('mobRowPeekBackdrop');
+        if (!peekBd || peekBd.hidden) return;
+        if (document.querySelector('#recordInspector:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden])')) return;
+        if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+        const tTag = ev.target && ev.target.tagName ? ev.target.tagName : '';
+        if (/^(INPUT|TEXTAREA|SELECT)$/i.test(tTag)) return;
+        ev.preventDefault();
+        const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+        const step = ev.key === 'ArrowRight' ? (rtl ? -1 : 1) : (rtl ? 1 : -1);
+        stepMobRowPeek(step, { via: 'key' });
+      }
+    });
+  }
+
+  function buildPocketBriefData() {
+    const u = activeUser();
+    const fullName = String((u && (u.full_name || u.name || u.email)) || 'Executive').trim();
+    const firstName = fullName.split(/\s+/)[0] || fullName;
+    const hr = new Date().getHours();
+    const greetingEn = hr < 12 ? 'Good Morning' : (hr < 17 ? 'Good Afternoon' : 'Good Evening');
+    const ind = getActiveIndustry(STATE.company) || 'Manufacturing';
+    const scopeOpts = getPocketBriefScopeOptions(u);
+    const activeScopeObj = scopeOpts.find(x => x.key === STATE.company) || { key: STATE.company, label: COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || ind };
+    const periodInfo = getPocketBriefPeriodLabel();
+    const seedLoading = Boolean(!SEED || !SEED._coreReady || !SEED._recordsReady);
+
+    const canViewBooks = isOwner(u) || canSeeTaxBreakdown(u);
+    const canSeePnlSummary = Boolean(canViewBooks && (isOwner(u) || canViewView('daily_ops', u) || canViewView('ledger', u)));
+    let cards = [];
+    if (ind === 'Manufacturing') {
+      const k = getKPI();
+      const hasLedger = typeof modelHasLedger === 'function' ? modelHasLedger() : true;
+      const cashUsd = k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0);
+      const netSales = k.net_sales != null ? k.net_sales : (k.gross_sales || 0);
+      const arChipFilter = Number(k.ar_60_plus || 0) > 0 ? 'overdue60' : (Number(k.ar_balance || 0) > 0 ? 'open_ar' : '');
+      cards = [
+        {
+          label: 'Cash & Bank Till',
+          val: hasLedger ? fmtUSD(cashUsd, 0) : 'Not Tracked Yet',
+          valNoI18n: hasLedger,
+          subLabel: hasLedger ? 'Receipts' : '',
+          subVal: hasLedger ? fmtUSD(k.receipts_total || 0, 0) : '',
+          subFixed: hasLedger ? '' : 'Pending Live Till',
+          jump: 'cashflow',
+          tone: hasLedger ? 'good' : 'muted'
+        },
+        { label: 'Net Sales', val: fmtUSD(netSales, 0), valNoI18n: true, subLabel: 'Delivered Loads', subVal: fmtNum(k.loads || 0), jump: 'sales', tone: 'cobalt' },
+        {
+          label: 'Open Receivables',
+          val: fmtUSD(k.ar_balance || 0, 0),
+          valNoI18n: true,
+          subLabel: '60d+ Overdue',
+          subVal: fmtUSD(k.ar_60_plus || 0, 0),
+          jump: 'customers',
+          jumpOpts: arChipFilter ? { chipFilter: arChipFilter } : undefined,
+          scrollTarget: 'custPanel',
+          tone: Number(k.ar_60_plus || 0) > 0 ? 'warn' : ''
+        },
+        { label: 'Fleet & Tank', val: `${fmtNum(Math.round(Number(k.diesel_in_tank || 0)))} L`, valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(k.operating_profit || 0, 0) : '', jump: 'fleet', scrollTarget: 'dieselTankPanel', tone: '' }
+      ];
+    } else if (ind === 'Holding & Treasury') {
+      const rollup = computeEnterpriseRollup();
+      const ic = (rollup && rollup.icRes) || {};
+      if (isOwner(u)) {
+        const t = (rollup && rollup.totals) || {};
+        const cashLabel = t.cash_partial ? 'Cash & Bank (Tracked Tills)' : 'Consolidated Cash & Bank';
+        const hldArView = canViewView('hld_entities', u) ? 'hld_entities' : (canViewView('hld_consolidation', u) ? 'hld_consolidation' : 'suppliers');
+        const hldArScroll = hldArView === 'hld_entities' ? 'hldEntitiesScorecardPanel' : (hldArView === 'hld_consolidation' ? 'hldConsolidatedPnlPanel' : '');
+        const icOpenCount = Number(ic.openCount || 0);
+        cards = [
+          { label: cashLabel, val: fmtUSD(t.cash_till || 0, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(((rollup && rollup.entities) || []).length), jump: 'cashflow', tone: 'good' },
+          { label: 'Group Net Revenue', val: fmtUSD(t.net_sales || 0, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(t.operating_profit || 0, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
+          { label: 'Open Receivables', val: fmtUSD(t.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(t.ap_balance || 0, 0), jump: hldArView, scrollTarget: hldArScroll, tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(ic.totalOpenUsd || 0, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(icOpenCount), jump: 'hld_interactions', jumpOpts: icOpenCount > 0 ? { chipFilter: 'open' } : undefined, scrollTarget: 'hldInteractionsPanel', tone: icOpenCount > 0 ? 'warn' : 'good' }
+        ];
+      } else {
+        const allowedNormSet = new Set(allowedCompanyNames(u).map(n => norm(n)));
+        const permittedEnts = ((rollup && rollup.entities) || []).filter(e => e && allowedNormSet.has(norm(e.name)));
+        const entHasTrackedCash = e => e.industry === 'Manufacturing'
+          ? (typeof modelHasLedger === 'function' ? modelHasLedger(e.key) : true)
+          : Boolean(siblingCashBook(e.industry).tracked);
+        const anyTrackedCash = permittedEnts.some(entHasTrackedCash);
+        const allTrackedCash = permittedEnts.length > 0 && permittedEnts.every(entHasTrackedCash);
+        const pCashTill = round2(permittedEnts.reduce((s, e) => s + (entHasTrackedCash(e) ? Number((e.k && e.k.cash_till) || 0) : 0), 0));
+        const pNetSales = round2(permittedEnts.reduce((s, e) => s + Number((e.k && (e.k.net_sales != null ? e.k.net_sales : e.k.gross_sales)) || 0), 0));
+        const pOpProfit = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.operating_profit) || 0), 0));
+        const pAr = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.ar_balance) || 0), 0));
+        const pAp = round2(permittedEnts.reduce((s, e) => s + Number((e.k && e.k.ap_balance) || 0), 0));
+        const permittedOpenIc = ((ic && Array.isArray(ic.openRows)) ? ic.openRows : []).filter(r => r && (
+          allowedNormSet.has(norm(r.fromCo)) ||
+          allowedNormSet.has(norm(r.toCo)) ||
+          allowedNormSet.has(norm(r.initiatorCo)) ||
+          (r.primaryRow && allowedNormSet.has(norm(r.primaryRow.company))) ||
+          (r.mirrorRow && allowedNormSet.has(norm(r.mirrorRow.company)))
+        ));
+        const pIcOpenCount = permittedOpenIc.length;
+        const pIcOpenUsd = round2(permittedOpenIc.reduce((s, r) => s + Math.abs(Number(r.usd || r.outUsd || r.inUsd || 0)), 0));
+        const supArView = canViewView('entities', u) ? 'entities' : (canViewView('hld_loans', u) ? 'hld_loans' : 'suppliers');
+        cards = [
+          anyTrackedCash
+            ? { label: allTrackedCash ? 'Consolidated Cash & Bank' : 'Cash & Bank (Tracked Tills)', val: fmtUSD(pCashTill, 0), valNoI18n: true, subLabel: 'Group Entities', subVal: fmtNum(permittedEnts.length), jump: 'cashflow', tone: 'good' }
+            : { label: 'Cash & Bank Till', val: 'Not Tracked Yet', valNoI18n: false, subFixed: 'Pending Live Till', jump: 'cashflow', tone: 'muted' },
+          { label: 'Group Net Revenue', val: fmtUSD(pNetSales, 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(pOpProfit, 0) : '', jump: 'hld_consolidation', tone: 'cobalt' },
+          { label: 'Open Receivables', val: fmtUSD(pAr, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(pAp, 0), jump: supArView, scrollTarget: supArView === 'entities' ? 'multiIndustryEntitiesPanel' : '', tone: '' },
+          { label: 'Intercompany Pairing', val: fmtUSD(pIcOpenUsd, 0), valNoI18n: true, subLabel: 'Unpaired Legs', subVal: fmtNum(pIcOpenCount), jump: 'hld_interactions', jumpOpts: pIcOpenCount > 0 ? { chipFilter: 'open' } : undefined, scrollTarget: 'hldInteractionsPanel', tone: pIcOpenCount > 0 ? 'warn' : 'good' }
+        ];
+      }
+    } else {
+      const baseKpi = getKPI();
+      const sib = getIndustryKpiSnapshot(ind, STATE.company, baseKpi) || {};
+      const cb = siblingCashBook(ind);
+      const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Hospitality & Resorts'];
+      const revView = (spec && spec.slots && spec.slots[0] && spec.slots[0].view) || 'sales';
+      const secView = (spec && spec.slots && spec.slots[1] && spec.slots[1].view) || revView;
+      const opsView = (spec && spec.slots && spec.slots[2] && spec.slots[2].view) || revView;
+      let arCardJump = secView;
+      let arCardJumpOpts;
+      let arCardScroll = '';
+      if (ind === 'Hospitality & Resorts') {
+        arCardJump = canViewView('hsp_memberships', u) ? 'hsp_memberships' : revView;
+        if (arCardJump === 'hsp_memberships') {
+          if (Number(sib.ar_balance || 0) > 0) arCardJumpOpts = { chipFilter: 'partial' };
+          arCardScroll = 'hspMembershipsPanel';
+        }
+      } else if (ind === 'Automotive & Heavy Trading') {
+        arCardJump = canViewView('trd_receivables', u) ? 'trd_receivables' : (canViewView('trd_sales', u) ? 'trd_sales' : 'suppliers');
+        if (arCardJump === 'trd_receivables') {
+          if (Number(sib.ar_balance || 0) > 0) arCardJumpOpts = { chipFilter: 'gross_ar' };
+          arCardScroll = 'trdReceivablesPanel';
+        }
+      } else if (ind === 'Real Estate & Property') {
+        const reData = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ company: STATE.company, ignoreSearch: true }) : null;
+        const reSum = (reData && reData.summary) || {};
+        const salesArOnly = Number(reSum.openRentArUsd || 0) <= 0 && Number(reSum.salesOpenUsd || 0) > 0;
+        arCardJump = salesArOnly
+          ? (canViewView('re_sales', u) ? 're_sales' : revView)
+          : (canViewView('re_invoicing', u) ? 're_invoicing' : revView);
+      } else if (ind === 'Insurance & Brokerage') {
+        arCardJump = canViewView('ins_billing', u) ? 'ins_billing' : revView;
+      }
+      cards = [
+        {
+          label: 'Cash & Bank Till',
+          val: cb.tracked ? fmtUSD(sib.cash_till || 0, 0) : 'Not Tracked Yet',
+          valNoI18n: Boolean(cb.tracked),
+          subFixed: cb.tracked ? 'Tracked Till' : 'Pending Live Till',
+          jump: 'cashflow',
+          tone: cb.tracked ? 'good' : 'muted'
+        },
+        { label: 'Net Revenue', val: fmtUSD(sib.net_sales != null ? sib.net_sales : (sib.sales_ttc || 0), 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Operating Profit' : '', subVal: canSeePnlSummary ? fmtUSD(sib.operating_profit || 0, 0) : '', jump: revView, tone: 'cobalt' },
+        { label: 'Open Receivables', val: fmtUSD(sib.ar_balance || 0, 0), valNoI18n: true, subLabel: 'Open Payables', subVal: fmtUSD(sib.ap_balance || 0, 0), jump: arCardJump, jumpOpts: arCardJumpOpts, scrollTarget: arCardScroll, tone: Number(sib.ar_balance || 0) > 0 ? 'warn' : '' },
+        { label: 'Operational Volume', val: fmtNum(sib.loads || 0), valNoI18n: true, subLabel: canSeePnlSummary ? 'Gross Margin' : '', subVal: canSeePnlSummary ? fmtUSD(sib.gross_margin || 0, 0) : '', jump: opsView, tone: '' }
+      ];
+    }
+
+    cards = cards.filter(c => Boolean(c && c.jump && canViewView(c.jump, u)));
+
+    const allowSentinels = Boolean(canViewView('sentinels', u));
+    const allSn = allowSentinels && typeof buildSentinelItems === 'function' ? (buildSentinelItems() || []) : [];
+    const visibleSn = allowSentinels
+      ? allSn.filter(s => s && (canViewBooks || s.id !== 'S1') && (!s.navView || canViewView(s.navView, u)))
+      : [];
+    const flaggedSn = visibleSn.filter(s => s && (s.severity === 'crit' || s.severity === 'warn'));
+    flaggedSn.sort((a, b) => {
+      const ra = a.severity === 'crit' ? 0 : 1;
+      const rb = b.severity === 'crit' ? 0 : 1;
+      return ra - rb;
+    });
+    const topSentinels = flaggedSn.slice(0, 3);
+
+    return {
+      greetingEn,
+      firstName,
+      ind,
+      scopeOpts,
+      activeScope: activeScopeObj,
+      periodInfo,
+      seedLoading,
+      cards,
+      allowSentinels,
+      totalFlaggedCount: flaggedSn.length,
+      topSentinels
+    };
+  }
+
+  function buildPocketBriefSpeechText(data, langCode) {
+    const tr = str => {
+      const v = String(str || '').trim();
+      if (!v || langCode === 'en') return v;
+      if (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+        return window.MFG_I18N.t(v, langCode) || v;
+      }
+      return v;
+    };
+    const scopeSpeech = tr(data.activeScope && data.activeScope.label ? data.activeScope.label : '');
+    const kpiLine = (data.cards || []).map(c => `${tr(c.label)}: ${c.valNoI18n ? c.val : tr(c.val)}`).join('. ');
+    const topSnNames = (data.topSentinels || []).map(s => s.isCustom ? s.title : tr(s.title));
+    if (langCode === 'ar') {
+      const snPart = !data.allowSentinels
+        ? ''
+        : (data.totalFlaggedCount > 0
+          ? `يوجد ${data.totalFlaggedCount} تنبيهات رقابة نشطة، أبرزها ${topSnNames.join('، ')}.`
+          : 'جميع مؤشرات الرقابة سليمة ولا توجد تنبيهات مفتوحة.');
+      return [ `مرحباً ${data.firstName}. ملخص الجيب الصباحي لنطاق ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+    }
+    if (langCode === 'fr') {
+      const snPart = !data.allowSentinels
+        ? ''
+        : (data.totalFlaggedCount > 0
+          ? `${data.totalFlaggedCount} alertes Sentinelles ouvertes, notamment ${topSnNames.join(', ')}.`
+          : 'Toutes les sentinelles d audit sont conformes.');
+      return [ `Bonjour ${data.firstName}. Synthèse de poche pour ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+    }
+    const snPart = !data.allowSentinels
+      ? ''
+      : (data.totalFlaggedCount > 0
+        ? `${data.totalFlaggedCount} open Sentinel alerts, top priority ${topSnNames.join(', ')}.`
+        : 'All audit Sentinels are clear.');
+    return [ `${data.greetingEn} ${data.firstName}. Pocket brief for ${scopeSpeech}.`, kpiLine, snPart ].filter(Boolean).join(' ');
+  }
+
+  function closePocketBrief(opts = {}) {
+    _pocketBriefOpen = false;
+    if (window.MFG_ASK && typeof window.MFG_ASK.stopPocketBriefIfActive === 'function') {
+      window.MFG_ASK.stopPocketBriefIfActive();
+    }
+    const bd = $('pocketBriefOverlay');
+    const prevFocus = _pocketBriefLastFocus;
+    _pocketBriefLastFocus = null;
+    if (bd) {
+      if (opts && opts.purgeDom) {
+        if (bd.parentNode) bd.parentNode.removeChild(bd);
+      } else {
+        bd.classList.remove('open');
+        bd.hidden = true;
+      }
+    }
+    if ((!opts || opts.restoreFocus !== false) && prevFocus && prevFocus.isConnected && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderPocketBriefOverlayDom() {
+    if (typeof document === 'undefined' || !canUsePocketBrief(activeUser())) return null;
+    const data = buildPocketBriefData();
+    let bd = $('pocketBriefOverlay');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'pocketBriefOverlay';
+      bd.className = 'pocket-brief-backdrop';
+      bd.innerHTML = `
+        <div id="pocketBriefCard" class="pocket-brief-card" role="dialog" aria-modal="true" aria-labelledby="pocketBriefTitle">
+          <div class="pb-head">
+            <div class="pb-head-copy">
+              <div class="pb-eyebrow" id="pocketBriefEyebrow">Morning Pocket Brief</div>
+              <h2 class="pb-title" id="pocketBriefTitle"></h2>
+              <div class="pb-sub" id="pocketBriefSub"></div>
+            </div>
+            <div class="pb-head-acts">
+              <button type="button" class="btn btn-outline-bar btn-sm pb-listen-btn" id="pocketBriefListenBtn" data-pocket-brief-listen="1" aria-pressed="false">${ic('audio')}<span class="pb-lsn-lbl">Listen</span></button>
+              <button type="button" class="modal-close-btn" id="pocketBriefCloseBtn" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div class="pb-scope-bar" id="pocketBriefScopeBar" role="tablist" aria-label="Company scope"></div>
+          <div class="pb-kpis" id="pocketBriefKpiGrid"></div>
+          <section class="pb-sentinels" aria-label="Top Urgent Sentinels">
+            <div class="pb-sec-head">
+              <span class="pb-sec-title">Top Urgent Sentinels</span>
+              <span class="pb-sec-count badge badge-brass" id="pocketBriefSnCount" data-no-i18n="1"></span>
+            </div>
+            <div class="pb-sn-list" id="pocketBriefSentinels"></div>
+          </section>
+          <div class="pb-foot">
+            <label class="pb-auto-opt" for="pocketBriefAutoChk">
+              <input type="checkbox" id="pocketBriefAutoChk" />
+              <span>Show on phone sign-in</span>
+            </label>
+            <button type="button" class="btn btn-primary pb-enter-btn" id="pocketBriefEnterBtn">Enter Full App</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(bd);
+      bd.addEventListener('click', ev => {
+        if (ev.target === bd) closePocketBrief();
+      });
+      const closeBtn = $('pocketBriefCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', () => closePocketBrief());
+      const enterBtn = $('pocketBriefEnterBtn');
+      if (enterBtn) enterBtn.addEventListener('click', () => closePocketBrief());
+      const autoChk = $('pocketBriefAutoChk');
+      if (autoChk) {
+        autoChk.addEventListener('change', () => {
+          setPocketBriefAutoEnabled(Boolean(autoChk.checked));
+        });
+      }
+      const listenBtn = $('pocketBriefListenBtn');
+      if (listenBtn) {
+        listenBtn.addEventListener('click', () => {
+          const langCode = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+          const freshData = buildPocketBriefData();
+          const speech = buildPocketBriefSpeechText(freshData, langCode);
+          if (window.MFG_ASK && typeof window.MFG_ASK.speakPocketBrief === 'function') {
+            window.MFG_ASK.speakPocketBrief(speech, listenBtn, langCode);
+          }
+        });
+      }
+      ensureMobOverlayGlobalListeners();
+    }
+
+    const titleEl = $('pocketBriefTitle');
+    if (titleEl) {
+      titleEl.innerHTML = `<span>${esc(data.greetingEn)}</span> <span data-no-i18n="1">${esc(data.firstName)}</span>`;
+    }
+    const subEl = $('pocketBriefSub');
+    if (subEl) {
+      const pSpan = data.periodInfo.isCustom
+        ? `<span data-no-i18n="1">${esc(data.periodInfo.text)}</span>`
+        : `<span>${esc(data.periodInfo.text)}</span>`;
+      const loadHtml = data.seedLoading ? ' <span aria-hidden="true">·</span> <span class="pb-loading-pill">Loading live data...</span>' : '';
+      subEl.innerHTML = `<span>${esc(data.activeScope.label)}</span> <span aria-hidden="true">·</span> ${pSpan}${loadHtml}`;
+    }
+
+    const scopeBar = $('pocketBriefScopeBar');
+    if (scopeBar) {
+      scopeBar.innerHTML = data.scopeOpts.map(s => `<button type="button" class="pb-scope-pill${s.key === STATE.company ? ' is-active' : ''}" data-pb-scope="${esc(s.key)}" role="tab" aria-selected="${s.key === STATE.company ? 'true' : 'false'}">${esc(s.label)}</button>`).join('');
+      scopeBar.querySelectorAll('[data-pb-scope]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sk = btn.getAttribute('data-pb-scope');
+          if (!sk || sk === STATE.company) return;
+          if (window.MFG_ASK && typeof window.MFG_ASK.stopPocketBriefIfActive === 'function') {
+            window.MFG_ASK.stopPocketBriefIfActive();
+          }
+          selectCompanyScope(sk, true);
+          if (_pocketBriefOpen) renderPocketBriefOverlayDom();
+        });
+      });
+    }
+
+    const scrollAndFlashTarget = el => {
+      if (!el) return;
+      if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+      scrollWorkspaceTo(el, 8);
+      el.classList.remove('sn-panel-flash');
+      void el.offsetWidth;
+      el.classList.add('sn-panel-flash');
+    };
+
+    const kpiGrid = $('pocketBriefKpiGrid');
+    if (kpiGrid) {
+      kpiGrid.hidden = !data.cards.length;
+      kpiGrid.innerHTML = data.cards.map((c, ci) => `
+        <button type="button" class="pb-kpi-card ${esc(c.tone || '')}" data-pb-card-idx="${ci}" data-pb-jump="${esc(c.jump)}">
+          <span class="pb-kpi-lbl">${esc(c.label)}</span>
+          <span class="pb-kpi-val"${c.valNoI18n ? ' data-no-i18n="1"' : ''}>${esc(c.val)}</span>
+          <span class="pb-kpi-sub">${c.subLabel ? `<span>${esc(c.subLabel)}</span> ` : ''}<span${c.subVal ? ' data-no-i18n="1"' : ''}>${esc(c.subVal || c.subFixed || '')}</span></span>
+        </button>
+      `).join('');
+      kpiGrid.querySelectorAll('[data-pb-jump]').forEach(cardBtn => {
+        cardBtn.addEventListener('click', () => {
+          const ci = Number(cardBtn.getAttribute('data-pb-card-idx'));
+          const cardSpec = Number.isFinite(ci) ? data.cards[ci] : null;
+          const dest = (cardSpec && cardSpec.jump) || cardBtn.getAttribute('data-pb-jump');
+          closePocketBrief({ restoreFocus: false });
+          const u = activeUser();
+          const target = (dest && canViewView(dest, u)) ? dest : defaultViewFor(u);
+          if (target) setView(target, (cardSpec && target === dest && cardSpec.jumpOpts) ? cardSpec.jumpOpts : undefined);
+          if (cardSpec && cardSpec.scrollTarget && target === dest) {
+            if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+            const stEl = $(cardSpec.scrollTarget);
+            if (stEl) scrollAndFlashTarget(stEl);
+          }
+        });
+      });
+    }
+
+    const snCountEl = $('pocketBriefSnCount');
+    if (snCountEl) {
+      snCountEl.textContent = String(data.totalFlaggedCount);
+    }
+    const snListEl = $('pocketBriefSentinels');
+    const snSecEl = snListEl ? snListEl.closest('.pb-sentinels') : null;
+    if (snSecEl) snSecEl.hidden = !data.allowSentinels;
+    if (snListEl) {
+      if (!data.allowSentinels) {
+        snListEl.innerHTML = '';
+      } else if (!data.topSentinels.length) {
+        snListEl.innerHTML = `<div class="pb-sn-clear"><span class="pb-sn-clear-dot" aria-hidden="true"></span><span>All Audit Sentinels Clear</span></div>`;
+      } else {
+        snListEl.innerHTML = data.topSentinels.map((s, si) => `
+          <button type="button" class="pb-sn-row is-${esc(s.severity)}" data-pb-sn-idx="${si}">
+            <span class="pb-sn-sev">${esc(s.severity === 'crit' ? 'Critical' : 'Warning')}</span>
+            <span class="pb-sn-title"${s.isCustom ? ' data-no-i18n="1"' : ''}>${esc(s.title)}</span>
+            <span class="pb-sn-badge" data-no-i18n="1">${esc(s.badge || '')}</span>
+          </button>
+        `).join('');
+        snListEl.querySelectorAll('[data-pb-sn-idx]').forEach(rowBtn => {
+          rowBtn.addEventListener('click', () => {
+            const idx = Number(rowBtn.getAttribute('data-pb-sn-idx'));
+            const item = data.topSentinels[idx];
+            closePocketBrief({ restoreFocus: false });
+            const u = activeUser();
+            const target = canViewView('sentinels', u) ? 'sentinels' : (item && item.navView && canViewView(item.navView, u) ? item.navView : defaultViewFor(u));
+            let viewOpts;
+            if (target === 'sentinels') {
+              STATE.sentinelFilter = 'all';
+              if (item && item.scrollPanel && item.scrollPanel.startsWith('snInd_') && STATE.indSentinelRuleFilter && STATE.indSentinelRuleFilter !== 'all' && STATE.indSentinelRuleFilter !== item.id) {
+                STATE.indSentinelRuleFilter = 'all';
+              }
+              if (item && item.padFilter) {
+                viewOpts = { salesPadFilter: item.padFilter };
+              }
+            } else if (target === 'expenses' && item && item.id === 'S2') {
+              viewOpts = { chipFilter: 'pending_price' };
+            }
+            if (target) setView(target, viewOpts);
+            if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+            let hitEl = item && item.scrollPanel ? $(item.scrollPanel) : null;
+            if (!hitEl && target === 'sentinels' && item && item.id) {
+              const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(item.id) : item.id;
+              hitEl = document.querySelector(`#workspace [data-sn-card="${escId}"]`);
+            }
+            if (hitEl) scrollAndFlashTarget(hitEl);
+          });
+        });
+      }
+    }
+
+    const cardAuto = $('pocketBriefAutoChk');
+    if (cardAuto) {
+      const on = isPocketBriefAutoEnabled();
+      cardAuto.checked = on;
+      cardAuto.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(bd); } catch (_) {}
+    }
+    return bd;
+  }
+
+  function openPocketBrief(opts = {}) {
+    if (!canUsePocketBrief(activeUser())) return false;
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (typeof closeMobileTopSheets === 'function') closeMobileTopSheets();
+    _pocketBriefLastFocus = (!opts || !opts.fromLogin) && document.activeElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null;
+    _pocketBriefOpen = true;
+    const bd = renderPocketBriefOverlayDom();
+    if (!bd) return false;
+    bd.hidden = false;
+    bd.classList.add('open');
+    const focusEl = $('pocketBriefEnterBtn') || $('pocketBriefCloseBtn');
+    if (focusEl && typeof focusEl.focus === 'function') {
+      try { focusEl.focus({ preventScroll: true }); } catch (_) {}
+    }
     return true;
   }
 
@@ -138157,7 +143713,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect', void_log: 'defect',
+      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect', void_log: 'defect', rate_changes: 'defect',
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
@@ -138246,10 +143802,25 @@
       el.classList.remove('mob-hubs-open');
       if (tv && canViewView(tv, user)) {
         e.stopPropagation();
+        if (shouldUseNavAck(e, navAckWantedView(tv))) {
+          runAfterNavAck(() => {
+            el.querySelectorAll('[data-subnav-hub]').forEach(b => b.classList.toggle('on', b === btn));
+          }, () => setView(tv));
+          return;
+        }
+        _navAckToken++;
         setView(tv);
         return;
       }
-      clickHub(btn.getAttribute('data-subnav-hub'));
+      const subHubId = btn.getAttribute('data-subnav-hub');
+      if (shouldUseNavAck(e, navAckWanted(subHubId))) {
+        runAfterNavAck(() => {
+          el.querySelectorAll('[data-subnav-hub]').forEach(b => b.classList.toggle('on', b === btn));
+        }, () => clickHub(subHubId));
+        return;
+      }
+      _navAckToken++;
+      clickHub(subHubId);
     }));
 
     // Sync Mobile Bottom Dock active states
@@ -140420,7 +145991,7 @@
     },
     'Real Estate & Property': {
       sales: [
-        { lbl: 'Active Tenants', field: 'ik_tenant', vals: ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics'] },
+        { lbl: 'Active Tenants', field: 'ik_tenant', vals: ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics'] },
         { lbl: 'Entities', field: 'ik_company', vals: ['4235 Company S.A.L', 'Properties'] }
       ],
       raw: [
@@ -140560,7 +146131,7 @@
         `;
       }
     } else if (activeInd === 'Real Estate & Property') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mohamad Ali Fawz']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Nabil Khoury']);
       dlHtml = `<datalist id="dl_ik_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       if (kMode === 'sales') {
         gridHtml = `
@@ -140568,7 +146139,7 @@
           ${fld('Rent Receipt # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="RCT-4235-841">`)}
           ${fld('Receipt Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
           ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="${/4235/.test(curCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'}">`)}
-          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[0] || 'Mazen (Unesco Pharmacy)')}">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[0] || 'Cedar Pharmacy')}">`)}
           ${fld('Linked Rent Invoice #', `<input type="text" id="ik_inv_ref" class="mono" style="${inpStyle}" value="INV-4235-010">`)}
           ${fld('Base Rent Amount ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="12500">`)}
           ${fld('Statutory VAT ($)', `<input type="text" id="ik_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
@@ -140582,7 +146153,7 @@
           ${fld('Start Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
           ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="4235 Msaytbeh Commercial Center">`)}
           ${fld('Leased Unit / Floor *', `<input type="text" id="ik_unit" style="${inpStyle}" value="Floor 3 Commercial Suite">`)}
-          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[1] || 'Infinitas S.A.L')}">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[1] || 'Meridian Consulting SAL')}">`)}
           ${fld('Billing Frequency', `<input type="text" id="ik_freq" style="${inpStyle}" value="Quarterly">`)}
           ${fld('Net Period Rent ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="15000">`)}
           ${fld('Security Deposit ($)', `<input type="number" id="ik_deposit" class="mono" step="100" min="0" style="${inpStyle}" value="15000">`)}
@@ -143787,7 +149358,7 @@
     const prof = profOpt || getStaffContractProfile(staffName, effCo);
     const roleStr = String((prof && prof.role) || '').toLowerCase();
     const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director|broker|underwriter|executive)\b/i.test(roleStr)
-      || norm(staffName) === norm('Hussein Bdeir');
+      || window.MFG_NAMEBOOK.isSeniorPerson(staffName);
     if (rawRule && !rawRule.reset_default) {
       if (rawRule.late_penalty_mode === 'none') return 'pkg_exec_21d';
       if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
@@ -156277,7 +161848,7 @@
                   </label>
                   <label class="sfe-ns-field">
                     <span>Father's Name (Optional)</span>
-                    <input type="text" id="sfeNewStaffFather" class="sfe-search-input" placeholder="e.g. Mohammad" autocomplete="off" spellcheck="false">
+                    <input type="text" id="sfeNewStaffFather" class="sfe-search-input" placeholder="e.g. Nabil" autocomplete="off" spellcheck="false">
                   </label>
                   <label class="sfe-ns-field">
                     <span>Business Unit *</span>
@@ -170353,19 +175924,296 @@
     } catch (_) {}
   }
 
+  // ---- Two-step screen paint ---------------------------------------------------------------------------
+  // A hub screen is 5,000 to 12,000 elements and about a fifth of them are on the first screen. When a screen
+  // opens at its top, the blocks that start below the first screen are parked (content-visibility: hidden:
+  // the browser skips their style, layout and paint), the first screen is painted, and the parked blocks are
+  // released straight after that paint. Every block is in the page the whole time, so nothing a person or a
+  // program can read is missing: only the browser's own work on the lower blocks moves one frame later.
+  // They are released at once on any key, pointer, wheel, touch or scroll, before printing, and whenever the
+  // workspace is scrolled to something. Never parked: a block holding the cursor, a map, a camera or a canvas.
+  // Off with window.__MFG_TWO_STEP_OFF (the speed gate compares both ways).
+  // `var`, not const or let: a screen can be drawn while this file is still starting up, before these lines
+  // have run (see build/verify_boot_saved_scope.mjs). Until they have, _wsLaterSupported is undefined and
+  // nothing is parked.
+  var WS_LATER_CLASS = 'ws-later';
+  var WS_LATER_MIN_ELEMENTS = 2500;     // smaller screens paint fast enough whole
+  var WS_LATER_MIN_PARK_SHARE = 0.30;   // skip parking when parked blocks hold under 30% of the screen's elements
+  var WS_LATER_HEADER_MAX_ELS = 180;    // when kids[0] is a compact banner/KPI strip, kids[1] starts on the first screen
+  var WS_LATER_CHUNK_ELEMENTS = 3000;   // released per task, so a tap in between is not kept waiting
+  var WS_LATER_FOLD_MARGIN = 160;       // px below the screen edge that still count as the first screen
+  var WS_LATER_NEVER_SEL = 'video, canvas, iframe, [id*="map" i], [class*="map" i], [contenteditable="true"]';
+  // Chromium only for now (Chrome, Edge, the Android tablets): the screen is wired while its lower blocks are
+  // parked, and only Chromium has been checked to answer a measurement inside a parked block as if it were
+  // drawn. iPhone, iPad and Safari keep the one-step paint until that is checked on a real device.
+  var _wsLaterSupported = (() => {
+    try {
+      const ua = String((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+      const chromium = /\b(Chrome|Chromium|Edg)\//.test(ua) && !/\b(iPhone|iPad|iPod)\b|CriOS|EdgiOS|FxiOS/.test(ua);
+      return chromium && typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('content-visibility', 'hidden') && typeof requestAnimationFrame === 'function';
+    } catch (_) { return false; }
+  })();
+  var _wsLaterToken = 0;
+  var _wsLaterPending = false;
+  function releaseWorkspaceLaterBlocks() {
+    _wsLaterToken = (_wsLaterToken || 0) + 1;
+    _wsLaterPending = false;
+    const ws = $('workspace');
+    if (!ws) return 0;
+    const parked = ws.getElementsByClassName('ws-later');
+    let n = 0;
+    while (parked.length) { parked[0].classList.remove('ws-later'); n++; }
+    return n;
+  }
+  // Step 1, straight after the new screen is in the page and before anything has measured it.
+  function parkWorkspaceLaterBlocks(container, opensAtTop) {
+    _wsLaterToken = (_wsLaterToken || 0) + 1;
+    _wsLaterPending = false;
+    if (!container || !opensAtTop || !_wsLaterSupported || window.__MFG_TWO_STEP_OFF || STATE.kioskLocked) return false;
+    const kids = container.children;
+    if (kids.length < 3) return false;
+    const active = document.activeElement;
+    if (active && container.contains(active)) return false;          // someone is typing in this screen
+    const kidEls = [];
+    let totalEls = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const cnt = kids[i].getElementsByTagName('*').length + 1;
+      kidEls.push(cnt);
+      totalEls += cnt;
+    }
+    if (totalEls < WS_LATER_MIN_ELEMENTS) return false;
+    const startIdx = kidEls[0] < WS_LATER_HEADER_MAX_ELS ? 2 : 1;
+    if (kids.length <= startIdx) return false;
+    const candidates = [];
+    let candidateEls = 0;
+    for (let i = startIdx; i < kids.length; i++) {
+      const el = kids[i];
+      if (el.hidden || el.matches(WS_LATER_NEVER_SEL) || el.querySelector(WS_LATER_NEVER_SEL)) continue;
+      candidates.push(el);
+      candidateEls += kidEls[i];
+    }
+    if (!candidates.length || candidateEls < totalEls * WS_LATER_MIN_PARK_SHARE) return false;
+    for (let i = 0; i < candidates.length; i++) candidates[i].classList.add(WS_LATER_CLASS);
+    return true;
+  }
+  // Step 2, when the screen is fully wired: the blocks that start on the first screen are released now, the
+  // rest right after the first paint.
+  function settleWorkspaceLaterBlocks(container) {
+    if (!container || !_wsLaterSupported) return;
+    const kids = Array.from(container.children);
+    if (!kids.some(el => el.classList.contains(WS_LATER_CLASS))) return;
+    const token = _wsLaterToken;
+    const fold = Math.min(container.getBoundingClientRect().top + container.clientHeight, window.innerHeight || Infinity) + WS_LATER_FOLD_MARGIN;
+    const waiting = [];
+    let waitingEls = 0;
+    let belowFold = false;
+    for (const el of kids) {
+      if (!el.classList.contains(WS_LATER_CLASS)) continue;
+      if (!belowFold && el.getBoundingClientRect().top < fold) { el.classList.remove(WS_LATER_CLASS); continue; }
+      belowFold = true;
+      waiting.push(el);
+      waitingEls += el.getElementsByTagName('*').length + 1;
+    }
+    const totalEls = container.getElementsByTagName('*').length;
+    if (!waiting.length || waitingEls < totalEls * WS_LATER_MIN_PARK_SHARE) {
+      for (const el of waiting) el.classList.remove(WS_LATER_CLASS);
+      return;
+    }
+    _wsLaterPending = true;
+    let started = false;
+    const step = () => {
+      if (token !== _wsLaterToken) return;                           // a newer screen or an early release took over
+      let n = 0;
+      while (waiting.length && n < WS_LATER_CHUNK_ELEMENTS) {
+        const el = waiting.shift();
+        n += el.getElementsByTagName('*').length + 1;
+        el.classList.remove(WS_LATER_CLASS);
+      }
+      if (waiting.length) setTimeout(step, 0);
+      else _wsLaterPending = false;
+    };
+    const start = () => { if (started) return; started = true; step(); };
+    requestAnimationFrame(() => setTimeout(start, 0));
+    setTimeout(start, 200);                                          // a tab in the background gets no frames
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiTwoStepWired) {
+    window.__isabiTwoStepWired = true;
+    const releaseNow = () => { if (_wsLaterPending) releaseWorkspaceLaterBlocks(); };
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => window.addEventListener(type, releaseNow, { capture: true, passive: true }));
+    // A scroll counts only when the workspace (or the page around it) has moved away from its top. Opening a
+    // screen from one that was scrolled down sends a scroll event of its own (back to 0), and so does the
+    // sub-tab bar when its sideways position is put back: neither is a person scrolling.
+    document.addEventListener('scroll', e => {
+      if (!_wsLaterPending) return;
+      const ws = $('workspace');
+      const t = (e.target === document || e.target === window) ? document.scrollingElement : e.target;
+      if (!ws || !t || (t !== ws && !(typeof t.contains === 'function' && t.contains(ws)))) return;
+      if (t.scrollTop > 0) releaseWorkspaceLaterBlocks();
+    }, { capture: true, passive: true });
+    window.addEventListener('beforeprint', () => { releaseWorkspaceLaterBlocks(); });
+  }
+
   function scrollWorkspaceTo(el, padTop = 8) {
     if (!el) return;
+    if (_wsLaterPending) releaseWorkspaceLaterBlocks();
+    const scrollBehavior = IS_AUTOMATED_TEST ? 'auto' : 'smooth';
     const ws = $('workspace');
     if (ws && ws.contains(el)) {
       const wsRect = ws.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
       const targetTop = Math.max(0, ws.scrollTop + (elRect.top - wsRect.top) - padTop);
-      ws.scrollTo({ top: targetTop, behavior: 'smooth' });
+      ws.scrollTo({ top: targetTop, behavior: scrollBehavior });
       lockShellScroll();
       return;
     }
-    try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+    try { el.scrollIntoView({ behavior: scrollBehavior, block: 'nearest' }); } catch (_) {}
     lockShellScroll();
+  }
+
+  function buildActiveWorkspaceViewHtml({ activeInd, univGroupKeys, canonicalViewTitle }) {
+    let wsHtml = '';
+    switch (STATE.view) {
+      case 'overview': wsHtml = renderOverview(); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, canSeeTaxBreakdown, canAccessTable, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'entities': wsHtml = renderEntitiesComparison(); break;
+      case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
+      case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
+      case 'hld_interactions': wsHtml = renderHoldingInteractions('main'); break;
+      case 'hld_open_recon': wsHtml = renderHoldingInteractions('open_recon'); break;
+      case 'hld_due_matrix': wsHtml = renderHoldingInteractions('due_matrix'); break;
+      case 'hld_partners': wsHtml = renderHoldingPartners('main'); break;
+      case 'hld_extended': wsHtml = renderHoldingExtended(); break;
+      case 'hld_distributions': wsHtml = renderHoldingPartners('distributions'); break;
+      case 'hld_loans': wsHtml = renderHoldingLoans('main'); break;
+      case 'hld_assets': wsHtml = renderHoldingLoans('assets'); break;
+      case 'hsp_revenue': wsHtml = renderHospitalityRevenue('main'); break;
+      case 'hsp_pos': wsHtml = renderHospitalityRevenue('pos'); break;
+      case 'hsp_vat': wsHtml = renderHospitalityRevenue('vat'); break;
+      case 'hsp_memberships': wsHtml = renderHospitalityMemberships('main'); break;
+      case 'hsp_partners': wsHtml = renderHospitalityMemberships('partners'); break;
+      case 'hsp_stock': wsHtml = renderHospitalityStock('main'); break;
+      case 'hsp_menu': wsHtml = renderHospitalityStock('menu'); break;
+      case 'hsp_energy': wsHtml = renderHospitalityEnergy('main'); break;
+      case 'hsp_maint': wsHtml = renderHospitalityEnergy('maint'); break;
+      case 'trd_sales': wsHtml = renderTradingSales('main'); break;
+      case 'trd_receivables': wsHtml = renderTradingSales('receivables'); break;
+      case 'trd_targets': wsHtml = renderTradingSales('targets'); break;
+      case 'trd_purchases': wsHtml = renderTradingPurchases('main'); break;
+      case 'trd_landed': wsHtml = renderTradingPurchases('landed'); break;
+      case 'trd_grn': wsHtml = renderTradingPurchases('grn'); break;
+      case 'trd_trucks': wsHtml = renderTradingTrucks('main'); break;
+      case 'trd_warranty': wsHtml = renderTradingTrucks('warranty'); break;
+      case 'trd_stock': wsHtml = renderTradingStock('main'); break;
+      case 'trd_movements': wsHtml = renderTradingStock('movements'); break;
+      case 'trd_recon': wsHtml = renderTradingStock('recon'); break;
+      case 're_leases': wsHtml = renderRealEstateLeases('main'); break;
+      case 're_invoicing': wsHtml = renderRealEstateLeases('invoicing'); break;
+      case 're_receipts': wsHtml = renderRealEstateLeases('receipts'); break;
+      case 're_sales': wsHtml = renderRealEstateSales('main'); break;
+      case 're_instalments': wsHtml = renderRealEstateSales('instalments'); break;
+      case 're_properties': wsHtml = renderRealEstateProperties('main'); break;
+      case 're_units': wsHtml = renderRealEstateProperties('units'); break;
+      case 're_valuations': wsHtml = renderRealEstateProperties('valuations'); break;
+      case 're_ownership': wsHtml = renderRealEstateProperties('ownership'); break;
+      case 're_workorders': wsHtml = renderRealEstateWorkOrders('main'); break;
+      case 're_recharges': wsHtml = renderRealEstateWorkOrders('recharges'); break;
+      case 'ins_policies': wsHtml = renderInsurancePolicies('main'); break;
+      case 'ins_renewals': wsHtml = renderInsurancePolicies('renewals'); break;
+      case 'ins_items': wsHtml = renderInsurancePolicies('items'); break;
+      case 'ins_billing': wsHtml = renderInsuranceBilling('main'); break;
+      case 'ins_remittances': wsHtml = renderInsuranceBilling('remittances'); break;
+      case 'ins_statements': wsHtml = renderInsuranceBilling('statements'); break;
+      case 'ins_claims': wsHtml = renderInsuranceClaims('main'); break;
+      case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
+      case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
+      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
+      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
+      case 'sentinels': wsHtml = renderSentinels(); break;
+      case 'alert_rules': wsHtml = renderAlertRules(); break;
+      case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
+      case 'void_log': wsHtml = window.MFG_VOID_LOG ? window.MFG_VOID_LOG.renderView() : ''; break;
+      case 'rate_changes': wireRateChangesOnce(); wsHtml = renderRateChangesView(); break;
+      case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
+      case 'sales': wsHtml = renderSales(); break;
+      case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
+      case 'sales_analytics':
+        wsHtml = renderHubAnalyticsView(STATE.view);
+        break;
+      case 'raw_analytics':
+      case 'raw': wsHtml = renderRaw(); break;
+      case 'raw_pricing': wsHtml = renderRawPricing(); break;
+      case 'raw_jv':
+      case 'jv': wsHtml = renderRawJv(); break;
+      case 'fleet': wsHtml = renderFleet(); break;
+      case 'fleet_equip': wsHtml = renderFleetEquipment(); break;
+      case 'fleet_maint': wsHtml = renderFleetMaintenance(); break;
+      case 'fleet_drivers':
+      case 'fleet_analytics': wsHtml = renderFleetDrivers(); break;
+      case 'pricing': wsHtml = renderPricing(); break;
+      case 'cashflow_analytics':
+      case 'cashflow': wsHtml = renderCashFlowTill(); break;
+      case 'external': wsHtml = renderExternalEntries(); break;
+      case 'conversions': wsHtml = renderFxConversions(); break;
+      case 'customers':
+      case 'ar': wsHtml = renderAR(); break;
+      case 'suppliers':
+      case 'ap': wsHtml = renderAP(); break;
+      case 'expenses_analytics':
+      case 'expenses': wsHtml = renderExpenses(); break;
+      case 'recurring_expenses': wsHtml = renderRecurringExpenses(); break;
+      case 'documents': wsHtml = renderDocumentVault(); break;
+      case 'warehouse': wsHtml = renderWarehouse(); break;
+      case 'warehouse_parts': wsHtml = renderWarehouseParts(); break;
+      case 'payroll':
+      case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
+      case 'workforce_map': wsHtml = renderWorkforceMap(); break;
+      case 'payroll_attendance': wsHtml = renderPayroll('attendance'); break;
+      case 'payroll_allowances': wsHtml = renderPayroll('allowances'); break;
+      case 'payroll_contracts': wsHtml = renderPayroll('contracts'); break;
+      case 'ledger':
+      case 'gl': wsHtml = renderGL(); break;
+      case 'coa_classes': wsHtml = renderCoaClasses(); break;
+      case 'gl_automation': wsHtml = renderGlAutomation(); break;
+      case 'ledger_treasury': wsHtml = renderLedgerTreasury(); break;
+      case 'reg_equipment':
+      case 'reg_drivers':
+      case 'reg_staff':
+      case 'reg_roles':
+      case 'reg_sites':
+      case 'reg_regions':
+      case 'reg_products':
+      case 'reg_items':
+      case 'reg_customers':
+      case 'reg_suppliers':
+      case 'reg_categories':
+      case 'reg_fx_rates':
+      case 'reg_currencies':
+      case 'reg_vat_rates': {
+        ensureStaffMembersSeeded();
+        const curUnivHub = getHubDef(VIEW_TO_HUB[STATE.view]);
+        const siblingSubtabTableKeys = curUnivHub && Array.isArray(curUnivHub.tabs)
+          ? curUnivHub.tabs.flatMap(t => [t.view].concat(t.match || [])).map(v => UNIV_VIEW_TO_TABLE_KEY[v]).filter(Boolean)
+          : [];
+        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys, siblingSubtabTableKeys }) : renderOverview();
+        if (STATE.view === 'reg_staff') {
+          const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
+          const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
+            .concat(canViewPayStaff ? ['active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'] : []);
+          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffMemberAllowedForSeat(r, SEED));
+          const wdHtml = renderStaffPermitWatchdogStripHtml({ scope: 'reg_staff', staffRows: wdStaffRows });
+          const fbHtml = canOpenFatherBackfill() ? renderFatherBackfillBannerHtml() : '';
+          if (fbHtml || wdHtml) wsHtml = fbHtml + wdHtml + wsHtml;
+        }
+        if (STATE.view === 'reg_equipment' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function') {
+          wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
+        }
+        break;
+      }
+      case 'statements': wsHtml = renderStatements(); break;
+      case 'users': wsHtml = renderUsers(); break;
+      default: wsHtml = renderOverview();
+    }
+    return wsHtml;
   }
 
   function renderApp() {
@@ -170373,6 +176221,7 @@
   }
   function renderAppPass() {
     STATE.renderPending = false;
+    _mapsQuotaSigBuilt = null;
     const popEl = $('mfgChartPopover');
     if (popEl && !popEl.hidden) popEl.hidden = true;
     lockShellScroll();
@@ -170546,147 +176395,8 @@
 
     for (const k in _tableShownRows) delete _tableShownRows[k];
     for (const k in _regPanelRows) delete _regPanelRows[k];
-    let wsHtml = '';
-    switch (STATE.view) {
-      case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, canSeeTaxBreakdown, canAccessTable, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
-      case 'entities': wsHtml = renderEntitiesComparison(); break;
-      case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
-      case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
-      case 'hld_interactions': wsHtml = renderHoldingInteractions('main'); break;
-      case 'hld_open_recon': wsHtml = renderHoldingInteractions('open_recon'); break;
-      case 'hld_due_matrix': wsHtml = renderHoldingInteractions('due_matrix'); break;
-      case 'hld_partners': wsHtml = renderHoldingPartners('main'); break;
-      case 'hld_extended': wsHtml = renderHoldingExtended(); break;
-      case 'hld_distributions': wsHtml = renderHoldingPartners('distributions'); break;
-      case 'hld_loans': wsHtml = renderHoldingLoans('main'); break;
-      case 'hld_assets': wsHtml = renderHoldingLoans('assets'); break;
-      case 'hsp_revenue': wsHtml = renderHospitalityRevenue('main'); break;
-      case 'hsp_pos': wsHtml = renderHospitalityRevenue('pos'); break;
-      case 'hsp_vat': wsHtml = renderHospitalityRevenue('vat'); break;
-      case 'hsp_memberships': wsHtml = renderHospitalityMemberships('main'); break;
-      case 'hsp_partners': wsHtml = renderHospitalityMemberships('partners'); break;
-      case 'hsp_stock': wsHtml = renderHospitalityStock('main'); break;
-      case 'hsp_menu': wsHtml = renderHospitalityStock('menu'); break;
-      case 'hsp_energy': wsHtml = renderHospitalityEnergy('main'); break;
-      case 'hsp_maint': wsHtml = renderHospitalityEnergy('maint'); break;
-      case 'trd_sales': wsHtml = renderTradingSales('main'); break;
-      case 'trd_receivables': wsHtml = renderTradingSales('receivables'); break;
-      case 'trd_targets': wsHtml = renderTradingSales('targets'); break;
-      case 'trd_purchases': wsHtml = renderTradingPurchases('main'); break;
-      case 'trd_landed': wsHtml = renderTradingPurchases('landed'); break;
-      case 'trd_grn': wsHtml = renderTradingPurchases('grn'); break;
-      case 'trd_trucks': wsHtml = renderTradingTrucks('main'); break;
-      case 'trd_warranty': wsHtml = renderTradingTrucks('warranty'); break;
-      case 'trd_stock': wsHtml = renderTradingStock('main'); break;
-      case 'trd_movements': wsHtml = renderTradingStock('movements'); break;
-      case 'trd_recon': wsHtml = renderTradingStock('recon'); break;
-      case 're_leases': wsHtml = renderRealEstateLeases('main'); break;
-      case 're_invoicing': wsHtml = renderRealEstateLeases('invoicing'); break;
-      case 're_receipts': wsHtml = renderRealEstateLeases('receipts'); break;
-      case 're_sales': wsHtml = renderRealEstateSales('main'); break;
-      case 're_instalments': wsHtml = renderRealEstateSales('instalments'); break;
-      case 're_properties': wsHtml = renderRealEstateProperties('main'); break;
-      case 're_units': wsHtml = renderRealEstateProperties('units'); break;
-      case 're_valuations': wsHtml = renderRealEstateProperties('valuations'); break;
-      case 're_ownership': wsHtml = renderRealEstateProperties('ownership'); break;
-      case 're_workorders': wsHtml = renderRealEstateWorkOrders('main'); break;
-      case 're_recharges': wsHtml = renderRealEstateWorkOrders('recharges'); break;
-      case 'ins_policies': wsHtml = renderInsurancePolicies('main'); break;
-      case 'ins_renewals': wsHtml = renderInsurancePolicies('renewals'); break;
-      case 'ins_items': wsHtml = renderInsurancePolicies('items'); break;
-      case 'ins_billing': wsHtml = renderInsuranceBilling('main'); break;
-      case 'ins_remittances': wsHtml = renderInsuranceBilling('remittances'); break;
-      case 'ins_statements': wsHtml = renderInsuranceBilling('statements'); break;
-      case 'ins_claims': wsHtml = renderInsuranceClaims('main'); break;
-      case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
-      case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
-      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
-      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
-      case 'sentinels': wsHtml = renderSentinels(); break;
-      case 'alert_rules': wsHtml = renderAlertRules(); break;
-      case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
-      case 'void_log': wsHtml = window.MFG_VOID_LOG ? window.MFG_VOID_LOG.renderView() : ''; break;
-      case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
-      case 'sales': wsHtml = renderSales(); break;
-      case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
-      case 'sales_analytics':
-        wsHtml = renderHubAnalyticsView(STATE.view);
-        break;
-      case 'raw_analytics':
-      case 'raw': wsHtml = renderRaw(); break;
-      case 'raw_pricing': wsHtml = renderRawPricing(); break;
-      case 'raw_jv':
-      case 'jv': wsHtml = renderRawJv(); break;
-      case 'fleet': wsHtml = renderFleet(); break;
-      case 'fleet_equip': wsHtml = renderFleetEquipment(); break;
-      case 'fleet_maint': wsHtml = renderFleetMaintenance(); break;
-      case 'fleet_drivers':
-      case 'fleet_analytics': wsHtml = renderFleetDrivers(); break;
-      case 'pricing': wsHtml = renderPricing(); break;
-      case 'cashflow_analytics':
-      case 'cashflow': wsHtml = renderCashFlowTill(); break;
-      case 'external': wsHtml = renderExternalEntries(); break;
-      case 'conversions': wsHtml = renderFxConversions(); break;
-      case 'customers':
-      case 'ar': wsHtml = renderAR(); break;
-      case 'suppliers':
-      case 'ap': wsHtml = renderAP(); break;
-      case 'expenses_analytics':
-      case 'expenses': wsHtml = renderExpenses(); break;
-      case 'recurring_expenses': wsHtml = renderRecurringExpenses(); break;
-      case 'documents': wsHtml = renderDocumentVault(); break;
-      case 'warehouse': wsHtml = renderWarehouse(); break;
-      case 'warehouse_parts': wsHtml = renderWarehouseParts(); break;
-      case 'payroll':
-      case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
-      case 'workforce_map': wsHtml = renderWorkforceMap(); break;
-      case 'payroll_attendance': wsHtml = renderPayroll('attendance'); break;
-      case 'payroll_allowances': wsHtml = renderPayroll('allowances'); break;
-      case 'payroll_contracts': wsHtml = renderPayroll('contracts'); break;
-      case 'ledger':
-      case 'gl': wsHtml = renderGL(); break;
-      case 'coa_classes': wsHtml = renderCoaClasses(); break;
-      case 'gl_automation': wsHtml = renderGlAutomation(); break;
-      case 'ledger_treasury': wsHtml = renderLedgerTreasury(); break;
-      case 'reg_equipment':
-      case 'reg_drivers':
-      case 'reg_staff':
-      case 'reg_roles':
-      case 'reg_sites':
-      case 'reg_regions':
-      case 'reg_products':
-      case 'reg_items':
-      case 'reg_customers':
-      case 'reg_suppliers':
-      case 'reg_categories':
-      case 'reg_fx_rates':
-      case 'reg_currencies':
-      case 'reg_vat_rates': {
-        ensureStaffMembersSeeded();
-        const curUnivHub = getHubDef(VIEW_TO_HUB[STATE.view]);
-        const siblingSubtabTableKeys = curUnivHub && Array.isArray(curUnivHub.tabs)
-          ? curUnivHub.tabs.flatMap(t => [t.view].concat(t.match || [])).map(v => UNIV_VIEW_TO_TABLE_KEY[v]).filter(Boolean)
-          : [];
-        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys, siblingSubtabTableKeys }) : renderOverview();
-        if (STATE.view === 'reg_staff') {
-          const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
-          const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
-            .concat(canViewPayStaff ? ['active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'] : []);
-          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffMemberAllowedForSeat(r, SEED));
-          const wdHtml = renderStaffPermitWatchdogStripHtml({ scope: 'reg_staff', staffRows: wdStaffRows });
-          const fbHtml = canOpenFatherBackfill() ? renderFatherBackfillBannerHtml() : '';
-          if (fbHtml || wdHtml) wsHtml = fbHtml + wdHtml + wsHtml;
-        }
-        if (STATE.view === 'reg_equipment' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function') {
-          wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
-        }
-        break;
-      }
-      case 'statements': wsHtml = renderStatements(); break;
-      case 'users': wsHtml = renderUsers(); break;
-      default: wsHtml = renderOverview();
-    }
+    for (const k in _shownSliceMeta) delete _shownSliceMeta[k];
+    let wsHtml = buildActiveWorkspaceViewHtml({ activeInd, univGroupKeys, canonicalViewTitle });
     const subtabBarHtml = renderHubSubtabBar(user, k, sentinelsOpen);
     const isDesktopFrozenSubtabs = window.innerWidth > 860;
     const prevSubtabBar = $('hubSubtabBar');
@@ -170724,7 +176434,9 @@
         !KIOSK_ATT_STATE.nightSleep &&
         !(KIOSK_ATT_STATE.blackFrameStreak > 0)
       );
+      const wsOpensAtTop = !wsScrollSnap && container.scrollTop === 0;
       setContainerHtmlPreservingActiveInput(container, wsHtml);
+      parkWorkspaceLaterBlocks(container, wsOpensAtTop);
       settleChartRowsAtPageBottom(container, STATE.view);
       wireChartToolsOnce();
       try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
@@ -170760,6 +176472,13 @@
         const uSec = $('unit_economics');
         if (uSec && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(uSec, 10);
       }
+      if (_pocketBriefOpen && $('pocketBriefOverlay') && !$('pocketBriefOverlay').hidden) {
+        if (!canUsePocketBrief(user)) {
+          closePocketBrief({ purgeDom: true, restoreFocus: false });
+        } else {
+          renderPocketBriefOverlayDom();
+        }
+      }
     } finally {
       if (window.MFG_I18N) {
         window.MFG_I18N.syncLangSwitchersDom();
@@ -170769,6 +176488,8 @@
       if (_uiTipObserver && document.body) {
         _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
       }
+      _mapsQuotaSigShown = _mapsQuotaSigBuilt || null;
+      try { settleWorkspaceLaterBlocks(container); } catch (err) { releaseWorkspaceLaterBlocks(); console.warn('two-step paint', err); }
     }
   }
 
@@ -171385,7 +177106,7 @@
       const showMoreBtn = t.closest('[data-show-more]');
       if (showMoreBtn && container.contains(showMoreBtn)) {
         const v = showMoreBtn.getAttribute('data-show-more');
-        STATE.shown[v] = shownCount(v) + PAGE;
+        STATE.shown[v] = shownCount(v) + 50;
         const ws = $('workspace');
         const y = ws ? ws.scrollTop : 0;
         renderApp();
@@ -171403,7 +177124,91 @@
         // and in a first line, so the extract never passes for the full register.
         const filt = registerExportFilterParts(panel, tables, csvTarget);
         const filtLine = filt.parts.length ? `"${(wsUiT('Filtered') + ': ' + filt.parts.join(' · ')).replace(/"/g, '""')}"\r\n` : '';
-        const csv = filtLine + tables.map(tableToCsv).join('\r\n\r\n');
+        const panelSliceKeyMap = {
+          cfSalesPanel: 'cf_sales_t',
+          cfExpPanel: 'cf_exps_t',
+          cfBorPanel: 'cf_bor_t',
+          cfSalPanel: 'cf_sal_t',
+          cfExtPanel: 'cf_ext_t',
+          treasuryOpenLoansPanel: 'tr_open_close'
+        };
+        const panelCtxId = (panel && panel.id) || csvTarget || '';
+        const expandShownKeys = new Map();
+        const tableMasks = tables.map(tbl => {
+          const thEl = tbl.querySelector('thead th[data-sort-view]');
+          const sortView = thEl ? String(thEl.getAttribute('data-sort-view') || '') : '';
+          const tblPanel = (tbl.closest && tbl.closest('.panel-card, .panel')) || panel;
+          const meta = getRegisterRowsMeta(sortView, tblPanel) || (!sortView && panelCtxId ? getRegisterRowsMeta('', { id: panelCtxId }) : null);
+          let truncated = false;
+          if (meta && Array.isArray(meta.rows)) {
+            const sk = meta.shownKey || sortView;
+            if (sk && meta.rows.length > shownCount(sk)) {
+              truncated = true;
+              expandShownKeys.set(sk, Math.max(expandShownKeys.get(sk) || 0, meta.rows.length));
+            }
+          } else {
+            const pId = (tblPanel && tblPanel.id) || panelCtxId;
+            const sKey = panelSliceKeyMap[pId] || sortView;
+            const sMeta = sKey ? _shownSliceMeta[sKey] : null;
+            if (sMeta && sMeta.len > sMeta.lim) {
+              truncated = true;
+              expandShownKeys.set(sKey, Math.max(expandShownKeys.get(sKey) || 0, sMeta.len));
+            }
+          }
+          const sampleTr = Array.from(tbl.querySelectorAll('tbody tr')).find(tr => !tr.classList.contains('empty-row') && !tr.classList.contains('totals-row') && !tr.querySelector('[colspan]') && tr.children.length > 1);
+          const bodyVis = sampleTr ? Array.from(sampleTr.children).map(td => !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none') : null;
+          return { tbl, sortView, truncated, bodyVis };
+        });
+        let csvBody = '';
+        if (expandShownKeys.size > 0) {
+          const prevShown = Object.assign({}, STATE.shown);
+          const prevTblShown = Object.assign({}, _tableShownRows);
+          const prevRegPanels = Object.assign({}, _regPanelRows);
+          const prevSliceMeta = Object.assign({}, _shownSliceMeta);
+          try {
+            expandShownKeys.forEach((len, sk) => { STATE.shown[sk] = len; });
+            const activeIndExp = getActiveIndustry(STATE.company);
+            const isUnivExp = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
+            const univGroupKeysExp = isUnivExp ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
+            let titleExp = VIEW_TITLES[STATE.view] || VIEW_TITLES.overview;
+            if (STATE.view === 'reg_sites' || STATE.view === 'reg_regions') titleExp = 'Sites & Regions';
+            else if (isUnivExp && window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) {
+              const activeUnivMeta = window.MFG_PBI.TABLE_CATALOG.find(tt => tt.key === STATE.activeUnivRegKey);
+              if (activeUnivMeta && activeUnivMeta.label) titleExp = activeUnivMeta.label;
+            }
+            const fullHtml = withReadPass(() => buildActiveWorkspaceViewHtml({
+              activeInd: activeIndExp,
+              univGroupKeys: univGroupKeysExp,
+              canonicalViewTitle: titleExp
+            }));
+            const tmp = document.createElement('div');
+            tmp.innerHTML = fullHtml;
+            const tmpPanel = (csvTarget && tmp.querySelector('#' + CSS.escape(csvTarget))) || (panel && panel.id && tmp.querySelector('#' + CSS.escape(panel.id))) || tmp;
+            const tmpTables = Array.from(tmpPanel.querySelectorAll('table'));
+            const curLang = window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en';
+            csvBody = tableMasks.map((tm, ti) => {
+              if (!tm.truncated) return tableToCsv(tm.tbl);
+              const matchTmp = (tm.sortView ? tmpTables.find(tt => tt.querySelector(`thead th[data-sort-view="${CSS.escape(tm.sortView)}"]`)) : null) || tmpTables[ti];
+              if (!matchTmp) return tableToCsv(tm.tbl);
+              if (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+                const tb = (matchTmp.tBodies && matchTmp.tBodies[0]) || matchTmp.querySelector('tbody');
+                if (tb) window.MFG_I18N.translateDom(tb);
+              }
+              return tableToCsvFromFullBody(tm.tbl, matchTmp, tm.bodyVis);
+            }).join('\r\n\r\n');
+          } finally {
+            STATE.shown = prevShown;
+            for (const k in _tableShownRows) delete _tableShownRows[k];
+            Object.assign(_tableShownRows, prevTblShown);
+            for (const k in _regPanelRows) delete _regPanelRows[k];
+            Object.assign(_regPanelRows, prevRegPanels);
+            for (const k in _shownSliceMeta) delete _shownSliceMeta[k];
+            Object.assign(_shownSliceMeta, prevSliceMeta);
+          }
+        } else {
+          csvBody = tables.map(tableToCsv).join('\r\n\r\n');
+        }
+        const csv = filtLine + csvBody;
         const slug = filt.parts.length ? exportFilterSlug(filt.values) : '';
         downloadCsv(`ISABI_${exportCsvBtn.getAttribute('data-export-name') || csvTarget || 'export'}${filt.parts.length ? '_Filtered' + (slug ? '_' + slug : '') : ''}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
         toast('CSV downloaded');
@@ -171708,6 +177513,12 @@
         return;
       }
 
+      const openBriefBtn = t.closest('[data-open-pocket-brief]');
+      if (openBriefBtn && container.contains(openBriefBtn)) {
+        if (typeof openPocketBrief === 'function') openPocketBrief({ fromLogin: false });
+        return;
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -171723,6 +177534,16 @@
         const selObj = window.getSelection ? window.getSelection() : null;
         const sel = (selObj && selObj.anchorNode && rrow.contains(selObj.anchorNode)) ? String(selObj) : '';
         if (sel.length > 1) return;
+        if (shouldInterceptWithMobRowPeek(e, rrow)) {
+          openMobRowPeekForRow({
+            kind: 'rrow',
+            crKey: rrow.getAttribute('data-rkey'),
+            rid: rrow.getAttribute('data-rid'),
+            trEl: rrow,
+            triggerEl: t
+          });
+          return;
+        }
         openRecordFromTableRow(rrow.getAttribute('data-rkey'), rrow.getAttribute('data-rid'), rrow);
         return;
       }
@@ -171745,31 +177566,31 @@
         const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
         const rowIdAttr = indRow.getAttribute('data-ind-row-id') || '';
         if (activeExplorerTbl === 'hld_extended_tbl' && rowIdAttr) {
+          if (shouldInterceptWithMobRowPeek(e, indRow)) {
+            openMobRowPeekForRow({
+              kind: 'rrow',
+              crKey: 'external_movements',
+              rid: rowIdAttr,
+              trEl: indRow,
+              triggerEl: t
+            });
+            return;
+          }
           openRecordFromTableRow('external_movements', rowIdAttr, indRow);
           return;
         }
-        const tbl = indRow.closest('table');
-        const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
-        const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
-        const cells = visTds.map(cleanDomainCellText);
-        const matchCells = visTds.map(domainCellEnText);
-        if (cells.length >= 2) {
-          if (indRow.getAttribute('data-ind-row-id')) {
-            cells[0] = indRow.getAttribute('data-ind-row-id');
-            matchCells[0] = cells[0];
+        const domInspectOpts = buildIndRowInspectOpts(indRow);
+        if (domInspectOpts) {
+          if (shouldInterceptWithMobRowPeek(e, indRow)) {
+            openMobRowPeekForRow({
+              kind: 'indRow',
+              trEl: indRow,
+              inspectOpts: domInspectOpts,
+              triggerEl: t
+            });
+            return;
           }
-          const cardEl = indRow.closest('.panel-card, .panel');
-          const tableTitle = getDomainCardCanonicalTitle(cardEl);
-          openIndustryDomainInspector({
-            ind: getActiveIndustry(STATE.company),
-            headers,
-            cells,
-            matchCells,
-            tableTitle,
-            trEl: indRow,
-            domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
-            rowCompany: indRow.getAttribute('data-ind-row-co') || ''
-          });
+          openIndustryDomainInspector(domInspectOpts);
           if (agrPillHit) {
             const relBox = $('indInspRelatedAgreementsBox');
             if (relBox) {
@@ -171930,9 +177751,21 @@
     }
     const subtabRoot = $('hubSubtabBar') || container;
     subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', e => {
         const targetView = btn.getAttribute('data-hub-subtab');
-        if (targetView) setView(targetView);
+        if (!targetView) return;
+        if (shouldUseNavAck(e, navAckWantedView(targetView))) {
+          runAfterNavAck(() => {
+            subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(b => {
+              const on = b === btn;
+              b.classList.toggle('active', on);
+              b.setAttribute('aria-current', on ? 'page' : 'false');
+            });
+          }, () => setView(targetView));
+          return;
+        }
+        _navAckToken++;
+        setView(targetView);
       });
     });
     const allowedCos = getAllowedCompanyKeys(activeUserRow);
@@ -174481,12 +180314,13 @@
       wrap.addEventListener('scroll', () => {
         if (!wrap.isConnected || wrap.clientHeight <= 0 || wrap.scrollHeight <= wrap.clientHeight || wrap.scrollTop <= 0) return;
         if (wrap.scrollTop + wrap.clientHeight < wrap.scrollHeight - 160) return;
-        const rendered = wrap.querySelectorAll('tbody tr').length;
+        const tbl = wrap.querySelector('table');
+        const rendered = tbl ? tableDataTrs(tbl).length : wrap.querySelectorAll('tbody tr').length;
         if (rendered < shownCount(v)) return;
         const prevTop = wrap.scrollTop;
         const ws = $('workspace');
         const wsY = ws ? ws.scrollTop : 0;
-        STATE.shown[v] = shownCount(v) + PAGE;
+        STATE.shown[v] = shownCount(v) + 50;
         renderApp();
         if (ws && wsY > 0) ws.scrollTop = wsY;
         const nextTh = container.querySelector(`th[data-sort-view="${v}"]`);
@@ -174833,7 +180667,186 @@
     setView(target);
   }
 
+  var _navAckToken = 0;   // a sidebar tap waiting for its frame (openHubAfterAck); any setView moves it on
+  var _pendingDockAck = null;
+  // How long each screen took to build the last time it was opened on this device. A tap on a hub whose screen
+  // builds quickly opens it in the same call (the highlight-first frame would only add 16 ms to it); a hub
+  // that took longer, or has not been opened yet, shows the highlight first.
+  var _viewRenderMs = {};
+  var NAV_ACK_MIN_MS = 80;
+  function navAckWanted(hubId) {
+    let v = '';
+    try { v = hubId === 'univ_rates' ? '' : resolveHubView(hubId === 'master' ? 'univ_parties' : hubId, activeUser()); } catch (_) { v = ''; }
+    const ms = v && _viewRenderMs ? _viewRenderMs[v] : undefined;
+    return !(typeof ms === 'number' && ms < NAV_ACK_MIN_MS);
+  }
+  function resolveViewForNavAck(rawView) {
+    let v = String(rawView || '');
+    if (v === 'cashflow_analytics') v = 'cashflow';
+    if (v === 'sales_vat') v = 'customers';
+    if (v === 'sales_analytics' || v === 'unit_economics') v = 'sales';
+    if (v === 'raw_analytics') v = 'raw';
+    if (v === 'expenses_analytics') v = 'expenses';
+    if (v === 'fleet_analytics') v = 'fleet_drivers';
+    if (v === 'payroll_analytics' || v === 'payroll_salaries') v = 'payroll';
+    if (v === 'jv') v = 'raw_jv';
+    if (!VIEW_TITLES[v]) v = 'overview';
+    return resolveIndustryCompatibleView(v, getActiveIndustry(STATE.company));
+  }
+  function navAckWantedView(view) {
+    const v = resolveViewForNavAck(view);
+    if (!v) return false;
+    const ms = _viewRenderMs ? _viewRenderMs[v] : undefined;
+    return !(typeof ms === 'number' && ms < NAV_ACK_MIN_MS);
+  }
+  function shouldUseNavAck(e, wanted) {
+    const ackFirst = Boolean(window.__MFG_NAV_ACK_FORCE || (e && e.isTrusted && !IS_AUTOMATED_TEST && !window.__MFG_NAV_ACK_OFF));
+    return Boolean(ackFirst && !STATE.kioskLocked && typeof requestAnimationFrame === 'function' && (window.__MFG_NAV_ACK_FORCE || wanted));
+  }
+  function runAfterNavAck(highlightFn, goFn) {
+    const token = ++_navAckToken;
+    if (typeof highlightFn === 'function') highlightFn();
+    let done = false;
+    const run = () => {
+      if (done || token !== _navAckToken) return;
+      done = true;
+      goFn();
+    };
+    requestAnimationFrame(() => setTimeout(run, 0));
+    setTimeout(run, 80);                                             // a tab in the background gets no frames
+  }
+
+  // ---- Idle cold-hub pre-warming (never writes _tableShownRows / _regPanelRows or HTML) ----
+  let _idleWarmToken = 0;
+  let _idleWarmTimer = null;
+  let _idleWarmIdleId = 0;
+  let _lastIdleWarmedScopeSig = '';
+  function currentIdleWarmScopeSig() {
+    const u = activeUser();
+    return `${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${(SEED && SEED._customRev) || 0}|${_WIN_REV || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${(u && u.id) || ''}`;
+  }
+  function cancelIdleHubPrewarm() {
+    _idleWarmToken++;
+    if (_idleWarmTimer) { clearTimeout(_idleWarmTimer); _idleWarmTimer = null; }
+    if (_idleWarmIdleId && typeof cancelIdleCallback === 'function') {
+      try { cancelIdleCallback(_idleWarmIdleId); } catch (_) {}
+      _idleWarmIdleId = 0;
+    }
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiIdleWarmWired) {
+    window.__isabiIdleWarmWired = true;
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => window.addEventListener(type, () => cancelIdleHubPrewarm(), { capture: true, passive: true }));
+  }
+  function computeActiveSiblingIndustryOps(indId) {
+    if (indId === 'Holding & Treasury') {
+      return { sched: computeHoldingSchedules(), extd: computeHoldingExtendedSummary({ ignoreSearch: true, basis: 'tx' }) };
+    }
+    if (indId === 'Hospitality & Resorts') return computeHospitalityOperations({ ignoreSearch: true });
+    if (indId === 'Automotive & Heavy Trading') return computeTradingOperations({ ignoreSearch: true });
+    if (indId === 'Real Estate & Property') return STATE.search ? null : computeRealEstateOperations();
+    if (indId === 'Insurance & Brokerage') return computeInsuranceOperations({ ignoreSearch: true });
+    return null;
+  }
+  function buildIdlePrewarmSteps() {
+    const activeInd = getActiveIndustry(STATE.company);
+    const steps = [
+      () => { getModel(); getKPI(); }
+    ];
+    if (activeInd === 'Manufacturing') {
+      if (canViewHub('raw')) {
+        steps.push(() => { renderRaw({ warmOnly: true }); });
+      }
+      if (canViewHub('fleet')) {
+        steps.push(() => {
+          meterGuardMap(filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true, ignorePeriod: true }));
+          getDieselTankLedger();
+        });
+      }
+      if (canViewHub('cashflow')) {
+        steps.push(() => {
+          const u = activeUser();
+          buildCashTillMoves({ user: u });
+          buildDailyTillSheetRows({ user: u });
+        });
+      }
+      if (canViewHub('payroll')) {
+        steps.push(() => { computeStaffPayrollRegister(); });
+      }
+      if (canViewView('sentinels')) {
+        steps.push(() => { sentinelSlice(); buildSentinelItems(); });
+      }
+    } else {
+      steps.push(() => {
+        computeActiveSiblingIndustryOps(activeInd);
+        getIndustryGlModel(activeInd, STATE.company);
+      });
+      if (canViewHub('cashflow')) {
+        steps.push(() => { buildCashTillMoves({ user: activeUser() }); });
+      }
+      if (canViewView('sentinels')) {
+        steps.push(() => {
+          buildSentinelItems();
+          buildIndustrySentinelExceptionTables(activeInd);
+        });
+      }
+    }
+    return steps;
+  }
+  function runIdlePrewarmNow() {
+    if (window.__MFG_SPEED_CACHES_OFF || window.__MFG_IDLE_WARM_OFF || !STATE.authed || !SEED || !SEED._recordsReady || STATE.kioskLocked) return false;
+    cancelIdleHubPrewarm();
+    const sig = currentIdleWarmScopeSig();
+    const steps = buildIdlePrewarmSteps();
+    withReadPass(() => {
+      for (let i = 0; i < steps.length; i++) {
+        try { steps[i](); } catch (_) {}
+      }
+    });
+    _lastIdleWarmedScopeSig = sig;
+    return true;
+  }
+  function scheduleIdleHubPrewarm(reason) {
+    if ((IS_AUTOMATED_TEST && !window.__MFG_IDLE_WARM_FORCE) || window.__MFG_SPEED_CACHES_OFF || window.__MFG_IDLE_WARM_OFF) return false;
+    if (!STATE.authed || !SEED || !SEED._recordsReady || STATE.kioskLocked) return false;
+    const targetSig = currentIdleWarmScopeSig();
+    if (_lastIdleWarmedScopeSig === targetSig && reason !== 'force') return false;
+    cancelIdleHubPrewarm();
+    const token = _idleWarmToken;
+    const steps = buildIdlePrewarmSteps();
+    let idx = 0;
+    const scheduleNext = (delayMs) => {
+      if (token !== _idleWarmToken) return;
+      if (typeof requestIdleCallback === 'function' && delayMs <= 50) {
+        _idleWarmIdleId = requestIdleCallback(() => { _idleWarmIdleId = 0; pump(); }, { timeout: 600 });
+      } else {
+        _idleWarmTimer = setTimeout(() => { _idleWarmTimer = null; pump(); }, delayMs);
+      }
+    };
+    const pump = () => {
+      if (token !== _idleWarmToken) return;
+      if (!STATE.authed || !SEED || !SEED._recordsReady || STATE.kioskLocked || window.__MFG_SPEED_CACHES_OFF || window.__MFG_IDLE_WARM_OFF) return;
+      if (currentIdleWarmScopeSig() !== targetSig) return;
+      if (_wsLaterPending) { scheduleNext(120); return; }
+      if (idx < steps.length) {
+        const fn = steps[idx++];
+        withReadPass(() => { try { fn(); } catch (_) {} });
+        if (idx < steps.length) {
+          scheduleNext(35);
+          return;
+        }
+      }
+      _lastIdleWarmedScopeSig = targetSig;
+    };
+    scheduleNext(160);
+    return true;
+  }
+
   function setView(view, opts = {}) {
+    _navAckToken = (_navAckToken || 0) + 1;
+    _pendingDockAck = null;
+    _lastUserNavAt = Date.now();
+    cancelIdleHubPrewarm();
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
@@ -174887,10 +180900,11 @@
       STATE.expandedRegions = {};
       STATE.expandAllRegions = false;
       STATE.chipFilter = opts.chipFilter || 'all';
-      STATE.salesPadFilter = 'all';
+      STATE.salesPadFilter = opts.salesPadFilter || 'all';
       STATE.vatInvFilter = 'all';
       STATE.siteAllowStaffFilter = '';
       STATE.shown = {};
+      if (opts.salesPadFilter) STATE.shown.spad = PAGE;
       STATE.cfEntryMode = 'entries';
       STATE.cfBridgeMode = 'streams';
       STATE.cfFocusDate = '';
@@ -174932,7 +180946,9 @@
     _preModalWorkspaceScope = '';
     const ws = $('workspace');
     if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
+    const _buildT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
     renderApp();
+    if (_buildT0 && _viewRenderMs) _viewRenderMs[view] = performance.now() - _buildT0;
     if (_scrollPaySal) {
       const pPanel = $('paySalPanel');
       if (pPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(pPanel, 10);
@@ -174940,9 +180956,6 @@
     if (_scrollUnitEcon) {
       const uPanel = $('unit_economics');
       if (uPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(uPanel, 10);
-    }
-    if (STATE.authed && !IS_AUTOMATED_TEST && Date.now() - _lastCloudSyncStartedAt > 8000) {
-      syncWithCloud(false);
     }
   }
 
@@ -175337,6 +181350,13 @@
         e.stopPropagation();
         clearSelectedAuthSeat();
       });
+    }
+    const pbSwitch = $('authPocketBriefSwitch');
+    if (pbSwitch) {
+      pbSwitch.addEventListener('change', () => {
+        setPocketBriefAutoEnabled(Boolean(pbSwitch.checked));
+      });
+      syncAuthPocketBriefUi();
     }
     const selSeatBar = $('authSelectedSeatBar');
     if (selSeatBar) {
@@ -175961,18 +181981,42 @@
     window.addEventListener('resize', followPinnedChartPop, { passive: true });
     window.MFG_CHART_POP = { close: closeChartPopover, isHeld: chartPopHeld };
 
+    // A tap on the sidebar, sub-tabs or phone dock shows at once: the highlight moves in the very next frame
+    // and the screen is built straight after it, so a screen that takes a moment to build never leaves the tap
+    // looking ignored. A target whose screen built in under 80 ms last time opens in the same call instead
+    // (navAckWanted / navAckWantedView). Only for a person's own tap (a script that calls click() gets the
+    // screen in the same call, as before). Any change of screen in between moves _navAckToken in setView, so
+    // a waiting tap is dropped and never undoes it.
+    const markSidebarHighlight = btn => {
+      document.querySelectorAll('#sidebarNav .nav-item.on, #railSystemBar button.rail-sys-btn.on').forEach(b => { if (b !== btn) b.classList.remove('on'); });
+      btn.classList.add('on');
+    };
     document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', e => {
       const pill = e.target && e.target.closest ? e.target.closest('.nav-pill[data-target-view]') : null;
       const tv = pill ? String(pill.getAttribute('data-target-view') || '').trim() : '';
       if (tv && canViewView(tv)) {
         e.stopPropagation();
+        if (shouldUseNavAck(e, navAckWantedView(tv))) {
+          runAfterNavAck(() => markSidebarHighlight(btn), () => setView(tv));
+          return;
+        }
+        _navAckToken++;
         setView(tv);
         return;
       }
-      clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'));
+      const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
+      if (shouldUseNavAck(e, navAckWanted(hubId))) {
+        runAfterNavAck(() => markSidebarHighlight(btn), () => clickHub(hubId));
+        return;
+      }
+      _navAckToken++;
+      clickHub(hubId);
     }));
-    document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', e => {
       const ms = $('mobileSubnav');
+      if (_pendingDockAck && _pendingDockAck.btn === btn && _pendingDockAck.token === _navAckToken) {
+        return;
+      }
       if (window.innerWidth <= 860 && btn.classList.contains('on')) {
         if (ms && ms.querySelector('[data-subnav-hub]')) {
           ms.classList.toggle('mob-hubs-open');
@@ -175988,8 +182032,22 @@
       const indSpec = dv === 'sales' ? INDUSTRY_SIDEBAR_SPEC[getActiveIndustry(STATE.company)] : null;
       const ownSlot = indSpec ? indSpec.slots.find(s => getHubDef(s.hub) && canViewHub(s.hub, u)) : null;
       const firstHub = (ownSlot && getHubDef(ownSlot.hub)) || HUB_CATALOG.find(h => grps.includes(h.group) && isHubInActiveIndustry(h) && canViewHub(h.id, u));
-      if (firstHub) clickHub(firstHub.id);
-      else setView(dv);
+      const wantAck = firstHub ? navAckWanted(firstHub.id) : navAckWantedView(dv);
+      const go = () => {
+        if (_pendingDockAck && _pendingDockAck.btn === btn) _pendingDockAck = null;
+        if (firstHub) clickHub(firstHub.id);
+        else setView(dv);
+      };
+      if (shouldUseNavAck(e, wantAck)) {
+        runAfterNavAck(() => {
+          _pendingDockAck = { btn, token: _navAckToken };
+          document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(b => b.classList.toggle('on', b === btn));
+        }, go);
+        return;
+      }
+      _pendingDockAck = null;
+      _navAckToken++;
+      go();
     }));
     const mptBtn = $('mobilePeriodToggleBtn');
     if (mptBtn) {
@@ -176057,6 +182115,7 @@
       saveFilterState();
       renderApp();
       if (_dateFacState.open) renderDateFacilitatorPopover();
+      if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('basis');
     }));
 
     // Delegated Interactive Segmented Date Control & Date/Period Facilitator Popover
@@ -176540,6 +182599,9 @@
         renderApp,
         toast,
         closeRecordInspector,
+        canUsePocketBrief,
+        openPocketBrief,
+        closePocketBrief,
         getKPI,
         getModel,
         filterRecords,
@@ -176625,6 +182687,9 @@
         allowedCompanyNames,
         getActiveIndustry,
         canEnterForm,
+        canEnterAny,
+        canModifyData,
+        isOwner,
         canAccessTable,
         canViewPayrollDollarAmounts,
         canModifyTextOnly,
@@ -176881,6 +182946,12 @@
         if (ncPop && !ncPop.hidden) {
           e.preventDefault();
           closeNearCopyPeekPopover(true);
+          return;
+        }
+        const fifoPop = $('fifoSplitPeekPopover');
+        if (fifoPop && !fifoPop.hidden) {
+          e.preventDefault();
+          closeFifoSplitPeekPopover(true);
           return;
         }
         const hc = $('roleHoverPreviewCard');
@@ -177239,8 +183310,13 @@
       setInterval(() => {
         if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
         if (Date.now() - _lastCloudSyncStartedAt < 10000) return;
+        if (!STATE.pendingCloudPush && !STATE.pushAfterSync) {
+          if (Date.now() - _lastUserNavAt < 2500) return;
+          const ae = document.activeElement;
+          if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;
+        }
         syncWithCloud(Boolean(STATE.pendingCloudPush));
-      }, 12000);
+      }, 15000);
     }
     window.addEventListener('online', () => { toast('Back online — syncing'); syncWithCloud(true); });
     window.addEventListener('offline', () => { STATE.cloudStatus = '● Offline Cache'; updateCloudBadges(); toast('Offline — entries are kept on this device and sync later', 'err'); });
@@ -177702,7 +183778,15 @@
       resolveHubView: (hubId, u) => resolveHubView(hubId, u || activeUser()),
       clickHub: hubId => clickHub(hubId),
       setView: (view, opts) => setView(view, opts),
-      setRailWidth: (w, persist) => setRailWidth(w, persist)
+      setRailWidth: (w, persist) => setRailWidth(w, persist),
+      releaseLaterBlocks: () => releaseWorkspaceLaterBlocks(),
+      laterBlocksPending: () => _wsLaterPending,
+      navAckWanted: hubId => navAckWanted(hubId),
+      navAckWantedView: view => navAckWantedView(view),
+      scheduleIdleHubPrewarm: reason => scheduleIdleHubPrewarm(reason),
+      runIdlePrewarmNow: () => runIdlePrewarmNow(),
+      cancelIdleHubPrewarm: () => cancelIdleHubPrewarm(),
+      viewRenderMs: _viewRenderMs
     };
     window.__openModalForm = (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true });
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
@@ -177881,6 +183965,7 @@
 
     initZeroBlackBoxTooltips();
     wireNearCopyPeekPopover();
+    wireFifoSplitPeekPopover();
     scheduleSeedHydration();
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (STATE.authed || isAutoTest) {
@@ -178422,6 +184507,11 @@
     }
     if (P.sentinels && typeof P.sentinels === 'object' && Object.keys(P.sentinels).length) {
       tgt0.sentinels = P.sentinels;
+    }
+    // Only the private seed carries `namebook`; the public demo bundles never do.
+    if (!targetSeed && P.namebook && typeof P.namebook === 'object' && !Array.isArray(P.namebook)) {
+      setPrivateNameBook(P.namebook);
+      try { applyBioQuarantineToLocal(); } catch (_) {}
     }
     const S = P._s || [];
     const entries = Object.entries(P.records || {});
@@ -179007,8 +185097,13 @@
       const hldSched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerAgreements: [] };
       // The partners in force: a schedule kept apart by a save and the one that follows it are one partner
       const schedPartners = holdingInForceRows(hldSched.partnerAgreements);
+      // A statement for a date range reads each partner's schedule in force during that range, one line per period
+      // when the share changed inside it (partnerPeriods); `partners` then holds the lines a total counts. With no
+      // range the partners in force today, as before.
+      const partnerPeriods = (!isEmptyBounded && expRange) ? holdingPartnerPeriodsInRange(hldSched.partnerAgreements, expRange) : null;
       const partners = isEmptyBounded
         ? []
+        : partnerPeriods ? partnerPeriods.filter(l => l.counted)
         : (schedPartners.length
           ? schedPartners.map(p => ({
               partner: p.partner,
@@ -179042,9 +185137,13 @@
           net: p.openUsd,
           status: p.openUsd > 0 ? 'Open Leg' : 'Reconciled'
         })),
-        partners
+        partners,
+        partnerPeriods
       };
     },
+    // Gate hook: the partner lines of a date range for any list of schedules (reads only)
+    partnerPeriodsInRange: holdingPartnerPeriodsInRange,
+    schedulesInRange: holdingSchedulesInRange,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     getIndustryGroups: typeof getIndustryGroups === 'function' ? getIndustryGroups : null,
@@ -179225,9 +185324,12 @@
             endDate: l.end_date || 'Open',
             annualBaseUsd: base,
             vatUsd: vat,
-            annualTtcUsd: ttc
+            annualTtcUsd: ttc,
+            // In the rent roll's total (a lease period that ended, or was followed by a new rent, is listed but not counted)
+            counted: Boolean(re.rentRollIds && re.rentRollIds.has(String(l.id || '').trim().toUpperCase()))
           };
         }),
+        rentRollAsOf: re.rentRollAsOf || '',
         rentInvoices: (re.invoices || []).map(r => ({
           invNo: r.id,
           company: r.company,
@@ -179366,6 +185468,7 @@
     closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
     voidRecord: typeof voidRecord === 'function' ? voidRecord : null,
     restoreVoidedRecord: typeof restoreVoidedRecord === 'function' ? restoreVoidedRecord : null,
+    restoreVoidedIndustryDomainRow: typeof restoreVoidedIndustryDomainRow === 'function' ? restoreVoidedIndustryDomainRow : null,
     canEnterForm: typeof canEnterForm === 'function' ? canEnterForm : null,
     canAccessTable: typeof canAccessTable === 'function' ? canAccessTable : null,
     isAppRecord: typeof isAppRecord === 'function' ? isAppRecord : null,
@@ -179485,14 +185588,58 @@
     computeUnitSteepWearSince: typeof computeUnitSteepWearSince === 'function' ? computeUnitSteepWearSince : null,
     getSteepWearSentinelData: typeof getSteepWearSentinelData === 'function' ? getSteepWearSentinelData : null,
     resolveSteepWearServicePrefill: typeof resolveSteepWearServicePrefill === 'function' ? resolveSteepWearServicePrefill : null,
+    isUnpavedQuarrySite: typeof isUnpavedQuarrySite === 'function' ? isUnpavedQuarrySite : null,
+    evaluateDispatchSteepBrakeWarning: typeof evaluateDispatchSteepBrakeWarning === 'function' ? evaluateDispatchSteepBrakeWarning : null,
+    findLowestWearAvailableOwnTruck: typeof findLowestWearAvailableOwnTruck === 'function' ? findLowestWearAvailableOwnTruck : null,
     getOilServiceIndex: typeof getOilServiceIndex === 'function' ? getOilServiceIndex : null,
     getWarehouseIndex: typeof getWarehouseIndex === 'function' ? getWarehouseIndex : null,
+    canUsePocketBrief,
+    openPocketBrief,
+    closePocketBrief,
+    isPocketBriefAutoEnabled,
+    setPocketBriefAutoEnabled,
+    openMobRowPeekForRow,
+    stepMobRowPeek,
+    closeMobRowPeekSheet,
     getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
 
   let _seedHydrationPromise = null;
+  // Bumped on sign-out: a seed fetch still in flight then is dropped instead of refilling records and the
+  // private name book behind the sign-in screen.
+  let _seedHydrationGen = 0;
   let _seedAuthGateListenerAttached = false;
+  let _nameBookRefetchArmed = false;
+  // A signed-in real seat whose core came without the book (an offline copy from before v19.6.270, or a seed
+  // packed by an older script): fetch it again once online, so the name rules do not stay quiet.
+  function armNameBookRefetch(coreUrl) {
+    if (_nameBookRefetchArmed || IS_AUTOMATED_TEST) return;
+    _nameBookRefetchArmed = true;
+    const seedEpoch = _authSessionEpoch;
+    const gen = _seedHydrationGen;
+    const tryFetch = async () => {
+      try {
+        if (!STATE.authed || _privateNameBook || gen !== _seedHydrationGen || seedEpoch !== _authSessionEpoch) return;
+        const r = await edgeApiFetch(String(coreUrl) + (String(coreUrl).includes('?') ? '&' : '?') + 'nb=' + Date.now(), { cache: 'no-store' });
+        const P = (r && r.ok) ? await r.json() : null;
+        if (gen !== _seedHydrationGen || seedEpoch !== _authSessionEpoch || !STATE.authed) return;
+        if (P && P.namebook && typeof P.namebook === 'object' && !Array.isArray(P.namebook)) {
+          setPrivateNameBook(P.namebook);
+          try { applyBioQuarantineToLocal(); } catch (_) {}
+          invalidateAllSeedCaches();
+          safeRender();
+        } else {
+          console.warn('[ISABI] The private seed is missing its name book; name variants, driver aliases and named pins stay off until it is repacked.');
+        }
+      } catch (_) {
+      } finally {
+        _nameBookRefetchArmed = false;
+      }
+    };
+    if (navigator.onLine === false) window.addEventListener('online', () => { setTimeout(tryFetch, 1500); }, { once: true });
+    else setTimeout(tryFetch, 1500);
+  }
 
   async function fetchSeedPayloadJson(url, useAuthedApi) {
     if (!useAuthedApi) {
@@ -179553,16 +185700,24 @@
       : (useAuthedApi ? (SEED_MANIFEST.apiIndustries || './api/seed/industries') : (SEED_MANIFEST.industries || './js/seed_industries.json'));
 
     const seedEpoch = _authSessionEpoch;
+    const hydrationGen = _seedHydrationGen;
     let myHydratePromise = null;
     myHydratePromise = (async () => {
       try {
         const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
         const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
-        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
           return SEED;
         }
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
+        // Signed out while the core was being unpacked (it yields): drop what it wrote behind the sign-in screen.
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && seedEpoch !== _authSessionEpoch)) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+          return SEED;
+        }
+        if (useAuthedApi && !isDemoSbx && !(corePayload && corePayload.namebook)) armNameBookRefetch(coreUrl);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
           _demoCompanyLiveSnap.coreReady = true;
@@ -179619,7 +185774,16 @@
             if (_demoCompanySandboxActive) attachDemoBundleToActiveSandbox(_preloadedDemoBundle);
           }
         }
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          return SEED;
+        }
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+          return SEED;
+        }
         if (indPayload) unpackIndustrySeedPayload(indPayload);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
@@ -179646,6 +185810,7 @@
         }
         if (STATE.authed || isAutoTest) {
           safeRender();
+          if (STATE.authed) scheduleIdleHubPrewarm('records_ready');
         } else {
           // Non-blocking background warm-up of post-login caches only when camera is not actively scanning
           const prewarmSteps = [
@@ -179677,9 +185842,12 @@
         }
         console.error('Seed hydration error:', err);
         if (!useAuthedApi) {
+          SEED._coreReady = true;
           SEED._recordsReady = true;
           SEED._recordsLoadFailed = true;   // screens carry on; site closure and dormancy refuse to judge loads
           window.MFG_SEED = SEED;
+          try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+          safeRender();
         } else {
           const errMsg = String((err && err.message) || err || '');
           if (/\b(401|403)\b/.test(errMsg) && !_edgeSessionToken) {
@@ -179687,10 +185855,15 @@
             SEED._recordsReady = false;
             SEED._preAuthDeferred = true;
             openAuthGate();
+            // Load the private seed again after the next sign-in (the one-time listener was already used).
+            if (!STATE.authed) setTimeout(() => { try { hydrateSeedData(); } catch (_) {} }, 0);
           } else if (STATE.authed) {
+            SEED._coreReady = true;
             SEED._recordsReady = true;
             SEED._recordsLoadFailed = true;
             window.MFG_SEED = SEED;
+            try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+            safeRender();
           }
         }
       }

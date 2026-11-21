@@ -4572,3 +4572,29 @@ html.ios-standalone .geo-modal-map-wrap.is-picker-fullwin {
     font-size: 16px !important;
   }
 }
+
+/* ==================== Site Clean-up (bulk Close Site) ==================== */
+.geo-site-cleanup-btn { margin-left: 2px; }
+.site-cleanup-card { width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; }
+.site-cleanup-card .modal-body { overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.sc-intro { margin: 0; font-size: 0.82rem; color: var(--muted); }
+.sc-group { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.sc-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.sc-group-head h3 { margin: 0; font-size: 0.9rem; color: var(--ink); }
+.sc-group-sub { font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
+.sc-all { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; white-space: nowrap; cursor: pointer; }
+.sc-tbl-wrap { max-height: 300px; overflow: auto; }
+.sc-tbl { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.sc-tbl th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--muted); z-index: 1; }
+.sc-tbl td { padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--ink); }
+.sc-tbl .num { text-align: right; }
+.sc-tbl .sc-chk { width: 28px; padding-right: 0; }
+.sc-tbl tr.is-blocked td { opacity: 0.6; }
+.sc-blocked { display: inline-block; margin-left: 6px; font-size: 0.68rem; font-weight: 600; color: #A4521A; }
+[data-theme="dark"] .sc-blocked { color: #FCD34D; }
+.sc-empty { padding: 12px; font-size: 0.8rem; color: var(--muted); }
+.sc-foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 860px) {
+  .sc-tbl th:nth-child(3), .sc-tbl td:nth-child(3) { display: none; }
+  .sc-group-head { flex-wrap: wrap; }
+}
