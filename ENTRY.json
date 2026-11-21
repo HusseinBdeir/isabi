@@ -1,0 +1,29 @@
+{
+ "app": {
+  "branch": "wt/all-five-typo-hygiene-recs",
+  "sha": "b29bb204836df1b72a6cbf89ea2620575f930b01"
+ },
+ "gates": [
+  "isabi-app: python build/audit_i18n.py",
+  "isabi-app: python build/verify_public_names.py",
+  "isabi: node build/verify_seat_ai_mask_edge.mjs",
+  "isabi-app: node build/verify_typo_hygiene_unit.mjs",
+  "isabi-app: node build/verify_near_copy.mjs",
+  "isabi-app: node build/verify_all_5_typo_hygiene_recs.mjs",
+  "isabi-app: node build/verify_ar_fifo_sister_recs.mjs",
+  "isabi-app: node build/verify_smart_scan.mjs",
+  "isabi-app: node build/verify_boot_saved_scope.mjs",
+  "isabi-app: node build/verify_telematics.mjs"
+ ],
+ "holder": "THEO cb64e097 (all-5-typo-hygiene-recs)",
+ "id": "20261121T102907Z-ffc1926e",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T10:29:07Z",
+ "seenAt": "2026-11-21T10:29:07Z",
+ "site": {
+  "branch": "wt/all-five-typo-hygiene-recs",
+  "sha": "f210d0471064648c26ffb405cbd6457b3c6e75fa"
+ },
+ "state": "waiting",
+ "summary": "Site & staff 1-letter-off + Keep-as-new-name, sibling domain near-copy, Data Hygiene alias clustering, Camera/Smart Scan pre-check & signed-out telematics guard"
+}
