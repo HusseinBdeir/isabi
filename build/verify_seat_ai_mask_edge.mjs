@@ -603,7 +603,7 @@ async function run() {
         return exec;
       }
     });
-    const baseSess = { sub: 'u3', email: 'sabahkassab@bhfirms.com', sid: 'sid-1', role: 'Entry', companies: 'WTC' };
+    const baseSess = { sub: 'u3', email: 'entry-seat@example.com', sid: 'sid-1', role: 'Entry', companies: 'WTC' };
 
     // Empty '{}' role_tab_policies must fall through to mfg_web_store.roleTabPolicies
     const fallbackSess = await verifyActiveEdgeSession(baseSess, {
