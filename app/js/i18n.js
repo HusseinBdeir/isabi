@@ -31185,6 +31185,12 @@
         ? `العقد النشط براتب قيد التحديد (${m[1]}) · مدفوع كسلفة (${advAmt}) لحين إدخال الراتب النهائي`
         : `Contrat actif avec salaire en attente (${m[1]}) · Versé en avance (${advAmt}) jusqu'à saisie du salaire final`;
     }
+    m = trimmed.match(/^Only\s+([\d.,]+)\s+L for\s+(\$[\d.,]+)\s+\((\$[\d.,]+)\s*\/\s*L\):\s*type the litres delivered, the diesel tank counts this quantity$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `فقط ${m[1]} ليتر مقابل ${m[2]} (${m[3]} / ليتر): أدخل عدد الليترات المسلّمة، فخزان المازوت يحتسب هذه الكمية`
+        : `Seulement ${m[1]} L pour ${m[2]} (${m[3]} / L) : saisissez les litres livrés, le réservoir de gasoil compte cette quantité`;
+    }
     m = trimmed.match(/^Future Advance\s*\(([^)]+)\)$/i);
     if (m) {
       return lang === 'ar' ? `سلفة مسبقة (${translatePayrollPeriodRef(m[1], 'ar')})` : `Avance Anticipée (${translatePayrollPeriodRef(m[1], 'fr')})`;

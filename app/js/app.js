@@ -102260,6 +102260,10 @@
       setHint('hint_qty', isBulkTankRefill && qty > 0 ? `${fmtNum(qty, 0)} L already received in ${val('f_company') || 'WTC'} Diesel Tank` : '', 'ok');
     } else if (pricePending && !(qty > 0)) {
       setHint('hint_qty', isBulkTankRefill ? 'Enter delivered Litres (L) from delivery slip' : 'Enter quantity received', FORM_UI.postAttempted ? 'crit' : 'warn');
+    } else if (isBulkTankRefill && qty > 0 && qty < 100 && amount / qty > 3) {
+      // Owner 2026-11-21: 84 BBConstruction deliveries were typed as Quantity 1 with only the amount, and the tank lost
+      // about 200,000 L. Diesel never costs above $3 / L, so a dearer litre is a quantity left at 1. A warning, not a block.
+      setHint('hint_qty', `Only ${fmtNum(qty, qty % 1 ? 2 : 0)} L for ${fmtUSD(amount, 2)} (${fmtUSD(amount / qty, 2)} / L): type the litres delivered, the diesel tank counts this quantity`, 'warn');
     } else if (isBulkTankRefill && qty > 0) {
       setHint('hint_qty', `+${fmtNum(qty, 0)} L added to ${val('f_company') || 'WTC'} Diesel Tank`, 'ok');
     } else {
