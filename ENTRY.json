@@ -3,12 +3,6 @@
   "branch": "wt/all-five-typo-hygiene-recs",
   "sha": "b29bb204836df1b72a6cbf89ea2620575f930b01"
  },
- "batch": {
-  "at": "2026-11-21T10:29:31Z",
-  "holder": "THEO cb64e097 (all-5-typo-hygiene-recs)",
-  "lockId": "c43b69b82eee42c4b5d20963e91f19ab",
-  "version": "19.6.419"
- },
  "gates": [
   "isabi-app: python build/audit_i18n.py",
   "isabi-app: python build/verify_public_names.py",
@@ -26,10 +20,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T10:29:07Z",
  "seenAt": "2026-11-21T10:29:07Z",
+ "shippedAt": "2026-11-21T11:27:54Z",
+ "shippedBy": "THEO cb64e097 (all-5-typo-hygiene-recs)",
+ "shippedVersion": "19.6.419",
  "site": {
   "branch": "wt/all-five-typo-hygiene-recs",
   "sha": "f210d0471064648c26ffb405cbd6457b3c6e75fa"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Site & staff 1-letter-off + Keep-as-new-name, sibling domain near-copy, Data Hygiene alias clustering, Camera/Smart Scan pre-check & signed-out telematics guard"
 }
