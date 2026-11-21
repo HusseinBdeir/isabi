@@ -3,12 +3,6 @@
   "branch": "wt/workbook-display",
   "sha": "98f45b93f5ef5f39925ebd2f642a90d2216aee4a"
  },
- "batch": {
-  "at": "2026-11-21T03:19:13Z",
-  "holder": "THEO 96b2bb5b (workbook-display)",
-  "lockId": "8a475329be5d4bd5b0e4edf60a0c5c70",
-  "version": "19.6.414"
- },
  "gates": [
   "isabi-app: python build/verify_truck_log_reopen.py",
   "isabi-app: python build/verify_close_twins.py"
@@ -18,10 +12,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T02:58:25Z",
  "seenAt": "2026-11-21T03:17:18Z",
+ "shippedAt": "2026-11-21T04:00:05Z",
+ "shippedBy": "THEO 96b2bb5b (workbook-display)",
+ "shippedVersion": "19.6.414",
  "site": {
   "branch": "wt/workbook-display",
   "sha": "90f7e7b75d5f3e6ab6e43b0802f75e794bbefefd"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Top-up follows how the workbooks display things: Haj Ali's side of the Extended ledger keyed under Bdeir Holding matches its WTC workbook row; a stakeholder keyed wrong in one company is a one-difference twin from 1,000 USD; truck logs the workbook leaves open and its loads bear out are no longer kept ended; Expense form warns on a diesel purchase typed as 1 L"
 }
