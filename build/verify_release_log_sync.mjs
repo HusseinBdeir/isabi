@@ -122,6 +122,13 @@ try {
     const e = parsed.entries[0];
     check('7 conditional anchor parsed', e.ids.includes('apvLiveCard') && e.conditional.has('apvLiveCard'));
     check('7 plain anchor not conditional', e.ids.includes('hubPanel') && !e.conditional.has('hubPanel'));
+
+    const starLine = '- **v19.6.417 Stalled `wt/*` radar (`53c65a7`, 2026-11-21):** `#p`\n';
+    const starParsed = parseReleaseLogText(starLine);
+    const starSync = checkSyncKeepsCuratedText(starLine, 'v19.6.417');
+    check('7b single asterisk inside bold header parsed and synced cleanly',
+      starParsed.entries.length === 1 && starParsed.entries[0].ver === 'v19.6.417' && starSync.ok && starSync.updated === 0,
+      `entries=${starParsed.entries.length} updated=${starSync.updated}`);
   }
 
   // 8. CRLF and mixed endings are kept line by line; no line over 2,500 bytes.

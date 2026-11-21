@@ -30,7 +30,7 @@ const STATUS_RE = /^\s+(?:-\s+)?\*Status\b/;
 // The only status lines the sync may rewrite: the text after the colon STARTS with one of these
 // phrases. A line that says the release is live and merely mentions "pending sync" later is kept.
 export const REWRITABLE_STATUS_RE = /^\s+(?:-\s+)?\*Status[^:]*:\s*(pending sync|not yet synced|partial on)\b/i;
-const ENTRY_RE = /^- \*\*(v19\.\d+\.\d+)([^*]+)\*\*/;
+const ENTRY_RE = /^- \*\*(v19\.\d+\.\d+)((?:(?!\*\*).)+)\*\*/;
 const SYNC_ENTRY_RE = /^- \*\*(v19\.\d+\.\d+)\b/;
 // `#id` = must be in the served code AND seen on screen in the demo walk.
 // `#id:conditional` = must be in the served code only: the element appears inside a modal or form,
