@@ -3,6 +3,12 @@
   "branch": "wt/seat-lens-overview-books",
   "sha": "d027ee5fba156aee21f59b83288621ce3750f7ca"
  },
+ "batch": {
+  "at": "2026-11-21T07:59:36Z",
+  "holder": "THEO a5b5a094 (seat-lens-overview-books)",
+  "lockId": "d205fe1b1e2d413cbf7866ca702a8e0a",
+  "version": "19.6.418"
+ },
  "gates": [
   "isabi: node build/verify_seat_ai_mask_edge.mjs",
   "isabi-app: node build/verify_seat_lens_and_overview.mjs"
