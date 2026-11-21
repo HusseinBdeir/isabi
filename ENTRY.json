@@ -3,12 +3,6 @@
   "branch": "wt/speed-gate-geo-twostep",
   "sha": "e7a1e019fa6d0e03bd602856424b87284bf3cc0d"
  },
- "batch": {
-  "at": "2026-11-21T04:00:40Z",
-  "holder": "agy-5679a8cc (speed-gate-geo-twostep)",
-  "lockId": "815db92403cb4fc4bc2fbaee24f73be3",
-  "version": "19.6.415"
- },
  "gates": [
   "isabi-app: node build/verify_speed_verdict.mjs",
   "isabi-app: node build/verify_two_step_paint.mjs",
@@ -19,10 +13,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T03:29:38Z",
  "seenAt": "2026-11-21T03:57:56Z",
+ "shippedAt": "2026-11-21T04:45:53Z",
+ "shippedBy": "agy-5679a8cc (speed-gate-geo-twostep)",
+ "shippedVersion": "19.6.415",
  "site": {
   "branch": "wt/speed-gate-geo-twostep",
   "sha": "cd693ebe724ccffa73efc2782e4471dc54502717"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Speed gate internal leg counter + full-unpark verdict + CRLF ignore, lazy Map Studio popups, 30% two-step threshold, assemble --skip-speed-gate"
 }
