@@ -3,6 +3,12 @@
   "branch": "wt/namebook-and-stalled-radar",
   "sha": "2e7da299266cb9dcd6e5febf5e323be7ab1e594c"
  },
+ "batch": {
+  "at": "2026-11-21T06:08:06Z",
+  "holder": "agy-a4361145 (namebook-stalled-radar)",
+  "lockId": "07921546d68a44448ca0cdd7374713c1",
+  "version": "19.6.417"
+ },
  "gates": [
   "isabi-app: python build/verify_public_names.py",
   "isabi: python build/verify_period_close_routes.py",
