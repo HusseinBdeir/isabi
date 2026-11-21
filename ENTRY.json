@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/phone-peek-and-brief",
+  "sha": "2ec1d855962508c00988171e433ed11e77f7edcc"
+ },
+ "gates": [
+  "isabi-app: node build/verify_phone_peek_brief.mjs",
+  "isabi-app: node build/verify_mobile_ux.mjs"
+ ],
+ "holder": "agy-106d51f9 (phone-peek-brief)",
+ "id": "20261121T001609Z-fd4ed336",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T00:16:09Z",
+ "seenAt": "2026-11-21T00:16:09Z",
+ "state": "waiting",
+ "summary": "Phone pinned identifier column, 1-tap Row Peek sheet, and opt-in Morning Pocket Brief across all 6 industries"
+}
