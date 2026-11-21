@@ -2802,7 +2802,7 @@
         if (r.truck) {
           const eq = getFleetIndex().eqByName.get(norm(r.truck));
           if (eq) {
-            const win = resolveTruckWindow(eq, r.company, String(r.date || '').slice(0, 10), { side: r.customer ? 'sales' : 'raw', customer: r.customer, site: r.site });
+            const win = resolveTruckWindow(eq, r.company, String(r.date || '').slice(0, 10), { side: r.customer ? 'sales' : 'raw', customer: r.customer, site: r.site, subTruck: r.wb_truck, owner: r.truck_owner });
             const cap = Number((win && win.cap) || eq.capacity || 0);
             if (cap > 0) out = q * cap;
           }
@@ -16908,6 +16908,7 @@
     const coN = norm((winSpec && winSpec.co) || eq.company || 'WTC');
     const custN = norm(winSpec && winSpec.cust);
     const siteN = norm(winSpec && winSpec.site);
+    const subN = norm(winSpec && winSpec.sub);
     const rawSide = String((winSpec && winSpec.side) || 'both').trim() || 'both';
     const side = rawSide === 'all' ? 'both' : rawSide;
     const out = [];
@@ -16917,7 +16918,7 @@
       if (!w) continue;
       const sameCo = !coN || !w.co || norm(w.co) === coN;
       if (!sameCo) continue;
-      if (norm(w.cust) !== custN || norm(w.site) !== siteN) continue;
+      if (norm(w.cust) !== custN || norm(w.site) !== siteN || norm(w.sub) !== subN) continue;
       const wSide = (w.side || 'both') === 'all' ? 'both' : (w.side || 'both');
       const sameSide = side === 'both' || wSide === 'both' || wSide === side;
       if (!sameSide) continue;
@@ -17005,24 +17006,32 @@
     const side = opts.side || '';
     const custN = norm(opts.customer);
     const siteN = norm(opts.site);
+    const subN = norm(opts.subTruck || opts.sub);
+    const ownN = norm(opts.owner);
     let best = null, bestSpec = -1, bestStart = '', bestTie = -1;
-    let maxClosedGenEndOnSide = '';
+    let maxClosedGenEndBase = '';
+    let maxClosedGenEndSub = '';
     for (let i = 0; i < eq.adj_windows.length; i++) {
       const w = eq.adj_windows[i];
       if (!w) continue;
+      const wSubN = norm(w.sub);
+      if (wSubN && wSubN !== subN) continue;
       const wSide = w.side || 'both';
       const matchesSide = !side || wSide === 'both' || wSide === 'all' || wSide === side;
-      if (matchesSide && !w.cust && !w.site && w.e && String(w.e) > maxClosedGenEndOnSide) {
-        maxClosedGenEndOnSide = String(w.e);
+      if (matchesSide && !w.cust && !w.site && w.e) {
+        const weStr = String(w.e);
+        if (wSubN && subN && wSubN === subN && weStr > maxClosedGenEndSub) maxClosedGenEndSub = weStr;
+        else if (!wSubN && weStr > maxClosedGenEndBase) maxClosedGenEndBase = weStr;
       }
       if (!matchesSide) continue;
       if (w.cust && (!custN || norm(w.cust) !== custN)) continue;
       if (w.site && (!siteN || norm(w.site) !== siteN)) continue;
       if (w.s && String(w.s) > refDate) continue;
       if (w.e && String(w.e) < refDate) continue;
-      const spec = (w.cust ? 8 : 0) + (w.site ? 4 : 0) + (w.e ? 2 : 0);
+      const subMatch = (subN && wSubN === subN) ? 16 : 0;
+      const spec = subMatch + (w.cust ? 8 : 0) + (w.site ? 4 : 0) + (w.e ? 2 : 0);
       const sVal = String(w.s || '');
-      const tie = (coN && w.co && norm(w.co) === coN ? 2 : 0) + (side && wSide !== 'both' && wSide !== 'all' ? 1 : 0);
+      const tie = (coN && w.co && norm(w.co) === coN ? 4 : 0) + (side && wSide !== 'both' && wSide !== 'all' ? 2 : 0) + (ownN && w.own && norm(w.own) === ownN ? 1 : 0);
       if (
         spec > bestSpec ||
         (spec === bestSpec && sVal > bestStart) ||
@@ -17038,12 +17047,17 @@
       for (let i = 0; i < eq.adj_windows.length; i++) {
         const w = eq.adj_windows[i];
         if (!w || w.e || w.cust || w.site) continue;
+        const wSubN = norm(w.sub);
+        if (wSubN && wSubN !== subN) continue;
         const sVal = String(w.s || '');
         if (sVal && sVal > refDate) continue;
-        if (maxClosedGenEndOnSide && sVal <= maxClosedGenEndOnSide) continue;
-        const tie = coN && w.co && norm(w.co) === coN ? 2 : 0;
-        if (!best || sVal > bestStart || (sVal === bestStart && tie >= bestTie)) {
+        const maxClosedRef = wSubN ? maxClosedGenEndSub : maxClosedGenEndBase;
+        if (maxClosedRef && sVal <= maxClosedRef) continue;
+        const subMatch = (subN && wSubN === subN) ? 16 : 0;
+        const tie = (coN && w.co && norm(w.co) === coN ? 4 : 0) + (ownN && w.own && norm(w.own) === ownN ? 1 : 0);
+        if (!best || subMatch > bestSpec || (subMatch === bestSpec && (sVal > bestStart || (sVal === bestStart && tie >= bestTie)))) {
           best = w;
+          bestSpec = subMatch;
           bestStart = sVal;
           bestTie = tie;
         }
@@ -17060,7 +17074,7 @@
     if (!eq || !Array.isArray(eq.adj_windows) || !eq.adj_windows.length) return;
     ensureEquipmentInitBaseline(eq);
     const today = todayISO();
-    const genWins = eq.adj_windows.filter(w => w && !w.cust && !w.site);
+    const genWins = eq.adj_windows.filter(w => w && !w.cust && !w.site && !w.sub);
     if (!genWins.length) return;
     const activeGen = genWins.filter(w => (!w.s || String(w.s) <= today) && (!w.e || String(w.e) >= today));
     const openGen = activeGen.filter(w => !w.e);
@@ -17140,13 +17154,15 @@
     const drv = String(winSpec.drv != null ? winSpec.drv : (eq.default_driver || '')).trim();
     const cust = String(winSpec.cust || '').trim();
     const site = String(winSpec.site || '').trim();
-    const isGeneral = !cust && !site;
+    const sub = String(winSpec.sub || '').trim();
+    const subN = norm(sub);
+    const isGeneral = !cust && !site && !sub;
     const hasExplicitEditIdx = typeof editIdx === 'number' && editIdx >= 0 && editIdx < eq.adj_windows.length;
     const explicitTarget = hasExplicitEditIdx ? eq.adj_windows[editIdx] : null;
     const existing = explicitTarget || eq.adj_windows.find(w => {
       if (!w) return false;
       if (norm(w.co) !== norm(co)) return false;
-      if (norm(w.cust) !== norm(cust) || norm(w.site) !== norm(site)) return false;
+      if (norm(w.cust) !== norm(cust) || norm(w.site) !== norm(site) || norm(w.sub) !== subN) return false;
       if (String(w.s || '') !== s) return false;
       const wSide = (w.side || 'both') === 'all' ? 'both' : (w.side || 'both');
       const sideCompat = wSide === side || side === 'both' || wSide === 'both';
@@ -17195,13 +17211,13 @@
     }
 
     const effEditIdx = existing ? eq.adj_windows.indexOf(existing) : -1;
-    const bounds = getTruckWindowBounds(eq, { co, side, cust, site }, effEditIdx);
+    const bounds = getTruckWindowBounds(eq, { co, side, cust, site, sub }, effEditIdx);
     const prevPeer = bounds.prevPeer;
     const nextPeer = bounds.nextPeer;
     let prevPeerOldE = prevPeer ? String(prevPeer.e || '').slice(0, 10) : '';
 
     if (isGeneral && e && !existing) {
-      const hasOpenBaseline = eq.adj_windows.some(w => w && w !== existing && !w.cust && !w.site && !w.e);
+      const hasOpenBaseline = eq.adj_windows.some(w => w && w !== existing && !w.cust && !w.site && !w.sub && !w.e);
       if (!hasOpenBaseline && !prevPeer && (eq.default_driver || eq.supplier || Number(eq.capacity) > 0)) {
         const baseWin = { co: co || eq.company || 'WTC', side: 'both', s: '2024-01-01', e: '', cap: Number(eq.capacity || 0) };
         if (eq.supplier) baseWin.own = eq.supplier;
@@ -17223,7 +17239,7 @@
       }
     } else if (isGeneral && !e && !existing) {
       eq.adj_windows.forEach(w => {
-        if (!w || w === existing || w.cust || w.site) return;
+        if (!w || w === existing || w.cust || w.site || w.sub) return;
         const sameCo = !co || !w.co || norm(w.co) === norm(co);
         const wSide = w.side || 'both';
         const sameSide = side === 'both' || wSide === 'both' || wSide === 'all' || wSide === side;
@@ -17260,6 +17276,7 @@
       if (drv) existing.drv = drv; else delete existing.drv;
       if (cust) existing.cust = cust; else delete existing.cust;
       if (site) existing.site = site; else delete existing.site;
+      if (sub) existing.sub = sub; else delete existing.sub;
       existing._userWin = true;
       targetWin = existing;
     } else {
@@ -17270,6 +17287,7 @@
       if (drv) targetWin.drv = drv;
       if (cust) targetWin.cust = cust;
       if (site) targetWin.site = site;
+      if (sub) targetWin.sub = sub;
       eq.adj_windows.push(targetWin);
     }
     eq.adj_windows.sort((a, b) => String(a.s || '').localeCompare(String(b.s || '')) || String(a.e || '9999-12-31').localeCompare(String(b.e || '9999-12-31')));
@@ -17443,6 +17461,7 @@
     const wEnd = rawWEnd === '9999-12-31' ? '' : rawWEnd;
     const wCustNorm = norm(targetWin.cust);
     const wSiteNorm = norm(targetWin.site);
+    const wSubNorm = norm(targetWin.sub);
     // dryRun: work out what the save would change on copies of the rows; nothing is written, stamped or sent.
     const dry = Boolean(opts.dryRun);
     const dryRows = [];
@@ -17466,6 +17485,7 @@
       const salesList = Array.isArray(SEED.records.sales_tickets) ? SEED.records.sales_tickets : [];
       salesList.forEach(src => {
         if (!src || src.voided || !matchUnit(src.truck)) return;
+        if (wSubNorm && norm(src.wb_truck) !== wSubNorm) return;
         const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
@@ -17474,7 +17494,7 @@
         if (wEnd && dt > wEnd) return;
         if (wCustNorm && norm(r.customer) !== wCustNorm) return;
         if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
-        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'sales', customer: r.customer, site: r.site });
+        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'sales', customer: r.customer, site: r.site, subTruck: r.wb_truck, owner: r.truck_owner });
         const effOwn = effWin ? (effWin.own || '') : (baseFallback.own || '');
         const effDrv = effWin ? (effWin.drv || '') : (baseFallback.drv || '');
         const effCap = effWin && Number(effWin.cap) > 0 ? Number(effWin.cap) : Number(baseFallback.cap || 0);
@@ -17527,6 +17547,7 @@
       const rawList = Array.isArray(SEED.records.raw_purchases) ? SEED.records.raw_purchases : [];
       rawList.forEach(src => {
         if (!src || src.voided || !matchUnit(src.truck)) return;
+        if (wSubNorm && norm(src.wb_truck) !== wSubNorm) return;
         const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
@@ -17534,7 +17555,7 @@
         if (wStart && dt < wStart) return;
         if (wEnd && dt > wEnd) return;
         if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
-        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'raw', site: r.site });
+        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'raw', site: r.site, subTruck: r.wb_truck, owner: r.truck_owner });
         const effOwn = effWin ? (effWin.own || '') : (baseFallback.own || '');
         const effDrv = effWin ? (effWin.drv || '') : (baseFallback.drv || '');
         const effCap = effWin && Number(effWin.cap) > 0 ? Number(effWin.cap) : Number(baseFallback.cap || 0);
@@ -19762,7 +19783,7 @@
         const isTruckUom = /^truck$/i.test(uom);
         const tonFactor = resolveProductTonFactor(prod, s.product);
         const trkRow = (anyCandidateTruckSize || activeSalesRule || activeTrRule) && s.truck
-          ? equipInfo(s.truck, s.company || 'WTC', false, { date: d, side: 'sales', customer: s.customer, site: isDelivery ? s.site : '' })
+          ? equipInfo(s.truck, s.company || 'WTC', false, { date: d, side: 'sales', customer: s.customer, site: isDelivery ? s.site : '', subTruck: s.wb_truck, owner: s.truck_owner })
           : null;
         const tsMatch = (anyCandidateTruckSize || (activeSalesRule && Number(activeSalesRule.truck_size) > 0) || (activeTrRule && Number(activeTrRule.truck_size) > 0))
           ? resolveAgreementTruckSize({
@@ -20044,7 +20065,7 @@
         const isTruckUom = /^truck$/i.test(uom);
         const rawTonFactor = resolveProductTonFactor(prod, r.product);
         const trkRow = (anyCandidateTruckSize || pRule || checkHaulLeg) && r.truck
-          ? equipInfo(r.truck, r.company || 'WTC', false, { date: d, side: 'raw', site: r.site })
+          ? equipInfo(r.truck, r.company || 'WTC', false, { date: d, side: 'raw', site: r.site, subTruck: r.wb_truck, owner: r.truck_owner })
           : null;
         const tsMatch = anyCandidateTruckSize
           ? resolveAgreementTruckSize({
@@ -36712,7 +36733,7 @@
         tons = q;
         m3 = q / tonFactor;
       } else if (uomKey === 'load' || uomKey === 'truck') {
-        const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt }) || equipInfo(t.truck)) : null;
+        const eqInfoForCap = canEquip ? (equipInfo(t.truck, co, false, { date: dt, side: sourceKind === 'raw' ? 'raw' : 'sales', customer: t.customer, site: t.site, subTruck: t.wb_truck, owner: t.truck_owner }) || equipInfo(t.truck)) : null;
         const cap = Math.max(1, Number((eqInfoForCap && eqInfoForCap.capacity) || 12));
         m3 = q * cap;
         tons = m3 * tonFactor;
@@ -100937,6 +100958,14 @@
     return s;
   }
 
+  function _editSubTruckForForm(curTruck, company, editCtx) {
+    const orig = editCtx && editCtx.orig ? editCtx.orig : editCtx;
+    if (!orig || !orig.wb_truck) return '';
+    const canon = resolveCanonicalEquipmentName(curTruck, company, false) || String(curTruck || '').trim();
+    const curN = norm(canon);
+    return curN && (curN === norm(orig.truck) || curN === norm(orig.wb_truck)) ? String(orig.wb_truck) : '';
+  }
+
   function isAutoEditUnlockedField(fid) {
     return Boolean(FORM_UI.autoUnlockedForEdit instanceof Set && FORM_UI.autoUnlockedForEdit.has(fid));
   }
@@ -100985,7 +101014,7 @@
     }
     const curTruck = val('f_truck');
     const curOwner = val('f_truckowner');
-    const winKey = winOpts ? `${company}|${winOpts.date || ''}|${winOpts.side || ''}|${norm(winOpts.customer)}|${norm(winOpts.site)}|${norm(winOpts.siteOwner)}|${norm(winOpts.product)}` : '';
+    const winKey = winOpts ? `${company}|${winOpts.date || ''}|${winOpts.side || ''}|${norm(winOpts.customer)}|${norm(winOpts.site)}|${norm(winOpts.siteOwner)}|${norm(winOpts.product)}|${norm(winOpts.subTruck || winOpts.sub)}` : '';
     const truckChanged = !FORM_UI.hydrating && curTruck !== FORM_UI.lastTruck;
     const winChanged = !FORM_UI.hydrating && !truckChanged && Boolean(curTruck && winKey && FORM_UI.lastWinKey !== undefined && FORM_UI.lastWinKey !== winKey);
     const ownerChanged = !FORM_UI.hydrating && !truckChanged && curOwner !== FORM_UI.lastTruckOwner;
@@ -102217,7 +102246,7 @@
     }
 
     // 4. Cascading Truck -> Truck Owner + Driver + Capacity (Date & Client/Site Window Aware)
-    const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3POrPickup, isUnreg, isDelivery, { date: effDate, side: 'sales', customer, site: isDelivery ? site : '', product });
+    const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3POrPickup, isUnreg, isDelivery, { date: effDate, side: 'sales', customer, site: isDelivery ? site : '', product, subTruck: _editSubTruckForForm(val('f_truck'), company, STATE.editingRecord) });
     const isSalesSubCharter = Boolean(is3POrPickup && truckRow && truckRow.supplier && truckOwner && normOwnerName(truckOwner) !== normOwnerName(truckRow.supplier));
     setHint('hint_truckowner', is3POrPickup
       ? (isSalesSubCharter
@@ -102866,7 +102895,7 @@
 
     // 3. Cascading Truck Plate -> Truck Owner + Driver + Capacity (Date & Quarry Site Window Aware)
     const savedSuppDriver = isSuppDeliv ? val('f_driver') : '';
-    const { truckName, truckRow, truckOwner, ownerFromTruck, subCharter } = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site, siteOwner: owner, product });
+    const { truckName, truckRow, truckOwner, ownerFromTruck, subCharter } = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site, siteOwner: owner, product, subTruck: _editSubTruckForForm(val('f_truck'), company, STATE.editingRecord) });
     if (isSuppDeliv && !pendRawEditRowEarly) {
       applyFieldLockState('f_driver', false, 'Optional supplier driver on supplier-delivered loads');
       const drvElSupp = $('f_driver');
@@ -105799,7 +105828,7 @@
           if (agr && Number(agr.size) > 0) { expected = Number(agr.size); src = 'agreement'; }
         }
         if (!expected) {
-          const win = resolveTruckWindow(eq, co, dt, side === 'sales' ? { side: 'sales', customer: r.customer, site: r.site } : { side: 'raw', site: r.site });
+          const win = resolveTruckWindow(eq, co, dt, side === 'sales' ? { side: 'sales', customer: r.customer, site: r.site, subTruck: r.wb_truck, owner: r.truck_owner } : { side: 'raw', site: r.site, subTruck: r.wb_truck, owner: r.truck_owner });
           if (win && Number(win.cap) > 0) { expected = Number(win.cap); src = 'log'; }
         }
         if (!expected) { noLog += 1; return; }
@@ -116788,7 +116817,7 @@
           else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
           else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
           if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet') {
-            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site }) : null;
+            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site, owner: val('f_truckowner'), subTruck: _editSubTruckForForm(val('f_truck'), company, editCtx) }) : null;
             if (!preview && !val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
               $('f_truckowner').value = tRow.supplier;
             }
@@ -117007,7 +117036,7 @@
           if (!isSuppDeliv && !val('f_truck')) addErr('f_truck', 'Truck is required.');
           if (!isSuppDeliv && !val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
           if (!isRetR && !isSuppDeliv && c.transportBy !== 'Company fleet') {
-            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site }) : null;
+            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site, owner: val('f_truckowner'), subTruck: _editSubTruckForForm(val('f_truck'), company, editCtx) }) : null;
             if (!preview && !val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
               $('f_truckowner').value = tRow.supplier;
             }
@@ -119248,6 +119277,7 @@
       record.modified_by = who.email;
       record.modified_at = new Date().toISOString();
       if (f === 'sales' || f === 'raw') {
+        if (orig.wb_truck && norm(record.truck) !== norm(orig.truck)) delete record.wb_truck;
         if (f === 'raw' && c && c.rawTot != null) record.total = c.rawTot;
         if (f === 'sales' && $('f_vatinvoice') && val('f_vatinvoice')) record.vat_invoice = val('f_vatinvoice');
         if (!record.mat_indiff) record.mat_indiff = false;
@@ -134543,6 +134573,73 @@
     return removedAny;
   }
 
+  function _winCloseKey(w) {
+    return `${norm(w.co)}|${w.side || ''}|${String(w.s || '').slice(0, 10)}|${norm(w.own)}|${norm(w.drv)}|${norm(w.site)}|${norm(w.cust || w.client)}|${norm(w.sub)}`;
+  }
+
+  function _winCompatSide(a, b) {
+    const sa = String(a || 'both').toLowerCase();
+    const sb = String(b || 'both').toLowerCase();
+    return sa === sb || sa === 'both' || sa === 'all' || sb === 'both' || sb === 'all';
+  }
+
+  function _winLev(a, b) {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    const prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      let topLeft = i - 1;
+      prev[0] = i;
+      for (let j = 1; j <= n; j++) {
+        const tmp = prev[j];
+        prev[j] = a[i - 1] === b[j - 1] ? topLeft : 1 + Math.min(topLeft, prev[j], prev[j - 1]);
+        topLeft = tmp;
+      }
+    }
+    return prev[n];
+  }
+
+  function _winOwnCompat(a, b) {
+    const na = norm(a), nb = norm(b);
+    if (!na || !nb || na === nb) return true;
+    const ta = na.split(/\s+/), tb = nb.split(/\s+/);
+    if (ta.length !== tb.length) return false;
+    return (ta[0] === tb[0] || (Math.min(ta[0].length, tb[0].length) >= 4 && _winLev(ta[0], tb[0]) <= 2)) && _winLev(na, nb) <= 2;
+  }
+
+  function _syncReopenedAdjWindows(openSourceWins, targetWins) {
+    if (!Array.isArray(openSourceWins) || !Array.isArray(targetWins)) return;
+    const reopenedWins = openSourceWins.filter(w => {
+      if (!w || typeof w !== 'object' || !w._reopenedExplicitly) return false;
+      const we = w.e ? String(w.e).slice(0, 10) : '';
+      return !we || we >= '2030-01-01';
+    });
+    if (!reopenedWins.length) return;
+    const exactKeys = new Set(reopenedWins.map(w => _winCloseKey(w)));
+    targetWins.forEach(rw => {
+      if (!rw || typeof rw !== 'object' || rw._userWin || rw._explicitEnd) return;
+      const rwe = rw.e ? String(rw.e).slice(0, 10) : '';
+      if (!rwe || rwe >= '2030-01-01') return;
+      const hit = exactKeys.has(_winCloseKey(rw)) || reopenedWins.some(sw =>
+        norm(sw.co) === norm(rw.co)
+        && String(sw.s || '').slice(0, 10) === String(rw.s || '').slice(0, 10)
+        && Math.round(Number(sw.cap || 0) * 100) === Math.round(Number(rw.cap || 0) * 100)
+        && norm(sw.site) === norm(rw.site)
+        && norm(sw.cust || sw.client) === norm(rw.cust || rw.client)
+        && norm(sw.sub) === norm(rw.sub)
+        && _winCompatSide(sw.side, rw.side)
+        && (!rw.drv || !sw.drv || norm(sw.drv) === norm(rw.drv))
+        && _winOwnCompat(sw.own, rw.own)
+      );
+      if (hit) {
+        rw.e = '';
+        rw._reopenedExplicitly = true;
+      }
+    });
+  }
+
   // Preserve explicitly closed end_date / effective_to / adj_windows when an incoming sync or stale open custom record has an open end_date
   function _preserveClosedEffectiveDates(existingObj, incomingObj) {
     if (!existingObj || !incomingObj || incomingObj._reopenedExplicitly) return;
@@ -134559,8 +134656,7 @@
         if (!w || typeof w !== 'object') return;
         const we = w.e ? String(w.e).slice(0, 10) : '';
         if (we >= '1900-01-01' && we < '2030-01-01') {
-          const wk = `${w.side || ''}|${String(w.s || '').slice(0, 10)}|${norm(w.own)}|${norm(w.drv)}|${norm(w.site)}|${norm(w.client)}`;
-          closedWinMap.set(wk, we);
+          closedWinMap.set(_winCloseKey(w), we);
         }
       });
       if (closedWinMap.size) {
@@ -134568,8 +134664,7 @@
           if (!w || typeof w !== 'object' || w._reopenedExplicitly) return;
           const we = w.e ? String(w.e).slice(0, 10) : '';
           if (!we || we >= '2030-01-01') {
-            const wk = `${w.side || ''}|${String(w.s || '').slice(0, 10)}|${norm(w.own)}|${norm(w.drv)}|${norm(w.site)}|${norm(w.client)}`;
-            const prevWe = closedWinMap.get(wk);
+            const prevWe = closedWinMap.get(_winCloseKey(w));
             if (prevWe) w.e = prevWe;
           }
         });
@@ -134685,6 +134780,7 @@
             || (Array.isArray(r.adj_windows) && (!Array.isArray(cur.adj_windows) || r.adj_windows.length > cur.adj_windows.length));
           if ((rModTs && (!curModTs || rModTs > curModTs)) || (!curModTs && completedPending)) {
             _preserveClosedEffectiveDates(cur, r);
+            if (k === 'equipment') _syncReopenedAdjWindows(cur.adj_windows, r.adj_windows);
             const preMergeCur = Object.assign({}, cur);
             const prevSeedOrig = cur._seed_orig;
             Object.assign(cur, r);
@@ -134891,6 +134987,7 @@
           if (!isAppRecord(existingById)) {
             const origSeed = captureSeedOrigSnapshot(k, existingById);
             if (origSeed && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(origSeed);
+            if (k === 'equipment') _syncReopenedAdjWindows(existingById.adj_windows, r.adj_windows);
           }
           _preserveClosedEffectiveDates(existingById, r);
           Object.assign(existingById, r);
@@ -134902,6 +134999,7 @@
           const mk = UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, r) : norm(r.name);
           const existingByName = mk ? list.find(x => x && String(x.id) !== rid && (UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, x) === mk : norm(x.name || x.equipment || x.driver) === mk)) : null;
           if (existingByName) {
+            if (!isAppRecord(existingByName) && k === 'equipment') _syncReopenedAdjWindows(existingByName.adj_windows, r.adj_windows);
             _preserveClosedEffectiveDates(existingByName, r);
             Object.assign(existingByName, r, { id: existingByName.id || r.id });
             touched = true;
@@ -185896,6 +185994,15 @@
     };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+    window.__mfgTruckTestHooks = {
+      resolveTruckWindow: (eq, co, dt, opts) => resolveTruckWindow(eq, co, dt, opts),
+      syncEquipmentBaselineFromWindows: eq => syncEquipmentBaselineFromWindows(eq),
+      appendOrUpdateTruckWindow: (eq, winSpec, editIdx) => appendOrUpdateTruckWindow(eq, winSpec, editIdx),
+      _editSubTruckForForm: (curTruck, co, editCtx) => _editSubTruckForForm(curTruck, co, editCtx),
+      _preserveClosedEffectiveDates: (ex, inc) => _preserveClosedEffectiveDates(ex, inc),
+      mergeCustomRecords: remote => mergeCustomRecords(remote),
+      getTestInternals: () => ({ STATE, SEED })
+    };
     window.__getKPI = co => getKPI(co);
     window.__computeCustomCashDeltas = (co, range) => computeCustomCashDeltas(co, range);
     window.__buildDailyTillSheetRows = co => buildDailyTillSheetRows(co);
