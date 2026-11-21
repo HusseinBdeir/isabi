@@ -59246,7 +59246,82 @@
     const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : industryDemoRows(fallback);
 
     // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
-    const rawSalesRows = mergeCustomOverSeededRows(pickTrd('salesRows', [
+    const voidedTrdSalesIds = typeof _rawVoidedDomainIds === 'function' ? _rawVoidedDomainIds('trd_sales') : new Set();
+    const trdEditsMap = (STATE && STATE.industryRowEdits) || {};
+    const trdSaleCellEditsById = new Map();
+    Object.keys(trdEditsMap).forEach(ek => {
+      if (!ek.startsWith('Automotive & Heavy Trading::')) return;
+      const ev = trdEditsMap[ek];
+      if (!ev || typeof ev !== 'object') return;
+      const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
+      if (snapTbl && snapTbl !== 'trd_sales') return;
+      const parts = ek.split('::');
+      if (parts.length < 3) return;
+      if (/receiv|target|import|landed|grn|showroom|vin|warranty|stock|movement|recon/i.test(String(parts[1] || ''))) return;
+      const pidUp = String(parts.slice(2).join('::') || '').trim().toUpperCase();
+      if (pidUp) trdSaleCellEditsById.set(pidUp, ev);
+    });
+    const applyTrdSaleCellOverride = (rowObj, idUp) => {
+      const ev = idUp ? trdSaleCellEditsById.get(idUp) : null;
+      if (!ev) return rowObj;
+      if (ev.voided || ev.voided_at || ev._scheduleVoided) return null;
+      if (!Array.isArray(ev.headers) || !Array.isArray(ev.cells)) return rowObj;
+      const origNet = round2(Number(rowObj.net_usd || 0) || 0);
+      const origVat = round2(Number(rowObj.vat_usd || 0) || 0);
+      const origTtc = round2(Number(rowObj.ttc_usd || 0) || 0);
+      const out = Object.assign({}, rowObj);
+      let netEdited = false, vatEdited = false, ttcEdited = false;
+      for (let ci = 0; ci < ev.headers.length; ci++) {
+        const hdr = String(ev.headers[ci] || '').trim().toLowerCase();
+        const rawCell = ev.cells[ci];
+        const cell = rawCell == null ? '' : String(rawCell).trim();
+        if (!hdr) continue;
+        if (hdr.includes('date')) {
+          if (/^\d{4}-\d{2}-\d{2}/.test(cell)) out.date = cell.slice(0, 10);
+        } else if (hdr.includes('customer')) {
+          if (cell) out.customer = cell;
+        } else if (hdr.includes('entity') || hdr.includes('company')) {
+          if (cell) out.company = cell;
+        } else if (hdr.includes('payment') || hdr.includes('term')) {
+          if (cell) out.payment_term = cell;
+        } else if (hdr.includes('net') && !hdr.includes('margin')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.net_usd = round2(n); netEdited = true; }
+        } else if (hdr.includes('vat') && !hdr.includes('flag') && !hdr.includes('status')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.vat_usd = round2(n); vatEdited = true; }
+        } else if (hdr.includes('ttc') || hdr.includes('total') || hdr.includes('invoiced') || /^sale(?:s)?\b/.test(hdr)) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) { out.ttc_usd = round2(n); ttcEdited = true; }
+        } else if (hdr.includes('cost') || hdr.includes('cogs')) {
+          const n = parseFloat(cell.replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) out.cost_usd = round2(n);
+        }
+      }
+      const netChanged = netEdited && Math.abs(out.net_usd - origNet) >= 0.005;
+      const vatChanged = vatEdited && Math.abs(out.vat_usd - origVat) >= 0.005;
+      const ttcChanged = ttcEdited && Math.abs(out.ttc_usd - origTtc) >= 0.005;
+      if (netChanged && !ttcChanged) {
+        if (!vatChanged) out.vat_usd = round2((Number(out.net_usd || 0) || 0) * 0.11);
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (vatChanged && !netChanged) {
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (ttcChanged && !netChanged && !vatChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      } else if (ttcChanged && !netChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        if (!vatChanged) out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      } else if (netEdited && !ttcEdited) {
+        if (!vatEdited) out.vat_usd = round2((Number(out.net_usd || 0) || 0) * 0.11);
+        out.ttc_usd = round2((Number(out.net_usd || 0) || 0) + (Number(out.vat_usd || 0) || 0));
+      } else if (ttcEdited && !netEdited && !vatChanged) {
+        out.net_usd = round2((Number(out.ttc_usd || 0) || 0) / 1.11);
+        out.vat_usd = round2((Number(out.ttc_usd || 0) || 0) - out.net_usd);
+      }
+      return out;
+    };
+    const baseSalesArr = pickTrd('salesRows', [
       { id: 'INV-SH-2026-019', book: 'BK-SH-2026-01', seq: 19, date: '2026-10-28', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', category: 'Heavy Truck Sale', item: 'Shacman X3000 6x4 Tractor Head (WP12.430E201)', chassis: 'LZGJLDR44PX019281', qty: 2, net_usd: 158000, vat_usd: 17380, ttc_usd: 175380, cost_usd: 131200, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-020', book: 'BK-SH-2026-01', seq: 20, date: '2026-10-30', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', category: 'Heavy Truck Sale', item: 'Shacman F3000 8x4 Heavy Tipper 380HP', chassis: 'LZGJLDR44PX019288', qty: 1, net_usd: 92000, vat_usd: 10120, ttc_usd: 102120, cost_usd: 75400, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-018', book: 'BK-SH-2026-01', seq: 18, date: '2026-10-24', company: 'Shacman', customer: 'Mediterranean Haulage Group', category: 'Heavy Truck Sale', item: 'Shacman M3000 6x4 Transit Concrete Mixer 10m³', chassis: 'LZGJLDR44PX019274', qty: 2, net_usd: 184000, vat_usd: 20240, ttc_usd: 204240, cost_usd: 151000, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
@@ -59255,13 +59330,37 @@
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
-    ]), getIndustryCustomRows('trd_sales')).map(rawR => {
+    ]);
+    const seededTrdSaleById = new Map();
+    for (let si = 0; si < baseSalesArr.length; si++) {
+      const sr = baseSalesArr[si];
+      if (!sr || !sr.id) continue;
+      const sidUp = String(sr.id).trim().toUpperCase();
+      const srIsGap = Boolean(sr.is_gap || sidUp === 'PH-KA-2026-D02' || sidUp.startsWith('PH-KA-2026-D02-'));
+      if (!srIsGap && !sr.voided && !sr.voided_at && !/^cash$/i.test(String(sr.payment_term || ''))) {
+        seededTrdSaleById.set(sidUp, {
+          id: sidUp,
+          company: canonCompany(sr.company) || String(sr.company || '').trim(),
+          customer: String(sr.customer || '').trim(),
+          date: String(sr.date || '').slice(0, 10),
+          ttc: round2(Number(sr.ttc_usd || 0) || 0)
+        });
+      }
+    }
+    const rawSalesRows = [];
+    mergeCustomOverSeededRows(baseSalesArr, getIndustryCustomRows('trd_sales')).forEach(rawR => {
+      if (!rawR) return;
+      const ridUp = String(rawR.id || '').trim().toUpperCase();
+      if (ridUp && voidedTrdSalesIds.has(ridUp)) return;
       const wp = getIndustryWorkflowPatch('trd_sales', rawR.id);
-      const r = wp ? Object.assign({}, rawR, wp) : rawR;
-      const margin_usd = round2(r.ttc_usd - r.cost_usd);
-      const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
+      let r = wp ? Object.assign({}, rawR, wp) : Object.assign({}, rawR);
+      if (r.voided || r.voided_at) return;
+      r = applyTrdSaleCellOverride(r, ridUp);
+      if (!r || r.voided || r.voided_at) return;
+      const margin_usd = round2(Number(r.ttc_usd || 0) - Number(r.cost_usd || 0));
+      const margin_pct = Number(r.ttc_usd || 0) > 0 ? round2((margin_usd / Number(r.ttc_usd || 0)) * 100) : 0;
       const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02' || String(r.id || '').startsWith('PH-KA-2026-D02-'));
-      return { ...r, margin_usd, margin_pct, is_gap };
+      rawSalesRows.push({ ...r, margin_usd, margin_pct, is_gap });
     });
 
     // 2. Receivables, Customer Advances & Collection Promises
@@ -59277,6 +59376,76 @@
       ...r,
       net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
     }));
+    const applyTrdInvoiceDelta = (coRaw, custNameRaw, deltaTtc, refId, refDate) => {
+      const custName = String(custNameRaw || '').trim();
+      const d = round2(Number(deltaTtc || 0) || 0);
+      if (!custName || !(Math.abs(d) > 0.005)) return;
+      const rCo = canonCompany(coRaw) || String(coRaw || '').trim();
+      if (rCo !== 'Shacman' && rCo !== 'Korri Auto') return;
+      const hitIdx = rawReceivableRows.findIndex(x => x && (canonCompany(x.company) || String(x.company || '').trim()) === rCo && norm(x.customer) === norm(custName));
+      if (hitIdx >= 0) {
+        const curRow = rawReceivableRows[hitIdx];
+        const nextInv = round2((Number(curRow.invoiced_ttc || 0) || 0) + d);
+        const settledUsd = Number(curRow.settled_usd || 0) || 0;
+        const nextGross = Math.max(0, round2(nextInv - settledUsd));
+        const nextAdv = Math.max(0, round2(settledUsd - nextInv));
+        const nextStatus = nextAdv > 0.005
+          ? 'Customer Advance (Credit)'
+          : (nextGross <= 0.005 ? 'Settled' : (curRow.status && !/settled|advance/i.test(curRow.status) ? curRow.status : 'Open'));
+        rawReceivableRows[hitIdx] = Object.assign({}, curRow, {
+          invoiced_ttc: nextInv,
+          gross_ar_usd: nextGross,
+          advance_usd: nextAdv,
+          net_ar_usd: round2(nextGross - nextAdv),
+          dso_days: nextGross <= 0.005 ? 0 : (curRow.dso_days || 1),
+          status: nextStatus
+        });
+      } else {
+        const nextGross = Math.max(0, d);
+        const nextAdv = Math.max(0, round2(-d));
+        rawReceivableRows.unshift({
+          id: refId ? `AR-${refId}` : `AR-INV-${rawReceivableRows.length + 1}`,
+          company: rCo,
+          customer: custName,
+          invoiced_ttc: d,
+          settled_usd: 0,
+          gross_ar_usd: nextGross,
+          advance_usd: nextAdv,
+          net_ar_usd: d,
+          dso_days: nextGross > 0.005 ? 1 : 0,
+          promise_date: String(refDate || ''),
+          promise_usd: 0,
+          status: nextAdv > 0.005 ? 'Customer Advance (Credit)' : 'Open'
+        });
+      }
+    };
+    const activeTrdSaleIds = new Set();
+    rawSalesRows.forEach(r => {
+      if (!r) return;
+      const ridUp = String(r.id || '').trim().toUpperCase();
+      if (ridUp) activeTrdSaleIds.add(ridUp);
+      const isCreditNow = !r.is_gap && !r.voided && !r.voided_at && !/^cash$/i.test(String(r.payment_term || ''));
+      const coNow = canonCompany(r.company) || String(r.company || '').trim();
+      const custNow = String(r.customer || '').trim();
+      const ttcNow = round2(Number(r.ttc_usd || 0) || 0);
+      const seedMeta = ridUp ? seededTrdSaleById.get(ridUp) : null;
+      if (seedMeta) {
+        if (isCreditNow && seedMeta.company === coNow && norm(seedMeta.customer) === norm(custNow)) {
+          const diff = round2(ttcNow - seedMeta.ttc);
+          if (Math.abs(diff) > 0.005) applyTrdInvoiceDelta(coNow, custNow, diff, r.id, r.date);
+        } else {
+          applyTrdInvoiceDelta(seedMeta.company, seedMeta.customer, -seedMeta.ttc, seedMeta.id, seedMeta.date);
+          if (isCreditNow) applyTrdInvoiceDelta(coNow, custNow, ttcNow, r.id, r.date);
+        }
+      } else if (isCreditNow) {
+        applyTrdInvoiceDelta(coNow, custNow, ttcNow, r.id, r.date);
+      }
+    });
+    seededTrdSaleById.forEach((seedMeta, sidUp) => {
+      if (!activeTrdSaleIds.has(sidUp)) {
+        applyTrdInvoiceDelta(seedMeta.company, seedMeta.customer, -seedMeta.ttc, seedMeta.id, seedMeta.date);
+      }
+    });
     const seedRcpts = (SEED && SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
     const curCustRev = (SEED && SEED._customRev) || 0;
     const curRcptTblRev = (SEED && SEED._tableRev && SEED._tableRev.receipts) || 0;
@@ -60924,7 +61093,7 @@
     const demoActive = isDemoScopeActive();
     const rePm = industryPeriodMatcher(opts);
     const sig = `${activeCo}|${demoActive ? 1 : 0}|${ignoreRls ? 1 : 0}|${rePm.sig}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
-    if (!ignoreSearch && !ignoreRls && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
+    if (!ignoreSearch && !ignoreRls && !opts.excludeReceiptId && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
       if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return industryDemoRows(fallback);
@@ -61106,11 +61275,12 @@
       activeReInv.push(cur);
     });
     invoices.length = 0; invoices.push(...activeReInv);
+    const exclReRctIdUp = opts.excludeReceiptId ? String(opts.excludeReceiptId).trim().toUpperCase() : '';
     const activeReRct = [];
     receipts.forEach(r => {
       if (!r) return;
       const ridUp = String(r.id || '').trim().toUpperCase();
-      if (ridUp && voidedReRct.has(ridUp)) return;
+      if (ridUp && (voidedReRct.has(ridUp) || (exclReRctIdUp && ridUp === exclReRctIdUp))) return;
       const p = getIndustryWorkflowPatch('re_receipts', r.id);
       const cur = Object.assign({}, r, p || {});
       if (cur.voided || cur.voided_at) return;
@@ -63446,7 +63616,7 @@
                   <td class="r mono">${fmtUSD(r.collected_usd, 0)}</td>
                   <td class="r mono ${r.open_ar_4112_usd > 0 ? 'warn' : ''}"><strong>${fmtUSD(r.open_ar_4112_usd, 0)}</strong></td>
                   <td class="mono">${esc(r.receipt_ref)}</td>
-                  <td><span class="badge ${(r.status === 'Paid' || r.status === 'Receipt Applied') ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${(r.status === 'Paid' || r.status === 'Receipt Applied') ? 'badge-good' : (String(r.status || '').includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status || 'Open')}</span></td>
                 </tr>
               `).join('') : emptyRow(10, 'No premium billing records match current filter')}
               ${showMoreRow('ins_billing', filteredBil.length, 10)}
@@ -70048,7 +70218,7 @@
         makeVoucherPair('2026-10-25', coLbl, 'HSP-4515-03', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', '4515', 'Resort Partner Profit-Share Pool', 'Resort Co-Investors Pool', 'Monthly resort net operating profit split allocation', demoGl ? 36000 : s.totalPartnerPool)
       );
     } else if (ind === 'Automotive & Heavy Trading') {
-      const trd = computeTradingOperations({ ignoreSearch: true, company: rawKey });
+      const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true, company: rawKey });
       const s = trd.summary;
       const salesNet = dFloor(410000, s.totalSalesNet);
       const salesVat = dFloor(32000, s.totalSalesTtc - s.totalSalesNet);
@@ -73401,14 +73571,14 @@
   function previewTradingReceiptFifo({ company, customer, method, totalSettledUsd, cashAmountUsd = null, editRow = null } = {}) {
     const settleNow = round2(Number(totalSettledUsd || 0) || 0);
     if (!customer || !(settleNow > 0.005) || (cashAmountUsd != null && !(Number(cashAmountUsd) > 0.005))) {
-      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const rCo = canonCompany(company) || String(company || '').trim();
     const probeCand = { company: rCo, customer, method: method || 'Payment', amount: settleNow };
     const kNow = typeof receiptKind === 'function' ? receiptKind(probeCand) : 'Settlement';
     if ((typeof isArSettlingReceipt === 'function' && !isArSettlingReceipt(probeCand))
       || kNow === 'Excluded' || kNow === 'Customer invoice' || kNow === 'Rent & Barter') {
-      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0 };
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const trdOps = typeof computeTradingOperations === 'function'
       ? computeTradingOperations({ company: rCo || company, ignoreSearch: true, ignoreRls: true, ignorePeriod: true })
@@ -73441,14 +73611,152 @@
       }
     }
     let openBeforeUsd = 0;
+    let invTtc = 0;
+    let otherSettled = 0;
     if (hitRow) {
-      const invTtc = Number(hitRow.invoiced_ttc || 0) || 0;
-      const otherSettled = round2((Number(hitRow.settled_usd || 0) || 0) - priorSelfSettle);
+      invTtc = Number(hitRow.invoiced_ttc || 0) || 0;
+      otherSettled = round2((Number(hitRow.settled_usd || 0) || 0) - priorSelfSettle);
       openBeforeUsd = Math.max(0, round2(invTtc - otherSettled));
     }
     const allocatedUsd = round2(Math.min(settleNow, openBeforeUsd));
     const unallocatedUsd = Math.max(0, round2(settleNow - allocatedUsd));
-    return { openBeforeUsd, allocatedUsd, unallocatedUsd };
+    const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - allocatedUsd));
+    const splitRows = [];
+    if (allocatedUsd > 0.005 && hitRow && invTtc > 0.005) {
+      const custN = norm(customer);
+      const posSales = ((trdOps && Array.isArray(trdOps.salesRows)) ? trdOps.salesRows : [])
+        .filter(r => r && !r.voided && !r.voided_at && !r.is_gap && !/^cash$/i.test(String(r.payment_term || ''))
+          && (canonCompany(r.company) || String(r.company || '').trim()) === rCo
+          && norm(r.customer || '') === custN
+          && Number(r.ttc_usd || 0) > 0.005)
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')))
+        .map(r => ({
+          id: String(r.id || 'INV'),
+          date: String(r.date || '').slice(0, 10),
+          label: r.book ? String(r.book) : (r.item ? String(r.item) : ''),
+          origUsd: round2(Number(r.ttc_usd || 0))
+        }));
+      const posSum = round2(posSales.reduce((s, x) => s + x.origUsd, 0));
+      const carryDiff = round2(invTtc - posSum);
+      const fifoQueue = [];
+      if (carryDiff > 0.005) {
+        fifoQueue.push({ id: 'PRIOR-BAL', date: '', label: 'Prior Carried Balance', origUsd: carryDiff, isPrior: true });
+      }
+      posSales.forEach(x => fifoQueue.push(x));
+      if (carryDiff < -0.005) {
+        let credRem = round2(Math.abs(carryDiff));
+        for (let i = fifoQueue.length - 1; i >= 0 && credRem > 0.005; i--) {
+          const takeCr = round2(Math.min(credRem, fifoQueue[i].origUsd));
+          fifoQueue[i].origUsd = round2(fifoQueue[i].origUsd - takeCr);
+          credRem = round2(credRem - takeCr);
+        }
+      }
+      let priorRem = Math.max(0, round2(otherSettled));
+      let allocRem = allocatedUsd;
+      for (let i = 0; i < fifoQueue.length && allocRem > 0.005; i++) {
+        const qItem = fifoQueue[i];
+        if (!(qItem.origUsd > 0.005)) continue;
+        const absorbedPrior = priorRem > 0.005 ? round2(Math.min(priorRem, qItem.origUsd)) : 0;
+        priorRem = round2(priorRem - absorbedPrior);
+        const itemOpenBefore = round2(qItem.origUsd - absorbedPrior);
+        if (!(itemOpenBefore > 0.005)) continue;
+        const settledHere = round2(Math.min(allocRem, itemOpenBefore));
+        const itemOpenAfter = Math.max(0, round2(itemOpenBefore - settledHere));
+        allocRem = round2(allocRem - settledHere);
+        splitRows.push({
+          id: qItem.id,
+          date: qItem.date,
+          label: qItem.label,
+          isPrior: Boolean(qItem.isPrior),
+          openBeforeUsd: itemOpenBefore,
+          settledNowUsd: settledHere,
+          openAfterUsd: itemOpenAfter,
+          status: itemOpenAfter <= 0.005 ? 'Cleared' : 'Partial'
+        });
+      }
+    }
+    return { openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
+  }
+
+  function lookupTradingCustomerCreditLimit(customer, company, asOfDate) {
+    const custN = norm(customer || '');
+    if (!custN) return 0;
+    const rCo = canonCompany(company) || String(company || '').trim();
+    if (typeof creditTermsForCustomer === 'function') {
+      const activeCt = creditTermsForCustomer(customer, rCo || company, asOfDate || (typeof todayISO === 'function' ? todayISO() : '2026-11-06'));
+      if (activeCt && Number(activeCt.credit_limit || 0) > 0.005) {
+        return round2(Number(activeCt.credit_limit));
+      }
+    }
+    const custRows = (SEED && SEED.records && Array.isArray(SEED.records.customers)) ? SEED.records.customers : [];
+    let bestAny = 0;
+    for (let i = 0; i < custRows.length; i++) {
+      const c = custRows[i];
+      if (!c || c.voided || norm(c.name || '') !== custN) continue;
+      const lim = Number(c.credit_limit || 0) || 0;
+      if (!(lim > 0.005)) continue;
+      const cCo = c.company ? (canonCompany(c.company) || String(c.company || '').trim()) : '';
+      if (rCo && cCo === rCo) return round2(lim);
+      if (!bestAny) bestAny = round2(lim);
+    }
+    return bestAny;
+  }
+
+  function previewTradingSaleArImpact({ company, customer, netUsd = 0, ttcUsd = null, paymentTerm = 'Credit', editRow = null, date = '' } = {}) {
+    const rCo = canonCompany(company) || String(company || '').trim();
+    const custN = norm(customer || '');
+    const thisTtc = round2(Number(ttcUsd != null ? ttcUsd : round2((Number(netUsd || 0) || 0) * 1.11)) || 0);
+    const isCredit = !/^cash$/i.test(String(paymentTerm || 'Credit').trim());
+    const effectTtc = isCredit ? thisTtc : 0;
+    if (!custN) {
+      return {
+        currentOpenArUsd: 0,
+        currentAdvanceUsd: 0,
+        thisTtc,
+        effectTtc,
+        isCredit,
+        isCreditNote: thisTtc < -0.005,
+        projectedOpenArUsd: Math.max(0, effectTtc),
+        projectedAdvanceUsd: Math.max(0, round2(-effectTtc)),
+        creditLimitUsd: 0,
+        creditLimitExceeded: false
+      };
+    }
+    const trdOps = typeof computeTradingOperations === 'function'
+      ? computeTradingOperations({ company: rCo || company, ignoreSearch: true, ignoreRls: true, ignorePeriod: true })
+      : null;
+    const arRows = (trdOps && Array.isArray(trdOps.receivableRows)) ? trdOps.receivableRows : [];
+    const hitRow = arRows.find(x => x && (canonCompany(x.company) || String(x.company || '').trim()) === rCo && norm(x.customer) === custN) || null;
+    let invoicedBefore = hitRow ? round2(Number(hitRow.invoiced_ttc || 0) || 0) : 0;
+    const settledBefore = hitRow ? round2(Number(hitRow.settled_usd || 0) || 0) : 0;
+    if (editRow && editRow._editMode && editRow.id) {
+      const editIdUp = String(editRow.id).trim().toUpperCase();
+      const origLive = ((trdOps && Array.isArray(trdOps.salesRows)) ? trdOps.salesRows : []).find(s => s && String(s.id || '').trim().toUpperCase() === editIdUp) || editRow;
+      const origIsCredit = origLive && !origLive.is_gap && !origLive.voided && !origLive.voided_at && !/^cash$/i.test(String(origLive.payment_term || ''));
+      const origCo = origLive ? (canonCompany(origLive.company) || String(origLive.company || '').trim()) : '';
+      if (origIsCredit && origCo === rCo && norm(origLive.customer || '') === custN) {
+        invoicedBefore = round2(invoicedBefore - (Number(origLive.ttc_usd || 0) || 0));
+      }
+    }
+    const currentOpenArUsd = Math.max(0, round2(invoicedBefore - settledBefore));
+    const currentAdvanceUsd = Math.max(0, round2(settledBefore - invoicedBefore));
+    const invoicedAfter = round2(invoicedBefore + effectTtc);
+    const projectedOpenArUsd = Math.max(0, round2(invoicedAfter - settledBefore));
+    const projectedAdvanceUsd = Math.max(0, round2(settledBefore - invoicedAfter));
+    const creditLimitUsd = lookupTradingCustomerCreditLimit(customer, rCo || company, date || (editRow && editRow.date));
+    const creditLimitExceeded = Boolean(isCredit && creditLimitUsd > 0.005 && projectedOpenArUsd > creditLimitUsd + 0.005);
+    return {
+      currentOpenArUsd,
+      currentAdvanceUsd,
+      thisTtc,
+      effectTtc,
+      isCredit,
+      isCreditNote: thisTtc < -0.005,
+      projectedOpenArUsd,
+      projectedAdvanceUsd,
+      creditLimitUsd,
+      creditLimitExceeded
+    };
   }
 
   function previewInsuranceBillingFifo({ company, client, policyNo, billedUsd, collectedUsd, editRow = null } = {}) {
@@ -73472,32 +73780,130 @@
       const allocatedUsd = round2(Math.min(ownNeed, col));
       const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
       const remainingOpenArUsd = Math.max(0, round2(ownNeed - allocatedUsd));
-      return { mode: 'billing', openBeforeUsd: ownNeed, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+      const splitRows = allocatedUsd > 0.005 ? [{
+        id: editIdUp || String(policyNo || 'THIS-DN'),
+        date: String((editRow && editRow.date) || ''),
+        label: policyNo ? String(policyNo) : 'Current Debit Note',
+        isUiLabel: !policyNo,
+        openBeforeUsd: ownNeed,
+        settledNowUsd: allocatedUsd,
+        openAfterUsd: remainingOpenArUsd,
+        status: remainingOpenArUsd <= 0.005 ? 'Cleared' : 'Partial'
+      }] : [];
+      return { mode: 'billing', openBeforeUsd: ownNeed, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
     }
-    if (!cliNorm) return { mode: 'receipt', openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: col, remainingOpenArUsd: 0 };
+    if (!cliNorm) return { mode: 'receipt', openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: col, remainingOpenArUsd: 0, splitRows: [] };
     const insOps = typeof computeInsuranceOperations === 'function'
       ? computeInsuranceOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeBillingId: editIdUp })
       : null;
     const allBilling = (insOps && Array.isArray(insOps.billing)) ? insOps.billing : [];
-    const openBeforeUsd = round2(allBilling
+    const rcPol = String(policyNo || '').trim().toUpperCase();
+    const openDns = allBilling
       .filter(dn => dn && !dn._isClientReceipt
         && (!editIdUp || String(dn.id || '').trim().toUpperCase() !== editIdUp)
         && Number(dn.client_billed_4112_usd || 0) > 0.005
         && Number(dn.open_ar_4112_usd || 0) > 0.005
         && norm(dn.company || 'Insurance Company') === coNorm
         && norm(dn.client || dn.insured || '') === cliNorm)
-      .reduce((s, dn) => s + Number(dn.open_ar_4112_usd || 0), 0));
+      .sort((a, b) => {
+        const aPolMatch = rcPol && String(a.policy_no || '').trim().toUpperCase() === rcPol ? 1 : 0;
+        const bPolMatch = rcPol && String(b.policy_no || '').trim().toUpperCase() === rcPol ? 1 : 0;
+        if (aPolMatch !== bPolMatch) return bPolMatch - aPolMatch;
+        return String(a.due_date || a.date || '').localeCompare(String(b.due_date || b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''));
+      });
+    const openBeforeUsd = round2(openDns.reduce((s, dn) => s + Number(dn.open_ar_4112_usd || 0), 0));
     const allocatedUsd = round2(Math.min(col, openBeforeUsd));
     const unallocatedUsd = Math.max(0, round2(col - allocatedUsd));
     const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - allocatedUsd));
-    return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd };
+    const splitRows = [];
+    let rem = allocatedUsd;
+    for (let i = 0; i < openDns.length && rem > 0.005; i++) {
+      const dn = openDns[i];
+      const dnOpen = round2(Number(dn.open_ar_4112_usd || 0));
+      if (!(dnOpen > 0.005)) continue;
+      const settledHere = round2(Math.min(rem, dnOpen));
+      const openAfter = Math.max(0, round2(dnOpen - settledHere));
+      rem = round2(rem - settledHere);
+      splitRows.push({
+        id: String(dn.id || 'DN'),
+        date: String(dn.date || '').slice(0, 10),
+        label: dn.policy_no ? String(dn.policy_no) : '',
+        openBeforeUsd: dnOpen,
+        settledNowUsd: settledHere,
+        openAfterUsd: openAfter,
+        status: openAfter <= 0.005 ? 'Cleared' : 'Partial'
+      });
+    }
+    return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
+  }
+
+  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
+    const gross = Math.max(0, round2(Number(grossUsd || 0) || 0));
+    const dep = Math.max(0, round2(Number(depositUsd || 0) || 0));
+    const coNorm = norm(company || '4235 Company S.A.L');
+    const tenNorm = norm(tenant || '');
+    const rType = String(receiptType || 'Period Rent Settlement').trim();
+    const editIdUp = (editRow && editRow._editMode && editRow.id) ? String(editRow.id).trim().toUpperCase() : '';
+    const skipAuto = rType === 'Security Deposit' || rType === 'Advance Rent Tranche';
+    const reOps = (tenNorm && typeof computeRealEstateOperations === 'function')
+      ? computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: editIdUp })
+      : null;
+    const openInvs = ((reOps && Array.isArray(reOps.invoices)) ? reOps.invoices : [])
+      .filter(inv => inv && norm(inv.company || '') === coNorm && norm(inv.tenant || '') === tenNorm && Number(inv.open_ar_usd || 0) > 0.005)
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+    const openBeforeUsd = round2(openInvs.reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
+    let allocatedUsd = 0;
+    if (allocatedInputUsd != null) {
+      allocatedUsd = Math.max(0, round2(Number(allocatedInputUsd || 0) || 0));
+    } else if (!skipAuto && tenNorm) {
+      allocatedUsd = round2(Math.min(Math.max(0, round2(gross - dep)), openBeforeUsd));
+    }
+    const unallocatedUsd = Math.max(0, round2(gross - allocatedUsd - dep));
+    const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - Math.min(allocatedUsd, openBeforeUsd)));
+    const splitRows = [];
+    if (allocatedUsd > 0.005) {
+      let rem = allocatedUsd;
+      for (let i = 0; i < openInvs.length && rem > 0.005; i++) {
+        const inv = openInvs[i];
+        const invOpen = round2(Math.max(0, Number(inv.open_ar_usd || 0)));
+        if (!(invOpen > 0.005)) continue;
+        const settledHere = round2(Math.min(rem, invOpen));
+        const openAfter = Math.max(0, round2(invOpen - settledHere));
+        rem = round2(rem - settledHere);
+        splitRows.push({
+          id: String(inv.id || 'INV'),
+          date: String(inv.date || '').slice(0, 10),
+          label: inv.tax_seq ? String(inv.tax_seq) : (inv.period ? String(inv.period) : ''),
+          openBeforeUsd: invOpen,
+          settledNowUsd: settledHere,
+          openAfterUsd: openAfter,
+          status: openAfter <= 0.005 ? 'Cleared' : 'Partial'
+        });
+      }
+      if (rem > 0.005) {
+        splitRows.push({
+          id: 'ADV-ALLOC',
+          date: '',
+          label: 'Advance / Excess Allocation',
+          isPrior: false,
+          isUiLabel: true,
+          openBeforeUsd: rem,
+          settledNowUsd: rem,
+          openAfterUsd: 0,
+          status: 'Cleared'
+        });
+      }
+    }
+    return { openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
   }
 
   function closeIndustryDomainEntryModal() {
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
     FORM_UI.domainNearCopyPeekItems = [];
+    FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
       window.MFG_AI_EDGE.stopVoiceCapture();
     }
@@ -73506,7 +73912,9 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -73602,6 +74010,7 @@
     const idLockAttr = isEditMode ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
 
     const coSelectHtml = `<select id="ide_company" data-plain-options="1" style="${inpStyle}">${entityOptions.map(c => `<option value="${esc(c)}" ${c === defCo ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    const domainFifoSplitBtnHtml = () => `<button type="button" class="ide-fifo-split-btn" id="ideFifoSplitBtn" aria-haspopup="dialog" aria-expanded="false" hidden>${typeof ic === 'function' ? ic('receipt') : ''}<span>View Invoice Split</span></button>`;
 
     let fieldsHtml = '';
     let datalistsHtml = '';
@@ -73668,7 +74077,7 @@
         ${fldWrap('Client Billed ($)', `<input type="number" id="ide_billed" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defBilled)}" placeholder="0.00">`)}
         ${fldWrap('Collected Now ($) *', `<input type="number" id="ide_collected" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defCollected)}" placeholder="0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_ins_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_ins_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_ins_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Open Client AR ($)', `<input type="text" id="ide_open_ar" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Receipt Ref', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.receipt_ref || '')}" placeholder="Cheque / transfer ref...">`)}
@@ -73715,6 +74124,7 @@
       const remCarriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
       fieldsHtml = `
         ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Remittance Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
         ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : (prefill.broker_comm_7063_usd != null ? prefill.broker_comm_7063_usd : '2250'))}">`)}
@@ -73801,7 +74211,7 @@
         ${fldWrap('Payment Method', `<select id="ide_method" data-plain-options="1" style="${inpStyle}">${rMethods.map(m => `<option value="${esc(m)}" ${m === defMethod ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`)}
+        ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Security Deposit ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_gl4196_usd != null ? prefill.deposit_gl4196_usd : '0')}">`)}
         ${fldWrap('Unallocated Advance ($)', `<input type="text" id="ide_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Reference / Note', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.audit_flag || prefill.notes || '')}" placeholder="Transfer / cheque / invoice ref...">`)}
@@ -73871,12 +74281,33 @@
         ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || (/Korri/i.test(defCo) ? 'Weichai OEMInjector & Clutch Kit' : 'Shacman F3000 6x4 Dump Truck 340HP'))}">`)}
         ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || (/Korri/i.test(defCo) ? 'WH-AL-GHAZIEH' : 'LZGJLDR41PX019301'))}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
         ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defQty)}">`)}
-        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span><span class="ide-net-crnote-hint">Use negative (-) for credit notes</span>`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defCost)}">`)}
+        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="0.01" style="${inpStyle}" value="${esc(defCost)}">`)}
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
+        <div class="trd-ar-preview-card" id="ideTrdArPreviewCard">
+          <div class="trd-ar-preview-hdr">
+            <span class="trd-ar-preview-title">Customer Open AR Impact</span>
+            <span class="trd-ar-preview-cust" id="ideTrdArPreviewCust" data-no-i18n="1">${esc(prefill.customer || custs[0] || '')}</span>
+          </div>
+          <div class="trd-ar-preview-grid">
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArCurLbl">Current Open AR</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArCurVal" data-no-i18n="1">$0.00</span>
+            </div>
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArDocLbl">This Invoice</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArDocVal" data-no-i18n="1">$0.00</span>
+            </div>
+            <div class="trd-ar-pv-cell">
+              <span class="trd-ar-pv-lbl" id="ideTrdArProjLbl">Projected Open AR</span>
+              <span class="trd-ar-pv-val mono" id="ideTrdArProjVal" data-no-i18n="1">$0.00</span>
+            </div>
+          </div>
+          <div class="trd-ar-limit-warn" id="ideTrdArLimitWarn" role="status" hidden></div>
+        </div>
       `;
     } else if (spec.key === 'trd_receipts') {
       const trdOpsForDl = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
@@ -73898,7 +74329,7 @@
         ${fldWrap('Settlement Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
         ${fldWrap('Total Settled ($)', `<input type="text" id="ide_total_settled" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
-        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
+        ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Unallocated Credit ($)', `<input type="text" id="ide_trd_unallocated" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${fldWrap('Reference', `<input type="text" id="ide_ref" style="${inpStyle}" value="${esc(prefill.reference || '')}" placeholder="Cheque / transfer / receipt no.">`)}
         ${fldWrap('Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || '')}" placeholder="Optional settlement note...">`)}
@@ -74254,6 +74685,34 @@
       msgEl.style.color = isErr ? 'var(--crit,#DC2626)' : '#0f766e';
       msgEl.textContent = txt;
     };
+    const syncFifoSplitBtn = (fifoObj, partyLabel, formKeyNow) => {
+      const btn = $('ideFifoSplitBtn');
+      const rows = (fifoObj && Array.isArray(fifoObj.splitRows)) ? fifoObj.splitRows : [];
+      const hasSplit = Boolean(fifoObj && Number(fifoObj.allocatedUsd || 0) > 0.005 && rows.length > 0);
+      if (!hasSplit) {
+        FORM_UI.domainFifoSplitPreview = null;
+        if (btn) { btn.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+        if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
+        return;
+      }
+      const nextSig = `${formKeyNow}|${partyLabel}|${fifoObj.allocatedUsd}|${rows.map(r => `${r.id}:${r.settledNowUsd}`).join(',')}`;
+      const prevSig = FORM_UI.domainFifoSplitPreview ? FORM_UI.domainFifoSplitPreview.sig : '';
+      FORM_UI.domainFifoSplitPreview = {
+        sig: nextSig,
+        formKey: formKeyNow,
+        partyLabel: String(partyLabel || '').trim(),
+        fifo: fifoObj
+      };
+      if (prevSig && prevSig !== nextSig && typeof closeFifoSplitPeekPopover === 'function') {
+        closeFifoSplitPeekPopover(false);
+      }
+      if (btn) {
+        btn.hidden = false;
+        if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(btn);
+        }
+      }
+    };
 
     const recalcLive = () => {
       showMsg('');
@@ -74275,9 +74734,10 @@
         const col = Math.max(0, numVal('ide_collected'));
         const billedRaw = numVal('ide_billed');
         const billed = billedRaw > 0.005 ? billedRaw : 0;
+        const insClient = strVal('ide_client');
         const fifoIns = previewInsuranceBillingFifo({
           company: strVal('ide_company') || defCo,
-          client: strVal('ide_client'),
+          client: insClient,
           policyNo: strVal('ide_policy_no'),
           billedUsd: billed,
           collectedUsd: col,
@@ -74286,6 +74746,7 @@
         if ($('ide_ins_allocated')) $('ide_ins_allocated').value = fmtUSD(fifoIns.allocatedUsd, 2);
         if ($('ide_ins_unallocated')) $('ide_ins_unallocated').value = fmtUSD(fifoIns.unallocatedUsd, 2);
         if ($('ide_open_ar')) $('ide_open_ar').value = fmtUSD(fifoIns.remainingOpenArUsd, 2);
+        syncFifoSplitBtn(fifoIns, insClient, 'ins_billing');
       } else if (spec.key === 'ins_remittances') {
         const pay = round2(numVal('ide_gwp') - numVal('ide_comm') - numVal('ide_settled'));
         if ($('ide_payable')) $('ide_payable').value = fmtUSD(Math.max(0, pay), 2);
@@ -74320,16 +74781,19 @@
         const coR = strVal('ide_company') || defCo;
         const tenR = strVal('ide_tenant');
         const rType = strVal('ide_type') || 'Period Rent Settlement';
-        let alloc = 0;
-        if (allocRaw !== '') {
-          alloc = Math.max(0, round2(numVal('ide_allocated')));
-        } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && tenR && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true });
-          const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(coR) && norm(inv.tenant || '') === norm(tenR)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          const priorSelf = (isEditMode && prefill && norm(prefill.company || '') === norm(coR) && norm(prefill.tenant || '') === norm(tenR)) ? Math.max(0, Number(prefill.allocated_inv_usd || 0)) : 0;
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), round2(openAr + priorSelf)));
-        }
+        const allocIn = allocRaw !== '' ? Math.max(0, round2(numVal('ide_allocated'))) : null;
+        const fifoRe = previewRealEstateReceiptFifo({
+          company: coR,
+          tenant: tenR,
+          receiptType: rType,
+          grossUsd: gross,
+          allocatedInputUsd: allocIn,
+          depositUsd: dep,
+          editRow: isEditMode ? prefill : null
+        });
+        const alloc = fifoRe.allocatedUsd;
         if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - alloc - dep)), 2);
+        syncFifoSplitBtn(fifoRe, tenR, 're_receipts');
         if (gross > 0 && dep > gross + 0.005) {
           showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true);
           return false;
@@ -74346,9 +74810,10 @@
         const totAmt = round2(usd + (lbp / fx));
         const settledTot = round2(totAmt + disc);
         if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(settledTot, 2);
+        const trdCust = strVal('ide_customer');
         const fifoTrd = previewTradingReceiptFifo({
           company: strVal('ide_company') || defCo,
-          customer: strVal('ide_customer'),
+          customer: trdCust,
           method: strVal('ide_method') || 'Payment',
           totalSettledUsd: settledTot,
           cashAmountUsd: totAmt,
@@ -74356,6 +74821,7 @@
         });
         if ($('ide_trd_allocated')) $('ide_trd_allocated').value = fmtUSD(fifoTrd.allocatedUsd, 2);
         if ($('ide_trd_unallocated')) $('ide_trd_unallocated').value = fmtUSD(fifoTrd.unallocatedUsd, 2);
+        syncFifoSplitBtn(fifoTrd, trdCust, 'trd_receipts');
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
@@ -74392,6 +74858,62 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(tot, 2);
         if ($('ide_margin')) $('ide_margin').value = `${fmtUSD(mUsd, 2)} (${mPct.toFixed(1)}%)`;
+        const trdCustName = strVal('ide_customer');
+        const arPv = previewTradingSaleArImpact({
+          company: strVal('ide_company') || defCo,
+          customer: trdCustName,
+          netUsd: net,
+          ttcUsd: tot,
+          paymentTerm: (isEditMode && prefill && prefill.payment_term) ? prefill.payment_term : 'Credit',
+          editRow: isEditMode ? prefill : null,
+          date: strVal('ide_date') || today
+        });
+        const setPvLbl = (el, enKey) => {
+          if (!el || el.dataset.enKey === enKey) return;
+          el.dataset.enKey = enKey;
+          if (el.firstChild && el.firstChild.nodeType === 3) {
+            try { delete el.firstChild.__enText; } catch (_) {}
+          }
+          el.textContent = enKey;
+        };
+        if ($('ideTrdArPreviewCust')) $('ideTrdArPreviewCust').textContent = trdCustName || '-';
+        setPvLbl($('ideTrdArCurLbl'), arPv.currentAdvanceUsd > 0.005 ? 'Current Unapplied Advance' : 'Current Open AR');
+        if ($('ideTrdArCurVal')) {
+          $('ideTrdArCurVal').textContent = fmtUSD(arPv.currentAdvanceUsd > 0.005 ? arPv.currentAdvanceUsd : arPv.currentOpenArUsd, 2);
+          $('ideTrdArCurVal').classList.toggle('is-credit', arPv.currentAdvanceUsd > 0.005);
+        }
+        setPvLbl($('ideTrdArDocLbl'), arPv.isCreditNote ? 'This Credit Note' : 'This Invoice');
+        if ($('ideTrdArDocVal')) {
+          $('ideTrdArDocVal').textContent = fmtUSD(arPv.thisTtc, 2);
+          $('ideTrdArDocVal').classList.toggle('is-credit', arPv.isCreditNote);
+        }
+        setPvLbl($('ideTrdArProjLbl'), arPv.projectedAdvanceUsd > 0.005 ? 'Projected Advance' : 'Projected Open AR');
+        if ($('ideTrdArProjVal')) {
+          $('ideTrdArProjVal').textContent = fmtUSD(arPv.projectedAdvanceUsd > 0.005 ? arPv.projectedAdvanceUsd : arPv.projectedOpenArUsd, 2);
+          $('ideTrdArProjVal').classList.toggle('is-credit', arPv.projectedAdvanceUsd > 0.005);
+          $('ideTrdArProjVal').classList.toggle('is-warn', Boolean(arPv.creditLimitExceeded));
+        }
+        const warnEl = $('ideTrdArLimitWarn');
+        if (warnEl) {
+          if (arPv.creditLimitExceeded) {
+            const warnHtml = `<span>Credit limit warning</span><span data-no-i18n="1">: </span><span>Projected Open AR</span><span data-no-i18n="1"> ${esc(fmtUSD(arPv.projectedOpenArUsd, 2))} &gt; ${esc(fmtUSD(arPv.creditLimitUsd, 2))}</span>`;
+            warnEl.hidden = false;
+            if (warnEl.dataset.warnHtml !== warnHtml) {
+              warnEl.innerHTML = warnHtml;
+              warnEl.dataset.warnHtml = warnHtml;
+            }
+          } else {
+            warnEl.hidden = true;
+            if (warnEl.dataset.warnHtml) {
+              warnEl.innerHTML = '';
+              warnEl.dataset.warnHtml = '';
+            }
+          }
+        }
+        const cardEl = $('ideTrdArPreviewCard');
+        if (cardEl && typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(cardEl);
+        }
         if (tot > 0 && mPct < 16) {
           showMsg(`Low-Margin Watch: Invoice margin ${mPct.toFixed(1)}% is below the 16.0% floor.`, false);
         }
@@ -74621,11 +75143,13 @@
       });
       syncTrdChronoBounds();
     } else if (spec.key === 'trd_sales') {
-      const syncTrdSaleTariff = () => {
+      const syncTrdSaleTariff = ev => {
         const hit = lookupActiveTradingTariff(strVal('ide_company'), strVal('ide_category'), strVal('ide_date') || today);
         const qty = Math.max(1, Math.round(numVal('ide_qty') || 1));
-        if ($('ide_net')) $('ide_net').value = String(round2(qty * hit.unit_net_usd));
-        if ($('ide_cost')) $('ide_cost').value = String(round2(qty * hit.unit_cost_usd));
+        const curNet = numVal('ide_net');
+        const keepCrNote = curNet < -0.005 || numVal('ide_cost') < -0.005;
+        if ($('ide_net') && !keepCrNote) $('ide_net').value = String(round2(qty * hit.unit_net_usd));
+        if ($('ide_cost') && !keepCrNote) $('ide_cost').value = String(round2(qty * hit.unit_cost_usd));
         const hintEl = $('ideRateSourceHint');
         if (hintEl) {
           hintEl.textContent = hit.isFallback
@@ -74798,7 +75322,7 @@
       });
       syncHldLoanChrono();
     }
-    const isNearCopyDomainKey = ['ins_policies', 'ins_billing', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hld_extended', 'hld_interactions'].includes(spec.key);
+    const isNearCopyDomainKey = ['ins_policies', 'ins_billing', 'ins_remittances', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hld_extended', 'hld_interactions'].includes(spec.key);
     const buildDomCand = () => {
       if (!isNearCopyDomainKey) return null;
       const ridNow = strVal('ide_id') || strVal('ide_code') || '';
@@ -74810,6 +75334,7 @@
         const bRaw = numVal('ide_billed');
         return { id: ridNow, company: coNow, date: dtNow, client: strVal('ide_client'), policy_no: strVal('ide_policy_no'), client_billed_4112_usd: bRaw > 0.005 ? bRaw : 0, collected_usd: colN, receipt_ref: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
+      if (spec.key === 'ins_remittances') return { id: ridNow, company: 'Insurance Company', date: dtNow, next_due: strVal('ide_due'), carrier: strVal('ide_carrier'), settled_to_carrier_usd: Math.max(0, round2(numVal('ide_settled'))) };
       if (spec.key === 're_invoicing') {
         const netN = numVal('ide_net');
         const vatN = /4235/i.test(coNow) ? round2(netN * 0.11) : 0;
@@ -74838,7 +75363,7 @@
         const lE = isCfgE ? Math.round(numVal('ide_lbp')) : Math.max(0, Math.round(numVal('ide_lbp')));
         const fxE = getLbpFxRate(dtNow) || 89500;
         const totE = round2(uE + (lE / fxE));
-        return { id: ridNow, company: 'Bdeir Holding', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: ridNow, notes: strVal('ide_notes') };
+        return { id: ridNow, company: 'Bdeir Holding', kind: 'Extended', date: dtNow, counterparty: strVal('ide_party'), direction: dirE, flow: dirE, method: dirE, amount: totE, usd_amount: uE, lbp_amount: lE, reference: ridNow, notes: strVal('ide_notes') };
       }
       if (spec.key === 'hld_interactions') return { id: ridNow, date: dtNow, fromCo: strVal('ide_from'), toCo: strVal('ide_to'), usd: numVal('ide_usd'), method: strVal('ide_method'), notes: strVal('ide_notes') };
       return null;
@@ -75181,6 +75706,7 @@
         const pay = Math.max(0, round2(gwp - comm - settled));
         addIndustryCustomRow('ins_remittances', {
           id: recId,
+          date: strVal('ide_date') || today,
           carrier: strVal('ide_carrier') || 'MedGulf',
           company: 'Insurance Company',
           gl_payable: `${strVal('ide_carrier') || 'Carrier'} Account`,
@@ -75191,7 +75717,8 @@
           client_cash_held_usd: pay,
           settlement_mode: 'Net of Commission (Bordereau)',
           next_due: strVal('ide_due') || '2026-11-30',
-          status: pay === 0 ? 'Settled' : 'Covered by Cash'
+          status: pay === 0 ? 'Settled' : 'Covered by Cash',
+          ...domNearCopyLink
         });
       } else if (spec.key === 're_leases') {
         const tenant = strVal('ide_tenant');
@@ -75309,10 +75836,9 @@
           alloc = Math.max(0, round2(numVal('ide_allocated')));
           if (round2(alloc + dep) > gross + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
         } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true });
+          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' });
           const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          const priorSelf = (isEditMode && prefill && norm(prefill.company || '') === norm(co) && norm(prefill.tenant || '') === norm(tenant)) ? Math.max(0, Number(prefill.allocated_inv_usd || 0)) : 0;
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), round2(openAr + priorSelf)));
+          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), openAr));
         }
         const unalloc = Math.max(0, round2(gross - alloc - dep));
         const nts = strVal('ide_notes') || '';
@@ -75408,15 +75934,20 @@
         saveScheduleAndReprice('trd_targets', tgtRec, cState, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 'trd_sales') {
         const net = numVal('ide_net');
+        if (Math.abs(net) < 0.01) { showMsg('Net Sale Amount ($) cannot be zero (use negative for credit notes).', true); return; }
         const vat = round2(net * 0.11);
         const tot = round2(net + vat);
         const cost = numVal('ide_cost');
+        if (net > 0 && cost < 0) { showMsg('Capitalized Landed Cost ($) cannot be negative on a positive sale.', true); return; }
+        if (net < 0 && cost > 0) { showMsg('Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).', true); return; }
         const vin = strVal('ide_chassis') || 'WH-SHOWROOM';
         const qty = (vin.length >= 6 && !/^(parts|wh-)/i.test(vin)) ? 1 : Math.max(1, Math.round(numVal('ide_qty')));
+        const preservedSeq = (isEditMode && prefill && prefill.seq != null && prefill.seq !== '') ? prefill.seq : 99;
+        const preservedTerm = (isEditMode && prefill && prefill.payment_term) ? prefill.payment_term : 'Credit';
         addIndustryCustomRow('trd_sales', {
           id: recId,
           book: strVal('ide_book') || 'BK-SH-2026-01',
-          seq: 99,
+          seq: preservedSeq,
           date: strVal('ide_date') || today,
           company: co,
           customer: strVal('ide_customer') || 'Commercial Customer',
@@ -75428,8 +75959,9 @@
           vat_usd: vat,
           ttc_usd: tot,
           cost_usd: cost,
+          payment_term: preservedTerm,
           vat_flag: '11% Official VAT',
-          book_status: 'Entered via Smart Register',
+          book_status: net < 0 ? 'Credit Note · Entered via Smart Register' : 'Entered via Smart Register',
           ...domNearCopyLink
         });
       } else if (spec.key === 'trd_receipts') {
@@ -88495,7 +89027,7 @@
       const msgEl = $('indInspValidationMsg');
       const badgeEl = $('indInspRuleStatusBadge');
 
-      const wireDomainRules = () => {
+      const wireDomainRules = ev => {
         if (textOnlyLock) return;
         if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
         if (badgeEl) { badgeEl.className = 'badge badge-good'; badgeEl.textContent = 'Live Domain Guardrails Active'; }
@@ -88561,6 +89093,38 @@
               msgEl.style.background = 'rgba(13,148,136,0.1)';
               msgEl.style.color = '#0d9488';
               msgEl.textContent = 'Trading Serial VIN Rule: Serialized Heavy Truck & Vehicle VIN rows enforce Qty = 1.';
+            }
+          }
+          const srcEl = (ev && ev.target) || document.activeElement;
+          const netInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /^net\b/.test(k) && !/\bar\b/.test(k); });
+          const vatInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /\bvat\b/.test(k) && !/flag|status/.test(k); });
+          const totInp = inputs.find(el => { const k = el.getAttribute('data-ind-edit-col') || ''; return /^(?:sale(?:s)?|total|ttc|invoiced)\b/.test(k) && !/landed/.test(k); });
+          const costInp = findInp(/cost|cogs/);
+          const marginInp = inputs.find(el => /gross margin|margin\b/.test(el.getAttribute('data-ind-edit-col') || ''));
+          if (netInp && srcEl === netInp) {
+            const netV = parseNumVal(netInp.value);
+            const vatV = round2(netV * 0.11);
+            const totV = round2(netV + vatV);
+            if (vatInp && document.activeElement !== vatInp) vatInp.value = fmtUSD(vatV, 2);
+            if (totInp && document.activeElement !== totInp) totInp.value = fmtUSD(totV, 2);
+          } else if (totInp && srcEl === totInp) {
+            const totV = parseNumVal(totInp.value);
+            const netV = round2(totV / 1.11);
+            const vatV = round2(totV - netV);
+            if (netInp && document.activeElement !== netInp) netInp.value = fmtUSD(netV, 2);
+            if (vatInp && document.activeElement !== vatInp) vatInp.value = fmtUSD(vatV, 2);
+          } else if (vatInp && srcEl === vatInp && netInp && totInp) {
+            const totV = round2(parseNumVal(netInp.value) + parseNumVal(vatInp.value));
+            if (document.activeElement !== totInp) totInp.value = fmtUSD(totV, 2);
+          }
+          if (totInp && costInp && marginInp && (srcEl === netInp || srcEl === totInp || srcEl === vatInp || srcEl === costInp)) {
+            const totNow = parseNumVal(totInp.value);
+            const costNow = parseNumVal(costInp.value);
+            const mUsd = round2(totNow - costNow);
+            const mPct = totNow > 0.005 ? round2((mUsd / totNow) * 100) : 0;
+            const mCol = marginInp.getAttribute('data-ind-edit-col') || '';
+            if (document.activeElement !== marginInp) {
+              marginInp.value = mCol.includes('$') ? `${fmtUSD(mUsd, 2)} (${mPct.toFixed(1)}%)` : `${mPct.toFixed(1)}%`;
             }
           }
         }
@@ -89085,6 +89649,8 @@
         // The cell rewrite above clears the first cell's agreement pill; recount with the saved values.
         applyIndustryRelatedAgreementPills($('workspace'));
         closeRecordInspector();
+        invalidateIndustryDomainCaches();
+        if (typeof renderApp === 'function') renderApp();
         syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
       };
@@ -94639,6 +95205,7 @@
           ${fld('Payment Method *', sel('f_method', [['Payment', 'Payment'], ['Barter', 'Barter'], ['VAT', 'VAT 11% receipt'], ['Rent', 'Rent offset'], ['VATRent', 'VAT on rent']], 'Payment'))}
           ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
           ${fld('Settlement Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
+          ${nearCopyAmtJumpHtml()}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
@@ -94892,6 +95459,7 @@
         ], 'expense'), { id: 'wrap_f_payable_leg', hintId: 'hint_payable_leg', hint: '' })}
         ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
         ${fld('Difference / Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'))}
+        ${nearCopyAmtJumpHtml()}
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
         <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
@@ -96937,10 +97505,18 @@
     const edits = (STATE && STATE.industryRowEdits) || {};
     const prefix = `WF::${bucket}::`;
     Object.keys(edits).forEach(k => {
-      if (!k.startsWith(prefix)) return;
       const ev = edits[k];
       if (!ev || !(ev.voided || ev.voided_at || ev._scheduleVoided)) return;
-      const rowId = String(k.slice(prefix.length) || '').trim();
+      let rowId = '';
+      if (k.startsWith(prefix)) {
+        rowId = String(k.slice(prefix.length) || '').trim();
+      } else {
+        const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
+        const parts = k.split('::');
+        if (parts.length >= 3 && (snapTbl === bucket || parts[1] === bucket)) {
+          rowId = String(parts.slice(2).join('::') || '').trim();
+        }
+      }
       if (!rowId) return;
       voided.add(rowId.toUpperCase());
       const upId = String(legFn(rowId) || '').trim();
@@ -96966,7 +97542,86 @@
     return expanded;
   }
 
-  function nearCopySiblingPool(crKey) {
+  function nearCopySiblingPool(crKey, filter = null) {
+    const winDays = filter && filter.winDays ? filter.winDays : null;
+    const coFilter = filter && filter.co ? norm(filter.co) : '';
+    const passCoDate = (rawCo, rawDt, defCo = '') => {
+      if (winDays) {
+        const d = String(rawDt || '').slice(0, 10);
+        if (!d || !winDays.has(d)) return false;
+      }
+      if (coFilter) {
+        const effCo = String(rawCo || defCo || '');
+        if (norm(effCo) !== coFilter) return false;
+      }
+      return true;
+    };
+    const ov = (base, bkt) => {
+      const cust = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows(bkt) : [];
+      const voidIds = _rawVoidedDomainIds(bkt);
+      const cleanBase = Array.isArray(base)
+        ? (voidIds.size ? base.filter(r => r && !voidIds.has(String(r.id || r.code || '').trim().toUpperCase())) : base.slice())
+        : [];
+      const merged = typeof mergeCustomOverSeededRows === 'function' ? mergeCustomOverSeededRows(cleanBase, cust) : cleanBase.concat(cust);
+      return merged.map(r => {
+        const wp = (typeof getIndustryWorkflowPatch === 'function' && r && r.id) ? getIndustryWorkflowPatch(bkt, r.id) : null;
+        return wp ? Object.assign({}, r, wp) : r;
+      }).filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided);
+    };
+    const scanSpineTable = (tblKey, cb) => {
+      const custArr = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords[tblKey])) ? STATE.customRecords[tblKey] : [];
+      const seedArr = (SEED && SEED.records && Array.isArray(SEED.records[tblKey])) ? SEED.records[tblKey] : [];
+      const seen = new Set();
+      const visit = arr => {
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r) continue;
+          const rid = String(r.id || '').trim();
+          if (rid && seen.has(rid)) continue;
+          if (rid) seen.add(rid);
+          if (r.voided || r.voided_at || r._absorbedSeedTwin || r._scheduleVoided || r.price_pending || r.group_transfer_id) continue;
+          cb(r);
+        }
+      };
+      visit(custArr);
+      visit(seedArr);
+    };
+    const extMovSisterPool = (wantDir, outMode) => {
+      const out = [];
+      scanSpineTable('external_movements', r => {
+        if (/^extended$/i.test(String(r.kind || '')) || /^Extended\./i.test(String(r.notes || ''))) return;
+        const dirStr = String(r.direction || r.flow || r.method || '').trim();
+        if (/^(?:config|remove|adjusted)$/i.test(dirStr)) return;
+        const dirCls = /out/i.test(dirStr) ? 'out' : (/in/i.test(dirStr) ? 'in' : '');
+        if (dirCls !== wantDir) return;
+        if (!passCoDate(r.company, r.date, '')) return;
+        const cp = String(r.counterparty || r.party || '').trim();
+        if (!cp) return;
+        const lbpRaw = Number(r.lbp_amount || 0) || 0;
+        const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || r.principal || 0))) || 0;
+        const amtRaw = Number(r.amount != null ? r.amount : (r.principal != null ? r.principal : usdRaw)) || 0;
+        const baseObj = {
+          id: `extm:${r.id}`,
+          _srcId: String(r.id || ''),
+          _raw: r,
+          _bucket: 'external_movements',
+          _crossScreenSister: true,
+          _srcLabel: 'External Movement',
+          company: r.company || '',
+          date: String(r.date || '').slice(0, 10),
+          amount: amtRaw,
+          usd_amount: usdRaw,
+          lbp_amount: lbpRaw,
+          reference: r.reference || r.id || '',
+          notes: r.notes || ''
+        };
+        if (outMode === 'receipts') out.push({ ...baseObj, customer: cp, method: 'Payment' });
+        else if (outMode === 'settlements') out.push({ ...baseObj, supplier: cp, method: 'Payment' });
+        else if (outMode === 'expenses') out.push({ ...baseObj, supplier: cp, method: 'Cash' });
+      });
+      return out;
+    };
+
     if (crKey === 'external_movements') {
       const hld = SEED && SEED.industryLive && SEED.industryLive.holding;
       const legs = (hld && Array.isArray(hld.sisterExternalLegs)) ? hld.sisterExternalLegs : [];
@@ -96980,12 +97635,14 @@
         const wp = (typeof getIndustryWorkflowPatch === 'function' && r.id) ? getIndustryWorkflowPatch('hld_interactions', r.id) : null;
         if (wp) r = Object.assign({}, r, wp);
         if (r.voided || r.voided_at || r._scheduleVoided) continue;
+        const rowCo = r.company || 'Bdeir Holding';
+        if (!passCoDate(rowCo, r.date, 'Bdeir Holding')) continue;
         const dir = String(r.direction || r.flow || r.method || '').trim();
         const usdVal = Number(r.usd_amount != null ? r.usd_amount : (r.currency === 'LBP' ? 0 : (r.amount || r.in_usd || r.out_usd || 0))) || 0;
         const amtVal = Number(r.amount != null ? r.amount : (r.in_usd || r.out_usd || usdVal)) || 0;
         out.push({
           ...r,
-          company: r.company || 'Bdeir Holding',
+          company: rowCo,
           counterparty: r.counterparty || r.party || '',
           direction: dir,
           flow: dir,
@@ -96999,6 +97656,7 @@
       for (let i = 0; i < custIc.length; i++) {
         const cr = custIc[i];
         if (!cr || cr.voided || cr.voided_at || cr._scheduleVoided) continue;
+        if (!passCoDate('Bdeir Holding', cr.date, 'Bdeir Holding')) continue;
         const fromCo = String(cr.fromCo || cr.company || '').trim();
         const toCo = String(cr.toCo || cr.counterparty || cr.party || '').trim();
         const usdVal = Number(cr.usd != null ? cr.usd : (cr.amount || 0)) || 0;
@@ -97024,26 +97682,172 @@
           notes: cr.notes || ''
         });
       }
+      if (!(filter && filter.skipOpSister)) {
+        const indLive = (SEED && SEED.industryLive) || {};
+        scanSpineTable('receipts', r => {
+          if (NEAR_COPY_SUM_NOT_PAID.includes(String(r.method || '').trim())) return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.customer || '').trim();
+          if (!cp) return;
+          const isTrd = /shacman|korri/i.test(String(r.company || ''));
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || 0))) || 0;
+          const amtRaw = Number(r.amount != null ? r.amount : usdRaw) || 0;
+          out.push({
+            id: `${isTrd ? 'trd_receipts' : 'receipts'}:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: isTrd ? 'trd_receipts' : 'receipts',
+            _crossScreenSister: true,
+            _srcLabel: isTrd ? 'Invoice Receipt' : 'Customer Receipt',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Inflow',
+            flow: 'Inflow',
+            method: 'Inflow',
+            amount: amtRaw,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        scanSpineTable('settlements', r => {
+          if (NEAR_COPY_SUM_NOT_PAID.includes(String(r.method || '').trim())) return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.supplier || '').trim();
+          if (!cp) return;
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : (r.amount || 0))) || 0;
+          const amtRaw = Number(r.amount != null ? r.amount : usdRaw) || 0;
+          out.push({
+            id: `settlements:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 'settlements',
+            _crossScreenSister: true,
+            _srcLabel: 'Supplier Payment',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Outflow',
+            flow: 'Outflow',
+            method: 'Outflow',
+            amount: amtRaw,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        scanSpineTable('expenses', r => {
+          const m = String(r.method || '').trim();
+          if (m !== 'Cash' && m !== 'Cash VAT Dis') return;
+          if (!passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.supplier || '').trim();
+          if (!cp) return;
+          const lbpRaw = Number(r.lbp_amount || 0) || 0;
+          const baseAmt = r.amount != null ? Number(r.amount) : (Number(r.total_ttc != null ? r.total_ttc : (r.total || 0)) || 0);
+          const usdRaw = Number(r.usd_amount != null ? r.usd_amount : (lbpRaw > 1 ? 0 : baseAmt)) || 0;
+          out.push({
+            id: `expenses:${r.id}`,
+            _srcId: String(r.id || ''),
+            _raw: r,
+            _bucket: 'expenses',
+            _crossScreenSister: true,
+            _srcLabel: 'Cash Expense',
+            company: r.company || '',
+            date: String(r.date || '').slice(0, 10),
+            counterparty: cp,
+            direction: 'Outflow',
+            flow: 'Outflow',
+            method: 'Outflow',
+            amount: baseAmt,
+            usd_amount: usdRaw,
+            lbp_amount: lbpRaw,
+            invoice: r.invoice || '',
+            reference: r.reference || r.invoice || r.id || '',
+            notes: r.notes || ''
+          });
+        });
+        ov((indLive.realestate && indLive.realestate.receipts) || [], 're_receipts').forEach(r => {
+          const g = Number(r.gross_usd || 0) || 0;
+          if (!(g > 0.005) || !passCoDate(r.company, r.date, '4235 Company S.A.L') || !r.tenant) return;
+          out.push({
+            id: `re_receipts:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 're_receipts',
+            _crossScreenSister: true, _srcLabel: 'Tenant Receipt',
+            company: r.company || '4235 Company S.A.L', date: String(r.date || '').slice(0, 10),
+            counterparty: r.tenant, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: g, usd_amount: g, lbp_amount: 0,
+            invoice: r.linked_invoice || '', reference: r.reference || r.id || '', notes: r.audit_flag || r.notes || ''
+          });
+        });
+        ov((indLive.insurance && indLive.insurance.billing) || [], 'ins_billing').forEach(r => {
+          const col = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd || 0)) || 0;
+          if (!(col > 0.005) || !passCoDate(r.company, r.date, 'Insurance Company')) return;
+          const cp = String(r.client || r.insured || '').trim();
+          if (!cp) return;
+          out.push({
+            id: `ins_billing:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'ins_billing',
+            _crossScreenSister: true, _srcLabel: 'Client Receipt',
+            company: r.company || 'Insurance Company', date: String(r.date || '').slice(0, 10),
+            counterparty: cp, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: col, usd_amount: col, lbp_amount: 0,
+            invoice: r.policy_no || '', reference: r.receipt_ref || r.id || '', notes: r.notes || ''
+          });
+        });
+        ov((indLive.insurance && indLive.insurance.remittances) || [], 'ins_remittances').forEach(r => {
+          const setAmt = Number(r.settled_to_carrier_usd || 0) || 0;
+          const rDate = String(r.date || r.next_due || '').slice(0, 10);
+          if (!(setAmt > 0.005) || !passCoDate(r.company, rDate, 'Insurance Company') || !r.carrier) return;
+          out.push({
+            id: `ins_remittances:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'ins_remittances',
+            _crossScreenSister: true, _srcLabel: 'Carrier Bordereau',
+            company: r.company || 'Insurance Company', date: rDate,
+            counterparty: r.carrier, direction: 'Outflow', flow: 'Outflow', method: 'Outflow',
+            amount: setAmt, usd_amount: setAmt, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.settlement_mode || ''
+          });
+        });
+        ov((indLive.hospitality && indLive.hospitality.venueRows) || [], 'hsp_revenue').forEach(r => {
+          const ttc = Number(r.ttc_usd || 0) || 0;
+          if (!(ttc > 0.005) || !passCoDate(r.company, r.date, '')) return;
+          const cp = String(r.outlet || r.company || '').trim();
+          if (!cp) return;
+          out.push({
+            id: `hsp_revenue:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'hsp_revenue',
+            _crossScreenSister: true, _srcLabel: 'Venue Daily Revenue',
+            company: r.company || '', date: String(r.date || '').slice(0, 10),
+            counterparty: cp, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: ttc, usd_amount: ttc, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.notes || ''
+          });
+        });
+        ov((indLive.hospitality && indLive.hospitality.membershipRows) || [], 'hsp_memberships').forEach(r => {
+          const paid = Number(r.paid_usd || 0) || 0;
+          const rDate = String(r.start_date || r.date || '').slice(0, 10);
+          if (!(paid > 0.005) || !passCoDate(r.company, rDate, '') || !r.member) return;
+          out.push({
+            id: `hsp_memberships:${r.id}`, _srcId: String(r.id || ''), _raw: r, _bucket: 'hsp_memberships',
+            _crossScreenSister: true, _srcLabel: 'Seasonal Membership',
+            company: r.company || '', date: rDate,
+            counterparty: r.member, direction: 'Inflow', flow: 'Inflow', method: 'Inflow',
+            amount: paid, usd_amount: paid, lbp_amount: 0,
+            invoice: '', reference: r.id || '', notes: r.unit || ''
+          });
+        });
+      }
       return out;
     }
     if (crKey === 'receipts') {
       const out = [];
-      const ov = (base, bkt) => {
-        const cust = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows(bkt) : [];
-        const voidIds = _rawVoidedDomainIds(bkt);
-        const cleanBase = Array.isArray(base)
-          ? (voidIds.size ? base.filter(r => r && !voidIds.has(String(r.id || r.code || '').trim().toUpperCase())) : base.slice())
-          : [];
-        const merged = typeof mergeCustomOverSeededRows === 'function' ? mergeCustomOverSeededRows(cleanBase, cust) : cleanBase.concat(cust);
-        return merged.map(r => {
-          const wp = (typeof getIndustryWorkflowPatch === 'function' && r && r.id) ? getIndustryWorkflowPatch(bkt, r.id) : null;
-          return wp ? Object.assign({}, r, wp) : r;
-        }).filter(r => r && !r.voided && !r.voided_at && !r._scheduleVoided);
-      };
       const reRcts = (SEED && SEED.industryLive && SEED.industryLive.realestate && SEED.industryLive.realestate.receipts) || [];
       ov(reRcts, 're_receipts').forEach(r => {
         const g = Number(r.gross_usd || 0) || 0;
-        if (g > 0.005) {
+        if (g > 0.005 && passCoDate(r.company, r.date, '4235 Company S.A.L')) {
           out.push({
             id: `re_receipts:${r.id}`,
             _srcId: String(r.id || ''),
@@ -97065,7 +97869,7 @@
       const insBill = (SEED && SEED.industryLive && SEED.industryLive.insurance && SEED.industryLive.insurance.billing) || [];
       ov(insBill, 'ins_billing').forEach(r => {
         const col = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd || 0)) || 0;
-        if (col > 0.005) {
+        if (col > 0.005 && passCoDate(r.company, r.date, 'Insurance Company')) {
           out.push({
             id: `ins_billing:${r.id}`,
             _srcId: String(r.id || ''),
@@ -97084,16 +97888,22 @@
           });
         }
       });
+      if (!(filter && filter.skipOpSister)) {
+        extMovSisterPool('in', 'receipts').forEach(x => out.push(x));
+      }
       return out;
+    }
+    if ((crKey === 'settlements' || crKey === 'expenses') && !(filter && filter.skipOpSister)) {
+      return extMovSisterPool('out', crKey);
     }
     return [];
   }
 
-  function nearCopyPool(crKey) {
+  function nearCopyPool(crKey, filter = null) {
     const seedRows = (SEED.records && SEED.records[crKey]) || [];
     const customRows = (STATE.customRecords && STATE.customRecords[crKey]) || [];
     const base = customRows.length ? seedRows.concat(customRows) : seedRows;
-    const extra = nearCopySiblingPool(crKey);
+    const extra = nearCopySiblingPool(crKey, filter);
     return extra.length ? base.concat(extra) : base;
   }
 
@@ -97264,8 +98074,13 @@
   function _findNearCopySumGroup(days, byDay, recAmt, recLbp, recPoundsOnly, toks, getRefs, sameReason = 'sum', gapReason = 'sum_gap') {
     const lbpOf = x => Number(x.lbp_amount || 0) || 0;
     const poundsOnly = x => lbpOf(x) > 1 && !((Number(x.usd_amount || 0) || 0) > 0.005);
-    const addsUp = g => {
-      if (g.length < 2) return false;
+    const allowSingleSis = sameReason === 'sum' || sameReason === 'sister';
+    const addsUp = (g, allowOneSis = false) => {
+      if (!g || !g.length) return false;
+      if (g.length < 2 && !(allowOneSis && g.length === 1 && g[0] && g[0]._crossScreenSister)) return false;
+      if (g.some(x => x && x._crossScreenSister)) {
+        return Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - recAmt) < NEAR_COPY_SUM_USD_TOL;
+      }
       const lbpOff = Math.abs(g.reduce((s, x) => s + lbpOf(x), 0) - recLbp) < NEAR_COPY_SUM_LBP_TOL;
       if (recPoundsOnly && g.every(poundsOnly)) return lbpOff;
       return lbpOff && Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - recAmt) < NEAR_COPY_SUM_USD_TOL;
@@ -97273,21 +98088,36 @@
     for (let di = 0; di < days.length; di++) {
       const d = days[di];
       const cands = byDay.get(d);
-      let group = addsUp(cands) ? cands : null;
+      if (!cands || !cands.length) continue;
+      let group = addsUp(cands, allowSingleSis) ? cands : null;
       if (!group && toks.size) {
         const named = cands.filter(x => {
           const rToks = getRefs(x);
           for (const t of rToks) if (toks.has(t)) return true;
           return false;
         });
-        if (addsUp(named)) group = named;
+        if (addsUp(named, allowSingleSis)) group = named;
       }
-      if (group) return { row: group[0], rows: group.slice(), day: d, reason: di === 0 ? sameReason : gapReason };
+      if (!group && allowSingleSis) {
+        const sisRows = cands.filter(x => x && x._crossScreenSister);
+        const singleSis = sisRows.find(x => addsUp([x], true));
+        if (singleSis) {
+          group = [singleSis];
+        } else if (sisRows.length >= 2 && addsUp(sisRows, true)) {
+          group = sisRows;
+        }
+      }
+      if (group) {
+        const allSis = group.every(x => x && x._crossScreenSister);
+        const effSame = allSis ? (group.length === 1 ? 'sister' : 'sister_sum') : sameReason;
+        const effGap = allSis ? (group.length === 1 ? 'sister_gap' : 'sister_sum_gap') : gapReason;
+        return { row: group[0], rows: group.slice(), day: d, reason: di === 0 ? effSame : effGap };
+      }
     }
     return null;
   }
 
-  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' }, or null.
+  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' | 'sum_typo' | 'sum_gap_typo' | 'sister' | 'sister_gap' | 'sister_sum' | 'sister_sum_gap' }, or null.
   function findNearCopySumEntry(crKey, rec) {
     const pk = NEAR_COPY_SUM_PARTY[crKey];
     if (!pk || !rec || rec.price_pending || rec.group_transfer_id || rec.backpay_voucher || rec._backpay_lines) return null;
@@ -97301,7 +98131,8 @@
     const byDay = new Map(days.map(d => [d, []]));
     const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'counterparty') && party.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
     const closeByParty = checkTypo ? new Map() : null;
-    const rows = nearCopyPool(crKey);
+    const isExtExtended = crKey === 'external_movements' && (/^extended$/i.test(String(rec.kind || '')) || /^Extended\./i.test(String(rec.notes || '')));
+    const rows = nearCopyPool(crKey, { winDays: new Set(days), co, skipOpSister: isExtExtended });
     const seen = new Set();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -97310,7 +98141,7 @@
       const rDay = String(r.date || '').slice(0, 10);
       const bucket = byDay.get(rDay);
       if (!bucket || norm(r.company || '') !== co) continue;
-      if (rec.id && ((r.id && String(r.id) === String(rec.id)) || (r._srcId && String(r._srcId) === String(rec.id)))) continue;
+      if (rec.id && ((r.id && String(r.id) === String(rec.id)) || (r._srcId && String(r._srcId) === String(rec.id)) || (r._raw && r._raw.id && String(r._raw.id) === String(rec.id)))) continue;
       if (isSelfEditingRow(r, crKey)) continue;
       if (r.id) {
         if (seen.has(String(r.id))) continue;
@@ -97422,7 +98253,7 @@
     const refStr = String(explicitRef || '').trim();
     if (refStr) return refStr.length > 18 ? `${refStr.slice(0, 17)}…` : refStr;
     const alt = String(raw.ticket_no || raw.tax_seq || raw.policy_no || raw.receipt_ref || raw.reference || raw.invoice || raw.code || raw.id || '').trim()
-      .replace(/^(?:re_receipts|ins_billing|extm|sister|receipts|hld_ic):/i, '');
+      .replace(/^(?:re_receipts|ins_billing|ins_remittances|extm|sister|receipts|trd_receipts|settlements|expenses|hsp_revenue|hsp_memberships|hld_ic):/i, '');
     if (!alt) return 'Entry';
     return alt.length > 16 ? `${alt.slice(0, 15)}…` : alt;
   }
@@ -97468,6 +98299,10 @@
       sum_gap: 'Same party, these entries one day apart add up to this amount',
       sum_typo: 'Same day, entries under a similar name add up to this amount',
       sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      sister: 'Same day and party, already recorded on another form',
+      sister_gap: 'Same party, recorded one day apart on another form',
+      sister_sum: 'Same day and party, entries on another form add up to this amount',
+      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount',
       ticket: 'Same day, party, truck and amount, ticket number one digit apart',
       ticket_typo: 'Same day, similar customer name, same truck and amount, ticket number one digit apart',
       vat: 'Same day and supplier, amount differs by exactly the 11% VAT',
@@ -97475,18 +98310,23 @@
     };
     const reason = reasonMap[hit.reason] || '';
     if (hint && hit.rows) {
-      const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment', external_movements: 'External Movement' }[crKey] || 'Entry';
+      const defLabel = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment', external_movements: 'External Movement' }[crKey] || 'Entry';
+      const firstLabel = (hit.rows[0] && hit.rows[0]._srcLabel) || defLabel;
+      const mixedLabels = hit.rows.some(r => ((r && r._srcLabel) || defLabel) !== firstLabel);
       const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
       const parts = hit.rows.map((r, idx) => {
         const ref = cleanVoucherRef(r.invoice || r.reference);
         const chipTok = nearCopyPeekToken(r, ref);
         const u = nearCopySumUsd(r);
-        FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
-        return nearCopyPeekChipHtml('mfg', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
+        const rLabel = (r && r._srcLabel) || defLabel;
+        FORM_UI.nearCopyPeekItems.push({ scope: 'mfg', bucket: (r && r._bucket) || crKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+        const chipHtml = nearCopyPeekChipHtml('mfg', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
+        return mixedLabels ? `<span>${esc(rLabel)}</span><span data-no-i18n="1"> ${chipHtml}</span>` : chipHtml;
       }).join(' + ');
       const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
       const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
+      const headHtml = mixedLabels ? '' : `<span>${esc(firstLabel)}</span>`;
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span>${headHtml}<span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint) {
       const r = hit.row;
       const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
@@ -97533,6 +98373,7 @@
     const ico = typeof ic === 'function' ? ic('warn') : '';
     return `<button type="button" class="near-copy-jump span-3" id="nearCopyAmtJump" hidden>${ico}<span>Looks like an entry already in ISABI, see below</span></button>`;
   }
+  if (typeof window !== 'undefined') window.nearCopyAmtJumpHtml = nearCopyAmtJumpHtml;
 
   function domainNearCopyAmtJumpHtml() {
     const ico = typeof ic === 'function' ? ic('warn') : '';
@@ -97583,6 +98424,7 @@
     hsp_memberships: 'Seasonal Membership',
     ins_billing: 'Client Receipt',
     ins_policies: 'Insurance Policy',
+    ins_remittances: 'Carrier Bordereau',
     hld_extended: 'Extended Entry',
     hld_interactions: 'Sister Transfer'
   };
@@ -97616,7 +98458,7 @@
   }
 
   function _domIsSelfId(rowId, recId, origId) {
-    const stripPoolPrefix = v => String(v || '').trim().toUpperCase().replace(/^(?:RE_RECEIPTS|INS_BILLING|EXTM|SISTER|RECEIPTS):/, '');
+    const stripPoolPrefix = v => String(v || '').trim().toUpperCase().replace(/^(?:RE_RECEIPTS|INS_BILLING|INS_REMITTANCES|EXTM|SISTER|RECEIPTS|TRD_RECEIPTS|SETTLEMENTS|EXPENSES|HSP_REVENUE|HSP_MEMBERSHIPS|HLD_IC):/, '');
     const chk = [recId, origId].filter(Boolean).map(v => stripPoolPrefix(v)).filter(Boolean);
     if (!chk.length || !rowId) return false;
     const rawUp = String(rowId).trim().toUpperCase();
@@ -97688,10 +98530,55 @@
     scanArr(seedR);
   }
 
+  function _appendExternalSisterPoolRows(pool, wantDir, winDays, co) {
+    const custExt = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.external_movements)) ? STATE.customRecords.external_movements : [];
+    const seedExt = (SEED && SEED.records && Array.isArray(SEED.records.external_movements)) ? SEED.records.external_movements : [];
+    const seen = new Set();
+    const scanArr = arr => {
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        const rid = String(r.id || '').trim();
+        if (rid && seen.has(rid)) continue;
+        if (rid) seen.add(rid);
+        if (r.voided || r.voided_at || r._absorbedSeedTwin || r._scheduleVoided || r.price_pending || r.group_transfer_id) continue;
+        if (/^extended$/i.test(String(r.kind || '')) || /^Extended\./i.test(String(r.notes || ''))) continue;
+        const dirStr = String(r.direction || r.flow || r.method || '').trim();
+        if (/^(?:config|remove|adjusted)$/i.test(dirStr)) continue;
+        const dirCls = /out/i.test(dirStr) ? 'out' : (/in/i.test(dirStr) ? 'in' : '');
+        if (dirCls !== wantDir) continue;
+        const dSlice = String(r.date || '').slice(0, 10);
+        if (winDays && !winDays.has(dSlice)) continue;
+        if (co && norm(r.company || '') !== co) continue;
+        const cp = String(r.counterparty || r.party || '').trim();
+        if (!cp) continue;
+        const u = nearCopySumUsd(r);
+        if (!(Math.abs(u) > 0.005)) continue;
+        pool.push({
+          id: `extm:${r.id}`,
+          _raw: r,
+          _bucket: 'external_movements',
+          _crossScreenSister: true,
+          _srcLabel: 'External Movement',
+          company: r.company || '',
+          date: dSlice,
+          partyKey: nearCopyPartyKey(cp),
+          partyLabel: cp,
+          amount: Math.round(u * 100) / 100,
+          lbp_amount: 0,
+          ref: r.reference || r.id || '',
+          refs: nearCopyRefTokens(r.id, r.reference, r.notes)
+        });
+      }
+    };
+    scanArr(custExt);
+    scanArr(seedExt);
+  }
+
   function findDomainNearCopyEntry(formKey, rec, origId = '') {
     if (!rec || !formKey) return null;
     if (formKey === 'trd_receipts') return findNearCopyEntry('receipts', rec);
-    if (formKey === 'hld_extended') return findNearCopyEntry('external_movements', rec);
+    if (formKey === 'hld_extended') return findNearCopyEntry('external_movements', Object.assign({ kind: 'Extended' }, rec));
     const live = (SEED && SEED.industryLive) || {};
     const dtKey = formKey === 'hsp_memberships' ? 'start_date' : 'date';
     const day = String(rec[dtKey] || rec.date || '').slice(0, 10);
@@ -97719,6 +98606,7 @@
         refs: nearCopyRefTokens(r.id, r.reference, r.audit_flag, r.linked_invoice)
       }));
       _appendSharedReceiptPoolRows(pool, winDays, co);
+      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -97745,13 +98633,20 @@
     }
 
     if (formKey === 'trd_sales') {
-      const amt = Number(rec.ttc_usd || 0) || 0;
+      const rawAmt = Number(rec.ttc_usd || 0) || 0;
+      if (!(Math.abs(rawAmt) > 0.005)) return null;
+      const isNeg = rawAmt < -0.005;
+      const amt = Math.abs(rawAmt);
       const party = nearCopyPartyKey(rec.customer);
-      const pool = mkPool(live.trading && live.trading.salesRows, 'trd_sales', r => ({
-        id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.customer),
-        partyLabel: r.customer, amount: Number(r.ttc_usd || 0) || 0,
-        ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
-      }));
+      const pool = mkPool(live.trading && live.trading.salesRows, 'trd_sales', r => {
+        const rTtc = Number(r.ttc_usd || 0) || 0;
+        if (isNeg ? !(rTtc < -0.005) : !(rTtc > 0.005)) return null;
+        return {
+          id: r.id, company: r.company, date: r.date, partyKey: nearCopyPartyKey(r.customer),
+          partyLabel: r.customer, amount: Math.abs(rTtc), _signedAmt: rTtc,
+          ref: r.book || r.id || '', refs: nearCopyRefTokens(r.id, r.book, r.seq, r.chassis)
+        };
+      });
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -97768,7 +98663,19 @@
         const outHit = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, outScope);
         if (outHit) return outHit;
       }
-      return _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      const resHit = _findDomSumByPool(pool.map(x => ({ ...x, partyLabel: x.company })), day, co, resortKey, amt, toks, recId, origId, null);
+      if (resHit) return resHit;
+      const extPool = [];
+      _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
+      if (extPool.length) {
+        if (outScope) {
+          const extOutHit = _findDomSumByPool(extPool, day, co, outScope, amt, toks, recId, origId, null);
+          if (extOutHit) return extOutHit;
+        }
+        const extResHit = _findDomSumByPool(extPool, day, co, resortKey, amt, toks, recId, origId, null);
+        if (extResHit) return extResHit;
+      }
+      return null;
     }
 
     if (formKey === 'hsp_pos') {
@@ -97796,7 +98703,18 @@
         partyLabel: r.member, amount: Number(r.paid_usd || r.contract_usd || 0) || 0,
         ref: r.id || '', refs: nearCopyRefTokens(r.id, r.unit, r.season, r.notes)
       }));
-      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      const sameHit = _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+      if (sameHit) return sameHit;
+      const paidAmt = Number(rec.paid_usd || 0) || 0;
+      if (paidAmt > 0.005) {
+        const extPool = [];
+        _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
+        if (extPool.length) {
+          const extHit = _findDomSumByPool(extPool, day, co, party, paidAmt, toks, recId, origId, null);
+          if (extHit) return extHit;
+        }
+      }
+      return null;
     }
 
     if (formKey === 'ins_billing') {
@@ -97813,6 +98731,30 @@
         };
       }, 'Insurance Company');
       _appendSharedReceiptPoolRows(pool, winDays, co);
+      _appendExternalSisterPoolRows(pool, 'in', winDays, co);
+      return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
+    }
+
+    if (formKey === 'ins_remittances') {
+      const amt = Number(rec.settled_to_carrier_usd || 0) || 0;
+      if (!(amt > 0.005)) return null;
+      const party = nearCopyPartyKey(rec.carrier);
+      const pool = _domOverlayRows(live.insurance && live.insurance.remittances, 'ins_remittances', null, 'date')
+        .filter(r => {
+          const rDate = String(r.date || r.next_due || '').slice(0, 10);
+          return winDays.has(rDate) && (!co || norm(r.company || 'Insurance Company') === co);
+        })
+        .map(r => {
+          const sAmt = Number(r.settled_to_carrier_usd || 0) || 0;
+          if (!(sAmt > 0.005)) return null;
+          return {
+            id: r.id, _raw: r, _bucket: 'ins_remittances', company: r.company || 'Insurance Company',
+            date: String(r.date || r.next_due || '').slice(0, 10), partyKey: nearCopyPartyKey(r.carrier),
+            partyLabel: r.carrier, amount: sAmt, ref: r.id || '', refs: nearCopyRefTokens(r.id, r.gl_payable, r.next_due)
+          };
+        })
+        .filter(Boolean);
+      _appendExternalSisterPoolRows(pool, 'out', winDays, co);
       return _findDomSumByPool(pool, day, co, party, amt, toks, recId, origId, null);
     }
 
@@ -97926,13 +98868,14 @@
     if (formKey === 'hsp_pos') return Number(x.pos_billed_ttc != null ? x.pos_billed_ttc : ((Number(x.cash_usd || 0) || 0) + (Number(x.card_whish_usd || 0) || 0))) || 0;
     if (formKey === 'ins_billing') return Number(x.collected_usd != null ? x.collected_usd : (x.paid_usd || 0)) || 0;
     if (formKey === 'ins_policies') return Number(x.gross_prem_usd != null ? x.gross_prem_usd : (x.gwp_usd || 0)) || 0;
+    if (formKey === 'ins_remittances') return Number(x.settled_to_carrier_usd || 0) || 0;
     if (formKey === 'hld_interactions') return Number(x.usd || x.amount || 0) || 0;
     return Number(x.amount || 0) || 0;
   }
 
   function domainNearCopyDecision(formKey, rec, orig, ticked) {
     if (formKey === 'trd_receipts') return nearCopyDecision('receipts', rec, orig, ticked);
-    if (formKey === 'hld_extended') return nearCopyDecision('external_movements', rec, orig, ticked);
+    if (formKey === 'hld_extended') return nearCopyDecision('external_movements', Object.assign({ kind: 'Extended' }, rec), orig, ticked);
     const o = orig || null;
     const origId = o && (o.id || o.code) ? String(o.id || o.code) : '';
     const partyOf = x => {
@@ -97944,6 +98887,7 @@
       if (formKey === 'hsp_pos') return `${norm(x.terminal || '')}|${norm(x.shift || '')}`;
       if (formKey === 'hsp_memberships') return norm(x.member || '');
       if (formKey === 'ins_billing' || formKey === 'ins_policies') return norm(x.client || x.insured || '');
+      if (formKey === 'ins_remittances') return norm(x.carrier || '');
       if (formKey === 'hld_interactions') return `${norm(x.fromCo || x.company || '')}|${norm(x.toCo || x.counterparty || '')}`;
       return '';
     };
@@ -97995,35 +98939,42 @@
     wrap.hidden = false;
     if (jump) jump.hidden = false;
     FORM_UI.domainNearCopyPeekItems = [];
-    const label = DOMAIN_NEAR_COPY_LABELS[formKey] || 'Entry';
+    const baseLabel = DOMAIN_NEAR_COPY_LABELS[formKey] || 'Entry';
     const reasonMap = {
       sum: 'Same day and party, these entries add up to this amount',
       sum_gap: 'Same party, these entries one day apart add up to this amount',
       sum_typo: 'Same day, entries under a similar name add up to this amount',
       sum_gap_typo: 'One day apart, entries under a similar name add up to this amount',
+      sister: 'Same day and party, already recorded on another form',
+      sister_gap: 'Same party, recorded one day apart on another form',
+      sister_sum: 'Same day and party, entries on another form add up to this amount',
+      sister_sum_gap: 'One day apart, same party, entries on another form add up to this amount'
     };
     const reason = reasonMap[hit.reason] || reasonMap.sum_gap;
     if (hint && hit.rows) {
       const party = hit.row.partyLabel || hit.row.customer || hit.row.counterparty || hit.row.tenant || hit.row.client || '';
+      const headLabel = (hit.rows[0] && hit.rows[0]._srcLabel) || baseLabel;
       const parts = hit.rows.map((r, idx) => {
         const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
         const chipTok = nearCopyPeekToken(r, ref);
-        const u = Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
-        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
+        const u = Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
+        const rLabel = (r && r._srcLabel) || baseLabel;
+        FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
         return nearCopyPeekChipHtml('dom', idx, `#${chipTok} ${fmtUSD(u, 2)}`);
       }).join(' + ');
       const preBits = [fmtDateDMY(hit.day), party].filter(Boolean);
       const sep = preBits.length ? ` · ${esc(preBits.join(' · '))} · ` : ' · ';
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(headLabel)}</span><span data-no-i18n="1">${sep}${parts}</span>`);
     } else if (hint && hit.row) {
       const r = hit.row;
       const party = r.partyLabel || r.customer || r.counterparty || r.tenant || r.client || '';
       const ref = r.ref || cleanVoucherRef(r.invoice || r.reference);
       const chipTok = nearCopyPeekToken(r, ref);
-      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r.amount != null ? r.amount : nearCopySumUsd(r)) || 0;
-      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label, chipTok, usd: u });
-      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, u > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
-      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
+      const rLabel = (r && r._srcLabel) || baseLabel;
+      const u = _domRowAmt(formKey, (r && r._raw) || r) || Number(r._signedAmt != null ? r._signedAmt : (r.amount != null ? r.amount : nearCopySumUsd(r))) || 0;
+      FORM_UI.domainNearCopyPeekItems.push({ scope: 'dom', bucket: (r && r._bucket) || formKey, raw: (r && r._raw) || r, label: rLabel, chipTok, usd: u });
+      const bits = [fmtDateDMY(r.date || r.start_date || hit.day), party, Math.abs(u) > 0.005 ? fmtUSD(u, 2) : ''].filter(Boolean);
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(rLabel)}</span><span data-no-i18n="1"> ${nearCopyPeekChipHtml('dom', 0, '#' + chipTok)} · ${esc(bits.join(' · '))}</span>`);
     }
     if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
       window.MFG_I18N.translateDom(wrap);
@@ -113200,6 +114151,7 @@
   }
 
   function openNearCopyPeekPopover(scope, idx, chipEl) {
+    if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     const items = scope === 'dom'
       ? (FORM_UI.domainNearCopyPeekItems || [])
       : (FORM_UI.nearCopyPeekItems || []);
@@ -113395,6 +114347,191 @@
     document.addEventListener('scroll', repositionIfOpen, true);
   }
 
+  let _fifoPeekAnchorEl = null;
+
+  function ensureFifoSplitPeekPopover() {
+    let pop = $('fifoSplitPeekPopover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.id = 'fifoSplitPeekPopover';
+    pop.className = 'fifo-split-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'false');
+    pop.setAttribute('aria-label', 'FIFO Invoice Allocation Split');
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    return pop;
+  }
+
+  function closeFifoSplitPeekPopover(restoreFocus = false) {
+    const pop = $('fifoSplitPeekPopover');
+    const prevAnchor = _fifoPeekAnchorEl;
+    if (pop) {
+      pop.hidden = true;
+      pop.innerHTML = '';
+    }
+    _fifoPeekAnchorEl = null;
+    const btn = $('ideFifoSplitBtn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && prevAnchor && prevAnchor.isConnected) {
+      try { prevAnchor.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  function positionFifoSplitPeekPopover(pop, btnEl) {
+    if (!pop || !btnEl || !btnEl.isConnected) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 844;
+    const rect = btnEl.getBoundingClientRect();
+    const isRtl = typeof document !== 'undefined' && document.documentElement && document.documentElement.dir === 'rtl';
+    const popW = Math.min(440, Math.max(240, vw - 16), pop.offsetWidth || 440);
+    const popH = Math.min(460, pop.offsetHeight || 260);
+    let left = isRtl ? (rect.right - popW) : rect.left;
+    left = Math.max(8, Math.min(vw - popW - 8, left));
+    let top;
+    if (rect.top - popH - 8 >= 8) {
+      top = rect.top - popH - 8;
+    } else if (rect.bottom + popH + 8 <= vh - 8) {
+      top = rect.bottom + 8;
+    } else {
+      const aboveSpace = rect.top - 8;
+      const belowSpace = vh - rect.bottom - 8;
+      top = aboveSpace >= belowSpace
+        ? Math.max(8, rect.top - popH - 8)
+        : Math.max(8, Math.min(vh - popH - 8, rect.bottom + 8));
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function openFifoSplitPeekPopover(btnEl) {
+    if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
+    const pv = FORM_UI.domainFifoSplitPreview;
+    const splitRows = (pv && pv.fifo && Array.isArray(pv.fifo.splitRows)) ? pv.fifo.splitRows : [];
+    if (!splitRows.length) return false;
+
+    const pop = ensureFifoSplitPeekPopover();
+    if (!pop.hidden) {
+      closeFifoSplitPeekPopover(false);
+      return true;
+    }
+
+    const fifo = pv.fifo;
+    const bodyRowsHtml = splitRows.map(sr => {
+      const invCellBody = sr.isPrior
+        ? '<span>Prior Carried Balance</span>'
+        : `<strong data-no-i18n="1">${esc(sr.id)}</strong>${sr.label ? `<div ${sr.isUiLabel ? '' : 'data-no-i18n="1" '}style="font-size:10px;color:var(--mu,#5B6B82)"><span>${esc(sr.label)}</span></div>` : ''}`;
+      const stTxt = sr.status === 'Cleared' ? 'Cleared' : 'Partial';
+      const stCls = sr.status === 'Cleared' ? 'good' : 'warn';
+      return `
+        <tr>
+          <td>${invCellBody}</td>
+          <td class="mono" data-no-i18n="1">${esc(sr.date ? fmtDateDMY(sr.date) : '-')}</td>
+          <td class="r mono" data-no-i18n="1">${esc(fmtUSD(sr.openBeforeUsd, 2))}</td>
+          <td class="r mono" data-no-i18n="1"><strong>${esc(fmtUSD(sr.settledNowUsd, 2))}</strong></td>
+          <td class="r mono" data-no-i18n="1">${esc(fmtUSD(sr.openAfterUsd, 2))}</td>
+          <td><span class="${stCls}">${esc(stTxt)}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    const footParts = [
+      `<div><span>Total Allocated</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.allocatedUsd, 2))}</strong></span></div>`,
+      Number(fifo.unallocatedUsd || 0) > 0.005 ? `<div><span>Unallocated Credit</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.unallocatedUsd, 2))}</strong></span></div>` : '',
+      fifo.remainingOpenArUsd != null ? `<div><span>Remaining Open AR</span><span data-no-i18n="1">: <strong class="mono">${esc(fmtUSD(fifo.remainingOpenArUsd, 2))}</strong></span></div>` : ''
+    ].filter(Boolean).join('');
+
+    pop.innerHTML = `
+      <div class="nc-peek-hdr">
+        <div class="nc-peek-hdr-main">
+          <span class="nc-peek-kicker"><span>FIFO Invoice Split</span></span>
+          <div class="nc-peek-title" data-no-i18n="1">${esc(pv.partyLabel || '-')}</div>
+        </div>
+        <div class="nc-peek-amt-wrap"><div class="nc-peek-amt" data-no-i18n="1">${esc(fmtUSD(fifo.allocatedUsd, 2))}</div></div>
+        <button type="button" class="nc-peek-close" id="fifoSplitPeekCloseBtn" aria-label="Close Invoice Split" data-ui-tip="Close Invoice Split">✕</button>
+      </div>
+      <div class="fifo-split-tbl-wrap">
+        <table class="fifo-split-tbl">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Date</th>
+              <th class="r">Open Before</th>
+              <th class="r">Settled Now</th>
+              <th class="r">Open After</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${bodyRowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="fifo-split-foot">${footParts}</div>
+    `;
+
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(pop);
+    }
+
+    pop.style.visibility = 'hidden';
+    pop.hidden = false;
+    _fifoPeekAnchorEl = btnEl || $('ideFifoSplitBtn') || null;
+    if (_fifoPeekAnchorEl) _fifoPeekAnchorEl.setAttribute('aria-expanded', 'true');
+    positionFifoSplitPeekPopover(pop, _fifoPeekAnchorEl);
+    pop.style.visibility = '';
+    const closeBtn = $('fifoSplitPeekCloseBtn');
+    if (closeBtn) {
+      try { closeBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  let _fifoPeekWired = false;
+  function wireFifoSplitPeekPopover() {
+    if (_fifoPeekWired || typeof document === 'undefined') return;
+    _fifoPeekWired = true;
+    document.addEventListener('mousedown', ev => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('#ideFifoSplitBtn') : null;
+      if (btn) ev.preventDefault();
+    });
+    document.addEventListener('click', ev => {
+      const t = ev.target && ev.target.closest ? ev.target : null;
+      if (!t) return;
+      const closeBtn = t.closest('#fifoSplitPeekCloseBtn');
+      if (closeBtn) {
+        ev.preventDefault();
+        closeFifoSplitPeekPopover(true);
+        return;
+      }
+      const splitBtn = t.closest('#ideFifoSplitBtn');
+      if (splitBtn) {
+        ev.preventDefault();
+        openFifoSplitPeekPopover(splitBtn);
+        return;
+      }
+      const pop = $('fifoSplitPeekPopover');
+      if (pop && !pop.hidden && !t.closest('#fifoSplitPeekPopover')) {
+        closeFifoSplitPeekPopover(false);
+      }
+    });
+    const repositionIfOpen = () => {
+      const pop = $('fifoSplitPeekPopover');
+      if (!pop || pop.hidden) return;
+      if (!_fifoPeekAnchorEl || !_fifoPeekAnchorEl.isConnected) {
+        closeFifoSplitPeekPopover(false);
+        return;
+      }
+      const rect = _fifoPeekAnchorEl.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        closeFifoSplitPeekPopover(false);
+        return;
+      }
+      positionFifoSplitPeekPopover(pop, _fifoPeekAnchorEl);
+    };
+    window.addEventListener('resize', repositionIfOpen);
+    document.addEventListener('scroll', repositionIfOpen, true);
+  }
+
   function wirePartyTypoHost(host, ctx) {
     if (!host) return;
     host._partyTypoCtx = ctx || {};
@@ -113433,7 +114570,7 @@
       }, 130);
     });
     host.addEventListener('mousedown', ev => {
-      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip') : null;
+      const t = ev.target && ev.target.closest ? ev.target.closest('.party-typo-use-btn, #nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ideFifoSplitBtn') : null;
       if (t) ev.preventDefault();
     });
     host.addEventListener('click', ev => {
@@ -120341,7 +121478,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -180826,6 +181963,12 @@
           closeNearCopyPeekPopover(true);
           return;
         }
+        const fifoPop = $('fifoSplitPeekPopover');
+        if (fifoPop && !fifoPop.hidden) {
+          e.preventDefault();
+          closeFifoSplitPeekPopover(true);
+          return;
+        }
         const hc = $('roleHoverPreviewCard');
         if (hc && !hc.hidden) { hideRoleHoverCard(true); return; }
         const roleWrap = $('nuRolePermsSelector');
@@ -181828,6 +182971,7 @@
 
     initZeroBlackBoxTooltips();
     wireNearCopyPeekPopover();
+    wireFifoSplitPeekPopover();
     scheduleSeedHydration();
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (STATE.authed || isAutoTest) {

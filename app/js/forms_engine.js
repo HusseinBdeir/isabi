@@ -2264,6 +2264,7 @@
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${(typeof window !== 'undefined' && typeof window.nearCopyAmtJumpHtml === 'function') ? window.nearCopyAmtJumpHtml() : ''}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
           <div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>
@@ -2563,6 +2564,7 @@
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', isCfgEdit ? 'step="0.01"' : 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', isCfgEdit ? 'step="1000"' : 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${(typeof window !== 'undefined' && typeof window.nearCopyAmtJumpHtml === 'function') ? window.nearCopyAmtJumpHtml() : ''}
           ${fld('Reference', inp('f_reference', 'text', ''))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
           <div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>
