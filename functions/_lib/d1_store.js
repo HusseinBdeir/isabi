@@ -94,6 +94,59 @@ export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
+// Sent statement marks and the Owner's Rate Changes marks: who may change them (owner 2026-11-21).
+// Same rule as the app (setStatementWatermark / clearStatementWatermark / canViewRateChanges) and as
+// _guarded_workflow_mark_error in isabi-app/server.py. Checked only when a write changes the mark.
+const STMT_SENT_MARK_RE = /^WF::statement_watermark::/i;
+const RATE_CHANGE_OWNER_MARK_RE = /^WF::rate_change_(?:review|settings)::/i;
+
+export function isGuardedWorkflowMarkKey(editKey) {
+  const k = String(editKey || '');
+  return STMT_SENT_MARK_RE.test(k) || RATE_CHANGE_OWNER_MARK_RE.test(k);
+}
+
+function stmtMarkActiveThrough(obj) {
+  if (!obj || typeof obj !== 'object' || obj.voided === true || obj.voided === 1 || obj.voided === 'true'
+    || obj.cleared === true || obj.cleared === 1 || obj.cleared === 'true') return '';
+  const d = String(obj.confirmed_through || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+}
+
+// '' when the seat may make this change to the mark, else the refusal text. nextObj null = removed.
+export function guardedWorkflowMarkError(editKey, prevObj, nextObj, perms) {
+  const k = String(editKey || '');
+  const p = perms || {};
+  if (RATE_CHANGE_OWNER_MARK_RE.test(k)) {
+    return p.roleKey === 'Full Access (Owner)' ? '' : 'Only the Owner can review rate changes or change the alert amount.';
+  }
+  if (STMT_SENT_MARK_RE.test(k)) {
+    if (!p.modifyData && !p.voidData) return 'Only a finance or supervisor seat can mark a statement as sent.';
+    const was = stmtMarkActiveThrough(prevObj);
+    const now = nextObj ? stmtMarkActiveThrough(nextObj) : '';
+    if (was && (!now || now < was) && !p.voidData) return 'Only a supervisor can remove a sent mark or move it to an earlier date.';
+  }
+  return '';
+}
+
+// /sync: a change to one of these marks the seat may not make keeps the stored mark (a new one is dropped).
+export function enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, perms) {
+  if (!incomingDoc || typeof incomingDoc !== 'object') return incomingDoc;
+  const inc = incomingDoc.industryRowEdits;
+  if (!inc || typeof inc !== 'object') return incomingDoc;
+  const prevIre = (prevDoc && prevDoc.industryRowEdits && typeof prevDoc.industryRowEdits === 'object') ? prevDoc.industryRowEdits : {};
+  for (const ek of new Set([...Object.keys(prevIre), ...Object.keys(inc)])) {
+    if (!isGuardedWorkflowMarkKey(ek)) continue;
+    const pv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+    const iv = inc[ek] && typeof inc[ek] === 'object' ? inc[ek] : null;
+    if (!pv && !iv) continue;
+    if (pv && iv && stableRowSig(pv) === stableRowSig(iv)) continue;
+    if (!guardedWorkflowMarkError(ek, pv, iv, perms)) continue;
+    if (pv) inc[ek] = pv;
+    else delete inc[ek];
+  }
+  return incomingDoc;
+}
+
 function createPurgeOverrideAccumulator() {
   const list = [];
   const bareSeen = new Set();
@@ -6411,6 +6464,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     if (isPeriodCloseWf && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to lock or reopen an accounting period.' }, 403);
     }
+    const isGuardedMark = isGuardedWorkflowMarkKey(ek);
+    const isStmtMark = STMT_SENT_MARK_RE.test(ek);
     if (!validateRecordGpsCoords(rawEv)) {
       return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
     }
@@ -6444,6 +6499,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (exVoid && !incVoid && exRev >= incRev) continue;
       if (exRev > incRev && !(incVoid && !exVoid)) continue;
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(exVoid) }), ev, perms);
+        if (markErr) return jsonResponse({ ok: false, error: markErr }, 403);
+      }
       if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
       }
@@ -6463,7 +6522,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
-        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !gpsChanged);
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !gpsChanged);
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
@@ -6487,6 +6546,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (ev) pendingDomainGeoAudits.push(ev);
       }
     } else {
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, null, ev, perms);
+        if (markErr) return jsonResponse({ ok: false, error: markErr }, 403);
+      }
       if (!perms.voidData && Boolean(incVoid)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void domain records.' }, 403);
       }
@@ -6495,7 +6558,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
-        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
@@ -6570,6 +6633,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
     const exObj = safeJsonParse(ex.payload_json, {});
+    if (isGuardedWorkflowMarkKey(ek)) {
+      const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(Number(ex.voided || 0)) }), null, perms);
+      if (markErr) return jsonResponse({ ok: false, error: markErr }, 403);
+    }
     const exCoEd = canonicalizeCompanyName((exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
     const exIndEd = inferDomainIndustry(exObj, ek);
     if (restrictRls) {
@@ -9343,6 +9410,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     const syncAuditBlocked = [];
     if (pKey === 'mfg_web_store') {
       await enforceSyncRoleWriteLocks(env.DB, incomingDoc, prevDoc, session, syncAuditBlocked);
+      if (session) enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, getSessionWritePerms(session));
       for (const blkEv of syncAuditBlocked) {
         try {
           await recordGeoAuditEvent(env.DB, request, session, blkEv);
