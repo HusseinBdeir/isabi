@@ -113,10 +113,11 @@ function stmtMarkActiveThrough(obj) {
 }
 
 // What a mark locks: the party, its type, the industry and the company (the app files a mark under these fields,
-// not under its key). Compared as the app reads them, so a re-mark that only re-types the company matches.
+// not under its key). Compared exactly as the app's norm() reads them (trim, lower case, inner spacing kept), so a
+// re-mark that only re-types the company's case matches and any other difference counts as another party.
 function stmtMarkIdentity(obj) {
   const o = obj && typeof obj === 'object' ? obj : {};
-  const n = v => String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
+  const n = v => String(v == null ? '' : v).trim().toLowerCase();
   const co = n(o.company);
   const allCo = !co || co === 'all' || co === 'group' || co === 'all companies' || co === 'consolidated' || co === 'manufacturing-group' || /group$/.test(co);
   return [n(o.party_name), n(o.party_type) === 'supplier' ? 'supplier' : 'customer', n(o.industry) || 'manufacturing', allCo ? 'all' : co].join('|');

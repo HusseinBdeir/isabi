@@ -136,7 +136,8 @@ console.log('\n[sent statement mark: switching it off another way]');
 {
   let r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { party_name: 'zzz' }) });
   ok('a finance seat cannot file the mark under another party (403, party kept)', r.status === 403 && stored(MARK).party_name === 'ACME Trading', r);
-  for (const [fld, val] of [['company', 'BBConstruction'], ['party_type', 'supplier'], ['industry', 'trading']]) {
+  for (const [fld, val] of [['company', 'BBConstruction'], ['party_type', 'supplier'], ['industry', 'trading'],
+    ['party_name', 'ACME  Trading'], ['party_name', 'ACME\tTrading'], ['company', 'W  TC']]) {
     r = await post(FIN, { [MARK]: mark('2026-11-20', 4, false, { [fld]: val }) });
     ok(`a finance seat cannot change its ${fld} (403)`, r.status === 403 && stored(MARK)[fld] !== val, r);
   }
