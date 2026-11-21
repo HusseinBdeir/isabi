@@ -99,10 +99,10 @@ globalThis.fetch = async (input, init = {}) => {
           parts: [{
             text: JSON.stringify({
               docKind: 'work_permit',
-              fullNameLatin: 'Tarek Kamal Halabi',
-              fullNameArabic: 'طارق كمال الحلبي',
-              fatherNameLatin: 'Kamal',
-              fatherNameArabic: 'كمال',
+              fullNameLatin: 'Tarek Salim Haddad',
+              fullNameArabic: 'طارق سليم حداد',
+              fatherNameLatin: 'Salim',
+              fatherNameArabic: 'سليم',
               motherNameLatin: 'Salwa Karam',
               motherNameArabic: 'سلوى كرم',
               dob: '1991-06-12',
@@ -262,7 +262,7 @@ try {
     op: 'complete_id_card',
     extracted: {
       docKind: 'work_permit',
-      fullNameLatin: 'Tarek Kamal Halabi',
+      fullNameLatin: 'Tarek Salim Haddad',
       motherNameLatin: 'Salwa Karam',
       motherNameArabic: 'سلوى كرم',
       nssfNumber: '882190',
@@ -343,11 +343,11 @@ try {
   });
   const hrRec = {
     id: 'sm_hr_rt_' + Date.now(),
-    name: 'Hadi Mazen Mansour',
-    name_ar: 'هادي مازن منصور',
-    full_name_ar: 'هادي مازن منصور',
-    father_name: 'Mazen',
-    father_name_ar: 'مازن',
+    name: 'Hadi Karim Mansour',
+    name_ar: 'هادي كريم منصور',
+    full_name_ar: 'هادي كريم منصور',
+    father_name: 'Karim',
+    father_name_ar: 'كريم',
     mother_name: 'Layla Nassar',
     mother_name_ar: 'ليلى نصار',
     nationality: 'Syrian',
@@ -405,8 +405,8 @@ try {
   const colsOk = requiredCols.every(c => migratedStaffCols.has(c)) && migratedPsCols.has('meta_json');
   const fieldsRoundTripOk = Boolean(
     savedRec && savedSyncRec
-    && savedRec.father_name === 'Mazen' && savedRec.father_name_ar === 'مازن'
-    && savedRec.full_name_ar === 'هادي مازن منصور'
+    && savedRec.father_name === 'Karim' && savedRec.father_name_ar === 'كريم'
+    && savedRec.full_name_ar === 'هادي كريم منصور'
     && savedRec.mother_name === 'Layla Nassar' && savedRec.mother_name_ar === 'ليلى نصار'
     && savedRec.nationality_ar === 'سوري' && savedRec.id_doc_kind === 'work_permit'
     && savedRec.nssf_no === '991234' && savedRec.id_expiry_date === '2028-04-01'

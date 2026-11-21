@@ -18,31 +18,31 @@ import { canWriteWorkSchedulesSession } from '../functions/_lib/security.js';
 const results = [];
 const check = (ok, label, detail = '') => { results.push(ok); console.log(`${ok ? 'ok  ' : 'FAIL'}  ${label}${ok ? '' : ' - ' + detail}`); };
 
-check(staffRuleKeyCompanyMismatch('wtc|ahmad', { company: 'BBConstruction' }) === true, '1. A WTC key holding a BBConstruction rule is a mismatch');
-check(staffRuleKeyCompanyMismatch('wtc|ahmad', { company: ' WTC ' }) === false, '2. Company compared trimmed and lower-cased');
-check(staffRuleKeyCompanyMismatch('wtc|ahmad', { staff: 'Ahmad' }) === true, '3. A company key with no company on the rule is refused');
-check(staffRuleKeyCompanyMismatch('ahmad', { company: 'BBConstruction' }) === false, '4. Bare-name keys (older rules) are unaffected');
-check(staffRuleKeyCompanyMismatch('wtc|ahmad', null) === false, '5. Non-object rows are left to the existing guards');
+check(staffRuleKeyCompanyMismatch('wtc|tarek', { company: 'BBConstruction' }) === true, '1. A WTC key holding a BBConstruction rule is a mismatch');
+check(staffRuleKeyCompanyMismatch('wtc|tarek', { company: ' WTC ' }) === false, '2. Company compared trimmed and lower-cased');
+check(staffRuleKeyCompanyMismatch('wtc|tarek', { staff: 'Tarek' }) === true, '3. A company key with no company on the rule is refused');
+check(staffRuleKeyCompanyMismatch('tarek', { company: 'BBConstruction' }) === false, '4. Bare-name keys (older rules) are unaffected');
+check(staffRuleKeyCompanyMismatch('wtc|tarek', null) === false, '5. Non-object rows are left to the existing guards');
 
 const prev = { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {
-  'wtc|ahmad': { staff: 'Ahmad', company: 'WTC', shift_id: 'night_7_3', updated_at: '2026-11-13T10:00:00.000Z' },
-  ahmad: { staff: 'Ahmad', company: 'WTC', shift_id: 'day_8_4', updated_at: '2026-01-01T00:00:00.000Z' }
+  'wtc|tarek': { staff: 'Tarek', company: 'WTC', shift_id: 'night_7_3', updated_at: '2026-11-13T10:00:00.000Z' },
+  tarek: { staff: 'Tarek', company: 'WTC', shift_id: 'day_8_4', updated_at: '2026-01-01T00:00:00.000Z' }
 } };
 const planted = mergeWorkSchedulesDocs(prev, { staffRules: {
-  'wtc|ahmad': { staff: 'Ahmad', company: 'BBConstruction', shift_id: 'day_8_4', updated_at: '2099-01-01T00:00:00.000Z' },
+  'wtc|tarek': { staff: 'Tarek', company: 'BBConstruction', shift_id: 'day_8_4', updated_at: '2099-01-01T00:00:00.000Z' },
   'bbconstruction|nour': { staff: 'Nour', company: 'BBConstruction', shift_id: 'ext_7_4', updated_at: '2026-11-13T11:00:00.000Z' },
   'wtc|ghost': { staff: 'Ghost', company: 'BBConstruction', shift_id: 'day_8_4', updated_at: '2099-01-01T00:00:00.000Z' }
 } }, null, false);
 const r = planted.staffRules || {};
-check(r['wtc|ahmad'] && r['wtc|ahmad'].company === 'WTC' && r['wtc|ahmad'].shift_id === 'night_7_3',
-  '6. A newer rule filed under WTC\'s key but naming BBConstruction does not replace the stored WTC rule', JSON.stringify(r['wtc|ahmad']));
+check(r['wtc|tarek'] && r['wtc|tarek'].company === 'WTC' && r['wtc|tarek'].shift_id === 'night_7_3',
+  '6. A newer rule filed under WTC\'s key but naming BBConstruction does not replace the stored WTC rule', JSON.stringify(r['wtc|tarek']));
 check(!r['wtc|ghost'], '7. Such a rule is not stored at an empty key either', JSON.stringify(r['wtc|ghost']));
 check(r['bbconstruction|nour'] && r['bbconstruction|nour'].shift_id === 'ext_7_4', '8. A matching company key is stored', JSON.stringify(r['bbconstruction|nour']));
-check(r.ahmad && r.ahmad.shift_id === 'day_8_4', '9. The older bare-name rule is kept as it was', JSON.stringify(r.ahmad));
+check(r.tarek && r.tarek.shift_id === 'day_8_4', '9. The older bare-name rule is kept as it was', JSON.stringify(r.tarek));
 const newer = mergeWorkSchedulesDocs(planted, { staffRules: {
-  'wtc|ahmad': { staff: 'Ahmad', company: 'WTC', shift_id: 'day_8_4', updated_at: '2026-11-13T12:00:00.000Z' }
+  'wtc|tarek': { staff: 'Tarek', company: 'WTC', shift_id: 'day_8_4', updated_at: '2026-11-13T12:00:00.000Z' }
 } }, null, false);
-check(newer.staffRules['wtc|ahmad'].shift_id === 'day_8_4', '10. The owner\'s later edit of the real WTC rule is stored (nothing frozen by the planted row)', JSON.stringify(newer.staffRules['wtc|ahmad']));
+check(newer.staffRules['wtc|tarek'].shift_id === 'day_8_4', '10. The owner\'s later edit of the real WTC rule is stored (nothing frozen by the planted row)', JSON.stringify(newer.staffRules['wtc|tarek']));
 
 const coBase = {
   company: 'WTC',
@@ -133,7 +133,7 @@ const lwwPrevWs = {
   policyGroups: [{ id: 'pkg_global', name: 'Global Policy', math_mode: 'per_minute', updated_at: '2026-11-14T11:00:00.000Z' }],
   companyPolicyDefaults: {},
   staffRules: {
-    'wtc|ahmad': { company: 'WTC', staff: 'Ahmad', math_mode: 'per_minute', ot_threshold_min: 15, updated_at: '2026-11-14T11:00:00.000Z' }
+    'wtc|tarek': { company: 'WTC', staff: 'Tarek', math_mode: 'per_minute', ot_threshold_min: 15, updated_at: '2026-11-14T11:00:00.000Z' }
   }
 };
 const lwwMerged = mergeWorkSchedulesDocs(lwwPrevWs, {
@@ -141,12 +141,12 @@ const lwwMerged = mergeWorkSchedulesDocs(lwwPrevWs, {
   policyGroups: [{ id: 'pkg_global', name: 'Tampered', math_mode: 'tenth_hour', updated_at: '2099-01-01T00:00:00.000Z' }],
   companyPolicyDefaults: {},
   staffRules: {
-    'wtc|ahmad': { company: 'WTC', staff: 'Ahmad', math_mode: 'tenth_hour', ot_threshold_min: 5, updated_at: '2026-11-14T10:00:00.000Z' }
+    'wtc|tarek': { company: 'WTC', staff: 'Tarek', math_mode: 'tenth_hour', ot_threshold_min: 5, updated_at: '2026-11-14T10:00:00.000Z' }
   }
 }, wtcScopedSession, true);
 check(
-  lwwMerged.staffRules['wtc|ahmad'].math_mode === 'per_minute'
-    && lwwMerged.staffRules['wtc|ahmad'].ot_threshold_min === 15
+  lwwMerged.staffRules['wtc|tarek'].math_mode === 'per_minute'
+    && lwwMerged.staffRules['wtc|tarek'].ot_threshold_min === 15
     && lwwMerged.shiftTypes[0].start_time === '08:00'
     && lwwMerged.policyGroups[0].math_mode === 'per_minute',
   '14. Restricted sync LWW preserves newer staffRules, shiftTypes & global policyGroups against older timestamps',
@@ -636,10 +636,10 @@ check(
 
 // 26. staffRuleKeyCompanyMismatch canonicalizes case, whitespace, and company aliases identically to server.py
 check(
-  staffRuleKeyCompanyMismatch('WTC|ahmad', { company: 'WTC' }) === false
-  && staffRuleKeyCompanyMismatch(' WTC |ahmad', { company: 'wtc' }) === false
-  && staffRuleKeyCompanyMismatch('bbc|ahmad', { company: 'BBConstruction' }) === false
-  && staffRuleKeyCompanyMismatch('|ahmad', { company: 'WTC' }) === true,
+  staffRuleKeyCompanyMismatch('WTC|tarek', { company: 'WTC' }) === false
+  && staffRuleKeyCompanyMismatch(' WTC |tarek', { company: 'wtc' }) === false
+  && staffRuleKeyCompanyMismatch('bbc|tarek', { company: 'BBConstruction' }) === false
+  && staffRuleKeyCompanyMismatch('|tarek', { company: 'WTC' }) === true,
   '26. staffRuleKeyCompanyMismatch normalizes case, whitespace, and entity aliases and rejects empty key prefix'
 );
 

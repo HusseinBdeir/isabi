@@ -862,7 +862,7 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
   d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
     VALUES ('sm-edge-launa', 'Tarek Edge Register', 'Fadi', 'La Una', 'Waiter', 'Active', 0)`);
   d1.exec(`INSERT OR REPLACE INTO employments (id, staff, company, role, type, start_date, end_date, status, voided)
-    VALUES ('emp-edge-launa', 'Sami Edge Contract', 'La Una', 'Cook', 'Contract', '2026-01-01', '', 'Active', 0)`);
+    VALUES ('emp-edge-launa', 'Karim Edge Contract', 'La Una', 'Cook', 'Contract', '2026-01-01', '', 'Active', 0)`);
 
   // Attempt to sync new door staff clashing with active door, switched-off door, staff register, active contract, and 2nd batch clone
   r = await call({
@@ -870,10 +870,10 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
     site: 'LAUNA',
     staff: [
       { id: 'loc-dup-1', name: '  rami edge   active ', fatherName: 'Hassan' },
-      { id: 'loc-dup-2', name: 'Nader Edge Off', fatherName: 'Adel' },
+      { id: 'loc-dup-2', name: 'Nader Edge Off', fatherName: 'Salim' },
       { id: 'loc-dup-3', name: 'Tarek Edge Register', fatherName: 'Youssef' },
-      { id: 'loc-dup-4', name: 'Sami Edge Contract', fatherName: '' },
-      { id: 'loc-batch-ok', name: 'Walid Batch Unique', fatherName: 'Moussa' },
+      { id: 'loc-dup-4', name: 'Karim Edge Contract', fatherName: '' },
+      { id: 'loc-batch-ok', name: 'Walid Batch Unique', fatherName: 'Khoury' },
       { id: 'loc-batch-dup', name: 'walid batch unique', fatherName: 'Hadi' },
     ],
     faces: [
@@ -896,14 +896,14 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
     rejMap.get('loc-dup-1'));
   ok('NEGATIVE: switched-off door clash is rejected with existingActive=false',
     rejMap.has('loc-dup-2') && rejMap.get('loc-dup-2').existingActive === false
-    && rejMap.get('loc-dup-2').suggestedName === 'Nader Edge Off (Adel)',
+    && rejMap.get('loc-dup-2').suggestedName === 'Nader Edge Off (Salim)',
     rejMap.get('loc-dup-2'));
   ok('NEGATIVE: staff_members register clash is rejected (existingKind=staff)',
     rejMap.has('loc-dup-3') && rejMap.get('loc-dup-3').existingKind === 'staff',
     rejMap.get('loc-dup-3'));
   ok('NEGATIVE: active employment clash without father suggests "(2)"',
     rejMap.has('loc-dup-4') && rejMap.get('loc-dup-4').existingKind === 'contract'
-    && rejMap.get('loc-dup-4').suggestedName === 'Sami Edge Contract (2)',
+    && rejMap.get('loc-dup-4').suggestedName === 'Karim Edge Contract (2)',
     rejMap.get('loc-dup-4'));
   ok('first new name in batch succeeds while second duplicate in same batch is rejected',
     r.json.staff.includes('loc-batch-ok') && !r.json.staff.includes('loc-batch-dup')
@@ -929,7 +929,7 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
 
   // Switching sn-door-off back ON with its UNCHANGED own name fails when another active row holds that name
   d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
-    VALUES ('sm-nader-conflict', 'Nader Edge Off', 'Adel', 'La Una', 'Waiter', 'Active', 0)`);
+    VALUES ('sm-nader-conflict', 'Nader Edge Off', 'Salim', 'La Una', 'Waiter', 'Active', 0)`);
   const resOwnSwitch = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'sn-door-off', name: 'Nader Edge Off', active: true }] }, { key: KEY_LAUNA });
   ok('NEGATIVE: switching switched-off row back on with its unchanged own name is rejected when active homonym exists',
     (resOwnSwitch.json.rejectedStaff || []).some(x => x.id === 'sn-door-off')
@@ -939,16 +939,16 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
   // Active freelance_entries row at the site rejects duplicate door Add staff & punch sync
   d1.exec(`CREATE TABLE IF NOT EXISTS freelance_entries (id TEXT PRIMARY KEY, staff TEXT DEFAULT '', company TEXT DEFAULT '', date TEXT DEFAULT '', amount REAL DEFAULT 0, status TEXT DEFAULT 'Active', voided INTEGER DEFAULT 0, payload_json TEXT DEFAULT '{}');`);
   d1.exec(`INSERT OR REPLACE INTO freelance_entries (id, staff, company, date, amount, status, voided)
-    VALUES ('fl-edge-launa', 'Hani Edge Freelance', 'La Una', '2026-11-12', 80, 'Active', 0)`);
+    VALUES ('fl-edge-launa', 'Ziad Edge Freelance', 'La Una', '2026-11-12', 80, 'Active', 0)`);
   const flSyncRes = await call({
     op: 'sync',
     site: 'LAUNA',
-    staff: [{ id: 'loc-fl-dup', name: 'Hani Edge Freelance', fatherName: 'Tarek' }],
-    punches: [{ id: 'p-fl-dup', staffId: 'loc-fl-dup', staffName: 'Hani Edge Freelance', ts: DAY + 'T08:15:00.000Z', day: DAY, direction: 'in', method: 'pin' }],
+    staff: [{ id: 'loc-fl-dup', name: 'Ziad Edge Freelance', fatherName: 'Tarek' }],
+    punches: [{ id: 'p-fl-dup', staffId: 'loc-fl-dup', staffName: 'Ziad Edge Freelance', ts: DAY + 'T08:15:00.000Z', day: DAY, direction: 'in', method: 'pin' }],
   }, { key: KEY_LAUNA });
   const flRej = (flSyncRes.json.rejectedStaff || []).find(x => x.id === 'loc-fl-dup');
   ok('NEGATIVE: active freelance_entries row rejects duplicate door staff & punch sync (existingKind=freelance)',
-    flRej && flRej.existingKind === 'freelance' && flRej.suggestedName === 'Hani Edge Freelance (Tarek)'
+    flRej && flRej.existingKind === 'freelance' && flRej.suggestedName === 'Ziad Edge Freelance (Tarek)'
     && (flSyncRes.json.rejectedPunches || []).includes('p-fl-dup') && !(flSyncRes.json.punches || []).includes('p-fl-dup'),
     flSyncRes.json);
 
@@ -963,9 +963,9 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
   // Regression: unknown inactive local row (loc-*) is acked as deactivated no-op (no clash, no duplicate D1 insert) and its punches are refused;
   // staff_members register stays company-scoped; employments missing father_name falls back to staff_members.father_name; faces fatherName feeds suggestion.
   d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
-    VALUES ('sm-edge-empfb', 'Sami Edge Contract', 'Walid', 'La Una', 'Cook', 'Active', 0)`);
+    VALUES ('sm-edge-empfb', 'Karim Edge Contract', 'Walid', 'La Una', 'Cook', 'Active', 0)`);
   const rost2 = (await call({ op: 'roster', site: 'LAUNA', includeInactive: true }, { key: KEY_LAUNA })).json;
-  const rEmpFb = (rost2.staff || []).find(s => s.name === 'Sami Edge Contract');
+  const rEmpFb = (rost2.staff || []).find(s => s.name === 'Karim Edge Contract');
   const rPlant = (rost2.staff || []).find(s => s.name === 'Plant Person');
   const rBlanca = (rost2.staff || []).find(s => s.name === 'Other Resort');
   ok('register company scoping excludes other companies and falls back to staff_members.father_name on employments',

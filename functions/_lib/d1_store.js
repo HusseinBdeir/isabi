@@ -912,7 +912,9 @@ function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   if (!validSamples.length && d.face_updated_at) d.face_cleared = true;
   else delete d.face_cleared;
   d.custom_perms = safeJsonParse(d.custom_perms, null);
-  if (d.custom_perms && typeof d.custom_perms !== 'object') d.custom_perms = null;
+  if (!d.custom_perms || typeof d.custom_perms !== 'object' || Array.isArray(d.custom_perms) || !Object.keys(d.custom_perms).length) {
+    d.custom_perms = null;
+  }
   // Never expose raw 128-d biometric vectors over HTTP; keep verification strictly server-side
   d.face_redacted = Boolean(d.face_enrolled);
   delete d.face_samples;

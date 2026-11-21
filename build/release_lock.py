@@ -39,6 +39,7 @@ Commands
   python build/release_lock.py renew [--ttl 60]
   python build/release_lock.py release [--force]
   python build/release_lock.py prune [--days 7] [--dry] [--json] [--include-abandoned]
+  python build/release_lock.py stalled [--hours 24] [--json]
   python build/release_lock.py ci-acquire --sha <commit>   (the workflow; writes deploy=true|false to GITHUB_OUTPUT)
 Bypass (only when the owner says so): ISABI_RELEASE_LOCK=off, or deploy_cloudflare.py --no-release-lock.
 Test: python build/verify_release_lock.py
@@ -73,6 +74,9 @@ SEEN_REF = "refs/isabi-release-lock/seen"  # local copy of the remote lock commi
 QUEUE_NS = "refs/release-queue"
 QUEUE_SEEN_NS = "refs/isabi-release-lock-queue"
 DEFAULT_PRUNE_DAYS = 7
+DEFAULT_STALLED_HOURS = 24
+STALLED_QUEUE_HEARTBEAT_MIN = 180
+_PURE_GENERATED_PATHS = ("js/i18n.js", "js/seed_manifest.js", "functions/_lib/deployed_shell.js")
 REMOTE = os.environ.get("ISABI_RELEASE_LOCK_REMOTE", "origin")
 TOKEN_FILE = "isabi-release-lock.json"  # in this worktree's own git dir: one holder per worktree
 DEFAULT_TTL_MIN = 60
@@ -137,6 +141,11 @@ def git_dir(cwd: Path = ISABI_ROOT) -> Path:
     if key not in _GIT_DIRS:
         _GIT_DIRS[key] = Path(_git(["rev-parse", "--absolute-git-dir"], cwd).stdout.strip())
     return _GIT_DIRS[key]
+
+
+def _current_branch(cwd: Path) -> str:
+    r = _git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd, check=False, timeout=15)
+    return r.stdout.strip() if r.returncode == 0 else ""
 
 
 def read_remote_lock(cwd: Path = ISABI_ROOT) -> tuple[str, dict]:
@@ -356,10 +365,12 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
                             "taking over now could roll that work back. Find that work (the holder's worktree or branch), "
                             "get it onto main, then run `python build/release_lock.py acquire --takeover --holder ...`.")
     now = _now()
+    app_repo = _prune_app_repo(cwd)
     new = {
         "lockId": uuid.uuid4().hex,
         "holder": holder or default_holder(cwd),
         "pc": socket.gethostname(),
+        "branch": _current_branch(cwd),
         "worktree": str(cwd),
         "version": version,
         "purpose": purpose,
@@ -367,6 +378,10 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
         "expiresAt": _iso(now + dt.timedelta(minutes=ttl_min)),
         "deployed": [],
     }
+    if app_repo is not None:
+        app_b = _current_branch(app_repo)
+        if app_b:
+            new["appBranch"] = app_b
     if sha:
         new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
     commit = _make_lock_commit(new, cwd)
@@ -641,17 +656,24 @@ def _protected_worktree_branches(repo: Path) -> set[str]:
     return protected
 
 
-def _read_queue_for_prune(cwd: Path) -> tuple[set[tuple[str, str]], set[tuple[str, str, str]]]:
-    """Read `refs/release-queue/*` directly via git without importing `release_batch.py`."""
+def _read_queue_details(
+    cwd: Path, locked_batch_ids: set[str] | None = None
+) -> tuple[set[tuple[str, str]], set[tuple[str, str, str]], set[tuple[str, str]], set[tuple[str, str]]]:
+    """Read `refs/release-queue/*` directly via git without importing `release_batch.py`.
+    Returns (protected, shipped, fresh_heartbeat, batch_locked)."""
     protected: set[tuple[str, str]] = set()
     shipped: set[tuple[str, str, str]] = set()
+    fresh_heartbeat: set[tuple[str, str]] = set()
+    batch_locked: set[tuple[str, str]] = set()
+    batch_ids = set(locked_batch_ids or ())
+    now_dt = _now()
     r = _git(["fetch", "--no-tags", "--quiet", "--prune", REMOTE, f"+{QUEUE_NS}/*:{QUEUE_SEEN_NS}/*"],
              cwd, check=False, timeout=90)
     if r.returncode != 0:
         err = (r.stderr or r.stdout or "").lower()
         if "couldn't find remote ref" not in err and "could not find remote ref" not in err:
             raise LockError(f"cannot inspect release queue before pruning ({(r.stderr or r.stdout).strip()[:240]})")
-        return protected, shipped
+        return protected, shipped, fresh_heartbeat, batch_locked
     refs = _git(["for-each-ref", "--format=%(refname) %(objectname)", f"{QUEUE_SEEN_NS}/"], cwd, check=False).stdout
     try:
         for ln in refs.splitlines():
@@ -668,7 +690,10 @@ def _read_queue_for_prune(cwd: Path) -> tuple[set[tuple[str, str]], set[tuple[st
                 continue
             if not isinstance(entry, dict):
                 continue
+            eid = str(entry.get("id") or "")
             state = entry.get("state")
+            hb_dt = _parse_iso(str(entry.get("seenAt") or entry.get("queuedAt") or ""))
+            is_fresh = hb_dt is not None and (now_dt - hb_dt).total_seconds() <= STALLED_QUEUE_HEARTBEAT_MIN * 60
             for kind, repo_label in (("app", "isabi-app"), ("site", "isabi")):
                 part = entry.get(kind)
                 if not isinstance(part, dict):
@@ -677,8 +702,12 @@ def _read_queue_for_prune(cwd: Path) -> tuple[set[tuple[str, str]], set[tuple[st
                 psha = str(part.get("sha") or "")
                 if not branch:
                     continue
+                if eid and eid in batch_ids:
+                    batch_locked.add((repo_label, branch))
                 if state in ("waiting", "left_out"):
                     protected.add((repo_label, branch))
+                    if is_fresh:
+                        fresh_heartbeat.add((repo_label, branch))
                 elif state == "shipped" and psha:
                     shipped.add((repo_label, branch, psha))
     finally:
@@ -686,7 +715,55 @@ def _read_queue_for_prune(cwd: Path) -> tuple[set[tuple[str, str]], set[tuple[st
             ref = ln.strip().split(maxsplit=1)[0]
             if ref.startswith(QUEUE_SEEN_NS + "/"):
                 _git(["update-ref", "-d", ref], cwd, check=False)
+    return protected, shipped, fresh_heartbeat, batch_locked
+
+
+def _read_queue_for_prune(cwd: Path) -> tuple[set[tuple[str, str]], set[tuple[str, str, str]]]:
+    protected, shipped, _fresh, _bl = _read_queue_details(cwd)
     return protected, shipped
+
+
+def _locked_branch_refs(
+    lock_sha: str, lock_info: dict, batch_locked: set[tuple[str, str]] | None = None
+) -> set[tuple[str, str]]:
+    """Branches protected by a currently active (unexpired) release lock."""
+    locked_refs: set[tuple[str, str]] = set()
+    if not (lock_sha and lock_info and not is_expired(lock_info, 0)):
+        return locked_refs
+    if batch_locked:
+        locked_refs.update(batch_locked)
+    for item in lock_info.get("entries") or []:
+        if isinstance(item, dict):
+            for kind, rlbl in (("app", "isabi-app"), ("site", "isabi")):
+                b = str((item.get(kind) or {}).get("branch") or "").removeprefix("origin/").removeprefix("refs/heads/")
+                if b:
+                    locked_refs.add((rlbl, b))
+    lock_b = str(lock_info.get("branch") or "").removeprefix("origin/").removeprefix("refs/heads/")
+    app_b = str(lock_info.get("appBranch") or "").removeprefix("origin/").removeprefix("refs/heads/")
+    if lock_b:
+        locked_refs.add(("isabi", lock_b))
+    if app_b:
+        locked_refs.add(("isabi-app", app_b))
+    return {x for x in locked_refs if x[1]}
+
+
+_SHELL_BUMP_SUBJECT_RE = re.compile(r"^\ufeff?v\d+\.\d+\.\d+:\s*shell version\b", re.IGNORECASE)
+
+
+def _main_history_index(repo: Path, main_ref: str, limit: int = 600) -> tuple[str, set[str]]:
+    """Recent main commit messages and normalized subjects (single fast git-log call)."""
+    r = _git(["log", main_ref, "--format=%B%x00", "-n", str(limit)], repo, check=False, timeout=60)
+    if r.returncode != 0 or not r.stdout:
+        return "", set()
+    main_subjects: set[str] = set()
+    chunks = r.stdout.split("\x00")
+    for ch in chunks:
+        for ln in ch.splitlines():
+            s = ln.lstrip("\ufeff").strip()
+            if s:
+                main_subjects.add(s)
+                break
+    return r.stdout.replace("\x00", "\n"), main_subjects
 
 
 def _is_patch_equivalent(repo: Path, main_ref: str, sha: str) -> bool:
@@ -695,6 +772,92 @@ def _is_patch_equivalent(repo: Path, main_ref: str, sha: str) -> bool:
     if r.returncode != 0:
         return False
     return not any(ln.startswith("+ ") for ln in r.stdout.splitlines() if ln.strip())
+
+
+def _is_rebased_by_subjects(repo: Path, main_ref: str, sha: str, main_subjects: set[str]) -> bool:
+    """True when every non-shell-bump commit subject on the branch already appears verbatim on main."""
+    if not main_subjects:
+        return False
+    mb = _git(["merge-base", main_ref, sha], repo, check=False, timeout=30)
+    base_sha = (mb.stdout or "").strip()
+    if mb.returncode != 0 or not base_sha:
+        return False
+    lg = _git(["log", f"{base_sha}..{sha}", "--format=%s"], repo, check=False, timeout=30)
+    if lg.returncode != 0:
+        return False
+    substantive = [
+        ln.lstrip("\ufeff").strip()
+        for ln in lg.stdout.splitlines()
+        if ln.lstrip("\ufeff").strip() and not _SHELL_BUMP_SUBJECT_RE.match(ln.lstrip("\ufeff").strip())
+    ]
+    return bool(substantive) and all(s in main_subjects for s in substantive)
+
+
+def _is_generated_only(repo: Path, main_ref: str, sha: str, *, repo_label: str = "") -> bool:
+    """True when a branch's only unshipped diffs are generated build/sync files and all source files match main."""
+    mb = _git(["merge-base", main_ref, sha], repo, check=False, timeout=30)
+    base_sha = (mb.stdout or "").strip()
+    if mb.returncode != 0 or not base_sha:
+        return False
+    ch = _git(["diff", "--name-only", base_sha, sha], repo, check=False, timeout=30)
+    if ch.returncode != 0:
+        return False
+    changed = [ln.strip() for ln in ch.stdout.splitlines() if ln.strip()]
+    if not changed:
+        return True
+    non_gen = [
+        p for p in changed
+        if p not in _PURE_GENERATED_PATHS
+        and not (p.startswith("js/seed_demo_") and p.endswith(".json"))
+        and not (repo_label == "isabi" and p.startswith("app/"))
+    ]
+    if not non_gen:
+        return True
+    dq = _git(["diff", "--quiet", main_ref, sha, "--", *non_gen], repo, check=False, timeout=30)
+    return dq.returncode == 0
+
+
+def _branch_shipped_reason(
+    repo: Path,
+    main_ref: str,
+    branch: str,
+    sha: str,
+    *,
+    repo_label: str,
+    shipped_queue: set[tuple[str, str, str]],
+    main_text: str,
+    main_subjects: set[str] = frozenset(),
+    check_stalled_heuristics: bool = False,
+) -> str:
+    """Return non-empty reason if `branch` (`sha`) has already landed on `main_ref`."""
+    if _contains(repo, sha, main_ref):
+        return "merged"
+    if (repo_label, branch, sha) in shipped_queue:
+        return "shipped_queue"
+    if sha and f"{branch} {sha[:7]}" in main_text:
+        return "batch_commit"
+    if _is_patch_equivalent(repo, main_ref, sha):
+        return "patch_equivalent"
+    if check_stalled_heuristics:
+        if re.search(rf"(?<![\w/-]){re.escape(branch)}(?![\w/-])", main_text):
+            return "main_commit_trail"
+        if _is_rebased_by_subjects(repo, main_ref, sha, main_subjects):
+            return "rebased_on_main"
+        if _is_generated_only(repo, main_ref, sha, repo_label=repo_label):
+            return "generated_only"
+    return ""
+
+
+def _fetch_repo_main_and_wt(rdir: Path, repo_label: str) -> None:
+    r_main = _git(["fetch", "--no-tags", "--quiet", REMOTE, "main"], rdir, check=False, timeout=120)
+    if r_main.returncode != 0:
+        raise LockError(f"cannot fetch main in {repo_label} ({(r_main.stderr or r_main.stdout).strip()[:240]})")
+    r_wt = _git(["fetch", "--no-tags", "--quiet", "--prune", REMOTE, f"+refs/heads/wt/*:refs/remotes/{REMOTE}/wt/*"],
+                rdir, check=False, timeout=120)
+    if r_wt.returncode != 0:
+        err = (r_wt.stderr or r_wt.stdout or "").lower()
+        if "couldn't find remote ref" not in err and "could not find remote ref" not in err:
+            raise LockError(f"cannot fetch wt/* in {repo_label} ({(r_wt.stderr or r_wt.stdout).strip()[:240]})")
 
 
 def prune_stale_wt(
@@ -706,19 +869,13 @@ def prune_stale_wt(
 ) -> dict:
     """Safely prune merged, patch-equivalent, or batch-shipped `origin/wt/*` branches older than `days`."""
     lock_sha, lock_info = read_remote_lock(cwd)
-    protected_queue, shipped_queue = _read_queue_for_prune(cwd)
-    # Also protect branches referenced inside an active release lock's batch entries (if present)
-    locked_refs: set[tuple[str, str]] = set()
-    if lock_sha and lock_info and not is_expired(lock_info, 0):
-        wt_str = str(lock_info.get("worktree") or "")
-        for item in lock_info.get("entries") or []:
-            if isinstance(item, dict):
-                for kind, rlbl in (("app", "isabi-app"), ("site", "isabi")):
-                    b = str((item.get(kind) or {}).get("branch") or "")
-                    if b:
-                        locked_refs.add((rlbl, b))
-        if wt_str and Path(wt_str).name:
-            locked_refs.add(("isabi", str(lock_info.get("branch") or "")))
+    locked_batch_ids = (
+        {str(x) for x in (lock_info.get("batch") or []) if x}
+        if (lock_sha and lock_info and not is_expired(lock_info, 0))
+        else set()
+    )
+    protected_queue, shipped_queue, _fresh_hb, batch_locked = _read_queue_details(cwd, locked_batch_ids)
+    locked_refs = _locked_branch_refs(lock_sha, lock_info, batch_locked)
 
     repos: list[tuple[str, Path]] = [("isabi", cwd)]
     app_repo = _prune_app_repo(cwd)
@@ -730,17 +887,9 @@ def prune_stale_wt(
     report: dict = {"days": days, "dry": dry, "include_abandoned": include_abandoned, "repos": []}
 
     for repo_label, rdir in repos:
-        r_main = _git(["fetch", "--no-tags", "--quiet", REMOTE, "main"], rdir, check=False, timeout=120)
-        if r_main.returncode != 0:
-            raise LockError(f"cannot fetch main in {repo_label} ({(r_main.stderr or r_main.stdout).strip()[:240]})")
-        r_wt = _git(["fetch", "--no-tags", "--quiet", "--prune", REMOTE, f"+refs/heads/wt/*:refs/remotes/{REMOTE}/wt/*"],
-                    rdir, check=False, timeout=120)
-        if r_wt.returncode != 0:
-            err = (r_wt.stderr or r_wt.stdout or "").lower()
-            if "couldn't find remote ref" not in err and "could not find remote ref" not in err:
-                raise LockError(f"cannot fetch wt/* in {repo_label} ({(r_wt.stderr or r_wt.stdout).strip()[:240]})")
-
+        _fetch_repo_main_and_wt(rdir, repo_label)
         main_ref = f"refs/remotes/{REMOTE}/main"
+        main_text, main_subjects = _main_history_index(rdir, main_ref)
         dirty_local = _protected_worktree_branches(rdir)
         out = _git(["for-each-ref", "--format=%(refname)|%(objectname)|%(committerdate:unix)",
                     f"refs/remotes/{REMOTE}/wt/"], rdir).stdout
@@ -773,15 +922,17 @@ def prune_stale_wt(
                 kept_protected.append(branch)
                 continue
 
-            reason = ""
-            if _contains(rdir, sha, main_ref):
-                reason = "merged"
-            elif (repo_label, branch, sha) in shipped_queue:
-                reason = "shipped_queue"
-            elif _is_patch_equivalent(rdir, main_ref, sha):
-                reason = "patch_equivalent"
-            elif include_abandoned:
-                reason = "abandoned"
+            reason = _branch_shipped_reason(
+                rdir,
+                main_ref,
+                branch,
+                sha,
+                repo_label=repo_label,
+                shipped_queue=shipped_queue,
+                main_text=main_text,
+                main_subjects=main_subjects,
+                check_stalled_heuristics=False,
+            ) or ("abandoned" if include_abandoned else "")
 
             if not reason:
                 kept_unmerged.append(branch)
@@ -808,6 +959,138 @@ def prune_stale_wt(
             "kept_unmerged": kept_unmerged,
         })
     return report
+
+
+def stalled_wt_branches(
+    cwd: Path = ISABI_ROOT,
+    *,
+    hours: float = DEFAULT_STALLED_HOURS,
+) -> dict:
+    """Detect remote `origin/wt/*` branches in isabi and isabi-app older than `hours` carrying unshipped
+    commits, with no active release lock covering them and no fresh (<= 180 min) release-queue heartbeat."""
+    hrs = max(0.0, float(hours))
+    lock_sha, lock_info = read_remote_lock(cwd)
+    locked_batch_ids = (
+        {str(x) for x in (lock_info.get("batch") or []) if x}
+        if (lock_sha and lock_info and not is_expired(lock_info, 0))
+        else set()
+    )
+    _protected_queue, shipped_queue, fresh_heartbeat, batch_locked = _read_queue_details(cwd, locked_batch_ids)
+    locked_refs = _locked_branch_refs(lock_sha, lock_info, batch_locked)
+
+    repos: list[tuple[str, Path]] = [("isabi", cwd)]
+    app_repo = _prune_app_repo(cwd)
+    if app_repo is not None:
+        repos.append(("isabi-app", app_repo))
+
+    now_dt = _now()
+    now_ts = now_dt.timestamp()
+    cutoff_s = hrs * 3600.0
+    all_items: list[dict] = []
+    repo_reports: list[dict] = []
+
+    for repo_label, rdir in repos:
+        _fetch_repo_main_and_wt(rdir, repo_label)
+        main_ref = f"refs/remotes/{REMOTE}/main"
+        main_text, main_subjects = _main_history_index(rdir, main_ref)
+        out = _git(
+            ["for-each-ref", "--format=%(refname)|%(objectname)|%(committerdate:unix)|%(committerdate:iso-strict)|%(subject)",
+             f"refs/remotes/{REMOTE}/wt/"],
+            rdir,
+        ).stdout
+
+        stalled: list[dict] = []
+        skipped_recent = 0
+        skipped_shipped = 0
+        skipped_active = 0
+
+        for ln in out.splitlines():
+            if not ln.strip():
+                continue
+            parts = ln.split("|", 4)
+            if len(parts) < 3:
+                continue
+            refname, sha, ts_str = parts[0], parts[1], parts[2]
+            iso_dt = parts[3].strip() if len(parts) > 3 else ""
+            subj = parts[4].strip() if len(parts) > 4 else ""
+            branch = refname[len(f"refs/remotes/{REMOTE}/"):]
+            try:
+                ts_val = int(ts_str)
+            except ValueError:
+                skipped_recent += 1
+                continue
+            age_s = max(0.0, now_ts - ts_val)
+            if age_s < cutoff_s:
+                skipped_recent += 1
+                continue
+            if (repo_label, branch) in locked_refs or (repo_label, branch) in fresh_heartbeat:
+                skipped_active += 1
+                continue
+            reason = _branch_shipped_reason(
+                rdir,
+                main_ref,
+                branch,
+                sha,
+                repo_label=repo_label,
+                shipped_queue=shipped_queue,
+                main_text=main_text,
+                main_subjects=main_subjects,
+                check_stalled_heuristics=True,
+            )
+            if reason:
+                skipped_shipped += 1
+                continue
+            ah_r = _git(["rev-list", "--count", f"{main_ref}..{sha}"], rdir, check=False, timeout=30)
+            try:
+                ahead = int((ah_r.stdout or "").strip() or 0) if ah_r.returncode == 0 else 0
+            except ValueError:
+                ahead = 0
+            if ahead <= 0:
+                skipped_shipped += 1
+                continue
+            item = {
+                "repo": repo_label,
+                "branch": branch,
+                "sha": sha[:10],
+                "ageHours": round(age_s / 3600.0, 1),
+                "ahead": ahead,
+                "subject": subj[:100],
+                "committedAt": iso_dt,
+            }
+            stalled.append(item)
+            all_items.append(item)
+
+        repo_reports.append({
+            "repo": repo_label,
+            "stalled": stalled,
+            "skippedRecent": skipped_recent,
+            "skippedShipped": skipped_shipped,
+            "skippedActive": skipped_active,
+        })
+
+    all_items.sort(key=lambda x: (-x["ageHours"], x["repo"], x["branch"]))
+    return {
+        "hours": hrs,
+        "cutoffHours": hrs,
+        "checkedAt": _iso(now_dt),
+        "stalledCount": len(all_items),
+        "items": all_items,
+        "repos": repo_reports,
+    }
+
+
+def cmd_stalled(cwd: Path, *, hours: float, as_json: bool) -> int:
+    rep = stalled_wt_branches(cwd, hours=hours)
+    if as_json:
+        print(json.dumps(rep, indent=1))
+        return 0
+    print(f"Stalled unshipped origin/wt/* branches (>={hours:g} h): {rep['stalledCount']}")
+    for it in rep["items"]:
+        print(f"  - [{it['repo']}] {it['branch']} ({it['sha']}, {it['ageHours']}h, +{it['ahead']} vs main) :: {it['subject']}")
+    for rr in rep["repos"]:
+        print(f"  [{rr['repo']}] stalled={len(rr['stalled'])}, recent={rr['skippedRecent']}, "
+              f"shipped={rr['skippedShipped']}, active_lock_or_queue={rr['skippedActive']}")
+    return 0
 
 
 def cmd_prune(cwd: Path, *, days: int, dry: bool, as_json: bool, include_abandoned: bool) -> int:
@@ -846,6 +1129,9 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--dry", action="store_true", help="show what would be deleted without deleting any branch")
     pr.add_argument("--json", action="store_true")
     pr.add_argument("--include-abandoned", action="store_true", help="also delete unmerged origin/wt/* branches older than --days")
+    st = sub.add_parser("stalled", help="list unshipped origin/wt/* branches older than N hours with no active lock or fresh queue heartbeat")
+    st.add_argument("--hours", type=float, default=DEFAULT_STALLED_HOURS, help=f"minimum age in hours (default {DEFAULT_STALLED_HOURS})")
+    st.add_argument("--json", action="store_true")
     ci = sub.add_parser("ci-acquire", help="push-to-main workflow: wait for and take the lock, record this commit")
     ci.add_argument("--sha", required=True)
     ci.add_argument("--wait", type=int, default=600, help="seconds to wait for a session's release (default 600)")
@@ -866,12 +1152,16 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--ttl must be 1 to 240 minutes")
     if args.cmd == "prune" and args.days < 1:
         ap.error("--days must be at least 1")
+    if args.cmd == "stalled" and args.hours < 0:
+        ap.error("--hours must be >= 0")
     cwd = ISABI_ROOT
     try:
         if args.cmd == "status":
             return cmd_status(cwd, args.json)
         if args.cmd == "prune":
             return cmd_prune(cwd, days=args.days, dry=args.dry, as_json=args.json, include_abandoned=args.include_abandoned)
+        if args.cmd == "stalled":
+            return cmd_stalled(cwd, hours=args.hours, as_json=args.json)
         if args.cmd == "acquire":
             acquire(cwd, holder=args.holder, version=args.version, purpose=args.purpose, ttl_min=args.ttl, takeover=args.takeover)
         elif args.cmd == "renew":

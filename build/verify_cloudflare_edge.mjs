@@ -147,6 +147,9 @@ const appJsSrcDir = [
   path.resolve(ROOT, '..', '..', 'isabi-app', 'js'),
   path.join(os.homedir(), 'bhfirms', 'isabi-app', 'js')
 ].find(p => fs.existsSync(path.join(p, 'seed_core.json'))) || path.resolve(ROOT, '..', 'isabi-app', 'js');
+const TEST_SEATS_PATH = path.resolve(appJsSrcDir, '..', 'build', 'test_seats.json');
+const TEST_SEATS = fs.existsSync(TEST_SEATS_PATH) ? JSON.parse(fs.readFileSync(TEST_SEATS_PATH, 'utf8')) : {};
+const ENTRY_TEST_EMAIL = String(process.env.ISABI_TEST_ENTRY_EMAIL || TEST_SEATS.entry_email || 'entry@example.invalid').trim();
 for (const kind of ['core', 'records', 'industries']) {
   const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
   if (fs.existsSync(seedFile)) {
@@ -293,7 +296,7 @@ async function main() {
     const stRes = await httpReq('GET', '/app/api/status');
     const badLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '9999', method: 'PIN' });
     const ownerLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN', device: 'Verify Suite' });
-    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: 'sabahkassab@bhfirms.com', pin: '3333', method: 'PIN', device: 'Verify Suite' });
+    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: ENTRY_TEST_EMAIL, pin: '3333', method: 'PIN', device: 'Verify Suite' });
     const ownerToken = ownerLogin.json?.token || '';
     const entryToken = entryLogin.json?.token || '';
     const setCookieHdr = String(ownerLogin.headers['set-cookie'] || '');
@@ -679,7 +682,7 @@ async function main() {
     docTamper.customRecords.expenses.push({ id: 'exp-tamper-blanca', company: 'Blanca', date: '2026-11-08', amount: 9999 });
     if (Array.isArray(docTamper.users)) {
       docTamper.users = docTamper.users.map(u =>
-        String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com'
+        String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase()
           ? Object.assign({}, u, { role: 'Full Access (Owner)', companies: 'All' })
           : u
       );
@@ -695,7 +698,7 @@ async function main() {
     const bbcStillIntact = (checkBbcUntouched.json?.rows || []).some(r => r.id === bbcId && r.company === 'BBConstruction' && Number(r.total) === Number(bbcRow.total));
     const postTamperStore = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const ptDoc = postTamperStore.json?.docs?.mfg_web_store || {};
-    const sabahSeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
+    const entrySeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase());
     const blancaInjected = (ptDoc.customRecords?.expenses || []).some(r => r.id === 'exp-tamper-blanca');
 
     // Step 4: Hard-remove `exp-dirty-diff-0` AND stable-seed override `ex_a1b2c3d4e5f6` from `customRecords.expenses`;
@@ -722,8 +725,8 @@ async function main() {
       row0InD1?.code === 'EXP-MODIFIED-CODE-999' &&
       bbcStillIntact &&
       !blancaInjected &&
-      sabahSeat &&
-      !String(sabahSeat.role || '').includes('Owner') &&
+      entrySeat &&
+      !String(entrySeat.role || '').includes('Owner') &&
       ms4.voidedRemoved >= 1 &&
       row0Voided?.voided === true &&
       seedOvrRow &&
@@ -735,7 +738,7 @@ async function main() {
       );
     } else {
       fail('edge-15-dirty-row-only-sync-void-and-lateral-rls', JSON.stringify({
-        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, sabahRole: sabahSeat?.role, ms4, voided: row0Voided?.voided
+        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, entryRole: entrySeat?.role, ms4, voided: row0Voided?.voided
       }));
     }
 
@@ -1049,15 +1052,15 @@ finally:
     // Entry self-POST privilege lock + weak PIN reject + single-BU Supervisor cross-BU/Owner escalation block
     const weakPinAttempt17 = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        email: ENTRY_TEST_EMAIL,
+        full_name: 'Entry Test Seat',
         pin_code: '0000'
       }
     }, { 'X-ISABI-Session': entryToken });
     const entrySelfEscalate = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        email: ENTRY_TEST_EMAIL,
+        full_name: 'Entry Test Seat',
         role: 'Full Access (Owner)',
         companies: 'All',
         pin_redacted: true,
@@ -1067,9 +1070,9 @@ finally:
       }
     }, { 'X-ISABI-Session': entryToken });
     const usersAfterSelf = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
-    const sabahAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
-    const sabahPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+    const entryAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase());
+    const entryPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
+      email: ENTRY_TEST_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1138,11 +1141,14 @@ finally:
       weakPinAttempt17.status === 400 &&
       entrySelfEscalate.status === 200 &&
       entrySelfEscalate.json?.lockedPrivileges === true &&
-      sabahAfterSelf?.role === 'Entry' &&
-      sabahAfterSelf?.companies === 'WTC' &&
-      sabahAfterSelf?.pin_code === undefined &&
-      sabahAfterSelf?.pin_redacted === true &&
-      sabahPinStill3333.status === 200 &&
+      entryAfterSelf?.role === 'Entry' &&
+      entryAfterSelf?.companies === 'WTC' &&
+      entryAfterSelf?.pin_code === undefined &&
+      entryAfterSelf?.pin_redacted === true &&
+      entryAfterSelf?.custom_perms === null &&
+      entryPinStill3333.status === 200 &&
+      entryPinStill3333.json?.user?.custom_perms === null &&
+      bbcSupLogin.json?.user?.custom_perms === null &&
       supEditOwner.status === 403 &&
       supGrantOutScope.status === 403 &&
       faceNoVec.status === 401 &&
@@ -1172,7 +1178,7 @@ finally:
         evilCors: evilCookiePost.headers['access-control-allow-origin'],
         goodCors: goodOriginGet.headers['access-control-allow-origin'],
         weakPin: weakPinAttempt17.status,
-        entrySelf: [entrySelfEscalate.status, sabahAfterSelf?.pin_code, sabahAfterSelf?.pin_redacted, sabahPinStill3333.status],
+        entrySelf: [entrySelfEscalate.status, entryAfterSelf?.pin_code, entryAfterSelf?.pin_redacted, entryPinStill3333.status],
         supEditOwner: supEditOwner.status,
         supGrantOutScope: supGrantOutScope.status,
         face: [faceNoVec.status, faceWrongVec.status, faceNoPin.status, faceGoodVec.status, faceGoodVec.json?.user?.pin_code]
@@ -1694,7 +1700,7 @@ finally:
       face_descriptor: vecNear
     }, { 'X-ISABI-Session': ownerToken });
     const logoutLogin = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1923,12 +1929,12 @@ finally:
     });
     const tempOwnerTok26 = String(tempOwnerLogin26.json?.token || '');
     const impersBeforeLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
     const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     const sidlessOwnerTok = mintTestJwt({
@@ -1941,7 +1947,7 @@ finally:
       'X-ISABI-Session': sidlessOwnerTok
     });
     const sidlessImpersRes = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': sidlessOwnerTok });
     await httpReq('POST', '/app/api/users', {
@@ -3431,7 +3437,7 @@ finally:
     }
     const e34OvAnon = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' });
     const e34OvDemo = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Demo': '1' });
-    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: 'sabahkassab@bhfirms.com', pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: ENTRY_TEST_EMAIL, pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvCrossBu = await httpReq('POST', '/app/api/auth/verify-override', { email: 'site.bbc@bhfirms.com', pin: '6666', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34Ov2401 = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '2401', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvOk = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_tab: 'sales', field_id: 'f_price', record_id: 'ST-TEST-1' }, { 'X-ISABI-Session': entryToken });
@@ -3686,14 +3692,14 @@ finally:
     const e36UsersOwner = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const e36EntrySelfOnly = Array.isArray(e36UsersEntry.json?.users) &&
       e36UsersEntry.json.users.length === 1 &&
-      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === 'sabahkassab@bhfirms.com' &&
+      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase() &&
       e36UsersEntry.json.users[0]?.pin_code === undefined &&
       e36UsersEntry.json.users[0]?.face_samples === undefined;
     const e36OwnerRedacted = Array.isArray(e36UsersOwner.json?.users) &&
       e36UsersOwner.json.users.length >= 10 &&
       e36UsersOwner.json.users.every(u => u && u.pin_code === undefined && u.face_samples === undefined);
     const e36EntryTakeoverU1 = await httpReq('POST', '/app/api/users', {
-      user: { id: 'u1', email: 'sabahkassab@bhfirms.com', full_name: 'Sabah Takeover', role: 'Full Access (Owner)', companies: '*' }
+      user: { id: 'u1', email: ENTRY_TEST_EMAIL, full_name: 'Entry Takeover', role: 'Full Access (Owner)', companies: '*' }
     }, { 'X-ISABI-Session': entryToken });
 
     // Strict CORS on OPTIONS across /app/api/ask, /app/api/kiosk/verify, and /api/status
@@ -4134,7 +4140,7 @@ finally:
       report_date: '2026-11-13',
       cutoff: '2026-11-12',
       core_hash: 'testcore01',
-      companies: [{ company: 'WTC', company_key: 'wtc', cutoff: '2026-11-12', edited_day_count: 1, edited_net_usd: -1100.0, edited_net_lbp: 0, added_day_count: 0, edited_days: [{ date: '2026-08-24', diff_in_usd: 0, diff_out_usd: 1100.0, diff_net_usd: -1100.0, diff_net_lbp: 0, parties: ['Haj Ibrahim'] }] }]
+      companies: [{ company: 'WTC', company_key: 'wtc', cutoff: '2026-11-12', edited_day_count: 1, edited_net_usd: -1100.0, edited_net_lbp: 0, added_day_count: 0, edited_days: [{ date: '2026-08-24', diff_in_usd: 0, diff_out_usd: 1100.0, diff_net_usd: -1100.0, diff_net_lbp: 0, parties: ['Sample Concrete Co'] }] }]
     };
     const cbOwnerPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: cbNoticeSample }, { 'X-ISABI-Session': ownerToken });
     const cbOwnerGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
@@ -4234,7 +4240,7 @@ finally:
     const ceSyncPatch = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { changed_entries: { status: 'ok' } } }, { 'X-ISABI-Session': ownerToken });
     const ceTooBig = await httpReq('POST', '/app/api/changed_entries', { changed_entries: { status: 'ok', pad: 'x'.repeat(35000) } }, { 'X-ISABI-Session': ownerToken });
     const ceWrongWrap = await httpReq('POST', '/app/api/changed_entries', { source_behind: null }, { 'X-ISABI-Session': ownerToken });
-    const ceSample = { status: 'ok', until: '2026-11-17', core_hash: 'testcore01', listed_count: 1, items: [{ kind: 'edit', table: 'expenses', company: 'BBConstruction', date: '2026-10-30', party: 'Rabih Tannous', old_usd: 9200, new_usd: 700, fields: ['amount'] }] };
+    const ceSample = { status: 'ok', until: '2026-11-17', core_hash: 'testcore01', listed_count: 1, items: [{ kind: 'edit', table: 'expenses', company: 'BBConstruction', date: '2026-10-30', party: 'Phoenicia Logistics SAL', old_usd: 9200, new_usd: 700, fields: ['amount'] }] };
     const ceOwnerPost = await httpReq('POST', '/app/api/changed_entries', { changed_entries: ceSample }, { 'X-ISABI-Session': ownerToken });
     const ceOwnerGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Session': ownerToken });
     const sbAfterCe = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': ownerToken });
@@ -4247,7 +4253,7 @@ finally:
       ceSupGet.status === 403 && ceSupPost.status === 403 &&
       ceSyncGet.status === 403 && ceSyncPatch.status === 403 &&
       ceTooBig.status === 413 && ceWrongWrap.status === 400 &&
-      ceOwnerPost.status === 200 && ceOwnerGet.json?.changed_entries?.items?.[0]?.party === 'Rabih Tannous' &&
+      ceOwnerPost.status === 200 && ceOwnerGet.json?.changed_entries?.items?.[0]?.party === 'Phoenicia Logistics SAL' &&
       sbAfterCe.json?.source_behind === null &&
       ceClearPost.status === 200 && ceClearGet.json?.changed_entries === null &&
       cbAfterCe.json?.cashflow_behind?.core_hash === 'testcore01'
