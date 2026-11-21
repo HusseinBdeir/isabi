@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/cross-bucket-ar-fifo-recs",
+  "sha": "64fff6f1d0ace246dd708265e66e0b2f5116c852"
+ },
+ "gates": [
+  "isabi-app: node build/verify_ar_fifo_sister_recs.mjs"
+ ],
+ "holder": "f22c56fb-cross-bucket-ar-fifo",
+ "id": "20261121T021722Z-cb852b18",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T02:17:22Z",
+ "seenAt": "2026-11-21T02:17:22Z",
+ "state": "waiting",
+ "summary": "Cross-bucket sister near-copy check, live trd_sales AR preview + credit notes, and 1-tap View Invoice Split FIFO popover"
+}
