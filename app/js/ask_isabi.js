@@ -766,7 +766,7 @@
       .filter(w => w.length >= 3 && !/^\d+$/.test(w) && !genericStop.has(w) && !coNameSet.has(w));
     if (!contentWords.length && !explicitCounterparty && !explicitProduct && !explicitStaff) return null;
 
-    // 2 & 3. Customer & Supplier Counterparty Match (with Dual-Role Disambiguation for Dabousi, Haj Ibrahim, etc.)
+    // 2 & 3. Customer & Supplier Counterparty Match (with Dual-Role Disambiguation for parties that are both customer and supplier)
     const explicitCust = /\b(customer|client|buyer|receivable|ar\b|owe\s+us)\b/i.test(cleanQ);
     const explicitSup = /\b(supplier|vendor|quarry|pit|hauler|payable|ap\b|owed\s+to|settlement)\b/i.test(cleanQ);
 
@@ -2484,9 +2484,9 @@
         answer: 'Across the 2-month post-cutover audit (Aug 24 - Oct 23, 2026), Bdeir trucks <b>TB1 (360676)</b>, <b>Tb7 (364656)</b>, and <b>Tb9 (364168)</b> completed <b>999 trips</b> (748 WTC + 251 BBConstruction · <b>28,440.2 m³</b>). Recorded ledger transport revenue is <b>$46,124.02</b> against <b>$44,378.48</b> in de-duplicated operating costs (Net <b>+$1,745.54</b> · 3.8%). Unbundling the 165 external/partner $0.00 trips adds <b>+$16,896.40</b> for a Strict Adjusted P&L of <b>$63,020.42</b> revenue and <b>+$18,641.94</b> net profit (29.6%), or <b>$68,952.42</b> revenue and <b>+$24,573.94</b> net profit (35.6%) at full commercial benchmark across all 265 $0.00 trips.',
         headers: ['Truck & Owner', 'Trips (Paid / $0)', 'Recorded Rev', 'Strict Adj Rev', 'Total Cost', 'Recorded / Strict Net'],
         rows: [
-          ['TB1 · 360676 (Karim Bdeir)', '365 (251 / 114 $0)', '$19,687.00', '$29,277.80', '$16,904.89', '+$2,782.11 / +$12,372.91'],
-          ['Tb7 · 364656 (Hussein Bdeir)', '282 (205 / 77 $0)', '$11,965.51', '$15,503.91', '$13,342.07', '-$1,376.56 / +$2,161.84'],
-          ['Tb9 · 364168 (Jad Bdeir)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
+          ['TB1 · 360676 (Partner Truck)', '365 (251 / 114 $0)', '$19,687.00', '$29,277.80', '$16,904.89', '+$2,782.11 / +$12,372.91'],
+          ['Tb7 · 364656 (Partner Truck)', '282 (205 / 77 $0)', '$11,965.51', '$15,503.91', '$13,342.07', '-$1,376.56 / +$2,161.84'],
+          ['Tb9 · 364168 (Partner Truck)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
         ],
         total: ['Fleet Total (3 Trucks)', '+$1,745.54 Recorded / +$18,641.94 Strict Adj'],
         promptText: 'Open Fleet & Running Costs to inspect all 6 tabs (Executive P&L, 265 Zero-Haulage Audit, 108 Routes Explorer, Diesel De-Dup & 85 Repair Bills, 172 Overtime Trips, and 4 Reconciliation Findings).',

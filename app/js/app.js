@@ -22,6 +22,142 @@
   SEED.models = SEED.models || {};
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
+  // Private name book (v19.6.266): real people's names that rules need (name variants, driver aliases, truck
+  // owners and drivers, Holding stakeholders, named site pins, the JV partner) never sit in this public file.
+  // They come with the session-authenticated private seed (`seed_core.json` key `namebook`, built from
+  // `build/private_namebook.json`), and read as empty in the public demo and in Demo Company.
+  let _privateNameBook = null;
+  let _compiledRealSrc = null;
+  let _compiledRealNb = null;
+  const _nbNorm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+  const EMPTY_NB_OBJ = Object.freeze({});
+  const EMPTY_NB_ARR = Object.freeze([]);
+  const EMPTY_NB_MAP = new Map();
+  const EMPTY_COMPILED_NB = Object.freeze({
+    raw: EMPTY_NB_OBJ,
+    canonMap: EMPTY_NB_MAP,
+    displayMap: EMPTY_NB_MAP,
+    variantsMap: EMPTY_NB_MAP,
+    ownerFamilySet: new Set(),
+    seniorSet: new Set(),
+    properNounsList: EMPTY_NB_ARR
+  });
+  function compileNameBook(nb) {
+    const canonMap = new Map();
+    const displayMap = new Map();
+    const variantsMap = new Map();
+    const al = (nb && nb.party_aliases && typeof nb.party_aliases === 'object') ? nb.party_aliases : EMPTY_NB_OBJ;
+    for (const [k, v] of Object.entries(al)) {
+      const kn = _nbNorm(k);
+      const vn = _nbNorm(v);
+      if (kn && vn) canonMap.set(kn, vn);
+      const vs = String(v == null ? '' : v).trim();
+      if (vs) {
+        if (kn) displayMap.set(kn, vs);
+        if (vn && !displayMap.has(vn)) displayMap.set(vn, vs);
+      }
+      if (vn && kn && kn !== vn) {
+        let arr = variantsMap.get(vn);
+        if (!arr) { arr = []; variantsMap.set(vn, arr); }
+        arr.push(k);
+      }
+    }
+    const ownerFamilySet = new Set();
+    (Array.isArray(nb.owner_family) ? nb.owner_family : EMPTY_NB_ARR).forEach(n => {
+      const kn = _nbNorm(n);
+      if (kn) ownerFamilySet.add(kn);
+    });
+    const seniorSet = new Set();
+    (Array.isArray(nb.senior_people) ? nb.senior_people : EMPTY_NB_ARR).forEach(n => {
+      const kn = _nbNorm(n);
+      if (kn) seniorSet.add(kn);
+    });
+    const properNounsList = [];
+    const addPn = v => { if (typeof v === 'string' && v.trim()) properNounsList.push(v.trim().toLowerCase()); };
+    for (const [k, v] of Object.entries(al)) { addPn(k); addPn(v); }
+    (nb.owner_family || EMPTY_NB_ARR).forEach(addPn);
+    (nb.extended_parties || EMPTY_NB_ARR).forEach(addPn);
+    (nb.proper_nouns || EMPTY_NB_ARR).forEach(addPn);
+    const drvAl = (nb.driver_aliases && typeof nb.driver_aliases === 'object' && !Array.isArray(nb.driver_aliases)) ? nb.driver_aliases : EMPTY_NB_OBJ;
+    for (const [k, v] of Object.entries(drvAl)) { addPn(k); addPn(v); }
+    Object.values(nb.truck_people || EMPTY_NB_OBJ).forEach(t => { if (t) { addPn(t.owner); addPn(t.driver); addPn(t.driverShort); } });
+    Object.values(nb.telematics_drivers || EMPTY_NB_OBJ).forEach(addPn);
+    addPn(nb.jv_partner);
+    return { raw: nb, canonMap, displayMap, variantsMap, ownerFamilySet, seniorSet, properNounsList };
+  }
+  function setPrivateNameBook(next) {
+    _privateNameBook = (next && typeof next === 'object' && !Array.isArray(next)) ? next : null;
+    if (!_privateNameBook) {
+      _compiledRealSrc = null;
+      _compiledRealNb = null;
+    }
+  }
+  function compiledNameBook() {
+    if (!_privateNameBook || isDemoScopeActive()) return EMPTY_COMPILED_NB;
+    if (_compiledRealSrc !== _privateNameBook || !_compiledRealNb) {
+      _compiledRealSrc = _privateNameBook;
+      _compiledRealNb = compileNameBook(_privateNameBook);
+    }
+    return _compiledRealNb;
+  }
+  function nameBook() {
+    return compiledNameBook().raw;
+  }
+  window.MFG_NAMEBOOK = {
+    get: nameBook,
+    // True once the private seed's book has arrived in this session (false in demo scopes and before load).
+    get loaded() { return Boolean(_privateNameBook) && !isDemoScopeActive(); },
+    // Fast path when caller already holds whitespace-collapsed lowercase `norm(s)`.
+    canonNorm(n) {
+      if (!n) return '';
+      const cm = compiledNameBook().canonMap;
+      return (cm.size && cm.get(n)) || n;
+    },
+    // Canonical key of a name variant ("<variant>" -> "<canonical>"); any other name comes back exactly as
+    // norm() gives it (trimmed, lower case), so keys built elsewhere with norm() still match.
+    canonKey(s) {
+      const raw = String(s == null ? '' : s).trim().toLowerCase();
+      if (!raw) return '';
+      const cm = compiledNameBook().canonMap;
+      if (!cm.size) return raw;
+      return cm.get(raw) || ((raw.includes('  ') || /[^\S ]/.test(raw)) ? cm.get(_nbNorm(raw)) : undefined) || raw;
+    },
+    // Display form for a canonical key, when the book has one.
+    display(s) {
+      const dm = compiledNameBook().displayMap;
+      return dm.size ? (dm.get(_nbNorm(s)) || '') : '';
+    },
+    // Every other spelling that maps to this canonical key.
+    variantsOf(s) {
+      const vm = compiledNameBook().variantsMap;
+      const arr = vm.size ? vm.get(_nbNorm(s)) : null;
+      return arr ? arr.slice() : [];
+    },
+    isOwnerFamily(s) {
+      const k = _nbNorm(s);
+      return !!k && compiledNameBook().ownerFamilySet.has(k);
+    },
+    isSeniorPerson(s) {
+      const k = _nbNorm(s);
+      return !!k && compiledNameBook().seniorSet.has(k);
+    },
+    jvPartner(fallback) {
+      const p = String(nameBook().jv_partner || '').trim();
+      return p || (fallback == null ? 'JV Partner' : fallback);
+    },
+    list(key) {
+      const v = nameBook()[key];
+      return Array.isArray(v) ? v.slice() : [];
+    },
+    map(key) {
+      const v = nameBook()[key];
+      return (v && typeof v === 'object' && !Array.isArray(v)) ? v : EMPTY_NB_OBJ;
+    },
+    // Names the i18n audit treats as proper nouns (never translated).
+    properNouns() {
+      return compiledNameBook().properNounsList.slice();
+    }
+  };
   const SEED_RECORD_KEYS = [
     'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'recurring_expenses', 'expense_items', 'warehouse_movements',
     'receipts', 'settlements', 'salaries',
@@ -61,6 +197,8 @@
   const CLOUD_DOC_KEY = CLOUD_CFG.docKey || 'mfg_web_store';
 
   const PARAMS = new URLSearchParams(location.search);
+  const PARAM_AUTOLOGIN_1 = PARAMS.get('autologin') === '1';
+  const PARAM_DEMO_1 = PARAMS.get('demo') === '1';
   const IS_LOCAL = !window.__ISABI_SIMULATE_REMOTE_HOST && /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname);
   // Demo mode = the 1-click seat simulator shows PINs. Only on the local server.py host or with ?demo=1.
   const IS_DEMO = PARAMS.get('demo') !== '0' && (IS_LOCAL || PARAMS.get('demo') === '1');
@@ -98,10 +236,10 @@
   }
   const DEMO_COMPANY_KEY = 'democompany';
   function isDemoSandboxSession() {
-    if (Boolean((_stateRef && _stateRef.demoVisitor) || PARAMS.get('autologin') === '1')) {
+    if (Boolean((_stateRef && _stateRef.demoVisitor) || PARAM_AUTOLOGIN_1)) {
       return true;
     }
-    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
+    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAM_DEMO_1;
   }
   function isDemoScopeActive() {
     return Boolean(isDemoSandboxSession() || (_stateRef && _stateRef.company === DEMO_COMPANY_KEY));
@@ -453,23 +591,9 @@
     kioskUnlockPromptOpen: false,
     kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
     staffBiometrics: (() => {
+      // Named one-off repairs of saved enrolments now live in the private name book (`bio_quarantine`)
+      // and run once the private seed has loaded (applyBioQuarantineToLocal).
       const rawBio = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {};
-      if (rawBio && typeof rawBio === 'object') {
-        const ab = rawBio['abdallah ismail'];
-        if (ab && String(ab.face_updated_at || '').startsWith('2026-10-31T10:19:')) {
-          rawBio['abdallah ismail'] = Object.assign({}, ab, {
-            face_samples: [],
-            face_thumbs: [],
-            face_cleared: true,
-            face_updated_at: '2026-10-31T11:00:00.000Z',
-            updated_at: '2026-10-31T11:00:00.000Z'
-          });
-        }
-        const ah = rawBio['ahmad'];
-        if (ah && (!Array.isArray(ah.face_samples) || !ah.face_samples.length) && !ah.pin_code) {
-          delete rawBio['ahmad'];
-        }
-      }
       return rawBio;
     })(),
     workSchedules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_work_sched_v1', null) : null) || { shiftTypes: [], staffRules: {} },
@@ -5124,7 +5248,7 @@
 
   function normSupPayable(s) {
     const n = norm(s);
-    return n === 'kareem bdeir' ? 'karim bdeir' : n;
+    return window.MFG_NAMEBOOK.canonNorm(n);
   }
 
   function isSupplierIvaForCompany(supplierName, companyName, seedObj) {
@@ -13333,8 +13457,7 @@
   }
   function normOwnerName(s) {
     const n = norm(s);
-    if (n === 'kareem bdeir') return 'karim bdeir';
-    return n;
+    return n ? window.MFG_NAMEBOOK.canonNorm(n) : n;
   }
   function companyFleetRow(name, company) {
     const n = norm(name);
@@ -13754,7 +13877,7 @@
         s.jv_company = jpMeta.company || s.jv_company || s.company || 'WTC';
       }
       if (s.is_jv || s.jv) {
-        if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || 'Assaf';
+        if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || window.MFG_NAMEBOOK.jvPartner();
         if (!(Number(s.jv_share) > 0)) s.jv_share = (jpMeta && jpMeta.share) || 50;
         if (!s.jv_company) s.jv_company = (jpMeta && jpMeta.company) || s.company || 'WTC';
         if (s.includes_transport === undefined) {
@@ -14227,7 +14350,7 @@
     return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().split(' ').filter(Boolean);
   }
   // One key per real customer: legal suffixes, generic plant words and the site's own name are dropped,
-  // so "Sabeh Beton", "Sabeh Beton S.R.L" and "sabeh Beton Choueifat" count once on site Choueifat.
+  // so "Cedar Beton", "Cedar Beton S.R.L" and "cedar Beton Choueifat" count once on site Choueifat.
   function areaSiteCustomerKey(customer, siteName) {
     const siteTok = new Set(_areaSiteTokens(siteName));
     const all = _areaSiteTokens(customer);
@@ -15659,7 +15782,7 @@
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
     if (!siteRow || !siteRow.name || !siteRow.is_jv) return;
-    const partner = String(siteRow.jv_partner || 'Assaf').trim() || 'Assaf';
+    const partner = String(siteRow.jv_partner || window.MFG_NAMEBOOK.jvPartner()).trim() || window.MFG_NAMEBOOK.jvPartner();
     const share = Math.max(1, Math.min(99, round2(Number(siteRow.jv_share) || 50)));
     const coShare = round2(100 - share);
     const co = String(siteRow.jv_company || siteRow.company || defaultEntryCompany() || 'WTC').trim() || 'WTC';
@@ -29364,8 +29487,7 @@
       });
       const normSupKey = name => {
         const k = norm(name);
-        if (k === 'kareem bdeir') return 'karim bdeir';
-        return k;
+        return k ? window.MFG_NAMEBOOK.canonNorm(k) : k;
       };
       const siteCanon = new Map();
       const jvSiteKeys = new Set();
@@ -29388,7 +29510,7 @@
         if (!nk) return null;
         let o = supAgg.get(nk);
         if (!o) {
-          const disp = supCanon.get(nk) || (nk === 'karim bdeir' ? 'Karim Bdeir' : String(rawName).trim());
+          const disp = supCanon.get(nk) || window.MFG_NAMEBOOK.display(nk) || String(rawName).trim();
           o = {
             supplier: disp,
             raw_loads: 0,
@@ -49444,58 +49566,20 @@
   // ==========================================================================
   // VIEW 9A-2: DAILY PLANT, EXTERNAL FACTORIES & WORKFORCE MACHINE MAP
   // ==========================================================================
-  const WF_DRV_ALIASES = {
-    'abdallah smael': 'Abdallah Ismail',
-    'abdallah ismail': 'Abdallah Ismail',
-    'abdallah maghsal': 'Abdallah Ismail',
-    'ali najdeh': 'Ali Najdi',
-    'ali najdi': 'Ali Najdi',
-    'maher kadour': 'Maher Kadour',
-    'ibrahim mortada': 'Ibrahim Mortada',
-    'khalil al sharif': 'Khalil Al Sharif',
-    'ghafar saloum': 'Ghafar Saloum',
-    'ghafar': 'Ghafar Saloum',
-    'hussein saleh': 'Hussein Saleh',
-    'ali el hajj': 'Ali el Hajj',
-    'ali haj': 'Ali el Hajj',
-    'mohamad habib': 'Mohamad Habib',
-    'ali saleh': 'Ali Saleh',
-    'ismael': 'Ismael',
-    'ismail': 'Ismael',
-    'naameh najdi': 'Naameh Najdi',
-    'mashaal habib': 'Mashaal Habib',
-    'mashaal': 'Mashaal Habib',
-    'mahmoud shiref': 'mahmoud shiref',
-    'mohamad shiref': 'mahmoud shiref',
-    'jasim': 'jasim',
-    'jasem': 'jasim',
-    'abo nidal': 'abo nidal',
-    'rashad zahra': 'Rashad Zahra',
-    'awad': 'Awad',
-    'sultan': 'Sultan',
-    'mwafak': 'Mwafak',
-    'yasser': 'yasser mortada',
-    'yasser mortada': 'yasser mortada',
-    'ahmad jaawik': 'Ahmad jaawik',
-    'mosaed': 'Mosaed',
-    'majed karam': 'Majed Karam',
-    'mahmoud al mortada': 'Mahmoud Al Mortada',
-    'mahmoud sahi': 'Mahmoud Alsahe',
-    'mahmoud alsahe': 'Mahmoud Alsahe',
-    'imad': 'Imad Dakhloul',
-    'imad dakhloul': 'Imad Dakhloul'
-  };
+  // Driver spelling variants -> canonical driver name: private name book (driver_aliases), never this public file.
+  function wfDrvAliases() { return window.MFG_NAMEBOOK.map('driver_aliases'); }
 
   function resolveStaffEquipmentSitesInfo(staffName, company, onDate) {
     const raw = String(staffName || '').trim();
     const empty = { hasConnection: false, staff: raw, primaryEquipment: '', primarySite: '', registeredUnits: [], siteLogs: [] };
     if (!raw || !SEED.records) return empty;
+    const drvAl = wfDrvAliases();
     const rawNorm = norm(raw);
-    const canon = WF_DRV_ALIASES[rawNorm] || raw;
+    const canon = drvAl[rawNorm] || raw;
     const canonNorm = norm(canon);
     const aliasSet = new Set([rawNorm, canonNorm]);
-    Object.keys(WF_DRV_ALIASES).forEach(k => {
-      const targetNorm = norm(WF_DRV_ALIASES[k]);
+    Object.keys(drvAl).forEach(k => {
+      const targetNorm = norm(drvAl[k]);
       if (targetNorm === rawNorm || targetNorm === canonNorm) aliasSet.add(norm(k));
     });
     const rawStem = normStaffStem(raw);
@@ -49508,7 +49592,7 @@
       const n = norm(nameVal);
       if (!n) return false;
       if (aliasSet.has(n)) return true;
-      const mapped = WF_DRV_ALIASES[n];
+      const mapped = drvAl[n];
       if (mapped && aliasSet.has(norm(mapped))) return true;
       if (multiTokenStems.size) {
         const st = normStaffStem(nameVal);
@@ -49706,7 +49790,7 @@
     if (!ce) return false;
     if (ce.is_company_fleet === true) return true;
     if (/^(own|rent)/i.test(String(ce.ownership || '').trim())) return true;
-    if (/^(karim|kareem|hussein|jad)\s+bdeir$/i.test(String(ce.supplier || '').trim())) return true;
+    if (window.MFG_NAMEBOOK.isOwnerFamily(ce.supplier)) return true;
     if (/^(tb\d+|sb\d+|pb\d+|mb\d+|mbs\d+|shacman|danbar|maghsal|caterpillar|e6225f|baldouzar|mowaled|mwaled|325\s*cat|2\d0\s*volvo|pickup)/i.test(String(ce.equipment || ce.name || '').trim())) return true;
     return false;
   }
@@ -49869,7 +49953,7 @@
       empScoped.forEach(e => {
         if (!e || e.voided) return;
         const rawName = String(e.staff || e.name || '').trim();
-        const canonName = WF_DRV_ALIASES[norm(rawName)] || rawName;
+        const canonName = wfDrvAliases()[norm(rawName)] || rawName;
         const k = norm(canonName);
         if (!k) return;
         const isCurrent = (!e.end_date || String(e.end_date) >= latestOpDate) && String(e.status || 'Active') !== 'Ended';
@@ -49903,7 +49987,7 @@
           aliasToStaffKey.set(sk, sk);
           info.aliases.forEach(a => { if (a) aliasToStaffKey.set(a, sk); });
         }
-        Object.entries(WF_DRV_ALIASES).forEach(([al, targetName]) => {
+        Object.entries(wfDrvAliases()).forEach(([al, targetName]) => {
           const tk = norm(targetName);
           if (staffCatalog.has(tk)) {
             aliasToStaffKey.set(norm(al), tk);
@@ -49916,7 +50000,7 @@
       coDrvScoped.forEach(cd => {
         if (!cd || cd.voided) return;
         const drvRaw = String(cd.driver || '').trim();
-        const stfRaw = String(cd.staff || WF_DRV_ALIASES[norm(drvRaw)] || drvRaw).trim();
+        const stfRaw = String(cd.staff || wfDrvAliases()[norm(drvRaw)] || drvRaw).trim();
         const existingKey = aliasToStaffKey.get(norm(stfRaw)) || aliasToStaffKey.get(norm(drvRaw));
         if (existingKey && staffCatalog.has(existingKey)) {
           const sObj = staffCatalog.get(existingKey);
@@ -49948,7 +50032,7 @@
         if (!n) return '';
         const hit = aliasToStaffKey.get(n);
         if (hit) return hit;
-        const viaMap = WF_DRV_ALIASES[n];
+        const viaMap = wfDrvAliases()[n];
         if (viaMap) {
           const vk = norm(viaMap);
           if (staffCatalog.has(vk)) return vk;
@@ -50106,7 +50190,7 @@
           if (!ek || isWfNonMachineBucket(eqName)) continue;
           const mInfo = machineCatalog.get(ek);
           const eqMaster = eqMasterByKey.get(ek);
-          const isCompanyUnit = Boolean(mInfo || (eqMaster && (/^(own|rent)/i.test(eqMaster.ownership || '') || /^(karim|kareem|hussein|jad)\s+bdeir$/i.test(eqMaster.supplier || ''))));
+          const isCompanyUnit = Boolean(mInfo || (eqMaster && (/^(own|rent)/i.test(eqMaster.ownership || '') || window.MFG_NAMEBOOK.isOwnerFamily(eqMaster.supplier))));
           if (!isCompanyUnit) continue;
 
           const isLube = !/diesel|mazout|petrol/i.test(String(f.item || f.fuel_type || 'Diesel'));
@@ -61217,12 +61301,12 @@
     ]);
 
     const units = pickRe('units', [
-      { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Unesco Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Mazen (Unesco Pharmacy)', annual_rent_usd: 55500, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Infinitas S.A.L', annual_rent_usd: 77700, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Mohamad Ali Fawz', annual_rent_usd: 99900, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-1C', code: '4235-1C', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1C Executive Wing', floor: 'Floor 1', type: 'Executive Office', area_sqm: 185, tenant: 'Hoda / Maha Harkous', annual_rent_usd: 26000, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-2A', code: '4235-2A-CLINIC', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Clinic Suite 2A', floor: 'Floor 2', type: 'Medical Clinic', area_sqm: 140, tenant: 'DR Sara Abed Latif', annual_rent_usd: 24000, occupancy: 'Occupied' },
-      { id: 'UNIT-4235-ANX', code: '4235-GF-ANNEX', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Annex Ground Retail', floor: 'Ground Floor', type: 'Retail Unit', area_sqm: 95, tenant: 'Ayman Baz', annual_rent_usd: 18000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Cedar Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Cedar Pharmacy', annual_rent_usd: 55500, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Meridian Consulting SAL', annual_rent_usd: 77700, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Nabil Khoury', annual_rent_usd: 99900, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1C', code: '4235-1C', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1C Executive Wing', floor: 'Floor 1', type: 'Executive Office', area_sqm: 185, tenant: 'Maya Abi Saab', annual_rent_usd: 26000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-2A', code: '4235-2A-CLINIC', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Clinic Suite 2A', floor: 'Floor 2', type: 'Medical Clinic', area_sqm: 140, tenant: 'Dr. Nadine Maalouf', annual_rent_usd: 24000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-ANX', code: '4235-GF-ANNEX', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Annex Ground Retail', floor: 'Ground Floor', type: 'Retail Unit', area_sqm: 95, tenant: 'Fadi Rizk', annual_rent_usd: 18000, occupancy: 'Occupied' },
       { id: 'UNIT-4235-2E', code: '4235-2E-FITOUT', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Floor 2 East Medical Suite', floor: 'Floor 2', type: 'Medical Office', area_sqm: 210, tenant: 'Vacant (MEP Fit-Out)', annual_rent_usd: 0, occupancy: 'Under Fit-Out' },
       { id: 'UNIT-MARINA-01', code: 'MH-1354-GF01', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit_name: 'Marina Showroom & Duplex Suite', floor: 'GF & Mezzanine', type: 'Luxury Showroom', area_sqm: 310, tenant: 'Levant Luxury Retail SAL', annual_rent_usd: 96000, occupancy: 'Occupied' },
       { id: 'UNIT-HAMRA-01', code: 'RB-776-F12', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit_name: 'Hamra Pavillon Floors 1-2', floor: 'Floors 1-2', type: 'Medical & Diagnostics', area_sqm: 540, tenant: 'Hamra Medical & Diagnostics', annual_rent_usd: 78000, occupancy: 'Occupied' },
@@ -61233,12 +61317,12 @@
     ]);
 
     const leases = pickRe('leases', [
-      { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Mazen (Unesco Pharmacy)', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Infinitas S.A.L', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Mohamad Ali Fawz', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
-      { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Hoda / Maha Harkous', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
-      { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'DR Sara Abed Latif', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
-      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Ayman Baz', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (Renewal Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
+      { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Cedar Pharmacy', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Meridian Consulting SAL', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Nabil Khoury', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
+      { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Maya Abi Saab', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'Dr. Nadine Maalouf', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
+      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Fadi Rizk', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (Renewal Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
       { id: 'LSE-PROP-007', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01 (310 m²)', tenant: 'Levant Luxury Retail SAL', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 24000, vat_rate: 0, ttc_period_usd: 24000, annual_ttc_usd: 96000, deposit_usd: 24000, escalation: '5-Yr Prime Solidere Index', days_to_expiry: 1150, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-008', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Floors 1-2 (540 m²)', tenant: 'Hamra Medical & Diagnostics', start_date: '2024-07-01', end_date: '2029-06-30', frequency: 'Quarterly', net_period_usd: 19500, vat_rate: 0, ttc_period_usd: 19500, annual_ttc_usd: 78000, deposit_usd: 19500, escalation: '5-Yr Clinical Escalation (+6% Yr 3)', days_to_expiry: 965, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-009', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit: 'Commercial Hall A (480 m²)', tenant: 'Mazraa Commercial Logistics', start_date: '2025-01-01', end_date: '2027-12-31', frequency: 'Quarterly', net_period_usd: 13500, vat_rate: 0, ttc_period_usd: 13500, annual_ttc_usd: 54000, deposit_usd: 13500, escalation: '3-Yr Commercial Lease', days_to_expiry: 420, unbilled_periods: 0, status: 'Active' },
@@ -61246,25 +61330,25 @@
     ]);
 
     const invoices = pickRe('invoices', [
-      { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
-      { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
-      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
-      { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
-      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
-      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
-      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-FAWZ', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
-      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Hoda / Maha Harkous', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
+      { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
+      { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
+      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
+      { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
+      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
+      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
+      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-NKH', property: '4235 Msaytbeh Commercial Center', tenant: 'Nabil Khoury', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
+      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Maya Abi Saab', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
       { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
       { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
       { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
     ]);
 
     const receipts = pickRe('receipts', [
-      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 invoice)', status: 'Swap Audit' },
-      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 invoice)', status: 'Swap Audit' },
-      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
-      { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Hoda / Maha Harkous', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
-      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
+      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Cedar Pharmacy', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Cedar Pharmacy (matches Meridian Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Meridian Consulting SAL', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Meridian (matches Cedar Pharmacy Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Nabil Khoury', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
+      { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Maya Abi Saab', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
+      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'Dr. Nadine Maalouf', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
       { id: 'RCT-PROP-106', date: '2026-07-03', company: 'Properties', tenant: 'Levant Luxury Retail SAL', property: '1354/50 Mina el Hosn (Marina Tower)', type: 'Quarterly Rent Settlement', method: 'Bank Transfer USD', gross_usd: 96000, allocated_inv_usd: 72000, unallocated_adv_usd: 24000, deposit_gl4196_usd: 24000, audit_flag: 'Solidere showroom annual wire', status: 'Allocated' },
       { id: 'RCT-PROP-107', date: '2026-07-12', company: 'Properties', tenant: 'Hamra Medical & Diagnostics', property: '776 Ras Beirut (Hamra Pavillon)', type: 'Partial Rent Tranche', method: 'Bank Transfer USD', gross_usd: 51000, allocated_inv_usd: 51000, unallocated_adv_usd: 0, deposit_gl4196_usd: 19500, audit_flag: '$7,500 Q3 balance outstanding', status: 'Allocated' }
     ]);
@@ -61316,9 +61400,9 @@
     ]);
 
     const recharges = pickRe('recharges', [
-      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
-      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
-      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
+      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Meridian Consulting SAL', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Nabil Khoury', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
       { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
       { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
     ]);
@@ -61909,7 +61993,7 @@
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">Cross-Tenant Swap Watch</div>
               <div class="kpi-val mono" style="font-size:18px">$5,550 Diff</div>
-              <div class="kpi-sub">2026-05-05 Mazen $19,425 vs Infinitas $13,875</div>
+              <div class="kpi-sub">2026-05-05 Cedar Pharmacy $19,425 vs Meridian $13,875</div>
             </div>
           </div>
       </div>
@@ -62744,7 +62828,7 @@
       { id: 'BNK-WC-2026-07741', company: co, date: '2026-05-12', expiry: '2027-05-11', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', product: 'Industrial Workmen Compensation', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 2400000, gross_prem_usd: 11200, comm_rate_pct: 15.0, gross_comm_usd: 1680, discount_usd: 0, discount_reason: '', net_comm_usd: 1680, policy_fee_usd: 30, net_payable_4017_usd: 9520, status: 'Active' },
       { id: 'ALZ-LIFE-2026-60215', company: co, date: '2026-06-01', expiry: '2027-05-31', client: 'Bdeir Executive Key-Man Protection', carrier: 'Allianz SNA', line: 'LIFE · Life', product: 'Corporate Key-Person Term Life', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 3000000, gross_prem_usd: 9600, comm_rate_pct: 12.0, gross_comm_usd: 1152, discount_usd: 0, discount_reason: '', net_comm_usd: 1152, policy_fee_usd: 25, net_payable_4017_usd: 8448, status: 'Active' },
       { id: 'ARP-MOT-2026-10912', company: co, date: '2026-06-19', expiry: '2027-06-18', client: 'Dr. Nabil Khoury (Porsche Cayenne)', carrier: 'Arope Insurance', line: 'MOT · Motor', product: 'Motor All-Risk Prestige VIP', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 135000, gross_prem_usd: 4250, comm_rate_pct: 20.0, gross_comm_usd: 850, discount_usd: 75, discount_reason: 'VIP medical+motor bundle courtesy', net_comm_usd: 775, policy_fee_usd: 20, net_payable_4017_usd: 3400, status: 'Active' },
-      { id: 'POL-20251105-RAMISAAB-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Rami Saab (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
+      { id: 'POL-20251105-OMARSINNO-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Omar Sinno (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
       { id: 'END-2026-MGF-52077-A', company: co, date: '2026-07-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (+14 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Endorsement · Mid-Term Census Addition', producer: 'Carla Moubarak', type: 'Endorsement (+)', sum_insured_usd: 700000, gross_prem_usd: 6400, comm_rate_pct: 10.5, gross_comm_usd: 672, discount_usd: 0, discount_reason: '', net_comm_usd: 672, policy_fee_usd: 10, net_payable_4017_usd: 5728, status: 'Endorsed' },
       { id: 'END-2026-BNK-08510-A', company: co, date: '2026-08-05', expiry: '2027-01-31', client: 'Unipak Tissue Mill (Solar Roof Ext.)', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Endorsement · 1.2MW Solar Array Cover', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 950000, gross_prem_usd: 2850, comm_rate_pct: 17.5, gross_comm_usd: 499, discount_usd: 0, discount_reason: '', net_comm_usd: 499, policy_fee_usd: 15, net_payable_4017_usd: 2351, status: 'Endorsed' },
       { id: 'END-2026-ALZ-12801-A', company: co, date: '2026-09-02', expiry: '2027-02-17', client: 'Transmed Distribution (+2 Reefer Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Endorsement · Fleet Vehicle Addition', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 88000, gross_prem_usd: 3100, comm_rate_pct: 18.0, gross_comm_usd: 558, discount_usd: 0, discount_reason: '', net_comm_usd: 558, policy_fee_usd: 0, net_payable_4017_usd: 2542, status: 'Endorsed' },
@@ -62752,7 +62836,7 @@
     ]);
 
     const renewals = pickIns('renewals', [
-      { id: 'REN-2026-11-001', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
+      { id: 'REN-2026-11-001', policy_no: 'POL-20251105-OMARSINNO-001', company: co, client: 'Omar Sinno', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
       { id: 'REN-2026-11-002', policy_no: 'MGF-MED-2025-49102', company: co, client: 'Levant Beverage Bottling (42 Lives)', carrier: 'MedGulf', line: 'MED · Medical', expiry_date: '2026-11-24', days_left: 18, bucket: '0–30 Days', expiring_prem_usd: 38400, quoted_renewal_usd: 41200, producer: 'Carla Moubarak', stage: 'Loss-Ratio Review (64%)', status: 'Due for renewal' },
       { id: 'REN-2026-12-003', policy_no: 'BNK-PAR-2025-07119', company: co, client: 'Bekaa Cold Storage Warehouses', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2026-12-12', days_left: 36, bucket: '31–60 Days', expiring_prem_usd: 14800, quoted_renewal_usd: 14800, producer: 'Joseph Khalil', stage: 'Surveyor Inspection Booked', status: 'Due for renewal' },
       { id: 'REN-2026-12-004', policy_no: 'ALZ-MOT-2025-11408', company: co, client: 'Cedar Logistics Heavy Haulage (9 Trucks)', carrier: 'Allianz SNA', line: 'MOT · Motor', expiry_date: '2026-12-20', days_left: 44, bucket: '31–60 Days', expiring_prem_usd: 16200, quoted_renewal_usd: 15800, producer: 'Joseph Khalil', stage: 'Renewal Terms Requested', status: 'Due for renewal' },
@@ -62770,7 +62854,7 @@
       { id: 'ITM-ENG-44102-01', policy_no: 'AXA-ENG-2026-44102', company: co, client: 'MAN Enterprise Contracting', category: 'Contractors All Risks (CAR)', identifier: 'District S Tower Excavation & Crane Plant', location_or_vin: 'Beirut Central District · Sector 44', sum_insured_usd: 8500000, deductible_usd: 10000, annual_prem_usd: 21500, status: 'Covered' },
       { id: 'ITM-MAR-31044-01', policy_no: 'AXA-MAR-2026-31044', company: co, client: 'Khalil Fattal & Fils', category: 'Marine Cargo Open Cover', identifier: 'FMCG & Pharma Container Shipments', location_or_vin: 'Med / Europe Ports to Beirut Port', sum_insured_usd: 4020000, deductible_usd: 1500, annual_prem_usd: 16000, status: 'Covered' },
       { id: 'ITM-MOT-10912-01', policy_no: 'ARP-MOT-2026-10912', company: co, client: 'Dr. Nabil Khoury', category: 'Motor Prestige VIP', identifier: '2025 Porsche Cayenne Coupe AWD', location_or_vin: 'VIN WP1ZZZ9Y8SDA41092 · Plate B-88412', sum_insured_usd: 135000, deductible_usd: 500, annual_prem_usd: 4250, status: 'Covered' },
-      { id: 'ITM-MOT-RAMI-01', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
+      { id: 'ITM-MOT-OS-01', policy_no: 'POL-20251105-OMARSINNO-001', company: co, client: 'Omar Sinno', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
     ]);
 
     const billing = pickIns('billing', [
@@ -63252,7 +63336,7 @@
         <div class="kpi-card">
           <div class="kpi-lbl">90-Day Renewal Pipeline</div>
           <div class="kpi-val mono warn">${fmtNum(s.dueRenewals90dCount)} Due · ${fmtPct(s.retentionPct, 1)}</div>
-          <div class="kpi-sub">${fmtNum(s.expiredUnrenewedCount)} expired unrenewed · Rami Saab BMW X5 in 22d</div>
+          <div class="kpi-sub">${fmtNum(s.expiredUnrenewedCount)} expired unrenewed · Omar Sinno BMW X5 in 22d</div>
         </div>
       </div>
     `;
@@ -68499,7 +68583,7 @@
       // Venue rows are taken whole ("Cash & Card", POS); the card share must be split out before the till can be tracked.
       'Hospitality & Resorts': { tracked: false, missing: ['Salaries', 'Supplier Payments', 'Partner Payouts', 'Most Expenses', 'Cash vs Card Split'] },
       'Automotive & Heavy Trading': { tracked: false, missing: ['Customer Receipts', 'Supplier Payments', 'Salaries'] },
-      // Some receipts and works are bank wires (the Iraq remittance ledger): split bank from cash before tracking.
+      // Some receipts and works are bank wires (the overseas remittance ledger): split bank from cash before tracking.
       'Real Estate & Property': { tracked: false, missing: ['Expenses', 'Salaries', 'Bank vs Cash Split'] },
       'Insurance & Brokerage': { tracked: false, missing: ['Insurer Remittance Dates'] }
     };
@@ -68938,14 +69022,14 @@
       mk('mi-domdoc-trd-pdi-2', 'DOC-KOR-108', '2026-09-25', 'Korri Auto', 'Automotive & Heavy Trading', 'Equipment & Permit Document', 'Lowbed Hydraulic Valve Warranty Diagnostic Report · WAR-KA-2026-065', 'Al-Ghazieh Service Bay', 'WAR-KA-2026-065', 'trd_warranty', 'WAR-KA-2026-065', 'WAR-KA-2026-065', 660, 'KorriAuto_WAR_065_Diagnostic_Sheet.svg', 'Camera Scan', 'Signed supplier warranty bench test and replacement authorization'),
 
       // 4. Real Estate & Property: Registered Lease PDFs, Municipal Rental Tax & Official 4235 VAT Receipts
-      mk('mi-domdoc-re-lse-1', 'DOC-4235-104', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Commercial Lease Contract PDF · LSE-4235-001', 'Mazen (Unesco Pharmacy)', 'LSE-4235-001', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 55500, '4235_LSE_001_Signed_Lease_Contract.svg', 'File Upload', 'Municipally registered commercial pharmacy lease contract with 11% VAT clause'),
+      mk('mi-domdoc-re-lse-1', 'DOC-4235-104', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Commercial Lease Contract PDF · LSE-4235-001', 'Cedar Pharmacy', 'LSE-4235-001', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 55500, '4235_LSE_001_Signed_Lease_Contract.svg', 'File Upload', 'Municipally registered commercial pharmacy lease contract with 11% VAT clause'),
       mk('mi-domdoc-re-lse-1b', 'DOC-4235-105', '2026-02-10', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Beirut Municipality Rental Tax Registration Receipt · LSE-4235-001', 'Municipality of Beirut · Msaytbeh', 'MUN-4235-2026-01', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 2775, '4235_LSE_001_Municipal_Tax_Receipt.svg', 'Camera Scan', 'Official municipal lease registration stamp and tax clearance'),
-      mk('mi-domdoc-re-lse-2', 'DOC-4235-106', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Anchor Commercial Lease PDF · LSE-4235-002', 'Infinitas S.A.L', 'LSE-4235-002', 're_leases', 'LSE-4235-002', 'LSE-4235-002', 77700, '4235_LSE_002_Infinitas_Lease_PDF.svg', 'File Upload', 'Executed anchor commercial lease contract at 4235 Msaytbeh Center'),
+      mk('mi-domdoc-re-lse-2', 'DOC-4235-106', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Anchor Commercial Lease PDF · LSE-4235-002', 'Meridian Consulting SAL', 'LSE-4235-002', 're_leases', 'LSE-4235-002', 'LSE-4235-002', 77700, '4235_LSE_002_Meridian_Lease_PDF.svg', 'File Upload', 'Executed anchor commercial lease contract at 4235 Msaytbeh Center'),
       mk('mi-domdoc-re-lse-3', 'DOC-PRP-104', '2026-01-01', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Marina Tower Luxury Showroom Lease PDF · LSE-PROP-007', 'Levant Luxury Retail SAL', 'LSE-PROP-007', 're_leases', 'LSE-PROP-007', 'LSE-PROP-007', 96000, 'Properties_LSE_PROP_007_Marina_Lease.svg', 'File Upload', 'Signed Mina el Hosn showroom lease contract and bank guarantee annex'),
       mk('mi-domdoc-re-lse-4', 'DOC-PRP-106', '2026-01-15', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Hamra Pavillon Medical Floors Lease PDF · LSE-PROP-008', 'Hamra Medical & Diagnostics', 'LSE-PROP-008', 're_leases', 'LSE-PROP-008', 'LSE-PROP-008', 78000, 'Properties_LSE_PROP_008_Hamra_Lease.svg', 'File Upload', 'Registered medical center commercial lease contract'),
-      mk('mi-domdoc-re-inv-1', 'DOC-4235-107', '2026-05-01', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Official 4235 S.A.L 11% VAT Tax Invoice Scan · INV-4235-010', 'Infinitas S.A.L', 'INV-2026-Q2-INF', 're_invoicing', 'INV-4235-010', 'INV-4235-010', 19425, '4235_INV_010_Official_VAT_Invoice.svg', 'Camera Scan', 'Pre-numbered statutory 11% VAT commercial rent invoice'),
+      mk('mi-domdoc-re-inv-1', 'DOC-4235-107', '2026-05-01', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Official 4235 S.A.L 11% VAT Tax Invoice Scan · INV-4235-010', 'Meridian Consulting SAL', 'INV-2026-Q2-INF', 're_invoicing', 'INV-4235-010', 'INV-4235-010', 19425, '4235_INV_010_Official_VAT_Invoice.svg', 'Camera Scan', 'Pre-numbered statutory 11% VAT commercial rent invoice'),
       mk('mi-domdoc-re-inv-2', 'DOC-PRP-107', '2026-07-01', 'Properties', 'Real Estate & Property', 'Invoice & Bill', 'Marina Showroom Q3 Rent Debit Note · INV-PROP-013', 'Levant Luxury Retail SAL', 'INV-2026-Q3-MAR', 're_invoicing', 'INV-PROP-013', 'INV-PROP-013', 24000, 'Properties_INV_013_Rent_Debit_Note.svg', 'File Upload', 'Signed quarterly showroom rent debit note (0% VAT non-corporate entity)'),
-      mk('mi-domdoc-re-rct-1', 'DOC-4235-108', '2026-05-05', '4235 Company S.A.L', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Tenant Bank Transfer Credit Advice · RCT-4235-101', 'Mazen (Unesco Pharmacy)', 'BNK-4235-0505', 're_receipts', 'RCT-4235-101', 'RCT-4235-101', 19425, '4235_RCT_101_Tenant_Wire_Receipt.svg', 'File Upload', 'Fresh USD wire transfer slip flagged in Q2 cross-tenant swap audit'),
+      mk('mi-domdoc-re-rct-1', 'DOC-4235-108', '2026-05-05', '4235 Company S.A.L', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Tenant Bank Transfer Credit Advice · RCT-4235-101', 'Cedar Pharmacy', 'BNK-4235-0505', 're_receipts', 'RCT-4235-101', 'RCT-4235-101', 19425, '4235_RCT_101_Tenant_Wire_Receipt.svg', 'File Upload', 'Fresh USD wire transfer slip flagged in Q2 cross-tenant swap audit'),
       mk('mi-domdoc-re-rct-2', 'DOC-PRP-105', '2026-07-03', 'Properties', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Quarterly Rent & Security Deposit Wire Slip · RCT-PROP-106', 'Levant Luxury Retail SAL', 'BNK-PROP-0703', 're_receipts', 'RCT-PROP-106', 'RCT-PROP-106', 96000, 'Properties_RCT_106_Marina_Wire_Slip.svg', 'File Upload', 'Escrow bank confirmation for Marina Tower showroom rent and deposit'),
 
       // 5. Insurance & Brokerage: Carrier Bordereau PDFs, Commission Recon Statements & FNOL Claim Photo Packs
@@ -69097,7 +69181,7 @@
           { name: 'Boecker Food Safety & Hygiene', role: 'Sanitation & HACCP', cat: 'Sanitation and Pest Control', subcat: 'Kitchen Hygiene', iva: true, mof: '449102-601', phone: '+961 1 281 777', expAmt: 3600, recAmt: 650, recItem: 'Resort Kitchen HACCP & Pest Control Contract' }
         ],
         customers: [
-          { name: 'VIP Cabana Member — Dr. Mazen Saab', mof: '774120-601', phone: '+961 3 221 900', sales: 48000, ar: 9500 },
+          { name: 'VIP Cabana Member — Dr. Karim Saab', mof: '774120-601', phone: '+961 3 221 900', sales: 48000, ar: 9500 },
           { name: 'Corporate Sunset Gala — MEA', mof: '100291-601', phone: '+961 1 629 999', sales: 36500, ar: 7200 }
         ],
         sites: ['Blanca Beachfront & Infinity Pool Deck', 'Blanca Central Commissary & Cellar'],
@@ -69230,7 +69314,7 @@
           { name: 'PLT-GEN-01 (Volvo Penta 400kVA Standby)', plate: 'GEN-PLT-01', type: 'Generator', cap: 400 }
         ],
         staff: [
-          { name: 'Walid Kassab', role: 'Banquet & Events Director', cat: 'Management & Admin', sal: 2300, phone: '+961 3 518 720' },
+          { name: 'Walid Haddad', role: 'Banquet & Events Director', cat: 'Management & Admin', sal: 2300, phone: '+961 3 518 720' },
           { name: 'Samar Aoun', role: 'Executive Housekeeping Lead', cat: 'Site & Operations', sal: 1300, phone: '+961 70 614 390' }
         ]
       },
@@ -69288,7 +69372,7 @@
           { name: 'SHC-REC-01 (Shacman 6x4 Heavy Recovery Truck)', plate: 'M-519204', type: 'Truck', cap: 30 }
         ],
         staff: [
-          { name: 'Mazen Dirani', role: 'Heavy Truck PDI & Warranty Chief', cat: 'Maintenance & Workshop', sal: 2250, phone: '+961 3 884 120' },
+          { name: 'Samir Dirani', role: 'Heavy Truck PDI & Warranty Chief', cat: 'Maintenance & Workshop', sal: 2250, phone: '+961 3 884 120' },
           { name: 'Youssef Berro', role: 'Commercial Fleet Sales Executive', cat: 'Site & Operations', sal: 1800, phone: '+961 71 445 902' }
         ]
       },
@@ -70668,7 +70752,7 @@
   const INDUSTRY_QUICK_ENTRY_TEMPLATES = {
     'Holding & Treasury': [
       { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer', title: 'New Intercompany Sister Transfer', prefill: { party: 'WTC', notes: 'Intercompany transfer (voucher match)' } },
-      { id: 'hld_extd', form: 'extended', label: 'Extended Entry', title: 'New Extended Stakeholder Entry', prefill: { co: 'Bdeir Holding', extkind: 'Extended', party: 'Haj Mohamad', notes: 'Extended stakeholder ledger movement' } },
+      { id: 'hld_extd', form: 'extended', label: 'Extended Entry', title: 'New Extended Stakeholder Entry', prefill: { co: 'Bdeir Holding', extkind: 'Extended', notes: 'Extended stakeholder ledger movement' } },
       { id: 'hld_split', form: 'jv', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
       { id: 'hld_loan', form: 'treasury', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
       { id: 'hld_exp', form: 'expense', label: 'Holding Shared Expense', title: 'New Holding Corporate Overhead Voucher', prefill: { notes: 'HQ shared services & statutory advisory' } }
@@ -74259,7 +74343,7 @@
         ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="${esc(prefill.next_due || prefill.due_date || '2026-11-30')}">`)}
       `;
     } else if (spec.key === 're_leases') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
       // Live leases are billed "Yearly": the form's Annual (else the select fell back to Quarterly on every edit)
       const defFreq = /^(yearly|annually)$/i.test(String(prefill.frequency || '').trim()) ? 'Annual' : (prefill.frequency || 'Quarterly');
@@ -74285,10 +74369,10 @@
         ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="${esc(prefill.escalation || '3-Yr Commercial (+8% Yr 4)')}">`)}
       `;
     } else if (spec.key === 're_invoicing') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
       const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
-      const defTenant = prefill.tenant || tenants[0] || 'Mazen (Unesco Pharmacy)';
+      const defTenant = prefill.tenant || tenants[0] || 'Cedar Pharmacy';
       const defDate = prefill.date || today;
       const initLeaseHit = lookupActiveRealEstateLeaseRate(defCo, defProp, defTenant, defDate);
       const defNet = prefill.net_usd != null ? prefill.net_usd : initLeaseHit.net_period_usd;
@@ -74315,10 +74399,10 @@
       const tenants = freqRankCandidates('customer', []
         .concat((reOpsForDl && reOpsForDl.receipts || []).map(r => r && r.tenant))
         .concat((reOpsForDl && reOpsForDl.leases || []).map(r => r && r.tenant))
-        .concat(['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Hoda / Maha Harkous', 'DR Sara Abed Latif', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']));
+        .concat(['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Maya Abi Saab', 'Dr. Nadia Frem', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']));
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '776 Ras Beirut (Hamra Pavillon)', '915 & 2557 Mazraa Commercial Complex']);
       const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
-      const defTenant = prefill.tenant || tenants[0] || 'Mazen (Unesco Pharmacy)';
+      const defTenant = prefill.tenant || tenants[0] || 'Cedar Pharmacy';
       const defType = prefill.type || 'Period Rent Settlement';
       const defMethod = prefill.method || 'Bank Transfer USD';
       const rTypes = ['Period Rent Settlement', 'Advance Rent Tranche', 'Security Deposit', 'Partial Rent Tranche', 'Annual Advance Settlement'];
@@ -74647,8 +74731,8 @@
         ${fldWrap('Quarterly Interest & Balance', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
     } else if (spec.key === 'hld_extended') {
-      const extdParties = freqRankCandidates('counterparty', ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms'].concat(((SEED.records && SEED.records.external_movements) || []).filter(r => /^extended$/i.test(String(r.kind || ''))).map(r => r.counterparty || r.name)));
-      const defParty = prefill.counterparty || prefill.party || extdParties[0] || 'Haj Mohamad';
+      const extdParties = freqRankCandidates('counterparty', window.MFG_NAMEBOOK.list('extended_parties').concat(['Blanca', 'Palms']).concat(((SEED.records && SEED.records.external_movements) || []).filter(r => /^extended$/i.test(String(r.kind || ''))).map(r => r.counterparty || r.name)));
+      const defParty = prefill.counterparty || prefill.party || extdParties[0] || '';
       const rawPrefDir = String(prefill.flow || prefill.direction || prefill.method || '').trim();
       const isCfgPref = Boolean(isEditMode && /^config$/i.test(rawPrefDir));
       const defDir = isCfgPref ? 'Config' : (rawPrefDir ? (/out|withdraw|paid|took/i.test(rawPrefDir) ? 'Outflow' : 'Inflow') : 'Outflow');
@@ -88663,7 +88747,7 @@
     if (titleEl) titleEl.textContent = `${primaryId} · ${secondaryLbl}`;
 
     const inspCatPool = {
-      party: freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Khoury Family Trust']),
+      party: freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Khoury Family Trust']),
       carrier: freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']),
       supplier: freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'MEP Tech Engineering SAL']),
       site: freqRankCandidates('site', ['Main Showroom', 'Bchamoun Yard', 'Bonded Yard', 'Al Ghazieh', 'Workshop', '4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)'])
@@ -93006,7 +93090,7 @@
           <div class="form-grid-3">
             <div class="form-field">
               <label for="nu_name">Full Name *</label>
-              <input type="text" id="nu_name" value="${esc(editUser ? editUser.full_name : '')}" placeholder="e.g. Ali Mansour (WTC Scale)" autocomplete="off">
+              <input type="text" id="nu_name" value="${esc(editUser ? editUser.full_name : '')}" placeholder="e.g. Rami Haddad (WTC Scale)" autocomplete="off">
             </div>
             <div class="form-field">
               <label for="nu_email">Email Address (Login ID) *</label>
@@ -98038,7 +98122,7 @@
     return findNearCopySingleEntry(crKey, rec) || findNearCopySumEntry(crKey, rec);
   }
 
-  // One payment already booked as several rows (owner idea 2026-11-17). Live case: Star Solutions, $1,000 keyed in the
+  // One payment already booked as several rows (owner idea 2026-11-17). Live case: Sample Supplies, $1,000 keyed in the
   // app on 17 Nov, already in the workbook on 16 Nov as Payment #1341 $889.78 + VAT #1342 $110.22. Same rules as the
   // top-up's several-row matcher (build/reconcile_cloud_store.py find_sum_twin_group, gap_sum_twin_groups): same company,
   // party and kind of money; every row of that party that day adds up to the entry, or the rows whose invoice or
@@ -98061,7 +98145,7 @@
   }
 
   // Two compact party keys differing by one non-digit typo (or adjacent non-digit swap), never digit-only numbers
-  // ("Store 1" vs "Store 2", "Amtrac" vs "Amtrac 1") or short first-letter names ("Sami" vs "Rami").
+  // ("Store 1" vs "Store 2", "SampleCo" vs "SampleCo 1") or short first-letter names ("Tarek" vs "Rami").
   function partyKeyOneLetterOff(a, b) {
     if (!a || !b || a === b || Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
     if (a.length === b.length) {
@@ -98087,7 +98171,7 @@
     return false;
   }
 
-  // Matches 1-letter key typos AND single missing/extra spaces ("StarSolutions" vs "Star Solutions").
+  // Matches 1-letter key typos AND single missing/extra spaces ("SampleSupplies" vs "Sample Supplies").
   function partyNameOneLetterOff(rawA, rawB) {
     const ka = nearCopyPartyKey(rawA);
     const kb = nearCopyPartyKey(rawB);
@@ -99503,7 +99587,7 @@
             bJvRaw.set(sitK, {
               site: r.site,
               isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
-              partner: (sObj && sObj.jv_partner) || 'Assaf',
+              partner: (sObj && sObj.jv_partner) || window.MFG_NAMEBOOK.jvPartner(),
               sharePct: (sObj && Number(sObj.jv_share) > 0) ? Number(sObj.jv_share) : 50,
               siteOwner: (sObj && sObj.supplier) || '',
               rawMatUsd: 0,
@@ -99538,7 +99622,7 @@
         jvBySite.set(sitK, {
           site: s.name,
           isJv: Boolean(s.is_jv || s.jv),
-          partner: sJvPartner || 'Assaf',
+          partner: sJvPartner || window.MFG_NAMEBOOK.jvPartner(),
           sharePct: sJvShare,
           siteOwner: s.supplier || '',
           rawMatUsd: 0,
@@ -99579,7 +99663,7 @@
       } else if (amt > 0) {
         // Fallback: allocate general partner distributions across JV sites proportionally or track on primary JV site
         jvBySite.forEach(jb => {
-          if (jb.isJv && (!j.site || norm(jb.partner) === norm(j.partner || j.counterparty || 'Assaf'))) {
+          if (jb.isJv && (!j.site || norm(jb.partner) === norm(j.partner || j.counterparty || window.MFG_NAMEBOOK.jvPartner()))) {
             jb.distributedUsd = round2(jb.distributedUsd + amt);
             jb.distCount += 1;
           }
@@ -101466,7 +101550,7 @@
         rawStrip.hidden = false;
         rawStrip.className = 'att-contract-strip';
         rawStrip.innerHTML = `
-          <div><strong>${esc(site || owner || truckName)}</strong> <span class="badge ${isJv ? 'badge-brass' : (isSuppDeliv ? 'badge-brass' : 'badge-info')}">${isJv ? 'JV 50/50 Site · Partner ' + esc((jvInfo && jvInfo.partner) || 'Assaf') : (isSuppDeliv ? 'Bundled · Mat + Trans Included' : 'Quarry Intake')}</span></div>
+          <div><strong>${esc(site || owner || truckName)}</strong> <span class="badge ${isJv ? 'badge-brass' : (isSuppDeliv ? 'badge-brass' : 'badge-info')}">${isJv ? 'JV 50/50 Site · Partner ' + esc((jvInfo && jvInfo.partner) || window.MFG_NAMEBOOK.jvPartner()) : (isSuppDeliv ? 'Bundled · Mat + Trans Included' : 'Quarry Intake')}</span></div>
           <div class="att-contract-metrics">
             ${owner ? `<span><small>Leg 1 Payee (${esc(owner)})</small><b>${ap != null ? 'Open AP ' + fmtUSD(ap, 0) : 'Direct Site Payee'}</b></span>` : ''}
             ${isSuppDeliv ? `<span><small>Transport</small><b>Included in Material Price (Split Unknown)</b></span>` : (is3PHauler && truckOwner ? `<span><small>Leg 2 Hauler (${esc(truckOwner)})</small><b>${haulAp != null ? 'Open AP ' + fmtUSD(haulAp, 0) : '3P Hauler'}</b></span>` : `<span><small>Transport</small><b>${esc(company)} Fleet ($0 3P AP)</b></span>`)}
@@ -108298,7 +108382,7 @@
             jvStrip.innerHTML = `
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <strong>${esc((jvPos && jvPos.site) || site || 'JV Site')}</strong>
-                <span class="badge ${jvPos && jvPos.isJv ? 'badge-brass' : 'badge-info'}">${jvPos && jvPos.isJv ? 'Active 50/50 JV Site' : 'Site Ledger'} · Partner: ${esc(val('f_counterparty') || (jvPos && jvPos.partner) || 'Assaf')}</span>
+                <span class="badge ${jvPos && jvPos.isJv ? 'badge-brass' : 'badge-info'}">${jvPos && jvPos.isJv ? 'Active 50/50 JV Site' : 'Site Ledger'} · Partner: ${esc(val('f_counterparty') || (jvPos && jvPos.partner) || window.MFG_NAMEBOOK.jvPartner())}</span>
                 ${isAdvDist ? `<span class="badge badge-warn">Advance Distribution (+${fmtUSD(Math.abs(remAfter), 2)} over Accrued)</span>` : ''}
                 ${jvt === 'distribution' && remBefore > 0.01 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${remBefore.toFixed(2)}">Pay Remaining (${fmtUSD(remBefore, 2)})</button>` : ''}
               </div>
@@ -124347,7 +124431,7 @@
       const isBundledSt = isSupplierDeliveredSite(row);
       const rulesCnt = activeRulesCountFor('site', row.name);
       const supplyTxt = row.is_jv
-        ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
+        ? `Active JV (Partner: ${row.jv_partner || window.MFG_NAMEBOOK.jvPartner()} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
         : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Standard Region Site (Separate Haulage)');
       const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
       const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
@@ -125460,7 +125544,7 @@
       const staffKeys = new Set([staffNorm]);
       const addAliasKey = v => { const k = String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (k) staffKeys.add(k); };
       addAliasKey(staff);
-      Object.entries(WF_DRV_ALIASES).forEach(([a, b]) => {
+      Object.entries(wfDrvAliases()).forEach(([a, b]) => {
         const ka = a.toLowerCase().replace(/[^a-z0-9]/g, '');
         const kb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (staffKeys.has(ka) || staffKeys.has(kb)) { staffKeys.add(ka); staffKeys.add(kb); }
@@ -128840,7 +128924,7 @@
               </div>
               <div class="form-field">
                 <label for="insp_tw_own">Truck Owner *</label>
-                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || (/^(own|company)/i.test(targetEqRow.ownership || '') ? inspDefaultTwCo : ''))}" placeholder="e.g. Hussein Bdeir, Karim Bdeir, WTC" autocomplete="off">
+                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || (/^(own|company)/i.test(targetEqRow.ownership || '') ? inspDefaultTwCo : ''))}" placeholder="e.g. Rami Haddad, WTC" autocomplete="off">
               </div>
               <div class="form-field">
                 <label for="insp_tw_drv">Active / Substitute Driver *</label>
@@ -133316,6 +133400,40 @@
     return changed;
   }
 
+  // `bio_quarantine` rules from the private name book: { name, face_updated_prefix } clears a known-bad
+  // enrolment; { name, drop_if_empty: true } drops an empty placeholder record.
+  function bioQuarantineHit(key, rec) {
+    if (!rec || typeof rec !== 'object') return '';
+    const rules = window.MFG_NAMEBOOK.list('bio_quarantine');
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      if (!r || _nbNorm(r.name) !== key) continue;
+      if (r.face_updated_prefix && String(rec.face_updated_at || '').startsWith(String(r.face_updated_prefix))) return 'clear';
+      if (r.drop_if_empty && (!Array.isArray(rec.face_samples) || !rec.face_samples.length) && !rec.pin_code) return 'drop';
+    }
+    return '';
+  }
+  function applyBioQuarantineToLocal() {
+    const bio = STATE && STATE.staffBiometrics;
+    if (!bio || typeof bio !== 'object') return;
+    let changed = false;
+    Object.keys(bio).forEach(k => {
+      const hit = bioQuarantineHit(_nbNorm(k), bio[k]);
+      if (hit) changed = true;
+      if (hit === 'drop') delete bio[k];
+      else if (hit === 'clear') {
+        const rule = window.MFG_NAMEBOOK.list('bio_quarantine').find(r => r && _nbNorm(r.name) === _nbNorm(k)) || {};
+        const ts = String(rule.cleared_at || new Date().toISOString());
+        bio[k] = Object.assign({}, bio[k], { face_samples: [], face_thumbs: [], face_cleared: true, face_updated_at: ts, updated_at: ts });
+      }
+    });
+    // Save the repair and send it to the cloud copy, like a manual Face ID clear, so it holds on every device.
+    if (changed) {
+      saveLocalAuthAndRecords();
+      if (STATE.authed && !IS_AUTOMATED_TEST) syncWithCloud(true);
+    }
+  }
+
   function mergeStaffBiometrics(remoteMap) {
     if (!remoteMap || typeof remoteMap !== 'object') return false;
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
@@ -133324,8 +133442,7 @@
       if (!inc || typeof inc !== 'object') return;
       const key = norm(inc.name || rk);
       if (!key) return;
-      if (key === 'abdallah ismail' && String(inc.face_updated_at || '').startsWith('2026-10-31T10:19:')) return;
-      if (key === 'ahmad' && (!Array.isArray(inc.face_samples) || !inc.face_samples.length) && !inc.pin_code) return;
+      if (bioQuarantineHit(key, inc)) return;
       const cur = STATE.staffBiometrics[key];
       const inTs = String(inc.updated_at || inc.face_updated_at || '');
       const curTs = cur ? String(cur.updated_at || cur.face_updated_at || '') : '';
@@ -142220,6 +142337,7 @@
       if (!SEED._recordsReady) {
         SEED.records = {};
         SEED.models = {};
+        setPrivateNameBook(null);
         SEED.industryLive = null;
         SEED._coreReady = false;
         SEED._preAuthDeferred = true;
@@ -142506,6 +142624,8 @@
         try { appStoreRemoveRaw('isabi_mfg_ind_row_edits_v1'); } catch (_) {}
         SEED.records = {};
         SEED.models = {};
+        setPrivateNameBook(null);
+        _seedHydrationGen++;
         SEED.industryLive = null;
         SEED._coreReady = false;
         SEED._recordsReady = false;
@@ -142540,6 +142660,11 @@
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
     openAuthGate('');
+    // A server-held seat's private seed was dropped above: wait for the next sign-in in this tab and load it
+    // again (without this, a second sign-in without a reload showed an empty workspace and no name book).
+    if (rosterIsServerHeld() && !isDemoSandboxSession() && !STATE.authed) {
+      try { hydrateSeedData(); } catch (_) {}
+    }
   }
 
   function authError(msg, opts = {}) {
@@ -145866,7 +145991,7 @@
     },
     'Real Estate & Property': {
       sales: [
-        { lbl: 'Active Tenants', field: 'ik_tenant', vals: ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics'] },
+        { lbl: 'Active Tenants', field: 'ik_tenant', vals: ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics'] },
         { lbl: 'Entities', field: 'ik_company', vals: ['4235 Company S.A.L', 'Properties'] }
       ],
       raw: [
@@ -146006,7 +146131,7 @@
         `;
       }
     } else if (activeInd === 'Real Estate & Property') {
-      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mohamad Ali Fawz']);
+      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Nabil Khoury']);
       dlHtml = `<datalist id="dl_ik_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       if (kMode === 'sales') {
         gridHtml = `
@@ -146014,7 +146139,7 @@
           ${fld('Rent Receipt # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="RCT-4235-841">`)}
           ${fld('Receipt Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
           ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="${/4235/.test(curCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'}">`)}
-          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[0] || 'Mazen (Unesco Pharmacy)')}">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[0] || 'Cedar Pharmacy')}">`)}
           ${fld('Linked Rent Invoice #', `<input type="text" id="ik_inv_ref" class="mono" style="${inpStyle}" value="INV-4235-010">`)}
           ${fld('Base Rent Amount ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="12500">`)}
           ${fld('Statutory VAT ($)', `<input type="text" id="ik_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
@@ -146028,7 +146153,7 @@
           ${fld('Start Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
           ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="4235 Msaytbeh Commercial Center">`)}
           ${fld('Leased Unit / Floor *', `<input type="text" id="ik_unit" style="${inpStyle}" value="Floor 3 Commercial Suite">`)}
-          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[1] || 'Infinitas S.A.L')}">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[1] || 'Meridian Consulting SAL')}">`)}
           ${fld('Billing Frequency', `<input type="text" id="ik_freq" style="${inpStyle}" value="Quarterly">`)}
           ${fld('Net Period Rent ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="15000">`)}
           ${fld('Security Deposit ($)', `<input type="number" id="ik_deposit" class="mono" step="100" min="0" style="${inpStyle}" value="15000">`)}
@@ -149233,7 +149358,7 @@
     const prof = profOpt || getStaffContractProfile(staffName, effCo);
     const roleStr = String((prof && prof.role) || '').toLowerCase();
     const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director|broker|underwriter|executive)\b/i.test(roleStr)
-      || norm(staffName) === norm('Hussein Bdeir');
+      || window.MFG_NAMEBOOK.isSeniorPerson(staffName);
     if (rawRule && !rawRule.reset_default) {
       if (rawRule.late_penalty_mode === 'none') return 'pkg_exec_21d';
       if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
@@ -161723,7 +161848,7 @@
                   </label>
                   <label class="sfe-ns-field">
                     <span>Father's Name (Optional)</span>
-                    <input type="text" id="sfeNewStaffFather" class="sfe-search-input" placeholder="e.g. Mohammad" autocomplete="off" spellcheck="false">
+                    <input type="text" id="sfeNewStaffFather" class="sfe-search-input" placeholder="e.g. Nabil" autocomplete="off" spellcheck="false">
                   </label>
                   <label class="sfe-ns-field">
                     <span>Business Unit *</span>
@@ -184383,6 +184508,11 @@
     if (P.sentinels && typeof P.sentinels === 'object' && Object.keys(P.sentinels).length) {
       tgt0.sentinels = P.sentinels;
     }
+    // Only the private seed carries `namebook`; the public demo bundles never do.
+    if (!targetSeed && P.namebook && typeof P.namebook === 'object' && !Array.isArray(P.namebook)) {
+      setPrivateNameBook(P.namebook);
+      try { applyBioQuarantineToLocal(); } catch (_) {}
+    }
     const S = P._s || [];
     const entries = Object.entries(P.records || {});
     let sliceStart = performance.now();
@@ -185476,7 +185606,40 @@
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
 
   let _seedHydrationPromise = null;
+  // Bumped on sign-out: a seed fetch still in flight then is dropped instead of refilling records and the
+  // private name book behind the sign-in screen.
+  let _seedHydrationGen = 0;
   let _seedAuthGateListenerAttached = false;
+  let _nameBookRefetchArmed = false;
+  // A signed-in real seat whose core came without the book (an offline copy from before v19.6.270, or a seed
+  // packed by an older script): fetch it again once online, so the name rules do not stay quiet.
+  function armNameBookRefetch(coreUrl) {
+    if (_nameBookRefetchArmed || IS_AUTOMATED_TEST) return;
+    _nameBookRefetchArmed = true;
+    const seedEpoch = _authSessionEpoch;
+    const gen = _seedHydrationGen;
+    const tryFetch = async () => {
+      try {
+        if (!STATE.authed || _privateNameBook || gen !== _seedHydrationGen || seedEpoch !== _authSessionEpoch) return;
+        const r = await edgeApiFetch(String(coreUrl) + (String(coreUrl).includes('?') ? '&' : '?') + 'nb=' + Date.now(), { cache: 'no-store' });
+        const P = (r && r.ok) ? await r.json() : null;
+        if (gen !== _seedHydrationGen || seedEpoch !== _authSessionEpoch || !STATE.authed) return;
+        if (P && P.namebook && typeof P.namebook === 'object' && !Array.isArray(P.namebook)) {
+          setPrivateNameBook(P.namebook);
+          try { applyBioQuarantineToLocal(); } catch (_) {}
+          invalidateAllSeedCaches();
+          safeRender();
+        } else {
+          console.warn('[ISABI] The private seed is missing its name book; name variants, driver aliases and named pins stay off until it is repacked.');
+        }
+      } catch (_) {
+      } finally {
+        _nameBookRefetchArmed = false;
+      }
+    };
+    if (navigator.onLine === false) window.addEventListener('online', () => { setTimeout(tryFetch, 1500); }, { once: true });
+    else setTimeout(tryFetch, 1500);
+  }
 
   async function fetchSeedPayloadJson(url, useAuthedApi) {
     if (!useAuthedApi) {
@@ -185537,16 +185700,24 @@
       : (useAuthedApi ? (SEED_MANIFEST.apiIndustries || './api/seed/industries') : (SEED_MANIFEST.industries || './js/seed_industries.json'));
 
     const seedEpoch = _authSessionEpoch;
+    const hydrationGen = _seedHydrationGen;
     let myHydratePromise = null;
     myHydratePromise = (async () => {
       try {
         const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
         const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
-        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
           return SEED;
         }
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
+        // Signed out while the core was being unpacked (it yields): drop what it wrote behind the sign-in screen.
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && seedEpoch !== _authSessionEpoch)) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+          return SEED;
+        }
+        if (useAuthedApi && !isDemoSbx && !(corePayload && corePayload.namebook)) armNameBookRefetch(coreUrl);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
           _demoCompanyLiveSnap.coreReady = true;
@@ -185603,7 +185774,16 @@
             if (_demoCompanySandboxActive) attachDemoBundleToActiveSandbox(_preloadedDemoBundle);
           }
         }
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          return SEED;
+        }
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
+        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+          return SEED;
+        }
         if (indPayload) unpackIndustrySeedPayload(indPayload);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
@@ -185675,6 +185855,8 @@
             SEED._recordsReady = false;
             SEED._preAuthDeferred = true;
             openAuthGate();
+            // Load the private seed again after the next sign-in (the one-time listener was already used).
+            if (!STATE.authed) setTimeout(() => { try { hydrateSeedData(); } catch (_) {} }, 0);
           } else if (STATE.authed) {
             SEED._coreReady = true;
             SEED._recordsReady = true;

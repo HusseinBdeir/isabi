@@ -27,7 +27,6 @@
     'River': { zone_type: 'circle', center_lat: 33.8986, center_lng: 35.5298, radius_km: 1.4, distance_km: 7 },
     'Naher l Mot': { zone_type: 'circle', center_lat: 33.9035, center_lng: 35.5655, radius_km: 1.7, distance_km: 11 },
     'Bsalim': { zone_type: 'circle', center_lat: 33.9138, center_lng: 35.6145, radius_km: 2.3, distance_km: 17 },
-    'Ibrahim Bdeir WAZANI': { zone_type: 'circle', center_lat: 33.2745, center_lng: 35.6215, radius_km: 2.6, distance_km: 96 },
     'Halat /nahr el mot': {
       zone_type: 'polygon',
       center_lat: 33.9950,
@@ -40,49 +39,12 @@
     }
   };
 
-  // Unambiguous Lebanese town & plant coordinates for top operational sites
-  const BASELINE_SITE_PINS = {
-    'jiyeh jv': { lat: 33.6632, lng: 35.4214, region: 'jiyeh jv' },
-    'spinneys mar elias': { lat: 33.8819, lng: 35.4864, region: 'spinneys Mar Elias' },
-    'choueifat': { lat: 33.8065, lng: 35.4892, region: 'Beirut' },
-    'bsalim': { lat: 33.9138, lng: 35.6145, region: 'Bsalim' },
-    'bsalim gsd': { lat: 33.9162, lng: 35.6180, region: 'Bsalim' },
-    'bsalim gs': { lat: 33.9119, lng: 35.6112, region: 'Bsalim' },
-    'halat jv': { lat: 34.0869, lng: 35.6675, region: 'Halat JV' },
-    'jiyeh': { lat: 33.6685, lng: 35.4240, region: 'Jiyeh' },
-    'sibline': { lat: 33.6255, lng: 35.4218, region: 'Sibline' },
-    'hatem saab': { lat: 33.6610, lng: 35.4185, region: 'Jiyeh' },
-    'dawra': { lat: 33.8952, lng: 35.5478, region: 'Borj Hammoud 2' },
-    'wtc': { lat: 33.8938, lng: 35.4820, region: 'Beirut' },
-    'jdaide': { lat: 33.8920, lng: 35.5612, region: 'Naher l Mot' },
-    'ibrahim bdeir aawkar': { lat: 33.9342, lng: 35.6011, region: 'Aawkar' },
-    'haj ali aawkar': { lat: 33.9331, lng: 35.5988, region: 'Aawkar' },
-    'aawkar': { lat: 33.9340, lng: 35.6002, region: 'Aawkar' },
-    'goulf': { lat: 33.8548, lng: 35.4882, region: 'Goulf' },
-    'al jnah': { lat: 33.8615, lng: 35.4795, region: 'Beirut' },
-    'halat /nahr el mot': { lat: 33.9950, lng: 35.6120, region: 'Halat /nahr el mot' },
-    'ibrahim bdeir wazani': { lat: 33.2745, lng: 35.6215, region: 'Ibrahim Bdeir WAZANI' },
-    'talet khayat': { lat: 33.8842, lng: 35.4908, region: 'Talet Khayat' },
-    'nahr el mot': { lat: 33.9035, lng: 35.5655, region: 'Naher l Mot' },
-    'naher l mot': { lat: 33.9035, lng: 35.5655, region: 'Naher l Mot' },
-    'ibrahim bdeir bremena': { lat: 33.8856, lng: 35.6435, region: 'Bsalim' },
-    'gisr al bacha': { lat: 33.8672, lng: 35.5418, region: 'Dekwaneh' },
-    'madar amhaz': { lat: 33.8260, lng: 35.4930, region: 'Goulf' },
-    'ramle bayda amhaz': { lat: 33.8732, lng: 35.4778, region: 'Beirut' },
-    'beirut': { lat: 33.8892, lng: 35.5047, region: 'Beirut' },
-    'dabousi chafat': { lat: 33.8095, lng: 35.4925, region: 'Beirut' },
-    'haj ali fanar': { lat: 33.8812, lng: 35.5815, region: 'Dekwaneh' },
-    'radwan sidani': { lat: 33.8825, lng: 35.4852, region: 'Mar Elias' },
-    'mkalles': { lat: 33.8665, lng: 35.5605, region: 'Dekwaneh' },
-    'al mrayjeh': { lat: 33.8355, lng: 35.5082, region: 'Goulf' },
-    'kfar chima': { lat: 33.8168, lng: 35.5342, region: 'Beirut' },
-    'dekwaneh': { lat: 33.8762, lng: 35.5464, region: 'Dekwaneh' },
-    'nabatieh': { lat: 33.3790, lng: 35.4870, region: 'Nabatieh' },
-    'sinai': { lat: 33.3896, lng: 35.3625, region: 'sinai' },
-    'borj hammoud 2': { lat: 33.8930, lng: 35.5434, region: 'Borj Hammoud 2' },
-    'cola': { lat: 33.8780, lng: 35.4982, region: 'cola' },
-    'mar elias': { lat: 33.8814, lng: 35.4858, region: 'Mar Elias' }
-  };
+  // Fallback pins for top Manufacturing sites. Several carry a person's name, so the table lives in the
+  // private name book (`site_pins`, session seed) and is empty in the public demo and Demo Company.
+  function baselineSitePins() {
+    const b = window.MFG_NAMEBOOK;
+    return (b && typeof b.map === 'function') ? b.map('site_pins') : {};
+  }
 
   // Official OpenStreetMap admin_level=4 Governorate polygons for automatic spatial Governorate detection
   const GOVERNORATE_BOUNDARIES = [
@@ -2041,7 +2003,7 @@
     const sites = (recs.sites || []).filter(s => isRowInGeoIndustry(s, ind) && s.name && _hasSitePin(s));
     // Sites with no saved Region and no fixed map Region: the map fills theirs from the Region records holding the pin
     const filled = sites.filter(s => !String(s.region || '').trim()
-      && !(BASELINE_SITE_PINS[norm(s.name)] && BASELINE_SITE_PINS[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
+      && !(baselineSitePins()[norm(s.name)] && baselineSitePins()[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
     const before = new Map(filled.map(s => [s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || '']));
     const after = new Map();
     if (regRow) {
@@ -2152,7 +2114,7 @@
     const recs = SEED.records;
     const sites = (recs.sites || []).filter(s => isRowInGeoIndustry(s, ind) && s.name && _hasSitePin(s));
     const filled = sites.filter(s => !String(s.region || '').trim()
-      && !(BASELINE_SITE_PINS[norm(s.name)] && BASELINE_SITE_PINS[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
+      && !(baselineSitePins()[norm(s.name)] && baselineSitePins()[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
     const before = new Map(filled.map(s => [s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || '']));
     const after = new Map();
     const targetSynths = new Map();
@@ -2483,6 +2445,9 @@
     });
     const exactCircByNorm = new Map();
     Object.keys(BASELINE_CIRCLES).forEach(k => exactCircByNorm.set(norm(k), BASELINE_CIRCLES[k]));
+    // Region circles named after a person come from the private name book (region_circles), signed-in only.
+    const nbCircles = (window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function') ? window.MFG_NAMEBOOK.map('region_circles') : {};
+    Object.keys(nbCircles).forEach(k => { if (!exactCircByNorm.has(norm(k))) exactCircByNorm.set(norm(k), nbCircles[k]); });
 
     regions.forEach(r => {
       if (!r || !r.name) return;
@@ -2558,7 +2523,7 @@
       const sCat = resolveGeoSiteCat(s);
       const sTwin = siteHasTwin(siteCatsByName, s);
       const ov = siteStoreEntryFor(pfx, nk, sCat, sTwin);
-      const basePin = sIsMfg ? BASELINE_SITE_PINS[nk] : null;
+      const basePin = sIsMfg ? baselineSitePins()[nk] : null;
       if ('_pinCleared' in s) s._pinCleared = _isPinClearedFlag(s._pinCleared);
       const pinCleared = _isPinClearedFlag(s._pinCleared);
       let geoZone = s.region || '';
@@ -2695,7 +2660,7 @@
     const pfx = geoIndStorePrefix(activeInd);
     const pinCleared = Boolean(sRow && _isPinClearedFlag(sRow._pinCleared));
     const ov = !pinCleared ? siteStoreEntryFor(pfx, nk, rowCat, sites.some(s => norm(s.name) === nk && resolveGeoSiteCat(s) !== rowCat), true) : null;
-    const basePin = (isMfg && !pinCleared) ? BASELINE_SITE_PINS[nk] : null;
+    const basePin = (isMfg && !pinCleared) ? baselineSitePins()[nk] : null;
     const lat = ov && ov.latitude != null ? Number(ov.latitude) : (sRow && sRow.latitude != null && sRow.latitude !== '' ? Number(sRow.latitude) : (basePin ? basePin.lat : null));
     const lng = ov && ov.longitude != null ? Number(ov.longitude) : (sRow && sRow.longitude != null && sRow.longitude !== '' ? Number(sRow.longitude) : (basePin ? basePin.lng : null));
     const regName = (ov && ov.region) || (sRow && sRow.region) || (basePin && basePin.region) || '';

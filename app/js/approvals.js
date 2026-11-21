@@ -755,6 +755,11 @@
     const ep = pushEndpoint;
     pushEndpoint = '';
     pushOn = false;
+    // Close the approval banners already on this device (they name the requester) and clear the icon badge.
+    try {
+      const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (c) c.postMessage({ type: 'APV_SYNC', pending: [], count: 0 });
+    } catch (_) { /* no controller */ }
     const tok = (opts && opts.token) ? String(opts.token) : '';
     const allowed = opts && 'serverApi' in opts ? Boolean(opts.serverApi) : pushCallsAllowed();
     const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);

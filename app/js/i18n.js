@@ -909,7 +909,7 @@
       "Alerts": "تنبيهات",
       "Alerts & Thresholds": "قواعد التنبيه والحدود",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "ينبّه الإدارة عندما تصل فروقات العدادات أو إيصالات المازوت غير الموزعة أو فروقات الخزان إلى 5% أو أكثر من إجمالي استهلاك الشركة في الفترة المحددة.",
-      "Ali Mansour (WTC Scale)": "علي منصور (قبان WTC)",
+      "Rami Haddad (WTC Scale)": "رامي حداد (قبان WTC)",
       "Align 17-character VIN or chassis plate inside narrow strip": "ضع لوحة رقم الشاسيه (17 خانة) داخل الشريط الضيق",
       "All": "الكل",
       "All 108 Routes Explorer": "مستكشف جميع المسارات (108)",
@@ -4170,8 +4170,7 @@
       "Holding Briefing": "ملخص القابضة والخزينة",
       "Holding Entity": "الكيان القابض",
       "Holding Entity *": "الشركة القابضة *",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Counterparties)": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة (الحاج محمد والأطراف المقابلة)",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Stakeholders)": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة (الحاج محمد وأصحاب المصلحة)",
+      "Holding Extended Stakeholder Ledger": "دفتر الأستاذ الموسع لأصحاب المصلحة في القابضة",
       "Holding Extended Stakeholder Ledger (Received vs Gave & Difference)": "دفتر أصحاب المصلحة الممتدة في القابضة (المسحوب مقابل المدفوع والفرق)",
       "Holding HQ Overhead": "نفقات الإدارة العامة للقابضة",
       "Holding Loans & Treasury Audit": "تدقيق قروض وخزينة القابضة",
@@ -10537,7 +10536,7 @@
       "Father": "الأب",
       "Father Name": "اسم الأب",
       "Father:": "الأب:",
-      "e.g. Mohammad": "مثلاً: محمد",
+      "e.g. Nabil": "مثلاً: نبيل",
       "Locked to the father's name recorded on onboarding": "مقفل على اسم الأب المسجّل عند التعيين",
       "Please update to the latest ISABI app version before syncing changes.": "يرجى التحديث إلى أحدث إصدار من تطبيق ISABI قبل مزامنة التغييرات.",
       "Duplicate active staff name blocked by server.": "تم حظر تكرار اسم الموظف النشط من الخادم.",
@@ -14848,7 +14847,7 @@
       "Alerts": "Alertes",
       "Alerts & Thresholds": "Règles d'Alerte & Seuils",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "Alerte la direction dès que les écarts compteurs, bons non imputés ou écarts de cuve atteignent 5 % ou plus du gasoil consommé sur la période.",
-      "Ali Mansour (WTC Scale)": "Ali Mansour (Bascule WTC)",
+      "Rami Haddad (WTC Scale)": "Rami Haddad (Bascule WTC)",
       "Align 17-character VIN or chassis plate inside narrow strip": "Alignez la plaque VIN à 17 caractères dans la bande étroite",
       "All": "Tout",
       "All 108 Routes Explorer": "Explorateur des 108 Itinéraires",
@@ -18109,8 +18108,7 @@
       "Holding Briefing": "Synthèse Holding & Trésorerie",
       "Holding Entity": "Entité Holding",
       "Holding Entity *": "Entité Holding *",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Counterparties)": "Grand livre étendu des parties prenantes Holding (Haj Mohamad et contreparties)",
-      "Holding Extended Stakeholder Ledger (Haj Mohamad & Stakeholders)": "Grand livre étendu des parties prenantes Holding (Haj Mohamad et parties prenantes)",
+      "Holding Extended Stakeholder Ledger": "Grand livre étendu des parties prenantes Holding",
       "Holding Extended Stakeholder Ledger (Received vs Gave & Difference)": "Grand livre Extended Holding (Prélevé vs Versé et Différence)",
       "Holding HQ Overhead": "Frais généraux du siège Holding",
       "Holding Loans & Treasury Audit": "Audit prêts et trésorerie Holding",
@@ -24476,7 +24474,7 @@
       "Father": "Père",
       "Father Name": "Nom du père",
       "Father:": "Père :",
-      "e.g. Mohammad": "ex. Mohammad",
+      "e.g. Nabil": "ex. Nabil",
       "Locked to the father's name recorded on onboarding": "Verrouillé sur le nom du père enregistré à l'embauche",
       "Please update to the latest ISABI app version before syncing changes.": "Veuillez mettre à jour vers la dernière version de l'application ISABI avant de synchroniser les modifications.",
       "Duplicate active staff name blocked by server.": "Nom d'employé actif en double bloqué par le serveur.",
@@ -28445,9 +28443,39 @@
   ]);
 
   let _properNounSet = null;
-  let _properNounSeedCount = -1;
+  let _properNounSeedTotal = -1;
+  let _properNounNbObj = undefined;
 
-  function buildProperNounSet() {
+  const PROPER_NOUN_SEED_TABLES = [
+    'customers', 'suppliers', 'staff_members', 'employments', 'drivers', 'sites', 'regions',
+    'products', 'items', 'equipment', 'users', 'bank_accounts',
+    'cash_movements', 'external_movements',
+    're_properties', 're_tenants', 're_leases', 're_sales',
+    'ins_carriers', 'ins_policies', 'ins_claims',
+    'trd_skus', 'trd_shipments', 'hld_loans', 'hsp_memberships'
+  ];
+
+  function countProperNounSeedTotal() {
+    let total = 0;
+    try {
+      const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
+      const recs = (seed && seed.records) ? seed.records : null;
+      if (recs) {
+        for (let ti = 0; ti < PROPER_NOUN_SEED_TABLES.length; ti++) {
+          const arr = recs[PROPER_NOUN_SEED_TABLES[ti]];
+          if (Array.isArray(arr)) total += arr.length;
+        }
+      }
+      const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && Array.isArray(window.MFG_ENTERPRISE.companies))
+        ? window.MFG_ENTERPRISE.companies : null;
+      if (ent) total += ent.length;
+    } catch (_) {
+      return 0;
+    }
+    return total;
+  }
+
+  function buildProperNounSet(seedTotal, seedNbObj) {
     const s = new Set([
       'wtc', 'bbconstruction', 'lions transport', 'lions', 'bdeir holding', 'bdeir',
       'blanca', 'la una', 'launa', 'palms', 'voile', 'platinum', 'platinum executive suites',
@@ -28455,51 +28483,38 @@
       'properties', '4235 company s.a.l', '4235 s.a.l', '4235', 'insurance company', 'bdeir insurance brokerage',
       'allianz', 'allianz sna', 'axa', 'axa middle', 'axa middle east', 'bankers', 'bankers assurance', 'bankers ass',
       'arope', 'arope insurance', 'medgulf', 'libano-suisse', 'whish', 'rawbt', 'isabi', 'isabi systems',
-      'hussein bdeir', 'karim bdeir', 'jad bdeir', 'afif bdeir', 'afif & ibrahim bdeir', 'haj ibrahim',
-      'tarek farah', 'maya nassar', 'nadine khoury', 'rami haddad', 'sabah kassab', 'aya hammoud',
-      'mark abou tayeh', 'mohamad rammal', 'hatem saab', 'samaan al hayek', 'chadi haj hassan', 'ali klait',
-      'ghassan abou ghader', 'abdullah zahra', 'al razan company', 'al-rida trading co.', 'cedar coast developers sal',
-      'beirut diagnostic partners l', 'khoury international holding', 'infinitas sal', 'infinitas', 'mazen',
-      'hoda harkous', 'dr sara abed latif', 'mohamad ali fawz', 'nadia khoury', 'karim haddad', 'cedar trading sal',
-      'phoenicia logis', 'kansoun brothers co.', 'majbal araco', 'majbal araco jiyeh', 'majed terro', 'mega beton',
-      'soime choueifat', 'soime dawra', 'sabeh beton choueifat', 'dabousi', 'dabousi ghrbal', 'bsalim', 'jiyeh',
+      // Real people and outside parties are not listed here (this file is public): they come from the seed
+      // tables below and from the private name book (`window.MFG_NAMEBOOK.properNouns()`), signed-in only.
+      'tarek farah', 'maya nassar', 'nadine khoury', 'rami haddad',
+      'al-rida trading co.', 'cedar coast developers sal',
+      'beirut diagnostic partners l', 'khoury international holding',
+      'cedar pharmacy', 'meridian consulting sal', 'nabil khoury', 'maya abi saab', 'dr. nadine maalouf', 'fadi rizk',
+      'phoenicia logis', 'bsalim', 'jiyeh',
       'jiyeh jv', 'halat jv', 'tyre jv', 'sibline', 'choueifat', 'dawra', 'beirut', 'bashoura', 'jdaide',
       'aawkar', 'fanar', 'sinai', 'south', 'jnoub', 'nabatieh', 'naher l mot', 'halat /nahr el mot',
-      'spinneys mar elias', 'radwan sidani', 'chhab', 'goulf', 'natgaz', 'ramel mrml', 'trab mrml', 'sakher',
-      'bodra', 'bahes', 'mghasal', 'miran', 'bleupool', 'aluminium',
+      'spinneys mar elias', 'goulf', 'natgaz', 'ramel mrml', 'trab mrml', 'sakher',
+      'bodra', 'bahes', 'mghasal', 'aluminium',
       'mina el hosn', 'marina tower', 'nabatieh el tahta', 'kaakaayit al snoubar', 'chiah', 'msaytbeh',
       'ras beirut', 'hamra pavillon', 'mazraa', 'qrouh', 'baghdad mansour commercial unit (iraq)',
       'cannes croisette luxury residence (france)', 'caterpillar 650kva banquet gen #1',
       'cummins 250kva silent gen + hybrid inverter', 'perkins 500kva prime gen #1 + 180kwp solar',
       'mtu 550kva twin redundant power plant', 'ballroom acoustic dimmers & chiller ahu #3',
       'world trading & construction company', 'world trading & construction',
-      'karim mansour', 'ali mansour', 'rami kassis', 'ghassanieh',
+      'karim mansour', 'rami kassis', 'ghassanieh',
       'blanca beach resort', 'la una resort', 'palms resort', 'voile resort', 'platinum hospitality',
       'korri auto sal', 'shacman lebanon sal', '4235 company s.a.l (msaytbeh commercial)',
       'bankers assurance sal', 'man enterprise', 'holcim liban', 'ipt diesel supply',
-      'arabian construction co.', 'dahr el baidar quarry', 'agrimount', 'haj', 'sheikh rabih',
-      'jad', 'ghafar saloum', 'mahmoud al mortada', 'mwafak', 'liwaa harb', 'yasser',
-      'ayman mousa', 'sultan', 'awad', 'hussein saleh', 'bechara srouji for contracting s.a.l',
-      'majed karam', 'khalife', 'wissam mlaab', 'mohamad habib', 'ali saleh',
+      'arabian construction co.', 'dahr el baidar quarry', 'haj',
       'shacman x3000', 'shacman f3000', 'hino 500', 'fmc150', 'fmc920'
     ]);
     try {
       const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
       const recs = (seed && seed.records) ? seed.records : null;
-      let count = 0;
       if (recs) {
-        const tables = [
-          'customers', 'suppliers', 'staff_members', 'employments', 'drivers', 'sites', 'regions',
-          'products', 'items', 'equipment', 'users', 'bank_accounts',
-          'cash_movements', 'external_movements',
-          're_properties', 're_tenants', 're_leases', 're_sales',
-          'ins_carriers', 'ins_policies', 'ins_claims',
-          'trd_skus', 'trd_shipments', 'hld_loans', 'hsp_memberships'
-        ];
+        const tables = PROPER_NOUN_SEED_TABLES;
         for (let ti = 0; ti < tables.length; ti++) {
           const arr = recs[tables[ti]];
           if (!Array.isArray(arr)) continue;
-          count += arr.length;
           for (let i = 0; i < arr.length; i++) {
             const r = arr[i];
             if (!r || typeof r !== 'object') continue;
@@ -28517,17 +28532,40 @@
       const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && Array.isArray(window.MFG_ENTERPRISE.companies))
         ? window.MFG_ENTERPRISE.companies : null;
       if (ent) {
-        count += ent.length;
         for (let i = 0; i < ent.length; i++) {
           const c = ent[i];
           if (c && c.name) s.add(String(c.name).trim().toLowerCase());
           if (c && c.shortName) s.add(String(c.shortName).trim().toLowerCase());
         }
       }
-      _properNounSeedCount = count;
+      const nbook = (typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.properNouns === 'function')
+        ? window.MFG_NAMEBOOK.properNouns() : [];
+      for (let i = 0; i < nbook.length; i++) s.add(nbook[i]);
+      const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK) ? window.MFG_NAMEBOOK : null;
+      _properNounSeedTotal = seedTotal !== undefined ? seedTotal : countProperNounSeedTotal();
+      _properNounNbObj = seedNbObj !== undefined ? seedNbObj : ((nb && nb.loaded && typeof nb.get === 'function') ? nb.get() : null);
     } catch (_) {}
     _properNounSet = s;
     return s;
+  }
+
+  function ensureProperNounSetFresh() {
+    let total = 0;
+    let nbObj = null;
+    try {
+      total = countProperNounSeedTotal();
+      const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK) ? window.MFG_NAMEBOOK : null;
+      nbObj = (nb && nb.loaded && typeof nb.get === 'function') ? nb.get() : null;
+    } catch (_) {
+      total = 0;
+      nbObj = null;
+    }
+    if (!_properNounSet || total !== _properNounSeedTotal || nbObj !== _properNounNbObj) {
+      buildProperNounSet(total, nbObj);
+      if (typeof STR_CACHE === 'object' && STR_CACHE) {
+        Object.keys(STR_CACHE).forEach(k => { if (STR_CACHE[k] && typeof STR_CACHE[k].clear === 'function') STR_CACHE[k].clear(); });
+      }
+    }
   }
 
   function isProperNounOrInvariant(str) {
@@ -28547,16 +28585,14 @@
     if (/^(PLOT-|INTL-|WO-|IMP-|ALZ-|AXA-|BNK-|MGF-|CLM-|SU-|TRIP-|KA-\d{4}-)/i.test(t)) return true;
     if (/^\d{4}-\d{2}(?:-\d{2})?$/.test(t)) return true;
 
-    const curCount = (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records && Array.isArray(window.MFG_SEED.records.customers))
-      ? window.MFG_SEED.records.customers.length : 0;
-    if (!_properNounSet || curCount !== _properNounSeedCount) buildProperNounSet();
+    ensureProperNounSetFresh();
 
     const low = t.toLowerCase();
     if (_properNounSet.has(low)) return true;
     // Strip trailing "(WTC)" / "(BBC)" / "(2)" / "(Abu Khalil)" on proper nouns
     const baseMatch = t.match(/^(.+?)\s*\(([^()]+)\)$/);
     if (baseMatch && _properNounSet.has(baseMatch[1].trim().toLowerCase())) return true;
-    // Comma-separated list of proper nouns / plate numbers (e.g. "TB3, Tb4, Tb2" or "363587, Mohamad Rammal, 357222")
+    // Comma-separated list of proper nouns / plate numbers (e.g. "TB3, Tb4, Tb2" or "363587, Rami Haddad, 357222")
     if (t.includes(',')) {
       const parts = t.split(',').map(x => x.trim()).filter(Boolean);
       if (parts.length >= 2 && parts.every(p => !/[A-Za-z]/.test(p) || _properNounSet.has(p.toLowerCase()) || /^(Tb?\d+|\d+)$/i.test(p))) {
@@ -33419,7 +33455,7 @@
     }
 
     // Daily Operations spelled-out phrases & Close-of-Day Digest (v19.6.378+)
-    // A material figure can be negative (a quarry that pays the company per load, WTC 2026-11-20 Bassam Ziadeh).
+    // A material figure can be negative (a quarry that pays the company per load, WTC 2026-11-20 quarry rebate).
     m = trimmed.match(/^Material\s+([-−]?\$[\d.,]+)\s*·\s*Haulage\s+([-−]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `المواد ${m[1]} · النقل ${m[2]}` : `Matériau ${m[1]} · Transport ${m[2]}`;
 
@@ -33994,6 +34030,7 @@
 
   function evalCached(trimmed, lang) {
     if (!trimmed || lang === 'en') return { out: trimmed, ok: true };
+    ensureProperNounSetFresh();
     let cache = STR_CACHE[lang];
     if (!cache) {
       cache = new Map();

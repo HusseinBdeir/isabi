@@ -815,7 +815,7 @@
     'Holding & Treasury': 'Intercompany transfer from WTC to Bdeir Holding 18500 dollars treasury sweep',
     'Hospitality & Resorts': 'Blanca daily venue closing chalet revenue 3200 dollars cash',
     'Automotive & Heavy Trading': 'Shacman X3000 commercial invoice 68000 dollars customer Michel Khoury',
-    'Real Estate & Property': 'Commercial lease 4235 Company annual rent 24000 dollars tenant Infinitas',
+    'Real Estate & Property': 'Commercial lease 4235 Company annual rent 24000 dollars tenant Meridian',
     'Insurance & Brokerage': 'MedGulf motor policy for Michel Khoury gross premium 2800 dollars'
   };
 
@@ -2913,7 +2913,7 @@
     'CAM | 4235 Msaytbeh | كهرباء ومولد مشترك | Pool Cost: $4,400.00 | Markup: 5%',
     'CAM | 776 Ras Beirut (Hamra Pavillon) | صيانة مصاعد وتكييف مشترك | Pool Cost: $2,800.00 | Markup: 5%',
     'WIRE | أرز الشرق العقارية | Fresh USD Bank Wire | Amount: $9,975.00 | 2026-10-30',
-    'WIRE | Infinitas SAL | Bank Transfer USD | Amount: $5,550.00 | 2026-10-31'
+    'WIRE | Meridian Consulting SAL | Bank Transfer USD | Amount: $5,550.00 | 2026-10-31'
   ].join('\n');
 
   function reconcileRealEstateCamAndWires(rawText) {
@@ -4772,8 +4772,8 @@
 
   // --- STUDIO 3: REAL ESTATE DEFERRED-RENT AMORTIZATION, 4235 VAT RETURN LOCK & 60/30D RENEWAL QUEUE ---
   const SAMPLE_RE_ADDENDUM_TEXT = [
-    'تمديد عقد إيجار | 4235 Msaytbeh Commercial Center | Mazen Pharmacy | Step-Up: +5% | القيمة التأجيرية البلدية: $52,500 | 2026-12-01',
-    'Avenant de Bail | Hamra Plaza | Infinitas Advisory | CPI Indexation: +4.5% | Taxe Municipale: $3,150 | 2026-11-25'
+    'تمديد عقد إيجار | 4235 Msaytbeh Commercial Center | Cedar Pharmacy | Step-Up: +5% | القيمة التأجيرية البلدية: $52,500 | 2026-12-01',
+    'Avenant de Bail | Hamra Plaza | Meridian Advisory | CPI Indexation: +4.5% | Taxe Municipale: $3,150 | 2026-11-25'
   ].join('\n');
 
   function parseRealEstateAddendumClause(rawText) {
@@ -4825,8 +4825,8 @@
       .reduce((s, inv) => s + Number(inv.vat_usd || 0), 0)) || demoOnly(6875.00, 0);
 
     const amortRows = (leases.length ? leases : demoOnly([
-      { id: 'LEASE-20250301-MAZEN-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen Pharmacy', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, days_to_expiry: 45 },
-      { id: 'LEASE-20250601-INF-002', company: 'Properties', property: 'Hamra Commercial Tower', tenant: 'Infinitas Advisory', frequency: 'Annual', net_period_usd: 36000, vat_rate: 0, days_to_expiry: 28 }
+      { id: 'LEASE-20250301-CEDARPH-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Cedar Pharmacy', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, days_to_expiry: 45 },
+      { id: 'LEASE-20250601-MER-002', company: 'Properties', property: 'Hamra Commercial Tower', tenant: 'Meridian Advisory', frequency: 'Annual', net_period_usd: 36000, vat_rate: 0, days_to_expiry: 28 }
     ], [])).map((ls, idx) => {
       const freq = String(ls.frequency || 'Quarterly');
       const periodNet = Number(ls.net_period_usd || demoOnly(12500, 0));
@@ -4914,7 +4914,7 @@
   function buildRealEstateRenewalConfirmation(lang) {
     const l = lang || EDGE_STATE.reConfirmLang || curLang();
     const pack = EDGE_STATE.reClosePack || computeRealEstateMonthEndClosePack();
-    const p0 = pack.addendumProposals[0] || demoOnly({ tenant: 'Mazen Pharmacy', property: '4235 Msaytbeh Commercial Center', stepUpPct: 5, proposedAnnualTtcUsd: 58275, effectiveDate: '2026-12-01' }, { tenant: '', property: '', stepUpPct: 0, proposedAnnualTtcUsd: 0, effectiveDate: '' });
+    const p0 = pack.addendumProposals[0] || demoOnly({ tenant: 'Cedar Pharmacy', property: '4235 Msaytbeh Commercial Center', stepUpPct: 5, proposedAnnualTtcUsd: 58275, effectiveDate: '2026-12-01' }, { tenant: '', property: '', stepUpPct: 0, proposedAnnualTtcUsd: 0, effectiveDate: '' });
     if (l === 'ar') {
       return sanitizeOutward(`السادة ${p0.tenant} المحترمين، إشارة إلى إقفال الفترة الضريبية والمحاسبية كما في ${pack.cutoffDate}، نود إعلامكم باقتراب موعد تجديد عقد الإيجار في ${p0.property} اعتباراً من ${p0.effectiveDate} وفق بند الزيادة التعاقدية (${p0.stepUpPct}%) ليصبح البدل السنوي الشامل ${fmtUSD(p0.proposedAnnualTtcUsd, 2)}. يرجى تأكيد الموافقة لتوثيق الملحق.`);
     }

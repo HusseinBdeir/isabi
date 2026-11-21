@@ -1336,8 +1336,10 @@
         if (siteName) entry.sites.add(String(siteName).trim());
         if (Number(pct) > 0) entry.pct = Number(pct);
       };
-      addJvSiteRef('Assaf', 'Jiyeh JV', 50);
-      addJvSiteRef('Assaf', 'Halat JV', 50);
+      // The JV partner's name and its sites come from the private name book (signed-in seats only).
+      const nbBook = (window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.get === 'function') ? window.MFG_NAMEBOOK.get() : {};
+      const nbJvPartner = String(nbBook.jv_partner || '').trim();
+      if (nbJvPartner) (Array.isArray(nbBook.jv_sites) ? nbBook.jv_sites : []).forEach(sn => addJvSiteRef(nbJvPartner, sn, 50));
       ((rec.jv_partnerships || [])).forEach(j => {
         if (j && !j.voided) addJvSiteRef(j.partner || j.counterparty, j.site, j.percentage ?? j.share_pct);
       });
@@ -1357,7 +1359,8 @@
       ((rec.suppliers || [])).forEach(s => {
         if (!s || s.voided || !s.name) return;
         const catStr = [s.category, s.category1, s.category2, s.category3].filter(Boolean).join(' ');
-        if (/raw\s*material|quarry|site|assaf/i.test(catStr) || /assaf/i.test(s.name)) {
+        const nbJvLow = nbJvPartner.toLowerCase();
+        if (/raw\s*material|quarry|site/i.test(catStr) || (nbJvLow && (catStr.toLowerCase().includes(nbJvLow) || String(s.name).toLowerCase().includes(nbJvLow)))) {
           rawSupSet.add(String(s.name).trim().toLowerCase());
         }
       });
@@ -2534,8 +2537,8 @@
     if (fType === 'external') {
       const isExtdMode = Boolean(ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'extended');
       const baseParties = isExtdMode
-        ? ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms', 'Haj Ali', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Voile', 'Bdeir Holding']
-        : ['Haj Ali', 'Haj Mohamad', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'George', 'Bdeir Holding'];
+        ? ((window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.list === 'function') ? window.MFG_NAMEBOOK.list('extended_parties') : []).concat(['Blanca', 'Palms', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Voile', 'Bdeir Holding'])
+        : ((window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.list === 'function') ? window.MFG_NAMEBOOK.list('extended_parties') : []).concat(['WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'Bdeir Holding']);
       let cpFreqMap = fIdx && fIdx.counterparty;
       if (isExtdMode) {
         cpFreqMap = new Map();

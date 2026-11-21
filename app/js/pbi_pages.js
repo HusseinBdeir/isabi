@@ -2340,7 +2340,7 @@
       const cCanon = new Map();
       const normCustKey = nm => {
         const nk = norm(nm);
-        return nk === 'mohamd afara' ? 'mohamad afara' : nk;
+        return (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.canonKey(nk) : nk);
       };
       const ensureCC = nm => {
         const nk = normCustKey(nm);
@@ -2373,19 +2373,20 @@
         e.sales_loads = st.loads;
         e.total_sales = round2(st.ttc);
         e.ar_balance = round2(st.crTtc - st.settled);
-        if (nk === 'mohamad afara') {
-          const eAlt = rel.custByName['mohamd afara'] || (rel.custByName['mohamd afara'] = initCust());
+        // Other spellings of the same party (private name book) show the same figures.
+        (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.variantsOf(nk) : []).forEach(alt => {
+          const eAlt = rel.custByName[alt] || (rel.custByName[alt] = initCust());
           eAlt.sales_loads = st.loads;
           eAlt.total_sales = round2(st.ttc);
           eAlt.ar_balance = round2(st.crTtc - st.settled);
-        }
+        });
       });
     }
     if ((Array.isArray(rec.raw_purchases) && rec.raw_purchases.length > 0) || (Array.isArray(rec.settlements) && rec.settlements.length > 0)) {
       const sCanon = new Map();
       const normSupKey = nm => {
         const nk = norm(nm);
-        return nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+        return (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.canonKey(nk) : nk);
       };
       const ensureSC = nm => {
         const nk = normSupKey(nm);
@@ -2456,10 +2457,10 @@
             e.exp_rem_lbp = Math.round(lr.exp_rem_lbp || 0);
             e.exp_rem_ttc = round2(lr.exp_rem_ttc || 0);
             e.ap_balance = round2((lr.quarry_rem || 0) + (lr.trans_rem || 0) + (lr.exp_rem_ttc || 0));
-            if (sk === 'karim bdeir') {
-              const eAlt = rel.suppByName['kareem bdeir'] || (rel.suppByName['kareem bdeir'] = initSupp());
+            (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.variantsOf(sk) : []).forEach(alt => {
+              const eAlt = rel.suppByName[alt] || (rel.suppByName[alt] = initSupp());
               Object.assign(eAlt, { ap_balance: e.ap_balance, quarry_rem: e.quarry_rem, trans_rem: e.trans_rem, exp_rem_usd: e.exp_rem_usd, exp_vat_rem_usd: e.exp_vat_rem_usd, exp_rem_lbp: e.exp_rem_lbp, exp_rem_ttc: e.exp_rem_ttc });
-            }
+            });
           });
         }
       }
@@ -3210,7 +3211,7 @@
       if (c === 'supplier') return r.supplier || null;
       if (c === 'customer') return r.customer || null;
       if (c === 'is_jv') return Boolean(r.is_jv);
-      if (c === 'jv_partner') return r.is_jv ? (r.jv_partner || 'Assaf') : null;
+      if (c === 'jv_partner') return r.is_jv ? (r.jv_partner || (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.jvPartner() : 'JV Partner')) : null;
       if (c === 'jv_share') return r.is_jv ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
     }
     if (tableKey === 'regions' && c === 'corridor') {
@@ -4539,7 +4540,7 @@
       case 'p17_jv':
         return [
           { key: 'site', label: 'JV Site', opts: data.jvSiteOpts || ['Jiyeh JV', 'Halat JV', 'Nahr Ibrahim JV'] },
-          { key: 'partner', label: 'JV Partner', opts: ['Assaf', 'WTC', 'Partner 50%'] },
+          { key: 'partner', label: 'JV Partner', opts: [(window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.jvPartner() : 'JV Partner'), 'WTC', 'Partner 50%'] },
           { key: 'jvBasis', label: 'Distribution Basis', opts: ['Stock', 'Revenue', 'Profit', 'Cash'] }
         ];
       case 'p18_tickets':
@@ -5061,7 +5062,7 @@
             : null;
           const normSup = nm => {
             const nk = norm(nm);
-            return nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+            return (window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.canonKey(nk) : nk);
           };
           const seenSupNorm = new Set();
           const baseModelSupps = STATE._officialScopeActive
@@ -10454,7 +10455,7 @@
                 }
                 if (t.key === 'external_movements' && isHoldingTbl) {
                   const extdCnt = chipCounts.extdCnt || 0;
-                  return mainChip + `<button type="button" class="filter-chip ${isExtdTblMode ? 'active' : ''}" data-tbl-key="external_movements" data-tbl-view="extended" data-ui-tip="Holding Extended Stakeholder Ledger (Haj Mohamad &amp; Stakeholders)">Extended Stakeholder Ledger <span class="mono" style="opacity:.75">(${fmtNum(extdCnt)})</span></button>`;
+                  return mainChip + `<button type="button" class="filter-chip ${isExtdTblMode ? 'active' : ''}" data-tbl-key="external_movements" data-tbl-view="extended" data-ui-tip="Holding Extended Stakeholder Ledger">Extended Stakeholder Ledger <span class="mono" style="opacity:.75">(${fmtNum(extdCnt)})</span></button>`;
                 }
                 return mainChip;
               }).join('')}

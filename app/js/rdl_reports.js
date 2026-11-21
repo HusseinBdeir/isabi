@@ -4391,7 +4391,7 @@
         const lastDateByNorm = new Map();
         bySup.forEach((g, s) => {
           const nk = String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const ck = nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+          const ck = window.MFG_NAMEBOOK ? window.MFG_NAMEBOOK.canonKey(nk) : nk;
           const prev = lastDateByNorm.get(ck) || '';
           if (g.lastDate && g.lastDate > prev) lastDateByNorm.set(ck, g.lastDate);
         });
