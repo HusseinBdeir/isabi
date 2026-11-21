@@ -13956,7 +13956,184 @@
       "One day apart, same party, entries on another form add up to this amount": "بفارق يوم واحد ولنفس الطرف، قيود في نموذج آخر يساوي مجموعها هذا المبلغ",
       "Capitalized Landed Cost ($) cannot be negative on a positive sale.": "لا يمكن أن تكون التكلفة الرأسمالية المحمّلة ($) سالبة في فاتورة بيع موجبة.",
       "Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).": "لا يمكن أن تكون التكلفة الرأسمالية المحمّلة ($) موجبة في إشعار دائن (أدخل 0 أو قيداً عكسياً سالباً).",
-      "Credit Note · Entered via Smart Register": "إشعار دائن · مُدخل عبر السجل الذكي"
+      "Credit Note · Entered via Smart Register": "إشعار دائن · مُدخل عبر السجل الذكي",
+      "Requires Expenses hub access": "يتطلب صلاحية قسم المصاريف",
+      "Requires Expenses hub access for operating profit": "يتطلب صلاحية قسم المصاريف لعرض الربح التشغيلي",
+      "Requires Cash Flow & Ledger access": "يتطلب صلاحية السيولة والأستاذ العام",
+      "Requires Expenses, Cash Flow & Ledger access": "يتطلب صلاحية المصاريف والسيولة والأستاذ العام",
+      "Restricted by seat permissions": "مقيد حسب صلاحيات المقعد",
+      "Requires Full Books": "يتطلب صلاحية الدفاتر الكاملة",
+      "Requires Expenses hub": "يتطلب قسم المصاريف",
+      "Deposits & cash balances require Cash Flow & Ledger access": "تتطلب الودائع والأرصدة النقدية صلاحية السيولة والأستاذ العام",
+      "Stock valuation requires Treasury & Ledger access": "يتطلب تقييم المخزون صلاحية الخزينة والأستاذ العام",
+      "Trial Balance and treasury books require Cash Flow & Ledger permissions": "يتطلب ميزان المراجعة ودفاتر الخزينة صلاحية السيولة والأستاذ العام",
+      "Monthly Sales Volume Trajectory": "مسار حجم المبيعات الشهري",
+      "Resort Revenue Trajectory": "مسار إيرادات المنتجعات",
+      "Heavy Truck & Parts Revenue Trajectory": "مسار إيرادات الشاحنات وقطع الغيار",
+      "Annual Rent Roll Trajectory": "مسار الإيجارات السنوية",
+      "Annual Rent Roll by Active Lease": "جدول الإيجار السنوي حسب العقود النشطة",
+      "Written Premium by Carrier": "الأقساط المكتتبة حسب شركة التأمين",
+      "6-Industry Revenue Trajectory": "مسار الإيرادات عبر 6 قطاعات",
+      "Revenue & Operations Summary": "ملخص الإيرادات والعمليات",
+      "Resort Revenue & Operations Summary": "ملخص إيرادات وعمليات المنتجعات",
+      "Trading Sales & Showroom Summary": "ملخص مبيعات التجارة وصالة العرض",
+      "Real Estate Rent & Occupancy Summary": "ملخص الإيجارات وإشغال العقارات",
+      "Insurance Production Summary": "ملخص إنتاج التأمين",
+      "Consolidated 6-Industry Revenue Summary": "ملخص الإيرادات الموحد للقطاعات الستة",
+      "Consolidated P&L Value Bridge": "جسر الأرباح والخسائر الموحد",
+      "Consolidated Resort P&L Value Bridge": "جسر الأرباح والخسائر الموحد للمنتجعات",
+      "Receivables & dispatch status": "حالة الذمم المدينة وحركة التسليم",
+      "Operational status active on permitted views": "الحالة التشغيلية نشطة ضمن الصفحات المسموحة",
+      "Operational controls active on permitted views": "الضوابط التشغيلية نشطة ضمن الصفحات المسموحة",
+      "Operational Status: Active": "الحالة التشغيلية: نشط",
+      "Operational Dispatch Status: Active": "حالة التوزيع التشغيلي: نشط",
+      "Operational Pricing Status: Active": "حالة التسعير التشغيلي: نشط",
+      "Sales dispatches and customer tariff controls active on this workspace": "عمليات البيع وقواعد تسعير العملاء نشطة في مساحة العمل هذه",
+      "Customer tariff rules active across scoped deliveries": "قواعد تسعير العملاء نشطة عبر التسليمات المحددة",
+      "General Ledger & Books: Restricted": "الأستاذ العام والدفاتر: مقيد",
+      "Zero Unpriced Quarry Queues": "صفر شحنات كسارات بانتظار التسعير",
+      "Dispatched loads carry active commercial rates": "جميع الشحنات المرسلة تحمل أسعاراً تجارية معتمدة",
+      "Operational workspace is ready.": "مساحة العمل التشغيلية جاهزة.",
+      "Trial Balance and cash till status require Cash Flow & Ledger access": "يتطلب ميزان المراجعة وحالة الصندوق صلاحية السيولة والأستاذ العام",
+      "No monthly ledger data for this entity yet": "لا توجد بيانات دفتر شهرية لهذه الشركة بعد",
+      "Cost valuation Restricted": "تقييم التكلفة مقيد",
+      "Total sales by month": "إجمالي المبيعات حسب الشهر",
+      "Monthly weighbridge and delivery revenue (cost & profit series restricted)": "إيرادات القبان والتوصيل الشهرية (سلاسل التكلفة والربح مقيدة)",
+      "Weighbridge loads by month": "نقلات القبان حسب الشهر",
+      "Monthly weighbridge dispatches (cash till inflows and outflows restricted)": "حركات إرسال القبان الشهرية (تدفقات الصندوق الداخلة والخارجة مقيدة)",
+      "Monthly Sales & Volumes Summary": "ملخص المبيعات والأحجام الشهري",
+      "Monthly weighbridge revenue and tonnage progression (margin, expenses, payroll & cash columns restricted)": "التطور الشهري لإيرادات وأطنان القبان (أعمدة الهامش والمصاريف والرواتب والنقد مقيدة)",
+      "Group Open AR": "ذمم المجموعة المفتوحة",
+      "AP Restricted": "الذمم الدائنة مقيدة",
+      "WEIGHBRIDGE LOADS": "نقلات القبان",
+      "Holding & Treasury dashboards require Cash Flow & General Ledger permissions": "تتطلب لوحات القابضة والخزينة صلاحيات السيولة النقدية والأستاذ العام",
+      "Requires Full Books & Expenses access": "يتطلب صلاحية الدفاتر الكاملة والمصاريف",
+      "Cash Till: Restricted": "رصيد الصندوق: مقيد",
+      "Gross Margin & Operating Profit: Restricted": "مجمل الربح والربح التشغيلي: مقيد",
+      "Cash & Profit Metrics: Restricted by seat permissions": "مؤشرات السيولة والأرباح: مقيدة حسب صلاحيات المقعد",
+      "Requires Cash Flow & General Ledger permissions": "يتطلب صلاحيات السيولة النقدية والأستاذ العام",
+      "Entity Ledgers Tied": "دفاتر الشركات متطابقة",
+      "Monthly Sales TTC - WTC vs BBConstruction": "المبيعات الشهرية شاملة الضريبة - WTC مقابل BBConstruction",
+      "Open Invoiced Sales": "المبيعات المفوترة المفتوحة",
+      "Sales & Deposits": "المبيعات والودائع",
+      "Cash in vs cash out by month": "التدفقات النقدية الداخلة مقابل الخارجة حسب الشهر",
+      "Monthly Performance & Profit Trajectory": "مسار الأداء والأرباح الشهري",
+      "Trial balance requires review ($0.00 target)": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00)",
+      "Trial balance requires review ($0.00 target).": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00).",
+      "POS Till #1": "صندوق نقطة البيع #1",
+      "Gross Margin ($)": "مجمل الربح ($)",
+      "GWP ($)": "إجمالي الأقساط المكتتبة ($)",
+      "Gross Comm ($)": "إجمالي العمولة ($)",
+      "Client Disc ($)": "حسم العميل ($)",
+      "Net Comm ($)": "صافي العمولة ($)",
+      "Raw intake average": "متوسط تكلفة الخام",
+      "Active Rent Roll": "سجل الإيجارات الفعالة",
+      "Claims Register": "سجل المطالبات",
+      "Entity Sales & Loads": "مبيعات ونقلات الشركات",
+      "Welcome": "أهلاً بك",
+      "Books are tied at": "الدفاتر متوازنة عند",
+      "open Sentinel alert.": "تنبيه مراقب مفتوح.",
+      "open Sentinel alerts.": "تنبيهات مراقب مفتوحة.",
+      "open Sentinel alert on your permitted scope.": "تنبيه مراقب مفتوح ضمن نطاق صلاحيتك.",
+      "open Sentinel alerts on your permitted scope.": "تنبيهات مراقب مفتوحة ضمن نطاق صلاحيتك.",
+      "Ask anything in English, العربية, or Français, open": "اسأل عن أي شيء بالعربية أو الإنجليزية أو الفرنسية، افتح",
+      "Top customers by sales": "أعلى الزبائن حسب المبيعات",
+      "Annual rent roll & occupancy by deeded asset": "الإيجار السنوي والإشغال حسب العقار المملوك",
+      "Seasonal Beach & Chalet": "موسمي شاطئ وشاليه",
+      "Active and completed work order count per asset": "عدد أوامر العمل النشطة والمكتملة لكل عقار",
+      "Activity volume across extended stakeholder counterparties": "حجم النشاط عبر الأطراف المعنية الممتدة",
+      "Agreement count across resort profit centers": "عدد الاتفاقيات عبر مراكز ربحية المنتجعات",
+      "Agreement count by settlement status": "عدد الاتفاقيات حسب حالة التسوية",
+      "Bound policy and endorsement count across standardized insurance lines": "عدد البوالص والملاحق المعتمدة عبر فروع التأمين الموحدة",
+      "CapEx and investment vouchers by posting month": "سندات النفقات الرأسمالية والاستثمار حسب شهر القيد",
+      "Carrier account coverage status across insurers": "حالة تغطية حسابات شركات التأمين",
+      "Count of single-sided intercompany legs awaiting mirror booking by month": "عدد القيود البينية أحادية الطرف بانتظار المطابقة حسب الشهر",
+      "Count of sister funding and repayment entries by month": "عدد قيود التمويل والسداد بين الشركات الشقيقة حسب الشهر",
+      "Coverage Status": "حالة التغطية",
+      "Customer billing breakdown across active accounts": "توزيع فوترة العملاء عبر الحسابات النشطة",
+      "Engineering, HVAC, and renovation order count by vendor": "عدد أوامر الهندسة والتكييف والترميم حسب المقاول",
+      "Entities holding unmatched single-sided intercompany legs": "الشركات التي تحمل قيوداً بينية أحادية الطرف غير مطابقة",
+      "FNOL notification, adjuster assessment, approved, and settled claim counts": "عدد المطالبات المبلّغ عنها وتحت التقييم والمعتمدة والمسددة",
+      "Facility counts grouped by lender or borrower counterparty": "عدد التسهيلات المصنفة حسب الجهة المقرضة أو المقترضة",
+      "Gross entity operating revenue across subsidiaries": "إجمالي الإيرادات التشغيلية للشركات التابعة",
+      "Gross written premium across insurance carriers": "إجمالي الأقساط المكتتبة عبر شركات التأمين",
+      "Import landed-cost allocation files logged by month": "ملفات توزيع كلفة الاستيراد المسجلة حسب الشهر",
+      "Import shipment unit volume across arrival and booking months": "حجم وحدات شحنات الاستيراد حسب أشهر الوصول والقيد",
+      "Invoiced and settled items vs unbilled tenant recharge items": "البنود المفوترة والمسددة مقابل بنود إعادة الفوترة غير المحررة",
+      "Logged stock snapshots across active store rooms": "لقطات الجرد المسجلة عبر المستودعات النشطة",
+      "Menu count across Star, Plowhorse, Puzzle, and Dog classes": "عدد أصناف القائمة وفق تصنيف Star و Plowhorse و Puzzle و Dog",
+      "Movement count across extended stakeholder accounts": "عدد الحركات عبر حسابات الأطراف المعنية الممتدة",
+      "On-hand quantities across tyres, filters, engine parts, and hydraulics": "الكميات المتوفرة من الإطارات والفلاتر وقطع المحرك والهيدروليك",
+      "On-hand unit quantities across Al Ghazieh, Bchamoun, and showroom stores": "الكميات المتوفرة في مخازن الغازية وبشامون وصالة العرض",
+      "Parallel stock position and ledger parity row counts": "عدد صفوف مطابقة رصيد المخزون والأستاذ الموازي",
+      "Policy count across monthly carrier bordereaux": "عدد البوالص عبر كشوف شركات التأمين الشهرية",
+      "Pre-delivery inspection, preventive service, and OEM warranty job counts": "عدد مهام فحص ما قبل التسليم والصيانة الوقائية وضمان الوكالة",
+      "Receipt and deposit voucher volume by posting month": "عدد سندات القبض والتأمينات حسب شهر القيد",
+      "Received quantities across trading warehouses": "الكميات المستلمة عبر مستودعات التجارة",
+      "Reconciled vs flagged monthly carrier statements": "كشوف شركات التأمين المطابقة مقابل الكشوف المعلّقة بفروقات",
+      "Recoverable recharge item count grouped by building": "عدد بنود إعادة الفوترة القابلة للاسترداد مصنفة حسب العقار",
+      "Repair and PM work order count by resort zone": "عدد أوامر الإصلاح والصيانة الوقائية حسب مرافق المنتجع",
+      "Reported claim count grouped by incident date across active files": "عدد المطالبات المبلّغ عنها حسب تاريخ الحادث عبر الملفات النشطة",
+      "Shaanxi, Weichai, OEM truck, tyre, and spare-parts unit volume": "حجم وحدات شاحنات شاكمان وويتشاي والإطارات وقطع الغيار",
+      "Sold menu sales grouped by kitchen, seafood, bar, and banquet": "مبيعات الأصناف المصنفة حسب المطبخ والمأكولات البحرية والبار والحفلات",
+      "Stock movements grouped by kitchen and cellar categories": "حركات المخزون مصنفة حسب فئات المطبخ والقبو",
+      "Transfer count across borrowing entities": "عدد التحويلات عبر الشركات المقترضة",
+      "Transfer count across lending entities": "عدد التحويلات عبر الشركات المقرضة",
+      "Transfer counts initiated by each group entity": "عدد التحويلات الصادرة عن كل شركة في المجموعة",
+      "Unit breakdown across inter-company transfers, workshop issues, and receipts": "توزيع الوحدات بين التحويلات البينية ومصروفات الورشة والاستلامات",
+      "Units inspected and received into trading warehouses by month": "الوحدات المفحوصة والمستلمة في مستودعات التجارة حسب الشهر",
+      "Voucher count across asset categories": "عدد السندات حسب فئات الأصول",
+      "Voucher count across bank wire, cash till, and check channels": "عدد السندات عبر التحويل المصرفي والصندوق والشيكات",
+      "Voucher count grouped by allocation driver": "عدد السندات مصنفة حسب أساس التوزيع",
+      "Warehouse issue, receipt, and inter-company transfer unit counts": "عدد وحدات الصرف والاستلام والتحويلات البينية للمستودع",
+      "Work orders logged across operating months": "أوامر العمل المسجلة عبر أشهر التشغيل",
+      "Workshop and warranty job counts across months": "عدد مهام الورشة والضمان عبر الأشهر",
+      "Capital Vouchers by Asset Class": "سندات الأصول والرأسمال حسب الفئة",
+      "Carrier Remittance Accounts by Status (Count)": "حسابات تسوية شركات التأمين حسب الحالة (العدد)",
+      "Commission Statements by Recon Status (Count)": "كشوف العمولات حسب حالة المطابقة (العدد)",
+      "Extended Entries by Stakeholder": "القيود الممتدة حسب الطرف المعني",
+      "Gross Premium Bordereaux by Insurer ($)": "إجمالي أقساط كشوف شركات التأمين ($)",
+      "Insurance Claims by Settlement Status (Count)": "مطالبات التأمين حسب حالة التسوية (العدد)",
+      "Intercompany Transfers by Borrowing Entity": "التحويلات البينية حسب الجهة المستلمة",
+      "Intercompany Transfers by Lending Entity": "التحويلات البينية حسب الجهة المرسلة",
+      "Intercompany Transfers by Originating Entity": "التحويلات البينية حسب الجهة المنشئة",
+      "Invoiced Trading Volume by Account Status ($)": "حجم المبيعات المفوترة حسب حالة الحساب ($)",
+      "Landed Vouchers by Allocation Basis": "مستندات الاستيراد حسب أساس التوزيع",
+      "Maintenance Work Orders by Resort Zone": "أوامر الصيانة حسب مرافق المنتجع",
+      "Menu Items by Engineering Class": "أصناف القائمة حسب فئة الأداء",
+      "Menu Revenue by Outlet Category ($)": "إيرادات القائمة حسب فئة المنفذ ($)",
+      "Monthly Capital & Asset Voucher Count": "العدد الشهري لسندات الرأسمال والأصول",
+      "Monthly Commissary & Cellar Stock Counts": "جرد المستودع والقبو الشهري (العدد)",
+      "Monthly FNOL Claims Reported (Count)": "المطالبات المبلّغة شهرياً (العدد)",
+      "Monthly Facility Maintenance Work Orders": "أوامر صيانة المرافق الشهرية",
+      "Monthly Goods Receipt Quantity (Units)": "كميات استلام البضائع الشهرية (وحدات)",
+      "Monthly Intercompany Transfer Count": "العدد الشهري للتحويلات البينية",
+      "Monthly Landed Cost Voucher Count": "العدد الشهري لملفات الاستيراد",
+      "Monthly Loan Facility Entries": "القيود الشهرية للتسهيلات والقروض",
+      "Monthly Open Unmatched Intercompany Legs": "القيود البينية غير المطابقة شهرياً",
+      "Monthly Overseas Import Order Volume (Units)": "حجم طلبات الاستيراد الخارجية شهرياً (وحدات)",
+      "Monthly Stock Movement Units": "وحدات حركة المخزون الشهرية",
+      "Monthly Tenant Receipt Vouchers (Count)": "سندات قبض المستأجرين الشهرية (العدد)",
+      "Monthly Venue Revenue ($)": "إيرادات المنتجعات الشهرية ($)",
+      "Monthly Workshop, PDI & Warranty Jobs": "مهام الورشة والفحص والضمان الشهرية",
+      "Open Legs by Pending Mirror Entity": "القيود المعلّقة حسب الشركة المنتظرة للمطابقة",
+      "Ordered Units by Overseas Supplier": "الوحدات المطلوبة حسب المورد الخارجي",
+      "Partner Split Agreements by Category": "اتفاقيات توزيع الشركاء حسب الفئة",
+      "Partner Split Agreements by Status": "اتفاقيات توزيع الشركاء حسب الحالة",
+      "Sales Revenue by Subsidiary Entity ($)": "إيرادات المبيعات حسب الشركة التابعة ($)",
+      "Spare Parts On-Hand Units by Warehouse": "وحدات قطع الغيار المتوفرة حسب المستودع",
+      "Spare Parts Stock": "مخزون قطع الغيار",
+      "Spare Parts Units by Category": "وحدات قطع الغيار حسب الفئة",
+      "Statements Reconciled by Carrier (Policies)": "الكشوف المطابقة حسب شركة التأمين (بوالص)",
+      "Stock Logs by Item Group": "سجلات الجرد حسب مجموعة الصنف",
+      "Stock Movement Units by Type": "وحدات حركة المخزون حسب النوع",
+      "Tenant Recharge Items by Property (Count)": "بنود إعادة الفوترة حسب العقار (العدد)",
+      "Tenant Recharges by Billing Status (Count)": "إعادة فوترة المستأجرين حسب الحالة (العدد)",
+      "Top Extended Stakeholders by Movement Count": "أبرز الأطراف المعنية الممتدة حسب عدد الحركات",
+      "Units Received by Warehouse": "الوحدات المستلمة حسب المستودع",
+      "Verified Records by Reconciliation Domain (Rows)": "السجلات المدققة حسب مجال المطابقة (صفوف)",
+      "Workshop Jobs by Type": "مهام الورشة حسب النوع",
+      "Top truck & parts fleet accounts": "أبرز حسابات أسطول الشاحنات وقطع الغيار"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -27894,7 +28071,184 @@
       "One day apart, same party, entries on another form add up to this amount": "À un jour d'écart et pour le même tiers, des écritures d'un autre formulaire totalisent ce montant",
       "Capitalized Landed Cost ($) cannot be negative on a positive sale.": "Le coût d'achat capitalisé ($) ne peut pas être négatif sur une vente positive.",
       "Capitalized Landed Cost ($) cannot be positive on a credit note (enter 0 or a negative reversal).": "Le coût d'achat capitalisé ($) ne peut pas être positif sur un avoir (saisissez 0 ou une contre-passation négative).",
-      "Credit Note · Entered via Smart Register": "Avoir · Saisi via le registre intelligent"
+      "Credit Note · Entered via Smart Register": "Avoir · Saisi via le registre intelligent",
+      "Requires Expenses hub access": "Nécessite les droits du module Dépenses",
+      "Requires Expenses hub access for operating profit": "Nécessite le module Dépenses pour afficher le résultat",
+      "Requires Cash Flow & Ledger access": "Nécessite Trésorerie et Grand Livre",
+      "Requires Expenses, Cash Flow & Ledger access": "Nécessite Dépenses, Trésorerie et Grand Livre",
+      "Restricted by seat permissions": "Restreint selon les droits du poste",
+      "Requires Full Books": "Nécessite les livres complets",
+      "Requires Expenses hub": "Nécessite le module Dépenses",
+      "Deposits & cash balances require Cash Flow & Ledger access": "Les dépôts et soldes de caisse nécessitent Trésorerie et Grand Livre",
+      "Stock valuation requires Treasury & Ledger access": "La valorisation des stocks nécessite Trésorerie et Grand Livre",
+      "Trial Balance and treasury books require Cash Flow & Ledger permissions": "La balance et la trésorerie nécessitent les droits Trésorerie et Grand Livre",
+      "Monthly Sales Volume Trajectory": "Trajectoire mensuelle des ventes",
+      "Resort Revenue Trajectory": "Trajectoire des revenus hôteliers",
+      "Heavy Truck & Parts Revenue Trajectory": "Trajectoire des revenus véhicules et pièces",
+      "Annual Rent Roll Trajectory": "Trajectoire des loyers annuels",
+      "Annual Rent Roll by Active Lease": "Loyers annuels par bail actif",
+      "Written Premium by Carrier": "Primes émises par assureur",
+      "6-Industry Revenue Trajectory": "Trajectoire des revenus sur 6 secteurs",
+      "Revenue & Operations Summary": "Synthèse revenus et opérations",
+      "Resort Revenue & Operations Summary": "Synthèse revenus et opérations complexes",
+      "Trading Sales & Showroom Summary": "Synthèse ventes négoce et showroom",
+      "Real Estate Rent & Occupancy Summary": "Synthèse loyers et occupation immobilière",
+      "Insurance Production Summary": "Synthèse production assurance",
+      "Consolidated 6-Industry Revenue Summary": "Synthèse consolidée des revenus (6 secteurs)",
+      "Consolidated P&L Value Bridge": "Pont P&L consolidé",
+      "Consolidated Resort P&L Value Bridge": "Pont P&L consolidé des complexes",
+      "Receivables & dispatch status": "Créances clients et suivi des expéditions",
+      "Operational status active on permitted views": "Statut opérationnel actif sur les vues autorisées",
+      "Operational controls active on permitted views": "Contrôles opérationnels actifs sur les vues autorisées",
+      "Operational Status: Active": "Statut opérationnel : Actif",
+      "Operational Dispatch Status: Active": "Statut des expéditions : Actif",
+      "Operational Pricing Status: Active": "Statut tarification : Actif",
+      "Sales dispatches and customer tariff controls active on this workspace": "Les expéditions et tarifs clients sont actifs sur cet espace",
+      "Customer tariff rules active across scoped deliveries": "Les grilles tarifaires clients sont actives sur le périmètre",
+      "General Ledger & Books: Restricted": "Grand Livre et comptes : Restreint",
+      "Zero Unpriced Quarry Queues": "Aucune file carrière en attente de tarif",
+      "Dispatched loads carry active commercial rates": "Les livraisons expédiées portent les tarifs commerciaux actifs",
+      "Operational workspace is ready.": "Espace opérationnel prêt.",
+      "Trial Balance and cash till status require Cash Flow & Ledger access": "La balance générale et la caisse nécessitent les droits Trésorerie et Grand Livre",
+      "No monthly ledger data for this entity yet": "Aucune donnée mensuelle pour cette entité pour le moment",
+      "Cost valuation Restricted": "Valorisation du coût restreinte",
+      "Total sales by month": "Ventes totales par mois",
+      "Monthly weighbridge and delivery revenue (cost & profit series restricted)": "Chiffre d'affaires mensuel bascule et livraison (séries coût et profit restreintes)",
+      "Weighbridge loads by month": "Chargements bascule par mois",
+      "Monthly weighbridge dispatches (cash till inflows and outflows restricted)": "Expéditions bascule mensuelles (flux de caisse entrants et sortants restreints)",
+      "Monthly Sales & Volumes Summary": "Synthèse mensuelle des ventes et volumes",
+      "Monthly weighbridge revenue and tonnage progression (margin, expenses, payroll & cash columns restricted)": "Évolution mensuelle des ventes et tonnages bascule (colonnes marge, charges, paie et caisse restreintes)",
+      "Group Open AR": "Créances clients ouvertes du groupe",
+      "AP Restricted": "Dettes fournisseurs restreintes",
+      "WEIGHBRIDGE LOADS": "CHARGEMENTS BASCULE",
+      "Holding & Treasury dashboards require Cash Flow & General Ledger permissions": "Les tableaux Holding & Trésorerie nécessitent les droits Trésorerie et Grand Livre",
+      "Requires Full Books & Expenses access": "Nécessite l'accès complet aux livres et charges",
+      "Cash Till: Restricted": "Solde de caisse : Restreint",
+      "Gross Margin & Operating Profit: Restricted": "Marge brute et résultat d'exploitation : Restreints",
+      "Cash & Profit Metrics: Restricted by seat permissions": "Indicateurs de trésorerie et de résultat : restreints selon les droits du poste",
+      "Requires Cash Flow & General Ledger permissions": "Nécessite les droits Trésorerie et Grand Livre",
+      "Entity Ledgers Tied": "Grands livres des entités équilibrés",
+      "Monthly Sales TTC - WTC vs BBConstruction": "Ventes mensuelles TTC - WTC vs BBConstruction",
+      "Open Invoiced Sales": "Ventes facturées ouvertes",
+      "Sales & Deposits": "Ventes et dépôts",
+      "Cash in vs cash out by month": "Encaissements vs décaissements par mois",
+      "Monthly Performance & Profit Trajectory": "Trajectoire mensuelle de performance et de profit",
+      "Trial balance requires review ($0.00 target)": "La balance générale nécessite une révision (objectif $0.00)",
+      "Trial balance requires review ($0.00 target).": "La balance générale nécessite une révision (objectif $0.00).",
+      "POS Till #1": "Caisse PDV n°1",
+      "Gross Margin ($)": "Marge brute ($)",
+      "GWP ($)": "Primes brutes émises ($)",
+      "Gross Comm ($)": "Commission brute ($)",
+      "Client Disc ($)": "Remise client ($)",
+      "Net Comm ($)": "Commission nette ($)",
+      "Raw intake average": "Coût brut moyen",
+      "Active Rent Roll": "État des loyers actifs",
+      "Claims Register": "Registre des sinistres",
+      "Entity Sales & Loads": "Ventes et livraisons par entité",
+      "Welcome": "Bienvenue",
+      "Books are tied at": "Les livres sont équilibrés à",
+      "open Sentinel alert.": "alerte Sentinel ouverte.",
+      "open Sentinel alerts.": "alertes Sentinel ouvertes.",
+      "open Sentinel alert on your permitted scope.": "alerte Sentinel ouverte dans votre périmètre.",
+      "open Sentinel alerts on your permitted scope.": "alertes Sentinel ouvertes dans votre périmètre.",
+      "Ask anything in English, العربية, or Français, open": "Posez toute question en français, en anglais ou en arabe, ouvrez",
+      "Top customers by sales": "Principaux clients par ventes",
+      "Annual rent roll & occupancy by deeded asset": "Loyers annuels et occupation par actif titré",
+      "Seasonal Beach & Chalet": "Saisonnier plage et chalet",
+      "Active and completed work order count per asset": "Nombre d'ordres de travaux actifs et clôturés par actif",
+      "Activity volume across extended stakeholder counterparties": "Volume d'activité par contrepartie étendue",
+      "Agreement count across resort profit centers": "Nombre d'accords par centre de profit des sites",
+      "Agreement count by settlement status": "Nombre d'accords par statut de règlement",
+      "Bound policy and endorsement count across standardized insurance lines": "Nombre de polices et avenants par branche d'assurance",
+      "CapEx and investment vouchers by posting month": "Pièces d'investissement et CapEx par mois comptable",
+      "Carrier account coverage status across insurers": "Statut de couverture des comptes compagnies",
+      "Count of single-sided intercompany legs awaiting mirror booking by month": "Nombre d'écritures inter-sociétés unilatérales en attente par mois",
+      "Count of sister funding and repayment entries by month": "Nombre d'écritures de financement et remboursement interco par mois",
+      "Coverage Status": "Statut de Couverture",
+      "Customer billing breakdown across active accounts": "Répartition de la facturation client par compte actif",
+      "Engineering, HVAC, and renovation order count by vendor": "Nombre d'ordres techniques, CVC et rénovation par prestataire",
+      "Entities holding unmatched single-sided intercompany legs": "Entités détenant des opérations inter-sociétés non rapprochées",
+      "FNOL notification, adjuster assessment, approved, and settled claim counts": "Nombre de sinistres déclarés, expertisés, agréés et réglés",
+      "Facility counts grouped by lender or borrower counterparty": "Nombre de facilités groupées par prêteur ou emprunteur",
+      "Gross entity operating revenue across subsidiaries": "Chiffre d'affaires opérationnel brut par filiale",
+      "Gross written premium across insurance carriers": "Primes brutes émises par compagnie d'assurance",
+      "Import landed-cost allocation files logged by month": "Dossiers d'importation enregistrés par mois",
+      "Import shipment unit volume across arrival and booking months": "Volume d'unités importées par mois d'arrivée et d'enregistrement",
+      "Invoiced and settled items vs unbilled tenant recharge items": "Éléments facturés et réglés vs refacturations locataires à émettre",
+      "Logged stock snapshots across active store rooms": "Relevés de stock enregistrés par réserve active",
+      "Menu count across Star, Plowhorse, Puzzle, and Dog classes": "Nombre de plats par classe d'ingénierie de menu",
+      "Movement count across extended stakeholder accounts": "Nombre de mouvements sur comptes tiers étendus",
+      "On-hand quantities across tyres, filters, engine parts, and hydraulics": "Quantités disponibles par famille : pneus, filtres, moteur et hydraulique",
+      "On-hand unit quantities across Al Ghazieh, Bchamoun, and showroom stores": "Quantités en stock sur Al Ghazieh, Bchamoun et le showroom",
+      "Parallel stock position and ledger parity row counts": "Nombre de lignes par domaine de rapprochement stock et grand livre",
+      "Policy count across monthly carrier bordereaux": "Nombre de polices sur les bordereaux mensuels compagnies",
+      "Pre-delivery inspection, preventive service, and OEM warranty job counts": "Nombre d'interventions PDI, entretien préventif et garantie constructeur",
+      "Receipt and deposit voucher volume by posting month": "Volume de reçus et dépôts par mois d'enregistrement",
+      "Received quantities across trading warehouses": "Quantités réceptionnées par dépôt commercial",
+      "Reconciled vs flagged monthly carrier statements": "Relevés compagnies rapprochés vs écarts signalés",
+      "Recoverable recharge item count grouped by building": "Nombre de refacturations récupérables par immeuble",
+      "Repair and PM work order count by resort zone": "Nombre d'ordres de réparation et maintenance par zone du site",
+      "Reported claim count grouped by incident date across active files": "Nombre de sinistres déclarés par date de survenance",
+      "Shaanxi, Weichai, OEM truck, tyre, and spare-parts unit volume": "Volume d'unités Shaanxi, Weichai, poids lourds, pneus et pièces",
+      "Sold menu sales grouped by kitchen, seafood, bar, and banquet": "Ventes de menu par catégorie : cuisine, mer, bar et banquets",
+      "Stock movements grouped by kitchen and cellar categories": "Mouvements de stock groupés par catégorie cuisine et cave",
+      "Transfer count across borrowing entities": "Nombre de virements par entité emprunteuse",
+      "Transfer count across lending entities": "Nombre de virements par entité prêteuse",
+      "Transfer counts initiated by each group entity": "Nombre de virements émis par chaque entité du groupe",
+      "Unit breakdown across inter-company transfers, workshop issues, and receipts": "Répartition des unités par transferts inter-sites, sorties atelier et réceptions",
+      "Units inspected and received into trading warehouses by month": "Unités inspectées et réceptionnées en dépôt par mois",
+      "Voucher count across asset categories": "Nombre de pièces par catégorie d'actif",
+      "Voucher count across bank wire, cash till, and check channels": "Nombre de reçus par mode : virement, caisse et chèque",
+      "Voucher count grouped by allocation driver": "Nombre de pièces groupées par clé de répartition",
+      "Warehouse issue, receipt, and inter-company transfer unit counts": "Unités de sortie, réception et transfert inter-dépôts",
+      "Work orders logged across operating months": "Ordres de maintenance enregistrés par mois",
+      "Workshop and warranty job counts across months": "Nombre d'interventions atelier et garantie par mois",
+      "Capital Vouchers by Asset Class": "Pièces d'Investissement par Classe d'Actif",
+      "Carrier Remittance Accounts by Status (Count)": "Comptes Compagnies par Statut (Nombre)",
+      "Commission Statements by Recon Status (Count)": "Relevés de Commissions par Statut (Nombre)",
+      "Extended Entries by Stakeholder": "Écritures Étendues par Tiers",
+      "Gross Premium Bordereaux by Insurer ($)": "Primes Brutes par Assureur ($)",
+      "Insurance Claims by Settlement Status (Count)": "Sinistres par Statut de Règlement (Nombre)",
+      "Intercompany Transfers by Borrowing Entity": "Virements Inter-Sociétés par Entité Débitrice",
+      "Intercompany Transfers by Lending Entity": "Virements Inter-Sociétés par Entité Créditrice",
+      "Intercompany Transfers by Originating Entity": "Virements Inter-Sociétés par Entité Émettrice",
+      "Invoiced Trading Volume by Account Status ($)": "Volume Facturé par Statut de Compte ($)",
+      "Landed Vouchers by Allocation Basis": "Dossiers d'Import par Clé de Répartition",
+      "Maintenance Work Orders by Resort Zone": "Ordres de Maintenance par Zone",
+      "Menu Items by Engineering Class": "Articles du Menu par Classe",
+      "Menu Revenue by Outlet Category ($)": "Revenus du Menu par Catégorie ($)",
+      "Monthly Capital & Asset Voucher Count": "Nombre Mensuel de Pièces d'Investissement",
+      "Monthly Commissary & Cellar Stock Counts": "Relevés Mensuels Économat & Cave",
+      "Monthly FNOL Claims Reported (Count)": "Sinistres Déclarés par Mois (Nombre)",
+      "Monthly Facility Maintenance Work Orders": "Ordres de Maintenance Mensuels des Sites",
+      "Monthly Goods Receipt Quantity (Units)": "Réceptions Mensuelles de Marchandises (Unités)",
+      "Monthly Intercompany Transfer Count": "Nombre Mensuel de Virements Inter-Sociétés",
+      "Monthly Landed Cost Voucher Count": "Nombre Mensuel de Dossiers d'Importation",
+      "Monthly Loan Facility Entries": "Écritures Mensuelles des Facilités de Crédit",
+      "Monthly Open Unmatched Intercompany Legs": "Opérations Inter-Sociétés Ouvertes par Mois",
+      "Monthly Overseas Import Order Volume (Units)": "Commandes d'Importation Mensuelles (Unités)",
+      "Monthly Stock Movement Units": "Unités de Mouvements de Stock Mensuels",
+      "Monthly Tenant Receipt Vouchers (Count)": "Reçus Locataires Mensuels (Nombre)",
+      "Monthly Venue Revenue ($)": "Revenus Mensuels des Établissements ($)",
+      "Monthly Workshop, PDI & Warranty Jobs": "Interventions Mensuelles Atelier, PDI & Garantie",
+      "Open Legs by Pending Mirror Entity": "Opérations Ouvertes par Entité en Attente",
+      "Ordered Units by Overseas Supplier": "Unités Commandées par Fournisseur Étranger",
+      "Partner Split Agreements by Category": "Accords de Répartition par Catégorie",
+      "Partner Split Agreements by Status": "Accords de Répartition par Statut",
+      "Sales Revenue by Subsidiary Entity ($)": "Chiffre d'Affaires par Filiale ($)",
+      "Spare Parts On-Hand Units by Warehouse": "Unités de Pièces Disponibles par Dépôt",
+      "Spare Parts Stock": "Stock Pièces Détachées",
+      "Spare Parts Units by Category": "Unités de Pièces par Catégorie",
+      "Statements Reconciled by Carrier (Policies)": "Relevés Rapprochés par Compagnie (Polices)",
+      "Stock Logs by Item Group": "Journaux de Stock par Famille d'Articles",
+      "Stock Movement Units by Type": "Unités de Mouvement de Stock par Type",
+      "Tenant Recharge Items by Property (Count)": "Refacturations Locataires par Immeuble (Nombre)",
+      "Tenant Recharges by Billing Status (Count)": "Refacturations Locataires par Statut (Nombre)",
+      "Top Extended Stakeholders by Movement Count": "Principaux Tiers Étendus par Nombre de Mouvements",
+      "Units Received by Warehouse": "Unités Réceptionnées par Dépôt",
+      "Verified Records by Reconciliation Domain (Rows)": "Enregistrements Vérifiés par Domaine (Lignes)",
+      "Workshop Jobs by Type": "Travaux d'Atelier par Type",
+      "Top truck & parts fleet accounts": "Principaux comptes flottes poids lourds & pièces"
     }
   };
 
@@ -29741,6 +30095,38 @@
     m = trimmed.match(/^(\d+)\s+corridors open$/i);
     if (m) return lang === 'ar' ? `${m[1]} مسارات مفتوحة` : `${m[1]} corridors ouverts`;
 
+    m = trimmed.match(/^(.+?)\s+workflow status$/i);
+    if (m) {
+      const sc = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `حالة سير عمل ${sc}` : `Statut des opérations ${sc}`;
+    }
+
+    m = trimmed.match(/^Daily\s+(.+?)\s+operations active across\s+(\d+)\s+entit(?:y|ies)$/i);
+    if (m) {
+      const sc = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `العمليات اليومية لـ ${sc} نشطة عبر ${m[2]} ${Number(m[2]) === 1 ? 'شركة' : 'شركات'}`
+        : `Opérations quotidiennes ${sc} actives sur ${m[2]} ${Number(m[2]) === 1 ? 'entité' : 'entités'}`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+chassis sold across\s+(\d+)\s+commercial invoices?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} شاحنة مباعة عبر ${m[2]} فاتورة تجارية` : `${m[1]} châssis vendus sur ${m[2]} factures commerciales`;
+
+    m = trimmed.match(/^(\d+)\s+active leases? across\s+(\d+)\s+units?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار نشطة عبر ${m[2]} وحدة` : `${m[1]} baux actifs sur ${m[2]} lots`;
+
+    m = trimmed.match(/^([\d/]+)\s+units leased$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وحدة مؤجرة` : `${m[1]} lots loués`;
+
+    m = trimmed.match(/^(\d+)\s+renewals\s*<90d\s*·\s*Requires Cash Flow & Ledger access$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تجديدات <90 يوماً · يتطلب صلاحية السيولة والأستاذ العام` : `${m[1]} renouvellements <90 j · Nécessite Trésorerie et Grand Livre`;
+
+    m = trimmed.match(/^(\d+)\s+renewals\s*<90d$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تجديدات <90 يوماً` : `${m[1]} renouvellements <90 j`;
+
+    m = trimmed.match(/^(\d+)\s+billing instalments?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أقساط فوترة` : `${m[1]} échéances de facturation`;
+
     // 5. Sentinel Detail Sentences (Manufacturing + Shared)
     m = trimmed.match(/^Open AR\s+(\$[\d.,]+)\s*\(VAT-inclusive\)\s*·\s*(\$[\d.,]+)\s+aged past\s+(\d+)\s+days after (?:FIFO|oldest-first) receipt allocation\s*·\s*DSO\s+(\d+)\s+days\.?$/i);
     if (m) return lang === 'ar' ? `الذمم المدينة المفتوحة ${m[1]} (شاملة الضريبة) · ${m[2]} متأخرة لأكثر من ${m[3]} يوماً بعد تخصيص المقبوضات للأقدم أولاً · متوسط فترة التحصيل ${m[4]} يوماً.` : `Créances clients ouvertes ${m[1]} (toutes taxes comprises) · ${m[2]} échues à plus de ${m[3]} jours après imputation sur les plus anciennes · DSO ${m[4]} jours.`;
@@ -30260,6 +30646,45 @@
       return lang === 'ar'
         ? `مراقب مباشر: ينبّه عند >= ${m[1]} إلغاءات وردية، أو الإلغاء بعد الطباعة، أو إعادة الإدخال بمبلغ أقل خلال ${m[2]} دقيقة مع انتقال بنقرة واحدة إلى سجل الإلغاءات.`
         : `Sentinelle active : signale >= ${m[1]} annulations/quart, suppressions après impression et re-saisies réduites sous ${m[2]} min avec accès direct au journal.`;
+    }
+    m = trimmed.match(/^Year\s+(\d{4})$/i);
+    if (m) return lang === 'ar' ? `سنة ${m[1]}` : `Année ${m[1]}`;
+    m = trimmed.match(/^(\d{4})-Q([1-4])$/i);
+    if (m) return lang === 'ar' ? `الربع ${m[2]} - ${m[1]}` : `T${m[2]} ${m[1]}`;
+    m = trimmed.match(/^Month\s+(\d{4}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `شهر ${m[1]}` : `Mois ${m[1]}`;
+    m = trimmed.match(/^Sort by\s+(.+)$/i);
+    if (m && depth < 3) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      return lang === 'ar' ? `ترتيب حسب ${inner}` : `Trier par ${inner}`;
+    }
+    m = trimmed.match(/^Search\s+(.+?)\s+register\.\.\.$/i);
+    if (m && depth < 3) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      return lang === 'ar' ? `بحث في سجل ${inner}...` : `Rechercher dans ${inner}...`;
+    }
+    m = trimmed.match(/^(.+?)\s+Dashboard Pages$/i);
+    if (m && depth < 3) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      return lang === 'ar' ? `صفحات لوحة ${inner}` : `Pages du tableau ${inner}`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+venue & POS closes\s*·\s*([\d,]+)\s+covers$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} إغلاقات منافذ ونقاط بيع · ${m[2]} روّاد`
+        : `${m[1]} clôtures points de vente & caisses · ${m[2]} couverts`;
+    }
+    m = trimmed.match(/^(.+?)\s*·\s*([\d,]+)\s+covers\s*·\s*(.+)$/i);
+    if (m && depth < 3) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      const rhs = translateCore(m[3].trim(), lang, depth + 1) || m[3].trim();
+      return lang === 'ar' ? `${lhs} · ${m[2]} روّاد · ${rhs}` : `${lhs} · ${m[2]} couverts · ${rhs}`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+sold\s*·\s*Heavy Truck VINs$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} مباعة · أرقام هيكل الشاحنات`
+        : `${m[1]} vendus · Châssis VIN poids lourds`;
     }
     m = trimmed.match(/^Site Wait >\s*([\d,]+)m$/i);
     if (m) {
@@ -34018,6 +34443,86 @@
       return { out: (lang === 'ar' ? 'مُسجّل في هذا التطبيق' : 'Saisi dans cette application web') + byPart + atPart, ok: true };
     }
 
+    m = trimmed.match(/^Ask about\s+(.+?)\.\.\.$/i);
+    if (m) {
+      const ASK_TOPIC_MAP = {
+        "today's ops": ['عمليات اليوم', 'opérations du jour'],
+        'ar': ['الذمم المدينة', 'créances clients'],
+        'sales': ['المبيعات', 'ventes'],
+        'expenses': ['المصاريف', 'charges'],
+        'stock': ['المخزون', 'stock'],
+        'diesel': ['المازوت', 'gasoil'],
+        'overhead': ['المصاريف الإدارية', 'frais généraux'],
+        'intercompany due-from/due-to': ['أرصدة الشركات الشقيقة', 'soldes inter-sociétés'],
+        'partner splits': ['توزيعات الشركاء', 'parts associés'],
+        'trial balance': ['ميزان المراجعة', 'balance générale'],
+        'fleet': ['الأسطول', 'flotte'],
+        'documents': ['المستندات', 'documents'],
+        'venue revenue': ['إيرادات المنتجعات', 'revenus des sites'],
+        'pos tills': ['صناديق نقاط البيع', 'caisses POS'],
+        'cabanas': ['الكابانا', 'cabanas'],
+        'memberships': ['الاشتراكات', 'abonnements'],
+        'f&b costs': ['تكاليف الأغذية والمشروبات', 'coûts F&B'],
+        'invoice books (n/s/is/in)': ['دفاتر الفواتير (N/S/IS/IN)', 'carnets de factures (N/S/IS/IN)'],
+        'shacman vins': ['أرقام شاسيه Shacman', 'VIN Shacman'],
+        'fifo parts stock': ['مخزون القطع FIFO', 'stock pièces FIFO'],
+        'parts stock': ['مخزون قطع الغيار', 'stock pièces'],
+        '4235 vat rent roll': ['سجل إيجارات 4235 الضريبي', 'état locatif TVA 4235'],
+        'lease rent roll': ['سجل عقود الإيجار', 'état des loyers'],
+        'occupancy': ['نسبة الإشغال', 'occupation'],
+        'expiring leases': ['العقود المنتهية قريباً', 'baux à échéance'],
+        'tenant ar': ['ذمم المستأجرين', 'créances locataires'],
+        'gwp': ['الأقساط المكتتبة', 'primes brutes'],
+        'brokerage commissions': ['عمولات الوساطة', 'commissions de courtage'],
+        '30/60/90d renewals': ['تجديدات 30/60/90 يوماً', 'renouvellements 30/60/90 j'],
+        'claims': ['المطالبات', 'sinistres'],
+        'carrier payables': ['ذمم شركات التأمين', 'dettes compagnies']
+      };
+      const rawBody = m[1].trim();
+      const parts = rawBody.split(',').map(x => x.trim()).filter(Boolean);
+      const li = lang === 'ar' ? 0 : 1;
+      const transTopics = [];
+      let scopeOut = '';
+      if (parts.length > 1 && !ASK_TOPIC_MAP[parts[0].toLowerCase()]) {
+        const scTok = parts.shift();
+        const scRes = evalCore(scTok, lang, depth + 1);
+        scopeOut = scRes.ok ? scRes.out : scTok;
+      } else if (parts.length >= 1 && !ASK_TOPIC_MAP[parts[0].toLowerCase()]) {
+        const topicKeysSorted = Object.keys(ASK_TOPIC_MAP).sort((a, b) => b.length - a.length);
+        const lowFirst = parts[0].toLowerCase();
+        const matchedTopic = topicKeysSorted.find(tk => lowFirst.endsWith(' ' + tk));
+        if (matchedTopic) {
+          const prefixTxt = parts[0].slice(0, parts[0].length - matchedTopic.length).trim();
+          const scRes = evalCore(prefixTxt, lang, depth + 1);
+          scopeOut = scRes.ok ? scRes.out : prefixTxt;
+          parts[0] = matchedTopic;
+        }
+      }
+      let allTopicsOk = parts.length > 0;
+      for (let ti = 0; ti < parts.length; ti++) {
+        const hit = ASK_TOPIC_MAP[parts[ti].toLowerCase()];
+        if (hit) transTopics.push(hit[li]);
+        else { allTopicsOk = false; break; }
+      }
+      if (allTopicsOk) {
+        const sep = lang === 'ar' ? '، ' : ', ';
+        const lead = scopeOut ? (scopeOut + sep) : '';
+        return {
+          out: lang === 'ar' ? `اسأل عن ${lead}${transTopics.join(sep)}...` : `Posez une question sur ${lead}${transTopics.join(sep)}...`,
+          ok: true
+        };
+      }
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+active\s+trading\s+accounts?$/i);
+    if (m) {
+      const cnt = m[1];
+      return {
+        out: lang === 'ar' ? `${cnt} حساب تجاري نشط` : `${cnt} comptes négoce actifs`,
+        ok: true
+      };
+    }
+
     const cntHit = translateCountNoun(trimmed, lang);
     if (cntHit) return { out: cntHit, ok: true };
 
@@ -34139,7 +34644,7 @@
         const sel = el.parentElement;
         const val = el.getAttribute('value') || '';
         if (/^(rec_|usr_|emp_|drv_|eq_|cust_|sup_|site_|prop_|pol_|clm_|cor_|part_|\d{3,})/.test(val)) return true;
-        if (sel && /^(f_|insp_|attFilterStaff|ppdStaffSel|kioskDriver|kioskCustomer|kioskSite|kioskEquip)/.test(sel.id || '')) {
+        if (sel && /^(f_|insp_|indPbiDimSelect|attFilterStaff|ppdStaffSel|kioskDriver|kioskCustomer|kioskSite|kioskEquip)/.test(sel.id || '')) {
           if (val && val !== 'all' && val !== 'ALL' && val !== '') return true;
         }
       }

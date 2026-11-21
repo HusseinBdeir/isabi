@@ -3280,9 +3280,28 @@
   function resolveDopsPerms(ctx) {
     const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
     const getUser = (ctx && typeof ctx.activeUser === 'function') ? ctx.activeUser : (ent && typeof ent.activeUser === 'function' ? ent.activeUser : null);
+    const u = getUser ? getUser() : null;
+    const lensFn = (ctx && typeof ctx.seatLens === 'function') ? ctx.seatLens : (ent && typeof ent.seatLens === 'function' ? ent.seatLens : null);
+    const hasExplicitSeatLens = Boolean(ctx && typeof ctx.seatLens === 'function');
+    const hasCustomMockHooks = Boolean(
+      !hasExplicitSeatLens && ctx && (
+        (typeof ctx.isOwner === 'function' && ent && typeof ent.isOwner === 'function' && ctx.isOwner !== ent.isOwner) ||
+        (typeof ctx.canViewHub === 'function' && ent && typeof ent.canViewHub === 'function' && ctx.canViewHub !== ent.canViewHub)
+      )
+    );
+    if (lensFn && !hasCustomMockHooks) {
+      const l = lensFn(u);
+      return {
+        canBooks: Boolean(l.books),
+        canExp: Boolean(l.expenses),
+        canPayroll: Boolean(l.payroll),
+        canFullPnl: Boolean(l.profit),
+        canTax: Boolean(l.tax),
+        canJv: Boolean(l.partnerSplits)
+      };
+    }
     const chkOwner = (ctx && typeof ctx.isOwner === 'function') ? ctx.isOwner : (ent && typeof ent.isOwner === 'function' ? ent.isOwner : null);
     const chkHub = (ctx && typeof ctx.canViewHub === 'function') ? ctx.canViewHub : (ent && typeof ent.canViewHub === 'function' ? ent.canViewHub : null);
-    const u = getUser ? getUser() : null;
     const owner = chkOwner ? Boolean(chkOwner(u)) : (!u);
     const canBooks = owner || Boolean(chkHub && chkHub('cashflow', u) && chkHub('ledger', u));
     const canExp = owner || Boolean(!chkHub || chkHub('expenses', u));
@@ -3752,7 +3771,8 @@
     `;
   }
 
-  function renderPanel5FleetFuel(ctx, dm, lens, isSingleCo) {
+  function renderPanel5FleetFuel(ctx, dm, lens, isSingleCo, perms) {
+    perms = perms || resolveDopsPerms(ctx);
     const { esc, ic, fmtUSD, fmtNum, coBadge, relLink } = ctx;
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
@@ -3862,7 +3882,7 @@
                   <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
                     <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong> ${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</td>
                     <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
-                    <td class="r"><strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong></td>
+                    <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                   </tr>
                 `).join('')}
                 ${oilFiltered.map(ol => `
@@ -4040,7 +4060,7 @@
                 <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
                   <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong> ${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</td>
                   <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
-                  <td class="r"><strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong></td>
+                  <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                 </tr>
               `).join('')}
               ${fuels.map(fl => {
@@ -4315,8 +4335,10 @@
       else if (streamFilter === 'team' && row.group !== 'team') return false;
       else if (streamFilter === 'plant' && !['expenses', 'fuel_maint', 'team'].includes(row.group)) return false;
       else if (streamFilter === 'costs') {
-        const isCostTeam = row.group === 'team' && ['salaries', 'freelance_entries', 'logistics_allowances'].includes(row.rkey);
-        if (!(row.group === 'raw' || row.group === 'expenses' || isCostTeam)) return false;
+        const isCostTeam = (!perms || perms.canPayroll) && row.group === 'team' && ['salaries', 'freelance_entries', 'logistics_allowances'].includes(row.rkey);
+        const isCostRaw = (!perms || perms.canExp) && row.group === 'raw';
+        const isCostExp = (!perms || perms.canExp) && row.group === 'expenses';
+        if (!(isCostRaw || isCostExp || isCostTeam)) return false;
       }
 
       if (q) {
@@ -4359,7 +4381,12 @@
           </tr>
         </thead>
         <tbody>
-          ${filtered.slice(0, 160).map(row => `
+          ${filtered.slice(0, 160).map(row => {
+            const hideRowAmt = Boolean(perms && (
+              (!perms.canExp && (row.rkey === 'equipment_repairs' || row.rkey === 'equipment_oil_logs'))
+              || (!perms.canPayroll && row.rkey === 'attendance')
+            ));
+            return `
             <tr class="${row.rkey && row.rid ? 'rrow' : ''}${row.isAfterHours ? ' is-afterhours-row' : ''}"${row.rkey && row.rid ? ` data-rkey="${esc(row.rkey)}" data-rid="${esc(String(row.rid || ''))}"` : ''}>
               <td class="mono dops-ref-cell">
                 <strong>${esc(row.ref)}</strong>${row.time ? `<small class="dops-time-tag">${esc(row.time)}</small>` : ''}
@@ -4369,9 +4396,10 @@
               </td>
               <td class="dops-trunc">${!isSingleCo ? `${coBadge(row.company)} ` : ''}${row.isRepShifted ? renderRepBadge(ctx, row.txDate, row.repDate) : ''}${row.isAfterHours ? `<span class="dops-ah-badge" data-ui-tip="Occurred on ${esc(fmtShortDay(row.txDate))} after accountants left · logged via Yesterday's After-Hours">${ic('moon')}After-Hours</span>` : ''}${row.isOvertime ? `<span class="dops-ot-badge" data-ui-tip="Overtime shift load">${ic('overtime')}Overtime</span>` : ''}${row.isPendingPrice ? `<span class="dops-pend-badge" data-ui-tip="Pending supplier invoice price">${ic('clock')}Pending $</span>` : ''}${renderTurnaroundBadgeHtml(ctx, row.turnaroundStamp)}<strong>${esc(row.party)}</strong>${row.detail ? ` <span style="color:var(--muted)">· ${esc(row.detail)}</span>` : ''}</td>
               <td class="r dops-vol-cell">${esc(row.qtyTxt || '-')}</td>
-              <td class="r dops-amt-cell">${row.amount == null ? '-' : `<strong style="color:${row.inflow ? 'var(--good)' : (row.amount < 0 ? 'var(--crit)' : 'var(--ink)')}">${fmtUSD(row.amount, 0)}</strong>`}</td>
+              <td class="r dops-amt-cell">${hideRowAmt ? '<span style="color:var(--muted)">Restricted</span>' : (row.amount == null ? '-' : `<strong style="color:${row.inflow ? 'var(--good)' : (row.amount < 0 ? 'var(--crit)' : 'var(--ink)')}">${fmtUSD(row.amount, 0)}</strong>`)}</td>
             </tr>
-          `).join('')}
+          `;
+          }).join('')}
         </tbody>
         <tfoot>
           <tr>
@@ -4511,7 +4539,7 @@
             <button type="button" class="dops-add-btn" data-open-modal="fuel" data-ui-tip="New Diesel / Lube Issue" aria-label="New Fuel Intake">${ic('plus')}</button>
           </div>
         </div>
-        ${renderPanel5FleetFuel(ctx, dm, fuelLens, isSingleCo)}
+        ${renderPanel5FleetFuel(ctx, dm, fuelLens, isSingleCo, perms)}
       </div>
 
       <!-- PANEL 6: 7-DAY SALES & PROFIT TREND, TEAM & AUDIT -->

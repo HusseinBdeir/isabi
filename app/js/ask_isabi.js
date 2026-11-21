@@ -637,6 +637,32 @@
     return !_ctx || typeof _ctx.canViewView !== 'function' || _ctx.canViewView(viewId, user);
   }
 
+  function getSeatLens(user) {
+    const u = user || ((_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null);
+    if (_ctx && typeof _ctx.seatLens === 'function') return _ctx.seatLens(u);
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    if (ent && typeof ent.seatLens === 'function') return ent.seatLens(u);
+    const cashflow = Boolean(canHub('cashflow', u));
+    const ledger = Boolean(canHub('ledger', u));
+    const books = Boolean(cashflow && ledger);
+    const expenses = Boolean(canHub('expenses', u));
+    return {
+      owner: false,
+      books,
+      cashflow,
+      ledger,
+      expenses,
+      profit: Boolean(books && expenses),
+      tax: Boolean(canTax(u)),
+      partnerSplits: false,
+      payroll: Boolean(canHub('payroll', u)),
+      payrollDollars: false,
+      sentinels: Boolean(canView('sentinels', u)),
+      canSignOffSentinels: false,
+      voidLog: false
+    };
+  }
+
   function salesLabel() {
     return 'Total Sales';
   }
@@ -647,6 +673,7 @@
   function trySpecificRecordLookup(cleanQ, scope) {
     if (!_ctx || !_ctx.SEED || !_ctx.SEED.records) return null;
     const low = cleanQ.toLowerCase();
+    const sLens = getSeatLens(scope && scope.user);
 
     // 1. Explicit Ticket / Voucher Number lookup ("ticket 1045", "#1045")
     const tktMatch = cleanQ.match(/(?:\bticket\s*#?|\bvoucher\s*#?|#)\s*([A-Za-z0-9-]{2,18})\b/i);
@@ -657,12 +684,15 @@
         { key: 'raw_purchases', label: 'Quarry / Raw Ticket', view: 'raw' },
         { key: 'expenses', label: 'Expense Voucher', view: 'expenses' },
         { key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }
-      ];
+      ].filter(p => canView(p.view, scope && scope.user));
       for (const p of pools) {
         const rows = scopedRows(p.key, scope, { ignorePeriod: true });
         const hit = rows.find(r => norm(r.ticket_no || r.invoice_no || r.voucher_no || '') === targetNo);
         if (hit) {
           const amt = Number(hit.total_ttc != null ? hit.total_ttc : (hit.total != null ? hit.total : (hit.amount || 0)));
+          const canShowAmt = p.key === 'sales_tickets'
+            ? canHub('sales', scope && scope.user)
+            : (sLens.expenses || sLens.books);
           const party = hit.customer || hit.supplier || hit.site || hit.category || hit.equipment || '-';
           const prod = hit.product || hit.subcategory || hit.item_summary || (hit.litres ? `${fmtInt(hit.litres, 1)} L Diesel` : '-');
           return {
@@ -670,50 +700,67 @@
             lang: detectLang(cleanQ),
             instantLocal: true,
             title: `${p.label} #${cleanOut(hit.ticket_no || tktMatch[1])}`,
-            answer: `Found <b>${esc(p.label)} #${esc(hit.ticket_no || tktMatch[1])}</b> under <b>${esc(hit.company || scope.scopeCoLabel)}</b> dated <b>${esc(hit.date || hit.rep_date || '-')}</b> for <b>${esc(party)}</b> (${esc(prod)})${amt ? ` totaling <b>${fmtMoney(amt, 2)}</b>` : ''}.`,
+            answer: `Found <b>${esc(p.label)} #${esc(hit.ticket_no || tktMatch[1])}</b> under <b>${esc(hit.company || scope.scopeCoLabel)}</b> dated <b>${esc(hit.date || hit.rep_date || '-')}</b> for <b>${esc(party)}</b> (${esc(prod)})${(amt && canShowAmt) ? ` totaling <b>${fmtMoney(amt, 2)}</b>` : ''}.`,
             promptText: 'Would you like to open its 360° Record Inspector or jump to the register?',
             actions: [
               { type: 'inspect', crKey: p.key, id: hit.id, label: `Inspect #${hit.ticket_no || tktMatch[1]}` },
-              { type: 'view', view: p.view, label: `Open ${p.label}s` }
+              ...(canView(p.view, scope && scope.user) ? [{ type: 'view', view: p.view, label: `Open ${p.label}s` }] : [])
             ],
             followUps: [
-              `Show ${scope.scopeCoLabel} summary`,
-              'Check open AI Sentinel alerts',
-              'Show overdue receivables'
-            ]
+              canView('overview', scope && scope.user) ? `Show ${scope.scopeCoLabel} summary` : null,
+              sLens.sentinels ? 'Check open AI Sentinel alerts' : null,
+              (sLens.books && canView('sales', scope && scope.user)) ? 'Show overdue receivables' : null
+            ].filter(Boolean)
           };
         }
       }
     }
 
     // 1b. Multi-Industry Domain Record ID Lookup (POL-..., CLM-..., REM-..., LSE-..., INV-..., LZG... VIN, MEM-..., IC-..., etc.)
+    const activeLookupInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(scope && scope.coKey)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+        ? window.MFG_ENTERPRISE.getActiveIndustry(scope && scope.coKey)
+        : 'Manufacturing');
     if (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.lookupIndustryDomainRecord === 'function') {
       const domHit = window.MFG_ENTERPRISE.lookupIndustryDomainRecord(cleanQ);
       if (domHit && domHit.id) {
+        const bkt = String(domHit.bucket || '').toLowerCase();
+        const isPartnerBkt = /partner|split|\bjv\b|dist/i.test(bkt);
+        const isBooksBkt = /(?:^|_)(?:ic|intercomp|remit|bordereau|cash|treas|bank|ledger|deposit|rct)(?:_|$)/i.test(bkt);
+        const isProfitBkt = /margin|comm|pnl|valuation|landed/i.test(bkt);
+        const isExpBkt = /(?:^|_)(?:exp|maint|purch|ap|cost|import|vendor|repair)(?:_|$)/i.test(bkt);
+        const canOpenDomView = canView(domHit.parentView || 'overview', scope && scope.user);
+        const bucketAllowed = (!isPartnerBkt || sLens.partnerSplits)
+          && (!isBooksBkt || sLens.books)
+          && (!isProfitBkt || sLens.profit)
+          && (!isExpBkt || sLens.expenses);
+        if (!canOpenDomView || !bucketAllowed) {
+          return buildRestrictedReply(cleanQ, detectLang(cleanQ), domHit.title || domHit.industry || 'Domain Record', scope && scope.user);
+        }
         return {
           q: cleanQ,
           lang: detectLang(cleanQ),
           instantLocal: true,
           title: `${cleanOut(domHit.title)} · ${cleanOut(domHit.id)}`,
-          answer: `Found <b>${esc(domHit.title)} ${esc(domHit.id)}</b> under <b>${esc(domHit.company)}</b> (${esc(domHit.industry)}) dated <b>${esc(domHit.date)}</b> for <b>${esc(domHit.party)}</b> (${esc(domHit.summary)})${domHit.amount ? ` totaling <b>${fmtMoney(domHit.amount, 2)}</b>` : ''} · Status: <b>${esc(domHit.status)}</b>.`,
+          answer: `Found <b>${esc(domHit.title)} ${esc(domHit.id)}</b> under <b>${esc(domHit.company)}</b> (${esc(domHit.industry)}) dated <b>${esc(domHit.date)}</b> for <b>${esc(domHit.party)}</b> (${esc(domHit.summary)})${(domHit.amount && (!isProfitBkt || sLens.profit)) ? ` totaling <b>${fmtMoney(domHit.amount, 2)}</b>` : ''} · Status: <b>${esc(domHit.status)}</b>.`,
           promptText: 'Would you like to open its 360° Domain Record Inspector or jump to the register?',
           actions: [
             { type: 'inspect', crKey: 'ind_domain:' + domHit.bucket, id: domHit.id, label: `Inspect ${domHit.id}` },
-            { type: 'view', view: domHit.parentView || 'overview', label: `Open ${domHit.title} Register` }
+            ...(canView(domHit.parentView || 'overview', scope && scope.user)
+              ? [{ type: 'view', view: domHit.parentView || 'overview', label: `Open ${domHit.title} Register` }]
+              : [])
           ],
           followUps: [
-            `Give me a ${domHit.industry} executive briefing`,
-            "Show today's daily operations",
-            'Verify the double-entry trial balance'
-          ]
+            canView('overview', scope && scope.user) ? `Give me a ${domHit.industry} executive briefing` : null,
+            canView('daily_ops', scope && scope.user) ? "Show today's daily operations" : null,
+            sLens.books ? 'Verify the double-entry trial balance' : null
+          ].filter(Boolean)
         };
       }
     }
 
     // Never hijack non-Manufacturing industry scopes or cross-industry domain prompts with quarry counterparty/product lookups
-    const activeLookupInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
-      ? window.MFG_ENTERPRISE.getActiveIndustry()
-      : 'Manufacturing';
     if (activeLookupInd !== 'Manufacturing' ||
         /\b(bdeir\s+holding|intercompany|partner\s+split|blanca|la\s+una|palms|voile|platinum|cabana|korri\s+auto|shacman|4235|rent\s+roll|rent\s+invoices?|tenant\s+arrears|gwp\b|bordereau|policy\s+renewal)\b/i.test(low)) {
       return null;
@@ -849,14 +896,18 @@
       supStat = { mSup, rawCnt, rawAmt, expCnt, expAmt, paidAmt, openAp, bundledCnt: bundledSupRows.length, bundledUsd: bundledSupUsd, vol: Math.abs(rawAmt) + Math.abs(expAmt) + Math.abs(openAp || 0) + rawCnt };
     }
 
-    const preferSupplier = Boolean(bestSup && (!bestCust || explicitSup || (supStat.vol > custStat.vol && !explicitCust)));
+    const recLens = getSeatLens(scope.user);
+    const preferSupplier = Boolean(bestSup && (!bestCust || explicitSup || (supStat.vol > custStat.vol && !explicitCust && recLens.expenses)));
     if (preferSupplier && supStat) {
+      if (!recLens.expenses) {
+        return buildRestrictedReply(cleanQ, detectLang(cleanQ), 'Suppliers & Payables');
+      }
       const supBullets = [];
       if (supStat.bundledCnt > 0) {
         supBullets.push(`Bundled Delivery Basis: <b>${fmtInt(supStat.bundledCnt)}</b> loads (<b>${fmtMoney(supStat.bundledUsd, 2)}</b>) include supplier-provided raw material + transportation in one delivered price (internal transport split unknown).`);
       }
       if (bestCust && custStat && custStat.vol > 0) {
-        supBullets.push(`Customer Ledger Also Active: <b>${fmtInt(custStat.loadsCnt)}</b> sales loads (<b>${fmtMoney(custStat.billed, 2)}</b>) · Open AR <b>${fmtMoney(custStat.openAr, 2)}</b>`);
+        supBullets.push(`Customer Ledger Also Active: <b>${fmtInt(custStat.loadsCnt)}</b> sales loads (<b>${fmtMoney(custStat.billed, 2)}</b>)${recLens.books ? ` · Open AR <b>${fmtMoney(custStat.openAr, 2)}</b>` : ''}`);
       }
       return {
         q: cleanQ,
@@ -864,16 +915,18 @@
         instantLocal: true,
         topic: 'ap',
         title: `Supplier · ${cleanOut(bestSup.name)}`,
-        answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`,
+        answer: recLens.books
+          ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`
+          : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>) and <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>) (settlements &amp; open AP balance are restricted for this seat).`,
         bullets: supBullets.length ? supBullets : undefined,
         promptText: 'Would you like to open this supplier\'s 360° ledger or jump to Suppliers & Payables?',
         actions: [
           { type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: `360° ${bestSup.name}` },
           ...(bestCust && custStat && custStat.vol > 0 ? [{ type: 'inspect', crKey: 'customers', id: bestCust.id, label: '360° Customer Account' }] : []),
-          { type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }
+          ...(canView('suppliers', scope.user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : [])
         ],
         followUps: [
-          'Show Accounts Payable breakdown',
+          ...(recLens.books ? ['Show Accounts Payable breakdown'] : ['Show today\'s daily operations']),
           'Show top expense categories',
           'Check pending-price vouchers'
         ]
@@ -881,8 +934,8 @@
     }
 
     if (bestCust && custStat) {
-      const dualSupBullets = (bestSup && supStat && supStat.vol > 0)
-        ? [`Supplier Ledger Also Active: <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>)${supStat.openAp != null ? ` · Open AP <b>${fmtMoney(supStat.openAp, 2)}</b>` : ''}`]
+      const dualSupBullets = (recLens.expenses && bestSup && supStat && supStat.vol > 0)
+        ? [`Supplier Ledger Also Active: <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>)${recLens.books && supStat.openAp != null ? ` · Open AP <b>${fmtMoney(supStat.openAp, 2)}</b>` : ''}`]
         : undefined;
       return {
         q: cleanQ,
@@ -890,18 +943,22 @@
         instantLocal: true,
         topic: 'ar',
         title: `Customer · ${cleanOut(bestCust.name)}`,
-        answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestCust.name)}</b> has <b>${fmtInt(custStat.loadsCnt)}</b> sales tickets totaling <b>${fmtMoney(custStat.billed, 2)}</b>, collections of <b>${fmtMoney(custStat.collected, 2)}</b>, and an open receivable balance of <b>${fmtMoney(custStat.openAr, 2)}</b>${custStat.mHit && Number(custStat.mHit.ar_60_plus || 0) > 0 ? ` (<b>${fmtMoney(custStat.mHit.ar_60_plus, 0)}</b> past 60 days)` : ''}.`,
+        answer: recLens.books
+          ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestCust.name)}</b> has <b>${fmtInt(custStat.loadsCnt)}</b> sales tickets totaling <b>${fmtMoney(custStat.billed, 2)}</b>, collections of <b>${fmtMoney(custStat.collected, 2)}</b>, and an open receivable balance of <b>${fmtMoney(custStat.openAr, 2)}</b>${custStat.mHit && Number(custStat.mHit.ar_60_plus || 0) > 0 ? ` (<b>${fmtMoney(custStat.mHit.ar_60_plus, 0)}</b> past 60 days)` : ''}.`
+          : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestCust.name)}</b> has <b>${fmtInt(custStat.loadsCnt)}</b> sales tickets totaling <b>${fmtMoney(custStat.billed, 2)}</b> (collections and open receivable balance are restricted for this seat).`,
         bullets: dualSupBullets,
-        promptText: 'Would you like to inspect all vouchers for this customer or print their Statement of Account?',
+        promptText: recLens.books
+          ? 'Would you like to inspect all vouchers for this customer or print their Statement of Account?'
+          : 'Would you like to inspect this customer account profile?',
         actions: [
           { type: 'inspect', crKey: 'customers', id: bestCust.id, label: `360° ${bestCust.name}` },
-          ...(bestSup && supStat && supStat.vol > 0 ? [{ type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: '360° Supplier Account' }] : []),
-          { type: 'view', view: 'customers', label: 'Open Receivables' },
-          { type: 'view', view: 'statements', label: 'Printable SOA' }
+          ...(recLens.expenses && bestSup && supStat && supStat.vol > 0 ? [{ type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: '360° Supplier Account' }] : []),
+          ...((canView('customers', scope.user) && recLens.books) ? [{ type: 'view', view: 'customers', label: 'Open Receivables' }] : []),
+          ...((canView('statements', scope.user) && recLens.books) ? [{ type: 'view', view: 'statements', label: 'Printable SOA' }] : [])
         ],
         followUps: [
-          'Show top overdue AR customers',
-          `Show ${scope.scopeCoLabel} sales & margin`,
+          ...(recLens.books ? ['Show top overdue AR customers'] : ['Show today\'s daily operations']),
+          recLens.profit ? `Show ${scope.scopeCoLabel} sales & margin` : `Show ${scope.scopeCoLabel} sales summary`,
           'Check price agreement compliance'
         ]
       };
@@ -957,7 +1014,7 @@
         ],
         followUps: [
           'Show top selling products & grades',
-          `Show ${scope.scopeCoLabel} sales & margin`,
+          recLens.profit ? `Show ${scope.scopeCoLabel} sales & margin` : `Show ${scope.scopeCoLabel} sales summary`,
           'Check price agreement compliance'
         ]
       };
@@ -992,7 +1049,7 @@
           promptText: 'Would you like to inspect this unit in 360° view or open Repairs, Warnings & Oil Logs?',
           actions: [
             { type: 'inspect', crKey: 'equipment', id: bestEq.id, label: `360° ${eqName}` },
-            { type: 'view', view: 'fleet_maint', label: 'Repairs & Warnings' }
+            ...(canView('fleet_maint', scope.user) ? [{ type: 'view', view: 'fleet_maint', label: 'Repairs & Warnings' }] : [])
           ],
           followUps: [
             'Show diesel tank & malfunction status',
@@ -1022,18 +1079,21 @@
         const salRows = scopedRows('salaries', scope).filter(r => norm(r.staff || r.name) === sNorm);
         const attRows = scopedRows('attendance', scope).filter(r => norm(r.staff || r.name) === sNorm);
         const paidUsd = salRows.reduce((a, r) => a + Number(r.amount || 0), 0);
+        const salPart = recLens.payrollDollars
+          ? (salRows.length ? `<b>${fmtInt(salRows.length)}</b> salary disbursements totaling <b>${fmtMoney(paidUsd, 2)}</b>` : '<b>0</b> salary disbursements')
+          : `<b>${fmtInt(salRows.length)}</b> salary disbursements (dollar amounts restricted)`;
         return {
           q: cleanQ,
           lang: detectLang(cleanQ),
           instantLocal: true,
           topic: 'payroll',
           title: `Staff Member · ${cleanOut(staffName)}`,
-          answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(staffName)}</b> (${esc(cleanOut(bestEmp.company || scope.scopeCoLabel))} · ${esc(cleanOut(bestEmp.type || 'Staff'))}) has ${salRows.length ? `<b>${fmtInt(salRows.length)}</b> salary disbursements totaling <b>${fmtMoney(paidUsd, 2)}</b>` : '<b>0</b> salary disbursements'} and <b>${fmtInt(attRows.length)}</b> logged attendance entries.`,
+          answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(staffName)}</b> (${esc(cleanOut(bestEmp.company || scope.scopeCoLabel))} · ${esc(cleanOut(bestEmp.type || 'Staff'))}) has ${salPart} and <b>${fmtInt(attRows.length)}</b> logged attendance entries.`,
           promptText: 'Would you like to open this employee\'s 360° record or jump to Payroll & Workforce?',
           actions: [
             { type: 'inspect', crKey: 'employments', id: bestEmp.id, label: `360° ${staffName}` },
             ...(canView('reg_staff', scope.user) ? [{ type: 'view', view: 'reg_staff', label: 'Staff Registry' }] : []),
-            { type: 'view', view: 'payroll', label: 'Open Payroll' }
+            ...(canView('payroll', scope.user) ? [{ type: 'view', view: 'payroll', label: 'Open Payroll' }] : [])
           ],
           followUps: [
             'Show payroll & overtime summary',
@@ -1170,9 +1230,11 @@
     if (specificHit) return specificHit;
 
     // 2b. Multi-Industry Deterministic Fast-Path Copilot (Holding, Hospitality, Trading, Real Estate, Insurance)
-    const activeInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
-      ? window.MFG_ENTERPRISE.getActiveIndustry()
-      : 'Manufacturing';
+    const activeInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(scope && scope.coKey)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+        ? window.MFG_ENTERPRISE.getActiveIndustry(scope && scope.coKey)
+        : 'Manufacturing');
     const domainMentionInd = /\b(bdeir\s+holding|intercompany|partner\s+split|due[- ]from|due[- ]to|root[- ]bu|shareholder\s+partner)\b/i.test(low)
       ? 'Holding & Treasury'
       : (/\b(blanca|la\s+una|palms|voile|platinum|cabana|pos\s+till|resort|venue\s+revenue|membership)\b/i.test(low)
@@ -1186,7 +1248,23 @@
                       : null))));
     const targetInd = domainMentionInd || (activeInd !== 'Manufacturing' ? activeInd : null);
     if (targetInd && !/\b(trial\s+balance|coa|double[- ]entry|pcg|journal\s+voucher|daily\s+ops|daily\s+operations)\b/i.test(low)) {
+      const indLens = getSeatLens(user);
+      const allowedIndList = Array.isArray(scope.allowed) ? scope.allowed : [];
+      const indAllowMatch = {
+        'Holding & Treasury': c => /holding/i.test(c),
+        'Hospitality & Resorts': c => /blanca|la\s*una|palms|voile|platinum/i.test(c),
+        'Automotive & Heavy Trading': c => /korri|shacman/i.test(c),
+        'Real Estate & Property': c => /properties|4235/i.test(c),
+        'Insurance & Brokerage': c => /insurance/i.test(c)
+      };
+      if (domainMentionInd && domainMentionInd !== activeInd && !indLens.owner && allowedIndList.length && !allowedIndList.some(indAllowMatch[targetInd] || (() => true))) {
+        return buildRestrictedReply(cleanQ, lang, targetInd);
+      }
+      const filterIndActions = acts => (acts || []).filter(a => !a || a.type !== 'view' || canView(a.view, user));
       if (targetInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+        if (!indLens.books) {
+          return buildRestrictedReply(cleanQ, lang, 'Holding & Treasury');
+        }
         const h = window.MFG_HOLDING.compute({ company: scope.coKey, ignoreSearch: true });
         const hk = h.kpis || {};
         const icRows = h.intercompany || [];
@@ -1211,11 +1289,11 @@
             ]) : undefined,
             total: icRows.length ? [`Consolidated (${icRows.length} Pairs)`, fmtMoney(hk.netIntercompany || 0, 0)] : undefined,
             promptText: 'Open the Intercompany Consolidation hub or Statement 23:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'hld_consolidation', label: 'Intercompany Hub' },
               { type: 'view', view: 'hld_treasury', label: 'Treasury & Loans' },
               { type: 'view', view: 'statements', label: 'Statement 23' }
-            ],
+            ]),
             followUps: [
               'Show shareholder partner split balances',
               'Give me a Bdeir Holding & Treasury executive briefing',
@@ -1224,6 +1302,9 @@
           };
         }
         if (/\b(partner|shareholder|split|equity|draw|capital)\b/i.test(low)) {
+          if (!indLens.partnerSplits) {
+            return buildRestrictedReply(cleanQ, lang, 'Partner Split & Equity');
+          }
           const totClosing = pRows.reduce((s, p) => s + Number(p.closingBalance != null ? p.closingBalance : (p.balance || 0)), 0);
           return {
             q: cleanQ,
@@ -1242,15 +1323,15 @@
             ]) : undefined,
             total: pRows.length ? [`Total Equity (${pRows.length} Partners)`, fmtMoney(totClosing, 0)] : undefined,
             promptText: 'Inspect Partner Splits & Capital Calls or Statement 23:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'hld_partners', label: 'Partner Split & Equity' },
               { type: 'view', view: 'expenses', label: 'Holding Expenses' },
               { type: 'view', view: 'statements', label: 'Statement 23' }
-            ],
+            ]),
             followUps: [
               'Show bilateral intercompany Due-From and Due-To matrix',
               'Give me a Bdeir Holding & Treasury executive briefing',
-              'Verify the double-entry trial balance'
+              'Verify double-entry trial balance'
             ]
           };
         }
@@ -1260,10 +1341,14 @@
           instantLocal: fastBriefing,
           topic: 'holding',
           title: `Holding & Treasury Briefing · Bdeir Holding`,
-          answer: `Across <b>Bdeir Holding</b>, shared corporate overhead stands at <b>${fmtMoney(hk.totalExpenses || 0, 0)}</b> across <b>${fmtInt(hk.voucherCount || 0)}</b> vouchers, treasury net cashflow is <b>${fmtMoney(hk.netCashflow || 0, 0)}</b>, and bilateral intercompany clearing nets to <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b>.`,
+          answer: indLens.expenses
+            ? `Across <b>Bdeir Holding</b>, shared corporate overhead stands at <b>${fmtMoney(hk.totalExpenses || 0, 0)}</b> across <b>${fmtInt(hk.voucherCount || 0)}</b> vouchers, treasury net cashflow is <b>${fmtMoney(hk.netCashflow || 0, 0)}</b>, and bilateral intercompany clearing nets to <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b>.`
+            : `Across <b>Bdeir Holding</b>, treasury net cashflow is <b>${fmtMoney(hk.netCashflow || 0, 0)}</b> and bilateral intercompany clearing nets to <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b> (corporate overhead expenses restricted).`,
           bullets: [
             `Intercompany Due-From vs Due-To: <b>${fmtMoney(hk.dueFromTotal || 0, 0)}</b> receivable vs <b>${fmtMoney(hk.dueToTotal || 0, 0)}</b> payable across <b>${fmtInt(icRows.length)}</b> subsidiary pairs`,
-            `Shareholder & Partner Current Accounts: <b>${fmtInt(pRows.length)}</b> equity ledgers · Total Capital & Draws tracked in real time`
+            ...(indLens.partnerSplits
+              ? [`Shareholder & Partner Current Accounts: <b>${fmtInt(pRows.length)}</b> equity ledgers · Total Capital & Draws tracked in real time`]
+              : [])
           ],
           headers: icRows.length ? ['Subsidiary Pair', 'Due-From', 'Due-To', 'Net Clearing'] : ['Holding Ledger', 'Records', 'Balance'],
           rows: icRows.length ? icRows.slice(0, 6).map(r => [
@@ -1272,21 +1357,21 @@
             fmtMoney(r.dueTo || 0, 0),
             fmtMoney(r.net != null ? r.net : ((r.dueFrom || 0) - (r.dueTo || 0)), 0)
           ]) : [
-            ['Corporate Overhead', fmtInt(hk.voucherCount || 0), fmtMoney(hk.totalExpenses || 0, 0)],
+            ...(indLens.expenses ? [['Corporate Overhead', fmtInt(hk.voucherCount || 0), fmtMoney(hk.totalExpenses || 0, 0)]] : []),
             ['Intercompany Due-From', fmtInt(icRows.length), fmtMoney(hk.dueFromTotal || 0, 0)],
             ['Intercompany Due-To', fmtInt(icRows.length), fmtMoney(hk.dueToTotal || 0, 0)]
           ],
           total: [`Consolidated Clearing (${icRows.length} Pairs)`, fmtMoney(hk.netIntercompany || 0, 0)],
           promptText: 'Which Holding & Treasury register or statement would you like to open?',
-          actions: [
+          actions: filterIndActions([
             { type: 'view', view: 'expenses', label: 'Holding Expenses' },
-            { type: 'view', view: 'hld_partners', label: 'Partner Split & IC' },
+            ...(indLens.partnerSplits ? [{ type: 'view', view: 'hld_partners', label: 'Partner Split & IC' }] : []),
             { type: 'view', view: 'hld_consolidation', label: 'Intercompany Hub' },
             { type: 'view', view: 'statements', label: 'Statement 23' }
-          ],
+          ]),
           followUps: [
             'Show bilateral intercompany Due-From and Due-To matrix',
-            'Show shareholder partner split balances',
+            ...(indLens.partnerSplits ? ['Show shareholder partner split balances'] : []),
             'Verify double-entry trial balance'
           ]
         };
@@ -1305,26 +1390,27 @@
             instantLocal: fastTopic,
             topic: 'hospitality_memberships',
             title: `Seasonal Cabana, Pool & Gym Memberships · ${scope.scopeCoLabel}`,
-            answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, there are <b>${fmtInt(hk.activeMembers || mRows.length)}</b> active seasonal cabana, beach club, and Platinum wellness memberships totaling <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> in contracted package value with <b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> in open installments.`,
-            bullets: mRows.slice(0, 4).map(m => `<b>${esc(m.code || m.id)} · ${esc(m.member)}</b> (${esc(m.company)} · ${esc(m.tier)}): Package <b>${fmtMoney(m.packageUsd || 0, 0)}</b> · Paid <b>${fmtMoney(m.paidUsd || 0, 0)}</b> · Balance <b>${fmtMoney(m.balanceUsd || 0, 0)}</b>`),
-            headers: mRows.length ? ['Member', 'Property & Tier', 'Paid', 'Package Value'] : undefined,
-            rows: mRows.length ? mRows.slice(0, 6).map(m => [
-              cleanOut(m.member || m.code || '-'),
-              cleanOut(`${m.company || ''} · ${m.tier || ''}`),
-              fmtMoney(m.paidUsd || 0, 0),
-              fmtMoney(m.packageUsd || 0, 0)
-            ]) : undefined,
+            answer: indLens.books
+              ? `Across <b>${esc(scope.scopeCoLabel)}</b>, there are <b>${fmtInt(hk.activeMembers || mRows.length)}</b> active seasonal cabana, beach club, and Platinum wellness memberships totaling <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> in contracted package value with <b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> in open installments.`
+              : `Across <b>${esc(scope.scopeCoLabel)}</b>, there are <b>${fmtInt(hk.activeMembers || mRows.length)}</b> active seasonal cabana, beach club, and Platinum wellness memberships totaling <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> in contracted package value (receivable balances restricted).`,
+            bullets: mRows.slice(0, 4).map(m => indLens.books
+              ? `<b>${esc(m.code || m.id)} · ${esc(m.member)}</b> (${esc(m.company)} · ${esc(m.tier)}): Package <b>${fmtMoney(m.packageUsd || 0, 0)}</b> · Paid <b>${fmtMoney(m.paidUsd || 0, 0)}</b> · Balance <b>${fmtMoney(m.balanceUsd || 0, 0)}</b>`
+              : `<b>${esc(m.code || m.id)} · ${esc(m.member)}</b> (${esc(m.company)} · ${esc(m.tier)}): Contracted Package <b>${fmtMoney(m.packageUsd || 0, 0)}</b>`),
+            headers: mRows.length ? (indLens.books ? ['Member', 'Property & Tier', 'Paid', 'Package Value'] : ['Member', 'Property & Tier', 'Package Value']) : undefined,
+            rows: mRows.length ? mRows.slice(0, 6).map(m => indLens.books
+              ? [cleanOut(m.member || m.code || '-'), cleanOut(`${m.company || ''} · ${m.tier || ''}`), fmtMoney(m.paidUsd || 0, 0), fmtMoney(m.packageUsd || 0, 0)]
+              : [cleanOut(m.member || m.code || '-'), cleanOut(`${m.company || ''} · ${m.tier || ''}`), fmtMoney(m.packageUsd || 0, 0)]) : undefined,
             total: mRows.length ? [`Active Packages (${fmtInt(hk.activeMembers || mRows.length)})`, fmtMoney(hk.membershipPkgValue || 0, 0)] : undefined,
             promptText: 'Open the Memberships & Pool hub or Statement 24:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'hsp_memberships', label: 'Memberships & Pool' },
               { type: 'view', view: 'hsp_revenue', label: 'Venue Revenue & POS' },
               { type: 'view', view: 'statements', label: 'Statement 24' }
-            ],
+            ]),
             followUps: [
               'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue',
               'Give me a Hospitality & Resorts executive briefing',
-              'Verify the double-entry trial balance'
+              indLens.books ? 'Verify the double-entry trial balance' : "Show today's daily operations"
             ]
           };
         }
@@ -1355,15 +1441,15 @@
             ]) : undefined,
             total: vEntries.length ? [`Combined (${vEntries.length} Resorts)`, fmtMoney(hk.salesTotal || 0, 0)] : undefined,
             promptText: 'Drill into Venue Revenue & POS or Statement 24:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'hsp_revenue', label: 'Venue Revenue & POS' },
               { type: 'view', view: 'pbi', label: 'Hospitality Dashboards' },
               { type: 'view', view: 'statements', label: 'Statement 24' }
-            ],
+            ]),
             followUps: [
               'Show active seasonal cabana and gym memberships',
               'Give me a Hospitality & Resorts executive briefing',
-              'Verify the double-entry trial balance'
+              indLens.books ? 'Verify the double-entry trial balance' : "Show today's daily operations"
             ]
           };
         }
@@ -1373,18 +1459,24 @@
           instantLocal: fastBriefing,
           topic: 'hospitality',
           title: `Hospitality & Resorts Copilot · ${scope.scopeCoLabel}`,
-          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, venue revenue is <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts (<b>${fmtInt(hk.coversTotal || 0)}</b> guest covers, avg check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>), with operating profit at <b>${fmtMoney(hk.operatingProfit || 0, 0)}</b>.`,
+          answer: indLens.profit
+            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, venue revenue is <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts (<b>${fmtInt(hk.coversTotal || 0)}</b> guest covers, avg check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>), with operating profit at <b>${fmtMoney(hk.operatingProfit || 0, 0)}</b>.`
+            : `Across <b>${esc(scope.scopeCoLabel)}</b>, venue revenue is <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts (<b>${fmtInt(hk.coversTotal || 0)}</b> guest covers, avg check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>; operating profit is restricted for this seat).`,
           bullets: [
-            `POS Till & Settlement Mix: Cash USD <b>${fmtMoney(hk.cashCollected || 0, 0)}</b> · Card/POS <b>${fmtMoney(hk.cardCollected || 0, 0)}</b> · Open F&B/Supplier AP <b>${fmtMoney(hk.apBalance || 0, 0)}</b>`,
-            `Seasonal Cabanas & Platinum Memberships: <b>${fmtInt(hk.activeMembers || 0)}</b> active packages worth <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> (<b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> receivable)`
+            (indLens.books && indLens.expenses)
+              ? `POS Till & Settlement Mix: Cash USD <b>${fmtMoney(hk.cashCollected || 0, 0)}</b> · Card/POS <b>${fmtMoney(hk.cardCollected || 0, 0)}</b> · Open F&B/Supplier AP <b>${fmtMoney(hk.apBalance || 0, 0)}</b>`
+              : `Operational Activity: <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts across <b>${fmtInt(hk.coversTotal || 0)}</b> guest covers (till and AP balances restricted)`,
+            indLens.books
+              ? `Seasonal Cabanas & Platinum Memberships: <b>${fmtInt(hk.activeMembers || 0)}</b> active packages worth <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> (<b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> receivable)`
+              : `Seasonal Cabanas & Platinum Memberships: <b>${fmtInt(hk.activeMembers || 0)}</b> active packages worth <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b>`
           ],
           promptText: 'Drill into a Hospitality hub or official register:',
-          actions: [
+          actions: filterIndActions([
             { type: 'view', view: 'hsp_revenue', label: 'Venue Revenue & POS' },
             { type: 'view', view: 'hsp_memberships', label: 'Memberships & Pool' },
             { type: 'view', view: 'pbi', label: 'Hospitality Dashboards' },
             { type: 'view', view: 'statements', label: 'Statement 24' }
-          ],
+          ]),
           followUps: [
             'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue',
             'Show active seasonal cabana and gym memberships',
@@ -1400,29 +1492,31 @@
         const fastTopic = !isReasoningQuery(cleanQ);
         const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(vin\b|chassis|shacman|heavy\s+truck|unit\s+margin|registry)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          const canVinMargin = Boolean(indLens.profit && indLens.expenses);
           const totMargin = vRows.reduce((s, v) => s + Number(v.marginUsd || 0), 0);
           return {
             q: cleanQ,
             lang,
             instantLocal: fastTopic,
             topic: 'trading_vins',
-            title: `Serialized Heavy Truck VIN Registry & Unit Margins · ${scope.scopeCoLabel}`,
-            answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, the commercial vehicle yard tracks <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered and <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom Shacman & Korri Auto VIN units with full customs declaration and landed-cost margin tie-out.`,
-            bullets: vRows.slice(0, 4).map(v => `<b>${esc(v.vin)}</b> (${esc(v.model)} · Customs <code>${esc(v.customsNo)}</code>): Landed <b>${fmtMoney(v.landedCostUsd || 0, 0)}</b> · Sale <b>${fmtMoney(v.salePriceUsd || 0, 0)}</b> · Margin <b>${fmtMoney(v.marginUsd || 0, 0)}</b> (${esc(v.status)})`),
-            headers: vRows.length ? ['VIN & Model', 'Status', 'Landed Cost', 'Unit Margin'] : undefined,
-            rows: vRows.length ? vRows.slice(0, 6).map(v => [
-              cleanOut(`${v.vin || '-'} · ${v.model || ''}`),
-              cleanOut(v.status || '-'),
-              fmtMoney(v.landedCostUsd || 0, 0),
-              fmtMoney(v.marginUsd || 0, 0)
-            ]) : undefined,
-            total: vRows.length ? [`Fleet Margin (${vRows.length} VINs)`, fmtMoney(totMargin, 0)] : undefined,
+            title: canVinMargin ? `Serialized Heavy Truck VIN Registry & Unit Margins · ${scope.scopeCoLabel}` : `Serialized Heavy Truck VIN Registry · ${scope.scopeCoLabel}`,
+            answer: canVinMargin
+              ? `Across <b>${esc(scope.scopeCoLabel)}</b>, the commercial vehicle yard tracks <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered and <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom Shacman & Korri Auto VIN units with full customs declaration and landed-cost margin tie-out.`
+              : `Across <b>${esc(scope.scopeCoLabel)}</b>, the commercial vehicle yard tracks <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered and <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom Shacman & Korri Auto VIN units (landed-cost and unit margins restricted).`,
+            bullets: vRows.slice(0, 4).map(v => canVinMargin
+              ? `<b>${esc(v.vin)}</b> (${esc(v.model)} · Customs <code>${esc(v.customsNo)}</code>): Landed <b>${fmtMoney(v.landedCostUsd || 0, 0)}</b> · Sale <b>${fmtMoney(v.salePriceUsd || 0, 0)}</b> · Margin <b>${fmtMoney(v.marginUsd || 0, 0)}</b> (${esc(v.status)})`
+              : `<b>${esc(v.vin)}</b> (${esc(v.model)} · Customs <code>${esc(v.customsNo)}</code>): Sale <b>${fmtMoney(v.salePriceUsd || 0, 0)}</b> (${esc(v.status)})`),
+            headers: vRows.length ? (canVinMargin ? ['VIN & Model', 'Status', 'Landed Cost', 'Unit Margin'] : ['VIN & Model', 'Status', 'Sale Price']) : undefined,
+            rows: vRows.length ? vRows.slice(0, 6).map(v => canVinMargin
+              ? [cleanOut(`${v.vin || '-'} · ${v.model || ''}`), cleanOut(v.status || '-'), fmtMoney(v.landedCostUsd || 0, 0), fmtMoney(v.marginUsd || 0, 0)]
+              : [cleanOut(`${v.vin || '-'} · ${v.model || ''}`), cleanOut(v.status || '-'), fmtMoney(v.salePriceUsd || 0, 0)]) : undefined,
+            total: vRows.length ? (canVinMargin ? [`Fleet Margin (${vRows.length} VINs)`, fmtMoney(totMargin, 0)] : [`Fleet VINs (${vRows.length})`, fmtInt(vRows.length)]) : undefined,
             promptText: 'Open the Shacman VIN Registry or Statement 25:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'trd_trucks', label: 'Shacman VIN Registry' },
               { type: 'view', view: 'trd_sales', label: 'Invoice Books & AR' },
               { type: 'view', view: 'statements', label: 'Statement 25' }
-            ],
+            ]),
             followUps: [
               'Show FIFO spare parts stock valuation and reorder alerts',
               'Give me an Automotive & Heavy Trading executive briefing',
@@ -1431,32 +1525,34 @@
           };
         }
         if (/\b(fifo|spare\s+part|stock|reorder|valuation|sku)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          const canSeeStockVal = Boolean(indLens.profit && indLens.books);
           return {
             q: cleanQ,
             lang,
             instantLocal: fastTopic,
             topic: 'trading_fifo',
-            title: `FIFO Spare Parts Valuation & Reorder Watch · ${scope.scopeCoLabel}`,
-            answer: `FIFO spare parts and assembly stock valuation stands at <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> across <b>${fmtInt(stRows.length)}</b> active SKU lines, with <b>${fmtInt(tk.lowStockCount || 0)}</b> SKUs currently at or below reorder threshold.`,
-            bullets: stRows.slice(0, 4).map(s => `<b>${esc(s.sku || s.id)} · ${esc(s.part_name || s.name || 'Spare Part')}</b>: On-Hand <b>${fmtInt(s.qty_on_hand || s.qty || 0)}</b> · FIFO Unit Cost <b>${fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2)}</b> · Value <b>${fmtMoney(s.total_value_usd || 0, 0)}</b>`),
-            headers: stRows.length ? ['SKU & Part', 'On-Hand', 'FIFO Unit Cost', 'Stock Value'] : undefined,
-            rows: stRows.length ? stRows.slice(0, 6).map(s => [
-              cleanOut(`${s.sku || s.id || '-'} · ${s.part_name || s.name || 'Spare Part'}`),
-              fmtInt(s.qty_on_hand || s.qty || 0),
-              fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2),
-              fmtMoney(s.total_value_usd || 0, 0)
-            ]) : undefined,
-            total: stRows.length ? [`FIFO Stock (${stRows.length} SKUs)`, fmtMoney(tk.stockValuation || 0, 0)] : undefined,
+            title: canSeeStockVal ? `FIFO Spare Parts Valuation & Reorder Watch · ${scope.scopeCoLabel}` : `Spare Parts Stock & Reorder Watch · ${scope.scopeCoLabel}`,
+            answer: canSeeStockVal
+              ? `FIFO spare parts and assembly stock valuation stands at <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> across <b>${fmtInt(stRows.length)}</b> active SKU lines, with <b>${fmtInt(tk.lowStockCount || 0)}</b> SKUs currently at or below reorder threshold.`
+              : `Spare parts and assembly stock tracks <b>${fmtInt(stRows.length)}</b> active SKU lines, with <b>${fmtInt(tk.lowStockCount || 0)}</b> SKUs currently at or below reorder threshold (stock valuation restricted).`,
+            bullets: stRows.slice(0, 4).map(s => canSeeStockVal
+              ? `<b>${esc(s.sku || s.id)} · ${esc(s.part_name || s.name || 'Spare Part')}</b>: On-Hand <b>${fmtInt(s.qty_on_hand || s.qty || 0)}</b> · FIFO Unit Cost <b>${fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2)}</b> · Value <b>${fmtMoney(s.total_value_usd || 0, 0)}</b>`
+              : `<b>${esc(s.sku || s.id)} · ${esc(s.part_name || s.name || 'Spare Part')}</b>: On-Hand <b>${fmtInt(s.qty_on_hand || s.qty || 0)}</b> units`),
+            headers: stRows.length ? (canSeeStockVal ? ['SKU & Part', 'On-Hand', 'FIFO Unit Cost', 'Stock Value'] : ['SKU & Part', 'On-Hand', 'Warehouse']) : undefined,
+            rows: stRows.length ? stRows.slice(0, 6).map(s => canSeeStockVal
+              ? [cleanOut(`${s.sku || s.id || '-'} · ${s.part_name || s.name || 'Spare Part'}`), fmtInt(s.qty_on_hand || s.qty || 0), fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2), fmtMoney(s.total_value_usd || 0, 0)]
+              : [cleanOut(`${s.sku || s.id || '-'} · ${s.part_name || s.name || 'Spare Part'}`), fmtInt(s.qty_on_hand || s.qty || 0), cleanOut(s.warehouse || 'Showroom')]) : undefined,
+            total: stRows.length ? (canSeeStockVal ? [`FIFO Stock (${stRows.length} SKUs)`, fmtMoney(tk.stockValuation || 0, 0)] : [`Tracked Parts (${stRows.length} SKUs)`, `${fmtInt(tk.lowStockCount || 0)} low stock`]) : undefined,
             promptText: 'Open FIFO Stock & Parts or Statement 25:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'trd_stock', label: 'FIFO Stock & Parts' },
               { type: 'view', view: 'trd_trucks', label: 'Shacman VIN Registry' },
               { type: 'view', view: 'statements', label: 'Statement 25' }
-            ],
+            ]),
             followUps: [
-              'Show Shacman heavy truck VIN registry and unit margins',
+              indLens.profit ? 'Show Shacman heavy truck VIN registry and unit margins' : 'Show Shacman heavy truck VIN registry',
               'Give me an Automotive & Heavy Trading executive briefing',
-              'Verify the double-entry trial balance'
+              indLens.books ? 'Verify the double-entry trial balance' : 'Show today\'s daily operations'
             ]
           };
         }
@@ -1466,21 +1562,25 @@
           instantLocal: fastBriefing,
           topic: 'trading',
           title: `Automotive & Heavy Trading Copilot · ${scope.scopeCoLabel}`,
-          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, multi-book commercial sales (N/S/IS/IN) stand at <b>${fmtMoney(tk.salesTotal || 0, 0)}</b> with gross margin of <b>${fmtMoney(tk.grossMargin || 0, 0)}</b> (<b>${fmtPctVal(tk.grossMargin, tk.salesTotal)}</b>) and operating profit of <b>${fmtMoney(tk.operatingProfit || 0, 0)}</b>.`,
+          answer: indLens.profit
+            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, multi-book commercial sales (N/S/IS/IN) stand at <b>${fmtMoney(tk.salesTotal || 0, 0)}</b> with gross margin of <b>${fmtMoney(tk.grossMargin || 0, 0)}</b> (<b>${fmtPctVal(tk.grossMargin, tk.salesTotal)}</b>) and operating profit of <b>${fmtMoney(tk.operatingProfit || 0, 0)}</b>.`
+            : `Across <b>${esc(scope.scopeCoLabel)}</b>, multi-book commercial sales (N/S/IS/IN) stand at <b>${fmtMoney(tk.salesTotal || 0, 0)}</b> across <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered and <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom VINs (margin and operating profit are restricted).`,
           bullets: [
-            `Heavy Truck VIN Yard & Parts Stock: <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered / <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom VINs · FIFO Spare Parts Valuation <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`,
-            `Working Capital: Customer AR <b>${fmtMoney(tk.arBalance || 0, 0)}</b> · Foreign Supplier & Customs AP <b>${fmtMoney(tk.apBalance || 0, 0)}</b>`
+            (indLens.profit && indLens.books)
+              ? `Heavy Truck VIN Yard & Parts Stock: <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered / <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom VINs · FIFO Spare Parts Valuation <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`
+              : `Heavy Truck VIN Yard & Parts Stock: <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered / <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom VINs · <b>${fmtInt(tk.lowStockCount || 0)}</b> low-stock SKUs`,
+            `Working Capital: Customer AR <b>${indLens.books ? fmtMoney(tk.arBalance || 0, 0) : 'Restricted'}</b> · Foreign Supplier AP <b>${indLens.books ? fmtMoney(tk.apBalance || 0, 0) : 'Restricted'}</b>`
           ],
           promptText: 'Explore Trading invoice books, Shacman VIN units, or FIFO stock:',
-          actions: [
+          actions: filterIndActions([
             { type: 'view', view: 'trd_sales', label: 'Invoice Books & AR' },
             { type: 'view', view: 'trd_trucks', label: 'Shacman VIN Registry' },
             { type: 'view', view: 'pbi', label: 'Trading Dashboards' },
             { type: 'view', view: 'statements', label: 'Statement 25' }
-          ],
+          ]),
           followUps: [
-            'Show Shacman heavy truck VIN registry and unit margins',
-            'Show FIFO spare parts stock valuation and reorder alerts',
+            indLens.profit ? 'Show Shacman heavy truck VIN registry and unit margins' : 'Show Shacman heavy truck VIN registry',
+            (indLens.profit && indLens.books) ? 'Show FIFO spare parts stock valuation and reorder alerts' : 'Show today\'s daily operations',
             'Show today\'s daily operations'
           ]
         };
@@ -1510,68 +1610,69 @@
             ]) : undefined,
             total: lRows.length ? [`Contracted Rent (${lRows.length} Leases)`, fmtMoney(rk.annualRentTtc || 0, 0)] : undefined,
             promptText: 'Open Leases & 4235 Rent Roll or Properties & Units:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 're_leases', label: 'Leases & 4235 Rent Roll' },
               { type: 'view', view: 're_properties', label: 'Properties & Units' },
               { type: 'view', view: 'statements', label: 'Statement 26 Rent Roll' }
-            ],
+            ]),
             followUps: [
-              'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears',
+              'Show 4235 Company S.A.L rent invoices and occupancy',
               'Give me a Real Estate & 4235 S.A.L executive briefing',
-              'Verify the double-entry trial balance'
+              indLens.books ? 'Verify the double-entry trial balance' : "Show today's daily operations"
             ]
           };
         }
         if (/\b(invoice|arrear|rent\s+roll|11%\s+vat)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          const canReCol = Boolean(indLens.books);
           return {
             q: cleanQ,
             lang,
             instantLocal: fastTopic,
             topic: 'realestate_invoices',
-            title: `4235 Company S.A.L 11% VAT Rent Invoices & Tenant Arrears`,
-            answer: `Total billed rent stands at <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>), with <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> collected and <b>${fmtMoney(rk.openArUsd || 0, 0)}</b> in open tenant receivables.`,
-            bullets: rRows.slice(0, 4).map(r => `<b>${esc(r.invNo)} · ${esc(r.tenant)}</b> (Unit <code>${esc(r.unitCode)}</code> · ${esc(r.date)}): Base <b>${fmtMoney(r.baseUsd || 0, 0)}</b> + VAT <b>${fmtMoney(r.vatUsd || 0, 0)}</b> = <b>${fmtMoney(r.totalTtc || 0, 0)}</b> · Open Balance <b>${fmtMoney(r.balanceUsd || 0, 0)}</b>`),
-            headers: rRows.length ? ['Invoice & Tenant', 'Unit', 'Billed Rent', 'Open Arrears'] : undefined,
-            rows: rRows.length ? rRows.slice(0, 6).map(r => [
-              cleanOut(`${r.invNo || '-'} · ${r.tenant || ''}`),
-              cleanOut(r.unitCode || '-'),
-              fmtMoney(r.totalTtc || 0, 0),
-              fmtMoney(r.balanceUsd || 0, 0)
-            ]) : undefined,
-            total: rRows.length ? [`Open Tenant Receivables`, fmtMoney(rk.openArUsd || 0, 0)] : undefined,
+            title: indLens.tax ? `4235 Company S.A.L 11% VAT Rent Invoices & Tenant Arrears` : `4235 Company S.A.L Rent Invoices & Occupancy`,
+            answer: `Total billed rent stands at <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b>${indLens.tax ? ` (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>)` : ''}${canReCol ? `, with <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> collected and <b>${fmtMoney(rk.openArUsd || 0, 0)}</b> in open tenant receivables.` : '.'}`,
+            bullets: rRows.slice(0, 4).map(r => `<b>${esc(r.invNo)} · ${esc(r.tenant)}</b> (Unit <code>${esc(r.unitCode)}</code> · ${esc(r.date)}): ${indLens.tax ? `Base <b>${fmtMoney(r.baseUsd || 0, 0)}</b> + VAT <b>${fmtMoney(r.vatUsd || 0, 0)}</b> = ` : ''}<b>${fmtMoney(r.totalTtc || 0, 0)}</b>${canReCol ? ` · Open Balance <b>${fmtMoney(r.balanceUsd || 0, 0)}</b>` : ''}`),
+            headers: rRows.length ? (canReCol ? ['Invoice & Tenant', 'Unit', 'Billed Rent', 'Open Arrears'] : ['Invoice & Tenant', 'Unit', 'Billed Rent']) : undefined,
+            rows: rRows.length ? rRows.slice(0, 6).map(r => canReCol
+              ? [cleanOut(`${r.invNo || '-'} · ${r.tenant || ''}`), cleanOut(r.unitCode || '-'), fmtMoney(r.totalTtc || 0, 0), fmtMoney(r.balanceUsd || 0, 0)]
+              : [cleanOut(`${r.invNo || '-'} · ${r.tenant || ''}`), cleanOut(r.unitCode || '-'), fmtMoney(r.totalTtc || 0, 0)]) : undefined,
+            total: rRows.length ? (canReCol ? ['Open Tenant Receivables', fmtMoney(rk.openArUsd || 0, 0)] : ['Total Billed Rent', fmtMoney(rk.billedRentTtc || 0, 0)]) : undefined,
             promptText: 'Inspect Tenant Collections & Arrears or Statement 26:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 're_collections', label: 'Tenant Collections & AR' },
               { type: 'view', view: 're_leases', label: 'Leases & 4235 Rent Roll' },
               { type: 'view', view: 'statements', label: 'Statement 26 Rent Roll' }
-            ],
+            ]),
             followUps: [
               'Which leases are expiring within 90 days?',
               'Give me a Real Estate & 4235 S.A.L executive briefing',
-              'Verify the double-entry trial balance'
+              indLens.books ? 'Verify the double-entry trial balance' : "Show today's daily operations"
             ]
           };
         }
+        const canReColBrief = Boolean(indLens.books);
         return {
           q: cleanQ,
           lang,
           instantLocal: fastBriefing,
           topic: 'realestate',
           title: `Real Estate & 4235 S.A.L Copilot · ${scope.scopeCoLabel}`,
-          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, contracted annual rent is <b>${fmtMoney(rk.annualRentTtc || 0, 0)}</b> (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>), portfolio occupancy is <b>${fmtInt(rk.occupancyPct || 0, 1)}%</b> (<b>${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)}</b> units), and Net Operating Income (NOI) is <b>${fmtMoney(rk.noiUsd || 0, 0)}</b>.`,
+          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, contracted annual rent is <b>${fmtMoney(rk.annualRentTtc || 0, 0)}</b>${indLens.tax ? ` (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>)` : ''}, and portfolio occupancy is <b>${fmtInt(rk.occupancyPct || 0, 1)}%</b> (<b>${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)}</b> units)${indLens.profit ? `, delivering Net Operating Income (NOI) of <b>${fmtMoney(rk.noiUsd || 0, 0)}</b>` : ''}.`,
           bullets: [
-            `Rent Billing & Collections: Billed <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> · Collected <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> · Open Tenant AR <b>${fmtMoney(rk.openArUsd || 0, 0)}</b>`,
-            `Lease Expiry & Maintenance: <b>${fmtInt(rk.expiring90d || 0)}</b> leases within 90 days · Property Upkeep & Municipal Taxes <b>${fmtMoney(rk.maintTotalUsd || 0, 0)}</b>`
+            canReColBrief
+              ? `Rent Billing & Collections: Billed <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> · Collected <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> · Open Tenant AR <b>${fmtMoney(rk.openArUsd || 0, 0)}</b>`
+              : `Rent Billing Volume: Billed <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> across <b>${fmtInt(rRows.length)}</b> invoices (collection balances restricted)`,
+            `Lease Expiry & Upkeep: <b>${fmtInt(rk.expiring90d || 0)}</b> leases within 90 days${indLens.expenses ? ` · Property Upkeep & Municipal Taxes <b>${fmtMoney(rk.maintTotalUsd || 0, 0)}</b>` : ''}`
           ],
           promptText: 'Inspect the 4235 rent roll, tenant arrears, or lease expiry radar:',
-          actions: [
+          actions: filterIndActions([
             { type: 'view', view: 're_properties', label: 'Properties & Units' },
             { type: 'view', view: 're_leases', label: 'Leases & 4235 Rent Roll' },
             { type: 'view', view: 'pbi', label: 'Real Estate Dashboards' },
             { type: 'view', view: 'statements', label: 'Statement 26 Rent Roll' }
-          ],
+          ]),
           followUps: [
-            'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears',
+            'Show 4235 Company S.A.L rent invoices and occupancy',
             'Which leases are expiring within 90 days?',
             'Show today\'s daily operations'
           ]
@@ -1594,7 +1695,7 @@
             topic: 'insurance_renewals',
             title: `30/60/90-Day Policy Renewal Pipeline · ${scope.scopeCoLabel}`,
             answer: `Across <b>${fmtInt(pRows.length)}</b> active policies, <b>${fmtInt(ik.renewing60d || 0)}</b> policies representing <b>${fmtMoney(ik.renewalGwp60d || 0, 0)}</b> in Gross Written Premium are scheduled for renewal within the 60-day retention window.`,
-            bullets: sortedPols.slice(0, 4).map(p => `<b>${esc(p.policyNo)} · ${esc(p.insured)}</b> (${esc(p.carrier)} · ${esc(p.line)}): Expires <code>${esc(p.endDate)}</code> (${fmtInt(p.daysToExpiry || 0)}d) · GWP <b>${fmtMoney(p.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(p.commUsd || 0, 0)}</b>`),
+            bullets: sortedPols.slice(0, 4).map(p => `<b>${esc(p.policyNo)} · ${esc(p.insured)}</b> (${esc(p.carrier)} · ${esc(p.line)}): Expires <code>${esc(p.endDate)}</code> (${fmtInt(p.daysToExpiry || 0)}d) · GWP <b>${fmtMoney(p.gwpUsd || 0, 0)}</b>${indLens.profit ? ` · Comm <b>${fmtMoney(p.commUsd || 0, 0)}</b>` : ''}`),
             headers: sortedPols.length ? ['Policy & Insured', 'Carrier & Line', 'Expiry', 'Gross Premium'] : undefined,
             rows: sortedPols.length ? sortedPols.slice(0, 6).map(p => [
               cleanOut(`${p.policyNo || '-'} · ${p.insured || ''}`),
@@ -1604,11 +1705,11 @@
             ]) : undefined,
             total: sortedPols.length ? [`60-Day Renewal Window (${fmtInt(ik.renewing60d || 0)} Policies)`, fmtMoney(ik.renewalGwp60d || 0, 0)] : undefined,
             promptText: 'Open Policies & Renewals or Premium Billing:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'ins_policies', label: 'Policies & Renewals' },
               { type: 'view', view: 'ins_billing', label: 'Premium Billing' },
               { type: 'view', view: 'statements', label: 'Statement 27' }
-            ],
+            ]),
             followUps: [
               'Show carrier bordereau payable reconciliation',
               'Show open insurance claims and loss ratio by line',
@@ -1617,28 +1718,30 @@
           };
         }
         if (/\b(bordereau|carrier|payable|underwriter|remit)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          if (!indLens.books || !indLens.expenses) {
+            return buildRestrictedReply(cleanQ, lang, 'Carrier Settlements', user);
+          }
           return {
             q: cleanQ,
             lang,
             instantLocal: fastTopic,
             topic: 'insurance_carriers',
             title: `Underwriter Carrier Bordereau Payable Reconciliation`,
-            answer: `Across <b>${fmtInt(cRows.length)}</b> underwriting carriers, Gross Written Premium is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b>, brokerage commission retained is <b>${fmtMoney(ik.commTotal || 0, 0)}</b>, and net carrier bordereau payable stands at <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>.`,
-            bullets: cRows.slice(0, 4).map(c => `<b>${esc(c.carrier)}</b> (${fmtInt(c.policies || 0)} policies): GWP <b>${fmtMoney(c.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(c.commUsd || 0, 0)}</b> · Net Payable <b>${fmtMoney(c.netPayableUsd || 0, 0)}</b> · Balance Due <b>${fmtMoney(c.balanceDueUsd || 0, 0)}</b>`),
-            headers: cRows.length ? ['Underwriting Carrier', 'Policies', 'Commission', 'Balance Due'] : undefined,
-            rows: cRows.length ? cRows.slice(0, 6).map(c => [
-              cleanOut(c.carrier || '-'),
-              fmtInt(c.policies || 0),
-              fmtMoney(c.commUsd || 0, 0),
-              fmtMoney(c.balanceDueUsd || 0, 0)
-            ]) : undefined,
+            answer: indLens.profit
+              ? `Across <b>${fmtInt(cRows.length)}</b> underwriting carriers, Gross Written Premium is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b>, brokerage commission retained is <b>${fmtMoney(ik.commTotal || 0, 0)}</b>, and net carrier bordereau payable stands at <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>.`
+              : `Across <b>${fmtInt(cRows.length)}</b> underwriting carriers, Gross Written Premium is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> and net carrier bordereau payable stands at <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b> (commission figures restricted).`,
+            bullets: cRows.slice(0, 4).map(c => `<b>${esc(c.carrier)}</b> (${fmtInt(c.policies || 0)} policies): GWP <b>${fmtMoney(c.gwpUsd || 0, 0)}</b>${indLens.profit ? ` · Comm <b>${fmtMoney(c.commUsd || 0, 0)}</b>` : ''} · Net Payable <b>${fmtMoney(c.netPayableUsd || 0, 0)}</b> · Balance Due <b>${fmtMoney(c.balanceDueUsd || 0, 0)}</b>`),
+            headers: cRows.length ? (indLens.profit ? ['Underwriting Carrier', 'Policies', 'Commission', 'Balance Due'] : ['Underwriting Carrier', 'Policies', 'Net Payable', 'Balance Due']) : undefined,
+            rows: cRows.length ? cRows.slice(0, 6).map(c => indLens.profit
+              ? [cleanOut(c.carrier || '-'), fmtInt(c.policies || 0), fmtMoney(c.commUsd || 0, 0), fmtMoney(c.balanceDueUsd || 0, 0)]
+              : [cleanOut(c.carrier || '-'), fmtInt(c.policies || 0), fmtMoney(c.netPayableUsd || 0, 0), fmtMoney(c.balanceDueUsd || 0, 0)]) : undefined,
             total: cRows.length ? [`Net Carrier Payable (${cRows.length} Carriers)`, fmtMoney(ik.carrierPayableUsd || 0, 0)] : undefined,
             promptText: 'Open Carrier Settlements or Statement 27:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'ins_carriers', label: 'Carrier Settlements' },
               { type: 'view', view: 'ins_billing', label: 'Premium Billing' },
               { type: 'view', view: 'statements', label: 'Statement 27' }
-            ],
+            ]),
             followUps: [
               'Show 30/60/90-day policy renewal pipeline',
               'Show open insurance claims and loss ratio by line',
@@ -1647,56 +1750,68 @@
           };
         }
         if (/\b(claim|loss\s+ratio|reserve|adjuster)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          if (!canView('ins_claims', user)) {
+            return buildRestrictedReply(cleanQ, lang, 'Claims & Subrogation', user);
+          }
+          const canClmUsd = Boolean(indLens.expenses);
           return {
             q: cleanQ,
             lang,
             instantLocal: fastTopic,
             topic: 'insurance_claims',
-            title: `Insurance Claims Register & Loss Ratio Watch`,
-            answer: `Total incurred claims across <b>${fmtInt(clmRows.length)}</b> claim files stand at <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b>, corresponding to a portfolio loss ratio of <b>${fmtInt(ik.lossRatioPct || 0, 1)}%</b> against Gross Written Premium.`,
-            bullets: clmRows.slice(0, 4).map(c => `<b>${esc(c.claimNo || c.id)} · ${esc(c.insured || c.client || '-')}</b> (${esc(c.line || 'Motor')} · Policy <code>${esc(c.policyNo || pRows[0]?.policyNo || '-')}</code>): Reserve <b>${fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)}</b> · Paid <b>${fmtMoney(c.paidUsd || c.paid_usd || 0, 0)}</b> (${esc(c.status || 'Open')})`),
-            headers: clmRows.length ? ['Claim & Insured', 'Line', 'Paid', 'Reserve'] : undefined,
-            rows: clmRows.length ? clmRows.slice(0, 6).map(c => [
-              cleanOut(`${c.claimNo || c.id || '-'} · ${c.insured || c.client || ''}`),
-              cleanOut(c.line || 'Motor'),
-              fmtMoney(c.paidUsd || c.paid_usd || 0, 0),
-              fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)
-            ]) : undefined,
-            total: clmRows.length ? [`Incurred Claims (${fmtInt(ik.lossRatioPct || 0, 1)}% Loss Ratio)`, fmtMoney(ik.incurredClaimsUsd || 0, 0)] : undefined,
+            title: canClmUsd ? `Insurance Claims Register & Loss Ratio Watch` : `Insurance Claims Register`,
+            answer: canClmUsd
+              ? `Total incurred claims across <b>${fmtInt(clmRows.length)}</b> claim files stand at <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b>, corresponding to a portfolio loss ratio of <b>${fmtInt(ik.lossRatioPct || 0, 1)}%</b> against Gross Written Premium.`
+              : `Tracking <b>${fmtInt(clmRows.length)}</b> claim files across active policies (claim reserves and incurred amounts are restricted for this seat).`,
+            bullets: clmRows.slice(0, 4).map(c => canClmUsd
+              ? `<b>${esc(c.claimNo || c.id)} · ${esc(c.insured || c.client || '-')}</b> (${esc(c.line || 'Motor')} · Policy <code>${esc(c.policyNo || pRows[0]?.policyNo || '-')}</code>): Reserve <b>${fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)}</b> · Paid <b>${fmtMoney(c.paidUsd || c.paid_usd || 0, 0)}</b> (${esc(c.status || 'Open')})`
+              : `<b>${esc(c.claimNo || c.id)} · ${esc(c.insured || c.client || '-')}</b> (${esc(c.line || 'Motor')} · Policy <code>${esc(c.policyNo || pRows[0]?.policyNo || '-')}</code>): ${esc(c.status || 'Open')}`),
+            headers: clmRows.length ? (canClmUsd ? ['Claim & Insured', 'Line', 'Paid', 'Reserve'] : ['Claim & Insured', 'Line', 'Status']) : undefined,
+            rows: clmRows.length ? clmRows.slice(0, 6).map(c => canClmUsd
+              ? [cleanOut(`${c.claimNo || c.id || '-'} · ${c.insured || c.client || ''}`), cleanOut(c.line || 'Motor'), fmtMoney(c.paidUsd || c.paid_usd || 0, 0), fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)]
+              : [cleanOut(`${c.claimNo || c.id || '-'} · ${c.insured || c.client || ''}`), cleanOut(c.line || 'Motor'), cleanOut(c.status || 'Open')]) : undefined,
+            total: clmRows.length ? (canClmUsd ? [`Incurred Claims (${fmtInt(ik.lossRatioPct || 0, 1)}% Loss Ratio)`, fmtMoney(ik.incurredClaimsUsd || 0, 0)] : [`Open Claim Files`, fmtInt(clmRows.length)]) : undefined,
             promptText: 'Open Claims & Subrogation or Statement 27:',
-            actions: [
+            actions: filterIndActions([
               { type: 'view', view: 'ins_claims', label: 'Claims & Subrogation' },
               { type: 'view', view: 'ins_policies', label: 'Policies & GWP' },
               { type: 'view', view: 'statements', label: 'Statement 27' }
-            ],
+            ]),
             followUps: [
               'Show 30/60/90-day policy renewal pipeline',
-              'Show carrier bordereau payable reconciliation',
+              ...(indLens.books && indLens.expenses ? ['Show carrier bordereau payable reconciliation'] : []),
               'Give me an Insurance & Brokerage executive briefing'
             ]
           };
         }
+        const canInsBilling = Boolean(indLens.books);
         return {
           q: cleanQ,
           lang,
           instantLocal: fastBriefing,
           topic: 'insurance',
           title: `Insurance & Brokerage Copilot · ${scope.scopeCoLabel}`,
-          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, Gross Written Premium (GWP) is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> across <b>${fmtInt(ik.policyCount || 0)}</b> active policies, brokerage commission earned is <b>${fmtMoney(ik.commTotal || 0, 0)}</b> (<b>${fmtInt(ik.avgCommYield || 0, 1)}%</b> yield), and net brokerage operating profit is <b>${fmtMoney(ik.netBrokerageIncome || 0, 0)}</b>.`,
+          answer: indLens.profit
+            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, Gross Written Premium (GWP) is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> across <b>${fmtInt(ik.policyCount || 0)}</b> active policies, brokerage commission earned is <b>${fmtMoney(ik.commTotal || 0, 0)}</b> (<b>${fmtInt(ik.avgCommYield || 0, 1)}%</b> yield), and net brokerage operating profit is <b>${fmtMoney(ik.netBrokerageIncome || 0, 0)}</b>.`
+            : `Across <b>${esc(scope.scopeCoLabel)}</b>, Gross Written Premium (GWP) is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> across <b>${fmtInt(ik.policyCount || 0)}</b> active policies (commission yield and brokerage profit are restricted for this seat).`,
           bullets: [
-            `Premium Collections & Carrier Clearing: Client Premium Receivable <b>${fmtMoney(ik.unpaidPremUsd || 0, 0)}</b> · Net Underwriter Carrier Payable <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>`,
-            `Renewals & Claims Watch: <b>${fmtInt(ik.renewing60d || 0)}</b> policies renewing in <=60d (<b>${fmtMoney(ik.renewalGwp60d || 0, 0)}</b> GWP) · Incurred Claims <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b> (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)`
+            indLens.books
+              ? `Premium Collections & Carrier Clearing: Client Premium Receivable <b>${fmtMoney(ik.unpaidPremUsd || 0, 0)}</b> · Net Underwriter Carrier Payable <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>`
+              : (canInsBilling
+                  ? `Premium Billing & Collections: Client Premium Receivable <b>${fmtMoney(ik.unpaidPremUsd || 0, 0)}</b> (carrier payables restricted)`
+                  : `Premium Collections & Carrier Clearing: restricted by seat permissions`),
+            `Renewals & Claims Watch: <b>${fmtInt(ik.renewing60d || 0)}</b> policies renewing in <=60d (<b>${fmtMoney(ik.renewalGwp60d || 0, 0)}</b> GWP)${indLens.expenses ? ` · Incurred Claims <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b> (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)` : ''}`
           ],
           promptText: 'Open the policy schedule, renewal queue, claims hub, or carrier bordereau:',
-          actions: [
+          actions: filterIndActions([
             { type: 'view', view: 'ins_policies', label: 'Policies & GWP' },
             { type: 'view', view: 'ins_billing', label: 'Premium Billing' },
             { type: 'view', view: 'ins_claims', label: 'Claims & Carrier Recon' },
             { type: 'view', view: 'statements', label: 'Statement 27' }
-          ],
+          ]),
           followUps: [
             'Show 30/60/90-day policy renewal pipeline',
-            'Show carrier bordereau payable reconciliation',
+            ...(indLens.books ? ['Show carrier bordereau payable reconciliation'] : []),
             'Show open insurance claims and loss ratio by line'
           ]
         };
@@ -1747,36 +1862,45 @@
     if (/\b(daily\s+ops|daily\s+operations|after[- ]hours|what\s+happened\s+(today|yesterday))\b/i.test(effLow) ||
         (scope.forceTxBasis && !hasNewTopic && !scope.inheritedTopic) ||
         (scope.forceTxBasis && /\b(daily|operations|ops|happened|activity)\b/i.test(effLow))) {
+      const doLens = getSeatLens(user);
+      if (!canView('daily_ops', user) && !doLens.books && !doLens.expenses && !canHub('sales', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Daily Operations');
+      }
       const txScope = Object.assign({}, scope, { basis: 'tx', forceTxBasis: true });
       const win = computeWindowSummary(txScope);
       const k = win.k;
-      const rawRowsTx = scopedRows('raw_purchases', txScope, { basis: 'tx' });
-      const expRowsTx = scopedRows('expenses', txScope, { basis: 'tx' });
-      const unpricedRawCnt = rawRowsTx.filter(r => Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))) === 0).length;
-      const bulkFuelRows = expRowsTx.filter(e =>
+      const rawRowsTx = doLens.expenses ? scopedRows('raw_purchases', txScope, { basis: 'tx' }) : [];
+      const expRowsTx = doLens.expenses ? scopedRows('expenses', txScope, { basis: 'tx' }) : [];
+      const unpricedRawCnt = doLens.expenses ? rawRowsTx.filter(r => Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))) === 0).length : 0;
+      const bulkFuelRows = doLens.expenses ? expRowsTx.filter(e =>
         /^fuel$/i.test(String(e.category || '').trim()) &&
         (!e.subcategory || /^diesel$|^mazout$/i.test(String(e.subcategory || '').trim())) &&
         Number(e.qty || 0) >= 500
-      );
+      ) : [];
       const bulkFuelL = bulkFuelRows.reduce((a, e) => a + Number(e.qty || 0), 0);
       const bulkFuelUsd = bulkFuelRows.reduce((a, e) => a + Number(e.amount || e.total || 0), 0);
-      const pendingExpCnt = expRowsTx.filter(e => (_ctx && typeof _ctx.isPendingPriceExpense === 'function') ? _ctx.isPendingPriceExpense(e) : false).length;
+      const pendingExpCnt = doLens.expenses ? expRowsTx.filter(e => (_ctx && typeof _ctx.isPendingPriceExpense === 'function') ? _ctx.isPendingPriceExpense(e) : false).length : 0;
       const attRows = scopedRows('attendance', txScope, { basis: 'tx' });
       const presentCnt = attRows.filter(a => /present|in|full|half|on[- ]site/i.test(String(a.status || a.punch_type || 'present'))).length;
-      const rawNote = unpricedRawCnt > 0 ? `; ${fmtInt(unpricedRawCnt)} own-pit/rate-pending at $0` : '';
-      const bulkNote = bulkFuelRows.length > 0
+      const rawNote = (doLens.expenses && unpricedRawCnt > 0) ? `; ${fmtInt(unpricedRawCnt)} own-pit/rate-pending at $0` : '';
+      const bulkNote = (doLens.expenses && bulkFuelRows.length > 0)
         ? `, incl. ${fmtInt(bulkFuelRows.length)} bulk diesel tank intake (${fmtInt(bulkFuelL, 0)} L · ${fmtMoney(bulkFuelUsd, 2)})`
         : '';
-      const pendNote = pendingExpCnt > 0 ? `; ${fmtInt(pendingExpCnt)} price-pending at $0.00` : '';
+      const pendNote = (doLens.expenses && pendingExpCnt > 0) ? `; ${fmtInt(pendingExpCnt)} price-pending at $0.00` : '';
+      const rawExpClause = doLens.expenses
+        ? `, against <b>${fmtInt(k.raw_loads)}</b> quarry loads (<b>${fmtMoney(k.raw_cost, 2)}</b>${rawNote}) and <b>${fmtInt(expRowsTx.length)}</b> expense vouchers (<b>${fmtMoney(k.expenses_total, 2)}</b>${bulkNote}${pendNote})`
+        : ' (raw purchases & operating expenses restricted for this seat)';
       return {
         q: cleanQ,
         lang,
         instantLocal: true,
         topic: 'daily ops',
         title: `Daily Operations · ${scope.fullScopeLabel}`,
-        answer: `On transaction-date basis for <b>${esc(scope.fullScopeLabel)}</b>: <b>${fmtInt(k.loads)}</b> sales loads generated <b>${fmtMoney(k.sales_ttc, 2)}</b> (${fmtInt(k.tons_sold, 0)} t), against <b>${fmtInt(k.raw_loads)}</b> quarry loads (<b>${fmtMoney(k.raw_cost, 2)}</b>${rawNote}) and <b>${fmtInt(expRowsTx.length)}</b> expense vouchers (<b>${fmtMoney(k.expenses_total, 2)}</b>${bulkNote}${pendNote}).`,
+        answer: `On transaction-date basis for <b>${esc(scope.fullScopeLabel)}</b>: <b>${fmtInt(k.loads)}</b> sales loads generated <b>${fmtMoney(k.sales_ttc, 2)}</b> (${fmtInt(k.tons_sold, 0)} t)${rawExpClause}.`,
         bullets: [
-          `Collections in: <b>${fmtMoney(k.receipts_collected, 2)}</b> · Supplier settlements paid: <b>${fmtMoney(k.settlements_paid, 2)}</b>`,
+          doLens.books
+            ? `Collections in: <b>${fmtMoney(k.receipts_collected, 2)}</b> · Supplier settlements paid: <b>${fmtMoney(k.settlements_paid, 2)}</b>`
+            : 'Collections & settlements: Restricted by seat permissions',
           `Diesel dispensed: <b>${fmtInt(k.diesel_litres, 1)} L</b> · Logged attendance records: <b>${fmtInt(presentCnt || attRows.length)}</b>`
         ],
         promptText: 'Would you like to open the Shareholder Daily Operations board or log a new transaction?',
@@ -1785,9 +1909,9 @@
           { type: 'form', form: 'sales', label: '+ New Entry' }
         ],
         followUps: [
-          `Compare entity sales & operating profit`,
-          'Show top expense categories',
-          'Check open AI Sentinel alerts'
+          ...(doLens.profit ? [`Compare entity sales & operating profit`] : ['Show top customer sales']),
+          ...(doLens.expenses ? ['Show top expense categories'] : []),
+          ...(doLens.sentinels ? ['Check open AI Sentinel alerts'] : [])
         ]
       };
     }
@@ -1796,6 +1920,8 @@
     if (/\b(sentinel|sentinels|watchdog|watchdogs|alert|alerts|anomal|exception|exceptions|flagged|threshold|thresholds|abnormal)\b/i.test(effLow) ||
         /(تنبيه|تنبيهات|رقاب|مخالف|شذوذ)/.test(cleanQ) ||
         /\b(alerte|alertes|anomalie|contrôle|controle)\b/i.test(effLow)) {
+      const snLens = getSeatLens(user);
+      if (!snLens.sentinels) return buildRestrictedReply(cleanQ, lang, 'AI Sentinels & Audit Controls');
       const items = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
       const openItems = items.filter(it => it && it.severity && it.severity !== 'ok');
       const openBuiltin = openItems.filter(it => !it.isCustom);
@@ -1955,6 +2081,7 @@
         rankedCusts = Array.from(byC.values()).sort((a, b) => b.sales - a.sales).slice(0, 5);
       }
       const leadC = rankedCusts[0];
+      const tcLens = getSeatLens(user);
       return {
         q: cleanQ,
         lang,
@@ -1962,20 +2089,20 @@
         topic: 'top customers',
         title: `Top Customers by Revenue · ${scope.fullScopeLabel}`,
         answer: leadC
-          ? `For <b>${esc(scope.fullScopeLabel)}</b>, the leading customer is <b>${esc(leadC.name)}</b> with <b>${fmtMoney(leadC.sales, 0)}</b> across <b>${fmtInt(leadC.loads)}</b> loads (open AR: <b>${fmtMoney(leadC.ar, 0)}</b>). Below are the top ${rankedCusts.length} accounts by ${salesLabel(user).toLowerCase()}.`
+          ? `For <b>${esc(scope.fullScopeLabel)}</b>, the leading customer is <b>${esc(leadC.name)}</b> with <b>${fmtMoney(leadC.sales, 0)}</b> across <b>${fmtInt(leadC.loads)}</b> loads${tcLens.books ? ` (open AR: <b>${fmtMoney(leadC.ar, 0)}</b>)` : ''}. Below are the top ${rankedCusts.length} accounts by ${salesLabel(user).toLowerCase()}.`
           : `No billed customer sales were recorded in <b>${esc(scope.fullScopeLabel)}</b>.`,
-        headers: rankedCusts.length ? ['Customer', 'Loads', 'Open AR', salesLabel(user)] : undefined,
-        rows: rankedCusts.map(c => [c.name, fmtInt(c.loads), fmtMoney(c.ar, 0), fmtMoney(c.sales, 0)]),
+        headers: rankedCusts.length ? (tcLens.books ? ['Customer', 'Loads', 'Open AR', salesLabel(user)] : ['Customer', 'Loads', salesLabel(user)]) : undefined,
+        rows: rankedCusts.map(c => tcLens.books ? [c.name, fmtInt(c.loads), fmtMoney(c.ar, 0), fmtMoney(c.sales, 0)] : [c.name, fmtInt(c.loads), fmtMoney(c.sales, 0)]),
         total: rankedCusts.length ? [`Top ${rankedCusts.length} Customers`, fmtMoney(rankedCusts.reduce((s, c) => s + Number(c.sales || 0), 0), 0)] : undefined,
         promptText: 'Would you like to open Customer Receivables or inspect top selling aggregate grades?',
         actions: [
-          { type: 'view', view: 'customers', label: 'Customer Accounts' },
+          ...(canView('customers', user) ? [{ type: 'view', view: 'customers', label: 'Customer Accounts' }] : []),
           { type: 'view', view: 'sales', label: 'Sales Register' }
         ],
         followUps: [
-          'Show top overdue AR customers',
+          ...(tcLens.books ? ['Show top overdue AR customers'] : []),
           'Show top selling products & grades',
-          `Compare entity sales & operating profit`
+          ...(tcLens.profit ? ['Compare entity sales & operating profit'] : [])
         ]
       };
     }
@@ -1984,14 +2111,15 @@
     if (/\b(ar|overdue|receivable|receivables|debtor|debtors|credit\s+hold|dso|collections?|customer\s+balance|customers\s+owe)\b/i.test(effLow) ||
         /(ذمم\s*مدينة|متأخرات|تحصيل|زبائن|عملاء)/.test(cleanQ) ||
         /\b(créance|creance|créances|creances|impayé|impayes|clients?\s+en\s+retard)\b/i.test(effLow)) {
-      if (!canHub('sales', user)) return buildRestrictedReply(cleanQ, lang, 'Sales & Receivables');
+      const arLens = getSeatLens(user);
+      if (!canHub('sales', user) || !arLens.books) return buildRestrictedReply(cleanQ, lang, 'Accounts Receivable & Aging');
       const k = evalExactKPI(scope.coKey, scope);
       const model = (_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
       const topC = (model.customers || [])
         .filter(c => Number(c.ar_balance || 0) > 0.5)
         .sort((a, b) => Number(b.ar_balance || 0) - Number(a.ar_balance || 0))
         .slice(0, 5);
-      const periodRcptNote = scope.customDateOverride
+      const periodRcptNote = (scope.customDateOverride && arLens.books)
         ? ` Collections received in <b>${esc(scope.periodLabel)}</b> totaled <b>${fmtMoney(k.receipts_collected, 2)}</b>.`
         : '';
       return {
@@ -2009,13 +2137,12 @@
         promptText: 'Would you like to open Customer Receivables, post a receipt, or print a Customer SOA?',
         actions: [
           { type: 'view', view: 'customers', label: 'Open Receivables' },
-          { type: 'form', form: 'receipt', label: '+ Post Receipt' },
+          ...((arLens.books || canEnter('receipt', user)) ? [{ type: 'form', form: 'receipt', label: '+ Post Receipt' }] : []),
           { type: 'view', view: 'statements', label: 'Customer SOA' }
         ],
         followUps: [
-          `Compare entity sales & operating profit`,
-          'Show Accounts Payable breakdown',
-          'Show live cash in till'
+          ...(arLens.profit ? ['Compare entity sales & operating profit'] : []),
+          ...(arLens.books ? ['Show Accounts Payable breakdown', 'Show live cash in till'] : [])
         ]
       };
     }
@@ -2025,8 +2152,20 @@
         /(ذمم\s*دائنة|موردين|مقالع|كسارات|نقليات)/.test(cleanQ) ||
         /\b(fournisseur|fournisseurs|dettes?\s+fournisseurs|carrière|carriere)\b/i.test(effLow)) {
       if (!canHub('raw', user) && !canHub('expenses', user)) return buildRestrictedReply(cleanQ, lang, 'Quarry & Payables');
+      const apLens = getSeatLens(user);
       const win = computeWindowSummary(scope);
       const k = win.k;
+      if (!apLens.expenses && !apLens.books) {
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: !isReasoningQuery(cleanQ),
+          topic: 'ap',
+          title: `Purchases, Quarry & Payables · ${scope.fullScopeLabel}`,
+          answer: `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads; purchase costs and Accounts Payable balances are restricted for this seat.`,
+          actions: canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : []
+        };
+      }
       const model = (_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
       const asksTopSuppliers = /\b(top|biggest|largest|highest|who\s+are)\s+\d*\s*(?:suppliers?|vendors?|quarries|haulers?)\b/i.test(effLow);
       if (asksTopSuppliers && Array.isArray(model.suppliers) && model.suppliers.length) {
@@ -2037,7 +2176,7 @@
             spend: Number(s.raw_cost || 0) + Number(s.expenses || 0),
             ap: Number(s.ap_balance || s.balance || 0)
           }))
-          .filter(s => s.spend > 0 || Math.abs(s.ap) > 1)
+          .filter(s => s.spend > 0 || (apLens.books && Math.abs(s.ap) > 1))
           .sort((a, b) => b.spend - a.spend)
           .slice(0, 5);
         const leadS = topVol[0];
@@ -2048,19 +2187,18 @@
           topic: 'ap',
           title: `Top Suppliers & Quarry Partners · ${scope.scopeCoLabel}`,
           answer: leadS
-            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, the largest supplier by cumulative volume is <b>${esc(leadS.name)}</b> with <b>${fmtMoney(leadS.spend, 0)}</b> (${fmtInt(leadS.loads)} quarry/haulage loads · open AP: <b>${fmtMoney(leadS.ap, 0)}</b>).`
+            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, the largest supplier by cumulative volume is <b>${esc(leadS.name)}</b> with <b>${fmtMoney(leadS.spend, 0)}</b> (${fmtInt(leadS.loads)} quarry/haulage loads${apLens.books ? ` · open AP: <b>${fmtMoney(leadS.ap, 0)}</b>` : ''}).`
             : `No supplier activity found for <b>${esc(scope.scopeCoLabel)}</b>.`,
-          headers: topVol.length ? ['Supplier', 'Quarry Loads', 'Total Volume', 'Open AP'] : undefined,
-          rows: topVol.map(s => [s.name, fmtInt(s.loads), fmtMoney(s.spend, 0), fmtMoney(s.ap, 0)]),
+          headers: topVol.length ? (apLens.books ? ['Supplier', 'Quarry Loads', 'Total Volume', 'Open AP'] : ['Supplier', 'Quarry Loads', 'Total Volume']) : undefined,
+          rows: topVol.map(s => apLens.books ? [s.name, fmtInt(s.loads), fmtMoney(s.spend, 0), fmtMoney(s.ap, 0)] : [s.name, fmtInt(s.loads), fmtMoney(s.spend, 0)]),
           promptText: 'Would you like to open Suppliers & Payables or Quarry & Haulage?',
           actions: [
-            { type: 'view', view: 'suppliers', label: 'Suppliers & Payables' },
-            { type: 'view', view: 'raw', label: 'Quarry & Haulage' }
+            ...(canView('suppliers', user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : []),
+            ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : [])
           ],
           followUps: [
-            'Show Accounts Payable breakdown',
-            'Show top expense categories',
-            'Show live cash in till'
+            ...(apLens.books ? ['Show Accounts Payable breakdown', 'Show live cash in till'] : []),
+            'Show top expense categories'
           ]
         };
       }
@@ -2073,15 +2211,17 @@
       const scopedRawRows = scopedRows('raw_purchases', scope);
       const bundledRawRows = scopedRawRows.filter(isBundledRawAsk);
       const bundledRawUsd = bundledRawRows.reduce((a, r) => a + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))), 0);
-      const topS = (model.suppliers || [])
-        .filter(s => Math.abs(Number(s.ap_balance || s.balance || 0)) > 1)
-        .sort((a, b) => Number(b.ap_balance || b.balance || 0) - Number(a.ap_balance || a.balance || 0))
-        .slice(0, 5);
+      const topS = apLens.books
+        ? (model.suppliers || [])
+            .filter(s => Math.abs(Number(s.ap_balance || s.balance || 0)) > 1)
+            .sort((a, b) => Number(b.ap_balance || b.balance || 0) - Number(a.ap_balance || a.balance || 0))
+            .slice(0, 5)
+        : [];
       const periodNetAp = Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0) - Number(k.ap_settled || k.settlements_paid || 0);
       const totLabel = scope.customDateOverride ? `Net Period AP Change (${scope.periodLabel})` : 'Net Open Accounts Payable';
       const totVal = scope.customDateOverride ? periodNetAp : Number(k.ap_balance || 0);
       const apBullets = [];
-      if (topS.length) {
+      if (apLens.books && topS.length) {
         apBullets.push(`Largest open supplier balances: ${topS.map(s => `<b>${esc(cleanOut(s.Supplier || s.name))}</b> (${fmtMoney(s.ap_balance || s.balance || 0, 0)})`).join(', ')}`);
       }
       if (bundledRawRows.length > 0) {
@@ -2093,26 +2233,28 @@
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'ap',
         title: `Purchases, Quarry & Payables · ${scope.fullScopeLabel}`,
-        answer: `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>), settlements paid totaled <b>${fmtMoney(k.settlements_paid, 0)}</b>, and cumulative open Accounts Payable stands at <b>${fmtMoney(k.ap_balance, 0)}</b>.`,
+        answer: apLens.books
+          ? `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>), settlements paid totaled <b>${fmtMoney(k.settlements_paid, 0)}</b>, and cumulative open Accounts Payable stands at <b>${fmtMoney(k.ap_balance, 0)}</b>.`
+          : `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>); settlements paid and Accounts Payable balances are restricted for this seat.`,
         headers: ['Payable Component', 'Scope', 'Amount (USD)'],
         rows: [
-          ['1. Quarry Material Leg', 'Owed to quarry / pit owners (incl. bundled Mat+Trans loads)', fmtMoney(k.ap_material, 0)],
-          ['2. Third-Party Haulage Leg', 'Owed to external truck owners', fmtMoney(k.ap_haulage, 0)],
-          ['3. Credit Expenses Leg', 'Unpaid supplier bills & parts', fmtMoney(k.ap_expense, 0)],
-          ['Less: AP Settlements Paid', 'Cash & bank payments posted', '-' + fmtMoney(k.ap_settled || k.settlements_paid, 0)]
+          ['1. Quarry Material Leg', 'Owed to quarry / pit owners (incl. bundled Mat+Trans loads)', apLens.books ? fmtMoney(k.ap_material, 0) : 'Restricted'],
+          ['2. Third-Party Haulage Leg', 'Owed to external truck owners', apLens.books ? fmtMoney(k.ap_haulage, 0) : 'Restricted'],
+          ['3. Credit Expenses Leg', 'Unpaid supplier bills & parts', apLens.books ? fmtMoney(k.ap_expense, 0) : 'Restricted'],
+          ['Less: AP Settlements Paid', 'Cash & bank payments posted', apLens.books ? ('-' + fmtMoney(k.ap_settled || k.settlements_paid, 0)) : 'Restricted']
         ],
-        total: [totLabel, fmtMoney(totVal, 0)],
+        total: [totLabel, apLens.books ? fmtMoney(totVal, 0) : 'Restricted'],
         bullets: apBullets,
         promptText: 'Would you like to open Suppliers & Payables, Quarry & Haulage, or post a supplier settlement?',
         actions: [
-          { type: 'view', view: 'suppliers', label: 'Suppliers & Payables' },
-          { type: 'view', view: 'raw', label: 'Quarry & Haulage' },
-          { type: 'form', form: 'settlement', label: '+ Settle AP' }
+          ...(canView('suppliers', user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : []),
+          ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : []),
+          ...(apLens.books ? [{ type: 'form', form: 'settlement', label: '+ Settle AP' }] : [])
         ],
         followUps: [
           'Show top expense categories',
-          'Show overdue receivables',
-          'Show live cash in till'
+          ...(canHub('sales', user) && apLens.books ? ['Show overdue receivables'] : []),
+          ...(apLens.books ? ['Show live cash in till'] : [])
         ]
       };
     }
@@ -2122,10 +2264,11 @@
         /(صيانة|أعطال|اعطال|تصليح|غيار زيت|شحم)/.test(cleanQ) ||
         /\b(panne|pannes|réparation|reparation|entretien|huile)\b/i.test(effLow)) {
       if (!canHub('fleet', user)) return buildRestrictedReply(cleanQ, lang, 'Fleet & Maintenance');
+      const repLens = getSeatLens(user);
       const openDefs = scopedRows('equipment_defects', scope, { ignorePeriod: true }).filter(d => !/resolved|closed/i.test(d.status || ''));
       const graveCnt = openDefs.filter(d => /critical|grave/i.test(d.severity || '')).length;
       const repRows = scopedRows('equipment_repairs', scope);
-      const repCost = repRows.reduce((a, r) => a + Number(r.total_cost != null ? r.total_cost : r.cost || r.amount || 0), 0);
+      const repCost = repLens.expenses ? repRows.reduce((a, r) => a + Number(r.total_cost != null ? r.total_cost : r.cost || r.amount || 0), 0) : 0;
       const oilRows = scopedRows('equipment_oil_logs', scope);
       const partRows = scopedRows('part_movements', scope, { ignorePeriod: true });
       return {
@@ -2134,7 +2277,7 @@
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'maintenance',
         title: `Fleet Maintenance, Repairs & Oil Logs · ${scope.fullScopeLabel}`,
-        answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, there ${openDefs.length === 1 ? 'is' : 'are'} <b>${fmtInt(openDefs.length)}</b> open equipment ${openDefs.length === 1 ? 'warning' : 'warnings'} (<b>${fmtInt(graveCnt)}</b> critical/grave), <b>${fmtInt(repRows.length)}</b> logged repairs (${fmtMoney(repCost, 2)}), <b>${fmtInt(oilRows.length)}</b> preventive oil logs, and <b>${fmtInt(partRows.length)}</b> tracked component custody entries.`,
+        answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, there ${openDefs.length === 1 ? 'is' : 'are'} <b>${fmtInt(openDefs.length)}</b> open equipment ${openDefs.length === 1 ? 'warning' : 'warnings'} (<b>${fmtInt(graveCnt)}</b> critical/grave), <b>${fmtInt(repRows.length)}</b> logged repairs${repLens.expenses ? ` (${fmtMoney(repCost, 2)})` : ''}, <b>${fmtInt(oilRows.length)}</b> preventive oil logs, and <b>${fmtInt(partRows.length)}</b> tracked component custody entries.`,
         promptText: 'Would you like to open Repairs, Warnings & Oil Logs or report a new unit warning?',
         actions: [
           { type: 'view', view: 'fleet_maint', label: 'Repairs & Oil Logs' },
@@ -2254,7 +2397,9 @@
         answer: `Trial Balance variance for <b>${esc(scope.fullScopeLabel)}</b> is <b>${fmtMoney(tb, 2)}</b> (${tied ? '<b>100% TIED</b> across Classes 1 to 7' : '<b>VARIANCE DETECTED</b> - inspect General Ledger'}). Automated GL engine maps <b>45</b> accounts automatically across receivables, payables, cash tills, inventory, payroll, expenses, and revenue.`,
         bullets: canTax(user)
           ? [`Output VAT (11%): <b>${fmtMoney(k.sales_vat, 2)}</b> · Input VAT Receivable: <b>${fmtMoney(k.vat_receivable, 2)}</b> · GL Accounts Registered: <b>${fmtInt(glAccounts.length || 45)}</b>`]
-          : [`Cash Till: <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b> · Open AR: <b>${fmtMoney(k.ar_balance, 2)}</b> · Open AP: <b>${fmtMoney(k.ap_balance, 2)}</b>`],
+          : [!getSeatLens(user).books
+              ? 'Cash Till: <b>Restricted</b> · Open AR: <b>Restricted</b> · Open AP: <b>Restricted</b>'
+              : `Cash Till: <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b> · Open AR: <b>${fmtMoney(k.ar_balance, 2)}</b> · Open AP: <b>${fmtMoney(k.ap_balance, 2)}</b>`],
         promptText: 'Would you like to open the General Ledger, COA Classes 1-7, or Automated GL Rules?',
         actions: [
           { type: 'view', view: 'ledger', label: 'General Ledger' },
@@ -2330,6 +2475,7 @@
         /(رواتب|راتب|معاشات|دوام|حضور|إضافي|اضافي|موظفين|عمال|سائقين)/.test(cleanQ) ||
         /\b(paie|salaire|salaires|pointage|présence|heures\s+sup|employés|employes|chauffeurs?)\b/i.test(effLow)) {
       if (!canHub('payroll', user)) return buildRestrictedReply(cleanQ, lang, 'Payroll & Workforce');
+      const payLens = getSeatLens(user);
       const win = computeWindowSummary(scope);
       const k = win.k;
       const empRows = scopedRows('employments', scope, { ignorePeriod: true });
@@ -2342,20 +2488,22 @@
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'payroll',
         title: `Payroll, Attendance & Overtime · ${scope.fullScopeLabel}`,
-        answer: `In <b>${esc(scope.fullScopeLabel)}</b>, salaries paid totaled <b>${fmtMoney(k.salaries_paid, 0)}</b> with driver/shift overtime of <b>${fmtMoney(k.overtime_bonus, 0)}</b> across <b>${fmtInt(empRows.length)}</b> staff contracts${pendingSal > 0 ? ` (<b>${fmtInt(pendingSal)}</b> onboarding with Salary Pending $0.00)` : ''}.`,
+        answer: payLens.payrollDollars
+          ? `In <b>${esc(scope.fullScopeLabel)}</b>, salaries paid totaled <b>${fmtMoney(k.salaries_paid, 0)}</b> with driver/shift overtime of <b>${fmtMoney(k.overtime_bonus, 0)}</b> across <b>${fmtInt(empRows.length)}</b> staff contracts${pendingSal > 0 ? ` (<b>${fmtInt(pendingSal)}</b> onboarding with Salary Pending $0.00)` : ''}.`
+          : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${fmtInt(empRows.length)}</b> staff contracts and <b>${fmtInt(attRows.length)}</b> attendance entries are active in this period (salary dollar amounts are restricted for this seat).`,
         bullets: [
           `Attendance logs in period: <b>${fmtInt(attRows.length)}</b> · Site transport allowance entries: <b>${fmtInt(allowRows.length)}</b>`
         ],
         promptText: 'Would you like to open Payroll, Daily Workforce Map, Attendance, or Site Transport?',
         actions: [
-          { type: 'view', view: 'payroll', label: 'Open Payroll' },
+          ...(canView('payroll', user) ? [{ type: 'view', view: 'payroll', label: 'Open Payroll' }] : []),
           ...(canView('workforce_map', user) ? [{ type: 'view', view: 'workforce_map', label: 'Workforce Map' }] : []),
           ...(canView('payroll_attendance', user) ? [{ type: 'view', view: 'payroll_attendance', label: 'Attendance' }] : [])
         ],
         followUps: [
           'Show today\'s daily operations',
           'Check open AI Sentinel alerts',
-          `Compare entity sales & operating profit`
+          payLens.profit ? 'Compare entity sales & operating profit' : 'Compare entity sales & loads'
         ]
       };
     }
@@ -2365,25 +2513,32 @@
         /(تسعير|أسعار|اتفاقيات الأسعار|عمولات)/.test(cleanQ) ||
         /\b(tarif|tarifs|accord\s+de\s+prix|commission)\b/i.test(effLow)) {
       if (!canHub('sales', user)) return buildRestrictedReply(cleanQ, lang, 'Commercial Pricing');
+      const prLens = getSeatLens(user);
       const k = evalExactKPI(scope.coKey, scope);
-      const sn = (_ctx.sentinelSlice ? _ctx.sentinelSlice() : {}) || {};
+      const sn = prLens.sentinels ? ((_ctx.sentinelSlice ? _ctx.sentinelSlice() : {}) || {}) : {};
       const pr = sn.pricing || {};
+      const auditPart = prLens.sentinels
+        ? ` Below-agreed variance is <b>${fmtMoney(pr.sales_below_agreed_usd || 0, 0)}</b> across <b>${fmtInt(pr.below_agreed_pairs_count || 0)}</b> customer-product pairs`
+        : ' Below-agreed audit alerts are restricted for this seat';
+      const commPart = prLens.profit
+        ? `, and sales commissions accrued stand at <b>${fmtMoney(k.commission_due || 0, 0)}</b>.`
+        : ', and sales commissions accrued are restricted for this seat.';
       return {
         q: cleanQ,
         lang,
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'pricing',
         title: `Commercial Pricing & Commissions · ${scope.fullScopeLabel}`,
-        answer: `There are <b>${fmtInt(pr.active_agreements || k.active_agreements || 0)}</b> active customer price agreements. Below-agreed variance is <b>${fmtMoney(pr.sales_below_agreed_usd || 0, 0)}</b> across <b>${fmtInt(pr.below_agreed_pairs_count || 0)}</b> customer-product pairs, and sales commissions accrued stand at <b>${fmtMoney(k.commission_due || 0, 0)}</b>.`,
+        answer: `There are <b>${fmtInt(pr.active_agreements || k.active_agreements || 0)}</b> active customer price agreements.${auditPart}${commPart}`,
         promptText: 'Would you like to inspect Commercial Pricing or Quarry & Haulage Rates?',
         actions: [
           { type: 'view', view: 'pricing', label: 'Commercial Pricing' },
           ...(canView('raw_pricing', user) ? [{ type: 'view', view: 'raw_pricing', label: 'Quarry & Haulage Rates' }] : [])
         ],
         followUps: [
-          `Compare entity sales & operating profit`,
-          'Show overdue receivables',
-          'Check open AI Sentinel alerts'
+          ...(prLens.profit ? [`Compare entity sales & operating profit`] : ['Show top customer sales']),
+          ...(prLens.books ? ['Show overdue receivables'] : []),
+          ...(prLens.sentinels ? ['Check open AI Sentinel alerts'] : [])
         ]
       };
     }
@@ -2475,6 +2630,10 @@
 
     // 16A. Bdeir Truck Fleet Revenue & Cost Analysis (TB1 · 360676, Tb7 · 364656, Tb9 · 364168)
     if (/\b(truck\s+fleet\s+revenue|bdeir\s+fleet|fleet\s+revenue\s+(?:and|&)\s+cost|tb1|tb7|tb9|360676|364656|364168|zero[- ]haulage)\b/i.test(effLow)) {
+      const fltLens = getSeatLens(user);
+      if (!fltLens.profit || !canHub('fleet', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Fleet & Running Costs');
+      }
       return {
         q: cleanQ,
         lang,
@@ -2505,6 +2664,9 @@
     // 16B. Monthly Trajectory & Peak / Best / Worst Month ("peak month", "which month was highest", "monthly trend")
     if (/\b(peak\s+month|best\s+month|highest\s+month|strongest\s+month|worst\s+month|lowest\s+month|which\s+month|monthly\s+(?:trend|trajectory|breakdown|sales|performance))\b/i.test(effLow) ||
         /(أعلى شهر|أفضل شهر|الأداء الشهري)/.test(cleanQ)) {
+      if (!canHub('sales', user) && !canView('overview', user) && !canView('pbi', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Sales & Dashboards');
+      }
       const model = (_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
       let months = Array.isArray(model.monthly) ? model.monthly.slice() : [];
       if (scope.customDateOverride && scope.dateRange && months.length) {
@@ -2524,20 +2686,20 @@
           ? ` (Transaction-Date basis; <b>${fmtMoney(peakM.sales_rep, 0)}</b> on Reporting-Date basis)`
           : '';
         const recentSix = months.slice(-6);
+        const moLens = getSeatLens(user);
         return {
           q: cleanQ,
           lang,
           instantLocal: !isReasoningQuery(cleanQ),
           topic: 'monthly',
           title: `Monthly Trajectory & Peak Month · ${scope.scopeCoLabel}`,
-          answer: `Across the ${months.length}-month window for <b>${esc(scope.scopeCoLabel)}</b>, the peak month was <b>${esc(peakLbl)}</b> at <b>${fmtMoney(peakM.sales_ttc, 0)}</b> (${fmtInt(peakM.loads || 0)} loads · operating profit <b>${fmtMoney(peakM.operating_profit, 0)}</b>)${repDiffNote}, compared with a monthly run-rate of <b>${fmtMoney(avgSales, 0)}/mo</b>${lowM && lowM !== peakM ? ` and a low active month of <b>${esc(cleanOut(lowM['Year Month'] || ''))}</b> (${fmtMoney(lowM.sales_ttc, 0)})` : ''}.`,
-          headers: ['Month', 'Loads', salesLabel(user), 'Operating Profit'],
-          rows: recentSix.map(m => [
-            cleanOut(m['Year Month'] || m.Month || '-'),
-            fmtInt(m.loads || 0),
-            fmtMoney(m.sales_ttc || 0, 0),
-            fmtMoney(m.operating_profit || 0, 0)
-          ]),
+          answer: moLens.profit
+            ? `Across the ${months.length}-month window for <b>${esc(scope.scopeCoLabel)}</b>, the peak month was <b>${esc(peakLbl)}</b> at <b>${fmtMoney(peakM.sales_ttc, 0)}</b> (${fmtInt(peakM.loads || 0)} loads · operating profit <b>${fmtMoney(peakM.operating_profit, 0)}</b>)${repDiffNote}, compared with a monthly run-rate of <b>${fmtMoney(avgSales, 0)}/mo</b>${lowM && lowM !== peakM ? ` and a low active month of <b>${esc(cleanOut(lowM['Year Month'] || ''))}</b> (${fmtMoney(lowM.sales_ttc, 0)})` : ''}.`
+            : `Across the ${months.length}-month window for <b>${esc(scope.scopeCoLabel)}</b>, the peak month was <b>${esc(peakLbl)}</b> at <b>${fmtMoney(peakM.sales_ttc, 0)}</b> (${fmtInt(peakM.loads || 0)} loads)${repDiffNote}, compared with a monthly run-rate of <b>${fmtMoney(avgSales, 0)}/mo</b>${lowM && lowM !== peakM ? ` and a low active month of <b>${esc(cleanOut(lowM['Year Month'] || ''))}</b> (${fmtMoney(lowM.sales_ttc, 0)})` : ''}.`,
+          headers: moLens.profit ? ['Month', 'Loads', salesLabel(user), 'Operating Profit'] : ['Month', 'Loads', salesLabel(user)],
+          rows: recentSix.map(m => moLens.profit
+            ? [cleanOut(m['Year Month'] || m.Month || '-'), fmtInt(m.loads || 0), fmtMoney(m.sales_ttc || 0, 0), fmtMoney(m.operating_profit || 0, 0)]
+            : [cleanOut(m['Year Month'] || m.Month || '-'), fmtInt(m.loads || 0), fmtMoney(m.sales_ttc || 0, 0)]),
           promptText: 'Would you like to drill into that peak month or open Executive Dashboards?',
           actions: [
             ...(canView('overview', user) ? [{ type: 'view', view: 'overview', label: 'Executive Overview' }] : []),
@@ -2545,8 +2707,8 @@
           ],
           followUps: [
             `Show ${scope.scopeCoLabel} sales in ${peakLbl}`,
-            `Compare entity sales & operating profit`,
-            'Show top 5 customers by revenue'
+            ...(moLens.profit ? ['Compare entity sales & operating profit'] : []),
+            ...(canHub('sales', user) ? ['Show top 5 customers by revenue'] : [])
           ]
         };
       }
@@ -2556,6 +2718,10 @@
     if (/\b(margin|gm|p&l|pnl|profit|compare|comparison|entities|revenue|sales|loads|tons|volume|wtc|bbconstruction|bbc|lions|lionstransport)\b/i.test(effLow) ||
         /(مبيعات|أرباح|ارباح|إيرادات|ايرادات|هامش|مقارنة)/.test(cleanQ) ||
         /\b(ventes?|chiffre\s+d'affaires|marge|bénéfice|benefice|profit|comparer)\b/i.test(effLow)) {
+      if (!canHub('sales', user) && !canView('sales', user) && !canView('overview', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Sales & Operating Margin', user);
+      }
+      const sLens = getSeatLens(user);
       const win = computeWindowSummary(scope);
       const k = win.k;
       const entityRows = [];
@@ -2564,18 +2730,24 @@
           const cw = computeWindowSummary(scope, coName);
           const ck = cw.k;
           if (Number(ck.loads || 0) > 0 || Number(ck.expenses_total || 0) > 0 || Number(ck.raw_loads || 0) > 0 || scope.coNames.length <= 5) {
-            entityRows.push([
-              coName,
-              fmtInt(ck.loads || 0),
-              fmtMoney(canTax(user) ? ck.sales_ttc : (ck.sales_ttc || ck.net_sales), 0),
-              `${fmtMoney(ck.gross_margin, 0)} (${fmtPctVal(ck.gross_margin, ck.net_sales || ck.sales_ttc)})`,
-              fmtMoney(ck.operating_profit, 0)
-            ]);
+            entityRows.push(sLens.profit
+              ? [
+                  coName,
+                  fmtInt(ck.loads || 0),
+                  fmtMoney(canTax(user) ? ck.sales_ttc : (ck.sales_ttc || ck.net_sales), 0),
+                  `${fmtMoney(ck.gross_margin, 0)} (${fmtPctVal(ck.gross_margin, ck.net_sales || ck.sales_ttc)})`,
+                  fmtMoney(ck.operating_profit, 0)
+                ]
+              : [
+                  coName,
+                  fmtInt(ck.loads || 0),
+                  fmtMoney(canTax(user) ? ck.sales_ttc : (ck.sales_ttc || ck.net_sales), 0)
+                ]);
           }
         });
       }
       const hasMfgPair = scope.coNames.includes('WTC') && scope.coNames.includes('BBConstruction');
-      const marginBullets = hasMfgPair && entityRows.length > 1
+      const marginBullets = (sLens.profit && hasMfgPair && entityRows.length > 1)
         ? ['Margin Driver: BBConstruction achieves higher gross margin % from own/JV pit material, while WTC scales stronger operating profit by absorbing overhead and payroll over larger dispatch volume.']
         : undefined;
       const txParityNote = (scope.customDateOverride && scope.basis === 'rep' && win.kTx && Math.abs(Number(win.kTx.sales_ttc || 0) - Number(k.sales_ttc || 0)) > 100)
@@ -2586,12 +2758,14 @@
         lang,
         instantLocal: !isReasoningQuery(cleanQ),
         topic: scope.wantsAllEntities ? 'compare entities' : 'sales',
-        title: `${salesLabel(user)}, Margin & Operating Profit · ${scope.fullScopeLabel}`,
-        answer: `For <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} reached <b>${fmtMoney(k.sales_ttc, 2)}</b> across <b>${fmtInt(k.loads)}</b> loads (<b>${fmtInt(k.tons_sold, 0)} t</b>)${txParityNote}, delivering gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b> (<b>${fmtPctVal(k.gross_margin, k.net_sales || k.sales_ttc)}</b>) and operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>.`,
+        title: sLens.profit ? `${salesLabel(user)}, Margin & Operating Profit · ${scope.fullScopeLabel}` : `${salesLabel(user)} & Entity Volume · ${scope.fullScopeLabel}`,
+        answer: sLens.profit
+          ? `For <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} reached <b>${fmtMoney(k.sales_ttc, 2)}</b> across <b>${fmtInt(k.loads)}</b> loads (<b>${fmtInt(k.tons_sold, 0)} t</b>)${txParityNote}, delivering gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b> (<b>${fmtPctVal(k.gross_margin, k.net_sales || k.sales_ttc)}</b>) and operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>.`
+          : `For <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} reached <b>${fmtMoney(k.sales_ttc, 2)}</b> across <b>${fmtInt(k.loads)}</b> loads (<b>${fmtInt(k.tons_sold, 0)} t</b>)${txParityNote}. Margin and profit metrics are restricted for this seat.`,
         bullets: marginBullets,
-        headers: entityRows.length > 1 ? ['Entity', 'Loads', salesLabel(user), 'Gross Margin', 'Operating Profit'] : undefined,
+        headers: entityRows.length > 1 ? (sLens.profit ? ['Entity', 'Loads', salesLabel(user), 'Gross Margin', 'Operating Profit'] : ['Entity', 'Loads', salesLabel(user)]) : undefined,
         rows: entityRows.length > 1 ? entityRows : undefined,
-        total: entityRows.length > 1 ? [`Combined (${entityRows.length} Entities)`, fmtMoney(k.operating_profit, 0)] : undefined,
+        total: entityRows.length > 1 ? [`Combined (${entityRows.length} Entities)`, fmtMoney(sLens.profit ? k.operating_profit : k.sales_ttc, 0)] : undefined,
         promptText: 'Would you like to open Sales & Receivables, Multi-Entity Comparison, or Executive Dashboards?',
         actions: [
           ...(canView('sales', user) ? [{ type: 'view', view: 'sales', label: 'Sales & Receivables' }] : []),
@@ -2599,10 +2773,10 @@
           ...(canView('pbi', user) ? [{ type: 'view', view: 'pbi', label: 'Dashboards' }] : [])
         ],
         followUps: [
-          'Show top expense categories',
-          'Show overdue receivables',
-          'Show Accounts Payable breakdown'
-        ]
+          sLens.expenses ? 'Show top expense categories' : null,
+          sLens.books ? 'Show overdue receivables' : null,
+          sLens.books ? 'Show Accounts Payable breakdown' : null
+        ].filter(Boolean)
       };
     }
 
@@ -2643,12 +2817,28 @@
 
   function buildExecutiveBriefing(cleanQ, lang, scope, markInstant = false) {
     const user = scope.user;
+    const lens = getSeatLens(user);
     const win = computeWindowSummary(scope);
     const k = win.k;
-    const items = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    const items = (lens.sentinels && _ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
     const openAlerts = items.filter(it => it && it.severity && it.severity !== 'ok');
-    const pendingExp = scopedRows('expenses', scope, { ignorePeriod: true }).filter(e => e.price_pending).length;
-    const pendingRaw = scopedRows('raw_purchases', scope, { ignorePeriod: true }).filter(r => r.price_pending).length;
+    const pendingExp = lens.expenses ? scopedRows('expenses', scope, { ignorePeriod: true }).filter(e => e.price_pending).length : 0;
+    const pendingRaw = canView('raw', user) ? scopedRows('raw_purchases', scope, { ignorePeriod: true }).filter(r => r.price_pending).length : 0;
+    const totPending = pendingExp + pendingRaw;
+
+    const canSales = canHub('sales', user) || canView('customers', user);
+    const canSeeSalesAmt = canSales || canView('overview', user) || canView('daily_ops', user);
+    const wcParts = [];
+    if (canSales && lens.books) {
+      wcParts.push(`Open AR <b>${fmtMoney(k.ar_balance, 0)}</b> (<b>${fmtMoney(k.ar_60_plus, 0)}</b> past 60d)`);
+    }
+    if (lens.books) {
+      wcParts.push(`Net Open AP <b>${fmtMoney(k.ap_balance, 0)}</b>`);
+      wcParts.push(`Cash Till <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b>`);
+    }
+    const wcLine = wcParts.length
+      ? `Working Capital: ${wcParts.join(' · ')}`
+      : 'Working Capital: Receivables, payables, and cash balances are restricted for this seat';
 
     return {
       q: cleanQ,
@@ -2656,21 +2846,29 @@
       instantLocal: markInstant,
       topic: 'briefing',
       title: `Executive Briefing · ${scope.fullScopeLabel}`,
-      answer: `Across <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} stand at <b>${fmtMoney(k.sales_ttc, 0)}</b> (${fmtInt(k.loads)} loads), gross margin is <b>${fmtMoney(k.gross_margin, 0)}</b>, and operating profit is <b>${fmtMoney(k.operating_profit, 0)}</b>.`,
+      answer: lens.profit
+        ? `Across <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} stand at <b>${fmtMoney(k.sales_ttc, 0)}</b> (${fmtInt(k.loads)} loads), gross margin is <b>${fmtMoney(k.gross_margin, 0)}</b>, and operating profit is <b>${fmtMoney(k.operating_profit, 0)}</b>.`
+        : (canSeeSalesAmt
+            ? `Across <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} stand at <b>${fmtMoney(k.sales_ttc, 0)}</b> (${fmtInt(k.loads)} loads).`
+            : `Across <b>${esc(scope.fullScopeLabel)}</b>, operational workspace is active (${fmtInt(k.loads)} logged operations); commercial totals are restricted for this seat.`),
       bullets: [
-        `Working Capital: Open AR <b>${fmtMoney(k.ar_balance, 0)}</b> (<b>${fmtMoney(k.ar_60_plus, 0)}</b> past 60d) · Net Open AP <b>${fmtMoney(k.ap_balance, 0)}</b>${canHub('cashflow', user) ? ` · Cash Till <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b>` : ''}`,
-        `Governance Queue: <b>${fmtInt(openAlerts.length)}</b> unreviewed Sentinel ${openAlerts.length === 1 ? 'alert' : 'alerts'} · <b>${fmtInt(pendingExp + pendingRaw)}</b> price-pending ($0.00) operational ${pendingExp + pendingRaw === 1 ? 'voucher' : 'vouchers'}`
+        wcLine,
+        lens.sentinels
+          ? `Governance Queue: <b>${fmtInt(openAlerts.length)}</b> unreviewed Sentinel ${openAlerts.length === 1 ? 'alert' : 'alerts'} · <b>${fmtInt(totPending)}</b> price-pending ($0.00) operational ${totPending === 1 ? 'voucher' : 'vouchers'}`
+          : (lens.expenses || canView('raw', user))
+            ? `Operations Queue: <b>${fmtInt(totPending)}</b> price-pending operational ${totPending === 1 ? 'voucher' : 'vouchers'}`
+            : 'Operational Status: Dispatches and workspace operations active on this scope'
       ],
       promptText: 'Which area would you like to drill into next?',
       actions: [
         ...(canView('overview', user) ? [{ type: 'view', view: 'overview', label: 'Executive Overview' }] : []),
         ...(canView('daily_ops', user) ? [{ type: 'view', view: 'daily_ops', label: 'Daily Operations' }] : []),
-        ...(canView('sentinels', user) && openAlerts.length ? [{ type: 'view', view: 'sentinels', label: `${openAlerts.length} Sentinel Alerts` }] : [])
+        ...(lens.sentinels && openAlerts.length ? [{ type: 'view', view: 'sentinels', label: `${openAlerts.length} Sentinel Alerts` }] : [])
       ],
       followUps: [
-        'Check open AI Sentinel alerts',
-        `Compare entity sales & operating profit`,
-        'Show overdue receivables'
+        ...(lens.sentinels ? ['Check open AI Sentinel alerts'] : []),
+        ...(lens.profit ? ['Compare entity sales & operating profit'] : []),
+        ...(canSales && lens.books ? ['Show overdue receivables'] : [])
       ]
     };
   }
@@ -3431,6 +3629,7 @@
   function buildScreenWalkthroughReply(cleanQ, lang, scope, primaryAtt, targetViewId, snap, ocrText) {
     const user = scope.user;
     const k = evalExactKPI(scope.coKey, scope);
+    const wLens = getSeatLens(user);
     const salesLoads = Number(k.sales_loads || k.loads || 0);
     const salesTons = Number(k.sales_tons || k.tons_sold || 0);
     const salesM3 = Number(k.sales_m3 || k.m3_sold || 0);
@@ -3440,7 +3639,7 @@
     const tillVal = Number(k.cash_till != null ? k.cash_till : (k.net_cash_flow || 0));
     // An industry whose cash book is not whole in ISABI has no till yet: never explain a $0 till.
     const tillOff = k.till_tracked === false;
-    const tillShown = tillOff ? 'Not Tracked Yet' : fmtMoney(tillVal, 2);
+    const tillShown = !wLens.books ? 'Restricted' : (tillOff ? 'Not Tracked Yet' : fmtMoney(tillVal, 2));
     const viewId = String(targetViewId || (snap && snap.viewId) || ((_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview'));
     const useSnap = (snap && snap.viewId === viewId) ? snap : null;
     const screenTitle = VIEW_TITLE_MAP[viewId] || (useSnap && useSnap.pageTitle ? useSnap.pageTitle : 'ISABI Command Center');
@@ -3450,36 +3649,53 @@
     let rows = [];
 
     // Answer any specific metric or UI glossary question right in the first bullet
-    if (tillOff && /cash\s*till|net\s*flow/i.test(cleanQ)) {
+    if (wLens.books && tillOff && /cash\s*till|net\s*flow/i.test(cleanQ)) {
       bullets.push(`<b>Cash Till</b>: not tracked yet. This business's cash book is not complete in ISABI${(k.till_missing || []).length ? ` (still missing: ${esc(k.till_missing.join(', '))})` : ''}, so no till balance is shown; the Cash Flow page lists the cash entries loaded so far.`);
-    } else if (!tillOff && /cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
-      bullets.push(`<b>Why Cash Till is ${fmtMoney(tillVal, 2)}</b>: Direct cash outflows (<b>${fmtMoney(k.cash_expense, 0)}</b> cash expenses + <b>${fmtMoney(k.settlements_paid, 0)}</b> supplier settlements = <b>${fmtMoney(cashOut, 0)}</b>) exceeded direct physical cash inflows (<b>${fmtMoney(k.cash_sales, 0)}</b> cash sales + <b>${fmtMoney(k.receipts_collected, 0)}</b> customer receipts = <b>${fmtMoney(cashIn, 0)}</b>). Because most revenue (<b>${fmtMoney(k.credit_sales, 0)}</b>) is billed on credit rather than paid into the physical till at dispatch, the cash drawer net flow is negative even while operating profit is <b>+${fmtMoney(k.operating_profit, 0)}</b>.`);
+    } else if (wLens.books && !tillOff && /cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
+      const profClause = wLens.profit ? ` even while operating profit is <b>+${fmtMoney(k.operating_profit, 0)}</b>` : '';
+      bullets.push(`<b>Why Cash Till is ${fmtMoney(tillVal, 2)}</b>: Direct cash outflows (<b>${fmtMoney(k.cash_expense, 0)}</b> cash expenses + <b>${fmtMoney(k.settlements_paid, 0)}</b> supplier settlements = <b>${fmtMoney(cashOut, 0)}</b>) exceeded direct physical cash inflows (<b>${fmtMoney(k.cash_sales, 0)}</b> cash sales + <b>${fmtMoney(k.receipts_collected, 0)}</b> customer receipts = <b>${fmtMoney(cashIn, 0)}</b>). Because most revenue (<b>${fmtMoney(k.credit_sales, 0)}</b>) is billed on credit rather than paid into the physical till at dispatch, the cash drawer net flow is negative${profClause}.`);
+    } else if (!wLens.books && /cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
+      bullets.push('<b>Cash Till</b>: Cash till and bank balances are restricted for this seat.');
     }
     if (/app[- ]?entered|not\s+yet\s+in\s+the\s+book/i.test(cleanQ)) {
-      bullets.push(`<b>What "App-entered this period (not yet in the book totals)" means</b>: This strip tracks live vouchers created directly inside the Command Center or field kiosks (such as <b>14 sales tickets · $7,532</b>, <b>23 raw receipts · $1,250</b>, <b>8 expenses · $4,469</b>, and <b>2 supplier settlements · $6,000</b>) that are staged separately from reconciled historical book totals until period close.`);
+      bullets.push(wLens.books && wLens.expenses
+        ? `<b>What "App-entered this period (not yet in the book totals)" means</b>: This strip tracks live vouchers created directly inside the Command Center or field kiosks (such as <b>14 sales tickets · $7,532</b>, <b>23 raw receipts · $1,250</b>, <b>8 expenses · $4,469</b>, and <b>2 supplier settlements · $6,000</b>) that are staged separately from reconciled historical book totals until period close.`
+        : `<b>What "App-entered this period (not yet in the book totals)" means</b>: This strip tracks live operational vouchers created directly inside the Command Center or field kiosks since the last period close.`);
     }
     if (/mof\s*tax/i.test(cleanQ)) {
       bullets.push(`<b>What "MOF Tax #" means</b>: The counterparty's official Lebanese Ministry of Finance tax registration number used on statutory 11% VAT invoices and quarterly VAT declarations.`);
     }
     if (/credit\s*days/i.test(cleanQ)) {
-      bullets.push(`<b>What "Credit Days" means</b>: The approved payment term window (e.g., <b>30 days</b>) granted to a credit customer before unpaid FIFO invoices are flagged as overdue by AI Sentinel #04.`);
+      bullets.push(`<b>What "Credit Days" means</b>: The approved payment term window (e.g., <b>30 days</b>) granted to a credit customer before unpaid FIFO invoices are flagged as overdue${wLens.sentinels ? ' by AI Sentinel #04' : ''}.`);
     }
 
     if (viewId === 'overview') {
       const marginPct = k.sales_ttc > 0 ? ((k.gross_margin / k.sales_ttc) * 100).toFixed(1) : '0.0';
       const opPct = k.sales_ttc > 0 ? ((k.operating_profit / k.sales_ttc) * 100).toFixed(1) : '0.0';
 
-      bullets.push(`<b>Row 1 · 4 Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with monthly run-rate and Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) composition bar; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> with Raw Material, OpEx, and Profit share; <b>Cash Position & Velocity (${tillShown})</b> with AR collection rate and Cash In (<b>${fmtMoney(cashIn, 0)}</b>) vs Out (<b>${fmtMoney(cashOut, 0)}</b>); and <b>Working Capital (${fmtMoney(k.ar_balance, 0)} Open AR vs ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
-      bullets.push(`<b>Row 2 Left · Performance Trajectory & 5-Step P&L Value Bridge</b>: Plots monthly <b>Sales</b>, <b>Direct Cost</b>, and <b>Operating Profit</b> with peak-month callout and dashed run-rate line, anchored below by a clickable 5-step P&L waterfall (<b>Net Revenue - Direct Cost = Gross Margin - OpEx & Payroll = Cash Profit</b>) and unit economics spread.`);
-      bullets.push(`<b>Row 2 Right · Operating Entities Scorecard & 3-Lens Executive Pulse</b>: Pairs entity-by-entity revenue share, margin, and ledger tie-out above an interactive <b>Executive Pulse</b> deck switching instantly between <b>Attention</b> (overdue AR, open sentinels, pending rate sign-offs, $0.00 book parity), <b>Top Clients</b> (concentration & 360° Inspector), and <b>Revenue Mix</b> (top grades & unit pricing).`);
+      if (wLens.profit && wLens.books) {
+        bullets.push(`<b>Row 1 · 4 Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with monthly run-rate and Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) composition bar; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> with Raw Material, OpEx, and Profit share; <b>Cash Position & Velocity (${tillShown})</b> with AR collection rate and Cash In (<b>${fmtMoney(cashIn, 0)}</b>) vs Out (<b>${fmtMoney(cashOut, 0)}</b>); and <b>Working Capital (${fmtMoney(k.ar_balance, 0)} Open AR vs ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
+        bullets.push(`<b>Row 2 Left · Performance Trajectory & 5-Step P&L Value Bridge</b>: Plots monthly <b>Sales</b>, <b>Direct Cost</b>, and <b>Operating Profit</b> with peak-month callout and dashed run-rate line, anchored below by a clickable 5-step P&L waterfall (<b>Net Revenue - Direct Cost = Gross Margin - OpEx & Payroll = Cash Profit</b>) and unit economics spread.`);
+        bullets.push(`<b>Row 2 Right · Operating Entities Scorecard & 3-Lens Executive Pulse</b>: Pairs entity-by-entity revenue share, margin, and ledger tie-out above an interactive <b>Executive Pulse</b> deck switching instantly between <b>Attention</b> (overdue AR, open sentinels, pending rate sign-offs, $0.00 book parity), <b>Top Clients</b> (concentration & 360° Inspector), and <b>Revenue Mix</b> (top grades & unit pricing).`);
 
-      rows = [
-        ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
-        ['2. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin ${fmtMoney(k.gross_margin, 0)} (${marginPct}%) minus OpEx & Payroll (${fmtMoney(expTotal, 0)})`],
-        ['3. Cash Position & Velocity', tillShown, `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
-        ['4. Working Capital (AR / AP)', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
-        ['5. Scorecard & Executive Pulse', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Switch between Attention, Top Clients, and Revenue Mix or click any entity row']
-      ];
+        rows = [
+          ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
+          ['2. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin ${fmtMoney(k.gross_margin, 0)} (${marginPct}%) minus OpEx & Payroll (${fmtMoney(expTotal, 0)})`],
+          ['3. Cash Position & Velocity', tillShown, `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
+          ['4. Working Capital (AR / AP)', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
+          ['5. Scorecard & Executive Pulse', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Switch between Attention, Top Clients, and Revenue Mix or click any entity row']
+        ];
+      } else {
+        bullets.push(`<b>Row 1 · Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) mix and <b>Working Capital (${wLens.books ? fmtMoney(k.ar_balance, 0) + ' Open AR' : 'Restricted'})</b>; profit and cash till metrics follow your seat permissions (${wLens.books ? tillShown : 'Restricted'}).`);
+        bullets.push('<b>Row 2 · Volume Trajectory & Executive Pulse</b>: Shows permitted sales trajectory, entity volume comparison, Top Clients, and Revenue Mix.');
+        rows = [
+          ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
+          ['2. Operating Profit', 'Restricted', 'Requires Full Books & Expenses access'],
+          ['3. Cash Position', tillShown, wLens.books ? `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})` : 'Requires Cash Flow & Ledger access'],
+          ['4. Open Receivables', wLens.books ? `${fmtMoney(k.ar_balance, 0)} AR` : 'Restricted', wLens.books ? `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)}` : 'Requires Cash Flow & Ledger access'],
+          ['5. Scorecard & Executive Pulse', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Click Top Clients or Revenue Mix tabs']
+        ];
+      }
     } else if (/^reg_/.test(viewId) || (useSnap && useSnap.hubCards && useSnap.hubCards.length > 0)) {
       const regTableMap = {
         reg_customers: 'customers',
@@ -3548,7 +3764,9 @@
         bullets.push(`<b>Active Data Table</b>: Columns include <b>${esc(t0.cols.join(', '))}</b>${t0.sample ? ` (top row: ${esc(t0.sample)})` : ''}. Click any row to inspect or edit.`);
       }
       if (!bullets.length) {
-        bullets.push(`<b>Active Screen (${esc(screenTitle)})</b>: Displays live operational and financial registers for <b>${esc(scope.fullScopeLabel)}</b> with revenue of <b>${fmtMoney(k.sales_ttc, 0)}</b>, gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b>, operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>, and cash till of <b>${tillShown}</b>.`);
+        bullets.push(wLens.profit
+          ? `<b>Active Screen (${esc(screenTitle)})</b>: Displays live operational and financial registers for <b>${esc(scope.fullScopeLabel)}</b> with revenue of <b>${fmtMoney(k.sales_ttc, 0)}</b>, gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b>, operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>, and cash till of <b>${tillShown}</b>.`
+          : `<b>Active Screen (${esc(screenTitle)})</b>: Displays live permitted operational views for <b>${esc(scope.fullScopeLabel)}</b> with revenue of <b>${fmtMoney(k.sales_ttc, 0)}</b>.`);
       }
     }
 
@@ -3569,9 +3787,8 @@
         ...(canView('cashflow', user) ? [{ type: 'view', view: 'cashflow', label: 'Cash Flow & Till' }] : [])
       ],
       followUps: [
-        tillOff ? 'Why is the Cash Till not tracked yet?' : `Why is Cash Till ${tillVal < 0 ? fmtMoney(tillVal, 2) : '-$4,990.00'}?`,
-        'Show overdue receivables',
-        'Check open AI Sentinel alerts'
+        ...(wLens.books ? [tillOff ? 'Why is the Cash Till not tracked yet?' : `Why is Cash Till ${tillVal < 0 ? fmtMoney(tillVal, 2) : '-$4,990.00'}?`, 'Show overdue receivables'] : ['Show today\'s daily operations', `Show ${scope.scopeCoLabel} sales summary`]),
+        wLens.sentinels ? 'Check open AI Sentinel alerts' : 'Explain how to filter this screen'
       ]
     };
   }
@@ -3991,16 +4208,24 @@
       bullets.push(`Unrecorded Ticket Check: Ticket ref(s) <b>#${esc(missingTickets.slice(0, 4).join(', #'))}</b> were not found in <b>${esc(scope.scopeCoLabel)}</b> live registers.`);
     }
 
+    const attLens = getSeatLens(scope.user);
+    const attFollowUps = [
+      ...(canView('overview', scope.user) ? [`Show ${scope.scopeCoLabel} summary`] : []),
+      ...(attLens.books ? ['Show overdue receivables'] : []),
+      ...(attLens.sentinels ? ['Check open AI Sentinel alerts'] : []),
+      'Show today\'s daily operations'
+    ].slice(0, 3);
+
     if (matchedCustomers.length > 0) {
       matchedCustomers.slice(0, 2).forEach(cItem => {
-        bullets.push(`Matched Customer Ledger (<b>${esc(cItem.name)}</b>): <b>${fmtInt(cItem.loads)}</b> live loads · Billed <b>${fmtMoney(cItem.sales, 2)}</b> · Open AR <b>${fmtMoney(cItem.ar, 2)}</b>.`);
+        bullets.push(`Matched Customer Ledger (<b>${esc(cItem.name)}</b>): <b>${fmtInt(cItem.loads)}</b> live loads · Billed <b>${fmtMoney(cItem.sales, 2)}</b>${attLens.books ? ` · Open AR <b>${fmtMoney(cItem.ar, 2)}</b>` : ''}.`);
       });
       const c0 = matchedCustomers[0];
       actions.push({ type: 'inspect', crKey: 'customers', id: c0.id, label: `360° ${c0.name}` });
     }
-    if (matchedSuppliers.length > 0) {
+    if (attLens.expenses && matchedSuppliers.length > 0) {
       matchedSuppliers.slice(0, 2).forEach(sItem => {
-        bullets.push(`Matched Supplier Ledger (<b>${esc(sItem.name)}</b>): <b>${fmtInt(sItem.loads)}</b> quarry/haulage loads · Total Spend <b>${fmtMoney(sItem.cost, 2)}</b> · Open AP <b>${fmtMoney(sItem.ap, 2)}</b>.`);
+        bullets.push(`Matched Supplier Ledger (<b>${esc(sItem.name)}</b>): <b>${fmtInt(sItem.loads)}</b> quarry/haulage loads · Total Spend <b>${fmtMoney(sItem.cost, 2)}</b>${attLens.books ? ` · Open AP <b>${fmtMoney(sItem.ap, 2)}</b>` : ''}.`);
       });
       const s0 = matchedSuppliers[0];
       actions.push({ type: 'inspect', crKey: 'suppliers', id: s0.id, label: `360° ${s0.name}` });
@@ -4019,8 +4244,14 @@
         : `${fmtInt(primary.rowCount)} rows`;
 
       if (!actions.some(a => a.type === 'view')) {
-        actions.push({ type: 'view', view: matchedSuppliers.length ? 'suppliers' : 'sales', label: matchedSuppliers.length ? 'Suppliers & Payables' : 'Sales & Receivables' });
-        actions.push({ type: 'form', form: matchedSuppliers.length ? 'raw' : 'sales', label: matchedSuppliers.length ? '+ New Raw Ticket' : '+ New Sales Ticket' });
+        const wantSup = attLens.expenses && matchedSuppliers.length > 0 && canView('suppliers', scope.user);
+        if (wantSup) {
+          actions.push({ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' });
+          actions.push({ type: 'form', form: 'raw', label: '+ New Raw Ticket' });
+        } else if (canView('sales', scope.user)) {
+          actions.push({ type: 'view', view: 'sales', label: 'Sales & Receivables' });
+          actions.push({ type: 'form', form: 'sales', label: '+ New Sales Ticket' });
+        }
       }
 
       return {
@@ -4038,11 +4269,7 @@
         total: primary.numericCol && previewCols.length >= 2 ? [`Sheet Total (${primary.rowCount} rows)`, totalLabel] : undefined,
         promptText: 'Would you like to inspect the matched ERP records or post a new entry from this sheet?',
         actions,
-        followUps: [
-          `Show ${scope.scopeCoLabel} summary`,
-          'Show overdue receivables',
-          'Check open AI Sentinel alerts'
-        ]
+        followUps: attFollowUps
       };
     }
 
@@ -4076,11 +4303,14 @@
       const isFuel = /fuel|diesel|mazout|tank/i.test(lowCorpus);
       const isRaw = /quarry|raw|supplier|hauler|sand|gravel/i.test(lowCorpus);
       const isDefect = /defect|broken|repair|leak|damage|tire|hydraulic/i.test(lowCorpus);
-      const targetForm = isDefect ? 'defect' : (isFuel ? 'fuel' : (isRaw ? 'raw' : (matchedSuppliers.length ? 'expense' : 'sales')));
-      const targetFormLbl = isDefect ? '+ Report Defect' : (isFuel ? '+ New Fuel Entry' : (isRaw ? '+ New Raw Ticket' : (matchedSuppliers.length ? '+ New Expense' : '+ New Sales Ticket')));
+      const targetForm = isDefect ? 'defect' : (isFuel ? 'fuel' : ((isRaw && canView('raw', scope.user)) ? 'raw' : ((attLens.expenses && matchedSuppliers.length) ? 'expense' : 'sales')));
+      const targetFormLbl = targetForm === 'defect' ? '+ Report Defect' : (targetForm === 'fuel' ? '+ New Fuel Entry' : (targetForm === 'raw' ? '+ New Raw Ticket' : (targetForm === 'expense' ? '+ New Expense' : '+ New Sales Ticket')));
 
       actions.push({ type: 'form', form: targetForm, label: targetFormLbl });
-      actions.push({ type: 'view', view: isDefect ? 'fleet_maint' : (isFuel ? 'fleet' : 'daily_ops'), label: 'Open Register' });
+      const imgView = isDefect && canView('fleet_maint', scope.user) ? 'fleet_maint' : (isFuel && canView('fleet', scope.user) ? 'fleet' : (canView('daily_ops', scope.user) ? 'daily_ops' : 'sales'));
+      if (canView(imgView, scope.user)) {
+        actions.push({ type: 'view', view: imgView, label: 'Open Register' });
+      }
 
       return {
         q: cleanQ,
@@ -4088,7 +4318,7 @@
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'attachment',
         title: `Visual Attachment · ${primary.name}`,
-        answer: `Analyzed attached image <b>${esc(primary.name)}</b> (${esc(primary.summaryLine || primary.sizeLabel)}) under <b>${esc(scope.fullScopeLabel)}</b>${matchedErpTickets.length || matchedCustomers.length || matchedSuppliers.length ? ' and linked matching live ledger records below' : (ocrText ? ' and extracted visible voucher text below' : '. Ready to log or reconcile against your active operational registers')}.`,
+        answer: `Analyzed attached image <b>${esc(primary.name)}</b> (${esc(primary.summaryLine || primary.sizeLabel)}) under <b>${esc(scope.fullScopeLabel)}</b>${matchedErpTickets.length || matchedCustomers.length || (attLens.expenses && matchedSuppliers.length) ? ' and linked matching live ledger records below' : (ocrText ? ' and extracted visible voucher text below' : '. Ready to log or reconcile against your active operational registers')}.`,
         bullets: bullets.length ? bullets : [
           `Quick Action: Open <b>${esc(targetFormLbl)}</b> to post this voucher or inspect live ${esc(scope.scopeCoLabel)} registers.`
         ],
@@ -4097,7 +4327,7 @@
         followUps: [
           'Show today\'s daily operations',
           'Check pending-price vouchers',
-          'Show top expense categories'
+          attLens.expenses ? 'Show top expense categories' : `Show ${scope.scopeCoLabel} sales summary`
         ]
       };
     }
@@ -4110,8 +4340,8 @@
     if (!bullets.length && primary.textContent) {
       bullets.push(`Document Excerpt: "${esc(primary.textContent.slice(0, 140))}${primary.textContent.length > 140 ? '...' : ''}"`);
     }
-    actions.push({ type: 'view', view: 'statements', label: 'Printable Statements' });
-    actions.push({ type: 'form', form: 'expense', label: '+ New Expense' });
+    if (canView('statements', scope.user)) actions.push({ type: 'view', view: 'statements', label: 'Printable Statements' });
+    if (attLens.expenses) actions.push({ type: 'form', form: 'expense', label: '+ New Expense' });
 
     return {
       q: cleanQ,
@@ -4124,9 +4354,8 @@
       promptText: 'Would you like to open Printable Statements or inspect matched accounts?',
       actions,
       followUps: [
-        `Give me an executive briefing & open alerts`,
-        'Show Accounts Payable breakdown',
-        'Show overdue receivables'
+        ...(attLens.sentinels ? ['Give me an executive briefing & open alerts'] : ['Give me an executive briefing']),
+        ...(attLens.books ? ['Show Accounts Payable breakdown', 'Show overdue receivables'] : ['Show today\'s daily operations'])
       ]
     };
   }
@@ -5946,12 +6175,13 @@
           .trim();
     const scopeName = sanitizeSpokenText(rawCoLbl, safeLang) || ind;
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const lens = getSeatLens(user);
     const canViewBooks = hoSnap
-      ? Boolean(hoSnap.canViewBooks)
-      : Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('ledger', user)));
+      ? Boolean(hoSnap.canViewBooks && lens.books)
+      : lens.books;
     const canViewProfit = hoSnap
-      ? Boolean(hoSnap.canViewProfit != null ? hoSnap.canViewProfit : (hoSnap.canViewBooks && hoSnap.dayOpProfit != null))
-      : Boolean(canViewBooks && canHub('expenses', user));
+      ? Boolean(lens.profit && (hoSnap.canViewProfit != null ? hoSnap.canViewProfit : (hoSnap.canViewBooks && hoSnap.dayOpProfit != null)))
+      : lens.profit;
 
     let targetDate = (hoSnap && hoSnap.targetDate) || st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
     let dayRevUsd = hoSnap ? Number(hoSnap.dayRevUsd || 0) : 0;
@@ -6340,8 +6570,9 @@
     const coKey = st.company || 'manufacturing-group';
     const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(coKey) : 'Manufacturing';
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const lens = getSeatLens(user);
     const uid = (user && (user.id || user.username)) || 'anon';
-    return `${ind}|${coKey}|${st.period || 'all'}|${st.dateFrom || ''}|${st.dateTo || ''}|${st.basis || 'tx'}|${uid}`;
+    return `${ind}|${coKey}|${st.period || 'all'}|${st.dateFrom || ''}|${st.dateTo || ''}|${st.basis || 'tx'}|${uid}|b${lens.books ? 1 : 0}p${lens.profit ? 1 : 0}t${lens.tax ? 1 : 0}s${lens.sentinels ? 1 : 0}`;
   }
 
   function buildCeoPeriodSummary(langOverride, opts) {
@@ -6351,7 +6582,10 @@
     const coKey = st.company || 'manufacturing-group';
     const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(coKey) : 'Manufacturing';
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
-    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const lens = getSeatLens(user);
+    const canViewBooks = Boolean(lens.books && (!opts || opts.canViewBooks === undefined || opts.canViewBooks));
+    const canViewProfit = Boolean(lens.profit && (!opts || opts.canViewProfit === undefined || opts.canViewProfit));
+    const canViewSentinels = Boolean(lens.sentinels && (!opts || opts.canViewSentinels === undefined || opts.canViewSentinels));
     const scopeKey = computeActivePeriodScopeKey();
 
     let snap = (opts && opts.snapOverride) ? opts.snapOverride : null;
@@ -6433,11 +6667,11 @@
     const revDeltaPct = (hasPrior && Number(deltaPrev.revUsd || 0) >= 500)
       ? Math.max(-99.9, Math.min(999.9, Number((((Number(deltaCur.revUsd || 0) - Number(deltaPrev.revUsd || 0)) / Number(deltaPrev.revUsd)) * 100).toFixed(1))))
       : null;
-    const gmDeltaPts = meaningfulBothRev
+    const gmDeltaPts = (canViewProfit && meaningfulBothRev)
       ? Number((resolveUnclampedPct(deltaCur, 'grossMarginUsd', 'gmPct') - resolveUnclampedPct(deltaPrev, 'grossMarginUsd', 'gmPct')).toFixed(1))
       : null;
-    const opProfitDeltaUsd = hasPrior ? Math.round(Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) : null;
-    const opProfitDeltaPct = (hasPrior && Math.abs(Number(deltaPrev.opProfitUsd || 0)) >= 500)
+    const opProfitDeltaUsd = (canViewProfit && hasPrior) ? Math.round(Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) : null;
+    const opProfitDeltaPct = (canViewProfit && hasPrior && Math.abs(Number(deltaPrev.opProfitUsd || 0)) >= 500)
       ? Math.max(-999.9, Math.min(999.9, Number((((Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) / Math.abs(Number(deltaPrev.opProfitUsd))) * 100).toFixed(1))))
       : null;
 
@@ -6447,28 +6681,28 @@
     const locLatestMoUi = (isMomentum && prevObj.latestLabel) ? localizePeriodLabel(prevObj.latestLabel, safeLang, false) : '';
 
     const revUsdRound = Math.round(Number(cur.revUsd || 0));
-    const directUsdRound = Math.round(Number(cur.directCostUsd || 0));
-    const gmUsdRound = Math.round(Number(cur.grossMarginUsd || 0));
-    const opExUsdRound = Math.round(Number(cur.opExUsd || 0));
-    const opProfUsdRound = Math.round(Number(cur.opProfitUsd || 0));
+    const directUsdRound = canViewProfit ? Math.round(Number(cur.directCostUsd || 0)) : null;
+    const gmUsdRound = canViewProfit ? Math.round(Number(cur.grossMarginUsd || 0)) : null;
+    const opExUsdRound = canViewProfit ? Math.round(Number(cur.opExUsd || 0)) : null;
+    const opProfUsdRound = canViewProfit ? Math.round(Number(cur.opProfitUsd || 0)) : null;
     const hasPositiveRev = revUsdRound > 0 || Number(cur.netSalesUsd || 0) > 0;
-    const gmPctRound = hasPositiveRev ? resolveUnclampedPct(cur, 'grossMarginUsd', 'gmPct') : 0;
-    const opPctRound = hasPositiveRev ? resolveUnclampedPct(cur, 'opProfitUsd', 'opMarginPct') : 0;
+    const gmPctRound = (canViewProfit && hasPositiveRev) ? resolveUnclampedPct(cur, 'grossMarginUsd', 'gmPct') : null;
+    const opPctRound = (canViewProfit && hasPositiveRev) ? resolveUnclampedPct(cur, 'opProfitUsd', 'opMarginPct') : null;
     const txCount = Math.round(Number(cur.txCount || 0));
 
     // null = the business has no till balance yet (its cash book is not whole in ISABI); never shown as $0.
     const cashTillRound = (canViewBooks && snap.books && snap.books.cashTillUsd != null) ? Math.round(Number(snap.books.cashTillUsd)) : null;
     const arBalRound = canViewBooks ? Math.round(Number(snap.books && snap.books.arBalanceUsd || 0)) : null;
-    const openCount = Number(snap.sentinels && snap.sentinels.openCount || 0);
-    const critCount = Number(snap.sentinels && snap.sentinels.critCount || 0);
-    const topSentinelTitle = snap.sentinels && snap.sentinels.topTitle ? sanitizeSpokenText(snap.sentinels.topTitle, safeLang) : '';
+    const openCount = canViewSentinels ? Number(snap.sentinels && snap.sentinels.openCount || 0) : null;
+    const critCount = canViewSentinels ? Number(snap.sentinels && snap.sentinels.critCount || 0) : null;
+    const topSentinelTitle = (canViewSentinels && snap.sentinels && snap.sentinels.topTitle) ? sanitizeSpokenText(snap.sentinels.topTitle, safeLang) : '';
     const topDriverName = snap.topDriver && snap.topDriver.name ? sanitizeSpokenText(snap.topDriver.name, safeLang) : '';
 
     const revMoney = formatSpokenMoney(revUsdRound, safeLang);
-    const gmMoney = formatSpokenMoney(gmUsdRound, safeLang);
-    const opExMoney = formatSpokenMoney(opExUsdRound, safeLang);
-    const opProfMoney = formatSpokenMoney(opProfUsdRound, safeLang);
-    const directMoney = formatSpokenMoney(directUsdRound, safeLang);
+    const gmMoney = canViewProfit ? formatSpokenMoney(gmUsdRound, safeLang) : '';
+    const opExMoney = canViewProfit ? formatSpokenMoney(opExUsdRound, safeLang) : '';
+    const opProfMoney = canViewProfit ? formatSpokenMoney(opProfUsdRound, safeLang) : '';
+    const directMoney = canViewProfit ? formatSpokenMoney(directUsdRound, safeLang) : '';
 
     const bullets = [];
     const speechParts = [];
@@ -6487,13 +6721,18 @@
       speechParts.push(`ملخص الفترة لـ ${scopeName} (${locPeriodUi}): بلغت ${domSpec.rev} ${revMoney}${txClause}${varClauseSpeech}.`);
       bullets.push(`بلغت ${domSpec.rev} ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `، بقيادة ${topDriverName}` : ''}.`);
 
-      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
-        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} نقطة في الهامش)`
-        : '';
-      speechParts.push(`سجل مجمل الربح ${gmMoney} بنسبة ${gmPctRound} بالمئة بعد ${domSpec.direct} بقيمة ${directMoney}، ليبلغ ${domSpec.profit} ${opProfMoney} بنسبة ${opPctRound} بالمئة بعد خصم ${domSpec.opex} بقيمة ${opExMoney}.`);
-      bullets.push(`مجمل الربح ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}، وبلغ ${domSpec.profit} ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) بعد ${domSpec.opex} ${fmtCompactUsd(opExUsdRound)}.`);
+      if (canViewProfit) {
+        const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+          ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} نقطة في الهامش)`
+          : '';
+        speechParts.push(`سجل مجمل الربح ${gmMoney} بنسبة ${gmPctRound} بالمئة بعد ${domSpec.direct} بقيمة ${directMoney}، ليبلغ ${domSpec.profit} ${opProfMoney} بنسبة ${opPctRound} بالمئة بعد خصم ${domSpec.opex} بقيمة ${opExMoney}.`);
+        bullets.push(`مجمل الربح ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}، وبلغ ${domSpec.profit} ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) بعد ${domSpec.opex} ${fmtCompactUsd(opExUsdRound)}.`);
+      } else {
+        speechParts.push('تفاصيل التكاليف وهوامش الربح مقيدة حسب صلاحيات هذا المقعد.');
+        bullets.push('الربحية وهوامش الربح مقيدة وفق صلاحيات المقعد.');
+      }
 
-      if (canViewBooks) {
+      if (canViewBooks && canViewSentinels) {
         const tillSp = formatSpokenMoney(cashTillRound, 'ar');
         const arSp = formatSpokenMoney(arBalRound, 'ar');
         if (openCount === 0) {
@@ -6503,12 +6742,22 @@
           speechParts.push(`${cashTillRound === null ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد السيولة النقدية ${tillSp}`} مع ذمم مدينة بقيمة ${arSp}، وتوجد ${openCount} تنبيهات رقابية نشطة أبرزها ${topSentinelTitle}.`);
           bullets.push(`${cashTillRound === null ? 'الصندوق غير متتبَّع بعد' : `السيولة النقدية ${fmtCompactUsd(cashTillRound)}`} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ ${openCount} تنبيهات رقابية نشطة (${topSentinelTitle}).`);
         }
-      } else if (openCount === 0) {
-        speechParts.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
-        bullets.push('جميع الضوابط الرقابية التشغيلية سليمة مع صفر تنبيهات نشطة.');
+      } else if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'ar');
+        const arSp = formatSpokenMoney(arBalRound, 'ar');
+        speechParts.push(`${cashTillRound === null ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد السيولة النقدية ${tillSp}`} مع ذمم مدينة مفتوحة بقيمة ${arSp}.`);
+        bullets.push(`${cashTillRound === null ? 'الصندوق غير متتبَّع بعد' : `السيولة النقدية ${fmtCompactUsd(cashTillRound)}`} والذمم المدينة ${fmtCompactUsd(arBalRound)}.`);
+      } else if (canViewSentinels) {
+        if (openCount === 0) {
+          speechParts.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
+          bullets.push('جميع الضوابط الرقابية التشغيلية سليمة مع صفر تنبيهات نشطة.');
+        } else {
+          speechParts.push(`توجد ${openCount} تنبيهات رقابية نشطة تتطلب المراجعة، أبرزها ${topSentinelTitle}.`);
+          bullets.push(`${openCount} تنبيهات رقابية نشطة تتطلب المراجعة (${topSentinelTitle}).`);
+        }
       } else {
-        speechParts.push(`توجد ${openCount} تنبيهات رقابية نشطة تتطلب المراجعة، أبرزها ${topSentinelTitle}.`);
-        bullets.push(`${openCount} تنبيهات رقابية نشطة تتطلب المراجعة (${topSentinelTitle}).`);
+        speechParts.push('مؤشرات المبيعات والحجم التشغيلي نشطة لهذا النطاق بينما الخزينة والأستاذ العام مقيدان.');
+        bullets.push('بيانات المبيعات والحجم التشغيلي نشطة؛ الخزينة والأستاذ العام مقيدان.');
       }
     } else if (safeLang === 'fr') {
       const txClause = txCount > 0 ? ` sur ${txCount.toLocaleString('en-US')} ${txCount === 1 ? domSpec.sing : domSpec.plur}` : '';
@@ -6524,13 +6773,18 @@
       speechParts.push(`Bilan de période pour ${scopeName} (${locPeriodUi}) : ${domSpec.rev} ${domSpec.verb || "s'élève à"} ${revMoney}${txClause}${varClauseSpeech}.`);
       bullets.push(`Volume : ${domSpec.rev} à ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `, porté par ${topDriverName}` : ''}.`);
 
-      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
-        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
-        : '';
-      speechParts.push(`La marge brute atteint ${gmMoney} à ${gmPctRound} pour cent après ${directMoney} pour ${domSpec.direct}, générant ${opProfMoney} pour ${domSpec.profit} à ${opPctRound} pour cent après ${opExMoney} pour ${domSpec.opex}.`);
-      bullets.push(`Pont P&L : marge brute de ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt} et résultat de ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) après ${fmtCompactUsd(opExUsdRound)} de charges.`);
+      if (canViewProfit) {
+        const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+          ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
+          : '';
+        speechParts.push(`La marge brute atteint ${gmMoney} à ${gmPctRound} pour cent après ${directMoney} pour ${domSpec.direct}, générant ${opProfMoney} pour ${domSpec.profit} à ${opPctRound} pour cent après ${opExMoney} pour ${domSpec.opex}.`);
+        bullets.push(`Pont P&L : marge brute de ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt} et résultat de ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) après ${fmtCompactUsd(opExUsdRound)} de charges.`);
+      } else {
+        speechParts.push('Les détails de marge brute et de résultat sont restreints pour ce poste.');
+        bullets.push('Marges et résultat restreints selon les droits du poste.');
+      }
 
-      if (canViewBooks) {
+      if (canViewBooks && canViewSentinels) {
         const tillSp = formatSpokenMoney(cashTillRound, 'fr');
         const arSp = formatSpokenMoney(arBalRound, 'fr');
         if (openCount === 0) {
@@ -6540,12 +6794,22 @@
           speechParts.push(`${cashTillRound === null ? "La caisse n'est pas encore suivie" : `La trésorerie s'établit à ${tillSp}`} avec ${arSp} de créances, et ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, dont ${topSentinelTitle}.`);
           bullets.push(`${cashTillRound === null ? 'Caisse pas encore suivie' : `Trésorerie à ${fmtCompactUsd(cashTillRound)}`} et créances à ${fmtCompactUsd(arBalRound)} ; ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel (${topSentinelTitle}).`);
         }
-      } else if (openCount === 0) {
-        speechParts.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
-        bullets.push('Contrôles opérationnels Sentinel validés avec 0 alerte active.');
+      } else if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'fr');
+        const arSp = formatSpokenMoney(arBalRound, 'fr');
+        speechParts.push(`${cashTillRound === null ? "La caisse n'est pas encore suivie" : `La trésorerie s'établit à ${tillSp}`} avec ${arSp} de créances clients.`);
+        bullets.push(`${cashTillRound === null ? 'Caisse pas encore suivie' : `Trésorerie à ${fmtCompactUsd(cashTillRound)}`} et créances à ${fmtCompactUsd(arBalRound)}.`);
+      } else if (canViewSentinels) {
+        if (openCount === 0) {
+          speechParts.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
+          bullets.push('Contrôles opérationnels Sentinel validés avec 0 alerte active.');
+        } else {
+          speechParts.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, à commencer par ${topSentinelTitle}.`);
+          bullets.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} (${topSentinelTitle}).`);
+        }
       } else {
-        speechParts.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, à commencer par ${topSentinelTitle}.`);
-        bullets.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} (${topSentinelTitle}).`);
+        speechParts.push('Les volumes opérationnels sont actifs tandis que la trésorerie et les contrôles sont restreints.');
+        bullets.push('Volumes opérationnels actifs ; trésorerie et contrôles restreints.');
       }
     } else {
       const txClause = txCount > 0 ? ` across ${txCount.toLocaleString('en-US')} ${txCount === 1 ? domSpec.sing : domSpec.plur}` : '';
@@ -6561,13 +6825,18 @@
       speechParts.push(`Period summary for ${scopeName}, ${locPeriodSpeech}: ${domSpec.rev} reached ${revMoney}${txClause}${varClauseSpeech}.`);
       bullets.push(`Top-line: ${domSpec.rev} at ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `, led by ${topDriverName}` : ''}.`);
 
-      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
-        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
-        : '';
-      speechParts.push(`Gross margin stood at ${gmMoney} at ${gmPctRound} percent after ${directMoney} in ${domSpec.direct}, delivering ${opProfMoney} in ${domSpec.profit} at ${opPctRound} percent after ${opExMoney} in ${domSpec.opex}.`);
-      bullets.push(`P&L bridge: gross margin ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}, yielding ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) ${domSpec.profit} after ${fmtCompactUsd(opExUsdRound)} ${domSpec.opex}.`);
+      if (canViewProfit) {
+        const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+          ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
+          : '';
+        speechParts.push(`Gross margin stood at ${gmMoney} at ${gmPctRound} percent after ${directMoney} in ${domSpec.direct}, delivering ${opProfMoney} in ${domSpec.profit} at ${opPctRound} percent after ${opExMoney} in ${domSpec.opex}.`);
+        bullets.push(`P&L bridge: gross margin ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}, yielding ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) ${domSpec.profit} after ${fmtCompactUsd(opExUsdRound)} ${domSpec.opex}.`);
+      } else {
+        speechParts.push('Gross margin and operating profit details are restricted for this seat.');
+        bullets.push('Profitability and margin metrics are restricted by seat permissions.');
+      }
 
-      if (canViewBooks) {
+      if (canViewBooks && canViewSentinels) {
         const tillSp = formatSpokenMoney(cashTillRound, 'en');
         const arSp = formatSpokenMoney(arBalRound, 'en');
         if (openCount === 0) {
@@ -6577,12 +6846,22 @@
           speechParts.push(`${cashTillRound === null ? 'The cash till is not tracked yet' : `Cash till stands at ${tillSp}`} alongside ${arSp} in open receivables, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
           bullets.push(`Liquidity & controls: ${cashTillRound === null ? 'cash till not tracked yet' : `cash till ${fmtCompactUsd(cashTillRound)}`}, open receivables ${fmtCompactUsd(arBalRound)}, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} (${topSentinelTitle}).`);
         }
-      } else if (openCount === 0) {
-        speechParts.push('All Sentinel operational controls are clear with zero active flags.');
-        bullets.push('Operational controls: all Sentinel watchdogs passing with 0 active flags.');
+      } else if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'en');
+        const arSp = formatSpokenMoney(arBalRound, 'en');
+        speechParts.push(`${cashTillRound === null ? 'The cash till is not tracked yet' : `Cash till stands at ${tillSp}`} alongside ${arSp} in open receivables.`);
+        bullets.push(`Liquidity: ${cashTillRound === null ? 'cash till not tracked yet' : `cash till ${fmtCompactUsd(cashTillRound)}`} and open receivables ${fmtCompactUsd(arBalRound)}.`);
+      } else if (canViewSentinels) {
+        if (openCount === 0) {
+          speechParts.push('All Sentinel operational controls are clear with zero active flags.');
+          bullets.push('Operational controls: all Sentinel watchdogs passing with 0 active flags.');
+        } else {
+          speechParts.push(`${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
+          bullets.push(`Operational controls: ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review (${topSentinelTitle}).`);
+        }
       } else {
-        speechParts.push(`${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
-        bullets.push(`Operational controls: ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review (${topSentinelTitle}).`);
+        speechParts.push('Operational volume metrics are active for this scope; treasury and ledger details are restricted.');
+        bullets.push('Operational scope active; treasury and ledger balances are restricted.');
       }
     }
 
@@ -6608,6 +6887,8 @@
       isMomentumPair: isMomentum,
       windowSubtitle,
       canViewBooks,
+      canViewProfit,
+      canViewSentinels,
       cur: {
         revUsd: revUsdRound,
         directCostUsd: directUsdRound,
@@ -6636,14 +6917,40 @@
     };
   }
 
-  function sanitizeVarianceBulletText(rawStr, canViewBooks) {
+  function sanitizeVarianceBulletText(rawStr, maskOpts) {
+    const hasObj = maskOpts && typeof maskOpts === 'object';
+    const canViewBooks = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.books !== undefined ? maskOpts.books : maskOpts.canViewBooks));
+    const canViewProfit = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.profit !== undefined ? maskOpts.profit : maskOpts.canViewProfit));
+    const canViewExpenses = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.expenses !== undefined ? maskOpts.expenses : maskOpts.canViewExpenses));
+    const canViewTax = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.tax !== undefined ? maskOpts.tax : maskOpts.canViewTax));
+    const canViewPartnerSplits = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.partnerSplits !== undefined ? maskOpts.partnerSplits : maskOpts.canViewPartnerSplits));
+    const canViewPayrollDollars = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.payrollDollars !== undefined ? maskOpts.payrollDollars : maskOpts.canViewPayrollDollars));
+    const canViewSentinels = typeof maskOpts === 'boolean' ? maskOpts : Boolean(hasObj && (maskOpts.sentinels !== undefined ? maskOpts.sentinels : maskOpts.canViewSentinels));
     let s = cleanOut(String(rawStr || ''))
       .replace(/^[•\-*\d.)\s]+/, '')
       .replace(/[—–→↔]/g, ', ')
       .replace(/\b(?:THEO|TTC|RDL|Z-Read)\b/gi, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
-    if (!canViewBooks && /\b(cash\s*till|receivables|ar_balance|caisse|السيولة\s*النقدية|رصيد\s*الصندوق)\b/i.test(s)) {
+    if (!canViewBooks && /\b(?:cash\s*till|fiduciary\s*cash|receivables?|ar_balance|ap_balance|open\s*ar|open\s*ap|payable|bordereau|intercompany|due[- ]?(?:from|to)|overdue\s*ar|trial\s*balance|security\s*deposits?|escrow|arrears|caisse|tr[ée]sorerie|cr[ée]ances?|bilan)\b|(?:السيولة\s*النقدية|رصيد\s*الصندوق|الذمم|الحسابات\s*البينية)/i.test(s)) {
+      return '';
+    }
+    if (!canViewProfit && /\b(?:gross\s*margin|operating\s*profit|net\s*profit|\bnoi\b|net\s*operating\s*income|brokerage\s*yield|retained\s*comm|gross\s*comm|net\s*comm|commission|marge\s*brute|r[ée]sultat)\b|(?:مجمل\s*الربح|الربح\s*التشغيلي|صافي\s*الربح|صافي\s*الدخل|عمولة)/i.test(s)) {
+      return '';
+    }
+    if (!canViewExpenses && /\b(?:opex|direct\s*cost|raw\s*cost|raw\s*mat|haulage|landed\s*cost|unrecharged|upkeep|incurred\s*claims|loss\s*ratio|wac|fob|expense\s*total)\b|(?:مصاريف\s*تشغيل|كلفة\s*الخام|مطالبات\s*التأمين)/i.test(s)) {
+      return '';
+    }
+    if (!canViewTax && /\b(?:11%\s*vat|output\s*vat|input\s*vat|mof\s*vat|ex[- ]?vat|tax\s*seq|tva)\b|(?:ضريبة\s*القيمة\s*المضافة)/i.test(s)) {
+      return '';
+    }
+    if (!canViewPartnerSplits && /\b(?:partner\s*(?:split|share|pool|payable)|shareholder|co[- ]?invest|due\s*to\s*partner)\b|(?:حصص?\s*الشركاء)/i.test(s)) {
+      return '';
+    }
+    if (!canViewPayrollDollars && /\b(?:salar(?:y|ies)|payroll\s*(?:cost|paid|disbursed)|overtime\s*pay|site\s*transport\s*pay|salaire)\b|(?:رواتب|معاشات|أجور)/i.test(s)) {
+      return '';
+    }
+    if (!canViewSentinels && /\b(?:sentinel|watchdogs?|control\s*flags?|alertes?\s*sentinel)\b|(?:الضوابط\s*الرقابية|تنبيهات)/i.test(s)) {
       return '';
     }
     return s;
@@ -6678,19 +6985,25 @@
       comparedAgainst: sum.compareLabel || null,
       revenueUsd: sum.cur.revUsd,
       transactions: sum.cur.txCount,
-      directCostUsd: sum.cur.directCostUsd,
-      grossMarginUsd: sum.cur.grossMarginUsd,
-      grossMarginPct: sum.cur.gmPct,
-      opExUsd: sum.cur.opExUsd,
-      operatingProfitUsd: sum.cur.opProfitUsd,
-      operatingMarginPct: sum.cur.opMarginPct,
       revenueDeltaPct: sum.deltas.revDeltaPct,
-      grossMarginDeltaPts: sum.deltas.gmDeltaPts,
-      operatingProfitDeltaUsd: sum.deltas.opProfitDeltaUsd,
-      leadDriver: sum.topDriver || null,
-      activeSentinelFlags: sum.openSentinelCount,
-      leadSentinel: sum.topSentinelTitle || null
+      leadDriver: sum.topDriver || null
     };
+    if (sum.canViewProfit) {
+      groundedPayload.directCostUsd = sum.cur.directCostUsd;
+      groundedPayload.grossMarginUsd = sum.cur.grossMarginUsd;
+      groundedPayload.grossMarginPct = sum.cur.gmPct;
+      groundedPayload.opExUsd = sum.cur.opExUsd;
+      groundedPayload.operatingProfitUsd = sum.cur.opProfitUsd;
+      groundedPayload.operatingMarginPct = sum.cur.opMarginPct;
+      groundedPayload.grossMarginDeltaPts = sum.deltas.gmDeltaPts;
+      groundedPayload.operatingProfitDeltaUsd = sum.deltas.opProfitDeltaUsd;
+    } else {
+      groundedPayload.profitabilityNote = 'Cost, gross margin, and operating profit metrics are restricted for this seat.';
+    }
+    if (sum.canViewSentinels) {
+      groundedPayload.activeSentinelFlags = sum.openSentinelCount;
+      groundedPayload.leadSentinel = sum.topSentinelTitle || null;
+    }
     if (sum.canViewBooks && sum.books) {
       if (sum.books.cashTillUsd == null) groundedPayload.cashTillNote = 'No till balance: this business\'s cash book is not complete in ISABI yet. Do not state a till figure.';
       else groundedPayload.cashTillUsd = sum.books.cashTillUsd;
@@ -6704,10 +7017,16 @@
       'Rules:',
       '1. Every dollar figure, percentage, and count MUST come verbatim from the supplied JSON ledger facts. Never invent or recompute numbers.',
       '2. Bullet 1 covers revenue volume, lead driver, and period-over-period trajectory.',
-      '3. Bullet 2 explains the P&L bridge spread (gross margin vs direct cost and operating profit after OpEx).',
-      sum.canViewBooks
+      sum.canViewProfit
+        ? '3. Bullet 2 explains the P&L bridge spread (gross margin vs direct cost and operating profit after OpEx).'
+        : '3. Bullet 2 states concisely that cost, margin, and operating profit figures are restricted for this seat.',
+      (sum.canViewBooks && sum.canViewSentinels)
         ? '4. Bullet 3 covers cash liquidity, open receivables, and active Sentinel control posture.'
-        : '4. Bullet 3 covers operational execution and Sentinel control posture (never mention cash till or receivables).',
+        : (sum.canViewBooks
+            ? '4. Bullet 3 covers cash liquidity and open receivables (never mention Sentinel controls).'
+            : (sum.canViewSentinels
+                ? '4. Bullet 3 covers operational execution and Sentinel control posture (never mention cash till or receivables).'
+                : '4. Bullet 3 summarizes operational scope cleanly (never mention cash till, receivables, or Sentinel flags).')),
       '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, or internal system codes.'
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate array elements grounded strictly on this period ledger JSON:\n${JSON.stringify(groundedPayload)}`;
@@ -6796,17 +7115,17 @@
             : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
           const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
           let candBullets = Array.isArray(rawBulletArr)
-            ? rawBulletArr.map(b => sanitizeVarianceBulletText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            ? rawBulletArr.map(b => sanitizeVarianceBulletText(extractStr(b), sum)).filter(b => b.length >= 12)
             : [];
           if (candBullets.length === 1 && candBullets[0].length >= 70) {
             let splitParts = candBullets[0]
               .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
-              .map(s => sanitizeVarianceBulletText(s, sum.canViewBooks))
+              .map(s => sanitizeVarianceBulletText(s, sum))
               .filter(s => s.length >= 12);
             if (splitParts.length < 2) {
               splitParts = candBullets[0]
                 .split(/,\s+(?=(?:while|whereas|gross|operating|net|cash|tandis|alors|la marge|le résultat|la trésorerie|بينما|في حين|هامش|الربح|السيولة)\b)|،\s+(?=(?:بينما|في حين|هامش|الربح|السيولة))/i)
-                .map(s => sanitizeVarianceBulletText(s, sum.canViewBooks))
+                .map(s => sanitizeVarianceBulletText(s, sum))
                 .filter(s => s.length >= 12);
             }
             if (splitParts.length >= 2) candBullets = splitParts;
@@ -6977,12 +7296,16 @@
     const revDeltaChip = sum.deltas.revDeltaPct !== null
       ? `${sum.deltas.revDeltaPct > 0 ? '+' : ''}${sum.deltas.revDeltaPct.toFixed(1)}%`
       : `${sum.cur.txCount}`;
-    const gmDeltaChip = sum.deltas.gmDeltaPts !== null
-      ? `${sum.deltas.gmDeltaPts > 0 ? '+' : ''}${sum.deltas.gmDeltaPts.toFixed(1)}pt`
-      : `${sum.cur.gmPct.toFixed(1)}%`;
-    const opDeltaChip = sum.deltas.opProfitDeltaPct !== null
-      ? `${sum.deltas.opProfitDeltaPct > 0 ? '+' : ''}${sum.deltas.opProfitDeltaPct.toFixed(1)}%`
-      : `${sum.cur.opMarginPct.toFixed(1)}%`;
+    const gmDeltaChip = !sum.canViewProfit
+      ? 'Restricted'
+      : (sum.deltas.gmDeltaPts !== null
+          ? `${sum.deltas.gmDeltaPts > 0 ? '+' : ''}${sum.deltas.gmDeltaPts.toFixed(1)}pt`
+          : `${Number(sum.cur.gmPct || 0).toFixed(1)}%`);
+    const opDeltaChip = !sum.canViewProfit
+      ? 'Restricted'
+      : (sum.deltas.opProfitDeltaPct !== null
+          ? `${sum.deltas.opProfitDeltaPct > 0 ? '+' : ''}${sum.deltas.opProfitDeltaPct.toFixed(1)}%`
+          : `${Number(sum.cur.opMarginPct || 0).toFixed(1)}%`);
 
     const kpi4Html = sum.canViewBooks && sum.books
       ? `<div class="ceo-pv-kpi">
@@ -6992,11 +7315,17 @@
             : `<strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.cashTillUsd))}</strong>`}
           <small class="ceo-pv-d num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.arBalanceUsd))}</small>
         </div>`
-      : `<div class="ceo-pv-kpi">
-          <span class="ceo-pv-k">Control Flags</span>
-          <strong class="ceo-pv-v num" data-no-i18n="1">${sum.openSentinelCount}</strong>
-          <small class="ceo-pv-d ${sum.openSentinelCount > 0 ? 'warn' : 'good'}" data-no-i18n="1">${sum.critSentinelCount > 0 ? `${sum.critSentinelCount}!` : '0'}</small>
-        </div>`;
+      : (sum.canViewSentinels
+          ? `<div class="ceo-pv-kpi">
+              <span class="ceo-pv-k">Control Flags</span>
+              <strong class="ceo-pv-v num" data-no-i18n="1">${sum.openSentinelCount || 0}</strong>
+              <small class="ceo-pv-d ${(sum.openSentinelCount || 0) > 0 ? 'warn' : 'good'}" data-no-i18n="1">${(sum.critSentinelCount || 0) > 0 ? `${sum.critSentinelCount}!` : '0'}</small>
+            </div>`
+          : `<div class="ceo-pv-kpi">
+              <span class="ceo-pv-k">Transactions</span>
+              <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtInt(sum.cur.txCount || 0))}</strong>
+              <small class="ceo-pv-d">Restricted</small>
+            </div>`);
 
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const isSpeakingNow = Boolean(
@@ -7027,13 +7356,17 @@
         </div>
         <div class="ceo-pv-kpi">
           <span class="ceo-pv-k">Gross Margin</span>
-          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.grossMarginUsd))}</strong>
-          <small class="ceo-pv-d ${(sum.deltas.gmDeltaPts || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(gmDeltaChip)}</small>
+          ${sum.canViewProfit
+            ? `<strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.grossMarginUsd))}</strong>
+               <small class="ceo-pv-d ${(sum.deltas.gmDeltaPts || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(gmDeltaChip)}</small>`
+            : '<strong class="ceo-pv-v">Restricted</strong><small class="ceo-pv-d">Restricted</small>'}
         </div>
         <div class="ceo-pv-kpi">
           <span class="ceo-pv-k">Operating Profit</span>
-          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.opProfitUsd))}</strong>
-          <small class="ceo-pv-d ${(sum.deltas.opProfitDeltaPct || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(opDeltaChip)}</small>
+          ${sum.canViewProfit
+            ? `<strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.opProfitUsd))}</strong>
+               <small class="ceo-pv-d ${(sum.deltas.opProfitDeltaPct || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(opDeltaChip)}</small>`
+            : '<strong class="ceo-pv-v">Restricted</strong><small class="ceo-pv-d">Restricted</small>'}
         </div>
         ${kpi4Html}
       </div>
@@ -7072,11 +7405,17 @@
         e.preventDefault();
         closeCeoVariancePopover();
         openDrawer();
-        const qPrompt = sum.lang === 'ar'
-          ? `حلل تباين الأرباح والهامش لـ ${sum.companyLabel} خلال ${sum.periodLabel}`
-          : (sum.lang === 'fr'
-              ? `Analysez l'écart de marge et de résultat pour ${sum.companyLabel} sur ${sum.periodLabel}`
-              : `Explain the P&L margin and profit drivers for ${sum.companyLabel} in ${sum.periodLabel}`);
+        const qPrompt = !sum.canViewProfit
+          ? (sum.lang === 'ar'
+              ? `لخص محركات الإيرادات وحجم المبيعات لـ ${sum.companyLabel} خلال ${sum.periodLabel}`
+              : (sum.lang === 'fr'
+                  ? `Analysez les moteurs du chiffre d'affaires et des volumes pour ${sum.companyLabel} sur ${sum.periodLabel}`
+                  : `Summarize the revenue and volume drivers for ${sum.companyLabel} in ${sum.periodLabel}`))
+          : (sum.lang === 'ar'
+              ? `حلل تباين الأرباح والهامش لـ ${sum.companyLabel} خلال ${sum.periodLabel}`
+              : (sum.lang === 'fr'
+                  ? `Analysez l'écart de marge et de résultat pour ${sum.companyLabel} sur ${sum.periodLabel}`
+                  : `Explain the P&L margin and profit drivers for ${sum.companyLabel} in ${sum.periodLabel}`));
         submitQuestion(qPrompt);
       });
     }
@@ -7226,6 +7565,13 @@
     };
 
     let rawBullets = [];
+    if (snap && snap.restricted) {
+      return [lang === 'ar'
+        ? 'تفاصيل هذا الكشف مقيدة حسب صلاحيات المقعد.'
+        : (lang === 'fr'
+            ? 'Les détails de cet état sont restreints selon les droits du poste.'
+            : 'Statement details are restricted by seat permissions.')];
+    }
     if (id === '05') {
       const tieOk = snap.tieCheck && snap.tieCheck.balanced;
       if (lang === 'ar') {
@@ -7404,18 +7750,30 @@
       }
     }
 
-    return rawBullets.map(b => sanitizeStmtCoverText(b, snap.canViewBooks));
+    const stmtCoverUser = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const stmtCoverMask = Object.assign({}, getSeatLens(stmtCoverUser), {
+      canViewBooks: Boolean(snap && snap.canViewBooks),
+      books: Boolean(snap && snap.canViewBooks),
+      canViewProfit: Boolean(snap && snap.canViewProfit),
+      profit: Boolean(snap && snap.canViewProfit),
+      canViewSentinels: Boolean(snap && snap.canViewSentinels),
+      sentinels: Boolean(snap && snap.canViewSentinels)
+    });
+    return rawBullets.map(b => sanitizeStmtCoverText(b, stmtCoverMask));
   }
 
   function buildStatementSummary(langOverride, opts) {
     const safeLang = resolveActiveBriefingLang(langOverride);
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
-    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const lens = getSeatLens(user);
+    const canViewBooks = Boolean(lens.books && (!opts || opts.canViewBooks === undefined || opts.canViewBooks));
+    const canViewProfit = Boolean(lens.profit && canViewBooks);
+    const canViewSentinels = Boolean(lens.sentinels);
     const rdlApi = (typeof window !== 'undefined' && window.MFG_RDL && typeof window.MFG_RDL.computeStatementSnapshot === 'function')
       ? window.MFG_RDL
       : null;
     const snap = rdlApi
-      ? rdlApi.computeStatementSnapshot(_ctx && _ctx.SEED, _ctx && _ctx.STATE, Object.assign({ canViewBooks }, opts || {}))
+      ? rdlApi.computeStatementSnapshot(_ctx && _ctx.SEED, _ctx && _ctx.STATE, Object.assign({}, opts || {}, { canViewBooks }))
       : {
           stmtId: '01',
           stmtTitle: 'Daily Operations',
@@ -7433,11 +7791,17 @@
           windowLabelFr: '',
           scopeKey: 'stmt|01|ALL',
           canViewBooks,
+          canViewProfit,
+          canViewSentinels,
           pinnedCoverNote: false,
           tieCheck: null,
           kpis: [],
           facts: {}
         };
+    if (snap && typeof snap === 'object') {
+      snap.canViewProfit = Boolean(snap.canViewProfit !== undefined ? (snap.canViewProfit && canViewProfit) : canViewProfit);
+      snap.canViewSentinels = Boolean(snap.canViewSentinels !== undefined ? (snap.canViewSentinels && canViewSentinels) : canViewSentinels);
+    }
 
     const headerTitle = safeLang === 'ar'
       ? `الكشف ${snap.stmtId}: ${snap.stmtAr || snap.stmtTitle}`
@@ -7448,7 +7812,7 @@
     const winDisplay = safeLang === 'ar' ? snap.windowLabelAr : (safeLang === 'fr' ? snap.windowLabelFr : snap.windowLabelEn);
     const windowSubtitle = `${headerTitle} · ${coDisplay} · ${winDisplay}`;
     const detBullets = buildStatementDeterministicBullets(snap, safeLang);
-    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cacheKey = `${snap.scopeKey}|${snap.canViewBooks ? 'B1' : 'B0'}|${snap.canViewProfit ? 'P1' : 'P0'}|${snap.canViewSentinels ? 'S1' : 'S0'}|${safeLang}`;
     const cachedAi = _chatState.stmtVarianceCache.get(cacheKey);
     const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
       ? cachedAi.bullets
@@ -7463,7 +7827,7 @@
 
     return {
       lang: safeLang,
-      scopeKey: snap.scopeKey,
+      scopeKey: `${snap.scopeKey}|${snap.canViewBooks ? 'B1' : 'B0'}|${snap.canViewProfit ? 'P1' : 'P0'}|${snap.canViewSentinels ? 'S1' : 'S0'}`,
       stmtId: snap.stmtId,
       stmtTitle: snap.stmtTitle,
       stmtAr: snap.stmtAr,
@@ -7476,6 +7840,8 @@
       windowLabel: winDisplay,
       windowSubtitle,
       canViewBooks: snap.canViewBooks,
+      canViewProfit: Boolean(snap.canViewProfit),
+      canViewSentinels: Boolean(snap.canViewSentinels),
       pinnedCoverNote: Boolean(snap.pinnedCoverNote),
       tieCheck: snap.tieCheck,
       kpis: snap.kpis,
@@ -7500,7 +7866,15 @@
       const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
       return `${lbl}: ${_pbiKpiValLoc(k, s.lang)}`;
     }).join(' | ');
-    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeStmtCoverText(b, s.canViewBooks)}`).join('\n');
+    const maskS = Object.assign({}, getSeatLens((_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null), {
+      canViewBooks: Boolean(s.canViewBooks),
+      books: Boolean(s.canViewBooks),
+      canViewProfit: Boolean(s.canViewProfit),
+      profit: Boolean(s.canViewProfit),
+      canViewSentinels: Boolean(s.canViewSentinels),
+      sentinels: Boolean(s.canViewSentinels)
+    });
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeStmtCoverText(b, maskS)}`).join('\n');
     return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
   }
 
@@ -7530,7 +7904,7 @@
           }).join('')}
         </div>
         <ul class="stmt-pcn-bullets">
-          ${bullets.map(b => `<li>${esc(sanitizeStmtCoverText(b, sum.canViewBooks))}</li>`).join('')}
+          ${bullets.map(b => `<li>${esc(sanitizeStmtCoverText(b, { canViewBooks: Boolean(sum.canViewBooks), canViewProfit: Boolean(sum.canViewProfit !== undefined ? sum.canViewProfit : sum.canViewBooks), canViewSentinels: Boolean(sum.canViewSentinels) }))}</li>`).join('')}
         </ul>
       </section>
     `;
@@ -7661,13 +8035,18 @@
             ? parsed.bullets
             : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
           const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          const stmtMaskOpts = {
+            canViewBooks: Boolean(sum.canViewBooks),
+            canViewProfit: Boolean(sum.canViewProfit !== undefined ? sum.canViewProfit : sum.canViewBooks),
+            canViewSentinels: Boolean(sum.canViewSentinels)
+          };
           let candBullets = Array.isArray(rawBulletArr)
-            ? rawBulletArr.map(b => sanitizeStmtCoverText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            ? rawBulletArr.map(b => sanitizeStmtCoverText(extractStr(b), stmtMaskOpts)).filter(b => b.length >= 12)
             : [];
           if (candBullets.length === 1 && candBullets[0].length >= 70) {
             const splitParts = candBullets[0]
               .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
-              .map(s => sanitizeStmtCoverText(s, sum.canViewBooks))
+              .map(s => sanitizeStmtCoverText(s, stmtMaskOpts))
               .filter(s => s.length >= 12);
             if (splitParts.length >= 2) candBullets = splitParts;
           }
@@ -8097,8 +8476,8 @@
   // ============================================================================
   // DASHBOARD VARIANCE, OUTLIER CONCENTRATION & READBACK (ALL 42 #pbi PAGES)
   // ============================================================================
-  function sanitizePbiBriefText(raw, canViewBooks) {
-    return sanitizeStmtCoverText(raw, canViewBooks);
+  function sanitizePbiBriefText(raw, maskOpts) {
+    return sanitizeStmtCoverText(raw, maskOpts);
   }
 
   function _pbiKpiValLoc(item, lang) {
@@ -8205,16 +8584,20 @@
       }
     }
 
-    return rawBullets.map(b => sanitizePbiBriefText(b, snap.canViewBooks));
+    return rawBullets.map(b => sanitizePbiBriefText(b, {
+      canViewBooks: Boolean(snap.canViewBooks),
+      canViewProfit: Boolean(snap.canViewProfit !== undefined ? snap.canViewProfit : snap.canViewBooks),
+      canViewSentinels: Boolean(snap.canViewSentinels !== undefined ? snap.canViewSentinels : snap.canViewBooks)
+    }));
   }
 
   function buildDashboardSummary(langOverride, opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     const safeLang = resolveActiveBriefingLang(langOverride || options.lang);
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
-    const canViewBooks = options.canViewBooks !== undefined
-      ? Boolean(options.canViewBooks)
-      : Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const lens = getSeatLens(user);
+    const canViewBooks = Boolean(lens.books && (options.canViewBooks === undefined || Boolean(options.canViewBooks)));
+    const canViewProfit = Boolean(lens.profit && canViewBooks);
 
     const activeInd = options.industry
       || ((_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(_ctx.STATE && _ctx.STATE.company) : 'Manufacturing')
@@ -8222,13 +8605,13 @@
 
     let snap = null;
     if (activeInd === 'Manufacturing' && typeof window !== 'undefined' && window.MFG_PBI && typeof window.MFG_PBI.computeDashboardSnapshot === 'function') {
-      snap = window.MFG_PBI.computeDashboardSnapshot(_ctx, Object.assign({
+      snap = window.MFG_PBI.computeDashboardSnapshot(_ctx, Object.assign({}, options, {
         STATE: _ctx && _ctx.STATE,
         SEED: _ctx && _ctx.SEED,
         canViewBooks
-      }, options));
+      }));
     } else if (activeInd !== 'Manufacturing' && _ctx && typeof _ctx.computeIndustryDashboardSnapshot === 'function') {
-      snap = _ctx.computeIndustryDashboardSnapshot(activeInd, Object.assign({ canViewBooks }, options));
+      snap = _ctx.computeIndustryDashboardSnapshot(activeInd, Object.assign({}, options, { canViewBooks }));
     }
 
     if (!snap) {
@@ -8251,13 +8634,17 @@
         slicerSummaryEn: '',
         slicerSummaryAr: '',
         slicerSummaryFr: '',
-        scopeKey: `pbi|${activeInd}|p01_overview`,
+        scopeKey: `pbi|${activeInd}|p01_overview|${canViewBooks ? 'b1' : 'b0'}|${canViewProfit ? 'p1' : 'p0'}`,
         canViewBooks,
+        canViewProfit,
+        canViewSentinels: lens.sentinels,
         tieCheck: null,
         topConcentration: { count: 0, top1Name: '', top1Pct: 0, top3Pct: 0 },
         kpis: [],
         facts: {}
       };
+    } else if (snap.canViewSentinels === undefined) {
+      snap = Object.assign({}, snap, { canViewSentinels: lens.sentinels, canViewProfit: snap.canViewProfit !== undefined ? Boolean(snap.canViewProfit && canViewProfit) : canViewProfit });
     }
 
     const pageTitleLoc = safeLang === 'ar'
@@ -8307,6 +8694,8 @@
       slicerSummary: slLoc || '',
       windowSubtitle,
       canViewBooks: snap.canViewBooks,
+      canViewProfit: Boolean(snap.canViewProfit !== undefined ? snap.canViewProfit : snap.canViewBooks),
+      canViewSentinels: Boolean(snap.canViewSentinels !== undefined ? snap.canViewSentinels : lens.sentinels),
       tieCheck: snap.canViewBooks ? snap.tieCheck : null,
       topConcentration: snap.topConcentration,
       kpis: snap.kpis,
@@ -8331,7 +8720,7 @@
       const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
       return `${lbl}: ${_pbiKpiValLoc(k, s.lang)}`;
     }).join(' | ');
-    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizePbiBriefText(b, s.canViewBooks)}`).join('\n');
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizePbiBriefText(b, { canViewBooks: s.canViewBooks, canViewProfit: s.canViewProfit !== undefined ? s.canViewProfit : s.canViewBooks, canViewSentinels: s.canViewSentinels !== undefined ? s.canViewSentinels : s.canViewBooks })}`).join('\n');
     return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
   }
 
@@ -8377,9 +8766,9 @@
       '1. Every dollar figure, percentage, entity/customer name, and count MUST come verbatim from the supplied JSON payload. Never invent or recompute numbers.',
       '2. Bullet 1 summarizes the headline dashboard KPIs and active reporting/slicer scope.',
       '3. Bullet 2 highlights Top-1 / Top-3 concentration share, margin dispersion, or primary operational driver.',
-      sum.canViewBooks
+      (sum.canViewBooks && sum.canViewProfit !== false)
         ? '4. Bullet 3 states ledger tie posture (cite $0.00 variance when tieStatus.balanced is true) or concrete management follow-up.'
-        : '4. Bullet 3 states operational control posture and field action (never mention cash till, bank balances, receivables, or restricted payables).',
+        : '4. Bullet 3 states operational control posture and field action (never mention cash till, bank balances, profit, gross margin, receivables, or restricted payables).',
       '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, Power BI, or internal system names.'
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate executive dashboard outlier/concentration bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
@@ -8467,13 +8856,18 @@
             ? parsed.bullets
             : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
           const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          const pbiMaskOpts = {
+            canViewBooks: Boolean(sum.canViewBooks),
+            canViewProfit: Boolean(sum.canViewProfit !== undefined ? sum.canViewProfit : sum.canViewBooks),
+            canViewSentinels: Boolean(sum.canViewSentinels)
+          };
           let candBullets = Array.isArray(rawBulletArr)
-            ? rawBulletArr.map(b => sanitizePbiBriefText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            ? rawBulletArr.map(b => sanitizePbiBriefText(extractStr(b), pbiMaskOpts)).filter(b => b.length >= 12)
             : [];
           if (candBullets.length === 1 && candBullets[0].length >= 70) {
             const splitParts = candBullets[0]
               .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
-              .map(s => sanitizePbiBriefText(s, sum.canViewBooks))
+              .map(s => sanitizePbiBriefText(s, pbiMaskOpts))
               .filter(s => s.length >= 12);
             if (splitParts.length >= 2) candBullets = splitParts;
           }
@@ -14238,7 +14632,8 @@
     const isAi = Boolean(sum.isAiSource);
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
 
-    const kpiCardsHtml = sum.canViewBooks
+    const isWiRestricted = Boolean(sum.restricted || !sum.canViewBooks);
+    const kpiCardsHtml = !isWiRestricted
       ? `
         <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="rev">
           <span class="ceo-pv-kpi-lbl">Simulated Revenue</span>
@@ -14277,12 +14672,12 @@
         <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="gm">
           <span class="ceo-pv-kpi-lbl">Simulated Gross Margin</span>
           <strong class="ceo-pv-kpi-val" data-no-i18n="1">${sum.lang === 'ar' ? 'الدفاتر مقيدة' : (sum.lang === 'fr' ? 'Comptes restreints' : 'Books Restricted')}</strong>
-          <small class="ceo-pv-kpi-sub" data-no-i18n="1">RLS</small>
+          <small class="ceo-pv-kpi-sub" data-no-i18n="1">Restricted by seat permissions</small>
         </div>
         <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="cash">
           <span class="ceo-pv-kpi-lbl">30-Day Projected Cash & Runway</span>
           <strong class="ceo-pv-kpi-val" data-no-i18n="1">${sum.lang === 'ar' ? 'الدفاتر مقيدة' : (sum.lang === 'fr' ? 'Comptes restreints' : 'Books Restricted')}</strong>
-          <small class="ceo-pv-kpi-sub" data-no-i18n="1">DSO ${s.dsoDays}d</small>
+          <small class="ceo-pv-kpi-sub" data-no-i18n="1">Restricted by seat permissions</small>
         </div>
       `;
 
@@ -14318,6 +14713,7 @@
         ${kpiCardsHtml}
       </div>
 
+      ${!isWiRestricted ? `
       <div class="wi-tornado-card" id="wiTornadoCard">
         <div class="wi-card-head">
           <span class="pg-sec-title">Profit & Cash Sensitivity Bridge</span>
@@ -14352,15 +14748,18 @@
           </button>
         </div>
       </div>
+      ` : ''}
 
       <div class="wi-insights-card" id="wiInsightsCard">
         <div class="wi-card-head">
           <span class="pg-sec-title">Key Sensitivity Takeaways</span>
           <div class="wi-insights-head-right">
             <span class="ceo-pv-badge ${isAi ? 'is-ai' : 'is-det'}" id="wiSourceBadge">${isAi ? 'AI Scenario Brief' : 'Deterministic Engine'}</span>
+            ${!isWiRestricted ? `
             <button type="button" class="ceo-pv-btn wi-ai-btn" id="wiGenerateAiBriefBtn" data-wi-gen-ai="1">
               ${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>AI Sensitivity Brief</span>
             </button>
+            ` : ''}
           </div>
         </div>
         <ol class="ceo-pv-list wi-bullets-list" id="wiBulletsList" data-no-i18n="1">
@@ -15337,13 +15736,15 @@
       `Rules: Never invent numbers. Never use em-dashes, en-dashes, or arrows. Return 3 short bullet lines.`
     ];
 
-    const p = fetch('./api/ask', {
+    const promptText = promptLines.join('\n');
+    const p = ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${getApiBase()}/api/ask`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tier: 'fast',
         lang: safeLang,
-        messages: [{ role: 'user', content: promptLines.join('\n') }]
+        userPrompt: promptText,
+        geminiContents: [{ role: 'user', parts: [{ text: promptText }] }]
       })
     })
       .then(r => (r.ok ? r.json() : null))
@@ -20812,14 +21213,26 @@
   // ============================================================================
   function buildIndustryLiveContextLines(activeInd, scope) {
     const user = scope.user;
+    const lens = getSeatLens(user);
     if (activeInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+      if (!lens.books) {
+        return ['Industry: Holding & Treasury (Restricted Treasury Scope: Cash Flow & General Ledger access required)'];
+      }
       const h = window.MFG_HOLDING.compute();
       const hk = h.kpis || {};
       const icRows = h.intercompany || [];
-      const pRows = h.partners || [];
+      const pRows = lens.partnerSplits ? (h.partners || []) : [];
+      if (!lens.books) {
+        return [
+          'Industry: Holding & Treasury (Bdeir Holding)',
+          'Holding & Treasury: Restricted Treasury Scope'
+        ];
+      }
       return [
-        `Industry: Holding & Treasury (Bdeir Holding)`,
-        `Corporate Overhead: ${fmtMoney(hk.totalExpenses || 0, 0)} across ${fmtInt(hk.voucherCount || 0)} vouchers | Net Treasury Cashflow: ${fmtMoney(hk.netCashflow || 0, 0)}`,
+        'Industry: Holding & Treasury (Bdeir Holding)',
+        lens.expenses
+          ? `Corporate Overhead: ${fmtMoney(hk.totalExpenses || 0, 0)} across ${fmtInt(hk.voucherCount || 0)} vouchers | Net Treasury Cashflow: ${fmtMoney(hk.netCashflow || 0, 0)}`
+          : `Net Treasury Cashflow: ${fmtMoney(hk.netCashflow || 0, 0)}`,
         `Intercompany Clearing: Due-From ${fmtMoney(hk.dueFromTotal || 0, 0)} vs Due-To ${fmtMoney(hk.dueToTotal || 0, 0)} | Net Position: ${fmtMoney(hk.netIntercompany || 0, 0)} across ${fmtInt(icRows.length)} pairs`,
         icRows.length ? `Top Intercompany Pairs: ${icRows.slice(0, 4).map(r => `${cleanOut(r.from || 'Holding')}/${cleanOut(r.to || r.counterparty || '')} Net ${fmtMoney(r.net || ((r.dueFrom || 0) - (r.dueTo || 0)), 0)}`).join(', ')}` : '',
         pRows.length ? `Shareholder Partner Accounts: ${pRows.slice(0, 4).map(p => `${cleanOut(p.partner || p.name)} (${fmtInt(p.sharePct || 0, 1)}%, Closing ${fmtMoney(p.closingBalance || p.balance || 0, 0)})`).join(', ')}` : ''
@@ -20835,8 +21248,14 @@
       return [
         `Industry: Hospitality & Resorts (${scope.scopeCoLabel})`,
         `Venue Revenue: ${fmtMoney(hk.salesTotal || 0, 0)} across ${fmtInt(hk.receiptCount || 0)} closings (${fmtInt(hk.coversTotal || 0)} guest covers, Avg Check ${fmtMoney(hk.avgCover || 0, 2)})`,
-        `Operating Profit: ${fmtMoney(hk.operatingProfit || 0, 0)} | Cash USD: ${fmtMoney(hk.cashCollected || 0, 0)} | Card/POS: ${fmtMoney(hk.cardCollected || 0, 0)} | Supplier AP: ${fmtMoney(hk.apBalance || 0, 0)}`,
-        `Memberships & Cabanas: ${fmtInt(hk.activeMembers || 0)} active packages worth ${fmtMoney(hk.membershipPkgValue || 0, 0)} (${fmtMoney(hk.membershipBalance || 0, 0)} open installments)`,
+        (lens.profit && lens.books)
+          ? `Operating Profit: ${fmtMoney(hk.operatingProfit || 0, 0)} | Cash USD: ${fmtMoney(hk.cashCollected || 0, 0)} | Card/POS: ${fmtMoney(hk.cardCollected || 0, 0)} | Supplier AP: ${fmtMoney(hk.apBalance || 0, 0)}`
+          : (lens.books
+              ? `Cash USD: ${fmtMoney(hk.cashCollected || 0, 0)} | Card/POS: ${fmtMoney(hk.cardCollected || 0, 0)}${lens.expenses ? ` | Supplier AP: ${fmtMoney(hk.apBalance || 0, 0)}` : ''} | Operating Profit: Restricted`
+              : (lens.profit
+                  ? `Operating Profit: ${fmtMoney(hk.operatingProfit || 0, 0)} | Cash & Payables: Restricted`
+                  : 'Cash & Profit Metrics: Restricted by seat permissions')),
+        `Memberships & Cabanas: ${fmtInt(hk.activeMembers || 0)} active packages worth ${fmtMoney(hk.membershipPkgValue || 0, 0)}${lens.books ? ` (${fmtMoney(hk.membershipBalance || 0, 0)} open installments)` : ''}`,
         topVenues.length ? `Resort Breakdown: ${topVenues.map(([v, amt]) => `${cleanOut(v)} (${fmtMoney(amt, 0)})`).join(', ')}` : ''
       ].filter(Boolean);
     }
@@ -20846,10 +21265,16 @@
       const vRows = d.vehicleRows || [];
       return [
         `Industry: Automotive & Heavy Trading (${scope.scopeCoLabel})`,
-        `Commercial Sales (N/S/IS/IN Books): ${fmtMoney(tk.salesTotal || 0, 0)} | Gross Margin: ${fmtMoney(tk.grossMargin || 0, 0)} (${fmtPctVal(tk.grossMargin, tk.salesTotal)}) | Operating Profit: ${fmtMoney(tk.operatingProfit || 0, 0)}`,
-        `Heavy Truck VIN Yard: ${fmtInt(tk.deliveredUnits || 0)} delivered, ${fmtInt(tk.inStockUnits || 0)} showroom units | FIFO Spare Parts Valuation: ${fmtMoney(tk.stockValuation || 0, 0)} (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`,
-        `Working Capital: Customer AR ${fmtMoney(tk.arBalance || 0, 0)} | Foreign Supplier & Customs AP ${fmtMoney(tk.apBalance || 0, 0)}`,
-        vRows.length ? `Sample VIN Units: ${vRows.slice(0, 4).map(v => `${cleanOut(v.vin)} ${cleanOut(v.model)} (Margin ${fmtMoney(v.marginUsd || 0, 0)}, ${cleanOut(v.status)})`).join('; ')}` : ''
+        (lens.profit && lens.expenses)
+          ? `Commercial Sales (N/S/IS/IN Books): ${fmtMoney(tk.salesTotal || 0, 0)} | Gross Margin: ${fmtMoney(tk.grossMargin || 0, 0)} (${fmtPctVal(tk.grossMargin, tk.salesTotal)}) | Operating Profit: ${fmtMoney(tk.operatingProfit || 0, 0)}`
+          : `Commercial Sales: ${fmtMoney(tk.salesTotal || 0, 0)} | Margin & Profit: Restricted`,
+        (lens.expenses && (lens.books || lens.profit))
+          ? `Heavy Truck VIN Yard: ${fmtInt(tk.deliveredUnits || 0)} delivered, ${fmtInt(tk.inStockUnits || 0)} showroom units | FIFO Spare Parts Valuation: ${fmtMoney(tk.stockValuation || 0, 0)} (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`
+          : `Heavy Truck VIN Yard: ${fmtInt(tk.deliveredUnits || 0)} delivered, ${fmtInt(tk.inStockUnits || 0)} showroom units`,
+        lens.books
+          ? `Working Capital: Customer AR ${fmtMoney(tk.arBalance || 0, 0)} | Foreign Supplier & Customs AP ${fmtMoney(tk.apBalance || 0, 0)}`
+          : 'Working Capital: Restricted',
+        vRows.length ? `Sample VIN Units: ${vRows.slice(0, 4).map(v => `${cleanOut(v.vin)} ${cleanOut(v.model)} (${(lens.profit && lens.expenses) ? `Margin ${fmtMoney(v.marginUsd || 0, 0)}, ` : ''}${cleanOut(v.status)})`).join('; ')}` : ''
       ].filter(Boolean);
     }
     if (activeInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
@@ -20858,9 +21283,9 @@
       const lRows = d.leases || [];
       return [
         `Industry: Real Estate & Property (${scope.scopeCoLabel})`,
-        `Contracted Annual Rent: ${fmtMoney(rk.annualRentTtc || 0, 0)} (Base ${fmtMoney(rk.annualBaseRent || 0, 0)} + 11% VAT ${fmtMoney(rk.annualVat || 0, 0)}) | Net Operating Income: ${fmtMoney(rk.noiUsd || 0, 0)}`,
+        `${lens.tax ? `Contracted Annual Rent: ${fmtMoney(rk.annualRentTtc || 0, 0)} (Base ${fmtMoney(rk.annualBaseRent || 0, 0)} + 11% VAT ${fmtMoney(rk.annualVat || 0, 0)})` : `Contracted Annual Rent: ${fmtMoney(rk.annualRentTtc || 0, 0)}`} | Net Operating Income: ${lens.profit ? fmtMoney(rk.noiUsd || 0, 0) : 'Restricted'}`,
         `Occupancy: ${fmtInt(rk.occupancyPct || 0, 1)}% (${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)} units) | Expiring <=90d: ${fmtInt(rk.expiring90d || 0)} leases`,
-        `Billing & Arrears: Billed ${fmtMoney(rk.billedRentTtc || 0, 0)} | Collected ${fmtMoney(rk.collectedUsd || 0, 0)} | Open Tenant Receivables ${fmtMoney(rk.openArUsd || 0, 0)} | Upkeep ${fmtMoney(rk.maintTotalUsd || 0, 0)}`,
+        `Billing & Arrears: Billed ${fmtMoney(rk.billedRentTtc || 0, 0)}${lens.books ? ` | Collected ${fmtMoney(rk.collectedUsd || 0, 0)} | Open Tenant Receivables ${fmtMoney(rk.openArUsd || 0, 0)}` : ' | Collections & Tenant Receivables: Restricted'}${lens.expenses ? ` | Upkeep ${fmtMoney(rk.maintTotalUsd || 0, 0)}` : ''}`,
         lRows.length ? `Key Leases: ${lRows.slice(0, 4).map(l => `${cleanOut(l.tenant)} (${cleanOut(l.unitCode)}, Ends ${cleanOut(l.endDate)}, ${fmtMoney(l.annualTtcUsd || 0, 0)})`).join('; ')}` : ''
       ].filter(Boolean);
     }
@@ -20870,10 +21295,14 @@
       const cRows = d.carrierMatrix || [];
       return [
         `Industry: Insurance & Brokerage (${scope.scopeCoLabel})`,
-        `Gross Written Premium (GWP): ${fmtMoney(ik.gwpTotal || 0, 0)} across ${fmtInt(ik.policyCount || 0)} policies | Brokerage Commission: ${fmtMoney(ik.commTotal || 0, 0)} (${fmtInt(ik.avgCommYield || 0, 1)}% yield) | Net Brokerage Profit: ${fmtMoney(ik.netBrokerageIncome || 0, 0)}`,
-        `Receivables & Carrier Clearing: Client Unpaid Premium ${fmtMoney(ik.unpaidPremUsd || 0, 0)} | Net Carrier Bordereau Payable ${fmtMoney(ik.carrierPayableUsd || 0, 0)}`,
-        `Renewals & Claims: ${fmtInt(ik.renewing60d || 0)} policies renewing <=60d (${fmtMoney(ik.renewalGwp60d || 0, 0)} GWP) | Incurred Claims ${fmtMoney(ik.incurredClaimsUsd || 0, 0)} (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)`,
-        cRows.length ? `Top Carriers: ${cRows.slice(0, 4).map(c => `${cleanOut(c.carrier)} (GWP ${fmtMoney(c.gwpUsd || 0, 0)}, Balance Due ${fmtMoney(c.balanceDueUsd || 0, 0)})`).join('; ')}` : ''
+        lens.profit
+          ? `Gross Written Premium (GWP): ${fmtMoney(ik.gwpTotal || 0, 0)} across ${fmtInt(ik.policyCount || 0)} policies | Brokerage Commission: ${fmtMoney(ik.commTotal || 0, 0)} (${fmtInt(ik.avgCommYield || 0, 1)}% yield) | Net Brokerage Profit: ${fmtMoney(ik.netBrokerageIncome || 0, 0)}`
+          : `Gross Written Premium (GWP): ${fmtMoney(ik.gwpTotal || 0, 0)} across ${fmtInt(ik.policyCount || 0)} policies | Commission & Profit: Restricted`,
+        lens.books
+          ? `Receivables & Carrier Clearing: Client Unpaid Premium ${fmtMoney(ik.unpaidPremUsd || 0, 0)} | Net Carrier Bordereau Payable ${fmtMoney(ik.carrierPayableUsd || 0, 0)}`
+          : 'Receivables & Carrier Clearing: Restricted',
+        `Renewals & Claims: ${fmtInt(ik.renewing60d || 0)} policies renewing <=60d (${fmtMoney(ik.renewalGwp60d || 0, 0)} GWP)${lens.expenses ? ` | Incurred Claims ${fmtMoney(ik.incurredClaimsUsd || 0, 0)} (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)` : ''}`,
+        cRows.length ? `Top Carriers: ${cRows.slice(0, 4).map(c => `${cleanOut(c.carrier)} (GWP ${fmtMoney(c.gwpUsd || 0, 0)}${lens.books ? `, Balance Due ${fmtMoney(c.balanceDueUsd || 0, 0)}` : ''})`).join('; ')}` : ''
       ].filter(Boolean);
     }
 
@@ -20886,18 +21315,21 @@
     return [
       `Industry: Manufacturing & Quarries (${scope.fullScopeLabel})`,
       `${salesLabel(user)}: ${fmtMoney(k.sales_ttc, 0)} across ${fmtInt(k.loads)} loads (${fmtInt(k.tons_sold, 0)} tons)`,
-      `Raw Material & Haulage Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Operating Expenses: ${fmtMoney(k.expenses_total, 0)}`,
-      `Gross Margin: ${fmtMoney(k.gross_margin, 0)} | Operating Profit: ${fmtMoney(k.operating_profit, 0)}`,
-      `Open Receivables: ${fmtMoney(k.ar_balance, 0)} (Past 60d: ${fmtMoney(k.ar_60_plus, 0)}) | Net Open Payables: ${fmtMoney(k.ap_balance, 0)}`,
+      lens.expenses ? `Raw Material & Haulage Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Operating Expenses: ${fmtMoney(k.expenses_total, 0)}` : '',
+      lens.profit ? `Gross Margin: ${fmtMoney(k.gross_margin, 0)} | Operating Profit: ${fmtMoney(k.operating_profit, 0)}` : 'Gross Margin & Operating Profit: Restricted',
+      lens.books
+        ? `Open Receivables: ${fmtMoney(k.ar_balance, 0)} (Past 60d: ${fmtMoney(k.ar_60_plus, 0)}) | Net Open Payables: ${fmtMoney(k.ap_balance, 0)}`
+        : 'Open Receivables & Payables: Restricted',
       topProds.length ? `Top Products: ${topProds.map(p => `${cleanOut(p.Product || p.name)} (${fmtMoney(p.sales_ttc, 0)})`).join(', ')}` : '',
-      topCusts.length ? `Top Customers: ${topCusts.map(c => `${cleanOut(c.Customer || c.name)} (${fmtMoney(c.sales_ttc, 0)}, Open AR ${fmtMoney(c.ar_balance, 0)})`).join(', ')}` : '',
-      canHub('cashflow', user) ? `Cash Till: ${fmtMoney(k.cash_till, 2)}` : '',
+      topCusts.length ? `Top Customers: ${topCusts.map(c => `${cleanOut(c.Customer || c.name)} (${fmtMoney(c.sales_ttc, 0)}${lens.books ? `, Open AR ${fmtMoney(c.ar_balance, 0)}` : ''})`).join(', ')}` : '',
+      lens.books ? `Cash Till: ${fmtMoney(k.cash_till, 2)}` : 'Cash Till: Restricted',
       canHub('fleet', user) ? `Diesel Dispensed: ${fmtInt(k.diesel_litres, 0)} L` : ''
     ].filter(Boolean);
   }
 
   function buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts = [], opts = {}) {
     const user = scope ? scope.user : null;
+    const lens = getSeatLens(user);
     const scopeCo = scope && scope.coKey ? scope.coKey : undefined;
     const activeInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
       ? _ctx.getActiveIndustry(scopeCo)
@@ -20905,12 +21337,26 @@
         ? window.MFG_ENTERPRISE.getActiveIndustry(scopeCo)
         : 'Manufacturing');
     const indLines = buildIndustryLiveContextLines(activeInd, scope);
-    const items = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    const items = (lens.sentinels && _ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
     const openAlerts = items.filter(it => it && it.severity && it.severity !== 'ok');
     const liveScreen = captureLiveScreenSnapshot();
 
-    const kpiTxt = (liveScreen && Array.isArray(liveScreen.topKpis) && liveScreen.topKpis.length)
-      ? ' | Visible Screen KPIs: ' + liveScreen.topKpis.slice(0, 5).map(x => `${x.label}=${x.val}`).join(', ')
+    const filterKpisForSeatLens = list => (Array.isArray(list) ? list : []).filter(x => {
+      if (!x) return false;
+      const lbl = `${String(x.label || '')} ${String(x.val || '')}`;
+      if (/restricted|مقيد|restreint/i.test(String(x.val || ''))) return false;
+      if (!lens.books && /cash|till|fiduciary|trial balance|payable|receivable|\bar\b|arrears|collection|deposit|escrow|variance|due[- ]?(?:from|to)|intercompany|caisse|tr[ée]sorerie|cr[ée]ance|bilan|الصندوق|السيولة|ميزان|الذمم|تحصيل|تأمين|بيني/i.test(lbl)) return false;
+      if (!lens.profit && /profit|margin|\bgm\b|cost|cogs|\bnoi\b|commission|brokerage|valuation|landed|spread|closing|net comm|client disc|rate\s*%|marge|r[ée]sultat|co[ûu]t|courtage|الربح|هامش|تكلفة|كلفة|عمولة/i.test(lbl)) return false;
+      if (!lens.expenses && /expense|opex|raw|purchas|overhead|\bap\b|maint|upkeep|supplier|charge|fournisseur|مصاريف|نفقات|مشتريات|مورد/i.test(lbl)) return false;
+      if (!lens.tax && /\bvat\b|ex-vat|\bht\b|tva|ضريبة/i.test(lbl)) return false;
+      if (!lens.partnerSplits && /partner|shareholder|\bjv\b|associ[ée]|شريك|شركاء/i.test(lbl)) return false;
+      if (!lens.payrollDollars && /salar|payroll|paie|رواتب|أجور/i.test(lbl)) return false;
+      if (!lens.sentinels && /sentinel|watchdog|anom|alerte|رقاب|تنبيه/i.test(lbl)) return false;
+      return true;
+    }).slice(0, 5);
+    const safeScreenKpis = filterKpisForSeatLens(liveScreen && liveScreen.topKpis);
+    const kpiTxt = safeScreenKpis.length
+      ? ' | Visible Screen KPIs: ' + safeScreenKpis.map(x => `${x.label}=${x.val}`).join(', ')
       : '';
     const screenLine = `Current Screen Visible to User: ${(liveScreen && liveScreen.pageTitle) || 'Executive Overview'} (#${(liveScreen && liveScreen.viewId) || 'overview'})${kpiTxt}`;
 
@@ -20930,17 +21376,18 @@
         const sample = a.parsedRows && a.parsedRows.length
           ? ' | Sample rows: ' + a.parsedRows.slice(0, 4).map(r => r.join(', ')).join(' ; ')
           : (txtSample ? ' | Excerpt: ' + txtSample.slice(0, 400) : '');
+        const safeAttKpis = filterKpisForSeatLens(a.screenSnapshot && a.screenSnapshot.topKpis);
         const screenCtx = (a.screenSnapshot && a.screenSnapshot.pageTitle)
-          ? ` | Captured Screen: ${a.screenSnapshot.pageTitle} (${(a.screenSnapshot.topKpis || []).map(x => `${x.label}=${x.val}`).join(', ')})`
+          ? ` | Captured Screen: ${a.screenSnapshot.pageTitle}${safeAttKpis.length ? ` (${safeAttKpis.map(x => `${x.label}=${x.val}`).join(', ')})` : ''}`
           : '';
         return `- ${a.name} (${a.kind}, ${a.summaryLine || a.sizeLabel})${screenCtx}${sample}`;
       }).join('\n');
     }
 
-    const p16Line = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase16ReconSnapshot === 'function')
+    const p16Line = (lens.books && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase16ReconSnapshot === 'function')
       ? cleanOut(window.MFG_AI_EDGE.getPhase16ReconSnapshot(activeInd).summaryLine || '')
       : '';
-    const p17Line = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase17CloseSnapshot === 'function')
+    const p17Line = (lens.books && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase17CloseSnapshot === 'function')
       ? cleanOut(window.MFG_AI_EDGE.getPhase17CloseSnapshot(activeInd).summaryLine || '')
       : '';
     const telLine = (canHub('fleet', user) && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.buildAskContextSummary === 'function')
@@ -20954,7 +21401,7 @@
       p17Line,
       telLine,
       screenLine,
-      `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 4).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
+      lens.sentinels ? `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 4).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}` : '',
       domainDetail,
       attDetail
     ].filter(Boolean).join('\n');
@@ -21016,33 +21463,48 @@
         if (dynHit) enrichedBase = dynHit;
       }
 
+      const llmLens = getSeatLens(scope ? scope.user : null);
       const llmBullets = Array.isArray(obj.bullets)
-        ? obj.bullets.slice(0, 4).map(b => esc(cleanOut(String(b || '').replace(/<[^>]+>/g, '')))).filter(Boolean)
+        ? obj.bullets.slice(0, 4).map(b => sanitizeVarianceBulletText(String(b || '').replace(/<[^>]+>/g, ''), llmLens)).map(b => esc(b)).filter(Boolean)
         : [];
       const mergedBullets = (enrichedBase.bullets && enrichedBase.bullets.length)
         ? enrichedBase.bullets
         : (llmBullets.length ? llmBullets : undefined);
+      const cleanLlmAnswer = sanitizeVarianceBulletText(obj.answer, llmLens);
+      const restrictedFallbackAns = resolvedLang === 'ar'
+        ? 'بعض المؤشرات المالية مقيدة لصلاحيات هذا المقعد.'
+        : (resolvedLang === 'fr'
+            ? 'Certains indicateurs financiers sont restreints pour ce siège.'
+            : 'Requested financial figures are restricted by seat permissions.');
+      const safeAnswer = cleanLlmAnswer
+        ? esc(cleanLlmAnswer)
+        : (enrichedBase.answer || restrictedFallbackAns);
+      const cleanLlmVoice = obj.voiceSummary ? sanitizeVarianceBulletText(obj.voiceSummary, llmLens) : '';
+      const safeVoice = cleanLlmVoice || (enrichedBase.voiceSummary ? cleanOut(enrichedBase.voiceSummary) : undefined);
+      const safeFollowUps = Array.isArray(obj.followUps) && obj.followUps.length
+        ? obj.followUps.slice(0, 3).map(f => sanitizeVarianceBulletText(f, llmLens)).filter(Boolean)
+        : [];
+      const cleanLlmTitle = obj.title ? sanitizeVarianceBulletText(obj.title, llmLens) : '';
+      const cleanLlmPrompt = obj.promptText ? sanitizeVarianceBulletText(obj.promptText, llmLens) : '';
 
       return {
         q: resolvedQ,
         userTranscript: userTranscript || undefined,
         lang: resolvedLang,
         conversational: !(enrichedBase.rows && enrichedBase.rows.length),
-        title: cleanOut(obj.title || enrichedBase.title || 'Ask ISABI'),
-        answer: esc(cleanOut(obj.answer)),
-        voiceSummary: obj.voiceSummary ? cleanOut(obj.voiceSummary) : undefined,
+        title: cleanLlmTitle || cleanOut(enrichedBase.title || 'Ask ISABI'),
+        answer: safeAnswer,
+        voiceSummary: safeVoice,
         headers: enrichedBase.headers,
         rows: enrichedBase.rows,
         total: enrichedBase.total,
         kpis: enrichedBase.kpis,
         bullets: mergedBullets,
-        promptText: obj.promptText ? cleanOut(obj.promptText) : enrichedBase.promptText,
+        promptText: cleanLlmPrompt || enrichedBase.promptText,
         actions: enrichedBase.actions,
         attachments: fallback ? fallback.attachments : undefined,
         fromVoice: fallback ? fallback.fromVoice : undefined,
-        followUps: Array.isArray(obj.followUps) && obj.followUps.length
-          ? obj.followUps.slice(0, 3).map(cleanOut).filter(Boolean)
-          : enrichedBase.followUps
+        followUps: safeFollowUps.length ? safeFollowUps : enrichedBase.followUps
       };
     } catch (_) {
       return null;
@@ -21121,16 +21583,30 @@
   // ============================================================================
   function renderWelcomeHtml() {
     const user = getActiveUser();
+    const lens = getSeatLens(user);
     const scope = resolveQueryScope('', user);
     const firstName = cleanOut(userDisplayName(user).split(' ')[0]);
-    const items = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    const items = (lens.sentinels && _ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
     const openAlerts = items.filter(it => it && it.severity && it.severity !== 'ok').length;
     const k = (_ctx && typeof _ctx.getKPI === 'function') ? _ctx.getKPI(scope.coKey) : {};
     const tbOk = Math.abs(Number(k.tb_check || 0)) < 0.005;
 
+    let statusLead = '<span>Operational workspace is ready.</span>';
+    if (lens.books && lens.sentinels) {
+      statusLead = tbOk
+        ? `<span>Books are tied at</span> <b data-no-i18n="1">$0.00</b> <span>with</span> <b data-no-i18n="1">${fmtInt(openAlerts)}</b> <span>${openAlerts === 1 ? 'open Sentinel alert.' : 'open Sentinel alerts.'}</span>`
+        : `<span>Trial balance requires review ($0.00 target)</span> <span>with</span> <b data-no-i18n="1">${fmtInt(openAlerts)}</b> <span>${openAlerts === 1 ? 'open Sentinel alert.' : 'open Sentinel alerts.'}</span>`;
+    } else if (lens.books) {
+      statusLead = tbOk
+        ? '<span>Books are tied at</span> <b data-no-i18n="1">$0.00</b>.'
+        : '<span>Trial balance requires review ($0.00 target).</span>';
+    } else if (lens.sentinels) {
+      statusLead = `<b data-no-i18n="1">${fmtInt(openAlerts)}</b> <span>${openAlerts === 1 ? 'open Sentinel alert on your permitted scope.' : 'open Sentinel alerts on your permitted scope.'}</span>`;
+    }
+
     return `
       <div class="ai-msg-bot ai-welcome-card">
-        <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. ${tbOk ? 'Books are tied at <b>$0.00</b>' : 'Trial balance requires review ($0.00 target)'} with <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}. Ask anything in English, العربية, or Français, open <b>Voice Mode</b> for a live spoken briefing, or attach any file.</p>
+        <p class="ai-bot-p"><span>Welcome</span>${firstName ? ', <b data-no-i18n="1">' + esc(firstName) + '</b>.' : '.'} ${statusLead} <span>Ask anything in English, العربية, or Français, open</span> <b>Voice Mode</b> <span>for a live spoken briefing, or attach any file.</span></p>
       </div>
     `;
   }
@@ -21366,6 +21842,8 @@
     _chatState.scopeDirty = false;
     const user = getActiveUser();
     const scope = resolveQueryScope('', user);
+    const chipLens = getSeatLens(user);
+    const canChipLedger = Boolean(chipLens.books && canView('ledger', user));
 
     const hdrTitle = document.querySelector('#aiDrawer .ai-console-title b');
     if (hdrTitle) {
@@ -21375,71 +21853,125 @@
     if (hdrSub) {
       hdrSub.textContent = `${scope.scopeCoLabel} · USD · ${scope.periodLabel}`;
     }
-    const inp = document.getElementById('aiInput');
-    if (inp) {
-      inp.placeholder = `Ask about ${scope.scopeCoLabel}, today's ops, AR, expenses, stock, diesel...`;
-    }
 
     const chipsBox = document.getElementById('aiChips');
-    const activeInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
-      ? window.MFG_ENTERPRISE.getActiveIndustry()
-      : 'Manufacturing';
-    if (inp && activeInd !== 'Manufacturing') {
-      const indPlaceholders = {
-        'Holding & Treasury': `Ask about Bdeir Holding overhead, intercompany Due-From/Due-To, partner splits, trial balance...`,
-        'Hospitality & Resorts': `Ask about ${scope.scopeCoLabel} venue revenue, POS tills, cabanas, memberships, F&B costs...`,
-        'Automotive & Heavy Trading': `Ask about ${scope.scopeCoLabel} invoice books (N/S/IS/IN), Shacman VINs, FIFO parts stock...`,
-        'Real Estate & Property': `Ask about ${scope.scopeCoLabel} 4235 VAT rent roll, occupancy, expiring leases, tenant AR...`,
-        'Insurance & Brokerage': `Ask about GWP, brokerage commissions, 30/60/90d renewals, claims loss ratio, carrier payables...`
-      };
-      inp.placeholder = indPlaceholders[activeInd] || inp.placeholder;
+    const activeInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(scope && scope.coKey)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+        ? window.MFG_ENTERPRISE.getActiveIndustry(scope && scope.coKey)
+        : 'Manufacturing');
+    const inp = document.getElementById('aiInput');
+    if (inp) {
+      let nextPh = '';
+      if (activeInd === 'Manufacturing') {
+        const mfgTopics = [
+          'today\'s ops',
+          ...(chipLens.books && canHub('sales', user) ? ['AR'] : (canHub('sales', user) ? ['sales'] : [])),
+          ...(chipLens.expenses && canHub('expenses', user) ? ['expenses'] : []),
+          ...(canHub('warehouse', user) ? ['stock'] : []),
+          ...(canHub('fleet', user) ? ['diesel'] : [])
+        ];
+        nextPh = `Ask about ${scope.scopeCoLabel}, ${mfgTopics.join(', ')}...`;
+      } else if (activeInd === 'Holding & Treasury') {
+        const hldTopics = [
+          ...(chipLens.expenses ? ['overhead'] : []),
+          ...(chipLens.books ? ['intercompany Due-From/Due-To'] : []),
+          ...(chipLens.partnerSplits ? ['partner splits'] : []),
+          ...(canChipLedger ? ['trial balance'] : [])
+        ];
+        nextPh = hldTopics.length
+          ? `Ask about Bdeir Holding ${hldTopics.join(', ')}...`
+          : 'Ask about Bdeir Holding today\'s ops, fleet, documents...';
+      } else if (activeInd === 'Hospitality & Resorts') {
+        const hspTopics = [
+          'venue revenue',
+          ...(chipLens.books ? ['POS tills'] : []),
+          'cabanas',
+          'memberships',
+          ...((chipLens.expenses && chipLens.profit) ? ['F&B costs'] : [])
+        ];
+        nextPh = `Ask about ${scope.scopeCoLabel} ${hspTopics.join(', ')}...`;
+      } else if (activeInd === 'Automotive & Heavy Trading') {
+        const trdTopics = [
+          'invoice books (N/S/IS/IN)',
+          'Shacman VINs',
+          (chipLens.profit && chipLens.expenses) ? 'FIFO parts stock' : 'parts stock'
+        ];
+        nextPh = `Ask about ${scope.scopeCoLabel} ${trdTopics.join(', ')}...`;
+      } else if (activeInd === 'Real Estate & Property') {
+        const reTopics = [
+          chipLens.tax ? '4235 VAT rent roll' : 'lease rent roll',
+          'occupancy',
+          'expiring leases',
+          ...(chipLens.books ? ['tenant AR'] : [])
+        ];
+        nextPh = `Ask about ${scope.scopeCoLabel} ${reTopics.join(', ')}...`;
+      } else if (activeInd === 'Insurance & Brokerage') {
+        const insTopics = [
+          'GWP',
+          ...(chipLens.profit ? ['brokerage commissions'] : []),
+          '30/60/90d renewals',
+          ...(chipLens.expenses ? ['claims'] : []),
+          ...(chipLens.books ? ['carrier payables'] : [])
+        ];
+        nextPh = `Ask about ${insTopics.join(', ')}...`;
+      }
+      if (nextPh) {
+        inp.__enAttr_placeholder = nextPh;
+        inp.__enAttrApp_placeholder = nextPh;
+        inp.placeholder = nextPh;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(inp);
+        }
+      }
     }
     if (chipsBox) {
+      const canInsBordereau = Boolean(chipLens.books && chipLens.expenses);
       const domainChipsMap = {
         'Holding & Treasury': [
-          { label: 'Holding Briefing', prompt: 'Give me a Bdeir Holding & Treasury executive briefing' },
-          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-          { label: 'Intercompany Matrix', prompt: 'Show bilateral intercompany Due-From and Due-To matrix' },
-          { label: 'Partner Equity Splits', prompt: 'Show shareholder partner split balances' },
-          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+          ...(chipLens.books ? [{ label: 'Holding Briefing', prompt: 'Give me a Bdeir Holding & Treasury executive briefing' }] : []),
+          ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+          ...(chipLens.books ? [{ label: 'Intercompany Matrix', prompt: 'Show bilateral intercompany Due-From and Due-To matrix' }] : []),
+          ...((chipLens.books && chipLens.partnerSplits) ? [{ label: 'Partner Equity Splits', prompt: 'Show shareholder partner split balances' }] : []),
+          ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
         ],
         'Hospitality & Resorts': [
           { label: 'Hospitality Briefing', prompt: 'Give me a Hospitality & Resorts executive briefing' },
-          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-          { label: 'Venue Revenue & POS', prompt: 'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue' },
-          { label: 'Cabanas & Memberships', prompt: 'Show active seasonal cabana and gym memberships' },
-          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+          ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+          ...(canView('hsp_revenue', user) ? [{ label: 'Venue Revenue & POS', prompt: 'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue' }] : []),
+          ...(canView('hsp_memberships', user) ? [{ label: 'Cabanas & Memberships', prompt: 'Show active seasonal cabana and gym memberships' }] : []),
+          ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
         ],
         'Automotive & Heavy Trading': [
           { label: 'Trading Briefing', prompt: 'Give me an Automotive & Heavy Trading executive briefing' },
-          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-          { label: 'Shacman VIN Fleet', prompt: 'Show Shacman heavy truck VIN registry and unit margins' },
-          { label: 'FIFO Stock & Parts', prompt: 'Show FIFO spare parts stock valuation and reorder alerts' },
-          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+          ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+          ...(canView('trd_trucks', user) ? [{ label: 'Shacman VIN Fleet', prompt: (chipLens.profit && chipLens.expenses) ? 'Show Shacman heavy truck VIN registry and unit margins' : 'Show Shacman heavy truck VIN deliveries and fleet count' }] : []),
+          ...(canView('trd_stock', user) ? [(chipLens.profit && chipLens.expenses) ? { label: 'FIFO Stock & Parts', prompt: 'Show FIFO spare parts stock valuation and reorder alerts' } : { label: 'Spare Parts Stock', prompt: 'Show spare parts stock quantities and reorder alerts' }] : []),
+          ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
         ],
         'Real Estate & Property': [
           { label: 'Real Estate Briefing', prompt: 'Give me a Real Estate & 4235 S.A.L executive briefing' },
-          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-          { label: '4235 VAT Rent Roll', prompt: 'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears' },
-          { label: 'Expiring Leases', prompt: 'Which leases are expiring within 90 days?' },
-          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+          ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+          ...((canView('re_leases', user) || chipLens.books) ? [chipLens.tax ? { label: '4235 VAT Rent Roll', prompt: 'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears' } : { label: 'Active Rent Roll', prompt: 'Show active commercial and residential lease rent roll' }] : []),
+          ...(canView('re_leases', user) ? [{ label: 'Expiring Leases', prompt: 'Which leases are expiring within 90 days?' }] : []),
+          ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
         ],
         'Insurance & Brokerage': [
           { label: 'Insurance Briefing', prompt: 'Give me an Insurance & Brokerage executive briefing' },
-          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-          { label: '30/60/90d Renewals', prompt: 'Show 30/60/90-day policy renewal pipeline' },
-          { label: 'Carrier Recon & Claims', prompt: 'Show carrier bordereau payable reconciliation' },
-          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+          ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+          ...(canView('ins_policies', user) ? [{ label: '30/60/90d Renewals', prompt: 'Show 30/60/90-day policy renewal pipeline' }] : []),
+          ...(canInsBordereau ? [{ label: 'Carrier Recon & Claims', prompt: 'Show carrier bordereau payable reconciliation' }] : (canView('ins_claims', user) ? [{ label: 'Claims Register', prompt: 'Show open insurance claims and recoveries' }] : [])),
+          ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
         ]
       };
       const chips = domainChipsMap[activeInd] || [
-        { label: 'Executive Briefing', prompt: 'Give me an executive briefing & open alerts' },
-        { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
-        { label: 'Entity Sales & Profit', prompt: 'Compare entity sales & operating profit' },
-        ...(canHub('sales', user) ? [{ label: 'Overdue AR', prompt: 'Show top overdue AR customers and credit risk' }] : []),
-        ...(canHub('expenses', user) ? [{ label: 'Expenses & AP', prompt: 'Show top expense categories and pending prices' }] : []),
-        ...(canHub('fleet', user) ? [{ label: 'Diesel & Repairs', prompt: 'Explain the diesel tank reconciliation variance across entities' }] : []),
-        ...(canView('ledger', user) ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
+        { label: 'Executive Briefing', prompt: chipLens.sentinels ? 'Give me an executive briefing & open alerts' : 'Give me an executive briefing' },
+        ...(canView('daily_ops', user) ? [{ label: 'Daily Operations', prompt: 'Show today\'s daily operations' }] : []),
+        ...(canHub('sales', user) ? [chipLens.profit ? { label: 'Entity Sales & Profit', prompt: 'Compare entity sales & operating profit' } : { label: 'Entity Sales & Loads', prompt: 'Compare entity sales & loads' }] : []),
+        ...((canHub('sales', user) && chipLens.books) ? [{ label: 'Overdue AR', prompt: 'Show top overdue AR customers and credit risk' }] : []),
+        ...((canHub('expenses', user) && (chipLens.expenses || chipLens.books)) ? [{ label: 'Expenses & AP', prompt: chipLens.books ? 'Show top expense categories and pending prices' : 'Show top expense categories and pending bills' }] : []),
+        ...((canHub('fleet', user) && chipLens.expenses) ? [{ label: 'Diesel & Repairs', prompt: 'Explain the diesel tank reconciliation variance across entities' }] : []),
+        ...(canChipLedger ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
       ];
       chipsBox.innerHTML = chips.map(c => `<button type="button" class="ai-pill-btn" data-prompt="${esc(c.prompt)}">${esc(c.label)}</button>`).join('');
       if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
@@ -22548,6 +23080,7 @@
     }),
     syncScope: syncHeaderAndChips,
     unsubscribePushOnSignOut,
+    sanitizeVarianceBulletText,
     isDayClosePushActiveOnDevice,
     checkDayClosePushSubscribed,
     answer: answerHtmlSnapshot,

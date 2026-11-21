@@ -2187,27 +2187,44 @@
     }).filter(x => x.lbl && x.val);
 
     const k = (D && typeof D.getKPI === 'function') ? D.getKPI() : {};
-    // Sentinel titles and ledger tie status only for seats that may open Sentinels (Entry seats see Daily
-    // Operations but not Sentinels or the ledger; fail closed when the check is not wired).
-    const canSn = Boolean(D && typeof D.canViewView === 'function' && D.canViewView('sentinels', typeof D.activeUser === 'function' ? D.activeUser() : undefined));
+    // Sentinel titles, ledger tie status, and hidden cost/margin telemetry follow the shared seatLens truth.
+    const u = (D && typeof D.activeUser === 'function') ? D.activeUser() : undefined;
+    const lens = (D && typeof D.seatLens === 'function')
+      ? D.seatLens(u)
+      : {
+          sentinels: Boolean(D && typeof D.canViewView === 'function' && D.canViewView('sentinels', u)),
+          books: false,
+          profit: false
+        };
+    const canSn = Boolean(lens && lens.sentinels);
     const snItems = (canSn && typeof D.buildSentinelItems === 'function') ? D.buildSentinelItems() : [];
     const openSn = snItems.filter(s => s && s.severity !== 'ok');
 
+    const safeKpis = kpiPairs.filter(p => !(
+      (!lens.profit && /\b(profit|margin|gm|cost|cogs|noi|commission|brokerage)\b/i.test(p.lbl)) ||
+      (!lens.books && /\b(cash|till|fiduciary|trial balance|payable|ap)\b/i.test(p.lbl))
+    ));
     const bullets = [];
-    if (kpiPairs.length >= 2) {
-      bullets.push(`${coLabel} recorded ${kpiPairs[0].lbl} of ${kpiPairs[0].val} alongside ${kpiPairs[1].lbl} of ${kpiPairs[1].val}.`);
+    if (safeKpis.length >= 2) {
+      bullets.push(`${coLabel} recorded ${safeKpis[0].lbl} of ${safeKpis[0].val} alongside ${safeKpis[1].lbl} of ${safeKpis[1].val}.`);
+    } else if (safeKpis.length === 1) {
+      bullets.push(`${coLabel} recorded ${safeKpis[0].lbl} of ${safeKpis[0].val}.`);
     } else {
-      bullets.push(canSn
+      bullets.push(canSn && lens.books
         ? `${coLabel} period sales stand at ${fmtUSD(k.sales_ttc || 0, 0)} with trial balance variance locked at $0.00.`
         : `${coLabel} period sales stand at ${fmtUSD(k.sales_ttc || 0, 0)}.`);
     }
-    if (kpiPairs.length >= 4) {
-      bullets.push(`Operational cost & margin telemetry: ${kpiPairs[2].lbl} at ${kpiPairs[2].val} and ${kpiPairs[3].lbl} at ${kpiPairs[3].val}.`);
+    if (safeKpis.length >= 4 && lens.profit) {
+      bullets.push(`Operational cost & margin telemetry: ${safeKpis[2].lbl} at ${safeKpis[2].val} and ${safeKpis[3].lbl} at ${safeKpis[3].val}.`);
+    } else if (safeKpis.length >= 3) {
+      bullets.push(`Operational telemetry: ${safeKpis[2].lbl} at ${safeKpis[2].val}.`);
     }
     if (openSn.length > 0) {
       bullets.push(`Attention focus: ${openSn.length} active audit rule${openSn.length === 1 ? '' : 's'} (${sanitizeOutward(openSn[0].title)}) flagged for supervisor sign-off.`);
-    } else if (canSn) {
+    } else if (canSn && lens.books) {
       bullets.push(`Audit hygiene: 0 open Sentinel exceptions on this scope; all double-entry Classes 1-7 ties are clean.`);
+    } else if (canSn) {
+      bullets.push(`Audit hygiene: 0 open Sentinel exceptions on this scope.`);
     }
     return { coLabel, activeInd, bullets };
   }
@@ -5765,6 +5782,25 @@
 
   async function buildExecutiveBoardPackNarrative(lang) {
     const l = lang || EDGE_STATE.hldBoardLang || curLang();
+    const u = (D && typeof D.activeUser === 'function') ? D.activeUser() : undefined;
+    const bpLens = (D && typeof D.seatLens === 'function')
+      ? D.seatLens(u)
+      : { books: false, profit: false, sentinels: false };
+    if (!bpLens.books || !bpLens.profit) {
+      const restrictedMsg = l === 'ar'
+        ? 'ملخص مجلس الإدارة الموحد: يتطلب عرض الأرباح التشغيلية وميزان المراجعة صلاحيات الدفاتر والتدفق النقدي.'
+        : (l === 'fr'
+            ? 'Synthese du Conseil : les resultats operationnels et la balance generale sont restreints selon les droits du poste.'
+            : 'Consolidated Board Pack: Group operating profit, Trial Balance variance, and holding disclosures are restricted for this seat.');
+      EDGE_STATE.hldBoardBrief = {
+        lang: l,
+        restricted: true,
+        headline: restrictedMsg,
+        bullets: [restrictedMsg],
+        spokenScript: restrictedMsg
+      };
+      return EDGE_STATE.hldBoardBrief;
+    }
     const gate = computeGroupMonthEndCloseGate();
     const salesM = (gate.consolidatedSalesUsd / 1000000).toFixed(2);
     const ebitdaM = (gate.consolidatedEbitdaUsd / 1000000).toFixed(2);
@@ -5836,9 +5872,19 @@
       stopExecutiveBoardPackSpeech();
       return { ok: true, stopped: true };
     }
+    const u = (D && typeof D.activeUser === 'function') ? D.activeUser() : undefined;
+    const bpLens = (D && typeof D.seatLens === 'function')
+      ? D.seatLens(u)
+      : { books: false, profit: false };
+    if (!bpLens.books || !bpLens.profit) {
+      return { ok: false, restricted: true };
+    }
     const brief = (EDGE_STATE.hldBoardBrief && EDGE_STATE.hldBoardBrief.lang === l)
       ? EDGE_STATE.hldBoardBrief
       : await buildExecutiveBoardPackNarrative(l);
+    if (!brief || brief.restricted) {
+      return { ok: false, restricted: true };
+    }
     const script = brief.spokenScript || brief.headline;
     EDGE_STATE.boardSpeaking = true;
 

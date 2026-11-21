@@ -2509,23 +2509,22 @@
       return { label: dt.doc21Label, wide: true, steppable: true, placeholder: 'Search customer name, ref #, location or date…', badge: `${fmtNum(ctx._ticketComboOpts.length)} records`, options: ctx._ticketComboOpts };
     }
     if (k === 'receiptId') {
-      if (!ctx._receiptComboOpts) {
-        ctx._receiptComboOpts = ctx.receiptCandidates.map(r => {
-          const rid = String(r.id);
-          const vno = `RC-${r.invoice_no || r.ticket_no || rid.slice(-4)}`;
-          const d = rowDate(r, ctx.basis);
-          const cust = r.customer || '—';
-          const amt = fmtUsd(r.paid_usd);
-          return {
-            value: rid,
-            code: vno,
-            main: cust,
-            meta: `${d} · ${r.pay_method || 'Cash'} · ${amt}`,
-            label: `${vno} · ${cust} · ${d} · ${amt}`,
-            q: `${vno} ${r.invoice_no || ''} ${cust} ${d} ${r.pay_method || ''} ${amt}`.toLowerCase()
-          };
-        });
-      }
+      const canBooksCombo = _rdlSeatLens(ctx).books;
+      ctx._receiptComboOpts = ctx.receiptCandidates.map(r => {
+        const rid = String(r.id);
+        const vno = `RC-${r.invoice_no || r.ticket_no || rid.slice(-4)}`;
+        const d = rowDate(r, ctx.basis);
+        const cust = r.customer || '—';
+        const amt = canBooksCombo ? fmtUsd(r.paid_usd) : 'Restricted';
+        return {
+          value: rid,
+          code: vno,
+          main: cust,
+          meta: `${d} · ${r.pay_method || 'Cash'} · ${amt}`,
+          label: `${vno} · ${cust} · ${d} · ${amt}`,
+          q: `${vno} ${r.invoice_no || ''} ${cust} ${d} ${r.pay_method || ''} ${canBooksCombo ? amt : ''}`.toLowerCase()
+        };
+      });
       return { label: 'Receipt Voucher', wide: true, steppable: true, placeholder: 'Search customer name, voucher #, date or amount…', badge: `${fmtNum(ctx._receiptComboOpts.length)} vouchers`, options: ctx._receiptComboOpts };
     }
     if (k === 'hrStaff') {
@@ -2757,6 +2756,7 @@
       g.fuelL += Number(r.liters || 0);
       byDay.set(d, g);
     });
+    const l01 = _rdlSeatLens(ctx);
     const dayRows = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 35);
     const subHdr = isMfg
       ? `Period ${p.from} to ${p.to} · ${sales.length} deliveries · ${fmtNum(totM3, 1)} m³ dispatched`
@@ -2767,8 +2767,8 @@
       <div class="rdl-kpi-strip">
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${esc(dt.volKpi)}</div><div class="rdl-kpi-val">${fmtNum(totM3, dt.qtyDp)} ${esc(dt.qtyUnit)}</div><div class="rdl-kpi-sub">${sales.length} ${esc(isMfg ? 'batching loads' : dt.txPlural)}</div></div>
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Gross Billing</div><div class="rdl-kpi-val">${fmtUsd(totRev)}</div><div class="rdl-kpi-sub">Avg ${fmtUsd(totM3 > 0 ? totRev / totM3 : 0)} / ${esc(dt.qtyUnit)}</div></div>
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Cash Collected</div><div class="rdl-kpi-val">${fmtUsd(totPaid)}</div><div class="rdl-kpi-sub">${totRev > 0 ? ((totPaid / totRev) * 100).toFixed(1) : '0.0'}% realization</div></div>
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${isMfg ? 'OPEX + RM Intake' : 'OPEX & Direct Costs'}</div><div class="rdl-kpi-val">${fmtUsd(totExp)}</div><div class="rdl-kpi-sub">${isMfg ? 'Diesel' : 'Utility / Fuel'} ${fmtNum(totLiters, 0)} L</div></div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Cash Collected</div>${l01.books ? `<div class="rdl-kpi-val">${fmtUsd(totPaid)}</div><div class="rdl-kpi-sub">${totRev > 0 ? ((totPaid / totRev) * 100).toFixed(1) : '0.0'}% realization</div>` : '<div class="rdl-kpi-val">Restricted</div><div class="rdl-kpi-sub">Restricted by seat permissions</div>'}</div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${isMfg ? 'OPEX + RM Intake' : 'OPEX & Direct Costs'}</div><div class="rdl-kpi-val">${l01.expenses ? fmtUsd(totExp) : 'Restricted'}</div><div class="rdl-kpi-sub">${isMfg ? 'Diesel' : 'Utility / Fuel'} ${fmtNum(totLiters, 0)} L</div></div>
       </div>
 
       <div class="rdl-sec-title">${esc(dt.sec1Title)}</div>
@@ -2792,8 +2792,8 @@
               <td class="num">${fmtNum(r.m3, dt.qtyDp)}</td>
               <td class="num">${fmtUsd(r.m3 > 0 ? r.rev / r.m3 : 0, 2)}</td>
               <td class="num bold">${fmtUsd(r.rev)}</td>
-              <td class="num">${fmtUsd(r.paid)}</td>
-              <td class="num">${fmtUsd(r.bal)}</td>
+              <td class="num">${l01.books ? fmtUsd(r.paid) : 'Restricted'}</td>
+              <td class="num">${l01.books ? fmtUsd(r.bal) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -2804,8 +2804,8 @@
             <td class="num">${fmtNum(totM3, dt.qtyDp)}</td>
             <td class="num">${fmtUsd(totM3 > 0 ? totRev / totM3 : 0, 2)}</td>
             <td class="num">${fmtUsd(totRev)}</td>
-            <td class="num">${fmtUsd(totPaid)}</td>
-            <td class="num">${fmtUsd(totRev - totPaid)}</td>
+            <td class="num">${l01.books ? fmtUsd(totPaid) : 'Restricted'}</td>
+            <td class="num">${l01.books ? fmtUsd(totRev - totPaid) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -2831,9 +2831,9 @@
               <td class="num">${fmtNum(d.loads, 0)}</td>
               <td class="num">${fmtNum(d.m3, dt.qtyDp)}</td>
               <td class="num bold">${fmtUsd(d.sales)}</td>
-              <td class="num">${fmtUsd(d.collected)}</td>
-              <td class="num">${fmtUsd(d.rm)}</td>
-              <td class="num">${fmtUsd(d.exp)}</td>
+              <td class="num">${l01.books ? fmtUsd(d.collected) : 'Restricted'}</td>
+              <td class="num">${l01.expenses ? fmtUsd(d.rm) : 'Restricted'}</td>
+              <td class="num">${l01.expenses ? fmtUsd(d.exp) : 'Restricted'}</td>
               <td class="num">${fmtNum(d.fuelL, 0)}</td>
             </tr>
           `).join('')}
@@ -2844,6 +2844,10 @@
   }
 
   function render02BalanceSheet(meta, ctx) {
+    const l02 = _rdlSeatLens(ctx);
+    if (!l02.books || !l02.profit) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Balance Sheet Restricted', 'Financial statements require Cash Flow, Ledger & Profit permissions');
+    }
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const coaList = ctx.coaAccounts || COA_ACCOUNTS;
@@ -2948,6 +2952,10 @@
 
 
   function render03IncomeStatement(meta, ctx) {
+    const l03 = _rdlSeatLens(ctx);
+    if (!l03.books || !l03.profit) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Income Statement Restricted', 'Profit and loss statements require Cash Flow, Ledger & Profit permissions');
+    }
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const coaList = ctx.coaAccounts || COA_ACCOUNTS;
@@ -3024,8 +3032,8 @@
           </tr>
         </thead>
         <tbody>
-          ${renderGroup(`OPERATING REVENUE (Class 7 ${isMfg ? '—' : '·'} الإيرادات التشغيلية)`, revCodes)}
-          ${renderGroup(`OPERATING COSTS & EXPENSES (Class 6 ${isMfg ? '—' : '·'} الأعباء والمصاريف)`, expCodes)}
+          ${renderGroup(`OPERATING REVENUE (Class 7 · الإيرادات التشغيلية)`, revCodes)}
+          ${renderGroup(`OPERATING COSTS & EXPENSES (Class 6 · الأعباء والمصاريف)`, expCodes)}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
@@ -3040,6 +3048,10 @@
   }
 
   function render04CashFlow(meta, ctx) {
+    const l04 = _rdlSeatLens(ctx);
+    if (!l04.books) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Cash Flow Statement Restricted', 'Financial cash flow requires Cash Flow & Ledger permissions');
+    }
     const p = ctx.rdl.params;
     const pMode = p.period || 'Month';
     const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
@@ -3115,6 +3127,10 @@
   }
 
   function render05TrialBalance(meta, ctx) {
+    const l05 = _rdlSeatLens(ctx);
+    if (!l05.books) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Trial Balance Restricted', 'Trial balance requires Cash Flow & General Ledger permissions');
+    }
     const p = ctx.rdl.params;
     const coaList = ctx.coaAccounts || COA_ACCOUNTS;
     const jes = buildJournalEntries(ctx, p.to);
@@ -3198,6 +3214,10 @@
 
 
   function render06GeneralJournal(meta, ctx) {
+    const l06 = _rdlSeatLens(ctx);
+    if (!l06.books) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'General Journal Restricted', 'General journal requires Cash Flow & General Ledger permissions');
+    }
     const p = ctx.rdl.params;
     const allJes = buildJournalEntries(ctx, p.to).filter(j => {
       if (!inWindow(j.date, p.from, p.to)) return false;
@@ -3252,6 +3272,10 @@
   }
 
   function render07SubAccount(meta, ctx) {
+    const l07 = _rdlSeatLens(ctx);
+    if (!l07.books) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Sub-Account Ledger Restricted', 'Sub-account ledger requires Cash Flow & General Ledger permissions');
+    }
     const p = ctx.rdl.params;
     const jes = buildJournalEntries(ctx, p.to).filter(j => {
       if (p.account && p.account !== 'ALL' && j.acct_code !== p.account) return false;
@@ -3344,7 +3368,8 @@
     const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const viewRows = rows.slice(0, 160);
 
-    const showTaxCols = Boolean(ctx.showTaxBreakdown || ctx.officialScope);
+    const l08 = _rdlSeatLens(ctx);
+    const showTaxCols = Boolean(l08.tax && (ctx.showTaxBreakdown || ctx.officialScope));
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const recWord = isMfg ? 'tickets' : dt.txPlural;
@@ -3384,7 +3409,7 @@
                 <td class="num">${fmtUsd(unitRate, 2)}</td>
                 ${showTaxCols ? `<td class="num">${fmtUsdSigned(net, 2)}</td><td class="num">${fmtUsdSigned(r.vat_usd, 2)}</td>` : ''}
                 <td class="num bold">${fmtUsdSigned(r.total_usd, 2)}</td>
-                <td class="num">${fmtUsdSigned(r.paid_usd, 2)}</td>
+                <td class="num">${l08.books ? fmtUsdSigned(r.paid_usd, 2) : 'Restricted'}</td>
               </tr>
             `;
           }).join('')}
@@ -3396,7 +3421,7 @@
             <td class="num">${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}</td>
             ${showTaxCols ? `<td class="num">${fmtUsd(totSub, 2)}</td><td class="num">${fmtUsd(totVat, 2)}</td>` : ''}
             <td class="num">${fmtUsd(totGross, 2)}</td>
-            <td class="num">${fmtUsd(totPaid, 2)}</td>
+            <td class="num">${l08.books ? fmtUsd(totPaid, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -3405,6 +3430,10 @@
   }
 
   function render09ExpenseRegister(meta, ctx) {
+    const l09 = _rdlSeatLens(ctx);
+    if (!l09.expenses && !l09.books) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Expense Register', 'Restricted by seat permissions');
+    }
     const p = ctx.rdl.params;
     const rows = ctx.expAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
@@ -3446,11 +3475,11 @@
                 <td>${esc(r.category || '—')}</td>
                 <td class="bold">${esc(r.supplier || '—')}</td>
                 <td>${esc(r.description || '—')}</td>
-                <td class="num">${fmtUsdSigned(net, 2)}</td>
-                <td class="num">${fmtUsdSigned(r.vat_usd, 2)}</td>
+                <td class="num">${l09.tax ? fmtUsdSigned(net, 2) : 'Restricted'}</td>
+                <td class="num">${l09.tax ? fmtUsdSigned(r.vat_usd, 2) : 'Restricted'}</td>
                 <td class="num bold">${fmtUsdSigned(r.total_usd, 2)}</td>
-                <td class="num">${fmtUsdSigned(r.paid_usd, 2)}</td>
-                <td class="num">${fmtUsdSigned(r.balance_usd, 2)}</td>
+                <td class="num">${l09.books ? fmtUsdSigned(r.paid_usd, 2) : 'Restricted'}</td>
+                <td class="num">${l09.books ? fmtUsdSigned(r.balance_usd, 2) : 'Restricted'}</td>
               </tr>
             `;
           }).join('')}
@@ -3458,11 +3487,11 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="5">TOTAL EXPENSE REGISTER (${fmtNum(rows.length, 0)} vouchers)</td>
-            <td class="num">${fmtUsd(totNet, 2)}</td>
-            <td class="num">${fmtUsd(totVat, 2)}</td>
+            <td class="num">${l09.tax ? fmtUsd(totNet, 2) : 'Restricted'}</td>
+            <td class="num">${l09.tax ? fmtUsd(totVat, 2) : 'Restricted'}</td>
             <td class="num">${fmtUsd(totGross, 2)}</td>
-            <td class="num">${fmtUsd(totPaid, 2)}</td>
-            <td class="num">${fmtUsd(totGross - totPaid, 2)}</td>
+            <td class="num">${l09.books ? fmtUsd(totPaid, 2) : 'Restricted'}</td>
+            <td class="num">${l09.books ? fmtUsd(totGross - totPaid, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -3955,6 +3984,10 @@
   }
 
   function render11RawMaterial(meta, ctx) {
+    const lRm11 = _rdlSeatLens(ctx);
+    if (!lRm11.books && !lRm11.expenses) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Raw Material Intake', 'Restricted by seat permissions');
+    }
     const p = ctx.rdl.params;
     const rows = ctx.rmAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
@@ -3988,15 +4021,15 @@
           ${viewRows.map(r => `
             <tr>
               <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-              <td class="mono">${esc(r.voucher || r.name || '—')}</td>
-              <td class="bold">${esc(r.material || '—')}</td>
-              <td>${esc(r.supplier || '—')}</td>
-              <td>${esc(r.driver || r.plate || '—')}</td>
+              <td class="mono">${esc(r.voucher || r.name || '-')}</td>
+              <td class="bold">${esc(r.material || '-')}</td>
+              <td>${esc(r.supplier || '-')}</td>
+              <td>${esc(r.driver || r.plate || '-')}</td>
               <td class="num">${fmtNum(r.qty, 2)}</td>
               <td>${esc(r.unit || 'Ton')}</td>
               <td class="num">${fmtUsd(r.unit_price, 2)}</td>
               <td class="num bold">${fmtUsd(r.total_usd, 2)}</td>
-              <td class="num">${fmtUsd(r.paid_usd, 2)}</td>
+              <td class="num">${lRm11.books ? fmtUsd(r.paid_usd, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -4007,7 +4040,7 @@
             <td>Ton / m³</td>
             <td class="num">${fmtUsd(totQty > 0 ? totUsd / totQty : 0, 2)}</td>
             <td class="num">${fmtUsd(totUsd, 2)}</td>
-            <td class="num">${fmtUsd(totPaid, 2)}</td>
+            <td class="num">${lRm11.books ? fmtUsd(totPaid, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -4082,6 +4115,7 @@
   }
 
   function render13AgedReceivables(meta, ctx) {
+    const lAr13 = _rdlSeatLens(ctx);
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
     const custFilter = ctx.rdl.params.customer;
     const asofMs = new Date(asof + 'T00:00:00Z').getTime() || Date.now();
@@ -4101,7 +4135,7 @@
       if (!d || d > asof) return;
       const c = r.customer || 'Walk-in Customer';
       if (custFilter && custFilter !== 'ALL' && c !== custFilter) return;
-      if (r.is_receipt_row) {
+      if (lAr13.books && r.is_receipt_row) {
         const g = ensureCust(c, d);
         g.paid += Number(r.paid_usd || 0);
       } else if (r.is_credit) {
@@ -4136,8 +4170,10 @@
     });
 
     const rows = [...byCust.values()]
-      .filter(g => Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01)
-      .sort((a, b) => b.totalBal - a.totalBal)
+      .filter(g => lAr13.books
+        ? (Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01)
+        : Math.abs(g.billed) > 0.01)
+      .sort((a, b) => lAr13.books ? (b.totalBal - a.totalBal) : (b.billed - a.billed))
       .slice(0, 450);
 
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
@@ -4163,12 +4199,12 @@
             <tr>
               <td class="bold">${esc(r.customer)}</td>
               <td class="num">${fmtUsd(r.billed)}</td>
-              <td class="num">${fmtUsd(r.paid)}</td>
-              <td class="num">${fmtUsdSigned(r.b0_30)}</td>
-              <td class="num">${fmtUsdSigned(r.b31_60)}</td>
-              <td class="num">${fmtUsdSigned(r.b61_90)}</td>
-              <td class="num">${fmtUsdSigned(r.b90p)}</td>
-              <td class="num bold">${fmtUsdSigned(r.totalBal)}</td>
+              <td class="num">${lAr13.books ? fmtUsd(r.paid) : 'Restricted'}</td>
+              <td class="num">${lAr13.books ? fmtUsdSigned(r.b0_30) : 'Restricted'}</td>
+              <td class="num">${lAr13.books ? fmtUsdSigned(r.b31_60) : 'Restricted'}</td>
+              <td class="num">${lAr13.books ? fmtUsdSigned(r.b61_90) : 'Restricted'}</td>
+              <td class="num">${lAr13.books ? fmtUsdSigned(r.b90p) : 'Restricted'}</td>
+              <td class="num bold">${lAr13.books ? fmtUsdSigned(r.totalBal) : 'Restricted'}</td>
               <td class="mono">${esc(r.lastDate)}</td>
             </tr>
           `).join('')}
@@ -4177,13 +4213,13 @@
           <tr class="rdl-total-row">
             <td>TOTAL AGED RECEIVABLES (${rows.length} accounts)</td>
             <td class="num">${fmtUsd(sum('billed'))}</td>
-            <td class="num">${fmtUsd(sum('paid'))}</td>
-            <td class="num">${fmtUsdSigned(sum('b0_30'))}</td>
-            <td class="num">${fmtUsdSigned(sum('b31_60'))}</td>
-            <td class="num">${fmtUsdSigned(sum('b61_90'))}</td>
-            <td class="num">${fmtUsdSigned(sum('b90p'))}</td>
-            <td class="num">${fmtUsdSigned(sum('totalBal'))}</td>
-            <td>—</td>
+            <td class="num">${lAr13.books ? fmtUsd(sum('paid')) : 'Restricted'}</td>
+            <td class="num">${lAr13.books ? fmtUsdSigned(sum('b0_30')) : 'Restricted'}</td>
+            <td class="num">${lAr13.books ? fmtUsdSigned(sum('b31_60')) : 'Restricted'}</td>
+            <td class="num">${lAr13.books ? fmtUsdSigned(sum('b61_90')) : 'Restricted'}</td>
+            <td class="num">${lAr13.books ? fmtUsdSigned(sum('b90p')) : 'Restricted'}</td>
+            <td class="num">${lAr13.books ? fmtUsdSigned(sum('totalBal')) : 'Restricted'}</td>
+            <td>-</td>
           </tr>
         </tfoot>
       </table>
@@ -4253,12 +4289,13 @@
   }
 
   function render14CustomerStatement(meta, ctx) {
+    const lSoa14 = _rdlSeatLens(ctx);
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
     const allCustRows = (ctx.arLedgerAll || ctx.salesAll)
-      .filter(r => r.customer === custName && (r.is_receipt_row || r.is_credit))
+      .filter(r => r.customer === custName && ((lSoa14.books && r.is_receipt_row) || r.is_credit))
       .sort((a, b) => rowDate(a, ctx.basis).localeCompare(rowDate(b, ctx.basis)));
 
     let openDr = 0, openCr = 0;
@@ -4279,7 +4316,7 @@
     const totM3 = periodRows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const closingBal = runBal + totDr - totCr;
     const siteList = [...new Set(allCustRows.filter(r => !r.is_receipt_row).map(r => r.site).filter(Boolean))].slice(0, 3).join(' · ');
-    const dash = isMfg ? '—' : '-';
+    const dash = '-';
 
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Customer Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
@@ -4287,9 +4324,9 @@
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
           ['Statement Period', `${p.from} .. ${p.to}`],
-          ['Account Code', isMfg ? '411 — Customers AR' : '411 · Customers AR'],
+          ['Account Code', '411 · Customers AR'],
           [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totM3, dt.qtyDp)} ${dt.qtyUnit} (${periodRows.filter(r => !r.is_receipt_row && !r.is_return).length} ${dt.txPlural})`],
-          ['Closing Balance', fmtUsdSigned(closingBal, 2)]
+          ['Closing Balance', lSoa14.books ? fmtUsdSigned(closingBal, 2) : 'Restricted']
         ])}
       </div>
       ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Ready-Mix Concrete Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
@@ -4314,9 +4351,9 @@
           <tr class="rdl-subtotal-row">
             <td class="mono">${esc(p.from)}</td>
             <td colspan="6">Opening Balance Brought Forward (رصيد مدور)</td>
-            <td class="num">${fmtUsd(openDr, 2)}</td>
-            <td class="num">${fmtUsd(openCr, 2)}</td>
-            <td class="num bold">${fmtUsdSigned(runBal, 2)}</td>
+            <td class="num">${lSoa14.books ? fmtUsd(openDr, 2) : 'Restricted'}</td>
+            <td class="num">${lSoa14.books ? fmtUsd(openCr, 2) : 'Restricted'}</td>
+            <td class="num bold">${lSoa14.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
           </tr>
           ${periodRows.slice(-140).map(r => {
             const dr = Number(r.total_usd || 0);
@@ -4332,20 +4369,20 @@
                 <td class="num">${fmtNum(r.qty, dt.qtyDp)}</td>
                 <td class="num">${fmtUsd(r.unit_price, 2)}</td>
                 <td class="num">${fmtUsdSigned(dr, 2)}</td>
-                <td class="num">${cr !== 0 ? fmtUsdSigned(cr, 2) : dash}</td>
-                <td class="num bold">${fmtUsdSigned(runBal, 2)}</td>
+                <td class="num">${lSoa14.books ? (cr !== 0 ? fmtUsdSigned(cr, 2) : dash) : 'Restricted'}</td>
+                <td class="num bold">${lSoa14.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
               </tr>
             `;
           }).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="5">CLOSING STATEMENT BALANCE ${isMfg ? '—' : '·'} ${esc(custName)}</td>
+            <td colspan="5">CLOSING STATEMENT BALANCE · ${esc(custName)}</td>
             <td class="num">${fmtNum(totM3, dt.qtyDp)}</td>
             <td>${dash}</td>
-            <td class="num">${fmtUsd(openDr + totDr, 2)}</td>
-            <td class="num">${fmtUsd(openCr + totCr, 2)}</td>
-            <td class="num">${fmtUsdSigned(closingBal, 2)}</td>
+            <td class="num">${lSoa14.books ? fmtUsd(openDr + totDr, 2) : fmtUsd(totDr, 2)}</td>
+            <td class="num">${lSoa14.books ? fmtUsd(openCr + totCr, 2) : 'Restricted'}</td>
+            <td class="num">${lSoa14.books ? fmtUsdSigned(closingBal, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -4355,6 +4392,10 @@
   }
 
   function render15SupplierBalances(meta, ctx) {
+    const lAp15 = _rdlSeatLens(ctx);
+    if (!lAp15.books && !lAp15.expenses) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Balances', 'Restricted by seat permissions');
+    }
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
     const supFilter = ctx.rdl.params.supplier;
     const bySup = new Map();
@@ -4418,8 +4459,10 @@
     }
 
     const rows = [...bySup.values()]
-      .filter(g => Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01)
-      .sort((a, b) => (b.billed - b.paid) - (a.billed - a.paid))
+      .filter(g => lAp15.books
+        ? (Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01)
+        : Math.abs(g.billed) > 0.01)
+      .sort((a, b) => lAp15.books ? ((b.billed - b.paid) - (a.billed - a.paid)) : (b.billed - a.billed))
       .slice(0, 450);
 
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
@@ -4449,8 +4492,8 @@
                 <td class="num">${fmtUsd(r.haulUsd)}</td>
                 <td class="num">${fmtUsd(r.expUsd)}</td>
                 <td class="num bold">${fmtUsd(r.billed)}</td>
-                <td class="num">${fmtUsd(r.paid)}</td>
-                <td class="num bold">${fmtUsdSigned(net)}</td>
+                <td class="num">${lAp15.books ? fmtUsd(r.paid) : 'Restricted'}</td>
+                <td class="num bold">${lAp15.books ? fmtUsdSigned(net) : 'Restricted'}</td>
                 <td class="mono">${esc(r.lastDate)}</td>
               </tr>
             `;
@@ -4463,9 +4506,9 @@
             <td class="num">${fmtUsd(sum('haulUsd'))}</td>
             <td class="num">${fmtUsd(sum('expUsd'))}</td>
             <td class="num">${fmtUsd(sum('billed'))}</td>
-            <td class="num">${fmtUsd(sum('paid'))}</td>
-            <td class="num">${fmtUsdSigned(sum('billed') - sum('paid'))}</td>
-            <td>—</td>
+            <td class="num">${lAp15.books ? fmtUsd(sum('paid')) : 'Restricted'}</td>
+            <td class="num">${lAp15.books ? fmtUsdSigned(sum('billed') - sum('paid')) : 'Restricted'}</td>
+            <td>-</td>
           </tr>
         </tfoot>
       </table>
@@ -4474,12 +4517,17 @@
   }
 
   function render16SupplierStatement(meta, ctx) {
+    const lAp16 = _rdlSeatLens(ctx);
+    if (!lAp16.books && !lAp16.expenses) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Statement', 'Restricted by seat permissions');
+    }
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
     const tx = [];
     (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
+      if (!lAp16.books && r.is_settlement_row) return;
       const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? (isMfg ? 'Raw Haulage' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
       const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
       tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: srcLbl, desc: descLbl, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
@@ -4500,7 +4548,7 @@
     const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
     const totDr = periodRows.reduce((s, t) => s + t.dr, 0);
     const closingBal = runBal + totCr - totDr;
-    const dash = isMfg ? '—' : '-';
+    const dash = '-';
 
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Supplier Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
@@ -4508,9 +4556,9 @@
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
           ['Statement Period', `${p.from} .. ${p.to}`],
-          ['Account Code', isMfg ? '401 — Suppliers AP' : '401 · Suppliers AP'],
+          ['Account Code', '401 · Suppliers AP'],
           ['Transactions', `${periodRows.length} vouchers in period`],
-          ['Net Payable Balance', fmtUsdSigned(closingBal, 2)]
+          ['Net Payable Balance', lAp16.books ? fmtUsdSigned(closingBal, 2) : 'Restricted']
         ])}
       </div>
       ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, dt.supSubtitle, 'Account Currency: Fresh USD', '')}
@@ -4532,9 +4580,9 @@
           <tr class="rdl-subtotal-row">
             <td class="mono">${esc(p.from)}</td>
             <td colspan="3">Opening Balance Brought Forward (رصيد مدور)</td>
-            <td class="num">${fmtUsd(openDr, 2)}</td>
-            <td class="num">${fmtUsd(openCr, 2)}</td>
-            <td class="num bold">${fmtUsdSigned(runBal, 2)}</td>
+            <td class="num">${lAp16.books ? fmtUsd(openDr, 2) : 'Restricted'}</td>
+            <td class="num">${lAp16.books ? fmtUsd(openCr, 2) : 'Restricted'}</td>
+            <td class="num bold">${lAp16.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
           </tr>
           ${periodRows.slice(-140).map(t => {
             runBal += (t.cr - t.dr);
@@ -4544,19 +4592,19 @@
                 <td class="mono">${esc(t.ref)}</td>
                 <td>${esc(t.type)}</td>
                 <td>${esc(t.desc)}</td>
-                <td class="num">${t.dr !== 0 ? fmtUsdSigned(t.dr, 2) : '—'}</td>
+                <td class="num">${lAp16.books ? (t.dr !== 0 ? fmtUsdSigned(t.dr, 2) : dash) : 'Restricted'}</td>
                 <td class="num">${fmtUsdSigned(t.cr, 2)}</td>
-                <td class="num bold">${fmtUsdSigned(runBal, 2)}</td>
+                <td class="num bold">${lAp16.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
               </tr>
             `;
           }).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="4">CLOSING SUPPLIER BALANCE — ${esc(supName)}</td>
-            <td class="num">${fmtUsd(openDr + totDr, 2)}</td>
-            <td class="num">${fmtUsd(openCr + totCr, 2)}</td>
-            <td class="num">${fmtUsdSigned(closingBal, 2)}</td>
+            <td colspan="4">CLOSING SUPPLIER BALANCE · ${esc(supName)}</td>
+            <td class="num">${lAp16.books ? fmtUsd(openDr + totDr, 2) : 'Restricted'}</td>
+            <td class="num">${lAp16.books ? fmtUsd(openCr + totCr, 2) : fmtUsd(totCr, 2)}</td>
+            <td class="num">${lAp16.books ? fmtUsdSigned(closingBal, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -4742,6 +4790,10 @@
   }
 
   function render18VatReturn(meta, ctx) {
+    const l18 = _rdlSeatLens(ctx);
+    if (!l18.tax) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'VAT Return Restricted', 'Tax and 11% VAT statements require Finance Tax permissions');
+    }
     const p = ctx.rdl.params;
     const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
     const vatPaidRows = (ctx.vatPaidAll || []).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
@@ -4844,6 +4896,10 @@
   }
 
   function render19PlRecon(meta, ctx) {
+    const l19 = _rdlSeatLens(ctx);
+    if (!l19.books || !l19.profit) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Monthly P&L Reconciliation Restricted', 'P&L reconciliation requires Cash Flow, Ledger & Profit permissions');
+    }
     const p = ctx.rdl.params;
     const yr = p.year || 'ALL';
     const mo = p.month || 'ALL';
@@ -4937,6 +4993,8 @@
       site: dt.siteDefault, date: p.to || '2026-10-21', co: ctx.co, loads: 0, qty: 0, total: 0, vat: 0, rows: []
     };
     const rows = grp.rows.slice().sort((a, b) => String(a.ticket_no || '').localeCompare(String(b.ticket_no || '')));
+    const l20 = _rdlSeatLens(ctx);
+    const canTax20 = Boolean(l20.tax);
     const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
@@ -4948,7 +5006,7 @@
       <div class="rdl-doc-top">
         ${companyBlockHtml(grp.co || ctx.co)}
         ${metaRowsHtml([
-          ['VAT Invoice No', grp.vat_inv || grp.invoice_no],
+          [canTax20 ? 'VAT Invoice No' : 'Invoice No', grp.vat_inv || grp.invoice_no],
           ['Invoice Date', grp.date],
           [isMfg ? 'Loads' : dt.txCol, `${rows.length} ${rows.length === 1 ? dt.txSingular : dt.txPlural}`],
           [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`]
@@ -4987,8 +5045,8 @@
                 <td>${esc(r.driver || dash)}</td>
                 <td class="num">${fmtNum(r.qty, dt.qtyDp)}</td>
                 <td class="num">${fmtUsd(r.unit_price, 2)}</td>
-                <td class="num">${fmtUsd(sub, 2)}</td>
-                <td class="num">${fmtUsd(vat, 2)}</td>
+                <td class="num">${canTax20 ? fmtUsd(sub, 2) : 'Restricted'}</td>
+                <td class="num">${canTax20 ? fmtUsd(vat, 2) : 'Restricted'}</td>
                 <td class="num bold">${fmtUsd(tot, 2)}</td>
               </tr>
             `;
@@ -4999,8 +5057,8 @@
             <td colspan="6">Grand Total</td>
             <td class="num">${fmtNum(totQty, dt.qtyDp)}</td>
             <td></td>
-            <td class="num">${fmtUsd(totSub, 2)}</td>
-            <td class="num">${fmtUsd(totVat, 2)}</td>
+            <td class="num">${canTax20 ? fmtUsd(totSub, 2) : 'Restricted'}</td>
+            <td class="num">${canTax20 ? fmtUsd(totVat, 2) : 'Restricted'}</td>
             <td class="num">${fmtUsd(totGross, 2)}</td>
           </tr>
         </tfoot>
@@ -5086,6 +5144,7 @@
   }
 
   function render22ReceiptVoucher(meta, ctx) {
+    const lRcpt22 = _rdlSeatLens(ctx);
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
@@ -5093,7 +5152,8 @@
     const d = rowDate(rc, ctx.basis);
     const vNo = `RC-${rc.invoice_no || rc.ticket_no || String(rc.id || '1001').slice(-4)}`;
     const paid = Number(rc.paid_usd || rc.total_usd || 0);
-    const dash = isMfg ? '—' : '-';
+    const rem = Math.max(0, Number(rc.total_usd || 0) - paid);
+    const dash = '-';
     const descLine = isMfg
       ? `Settlement against ${esc(rc.product || 'Concrete Supply')} (${fmtNum(rc.qty || 0, 1)} m³)`
       : `Settlement against ${esc(rc.product || dt.rcptDescDef)}${Number(rc.qty || 0) > 0 ? ` (${fmtNum(rc.qty || 0, dt.qtyDp)} ${esc(dt.qtyUnit)})` : ''}`;
@@ -5106,10 +5166,10 @@
           ['Receipt Voucher No', vNo],
           ['Receipt Date', d],
           ['Payment Method', rc.pay_method || 'Cash / Fresh USD'],
-          ['Amount Received', fmtUsd(paid, 2)]
+          ['Amount Received', lRcpt22.books ? fmtUsd(paid, 2) : 'Restricted']
         ])}
       </div>
-      ${partyBlockHtml('Received From / وصلنا من السادة', rc.customer || dash, `${isMfg ? 'Project Site' : 'Reference'}: ${rc.site || 'General Account'}`, isMfg ? 'Credited to Account 411 — Customers AR' : 'Credited to Account 411 · Customers AR', '')}
+      ${partyBlockHtml('Received From / وصلنا من السادة', rc.customer || dash, `${isMfg ? 'Project Site' : 'Reference'}: ${rc.site || 'General Account'}`, 'Credited to Account 411 · Customers AR', '')}
 
       <table class="rdl-table">
         <thead>
@@ -5131,16 +5191,16 @@
             <td class="mono">${esc(rc.vat_inv || rc.invoice_no || rc.ticket_no || 'Account')}</td>
             <td>${descLine}</td>
             <td>${esc(rc.pay_method || 'Cash USD')}</td>
-            <td class="num">${fmtUsd(rc.total_usd || paid, 2)}</td>
-            <td class="num bold">${fmtUsd(paid, 2)}</td>
-            <td class="num">${fmtUsd(Math.max(0, Number(rc.total_usd || 0) - paid), 2)}</td>
+            <td class="num">${lRcpt22.books ? fmtUsd(rc.total_usd || paid, 2) : fmtUsd(rc.total_usd || 0, 2)}</td>
+            <td class="num bold">${lRcpt22.books ? fmtUsd(paid, 2) : 'Restricted'}</td>
+            <td class="num">${lRcpt22.books ? fmtUsd(rem, 2) : 'Restricted'}</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="6">Total Official Receipt (مجموع سند القبض)</td>
-            <td class="num">${fmtUsd(paid, 2)}</td>
-            <td class="num">${fmtUsd(Math.max(0, Number(rc.total_usd || 0) - paid), 2)}</td>
+            <td class="num">${lRcpt22.books ? fmtUsd(paid, 2) : 'Restricted'}</td>
+            <td class="num">${lRcpt22.books ? fmtUsd(rem, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -5232,6 +5292,11 @@
   }
 
   function render23HoldingRegister(meta, ctx) {
+    const l23 = _rdlSeatLens(ctx);
+    const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
+    if (!l23.books) {
+      return renderRdlRestrictedSheet(meta, coKey, 'Restricted Treasury Scope', 'Holding & Treasury statements require Cash Flow & General Ledger permissions');
+    }
     const stmtRange = stmtActiveRange(ctx);
     const h = (window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
       ? window.MFG_HOLDING.compute({ range: stmtRange, ignorePeriod: !stmtRange })
@@ -5253,7 +5318,6 @@
     const pSum = key => pRows.reduce((s, p) => s + Number(p[key] || 0), 0);
     // A line the total leaves out (an earlier period of a schedule that goes on inside the range) is explained
     const pHasEarlierPeriod = Boolean(pLines && pLines.some(p => p.counted === false));
-    const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
     const winLbl = formatStmtWindowLabel(ctx);
     const winHdr = formatStmtWindowHeader(ctx);
     return `
@@ -5263,7 +5327,7 @@
         ${metaRowsHtml([
           ['Statement Code', 'Statement 23 · Holding & Treasury'],
           ['Reporting Window', winLbl],
-          ['Shared Holding Overhead', fmtUsd(k.totalExpenses || 0, 2)],
+          ['Shared Holding Overhead', l23.expenses ? fmtUsd(k.totalExpenses || 0, 2) : 'Restricted'],
           ['Net Intercompany Clearing', fmtUsd(k.netIntercompany || 0, 2)]
         ])}
       </div>
@@ -5323,21 +5387,21 @@
             <tr>
               <td class="bold">${esc(p.partner || p.name || '-')}</td>
               <td>${esc(p.role || 'Managing Shareholder')}</td>${pLines ? `<td class="mono">${pPeriodHtml(p)}</td>` : ''}
-              <td class="num">${fmtNum(p.sharePct || 0, 1)}%</td>
-              <td class="num">${fmtUsd(p.opening || 0, 2)}</td>
-              <td class="num">${fmtUsd(p.draws || p.distributions || 0, 2)}</td>
-              <td class="num">${fmtUsd(p.allocatedOverhead || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(p.closingBalance || p.balance || 0, 2)}</td>
+              <td class="num">${l23.partnerSplits ? `${fmtNum(p.sharePct || 0, 1)}%` : 'Restricted'}</td>
+              <td class="num">${l23.partnerSplits ? fmtUsd(p.opening || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l23.partnerSplits ? fmtUsd(p.draws || p.distributions || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l23.partnerSplits ? fmtUsd(p.allocatedOverhead || 0, 2) : 'Restricted'}</td>
+              <td class="num bold">${l23.partnerSplits ? fmtUsd(p.closingBalance || p.balance || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>${pLines ? `
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="4">Total Partner Current Accounts</td>
-            <td class="num">${fmtUsd(pSum('opening'), 2)}</td>
-            <td class="num">${fmtUsd(pSum('draws'), 2)}</td>
-            <td class="num">${fmtUsd(pSum('allocatedOverhead'), 2)}</td>
-            <td class="num">${fmtUsd(pSum('closingBalance'), 2)}</td>
+            <td class="num">${l23.partnerSplits ? fmtUsd(pSum('opening'), 2) : 'Restricted'}</td>
+            <td class="num">${l23.partnerSplits ? fmtUsd(pSum('draws'), 2) : 'Restricted'}</td>
+            <td class="num">${l23.partnerSplits ? fmtUsd(pSum('allocatedOverhead'), 2) : 'Restricted'}</td>
+            <td class="num">${l23.partnerSplits ? fmtUsd(pSum('closingBalance'), 2) : 'Restricted'}</td>
           </tr>
         </tfoot>` : ''}
       </table>${pHasEarlierPeriod ? `
@@ -5349,6 +5413,7 @@
   }
 
   function render24HospitalityRegister(meta, ctx) {
+    const l24 = _rdlSeatLens(ctx);
     const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
       ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts', range: stmtRange, ignorePeriod: !stmtRange })
@@ -5368,7 +5433,7 @@
         ${metaRowsHtml([
           ['Statement Code', 'Statement 24 · Hospitality & Resorts'],
           ['Venue Revenue', fmtUsd(revTotal, 2)],
-          ['Cash Collected vs Card', `${fmtUsd(k.cashCollected || 0, 0)} / ${fmtUsd(k.cardCollected || 0, 0)}`],
+          ['Cash Collected vs Card', l24.books ? `${fmtUsd(k.cashCollected || 0, 0)} / ${fmtUsd(k.cardCollected || 0, 0)}` : 'Restricted'],
           ['Active Memberships', `${fmtNum(allMembers.length, 0)} (${fmtUsd(allMembers.reduce((s, m) => s + Number(m.packageUsd || 0), 0), 0)})`]
         ])}
       </div>
@@ -5432,8 +5497,8 @@
               <td>${esc(m.tier)}</td>
               <td class="mono">${esc(m.startDate)} to ${esc(m.endDate)}</td>
               <td class="num">${fmtUsd(m.packageUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(m.paidUsd || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(m.balanceUsd || 0, 2)}</td>
+              <td class="num">${l24.books ? fmtUsd(m.paidUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num bold">${l24.books ? fmtUsd(m.balanceUsd || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -5445,6 +5510,7 @@
   }
 
   function render25TradingRegister(meta, ctx) {
+    const l25 = _rdlSeatLens(ctx);
     const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
       ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading', range: stmtRange, ignorePeriod: !stmtRange })
@@ -5465,7 +5531,7 @@
           ['Statement Code', 'Statement 25 · Automotive & Heavy Trading'],
           ['Commercial Revenue', fmtUsd(revTotal, 2)],
           ['Heavy Trucks Delivered', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} VINs`],
-          ['FIFO Stock Valuation', fmtUsd(k.stockValuation || 0, 2)]
+          ['FIFO Stock Valuation', l25.profit ? fmtUsd(k.stockValuation || 0, 2) : 'Restricted']
         ])}
       </div>
       <div class="rdl-section-hdr">1. Multi-Book Commercial Invoice Register · N / S / IS / IN (سجل دفاتر الفواتير التجارية)</div>
@@ -5492,7 +5558,7 @@
               <td>${esc(r.customer)}</td>
               <td>${esc(r.description)}</td>
               <td class="num">${fmtUsd(r.totalTtc || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(r.balanceUsd || 0, 2)}</td>
+              <td class="num bold">${l25.books ? fmtUsd(r.balanceUsd || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -5500,7 +5566,7 @@
           <tr class="rdl-total-row">
             <td colspan="6">Total Commercial Invoice Books (إجمالي دفاتر الفواتير)</td>
             <td class="num">${fmtUsd(sRows.reduce((s, r) => s + Number(r.totalTtc || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(sRows.reduce((s, r) => s + Number(r.balanceUsd || 0), 0), 2)}</td>
+            <td class="num">${l25.books ? fmtUsd(sRows.reduce((s, r) => s + Number(r.balanceUsd || 0), 0), 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -5525,9 +5591,9 @@
               <td>${esc(v.model)}</td>
               <td class="mono">${esc(v.customsNo)}</td>
               <td>${esc(v.buyer || 'Showroom Yard')}</td>
-              <td class="num">${fmtUsd(v.landedCostUsd || 0, 2)}</td>
+              <td class="num">${l25.profit ? fmtUsd(v.landedCostUsd || 0, 2) : 'Restricted'}</td>
               <td class="num">${fmtUsd(v.salePriceUsd || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(v.marginUsd || 0, 2)}</td>
+              <td class="num bold">${l25.profit ? fmtUsd(v.marginUsd || 0, 2) : 'Restricted'}</td>
               <td>${esc(v.status)}</td>
             </tr>
           `).join('')}
@@ -5540,6 +5606,7 @@
   }
 
   function render26RealEstateRegister(meta, ctx) {
+    const l26 = _rdlSeatLens(ctx);
     const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
       ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property', range: stmtRange, ignorePeriod: !stmtRange })
@@ -5564,7 +5631,7 @@
           ['Statement Code', 'Statement 26 · Real Estate & Property'],
           ['Contracted Annual Rent', fmtUsd(rentTotal, 2)],
           ['Portfolio Occupancy', `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} (${fmtNum(k.occupancyPct || 0, 1)}%)`],
-          ['Rent Collected vs Open AR', `${fmtUsd(k.collectedUsd || 0, 0)} / ${fmtUsd(k.openArUsd || 0, 0)}`]
+          ['Rent Collected vs Open AR', l26.books ? `${fmtUsd(k.collectedUsd || 0, 0)} / ${fmtUsd(k.openArUsd || 0, 0)}` : 'Restricted']
         ])}
       </div>
       <div class="rdl-section-hdr">1. Active Commercial & Residential Lease Roll (جدول عقود الإيجار الفعالة)</div>
@@ -5589,8 +5656,8 @@
               <td>${esc(l.property)} · ${esc(l.unitCode)}</td>
               <td>${esc(l.tenant)}</td>
               <td class="mono">${esc(l.startDate)} to ${esc(l.endDate)}</td>
-              <td class="num">${fmtUsd(l.annualBaseUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(l.vatUsd || 0, 2)}</td>
+              <td class="num">${l26.tax ? fmtUsd(l.annualBaseUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l26.tax ? fmtUsd(l.vatUsd || 0, 2) : 'Restricted'}</td>
               <td class="num bold">${fmtUsd(l.annualTtcUsd || 0, 2)}</td>
             </tr>
           `).join('')}
@@ -5598,8 +5665,8 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="5">Total Contracted Rent Roll (إجمالي عقود الإيجار السنوية)</td>
-            <td class="num">${fmtUsd(lSum('annualBaseUsd'), 2)}</td>
-            <td class="num">${fmtUsd(lSum('vatUsd'), 2)}</td>
+            <td class="num">${l26.tax ? fmtUsd(lSum('annualBaseUsd'), 2) : 'Restricted'}</td>
+            <td class="num">${l26.tax ? fmtUsd(lSum('vatUsd'), 2) : 'Restricted'}</td>
             <td class="num" id="rdlReRentRollTotal">${fmtUsd(lSum('annualTtcUsd'), 2)}</td>
           </tr>
         </tfoot>
@@ -5627,10 +5694,10 @@
               <td class="mono">${esc(r.date)}</td>
               <td>${esc(r.tenant)}</td>
               <td class="mono">${esc(r.unitCode)}</td>
-              <td class="num">${fmtUsd(r.baseUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(r.vatUsd || 0, 2)}</td>
+              <td class="num">${l26.tax ? fmtUsd(r.baseUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l26.tax ? fmtUsd(r.vatUsd || 0, 2) : 'Restricted'}</td>
               <td class="num">${fmtUsd(r.totalTtc || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(r.balanceUsd || 0, 2)}</td>
+              <td class="num bold">${l26.books ? fmtUsd(r.balanceUsd || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -5642,6 +5709,7 @@
   }
 
   function render27InsuranceRegister(meta, ctx) {
+    const l27 = _rdlSeatLens(ctx);
     const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
       ? window.MFG_INSURANCE.compute({ range: stmtRange, ignorePeriod: !stmtRange })
@@ -5658,8 +5726,8 @@
         ${metaRowsHtml([
           ['Statement Code', 'Statement 27 · Insurance & Brokerage'],
           ['Gross Written Premium (GWP)', fmtUsd(k.gwpTotal || 0, 2)],
-          ['Brokerage Commission Earned', `${fmtUsd(k.commTotal || 0, 2)} (${fmtNum(k.avgCommYield || 0, 1)}%)`],
-          ['Net Carrier Payable', fmtUsd(k.carrierPayableUsd || 0, 2)]
+          ['Brokerage Commission Earned', l27.profit ? `${fmtUsd(k.commTotal || 0, 2)} (${fmtNum(k.avgCommYield || 0, 1)}%)` : 'Restricted'],
+          ['Net Carrier Payable', l27.books ? fmtUsd(k.carrierPayableUsd || 0, 2) : 'Restricted']
         ])}
       </div>
       <div class="rdl-section-hdr">1. Active Policy Schedule & 30/60/90-Day Renewal Pipeline (جدول البوالص والتجديدات)</div>
@@ -5685,8 +5753,8 @@
               <td>${esc(p.line)}</td>
               <td class="mono">${esc(p.endDate || '-')}${Number.isFinite(Number(p.daysToExpiry)) ? ` (${Number(p.daysToExpiry)}d)` : ''}</td>
               <td class="num">${fmtUsd(p.gwpUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(p.commUsd || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(p.clientBalanceUsd || 0, 2)}</td>
+              <td class="num">${l27.profit ? fmtUsd(p.commUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num bold">${l27.books ? fmtUsd(p.clientBalanceUsd || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -5694,8 +5762,8 @@
           <tr class="rdl-total-row">
             <td colspan="5">Total Policy Schedule (إجمالي جدول البوالص)</td>
             <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.gwpUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.commUsd || 0), 0), 2)}</td>
-            <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.clientBalanceUsd || 0), 0), 2)}</td>
+            <td class="num">${l27.profit ? fmtUsd(pRows.reduce((s, p) => s + Number(p.commUsd || 0), 0), 2) : 'Restricted'}</td>
+            <td class="num">${l27.books ? fmtUsd(pRows.reduce((s, p) => s + Number(p.clientBalanceUsd || 0), 0), 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -5718,10 +5786,10 @@
               <td class="bold">${esc(c.carrier)}</td>
               <td class="num">${fmtNum(c.policies || 0, 0)}</td>
               <td class="num">${fmtUsd(c.gwpUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(c.commUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(c.netPayableUsd || 0, 2)}</td>
-              <td class="num">${fmtUsd(c.remittedUsd || 0, 2)}</td>
-              <td class="num bold">${fmtUsd(c.balanceDueUsd || 0, 2)}</td>
+              <td class="num">${l27.profit ? fmtUsd(c.commUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l27.books ? fmtUsd(c.netPayableUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num">${l27.books ? fmtUsd(c.remittedUsd || 0, 2) : 'Restricted'}</td>
+              <td class="num bold">${l27.books ? fmtUsd(c.balanceDueUsd || 0, 2) : 'Restricted'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -6501,6 +6569,28 @@
     '28': render28HrPrintPack
   };
 
+  function _rdlSeatLens(ctx) {
+    const ent = typeof window !== 'undefined' ? window.MFG_ENTERPRISE : null;
+    const u = (ctx && ctx.user) || (ent && typeof ent.activeUser === 'function' ? ent.activeUser() : null);
+    return (ent && typeof ent.seatLens === 'function' && u)
+      ? ent.seatLens(u)
+      : { owner: false, books: false, cashflow: false, ledger: false, expenses: false, profit: false, tax: false, partnerSplits: false, payroll: false, payrollDollars: false, sentinels: false };
+  }
+
+  function renderRdlRestrictedSheet(meta, coKey, title, subtitle) {
+    return `
+      ${sheetHeaderHtml(meta, coKey || 'ALL', subtitle || 'Restricted by seat permissions')}
+      <div class="rdl-kpi-strip">
+        <div class="rdl-kpi-box">
+          <div class="rdl-kpi-lbl">${esc(title || (meta && meta.title) || 'Statement Access')}</div>
+          <div class="rdl-kpi-val">Restricted</div>
+          <div class="rdl-kpi-sub">${esc(subtitle || 'Restricted by seat permissions')}</div>
+        </div>
+      </div>
+      ${sheetFooterHtml(coKey || 'ALL', 1, 1)}
+    `;
+  }
+
   function renderRdlSheet(id, ctx) {
     const padId = String(id || '01').padStart(2, '0');
     const meta = RDL_CATALOG.find(x => x.id === padId) || RDL_CATALOG[0];
@@ -6546,8 +6636,24 @@
         }
       };
       effCtx = buildRdlContext(seedObj, mockState);
+      if (opts && opts.user) effCtx.user = opts.user;
       if (opts.co !== undefined && Number(padId) >= 23) {
         effCtx.co = opts.co;
+      }
+    }
+    const entRdl = typeof window !== 'undefined' ? window.MFG_ENTERPRISE : null;
+    const checkU = (effCtx && effCtx.user) || (entRdl && typeof entRdl.activeUser === 'function' ? entRdl.activeUser() : null);
+    if (checkU) {
+      if (String(checkU.status || '').trim().toLowerCase() === 'suspended' || checkU.locked) {
+        return renderRdlRestrictedSheet(meta, effCtx.co, meta.title, 'Restricted by seat permissions');
+      }
+      if (padId !== '10' && padId !== '28' && entRdl && typeof entRdl.canAccessRdlReport === 'function') {
+        const indMap = { '23': 'Holding & Treasury', '24': 'Hospitality & Resorts', '25': 'Automotive & Heavy Trading', '26': 'Real Estate & Property', '27': 'Insurance & Brokerage' };
+        const curInd = typeof entRdl.getActiveIndustry === 'function' ? entRdl.getActiveIndustry() : 'Manufacturing';
+        const needCrossInd = (indMap[padId] && indMap[padId] !== curInd) || (['11', '12', '17'].includes(padId) && curInd !== 'Manufacturing');
+        if (!needCrossInd && !entRdl.canAccessRdlReport(meta.id, checkU)) {
+          return renderRdlRestrictedSheet(meta, effCtx.co, meta.title, 'Restricted by seat permissions');
+        }
       }
     }
     const fn = SHEET_RENDERERS[meta.id] || render01DailyOps;
@@ -6580,11 +6686,16 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   }
 
-  function getVisibleRdlCatalog(STATE) {
-    const filtered = STATE && typeof STATE.canAccessRdlReport === 'function'
-      ? RDL_CATALOG.filter(r => STATE.canAccessRdlReport(r))
-      : RDL_CATALOG;
-    return filtered.length ? filtered : RDL_CATALOG;
+  function getVisibleRdlCatalog(STATE, uOpt) {
+    const ent = typeof window !== 'undefined' ? window.MFG_ENTERPRISE : null;
+    if (STATE && typeof STATE.canAccessRdlReport === 'function') {
+      return RDL_CATALOG.filter(r => STATE.canAccessRdlReport(r, uOpt));
+    }
+    if (ent && typeof ent.canAccessRdlReport === 'function') {
+      const u = uOpt !== undefined ? uOpt : (typeof ent.activeUser === 'function' ? ent.activeUser() : null);
+      return RDL_CATALOG.filter(r => ent.canAccessRdlReport(r, u));
+    }
+    return RDL_CATALOG;
   }
 
   function _stmtShiftIsoDays(isoStr, deltaDays) {
@@ -6652,20 +6763,29 @@
     const seedObj = SEED || (typeof window !== 'undefined' ? window.MFG_SEED : {}) || {};
     const stObj = STATE || { company: 'ALL', activeStatement: '01' };
     const ctx = buildRdlContext(seedObj, stObj);
-    const catalog = getVisibleRdlCatalog(stObj);
+    const ent = typeof window !== 'undefined' ? window.MFG_ENTERPRISE : null;
+    const rdlUser = options.user || ((ent && typeof ent.activeUser === 'function') ? ent.activeUser() : null);
+    const catalog = getVisibleRdlCatalog(stObj, rdlUser);
     const reqId = String(options.stmtId || stObj.activeStatement || '01').padStart(2, '0');
-    const meta = catalog.find(x => x.id === reqId) || RDL_CATALOG.find(x => x.id === reqId) || catalog[0] || RDL_CATALOG[0];
+    const inCatalog = catalog.find(x => x.id === reqId);
+    const meta = inCatalog || RDL_CATALOG.find(x => x.id === reqId) || RDL_CATALOG[0];
     const stmtId = meta.id;
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
 
-    let canViewBooks = true;
-    if (typeof options.canViewBooks === 'boolean') {
-      canViewBooks = options.canViewBooks;
-    } else if (stObj && typeof stObj.canAccessNavGroup === 'function') {
-      try { canViewBooks = Boolean(stObj.canAccessNavGroup('accounting')); } catch (_) {}
+    const rdlLens = (ent && typeof ent.seatLens === 'function' && rdlUser)
+      ? ent.seatLens(rdlUser)
+      : { books: false, profit: false, expenses: false, tax: false, payrollDollars: false, sentinels: false };
+    let actualCanBooks = Boolean(rdlLens && rdlLens.books);
+    if (stObj && typeof stObj.canAccessNavGroup === 'function') {
+      try { actualCanBooks = actualCanBooks && Boolean(stObj.canAccessNavGroup('accounting')); } catch (_) {}
     }
+    const canViewBooks = typeof options.canViewBooks === 'boolean'
+      ? Boolean(actualCanBooks && options.canViewBooks)
+      : actualCanBooks;
+    const canViewProfit = Boolean(rdlLens && rdlLens.profit && canViewBooks);
+    const canViewSentinels = Boolean(rdlLens && rdlLens.sentinels);
 
     let effCoKey = ctx.co || 'ALL';
     if (stmtId === '23') effCoKey = (ctx.co && ctx.co !== 'ALL') ? ctx.co : 'Bdeir Holding';
@@ -6697,6 +6817,51 @@
     let tieCheck = null;
     let kpis = [];
     let facts = {};
+
+    const isRestrictedStmt = Boolean(
+      !inCatalog
+      || (!canViewBooks && ['02', '03', '04', '05', '06', '07', '18', '19', '23'].includes(stmtId))
+      || (!canViewProfit && ['02', '03', '19'].includes(stmtId))
+      || (!(rdlLens && rdlLens.expenses) && !canViewBooks && ['09', '11', '15', '16'].includes(stmtId))
+      || (!(rdlLens && rdlLens.tax) && stmtId === '18')
+      || (!(rdlLens && rdlLens.payrollDollars) && stmtId === '10')
+    );
+
+    if (isRestrictedStmt) {
+      return {
+        stmtId,
+        stmtTitle: meta.title,
+        stmtAr: meta.ar,
+        stmtFr: STMT_FR_TITLES[stmtId] || meta.title,
+        stmtCat: meta.cat,
+        industry: ctx.ind || 'Manufacturing',
+        coKey: effCoKey,
+        companyShort: L.short,
+        companyLegal: _stmtCleanParty(L.legal),
+        companyAr: L.ar,
+        windowMode: 'period',
+        from: p.from,
+        to: p.to,
+        asof: p.asof || p.to,
+        windowLabelEn: isUntouchedAllStmtWindow(ctx) ? 'All Periods' : `${p.from} to ${p.to}`,
+        windowLabelAr: isUntouchedAllStmtWindow(ctx) ? 'جميع الفترات' : `${p.from} إلى ${p.to}`,
+        windowLabelFr: isUntouchedAllStmtWindow(ctx) ? 'Toutes les périodes' : `${p.from} au ${p.to}`,
+        scopeKey: `stmt|${stmtId}|${effCoKey}|${ctx.ind}|R0`,
+        restricted: true,
+        canViewBooks: false,
+        canViewProfit: false,
+        canViewSentinels,
+        pinnedCoverNote: false,
+        tieCheck: null,
+        kpis: [
+          mkKpi('access', 'Statement Access', 'صلاحية الكشف', 'Accès état', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+          mkKpi('ledger', 'General Ledger', 'الأستاذ العام', 'Grand livre', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+          mkKpi('margin', 'Financial Metrics', 'المؤشرات المالية', 'Indicateurs financiers', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+          mkKpi('scope', 'Authorized Scope', 'النطاق المصرح', 'Périmètre autorisé', L.short, 'Row-level policy enforced', 'تطبيق سياسة الصلاحيات', 'Politique de droits active', 'ok')
+        ],
+        facts: { restricted: true }
+      };
+    }
 
     if (stmtId === '01') {
       const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
@@ -6731,16 +6896,19 @@
         topItem: topProdEntry ? _stmtCleanParty(topProdEntry[0]) : null,
         topItemUsd: topProdEntry ? Math.round(topProdEntry[1]) : 0
       };
+      const canExp01 = Boolean(rdlLens && rdlLens.expenses);
       if (canViewBooks) {
         facts.cashCollectedUsd = Math.round(totPaid);
         facts.realizationPct = realPct;
+        if (canExp01) facts.directAndOpexUsd = Math.round(totExp);
+      } else if (canExp01) {
         facts.directAndOpexUsd = Math.round(totExp);
       }
       kpis = canViewBooks ? [
         mkKpi('vol', 'Dispatched Volume', 'الكمية المنفذة', 'Volume exécuté', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(sales.length, 0)} ${isMfg ? 'loads' : dt.txPlural}`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} opérations`),
         mkKpi('rev', 'Gross Billing', 'إجمالي الفوترة', 'Facturation brute', fmtUsd(totRev), `Avg ${fmtUsd(totQty > 0 ? totRev / totQty : 0)} / ${dt.qtyUnit}`, `متوسط ${fmtUsd(totQty > 0 ? totRev / totQty : 0)}`, `Moy. ${fmtUsd(totQty > 0 ? totRev / totQty : 0)}`),
         mkKpi('paid', 'Cash Collected', 'التحصيل النقدي', 'Encaissements', fmtUsd(totPaid), `${realPct.toFixed(1)}% realization`, `${realPct.toFixed(1)}% نسبة تحصيل`, `${realPct.toFixed(1)}% encaissé`, realPct >= 75 ? 'pos' : 'neutral'),
-        mkKpi('cost', 'Direct & OPEX', 'المصاريف والمشتريات', 'Coûts directs et OPEX', fmtUsd(totExp), `${fmtNum(totLiters, 0)} L fuel`, `${fmtNum(totLiters, 0)} ليتر محروقات`, `${fmtNum(totLiters, 0)} L carburant`)
+        mkKpi('cost', 'Direct & OPEX', 'المصاريف والمشتريات', 'Coûts directs et OPEX', canExp01 ? fmtUsd(totExp) : 'Restricted', `${fmtNum(totLiters, 0)} L fuel`, `${fmtNum(totLiters, 0)} ليتر محروقات`, `${fmtNum(totLiters, 0)} L carburant`)
       ] : [
         mkKpi('vol', 'Dispatched Volume', 'الكمية المنفذة', 'Volume exécuté', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(sales.length, 0)} ${isMfg ? 'loads' : dt.txPlural}`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} opérations`),
         mkKpi('rev', 'Gross Billing', 'إجمالي الفوترة', 'Facturation brute', fmtUsd(totRev), topProdEntry ? topProdEntry[0] : dt.rcptDescDef, topProdEntry ? topProdEntry[0] : '', topProdEntry ? topProdEntry[0] : ''),
@@ -6779,22 +6947,27 @@
       const varianceUsd = Math.round(Math.abs(totalAssets - totalLiabEq) * 100) / 100;
       const balanced = varianceUsd < 0.02;
       tieCheck = { balanced, varianceUsd, kind: 'bs' };
-      facts = {
+      facts = (canViewBooks && canViewProfit) ? {
         asOfDate: asof,
         totalAssetsUsd: Math.round(totalAssets),
         totalLiabilitiesAndEquityUsd: Math.round(totalLiabEq),
-        cashAndBankClass5Usd: canViewBooks ? Math.round(cashBank) : undefined,
-        receivables411Usd: canViewBooks ? Math.round(dBal('411')) : undefined,
-        payables401Usd: canViewBooks ? Math.round(cBal('401')) : undefined,
+        cashAndBankClass5Usd: Math.round(cashBank),
+        receivables411Usd: Math.round(dBal('411')),
+        payables401Usd: Math.round(cBal('401')),
         periodNetResult120Usd: Math.round(retainedEarnings),
         balanceSheetVarianceUsd: varianceUsd,
         balanced
-      };
-      kpis = [
+      } : { restricted: true };
+      kpis = (canViewBooks && canViewProfit) ? [
         mkKpi('assets', 'Total Assets', 'إجمالي الموجودات', 'Total actif', fmtUsdSigned(totalAssets), `Fixed ${fmtUsd(fixedAssets)}`, `ثابتة ${fmtUsd(fixedAssets)}`, `Immobilisé ${fmtUsd(fixedAssets)}`),
         mkKpi('liabeq', 'Liabilities & Equity', 'المطلوبات والرساميل', 'Passif et capitaux', fmtUsdSigned(totalLiabEq), `Payables ${fmtUsd(liabClass4)}`, `ذمم دائنة ${fmtUsd(liabClass4)}`, `Dettes ${fmtUsd(liabClass4)}`),
-        mkKpi('cash', 'Cash & Bank (Class 5)', 'النقدية والبنوك', 'Trésorerie (Classe 5)', canViewBooks ? fmtUsdSigned(cashBank) : 'Restricted', 'Accounts 512 + 531', 'حسابات 512 و 531', 'Comptes 512 + 531', cashBank >= 0 ? 'pos' : 'neg'),
+        mkKpi('cash', 'Cash & Bank (Class 5)', 'النقدية والبنوك', 'Trésorerie (Classe 5)', fmtUsdSigned(cashBank), 'Accounts 512 + 531', 'حسابات 512 و 531', 'Comptes 512 + 531', cashBank >= 0 ? 'pos' : 'neg'),
         mkKpi('tie', 'Balance Sheet Tie', 'مطابقة الميزانية', 'Équilibre du bilan', balanced ? '$0.00' : fmtUsd(varianceUsd, 2), balanced ? 'Classes 1-5 balanced' : 'Variance detected', balanced ? 'متوازنة بالكامل' : 'يوجد فرق', balanced ? 'Classes 1-5 équilibrées' : 'Écart détecté', balanced ? 'ok' : 'neg')
+      ] : [
+        mkKpi('assets', 'Total Assets', 'إجمالي الموجودات', 'Total actif', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('liabeq', 'Liabilities & Equity', 'المطلوبات والرساميل', 'Passif et capitaux', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('cash', 'Cash & Bank (Class 5)', 'النقدية والبنوك', 'Trésorerie (Classe 5)', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('tie', 'Balance Sheet Tie', 'مطابقة الميزانية', 'Équilibre du bilan', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste')
       ];
     } else if (stmtId === '03') {
       const jes = buildJournalEntries(ctx, p.to).filter(j => j.date !== '2020-01-01' && inWindow(j.date, p.from, p.to));
@@ -6811,7 +6984,7 @@
       const expTotal = exp601 + exp615 + exp622 + exp641;
       const ebitda = revTotal - expTotal;
       const marginPct = revTotal > 0 ? Number(((ebitda / revTotal) * 100).toFixed(1)) : 0;
-      facts = {
+      facts = (canViewBooks && canViewProfit) ? {
         operatingRevenueClass7Usd: Math.round(revTotal),
         directCost601Usd: Math.round(exp601),
         maintenanceAndServicesUsd: Math.round(exp615 + exp622),
@@ -6820,12 +6993,17 @@
         netOperatingIncomeUsd: Math.round(ebitda),
         operatingMarginPct: marginPct,
         periodGrain: p.period || 'Month'
-      };
-      kpis = [
+      } : { restricted: true };
+      kpis = (canViewBooks && canViewProfit) ? [
         mkKpi('rev', 'Operating Revenue', 'الإيرادات التشغيلية', 'Produits d’exploitation', fmtUsd(revTotal), 'Class 7 (701 + 706)', 'الفئة 7 (701 + 706)', 'Classe 7 (701 + 706)', 'pos'),
         mkKpi('exp', 'Operating Costs', 'الأعباء التشغيلية', 'Charges d’exploitation', fmtUsd(expTotal), `Direct 601: ${fmtUsd(exp601)}`, `مباشرة 601: ${fmtUsd(exp601)}`, `Directs 601 : ${fmtUsd(exp601)}`),
         mkKpi('ebitda', 'Net Operating Income', 'صافي النتيجة التشغيلية', 'Résultat d’exploitation', fmtUsdSigned(ebitda), `Payroll 641: ${fmtUsd(exp641)}`, `رواتب 641: ${fmtUsd(exp641)}`, `Paie 641 : ${fmtUsd(exp641)}`, ebitda >= 0 ? 'pos' : 'neg'),
         mkKpi('margin', 'Operating Margin', 'هامش التشغيل', 'Marge opérationnelle', `${marginPct.toFixed(1)}%`, `Columns by ${p.period || 'Month'}`, `موزعة حسب ${p.period || 'Month'}`, `Ventilé par ${p.period || 'Month'}`, marginPct >= 15 ? 'ok' : (marginPct >= 0 ? 'neutral' : 'neg'))
+      ] : [
+        mkKpi('rev', 'Operating Revenue', 'الإيرادات التشغيلية', 'Produits d’exploitation', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('exp', 'Operating Costs', 'الأعباء التشغيلية', 'Charges d’exploitation', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('ebitda', 'Net Operating Income', 'صافي النتيجة التشغيلية', 'Résultat d’exploitation', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste'),
+        mkKpi('margin', 'Operating Margin', 'هامش التشغيل', 'Marge opérationnelle', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste')
       ];
     } else if (stmtId === '04') {
       const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
@@ -6999,10 +7177,11 @@
       const byCat = new Map();
       rows.forEach(r => byCat.set(r.category || 'General', (byCat.get(r.category || 'General') || 0) + Number(r.total_usd || 0)));
       const topCat = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      const canTax09 = Boolean(rdlLens && rdlLens.tax);
       facts = {
         voucherCount: rows.length,
-        netExpenseUsd: Math.round(totNet),
-        inputVatUsd: Math.round(totVat),
+        netExpenseUsd: canTax09 ? Math.round(totNet) : undefined,
+        inputVatUsd: canTax09 ? Math.round(totVat) : undefined,
         totalExpenseUsd: Math.round(totGross),
         paidExpenseUsd: canViewBooks ? Math.round(totPaid) : undefined,
         unpaidCreditExpenseUsd: canViewBooks ? Math.round(totGross - totPaid) : undefined,
@@ -7011,7 +7190,7 @@
       };
       kpis = [
         mkKpi('cnt', 'Expense Vouchers', 'سندات المصاريف', 'Pièces de charges', fmtNum(rows.length, 0), topCat ? topCat[0] : 'All categories', topCat ? topCat[0] : 'كافة الفئات', topCat ? topCat[0] : 'Toutes catégories'),
-        mkKpi('net', 'Net Expenses', 'صافي المصاريف', 'Charges HT', fmtUsd(totNet, 2), `VAT ${fmtUsd(totVat, 2)}`, `ضريبة ${fmtUsd(totVat, 2)}`, `TVA ${fmtUsd(totVat, 2)}`),
+        mkKpi('net', 'Net Expenses', 'صافي المصاريف', 'Charges HT', canTax09 ? fmtUsd(totNet, 2) : 'Restricted', canTax09 ? `VAT ${fmtUsd(totVat, 2)}` : 'Restricted', canTax09 ? `ضريبة ${fmtUsd(totVat, 2)}` : 'مقيد', canTax09 ? `TVA ${fmtUsd(totVat, 2)}` : 'Restreint'),
         mkKpi('tot', 'Total Expenses', 'إجمالي المصاريف', 'Total charges', fmtUsd(totGross, 2), p.supplier === 'ALL' ? 'All vendors' : p.supplier, p.supplier === 'ALL' ? 'كافة الموردين' : p.supplier, p.supplier === 'ALL' ? 'Tous fournisseurs' : p.supplier),
         mkKpi('ap', 'Credit Balance', 'ذمم غير مسددة', 'Solde à payer', canViewBooks ? fmtUsd(totGross - totPaid, 2) : 'Restricted', canViewBooks ? `Paid ${fmtUsd(totPaid, 0)}` : 'Books restricted', canViewBooks ? `مسدد ${fmtUsd(totPaid, 0)}` : 'مقيد', canViewBooks ? `Payé ${fmtUsd(totPaid, 0)}` : 'Restreint')
       ];
@@ -7142,7 +7321,7 @@
         if (!d || d > asof) return;
         const c = r.customer || 'Walk-in Customer';
         if (custFilter && custFilter !== 'ALL' && c !== custFilter) return;
-        if (r.is_receipt_row) ensureCust(c, d).paid += Number(r.paid_usd || 0);
+        if (r.is_receipt_row) { if (canViewBooks) ensureCust(c, d).paid += Number(r.paid_usd || 0); }
         else if (r.is_credit) {
           const tot = Number(r.total_usd || 0);
           if (Math.abs(tot) < 0.005) return;
@@ -7172,7 +7351,10 @@
         if (totalCredits < -0.005) g.b0_30 += Math.abs(totalCredits);
         g.totalBal = g.billed - g.paid;
       });
-      const rows = [...byCust.values()].filter(g => Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01).sort((a, b) => b.totalBal - a.totalBal).slice(0, 450);
+      const rows = [...byCust.values()]
+        .filter(g => canViewBooks ? (Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01) : Math.abs(g.billed) > 0.01)
+        .sort((a, b) => canViewBooks ? (b.totalBal - a.totalBal) : (b.billed - a.billed))
+        .slice(0, 450);
       const sum = k => rows.reduce((s, r) => s + r[k], 0);
       const netAr = sum('totalBal');
       const b0_30 = sum('b0_30');
@@ -7183,23 +7365,23 @@
         asOfDate: asof,
         customerAccounts: rows.length,
         creditBilledUsd: Math.round(sum('billed')),
-        settledUsd: Math.round(sum('paid')),
-        bucket0To30Usd: Math.round(b0_30),
-        bucket31To90Usd: Math.round(b31_90),
-        bucketOver90Usd: Math.round(b90p),
-        netReceivable411Usd: Math.round(netAr),
-        topDebtor: topDebtor ? _stmtCleanParty(topDebtor.customer) : null,
-        topDebtorUsd: topDebtor ? Math.round(topDebtor.totalBal) : 0
+        settledUsd: canViewBooks ? Math.round(sum('paid')) : undefined,
+        bucket0To30Usd: canViewBooks ? Math.round(b0_30) : undefined,
+        bucket31To90Usd: canViewBooks ? Math.round(b31_90) : undefined,
+        bucketOver90Usd: canViewBooks ? Math.round(b90p) : undefined,
+        netReceivable411Usd: canViewBooks ? Math.round(netAr) : undefined,
+        topDebtor: (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : null,
+        topDebtorUsd: (canViewBooks && topDebtor) ? Math.round(topDebtor.totalBal) : undefined
       };
       kpis = [
-        mkKpi('net', 'Net Receivables', 'صافي الذمم المدينة', 'Créances nettes (411)', fmtUsdSigned(netAr), `${rows.length} accounts`, `${rows.length} حساب زبون`, `${rows.length} comptes clients`),
-        mkKpi('cur', 'Current (0-30d)', 'جاري (0-30 يوم)', 'Courant (0-30 j)', fmtUsdSigned(b0_30), 'FIFO allocation', 'تخصيص الوارد أولاً', 'Allocation FIFO', 'pos'),
-        mkKpi('mid', '31-90 Days', '31 إلى 90 يوماً', '31 à 90 jours', fmtUsdSigned(b31_90), 'Active follow-up', 'متابعة تحصيل', 'Relance active'),
-        mkKpi('old', 'Over 90 Days', 'أكثر من 90 يوماً', 'Plus de 90 jours', fmtUsdSigned(b90p), topDebtor ? _stmtCleanParty(topDebtor.customer) : 'Aged bucket', topDebtor ? _stmtCleanParty(topDebtor.customer) : 'ذمم متأخرة', topDebtor ? _stmtCleanParty(topDebtor.customer) : 'Créances échues', b90p > 0 ? 'neg' : 'ok')
+        mkKpi('net', 'Net Receivables', 'صافي الذمم المدينة', 'Créances nettes (411)', canViewBooks ? fmtUsdSigned(netAr) : 'Restricted', `${rows.length} accounts`, `${rows.length} حساب زبون`, `${rows.length} comptes clients`),
+        mkKpi('cur', 'Current (0-30d)', 'جاري (0-30 يوم)', 'Courant (0-30 j)', canViewBooks ? fmtUsdSigned(b0_30) : 'Restricted', 'FIFO allocation', 'تخصيص الوارد أولاً', 'Allocation FIFO', 'pos'),
+        mkKpi('mid', '31-90 Days', '31 إلى 90 يوماً', '31 à 90 jours', canViewBooks ? fmtUsdSigned(b31_90) : 'Restricted', 'Active follow-up', 'متابعة تحصيل', 'Relance active'),
+        mkKpi('old', 'Over 90 Days', 'أكثر من 90 يوماً', 'Plus de 90 jours', canViewBooks ? fmtUsdSigned(b90p) : 'Restricted', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'Aged bucket', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'ذمم متأخرة', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'Créances échues', (canViewBooks && b90p > 0) ? 'neg' : 'ok')
       ];
     } else if (stmtId === '14') {
       const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
-      const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && (r.is_receipt_row || r.is_credit));
+      const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && ((canViewBooks && r.is_receipt_row) || r.is_credit));
       let openDr = 0, openCr = 0, totDr = 0, totCr = 0, totQty = 0, pCount = 0;
       allCustRows.forEach(r => {
         const d = rowDate(r, ctx.basis);
@@ -7213,16 +7395,16 @@
         periodEntries: pCount,
         dispatchedQty: Number(totQty.toFixed(dt.qtyDp)),
         qtyUnit: dt.qtyUnit,
-        openingBalanceUsd: Math.round(openBal),
+        openingBalanceUsd: canViewBooks ? Math.round(openBal) : undefined,
         periodBilledUsd: Math.round(totDr),
-        periodSettledUsd: Math.round(totCr),
-        closingBalanceUsd: Math.round(closeBal)
+        periodSettledUsd: canViewBooks ? Math.round(totCr) : undefined,
+        closingBalanceUsd: canViewBooks ? Math.round(closeBal) : undefined
       };
       kpis = [
-        mkKpi('open', 'Opening Balance', 'رصيد مدور', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), _stmtCleanParty(custName), _stmtCleanParty(custName), _stmtCleanParty(custName)),
+        mkKpi('open', 'Opening Balance', 'رصيد مدور', 'Solde d’ouverture', canViewBooks ? fmtUsdSigned(openBal, 2) : 'Restricted', _stmtCleanParty(custName), _stmtCleanParty(custName), _stmtCleanParty(custName)),
         mkKpi('dr', 'Period Billed', 'فوترة الفترة', 'Facturé période', fmtUsd(totDr, 2), `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`),
-        mkKpi('cr', 'Period Settled', 'تسديدات الفترة', 'Réglé période', fmtUsd(totCr, 2), `${fmtNum(pCount, 0)} entries`, `${fmtNum(pCount, 0)} حركة`, `${fmtNum(pCount, 0)} lignes`, 'pos'),
-        mkKpi('close', 'Closing Balance', 'الرصيد الختامي', 'Solde de clôture', fmtUsdSigned(closeBal, 2), 'Account 411 SOA', 'كشف حساب 411', 'Relevé compte 411', closeBal <= 0.01 ? 'ok' : 'neutral')
+        mkKpi('cr', 'Period Settled', 'تسديدات الفترة', 'Réglé période', canViewBooks ? fmtUsd(totCr, 2) : 'Restricted', `${fmtNum(pCount, 0)} entries`, `${fmtNum(pCount, 0)} حركة`, `${fmtNum(pCount, 0)} lignes`, 'pos'),
+        mkKpi('close', 'Closing Balance', 'الرصيد الختامي', 'Solde de clôture', canViewBooks ? fmtUsdSigned(closeBal, 2) : 'Restricted', 'Account 411 SOA', 'كشف حساب 411', 'Relevé compte 411', (!canViewBooks || closeBal > 0.01) ? 'neutral' : 'ok')
       ];
     } else if (stmtId === '15') {
       const asof = p.asof || p.to;
@@ -7246,8 +7428,9 @@
         bySup.set(s, g);
       };
       (ctx.apRmLedgerAll || ctx.rmAll).forEach(r => {
+        if (!canViewBooks && r.is_settlement_row) return;
         const tp = r.is_settlement_row ? 'settle' : (r.leg === 'haulage' ? 'haul' : 'rm');
-        addSup(r.supplier, rowDate(r, ctx.basis), tp, Number(r.total_usd || 0), Number(r.paid_usd || 0));
+        addSup(r.supplier, rowDate(r, ctx.basis), tp, Number(r.total_usd || 0), canViewBooks ? Number(r.paid_usd || 0) : 0);
       });
       ctx.expAll.forEach(r => {
         if (!r.is_ap_credit) return;
@@ -7266,12 +7449,15 @@
             const haulUsd = Number(lr.trans_cr || 0);
             const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
             const billed = rmUsd + haulUsd + expUsd;
-            const paid = Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0);
+            const paid = canViewBooks ? (Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0)) : 0;
             bySup.set(s, { supplier: s, rmUsd, haulUsd, expUsd, billed, paid, lastDate: asof });
           });
         }
       }
-      const rows = [...bySup.values()].filter(g => Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01).sort((a, b) => (b.billed - b.paid) - (a.billed - a.paid)).slice(0, 450);
+      const rows = [...bySup.values()]
+        .filter(g => canViewBooks ? (Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01) : Math.abs(g.billed) > 0.01)
+        .sort((a, b) => canViewBooks ? ((b.billed - b.paid) - (a.billed - a.paid)) : (b.billed - a.billed))
+        .slice(0, 450);
       const sum = k => rows.reduce((s, r) => s + r[k], 0);
       const rmTot = sum('rmUsd');
       const haulTot = sum('haulUsd');
@@ -7284,21 +7470,22 @@
         directSupplyLegUsd: Math.round(rmTot),
         haulageLegUsd: Math.round(haulTot),
         creditExpenseLegUsd: Math.round(expTot),
-        settledUsd: Math.round(sum('paid')),
-        netPayable401Usd: Math.round(netAp),
-        topCreditor: topSup ? _stmtCleanParty(topSup.supplier) : null,
-        topCreditorUsd: topSup ? Math.round(topSup.billed - topSup.paid) : 0
+        settledUsd: canViewBooks ? Math.round(sum('paid')) : undefined,
+        netPayable401Usd: canViewBooks ? Math.round(netAp) : undefined,
+        topCreditor: (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : null,
+        topCreditorUsd: (canViewBooks && topSup) ? Math.round(topSup.billed - topSup.paid) : undefined
       };
       kpis = [
         mkKpi('rm', isMfg ? 'Raw Materials Leg' : 'Direct Supply', 'توريد المواد', 'Approvisionnement', fmtUsd(rmTot), `${rows.length} vendors`, `${rows.length} مورد`, `${rows.length} fournisseurs`),
         mkKpi('haul', isMfg ? 'Haulage Leg' : 'Freight & Delivery', 'أجور النقل', 'Transport et fret', fmtUsd(haulTot), 'Split haulage leg', 'ذمم النقل المفصولة', 'Volet transport'),
-        mkKpi('exp', 'Credit Expenses', 'مصاريف آجلة', 'Charges à crédit', fmtUsd(expTot), `Settled ${fmtUsd(sum('paid'))}`, `مسدد ${fmtUsd(sum('paid'))}`, `Réglé ${fmtUsd(sum('paid'))}`),
-        mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', fmtUsdSigned(netAp), topSup ? _stmtCleanParty(topSup.supplier) : 'Account 401', topSup ? _stmtCleanParty(topSup.supplier) : 'حساب 401', topSup ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
+        mkKpi('exp', 'Credit Expenses', 'مصاريف آجلة', 'Charges à crédit', fmtUsd(expTot), canViewBooks ? `Settled ${fmtUsd(sum('paid'))}` : 'Credit bills', canViewBooks ? `مسدد ${fmtUsd(sum('paid'))}` : 'فواتير آجلة', canViewBooks ? `Réglé ${fmtUsd(sum('paid'))}` : 'Factures à crédit'),
+        mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', canViewBooks ? fmtUsdSigned(netAp) : 'Restricted', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Account 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'حساب 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
       ];
     } else if (stmtId === '16') {
       const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
       let openCr = 0, openDr = 0, totCr = 0, totDr = 0, pCount = 0;
       (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
+        if (!canViewBooks && r.is_settlement_row) return;
         const d = rowDate(r, ctx.basis);
         if (d < p.from) { openCr += Number(r.total_usd || 0); openDr += Number(r.paid_usd || 0); }
         else if (d <= p.to) { totCr += Number(r.total_usd || 0); totDr += Number(r.paid_usd || 0); pCount += 1; }
@@ -7313,16 +7500,16 @@
       facts = {
         supplier: _stmtCleanParty(supName),
         periodVouchers: pCount,
-        openingPayableUsd: Math.round(openBal),
+        openingPayableUsd: canViewBooks ? Math.round(openBal) : undefined,
         periodInvoicedUsd: Math.round(totCr),
-        periodPaidUsd: Math.round(totDr),
-        closingPayableUsd: Math.round(closeBal)
+        periodPaidUsd: canViewBooks ? Math.round(totDr) : undefined,
+        closingPayableUsd: canViewBooks ? Math.round(closeBal) : undefined
       };
       kpis = [
-        mkKpi('open', 'Opening Payable', 'رصيد مدور للمورد', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), _stmtCleanParty(supName), _stmtCleanParty(supName), _stmtCleanParty(supName)),
+        mkKpi('open', 'Opening Payable', 'رصيد مدور للمورد', 'Solde d’ouverture', canViewBooks ? fmtUsdSigned(openBal, 2) : 'Restricted', _stmtCleanParty(supName), _stmtCleanParty(supName), _stmtCleanParty(supName)),
         mkKpi('cr', 'Period Invoiced', 'استحقاق الفترة', 'Facturé période', fmtUsd(totCr, 2), `${fmtNum(pCount, 0)} vouchers`, `${fmtNum(pCount, 0)} سند`, `${fmtNum(pCount, 0)} pièces`),
-        mkKpi('dr', 'Period Settled', 'المسدد خلال الفترة', 'Réglé période', fmtUsd(totDr, 2), 'Payments & settlements', 'دفعات وتسويات', 'Règlements versés', 'pos'),
-        mkKpi('close', 'Closing Payable', 'الرصيد المستحق', 'Solde fournisseur final', fmtUsdSigned(closeBal, 2), 'Account 401 SOA', 'كشف حساب 401', 'Relevé compte 401')
+        mkKpi('dr', 'Period Settled', 'المسدد خلال الفترة', 'Réglé période', canViewBooks ? fmtUsd(totDr, 2) : 'Restricted', 'Payments & settlements', 'دفعات وتسويات', 'Règlements versés', 'pos'),
+        mkKpi('close', 'Closing Payable', 'الرصيد المستحق', 'Solde fournisseur final', canViewBooks ? fmtUsdSigned(closeBal, 2) : 'Restricted', 'Account 401 SOA', 'كشف حساب 401', 'Relevé compte 401')
       ];
     } else if (stmtId === '17') {
       const drvFilter = p.driver;
@@ -7480,6 +7667,7 @@
       windowLabelEn = `Invoice ${invRef} (${grp.date || p.to})`;
       windowLabelAr = `فاتورة ${invRef} (${grp.date || p.to})`;
       windowLabelFr = `Facture ${invRef} (${grp.date || p.to})`;
+      const canTax20Snap = Boolean(rdlLens && rdlLens.tax);
       facts = {
         invoiceNo: invRef,
         invoiceDate: grp.date || p.to,
@@ -7487,14 +7675,13 @@
         lineCount: rows.length,
         dispatchedQty: Number(totQty.toFixed(dt.qtyDp)),
         qtyUnit: dt.qtyUnit,
-        subtotalExclTaxUsd: Number(totSub.toFixed(2)),
-        vatUsd: Number(totVat.toFixed(2)),
+        ...(canTax20Snap ? { subtotalExclTaxUsd: Number(totSub.toFixed(2)), vatUsd: Number(totVat.toFixed(2)) } : {}),
         invoiceTotalUsd: Number(totGross.toFixed(2))
       };
       kpis = [
         mkKpi('inv', 'Invoice Reference', 'رقم الفاتورة', 'Réf. facture', `#${invRef}`, _stmtCleanParty(grp.customer), _stmtCleanParty(grp.customer), _stmtCleanParty(grp.customer)),
         mkKpi('qty', 'Billed Volume', 'الكمية المفوترة', 'Volume facturé', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${rows.length} ${rows.length === 1 ? dt.txSingular : dt.txPlural}`, `${rows.length} حركة`, `${rows.length} lignes`),
-        mkKpi('sub', 'Subtotal Excl. VAT', 'المبلغ قبل الضريبة', 'Sous-total HT', fmtUsd(totSub, 2), `VAT ${fmtUsd(totVat, 2)}`, `ضريبة ${fmtUsd(totVat, 2)}`, `TVA ${fmtUsd(totVat, 2)}`),
+        mkKpi('sub', 'Subtotal Excl. VAT', 'المبلغ قبل الضريبة', 'Sous-total HT', canTax20Snap ? fmtUsd(totSub, 2) : 'Restricted', canTax20Snap ? `VAT ${fmtUsd(totVat, 2)}` : 'Restricted by seat permissions', canTax20Snap ? `ضريبة ${fmtUsd(totVat, 2)}` : 'مقيد حسب صلاحيات المقعد', canTax20Snap ? `TVA ${fmtUsd(totVat, 2)}` : 'Restreint selon les droits du poste'),
         mkKpi('tot', 'Invoice Total', 'إجمالي الفاتورة', 'Total facture', fmtUsd(totGross, 2), grp.date || p.to, grp.date || p.to, grp.date || p.to, 'pos')
       ];
     } else if (stmtId === '21') {
@@ -7537,14 +7724,14 @@
         receiptDate: d,
         payer: _stmtCleanParty(rc.customer || dt.custDefault),
         paymentMethod: _stmtCleanParty(rc.pay_method || 'Cash USD'),
-        amountReceivedUsd: Number(paid.toFixed(2)),
-        remainingBalanceUsd: Number(rem.toFixed(2))
+        amountReceivedUsd: canViewBooks ? Number(paid.toFixed(2)) : undefined,
+        remainingBalanceUsd: canViewBooks ? Number(rem.toFixed(2)) : undefined
       };
       kpis = [
         mkKpi('ref', 'Receipt Voucher', 'رقم سند القبض', 'N° de reçu', vNo, d, d, d),
         mkKpi('payer', 'Received From', 'وصلنا من', 'Reçu de', _stmtCleanParty(rc.customer || '-'), _stmtCleanParty(rc.site || 'Account 411'), _stmtCleanParty(rc.site || 'حساب 411'), _stmtCleanParty(rc.site || 'Compte 411')),
         mkKpi('paid', 'Amount Received', 'المبلغ المقبوض', 'Montant encaissé', canViewBooks ? fmtUsd(paid, 2) : 'Restricted', _stmtCleanParty(rc.pay_method || 'Cash USD'), _stmtCleanParty(rc.pay_method || 'نقداً'), _stmtCleanParty(rc.pay_method || 'Espèces USD'), 'pos'),
-        mkKpi('rem', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', canViewBooks ? fmtUsd(rem, 2) : 'Restricted', 'Official receipt', 'سند رسمي', 'Quittance officielle', rem <= 0.01 ? 'ok' : 'neutral')
+        mkKpi('rem', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', canViewBooks ? fmtUsd(rem, 2) : 'Restricted', 'Official receipt', 'سند رسمي', 'Quittance officielle', (!canViewBooks || rem > 0.01) ? 'neutral' : 'ok')
       ];
     } else if (stmtId === '23') {
       const h = (typeof window !== 'undefined' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
@@ -7557,20 +7744,22 @@
       const dueTo = icRows.reduce((s, r) => s + Number(r.dueTo || 0), 0);
       const netIc = icRows.reduce((s, r) => s + Number(r.net || ((r.dueFrom || 0) - (r.dueTo || 0))), 0);
       const partnerCap = pRows.reduce((s, r) => s + Number(r.closingBalance || r.balance || 0), 0);
+      const canSplits23 = Boolean(canViewBooks && rdlLens && rdlLens.partnerSplits);
+      const canExp23 = Boolean(rdlLens && rdlLens.expenses);
       facts = {
-        sharedOverheadUsd: Math.round(Number(k.totalExpenses || 0)),
+        sharedOverheadUsd: canExp23 ? Math.round(Number(k.totalExpenses || 0)) : undefined,
         intercompanyPairs: icRows.length,
         dueFromUsd: Math.round(dueFrom),
         dueToUsd: Math.round(dueTo),
         netIntercompanyUsd: Math.round(netIc),
         partnerAccounts: pRows.length,
-        closingPartnerCapitalUsd: Math.round(partnerCap)
+        closingPartnerCapitalUsd: canSplits23 ? Math.round(partnerCap) : undefined
       };
       kpis = [
-        mkKpi('ovh', 'Holding Overhead', 'مصاريف المركز الرئيسي', 'Frais généraux Holding', fmtUsd(k.totalExpenses || 0, 0), 'Shared group center', 'المركز المشترك', 'Centre partagé'),
+        mkKpi('ovh', 'Holding Overhead', 'مصاريف المركز الرئيسي', 'Frais généraux Holding', canExp23 ? fmtUsd(k.totalExpenses || 0, 0) : 'Restricted', 'Shared group center', 'المركز المشترك', 'Centre partagé'),
         mkKpi('df', 'Intercompany Due From', 'ذمم على الشقيقات', 'Créances intersociétés', fmtUsd(dueFrom, 0), `${icRows.length} entity pairs`, `${icRows.length} شركات شقيقة`, `${icRows.length} paires`),
         mkKpi('dt', 'Intercompany Due To', 'ذمم للشقيقات', 'Dettes intersociétés', fmtUsd(dueTo, 0), `Net ${fmtUsdSigned(netIc, 0)}`, `الصافي ${fmtUsdSigned(netIc, 0)}`, `Net ${fmtUsdSigned(netIc, 0)}`),
-        mkKpi('eq', 'Partner Current Accts', 'جاري الشركاء (165)', 'Comptes courants (165)', fmtUsd(partnerCap, 0), `${pRows.length} shareholders`, `${pRows.length} شركاء`, `${pRows.length} associés`, 'pos')
+        mkKpi('eq', 'Partner Current Accts', 'جاري الشركاء (165)', 'Comptes courants (165)', canSplits23 ? fmtUsd(partnerCap, 0) : 'Restricted', `${pRows.length} shareholders`, `${pRows.length} شركاء`, `${pRows.length} associés`, 'pos')
       ];
     } else if (stmtId === '24') {
       const d = (typeof window !== 'undefined' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
@@ -7612,14 +7801,14 @@
         invoiceCount: allSales.length,
         deliveredVinUnits: Number(k.deliveredUnits || 0),
         totalVinUnits: Number(k.totalUnits || allVehicles.length),
-        fifoStockValuationUsd: Math.round(Number(k.stockValuation || 0)),
+        fifoStockValuationUsd: canViewProfit ? Math.round(Number(k.stockValuation || 0)) : undefined,
         openCommercialArUsd: canViewBooks ? Math.round(arBal) : undefined,
-        vinGrossMarginUsd: Math.round(vinMargin)
+        vinGrossMarginUsd: canViewProfit ? Math.round(vinMargin) : undefined
       };
       kpis = [
         mkKpi('rev', 'Commercial Revenue', 'الإيرادات التجارية', 'Chiffre d’affaires', fmtUsd(revTotal, 0), 'Books N / S / IS / IN', 'دفاتر N / S / IS / IN', 'Carnets N / S / IS / IN', 'pos'),
-        mkKpi('vin', 'Heavy VIN Fleet', 'شاحنات VIN المسلمة', 'Unités VIN livrées', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || allVehicles.length, 0)}`, `Margin ${fmtUsd(vinMargin, 0)}`, `هامش ${fmtUsd(vinMargin, 0)}`, `Marge ${fmtUsd(vinMargin, 0)}`),
-        mkKpi('stk', 'FIFO Stock Value', 'تقييم المخزون FIFO', 'Stock valorisé FIFO', fmtUsd(k.stockValuation || 0, 0), 'Vehicles & OEM parts', 'شاحنات وقطع غيار', 'Camions et pièces OEM'),
+        mkKpi('vin', 'Heavy VIN Fleet', 'شاحنات VIN المسلمة', 'Unités VIN livrées', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || allVehicles.length, 0)}`, canViewProfit ? `Margin ${fmtUsd(vinMargin, 0)}` : 'Delivered units', canViewProfit ? `هامش ${fmtUsd(vinMargin, 0)}` : 'الشاحنات المسلمة', canViewProfit ? `Marge ${fmtUsd(vinMargin, 0)}` : 'Unités livrées'),
+        mkKpi('stk', 'FIFO Stock Value', 'تقييم المخزون FIFO', 'Stock valorisé FIFO', canViewProfit ? fmtUsd(k.stockValuation || 0, 0) : 'Restricted', 'Vehicles & OEM parts', 'شاحنات وقطع غيار', 'Camions et pièces OEM'),
         mkKpi('ar', 'Commercial AR', 'ذمم الفواتير التجارية', 'Créances commerciales', canViewBooks ? fmtUsd(arBal, 0) : 'Restricted', `${allSales.length} invoices`, `${allSales.length} فاتورة`, `${allSales.length} factures`)
       ];
     } else if (stmtId === '26') {
@@ -7633,10 +7822,11 @@
       const lCountedRows = lRows.filter(l => l.counted !== false);
       const rentTotal = lCountedRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
       const vatTotal = lCountedRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
+      const canTax26 = Boolean(rdlLens && rdlLens.tax);
       facts = {
         activeLeases: lCountedRows.length,
         annualContractedRentUsd: Math.round(rentTotal),
-        annualVat11Usd: Math.round(vatTotal),
+        annualVat11Usd: canTax26 ? Math.round(vatTotal) : undefined,
         occupiedUnits: Number(k.occupiedUnits || 0),
         totalUnits: Number(k.totalUnits || 0),
         occupancyPct: Number(Number(k.occupancyPct || 0).toFixed(1)),
@@ -7648,7 +7838,7 @@
         mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lCountedRows.length} active leases`, `${lCountedRows.length} عقد فعال`, `${lCountedRows.length} baux actifs`, 'pos'),
         mkKpi('occ', 'Portfolio Occupancy', 'نسبة الإشغال', 'Taux d’occupation', `${fmtNum(k.occupancyPct || 0, 1)}%`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} units`, `${fmtNum(k.occupiedUnits || 0, 0)} من ${fmtNum(k.totalUnits || 0, 0)} وحدة`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} lots`, 'ok'),
         mkKpi('col', 'Rent Collected', 'الإيجارات المحصلة', 'Loyers encaissés', canViewBooks ? fmtUsd(k.collectedUsd || 0, 0) : 'Restricted', `${rRows.length} VAT invoices`, `${rRows.length} فاتورة ضريبية`, `${rRows.length} factures TVA`),
-        mkKpi('arr', 'Tenant Arrears', 'متأخرات المستأجرين', 'Arriérés locataires', canViewBooks ? fmtUsd(k.openArUsd || 0, 0) : 'Restricted', `11% VAT ${fmtUsd(vatTotal, 0)}`, `ضريبة 11% ${fmtUsd(vatTotal, 0)}`, `TVA 11% ${fmtUsd(vatTotal, 0)}`, Number(k.openArUsd || 0) > 0 ? 'neg' : 'ok')
+        mkKpi('arr', 'Tenant Arrears', 'متأخرات المستأجرين', 'Arriérés locataires', canViewBooks ? fmtUsd(k.openArUsd || 0, 0) : 'Restricted', canTax26 ? `11% VAT ${fmtUsd(vatTotal, 0)}` : 'Restricted', canTax26 ? `ضريبة 11% ${fmtUsd(vatTotal, 0)}` : 'مقيد', canTax26 ? `TVA 11% ${fmtUsd(vatTotal, 0)}` : 'Restreint', Number(k.openArUsd || 0) > 0 ? 'neg' : 'ok')
       ];
     } else if (stmtId === '27') {
       const d = (typeof window !== 'undefined' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
@@ -7662,14 +7852,14 @@
         activePolicies: pRows.length,
         underwritingCarriers: cRows.length,
         grossWrittenPremiumUsd: Math.round(Number(k.gwpTotal || 0)),
-        brokerageCommissionUsd: Math.round(Number(k.commTotal || 0)),
-        avgCommissionYieldPct: Number(Number(k.avgCommYield || 0).toFixed(1)),
+        brokerageCommissionUsd: canViewProfit ? Math.round(Number(k.commTotal || 0)) : undefined,
+        avgCommissionYieldPct: canViewProfit ? Number(Number(k.avgCommYield || 0).toFixed(1)) : undefined,
         netCarrierPayableUsd: canViewBooks ? Math.round(Number(k.carrierPayableUsd || 0)) : undefined,
         unpaidClientPremiumUsd: canViewBooks ? Math.round(clientUnpaid) : undefined
       };
       kpis = [
         mkKpi('gwp', 'Gross Written Prem.', 'إجمالي الأقساط المكتتبة', 'Primes émises brutes', fmtUsd(k.gwpTotal || 0, 0), `${pRows.length} bound policies`, `${pRows.length} بوليصة`, `${pRows.length} polices`, 'pos'),
-        mkKpi('comm', 'Brokerage Commission', 'عمولة الوساطة', 'Commissions courtage', fmtUsd(k.commTotal || 0, 0), `${fmtNum(k.avgCommYield || 0, 1)}% avg yield`, `متوسط العمولة ${fmtNum(k.avgCommYield || 0, 1)}%`, `Taux moy. ${fmtNum(k.avgCommYield || 0, 1)}%`, 'pos'),
+        mkKpi('comm', 'Brokerage Commission', 'عمولة الوساطة', 'Commissions courtage', canViewProfit ? fmtUsd(k.commTotal || 0, 0) : 'Restricted', canViewProfit ? `${fmtNum(k.avgCommYield || 0, 1)}% avg yield` : 'Restricted', canViewProfit ? `متوسط العمولة ${fmtNum(k.avgCommYield || 0, 1)}%` : 'مقيد', canViewProfit ? `Taux moy. ${fmtNum(k.avgCommYield || 0, 1)}%` : 'Restreint', 'pos'),
         mkKpi('car', 'Net Carrier Payable', 'مستحقات شركات التأمين', 'Net dû compagnies', canViewBooks ? fmtUsd(k.carrierPayableUsd || 0, 0) : 'Restricted', `${cRows.length} carriers`, `${cRows.length} شركات ضامنة`, `${cRows.length} compagnies`),
         mkKpi('unp', 'Unpaid Client Prem.', 'أقساط قيد التحصيل', 'Primes clients à encaisser', canViewBooks ? fmtUsd(clientUnpaid, 0) : 'Restricted', 'Account 4112 / 4017', 'حساب 4112 / 4017', 'Comptes 4112 / 4017')
       ];
@@ -7761,7 +7951,7 @@
     const fuelSeatSig = (fuelFe && fuelFe.mayReadPrice)
       ? Array.from(new Set((ctx.fuelAll || []).map(r => String(r.co || '')))).sort().map(c => `${c}:${fuelFe.mayReadPrice(c) ? '1' : '0'}`).join(',')
       : 'x';
-    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}`;
+    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${canViewProfit ? '1' : '0'}|${rdlLens && rdlLens.expenses ? '1' : '0'}|${rdlLens && rdlLens.tax ? '1' : '0'}|${rdlLens && rdlLens.partnerSplits ? '1' : '0'}|${canViewSentinels ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}`;
 
     return {
       stmtId,
@@ -7783,6 +7973,8 @@
       windowLabelFr,
       scopeKey,
       canViewBooks,
+      canViewProfit,
+      canViewSentinels,
       pinnedCoverNote: Boolean(ctx.rdl && ctx.rdl.pinnedCoverNote),
       tieCheck,
       kpis,
@@ -7845,8 +8037,30 @@
   function renderStatementsView(SEED, STATE) {
     const ctx = buildRdlContext(SEED, STATE);
     const catalog = getVisibleRdlCatalog(STATE);
+    if (!catalog.length) {
+      STATE.activeStatement = '';
+      return `
+        <div class="rdl-suite-wrap">
+          <div class="rdl-viewer-shell">
+            <div class="rdl-suite-hdr no-print">
+              <h1 class="rdl-suite-title sr-only">Statements &amp; Reports</h1>
+              <div class="rdl-tb-left">
+                <span class="rdl-suite-pill">Restricted</span>
+                <span class="rdl-menu-crumb"><b>Restricted</b></span>
+              </div>
+            </div>
+            <div class="rdl-canvas">
+              <div class="statement-sheet rdl-sheet" id="printableSheet">
+                ${renderRdlRestrictedSheet(RDL_CATALOG[0], ctx.co, 'Statements & Reports', 'Restricted by seat permissions')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
     const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
     const meta = catalog.find(x => x.id === activeId) || catalog[0];
+    if (!meta) return '';
     STATE.activeStatement = meta.id;
     const q = (ctx.rdl.search || '').trim().toLowerCase();
     const visibleCats = RDL_CATEGORIES.filter(c => c === 'All' || catalog.some(r => r.cat === c));
@@ -7980,8 +8194,15 @@
     const refreshSheetAndParams = () => {
       const updatedCtx = buildRdlContext(SEED, STATE);
       const catalog = getVisibleRdlCatalog(STATE);
+      if (!catalog.length) {
+        STATE.activeStatement = '';
+        const sheet = root.querySelector('#printableSheet');
+        if (sheet) sheet.innerHTML = renderRdlRestrictedSheet(RDL_CATALOG[0], updatedCtx.co, 'Statements & Reports', 'Restricted by seat permissions');
+        return;
+      }
       const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
       const meta = catalog.find(x => x.id === activeId) || catalog[0];
+      if (!meta) return;
       STATE.activeStatement = meta.id;
       syncHeaderMeta(meta, catalog);
       const paramCont = root.querySelector('#rdlParamContainer');
@@ -8083,6 +8304,7 @@
     if (prevBtn) {
       prevBtn.addEventListener('click', () => {
         const catalog = getVisibleRdlCatalog(STATE);
+        if (!catalog.length) return;
         const idx = Math.max(0, catalog.findIndex(x => x.id === String(STATE.activeStatement || '01').padStart(2, '0')));
         const nextIdx = (idx - 1 + catalog.length) % catalog.length;
         STATE.activeStatement = catalog[nextIdx].id;
@@ -8092,6 +8314,7 @@
     if (nextBtn) {
       nextBtn.addEventListener('click', () => {
         const catalog = getVisibleRdlCatalog(STATE);
+        if (!catalog.length) return;
         const idx = Math.max(0, catalog.findIndex(x => x.id === String(STATE.activeStatement || '01').padStart(2, '0')));
         const nextIdx = (idx + 1) % catalog.length;
         STATE.activeStatement = catalog[nextIdx].id;
@@ -9002,14 +9225,20 @@
     wireParamControls();
     wireTableSorting();
     const initialCatalog = getVisibleRdlCatalog(STATE);
+    if (!initialCatalog.length) {
+      syncPinnedStatementCoverNote(root, STATE);
+      return;
+    }
     const initialId = String(STATE.activeStatement || '01').padStart(2, '0');
     const initialMeta = initialCatalog.find(x => x.id === initialId) || initialCatalog[0];
+    if (!initialMeta) return;
     syncPinnedStatementCoverNote(root, STATE);
     wireInteractiveSheetEnhancements(initialMeta, ctx);
   }
 
   window.MFG_RDL = {
     RDL_CATALOG,
+    getVisibleRdlCatalog,
     renderStatementsView,
     wireStatementsEvents,
     renderRdlSheet,
