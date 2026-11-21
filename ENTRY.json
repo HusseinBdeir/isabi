@@ -3,6 +3,12 @@
   "branch": "wt/phone-peek-and-brief",
   "sha": "2ec1d855962508c00988171e433ed11e77f7edcc"
  },
+ "batch": {
+  "at": "2026-11-21T00:16:43Z",
+  "holder": "agy-106d51f9 (phone-peek-brief)",
+  "lockId": "ab7ffe96c00749e4824eb215d7b116c1",
+  "version": "19.6.411"
+ },
  "gates": [
   "isabi-app: node build/verify_phone_peek_brief.mjs",
   "isabi-app: node build/verify_mobile_ux.mjs"
