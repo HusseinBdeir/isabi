@@ -1,0 +1,19 @@
+{
+ "app": {
+  "branch": "wt/topup-subtruck-reopen",
+  "sha": "f457a2fa68d62e9c1887cdb352f0b2ba143436e1"
+ },
+ "gates": [
+  "isabi-app: python build/verify_truck_log_reopen.py",
+  "isabi-app: python build/verify_meter_check.py",
+  "isabi-app: python build/verify_changed_old_entries.py",
+  "isabi-app: python build/verify_cashflow_rules.py"
+ ],
+ "holder": "THEO 8c5a12fa (topup-subtruck-reopen)",
+ "id": "20261121T130814Z-592f0514",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T13:08:14Z",
+ "seenAt": "2026-11-21T13:08:14Z",
+ "state": "waiting",
+ "summary": "Keep reopened workbook truck logs open across R5 and offline sync, support sub-truck logs and wb_truck tickets, report >3 USD/L workbook diesel rows, and void Bdeir Holding Extended app-only rows <= cutoff"
+}
