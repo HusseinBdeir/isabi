@@ -1,0 +1,18 @@
+{
+ "gates": [
+  "isabi: python build/verify_r2_seed_parity.py",
+  "isabi: python build/verify_deploy_cli.py",
+  "isabi: python build/verify_release_lock.py"
+ ],
+ "holder": "THEO 12bea425 (r2-seed-hash-parity)",
+ "id": "20261121T113707Z-59fbcee5",
+ "pc": "Theo",
+ "queuedAt": "2026-11-21T11:37:07Z",
+ "seenAt": "2026-11-21T11:37:07Z",
+ "site": {
+  "branch": "wt/r2-seed-hash-parity",
+  "sha": "e9d6fbd0e0667a6102b60fb40e65dce7c708041a"
+ },
+ "state": "waiting",
+ "summary": "Pre-deploy R2 private seed hash parity gate across sync_app, deploy_cloudflare, and deploy.yml"
+}
