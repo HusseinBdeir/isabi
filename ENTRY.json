@@ -3,6 +3,12 @@
   "branch": "wt/topup-subtruck-reopen",
   "sha": "f457a2fa68d62e9c1887cdb352f0b2ba143436e1"
  },
+ "batch": {
+  "at": "2026-11-21T13:08:38Z",
+  "holder": "THEO 8c5a12fa (topup-subtruck-reopen)",
+  "lockId": "5935120134d642c48220b305faae7265",
+  "version": "19.6.420"
+ },
  "gates": [
   "isabi-app: python build/verify_truck_log_reopen.py",
   "isabi-app: python build/verify_meter_check.py",
