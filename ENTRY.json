@@ -3,12 +3,6 @@
   "branch": "wt/namebook-and-stalled-radar",
   "sha": "2e7da299266cb9dcd6e5febf5e323be7ab1e594c"
  },
- "batch": {
-  "at": "2026-11-21T06:08:06Z",
-  "holder": "agy-a4361145 (namebook-stalled-radar)",
-  "lockId": "07921546d68a44448ca0cdd7374713c1",
-  "version": "19.6.417"
- },
  "gates": [
   "isabi-app: python build/verify_public_names.py",
   "isabi: python build/verify_period_close_routes.py",
@@ -19,10 +13,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-21T05:35:19Z",
  "seenAt": "2026-11-21T06:03:09Z",
+ "shippedAt": "2026-11-21T06:25:51Z",
+ "shippedBy": "agy-a4361145 (namebook-stalled-radar)",
+ "shippedVersion": "19.6.417",
  "site": {
   "branch": "wt/namebook-and-stalled-radar",
   "sha": "9a79e616d709e9753ba7b4ba4f2c9cf07f4f9417"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Private Namebook + 0-hit public-name scrub + Period-Close route parity gate + release_lock.py stalled radar"
 }
