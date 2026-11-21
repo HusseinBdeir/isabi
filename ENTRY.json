@@ -3,12 +3,6 @@
   "branch": "wt/rate-impact-recs",
   "sha": "65307a3f54df1a7db9e0c6001047a8679e91ee0e"
  },
- "batch": {
-  "at": "2026-11-21T00:11:06Z",
-  "holder": "agy-106d51f9 (phone-peek-brief)",
-  "lockId": "adb3452226044f4388b7745c5d27f344",
-  "version": "19.6.411"
- },
  "gates": [
   "isabi-app: node build/verify_rate_change_recs.mjs",
   "isabi-app: node build/verify_statement_past_ranges.mjs",
@@ -20,6 +14,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-20T22:55:58Z",
  "seenAt": "2026-11-20T22:55:58Z",
- "state": "waiting",
+ "shippedAt": "2026-11-21T00:11:45Z",
+ "shippedBy": "an earlier release",
+ "shippedVersion": "19.6.410",
+ "state": "shipped",
  "summary": "Rate changes: a Customer or Supplier Statement marked as sent keeps its records as they are (difference listed for the next statement), Manufacturing shows the tickets a price change re-prices before Post, Owner page Rate Changes with large-change and same-day-undo alerts, past date ranges read the schedule in force then (Holding dashboard, Real Estate rent roll, Statement 26)"
 }
