@@ -94,6 +94,109 @@ export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
+// Sent statement marks and the Owner's Rate Changes marks: who may change them (owner 2026-11-21).
+// Same rule as the app (setStatementWatermark / clearStatementWatermark / canViewRateChanges) and as
+// _guarded_workflow_mark_error in isabi-app/server.py. Checked only when a write changes the mark.
+const STMT_SENT_MARK_RE = /^WF::statement_watermark::/i;
+const RATE_CHANGE_OWNER_MARK_RE = /^WF::rate_change_(?:review|settings)::/i;
+
+export function isGuardedWorkflowMarkKey(editKey) {
+  const k = String(editKey || '');
+  return STMT_SENT_MARK_RE.test(k) || RATE_CHANGE_OWNER_MARK_RE.test(k);
+}
+
+// The app reads `cleared` and `voided` as JavaScript truthy values (statementLockIndex): so does this check
+function stmtMarkActiveThrough(obj) {
+  if (!obj || typeof obj !== 'object' || obj.voided || obj.cleared) return '';
+  const d = String(obj.confirmed_through || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+}
+
+// What a mark locks: the party, its type, the industry and the company (the app files a mark under these fields,
+// not under its key). Compared exactly as the app's norm() reads them (trim, lower case, inner spacing kept), so a
+// re-mark that only re-types the company's case matches and any other difference counts as another party.
+function stmtMarkIdentity(obj) {
+  const o = obj && typeof obj === 'object' ? obj : {};
+  const n = v => String(v == null ? '' : v).trim().toLowerCase();
+  const co = n(o.company);
+  const allCo = !co || co === 'all' || co === 'group' || co === 'all companies' || co === 'consolidated' || co === 'manufacturing-group' || /group$/.test(co);
+  return [n(o.party_name), n(o.party_type) === 'supplier' ? 'supplier' : 'customer', n(o.industry) || 'manufacturing', allCo ? 'all' : co].join('|');
+}
+
+// '' when the seat may make this change to the mark, else the refusal text. nextObj null = removed.
+export function guardedWorkflowMarkError(editKey, prevObj, nextObj, perms) {
+  const k = String(editKey || '');
+  const p = perms || {};
+  if (RATE_CHANGE_OWNER_MARK_RE.test(k)) {
+    return p.roleKey === 'Full Access (Owner)' ? '' : 'Only the Owner can review rate changes or change the alert amount.';
+  }
+  if (STMT_SENT_MARK_RE.test(k)) {
+    if (!p.modifyData && !p.voidData) return 'Only a finance or supervisor seat can mark a statement as sent.';
+    if (p.voidData) return '';
+    const was = stmtMarkActiveThrough(prevObj);
+    if (!was) return '';
+    const now = nextObj ? stmtMarkActiveThrough(nextObj) : '';
+    // Removing it, moving it earlier, or filing it under another party or company all free the records it locks
+    if (!now || now < was || stmtMarkIdentity(prevObj) !== stmtMarkIdentity(nextObj)) {
+      return 'Only a supervisor can remove a sent mark or move it to an earlier date.';
+    }
+  }
+  return '';
+}
+
+// /sync: a change to one of these marks the seat may not make keeps the stored mark (a new one is dropped). The
+// stored mark is the D1 row and the copy in the sync document (`d1Map`, edit key -> row object): the change must pass
+// against both (POST /industry_domain_store writes only the table), and the later of the two is put back.
+export function enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, perms, d1Map = null) {
+  if (!incomingDoc || typeof incomingDoc !== 'object') return incomingDoc;
+  const prevIre = (prevDoc && prevDoc.industryRowEdits && typeof prevDoc.industryRowEdits === 'object') ? prevDoc.industryRowEdits : {};
+  // A save that leaves the row edits out would store the document without them, and the table copy would then drop
+  // every mark: for any seat but the Owner, a missing store means unchanged
+  if ((!incomingDoc.industryRowEdits || typeof incomingDoc.industryRowEdits !== 'object')) {
+    if ((perms || {}).roleKey === 'Full Access (Owner)') return incomingDoc;
+    if (Object.keys(prevIre).length) incomingDoc.industryRowEdits = Object.assign({}, prevIre);
+    else return incomingDoc;
+  }
+  const inc = incomingDoc.industryRowEdits;
+  const dm = d1Map instanceof Map ? d1Map : new Map();
+  const keys = new Set([...Object.keys(prevIre), ...Object.keys(inc), ...dm.keys()]);
+  for (const ek of keys) {
+    if (!isGuardedWorkflowMarkKey(ek)) continue;
+    const kv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+    const db = dm.get(ek) || null;
+    const iv = inc[ek] && typeof inc[ek] === 'object' ? inc[ek] : null;
+    const bases = [db, kv].filter(Boolean);
+    if (!bases.length && !iv) continue;
+    if (iv && bases.length && bases.every(b => stableRowSig(b) === stableRowSig(iv))) continue;
+    const refused = bases.length
+      ? bases.some(b => guardedWorkflowMarkError(ek, b, iv, perms))
+      : Boolean(guardedWorkflowMarkError(ek, null, iv, perms));
+    if (!refused) continue;
+    const keep = bases.length ? pickSyncBase(db, kv) : null;
+    if (keep) inc[ek] = keep;
+    else delete inc[ek];
+  }
+  return incomingDoc;
+}
+
+// The same, reading the D1 rows of every guarded key first
+export async function enforceGuardedWorkflowMarksOnSyncDb(db, incomingDoc, prevDoc, perms) {
+  const d1Map = new Map();
+  if (db && incomingDoc && typeof incomingDoc === 'object') {
+    try {
+      const res = await db.prepare("SELECT edit_key, voided, payload_json FROM industry_row_edits WHERE edit_key LIKE 'WF::statement_watermark::%' OR edit_key LIKE 'WF::rate_change_%'").all();
+      for (const r of (res && res.results) || []) {
+        const ek = String(r.edit_key || '');
+        if (!isGuardedWorkflowMarkKey(ek)) continue;
+        const obj = safeJsonParse(r.payload_json, {});
+        if (Number(r.voided || 0)) obj.voided = true;
+        d1Map.set(ek, obj);
+      }
+    } catch (_) {}
+  }
+  return enforceGuardedWorkflowMarksOnSync(incomingDoc, prevDoc, perms, d1Map);
+}
+
 function createPurgeOverrideAccumulator() {
   const list = [];
   const bareSeen = new Set();
@@ -6252,6 +6355,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   let savedRows = 0;
   let savedEdits = 0;
   let ignoredServerOwned = 0;   // rows and patches aimed at server-totalled till close rows
+  // Sent statement and Rate Changes marks this seat may not change: left as stored and named in the answer, so one
+  // refused mark never holds up the device's other saves (the app reloads the stored copy of each)
+  const refusedMarks = [];
   let rlsSkipped = 0;
 
   const pendingRowWrites = [];
@@ -6411,6 +6517,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     if (isPeriodCloseWf && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Supervisor or Owner permission is required to lock or reopen an accounting period.' }, 403);
     }
+    const isGuardedMark = isGuardedWorkflowMarkKey(ek);
+    const isStmtMark = STMT_SENT_MARK_RE.test(ek);
     if (!validateRecordGpsCoords(rawEv)) {
       return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
     }
@@ -6444,6 +6552,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (exVoid && !incVoid && exRev >= incRev) continue;
       if (exRev > incRev && !(incVoid && !exVoid)) continue;
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(exVoid) }), ev, perms);
+        if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+      }
       if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
       }
@@ -6463,7 +6575,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
-        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !gpsChanged);
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !gpsChanged);
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
@@ -6487,6 +6599,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (ev) pendingDomainGeoAudits.push(ev);
       }
     } else {
+      if (isGuardedMark) {
+        const markErr = guardedWorkflowMarkError(ek, null, ev, perms);
+        if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+      }
       if (!perms.voidData && Boolean(incVoid)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void domain records.' }, 403);
       }
@@ -6495,7 +6611,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
-        const allowPeriodClose = Boolean(isPeriodLockWf && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
+        const allowPeriodClose = Boolean((isPeriodLockWf || isStmtMark) && perms.voidData && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
         if (!allowVoidOnly && !allowPeriodClose) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
@@ -6570,6 +6686,10 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
     const exObj = safeJsonParse(ex.payload_json, {});
+    if (isGuardedWorkflowMarkKey(ek)) {
+      const markErr = guardedWorkflowMarkError(ek, Object.assign({}, exObj, { voided: Boolean(Number(ex.voided || 0)) }), null, perms);
+      if (markErr) { refusedMarks.push({ key: ek, error: markErr }); continue; }
+    }
     const exCoEd = canonicalizeCompanyName((exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
     const exIndEd = inferDomainIndustry(exObj, ek);
     if (restrictRls) {
@@ -6607,6 +6727,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     rlsSkipped > 0
   ) {
     return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity domain write.' }, 403);
+  }
+  if (refusedMarks.length && !pendingRowWrites.length && !pendingEditWrites.length && !pendingPurgeRows.length && !pendingPurgeEdits.length) {
+    return jsonResponse({ ok: false, error: refusedMarks[0].error, refusedMarks }, 403);
   }
 
   for (const args of pendingRowWrites) {
@@ -6660,6 +6783,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     deletedLegacyRows,
     deletedLegacyEdits,
     ignoredServerOwned,
+    ...(refusedMarks.length ? { refusedMarks } : {}),
     ...(rollbackToken ? { rollbackToken } : {})
   });
 }
@@ -9343,6 +9467,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     const syncAuditBlocked = [];
     if (pKey === 'mfg_web_store') {
       await enforceSyncRoleWriteLocks(env.DB, incomingDoc, prevDoc, session, syncAuditBlocked);
+      if (session) await enforceGuardedWorkflowMarksOnSyncDb(env.DB, incomingDoc, prevDoc, getSessionWritePerms(session));
       for (const blkEv of syncAuditBlocked) {
         try {
           await recordGeoAuditEvent(env.DB, request, session, blkEv);
