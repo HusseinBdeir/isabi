@@ -1000,7 +1000,7 @@
   function loadStoredConfig() {
     try {
       const raw = isDemoGeoMode()
-        ? (sessionStorage.getItem('demo_sbx_' + STORAGE_KEY) || localStorage.getItem(STORAGE_KEY))
+        ? sessionStorage.getItem('demo_sbx_' + STORAGE_KEY)
         : localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -1055,6 +1055,7 @@
     return true;
   }
 
+  const GEO_SEAT_KEY = 'isabi_mfg_geo_seat_v1';
   let _geoSessionEpoch = 0;
   let _geoExplicitlySignedOut = false;
   let _gateSatWarmupEpoch = 0;
@@ -1075,11 +1076,64 @@
       _gateSatWarmupIdleId = null;
     }
   }
-  function markGeoSessionActive() {
-    _geoExplicitlySignedOut = false;
+  function _hasGeoStoreData() {
+    if (
+      Object.keys(GEO_STORE.companyHubs || {}).length ||
+      Object.keys(GEO_STORE.regions || {}).length ||
+      Object.keys(GEO_STORE.sites || {}).length ||
+      Object.keys(GEO_STORE.pairKmOverrides || {}).length ||
+      Object.keys(GEO_STORE.verifiedRoutes || {}).length ||
+      Object.keys(GEO_STORE._deletedKeys || {}).length
+    ) {
+      return true;
+    }
+    try {
+      const raw = isDemoGeoMode()
+        ? sessionStorage.getItem('demo_sbx_' + STORAGE_KEY)
+        : localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return false;
+      return Boolean(
+        Object.keys(parsed.companyHubs || {}).length ||
+        Object.keys(parsed.regions || {}).length ||
+        Object.keys(parsed.sites || {}).length ||
+        Object.keys(parsed.pairKmOverrides || {}).length ||
+        Object.keys(parsed.verifiedRoutes || {}).length ||
+        Object.keys(parsed._deletedKeys || {}).length
+      );
+    } catch (_) {
+      return false;
+    }
   }
-  function resetGeoStoreSession() {
-    _geoSessionEpoch++;
+  function getGeoSessionSeat() {
+    try {
+      const k = isDemoGeoMode() ? ('demo_sbx_' + GEO_SEAT_KEY) : GEO_SEAT_KEY;
+      const store = isDemoGeoMode() ? sessionStorage : localStorage;
+      return norm(store.getItem(k) || '');
+    } catch (_) {
+      return '';
+    }
+  }
+  function markGeoSessionActive(email = '') {
+    const seat = norm(email);
+    const prevSeat = getGeoSessionSeat();
+    const shouldReset = Boolean(
+      (prevSeat && (!seat || prevSeat !== seat)) ||
+      (!prevSeat && _hasGeoStoreData())
+    );
+    if (shouldReset) {
+      resetGeoStoreSession();
+    }
+    _geoExplicitlySignedOut = false;
+    if (seat) {
+      try {
+        if (isDemoGeoMode()) sessionStorage.setItem('demo_sbx_' + GEO_SEAT_KEY, seat);
+        else localStorage.setItem(GEO_SEAT_KEY, seat);
+      } catch (_) {}
+    }
+  }
+  function resetGeoUiState() {
     _gateSatWarmupEpoch++;
     _cancelGateSatWarmupTimer();
     _gateSatWarmupState.running = false;
@@ -1088,12 +1142,13 @@
     _gateSatWarmupState.lastStoppedReason = '';
     _gateSatWarmupState.scheduledEpoch = -1;
     _gateSatWarmupState.scheduledInd = '';
-    _geoExplicitlySignedOut = true;
     try {
       if (typeof STUDIO !== 'undefined' && STUDIO) {
         STUDIO.fullWindow = false;
         STUDIO.fullWindowRailCollapsed = false;
         STUDIO._userPanned = false;
+        STUDIO.dwellDriftTarget = null;
+        STUDIO.auditFocusTarget = null;
       }
       if (typeof cleanupModalGeoMap === 'function') cleanupModalGeoMap();
       if (typeof cleanupInspectorGeoMap === 'function') cleanupInspectorGeoMap();
@@ -1103,6 +1158,12 @@
         document.body.classList.remove('has-geo-picker-fullwin');
       }
     } catch (_) {}
+    return true;
+  }
+  function resetGeoStoreSession() {
+    _geoSessionEpoch++;
+    _geoExplicitlySignedOut = true;
+    resetGeoUiState();
     if (typeof _mapsQuotaResetFn === 'function') _mapsQuotaResetFn();
     GEO_STORE.companyHubs = {};
     GEO_STORE.regions = {};
@@ -1115,6 +1176,8 @@
     GEO_STORE.updatedAt = '';
     try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
     try { sessionStorage.removeItem('demo_sbx_' + STORAGE_KEY); } catch (_) {}
+    try { localStorage.removeItem(GEO_SEAT_KEY); } catch (_) {}
+    try { sessionStorage.removeItem('demo_sbx_' + GEO_SEAT_KEY); } catch (_) {}
     if (typeof GEO_AUDIT_CACHE === 'object' && GEO_AUDIT_CACHE) {
       GEO_AUDIT_CACHE.logs = [];
       GEO_AUDIT_CACHE.fetchedAt = 0;
@@ -1123,10 +1186,6 @@
     }
     if (typeof DEMO_GATE_SUGGESTIONS !== 'undefined' && Array.isArray(DEMO_GATE_SUGGESTIONS)) {
       DEMO_GATE_SUGGESTIONS.length = 0;
-    }
-    if (typeof STUDIO === 'object' && STUDIO) {
-      STUDIO.dwellDriftTarget = null;
-      STUDIO.auditFocusTarget = null;
     }
     return true;
   }
@@ -1280,6 +1339,10 @@
             if (typeof o.onAccept === 'function') {
               try { o.onAccept(res); } catch (_) {}
             }
+            return res;
+          }
+          if (res && res.status === 401 && !isDemoGeo && typeof window !== 'undefined' && typeof window.__mfgHandleGeo401 === 'function') {
+            try { window.__mfgHandleGeo401(); } catch (_) {}
             return res;
           }
           let errMsg = 'Map update was rejected by the server.';
@@ -14167,6 +14230,9 @@
     exportGeoConfig,
     importGeoConfig,
     markGeoSessionActive,
+    getGeoSessionSeat,
+    hasGeoStoreData: _hasGeoStoreData,
+    resetGeoUiState,
     resetGeoStoreSession,
     restoreGeoConfigSnapshot: _replaceGeoConfigStore,
     isSiteRowEligibleForInitialPinFill,

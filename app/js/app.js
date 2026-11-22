@@ -138461,11 +138461,13 @@
 
     // 1. Relational SQLite / Cloudflare D1 Edge API (parallel auxiliary pulls + coalesced local save)
     if (hasServerApi()) {
+      let sawAuth401 = false;
       const auxFetchJson = async (url, timeoutMs = 5000) => {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
           const r = await edgeApiFetch(url, { signal: ctrl.signal });
+          if (r && r.status === 401 && STATE.authed && !isDemoSandboxSession()) sawAuth401 = true;
           return (r && r.ok) ? await r.json().catch(() => null) : null;
         } catch (_) {
           return null;
@@ -138490,6 +138492,10 @@
           fetchOwnerNotices ? loadDevicesHolding().catch(() => false) : Promise.resolve(false)
         ]);
         if (abortedByAuthChange()) return;
+        if (sawAuth401 && isEdgeActive && STATE.authed && !isDemoSandboxSession()) {
+          handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+          return;
+        }
         if (dLocal && Array.isArray(dLocal.users)) {
           applyServerUsersPayload(dLocal.users, dLocal);
         }
@@ -138562,7 +138568,7 @@
             return await rE.json();
           }
           if (rE.status === 401 || rE.status === 403) {
-            return { _authDenied: true };
+            return { _authDenied: true, _status: rE.status };
           }
           throw new Error('edge sync ' + rE.status);
         } catch (errE) {
@@ -138574,6 +138580,10 @@
       let store = await fetchGetMfg(canSendEtag);
       if (abortedByAuthChange()) return;
       if (store && store._authDenied) {
+        if (store._status === 401 && isEdgeActive && !isDemoSandboxSession()) {
+          handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+          return;
+        }
         STATE.cloudStatus = '● Sign-in required';
         updateCloudBadges();
         return;
@@ -138591,6 +138601,10 @@
         store = await fetchGetMfg(false);
         if (abortedByAuthChange()) return;
         if (store && store._authDenied) {
+          if (store._status === 401 && isEdgeActive && !isDemoSandboxSession()) {
+            handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+            return;
+          }
           STATE.cloudStatus = '● Sign-in required';
           updateCloudBadges();
           return;
@@ -138819,6 +138833,10 @@
           clearTimeout(timer2);
           if (abortedByAuthChange()) return;
           if (!putRes.ok) {
+            if (putRes.status === 401 && isEdgeActive && !isDemoSandboxSession()) {
+              handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+              return;
+            }
             const putErr = await putRes.json().catch(() => null);
             if (putRes.status === 426 && putErr && putErr.code === 'shell_outdated') {
               setPendingCloudPush(false);
@@ -144257,7 +144275,32 @@
     });
   }
 
-  function openAuthGate(prefillEmail) {
+  function handleEdgeSessionExpired(opts = {}) {
+    setEdgeSessionToken('');
+    _edgeCookieAuthed = false;
+    _authSessionEpoch++;
+    if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+      try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+    }
+    try { localStorage.removeItem('isabi_mfg_geo_v1'); } catch (_) {}
+    if (rosterIsServerHeld() && !isDemoSandboxSession()) {
+      SEED._recordsReady = false;
+      SEED._preAuthDeferred = true;
+      SEED._coreReady = false;
+      SEED.records = {};
+      SEED.models = {};
+      setPrivateNameBook(null);
+      _seedHydrationGen++;
+      _seedHydrationPromise = null;
+      invalidateAllSeedCaches();
+    }
+    openAuthGate(opts.prefillEmail || '');
+    if (opts.rearmSeedOnNextLogin && rosterIsServerHeld() && !isDemoSandboxSession() && !STATE.authed) {
+      setTimeout(() => { try { hydrateSeedData(); } catch (_) {} }, 0);
+    }
+  }
+
+  function openAuthGate(prefillEmail, opts = {}) {
     // Every way back to the sign-in screen (sign-out, idle lock, session expiry) starts the next person clean:
     // no carried-over face misses and no held face descriptor that could ride along with their PIN.
     FACE_STATE.edgeMissCount = 0;
@@ -144278,7 +144321,12 @@
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
     if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
     if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(resolveSelectedAuthUser());
-    if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+    // Preserve persisted local geo store only during initial unauthenticated cookie-resume boot;
+    // every session lock, sign-out, expiry, or non-cookie boot wipes it cleanly.
+    const preserveBootGeo = Boolean(opts && opts.preserveStoredGeo && !STATE.authed);
+    if (preserveBootGeo && window.MFG_GEO && typeof window.MFG_GEO.resetGeoUiState === 'function') {
+      window.MFG_GEO.resetGeoUiState();
+    } else if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       window.MFG_GEO.resetGeoStoreSession();
     }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
@@ -144387,7 +144435,10 @@
   function closeAuthGate() {
     STATE.authed = true;
     if (window.MFG_GEO && typeof window.MFG_GEO.markGeoSessionActive === 'function') {
-      try { window.MFG_GEO.markGeoSessionActive(); } catch (_) {}
+      try {
+        const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
+        window.MFG_GEO.markGeoSessionActive((curSeat && curSeat.email) || '');
+      } catch (_) {}
     }
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -145031,6 +145082,12 @@
     FACE_STATE.lastLiveGateMethod = '';
     FACE_STATE.lastLiveGateAt = 0;
     const finalAuthedUser = STATE.users[idx];
+    const prevSeatObj = STATE.authed ? activeUser() : null;
+    const prevSeatEmail = (prevSeatObj && prevSeatObj.email) ? norm(prevSeatObj.email) : '';
+    const nextSeatEmail = norm(finalAuthedUser && finalAuthedUser.email);
+    if (prevSeatEmail && prevSeatEmail !== nextSeatEmail && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+      try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+    }
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function' && STATE.activeUserIdx !== idx) {
       window.MFG_ASK.clearSessionState();
     }
@@ -183183,33 +183240,68 @@
       saveKioskStationConfig({ kioskLocked: true, activeKiosk: STATE.activeKiosk, company: STATE.company });
       closeAuthGate();
       if (rosterIsServerHeld() && !isDemoSandboxSession()) {
+        const lockKioskIfNoStationKey = () => {
+          const hasStationKey = Boolean(
+            localStorage.getItem('isabi_mfg_kiosk_key_' + String(STATE.activeKiosk || 'sales')) ||
+            localStorage.getItem('isabi_kiosk_station_key')
+          );
+          if (!hasStationKey) openAuthGate(savedKioskSeatEmail || '');
+        };
         edgeApiFetch('./api/auth/me')
           .then(r => (r && r.ok ? r.json() : null))
           .then(d => {
             if (d && d.authenticated) {
               _edgeCookieAuthed = true;
             } else {
-              const hasStationKey = Boolean(
-                localStorage.getItem('isabi_mfg_kiosk_key_' + String(STATE.activeKiosk || 'sales')) ||
-                localStorage.getItem('isabi_kiosk_station_key')
-              );
-              if (!hasStationKey) openAuthGate(savedKioskSeatEmail || '');
+              lockKioskIfNoStationKey();
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            lockKioskIfNoStationKey();
+          });
       }
     } else {
       history.replaceState({ view: STATE.view }, '', lockedCleanUrl);
-      openAuthGate(inviteEmail || '');
-      if (rosterIsServerHeld() && !isDemoSandboxSession() && !invitePin) {
-        edgeApiFetch('./api/auth/me')
-          .then(r => (r && r.ok ? r.json() : null))
+      const shouldProbeCookieResume = Boolean(
+        !isDemoSandboxSession() &&
+        !invitePin &&
+        (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))
+      );
+      openAuthGate(inviteEmail || '', { preserveStoredGeo: shouldProbeCookieResume });
+      if (shouldProbeCookieResume) {
+        const probeBootAuthMe = (attempt = 0) => edgeApiFetch('./api/auth/me', { cache: 'no-store' })
+          .then(r => {
+            if (r && r.status >= 500 && attempt < 2) {
+              return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
+            }
+            return r && r.ok ? r.json() : null;
+          })
+          .catch(err => {
+            if (attempt < 2 && !STATE.authed) {
+              return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
+            }
+            throw err;
+          });
+        probeBootAuthMe()
           .then(d => {
-            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended' || STATE.authed) return;
+            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended') {
+              if (!STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+                window.MFG_GEO.resetGeoStoreSession();
+              }
+              return;
+            }
+            if (STATE.authed) return;
             _edgeCookieAuthed = true;
             const resumedSeat = ensureCanonicalMultiIndustrySeat(Object.assign({}, d.user, { pin_redacted: true }));
             delete resumedSeat.pin_code;
             delete resumedSeat._verifiedPin;
+            if (window.MFG_GEO && typeof window.MFG_GEO.getGeoSessionSeat === 'function') {
+              const prevGeoSeat = window.MFG_GEO.getGeoSessionSeat();
+              const hasUnattributedGeo = Boolean(!prevGeoSeat && typeof window.MFG_GEO.hasGeoStoreData === 'function' && window.MFG_GEO.hasGeoStoreData());
+              if (((prevGeoSeat && prevGeoSeat !== norm(resumedSeat.email)) || hasUnattributedGeo) && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+                window.MFG_GEO.resetGeoStoreSession();
+              }
+            }
             const exIdx = STATE.users.findIndex(u => norm(u.email) === norm(resumedSeat.email));
             if (exIdx >= 0) {
               STATE.users[exIdx] = resumedSeat;
@@ -183222,9 +183314,17 @@
               STATE.company = defaultCompanyForUser(resumedSeat);
             }
             closeAuthGate();
+            if (SEED._recordsReady && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+              window.MFG_GEO.hydrateSeedGeo(SEED, true);
+            }
             safeRender();
+            if (typeof syncWithCloud === 'function') syncWithCloud(false);
           })
-          .catch(() => {});
+          .catch(_ => {
+            if (!STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+              try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+            }
+          });
       }
     }
 
@@ -185963,6 +186063,11 @@
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
     window.__cloudPayload = () => cloudPayload();
     window.__syncWithCloud = (p) => syncWithCloud(p);   // build/verify_legacy_pos_report.mjs drives the push loop
+    window.__mfgHandleGeo401 = () => {
+      if ((STATE.authed || hasServerApi()) && !isDemoSandboxSession()) {
+        handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+      }
+    };
     window.__mergeIndustryRowEdits = incoming => mergeIndustryRowEdits(incoming);
     window.__mergeIndustryCustomRows = incoming => mergeIndustryCustomRows(incoming);
     window.__applyIndustryDomRowEdits = root => applyIndustryDomRowEdits(root);
@@ -187963,13 +188068,9 @@
           safeRender();
         } else {
           const errMsg = String((err && err.message) || err || '');
-          if (/\b(401|403)\b/.test(errMsg) && !_edgeSessionToken) {
-            _edgeCookieAuthed = false;
-            SEED._recordsReady = false;
-            SEED._preAuthDeferred = true;
-            openAuthGate();
-            // Load the private seed again after the next sign-in (the one-time listener was already used).
-            if (!STATE.authed) setTimeout(() => { try { hydrateSeedData(); } catch (_) {} }, 0);
+          if (/\b(401|403)\b/.test(errMsg)) {
+            handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+            return SEED;
           } else if (STATE.authed) {
             SEED._coreReady = true;
             SEED._recordsReady = true;
