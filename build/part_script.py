@@ -102,7 +102,7 @@ JS = r"""
       lead: 'Engineered for ready-mix concrete plants, construction material producers, and heavy transport fleets where every cubic meter batched, cement silo delivery, and transit mixer trip must be tracked from plant dispatch to customer signature.',
       modules: [
         'Sales Tickets, Concrete Mix Grades, Pump Fees & Cement Silo Stock Control',
-        'Touch Field Kiosks: Dispatch, Quarry Receiving, Fuel & Live Face Attendance',
+        'Touch Field Kiosks: Dispatch, Material Receiving, Fuel & Live Face Attendance',
         'Live Fleet GPS & Engine Sensor Telematics + Daily Workforce Map',
         'Truck Revenue vs Cost Studio, What-If Margin Bridge & Parts Custody',
         'Automated Statement Matching, Period-Close Locks & Inter-Entity Billing'
