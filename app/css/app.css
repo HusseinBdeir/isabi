@@ -22444,7 +22444,7 @@ tr.rrow.is-row-selected u.row-sel-dot {
   border-color: var(--brass);
   color: #0B1730;
 }
-tr.rrow.is-row-selected > td {
+tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
   background-color: rgba(192, 137, 47, 0.11) !important;
 }
 
@@ -43592,6 +43592,60 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   font-size: 11.8px;
   font-weight: 700;
   white-space: nowrap;
+}
+.mob-peek-share-btn,
+.insp-share-summary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.mob-peek-share-btn.is-copied,
+.insp-share-summary-btn.is-copied {
+  border-color: var(--good, #1F7A4C);
+  color: var(--good, #1F7A4C);
+  background: color-mix(in srgb, var(--good, #1F7A4C) 10%, var(--surface, #FFFFFF));
+}
+@media (max-width: 420px) {
+  .mob-peek-share-btn {
+    padding: 6px 8px;
+    min-width: 36px;
+  }
+  .mob-peek-share-btn .mob-peek-share-lbl {
+    display: none;
+  }
+}
+@keyframes mobPeekTdPulse {
+  0% { background-color: color-mix(in srgb, var(--brass, #C0892F) 26%, var(--surface, #FFFFFF)); }
+  100% { background-color: var(--surface, #FFFFFF); }
+}
+tbody tr.is-mob-peek-current > td,
+tbody tr.is-mob-peek-current > th,
+table.ledger-table tbody tr.is-mob-peek-current > td,
+table.data-table tbody tr.is-mob-peek-current > td,
+table.ledger-table tbody tr.is-mob-peek-current:hover > td,
+table.data-table tbody tr.is-mob-peek-current:hover > td {
+  background-color: color-mix(in srgb, var(--brass, #C0892F) 14%, var(--surface, #FFFFFF));
+}
+tbody tr.is-mob-peek-current > td:is(:first-child, .tbl-first-vis-cell),
+tbody tr.sn-panel-flash > td:is(:first-child, .tbl-first-vis-cell) {
+  box-shadow: inset 3px 0 0 var(--brass, #C0892F);
+}
+[dir="rtl"] tbody tr.is-mob-peek-current > td:is(:first-child, .tbl-first-vis-cell),
+[dir="rtl"] tbody tr.sn-panel-flash > td:is(:first-child, .tbl-first-vis-cell) {
+  box-shadow: inset -3px 0 0 var(--brass, #C0892F);
+}
+tbody tr.sn-panel-flash > td,
+tbody tr.sn-panel-flash > th {
+  animation: mobPeekTdPulse 1.15s ease-out 1;
+}
+:root[data-theme="dark"] tbody tr.is-mob-peek-current > td,
+:root[data-theme="dark"] tbody tr.is-mob-peek-current > th,
+:root[data-theme="dark"] table.ledger-table tbody tr.is-mob-peek-current > td,
+:root[data-theme="dark"] table.data-table tbody tr.is-mob-peek-current > td,
+:root[data-theme="dark"] table.ledger-table tbody tr.is-mob-peek-current:hover > td,
+:root[data-theme="dark"] table.data-table tbody tr.is-mob-peek-current:hover > td {
+  background-color: color-mix(in srgb, var(--brass, #D4A143) 18%, var(--surface, #0F1726));
 }
 .mob-peek-nav {
   display: flex;

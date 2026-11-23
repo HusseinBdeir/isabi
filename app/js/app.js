@@ -7666,12 +7666,12 @@
   }
 
   const _PAYROLL_MASKED_COL_RE = {
-    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/i,
-    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status)$/i,
-    salaries: /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/i,
+    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/i,
+    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|salary_pending|reimbursement|reimbursement_lbp|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status)$/i,
+    salaries: /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/i,
     attendance: /^(?:extra_usd|overtime_usd|deduction_usd|net_usd|wage_usd|amount|usd_amount|sales_ot_usd|raw_ot_usd|total_ot_usd|in_payroll_usd|total|diff|ot_pay_usd|late_ded_usd|abs_ded_usd|earned_usd|lost_usd|payroll_impact_usd|extra_lbp)$/i,
-    freelance_entries: /^(?:rate_usd|total|amount|usd_amount|reimbursement|deduction)$/i,
-    logistics_allowances: /^(?:daily_usd|lbp_amount|amount|total|usd_amount|earned_usd|earned_win_usd|accrued|paid_fifo|outstanding|daily_rate_eff)$/i,
+    freelance_entries: /^(?:rate_usd|total|amount|usd_amount|reimbursement|reimbursement_lbp|deduction)$/i,
+    logistics_allowances: /^(?:daily_usd|lbp_amount|amount|total|usd_amount|earned_usd|earned_win_usd|accrued|paid_fifo|outstanding|daily_rate_eff|reimbursement_lbp)$/i,
     overtime_rates: /^(?:amount|rate|rate_usd|usd_amount)$/i
   };
 
@@ -7692,8 +7692,16 @@
     const t = String(tableKey || '').trim().toLowerCase();
     const c = String(colName || '').trim().toLowerCase();
     if (!t || !c) return false;
-    if (t === 'customers') return /^(?:ar_balance|ar_overdue|ar_1_60|ar_60_plus)$/i.test(c);
+    if (t === 'customers') return /^(?:ar_balance|ar_overdue|ar_1_60|ar_60_plus|ar_current|ar_1_10|ar_11_30|ar_31_60|ar_settled|receipts|credit_limit)$/i.test(c);
+    if (t === 'credit_terms') return /^(?:credit_limit|ar_balance)$/i.test(c);
     if (t === 'suppliers') return /^(?:ap_balance|ap_material|ap_haulage|ap_expense|ap_settled)$/i.test(c);
+    if (t === 'receipts') return /^(?:amount|discount)$/i.test(c);
+    if (t === 'settlements') return /^(?:amount|discount|principal|settled_amount|balance|debit|credit)$/i.test(c);
+    if (t === 'loans') return /^(?:principal|interest_rate|settled_amount|balance|amount)$/i.test(c);
+    if (t === 'loan_settlements') return /^(?:usd_amount|lbp_amount|amount|principal|settled_amount|balance)$/i.test(c);
+    if (t === 'conversions') return /^(?:usd_amount|lbp_amount|exchange_rate|fx_rate|usd_delta|lbp_delta|amount)$/i.test(c);
+    if (t === 'external_movements') return /^(?:usd_amount|lbp_amount|amount|usd_delta|lbp_delta|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp)$/i.test(c);
+    if (t === 'gl_accounts') return /^(?:debit|credit|balance|soa_legs)$/i.test(c);
     return false;
   }
 
@@ -7703,9 +7711,46 @@
     return typeof seatLens !== 'function' || !seatLens(usr).books;
   }
 
-  function isMaskedFieldAccessBlocked(tableKey, colName, u) {
-    return isMaskedPayrollAccessBlocked(tableKey, colName, u) || isMaskedBooksAccessBlocked(tableKey, colName, u);
+  function isMaskedPartnerSplitsField(tableKey, colName) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    if (!t || !c) return false;
+    if (t === 'jv_partnerships') return /^(?:percentage|share_pct|jv_share|jv_partner|partner_split|owner_share|pool_share|distributions_total)$/i.test(c);
+    if (t === 'jv_distributions') return /^(?:amount|difference|total|jv_share|percentage|share_pct)$/i.test(c);
+    if (t === 'sites') return /^(?:is_jv|jv_partner|jv_share)$/i.test(c);
+    return false;
   }
+
+  function isMaskedPartnerSplitsAccessBlocked(tableKey, colName, u) {
+    if (!isMaskedPartnerSplitsField(tableKey, colName)) return false;
+    const usr = u === undefined ? activeUser() : u;
+    return typeof seatLens !== 'function' || !seatLens(usr).partnerSplits;
+  }
+
+  function isMaskedFieldAccessBlocked(tableKey, colName, u) {
+    return isMaskedPayrollAccessBlocked(tableKey, colName, u)
+      || isMaskedBooksAccessBlocked(tableKey, colName, u)
+      || isMaskedPartnerSplitsAccessBlocked(tableKey, colName, u);
+  }
+
+  window.__mfgIsTableColRestricted = function (tableKey, colName, rowObj, u, viewId) {
+    const usr = u === undefined ? activeUser() : u;
+    const lens = typeof seatLens === 'function' ? seatLens(usr) : {};
+    const tk = String(tableKey || '').trim().toLowerCase();
+    const cn = String(colName || '').trim().toLowerCase();
+    const vw = String(viewId || '').trim().toLowerCase();
+    if (!tk || !cn) return false;
+    if (isMaskedFieldAccessBlocked(tk, cn, usr)) return true;
+    if (tk === 'regions' && cn === 'overtime_rate' && (typeof canViewPayrollDollarAmounts !== 'function' || !canViewPayrollDollarAmounts(usr))) return true;
+    if (!lens.expenses && (tk === 'items' || tk === 'expense_categories' || tk === 'expense_subcategories') && /^(?:default_cost|total_spent)$/i.test(cn)) return true;
+    if (!lens.tax && ((tk === 'vat_invoices' && /^(?:net_amount|vat_amount|total_ttc)$/i.test(cn)) || (tk === 'vat_rates' && /^(?:vat_percent|vat_fx_rate)$/i.test(cn)))) return true;
+    if (tk === 'price_rules' && !rowObj) {
+      if (vw === 'commission') return !lens.profit && /^(?:unit_price|price|indiff_price|rate|amount)$/i.test(cn);
+      if (/^(?:raw_|site_raw)/i.test(vw)) return !lens.expenses && /^(?:unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|price|trans_price|floor_price)$/i.test(cn);
+      return false;
+    }
+    return Boolean(typeof isRecordShareFieldBlocked === 'function' && isRecordShareFieldBlocked(tk, cn, (rowObj && rowObj.company) || '', usr, rowObj ? rowObj[colName] : null, rowObj || null, { rbacOnly: true }));
+  };
 
   // One lookup-index resolution per table pass. MFG_PBI.getHubRelIndex() re-validates its cache on every call
   // (the seat's company list, two permission checks, about 55 table revisions). Sorting and filtering asked for
@@ -38686,17 +38731,21 @@
     const today = SEED_DATE;
     const isActive = r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today);
     const isQuarryOnlyRule = r => r && (r.rule_type === 'Purchase Price (Site)' || r.rule_type === 'Transport Price (Site)');
+    const canSeeComm = Boolean(seatLens().profit);
+    if (!canSeeComm && STATE.chipFilter === 'Commission') STATE.chipFilter = 'all';
     const isCommRule = r => Boolean(r && /^commission$/i.test(String(r.rule_type || '').trim()));
     const isNonAggOutlierRule = r => !r || /^unit$/i.test(String(r.unit || '')) || Number(r.unit_price ?? r.price ?? 0) > 250 || /\b(shacman|truck|mixer|pump|excavator|excavation)\b/i.test(String(r.product || ''));
-    const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
+    const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true }).filter(r => canSeeComm || !isCommRule(r));
     const salesBase = base.filter(r => !isQuarryOnlyRule(r) && !isCommRule(r));
-    const commBaseCount = base.filter(isCommRule).length;
-    const isCommView = STATE.chipFilter === 'Commission';
-    const CANON_SALES_TYPES = ['Sales (Pickup)', 'Sales (Delivery)', 'List Price', 'Commission'];
+    const commBaseCount = canSeeComm ? base.filter(isCommRule).length : 0;
+    const isCommView = canSeeComm && STATE.chipFilter === 'Commission';
+    const CANON_SALES_TYPES = canSeeComm
+      ? ['Sales (Pickup)', 'Sales (Delivery)', 'List Price', 'Commission']
+      : ['Sales (Pickup)', 'Sales (Delivery)', 'List Price'];
     const salesTypes = uniqSorted(CANON_SALES_TYPES.concat(salesBase.map(r => r.rule_type)).filter(Boolean));
     const allTypes = uniqSorted(CANON_SALES_TYPES.concat(base.map(r => r.rule_type)).filter(Boolean));
     const rules = sortRows(base.filter(r => {
-      if (STATE.chipFilter === 'Commission') return isCommRule(r);
+      if (canSeeComm && STATE.chipFilter === 'Commission') return isCommRule(r);
       if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && !isCommRule(r) && isActive(r);
       if (STATE.chipFilter === 'lapsed') return !isQuarryOnlyRule(r) && !isCommRule(r) && !isActive(r);
       if (STATE.chipFilter === 'indiff') return !isQuarryOnlyRule(r) && !isCommRule(r) && ruleAnyIndiffPrice(r) != null;
@@ -38719,7 +38768,7 @@
       'Commission': `Commission (${commBaseCount})`
     }[t] || t);
     const typeChips = salesTypes.map(t => chip(t, shortRuleType(t))).join('');
-    const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && (STATE.chipFilter === 'Commission' || !isCommRule(r)) && Number(r.unit_price ?? r.price ?? 0) > 0);
+    const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && ((canSeeComm && STATE.chipFilter === 'Commission') || !isCommRule(r)) && Number(r.unit_price ?? r.price ?? 0) > 0);
     const tpRules = rules.filter(r => !isTransIndiffRule(r) && Number(r.trans_unit_price ?? r.trans_price ?? 0) > 0 && Number(r.trans_unit_price ?? r.trans_price ?? 0) <= 100);
     const indRules = rules.filter(r => ruleAnyIndiffPrice(r) != null);
 
@@ -38743,14 +38792,14 @@
     // Live Sales Commission engine (BBConstruction -> Agrimount 12 rules across 11 products + 94 GL 6222 / GL 449 settlement vouchers)
     const pRangeTop = periodRange(STATE.period);
     const asAtDateTop = (pRangeTop && pRangeTop.to && pRangeTop.to < today) ? pRangeTop.to : today;
-    const allCompanyRulesTop = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true });
+    const allCompanyRulesTop = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true }).filter(r => canSeeComm || !isCommRule(r));
     const scopedSalesTop = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     const scopedRecTop = filterRecords(SEED.records.receipts, { ignoreSearch: true });
     const scopedSetTop = filterRecords(SEED.records.settlements, { ignoreSearch: true });
     const allCoSalesTop = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
     const allCoRecTop = filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true });
     const allCoSetTop = filterRecords(SEED.records.settlements, { ignorePeriod: true, ignoreSearch: true });
-    const commData = (window.MFG_PBI && typeof window.MFG_PBI.buildSalesCommissionData === 'function')
+    const commData = (canSeeComm && window.MFG_PBI && typeof window.MFG_PBI.buildSalesCommissionData === 'function')
       ? window.MFG_PBI.buildSalesCommissionData(scopedSalesTop, scopedRecTop, scopedSetTop, allCompanyRulesTop, {
           today,
           asAtDate: asAtDateTop,
@@ -38763,13 +38812,13 @@
           dateTo: pRangeTop && pRangeTop.to,
           basis: STATE.basis
         })
-      : { rulesCount: 0, activeRulesCount: 0, productsCount: 0, activeVolumeProductsCount: 0, beneficiariesLabel: 'Agrimount', totalQualifyingLoads: 0, totalQualifyingQty: 0, totalEarned: Number(k.commission_due || 0), totalPaidExVat: 0, totalPaidVat: 0, totalPaidTtc: 0, periodNetExVat: Number(k.commission_due || 0), openPayableExVat: Number(k.commission_due || 0), productRows: [], monthlyRows: [], voucherRows: [], otherEntities: [] };
-    const hasComm = commData.rulesCount > 0 || commData.totalEarned > 0 || commData.totalPaidExVat > 0;
-    const commHintCo = !hasComm && commData.otherEntities.length ? commData.otherEntities[0] : null;
+      : { rulesCount: 0, activeRulesCount: 0, productsCount: 0, activeVolumeProductsCount: 0, beneficiariesLabel: 'Agrimount', totalQualifyingLoads: 0, totalQualifyingQty: 0, totalEarned: 0, totalPaidExVat: 0, totalPaidVat: 0, totalPaidTtc: 0, periodNetExVat: 0, openPayableExVat: 0, productRows: [], monthlyRows: [], voucherRows: [], otherEntities: [] };
+    const hasComm = canSeeComm && (commData.rulesCount > 0 || commData.totalEarned > 0 || commData.totalPaidExVat > 0);
+    const commHintCo = canSeeComm && !hasComm && commData.otherEntities.length ? commData.otherEntities[0] : null;
     const commHintSlug = commHintCo
       ? (norm(commHintCo.company) === 'bbconstruction' ? 'bbconstruction' : (norm(commHintCo.company) === 'wtc' ? 'wtc' : (norm(commHintCo.company) === 'lions transport' ? 'lionstransport' : 'manufacturing-group')))
       : '';
-    const commPaidPct = commData.totalEarned > 0 ? Math.min(100, Math.max(4, (commData.totalPaidExVat / commData.totalEarned) * 100)) : 0;
+    const commPaidPct = (canSeeComm && commData.totalEarned > 0) ? Math.min(100, Math.max(4, (commData.totalPaidExVat / commData.totalEarned) * 100)) : 0;
 
     return `
       <div class="cockpit-banner has-insights">
@@ -38793,7 +38842,7 @@
             label: 'Avg Agreement Rates',
             badge: `Trans: ${avgTp ? fmtUSD(avgTp, 2) + '/m³' : '—'}`,
             badgeCls: 'emerald',
-            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ ${STATE.chipFilter === 'Commission' ? 'unit' : 'm³'}</small>`,
+            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ ${isCommView ? 'unit' : 'm³'}</small>`,
             valCls: 'emerald',
             sub: `<b>${fmtNum(salesIndiffRules.length)}</b> per-truck-load delivery rules (${avgInd ? 'avg ' + fmtUSD(avgInd, 0) + '/load' : 'per load'})`,
             tone: 'emerald'
@@ -38805,7 +38854,7 @@
             sub: `Benchmarked across <b>${fmtNum(volScopedProds.length || scopedProds.length)}</b> active aggregate grades`,
             tone: 'steel'
           })}
-          ${insightCard({
+          ${canSeeComm ? insightCard({
             label: 'Sales Commission Earned',
             badge: `${fmtNum(commData.rulesCount)} Rules · ${commData.beneficiariesLabel}`,
             badgeCls: commData.rulesCount > 0 ? 'brass' : 'emerald',
@@ -38814,6 +38863,15 @@
             pct: commPaidPct,
             sub: `Paid <b>${fmtUSD(commData.totalPaidExVat, 0)}</b> Ex-VAT${commData.totalPaidVat > 0 ? ` (+<b>${fmtUSD(commData.totalPaidVat, 0)}</b> VAT)` : ''} · <span class="insight-drill" data-scroll-panel="commissionLedgerPanel">Open: <b>${fmtUSD(commData.openPayableExVat, 0)}</b></span>`,
             tone: commData.rulesCount > 0 ? 'brass' : 'emerald'
+          }) : insightCard({
+            label: 'Sales Commission Earned',
+            badge: 'Restricted',
+            badgeCls: 'info',
+            val: 'Restricted',
+            valCls: '',
+            pct: 0,
+            sub: 'Restricted by seat permissions',
+            tone: 'steel'
           })}
           ${appPill('price_rules', 'unit_price', 'agreements')}
         </div>
@@ -38827,7 +38885,7 @@
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Site Haulage Agreements in Purchases, Expenses &amp; Payables">${ic('raw')} Raw &amp; Haulage Agreements</button>
-            ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_comm" title="Create a per-unit Sales Commission rule for a plant owner">+ Commission Rule</button>' : ''}
+            ${(canSeeComm && canEnterForm('pricerule')) ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_comm" title="Create a per-unit Sales Commission rule for a plant owner">+ Commission Rule</button>' : ''}
             ${exportBtn('pricingPanel', isCommView ? 'Commission_Rules' : 'Price_Agreements')}
             ${canEnterForm('pricerule') ? '<button class="btn btn-primary" data-open-modal="pricerule">+ New Price Agreement</button>' : ''}
           </div>
@@ -38965,10 +39023,11 @@
               asAtDate
             })
           : '';
-        const commVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderCommissionVisualsSection === 'function')
+        const commVisualsHtml = (canSeeComm && window.MFG_PBI && typeof window.MFG_PBI.renderCommissionVisualsSection === 'function')
           ? window.MFG_PBI.renderCommissionVisualsSection(commData, { isPbi: false })
           : '';
         const qSearch = STATE.search.trim().toLowerCase();
+        const commSectionHtml = !canSeeComm ? '' : (() => {
         const commProdFiltered = sortRows((commData.productRows || []).filter(r => {
           if (!qSearch) return true;
           return `${r.product || ''} ${r.owner || ''} ${r.company || ''} ${r.uom || ''}`.toLowerCase().includes(qSearch);
@@ -38993,7 +39052,7 @@
         const totMoPeriodNet = commMonthsSorted.reduce((a, r) => a + Number(r.period_net_ex_vat || 0), 0);
         const totVcExVat = commVouchersFiltered.reduce((a, v) => a + Number(v.ex_vat_paid || 0), 0);
         const totVcVat = commVouchersFiltered.reduce((a, v) => a + Number(v.vat_paid || 0), 0);
-        const commSectionHtml = `
+        return `
           <div class="panel-card" id="commissionProductPanel" style="margin-bottom:14px">
             <div class="panel-head">
               <div class="panel-title"><span>SALES COMMISSIONS BY PRODUCT &amp; SELLING-PRICE CORRIDOR (${fmtNum(commProdFiltered.length)} PRODUCTS · ${fmtNum(commData.rulesCount)} RULES · ${esc(commData.beneficiariesLabel.toUpperCase())})</span></div>
@@ -39130,6 +39189,7 @@
             </div>
           </div>
         `;
+        })();
         const delRowsFiltered = sortRows((delTransComp.rows || []).filter(r => {
           if (!qSearch) return true;
           return `${r.customer || ''} ${r.site || ''} ${r.basis || ''} ${r.company || ''}`.toLowerCase().includes(qSearch);
@@ -39816,6 +39876,7 @@
         })
       : '';
     const custCols = showTaxCols ? 12 : 10;
+    const canArBooks = Boolean(seatLens().books);
 
     return `
       <div class="cockpit-banner has-insights">
@@ -39826,23 +39887,23 @@
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'FIFO Collection Rate',
-            badge: `DSO ${fmtNum(k.dso_days || 0, 0)}d`,
-            badgeCls: 'emerald',
-            val: Number(k.sales_ttc || 0) > 0 ? `${collPct.toFixed(1)}% <small>Collected</small>` : `0.0% <small>No Invoices</small>`,
-            valCls: 'emerald',
-            pct: collPct,
-            pct2: Number(k.sales_ttc || 0) > 0 ? (100 - collPct) : 0,
-            sub: `Collected <b>${fmtUSD(k.receipts, 0)}</b> of <b>${fmtUSD(k.sales_ttc, 0)}</b> invoiced`,
+            badge: canArBooks ? `DSO ${fmtNum(k.dso_days || 0, 0)}d` : 'Restricted',
+            badgeCls: canArBooks ? 'emerald' : 'info',
+            val: canArBooks ? (Number(k.sales_ttc || 0) > 0 ? `${collPct.toFixed(1)}% <small>Collected</small>` : `0.0% <small>No Invoices</small>`) : 'Restricted',
+            valCls: canArBooks ? 'emerald' : '',
+            pct: canArBooks ? collPct : 0,
+            pct2: canArBooks && Number(k.sales_ttc || 0) > 0 ? (100 - collPct) : 0,
+            sub: canArBooks ? `Collected <b>${fmtUSD(k.receipts, 0)}</b> of <b>${fmtUSD(k.sales_ttc, 0)}</b> invoiced` : 'Restricted by seat permissions',
             tone: 'emerald'
           })}
           ${insightCard({
             label: 'AR Aging Health',
-            badge: `60+d: ${over60Pct.toFixed(1)}%`,
-            badgeCls: over60Pct > 25 ? 'amber' : 'brass',
-            val: `${curPct.toFixed(1)}% <small>Current (0–10d)</small>`,
-            valCls: over60Pct > 25 ? 'amber' : 'brass',
-            pct: curPct,
-            sub: `0–10d <b>${fmtUSD(arCur, 0)}</b> · 11–60d <b>${fmtUSD(arMid, 0)}</b> · 60+d <b>${fmtUSD(ar60, 0)}</b>`,
+            badge: canArBooks ? `60+d: ${over60Pct.toFixed(1)}%` : 'Restricted',
+            badgeCls: canArBooks ? (over60Pct > 25 ? 'amber' : 'brass') : 'info',
+            val: canArBooks ? `${curPct.toFixed(1)}% <small>Current (0–10d)</small>` : 'Restricted',
+            valCls: canArBooks ? (over60Pct > 25 ? 'amber' : 'brass') : '',
+            pct: canArBooks ? curPct : 0,
+            sub: canArBooks ? `0–10d <b>${fmtUSD(arCur, 0)}</b> · 11–60d <b>${fmtUSD(arMid, 0)}</b> · 60+d <b>${fmtUSD(ar60, 0)}</b>` : 'Restricted by seat permissions',
             tone: 'brass'
           })}
           ${canTax ? insightCard({
@@ -39858,9 +39919,9 @@
             label: 'Settlement Channel Mix',
             badge: `${fmtNum(rcpts.length)} Receipts`,
             badgeCls: 'info',
-            val: fmtUSD(sumSettle, 0),
-            valCls: 'brass',
-            sub: `Cash settled <b>${fmtUSD(sumAmt, 0)}</b> · Rebates &amp; disc. <b>${fmtUSD(sumDisc, 0)}</b>`,
+            val: canArBooks ? fmtUSD(sumSettle, 0) : 'Restricted',
+            valCls: canArBooks ? 'brass' : '',
+            sub: canArBooks ? `Cash settled <b>${fmtUSD(sumAmt, 0)}</b> · Rebates &amp; disc. <b>${fmtUSD(sumDisc, 0)}</b>` : 'Restricted by seat permissions',
             tone: 'steel'
           })}
           ${(() => {
@@ -39869,13 +39930,15 @@
             const totArEx = round2(custAll.reduce((a, c) => a + Number(c.ar_rem_ex_vat != null ? c.ar_rem_ex_vat : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0))), 0));
             return insightCard({
               label: 'Customer Credit Exposure',
-              badge: `${fmtNum(over60CustCount)} Overdue 60+`,
-              badgeCls: over60CustCount > 0 ? 'amber' : 'emerald',
-              val: `${fmtUSD(totArBal, 2)}`,
-              valCls: over60CustCount > 0 ? 'amber' : 'emerald',
-              sub: canTax
-                ? `Ex-VAT <b>${fmtUSD(totArEx, 2)}</b> · VAT <b>${fmtUSD(totVatRec, 2)}</b> · <b>${fmtNum(openCustCount)}</b> open of <b>${fmtNum(custAll.length)}</b>`
-                : `<b>${fmtNum(openCustCount)}</b> open balances across <b>${fmtNum(custAll.length)}</b> customer accounts`,
+              badge: canArBooks ? `${fmtNum(over60CustCount)} Overdue 60+` : 'Restricted',
+              badgeCls: canArBooks ? (over60CustCount > 0 ? 'amber' : 'emerald') : 'info',
+              val: canArBooks ? `${fmtUSD(totArBal, 2)}` : 'Restricted',
+              valCls: canArBooks ? (over60CustCount > 0 ? 'amber' : 'emerald') : '',
+              sub: canArBooks
+                ? (canTax
+                  ? `Ex-VAT <b>${fmtUSD(totArEx, 2)}</b> · VAT <b>${fmtUSD(totVatRec, 2)}</b> · <b>${fmtNum(openCustCount)}</b> open of <b>${fmtNum(custAll.length)}</b>`
+                  : `<b>${fmtNum(openCustCount)}</b> open balances across <b>${fmtNum(custAll.length)}</b> customer accounts`)
+                : 'Restricted by seat permissions',
               tone: over60CustCount > 0 ? 'amber' : 'emerald'
             });
           })()}
@@ -39887,7 +39950,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, customer, invoice #, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}${canTax ? chip('vat_reg', '11% VAT') : ''}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${canArBooks ? `${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}` : ''}${canTax ? chip('vat_reg', '11% VAT') : ''}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="arCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="customers" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior, FIFO Aging &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
@@ -39903,26 +39966,26 @@
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
             <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcRc.n)} Settlements</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
-              <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(wtcRc.settle, 2)}</b></span>
+              <span><small>Receipts (Cash + Disc)</small><b class="brass">${canArBooks ? fmtUSD(wtcRc.settle, 2) : 'Restricted'}</b></span>
               ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(wtcRc.vat, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(wtcRc.iva, 2)}</b></span>
               ` : `
-              <span><small>Cash Collected</small><b>${fmtUSD(wtcRc.cash, 2)}</b></span>
-              <span><small>Discounts</small><b>${fmtUSD(wtcRc.disc, 2)}</b></span>
+              <span><small>Cash Collected</small><b>${canArBooks ? fmtUSD(wtcRc.cash, 2) : 'Restricted'}</b></span>
+              <span><small>Discounts</small><b>${canArBooks ? fmtUSD(wtcRc.disc, 2) : 'Restricted'}</b></span>
               `}
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
             <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcRc.n)} Settlements</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
-              <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(bbcRc.settle, 2)}</b></span>
+              <span><small>Receipts (Cash + Disc)</small><b class="brass">${canArBooks ? fmtUSD(bbcRc.settle, 2) : 'Restricted'}</b></span>
               ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(bbcRc.vat, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(bbcRc.iva, 2)}</b></span>
               ` : `
-              <span><small>Cash Collected</small><b>${fmtUSD(bbcRc.cash, 2)}</b></span>
-              <span><small>Discounts</small><b>${fmtUSD(bbcRc.disc, 2)}</b></span>
+              <span><small>Cash Collected</small><b>${canArBooks ? fmtUSD(bbcRc.cash, 2) : 'Restricted'}</b></span>
+              <span><small>Discounts</small><b>${canArBooks ? fmtUSD(bbcRc.disc, 2) : 'Restricted'}</b></span>
               `}
             </div>
           </div>
@@ -39936,13 +39999,13 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
             </div>
             <div class="sales-recon-metrics">
-              <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(sumSettle, 2)}</b></span>
+              <span><small>Receipts (Cash + Disc)</small><b class="brass">${canArBooks ? fmtUSD(sumSettle, 2) : 'Restricted'}</b></span>
               ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(sumVatRec, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(sumIvaInv, 2)}</b></span>
               ` : `
-              <span><small>Cash Collected</small><b>${fmtUSD(sumAmt, 2)}</b></span>
-              <span><small>Discounts</small><b>${fmtUSD(sumDisc, 2)}</b></span>
+              <span><small>Cash Collected</small><b>${canArBooks ? fmtUSD(sumAmt, 2) : 'Restricted'}</b></span>
+              <span><small>Discounts</small><b>${canArBooks ? fmtUSD(sumDisc, 2) : 'Restricted'}</b></span>
               `}
             </div>
           </div>
@@ -39964,8 +40027,8 @@
                   <td>${coBadge(r.company)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
                   <td>${esc(r.method)} <span class="mu" style="font-size:10px">(${esc(receiptKind(r))})</span></td>
-                  <td class="r"><strong>${fmtUSD(r.amount, 2)}</strong></td>
-                  <td class="r">${r.discount ? fmtUSD(r.discount, 2) : '—'}</td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<strong>${fmtUSD(r.amount, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? (r.discount ? fmtUSD(r.discount, 2) : '—') : '<span class="muted">Restricted</span>'}</td>
                 </tr>
               `).join('') || emptyRow(7, periodEmptyMsg(SEED.records.receipts, 'customer receipts'))}
               ${showMoreRow('receipts', rcpts.length, 7)}
@@ -39973,10 +40036,10 @@
             <tfoot>
               <tr>
                 <td colspan="5">
-                  <b>TOTAL (${fmtNum(rcpts.length)} RECEIPTS · Settled ${fmtUSD(sumSettle, 2)})</b>
+                  <b>TOTAL (${fmtNum(rcpts.length)} RECEIPTS${canArBooks ? ` · Settled ${fmtUSD(sumSettle, 2)}` : ''})</b>
                 </td>
-                <td class="r"><b>${fmtUSD(sumAmt, 2)}</b></td>
-                <td class="r"><b>${sumDisc ? fmtUSD(sumDisc, 2) : '—'}</b></td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(sumAmt, 2)}</b>` : '<span class="muted">Restricted</span>'}</td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${sumDisc ? fmtUSD(sumDisc, 2) : '—'}</b>` : '<span class="muted">Restricted</span>'}</td>
               </tr>
             </tfoot>
           </table>
@@ -40009,17 +40072,17 @@
                 <tr class="rrow" data-rkey="customers" data-rid="${esc((customerInfo(c.Customer) || {}).id || c.Customer)}">
                   <td>${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}</td>
                   ${showTaxCols
-                    ? `<td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>`
-                    : `<td><span class="mono">${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' · ' + fmtUSDk(c.credit_limit) : ''}</span></td>`}
+                    ? `<td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>`
+                    : `<td><span class="mono">${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' · ' + fmtUSDk(c.credit_limit) : ''}</span></td>`}
                   <td class="r">${fmtNum(c.loads)}</td>
                   <td class="r">${fmtUSD(c.credit_sales_ttc != null ? c.credit_sales_ttc : c.sales_ttc, 0)}</td>
                   ${showTaxCols ? `<td class="r">${Number(c.sales_vat || 0) > 0 ? fmtUSD(c.sales_vat, 0) : '—'}</td>` : ''}
-                  <td class="r">${fmtUSD(c.ar_settled != null ? c.ar_settled : c.receipts, 0)}</td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? fmtUSD(c.ar_settled != null ? c.ar_settled : c.receipts, 0) : '<span class="muted">Restricted</span>'}</td>
                   ${showTaxCols ? `<td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 2) : '—'}</td>` : ''}
-                  <td class="r">${fmtUSD(c.ar_current, 0)}</td>
-                  <td class="r">${Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—'}</td>
-                  <td class="r">${Number(c.ar_60_plus || 0) > 0 ? `<span style="color:var(--crit)">${fmtUSD(c.ar_60_plus, 0)}</span>` : '—'}</td>
-                  <td class="r"${canTax ? ` data-ui-tip="${esc(`Ex-VAT Rem: ${fmtUSD(c.ar_rem_ex_vat != null ? c.ar_rem_ex_vat : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0)), 2)} · VAT Due: ${fmtUSD(c.vat_receivable || 0, 2)}`)}"` : ''}><strong>${fmtUSD(c.ar_balance, 2)}</strong></td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? fmtUSD(c.ar_current, 0) : '<span class="muted">Restricted</span>'}</td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? (Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—') : '<span class="muted">Restricted</span>'}</td>
+                  <td class="${canArBooks ? 'r' : ''}">${canArBooks ? (Number(c.ar_60_plus || 0) > 0 ? `<span style="color:var(--crit)">${fmtUSD(c.ar_60_plus, 0)}</span>` : '—') : '<span class="muted">Restricted</span>'}</td>
+                  <td class="${canArBooks ? 'r' : ''}"${(canTax && canArBooks) ? ` data-ui-tip="${esc(`Ex-VAT Rem: ${fmtUSD(c.ar_rem_ex_vat != null ? c.ar_rem_ex_vat : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0)), 2)} · VAT Due: ${fmtUSD(c.vat_receivable || 0, 2)}`)}"` : ''}>${canArBooks ? `<strong>${fmtUSD(c.ar_balance, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                   <td class="mono">${esc(fmtDateDMY(c.last_sale))}</td>
                 </tr>
               `).join('') || emptyRow(custCols, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
@@ -40031,12 +40094,12 @@
                 <td class="r"><b>${fmtNum(custs.reduce((a, c) => a + Number(c.loads || 0), 0))}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.sales_ttc || 0)), 0), 0)}</b></td>
                 ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_vat || 0), 0), 0)}</b></td>` : ''}
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_settled != null ? c.ar_settled : (c.receipts || 0)), 0), 0)}</b></td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_settled != null ? c.ar_settled : (c.receipts || 0)), 0), 0)}</b>` : '<span class="muted">Restricted</span>'}</td>
                 ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 2)}</b></td>` : ''}
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_60_plus || 0), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_balance || 0), 0), 2)}</b></td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b>` : '<span class="muted">Restricted</span>'}</td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b>` : '<span class="muted">Restricted</span>'}</td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_60_plus || 0), 0), 0)}</b>` : '<span class="muted">Restricted</span>'}</td>
+                <td class="${canArBooks ? 'r' : ''}">${canArBooks ? `<b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_balance || 0), 0), 2)}</b>` : '<span class="muted">Restricted</span>'}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -43017,6 +43080,7 @@
     hsp_pos: { view: 'hsp_pos', ind: 'Hospitality & Resorts', label: 'POS Terminal Shift Close' },
     hsp_memberships: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Membership Contract' },
     hsp_tariffs: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Resort Tariff Schedule' },
+    hsp_partners: { view: 'hsp_partners', ind: 'Hospitality & Resorts', label: 'Partner Splits & Shares' },
     hsp_stock: { view: 'hsp_stock', ind: 'Hospitality & Resorts', label: 'Commissary & Cellar Stock' },
     hsp_energy: { view: 'hsp_energy', ind: 'Hospitality & Resorts', label: 'Generator & Utility Log' },
     trd_sales: { view: 'trd_sales', ind: 'Automotive & Heavy Trading', label: 'Commercial Sales Invoice' },
@@ -43047,6 +43111,7 @@
     if (/^AGR-/i.test(pid)) return 'ins_agreements';
     if (/^TRF-/i.test(pid)) return 'hsp_tariffs';
     if (/^MEM-/i.test(pid)) return 'hsp_memberships';
+    if (/^HSP-JV-/i.test(pid) || viewKey === 'hsp_partners') return 'hsp_partners';
     if (/^STK-/i.test(pid)) return 'hsp_stock';
     if (/^(POS|Z)-/i.test(pid)) return 'hsp_pos';
     if (/^(REV|HSP-REV)-/i.test(pid)) return 'hsp_revenue';
@@ -43078,14 +43143,37 @@
     return 'ind_domain';
   }
 
-  function cleanDomainCellText(tdEl) {
+  function walkBlockSeparatedCellText(tdEl, rejectSelector) {
     if (!tdEl) return '';
-    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only, .ind-agr-pill')) {
-      return (tdEl.textContent || '').trim();
+    let out = '';
+    let lastBlock = null;
+    const walker = document.createTreeWalker(tdEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (rejectSelector && p && p.closest && p.closest(rejectSelector)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      const txt = String(n.nodeValue || '');
+      const p = n.parentElement;
+      const curBlock = (p && p.closest && p.closest('div, p, li')) || tdEl;
+      if (txt.trim()) {
+        if (out.trim() && lastBlock !== null && curBlock !== lastBlock && !/(?:·|\||-|\/)$/.test(out.trim())) {
+          out += ' · ';
+        }
+        lastBlock = curBlock;
+      }
+      out += txt;
     }
-    const clone = tdEl.cloneNode(true);
-    clone.querySelectorAll('.att-inline-badge, .sr-only, .ind-agr-pill').forEach(n => n.remove());
-    return (clone.textContent || '').trim();
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
+  function cleanDomainCellText(tdEl) {
+    return walkBlockSeparatedCellText(tdEl, '.att-inline-badge, .sr-only, .ind-agr-pill, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select');
   }
 
   // English text of a register cell (the translator keeps the original on each text node as __enText),
@@ -59116,8 +59204,8 @@
               </thead>
               <tbody>
                 ${shownPartners.length ? shownPartners.map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="hsp_partners" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_partners', r.id)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.category)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.start_date))} to ${esc(r.end_date)}</td>
@@ -63262,7 +63350,7 @@
             </thead>
             <tbody>
               ${filteredWo.length ? sliceRows('re_workorders', filteredWo).map(r => `
-                <tr class="rrow">
+                <tr class="rrow" data-ind-row-tbl="re_workorders" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong>${renderJobOtSnapRowPillHtml(allocRe.byJobMap.get('re_workorders:' + r.id), allocRe)}</td>
                   <td class="mono">${esc(r.date)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
@@ -63951,7 +64039,7 @@
               </thead>
               <tbody>
                 ${filteredItm.length ? sliceRows('ins_items', filteredItm).map(r => `
-                  <tr class="rrow">
+                  <tr class="rrow" data-ind-row-tbl="ins_items" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.policy_no)}</td>
                     <td style="display:none">${coBadge(r.company)}</td>
@@ -64024,7 +64112,7 @@
             </thead>
             <tbody>
               ${filteredPol.length ? sliceRows('ins_policies', filteredPol).map(r => `
-                <tr class="rrow">
+                <tr class="rrow" data-ind-row-tbl="ins_policies" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong><div class="muted" style="font-size:11px">${esc(r.type)}</div></td>
                   <td style="display:none">${coBadge(r.company)}</td>
                   <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.product)} · ${esc(r.producer)}</div></td>
@@ -67591,19 +67679,19 @@
   function isIndustryPbiItemRestricted(txt, lensFlags) {
     const f = lensFlags || {};
     const s = String(txt || '');
-    if (!f.canViewBooks && /pos\s+(?:till|shift)|\bcash\s*\(\$\)|card\s*(?:&|\/)\s*whish|drawer\s+variance|\bvariance\s*\(\$\)|rent\s+cash\s+collected|collected\s+buyer|open\s+buyer|open\s+balance|\bcollected\s*\(\$\)|open\s+ar|balance\s+due|unpaid\s+prem|\bsettled\s*\(\$\)|settled\s+to\b|security\s+deposit|tenant\s+deposit|deposit\s*\(\$\)|escrow|unallocated\s+adv|\badvance\s+pool|cash till|cash\s*&\s*bank|physical cash|fiduciary cash|consolidated cash|\bbank\b|\bar\b|receivable|payable|\bdebt\b|\bloan\b|arrears|credit facilit|trial balance|\bdebit\b|\bcredit\b|given to sisters|paid back by sisters|caisse|tr[ée]sorerie|deposits?\s+held|eliminat/i.test(s)) {
+    if (!f.canViewBooks && /pos\s+(?:till|shift)|\bcash\s*\(\$\)|card\s*(?:&|\/)\s*whish|drawer\s+variance|\bvariance\s*\(\$\)|rent\s+cash\s+collected|collected\s+buyer|open\s+buyer|open\s+balance|\bcollected\s*\(\$\)|open\s+ar|balance\s+due|unpaid\s+prem|\bsettled\s*\(\$\)|settled\s+to\b|security\s+deposit|tenant\s+deposit|deposit\s*\(\$\)|escrow|unallocated\s+adv|\badvance\s+pool|cash till|cash\s*&\s*bank|physical cash|fiduciary cash|consolidated cash|\bbank\b|\bar\b|receivable|payable|\bdebt\b|\bloan\b|arrears|credit facilit|trial balance|\bdebit\b|\bcredit\b|given to sisters|paid back by sisters|caisse|tr[ée]sorerie|deposits?\s+held|eliminat|\bprincipal\b|interest\s*rate|apr\s*\(?%\)?|\bapr[_\s]+pct\b|\brate\s+apr\b|accrued\s+int|total\s+due\s*\(\$\)|\bbalance\s*\(\$\)|(?:effective\s*)?fx\s*rate|exchange\s*rate|usd\s*amount|lbp\s*amount|total\s+usd\s+equivalent|amount\s*received|settlement\s*discount|\bpaid\s*\(\$\)|\bpaid[_\s]+usd\b|\bgross\s+receipt\b|\bgross[_\s]+usd\b|\ballocated(?:\s+inv(?:oices?)?|\s*\(\$\)|[_\s]+usd)\b|\badvances?\s*\(\$\)|\badvance[_\s]+usd\b|\bdso\b|\bpromise\s*(?:date|\(\$\)|[_\s]*usd)\b|\bcomp(?:limentary)?\s*\(\$\)|\bcomp[_\s]+usd\b|\bholding\s+share\b|\bpaid\s+drawings\b|\brepay\s*\(?%\)?|\brepay[_\s]+pct\b|\bnet\s+unpaid\b|\bgiven\s*(?:\(\$\)|[_\s]+usd)\b/i.test(s)) {
       return true;
     }
-    if (!f.canViewProfit && /gross\s+comm\b|broker\s+comm\b|retained\s+comm\b|expected\s+comm\b|statement\s+comm\b|carrier\s+stmt|base\s+comm\s*%|\bcomm\s*\(\$\)|appraisal|share\s+value|\bwac\b|food\s*cost|cellar\s+(?:closing|stock)|closing\s*\(\$\)|stock\s+movement|net\s+comm\b|client\s+disc\b|rate\s*%|implied\s+cap|cap\s+rate|landed\s+add|policy\s+issuance\s+fees|brokerage\s+sales\s+fees|margin|profit|\bnoi\b|net operating income|valuation|landed|\bfob\b|freight|customs|spare parts|stock value|fifo|commission|yield|brokerage income|client discount|cost\s*%|\bbom\b/i.test(s)) {
+    if (!f.canViewProfit && /gross\s+comm\b|broker\s+comm\b|retained\s+comm\b|expected\s+comm\b|statement\s+comm\b|carrier\s+stmt|base\s+comm\s*%|\bcomm\s*\(\$\)|appraisal|share\s+value|\bwac\b|food\s*cost|cellar\s+(?:closing|stock)|closing\s*\(\$\)|stock\s+movement|net\s+comm\b|client\s+disc\b|rate\s*%|implied\s+cap|cap\s+rate|landed\s+add|policy\s+issuance\s+fees|brokerage\s+sales\s+fees|margin|profit(?!\s+center\b)|\bnoi\b|net operating income|valuation|landed|\bfob\b|freight|customs|spare parts|stock value|fifo|commission|yield|brokerage income|client discount|cost\s*%|\bbom\b|\b(?:new[\s_]*bus|renewal|override|prior|base[\s_]*comm)[\s_]*(?:\(?%\)?|(?:bonus[\s_]*|rate[\s_]*)?pct\b)|\blive[\s_]+app[\s_]*(?:\(\$\)|usd)|\bparallel[\s_]+book[\s_]*(?:\(\$\)|usd)|\bgm\s*%/i.test(s)) {
       return true;
     }
-    if (!f.canViewExpenses && /purchases?\s+intake|\bpurchases?\s*\(\$\)|expense|overhead|opex|upkeep|fit-out|maint|supplier|\bap\b|settlement|payable|claimed|approved\s*\(\$\)|indemnit|deductible|loss\s+ratio|repair\s+cost|recharge|capex|outlay|markup/i.test(s)) {
+    if (!f.canViewExpenses && /purchases?\s+intake|\bpurchases?\s*\(\$\)|expense|overhead|opex|upkeep|fit-out|maint|supplier|\bap\b|settlement|payable|claimed|approved\s*\(\$\)|indemnit|deductible|loss\s+ratio|repair\s+cost|recharge|capex|outlay|markup|\bbudget\b|\bactual\s+spend\b|\bparts\s*\(\$\)|\blabor\s*\(\$\)|recovery\s*\/\s*billed|\bparts\s+cost\b|\bservice\s+labor\b|\bopening\s*\(\$\)|\bopening[_\s]+usd\b|\bpurchases?[_\s]+in\b|\bnet\s+transfers?\s*\(\$\)|\btransfers?[_\s]+net\b|\brecipe[\s_]*(?:bom|cost|usage)\b|\bclosing\s*\(\$\)|\bclosing[_\s]+usd\b|\bpur(?:chase)?\s*\/\s*use\s+ratio\b|\br3[_\s]+ratio\b|\bfood\s*cost\b|\bfob\b|\blanded\b|\bfreight\b|\bcustoms\s*(?:\(\$\)|[_\s]+usd)\b|\bclearance\s*(?:\(\$\)|[_\s]+usd)\b|\bwac\b|\bstock[\s_]+val(?:ue)?\b|\bunit[\s_]+cost\b|\bpaid[_\s]+by[_\s]+insurer\b/i.test(s)) {
       return true;
     }
-    if (!f.canViewTax && /\bvat\b|ex-vat|\bht\b|tax\s+seq|4427/i.test(s)) {
+    if (!f.canViewTax && /\bvat\b|ex-vat|\bht\b|tax\s+seq|4427|\bnet\s*\/\s*period\b|\bnet[_\s]+period[_\s]+usd\b|\b(?:net|base)\s+rent\b|\bbase[_\s]+usd\b|^net\s*\(\$\)$|\bprice[_\s]+ht\b/i.test(s)) {
       return true;
     }
-    if (!f.canViewPartners && /partner|shareholder|extended|\bowes\b|drawing|entitled share|distributable pool|\bjv\b/i.test(s)) {
+    if (!f.canViewPartners && /partner|shareholder|extended|\bowes\b|drawing|entitled share|distributable pool|\bjv\b|profit\s*share|distribution\s*amount|reconciliation\s*adj|net\s+total\s*distributed|\bgross\s+pool\b|\bsplit\s*\(?%\)?|\bshare\s*%|\bentitled\s*(?:\(\$\)|[_\s]*usd|share)\b|\bdrawn\s*(?:\(\$\)|[_\s]*usd)\b|\bdistributed\s*(?:\(\$\)|[_\s]*usd)\b|\bretained\s+reserve\b|\bholding\s+share\b|\bpaid\s+drawings\b/i.test(s)) {
       return true;
     }
     return false;
@@ -72016,8 +72104,19 @@
         const curHeaders = getDomainTableEnHeaders(tblEl);
         const curRawCells = tds.map(cleanDomainCellText);
         const projected = projectSavedDomainCellsToHeaders(saved, curHeaders, curRawCells);
+        const curLang = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+        const rowCo = tr.getAttribute('data-ind-row-co') || saved.company || '';
+        const domTblKey = tr.getAttribute('data-ind-row-tbl') || inferDomainTblKey(ind, STATE.view, primaryId);
         projected.forEach((val, idx) => {
-          if (tds[idx] && val != null && String(val) !== curRawCells[idx]) {
+          if (!tds[idx] || val == null) return;
+          if (idx > 0 && (
+            isRestrictedSharePlaceholder(curRawCells[idx], curLang)
+            || isRestrictedSharePlaceholder(tds[idx].textContent, curLang)
+            || isRecordShareFieldBlocked(domTblKey, curHeaders[idx], rowCo, undefined, val, null, { rbacOnly: true })
+          )) {
+            return;
+          }
+          if (String(val) !== curRawCells[idx]) {
             setDomainCellTextPreservingBadge(tds[idx], val);
           }
         });
@@ -77934,9 +78033,10 @@
         const co = hit.company || hit.entity || hit.fromCo || 'Bdeir Holding';
         const party = hit.insured || hit.client || hit.tenant || hit.customer || hit.supplier || hit.member || hit.partner || hit.lender || hit.carrier || hit.toCo || co;
         const amt = Number(hit.gwp_usd || hit.annual_ttc_usd || hit.ttc_usd || hit.pos_billed_ttc || hit.seasonal_rate_usd || hit.unit_net_usd || hit.contract_usd || hit.fob_usd || hit.price_usd || hit.claimed_usd || hit.usd || hit.principal_usd || hit.entitled_usd || 0);
-        const custKeys = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 8);
+        const custKeys = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 10);
         const headers = custKeys.map(k => k.replace(/_/g, ' ').toUpperCase());
-        const cells = custKeys.map((k, idx) => isIndustryPbiItemRestricted(headers[idx], lkFlags) ? 'Restricted' : String(hit[k] ?? ''));
+        const step1Tbl = domKey !== 'ind_domain' ? domKey : bucket;
+        const cells = custKeys.map((k, idx) => (isIndustryPbiItemRestricted(headers[idx], lkFlags) || isRecordShareFieldBlocked(step1Tbl, custKeys[idx], co, activeUser(), hit[k], hit, { rbacOnly: true })) ? 'Restricted' : String(hit[k] ?? ''));
         return {
           id: pid,
           bucket: domKey !== 'ind_domain' ? domKey : bucket,
@@ -78001,6 +78101,16 @@
           headers: ['Receipt / Inv #', 'Date', 'Client', 'Policy #', 'Carrier', 'Billed ($)', 'Collected ($)', 'Open AR ($)'],
           cells: [bill.id, bill.date, bill.client, bill.policy_no, bill.carrier, fmtUSD(bill.client_billed_4112_usd, 2), lkLens.books ? fmtUSD(bill.collected_usd, 2) : 'Restricted', lkLens.books ? fmtUSD(bill.open_ar_4112_usd, 2) : 'Restricted'],
           raw: bill
+        };
+      }
+      const agr = (ins.agreements || []).find(a => String(a.id || '').toUpperCase() === needle);
+      if (agr) {
+        return {
+          id: agr.id, bucket: 'ins_agreements', view: 'ins_agreements', parentView: 'ins_agreements', ind: 'Insurance & Brokerage', industry: 'Insurance & Brokerage', label: 'Carrier Commission Agreement', title: 'Carrier Commission Agreement',
+          company: 'Insurance Company', counterparty: agr.carrier, party: agr.carrier, summary: `${agr.carrier} · ${agr.line}`, amount: 0, status: agr.status, date: agr.start_date,
+          headers: ['Agreement ID', 'Carrier', 'Insurance Line', 'Effective From', 'Effective To', 'New Bus %', 'Renewal %', 'Override %', 'Prior %', 'Status'],
+          cells: [agr.id, agr.carrier, agr.line, agr.start_date, agr.end_date, lkLens.profit ? `${Number(agr.new_bus_pct).toFixed(1)}%` : 'Restricted', lkLens.profit ? `${Number(agr.renewal_pct).toFixed(1)}%` : 'Restricted', lkLens.profit ? `${Number(agr.override_bonus_pct).toFixed(1)}%` : 'Restricted', lkLens.profit ? `${Number(agr.prior_rate_pct).toFixed(1)}%` : 'Restricted', agr.status],
+          raw: agr
         };
       }
     }
@@ -89828,16 +89938,8 @@
     const domInspUser = activeUser();
     const domInspLens = seatLens(domInspUser);
     const domInspFlags = lensFlagsFromSeat(domInspUser);
-    const origCellsForSave = cells.slice();
-    const restrictedIdxSet = new Set();
-    headers.forEach((h, hi) => {
-      if (hi > 0 && isIndustryPbiItemRestricted(h, domInspFlags)) {
-        restrictedIdxSet.add(hi);
-        cells[hi] = 'Restricted';
-      }
-    });
-    const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
     const domainTblKey = opts.domainTblKey || (opts.trEl && opts.trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
+    const origCellsForSave = cells.slice();
     const initialRowCompany = String(
       opts.rowCompany
       || (opts.trEl && opts.trEl.getAttribute('data-ind-row-co'))
@@ -89846,6 +89948,16 @@
       || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '')
       || ''
     ).trim();
+    const restrictedIdxSet = new Set();
+    headers.forEach((h, hi) => {
+      const rawMasked = /^(?:Restricted|مقيد|Restreint)$/i.test(String(rawCells[hi] || '').trim());
+      const claimsSettledMasked = Boolean(domainTblKey === 'ins_claims' && !domInspFlags.canViewExpenses && /\bsettled\b/i.test(String(h || '')));
+      if (hi > 0 && (rawMasked || claimsSettledMasked || isIndustryPbiItemRestricted(h, domInspFlags) || isRecordShareFieldBlocked(domainTblKey, h, initialRowCompany, domInspUser, cells[hi], null, { rbacOnly: true }))) {
+        restrictedIdxSet.add(hi);
+        cells[hi] = 'Restricted';
+      }
+    });
+    const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
     const resolvedDomainChrono = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, initialRowCompany, editKey);
     const pickColCompany = () => {
       for (let hi = 0; hi < headers.length; hi++) {
@@ -89976,16 +90088,7 @@
     };
     const meta = stmtMap[ind] || stmtMap['Holding & Treasury'];
 
-    let panel = $('recordInspector');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'recordInspector';
-      panel.className = 'modal-backdrop';
-      panel.innerHTML = '<div class="modal-card inspector-card" role="dialog" aria-modal="true" aria-labelledby="inspectorTitle"><div class="modal-header"><div><span class="modal-eyebrow" id="inspectorEyebrow"></span><h2 id="inspectorTitle"></h2></div><button type="button" class="modal-close-btn" id="inspectorCloseBtn" aria-label="Close">✕</button></div><div class="modal-body" id="inspectorBody"></div></div>';
-      document.body.appendChild(panel);
-      wireBackdropDismiss(panel, closeRecordInspector);
-      $('inspectorCloseBtn').addEventListener('click', closeRecordInspector);
-    }
+    let panel = ensureRecordInspectorModal();
 
     const eyeEl = $('inspectorEyebrow');
     const titleEl = $('inspectorTitle');
@@ -90161,6 +90264,7 @@
     };
 
     if (bodyEl) {
+      bodyEl._activeTableContext = null;
       bodyEl.innerHTML = `
         <div id="industryDomainInspectorView" style="display:flex;flex-direction:column;gap:14px">
           <div class="pa-cmd-bar" style="margin-bottom:0">
@@ -90172,6 +90276,7 @@
             <div class="pa-cmd-actions">
               <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="indInspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
               <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="indInspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
+              <button type="button" class="pa-cmd-btn insp-share-summary-btn" id="inspShareSummaryBtn" data-insp-share-summary="1" data-ui-tip="Share or copy summary">${ic('copy')} <span class="insp-share-lbl">${isMobPhoneViewport() ? 'Share Summary' : 'Copy Summary'}</span></button>
             </div>
           </div>
           <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
@@ -91100,9 +91205,18 @@
           const tblEl = opts.trEl.closest('table');
           const curHdrs = getDomainTableEnHeaders(tblEl);
           const tds = Array.from(opts.trEl.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
-          const projected = projectSavedDomainCellsToHeaders(store[editKey], curHdrs, tds.map(cleanDomainCellText));
+          const curDomRaw = tds.map(cleanDomainCellText);
+          const projected = projectSavedDomainCellsToHeaders(store[editKey], curHdrs, curDomRaw);
           projected.forEach((val, idx) => {
-            if (tds[idx]) setDomainCellTextPreservingBadge(tds[idx], val);
+            if (!tds[idx]) return;
+            if (idx > 0 && (
+              restrictedIdxSet.has(idx)
+              || isRestrictedSharePlaceholder(curDomRaw[idx], 'en')
+              || isRecordShareFieldBlocked(domainTblKey, curHdrs[idx], rowCompany, domInspUser, val, null, { rbacOnly: true })
+            )) {
+              return;
+            }
+            setDomainCellTextPreservingBadge(tds[idx], val);
           });
         }
         applyIndustryDomRowEdits($('workspace'));
@@ -91715,6 +91829,7 @@
     const sumTtc = vatRows.reduce((a, r) => a + Number(r.total_ttc || (Number(r.net_amount || 0) + Number(r.vat_amount || 0))), 0);
     const activeCred = credBase.filter(c => !c.end_date || String(c.end_date) >= today).length;
     const sumLimit = credRows.reduce((a, c) => a + Number(c.credit_limit || 0), 0);
+    const canVatBooks = Boolean(seatLens().books);
 
     return `
       <div class="cockpit-banner has-insights">
@@ -91745,16 +91860,16 @@
             label: 'Active Credit Policies',
             badge: `${fmtNum(activeCred)} / ${fmtNum(credBase.length)} Active`,
             val: `${fmtNum(activeCred)} <small>Terms</small>`,
-            sub: `Authorized credit lines totaling <b>${fmtUSD(sumLimit, 0)}</b>`,
+            sub: canVatBooks ? `Authorized credit lines totaling <b>${fmtUSD(sumLimit, 0)}</b>` : 'Restricted by seat permissions',
             tone: 'steel'
           })}
           ${insightCard({
             label: 'Open AR vs Credit Limit',
-            badge: `DSO ${fmtNum(k.dso_days || 0, 0)}d`,
-            badgeCls: Number(k.ar_overdue || 0) > 0 ? 'amber' : 'emerald',
-            val: fmtUSD(k.ar_balance || 0, 0),
-            valCls: Number(k.ar_overdue || 0) > 0 ? 'amber' : 'emerald',
-            sub: `Overdue &gt;30d: <b>${fmtUSD(k.ar_overdue || 0, 0)}</b>`,
+            badge: canVatBooks ? `DSO ${fmtNum(k.dso_days || 0, 0)}d` : 'Restricted',
+            badgeCls: canVatBooks ? (Number(k.ar_overdue || 0) > 0 ? 'amber' : 'emerald') : 'info',
+            val: canVatBooks ? fmtUSD(k.ar_balance || 0, 0) : 'Restricted',
+            valCls: canVatBooks ? (Number(k.ar_overdue || 0) > 0 ? 'amber' : 'emerald') : '',
+            sub: canVatBooks ? `Overdue &gt;30d: <b>${fmtUSD(k.ar_overdue || 0, 0)}</b>` : 'Restricted by seat permissions',
             tone: Number(k.ar_overdue || 0) > 0 ? 'amber' : 'emerald'
           })}
         </div>
@@ -91829,7 +91944,7 @@
               <thead>
                 <tr>
                   ${th('credterm', 'Policy', 'name')}${th('credterm', 'Co.', 'company')}${th('credterm', 'Customer', 'customer')}
-                  ${th('credterm', 'Days', 'credit_days', 'r')}${th('credterm', 'Limit ($)', 'credit_limit', 'r')}${th('credterm', 'Start', 'start_date')}<th>Status</th>
+                  ${th('credterm', 'Days', 'credit_days', 'r')}${th('credterm', canVatBooks ? 'Limit ($)' : 'Limit', 'credit_limit', canVatBooks ? 'r' : '')}${th('credterm', 'Start', 'start_date')}<th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -91841,7 +91956,7 @@
                       <td>${coBadge(c.company)}</td>
                       <td>${c.customer ? relLink('customers', c.customer, c.customer, true) : '—'}</td>
                       <td class="r">${fmtNum(c.credit_days || 0)} d</td>
-                      <td class="r"><strong>${fmtUSD(c.credit_limit || 0, 0)}</strong></td>
+                      <td class="${canVatBooks ? 'r' : ''}">${canVatBooks ? `<strong>${fmtUSD(c.credit_limit || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                       <td class="mono">${esc(fmtDateDMY(c.start_date))}</td>
                       <td><span class="badge ${active ? 'badge-ok' : 'badge-warn'}">${active ? 'Active' : 'Ended'}</span></td>
                     </tr>
@@ -91852,7 +91967,7 @@
               <tfoot>
                 <tr>
                   <td colspan="4"><b>TOTAL (${fmtNum(credRows.length)} CREDIT POLICIES)</b></td>
-                  <td class="r"><b>${fmtUSD(sumLimit, 0)}</b></td>
+                  <td class="${canVatBooks ? 'r' : ''}">${canVatBooks ? `<b>${fmtUSD(sumLimit, 0)}</b>` : '<span class="muted">Restricted</span>'}</td>
                   <td colspan="2"></td>
                 </tr>
               </tfoot>
@@ -125416,20 +125531,31 @@
       liveTbl = candTables.find(tbl => {
         const card = tbl.closest('.panel-card, .panel');
         return card && typeof getDomainCardCanonicalTitle === 'function' && getDomainCardCanonicalTitle(card) === st.tableTitle;
-      }) || candTables[0] || null;
+      }) || null;
     }
     const tbody = liveTbl ? liveTbl.querySelector('tbody') : null;
     const siblings = tbody ? Array.from(tbody.children).filter(el => el.tagName === 'TR' && isEligibleMobPeekTr(el)) : [];
     if (!st.rid && !st.indRowId && st.primaryTitle && siblings.length > 0 && siblings.length <= 200) {
-      const matchedIdx = siblings.findIndex(r => {
+      const matches = [];
+      siblings.forEach((r, idx) => {
         const rCtx = buildMobRowContextFromTr(r, r);
         const rData = rCtx ? buildMobRowPeekData(rCtx) : null;
-        return Boolean(rData && rData.title === st.primaryTitle);
+        if (rData && rData.title === st.primaryTitle) {
+          matches.push({ idx, sig: (rData.tblMeta && rData.tblMeta.rowSig) || '' });
+        }
       });
-      if (matchedIdx >= 0) {
+      const sigPool = (st.rowSig && matches.length)
+        ? matches.filter(m => m.sig === st.rowSig)
+        : matches;
+      if (sigPool.length >= 1) {
+        const targetLast = Math.max(0, Number(st.lastIndex || 0));
+        let best = sigPool[0];
+        sigPool.forEach(m => {
+          if (Math.abs(m.idx - targetLast) < Math.abs(best.idx - targetLast)) best = m;
+        });
         return {
           siblings,
-          curIdx: matchedIdx,
+          curIdx: best.idx,
           rowVanished: false
         };
       }
@@ -125442,7 +125568,7 @@
     };
   }
 
-  function extractThEnText(th) {
+  function extractThLabelText(th, useEnOrigin = true) {
     if (!th) return '';
     let out = '';
     const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT, {
@@ -125456,28 +125582,17 @@
     });
     let n;
     while ((n = walker.nextNode())) {
-      out += (n.__enText !== undefined ? String(n.__enText) : String(n.nodeValue || ''));
+      out += ((useEnOrigin && n.__enText !== undefined) ? String(n.__enText) : String(n.nodeValue || ''));
     }
-    return out.replace(/[\s\u25B2\u25BC▲▼]+$/g, '').replace(/\s+/g, ' ').trim();
+    return out.replace(/[\s\u25B2\u25BC\u2195▲▼]+$/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractThEnText(th) {
+    return extractThLabelText(th, true);
   }
 
   function extractTdCellCleanText(td) {
-    if (!td) return '';
-    let out = '';
-    const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const p = node.parentElement;
-        if (p && p.closest && p.closest('button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    let n;
-    while ((n = walker.nextNode())) {
-      out += String(n.nodeValue || '');
-    }
-    return out.replace(/\s+/g, ' ').trim();
+    return walkBlockSeparatedCellText(td, 'button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select, .att-inline-badge, .ind-agr-pill');
   }
 
   function canMobPeekEditRrow(checkKey, row) {
@@ -125513,6 +125628,14 @@
     const hiddenSet = (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.getEffectiveHiddenCols === 'function')
       ? window.MFG_TABLE_COLS.getEffectiveHiddenCols(tbl)
       : new Set();
+    const curLang = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+    const peekUser = activeUser();
+    const peekRowObj = (ctx.kind === 'rrow' && ctx.crKey && ctx.rid) ? resolveInspectorRecord(ctx.crKey, ctx.rid) : null;
+    const peekPrimaryId = ctx.kind === 'indRow' ? String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || '').trim() : '';
+    const peekTblKey = ctx.kind === 'rrow'
+      ? String(ctx.crKey || '')
+      : String((trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || (ctx.inspectOpts && ctx.inspectOpts.domainTblKey) || inferDomainTblKey(getActiveIndustry(STATE.company), STATE.view, peekPrimaryId) || '');
+    const peekRowCo = String((peekRowObj && peekRowObj.company) || (trEl.getAttribute && (trEl.getAttribute('data-ind-row-co') || trEl.getAttribute('data-row-co'))) || (ctx.inspectOpts && ctx.inspectOpts.rowCompany) || '').trim();
     const tds = Array.from(trEl.children).filter(el => el.tagName === 'TD' || el.tagName === 'TH');
     let excessInlineHidden = Math.max(0, tds.reduce((s, el) => s + Math.max(1, Number(el.getAttribute('colspan') || 1)), 0) - headerSpecs.length);
     const fields = [];
@@ -125527,12 +125650,12 @@
       colCursor += span;
       const hSpec = headerSpecs[cIdx] || { enLabel: '', isCheckbox: false };
       if (hSpec.isCheckbox || td.hasAttribute('data-row-sel')) return;
-      if (td.classList.contains('col-mgr-hidden') || td.style.display === 'none' || hiddenSet.has(cIdx)) return;
+      if (td.classList.contains('tbl-col-hidden') || td.classList.contains('col-mgr-hidden') || td.style.display === 'none' || hiddenSet.has(cIdx)) return;
       try {
         if (window.getComputedStyle(td).display === 'none') return;
       } catch (_) {}
-      const rawText = extractTdCellCleanText(td);
-      const relLinks = [];
+      let rawText = extractTdCellCleanText(td);
+      let relLinks = [];
       if (td.querySelectorAll) {
         td.querySelectorAll('.rel-link[data-rel-key][data-rel-val]').forEach(el => {
           const rk = String(el.getAttribute('data-rel-key') || '').trim();
@@ -125540,6 +125663,11 @@
           const rt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
           if (rk && rv) relLinks.push({ key: rk, val: rv, text: rt || rv });
         });
+      }
+      if (cIdx > 0 && !isRestrictedSharePlaceholder(rawText, curLang)
+        && isRecordShareFieldBlocked(peekTblKey, hSpec.enLabel, peekRowCo, peekUser, rawText, peekRowObj, { rbacOnly: true })) {
+        rawText = 'Restricted';
+        relLinks = [];
       }
       fields.push({
         colIdx: cIdx,
@@ -125643,7 +125771,8 @@
         rid: ctx.kind === 'rrow' ? String(ctx.rid || '') : '',
         indRowTbl: ctx.kind === 'indRow' ? String((trEl.getAttribute && trEl.getAttribute('data-ind-row-tbl')) || '') : '',
         indRowId: String((trEl.getAttribute && trEl.getAttribute('data-ind-row-id')) || ''),
-        primaryTitle
+        primaryTitle,
+        rowSig: fields.slice(0, 3).map(f => String(f.text || '')).join('|')
       };
     })();
 
@@ -125660,28 +125789,585 @@
     };
   }
 
+  let _mobPeekFlashTimer = null;
+  let _mobPeekCopyBtnTimer = null;
+  let _shareSummaryInFlight = false;
+  let _shareSummaryGen = 0;
+
+  function clearShareCopyBtnFeedback() {
+    if (_mobPeekCopyBtnTimer) {
+      clearTimeout(_mobPeekCopyBtnTimer);
+      _mobPeekCopyBtnTimer = null;
+    }
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.mob-peek-share-btn.is-copied, .insp-share-summary-btn.is-copied').forEach(el => el.classList.remove('is-copied'));
+    }
+  }
+
+  function clearMobPeekRowHighlights(clearFlash = false) {
+    clearShareCopyBtnFeedback();
+    if (typeof document === 'undefined') return;
+    document.querySelectorAll('tr.is-mob-peek-current').forEach(el => el.classList.remove('is-mob-peek-current'));
+    if (clearFlash) {
+      if (_mobPeekFlashTimer) {
+        clearTimeout(_mobPeekFlashTimer);
+        _mobPeekFlashTimer = null;
+      }
+      document.querySelectorAll('tr.sn-panel-flash[data-mob-peek-flashed="1"]').forEach(el => {
+        el.classList.remove('sn-panel-flash');
+        el.removeAttribute('data-mob-peek-flashed');
+      });
+    }
+  }
+
+  function syncMobPeekCurrentRowHighlight(trEl) {
+    clearMobPeekRowHighlights(false);
+    if (!trEl || !trEl.isConnected || !trEl.classList) return;
+    if (trEl.classList.contains('sn-panel-flash')) {
+      trEl.classList.remove('sn-panel-flash');
+      trEl.removeAttribute('data-mob-peek-flashed');
+    }
+    trEl.classList.add('is-mob-peek-current');
+  }
+
+  const SYNTH_INSPECTOR_SKIP_RE = /^(?:entity[_\s]table|record[_\s]origin|snapshot[_\s]date|coa[_\s]status|currency[_\s]basis)$/i;
+
+  function cleanOutwardShareTokens(raw, opts = {}) {
+    let s = String(raw == null ? '' : raw);
+    if (opts.stripLockTail) s = s.replace(/🔒.*$/g, '');
+    if (opts.isLabel) {
+      s = s.replace(/\s*\(Primary Key\)\s*/gi, ' ').replace(/[✎↗🔒*]/g, '');
+    } else {
+      s = s.replace(/[✎↗]/g, '');
+    }
+    s = s
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF]/g, '')
+      .replace(/\bZ-Read\b/gi, 'Till Close')
+      .replace(/\bTotal\s+TTC\b/gi, 'Total')
+      .replace(/\bSales\s+TTC\b/gi, 'Sales')
+      .replace(/\s*\(\s*TTC\s*\)/gi, '')
+      .replace(/\bTTC\b/gi, '')
+      .replace(/\(\s*\)/g, '');
+    s = opts.preserveNewlines ? s.replace(/[ \t]{2,}/g, ' ') : s.replace(/\s+/g, ' ');
+    return s.trim();
+  }
+
+  function cleanRecordShareLabel(rawLbl, langCode, sanitizeOnly = false) {
+    let s = String(rawLbl == null ? '' : rawLbl)
+      .replace(/\s*\(Primary Key\)\s*/gi, ' ')
+      .replace(/[✎↗🔒*]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!s) return '';
+    if (!sanitizeOnly && langCode && langCode !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+      let tr = '';
+      try { tr = window.MFG_I18N.t(s, langCode) || ''; } catch (_) {}
+      if (!tr || tr === s) {
+        const cleanEn = cleanOutwardShareTokens(s, { isLabel: true });
+        if (cleanEn && cleanEn !== s) {
+          try { tr = window.MFG_I18N.t(cleanEn, langCode) || cleanEn; } catch (_) {}
+        }
+      }
+      if (tr) s = tr;
+    }
+    return cleanOutwardShareTokens(sanitizeOutwardReceiptText(s), { isLabel: true });
+  }
+
+  function isRestrictedSharePlaceholder(rawVal, langCode) {
+    const s = String(rawVal == null ? '' : rawVal).trim();
+    if (!s) return false;
+    if (/^Restricted\b|^مقيد$|^Restreint$/i.test(s)) return true;
+    if (langCode && langCode !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+      try {
+        const tr = String(window.MFG_I18N.t('Restricted', langCode) || '').trim();
+        if (tr && norm(s) === norm(tr)) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function cleanRecordShareValue(rawVal, langCode) {
+    const pre = String(rawVal == null ? '' : rawVal).replace(/🔒.*$/g, '');
+    const s = cleanOutwardShareTokens(sanitizeOutwardReceiptText(pre), { isLabel: false, stripLockTail: false });
+    if (!s || s === '-' || /^\+\s*Set\b/i.test(s) || isRestrictedSharePlaceholder(s, langCode)) return '';
+    return s;
+  }
+
+  function isRecordShareFieldBlocked(tableKey, keyOrLabel, rowCo, u, rawVal, rowObj, opts = {}) {
+    const usr = u === undefined ? activeUser() : u;
+    const lens = seatLens(usr);
+    const tk = String(tableKey || '').trim().toLowerCase();
+    const kl = String(keyOrLabel || '').trim();
+    if (!kl) return true;
+    if (!opts.rbacOnly) {
+      if (SYNTH_INSPECTOR_SKIP_RE.test(kl)) return true;
+      if (tk !== 'gl_accounts' && (
+        /(?:^|[^a-z0-9])(?:output_vat_account|input_vat_account|revenue_account|purchase_account|gl_code|gl_account|receivable_account|payable_account|salary_account|asset_account|depreciation_account)(?:$|[^a-z0-9])/i.test(kl)
+        || /(?:^|[^a-z0-9])gl\s*(?:code|account|tie)(?:$|[^a-z0-9])/i.test(kl)
+      )) {
+        return true;
+      }
+    }
+    if (isMaskedFieldAccessBlocked(tk, kl, usr)) return true;
+    if (typeof isIndustryPbiItemRestricted === 'function' && isIndustryPbiItemRestricted(kl, lensFlagsFromSeat(usr))) return true;
+    if (!lens.books && (
+      /(?:^|[^a-z0-9])(?:cash_till|ar_balance|ar_current|ar_1_10|ar_11_30|ar_31_60|ar_settled|ap_balance|ar_overdue|ar_1_60|ar_60_plus|soa_legs|debit|credit|credit_limit|credit\s+limit|closing_till|open_ar|open_ap|open\s+ar|open\s+ap|aged\s+ar|receivable\s+balance|payable\s+balance|bank\s+balance|open\s+fifo\s+ar(?:\s+balance)?|receipts\s+collected|net\s+3-leg\s+ap(?:\s+balance)?|settlements\s+disbursed|amount\s+received|settlement\s+discount|principal(?:\s+amount)?|interest\s+rate|apr\s*\(?%\)?|\bapr[_\s]+pct|accrued\s+int|total\s+due|settled\s+amount|usd\s+amount|lbp\s+amount|total\s+usd\s+equivalent|effective\s+fx\s+rate|fx\s+rate|exchange\s+rate)(?:$|[^a-z0-9])/i.test(kl)
+      || (tk === 'customers' && /^receipts$/i.test(kl))
+      || (tk === 'customers' && /^(?:credit[\s_]*terms|iva\s*&\s*term)$/i.test(kl) && rawVal != null && /\$\s*-?\d/.test(String(rawVal)))
+      || (tk === 'hld_loans' && /\b(?:apr|principal|balance|accrued|total\s*due|interest)\b/i.test(kl))
+      || (tk === 'hsp_partners' && /(?:\bholding[\s_]*share\b|\bpartner[\s_]*share\b|\bpaid[\s_]*drawings\b|\bopen[\s_]*payable\b)/i.test(kl))
+      || (/^(?:receipts|settlements|loans|loan_settlements|conversions|external_movements|trd_receipts|re_receipts|hsp_memberships|credit_terms)$/i.test(tk) && /^(?:amount|discount|principal|interest_rate|settled_amount|usd_amount|lbp_amount|exchange_rate|fx_rate|usd_delta|lbp_delta|balance|debit|credit|credit_limit|ar_balance|paid|paid_usd|balance_usd|gross_usd|allocated_inv_usd|unallocated_adv_usd|deposit_gl4196_usd|settled_usd|gross_ar_usd|advance_usd|dso_days|promise_date|promise_usd|cash_usd|card_whish_usd|comp_usd|variance_usd)$/i.test(kl))
+    )) {
+      return true;
+    }
+    const isPrCommRow = Boolean(tk === 'price_rules' && rowObj && ((typeof isCommRule === 'function' && isCommRule(rowObj)) || /^commission$/i.test(String(rowObj.rule_type || '').trim())));
+    if (!lens.profit && (
+      /(?:^|[^a-z0-9])(?:operating_profit|gross_margin|ebitda|net_income|profit(?!\s+center\b)|margin)(?:$|[^a-z0-9])/i.test(kl)
+      || /\bcomm(?:ission)?[\s._]*rate\b/i.test(kl)
+      || (tk === 'price_rules' && /\bcomm(?:ission)?\b/i.test(kl) && (/\$\s*-?\d/.test(String(rawVal || '')) || /\b(?:rate|price|amount|payout)\b/i.test(kl)))
+      || (isPrCommRow && (/^(?:unit_price|price|indiff_price|trans_indiff_price|delivered_indiff_price|rate|amount|adj1|adj2|total1|total2)$/i.test(kl) || /(?:^|[^a-z0-9])(?:unit[\s_]*price|indiff|rate|amount|price|adj|total)(?:$|[^a-z0-9])/i.test(kl) || (rawVal != null && /\$\s*-?\d/.test(String(rawVal)))))
+      || (tk === 'ins_agreements' && /(?:new[\s_]*bus|renewal|override|prior|pct)/i.test(kl))
+    )) {
+      return true;
+    }
+    if (!lens.tax && (
+      /^(?:vat|vat_amount|vat_invoice|output_vat|input_vat|tax_seq|net_amount|net_period_usd|net_usd|base_usd|ht_usd|price_ht)$/i.test(kl)
+      || /(?:^|[^a-z0-9])(?:vat\s*(?:amount|11%|invoice|\$|status|reg\.?)|output\s*vat|input\s*vat|tax\s*invoice|tax\s*seq|ex-vat|net\s*\/\s*period|(?:net|base)\s+rent)(?:$|[^a-z0-9])|^net\s*\(\$\)$/i.test(kl)
+    )) {
+      return true;
+    }
+    if (!lens.partnerSplits && (
+      /(?:^|[^a-z0-9])(?:jv_share|jv_partner|partner_split|owner_share|pool_share|partner\s+share|profit\s+share|distribution\s+amount|reconciliation\s+adj|net\s+total\s+distributed|entitled\s+share|distributable\s+pool|gross\s+pool)(?:$|[^a-z0-9])/i.test(kl)
+      || (/^(?:jv_partnerships|jv_distributions)$/i.test(tk) && /^(?:percentage|share_pct|jv_share|amount|difference|total)$/i.test(kl))
+      || (tk === 'hld_partners' && /\b(?:split|pct|entitled|drawn|open)\b/i.test(kl))
+      || (tk === 'hsp_partners' && /(?:\bgross[\s_]*pool\b|partner[\s_]*allocation|\bholding[\s_]*share\b|\bpartner[\s_]*share\b|\bpaid[\s_]*drawings\b|\bopen[\s_]*payable\b)/i.test(kl))
+    )) {
+      return true;
+    }
+    const isExpCostTbl = /^(?:raw_purchases|expenses|expense_items|settlements|recurring_expenses|repair_items|warehouse_movements|items|equipment_repairs|equipment_oil_logs|part_movements)$/i.test(tk);
+    const isPrSupRow = Boolean(tk === 'price_rules' && (!rowObj || /^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(rowObj.rule_type || '').trim())));
+    if (!lens.expenses && tk === 'ins_claims' && /\b(?:claimed|deductible|approved|settled)\b/i.test(kl)) {
+      return true;
+    }
+    if (!lens.expenses && (tk === 're_workorders' || tk === 're_maintenance') && /\b(?:budget|actual)\b/i.test(kl)) {
+      return true;
+    }
+    if (!lens.expenses && tk === 'trd_warranty' && /\b(?:parts|labor|recovery|billed)\b/i.test(kl)) {
+      return true;
+    }
+    if (!lens.expenses && tk === 'hsp_stock' && /\b(?:opening|purchases?|transfers?|recipe|closing|ratio|r3_ratio|opening_usd|purchases_in_usd|transfers_net_usd|recipe_usage_usd|closing_usd)\b/i.test(kl)) {
+      return true;
+    }
+    if (!lens.expenses && tk === 'trd_landed' && /\b(?:freight|customs|clearance|insurance|landed|unallocated)\b/i.test(kl)) {
+      return true;
+    }
+    if (!lens.expenses && (
+      isExpCostTbl
+      || isPrSupRow
+      || /(?:^|[^a-z0-9])(?:unit\s*cost|raw\s*cost|haulage\s*cost|trans(?:port)?\s*(?:cost|rate)|landed\s*cost|supplier\s*ap|site\s*owner\s*ap|hauler\s*ap|expense\s*amount|line\s*total|stock\s*value|avg\s*cost|stock\s*cost|outside\s*parts?\s*cost|outside\s*labor\s*cost|total\s*repair\s*cost|service\s*cost|new\s*part\s*cost|rebuild\s*cost|sale\s*proceeds|default\s*unit\s*cost|default\s*\/\s*avg\s*cost)(?:$|[^a-z0-9])/i.test(kl)
+    )) {
+      if (
+        /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|new_part_cost|repair_cost|sale_proceeds|default_cost|avgUnitCost|onHandValue|unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|floor_price|trans_price|indiff_price|trans_indiff_price|delivered_indiff_price)$/i.test(kl)
+        || /(?:^|[^a-z0-9])(?:unit\s*cost|raw\s*cost|haulage\s*cost|trans(?:port)?\s*(?:cost|rate|unit\s*price)|landed\s*cost|supplier\s*ap|site\s*owner\s*ap|hauler\s*ap|line\s*total|total\s*ttc|stock\s*value|avg\s*cost|stock\s*cost|outside\s*parts?\s*cost|outside\s*labor\s*cost|total\s*repair\s*cost|service\s*cost|new\s*part\s*cost|rebuild\s*cost|sale\s*proceeds|default\s*(?:unit|\/\s*avg)\s*cost|material\s*(?:unit\s*)?price|transport\s*price|ex-works\s*floor|tier.*adj|value\s*\(\$\)|cost|price|amount|usd|lbp)(?:$|[^a-z0-9])/i.test(kl)
+        || /^(?:total(?:\s*\(\$\))?|total[\s_]*ttc(?:\s*\(\$\))?|value(?:\s*\(\$\))?)$/i.test(kl)
+      ) {
+        return true;
+      }
+      if ((isExpCostTbl || isPrSupRow) && rawVal != null && /\$\s*-?\d/.test(String(rawVal))) {
+        return true;
+      }
+    }
+    const isFuelField = /^(?:fuel_price_ref|fuel_steps|fuel_base_price)$/i.test(kl)
+      || /(?:^|[^a-z0-9])(?:diesel\s+price\s+used|diesel\s+steps\s+above\s+agreement|diesel\s+price\s+at\s+signing|fuel\s+price\s+ref)(?:$|[^a-z0-9])/i.test(kl);
+    if ((tk === 'sales_tickets' || tk === 'price_rules' || !tk) && isFuelField) {
+      if (!(rowCo && canSeeFuelEconomics() && isFuelCompanyAllowed(rowCo))) {
+        return true;
+      }
+    }
+    if (!lens.payrollDollars) {
+      if (
+        /(?:^|[^a-z0-9])(?:salary_usd|salary_lbp|salary_pending|salary_status|monthly_salary|monthly_salary_usd|base_salary|monthly_compensation|awaiting_salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|daily_usd|deduction|absent_reimb|ot_pay|late_ded|abs_ded|payroll_impact|net_earned|pay_rate|base_pay|rem_payment|total_paid|total_earned|cash_usd|bank_usd|unmatched_usd|rate_usd|extra_usd|extra_lbp|overtime_usd|deduction_usd|net_usd|wage_usd|salary|wage)(?:$|[^a-z0-9])/i.test(kl)
+      ) {
+        return true;
+      }
+      if (
+        rawVal != null
+        && /^(?:employments|salaries|staff_members|attendance|freelance_entries|logistics_allowances|overtime_rates)$/i.test(tk)
+        && /(?:^|[^a-z0-9])type(?:$|[^a-z0-9])|^Contract Type$/i.test(kl) === false
+        && /(?:\$\s*\d|\bUSD\b|\bLBP\b|\bL\.L\.?(?![a-z0-9])|(?:\b|\d\s*)LL\b|(?:base|monthly)\s*salary|reimbursement|package)/i.test(String(rawVal))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function translateShareSegment(seg, langCode) {
+    return cleanRecordShareLabel(seg, langCode);
+  }
+
+  function formatRecordShareSummaryText(spec) {
+    const s = spec || {};
+    const langCode = s.langCode || 'en';
+    const rawParts = Array.isArray(s.eyebrowParts)
+      ? s.eyebrowParts
+      : String(s.eyebrow || '').split(/\s*\u00B7\s*|\s*·\s*/);
+    const trParts = [];
+    rawParts.forEach(part => {
+      const cleaned = translateShareSegment(part, langCode);
+      if (cleaned && !trParts.some(x => norm(x) === norm(cleaned))) trParts.push(cleaned);
+    });
+    const eyebrow = trParts.join(' · ');
+    const title = cleanRecordShareValue(s.title || '', langCode);
+    const seenLbls = new Set();
+    const lines = [];
+    const header = eyebrow ? `ISABI · ${eyebrow}` : 'ISABI';
+    lines.push(header);
+    if (title && norm(title) !== norm(eyebrow)) {
+      lines.push(title);
+    }
+    let count = 0;
+    const pairs = Array.isArray(s.pairs) ? s.pairs : [];
+    for (let i = 0; i < pairs.length && count < 16; i++) {
+      const p = pairs[i];
+      if (!p) continue;
+      if (count === 15 && !p.mustKeep && pairs.slice(i + 1).some(x => x && x.mustKeep && cleanRecordShareValue(x.value, langCode))) continue;
+      const lbl = p.preTranslatedLabel ? cleanRecordShareLabel(p.preTranslatedLabel, langCode, true) : cleanRecordShareLabel(p.label, langCode);
+      const val = cleanRecordShareValue(p.value, langCode);
+      if (!lbl || !val) continue;
+      const lk = norm(lbl);
+      if (seenLbls.has(lk)) continue;
+      seenLbls.add(lk);
+      lines.push(`- ${lbl}: ${val}`);
+      count += 1;
+    }
+    return cleanOutwardShareTokens(sanitizeOutwardReceiptText(lines.join('\n')), { preserveNewlines: true });
+  }
+
+  function buildMobRowPeekShareSummary() {
+    const st = _mobRowPeekState;
+    if (!st || !st.data) return '';
+    const d = st.data;
+    const u = activeUser();
+    const langCode = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+    const tableKey = st.crKey || st.indRowTbl || '';
+    const rowObj = (st.crKey && st.rid) ? resolveInspectorRecord(st.crKey, st.rid) : null;
+    const ruleTypeField = (!rowObj && tableKey === 'price_rules')
+      ? (d.fields || []).find(f => f && /rule.?type|type/i.test(f.label || ''))
+      : null;
+    const rowCtx = rowObj || (ruleTypeField ? { rule_type: ruleTypeField.text } : null);
+    const coField = (!rowObj || !rowObj.company)
+      ? (d.fields || []).find(f => f && /^(?:co\.?|company|entity|bu)$/i.test(String(f.label || '').trim()))
+      : null;
+    const rowCo = (rowObj && rowObj.company)
+      || (st.trEl && st.trEl.getAttribute && (st.trEl.getAttribute('data-ind-row-co') || st.trEl.getAttribute('data-row-co')))
+      || (coField && coField.text && coField.text !== '-' ? coField.text : '')
+      || '';
+    const pairs = [];
+    (d.fields || []).forEach(f => {
+      if (!f || !f.label) return;
+      if (isRecordShareFieldBlocked(tableKey, f.label, rowCo, u, f.text, rowCtx)) return;
+      pairs.push({ label: f.label, value: f.text });
+    });
+    return formatRecordShareSummaryText({
+      eyebrow: d.eyebrow || st.tableTitle || '',
+      title: d.title || st.primaryTitle || '',
+      pairs,
+      langCode
+    });
+  }
+
+  function buildRecordInspectorShareSummary() {
+    const ctx = STATE && STATE.activeInspectorCtx;
+    const panel = $('recordInspector');
+    const bodyEl = $('inspectorBody');
+    if (!ctx || !panel || panel.hidden) return '';
+    const u = activeUser();
+    const lens = seatLens(u);
+    const langCode = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+    const pairs = [];
+    let eyebrowParts = [];
+    let title = '';
+
+    if (ctx.mode === 'domain') {
+      eyebrowParts = ctx.ind ? [ctx.ind, ctx.tableTitle || ''] : [ctx.tableTitle || 'Record Summary'];
+      title = ($('inspectorTitle') && $('inspectorTitle').textContent) || ctx.primaryId || '';
+      const modForm = $('indDomainModifyForm');
+      if (modForm) {
+        const chStart = $('indInspChronoStartInp');
+        const chEnd = $('indInspChronoEndInp');
+        if (chStart && chStart.value && !isRecordShareFieldBlocked(ctx.domainTblKey, 'Effective Start Date', ctx.rowCompany, u, chStart.value)) {
+          pairs.push({ label: 'Effective Start Date', value: chStart.value });
+        }
+        if (chEnd && chEnd.value && !isRecordShareFieldBlocked(ctx.domainTblKey, 'Effective End Date', ctx.rowCompany, u, chEnd.value)) {
+          pairs.push({ label: 'Effective End Date', value: chEnd.value });
+        }
+      }
+      const hdrs = Array.isArray(ctx.headers) ? ctx.headers : [];
+      const cells = Array.isArray(ctx.cells) ? ctx.cells : [];
+      hdrs.forEach((h, idx) => {
+        const hdr = String(h || '').trim();
+        if (!hdr) return;
+        const inp = modForm ? modForm.querySelector(`.ind-domain-edit-input[data-ind-edit-idx="${idx}"]`) : null;
+        if (inp && inp.hasAttribute('data-restricted-col')) return;
+        const val = inp ? inp.value : cells[idx];
+        if (isRecordShareFieldBlocked(ctx.domainTblKey, hdr, ctx.rowCompany, u, val)) return;
+        pairs.push({ label: hdr, value: val });
+      });
+    } else if (ctx.mode === 'wb') {
+      eyebrowParts = [ctx.company || 'WTC', ctx.tableTitle || 'Weighbridge Book Audit'];
+      title = ($('inspectorTitle') && $('inspectorTitle').textContent) || (ctx.wbItem && ctx.wbItem.serialLabel) || String(ctx.id || '');
+      if (bodyEl) {
+        bodyEl.querySelectorAll('#inspCockpit .pa-rec-kcard').forEach(card => {
+          const lblEl = card.querySelector('.pa-rec-kcard-lbl');
+          const lbl = lblEl?.textContent?.trim() || '';
+          const enLbl = (lblEl && lblEl.getAttribute('data-en-label')) ? lblEl.getAttribute('data-en-label').trim() : lbl;
+          const val = card.querySelector('.pa-rec-kcard-val')?.textContent?.trim() || '';
+          const tag = card.querySelector('.pa-rec-kcard-tag')?.textContent?.trim() || '';
+          if (!lbl || /RESTRICTED|^مقيد$|^Restreint$/i.test(tag) || isRestrictedSharePlaceholder(tag, langCode) || isRestrictedSharePlaceholder(val, langCode)) return;
+          if (isRecordShareFieldBlocked('wb_audit', enLbl || lbl, ctx.company, u, val)) return;
+          if (enLbl && enLbl !== lbl && isRecordShareFieldBlocked('wb_audit', lbl, ctx.company, u, val)) return;
+          pairs.push({ label: enLbl || lbl, preTranslatedLabel: lbl !== (enLbl || lbl) ? lbl : '', value: val });
+        });
+      }
+    } else {
+      const tc = bodyEl && bodyEl._activeTableContext;
+      const row = ctx.row || resolveInspectorRecord(ctx.key, ctx.id);
+      const rowCo = (tc && tc.company) || (row && row.company) || ctx.company || '';
+      if (tc && Array.isArray(tc.cells) && tc.cells.length) {
+        eyebrowParts = [rowCo || COMPANY_BU_MATCH[STATE.company] || 'ISABI', tc.tableTitle || ctx.tableTitle || 'Record Details'];
+        title = tc.subjectTitle || ($('inspectorTitle') && $('inspectorTitle').textContent) || String(ctx.id || '');
+        tc.cells.forEach(c => {
+          if (!c || !c.label) return;
+          if (isRecordShareFieldBlocked(ctx.key, c.rbacKey || c.label, rowCo, u, c.value, row)) return;
+          if (c.rbacKey && c.rbacKey !== c.label && isRecordShareFieldBlocked(ctx.key, c.label, rowCo, u, c.value, row)) return;
+          pairs.push({ label: c.rbacKey || c.label, preTranslatedLabel: c.rbacKey && c.label !== c.rbacKey ? c.label : '', value: c.value });
+        });
+      } else if (row) {
+        eyebrowParts = [rowCo || 'ISABI', INSPECT_LABELS[ctx.key] || ctx.tableTitle || ctx.key];
+        title = ($('inspectorTitle') && $('inspectorTitle').textContent) || row.name || row.ticket_no || row.invoice_no || row.staff || String(ctx.id || '');
+        const isTaxedSaleRow = Boolean(ctx.key === 'sales_tickets' && (
+          Number(row.vat || 0) !== 0
+          || (row.total_ttc != null && row.total != null && Math.abs(Number(row.total_ttc) - Number(row.total)) > 0.005)
+        ));
+        const sections = buildInspectorSections(ctx.key, row) || [];
+        const tmp = document.createElement('div');
+        tmp.innerHTML = sections.map(sec => sec.html || '').join('');
+        const rawCells = [];
+        tmp.querySelectorAll('.inspector-cell').forEach(cell => {
+          if (cell.classList.contains('is-empty-cell')) return;
+          const fKey = cell.getAttribute('data-insp-field') || cell.getAttribute('data-edit-field') || '';
+          if (ctx.key === 'sales_tickets' && fKey === 'total' && (row.total_ttc != null || (!lens.tax && isTaxedSaleRow))) return;
+          if (!lens.tax && isTaxedSaleRow && /^(?:price|trans_price|unit_price|trans_unit_price|net_amount|vat|vat_amount|vat_invoice)$/i.test(fKey)) return;
+          const smEl = cell.querySelector('small');
+          const bEl = cell.querySelector('b');
+          if (!smEl || !bEl) return;
+          const smClone = smEl.cloneNode(true);
+          smClone.querySelectorAll('.insp-cell-edit-ico').forEach(n => n.remove());
+          const bClone = bEl.cloneNode(true);
+          bClone.querySelectorAll('.rel-arr').forEach(n => n.remove());
+          const enLbl = smClone.textContent.trim();
+          const enVal = bClone.textContent.trim();
+          if (
+            (fKey === 'name' && (!title || norm(enVal) === norm(title)))
+            || (fKey === 'company' && rowCo && norm(enVal) === norm(rowCo))
+            || fKey === 'source'
+            || (fKey === 'voided' && /^(?:no|false)$/i.test(enVal))
+            || (fKey === 'overtime' && /^(?:no|false)$/i.test(enVal))
+            || (fKey === 'rep_date' && row.date && norm(enVal) === norm(fmtDateDMY(row.date)))
+          ) return;
+          if (isRecordShareFieldBlocked(ctx.key, fKey || enLbl, rowCo, u, enVal, row)) return;
+          if (isRecordShareFieldBlocked(ctx.key, enLbl, rowCo, u, enVal, row)) return;
+          rawCells.push({ cell, fKey, enLbl, enVal });
+        });
+        if (langCode !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+          try { window.MFG_I18N.translateDom(tmp); } catch (_) {}
+        }
+        rawCells.forEach(item => {
+          const bEl = item.cell.querySelector('b');
+          let dispVal = item.enVal;
+          if (langCode !== 'en' && bEl && !bEl.querySelector('.rel-link')) {
+            const bClone2 = bEl.cloneNode(true);
+            bClone2.querySelectorAll('.rel-arr').forEach(n => n.remove());
+            const tVal = bClone2.textContent.trim();
+            if (tVal) dispVal = tVal;
+          }
+          if (isRestrictedSharePlaceholder(dispVal, langCode)) return;
+          const isMustKeepTtc = Boolean(!lens.tax && isTaxedSaleRow && item.fKey === 'total_ttc');
+          pairs.push({ label: item.enLbl, value: dispVal, _fKey: item.fKey, mustKeep: isMustKeepTtc });
+        });
+        if (!lens.tax && isTaxedSaleRow && !pairs.some(p => p && (p._fKey === 'total_ttc' || /^total(?:\s*\(\$\))?$/i.test(cleanRecordShareLabel(p.label, 'en'))))) {
+          const ttcFallback = row.total_ttc != null ? Number(row.total_ttc) : (Number(row.total || 0) + Number(row.vat || 0));
+          pairs.push({ label: 'Total', value: fmtUSD(round2(ttcFallback), 2), _fKey: 'total_ttc', mustKeep: true });
+        }
+        if (ctx.key === 'customers' || ctx.key === 'suppliers') {
+          const ck = buildInspectorCockpit(ctx.key, row);
+          (ck && Array.isArray(ck.cards) ? ck.cards : []).forEach(c => {
+            if (!c || !c.lbl || /RESTRICTED|^مقيد$|^Restreint$/i.test(c.tag || '') || isRestrictedSharePlaceholder(c.val, langCode)) return;
+            if (isRecordShareFieldBlocked(ctx.key, c.lbl, rowCo, u, c.val, row)) return;
+            pairs.push({ label: c.lbl, value: c.val });
+          });
+        }
+      }
+    }
+
+    return formatRecordShareSummaryText({ eyebrowParts, title, pairs, langCode });
+  }
+
+  async function triggerRecordSummaryShare(summaryText, btnEl) {
+    const clean = String(summaryText || '').trim();
+    if (!clean) return { ok: false, method: 'none', text: '' };
+    if (!STATE.authed || STATE.kioskLocked) return { ok: false, aborted: true, method: 'none', text: '' };
+    if (_shareSummaryInFlight) return { ok: false, busy: true, method: 'none', text: clean };
+    const startEpoch = _authSessionEpoch;
+    const startUserId = (() => {
+      try { const usr = activeUser(); return usr ? String(usr.id || usr.email || '') : ''; } catch (_) { return ''; }
+    })();
+    const isStillActiveSession = () => Boolean(
+      STATE.authed
+      && !STATE.kioskLocked
+      && _authSessionEpoch === startEpoch
+      && (!startUserId || (() => { try { const usr = activeUser(); return Boolean(usr && String(usr.id || usr.email || '') === startUserId); } catch (_) { return false; } })())
+    );
+    const langCode = (window.MFG_I18N && window.MFG_I18N.getLang) ? window.MFG_I18N.getLang() : 'en';
+    const useNativeShare = Boolean(
+      isMobPhoneViewport()
+      && typeof navigator !== 'undefined'
+      && typeof navigator.share === 'function'
+      && (!navigator.webdriver || window.__ALLOW_WEBDRIVER_SHARE_TEST)
+      && !window.__MFG_FORCE_CLIPBOARD_SHARE
+    );
+    const myGen = ++_shareSummaryGen;
+    _shareSummaryInFlight = true;
+    try {
+      if (useNativeShare) {
+        try {
+          await navigator.share({ text: clean });
+          if (!isStillActiveSession()) return { ok: false, aborted: true, method: 'share', text: '' };
+          window.__LAST_RECORD_SUMMARY_TEXT = clean;
+          return { ok: true, method: 'share', text: clean };
+        } catch (err) {
+          if (!isStillActiveSession()) return { ok: false, aborted: true, method: 'share', text: '' };
+          if (err && (err.name === 'AbortError' || err.name === 'InvalidStateError')) {
+            return { ok: false, aborted: true, method: 'share', text: clean };
+          }
+        }
+      }
+      if (!isStillActiveSession()) return { ok: false, aborted: true, method: 'clipboard', copied: false, text: '' };
+      let copied = false;
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(clean);
+          copied = true;
+        }
+      } catch (_) {
+        copied = false;
+      }
+      if (!isStillActiveSession()) return { ok: false, aborted: true, method: 'clipboard', copied: false, text: '' };
+      if (!copied && typeof document !== 'undefined' && document.body) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = clean;
+          ta.setAttribute('readonly', 'readonly');
+          ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+          document.body.appendChild(ta);
+          ta.focus({ preventScroll: true });
+          ta.select();
+          copied = Boolean(document.execCommand && document.execCommand('copy'));
+          ta.remove();
+        } catch (_) {
+          copied = false;
+        }
+      }
+      if (!isStillActiveSession()) return { ok: false, aborted: true, method: 'clipboard', copied: false, text: '' };
+      if (!copied) {
+        window.__LAST_RECORD_SUMMARY_TEXT = '';
+        const failMsg = (langCode !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+          ? (window.MFG_I18N.t('Could not copy summary', langCode) || 'Could not copy summary')
+          : 'Could not copy summary';
+        toast(failMsg, 'err');
+        return { ok: false, method: 'clipboard', copied: false, text: clean };
+      }
+      window.__LAST_RECORD_SUMMARY_TEXT = clean;
+      if (btnEl && btnEl.isConnected && btnEl.classList) {
+        clearShareCopyBtnFeedback();
+        btnEl.classList.add('is-copied');
+        _mobPeekCopyBtnTimer = setTimeout(() => {
+          _mobPeekCopyBtnTimer = null;
+          if (btnEl.isConnected) btnEl.classList.remove('is-copied');
+        }, 1400);
+      }
+      const toastMsg = (langCode !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+        ? (window.MFG_I18N.t('Summary copied to clipboard', langCode) || 'Summary copied to clipboard')
+        : 'Summary copied to clipboard';
+      toast(toastMsg, 'ok');
+      return { ok: true, method: 'clipboard', copied: true, text: clean };
+    } finally {
+      if (_shareSummaryGen === myGen) _shareSummaryInFlight = false;
+    }
+  }
+
   function closeMobRowPeekSheet(opts = {}) {
     const bd = $('mobRowPeekBackdrop');
-    const lastFocus = _mobRowPeekState && _mobRowPeekState.lastFocus;
+    const st = _mobRowPeekState;
+    const isPurge = Boolean(opts && opts.purgeDom);
+    const shouldRestoreFocus = !opts || opts.restoreFocus !== false;
+    const resolved = (st && !isPurge) ? resolveLiveMobPeekState() : null;
+    const landedTr = (st && st.trEl && st.trEl.isConnected)
+      ? st.trEl
+      : (resolved && !resolved.rowVanished && resolved.curIdx >= 0 ? resolved.siblings[resolved.curIdx] : null);
+    const lastFocus = st && st.lastFocus;
     _mobRowPeekState = null;
+    const shareBtn = $('mobPeekShareBtn');
     const editBtn = $('mobPeekEditBtn');
     const inspBtn = $('mobPeekInspectBtn');
     const prevBtn = $('mobPeekPrevBtn');
     const nextBtn = $('mobPeekNextBtn');
+    if (shareBtn) shareBtn.onclick = null;
     if (editBtn) editBtn.onclick = null;
     if (inspBtn) inspBtn.onclick = null;
     if (prevBtn) prevBtn.onclick = null;
     if (nextBtn) nextBtn.onclick = null;
+    clearMobPeekRowHighlights(isPurge);
     if (bd) {
-      if (opts && opts.purgeDom) {
+      if (isPurge) {
         if (bd.parentNode) bd.parentNode.removeChild(bd);
       } else {
         bd.classList.remove('open');
         bd.hidden = true;
       }
     }
-    if ((!opts || opts.restoreFocus !== false) && lastFocus && lastFocus.isConnected && typeof lastFocus.focus === 'function') {
-      try { lastFocus.focus({ preventScroll: true }); } catch (_) {}
+    if (!isPurge && shouldRestoreFocus) {
+      if (landedTr && landedTr.isConnected) {
+        if (_mobPeekFlashTimer) {
+          clearTimeout(_mobPeekFlashTimer);
+          _mobPeekFlashTimer = null;
+        }
+        document.querySelectorAll('tr.sn-panel-flash[data-mob-peek-flashed="1"]').forEach(el => {
+          el.classList.remove('sn-panel-flash');
+          el.removeAttribute('data-mob-peek-flashed');
+        });
+        landedTr.classList.remove('sn-panel-flash');
+        void landedTr.offsetWidth;
+        landedTr.classList.add('sn-panel-flash');
+        landedTr.setAttribute('data-mob-peek-flashed', '1');
+        _mobPeekFlashTimer = setTimeout(() => {
+          _mobPeekFlashTimer = null;
+          if (landedTr.isConnected) {
+            landedTr.classList.remove('sn-panel-flash');
+            landedTr.removeAttribute('data-mob-peek-flashed');
+          }
+        }, 1200);
+        if (st && st.stepped) {
+          if (!landedTr.hasAttribute('tabindex')) landedTr.setAttribute('tabindex', '-1');
+          try { landedTr.focus({ preventScroll: true }); } catch (_) {}
+          return;
+        }
+      }
+      if (lastFocus && lastFocus.isConnected && typeof lastFocus.focus === 'function') {
+        try { lastFocus.focus({ preventScroll: true }); } catch (_) {}
+      }
     }
   }
 
@@ -125703,6 +126389,7 @@
               <h2 class="mob-peek-title" id="mobPeekTitle" data-no-i18n="1"></h2>
             </div>
             <div class="mob-peek-hdr-acts">
+              <button type="button" class="btn btn-outline-bar btn-sm mob-peek-share-btn" id="mobPeekShareBtn" aria-label="Share or copy summary" data-ui-tip="Share or copy summary">${ic('send_msg')}<span class="mob-peek-share-lbl">Share Summary</span></button>
               <button type="button" class="btn btn-outline-bar btn-sm" id="mobPeekEditBtn" hidden>Edit</button>
               <button type="button" class="btn btn-primary btn-sm" id="mobPeekInspectBtn">360° Inspector</button>
               <button type="button" class="modal-close-btn" id="mobPeekCloseBtn" aria-label="Close">✕</button>
@@ -125788,6 +126475,7 @@
 
     const eyeEl = $('mobPeekEyebrow');
     const titleEl = $('mobPeekTitle');
+    const shareBtn = $('mobPeekShareBtn');
     const editBtn = $('mobPeekEditBtn');
     const inspBtn = $('mobPeekInspectBtn');
     const navBar = $('mobPeekNavBar');
@@ -125798,6 +126486,10 @@
     const bodyEl = $('mobPeekBody');
     if (eyeEl) eyeEl.textContent = data.eyebrow || 'Record Summary';
     if (titleEl) titleEl.textContent = data.title || 'Record Peek';
+    if (shareBtn) {
+      shareBtn.classList.remove('is-copied');
+      shareBtn.onclick = () => triggerRecordSummaryShare(buildMobRowPeekShareSummary(), shareBtn);
+    }
     if (editBtn) {
       editBtn.hidden = !data.canEdit;
       editBtn.onclick = data.canEdit && data.onEdit ? data.onEdit : null;
@@ -125832,7 +126524,7 @@
 
     if (fieldsEl) {
       fieldsEl.innerHTML = data.fields.map((f, idx) => {
-        let valHtml = `<span data-no-i18n="1">${esc(f.text)}</span>`;
+        let valHtml = f.text === 'Restricted' ? '<span>Restricted</span>' : `<span data-no-i18n="1">${esc(f.text)}</span>`;
         if (f.relLinks && f.relLinks.length === 1 && norm(f.relLinks[0].text) === norm(f.text)) {
           const rl = f.relLinks[0];
           valHtml = `<button type="button" class="mob-peek-rel-btn" data-peek-rel-idx="${idx}" data-peek-rel-sub="0" data-no-i18n="1">${esc(f.text)}</button>`;
@@ -125858,6 +126550,7 @@
     if (bodyEl) bodyEl.scrollTop = 0;
 
     const prevLastFocus = isStep && _mobRowPeekState ? _mobRowPeekState.lastFocus : null;
+    const prevStepped = isStep && _mobRowPeekState ? Boolean(_mobRowPeekState.stepped) : false;
     const meta = data.tblMeta || {};
     _mobRowPeekState = {
       data,
@@ -125871,9 +126564,12 @@
       indRowTbl: meta.indRowTbl || '',
       indRowId: meta.indRowId || '',
       primaryTitle: meta.primaryTitle || '',
+      rowSig: meta.rowSig || '',
       lastIndex: curIdx >= 0 ? curIdx : 0,
+      stepped: Boolean(isStep || prevStepped),
       lastFocus: prevLastFocus || ((document.activeElement && document.activeElement !== document.body) ? document.activeElement : (data.triggerEl || null))
     };
+    syncMobPeekCurrentRowHighlight(trEl);
     bd.hidden = false;
     bd.classList.add('open');
 
@@ -126095,17 +126791,21 @@
       const eq = equipInfo(row.truck);
       const ct = creditTermsForCustomer(row.customer);
       const lp = listPrice(row.product);
+      const isTaxedSale = Boolean(Number(row.vat || 0) !== 0 || (row.total_ttc != null && row.total != null && Math.abs(Number(row.total_ttc) - Number(row.total)) > 0.005));
+      const trkTxt = eq
+        ? `${eq.ownership || 'Truck'}: ${eq.name}${eq.capacity ? ' (' + fmtNum(eq.capacity, 0) + ' m³)' : ''}${row.driver || eq.default_driver ? ' · ' + (row.driver || eq.default_driver) : ''}`
+        : `Truck: ${row.truck || row.transport_by || '—'}${row.driver ? ' · ' + row.driver : ''}`;
+      const totTxt = `Load Total: ${fmtNum(row.qty, 2)} ${row.uom || 'm³'} = ${fmtUSD(row.total_ttc != null ? row.total_ttc : row.total, 2)} USD`;
+      const crTxt = (ct && bLens.books) ? `Credit Terms: ${ct.credit_days || 30} days (Limit ${fmtUSD(ct.credit_limit || 0, 0)})` : `Payment: ${row.method || 'Credit'}`;
+      if (!bLens.tax && isTaxedSale) {
+        return { tone: 'info', text: `Sale Type: ${row.sale_type || 'Delivery'}  |  ${trkTxt}  |  ${totTxt}  |  ${crTxt}` };
+      }
       const ruleTxt = pr
         ? `${pr.rule_type || 'Sales Agreement'}: ${fmtUSD(pr.unit_price, 2)}/${row.uom || pr.unit || 'm³'}`
         : (lp != null ? `List Price Benchmark: ${fmtUSD(lp, 2)}/${row.uom || 'm³'} (no active customer rule)` : `Spot Ticket Price: ${fmtUSD(row.unit_price, 2)}/${row.uom || 'm³'}`);
       const trTxt = row.sale_type === 'Delivery'
         ? `Transport: ${fmtUSD(row.trans_unit_price || (pr && pr.trans_unit_price) || 0, 2)}/${row.uom || 'm³'} (${fmtUSD(row.trans_price, 2)})`
         : 'Pick-up (Material Only · $0.00 Transport)';
-      const trkTxt = eq
-        ? `${eq.ownership || 'Truck'}: ${eq.name}${eq.capacity ? ' (' + fmtNum(eq.capacity, 0) + ' m³)' : ''}${row.driver || eq.default_driver ? ' · ' + (row.driver || eq.default_driver) : ''}`
-        : `Truck: ${row.truck || row.transport_by || '—'}${row.driver ? ' · ' + row.driver : ''}`;
-      const totTxt = `Load Total: ${fmtNum(row.qty, 2)} ${row.uom || 'm³'} = ${fmtUSD(row.total_ttc != null ? row.total_ttc : row.total, 2)} USD`;
-      const crTxt = ct ? `Credit Terms: ${ct.credit_days || 30} days (Limit ${fmtUSD(ct.credit_limit || 0, 0)})` : `Payment: ${row.method || 'Credit'}`;
       return { tone: pr ? 'info' : 'warn', text: `Pricing: ${ruleTxt}  |  ${trTxt}  |  ${trkTxt}  |  ${totTxt}  |  ${crTxt}` };
     }
     if (key === 'raw_purchases') {
@@ -126172,22 +126872,25 @@
       const ci = customerInfo(row.name || row.Customer) || {};
       const ct = creditTermsForCustomer(row.name || row.Customer);
       const rulesCnt = activeRulesCountFor('customer', row.name || row.Customer);
-      const canBooksInsp = seatLens().books;
+      const canBooksInsp = bLens.books;
+      const vatPart = bLens.tax ? `  |  VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT Registered' : 'Non-VAT'}` : '';
+      const crBanner = ct ? (canBooksInsp ? `${ct.credit_days} days · Limit ${fmtUSD(ct.credit_limit, 0)}` : `${ct.credit_days} days`) : 'Standard Account';
       return {
         tone: (canBooksInsp && Number(ci.ar_60_plus || 0) > 0) ? 'warn' : 'info',
         text: canBooksInsp
-          ? `Customer 360° Ledger: Open FIFO AR Balance ${fmtUSD(ci.ar_balance || 0, 2)} (Overdue 60+d: ${fmtUSD(ci.ar_60_plus || 0, 0)})  |  Active Price Agreements: ${rulesCnt}  |  Credit Policy: ${ct ? ct.credit_days + ' days · Limit ' + fmtUSD(ct.credit_limit, 0) : 'Standard Account'}  |  VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT Registered' : 'Non-VAT'}`
-          : `Customer 360° Profile: ${row.name || row.Customer}  |  Active Price Agreements: ${rulesCnt}  |  Credit Policy: ${ct ? ct.credit_days + ' days · Limit ' + fmtUSD(ct.credit_limit, 0) : 'Standard Account'}  |  VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT Registered' : 'Non-VAT'}`
+          ? `Customer 360° Ledger: Open FIFO AR Balance ${fmtUSD(ci.ar_balance || 0, 2)} (Overdue 60+d: ${fmtUSD(ci.ar_60_plus || 0, 0)})  |  Active Price Agreements: ${rulesCnt}  |  Credit Policy: ${crBanner}${vatPart}`
+          : `Customer 360° Profile: ${row.name || row.Customer}  |  Active Price Agreements: ${rulesCnt}  |  Credit Policy: ${crBanner}${vatPart}`
       };
     }
     if (key === 'suppliers') {
       const si = supplierInfo(row.name || row.Supplier) || {};
       const rulesCnt = activeRulesCountFor('supplier', row.name || row.Supplier);
-      const canBooksInsp = seatLens().books;
+      const canBooksInsp = bLens.books;
+      const legBreak = bLens.expenses ? ` (Material Leg: ${fmtUSD(si.ap_material || 0, 0)} · Haulage Leg: ${fmtUSD(si.ap_haulage || 0, 0)} · Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)})` : '';
       return {
         tone: 'info',
         text: canBooksInsp
-          ? `Supplier & Hauler 3-Leg AP Ledger: Net AP Balance ${fmtUSD(si.ap_balance || 0, 2)} (Material Leg: ${fmtUSD(si.ap_material || 0, 0)} · Haulage Leg: ${fmtUSD(si.ap_haulage || 0, 0)} · Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)})  |  Active Agreements: ${rulesCnt}  |  Registered Trucks: ${fmtNum(row.trucks_count || (row.trucks || []).length || 0)}`
+          ? `Supplier & Hauler 3-Leg AP Ledger: Net AP Balance ${fmtUSD(si.ap_balance || 0, 2)}${legBreak}  |  Active Agreements: ${rulesCnt}  |  Registered Trucks: ${fmtNum(row.trucks_count || (row.trucks || []).length || 0)}`
           : `Supplier & Hauler 360° Profile: ${row.name || row.Supplier}  |  Active Agreements: ${rulesCnt}  |  Registered Trucks: ${fmtNum(row.trucks_count || (row.trucks || []).length || 0)}`
       };
     }
@@ -126280,7 +126983,7 @@
       }
       const isBundledSt = isSupplierDeliveredSite(row);
       const rulesCnt = activeRulesCountFor('site', row.name);
-      const supplyTxt = row.is_jv
+      const supplyTxt = (row.is_jv && bLens.partnerSplits)
         ? `Active JV (Partner: ${row.jv_partner || window.MFG_NAMEBOOK.jvPartner()} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
         : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Standard Region Site (Separate Haulage)');
       const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
@@ -126307,16 +127010,28 @@
       const avgC = whMeta && whMeta.avgUnitCost > 0 ? whMeta.avgUnitCost : Number(row.default_cost || 0);
       return {
         tone: 'info',
-        text: `Universal Item & Part Master: ${itName} (${row.category || 'Spare Parts'} · Locked Unit: ${row.uom || 'Piece'})  |  Warehouse On-Hand: ${fmtNum(onHand, 2)} ${row.uom || 'Piece'}  |  Avg / Default Unit Cost: ${fmtUSD(avgC, 2)}  |  Default Shelf: ${row.default_location || 'WTC Main Warehouse'}`
+        text: `Universal Item & Part Master: ${itName} (${row.category || 'Spare Parts'} · Locked Unit: ${row.uom || 'Piece'})  |  Warehouse On-Hand: ${fmtNum(onHand, 2)} ${row.uom || 'Piece'}${bLens.expenses ? `  |  Avg / Default Unit Cost: ${fmtUSD(avgC, 2)}` : ''}  |  Default Shelf: ${row.default_location || 'WTC Main Warehouse'}`
       };
     }
     if (key === 'gl_accounts') {
+      if (!bLens.books) {
+        return {
+          tone: 'info',
+          text: `GL ${row.code} · ${row.name} (${row.pcg_class || 'Lebanese PCG'}): Restricted by seat permissions`
+        };
+      }
       return {
         tone: 'info',
         text: `GL ${row.code} · ${row.name} (${row.pcg_class || 'Lebanese PCG'})  |  Automation: ${row.automation_mode || 'Direct Formula'} (${row.source_module || 'Double-Entry Engine'})  |  Debit Rule: ${row.debit_rule || '-'}  |  Credit Rule: ${row.credit_rule || '-'}`
       };
     }
     if (key === 'conversions') {
+      if (!bLens.books) {
+        return {
+          tone: 'info',
+          text: `FX Conversion (${row.type || 'Currency Exchange'} · ${row.company || 'WTC'}): Restricted by seat permissions`
+        };
+      }
       const d = convSignedDeltas(row);
       return {
         tone: 'info',
@@ -126459,6 +127174,12 @@
       }
     }
     if (key === 'expenses') {
+      if (!bLens.expenses) {
+        return {
+          tone: 'info',
+          text: `Expense Voucher ${row.name || ('#' + row.id)}: ${row.category || 'Operating'}${row.subcategory ? ' · ' + row.subcategory : ''}  |  Restricted by seat permissions`
+        };
+      }
       const isPend = isPendingPriceExpense(row);
       const isDiesel = isBulkDieselExpense(row);
       const q = Number(row.qty || 1);
@@ -126491,7 +127212,7 @@
       }
       const whRec = getWarehouseIndex(row.company || 'WTC').byKey[norm(mCls.item)] || null;
       const shelfTxt = whRec
-        ? `Live Warehouse Shelf: ${fmtNum(whRec.onHandQty || 0, dec)} ${mUom} (${fmtUSD(whRec.onHandValue || 0, 2)})`
+        ? `Live Warehouse Shelf: ${fmtNum(whRec.onHandQty || 0, dec)} ${mUom}${bLens.expenses ? ` (${fmtUSD(whRec.onHandValue || 0, 2)})` : ''}`
         : `Domain: ${mCls.category} (${mUom})`;
       return {
         tone: qty > 0 ? 'warn' : 'info',
@@ -126537,38 +127258,50 @@
       const eq = equipInfo(row.truck);
       const ttc = Number(row.total_ttc != null ? row.total_ttc : row.total || 0);
       const tons = ticketTons(row);
+      const stLens = seatLens();
+      const isTaxedSale = Boolean(Number(row.vat || 0) !== 0 || (row.total_ttc != null && row.total != null && Math.abs(Number(row.total_ttc) - Number(row.total)) > 0.005));
 
       return {
         bu,
         title,
         pill: fmtUSD(ttc, 2),
         cards: [
-          {
-            lbl: 'UNIT PRICE VS AGREEMENT',
-            tag: diff < -0.01 ? 'BELOW RULE' : (pr ? 'ON RULE' : 'LIST / SPOT'),
-            tone: diff < -0.01 ? 'warn' : 'good',
-            val: `${fmtUSD(actual, 2)} / ${row.uom || 'm³'}`,
-            sub1: pr ? `Agreed: ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
-            sub2: `Material: ${fmtUSD(row.price, 2)} · VAT 11%: ${fmtUSD(row.vat, 2)}`,
-            pct: Math.min(100, Math.max(20, bench > 0 ? Math.round((actual / bench) * 85) : 80))
-          },
+          (!stLens.tax && isTaxedSale)
+            ? {
+              lbl: 'PRIMARY RECORD VALUE',
+              tag: String(row.sale_type || 'SALE').toUpperCase(),
+              tone: 'good',
+              val: fmtUSD(ttc, 2),
+              sub1: `Qty: ${fmtNum(row.qty, 2)} ${row.uom || 'm³'} (${fmtNum(tons, 1)} tons)`,
+              sub2: `Payment: ${row.method || 'Credit'}`,
+              pct: 80
+            }
+            : {
+              lbl: 'UNIT PRICE VS AGREEMENT',
+              tag: diff < -0.01 ? 'BELOW RULE' : (pr ? 'ON RULE' : 'LIST / SPOT'),
+              tone: diff < -0.01 ? 'warn' : 'good',
+              val: `${fmtUSD(actual, 2)} / ${row.uom || 'm³'}`,
+              sub1: pr ? `Agreed: ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
+              sub2: stLens.tax ? `Material: ${fmtUSD(row.price, 2)} · VAT 11%: ${fmtUSD(row.vat, 2)}` : `Material: ${fmtUSD(row.price, 2)} · ${row.method || 'Credit'}`,
+              pct: Math.min(100, Math.max(20, bench > 0 ? Math.round((actual / bench) * 85) : 80))
+            },
           {
             lbl: 'CUSTOMER AR & AGING',
-            tag: !seatLens().books ? 'RESTRICTED' : (ar60 > 0 ? 'OVER 60D' : 'CURRENT'),
-            tone: !seatLens().books ? 'info' : (ar60 > 0 ? 'crit' : 'good'),
-            val: seatLens().books ? fmtUSD(arBal, 0) : 'Restricted',
-            sub1: seatLens().books ? `0–30d: ${fmtUSD((ci.ar_current || 0) + (ci.ar_1_10 || 0) + (ci.ar_11_30 || 0), 0)} · 31–60d: ${fmtUSD(ci.ar_31_60 || 0, 0)}` : 'Requires Cash Flow & Ledger access',
-            sub2: seatLens().books ? `60+d Overdue: ${fmtUSD(ar60, 0)} · Loads: ${fmtNum(ci.loads || 0)}` : `Loads: ${fmtNum(ci.loads || 0)}`,
-            pct: seatLens().books ? Math.min(100, arBal > 0 ? Math.max(15, Math.round((ar60 / arBal) * 100)) : 20) : 0
+            tag: !stLens.books ? 'RESTRICTED' : (ar60 > 0 ? 'OVER 60D' : 'CURRENT'),
+            tone: !stLens.books ? 'info' : (ar60 > 0 ? 'crit' : 'good'),
+            val: stLens.books ? fmtUSD(arBal, 0) : 'Restricted',
+            sub1: stLens.books ? `0–30d: ${fmtUSD((ci.ar_current || 0) + (ci.ar_1_10 || 0) + (ci.ar_11_30 || 0), 0)} · 31–60d: ${fmtUSD(ci.ar_31_60 || 0, 0)}` : 'Requires Cash Flow & Ledger access',
+            sub2: stLens.books ? `60+d Overdue: ${fmtUSD(ar60, 0)} · Loads: ${fmtNum(ci.loads || 0)}` : `Loads: ${fmtNum(ci.loads || 0)}`,
+            pct: stLens.books ? Math.min(100, arBal > 0 ? Math.max(15, Math.round((ar60 / arBal) * 100)) : 20) : 0
           },
           {
             lbl: 'CREDIT LIMIT EXPOSURE',
-            tag: !seatLens().books ? 'CREDIT POLICY' : (credLim > 0 && arBal > credLim ? 'OVER LIMIT' : 'WITHIN LIMIT'),
-            tone: !seatLens().books ? 'info' : (credLim > 0 && arBal > credLim ? 'warn' : 'good'),
+            tag: !stLens.books ? 'CREDIT POLICY' : (credLim > 0 && arBal > credLim ? 'OVER LIMIT' : 'WITHIN LIMIT'),
+            tone: !stLens.books ? 'info' : (credLim > 0 && arBal > credLim ? 'warn' : 'good'),
             val: `${ fmtNum(row.qty, 2)} ${row.uom || 'm³'}`,
-            sub1: `Ticket TTC: ${fmtUSD(ttc, 2)} (${fmtNum(tons, 1)} tons)`,
-            sub2: `Credit Terms: ${ct ? ct.credit_days + 'd · Limit ' + fmtUSD(credLim, 0) : row.method || 'Credit'}`,
-            pct: seatLens().books && credLim > 0 ? Math.min(100, Math.max(15, Math.round((arBal / credLim) * 100))) : 35
+            sub1: `${stLens.tax ? 'Ticket TTC' : 'Ticket Total'}: ${fmtUSD(ttc, 2)} (${fmtNum(tons, 1)} tons)`,
+            sub2: (ct && stLens.books) ? `Credit Terms: ${ct.credit_days + 'd · Limit ' + fmtUSD(credLim, 0)}` : `Payment: ${row.method || 'Credit'}`,
+            pct: stLens.books && credLim > 0 ? Math.min(100, Math.max(15, Math.round((arBal / credLim) * 100))) : 35
           },
           {
             lbl: 'TRUCK & TELEMETRY',
@@ -126617,18 +127350,20 @@
       const rcpts = (SEED.records.receipts || []).filter(r => norm(r.customer) === norm(name));
       const rules = (SEED.records.price_rules || []).filter(r => norm(r.customer) === norm(name));
       const arBal = Number(ci.ar_balance != null ? ci.ar_balance : 0);
-      const canBooksCustInsp = seatLens().books;
+      const custCkLens = seatLens();
+      const canBooksCustInsp = custCkLens.books;
+      const vatSubCust = custCkLens.tax ? `VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT' : 'Standard'}` : `Method: ${row.method || ci.method || 'Credit'}`;
       return {
         bu: singleBuCockpit || 'ALL BUs', title, pill: canBooksCustInsp ? `AR ${fmtUSD(arBal, 2)}` : `${fmtNum(ci.loads || tickets.length)} Loads`,
         cards: [
           canBooksCustInsp
-            ? { lbl: 'OPEN FIFO AR BALANCE', tag: Number(ci.ar_60_plus || 0) > 0 ? 'AGED 60+D' : 'ACTIVE AR', tone: Number(ci.ar_60_plus || 0) > 0 ? 'warn' : 'good', val: fmtUSD(arBal, 2), sub1: `Current: ${fmtUSD(ci.ar_current || 0, 0)} · 60+d: ${fmtUSD(ci.ar_60_plus || 0, 0)}`, sub2: `VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT' : 'Standard'}`, pct: 75 }
-            : { lbl: 'OPEN FIFO AR BALANCE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: `VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT' : 'Standard'}`, pct: 0 },
+            ? { lbl: 'OPEN FIFO AR BALANCE', tag: Number(ci.ar_60_plus || 0) > 0 ? 'AGED 60+D' : 'ACTIVE AR', tone: Number(ci.ar_60_plus || 0) > 0 ? 'warn' : 'good', val: fmtUSD(arBal, 2), sub1: `Current: ${fmtUSD(ci.ar_current || 0, 0)} · 60+d: ${fmtUSD(ci.ar_60_plus || 0, 0)}`, sub2: vatSubCust, pct: 75 }
+            : { lbl: 'OPEN FIFO AR BALANCE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: vatSubCust, pct: 0 },
           { lbl: 'LIFETIME SALES & LOADS', tag: `${fmtNum(ci.loads || tickets.length)} LOADS`, tone: 'info', val: fmtUSD(ci.sales_ttc || tickets.reduce((a, t) => a + Number(t.total_ttc || 0), 0), 0), sub1: `${fmtNum(tickets.length)} tickets in register`, sub2: `Last Sale: ${ci.last_sale || (tickets[0] && tickets[0].date) || '—'}`, pct: 85 },
           canBooksCustInsp
             ? { lbl: 'RECEIPTS COLLECTED', tag: `${fmtNum(rcpts.length)} VOUCHERS`, tone: 'good', val: fmtUSD(ci.receipts || rcpts.reduce((a, r) => a + Number(r.amount || 0), 0), 0), sub1: `Oldest-First FIFO Relief`, sub2: `Default Method: ${row.method || ci.method || 'Credit'}`, pct: 80 }
             : { lbl: 'RECEIPTS COLLECTED', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: `Default Method: ${row.method || ci.method || 'Credit'}`, pct: 0 },
-          { lbl: 'AGREEMENTS & CREDIT TERMS', tag: `${rules.filter(r => !r.end_date).length} ACTIVE`, tone: 'info', val: ct ? `${ct.credit_days || 30} Days` : 'Open Terms', sub1: `Credit Limit: ${ct ? fmtUSD(ct.credit_limit, 0) : 'Not capped'}`, sub2: `${rules.length} total price agreements on file`, pct: 70 }
+          { lbl: 'AGREEMENTS & CREDIT TERMS', tag: `${rules.filter(r => !r.end_date).length} ACTIVE`, tone: 'info', val: ct ? `${ct.credit_days || 30} Days` : 'Open Terms', sub1: canBooksCustInsp ? `Credit Limit: ${ct ? fmtUSD(ct.credit_limit, 0) : 'Not capped'}` : `Terms: ${ct ? (ct.credit_days || 30) + ' days' : 'Standard Account'}`, sub2: `${rules.length} total price agreements on file`, pct: 70 }
         ]
       };
     }
@@ -126641,26 +127376,41 @@
       const exps = (SEED.records.expenses || []).filter(x => norm(x.supplier) === norm(name));
       const spays = (SEED.records.settlements || []).filter(s => norm(s.supplier) === norm(name));
       const apBal = Number(si.ap_balance != null ? si.ap_balance : 0);
-      const canBooksSupInsp = seatLens().books;
+      const supCkLens = seatLens();
+      const canBooksSupInsp = supCkLens.books;
       const expRemSub = Math.abs(Number(si.exp_vat_rem_usd || 0)) > 0.005
         ? `Exp Rem: ${fmtUSD(si.exp_rem_usd || 0, 2)} Ex-VAT + ${fmtUSD(si.exp_vat_rem_usd || 0, 2)} VAT = ${fmtUSD(si.exp_rem_ttc || 0, 2)}`
         : `Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)} (Rem ${fmtUSD(si.exp_rem_ttc || 0, 2)})`;
+      const taxSubSup = supCkLens.tax ? `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}` : `Method: ${row.method || si.method || 'Credit'}`;
       return {
         bu: singleBuCockpit || 'ALL BUs', title, pill: canBooksSupInsp ? `AP ${fmtUSD(apBal, 2)}` : `${fmtNum(si.raw_loads || (matLoads.length + haulLoads.length))} Loads`,
         cards: [
           canBooksSupInsp
-            ? { lbl: 'NET 3-LEG AP BALANCE', tag: '3-LEG AP', tone: apBal > 0 ? 'warn' : 'good', val: fmtUSD(apBal, 2), sub1: `Mat: ${fmtUSD(si.ap_material || 0, 0)} · Haul: ${fmtUSD(si.ap_haulage || 0, 0)}`, sub2: expRemSub, pct: 75 }
+            ? { lbl: 'NET 3-LEG AP BALANCE', tag: '3-LEG AP', tone: apBal > 0 ? 'warn' : 'good', val: fmtUSD(apBal, 2), sub1: supCkLens.expenses ? `Mat: ${fmtUSD(si.ap_material || 0, 0)} · Haul: ${fmtUSD(si.ap_haulage || 0, 0)}` : 'Restricted by seat permissions', sub2: supCkLens.expenses ? expRemSub : `Expenses Billed: ${fmtNum(exps.length)} vouchers`, pct: 75 }
             : { lbl: 'NET 3-LEG AP BALANCE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: `Expenses Billed: ${fmtNum(exps.length)} vouchers`, pct: 0 },
           { lbl: 'MATERIAL & HAULAGE LOADS', tag: `${fmtNum(matLoads.length + haulLoads.length)} TICKETS`, tone: 'info', val: fmtNum(si.raw_loads || (matLoads.length + haulLoads.length)), sub1: `As Site Owner: ${fmtNum(matLoads.length)} · As Hauler: ${fmtNum(haulLoads.length)}`, sub2: `Expenses Billed: ${fmtNum(exps.length)} vouchers`, pct: 80 },
           canBooksSupInsp
-            ? { lbl: 'SETTLEMENTS DISBURSED', tag: `${fmtNum(spays.length)} PAYMENTS`, tone: 'good', val: fmtUSD(si.ap_settled || si.settlements_paid || spays.reduce((a, s) => a + Number(s.amount || 0), 0), 0), sub1: `${fmtNum(spays.length)} settlement vouchers in register`, sub2: `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}`, pct: 85 }
-            : { lbl: 'SETTLEMENTS DISBURSED', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}`, pct: 0 },
+            ? { lbl: 'SETTLEMENTS DISBURSED', tag: `${fmtNum(spays.length)} PAYMENTS`, tone: 'good', val: fmtUSD(si.ap_settled || si.settlements_paid || spays.reduce((a, s) => a + Number(s.amount || 0), 0), 0), sub1: `${fmtNum(spays.length)} settlement vouchers in register`, sub2: taxSubSup, pct: 85 }
+            : { lbl: 'SETTLEMENTS DISBURSED', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Requires Cash Flow & Ledger access', sub2: taxSubSup, pct: 0 },
           { lbl: 'FLEET & AGREEMENTS', tag: row.is_truck_owner ? 'HAULER FLEET' : 'VENDOR', tone: 'info', val: `${fmtNum(row.trucks_count || (row.trucks || []).length || 0)} Trucks`, sub1: `Drivers Linked: ${fmtNum((row.drivers || []).length)}`, sub2: `Active Price Rules: ${activeRulesCountFor('supplier', name)}`, pct: 70 }
         ]
       };
     }
 
     if (key === 'conversions') {
+      if (!seatLens().books) {
+        return {
+          bu,
+          title,
+          pill: 'Restricted',
+          cards: [
+            { lbl: 'USD DRAWER CHANGE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Direction: ${row.type || 'FX Conversion'}`, pct: 0 },
+            { lbl: 'LBP DRAWER CHANGE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: 'Requires Cash Flow & Ledger access', pct: 0 },
+            { lbl: 'EFFECTIVE FX RATE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Tx Date: ${row.date || '—'}`, pct: 0 },
+            { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Requires Cash Flow & Ledger access`, pct: 100 }
+          ]
+        };
+      }
       const d = convSignedDeltas(row);
       return {
         bu,
@@ -126692,6 +127442,17 @@
     }
 
     if (key === 'equipment_repairs') {
+      if (!seatLens().expenses) {
+        return {
+          bu, title, pill: 'Restricted',
+          cards: [
+            { lbl: 'REPAIR SOURCE', tag: (row.repair_source || 'WAREHOUSE').toUpperCase().slice(0, 18), tone: /Warehouse/i.test(row.repair_source || '') ? 'good' : 'info', val: row.repair_source || 'Warehouse Only', sub1: `Unit: ${row.equipment || '-'} · ${row.subsystem || 'General'}`, sub2: `Workshop / Vendor: ${row.supplier || 'Internal Workshop'}`, pct: 85 },
+            { lbl: 'WAREHOUSE STOCK USED', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Items: ${row.items_summary || '-'}`, pct: 0 },
+            { lbl: 'OUTSIDE PARTS & LABOR', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Workshop / Vendor: ${row.supplier || 'Internal Workshop'}`, pct: 0 },
+            { lbl: 'TOTAL REPAIR COST', tag: row.defect_ref ? 'LINKED WARNING' : 'REPAIR LOG', tone: 'info', val: 'Restricted', sub1: `Linked Warning: ${row.defect_ref || 'Direct Repair'}`, sub2: `Tx Date: ${row.date || '-'} · Status: ${row.status || 'Completed'}`, pct: 0 }
+          ]
+        };
+      }
       const whCost = round2(Number(row.warehouse_parts_usd != null ? row.warehouse_parts_usd : (row.warehouse_cost || 0)));
       const outParts = round2(Number(row.outside_parts_usd != null ? row.outside_parts_usd : (row.outside_parts_cost || 0)));
       const outLabor = round2(Number(row.external_labor_usd != null ? row.external_labor_usd : (row.outside_labor_cost || 0)));
@@ -126720,7 +127481,7 @@
         cards: [
           { lbl: 'OIL / SERVICE TYPE', tag: `${fmtNum(row.qty || 1, 1)} ${row.uom || 'Litre'}`, tone: 'good', val: row.oil_type || 'Engine Oil 15W-40', sub1: `Unit: ${row.equipment || '-'} · ${row.service_action || 'Full Change'}`, sub2: `Source: ${row.source || 'Plant Lube Bay'}`, pct: 85 },
           { lbl: 'METER AT SERVICE', tag: hrsVal != null ? 'HOURS' : (row.odometer_km != null ? 'ODOMETER' : 'DATE'), tone: 'info', val: hrsVal != null ? `${fmtNum(hrsVal, 1)} hr` : (row.odometer_km != null ? `${fmtNum(row.odometer_km, 0)} km` : (row.date || '-')), sub1: `Hours: ${hrsVal != null ? fmtNum(hrsVal, 1) + ' hr' : '-'}`, sub2: `Odometer: ${row.odometer_km != null ? fmtNum(row.odometer_km, 0) + ' km' : '-'}`, pct: 80 },
-          { lbl: 'CHANGE INTERVAL', tag: 'PREVENTIVE', tone: 'info', val: intStr, sub1: `Service Date: ${row.date || '-'}`, sub2: `Cost: ${fmtUSD(costVal, 2)}`, pct: 75 },
+          { lbl: 'CHANGE INTERVAL', tag: 'PREVENTIVE', tone: 'info', val: intStr, sub1: `Service Date: ${row.date || '-'}`, sub2: seatLens().expenses ? `Cost: ${fmtUSD(costVal, 2)}` : 'Cost: Restricted', pct: 75 },
           { lbl: 'NEXT CHANGE DUE', tag: 'SCHEDULED', tone: 'good', val: nextDueStr, sub1: `Auto-tracked against live meters`, sub2: `Notes: ${row.notes || '-'}`, pct: 90 }
         ]
       };
@@ -126735,8 +127496,8 @@
         bu, title, pill: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`,
         cards: [
           { lbl: 'SHELF ACTION & REASON', tag: isOut ? '-REMOVE FROM SHELF' : '+ADD TO SHELF', tone: isOut ? 'warn' : 'good', val: row.item_name || '-', sub1: `Reason: ${mvLbl}`, sub2: `Shelf: ${row.warehouse_location || row.location || 'WTC Main Warehouse'}`, pct: 85 },
-          { lbl: 'ADJUSTMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}`, sub2: `Total Value: ${fmtUSD(row.total_cost || 0, 2)}`, pct: 80 },
-          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'DEPLETED', tone: balQty > 0 ? 'good' : 'warn', val: whItem ? `${fmtNum(balQty, 2)} ${whItem.uom || 'Piece'}` : '0', sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Repairs Out: ${fmtNum(whItem.usedInRepairsQty || 0, 2)}` : 'Item summary', sub2: whItem ? `Avg Cost: ${fmtUSD(whItem.avgUnitCost || 0, 2)}` : '-', pct: 75 },
+          { lbl: 'ADJUSTMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: seatLens().expenses ? `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}` : 'Unit Cost: Restricted', sub2: seatLens().expenses ? `Total Value: ${fmtUSD(row.total_cost || 0, 2)}` : 'Total Value: Restricted', pct: 80 },
+          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'DEPLETED', tone: balQty > 0 ? 'good' : 'warn', val: whItem ? `${fmtNum(balQty, 2)} ${whItem.uom || 'Piece'}` : '0', sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Repairs Out: ${fmtNum(whItem.usedInRepairsQty || 0, 2)}` : 'Item summary', sub2: seatLens().expenses ? (whItem ? `Avg Cost: ${fmtUSD(whItem.avgUnitCost || 0, 2)}` : '-') : 'Avg Cost: Restricted', pct: 75 },
           { lbl: 'RECORD ORIGIN', tag: isOut ? 'SHELF DEDUCTION' : 'SHELF ADDITION', tone: 'info', val: mvLbl, sub1: `Repair Link: ${row.repair_ref || '-'}`, sub2: `Expense Link: ${row.expense_ref || '-'}`, pct: 90 }
         ]
       };
@@ -126752,15 +127513,18 @@
       const totQtyBought = round2(expLines.reduce((a, ei) => a + Number(ei.qty || 1), 0));
       const totUsdBought = round2(expLines.reduce((a, ei) => a + Number(ei.line_total != null ? ei.line_total : Number(ei.qty || 1) * Number(ei.unit_cost || 0)), 0));
       const avgUnit = totQtyBought > 0 ? round2(totUsdBought / totQtyBought) : Number((catRec && catRec.default_cost) || row.unit_cost || 0);
+      const canItemsExp = seatLens().expenses;
       return {
         bu: key === 'items' ? (singleBuCockpit || 'UNIVERSAL CATALOG') : bu,
         title: itName || title,
         pill: `${lockedUom} (Locked UoM)`,
         cards: [
           { lbl: 'CATALOG ITEM & LOCKED UOM', tag: `LOCKED: ${lockedUom.toUpperCase()}`, tone: 'good', val: itName || '-', sub1: `Category: ${(catRec && catRec.category) || row.category || 'Spare Parts'}`, sub2: `Default Shelf: ${(catRec && catRec.default_location) || 'WTC Main Warehouse'}`, pct: 95 },
-          { lbl: 'PURCHASE HISTORY & SPEND', tag: `${fmtNum(expLines.length)} TICKETS`, tone: 'info', val: fmtUSD(totUsdBought, 2), sub1: `Total Purchased: ${fmtNum(totQtyBought, totQtyBought % 1 ? 2 : 0)} ${lockedUom}`, sub2: `Avg Unit Cost: ${fmtUSD(avgUnit, 2)} / ${lockedUom}`, pct: 85 },
-          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'CATALOG READY', tone: balQty > 0 ? 'good' : 'info', val: `${fmtNum(balQty, balQty % 1 ? 2 : 0)} ${lockedUom}`, sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Used Out: ${fmtNum((whItem.usedInRepairsQty || 0) + (whItem.usedInOilQty || 0), 2)}` : `Min Stock Alert: ${fmtNum((catRec && catRec.min_stock) || 0)} ${lockedUom}`, sub2: whItem ? `Stock Value: ${fmtUSD(whItem.onHandValue || 0, 2)}` : `Default Cost: ${fmtUSD((catRec && catRec.default_cost) || 0, 2)}`, pct: 80 },
-          { lbl: key === 'expense_items' ? 'TICKET ALLOCATION' : 'EQUIPMENT & REPAIR USAGE', tag: key === 'expense_items' ? (String(row.allocation_mode || 'same_equipment').toUpperCase().slice(0, 16)) : '360° TRACKED', tone: 'info', val: key === 'expense_items' ? (row.target_equipment || row.warehouse_location || 'Equipment') : `${fmtNum(new Set(expLines.map(x => x.target_equipment).filter(Boolean)).size)} Units`, sub1: key === 'expense_items' ? `Line: ${fmtNum(row.qty || 1, 2)} ${lockedUom} × ${fmtUSD(row.unit_cost || 0, 2)} = ${fmtUSD(row.line_total || 0, 2)}` : `Used across ${fmtNum(new Set(expLines.map(x => x.supplier).filter(Boolean)).size)} suppliers`, sub2: key === 'expense_items' ? `Parent Voucher: ${row.expense_ref || '-'}` : `Locked UoM enforced on all tickets`, pct: 90 }
+          canItemsExp
+            ? { lbl: 'PURCHASE HISTORY & SPEND', tag: `${fmtNum(expLines.length)} TICKETS`, tone: 'info', val: fmtUSD(totUsdBought, 2), sub1: `Total Purchased: ${fmtNum(totQtyBought, totQtyBought % 1 ? 2 : 0)} ${lockedUom}`, sub2: `Avg Unit Cost: ${fmtUSD(avgUnit, 2)} / ${lockedUom}`, pct: 85 }
+            : { lbl: 'PURCHASE HISTORY & SPEND', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: `Total Purchased: ${fmtNum(totQtyBought, totQtyBought % 1 ? 2 : 0)} ${lockedUom}`, sub2: 'Restricted by seat permissions', pct: 0 },
+          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'CATALOG READY', tone: balQty > 0 ? 'good' : 'info', val: `${fmtNum(balQty, balQty % 1 ? 2 : 0)} ${lockedUom}`, sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Used Out: ${fmtNum((whItem.usedInRepairsQty || 0) + (whItem.usedInOilQty || 0), 2)}` : `Min Stock Alert: ${fmtNum((catRec && catRec.min_stock) || 0)} ${lockedUom}`, sub2: canItemsExp ? (whItem ? `Stock Value: ${fmtUSD(whItem.onHandValue || 0, 2)}` : `Default Cost: ${fmtUSD((catRec && catRec.default_cost) || 0, 2)}`) : 'Restricted by seat permissions', pct: 80 },
+          { lbl: key === 'expense_items' ? 'TICKET ALLOCATION' : 'EQUIPMENT & REPAIR USAGE', tag: key === 'expense_items' ? (String(row.allocation_mode || 'same_equipment').toUpperCase().slice(0, 16)) : '360° TRACKED', tone: 'info', val: key === 'expense_items' ? (row.target_equipment || row.warehouse_location || 'Equipment') : `${fmtNum(new Set(expLines.map(x => x.target_equipment).filter(Boolean)).size)} Units`, sub1: key === 'expense_items' ? (canItemsExp ? `Line: ${fmtNum(row.qty || 1, 2)} ${lockedUom} × ${fmtUSD(row.unit_cost || 0, 2)} = ${fmtUSD(row.line_total || 0, 2)}` : `Line: ${fmtNum(row.qty || 1, 2)} ${lockedUom}`) : `Used across ${fmtNum(new Set(expLines.map(x => x.supplier).filter(Boolean)).size)} suppliers`, sub2: key === 'expense_items' ? `Parent Voucher: ${row.expense_ref || '-'}` : `Locked UoM enforced on all tickets`, pct: 90 }
         ]
       };
     }
@@ -126769,13 +127533,16 @@
       const preOk = Boolean(row.prior_defect_notified || row.defect_ref);
       const outlay = round2(Number(row.new_part_cost || 0) + Number(row.repair_cost || 0));
       const proceeds = round2(Number(row.sale_proceeds || 0));
+      const canPartExp = seatLens().expenses;
       return {
         bu, title, pill: row.removed_disposition || 'Tracked',
         cards: [
           { lbl: 'PART & DISPOSITION', tag: `QTY ${fmtNum(row.qty || 1, 0)}`, tone: 'info', val: row.part_name || '—', sub1: `Disposition: ${row.removed_disposition || '—'}`, sub2: `Condition: ${row.condition || '—'}${row.part_serial ? ' · SN ' + row.part_serial : ''}`, pct: 85 },
           { lbl: 'PRE-DEFECT GOVERNANCE', tag: preOk ? 'PRE-NOTIFIED' : 'UNNOTIFIED', tone: preOk ? 'good' : 'warn', val: preOk ? (row.defect_ref || 'Verified') : 'Emergency', sub1: preOk ? 'Prior defect report verified before change' : 'Flagged in AI Sentinel S10', sub2: `Unit: ${row.equipment || '—'} · ${row.subsystem || '—'}`, pct: preOk ? 100 : 45 },
           { lbl: 'CUSTODY & COUNTERPARTY', tag: (row.action_type || 'PART LOG').split('(')[0].trim().toUpperCase().slice(0, 16), tone: 'info', val: row.storage_location || row.vendor_or_buyer || row.equipment || '—', sub1: `Storage / Shelf: ${row.storage_location || '—'}`, sub2: `Workshop / Buyer: ${row.vendor_or_buyer || '—'}`, pct: 75 },
-          { lbl: 'PART ECONOMICS ($)', tag: proceeds > 0 ? 'RECOVERY $' : 'COST TRACKED', tone: proceeds > 0 ? 'good' : 'info', val: fmtUSD(outlay - proceeds, 2), sub1: `New Cost: ${fmtUSD(row.new_part_cost || 0, 2)} · Repair: ${fmtUSD(row.repair_cost || 0, 2)}`, sub2: `Sale Proceeds: ${fmtUSD(proceeds, 2)} · Approved: ${row.approved_by || '—'}`, pct: 80 }
+          canPartExp
+            ? { lbl: 'PART ECONOMICS ($)', tag: proceeds > 0 ? 'RECOVERY $' : 'COST TRACKED', tone: proceeds > 0 ? 'good' : 'info', val: fmtUSD(outlay - proceeds, 2), sub1: `New Cost: ${fmtUSD(row.new_part_cost || 0, 2)} · Repair: ${fmtUSD(row.repair_cost || 0, 2)}`, sub2: `Sale Proceeds: ${fmtUSD(proceeds, 2)} · Approved: ${row.approved_by || '—'}`, pct: 80 }
+            : { lbl: 'PART ECONOMICS ($)', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Approved: ${row.approved_by || '—'}`, pct: 0 }
         ]
       };
     }
@@ -126804,15 +127571,16 @@
         };
       }
       const whRec = getWarehouseIndex(row.company || 'WTC').byKey[norm(mCls.item)] || null;
-      const unitCost = whRec ? Number(whRec.avgUnitCost || 0) : Number(mCls.unitCost || 0);
-      const estUsd = round2(Math.abs(qty) * unitCost);
+      const canMalfExp = seatLens().expenses;
+      const unitCost = canMalfExp ? (whRec ? Number(whRec.avgUnitCost || 0) : Number(mCls.unitCost || 0)) : 0;
+      const estUsd = canMalfExp ? round2(Math.abs(qty) * unitCost) : 0;
       return {
         bu,
         title: `${INSPECT_LABELS[key]} · ${mCls.item}`,
         pill: `${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom} ${whRec ? 'Shelf' : mCls.category}`,
         cards: [
           { lbl: 'DISCREPANCY QUANTITY', tag: (row.discrepancy_type || 'MALFUNCTION').toUpperCase(), tone: qty > 0 ? 'warn' : 'good', val: `${qty > 0 ? '+' : ''}${fmtNum(qty, dec)} ${mUom}`, sub1: qty >= 0 ? 'Shortage / Loss (-Stock)' : 'Surplus / Gain (+Stock)', sub2: `Ref / Slip: ${row.ticket_no ? '#' + row.ticket_no : '-'}`, pct: 80 },
-          { lbl: whRec ? 'LIVE SHELF RECONCILIATION' : 'ESTIMATED VARIANCE VALUE', tag: whRec ? ((whRec.onHandQty || 0) < 0 ? 'DEFICIT' : 'RECONCILED') : mCls.category.toUpperCase(), tone: whRec && (whRec.onHandQty || 0) < 0 ? 'crit' : 'good', val: whRec ? `${fmtNum(whRec.onHandQty || 0, dec)} ${mUom}` : (estUsd > 0 ? fmtUSD(estUsd, 2) : `${fmtNum(Math.abs(qty), dec)} ${mUom}`), sub1: `Stock Impact: ${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom}`, sub2: unitCost > 0 ? `Est. Value: ${fmtUSD(estUsd, 2)} (@ ${fmtUSD(unitCost, 2)}/${mUom})` : `Tracked in ${mCls.category} ledger`, pct: 75 },
+          { lbl: whRec ? 'LIVE SHELF RECONCILIATION' : 'ESTIMATED VARIANCE VALUE', tag: whRec ? ((whRec.onHandQty || 0) < 0 ? 'DEFICIT' : 'RECONCILED') : mCls.category.toUpperCase(), tone: whRec && (whRec.onHandQty || 0) < 0 ? 'crit' : 'good', val: whRec ? `${fmtNum(whRec.onHandQty || 0, dec)} ${mUom}` : (estUsd > 0 ? fmtUSD(estUsd, 2) : `${fmtNum(Math.abs(qty), dec)} ${mUom}`), sub1: `Stock Impact: ${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom}`, sub2: (canMalfExp && unitCost > 0) ? `Est. Value: ${fmtUSD(estUsd, 2)} (@ ${fmtUSD(unitCost, 2)}/${mUom})` : `Tracked in ${mCls.category} ledger`, pct: 75 },
           { lbl: 'DOMAIN & ITEM UOM', tag: mCls.uomLocked ? `LOCKED: ${mUom.toUpperCase()}` : mUom.toUpperCase(), tone: 'info', val: mCls.item, sub1: `Category: ${mCls.category}`, sub2: `Location: ${row.warehouse_location || (whRec && whRec.location) || ((row.company || 'WTC') + ' Plant')}`, pct: 85 },
           { lbl: 'UNIT & AUDIT SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: row.equipment || (whRec ? 'Warehouse Shelf' : 'Plant Bay'), sub1: `Driver / Tech: ${row.driver || '-'}`, sub2: `Tx: ${row.date || '-'} · Rep: ${row.rep_date || row.date || '-'}`, pct: 90 }
         ]
@@ -126820,6 +127588,19 @@
     }
 
     if (key === 'gl_accounts') {
+      if (!seatLens().books) {
+        return {
+          bu: 'ALL BUs',
+          title: `GL ${row.code} · ${row.name}`,
+          pill: 'Restricted',
+          cards: [
+            { lbl: 'AUTOMATION ENGINE', tag: (row.automation_mode || 'AUTOMATED').toUpperCase(), tone: row.is_automated !== false ? 'good' : 'info', val: `GL ${row.code}`, sub1: `${row.pcg_class || 'Lebanese PCG'}`, sub2: `Driven By: ${row.source_module || 'Double-Entry Engine'}`, pct: 95 },
+            { lbl: 'SCOPED GROSS DEBITS', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: 'Requires Cash Flow & Ledger access', pct: 0 },
+            { lbl: 'SCOPED GROSS CREDITS', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: 'Requires Cash Flow & Ledger access', pct: 0 },
+            { lbl: 'NET ACCOUNT BALANCE', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: 'Requires Cash Flow & Ledger access', pct: 0 }
+          ]
+        };
+      }
       const dr = round2(Number(row.debit || 0));
       const cr = round2(Number(row.credit || 0));
       const bal = round2(Number(row.balance || 0));
@@ -126937,26 +127718,36 @@
     // Generic rich 4-card cockpit for all other 30 tables
     const subgrids = buildInspectorSubgrids(key, row);
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
+    const genLens = seatLens();
     const maskPayrollCockpit = ['employments', 'salaries', 'attendance', 'freelance_entries', 'logistics_allowances', 'overtime_rates'].includes(key) && !canViewPayrollDollarAmounts();
-    const prMoney = key === 'price_rules'
+    const maskSupPrCockpit = key === 'price_rules' && /^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim()) && !genLens.expenses;
+    const maskCommPrCockpit = key === 'price_rules' && isCommRule(row) && !genLens.profit;
+    const maskExpTblCockpit = ['expenses', 'recurring_expenses', 'repair_items', 'expense_items', 'raw_purchases', 'settlements', 'warehouse_movements', 'items', 'equipment_repairs', 'equipment_oil_logs', 'part_movements'].includes(key) && !genLens.expenses;
+    const maskBooksTblCockpit = ['receipts', 'settlements', 'loans', 'loan_settlements', 'conversions', 'external_movements', 'gl_accounts', 'credit_terms'].includes(key) && !genLens.books;
+    const maskPartnerTblCockpit = ['jv_partnerships', 'jv_distributions'].includes(key) && !genLens.partnerSplits;
+    const maskTaxTblCockpit = ['vat_invoices', 'vat_rates'].includes(key) && !genLens.tax;
+    const maskNonPayrollCockpit = maskSupPrCockpit || maskCommPrCockpit || maskExpTblCockpit || maskBooksTblCockpit || maskPartnerTblCockpit || maskTaxTblCockpit;
+    const prMoney = (key === 'price_rules' && !maskSupPrCockpit && !maskCommPrCockpit)
       ? (Number(row.unit_price || 0) > 0 ? row.unit_price : (Number(row.trans_unit_price || 0) > 0 ? row.trans_unit_price : ruleAnyIndiffPrice(row)))
-      : row.unit_price;
+      : ((maskSupPrCockpit || maskCommPrCockpit) ? null : row.unit_price);
     const empMoney = (!maskPayrollCockpit && key === 'employments') ? empContractPackageUsd(row) : null;
     const empReimbMoney = (!maskPayrollCockpit && key === 'employments') ? empContractReimbUsd(row) : 0;
-    const primaryMoney = maskPayrollCockpit
+    const primaryMoney = (maskPayrollCockpit || maskNonPayrollCockpit)
       ? null
       : (empMoney != null
           ? empMoney
-          : (row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? row.credit_limit ?? row.list_price));
-    const isPendExp = (key === 'expenses' && isPendingPriceExpense(row)) || (key === 'raw_purchases' && isPendingPriceRaw(row));
+          : (row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? (genLens.books ? row.credit_limit : null) ?? row.list_price));
+    const isPendExp = genLens.expenses && ((key === 'expenses' && isPendingPriceExpense(row)) || (key === 'raw_purchases' && isPendingPriceRaw(row)));
     const isPendSal = key === 'employments' && isPendingSalaryEmployment(row);
     const isDieselExp = key === 'expenses' && isBulkDieselExpense(row);
     return {
       bu,
       title,
-      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? (maskPayrollCockpit ? 'PENDING SALARY' : 'PENDING SALARY ($0.00)') : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
+      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? (maskPayrollCockpit ? 'PENDING SALARY' : 'PENDING SALARY ($0.00)') : (maskNonPayrollCockpit ? 'Restricted' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`))),
       cards: [
-        { lbl: maskPayrollCockpit ? 'RECORD STATUS' : (key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE'), tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? (maskPayrollCockpit ? 'Pending Salary' : 'Pending ($0.00)') : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (maskPayrollCockpit ? (row.status || row.type || row.payroll_month || row.name || String(row.id || '').slice(0, 10) || 'Masked') : (row.name || row.ticket_no || String(row.id).slice(0, 10))))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}${maskPayrollCockpit ? ' · Amounts masked' : ''}`)), sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 82 },
+        maskNonPayrollCockpit
+          ? { lbl: 'RECORD STATUS', tag: 'RESTRICTED', tone: 'info', val: 'Restricted', sub1: 'Restricted by seat permissions', sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 0 }
+          : { lbl: maskPayrollCockpit ? 'RECORD STATUS' : (key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE'), tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? (maskPayrollCockpit ? 'Pending Salary' : 'Pending ($0.00)') : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (maskPayrollCockpit ? (row.status || row.type || row.payroll_month || row.name || String(row.id || '').slice(0, 10) || 'Masked') : (row.name || row.ticket_no || String(row.id).slice(0, 10))))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}${maskPayrollCockpit ? ' · Amounts masked' : ''}`)), sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -126971,35 +127762,43 @@
       if (!custName) return;
       const ci = customerInfo(custName) || {};
       const ct = creditTermsForCustomer(custName);
-      const canBooksQv = seatLens().books;
+      const qvLensC = seatLens();
+      const canBooksQv = qvLensC.books;
+      const qvKvsC = [
+        ['Open AR (FIFO)', canBooksQv ? fmtUSD(ci.ar_balance || 0, 2) : 'Restricted'],
+        ['Overdue 60+d', canBooksQv ? fmtUSD(ci.ar_60_plus || 0, 0) : 'Restricted'],
+        ['Credit Terms', (ct && canBooksQv) ? `${ct.credit_days || 30}d / ${fmtUSD(ct.credit_limit || 0, 0)}` : (ct ? `${ct.credit_days || 30}d` : (ci.method || 'Credit'))]
+      ];
+      if (qvLensC.tax) {
+        qvKvsC.push(['VAT 11% Reg.', (ci['VAT Registered'] === 'Yes' || ci.vat_registered) ? 'Yes (11%)' : 'No']);
+      }
       cards.push({
         tag: 'QUICK VIEW · CUSTOMER',
         targetKey: 'customers',
         targetVal: custName,
         title: custName,
-        kvs: [
-          ['Open AR (FIFO)', canBooksQv ? fmtUSD(ci.ar_balance || 0, 2) : 'Restricted'],
-          ['Overdue 60+d', canBooksQv ? fmtUSD(ci.ar_60_plus || 0, 0) : 'Restricted'],
-          ['Credit Terms', ct ? `${ct.credit_days || 30}d / ${fmtUSD(ct.credit_limit || 0, 0)}` : (ci.method || 'Credit')],
-          ['VAT 11% Reg.', (ci['VAT Registered'] === 'Yes' || ci.vat_registered) ? 'Yes (11%)' : 'No']
-        ]
+        kvs: qvKvsC
       });
     };
     const addSupplierQv = (supName, roleLbl) => {
       if (!supName || supName === 'Company fleet') return;
       const si = supplierInfo(supName) || {};
-      const canBooksQv = seatLens().books;
+      const qvLensS = seatLens();
+      const canBooksQv = qvLensS.books;
+      const qvKvsS = [
+        ['Net 3-Leg AP', canBooksQv ? fmtUSD(si.ap_balance || 0, 2) : 'Restricted'],
+        ['Material / Haul AP', (canBooksQv && qvLensS.expenses) ? `${fmtUSD(si.ap_material || 0, 0)} / ${fmtUSD(si.ap_haulage || 0, 0)}` : 'Restricted'],
+        ['Registered Trucks', fmtNum(si.trucks_count || (si.trucks || []).length || 0)]
+      ];
+      if (qvLensS.tax) {
+        qvKvsS.push(['IVA Status', si.iva ? 'IVA Registered' : 'Standard']);
+      }
       cards.push({
         tag: `QUICK VIEW · ${roleLbl || 'SUPPLIER'}`,
         targetKey: 'suppliers',
         targetVal: supName,
         title: supName,
-        kvs: [
-          ['Net 3-Leg AP', canBooksQv ? fmtUSD(si.ap_balance || 0, 2) : 'Restricted'],
-          ['Material / Haul AP', canBooksQv ? `${fmtUSD(si.ap_material || 0, 0)} / ${fmtUSD(si.ap_haulage || 0, 0)}` : 'Restricted'],
-          ['Registered Trucks', fmtNum(si.trucks_count || (si.trucks || []).length || 0)],
-          ['IVA Status', si.iva ? 'IVA Registered' : 'Standard']
-        ]
+        kvs: qvKvsS
       });
     };
     const addTruckQv = (trkName, drvName) => {
@@ -127034,7 +127833,7 @@
           ['Region / Zone', si.region || (isBundledSt ? 'Optional (Bundled)' : 'Lebanon')],
           ['Site Owner', si.supplier || row.site_owner || '—'],
           ['Linked Customer', si.customer || (isCustSide ? row.customer : '') || '—'],
-          ['Supply / Rules', `${si.is_jv ? 'JV 50/50' : (isBundledSt ? 'Mat+Trans Included' : 'Standard Site')} · ${fmtNum(activeRulesCountFor('site', siteName))} rules`]
+          ['Supply / Rules', `${(si.is_jv && seatLens().partnerSplits) ? 'JV 50/50' : (isBundledSt ? 'Mat+Trans Included' : 'Standard Site')} · ${fmtNum(activeRulesCountFor('site', siteName))} rules`]
         ]
       });
     };
@@ -127165,7 +127964,7 @@
             kvs: [
               ['Category / UoM', `${catIt.category || 'Spare Parts'} · ${catIt.uom || 'Piece'}`],
               ['Live On-Hand', whIt ? `${fmtNum(whIt.onHandQty || 0, 2)} ${catIt.uom || 'Piece'}` : `0 ${catIt.uom || 'Piece'}`],
-              ['Avg Unit Cost', fmtUSD((whIt && whIt.avgUnitCost) || catIt.default_cost || 0, 2)],
+              ['Avg Unit Cost', seatLens().expenses ? fmtUSD((whIt && whIt.avgUnitCost) || catIt.default_cost || 0, 2) : 'Restricted'],
               ['Shelf Location', (whIt && whIt.location) || catIt.default_location || 'Main Warehouse']
             ]
           });
@@ -127248,7 +128047,7 @@
       addGrid('sg_c_sales', `Sales Tickets & Deliveries (${name})`, 'Sales Tickets', 'Sales Tickets', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.customer) === norm(name)), ['date', 'ticket_no', 'company', 'sale_type', 'product', 'site', 'truck', 'qty', 'unit_price', 'vat', 'total_ttc', 'method'], 'total_ttc');
       addGrid('sg_c_rcpts', `Customer Receipts · FIFO Applied (${name})`, 'AR Receipts', 'AR Receipts', 'receipts', (rec.receipts || []).filter(r => norm(r.customer) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'vat_invoice', 'reference'], 'amount');
       addGrid('sg_c_rules', `Price Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.customer) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
-      addGrid('sg_c_cred', `Credit Terms & Limits (${name})`, 'Credit Terms', 'Credit Terms', 'credit_terms', (rec.credit_terms || []).filter(c => norm(c.customer) === norm(name)), ['name', 'company', 'credit_days', 'credit_limit', 'start_date', 'end_date', 'notes'], 'credit_limit');
+      addGrid('sg_c_cred', seatLens().books ? `Credit Terms & Limits (${name})` : `Credit Terms (${name})`, 'Credit Terms', 'Credit Terms', 'credit_terms', (rec.credit_terms || []).filter(c => norm(c.customer) === norm(name)), ['name', 'company', 'credit_days', 'credit_limit', 'start_date', 'end_date', 'notes'], 'credit_limit');
       addGrid('sg_c_vat', `VAT 11% Tax Invoices (${name})`, 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(name)), ['invoice_no', 'date', 'company', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
       const custEqs = (rec.equipment || []).filter(e => normOwnerName(e.supplier) === normOwnerName(name));
       const custDrvs = (rec.drivers || []).filter(d => normOwnerName(d.truck_owner) === normOwnerName(name));
@@ -127265,15 +128064,18 @@
         addGrid('sg_s_recur', `Standing Recurring Expense Schedules (${name})`, 'Recurring Schedules', 'Standing Agreements', 'recurring_expenses', supRecur, ['company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status'], 'amount');
       }
       addGrid('sg_s_pay', `Supplier AP Settlements (${name})`, 'Settlements', 'Settlements', 'settlements', (rec.settlements || []).filter(s => norm(s.supplier) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference'], 'amount');
-      const commVouchersForSup = (rec.receipts || []).filter(r => norm(r.customer) === norm(name) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
+      const sgProfitOk = Boolean(seatLens().profit);
+      const commVouchersForSup = sgProfitOk
+        ? (rec.receipts || []).filter(r => norm(r.customer) === norm(name) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()))
+        : [];
       if (commVouchersForSup.length) {
         addGrid('sg_s_comm_rcpt', `Plant Commission & 11% VAT Settlements (${name})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commVouchersForSup, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
       }
-      const supRules = (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name));
-      const allCommSup = supRules.length > 0 && supRules.every(isCommRule);
+      const supRules = (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name) && (sgProfitOk || !isCommRule(r)));
+      const allCommSup = sgProfitOk && supRules.length > 0 && supRules.every(isCommRule);
       addGrid(
         'sg_s_rules',
-        allCommSup ? `Sales Commission Rules (${name})` : `Price & Commission Agreements (${name})`,
+        allCommSup ? `Sales Commission Rules (${name})` : (sgProfitOk ? `Price & Commission Agreements (${name})` : `Price Agreements (${name})`),
         allCommSup ? 'Commission Rules' : 'Price Rules',
         allCommSup ? 'Commission Schedule' : 'Price Rules',
         'price_rules',
@@ -127318,7 +128120,7 @@
         const jvParts = (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name));
         const siteJvDists = (rec.jv_distributions || []).filter(d => norm(d.site) === norm(name));
         const siteLog = (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name));
-        const canSeeRawSiteRules = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+        const canSeeRawSiteRules = Boolean(seatLens().expenses) && (typeof canAccessTable !== 'function' || canAccessTable('raw_purchases'));
         if (canSeeRawSiteRules && (qRules.length || rawLoads.length || row.supplier || row.is_jv || !row.customer)) {
           addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', qRules, ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
         }
@@ -127839,6 +128641,44 @@
     }
 
     return { price, transPrice, total, vat, totalTtc, matIsFlat, transIsFlat, matEdited, transEdited, effDate: date };
+  }
+
+  function isInspectorSchemaFieldBlocked(key, fieldKey, row, u) {
+    const usr = u === undefined ? activeUser() : u;
+    const lens = seatLens(usr);
+    const tk = String(key || '').trim().toLowerCase();
+    const fk = String(fieldKey || '').trim().toLowerCase();
+    if (!tk || !fk) return false;
+    if (isMaskedFieldAccessBlocked(tk, fk, usr)) return true;
+    if (tk === 'employments' && fk === 'salary_pending' && !canViewPayrollDollarAmounts(usr)) return true;
+    if (!lens.expenses) {
+      if (
+        /^(?:raw_purchases|expenses|recurring_expenses|expense_items|settlements|repair_items|warehouse_movements|items|equipment_repairs|equipment_oil_logs|part_movements)$/i.test(tk)
+        && /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|warehouse_cost|outside_parts_cost|outside_labor_cost|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue|price_pending)$/i.test(fk)
+      ) {
+        return true;
+      }
+      if (tk === 'price_rules' && (!row || /^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim()))) {
+        if (/^(?:unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|price|trans_price|floor_price|indiff_price|trans_indiff_price|delivered_indiff_price)$/i.test(fk)) {
+          return true;
+        }
+      }
+    }
+    if (!lens.profit && tk === 'price_rules' && row && isCommRule(row)) {
+      if (/^(?:unit_price|price|indiff_price|rate|amount)$/i.test(fk)) return true;
+    }
+    if (!lens.tax) {
+      if (/^(?:vat|vat_amount|vat_invoice|output_vat|input_vat|tax_seq|net_amount|vat_registered|vat_percent|vat_fx_rate)$/i.test(fk)) return true;
+      if (tk === 'suppliers' && fk === 'iva') return true;
+      if (tk === 'vat_invoices' && /^(?:total_ttc|amount|total)$/i.test(fk)) return true;
+      if (tk === 'sales_tickets' && row && (Number(row.vat || 0) !== 0 || (row.total_ttc != null && row.total != null && Math.abs(Number(row.total_ttc) - Number(row.total)) > 0.005))) {
+        if (/^(?:unit_price|trans_unit_price|price|trans_price|total)$/i.test(fk)) return true;
+      }
+    }
+    if (!lens.partnerSplits && tk === 'sites' && /^(?:is_jv|jv_partner|jv_share)$/i.test(fk)) {
+      return true;
+    }
+    return false;
   }
 
   function getInspectorEditableSchema(key, row, targetEqRow) {
@@ -128580,7 +129420,7 @@
 
     const rawSchema = schemas[key] || buildFallbackInspectorEditableSchema(key, row);
     return Array.isArray(rawSchema)
-      ? rawSchema.filter(f => f && !isMaskedFieldAccessBlocked(key, f.key) && !(key === 'employments' && f.key === 'salary_pending' && !canViewPayrollDollarAmounts()))
+      ? rawSchema.filter(f => f && !isInspectorSchemaFieldBlocked(key, f.key, row))
       : [];
   }
 
@@ -128930,10 +129770,13 @@
         hidden.add('fuel_base_price');
         hidden.add('fuel_step');
         hidden.add('fuel_surcharge');
-      } else if (!(canSeeFuelEconomics() && isFuelCompanyAllowed(row.company || 'WTC'))) {
+      } else if (!(row.company && canSeeFuelEconomics() && isFuelCompanyAllowed(row.company))) {
         // The diesel price at signing is a purchase price: only for a seat that may read diesel purchases.
         // The step and the surcharge per step are terms of the agreement and stay readable.
         hidden.add('fuel_base_price');
+      }
+      if (/^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rtTrim) && !seatLens().expenses) {
+        ['unit_price', 'trans_unit_price', 'adj1', 'adj2', 'trans_adj1', 'trans_adj2', 'total1', 'total2', 'floor_price'].forEach(pk => hidden.add(pk));
       }
     }
 
@@ -128971,10 +129814,10 @@
       }
     }
 
-    const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && !isMaskedFieldAccessBlocked(key, k) && !(key === 'employments' && k === 'salary_pending' && !canViewPayrollDollarAmounts()) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
+    const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && !isInspectorSchemaFieldBlocked(key, k, row) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
     schema.forEach(f => {
-      if (!f.drawerOnly && !hidden.has(f.key) && !isMaskedFieldAccessBlocked(key, f.key) && !(key === 'employments' && f.key === 'salary_pending' && !canViewPayrollDollarAmounts())) allKeysSet.add(f.key);
+      if (!f.drawerOnly && !hidden.has(f.key) && !isInspectorSchemaFieldBlocked(key, f.key, row)) allKeysSet.add(f.key);
     });
     const allKeys = Array.from(allKeysSet);
 
@@ -129011,8 +129854,9 @@
 
     const canEditFull = canModifyData();
     const canEditWordOnly = canModifyTextOnly();
+    const secTaxAllowed = seatLens().tax;
     const renderCell = (k, valOverride) => {
-      if (isMaskedFieldAccessBlocked(key, k) || (key === 'employments' && k === 'salary_pending' && !canViewPayrollDollarAmounts())) return '';
+      if (isInspectorSchemaFieldBlocked(key, k, row)) return '';
       const fDef = schemaByKey.get(k);
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
@@ -129024,7 +129868,9 @@
         source_module: 'Driven By', debit_rule: 'Hidden Debit Calculation', credit_rule: 'Hidden Credit Calculation',
         soa_legs: 'Posted SOA Legs', debit: 'Total Debit ($)', credit: 'Total Credit ($)', balance: 'Net Balance ($)'
       } : null;
-      const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || INSPECT_FUEL_RO_LABELS[k] || k.replace(/_/g, ' '));
+      const lblText = (k === 'total_ttc' && !secTaxAllowed)
+        ? 'Total ($)'
+        : (fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || INSPECT_FUEL_RO_LABELS[k] || k.replace(/_/g, ' ')));
       const canEditThisCell = canEditFull ? (fDef && valOverride === undefined) : (canEditWordOnly && fDef && valOverride === undefined && !isNumericInspectorField(k, fDef, row));
       const editableAttr = canEditThisCell ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
       const cellCls = `inspector-cell${editableAttr ? ' is-editable-cell' : ''}${isEmpty && editableAttr ? ' is-empty-cell' : ''}`;
@@ -129036,7 +129882,7 @@
       } else {
         valHtml = esc(formatted);
       }
-      return `<div class="${cellCls}"${editableAttr}><small>${esc(lblText)}${editableAttr ? '<i class="insp-cell-edit-ico" aria-hidden="true">✎</i>' : ''}</small><b>${valHtml}</b></div>`;
+      return `<div class="${cellCls}" data-insp-field="${esc(k)}"${editableAttr}><small>${esc(lblText)}${editableAttr ? '<i class="insp-cell-edit-ico" aria-hidden="true">✎</i>' : ''}</small><b>${valHtml}</b></div>`;
     };
 
     const sections = [];
@@ -129047,10 +129893,44 @@
   }
 
   function renderSubgridBoxHtml(sg) {
-    const rows = sg.rows || [];
+    const sgLens = seatLens();
+    const isSupPrSg = sg.targetKey === 'price_rules';
+    let rows = sg.rows || [];
+    if (isSupPrSg && !sgLens.expenses) {
+      rows = rows.filter(r => !/^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String((r && r.rule_type) || '').trim()));
+    }
+    if (isSupPrSg && !sgLens.profit) {
+      rows = rows.filter(r => !isCommRule(r));
+    }
+    const isSgColBlocked = c => {
+      if (isMaskedFieldAccessBlocked(sg.targetKey, c)) return true;
+      const tkSg = String(sg.targetKey || '').toLowerCase();
+      const cn = String(c || '').toLowerCase();
+      if (!sgLens.expenses && /^(?:raw_purchases|expenses|expense_items|settlements|recurring_expenses|repair_items|warehouse_movements|items|equipment_repairs|equipment_oil_logs|part_movements)$/i.test(tkSg)) {
+        if (/^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue)$/i.test(cn)) return true;
+      }
+      if (!sgLens.expenses && isSupPrSg && /^(?:sg_raw_rules|sg_s_rules|sg_pr_raw|sg_st_rules)$/i.test(sg.id || '')) {
+        if (/^(?:unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|price|trans_price|floor_price)$/i.test(cn)) return true;
+      }
+      if (!sgLens.profit && isSupPrSg && sg.id === 'sg_s_rules' && /^(?:unit_price|price|indiff_price|rate|amount|adj1|adj2|total1|total2)$/i.test(cn)) {
+        if (rows.length > 0 && rows.every(isCommRule)) return true;
+      }
+      if (!sgLens.tax) {
+        if (/^(?:vat|vat_amount|vat_invoice|output_vat|input_vat|tax_seq|net_amount)$/i.test(cn)) return true;
+        if (tkSg === 'vat_invoices' && /^(?:total_ttc|vat_percent|vat_fx_rate)$/i.test(cn)) return true;
+        if (tkSg === 'sales_tickets' && /^(?:unit_price|total|price|trans_price)$/i.test(cn)) return true;
+      }
+      if (!sgLens.partnerSplits && /^(?:jv_partnerships|jv_distributions)$/i.test(tkSg) && /^(?:jv_share|amount|total|percentage)$/i.test(cn)) return true;
+      if (!sgLens.books && /^(?:receipts|settlements|loans|loan_settlements|gl_accounts|ledger|conversions|external_movements|customers|suppliers|credit_terms)$/i.test(tkSg) && /^(?:amount|discount|principal|settled_amount|balance|debit|credit|usd_amount|lbp_amount|exchange_rate|fx_rate|usd_delta|lbp_delta|credit_limit|ar_balance|ar_overdue|ar_1_60|ar_60_plus|ar_current|ar_1_10|ar_11_30|ar_31_60|ar_settled|receipts|ap_balance|ap_material|ap_haulage|ap_expense|ap_settled)$/i.test(cn)) return true;
+      if (/^(?:fuel_price_ref|fuel_steps|fuel_base_price)$/i.test(cn)) {
+        const allAllowed = rows.length > 0 && rows.every(r => Boolean(r && r.company && canSeeFuelEconomics() && isFuelCompanyAllowed(r.company)));
+        if (!allAllowed) return true;
+      }
+      return false;
+    };
     const shown = rows.slice(0, 25);
-    const visibleCols = (sg.cols || []).filter(c => !isMaskedFieldAccessBlocked(sg.targetKey, c));
-    const effSumCol = (sg.sumCol && !isMaskedFieldAccessBlocked(sg.targetKey, sg.sumCol)) ? sg.sumCol : '';
+    const visibleCols = (sg.cols || []).filter(c => !isSgColBlocked(c));
+    const effSumCol = (sg.sumCol && !isSgColBlocked(sg.sumCol)) ? sg.sumCol : '';
     let sumVal = 0, hasSum = false;
     if (effSumCol) {
       rows.forEach(r => {
@@ -129083,7 +129963,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${visibleCols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|qty|litres|capacity|hours|days|percentage|_count|proceeds|^debit$|^credit$|balance$/.test(c) ? 'r' : ''}">${esc(c === 'package_usd' ? 'Total / Mo ($)' : (c === 'reimbursement' ? 'Reimb. ($)' : c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())))}</th>`).join('')}
+                  ${visibleCols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|qty|litres|capacity|hours|days|percentage|_count|proceeds|^debit$|^credit$|balance$/.test(c) ? 'r' : ''}">${esc(c === 'package_usd' ? 'Total / Mo ($)' : (c === 'reimbursement' ? 'Reimb. ($)' : ((c === 'total_ttc' && !sgLens.tax) ? 'Total ($)' : c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))))}</th>`).join('')}
                 </tr>
               </thead>
               <tbody data-sg-tbody="${esc(sg.id)}">
@@ -129211,6 +130091,16 @@
       document.body.appendChild(panel);
       wireBackdropDismiss(panel, closeRecordInspector);
       $('inspectorCloseBtn').addEventListener('click', closeRecordInspector);
+    }
+    if (!panel._shareSummaryWired) {
+      panel._shareSummaryWired = true;
+      panel.addEventListener('click', e => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-insp-share-summary]') : null;
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        triggerRecordSummaryShare(buildRecordInspectorShareSummary(), btn);
+      });
     }
     return panel;
   }
@@ -129772,7 +130662,7 @@
       wbBook: book,
       ind: 'Manufacturing',
       company: co,
-      tableTitle: 'Weighbridge 25-Ticket Book Audit'
+      tableTitle: 'Weighbridge Book Audit'
     };
     const bodyEl = $('inspectorBody');
     bodyEl._activeTableContext = null;
@@ -129789,6 +130679,7 @@
         <div class="pa-cmd-actions">
           <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="inspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
           <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="inspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
+          <button type="button" class="pa-cmd-btn insp-share-summary-btn" id="inspShareSummaryBtn" data-insp-share-summary="1" data-ui-tip="Share or copy summary">${ic('copy')} <span class="insp-share-lbl">${isMobPhoneViewport() ? 'Share Summary' : 'Copy Summary'}</span></button>
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-primary" id="wbCmdEnterSalesBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Sales #${esc(firstGapNo)}</button>` : ''}
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-brass" id="wbCmdEnterRawBtn" data-wb-enter-stream="raw" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Raw #${esc(firstGapNo)}</button>` : ''}
           ${firstGapNo && canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" id="wbCmdRemoveSlipBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove Ticket · 0 KM (#${esc(firstGapNo)})</button>` : ''}
@@ -129816,7 +130707,7 @@
             <div class="pa-rec-kcard">
               <div>
                 <div class="pa-rec-kcard-hdr">
-                  <span class="pa-rec-kcard-lbl">${esc(c.lbl)}</span>
+                  <span class="pa-rec-kcard-lbl" data-en-label="${esc(c.lbl)}">${esc(c.lbl)}</span>
                   <span class="pa-rec-kcard-tag ${esc(c.tone)}">${esc(c.tag)}</span>
                 </div>
                 <div class="pa-rec-kcard-val">${esc(c.val)}</div>
@@ -129896,6 +130787,9 @@
     if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
       window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
     }
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(panel); } catch (_) {}
+    }
   }
 
   function resolveTableRowContext(trEl, crKey, id, row) {
@@ -129910,7 +130804,7 @@
       if (titleNode) rawTitle = String(titleNode.textContent || '').trim();
     }
     const tableTitle = (rawTitle || INSPECT_LABELS[crKey] || 'Table Breakdown')
-      .replace(/[—→]/g, '·')
+      .replace(/[\u2014\u2013\u2190-\u21FF]/g, '·')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -129918,22 +130812,30 @@
     const tdEls = Array.from(trEl.querySelectorAll('td'));
     const cells = [];
     for (let i = 0; i < tdEls.length; i++) {
-      const lbl = String((thEls[i] && thEls[i].textContent) || `Col ${i + 1}`)
-        .replace(/[▲▼↕]/g, '')
-        .replace(/[—→]/g, '-')
+      const thEl = thEls[i];
+      const tdEl = tdEls[i];
+      if (
+        (thEl && (thEl.classList.contains('tbl-col-hidden') || thEl.classList.contains('col-mgr-hidden') || (thEl.style && thEl.style.display === 'none')))
+        || (tdEl.classList.contains('tbl-col-hidden') || tdEl.classList.contains('col-mgr-hidden') || (tdEl.style && tdEl.style.display === 'none'))
+      ) {
+        continue;
+      }
+      const lbl = ((thEl ? extractThLabelText(thEl, false) : '') || `Col ${i + 1}`)
+        .replace(/[\u2014\u2013\u2190-\u21FF]/g, '-')
         .replace(/\s+/g, ' ')
         .trim();
-      const val = String(tdEls[i].textContent || '')
-        .replace(/[—→]/g, '-')
+      const rbacKey = (thEl ? extractThEnText(thEl) : '') || lbl;
+      const val = extractTdCellCleanText(tdEl)
+        .replace(/[\u2014\u2013\u2190-\u21FF]/g, '-')
         .replace(/\s+/g, ' ')
         .trim();
-      if (!lbl || /^action|^edit$/i.test(lbl)) continue;
-      cells.push({ label: lbl, value: val || '-' });
+      if (!rbacKey || /^(?:action|actions|edit|quick action|day tally|reconcile action)$/i.test(rbacKey)) continue;
+      cells.push({ label: lbl || rbacKey, rbacKey, value: val || '-' });
     }
     if (!cells.length) return null;
 
     const findCellVal = rx => {
-      const hit = cells.find(c => rx.test(c.label));
+      const hit = cells.find(c => rx.test(c.rbacKey || c.label));
       return hit && hit.value && hit.value !== '-' ? hit.value : '';
     };
     const filterCustomer = (trEl.getAttribute('data-row-cust') || findCellVal(/^(customer|client|buyer)$/i) || '').trim();
@@ -130113,7 +131015,7 @@
       panelId,
       tableTitle,
       subjectTitle,
-      company: filterCompany || row.company || 'WTC',
+      company: filterCompany || row.company || COMPANY_BU_MATCH[STATE.company] || 'ISABI',
       filterCustomer,
       filterProduct,
       filterSite,
@@ -130123,7 +131025,7 @@
       bannerTone: /snBelow|snLapsed|snOverdueAr|snFuel|snDates|snPayroll|snFleetParts|snWorkforce|belowAgreedPanel|pricingBelowPanel/.test(panelId) ? 'amber' : '',
       bannerText,
       cockpit: {
-        bu: filterCompany || row.company || 'WTC',
+        bu: filterCompany || row.company || COMPANY_BU_MATCH[STATE.company] || 'ISABI',
         title: `${subjectParts.join(' · ')} · ${tableTitle}`,
         pill: (cells[cells.length - 1] && cells[cells.length - 1].value) || primarySubject,
         cards: cockpitCards
@@ -130208,21 +131110,12 @@
       ? null
       : (opts.tableContext || (targetHist && targetHist.tableContext) || (isSameInspectorRecord && existingBody && existingBody._activeTableContext) || null);
     const activeTab = opts.tab || (targetHist && targetHist.tab) || (isSameInspectorRecord ? prevActiveTab : 'general');
-    let panel = $('recordInspector');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'recordInspector';
-      panel.className = 'modal-backdrop';
-      panel.innerHTML = '<div class="modal-card inspector-card" role="dialog" aria-modal="true" aria-labelledby="inspectorTitle"><div class="modal-header"><div><span class="modal-eyebrow" id="inspectorEyebrow"></span><h2 id="inspectorTitle"></h2></div><button type="button" class="modal-close-btn" id="inspectorCloseBtn" aria-label="Close">✕</button></div><div class="modal-body" id="inspectorBody"></div></div>';
-      document.body.appendChild(panel);
-      wireBackdropDismiss(panel, closeRecordInspector);
-      $('inspectorCloseBtn').addEventListener('click', closeRecordInspector);
-    }
+    let panel = ensureRecordInspectorModal();
 
     const app = isAppRecord(row);
     const isAhRow = row && (row.after_hours === true || row.after_hours === 1 || row.after_hours === '1' || row.after_hours === 'true');
     if (tc) {
-      $('inspectorEyebrow').textContent = `TABLE ROW DETAILS · ${tc.tableTitle.toUpperCase()} · ${(tc.company || row.company || 'WTC').toUpperCase()}`;
+      $('inspectorEyebrow').textContent = `TABLE ROW DETAILS · ${tc.tableTitle.toUpperCase()} · ${(tc.company || row.company || COMPANY_BU_MATCH[STATE.company] || 'ISABI').toUpperCase()}`;
       $('inspectorTitle').textContent = tc.subjectTitle;
     } else {
       $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
@@ -130236,7 +131129,7 @@
     let siteNetBackInspHtml = '';
     if (!fastMod && !tc && key === 'sites' && getActiveIndustry() === 'Manufacturing'
       && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing')
-      && canAccessTable('price_rules')) {
+      && canAccessTable('price_rules') && seatLens().expenses && seatLens().profit) {
       try {
         const nbSite = String(row.name || row.Site || '').trim();
         const nbBu = COMPANY_BU_MATCH[STATE.company] || '';
@@ -130260,10 +131153,7 @@
     const eqWindows = (targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows : [];
     const inspDefaultTwCo = COMPANY_BU_MATCH[STATE.company] || (row.company === 'BBConstruction' ? 'BBConstruction' : (row.company === 'Lions Transport' ? 'Lions Transport' : 'WTC'));
     const eqScopedWinCount = eqWindows.filter(w => canonTwBu((w && w.co) || 'WTC') === canonTwBu(inspDefaultTwCo)).length;
-    const editSchemaRaw = getInspectorEditableSchema(key, row, targetEqRow);
-    const editSchema = (key === 'raw_purchases' && !seatLens().expenses)
-      ? editSchemaRaw.filter(f => f && !['unit_cost', 'cost', 'trans_unit_cost', 'trans_rate', 'trans_cost', 'discount', 'total', 'landed_cost'].includes(f.key))
-      : editSchemaRaw;
+    const editSchema = getInspectorEditableSchema(key, row, targetEqRow);
     const inspFreqIdx = getFreqIndex();
     const inspRegions = uniqSorted(
       ((SEED.records && SEED.records.regions) || []).map(r => r.name)
@@ -130524,6 +131414,7 @@
         <div class="pa-cmd-actions">
           <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="inspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
           <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="inspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
+          <button type="button" class="pa-cmd-btn insp-share-summary-btn" id="inspShareSummaryBtn" data-insp-share-summary="1" data-ui-tip="Share or copy summary">${ic('copy')} <span class="insp-share-lbl">${isMobPhoneViewport() ? 'Share Summary' : 'Copy Summary'}</span></button>
           ${tc ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspOpenFull360Btn">Open Full 360° Profile ↗</button>` : ''}
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
@@ -130688,7 +131579,7 @@
             <div class="pa-rec-kcard">
               <div>
                 <div class="pa-rec-kcard-hdr">
-                  <span class="pa-rec-kcard-lbl">${esc(c.lbl)}</span>
+                  <span class="pa-rec-kcard-lbl" data-en-label="${esc(c.lbl)}">${esc(c.lbl)}</span>
                   <span class="pa-rec-kcard-tag ${esc(c.tone)}">${esc(c.tag)}</span>
                 </div>
                 <div class="pa-rec-kcard-val">${esc(c.val)}</div>
@@ -133661,6 +134552,7 @@
 
   function closeRecordInspector() {
     STATE.activeInspectorCtx = null;
+    if (typeof clearShareCopyBtnFeedback === 'function') clearShareCopyBtnFeedback();
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
       window.MFG_GEO.cleanupInspectorGeoMap();
     }
@@ -133670,7 +134562,10 @@
     const panel = $('recordInspector');
     if (panel) panel.hidden = true;
     const ib = $('inspectorBody');
-    if (ib) ib.innerHTML = '';
+    if (ib) {
+      ib._activeTableContext = null;
+      ib.innerHTML = '';
+    }
     const m = $('entryModal');
     if (!m || m.hidden) document.body.classList.remove('modal-open');
     if (STATE.renderPending) { STATE.renderPending = false; renderApp(); }
@@ -143174,6 +144069,9 @@
     clearCfScrubChipState();
     STATE.indDrawerFilters = {};
     closeCoOverrideDiffPopover();
+    closeMobRowPeekSheet({ restoreFocus: false });
+    clearMobPeekRowHighlights(true);
+    if (STATE.activeInspectorCtx) closeRecordInspector();
     STATE.shown = {};
     STATE.pbiTablePage = {};
     let nextView = resolveIndustryCompatibleView(STATE.view, indId);
@@ -143317,6 +144215,7 @@
       try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     renderApp();
     if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('scope');
   }
@@ -144300,6 +145199,26 @@
     }
   }
 
+  function purgeOverlaysOnSessionOrKioskLock() {
+    if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
+    if (window.MFG_CHART_POP && typeof window.MFG_CHART_POP.close === 'function') window.MFG_CHART_POP.close();
+    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+      window.MFG_GEO.exitInlinePickerFullWindow();
+    }
+    if (typeof closeEntryModal === 'function') closeEntryModal(true);
+    if (typeof closeRecordInspector === 'function') closeRecordInspector();
+    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true, restoreFocus: false });
+    if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
+    _shareSummaryGen++;
+    _shareSummaryInFlight = false;
+    _authSessionEpoch++;
+    if (typeof window !== 'undefined') window.__LAST_RECORD_SUMMARY_TEXT = '';
+    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true, restoreFocus: false });
+    if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
+      window.MFG_CMD_PALETTE.close({ clearCache: true });
+    }
+  }
+
   function openAuthGate(prefillEmail, opts = {}) {
     // Every way back to the sign-in screen (sign-out, idle lock, session expiry) starts the next person clean:
     // no carried-over face misses and no held face descriptor that could ride along with their PIN.
@@ -144309,17 +145228,8 @@
     FACE_STATE.lastLiveGateAt = 0;
     FACE_STATE.lastVerifiedDescriptor = null;
     FACE_STATE.pendingPinDescriptor = null;
-    // A stakeholder balance card must not stay in the page once the seat signs out or the session ends.
-    if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
-    // Same for a pinned KPI breakdown or an open touch sheet: the previous seat's figures go with it.
-    if (window.MFG_CHART_POP && typeof window.MFG_CHART_POP.close === 'function') window.MFG_CHART_POP.close();
-    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
-      window.MFG_GEO.exitInlinePickerFullWindow();
-    }
-    closeEntryModal(true);
-    closeRecordInspector();
-    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
-    if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
+    // A stakeholder balance card, inspector modal, pinned KPI breakdown or touch sheet must not stay open across sign-out/lock.
+    purgeOverlaysOnSessionOrKioskLock();
     if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(resolveSelectedAuthUser());
     // Preserve persisted local geo store only during initial unauthenticated cookie-resume boot;
     // every session lock, sign-out, expiry, or non-cookie boot wipes it cleanly.
@@ -144328,9 +145238,6 @@
       window.MFG_GEO.resetGeoUiState();
     } else if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       window.MFG_GEO.resetGeoStoreSession();
-    }
-    if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
-      window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
@@ -144543,6 +145450,7 @@
   }
 
   function signOut() {
+    purgeOverlaysOnSessionOrKioskLock();
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
     // Stop approval notifications cleanly: demo cleanup runs locally; live sessions await server unsub before logout.
@@ -144706,6 +145614,10 @@
     closeMobileTopSheets();
     closeEntryModal(true);
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
+    if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
+    _shareSummaryGen++;
+    _shareSummaryInFlight = false;
+    if (typeof window !== 'undefined') window.__LAST_RECORD_SUMMARY_TEXT = '';
     if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true });
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
@@ -145778,6 +146690,7 @@
   function openPocketBrief(opts = {}) {
     if (!canUsePocketBrief(activeUser())) return false;
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (typeof closeMobileTopSheets === 'function') closeMobileTopSheets();
     _pocketBriefLastFocus = (!opts || !opts.fromLogin) && document.activeElement && document.activeElement !== document.body
       ? document.activeElement
@@ -147009,6 +147922,7 @@
       STAFF_FACE_MODAL_STATE.newStaffOpen = false;
       $('staffFaceEnrolModal').hidden = true;
     }
+    purgeOverlaysOnSessionOrKioskLock();
     document.body.classList.remove('modal-open', 'kiosk-idle-dimmed', 'kiosk-night-sleep');
     const targetKiosk = ['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk)
       ? STATE.activeKiosk
@@ -147401,6 +148315,7 @@
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
       KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = '';
       KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
+      purgeOverlaysOnSessionOrKioskLock();
     } else if (!KIOSK_ADMIN_MODAL_STATE.sessionActive) {
       startOrResetKioskAdminSession(activeUser().full_name || 'Admin');
     }
@@ -178587,6 +179502,48 @@
           renderPocketBriefOverlayDom();
         }
       }
+      if ((!user || !STATE.authed || STATE.kioskLocked || isAnyKioskOrScanSurface()) && $('recordInspector') && !$('recordInspector').hidden) {
+        closeRecordInspector();
+      }
+      if (_mobRowPeekState && $('mobRowPeekBackdrop') && !$('mobRowPeekBackdrop').hidden) {
+        if (!user || !STATE.authed || STATE.kioskLocked || isAnyKioskOrScanSurface()) {
+          closeMobRowPeekSheet({ purgeDom: true, restoreFocus: false });
+        } else {
+          const livePeek = resolveLiveMobPeekState();
+          const hasLiveRow = Boolean(livePeek && !livePeek.rowVanished && livePeek.curIdx >= 0 && livePeek.siblings && livePeek.siblings[livePeek.curIdx]);
+          if (hasLiveRow) {
+            _mobRowPeekState.trEl = livePeek.siblings[livePeek.curIdx];
+            _mobRowPeekState.lastIndex = livePeek.curIdx;
+            syncMobPeekCurrentRowHighlight(_mobRowPeekState.trEl);
+          } else {
+            _mobRowPeekState.trEl = null;
+            clearMobPeekRowHighlights(false);
+          }
+          const navBar = $('mobPeekNavBar');
+          const posLbl = $('mobPeekPosLabel');
+          const prevBtn = $('mobPeekPrevBtn');
+          const nextBtn = $('mobPeekNextBtn');
+          const liveSibs = (livePeek && Array.isArray(livePeek.siblings)) ? livePeek.siblings : [];
+          if (navBar) {
+            if (hasLiveRow && liveSibs.length > 1) {
+              navBar.hidden = false;
+              if (posLbl) posLbl.textContent = `${livePeek.curIdx + 1} / ${liveSibs.length}`;
+              if (prevBtn) prevBtn.disabled = livePeek.curIdx <= 0;
+              if (nextBtn) nextBtn.disabled = livePeek.curIdx >= liveSibs.length - 1;
+            } else if (livePeek && livePeek.rowVanished && liveSibs.length > 0) {
+              navBar.hidden = false;
+              if (posLbl) posLbl.textContent = `- / ${liveSibs.length}`;
+              if (prevBtn) prevBtn.disabled = livePeek.curIdx <= 0;
+              if (nextBtn) nextBtn.disabled = livePeek.curIdx >= liveSibs.length;
+            } else {
+              navBar.hidden = true;
+              if (posLbl) posLbl.textContent = '';
+              if (prevBtn) prevBtn.disabled = true;
+              if (nextBtn) nextBtn.disabled = true;
+            }
+          }
+        }
+      }
     } finally {
       if (window.MFG_I18N) {
         window.MFG_I18N.syncLangSwitchersDom();
@@ -182955,6 +183912,7 @@
     _lastUserNavAt = Date.now();
     cancelIdleHubPrewarm();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
@@ -187819,6 +188777,9 @@
     savePartyHygieneDecision: typeof savePartyHygieneDecision === 'function' ? savePartyHygieneDecision : null,
     getPartyHygieneRules: typeof getPartyHygieneRules === 'function' ? getPartyHygieneRules : null,
     resolveConfirmedPartyAlias: typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias : null,
+    buildMobRowPeekShareSummary,
+    buildRecordInspectorShareSummary,
+    triggerRecordSummaryShare,
     getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);

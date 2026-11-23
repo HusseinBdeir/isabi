@@ -14241,7 +14241,15 @@
       "Units Received by Warehouse": "الوحدات المستلمة حسب المستودع",
       "Verified Records by Reconciliation Domain (Rows)": "السجلات المدققة حسب مجال المطابقة (صفوف)",
       "Workshop Jobs by Type": "مهام الورشة حسب النوع",
-      "Top truck & parts fleet accounts": "أبرز حسابات أسطول الشاحنات وقطع الغيار"
+      "Top truck & parts fleet accounts": "أبرز حسابات أسطول الشاحنات وقطع الغيار",
+      "Share Summary": "مشاركة الملخص",
+      "Share or copy summary": "مشاركة الملخص أو نسخه",
+      "Summary copied to clipboard": "تم نسخ الملخص إلى الحافظة",
+      "Could not copy summary": "تعذّر نسخ الملخص",
+      "Record Details": "تفاصيل السجل",
+      "Weighbridge Book Audit": "تدقيق دفتر القبان",
+      "Effective End Date": "تاريخ الانتهاء الفعلي",
+      "Monthly Operating Profit - WTC vs BBConstruction": "الربح التشغيلي الشهري - WTC مقابل BBConstruction"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -28464,7 +28472,15 @@
       "Units Received by Warehouse": "Unités Réceptionnées par Dépôt",
       "Verified Records by Reconciliation Domain (Rows)": "Enregistrements Vérifiés par Domaine (Lignes)",
       "Workshop Jobs by Type": "Travaux d'Atelier par Type",
-      "Top truck & parts fleet accounts": "Principaux comptes flottes poids lourds & pièces"
+      "Top truck & parts fleet accounts": "Principaux comptes flottes poids lourds & pièces",
+      "Share Summary": "Partager le résumé",
+      "Share or copy summary": "Partager ou copier le résumé",
+      "Summary copied to clipboard": "Résumé copié dans le presse-papiers",
+      "Could not copy summary": "Impossible de copier le résumé",
+      "Record Details": "Détails de l'enregistrement",
+      "Weighbridge Book Audit": "Audit Carnet Pont-Bascule",
+      "Effective End Date": "Date de fin effective",
+      "Monthly Operating Profit - WTC vs BBConstruction": "Profit Opérationnel Mensuel - WTC vs BBConstruction"
     }
   };
 

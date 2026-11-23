@@ -145,6 +145,8 @@
       return -1;
     }
     table.dataset.mobPinCol = String(pinCol);
+    const firstVisColIdx = labels.findIndex((_, ci) => !hiddenSet || !hiddenSet.has(ci));
+    const isFirstVisPin = firstVisColIdx >= 0 && pinCol === firstVisColIdx;
     const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(tableId) : tableId.replace(/"/g, '\\"');
     const headColSel = useFastNth ? `:nth-child(${pinCol + 1})` : `[data-col-start="${pinCol}"]`;
     let bodyPinCol = pinCol;
@@ -174,21 +176,34 @@
     const bodyCapSel = `body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > tbody > tr > td${bodyColSel}:not([colspan]):not(.tbl-col-resized), body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > tbody > tr > th${bodyColSel}:not([colspan]):not(.tbl-col-resized)`;
     const headCapSel = `body:not(.kiosk-locked) table[data-col-mgr-id="${escId}"]:not(.has-col-resize) > thead > tr > th${headColSel}:not([colspan]):not(.tbl-col-resized)`;
     const hoverSel = `${tRoot} > tbody > tr:hover > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr:hover > th${bodyColSel}:not([colspan])`;
-    const selRowSel = `${tRoot} > tbody > tr.is-row-selected > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.is-row-selected > th${bodyColSel}:not([colspan])`;
+    const selRowSel = `${tRoot} > tbody > tr.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > th${bodyColSel}:not([colspan])`;
+    const peekRowSel = `${tRoot} > tbody > tr.is-mob-peek-current > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.is-mob-peek-current > th${bodyColSel}:not([colspan])`;
+    const peekFlashSel = `${tRoot} > tbody > tr.sn-panel-flash > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.sn-panel-flash > th${bodyColSel}:not([colspan])`;
+    const rtlPeekRowSel = `[dir="rtl"] ${tRoot} > tbody > tr.is-mob-peek-current > td${bodyColSel}:not([colspan]), [dir="rtl"] ${tRoot} > tbody > tr.is-mob-peek-current > th${bodyColSel}:not([colspan])`;
+    const rtlPeekFlashSel = `[dir="rtl"] ${tRoot} > tbody > tr.sn-panel-flash > td${bodyColSel}:not([colspan]), [dir="rtl"] ${tRoot} > tbody > tr.sn-panel-flash > th${bodyColSel}:not([colspan])`;
     const voidRowSel = `${tRoot} > tbody > tr.is-voided > td${bodyColSel}:not([colspan]), ${tRoot} > tbody > tr.row-voided > td${bodyColSel}:not([colspan])`;
     const rtlHeadSel = `[dir="rtl"] ${headSel}`;
     const rtlBodySel = `[dir="rtl"] ${tRoot} > tbody > tr > td${bodyColSel}:not([colspan]), [dir="rtl"] ${tRoot} > tbody > tr > th${bodyColSel}:not([colspan])`;
-    MOB_PIN_CSS.set(tableId, [
+    const peekShadowRule = isFirstVisPin ? ' box-shadow: inset 3px 0 0 var(--brass, #C0892F), 2px 0 5px -2px rgba(15, 30, 56, 0.10);' : '';
+    const rtlPeekShadowRule = isFirstVisPin ? ' box-shadow: inset -3px 0 0 var(--brass, #C0892F), -2px 0 5px -2px rgba(15, 30, 56, 0.10);' : '';
+    const pinCssRules = [
       `  ${headSel} { position: sticky; inset-inline-start: 0; z-index: 6; background-color: var(--surface-2); border-inline-end: 1px solid var(--line-strong); box-shadow: 2px 0 5px -2px rgba(15, 30, 56, 0.10), 0 -2px 0 0 var(--surface-2), 0 1px 0 var(--line); }`,
       `  ${bodyTdSel} { position: sticky; inset-inline-start: 0; z-index: 2; background-color: var(--surface); border-inline-end: 1px solid var(--line-strong); box-shadow: 2px 0 5px -2px rgba(15, 30, 56, 0.10); }`,
       `  ${headCapSel} { max-width: min(148px, 37vw); }`,
       `  ${bodyCapSel} { max-width: min(148px, 37vw); overflow: hidden; text-overflow: ellipsis; }`,
       `  ${hoverSel} { background-color: color-mix(in srgb, var(--brass) 5%, var(--surface)); }`,
       `  ${selRowSel} { background-color: color-mix(in srgb, var(--brass) 13%, var(--surface)) !important; }`,
+      `  ${peekRowSel} { background-color: color-mix(in srgb, var(--brass) 14%, var(--surface)) !important;${peekShadowRule} }`,
+      `  ${peekFlashSel} { animation: mobPeekTdPulse 1.15s ease-out 1;${peekShadowRule} }`,
       `  ${voidRowSel} { background-color: var(--surface-2); }`,
       `  ${rtlHeadSel} { left: auto; right: 0; box-shadow: -2px 0 5px -2px rgba(15, 30, 56, 0.10), 0 -2px 0 0 var(--surface-2), 0 1px 0 var(--line); }`,
       `  ${rtlBodySel} { left: auto; right: 0; box-shadow: -2px 0 5px -2px rgba(15, 30, 56, 0.10); }`
-    ].join('\n'));
+    ];
+    if (isFirstVisPin) {
+      pinCssRules.push(`  ${rtlPeekRowSel} {${rtlPeekShadowRule} }`);
+      pinCssRules.push(`  ${rtlPeekFlashSel} {${rtlPeekShadowRule} }`);
+    }
+    MOB_PIN_CSS.set(tableId, pinCssRules.join('\n'));
     if (!batchingDynHide) flushMobilePinCss();
     return pinCol;
   }
