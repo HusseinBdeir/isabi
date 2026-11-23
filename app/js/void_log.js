@@ -1241,6 +1241,7 @@
     const canModifyDollars = D.canViewPayrollDollarAmounts ? D.canViewPayrollDollarAmounts(u) : false;
     const canRestoreChrono = Boolean(D.canModifyData && D.canModifyData(u));
     const userCanVoid = D.canVoid ? D.canVoid(u) : false;
+    const canEditGlobalRates = Boolean(D.isFullGroupSeat ? D.isFullGroupSeat(u) : (window.MFG_IS_FULL_GROUP_SEAT && window.MFG_IS_FULL_GROUP_SEAT(u)));
     const { scopeStr, activeInd, scopeSet } = resolveActiveScopeCtx(u);
     const entries = [];
     const seenKeys = new Set();
@@ -1377,10 +1378,11 @@
         const amtUsd = masked ? null : extractRecordAmountUsd(rec, crKey);
         const diffMeta = extractPreVoidDiffSummary(rec, crKey, amtUsd, masked);
         const disp = extractStructuredDisplay(rec, crKey, masked, null);
+        const globalRateLocked = (crKey === 'fx_rates' || crKey === 'vat_rates') && !canEditGlobalRates;
         const canRestoreRow = Boolean(
-          userCanVoid && !hasVoidedParent && originMeta.systemKind !== 'sync_twin'
+          userCanVoid && !globalRateLocked && !hasVoidedParent && originMeta.systemKind !== 'sync_twin'
         );
-        const canEditNoteRow = Boolean(userCanVoid && originMeta.systemKind !== 'sync_twin');
+        const canEditNoteRow = Boolean(userCanVoid && !globalRateLocked && originMeta.systemKind !== 'sync_twin');
 
         const defaultReason = reasonRaw
           || (originMeta.twinIds.length ? `Matched ${originMeta.twinIds.length} workbook ${originMeta.twinIds.length === 1 ? 'row' : 'rows'}${originMeta.twinDiff ? ` (${originMeta.twinDiff})` : ''}` : '');

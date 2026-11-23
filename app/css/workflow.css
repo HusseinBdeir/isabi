@@ -148,12 +148,25 @@
 .vlog-kpi-card {
   appearance: none; font: inherit; text-align: start; cursor: pointer;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
-  display: grid; gap: 3px; min-width: 0; transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+  display: grid; gap: 3px; min-width: 0; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease;
 }
-.vlog-kpi-card:hover { border-color: var(--brass-border); box-shadow: var(--shadow-sm); }
 .vlog-kpi-card.is-active {
   border-color: var(--brass); border-top: 3px solid var(--brass);
   background: color-mix(in srgb, var(--brass) 7%, var(--surface));
+}
+.vlog-kpi-card:hover,
+.vlog-kpi-card.is-active:hover {
+  border-color: var(--hover-ring-border);
+  background: var(--hover-surface-tint);
+  box-shadow: var(--hover-ring-shadow);
+  outline: none;
+}
+.vlog-kpi-card:focus-visible,
+.vlog-kpi-card.is-active:focus-visible {
+  border-color: var(--hover-ring-border);
+  background: var(--hover-surface-tint);
+  box-shadow: var(--hover-ring-shadow), var(--hover-focus-ring);
+  outline: none;
 }
 .vlog-kpi-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .vlog-kpi-val { font-size: 20px; font-weight: 800; color: var(--ink); line-height: 1.2; }

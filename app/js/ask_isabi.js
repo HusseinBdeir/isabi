@@ -21707,21 +21707,14 @@
     let tableHtml = '';
     if (Array.isArray(item.headers) && item.headers.length && Array.isArray(item.rows) && item.rows.length) {
       const colCnt = item.headers.length;
-      const lastColNums = item.rows.map(r => Math.abs(parseNumericCell(r[colCnt - 1]))).filter(n => Number.isFinite(n) && n > 0);
-      const maxLastVal = lastColNums.length >= 2 ? Math.max(...lastColNums) : 0;
 
       const ths = item.headers.map((h, i) => `<th${i === colCnt - 1 ? ' class="num"' : ''}>${esc(h)}</th>`).join('');
       const trs = item.rows.map(r => {
         const rowAttrs = resolveRowInteractiveAttrs(r, item);
-        const rawLast = Math.abs(parseNumericCell(r[colCnt - 1]));
-        const barPct = (maxLastVal > 0 && Number.isFinite(rawLast) && item.topic !== 'screen_walkthrough')
-          ? Math.max(4, Math.min(100, Math.round((rawLast / maxLastVal) * 100)))
-          : 0;
         const tds = r.slice(0, colCnt).map((c, i) => {
           if (i === 0) return `<td><b>${esc(c)}</b></td>`;
           if (i === colCnt - 1) {
-            const barSpan = barPct > 0 ? `<span class="ai-cell-bar" style="width:${barPct}%"></span>` : '';
-            return `<td class="num${barPct > 0 ? ' has-bar' : ''}">${barSpan}<span class="ai-cell-val">${esc(c)}</span></td>`;
+            return `<td class="num"><span class="ai-cell-val">${esc(c)}</span></td>`;
           }
           return `<td>${esc(c)}</td>`;
         }).join('');

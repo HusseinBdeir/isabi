@@ -530,16 +530,12 @@ body.is-daily-ops-view .period-basis-row {
   padding: 7.5px 10px 6.5px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-top: 2.5px solid var(--chart-navy, #2356A8);
+  border-top: 2px solid var(--chart-navy, #2356A8);
   border-radius: 9px;
   box-shadow: var(--shadow-sm);
   min-width: 0;
   cursor: pointer;
-  transition: border-color 0.14s, box-shadow 0.14s;
-}
-
-.dops-kpi:hover {
-  box-shadow: var(--shadow-md);
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 /* Pin in the card corner (desktop, added on first hover): keeps the breakdown popover open and clickable. */
@@ -565,7 +561,7 @@ body.is-daily-ops-view .period-basis-row {
 .dops-kpi:focus-within .dops-kpi-pin,
 .dops-kpi-pin[aria-pressed="true"] { opacity: 1; }
 .dops-kpi-pin:hover,
-.dops-kpi-pin:focus-visible { color: var(--ink); border-color: var(--brass); outline: none; }
+.dops-kpi-pin:focus-visible { color: var(--ink); border-color: var(--hover-ring-border); outline: none; }
 .dops-kpi-pin[aria-pressed="true"] { color: #fff; background: var(--brass); border-color: var(--brass); }
 [dir="rtl"] .dops-kpi-pin { right: auto; left: 4px; }
 @media (hover: none) { .dops-kpi-pin { display: none; } }
@@ -578,6 +574,20 @@ body.is-daily-ops-view .period-basis-row {
 .dops-kpi.accent-cash   { border-top-color: var(--teal, #1E9E8A); }
 .dops-kpi.accent-deals  { border-top-color: #6B5CE7; }
 .dops-kpi.accent-plant  { border-top-color: var(--chart-steel, #4A90D9); }
+
+.dops-kpi:hover {
+  border-color: var(--hover-ring-border);
+  background: var(--hover-surface-tint);
+  box-shadow: var(--hover-ring-shadow);
+  outline: none;
+}
+
+.dops-kpi:focus-visible {
+  border-color: var(--hover-ring-border);
+  background: var(--hover-surface-tint);
+  box-shadow: var(--hover-ring-shadow), var(--hover-focus-ring);
+  outline: none;
+}
 
 .dops-kpi-top {
   display: flex;

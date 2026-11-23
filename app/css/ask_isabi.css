@@ -1447,36 +1447,6 @@
   background: rgba(217, 165, 74, 0.16);
 }
 
-.ai-mini-table td.has-bar {
-  position: relative;
-  z-index: 0;
-}
-
-.ai-mini-table td.has-bar .ai-cell-bar {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  right: 4px;
-  background: rgba(35, 86, 168, 0.13);
-  border-radius: 3px;
-  z-index: -1;
-  pointer-events: none;
-}
-
-#aiDrawer .ai-msg-bot[dir="rtl"] .ai-mini-table td.has-bar .ai-cell-bar {
-  right: auto;
-  left: 4px;
-}
-
-:root[data-theme="dark"] .ai-mini-table td.has-bar .ai-cell-bar {
-  background: rgba(96, 165, 250, 0.2);
-}
-
-.ai-mini-table td.has-bar .ai-cell-val {
-  position: relative;
-  z-index: 1;
-}
-
 @media (max-width: 520px) {
   .ai-lens-bar {
     padding: 6px 10px;
@@ -2366,7 +2336,7 @@ html.phone-scan-companion .topbar-more-popover {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
 .ceo-whatif-btn:hover,
@@ -2378,7 +2348,7 @@ html.phone-scan-companion .topbar-more-popover {
   border-color: #2563eb;
   background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
   color: #1d4ed8;
-  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.14);
+  box-shadow: inset 0 0 0 1px #2563eb;
 }
 
 .ceo-whatif-btn svg,
@@ -2406,6 +2376,7 @@ html.phone-scan-companion .topbar-more-popover {
   background: rgba(37, 99, 235, 0.25);
   border-color: #60a5fa;
   color: #93c5fd;
+  box-shadow: inset 0 0 0 1px #60a5fa;
 }
 
 #whatIfSimulatorModal.wi-modal-backdrop {

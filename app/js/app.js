@@ -388,6 +388,7 @@
     shacman: 'Shacman',
     properties: 'Properties',
     '4235company': '4235 Company S.A.L',
+    '4235 company': '4235 Company S.A.L',
     '4235 company s.a.l': '4235 Company S.A.L',
     '4235': '4235 Company S.A.L',
     insurance: 'Insurance Company',
@@ -1404,10 +1405,11 @@
     const pushCo = (raw) => {
       if (!raw) return;
       const ind = inferIndustryForCompany(raw);
+      const rawCanon = typeof raw === 'string' ? canonCompany(raw.trim()) : '';
       const obj = typeof raw === 'string'
-        ? { key: COMPANY_KEY_BY_NAME[raw.trim()] || slugCompanyKey(raw), name: raw.trim(), label: raw.trim(), industry: ind, sector: ind === 'Manufacturing' ? 'Operating Entity (BU)' : ind }
+        ? { key: COMPANY_KEY_BY_NAME[rawCanon] || slugCompanyKey(rawCanon), name: rawCanon, label: rawCanon, industry: ind, sector: ind === 'Manufacturing' ? 'Operating Entity (BU)' : ind }
         : {
-            key: raw.key || COMPANY_KEY_BY_NAME[String(raw.name || '').trim()] || slugCompanyKey(raw.name),
+            key: raw.key || COMPANY_KEY_BY_NAME[canonCompany(String(raw.name || '').trim())] || slugCompanyKey(raw.name),
             name: String(raw.name || raw.label || '').trim(),
             label: String(raw.label || raw.name || '').trim(),
             industry: ind,
@@ -1434,8 +1436,10 @@
     }
     (STATE.users || []).forEach(u => {
       String((u && u.companies) || '').split(/[,;|]+/).map(s => s.trim()).filter(Boolean).forEach(s => {
-        if (isSynthetic100Test && !/^(wtc|bbconstruction|lions\s*transport|company\s*\d+)$/i.test(s)) return;
-        pushCo(s);
+        if (s === '*' || /^all(\s+\d+)?\s*(companies|group)?$/i.test(s) || /^industry:/i.test(s) || /^manufacturing-group$/i.test(s)) return;
+        const cName = canonCompany(s);
+        if (isSynthetic100Test && !/^(wtc|bbconstruction|lions\s*transport|company\s*\d+)$/i.test(cName)) return;
+        pushCo(cName);
       });
     });
     if (SEED && SEED.records) {
@@ -10448,12 +10452,13 @@
     if (tier === 'owner') return parseUserCompanies(rawCompanies);
     if (tier === 'entry') return [];
     const scopedBus = getSupervisorScopedBus(viewer);
-    const scopedSet = new Set(scopedBus.map(b => norm(b)));
-    const parsed = parseUserCompanies(rawCompanies).filter(c => scopedSet.has(norm(c)));
+    const coKey = c => norm(canonCompany(c) || c);
+    const scopedSet = new Set(scopedBus.map(coKey));
+    const parsed = parseUserCompanies(rawCompanies).filter(c => scopedSet.has(coKey(c)));
     if (parsed.length) return parsed;
     const viewerBus = allowedCompanyNames(viewer);
-    const viewerSet = new Set(viewerBus.map(b => norm(b)));
-    const fallback = parseUserCompanies(rawCompanies).filter(c => viewerSet.has(norm(c)));
+    const viewerSet = new Set(viewerBus.map(coKey));
+    const fallback = parseUserCompanies(rawCompanies).filter(c => viewerSet.has(coKey(c)));
     return fallback.length ? fallback : scopedBus.slice(0, 1);
   }
   function getVisibleDirectoryUsers(viewer) {
@@ -10939,6 +10944,7 @@
     if (form === 'extended') form = 'external';
     if (form === 'grouptransfer') form = 'expense'; // a Group Transfer is entered by whoever enters expenses
     u = u || activeUser();
+    if ((form === 'fxrate' || form === 'vatrate') && !isFullGroupSeat(u)) return false;
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
       const p = getEffectivePermissions(u);
@@ -11056,6 +11062,7 @@
   window.MFG_CAN_ACCESS_GEO_COMPANY = (co, u, opts) => canAccessGeoCompany(co, u, opts);
   window.MFG_CAN_ACCESS_GEO_INDUSTRY = (ind, u) => canAccessGeoIndustry(ind, u);
   window.MFG_IS_OWNER = u => isOwner(u);
+  window.MFG_IS_FULL_GROUP_SEAT = u => isFullGroupSeat(u);
   window.__mfgReapplyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
   window.__mfgGetActiveUser = () => activeUser();
   window.__mfgGetState = () => STATE;
@@ -12220,8 +12227,8 @@
     if (STATE.company === DEMO_COMPANY_KEY) return indCos.length >= 2;
     const allowed = allowedCompanyNames(u);
     if (allowed.length < 2) return false;
-    const allowedNorm = new Set(allowed.map(n => norm(n)));
-    return indCos.filter(c => allowedNorm.has(norm(c.name))).length >= 2;
+    const allowedNorm = new Set(allowed.map(n => norm(canonCompany(n) || n)));
+    return indCos.filter(c => allowedNorm.has(norm(canonCompany(c.name) || c.name))).length >= 2;
   }
 
   function isSelfActiveAdminUsersCheck(targetKey, u) {
@@ -12785,7 +12792,7 @@
       ? raw.map(x => String(x || '').trim()).filter(Boolean)
       : String(raw == null ? 'WTC' : raw).split(/[,;|]+/).map(s => s.trim()).filter(Boolean)
     ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?|insurance\s*company)$/i.test(tok)));
-    if (tokens.some(t => /^all(\s+\d+)?\s*(companies|group)?$/i.test(t) || t.toLowerCase() === 'manufacturing-group')) {
+    if (tokens.some(t => t === '*' || /^all(\s+\d+)?\s*(companies|group)?$/i.test(t) || t.toLowerCase() === 'manufacturing-group')) {
       return cat.map(c => c.name);
     }
     const out = [];
@@ -12799,7 +12806,8 @@
         });
         return;
       }
-      const canonical = byLower.get(tok.toLowerCase()) || tok;
+      const canonTok = canonCompany(tok);
+      const canonical = byLower.get(canonTok.toLowerCase()) || byLower.get(tok.toLowerCase()) || canonTok;
       const k = canonical.toLowerCase();
       if (!seen.has(k)) {
         seen.add(k);
@@ -53296,7 +53304,6 @@
       return acc;
     }, { cash_sales: 0, receipts: 0, treasury_in: 0, cash_in: 0, cash_expenses: 0, settlements_paid: 0, salaries: 0, sweeps_out: 0, cash_out: 0, net_cash: 0 });
     const latestProgTill = progRows.length ? progRows[0].cash_till : cleanCfUsd(liveTot);
-    const maxProgBar = Math.max(1, ...progRows.map(r => Math.max(Math.abs(r.cash_in || 0), Math.abs(r.cash_out || 0))));
 
     return `
       <div class="cockpit-banner has-insights">
@@ -53597,20 +53604,18 @@
             </thead>
             <tbody>
               ${progRows.map(pr => {
-                const inBarW = Math.min(100, Math.round((Math.abs(pr.cash_in || 0) / maxProgBar) * 100));
-                const outBarW = Math.min(100, Math.round((Math.abs(pr.cash_out || 0) / maxProgBar) * 100));
                 return `
                 <tr>
                   <td>${pr.ymIso ? `<button type="button" class="cf-month-drill-btn${focusYm === pr.ymIso ? ' active' : ''}" data-cf-focus-ym="${esc(pr.ymIso)}" title="Inspect all cash till entries in ${esc(pr.monthLbl)}"><strong>${esc(pr.monthLbl)}</strong></button>` : `<strong>${esc(pr.monthLbl)}</strong>`}</td>
                   <td class="r">${fmtUSD(pr.cash_sales, 0)}</td>
                   <td class="r">${fmtUSD(pr.receipts, 0)}</td>
                   <td class="r">${fmtUSD(pr.treasury_in, 0)}</td>
-                  <td class="r pbi-bar-cell"><span class="pbi-bar-bg" style="width:${inBarW}%"></span><span class="pbi-bar-fg"><b>${fmtUSD(pr.cash_in, 0)}</b></span></td>
+                  <td class="r"><b>${fmtUSD(pr.cash_in, 0)}</b></td>
                   <td class="r">${fmtUSD(pr.cash_expenses, 0)}</td>
                   <td class="r">${fmtUSD(pr.settlements_paid, 0)}</td>
                   ${fullFin ? `<td class="r">${fmtUSD(pr.salaries, 0)}</td>` : ''}
                   <td class="r">${fmtUSD(pr.sweeps_out, 0)}</td>
-                  <td class="r pbi-bar-cell"><span class="pbi-bar-bg" style="width:${outBarW}%"></span><span class="pbi-bar-fg"><b>${fmtUSD(pr.cash_out, 0)}</b></span></td>
+                  <td class="r"><b>${fmtUSD(pr.cash_out, 0)}</b></td>
                   <td class="r"><strong style="color:${pr.net_cash < -0.5 ? 'var(--crit)' : (pr.net_cash > 0.5 ? 'var(--good)' : 'inherit')}">${fmtUSD(pr.net_cash, 0)}</strong></td>
                   <td class="r"><strong style="color:${pr.cash_till < -0.5 ? 'var(--crit)' : 'inherit'}">${fmtUSD(pr.cash_till, 0)}</strong></td>
                 </tr>`;
@@ -116912,6 +116917,7 @@
     const origEditDate = editCtx && editCtx.orig ? String(editCtx.orig.date || editCtx.orig.start_date || '').slice(0, 10) : '';
     const origEditRepDate = editCtx && editCtx.orig ? String(editCtx.orig.rep_date || editCtx.orig.set_date || origEditDate || '').slice(0, 10) : '';
     const isUniversalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
+    if ((f === 'fxrate' || f === 'vatrate') && !isFullGroupSeat()) addErr('f_date', 'Global FX & VAT rate schedules require full-group or Owner access.');
     const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
     const staffCoForSeatCheck = f === 'staff' ? (val('f_staff_company') || (editCtx && editCtx.orig && editCtx.orig.company) || company || defaultEntryCompany()) : company;
     if ((!isUniversalForm || f === 'staff') && staffCoForSeatCheck && !allowedCompanyNames().includes(staffCoForSeatCheck)) addErr(f === 'staff' ? 'f_staff_company' : 'f_company', 'Your seat cannot post to ' + (staffCoForSeatCheck || 'that company') + '.');
@@ -121579,6 +121585,9 @@
 
   function _checkVoidRestoreScopeAllowed(crKey, targetRow) {
     if (!targetRow || isOwner()) return '';
+    if (isGlobalRateCrKey(crKey) && !isFullGroupSeat()) {
+      return 'Global FX & VAT rate schedules require full-group or Owner access';
+    }
     const co = String(targetRow.company || targetRow.resort || targetRow.entity || '').trim();
     const normCo = co.toLowerCase().replace(/\s+/g, ' ');
     const isSharedCo = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
@@ -122918,6 +122927,10 @@
 
     if (spec.sourceKind === 'custom_record') {
       const crKey = String(spec.crKey || '').trim();
+      if (isGlobalRateCrKey(crKey) && !isFullGroupSeat()) {
+        toast('Global FX & VAT rate schedules require full-group or Owner access', 'err');
+        return false;
+      }
       const targetId = String(spec.id || '').trim();
       if (!crKey || !targetId) return false;
       if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
@@ -123380,6 +123393,10 @@
         window.MFG_GEO.cleanupTicketOriginMiniMap();
       }
       openIndustryDomainEntryModal(STATE.view, prefill && typeof prefill === 'object' ? prefill : {});
+      return;
+    }
+    if ((form === 'fxrate' || form === 'vatrate') && !isFullGroupSeat()) {
+      toast('Global FX & VAT rate schedules require full-group or Owner access', 'err');
       return;
     }
     if (!editTargetRow && !(pendingTargetRow ? (canModifyData() || canEnterForm(form)) : canEnterForm(form))) {
@@ -130491,8 +130508,9 @@
       if (!(ek in row)) { extraPairs.push([ek, ev]); totalCount++; }
     }
 
-    const canEditFull = canModifyData();
-    const canEditWordOnly = canModifyTextOnly();
+    const rateLocked = isGlobalRateCrKey(key) && !isFullGroupSeat();
+    const canEditFull = !rateLocked && canModifyData();
+    const canEditWordOnly = !rateLocked && canModifyTextOnly();
     const secTaxAllowed = seatLens().tax;
     const renderCell = (k, valOverride) => {
       if (isInspectorSchemaFieldBlocked(key, k, row)) return '';
@@ -131924,6 +131942,7 @@
       inspFreqIdx.warehouseLoc
     );
 
+    const isInspGlobalRateLocked = isGlobalRateCrKey(key) && !isFullGroupSeat();
     const isInspWordOnly = canModifyTextOnly();
     const isGeoEntityInspector = key === 'sites' || key === 'customers' || key === 'suppliers';
     const effInspInd = (row && row._industry) || getActiveIndustry();
@@ -132126,7 +132145,7 @@
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
           ${(key === 'employments' && isPendingSalaryEmployment(row) && canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
-          ${(canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver())) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
+          ${(!isInspGlobalRateLocked && (canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver()))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
           ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
@@ -132139,7 +132158,7 @@
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Quarry Agreement</button>` : ''}
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
-          ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
+          ${(!row.voided && !isInspGlobalRateLocked && canVoid()) ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
           ${inspTicketGatePin && inspTicketGatePin.whatsappUrl ? `<a class="pa-cmd-btn btn-brass" id="inspWhatsAppGatePinBtn" href="${esc(inspTicketGatePin.whatsappUrl)}" target="_blank" rel="noopener">${ic('send')} WhatsApp Gate Pin</a>` : ''}
           ${allowInspGeoPinEdit && !hasInspSitePin ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
@@ -132529,7 +132548,7 @@
       <div class="modal-foot">
         <span class="form-note">${app ? `Posted by <b>${esc(row.entered_by || '—')}</b> · ${esc(row.entered_at || '')}${row.voided ? ' · <b>VOIDED</b>' : ''}` : 'Click any blue lookup pill or related subgrid row to navigate across connected relational records.'}</span>
         <div>
-          ${!row.voided && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} Void / Delete Record</button>` : ''}
+          ${!row.voided && !isInspGlobalRateLocked && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} Void / Delete Record</button>` : ''}
           <button type="button" class="btn btn-brass" id="inspectorDoneBtn">Close</button>
         </div>
       </div>
@@ -133325,7 +133344,7 @@
       }
     };
 
-    const canUseInspModify = canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
+    const canUseInspModify = !isInspGlobalRateLocked && (canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver()));
     const openModifyDrawerAndFocus = (focusFieldKey) => {
       if (!modDrawer || !canUseInspModify) return;
       if (modDrawer.hidden && !bodyEl._preModifySnap) {
@@ -139390,8 +139409,11 @@
     try { appStoreRemoveRaw(CLOUD_UNSENT_CONFIRMED_KEY); } catch (_) {}
   }
   function unsentConfirmedAtFor(co) {
-    const own = Number(_unsentConfirmed.at[co]) || 0;
-    return _unsentConfirmed.allExcept.includes(co) ? own : Math.max(own, _unsentConfirmed.allAt);
+    const k = _unsentCanonCo(co);
+    const own = Number(_unsentConfirmed.at[k] || _unsentConfirmed.at[co]) || 0;
+    return (_unsentConfirmed.allExcept.includes(k) || _unsentConfirmed.allExcept.includes(co))
+      ? own
+      : Math.max(own, _unsentConfirmed.allAt);
   }
   // A sync has just read the cloud (lackCos = the companies that still have rows waiting, of those this seat sends)
   // or sent everything it can send (lackCos = null): every other company of this seat is confirmed as of now.
@@ -139399,7 +139421,10 @@
     if (!_unsentSinceMs) return;
     const now = Date.now();
     if (_unsentScoped && _unsentAllowedCos) {
-      _unsentAllowedCos.forEach(c => { if (!lackCos || !lackCos.has(c)) _unsentConfirmed.at[c] = now; });
+      _unsentAllowedCos.forEach(c => {
+        const ck = _unsentCanonCo(c);
+        if (ck && (!lackCos || !lackCos.has(ck))) _unsentConfirmed.at[ck] = now;
+      });
       // Shared sites and regions are confirmed by industry (unsentClearKey): those of every industry this seat has a
       // real company in.
       _unsentSeatIndustryKeys(_unsentAllowedCos).forEach(ik => { if (!lackCos || !lackCos.has(ik)) _unsentConfirmed.at[ik] = now; });
@@ -139426,6 +139451,14 @@
   // Older names a device may still hold: their rows without a company were always this seat's to send.
   const UNSENT_LEGACY_SHARED_CR_RE = /^(chart_of_accounts|employees|trucks|cost_centers|projects)$/;
   const _unsentSharedCo = c => /^(|all|all bus|all companies|shared)$/.test(String(c || '').trim().toLowerCase().replace(/\s+/g, ' '));
+  function _unsentCanonCo(raw) {
+    const str = String(raw || '').trim();
+    if (!str) return '';
+    if (str.startsWith('ind:')) return str;
+    const s = norm(str);
+    if (s === 'manufacturing-group' || s === DEMO_COMPANY_KEY || s.startsWith('industry:')) return s;
+    return norm(canonCompany(str) || str);
+  }
   // canonGeoIndustryKey in functions/_lib/security.js
   const _unsentGeoInd = raw => {
     const s = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -139439,18 +139472,19 @@
   };
   // Whether the seat signed in now sends this customRecords row, as the cloud judges it (allowed null = every row):
   // canAccessUniversalGeoRow for the shared registers (sites and regions also need a company of the row's industry),
-  // the row's company for everything else.
+  // false for global rate schedules (fx_rates, vat_rates) on scoped seats, and the row's company for everything else.
   function unsentCrRowInScope(key, r, allowed) {
     if (!allowed) return true;
     if (!r) return false;
+    if (isGlobalRateCrKey(key)) return false;
     if (!UNSENT_SHARED_CR_RE.test(key)) {
       const co = String(r.company || '').trim();
       if (!co) return UNSENT_LEGACY_SHARED_CR_RE.test(key);
-      return allowed.has(norm(co));
+      return allowed.has(_unsentCanonCo(co));
     }
     const co = String(r.company || r.resort || r.entity || '').trim();
     const shared = _unsentSharedCo(co);
-    if (!shared && !allowed.has(norm(co))) return false;
+    if (!shared && !allowed.has(_unsentCanonCo(co))) return false;
     if (key !== 'sites' && key !== 'regions') return true;
     const indRaw = String(r._industry || r.industry || r.ind || '').trim() || (shared ? '' : _unsentCoInd(co));
     const ind = _unsentGeoInd(indRaw);
@@ -139474,15 +139508,30 @@
   // company of its own, its industry (as unsentCrRowInScope judges it). Other shared rows are every seat's to send.
   function unsentClearKey(key, r) {
     if (!r) return '';
-    if (!UNSENT_SHARED_CR_RE.test(key)) return norm(r.company || '');
+    if (isGlobalRateCrKey(key)) return 'global:rates';
+    if (!UNSENT_SHARED_CR_RE.test(key)) return _unsentCanonCo(r.company || '');
     const co = String(r.company || r.resort || r.entity || '').trim();
     if ((key === 'sites' || key === 'regions') && _unsentSharedCo(co)) {
       return 'ind:' + _unsentGeoInd(String(r._industry || r.industry || r.ind || '').trim());
     }
-    return _unsentSharedCo(co) ? '' : norm(co);
+    return _unsentSharedCo(co) ? '' : _unsentCanonCo(co);
   }
   function _unsentCoInd(c) {
-    return COMPANY_INDUSTRY_BY_KEY[String(c || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || inferIndustryForCompany(String(c || ''));
+    const canon = canonCompany(String(c || '')) || String(c || '');
+    return COMPANY_INDUSTRY_BY_KEY[canon.toLowerCase().replace(/[^a-z0-9]/g, '')] || inferIndustryForCompany(canon);
+  }
+
+  function _isCrRowHeldInCloud(known, key, r) {
+    if (!known || !known.idx || !r || !r.id) return false;
+    const held = known.idx.get(`${key}\u0001${r.id}`);
+    if (held === undefined) return false;
+    const cut = held.indexOf('|');
+    if ((held.slice(0, cut) === '1') !== Boolean(r.voided)) return false;
+    if (!r.voided) {
+      const myMod = _recModTs(r), remMod = held.slice(cut + 1);
+      if (myMod && (!remMod || myMod > remMod)) return false;
+    }
+    return true;
   }
 
   // A shared device: the seat signed in now sends only its own companies' rows. Rows of other companies keyed or
@@ -139493,6 +139542,7 @@
   function _unsentCrRowHoldsWait(key, r, allowed, floor) {
     if (!r || !r.id) return false;
     if (unsentCrRowInScope(key, r, allowed)) return false;
+    if (_isCrRowHeldInCloud(_unsentKnown, key, r)) return false;
     const t = _unsentRowTouchedMs(r);
     return t >= floor && t > unsentConfirmedAtFor(unsentClearKey(key, r));
   }
@@ -139519,8 +139569,12 @@
         const r = bList[j];
         const pid = r && String(r.id || r.code || '').trim();
         if (!pid || isTillOwnedRowId(pid)) continue;
-        const co = norm(r.company || r.resort || r.entity || '');
+        const co = _unsentCanonCo(r.company || r.resort || r.entity || '');
         if (allowed.has(co)) continue;
+        if (_unsentKnown && _unsentKnown.ind) {
+          const held = _unsentKnown.ind.get(`${bks[i]}\u0001${pid}`);
+          if (held && Boolean(r.voided) === Boolean(held[0]) && Number(r.rev || 1) <= held[1] && _indRowStamp(r) <= held[2]) continue;
+        }
         const t = _unsentRowTouchedMs(r);
         if (t >= floor && t > unsentConfirmedAtFor(co)) return true;
       }
@@ -139595,7 +139649,7 @@
       ind[bk].forEach(r => {
         const pid = r && String(r.id || r.code || '').trim();
         if (!pid || isTillOwnedRowId(pid)) return;
-        if (!allowed.has(norm(r.company || r.resort || r.entity || ''))) return;
+        if (!allowed.has(_unsentCanonCo(r.company || r.resort || r.entity || ''))) return;
         known.ind.set(`${bk}\u0001${pid}`, [r.voided ? 1 : 0, Number(r.rev || 1), _indRowStamp(r)]);
       });
     });
@@ -139665,7 +139719,7 @@
         if (!r) continue;
         if (industry && isTillOwnedRowId(String(r.id || r.code || '').trim())) continue;
         if (allowed) {
-          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !unsentCrRowInScope(k, r, allowed)) continue;
+          if (industry ? !allowed.has(_unsentCanonCo(r.company || r.resort || r.entity || '')) : !unsentCrRowInScope(k, r, allowed)) continue;
         }
         if (_unsentRowTouchedMs(r) >= sinceMs) n++;
       }
@@ -139730,7 +139784,7 @@
       bList.forEach(r => {
         const pid = r && String(r.id || r.code || '').trim();
         if (!pid || isTillOwnedRowId(pid)) return;
-        const co = norm(r.company || r.resort || r.entity || '');
+        const co = _unsentCanonCo(r.company || r.resort || r.entity || '');
         if (allowed && !allowed.has(co)) return;
         const held = known.ind.get(`${bk}\u0001${pid}`);
         if (!held || Boolean(r.voided) !== Boolean(held[0]) || Number(r.rev || 1) > held[1] || _indRowStamp(r) > held[2]) hit(co);
@@ -139883,28 +139937,30 @@
   }
 
   // Owner: devices that reported entries they have not sent, and devices whose held entries arrived late.
+  let _devHoldGen = 0;
   async function loadDevicesHolding() {
+    const myGen = ++_devHoldGen;
     const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
     if (!hasServerApi() || !ownerNow()) {
-      if (STATE.devicesHolding) { STATE.devicesHolding = null; updateDevicesHoldingBar(); }
+      if (myGen === _devHoldGen && STATE.devicesHolding) { STATE.devicesHolding = null; updateDevicesHoldingBar(); }
       return;
     }
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
       const r = await edgeApiFetch('./api/device_unsent', { signal: ctrl.signal });
-      if (!ownerNow()) return;
+      if (myGen !== _devHoldGen || !ownerNow()) return;
       if (r && (r.status === 401 || r.status === 403)) STATE.devicesHolding = null;
       else if (r && r.ok) {
         const d = await r.json().catch(() => null);
-        if (!ownerNow()) return;
+        if (myGen !== _devHoldGen || !ownerNow()) return;
         if (d && Array.isArray(d.devices)) STATE.devicesHolding = d.devices;
       }
     } catch (_) {
     } finally {
       clearTimeout(t);
     }
-    updateDevicesHoldingBar();
+    if (myGen === _devHoldGen) updateDevicesHoldingBar();
   }
 
   function updateDevicesHoldingBar() {
@@ -139919,7 +139975,7 @@
       if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
       return;
     }
-    const sig = JSON.stringify(list.map(d => [d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.sent_at]));
+    const sig = JSON.stringify(list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.reported_at, d.sent_at]));
     if (el.dataset.sig === sig && !el.hidden) return;
     const SHOWN = 4;
     const segs = list.slice(0, SHOWN).map(d => {
@@ -139929,19 +139985,67 @@
       const late = d.state === 'sent_late';
       const n = Math.max(1, Number(late ? d.sent_count : d.count) || 1);
       const since = fmtUnsentStamp(Date.parse(String(d.since || '')));
+      const uid = String(d.user_id || (seat && seat.id) || '').trim();
+      const devId = String(d.device_id || '').trim();
+      const dismissHtml = (uid && devId)
+        ? ` <button type="button" class="dev-hold-dismiss-btn" data-dismiss-user="${esc(uid)}" data-dismiss-dev="${esc(devId)}"><span>Dismiss</span></button>`
+        : '';
       const head = `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(who)}</span></b>${label ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(label)})</span>` : ''}<span data-no-i18n="1">:</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b>`;
       if (late) {
         const sentAt = fmtUnsentStamp(Date.parse(String(d.sent_at || '')));
-        return `<span class="cf-behind-co dev-hold-item is-late">${head} <span>${n === 1 ? 'entry keyed from' : 'entries keyed from'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span> <span>reached the cloud late, on</span> <span class="cf-behind-num" data-no-i18n="1">${esc(sentAt)}</span></span>`;
+        return `<span class="cf-behind-co dev-hold-item is-late">${head} <span>${n === 1 ? 'entry keyed from' : 'entries keyed from'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span> <span>reached the cloud late, on</span> <span class="cf-behind-num" data-no-i18n="1">${esc(sentAt)}</span>${dismissHtml}</span>`;
       }
       const why = UNSENT_REASON_SHORT[String(d.reason || '')] || UNSENT_REASON_SHORT.retrying;
-      return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span></span>`;
+      const heardMs = Date.parse(String(d.reported_at || ''));
+      const heardHtml = Number.isFinite(heardMs)
+        ? `<span data-no-i18n="1">, </span><span>last heard</span> <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(heardMs))}</span>`
+        : '';
+      return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span>${heardHtml}${dismissHtml}</span>`;
     });
     const extra = list.length - Math.min(list.length, SHOWN);
     const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
     el.dataset.sig = sig;
     el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>`;
     el.hidden = false;
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(el);
+    }
+  }
+
+  async function dismissHeldDeviceReport(uid, devId) {
+    if (!uid || !devId) return false;
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return false;
+    ++_devHoldGen;
+    const prev = Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding.slice() : null;
+    if (prev) {
+      STATE.devicesHolding = prev.filter(d => {
+        if (!d) return false;
+        const rowUid = String(d.user_id || ((STATE.users || []).find(u => u && norm(u.email) === norm(d.email)) || {}).id || '').trim();
+        return !(rowUid === uid && String(d.device_id || '').trim() === devId);
+      });
+      updateDevicesHoldingBar();
+    }
+    try {
+      const r = await edgeApiFetch('./api/device_unsent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'dismiss', user_id: uid, device_id: devId })
+      });
+      const d = r ? await r.json().catch(() => null) : null;
+      if (r && r.ok && d && d.ok) return true;
+    } catch (_) {}
+    toast('Could not dismiss device report', 'err');
+    await loadDevicesHolding();
+    return false;
+  }
+
+  function onDevicesHoldingBarClick(ev) {
+    const btn = ev.target && ev.target.closest ? ev.target.closest('[data-dismiss-user][data-dismiss-dev]') : null;
+    if (!btn) return;
+    const uid = String(btn.getAttribute('data-dismiss-user') || '').trim();
+    const devId = String(btn.getAttribute('data-dismiss-dev') || '').trim();
+    if (!uid || !devId) return;
+    dismissHeldDeviceReport(uid, devId);
   }
 
   (function wireUnsentBars() {
@@ -139950,6 +140054,11 @@
       if (el && !el._unsentWired) {
         el._unsentWired = true;
         el.addEventListener('click', onUnsentBarClick);
+      }
+      const dEl = $('devicesHoldingBar');
+      if (dEl && !dEl._devHoldWired) {
+        dEl._devHoldWired = true;
+        dEl.addEventListener('click', onDevicesHoldingBarClick);
       }
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
@@ -140412,13 +140521,13 @@
       const canManageSyncSeats = /Owner|Supervisor|Manager|Admin/i.test(String((auSync && auSync.role) || ''));
       const allowedCoSet = isScopedRemote
         ? new Set([
-            ...parseUserCompanies(auSync).map(c => norm(c)),
-            ...getAllowedCompanyKeys(auSync).map(c => norm(c))
-          ])
+            ...parseUserCompanies(auSync).map(c => _unsentCanonCo(c)),
+            ...getAllowedCompanyKeys(auSync).map(c => _unsentCanonCo(c))
+          ].filter(Boolean))
         : null;
       const canPushCo = (coRaw) => {
         if (!isScopedRemote) return true;
-        const c = norm(coRaw || '');
+        const c = _unsentCanonCo(coRaw || '');
         return Boolean(c && allowedCoSet.has(c));
       };
       // What the cloud holds, read before the merge. Only kept while something waits or is about to be pushed.
@@ -170862,17 +170971,20 @@
     return Boolean(perms && perms.rights && perms.rights.modify_data);
   }
 
+  function isGlobalRateCrKey(k) {
+    return k === 'fx_rates' || k === 'vat_rates';
+  }
+
   function isFullGroupSeat(u) {
     const seat = u || activeUser();
-    if (!seat) return false;
+    if (!seat || String(seat.status || '') === 'Suspended' || seat.locked) return false;
     if (isOwner(seat)) return true;
     const idStr = String(seat.id || seat.user_id || '').trim().toLowerCase();
     if (idStr === 'u1' || idStr === 'u2') return true;
     const rawCos = Array.isArray(seat.companies)
       ? seat.companies.map(c => String(c || '').trim()).filter(Boolean)
       : String(seat.companies || '').split(/[,;|]+/).map(s => s.trim()).filter(Boolean);
-    if (rawCos.some(c => /^all\b/i.test(c))) return true;
-    return rawCos.length >= 12;
+    return rawCos.some(c => c === '*' || /^all\b/i.test(c));
   }
 
   function canEditShiftsAndRules(u, companyOpt = '') {
@@ -181048,40 +181160,7 @@
       }
     });
 
-    // 2. Proportional Visual Inline Data Bars (.td-databar) on Ledger & Summary Breakdown Tables
-    container.querySelectorAll('table.ledger-table').forEach(tbl => {
-      const ths = Array.from(tbl.querySelectorAll('thead tr th'));
-      if (!ths.length) return;
-      let targetColIdx = -1;
-      ths.forEach((th, idx) => {
-        const txt = (th.textContent || '').trim();
-        if (/VAT INCL|TOTAL|AMOUNT|NET PAY|BALANCE|\(\$\)/i.test(txt)) {
-          targetColIdx = idx;
-        }
-      });
-      if (targetColIdx < 0) return;
-      const rows = Array.from(tbl.querySelectorAll('tbody tr:not(.empty-row)'));
-      const cellPairs = [];
-      let maxVal = 0;
-      rows.forEach(tr => {
-        const td = tr.children[targetColIdx];
-        if (!td) return;
-        const txt = (td.textContent || '').trim();
-        if (!/\$/.test(txt)) return;
-        const v = Math.abs(parseFloat(txt.replace(/[^0-9.-]/g, '')) || 0);
-        if (v > maxVal) maxVal = v;
-        cellPairs.push({ td, v });
-      });
-      if (maxVal > 0) {
-        cellPairs.forEach(({ td, v }) => {
-          const pct = Math.min(100, Math.max(v > 0 ? 3.5 : 0, (v / maxVal) * 100));
-          td.classList.add('td-databar');
-          td.style.setProperty('--bar-pct', pct.toFixed(1) + '%');
-        });
-      }
-    });
-
-    // 3. Multi-row selection dots (.row-sel-dot) for Live Calculator Bar
+    // 2. Multi-row selection dots (.row-sel-dot) for Live Calculator Bar
     const rrows = container.querySelectorAll('tr.rrow[data-rid]');
     if (rrows.length) {
       let protoDot = enhanceVisualWorkspace._protoDot;
@@ -187306,6 +187385,7 @@
         setView,
         activeUser,
         isOwner,
+        isFullGroupSeat,
         canVoid,
         canModifyData,
         canViewVoidLog,
@@ -188324,13 +188404,13 @@
       backdate: ms => { if (_unsentSinceMs) _unsentSinceMs -= Math.max(0, Number(ms) || 0); updateUnsentEntriesBar(); return _unsentSinceMs; },
       noteHeld: remote => noteCloudHeldEntries(remote, null),
       syncLeft: () => { _unsentSyncLeftAtMs = Date.now(); },
-      setScoped: (on, cos) => { _unsentScoped = Boolean(on); _unsentAllowedCos = on ? new Set((cos || []).map(c => norm(c))) : null; if (_unsentKnown) _unsentKnown.allowedCos = _unsentAllowedCos; },
+      setScoped: (on, cos) => { _unsentScoped = Boolean(on); _unsentAllowedCos = on ? new Set((cos || []).map(c => _unsentCanonCo(c)).filter(Boolean)) : null; if (_unsentKnown) _unsentKnown.allowedCos = _unsentAllowedCos; },
       setLastCount: n => { _unsentLastCount = Number(n) || 0; },
       setReported: on => { _unsentReported = on ? '1' : ''; _unsentClearTriedAtMs = 0; },
       cameOnline: () => { _lastOnlineAtMs = Date.now(); },
       inSync: () => noteCloudInSync(),
       outsideScope: () => unsentRowsOutsideScope(),
-      inScope: (key, row, cos) => unsentCrRowInScope(key, row, Array.isArray(cos) ? new Set(cos.map(c => norm(c))) : null),
+      inScope: (key, row, cos) => unsentCrRowInScope(key, row, Array.isArray(cos) ? new Set(cos.map(c => _unsentCanonCo(c)).filter(Boolean)) : null),
       clearKey: (key, row) => unsentClearKey(key, row),
       rowHoldsWait: (key, row) => Boolean(_unsentSinceMs && _unsentAllowedCos) && _unsentCrRowHoldsWait(key, row, _unsentAllowedCos, _unsentSinceMs - 5000),
       restoreConfirmed: snap => { _unsentConfirmed = JSON.parse(JSON.stringify(snap)); saveUnsentConfirmed(); },
@@ -188341,6 +188421,9 @@
     };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+    window.__getCompanyCatalog = () => getCompanyCatalog();
+    window.__mfgCanEnterForm = (f, u) => canEnterForm(f, u);
+    window.__saveVoidNote = (spec, noteText) => saveVoidNote(spec, noteText);
     window.__isKeptOverWorkbook = (k, r) => isKeptOverWorkbook(r, keptOverWorkbookVoidedIds(k));
     window.__appOnlyCashIds = () => getAppOnlyCashIndex().rows.map(x => String(x.r.id));
     window.__mfgTruckTestHooks = {
