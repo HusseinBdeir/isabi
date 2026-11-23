@@ -10,7 +10,12 @@ const STATIC_ASSETS = [
   './icon-180.png?v=6.38',
   './icon-192.png?v=6.38',
   './icon-512.png?v=6.38',
-  './icon-512-maskable.png?v=6.38'
+  './icon-512-maskable.png?v=6.38',
+  './logo-wtc.png?v=1',
+  './logo-blanca.png?v=1',
+  './logo-la-una.png?v=1',
+  './logo-palms.png?v=1',
+  './logo-voile.png?v=1'
 ];
 
 function isSameOriginUrl(rawUrl) {

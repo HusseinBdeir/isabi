@@ -385,7 +385,7 @@ def _why(badge):
             <div class="d-cmp-k" role="rowheader">{tile(icon, tone, "d-tile-36")}<span>{k}</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems">{dic('check', 'd-ic-sm d-ok')}<span>{a}</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS">{dic('warn', 'd-ic-sm d-warn')}<span>{b}</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies">{dic('cross', 'd-ic-sm d-crit')}<span>{c}</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies">{dic('cross', 'd-ic-sm d-crit')}<span>{c}</span></div>
           </div>""" for icon, tone, k, a, b, c in COMPARE)
     return f"""
   <section class="d-page" id="why">

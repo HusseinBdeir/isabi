@@ -866,7 +866,7 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   opacity: 0.66;
   transition: filter 0.25s ease, opacity 0.25s ease;
 }
-.d-logo:hover, .d-logo:focus-visible, .d-logo.d-logo-lit { filter: none; opacity: 1; }
+.d-logo:hover, .d-logo.d-logo-lit { filter: none; opacity: 1; }
 .d-logo-sq { height: 78px; }
 .d-logo-wide { height: 54px; }
 .d-logo-mid { height: 64px; }
@@ -951,6 +951,7 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
 .d-sheet-top .eyebrow { margin-bottom: 0 !important; display: inline-flex; align-items: center; gap: 6px; }
 .sec.d-sheet { border-bottom: 1px solid var(--d-line); }
 .sec.d-sheet h2 { font-weight: 700; letter-spacing: -0.02em; }
+.sec.d-sheet h2:focus { outline: none; }
 #faq.d-sheet .faq-panel { margin-top: 6px; }
 /* The widgets on these pages were drawn small to fit one screen; scale them up on desktop as far as the screen height allows. */
 @media (min-width: 1081px) {
@@ -958,11 +959,14 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   #faq.d-sheet > .wrap { --sheet-zoom: 1.2; max-width: calc(min(95vw, 1500px) / var(--sheet-zoom)); }
 }
 @media (min-width: 1081px) and (min-height: 700px) {
-  .sec.d-sheet > .wrap { --sheet-zoom: 1.1; }
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.06; }
   #faq.d-sheet > .wrap { --sheet-zoom: 1.25; }
 }
-@media (min-width: 1081px) and (min-height: 900px) {
-  .sec.d-sheet > .wrap { --sheet-zoom: 1.18; }
+@media (min-width: 1081px) and (min-height: 765px) {
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.1; }
+}
+@media (min-width: 1081px) and (min-height: 940px) {
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.16; }
   #faq.d-sheet > .wrap { --sheet-zoom: 1.3; }
 }
 
@@ -1200,6 +1204,9 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-row > div { padding: 8px 16px; }
   .d-row > .d-cmp-k { padding-top: 14px; }
   .d-rowhead { display: none; }
+  .d-row > [data-col-lbl] { flex-wrap: wrap; row-gap: 2px; }
+  .d-row > [data-col-lbl]::before { content: attr(data-col-lbl); flex-basis: 100%; font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--d-muted); }
+  .d-row > [data-col-lbl] > span { flex: 1; min-width: 0; }
   .d-prev-tabs { max-width: none; flex-direction: row; overflow-x: auto; border-inline-end: 0; border-bottom: 1px solid var(--d-line); scrollbar-width: none; }
   .d-prev-tabs::-webkit-scrollbar { display: none; }
   .d-tab { width: auto; flex: none; white-space: nowrap; }

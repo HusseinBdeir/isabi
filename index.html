@@ -7462,7 +7462,7 @@ filter: grayscale(1) sepia(0.28) contrast(0.82) brightness(1.04);
 opacity: 0.66;
 transition: filter 0.25s ease, opacity 0.25s ease;
 }
-.d-logo:hover, .d-logo:focus-visible, .d-logo.d-logo-lit { filter: none; opacity: 1; }
+.d-logo:hover, .d-logo.d-logo-lit { filter: none; opacity: 1; }
 .d-logo-sq { height: 78px; }
 .d-logo-wide { height: 54px; }
 .d-logo-mid { height: 64px; }
@@ -7543,17 +7543,21 @@ flex: none;
 .d-sheet-top .eyebrow { margin-bottom: 0 !important; display: inline-flex; align-items: center; gap: 6px; }
 .sec.d-sheet { border-bottom: 1px solid var(--d-line); }
 .sec.d-sheet h2 { font-weight: 700; letter-spacing: -0.02em; }
+.sec.d-sheet h2:focus { outline: none; }
 #faq.d-sheet .faq-panel { margin-top: 6px; }
 @media (min-width: 1081px) {
 .sec.d-sheet > .wrap { --sheet-zoom: 1.05; zoom: var(--sheet-zoom); max-width: calc(min(95vw, 1720px) / var(--sheet-zoom)); }
 #faq.d-sheet > .wrap { --sheet-zoom: 1.2; max-width: calc(min(95vw, 1500px) / var(--sheet-zoom)); }
 }
 @media (min-width: 1081px) and (min-height: 700px) {
-.sec.d-sheet > .wrap { --sheet-zoom: 1.1; }
+.sec.d-sheet > .wrap { --sheet-zoom: 1.06; }
 #faq.d-sheet > .wrap { --sheet-zoom: 1.25; }
 }
-@media (min-width: 1081px) and (min-height: 900px) {
-.sec.d-sheet > .wrap { --sheet-zoom: 1.18; }
+@media (min-width: 1081px) and (min-height: 765px) {
+.sec.d-sheet > .wrap { --sheet-zoom: 1.1; }
+}
+@media (min-width: 1081px) and (min-height: 940px) {
+.sec.d-sheet > .wrap { --sheet-zoom: 1.16; }
 #faq.d-sheet > .wrap { --sheet-zoom: 1.3; }
 }
 .d-foot { padding: 22px 0 26px; font-size: 14px; line-height: 1.5; color: var(--d-muted); background: var(--d-bg); }
@@ -7777,6 +7781,9 @@ box-shadow: none;
 .d-row > div { padding: 8px 16px; }
 .d-row > .d-cmp-k { padding-top: 14px; }
 .d-rowhead { display: none; }
+.d-row > [data-col-lbl] { flex-wrap: wrap; row-gap: 2px; }
+.d-row > [data-col-lbl]::before { content: attr(data-col-lbl); flex-basis: 100%; font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--d-muted); }
+.d-row > [data-col-lbl] > span { flex: 1; min-width: 0; }
 .d-prev-tabs { max-width: none; flex-direction: row; overflow-x: auto; border-inline-end: 0; border-bottom: 1px solid var(--d-line); scrollbar-width: none; }
 .d-prev-tabs::-webkit-scrollbar { display: none; }
 .d-tab { width: auto; flex: none; white-space: nowrap; }
@@ -8138,37 +8145,37 @@ box-shadow: none;
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-br d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></svg></span><span>Fit to your workflow</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>100% tailored workspaces, guided forms and interactive page tours</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>Rigid templates and awkward workarounds</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Possible only after expensive change orders</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Possible only after expensive change orders</span></div>
           </div>
           <div class="d-row" role="row">
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-bl d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg></span><span>Setup and pricing</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>From $3,000 custom setup plus $50 to $100 per seat per month</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>Per-module tiers plus costly implementation add-ons</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Six-figure setup fees plus heavy annual maintenance</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Six-figure setup fees plus heavy annual maintenance</span></div>
           </div>
           <div class="d-row" role="row">
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-gr d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16M18 17V9M13 17V5M8 17v-3"/></svg></span><span>Analytics and statements</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>What-If scenario studio, 30-day cash bridge and bilingual statements</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>Basic built-in charts and constant Excel exports</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Sold as a separate BI project</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Sold as a separate BI project</span></div>
           </div>
           <div class="d-row" role="row">
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-br d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM13 8H7M17 12H7"/></svg></span><span>AI, telematics and kiosks</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Spoken briefings in three languages, Smart Scan, fleet GPS and face kiosks</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>Generic chatbots and third-party POS add-ons</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Rarely available, or requires external middleware</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Rarely available, or requires external middleware</span></div>
           </div>
           <div class="d-row" role="row">
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-bl d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 5a9 3 0 1 1-18 0 9 3 0 0 1 18 0zM3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0"/></svg></span><span>Ownership and speed</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>100% client-owned data, automated close locks, live in 1 to 2 weeks</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>2 to 4 months, locked inside the vendor cloud</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>9 to 18 months on aging on-premise servers</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>9 to 18 months on aging on-premise servers</span></div>
           </div>
           <div class="d-row" role="row">
             <div class="d-cmp-k" role="rowheader"><span class="d-tile d-t-gr d-tile-36"><svg class="d-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span>Who you work with</span></div>
             <div class="d-cmp-a" role="cell" data-col-lbl="ISABI Systems"><svg class="d-ic d-ic-sm d-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Direct access to the principal architect who builds your system</span></div>
             <div class="d-cmp-b" role="cell" data-col-lbl="Generic SaaS"><svg class="d-ic d-ic-sm d-warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg><span>Ticket queues and scripted support agents</span></div>
-            <div class="d-cmp-c" role="cell" data-col-lbl="Legacy Consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Layered account managers and rotating juniors</span></div>
+            <div class="d-cmp-c" role="cell" data-col-lbl="Traditional ERP consultancies"><svg class="d-ic d-ic-sm d-crit" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg><span>Layered account managers and rotating juniors</span></div>
           </div>
       </div>
     </div>
@@ -9453,6 +9460,7 @@ box-shadow: none;
 
   // ---------------- MORE PAGES (LIVE DEMO, INDUSTRY BLUEPRINTS, FAQ) ----------------
   let sheetReturnY = 0;
+  let sheetOpener = null;
 
   function activeSheetId() {
     const el = document.querySelector('[data-sheet]:not([hidden])');
@@ -9476,17 +9484,29 @@ box-shadow: none;
 
   function showSheet(id) {
     if (!SHEET_IDS.includes(id)) return;
-    if (!activeSheetId()) sheetReturnY = window.scrollY;
+    if (!activeSheetId()) {
+      sheetReturnY = window.scrollY;
+      sheetOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    }
     syncSheetChrome(id);
     if (id === 'industries') renderIndustries();
     navScrollLockUntil = Date.now() + 400;
     window.scrollTo(0, 0);
+    const sheetHead = document.querySelector('[data-sheet="' + id + '"] h2');
+    if (sheetHead) {
+      sheetHead.setAttribute('tabindex', '-1');
+      try { sheetHead.focus({ preventScroll: true }); } catch (e) {}
+    }
   }
 
   function hideSheet(restoreScroll) {
     if (!activeSheetId()) return;
     syncSheetChrome('');
     window.scrollTo(0, restoreScroll ? sheetReturnY : 0);
+    if (restoreScroll && sheetOpener && document.contains(sheetOpener) && sheetOpener.getClientRects().length) {
+      try { sheetOpener.focus({ preventScroll: true }); } catch (e) {}
+    }
+    sheetOpener = null;
     navScrollLockUntil = 0;
     updateActiveNavOnScroll();
   }
@@ -9497,7 +9517,7 @@ box-shadow: none;
     showSheet(id);
     if (pushHistory && history.pushState) {
       try {
-        if (was) history.replaceState({ sheet: id }, '', '#' + id);
+        if (was) history.replaceState(history.state && history.state.sheet ? { sheet: id } : null, '', '#' + id);
         else history.pushState({ sheet: id }, '', '#' + id);
       } catch (e) {}
     }
@@ -10646,8 +10666,9 @@ box-shadow: none;
           tip.innerHTML = `<div class="sbox-tip-hdr"><span>${col.dataset.m}</span><span class="sbox-tip-badge">Total ${col.dataset.t}</span></div>${rowsHtml || `<div>${col.dataset.tip}</div>`}`;
           tip.hidden = false;
           const r = cwrap.getBoundingClientRect();
-          const relX = (clientX || (r.left + r.width / 2)) - r.left;
-          const left = Math.min(Math.max(8, r.width - 235), Math.max(8, relX - 105));
+          const scale = cwrap.offsetWidth ? (r.width / cwrap.offsetWidth) || 1 : 1;
+          const relX = ((clientX || (r.left + r.width / 2)) - r.left) / scale;
+          const left = Math.min(Math.max(8, r.width / scale - 235), Math.max(8, relX - 105));
           tip.style.left = left + 'px';
           tip.style.top = '10px';
         };

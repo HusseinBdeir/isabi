@@ -799,6 +799,7 @@ JS = r"""
 
   // ---------------- MORE PAGES (LIVE DEMO, INDUSTRY BLUEPRINTS, FAQ) ----------------
   let sheetReturnY = 0;
+  let sheetOpener = null;
 
   function activeSheetId() {
     const el = document.querySelector('[data-sheet]:not([hidden])');
@@ -822,17 +823,29 @@ JS = r"""
 
   function showSheet(id) {
     if (!SHEET_IDS.includes(id)) return;
-    if (!activeSheetId()) sheetReturnY = window.scrollY;
+    if (!activeSheetId()) {
+      sheetReturnY = window.scrollY;
+      sheetOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    }
     syncSheetChrome(id);
     if (id === 'industries') renderIndustries();
     navScrollLockUntil = Date.now() + 400;
     window.scrollTo(0, 0);
+    const sheetHead = document.querySelector('[data-sheet="' + id + '"] h2');
+    if (sheetHead) {
+      sheetHead.setAttribute('tabindex', '-1');
+      try { sheetHead.focus({ preventScroll: true }); } catch (e) {}
+    }
   }
 
   function hideSheet(restoreScroll) {
     if (!activeSheetId()) return;
     syncSheetChrome('');
     window.scrollTo(0, restoreScroll ? sheetReturnY : 0);
+    if (restoreScroll && sheetOpener && document.contains(sheetOpener) && sheetOpener.getClientRects().length) {
+      try { sheetOpener.focus({ preventScroll: true }); } catch (e) {}
+    }
+    sheetOpener = null;
     navScrollLockUntil = 0;
     updateActiveNavOnScroll();
   }
@@ -843,7 +856,7 @@ JS = r"""
     showSheet(id);
     if (pushHistory && history.pushState) {
       try {
-        if (was) history.replaceState({ sheet: id }, '', '#' + id);
+        if (was) history.replaceState(history.state && history.state.sheet ? { sheet: id } : null, '', '#' + id);
         else history.pushState({ sheet: id }, '', '#' + id);
       } catch (e) {}
     }
@@ -1992,8 +2005,9 @@ JS = r"""
           tip.innerHTML = `<div class="sbox-tip-hdr"><span>${col.dataset.m}</span><span class="sbox-tip-badge">Total ${col.dataset.t}</span></div>${rowsHtml || `<div>${col.dataset.tip}</div>`}`;
           tip.hidden = false;
           const r = cwrap.getBoundingClientRect();
-          const relX = (clientX || (r.left + r.width / 2)) - r.left;
-          const left = Math.min(Math.max(8, r.width - 235), Math.max(8, relX - 105));
+          const scale = cwrap.offsetWidth ? (r.width / cwrap.offsetWidth) || 1 : 1;
+          const relX = ((clientX || (r.left + r.width / 2)) - r.left) / scale;
+          const left = Math.min(Math.max(8, r.width / scale - 235), Math.max(8, relX - 105));
           tip.style.left = left + 'px';
           tip.style.top = '10px';
         };

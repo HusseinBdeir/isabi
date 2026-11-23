@@ -121,7 +121,6 @@ def run_dom_and_screenshots():
             ('Rendered Ask ISABI Thread', 'Overdue Receivables Audit'),
             ('Rendered Configurator Total', '$6,800 to $8,200'),
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
-            ('Hash #industries opens the Industry Blueprints page', 'data-sheet-open="industries"'),
             ('FAQ page rendered', 'id="faq-grid"'),
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
@@ -138,6 +137,9 @@ def run_dom_and_screenshots():
             ('Pricing Guarantee Strip rendered', 'class="d-trust"'),
             ('Contact email', 'mailto:hbdeir@isabisystems.com'),
         ]
+        assert re.search(r'<body[^>]*\sdata-sheet-open="industries"', dom), "Hash #industries did not open the Industry Blueprints page (body state missing)"
+        assert re.search(r'<div id="site-pages" hidden', dom), "Hash #industries left the eight pages visible"
+        assert re.search(r'<section class="sec d-sheet" id="industries" data-sheet="industries">', dom), "Industry Blueprints page still hidden after loading #industries"
         mod_count = dom.count('class="d-mod"')
         assert mod_count == 18, f"Expected 18 modules on the Platform page, got {mod_count}"
         assert dom.count('<img class="d-logo ') == 5, "Expected 5 company logos on the In Practice page"
@@ -821,6 +823,56 @@ document.addEventListener('DOMContentLoaded', async function() {
                 raise RuntimeError(f"[{label} {w}x{h}] JS error: {d_vp['error']}")
             print(f'[{label} {w}x{h}]', json.dumps({k: d_vp[k] for k in ('vw', 'vh', 'scrollW', 'hdrBottom', 'hdrControlCount', 'heroControlCount', 'secHeights', 'cardOverflows', 'overflows') if k in d_vp}))
             return d_vp
+
+        # 2b. Shared link: arrive on #faq, move to Live Demo from the page menu, press Back to Site. The visitor must stay on the site.
+        deep_html = os.path.join(repo_root, '_diag_deeplink.html')
+        deep_script = """
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+  var pre = document.createElement('pre');
+  pre.id = 'deep-json';
+  var tick = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+  try {
+    var o = { lenStart: history.length, faqShownOnLoad: !document.getElementById('faq').hidden, pagesHiddenOnLoad: document.getElementById('site-pages').hidden };
+    var toDemo = document.querySelector('#sheet-nav a[href="#sandbox"]');
+    if (toDemo) toDemo.click();
+    await tick(40);
+    o.demoShown = !document.getElementById('sandbox').hidden;
+    o.hashOnDemo = location.hash;
+    o.stateOnDemo = history.state && history.state.sheet ? 'pushed' : 'none';
+    var back = document.querySelector('#sheet-nav [data-sheet-close]');
+    if (back) back.click();
+    await tick(200);
+    o.stillOnPage = /_diag_deeplink\\.html/.test(location.href);
+    o.pagesHidden = document.getElementById('site-pages').hidden;
+    o.openSheets = document.querySelectorAll('[data-sheet]:not([hidden])').length;
+    o.hashAfter = location.hash;
+    o.lenEnd = history.length;
+    pre.textContent = JSON.stringify(o);
+  } catch (err) {
+    pre.textContent = JSON.stringify({ error: String(err) });
+  }
+  document.body.appendChild(pre);
+});
+</script>
+"""
+        with open(deep_html, 'w', encoding='utf-8') as f:
+            f.write(base_html.replace('</body>', deep_script + '</body>'))
+        try:
+            res_deep = subprocess.run(
+                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--window-size=1366,768', '--dump-dom', 'file:///' + deep_html.replace('\\', '/') + '#faq'],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
+            )
+            assert '<pre id="deep-json">' in res_deep.stdout, "Shared-link probe left the page (Back to Site navigated away) or did not finish"
+            d_deep = json.loads(html.unescape(res_deep.stdout.split('<pre id="deep-json">')[1].split('</pre>')[0]))
+        finally:
+            if os.path.exists(deep_html):
+                os.remove(deep_html)
+        assert 'error' not in d_deep, f"Shared-link probe JS error: {d_deep}"
+        assert d_deep['faqShownOnLoad'] and d_deep['pagesHiddenOnLoad'], f"Shared link #faq did not open the FAQ page: {d_deep}"
+        assert d_deep['demoShown'] and d_deep['hashOnDemo'] == '#sandbox' and d_deep['stateOnDemo'] == 'none', f"Moving between pages after a shared link must not claim a history entry: {d_deep}"
+        assert d_deep['stillOnPage'] and d_deep['pagesHidden'] is False and d_deep['openSheets'] == 0 and d_deep['hashAfter'] == '' and d_deep['lenEnd'] == d_deep['lenStart'], f"Back to Site after a shared link must return to the eight pages on the same site: {d_deep}"
+        print('[DEEP-LINK] Shared link #faq, switch to Live Demo, Back to Site: stays on the site')
 
         d_desk = probe_viewport(1366, 768, 'DESK')
         d_desk_1440 = probe_viewport(1440, 810, 'DESK')
