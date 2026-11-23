@@ -426,12 +426,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (faqOpener3) faqOpener3.click();
     await tick(30);
     awayInfo.faqShown = !document.getElementById('faq').hidden;
+    // Smooth scrolling does not advance in this headless run, so the scroll requests themselves are recorded:
+    // after Back to Site every request must be for the place the visitor left.
+    awayInfo.leftAtY = Math.round(window.scrollY + 0);
+    var scrollAsks = [];
+    var realScrollTo = window.scrollTo;
+    window.scrollTo = function(a, b) {
+      scrollAsks.push(Math.round(a && typeof a === 'object' ? Number(a.top) : Number(b)));
+      return realScrollTo.apply(window, arguments);
+    };
+    awayInfo.returnY = null;
     var backBtn3 = document.querySelector('#sheet-nav [data-sheet-close]');
     if (backBtn3) backBtn3.click();
     await tick(60);
     awayInfo.whyTopAfter = whyTopNow();
     await tick(400);
     awayInfo.whyTopSettled = whyTopNow();
+    window.scrollTo = realScrollTo;
+    awayInfo.returnY = Math.round(window.scrollY);
+    awayInfo.scrollAsks = scrollAsks;
+    awayInfo.strayAsks = scrollAsks.filter(function(y) { return Math.abs(y - awayInfo.returnY) > 4; });
     awayInfo.openSheets = document.querySelectorAll('[data-sheet]:not([hidden])').length;
     awayInfo.hashAfter = location.hash;
     if (onFloor()) floorHits.push('Back to Site after scrolling away');
@@ -1117,6 +1131,7 @@ document.addEventListener('DOMContentLoaded', function() {
             assert dvp['sheets']['floorHits'] == [], f"{vp_lbl} a press stepped back twice (the visitor would leave the site): {dvp['sheets']['floorHits']}"
             aw = dvp['sheets']['scrolledAway']
             assert aw['hashBefore'] == '#pricing' and abs(aw['whyTopBefore']) <= 4 and aw['faqShown'] is True, f"{vp_lbl} scrolled-away probe could not start: {aw}"
+            assert len(aw['scrollAsks']) >= 1 and aw['strayAsks'] == [], f"{vp_lbl} after Back to Site something asked to scroll away from where the visitor was (the section in the address pulled them): {aw}"
             assert abs(aw['whyTopAfter']) <= 4 and abs(aw['whyTopSettled']) <= 4 and aw['openSheets'] == 0, f"{vp_lbl} Back to Site moved the visitor to the section in the address instead of where they were (Why ISABI): {aw}"
             fl = dvp['sheets']['footerLink']
             assert fl['hasLink'] and fl['ownEntry'] and fl['faqShown'], f"{vp_lbl} footer-link probe could not start (FAQ open on its own history entry, footer Pricing link present): {fl}"
