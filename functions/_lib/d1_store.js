@@ -37,6 +37,7 @@ import {
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
 import { isWebPushConfigured, sendOverrideRequestPush } from './approval_push.js';
+import { attachUserPasskeysMeta, clearStepUpReceipt, verifyPasskeyOverrideAssertion, writeStepUpReceipt } from './webauthn.js';
 import { validateBase64MediaDataUrl } from './gemini.js';
 import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.js';
 
@@ -507,7 +508,7 @@ function safeJsonParse(raw, fallback) {
   }
 }
 
-function isDemoHeader(request) {
+export function isDemoHeader(request) {
   return request.headers.get('X-ISABI-Demo') === '1';
 }
 
@@ -949,7 +950,7 @@ function stripBiometricsForPayload(uObj) {
   return clean;
 }
 
-function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
+export function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   const d = Object.assign({}, safeJsonParse(r.payload_json, {}), r);
   delete d.payload_json;
   delete d._verifiedPin;
@@ -1005,7 +1006,7 @@ function sanitizePublicFaceSettings(fs) {
   };
 }
 
-async function readWorkspaceFaceSettings(db) {
+export async function readWorkspaceFaceSettings(db) {
   if (!db) return null;
   try {
     const fastRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'face_settings' LIMIT 1").first();
@@ -1024,7 +1025,7 @@ async function readWorkspaceFaceSettings(db) {
   return null;
 }
 
-function resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio) {
+export function resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio) {
   const wsMode = wsFaceSettings && wsFaceSettings.authMode
     ? normalizeServerAuthMode(wsFaceSettings.authMode, wsFaceSettings.enforce2FA === true ? 'both' : 'either')
     : 'either';
@@ -1042,7 +1043,7 @@ function resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio) {
 // - Per IP (/64) & per IP+email: 5 fails -> 5m, 10 fails -> 30m, 15+ fails -> 24h (resets after 24h quiet or valid login)
 const LOCKOUT_WINDOW_MS = 24 * 3600 * 1000;
 
-async function readLockEntry(db, key) {
+export async function readLockEntry(db, key) {
   const r = await db.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(key).first();
   if (!r || !r.payload_json) return null;
   const obj = safeJsonParse(r.payload_json, null);
@@ -1051,7 +1052,7 @@ async function readLockEntry(db, key) {
 
 // Anonymous Face ID probes (no email, no PIN) count on their own per-IP key, so a camera that keeps
 // seeing an unknown face can never lock PIN sign-in for everyone behind the same office IP.
-async function checkAuthLockout(db, ipHash, emailRaw, faceProbe = false) {
+export async function checkAuthLockout(db, ipHash, emailRaw, faceProbe = false) {
   if (!db || !ipHash) return { locked: false, retryAfterSec: 0 };
   const nowMs = Date.now();
   const emailClean = String(emailRaw || '').trim().toLowerCase();
@@ -1075,7 +1076,7 @@ async function checkAuthLockout(db, ipHash, emailRaw, faceProbe = false) {
   return { locked: false, retryAfterSec: 0 };
 }
 
-async function bumpLockCounter(db, key, windowMs, nowMs, nowIso) {
+export async function bumpLockCounter(db, key, windowMs, nowMs, nowIso) {
   const initJson = JSON.stringify({ fails: 1, windowStartMs: nowMs, lockedUntilMs: 0 });
   const row = await db.prepare(
     `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
@@ -1131,7 +1132,7 @@ async function recordFaceProbeFailure(db, ipHash) {
   }
 }
 
-async function recordAuthFailure(db, ipHash, emailRaw) {
+export async function recordAuthFailure(db, ipHash, emailRaw) {
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const memIp = checkSlidingRateLimit(`auth_fail_ip:${ipHash}`, 5, 300000);
   const memEm = emailClean
@@ -1167,7 +1168,7 @@ async function recordAuthFailure(db, ipHash, emailRaw) {
 // opts.face: also clear the face-only key (a sign-in that verified a face);
 // opts.keepIp: leave the office-wide IP key alone (a face-without-PIN sign-in must not reset PIN-guess throttling);
 // opts.keepEmail: leave the seat's own PIN key alone (only a checked PIN may reset it).
-async function clearAuthFailure(db, ipHash, emailRaw, opts = {}) {
+export async function clearAuthFailure(db, ipHash, emailRaw, opts = {}) {
   if (!db || !ipHash) return;
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const keys = [];
@@ -1233,6 +1234,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   if (isDemoHeader(request)) {
     return jsonResponse({ ok: true, demo: true, edge: true });
   }
+
   const email = String((body && body.email) || '').trim().toLowerCase();
   const pin = String((body && body.pin) || '').trim();
   const method = String((body && body.method) || 'PIN').trim().slice(0, 40);
@@ -1501,6 +1503,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   if (isVerifyOnly) {
     await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null, keepEmail: !pinVerified && verifiedFaceDist !== null });
+    if (isStepUp && callerSess && callerSess.sid) {
+      await writeStepUpReceipt(env.DB, callerSess.sid, row.id, method || 'Step-Up');
+    }
     const redactDist = isStepUp || Boolean(body && body.redact_dist === true) || !(callerSess && canManageUsersSeat(callerSess));
     const verifyOut = {
       ok: true,
@@ -1567,6 +1572,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   const isHttps = new URL(request.url).protocol === 'https:';
   const userOut = hydrateUserRow(Object.assign({}, row, { last_login_at: nowIso }), true, false);
+  await attachUserPasskeysMeta(env.DB, [userOut], { sub: row.id, role: row.role, companies: row.companies });
   // Real browsers send `Sec-Fetch-Site` and rely exclusively on the HttpOnly session cookie (zero JS-accessible JWT in localStorage).
   // Non-browser CLI / verification clients omit `Sec-Fetch-Site` and receive `token` for header-based API calls.
   const isBrowserFetch = Boolean(request.headers.get('Sec-Fetch-Site'));
@@ -1585,6 +1591,7 @@ export async function handleAuthLogout(request, env, session) {
     try {
       await env.DB.prepare('DELETE FROM auth_sessions WHERE id = ?1').bind(String(session.sid)).run();
     } catch (_) {}
+    await clearStepUpReceipt(env.DB, session.sid);
   }
   const isHttps = new URL(request.url).protocol === 'https:';
   return jsonResponse(
@@ -1632,7 +1639,7 @@ const OVERRIDE_FIELD_TO_UNLOCK_KEY = {
 const DUMMY_OVERRIDE_PBKDF2 = 'pbkdf2$sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 let _overrideAuditSchemaReady = false;
-async function ensureOverrideAuditSchema(db) {
+export async function ensureOverrideAuditSchema(db) {
   if (!db || _overrideAuditSchemaReady) return;
   try {
     await db.batch([
@@ -1668,7 +1675,7 @@ function isSupervisorOrOwnerRole(roleRaw, uidRaw = '') {
   return /owner|admin|full\s*access|supervisor/i.test(String(roleRaw || ''));
 }
 
-function canUserRowAuthorizeOverride(row, fieldId, unlockAll) {
+export function canUserRowAuthorizeOverride(row, fieldId, unlockAll) {
   if (!row) return false;
   if (isSupervisorOrOwnerRole(row.role, row.id)) return true;
   const roleStr = String(row.role || '').trim();
@@ -1683,7 +1690,7 @@ function canUserRowAuthorizeOverride(row, fieldId, unlockAll) {
   return false;
 }
 
-function shareAnyAllowedCompany(sessA, sessB) {
+export function shareAnyAllowedCompany(sessA, sessB) {
   if (!sessA || !sessB) return false;
   if (isOwnerOrFullGroupSession(sessA) || isOwnerOrFullGroupSession(sessB)) {
     const aList = parseAllowedCompanies(sessA.companies);
@@ -1718,6 +1725,10 @@ export async function handleVerifyOverride(request, env, session, body, url) {
       return String(r.supervisor_user_id || '') === String(session.sub || '') || String(r.caller_user_id || '') === String(session.sub || '');
     }).map(r => Object.assign({}, r, { unlock_all: Boolean(r.unlock_all) }));
     return jsonResponse({ ok: true, audits });
+  }
+
+  if (body && body.passkey_assertion) {
+    return verifyPasskeyOverrideAssertion(request, env, session, body, url);
   }
 
   const email = String((body && body.email) || '').trim().toLowerCase();
@@ -2457,6 +2468,7 @@ export async function handleUsersGet(request, env, session) {
   } else {
     sessions = rawSess.filter(s => sessEmail && String((s && s.email) || '').trim().toLowerCase() === sessEmail);
   }
+  await attachUserPasskeysMeta(env.DB, users, session);
   return jsonResponse({ ok: true, edge: true, users, sessions, faceSettings: wsFaceSettings });
 }
 
@@ -8678,6 +8690,7 @@ export async function handleAuthMe(env, session) {
       return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
     }
     userOut = hydrateUserRow(row, true, false);
+    if (userOut) await attachUserPasskeysMeta(env.DB, [userOut], session);
   } catch (_) {}
   return jsonResponse({ ok: true, edge: true, authenticated: true, session, user: userOut });
 }

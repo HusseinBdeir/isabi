@@ -76,7 +76,9 @@ try:
     schema_cols = orig_parse(eds.SCHEMA_SQL.read_text(encoding="utf-8"))
     ok("geo_audit_log is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "geo_audit_log" in schema_cols and "geo_audit_log" in RUNTIME)
     ok("geo_gate_suggestions is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "geo_gate_suggestions" in schema_cols and "geo_gate_suggestions" in RUNTIME)
-    ok("release_data_only.EDGE_OWNED covers all EDGE_RUNTIME_TABLES incl. geo_audit_log & geo_gate_suggestions", set(rdo.EDGE_OWNED) >= set(eds.EDGE_RUNTIME_TABLES) and {"geo_audit_log", "geo_gate_suggestions"} <= set(rdo.EDGE_OWNED))
+    ok("user_passkeys is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "user_passkeys" in schema_cols and "user_passkeys" in RUNTIME)
+    ok("passkey_challenges is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "passkey_challenges" in schema_cols and "passkey_challenges" in RUNTIME)
+    ok("release_data_only.EDGE_OWNED covers all EDGE_RUNTIME_TABLES incl. geo & passkey tables", set(rdo.EDGE_OWNED) >= set(eds.EDGE_RUNTIME_TABLES) and {"geo_audit_log", "geo_gate_suggestions", "user_passkeys", "passkey_challenges"} <= set(rdo.EDGE_OWNED))
     dbp = tmp / "local.db"
     conn = sqlite3.connect(str(dbp))
     conn.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
@@ -86,6 +88,8 @@ try:
     conn.execute("CREATE TABLE geo_audit_log (id TEXT PRIMARY KEY, created_at TEXT, action TEXT)")
     conn.execute("CREATE TABLE geo_gate_suggestions (id TEXT PRIMARY KEY, status TEXT, site_name TEXT)")
     conn.execute("CREATE TABLE push_subscriptions (id TEXT PRIMARY KEY, endpoint TEXT, user_id TEXT)")
+    conn.execute("CREATE TABLE user_passkeys (id TEXT PRIMARY KEY, user_id TEXT, credential_id TEXT)")
+    conn.execute("CREATE TABLE passkey_challenges (id TEXT PRIMARY KEY, purpose TEXT, challenge_b64u TEXT)")
     conn.execute("INSERT INTO customers VALUES ('c-local-1', 'Acme')")
     conn.execute("INSERT INTO push_subscriptions VALUES ('ps-local-1', 'https://fcm.googleapis.com/fcm/send/local-test', 'u-test')")
     conn.execute("INSERT INTO override_requests VALUES ('ovr-1-deadbeef', 'pending', 'u-test')")
@@ -93,6 +97,8 @@ try:
     conn.execute("INSERT INTO override_audit VALUES ('ova-1-deadbeef', '2026-11-12T00:00:00.000Z', 'u-test')")
     conn.execute("INSERT INTO geo_audit_log VALUES ('ga-1-deadbeef', '2026-11-17T00:00:00.000Z', 'site_pin_moved')")
     conn.execute("INSERT INTO geo_gate_suggestions VALUES ('gs-1-deadbeef', 'pending', 'Site A')")
+    conn.execute("INSERT INTO user_passkeys VALUES ('pk-1-deadbeef', 'u1', 'cred-test-1')")
+    conn.execute("INSERT INTO passkey_challenges VALUES ('pkc-1-deadbeef', 'login', 'chal-test-1')")
     conn.commit()
     conn.close()
 
@@ -107,7 +113,7 @@ try:
 
     man = tmp / "manifest.json"
     prev = dict(meta["row_hashes"])
-    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("geo_audit_log", "ga-live-1"), ("geo_gate_suggestions", "gs-live-1"), ("push_subscriptions", "ps-live-1"), ("customers", "c-vanished")):
+    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("geo_audit_log", "ga-live-1"), ("geo_gate_suggestions", "gs-live-1"), ("push_subscriptions", "ps-live-1"), ("user_passkeys", "pk-live-1"), ("passkey_challenges", "pkc-live-1"), ("customers", "c-vanished")):
         prev[eds.encode_row_key(t, (pk,))] = "0" * 64
     man.write_text(json.dumps({"row_hashes": prev}), encoding="utf-8")
     files_d, meta_d = eds.export_all(delta=True, offline=False, manifest_path=man, db_path=dbp,
