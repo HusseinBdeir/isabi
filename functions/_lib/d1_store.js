@@ -300,7 +300,7 @@ function createPurgeOverrideAccumulator() {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
-export const MIN_SYNC_SHELL_VER = '19.6.373';
+export const MIN_SYNC_SHELL_VER = '19.6.428';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
@@ -8348,17 +8348,114 @@ function redactFaceSamplesFromUserObj(u) {
   return copy;
 }
 
+const MAX_RETIRED_SYS_TOPUP_IDS = 20000;
+const RETIRED_SYS_TOPUP_ID_RE = /^[a-z0-9][a-z0-9_-]{2,79}$/i;
+
+export function normalizeRetiredSysTopupIds(raw) {
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (typeof raw[i] !== 'string') continue;
+    const s = raw[i].trim();
+    if (!s || !RETIRED_SYS_TOPUP_ID_RE.test(s) || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out.length > MAX_RETIRED_SYS_TOPUP_IDS ? out.slice(-MAX_RETIRED_SYS_TOPUP_IDS) : out;
+}
+
+function isDroppableSysTopupStubServer(tableKey, r) {
+  if (!r || typeof r !== 'object' || !r.voided) return false;
+  const vb = String(r.voided_by || '').trim();
+  if (!/^(?:system-topup|sharepoint top-up)/i.test(vb)) return false;
+  if (r.kept_for || r.voided_with_parent || r.twin_of || r.backpay_stamp || r.restored_at || r._reopenedExplicitly) return false;
+  if (tableKey === 'sales_tickets') {
+    const m = String(r.method || '').trim().toLowerCase();
+    if (!m || m === 'credit') return false;
+  }
+  return true;
+}
+
+export function reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, session, truncMap, syncMeta = null) {
+  if (!incomingDoc || typeof incomingDoc !== 'object') return incomingDoc;
+  const isBuildTicket = Boolean(session && session.build_ticket);
+  const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
+  const prevRetired = normalizeRetiredSysTopupIds(prev._retiredSysTopupIds);
+  const effectiveRetired = (isBuildTicket && Object.prototype.hasOwnProperty.call(incomingDoc, '_retiredSysTopupIds'))
+    ? normalizeRetiredSysTopupIds([...prevRetired, ...(Array.isArray(incomingDoc._retiredSysTopupIds) ? incomingDoc._retiredSysTopupIds : [])])
+    : prevRetired;
+  if (effectiveRetired.length) incomingDoc._retiredSysTopupIds = effectiveRetired;
+  else delete incomingDoc._retiredSysTopupIds;
+
+  if (isBuildTicket || !incomingDoc.customRecords || typeof incomingDoc.customRecords !== 'object') {
+    return incomingDoc;
+  }
+  const retiredSet = effectiveRetired.length ? new Set(effectiveRetired) : null;
+  const trunc = (truncMap && typeof truncMap === 'object' && !Array.isArray(truncMap)) ? truncMap : null;
+  const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
+  const retiredDropped = {};
+  for (const k of Object.keys(incomingDoc.customRecords)) {
+    const iList = Array.isArray(incomingDoc.customRecords[k]) ? incomingDoc.customRecords[k] : null;
+    if (!iList) continue;
+    const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
+    const pIds = new Set();
+    for (const pr of pList) {
+      if (pr && typeof pr === 'object' && pr.id != null) {
+        const prid = String(pr.id).trim();
+        if (prid) pIds.add(prid);
+      }
+    }
+    const wantTruncPreserve = Boolean(trunc && trunc[k] === true && pList.length);
+    if (!retiredSet && !wantTruncPreserve) continue;
+    const outList = [];
+    const seenIds = new Set();
+    for (const ir of iList) {
+      if (!ir || typeof ir !== 'object') continue;
+      const rid = ir.id != null ? String(ir.id).trim() : '';
+      if (retiredSet && rid && retiredSet.has(rid) && !pIds.has(rid) && !ir.restored_at && !ir._reopenedExplicitly) {
+        if (!retiredDropped[k]) retiredDropped[k] = [];
+        retiredDropped[k].push(rid);
+        continue;
+      }
+      outList.push(ir);
+      if (rid) seenIds.add(rid);
+    }
+    if (wantTruncPreserve) {
+      for (const pr of pList) {
+        if (!pr || typeof pr !== 'object' || pr.id == null) continue;
+        const rid = String(pr.id).trim();
+        if (!rid || seenIds.has(rid)) continue;
+        if (isDroppableSysTopupStubServer(k, pr)) {
+          outList.push(pr);
+          seenIds.add(rid);
+        }
+      }
+    }
+    incomingDoc.customRecords[k] = outList;
+  }
+  if (syncMeta && typeof syncMeta === 'object' && Object.keys(retiredDropped).length) {
+    syncMeta.retiredDropped = retiredDropped;
+  }
+  return incomingDoc;
+}
+
 function scopeStoreDocForSession(docObj, session) {
   if (!docObj || typeof docObj !== 'object') return docObj;
+  const isBuildTicket = Boolean(session && session.build_ticket);
   if (session && isOwnerOrFullGroupSession(session)) {
-    if (!Array.isArray(docObj.users)) return docObj;
-    return Object.assign({}, docObj, {
-      users: docObj.users.map(redactFaceSamplesFromUserObj)
-    });
+    if (isBuildTicket && !Array.isArray(docObj.users)) return docObj;
+    const ownerCopy = Object.assign({}, docObj);
+    if (!isBuildTicket) delete ownerCopy._retiredSysTopupIds;
+    if (Array.isArray(docObj.users)) {
+      ownerCopy.users = docObj.users.map(redactFaceSamplesFromUserObj);
+    }
+    return ownerCopy;
   }
   const sessEmail = session ? String(session.email || '').trim().toLowerCase() : '';
   const canManage = Boolean(session && canManageUsersSeat(session));
   const copyDoc = Object.assign({}, docObj, { _scopedForSession: true });
+  if (!isBuildTicket) delete copyDoc._retiredSysTopupIds;
 
   if (Array.isArray(docObj.users)) {
     copyDoc.users = docObj.users.map(u => {
@@ -9624,6 +9721,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       ? JSON.parse(JSON.stringify(rawPatchDoc))
       : {};
     delete incomingDoc._scopedForSession;
+    const rawTruncMap = (incomingDoc._truncatedCrTables && typeof incomingDoc._truncatedCrTables === 'object' && !Array.isArray(incomingDoc._truncatedCrTables))
+      ? incomingDoc._truncatedCrTables
+      : null;
+    delete incomingDoc._truncatedCrTables;
     if (pKey === 'mfg_web_store') {
       const rawVer = incomingDoc && incomingDoc.minShellVer !== undefined && incomingDoc.minShellVer !== null
         ? String(incomingDoc.minShellVer).trim()
@@ -9677,12 +9778,15 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store') {
       prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
     }
+    let crSyncMeta = null;
     if (pKey === 'mfg_web_store') {
       if (isOwnerOrFullGroupSession(session)) {
         mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session);
       } else {
         await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
       }
+      crSyncMeta = {};
+      reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, session, rawTruncMap, crSyncMeta);
     }
     const syncAuditBlocked = [];
     if (pKey === 'mfg_web_store') {
@@ -9786,11 +9890,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       if (legacyHitsTask) await legacyHitsTask;
     }
 
-    return jsonResponse(
-      body.awaitMirror === true && mirrorStats
-        ? { ok: true, edge: true, updatedAt: newTs, mirrorStats }
-        : { ok: true, edge: true, updatedAt: newTs }
-    );
+    const patchOut = { ok: true, edge: true, updatedAt: newTs };
+    if (body.awaitMirror === true && mirrorStats) patchOut.mirrorStats = mirrorStats;
+    if (crSyncMeta && crSyncMeta.retiredDropped) patchOut.retiredDropped = crSyncMeta.retiredDropped;
+    return jsonResponse(patchOut);
   }
 
   return jsonResponse({ ok: false, error: 'Unsupported sync operation' }, 400);

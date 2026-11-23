@@ -65,6 +65,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
+    ("isabi-app", "build/verify_custom_store_headroom.py", "python"), # store headroom 70% gate, 60d stub retirement, sync truncation/resurrection guards
     ("isabi-app", "build/verify_meter_check.py", "python"),          # top-up reconcile: workbook quantity back on re-sized tickets, truck logs fresh from the workbooks
     ("isabi-app", "build/verify_truck_log_reopen.py", "python"),     # top-up: a truck log the workbook leaves open and its loads bear out is not kept ended
     ("isabi-app", "build/verify_close_twins.py", "python"),          # top-up reconcile: one-difference twins (cross-entity Extended side under WTC, stakeholder slips)
