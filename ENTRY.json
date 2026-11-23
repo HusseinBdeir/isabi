@@ -1,0 +1,14 @@
+{
+ "gates": [],
+ "holder": "agy-1eec7159 (tour-video)",
+ "id": "20261123T234312Z-3e942f18",
+ "pc": "Theo",
+ "queuedAt": "2026-11-23T23:43:12Z",
+ "seenAt": "2026-11-23T23:43:12Z",
+ "site": {
+  "branch": "wt/tour-video",
+  "sha": "cb77d976ef4029129a840b7dcb1d0cdccf07c820"
+ },
+ "state": "waiting",
+ "summary": "Showcase v6.40: 90-second product tour video with EN/AR/FR subtitles"
+}
