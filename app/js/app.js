@@ -222,7 +222,8 @@
   }
   function setEdgeSessionToken(tok) {
     _edgeSessionToken = String(tok || '');
-    if (!_edgeSessionToken) _edgeCookieAuthed = false;
+    if (_edgeSessionToken) _authSignInSeq++;
+    else _edgeCookieAuthed = false;
   }
   const WEAK_PIN_SET = new Set([
     '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
@@ -845,6 +846,9 @@
     eyeClosedSeen: false,
     livenessUser: '',
     livenessHistory: [],
+    livenessWaitStart: 0,
+    livenessStage1Only: false,
+    hadUnmatchedFrame: false,
     lastPadResult: null,
     pending2faUser: null,
     pendingPinUser: null,
@@ -95332,6 +95336,16 @@
         </div>
       </div>
 
+      ${(window.ISABI_PASSKEYS && typeof window.ISABI_PASSKEYS.renderPasskeysPanelHtml === 'function')
+        ? window.ISABI_PASSKEYS.renderPasskeysPanelHtml({
+            activeUser: me,
+            users: STATE.users,
+            isOwner: owner,
+            isDemo: isDemoScopeActive(),
+            hasServerApi: hasServerApi()
+          })
+        : ''}
+
       <div class="panel-card" style="margin-bottom:14px">
         <div class="panel-head">
           <div class="panel-title"><span>${hideRoleAndRlsCols ? 'MY ACCOUNT &amp; SIGN-IN SECURITY' : (tier === 'supervisor' ? 'BUSINESS-UNIT TEAM LOGIN DIRECTORY' : 'TEAM LOGIN DIRECTORY &amp; ROW-LEVEL SECURITY (RLS) SCOPES')}</span></div>
@@ -98842,6 +98856,7 @@
     const unlockedList = fields.filter(f => f.adminOpen);
     // Remote approval (js/approvals.js): a signed-in workspace with a live connection, never the demo.
     const canAskApproval = Boolean(!canUnlockTarget && window.MFG_APPROVALS && hasServerApi() && !isDemoScopeActive());
+    const canPasskeyOverride = Boolean(!canUnlockTarget && window.ISABI_PASSKEYS && window.ISABI_PASSKEYS.isSupported() && hasServerApi() && !isDemoScopeActive());
     const targetElForBox = $(target.id);
     const targetWrapForBox = targetElForBox ? targetElForBox.closest('.form-field') : null;
     if (targetWrapForBox && targetWrapForBox.parentNode) {
@@ -98851,19 +98866,20 @@
     box.innerHTML = `
       <div class="pa-admin-unlock-hdr">
         <strong>${ic('shield')} ${target.id === 'f_fxrate' ? 'Supervisor / Admin FX Corridor Unlock' : 'Admin Privilege Unlock Process'} · <span id="paUnlockTargetLabel">${esc(target.label)}</span></strong>
-        <span class="pa-admin-badge">${canUnlockTarget ? (isAdmin ? 'SUPERVISOR / ADMIN VERIFIED · ' + esc(who.full_name) : 'ROLE UNLOCK AUTHORIZED · ' + esc(who.full_name)) : 'SUPERVISOR PIN REQUIRED'}</span>
+        <span class="pa-admin-badge">${canUnlockTarget ? (isAdmin ? 'SUPERVISOR / ADMIN VERIFIED · ' + esc(who.full_name) : 'ROLE UNLOCK AUTHORIZED · ' + esc(who.full_name)) : 'SUPERVISOR PIN OR PASSKEY REQUIRED'}</span>
       </div>
       <div class="pa-admin-unlock-desc">
         <div><b>Why this field is locked:</b> <span id="paUnlockTargetReason">${esc(target.reason)}</span></div>
         <div style="margin-top:3px"><b>Override Posture:</b> ${canUnlockTarget
           ? `Your role (<b>${esc(who.role)}</b>) is authorized to unlock <b>${esc(target.label)}</b> directly without an external PIN.`
-          : `Your role (<b>${esc(who.role)}</b>) does not have direct unlock rights for <b>${esc(target.label)}</b> · enter a Supervisor work email and Access PIN to authorize this override.`} Overrides are logged on the posted record.</div>
+          : `Your role (<b>${esc(who.role)}</b>) does not have direct unlock rights for <b>${esc(target.label)}</b> · authorize with a Supervisor passkey or work email and Access PIN.`} Overrides are logged on the posted record.</div>
         ${canAskApproval ? '<div style="margin-top:3px">Or ask a Supervisor to approve from their own screen. They see your request at once while their workspace is open.</div>' : ''}
       </div>
-      ${canAskApproval ? `
+      ${(canAskApproval || canPasskeyOverride) ? `
       <div class="pa-admin-unlock-ask">
-        <button type="button" class="pa-admin-btn pa-ask-approval-btn" id="paRequestApprovalBtn">${ic('approvals')} Ask a Supervisor to Approve</button>
-        <span class="apv-wait-status" id="paApprovalWaitStatus" role="status" aria-live="polite" hidden></span>
+        ${canPasskeyOverride ? `<button type="button" class="pa-admin-btn pa-passkey-unlock-btn" id="paPasskeyUnlockBtn">${ic('shield')} Authorize with Passkey</button>` : ''}
+        ${canAskApproval ? `<button type="button" class="pa-admin-btn pa-ask-approval-btn" id="paRequestApprovalBtn">${ic('approvals')} Ask a Supervisor to Approve</button>
+        <span class="apv-wait-status" id="paApprovalWaitStatus" role="status" aria-live="polite" hidden></span>` : ''}
       </div>` : ''}
       <div class="pa-admin-unlock-controls">
         <select id="paUnlockFieldSelect" style="max-width:230px;padding:5px 8px;border-radius:5px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px">
@@ -99067,6 +99083,62 @@
         }
       });
     }
+    const btnPasskeyUnlock = $('paPasskeyUnlockBtn');
+    if (btnPasskeyUnlock) {
+      btnPasskeyUnlock.addEventListener('click', async () => {
+        if (overrideBusy || !window.ISABI_PASSKEYS) return;
+        if (target.id === 'f_fxrate') {
+          const fxG = evaluateCurrentModalFxConversionGuard();
+          if (fxG && fxG.frozen) {
+            box.hidden = true;
+            toast(fxG.reason, 'err');
+            return;
+          }
+        }
+        overrideBusy = true;
+        btnPasskeyUnlock.disabled = true;
+        try {
+          const emInp = $('paAdminEmailInput');
+          const supEmail = norm((emInp && emInp.value) || '');
+          const company = resolveOverrideCompany();
+          const formKey = String(STATE.modalForm || STATE.activeKiosk || '');
+          const recId = String((STATE.editingRecord && STATE.editingRecord.id) || '');
+          const j = await window.ISABI_PASSKEYS.verifySupervisorOverride({
+            email: supEmail,
+            company,
+            form_key: formKey,
+            field_id: target.id,
+            field_label: target.label,
+            unlock_all: false,
+            record_id: recId
+          });
+          const authEmail = (j.authorized_by && j.authorized_by.email) || supEmail;
+          const authName = (j.authorized_by && (j.authorized_by.full_name || j.authorized_by.email)) || authEmail || 'Supervisor';
+          if (authEmail) FORM_UI.lastSupervisorEmail = authEmail;
+          FORM_UI.lastOverrideAudit = {
+            audit_id: j.audit_id || '',
+            created_at: j.created_at || new Date().toISOString(),
+            authorized_by: j.authorized_by || { email: authEmail, full_name: authName }
+          };
+          saveNote({ directRole: false, authorizerName: `${authName} (Passkey)`, auditId: j.audit_id || '' });
+          FORM_UI.adminUnlockCompany = company;
+          FORM_UI.adminUnlocked[target.id] = true;
+          box.hidden = true;
+          recalcForm();
+          const el = $(target.id);
+          if (el) {
+            try { el.focus(); if (el.select) el.select(); } catch (_) {}
+          }
+          toast(`Supervisor Passkey Override: "${target.label}" unlocked for manual editing`, 'ok');
+        } catch (err) {
+          toast((err && err.message) || 'Passkey override authorization failed', 'err');
+        } finally {
+          overrideBusy = false;
+          if (btnPasskeyUnlock.isConnected) btnPasskeyUnlock.disabled = false;
+        }
+      });
+    }
+
     // Ask a Supervisor: the request waits up to 10 minutes; closing the form, switching field or record,
     // or unlocking with a PIN meanwhile cancels it. On approval the same note stamp and audit id as the PIN path.
     const btnAsk = $('paRequestApprovalBtn');
@@ -136082,6 +136154,21 @@
     if (preferExistingSeat && existing.custom_perms != null) out.custom_perms = existing.custom_perms;
     else if (incoming.custom_perms != null) out.custom_perms = incoming.custom_perms;
     else if (existing.custom_perms != null) out.custom_perms = existing.custom_perms;
+    if (Array.isArray(incoming.passkeys)) {
+      out.passkeys = incoming.passkeys;
+      out.passkey_count = incoming.passkeys.length;
+      out.passkeys_enrolled = incoming.passkeys.length > 0;
+    } else if (incoming.passkey_count != null || incoming.passkeys_enrolled != null) {
+      out.passkey_count = Number(incoming.passkey_count || 0);
+      out.passkeys_enrolled = Boolean(incoming.passkeys_enrolled || out.passkey_count > 0);
+      if (Array.isArray(existing.passkeys) && out.passkey_count === existing.passkeys.length) {
+        out.passkeys = existing.passkeys;
+      }
+    } else if (Array.isArray(existing.passkeys)) {
+      out.passkeys = existing.passkeys;
+      out.passkey_count = existing.passkeys.length;
+      out.passkeys_enrolled = existing.passkeys.length > 0;
+    }
     return ensureCanonicalMultiIndustrySeat(out);
   }
 
@@ -141625,6 +141712,9 @@
     FACE_STATE.eyeClosedSeen = false;
     FACE_STATE.livenessUser = '';
     FACE_STATE.livenessHistory = [];
+    FACE_STATE.livenessWaitStart = 0;
+    FACE_STATE.livenessStage1Only = false;
+    FACE_STATE.hadUnmatchedFrame = false;
     FACE_STATE.streakStartedAt = 0;
     FACE_STATE.streakVecs = [];
     FACE_STATE.edgeProbeStartedAt = 0;
@@ -141667,7 +141757,7 @@
     }
 
     const lvCfg = (window.Face && ((window.Face.config && window.Face.config.liveness) || (window.Face.CONFIG && window.Face.CONFIG.liveness))) || {};
-    const windowMs = Number(evalCfg.windowMs || (Number(lvCfg.windowSec || 6) * 1000));
+    const windowMs = Number(evalCfg.windowMs || (Number(lvCfg.windowSec || 4.5) * 1000));
     const box = det && det.box ? det.box : null;
     const boxW = box && Number(box.width) > 0 ? Number(box.width) : null;
     const boxCx = (box && boxW != null) ? (Number(box.x || 0) + boxW * 0.5) : null;
@@ -141732,15 +141822,17 @@
     }
 
     const userKey = norm(matchedEmail || '');
-    if (userKey && FACE_STATE.livenessUser !== userKey) {
-      const wasAnonPrewarm = FACE_STATE.livenessUser === '__edge_face__';
+    if (FACE_STATE.livenessStage1Only || FACE_STATE.hadUnmatchedFrame || !userKey || (FACE_STATE.livenessUser && FACE_STATE.livenessUser !== userKey) || (userKey !== '__edge_face__' && FACE_STATE.livenessUser === '__edge_face__')) {
       FACE_STATE.livenessUser = userKey;
-      if (!wasAnonPrewarm) {
-        FACE_STATE.livenessHistory = [];
-        FACE_STATE.eyeClosedSeen = false;
-        FACE_STATE.lastBlinkAt = 0;
-        FACE_STATE.lastTurnAt = 0;
-      }
+      FACE_STATE.livenessHistory = [];
+      FACE_STATE.eyeClosedSeen = false;
+      FACE_STATE.lastBlinkAt = 0;
+      FACE_STATE.lastTurnAt = 0;
+      FACE_STATE.livenessWaitStart = 0;
+      FACE_STATE.livenessStage1Only = false;
+      FACE_STATE.hadUnmatchedFrame = false;
+    } else if (userKey && FACE_STATE.livenessUser !== userKey) {
+      FACE_STATE.livenessUser = userKey;
     }
 
     return recordAndEvalFaceLiveness(FACE_STATE, det, opts, {
@@ -141858,15 +141950,22 @@
       FACE_STATE.missedFrames = 0;
       if (!FACE_STATE.modelLoadingStartedAt) FACE_STATE.modelLoadingStartedAt = Date.now();
       ensureFaceModelsLoaded().catch(() => {});
-      const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
-      const stage1Live = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
-      if (stage1Live && stage1Live.spoofSuspected) {
+      // Stage-1 modelLoading frames never accumulate into livenessHistory (anti-carryover); run pixel PAD only.
+      FACE_STATE.livenessStage1Only = true;
+      FACE_STATE.livenessUser = '';
+      FACE_STATE.livenessHistory = [];
+      FACE_STATE.livenessWaitStart = 0;
+      const stage1Pad = (hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function')
+        ? window.Face.analyzePad(opts.videoEl, det)
+        : { evaluated: false, frameSpoof: false, score: 0, reasons: [] };
+      if (stage1Pad) FACE_STATE.lastPadResult = stage1Pad;
+      if (stage1Pad && stage1Pad.frameSpoof) {
         FACE_STATE.detectorStreak = 0;
         if (!FACE_STATE.pendingPinUser) {
           setAuthStreak(0, defaultNeeded);
           setAuthHint(faceTr('Screen or photo detected. Look directly at the camera.'), 'warn');
         }
-        return { status: 'spoof-detected', modelLoading: true, livenessStatus: 'pad-spoof', livenessDetail: stage1Live };
+        return { status: 'spoof-detected', modelLoading: true, livenessStatus: 'pad-spoof', livenessDetail: { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: stage1Pad.reasons || [] } };
       }
       const isLiveVideoSingleFace = Boolean(opts && opts.videoEl && !det.multiple);
       if (isLiveVideoSingleFace) {
@@ -141931,6 +142030,11 @@
       return { status: 'multiple' };
     }
     FACE_STATE.detectorStreak = 0;
+    if (window.Face && typeof window.Face.isFiniteVec128 === 'function' && !window.Face.isFiniteVec128(det.descriptor)) {
+      resetLivenessState();
+      FACE_STATE.hadUnmatchedFrame = true;
+      return { status: 'invalid-descriptor' };
+    }
 
     const descArr = (det.descriptor && det.descriptor.length === 128)
       ? Array.from(det.descriptor, v => Number(Number(v).toFixed(5)))
@@ -141964,6 +142068,9 @@
           FACE_STATE.edgeProbeStreak = 0;
           FACE_STATE.edgeProbeStartedAt = 0;
           FACE_STATE.edgeProbeVecs = [];
+          resetLivenessState();
+          FACE_STATE.hadUnmatchedFrame = true;
+          FACE_STATE.livenessWaitStart = 0;
           setAuthStreak(0, defaultNeeded);
           setAuthHint('Move slightly closer', 'warn');
           return { status: 'too-small' };
@@ -142007,12 +142114,15 @@
           FACE_STATE.edgeProbeStreak = 0;
           FACE_STATE.edgeProbeStartedAt = 0;
           FACE_STATE.edgeProbeVecs = [];
+          resetLivenessState();
+          FACE_STATE.hadUnmatchedFrame = true;
           setAuthStreak(0, edgeNeeded);
           setAuthHint(faceTr('Screen or photo detected. Look directly at the camera.'), 'warn');
           return { status: 'spoof-detected', livenessStatus: 'pad-spoof', livenessDetail: liveProbe, count: 0, needed: edgeNeeded };
         }
 
         if (FACE_STATE.edgeProbeStreak < edgeNeeded || !edgeElapsedOk) {
+          FACE_STATE.livenessWaitStart = 0;
           if (FACE_STATE.edgeProbeStreak >= edgeNeeded && !edgeElapsedOk) {
             FACE_STATE.edgeProbeStreak = edgeNeeded - 1;
             FACE_STATE.edgeProbeVecs = FACE_STATE.edgeProbeVecs.slice(-Math.max(1, edgeNeeded - 1));
@@ -142028,14 +142138,36 @@
         }
 
         if (!liveProbe.ok) {
+          const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+          if (!FACE_STATE.livenessWaitStart) FACE_STATE.livenessWaitStart = Date.now();
+          if ((Date.now() - FACE_STATE.livenessWaitStart) >= lvWindowMs) {
+            FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeProbeStartedAt = 0;
+            FACE_STATE.edgeProbeVecs = [];
+            resetLivenessState();
+            setAuthStreak(0, edgeNeeded);
+            setAuthHint(faceTr('Liveness check timed out. Look at the camera and blink or turn slightly.'), 'warn');
+            return { status: 'liveness-timeout', livenessStatus: 'liveness-timeout', livenessDetail: liveProbe, count: 0, needed: edgeNeeded };
+          }
           FACE_STATE.edgeProbeStreak = edgeNeeded - 1;
           FACE_STATE.edgeProbeVecs = FACE_STATE.edgeProbeVecs.slice(-Math.max(1, edgeNeeded - 1));
           setAuthStreak(FACE_STATE.edgeProbeStreak, edgeNeeded);
           setAuthHint(faceTr('Hold naturally in front of the camera'), 'warn');
           return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveProbe, count: FACE_STATE.edgeProbeStreak, needed: edgeNeeded };
         }
+        FACE_STATE.livenessWaitStart = 0;
 
-        const submitEdgeDesc = (window.Face && window.Face.averageDescriptors ? window.Face.averageDescriptors(FACE_STATE.edgeProbeVecs) : null) || descArr;
+        const submitEdgeDesc = (FACE_STATE.edgeProbeVecs.length && window.Face && window.Face.averageDescriptors)
+          ? window.Face.averageDescriptors(FACE_STATE.edgeProbeVecs)
+          : descArr;
+        if (!submitEdgeDesc) {
+          FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeStartedAt = 0;
+          FACE_STATE.edgeProbeVecs = [];
+          resetLivenessState();
+          FACE_STATE.hadUnmatchedFrame = true;
+          return { status: 'invalid-descriptor' };
+        }
 
         if (FACE_STATE.edgeProbeBusy) {
           setAuthStreak(edgeNeeded, edgeNeeded);
@@ -142129,6 +142261,8 @@
           FACE_STATE.edgeProbeStreak = 0;
           FACE_STATE.edgeProbeStartedAt = 0;
           FACE_STATE.edgeProbeVecs = [];
+          resetLivenessState();
+          FACE_STATE.hadUnmatchedFrame = true;
           // Face misses never hammer the server: after 2 misses in a row (or a 429) the live camera stops
           // and waits for a tap on "Tap for Face ID"; the PIN form keeps working the whole time.
           const probeThrottled = Boolean(rEdge && rEdge.status === 429);
@@ -142159,6 +142293,8 @@
           FACE_STATE.edgeProbeStreak = 0;
           FACE_STATE.edgeProbeStartedAt = 0;
           FACE_STATE.edgeProbeVecs = [];
+          resetLivenessState();
+          FACE_STATE.hadUnmatchedFrame = true;
           FACE_STATE.edgeProbeCooldownUntil = Date.now() + 750;
           setAuthStreak(0, edgeNeeded);
           setAuthHint('Face not recognized', 'crit');
@@ -142168,6 +142304,9 @@
         }
       }
       if (opts && opts.videoEl && FACE_STATE.streakCount > 0) {
+        if (!m || !m.best || (FACE_STATE.streakUser && norm(m.best.email) !== norm(FACE_STATE.streakUser.email))) {
+          FACE_STATE.hadUnmatchedFrame = true;
+        }
         FACE_STATE.weakFrames = (FACE_STATE.weakFrames || 0) + 1;
         if (FACE_STATE.weakFrames < 3) {
           return { status: dec.status, match: m, heldStreak: FACE_STATE.streakCount };
@@ -142261,6 +142400,7 @@
     }
 
     if (FACE_STATE.streakCount < needed || !localElapsedOk) {
+      FACE_STATE.livenessWaitStart = 0;
       if (FACE_STATE.streakCount >= needed && !localElapsedOk) {
         FACE_STATE.streakCount = needed - 1;
         FACE_STATE.streakVecs = FACE_STATE.streakVecs.slice(-Math.max(1, needed - 1));
@@ -142271,6 +142411,21 @@
     }
 
     if (!liveRes.ok) {
+      const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+      if (!FACE_STATE.livenessWaitStart) FACE_STATE.livenessWaitStart = Date.now();
+      if ((Date.now() - FACE_STATE.livenessWaitStart) >= lvWindowMs) {
+        FACE_STATE.streakUser = null;
+        FACE_STATE.streakCount = 0;
+        FACE_STATE.streakStartedAt = 0;
+        FACE_STATE.streakVecs = [];
+        FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.edgeProbeStartedAt = 0;
+        FACE_STATE.edgeProbeVecs = [];
+        resetLivenessState();
+        setAuthStreak(0, needed);
+        setAuthHint(faceTr('Liveness check timed out. Look at the camera and blink or turn slightly.'), 'warn');
+        return { status: 'liveness-timeout', livenessStatus: 'liveness-timeout', livenessDetail: liveRes, count: 0, needed, best: dec.best, dist: m.bestDist };
+      }
       // Hold streak at needed - 1 until natural blink or coupled 3D parallax confirms a real person
       FACE_STATE.streakCount = needed - 1;
       FACE_STATE.streakVecs = FACE_STATE.streakVecs.slice(-Math.max(1, needed - 1));
@@ -142278,10 +142433,20 @@
       setAuthHint(faceTr('Hold naturally in front of the camera'), 'warn');
       return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveRes, count: FACE_STATE.streakCount, needed, best: dec.best, dist: m.bestDist };
     }
+    FACE_STATE.livenessWaitStart = 0;
 
-    const submitLocalDesc = (window.Face && window.Face.averageDescriptors && FACE_STATE.streakVecs.length
+    const submitLocalDesc = (FACE_STATE.streakVecs.length && window.Face && window.Face.averageDescriptors)
       ? window.Face.averageDescriptors(FACE_STATE.streakVecs)
-      : null) || descArr;
+      : descArr;
+    if (!submitLocalDesc) {
+      FACE_STATE.streakUser = null;
+      FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
+      resetLivenessState();
+      FACE_STATE.hadUnmatchedFrame = true;
+      return { status: 'invalid-descriptor' };
+    }
 
     // Confirmed across consecutive frames + passive liveness + PAD!
     FACE_STATE.streakUser = null;
@@ -146464,6 +146629,23 @@
     const waitingCam2FA = !!FACE_STATE.pending2faUser;
     const waitingPin2FA = !!FACE_STATE.pendingPinUser;
 
+    const isKioskOrDemo = Boolean(isAnyKioskOrScanSurface() || STATE.kioskLocked || isDemoScopeActive());
+    const pkWrap = $('authPasskeyWrap');
+    const syncAuthPasskeyUi = seatOpt => {
+      if (!pkWrap) return;
+      const wsModePk = getWorkspaceAuthMode();
+      const canPk = Boolean(
+        !isKioskOrDemo &&
+        !waitingCam2FA &&
+        wsModePk !== 'pin_only' &&
+        hasServerApi() &&
+        window.ISABI_PASSKEYS &&
+        window.ISABI_PASSKEYS.isSupported() &&
+        (!seatOpt || (window.ISABI_PASSKEYS.isEligibleSeat(seatOpt) && effectiveSeatAuthMode(seatOpt) !== 'pin_only'))
+      );
+      pkWrap.hidden = !canPk;
+    };
+
     if (serverHeld) {
       const showCreds = !waitingCam2FA;
       FACE_STATE.seatDrawerOpen = showCreds;
@@ -146491,6 +146673,7 @@
           if (divLblEl) divLblEl.textContent = 'or sign in with Email & PIN';
         }
       }
+      syncAuthPasskeyUi(null);
       if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(null);
       return;
     }
@@ -146543,6 +146726,7 @@
         }
       }
     }
+    syncAuthPasskeyUi(selUser || null);
     if (typeof syncAuthPocketBriefUi === 'function') syncAuthPocketBriefUi(selUser);
   }
 
@@ -147321,6 +147505,7 @@
     const reqMethod = String((opts && opts.method) || '');
     const isPinlessBypass = Boolean(opts && opts.bypass2FA) && (
       (/^face\s*id/i.test(reqMethod) && !/face\s*id\s*\+\s*pin/i.test(reqMethod)) ||
+      /^passkey/i.test(reqMethod) ||
       reqMethod === 'Owner Impersonation' ||
       reqMethod === 'Interactive Sandbox'
     );
@@ -149357,6 +149542,7 @@
     KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
     KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
     KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+    KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
     KIOSK_ADMIN_MODAL_STATE.lastPadResult = null;
     const v = $('ksaAdminFaceVideo');
     if (v && v.srcObject) {
@@ -149425,6 +149611,7 @@
       KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
       KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
       KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+      KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
       KIOSK_ADMIN_MODAL_STATE.lastPadResult = null;
       KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = false;
     };
@@ -149511,6 +149698,7 @@
         }
         const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ADMIN_MODAL_STATE.streakStartedAt || Date.now())) >= minSpanMs);
         if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames || !elapsedOk) {
+          KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
           KIOSK_ADMIN_MODAL_STATE.err = '';
           KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
           KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
@@ -149518,6 +149706,16 @@
           return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
         }
         if (shouldEvalLiveness && !(lv && lv.ok)) {
+          const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+          if (!KIOSK_ADMIN_MODAL_STATE.livenessWaitStart) KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = Date.now();
+          if ((Date.now() - KIOSK_ADMIN_MODAL_STATE.livenessWaitStart) >= lvWindowMs) {
+            resetKsaFaceAccumulators();
+            KIOSK_ADMIN_MODAL_STATE.err = faceTr('Liveness check timed out. Look at the camera and blink or turn slightly.');
+            KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+            KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
+            syncKioskAdminFaceDomInPlace();
+            return { ok: false, reason: 'liveness-timeout', admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
+          }
           KIOSK_ADMIN_MODAL_STATE.streakCount = needFrames - 1;
           KIOSK_ADMIN_MODAL_STATE.err = '';
           KIOSK_ADMIN_MODAL_STATE.statusText = faceTr('Hold naturally in front of the camera');
@@ -149525,6 +149723,7 @@
           syncKioskAdminFaceDomInPlace();
           return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
         }
+        KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
       }
       resetKsaFaceAccumulators();
       KIOSK_ADMIN_MODAL_STATE.err = '';
@@ -149571,6 +149770,10 @@
 
     if (det.multiple) {
       return failUnrecognized('multiple');
+    }
+    if (window.Face && typeof window.Face.isFiniteVec128 === 'function' && !window.Face.isFiniteVec128(det.descriptor)) {
+      resetKsaFaceAccumulators();
+      return { ok: false, reason: 'invalid-descriptor' };
     }
     const ksaMinFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
     if (det.faceSizeFrac != null && det.faceSizeFrac < ksaMinFrac) {
@@ -149631,6 +149834,7 @@
           }
           const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ADMIN_MODAL_STATE.streakStartedAt || Date.now())) >= minSpanMs);
           if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames || !elapsedOk) {
+            KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
             KIOSK_ADMIN_MODAL_STATE.err = '';
             KIOSK_ADMIN_MODAL_STATE.statusText = 'Verifying Admin Face ID...';
             KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
@@ -149638,6 +149842,16 @@
             return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames };
           }
           if (shouldEvalLiveness && !(lv && lv.ok)) {
+            const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+            if (!KIOSK_ADMIN_MODAL_STATE.livenessWaitStart) KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = Date.now();
+            if ((Date.now() - KIOSK_ADMIN_MODAL_STATE.livenessWaitStart) >= lvWindowMs) {
+              resetKsaFaceAccumulators();
+              KIOSK_ADMIN_MODAL_STATE.err = faceTr('Liveness check timed out. Look at the camera and blink or turn slightly.');
+              KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+              KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
+              syncKioskAdminFaceDomInPlace();
+              return { ok: false, reason: 'liveness-timeout' };
+            }
             KIOSK_ADMIN_MODAL_STATE.streakCount = needFrames - 1;
             KIOSK_ADMIN_MODAL_STATE.err = '';
             KIOSK_ADMIN_MODAL_STATE.statusText = faceTr('Hold naturally in front of the camera');
@@ -149645,14 +149859,20 @@
             syncKioskAdminFaceDomInPlace();
             return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames };
           }
+          KIOSK_ADMIN_MODAL_STATE.livenessWaitStart = 0;
         }
         if (KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy) {
           return { ok: false, reason: 'verifying' };
         }
         KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = true;
         const vecArr = (!opts.instant && KIOSK_ADMIN_MODAL_STATE.streakVecs.length && window.Face && typeof window.Face.averageDescriptors === 'function')
-          ? (window.Face.averageDescriptors(KIOSK_ADMIN_MODAL_STATE.streakVecs) || rawVec)
+          ? window.Face.averageDescriptors(KIOSK_ADMIN_MODAL_STATE.streakVecs)
           : rawVec;
+        if (!vecArr) {
+          KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = false;
+          resetKsaFaceAccumulators();
+          return { ok: false, reason: 'invalid-descriptor' };
+        }
         return edgeApiFetch('./api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -163219,6 +163439,7 @@
       KIOSK_ATT_STATE.streakVecs = [];
       KIOSK_ATT_STATE.streakStartedAt = 0;
       KIOSK_ATT_STATE.livenessHistory = [];
+      KIOSK_ATT_STATE.livenessWaitStart = 0;
       KIOSK_ATT_STATE.lastPadResult = null;
     };
     if (!det || !det.descriptor) {
@@ -163230,6 +163451,10 @@
       KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
       KIOSK_ATT_STATE.statusCls = '';
       return { ok: false, reason: 'no-face' };
+    }
+    if (window.Face && typeof window.Face.isFiniteVec128 === 'function' && !window.Face.isFiniteVec128(det.descriptor)) {
+      resetKioskAttAccumulators();
+      return { ok: false, reason: 'invalid-descriptor' };
     }
     KIOSK_ATT_STATE.missedFrames = 0;
     if (Number(det.score || det.detScore || 0.9) >= 0.42) {
@@ -163323,16 +163548,31 @@
 
     const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ATT_STATE.streakStartedAt || Date.now())) >= minSpanMs);
     if (KIOSK_ATT_STATE.streakCount < needFrames || !elapsedOk) {
+      KIOSK_ATT_STATE.livenessWaitStart = 0;
       KIOSK_ATT_STATE.statusText = `Recognizing ${matchedName}...`;
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'building-streak', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
     }
     if (shouldEvalLiveness && !(lv && lv.ok)) {
+      const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+      if (!KIOSK_ATT_STATE.livenessWaitStart) KIOSK_ATT_STATE.livenessWaitStart = Date.now();
+      if ((Date.now() - KIOSK_ATT_STATE.livenessWaitStart) >= lvWindowMs) {
+        resetKioskAttAccumulators();
+        KIOSK_ATT_STATE.statusText = faceTr('Liveness check timed out. Blink or turn slightly inside the oval guide.');
+        KIOSK_ATT_STATE.statusCls = 'warn';
+        const stElTimeout = $('kioskAttCamStatus');
+        if (stElTimeout) {
+          stElTimeout.textContent = KIOSK_ATT_STATE.statusText;
+          stElTimeout.className = 'kiosk-att-status warn';
+        }
+        return { ok: false, reason: 'liveness-timeout', staff: matchedName };
+      }
       KIOSK_ATT_STATE.streakCount = needFrames - 1;
       KIOSK_ATT_STATE.statusText = faceTr('Verifying live presence...');
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
     }
+    KIOSK_ATT_STATE.livenessWaitStart = 0;
 
     resetKioskAttAccumulators();
     const recentGuard = checkKioskRecentPunchGuard(matchedName, opts);
@@ -185688,6 +185928,19 @@
         saveSbBtn.textContent = '✓ Saved';
         setTimeout(() => { if (saveSbBtn.isConnected) saveSbBtn.textContent = 'Save'; }, 1500);
       });
+
+      if (window.ISABI_PASSKEYS && typeof window.ISABI_PASSKEYS.wirePasskeysPanel === 'function') {
+        window.ISABI_PASSKEYS.wirePasskeysPanel(container, {
+          activeUser: activeUser(),
+          toast,
+          onMutated: async () => {
+            window.__ISABI_EARLY_USERS_PROMISE = null;
+            _usersHydrateInFlight = null;
+            await hydrateServerUsersOnce();
+            renderApp();
+          }
+        });
+      }
     }
 
     if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
@@ -186244,7 +186497,7 @@
             }
             const exIdx = STATE.users.findIndex(u => norm(u.email) === norm(resumedSeat.email));
             if (exIdx >= 0) {
-              STATE.users[exIdx] = resumedSeat;
+              STATE.users[exIdx] = mergeUserRow(STATE.users[exIdx], resumedSeat);
               STATE.activeUserIdx = exIdx;
             } else {
               STATE.users.unshift(resumedSeat);
@@ -186293,6 +186546,53 @@
       updateAuthFaceUi();
       setAuthSeatDrawerOpen(true);
     };
+
+    const authPasskeyBtn = $('authPasskeyBtn');
+    if (authPasskeyBtn) {
+      authPasskeyBtn.addEventListener('click', async () => {
+        if (authUiLoginBusy || STATE.authed) return;
+        if (!window.ISABI_PASSKEYS || !window.ISABI_PASSKEYS.isSupported()) {
+          authError('Passkeys are not supported in this browser.', { noShake: true, keepPin: true });
+          return;
+        }
+        const errEl = $('authErrorBox');
+        if (errEl) errEl.hidden = true;
+        authUiLoginBusy = true;
+        authPasskeyBtn.disabled = true;
+        try {
+          const seatEmailHint = resolveUiSubmitEmail();
+          await flushPendingSignOutBeforeLogin();
+          const j = await window.ISABI_PASSKEYS.loginWithPasskey({ email: seatEmailHint });
+          if (!j || !j.ok || !j.user || !j.user.email) {
+            authError((j && j.error) || 'Passkey sign-in failed.', { keepPin: true });
+            return;
+          }
+          _edgeCookieAuthed = true;
+          if (j.token) setEdgeSessionToken(j.token);
+          else setEdgeSessionToken('');
+          const cleanUser = Object.assign({}, j.user, { pin_redacted: true });
+          delete cleanUser.pin_code;
+          delete cleanUser._verifiedPin;
+          const existIdx = STATE.users.findIndex(u => norm(u.email) === norm(cleanUser.email));
+          const mergedSeat = existIdx >= 0 ? mergeUserRow(STATE.users[existIdx], cleanUser) : ensureCanonicalMultiIndustrySeat(cleanUser);
+          delete mergedSeat.pin_code;
+          mergedSeat.pin_redacted = true;
+          if (existIdx >= 0) STATE.users[existIdx] = mergedSeat;
+          else STATE.users.push(mergedSeat);
+          await performLogin(mergedSeat.email, '', {
+            bypass2FA: true,
+            serverToken: j.token || '1',
+            method: j.method || 'Passkey (FIDO2)',
+            confidence: 100
+          });
+        } catch (err) {
+          authError((err && err.message) || 'Passkey sign-in failed.', { keepPin: true });
+        } finally {
+          authUiLoginBusy = false;
+          if (authPasskeyBtn.isConnected) authPasskeyBtn.disabled = false;
+        }
+      });
+    }
 
     const authForm = $('authLoginForm');
     if (authForm) {

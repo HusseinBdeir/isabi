@@ -247,6 +247,34 @@
   margin-bottom: 12px;
 }
 
+.sua-passkey-wrap {
+  margin-bottom: 12px;
+}
+.sua-passkey-btn {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(184, 144, 56, 0.55);
+  background: linear-gradient(180deg, #FFFDF8 0%, #F5EFE2 100%);
+  color: #1F242D;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sua-passkey-btn:hover:not(:disabled) {
+  border-color: #B89038;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F1E7D2 100%);
+}
+.sua-passkey-btn svg {
+  color: #9A7120;
+  flex: 0 0 auto;
+}
+
 .sua-actions {
   display: flex;
   align-items: center;

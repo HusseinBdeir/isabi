@@ -35,10 +35,11 @@ const MFG_FACE_CONFIG = {
     earClosed: 0.228,
     earOpen: 0.240,
     earDropMin: 0.024,        // relative EAR drop from open baseline for fast webcam blinks
-    yawSpanMin: 0.020,        // 3D nose-to-jaw yaw span across frames
-    parallaxSpanMin: 0.010,   // 3D nose-over-cheek vs nose-over-eye differential parallax
-    earVarianceMin: 0.005,    // non-rigid eye variance required alongside head turn (rejects tilted 2D photos)
-    windowSec: 6
+    yawSpanMin: 0.055,        // 3D nose-to-jaw yaw span across frames
+    parallaxSpanMin: 0.022,   // 3D nose-over-cheek vs nose-over-eye differential parallax
+    earVarianceMin: 0.012,    // non-rigid eye variance required alongside head turn (rejects tilted 2D photos)
+    windowSec: 4.5,
+    maxStepDist: 0.26
   },
   snapshotWidth: 240,
   snapshotQuality: 0.78
@@ -774,7 +775,7 @@ const Face = (() => {
     const dLeftEye = d(pts[27], pts[36]);
     const dRightEye = d(pts[27], pts[45]);
     const yawEye = (dLeftEye - dRightEye) / ((dLeftEye + dRightEye) || 1);
-    const parallax3d = yaw - yawEye;
+    const parallax3d = yaw - 1.35 * yawEye;
     const dBridgeNose = d(pts[27], pts[30]);
     const dNoseChin = d(pts[30], pts[8]);
     const pitch = (dBridgeNose - dNoseChin) / ((dBridgeNose + dNoseChin) || 1);
@@ -789,7 +790,9 @@ const Face = (() => {
     return {
       yaw: Number(yaw.toFixed(4)),
       yawEye: Number(yawEye.toFixed(4)),
+      bridgeYaw: Number(yawEye.toFixed(4)),
       parallax3d: Number(parallax3d.toFixed(4)),
+      parallax: Number(parallax3d.toFixed(4)),
       pitch: Number(pitch.toFixed(4)),
       parallaxPitch3d: Number(parallaxPitch3d.toFixed(4))
     };
@@ -850,7 +853,8 @@ const Face = (() => {
   let padCanvas = null;
   function analyzePad(src, det) {
     const empty = { evaluated: false, frameSpoof: false, score: 0, reasons: [], metrics: null };
-    if (!src || !det || !det.box) return empty;
+    const srcEl = (src && (src.rawSrc || src._rawSrc)) || src;
+    if (!srcEl || !det || !det.box) return empty;
     const rawBox = det.box;
     const bx = Number(rawBox.x || 0), by = Number(rawBox.y || 0);
     const bw = Number(rawBox.width || 0), bh = Number(rawBox.height || 0);
@@ -860,18 +864,18 @@ const Face = (() => {
     let cw = 0, ch = 0;
     let faceX0 = 0, faceY0 = 0, faceW = 0, faceH = 0;
 
-    if (src.data && src.width > 0 && src.height > 0) {
-      cw = src.width | 0;
-      ch = src.height | 0;
-      rgba = src.data;
+    if (srcEl.data && srcEl.width > 0 && srcEl.height > 0) {
+      cw = srcEl.width | 0;
+      ch = srcEl.height | 0;
+      rgba = srcEl.data;
       faceX0 = Math.max(0, Math.round(bx));
       faceY0 = Math.max(0, Math.round(by));
       faceW = Math.min(cw - faceX0, Math.max(12, Math.round(bw)));
       faceH = Math.min(ch - faceY0, Math.max(12, Math.round(bh)));
     } else {
-      if (src.tagName === "VIDEO" && (src.readyState < 2 || !src.videoWidth || !src.videoHeight)) return empty;
-      const srcW = frameWidth(src);
-      const srcH = src.videoHeight || src.naturalHeight || src.height || 0;
+      if (srcEl.tagName === "VIDEO" && (srcEl.readyState < 2 || !srcEl.videoWidth || !srcEl.videoHeight)) return empty;
+      const srcW = frameWidth(srcEl);
+      const srcH = srcEl.videoHeight || srcEl.naturalHeight || srcEl.height || 0;
       if (!(srcW >= 32 && srcH >= 32)) return empty;
 
       const padMarginX = Math.round(bw * 0.32);
@@ -892,7 +896,7 @@ const Face = (() => {
       if (cv.height !== ch) cv.height = ch;
       try {
         const ctx = cv.getContext("2d", { willReadFrequently: true }) || cv.getContext("2d");
-        ctx.drawImage(src, roiX, roiY, roiW, roiH, 0, 0, cw, ch);
+        ctx.drawImage(srcEl, roiX, roiY, roiW, roiH, 0, 0, cw, ch);
         rgba = ctx.getImageData(0, 0, cw, ch).data;
       } catch (_) {
         return empty;
@@ -929,7 +933,7 @@ const Face = (() => {
       x0: Math.max(faceX0 + Math.round(faceW * 0.28), 3),
       x1: Math.min(faceX0 + Math.round(faceW * 0.72), cw - 4),
       y0: Math.max(faceY0 + Math.round(faceH * 0.08), 3),
-      y1: Math.min(faceY0 + Math.round(faceH * Math.max(0.18, eyeBand.y0 - 0.02)), ch - 4)
+      y1: Math.min(faceY0 + Math.round(faceH * Math.max(0.10, eyeBand.y0 - 0.02)), ch - 4)
     };
     const jawPatch = {
       x0: Math.max(faceX0 + Math.round(faceW * 0.28), 3),
@@ -1092,17 +1096,22 @@ const Face = (() => {
       hp(leftMean, bL); hp(rightMean, bR); hp(innerMean, bI);
       if (outerCols >= 10) hp(outerMean, bO);
 
+      const eyeRowStart = Math.max(0, (faceY0 + Math.round(faceH * Math.max(0.14, eyeBand.y0 - 0.02))) - rowY0);
+      const eyeRowEnd = Math.min(rLen, (faceY0 + Math.round(faceH * Math.min(0.62, eyeBand.y1 + 0.03))) - rowY0);
       let sumI2 = 0, sumO2 = 0, dotLR = 0, normL = 0, normR = 0;
-      const validRows = Math.max(1, rLen - 4);
+      let validRows = 0;
       for (let i = 2; i < rLen - 2; i++) {
+        if (i >= eyeRowStart && i <= eyeRowEnd) continue;
+        validRows += 1;
         sumI2 += bI[i] * bI[i];
         dotLR += bL[i] * bR[i];
         normL += bL[i] * bL[i];
         normR += bR[i] * bR[i];
         if (outerCols >= 10) sumO2 += bO[i] * bO[i];
       }
-      innerBandRms = Math.sqrt(sumI2 / validRows);
-      outerBandRms = outerCols >= 10 ? Math.sqrt(sumO2 / validRows) : 0;
+      const denomRows = Math.max(1, validRows);
+      innerBandRms = Math.sqrt(sumI2 / denomRows);
+      outerBandRms = outerCols >= 10 ? Math.sqrt(sumO2 / denomRows) : 0;
       rowCorr = (normL > 1e-6 && normR > 1e-6) ? (dotLR / Math.sqrt(normL * normR)) : 0;
     }
 
@@ -1327,11 +1336,11 @@ const Face = (() => {
       const dirDeltaPar = pars[maxYIdx] - pars[minYIdx];
 
       const horizontalTurnOk = (
-        yawSpan >= 0.025 &&
-        parallaxSpan >= 0.012 &&
-        dirDeltaPar >= 0.009 &&
-        corrYawPar >= 0.45 &&
-        earSpan >= 0.0045
+        yawSpan >= 0.055 &&
+        parallaxSpan >= 0.022 &&
+        dirDeltaPar >= 0.018 &&
+        corrYawPar >= 0.60 &&
+        earSpan >= 0.012
       );
 
       // Vertical nod requires positively-coupled 3D nose-vs-eye-mouth-plane pitch parallax + eyelid movement above static jitter
@@ -1389,22 +1398,32 @@ const Face = (() => {
     };
   }
 
+  function isFiniteVec128(v) {
+    if (!v || v.length !== 128) return false;
+    for (let i = 0; i < 128; i++) {
+      const val = v[i];
+      if (val === null || val === "" || typeof val === "boolean") return false;
+      if (!Number.isFinite(Number(val))) return false;
+    }
+    return true;
+  }
+
   function checkDescriptorStability(vecs, maxStepDist = 0.26) {
-    if (!Array.isArray(vecs) || vecs.length < 2) return true;
-    for (let i = 1; i < vecs.length; i++) {
-      if (!vecs[i - 1] || !vecs[i] || vecs[i - 1].length !== 128 || vecs[i].length !== 128) return false;
-      if (euclidean(vecs[i - 1], vecs[i]) > maxStepDist) return false;
+    if (!Array.isArray(vecs) || !vecs.length) return true;
+    for (let i = 0; i < vecs.length; i++) {
+      if (!isFiniteVec128(vecs[i])) return false;
+      if (i > 0 && euclidean(vecs[i - 1], vecs[i]) > maxStepDist) return false;
     }
     return true;
   }
 
   function averageDescriptors(vecs) {
-    const valid = Array.isArray(vecs) ? vecs.filter(v => v && v.length === 128) : [];
+    const valid = Array.isArray(vecs) ? vecs.filter(isFiniteVec128) : [];
     if (!valid.length) return null;
     if (valid.length === 1) return Array.from(valid[0], n => Number(Number(n).toFixed(5)));
     const out = new Array(128).fill(0);
     for (const v of valid) {
-      for (let i = 0; i < 128; i++) out[i] += Number(v[i]) || 0;
+      for (let i = 0; i < 128; i++) out[i] += Number(v[i]);
     }
     for (let i = 0; i < 128; i++) out[i] = Number((out[i] / valid.length).toFixed(5));
     return out;
@@ -1858,6 +1877,7 @@ const Face = (() => {
     pose,
     analyzePad,
     evaluatePassiveLiveness,
+    isFiniteVec128,
     checkDescriptorStability,
     averageDescriptors,
     euclidean,

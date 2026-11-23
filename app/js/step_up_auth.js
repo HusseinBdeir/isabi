@@ -23,6 +23,7 @@
   let _camActive = false;
   let _faceStreak = [];
   let _livenessHist = [];
+  let _livenessWaitStart = 0;
   let _streakStartedAt = 0;
   let _missedFrames = 0;
   let _lastPadResult = null;
@@ -323,7 +324,7 @@
     if (!user) return false;
     const hasFace = Boolean(C && C.userHasFaceId ? C.userHasFaceId(user) : false);
     const effMode = C && C.effectiveSeatAuthMode ? C.effectiveSeatAuthMode(user) : 'either';
-    if (isLoopbackTestEnv() && navigator.webdriver && !_leaseClearedExplicitly && !window.__ISABI_TEST_STEP_UP) {
+    if (isLoopbackTestEnv() && navigator.webdriver && !_leaseClearedExplicitly && !window.__ISABI_TEST_STEP_UP && !(spec && (spec.alwaysChallenge || spec.forceFresh))) {
       _lease = {
         userId: String(user.id),
         email: String(user.email || '').trim().toLowerCase(),
@@ -332,7 +333,7 @@
       };
       return true;
     }
-    if (spec && spec.alwaysChallenge) return false;
+    if (spec && (spec.alwaysChallenge || spec.forceFresh)) return false;
     if (!_lease.userId || Date.now() >= _lease.until) {
       return false;
     }
@@ -340,8 +341,10 @@
         String(user.email || '').trim().toLowerCase() !== String(_lease.email || '').trim().toLowerCase()) {
       return false;
     }
-    if (effMode === 'both' && hasFace && !/2FA/i.test(String(_lease.method || ''))) return false;
-    if (effMode === 'face_only' && hasFace && !/Face/i.test(String(_lease.method || ''))) return false;
+    const isPasskeyLease = /Passkey/i.test(String(_lease.method || ''));
+    if (effMode === 'pin_only' && /Passkey|Face/i.test(String(_lease.method || ''))) return false;
+    if (!isPasskeyLease && effMode === 'both' && hasFace && !/2FA/i.test(String(_lease.method || ''))) return false;
+    if (!isPasskeyLease && effMode === 'face_only' && hasFace && !/Face/i.test(String(_lease.method || ''))) return false;
     return true;
   }
 
@@ -378,6 +381,7 @@
     }
     _faceStreak = [];
     _livenessHist = [];
+    _livenessWaitStart = 0;
     _streakStartedAt = 0;
     _lastPadResult = null;
   }
@@ -546,7 +550,7 @@
     const boxCx = (box && boxW != null) ? (Number(box.x || 0) + boxW * 0.5) : null;
     const boxCy = (box && Number(box.height) > 0) ? (Number(box.y || 0) + Number(box.height) * 0.5) : null;
 
-    _livenessHist = _livenessHist.filter(h => (now - h.t) <= 6000);
+    _livenessHist = _livenessHist.filter(h => (now - h.t) <= 4500);
     _livenessHist.push({
       t: now,
       ear: typeof ear === 'number' ? ear : null,
@@ -585,6 +589,7 @@
     if (det && det.multiple) {
       _faceStreak = [];
       _livenessHist = [];
+      _livenessWaitStart = 0;
       _streakStartedAt = 0;
       _missedFrames = 0;
       updateStreakUi(0, tr('One person in frame at a time'), 'is-err');
@@ -595,6 +600,7 @@
       if (!videoEl || _missedFrames >= 2) {
         _faceStreak = [];
         _livenessHist = [];
+        _livenessWaitStart = 0;
         _streakStartedAt = 0;
         if (_activeChallenge.showCamera) {
           updateStreakUi(0, tr('Look at the camera to confirm your identity'), '');
@@ -613,6 +619,7 @@
       if (euclidean128(vec, prev) > 0.26) {
         _faceStreak = [];
         _livenessHist = [];
+        _livenessWaitStart = 0;
         _streakStartedAt = 0;
       }
     }
@@ -625,6 +632,7 @@
     const lv = evaluateStepUpLiveness(det, videoEl, { minFrames: needed, minSpanMs });
     if (lv && lv.spoofSuspected) {
       _faceStreak = [];
+      _livenessWaitStart = 0;
       _streakStartedAt = 0;
       updateStreakUi(15, tr('Screen or photo detected. Look directly at the camera.'), 'is-err');
       return { ok: false, reason: 'spoof_detected', padReasons: lv.padReasons || [] };
@@ -632,10 +640,21 @@
 
     const elapsedOk = !minSpanMs || ((Date.now() - (_streakStartedAt || Date.now())) >= minSpanMs);
     if (_faceStreak.length < needed || !elapsedOk) {
+      _livenessWaitStart = 0;
       updateStreakUi(Math.min(80, (_faceStreak.length / needed) * 80), tr('Hold steady for biometric confirmation...'), '');
       return { ok: false, reason: 'stabilizing', streak: _faceStreak.length };
     }
     if (!lv || !lv.ok) {
+      const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+      if (!_livenessWaitStart) _livenessWaitStart = Date.now();
+      if ((Date.now() - _livenessWaitStart) >= lvWindowMs) {
+        _faceStreak = [];
+        _livenessHist = [];
+        _livenessWaitStart = 0;
+        _streakStartedAt = 0;
+        updateStreakUi(0, tr('Liveness check timed out. Blink or turn slightly to try again.'), 'is-err');
+        return { ok: false, reason: 'liveness_timeout' };
+      }
       updateStreakUi(85, tr('Hold naturally in front of the camera'), '');
       return { ok: false, reason: 'liveness_pending' };
     }
@@ -645,6 +664,7 @@
       : avgVectors(_faceStreak.slice(-needed));
     _faceStreak = [];
     _livenessHist = [];
+    _livenessWaitStart = 0;
     _streakStartedAt = 0;
     const wrap = $('suaCamWrap');
     if (wrap) wrap.classList.add('is-verified');
@@ -727,6 +747,7 @@
     _verifiedFaceVec = null;
     _faceStreak = [];
     _livenessHist = [];
+    _livenessWaitStart = 0;
     _streakStartedAt = 0;
     _missedFrames = 0;
     _lastPadResult = null;
@@ -962,6 +983,16 @@
     const effMode = C && C.effectiveSeatAuthMode ? C.effectiveSeatAuthMode(user) : 'either';
     const showCamera = hasFace && effMode !== 'pin_only';
     const showPin = !hasFace || effMode !== 'face_only';
+    const inDemoScope = Boolean(C && ((C.isDemoScopeActive && C.isDemoScopeActive()) || (C.isDemoSandboxSession && C.isDemoSandboxSession())));
+    const useServer = Boolean(C && C.hasServerApi && C.hasServerApi() && !inDemoScope);
+    const showPasskey = Boolean(
+      useServer &&
+      window.ISABI_PASSKEYS &&
+      window.ISABI_PASSKEYS.isSupported() &&
+      window.ISABI_PASSKEYS.isEligibleSeat(user) &&
+      ((Array.isArray(user.passkeys) && user.passkeys.length > 0) || user.passkeys_enrolled) &&
+      effMode !== 'pin_only'
+    );
     const offHours = isOffHoursNow();
     const companyRaw = String(spec.company || st.company || 'WTC');
     const companyLabel = (C && C.COMPANY_LABELS && C.COMPANY_LABELS[companyRaw]) || companyRaw;
@@ -972,6 +1003,7 @@
     _verifiedFaceVec = null;
     _faceStreak = [];
     _livenessHist = [];
+    _livenessWaitStart = 0;
     _streakStartedAt = 0;
     _lastPadResult = null;
 
@@ -1033,6 +1065,15 @@
           </div>
         ` : ''}
 
+        ${showPasskey ? `
+          <div class="sua-passkey-wrap">
+            <button type="button" class="sua-passkey-btn" id="suaPasskeyBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4.5"/><path d="M11.3 11.7 19 4"/><path d="M16 7l3 3"/><path d="M13.5 9.5l2 2"/></svg>
+              <span>${esc(tr('Verify with Passkey'))}</span>
+            </button>
+          </div>
+        ` : ''}
+
         <div class="sua-err-box" id="suaErrorBox" hidden></div>
 
         <div class="sua-actions">
@@ -1062,6 +1103,65 @@
     if (botCancel) botCancel.onclick = cancelActiveChallenge;
     const confBtn = $('suaConfirmBtn');
     if (confBtn) confBtn.onclick = () => { submitStepUpVerification(); };
+
+    const pkBtn = $('suaPasskeyBtn');
+    if (pkBtn) {
+      pkBtn.onclick = async () => {
+        if (!_activeChallenge || _activeChallenge.submitting || !window.ISABI_PASSKEYS) return;
+        const nowMs = Date.now();
+        if (nowMs < _lockedUntil) {
+          const waitSec = Math.max(1, Math.ceil((_lockedUntil - nowMs) / 1000));
+          showModalError(`${tr('Too many failed step-up attempts. Wait')} ${waitSec}s.`);
+          return;
+        }
+        const liveSeat = C && C.activeUser ? C.activeUser() : null;
+        const boundSeat = _activeChallenge.seat;
+        if (!liveSeat || String(liveSeat.id) !== String(boundSeat.id)) {
+          cancelActiveChallenge();
+          return;
+        }
+        _activeChallenge.submitting = true;
+        pkBtn.disabled = true;
+        if (confBtn) confBtn.disabled = true;
+        try {
+          showModalError('');
+          const res = await window.ISABI_PASSKEYS.authenticateStepUp();
+          if (res && res.ok) {
+            _fails = 0;
+            _lockedUntil = 0;
+            const usedMethod = res.method || 'Passkey (FIDO2)';
+            _lease = {
+              userId: String(boundSeat.id),
+              email: String(boundSeat.email || '').trim().toLowerCase(),
+              until: Date.now() + LEASE_TTL_MS,
+              method: usedMethod
+            };
+            recordStepUpAudit(boundSeat, _activeChallenge.spec, usedMethod);
+            stopStepUpCamera();
+            if (modal) modal.hidden = true;
+            const resolveFn = _activeChallenge.resolve;
+            _activeChallenge = null;
+            resolveFn(true);
+          }
+        } catch (err) {
+          if (err && err.status === 429) {
+            _lockedUntil = Date.now() + 30000;
+            _fails = 0;
+          } else if (err && err.status && err.status >= 400 && err.status < 500) {
+            _fails += 1;
+            if (_fails >= 5) {
+              _lockedUntil = Date.now() + 30000;
+              _fails = 0;
+            }
+          }
+          showModalError((err && err.message) || tr('Passkey verification failed.'));
+        } finally {
+          if (_activeChallenge) _activeChallenge.submitting = false;
+          if (pkBtn.isConnected) pkBtn.disabled = false;
+          if (confBtn && confBtn.isConnected) confBtn.disabled = false;
+        }
+      };
+    }
 
     const pinInp = $('suaPinInput');
     if (pinInp) {
