@@ -124,6 +124,48 @@ function stmtMarkIdentity(obj) {
   return [n(o.party_name), n(o.party_type) === 'supplier' ? 'supplier' : 'customer', n(o.industry) || 'manufacturing', allCo ? 'all' : co].join('|');
 }
 
+function stmtMarkAliases(obj) {
+  const o = obj && typeof obj === 'object' ? obj : {};
+  const raw = Array.isArray(o.merged_aliases) ? o.merged_aliases : [];
+  return new Set(raw.map(x => String(x == null ? '' : x).trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean));
+}
+
+function stmtMarkAliasesDropped(prevObj, nextObj) {
+  const prevA = stmtMarkAliases(prevObj);
+  if (!prevA.size) return false;
+  const nextA = stmtMarkAliases(nextObj);
+  for (const a of prevA) {
+    if (!nextA.has(a)) return true;
+  }
+  return false;
+}
+
+function stmtMarkAliasThroughLowered(prevObj, nextObj, prevThrough, nextThrough) {
+  const prevA = stmtMarkAliases(prevObj);
+  if (!prevA.size) return false;
+  const normMap = (rawM, fb) => {
+    const out = {};
+    if (rawM && typeof rawM === 'object' && !Array.isArray(rawM)) {
+      for (const [k, v] of Object.entries(rawM)) {
+        const nk = String(k == null ? '' : k).trim().toLowerCase().replace(/\s+/g, ' ');
+        const dv = String(v == null ? '' : v).slice(0, 10);
+        if (nk && /^\d{4}-\d{2}-\d{2}$/.test(dv)) {
+          out[nk] = fb && dv > fb ? fb : dv;
+        }
+      }
+    }
+    return out;
+  };
+  const pm = normMap(prevObj && prevObj.merged_alias_through, prevThrough);
+  const nm = normMap(nextObj && nextObj.merged_alias_through, nextThrough);
+  for (const a of prevA) {
+    const pDt = pm[a] || prevThrough;
+    const nDt = nm[a] || nextThrough;
+    if (pDt && (!nDt || nDt < pDt)) return true;
+  }
+  return false;
+}
+
 // '' when the seat may make this change to the mark, else the refusal text. nextObj null = removed.
 export function guardedWorkflowMarkError(editKey, prevObj, nextObj, perms) {
   const k = String(editKey || '');
@@ -140,6 +182,9 @@ export function guardedWorkflowMarkError(editKey, prevObj, nextObj, perms) {
     // Removing it, moving it earlier, or filing it under another party or company all free the records it locks
     if (!now || now < was || stmtMarkIdentity(prevObj) !== stmtMarkIdentity(nextObj)) {
       return 'Only a supervisor can remove a sent mark or move it to an earlier date.';
+    }
+    if (stmtMarkAliasesDropped(prevObj, nextObj) || stmtMarkAliasThroughLowered(prevObj, nextObj, was, now)) {
+      return 'Only a supervisor can remove an included alias from a sent mark.';
     }
   }
   return '';
