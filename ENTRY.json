@@ -1,0 +1,24 @@
+{
+ "app": {
+  "branch": "wt/kept-recs-3-4",
+  "sha": "cbf19eb44ea7237a6972db546badb86aeb49113e"
+ },
+ "gates": [
+  "isabi-app: python build/verify_custom_store_headroom.py",
+  "isabi-app: python build/verify_min_shell_ver_local.py",
+  "isabi-app: python build/verify_kept_app_entries.py",
+  "isabi-app: node build/verify_rep_date_twins.mjs",
+  "isabi: node build/verify_same_name_edge.mjs"
+ ],
+ "holder": "agy-852c992c (kept-recs-3-4)",
+ "id": "20261123T154420Z-9308fc76",
+ "pc": "Theo",
+ "queuedAt": "2026-11-23T15:44:20Z",
+ "seenAt": "2026-11-23T15:44:20Z",
+ "site": {
+  "branch": "wt/kept-recs-3-4",
+  "sha": "532e5f4c4cc2efc33fea23c17494a1a67ee3023f"
+ },
+ "state": "waiting",
+ "summary": "Kept-entry follow-ups: skip _absorbedSeedTwin in cash/KPI/AR/AP/S4 deltas (Rec 3) + 5,000-row priority sync slice, _truncatedCrTables/_retiredSysTopupIds sync/convergence/un-retire guards, 19.6.430 shell floor, 60-day stub retirement, and 70% headroom gate (Rec 4)"
+}
