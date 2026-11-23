@@ -4398,28 +4398,6 @@
     const shown = list.slice(startIdx, startIdx + pageSize);
     const footCells = opts.foot || buildAutoFoot(cols, list, opts);
 
-    // Compute max per bar column (and shared barGroup) for proportional inline data bars
-    const barMax = {};
-    const barGroupMax = {};
-    cols.forEach((c, ci) => {
-      if (c.bar) {
-        let m = 1;
-        shown.forEach((r, idx) => {
-          const v = Math.abs(Number(typeof c.raw === 'function' ? c.raw(r, startIdx + idx) : r[c.key] || 0));
-          if (v > m) m = v;
-        });
-        barMax[ci] = m;
-        if (c.barGroup) {
-          barGroupMax[c.barGroup] = Math.max(barGroupMax[c.barGroup] || 1, m);
-        }
-      }
-    });
-    cols.forEach((c, ci) => {
-      if (c.bar && c.barGroup && barGroupMax[c.barGroup]) {
-        barMax[ci] = barGroupMax[c.barGroup];
-      }
-    });
-
     const pagerHtml = totalRows > 10 ? `
       <div class="pbi-pager">
         <span class="pbi-pager-info">Showing <b>${totalRows ? fmtNum(startIdx + 1) : 0}–${fmtNum(startIdx + shown.length)}</b> of <b>${fmtNum(totalRows)}</b> ${esc(opts.unitLabel || 'rows')} · Page <b>${fmtNum(curPage + 1)}</b> of <b>${fmtNum(totalPages)}</b></span>
@@ -4465,22 +4443,15 @@
                 const cls = [
                   c.r ? 'r' : '',
                   c.mono ? 'mono' : '',
-                  c.bar ? 'pbi-bar-cell' : '',
                   isNeg ? 'pbi-neg' : '',
                   cellAmber ? 'pbi-cell-amber' : ''
                 ].filter(Boolean).join(' ');
-                let barHtml = '';
-                if (c.bar && Math.abs(numVal) > 0.001) {
-                  const w = Math.min(92, Math.max(4, Math.round((Math.abs(numVal) / (barMax[ci] || 1)) * 90)));
-                  const bTone = numVal < 0 ? 'neg' : (c.bar === 'brass' ? 'brass' : 'pos');
-                  barHtml = `<span class="pbi-bar-bg ${bTone}" style="width:${w}%"></span>`;
-                }
                 const isCoCol = !c.fmt && (c.key === 'company' || c.key === 'bu');
                 let formatted = c.fmt ? c.fmt(rawVal, r, absIdx) : (isCoCol ? shortCoHtml(rawVal) : (c.bold ? `<b>${esc(rawVal == null || rawVal === '' ? '—' : rawVal)}</b>` : esc(rawVal == null || rawVal === '' ? '—' : rawVal)));
                 if (/date|last_sale|last_purchase/i.test(String(c.key || '')) || /^(Date|Start|End|Start Date|End Date|Last Sale|Last Purchase|Tx Date|Rpt Date|Last Paid)$/i.test(String(c.label || ''))) {
                   formatted = String(formatted).replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, '$3-$2-$1');
                 }
-                return `<td class="${cls}">${barHtml}${formatted}</td>`;
+                return `<td class="${cls}">${formatted}</td>`;
               }).join('')}</tr>`;
             }).join('') || `<tr><td colspan="${cols.length}" class="empty-row" style="text-align:center;padding:18px;color:var(--muted)">${esc(opts.emptyMsg || 'No matching rows for the selected filters')}</td></tr>`}
           </tbody>
