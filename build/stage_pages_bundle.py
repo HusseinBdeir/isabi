@@ -36,6 +36,11 @@ ROOT_ALLOWLIST = (
     "icon-192.png",
     "icon-512.png",
     "icon-512-maskable.png",
+    "logo-wtc.png",
+    "logo-blanca.png",
+    "logo-la-una.png",
+    "logo-palms.png",
+    "logo-voile.png",
     "404.html",
     "c4b9e2a7d18f406395e1a82c7d3f6b90.txt",
 )
