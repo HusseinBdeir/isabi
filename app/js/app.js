@@ -280,6 +280,7 @@
       else localStorage.removeItem(key);
     } catch (_) {}
   }
+  const allowSwReloadInTest = () => Boolean(typeof window !== 'undefined' && window.__ISABI_TEST_SW_RELOAD);
   function hasServerApi() {
     return Boolean(HAS_LOCAL_API || window.__ISABI_TEST_EDGE || (window.ISABI_HAS_EDGE_API && !IS_HEADLESS_HARNESS));
   }
@@ -318,11 +319,32 @@
         headers: { 'Content-Type': 'application/json' }
       }));
     }
-    const headers = Object.assign({}, opts.headers || {});
+    const rawHdrs = opts && opts.headers;
+    let headers = {};
+    try {
+      if (typeof Headers !== 'undefined' && rawHdrs instanceof Headers) {
+        rawHdrs.forEach((v, k) => { headers[k] = v; });
+      } else if (Array.isArray(rawHdrs)) {
+        for (let hi = 0; hi < rawHdrs.length; hi++) {
+          if (rawHdrs[hi] && rawHdrs[hi].length >= 2) headers[String(rawHdrs[hi][0])] = String(rawHdrs[hi][1]);
+        }
+      } else if (rawHdrs && typeof rawHdrs === 'object') {
+        headers = Object.assign({}, rawHdrs);
+      }
+    } catch (_) {
+      headers = Object.assign({}, rawHdrs || {});
+    }
+    const hasHdrKey = name => {
+      const low = String(name || '').toLowerCase();
+      return Object.keys(headers).some(k => k.toLowerCase() === low);
+    };
     if (inDemoSession) {
-      headers['X-ISABI-Demo'] = '1';
-    } else if (_edgeSessionToken && !headers['X-ISABI-Session']) {
+      if (!hasHdrKey('X-ISABI-Demo')) headers['X-ISABI-Demo'] = '1';
+    } else if (_edgeSessionToken && !hasHdrKey('X-ISABI-Session')) {
       headers['X-ISABI-Session'] = _edgeSessionToken;
+    }
+    if (window.__MFG_SHELL_VER && !hasHdrKey('X-ISABI-Shell')) {
+      headers['X-ISABI-Shell'] = String(window.__MFG_SHELL_VER);
     }
     return fetch(url, Object.assign({ credentials: 'same-origin' }, opts, { headers }));
   }
@@ -705,7 +727,7 @@
     // Positional Manufacturing ids this browser upgraded or dropped and has not yet reported to the Edge
     // (`_legacyPosUpgrades` in the sync patch; counts only). Feeds the sunset of the legacyPosRe upgrade path.
     _legacyPosUpgrades: (!IS_AUTOMATED_TEST ? Math.max(0, Math.floor(Number(lsGet('isabi_mfg_legacy_pos_upgrades_v1', 0)) || 0)) : 0),
-    industryCustomRows: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {},
+    industryCustomRows: ((!IS_AUTOMATED_TEST || allowSwReloadInTest()) ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {},
     _indCustomRev: 0,
     indTablesSearch: '',
     sentinelReviews: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_sentinel_reviews_v1', null) : null) || {},
@@ -12897,6 +12919,10 @@
       if (!keys.includes(DEMO_COMPANY_KEY)) keys.push(DEMO_COMPANY_KEY);
     }
     return keys;
+  }
+  function defaultCompanyForUser(user) {
+    const allowed = getAllowedCompanyKeys(user);
+    return allowed[0] || 'manufacturing-group';
   }
   function allowedCompanyNames(u) {
     return parseUserCompanies(u || activeUser());
@@ -72285,7 +72311,7 @@
   function getIndustryRowEditStore() {
     if (!STATE.industryRowEdits || typeof STATE.industryRowEdits !== 'object') {
       try {
-        const raw = !IS_AUTOMATED_TEST ? appStoreGetRaw('isabi_mfg_ind_row_edits_v1') : null;
+        const raw = (!IS_AUTOMATED_TEST || allowSwReloadInTest()) ? appStoreGetRaw('isabi_mfg_ind_row_edits_v1') : null;
         STATE.industryRowEdits = raw ? JSON.parse(raw) : {};
       } catch (_) {
         STATE.industryRowEdits = {};
@@ -72343,8 +72369,14 @@
     const forceEditSet = new Set(Array.isArray(o.forceEditKeys) ? o.forceEditKeys.map(x => String(x || '')) : []);
     try {
       const pLeg = STATE._purgedIndustryLegacy || { rows: [], editKeys: [] };
-      let sentRows = Array.isArray(pLeg.rows) ? pLeg.rows.slice() : [];
-      let sentEdits = Array.isArray(pLeg.editKeys) ? pLeg.editKeys.slice() : [];
+      let sentRows = _normPurgedRowsList([
+        ...(Array.isArray(pLeg.rows) ? pLeg.rows : []),
+        ...(Array.isArray(o.purgedRows) ? o.purgedRows : [])
+      ]);
+      let sentEdits = Array.from(new Set([
+        ...(Array.isArray(pLeg.editKeys) ? pLeg.editKeys : []),
+        ...(Array.isArray(o.purgedEditKeys) ? o.purgedEditKeys : [])
+      ].map(String).filter(Boolean)));
       let customPayload = withoutTillOwnedRows(getIndustryCustomRowsStore());
       let editsPayload = withoutTillOwnedEdits(getIndustryRowEditStore());
       if (!isOwner()) {
@@ -72432,14 +72464,30 @@
         let errCode = '';
         let errRowId = '';
         let errBucket = '';
+        let errJson = null;
         try {
-          const j = await res.json();
-          if (j && j.error) errTxt = String(j.error);
-          if (j && typeof j.code === 'string') errCode = j.code;
-          if (j && j.id != null) errRowId = String(j.id);
-          if (j && typeof j.bucket === 'string') errBucket = j.bucket;
-          if (j && Array.isArray(j.refusedMarks) && j.refusedMarks.length) reloadRefusedIndustryMarks(j.refusedMarks);
+          errJson = await res.json();
+          if (errJson && errJson.error) errTxt = String(errJson.error);
+          if (errJson && typeof errJson.code === 'string') errCode = errJson.code;
+          if (errJson && errJson.id != null) errRowId = String(errJson.id);
+          if (errJson && typeof errJson.bucket === 'string') errBucket = errJson.bucket;
+          if (errJson && Array.isArray(errJson.refusedMarks) && errJson.refusedMarks.length) reloadRefusedIndustryMarks(errJson.refusedMarks);
         } catch (_) {}
+        if (res.status === 426 || errCode === 'shell_outdated') {
+          enqueuePending426Domain(opts && opts.forceRowIds, opts && opts.forceEditKeys, sentRows, sentEdits);
+          handleShellOutdated426(errJson);
+          return {
+            ok: false,
+            networkErr: true,
+            networkError: true,
+            shellOutdated: true,
+            status: 426,
+            code: errCode || 'shell_outdated',
+            conflictId: errRowId,
+            conflictBucket: errBucket,
+            error: errTxt || 'Please update to the latest ISABI app version before syncing changes.'
+          };
+        }
         return {
           ok: false,
           status: res.status,
@@ -72475,7 +72523,7 @@
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.invalidateCache === 'function') {
       window.MFG_CMD_PALETTE.invalidateCache();
     }
-    if (!IS_AUTOMATED_TEST) {
+    if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
       try {
         appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
       } catch (_) {}
@@ -72626,7 +72674,7 @@
 
   function getIndustryCustomRowsStore() {
     if (!STATE.industryCustomRows || typeof STATE.industryCustomRows !== 'object') {
-      STATE.industryCustomRows = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {};
+      STATE.industryCustomRows = ((!IS_AUTOMATED_TEST || allowSwReloadInTest()) ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {};
     }
     return STATE.industryCustomRows;
   }
@@ -72671,7 +72719,7 @@
   function saveIndustryCustomRowsStore(opts = {}) {
     const store = getIndustryCustomRowsStore();
     const slim = offloadIndustryCustomRowBlobs(store);
-    if (!IS_AUTOMATED_TEST) {
+    if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
       try {
         appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(slim));
       } catch (_) {}
@@ -75630,6 +75678,8 @@
     }
     const modal = $('indDomainEntryModal');
     if (modal) modal.hidden = true;
+    _auxModalDirty = false;
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
@@ -78429,6 +78479,8 @@
     }
 
     modal.hidden = false;
+    _auxModalDirty = false;
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
@@ -91690,6 +91742,7 @@
         applyIndustryDomRowEdits($('workspace'));
         // The cell rewrite above clears the first cell's agreement pill; recount with the saved values.
         applyIndustryRelatedAgreementPills($('workspace'));
+        _auxModalDirty = false;
         closeRecordInspector({ restoreFocus: false });
         invalidateIndustryDomainCaches();
         if (typeof renderApp === 'function') renderApp();
@@ -120590,6 +120643,22 @@
       }
       if (!res.ok) {
         const err = await res.json().catch(() => null);
+        if (res.status === 426 || (err && err.code === 'shell_outdated')) {
+          enqueuePending426Record(crKey, tblName, record.id, record);
+          handleShellOutdated426(err);
+          return {
+            ok: false,
+            blockedSameName: false,
+            networkError: true,
+            networkErr: true,
+            shellOutdated: true,
+            status: 426,
+            table: tblName,
+            id: record.id,
+            err,
+            error: (err && err.error) || 'Please update to the latest ISABI app version before syncing changes.'
+          };
+        }
         return { ok: false, blockedSameName: false, status: Number(res.status || 0), table: tblName, id: record.id, err, error: (err && err.error) || `HTTP ${res.status || 0} saving record.` };
       }
       const okJson = await res.json().catch(() => null);
@@ -120731,6 +120800,7 @@
       const chunkRes = await Promise.all(chunk.map(([ek, er]) => postRecordToLocalApi(ek, er, opts)));
       let sameNameHit = null;
       let authOrValHit = null;
+      let shellOutdatedHit = null;
       let errHit = null;
       chunkRes.forEach((r, idx) => {
         if (r && r.ok) {
@@ -120738,12 +120808,38 @@
           postedResults.push(r);
         } else if (r && r.blockedSameName && !sameNameHit) {
           sameNameHit = r;
+        } else if (r && r.shellOutdated && !shellOutdatedHit) {
+          shellOutdatedHit = r;
         } else if (r && (r.status === 400 || r.status === 401 || r.status === 403) && !authOrValHit) {
           authOrValHit = r;
         } else if (r && !r.ok && !errHit) {
           errHit = r;
         }
       });
+      if (shellOutdatedHit) {
+        for (let j = i; j < dedup.length; j++) {
+          const idxInChunk = j - i;
+          const r = idxInChunk < chunkRes.length ? chunkRes[idxInChunk] : null;
+          if (!r || (!r.ok && !r.shellOutdated)) {
+            const [qk, qr] = dedup[j];
+            if (qk && qr && qr.id) enqueuePending426Record(qk, CR_TABLE[qk] || qk, qr.id, qr);
+          }
+        }
+        return {
+          ok: false,
+          blockedSameName: false,
+          networkError: true,
+          networkErr: true,
+          shellOutdated: true,
+          status: 426,
+          table: shellOutdatedHit.table,
+          id: shellOutdatedHit.id,
+          err: shellOutdatedHit.err || null,
+          error: shellOutdatedHit.error || '',
+          postedPairs,
+          postedResults,
+        };
+      }
       const hit = sameNameHit || authOrValHit || errHit;
       if (hit) {
         return {
@@ -121832,7 +121928,10 @@
       if (sameNameSaveSnap) {
         const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
         sameNameMainPostRes = mainPostRes;
-        if (!mainPostRes || !mainPostRes.ok) {
+        if (mainPostRes && mainPostRes.shellOutdated) {
+          enqueuePending426Pairs(extraApiPosts);
+          setPendingCloudPush(true);
+        } else if (!mainPostRes || !mainPostRes.ok) {
           restoreModalAfterServerFail(
             (mainPostRes && mainPostRes.table) || CR_TABLE[crKey] || crKey,
             (mainPostRes && mainPostRes.id) || record.id,
@@ -121845,9 +121944,13 @@
           );
           return;
         }
-        const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+        const extraPostRes = (mainPostRes && mainPostRes.shellOutdated)
+          ? { ok: false, shellOutdated: true, networkError: true, networkErr: true, postedPairs: [], postedResults: [] }
+          : await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
         sameNameExtraPostRes = extraPostRes;
-        if (!extraPostRes || !extraPostRes.ok) {
+        if (extraPostRes && extraPostRes.shellOutdated) {
+          setPendingCloudPush(true);
+        } else if (!extraPostRes || !extraPostRes.ok) {
           const postedExtra = Array.isArray(extraPostRes && extraPostRes.postedPairs) ? extraPostRes.postedPairs : [];
           for (let i = postedExtra.length - 1; i >= 0; i--) {
             const [pTbl, pRec] = postedExtra[i];
@@ -122007,7 +122110,13 @@
           else { toast(rejectMsg, 'err'); renderApp(); }
           return;
         }
-        const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+        let extraPostRes = { ok: true, postedPairs: [], postedResults: [] };
+        if (mainPostRes && mainPostRes.shellOutdated) {
+          enqueuePending426Pairs(extraApiPosts);
+          setPendingCloudPush(true);
+        } else {
+          extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+        }
         if (extraPostRes && extraPostRes.blockedSameName) {
           await compensateMainRecordSave(extraPostRes);
           rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
@@ -122678,9 +122787,13 @@
         }
         return false;
       }
-      const extraRes = extraPayloads.length
-        ? await postRecordPairsChunked(extraPayloads, 8, { deferRender: true })
-        : { ok: true, postedResults: [] };
+      let extraRes = { ok: true, postedResults: [] };
+      if (mainRes && mainRes.shellOutdated) {
+        enqueuePending426Pairs(extraPayloads);
+        setPendingCloudPush(true);
+      } else if (extraPayloads.length) {
+        extraRes = await postRecordPairsChunked(extraPayloads, 8, { deferRender: true });
+      }
       if (isServerRejectRes(extraRes)) {
         if (extraRes.postedResults && extraRes.postedResults.length) {
           await rollbackRecordListOnServer(extraRes.postedResults);
@@ -123086,9 +123199,13 @@
         }
         return false;
       }
-      const extraRes = extraPayloads.length
-        ? await postRecordPairsChunked(extraPayloads, 8, { deferRender: true })
-        : { ok: true, postedResults: [] };
+      let extraRes = { ok: true, postedResults: [] };
+      if (mainRes && mainRes.shellOutdated) {
+        enqueuePending426Pairs(extraPayloads);
+        setPendingCloudPush(true);
+      } else if (extraPayloads.length) {
+        extraRes = await postRecordPairsChunked(extraPayloads, 8, { deferRender: true });
+      }
       if (isServerRejectRes(extraRes)) {
         if (extraRes.postedResults && extraRes.postedResults.length) {
           await rollbackRecordListOnServer(extraRes.postedResults);
@@ -124302,6 +124419,7 @@
       if (card) card.scrollTop = 0;
     }
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (preselectConv && $('f_trtype')) {
       $('f_trtype').value = 'conversion';
     } else if (preselectExt && $('f_trtype')) {
@@ -124838,6 +124956,7 @@
     const modal = $('entryModal');
     if (modal) modal.hidden = true;
     document.body.classList.remove('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (STATE.view === 'kiosks') {
       const mBody = $('modalBody');
       if (mBody) mBody.innerHTML = '';
@@ -133343,7 +133462,10 @@
         const shouldPostRemote = !window.__fastInspectorModifyTest && typeof hasServerApi === 'function' && hasServerApi() && !isDemoScopeActive();
         if (shouldPostRemote) {
           const primaryRes = await postRecordToLocalApi(key, Object.assign({}, row), { deferRender: true });
-          if (!primaryRes || !primaryRes.ok) {
+          if (primaryRes && primaryRes.shellOutdated) {
+            enqueuePending426Pairs(extraApiPosts);
+            setPendingCloudPush(true);
+          } else if (!primaryRes || !primaryRes.ok) {
             restoreRenewalSnap();
             renderApp();
             const errMsg = (primaryRes && (primaryRes.error || (primaryRes.err && primaryRes.err.error)))
@@ -133351,9 +133473,11 @@
             toast(errMsg, 'err');
             return;
           }
-          if (extraApiPosts.length) {
+          if (!(primaryRes && primaryRes.shellOutdated) && extraApiPosts.length) {
             const extraRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
-            if (!extraRes || !extraRes.ok) {
+            if (extraRes && extraRes.shellOutdated) {
+              setPendingCloudPush(true);
+            } else if (!extraRes || !extraRes.ok) {
               const postedExtra = Array.isArray(extraRes && extraRes.postedPairs) ? extraRes.postedPairs : [];
               for (let i = postedExtra.length - 1; i >= 0; i--) {
                 const [pTbl, pRec] = postedExtra[i];
@@ -133871,7 +133995,9 @@
         bodyEl._preModifySnap = captureScrollSnapshot(bodyEl);
       }
       modDrawer.hidden = false;
+      _auxModalDirty = false;
       syncModifyLiveSummary();
+      if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
       if (allowInspGeoPinEdit && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
         window.MFG_GEO.wireInspectorSiteModifyMap(modDrawer, row, SEED, {
           tableKey: key,
@@ -133975,6 +134101,8 @@
         syncModifyLiveSummary();
       }
       if (modDrawer) modDrawer.hidden = true;
+      _auxModalDirty = false;
+      if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
       if (bodyEl._preModifySnap) {
         restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
         bodyEl._preModifySnap = null;
@@ -135379,7 +135507,13 @@
             await restoreInspOnReject(mainPostRes, false, null);
             return;
           }
-          const extraPostRes = await postRecordPairsChunked(inspExtraPosts);
+          let extraPostRes = { ok: true, postedResults: [] };
+          if (mainPostRes && mainPostRes.shellOutdated) {
+            enqueuePending426Pairs(inspExtraPosts);
+            setPendingCloudPush(true);
+          } else {
+            extraPostRes = await postRecordPairsChunked(inspExtraPosts);
+          }
           if (isServerRejectRes(extraPostRes)) {
             await restoreInspOnReject(extraPostRes, true, extraPostRes);
             return;
@@ -135769,7 +135903,9 @@
     }));
 
     panel.hidden = false;
+    _auxModalDirty = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
@@ -135824,6 +135960,7 @@
     }
     const panel = $('recordInspector');
     if (panel) panel.hidden = true;
+    _auxModalDirty = false;
     const ib = $('inspectorBody');
     if (ib) {
       ib._activeTableContext = null;
@@ -135835,6 +135972,7 @@
     }
     const m = $('entryModal');
     if (!m || m.hidden) document.body.classList.remove('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (STATE.renderPending) { STATE.renderPending = false; renderApp(); }
     if (!isPurge && shouldRestoreFocus && st) {
       const resolvedAfter = resolveLiveRowStepState(st) || resolvedBefore;
@@ -135965,7 +136103,7 @@
       appStoreSetRaw('isabi_mfg_work_sched_v1', JSON.stringify(STATE.workSchedules || { shiftTypes: [], staffRules: {} }));
       appStoreSetRaw('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
       if (STATE.lbpFxUpdatedAt) appStoreSetRaw('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
-      if (!IS_AUTOMATED_TEST) {
+      if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
         if (Array.isArray(STATE._purgedOverrideIds) && STATE._purgedOverrideIds.length) {
           appStoreSetRaw('isabi_mfg_purged_overrides_v1', JSON.stringify(STATE._purgedOverrideIds.slice(-2000)));
         }
@@ -137943,6 +138081,11 @@
   let lastPointerUpAt = 0;
   let _activePointerDown = false;
   let pendingFlushTimer = null;
+  let _lastUserActivityAt = Date.now();
+  let _auxModalDirty = false;
+  let _swUpdateFirstSeenAt = 0;
+  let _swIdleReloadTimer = null;
+  let _swUpdateWaitUntilMs = 0;
 
   const isActivePointerPress = now => {
     if (!_activePointerDown) return false;
@@ -137976,6 +138119,37 @@
     }, Math.max(0, Number(delayMs) || 0));
   }
 
+  function isDocScannerCamStarting() {
+    try {
+      const ds = window.MFG_DOC_SCANNER;
+      const st = ds && typeof ds.state === 'function' ? ds.state() : null;
+      return Boolean(st && st.camStarting);
+    } catch (_) { return false; }
+  }
+  function isAnyCameraOrAuthFlowActive() {
+    if (
+      FACE_STATE.camActive ||
+      FACE_STATE.camStarting ||
+      FACE_STATE.enrolCamActive ||
+      FACE_STATE.pending2faUser ||
+      FACE_STATE.pendingPinUser ||
+      KIOSK_ATT_STATE.camActive ||
+      KIOSK_ATT_STATE.camStarting ||
+      KIOSK_ADMIN_MODAL_STATE.camActive ||
+      STAFF_FACE_MODAL_STATE.camActive
+    ) {
+      return true;
+    }
+    try {
+      if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.isCameraActive === 'function' && window.MFG_STEP_UP.isCameraActive()) {
+        return true;
+      }
+      if (window.MFG_DOC_SCANNER && typeof window.MFG_DOC_SCANNER.isCameraActive === 'function' && window.MFG_DOC_SCANNER.isCameraActive()) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
   function uiBusy() {
     const now = Date.now();
     if (_cfTillScrubDragging || isActivePointerPress(now) || (now - lastPointerDownAt < 600) || (now - lastPointerUpAt < 350)) return true;
@@ -137984,16 +138158,61 @@
     const ins = $('recordInspector');
     if (ins && !ins.hidden) return true;
     if (($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
+      || ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden)
       || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
       || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)
       || ($('policyGroupModal') && !$('policyGroupModal').hidden)
       || ($('punchDriftModal') && !$('punchDriftModal').hidden)
-      || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)) return true;
-    if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || KIOSK_ATT_STATE.camStarting || STAFF_FACE_MODAL_STATE.camActive) return true;
+      || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)
+      || ($('stepUpAuthModal') && !$('stepUpAuthModal').hidden)
+      || ($('rateImpactModal') && !$('rateImpactModal').hidden)
+      || ($('fatherBackfillModal') && !$('fatherBackfillModal').hidden)
+      || ($('docCameraModal') && !$('docCameraModal').hidden)
+      || ($('docPreviewModal') && !$('docPreviewModal').hidden)
+      || ($('aiBatchIntakeModal') && !$('aiBatchIntakeModal').hidden)
+      || ($('backfillModal') && !$('backfillModal').hidden)
+      || (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.isOpen === 'function' && window.MFG_CMD_PALETTE.isOpen())) return true;
+    if ((STATE.view === 'users' && STATE.userFormDirty) || isAnyCameraOrAuthFlowActive()) return true;
     if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
     return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput' && a.id !== 'cfTillScrubRange');
   }
+  function isAnyOverlayModalOpen() {
+    if (($('entryModal') && !$('entryModal').hidden)
+      || ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden)
+      || ($('recordInspector') && !$('recordInspector').hidden)
+      || ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
+      || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
+      || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)
+      || ($('policyGroupModal') && !$('policyGroupModal').hidden)
+      || ($('punchDriftModal') && !$('punchDriftModal').hidden)
+      || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)
+      || ($('stepUpAuthModal') && !$('stepUpAuthModal').hidden)
+      || ($('rateImpactModal') && !$('rateImpactModal').hidden)
+      || ($('fatherBackfillModal') && !$('fatherBackfillModal').hidden)
+      || ($('docCameraModal') && !$('docCameraModal').hidden)
+      || ($('docPreviewModal') && !$('docPreviewModal').hidden)
+      || ($('aiBatchIntakeModal') && !$('aiBatchIntakeModal').hidden)
+      || ($('backfillModal') && !$('backfillModal').hidden)
+      || ($('cmdPaletteModal') && !$('cmdPaletteModal').hidden)
+      || (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.isOpen === 'function' && window.MFG_CMD_PALETTE.isOpen())) {
+      return true;
+    }
+    return Boolean(document.querySelector('.modal-backdrop:not([hidden]), .sua-backdrop:not([hidden]), .cmdp-backdrop:not([hidden])'));
+  }
+
+  function hasUnsavedUiWork() {
+    if (STATE.saving || isEntryModalDirty() || (STATE.view === 'users' && STATE.userFormDirty)) return true;
+    if (isAnyCameraOrAuthFlowActive()) return true;
+    if (($('stepUpAuthModal') && !$('stepUpAuthModal').hidden) || ($('docCameraModal') && !$('docCameraModal').hidden)) {
+      return true;
+    }
+    if (_auxModalDirty && document.querySelector('#indDomainEntryModal:not([hidden]), #inspModifyDrawer:not([hidden]), #recordInspector:not([hidden]) #indDomainModifyForm, #staffFaceEnrolModal:not([hidden]), #staffScheduleModal:not([hidden]), #shiftTypeModal:not([hidden]), #policyGroupModal:not([hidden]), #fatherBackfillModal:not([hidden]), #backfillModal:not([hidden]), #rateImpactModal:not([hidden]), #stepUpAuthModal:not([hidden]), #policySimDiffDrawer:not([hidden]), #punchDriftModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #docPreviewModal:not([hidden]), #docCameraModal:not([hidden])')) {
+      return true;
+    }
+    return false;
+  }
+
   function safeRender() {
     if (uiBusy()) { STATE.renderPending = true; return; }
     renderApp();
@@ -139914,6 +140133,8 @@
   }
 
   const CLOUD_PENDING_PUSH_KEY = 'isabi_mfg_pending_push_v1';
+  const SHELL_426_QUEUE_KEY = 'isabi_mfg_pending_426_writes_v1';
+  const SW_426_RELOAD_GUARD_KEY = 'isabi_mfg_426_reload_guard';
   let syncInFlight = null;
   let _cloudRetryTimer = null;
   let _lastCloudSyncStartedAt = 0;
@@ -139929,7 +140150,7 @@
     _lastVerifiedPushSeq = -1;
   }
   try {
-    if (!IS_AUTOMATED_TEST && appStoreGetRaw(CLOUD_PENDING_PUSH_KEY) === '1') {
+    if ((!IS_AUTOMATED_TEST || allowSwReloadInTest()) && appStoreGetRaw(CLOUD_PENDING_PUSH_KEY) === '1') {
       STATE.pendingCloudPush = true;
     }
   } catch (_) {}
@@ -139938,13 +140159,409 @@
     if (flag && isDemoScopeActive()) return;
     if (flag) _localPushSeq += 1;
     STATE.pendingCloudPush = Boolean(flag);
-    if (!IS_AUTOMATED_TEST) {
+    if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
       try {
         if (flag) appStoreSetRaw(CLOUD_PENDING_PUSH_KEY, '1');
         else appStoreRemoveRaw(CLOUD_PENDING_PUSH_KEY);
       } catch (_) {}
     }
     if (flag) noteCloudUnsent();
+  }
+
+  function _normPurgedRowsList(arr) {
+    if (!Array.isArray(arr)) return [];
+    const seen = new Set();
+    const out = [];
+    arr.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const bucket = String(item.bucket || '').trim();
+      const row_id = String(item.row_id || item.id || '').trim();
+      if (!bucket || !row_id) return;
+      const k = `${bucket}::${row_id}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(Object.assign({}, item, { bucket, row_id }));
+    });
+    return out;
+  }
+  function _emptyPending426Queue(email = '') {
+    return {
+      email: String(email || '').trim().toLowerCase(),
+      records: [],
+      indDomainPending: false,
+      forceRowIds: [],
+      forceEditKeys: [],
+      purgedRows: [],
+      purgedEditKeys: []
+    };
+  }
+  function _readPending426Queue() {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || isDemoScopeActive()) return _emptyPending426Queue();
+    try {
+      const raw = appStoreGetRaw(SHELL_426_QUEUE_KEY);
+      if (!raw) return _emptyPending426Queue();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return _emptyPending426Queue();
+      return {
+        email: String(parsed.email || '').trim().toLowerCase(),
+        records: Array.isArray(parsed.records) ? parsed.records : [],
+        indDomainPending: Boolean(parsed.indDomainPending),
+        forceRowIds: Array.isArray(parsed.forceRowIds) ? parsed.forceRowIds.map(String).filter(Boolean) : [],
+        forceEditKeys: Array.isArray(parsed.forceEditKeys) ? parsed.forceEditKeys.map(String).filter(Boolean) : [],
+        purgedRows: _normPurgedRowsList(parsed.purgedRows),
+        purgedEditKeys: Array.isArray(parsed.purgedEditKeys) ? parsed.purgedEditKeys.map(String).filter(Boolean) : []
+      };
+    } catch (_) {
+      return _emptyPending426Queue();
+    }
+  }
+  function _writePending426Queue(q) {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || isDemoScopeActive()) return;
+    if (!q || (!q.indDomainPending && (!q.records || !q.records.length))) {
+      appStoreRemoveRaw(SHELL_426_QUEUE_KEY);
+      return;
+    }
+    try {
+      appStoreSetRaw(SHELL_426_QUEUE_KEY, JSON.stringify(q));
+    } catch (_) {
+      try {
+        const slim = Object.assign({}, q, {
+          records: (q.records || []).slice(-200).map(item => Object.assign({}, item, { row: null }))
+        });
+        appStoreSetRaw(SHELL_426_QUEUE_KEY, JSON.stringify(slim));
+      } catch (_2) {}
+    }
+  }
+  function enqueuePending426Record(crKey, tblName, id, record) {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || isDemoScopeActive() || !tblName || !id) return;
+    const curEmail = String((activeUser() && activeUser().email) || '').trim().toLowerCase();
+    let q = _readPending426Queue();
+    if (q.email && curEmail && q.email !== curEmail) q = _emptyPending426Queue(curEmail);
+    if (!q.email && curEmail) q.email = curEmail;
+    const sid = String(id);
+    const tbl = String(tblName);
+    const cleanRow = record ? _stripTurnaroundInternals(record) : null;
+    const nextItem = {
+      crKey: String(crKey || tbl),
+      table: tbl,
+      id: sid,
+      row: (cleanRow && JSON.stringify(cleanRow).length <= 32768) ? cleanRow : null,
+      ts: Date.now()
+    };
+    const idx = q.records.findIndex(x => x && String(x.table) === tbl && String(x.id) === sid);
+    if (idx >= 0) q.records[idx] = nextItem;
+    else q.records.push(nextItem);
+    _writePending426Queue(q);
+  }
+  function enqueuePending426Pairs(pairs) {
+    if (!Array.isArray(pairs) || !pairs.length) return;
+    pairs.forEach(item => {
+      if (!Array.isArray(item) || !item[0] || !item[1] || !item[1].id) return;
+      const crKey = String(item[0]);
+      enqueuePending426Record(crKey, CR_TABLE[crKey] || crKey, item[1].id, item[1]);
+    });
+  }
+  function enqueuePending426Domain(forceRowIds = [], forceEditKeys = [], purgedRows = [], purgedEditKeys = []) {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || isDemoScopeActive()) return;
+    const curEmail = String((activeUser() && activeUser().email) || '').trim().toLowerCase();
+    let q = _readPending426Queue();
+    if (q.email && curEmail && q.email !== curEmail) q = _emptyPending426Queue(curEmail);
+    if (!q.email && curEmail) q.email = curEmail;
+    q.indDomainPending = true;
+    q.forceRowIds = Array.from(new Set([...(q.forceRowIds || []), ...(Array.isArray(forceRowIds) ? forceRowIds : []).map(String).filter(Boolean)]));
+    q.forceEditKeys = Array.from(new Set([...(q.forceEditKeys || []), ...(Array.isArray(forceEditKeys) ? forceEditKeys : []).map(String).filter(Boolean)]));
+    q.purgedRows = _normPurgedRowsList([...(q.purgedRows || []), ...(Array.isArray(purgedRows) ? purgedRows : [])]);
+    q.purgedEditKeys = Array.from(new Set([...(q.purgedEditKeys || []), ...(Array.isArray(purgedEditKeys) ? purgedEditKeys : []).map(String).filter(Boolean)]));
+    _writePending426Queue(q);
+  }
+  function clearPending426All() {
+    STATE._shellOutdated426 = false;
+    STATE._shellOutdatedToasted = false;
+    _swUpdateWaitUntilMs = 0;
+    appStoreRemoveRaw(SHELL_426_QUEUE_KEY);
+    try { localStorage.removeItem('isabi_mfg_pending_geo_push_v1'); } catch (_) {}
+    try { sessionStorage.removeItem(SW_426_RELOAD_GUARD_KEY); } catch (_) {}
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill(false);
+  }
+  async function flushPending426GeoBeforePull(curEmail = '') {
+    if (isDemoScopeActive() || !hasServerApi()) return false;
+    if (window.MFG_GEO && typeof window.MFG_GEO.flushPendingGeoPush === 'function') {
+      return await window.MFG_GEO.flushPendingGeoPush(curEmail).catch(() => false);
+    }
+    return false;
+  }
+  async function flushPending426Writes(curEmail = '') {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || isDemoScopeActive() || !hasServerApi() || !STATE.authed || STATE._shellOutdated426) {
+      return;
+    }
+    const q = _readPending426Queue();
+    const nowEmail = String(curEmail || (activeUser() && activeUser().email) || '').trim().toLowerCase();
+    if (q.email && nowEmail && q.email !== nowEmail) {
+      appStoreRemoveRaw(SHELL_426_QUEUE_KEY);
+      return;
+    }
+    if (!q.records.length && !q.indDomainPending) return;
+    let stopFor426 = false;
+    if (q.records.length) {
+      const remaining = [];
+      for (let idx = 0; idx < q.records.length; idx++) {
+        const entry = q.records[idx];
+        if (!entry || !entry.id || !entry.table) continue;
+        if (stopFor426) { remaining.push(entry); continue; }
+        const crKey = entry.crKey || entry.table;
+        const list = (STATE.customRecords && Array.isArray(STATE.customRecords[crKey])) ? STATE.customRecords[crKey] : [];
+        const liveRow = list.find(x => x && String(x.id) === String(entry.id)) || null;
+        const payloadRow = entry.row || liveRow;
+        if (!payloadRow) continue;
+        const r = await postRecordToLocalApi(crKey, payloadRow, { deferRender: true });
+        if (r && r.shellOutdated) {
+          stopFor426 = true;
+          remaining.push(entry);
+          continue;
+        }
+        const recNetErr = Boolean(!r || r.networkErr || r.networkError);
+        const st = Number((r && r.status) || 0);
+        const dropDoneOrPerm4xx = Boolean(r && !recNetErr && (r.ok || (st >= 400 && st !== 401 && st < 500)));
+        if (!dropDoneOrPerm4xx) {
+          remaining.push(entry);
+        }
+      }
+      q.records = remaining;
+      _writePending426Queue(q);
+    }
+    if (!stopFor426 && !STATE._shellOutdated426 && q.indDomainPending) {
+      const domRes = await postIndustryDomainStoreToLocalApi({
+        forceRowIds: q.forceRowIds || [],
+        forceEditKeys: q.forceEditKeys || [],
+        purgedRows: q.purgedRows || [],
+        purgedEditKeys: q.purgedEditKeys || []
+      });
+      if (domRes && domRes.shellOutdated) {
+        stopFor426 = true;
+      } else {
+        const domNetErr = Boolean(!domRes || domRes.networkErr || domRes.networkError);
+        const dst = Number((domRes && domRes.status) || 0);
+        if (domRes && !domNetErr && (domRes.ok || (dst >= 400 && dst !== 401 && dst < 500))) {
+          q.indDomainPending = false;
+          q.forceRowIds = [];
+          q.forceEditKeys = [];
+          q.purgedRows = [];
+          q.purgedEditKeys = [];
+        }
+      }
+      _writePending426Queue(q);
+    }
+  }
+
+  function _swReloadCfg() {
+    const o = (typeof window !== 'undefined' && window.__ISABI_TEST_SW_RELOAD_CFG && typeof window.__ISABI_TEST_SW_RELOAD_CFG === 'object')
+      ? window.__ISABI_TEST_SW_RELOAD_CFG
+      : null;
+    const num = (k, def) => {
+      const v = o && o[k];
+      return (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? v : def;
+    };
+    return {
+      intervalMs: Math.max(50, num('intervalMs', 1500)),
+      pillDelayMs: num('pillDelayMs', 60000),
+      idleForceMs: num('idleForceMs', 600000),
+      onReload: (o && typeof o.onReload === 'function') ? o.onReload : null
+    };
+  }
+  let _swUpdateModalObserver = null;
+  let _swUpdateBodyObserver = null;
+  let _swObservedOverlayEls = typeof WeakSet === 'function' ? new WeakSet() : null;
+  const SW_OVERLAY_ATTR_SEL = '.modal-backdrop, .sua-backdrop, .cmdp-backdrop, #stepUpAuthModal, #cmdPaletteModal, #docCameraModal, #docPreviewModal, #aiBatchIntakeModal, #backfillModal, #fatherBackfillModal, #rateImpactModal, #policySimDiffDrawer, #punchDriftModal, #recordInspector, #inspModifyDrawer';
+  function _syncSwUpdateModalObserver(active) {
+    if (!active) {
+      if (_swUpdateModalObserver) {
+        try { _swUpdateModalObserver.disconnect(); } catch (_) {}
+        _swUpdateModalObserver = null;
+      }
+      if (_swUpdateBodyObserver) {
+        try { _swUpdateBodyObserver.disconnect(); } catch (_) {}
+        _swUpdateBodyObserver = null;
+      }
+      _swObservedOverlayEls = typeof WeakSet === 'function' ? new WeakSet() : null;
+      return;
+    }
+    if (typeof MutationObserver !== 'function') return;
+    try {
+      const refreshFloatingState = () => {
+        const bar = $('swUpdateReadyBar');
+        if (!bar || bar.hidden) return;
+        bar.classList.toggle('is-floating-over-modal', isAnyOverlayModalOpen());
+      };
+      if (!_swUpdateModalObserver) {
+        _swUpdateModalObserver = new MutationObserver(refreshFloatingState);
+      }
+      const wireOverlayEl = el => {
+        if (!el || el.nodeType !== 1) return;
+        if (_swObservedOverlayEls) {
+          if (_swObservedOverlayEls.has(el)) return;
+          _swObservedOverlayEls.add(el);
+        }
+        _swUpdateModalObserver.observe(el, { attributes: true, attributeFilter: ['hidden', 'class'] });
+      };
+      document.querySelectorAll(SW_OVERLAY_ATTR_SEL).forEach(wireOverlayEl);
+      if (!_swUpdateBodyObserver && document.body) {
+        _swUpdateBodyObserver = new MutationObserver(muts => {
+          let sawNew = false;
+          for (const m of (muts || [])) {
+            for (const n of (m.addedNodes || [])) {
+              if (!n || n.nodeType !== 1) continue;
+              if (typeof n.matches === 'function' && n.matches(SW_OVERLAY_ATTR_SEL)) {
+                wireOverlayEl(n);
+                sawNew = true;
+              }
+              if (typeof n.querySelectorAll === 'function') {
+                n.querySelectorAll(SW_OVERLAY_ATTR_SEL).forEach(sub => { wireOverlayEl(sub); sawNew = true; });
+              }
+            }
+          }
+          if (sawNew) refreshFloatingState();
+        });
+        _swUpdateBodyObserver.observe(document.body, { childList: true });
+      }
+    } catch (_) {}
+  }
+  function syncSwUpdateReadyPill(forceVisible) {
+    const bar = $('swUpdateReadyBar');
+    const pill = $('swUpdateReadyPill');
+    if (!bar || !pill) return;
+    if (forceVisible === false) {
+      bar.hidden = true;
+      bar.classList.remove('is-floating-over-modal');
+      _syncSwUpdateModalObserver(false);
+      return;
+    }
+    const wantShow = forceVisible === true ? true : !bar.hidden;
+    bar.hidden = !wantShow;
+    if (!wantShow) {
+      bar.classList.remove('is-floating-over-modal');
+      _syncSwUpdateModalObserver(false);
+      return;
+    }
+    bar.classList.toggle('is-floating-over-modal', isAnyOverlayModalOpen());
+    _syncSwUpdateModalObserver(true);
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(bar);
+    }
+  }
+  function _reloadPageLocation() {
+    location.reload();
+  }
+  function performSeamlessSwReload(opts = {}) {
+    const manual = Boolean(opts && opts.manual);
+    const cfg = _swReloadCfg();
+    const curVer = String((typeof window !== 'undefined' && window.__MFG_SHELL_VER) || '');
+    if (!manual && STATE._shellOutdated426) {
+      try {
+        const rawGuard = sessionStorage.getItem(SW_426_RELOAD_GUARD_KEY);
+        if (rawGuard) {
+          const g = JSON.parse(rawGuard);
+          if (g && g.ver === curVer && (Date.now() - Number(g.ts || 0)) < 45000) {
+            syncSwUpdateReadyPill(true);
+            return false;
+          }
+        }
+        sessionStorage.setItem(SW_426_RELOAD_GUARD_KEY, JSON.stringify({ ts: Date.now(), ver: curVer }));
+      } catch (_) {}
+    } else if (manual) {
+      try { sessionStorage.removeItem(SW_426_RELOAD_GUARD_KEY); } catch (_) {}
+    }
+    saveLocalAuthAndRecords();
+    let resumeObj = null;
+    try {
+      if (STATE.authed && activeUser() && activeUser().email) {
+        resumeObj = {
+          email: activeUser().email,
+          company: STATE.company === DEMO_COMPANY_KEY ? (_demoCompanyPrevRealCo || 'manufacturing-group') : STATE.company,
+          view: STATE.view,
+          activeTableKey: STATE.activeTableKey || '',
+          activeUnivRegKey: STATE.activeUnivRegKey || '',
+          ts: Date.now()
+        };
+        sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify(resumeObj));
+      }
+    } catch (_) {}
+    if (cfg.onReload) {
+      try {
+        const res = cfg.onReload({ manual, shellOutdated: Boolean(STATE._shellOutdated426), resume: resumeObj });
+        if (res === false) return true;
+      } catch (_) {}
+    }
+    _reloadPageLocation();
+    return true;
+  }
+  function scheduleSwIdleReload() {
+    if ((IS_AUTOMATED_TEST && !allowSwReloadInTest()) || _swIdleReloadTimer) return;
+    if (!_swUpdateFirstSeenAt) _swUpdateFirstSeenAt = Date.now();
+    const checkAndAct = () => {
+      const cfg = _swReloadCfg();
+      const seenElapsed = _swUpdateFirstSeenAt ? (Date.now() - _swUpdateFirstSeenAt) : 0;
+      const showPillIfDelayed = () => {
+        if (STATE._shellOutdated426 || seenElapsed >= cfg.pillDelayMs) {
+          syncSwUpdateReadyPill(true);
+        } else {
+          syncSwUpdateReadyPill();
+        }
+      };
+      if (syncInFlight || FACE_STATE.camStarting || isDocScannerCamStarting()) {
+        showPillIfDelayed();
+        return;
+      }
+      if (_swUpdateWaitUntilMs && Date.now() < _swUpdateWaitUntilMs) {
+        if (STATE._shellOutdated426 && uiBusy()) syncSwUpdateReadyPill(true);
+        return;
+      }
+      const busy = uiBusy();
+      const idleElapsed = Date.now() - _lastUserActivityAt;
+      if (!hasUnsavedUiWork() && (!busy || idleElapsed >= cfg.idleForceMs)) {
+        clearInterval(_swIdleReloadTimer);
+        _swIdleReloadTimer = null;
+        performSeamlessSwReload({ manual: false });
+        return;
+      }
+      showPillIfDelayed();
+    };
+    _swIdleReloadTimer = setInterval(checkAndAct, _swReloadCfg().intervalMs);
+    if (STATE._shellOutdated426 && uiBusy()) syncSwUpdateReadyPill(true);
+  }
+  function handleShellOutdated426(errObj) {
+    STATE._shellOutdated426 = true;
+    setPendingCloudPush(true);
+    saveLocalAuthAndRecords();
+    if (_cloudRetryTimer) {
+      clearTimeout(_cloudRetryTimer);
+      _cloudRetryTimer = null;
+    }
+    const minVer = String((errObj && errObj.minSyncShellVer) || window.__MFG_SHELL_VER || '19.6.432');
+    STATE.cloudStatus = '● Refresh app to sync (v' + minVer + '+)';
+    updateCloudBadges();
+    if (!STATE._shellOutdatedToasted) {
+      STATE._shellOutdatedToasted = true;
+      toast('Please update to the latest ISABI app version before syncing changes.', 'warn');
+    }
+    if (!window.__mfgPendingShellVer) window.__mfgPendingShellVer = minVer;
+    if (!_swUpdateFirstSeenAt) _swUpdateFirstSeenAt = Date.now();
+    _swUpdateWaitUntilMs = Date.now() + 1000;
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+        Promise.resolve(navigator.serviceWorker.getRegistration()).then(r => {
+          if (r && typeof r.update === 'function') return r.update();
+          return null;
+        }).catch(() => {}).finally(() => {
+          _swUpdateWaitUntilMs = 0;
+        });
+      } else {
+        _swUpdateWaitUntilMs = 0;
+      }
+    } catch (_) {
+      _swUpdateWaitUntilMs = 0;
+    }
+    if (uiBusy()) syncSwUpdateReadyPill(true);
+    scheduleSwIdleReload();
   }
 
   // ---- Entries not sent yet (owner 2026-11-18) -------------------------------------------------------------------
@@ -140837,9 +141454,10 @@
   }
 
   function scheduleCloudPushRetry(delayMs = 6000) {
-    if (_cloudRetryTimer || IS_AUTOMATED_TEST) return;
+    if (_cloudRetryTimer || IS_AUTOMATED_TEST || STATE._shellOutdated426) return;
     _cloudRetryTimer = setTimeout(() => {
       _cloudRetryTimer = null;
+      if (STATE._shellOutdated426) return;
       if (STATE.pendingCloudPush && navigator.onLine !== false) {
         syncWithCloud(true);
       }
@@ -140852,6 +141470,11 @@
         STATE.cloudStatus = '● Demo Sandbox';
         updateCloudBadges();
       }
+      return Promise.resolve(false);
+    }
+    if (STATE._shellOutdated426) {
+      if (pushChanges) setPendingCloudPush(true);
+      saveLocalAuthAndRecords();
       return Promise.resolve(false);
     }
     if (pushChanges) setPendingCloudPush(true);
@@ -140867,6 +141490,7 @@
       if (!isDemoSandboxSession() && (!STATE.authed || runEpoch !== _authSessionEpoch)) {
         return;
       }
+      if (STATE._shellOutdated426) return;
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
       else if (STATE.pendingCloudPush) { scheduleCloudPushRetry(6000); }
       pullDoorTabletPunches(false);
@@ -141011,10 +141635,23 @@
         }
       };
       try {
+        const curSyncEmail = (activeUser() && activeUser().email) || '';
         const fetchUsers = !isDemoSandboxSession() && (!rosterIsServerHeld() || STATE.authed);
         const fetchSubStores = !isEdgeActive || STATE.authed || isDemoSandboxSession();
         const fetchWsGeo = Boolean(fetchSubStores && (STATE.authed || isDemoSandboxSession()));
         const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()));
+        let geoHoldStillPending = false;
+        let indHoldStillPending = false;
+        if (fetchWsGeo && !isDemoScopeActive()) {
+          await flushPending426GeoBeforePull(curSyncEmail);
+          if (abortedByAuthChange() || STATE._shellOutdated426) return;
+          try { geoHoldStillPending = Boolean(localStorage.getItem('isabi_mfg_pending_geo_push_v1')); } catch (_) {}
+        }
+        if (STATE.authed && !isDemoScopeActive() && !abortedByAuthChange()) {
+          await flushPending426Writes(curSyncEmail);
+          if (abortedByAuthChange() || STATE._shellOutdated426) return;
+          try { indHoldStillPending = Boolean(_readPending426Queue().indDomainPending); } catch (_) {}
+        }
         const [dLocal, dSr, dAr, dSb, dWs, dGeo, dId] = await Promise.all([
           fetchUsers ? auxFetchJson('./api/users', 6000) : Promise.resolve(null),
           fetchSubStores ? auxFetchJson('./api/sentinel_reviews', 5000) : Promise.resolve(null),
@@ -141039,15 +141676,21 @@
         if (dAr && mergeAlertRules(dAr)) auxLocalChanged = true;
         if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) auxLocalChanged = true;
         if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) auxLocalChanged = true;
-        if (dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
+        if (!geoHoldStillPending && dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
           if (window.MFG_GEO.importGeoConfig(dGeo.config)) {
             if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
             safeRender();
           }
         }
-        if (dId) {
-          if (dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) auxLocalChanged = true;
-          if (dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) auxLocalChanged = true;
+        if (!indHoldStillPending && dId) {
+          const prevDeferDomPost = _deferIndustryDomainServerPost;
+          _deferIndustryDomainServerPost = true;
+          try {
+            if (dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) auxLocalChanged = true;
+            if (dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) auxLocalChanged = true;
+          } finally {
+            _deferIndustryDomainServerPost = prevDeferDomPost;
+          }
         }
         if (auxLocalChanged) saveLocalAuthAndRecords();
       } catch (_) { /* API not reachable */ }
@@ -141378,14 +142021,8 @@
               return;
             }
             const putErr = await putRes.json().catch(() => null);
-            if (putRes.status === 426 && putErr && putErr.code === 'shell_outdated') {
-              setPendingCloudPush(false);
-              STATE.cloudStatus = '● Refresh app to sync (v' + String(putErr.minSyncShellVer || window.__MFG_SHELL_VER || '19.6.346') + '+)';
-              if (!STATE._shellOutdatedToasted) {
-                STATE._shellOutdatedToasted = true;
-                toast('Please update to the latest ISABI app version before syncing changes.', 'warn');
-              }
-              try { navigator.serviceWorker && navigator.serviceWorker.getRegistration && navigator.serviceWorker.getRegistration().then(r => r && r.update && r.update()); } catch (_) {}
+            if (putRes.status === 426 || (putErr && putErr.code === 'shell_outdated')) {
+              handleShellOutdated426(putErr);
               break;
             }
             if (putRes.status === 409 && putErr && putErr.code === 'same_name_conflict') {
@@ -146950,6 +147587,11 @@
     setEdgeSessionToken('');
     _edgeCookieAuthed = false;
     _authSessionEpoch++;
+    // Keep email-scoped 426 & Geo pending queues across automatic 401 expiry so the same seat can replay after re-auth.
+    STATE._shellOutdated426 = false;
+    STATE._shellOutdatedToasted = false;
+    _swUpdateWaitUntilMs = 0;
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill(false);
     if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
     }
@@ -147372,8 +148014,9 @@
       if (_cloudRetryTimer) { clearTimeout(_cloudRetryTimer); _cloudRetryTimer = null; }
       STATE.pendingCloudPush = false;
       STATE.pushAfterSync = false;
+      clearPending426All();
       if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
-        try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+        try { window.MFG_GEO.resetGeoStoreSession({ clearPendingPush: true }); } catch (_) {}
       }
       try { localStorage.removeItem('isabi_mfg_geo_v1'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
@@ -151086,8 +151729,10 @@
     };
 
     KIOSK_ADMIN_MODAL_STATE.renderInnerFn = renderAdminInner;
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     renderAdminInner();
     return modal;
   }
@@ -152493,9 +153138,13 @@
         else { toast(rejectMsg, 'err'); renderApp(); }
         return { ok: false, reason: 'server_reject', error: rejectMsg };
       }
-      const extraPostRes = kioskExtraPosts.length
-        ? await postRecordPairsChunked(kioskExtraPosts, 8, { deferRender: true })
-        : { ok: true, postedResults: [] };
+      let extraPostRes = { ok: true, postedResults: [] };
+      if (mainPostRes && mainPostRes.shellOutdated) {
+        enqueuePending426Pairs(kioskExtraPosts);
+        setPendingCloudPush(true);
+      } else if (kioskExtraPosts.length) {
+        extraPostRes = await postRecordPairsChunked(kioskExtraPosts, 8, { deferRender: true });
+      }
       if ((extraPostRes && extraPostRes.blockedSameName) || isServerRejectRes(extraPostRes)) {
         await rollbackRecordListOnServer(extraPostRes && extraPostRes.postedResults);
         const rbOk = await rollbackRecordOnServer(mainPostRes);
@@ -163918,8 +164567,10 @@
       KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
     }
     const modal = $('staffFaceEnrolModal');
+    _auxModalDirty = false;
     if (modal) modal.hidden = true;
     document.body.classList.remove('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
     if (STATE.view === 'kiosks' && STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
       if (hadActiveCam) {
@@ -164939,6 +165590,13 @@
         toast(`Updated ${updatedCount} staff profile${updatedCount === 1 ? '' : 's'} in Demo session only (no server changes).`, 'ok');
       } else if (pairs.length) {
         const postRes = await postRecordPairsChunked(pairs, 8, { deferRender: true });
+        if (postRes && postRes.shellOutdated) {
+          setPendingCloudPush(true);
+          saveLocalAuthAndRecords();
+          if (FATHER_BACKFILL_STATE.open) renderFatherBackfillModalDom();
+          renderApp();
+          return { ok: true, count: updatedCount, deferredForShellUpdate: true };
+        }
         if (!postRes || !postRes.ok) {
           const posted = Array.isArray(postRes && postRes.postedPairs) ? postRes.postedPairs : [];
           const rollbackFailures = [];
@@ -165247,8 +165905,10 @@
         </div>
       </div>
     `;
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
 
     const ingestBatchIdFiles = async files => {
       const list = Array.from(files || []).filter(Boolean);
@@ -166043,6 +166703,13 @@
       };
       if (empToPost) {
         const rEmp = await postRecordToLocalApi('employments', empToPost, { deferRender: true });
+        if (rEmp && rEmp.shellOutdated) {
+          enqueuePending426Record('staff_members', 'staff_members', smRec.id, smRec);
+          if (createdSaRec) enqueuePending426Record('staff_assignments', 'staff_assignments', createdSaRec.id, createdSaRec);
+          setPendingCloudPush(true);
+          saveLocalAuthAndRecords();
+          return { ok: true, deferredForShellUpdate: true };
+        }
         if (!rEmp || !rEmp.ok) {
           const blocked = Boolean(rEmp && rEmp.blockedSameName);
           rollbackEnrolRegistration(
@@ -166067,6 +166734,12 @@
         postedUpdatedEmp = Boolean(!createdNewEmp && rEmp.ok);
       }
       const rSm = await postRecordToLocalApi('staff_members', smRec, { deferRender: true });
+      if (rSm && rSm.shellOutdated) {
+        if (createdSaRec) enqueuePending426Record('staff_assignments', 'staff_assignments', createdSaRec.id, createdSaRec);
+        setPendingCloudPush(true);
+        saveLocalAuthAndRecords();
+        return { ok: true, deferredForShellUpdate: true };
+      }
       if (!rSm || !rSm.ok) {
         const rbFails = await compensatePosted();
         const blocked = Boolean(rSm && rSm.blockedSameName);
@@ -166095,6 +166768,11 @@
       postedSm = true;
       if (createdSaRec) {
         const rSa = await postRecordToLocalApi('staff_assignments', createdSaRec, { deferRender: true });
+        if (rSa && rSa.shellOutdated) {
+          setPendingCloudPush(true);
+          saveLocalAuthAndRecords();
+          return { ok: true, deferredForShellUpdate: true };
+        }
         if (!rSa || !rSa.ok) {
           const rbFails = await compensatePosted();
           const blocked = Boolean(rSa && rSa.blockedSameName);
@@ -167145,8 +167823,10 @@
         </div>
       </div>
     `;
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
 
     $('closeStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
     $('doneStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
@@ -167354,6 +168034,7 @@
       STAFF_FACE_MODAL_STATE.pendingIdAtts = scanAttList;
       STAFF_FACE_MODAL_STATE.pendingIdAtt = scanAttList[0] || null;
       renderSfeIdScanStrip(res, '');
+      _auxModalDirty = true;
       checkSfeLiveSameNameConflict();
       toast(`Extracted ${formatIdDocKindBadgeLabel(res.docKind)} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
       return true;
@@ -167422,7 +168103,9 @@
     $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
       STAFF_FACE_MODAL_STATE.newStaffOpen = false;
       clearSfeNewStaffFields();
+      _auxModalDirty = false;
       syncStaffFaceEnrolModalDom();
+      if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     });
     $('sfeNewStaffCo')?.addEventListener('change', () => {
       checkSfeLiveSameNameConflict();
@@ -167541,6 +168224,8 @@
         }
       }
       clearSfeNewStaffFields();
+      _auxModalDirty = false;
+      if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
       toast(`Registered ${res.staff} (${res.company} · ${res.role}) · ready for 3-pose Face ID`, 'ok');
     };
     $('sfeNewStaffSaveBtn')?.addEventListener('click', commitNewStaffFromStudio);
@@ -167639,8 +168324,10 @@
         toast(res.error || 'Could not save PIN', 'err');
         return;
       }
+      _auxModalDirty = false;
       toast(res.pin ? `Saved 4-digit PIN for ${res.staff}` : `Cleared PIN for ${res.staff}`, 'ok');
       syncStaffFaceEnrolModalDom();
+      if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     });
 
     syncStaffFaceEnrolModalDom();
@@ -167659,8 +168346,10 @@
       Object.keys(STATE.kioskCoPolicyDraft).forEach(k => { if (k.startsWith('ssm-bu:')) delete STATE.kioskCoPolicyDraft[k]; });
     }
     const m = $('staffScheduleModal');
+    _auxModalDirty = false;
     if (m) m.hidden = true;
     document.body.classList.remove('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
   }
 
@@ -170462,8 +171151,10 @@
       if (nextCardEl && prevCardTop > 0) nextCardEl.scrollTop = prevCardTop;
     };
 
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     renderModalInner();
     if (opts.focusSection === 'ot') {
       setTimeout(() => { $('ssmOvertimeSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
@@ -170477,8 +171168,10 @@
 
   function closeShiftTypeModal() {
     const m = $('shiftTypeModal');
+    _auxModalDirty = false;
     if (m) m.hidden = true;
     _syncOverlayModalState(true);
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
   }
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
@@ -170861,8 +171554,10 @@
         </div>
       </div>
     `;
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     wireModalSuggestions(modal);
     stripNativeTitles(modal);
 
@@ -175971,8 +176666,10 @@
 
   function closePolicyGroupModal() {
     const m = $('policyGroupModal');
+    _auxModalDirty = false;
     if (m) m.hidden = true;
     _syncOverlayModalState(true);
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
   }
 
   function renderCompanyDefaultAttendanceCardHtml(coName, opts = {}) {
@@ -177153,8 +177850,10 @@
       stripNativeTitles(modal);
     };
 
+    _auxModalDirty = false;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     renderGroupModal();
     return modal;
   }
@@ -186301,17 +187000,27 @@
     }
     let swResumeEmail = '';
     let swResumeView = '';
+    let swResumeIdx = -1;
     try {
       const rawSw = sessionStorage.getItem('isabi_mfg_sw_resume');
       sessionStorage.removeItem('isabi_mfg_sw_resume');
       if (rawSw) {
         const parsedSw = JSON.parse(rawSw);
         if (parsedSw && parsedSw.email && (Date.now() - Number(parsedSw.ts || 0)) < 30000) {
-          swResumeEmail = parsedSw.email;
-          if (parsedSw.company && parsedSw.company !== DEMO_COMPANY_KEY && COMPANY_LABELS[parsedSw.company] && !PARAMS.get('industry')) STATE.company = parsedSw.company;
-          if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
-          if (parsedSw.activeTableKey) STATE.activeTableKey = parsedSw.activeTableKey;
-          if (parsedSw.activeUnivRegKey) STATE.activeUnivRegKey = parsedSw.activeUnivRegKey;
+          const candIdx = STATE.users.findIndex(u => norm(u.email) === norm(parsedSw.email));
+          if (candIdx >= 0 && STATE.users[candIdx].status !== 'Suspended') {
+            swResumeIdx = candIdx;
+            swResumeEmail = parsedSw.email;
+            const allowedCo = getAllowedCompanyKeys(STATE.users[candIdx]);
+            if (parsedSw.company && parsedSw.company !== DEMO_COMPANY_KEY && COMPANY_LABELS[parsedSw.company] && !PARAMS.get('industry') && allowedCo.includes(parsedSw.company)) {
+              STATE.company = parsedSw.company;
+            } else if (!allowedCo.includes(STATE.company)) {
+              STATE.company = defaultCompanyForUser(STATE.users[candIdx]);
+            }
+            if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
+            if (parsedSw.activeTableKey) STATE.activeTableKey = parsedSw.activeTableKey;
+            if (parsedSw.activeUnivRegKey) STATE.activeUnivRegKey = parsedSw.activeUnivRegKey;
+          }
         }
       }
     } catch (_) {}
@@ -186412,7 +187121,7 @@
     const kioskSeatIdx = savedKioskSeatEmail ? STATE.users.findIndex(u => norm(u.email) === norm(savedKioskSeatEmail)) : -1;
 
     const autoLoginDemo = PARAMS.get('autologin') === '1' && !window.__MFG_HEADLESS_TEST;
-    const swIdx = swResumeEmail ? STATE.users.findIndex(u => norm(u.email) === norm(swResumeEmail)) : -1;
+    const swIdx = swResumeIdx >= 0 ? swResumeIdx : (swResumeEmail ? STATE.users.findIndex(u => norm(u.email) === norm(swResumeEmail)) : -1);
     if (inviteEmail && invitePin) {
       history.replaceState({ view: STATE.view }, '', lockedCleanUrl); // never leave the PIN in the address bar / history
       performLogin(inviteEmail, invitePin).then(ok => { if (!ok || ok === '2fa_pending') openAuthGate(inviteEmail); });
@@ -186423,7 +187132,33 @@
       performLogin(ownerSeat.email, ownerSeat.pin_code || DEMO_FALLBACK_PIN, { bypass2FA: true, method: 'Interactive Sandbox' });
     } else if (swIdx >= 0 && STATE.users[swIdx].status !== 'Suspended') {
       STATE.activeUserIdx = swIdx;
+      if (!getAllowedCompanyKeys(STATE.users[swIdx]).includes(STATE.company)) {
+        STATE.company = defaultCompanyForUser(STATE.users[swIdx]);
+      }
       closeAuthGate();
+      if (!isDemoSandboxSession() && (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))) {
+        edgeApiFetch('./api/auth/me', { cache: 'no-store' })
+          .then(async r => {
+            if (!r) return;
+            if (r.status === 401) {
+              if (STATE.authed && typeof handleEdgeSessionExpired === 'function') {
+                handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+              }
+              return;
+            }
+            if (!r.ok) return;
+            const d = await r.json().catch(() => null);
+            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended' || (d.user.email && norm(d.user.email) !== norm(STATE.users[swIdx].email))) {
+              if (STATE.authed && typeof handleEdgeSessionExpired === 'function') {
+                handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+              }
+              return;
+            }
+            _edgeCookieAuthed = true;
+            if (typeof syncWithCloud === 'function') syncWithCloud(false);
+          })
+          .catch(() => {});
+      }
     } else if (dedicatedKioskBoot && kioskSeatIdx >= 0 && STATE.users[kioskSeatIdx].status !== 'Suspended') {
       STATE.activeUserIdx = kioskSeatIdx;
       try { localStorage.setItem('isabi_mfg_kiosk_station_seat', JSON.stringify({ email: STATE.users[kioskSeatIdx].email || '', ts: Date.now() })); } catch (_) {}
@@ -189334,11 +190069,12 @@
         handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
       }
     };
+    window.__mfgHandleShellOutdated426 = errObj => handleShellOutdated426(errObj);
     window.__mergeIndustryRowEdits = incoming => mergeIndustryRowEdits(incoming);
     window.__mergeIndustryCustomRows = incoming => mergeIndustryCustomRows(incoming);
     window.__applyIndustryDomRowEdits = root => applyIndustryDomRowEdits(root);
     window.__getIndustryRowEditStore = () => getIndustryRowEditStore();
-    window.__saveIndustryRowEditStore = store => saveIndustryRowEditStore(store);
+    window.__saveIndustryRowEditStore = (store, opts) => saveIndustryRowEditStore(store, opts);
     window.__getIndustryCustomRowsStore = () => getIndustryCustomRowsStore();
     window.__mergeCustomOverSeededRows = (baseArr, customArr, opts) => mergeCustomOverSeededRows(baseArr, customArr, opts);
     window.__resolveLegacyIndustryId = id => resolveLegacyIndustryId(id);
@@ -189391,34 +190127,93 @@
     window.__buildLiveCashFlowTables = (cf, co, rate) => buildLiveCashFlowTables(cf, co, rate);
     if (!window.__navToView) window.__navToView = v => setView(v);
 
-    let _swIdleReloadTimer = null;
-    function scheduleSwIdleReload() {
-      if (IS_AUTOMATED_TEST || _swIdleReloadTimer) return;
-      _swIdleReloadTimer = setInterval(() => {
-        if (uiBusy() || syncInFlight || STATE.pendingCloudPush || FACE_STATE.camStarting) return;
-        clearInterval(_swIdleReloadTimer);
-        _swIdleReloadTimer = null;
-        try {
-          if (STATE.authed && activeUser() && activeUser().email) {
-            sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({
-              email: activeUser().email,
-              company: STATE.company === DEMO_COMPANY_KEY ? (_demoCompanyPrevRealCo || 'manufacturing-group') : STATE.company,
-              view: STATE.view,
-              activeTableKey: STATE.activeTableKey || '',
-              activeUnivRegKey: STATE.activeUnivRegKey || '',
-              ts: Date.now()
-            }));
-          }
-        } catch (_) {}
-        location.reload();
-      }, 1500);
+    window.__swReloadTest = {
+      schedule: () => scheduleSwIdleReload(),
+      syncPill: v => syncSwUpdateReadyPill(v),
+      hasUnsavedUiWork: () => hasUnsavedUiWork(),
+      flush426: em => flushPending426Writes(em),
+      performReload: opts => performSeamlessSwReload(opts),
+      backdateActivity: ms => { _lastUserActivityAt -= Math.max(0, Number(ms) || 0); },
+      backdateFirstSeen: ms => { _swUpdateFirstSeenAt = (_swUpdateFirstSeenAt || Date.now()) - Math.max(0, Number(ms) || 0); },
+      triggerSwUpdated: ver => {
+        window.__mfgPendingShellVer = String(ver || '19.99.999');
+        window.dispatchEvent(new CustomEvent('mfg:sw-updated', { detail: { ver: window.__mfgPendingShellVer } }));
+      },
+      state: () => ({
+        shellOutdated426: Boolean(STATE._shellOutdated426),
+        pendingCloudPush: Boolean(STATE.pendingCloudPush),
+        auxModalDirty: Boolean(_auxModalDirty),
+        firstSeenAt: _swUpdateFirstSeenAt,
+        lastActivityAt: _lastUserActivityAt,
+        timerActive: Boolean(_swIdleReloadTimer)
+      })
+    };
+    const swPill = $('swUpdateReadyPill');
+    if (swPill && !swPill._swPillWired) {
+      swPill._swPillWired = true;
+      swPill.addEventListener('click', () => {
+        if (hasUnsavedUiWork()) {
+          const promptTxt = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+            ? window.MFG_I18N.t('You have unsaved form changes. Reload now and discard unsaved edits?')
+            : 'You have unsaved form changes. Reload now and discard unsaved edits?';
+          if (!window.confirm(promptTxt)) return;
+        }
+        performSeamlessSwReload({ manual: true });
+      });
     }
     window.addEventListener('mfg:sw-updated', scheduleSwIdleReload);
     if (window.__mfgPendingShellVer) scheduleSwIdleReload();
 
-    const onPointerPress = () => {
+    const markUserActivity = () => {
+      _lastUserActivityAt = Date.now();
+    };
+    const AUX_DIRTY_MODAL_SEL = '#indDomainEntryModal, #inspModifyDrawer, #indDomainModifyForm, #staffFaceEnrolModal, #staffScheduleModal, #shiftTypeModal, #policyGroupModal, #fatherBackfillModal, #backfillModal, #rateImpactModal, #stepUpAuthModal, #policySimDiffDrawer, #punchDriftModal, #aiBatchIntakeModal, #docPreviewModal, #docCameraModal';
+    const ATT_MUTATOR_MODAL_SEL = '#staffFaceEnrolModal, #staffScheduleModal, #shiftTypeModal, #policyGroupModal';
+    const ATT_NON_MUTATING_CLICK_SEL = [
+      '.modal-close-btn', '#closeStaffEnrolModalBtn', '#doneStaffEnrolModalBtn',
+      '#sfeNewStaffCancelBtn', '#sfeNewStaffSaveBtn', '#staffEnrolPinSaveBtn',
+      '#staffEnrolSwitchStaffBtn', '#staffEnrolNextUnenrolledBtn', '#staffEnrolRosterClear',
+      '#staffEnrolStandby', '#staffEnrolStartCamBtn', '#sfeScanIdCamBtn', '#sfeScanIdFileBtn', '#sfeScanIdPhoneQrBtn',
+      '#sfeNewStaffToggleBtn', '[data-sfe-filter]', '[data-sfe-co]', '[data-sfe-pick]',
+      '#ssmCloseBtn', '#ssmCancelBtn', '#ssmSaveBtn', '#ssmCancelPolWinEditBtn', '#ssmSimCompanyLateBtn',
+      '#ssmNextStaffBtn', '#ssmPrevStaffBtn', '#ssmOpenFaceStudioBtn', '#ssmToggleShiftTableBtn',
+      '#ssmCustomizePolicyGroupBtn', '#ssmNewPolicyGroupBtn', '#ssmSaveAsPolicyGroupBtn', '#ssmOpenNewShiftModalBtn',
+      '[data-ssm-studio-tab]', '[data-ssm-bu-policy-sim]',
+      '#stmCloseBtn', '#stmCancelBtn', '#stmSaveBtn', '#stmDeleteBtn',
+      '#pgmCloseBtn', '#pgmCancelBtn', '#pgmSaveBtn', '#pgmDeleteBtn', '#pgmSimulateDiffBtn', '#pgmCancelVerEditBtn', '[data-pgm-open-sim]'
+    ].join(', ');
+    const markAuxFormDirtyIfInside = ev => {
+      markUserActivity();
+      const tgt = ev && ev.target;
+      const host = tgt && typeof tgt.closest === 'function'
+        ? tgt.closest(AUX_DIRTY_MODAL_SEL)
+        : null;
+      if (host) _auxModalDirty = true;
+    };
+    const markAttModalBtnMutatorDirty = ev => {
+      markUserActivity();
+      const tgt = ev && ev.target && ev.target.nodeType === 1 ? ev.target : null;
+      if (!tgt || !tgt.closest(ATT_MUTATOR_MODAL_SEL)) return;
+      const btn = tgt.closest('button, [role="button"], .kiosk-qchip, [data-ssm-day], [data-ssm-shift], [data-ssm-perk], [data-stm-day], [data-stm-tone], [data-pgm-perk], [data-pgm-tone]');
+      if (!btn || btn.closest(ATT_NON_MUTATING_CLICK_SEL) || btn.disabled) return;
+      if (btn.matches('.kiosk-qchip, [data-ssm-day], [data-ssm-shift], [data-ssm-preset], [data-ssm-day-preset], [data-ssm-custom-preset], [data-ssm-late-pen], [data-ssm-late-when-card], [data-ssm-count-from-card], [data-ssm-ot-mode], [data-ssm-ot-thresh], [data-ssm-ot-snap], [data-ssm-grace-chip], [data-ssm-early-grace-chip], [data-ssm-mult-chip], [data-ssm-ot-mult-chip], [data-ssm-cap-chip], [data-ssm-vac-chip], [data-ssm-hdmin-chip], [data-ssm-workdays-basis], [data-ssm-no-out], [data-ssm-holidays], [data-ssm-policy-group], [data-ssm-policy-late-mult], [data-ssm-brk-rm], [data-ssm-perk], [data-ssm-rm-date-exc], [data-ssm-pass-preset], [data-ssm-pol-edit-win], [data-ssm-pol-del-win], [data-ssm-save-shift-row], [data-ssm-row-set-def], [data-ssm-bu-default], [data-ssm-bu-policy-apply], [data-ssm-ws-row] button, [data-stm-day], [data-stm-exc-day], [data-stm-exc-preset], [data-stm-split-preset], [data-stm-tone], [data-stm-rm-day-sig], [data-stm-rm-date], [data-pgm-ot-thresh], [data-pgm-ot-early], [data-pgm-ot-from], [data-pgm-ot-snap], [data-pgm-ot-blk], [data-pgm-ot-at], [data-pgm-late-mult], [data-pgm-ot-mult], [data-pgm-ot-mode], [data-pgm-vac], [data-pgm-wd], [data-pgm-noout], [data-pgm-brk-del], [data-pgm-perk], [data-pgm-tone], [data-pgm-edit-ver], [data-pgm-del-ver], #ssmAddCustomPerkBtn, #ssmAddDateExcBtn, #ssmAddLateBracketBtn, #ssmAddOvBtn, #ssmAddPassBtn, #ssmAddShiftRowBtn, #ssmApplyCompanyLateBtn, #ssmResetBtn, #ssmQuickPinSaveBtn, #stmAddDateRuleBtn, #stmAddWeekdayRuleBtn, #pgmAddBrkBtn, #pgmAddPerkBtn, #pgmBrkPreset15Btn, #pgmForkCompanyBtn, #staffEnrolCaptureBtn, #staffEnrolClearBtn, #sfeHandsFreeBtn, #sfeScanIdSampleBtn, #sfeIdScanClearBtn, [data-staff-pose-slot], [data-sfe-rm-att], #sfeSameNameSuggestBtn')) {
+        _auxModalDirty = true;
+      }
+    };
+    document.addEventListener('keydown', markUserActivity, { capture: true, passive: true });
+    document.addEventListener('wheel', markUserActivity, { capture: true, passive: true });
+    document.addEventListener('input', markAuxFormDirtyIfInside, { capture: true, passive: true });
+    document.addEventListener('change', markAuxFormDirtyIfInside, { capture: true, passive: true });
+    document.addEventListener('click', markAttModalBtnMutatorDirty, { capture: true, passive: true });
+
+    const onPointerPress = ev => {
       _activePointerDown = true;
       lastPointerDownAt = Date.now();
+      markUserActivity();
+      const tgt = ev && ev.target && ev.target.nodeType === 1 ? ev.target : null;
+      if (tgt && tgt.closest('#staffScheduleModal [data-ssm-tl-handle], #staffScheduleModal .ssm-tl-bar')) {
+        _auxModalDirty = true;
+      }
     };
     const clearActivePointerDown = () => {
       if (!_activePointerDown) return;
@@ -191328,6 +192123,9 @@
           if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
           invalidateAllSeedCaches();
           applyCustomRecordsToSeed();
+          if (STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+            try { window.MFG_GEO.hydrateSeedGeo(SEED, true); } catch (_) {}
+          }
           if (STATE.company === DEMO_COMPANY_KEY && !isDemoSbx) syncDemoScopeDataState();
         }
         window.MFG_SEED = SEED;
