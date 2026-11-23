@@ -3,6 +3,12 @@
   "branch": "wt/material-transport-labels",
   "sha": "817c2a2d2e5767edcd06f9f82c551d41576f508c"
  },
+ "batch": {
+  "at": "2026-11-23T15:24:38Z",
+  "holder": "THEO hbdei (material-transport-labels)",
+  "lockId": "42a68158543445e5bb3752992cf030ae",
+  "version": "19.6.429"
+ },
  "gates": [
   "isabi-app: python build/audit_i18n.py",
   "isabi-app: node build/verify_i18n.py",
