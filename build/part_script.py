@@ -5,8 +5,11 @@ JS = r"""
   'use strict';
 
   const WA_NUMBER = '96170444955';
-  const EMAIL_ADDR = 'husseinbdeir@isabisystems.com';
-  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'ingenuity', 'pricing', 'portal'];
+  const EMAIL_ADDR = 'hbdeir@isabisystems.com';
+  const SEC_IDS = ['platform', 'ask', 'golive', 'why', 'pricing', 'proof', 'portal'];
+  // Pages outside the eight-page scroll: each opens from a button and has its own address.
+  const SHEET_IDS = ['sandbox', 'industries', 'faq'];
+  const SEC_ALIAS = { architecture: 'platform', 'platform-ai': 'ask', ingenuity: 'why', contact: 'portal', demo: 'sandbox', blueprints: 'industries' };
   const NOW = new Date();
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -882,7 +885,7 @@ JS = r"""
 
   // ---------------- STATE ----------------
   const state = {
-    activeSec: 'architecture',
+    activeSec: '',
     archView: 'apps',
     appCat: 'all',
     activeAppId: 'gl',
@@ -935,84 +938,70 @@ JS = r"""
   }
 
   // ---------------- RENDER INTERACTIVE HERO COMMAND CENTER ----------------
-  const HERO_VERTICALS = [
-    { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
-    { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
-    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet GPS & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
-    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Renewals', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
+  const HERO_ARROW_SVG = '<svg class="d-ic d-ic-sm d-flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>';
+  const HERO_VIEWS = {
+    all: { title: 'Group overview', scope: 'Consolidated · 6 entities', k1: 'Consolidated revenue, month to date', v1: '$1,482,600', s1: '+11.4% vs prior month', k2: 'Net operating profit', v2: '$384,200', s2: '25.9% margin · Books balanced', link: 'Open the full portal' },
+    trading: { title: 'Auto and heavy equipment', scope: 'Trading vertical', k1: 'Revenue, month to date', v1: '$524,900', s1: 'Vehicle, equipment and parts sales', k2: 'Gross profit margin', v2: '24%', s2: 'Gross profit on sales', share: '35.4%', color: '#2356A8', chips: ['VIN stock', 'Customs', 'Parts'], link: 'Open the trading demo' },
+    hospitality: { title: 'Hospitality and resorts', scope: 'Hospitality vertical', k1: 'Revenue, month to date', v1: '$418,200', s1: 'Outlets, cabanas and POS', k2: 'EBITDA margin', v2: '34%', s2: 'Operating margin', share: '28.2%', color: '#C0892F', chips: ['Outlets', 'Cabanas', 'POS', 'Partner splits'], link: 'Open the hospitality demo' },
+    manufacturing: { title: 'Concrete and manufacturing', scope: 'Manufacturing vertical', k1: 'Revenue, month to date', v1: '$361,400', s1: 'Batch plant deliveries', k2: 'Gross profit margin', v2: '29%', s2: 'Gross profit on sales', share: '24.4%', color: '#1F7A4C', chips: ['Batch plant m³', 'Fleet GPS', 'Silos'], link: 'Open the manufacturing demo' },
+    realestate: { title: 'Real estate and insurance', scope: 'Property and brokerage', k1: 'Revenue, month to date', v1: '$178,100', s1: 'Rent and brokerage income', k2: 'Occupancy', v2: '94%', s2: 'Leased units', share: '12.0%', color: '#7A889B', chips: ['Leases', 'Policies', 'Renewals'], link: 'Open the real estate demo' }
+  };
+  const HERO_BARS = [
+    { id: 'trading', name: 'Auto and heavy equipment', amt: '$524,900', pct: 88, color: '#2356A8' },
+    { id: 'hospitality', name: 'Hospitality and resorts', amt: '$418,200', pct: 70, color: '#C0892F' },
+    { id: 'manufacturing', name: 'Concrete and manufacturing', amt: '$361,400', pct: 61, color: '#1F7A4C' },
+    { id: 'realestate', name: 'Real estate and insurance', amt: '$178,100', pct: 30, color: '#7A889B' }
   ];
-
-  function fmtHeroMoney(usdVal) {
-    return '$' + Math.round(usdVal).toLocaleString('en-US');
-  }
 
   function renderHeroStage() {
     const stageEl = document.getElementById('hlc-stage');
     if (!stageEl) return;
+    const key = HERO_VIEWS[state.heroInd] ? state.heroInd : 'all';
+    const v = HERO_VIEWS[key];
+    const isGroup = key === 'all';
 
-    const k1Lbl = document.getElementById('hlc-kpi1-lbl');
-    const k1Val = document.getElementById('hlc-kpi1-val');
-    const k1Sub = document.getElementById('hlc-kpi1-sub');
-    const k2Lbl = document.getElementById('hlc-kpi2-lbl');
-    const k2Val = document.getElementById('hlc-kpi2-val');
-    const k2Sub = document.getElementById('hlc-kpi2-sub');
+    document.querySelectorAll('#hlc-tabs [data-hero-ind]').forEach(b => {
+      const on = b.dataset.heroInd === key;
+      b.classList.toggle('d-on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
 
-    const hlcPortalLink = document.getElementById('hlc-open-portal-link');
-    if (hlcPortalLink) {
-      const indParam = (state.heroInd && state.heroInd !== 'all') ? `&industry=${encodeURIComponent(state.heroInd)}` : '';
-      hlcPortalLink.setAttribute('href', `app/?demo=1&autologin=1${indParam}`);
-    }
-
-    const selV = HERO_VERTICALS.find(v => v.id === state.heroInd);
-    if (selV) {
-      if (k1Lbl) k1Lbl.innerHTML = `${selV.emoji} ${selV.name} (MTD)`;
-      if (k1Val) k1Val.textContent = fmtHeroMoney(selV.val);
-      if (k1Sub) k1Sub.textContent = `▲ ${selV.badge} · ${selV.sub}`;
-      if (k2Lbl) k2Lbl.innerHTML = selV.kpi2Lbl;
-      if (k2Val) k2Val.textContent = selV.kpi2Val;
-      if (k2Sub) k2Sub.textContent = selV.kpi2Sub;
-    } else {
-      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.trend} Consolidated Revenue (MTD)`;
-      if (k1Val) k1Val.textContent = fmtHeroMoney(1482600);
-      if (k1Sub) k1Sub.textContent = '▲ +11.4% vs prior month · 6 Entities';
-      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.scale} Net Operating Profit`;
-      if (k2Val) k2Val.textContent = fmtHeroMoney(384200);
-      if (k2Sub) k2Sub.textContent = '✓ 25.9% margin · Books 100% balanced';
-    }
-
-    stageEl.innerHTML = `
-      <div class="hlc-stage-hdr">
-        <span>Group Performance by Vertical</span>
-        ${selV
-          ? `<button type="button" class="hlc-reset-ind" id="hlc-reset-ind" data-hero-ind="all">Show All Group</button>`
-          : `<small id="hlc-stage-hint">Click a vertical to inspect</small>`}
-      </div>
-      <div class="hlc-visual-list">
-        ${HERO_VERTICALS.map(v => `
-          <div class="hlc-vrow ${state.heroInd === v.id ? 'active' : ''}" data-hero-ind="${v.id}">
-            <div class="hlc-vrow-main">
-              <b>${v.emoji} ${v.name}</b>
-              <small>${v.sub}</small>
-            </div>
-            <div class="hlc-vrow-bar"><i style="width:${v.pct}%;background:${v.color}"></i></div>
-            <span class="hlc-vrow-badge">${v.badge}</span>
-            <strong class="num">${fmtHeroMoney(v.val)}</strong>
+    const detailHtml = isGroup
+      ? `<div class="d-bars">
+          ${HERO_BARS.map(b => `
+            <button type="button" class="d-bar-row" data-hero-ind="${b.id}"><span class="d-bar-name">${b.name}</span><span class="d-bar-track"><i style="width:${b.pct}%;background:${b.color}"></i></span><span class="d-bar-amt num">${b.amt}</span></button>
+          `).join('')}
+        </div>`
+      : `<div class="d-vertical">
+          <div>
+            <div class="d-share-top"><span>Share of group revenue</span><span class="num">${v.share}</span></div>
+            <span class="d-bar-track"><i style="width:${v.share};background:${v.color}"></i></span>
           </div>
-        `).join('')}
+          <div class="d-tracks"><span>Tracks</span>${v.chips.map(c => `<span class="d-track-chip">${c}</span>`).join('')}</div>
+        </div>`;
+
+    const portalHref = 'app/?demo=1&amp;autologin=1' + (isGroup ? '' : '&amp;industry=' + encodeURIComponent(key));
+    stageEl.innerHTML = `
+      <div class="d-prev-head">
+        <div class="d-hd d-prev-title">${v.title}</div>
+        <div class="d-prev-scope">${v.scope}</div>
       </div>
-      <div class="hlc-telemetry-strip">
-        <div class="hlc-tel-cell">
-          <small>Statutory vs Operational</small>
-          <b>$0.00 Variance ✓</b>
+      <div class="d-kpis">
+        <div class="d-kpi">
+          <div class="d-kpi-l">${v.k1}</div>
+          <div class="d-kpi-v num" id="hlc-kpi1-val">${v.v1}</div>
+          <div class="d-kpi-s">${v.s1}</div>
         </div>
-        <div class="hlc-tel-cell">
-          <small>${selV ? 'Vertical Margin / Yield' : '30-Day Cash Runway'}</small>
-          <b>${selV ? selV.badge + ' Verified' : '+$418.5k Net Liquid'}</b>
+        <div class="d-kpi">
+          <div class="d-kpi-l">${v.k2}</div>
+          <div class="d-kpi-v num" id="hlc-kpi2-val">${v.v2}</div>
+          <div class="d-kpi-s">${v.s2}</div>
         </div>
-        <div class="hlc-tel-cell">
-          <small>${selV ? 'Operational Scope' : 'Field Kiosks &amp; Fleet GPS'}</small>
-          <b>${selV ? selV.sub : '28 Audit Watchdogs Live'}</b>
-        </div>
+      </div>
+      ${detailHtml}
+      <div class="d-prev-foot">
+        <span class="d-prev-var">Statutory vs operational variance: $0.00</span>
+        <a href="${portalHref}" id="hlc-open-portal-link" class="d-textlink"><span>${v.link}</span>${HERO_ARROW_SVG}</a>
       </div>
     `;
   }
@@ -1065,14 +1054,15 @@ JS = r"""
 
   // ---------------- NAVIGATION ACTIVE UNDERLINE & EXACT SECTION SCROLL ----------------
   function setActiveSection(secId) {
-    const resolved = SEC_IDS.includes(secId) ? secId : 'architecture';
+    const resolved = SEC_IDS.includes(secId) ? secId : '';
     state.activeSec = resolved;
     document.querySelectorAll('[data-sec-link]').forEach(link => {
       const isMatch = link.dataset.secLink === resolved;
       link.classList.toggle('active', isMatch);
+      if (isMatch) link.setAttribute('aria-current', 'true'); else link.removeAttribute('aria-current');
       if (isMatch && link.closest('#mobile-sec-nav')) {
         const nav = document.getElementById('mobile-sec-nav');
-        if (nav) {
+        if (nav && nav.clientWidth) {
           const targetLeft = link.offsetLeft - (nav.clientWidth / 2) + (link.offsetWidth / 2);
           nav.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
         }
@@ -1083,12 +1073,76 @@ JS = r"""
   function computeExactTargetScrollY(el) {
     if (!el) return 0;
     const hdr = document.getElementById('site-header');
-    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const hdrH = hdr ? hdr.offsetHeight : 64;
     const rectTop = el.getBoundingClientRect().top + window.scrollY;
-    if (el.classList.contains('sec')) {
+    if (el.classList.contains('sec') || el.classList.contains('d-page')) {
       return Math.max(0, Math.round(rectTop - hdrH + 2));
     }
     return Math.max(0, Math.round(rectTop - hdrH - 14));
+  }
+
+  // ---------------- MORE PAGES (LIVE DEMO, INDUSTRY BLUEPRINTS, FAQ) ----------------
+  let sheetReturnY = 0;
+
+  function activeSheetId() {
+    const el = document.querySelector('[data-sheet]:not([hidden])');
+    return el ? el.dataset.sheet : '';
+  }
+
+  function syncSheetChrome(id) {
+    const open = Boolean(id);
+    const pages = document.getElementById('site-pages');
+    if (pages) pages.hidden = open;
+    document.querySelectorAll('[data-sheet]').forEach(sec => { sec.hidden = sec.dataset.sheet !== id; });
+    ['main-nav', 'mobile-sec-nav'].forEach(nid => { const n = document.getElementById(nid); if (n) n.hidden = open; });
+    ['sheet-nav', 'mobile-sheet-nav'].forEach(nid => { const n = document.getElementById(nid); if (n) n.hidden = !open; });
+    if (open) document.body.setAttribute('data-sheet-open', id); else document.body.removeAttribute('data-sheet-open');
+    document.querySelectorAll('[data-sheet-link]').forEach(a => {
+      const on = open && a.dataset.sheetLink === id;
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+
+  function showSheet(id) {
+    if (!SHEET_IDS.includes(id)) return;
+    if (!activeSheetId()) sheetReturnY = window.scrollY;
+    syncSheetChrome(id);
+    if (id === 'industries') renderIndustries();
+    navScrollLockUntil = Date.now() + 400;
+    window.scrollTo(0, 0);
+  }
+
+  function hideSheet(restoreScroll) {
+    if (!activeSheetId()) return;
+    syncSheetChrome('');
+    window.scrollTo(0, restoreScroll ? sheetReturnY : 0);
+    navScrollLockUntil = 0;
+    updateActiveNavOnScroll();
+  }
+
+  function openSheet(id, pushHistory) {
+    const was = activeSheetId();
+    if (was === id) return;
+    showSheet(id);
+    if (pushHistory && history.pushState) {
+      try {
+        if (was) history.replaceState({ sheet: id }, '', '#' + id);
+        else history.pushState({ sheet: id }, '', '#' + id);
+      } catch (e) {}
+    }
+  }
+
+  function closeSheet() {
+    if (!activeSheetId()) return;
+    if (history.state && history.state.sheet) {
+      history.back();
+      return;
+    }
+    hideSheet(true);
+    if (history.replaceState) {
+      try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+    }
   }
 
   function activateArchView(viewKey) {
@@ -1107,7 +1161,9 @@ JS = r"""
 
   function activatePricingView(viewKey) {
     document.querySelectorAll('[data-price-view]').forEach(b => {
-      b.classList.toggle('active', b.dataset.priceView === viewKey);
+      const on = b.dataset.priceView === viewKey;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     document.querySelectorAll('[data-price-panel]').forEach(panel => {
       if (panel.dataset.pricePanel === viewKey) {
@@ -1162,11 +1218,19 @@ JS = r"""
   }
 
   function scrollToTargetId(rawId, updateHash = true, instant = false) {
-    const cleanId = String(rawId || '').replace(/^#/, '');
-    if (!cleanId || cleanId === 'top') {
+    let cleanId = String(rawId || '').replace(/^#/, '');
+    cleanId = SEC_ALIAS[cleanId] || cleanId;
+
+    if (SHEET_IDS.includes(cleanId)) {
+      openSheet(cleanId, updateHash);
+      return;
+    }
+
+    if (!cleanId || cleanId === 'top' || cleanId === 'hero') {
+      if (activeSheetId()) hideSheet(false);
       navScrollLockUntil = Date.now() + 900;
       scrollTargetId = null;
-      setActiveSection('architecture');
+      setActiveSection('');
       if (instant) {
         window.scrollTo(0, 0);
       } else {
@@ -1178,22 +1242,25 @@ JS = r"""
       return;
     }
 
-    if (cleanId === 'faq') {
-      activateMobileIngTab('faq');
-    } else if (cleanId === 'platform-ai') {
-      activateArchView('pillars');
-    } else if (cleanId === 'scope-configurator') {
+    if (cleanId === 'scope-configurator') {
       activatePricingView('builder');
     }
 
-    const aliasMap = { 'faq': 'ingenuity', 'platform-ai': 'architecture' };
-    const resolvedCleanId = aliasMap[cleanId] || cleanId;
-    const effectiveScrollId = (resolvedCleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : resolvedCleanId;
+    const effectiveScrollId = (cleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : cleanId;
     const targetEl = document.getElementById(effectiveScrollId);
     if (!targetEl) return;
 
-    const mappedSec = resolvedCleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(resolvedCleanId) ? resolvedCleanId : state.activeSec);
-    setActiveSection(mappedSec);
+    // A target inside a "more" page opens that page; any other target returns to the main pages first.
+    const hostSheet = targetEl.closest('[data-sheet]');
+    if (hostSheet) {
+      if (activeSheetId() !== hostSheet.dataset.sheet) openSheet(hostSheet.dataset.sheet, updateHash);
+    } else if (activeSheetId()) {
+      hideSheet(false);
+      instant = true;
+    }
+
+    const mappedSec = cleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(cleanId) ? cleanId : state.activeSec);
+    if (!hostSheet) setActiveSection(mappedSec);
 
     scrollTargetId = effectiveScrollId;
     navScrollLockUntil = Date.now() + 950;
@@ -1204,7 +1271,7 @@ JS = r"""
       window.scrollTo({ top: exactY, behavior: 'smooth' });
     }
 
-    if (updateHash && history.replaceState) {
+    if (updateHash && history.replaceState && !hostSheet) {
       history.replaceState(null, '', '#' + cleanId);
     }
 
@@ -1225,21 +1292,22 @@ JS = r"""
 
   function updateActiveNavOnScroll() {
     if (Date.now() < navScrollLockUntil) return;
+    if (activeSheetId()) return;
     const hdr = document.getElementById('site-header');
-    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const hdrH = hdr ? hdr.offsetHeight : 64;
     const probeY = window.scrollY + hdrH + 72;
 
-    if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 40)) {
+    if (window.scrollY > 40 && (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 40)) {
       if (state.activeSec !== 'portal') setActiveSection('portal');
       return;
     }
 
-    let current = SEC_IDS[0];
+    let current = '';
     for (let i = 0; i < SEC_IDS.length; i++) {
       const id = SEC_IDS[i];
       const el = document.getElementById(id);
       if (!el) continue;
-      const top = el.offsetTop;
+      const top = el.getBoundingClientRect().top + window.scrollY;
       if (probeY >= top) {
         current = id;
       }
@@ -4513,11 +4581,11 @@ JS = r"""
     }
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) {
-      btn.textContent = mode === 'light' ? 'Dark' : 'Light';
+      btn.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', mode === 'light' ? '#FAF9F6' : '#1B140F');
+      metaTheme.setAttribute('content', mode === 'light' ? '#FBF8F2' : '#1B140F');
     }
   }
 
@@ -4550,6 +4618,16 @@ JS = r"""
       }
     });
 
+    window.addEventListener('popstate', () => {
+      const hashId = (window.location.hash || '').slice(1);
+      const wanted = SEC_ALIAS[hashId] || hashId;
+      if (SHEET_IDS.includes(wanted)) {
+        if (activeSheetId() !== wanted) showSheet(wanted);
+      } else if (activeSheetId()) {
+        hideSheet(true);
+      }
+    });
+
     // Scroll spy listener
     let scrollTicking = false;
     window.addEventListener('scroll', () => {
@@ -4577,9 +4655,22 @@ JS = r"""
       // 00. Hero Vertical Row or Reset Click
       const heroIndBtn = e.target.closest('[data-hero-ind]');
       if (heroIndBtn) {
-        const clicked = heroIndBtn.dataset.heroInd;
-        state.heroInd = (state.heroInd === clicked && clicked !== 'all') ? 'all' : clicked;
+        state.heroInd = heroIndBtn.dataset.heroInd;
         renderHeroStage();
+        return;
+      }
+
+      // 00b. Leave a "more" page (Live Demo, Industry Blueprints, FAQ)
+      if (e.target.closest('[data-sheet-close]')) {
+        e.preventDefault();
+        closeSheet();
+        return;
+      }
+
+      // 00c. Tap a company logo to show it in colour (touch screens have no hover)
+      const logoEl = e.target.closest('.d-logo');
+      if (logoEl) {
+        logoEl.classList.toggle('d-logo-lit');
         return;
       }
 
@@ -5005,6 +5096,7 @@ JS = r"""
         stopAllShowcaseAskTools(false);
         const bd = document.getElementById('ai-drawer-backdrop');
         if (bd && !bd.hidden) bd.hidden = true;
+        else if (activeSheetId() && !/^(?:INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) closeSheet();
       }
     });
 

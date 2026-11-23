@@ -14,10 +14,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from part_styles import CSS
+from part_styles import CSS as CSS_BASE
+from part_styles_d import CSS_D
 from part_body import BODY
 from part_script import JS
 from part_faq import FAQ_JSONLD
+CSS = CSS_BASE + CSS_D
+
 from sync_app import _speed_skip_reason, sync_command_app
 from audit_showcase_i18n import find_node_runtime, run_showcase_i18n_audit
 
@@ -50,7 +53,7 @@ HEAD = """<!DOCTYPE html>
   <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
   <meta name="twitter:description" content="Custom operations, double-entry accounting, What-If scenario studios, executive dashboards, statement reconciliation, fleet GPS telematics, field kiosks, and Ask ISABI AI with simple per-seat pricing.">
   <meta name="twitter:image" content="https://isabisystems.com/og-image.png">
-  <meta name="theme-color" content="#FAF9F6">
+  <meta name="theme-color" content="#FBF8F2">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
@@ -64,7 +67,7 @@ HEAD = """<!DOCTYPE html>
   <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.37">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
   <script id="pre-theme">
     (function(){
       try {
@@ -76,7 +79,7 @@ HEAD = """<!DOCTYPE html>
         var t = localStorage.getItem('isabi.theme.v2') === 'dark' ? 'dark' : 'light';
         d.setAttribute('data-theme', t);
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#1B140F' : '#FAF9F6');
+        if (m) m.setAttribute('content', t === 'dark' ? '#1B140F' : '#FBF8F2');
         if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
           d.classList.add('ios-standalone');
         }
@@ -87,7 +90,7 @@ HEAD = """<!DOCTYPE html>
           if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
             var gf = document.createElement('link');
             gf.rel = 'stylesheet';
-            gf.href = 'https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap';
+            gf.href = 'https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap';
             document.head.appendChild(gf);
           }
         }, { once: true });
@@ -140,14 +143,14 @@ ORG_JSONLD = _json.dumps({
         "logo": "https://isabisystems.com/icon-512.png?v=6.37",
         "slogan": "The ERP Your Group Actually Runs On"
     },
-    "email": "husseinbdeir@isabisystems.com",
+    "email": "hbdeir@isabisystems.com",
     "telephone": "+96170444955",
     "founder": {
         "@type": "Person",
         "@id": "https://isabisystems.com/#founder",
         "name": "Hussein Bdeir",
         "jobTitle": "Founder and Principal Systems Architect",
-        "email": "husseinbdeir@isabisystems.com",
+        "email": "hbdeir@isabisystems.com",
         "url": "https://github.com/HusseinBdeir",
         "sameAs": ["https://github.com/HusseinBdeir"],
         "knowsLanguage": ["en", "ar", "fr"],
@@ -178,7 +181,7 @@ ORG_JSONLD = _json.dumps({
         "@type": "ContactPoint",
         "contactType": "sales",
         "telephone": "+96170444955",
-        "email": "husseinbdeir@isabisystems.com",
+        "email": "hbdeir@isabisystems.com",
         "areaServed": ["Lebanon", "Middle East", "Worldwide"],
         "availableLanguage": ["en", "ar", "fr"]
     }],

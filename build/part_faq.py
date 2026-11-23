@@ -39,7 +39,7 @@ def _item(i, q, a, icon_key):
 
 
 FAQ_HTML = (
-    '      <div class="faq-panel" data-ing-panel="faq" data-panel-hidden="1" data-mob-hide="1">\n'
+    '      <div class="faq-panel">\n'
     '        <div class="faq-grid" id="faq-grid">\n'
     + '\n'.join(_item(i, q, a, ic) for i, (q, a, ic) in enumerate(FAQ_ITEMS)) + '\n'
     '        </div>\n'
