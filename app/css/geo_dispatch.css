@@ -1169,6 +1169,7 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
 }
 .geo-reg-site-item {
   appearance: none;
+  touch-action: manipulation;
   width: 100%;
   border: 1px solid transparent;
   background: var(--card, #FFFFFF);
@@ -1183,17 +1184,19 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.geo-reg-site-item:hover {
-  border-color: #C89D54;
-  background: #FFFDF8;
-}
 [data-theme="dark"] .geo-reg-site-item {
   background: rgba(255, 255, 255, 0.04);
   color: #F4F2EE;
 }
-[data-theme="dark"] .geo-reg-site-item:hover {
-  border-color: #E5B968;
-  background: rgba(217, 165, 74, 0.14);
+@media (hover: hover) and (pointer: fine) {
+  .geo-reg-site-item:hover {
+    border-color: #C89D54;
+    background: #FFFDF8;
+  }
+  [data-theme="dark"] .geo-reg-site-item:hover {
+    border-color: #E5B968;
+    background: rgba(217, 165, 74, 0.14);
+  }
 }
 .geo-reg-site-name {
   flex: 1 1 auto;
@@ -1248,6 +1251,7 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
 }
 .reg-sites-expand-pill {
   appearance: none;
+  touch-action: manipulation;
   border: 1px solid rgba(200, 157, 84, 0.45);
   background: rgba(200, 157, 84, 0.12);
   color: #6B470B;
@@ -1262,7 +1266,6 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   white-space: nowrap;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.reg-sites-expand-pill:hover,
 .reg-sites-expand-pill.active {
   background: var(--brass, #C89D54);
   border-color: #B4883E;
@@ -1279,7 +1282,6 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   border-color: rgba(229, 185, 104, 0.4);
   color: #FDE68A;
 }
-[data-theme="dark"] .reg-sites-expand-pill:hover,
 [data-theme="dark"] .reg-sites-expand-pill.active {
   background: #D9A54A;
   border-color: #F3CE85;
@@ -1330,6 +1332,7 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
 }
 .reg-exp-site-card {
   appearance: none;
+  touch-action: manipulation;
   border: 1px solid var(--line);
   background: var(--card, #FFFFFF);
   color: var(--ink);
@@ -1342,18 +1345,30 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   gap: 6px;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.1s ease;
 }
-.reg-exp-site-card:hover {
-  border-color: #C89D54;
-  background: #FFFDF8;
-  transform: translateY(-1px);
-}
 [data-theme="dark"] .reg-exp-site-card {
   background: rgba(255, 255, 255, 0.06);
   color: #F4F2EE;
 }
-[data-theme="dark"] .reg-exp-site-card:hover {
-  border-color: #E5B968;
-  background: rgba(217, 165, 74, 0.16);
+@media (hover: hover) and (pointer: fine) {
+  .reg-sites-expand-pill:hover {
+    background: var(--brass, #C89D54);
+    border-color: #B4883E;
+    color: #0B1730;
+  }
+  [data-theme="dark"] .reg-sites-expand-pill:hover {
+    background: #D9A54A;
+    border-color: #F3CE85;
+    color: #081124;
+  }
+  .reg-exp-site-card:hover {
+    border-color: #C89D54;
+    background: #FFFDF8;
+    transform: translateY(-1px);
+  }
+  [data-theme="dark"] .reg-exp-site-card:hover {
+    border-color: #E5B968;
+    background: rgba(217, 165, 74, 0.16);
+  }
 }
 .reg-exp-site-cat {
   font-size: 0.67rem;
