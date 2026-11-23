@@ -14249,7 +14249,22 @@
       "Record Details": "تفاصيل السجل",
       "Weighbridge Book Audit": "تدقيق دفتر القبان",
       "Effective End Date": "تاريخ الانتهاء الفعلي",
-      "Monthly Operating Profit - WTC vs BBConstruction": "الربح التشغيلي الشهري - WTC مقابل BBConstruction"
+      "Monthly Operating Profit - WTC vs BBConstruction": "الربح التشغيلي الشهري - WTC مقابل BBConstruction",
+      "Previous row (Alt+Up)": "الصف السابق (Alt+Up)",
+      "Next row (Alt+Down)": "الصف التالي (Alt+Down)",
+      "Copy Active Rates": "نسخ الأسعار النشطة",
+      "Share Active Rates": "مشاركة الأسعار النشطة",
+      "Share or copy active rates": "مشاركة الأسعار النشطة أو نسخها",
+      "Active rates copied to clipboard": "تم نسخ الأسعار النشطة إلى الحافظة",
+      "Could not copy active rates": "تعذّر نسخ الأسعار النشطة",
+      "Active Rate Agreements": "اتفاقيات الأسعار والشروط النشطة",
+      "Since": "منذ",
+      "Until": "حتى",
+      "All Grades": "كافة الأصناف",
+      "Unsaved edits on this record. Save changes first, or press again to discard and move.": "توجد تعديلات غير محفوظة على هذا السجل. احفظها أولاً أو اضغط مجدداً للتجاهل والانتقال.",
+      "Renewal": "التجديد",
+      "Facility": "التسهيل",
+      "APR": "الفائدة السنوية"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -28480,7 +28495,22 @@
       "Record Details": "Détails de l'enregistrement",
       "Weighbridge Book Audit": "Audit Carnet Pont-Bascule",
       "Effective End Date": "Date de fin effective",
-      "Monthly Operating Profit - WTC vs BBConstruction": "Profit Opérationnel Mensuel - WTC vs BBConstruction"
+      "Monthly Operating Profit - WTC vs BBConstruction": "Profit Opérationnel Mensuel - WTC vs BBConstruction",
+      "Previous row (Alt+Up)": "Ligne précédente (Alt+Haut)",
+      "Next row (Alt+Down)": "Ligne suivante (Alt+Bas)",
+      "Copy Active Rates": "Copier les tarifs actifs",
+      "Share Active Rates": "Partager les tarifs actifs",
+      "Share or copy active rates": "Partager ou copier les tarifs actifs",
+      "Active rates copied to clipboard": "Tarifs actifs copiés dans le presse-papiers",
+      "Could not copy active rates": "Impossible de copier les tarifs actifs",
+      "Active Rate Agreements": "Accords tarifaires actifs",
+      "Since": "Depuis",
+      "Until": "Jusqu'au",
+      "All Grades": "Toutes catégories",
+      "Unsaved edits on this record. Save changes first, or press again to discard and move.": "Modifications non enregistrées sur cette fiche. Enregistrez d'abord ou appuyez de nouveau pour ignorer et passer.",
+      "Renewal": "Renouvellement",
+      "Facility": "Ligne de crédit",
+      "APR": "Taux annuel"
     }
   };
 

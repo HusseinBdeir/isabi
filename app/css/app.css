@@ -8491,6 +8491,70 @@ table.ledger-table tfoot tr td:last-child {
   background: var(--surface-2);
   color: var(--ink);
   border-bottom: 1px solid var(--brass-border);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.insp-modal-hdr-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+.insp-row-step-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.insp-row-step-nav[hidden] {
+  display: none !important;
+}
+.insp-row-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 3px 9px;
+  font-size: 11.8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.insp-row-step-arr {
+  display: inline-block;
+}
+[dir="rtl"] .insp-row-step-arr {
+  transform: scaleX(-1);
+}
+.insp-row-step-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+  pointer-events: none;
+}
+.insp-row-step-pos {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 3px;
+}
+:root[data-theme="dark"] .insp-row-step-nav {
+  background: var(--surface-2, #182334);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+@media (max-width: 640px) {
+  .insp-row-step-btn {
+    min-width: 30px;
+    padding: 3px 7px;
+  }
+  .insp-row-step-btn .insp-row-step-lbl {
+    display: none;
+  }
 }
 :root[data-theme="dark"] #recordInspector .modal-header {
   background: #0B1730;
@@ -43719,8 +43783,29 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   justify-content: center;
   gap: 5px;
 }
+.pa-subgrid-copy-rates {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pa-subgrid-copy-rates:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+:root[data-theme="dark"] .pa-subgrid-copy-rates {
+  background: var(--surface-2, #182334);
+  color: var(--ink, #F4F2EE);
+  border-color: rgba(255, 255, 255, 0.16);
+}
 .mob-peek-share-btn.is-copied,
-.insp-share-summary-btn.is-copied {
+.insp-share-summary-btn.is-copied,
+.pa-subgrid-copy-rates.is-copied {
   border-color: var(--good, #1F7A4C);
   color: var(--good, #1F7A4C);
   background: color-mix(in srgb, var(--good, #1F7A4C) 10%, var(--surface, #FFFFFF));
