@@ -4101,7 +4101,7 @@
   function hasLiveCustomDelta(tk) {
     const arr = STATE.customRecords && STATE.customRecords[tk];
     if (!Array.isArray(arr) || !arr.length) return false;
-    return arr.some(r => r && (!r.voided || !isAppRecord(r)));
+    return arr.some(r => r && ((!r.voided && !r._absorbedSeedTwin) || !isAppRecord(r)));
   }
 
   function resolveSeedOrigRow(key, r) {
@@ -4123,7 +4123,7 @@
       if (!r) continue;
       if (r.voided && released.size && r.id != null && released.has(String(r.id))) continue; // read as not there
       if (isAppRecord(r)) {
-        if (!r.voided && matchCoFn(r)) applyRowFn(r, 1);
+        if (!r.voided && !r._absorbedSeedTwin && matchCoFn(r)) applyRowFn(r, 1);
       } else {
         const orig = resolveSeedOrigRow(key, r);
         if (r.voided) {
@@ -8949,8 +8949,8 @@
   }
 
   function isAppRecord(r) {
-    // app ids = uid(form.slice(0, 2)) → "sa-<ts36>-<rnd6>"; Dataverse ids are GUIDs
-    return !!(r && (r.source === 'app' || /^[a-z]{2}-[0-9a-z]+-[0-9a-z]{6}$/.test(String(r.id || ''))));
+    // app ids = uid(form.slice(0, 2)) → "sa-<ts36>-<rnd6>" (or split "-i1" child expense_items); Dataverse ids are GUIDs
+    return !!(r && (r.source === 'app' || /^[a-z]{2}-[0-9a-z]+-[0-9a-z]{6}(?:-i\d+)?$/.test(String(r.id || ''))));
   }
 
   // A workbook row keeps its workbook id (build/stable_seed_ids.py SEED_TX_ID_RE) when someone saves it in the app,
@@ -136812,8 +136812,10 @@
     return Number.isFinite(ms) ? ms : 0;
   }
 
-  function mergeCustomRecords(remote) {
+  function mergeCustomRecords(remote, opts) {
     if (!remote || typeof remote !== 'object') return false;
+    const canPruneRetiredSysTopup = Boolean(opts && opts.pruneRetiredSysTopup);
+    const canPruneRowFn = (opts && typeof opts.canPruneRow === 'function') ? opts.canPruneRow : null;
     ensureUniversalCanonicalIndex();
     STATE._purgedOverrideIds = normalizePurgedOverrideList(STATE._purgedOverrideIds);
     const purgeLookup = buildPurgeLookup(STATE._purgedOverrideIds);
@@ -136916,6 +136918,23 @@
           }
         }
       });
+      if (canPruneRetiredSysTopup && Array.isArray(remote[k])) {
+        const remIds = new Set();
+        for (let i = 0; i < inc.length; i++) {
+          const ir = inc[i];
+          if (ir && ir.id != null) remIds.add(String(ir.id));
+        }
+        for (let i = mine.length - 1; i >= 0; i--) {
+          const lr = mine[i];
+          if (!lr || lr.id == null) continue;
+          if (!isAppRecord(lr) || !isDroppableSysTopupStub(k, lr)) continue;
+          if (remIds.has(String(lr.id))) continue;
+          if (canPruneRowFn && !canPruneRowFn(k, lr)) continue;
+          mine.splice(i, 1);
+          byId.delete(lr.id);
+          changed = true;
+        }
+      }
     });
     if (sanitizeUniversalCustomRecords()) changed = true;
     return changed;
@@ -137684,7 +137703,7 @@
     return changed;
   }
 
-  const _CLOUD_TOMB_TWIN_KEYS = ['company', 'date', 'set_date', 'start_date', 'ticket_no', 'invoice', 'reference', 'customer', 'supplier', 'staff', 'site', 'equipment', 'counterparty', 'borrower', 'party', 'product', 'fuel_type', 'rule_type', 'type', 'status', 'name', 'driver', 'amount', 'total', 'qty', 'litres', 'unit_price', 'expense_id'];
+  const _CLOUD_TOMB_TWIN_KEYS = ['source', 'company', 'date', 'rep_date', 'set_date', 'start_date', 'ticket_no', 'invoice', 'reference', 'customer', 'supplier', 'staff', 'site', 'equipment', 'counterparty', 'borrower', 'party', 'product', 'fuel_type', 'rule_type', 'type', 'method', 'status', 'name', 'driver', 'amount', 'total', 'total_ttc', 'qty', 'litres', 'unit_price', 'expense_id', 'payroll_month', 'usd_amount', 'lbp_amount', 'backpay_stamp', 'backpay_contract_id', 'backpay_voucher', 'kept_for', 'voided_with_parent', 'restored_at', '_reopenedExplicitly'];
 
   function _slimRecordForCloud(r) {
     if (!r || typeof r !== 'object') return r;
@@ -137699,6 +137718,13 @@
           if (typeof v === 'number' || typeof v === 'boolean' || (typeof v === 'string' && v.length > 0 && v.length <= 120)) {
             slim[k] = v;
           }
+        }
+        if (typeof r.twin_of === 'string') {
+          const twStr = r.twin_of.trim();
+          if (twStr && twStr.length <= 120) slim.twin_of = twStr;
+        } else if (Array.isArray(r.twin_of) && r.twin_of.length) {
+          const twArr = r.twin_of.slice(0, 64).map(x => String(x || '').trim()).filter(Boolean);
+          if (twArr.length) slim.twin_of = twArr;
         }
         return slim;
       }
@@ -137717,12 +137743,64 @@
     return r;
   }
 
+  const CLOUD_CUSTOM_ROW_CAP = 5000;
+  function isDroppableSysTopupStub(tableKey, r) {
+    if (!r || typeof r !== 'object' || !r.voided) return false;
+    const vb = String(r.voided_by || '').trim();
+    if (!/^(?:system-topup|sharepoint top-up)/i.test(vb)) return false;
+    if (r.kept_for || r.voided_with_parent || r.twin_of || r.backpay_stamp || r.restored_at || r._reopenedExplicitly) return false;
+    if (tableKey === 'sales_tickets') {
+      const m = String(r.method || '').trim().toLowerCase();
+      if (!m || m === 'credit') return false;
+    }
+    return true;
+  }
+  function sliceCustomRecordsForCloud(tableKey, arr, cap = CLOUD_CUSTOM_ROW_CAP) {
+    const list = Array.isArray(arr) ? arr : [];
+    if (list.length <= cap) {
+      return { rows: list.map(_slimRecordForCloud), truncated: false };
+    }
+    let mustKeepCount = 0;
+    const droppable = [];
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (isDroppableSysTopupStub(tableKey, r)) {
+        droppable.push({ idx: i, ts: String(r.date || r.start_date || r.voided_at || '').slice(0, 19) });
+      } else {
+        mustKeepCount++;
+      }
+    }
+    const keepDropQuota = Math.max(0, cap - mustKeepCount);
+    if (droppable.length <= keepDropQuota) {
+      return { rows: list.map(_slimRecordForCloud), truncated: false };
+    }
+    const keptDropIdx = new Set();
+    if (keepDropQuota > 0) {
+      droppable
+        .slice()
+        .sort((a, b) => (b.ts > a.ts ? 1 : (b.ts < a.ts ? -1 : a.idx - b.idx)))
+        .slice(0, keepDropQuota)
+        .forEach(x => keptDropIdx.add(x.idx));
+    }
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!isDroppableSysTopupStub(tableKey, r) || keptDropIdx.has(i)) {
+        out.push(_slimRecordForCloud(r));
+      }
+    }
+    return { rows: out, truncated: true };
+  }
+
   function cloudPayload() {
     const trimmed = {};
+    const truncatedCrTables = {};
     const allCrKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allCrKeys.forEach(k => {
       const arr = Array.isArray(STATE.customRecords[k]) ? STATE.customRecords[k] : [];
-      trimmed[k] = arr.slice(0, 1500).map(_slimRecordForCloud);
+      const sliced = sliceCustomRecordsForCloud(k, arr);
+      trimmed[k] = sliced.rows;
+      if (sliced.truncated) truncatedCrTables[k] = true;
     });
     const slimUsers = (STATE.users || []).map(u => {
       if (!u || typeof u !== 'object') return u;
@@ -137744,7 +137822,7 @@
         slimBio[bk] = bv;
       }
     });
-    return {
+    const payload = {
       users: slimUsers,
       sessions: STATE.sessions.slice(0, 25),
       stepUpAudits: Array.isArray(STATE.stepUpAudits) ? STATE.stepUpAudits.slice(0, 300) : [],
@@ -137770,6 +137848,8 @@
       minShellVer: String(window.__MFG_SHELL_VER || ''),
       appVersion: '4.9'
     };
+    if (Object.keys(truncatedCrTables).length) payload._truncatedCrTables = truncatedCrTables;
+    return payload;
   }
 
   let lastPointerDownAt = 0;
@@ -140181,9 +140261,11 @@
   // allowedCos = the companies a scoped seat may push (null = all), as doSync's canPushCo.
   function noteCloudHeldEntries(remote, allowedCos) {
     const idx = new Map();
+    const crTables = new Set();
     const rem = (remote && remote.customRecords && typeof remote.customRecords === 'object') ? remote.customRecords : {};
     Object.keys(rem).forEach(k => {
       if (!Array.isArray(rem[k])) return;
+      crTables.add(k);
       rem[k].forEach(x => {
         if (x && x.id) idx.set(`${k}\u0001${x.id}`, `${x.voided ? 1 : 0}|${_recModTs(x)}`);
       });
@@ -140198,7 +140280,7 @@
         if (pid) ind.set(`${bk}\u0001${pid}`, [x.voided ? 1 : 0, Number(x.rev || 1), _indRowStamp(x)]);
       });
     });
-    _unsentKnown = { idx, ind, allowedCos: allowedCos || null };
+    _unsentKnown = { idx, ind, crTables, hasUpdatedAt: Boolean(remote && remote.updatedAt), allowedCos: allowedCos || null };
   }
 
   // Entries the cloud does not hold yet, as doSync judges a push (missing there, void state differs, or newer here).
@@ -140215,7 +140297,11 @@
         if (allowed && !unsentCrRowInScope(k, r, allowed)) return;
         const co = unsentClearKey(k, r);
         const held = known.idx.get(`${k}\u0001${r.id}`);
-        if (held === undefined) { hit(co); return; }
+        if (held === undefined) {
+          if (known.hasUpdatedAt && known.crTables && known.crTables.has(k) && isAppRecord(r) && isDroppableSysTopupStub(k, r)) return;
+          hit(co);
+          return;
+        }
         const cut = held.indexOf('|');
         if ((held.slice(0, cut) === '1') !== Boolean(r.voided)) { hit(co); return; }
         if (!r.voided) {
@@ -140608,7 +140694,18 @@
       purgedAdded = nextPurged.length !== prevPurged.length || nextPurged.some((v, i) => v !== prevPurged[i]);
       STATE._purgedOverrideIds = nextPurged;
     }
-    const mergedCr = Boolean(remote.customRecords && mergeCustomRecords(remote.customRecords));
+    const isScopedRem = Boolean(remote && remote._scopedForSession);
+    const auRem = isScopedRem ? activeUser() : null;
+    const allowedRemSet = isScopedRem
+      ? new Set([
+          ...parseUserCompanies(auRem).map(c => norm(c)),
+          ...getAllowedCompanyKeys(auRem).map(c => norm(c))
+        ])
+      : null;
+    const mergedCr = Boolean(remote.customRecords && mergeCustomRecords(remote.customRecords, {
+      pruneRetiredSysTopup: Boolean(remote.updatedAt),
+      canPruneRow: allowedRemSet ? (k, r) => unsentCrRowInScope(k, r, allowedRemSet) : null
+    }));
     const purgedClean = Boolean(purgedAdded && sanitizeUniversalCustomRecords());
     if (mergedCr || purgedClean) { changed = true; applyCustomRecordsToSeed(); }
     if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
@@ -141056,7 +141153,11 @@
             // item, an "All BUs" region) is pushed here too, so a sync never calls the device in step without it.
             if (isScopedRemote && !unsentCrRowInScope(k, r, allowedCoSet)) return;
             const remR = remById.get(String(r.id));
-            if (!remR) { pushChanges = true; return; }
+            if (!remR) {
+              if (remote.updatedAt && Array.isArray(remCr[k]) && isAppRecord(r) && isDroppableSysTopupStub(k, r)) return;
+              pushChanges = true;
+              return;
+            }
             if (Boolean(r.voided) !== Boolean(remR.voided)) { pushChanges = true; return; }
             if (!r.voided) {
               const myMod = _recModTs(r);
@@ -141228,6 +141329,29 @@
           }
           casSucceeded = true;
           STATE.cloudStatus = '● Cloud Live';
+          if (putJson && putJson.retiredDropped && typeof putJson.retiredDropped === 'object') {
+            let prunedByServer = false;
+            Object.keys(putJson.retiredDropped).forEach(tk => {
+              const dropArr = Array.isArray(putJson.retiredDropped[tk]) ? putJson.retiredDropped[tk] : [];
+              const list = STATE.customRecords && STATE.customRecords[tk];
+              if (!dropArr.length || !Array.isArray(list)) return;
+              const dropSet = new Set(dropArr.map(x => String(x || '').trim()).filter(Boolean));
+              if (!dropSet.size) return;
+              const nextList = list.filter(lr => {
+                if (!lr || lr.id == null) return true;
+                const lrid = String(lr.id).trim();
+                if (!dropSet.has(lrid)) return true;
+                prunedByServer = true;
+                return false;
+              });
+              if (nextList.length !== list.length) STATE.customRecords[tk] = nextList;
+            });
+            if (prunedByServer) {
+              applyCustomRecordsToSeed();
+              saveLocalAuthAndRecords();
+              changed = true;
+            }
+          }
           // The Edge has counted what this push reported; keep only what was added since the payload was built.
           const sentLegacyPos = Number(payload._legacyPosUpgrades) || 0;
           if (sentLegacyPos > 0) {
@@ -188900,8 +189024,10 @@
     window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
     window.__cascadeSiteRename = (oldName, newName) => cascadeSiteRename(oldName, newName, [], 'Manufacturing');
     window.__getCustomRecords = () => STATE.customRecords;
-    window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
+    window.__mergeCustomRecords = (incoming, opts) => mergeCustomRecords(incoming, opts);
     window.__cloudPayload = () => cloudPayload();
+    window.__slimRecordForCloud = r => _slimRecordForCloud(r);
+    window.__sliceCustomRecordsForCloud = (k, arr, cap) => sliceCustomRecordsForCloud(k, arr, cap);
     window.__syncWithCloud = (p) => syncWithCloud(p);   // build/verify_legacy_pos_report.mjs drives the push loop
     window.__mfgHandleGeo401 = () => {
       if ((STATE.authed || hasServerApi()) && !isDemoSandboxSession()) {
@@ -188959,6 +189085,7 @@
       getTestInternals: () => ({ STATE, SEED })
     };
     window.__getKPI = co => getKPI(co);
+    window.__sentinelSlice = () => sentinelSlice();
     window.__computeCustomCashDeltas = (co, range) => computeCustomCashDeltas(co, range);
     window.__buildDailyTillSheetRows = co => buildDailyTillSheetRows(co);
     window.__buildLiveCashFlowTables = (cf, co, rate) => buildLiveCashFlowTables(cf, co, rate);
