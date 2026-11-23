@@ -64,10 +64,21 @@ class D1 {
 const d1 = new D1();
 d1.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, pin_code TEXT DEFAULT '',
   role TEXT NOT NULL DEFAULT 'Entry', companies TEXT NOT NULL DEFAULT 'WTC', pbi_access TEXT DEFAULT 'full',
-  statements_access TEXT DEFAULT 'full', status TEXT DEFAULT 'Active', last_login_at TEXT DEFAULT '', custom_perms TEXT DEFAULT '{}');
+  statements_access TEXT DEFAULT 'full', status TEXT DEFAULT 'Active', last_login_at TEXT DEFAULT '',
+  face_samples TEXT DEFAULT '[]', face_thumbs TEXT DEFAULT '[]', face_required INTEGER DEFAULT 0,
+  face_updated_at TEXT DEFAULT '', seat_updated_at TEXT DEFAULT '', custom_perms TEXT DEFAULT '{}',
+  auth_mode TEXT DEFAULT '', payload_json TEXT DEFAULT '{}');
   CREATE TABLE auth_sessions (id TEXT PRIMARY KEY, user_id TEXT DEFAULT '', email TEXT DEFAULT '', full_name TEXT DEFAULT '',
   role TEXT DEFAULT '', companies TEXT DEFAULT '', device TEXT DEFAULT '', logged_in_at TEXT DEFAULT '', method TEXT DEFAULT 'PIN',
   confidence REAL, ip_hash TEXT DEFAULT '');
+  CREATE TABLE fx_rates (id TEXT PRIMARY KEY, name TEXT DEFAULT '', currency TEXT DEFAULT 'LBP', start_date TEXT DEFAULT '', end_date TEXT DEFAULT '',
+  amount REAL DEFAULT 89500, source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0,
+  voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '',
+  rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');
+  CREATE TABLE vat_rates (id TEXT PRIMARY KEY, name TEXT DEFAULT '', start_date TEXT DEFAULT '', end_date TEXT DEFAULT '',
+  amount REAL DEFAULT 11, source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0,
+  voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '',
+  rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');
   CREATE TABLE edge_kv_store (doc_key TEXT PRIMARY KEY, payload_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT '',
   updated_by TEXT DEFAULT '', rev INTEGER DEFAULT 1);`);
 const env = { DB: d1, ISABI_JWT_SECRET: 'device-unsent-offline-test-secret-' + Math.random().toString(36).slice(2) };
@@ -85,7 +96,7 @@ const BOTH = await seat('u8', 'Two Company Seat', 'both.seat@example.test', 'Ent
 async function api(path, { method = 'GET', body, headers = {}, raw } = {}) {
   const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.2' }, headers);
   const req = new Request(`https://example.test/app/api/${path}`, { method, headers: h, body: method === 'GET' ? undefined : (raw !== undefined ? raw : JSON.stringify(body || {})) });
-  const res = await onRequest({ request: req, env, params: { route: path.split('/') } });
+  const res = await onRequest({ request: req, env, params: { route: path.split('?')[0].split('/') } });
   const txt = await res.text();
   let json = null; try { json = JSON.parse(txt); } catch (_) {}
   return { status: res.status, json, txt };
@@ -278,6 +289,146 @@ console.log('\n[/api/sync keeps out]');
   ok('sync patch naming a device row -> 403, row unchanged', r.status === 403 && JSON.stringify(kv(`device_unsent:u7:${DEV_A}`)) === JSON.stringify(before), r);
   r = await api('sync', { method: 'POST', headers: as(ENTRY), body: { op: 'patch', doc: `device_unsent:u1:${DEV_A}`, patch: {} } });
   ok('sync patch addressed to a device row -> 403', r.status === 403, r);
+}
+
+console.log('\n[owner dismiss]');
+{
+  const DEV_D = 'devdismiss00010';
+  const since0 = iso(NOW - 3 * 3600000);
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_D, count: 3, since: since0, reason: 'update' }) });
+
+  let r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  ok('an Entry seat cannot dismiss a holding row -> 403', r.status === 403 && Boolean(kv(`device_unsent:u7:${DEV_D}`)), r);
+  r = await api('device_unsent', { method: 'POST', headers: as(SUP), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  ok('a Supervisor cannot dismiss a holding row -> 403', r.status === 403, r);
+
+  ok('unknown action -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'remove', user_id: 'u7', device_id: DEV_D } })).status === 400);
+  ok('bad user_id in dismiss -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: '../u7', device_id: DEV_D } })).status === 400);
+  ok('bad device_id in dismiss -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: 'short' } })).status === 400);
+
+  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: 'missingdev00001' } });
+  ok('dismissing a missing row returns dismissed: false', r.status === 200 && r.json && r.json.ok === true && r.json.dismissed === false, r);
+
+  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  const listAfterDismiss = await api('device_unsent', { headers: as(OWNER) });
+  const storedAfterDismiss = kv(`device_unsent:u7:${DEV_D}`);
+  ok('Owner dismisses a holding row -> hidden from Owner list while row retains dismissed_at/count/since',
+    r.status === 200 && r.json.dismissed === true && r.json.state === 'holding'
+    && Boolean(storedAfterDismiss && storedAfterDismiss.dismissed_at && storedAfterDismiss.dismissed_count === 3 && storedAfterDismiss.dismissed_since === since0)
+    && !(listAfterDismiss.json.devices || []).some(d => d.user_id === 'u7' && d.device_id === DEV_D),
+    { r, storedAfterDismiss });
+
+  // Repeat heartbeat at <= count and later since keeps row dismissed; earlier since or higher count resurfaces.
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_D, count: 3, since: iso(NOW - 60000), reason: 'offline' }) });
+  const listAfterSame = await api('device_unsent', { headers: as(OWNER) });
+  ok('repeat heartbeat with <= count stays dismissed', !(listAfterSame.json.devices || []).some(d => d.user_id === 'u7' && d.device_id === DEV_D), listAfterSame.json);
+
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_D, count: 4, since: since0, reason: 'offline' }) });
+  const listAfterMore = await api('device_unsent', { headers: as(OWNER) });
+  const resurfMore = (listAfterMore.json.devices || []).find(d => d.user_id === 'u7' && d.device_id === DEV_D);
+  ok('heartbeat with higher count resurfaces the row in Owner list', Boolean(resurfMore && resurfMore.count === 4 && !kv(`device_unsent:u7:${DEV_D}`).dismissed_at), { resurfMore });
+
+  await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  const earlierSince = iso(NOW - 5 * 3600000);
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_D, count: 4, since: earlierSince, reason: 'offline' }) });
+  const resurfEarlier = ((await api('device_unsent', { headers: as(OWNER) })).json.devices || []).find(d => d.user_id === 'u7' && d.device_id === DEV_D);
+  ok('heartbeat with earlier since resurfaces the dismissed row', Boolean(resurfEarlier && resurfEarlier.since === earlierSince), resurfEarlier);
+
+  // Dismissed holding row cleared after >= 1h still surfaces as sent_late, and dismissing sent_late deletes it.
+  await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: DEV_D, count: 0 } });
+  const lateAfterDismiss = ((await api('device_unsent', { headers: as(OWNER) })).json.devices || []).find(d => d.user_id === 'u7' && d.device_id === DEV_D);
+  ok('clearing a dismissed >=1h holding row surfaces as sent_late without dismissed_at', r.json && r.json.state === 'sent_late' && Boolean(lateAfterDismiss && lateAfterDismiss.state === 'sent_late' && !kv(`device_unsent:u7:${DEV_D}`).dismissed_at), { r, lateAfterDismiss });
+
+  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
+  ok('dismissing a sent_late row deletes it from edge_kv_store', r.status === 200 && r.json.dismissed === true && r.json.state === 'sent_late' && !kv(`device_unsent:u7:${DEV_D}`), r);
+  // Alias parity on shared-device closing: short aliases ('4235', 'bdeir holding · consolidated jv') canonicalize identically.
+  const DEV_AL = 'devalias0000007';
+  const S_4235_SHORT = await seat('u10', '4235 Short Seat', 'short4235@example.test', 'Entry', '4235');
+  const S_4235_CANON = await seat('u11', '4235 Canon Seat', 'canon4235@example.test', 'Entry', '4235 Company S.A.L');
+  const S_HLD_JV = await seat('u12', 'Holding JV Seat', 'hldjv@example.test', 'Entry', 'bdeir holding · consolidated jv');
+  const S_HLD_CANON = await seat('u13', 'Holding Canon Seat', 'hldcanon@example.test', 'Entry', 'Bdeir Holding');
+  await api('device_unsent', { method: 'POST', headers: as(S_4235_CANON), body: report({ device_id: DEV_AL, count: 3, since: iso(NOW - 2 * 3600000) }) });
+  const r4235Close = await api('device_unsent', { method: 'POST', headers: as(S_4235_SHORT), body: { device_id: DEV_AL, count: 0, all_seats: true } });
+  await api('device_unsent', { method: 'POST', headers: as(S_HLD_JV), body: report({ device_id: DEV_AL, count: 2, since: iso(NOW - 2 * 3600000) }) });
+  const rHldClose = await api('device_unsent', { method: 'POST', headers: as(S_HLD_CANON), body: { device_id: DEV_AL, count: 0, all_seats: true } });
+  ok('company aliases ("4235", "bdeir holding · consolidated jv") close canonical holding rows on shared devices',
+    r4235Close.json && r4235Close.json.saved === true && r4235Close.json.open === 0 && kv(`device_unsent:u11:${DEV_AL}`).state === 'sent_late'
+    && rHldClose.json && rHldClose.json.saved === true && rHldClose.json.open === 0 && kv(`device_unsent:u12:${DEV_AL}`).state === 'sent_late',
+    { r4235Close, rHldClose });
+}
+
+console.log('\n[global fx_rates & vat_rates access]');
+{
+  const fxRec = { id: 'fx-test-01', name: 'LBP @ 90,000', currency: 'LBP', start_date: '2026-11-20', end_date: 'Open', amount: 90000, rate: 90000, status: 'Current', source: 'app', voided: false };
+  const vatRec = { id: 'vat-test-01', name: '11% VAT @ 89,500', start_date: '2026-11-20', end_date: 'Open', amount: 11, vat_percent: 11, vat_fx_rate: 89500, status: 'Current', source: 'app', voided: false };
+  const TWELVE_COS = await seat('u14', 'Twelve Co NonOwner', 'twelve.seat@example.test', 'Supervisor + Entry',
+    'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties');
+
+  let r = await api('records', { method: 'POST', headers: as(OWNER), body: { table: 'fx_rates', record: fxRec } });
+  ok('Owner posts fx_rates via POST /api/records -> 200', r.status === 200 && r.json && r.json.ok === true, r);
+  r = await api('records', { method: 'POST', headers: as(OWNER), body: { table: 'vat_rates', record: vatRec } });
+  ok('Owner posts vat_rates via POST /api/records -> 200', r.status === 200 && r.json && r.json.ok === true, r);
+
+  // Reads stay open to company-limited seats so Owner-posted global rates sync down cleanly.
+  const entryFxGet = await api('records?table=fx_rates', { headers: as(ENTRY) });
+  const entryVatGet = await api('records?table=vat_rates', { headers: as(ENTRY) });
+  ok('Entry/WTC seat reads fx_rates and vat_rates via GET /api/records',
+    entryFxGet.status === 200 && (entryFxGet.json.rows || []).some(x => x.id === 'fx-test-01')
+    && entryVatGet.status === 200 && (entryVatGet.json.rows || []).some(x => x.id === 'vat-test-01'),
+    { entryFxGet, entryVatGet });
+
+  // Seed mfg_web_store with Owner rate rows and verify /api/sync get_mfg serves them while patch blocks limited seats.
+  const ownSyncSeed = await api('sync', { method: 'POST', headers: as(OWNER), body: { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: '19.6.424', customRecords: { fx_rates: [fxRec], vat_rates: [vatRec] } } } } });
+  const syncGet = await api('sync', { method: 'POST', headers: as(ENTRY), body: { op: 'get_mfg', doc: 'mfg_web_store' } });
+  const gotCr = (syncGet.json && syncGet.json.docs && syncGet.json.docs.mfg_web_store && syncGet.json.docs.mfg_web_store.customRecords) || {};
+  ok('Entry/WTC seat reads Owner fx_rates & vat_rates through /api/sync get_mfg',
+    ownSyncSeed.status === 200 && ownSyncSeed.json && ownSyncSeed.json.ok === true
+    && syncGet.status === 200 && Array.isArray(gotCr.fx_rates) && gotCr.fx_rates.some(x => x.id === 'fx-test-01')
+    && Array.isArray(gotCr.vat_rates) && gotCr.vat_rates.some(x => x.id === 'vat-test-01'),
+    { ownSyncSeed, syncGet: syncGet.json });
+
+  // Writes (including forged company: WTC, >=12-company non-Owner seats, edits, voids, sync patches) are blocked.
+  const forgedFx = Object.assign({}, fxRec, { id: 'fx-forged-01', company: 'WTC' });
+  const forgedVat = Object.assign({}, vatRec, { id: 'vat-forged-01', company: 'WTC' });
+  const p1 = await api('records', { method: 'POST', headers: as(ENTRY), body: { table: 'fx_rates', record: { id: 'fx-forged-00', name: 'Bad', currency: 'LBP', start_date: '2026-11-21', rate: 100 } } });
+  const p2 = await api('records', { method: 'POST', headers: as(ENTRY), body: { table: 'fx_rates', record: forgedFx } });
+  const p3 = await api('records', { method: 'POST', headers: as(ENTRY), body: { table: 'vat_rates', record: forgedVat } });
+  const p4 = await api('records', { method: 'POST', headers: as(SUP), body: { table: 'fx_rates', record: forgedFx } });
+  const p5 = await api('records', { method: 'POST', headers: as(TWELVE_COS), body: { table: 'fx_rates', record: fxRec } });
+  const p6 = await api('records', { method: 'POST', headers: as(TWELVE_COS), body: { table: 'vat_rates', record: vatRec } });
+  ok('company-limited seats (incl. >=12 explicit entities non-Owner) cannot write fx_rates or vat_rates via POST /api/records',
+    p1.status === 403 && p2.status === 403 && p3.status === 403 && p4.status === 403 && p5.status === 403 && p6.status === 403,
+    { p1: p1.status, p2: p2.status, p3: p3.status, p4: p4.status, p5: p5.status, p6: p6.status });
+
+  const sPatch = await api('sync', {
+    method: 'POST',
+    headers: as(TWELVE_COS),
+    body: {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          minShellVer: '19.6.424',
+          customRecords: {
+            fx_rates: [Object.assign({}, fxRec, { rate: 12345, voided: true }), forgedFx],
+            vat_rates: []
+          }
+        }
+      }
+    }
+  });
+  const afterSync = await api('sync', { method: 'POST', headers: as(OWNER), body: { op: 'get_mfg', doc: 'mfg_web_store' } });
+  const afterCr = (afterSync.json && afterSync.json.docs && afterSync.json.docs.mfg_web_store && afterSync.json.docs.mfg_web_store.customRecords) || {};
+  const fxRowD1 = d1.one('SELECT amount, voided FROM fx_rates WHERE id = ?', 'fx-test-01');
+  const forgedRowD1 = d1.one('SELECT id FROM fx_rates WHERE id = ?', 'fx-forged-01');
+  const vatRowD1 = d1.one('SELECT id FROM vat_rates WHERE id = ?', 'vat-test-01');
+  ok('company-limited /api/sync patch cannot edit, void, delete, or insert fx_rates or vat_rates in D1 or mfg_web_store',
+    sPatch.status === 200
+    && afterCr.fx_rates.length === 1 && afterCr.fx_rates[0].rate === 90000 && !afterCr.fx_rates[0].voided
+    && afterCr.vat_rates.length === 1 && afterCr.vat_rates[0].id === 'vat-test-01'
+    && fxRowD1 && fxRowD1.amount === 90000 && !fxRowD1.voided && !forgedRowD1 && Boolean(vatRowD1),
+    { sPatch, afterCr, fxRowD1, forgedRowD1, vatRowD1 });
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

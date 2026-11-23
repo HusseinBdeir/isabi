@@ -67,6 +67,7 @@ export const UNIVERSAL_UNIQUE_TABLES = new Set([
   'sites', 'regions', 'equipment', 'drivers', 'staff_roles',
   'expense_categories', 'expense_subcategories', 'currencies', 'gl_accounts'
 ]);
+export const GLOBAL_RATE_TABLES = new Set(['fx_rates', 'vat_rates']);
 
 // Map customRecords short keys to canonical SQL table names
 const CR_KEY_TO_TABLE = {
@@ -391,6 +392,7 @@ const CANON_COMPANY_MAP = {
   shacman: 'Shacman',
   properties: 'Properties',
   '4235company': '4235 Company S.A.L',
+  '4235 company': '4235 Company S.A.L',
   '4235 company s.a.l': '4235 Company S.A.L',
   '4235': '4235 Company S.A.L',
   insurance: 'Insurance Company',
@@ -547,7 +549,15 @@ function _sameNameCanonCo(raw) {
     if (Object.prototype.hasOwnProperty.call(CANON_COMPANY_MAP, s)) return CANON_COMPANY_MAP[s];
     if (Object.prototype.hasOwnProperty.call(CANON_COMPANY_MAP, low)) return CANON_COMPANY_MAP[low];
   }
-  return Object.prototype.hasOwnProperty.call(SAME_NAME_CANON_CO_FALLBACK, low) ? SAME_NAME_CANON_CO_FALLBACK[low] : s;
+  if (Object.prototype.hasOwnProperty.call(SAME_NAME_CANON_CO_FALLBACK, low)) return SAME_NAME_CANON_CO_FALLBACK[low];
+  if (low.includes('·')) {
+    const head = low.split('·')[0].trim();
+    if (typeof CANON_COMPANY_MAP === 'object' && CANON_COMPANY_MAP && Object.prototype.hasOwnProperty.call(CANON_COMPANY_MAP, head)) {
+      return CANON_COMPANY_MAP[head];
+    }
+    if (Object.prototype.hasOwnProperty.call(SAME_NAME_CANON_CO_FALLBACK, head)) return SAME_NAME_CANON_CO_FALLBACK[head];
+  }
+  return s;
 }
 
 const _INACTIVE_STAFF_STATUSES = new Set(['ended', 'closed', 'terminated', 'inactive', 'cancelled']);
@@ -2773,7 +2783,7 @@ export async function handleRecordsGet(request, env, session, url) {
   const whereParts = [];
   let allowUnknownCaseFallback = false;
 
-  if (cols.has('company')) {
+  if (cols.has('company') && !GLOBAL_RATE_TABLES.has(table)) {
     if (company && companyNorm !== 'all' && companyNorm !== 'manufacturing-group') {
       if (!canAccessCompany(session, company)) {
         return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity scope.' }, 403);
@@ -4047,6 +4057,9 @@ export async function handleRecordsPost(request, env, session, body) {
   };
 
   if (!isOwnerOrFullGroupSession(session)) {
+    if (GLOBAL_RATE_TABLES.has(canonTable)) {
+      return jsonResponse({ ok: false, error: 'Global FX & VAT rate schedules require full-group or Owner access.' }, 403);
+    }
     const isBuScopedTable = cols.has('company') && !UNIVERSAL_UNIQUE_TABLES.has(canonTable);
     const recCo = String(record.company || '').trim();
     const exCo = exHydratedRls ? String(exHydratedRls.company || exHydratedRls.resort || exHydratedRls.entity || '').trim() : '';
@@ -6064,6 +6077,12 @@ export function validateDeviceUnsentReport(body, nowMs) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'Invalid device report.' };
   const deviceId = String(body.device_id == null ? '' : body.device_id);
   if (!/^[a-z0-9]{12,32}$/.test(deviceId)) return { ok: false, error: 'Invalid device id.' };
+  if (Object.prototype.hasOwnProperty.call(body, 'action') && body.action !== undefined) {
+    if (body.action !== 'dismiss') return { ok: false, error: 'Invalid action.' };
+    const userId = String(body.user_id == null ? '' : body.user_id).trim();
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(userId)) return { ok: false, error: 'Invalid seat id.' };
+    return { ok: true, val: { action: 'dismiss', user_id: userId, device_id: deviceId } };
+  }
   const count = body.count;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 100000) return { ok: false, error: 'Invalid entry count.' };
   const val = { device_id: deviceId, count, label: cleanDeviceUnsentText(body.label, 60) };
@@ -6094,6 +6113,7 @@ export function listDeviceUnsentRows(rows, nowMs) {
     const p = safeJsonParse(row && row.payload_json, null);
     if (!p || typeof p !== 'object' || Array.isArray(p)) continue;
     const state = p.state === 'sent_late' ? 'sent_late' : 'holding';
+    if (state === 'holding' && String(p.dismissed_at || '').trim()) continue;
     const stampMs = Date.parse(String(state === 'sent_late' ? p.sent_at : p.reported_at) || '');
     if (!Number.isFinite(stampMs)) continue;
     const maxAgeMs = state === 'sent_late' ? DEVICE_UNSENT_LATE_HOURS * 3600000 : DEVICE_UNSENT_HOLD_DAYS * 86400000;
@@ -6146,8 +6166,29 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
   const rl = await checkD1RateLimit(env, `device-unsent:${seatId}`, 30, 600);
   if (!rl.allowed) return jsonResponse({ ok: false, error: 'Too many device reports. Try again later.' }, 429);
   const val = chk.val;
-  const docKey = `${DEVICE_UNSENT_PREFIX}${seatId}:${val.device_id}`;
   const nowIso = new Date(nowMs).toISOString();
+  if (val.action === 'dismiss') {
+    if (!/\bowner\b/i.test(String(session.role || ''))) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+    const targetKey = `${DEVICE_UNSENT_PREFIX}${val.user_id}:${val.device_id}`;
+    const tRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(targetKey).first();
+    const tp = tRow ? safeJsonParse(tRow.payload_json, null) : null;
+    if (!tp || typeof tp !== 'object' || Array.isArray(tp)) {
+      return jsonResponse({ ok: true, dismissed: false });
+    }
+    if (tp.state === 'sent_late') {
+      await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(targetKey).run();
+      return jsonResponse({ ok: true, dismissed: true, state: 'sent_late' });
+    }
+    const dismissed = Object.assign({}, tp, {
+      dismissed_at: nowIso,
+      dismissed_count: Math.max(1, Number(tp.count) || 1),
+      dismissed_since: String(tp.since || '')
+    });
+    await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
+      .bind(JSON.stringify(dismissed), nowIso, targetKey).run();
+    return jsonResponse({ ok: true, dismissed: true, state: 'holding' });
+  }
+  const docKey = `${DEVICE_UNSENT_PREFIX}${seatId}:${val.device_id}`;
   const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
   const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
   const prevHolding = Boolean(prev && typeof prev === 'object' && prev.state === 'holding' && Number(prev.count) >= 1);
@@ -6180,6 +6221,9 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
         if (!state) state = 'cleared';
       } else {
         const late = Object.assign({}, row.p, { state: 'sent_late', sent_count: Number(row.p.count), count: 0, sent_at: nowIso, shell: (row.key === docKey && val.shell) || row.p.shell || '' });
+        delete late.dismissed_at;
+        delete late.dismissed_count;
+        delete late.dismissed_since;
         await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
           .bind(JSON.stringify(late), nowIso, row.key).run();
         state = 'sent_late';
@@ -6227,6 +6271,7 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     ).bind(docKey, JSON.stringify(late), nowIso).run();
     return jsonResponse({ ok: true, saved: true, state: 'sent_late' });
   }
+  const effSince = (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since;
   const stored = {
     state: 'holding',
     device_id: identity.device_id,
@@ -6237,11 +6282,22 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     companies: identity.companies,
     count: val.count,
     // The first time the wait was reported wins while the device keeps holding: a reload cannot shorten the wait.
-    since: (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since,
+    since: effSince,
     reason: val.reason,
     shell: val.shell,
     reported_at: nowIso
   };
+  if (
+    prevHolding &&
+    String(prev.dismissed_at || '').trim() &&
+    Number.isInteger(prev.dismissed_count) &&
+    val.count <= prev.dismissed_count &&
+    String(prev.dismissed_since || '') === effSince
+  ) {
+    stored.dismissed_at = String(prev.dismissed_at);
+    stored.dismissed_count = prev.dismissed_count;
+    stored.dismissed_since = effSince;
+  }
   await env.DB.prepare(
     `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
      VALUES (?1, ?2, ?3, 1)
@@ -6979,6 +7035,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     for (const crKey of allCrKeys) {
       const canonTable = CR_KEY_TO_TABLE[crKey] || crKey;
       if (!USER_WRITABLE_TABLES.has(canonTable)) continue;
+      if (restrictRls && GLOBAL_RATE_TABLES.has(canonTable)) continue;
 
       const prevList = Array.isArray(prevCr[crKey]) ? prevCr[crKey] : [];
       const prevMap = new Map();
@@ -7688,6 +7745,10 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         continue;
       }
       const canonTable = CR_KEY_TO_TABLE[k] || k;
+      if (GLOBAL_RATE_TABLES.has(canonTable)) {
+        incomingDoc.customRecords[k] = Array.isArray(prevCr[k]) ? prevCr[k] : [];
+        continue;
+      }
       const isUniversal = UNIVERSAL_UNIQUE_TABLES.has(canonTable);
       const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
       const iList = Array.isArray(incomingDoc.customRecords[k]) ? incomingDoc.customRecords[k] : [];
@@ -8314,6 +8375,10 @@ function scopeStoreDocForSession(docObj, session) {
     for (const [k, list] of Object.entries(docObj.customRecords)) {
       if (!Array.isArray(list)) continue;
       const canonTable = CR_KEY_TO_TABLE[k] || k;
+      if (GLOBAL_RATE_TABLES.has(canonTable)) {
+        scopedCr[k] = list.filter(r => Boolean(r && typeof r === 'object'));
+        continue;
+      }
       const isUniversal = UNIVERSAL_UNIQUE_TABLES.has(canonTable);
       scopedCr[k] = list.filter(r => {
         if (!r || typeof r !== 'object') return false;
