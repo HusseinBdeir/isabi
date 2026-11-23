@@ -8382,9 +8382,26 @@ export function reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, 
   const isBuildTicket = Boolean(session && session.build_ticket);
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
   const prevRetired = normalizeRetiredSysTopupIds(prev._retiredSysTopupIds);
-  const effectiveRetired = (isBuildTicket && Object.prototype.hasOwnProperty.call(incomingDoc, '_retiredSysTopupIds'))
-    ? normalizeRetiredSysTopupIds([...prevRetired, ...(Array.isArray(incomingDoc._retiredSysTopupIds) ? incomingDoc._retiredSysTopupIds : [])])
-    : prevRetired;
+  let baseRetired = prevRetired;
+  if (isBuildTicket && Object.prototype.hasOwnProperty.call(incomingDoc, '_retiredSysTopupIds')) {
+    baseRetired = normalizeRetiredSysTopupIds(Array.isArray(incomingDoc._retiredSysTopupIds) ? incomingDoc._retiredSysTopupIds : []);
+  }
+  let effectiveRetired = baseRetired;
+  if (isBuildTicket && incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') {
+    const unretiredIds = new Set();
+    for (const k of Object.keys(incomingDoc.customRecords)) {
+      const list = incomingDoc.customRecords[k];
+      if (!Array.isArray(list)) continue;
+      for (const r of list) {
+        if (!r || typeof r !== 'object' || r.id == null) continue;
+        if (!r.voided || r.restored_at || r._reopenedExplicitly) {
+          const rid = String(r.id).trim();
+          if (rid) unretiredIds.add(rid);
+        }
+      }
+    }
+    if (unretiredIds.size) effectiveRetired = effectiveRetired.filter(id => !unretiredIds.has(id));
+  }
   if (effectiveRetired.length) incomingDoc._retiredSysTopupIds = effectiveRetired;
   else delete incomingDoc._retiredSysTopupIds;
 
@@ -8413,7 +8430,7 @@ export function reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, 
     for (const ir of iList) {
       if (!ir || typeof ir !== 'object') continue;
       const rid = ir.id != null ? String(ir.id).trim() : '';
-      if (retiredSet && rid && retiredSet.has(rid) && !pIds.has(rid) && !ir.restored_at && !ir._reopenedExplicitly) {
+      if (retiredSet && rid && retiredSet.has(rid) && !pIds.has(rid)) {
         if (!retiredDropped[k]) retiredDropped[k] = [];
         retiredDropped[k].push(rid);
         continue;
