@@ -906,6 +906,10 @@
     } else if (byL.startsWith('workbook match')) {
       actorDisplay = L('Workbook Match', 'مطابقة الدفتر', 'Correspondance classeur');
       actorKey = 'wb::match';
+    } else if (byL.startsWith('workbook reconciliation (isabi entry kept)')) {
+      // The workbook copy a top-up voided because the ISABI entry with the same facts was kept in its place.
+      actorDisplay = L('ISABI Entry Kept', 'الإبقاء على قيد ISABI', 'Saisie ISABI conservée');
+      actorKey = 'wb::kept';
     } else if (byL.startsWith('workbook reconciliation')) {
       actorDisplay = L('Workbook Recon', 'تسوية الدفتر', 'Rapprochement classeur');
       actorKey = 'wb::recon';

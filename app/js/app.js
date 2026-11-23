@@ -4105,9 +4105,11 @@
 
   function forEachCashCustomDelta(key, matchCoFn, applyRowFn) {
     const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+    const released = releasedKeptCopyIds(key);
     for (let i = 0; i < arr.length; i++) {
       const r = arr[i];
       if (!r) continue;
+      if (r.voided && released.size && r.id != null && released.has(String(r.id))) continue; // read as not there
       if (isAppRecord(r)) {
         if (!r.voided && matchCoFn(r)) applyRowFn(r, 1);
       } else {
@@ -8934,6 +8936,71 @@
   function isAppKeyedEntry(r) {
     return isAppRecord(r) && !isWorkbookRowId(r.id);
   }
+  // An entry keyed in the app that a top-up kept over its workbook copy (owner rule 2026-11-23): the facts agreed, so
+  // the entry stays as keyed and the workbook copy is voided under its workbook id (build/reconcile_cloud_store.py
+  // KEPT_APP_MARK `kept_over_workbook` on the entry, `kept_for` on the copy). While that copy stays voided the entry is
+  // the booked row: never app-only, never unposted, never paired away. The pair is read from the copy's kept_for
+  // first: a device that held the entry before the top-up keeps its own copy of it without the mark.
+  // `info` = keptOverWorkbookVoidedIds(key).
+  const KEPT_APP_VOID_BY = 'Workbook reconciliation (ISABI entry kept)';
+  // Workbook copies voided for a kept entry that is no longer active (voided by hand, deleted, moved to another
+  // table): the workbook row is the only record of that money again. The next top-up removes such a copy
+  // (reconcile_cloud_store.py kept_drop_ids); until then it is read as if it were not there. For expense_items, the
+  // lines voided with such an expense copy (voided_with_parent).
+  function releasedKeptCopyIds(key) {
+    const out = new Set();
+    const tbl = key === 'expense_items' ? 'expenses' : key;
+    const arr = (STATE.customRecords && STATE.customRecords[tbl]) || [];
+    const active = new Set();
+    for (let i = 0; i < arr.length; i++) { const r = arr[i]; if (r && !r.voided && r.id != null) active.add(String(r.id)); }
+    const seen = new Set();
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      if (!r || !r.voided || r.voided_by !== KEPT_APP_VOID_BY || !r.kept_for) continue;
+      const kf = String(r.kept_for);
+      if (!active.has(kf) || seen.has(kf)) out.add(String(r.id));
+      seen.add(kf);
+    }
+    if (key !== 'expense_items') return out;
+    const lines = new Set();
+    if (!out.size) return lines;
+    const larr = (STATE.customRecords && STATE.customRecords.expense_items) || [];
+    for (let i = 0; i < larr.length; i++) {
+      const ln = larr[i];
+      if (ln && ln.voided && ln.voided_by === KEPT_APP_VOID_BY && out.has(String(ln.voided_with_parent || ''))) lines.add(String(ln.id));
+    }
+    return lines;
+  }
+  function keptOverWorkbookVoidedIds(key) {
+    const voided = new Set();
+    const keptFor = new Map();   // entry id -> workbook id of its copy
+    const copyFor = new Map();   // workbook id -> the entry its copy names
+    const released = releasedKeptCopyIds(key);
+    const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      if (!r || !r.voided || r.id == null || released.has(String(r.id))) continue;
+      voided.add(String(r.id));
+      if (r.kept_for) {
+        if (!keptFor.has(String(r.kept_for))) keptFor.set(String(r.kept_for), String(r.id));
+        copyFor.set(String(r.id), String(r.kept_for));
+      }
+    }
+    return { voided, keptFor, copyFor, released };
+  }
+  function keptOverWorkbookId(r, info) {
+    if (!r || r.voided || !info || !isAppKeyedEntry(r)) return '';
+    const viaCopy = info.keptFor.get(String(r.id));
+    if (viaCopy) return viaCopy;
+    const mark = r.kept_over_workbook ? String(r.kept_over_workbook) : '';
+    // The mark alone counts only while no other entry holds that copy (one workbook row, one entry).
+    if (!mark || !info.voided.has(mark)) return '';
+    const holder = info.copyFor.get(mark);
+    return (!holder || holder === String(r.id)) ? mark : '';
+  }
+  function isKeptOverWorkbook(r, info) {
+    return Boolean(keptOverWorkbookId(r, info));
+  }
 
   function appCell(r, crKey) {
     if (!r || r.voided) return '';
@@ -9041,7 +9108,8 @@
   }
 
   function appPill(crKey, amountKey, label) {
-    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
+    const keptIds = keptOverWorkbookVoidedIds(crKey);
+    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin && !isKeptOverWorkbook(r, keptIds));
     if (!rows.length) return '';
     const hideUsd = isMaskedPayrollAccessBlocked(crKey, amountKey);
     const sum = hideUsd ? 0 : rows.reduce((a, r) => a + Number(r[amountKey] || 0), 0);
@@ -9052,7 +9120,8 @@
     const out = [];
     const spec = [['sales_tickets', 'total_ttc', 'sales tickets'], ['raw_purchases', 'total', 'raw receipts'], ['receipts', 'amount', 'customer receipts'], ['fuel_intakes', 'litres', 'fuel intakes'], ['fuel_malfunctions', 'litres', 'tank malfunctions'], ['expenses', 'amount', 'expenses'], ['settlements', 'amount', 'supplier settlements']];
     spec.forEach(([k, amt, label]) => {
-      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
+      const keptIds = keptOverWorkbookVoidedIds(k);
+      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin && !isKeptOverWorkbook(r, keptIds));
       if (!rows.length) return;
       const sum = rows.reduce((a, r) => a + Number(r[amt] || 0), 0);
       out.push({ key: k, n: rows.length, sum, label, unit: amt === 'litres' ? 'L' : '$' });
@@ -9467,9 +9536,10 @@
     if (cut) {
       APP_ONLY_CASH_KEYS.forEach(key => {
         const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+        const keptIds = keptOverWorkbookVoidedIds(key);
         for (let i = 0; i < arr.length; i++) {
           const r = arr[i];
-          if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r)) continue;
+          if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r) || isKeptOverWorkbook(r, keptIds)) continue;
           if (!WORKBOOK_COMPANY_NAMES.includes(String(r.company || 'WTC').trim() || 'WTC')) continue;
           const day = String(r.date || r.start_date || '').slice(0, 10);
           if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > cut.cutoff) continue;
@@ -135781,8 +135851,19 @@
       const customList = STATE.customRecords[k];
       if (!customList.length && (!UNIVERSAL_MAIN_SPEC[k] || list._univDeduped)) return;
       let touched = false;
+      // A workbook copy whose kept entry was voided since (releasedKeptCopyIds): its workbook row shows again now,
+      // as the next top-up will leave it. An earlier pass of this projection took the row out: put it back.
+      const releasedCopies = releasedKeptCopyIds(k);
+      if (releasedCopies.size) {
+        releasedCopies.forEach(rid => {
+          if (list.some(x => x && String(x.id) === rid)) return;
+          const snap = SEED_VOIDED_ARCHIVE[k] && SEED_VOIDED_ARCHIVE[k].get(rid);
+          if (snap) { list.push(Object.assign({}, snap, { voided: false })); touched = true; }
+        });
+      }
       const checkTwins = canDedupSeedTwins && _SEED_TWIN_TX_KEYS.has(k);
       const claimedSeedTwins = checkTwins ? new Set() : null;
+      const keptOverWorkbook = checkTwins ? new Set() : null;
       const repTwinQueue = (checkTwins && _SEED_TWIN_REP_KEYS.has(k)) ? [] : null;
       if (checkTwins) {
         // An entry a top-up struck through as a copy still holds its workbook row (the top-up keeps that row
@@ -135824,6 +135905,25 @@
           }
           if (held) claimedSeedTwins.add(held);
         });
+        // An entry a top-up kept over its workbook copy (owner rule 2026-11-23, build/reconcile_cloud_store.py
+        // KEPT_APP_MARK): while that copy is voided under its workbook id the entry stays on the register as it was
+        // keyed, holds that row, and is never paired away below. Copy restored: the entry pairs as any other.
+        const keptInfo = keptOverWorkbookVoidedIds(k);
+        if (!byId) {
+          byId = new Map();
+          list.forEach(s => { if (s && s.id) byId.set(String(s.id), s); });
+        }
+        // A workbook row voided in the app pairs with nothing, wherever its voided row sits in the list (the
+        // matcher's rule: build/reconcile_cloud_store.py app_voided_seed_idx). Without this an entry listed before
+        // the void would pair with the row and both would leave the register.
+        keptInfo.voided.forEach(vid => { const s = byId.get(vid); if (s) claimedSeedTwins.add(s); });
+        customList.forEach(r => {
+          const sid = keptOverWorkbookId(r, keptInfo);
+          if (!sid) return;
+          keptOverWorkbook.add(r);
+          const s = byId.get(sid);
+          if (s) claimedSeedTwins.add(s);
+        });
       }
       customList.forEach(r => {
         if (!r) return;
@@ -135835,6 +135935,7 @@
         const rid = String(r.id == null ? '' : r.id);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
         if (r.voided) {
+          if (rid && releasedCopies.has(rid)) return;
           let i = rid ? list.findIndex(x => x && String(x.id) === rid) : -1;
           if (i < 0 && !rid && rNameNorm && masterByNameKeys.has(k)) {
             i = list.findIndex(x => x && norm(x.name || x.equipment || x.driver || x.staff) === rNameNorm);
@@ -135855,7 +135956,7 @@
         }
         // Only an entry keyed in the app can be a second copy. A workbook row saved in the app (workbook id) is the
         // workbook row itself: it merges into it by id below and stays the row an app copy pairs with.
-        if (checkTwins && isAppKeyedEntry(r)) {
+        if (checkTwins && isAppKeyedEntry(r) && !keptOverWorkbook.has(r)) {
           const rIso = String(r.date || '').slice(0, 10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(rIso) && rIso <= seedCutIso) {
             const seedTwin = list.find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r));
@@ -138570,6 +138671,9 @@
     const now = Date.now();
     if (_unsentScoped && _unsentAllowedCos) {
       _unsentAllowedCos.forEach(c => { if (!lackCos || !lackCos.has(c)) _unsentConfirmed.at[c] = now; });
+      // Shared sites and regions are confirmed by industry (unsentClearKey): those of every industry this seat has a
+      // real company in.
+      _unsentSeatIndustryKeys(_unsentAllowedCos).forEach(ik => { if (!lackCos || !lackCos.has(ik)) _unsentConfirmed.at[ik] = now; });
     } else {
       _unsentConfirmed.allAt = now;
       _unsentConfirmed.allExcept = lackCos ? Array.from(lackCos) : [];
@@ -138585,10 +138689,84 @@
     }
   }
 
+  // The shared registers, as the cloud lists them (UNIVERSAL_UNIQUE_TABLES in functions/_lib/d1_store.js and
+  // server.py). Owner incident 2026-11-23: the old list here lacked items, regions, equipment and the other catalogs,
+  // so a new catalog item keyed by a WTC seat read as another company's entry, its wait never ended and the Owner saw
+  // the device "holding" entries for days while it was sending everything.
+  const UNSENT_SHARED_CR_RE = /^(customers|suppliers|products|items|product_types|uoms|sites|regions|equipment|drivers|staff_roles|expense_categories|expense_subcategories|currencies|gl_accounts)$/;
+  // Older names a device may still hold: their rows without a company were always this seat's to send.
+  const UNSENT_LEGACY_SHARED_CR_RE = /^(chart_of_accounts|employees|trucks|cost_centers|projects)$/;
+  const _unsentSharedCo = c => /^(|all|all bus|all companies|shared)$/.test(String(c || '').trim().toLowerCase().replace(/\s+/g, ' '));
+  // canonGeoIndustryKey in functions/_lib/security.js
+  const _unsentGeoInd = raw => {
+    const s = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!s || s.includes('manufactur') || s === 'mfg') return 'Manufacturing';
+    if (s.includes('holding') || s.includes('treasury')) return 'Holding & Treasury';
+    if (s.includes('hospitality') || s.includes('resort')) return 'Hospitality & Resorts';
+    if (s.includes('trading') || s.includes('auto')) return 'Automotive & Heavy Trading';
+    if (s.includes('real estate') || s.includes('realestate') || s.includes('property')) return 'Real Estate & Property';
+    if (s.includes('insur') || s.includes('broker')) return 'Insurance & Brokerage';
+    return String(raw || '').trim();
+  };
+  // Whether the seat signed in now sends this customRecords row, as the cloud judges it (allowed null = every row):
+  // canAccessUniversalGeoRow for the shared registers (sites and regions also need a company of the row's industry),
+  // the row's company for everything else.
+  function unsentCrRowInScope(key, r, allowed) {
+    if (!allowed) return true;
+    if (!r) return false;
+    if (!UNSENT_SHARED_CR_RE.test(key)) {
+      const co = String(r.company || '').trim();
+      if (!co) return UNSENT_LEGACY_SHARED_CR_RE.test(key);
+      return allowed.has(norm(co));
+    }
+    const co = String(r.company || r.resort || r.entity || '').trim();
+    const shared = _unsentSharedCo(co);
+    if (!shared && !allowed.has(norm(co))) return false;
+    if (key !== 'sites' && key !== 'regions') return true;
+    const indRaw = String(r._industry || r.industry || r.ind || '').trim() || (shared ? '' : _unsentCoInd(co));
+    const ind = _unsentGeoInd(indRaw);
+    return _unsentSeatIndustryKeys(allowed).has('ind:' + ind);
+  }
+  // The industries of the seat's real companies, as 'ind:<industry>' keys. doSync's set also carries made-up keys
+  // (manufacturing-group, industry:<X>, the Demo Company) that would read as Manufacturing; the cloud judges by the
+  // seat's companies alone.
+  const _unsentSeatIndCache = new WeakMap();
+  function _unsentSeatIndustryKeys(allowed) {
+    if (allowed && typeof allowed === 'object' && _unsentSeatIndCache.has(allowed)) return _unsentSeatIndCache.get(allowed);
+    const out = new Set();
+    if (allowed && typeof allowed === 'object') _unsentSeatIndCache.set(allowed, out);
+    (allowed || []).forEach(c => {
+      if (!c || c === 'manufacturing-group' || c === DEMO_COMPANY_KEY || c.startsWith('industry:')) return;
+      out.add('ind:' + _unsentGeoInd(_unsentCoInd(c)));
+    });
+    return out;
+  }
+  // Under which key a sync confirms that the cloud holds a row: its company, or for a shared site or region with no
+  // company of its own, its industry (as unsentCrRowInScope judges it). Other shared rows are every seat's to send.
+  function unsentClearKey(key, r) {
+    if (!r) return '';
+    if (!UNSENT_SHARED_CR_RE.test(key)) return norm(r.company || '');
+    const co = String(r.company || r.resort || r.entity || '').trim();
+    if ((key === 'sites' || key === 'regions') && _unsentSharedCo(co)) {
+      return 'ind:' + _unsentGeoInd(String(r._industry || r.industry || r.ind || '').trim());
+    }
+    return _unsentSharedCo(co) ? '' : norm(co);
+  }
+  function _unsentCoInd(c) {
+    return COMPANY_INDUSTRY_BY_KEY[String(c || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || inferIndustryForCompany(String(c || ''));
+  }
+
   // A shared device: the seat signed in now sends only its own companies' rows. Rows of other companies keyed or
   // changed here since the wait began (by a seat that used the device before), and since a sync last confirmed that
   // company's rows, are still on the device, and this seat's sync finding nothing to push says nothing about them.
   // Sending is decided by company, never by seat: two seats of one company send each other's rows.
+  // One customRecords row: another seat's, touched since the wait began and since a sync last confirmed its key.
+  function _unsentCrRowHoldsWait(key, r, allowed, floor) {
+    if (!r || !r.id) return false;
+    if (unsentCrRowInScope(key, r, allowed)) return false;
+    const t = _unsentRowTouchedMs(r);
+    return t >= floor && t > unsentConfirmedAtFor(unsentClearKey(key, r));
+  }
   function unsentRowsOutsideScope() {
     if (!_unsentSinceMs || !_unsentScoped || !_unsentAllowedCos) return false;
     const floor = _unsentSinceMs - 5000;
@@ -138598,13 +138776,8 @@
     for (let i = 0; i < keys.length; i++) {
       const arr = cr[keys[i]];
       if (!Array.isArray(arr)) continue;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(keys[i]);
       for (let j = 0; j < arr.length; j++) {
-        const r = arr[j];
-        if (!r || !r.id) continue;
-        if (r.company ? allowed.has(norm(r.company)) : isUniv) continue;
-        const t = _unsentRowTouchedMs(r);
-        if (t >= floor && t > unsentConfirmedAtFor(norm(r.company || ''))) return true;
+        if (_unsentCrRowHoldsWait(keys[i], arr[j], allowed, floor)) return true;
       }
     }
     let ind = {};
@@ -138680,10 +138853,9 @@
     const cr = STATE.customRecords || {};
     Object.keys(cr).forEach(k => {
       if (!Array.isArray(cr[k])) return;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       cr[k].forEach(r => {
         if (!r || !r.id) return;
-        if (!(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
+        if (!unsentCrRowInScope(k, r, allowed)) return;
         known.idx.set(`${k}\u0001${r.id}`, `${r.voided ? 1 : 0}|${_recModTs(r)}`);
       });
     });
@@ -138759,13 +138931,12 @@
     Object.keys(store || {}).forEach(k => {
       const arr = store[k];
       if (!Array.isArray(arr)) return;
-      const isUniv = !industry && /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       for (let i = 0; i < arr.length; i++) {
         const r = arr[i];
         if (!r) continue;
         if (industry && isTillOwnedRowId(String(r.id || r.code || '').trim())) continue;
         if (allowed) {
-          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !(r.company ? allowed.has(norm(r.company)) : isUniv)) continue;
+          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !unsentCrRowInScope(k, r, allowed)) continue;
         }
         if (_unsentRowTouchedMs(r) >= sinceMs) n++;
       }
@@ -138808,11 +138979,10 @@
     Object.keys(STATE.customRecords || {}).forEach(k => {
       const mine = STATE.customRecords[k];
       if (!Array.isArray(mine) || !mine.length) return;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       mine.forEach(r => {
         if (!r || !r.id) return;
-        if (allowed && !(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
-        const co = norm(r.company || '');
+        if (allowed && !unsentCrRowInScope(k, r, allowed)) return;
+        const co = unsentClearKey(k, r);
         const held = known.idx.get(`${k}\u0001${r.id}`);
         if (held === undefined) { hit(co); return; }
         const cut = held.indexOf('|');
@@ -139592,12 +139762,13 @@
         const remCr = remote.customRecords || {};
         const allCrCheckKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
         allCrCheckKeys.forEach(k => {
-          const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
           const remList = Array.isArray(remCr[k]) ? remCr[k] : [];
           const remById = new Map(remList.filter(x => x && x.id).map(x => [String(x.id), x]));
           (STATE.customRecords[k] || []).forEach(r => {
             if (!r || !r.id) return;
-            if (isScopedRemote && !(r.company ? canPushCo(r.company) : isUniv)) return;
+            // Same rule as the unsent count (unsentCrRowInScope): a shared-register row this seat keyed (a new catalog
+            // item, an "All BUs" region) is pushed here too, so a sync never calls the device in step without it.
+            if (isScopedRemote && !unsentCrRowInScope(k, r, allowedCoSet)) return;
             const remR = remById.get(String(r.id));
             if (!remR) { pushChanges = true; return; }
             if (Boolean(r.voided) !== Boolean(remR.voided)) { pushChanges = true; return; }
@@ -187050,6 +187221,11 @@
       setReported: on => { _unsentReported = on ? '1' : ''; _unsentClearTriedAtMs = 0; },
       cameOnline: () => { _lastOnlineAtMs = Date.now(); },
       inSync: () => noteCloudInSync(),
+      outsideScope: () => unsentRowsOutsideScope(),
+      inScope: (key, row, cos) => unsentCrRowInScope(key, row, Array.isArray(cos) ? new Set(cos.map(c => norm(c))) : null),
+      clearKey: (key, row) => unsentClearKey(key, row),
+      rowHoldsWait: (key, row) => Boolean(_unsentSinceMs && _unsentAllowedCos) && _unsentCrRowHoldsWait(key, row, _unsentAllowedCos, _unsentSinceMs - 5000),
+      restoreConfirmed: snap => { _unsentConfirmed = JSON.parse(JSON.stringify(snap)); saveUnsentConfirmed(); },
       refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
       report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
       loadDevices: () => loadDevicesHolding(),
@@ -187057,6 +187233,8 @@
     };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+    window.__isKeptOverWorkbook = (k, r) => isKeptOverWorkbook(r, keptOverWorkbookVoidedIds(k));
+    window.__appOnlyCashIds = () => getAppOnlyCashIndex().rows.map(x => String(x.r.id));
     window.__mfgTruckTestHooks = {
       resolveTruckWindow: (eq, co, dt, opts) => resolveTruckWindow(eq, co, dt, opts),
       syncEquipmentBaselineFromWindows: eq => syncEquipmentBaselineFromWindows(eq),
