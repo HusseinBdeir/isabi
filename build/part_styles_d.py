@@ -1235,11 +1235,11 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-facts, .d-proof, .d-groups, .d-steps, .d-fields, .d-channels { grid-template-columns: minmax(0, 1fr); }
   .d-inds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .d-head-split { align-items: flex-start; flex-direction: column; }
-  .d-logos { padding: 22px 18px; gap: 22px 28px; }
+  .d-logos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; padding: 22px 18px; gap: 22px 14px; }
   .d-logo-sq { height: 62px; }
   .d-logo-wide { height: 44px; }
   .d-logo-mid { height: 52px; }
-  .d-logo { max-width: 130px; }
+  .d-logo { max-width: 100%; }
   .ai-console.d-console { height: 600px; }
   .d-console .ai-console-hdr { padding: 10px 14px; }
   .d-console .ai-thread { padding: 12px 14px; }
@@ -1248,6 +1248,12 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-brief, .d-direct { padding: 18px 16px; }
   .d-foot-top, .d-foot-bottom { flex-direction: column; align-items: flex-start; }
   .d-field input, .d-field select, .d-field textarea, .d-console #ai-inline-input { font-size: 16px !important; }
+}
+/* Six logos need about 930px for one row. Below that they sit three to a row (two even rows) at every width,
+   never five and one. The phone block above keeps its own smaller sizes. */
+@media (max-width: 1040px) {
+  .d-logos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; }
+  .d-logo { max-width: 100%; }
 }
 @media (hover: none) {
   .d-logo { filter: grayscale(1) sepia(0.28) contrast(0.82) brightness(1.04); opacity: 0.66; }

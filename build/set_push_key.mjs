@@ -8,7 +8,7 @@
 //      secrets, through wrangler with the value on stdin (never on the command line, never on screen):
 //        VAPID_PRIVATE_KEY  the private half (secret)
 //        VAPID_PUBLIC_KEY   the public half (not secret; stored the same way so all three live in one place)
-//        VAPID_SUBJECT      mailto:husseinbdeir@isabisystems.com (the contact push services may write to)
+//        VAPID_SUBJECT      mailto:hbdeir@isabisystems.com (the contact push services may write to)
 //   3. Prints only the names it set and a short fingerprint of the public key. Nothing secret is printed or
 //      written to disk.
 //
@@ -28,6 +28,9 @@
 //   node build/set_push_key.mjs --check    show which of the three settings exist (no change)
 //   node build/set_push_key.mjs --dry-run  show what would happen (no key made, no change)
 //   node build/set_push_key.mjs --rotate   replace an existing key (see the warning above)
+//   node build/set_push_key.mjs --subject  store only the contact address again (VAPID_SUBJECT); the key pair is
+//                                          not touched, so every device keeps its notifications. Use it after the
+//                                          contact address changes. Needs a key already set, and a redeploy after.
 //   node build/set_push_key.mjs --help
 // Needs: Node 18+, wrangler signed in to the Cloudflare account (the same sign-in deploy_cloudflare.py uses).
 
@@ -39,7 +42,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SUBJECT = 'mailto:husseinbdeir@isabisystems.com';
+const SUBJECT = 'mailto:hbdeir@isabisystems.com';
 const NAMES = ['VAPID_PRIVATE_KEY', 'VAPID_PUBLIC_KEY', 'VAPID_SUBJECT'];
 const args = new Set(process.argv.slice(2));
 
@@ -117,6 +120,16 @@ async function main() {
   const project = projectName();
   console.log(`ISABI notifications key: Cloudflare Pages project "${project}"`);
 
+  if (args.has('--subject') && args.has('--rotate')) {
+    console.error('Use --subject or --rotate, not both: --rotate already stores the contact address with the new key.');
+    process.exit(2);
+  }
+  if (args.has('--dry-run') && args.has('--subject')) {
+    console.log(`Dry run: would read the project settings and, if a notifications key is set, store only VAPID_SUBJECT`);
+    console.log(`  (${SUBJECT})`);
+    console.log('as a Pages secret through wrangler (value on stdin). The key pair would not be touched. Nothing was changed.');
+    return;
+  }
   if (args.has('--dry-run')) {
     console.log('Dry run: would read the project settings, make a new P-256 key pair on this PC and store');
     console.log(`  ${NAMES.join(', ')} (subject ${SUBJECT})`);
@@ -131,6 +144,24 @@ async function main() {
     console.log(have.length === NAMES.length
       ? 'All three are set. If notifications still show "not set up yet", the app has not been redeployed since.'
       : 'Not set up: run this script without --check.');
+    return;
+  }
+
+  if (args.has('--subject')) {
+    if (!have.includes('VAPID_PRIVATE_KEY') || !have.includes('VAPID_PUBLIC_KEY')) {
+      console.log('No notifications key is set on this project yet, so there is no contact address to update.');
+      console.log('Run this script without --subject to set the key and the contact address together.');
+      process.exitCode = 3;
+      return;
+    }
+    const r = runWrangler(['pages', 'secret', 'put', 'VAPID_SUBJECT', `--project-name=${project}`], SUBJECT);
+    if (r.code !== 0) {
+      console.error('Could not store VAPID_SUBJECT. The key pair was not touched. wrangler said:');
+      console.error((r.err || r.out).split('\n').filter(Boolean).slice(-4).join('\n'));
+      process.exit(4);
+    }
+    console.log(`  stored VAPID_SUBJECT (${SUBJECT}). The key pair was not touched; devices keep their notifications.`);
+    console.log('Next: redeploy the app (the next release). The live site keeps the earlier address until then.');
     return;
   }
 

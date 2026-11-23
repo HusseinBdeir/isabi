@@ -800,6 +800,16 @@ JS = r"""
   // ---------------- MORE PAGES (LIVE DEMO, INDUSTRY BLUEPRINTS, FAQ) ----------------
   let sheetReturnY = 0;
   let sheetOpener = null;
+  let sheetStepBack = null;
+  // How the browser got to the current history entry: a step through existing entries (Back, Forward, our own
+  // step back) or a new entry (an address typed while a "more" page is open). Read by the popstate listener.
+  let lastNavType = '';
+  let lastHistLen = history.length;
+  try {
+    if (window.navigation && typeof window.navigation.addEventListener === 'function') {
+      window.navigation.addEventListener('navigate', e => { lastNavType = (e && e.navigationType) || ''; });
+    }
+  } catch (e) {}
 
   function activeSheetId() {
     const el = document.querySelector('[data-sheet]:not([hidden])');
@@ -850,22 +860,80 @@ JS = r"""
     updateActiveNavOnScroll();
   }
 
+  function ownsSheetEntry() {
+    return Boolean(history.state && history.state.sheet) && typeof history.back === 'function';
+  }
+
+  // Step back off the open page's own history entry. One step at a time: a second press before the browser has
+  // reported the first (a double click on Back to Site, Escape twice, two footer links) only updates where the
+  // visitor is going. Two steps back would walk the visitor off the site.
+  function stepBackOffSheet(exit) {
+    if (sheetStepBack) {
+      // The latest press wins: leaving (with or without a link target) cancels a page opened again meanwhile.
+      sheetStepBack.reopen = '';
+      if (exit) sheetStepBack.exit = exit;
+      return;
+    }
+    const job = { exit: exit || null, reopen: '' };
+    sheetStepBack = job;
+    // If the browser never reports the step back, finish in place so the press is not lost.
+    setTimeout(() => {
+      if (sheetStepBack !== job) return;
+      sheetStepBack = null;
+      settleSheetStepBack(job, false);
+    }, 1500);
+    history.back();
+  }
+
+  function settleSheetStepBack(job, arrived) {
+    if (job.reopen) {
+      // A page was opened again while the step back was on its way: it gets a fresh entry of its own.
+      if (activeSheetId() !== job.reopen) showSheet(job.reopen);
+      try { history.pushState({ sheet: job.reopen }, '', '#' + job.reopen); } catch (e) {}
+      lastHistLen = history.length;
+      return;
+    }
+    if (job.exit) {
+      scrollToTargetId(job.exit.id, job.exit.updateHash, true, true);
+      return;
+    }
+    if (!arrived && activeSheetId()) {
+      hideSheet(true);
+      try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+    }
+  }
+
   function openSheet(id, pushHistory) {
     const was = activeSheetId();
+    if (was === id && !sheetStepBack) return;
+    if (pushHistory && sheetStepBack) {
+      if (was !== id) showSheet(id);
+      sheetStepBack.reopen = id;
+      sheetStepBack.exit = null;
+      return;
+    }
     if (was === id) return;
     showSheet(id);
     if (pushHistory && history.pushState) {
       try {
         if (was) history.replaceState(history.state && history.state.sheet ? { sheet: id } : null, '', '#' + id);
-        else history.pushState({ sheet: id }, '', '#' + id);
+        else {
+          // From here the site places the scroll itself when the visitor comes back (to where they were, or to the
+          // link they pressed). Left on automatic, the browser puts its own remembered position back a moment later.
+          // It stays that way for this visit: handing it back would let the browser override a link pressed after
+          // a Forward step. The cost: a reload after visiting one of these pages starts at the top.
+          try { history.scrollRestoration = 'manual'; } catch (e) {}
+          history.pushState({ sheet: id }, '', '#' + id);
+          lastHistLen = history.length;
+        }
       } catch (e) {}
     }
   }
 
   function closeSheet() {
     if (!activeSheetId()) return;
-    if (history.state && history.state.sheet) {
-      history.back();
+    if (ownsSheetEntry()) {
+      stepBackOffSheet(null);
       return;
     }
     hideSheet(true);
@@ -946,13 +1014,24 @@ JS = r"""
     });
   }
 
-  function scrollToTargetId(rawId, updateHash = true, instant = false) {
+  function scrollToTargetId(rawId, updateHash = true, instant = false, skipSheetExit = false) {
     let cleanId = String(rawId || '').replace(/^#/, '');
     cleanId = SEC_ALIAS[cleanId] || cleanId;
 
     if (SHEET_IDS.includes(cleanId)) {
       openSheet(cleanId, updateHash);
       return;
+    }
+
+    // Leaving a "more" page for one of the main pages (footer link, logo, a section link). When the open page
+    // holds its own history entry, the visitor is moved at once and that entry is then stepped back off.
+    // Replacing the entry instead would leave the main pages twice in a row in the history, and the visitor's
+    // next Back would appear to do nothing.
+    let leaveSheet = false;
+    if (!skipSheetExit && ownsSheetEntry() && (activeSheetId() || sheetStepBack)) {
+      const isTop = !cleanId || cleanId === 'top' || cleanId === 'hero';
+      const exitEl = isTop ? null : document.getElementById((cleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : cleanId);
+      leaveSheet = isTop || Boolean(exitEl && !exitEl.closest('[data-sheet]'));
     }
 
     if (!cleanId || cleanId === 'top' || cleanId === 'hero') {
@@ -965,7 +1044,9 @@ JS = r"""
       } else {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      if (updateHash && history.replaceState) {
+      if (leaveSheet) {
+        stepBackOffSheet({ id: 'top', updateHash: updateHash });
+      } else if (updateHash && history.replaceState) {
         history.replaceState(null, '', window.location.pathname + window.location.search);
       }
       return;
@@ -1000,7 +1081,9 @@ JS = r"""
       window.scrollTo({ top: exactY, behavior: 'smooth' });
     }
 
-    if (updateHash && history.replaceState && !hostSheet) {
+    if (leaveSheet) {
+      stepBackOffSheet({ id: cleanId, updateHash: updateHash });
+    } else if (updateHash && history.replaceState && !hostSheet) {
       history.replaceState(null, '', '#' + cleanId);
     }
 
@@ -4344,7 +4427,14 @@ JS = r"""
       updateActiveNavOnScroll();
     }
 
+    // A step through history that closes or opens a "more" page places the visitor itself (back where they were,
+    // or on the link they pressed). The address change that follows it must not move them again to the section
+    // named in the address, which may be a different one from where they had scrolled to.
+    let popPlacedHash = null;
     window.addEventListener('hashchange', () => {
+      const placed = popPlacedHash;
+      popPlacedHash = null;
+      if (placed !== null && window.location.hash === placed) return;
       if (window.location.hash && window.location.hash.length > 1) {
         scrollToTargetId(window.location.hash.slice(1), false, false);
       }
@@ -4353,10 +4443,29 @@ JS = r"""
     window.addEventListener('popstate', () => {
       const hashId = (window.location.hash || '').slice(1);
       const wanted = SEC_ALIAS[hashId] || hashId;
+      const job = sheetStepBack;
+      sheetStepBack = null;
+      const sheetBefore = activeSheetId();
+      // A step through existing entries, or a new entry (an address typed in the bar)? The browser says so where
+      // it can; otherwise a history that just grew means a new entry.
+      const histGrew = history.length > lastHistLen;
+      lastHistLen = history.length;
+      const steppedThroughHistory = Boolean(job) || (lastNavType ? lastNavType === 'traverse' : !histGrew);
+      lastNavType = '';
       if (SHEET_IDS.includes(wanted)) {
         if (activeSheetId() !== wanted) showSheet(wanted);
-      } else if (activeSheetId()) {
-        hideSheet(true);
+      } else {
+        if (activeSheetId() && !(job && job.reopen)) hideSheet(!(job && job.exit));
+        // Our own step back off a "more" page has arrived: finish what the visitor pressed (the link's target,
+        // or the page they opened again meanwhile).
+        if (job) settleSheetStepBack(job, true);
+      }
+      // Only a step through history has placed the visitor. An address typed while a page was open is a request
+      // to go to that section, so the address change that follows must still take them there.
+      if (steppedThroughHistory && (job || sheetBefore !== activeSheetId())) {
+        const placedHash = window.location.hash;
+        popPlacedHash = placedHash;
+        setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
       }
     });
 

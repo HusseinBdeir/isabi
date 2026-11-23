@@ -1,21 +1,22 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.38';
+const CACHE_NAME = 'isabi-systems-pwa-v6.39';
 const CACHE_VER = CACHE_NAME.replace(/^isabi-systems-pwa-v/, '');
 const SHELL_DIR = new URL('./', self.location.href).pathname;
 const STATIC_ASSETS = [
-  './manifest.json?v=6.38',
-  './favicon.ico?v=6.38',
-  './favicon-dark.ico?v=6.38',
-  './icon.svg?v=6.38',
-  './icon-dark.svg?v=6.38',
-  './icon-180.png?v=6.38',
-  './icon-192.png?v=6.38',
-  './icon-512.png?v=6.38',
-  './icon-512-maskable.png?v=6.38',
+  './manifest.json?v=6.39',
+  './favicon.ico?v=6.39',
+  './favicon-dark.ico?v=6.39',
+  './icon.svg?v=6.39',
+  './icon-dark.svg?v=6.39',
+  './icon-180.png?v=6.39',
+  './icon-192.png?v=6.39',
+  './icon-512.png?v=6.39',
+  './icon-512-maskable.png?v=6.39',
   './logo-wtc.png?v=1',
   './logo-blanca.png?v=1',
   './logo-la-una.png?v=1',
   './logo-palms.png?v=1',
-  './logo-voile.png?v=1'
+  './logo-voile.png?v=1',
+  './logo-platinum.png?v=1'
 ];
 
 function isSameOriginUrl(rawUrl) {
