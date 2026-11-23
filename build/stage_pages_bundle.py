@@ -42,6 +42,11 @@ ROOT_ALLOWLIST = (
     "logo-palms.png",
     "logo-voile.png",
     "logo-platinum.png",
+    "isabi-tour.mp4",
+    "isabi-tour-poster.jpg",
+    "isabi-tour-en.vtt",
+    "isabi-tour-ar.vtt",
+    "isabi-tour-fr.vtt",
     "404.html",
     "c4b9e2a7d18f406395e1a82c7d3f6b90.txt",
 )

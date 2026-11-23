@@ -207,7 +207,7 @@ def _hero(badge):
       <p class="d-hero-lead">Daily operations, double-entry accounting, dashboards, field kiosks and cited AI in one system, tailored to how your business runs.</p>
       <div class="d-cta-row">
         <a class="d-btn d-btn-p" href="#sandbox" data-sheet-open="sandbox">{dic('monitor')}<span>Explore Live Demo</span></a>
-        <a class="d-btn d-btn-s" href="#industries" data-sheet-open="industries">{dic('layers')}<span>Industry Blueprints</span></a>
+        <a class="d-btn d-btn-s" id="hero-tour-btn" href="#tour" data-tour-open="1">{dic('play')}<span>Watch the 90-Second Tour</span></a>
         <a class="d-btn d-btn-t" href="{WA_HELLO}" target="_blank" rel="noopener">{dic('wa')}<span>WhatsApp Direct</span></a>
       </div>
 
@@ -788,6 +788,7 @@ def _footer(badge):
         </div>
       </div>
       <nav class="d-foot-more" aria-label="More Pages">
+        <a href="#tour" data-tour-open="1">{dic('play', 'd-ic-xs')}<span>90-Second Tour</span></a>
 {more}
       </nav>
       <div class="d-foot-contact">
@@ -836,6 +837,37 @@ def _drawer(badge):
       <button type="submit" class="btn btn-brass">Ask</button>
     </form>
   </aside>
+</div>
+
+<!-- 90-SECOND PRODUCT WALKTHROUGH MODAL -->
+<div class="drawer-backdrop d-tour-backdrop" id="tour-modal-backdrop" hidden>
+  <div class="d-tour-modal" id="tour-modal" role="dialog" aria-modal="true" aria-labelledby="tour-modal-title">
+    <div class="d-tour-hdr">
+      <div class="d-tour-title">
+        {badge}
+        <div>
+          <b id="tour-modal-title">90-Second Product Walkthrough</b>
+          <small>Unified operations, double-entry books, dashboards and field kiosks</small>
+        </div>
+      </div>
+      <button type="button" class="d-btn d-btn-s d-btn-sm" id="close-tour-modal" aria-label="Close Walkthrough">Close</button>
+    </div>
+    <div class="d-tour-stage">
+      <video id="isabi-tour-video" controls playsinline preload="none" poster="isabi-tour-poster.jpg" aria-label="ISABI Systems 90-Second Product Tour">
+        <source src="isabi-tour.mp4" type="video/mp4">
+        <track kind="subtitles" srclang="en" label="English" src="isabi-tour-en.vtt" default>
+        <track kind="subtitles" srclang="ar" label="العربية" src="isabi-tour-ar.vtt">
+        <track kind="subtitles" srclang="fr" label="Français" src="isabi-tour-fr.vtt">
+      </video>
+    </div>
+    <div class="d-tour-ftr">
+      <span class="d-tour-note">Runs on isolated sample company data</span>
+      <div class="d-tour-acts">
+        <a class="d-btn d-btn-p d-btn-sm" href="#sandbox" data-sheet-open="sandbox" data-tour-close-nav="1">{dic('monitor', 'd-ic-sm')}<span>Explore Live Demo</span></a>
+        <a class="d-btn d-btn-s d-btn-sm" href="#portal" data-tour-close-nav="1"><span>Book Discovery Call</span></a>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- TOAST NOTIFICATION -->

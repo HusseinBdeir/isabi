@@ -4416,12 +4416,20 @@ JS = r"""
     if (yearEl) yearEl.textContent = String(NOW.getFullYear());
 
     // Handle initial hash on page load immediately (zero previous-section bleed)
+    var _tourPrevFocus = null;
+    var _tourStepBack = null;
+    var _tourClosingPop = false;
+    var _tourClosingPopToken = null;
     if (window.location.hash && window.location.hash.length > 1) {
       const initId = window.location.hash.slice(1);
-      scrollToTargetId(initId, false, true);
+      if (initId === 'tour' && typeof openTourModal === 'function') {
+        openTourModal(false);
+      } else {
+        scrollToTargetId(initId, false, true);
+      }
       // Re-align once images and fonts have settled, unless the visitor has already moved on.
       window.addEventListener('load', () => {
-        if (!activeSheetId() && window.location.hash.slice(1) === initId) scrollToTargetId(initId, false, true);
+        if (initId !== 'tour' && !activeSheetId() && window.location.hash.slice(1) === initId) scrollToTargetId(initId, false, true);
       }, { once: true });
     } else {
       updateActiveNavOnScroll();
@@ -4436,33 +4444,59 @@ JS = r"""
       popPlacedHash = null;
       if (placed !== null && window.location.hash === placed) return;
       if (window.location.hash && window.location.hash.length > 1) {
-        scrollToTargetId(window.location.hash.slice(1), false, false);
+        const hid = window.location.hash.slice(1);
+        if (hid === 'tour' && typeof openTourModal === 'function') {
+          openTourModal(false);
+        } else {
+          if (typeof closeTourModal === 'function') closeTourModal(true);
+          scrollToTargetId(hid, false, false);
+        }
       }
     });
 
     window.addEventListener('popstate', () => {
       const hashId = (window.location.hash || '').slice(1);
       const wanted = SEC_ALIAS[hashId] || hashId;
+      const tJob = _tourStepBack;
+      _tourStepBack = null;
+      const closingTour = _tourClosingPop;
+      _tourClosingPop = false;
+      _tourClosingPopToken = null;
       const job = sheetStepBack;
       sheetStepBack = null;
       const sheetBefore = activeSheetId();
-      // A step through existing entries, or a new entry (an address typed in the bar)? The browser says so where
-      // it can; otherwise a history that just grew means a new entry.
+      const tourBdEl = document.getElementById('tour-modal-backdrop');
+      const tourWasOpen = closingTour || Boolean(tourBdEl && !tourBdEl.hidden);
       const histGrew = history.length > lastHistLen;
       lastHistLen = history.length;
-      const steppedThroughHistory = Boolean(job) || (lastNavType ? lastNavType === 'traverse' : !histGrew);
+      const steppedThroughHistory = Boolean(job || tJob || closingTour) || (lastNavType ? lastNavType === 'traverse' : !histGrew);
       lastNavType = '';
+      if (tJob) {
+        if (typeof closeTourModal === 'function') closeTourModal(true);
+        if (tJob.sheet) openSheet(tJob.sheet, true);
+        else if (tJob.hash) scrollToTargetId(tJob.hash, true, false);
+        const placedHash = window.location.hash;
+        popPlacedHash = placedHash;
+        setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
+        return;
+      }
+      if (wanted === 'tour' && typeof openTourModal === 'function') {
+        openTourModal(false);
+        if (steppedThroughHistory) {
+          const placedHash = window.location.hash;
+          popPlacedHash = placedHash;
+          setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
+        }
+        return;
+      }
+      if (typeof closeTourModal === 'function') closeTourModal(true);
       if (SHEET_IDS.includes(wanted)) {
         if (activeSheetId() !== wanted) showSheet(wanted);
       } else {
         if (activeSheetId() && !(job && job.reopen)) hideSheet(!(job && job.exit));
-        // Our own step back off a "more" page has arrived: finish what the visitor pressed (the link's target,
-        // or the page they opened again meanwhile).
         if (job) settleSheetStepBack(job, true);
       }
-      // Only a step through history has placed the visitor. An address typed while a page was open is a request
-      // to go to that section, so the address change that follows must still take them there.
-      if (steppedThroughHistory && (job || sheetBefore !== activeSheetId())) {
+      if (steppedThroughHistory && (job || sheetBefore !== activeSheetId() || tourWasOpen)) {
         const placedHash = window.location.hash;
         popPlacedHash = placedHash;
         setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
@@ -4888,6 +4922,130 @@ JS = r"""
       stopAllShowcaseAskTools(true);
       resetAiThread();
     });
+    function setTourBgInert(on) {
+      const inertVal = Boolean(on);
+      ['site-header', 'top'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.inert = inertVal;
+      });
+      const foot = document.querySelector('footer.d-foot');
+      if (foot) foot.inert = inertVal;
+    }
+    function getTourFocusables() {
+      const m = document.getElementById('tour-modal');
+      if (!m) return [];
+      return Array.from(m.querySelectorAll('#close-tour-modal, video[controls], a[href], button:not([disabled])')).filter(el => {
+        if (el.hidden) return false;
+        const cs = getComputedStyle(el);
+        return cs.display !== 'none' && cs.visibility !== 'hidden';
+      });
+    }
+    function syncTourTracksLang() {
+      const vid = document.getElementById('isabi-tour-video');
+      if (!vid || !vid.textTracks) return;
+      const curLang = String(document.documentElement.getAttribute('lang') || 'en').trim().toLowerCase().slice(0, 2);
+      const target = (curLang === 'ar' || curLang === 'fr') ? curLang : 'en';
+      for (let i = 0; i < vid.textTracks.length; i++) {
+        try {
+          vid.textTracks[i].mode = (vid.textTracks[i].language === target ? 'showing' : 'disabled');
+        } catch (_) {}
+      }
+    }
+    function ownsTourEntry() {
+      return Boolean(history.state && history.state.tour) && typeof history.back === 'function';
+    }
+    function openTourModal(pushHash = true) {
+      const bd = document.getElementById('tour-modal-backdrop');
+      if (!bd) return;
+      _tourClosingPop = false;
+      _tourClosingPopToken = null;
+      if (bd.hidden) {
+        _tourPrevFocus = document.activeElement && !bd.contains(document.activeElement) ? document.activeElement : null;
+      }
+      bd.hidden = false;
+      setTourBgInert(true);
+      syncTourTracksLang();
+      if (pushHash && window.location.hash !== '#tour') {
+        try { history.pushState({ tour: true }, '', '#tour'); lastHistLen = history.length; } catch (_) { window.location.hash = 'tour'; }
+      }
+      const closeBtn = document.getElementById('close-tour-modal');
+      if (closeBtn) {
+        try { closeBtn.focus({ preventScroll: true }); } catch (_) { closeBtn.focus(); }
+      }
+    }
+    function closeTourModal(fromPop = false, opts = {}) {
+      const bd = document.getElementById('tour-modal-backdrop');
+      if (!bd || bd.hidden) return;
+      const vid = document.getElementById('isabi-tour-video');
+      if (vid && typeof vid.pause === 'function') {
+        try { vid.pause(); } catch (_) {}
+      }
+      bd.hidden = true;
+      setTourBgInert(false);
+      if (!fromPop && !opts.keepUrl && window.location.hash === '#tour') {
+        if (history.state && history.state.tour) {
+          _tourClosingPop = true;
+          const closingToken = {};
+          _tourClosingPopToken = closingToken;
+          setTimeout(() => {
+            if (_tourClosingPopToken === closingToken) {
+              _tourClosingPop = false;
+              _tourClosingPopToken = null;
+            }
+          }, 1500);
+          try { history.back(); } catch (_) {
+            _tourClosingPop = false;
+            _tourClosingPopToken = null;
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        } else {
+          try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (_) {}
+        }
+      }
+      const prev = _tourPrevFocus;
+      _tourPrevFocus = null;
+      if (opts.restoreFocus !== false && prev && document.contains(prev) && typeof prev.focus === 'function') {
+        try { prev.focus({ preventScroll: true }); } catch (_) { try { prev.focus(); } catch (__) {} }
+      }
+    }
+    document.addEventListener('click', e => {
+      const tCloseNav = e.target.closest('[data-tour-close-nav]');
+      if (!tCloseNav) return;
+      const sheetTarget = tCloseNav.getAttribute('data-sheet-open') || '';
+      const hrefTarget = (tCloseNav.getAttribute('href') || '').replace(/^#/, '');
+      closeTourModal(true, { restoreFocus: false, keepUrl: true });
+      if (ownsTourEntry()) {
+        e.preventDefault();
+        e.stopPropagation();
+        const tJob = { sheet: sheetTarget, hash: hrefTarget };
+        _tourStepBack = tJob;
+        setTimeout(() => {
+          if (_tourStepBack !== tJob) return;
+          _tourStepBack = null;
+          if (tJob.sheet) openSheet(tJob.sheet, true);
+          else if (tJob.hash) scrollToTargetId(tJob.hash, true, false);
+        }, 1500);
+        history.back();
+        return;
+      }
+      if (window.location.hash === '#tour') {
+        try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (_) {}
+      }
+    }, true);
+    document.addEventListener('click', e => {
+      const tOpen = e.target.closest('[data-tour-open]');
+      if (tOpen) {
+        e.preventDefault();
+        openTourModal(true);
+      }
+    });
+    document.getElementById('close-tour-modal')?.addEventListener('click', () => closeTourModal(false));
+    document.getElementById('tour-modal-backdrop')?.addEventListener('click', e => {
+      if (e.target.id === 'tour-modal-backdrop') closeTourModal(false);
+    });
+    if (typeof MutationObserver !== 'undefined') {
+      new MutationObserver(syncTourTracksLang).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+    }
     document.getElementById('close-ai-drawer')?.addEventListener('click', () => {
       _showcaseTts.liveVoiceMode = false;
       stopAllShowcaseAskTools(false);
@@ -4901,7 +5059,31 @@ JS = r"""
       }
     });
     document.addEventListener('keydown', e => {
+      const tourBd = document.getElementById('tour-modal-backdrop');
+      if (e.key === 'Tab' && tourBd && !tourBd.hidden) {
+        const items = getTourFocusables();
+        if (items.length) {
+          const first = items[0];
+          const last = items[items.length - 1];
+          const cur = document.activeElement;
+          if (!tourBd.contains(cur)) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+          } else if (e.shiftKey && cur === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && cur === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
       if (e.key === 'Escape') {
+        if (tourBd && !tourBd.hidden) {
+          closeTourModal(false);
+          return;
+        }
         let canceledRec = false;
         ['ai-inline-form', 'ai-drawer-form'].forEach(fid => {
           const f = document.getElementById(fid);
