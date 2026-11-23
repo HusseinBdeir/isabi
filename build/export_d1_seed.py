@@ -81,6 +81,8 @@ EDGE_RUNTIME_TABLES = {
     "geo_audit_log",
     "geo_gate_suggestions",
     "push_subscriptions",
+    "user_passkeys",
+    "passkey_challenges",
 }
 
 MULTI_INDUSTRY_COMPANIES = (

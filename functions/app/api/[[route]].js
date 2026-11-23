@@ -50,6 +50,7 @@ import { handleKioskOptions, handleKioskPosVoidFeed, handleKioskPunchFeed, handl
 import { handleResolveMapLink } from '../../_lib/map_link.js';
 import { handleDayClosePush } from '../../_lib/web_push.js';
 import { handlePushApi } from '../../_lib/approval_push.js';
+import { handlePasskeysApi } from '../../_lib/webauthn.js';
 import {
   applyEdgeCors,
   canAccessCompany,
@@ -181,7 +182,9 @@ async function routeAppApi(context) {
     ? 4096
     : (subPath === '/geo/gate-suggestions'
       ? 16384
-      : (session ? AUTHED_MAX_BODY_BYTES : 6291456)); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
+      : (subPath === '/auth/passkeys'
+        ? 65536
+        : (session ? AUTHED_MAX_BODY_BYTES : 6291456))); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
   const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
   if (tooLarge) {
     return jsonResponse({ ok: false, error: 'Request payload exceeds size limit.' }, 413);
@@ -197,6 +200,18 @@ async function routeAppApi(context) {
       evictCachedMapSession(session);
     }
     return loginRes;
+  }
+  if (subPath === '/auth/passkeys' && request.method === 'POST') {
+    if (parseError) {
+      return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
+    }
+    const act = String((body && body.action) || '').trim().toLowerCase();
+    const purp = String((body && body.purpose) || '').trim().toLowerCase();
+    const preAuthOk = (act === 'auth_options' || act === 'auth_verify') && purp === 'login';
+    if (!preAuthOk && !session) {
+      return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+    }
+    return handlePasskeysApi(request, env, session, body, url);
   }
   if (subPath === '/auth/logout' && request.method === 'POST') {
     evictCachedMapSession(session || rawSession);

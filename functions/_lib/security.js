@@ -594,7 +594,14 @@ export async function verifyActiveEdgeSession(session, env) {
     }
 
     const uStatus = String(uRow.status || 'Active').trim().toLowerCase();
-    if (uStatus === 'suspended' || uStatus === 'locked' || Number(uRow.locked || 0) === 1 || uRow.locked === true || Number(uRow.kioskLocked || 0) === 1 || uRow.kioskLocked === true) return null;
+    let uPayload = null;
+    if (typeof uRow.payload_json === 'string' && uRow.payload_json.trim()) {
+      try { uPayload = JSON.parse(uRow.payload_json); } catch (_) { uPayload = null; }
+    } else if (uRow.payload_json && typeof uRow.payload_json === 'object') {
+      uPayload = uRow.payload_json;
+    }
+    const pLocked = Boolean(uPayload && (Number(uPayload.locked || 0) === 1 || uPayload.locked === true || Number(uPayload.kioskLocked || 0) === 1 || uPayload.kioskLocked === true));
+    if (uStatus === 'suspended' || uStatus === 'locked' || Number(uRow.locked || 0) === 1 || uRow.locked === true || Number(uRow.kioskLocked || 0) === 1 || uRow.kioskLocked === true || pLocked) return null;
 
     let roleTabPolicies = null;
     try {
