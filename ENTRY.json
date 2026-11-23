@@ -1,0 +1,14 @@
+{
+ "app": {
+  "branch": "wt/raw-sites-above-haul",
+  "sha": "b64ea6d26d35a42dea882816d72469c3922d88f6"
+ },
+ "gates": [],
+ "holder": "THEO hbdei (raw-sites-above-haul)",
+ "id": "20261123T231820Z-2ead4ee6",
+ "pc": "Theo",
+ "queuedAt": "2026-11-23T23:18:20Z",
+ "seenAt": "2026-11-23T23:18:20Z",
+ "state": "waiting",
+ "summary": "Material & Transport: Site Material, Transport & Remaining Expenses table moved above the 3rd-party customer-site transport register"
+}
