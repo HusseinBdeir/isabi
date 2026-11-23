@@ -32,14 +32,17 @@ Order of a release (THEO runs it; each stage refuses when the one before it has 
   9. git push origin main (both repos), then `status` to compare live with disk,
      then `python build/release_lock.py release`.
 `upload`, `r2` and `pages` hold the release lock (build/release_lock.py; taken when free, refused while another
-session holds it), and `pages` refuses a HEAD that does not contain origin/main (rebase the release commit first).
-`check` is read-only and can be run at any time. `status` prints what is live against what is on disk.
+session holds it unless `--wait-lock [SECONDS]` is passed, which polls every 12s up to 540s by default — or run
+`wait-lock` first to claim the lock before live writes), and `pages` refuses a HEAD that does not contain origin/main
+(rebase the release commit first). `check` is read-only and can be run at any time. `status` prints what is live
+against what is on disk.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -68,6 +71,19 @@ STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"
 # remote override requests, the override audit trail, geo audit / gate suggestion logs and per-seat saved views
 EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit", "geo_audit_log", "geo_gate_suggestions", "push_subscriptions"}
 NO_RELEASE_LOCK = False  # set from --no-release-lock in main()
+DEFAULT_WAIT_LOCK_S = 540
+DEFAULT_POLL_LOCK_S = 12
+_mono = time.monotonic
+_sleep = time.sleep
+_LEGACY_NET_ERR_RE = re.compile(
+    r"Could not resolve host|Connection (?:was )?reset|Recv failure|Send failure|Failed to connect|"
+    r"Connection timed out|Operation timed out|Connection refused|Network is unreachable|"
+    r"remote end hung up|early EOF|Empty reply from server|SSL connection timeout|gnutls_handshake\(\) failed|"
+    r"did not finish \(TimeoutExpired\)|The requested URL returned error: 5\d\d|"
+    r"schannel: (?:failed to receive handshake|server closed (?:the connection )?abruptly|failed to decrypt data)|"
+    r"cannot lock ref '[^']*': is at [0-9a-f]+ but expected [0-9a-f]+",
+    re.IGNORECASE,
+)
 
 
 def sha10(data: bytes) -> str:
@@ -682,19 +698,135 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
         print(f"Live manifest not readable yet ({exc})")
 
 
-def main() -> None:
+def _require_or_wait_release_lock(*, purpose: str, bypass: bool, wait_s: int, poll_s: int, holder: str = "") -> dict | None:
+    L = lock_mod()
+    if "wait_s" in inspect.signature(L.require_release_lock).parameters:
+        return lock_mod().require_release_lock(
+            ISABI, purpose=purpose, bypass=bypass, holder=holder, wait_s=wait_s, poll_s=poll_s,
+        )
+    if bypass or os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no"):
+        return lock_mod().require_release_lock(ISABI, purpose=purpose, bypass=bypass)
+    if wait_s <= 0:
+        return lock_mod().require_release_lock(ISABI, purpose=purpose, bypass=False)
+
+    # Legacy fallback when HEAD's committed release_lock.py does not accept wait_s/poll_s yet.
+    deadline = _mono() + max(0.0, float(wait_s))
+    eff_poll = max(1.0, float(poll_s))
+    shown_wait = ""
+    last_log: float | None = None
+    while True:
+        try:
+            sha, info = L.read_remote_lock(ISABI)
+        except L.LockError as exc:
+            if _LEGACY_NET_ERR_RE.search(str(exc) or "") and _mono() < deadline:
+                msg = str(exc).splitlines()[0]
+                if msg != shown_wait:
+                    print(f"Release lock read hiccup ({msg[:180]}); retrying in {int(eff_poll)}s...", flush=True)
+                    shown_wait = msg
+                _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                continue
+            print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+            raise SystemExit(2) from None
+        if not (info and L.held_by_me(info, ISABI)) and sha and not L.is_expired(info, L.TAKEOVER_GRACE_MIN):
+            rem = deadline - _mono()
+            desc = L.describe(info)
+            if rem <= 0:
+                print(
+                    f"ERROR: RELEASE LOCK: {desc}.\nStill held after waiting {int(wait_s)}s; run again with --wait-lock to keep waiting.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                raise SystemExit(2)
+            now_m = _mono()
+            if desc != shown_wait or last_log is None or now_m - last_log >= 60:
+                print(f"Waiting for release lock (polling every {int(eff_poll)}s, {int(rem)}s left): {desc}", flush=True)
+                shown_wait, last_log = desc, now_m
+            _sleep(min(eff_poll, max(0.0, rem)))
+            continue
+        try:
+            return lock_mod().require_release_lock(ISABI, purpose=purpose, bypass=False)
+        except SystemExit:
+            if _mono() >= deadline:
+                raise
+            # A peer may have grabbed the free lock right before require_release_lock pushed, or a transient read hiccup occurred.
+            try:
+                sha_now, info_now = L.read_remote_lock(ISABI)
+            except L.LockError as exc2:
+                if _LEGACY_NET_ERR_RE.search(str(exc2) or "") and _mono() < deadline:
+                    _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                    continue
+                raise
+            if sha_now and not L.is_expired(info_now, L.TAKEOVER_GRACE_MIN) and not L.held_by_me(info_now, ISABI):
+                _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                continue
+            raise
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Publish a Manufacturing data top-up without shipping the shell.", allow_abbrev=False)
-    ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "r2", "pages"])
+    ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "r2", "pages", "wait-lock"])
     ap.add_argument("--message", default="", help="Commit / deployment message (default: derived from the seed date)")
     ap.add_argument("--keep", action="store_true", help="pages: keep the release worktree and bundle for inspection")
     ap.add_argument("--no-release-lock", action="store_true", help="upload / r2 / pages without the release lock (owner only)")
     ap.add_argument("--skip-suite", action="store_true", help="check / commit: emergency bypass of the desktop suite gate")
-    a = ap.parse_args()
+    ap.add_argument(
+        "--wait-lock",
+        nargs="?",
+        const=DEFAULT_WAIT_LOCK_S,
+        default=None,
+        type=int,
+        metavar="SECONDS",
+        help=f"upload / r2 / pages / wait-lock: wait up to SECONDS (default {DEFAULT_WAIT_LOCK_S}) polling the release lock",
+    )
+    ap.add_argument(
+        "--poll-lock",
+        default=DEFAULT_POLL_LOCK_S,
+        type=int,
+        metavar="SECONDS",
+        help=f"seconds between release-lock polls when waiting (default {DEFAULT_POLL_LOCK_S})",
+    )
+    ap.add_argument("--holder", default="", help="optional holder name when taking the release lock")
+    return ap
+
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    ap = build_arg_parser()
+    a = ap.parse_args(argv)
+    if a.wait_lock is not None and a.stage not in ("upload", "r2", "pages", "wait-lock"):
+        ap.error("--wait-lock is only valid with upload, r2, pages or wait-lock")
+    if a.no_release_lock and (a.stage == "wait-lock" or a.wait_lock is not None):
+        ap.error("--no-release-lock cannot be combined with wait-lock / --wait-lock")
+    eff_wait = (DEFAULT_WAIT_LOCK_S if a.wait_lock is None else a.wait_lock) if a.stage == "wait-lock" else (0 if a.wait_lock is None else a.wait_lock)
+    if eff_wait < 0 or eff_wait > 3600:  # noqa: PLR2004
+        ap.error("--wait-lock must be 0 to 3600 seconds")
+    if a.poll_lock < 1 or a.poll_lock > 300:  # noqa: PLR2004
+        ap.error("--poll-lock must be 1 to 300 seconds")
+    a.eff_wait_lock = eff_wait
+    return a
+
+
+def main(argv: list[str] | None = None) -> int:
+    a = parse_cli_args(argv)
     global NO_RELEASE_LOCK
     NO_RELEASE_LOCK = a.no_release_lock
     if a.stage in ("upload", "r2", "pages"):
         # Live writes (D1, R2, Pages) happen one release at a time: build/release_lock.py.
-        lock_mod().require_release_lock(ISABI, purpose=f"data-only release ({a.stage})", bypass=a.no_release_lock)
+        _require_or_wait_release_lock(
+            purpose=f"data-only release ({a.stage})",
+            bypass=a.no_release_lock,
+            wait_s=a.eff_wait_lock,
+            poll_s=a.poll_lock,
+            holder=a.holder,
+        )
+    elif a.stage == "wait-lock":
+        _require_or_wait_release_lock(
+            purpose="data-only release",
+            bypass=False,
+            wait_s=a.eff_wait_lock,
+            poll_s=a.poll_lock,
+            holder=a.holder,
+        )
+        return 0
     if a.stage == "status":
         stage_status()
     elif a.stage == "check":
@@ -709,7 +841,8 @@ def main() -> None:
         stage_r2()
     else:
         stage_pages(a.message, a.keep)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
