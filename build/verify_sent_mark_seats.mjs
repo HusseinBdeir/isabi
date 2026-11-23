@@ -174,6 +174,38 @@ console.log('\n[a supervisor removes it]');
   ok('a removed mark can be purged by a finance seat (nothing it locks)', r.status === 200 && !stored(MARK), r);
 }
 
+const MARK_MA = 'WF::statement_watermark::manufacturing::wtc::customer::acme consolidated';
+console.log('\n[sent statement mark: merged_aliases guard]');
+{
+  let r = await post(FIN, { [MARK_MA]: mark('2026-11-10', 1, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme  Ltd', 'Old Co', 'old co'] }) });
+  ok('a finance seat saves a mark with merged_aliases', r.status === 200 && stored(MARK_MA) && Array.isArray(stored(MARK_MA).merged_aliases) && stored(MARK_MA).merged_aliases.length >= 2, r);
+  r = await post(FIN, { [MARK_MA]: mark('2026-11-12', 2, false, { party_name: 'Acme Consolidated', merged_aliases: ['acme ltd', 'OLD  CO', 'Third Co'] }) });
+  ok('a finance seat can keep existing merged_aliases (whitespace/case-folded) and add new ones',
+    r.status === 200 && stored(MARK_MA).confirmed_through === '2026-11-12' && stored(MARK_MA).merged_aliases.includes('Third Co'), r);
+  r = await post(FIN, { [MARK_MA]: mark('2026-11-12', 3, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd', 'Third Co'] }) });
+  ok('a finance seat cannot drop an alias from merged_aliases (403, kept)',
+    r.status === 403 && stored(MARK_MA).rev === 2 && stored(MARK_MA).merged_aliases.some(a => /old/i.test(a)), r);
+  r = await post(FIN, { [MARK_MA]: mark('2026-11-12', 3, false, { party_name: 'Acme Consolidated', merged_aliases: [] }) });
+  ok('a finance seat cannot empty merged_aliases (403, kept)',
+    r.status === 403 && stored(MARK_MA).rev === 2 && stored(MARK_MA).merged_aliases.length >= 2, r);
+  r = await post(SUP, { [MARK_MA]: mark('2026-11-12', 3, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd', 'Third Co'] }) });
+  ok('a read-only Supervisor can shrink merged_aliases',
+    r.status === 200 && stored(MARK_MA).rev === 3 && J(stored(MARK_MA).merged_aliases) === J(['Acme Ltd', 'Third Co']), r);
+  const MARK_AT = 'WF::statement_watermark::manufacturing::wtc::customer::ceiling test co';
+  r = await post(FIN, { [MARK_AT]: mark('2026-11-15', 1, false, { party_name: 'Ceiling Test Co', merged_aliases: ['Ceiling Alias'], merged_alias_through: { 'ceiling alias': '2026-11-15' } }) });
+  ok('a finance seat saves merged_alias_through',
+    r.status === 200 && stored(MARK_AT) && stored(MARK_AT).merged_alias_through && stored(MARK_AT).merged_alias_through['ceiling alias'] === '2026-11-15', r);
+  r = await post(FIN, { [MARK_AT]: mark('2026-11-25', 2, false, { party_name: 'Ceiling Test Co', merged_aliases: ['Ceiling Alias'], merged_alias_through: { 'ceiling alias': '2026-11-15' } }) });
+  ok('a finance seat can advance confirmed_through while keeping undone alias ceiling pinned at 2026-11-15',
+    r.status === 200 && stored(MARK_AT).confirmed_through === '2026-11-25' && stored(MARK_AT).merged_alias_through['ceiling alias'] === '2026-11-15', r);
+  r = await post(FIN, { [MARK_AT]: mark('2026-11-25', 3, false, { party_name: 'Ceiling Test Co', merged_aliases: ['Ceiling Alias'], merged_alias_through: { 'ceiling alias': '2026-11-10' } }) });
+  ok('a finance seat cannot lower merged_alias_through earlier (403, kept)',
+    r.status === 403 && stored(MARK_AT).rev === 2 && stored(MARK_AT).merged_alias_through['ceiling alias'] === '2026-11-15', r);
+  r = await post(SUP, { [MARK_AT]: mark('2026-11-25', 3, false, { party_name: 'Ceiling Test Co', merged_aliases: ['Ceiling Alias'], merged_alias_through: { 'ceiling alias': '2026-11-10' } }) });
+  ok('a read-only Supervisor can lower merged_alias_through',
+    r.status === 200 && stored(MARK_AT).rev === 3 && stored(MARK_AT).merged_alias_through['ceiling alias'] === '2026-11-10', r);
+}
+
 const REV = 'WF::rate_change_review::price_rules::PR-1::change::2026-11-21T09:00:00.000Z';
 const SET = 'WF::rate_change_settings::alert';
 const review = { reviewed_at: '2026-11-21T10:00:00.000Z', reviewed_by: 'Someone', rev: 1 };
@@ -245,6 +277,38 @@ console.log('\n[/sync keeps the stored mark]');
   inc = { industryRowEdits: { [MARK]: mark('', 3, true), [REV]: review, [SET]: { usd: 5000, rev: 2 } } };
   enforceGuardedWorkflowMarksOnSync(inc, prev, pOwn);
   ok('sync: the Owner removes the mark and changes the alert amount', inc.industryRowEdits[MARK].cleared === true && inc.industryRowEdits[SET].usd === 5000, inc);
+
+  const MARK_MA_S = 'WF::statement_watermark::manufacturing::wtc::customer::acme consolidated';
+  const prevMa = { industryRowEdits: { [MARK_MA_S]: mark('2026-11-15', 2, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd', 'Old Co'] }) } };
+  const d1Ma = new Map([[MARK_MA_S, mark('2026-11-15', 2, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd', 'Old Co'] })]]);
+  inc = { industryRowEdits: { [MARK_MA_S]: mark('2026-11-15', 3, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd'] }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevMa, pFin, d1Ma);
+  ok('sync: a finance seat dropping a merged alias goes back to the stored mark (D1-checked)',
+    inc.industryRowEdits[MARK_MA_S].rev === 2 && inc.industryRowEdits[MARK_MA_S].merged_aliases.includes('Old Co'), inc);
+  inc = { industryRowEdits: { [MARK_MA_S]: mark('2026-11-15', 3, false, { party_name: 'Acme Consolidated', merged_aliases: ['acme  ltd', 'OLD CO', 'Third Co'] }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevMa, pFin, d1Ma);
+  ok('sync: a finance seat preserving merged_aliases (plus adding) is kept',
+    inc.industryRowEdits[MARK_MA_S].rev === 3 && inc.industryRowEdits[MARK_MA_S].merged_aliases.includes('Third Co'), inc);
+  inc = { industryRowEdits: { [MARK_MA_S]: mark('2026-11-15', 3, false, { party_name: 'Acme Consolidated', merged_aliases: ['Acme Ltd'] }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevMa, pSe, d1Ma);
+  ok('sync: a Supervisor seat shrinking merged_aliases is kept',
+    inc.industryRowEdits[MARK_MA_S].rev === 3 && J(inc.industryRowEdits[MARK_MA_S].merged_aliases) === J(['Acme Ltd']), inc);
+
+  const MARK_AT_S = 'WF::statement_watermark::manufacturing::wtc::customer::acme ceiling';
+  const prevAt = { industryRowEdits: { [MARK_AT_S]: mark('2026-11-20', 2, false, { party_name: 'Acme Ceiling', merged_aliases: ['Old Co'], merged_alias_through: { 'old co': '2026-11-15' } }) } };
+  const d1At = new Map([[MARK_AT_S, mark('2026-11-20', 2, false, { party_name: 'Acme Ceiling', merged_aliases: ['Old Co'], merged_alias_through: { 'old co': '2026-11-15' } })]]);
+  inc = { industryRowEdits: { [MARK_AT_S]: mark('2026-11-25', 3, false, { party_name: 'Acme Ceiling', merged_aliases: ['Old Co'], merged_alias_through: { 'old co': '2026-11-10' } }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevAt, pFin, d1At);
+  ok('sync: a finance seat lowering merged_alias_through goes back to the stored ceiling (D1-checked)',
+    inc.industryRowEdits[MARK_AT_S].rev === 2 && inc.industryRowEdits[MARK_AT_S].merged_alias_through['old co'] === '2026-11-15', inc);
+  inc = { industryRowEdits: { [MARK_AT_S]: mark('2026-11-25', 3, false, { party_name: 'Acme Ceiling', merged_aliases: ['Old Co'], merged_alias_through: { 'old co': '2026-11-15' } }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevAt, pFin, d1At);
+  ok('sync: a finance seat advancing confirmed_through while keeping merged_alias_through pinned is kept',
+    inc.industryRowEdits[MARK_AT_S].rev === 3 && inc.industryRowEdits[MARK_AT_S].confirmed_through === '2026-11-25' && inc.industryRowEdits[MARK_AT_S].merged_alias_through['old co'] === '2026-11-15', inc);
+  inc = { industryRowEdits: { [MARK_AT_S]: mark('2026-11-25', 3, false, { party_name: 'Acme Ceiling', merged_aliases: ['Old Co'], merged_alias_through: { 'old co': '2026-11-10' } }) } };
+  enforceGuardedWorkflowMarksOnSync(inc, prevAt, pSe, d1At);
+  ok('sync: a Supervisor seat lowering merged_alias_through is kept',
+    inc.industryRowEdits[MARK_AT_S].rev === 3 && inc.industryRowEdits[MARK_AT_S].merged_alias_through['old co'] === '2026-11-10', inc);
   ok('only the two mark families are guarded', isGuardedWorkflowMarkKey(MARK) && isGuardedWorkflowMarkKey(SET) && !isGuardedWorkflowMarkKey('WF::period_close::wtc')
     && guardedWorkflowMarkError('WF::period_close::wtc', null, {}, pEntry) === '');
 }
