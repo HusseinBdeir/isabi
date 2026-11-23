@@ -414,6 +414,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       hash: location.hash
     };
     if (onFloor()) floorHits.push('Back to Site pressed twice');
+    // Later, Forward to the page again and press the footer link: the visitor must land on the link's target.
+    // (If the browser were handed scroll placement back after the return, it would put its own remembered position
+    // back after this step. That position is read from the page here, not from the recorded requests.)
+    await tick(1100);
+    history.forward();
+    await tick(90);
+    footInfo.forwardAgainShown = !document.getElementById('faq').hidden;
+    if (footLink) footLink.click();
+    await tick(250);
+    footInfo.afterForwardThenLink = { pricingTop: pricingTopNow(), hash: location.hash, openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length, mode: history.scrollRestoration };
+    if (onFloor()) floorHits.push('Forward then footer link');
     sheetInfo.footerLink = footInfo;
 
     // The visitor scrolled away from the section named in the address (#pricing) before opening a page:
@@ -450,6 +461,35 @@ document.addEventListener('DOMContentLoaded', async function() {
     awayInfo.hashAfter = location.hash;
     if (onFloor()) floorHits.push('Back to Site after scrolling away');
     sheetInfo.scrolledAway = awayInfo;
+    window.scrollTo(0, window.scrollY + pricingTopNow());
+    await tick(30);
+
+    // An address typed while a page is open (here: #why) is a request to go to that section. The visitor must be
+    // taken there, not left where they had been before opening the page.
+    var faqOpener4 = document.querySelector('#site-pages a[href="#faq"]');
+    if (faqOpener4) faqOpener4.click();
+    await tick(30);
+    var typedInfo = { faqShown: !document.getElementById('faq').hidden };
+    var typedAsks = [];
+    var realScrollTo2 = window.scrollTo;
+    window.scrollTo = function(a, b) {
+      typedAsks.push(Math.round(a && typeof a === 'object' ? Number(a.top) : Number(b)));
+      return realScrollTo2.apply(window, arguments);
+    };
+    location.hash = 'why';
+    await tick(150);
+    window.scrollTo = realScrollTo2;
+    typedInfo.openSheets = document.querySelectorAll('[data-sheet]:not([hidden])').length;
+    typedInfo.pagesHidden = document.getElementById('site-pages').hidden;
+    typedInfo.hash = location.hash;
+    typedInfo.whyY = Math.round(window.scrollY + whyTopNow());
+    typedInfo.asks = typedAsks;
+    typedInfo.lastAskOffWhy = typedAsks.length ? Math.abs(typedAsks[typedAsks.length - 1] - typedInfo.whyY) : -1;
+    sheetInfo.typedHash = typedInfo;
+    // Back to the entry the probes started on (two steps: the typed address, then the page's own entry)
+    history.go(-2);
+    await tick(120);
+    sheetInfo.typedHashRestored = { hash: location.hash, openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length, onFloor: onFloor() };
     window.scrollTo(0, window.scrollY + pricingTopNow());
     await tick(30);
 
@@ -945,7 +985,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         def probe_viewport(w, h, label):
             res_vp = subprocess.run(
-                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=6000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
+                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=9000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
             )
             if '<pre id="diag-json">' not in res_vp.stdout:
@@ -1139,6 +1179,10 @@ document.addEventListener('DOMContentLoaded', function() {
             assert fl['afterClick']['pagesHidden'] is False and fl['afterClick']['openSheets'] == 0 and fl['afterClick']['mainNavHidden'] is False and fl['afterClick']['hash'] == '#pricing' and fl['afterClick']['onSheetEntry'] is False, f"{vp_lbl} footer link inside a page did not return to the main pages: {fl}"
             assert abs(fl['afterClick']['pricingTop']) <= 4, f"{vp_lbl} footer link inside a page did not land on its target page: {fl}"
             assert fl['afterForward'] == {'faqShown': True, 'hash': '#faq'}, f"{vp_lbl} footer link inside a page replaced the page's history entry instead of stepping back off it (next Back would do nothing): {fl}"
+            assert fl['forwardAgainShown'] is True and abs(fl['afterForwardThenLink']['pricingTop']) <= 4 and fl['afterForwardThenLink']['hash'] == '#pricing' and fl['afterForwardThenLink']['openSheets'] == 0, f"{vp_lbl} Forward to a page, then a footer link: the visitor did not land on the link's target: {fl}"
+            ty = dvp['sheets']['typedHash']
+            assert ty['faqShown'] is True and ty['openSheets'] == 0 and ty['pagesHidden'] is False and ty['hash'] == '#why' and 0 <= ty['lastAskOffWhy'] <= 4, f"{vp_lbl} an address typed while a page was open did not take the visitor to that section: {ty}"
+            assert dvp['sheets']['typedHashRestored'] == {'hash': '#pricing', 'openSheets': 0, 'onFloor': False}, f"{vp_lbl} typed-address probe did not return to its starting entry: {dvp['sheets']['typedHashRestored']}"
             assert fl['end'] == {'pagesHidden': False, 'openSheets': 0, 'hash': '#pricing'}, f"{vp_lbl} footer-link probe did not end on the main pages: {fl}"
 
         # Primary Desktop assertions

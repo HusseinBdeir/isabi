@@ -9467,6 +9467,15 @@ box-shadow: none;
   let sheetReturnY = 0;
   let sheetOpener = null;
   let sheetStepBack = null;
+  // How the browser got to the current history entry: a step through existing entries (Back, Forward, our own
+  // step back) or a new entry (an address typed while a "more" page is open). Read by the popstate listener.
+  let lastNavType = '';
+  let lastHistLen = history.length;
+  try {
+    if (window.navigation && typeof window.navigation.addEventListener === 'function') {
+      window.navigation.addEventListener('navigate', e => { lastNavType = (e && e.navigationType) || ''; });
+    }
+  } catch (e) {}
 
   function activeSheetId() {
     const el = document.querySelector('[data-sheet]:not([hidden])');
@@ -9547,6 +9556,7 @@ box-shadow: none;
       // A page was opened again while the step back was on its way: it gets a fresh entry of its own.
       if (activeSheetId() !== job.reopen) showSheet(job.reopen);
       try { history.pushState({ sheet: job.reopen }, '', '#' + job.reopen); } catch (e) {}
+      lastHistLen = history.length;
       return;
     }
     if (job.exit) {
@@ -9576,8 +9586,11 @@ box-shadow: none;
         else {
           // From here the site places the scroll itself when the visitor comes back (to where they were, or to the
           // link they pressed). Left on automatic, the browser puts its own remembered position back a moment later.
+          // It stays that way for this visit: handing it back would let the browser override a link pressed after
+          // a Forward step. The cost: a reload after visiting one of these pages starts at the top.
           try { history.scrollRestoration = 'manual'; } catch (e) {}
           history.pushState({ sheet: id }, '', '#' + id);
+          lastHistLen = history.length;
         }
       } catch (e) {}
     }
@@ -13099,6 +13112,12 @@ box-shadow: none;
       const job = sheetStepBack;
       sheetStepBack = null;
       const sheetBefore = activeSheetId();
+      // A step through existing entries, or a new entry (an address typed in the bar)? The browser says so where
+      // it can; otherwise a history that just grew means a new entry.
+      const histGrew = history.length > lastHistLen;
+      lastHistLen = history.length;
+      const steppedThroughHistory = Boolean(job) || (lastNavType ? lastNavType === 'traverse' : !histGrew);
+      lastNavType = '';
       if (SHEET_IDS.includes(wanted)) {
         if (activeSheetId() !== wanted) showSheet(wanted);
       } else {
@@ -13106,14 +13125,10 @@ box-shadow: none;
         // Our own step back off a "more" page has arrived: finish what the visitor pressed (the link's target,
         // or the page they opened again meanwhile).
         if (job) settleSheetStepBack(job, true);
-        // Back on the main pages: hand scroll placement on reload back to the browser once this step has settled.
-        setTimeout(() => {
-          if (!activeSheetId() && !(history.state && history.state.sheet)) {
-            try { history.scrollRestoration = 'auto'; } catch (e) {}
-          }
-        }, 1000);
       }
-      if (job || sheetBefore !== activeSheetId()) {
+      // Only a step through history has placed the visitor. An address typed while a page was open is a request
+      // to go to that section, so the address change that follows must still take them there.
+      if (steppedThroughHistory && (job || sheetBefore !== activeSheetId())) {
         const placedHash = window.location.hash;
         popPlacedHash = placedHash;
         setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
