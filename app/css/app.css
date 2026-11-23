@@ -4835,6 +4835,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
     border-bottom: 1px solid var(--line);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
     scrollbar-width: none;
     flex-shrink: 0;
   }
@@ -4852,6 +4853,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
     font-weight: 600;
     white-space: nowrap;
     flex-shrink: 0;
+    touch-action: manipulation;
   }
   .m-subnav-pill em {
     font-style: normal;
@@ -20664,9 +20666,11 @@ svg.ic {
   opacity: 0.85;
   vertical-align: 0;
 }
-.hub-subtab:hover {
-  background: var(--brass-tint);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .hub-subtab:hover {
+    background: var(--brass-tint);
+    color: var(--ink);
+  }
 }
 .hub-subtab.active {
   background: var(--brass);
@@ -21376,6 +21380,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   box-shadow: none;
   overflow-x: auto;
   overflow-y: hidden;
+  touch-action: manipulation;
   scrollbar-width: none;
 }
 :root[data-theme="dark"] .hub-subtab-bar {
@@ -21398,6 +21403,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   line-height: 1.2;
   white-space: nowrap;
   flex-shrink: 0;
+  touch-action: manipulation;
   transition: color 0.14s, border-color 0.14s, background 0.14s;
 }
 .hub-subtab svg.ic {
@@ -21405,12 +21411,14 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   opacity: 0.72;
   color: var(--muted);
 }
-.hub-subtab:hover {
-  background: rgba(15, 30, 56, 0.035);
-  color: var(--ink);
-}
-:root[data-theme="dark"] .hub-subtab:hover {
-  background: rgba(255, 255, 255, 0.04);
+@media (hover: hover) and (pointer: fine) {
+  .hub-subtab:hover {
+    background: rgba(15, 30, 56, 0.035);
+    color: var(--ink);
+  }
+  :root[data-theme="dark"] .hub-subtab:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
 }
 .hub-subtab.active,
 :root[data-theme="dark"] .hub-subtab.active {
@@ -21463,9 +21471,17 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   border-color: rgba(239, 68, 68, 0.40);
 }
 @media (max-width: 860px) {
-  .hub-subtab-bar {
-    margin: 0 0 8px 0;
+  .hub-subtab-bar,
+  .main-area > .hub-subtab-bar {
+    flex-shrink: 0;
+    margin: 0;
     padding: 0 8px;
+    position: relative;
+    z-index: 18;
+    touch-action: manipulation;
+  }
+  .main-area > .hub-subtab-bar ~ .workspace {
+    padding-top: 8px;
   }
   .hub-subtab {
     padding: 7px 8px 6px;
@@ -38469,6 +38485,7 @@ video::-webkit-media-controls-start-playback-button {
   .m-subnav-pill,
   .hub-subtab {
     min-height: 40px;
+    touch-action: manipulation;
   }
   #mobileBottomDock .dock-btn {
     min-height: 44px;
@@ -39071,7 +39088,9 @@ video::-webkit-media-controls-start-playback-button {
   white-space: nowrap;
   cursor: pointer;
 }
-.hub-charts-jump:hover { border-color: var(--brass); }
+@media (hover: hover) and (pointer: fine) {
+  .hub-charts-jump:hover { border-color: var(--brass); }
+}
 .hub-charts-jump svg.ic { font-size: 13px; opacity: 0.85; }
 .reg-view-switch {
   display: inline-flex;

@@ -4105,9 +4105,11 @@
 
   function forEachCashCustomDelta(key, matchCoFn, applyRowFn) {
     const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+    const released = releasedKeptCopyIds(key);
     for (let i = 0; i < arr.length; i++) {
       const r = arr[i];
       if (!r) continue;
+      if (r.voided && released.size && r.id != null && released.has(String(r.id))) continue; // read as not there
       if (isAppRecord(r)) {
         if (!r.voided && matchCoFn(r)) applyRowFn(r, 1);
       } else {
@@ -8934,6 +8936,71 @@
   function isAppKeyedEntry(r) {
     return isAppRecord(r) && !isWorkbookRowId(r.id);
   }
+  // An entry keyed in the app that a top-up kept over its workbook copy (owner rule 2026-11-23): the facts agreed, so
+  // the entry stays as keyed and the workbook copy is voided under its workbook id (build/reconcile_cloud_store.py
+  // KEPT_APP_MARK `kept_over_workbook` on the entry, `kept_for` on the copy). While that copy stays voided the entry is
+  // the booked row: never app-only, never unposted, never paired away. The pair is read from the copy's kept_for
+  // first: a device that held the entry before the top-up keeps its own copy of it without the mark.
+  // `info` = keptOverWorkbookVoidedIds(key).
+  const KEPT_APP_VOID_BY = 'Workbook reconciliation (ISABI entry kept)';
+  // Workbook copies voided for a kept entry that is no longer active (voided by hand, deleted, moved to another
+  // table): the workbook row is the only record of that money again. The next top-up removes such a copy
+  // (reconcile_cloud_store.py kept_drop_ids); until then it is read as if it were not there. For expense_items, the
+  // lines voided with such an expense copy (voided_with_parent).
+  function releasedKeptCopyIds(key) {
+    const out = new Set();
+    const tbl = key === 'expense_items' ? 'expenses' : key;
+    const arr = (STATE.customRecords && STATE.customRecords[tbl]) || [];
+    const active = new Set();
+    for (let i = 0; i < arr.length; i++) { const r = arr[i]; if (r && !r.voided && r.id != null) active.add(String(r.id)); }
+    const seen = new Set();
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      if (!r || !r.voided || r.voided_by !== KEPT_APP_VOID_BY || !r.kept_for) continue;
+      const kf = String(r.kept_for);
+      if (!active.has(kf) || seen.has(kf)) out.add(String(r.id));
+      seen.add(kf);
+    }
+    if (key !== 'expense_items') return out;
+    const lines = new Set();
+    if (!out.size) return lines;
+    const larr = (STATE.customRecords && STATE.customRecords.expense_items) || [];
+    for (let i = 0; i < larr.length; i++) {
+      const ln = larr[i];
+      if (ln && ln.voided && ln.voided_by === KEPT_APP_VOID_BY && out.has(String(ln.voided_with_parent || ''))) lines.add(String(ln.id));
+    }
+    return lines;
+  }
+  function keptOverWorkbookVoidedIds(key) {
+    const voided = new Set();
+    const keptFor = new Map();   // entry id -> workbook id of its copy
+    const copyFor = new Map();   // workbook id -> the entry its copy names
+    const released = releasedKeptCopyIds(key);
+    const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      if (!r || !r.voided || r.id == null || released.has(String(r.id))) continue;
+      voided.add(String(r.id));
+      if (r.kept_for) {
+        if (!keptFor.has(String(r.kept_for))) keptFor.set(String(r.kept_for), String(r.id));
+        copyFor.set(String(r.id), String(r.kept_for));
+      }
+    }
+    return { voided, keptFor, copyFor, released };
+  }
+  function keptOverWorkbookId(r, info) {
+    if (!r || r.voided || !info || !isAppKeyedEntry(r)) return '';
+    const viaCopy = info.keptFor.get(String(r.id));
+    if (viaCopy) return viaCopy;
+    const mark = r.kept_over_workbook ? String(r.kept_over_workbook) : '';
+    // The mark alone counts only while no other entry holds that copy (one workbook row, one entry).
+    if (!mark || !info.voided.has(mark)) return '';
+    const holder = info.copyFor.get(mark);
+    return (!holder || holder === String(r.id)) ? mark : '';
+  }
+  function isKeptOverWorkbook(r, info) {
+    return Boolean(keptOverWorkbookId(r, info));
+  }
 
   function appCell(r, crKey) {
     if (!r || r.voided) return '';
@@ -9041,7 +9108,8 @@
   }
 
   function appPill(crKey, amountKey, label) {
-    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
+    const keptIds = keptOverWorkbookVoidedIds(crKey);
+    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin && !isKeptOverWorkbook(r, keptIds));
     if (!rows.length) return '';
     const hideUsd = isMaskedPayrollAccessBlocked(crKey, amountKey);
     const sum = hideUsd ? 0 : rows.reduce((a, r) => a + Number(r[amountKey] || 0), 0);
@@ -9052,7 +9120,8 @@
     const out = [];
     const spec = [['sales_tickets', 'total_ttc', 'sales tickets'], ['raw_purchases', 'total', 'raw receipts'], ['receipts', 'amount', 'customer receipts'], ['fuel_intakes', 'litres', 'fuel intakes'], ['fuel_malfunctions', 'litres', 'tank malfunctions'], ['expenses', 'amount', 'expenses'], ['settlements', 'amount', 'supplier settlements']];
     spec.forEach(([k, amt, label]) => {
-      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
+      const keptIds = keptOverWorkbookVoidedIds(k);
+      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin && !isKeptOverWorkbook(r, keptIds));
       if (!rows.length) return;
       const sum = rows.reduce((a, r) => a + Number(r[amt] || 0), 0);
       out.push({ key: k, n: rows.length, sum, label, unit: amt === 'litres' ? 'L' : '$' });
@@ -9467,9 +9536,10 @@
     if (cut) {
       APP_ONLY_CASH_KEYS.forEach(key => {
         const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+        const keptIds = keptOverWorkbookVoidedIds(key);
         for (let i = 0; i < arr.length; i++) {
           const r = arr[i];
-          if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r)) continue;
+          if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r) || isKeptOverWorkbook(r, keptIds)) continue;
           if (!WORKBOOK_COMPANY_NAMES.includes(String(r.company || 'WTC').trim() || 'WTC')) continue;
           const day = String(r.date || r.start_date || '').slice(0, 10);
           if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > cut.cutoff) continue;
@@ -135781,8 +135851,19 @@
       const customList = STATE.customRecords[k];
       if (!customList.length && (!UNIVERSAL_MAIN_SPEC[k] || list._univDeduped)) return;
       let touched = false;
+      // A workbook copy whose kept entry was voided since (releasedKeptCopyIds): its workbook row shows again now,
+      // as the next top-up will leave it. An earlier pass of this projection took the row out: put it back.
+      const releasedCopies = releasedKeptCopyIds(k);
+      if (releasedCopies.size) {
+        releasedCopies.forEach(rid => {
+          if (list.some(x => x && String(x.id) === rid)) return;
+          const snap = SEED_VOIDED_ARCHIVE[k] && SEED_VOIDED_ARCHIVE[k].get(rid);
+          if (snap) { list.push(Object.assign({}, snap, { voided: false })); touched = true; }
+        });
+      }
       const checkTwins = canDedupSeedTwins && _SEED_TWIN_TX_KEYS.has(k);
       const claimedSeedTwins = checkTwins ? new Set() : null;
+      const keptOverWorkbook = checkTwins ? new Set() : null;
       const repTwinQueue = (checkTwins && _SEED_TWIN_REP_KEYS.has(k)) ? [] : null;
       if (checkTwins) {
         // An entry a top-up struck through as a copy still holds its workbook row (the top-up keeps that row
@@ -135824,6 +135905,25 @@
           }
           if (held) claimedSeedTwins.add(held);
         });
+        // An entry a top-up kept over its workbook copy (owner rule 2026-11-23, build/reconcile_cloud_store.py
+        // KEPT_APP_MARK): while that copy is voided under its workbook id the entry stays on the register as it was
+        // keyed, holds that row, and is never paired away below. Copy restored: the entry pairs as any other.
+        const keptInfo = keptOverWorkbookVoidedIds(k);
+        if (!byId) {
+          byId = new Map();
+          list.forEach(s => { if (s && s.id) byId.set(String(s.id), s); });
+        }
+        // A workbook row voided in the app pairs with nothing, wherever its voided row sits in the list (the
+        // matcher's rule: build/reconcile_cloud_store.py app_voided_seed_idx). Without this an entry listed before
+        // the void would pair with the row and both would leave the register.
+        keptInfo.voided.forEach(vid => { const s = byId.get(vid); if (s) claimedSeedTwins.add(s); });
+        customList.forEach(r => {
+          const sid = keptOverWorkbookId(r, keptInfo);
+          if (!sid) return;
+          keptOverWorkbook.add(r);
+          const s = byId.get(sid);
+          if (s) claimedSeedTwins.add(s);
+        });
       }
       customList.forEach(r => {
         if (!r) return;
@@ -135835,6 +135935,7 @@
         const rid = String(r.id == null ? '' : r.id);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
         if (r.voided) {
+          if (rid && releasedCopies.has(rid)) return;
           let i = rid ? list.findIndex(x => x && String(x.id) === rid) : -1;
           if (i < 0 && !rid && rNameNorm && masterByNameKeys.has(k)) {
             i = list.findIndex(x => x && norm(x.name || x.equipment || x.driver || x.staff) === rNameNorm);
@@ -135855,7 +135956,7 @@
         }
         // Only an entry keyed in the app can be a second copy. A workbook row saved in the app (workbook id) is the
         // workbook row itself: it merges into it by id below and stays the row an app copy pairs with.
-        if (checkTwins && isAppKeyedEntry(r)) {
+        if (checkTwins && isAppKeyedEntry(r) && !keptOverWorkbook.has(r)) {
           const rIso = String(r.date || '').slice(0, 10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(rIso) && rIso <= seedCutIso) {
             const seedTwin = list.find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r));
@@ -136512,9 +136613,45 @@
   }
 
   let lastPointerDownAt = 0;
+  let lastPointerUpAt = 0;
+  let _activePointerDown = false;
+  let pendingFlushTimer = null;
+
+  const isActivePointerPress = now => {
+    if (!_activePointerDown) return false;
+    if (now - lastPointerDownAt >= 10000) {
+      _activePointerDown = false;
+      return false;
+    }
+    return true;
+  };
+
+  function schedulePendingRenderFlush(delayMs = 180) {
+    if (!STATE.renderPending) return;
+    clearTimeout(pendingFlushTimer);
+    pendingFlushTimer = setTimeout(() => {
+      pendingFlushTimer = null;
+      if (!STATE.renderPending) return;
+      if (!uiBusy()) {
+        STATE.renderPending = false;
+        renderApp();
+        return;
+      }
+      const now = Date.now();
+      const waitDown = (now - lastPointerDownAt < 600) ? (615 - (now - lastPointerDownAt)) : 0;
+      const waitUp = (now - lastPointerUpAt < 350) ? (365 - (now - lastPointerUpAt)) : 0;
+      const nextWait = Math.max(waitDown, waitUp);
+      if (nextWait > 0) {
+        schedulePendingRenderFlush(nextWait);
+      } else if (isActivePointerPress(now)) {
+        schedulePendingRenderFlush(220);
+      }
+    }, Math.max(0, Number(delayMs) || 0));
+  }
 
   function uiBusy() {
-    if (_cfTillScrubDragging || Date.now() - lastPointerDownAt < 400) return true;
+    const now = Date.now();
+    if (_cfTillScrubDragging || isActivePointerPress(now) || (now - lastPointerDownAt < 600) || (now - lastPointerUpAt < 350)) return true;
     const m = $('entryModal');
     if (m && !m.hidden) return true;
     const ins = $('recordInspector');
@@ -138570,6 +138707,9 @@
     const now = Date.now();
     if (_unsentScoped && _unsentAllowedCos) {
       _unsentAllowedCos.forEach(c => { if (!lackCos || !lackCos.has(c)) _unsentConfirmed.at[c] = now; });
+      // Shared sites and regions are confirmed by industry (unsentClearKey): those of every industry this seat has a
+      // real company in.
+      _unsentSeatIndustryKeys(_unsentAllowedCos).forEach(ik => { if (!lackCos || !lackCos.has(ik)) _unsentConfirmed.at[ik] = now; });
     } else {
       _unsentConfirmed.allAt = now;
       _unsentConfirmed.allExcept = lackCos ? Array.from(lackCos) : [];
@@ -138585,10 +138725,84 @@
     }
   }
 
+  // The shared registers, as the cloud lists them (UNIVERSAL_UNIQUE_TABLES in functions/_lib/d1_store.js and
+  // server.py). Owner incident 2026-11-23: the old list here lacked items, regions, equipment and the other catalogs,
+  // so a new catalog item keyed by a WTC seat read as another company's entry, its wait never ended and the Owner saw
+  // the device "holding" entries for days while it was sending everything.
+  const UNSENT_SHARED_CR_RE = /^(customers|suppliers|products|items|product_types|uoms|sites|regions|equipment|drivers|staff_roles|expense_categories|expense_subcategories|currencies|gl_accounts)$/;
+  // Older names a device may still hold: their rows without a company were always this seat's to send.
+  const UNSENT_LEGACY_SHARED_CR_RE = /^(chart_of_accounts|employees|trucks|cost_centers|projects)$/;
+  const _unsentSharedCo = c => /^(|all|all bus|all companies|shared)$/.test(String(c || '').trim().toLowerCase().replace(/\s+/g, ' '));
+  // canonGeoIndustryKey in functions/_lib/security.js
+  const _unsentGeoInd = raw => {
+    const s = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!s || s.includes('manufactur') || s === 'mfg') return 'Manufacturing';
+    if (s.includes('holding') || s.includes('treasury')) return 'Holding & Treasury';
+    if (s.includes('hospitality') || s.includes('resort')) return 'Hospitality & Resorts';
+    if (s.includes('trading') || s.includes('auto')) return 'Automotive & Heavy Trading';
+    if (s.includes('real estate') || s.includes('realestate') || s.includes('property')) return 'Real Estate & Property';
+    if (s.includes('insur') || s.includes('broker')) return 'Insurance & Brokerage';
+    return String(raw || '').trim();
+  };
+  // Whether the seat signed in now sends this customRecords row, as the cloud judges it (allowed null = every row):
+  // canAccessUniversalGeoRow for the shared registers (sites and regions also need a company of the row's industry),
+  // the row's company for everything else.
+  function unsentCrRowInScope(key, r, allowed) {
+    if (!allowed) return true;
+    if (!r) return false;
+    if (!UNSENT_SHARED_CR_RE.test(key)) {
+      const co = String(r.company || '').trim();
+      if (!co) return UNSENT_LEGACY_SHARED_CR_RE.test(key);
+      return allowed.has(norm(co));
+    }
+    const co = String(r.company || r.resort || r.entity || '').trim();
+    const shared = _unsentSharedCo(co);
+    if (!shared && !allowed.has(norm(co))) return false;
+    if (key !== 'sites' && key !== 'regions') return true;
+    const indRaw = String(r._industry || r.industry || r.ind || '').trim() || (shared ? '' : _unsentCoInd(co));
+    const ind = _unsentGeoInd(indRaw);
+    return _unsentSeatIndustryKeys(allowed).has('ind:' + ind);
+  }
+  // The industries of the seat's real companies, as 'ind:<industry>' keys. doSync's set also carries made-up keys
+  // (manufacturing-group, industry:<X>, the Demo Company) that would read as Manufacturing; the cloud judges by the
+  // seat's companies alone.
+  const _unsentSeatIndCache = new WeakMap();
+  function _unsentSeatIndustryKeys(allowed) {
+    if (allowed && typeof allowed === 'object' && _unsentSeatIndCache.has(allowed)) return _unsentSeatIndCache.get(allowed);
+    const out = new Set();
+    if (allowed && typeof allowed === 'object') _unsentSeatIndCache.set(allowed, out);
+    (allowed || []).forEach(c => {
+      if (!c || c === 'manufacturing-group' || c === DEMO_COMPANY_KEY || c.startsWith('industry:')) return;
+      out.add('ind:' + _unsentGeoInd(_unsentCoInd(c)));
+    });
+    return out;
+  }
+  // Under which key a sync confirms that the cloud holds a row: its company, or for a shared site or region with no
+  // company of its own, its industry (as unsentCrRowInScope judges it). Other shared rows are every seat's to send.
+  function unsentClearKey(key, r) {
+    if (!r) return '';
+    if (!UNSENT_SHARED_CR_RE.test(key)) return norm(r.company || '');
+    const co = String(r.company || r.resort || r.entity || '').trim();
+    if ((key === 'sites' || key === 'regions') && _unsentSharedCo(co)) {
+      return 'ind:' + _unsentGeoInd(String(r._industry || r.industry || r.ind || '').trim());
+    }
+    return _unsentSharedCo(co) ? '' : norm(co);
+  }
+  function _unsentCoInd(c) {
+    return COMPANY_INDUSTRY_BY_KEY[String(c || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || inferIndustryForCompany(String(c || ''));
+  }
+
   // A shared device: the seat signed in now sends only its own companies' rows. Rows of other companies keyed or
   // changed here since the wait began (by a seat that used the device before), and since a sync last confirmed that
   // company's rows, are still on the device, and this seat's sync finding nothing to push says nothing about them.
   // Sending is decided by company, never by seat: two seats of one company send each other's rows.
+  // One customRecords row: another seat's, touched since the wait began and since a sync last confirmed its key.
+  function _unsentCrRowHoldsWait(key, r, allowed, floor) {
+    if (!r || !r.id) return false;
+    if (unsentCrRowInScope(key, r, allowed)) return false;
+    const t = _unsentRowTouchedMs(r);
+    return t >= floor && t > unsentConfirmedAtFor(unsentClearKey(key, r));
+  }
   function unsentRowsOutsideScope() {
     if (!_unsentSinceMs || !_unsentScoped || !_unsentAllowedCos) return false;
     const floor = _unsentSinceMs - 5000;
@@ -138598,13 +138812,8 @@
     for (let i = 0; i < keys.length; i++) {
       const arr = cr[keys[i]];
       if (!Array.isArray(arr)) continue;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(keys[i]);
       for (let j = 0; j < arr.length; j++) {
-        const r = arr[j];
-        if (!r || !r.id) continue;
-        if (r.company ? allowed.has(norm(r.company)) : isUniv) continue;
-        const t = _unsentRowTouchedMs(r);
-        if (t >= floor && t > unsentConfirmedAtFor(norm(r.company || ''))) return true;
+        if (_unsentCrRowHoldsWait(keys[i], arr[j], allowed, floor)) return true;
       }
     }
     let ind = {};
@@ -138680,10 +138889,9 @@
     const cr = STATE.customRecords || {};
     Object.keys(cr).forEach(k => {
       if (!Array.isArray(cr[k])) return;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       cr[k].forEach(r => {
         if (!r || !r.id) return;
-        if (!(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
+        if (!unsentCrRowInScope(k, r, allowed)) return;
         known.idx.set(`${k}\u0001${r.id}`, `${r.voided ? 1 : 0}|${_recModTs(r)}`);
       });
     });
@@ -138759,13 +138967,12 @@
     Object.keys(store || {}).forEach(k => {
       const arr = store[k];
       if (!Array.isArray(arr)) return;
-      const isUniv = !industry && /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       for (let i = 0; i < arr.length; i++) {
         const r = arr[i];
         if (!r) continue;
         if (industry && isTillOwnedRowId(String(r.id || r.code || '').trim())) continue;
         if (allowed) {
-          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !(r.company ? allowed.has(norm(r.company)) : isUniv)) continue;
+          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !unsentCrRowInScope(k, r, allowed)) continue;
         }
         if (_unsentRowTouchedMs(r) >= sinceMs) n++;
       }
@@ -138808,11 +139015,10 @@
     Object.keys(STATE.customRecords || {}).forEach(k => {
       const mine = STATE.customRecords[k];
       if (!Array.isArray(mine) || !mine.length) return;
-      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
       mine.forEach(r => {
         if (!r || !r.id) return;
-        if (allowed && !(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
-        const co = norm(r.company || '');
+        if (allowed && !unsentCrRowInScope(k, r, allowed)) return;
+        const co = unsentClearKey(k, r);
         const held = known.idx.get(`${k}\u0001${r.id}`);
         if (held === undefined) { hit(co); return; }
         const cut = held.indexOf('|');
@@ -139592,12 +139798,13 @@
         const remCr = remote.customRecords || {};
         const allCrCheckKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
         allCrCheckKeys.forEach(k => {
-          const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
           const remList = Array.isArray(remCr[k]) ? remCr[k] : [];
           const remById = new Map(remList.filter(x => x && x.id).map(x => [String(x.id), x]));
           (STATE.customRecords[k] || []).forEach(r => {
             if (!r || !r.id) return;
-            if (isScopedRemote && !(r.company ? canPushCo(r.company) : isUniv)) return;
+            // Same rule as the unsent count (unsentCrRowInScope): a shared-register row this seat keyed (a new catalog
+            // item, an "All BUs" region) is pushed here too, so a sync never calls the device in step without it.
+            if (isScopedRemote && !unsentCrRowInScope(k, r, allowedCoSet)) return;
             const remR = remById.get(String(r.id));
             if (!remR) { pushChanges = true; return; }
             if (Boolean(r.voided) !== Boolean(remR.voided)) { pushChanges = true; return; }
@@ -144631,7 +144838,7 @@
           searchEl.value = '';
           syncCompanySwitchUi();
         }
-        if (STATE.renderPending) renderApp();
+        if (STATE.renderPending) schedulePendingRenderFlush(40);
       }
     };
 
@@ -144739,6 +144946,11 @@
       });
     });
     document.addEventListener('mousedown', e => {
+      if (switchEl.classList.contains('open') && (!e.target || !e.target.closest('#companySwitch'))) {
+        setOpen(false);
+      }
+    });
+    document.addEventListener('click', e => {
       if (switchEl.classList.contains('open') && (!e.target || !e.target.closest('#companySwitch'))) {
         setOpen(false);
       }
@@ -146787,7 +146999,231 @@
     return 'sales';
   }
 
+  let _hubSubtabAndSubnavDelegated = false;
+  let _pendingSubTabTouch = null;
+  let _pendingSubTabFallback = null;
+  let _lastTouchNavActivated = null;
+
+  function cancelPendingSubtabFallback() {
+    _pendingSubTabTouch = null;
+    if (_pendingSubTabFallback && _pendingSubTabFallback.timer) {
+      clearTimeout(_pendingSubTabFallback.timer);
+    }
+    _pendingSubTabFallback = null;
+  }
+
+  function activateHubSubtab(targetView, e) {
+    if (!targetView) return;
+    const u = activeUser();
+    if (!canViewView(targetView, u)) return;
+    if (shouldUseNavAck(e, navAckWantedView(targetView))) {
+      runAfterNavAck(() => {
+        const subtabRoot = $('hubSubtabBar') || $('workspace');
+        if (!subtabRoot) return;
+        subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(b => {
+          const on = b.getAttribute('data-hub-subtab') === targetView;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-current', on ? 'page' : 'false');
+        });
+      }, () => setView(targetView));
+      return;
+    }
+    _navAckToken++;
+    setView(targetView);
+  }
+
+  function activateMobileSubnav(subHubId, targetViewPill, e, clickedBtn) {
+    const el = $('mobileSubnav');
+    if (el) el.classList.remove('mob-hubs-open');
+    const user = activeUser();
+    if (targetViewPill && canViewView(targetViewPill, user)) {
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (shouldUseNavAck(e, navAckWantedView(targetViewPill))) {
+        runAfterNavAck(() => {
+          const bar = $('mobileSubnav');
+          if (!bar) return;
+          bar.querySelectorAll('[data-subnav-hub]').forEach(b => {
+            b.classList.toggle('on', clickedBtn ? b === clickedBtn : b.getAttribute('data-subnav-hub') === subHubId);
+          });
+        }, () => setView(targetViewPill));
+        return;
+      }
+      _navAckToken++;
+      setView(targetViewPill);
+      return;
+    }
+    if (!subHubId) return;
+    if (shouldUseNavAck(e, navAckWanted(subHubId))) {
+      runAfterNavAck(() => {
+        const bar = $('mobileSubnav');
+        if (!bar) return;
+        bar.querySelectorAll('[data-subnav-hub]').forEach(b => {
+          b.classList.toggle('on', clickedBtn ? b === clickedBtn : b.getAttribute('data-subnav-hub') === subHubId);
+        });
+      }, () => clickHub(subHubId));
+      return;
+    }
+    _navAckToken++;
+    clickHub(subHubId);
+  }
+
+  function wireHubSubtabAndSubnavDelegationOnce() {
+    if (_hubSubtabAndSubnavDelegated) return;
+    _hubSubtabAndSubnavDelegated = true;
+    const isSameNav = (a, b) => Boolean(a && b && a.kind === b.kind && a.val === b.val && (a.tv || '') === (b.tv || ''));
+
+    document.addEventListener('touchstart', e => {
+      _lastTouchNavActivated = null;
+      cancelPendingSubtabFallback();
+      if (STATE.kioskLocked || !e.touches || e.touches.length !== 1) return;
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+      const subtabBtn = t.closest('#hubSubtabBar [data-hub-subtab]');
+      if (subtabBtn) {
+        const bar = subtabBtn.closest('#hubSubtabBar');
+        const pt = e.touches[0];
+        _pendingSubTabTouch = {
+          kind: 'subtab',
+          val: subtabBtn.getAttribute('data-hub-subtab') || '',
+          tv: '',
+          bar,
+          barScrollLeft: bar ? bar.scrollLeft : 0,
+          x: pt.clientX,
+          y: pt.clientY,
+          ts: Date.now(),
+          moved: false,
+          isTrusted: e.isTrusted !== false
+        };
+        return;
+      }
+      const subnavBtn = t.closest('#mobileSubnav [data-subnav-hub]');
+      if (subnavBtn) {
+        const pill = t.closest('em[data-target-view]');
+        const tv = pill ? (pill.getAttribute('data-target-view') || '') : '';
+        const bar = subnavBtn.closest('#mobileSubnav');
+        const pt = e.touches[0];
+        _pendingSubTabTouch = {
+          kind: 'subnav',
+          val: subnavBtn.getAttribute('data-subnav-hub') || '',
+          tv: tv && canViewView(tv, activeUser()) ? tv : '',
+          bar,
+          barScrollLeft: bar ? bar.scrollLeft : 0,
+          x: pt.clientX,
+          y: pt.clientY,
+          ts: Date.now(),
+          moved: false,
+          isTrusted: e.isTrusted !== false
+        };
+      }
+    }, { capture: true, passive: true });
+
+    document.addEventListener('touchmove', e => {
+      const st = _pendingSubTabTouch;
+      if (!st) return;
+      if (!e.touches || e.touches.length !== 1) {
+        st.moved = true;
+        _pendingSubTabTouch = null;
+        return;
+      }
+      const pt = e.touches[0];
+      if (Math.hypot(pt.clientX - st.x, pt.clientY - st.y) > 10 || (st.bar && Math.abs(st.bar.scrollLeft - st.barScrollLeft) > 4)) {
+        st.moved = true;
+        _pendingSubTabTouch = null;
+      }
+    }, { capture: true, passive: true });
+
+    document.addEventListener('touchcancel', () => {
+      cancelPendingSubtabFallback();
+    }, { capture: true, passive: true });
+
+    document.addEventListener('touchend', e => {
+      const st = _pendingSubTabTouch;
+      _pendingSubTabTouch = null;
+      if (!st || st.moved || !e.changedTouches || e.changedTouches.length !== 1) return;
+      const pt = e.changedTouches[0];
+      if (Math.hypot(pt.clientX - st.x, pt.clientY - st.y) > 12) return;
+      if (st.bar && Math.abs(st.bar.scrollLeft - st.barScrollLeft) > 4) return;
+      if (Date.now() - st.ts > 750 || !st.val) return;
+      cancelPendingSubtabFallback();
+      const rec = {
+        kind: st.kind,
+        val: st.val,
+        tv: st.tv || '',
+        x: Math.round(pt.clientX),
+        y: Math.round(pt.clientY),
+        timer: null
+      };
+      rec.timer = setTimeout(() => {
+        if (_pendingSubTabFallback !== rec) return;
+        _pendingSubTabFallback = null;
+        _lastTouchNavActivated = { kind: rec.kind, val: rec.val, tv: rec.tv, x: rec.x, y: rec.y, ts: Date.now() };
+        const synthEvt = { isTrusted: st.isTrusted };
+        if (rec.kind === 'subtab') {
+          activateHubSubtab(rec.val, synthEvt);
+        } else {
+          const bar = $('mobileSubnav');
+          const btn = bar ? Array.from(bar.querySelectorAll('[data-subnav-hub]')).find(b => b.getAttribute('data-subnav-hub') === rec.val) : null;
+          activateMobileSubnav(rec.val, rec.tv, synthEvt, btn);
+        }
+      }, 85);
+      _pendingSubTabFallback = rec;
+    }, { capture: true, passive: true });
+
+    document.addEventListener('click', e => {
+      const t = e.target;
+      if (_lastTouchNavActivated) {
+        const age = Date.now() - _lastTouchNavActivated.ts;
+        if (age >= 650) {
+          _lastTouchNavActivated = null;
+        } else {
+          const subtabHit = t && typeof t.closest === 'function' ? t.closest('#hubSubtabBar [data-hub-subtab]') : null;
+          const subnavHit = (!subtabHit && t && typeof t.closest === 'function') ? t.closest('#mobileSubnav [data-subnav-hub]') : null;
+          let sameNav = false;
+          if (subtabHit) {
+            sameNav = _lastTouchNavActivated.kind === 'subtab' && _lastTouchNavActivated.val === (subtabHit.getAttribute('data-hub-subtab') || '');
+          } else if (subnavHit) {
+            const pill = t.closest('em[data-target-view]');
+            const rawTv = pill ? (pill.getAttribute('data-target-view') || '') : '';
+            const tv = rawTv && canViewView(rawTv, activeUser()) ? rawTv : '';
+            sameNav = _lastTouchNavActivated.kind === 'subnav' && _lastTouchNavActivated.val === (subnavHit.getAttribute('data-subnav-hub') || '') && _lastTouchNavActivated.tv === tv;
+          }
+          const sameCoords = e.isTrusted !== false
+            && (e.clientX !== 0 || e.clientY !== 0)
+            && Math.hypot(e.clientX - _lastTouchNavActivated.x, e.clientY - _lastTouchNavActivated.y) <= 28;
+          if (sameNav || sameCoords) {
+            _lastTouchNavActivated = null;
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return;
+          }
+        }
+      }
+      if (!t || typeof t.closest !== 'function') return;
+      const subtabBtn = t.closest('#hubSubtabBar [data-hub-subtab]');
+      if (subtabBtn) {
+        const meta = { kind: 'subtab', val: subtabBtn.getAttribute('data-hub-subtab') || '', tv: '' };
+        if (_pendingSubTabFallback && isSameNav(_pendingSubTabFallback, meta)) cancelPendingSubtabFallback();
+        activateHubSubtab(meta.val, e);
+        return;
+      }
+      const subnavBtn = t.closest('#mobileSubnav [data-subnav-hub]');
+      if (subnavBtn) {
+        const pill = t.closest('em[data-target-view]');
+        const rawTv = pill ? (pill.getAttribute('data-target-view') || '') : '';
+        const meta = {
+          kind: 'subnav',
+          val: subnavBtn.getAttribute('data-subnav-hub') || '',
+          tv: rawTv && canViewView(rawTv, activeUser()) ? rawTv : ''
+        };
+        if (_pendingSubTabFallback && isSameNav(_pendingSubTabFallback, meta)) cancelPendingSubtabFallback();
+        activateMobileSubnav(meta.val, meta.tv, e, subnavBtn);
+      }
+    }, true);
+  }
+
   function renderMobileSubnav(user, k, sentinelsOpen) {
+    wireHubSubtabAndSubnavDelegationOnce();
     const el = $('mobileSubnav');
     if (!el) return;
     const v = STATE.view;
@@ -146810,37 +147246,24 @@
           : h.group === group);
       return sameDock && canViewHub(h.id, user);
     });
-    el.innerHTML = hubsInGroup.map(h => {
-      const on = h.id === activeHubId;
+    const langCode = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const pillsMeta = hubsInGroup.map(h => {
       const badge = getHubExceptionBadge(h.id, user, k, sentinelsOpen);
-      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(resolveHubView(h.id, user))}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${badge ? `<em class="${esc(badge.cls)}"${badge.targetView ? ` data-target-view="${esc(badge.targetView)}"` : ''}>${esc(badge.text)}</em>` : ''}</button>`;
-    }).join('');
-    el.querySelectorAll('[data-subnav-hub]').forEach(btn => btn.addEventListener('click', e => {
-      const pill = e.target && e.target.closest ? e.target.closest('em[data-target-view]') : null;
-      const tv = pill ? pill.getAttribute('data-target-view') : '';
-      el.classList.remove('mob-hubs-open');
-      if (tv && canViewView(tv, user)) {
-        e.stopPropagation();
-        if (shouldUseNavAck(e, navAckWantedView(tv))) {
-          runAfterNavAck(() => {
-            el.querySelectorAll('[data-subnav-hub]').forEach(b => b.classList.toggle('on', b === btn));
-          }, () => setView(tv));
-          return;
-        }
-        _navAckToken++;
-        setView(tv);
-        return;
-      }
-      const subHubId = btn.getAttribute('data-subnav-hub');
-      if (shouldUseNavAck(e, navAckWanted(subHubId))) {
-        runAfterNavAck(() => {
-          el.querySelectorAll('[data-subnav-hub]').forEach(b => b.classList.toggle('on', b === btn));
-        }, () => clickHub(subHubId));
-        return;
-      }
-      _navAckToken++;
-      clickHub(subHubId);
-    }));
+      const subView = resolveHubView(h.id, user);
+      return { h, badge, subView };
+    });
+    const subnavSig = `${langCode}||${pillsMeta.map(m => `${m.h.id}|${m.subView}|${m.h.title}|${m.badge ? `${m.badge.cls || ''}:${m.badge.targetView || ''}:${m.badge.text || ''}` : ''}`).join(';')}`;
+    if (el.dataset.subnavSig !== subnavSig) {
+      el.innerHTML = pillsMeta.map(({ h, badge, subView }) => {
+        const on = h.id === activeHubId;
+        return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(subView)}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${badge ? `<em class="${esc(badge.cls)}"${badge.targetView ? ` data-target-view="${esc(badge.targetView)}"` : ''}>${esc(badge.text)}</em>` : ''}</button>`;
+      }).join('');
+      el.dataset.subnavSig = subnavSig;
+    } else {
+      el.querySelectorAll('[data-subnav-hub]').forEach(btn => {
+        btn.classList.toggle('on', btn.getAttribute('data-subnav-hub') === activeHubId);
+      });
+    }
 
     // Sync Mobile Bottom Dock active states
     const dOver = $('dockBtnOverview'), dDisp = $('dockBtnDispatch'), dBooks = $('dockBtnBooks'), dEntry = $('mobileDockEntryBtn'), dEntryLbl = $('mobileDockEntryLabel');
@@ -146884,23 +147307,41 @@
     }
   }
 
-  function renderHubSubtabBar(user, k, sentinelsOpen) {
+  function renderHubSubtabSpec(user, k, sentinelsOpen) {
     const hubId = VIEW_TO_HUB[STATE.view] || 'overview';
     const hubDef = getHubDef(hubId);
-    if (!hubDef || hubId === 'kiosks') return '';
+    if (!hubDef || hubId === 'kiosks') return null;
     const permittedTabs = hubDef.tabs.filter(t => canViewView(t.view, user));
-    if (permittedTabs.length <= 1) return '';
-    const pillsHtml = permittedTabs.map(t => {
+    if (permittedTabs.length <= 1) return null;
+    const langCode = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const tabs = permittedTabs.map(t => {
       const matchViews = t.match || [t.view];
       const isActive = matchViews.includes(STATE.view);
       const lbl = (isActive && STATE.view !== t.view && !UNIV_VIEW_TO_TABLE_KEY[STATE.view] && VIEW_TITLES[STATE.view])
         ? VIEW_TITLES[STATE.view]
         : (t.shortLabel || t.label || VIEW_TITLES[t.view] || t.view);
       const badge = typeof t.badgeFn === 'function' ? t.badgeFn(user, k, sentinelsOpen) : null;
+      return { t, isActive, lbl, badge };
+    });
+    const innerHtml = tabs.map(({ t, isActive, lbl, badge }) => {
       const pillHtml = badge && badge.text ? `<em class="hub-subtab-pill${badge.cls ? ' ' + badge.cls : ''}">${esc(badge.text)}</em>` : '';
       return `<button type="button" class="hub-subtab${isActive ? ' active' : ''}" data-hub-subtab="${esc(t.view)}" aria-current="${isActive ? 'page' : 'false'}"><i class="nav-ico" aria-hidden="true">${ic(t.icon || t.view)}</i><span class="hub-subtab-lbl">${esc(lbl)}</span>${pillHtml}</button>`;
     }).join('');
-    return `<nav class="hub-subtab-bar no-print" id="hubSubtabBar" data-parent-hub="${esc(hubId)}" aria-label="${esc(hubDef.title)} Sub-Views">${pillsHtml}</nav>`;
+    const ariaLabel = `${hubDef.title} Sub-Views`;
+    const sig = `${langCode}||${hubId}||${hubDef.title}||${tabs.map(({ t, lbl, badge }) => `${t.view}|${t.icon || t.view}|${lbl}|${badge ? `${badge.cls || ''}:${badge.text || ''}` : ''}`).join(';')}`;
+    return {
+      hubId,
+      ariaLabel,
+      sig,
+      tabs: tabs.map(({ t, isActive }) => ({ view: t.view, isActive })),
+      innerHtml,
+      html: `<nav class="hub-subtab-bar no-print" id="hubSubtabBar" data-parent-hub="${esc(hubId)}" aria-label="${esc(ariaLabel)}">${innerHtml}</nav>`
+    };
+  }
+
+  function renderHubSubtabBar(user, k, sentinelsOpen) {
+    const spec = renderHubSubtabSpec(user, k, sentinelsOpen);
+    return spec ? spec.html : '';
   }
 
   function setRailWidth(w, persist = true) {
@@ -179419,27 +179860,55 @@
     for (const k in _tableShownRows) delete _tableShownRows[k];
     for (const k in _regPanelRows) delete _regPanelRows[k];
     for (const k in _shownSliceMeta) delete _shownSliceMeta[k];
+    wireHubSubtabAndSubnavDelegationOnce();
     let wsHtml = buildActiveWorkspaceViewHtml({ activeInd, univGroupKeys, canonicalViewTitle });
-    const subtabBarHtml = renderHubSubtabBar(user, k, sentinelsOpen);
-    const isDesktopFrozenSubtabs = window.innerWidth > 860;
+    const subtabSpec = renderHubSubtabSpec(user, k, sentinelsOpen);
     const prevSubtabBar = $('hubSubtabBar');
-    const prevSubtabScroll = prevSubtabBar ? prevSubtabBar.scrollLeft : 0;
-    if (isDesktopFrozenSubtabs) {
-      if (subtabBarHtml) {
-        if (prevSubtabBar && prevSubtabBar.parentElement === container.parentElement) {
-          prevSubtabBar.outerHTML = subtabBarHtml;
-        } else {
-          if (prevSubtabBar) prevSubtabBar.remove();
-          container.insertAdjacentHTML('beforebegin', subtabBarHtml);
-        }
+    if (subtabSpec && subtabSpec.html) {
+      const canReuseSubtabBar = Boolean(
+        prevSubtabBar &&
+        prevSubtabBar.parentElement === container.parentElement &&
+        prevSubtabBar.nextElementSibling === container
+      );
+      if (canReuseSubtabBar && prevSubtabBar.dataset.subtabSig === subtabSpec.sig) {
+        prevSubtabBar.setAttribute('data-parent-hub', subtabSpec.hubId);
+        prevSubtabBar.setAttribute('aria-label', subtabSpec.ariaLabel);
+        const activeByView = new Map(subtabSpec.tabs.map(t => [t.view, t.isActive]));
+        prevSubtabBar.querySelectorAll('[data-hub-subtab]').forEach(b => {
+          const on = Boolean(activeByView.get(b.getAttribute('data-hub-subtab')));
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-current', on ? 'page' : 'false');
+        });
+      } else if (canReuseSubtabBar) {
+        const sameHub = prevSubtabBar.getAttribute('data-parent-hub') === subtabSpec.hubId;
+        const prevSubtabScroll = sameHub ? (prevSubtabBar.scrollLeft || 0) : 0;
+        prevSubtabBar.innerHTML = subtabSpec.innerHtml;
+        prevSubtabBar.setAttribute('data-parent-hub', subtabSpec.hubId);
+        prevSubtabBar.setAttribute('aria-label', subtabSpec.ariaLabel);
+        prevSubtabBar.dataset.subtabSig = subtabSpec.sig;
+        prevSubtabBar.scrollLeft = prevSubtabScroll;
+      } else {
+        const sameHub = Boolean(prevSubtabBar && prevSubtabBar.getAttribute('data-parent-hub') === subtabSpec.hubId);
+        const prevSubtabScroll = sameHub ? (prevSubtabBar.scrollLeft || 0) : 0;
+        if (prevSubtabBar) prevSubtabBar.remove();
+        container.insertAdjacentHTML('beforebegin', subtabSpec.html);
         const nextSubtabBar = $('hubSubtabBar');
-        if (nextSubtabBar && prevSubtabScroll > 0) nextSubtabBar.scrollLeft = prevSubtabScroll;
-      } else if (prevSubtabBar) {
-        prevSubtabBar.remove();
+        if (nextSubtabBar) {
+          nextSubtabBar.dataset.subtabSig = subtabSpec.sig;
+          nextSubtabBar.scrollLeft = prevSubtabScroll;
+        }
       }
-    } else {
-      if (prevSubtabBar && prevSubtabBar.parentElement !== container) prevSubtabBar.remove();
-      wsHtml = subtabBarHtml + wsHtml;
+      const liveSubtabBar = $('hubSubtabBar');
+      const activeSubtabBtn = liveSubtabBar ? liveSubtabBar.querySelector('.hub-subtab.active') : null;
+      if (liveSubtabBar && activeSubtabBtn) {
+        const bRect = liveSubtabBar.getBoundingClientRect();
+        const aRect = activeSubtabBtn.getBoundingClientRect();
+        if (bRect.width > 0 && (aRect.left < bRect.left + 1 || aRect.right > bRect.right - 1)) {
+          try { activeSubtabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+        }
+      }
+    } else if (prevSubtabBar) {
+      prevSubtabBar.remove();
     }
     if (STATE.company === DEMO_COMPANY_KEY && !STATE.kioskLocked) {
       wsHtml = renderDemoCompanyVerticalBar() + wsHtml;
@@ -179943,6 +180412,129 @@
       else STATE.colFilters[view][key] = val;
       STATE.shown = {};
       renderApp();
+    });
+
+    const getActiveIndPbiFilterDelegated = () => {
+      const studio = $('industryPbiStudio');
+      const pKey = studio ? (studio.getAttribute('data-ind-pbi-key') || '') : '';
+      if (!pKey) return null;
+      if (!STATE.indPbiFilters) STATE.indPbiFilters = {};
+      if (!STATE.indPbiFilters[pKey]) STATE.indPbiFilters[pKey] = { period: 'all', dim: '', search: '', sortCol: -1, sortDir: 'desc' };
+      return STATE.indPbiFilters[pKey];
+    };
+
+    const activatePbiJump = el => {
+      const targetId = el.getAttribute('data-pbi-jump') || 'p01_overview';
+      const moved = window.MFG_PBI && window.MFG_PBI.MOVED_PBI_PAGES && window.MFG_PBI.MOVED_PBI_PAGES[targetId];
+      if (moved && moved.view) {
+        if (!STATE.moduleSection) STATE.moduleSection = {};
+        if (moved.modSec) STATE.moduleSection[moved.view] = moved.modSec;
+        setView(moved.view);
+        if (moved.scrollPanel) {
+          const sp = $(moved.scrollPanel);
+          if (sp) scrollWorkspaceTo(sp, 10);
+        }
+        return;
+      }
+      STATE.pbiPage = targetId;
+      if (STATE.view !== 'pbi') setView('pbi');
+      else {
+        renderApp();
+        const ws = $('workspace');
+        if (ws) ws.scrollTop = 0;
+      }
+    };
+
+    const activateJumpCo = row => {
+      const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co') || row.getAttribute('data-switch-co');
+      if (getAllowedCompanyKeys(activeUser()).includes(targetCo)) {
+        selectCompanyScope(targetCo, true);
+      } else {
+        toast('Your seat is not scoped to that entity', 'err');
+      }
+    };
+
+    const activateNavJump = (btn, targetNode) => {
+      if (btn.hasAttribute('data-dtank-jump-chip')) return;
+      if (targetNode && typeof targetNode.closest === 'function' && targetNode.closest('[data-rel-key]')) return;
+      STATE.payrollFxPopoverBar = '';
+      const stmt = btn.getAttribute('data-stmt-jump');
+      if (stmt) STATE.activeStatement = stmt;
+      const targetView = btn.getAttribute('data-nav-jump');
+      const modJump = btn.getAttribute('data-mod-jump');
+      if (modJump && targetView) {
+        if (!STATE.moduleSection) STATE.moduleSection = {};
+        STATE.moduleSection[targetView] = modJump;
+      }
+      setView(targetView);
+    };
+
+    const activateModSec = btn => {
+      const hubKey = btn.getAttribute('data-mod-hub-key') || STATE.view;
+      const rawSecId = btn.getAttribute('data-mod-sec');
+      if (!STATE.moduleSection) STATE.moduleSection = {};
+      if (!STATE.moduleLastSection) STATE.moduleLastSection = {};
+      const prevSec = STATE.moduleSection[hubKey];
+      const wasCollapsed = prevSec === 'hide';
+      let nextSec = rawSecId;
+      if (rawSecId === 'hide') {
+        if (wasCollapsed) {
+          nextSec = STATE.moduleLastSection[hubKey] || '';
+        } else if (prevSec && prevSec !== 'hide') {
+          STATE.moduleLastSection[hubKey] = prevSec;
+        }
+      } else if (rawSecId) {
+        STATE.moduleLastSection[hubKey] = rawSecId;
+      }
+      if (nextSec) STATE.moduleSection[hubKey] = nextSec;
+      else delete STATE.moduleSection[hubKey];
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) {
+        ws.scrollTop = y;
+        if (wasCollapsed && STATE.moduleSection[hubKey] !== 'hide') {
+          const escKey = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(hubKey) : hubKey;
+          const hubEl = ws.querySelector(`.mod-analytics-hub[data-mod-hub="${escKey}"]`);
+          if (hubEl) {
+            const wsRect = ws.getBoundingClientRect();
+            const hubRect = hubEl.getBoundingClientRect();
+            if (hubRect.top > wsRect.top + wsRect.height * 0.45) {
+              scrollWorkspaceTo(hubEl, 14);
+            }
+          }
+        }
+        lockShellScroll();
+      }
+    };
+
+    container.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+      const pbiJumpEl = t.closest('[data-pbi-jump][role="button"]');
+      if (pbiJumpEl && container.contains(pbiJumpEl)) {
+        e.preventDefault();
+        activatePbiJump(pbiJumpEl);
+        return;
+      }
+      const jumpCoEl = t.closest('[data-jump-co][role="button"], [data-switch-comm-co][role="button"], [data-switch-co][role="button"]');
+      if (jumpCoEl && container.contains(jumpCoEl)) {
+        e.preventDefault();
+        activateJumpCo(jumpCoEl);
+        return;
+      }
+      const navJumpEl = t.closest('[data-nav-jump][role="button"]');
+      if (navJumpEl && container.contains(navJumpEl) && !navJumpEl.hasAttribute('data-dtank-jump-chip') && !t.closest('[data-rel-key]')) {
+        e.preventDefault();
+        activateNavJump(navJumpEl, t);
+        return;
+      }
+      const modSecEl = t.closest('[data-mod-sec][role="button"]');
+      if (modSecEl && container.contains(modSecEl) && modSecEl.tagName !== 'BUTTON') {
+        e.preventDefault();
+        activateModSec(modSecEl);
+      }
     });
 
     container.addEventListener('click', e => {
@@ -180584,6 +181176,317 @@
         return;
       }
 
+      const toggleAllRegBtn = t.closest('#toggleExpandAllRegionsBtn');
+      if (toggleAllRegBtn && container.contains(toggleAllRegBtn)) {
+        STATE.expandAllRegions = !STATE.expandAllRegions;
+        if (!STATE.expandAllRegions) STATE.expandedRegions = {};
+        renderApp();
+        return;
+      }
+
+      const clearRegFilterBtn = t.closest('#clearRegionFilterBtn');
+      if (clearRegFilterBtn && container.contains(clearRegFilterBtn)) {
+        if (window.MFG_GEO && window.MFG_GEO.STUDIO) {
+          window.MFG_GEO.STUDIO.selectedRegion = '';
+          window.MFG_GEO.STUDIO._userPanned = false;
+        }
+        STATE.expandedRegions = {};
+        renderApp();
+        return;
+      }
+
+      const expInspectSiteBtn = t.closest('[data-exp-inspect-site]');
+      if (expInspectSiteBtn && container.contains(expInspectSiteBtn)) {
+        e.stopPropagation();
+        const sid = expInspectSiteBtn.getAttribute('data-exp-inspect-site') || '';
+        if (sid) openEntryModalForRecord('sites', sid);
+        return;
+      }
+
+      const regToggleSitesBtn = t.closest('[data-reg-toggle-sites]');
+      if (regToggleSitesBtn && container.contains(regToggleSitesBtn)) {
+        e.stopPropagation();
+        const regName = regToggleSitesBtn.getAttribute('data-reg-toggle-sites') || '';
+        const rk = norm(regName);
+        if (!rk) return;
+        if (!STATE.expandedRegions) STATE.expandedRegions = {};
+        const curSel = (window.MFG_GEO && window.MFG_GEO.STUDIO && window.MFG_GEO.STUDIO.selectedRegion) || '';
+        const wasOpen = Boolean(STATE.expandAllRegions || STATE.expandedRegions[rk] || (curSel && norm(curSel) === rk));
+        if (STATE.expandAllRegions) STATE.expandAllRegions = false;
+        if (wasOpen) {
+          delete STATE.expandedRegions[rk];
+          if (window.MFG_GEO && window.MFG_GEO.STUDIO && norm(window.MFG_GEO.STUDIO.selectedRegion) === rk) {
+            window.MFG_GEO.STUDIO.selectedRegion = '';
+            window.MFG_GEO.STUDIO._userPanned = false;
+          }
+        } else {
+          STATE.expandedRegions[rk] = true;
+          if (window.MFG_GEO && window.MFG_GEO.STUDIO) {
+            window.MFG_GEO.STUDIO.selectedRegion = regName;
+            window.MFG_GEO.STUDIO._userPanned = false;
+          }
+        }
+        renderApp();
+        return;
+      }
+
+      const inlineConnBtn = t.closest('[data-inline-conn-table]');
+      if (inlineConnBtn && container.contains(inlineConnBtn)) {
+        e.stopPropagation();
+        const cTbl = inlineConnBtn.getAttribute('data-inline-conn-table') || '';
+        const cParty = inlineConnBtn.getAttribute('data-inline-conn-party') || '';
+        const cView = inlineConnBtn.getAttribute('data-inline-conn-view') || '';
+        const cSubRole = inlineConnBtn.getAttribute('data-inline-conn-subrole') || '';
+        if (!cTbl) return;
+        const isSameActive = STATE.univConnTableKey === cTbl &&
+          norm(STATE.univConnPartyFilter || '') === norm(cParty) &&
+          (STATE.univConnSubRole || '') === cSubRole;
+        if (isSameActive) {
+          STATE.univConnTableKey = '';
+          STATE.univConnPartyFilter = '';
+          STATE.univConnSearch = '';
+          STATE.univConnView = '';
+          STATE.univConnSubRole = '';
+        } else {
+          STATE.univConnTableKey = cTbl;
+          STATE.univConnPartyFilter = cParty;
+          STATE.univConnView = cView;
+          STATE.univConnSubRole = cSubRole;
+          STATE.univConnSearch = '';
+        }
+        renderApp();
+        const expCard = document.getElementById('connTableExplorerCard');
+        if (expCard && typeof expCard.scrollIntoView === 'function') {
+          try { expCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+        }
+        return;
+      }
+
+      const univRegBtn = t.closest('[data-univ-reg-key]');
+      if (univRegBtn && container.contains(univRegBtn)) {
+        const uk = univRegBtn.getAttribute('data-univ-reg-key');
+        const nv = univRegBtn.getAttribute('data-univ-nav-view');
+        STATE.activeUnivRegKey = uk || 'equipment';
+        STATE.univConnTableKey = '';
+        STATE.univConnPartyFilter = '';
+        STATE.univConnSearch = '';
+        STATE.univConnView = '';
+        STATE.univConnSubRole = '';
+        const curGroup = UNIV_REGISTRY_GROUPS[STATE.view] || [];
+        const nvGroup = nv ? (UNIV_REGISTRY_GROUPS[nv] || []) : [];
+        if (nv && VIEW_TITLES[nv] && VIEW_TO_HUB[nv] === VIEW_TO_HUB[STATE.view] && nvGroup.join(',') === curGroup.join(',')) {
+          STATE.view = nv;
+        }
+        STATE.search = '';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const connTableBtn = t.closest('[data-conn-table-key]');
+      if (connTableBtn && container.contains(connTableBtn)) {
+        const targetKey = connTableBtn.getAttribute('data-conn-table-key');
+        if (!targetKey) return;
+        if (connTableBtn.closest('#univRegPanel') || UNIV_VIEW_TO_TABLE_KEY[STATE.view]) {
+          if (STATE.univConnTableKey === targetKey && !STATE.univConnPartyFilter && !STATE.univConnSubRole) {
+            STATE.univConnTableKey = '';
+            STATE.univConnPartyFilter = '';
+            STATE.univConnSearch = '';
+            STATE.univConnView = '';
+            STATE.univConnSubRole = '';
+          } else {
+            STATE.univConnTableKey = targetKey;
+            STATE.univConnPartyFilter = '';
+            STATE.univConnSearch = '';
+            STATE.univConnView = '';
+            STATE.univConnSubRole = '';
+          }
+          renderApp();
+          return;
+        }
+        if (STATE.activeTableKey && STATE.activeTableKey !== targetKey) {
+          STATE.prevTableKey = STATE.activeTableKey;
+        }
+        const wasSupplier = STATE.activeTableKey === 'suppliers';
+        STATE.activeTableKey = targetKey;
+        if (targetKey === 'price_rules') {
+          if (!STATE.tableViews) STATE.tableViews = {};
+          STATE.tableViews.price_rules = wasSupplier ? 'raw_all' : 'all';
+        }
+        STATE.search = '';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const backTableBtn = t.closest('[data-back-table-key]');
+      if (backTableBtn && container.contains(backTableBtn)) {
+        const backKey = backTableBtn.getAttribute('data-back-table-key');
+        if (!backKey) return;
+        STATE.activeTableKey = backKey;
+        STATE.prevTableKey = '';
+        STATE.search = '';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const tableKeyBtn = t.closest('[data-table-key]');
+      if (tableKeyBtn && container.contains(tableKeyBtn)) {
+        const targetKey = tableKeyBtn.getAttribute('data-table-key');
+        if (!targetKey) return;
+        STATE.prevTableKey = '';
+        STATE.activeTableKey = targetKey;
+        if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.recordUsage === 'function') {
+          window.MFG_CMD_PALETTE.recordUsage('table', targetKey);
+        }
+        if (targetKey === 'price_rules') {
+          if (!STATE.tableViews) STATE.tableViews = {};
+          if (/^raw_/i.test(STATE.tableViews.price_rules || '')) STATE.tableViews.price_rules = 'all';
+        } else if (targetKey === 'external_movements') {
+          if (!STATE.tableViews) STATE.tableViews = {};
+          if (STATE.tableViews.external_movements === 'extended') STATE.tableViews.external_movements = 'all';
+        }
+        STATE.search = '';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const tblViewBtn = t.closest('[data-tbl-view]');
+      if (tblViewBtn && container.contains(tblViewBtn)) {
+        if (!STATE.tableViews) STATE.tableViews = {};
+        const tk = tblViewBtn.getAttribute('data-tbl-key') || STATE.activeTableKey || 'price_rules';
+        if (STATE.view === 'tables' && tk) STATE.activeTableKey = tk;
+        STATE.tableViews[tk] = tblViewBtn.getAttribute('data-tbl-view') || 'all';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const resetTblViewBtn = t.closest('[data-reset-tbl-view]');
+      if (resetTblViewBtn && container.contains(resetTblViewBtn)) {
+        if (!STATE.tableViews) STATE.tableViews = {};
+        const tk = resetTblViewBtn.getAttribute('data-reset-tbl-view') || STATE.activeTableKey || 'price_rules';
+        STATE.tableViews[tk] = (tk === 'price_rules' && /^raw_/i.test(STATE.tableViews.price_rules || '')) ? 'raw_all' : 'all';
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const closeConnExpBtn = t.closest('[data-close-conn-explorer]');
+      if (closeConnExpBtn && container.contains(closeConnExpBtn)) {
+        STATE.univConnTableKey = '';
+        STATE.univConnPartyFilter = '';
+        STATE.univConnSearch = '';
+        STATE.univConnView = '';
+        STATE.univConnSubRole = '';
+        renderApp();
+        return;
+      }
+
+      const connFilterPartyBtn = t.closest('[data-conn-filter-party]');
+      if (connFilterPartyBtn && container.contains(connFilterPartyBtn)) {
+        const pVal = connFilterPartyBtn.getAttribute('data-conn-filter-party') || '';
+        STATE.univConnPartyFilter = pVal;
+        if (!pVal) STATE.univConnSubRole = '';
+        if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
+        renderApp();
+        return;
+      }
+
+      const connTblViewBtn = t.closest('[data-conn-tbl-view]');
+      if (connTblViewBtn && container.contains(connTblViewBtn)) {
+        STATE.univConnView = connTblViewBtn.getAttribute('data-conn-tbl-view') || 'all';
+        if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
+        renderApp();
+        return;
+      }
+
+      const connJumpViewBtn = t.closest('[data-conn-jump-view]');
+      if (connJumpViewBtn && container.contains(connJumpViewBtn)) {
+        const targetView = connJumpViewBtn.getAttribute('data-conn-jump-view') || 'tables';
+        const targetTbl = connJumpViewBtn.getAttribute('data-conn-jump-table') || '';
+        STATE.univConnTableKey = '';
+        STATE.univConnPartyFilter = '';
+        STATE.univConnSearch = '';
+        STATE.univConnView = '';
+        STATE.univConnSubRole = '';
+        if (targetView === 'tables' && targetTbl) {
+          STATE.prevTableKey = STATE.activeUnivRegKey || '';
+          STATE.activeTableKey = targetTbl;
+        } else if (UNIV_VIEW_TO_TABLE_KEY[targetView] && targetTbl) {
+          STATE.activeUnivRegKey = targetTbl;
+        }
+        setView(targetView);
+        return;
+      }
+
+      const pbiPageBtn = t.closest('[data-pbi-page]');
+      if (pbiPageBtn && container.contains(pbiPageBtn)) {
+        STATE.pbiPage = pbiPageBtn.getAttribute('data-pbi-page');
+        if (window.innerWidth <= 860) {
+          STATE.pbiCatalogMobCollapsed = true;
+        }
+        renderApp();
+        return;
+      }
+
+      const indPbiPageBtn = t.closest('[data-ind-pbi-page]');
+      if (indPbiPageBtn && container.contains(indPbiPageBtn)) {
+        const ind = getActiveIndustry(STATE.company);
+        if (!STATE.indPbiPageByInd) STATE.indPbiPageByInd = {};
+        STATE.indPbiPageByInd[ind] = indPbiPageBtn.getAttribute('data-ind-pbi-page');
+        renderApp();
+        return;
+      }
+
+      const indTblKeyBtn = t.closest('[data-ind-tbl-key]');
+      if (indTblKeyBtn && container.contains(indTblKeyBtn)) {
+        const ind = getActiveIndustry(STATE.company);
+        if (!STATE.indActiveDomainTable) STATE.indActiveDomainTable = {};
+        STATE.indActiveDomainTable[ind] = indTblKeyBtn.getAttribute('data-ind-tbl-key');
+        STATE.indTablesSearch = '';
+        STATE.indTablesParty = '';
+        renderApp();
+        return;
+      }
+
+      const modSecBtn = t.closest('[data-mod-sec]');
+      if (modSecBtn && container.contains(modSecBtn)) {
+        activateModSec(modSecBtn);
+        return;
+      }
+
+      const rdlJumpBtn = t.closest('[data-rdl-jump]');
+      if (rdlJumpBtn && container.contains(rdlJumpBtn)) {
+        const targetRdl = rdlJumpBtn.getAttribute('data-rdl-jump');
+        if (targetRdl) {
+          STATE.activeStatement = String(targetRdl).padStart(2, '0');
+          if (STATE.view !== 'statements') setView('statements');
+          else renderApp();
+        }
+        return;
+      }
+
+      const pbiJumpEl = t.closest('[data-pbi-jump]');
+      if (pbiJumpEl && container.contains(pbiJumpEl)) {
+        activatePbiJump(pbiJumpEl);
+        return;
+      }
+
+      const jumpCoEl = t.closest('[data-jump-co], [data-switch-comm-co], [data-switch-co]');
+      if (jumpCoEl && container.contains(jumpCoEl)) {
+        activateJumpCo(jumpCoEl);
+        return;
+      }
+
+      const navJumpBtn = t.closest('[data-nav-jump]');
+      if (navJumpBtn && container.contains(navJumpBtn) && !navJumpBtn.hasAttribute('data-dtank-jump-chip') && !t.closest('[data-rel-key]')) {
+        activateNavJump(navJumpBtn, t);
+        return;
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -180789,55 +181692,38 @@
       window.MFG_VOID_LOG.ensurePosVoidsLoaded(false);
     }
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.wireSentinelContainer === 'function') {
-      window.MFG_VOID_LOG.wireSentinelContainer(container);
+      try { window.MFG_VOID_LOG.wireSentinelContainer(container); } catch (err) { console.warn('[wireWorkspace] sentinel', err); }
     }
-    wireModalSuggestions(container);
-    applyIndustryDomRowEdits(container);
-    applyIndustryRelatedAgreementPills(container);
+    try { wireModalSuggestions(container); } catch (err) { console.warn('[wireWorkspace] suggestions', err); }
+    try { applyIndustryDomRowEdits(container); } catch (err) { console.warn('[wireWorkspace] rowEdits', err); }
+    try { applyIndustryRelatedAgreementPills(container); } catch (err) { console.warn('[wireWorkspace] relPills', err); }
     if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
-      window.MFG_GEO.wireGeoStudio(container, {
-        SEED,
-        STATE,
-        canAccessTable,
-        canAddSite: canEnterForm('site', activeUserRow),
-        canPinLocations: canWriteGeoConfig(activeUserRow),
-        canShapeRegions: canWriteGeoConfig(activeUserRow),
-        canEnterSite: canEnterForm('site', activeUserRow),
-        canModifyRecord: canModifyRecord(activeUserRow),
-        filterRecords,
-        rerenderWorkspace: () => renderApp(),
-        openInspector: (k, id) => showRecordInspector(k, id),
-        editRecord: (k, id) => openEntryModalForRecord(k, id),
-        postRecordToLocalApi,
-        toast,
-        uid,
-        userEmail: (activeUserRow && activeUserRow.email) || ''
-      });
+      try {
+        window.MFG_GEO.wireGeoStudio(container, {
+          SEED,
+          STATE,
+          canAccessTable,
+          canAddSite: canEnterForm('site', activeUserRow),
+          canPinLocations: canWriteGeoConfig(activeUserRow),
+          canShapeRegions: canWriteGeoConfig(activeUserRow),
+          canEnterSite: canEnterForm('site', activeUserRow),
+          canModifyRecord: canModifyRecord(activeUserRow),
+          filterRecords,
+          rerenderWorkspace: () => renderApp(),
+          openInspector: (k, id) => showRecordInspector(k, id),
+          editRecord: (k, id) => openEntryModalForRecord(k, id),
+          postRecordToLocalApi,
+          toast,
+          uid,
+          userEmail: (activeUserRow && activeUserRow.email) || ''
+        });
+      } catch (err) { console.warn('[wireWorkspace] geoStudio', err); }
     }
-    const subtabRoot = $('hubSubtabBar') || container;
-    subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        const targetView = btn.getAttribute('data-hub-subtab');
-        if (!targetView) return;
-        if (shouldUseNavAck(e, navAckWantedView(targetView))) {
-          runAfterNavAck(() => {
-            subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(b => {
-              const on = b === btn;
-              b.classList.toggle('active', on);
-              b.setAttribute('aria-current', on ? 'page' : 'false');
-            });
-          }, () => setView(targetView));
-          return;
-        }
-        _navAckToken++;
-        setView(targetView);
-      });
-    });
     const allowedCos = getAllowedCompanyKeys(activeUserRow);
     const allowedNames = allowedCompanyNames(activeUserRow);
     const totalCatCount = getCompanyCatalog().length;
 
-    enhanceVisualWorkspace(container, activeUserRow, allowedCos, allowedNames);
+    try { enhanceVisualWorkspace(container, activeUserRow, allowedCos, allowedNames); } catch (err) { console.warn('[wireWorkspace] visual', err); }
 
     // Enforce RLS & permission consistency across entity recon cards, reset buttons & jump links in a single DOM pass
     const canSplitWtcBbc = allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
@@ -180884,63 +181770,7 @@
         el.hidden = true;
       }
     });
-    // Analytics & Insights 12-page tabs, embedded module analytics tabs & 34-table hub chips
-    container.querySelectorAll('[data-mod-sec]').forEach(btn => {
-      const applySec = () => {
-        const hubKey = btn.getAttribute('data-mod-hub-key') || STATE.view;
-        const rawSecId = btn.getAttribute('data-mod-sec');
-        if (!STATE.moduleSection) STATE.moduleSection = {};
-        if (!STATE.moduleLastSection) STATE.moduleLastSection = {};
-        const prevSec = STATE.moduleSection[hubKey];
-        const wasCollapsed = prevSec === 'hide';
-        let nextSec = rawSecId;
-        if (rawSecId === 'hide') {
-          if (wasCollapsed) {
-            nextSec = STATE.moduleLastSection[hubKey] || '';
-          } else if (prevSec && prevSec !== 'hide') {
-            STATE.moduleLastSection[hubKey] = prevSec;
-          }
-        } else if (rawSecId) {
-          STATE.moduleLastSection[hubKey] = rawSecId;
-        }
-        if (nextSec) STATE.moduleSection[hubKey] = nextSec;
-        else delete STATE.moduleSection[hubKey];
-        const ws = $('workspace');
-        const y = ws ? ws.scrollTop : 0;
-        renderApp();
-        if (ws) {
-          ws.scrollTop = y;
-          if (wasCollapsed && STATE.moduleSection[hubKey] !== 'hide') {
-            const escKey = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(hubKey) : hubKey;
-            const hubEl = ws.querySelector(`.mod-analytics-hub[data-mod-hub="${escKey}"]`);
-            if (hubEl) {
-              const wsRect = ws.getBoundingClientRect();
-              const hubRect = hubEl.getBoundingClientRect();
-              if (hubRect.top > wsRect.top + wsRect.height * 0.45) {
-                scrollWorkspaceTo(hubEl, 14);
-              }
-            }
-          }
-          lockShellScroll();
-        }
-      };
-      btn.addEventListener('click', applySec);
-      if (btn.tagName !== 'BUTTON' && btn.getAttribute('role') === 'button') {
-        btn.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            applySec();
-          }
-        });
-      }
-    });
-    container.querySelectorAll('[data-pbi-page]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.pbiPage = btn.getAttribute('data-pbi-page');
-      if (window.innerWidth <= 860) {
-        STATE.pbiCatalogMobCollapsed = true;
-      }
-      renderApp();
-    }));
+    // Analytics & Insights 12-page tabs, embedded module analytics tabs & 34-table hub chips are delegated in wireWorkspaceDelegatedOnce
     const indSlicerToggleBtn = $('indPbiToggleSlicersBtn');
     if (indSlicerToggleBtn) {
       indSlicerToggleBtn.addEventListener('click', () => {
@@ -180955,12 +181785,7 @@
         if (window.innerWidth <= 860) STATE.indPbiSlicersMobCollapsed = nextCollapsed;
       });
     }
-    container.querySelectorAll('[data-ind-pbi-page]').forEach(btn => btn.addEventListener('click', () => {
-      const ind = getActiveIndustry(STATE.company);
-      if (!STATE.indPbiPageByInd) STATE.indPbiPageByInd = {};
-      STATE.indPbiPageByInd[ind] = btn.getAttribute('data-ind-pbi-page');
-      renderApp();
-    }));
+
     const getActiveIndPbiFilter = () => {
       const studio = $('industryPbiStudio');
       const pKey = studio ? (studio.getAttribute('data-ind-pbi-key') || '') : '';
@@ -181018,14 +181843,6 @@
       if (!f || !Number.isFinite(col)) return;
       if (f.sortCol === col) f.sortDir = f.sortDir === 'asc' ? 'desc' : 'asc';
       else { f.sortCol = col; f.sortDir = 'desc'; }
-      renderApp();
-    }));
-    container.querySelectorAll('[data-ind-tbl-key]').forEach(btn => btn.addEventListener('click', () => {
-      const ind = getActiveIndustry(STATE.company);
-      if (!STATE.indActiveDomainTable) STATE.indActiveDomainTable = {};
-      STATE.indActiveDomainTable[ind] = btn.getAttribute('data-ind-tbl-key');
-      STATE.indTablesSearch = '';
-      STATE.indTablesParty = '';
       renderApp();
     }));
     container.querySelectorAll('[data-ind-tbl-sort]').forEach(thEl => thEl.addEventListener('click', () => {
@@ -181120,39 +181937,6 @@
         });
       }
     }
-    container.querySelectorAll('[data-rdl-jump]').forEach(btn => btn.addEventListener('click', () => {
-      const targetRdl = btn.getAttribute('data-rdl-jump');
-      if (targetRdl) {
-        STATE.activeStatement = String(targetRdl).padStart(2, '0');
-        if (STATE.view !== 'statements') setView('statements');
-        else renderApp();
-      }
-    }));
-    container.querySelectorAll('[data-pbi-jump]').forEach(el => {
-      const go = () => {
-        const targetId = el.getAttribute('data-pbi-jump') || 'p01_overview';
-        const moved = window.MFG_PBI && window.MFG_PBI.MOVED_PBI_PAGES && window.MFG_PBI.MOVED_PBI_PAGES[targetId];
-        if (moved && moved.view) {
-          if (!STATE.moduleSection) STATE.moduleSection = {};
-          if (moved.modSec) STATE.moduleSection[moved.view] = moved.modSec;
-          setView(moved.view);
-          if (moved.scrollPanel) {
-            const sp = $(moved.scrollPanel);
-            if (sp) scrollWorkspaceTo(sp, 10);
-          }
-          return;
-        }
-        STATE.pbiPage = targetId;
-        if (STATE.view !== 'pbi') setView('pbi');
-        else {
-          renderApp();
-          const ws = $('workspace');
-          if (ws) ws.scrollTop = 0;
-        }
-      };
-      el.addEventListener('click', go);
-      if (el.getAttribute('role') === 'button') el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
-    });
     const pbiReset = $('pbiResetSlicersBtn');
     if (pbiReset) pbiReset.addEventListener('click', () => {
       STATE.pbiSlicer = {};
@@ -181231,165 +182015,6 @@
         }, 160);
       });
     }
-    container.querySelectorAll('[data-table-key]').forEach(btn => btn.addEventListener('click', () => {
-      const targetKey = btn.getAttribute('data-table-key');
-      if (!targetKey) return;
-      STATE.prevTableKey = '';
-      STATE.activeTableKey = targetKey;
-      if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.recordUsage === 'function') {
-        window.MFG_CMD_PALETTE.recordUsage('table', targetKey);
-      }
-      if (targetKey === 'price_rules') {
-        if (!STATE.tableViews) STATE.tableViews = {};
-        if (/^raw_/i.test(STATE.tableViews.price_rules || '')) STATE.tableViews.price_rules = 'all';
-      } else if (targetKey === 'external_movements') {
-        if (!STATE.tableViews) STATE.tableViews = {};
-        if (STATE.tableViews.external_movements === 'extended') STATE.tableViews.external_movements = 'all';
-      }
-      STATE.search = '';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-conn-table-key]').forEach(btn => btn.addEventListener('click', () => {
-      const targetKey = btn.getAttribute('data-conn-table-key');
-      if (!targetKey) return;
-      if (btn.closest('#univRegPanel') || UNIV_VIEW_TO_TABLE_KEY[STATE.view]) {
-        if (STATE.univConnTableKey === targetKey && !STATE.univConnPartyFilter && !STATE.univConnSubRole) {
-          STATE.univConnTableKey = '';
-          STATE.univConnPartyFilter = '';
-          STATE.univConnSearch = '';
-          STATE.univConnView = '';
-          STATE.univConnSubRole = '';
-        } else {
-          STATE.univConnTableKey = targetKey;
-          STATE.univConnPartyFilter = '';
-          STATE.univConnSearch = '';
-          STATE.univConnView = '';
-          STATE.univConnSubRole = '';
-        }
-        renderApp();
-        return;
-      }
-      if (STATE.activeTableKey && STATE.activeTableKey !== targetKey) {
-        STATE.prevTableKey = STATE.activeTableKey;
-      }
-      const wasSupplier = STATE.activeTableKey === 'suppliers';
-      STATE.activeTableKey = targetKey;
-      if (targetKey === 'price_rules') {
-        if (!STATE.tableViews) STATE.tableViews = {};
-        STATE.tableViews.price_rules = wasSupplier ? 'raw_all' : 'all';
-      }
-      STATE.search = '';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-back-table-key]').forEach(btn => btn.addEventListener('click', () => {
-      const backKey = btn.getAttribute('data-back-table-key');
-      if (!backKey) return;
-      STATE.activeTableKey = backKey;
-      STATE.prevTableKey = '';
-      STATE.search = '';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-univ-reg-key]').forEach(btn => btn.addEventListener('click', () => {
-      const uk = btn.getAttribute('data-univ-reg-key');
-      const nv = btn.getAttribute('data-univ-nav-view');
-      STATE.activeUnivRegKey = uk || 'equipment';
-      STATE.univConnTableKey = '';
-      STATE.univConnPartyFilter = '';
-      STATE.univConnSearch = '';
-      STATE.univConnView = '';
-      STATE.univConnSubRole = '';
-      const curGroup = UNIV_REGISTRY_GROUPS[STATE.view] || [];
-      const nvGroup = nv ? (UNIV_REGISTRY_GROUPS[nv] || []) : [];
-      if (nv && VIEW_TITLES[nv] && VIEW_TO_HUB[nv] === VIEW_TO_HUB[STATE.view] && nvGroup.join(',') === curGroup.join(',')) {
-        STATE.view = nv;
-      }
-      STATE.search = '';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
-      if (!STATE.tableViews) STATE.tableViews = {};
-      const tk = btn.getAttribute('data-tbl-key') || STATE.activeTableKey || 'price_rules';
-      if (STATE.view === 'tables' && tk) STATE.activeTableKey = tk;
-      STATE.tableViews[tk] = btn.getAttribute('data-tbl-view') || 'all';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-reset-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
-      if (!STATE.tableViews) STATE.tableViews = {};
-      const tk = btn.getAttribute('data-reset-tbl-view') || STATE.activeTableKey || 'price_rules';
-      STATE.tableViews[tk] = (tk === 'price_rules' && /^raw_/i.test(STATE.tableViews.price_rules || '')) ? 'raw_all' : 'all';
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-close-conn-explorer]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.univConnTableKey = '';
-      STATE.univConnPartyFilter = '';
-      STATE.univConnSearch = '';
-      STATE.univConnView = '';
-      STATE.univConnSubRole = '';
-      renderApp();
-    }));
-    container.querySelectorAll('[data-conn-filter-party]').forEach(btn => btn.addEventListener('click', () => {
-      const pVal = btn.getAttribute('data-conn-filter-party') || '';
-      STATE.univConnPartyFilter = pVal;
-      if (!pVal) STATE.univConnSubRole = '';
-      if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
-      renderApp();
-    }));
-    container.querySelectorAll('[data-conn-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.univConnView = btn.getAttribute('data-conn-tbl-view') || 'all';
-      if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
-      renderApp();
-    }));
-    container.querySelectorAll('[data-conn-jump-view]').forEach(btn => btn.addEventListener('click', () => {
-      const targetView = btn.getAttribute('data-conn-jump-view') || 'tables';
-      const targetTbl = btn.getAttribute('data-conn-jump-table') || '';
-      STATE.univConnTableKey = '';
-      STATE.univConnPartyFilter = '';
-      STATE.univConnSearch = '';
-      STATE.univConnView = '';
-      STATE.univConnSubRole = '';
-      if (targetView === 'tables' && targetTbl) {
-        STATE.prevTableKey = STATE.activeUnivRegKey || '';
-        STATE.activeTableKey = targetTbl;
-      } else if (UNIV_VIEW_TO_TABLE_KEY[targetView] && targetTbl) {
-        STATE.activeUnivRegKey = targetTbl;
-      }
-      setView(targetView);
-    }));
-    container.querySelectorAll('[data-inline-conn-table]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const cTbl = btn.getAttribute('data-inline-conn-table') || '';
-      const cParty = btn.getAttribute('data-inline-conn-party') || '';
-      const cView = btn.getAttribute('data-inline-conn-view') || '';
-      const cSubRole = btn.getAttribute('data-inline-conn-subrole') || '';
-      if (!cTbl) return;
-      const isSameActive = STATE.univConnTableKey === cTbl &&
-        norm(STATE.univConnPartyFilter || '') === norm(cParty) &&
-        (STATE.univConnSubRole || '') === cSubRole;
-      if (isSameActive) {
-        STATE.univConnTableKey = '';
-        STATE.univConnPartyFilter = '';
-        STATE.univConnSearch = '';
-        STATE.univConnView = '';
-        STATE.univConnSubRole = '';
-      } else {
-        STATE.univConnTableKey = cTbl;
-        STATE.univConnPartyFilter = cParty;
-        STATE.univConnView = cView;
-        STATE.univConnSubRole = cSubRole;
-        STATE.univConnSearch = '';
-      }
-      renderApp();
-      const expCard = document.getElementById('connTableExplorerCard');
-      if (expCard && typeof expCard.scrollIntoView === 'function') {
-        try { expCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
-      }
-    }));
     const connSearchInput = $('connExplorerSearchInput');
     if (connSearchInput && connSearchInput.dataset.searchInputWired !== '1') {
       connSearchInput.dataset.searchInputWired = '1';
@@ -181519,58 +182144,6 @@
           const next = $('regionsSearchInput');
           if (next) next.focus({ preventScroll: true });
         }
-      });
-    }
-    const toggleAllRegBtn = $('toggleExpandAllRegionsBtn');
-    if (toggleAllRegBtn) {
-      toggleAllRegBtn.addEventListener('click', () => {
-        STATE.expandAllRegions = !STATE.expandAllRegions;
-        if (!STATE.expandAllRegions) STATE.expandedRegions = {};
-        renderApp();
-      });
-    }
-    container.querySelectorAll('[data-reg-toggle-sites]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const regName = btn.getAttribute('data-reg-toggle-sites') || '';
-        const rk = norm(regName);
-        if (!rk) return;
-        if (!STATE.expandedRegions) STATE.expandedRegions = {};
-        const curSel = (window.MFG_GEO && window.MFG_GEO.STUDIO && window.MFG_GEO.STUDIO.selectedRegion) || '';
-        const wasOpen = Boolean(STATE.expandAllRegions || STATE.expandedRegions[rk] || (curSel && norm(curSel) === rk));
-        if (STATE.expandAllRegions) STATE.expandAllRegions = false;
-        if (wasOpen) {
-          delete STATE.expandedRegions[rk];
-          if (window.MFG_GEO && window.MFG_GEO.STUDIO && norm(window.MFG_GEO.STUDIO.selectedRegion) === rk) {
-            window.MFG_GEO.STUDIO.selectedRegion = '';
-            window.MFG_GEO.STUDIO._userPanned = false;
-          }
-        } else {
-          STATE.expandedRegions[rk] = true;
-          if (window.MFG_GEO && window.MFG_GEO.STUDIO) {
-            window.MFG_GEO.STUDIO.selectedRegion = regName;
-            window.MFG_GEO.STUDIO._userPanned = false;
-          }
-        }
-        renderApp();
-      });
-    });
-    container.querySelectorAll('[data-exp-inspect-site]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const sid = btn.getAttribute('data-exp-inspect-site') || '';
-        if (sid) openEntryModalForRecord('sites', sid);
-      });
-    });
-    const clearRegFilterBtn = $('clearRegionFilterBtn');
-    if (clearRegFilterBtn) {
-      clearRegFilterBtn.addEventListener('click', () => {
-        if (window.MFG_GEO && window.MFG_GEO.STUDIO) {
-          window.MFG_GEO.STUDIO.selectedRegion = '';
-          window.MFG_GEO.STUDIO._userPanned = false;
-        }
-        STATE.expandedRegions = {};
-        renderApp();
       });
     }
 
@@ -183195,36 +183768,6 @@
         renderApp();
       });
     });
-    container.querySelectorAll('[data-jump-co], [data-switch-comm-co], [data-switch-co]').forEach(row => {
-      const goCo = () => {
-        const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co') || row.getAttribute('data-switch-co');
-        if (getAllowedCompanyKeys(activeUserRow).includes(targetCo)) {
-          selectCompanyScope(targetCo, true);
-        } else {
-          toast('Your seat is not scoped to that entity', 'err');
-        }
-      };
-      row.addEventListener('click', goCo);
-      if (row.getAttribute('role') === 'button') row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goCo(); } });
-    });
-    container.querySelectorAll('[data-nav-jump]').forEach(btn => {
-      if (btn.hasAttribute('data-dtank-jump-chip')) return;
-      const go = e => {
-        if (e && e.target && typeof e.target.closest === 'function' && e.target.closest('[data-rel-key]')) return;
-        STATE.payrollFxPopoverBar = '';
-        const stmt = btn.getAttribute('data-stmt-jump');
-        if (stmt) STATE.activeStatement = stmt;
-        const targetView = btn.getAttribute('data-nav-jump');
-        const modJump = btn.getAttribute('data-mod-jump');
-        if (modJump && targetView) {
-          if (!STATE.moduleSection) STATE.moduleSection = {};
-          STATE.moduleSection[targetView] = modJump;
-        }
-        setView(targetView);
-      };
-      btn.addEventListener('click', go);
-      if (btn.getAttribute('role') === 'button') btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(e); } });
-    });
     if (STATE.view === 'kiosks') {
       wireKiosks(container);
     }
@@ -183714,11 +184257,12 @@
     }
 
     if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
-      window.MFG_TABLE_COLS.enhanceAllTables(container, STATE);
+      try { window.MFG_TABLE_COLS.enhanceAllTables(container, STATE); } catch (err) { console.warn('[wireWorkspace] enhanceAllTables', err); }
     }
   }
 
   function clickHub(hubId) {
+    cancelPendingSubtabFallback();
     if (hubId === 'master') hubId = 'univ_parties';
     const u = activeUser();
     if (hubId === 'univ_rates') {
@@ -183907,6 +184451,7 @@
   }
 
   function setView(view, opts = {}) {
+    cancelPendingSubtabFallback();
     _navAckToken = (_navAckToken || 0) + 1;
     _pendingDockAck = null;
     _lastUserNavAt = Date.now();
@@ -184872,8 +185417,15 @@
       (host.parentElement || host).appendChild(proxy);
       try { proxy.click(); } finally { proxy.remove(); }
     };
+    let _lastWsTouchAt = 0;
     const showChartPopoverForEvent = e => {
       if (chartPopHeld()) return;
+      if (e) {
+        const isHoverLike = e.type === 'mouseover' || e.type === 'pointerover' || e.type === 'mousemove';
+        if (isHoverLike && ((e.pointerType && e.pointerType !== 'mouse') || (_lastWsTouchAt && (performance.now() - _lastWsTouchAt) < 900))) {
+          return;
+        }
+      }
       if (e && e.type === 'focusin' && performance.now() - _chartPopClosedAt < 500) return;
       if (e && e.isTrusted && wsElForPop) {
         if (e.type === 'mousemove' && (e.movementX || e.movementY)) {
@@ -185006,6 +185558,12 @@
       if (!t || chartPopEl.contains(t) || (t.closest && t.closest('[data-chart-pin]'))) return;
       closeChartPopover();
     }, true);
+    document.addEventListener('click', e => {
+      if (!chartPopEl || chartPopEl.hidden || chartPopEl._pinned || chartPopEl._sheet) return;
+      const t = e.target;
+      if (!t || chartPopEl.contains(t) || (t.closest && t.closest('[data-chart-pop], [data-chart-pin]'))) return;
+      hideChartPopover();
+    });
     if (wsElForPop) {
       wsElForPop.addEventListener('mouseover', showChartPopoverForEvent);
       wsElForPop.addEventListener('pointerover', showChartPopoverForEvent);
@@ -185043,7 +185601,11 @@
         if (lpState) clearTimeout(lpState.timer);
         lpState = null;
       };
+      wsElForPop.addEventListener('pointerdown', e => {
+        if (e && e.pointerType && e.pointerType !== 'mouse') _lastWsTouchAt = performance.now();
+      }, { passive: true });
       wsElForPop.addEventListener('touchstart', e => {
+        _lastWsTouchAt = performance.now();
         cancelLongPress();
         lpFired = false;
         if (!e.touches || e.touches.length !== 1 || !e.target || typeof e.target.closest !== 'function') return;
@@ -185069,11 +185631,13 @@
         };
       }, { passive: true });
       wsElForPop.addEventListener('touchmove', e => {
+        _lastWsTouchAt = performance.now();
         if (!lpState || !e.touches || !e.touches[0]) return;
         const t = e.touches[0];
         if (Math.abs(t.clientX - lpState.x) > LONG_PRESS_SLOP || Math.abs(t.clientY - lpState.y) > LONG_PRESS_SLOP) cancelLongPress();
       }, { passive: true });
       wsElForPop.addEventListener('touchend', e => {
+        _lastWsTouchAt = performance.now();
         cancelLongPress();
         // The finger lifting after a long press must not also click the card underneath.
         if (lpFired) {
@@ -187050,6 +187614,11 @@
       setReported: on => { _unsentReported = on ? '1' : ''; _unsentClearTriedAtMs = 0; },
       cameOnline: () => { _lastOnlineAtMs = Date.now(); },
       inSync: () => noteCloudInSync(),
+      outsideScope: () => unsentRowsOutsideScope(),
+      inScope: (key, row, cos) => unsentCrRowInScope(key, row, Array.isArray(cos) ? new Set(cos.map(c => norm(c))) : null),
+      clearKey: (key, row) => unsentClearKey(key, row),
+      rowHoldsWait: (key, row) => Boolean(_unsentSinceMs && _unsentAllowedCos) && _unsentCrRowHoldsWait(key, row, _unsentAllowedCos, _unsentSinceMs - 5000),
+      restoreConfirmed: snap => { _unsentConfirmed = JSON.parse(JSON.stringify(snap)); saveUnsentConfirmed(); },
       refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
       report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
       loadDevices: () => loadDevicesHolding(),
@@ -187057,6 +187626,8 @@
     };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+    window.__isKeptOverWorkbook = (k, r) => isKeptOverWorkbook(r, keptOverWorkbookVoidedIds(k));
+    window.__appOnlyCashIds = () => getAppOnlyCashIndex().rows.map(x => String(x.r.id));
     window.__mfgTruckTestHooks = {
       resolveTruckWindow: (eq, co, dt, opts) => resolveTruckWindow(eq, co, dt, opts),
       syncEquipmentBaselineFromWindows: eq => syncEquipmentBaselineFromWindows(eq),
@@ -187097,20 +187668,38 @@
     window.addEventListener('mfg:sw-updated', scheduleSwIdleReload);
     if (window.__mfgPendingShellVer) scheduleSwIdleReload();
 
-    document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
-    document.addEventListener('touchstart', () => { lastPointerDownAt = Date.now(); }, { capture: true, passive: true });
-    let pendingFlushTimer = null;
+    const onPointerPress = () => {
+      _activePointerDown = true;
+      lastPointerDownAt = Date.now();
+    };
+    const clearActivePointerDown = () => {
+      if (!_activePointerDown) return;
+      _activePointerDown = false;
+      schedulePendingRenderFlush(180);
+    };
+    const onPointerRelease = () => {
+      _activePointerDown = false;
+      lastPointerUpAt = Date.now();
+      schedulePendingRenderFlush(380);
+    };
+    document.addEventListener('pointerdown', onPointerPress, { capture: true, passive: true });
+    document.addEventListener('mousedown', onPointerPress, true);
+    document.addEventListener('touchstart', onPointerPress, { capture: true, passive: true });
+    document.addEventListener('pointerup', onPointerRelease, { capture: true, passive: true });
+    document.addEventListener('pointercancel', onPointerRelease, { capture: true, passive: true });
+    document.addEventListener('mouseup', onPointerRelease, true);
+    document.addEventListener('touchend', onPointerRelease, { capture: true, passive: true });
+    document.addEventListener('touchcancel', onPointerRelease, { capture: true, passive: true });
+    window.addEventListener('blur', clearActivePointerDown);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearActivePointerDown();
+    });
+    document.addEventListener('contextmenu', clearActivePointerDown, true);
     document.addEventListener('focusout', () => {
-      if (!STATE.renderPending) return;
-      clearTimeout(pendingFlushTimer);
-      pendingFlushTimer = setTimeout(() => {
-        if (STATE.renderPending && !uiBusy()) {
-          STATE.renderPending = false;
-          renderApp();
-        }
-      }, 160);
+      if (STATE.renderPending) schedulePendingRenderFlush(160);
     });
 
+    wireHubSubtabAndSubnavDelegationOnce();
     initZeroBlackBoxTooltips();
     wireNearCopyPeekPopover();
     wireFifoSplitPeekPopover();
@@ -188782,7 +189371,10 @@
     triggerRecordSummaryShare,
     getFormUi: () => FORM_UI
   };
-  window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
+  window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE, {
+    uiBusy: () => uiBusy(),
+    safeRender: () => safeRender()
+  });
 
   let _seedHydrationPromise = null;
   // Bumped on sign-out: a seed fetch still in flight then is dropped instead of refilling records and the
