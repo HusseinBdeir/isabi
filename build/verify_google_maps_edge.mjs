@@ -426,7 +426,7 @@ async function callEdge(method, pathAndQuery, { body = null, headers = {}, envOv
   const fullUrl = `https://isabisystems.com${pathAndQuery}`;
   const urlObj = new URL(fullUrl);
   const routeParts = urlObj.pathname.replace(/^\/app\/api\/?/, '').split('/').filter(Boolean);
-  const hdrs = new Headers(headers);
+  const hdrs = new Headers(Object.assign({ 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, headers));
   let reqBody = undefined;
   if (body !== null) {
     reqBody = typeof body === 'string' ? body : JSON.stringify(body);

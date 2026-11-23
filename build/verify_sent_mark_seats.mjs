@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { onRequest } from '../functions/app/api/[[route]].js';
 import { signEdgeSession, getSessionWritePerms } from '../functions/_lib/security.js';
-import { enforceGuardedWorkflowMarksOnSync, guardedWorkflowMarkError, isGuardedWorkflowMarkKey } from '../functions/_lib/d1_store.js';
+import { MIN_SYNC_SHELL_VER, enforceGuardedWorkflowMarksOnSync, guardedWorkflowMarkError, isGuardedWorkflowMarkKey } from '../functions/_lib/d1_store.js';
 
 // ---- minimal D1 stand-in (same binding rules as build/verify_device_unsent.mjs) ----
 class Stmt {
@@ -77,7 +77,7 @@ const ENTRY = await seat('u7', 'Entry Seat', 'entry.seat@example.test', 'Entry',
 const FIN = await seat('u9', 'Finance Seat', 'fin.seat@example.test', 'Custom', 'WTC', FIN_PERMS);
 
 async function api(path, { method = 'GET', body, headers = {} } = {}) {
-  const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.3' }, headers);
+  const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.3', 'X-ISABI-Shell': MIN_SYNC_SHELL_VER }, headers);
   const req = new Request(`https://example.test/app/api/${path}`, { method, headers: h, body: method === 'GET' ? undefined : JSON.stringify(body || {}) });
   const res = await onRequest({ request: req, env, params: { route: path.split('/') }, waitUntil: () => {} });
   const txt = await res.text();

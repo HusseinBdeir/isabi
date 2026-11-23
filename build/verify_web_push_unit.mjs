@@ -10,6 +10,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { onRequest } from '../functions/app/api/[[route]].js';
 import { signEdgeSession } from '../functions/_lib/security.js';
+import { MIN_SYNC_SHELL_VER } from '../functions/_lib/d1_store.js';
 import { PUSH_SUBS_KV_KEY } from '../functions/_lib/web_push.js';
 
 const B64_ENC = new TextEncoder();
@@ -232,11 +233,12 @@ async function seedSeat({ id, full_name, email, role, companies, pbi_access = 'f
   return signEdgeSession({ sid, sub: id, email, role, companies, pbi: pbi_access, stmts: statements_access, custom_perms }, env);
 }
 
-async function api(path, { method = 'POST', body, token } = {}) {
+async function api(path, { method = 'POST', body, token, shellVer = MIN_SYNC_SHELL_VER } = {}) {
   const headers = {
     'Content-Type': 'application/json',
     'CF-Connecting-IP': '10.11.0.1'
   };
+  if (shellVer) headers['X-ISABI-Shell'] = shellVer;
   if (token) headers['X-ISABI-Session'] = token;
   const req = new Request(`https://example.test/app/api/${path}`, {
     method,

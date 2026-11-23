@@ -57,12 +57,14 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),     # legacy_id_map sunset gate
     ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter + minShellVer floor/cap
     ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
+    ("isabi", "build/verify_min_shell_parity.py", "python"),         # d1_store.js == server.py MIN_SYNC_SHELL_VER & rolling-window lag cap
     ("isabi", "build/verify_deploy_cli.py", "python"),              # build/*.py CLI argparse + --dry + stale-checkout gate
     ("isabi", "build/verify_deploy_retry.py", "python"),            # deploy rides out Cloudflare blips; a failed list never creates
     ("isabi", "build/verify_store_kv_guard.py", "python"),          # D1 seed never leaves the live store unparseable (staged swap)
     ("isabi", "build/verify_seed_stale_store.py", "python"),        # D1 seed never deletes / overwrites live rows from a stale store copy
     ("isabi", "build/verify_export_runtime_tables.py", "python"),   # D1 seed never touches Edge runtime tables
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
+    ("isabi-app", "build/verify_shell_gate_and_reload.mjs", "node"), # 426 outdated-shell replay, SW pill & 10m idle reload CDP gate
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
     ("isabi-app", "build/verify_custom_store_headroom.py", "python"), # store headroom 70% gate, 60d stub retirement, sync truncation/resurrection guards
@@ -154,7 +156,7 @@ def _warning_block(stdout: str) -> list[str]:
     return out
 
 
-def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, show_warnings: bool = False) -> None:
+def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, show_warnings: bool = False, extra_env: dict[str, str] | None = None) -> None:
     roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
     script = os.path.join(roots[repo], *rel.split("/"))
     if not os.path.isfile(script):
@@ -172,6 +174,8 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
         exe, env = rt
     env["ISABI_ROOT"] = ISABI_ROOT
     env["ISABI_APP_SRC"] = APP_SRC_ROOT
+    if extra_env:
+        env.update(extra_env)
     if rel == "build/verify_public_names.py":
         env["ISABI_NAMES_REQUIRE_REPO"] = "1"
     try:
@@ -194,12 +198,13 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
             print(f"  {line}")
 
 
-def run_release_gates(*, skip_release_gates: bool = False) -> None:
+def run_release_gates(*, skip_release_gates: bool = False, sync_in_progress: bool = False) -> None:
     if skip_release_gates or os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1":
         print("WARN: release gates skipped (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)")
         return
+    gate_extra = {"ISABI_SYNC_IN_PROGRESS": "1"} if sync_in_progress else None
     for repo, rel, interp in RELEASE_GATES:
-        _run_gate(repo, rel, interp, GATE_TIMEOUT_S, "--skip-release-gates")
+        _run_gate(repo, rel, interp, GATE_TIMEOUT_S, "--skip-release-gates", extra_env=gate_extra)
 
 
 def run_speed_gate(*, skip_reason: str = "") -> None:
@@ -341,6 +346,66 @@ def verify_seed_manifest_parity(
     return manifest
 
 
+MAX_MIN_SHELL_LAG = 15
+_PLAIN_SHELL_VER_RE = re.compile(r"^\d{1,4}(?:\.\d{1,6}){0,3}$")
+
+
+def verify_min_sync_shell_parity(
+    sw_ver: str,
+    app_src_root: str = APP_SRC_ROOT,
+    isabi_root: str = ISABI_ROOT,
+    *,
+    max_lag: int = MAX_MIN_SHELL_LAG,
+) -> str:
+    """Assert d1_store.js and server.py define the exact same MIN_SYNC_SHELL_VER and stay within max_lag of sw_ver."""
+    if not _PLAIN_SHELL_VER_RE.fullmatch(str(sw_ver or "").strip()):
+        raise SystemExit(f"ERROR: Invalid sw.js shell version {sw_ver!r} for MIN_SYNC_SHELL_VER parity check")
+    d1_path = os.path.join(isabi_root, "functions", "_lib", "d1_store.js")
+    srv_path = os.path.join(app_src_root, "server.py")
+    if not os.path.isfile(d1_path):
+        raise SystemExit(f"ERROR: Missing {d1_path} for MIN_SYNC_SHELL_VER parity check")
+    if not os.path.isfile(srv_path):
+        raise SystemExit(f"ERROR: Missing {srv_path} for MIN_SYNC_SHELL_VER parity check")
+    with open(d1_path, "r", encoding="utf-8") as fh:
+        m_d1 = re.search(r"export\s+const\s+MIN_SYNC_SHELL_VER\s*=\s*['\"]([^'\"]+)['\"]", fh.read())
+    with open(srv_path, "r", encoding="utf-8") as fh:
+        m_srv = re.search(r"^MIN_SYNC_SHELL_VER\s*=\s*['\"]([^'\"]+)['\"]", fh.read(), re.M)
+    if not m_d1:
+        raise SystemExit(f"ERROR: Could not parse MIN_SYNC_SHELL_VER in {d1_path}")
+    if not m_srv:
+        raise SystemExit(f"ERROR: Could not parse MIN_SYNC_SHELL_VER in {srv_path}")
+    d1_ver = m_d1.group(1).strip()
+    srv_ver = m_srv.group(1).strip()
+    for lbl, val in (("d1_store.js", d1_ver), ("server.py", srv_ver)):
+        if not _PLAIN_SHELL_VER_RE.fullmatch(val):
+            raise SystemExit(f"ERROR: Invalid MIN_SYNC_SHELL_VER={val!r} in {lbl}")
+    if d1_ver != srv_ver:
+        raise SystemExit(
+            f"ERROR: MIN_SYNC_SHELL_VER parity mismatch: d1_store.js={d1_ver} vs server.py={srv_ver}"
+        )
+    sw_parts = [int(x) for x in sw_ver.strip().split(".")]
+    fl_parts = [int(x) for x in d1_ver.split(".")]
+    if len(sw_parts) < 3 or len(fl_parts) < 3:
+        raise SystemExit(
+            f"ERROR: Expected 3-part dotted versions for MIN_SYNC_SHELL_VER ({d1_ver}) and sw.js ({sw_ver})"
+        )
+    if tuple(fl_parts[:-1]) != tuple(sw_parts[:-1]):
+        raise SystemExit(
+            f"ERROR: MIN_SYNC_SHELL_VER={d1_ver} major/minor branch differs from sw.js={sw_ver}"
+        )
+    sw_patch, fl_patch = sw_parts[-1], fl_parts[-1]
+    if fl_patch > sw_patch:
+        raise SystemExit(
+            f"ERROR: MIN_SYNC_SHELL_VER={d1_ver} exceeds sw.js={sw_ver}"
+        )
+    lag = sw_patch - fl_patch
+    if lag > max_lag:
+        raise SystemExit(
+            f"ERROR: MIN_SYNC_SHELL_VER={d1_ver} lags {lag} releases behind sw.js={sw_ver} (max {max_lag}); advance MIN_SYNC_SHELL_VER"
+        )
+    return d1_ver
+
+
 def verify_shell_version_parity() -> str:
     sw_path = os.path.join(APP_SRC_ROOT, "sw.js")
     idx_path = os.path.join(APP_SRC_ROOT, "index.html")
@@ -368,6 +433,7 @@ def verify_shell_version_parity() -> str:
         if q_vers != {ver}:
             raise SystemExit(f"ERROR: ?v= query string mismatch in {label}: found {sorted(q_vers)}, expected {[ver]}")
 
+    verify_min_sync_shell_parity(ver)
     return ver
 
 
@@ -443,7 +509,7 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
     if cur_changed:
         print(f"OK: functions/_lib/deployed_shell.js re-derived from the current app/sw.js (v{cur_ver})")
 
-    run_release_gates(skip_release_gates=skip_release_gates)
+    run_release_gates(skip_release_gates=skip_release_gates, sync_in_progress=True)
     run_speed_gate(skip_reason=skip_speed_gate)
 
     os.makedirs(APP_OUT, exist_ok=True)
@@ -511,6 +577,10 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
                     content = f.read()
                 if "@bhfirms.com" in content.lower():
                     raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
+
+    if not skip_release_gates and os.environ.get("ISABI_SKIP_RELEASE_GATES") != "1":
+        _run_gate("isabi", "build/verify_deployed_shell.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
+        _run_gate("isabi", "build/verify_min_shell_parity.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

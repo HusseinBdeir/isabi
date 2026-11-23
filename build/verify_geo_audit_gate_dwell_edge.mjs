@@ -120,7 +120,7 @@ async function createCtx() {
     const fullUrl = `https://isabisystems.com${pathAndQuery}`;
     const u = new URL(fullUrl);
     const routeParts = u.pathname.replace(/^\/app\/api\/?/, '').split('/').filter(Boolean);
-    const hdrs = new Headers(Object.assign({ Origin: 'https://isabisystems.com' }, extraHeaders));
+    const hdrs = new Headers(Object.assign({ Origin: 'https://isabisystems.com', 'X-ISABI-Shell': MIN_SYNC_SHELL_VER }, extraHeaders));
     if (sessionId && tok[sessionId]) hdrs.set('X-ISABI-Session', tok[sessionId]);
     let reqBody;
     if (body !== null) {

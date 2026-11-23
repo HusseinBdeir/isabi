@@ -88,10 +88,10 @@ function ok(label, cond, detail) {
 
 const OWNER = { sub: 'u1', role: 'Owner', companies: 'ALL', email: 'owner@example.test' };
 const domainReq = body => new Request('https://example.test/app/api/industry_domain_store', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body)
 });
 const syncReq = body => new Request('https://example.test/app/api/sync', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body)
 });
 
 console.log('Legacy seed id counter');
