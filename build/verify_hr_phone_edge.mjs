@@ -160,7 +160,7 @@ async function createTestContext({ strippedLegacy = false } = {}) {
     const fullUrl = `https://isabisystems.com${pathAndQuery}`;
     const u = new URL(fullUrl);
     const routeParts = u.pathname.replace(/^\/app\/api\/?/, '').split('/').filter(Boolean);
-    const hdrs = new Headers(Object.assign({ Origin: 'https://isabisystems.com' }, headers));
+    const hdrs = new Headers(Object.assign({ Origin: 'https://isabisystems.com', 'X-ISABI-Shell': MIN_SYNC_SHELL_VER }, headers));
     let reqBody;
     if (body !== null) {
       reqBody = typeof body === 'string' ? body : JSON.stringify(body);

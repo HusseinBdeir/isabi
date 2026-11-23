@@ -395,7 +395,10 @@ const kvSeed13 = {
   geo_config: geoSample
 };
 const db13 = createMockD1({ users: mockUsers, kv: kvSeed13 });
-const mkReq = (method, url, headers = {}) => new Request(url, { method, headers });
+const mkReq = (method, url, headers = {}) => new Request(url, {
+  method,
+  headers: Object.assign(method === 'POST' ? { 'X-ISABI-Shell': DEPLOYED_SHELL_VER } : {}, headers)
+});
 const res13UnauthWs = await (await handleKvDoc(mkReq('GET', 'https://example.com/app/api/work_schedules'), { DB: db13 }, null, 'work_schedules', 'work_schedules', null)).json();
 const resp13UnauthWs = await handleKvDoc(mkReq('GET', 'https://example.com/app/api/work_schedules'), { DB: db13 }, null, 'work_schedules', 'work_schedules', null);
 const resp13UnauthGeo = await handleKvDoc(mkReq('GET', 'https://example.com/app/api/geo_config'), { DB: db13 }, null, 'geo_config', 'config', null);

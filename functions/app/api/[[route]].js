@@ -303,6 +303,15 @@ async function routeAppApi(context) {
       if (subPath === '/smart-scan') return handleEdgeSmartScan(request, env, body, null);
       return handleEdgeAiEdge(request, env, body, null);
     }
+    if (request.method === 'POST' && ['/records', '/industry_domain_store', '/geo_config', '/sync'].includes(subPath)) {
+      if (!env || !env.DB) {
+        return jsonResponse({ ok: false, error: 'Database unavailable' }, 503);
+      }
+      const isSyncRead = subPath === '/sync' && body && (body.op === 'get_mfg' || body.op === 'get_control');
+      if (isDemoReq && !isSyncRead) {
+        return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+      }
+    }
     return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   }
 

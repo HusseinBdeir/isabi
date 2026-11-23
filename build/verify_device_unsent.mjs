@@ -95,7 +95,7 @@ const BBC = await seat('u9', 'BBC Entry Seat', 'bbc.seat@example.test', 'Entry',
 const BOTH = await seat('u8', 'Two Company Seat', 'both.seat@example.test', 'Entry', 'WTC, BBConstruction');
 
 async function api(path, { method = 'GET', body, headers = {}, raw } = {}) {
-  const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.2' }, headers);
+  const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.2', 'X-ISABI-Shell': effectiveMinSyncShellVer() }, headers);
   const req = new Request(`https://example.test/app/api/${path}`, { method, headers: h, body: method === 'GET' ? undefined : (raw !== undefined ? raw : JSON.stringify(body || {})) });
   const res = await onRequest({ request: req, env, params: { route: path.split('?')[0].split('/') } });
   const txt = await res.text();

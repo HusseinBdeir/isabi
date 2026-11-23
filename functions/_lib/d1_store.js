@@ -301,7 +301,7 @@ function createPurgeOverrideAccumulator() {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
-export const MIN_SYNC_SHELL_VER = '19.6.430';
+export const MIN_SYNC_SHELL_VER = '19.6.432';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
@@ -315,6 +315,23 @@ export function effectiveMinSyncShellVer(ceiling = DEPLOYED_SHELL_VER) {
   const cap = SHELL_VER_RE.test(String(ceiling || '')) ? String(ceiling) : '';
   if (cap && compareShellVer(MIN_SYNC_SHELL_VER, cap) > 0) return cap;
   return MIN_SYNC_SHELL_VER;
+}
+export function checkRequestShellVer(request, ceiling = DEPLOYED_SHELL_VER) {
+  const rawVer = String((request && request.headers && request.headers.get('X-ISABI-Shell')) || '').trim();
+  const minSyncVer = effectiveMinSyncShellVer(ceiling);
+  if (!SHELL_VER_RE.test(rawVer) || compareShellVer(rawVer, minSyncVer) < 0) {
+    return {
+      ok: false,
+      response: jsonResponse({
+        ok: false,
+        code: 'shell_outdated',
+        minSyncShellVer: minSyncVer,
+        receivedShellVer: rawVer,
+        error: 'Please update to the latest ISABI app version before syncing changes.'
+      }, 426)
+    };
+  }
+  return { ok: true, shellVer: rawVer, minSyncShellVer: minSyncVer };
 }
 export function holdMinShellVer(doc, prevDoc = null, ceiling = DEPLOYED_SHELL_VER) {
   if (!doc || typeof doc !== 'object') return doc;
@@ -4013,7 +4030,19 @@ export async function handleRecordsPost(request, env, session, body) {
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
 
+  const rawTable = body && body.table;
+  const canonTable = CR_KEY_TO_TABLE[rawTable] || rawTable;
+  if (canonTable === 'users') {
+    return jsonResponse({ ok: false, error: 'Users table cannot be modified via /api/records.' }, 403);
+  }
+  const perms = getSessionWritePerms(session);
+  if (!perms.canEnterAny && !perms.modifyData && !perms.modifyText && !perms.voidData) {
+    return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify records.' }, 403);
+  }
+
   if (body && body.op === 'rollback') {
+    const shChk = checkRequestShellVer(request);
+    if (!shChk.ok) return shChk.response;
     const tokRes = await takeRollbackToken(env.DB, 'records', body.rollbackToken, session);
     if (!tokRes.ok) return jsonResponse({ ok: false, error: tokRes.error }, tokRes.status || 400);
     const entry = tokRes.entry;
@@ -4055,25 +4084,38 @@ export async function handleRecordsPost(request, env, session, body) {
     return jsonResponse({ ok: true, rolledBack: true, table: tbl, id: rid });
   }
 
-  const rawTable = body && body.table;
-  const canonTable = CR_KEY_TO_TABLE[rawTable] || rawTable;
   let record = body && body.record;
+  if (!isOwnerOrFullGroupSession(session) && GLOBAL_RATE_TABLES.has(canonTable)) {
+    return jsonResponse({ ok: false, error: 'Global FX & VAT rate schedules require full-group or Owner access.' }, 403);
+  }
   if (!USER_WRITABLE_TABLES.has(canonTable) || !record || typeof record !== 'object' || !record.id) {
+    if (
+      USER_WRITABLE_TABLES.has(canonTable) &&
+      perms.roleKey !== 'Owner' &&
+      !canCreateTableRecord(perms, canonTable) &&
+      !canEditExistingTableRecord(perms, canonTable) &&
+      !(perms.voidData && perms.roleKey === 'Supervisor')
+    ) {
+      return jsonResponse({ ok: false, error: 'Role permission: seat cannot modify records in this table.' }, 403);
+    }
+    const shChk = checkRequestShellVer(request);
+    if (!shChk.ok) return shChk.response;
     return jsonResponse({ ok: false, error: 'Invalid table or record (id required)' }, 400);
   }
-  if (!validateRecordGpsCoords(record)) {
-    return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
-  }
-  if (canonTable === 'sites') {
+  const gpsValid = validateRecordGpsCoords(record);
+  if (gpsValid && canonTable === 'sites') {
     record = normalizeIncomingSiteCoordAliases(record);
   }
 
   const cols = await getTableColumns(env.DB, canonTable);
-  if (!cols.size) {
-    return jsonResponse({ ok: false, error: `Unknown schema for table: ${canonTable}` }, 400);
-  }
-  let exRow = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(record.id).trim()).first();
-  if (UNIVERSAL_UNIQUE_TABLES.has(canonTable) && !record.voided && cols.has('name')) {
+  let deferred400 = !gpsValid
+    ? { ok: false, error: 'Invalid GPS coordinates.' }
+    : (!cols.size ? { ok: false, error: `Unknown schema for table: ${canonTable}` } : null);
+  let dupConflict409 = null;
+  let exRow = cols.size
+    ? await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(record.id).trim()).first()
+    : null;
+  if (cols.size && UNIVERSAL_UNIQUE_TABLES.has(canonTable) && !record.voided && cols.has('name')) {
     const mainVal = String(record.name || record.item_name || record.driver || record.equipment || '').trim();
     if (canonTable === 'items' && mainVal && !String(record.name || '').trim()) {
       record = Object.assign({}, record, { name: mainVal });
@@ -4092,15 +4134,16 @@ export async function handleRecordsPost(request, env, session, body) {
       }
       if (dupRow) {
         if (exRow || !record.modified_by) {
-          return jsonResponse({
+          dupConflict409 = {
             ok: false,
             error: `Duplicate ${canonTable} main column '${mainVal}' already exists (id=${dupRow.id}).`
-          }, 409);
-        }
-        const dupFull = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(dupRow.id)).first();
-        if (dupFull) {
-          exRow = dupFull;
-          record = Object.assign({}, record, { id: String(dupRow.id) });
+          };
+        } else {
+          const dupFull = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(dupRow.id)).first();
+          if (dupFull) {
+            exRow = dupFull;
+            record = Object.assign({}, record, { id: String(dupRow.id) });
+          }
         }
       }
     }
@@ -4163,7 +4206,6 @@ export async function handleRecordsPost(request, env, session, body) {
     }
   }
 
-  const perms = getSessionWritePerms(session);
   let recordToWrite = record;
   if (!exRow) {
     if (!canCreateTableRecord(perms, canonTable)) {
@@ -4188,10 +4230,10 @@ export async function handleRecordsPost(request, env, session, body) {
       recordToWrite.entered_at = new Date().toISOString();
     }
     sanitizeIncomingTwinKeys(recordToWrite, null, session, perms);
-    if (Boolean(recordToWrite.voided)) {
+    if (Boolean(recordToWrite.voided) && !deferred400) {
       const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
       const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg, null);
-      if (vrErr) return jsonResponse(vrErr, 400);
+      if (vrErr) deferred400 = vrErr;
     }
     enforceServerVoidActorFields(recordToWrite, null, session, new Date().toISOString());
   } else {
@@ -4281,13 +4323,18 @@ export async function handleRecordsPost(request, env, session, body) {
       }
     }
     sanitizeIncomingTwinKeys(recordToWrite, exHydrated, session, perms);
-    if (!wasVoid && nowVoid) {
+    if (!wasVoid && nowVoid && !deferred400) {
       const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
       const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg, exHydrated);
-      if (vrErr) return jsonResponse(vrErr, 400);
+      if (vrErr) deferred400 = vrErr;
     }
     enforceServerVoidActorFields(recordToWrite, exHydrated, session, new Date().toISOString(), { allowDoorTablet: canonTable === 'attendance' });
   }
+
+  const shChk = checkRequestShellVer(request);
+  if (!shChk.ok) return shChk.response;
+  if (deferred400) return jsonResponse(deferred400, 400);
+  if (dupConflict409) return jsonResponse(dupConflict409, 409);
 
   const prevRowForRb = exHydratedRls ? hydrateRowJson(exRow) : null;
   if (prevRowForRb && canonTable === 'sites') {
@@ -5457,9 +5504,15 @@ export async function handleStaffBiometrics(request, env, session, body) {
 }
 
 export async function handleKvDoc(request, env, session, docKey, responseProp, body) {
-  if (!env || !env.DB) return jsonResponse({ ok: true, [responseProp]: null });
+  if (!env || !env.DB) {
+    if (request.method === 'GET') return jsonResponse({ ok: true, [responseProp]: null });
+    return jsonResponse({ ok: false, error: 'Database unavailable' }, 503);
+  }
   if (isDemoHeader(request) && request.method === 'GET') {
     return jsonResponse({ ok: true, demo: true, [responseProp]: null });
+  }
+  if (request.method !== 'GET' && isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
   }
   if (!session) {
     return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
@@ -5495,6 +5548,8 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
     });
     return jsonResponse({ ok: false, error: errorMsg }, 403);
   };
+  const isPlainObj = v => Boolean(v && typeof v === 'object' && !Array.isArray(v));
+  const incomingObj = isPlainObj(incoming) ? incoming : {};
   if (docKey === 'geo_config') {
     geoAccess = await resolveGeoWriteAccess(env.DB, session);
     if (!geoAccess.canWriteGeo && !geoAccess.canEnterSitePin) {
@@ -5507,7 +5562,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   const restrictKvRls = !isOwnerOrFullGroupSession(effectiveSession);
   const nowIso = new Date().toISOString();
   let toStore = incoming;
-  if (docKey === 'geo_config' && incoming && typeof incoming === 'object') {
+  if (docKey === 'geo_config') {
     const parseGeoKm = (v) => {
       if (v === undefined || v === null) return { ok: true, empty: true, km: null };
       if (typeof v === 'boolean' || Array.isArray(v)) return { ok: false };
@@ -5519,115 +5574,102 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       if (!Number.isFinite(km) || km < 0 || km > 5000) return { ok: false };
       return { ok: true, empty: false, km: Math.round(km * 100) / 100 };
     };
-    const inHubs = (incoming.companyHubs && typeof incoming.companyHubs === 'object' && !Array.isArray(incoming.companyHubs)) ? incoming.companyHubs : {};
-    for (const v of Object.values(inHubs)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v !== 'object' || Array.isArray(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid companyHubs payload.' }, 400);
+    const inHubs = isPlainObj(incomingObj.companyHubs) ? incomingObj.companyHubs : {};
+    const inSites = isPlainObj(incomingObj.sites) ? incomingObj.sites : {};
+    const inRegions = isPlainObj(incomingObj.regions) ? incomingObj.regions : {};
+    const inPairs = isPlainObj(incomingObj.pairKmOverrides) ? incomingObj.pairKmOverrides : {};
+    const inVerifiedRoutes = isPlainObj(incomingObj.verifiedRoutes) ? incomingObj.verifiedRoutes : {};
+    const findFirstGeoPayloadErr = () => {
+      if (!isPlainObj(body)) return 'Valid non-empty JSON object required.';
+      if (Object.prototype.hasOwnProperty.call(body, 'config') && !isPlainObj(body.config)) return 'Invalid config object.';
+      if (!isPlainObj(incoming)) return 'Valid JSON object payload required.';
+      for (const v of Object.values(inHubs)) {
+        if (v === undefined || v === null) continue;
+        if (!isPlainObj(v)) return 'Invalid companyHubs payload.';
+        const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
+        const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
+        if (!isValidLatLngPair(la, ln)) return 'Invalid hub GPS coordinates.';
       }
-      const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
-      const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
-      if (!isValidLatLngPair(la, ln)) {
-        return jsonResponse({ ok: false, error: 'Invalid hub GPS coordinates.' }, 400);
+      for (const v of Object.values(inSites)) {
+        if (v === undefined || v === null) continue;
+        if (!isPlainObj(v)) return 'Invalid site geo payload.';
+        if (!validateRecordGpsCoords(v)) return 'Invalid site GPS coordinates.';
+        const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
+        const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
+        const hasCoordKey = ('lat' in v || 'latitude' in v || 'lng' in v || 'longitude' in v || 'lon' in v);
+        const isCleared = Boolean(v._pinCleared || v.pin_cleared || v.pinCleared);
+        if (hasCoordKey && !isCleared && !isValidLatLngPair(la, ln)) return 'Invalid site GPS coordinates.';
+        if (!hasCoordKey && !isCleared && !String(v.region || '').trim()) return 'Invalid site geo payload.';
       }
-    }
-    const inSites = (incoming.sites && typeof incoming.sites === 'object' && !Array.isArray(incoming.sites)) ? incoming.sites : {};
-    for (const v of Object.values(inSites)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v !== 'object' || Array.isArray(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid site geo payload.' }, 400);
-      }
-      if (!validateRecordGpsCoords(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid site GPS coordinates.' }, 400);
-      }
-      const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
-      const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
-      const hasCoordKey = ('lat' in v || 'latitude' in v || 'lng' in v || 'longitude' in v || 'lon' in v);
-      const isCleared = Boolean(v._pinCleared || v.pin_cleared || v.pinCleared);
-      if (hasCoordKey && !isCleared && !isValidLatLngPair(la, ln)) {
-        return jsonResponse({ ok: false, error: 'Invalid site GPS coordinates.' }, 400);
-      }
-      if (!hasCoordKey && !isCleared && !String(v.region || '').trim()) {
-        return jsonResponse({ ok: false, error: 'Invalid site geo payload.' }, 400);
-      }
-    }
-    const inRegions = (incoming.regions && typeof incoming.regions === 'object' && !Array.isArray(incoming.regions)) ? incoming.regions : {};
-    for (const v of Object.values(inRegions)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v !== 'object' || Array.isArray(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid region geo payload.' }, 400);
-      }
-      if (!validateRecordGpsCoords(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid region coordinates or radius.' }, 400);
-      }
-      const rShape = String(v.shape_type || v.zone_type || '').trim().toLowerCase();
-      if (rShape === 'circle') {
-        const hasRad = ('radius_km' in v) && v.radius_km !== undefined && v.radius_km !== null && String(v.radius_km).trim() !== '';
-        const rk = hasRad ? Number(String(v.radius_km).trim()) : NaN;
-        if (!hasRad || !Number.isFinite(rk) || rk <= 0 || rk > 500) {
-          return jsonResponse({ ok: false, error: 'Circle region radius_km must be > 0 and <= 500.' }, 400);
-        }
-      }
-    }
-    const inPairs = (incoming.pairKmOverrides && typeof incoming.pairKmOverrides === 'object' && !Array.isArray(incoming.pairKmOverrides)) ? incoming.pairKmOverrides : {};
-    for (const v of Object.values(inPairs)) {
-      if (v === undefined || v === null) continue;
-      if (!parseGeoKm(v).ok) {
-        return jsonResponse({ ok: false, error: 'Invalid route KM override value (must be 0 to 5000).' }, 400);
-      }
-    }
-    const inVerifiedRoutes = (incoming.verifiedRoutes && typeof incoming.verifiedRoutes === 'object' && !Array.isArray(incoming.verifiedRoutes)) ? incoming.verifiedRoutes : {};
-    for (const v of Object.values(inVerifiedRoutes)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v !== 'object' || Array.isArray(v)) {
-        return jsonResponse({ ok: false, error: 'Invalid verified route payload.' }, 400);
-      }
-      if ('km' in v && v.km !== undefined && v.km !== null && !parseGeoKm(v.km).ok) {
-        return jsonResponse({ ok: false, error: 'Invalid verified route KM value (must be 0 to 5000).' }, 400);
-      }
-      if ('coordsLngLat' in v && v.coordsLngLat !== undefined && v.coordsLngLat !== null) {
-        if (!Array.isArray(v.coordsLngLat) || v.coordsLngLat.length < 2 || v.coordsLngLat.length > 128) {
-          return jsonResponse({ ok: false, error: 'Invalid verified route coordinates (expected 2 to 128 [lng, lat] points).' }, 400);
-        }
-        for (const pt of v.coordsLngLat) {
-          if (!Array.isArray(pt) || pt.length < 2 || (typeof pt[0] !== 'number' && typeof pt[0] !== 'string') || (typeof pt[1] !== 'number' && typeof pt[1] !== 'string') || String(pt[0]).trim() === '' || String(pt[1]).trim() === '') {
-            return jsonResponse({ ok: false, error: 'Invalid verified route coordinate pair.' }, 400);
-          }
-          const lng = Number(pt[0]);
-          const lat = Number(pt[1]);
-          if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -85 || lat > 85) {
-            return jsonResponse({ ok: false, error: 'Verified route coordinate out of bounds.' }, 400);
+      for (const v of Object.values(inRegions)) {
+        if (v === undefined || v === null) continue;
+        if (!isPlainObj(v)) return 'Invalid region geo payload.';
+        if (!validateRecordGpsCoords(v)) return 'Invalid region coordinates or radius.';
+        const rShape = String(v.shape_type || v.zone_type || '').trim().toLowerCase();
+        if (rShape === 'circle') {
+          const hasRad = ('radius_km' in v) && v.radius_km !== undefined && v.radius_km !== null && String(v.radius_km).trim() !== '';
+          const rk = hasRad ? Number(String(v.radius_km).trim()) : NaN;
+          if (!hasRad || !Number.isFinite(rk) || rk <= 0 || rk > 500) {
+            return 'Circle region radius_km must be > 0 and <= 500.';
           }
         }
       }
-      if ('elevProfileM' in v && v.elevProfileM !== undefined && v.elevProfileM !== null) {
-        if (!Array.isArray(v.elevProfileM) || v.elevProfileM.length < 2 || v.elevProfileM.length > 128) {
-          return jsonResponse({ ok: false, error: 'Invalid verified route elevation profile (expected 2 to 128 samples).' }, 400);
+      for (const v of Object.values(inPairs)) {
+        if (v === undefined || v === null) continue;
+        if (!parseGeoKm(v).ok) return 'Invalid route KM override value (must be 0 to 5000).';
+      }
+      for (const v of Object.values(inVerifiedRoutes)) {
+        if (v === undefined || v === null) continue;
+        if (!isPlainObj(v)) return 'Invalid verified route payload.';
+        if ('km' in v && v.km !== undefined && v.km !== null && !parseGeoKm(v.km).ok) {
+          return 'Invalid verified route KM value (must be 0 to 5000).';
         }
-        if (!Array.isArray(v.coordsLngLat) || v.elevProfileM.length !== v.coordsLngLat.length) {
-          return jsonResponse({ ok: false, error: 'Verified route elevation profile must match coordinates length.' }, 400);
-        }
-        for (const eVal of v.elevProfileM) {
-          if ((typeof eVal !== 'number' && typeof eVal !== 'string') || String(eVal).trim() === '') {
-            return jsonResponse({ ok: false, error: 'Invalid verified route elevation value.' }, 400);
+        if ('coordsLngLat' in v && v.coordsLngLat !== undefined && v.coordsLngLat !== null) {
+          if (!Array.isArray(v.coordsLngLat) || v.coordsLngLat.length < 2 || v.coordsLngLat.length > 128) {
+            return 'Invalid verified route coordinates (expected 2 to 128 [lng, lat] points).';
           }
-          const n = Number(eVal);
-          if (!Number.isFinite(n) || n < -500 || n > 9000) {
-            return jsonResponse({ ok: false, error: 'Verified route elevation out of bounds (must be -500 to 9000 m).' }, 400);
+          for (const pt of v.coordsLngLat) {
+            if (!Array.isArray(pt) || pt.length < 2 || (typeof pt[0] !== 'number' && typeof pt[0] !== 'string') || (typeof pt[1] !== 'number' && typeof pt[1] !== 'string') || String(pt[0]).trim() === '' || String(pt[1]).trim() === '') {
+              return 'Invalid verified route coordinate pair.';
+            }
+            const lng = Number(pt[0]);
+            const lat = Number(pt[1]);
+            if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -85 || lat > 85) {
+              return 'Verified route coordinate out of bounds.';
+            }
+          }
+        }
+        if ('elevProfileM' in v && v.elevProfileM !== undefined && v.elevProfileM !== null) {
+          if (!Array.isArray(v.elevProfileM) || v.elevProfileM.length < 2 || v.elevProfileM.length > 128) {
+            return 'Invalid verified route elevation profile (expected 2 to 128 samples).';
+          }
+          if (!Array.isArray(v.coordsLngLat) || v.elevProfileM.length !== v.coordsLngLat.length) {
+            return 'Verified route elevation profile must match coordinates length.';
+          }
+          for (const eVal of v.elevProfileM) {
+            if ((typeof eVal !== 'number' && typeof eVal !== 'string') || String(eVal).trim() === '') {
+              return 'Invalid verified route elevation value.';
+            }
+            const n = Number(eVal);
+            if (!Number.isFinite(n) || n < -500 || n > 9000) {
+              return 'Verified route elevation out of bounds (must be -500 to 9000 m).';
+            }
           }
         }
       }
-    }
+      return '';
+    };
+    const geoBad400 = findFirstGeoPayloadErr();
 
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
     prevGeoDoc = (prev && typeof prev === 'object') ? prev : {};
     const geoLookup = await loadGeoEntityLookup(env.DB);
     const prevDelCheck = (prev && prev._deletedKeys && typeof prev._deletedKeys === 'object') ? prev._deletedKeys : {};
-    const inDelCheck = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
+    const inDelCheck = isPlainObj(incomingObj._deletedKeys) ? incomingObj._deletedKeys : {};
     const describeBucketTarget = (bucket, k, val) => {
       const split = splitGeoBucketKey(k, val, 'manufacturing');
-      const obj = (val && typeof val === 'object') ? val : {};
+      const obj = isPlainObj(val) ? val : {};
       const co = canonicalizeCompanyName(obj.company || obj.resort || obj.entity || (bucket === 'companyHubs' ? split.bodyStr : '')) || '';
       const tt = bucket === 'companyHubs' ? 'hub' : bucket === 'sites' ? 'site' : bucket === 'regions' ? 'region' : bucket === 'pairKmOverrides' ? 'pair_km' : bucket === 'verifiedRoutes' ? 'verified_route' : 'geo_config';
       return {
@@ -5642,7 +5684,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
     if (restrictKvRls) {
       for (const bucket of GEO_RL_BUCKETS) {
         const prevBucket = (prev && prev[bucket] && typeof prev[bucket] === 'object') ? prev[bucket] : {};
-        const inBucket = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
+        const inBucket = isPlainObj(incomingObj[bucket]) ? incomingObj[bucket] : {};
         for (const [bkKey, bkVal] of Object.entries(inBucket)) {
           const hasPrev = Object.prototype.hasOwnProperty.call(prevBucket, bkKey) && prevBucket[bkKey] != null;
           const changed = !hasPrev || stableRowSig(prevBucket[bkKey]) !== stableRowSig(bkVal);
@@ -5703,17 +5745,18 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         }
       }
       const prevPairTs = (prev && prev._pairKmTs && typeof prev._pairKmTs === 'object') ? prev._pairKmTs : {};
-      const inPairTsCheck = (incoming._pairKmTs && typeof incoming._pairKmTs === 'object') ? incoming._pairKmTs : {};
+      const inPairTsCheck = isPlainObj(incomingObj._pairKmTs) ? incomingObj._pairKmTs : {};
       for (const [k, v] of Object.entries(inPairTsCheck)) {
         if (String(prevPairTs[k] || '') !== String(v || '')) {
           return await rejectGeo403('Geo write permission required to edit route KM timestamps.', describeBucketTarget('pairKmOverrides', k, v));
         }
       }
       const prevSites = (prev && prev.sites && typeof prev.sites === 'object') ? prev.sites : {};
-      for (const [k, v] of Object.entries(inSites)) {
-        if (v === undefined || v === null) continue;
+      for (const [k, rawV] of Object.entries(inSites)) {
+        if (rawV === undefined || rawV === null) continue;
+        const v = isPlainObj(rawV) ? rawV : {};
         if (v._pinCleared || v.pin_cleared || v.pinCleared) {
-          return await rejectGeo403('Geo write permission required to clear site pins.', describeBucketTarget('sites', k, v));
+          return await rejectGeo403('Geo write permission required to clear site pins.', describeBucketTarget('sites', k, rawV));
         }
         const la = normGpsCoord(('lat' in v && v.lat !== undefined) ? v.lat : v.latitude, 90);
         const ln = normGpsCoord(('lng' in v && v.lng !== undefined) ? v.lng : v.longitude, 180);
@@ -5721,27 +5764,27 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         const split = splitGeoBucketKey(k, v, 'Manufacturing');
         const dbHits = lookupGeoSitesForBucketKey(geoLookup, split.indKey, split.bodyStr, split.hasIndPrefix, [v.name, v.id]);
         const matchedPrev = findMatchingPrevSiteEntries(prevSites, k, v, dbHits);
-        if (matchedPrev.length === 1 && matchedPrev[0][0] === k && stableRowSig(matchedPrev[0][1]) === stableRowSig(v)) {
+        if (matchedPrev.length === 1 && matchedPrev[0][0] === k && stableRowSig(matchedPrev[0][1]) === stableRowSig(rawV)) {
           continue;
         }
         for (const [pk, prevS] of matchedPrev) {
-          if (pk === k && stableRowSig(prevS) === stableRowSig(v)) continue;
+          if (pk === k && stableRowSig(prevS) === stableRowSig(rawV)) continue;
           if (!prevS || typeof prevS !== 'object' || prevS._pinCleared || prevS.pin_cleared || prevS.pinCleared) {
-            return await rejectGeo403('Geo write permission required to modify existing pinned sites.', describeBucketTarget('sites', k, v));
+            return await rejectGeo403('Geo write permission required to modify existing pinned sites.', describeBucketTarget('sites', k, rawV));
           }
           const [pLa, pLn] = normalizedGpsPair(prevS, ('lat' in prevS) ? 'lat' : 'latitude', ('lng' in prevS) ? 'lng' : 'longitude');
           if (pLa !== null || pLn !== null) {
-            return await rejectGeo403('Geo write permission required to modify existing pinned sites.', describeBucketTarget('sites', k, v));
+            return await rejectGeo403('Geo write permission required to modify existing pinned sites.', describeBucketTarget('sites', k, rawV));
           }
           if (!hasValidIncPin) {
-            return await rejectGeo403('Geo write permission required to modify existing unpinned site entries without adding a valid pin.', describeBucketTarget('sites', k, v));
+            return await rejectGeo403('Geo write permission required to modify existing unpinned site entries without adding a valid pin.', describeBucketTarget('sites', k, rawV));
           }
           for (const mf of ['company', 'site_category', 'name', 'region']) {
             const pm = String(prevS[mf] || '').trim();
             if (!pm) continue;
             const nm = String(v[mf] || '').trim();
             if (nm.toLowerCase() !== pm.toLowerCase()) {
-              return await rejectGeo403(`Geo write permission required to modify existing site metadata (${mf}).`, describeBucketTarget('sites', k, v));
+              return await rejectGeo403(`Geo write permission required to modify existing site metadata (${mf}).`, describeBucketTarget('sites', k, rawV));
             }
           }
         }
@@ -5751,14 +5794,14 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         for (const dbSite of dbHits) {
           if (hasDbTwin && incDesc.cat && dbSite.siteCategory && dbSite.siteCategory !== incDesc.cat) continue;
           if (dbSite.pinCleared) {
-            return await rejectGeo403('Geo write permission required to re-pin a cleared site.', describeBucketTarget('sites', k, v));
+            return await rejectGeo403('Geo write permission required to re-pin a cleared site.', describeBucketTarget('sites', k, rawV));
           }
           if (dbSite.hasValidPin) {
             const sameCoords = (la !== null && ln !== null && Math.abs(dbSite.lat - la) < 1e-5 && Math.abs(dbSite.lng - ln) < 1e-5);
             const sameActor = Boolean(actorEm && (dbSite.modifiedBy === actorEm || dbSite.enteredBy === actorEm));
             const recent = isRecentGeoTimestamp(dbSite.modifiedAt || dbSite.enteredAt);
             if (!sameCoords || !(sameActor || recent)) {
-              return await rejectGeo403('Geo write permission required to re-pin an already pinned site.', describeBucketTarget('sites', k, v));
+              return await rejectGeo403('Geo write permission required to re-pin an already pinned site.', describeBucketTarget('sites', k, rawV));
             }
           }
           const dbRaw = (dbSite.raw && typeof dbSite.raw === 'object') ? dbSite.raw : {};
@@ -5767,37 +5810,41 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
             const pm = String((mf === 'site_category' ? dbSite.siteCategory : '') || dbRaw[mf] || dbSite[mf] || '').trim();
             const nm = String(v[mf] || '').trim();
             if (pm && nm && nm.toLowerCase() !== pm.toLowerCase()) {
-              return await rejectGeo403(`Geo write permission required to modify existing site metadata (${mf}).`, describeBucketTarget('sites', k, v));
+              return await rejectGeo403(`Geo write permission required to modify existing site metadata (${mf}).`, describeBucketTarget('sites', k, rawV));
             }
           }
         }
       }
       const prevRegions = (prev && prev.regions && typeof prev.regions === 'object') ? prev.regions : {};
-      for (const [k, v] of Object.entries(inRegions)) {
-        if (v === undefined || v === null) continue;
+      for (const [k, rawV] of Object.entries(inRegions)) {
+        if (rawV === undefined || rawV === null) continue;
+        const v = isPlainObj(rawV) ? rawV : {};
         const matchedPrevRegs = findMatchingPrevRegionEntries(prevRegions, k, v);
         if (matchedPrevRegs.length > 0) {
-          if (matchedPrevRegs.length === 1 && matchedPrevRegs[0][0] === k && stableRowSig(matchedPrevRegs[0][1]) === stableRowSig(v)) {
+          if (matchedPrevRegs.length === 1 && matchedPrevRegs[0][0] === k && stableRowSig(matchedPrevRegs[0][1]) === stableRowSig(rawV)) {
             continue;
           }
-          return await rejectGeo403('Geo write permission required to modify existing regions.', describeBucketTarget('regions', k, v));
+          return await rejectGeo403('Geo write permission required to modify existing regions.', describeBucketTarget('regions', k, rawV));
         }
         const split = splitGeoBucketKey(k, v, 'Manufacturing');
         const dbHits = lookupGeoRegionsForBucketKey(geoLookup, split.indKey, split.bodyStr, split.hasIndPrefix, [v.name, v.id]);
         for (const dbReg of dbHits) {
           if (hasRegionZoneMutation(dbReg.raw, v, { ignoreAbsentDistanceKm: true })) {
-            return await rejectGeo403('Geo write permission required to modify an existing region zone.', describeBucketTarget('regions', k, v));
+            return await rejectGeo403('Geo write permission required to modify an existing region zone.', describeBucketTarget('regions', k, rawV));
           }
           if (dbReg.hasShape) {
             const sameActor = Boolean(actorEm && (dbReg.enteredBy === actorEm || dbReg.modifiedBy === actorEm));
             const recent = isRecentGeoTimestamp(dbReg.enteredAt || dbReg.modifiedAt);
             if (!(sameActor || recent)) {
-              return await rejectGeo403('Geo write permission required to modify an existing region zone.', describeBucketTarget('regions', k, v));
+              return await rejectGeo403('Geo write permission required to modify an existing region zone.', describeBucketTarget('regions', k, rawV));
             }
           }
         }
       }
     }
+    const shChk = checkRequestShellVer(request);
+    if (!shChk.ok) return shChk.response;
+    if (geoBad400) return jsonResponse({ ok: false, error: geoBad400 }, 400);
     // Merge happens authoritatively inside upsertGeoConfigWithCas below using fresh CAS rev state.
   } else if (docKey === 'work_schedules') {
     const reqOp = String((body && body.op) || '').trim();
@@ -6376,11 +6423,17 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
 }
 
 export async function handleIndustryDomainStore(request, env, session, body, ctx = null) {
-  if (!env || !env.DB) return jsonResponse({ ok: true, industryCustomRows: {}, industryRowEdits: {} });
+  if (!env || !env.DB) {
+    if (request.method === 'GET') return jsonResponse({ ok: true, industryCustomRows: {}, industryRowEdits: {} });
+    return jsonResponse({ ok: false, error: 'Database unavailable' }, 503);
+  }
+  if (isDemoHeader(request) && request.method === 'GET') {
+    return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
+  }
+  if (request.method !== 'GET' && isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  }
   if (!session) {
-    if (isDemoHeader(request) && request.method === 'GET') {
-      return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
-    }
     return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   }
   const restrictRls = !isOwnerOrFullGroupSession(session);
@@ -6412,8 +6465,13 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     return jsonResponse({ ok: true, industryCustomRows: customRows, industryRowEdits: rowEdits });
   }
 
-  if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  const perms = getSessionWritePerms(session);
+  if (!perms.canEnterAny && !perms.modifyData && !perms.modifyText && !perms.voidData) {
+    return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify domain records.' }, 403);
+  }
   if (body && body.op === 'rollback') {
+    const shChk = checkRequestShellVer(request);
+    if (!shChk.ok) return shChk.response;
     const tokRes = await takeRollbackToken(env.DB, 'industry_domain_store', body.rollbackToken, session);
     if (!tokRes.ok) return jsonResponse({ ok: false, error: tokRes.error }, tokRes.status || 400);
     const entry = tokRes.entry;
@@ -6473,10 +6531,6 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     if (rbStmts.length) await execBatchedStmts(env.DB, rbStmts);
     return jsonResponse({ ok: true, rolledBack: true, rows: rbRows.length, edits: rbEdits.length });
   }
-  // Old seed ids still in use (counts only; see legacy_ids.js). Read before anything below touches the body.
-  const legacyHitsTask = scheduleLegacyIdHits(env, ctx, collectLegacyCandidates(body));
-  if (legacyHitsTask) await legacyHitsTask;
-  const perms = getSessionWritePerms(session);
   const customMap = (body && body.industryCustomRows && typeof body.industryCustomRows === 'object') ? body.industryCustomRows : {};
   const editsMap = (body && body.industryRowEdits && typeof body.industryRowEdits === 'object') ? body.industryRowEdits : {};
   let savedRows = 0;
@@ -6494,6 +6548,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   const rbRowsMeta = [];
   const rbEditsMeta = [];
   const pendingDomainGeoAudits = [];
+  let deferredNon403 = null;
   const rejectDomainGeo403 = async (errMsg, target = {}) => {
     await recordGeoAuditEvent(env.DB, request, session, {
       action: 'blocked_403',
@@ -6516,10 +6571,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       const rid = String(rawR.id || rawR.code || '').trim();
       if (!rid) continue;
       if (isServerOwnedCustomRow(bucket, rid)) { ignoredServerOwned++; continue; }
-      if (!validateRecordGpsCoords(rawR)) {
-        return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
-      }
-      const r = normalizeIncomingSiteCoordAliases(rawR);
+      const gpsValidR = validateRecordGpsCoords(rawR);
+      const r = gpsValidR ? normalizeIncomingSiteCoordAliases(rawR) : Object.assign({}, rawR);
       const co = canonicalizeCompanyName(r.company || r.fromCo || r.resort || r.entity || '');
       const rowInd = inferDomainIndustry(r, bucket);
       if (restrictRls && (!co || !canAccessCompany(session, co) || (rowInd && !canAccessGeoIndustrySession(session, rowInd)))) {
@@ -6543,7 +6596,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         const exVoid = Number(ex.voided || 0);
         const exRev = Number(ex.rev || 1);
         const voidNoteChanged = Boolean(exVoid) && Boolean(incVoid) && hasVoidReasonChange(exObj, r);
-        if (Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, r) && !hasNonVoidFieldChange(exObj, r)) continue;
+        if (gpsValidR && Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, r) && !hasNonVoidFieldChange(exObj, r)) continue;
         if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
           return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
         }
@@ -6552,7 +6605,13 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           // it, would be dropped here while the answer says OK. Refused instead, before anything in the request
           // is written.
           if (isVoidedScheduleIdReuse(bucket, exObj, r)) {
-            return jsonResponse({ ok: false, error: VOIDED_ID_CONFLICT_ERROR, code: VOIDED_ID_CONFLICT_CODE, bucket: String(bucket), id: rid }, 409);
+            if (!deferredNon403) {
+              deferredNon403 = {
+                body: { ok: false, error: VOIDED_ID_CONFLICT_ERROR, code: VOIDED_ID_CONFLICT_CODE, bucket: String(bucket), id: rid },
+                status: 409
+              };
+            }
+            continue;
           }
           continue;
         }
@@ -6587,10 +6646,17 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
             applyExplicitVoidReason(rowToWrite, r);
           }
         }
+        if (!gpsValidR) {
+          if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
+          continue;
+        }
         sanitizeIncomingTwinKeys(rowToWrite, exObj, session, perms);
         if (!exVoid && incVoid) {
           const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
-          if (vrErr) return jsonResponse(vrErr, 400);
+          if (vrErr) {
+            if (!deferredNon403) deferredNon403 = { body: vrErr, status: 400 };
+            continue;
+          }
         }
         enforceServerVoidActorFields(rowToWrite, exObj, session, serverVoidNow);
         if (gpsChanged) {
@@ -6607,10 +6673,17 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (!perms.canWriteGeoConfig && (hasAnyGpsField(r) || hasExplicitGpsKeyInPayload(r))) {
           return await rejectDomainGeo403('Supervisor + Entry or Geo-authorized seat required to pin location coordinates.', { industry: rowInd, company: co, target_id: rid, target_label: String(r.name || rid), detail: { bucket } });
         }
+        if (!gpsValidR) {
+          if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
+          continue;
+        }
         sanitizeIncomingTwinKeys(rowToWrite, null, session, perms);
         if (incVoid) {
           const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
-          if (vrErr) return jsonResponse(vrErr, 400);
+          if (vrErr) {
+            if (!deferredNon403) deferredNon403 = { body: vrErr, status: 400 };
+            continue;
+          }
         }
         enforceServerVoidActorFields(rowToWrite, null, session, serverVoidNow, { allowInitialSeedEdit: !incVoid });
         const ev = detectRecordGeoAuditEvent('sites', null, rowToWrite, 'industry_domain_store', rowInd);
@@ -6646,10 +6719,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     }
     const isGuardedMark = isGuardedWorkflowMarkKey(ek);
     const isStmtMark = STMT_SENT_MARK_RE.test(ek);
-    if (!validateRecordGpsCoords(rawEv)) {
-      return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
-    }
-    const ev = normalizeIncomingSiteCoordAliases(rawEv);
+    const gpsValidE = validateRecordGpsCoords(rawEv);
+    const ev = gpsValidE ? normalizeIncomingSiteCoordAliases(rawEv) : Object.assign({}, rawEv);
     const edCo = canonicalizeCompanyName(ev.company || ev.fromCo || ev.resort || ev.entity || '');
     const edInd = inferDomainIndustry(ev, ek);
     if (restrictRls && (!edCo || !canAccessCompany(session, edCo) || (edInd && !canAccessGeoIndustrySession(session, edInd)))) {
@@ -6673,7 +6744,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       const exVoid = Number(ex.voided || 0);
       const exRev = Number(ex.rev || 1);
       const voidNoteChanged = Boolean(exVoid) && Boolean(incVoid) && hasVoidReasonChange(exObj, ev);
-      if (Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, ev) && !hasNonVoidFieldChange(exObj, ev)) continue;
+      if (gpsValidE && Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, ev) && !hasNonVoidFieldChange(exObj, ev)) continue;
       if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
         return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
       }
@@ -6715,10 +6786,17 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           applyExplicitVoidReason(editToWrite, ev);
         }
       }
+      if (!gpsValidE) {
+        if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
+        continue;
+      }
       sanitizeIncomingTwinKeys(editToWrite, exObj, session, perms);
       if (!exVoid && incVoid && !/^WF::/i.test(ek)) {
         const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
-        if (vrErr) return jsonResponse(vrErr, 400);
+        if (vrErr) {
+          if (!deferredNon403) deferredNon403 = { body: vrErr, status: 400 };
+          continue;
+        }
       }
       enforceServerVoidActorFields(editToWrite, exObj, session, serverEditVoidNow);
       if (gpsChanged) {
@@ -6743,10 +6821,17 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
       }
+      if (!gpsValidE) {
+        if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
+        continue;
+      }
       sanitizeIncomingTwinKeys(editToWrite, null, session, perms);
       if (incVoid && !/^WF::/i.test(ek)) {
         const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
-        if (vrErr) return jsonResponse(vrErr, 400);
+        if (vrErr) {
+          if (!deferredNon403) deferredNon403 = { body: vrErr, status: 400 };
+          continue;
+        }
       }
       enforceServerVoidActorFields(editToWrite, null, session, serverEditVoidNow, { allowInitialSeedEdit: !incVoid });
       const geoEv = detectRecordGeoAuditEvent('sites', null, editToWrite, 'industry_domain_store', edInd);
@@ -6770,6 +6855,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   }
 
   const purgedRows = Array.isArray(body && body.purgedRows) ? body.purgedRows : [];
+  if ((purgedRows.length > 0 || (Array.isArray(body && body.purgedEditKeys) && body.purgedEditKeys.length > 0)) && !perms.modifyData && !perms.voidData) {
+    return jsonResponse({ ok: false, error: 'Role permission: purge requires modify or void privileges.' }, 403);
+  }
   for (const pr of purgedRows) {
     if (!pr || typeof pr !== 'object') continue;
     const bk = String(pr.bucket || '').trim();
@@ -6858,6 +6946,14 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   if (refusedMarks.length && !pendingRowWrites.length && !pendingEditWrites.length && !pendingPurgeRows.length && !pendingPurgeEdits.length) {
     return jsonResponse({ ok: false, error: refusedMarks[0].error, refusedMarks }, 403);
   }
+  const shChk = checkRequestShellVer(request);
+  if (!shChk.ok) return shChk.response;
+  if (deferredNon403) {
+    return jsonResponse(deferredNon403.body, deferredNon403.status);
+  }
+  // Old seed ids still in use (counts only; see legacy_ids.js). Recorded only after RBAC and shell checks pass.
+  const legacyHitsTask = scheduleLegacyIdHits(env, ctx, collectLegacyCandidates(body));
+  if (legacyHitsTask) await legacyHitsTask;
 
   for (const args of pendingRowWrites) {
     await env.DB.prepare(
@@ -9687,8 +9783,12 @@ async function computeSyncDocEtag(docObj) {
 }
 
 export async function handleSync(request, env, session, body, _ctx) {
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Database unavailable' }, 503);
+  const isSyncReadOp = request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'));
+  if (!isSyncReadOp && isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  }
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
-  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
   const docKey = String((body && body.doc) || 'mfg_web_store');
   const patchDocKeys = (body && body.op === 'patch' && body.patch && typeof body.patch === 'object') ? Object.keys(body.patch) : [];
   if (isPushOwnedDoc(docKey) || patchDocKeys.some(isPushOwnedDoc)) {
@@ -9704,8 +9804,15 @@ export async function handleSync(request, env, session, body, _ctx) {
   if (isDeviceUnsentDoc(docKey) || patchDocKeys.some(isDeviceUnsentDoc)) {
     return jsonResponse({ ok: false, error: 'Device reports are managed from /api/device_unsent.' }, 403);
   }
+  if (
+    body &&
+    body.op === 'patch' &&
+    (docKey === 'work_schedules' || docKey === 'geo_config' || patchDocKeys.some(pk => pk === 'work_schedules' || pk === 'geo_config'))
+  ) {
+    return jsonResponse({ ok: false, error: 'Direct /api/sync patch on work_schedules or geo_config is not allowed; use the dedicated endpoint.' }, 403);
+  }
 
-  if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'))) {
+  if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get' || body.op === 'get_control'))) {
     const targetKey = body && body.op === 'get_control' ? 'control_store' : docKey;
     if (targetKey !== 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
       return jsonResponse({ ok: false, error: 'Owner permissions required for control store.' }, 403);
@@ -9748,15 +9855,16 @@ export async function handleSync(request, env, session, body, _ctx) {
     return jsonResponse(getResp);
   }
 
-  if (isDemoHeader(request)) {
-    return jsonResponse({ ok: false, error: 'Demo sandbox cannot push to live ledger' }, 403);
-  }
-
   if (body && body.op === 'patch' && body.patch && typeof body.patch === 'object') {
     const patchKeys = Object.keys(body.patch);
     const pKey = patchKeys[0] || docKey;
-    if (pKey !== 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
+    if ((pKey !== 'mfg_web_store' || patchKeys.some(pk => pk !== 'mfg_web_store')) && !isOwnerOrFullGroupSession(session)) {
       return jsonResponse({ ok: false, error: 'Owner permissions required for control store.' }, 403);
+    }
+    // Non-browser CLI build tickets remain exempt; all user sessions require X-ISABI-Shell >= floor.
+    if (!(session && session.build_ticket)) {
+      const shChk = checkRequestShellVer(request);
+      if (!shChk.ok) return shChk.response;
     }
     const rawPatchDoc = body.patch[pKey];
     const incomingDoc = (rawPatchDoc && typeof rawPatchDoc === 'object')
@@ -9938,6 +10046,13 @@ export async function handleSync(request, env, session, body, _ctx) {
     return jsonResponse(patchOut);
   }
 
+  if (docKey !== 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
+    return jsonResponse({ ok: false, error: 'Owner permissions required for non-store documents.' }, 403);
+  }
+  if (!(session && session.build_ticket)) {
+    const shChk = checkRequestShellVer(request);
+    if (!shChk.ok) return shChk.response;
+  }
   return jsonResponse({ ok: false, error: 'Unsupported sync operation' }, 400);
 }
 

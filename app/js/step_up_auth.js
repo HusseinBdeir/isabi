@@ -1485,7 +1485,8 @@
     mountWatchdogNow,
     rerenderWatchdog,
     hasActiveLease: () => Boolean(_lease.userId && Date.now() < _lease.until),
-    getLeaseInfo: () => ({ userId: _lease.userId, until: _lease.until, method: _lease.method })
+    getLeaseInfo: () => ({ userId: _lease.userId, until: _lease.until, method: _lease.method }),
+    isCameraActive: () => Boolean(_camActive || (_camStream && _camStream.getVideoTracks().some(t => t.readyState === 'live')))
   };
 
   if (isLoopbackTestEnv() && navigator.webdriver) {

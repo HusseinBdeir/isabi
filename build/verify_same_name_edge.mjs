@@ -5,10 +5,13 @@
 
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { onRequest } from '../functions/app/api/[[route]].js';
 import {
   MIN_SYNC_SHELL_VER,
   compareShellVer,
   effectiveMinSyncShellVer,
+  handleIndustryDomainStore,
+  handleKvDoc,
   handleRecordsGet,
   handleRecordsPost,
   handleSync,
@@ -77,9 +80,9 @@ function noteText(v) {
   else if (typeof v === 'string') textToAudit.push(v);
 }
 
-const mkPostReq = (path, body) => new Request(`https://example.test${path}`, {
+const mkPostReq = (path, body, extraHeaders = {}) => new Request(`https://example.test${path}`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: Object.assign({ 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, extraHeaders),
   body: JSON.stringify(body),
 });
 
@@ -185,6 +188,118 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
       && rej.json.minSyncShellVer === effFloor && stored.minShellVer === expectedSeedStored,
       rej);
   }
+
+  // 2d. 426 shell_outdated gate across handleRecordsPost, handleIndustryDomainStore, handleKvDoc (geo_config), and headered handleSync
+  const mkHdrReq = (path, body, headersObj = {}) => new Request(`https://example.test${path}`, {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, headersObj),
+    body: JSON.stringify(body),
+  });
+  const badVers = [
+    ['missing header', null],
+    ['empty header', ''],
+    ['malformed header', '19.6.x'],
+    [`below floor ${oneBelowFloor}`, oneBelowFloor],
+  ];
+  for (const [vLabel, vHdr] of badVers) {
+    const hdr = vHdr === null ? {} : { 'X-ISABI-Shell': vHdr };
+    const rRec = await handleRecordsPost(
+      mkHdrReq('/app/api/records', { table: 'sales_tickets', record: { id: 'st-426-blk', company: 'WTC', total: 10 } }, hdr),
+      env, OWNER, { table: 'sales_tickets', record: { id: 'st-426-blk', company: 'WTC', total: 10 } }
+    );
+    const jRec = await rRec.json();
+    const rRecRb = await handleRecordsPost(
+      mkHdrReq('/app/api/records', { op: 'rollback', rollbackToken: 'tok-x' }, hdr),
+      env, OWNER, { op: 'rollback', rollbackToken: 'tok-x' }
+    );
+    const rDom = await handleIndustryDomainStore(
+      mkHdrReq('/app/api/industry_domain_store', { industryCustomRows: { re_invoicing: [{ id: 'dom-426-blk', company: '4235 Company S.A.L' }] } }, hdr),
+      env, OWNER, { industryCustomRows: { re_invoicing: [{ id: 'dom-426-blk', company: '4235 Company S.A.L' }] } }, { waitUntil() {} }
+    );
+    const jDom = await rDom.json();
+    const rDomRb = await handleIndustryDomainStore(
+      mkHdrReq('/app/api/industry_domain_store', { op: 'rollback', rollbackToken: 'tok-x' }, hdr),
+      env, OWNER, { op: 'rollback', rollbackToken: 'tok-x' }, { waitUntil() {} }
+    );
+    const rGeo = await handleKvDoc(
+      mkHdrReq('/app/api/geo_config', { config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } } }, hdr),
+      env, OWNER, 'geo_config', 'config', { config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } } }
+    );
+    const jGeo = await rGeo.json();
+    ok(`2d. ${vLabel}: /records(+rb), /industry_domain_store(+rb), /geo_config return 426 shell_outdated`,
+      rRec.status === 426 && jRec.code === 'shell_outdated' && jRec.minSyncShellVer === effFloor && /update to the latest ISABI app version/i.test(jRec.error || '')
+      && rRecRb.status === 426
+      && rDom.status === 426 && jDom.code === 'shell_outdated' && jDom.minSyncShellVer === effFloor
+      && rDomRb.status === 426
+      && rGeo.status === 426 && jGeo.code === 'shell_outdated' && jGeo.minSyncShellVer === effFloor,
+      { rec: rRec.status, recRb: rRecRb.status, dom: rDom.status, domRb: rDomRb.status, geo: rGeo.status });
+    const sPatch = { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: '19.99.999', customRecords: {} } } };
+    const rSyncHdr = await handleSync(mkHdrReq('/app/api/sync', sPatch, hdr), env, OWNER, sPatch, { waitUntil() {} });
+    const jSyncHdr = await rSyncHdr.json();
+    ok(`2d-sync. ${vLabel} header rejects /api/sync patch even when body minShellVer=19.99.999`,
+      rSyncHdr.status === 426 && jSyncHdr.code === 'shell_outdated', { status: rSyncHdr.status, jSyncHdr });
+  }
+  const nRecAfter426 = d1.rows("SELECT COUNT(*) c FROM sales_tickets WHERE id = 'st-426-blk'")[0].c;
+  const nDomAfter426 = d1.rows("SELECT COUNT(*) c FROM industry_custom_rows WHERE row_id = 'dom-426-blk'")[0].c;
+  ok('2e. Zero DB rows persisted across 426 rejections', nRecAfter426 === 0 && nDomAfter426 === 0, { nRecAfter426, nDomAfter426 });
+
+  // Precedence: 403 Demo -> 401 Auth -> 426, plus GET/work_schedules exemptions & build_ticket-only headerless /api/sync
+  const rDemoRec = await handleRecordsPost(mkHdrReq('/app/api/records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, { 'X-ISABI-Demo': '1' }), env, OWNER, { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } });
+  const rUnauthRec = await handleRecordsPost(mkHdrReq('/app/api/records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, {}), env, null, { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } });
+  const rDemoDom = await handleIndustryDomainStore(mkHdrReq('/app/api/industry_domain_store', {}, { 'X-ISABI-Demo': '1' }), env, OWNER, {}, { waitUntil() {} });
+  const rUnauthDom = await handleIndustryDomainStore(mkHdrReq('/app/api/industry_domain_store', {}, {}), env, null, {}, { waitUntil() {} });
+  const rDemoGeo = await handleKvDoc(mkHdrReq('/app/api/geo_config', {}, { 'X-ISABI-Demo': '1' }), env, OWNER, 'geo_config', 'config', {});
+  const rUnauthGeo = await handleKvDoc(mkHdrReq('/app/api/geo_config', {}, {}), env, null, 'geo_config', 'config', {});
+  const rGetDom = await handleIndustryDomainStore(mkGetReq('/app/api/industry_domain_store'), env, OWNER, null);
+  const rGetGeo = await handleKvDoc(mkGetReq('/app/api/geo_config'), env, OWNER, 'geo_config', 'config', null);
+  const rWsPost = await handleKvDoc(mkHdrReq('/app/api/work_schedules', { work_schedules: { shiftTypes: [] } }, {}), env, OWNER, 'work_schedules', 'work_schedules', { work_schedules: { shiftTypes: [] } });
+  const hdrlessPatch = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: JSON.parse(d1.rows("SELECT updated_at FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0] ? JSON.stringify(d1.rows("SELECT updated_at FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].updated_at) : '""'), patch: { mfg_web_store: { minShellVer: effFloor, updatedAt: '2026-11-14T10:02:00.000Z', customRecords: {} } } };
+  const rHdrlessSync = await handleSync(mkHdrReq('/app/api/sync', hdrlessPatch, {}), env, OWNER, hdrlessPatch, { waitUntil() {} });
+  const rBuildTicketSync = await handleSync(mkHdrReq('/app/api/sync', hdrlessPatch, {}), env, Object.assign({}, OWNER, { build_ticket: true }), hdrlessPatch, { waitUntil() {} });
+  ok('2f. Precedence (403 Demo -> 401 Auth -> 426), GETs, work_schedules, headerless non-ticket /api/sync 426, and build_ticket /api/sync 200',
+    rDemoRec.status === 403 && rUnauthRec.status === 401
+    && rDemoDom.status === 403 && rUnauthDom.status === 401
+    && rDemoGeo.status === 403 && rUnauthGeo.status === 401
+    && rGetDom.status === 200 && rGetGeo.status === 200 && rWsPost.status === 200 && rHdrlessSync.status === 426 && rBuildTicketSync.status === 200,
+    { rDemoRec: rDemoRec.status, rUnauthRec: rUnauthRec.status, rDemoDom: rDemoDom.status, rUnauthDom: rUnauthDom.status, rDemoGeo: rDemoGeo.status, rUnauthGeo: rUnauthGeo.status, rGetDom: rGetDom.status, rGetGeo: rGetGeo.status, rWsPost: rWsPost.status, rHdrlessSync: rHdrlessSync.status, rBuildTicketSync: rBuildTicketSync.status });
+
+  // Strict router (onRequest) & handler precedence: 503 (!DB) -> 403 (unauthenticated X-ISABI-Demo: 1) -> 401 -> 426 across all 4 mutating POST routes
+  const callRoute = async (routePath, bodyObj, headers = {}, routeEnv = env) => {
+    const req = new Request(`https://example.test/app/api/${routePath}`, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.11' }, headers),
+      body: JSON.stringify(bodyObj),
+    });
+    const res = await onRequest({ request: req, env: routeEnv, params: { route: routePath.split('/') }, waitUntil() {} });
+    return res.status;
+  };
+  const noDbEnv = { ISABI_JWT_SECRET: env.ISABI_JWT_SECRET };
+  const s503Rec = await callRoute('records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, { 'X-ISABI-Demo': '1' }, noDbEnv);
+  const s503Dom = await callRoute('industry_domain_store', {}, { 'X-ISABI-Demo': '1' }, noDbEnv);
+  const s503Geo = await callRoute('geo_config', { config: {} }, { 'X-ISABI-Demo': '1' }, noDbEnv);
+  const s503Sync = await callRoute('sync', { op: 'patch', patch: { mfg_web_store: {} } }, { 'X-ISABI-Demo': '1' }, noDbEnv);
+  const s403Rec = await callRoute('records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, { 'X-ISABI-Demo': '1' });
+  const s403Dom = await callRoute('industry_domain_store', {}, { 'X-ISABI-Demo': '1' });
+  const s403Geo = await callRoute('geo_config', { config: {} }, { 'X-ISABI-Demo': '1' });
+  const s403Sync = await callRoute('sync', { op: 'patch', patch: { mfg_web_store: {} } }, { 'X-ISABI-Demo': '1' });
+  const s403SyncDel = await callRoute('sync', { op: 'delete', doc: 'mfg_web_store' }, { 'X-ISABI-Demo': '1' });
+  const s403SyncGet = await callRoute('sync', { op: 'get', doc: 'mfg_web_store' }, { 'X-ISABI-Demo': '1' });
+  const h503Geo = (await handleKvDoc(mkHdrReq('/app/api/geo_config', {}, { 'X-ISABI-Demo': '1' }), noDbEnv, null, 'geo_config', 'config', {})).status;
+  const h503Dom = (await handleIndustryDomainStore(mkHdrReq('/app/api/industry_domain_store', {}, { 'X-ISABI-Demo': '1' }), noDbEnv, null, {}, { waitUntil() {} })).status;
+  const h503Sync = (await handleSync(mkHdrReq('/app/api/sync', { op: 'patch' }, { 'X-ISABI-Demo': '1' }), noDbEnv, null, { op: 'patch' }, { waitUntil() {} })).status;
+  const h403SyncDel = (await handleSync(mkHdrReq('/app/api/sync', { op: 'delete' }, { 'X-ISABI-Demo': '1' }), env, null, { op: 'delete' }, { waitUntil() {} })).status;
+  const h403SyncGet = (await handleSync(mkHdrReq('/app/api/sync', { op: 'get', doc: 'mfg_web_store' }, { 'X-ISABI-Demo': '1' }), env, null, { op: 'get', doc: 'mfg_web_store' }, { waitUntil() {} })).status;
+  const SUP_GEO = { sub: 'u-sup-geo', role: 'Supervisor', companies: 'WTC', email: 'sup-geo@example.test' };
+  const rSupGeoOutdated = await handleKvDoc(
+    mkHdrReq('/app/api/geo_config', { config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } } }, { 'X-ISABI-Shell': '19.6.1' }),
+    env, SUP_GEO, 'geo_config', 'config', { config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } } }
+  );
+  const supAuditCount = d1.rows("SELECT COUNT(*) c FROM geo_audit_log WHERE outcome = 'blocked_403' AND lower(actor_email) = 'sup-geo@example.test'")[0]?.c || 0;
+  ok('2g. Router + direct handlers enforce 503 (!DB) -> 403 (unauth Demo / Supervisor geo_audit_log) before 401 & 426 across all 4 mutating POST routes',
+    [s503Rec, s503Dom, s503Geo, s503Sync, h503Geo, h503Dom, h503Sync].every(x => x === 503)
+    && [s403Rec, s403Dom, s403Geo, s403Sync, s403SyncDel, s403SyncGet, h403SyncDel, h403SyncGet, rSupGeoOutdated.status].every(x => x === 403)
+    && supAuditCount >= 1,
+    { s503Rec, s503Dom, s503Geo, s503Sync, h503Geo, h503Dom, h503Sync, s403Rec, s403Dom, s403Geo, s403Sync, s403SyncDel, s403SyncGet, h403SyncDel, h403SyncGet, supGeoStatus: rSupGeoOutdated.status, supAuditCount });
 }
 
 // 3. handleRecordsPost 409 same_name_conflict rules across staff_members, employments, freelance_entries

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MIN_SYNC_SHELL_VER } from '../functions/_lib/d1_store.js';
+import { onRequest as onApiRequest } from '../functions/app/api/[[route]].js';
 import { walkShortMapRedirects } from '../functions/_lib/map_link.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,8 +45,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function httpReq(method, urlPath, bodyObj = null, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
-    const rawBody = bodyObj != null ? JSON.stringify(bodyObj) : null;
-    const headers = Object.assign({}, extraHeaders);
+    const rawBody = typeof bodyObj === 'string' ? bodyObj : (bodyObj != null ? JSON.stringify(bodyObj) : null);
+    const headers = Object.assign({ 'X-ISABI-Shell': MIN_SYNC_SHELL_VER }, extraHeaders);
+    if (Object.prototype.hasOwnProperty.call(extraHeaders, 'X-ISABI-Shell') && extraHeaders['X-ISABI-Shell'] == null) {
+      delete headers['X-ISABI-Shell'];
+    }
     if (rawBody != null && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(rawBody);
@@ -7274,6 +7278,171 @@ finally:
         e51RoInitReasonOk, e51StaleNoClobberOk, e51CapAndIcrOk, e51SeedInitEditOk, e51SyncRaceOk,
         e51ForgedNewRow, e51Row, e51CellAfter, e51DomAfterSupTamper, e51DomAfterSupUnvoid, e51RoInitRecRow, e51RoInitDomRow, e51StaleAfter, e51IcrAfter, e51SeedGood, e51SeedBad, e51RaceAAfter, e51RaceBAfter
       }).slice(0, 800));
+    }
+
+    // 52. Strict 503 (!DB) -> Demo 403 -> Auth 401 -> Role 403 -> 426 shell_outdated precedence & headerless control_store vs outdated mfg_web_store minShellVer
+    const e52NoDbCall = async (routePath, bodyObj) => {
+      const req = new Request(`https://example.test/app/api/${routePath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-ISABI-Demo': '1', 'CF-Connecting-IP': '10.9.52.1' },
+        body: JSON.stringify(bodyObj)
+      });
+      const res = await onApiRequest({ request: req, env: { ISABI_JWT_SECRET: jwtSecret }, params: { route: routePath.split('/') }, waitUntil() {} });
+      return res.status;
+    };
+    const e52_503 = await Promise.all([
+      e52NoDbCall('records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }),
+      e52NoDbCall('industry_domain_store', {}),
+      e52NoDbCall('geo_config', { config: {} }),
+      e52NoDbCall('sync', { op: 'patch', patch: { mfg_web_store: {} } })
+    ]);
+    const demoHdr = { 'X-ISABI-Demo': '1', 'X-ISABI-Shell': null };
+    const e52Demo = await Promise.all([
+      httpReq('POST', '/app/api/records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, demoHdr),
+      httpReq('POST', '/app/api/industry_domain_store', {}, demoHdr),
+      httpReq('POST', '/app/api/geo_config', { config: {} }, demoHdr),
+      httpReq('POST', '/app/api/sync', { op: 'patch', patch: { mfg_web_store: {} } }, demoHdr),
+      httpReq('POST', '/app/api/sync', { op: 'delete', doc: 'mfg_web_store' }, demoHdr),
+      httpReq('POST', '/app/api/sync', { op: 'get', doc: 'mfg_web_store' }, demoHdr),
+      httpReq('POST', '/app/api/sync', '{not-json', demoHdr)
+    ]);
+    const unauthHdr = { 'X-ISABI-Shell': null };
+    const e52Auth = await Promise.all([
+      httpReq('POST', '/app/api/records', { table: 'sales_tickets', record: { id: 'x', company: 'WTC' } }, unauthHdr),
+      httpReq('POST', '/app/api/industry_domain_store', {}, unauthHdr),
+      httpReq('POST', '/app/api/geo_config', { config: {} }, unauthHdr),
+      httpReq('POST', '/app/api/sync', '{not-json', unauthHdr)
+    ]);
+    const e52SupCreate = await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-e52-sup', email: 'e52-sup@isabi.test', full_name: 'Edge52 Supervisor', role: 'Supervisor', companies: 'WTC', pin_code: '6482', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e52SupLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'e52-sup@isabi.test', pin: '6482', method: 'PIN'
+    });
+    const e52SupTok = e52SupLogin.json?.token || '';
+    const e52SupEntCreate = await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-e52-supent', email: 'e52-supent@isabi.test', full_name: 'Edge52 Sup Entry', role: 'Supervisor + Entry', companies: 'WTC', pin_code: '6483', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e52SupEntLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'e52-supent@isabi.test', pin: '6483', method: 'PIN'
+    });
+    const e52SupEntTok = e52SupEntLogin.json?.token || '';
+    const e52SupGeo403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } }
+    }, { 'X-ISABI-Session': e52SupTok, 'X-ISABI-Shell': '19.6.1' });
+    const e52EntryGeoHub403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } }
+    }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' });
+    const e52EntryGeoClr403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { sites: { 'wtc::customer:s1': { _pinCleared: true } } }
+    }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' });
+    const e52SupEntGeo403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { companyHubs: { BBConstruction: { lat: 33.89, lng: 35.50 } } }
+    }, { 'X-ISABI-Session': e52SupEntTok, 'X-ISABI-Shell': '19.6.1' });
+    const e52EntryBadLat403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { companyHubs: { WTC: { lat: 999, lng: 35.50 } } }
+    }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': MIN_SYNC_SHELL_VER });
+    const e52SupEntBadLat403 = await httpReq('POST', '/app/api/geo_config', {
+      config: { companyHubs: { BBConstruction: { lat: 999, lng: 35.50 } } }
+    }, { 'X-ISABI-Session': e52SupEntTok, 'X-ISABI-Shell': MIN_SYNC_SHELL_VER });
+    const e52Audit = await httpReq('GET', '/app/api/geo/audit?outcome=blocked_403&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const e52AuditList = e52Audit.status === 200 ? (e52Audit.json?.audits || []) : [];
+    const e52HasSupAudit = e52AuditList.some(a =>
+      a && a.outcome === 'blocked_403' && String(a.actor_email || '').toLowerCase() === 'e52-sup@isabi.test'
+    );
+    const e52HasEntAudit = e52AuditList.some(a =>
+      a && a.outcome === 'blocked_403' && String(a.actor_email || '').toLowerCase() === ENTRY_TEST_EMAIL.toLowerCase()
+    );
+    const e52HasSupEntAudit = e52AuditList.some(a =>
+      a && a.outcome === 'blocked_403' && String(a.actor_email || '').toLowerCase() === 'e52-supent@isabi.test'
+    );
+    const e52EntryCtrl403 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'control_store', patch: { control_store: { _probe: 1 } }
+    }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' });
+    const e52EntryMultiCtrl403 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: MIN_SYNC_SHELL_VER }, control_store: { _probe: 1 } }
+    }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' });
+    const e52RoleBefore426 = await Promise.all([
+      httpReq('POST', '/app/api/records', { table: 'fx_rates', record: { id: 'fx-e52-403', rate: 89500 } }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' }),
+      httpReq('POST', '/app/api/records', { table: 'sales_tickets', record: { id: 'st-e52-bbc-403', company: 'BBConstruction' } }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' }),
+      httpReq('POST', '/app/api/records', { table: 'sales_tickets', record: { id: 'st-e52-sup-403', company: 'WTC' } }, { 'X-ISABI-Session': e52SupTok, 'X-ISABI-Shell': '19.6.1' }),
+      httpReq('POST', '/app/api/industry_domain_store', { industryCustomRows: { re_invoicing: [{ id: 'dom-e52-sup-403', company: 'WTC' }] } }, { 'X-ISABI-Session': e52SupTok, 'X-ISABI-Shell': '19.6.1' }),
+      httpReq('POST', '/app/api/industry_domain_store', { industryRowEdits: { 'WF::period_close::wtc::2026-11': { company: 'WTC', locked: true, rev: 1 } } }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Shell': '19.6.1' })
+    ]);
+    const oldHdr = { 'X-ISABI-Session': ownerToken, 'X-ISABI-Shell': '19.6.1' };
+    const e52_426 = await Promise.all([
+      httpReq('POST', '/app/api/records', { table: 'sales_tickets', record: { id: 'st-e52-426', company: 'WTC' } }, oldHdr),
+      httpReq('POST', '/app/api/records', { op: 'rollback', rollbackToken: 'tok-x' }, oldHdr),
+      httpReq('POST', '/app/api/industry_domain_store', { industryCustomRows: { re_invoicing: [{ id: 'dom-e52-426', company: '4235 Company S.A.L' }] } }, oldHdr),
+      httpReq('POST', '/app/api/industry_domain_store', { op: 'rollback', rollbackToken: 'tok-x' }, oldHdr),
+      httpReq('POST', '/app/api/geo_config', { config: { companyHubs: { WTC: { lat: 33.89, lng: 35.50 } } } }, oldHdr),
+      httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: MIN_SYNC_SHELL_VER, customRecords: {} } } }, oldHdr)
+    ]);
+    const hdrlessOwner = { 'X-ISABI-Session': ownerToken, 'X-ISABI-Shell': null };
+    const stampedOwner = { 'X-ISABI-Session': ownerToken, 'X-ISABI-Shell': MIN_SYNC_SHELL_VER };
+    const e52AuthGet200 = await httpReq('POST', '/app/api/sync', { op: 'get', doc: 'mfg_web_store' }, hdrlessOwner);
+    const ctrlGet = await httpReq('POST', '/app/api/sync', { op: 'get_control', doc: 'control_store' }, hdrlessOwner);
+    const ctrlDoc = (ctrlGet.json?.docs && ctrlGet.json.docs.control_store) || {};
+    const ctrlUpd = String(ctrlGet.json?.updatedAt || '');
+    const e52HdrlessCtrl426 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'control_store',
+      ifMatchUpdatedAt: ctrlUpd || undefined,
+      patch: { control_store: Object.assign({}, ctrlDoc, { _edge52Probe: 1 }) }
+    }, hdrlessOwner);
+    const e52HdrlessMfgValidBody426 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store',
+      patch: { mfg_web_store: { minShellVer: MIN_SYNC_SHELL_VER, customRecords: {} } }
+    }, hdrlessOwner);
+    const ctrlPatch200 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'control_store',
+      ifMatchUpdatedAt: ctrlUpd || undefined,
+      patch: { control_store: Object.assign({}, ctrlDoc, { _edge52Probe: 1 }) }
+    }, stampedOwner);
+    const ctrlRestore = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'control_store',
+      ifMatchUpdatedAt: String(ctrlPatch200.json?.updatedAt || '') || undefined,
+      patch: { control_store: ctrlDoc }
+    }, stampedOwner);
+    const hdrlessMfgOutdated = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store',
+      patch: { mfg_web_store: { minShellVer: '19.6.1', customRecords: {} } }
+    }, hdrlessOwner);
+
+    const e52Ok = Boolean(
+      e52_503.every(s => s === 503) &&
+      e52Demo.every(r => r.status === 403) &&
+      e52Auth.every(r => r.status === 401) &&
+      e52SupTok && e52SupGeo403.status === 403 && e52HasSupAudit &&
+      e52SupEntTok && e52EntryGeoHub403.status === 403 && e52EntryGeoClr403.status === 403 && e52SupEntGeo403.status === 403 &&
+      e52EntryBadLat403.status === 403 && e52SupEntBadLat403.status === 403 &&
+      e52HasEntAudit && e52HasSupEntAudit &&
+      e52EntryCtrl403.status === 403 && e52EntryMultiCtrl403.status === 403 &&
+      e52RoleBefore426.every(r => r.status === 403) &&
+      e52_426.every(r => r.status === 426 && r.json?.code === 'shell_outdated') &&
+      e52AuthGet200.status === 200 &&
+      ctrlGet.status === 200 &&
+      e52HdrlessCtrl426.status === 426 && e52HdrlessCtrl426.json?.code === 'shell_outdated' &&
+      e52HdrlessMfgValidBody426.status === 426 && e52HdrlessMfgValidBody426.json?.code === 'shell_outdated' &&
+      ctrlPatch200.status === 200 && !ctrlPatch200.json?.conflict && ctrlRestore.status === 200 &&
+      hdrlessMfgOutdated.status === 426 && hdrlessMfgOutdated.json?.code === 'shell_outdated'
+    );
+    if (e52Ok) {
+      pass('edge-52-strict-precedence-and-sync-floor-headers', '503 -> Demo 403 -> Auth 401 -> Role 403 (before 426) -> 426 across all mutating routes (incl. headerless /sync patch) & stamped control_store 200');
+    } else {
+      fail('edge-52-strict-precedence-and-sync-floor-headers', JSON.stringify({
+        e52_503,
+        e52Demo: e52Demo.map(r => r.status),
+        e52Auth: e52Auth.map(r => r.status),
+        supGeo: [e52SupCreate.status, e52SupGeo403.status, e52HasSupAudit, e52SupLogin.status],
+        entryCtrl: [e52EntryCtrl403.status, e52EntryMultiCtrl403.status],
+        roleBefore426: e52RoleBefore426.map(r => r.status),
+        e52_426: e52_426.map(r => [r.status, r.json?.code]),
+        authGet200: e52AuthGet200.status,
+        hdrlessCtrl: [e52HdrlessCtrl426.status, e52HdrlessCtrl426.json?.code],
+        hdrlessMfg: [e52HdrlessMfgValidBody426.status, e52HdrlessMfgValidBody426.json?.code],
+        ctrl: [ctrlGet.status, ctrlPatch200.status, ctrlPatch200.json?.conflict, ctrlRestore.status],
+        hdrlessMfgOutdated: [hdrlessMfgOutdated.status, hdrlessMfgOutdated.json?.code]
+      }));
     }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}

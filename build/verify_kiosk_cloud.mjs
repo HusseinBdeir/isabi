@@ -247,7 +247,7 @@ console.log('command center cannot overwrite a till close row');
   const before = tillRow('Rami');
   const post = async (rowsMap, session) => {
     const body = { industryCustomRows: rowsMap, industryRowEdits: {} };
-    const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body) });
     const res = await handleIndustryDomainStore(req, env, session, body);
     return { status: res.status, json: await res.json() };
   };
@@ -272,7 +272,7 @@ console.log('command center cannot overwrite a till close row');
     [before.id]: { company: 'La Una', voided: true, rev: 6 },
     'WF::hsp_pos::POS-CL-999': { company: 'La Una', status: 'Balanced', rev: 1 }
   } };
-  const req2 = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
+  const req2 = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body2) });
   const res2 = await (await handleIndustryDomainStore(req2, env, ownerSeat, body2)).json();
   ok('the Command Center is told how many patches were not stored', res2.ok === true && res2.edits === 1 && res2.ignoredServerOwned === 2, res2);
   const editKeys = d1.rows('SELECT edit_key FROM industry_row_edits').map(x => x.edit_key);
@@ -739,7 +739,7 @@ console.log('till sales posted to venue revenue from a date the Owner sets');
     Object.assign({}, target, { rev: 999, ttc_usd: 1, ht_usd: 1, vat_usd: 0 }),
     { id: 'HSP-REV-900', date: DAY, company: 'La Una', outlet: 'Hand keyed', category: 'Restaurant F&B', ht_usd: 9.01, vat_usd: 0.99, ttc_usd: 10, rev: 1 }
   ] }, industryRowEdits: { ['WF::hsp_revenue::' + target.id]: { company: 'La Una', ttc_usd: 1, rev: 9 }, [target.id]: { company: 'La Una', voided: true, rev: 9 } } };
-  const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body) });
   const res = await (await handleIndustryDomainStore(req, env, ownerSeat, body)).json();
   const afterPost = revRows().find(x => x.row_id === target.row_id);
   ok('NEGATIVE: a Command Center copy with a higher rev does not change a posted row, a hand-keyed row still saves', afterPost.rev === target.rev && cents(afterPost.ttc_usd) === cents(target.ttc_usd)
@@ -1137,12 +1137,12 @@ console.log('supervisor domain void snapshots & note clearing without resurrecti
   const SUP_LU = { id: 'u11', email: 'sup@launa.test', full_name: 'La Una Sup', role: 'Supervisor', companies: 'La Una' };
   const OWNER_FU = { id: 'u1', email: 'owner@example.test', full_name: 'Group Owner', role: 'Owner', companies: 'ALL' };
   const postRec = async (body, sess) => {
-    const req = new Request('https://example.test/app/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const req = new Request('https://example.test/app/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body) });
     const res = await handleRecordsPost(req, env, sess, body);
     return { status: res.status, json: await res.json().catch(() => null) };
   };
   const postDom = async (body, sess) => {
-    const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body) });
     const res = await handleIndustryDomainStore(req, env, sess, body);
     return { status: res.status, json: await res.json().catch(() => null) };
   };
