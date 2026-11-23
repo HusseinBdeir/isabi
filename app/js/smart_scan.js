@@ -2881,7 +2881,9 @@
       ? 'customer'
       : (crKey === 'raw_purchases' ? 'site' : (crKey === 'salaries' ? 'staff' : 'supplier'));
     const rawParty = String(candRec[pk] || (pk === 'site' ? candRec.supplier : '') || '').trim();
-    const partyKey = rawParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+    const canonFn = typeof D.canonicalizePartyByHygiene === 'function' ? D.canonicalizePartyByHygiene : null;
+    const canonParty = canonFn ? (canonFn(pk, rawParty, candRec.company) || rawParty) : rawParty;
+    const partyKey = canonParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
     if (!partyKey) return null;
     const pool = [].concat(
       (D.SEED && D.SEED.records && Array.isArray(D.SEED.records[crKey])) ? D.SEED.records[crKey] : [],
@@ -2902,7 +2904,8 @@
       const rAmt = Number(r.total_ttc != null ? r.total_ttc : (r.total != null ? r.total : (r.amount != null ? r.amount : 0)));
       if (!(Math.abs(rAmt - amt) <= 0.02)) continue;
       const rRawParty = String(r[pk] || (pk === 'site' ? (r.site_owner || r.supplier) : '') || '').trim();
-      const rKey = rRawParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+      const rCanonParty = canonFn ? (canonFn(pk, rRawParty, r.company || candRec.company) || rRawParty) : rRawParty;
+      const rKey = rCanonParty.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\u0600-\u06ff]/g, '');
       if (!rKey) continue;
       if (rKey === partyKey) {
         return { reason: 'same_amt', row: r, match: r, matches: [r], matchCount: 1, sumUsd: rAmt, day };

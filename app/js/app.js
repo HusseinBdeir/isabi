@@ -703,6 +703,7 @@
     sentinelReviews: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_sentinel_reviews_v1', null) : null) || {},
     alertRules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_alert_rules_v1', null) : null) || { overrides: {}, custom: [] },
     partyHygiene: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_party_hygiene_v1', null) : null) || { rules: {} },
+    _partyHygieneRev: 0,
     roleTabPolicies: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_role_tab_policies_v1', null) : null) || {},
     permHubScopeMode: 'role',
     permHubIndFilter: '',
@@ -5347,8 +5348,15 @@
     const basis = opts.basis || STATE.basis || 'rep';
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const rangeKey = range ? `${range.from || ''}:${range.to || ''}` : 'ALL';
-    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}`;
+    const partyResolver = (opts && typeof opts.partyResolver === 'function') ? opts.partyResolver : null;
+    const partySig = String((opts && opts.partySig) || '');
+    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}|ps:${partySig}`;
     if (!opts._noMemo && _threeLegApCacheKey === cacheKey && _threeLegApCacheVal) return _threeLegApCacheVal;
+    const effSup = (rawName, rowCo, dIso) => {
+      if (!partyResolver) return rawName;
+      const resolved = partyResolver(rawName, rowCo, dIso);
+      return (resolved && String(resolved).trim()) ? String(resolved).trim() : rawName;
+    };
 
     const indTargetSet = targetCo.startsWith('industry:')
       ? new Set(getCompanyCatalog().filter(x => (x.industry || 'Manufacturing') === targetCo.slice(9)).map(x => x.name))
@@ -5440,16 +5448,17 @@
       const mth = String(rp.method || 'Credit').trim();
       if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') continue;
       if (norm(rp.product) === 'remove') continue;
+      const rpDate = String((basis === 'rep' ? (rp.rep_date || rp.date) : rp.date) || '').slice(0, 10);
       const sgn = (mth === 'CR Return' || mth === 'Credit Return') ? -1 : 1;
       const so = normSupPayable(rp.site_owner);
       if (so && so !== 'excluded' && so !== 'none' && !(rp.company === 'WTC' && so === 'wtc')) {
-        const rSo = ensureRow(rp.site_owner);
+        const rSo = ensureRow(effSup(rp.site_owner, rp.company, rpDate));
         if (rSo) rSo.quarry_cr += sgn * Number(rp.cost || 0);
       }
       const rawTo = rp.truck_owner || ((rp.company === 'WTC' && Number(rp.trans_cost || 0) !== 0) ? 'WTC' : '');
       const to = normSupPayable(rawTo);
       if (to && to !== 'excluded' && to !== 'none' && (rp.transport_by !== 'Company fleet' || Number(rp.trans_cost || 0) !== 0) && !(rp.company === 'BBConstruction' && to === 'bbconstruction')) {
-        const rTo = ensureRow(rawTo);
+        const rTo = ensureRow(effSup(rawTo, rp.company, rpDate));
         if (rTo) rTo.trans_cr += sgn * Number(rp.trans_cost || 0);
       }
     }
@@ -5462,9 +5471,10 @@
       if (!inRange(st.date, st.rep_date)) continue;
       const mth = String(st.method || 'Credit').trim();
       if ((mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') || st.transport_by !== 'Third-party truck') continue;
+      const stDate = String((basis === 'rep' ? (st.rep_date || st.date) : st.date) || '').slice(0, 10);
       const to = normSupPayable(st.truck_owner);
       if (to && to !== 'wtc' && to !== 'sibline' && to !== 'bbconstruction' && to !== 'excluded' && to !== 'none') {
-        const rTo = ensureRow(st.truck_owner);
+        const rTo = ensureRow(effSup(st.truck_owner, st.company, stDate));
         if (rTo) rTo.trans_cr += ((mth === 'CR Return' || mth === 'Credit Return') ? -1 : 1) * Number(st.trans_price || 0);
       }
     }
@@ -5482,12 +5492,14 @@
       }
       if (offScope && !isOfficialRecord(x, 'expenses')) continue;
       if (!inRange(x.date, x.rep_date)) continue;
-      const rEx = ensureRow(x.supplier);
+      const dRep = String(x.rep_date || x.date || '').slice(0, 10);
+      const xDate = String((basis === 'rep' ? (x.rep_date || x.date) : x.date) || '').slice(0, 10);
+      const rEx = ensureRow(effSup(x.supplier, x.company, xDate));
       if (!rEx) continue;
       const sn = rEx.key;
+      const rawSn = normSupPayable(x.supplier);
       const mth = String(x.method || 'Cash').trim();
-      const dRep = String(x.rep_date || x.date || '').slice(0, 10);
-      const iva = isIva(sn, x.company);
+      const iva = isIva(rawSn, x.company) || isIva(sn, x.company);
       if (x.wb_lbp_credit != null && mth === 'Credit') {
         const lbpAmt = Number(x.wb_lbp_credit || 0);
         rEx.exp_cr_lbp += iva ? (lbpAmt / 1.11) : lbpAmt;
@@ -5512,8 +5524,8 @@
     for (let i = 0; i < recExps.length; i++) {
       const rx = recExps[i];
       if (!rx || rx.voided || offScope || !isCoInScope(rx.company)) continue;
-      const rRx = ensureRow(rx.supplier);
-      if (!rRx) continue;
+      const rawRxKey = normSupPayable(rx.supplier);
+      if (!rawRxKey || rawRxKey === 'excluded' || rawRxKey === 'none' || rawRxKey === 'unspecified') continue;
       const sIso = String(rx.start_date || '').slice(0, 10);
       const rawEnd = String(rx.end_date || '').slice(0, 10);
       const isAppRec = isAppRecord(rx);
@@ -5526,7 +5538,6 @@
       const [sy, sm0, sd0] = sIso.split('-').map(Number);
       const [ey, em0] = eIso.split('-').map(Number);
       const nMonths = (ey - sy) * 12 + (em0 - sm0) + 1;
-      const iva = isIva(rRx.key, rx.company);
       const totV = Number(rx.wb_total != null ? rx.wb_total : (rx.amount || 0));
       const cur = String(rx.currency || 'USD').trim().toUpperCase();
       for (let mIdx = 0; mIdx < nMonths; mIdx++) {
@@ -5537,6 +5548,9 @@
         const dIso = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         if (rx.company === 'BBConstruction' && !isAppRec && dIso > '2024-04-05') continue;
         if (!inRange(dIso, dIso)) continue;
+        const rRx = ensureRow(effSup(rx.supplier, rx.company, dIso));
+        if (!rRx) continue;
+        const iva = isIva(rawRxKey, rx.company) || isIva(rRx.key, rx.company);
         const exV = iva ? (totV / 1.11) : totV;
         if (cur === 'USD') {
           rRx.exp_cr_usd += exV;
@@ -5557,8 +5571,10 @@
       if (!sp || sp.voided || !isCoInScope(sp.company)) continue;
       if (offScope && !isOfficialRecord(sp, 'settlements')) continue;
       if (!inRange(sp.date, sp.rep_date)) continue;
-      const rSp = ensureRow(sp.supplier);
+      const spDate = String((basis === 'rep' ? (sp.rep_date || sp.date) : sp.date) || '').slice(0, 10);
+      const rSp = ensureRow(effSup(sp.supplier, sp.company, spDate));
       if (!rSp) continue;
+      const rawSpKey = normSupPayable(sp.supplier);
       const mth = String(sp.method || 'Payment').trim();
       const dRep = String(sp.rep_date || sp.date || '').slice(0, 10);
       let leg = sp.payable_leg || '';
@@ -5582,7 +5598,7 @@
         if (isStdPayMth) rSp.exp_pd_usd += totV;
         else if (mth === 'VAT' || mth === 'VATConfig') {
           rSp.exp_vat_pd_usd += totV;
-          if (isIva(rSp.key, sp.company)) rSp.exp_vat_pd_lbp += totV * vRate(sp.company, dRep);
+          if (isIva(rawSpKey, sp.company) || isIva(rSp.key, sp.company)) rSp.exp_vat_pd_lbp += totV * vRate(sp.company, dRep);
         }
       }
     }
@@ -5634,6 +5650,7 @@
     const out = {
       byNorm,
       rows: Array.from(byNorm.values()),
+      withPartyResolver: Boolean(partyResolver),
       totals: {
         quarry_cr: round2(totQuarryCr),
         quarry_pd: round2(totQuarryPd),
@@ -12955,7 +12972,7 @@
     for (let ei = 0; ei < indEditsKeys.length; ei++) {
       if (indEditsStore[indEditsKeys[ei]] && indEditsStore[indEditsKeys[ei]].voided) indEditsVoidCnt++;
     }
-    const indEditsRev = `${indEditsKeys.length}:${indEditsVoidCnt}`;
+    const indEditsRev = `${indEditsKeys.length}:${indEditsVoidCnt}:${(STATE && STATE._indCustomRev) || 0}:${(SEED && SEED._industryRev) || 0}:${(STATE && STATE._partyHygieneRev) || 0}`;
     if (_FREQ_IDX && _FREQ_IDX._iifeBooted === _iifeBooted && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev && _FREQ_IDX._epActive === epActive && _FREQ_IDX._indEditsRev === indEditsRev) {
       const wKeys = _FREQ_IDX._watchedKeys;
       const wLens = _FREQ_IDX._watchedLens;
@@ -19079,6 +19096,63 @@
     return best;
   }
 
+  function _normStmtAlias(v) {
+    return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function _normalizeMergedAliasesList(list) {
+    if (!Array.isArray(list) || !list.length) return [];
+    const seen = new Set();
+    for (let i = 0; i < list.length && seen.size < 200; i++) {
+      const a = _normStmtAlias(list[i]);
+      if (a) seen.add(a);
+    }
+    return Array.from(seen).sort();
+  }
+
+  function _normalizeMergedAliasThroughMap(rawMap, fallbackThrough, aliasesList) {
+    const out = {};
+    const fb = /^\d{4}-\d{2}-\d{2}$/.test(String(fallbackThrough || '').slice(0, 10))
+      ? String(fallbackThrough).slice(0, 10)
+      : '';
+    if (rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap)) {
+      Object.keys(rawMap).forEach(k => {
+        const nk = _normStmtAlias(k);
+        const dt = String(rawMap[k] || '').slice(0, 10);
+        if (nk && /^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+          out[nk] = fb && dt > fb ? fb : dt;
+        }
+      });
+    }
+    if (fb && Array.isArray(aliasesList)) {
+      aliasesList.forEach(a => {
+        const nk = _normStmtAlias(a);
+        if (nk && !out[nk]) out[nk] = fb;
+      });
+    }
+    return out;
+  }
+
+  function _watermarkIndName(indKey) {
+    const map = {
+      manufacturing: 'Manufacturing',
+      hospitality: 'Hospitality & Resorts',
+      trading: 'Automotive & Heavy Trading',
+      realestate: 'Real Estate & Property',
+      holding: 'Holding & Treasury',
+      insurance: 'Insurance & Brokerage'
+    };
+    return map[canonWatermarkIndustry(indKey)] || 'Manufacturing';
+  }
+
+  function _wmMatchesCoScope(w, company) {
+    if (!w) return false;
+    if (w.allCo) return true;
+    const co = norm(company || '');
+    if (!co || _stmtLockAllCo(company)) return false;
+    return w.co === co;
+  }
+
   function setStatementWatermark(spec) {
     const u = typeof activeUser === 'function' ? activeUser() : null;
     if (!u || (typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u)))) {
@@ -19096,9 +19170,61 @@
     if (prevThrough && dt < prevThrough && !(typeof canVoid === 'function' && canVoid(u))) {
       return { ok: false, error: tr('Only a supervisor can move a sent mark to an earlier date.') };
     }
+    const indCanon = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
+    const indFull = _watermarkIndName(indCanon);
+    const ptKey = norm(sp.partyType || 'customer') === 'supplier' ? 'supplier' : 'customer';
+    const prevAliases = _normalizeMergedAliasesList(prevMark && prevMark.merged_aliases);
+    const prevAliasThrough = _normalizeMergedAliasThroughMap(prevMark && prevMark.merged_alias_through, prevThrough, prevAliases);
+    const autoActiveList = (typeof getConfirmedAliasesForCanonical === 'function' && sp.partyName && norm(sp.partyName) !== 'all')
+      ? getConfirmedAliasesForCanonical(ptKey, sp.partyName, sp.company || STATE.company || 'ALL', indFull).filter(al => {
+          const res = resolveRollupParty({ industry: indFull, company: sp.company || STATE.company || 'ALL', partyType: ptKey, rawName: al });
+          return !res.heldAlias && _normStmtAlias(res.party) === _normStmtAlias(sp.partyName);
+        })
+      : [];
+    const activeSet = new Set(_normalizeMergedAliasesList(Array.isArray(sp.activeMergedAliases) ? sp.activeMergedAliases : autoActiveList));
+    let candidateAliases;
+    if (Array.isArray(sp.mergedAliases)) {
+      candidateAliases = _normalizeMergedAliasesList(sp.mergedAliases);
+      if (prevThrough && prevAliases.some(a => !candidateAliases.includes(a)) && !(typeof canVoid === 'function' && canVoid(u))) {
+        return { ok: false, error: tr('Only a supervisor can remove an included alias from a sent mark.') };
+      }
+      if (!prevThrough) {
+        candidateAliases = _normalizeMergedAliasesList(prevAliases.concat(candidateAliases));
+      }
+    } else {
+      candidateAliases = _normalizeMergedAliasesList(prevAliases.concat(Array.from(activeSet)));
+    }
+    const explicitAliasThrough = (sp.mergedAliasThrough && typeof sp.mergedAliasThrough === 'object')
+      ? _normalizeMergedAliasThroughMap(sp.mergedAliasThrough, dt, [])
+      : null;
+    const hasExplicitActive = Array.isArray(sp.activeMergedAliases);
+    const filteredAliases = [];
+    const nextAliasThrough = {};
+    candidateAliases.forEach(al => {
+      const prevCeil = prevAliasThrough[al] || '';
+      const expDt = explicitAliasThrough ? (explicitAliasThrough[al] || '') : '';
+      let ceil;
+      if (expDt) {
+        ceil = expDt > dt ? dt : expDt;
+      } else if (hasExplicitActive && !activeSet.has(al) && !prevCeil) {
+        return;
+      } else if (!prevCeil) {
+        ceil = dt;
+      } else if (activeSet.has(al)) {
+        ceil = dt;
+      } else {
+        ceil = prevCeil > dt ? dt : prevCeil;
+      }
+      if (prevCeil && ceil < prevCeil && !(typeof canVoid === 'function' && canVoid(u))) {
+        ceil = prevCeil > dt ? dt : prevCeil;
+      }
+      filteredAliases.push(al);
+      nextAliasThrough[al] = ceil;
+    });
+    candidateAliases = filteredAliases;
     const payload = {
       key,
-      industry: canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing'),
+      industry: indCanon,
       company: String(sp.company || STATE.company || 'ALL').trim() || 'ALL',
       party_type: norm(sp.partyType || 'customer') || 'customer',
       party_name: String(sp.partyName || 'ALL').trim() || 'ALL',
@@ -19107,11 +19233,14 @@
       closing_balance_usd: sp.closingBalanceUsd != null && Number.isFinite(Number(sp.closingBalanceUsd))
         ? round2(Number(sp.closingBalanceUsd))
         : null,
+      merged_aliases: candidateAliases,
+      merged_alias_through: nextAliasThrough,
       confirmed_by: (u && (u.full_name || u.name || u.username)) || 'Finance',
       confirmed_at: nextMonotonicIso(),
       cleared: false
     };
     saveIndustryWorkflowPatch('statement_watermark', key, payload);
+    _stmtLockCache = null;
     STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
     if (typeof syncWithCloud === 'function' && !sp.skipCloudSync) syncWithCloud(true);
     return { ok: true, key, watermark: payload };
@@ -19135,6 +19264,7 @@
     };
     // Only this statement's own mark: a group statement's mark (company ALL) stays until it is removed there
     saveIndustryWorkflowPatch('statement_watermark', key, clearPatch);
+    _stmtLockCache = null;
     STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
     if (typeof syncWithCloud === 'function' && !(sp && sp.skipCloudSync)) syncWithCloud(true);
     return { ok: true, key };
@@ -19161,28 +19291,42 @@
   function statementLockIndex() {
     const store = (typeof getIndustryRowEditStore === 'function' && getIndustryRowEditStore()) || {};
     const rev = STATE._watermarkRev || 0;
+    const keyLen = Object.keys(store).length;
     const now = Date.now();
-    if (_stmtLockCache && _stmtLockCache.store === store && _stmtLockCache.rev === rev && now - _stmtLockCache.at < 3000) return _stmtLockCache.idx;
+    if (_stmtLockCache && _stmtLockCache.store === store && _stmtLockCache.rev === rev && _stmtLockCache.keyLen === keyLen && now - _stmtLockCache.at < 3000) return _stmtLockCache.idx;
     const idx = new Map();
+    const pushIdx = (ikKey, obj) => {
+      if (!idx.has(ikKey)) idx.set(ikKey, []);
+      idx.get(ikKey).push(obj);
+    };
     Object.keys(store).forEach(k => {
       if (!k.startsWith('WF::statement_watermark::')) return;
       const w = store[k];
       if (!w || typeof w !== 'object' || w.voided || w.cleared) return;
       const through = String(w.confirmed_through || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(through)) return;
-      const party = norm(w.party_name || '');
-      if (!party || party === 'all') return;
+      const partyRawNorm = norm(w.party_name || '');
+      const partyAliasNorm = _normStmtAlias(w.party_name || '');
+      if (!partyAliasNorm || partyAliasNorm === 'all') return;
       const pt = norm(w.party_type || 'customer') === 'supplier' ? 'supplier' : 'customer';
       const ind = canonWatermarkIndustry(w.industry || 'manufacturing');
-      const ik = `${ind}::${pt}::${party}`;
+      const mergedAliases = _normalizeMergedAliasesList(w.merged_aliases);
+      const aliasThroughMap = _normalizeMergedAliasThroughMap(w.merged_alias_through, through, mergedAliases);
       const ent = {
-        through, co: norm(w.company || ''), allCo: _stmtLockAllCo(w.company),
-        by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), party: String(w.party_name || ''), key: String(w.key || '')
+        ind, through, co: norm(w.company || ''), allCo: _stmtLockAllCo(w.company),
+        by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''),
+        party: String(w.party_name || ''), partyNorm: partyAliasNorm,
+        mergedAliases, aliasThroughMap, key: String(w.key || ''), fromAlias: ''
       };
-      if (!idx.has(ik)) idx.set(ik, []);
-      idx.get(ik).push(ent);
+      pushIdx(`${ind}::${pt}::${partyRawNorm}`, ent);
+      if (partyAliasNorm !== partyRawNorm) pushIdx(`${ind}::${pt}::${partyAliasNorm}`, ent);
+      mergedAliases.forEach(al => {
+        if (!al || al === partyAliasNorm) return;
+        const alThrough = (aliasThroughMap[al] && aliasThroughMap[al] <= through) ? aliasThroughMap[al] : through;
+        pushIdx(`${ind}::${pt}::${al}`, Object.assign({}, ent, { through: alThrough, fromAlias: al }));
+      });
     });
-    _stmtLockCache = { store, rev, at: now, idx };
+    _stmtLockCache = { store, rev, keyLen, at: now, idx };
     return idx;
   }
   // The sent statement that holds a record, or null. `parties`: the name(s) on the record (a raw material ticket has
@@ -19198,28 +19342,157 @@
     const day = ds.sort()[0];
     const co = norm(company || '');
     let best = null;
-    (Array.isArray(parties) ? parties : [parties]).forEach(pn => {
-      const list = idx.get(`${ind}::${pt}::${norm(pn || '')}`);
+    const checkList = list => {
       if (!list) return;
       list.forEach(w => {
         if (day > w.through) return;
         if (!w.allCo && co && w.co !== co) return;
         if (!best || w.through > best.through) best = w;
       });
+    };
+    (Array.isArray(parties) ? parties : [parties]).forEach(pn => {
+      const k1 = norm(pn || '');
+      const k2 = _normStmtAlias(pn || '');
+      if (k1) checkList(idx.get(`${ind}::${pt}::${k1}`));
+      if (k2 && k2 !== k1) checkList(idx.get(`${ind}::${pt}::${k2}`));
     });
     return best;
+  }
+
+  function resolveRollupParty(opts = {}) {
+    const raw = String(opts.rawName == null ? '' : opts.rawName).trim();
+    if (!raw) return { party: '', canonical: '', heldAlias: false, viaSentLock: false, lockedThrough: '', heldBy: '' };
+    const ptRaw = norm(opts.partyType || 'customer');
+    const pt = ptRaw === 'supplier' ? 'supplier' : (ptRaw === 'staff' ? 'staff' : (ptRaw === 'counterparty' ? 'counterparty' : 'customer'));
+    const indName = String(opts.industry || (opts.company && typeof inferIndustryForCompany === 'function' ? inferIndustryForCompany(opts.company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(opts.company) : 'Manufacturing') || 'Manufacturing').trim() || 'Manufacturing';
+    const indKey = canonWatermarkIndustry(indName);
+    const rawNorm = _normStmtAlias(raw);
+    const canon = (typeof canonicalizePartyByHygiene === 'function')
+      ? canonicalizePartyByHygiene(pt, raw, opts.company || '', indName)
+      : raw;
+    const canonNorm = _normStmtAlias(canon);
+    if (pt !== 'customer' && pt !== 'supplier') {
+      return { party: canon || raw, canonical: canon || raw, heldAlias: false, viaSentLock: false, lockedThrough: '', heldBy: '' };
+    }
+    const idx = statementLockIndex();
+    if (!idx.size) {
+      return { party: canon || raw, canonical: canon || raw, heldAlias: false, viaSentLock: false, lockedThrough: '', heldBy: '' };
+    }
+    const co = opts.company || '';
+    const rowCo = opts.rowCompany || co;
+    const dt = opts.recordDate ? String(opts.recordDate).slice(0, 10) : '';
+    const hasDt = /^\d{4}-\d{2}-\d{2}$/.test(dt);
+    const ownMarksFor = (pNorm, scopeCo) => (idx.get(`${indKey}::${pt}::${pNorm}`) || []).filter(w => !w.fromAlias && _wmMatchesCoScope(w, scopeCo));
+    if (canonNorm && canonNorm !== rawNorm) {
+      const canonOwn = ownMarksFor(canonNorm, rowCo);
+      const unmergedCanon = canonOwn.filter(w => {
+        if (!w.mergedAliases.includes(rawNorm)) return true;
+        const alCeil = (w.aliasThroughMap && w.aliasThroughMap[rawNorm]) || w.through;
+        return Boolean(alCeil && w.through && alCeil < w.through && (!hasDt || dt > alCeil));
+      });
+      if (unmergedCanon.length) {
+        const bestC = unmergedCanon.reduce((a, b) => (a && a.through > b.through ? a : b), unmergedCanon[0]);
+        return { party: raw, canonical: canon, heldAlias: true, viaSentLock: false, lockedThrough: bestC.through, heldBy: 'canonical' };
+      }
+      const aliasOwn = ownMarksFor(rawNorm, rowCo);
+      const mergedCoversQuery = canonOwn.some(w => {
+        if (!w.mergedAliases.includes(rawNorm)) return false;
+        const alCeil = (w.aliasThroughMap && w.aliasThroughMap[rawNorm]) || w.through;
+        return !hasDt || dt <= alCeil;
+      });
+      if (aliasOwn.length && !mergedCoversQuery) {
+        const bestA = aliasOwn.reduce((a, b) => (a && a.through > b.through ? a : b), aliasOwn[0]);
+        return { party: raw, canonical: canon, heldAlias: true, viaSentLock: false, lockedThrough: bestA.through, heldBy: 'alias' };
+      }
+      return { party: canon, canonical: canon, heldAlias: false, viaSentLock: false, lockedThrough: '', heldBy: '' };
+    }
+    if (hasDt) {
+      const boundMarks = (idx.get(`${indKey}::${pt}::${rawNorm}`) || []).filter(w => w.fromAlias === rawNorm && _wmMatchesCoScope(w, rowCo) && dt <= w.through);
+      if (boundMarks.length) {
+        const bestB = boundMarks.reduce((a, b) => (a && a.through > b.through ? a : b), boundMarks[0]);
+        return { party: bestB.party, canonical: bestB.party, heldAlias: false, viaSentLock: true, lockedThrough: bestB.through, heldBy: '' };
+      }
+    }
+    return { party: raw, canonical: raw, heldAlias: false, viaSentLock: false, lockedThrough: '', heldBy: '' };
+  }
+
+  function getRollupMeta(opts = {}) {
+    const pName = String(opts.partyName == null ? '' : opts.partyName).trim();
+    if (!pName || norm(pName) === 'all') {
+      return { mergedAliases: [], heldAliases: [], heldFromCanonical: null, frozenAliases: [] };
+    }
+    const pt = norm(opts.partyType || 'customer') === 'supplier' ? 'supplier' : 'customer';
+    const indName = String(opts.industry || (opts.company && typeof inferIndustryForCompany === 'function' ? inferIndustryForCompany(opts.company) : '') || 'Manufacturing').trim() || 'Manufacturing';
+    const indKey = canonWatermarkIndustry(indName);
+    const co = opts.company || '';
+    const pNorm = _normStmtAlias(pName);
+    const incoming = (typeof getConfirmedAliasesForCanonical === 'function')
+      ? getConfirmedAliasesForCanonical(pt, pName, co, indName)
+      : [];
+    const mergedAliases = [];
+    const heldAliases = [];
+    incoming.forEach(al => {
+      const res = resolveRollupParty({ industry: indName, company: co, partyType: pt, rawName: al });
+      if (res.heldAlias) heldAliases.push({ alias: al, heldBy: res.heldBy, through: res.lockedThrough });
+      else if (_normStmtAlias(res.party) === pNorm) mergedAliases.push(al);
+    });
+    const selfRes = resolveRollupParty({ industry: indName, company: co, partyType: pt, rawName: pName });
+    const heldFromCanonical = selfRes.heldAlias ? { canonical: selfRes.canonical, through: selfRes.lockedThrough, heldBy: selfRes.heldBy } : null;
+    const idx = statementLockIndex();
+    const own = (idx.get(`${indKey}::${pt}::${pNorm}`) || []).filter(w => !w.fromAlias && _wmMatchesCoScope(w, co));
+    const frozenSet = new Set();
+    const ownFrozenSet = new Set();
+    const frozenAliasThrough = {};
+    own.forEach(w => {
+      const isOwnBu = !w.allCo;
+      (w.mergedAliases || []).forEach(a => {
+        frozenSet.add(a);
+        if (isOwnBu) ownFrozenSet.add(a);
+        const c = (w.aliasThroughMap && w.aliasThroughMap[a]) || w.through || '';
+        if (c && (!frozenAliasThrough[a] || c > frozenAliasThrough[a])) frozenAliasThrough[a] = c;
+      });
+    });
+    return {
+      mergedAliases,
+      heldAliases,
+      heldFromCanonical,
+      frozenAliases: Array.from(frozenSet).sort(),
+      ownFrozenAliases: Array.from(ownFrozenSet).sort(),
+      frozenAliasThrough
+    };
+  }
+
+  function computeWatermarkSig(indRaw) {
+    const idx = statementLockIndex();
+    const wantInd = indRaw ? canonWatermarkIndustry(indRaw) : '';
+    const parts = [];
+    const seen = new Set();
+    idx.forEach(list => {
+      list.forEach(w => {
+        if (w.fromAlias) return;
+        if (wantInd && w.ind !== wantInd) return;
+        const atEntries = Object.keys(w.aliasThroughMap || {}).sort().map(ak => `${ak}=${w.aliasThroughMap[ak]}`).join(',');
+        const tag = `${w.key || (w.ind + '::' + w.co + '::' + w.partyNorm)}|${w.through}|${(w.mergedAliases || []).join(',')}|${atEntries}`;
+        if (!seen.has(tag)) {
+          seen.add(tag);
+          parts.push(tag);
+        }
+      });
+    });
+    parts.sort();
+    return `${STATE._watermarkRev || 0}:${parts.join(';')}`;
   }
   // For the statements page: the mark on one statement (exact party and scope), and marking or clearing it
   function statementSentMark(spec) {
     const sp = spec || {};
     const w = getStatementWatermark(buildStatementWatermarkKey(sp));
-    if (w) return { through: String(w.confirmed_through).slice(0, 10), by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), balance: w.closing_balance_usd };
+    if (w) return { through: String(w.confirmed_through).slice(0, 10), by: String(w.confirmed_by || ''), at: String(w.confirmed_at || ''), balance: w.closing_balance_usd, mergedAliases: _normalizeMergedAliasesList(w.merged_aliases) };
     // A company's statement covered by the group's (company ALL): shown as sent, through the group's day
     if (!_stmtLockAllCo(sp.company)) {
       const grpName = { hospitality: 'Hospitality Group', trading: 'Trading Group', realestate: 'Real Estate Group' }[canonWatermarkIndustry(sp.industry || 'manufacturing')] || '';
       const g = getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: 'ALL' })))
         || (grpName ? getStatementWatermark(buildStatementWatermarkKey(Object.assign({}, sp, { company: grpName }))) : null);
-      if (g) return { through: String(g.confirmed_through).slice(0, 10), by: String(g.confirmed_by || ''), at: String(g.confirmed_at || ''), balance: null, group: true };
+      if (g) return { through: String(g.confirmed_through).slice(0, 10), by: String(g.confirmed_by || ''), at: String(g.confirmed_at || ''), balance: null, mergedAliases: _normalizeMergedAliasesList(g.merged_aliases), group: true };
     }
     return null;
   }
@@ -19238,6 +19511,11 @@
       return r;
     },
     lockFor: statementLockFor,
+    resolveRollupParty,
+    getRollupMeta,
+    partyHygieneSig: ind => (typeof computePartyHygieneSig === 'function' ? computePartyHygieneSig(ind) : '0'),
+    watermarkSig: computeWatermarkSig,
+    invalidate: () => { _stmtLockCache = null; STATE._watermarkRev = (STATE._watermarkRev || 0) + 1; },
     canMark: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && ((typeof canModifyData === 'function' && canModifyData(u)) || (typeof canVoid === 'function' && canVoid(u))); },
     canClear: () => { const u = typeof activeUser === 'function' ? activeUser() : null; return Boolean(u) && typeof canVoid === 'function' && canVoid(u); },
     today: () => todayISO(),
@@ -26192,6 +26470,8 @@
   }
 
   function invalidatePartyHygieneCaches() {
+    STATE._partyHygieneRev = (STATE._partyHygieneRev || 0) + 1;
+    _stmtLockCache = null;
     try {
       const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
       if (fIdx && fIdx._partyTypoPools) fIdx._partyTypoPools.clear();
@@ -26270,6 +26550,55 @@
       return String(rule.canonical).trim();
     }
     return '';
+  }
+
+  function canonicalizePartyByHygiene(kind, rawName, company, explicitInd) {
+    let cur = String(rawName == null ? '' : rawName).trim();
+    if (!cur) return '';
+    const seen = new Set();
+    for (let hop = 0; hop < 5; hop++) {
+      const k = norm(cur).replace(/\s+/g, ' ');
+      if (!k || seen.has(k)) break;
+      seen.add(k);
+      const next = resolveConfirmedPartyAlias(kind, cur, company, explicitInd);
+      if (!next || norm(next).replace(/\s+/g, ' ') === k) break;
+      cur = next;
+    }
+    return cur;
+  }
+
+  function getConfirmedAliasesForCanonical(kind, canonicalName, company, explicitInd) {
+    const cNorm = norm(canonicalName || '').replace(/\s+/g, ' ');
+    if (!cNorm) return [];
+    const hasIndFn = typeof inferIndustryForCompany === 'function';
+    const indStr = explicitInd || (company && hasIndFn ? inferIndustryForCompany(company) : '') || (typeof getActiveIndustry === 'function' ? getActiveIndustry(company) : 'Manufacturing') || 'Manufacturing';
+    const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
+    const st = ensurePartyHygieneState();
+    const byNorm = new Map();
+    Object.values(st.rules || {}).forEach(rv => {
+      if (!rv || typeof rv !== 'object' || rv.status !== 'confirmed') return;
+      if (String(rv.industry || 'Manufacturing').trim() !== indStr) return;
+      if (String(rv.kind || '').trim().toLowerCase() !== kStr) return;
+      const aRaw = String(rv.alias || '').trim();
+      const aNorm = norm(aRaw).replace(/\s+/g, ' ');
+      if (!aNorm || aNorm === cNorm) return;
+      const resolved = norm(canonicalizePartyByHygiene(kStr, aRaw, company, indStr)).replace(/\s+/g, ' ');
+      if (resolved === cNorm && !byNorm.has(aNorm)) byNorm.set(aNorm, aRaw);
+    });
+    return Array.from(byNorm.values()).sort((a, b) => a.localeCompare(b));
+  }
+
+  function computePartyHygieneSig(explicitInd) {
+    const st = ensurePartyHygieneState();
+    const indFilter = explicitInd ? String(explicitInd).trim() : '';
+    const rows = [];
+    Object.entries(st.rules || {}).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object' || rv.status !== 'confirmed') return;
+      if (indFilter && String(rv.industry || '').trim() !== indFilter) return;
+      rows.push(`${rk}=${rv.canonical || ''}`);
+    });
+    rows.sort();
+    return `${STATE._partyHygieneRev || 0}:${rows.join(';')}`;
   }
 
   function isPartyHygieneDismissed(kind, nameA, nameB, company, explicitInd) {
@@ -71386,7 +71715,7 @@
     // Holding reads its partner and facility schedules for the period picked, so the period is part of its key
     const hldGlPr = ind === 'Holding & Treasury' ? periodRange() : null;
     const hldGlPrKey = hldGlPr && hldGlPr.from && hldGlPr.to ? `${hldGlPr.from}~${hldGlPr.to}` : '';
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}`;
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}|ph:${typeof computePartyHygieneSig === 'function' ? computePartyHygieneSig(ind) : '0'}|wm:${typeof computeWatermarkSig === 'function' ? computeWatermarkSig(ind) : '0'}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -71394,6 +71723,8 @@
 
     const kSnap = getIndustryKpiSnapshot(ind, rawKey, {});
     const coLbl = COMPANY_LABELS[rawKey] || (ind === 'Holding & Treasury' ? 'Bdeir Holding' : ind);
+    const buFilter = (!String(rawKey || '').startsWith('industry:') && COMPANY_BU_MATCH[rawKey]) || null;
+    const defaultRowCo = buFilter || (String(rawKey || '').startsWith('industry:') ? 'ALL' : coLbl);
     const dFloor = (minV, liveV) => round2(demoGl ? Math.max(minV, Number(liveV || 0)) : Number(liveV || 0));
     const dConst = v => round2(demoGl ? v : 0);
 
@@ -71643,8 +71974,22 @@
       extended: { rows: [], totals: { usd: 0, lbp: 0 } },
       conversion: { rows: [], totals: { from_amt: 0, to_amt: 0 } }
     };
-    const upsertIndCfRow = (tbl, rawName) => {
-      const nm = String(rawName || 'Counterparty').trim() || 'Counterparty';
+    const _glPartyResolve = (pKind, rawName, rowCo, dIso) => {
+      const sRaw = String(rawName == null ? '' : rawName).trim();
+      if (!sRaw) return '';
+      const effCo = rowCo || defaultRowCo;
+      if ((pKind === 'customer' || pKind === 'supplier') && typeof resolveRollupParty === 'function') {
+        const res = resolveRollupParty({ industry: ind, company: defaultRowCo, rowCompany: effCo, partyType: pKind, rawName: sRaw, recordDate: dIso || '' });
+        if (res && res.party) return res.party;
+      }
+      return (typeof canonicalizePartyByHygiene === 'function') ? (canonicalizePartyByHygiene(pKind, sRaw, effCo, ind) || sRaw) : sRaw;
+    };
+    const upsertIndCfRow = (tbl, rawName, mv) => {
+      const s = mv && mv.stream;
+      const pKind = s === 'sales' ? 'customer' : (s === 'exp' ? 'supplier' : (s === 'sal' ? 'staff' : 'counterparty'));
+      const nmRaw = String(rawName || 'Counterparty').trim() || 'Counterparty';
+      const mvCo = mv && (mv.company || mv.co || (mv.raw && mv.raw.company));
+      const nm = _glPartyResolve(pKind, nmRaw, mvCo || defaultRowCo, (mv && mv.date) || '') || nmRaw;
       const nk = norm(nm);
       let row = tbl.rows.find(x => x && norm(x.name) === nk);
       if (!row) {
@@ -71659,19 +72004,19 @@
       const uAbs = Math.abs(Number(mv.usd || 0));
       const lSigned = Math.round(Number(mv.lbp || 0));
       if (mv.stream === 'sales') {
-        const r = upsertIndCfRow(indCfTables.sales, mv.party);
+        const r = upsertIndCfRow(indCfTables.sales, mv.party, mv);
         r.usd = round2(r.usd + mv.usd);
         r.lbp = Math.round((r.lbp || 0) + lSigned);
         indCfTables.sales.totals.usd = round2(indCfTables.sales.totals.usd + mv.usd);
         indCfTables.sales.totals.lbp = Math.round((indCfTables.sales.totals.lbp || 0) + lSigned);
       } else if (mv.stream === 'exp') {
-        const r = upsertIndCfRow(indCfTables.expenses, mv.party);
+        const r = upsertIndCfRow(indCfTables.expenses, mv.party, mv);
         r.usd = round2(r.usd - Number(mv.usd || 0));
         r.lbp = Math.round((r.lbp || 0) - lSigned);
         indCfTables.expenses.totals.usd = round2(indCfTables.expenses.totals.usd - Number(mv.usd || 0));
         indCfTables.expenses.totals.lbp = Math.round((indCfTables.expenses.totals.lbp || 0) - lSigned);
       } else if (mv.stream === 'loan') {
-        const r = upsertIndCfRow(indCfTables.borrowing, mv.party);
+        const r = upsertIndCfRow(indCfTables.borrowing, mv.party, mv);
         if (mv.usd > 0 || (mv.usd === 0 && lSigned > 0)) {
           r.paid_usd = round2(r.paid_usd + uAbs);
           r.paid_lbp = Math.round((r.paid_lbp || 0) + Math.abs(lSigned));
@@ -71684,13 +72029,13 @@
           indCfTables.borrowing.totals.rec_lbp = Math.round((indCfTables.borrowing.totals.rec_lbp || 0) + Math.abs(lSigned));
         }
       } else if (mv.stream === 'sal') {
-        const r = upsertIndCfRow(indCfTables.salary, mv.party);
+        const r = upsertIndCfRow(indCfTables.salary, mv.party, mv);
         r.usd = round2(r.usd - Number(mv.usd || 0));
         r.lbp = Math.round((r.lbp || 0) - lSigned);
         indCfTables.salary.totals.usd = round2(indCfTables.salary.totals.usd - Number(mv.usd || 0));
         indCfTables.salary.totals.lbp = Math.round((indCfTables.salary.totals.lbp || 0) - lSigned);
       } else if (mv.stream === 'ext') {
-        const r = upsertIndCfRow(indCfTables.external, mv.party);
+        const r = upsertIndCfRow(indCfTables.external, mv.party, mv);
         const lAbs = Math.round(Math.abs(Number(mv.lbp || 0)));
         if (mv.usd > 0.004 || (Math.abs(mv.usd) <= 0.004 && mv.lbp > 1)) {
           r.rev_usd = round2(r.rev_usd + uAbs);
@@ -71714,7 +72059,7 @@
         const owesU = round2(-Number(mv.usd || 0));
         const owesL = Math.round(-Number(mv.lbp || 0));
         if (owesU || owesL) {
-          const r = upsertIndCfRow(indCfTables.extended, mv.party);
+          const r = upsertIndCfRow(indCfTables.extended, mv.party, mv);
           r.usd = round2((r.usd || 0) + owesU);
           r.lbp = Math.round((r.lbp || 0) + owesL);
           indCfTables.extended.totals.usd = round2((indCfTables.extended.totals.usd || 0) + owesU);
@@ -71726,16 +72071,30 @@
       indCfTables.extended.rows.sort((a, b) => Math.abs(Number(b.usd || 0)) - Math.abs(Number(a.usd || 0)));
     }
 
-    const buFilter = (!String(rawKey || '').startsWith('industry:') && COMPANY_BU_MATCH[rawKey]) || null;
     const matchIndRow = r => Boolean(r && !r.voided && r._industry === ind && (!buFilter || !r.company || r.company === buFilter));
-    const legBrk = computeThreeLegPayablesBreakdown({ company: rawKey || ('industry:' + ind), ignorePeriod: true });
-    const indSuppliers = ((SEED.records && SEED.records.suppliers) || []).filter(matchIndRow).map(s => {
-      const lr = (legBrk && legBrk.byNorm && legBrk.byNorm.get(normSupPayable(s.name))) || null;
+    const glPartySig = `${typeof computePartyHygieneSig === 'function' ? computePartyHygieneSig(ind) : '0'}|${typeof computeWatermarkSig === 'function' ? computeWatermarkSig(ind) : '0'}`;
+    const legBrk = computeThreeLegPayablesBreakdown({
+      company: rawKey || ('industry:' + ind),
+      ignorePeriod: true,
+      partySig: glPartySig,
+      partyResolver: (raw, rowCo, d) => _glPartyResolve('supplier', raw, rowCo, d)
+    });
+    const indSupByKey = new Map();
+    const indSuppliers = [];
+    ((SEED.records && SEED.records.suppliers) || []).filter(matchIndRow).forEach(s => {
+      const effName = _glPartyResolve('supplier', s.name, s.company || defaultRowCo, '');
+      const effKey = normSupPayable(effName);
+      const existingSup = indSupByKey.get(effKey);
+      if (existingSup) {
+        if (s.iva) existingSup.IVA = 'Yes';
+        return;
+      }
+      const lr = (legBrk && legBrk.byNorm && legBrk.byNorm.get(effKey)) || null;
       const expCr = lr ? round2((lr.exp_cr_usd || 0) + (lr.exp_vat_cr_usd || 0)) : 0;
       const expPd = lr ? round2((lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0)) : 0;
       const expRem = lr ? round2(lr.exp_rem_ttc || 0) : 0;
-      return {
-        Supplier: s.name,
+      const supRow = {
+        Supplier: effName,
         IVA: s.iva ? 'Yes' : 'No',
         raw_loads: 0,
         raw_mat_cost: 0,
@@ -71757,6 +72116,8 @@
         opening_ap: 0,
         ap_balance: expRem
       };
+      indSupByKey.set(effKey, supRow);
+      indSuppliers.push(supRow);
     });
     const indCustomers = ((SEED.records && SEED.records.customers) || []).filter(matchIndRow).map(c => {
       const salesTtc = round2(Number(c.sales_ttc != null ? c.sales_ttc : (demoGl ? 45000 : 0)));
@@ -72117,6 +72478,8 @@
     });
     STATE.industryRowEdits = nextStore;
     STATE._indCustomRev = (STATE._indCustomRev || 0) + 1; // KPI / cash caches key on it
+    _stmtLockCache = null;
+    STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.invalidateCache === 'function') {
       window.MFG_CMD_PALETTE.invalidateCache();
     }
@@ -72368,6 +72731,8 @@
     if (typeof _sentinelRawItemsCache !== 'undefined' && _sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     _liveSentinelCache = null;
     _FREQ_IDX = null;
+    _stmtLockCache = null;
+    STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
   }
 
   // Rows the cloud totals from the resort gate tills: till close rows and, once a resort's posting date is
@@ -96691,8 +97056,11 @@
 
   function renderEntryModalBody() {
     const fType = STATE.modalForm;
-    const comps = allowedCompanyNames();
-    const company = (STATE.modalGroupOverride === 'extended' && comps.includes('Bdeir Holding')) ? 'Bdeir Holding' : defaultEntryCompany();
+    const kioskStationCo = (STATE.kioskLocked && STATE.view === 'kiosks')
+      ? (COMPANY_BU_MATCH[STATE.company] || (typeof getCompanyCatalog === 'function' ? ((getCompanyCatalog().find(c => c.key === STATE.company || (c.industry || '') === getActiveIndustry(STATE.company)) || {}).name || '') : '') || 'WTC')
+      : '';
+    const comps = kioskStationCo ? [kioskStationCo] : allowedCompanyNames();
+    const company = kioskStationCo || ((STATE.modalGroupOverride === 'extended' && comps.includes('Bdeir Holding')) ? 'Bdeir Holding' : defaultEntryCompany());
     const today = todayISO();
     const dateAttrs = `min="${MIN_DATE}" max="${today}" required`;
     const stCo = String(STATE.company || '').trim();
@@ -99674,6 +100042,15 @@
     return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, '');
   }
 
+  function nearCopyCanonicalPartyKey(v, kind, company, explicitInd) {
+    const raw = String(v == null ? '' : v).trim();
+    if (!raw) return '';
+    const canon = (kind && typeof canonicalizePartyByHygiene === 'function')
+      ? canonicalizePartyByHygiene(kind, raw, company || '', explicitInd || '')
+      : raw;
+    return nearCopyPartyKey(canon || raw);
+  }
+
   function partyWordsKey(v) {
     return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06ff\s]/g, ' ').replace(/\s+/g, ' ').trim();
   }
@@ -99886,12 +100263,13 @@
     const day = String(rec.date || '').slice(0, 10);
     const co = norm(rec.company || '');
     const cls = nearCopySumClass(crKey, rec);
-    const party = nearCopyPartyKey(rec[pk]);
+    const rawParty = nearCopyPartyKey(rec[pk]);
+    const party = nearCopyCanonicalPartyKey(rec[pk], pk, rec.company);
     const amt = nearCopySumUsd(rec);
     if (!day || !co || !cls || !party || !(amt > 0.005)) return null;
     const days = [day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
-    const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'staff' || pk === 'counterparty') && party.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
+    const checkTypo = (pk === 'supplier' || pk === 'customer' || pk === 'staff' || pk === 'counterparty') && rawParty.length >= 4 && (pk === 'counterparty' || !isExactMasterParty(pk, rec[pk], rec.company));
     const closeByParty = checkTypo ? new Map() : null;
     const isExtExtended = crKey === 'external_movements' && (/^extended$/i.test(String(rec.kind || '')) || /^Extended\./i.test(String(rec.notes || '')));
     const rows = nearCopyPool(crKey, { winDays: new Set(days), co, skipOpSister: isExtExtended });
@@ -99911,7 +100289,7 @@
       }
       if (nearCopySumClass(crKey, r) !== cls) continue;
       if (Math.abs(nearCopySumUsd(r)) <= 0.005) continue;
-      const rp = nearCopyPartyKey(r[pk]);
+      const rp = nearCopyCanonicalPartyKey(r[pk], pk, r.company || rec.company);
       if (!rp) continue;
       if (rp === party) {
         bucket.push(r);
@@ -99966,6 +100344,8 @@
     if (!recParty) return null;
     const recPartyCompact = nearCopyPartyKey(rawRecParty);
     const typoKind = crKey === 'sales_tickets' ? 'customer' : (crKey === 'raw_purchases' ? (rec.site ? 'site' : 'supplier') : (crKey === 'expenses' ? 'supplier' : ''));
+    const recCanonCompact = nearCopyCanonicalPartyKey(rawRecParty, typoKind, rec.company);
+    const recCanonOwnerCompact = crKey === 'raw_purchases' && rec.site_owner ? nearCopyCanonicalPartyKey(rec.site_owner, 'supplier', rec.company) : '';
     const allowTypo = Boolean(typoKind && recPartyCompact.length >= 4 && !isExactMasterParty(typoKind, rawRecParty, rec.company));
     const recInv = normTicketNo(cleanVoucherRef(rec.invoice || rec.reference));
     const rows = nearCopyPool(crKey);
@@ -99983,9 +100363,15 @@
       if (crKey === 'sales_tickets' || crKey === 'raw_purchases') {
         if (r.removed_slip || r.ticket_disposition === 'remove_slip') continue;
         const rawRowParty = crKey === 'sales_tickets' ? (r.customer || '') : (r.site || r.site_owner || '');
+        const rowKind = crKey === 'sales_tickets' ? 'customer' : (r.site ? 'site' : 'supplier');
         const party = norm(rawRowParty);
-        const exactParty = party === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowParty) === recPartyCompact);
-        const rawOwnerMatch = crKey !== 'raw_purchases' || !rec.site_owner || !r.site_owner || norm(rec.site_owner) === norm(r.site_owner) || partyNameOneLetterOff(rec.site_owner, r.site_owner);
+        const exactParty = party === recParty
+          || Boolean(recPartyCompact && nearCopyPartyKey(rawRowParty) === recPartyCompact)
+          || Boolean(recCanonCompact && nearCopyCanonicalPartyKey(rawRowParty, rowKind, r.company || rec.company) === recCanonCompact);
+        const rawOwnerMatch = crKey !== 'raw_purchases' || !rec.site_owner || !r.site_owner
+          || norm(rec.site_owner) === norm(r.site_owner)
+          || (Boolean(recCanonOwnerCompact) && nearCopyCanonicalPartyKey(r.site_owner, 'supplier', r.company || rec.company) === recCanonOwnerCompact)
+          || partyNameOneLetterOff(rec.site_owner, r.site_owner);
         const typoParty = !exactParty && allowTypo && rawOwnerMatch && Boolean(rawRowParty)
           && partyNameOneLetterOff(rawRecParty, rawRowParty)
           && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoKind, rawRecParty, rawRowParty, rec.company));
@@ -100001,7 +100387,9 @@
       }
       if (r.price_pending) continue;
       const rawRowSup = r.supplier || '';
-      const exactSup = normSupPayable(rawRowSup) === recParty || Boolean(recPartyCompact && nearCopyPartyKey(rawRowSup) === recPartyCompact);
+      const exactSup = normSupPayable(rawRowSup) === recParty
+        || Boolean(recPartyCompact && nearCopyPartyKey(rawRowSup) === recPartyCompact)
+        || Boolean(recCanonCompact && nearCopyCanonicalPartyKey(rawRowSup, 'supplier', r.company || rec.company) === recCanonCompact);
       const typoSup = !exactSup && allowTypo && Boolean(rawRowSup)
         && partyNameOneLetterOff(rawRecParty, rawRowSup)
         && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed('supplier', rawRecParty, rawRowSup, rec.company));
@@ -100352,6 +100740,11 @@
     const days = [targetDay, nearCopyShiftDay(targetDay, -1), nearCopyShiftDay(targetDay, 1)].filter(Boolean);
     const byDay = new Map(days.map(d => [d, []]));
     const allowTypo = Boolean(typoCtx && typoCtx.allowTypo && typoCtx.rawRecParty);
+    const aliasKind = typoCtx && typoCtx.typoKind ? typoCtx.typoKind : '';
+    const aliasInd = typoCtx && typoCtx.ind ? typoCtx.ind : '';
+    const canonTargetKey = (typoCtx && !typoCtx.skipAlias && aliasKind && typoCtx.rawRecParty)
+      ? (nearCopyCanonicalPartyKey(typoCtx.rawRecParty, aliasKind, typoCtx.recCo || '', aliasInd) || targetPartyKey)
+      : targetPartyKey;
     const closeByParty = allowTypo ? new Map() : null;
     const seen = new Set();
     for (let i = 0; i < pool.length; i++) {
@@ -100369,7 +100762,10 @@
         if (seen.has(uidKey)) continue;
         seen.add(uidKey);
       }
-      if (c.partyKey === targetPartyKey) {
+      const cPartyKey = (aliasKind && !(typoCtx && typoCtx.skipAlias) && c.partyRaw)
+        ? (nearCopyCanonicalPartyKey(c.partyRaw, aliasKind, c.company || (typoCtx && typoCtx.recCo) || '', aliasInd) || c.partyKey)
+        : c.partyKey;
+      if (cPartyKey === canonTargetKey) {
         bucket.push(c);
       } else if (closeByParty && c.partyRaw && typeof partyNameOneLetterOff === 'function' && partyNameOneLetterOff(typoCtx.rawRecParty, c.partyRaw)
         && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoCtx.typoKind || 'customer', typoCtx.rawRecParty, c.partyRaw, typoCtx.recCo || '', typoCtx.ind || ''))) {
@@ -100400,6 +100796,7 @@
     const recPartyKey = opts.partyKeyOverride != null ? opts.partyKeyOverride : nearCopyPartyKey(recPartyRaw);
     if (!recPartyKey) return null;
     const typoKind = opts.typoKind || spec.typoKind || 'customer';
+    const recCanonKey = opts.skipAlias ? recPartyKey : (nearCopyCanonicalPartyKey(recPartyRaw, typoKind, opts.recCoRaw || '', spec.ind || '') || recPartyKey);
     const allowTypo = opts.disableTypo ? false : (recPartyKey.length >= 4 && !(typeof isExactMasterParty === 'function' && isExactMasterParty(typoKind, recPartyRaw, opts.recCoRaw || '')));
     const allowExactSameAmt = opts.forceSameAmt != null ? opts.forceSameAmt : (Boolean(spec.allowSameAmtKeyboard) || fromScan);
     const seen = new Set();
@@ -100419,8 +100816,10 @@
         seen.add(uidKey);
       }
       const cPartyRaw = String(c.partyRaw || c.partyLabel || '').trim();
-      const cPartyKey = opts.rowPartyKeyFn ? opts.rowPartyKeyFn(c) : c.partyKey;
-      const isExact = Boolean(cPartyKey && cPartyKey === recPartyKey);
+      const cPartyKey = opts.rowPartyKeyFn
+        ? opts.rowPartyKeyFn(c)
+        : (opts.skipAlias || !cPartyRaw ? c.partyKey : (nearCopyCanonicalPartyKey(cPartyRaw, typoKind, c.company || opts.recCoRaw || '', spec.ind || '') || c.partyKey));
+      const isExact = Boolean(cPartyKey && cPartyKey === recCanonKey);
       const isTypo = !isExact && allowTypo && Boolean(cPartyRaw) && typeof partyNameOneLetterOff === 'function' && partyNameOneLetterOff(recPartyRaw, cPartyRaw)
         && !(typeof isPartyHygieneDismissed === 'function' && isPartyHygieneDismissed(typoKind, recPartyRaw, cPartyRaw, opts.recCoRaw || '', spec.ind || ''));
       if (!isExact && !isTypo) continue;
@@ -100574,9 +100973,10 @@
 
     const runStdPool = (pool, partyRaw, amt, typoKind, extraOpts = {}) => {
       if (!(amt > 0.005)) return null;
-      const pKey = nearCopyPartyKey(partyRaw);
+      const rawPKey = nearCopyPartyKey(partyRaw);
+      const pKey = nearCopyCanonicalPartyKey(partyRaw, typoKind, recCoRaw, spec.ind) || rawPKey;
       if (!pKey) return null;
-      const typoCtx = { allowTypo: pKey.length >= 4 && !(typeof isExactMasterParty === 'function' && isExactMasterParty(typoKind, partyRaw, recCoRaw)), rawRecParty: partyRaw, typoKind, recCo: recCoRaw, ind: spec.ind };
+      const typoCtx = { allowTypo: rawPKey.length >= 4 && !(typeof isExactMasterParty === 'function' && isExactMasterParty(typoKind, partyRaw, recCoRaw)), rawRecParty: partyRaw, typoKind, recCo: recCoRaw, ind: spec.ind };
       const singleExact = _findDomSingleOrTypoHit(spec, pool, day, co, partyRaw, amt, recRefNum, recId, origId, Object.assign({ fromScan, recCoRaw, typoKind, disableTypo: true }, extraOpts));
       if (singleExact) return singleExact;
       const multiHit = spec.allowMultiRow ? _findDomSumByPool(pool, day, co, pKey, amt, toks, recId, origId, null, Object.assign({}, typoCtx, { allowTypo: false })) : null;
@@ -100699,10 +101099,10 @@
       if (!(amt > 0.005)) return null;
       const resortKey = nearCopyPartyKey(rec.company);
       const outRaw = String(rec.outlet || '').trim();
-      const outScope = nearCopyPartyKey(outRaw);
+      const outScope = nearCopyCanonicalPartyKey(outRaw, 'site', recCoRaw, spec.ind);
       const pool = mkPool(live.hospitality && (live.hospitality.venueRows || live.hospitality.revenueRows), 'hsp_revenue', r => ({
         id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
-        partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.outlet),
+        partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyCanonicalPartyKey(r.outlet, 'site', r.company || recCoRaw, spec.ind),
         partyRaw: String(r.outlet || '').trim(), partyLabel: r.outlet || r.company,
         amount: _domRowAmt('hsp_revenue', r), ref: r.outlet || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
       }));
@@ -100720,7 +101120,7 @@
       _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
       if (extPool.length) {
         if (outScope) {
-          const extOutHit = _findDomSumByPool(extPool, day, co, outScope, amt, toks, recId, origId, null);
+          const extOutHit = _findDomSumByPool(extPool, day, co, outScope, amt, toks, recId, origId, null, { allowTypo: false, typoKind: 'site', rawRecParty: outRaw, recCo: recCoRaw, ind: spec.ind });
           if (extOutHit) return extOutHit;
         }
         const extResHit = _findDomSumByPool(extPool, day, co, resortKey, amt, toks, recId, origId, null);
@@ -100740,11 +101140,11 @@
       const resortKey = nearCopyPartyKey(rec.company);
       const termScope = nearCopyPartyKey(rec.terminal);
       const cashierRaw = String(rec.cashier || '').trim();
-      const cashierKey = nearCopyPartyKey(cashierRaw);
+      const cashierKey = nearCopyCanonicalPartyKey(cashierRaw, 'staff', recCoRaw, spec.ind);
       const pool = mkPool(live.hospitality && live.hospitality.posRows, 'hsp_pos', r => ({
         id: r.id, _srcId: String(r.id || ''), rawRow: r, company: r.company, date: r.date,
         partyKey: nearCopyPartyKey(r.company), scopeKey: nearCopyPartyKey(r.terminal),
-        cashierRaw: String(r.cashier || '').trim(), cashierKey: nearCopyPartyKey(r.cashier || ''),
+        cashierRaw: String(r.cashier || '').trim(), cashierKey: nearCopyCanonicalPartyKey(r.cashier || '', 'staff', r.company || recCoRaw, spec.ind),
         partyRaw: String(r.cashier || r.terminal || r.company || '').trim(),
         partyLabel: r.cashier || r.terminal || r.company,
         amount: _domRowAmt('hsp_pos', r), ref: r.terminal || r.id || '', refs: nearCopyRefTokens(r.id, r.notes)
@@ -100757,7 +101157,7 @@
       }
       if (termScope) {
         const termSingle = _findDomSingleOrTypoHit(spec, pool, day, co, String(rec.terminal || ''), amt, recRefNum, recId, origId, {
-          fromScan, recCoRaw, typoKind: 'staff', partyKeyOverride: termScope, rowPartyKeyFn: x => x.scopeKey, disableTypo: true
+          fromScan, recCoRaw, typoKind: 'staff', partyKeyOverride: termScope, rowPartyKeyFn: x => x.scopeKey, disableTypo: true, skipAlias: true
         });
         if (termSingle) return termSingle;
         const termSum = _findDomSumByPool(pool, day, co, resortKey, amt, toks, recId, origId, termScope);
@@ -100792,7 +101192,7 @@
         const extPool = [];
         _appendExternalSisterPoolRows(extPool, 'in', winDays, co);
         if (extPool.length) {
-          const extHit = _findDomSumByPool(extPool, day, co, nearCopyPartyKey(partyRaw), paidAmt, toks, recId, origId, null);
+          const extHit = _findDomSumByPool(extPool, day, co, nearCopyCanonicalPartyKey(partyRaw, 'customer', recCoRaw, spec.ind), paidAmt, toks, recId, origId, null, { allowTypo: false, typoKind: 'customer', rawRecParty: partyRaw, recCo: recCoRaw, ind: spec.ind });
           if (extHit) return extHit;
         }
       }
@@ -115648,10 +116048,11 @@
     if (typeof wirePartyTypoHost === 'function') {
       wirePartyTypoHost(body, {
         getInd: () => (typeof getActiveIndustry === 'function' ? getActiveIndustry(val('f_company') || STATE.company) : 'Manufacturing'),
-        getCo: () => val('f_company') || '',
+        getCo: () => val('f_company') || COMPANY_BU_MATCH[STATE.company] || STATE.company || '',
         getModalForm: () => STATE.modalForm || '',
         isEditMode: () => Boolean(STATE.editingRecord || STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId),
-        isDomainModal: false
+        isDomainModal: false,
+        isKiosk: Boolean(body && body.id === 'kioskFormBody')
       });
     }
     renderEntryAttachmentsListUI();
@@ -115920,10 +116321,24 @@
     ide_cashier: 'staff',
     ide_producer: 'staff'
   };
+  const KIOSK_IND_PARTY_FIELD_KINDS = {
+    ik_client: 'customer',
+    ik_tenant: 'customer',
+    ik_customer: 'customer',
+    ik_guest: 'customer',
+    ik_carrier: 'supplier',
+    ik_vendor: 'supplier',
+    ik_supplier: 'supplier',
+    ik_property: 'site',
+    ik_outlet: 'site',
+    ik_lender: 'counterparty',
+    ik_partner: 'counterparty'
+  };
 
-  function resolvePartyFieldKind(el, isDomainModal, modalForm) {
+  function resolvePartyFieldKind(el, isDomainModal, modalForm, isKioskInd) {
     if (!el || !el.id) return '';
     if (isDomainModal) return DOMAIN_PARTY_FIELD_KINDS[el.id] || '';
+    if (isKioskInd) return KIOSK_IND_PARTY_FIELD_KINDS[el.id] || '';
     const k = ENTRY_PARTY_FIELD_KINDS[el.id] || '';
     if (!k) return '';
     if (el.id === 'f_supplier' && (modalForm === 'equipment' || modalForm === 'driver')) return 'truck_owner';
@@ -115953,7 +116368,8 @@
     const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
     if (fIdx && !fIdx._partyTypoPools) fIdx._partyTypoPools = new Map();
     const dlId = (demoActive && inputEl && inputEl.list && inputEl.list.id) ? inputEl.list.id : '';
-    const cacheKey = isRegEdit ? '' : `${ind}|${partyKind}|${demoActive ? 1 : 0}|${opts.isDomainModal ? 1 : 0}|${dlId}`;
+    const indRevSig = `${(STATE && STATE._indCustomRev) || 0}:${(SEED && SEED._industryRev) || 0}:${(STATE && STATE._partyHygieneRev) || 0}`;
+    const cacheKey = isRegEdit ? '' : `${ind}|${partyKind}|${demoActive ? 1 : 0}|${opts.isDomainModal ? 1 : 0}|${dlId}|${indRevSig}`;
     if (cacheKey && fIdx && fIdx._partyTypoPools.has(cacheKey)) {
       return fIdx._partyTypoPools.get(cacheKey);
     }
@@ -116129,10 +116545,15 @@
         const h = live.hospitality || {};
         if (wantCust) {
           walkLive(h.membershipRows, ['member']);
+          walkLive(h.venueRows || h.revenueRows, ['guest', 'customer']);
           walkCustom(['hsp_memberships'], ['member']);
+          walkCustom(['hsp_revenue'], ['guest', 'customer']);
         }
         if (wantSup) {
           walkLive(h.maintRows, ['vendor']);
+          walkLive(h.stockRows, ['supplier']);
+          walkCustom(['hsp_maint'], ['vendor']);
+          walkCustom(['hsp_stock'], ['supplier']);
         }
         if (wantSite) {
           walkLive(h.venueRows || h.revenueRows, ['outlet', 'venue']);
@@ -116154,12 +116575,12 @@
           walkLive(t.importRows, ['supplier']);
           walkLive(t.grnRows, ['supplier']);
           walkLive(t.targetRows, ['supplier']);
-          walkCustom(['trd_purchases', 'trd_targets'], ['supplier']);
+          walkCustom(['trd_purchases', 'trd_targets', 'trd_grn'], ['supplier']);
         }
         if (wantSite) {
           walkLive(t.serialUnits, ['warehouse']);
           walkLive(t.stockRows, ['warehouse']);
-          walkCustom(['trd_trucks', 'trd_stock'], ['warehouse']);
+          walkCustom(['trd_trucks', 'trd_stock', 'trd_grn'], ['warehouse']);
         }
       } else if (ind === 'Real Estate & Property') {
         const re = live.realestate || {};
@@ -116174,6 +116595,7 @@
         if (wantSup) {
           walkLive(re.workorders, ['contractor']);
           walkCustom(['re_workorders'], ['contractor']);
+          walkCustom(['re_maintenance'], ['vendor']);
         }
         if (wantSite) {
           walkLive(re.properties, ['name', 'property']);
@@ -116182,7 +116604,7 @@
           walkLive(re.units, ['property']);
           walkLive(re.sales, ['property']);
           walkLive(re.workorders, ['property']);
-          walkCustom(['re_leases', 're_invoicing', 're_receipts', 're_sales', 're_workorders'], ['property']);
+          walkCustom(['re_leases', 're_invoicing', 're_receipts', 're_sales', 're_workorders', 're_maintenance'], ['property']);
         }
       } else if (ind === 'Insurance & Brokerage') {
         const ins = live.insurance || {};
@@ -116232,10 +116654,11 @@
   function syncPartyTypoForInput(el, ctx = {}) {
     if (!el || !el.id) return false;
     const isDom = Boolean(ctx.isDomainModal);
-    const modalForm = isDom ? '' : (typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || ''));
-    const kind = resolvePartyFieldKind(el, isDom, modalForm);
+    const isKioskInd = Boolean(ctx.isKioskInd || (el.closest && el.closest('#kioskIndForm')));
+    const modalForm = (isDom || isKioskInd) ? '' : (typeof ctx.getModalForm === 'function' ? ctx.getModalForm() : (STATE.modalForm || ''));
+    const kind = resolvePartyFieldKind(el, isDom, modalForm, isKioskInd);
     if (!kind) return false;
-    const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+    const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.closest('.kiosk-ind-field') || el.parentElement;
     if (!wrap) return false;
     const barId = `partyTypo_${el.id}`;
     let bar = wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`) || $(barId);
@@ -116252,22 +116675,22 @@
     const isEdit = typeof ctx.isEditMode === 'function' ? ctx.isEditMode() : Boolean(ctx.isEditMode);
     const initRaw = el.dataset.partyInitVal !== undefined ? el.dataset.partyInitVal : el.dataset.initVal;
     if (isEdit && initRaw !== undefined && norm(rawVal) === norm(initRaw)) { hideBar(); return false; }
-    if (!isDom && (modalForm === 'customer' || modalForm === 'supplier' || modalForm === 'site' || modalForm === 'staff') && wrap.querySelector('.univ-dup-hint')) {
+    if (!isDom && !isKioskInd && (modalForm === 'customer' || modalForm === 'supplier' || modalForm === 'site' || modalForm === 'staff') && wrap.querySelector('.univ-dup-hint')) {
       hideBar();
       return false;
     }
-    if (!isDom && (modalForm === 'staff' || modalForm === 'employment' || modalForm === 'freelance')) {
+    if (!isDom && !isKioskInd && (modalForm === 'staff' || modalForm === 'employment' || modalForm === 'freelance')) {
       const sameBox = ['staffSameNameBox', 'empSameNameBox', 'staffDupBanner'].map(id => $(id)).find(el => el && !el.hidden);
       if (sameBox) {
         hideBar();
         return false;
       }
     }
-    const co = typeof ctx.getCo === 'function' ? ctx.getCo() : (val('f_company') || '');
+    const co = typeof ctx.getCo === 'function' ? ctx.getCo() : ((isKioskInd ? val('ik_company') : val('f_company')) || '');
     const ind = typeof ctx.getInd === 'function' ? ctx.getInd() : '';
     const aliasKind = kind === 'truck_owner' ? 'supplier' : kind;
     const aliasMatch = typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias(aliasKind, rawVal, co, ind) : '';
-    const candidates = aliasMatch ? [] : getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom });
+    const candidates = aliasMatch ? [] : getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom || isKioskInd });
     const match = aliasMatch || findNearPartyMatch(rawVal, candidates, { kind: aliasKind, company: co, ind });
     if (!match) { hideBar(); return false; }
 
@@ -116320,9 +116743,12 @@
   function syncFormPartyTypoHints(host, ctx) {
     if (!host || !host.isConnected) return;
     const effCtx = ctx || host._partyTypoCtx || {};
+    const isKioskInd = Boolean(effCtx.isKioskInd || host.id === 'kioskIndForm');
     const selStr = effCtx.isDomainModal
       ? '#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender, #ide_property, #ide_outlet, #ide_cashier, #ide_producer'
-      : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner, #f_site, #f_staff';
+      : (isKioskInd
+          ? '#ik_client, #ik_tenant, #ik_customer, #ik_guest, #ik_carrier, #ik_vendor, #ik_supplier, #ik_property, #ik_outlet, #ik_lender, #ik_partner'
+          : '#f_customer, #f_supplier, #f_siteowner, #f_truckowner, #f_site, #f_staff');
     host.querySelectorAll(selStr).forEach(el => syncPartyTypoForInput(el, effCtx));
   }
 
@@ -116335,6 +116761,34 @@
       if (!host.isConnected || FORM_UI.hydrating || STATE.saving) return;
       syncFormPartyTypoHints(host);
     }, NEAR_COPY_LIVE_DELAY_MS);
+  }
+
+  function flushKioskPartyTypoGuard(host, opts = {}) {
+    if (partyTypoTimer) { clearTimeout(partyTypoTimer); partyTypoTimer = 0; }
+    if (!host || !host.isConnected) return true;
+    const effCtx = host._partyTypoCtx || { isKiosk: true, isKioskInd: host.id === 'kioskIndForm' };
+    syncFormPartyTypoHints(host, effCtx);
+    if (host.id === 'kioskFormBody' && typeof recalcForm === 'function') recalcForm();
+    if (typeof updateKioskLiveThermalPreview === 'function') updateKioskLiveThermalPreview();
+    if (opts && opts.flushOnly) return true;
+    const unresolvedBar = host.querySelector('.party-typo-bar:not([hidden])');
+    if (unresolvedBar) {
+      try {
+        unresolvedBar.scrollIntoView({ behavior: (typeof navigator !== 'undefined' && navigator.webdriver) ? 'auto' : 'smooth', block: 'nearest' });
+      } catch (_) {}
+      unresolvedBar.classList.remove('is-jump-flash');
+      void unresolvedBar.offsetWidth;
+      unresolvedBar.classList.add('is-jump-flash');
+      const useBtn = unresolvedBar.querySelector('.party-typo-use-btn');
+      if (useBtn) {
+        try { useBtn.focus({ preventScroll: true }); } catch (_) {}
+      }
+      if (typeof toast === 'function') {
+        toast('Resolve the suggested name before printing or posting.', 'warn');
+      }
+      return false;
+    }
+    return true;
   }
 
   let _ncPeekAnchorEl = null;
@@ -116788,17 +117242,18 @@
     host._partyTypoCtx = ctx || {};
     if (host.dataset.partyTypoWired === '1') return;
     host.dataset.partyTypoWired = '1';
-    const isTargetInp = el => Boolean(el && el.id && resolvePartyFieldKind(el, Boolean((host._partyTypoCtx || {}).isDomainModal), typeof (host._partyTypoCtx || {}).getModalForm === 'function' ? host._partyTypoCtx.getModalForm() : ''));
+    const isKioskIndCtx = () => Boolean((host._partyTypoCtx || {}).isKioskInd || host.id === 'kioskIndForm');
+    const isTargetInp = el => Boolean(el && el.id && resolvePartyFieldKind(el, Boolean((host._partyTypoCtx || {}).isDomainModal), typeof (host._partyTypoCtx || {}).getModalForm === 'function' ? host._partyTypoCtx.getModalForm() : '', isKioskIndCtx()));
     host.addEventListener('input', ev => {
       if (FORM_UI.hydrating) return;
       const el = ev.target;
       if (!isTargetInp(el)) return;
-      const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+      const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.closest('.kiosk-ind-field') || el.parentElement;
       const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
       if (bar && norm(el.value) !== bar.dataset.typedNorm) {
         bar.hidden = true;
       }
-      if (!host._partyTypoCtx.isDomainModal && FORM_UI.postAttempted) {
+      if (!host._partyTypoCtx.isDomainModal && !isKioskIndCtx() && FORM_UI.postAttempted) {
         syncPartyTypoForInput(el, host._partyTypoCtx);
       } else {
         schedulePartyTypoCheck(host);
@@ -116814,7 +117269,7 @@
       if (!isTargetInp(el)) return;
       setTimeout(() => {
         if (!el.isConnected || FORM_UI.hydrating || document.activeElement === el) return;
-        const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.parentElement;
+        const wrap = el.closest('.form-field') || el.closest('.ide-fld-card') || el.closest('.kiosk-ind-field') || el.parentElement;
         const bar = wrap && wrap.querySelector(`.party-typo-bar[data-party-typo-for="${el.id}"]`);
         if (bar && bar.contains(document.activeElement)) return;
         syncPartyTypoForInput(el, host._partyTypoCtx);
@@ -116879,14 +117334,19 @@
         curBar.dataset.typedNorm = '';
       }
       const isDom = Boolean((host._partyTypoCtx || {}).isDomainModal);
-      if (!isDom) FORM_UI.userInteracted = true;
+      const isKioskInd = isKioskIndCtx();
+      const isKiosk = Boolean((host._partyTypoCtx || {}).isKiosk || isKioskInd || host.id === 'kioskFormBody');
+      if (!isDom && !isKioskInd) FORM_UI.userInteracted = true;
       inpEl.value = nextName;
       try { inpEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
       try { inpEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
-      if (!isDom && NEAR_COPY_LIVE_FORMS.includes(STATE.modalForm) && $('wrap_nearcopyok')) {
+      if (!isDom && !isKioskInd && NEAR_COPY_LIVE_FORMS.includes(STATE.modalForm) && $('wrap_nearcopyok')) {
         if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
         nearCopyLiveTimer = 0;
         try { validateAndBuild({ skipRecalc: false, preview: true }); } catch (_) {}
+      }
+      if (isKiosk && typeof updateKioskLiveThermalPreview === 'function') {
+        try { updateKioskLiveThermalPreview(); } catch (_) {}
       }
       try { inpEl.focus({ preventScroll: true }); } catch (_) {}
     });
@@ -145788,10 +146248,10 @@
       const hit = catalog.find(c => c.name.toLowerCase() === n.toLowerCase());
       return hit && hit.industry === String(STATE.company).slice(9);
     });
-    if (!allowedCos.includes(STATE.company) && !isPermittedIndScope) STATE.company = allowedCos[0];
+    if (!STATE.kioskLocked && !allowedCos.includes(STATE.company) && !isPermittedIndScope) STATE.company = allowedCos[0];
     const activeIndNow = getActiveIndustry(STATE.company);
-    let compatViewNow = resolveIndustryCompatibleView(STATE.view, activeIndNow);
-    if (!canViewView(compatViewNow, user)) {
+    let compatViewNow = STATE.kioskLocked ? 'kiosks' : resolveIndustryCompatibleView(STATE.view, activeIndNow);
+    if (!STATE.kioskLocked && !canViewView(compatViewNow, user)) {
       const curHubNow = VIEW_TO_HUB[compatViewNow];
       if (curHubNow && canViewHub(curHubNow, user)) {
         compatViewNow = resolveHubView(curHubNow, user);
@@ -145832,7 +146292,7 @@
       : `All Assigned (${mfgAllowed.length})`;
 
     syncSidebarHubVisibilityDom(user);
-    if (!canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
+    if (!STATE.kioskLocked && !canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
 
     if (STATE.pbiPage && !canAccessPbiPage(STATE.pbiPage, user)) {
       STATE.pbiPage = 'p01_overview';
@@ -146533,12 +146993,20 @@
         }
       } catch (_) {}
       const logoutTok = _edgeSessionToken || '';
+      const logoutEpoch = _authSessionEpoch;
       const serverOn = hasServerApi();
       const logoutSeat = (() => {
         try { const u = activeUser(); return u ? String(u.id || u.email || '') : ''; } catch (_) { return ''; }
       })();
       const sendLogout = () => {
         if (!serverOn) return;
+        if (STATE.authed || _authSessionEpoch !== logoutEpoch) {
+          if (!logoutTok) return;
+          try {
+            fetch('./api/auth/logout', { method: 'POST', credentials: 'omit', headers: { 'X-ISABI-Session': logoutTok } }).catch(() => {});
+          } catch (_) {}
+          return;
+        }
         try {
           const hdrs = {};
           if (logoutTok) hdrs['X-ISABI-Session'] = logoutTok;
@@ -150351,16 +150819,16 @@
     const allowedCos = allowedCompanyNames();
     const cat = getCompanyCatalog();
     const indCos = cat.filter(c => c.industry === activeInd && (isOwner(activeUser()) || allowedCos.some(a => a.toLowerCase() === c.name.toLowerCase()))).map(c => c.name);
-    const entityOptions = indCos.length ? indCos : [defCo || 'Bdeir Holding'];
+    const entityOptions = indCos.length ? indCos : [defCo || COMPANY_BU_MATCH[STATE.company] || (cat.find(c => c.industry === activeInd) || {}).name || 'Bdeir Holding'];
     const curCo = entityOptions.includes(defCo) ? defCo : entityOptions[0];
     const inpStyle = 'padding:8px 10px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:13px;font-weight:600;width:100%';
     const roStyle = 'padding:8px 10px;border:1px solid var(--line,#E2E8F0);border-radius:6px;background:var(--bg,#F1F5F9);color:var(--ink,#0F172A);font-size:13px;font-weight:700;width:100%';
     const fld = (lbl, html, hint = '') => `
-      <label class="kiosk-ind-field" style="display:flex;flex-direction:column;gap:4px;padding:9px 11px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
+      <div class="kiosk-ind-field" style="display:flex;flex-direction:column;gap:4px;padding:9px 11px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
         <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${lbl}</span>
         ${html}
         ${hint ? `<span style="font-size:10.5px;color:var(--muted,#64748B)">${hint}</span>` : ''}
-      </label>
+      </div>
     `;
     const coSel = `<select id="ik_company" data-plain-options="1" style="${inpStyle}">${entityOptions.map(c => `<option value="${esc(c)}" ${c === curCo ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
     let gridHtml = '';
@@ -151131,6 +151599,10 @@
     };
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
 
+    const indFormHost = $('kioskIndForm');
+    if (indFormHost && typeof flushKioskPartyTypoGuard === 'function' && !flushKioskPartyTypoGuard(indFormHost)) {
+      return { ok: false, reason: 'party_typo' };
+    }
     const co = strV('ik_company') || defaultEntryCompany() || 'Bdeir Holding';
     const dt = strV('ik_date') || todayISO();
     const recId = strV('ik_id');
@@ -151571,6 +152043,10 @@
         const qcOk = await FORM_UI.commitQuickCatalogItem({ deferServerPost: true });
         if (!qcOk) return { ok: false, reason: 'catalog_item' };
       }
+    }
+    const mfgFormHost = $('kioskFormBody');
+    if (mfgFormHost && typeof flushKioskPartyTypoGuard === 'function' && !flushKioskPartyTypoGuard(mfgFormHost)) {
+      return { ok: false, reason: 'party_typo' };
     }
     cancelNearCopyLiveCheck();
     const { errors, fieldErrors, record, crKey, pendingCatalogAdds } = validateAndBuild({ deferCatalogAdds: true });
@@ -177730,9 +178206,9 @@
     const formType = resolveKioskFormType();
     STATE.modalForm = formType;
     const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', autoPrintOnPost: true, bleDeviceName: '' };
-    const defCo = defaultEntryCompany();
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    const defCo = defaultEntryCompany() || scopedCo || (getCompanyCatalog().find(c => (c.industry || 'Manufacturing') === activeInd) || {}).name || 'WTC';
     const allAllowedKeys = getAllowedCompanyKeys(activeUser());
     const indCoCatalogMap = {
       'Manufacturing': [
@@ -179854,6 +180330,7 @@
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(fid)) {
           FORM_UI.adminUnlocked[fid] = true;
         }
+        el._partyTypoDismissedSig = '';
         el.value = fval;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -180088,6 +180565,16 @@
             el.addEventListener('input', () => updateKioskLiveThermalPreview());
             el.addEventListener('change', () => updateKioskLiveThermalPreview());
           });
+          if (typeof wirePartyTypoHost === 'function') {
+            wirePartyTypoHost(indFormEl, {
+              getInd: () => getActiveIndustry(STATE.company),
+              getCo: () => val('ik_company') || defaultEntryCompany() || COMPANY_BU_MATCH[STATE.company] || STATE.company || '',
+              isEditMode: false,
+              isDomainModal: false,
+              isKiosk: true,
+              isKioskInd: true
+            });
+          }
         }
         container.querySelectorAll('[data-kiosk-ind-preset-field]').forEach(chip => {
           chip.addEventListener('click', () => {
@@ -180095,7 +180582,10 @@
             const fVal = chip.getAttribute('data-kiosk-ind-preset-val') || '';
             const target = fId ? $(fId) : null;
             if (target) {
+              target._partyTypoDismissedSig = '';
               target.value = fVal;
+              target.dispatchEvent(new Event('input', { bubbles: true }));
+              target.dispatchEvent(new Event('change', { bubbles: true }));
               updateKioskLiveThermalPreview();
             }
           });
@@ -180181,6 +180671,8 @@
       const openModalPrevBtn = $('kioskOpenModalPreviewBtn');
       if (openModalPrevBtn && window.MFG_PRINT) {
         openModalPrevBtn.addEventListener('click', () => {
+          const activeHost = $('kioskIndForm') || $('kioskFormBody');
+          if (activeHost && typeof flushKioskPartyTypoGuard === 'function') flushKioskPartyTypoGuard(activeHost, { flushOnly: true });
           const docType = STATE.activeKiosk === 'raw' ? 'raw' : (STATE.activeKiosk === 'fuel' ? 'fuel' : 'sales');
           const draft = buildDraftThermalRecordFromForm();
           window.MFG_PRINT.openThermalPreviewModal(draft, { docType });
@@ -180189,6 +180681,8 @@
       const printDraftBtn = $('kioskPrintDraftBtn');
       if (printDraftBtn && window.MFG_PRINT) {
         printDraftBtn.addEventListener('click', async () => {
+          const activeHost = $('kioskIndForm') || $('kioskFormBody');
+          if (activeHost && typeof flushKioskPartyTypoGuard === 'function' && !flushKioskPartyTypoGuard(activeHost)) return;
           const docType = STATE.activeKiosk === 'raw' ? 'raw' : (STATE.activeKiosk === 'fuel' ? 'fuel' : 'sales');
           const draft = buildDraftThermalRecordFromForm();
           const res = await window.MFG_PRINT.printThermalTicket(draft, { docType });
@@ -185436,11 +185930,13 @@
         STATE.kioskNightSleep = savedStationCfg.kioskNightSleep !== false;
       }
     }
+    const qKioskRaw = String(qKiosk || '').trim().toLowerCase();
+    const normQKiosk = qKioskRaw === 'plant' ? 'sales' : qKioskRaw;
     const isAndroidKioskUa = /ISABIKiosk\//i.test(navigator.userAgent || '');
-    const hasValidQKiosk = !!(qKiosk && ['sales', 'raw', 'fuel', 'attendance'].includes(qKiosk.toLowerCase()));
+    const hasValidQKiosk = !!(normQKiosk && ['sales', 'raw', 'fuel', 'attendance'].includes(normQKiosk));
     const dedicatedKioskBoot = !IS_AUTOMATED_TEST && (hasValidQKiosk || (isAndroidKioskUa && savedStationCfg && savedStationCfg.kioskLocked));
     if (hasValidQKiosk) {
-      STATE.activeKiosk = qKiosk.toLowerCase();
+      STATE.activeKiosk = normQKiosk;
       STATE.view = 'kiosks';
     } else if (dedicatedKioskBoot && savedStationCfg && ['sales', 'raw', 'fuel', 'attendance'].includes(String(savedStationCfg.activeKiosk || ''))) {
       STATE.activeKiosk = savedStationCfg.activeKiosk;
@@ -187148,6 +187644,8 @@
         findNearPartyMatch,
         getScopedPartyCandidates,
         resolveConfirmedPartyAlias,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
         isPartyHygieneDismissed,
         nearCopyRowUsd,
         nearCopySumUsd,
@@ -187183,6 +187681,8 @@
         getPartyHygieneRules,
         savePartyHygieneDecision,
         resolveConfirmedPartyAlias,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
         isPartyHygieneDismissed,
         getScopedPartyCandidates,
         openEntryModal,
@@ -189920,6 +190420,7 @@
             : (p.days_left != null ? Number(p.days_left) : (endIso ? daysBetween(SEED_DATE, endIso) : 0));
           return {
             policyNo: p.policy_no || p.id,
+            date: String(p.date || p.start_date || '').slice(0, 10),
             insured: p.insured || p.client,
             carrier: p.carrier,
             line: p.line,
@@ -189942,6 +190443,8 @@
           const hasRealRem = remsForCarrier.length > 0;
           return {
             carrier: c.carrier,
+            period: c.period || '',
+            date: c.date || '',
             policies: c.policies_count != null ? Number(c.policies_count) : (polsForCarrier.length || (demo ? 6 : 0)),
             gwpUsd: round2(gwp),
             commUsd: comm,
@@ -190164,6 +190667,8 @@
     savePartyHygieneDecision: typeof savePartyHygieneDecision === 'function' ? savePartyHygieneDecision : null,
     getPartyHygieneRules: typeof getPartyHygieneRules === 'function' ? getPartyHygieneRules : null,
     resolveConfirmedPartyAlias: typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias : null,
+    canonicalizePartyByHygiene: typeof canonicalizePartyByHygiene === 'function' ? canonicalizePartyByHygiene : null,
+    getConfirmedAliasesForCanonical: typeof getConfirmedAliasesForCanonical === 'function' ? getConfirmedAliasesForCanonical : null,
     buildMobRowPeekShareSummary,
     buildRecordInspectorShareSummary,
     buildActiveAgreementsShareSummary,

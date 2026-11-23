@@ -14268,7 +14268,13 @@
       "Unsaved edits on this record. Save changes first, or press again to discard and move.": "توجد تعديلات غير محفوظة على هذا السجل. احفظها أولاً أو اضغط مجدداً للتجاهل والانتقال.",
       "Renewal": "التجديد",
       "Facility": "التسهيل",
-      "APR": "الفائدة السنوية"
+      "APR": "الفائدة السنوية",
+      "Only a supervisor can remove an included alias from a sent mark.": "فقط المشرف يمكنه إزالة اسم بديل مشمول من علامة الإرسال.",
+      "Combined aliases:": "الأسماء البديلة المدمجة:",
+      "Held separate while marked as sent:": "مُبقى منفصلاً أثناء التعليم كمُرسَل:",
+      "Held separate from": "مُبقى منفصلاً عن",
+      "while marked as sent": "أثناء التعليم كمُرسَل",
+      "Resolve the suggested name before printing or posting.": "احسم الاسم المقترح قبل الطباعة أو الترحيل."
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -28518,7 +28524,13 @@
       "Unsaved edits on this record. Save changes first, or press again to discard and move.": "Modifications non enregistrées sur cette fiche. Enregistrez d'abord ou appuyez de nouveau pour ignorer et passer.",
       "Renewal": "Renouvellement",
       "Facility": "Ligne de crédit",
-      "APR": "Taux annuel"
+      "APR": "Taux annuel",
+      "Only a supervisor can remove an included alias from a sent mark.": "Seul un superviseur peut retirer un alias inclus d'une marque d'envoi.",
+      "Combined aliases:": "Alias combinés :",
+      "Held separate while marked as sent:": "Maintenu séparé tant qu'il est marqué envoyé :",
+      "Held separate from": "Maintenu séparé de",
+      "while marked as sent": "tant que marqué envoyé",
+      "Resolve the suggested name before printing or posting.": "Validez le nom suggéré avant d'imprimer ou d'enregistrer."
     }
   };
 

@@ -1247,6 +1247,220 @@
     return s.slice(0, 7);
   }
 
+  function _rdlStmtLock() {
+    return (typeof window !== 'undefined' && window.MFG_STMT_LOCK) ? window.MFG_STMT_LOCK : null;
+  }
+
+  function _rdlResolveRollup(ind, partyType, rawName, company, recordDate, rowCompany) {
+    const raw = String(rawName == null ? '' : rawName).trim();
+    if (!raw) return '';
+    const L = _rdlStmtLock();
+    if (L && typeof L.resolveRollupParty === 'function') {
+      const r = L.resolveRollupParty({
+        industry: ind || 'Manufacturing',
+        company: company || '',
+        rowCompany: rowCompany || '',
+        partyType: partyType || 'customer',
+        rawName: raw,
+        recordDate: recordDate || ''
+      });
+      return (r && r.party) ? r.party : raw;
+    }
+    const E = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    if (E && typeof E.canonicalizePartyByHygiene === 'function') {
+      return E.canonicalizePartyByHygiene(partyType || 'customer', raw, company || '', ind || 'Manufacturing') || raw;
+    }
+    return raw;
+  }
+
+  function _rdlResolveFilterName(ctx, partyType, selectedName, pool) {
+    const sel = String(selectedName == null ? '' : selectedName).trim();
+    if (!sel || sel === 'ALL') return sel;
+    if (Array.isArray(pool) && pool.includes(sel)) return sel;
+    const mapped = _rdlResolveRollup(ctx && ctx.ind, partyType, sel, ctx && ctx.co, '');
+    if (mapped && Array.isArray(pool) && pool.includes(mapped)) return mapped;
+    return sel;
+  }
+
+  function _rdlRollupRecordParty(r, ind, co, basis, partyType, field) {
+    if (!r || !r[field]) return;
+    const rawVal = r[field];
+    const rawKey = `${field}_raw`;
+    if (r[rawKey] === undefined) r[rawKey] = rawVal;
+    const eff = _rdlResolveRollup(ind, partyType, rawVal, co, rowDate(r, basis), r.co || r.company || co);
+    if (eff) r[field] = eff;
+  }
+
+  function _rdlResolveSubAccountFilter(ctx, p) {
+    const subPool = p.account === '411' ? ctx.customers : (p.account === '401' ? ctx.suppliers : (p.account === '421' ? ctx.staff : [...ctx.customers, ...ctx.suppliers, ...ctx.staff]));
+    let effSub = p.subAccount;
+    if (effSub && effSub !== 'ALL' && !subPool.includes(effSub)) {
+      const tryKinds = p.account === '401' ? ['supplier'] : (p.account === '421' ? ['staff'] : (p.account === '411' ? ['customer'] : ['customer', 'supplier', 'staff']));
+      for (const tkKind of tryKinds) {
+        const candSub = _rdlResolveFilterName(ctx, tkKind, effSub, subPool);
+        if (candSub !== effSub) { effSub = candSub; break; }
+      }
+    }
+    return effSub;
+  }
+
+  function _rdlApplyThreeLegRollup(bySup, legRes, ctx, asof, supFilter, includePaid, lastDateByNorm) {
+    if (!legRes || !legRes.byNorm) return;
+    if (legRes.withPartyResolver) {
+      bySup.clear();
+      legRes.byNorm.forEach((lr, sk) => {
+        const s = String((lr && lr.supplier) || sk || '').trim();
+        if (!s) return;
+        if (supFilter && supFilter !== 'ALL' && s.toLowerCase() !== String(supFilter).toLowerCase()) return;
+        const rmUsd = Number(lr.quarry_cr || 0);
+        const haulUsd = Number(lr.trans_cr || 0);
+        const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
+        const billed = rmUsd + haulUsd + expUsd;
+        const paid = includePaid ? (Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0)) : 0;
+        const curLast = (lastDateByNorm && lastDateByNorm.get(sk)) || asof || '2026-11-04';
+        const ex = bySup.get(s);
+        if (ex) {
+          ex.rmUsd += rmUsd;
+          ex.haulUsd += haulUsd;
+          ex.expUsd += expUsd;
+          ex.billed += billed;
+          ex.paid += paid;
+          if (curLast > ex.lastDate) ex.lastDate = curLast;
+        } else {
+          bySup.set(s, { supplier: s, rmUsd, haulUsd, expUsd, billed, paid, lastDate: curLast });
+        }
+      });
+      return;
+    }
+    const preBySup = new Map(bySup);
+    const rowsByRawSup = new Map();
+    const addRawMap = r => {
+      const rRaw = r && (r.supplier_raw || r.supplier);
+      if (!rRaw) return;
+      const d = rowDate(r, ctx.basis);
+      if (!d || d > asof) return;
+      let arr = rowsByRawSup.get(rRaw);
+      if (!arr) { arr = []; rowsByRawSup.set(rRaw, arr); }
+      arr.push(r.supplier);
+    };
+    (ctx.apRmLedgerAll || ctx.rmAll).forEach(addRawMap);
+    ctx.expAll.forEach(r => { if (r && r.is_ap_credit) addRawMap(r); });
+    bySup.clear();
+    const usedPreKeys = new Set();
+    legRes.byNorm.forEach((lr, sk) => {
+      const rawS = lr.supplier || sk;
+      const mappedArr = rowsByRawSup.get(rawS) || [];
+      const uniqMapped = Array.from(new Set(mappedArr.filter(Boolean)));
+      if (uniqMapped.length > 1) {
+        uniqMapped.forEach(ms => {
+          if (supFilter && supFilter !== 'ALL' && String(ms).toLowerCase() !== String(supFilter).toLowerCase()) return;
+          if (!usedPreKeys.has(ms) && preBySup.has(ms)) {
+            usedPreKeys.add(ms);
+            bySup.set(ms, Object.assign({}, preBySup.get(ms)));
+          }
+        });
+        return;
+      }
+      const s = (uniqMapped.length === 1) ? uniqMapped[0] : _rdlResolveRollup('Manufacturing', 'supplier', rawS, ctx.co, '');
+      if (supFilter && supFilter !== 'ALL' && String(s).toLowerCase() !== String(supFilter).toLowerCase()) return;
+      const rmUsd = Number(lr.quarry_cr || 0);
+      const haulUsd = Number(lr.trans_cr || 0);
+      const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
+      const billed = rmUsd + haulUsd + expUsd;
+      const paid = includePaid ? (Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0)) : 0;
+      const curLast = (lastDateByNorm && lastDateByNorm.get(sk)) || asof || '2026-11-04';
+      const ex = bySup.get(s);
+      if (ex) {
+        ex.rmUsd += rmUsd;
+        ex.haulUsd += haulUsd;
+        ex.expUsd += expUsd;
+        ex.billed += billed;
+        ex.paid += paid;
+        if (curLast > ex.lastDate) ex.lastDate = curLast;
+      } else {
+        bySup.set(s, { supplier: s, rmUsd, haulUsd, expUsd, billed, paid, lastDate: curLast });
+      }
+    });
+  }
+
+  function _rdlRollupInsurancePolicies(policies, co) {
+    return (policies || []).map(p => {
+      if (!p || typeof p !== 'object') return p;
+      const insEff = _rdlResolveRollup('Insurance & Brokerage', 'customer', p.insured, co, p.date || '') || p.insured;
+      const carEff = _rdlResolveRollup('Insurance & Brokerage', 'supplier', p.carrier, co, p.date || '') || p.carrier;
+      if (insEff === p.insured && carEff === p.carrier) return p;
+      return Object.assign({}, p, { insured: insEff, carrier: carEff });
+    });
+  }
+
+  function _rdlRollupCarrierMatrix(carrierMatrix, co, rawPolicies, rolledPolicies) {
+    const cRowsMap = new Map();
+    const splitByRaw = new Map();
+    if (Array.isArray(rawPolicies) && Array.isArray(rolledPolicies) && rawPolicies.length === rolledPolicies.length) {
+      for (let i = 0; i < rawPolicies.length; i++) {
+        const rp = rawPolicies[i];
+        const ep = rolledPolicies[i];
+        if (!rp || !ep) continue;
+        const rk = String(rp.carrier || '').trim().toLowerCase();
+        const ekLabel = String(ep.carrier || rp.carrier || '').trim();
+        if (!rk || !ekLabel) continue;
+        let sm = splitByRaw.get(rk);
+        if (!sm) { sm = new Map(); splitByRaw.set(rk, sm); }
+        const ek = ekLabel.toLowerCase();
+        const prev = sm.get(ek) || { label: ekLabel, weight: 0 };
+        prev.weight += Math.abs(Number(ep.gwpUsd || 0)) || 1;
+        sm.set(ek, prev);
+      }
+    }
+    const mergeSlice = (carEff, part) => {
+      const key = String(carEff || '').trim().toLowerCase();
+      const ex = cRowsMap.get(key);
+      if (ex) {
+        ex.policies += Number(part.policies || 0);
+        ex.gwpUsd += Number(part.gwpUsd || 0);
+        ex.commUsd += Number(part.commUsd || 0);
+        ex.netPayableUsd += Number(part.netPayableUsd || 0);
+        ex.remittedUsd += Number(part.remittedUsd || 0);
+        ex.balanceDueUsd += Number(part.balanceDueUsd || 0);
+      } else {
+        cRowsMap.set(key, Object.assign({}, part, { carrier: carEff }));
+      }
+    };
+    (carrierMatrix || []).forEach(c => {
+      const rk = String((c && c.carrier) || '').trim().toLowerCase();
+      const sm = splitByRaw.get(rk);
+      if (sm && sm.size === 1) {
+        const sole = Array.from(sm.values())[0];
+        mergeSlice(sole.label, c);
+        return;
+      }
+      if (sm && sm.size > 1) {
+        const targets = Array.from(sm.values());
+        const totW = targets.reduce((s, t) => s + t.weight, 0) || 1;
+        let remPol = Math.round(Number(c.policies || 0));
+        targets.forEach((t, idx) => {
+          const share = t.weight / totW;
+          const pCnt = idx === targets.length - 1 ? Math.max(0, remPol) : Math.round(Number(c.policies || 0) * share);
+          remPol -= pCnt;
+          mergeSlice(t.label, Object.assign({}, c, {
+            policies: pCnt,
+            gwpUsd: Number(c.gwpUsd || 0) * share,
+            commUsd: Number(c.commUsd || 0) * share,
+            netPayableUsd: Number(c.netPayableUsd || 0) * share,
+            remittedUsd: Number(c.remittedUsd || 0) * share,
+            balanceDueUsd: Number(c.balanceDueUsd || 0) * share
+          }));
+        });
+        return;
+      }
+      const pStr = String((c && c.period) || '').trim();
+      const repDate = (c && c.date) ? String(c.date).slice(0, 10) : (/^\d{4}-\d{2}$/.test(pStr) ? `${pStr}-01` : '');
+      const carEff = _rdlResolveRollup('Insurance & Brokerage', 'supplier', c.carrier, co, repDate) || c.carrier;
+      mergeSlice(carEff, c);
+    });
+    return Array.from(cRowsMap.values());
+  }
+
   let _cachedCoKey = '';
   let _cachedCtxData = null;
 
@@ -1272,7 +1486,10 @@
     const dslFe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
     const dslSig = `${(dslFe && typeof dslFe.rightsSig === 'function') ? dslFe.rightsSig() : 'x'}:`
       + (allowedCos || [co, 'WTC', 'BBConstruction', 'Lions Transport']).map(c => (dslGate(c) ? '1' : '0')).join('');
-    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|seat:${(STATE && STATE.activeUserIdx) != null ? STATE.activeUserIdx : ''}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|sm:${(recs.staff_members || []).length}:${(recs.employments || []).length}|dsl:${dslSig}`;
+    const rdlLock = _rdlStmtLock();
+    const phSig = (rdlLock && typeof rdlLock.partyHygieneSig === 'function') ? rdlLock.partyHygieneSig(ind) : '0';
+    const wmSig = (rdlLock && typeof rdlLock.watermarkSig === 'function') ? rdlLock.watermarkSig(ind) : '0';
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|seat:${(STATE && STATE.activeUserIdx) != null ? STATE.activeUserIdx : ''}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|ph:${phSig}|wm:${wmSig}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|sm:${(recs.staff_members || []).length}:${(recs.employments || []).length}|dsl:${dslSig}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -1713,6 +1930,16 @@
 
       const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
       const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+      const attAll = rawAtt.map(a => Object.assign({}, a));
+      salesAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'customer', 'customer'));
+      receiptLedgerAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'customer', 'customer'));
+      expAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'supplier', 'supplier'));
+      apRmLegsAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'supplier', 'supplier'));
+      rmAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'supplier', 'supplier'));
+      settlementLedgerAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'supplier', 'supplier'));
+      vatPaidAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'supplier', 'supplier'));
+      payAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'staff', 'staff'));
+      attAll.forEach(r => _rdlRollupRecordParty(r, ind, co, basis, 'staff', 'staff'));
       const uniq = (arr, fallbackFreqMap) => {
         const counts = new Map();
         const out = [];
@@ -1772,7 +1999,8 @@
         const key = String(vi.invoice_no || '').trim();
         if (!key) return;
         const byInv = salesByVatInv.get(key) || [];
-        const byCust = vi.customer ? (salesByCust.get(vi.customer) || []) : [];
+        const effViCust = vi.customer ? _rdlResolveRollup(ind, 'customer', vi.customer, co, rowDate(vi, basis), vi.company || co) : '';
+        const byCust = vi.customer ? (salesByCust.get(effViCust) || salesByCust.get(vi.customer) || []) : [];
         let matchingRows;
         if (!byCust.length) {
           matchingRows = byInv;
@@ -1998,7 +2226,7 @@
         recs,
         coaAccounts: getCoaAccountsForInd(ind),
         domainTerms: getDomainRdlTerms(ind),
-        salesAll, expAll, payAll, attAll: rawAtt, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
+        salesAll, expAll, payAll, attAll, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
         invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById,
@@ -3277,9 +3505,10 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Sub-Account Ledger Restricted', 'Sub-account ledger requires Cash Flow & General Ledger permissions');
     }
     const p = ctx.rdl.params;
+    const effSub = _rdlResolveSubAccountFilter(ctx, p);
     const jes = buildJournalEntries(ctx, p.to).filter(j => {
       if (p.account && p.account !== 'ALL' && j.acct_code !== p.account) return false;
-      if (p.subAccount && p.subAccount !== 'ALL' && j.sub_account !== p.subAccount) return false;
+      if (effSub && effSub !== 'ALL' && j.sub_account !== effSub) return false;
       return true;
     }).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -3351,11 +3580,41 @@
     `;
   }
 
+  function _rdlMergeStaffEarnRows(rows, ctx, effStaffFilter) {
+    const outMap = new Map();
+    (rows || []).forEach(sr => {
+      if (!sr) return;
+      if (!coMatch(sr.company || 'WTC', ctx.co, null)) return;
+      const effStaff = _rdlResolveRollup(ctx.ind, 'staff', sr.staff, ctx.co, '', sr.company || ctx.co) || sr.staff;
+      if (effStaffFilter && effStaffFilter !== 'ALL' && effStaff !== effStaffFilter) return;
+      if (!(Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005)) return;
+      const k = `${String(sr.company || 'WTC').toLowerCase()}|${String(effStaff || '').toLowerCase()}`;
+      const ex = outMap.get(k);
+      if (ex) {
+        ex.base = (ex.base || 0) + Number(sr.base || 0);
+        ex.reimb = (ex.reimb || 0) + Number(sr.reimb || 0);
+        ex.ot_pay = (ex.ot_pay || 0) + Number(sr.ot_pay || 0);
+        ex.site_allow = (ex.site_allow || 0) + Number(sr.site_allow || 0);
+        ex.extras = (ex.extras || 0) + Number(sr.extras || 0);
+        ex.late_ded = (ex.late_ded || 0) + Number(sr.late_ded || 0);
+        ex.abs_ded = (ex.abs_ded || 0) + Number(sr.abs_ded || 0);
+        ex.ded = (ex.ded || 0) + Number(sr.ded || 0);
+        ex.earnings = (ex.earnings || 0) + Number(sr.earnings || 0);
+        ex.paid = (ex.paid || 0) + Number(sr.paid || 0);
+        ex.balance = (ex.balance || 0) + Number(sr.balance || 0);
+      } else {
+        outMap.set(k, Object.assign({}, sr, { staff: effStaff }));
+      }
+    });
+    return Array.from(outMap.values());
+  }
+
   function render08SalesRegister(meta, ctx) {
     const p = ctx.rdl.params;
+    const effCust08 = _rdlResolveFilterName(ctx, 'customer', p.customer, ctx.customers);
     const rows = ctx.salesAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-      if (p.customer && p.customer !== 'ALL' && r.customer !== p.customer) return false;
+      if (effCust08 && effCust08 !== 'ALL' && r.customer !== effCust08) return false;
       if (p.product && p.product !== 'ALL' && r.product !== p.product) return false;
       if (p.site && p.site !== 'ALL' && r.site !== p.site) return false;
       return true;
@@ -3435,9 +3694,10 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Expense Register', 'Restricted by seat permissions');
     }
     const p = ctx.rdl.params;
+    const effSup09 = _rdlResolveFilterName(ctx, 'supplier', p.supplier, ctx.suppliers);
     const rows = ctx.expAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-      if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+      if (effSup09 && effSup09 !== 'ALL' && r.supplier !== effSup09) return false;
       if (p.category && p.category !== 'ALL' && r.category !== p.category) return false;
       return true;
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
@@ -3536,9 +3796,10 @@
       const alreadyHas = fn && s.toLowerCase().includes('(' + fn.toLowerCase() + ')');
       return esc(s || '-') + (fn && !alreadyHas ? ` <small style="font-weight:400;color:#64748b">(${esc(fn)})</small>` : '');
     };
+    const effStaff10 = _rdlResolveFilterName(ctx, 'staff', p.staff, ctx.staff);
     const rows = ctx.payAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-      if (p.staff && p.staff !== 'ALL' && r.staff !== p.staff) return false;
+      if (effStaff10 && effStaff10 !== 'ALL' && r.staff !== effStaff10) return false;
       return true;
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
@@ -3554,12 +3815,7 @@
     const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
       ? window.__mfgComputeStaffPayrollRegister({ company: rdlPayCo, ignoreSearch: true, activeRange: { from: p.from, to: p.to }, inProgressPick: null })
       : null;
-    const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
-      if (!sr) return false;
-      if (!coMatch(sr.company || 'WTC', ctx.co, null)) return false;
-      if (p.staff && p.staff !== 'ALL' && sr.staff !== p.staff) return false;
-      return Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005;
-    });
+    const staffEarnRows = _rdlMergeStaffEarnRows(regCalc && regCalc.staffRows, ctx, effStaff10);
 
     const sumBase = staffEarnRows.reduce((s, r) => s + Number(r.base || 0), 0);
     const sumReimb = staffEarnRows.reduce((s, r) => s + Number(r.reimb || 0), 0);
@@ -3615,7 +3871,7 @@
         if (/^(?:config|extra|site|vac|sick)/i.test(String(a.type || ''))) continue;
         const dStr = rowDate(a, ctx.basis);
         if (!inWindow(dStr, p.from, p.to)) continue;
-        if (p.staff && p.staff !== 'ALL' && normStaffNm(a.staff) !== normStaffNm(p.staff)) continue;
+        if (effStaff10 && effStaff10 !== 'ALL' && normStaffNm(a.staff) !== normStaffNm(effStaff10)) continue;
         if (!coMatch(a.company || ctxSingleCo || 'WTC', ctx.co, null)) continue;
         const hasStamped = Boolean(a.rule_audit_late || a.rule_audit_ot);
         const hasEvent = hasStamped || Number(a.overtime_hours || 0) > 0 || Number(a.late_hours || 0) > 0 || Number(a.leave_days || 0) > 0 || Boolean(a.in_time || a.out_time);
@@ -3989,9 +4245,10 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Raw Material Intake', 'Restricted by seat permissions');
     }
     const p = ctx.rdl.params;
+    const effSup11 = _rdlResolveFilterName(ctx, 'supplier', p.supplier, ctx.suppliers);
     const rows = ctx.rmAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-      if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+      if (effSup11 && effSup11 !== 'ALL' && r.supplier !== effSup11) return false;
       return true;
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
@@ -4117,7 +4374,7 @@
   function render13AgedReceivables(meta, ctx) {
     const lAr13 = _rdlSeatLens(ctx);
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
-    const custFilter = ctx.rdl.params.customer;
+    const custFilter = _rdlResolveFilterName(ctx, 'customer', ctx.rdl.params.customer, ctx.customers);
     const asofMs = new Date(asof + 'T00:00:00Z').getTime() || Date.now();
 
     const byCust = new Map();
@@ -4255,10 +4512,57 @@
     const to = spec.confirmedThrough;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) return '';
     const mark = L.get(spec);
+    const metaR = (typeof L.getRollupMeta === 'function')
+      ? L.getRollupMeta({ industry: ctx.ind || 'Manufacturing', company: ctx.co || 'ALL', partyType, partyName })
+      : null;
+    const activeAliases = (metaR && Array.isArray(metaR.mergedAliases)) ? metaR.mergedAliases : [];
+    const frozenAliases = (metaR && Array.isArray(metaR.frozenAliases)) ? metaR.frozenAliases : [];
+    const shownByNorm = new Map();
+    frozenAliases.forEach(a => {
+      const k = String(a || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (k && !shownByNorm.has(k)) shownByNorm.set(k, String(a).trim());
+    });
+    activeAliases.forEach(a => {
+      const k = String(a || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (k) shownByNorm.set(k, String(a).trim());
+    });
+    const activeNorms = Array.from(new Set(activeAliases.map(a => String(a || '').trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean))).sort();
+    const shownAliases = Array.from(shownByNorm.values()).sort((a, b) => a.localeCompare(b));
+    const lockableFrozen = !mark
+      ? ((metaR && Array.isArray(metaR.ownFrozenAliases)) ? metaR.ownFrozenAliases : [])
+      : frozenAliases;
+    const lockNormSet = new Set(activeNorms);
+    lockableFrozen.forEach(a => {
+      const k = String(a || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (k) lockNormSet.add(k);
+    });
+    const mergedForLock = Array.from(lockNormSet).sort();
+    const frozenAliasThrough = {};
+    if (metaR && metaR.frozenAliasThrough && typeof metaR.frozenAliasThrough === 'object') {
+      const activeNormSet = new Set(activeNorms);
+      Object.keys(metaR.frozenAliasThrough).forEach(k => {
+        const nk = String(k || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (nk && !activeNormSet.has(nk) && metaR.frozenAliasThrough[k]) frozenAliasThrough[nk] = metaR.frozenAliasThrough[k];
+      });
+    }
     const canMark = L.canMark();
     const canClear = L.canClear();
-    const payload = esc(encodeURIComponent(JSON.stringify(Object.assign({}, spec, { closingBalanceUsd: Math.round(Number(closingBal || 0) * 100) / 100 }))));
+    const payload = esc(encodeURIComponent(JSON.stringify(Object.assign({}, spec, {
+      closingBalanceUsd: Math.round(Number(closingBal || 0) * 100) / 100,
+      mergedAliases: mergedForLock,
+      activeMergedAliases: activeNorms,
+      mergedAliasThrough: frozenAliasThrough
+    }))));
     const isCust = partyType !== 'supplier';
+    const mergedNoteHtml = shownAliases.length
+      ? `<div class="rdl-sent-sub" data-stmt-merged-aliases="1"><span>Combined aliases:</span> <b data-no-i18n="1">${esc(shownAliases.join(', '))}</b></div>`
+      : '';
+    let heldNoteHtml = '';
+    if (metaR && metaR.heldAliases && metaR.heldAliases.length) {
+      heldNoteHtml = `<div class="rdl-sent-sub" data-stmt-held-aliases="1" style="color:#92400E;"><span>Held separate while marked as sent:</span> <b data-no-i18n="1">${esc(metaR.heldAliases.map(h => h.alias).join(', '))}</b></div>`;
+    } else if (metaR && metaR.heldFromCanonical) {
+      heldNoteHtml = `<div class="rdl-sent-sub" data-stmt-held-aliases="1" style="color:#92400E;"><span>Held separate from</span> <b data-no-i18n="1">${esc(metaR.heldFromCanonical.canonical)}</b> <span>while marked as sent</span></div>`;
+    }
     const markBtn = canMark
       ? `<button type="button" class="rdl-sent-btn" data-stmt-sent="mark" data-stmt-sent-spec="${payload}">${ic('lock')}<span>${mark && !mark.group ? 'Move the Sent Mark To' : 'Mark as Sent Through'}</span> <b data-no-i18n="1">${esc(to)}</b></button>`
       : '';
@@ -4270,6 +4574,7 @@
           <div class="rdl-sent-text">
             <div><span>${isCust ? 'Sent to the customer through' : 'Sent to the supplier through'}</span> <b data-no-i18n="1">${esc(mark.through)}</b>${mark.by ? ` <span class="rdl-sent-by" data-no-i18n="1">· ${esc(mark.by)}</span>` : ''}</div>
             <div class="rdl-sent-sub"><span>A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.</span></div>
+            ${mergedNoteHtml}${heldNoteHtml}
           </div>
           <div class="rdl-sent-actions">
             ${later ? markBtn : ''}
@@ -4283,6 +4588,7 @@
         <div class="rdl-sent-text">
           <div><span>Not marked as sent</span></div>
           <div class="rdl-sent-sub"><span>${isCust ? 'Once sent, mark it: a rate change or its undo then leaves this customer\'s records up to the end date as they are.' : 'Once sent, mark it: a rate change or its undo then leaves this supplier\'s records up to the end date as they are.'}</span></div>
+          ${mergedNoteHtml}${heldNoteHtml}
         </div>
         <div class="rdl-sent-actions">${markBtn}</div>
       </div>`;
@@ -4293,7 +4599,8 @@
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
+    const rawFilterCust = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
+    const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust, ctx.customers);
     const allCustRows = (ctx.arLedgerAll || ctx.salesAll)
       .filter(r => r.customer === custName && ((lSoa14.books && r.is_receipt_row) || r.is_credit))
       .sort((a, b) => rowDate(a, ctx.basis).localeCompare(rowDate(b, ctx.basis)));
@@ -4397,7 +4704,7 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Balances', 'Restricted by seat permissions');
     }
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
-    const supFilter = ctx.rdl.params.supplier;
+    const supFilter = _rdlResolveFilterName(ctx, 'supplier', ctx.rdl.params.supplier, ctx.suppliers);
     const bySup = new Map();
 
     const addSup = (sup, d, type, billed, paid) => {
@@ -4427,7 +4734,14 @@
     const seedCutRdl = (typeof SEED !== 'undefined' && SEED && SEED.generated_at) ? String(SEED.generated_at).slice(0, 10) : '2026-11-04';
     if (isMfg && (!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
       const coKey = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
-      const legRes = window.__mfgComputeThreeLegPayables({ company: coKey, ignorePeriod: true });
+      const legLock15 = _rdlStmtLock();
+      const legSig15 = `${ctx.co}|${(legLock15 && typeof legLock15.partyHygieneSig === 'function') ? legLock15.partyHygieneSig('Manufacturing') : '0'}|${(legLock15 && typeof legLock15.watermarkSig === 'function') ? legLock15.watermarkSig('Manufacturing') : '0'}`;
+      const legRes = window.__mfgComputeThreeLegPayables({
+        company: coKey,
+        ignorePeriod: true,
+        partySig: legSig15,
+        partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
+      });
       if (legRes && legRes.byNorm) {
         const lastDateByNorm = new Map();
         bySup.forEach((g, s) => {
@@ -4436,25 +4750,7 @@
           const prev = lastDateByNorm.get(ck) || '';
           if (g.lastDate && g.lastDate > prev) lastDateByNorm.set(ck, g.lastDate);
         });
-        bySup.clear();
-        legRes.byNorm.forEach((lr, sk) => {
-          const s = lr.supplier || sk;
-          if (supFilter && supFilter !== 'ALL' && String(s).toLowerCase() !== String(supFilter).toLowerCase()) return;
-          const rmUsd = Number(lr.quarry_cr || 0);
-          const haulUsd = Number(lr.trans_cr || 0);
-          const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
-          const billed = rmUsd + haulUsd + expUsd;
-          const paid = Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0);
-          bySup.set(s, {
-            supplier: s,
-            rmUsd,
-            haulUsd,
-            expUsd,
-            billed,
-            paid,
-            lastDate: lastDateByNorm.get(sk) || asof || '2026-11-04'
-          });
-        });
+        _rdlApplyThreeLegRollup(bySup, legRes, ctx, asof, supFilter, true, lastDateByNorm);
       }
     }
 
@@ -4524,7 +4820,8 @@
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+    const rawFilterSup = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+    const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
     const tx = [];
     (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
       if (!lAp16.books && r.is_settlement_row) return;
@@ -5715,8 +6012,8 @@
       ? window.MFG_INSURANCE.compute({ range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, policies: [], claims: [], carrierMatrix: [] };
     const k = d.kpis || {};
-    const pRows = d.policies || [];
-    const cRows = d.carrierMatrix || [];
+    const pRows = _rdlRollupInsurancePolicies(d.policies, ctx.co);
+    const cRows = _rdlRollupCarrierMatrix(d.carrierMatrix, ctx.co, d.policies, pRows);
     const coKey = 'Insurance Company';
     const winHdr = formatStmtWindowHeader(ctx);
     return `
@@ -7103,9 +7400,10 @@
         mkKpi('tie', isAllAccts ? 'Double-Entry Tie' : 'Net Account Movement', isAllAccts ? 'توازن القيد المزدوج' : 'صافي حركة الحساب', isAllAccts ? 'Équilibre partie double' : 'Mouvement net', isAllAccts ? (balanced ? '$0.00' : fmtUsd(varianceUsd, 2)) : fmtUsdSigned(totDr - totCr, 2), isAllAccts ? 'Balanced Dr = Cr' : `Account ${p.account}`, isAllAccts ? 'المدين يساوي الدائن' : `حساب ${p.account}`, isAllAccts ? 'Débit = Crédit' : `Compte ${p.account}`, isAllAccts && balanced ? 'ok' : 'neutral')
       ];
     } else if (stmtId === '07') {
+      const effSub07 = _rdlResolveSubAccountFilter(ctx, p);
       const jes = buildJournalEntries(ctx, p.to).filter(j => {
         if (p.account && p.account !== 'ALL' && j.acct_code !== p.account) return false;
-        if (p.subAccount && p.subAccount !== 'ALL' && j.sub_account !== p.subAccount) return false;
+        if (effSub07 && effSub07 !== 'ALL' && j.sub_account !== effSub07) return false;
         return true;
       });
       let openDr = 0, openCr = 0, totDr = 0, totCr = 0, pCount = 0;
@@ -7117,7 +7415,7 @@
       const closeBal = openBal + totDr - totCr;
       facts = {
         accountFilter: p.account || 'ALL',
-        subAccountFilter: p.subAccount || 'ALL',
+        subAccountFilter: effSub07 || 'ALL',
         periodLines: pCount,
         openingBalanceUsd: Math.round(openBal),
         periodDebitUsd: Math.round(totDr),
@@ -7127,13 +7425,14 @@
       kpis = [
         mkKpi('open', 'Opening Balance', 'رصيد مدور', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), `Before ${p.from}`, `قبل ${p.from}`, `Avant ${p.from}`),
         mkKpi('dr', 'Period Debits', 'مدين الفترة', 'Débits période', fmtUsd(totDr, 2), `${fmtNum(pCount, 0)} lines`, `${fmtNum(pCount, 0)} حركة`, `${fmtNum(pCount, 0)} lignes`),
-        mkKpi('cr', 'Period Credits', 'دائن الفترة', 'Crédits période', fmtUsd(totCr, 2), p.subAccount === 'ALL' ? 'All sub-accounts' : p.subAccount, p.subAccount === 'ALL' ? 'كافة الحسابات الفرعية' : p.subAccount, p.subAccount === 'ALL' ? 'Tous sous-comptes' : p.subAccount),
+        mkKpi('cr', 'Period Credits', 'دائن الفترة', 'Crédits période', fmtUsd(totCr, 2), effSub07 === 'ALL' ? 'All sub-accounts' : effSub07, effSub07 === 'ALL' ? 'كافة الحسابات الفرعية' : effSub07, effSub07 === 'ALL' ? 'Tous sous-comptes' : effSub07),
         mkKpi('close', 'Closing Balance', 'الرصيد الختامي', 'Solde de clôture', fmtUsdSigned(closeBal, 2), `Account ${p.account || 'ALL'}`, `حساب ${p.account || 'ALL'}`, `Compte ${p.account || 'ALL'}`)
       ];
     } else if (stmtId === '08') {
+      const effCust08 = _rdlResolveFilterName(ctx, 'customer', p.customer, ctx.customers);
       const rows = ctx.salesAll.filter(r => {
         if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-        if (p.customer && p.customer !== 'ALL' && r.customer !== p.customer) return false;
+        if (effCust08 && effCust08 !== 'ALL' && r.customer !== effCust08) return false;
         if (p.product && p.product !== 'ALL' && r.product !== p.product) return false;
         if (p.site && p.site !== 'ALL' && r.site !== p.site) return false;
         return true;
@@ -7164,9 +7463,10 @@
         mkKpi('bal', canViewBooks ? 'Credit Billed' : 'Filtered Scope', canViewBooks ? 'مبيعات آجلة' : 'نطاق التصفية', canViewBooks ? 'Facturé à crédit' : 'Périmètre filtré', canViewBooks ? fmtUsd(totGross - totPaid, 2) : (p.customer === 'ALL' ? 'All' : p.customer), p.site === 'ALL' ? 'All locations' : p.site, p.site === 'ALL' ? 'كافة المواقع' : p.site, p.site === 'ALL' ? 'Tous sites' : p.site)
       ];
     } else if (stmtId === '09') {
+      const effSup09 = _rdlResolveFilterName(ctx, 'supplier', p.supplier, ctx.suppliers);
       const rows = ctx.expAll.filter(r => {
         if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-        if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+        if (effSup09 && effSup09 !== 'ALL' && r.supplier !== effSup09) return false;
         if (p.category && p.category !== 'ALL' && r.category !== p.category) return false;
         return true;
       });
@@ -7195,20 +7495,16 @@
         mkKpi('ap', 'Credit Balance', 'ذمم غير مسددة', 'Solde à payer', canViewBooks ? fmtUsd(totGross - totPaid, 2) : 'Restricted', canViewBooks ? `Paid ${fmtUsd(totPaid, 0)}` : 'Books restricted', canViewBooks ? `مسدد ${fmtUsd(totPaid, 0)}` : 'مقيد', canViewBooks ? `Payé ${fmtUsd(totPaid, 0)}` : 'Restreint')
       ];
     } else if (stmtId === '10') {
+      const effStaff10 = _rdlResolveFilterName(ctx, 'staff', p.staff, ctx.staff);
       const rows = ctx.payAll.filter(r => {
         if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-        if (p.staff && p.staff !== 'ALL' && r.staff !== p.staff) return false;
+        if (effStaff10 && effStaff10 !== 'ALL' && r.staff !== effStaff10) return false;
         return true;
       });
       const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
         ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to }, inProgressPick: null })
         : null;
-      const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
-        if (!sr) return false;
-        if (!coMatch(sr.company || 'WTC', ctx.co, null)) return false;
-        if (p.staff && p.staff !== 'ALL' && sr.staff !== p.staff) return false;
-        return Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005;
-      });
+      const staffEarnRows = _rdlMergeStaffEarnRows(regCalc && regCalc.staffRows, ctx, effStaff10);
       const sumEarned = staffEarnRows.reduce((s, r) => s + Number(r.earnings || 0), 0);
       const sumDed = staffEarnRows.reduce((s, r) => s + Number(r.late_ded || 0) + Number(r.abs_ded || 0) + Number(r.ded || 0), 0);
       const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
@@ -7235,9 +7531,10 @@
         mkKpi('bal', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', canPayUsd10 ? fmtUsdSigned(sumBal, 2) : 'Restricted', p.staff === 'ALL' ? 'All staff' : p.staff, p.staff === 'ALL' ? 'كافة الموظفين' : p.staff, p.staff === 'ALL' ? 'Tout le personnel' : p.staff)
       ];
     } else if (stmtId === '11') {
+      const effSup11 = _rdlResolveFilterName(ctx, 'supplier', p.supplier, ctx.suppliers);
       const rows = ctx.rmAll.filter(r => {
         if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
-        if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+        if (effSup11 && effSup11 !== 'ALL' && r.supplier !== effSup11) return false;
         return true;
       });
       const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
@@ -7307,7 +7604,7 @@
       windowLabelEn = `As at ${asof}`;
       windowLabelAr = `كما في ${asof}`;
       windowLabelFr = `Au ${asof}`;
-      const custFilter = p.customer;
+      const custFilter = _rdlResolveFilterName(ctx, 'customer', p.customer, ctx.customers);
       const asofMs = new Date(asof + 'T00:00:00Z').getTime() || Date.now();
       const byCust = new Map();
       const ensureCust = (c, d) => {
@@ -7380,7 +7677,8 @@
         mkKpi('old', 'Over 90 Days', 'أكثر من 90 يوماً', 'Plus de 90 jours', canViewBooks ? fmtUsdSigned(b90p) : 'Restricted', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'Aged bucket', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'ذمم متأخرة', (canViewBooks && topDebtor) ? _stmtCleanParty(topDebtor.customer) : 'Créances échues', (canViewBooks && b90p > 0) ? 'neg' : 'ok')
       ];
     } else if (stmtId === '14') {
-      const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
+      const rawFilterCust14 = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
+      const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust14, ctx.customers);
       const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && ((canViewBooks && r.is_receipt_row) || r.is_credit));
       let openDr = 0, openCr = 0, totDr = 0, totCr = 0, totQty = 0, pCount = 0;
       allCustRows.forEach(r => {
@@ -7412,7 +7710,7 @@
       windowLabelEn = `As at ${asof}`;
       windowLabelAr = `كما في ${asof}`;
       windowLabelFr = `Au ${asof}`;
-      const supFilter = p.supplier;
+      const supFilter = _rdlResolveFilterName(ctx, 'supplier', p.supplier, ctx.suppliers);
       const bySup = new Map();
       const addSup = (sup, d, type, billed, paid) => {
         if (!d || d > asof) return;
@@ -7439,19 +7737,16 @@
       const seedCutRdl = (seedObj && seedObj.generated_at) ? String(seedObj.generated_at).slice(0, 10) : '2026-11-04';
       if (isMfg && (!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
         const coKey3 = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
-        const legRes = window.__mfgComputeThreeLegPayables({ company: coKey3, ignorePeriod: true });
+        const legLock15s = _rdlStmtLock();
+        const legSig15s = `${ctx.co}|${(legLock15s && typeof legLock15s.partyHygieneSig === 'function') ? legLock15s.partyHygieneSig('Manufacturing') : '0'}|${(legLock15s && typeof legLock15s.watermarkSig === 'function') ? legLock15s.watermarkSig('Manufacturing') : '0'}`;
+        const legRes = window.__mfgComputeThreeLegPayables({
+          company: coKey3,
+          ignorePeriod: true,
+          partySig: legSig15s,
+          partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
+        });
         if (legRes && legRes.byNorm) {
-          bySup.clear();
-          legRes.byNorm.forEach((lr, sk) => {
-            const s = lr.supplier || sk;
-            if (supFilter && supFilter !== 'ALL' && String(s).toLowerCase() !== String(supFilter).toLowerCase()) return;
-            const rmUsd = Number(lr.quarry_cr || 0);
-            const haulUsd = Number(lr.trans_cr || 0);
-            const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
-            const billed = rmUsd + haulUsd + expUsd;
-            const paid = canViewBooks ? (Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0)) : 0;
-            bySup.set(s, { supplier: s, rmUsd, haulUsd, expUsd, billed, paid, lastDate: asof });
-          });
+          _rdlApplyThreeLegRollup(bySup, legRes, ctx, asof, supFilter, canViewBooks, null);
         }
       }
       const rows = [...bySup.values()]
@@ -7482,7 +7777,8 @@
         mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', canViewBooks ? fmtUsdSigned(netAp) : 'Restricted', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Account 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'حساب 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
       ];
     } else if (stmtId === '16') {
-      const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+      const rawFilterSup = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+    const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
       let openCr = 0, openDr = 0, totCr = 0, totDr = 0, pCount = 0;
       (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
         if (!canViewBooks && r.is_settlement_row) return;
@@ -7845,8 +8141,8 @@
         ? window.MFG_INSURANCE.compute({ range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, policies: [], carrierMatrix: [] };
       const k = d.kpis || {};
-      const pRows = d.policies || [];
-      const cRows = d.carrierMatrix || [];
+      const pRows = _rdlRollupInsurancePolicies(d.policies, ctx.co);
+      const cRows = _rdlRollupCarrierMatrix(d.carrierMatrix, ctx.co, d.policies, pRows);
       const clientUnpaid = pRows.reduce((s, r) => s + Number(r.clientBalanceUsd || 0), 0);
       facts = {
         activePolicies: pRows.length,
@@ -7951,7 +8247,10 @@
     const fuelSeatSig = (fuelFe && fuelFe.mayReadPrice)
       ? Array.from(new Set((ctx.fuelAll || []).map(r => String(r.co || '')))).sort().map(c => `${c}:${fuelFe.mayReadPrice(c) ? '1' : '0'}`).join(',')
       : 'x';
-    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${canViewProfit ? '1' : '0'}|${rdlLens && rdlLens.expenses ? '1' : '0'}|${rdlLens && rdlLens.tax ? '1' : '0'}|${rdlLens && rdlLens.partnerSplits ? '1' : '0'}|${canViewSentinels ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}`;
+    const rdlLockSum = _rdlStmtLock();
+    const sumPhSig = (rdlLockSum && typeof rdlLockSum.partyHygieneSig === 'function') ? rdlLockSum.partyHygieneSig(ctx.ind) : '0';
+    const sumWmSig = (rdlLockSum && typeof rdlLockSum.watermarkSig === 'function') ? rdlLockSum.watermarkSig(ctx.ind) : '0';
+    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${canViewProfit ? '1' : '0'}|${rdlLens && rdlLens.expenses ? '1' : '0'}|${rdlLens && rdlLens.tax ? '1' : '0'}|${rdlLens && rdlLens.partnerSplits ? '1' : '0'}|${canViewSentinels ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}|ph:${sumPhSig}|wm:${sumWmSig}`;
 
     return {
       stmtId,
@@ -8344,9 +8643,13 @@
       });
     }
 
-    // Marked as sent (Customer and Supplier Statements)
-    root.querySelectorAll('[data-stmt-sent]').forEach(btn => {
-      btn.addEventListener('click', ev => {
+    // Marked as sent (Customer and Supplier Statements) - delegated once on root so switching reports or parameters preserves wiring without stacking
+    root._stmtSentRerender = rerenderFn;
+    if (!root.dataset.stmtSentDelegated) {
+      root.dataset.stmtSentDelegated = '1';
+      root.addEventListener('click', ev => {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt-sent]') : null;
+        if (!btn || !root.contains(btn)) return;
         ev.preventDefault();
         ev.stopPropagation();
         const L = window.MFG_STMT_LOCK;
@@ -8356,9 +8659,9 @@
         if (!spec) return;
         const act = btn.getAttribute('data-stmt-sent');
         const res = act === 'clear' ? L.clear(spec) : L.set(spec);
-        if (res && res.ok) rerenderFn();
+        if (res && res.ok && typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
       });
-    });
+    }
 
     // Print & CSV buttons
     const printBtn = root.querySelector('#printStmtBtn');
