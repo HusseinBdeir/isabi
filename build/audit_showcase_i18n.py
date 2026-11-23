@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Static pre-deploy trilingual (EN | AR | FR) audit gate for ISABI Showcase (isabisystems.com/).
 
-Extracts UI text nodes and placeholder/aria-label/title attributes from build/part_body.py
+Extracts UI text nodes and placeholder/aria-label/title/alt attributes from build/part_body.py
 and evaluates every candidate against live window.ISABI_I18N.isTranslated(s, 'ar' | 'fr')
 inside a sandboxed Node/Electron VM context. Exits non-zero if any UI string is untranslated.
 """
@@ -90,7 +90,7 @@ class ShowcaseExtractor(HTMLParser):
         )
         self.stack.append((t, ad, skip_here))
         if not skip_here and not self._in_raw_td():
-            for attr in ("placeholder", "aria-label", "title"):
+            for attr in ("placeholder", "aria-label", "title", "alt"):
                 val = ad.get(attr, "").strip()
                 if val and re.search(r"[A-Za-z]", val):
                     self.items.append((val, f"<{t}@{attr}>"))

@@ -267,6 +267,12 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "Used every day in our own companies.":{"ar":"يُستخدم كل يوم في شركاتنا.","fr":"Utilisé chaque jour dans nos propres sociétés."},
 "ISABI was built inside a family group of companies in Lebanon, and it still follows their sales, purchases, payroll and cash every day.":{"ar":"بُني ISABI داخل مجموعة شركات عائلية في لبنان، وما زال يتابع مبيعاتها ومشترياتها ورواتبها ونقدها كل يوم.","fr":"ISABI est né au sein d'un groupe familial de sociétés au Liban, et il suit encore chaque jour leurs ventes, leurs achats, leur paie et leur trésorerie."},
 "Companies that run on ISABI":{"ar":"شركات تعمل على ISABI","fr":"Sociétés qui tournent sur ISABI"},
+"WTC, World Trading and Construction":{"ar":"شركة WTC، World Trading and Construction","fr":"Société WTC, World Trading and Construction"},
+"Blanca Ladies Resort":{"ar":"منتجع Blanca للسيدات","fr":"Blanca, resort pour dames"},
+"La Una Ladies Resort":{"ar":"منتجع La Una للسيدات","fr":"La Una, resort pour dames"},
+"The Palms Ladies Resort":{"ar":"منتجع The Palms للسيدات","fr":"The Palms, resort pour dames"},
+"Voile Sur Mer Ladies Resort":{"ar":"منتجع Voile Sur Mer للسيدات","fr":"Voile Sur Mer, resort pour dames"},
+"Platinum Hotel":{"ar":"فندق Platinum","fr":"Hôtel Platinum"},
 "With sister companies in parts distribution, truck imports, property and the family holding.":{"ar":"مع شركات شقيقة في توزيع قطع الغيار، استيراد الشاحنات، العقارات والشركة القابضة العائلية.","fr":"Avec des sociétés sœurs dans la distribution de pièces, l'importation de camions, l'immobilier et la holding familiale."},
 "Every load priced and checked":{"ar":"كل حمولة مسعّرة ومدققة","fr":"Chaque chargement tarifé et vérifié"},
 "More than 26,000 truckloads, each priced from its customer agreement and checked against the truck’s logged size.":{"ar":"أكثر من 26,000 حمولة، كل واحدة مسعّرة بحسب اتفاقية الزبون ومدققة مقابل الحجم المسجل للشاحنة.","fr":"Plus de 26 000 chargements, chacun tarifé selon l'accord du client et vérifié par rapport au volume enregistré du camion."},
@@ -2097,6 +2103,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
           targetRoot.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(el => translateShowcaseAttr(el, 'placeholder', lang));
           targetRoot.querySelectorAll('[aria-label]').forEach(el => translateShowcaseAttr(el, 'aria-label', lang));
           targetRoot.querySelectorAll('[title]').forEach(el => translateShowcaseAttr(el, 'title', lang));
+          targetRoot.querySelectorAll('img[alt]').forEach(el => translateShowcaseAttr(el, 'alt', lang));
           targetRoot.querySelectorAll('[data-col-lbl]').forEach(el => translateShowcaseAttr(el, 'data-col-lbl', lang));
         }
         document.querySelectorAll('#hdr-lang-switch [data-lang-switch]').forEach(el => {
@@ -2135,7 +2142,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
         }
       }
       if (root.querySelectorAll) {
-        ['placeholder', 'aria-label', 'title', 'data-col-lbl'].forEach(attr => {
+        ['placeholder', 'aria-label', 'title', 'alt', 'data-col-lbl'].forEach(attr => {
           root.querySelectorAll('[' + attr + ']').forEach(el => {
             const skip = attr === 'data-col-lbl'
               ? Boolean(el.closest && el.closest('[data-no-i18n]'))

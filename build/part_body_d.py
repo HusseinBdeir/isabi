@@ -130,6 +130,7 @@ LOGOS = [
     ('logo-la-una.png', 'La Una Ladies Resort', 420, 148, 'd-logo-wide'),
     ('logo-palms.png', 'The Palms Ladies Resort', 299, 280, 'd-logo-sq'),
     ('logo-voile.png', 'Voile Sur Mer Ladies Resort', 420, 209, 'd-logo-mid'),
+    ('logo-platinum.png', 'Platinum Hotel', 420, 192, 'd-logo-mid'),
 ]
 
 PROOF = [

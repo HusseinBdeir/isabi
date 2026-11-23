@@ -800,6 +800,7 @@ JS = r"""
   // ---------------- MORE PAGES (LIVE DEMO, INDUSTRY BLUEPRINTS, FAQ) ----------------
   let sheetReturnY = 0;
   let sheetOpener = null;
+  let sheetStepBack = null;
 
   function activeSheetId() {
     const el = document.querySelector('[data-sheet]:not([hidden])');
@@ -850,22 +851,74 @@ JS = r"""
     updateActiveNavOnScroll();
   }
 
+  function ownsSheetEntry() {
+    return Boolean(history.state && history.state.sheet) && typeof history.back === 'function';
+  }
+
+  // Step back off the open page's own history entry. One step at a time: a second press before the browser has
+  // reported the first (a double click on Back to Site, Escape twice, two footer links) only updates where the
+  // visitor is going. Two steps back would walk the visitor off the site.
+  function stepBackOffSheet(exit) {
+    if (sheetStepBack) {
+      if (exit) { sheetStepBack.exit = exit; sheetStepBack.reopen = ''; }
+      return;
+    }
+    const job = { exit: exit || null, reopen: '' };
+    sheetStepBack = job;
+    // If the browser never reports the step back, finish in place so the press is not lost.
+    setTimeout(() => {
+      if (sheetStepBack !== job) return;
+      sheetStepBack = null;
+      settleSheetStepBack(job, false);
+    }, 1500);
+    history.back();
+  }
+
+  function settleSheetStepBack(job, arrived) {
+    if (job.reopen) {
+      // A page was opened again while the step back was on its way: it gets a fresh entry of its own.
+      if (activeSheetId() !== job.reopen) showSheet(job.reopen);
+      try { history.pushState({ sheet: job.reopen }, '', '#' + job.reopen); } catch (e) {}
+      return;
+    }
+    if (job.exit) {
+      scrollToTargetId(job.exit.id, job.exit.updateHash, true, true);
+      return;
+    }
+    if (!arrived && activeSheetId()) {
+      hideSheet(true);
+      try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+    }
+  }
+
   function openSheet(id, pushHistory) {
     const was = activeSheetId();
+    if (was === id && !sheetStepBack) return;
+    if (pushHistory && sheetStepBack) {
+      if (was !== id) showSheet(id);
+      sheetStepBack.reopen = id;
+      sheetStepBack.exit = null;
+      return;
+    }
     if (was === id) return;
     showSheet(id);
     if (pushHistory && history.pushState) {
       try {
         if (was) history.replaceState(history.state && history.state.sheet ? { sheet: id } : null, '', '#' + id);
-        else history.pushState({ sheet: id }, '', '#' + id);
+        else {
+          // From here the site places the scroll itself when the visitor comes back (to where they were, or to the
+          // link they pressed). Left on automatic, the browser puts its own remembered position back a moment later.
+          try { history.scrollRestoration = 'manual'; } catch (e) {}
+          history.pushState({ sheet: id }, '', '#' + id);
+        }
       } catch (e) {}
     }
   }
 
   function closeSheet() {
     if (!activeSheetId()) return;
-    if (history.state && history.state.sheet) {
-      history.back();
+    if (ownsSheetEntry()) {
+      stepBackOffSheet(null);
       return;
     }
     hideSheet(true);
@@ -946,13 +999,24 @@ JS = r"""
     });
   }
 
-  function scrollToTargetId(rawId, updateHash = true, instant = false) {
+  function scrollToTargetId(rawId, updateHash = true, instant = false, skipSheetExit = false) {
     let cleanId = String(rawId || '').replace(/^#/, '');
     cleanId = SEC_ALIAS[cleanId] || cleanId;
 
     if (SHEET_IDS.includes(cleanId)) {
       openSheet(cleanId, updateHash);
       return;
+    }
+
+    // Leaving a "more" page for one of the main pages (footer link, logo, a section link). When the open page
+    // holds its own history entry, the visitor is moved at once and that entry is then stepped back off.
+    // Replacing the entry instead would leave the main pages twice in a row in the history, and the visitor's
+    // next Back would appear to do nothing.
+    let leaveSheet = false;
+    if (!skipSheetExit && ownsSheetEntry() && (activeSheetId() || sheetStepBack)) {
+      const isTop = !cleanId || cleanId === 'top' || cleanId === 'hero';
+      const exitEl = isTop ? null : document.getElementById((cleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : cleanId);
+      leaveSheet = isTop || Boolean(exitEl && !exitEl.closest('[data-sheet]'));
     }
 
     if (!cleanId || cleanId === 'top' || cleanId === 'hero') {
@@ -965,7 +1029,9 @@ JS = r"""
       } else {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      if (updateHash && history.replaceState) {
+      if (leaveSheet) {
+        stepBackOffSheet({ id: 'top', updateHash: updateHash });
+      } else if (updateHash && history.replaceState) {
         history.replaceState(null, '', window.location.pathname + window.location.search);
       }
       return;
@@ -1000,7 +1066,9 @@ JS = r"""
       window.scrollTo({ top: exactY, behavior: 'smooth' });
     }
 
-    if (updateHash && history.replaceState && !hostSheet) {
+    if (leaveSheet) {
+      stepBackOffSheet({ id: cleanId, updateHash: updateHash });
+    } else if (updateHash && history.replaceState && !hostSheet) {
       history.replaceState(null, '', '#' + cleanId);
     }
 
@@ -4353,10 +4421,15 @@ JS = r"""
     window.addEventListener('popstate', () => {
       const hashId = (window.location.hash || '').slice(1);
       const wanted = SEC_ALIAS[hashId] || hashId;
+      const job = sheetStepBack;
+      sheetStepBack = null;
       if (SHEET_IDS.includes(wanted)) {
         if (activeSheetId() !== wanted) showSheet(wanted);
-      } else if (activeSheetId()) {
-        hideSheet(true);
+      } else {
+        if (activeSheetId() && !(job && job.reopen)) hideSheet(!(job && job.exit));
+        // Our own step back off a "more" page has arrived: finish what the visitor pressed (the link's target,
+        // or the page they opened again meanwhile).
+        if (job) settleSheetStepBack(job, true);
       }
     });
 

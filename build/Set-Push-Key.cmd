@@ -1,7 +1,7 @@
 @echo off
 rem ISABI Command Center: switch on phone and desktop notifications for approval requests (owner step, once).
 rem Makes the notifications key on this PC and stores it on the Cloudflare Pages project. Prints nothing secret.
-rem Extra options can be passed through: --check, --dry-run, --rotate, --help (see build\set_push_key.mjs).
+rem Extra options can be passed through: --check, --dry-run, --rotate, --subject, --help (see build\set_push_key.mjs).
 setlocal
 where node >nul 2>nul
 if errorlevel 1 (

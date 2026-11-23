@@ -142,7 +142,25 @@ def run_dom_and_screenshots():
         assert re.search(r'<section class="sec d-sheet" id="industries" data-sheet="industries">', dom), "Industry Blueprints page still hidden after loading #industries"
         mod_count = dom.count('class="d-mod"')
         assert mod_count == 18, f"Expected 18 modules on the Platform page, got {mod_count}"
-        assert dom.count('<img class="d-logo ') == 5, "Expected 5 company logos on the In Practice page"
+        assert dom.count('<img class="d-logo ') == 6, "Expected 6 company logos on the In Practice page"
+        # Every logo on the row is a real file that the deploy bundle carries and the site keeps for offline use
+        _build_dir = os.path.dirname(os.path.abspath(__file__))
+        if _build_dir not in sys.path:
+            sys.path.insert(0, _build_dir)
+        from part_body_d import LOGOS as _LOGOS
+        from stage_pages_bundle import ROOT_ALLOWLIST as _ROOT_ALLOWLIST
+        with open(os.path.join(repo_root, 'sw.js'), 'r', encoding='utf-8') as _swf:
+            _sw_src = _swf.read()
+        for _lsrc, _lalt, _lw, _lh, _lcls in _LOGOS:
+            _lp = os.path.join(repo_root, _lsrc)
+            assert os.path.isfile(_lp) and os.path.getsize(_lp) > 2000, f"Logo file missing or empty: {_lsrc}"
+            with open(_lp, 'rb') as _lf:
+                _hd = _lf.read(24)
+            assert _hd[:8] == b'\x89PNG\r\n\x1a\n', f"Logo file is not a PNG: {_lsrc}"
+            _pw, _ph = int.from_bytes(_hd[16:20], 'big'), int.from_bytes(_hd[20:24], 'big')
+            assert (_pw, _ph) == (_lw, _lh), f"Logo {_lsrc} is {_pw}x{_ph} but the page declares {_lw}x{_lh}"
+            assert _lsrc in _ROOT_ALLOWLIST, f"Logo {_lsrc} is not in the deploy bundle list (stage_pages_bundle.py ROOT_ALLOWLIST)"
+            assert _lsrc in _sw_src, f"Logo {_lsrc} is not in sw.js STATIC_ASSETS"
         failed = 0
         for name, needle in checks:
             ok = needle in dom
@@ -215,6 +233,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     var industryTileCount = document.querySelectorAll('#platform .d-ind').length;
     var logoCount = document.querySelectorAll('#proof .d-logo').length;
     var logoFilter = getComputedStyle(document.querySelector('#proof .d-logo')).filter || '';
+    var logoAltList = function() { return Array.from(document.querySelectorAll('#proof .d-logo')).map(function(im){ return im.getAttribute('alt') || ''; }); };
+    var enLogoAlts = logoAltList();
+    // Rows of the logo strip: logos differ in height and are centred, so group them by their vertical middle
+    var logoMids = Array.from(document.querySelectorAll('#proof .d-logo')).map(function(im){ var r = im.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2); }).sort(function(a, b){ return a - b; });
+    var logoRows = logoMids.length ? 1 : 0;
+    for (var lmI = 1; lmI < logoMids.length; lmI++) { if (logoMids[lmI] - logoMids[lmI - 1] > 12) logoRows++; }
     function scanOverflows(root) {
       var found = [];
       if (effW !== 390) return found;
@@ -284,6 +308,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       industryTileCount: industryTileCount,
       logoCount: logoCount,
       logoOneTone: logoFilter.indexOf('grayscale') !== -1,
+      logoRows: logoRows,
       overflows: overflows.slice(0, 12),
       cardOverflows: cardOverflows.slice(0, 12)
     };
@@ -329,6 +354,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       mainNavHidden: document.getElementById('main-nav').hidden,
       hash: location.hash
     };
+    // The visitor opened the first page from the Pricing page: Back to Site puts them back there, not at the top
+    sheetInfo.afterBackPricingTop = Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom);
+    await tick(60);
+    sheetInfo.afterBackPricingTopLater = Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom);
     var faqOpener = document.querySelector('#site-pages a[href="#faq"]');
     if (faqOpener) faqOpener.click();
     await tick(30);
@@ -339,6 +368,42 @@ document.addEventListener('DOMContentLoaded', async function() {
       openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
       hash: location.hash
     };
+    // A footer link to a main page, pressed inside one of these pages, steps back off that page's history entry.
+    // Replacing the entry instead would leave the main pages twice in a row, so the visitor's next Back did nothing.
+    // Proof: after the footer link, Forward must bring the page back (its entry is still there, one step ahead).
+    document.documentElement.setAttribute('data-diag-step', 'footer-link:start');
+    var faqOpener2 = document.querySelector('#site-pages a[href="#faq"]');
+    if (faqOpener2) faqOpener2.click();
+    await tick(30);
+    var footLink = document.querySelector('.d-foot-links a[href="#pricing"]');
+    var footInfo = { hasLink: !!footLink, ownEntry: !!(history.state && history.state.sheet), faqShown: !document.getElementById('faq').hidden };
+    document.documentElement.setAttribute('data-diag-step', 'footer-link:click');
+    if (footLink) { footLink.click(); footLink.click(); }
+    footInfo.shownAtOnce = { pagesHidden: document.getElementById('site-pages').hidden, openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length };
+    await tick(90);
+    footInfo.afterClick = {
+      pagesHidden: document.getElementById('site-pages').hidden,
+      openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
+      mainNavHidden: document.getElementById('main-nav').hidden,
+      hash: location.hash,
+      onSheetEntry: !!(history.state && history.state.sheet),
+      pricingTop: Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom)
+    };
+    document.documentElement.setAttribute('data-diag-step', 'footer-link:forward');
+    history.forward();
+    await tick(90);
+    footInfo.afterForward = { faqShown: !document.getElementById('faq').hidden, hash: location.hash };
+    var backBtn2 = document.querySelector('#sheet-nav [data-sheet-close]');
+    document.documentElement.setAttribute('data-diag-step', 'footer-link:back-to-site');
+    if (backBtn2 && footInfo.afterForward.faqShown) { backBtn2.click(); backBtn2.click(); }
+    await tick(90);
+    footInfo.end = {
+      pagesHidden: document.getElementById('site-pages').hidden,
+      openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
+      hash: location.hash
+    };
+    sheetInfo.footerLink = footInfo;
+    document.documentElement.setAttribute('data-diag-step', 'after-footer-link');
     out.sheets = sheetInfo;
 
     // Interactive Ask ISABI functional checks (run after geometry measurement)
@@ -637,7 +702,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       var frScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
       var frMobBodyW = document.body.scrollWidth;
       var frColLbl = document.querySelector(colSel)?.getAttribute('data-col-lbl') || '';
+      var frLogoAlts = logoAltList();
       window.ISABI_I18N.setLang('ar', false);
+      var arLogoAlts = logoAltList();
       var arDir = document.documentElement.getAttribute('dir');
       var arNav = document.querySelector(navSel)?.textContent || '';
       var arHeroH1 = (document.querySelector('#hero h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
@@ -730,6 +797,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       var enDir = document.documentElement.getAttribute('dir');
       var enHeroH1 = (document.querySelector('#hero h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
       var enLeadPh = document.getElementById('lead-name')?.getAttribute('placeholder') || '';
+      // Logo descriptions (img alt) follow the language and return to English
+      out.logoAlts = {
+        ar: arLogoAlts.filter(function(a, i){ return /[\\u0600-\\u06FF]/.test(a) && a !== enLogoAlts[i]; }).length,
+        fr: frLogoAlts.filter(function(a, i){ return a && a !== enLogoAlts[i] && !/[\\u0600-\\u06FF]/.test(a); }).length
+      };
+      out.logoAltSamples = { en: enLogoAlts, ar: arLogoAlts, fr: frLogoAlts, enRestored: JSON.stringify(logoAltList()) === JSON.stringify(enLogoAlts) };
       i18nDiag = {
         frNav: frNav,
         frHeroOk: frHeroH1.indexOf("L'ERP sur lequel votre Groupe") !== -1 && /Chiffre d'affaires/i.test(frHeroCard),
@@ -817,6 +890,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
             )
+            if '<pre id="diag-json">' not in res_vp.stdout:
+                _step = re.search(r'data-diag-step="([^"]*)"', res_vp.stdout)
+                _href = re.search(r'<body[^>]*>', res_vp.stdout)
+                raise RuntimeError(f"[{label} {w}x{h}] the page probe did not finish (last step: {_step.group(1) if _step else 'before the page-history checks'}; output {len(res_vp.stdout)} chars; body: {_href.group(0)[:200] if _href else 'none'})")
             m_vp = html.unescape(res_vp.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
             d_vp = json.loads(m_vp)
             if 'error' in d_vp:
@@ -900,7 +977,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                 assert sh['scrollW'] <= dvp['vw'] and sh['cardOverflows'] == [], f"{vp_lbl} page #{sheet_id} overflows: {sh}"
             assert abs(dvp['sheets']['industries']['indTabsH'] - dvp['sheets']['industries']['indDetailH']) <= 2, f"{vp_lbl} industry tabs/detail heights mismatch: {dvp['sheets']['industries']}"
             assert dvp['sheets']['afterBack'] == {'pagesHidden': False, 'openSheets': 0, 'mainNavHidden': False, 'hash': '#pricing'}, f"{vp_lbl} Back to Site did not return to the main pages: {dvp['sheets']['afterBack']}"
+            assert abs(dvp['sheets']['afterBackPricingTop']) <= 4 and abs(dvp['sheets']['afterBackPricingTopLater']) <= 4, f"{vp_lbl} Back to Site did not return the visitor to where they were (Pricing): top offset {dvp['sheets']['afterBackPricingTop']} then {dvp['sheets']['afterBackPricingTopLater']}"
             assert dvp['sheets']['afterEscape']['pagesHidden'] is False and dvp['sheets']['afterEscape']['openSheets'] == 0, f"{vp_lbl} Escape did not close the page: {dvp['sheets']['afterEscape']}"
+            fl = dvp['sheets']['footerLink']
+            assert fl['hasLink'] and fl['ownEntry'] and fl['faqShown'], f"{vp_lbl} footer-link probe could not start (FAQ open on its own history entry, footer Pricing link present): {fl}"
+            assert fl['shownAtOnce'] == {'pagesHidden': False, 'openSheets': 0}, f"{vp_lbl} footer link inside a page must show the main pages at once: {fl}"
+            assert fl['afterClick']['pagesHidden'] is False and fl['afterClick']['openSheets'] == 0 and fl['afterClick']['mainNavHidden'] is False and fl['afterClick']['hash'] == '#pricing' and fl['afterClick']['onSheetEntry'] is False, f"{vp_lbl} footer link inside a page did not return to the main pages: {fl}"
+            assert abs(fl['afterClick']['pricingTop']) <= 4, f"{vp_lbl} footer link inside a page did not land on its target page: {fl}"
+            assert fl['afterForward'] == {'faqShown': True, 'hash': '#faq'}, f"{vp_lbl} footer link inside a page replaced the page's history entry instead of stepping back off it (next Back would do nothing): {fl}"
+            assert fl['end'] == {'pagesHidden': False, 'openSheets': 0, 'hash': '#pricing'}, f"{vp_lbl} footer-link probe did not end on the main pages: {fl}"
 
         # Primary Desktop assertions
         assert d_desk['hdrControlCount'] == 9, f"Expected 9 clean header controls (6 nav + theme, sign in, book), got {d_desk['hdrControlCount']}"
@@ -915,7 +1000,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .d-prev-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
         assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero page too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']})!"
         assert d_desk['moduleCount'] == 18 and d_desk['industryTileCount'] == 6, f"Platform page: expected 18 modules and 6 industry tiles, got {d_desk['moduleCount']} / {d_desk['industryTileCount']}"
-        assert d_desk['logoCount'] == 5 and d_desk['logoOneTone'] is True, f"In Practice page: expected 5 logos in one tone, got {d_desk['logoCount']} / {d_desk['logoOneTone']}"
+        assert d_desk['logoCount'] == 6 and d_desk['logoOneTone'] is True, f"In Practice page: expected 6 logos in one tone, got {d_desk['logoCount']} / {d_desk['logoOneTone']}"
+        for vp_lbl, dvp in [('1366x768', d_desk), ('1440x810', d_desk_1440), ('1536x864', d_desk_1536), ('1920x1080', d_desk_1920)]:
+            assert dvp['logoRows'] == 1, f"In Practice page at {vp_lbl}: the six logos must sit on one row, got {dvp['logoRows']} rows"
+        assert d_mob['logoRows'] == 2, f"In Practice page on a phone: the six logos must sit in two rows of three, got {d_mob['logoRows']} rows"
+        assert d_desk['logoAlts'] == {'ar': 6, 'fr': 6} and d_desk['logoAltSamples']['enRestored'] is True, f"Logo descriptions must follow Arabic and French and return to English: {d_desk['logoAlts']} {d_desk.get('logoAltSamples')}"
         assert d_desk['cmpCols'] == 4, f"Expected a 4-column comparison on desktop, got {d_desk['cmpCols']}"
         assert abs(d_desk['kpi1W'] - d_desk['kpi2W']) <= 2, f"Hero KPI width mismatch: {d_desk['kpi1W']} vs {d_desk['kpi2W']}"
 

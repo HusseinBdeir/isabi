@@ -1235,11 +1235,11 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-facts, .d-proof, .d-groups, .d-steps, .d-fields, .d-channels { grid-template-columns: minmax(0, 1fr); }
   .d-inds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .d-head-split { align-items: flex-start; flex-direction: column; }
-  .d-logos { padding: 22px 18px; gap: 22px 28px; }
+  .d-logos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; padding: 22px 18px; gap: 22px 14px; }
   .d-logo-sq { height: 62px; }
   .d-logo-wide { height: 44px; }
   .d-logo-mid { height: 52px; }
-  .d-logo { max-width: 130px; }
+  .d-logo { max-width: 100%; }
   .ai-console.d-console { height: 600px; }
   .d-console .ai-console-hdr { padding: 10px 14px; }
   .d-console .ai-thread { padding: 12px 14px; }
