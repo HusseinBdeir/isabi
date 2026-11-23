@@ -3,6 +3,12 @@
   "branch": "wt/kept-recs-3-4",
   "sha": "cbf19eb44ea7237a6972db546badb86aeb49113e"
  },
+ "batch": {
+  "at": "2026-11-23T17:02:13Z",
+  "holder": "agy-852c992c (kept-recs-3-4)",
+  "lockId": "2ca85d4f087148f39700714a73795b5d",
+  "version": "19.6.430"
+ },
  "gates": [
   "isabi-app: python build/verify_custom_store_headroom.py",
   "isabi-app: python build/verify_min_shell_ver_local.py",
