@@ -3,12 +3,6 @@
   "branch": "wt/liveness-passkeys",
   "sha": "9c5fbcd754da6ec464c9612c895fb448e18f6fde"
  },
- "batch": {
-  "at": "2026-11-23T18:05:47Z",
-  "holder": "agy-c3b1ee1b (liveness-passkeys)",
-  "lockId": "0cc0289b7654430d9d7bdf90ebc68b1a",
-  "version": "19.6.431"
- },
  "gates": [
   "isabi: node build/verify_passkeys_edge.mjs",
   "isabi-app: node build/verify_face_pad_unit.mjs",
@@ -21,10 +15,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-23T18:05:20Z",
  "seenAt": "2026-11-23T18:05:20Z",
+ "shippedAt": "2026-11-23T18:28:03Z",
+ "shippedBy": "agy-c3b1ee1b (liveness-passkeys)",
+ "shippedVersion": "19.6.431",
  "site": {
   "branch": "wt/liveness-passkeys",
   "sha": "1372ce367777fadd5ad9ce3f7537515fb7db456e"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Unify anti-spoof Face ID liveness and add native WebAuthn FIDO2 passkeys"
 }
