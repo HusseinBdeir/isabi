@@ -952,10 +952,18 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
 .sec.d-sheet { border-bottom: 1px solid var(--d-line); }
 .sec.d-sheet h2 { font-weight: 700; letter-spacing: -0.02em; }
 #faq.d-sheet .faq-panel { margin-top: 6px; }
-/* The widgets on these pages were drawn small to fit one screen; scale them up on desktop while they still fit. */
+/* The widgets on these pages were drawn small to fit one screen; scale them up on desktop as far as the screen height allows. */
 @media (min-width: 1081px) {
-  .sec.d-sheet > .wrap { zoom: 1.12; max-width: calc(min(95vw, 1720px) / 1.12); }
-  #faq.d-sheet > .wrap { zoom: 1.22; max-width: calc(min(95vw, 1500px) / 1.22); }
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.05; zoom: var(--sheet-zoom); max-width: calc(min(95vw, 1720px) / var(--sheet-zoom)); }
+  #faq.d-sheet > .wrap { --sheet-zoom: 1.2; max-width: calc(min(95vw, 1500px) / var(--sheet-zoom)); }
+}
+@media (min-width: 1081px) and (min-height: 700px) {
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.1; }
+  #faq.d-sheet > .wrap { --sheet-zoom: 1.25; }
+}
+@media (min-width: 1081px) and (min-height: 900px) {
+  .sec.d-sheet > .wrap { --sheet-zoom: 1.18; }
+  #faq.d-sheet > .wrap { --sheet-zoom: 1.3; }
 }
 
 /* ---------- Footer ---------- */
@@ -1059,6 +1067,64 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-tier-feats { gap: 5px; font-size: 14px; }
   .d-tier .d-btn { min-height: 44px; }
   .d-trust { margin-top: 10px; }
+}
+
+/* Shorter still (a 768 px screen with browser bars leaves about 670 px) */
+@media (min-width: 1081px) and (max-height: 730px) {
+  .d-page { padding: 12px 0; }
+  .d-h2 { font-size: 30px; margin: 4px 0 6px; }
+  .d-lead { font-size: 16px; }
+  .d-hero { padding: 6px 0 8px; }
+  .d-chip { padding: 3px 12px; }
+  .d-h1 { font-size: 44px; margin: 6px auto 6px; }
+  .d-hero-lead { font-size: 16.5px; line-height: 1.4; margin-bottom: 10px; max-width: 1120px; }
+  .d-hero .d-btn { min-height: 44px; }
+  .d-preview { margin-top: 12px; }
+  .d-prev-top { padding: 6px 18px; }
+  .d-prev-tabs { padding: 6px 10px; }
+  .d-tab { min-height: 38px; font-size: 14px; }
+  .d-prev-stage { padding: 10px 18px 4px; gap: 8px; }
+  .d-kpi { padding: 6px 14px; }
+  .d-kpi-v { font-size: 22px; }
+  .d-bar-row { padding: 1px 8px; }
+  .d-prev-foot .d-textlink { min-height: 36px; }
+  .d-facts { margin-top: 10px; }
+  .d-fact-b { font-size: 13.5px; }
+  .d-head-split { margin-bottom: 10px; }
+  .d-inds { margin-bottom: 8px; gap: 8px; }
+  .d-ind { min-height: 48px; padding: 5px 10px; }
+  .d-group-head { padding: 6px 16px; }
+  .d-mod { padding: 3px 0; }
+  .d-tile-36 { width: 32px; height: 32px; }
+  .d-promo { padding: 8px 12px; }
+  .d-feat { padding: 6px 14px; }
+  .d-ask-lead { margin-bottom: 10px; }
+  .ai-console.d-console { height: min(540px, calc(100dvh - var(--hdr-h) - 40px)); min-height: 400px; }
+  .d-steps { margin-top: 16px; }
+  .d-step-card { padding: 14px 16px; gap: 8px; }
+  .d-step-card p { font-size: 14.5px; }
+  .d-row > div { padding: 8px 16px; font-size: 14.5px; }
+  .d-tier { padding: 12px 18px; gap: 7px; }
+  .d-tier-desc { font-size: 14px; }
+  .d-tier-setup { font-size: 26px; }
+  .d-tier-price { padding: 6px 0; }
+  .d-tier-feats { gap: 4px; font-size: 13.5px; }
+  .d-tier .d-btn { min-height: 42px; }
+  .d-trust { margin-top: 8px; font-size: 14px; }
+  .d-logos { margin-top: 18px; padding: 18px 36px; }
+  .d-logo-sq { height: 68px; }
+  .d-logo-wide { height: 48px; }
+  .d-logo-mid { height: 58px; }
+  .d-proof { margin-top: 18px; padding-top: 18px; }
+  .d-contact-lead { margin-bottom: 12px; }
+  .d-brief, .d-direct { padding: 14px 18px; gap: 10px; }
+  .d-brief form { gap: 10px; }
+  .d-fields { gap: 10px; }
+  .d-field { gap: 4px; }
+  .d-field input, .d-field select, .d-field textarea { padding: 7px 12px; }
+  .d-channel { padding: 8px 12px; }
+  .d-next { padding-top: 10px; }
+  .d-next ol { gap: 7px; font-size: 14px; }
 }
 
 /* ---------- Tall, wide desktop screens: give the pages more presence ---------- */

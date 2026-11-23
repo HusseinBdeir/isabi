@@ -68,7 +68,8 @@ def run_dom_and_screenshots():
         indexnow_txt = open(os.path.join(repo_root, 'c4b9e2a7d18f406395e1a82c7d3f6b90.txt'), 'r', encoding='utf-8').read().strip()
         assert indexnow_txt == 'c4b9e2a7d18f406395e1a82c7d3f6b90', f"Invalid IndexNow key file: {indexnow_txt!r}"
         raw_idx_html = open(os.path.join(repo_root, 'index.html'), 'r', encoding='utf-8').read()
-        assert raw_idx_html.count('<!--email_off-->') == 3 and raw_idx_html.count('<!--/email_off-->') == 3, "Expected 3 <!--email_off--> wrappers in index.html"
+        assert raw_idx_html.count('<!--email_off-->') == 2 and raw_idx_html.count('<!--/email_off-->') == 2, "Expected 2 <!--email_off--> wrappers in index.html"
+        assert 'hbdeir@isabisystems.com' in raw_idx_html and 'husseinbdeir@isabisystems.com' not in raw_idx_html and 'gmail.com' not in raw_idx_html, "Contact email must be hbdeir@isabisystems.com everywhere"
         assert '/cdn-cgi/l/email-protection' not in raw_idx_html, "Unexpected Cloudflare email-protection link in index.html"
         assert '"sameAs": ["https://github.com/HusseinBdeir", "https://github.com/HusseinBdeir/isabi"]' in raw_idx_html, "Missing verified sameAs URLs in ORG_JSONLD"
         assert '"disambiguatingDescription":' in raw_idx_html and '"isabisystems"' in raw_idx_html and '"https://isabisystems.com/#brand"' in raw_idx_html, "Missing strengthened entity disambiguation fields in JSON-LD"
@@ -101,7 +102,7 @@ def run_dom_and_screenshots():
             [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
         )
-        assert 'class="js-io"' not in bot_res.stdout and 'reveal in done' in bot_res.stdout, "Googlebot UA must bypass js-io opacity gate and immediately reveal cards"
+        assert 'class="js-io"' not in bot_res.stdout and 'The ERP Your Group' in bot_res.stdout and bot_res.stdout.count('class="d-mod"') == 18, "Googlebot UA must get the full page with no opacity gate"
         print('[SEO] robots.txt, sitemap.xml (valid XML), CNAME, IndexNow key, email_off, sameAs & Googlebot reveal verified')
 
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
@@ -112,7 +113,7 @@ def run_dom_and_screenshots():
         dom = res.stdout
         checks = [
             ('Hero title', 'The ERP Your Group'),
-            ('Hero 3-Point Proof List', 'class="hero-proof-list"'),
+            ('Hero Facts Row', 'class="d-facts"'),
             ('Rendered Industry Tab', 'Hospitality, Resorts'),
             ('Rendered Industry Modules', 'Multi-Property Business Unit Isolation'),
             ('Rendered Sandbox Chart', 'class="chart"'),
@@ -120,9 +121,8 @@ def run_dom_and_screenshots():
             ('Rendered Ask ISABI Thread', 'Overdue Receivables Audit'),
             ('Rendered Configurator Total', '$6,800 to $8,200'),
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
-            ('Mobile Segmented Bar Present', 'class="mob-seg-bar"'),
-            ('Hash #industries activates Industries nav link', '<a href="#industries" data-sec-link="industries" class="active">Industries</a>'),
-            ('FAQ panel rendered in Why ISABI', 'data-ing-panel="faq"'),
+            ('Hash #industries opens the Industry Blueprints page', 'data-sheet-open="industries"'),
+            ('FAQ page rendered', 'id="faq-grid"'),
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
             ('WebSite JSON-LD present', '"@type": "WebSite"'),
@@ -130,14 +130,17 @@ def run_dom_and_screenshots():
             ('Sitemap link tag present', 'rel="sitemap"'),
             ('Open Graph image tag', 'property="og:image"'),
             ('Dynamic sandbox period label', '(MTD)</option>'),
-            ('Scroll reveal activated', '<html lang="en" data-theme="light" class="js-io">'),
-            ('18-App Ecosystem Grid rendered', 'id="app-suite-grid"'),
-            ('App Spotlight Inspector rendered', 'id="app-spotlight"'),
+            ('Platform page rendered', 'id="platform"'),
             ('Sandbox SOA Mode Tab rendered', 'data-sbox-mode="soa"'),
             ('Sandbox POS & Kiosk Mode Tab rendered', 'data-sbox-mode="pwa"'),
-            ('14-Day Go-Live Sprint Tab rendered', 'data-ing-tab="roadmap"'),
-            ('Pricing Guarantee Strip rendered', 'class="pricing-trust-bar"'),
+            ('Implementation page rendered', 'id="golive"'),
+            ('In Practice page rendered', 'id="proof"'),
+            ('Pricing Guarantee Strip rendered', 'class="d-trust"'),
+            ('Contact email', 'mailto:hbdeir@isabisystems.com'),
         ]
+        mod_count = dom.count('class="d-mod"')
+        assert mod_count == 18, f"Expected 18 modules on the Platform page, got {mod_count}"
+        assert dom.count('<img class="d-logo ') == 5, "Expected 5 company logos on the In Practice page"
         failed = 0
         for name, needle in checks:
             ok = needle in dom
@@ -151,6 +154,10 @@ def run_dom_and_screenshots():
             ('Metrics Band Removed', 'class="metrics-band"'),
             ('ROI Sliders Removed', 'id="roi-entities"'),
             ('Portal Quick-Fill Chips Removed', 'class="topic-chips-bar"'),
+            ('Hero Proof List Removed', 'class="hero-proof-list"'),
+            ('18-App Grid Removed', 'id="app-suite-grid"'),
+            ('Mobile Dock Removed', 'class="mobile-dock"'),
+            ('Proof Page By Industry Removed', 'Proven in our own group'),
         ]:
             ok = removed_needle not in dom
             print(f'[TRIM] {removed_lbl}: {"PASS" if ok else "FAIL"}')
@@ -166,85 +173,79 @@ def run_dom_and_screenshots():
 
         test_script = """
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   var pre = document.createElement('pre');
   pre.id = 'diag-json';
+  var tick = function(ms) { return new Promise(function(r) { setTimeout(r, ms || 40); }); };
   try {
     if (window.innerWidth < 600) {
       document.documentElement.style.width = '390px';
       document.body.style.width = '390px';
-      var md = document.querySelector('.mobile-dock');
-      if (md) md.style.maxWidth = '390px';
     }
-    var hdr = document.querySelector('.site-header').getBoundingClientRect();
-    var arch = document.getElementById('architecture').getBoundingClientRect();
-    var ind = document.getElementById('industries').getBoundingClientRect();
-    var sbox = document.getElementById('sandbox').getBoundingClientRect();
-    var mock = document.querySelector('.mock').getBoundingClientRect();
-    var comp = document.querySelector('.comp-table').getBoundingClientRect();
-    var ctaEl = document.querySelector('.hdr-actions .btn-brass');
+    var effW = window.innerWidth < 600 ? 390 : window.innerWidth;
+    var isShown = function(el) { return !el.hidden && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0; };
+    var hdr = document.getElementById('site-header').getBoundingClientRect();
+    var why = document.getElementById('why').getBoundingClientRect();
+    var pricing = document.getElementById('pricing').getBoundingClientRect();
+    var cmp = document.querySelector('.d-cmp').getBoundingClientRect();
+    var ctaEl = document.querySelector('.d-hdr-cta');
     var ctaBtn = ctaEl ? ctaEl.getBoundingClientRect() : { right: 0 };
-    var portalCard = document.querySelector('.portal-form-card').getBoundingClientRect();
+    var portalCard = document.querySelector('.d-brief').getBoundingClientRect();
     var leadName = document.getElementById('lead-name').getBoundingClientRect();
     var leadCompany = document.getElementById('lead-company').getBoundingClientRect();
     var leadContact = document.getElementById('lead-contact').getBoundingClientRect();
     var leadIndustry = document.getElementById('lead-industry').getBoundingClientRect();
-    var heroSec = document.querySelector('.hero-section').getBoundingClientRect();
-    var heroLeft = document.querySelector('.hero-grid > div:first-child').getBoundingClientRect();
-    var heroCard = document.querySelector('.hero-ledger-card').getBoundingClientRect();
-    var indTabs = document.querySelector('.ind-tabs').getBoundingClientRect();
-    var indDetail = document.querySelector('.ind-detail').getBoundingClientRect();
-    var kpis = document.querySelectorAll('.hlc-kpi');
+    var heroSec = document.getElementById('hero').getBoundingClientRect();
+    var kpis = document.querySelectorAll('#hero .d-kpi');
     var kpi1 = kpis[0].getBoundingClientRect();
     var kpi2 = kpis[1].getBoundingClientRect();
-    var kpi1Strong = kpis[0].querySelector('strong').getBoundingClientRect();
-    var kpi2Strong = kpis[1].querySelector('strong').getBoundingClientRect();
-    var hlcSvgCount = document.querySelectorAll('.hlc-brand svg').length;
-    var hdrControlCount = Array.from(document.querySelectorAll('#main-nav a, .hdr-actions button, .hdr-actions a')).filter(function(el){ return !el.hidden && getComputedStyle(el).display !== 'none'; }).length;
-    var heroControlCount = Array.from(document.querySelectorAll('.hero-section a, .hero-section button, .hero-section .hlc-vrow')).filter(function(el){ return !el.hidden && getComputedStyle(el).display !== 'none'; }).length;
+    var hlcSvgCount = document.querySelectorAll('.d-prev-brand svg').length;
+    var hdrControlCount = Array.from(document.querySelectorAll('#main-nav a, .d-hdr-acts button, .d-hdr-acts a')).filter(isShown).length;
+    var heroControlCount = Array.from(document.querySelectorAll('#hero a, #hero button')).filter(isShown).length;
     var activeMain = Array.from(document.querySelectorAll('#main-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeMob = Array.from(document.querySelectorAll('#mobile-sec-nav a.active')).map(function(a){ return a.getAttribute('href'); });
-    var activeDock = Array.from(document.querySelectorAll('.mobile-dock a.active')).map(function(a){ return a.getAttribute('href'); });
-    var dockEl = document.querySelector('.mobile-dock');
-    var dockHiddenMob = !dockEl || getComputedStyle(dockEl).display === 'none';
     var langSwitchEl = document.getElementById('hdr-lang-switch');
     var langSwitchH = langSwitchEl ? Math.round(langSwitchEl.getBoundingClientRect().height) : 0;
-    var mobInpEls = Array.from(document.querySelectorAll('#portal input, #portal select, #portal textarea, .ai-drawer input, .ai-drawer textarea, .ai-console input, .ai-console textarea')).filter(function(el){ return getComputedStyle(el).display !== 'none'; });
+    var mobInpEls = Array.from(document.querySelectorAll('#portal input, #portal select, #portal textarea, .ai-drawer input, .ai-drawer textarea, .ai-console input, .ai-console textarea')).filter(function(el){ return getComputedStyle(el).display !== 'none' && el.type !== 'hidden'; });
     var inputFontMin = mobInpEls.length ? Math.min.apply(null, mobInpEls.map(function(el){ return parseFloat(getComputedStyle(el).fontSize || '0'); })) : 16;
-    var effW = window.innerWidth < 600 ? 390 : window.innerWidth;
-    var suiteGrid = document.getElementById('app-suite-grid');
-    var suiteTiles = Array.from(document.querySelectorAll('#app-suite-grid .app-tile'));
-    var suiteTops = suiteTiles.map(function(t){ return t.getBoundingClientRect().top; }).sort(function(a, b){ return a - b; });
-    var suiteRows = suiteTops.length ? 1 : 0;
-    for (var si = 1; si < suiteTops.length; si++) { if (suiteTops[si] - suiteTops[si - 1] > 20) suiteRows++; }
-    if (suiteGrid && getComputedStyle(suiteGrid).gridAutoFlow !== 'column' && effW === 390) suiteRows = 0;
-    var compTds = Array.from(document.querySelectorAll('#ingenuity .comp-table tbody td'));
-    var compTdBlock = compTds.length > 0 && compTds.every(function(td){ return getComputedStyle(td).display === 'block'; });
-    var overflows = [];
-    if (effW === 390) {
-      document.querySelectorAll('*').forEach(function(el) {
-        if (el.closest('#mobile-sec-nav') || el.closest('.rail nav')) return;
-        var sc = el.closest('#app-suite-grid, .app-cat-bar, .ind-tabs, #sbox-ind-bar, .sec-tabs, .ind-subtabs');
+    var cmpCols = getComputedStyle(document.querySelector('#why .d-row:not(.d-rowhead)')).gridTemplateColumns.trim().split(/\\s+/).length;
+    var moduleCount = document.querySelectorAll('#platform .d-mod').length;
+    var industryTileCount = document.querySelectorAll('#platform .d-ind').length;
+    var logoCount = document.querySelectorAll('#proof .d-logo').length;
+    var logoFilter = getComputedStyle(document.querySelector('#proof .d-logo')).filter || '';
+    function scanOverflows(root) {
+      var found = [];
+      if (effW !== 390) return found;
+      root.querySelectorAll('*').forEach(function(el) {
+        if (el.closest('#mobile-sec-nav, #mobile-sheet-nav') || el.closest('.rail nav')) return;
+        var sc = el.closest('.d-prev-tabs, .ai-prompt-pills, .ind-tabs, #sbox-ind-bar, .sec-tabs, .ind-subtabs, .ai-thread');
         if (sc && sc !== el && sc.getBoundingClientRect().right <= 390.5) return;
         var r = el.getBoundingClientRect();
-        if (r.right > 390.5) {
-          overflows.push((el.tagName + '.' + (el.className || '') + '#' + (el.id || '')) + ':' + Math.round(r.right));
+        if (r.width > 0 && r.right > 390.5) {
+          found.push((el.tagName + '.' + (el.className && el.className.baseVal !== undefined ? el.className.baseVal : (el.className || '')) + '#' + (el.id || '')) + ':' + Math.round(r.right));
         }
       });
+      return found;
     }
-    var cardOverflows = [];
-    document.querySelectorAll('.portal-form-card, .portal-direct-card, .configurator-card, .price-card, .pricing-trust-bar, .hero-ledger-card, .ind-detail').forEach(function(card) {
-      var cr = card.getBoundingClientRect();
-      if (cr.width === 0) return;
-      card.querySelectorAll('*').forEach(function(child) {
-        var r = child.getBoundingClientRect();
-        if (r.width > 0 && (r.right > cr.right + 1 || r.left < cr.left - 1)) {
-          cardOverflows.push((child.tagName + '#' + (child.id || '') + '.' + (child.className || '')) + ' (' + Math.round(r.right) + ' > ' + Math.round(cr.right) + ')');
-        }
+    function scanCards(sel) {
+      var found = [];
+      document.querySelectorAll(sel).forEach(function(card) {
+        var cr = card.getBoundingClientRect();
+        if (cr.width === 0) return;
+        card.querySelectorAll('*').forEach(function(child) {
+          if (child.closest('.d-prev-tabs, .ai-prompt-pills, .ai-thread')) return;
+          var r = child.getBoundingClientRect();
+          if (r.width > 0 && (r.right > cr.right + 1 || r.left < cr.left - 1)) {
+            found.push((child.tagName + '#' + (child.id || '') + '.' + (child.className && child.className.baseVal !== undefined ? child.className.baseVal : (child.className || ''))) + ' (' + Math.round(r.right) + ' > ' + Math.round(cr.right) + ')');
+          }
+        });
       });
-    });
+      return found;
+    }
+    var overflows = scanOverflows(document.body);
+    var cardOverflows = scanCards('.d-brief, .d-direct, .configurator-card, .d-tier, .d-trust, .d-preview, .d-group, .d-cmp, .d-logos, .d-step-card');
     var secHeights = {};
-    ['.hero-section', '#architecture', '#industries', '#sandbox', '#ingenuity', '#pricing', '#portal'].forEach(function(sel) {
+    ['#hero', '#platform', '#ask', '#golive', '#why', '#pricing', '#proof', '#portal'].forEach(function(sel) {
       var el = document.querySelector(sel);
       if (el) secHeights[sel] = Math.round(el.getBoundingClientRect().height);
     });
@@ -255,11 +256,9 @@ document.addEventListener('DOMContentLoaded', function() {
       scrollH: document.documentElement.scrollHeight,
       scrollY: Math.round(window.scrollY),
       hdrBottom: Math.round(hdr.bottom),
-      archBottom: Math.round(arch.bottom),
-      indTop: Math.round(ind.top),
-      sboxTop: Math.round(sbox.top),
-      mockWidth: Math.round(mock.width),
-      compWidth: Math.round(comp.width),
+      whyBottom: Math.round(why.bottom),
+      pricingTop: Math.round(pricing.top),
+      compWidth: Math.round(cmp.width),
       ctaRight: Math.round(ctaBtn.right),
       portalCardRight: Math.round(portalCard.right),
       leadNameW: Math.round(leadName.width),
@@ -268,29 +267,77 @@ document.addEventListener('DOMContentLoaded', function() {
       leadIndustryW: Math.round(leadIndustry.width),
       leadIndustryRight: Math.round(leadIndustry.right),
       heroSecH: Math.round(heroSec.height),
-      heroLeftH: Math.round(heroLeft.height),
-      heroCardH: Math.round(heroCard.height),
-      indTabsH: Math.round(indTabs.height),
-      indDetailH: Math.round(indDetail.height),
       secHeights: secHeights,
       kpi1W: Math.round(kpi1.width),
       kpi2W: Math.round(kpi2.width),
-      kpi1StrongTop: Math.round(kpi1Strong.top),
-      kpi2StrongTop: Math.round(kpi2Strong.top),
       hlcSvgCount: hlcSvgCount,
       hdrControlCount: hdrControlCount,
       heroControlCount: heroControlCount,
       activeMain: activeMain,
       activeMob: activeMob,
-      activeDock: activeDock,
-      dockHiddenMob: dockHiddenMob,
       langSwitchH: langSwitchH,
       inputFontMin: inputFontMin,
-      suiteRows: suiteRows,
-      compTdBlock: compTdBlock,
+      cmpCols: cmpCols,
+      moduleCount: moduleCount,
+      industryTileCount: industryTileCount,
+      logoCount: logoCount,
+      logoOneTone: logoFilter.indexOf('grayscale') !== -1,
       overflows: overflows.slice(0, 12),
       cardOverflows: cardOverflows.slice(0, 12)
     };
+
+    // More pages (Live Demo, Industry Blueprints, FAQ): each opens from a button, swaps the header menu, and closes with Back to Site or Escape
+    var sheetInfo = {};
+    var sheetIds = ['sandbox', 'industries', 'faq'];
+    for (var shI = 0; shI < sheetIds.length; shI++) {
+      var sid = sheetIds[shI];
+      var opener = document.querySelector('#site-pages a[href="#' + sid + '"]');
+      if (opener) opener.click();
+      await tick(30);
+      var sEl = document.getElementById(sid);
+      var hdrNow = document.getElementById('site-header').getBoundingClientRect();
+      sheetInfo[sid] = {
+        hasOpener: !!opener,
+        h: Math.round(sEl.getBoundingClientRect().height),
+        avail: Math.round(window.innerHeight - hdrNow.bottom),
+        shown: !sEl.hidden,
+        pagesHidden: document.getElementById('site-pages').hidden,
+        mainNavHidden: document.getElementById('main-nav').hidden,
+        sheetNavShown: !document.getElementById('sheet-nav').hidden,
+        activeLink: Array.from(document.querySelectorAll('#sheet-nav a.active')).map(function(a){ return a.getAttribute('href'); }),
+        hash: location.hash,
+        scrollW: document.body.scrollWidth,
+        overflows: scanOverflows(sEl).slice(0, 8),
+        cardOverflows: scanCards('#' + sid + ' .ind-detail, #' + sid + ' .faq-item').slice(0, 8)
+      };
+      if (sid === 'industries') {
+        sheetInfo[sid].indTabsH = Math.round(document.querySelector('.ind-tabs').getBoundingClientRect().height);
+        sheetInfo[sid].indDetailH = Math.round(document.querySelector('.ind-detail').getBoundingClientRect().height);
+      }
+      if (sid === 'sandbox') {
+        sheetInfo[sid].mockWidth = Math.round(document.querySelector('.mock').getBoundingClientRect().width);
+      }
+    }
+    var backBtn = document.querySelector('#sheet-nav [data-sheet-close]');
+    if (backBtn) backBtn.click();
+    await tick(120);
+    sheetInfo.afterBack = {
+      pagesHidden: document.getElementById('site-pages').hidden,
+      openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
+      mainNavHidden: document.getElementById('main-nav').hidden,
+      hash: location.hash
+    };
+    var faqOpener = document.querySelector('#site-pages a[href="#faq"]');
+    if (faqOpener) faqOpener.click();
+    await tick(30);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick(120);
+    sheetInfo.afterEscape = {
+      pagesHidden: document.getElementById('site-pages').hidden,
+      openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
+      hash: location.hash
+    };
+    out.sheets = sheetInfo;
 
     // Interactive Ask ISABI functional checks (run after geometry measurement)
     var initDrawerUsers = document.querySelectorAll('#ai-drawer-thread .ai-msg-user').length;
@@ -443,19 +490,6 @@ document.addEventListener('DOMContentLoaded', function() {
       return 765;
     }
 
-    var appsPanelInit = document.querySelector('[data-arch-panel="apps"]');
-    var archDefaultIsApps = appsPanelInit ? !appsPanelInit.hasAttribute('data-panel-hidden') : false;
-    var hasPillarRibbon = document.querySelectorAll('.arch-pillars-ribbon .apr-item').length === 4;
-    var pillarsTabBtn = document.querySelector('[data-arch-view="pillars"]');
-    if (pillarsTabBtn) pillarsTabBtn.click();
-    var archPillarsH = Math.round(document.getElementById('architecture').getBoundingClientRect().height);
-    var appsTabBtn = document.querySelector('[data-arch-view="apps"]');
-    if (appsTabBtn) appsTabBtn.click();
-    var archAppsH = Math.round(document.getElementById('architecture').getBoundingClientRect().height);
-    var posTile = document.querySelector('[data-app-id="pos"]');
-    if (posTile) posTile.click();
-    var spotTitle = document.querySelector('#app-spotlight h3') ? document.querySelector('#app-spotlight h3').textContent : '';
-
     var indSubtabCount = document.querySelectorAll('.ind-subtabs .ind-subtab-btn').length;
     var dfBtn = document.querySelector('[data-ind-subtab="dayflow"]');
     if (dfBtn) dfBtn.click();
@@ -508,24 +542,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (ovBtn) ovBtn.click();
     var distinctSboxPages = Object.keys(sboxPageTitles).length;
 
-    var roadTab = document.querySelector('[data-ing-tab="roadmap"]');
-    if (roadTab) roadTab.click();
-    var roadPanel = document.querySelector('[data-ing-panel="roadmap"]');
-    var roadActive = roadPanel ? !roadPanel.hasAttribute('data-panel-hidden') : false;
-    var ingRoadH = Math.round(document.getElementById('ingenuity').getBoundingClientRect().height);
-
-    var faqTab = document.querySelector('[data-ing-tab="faq"]');
-    if (faqTab) faqTab.click();
-    var faqPanel = document.querySelector('[data-ing-panel="faq"]');
-    var faqActive = faqPanel ? !faqPanel.hasAttribute('data-panel-hidden') : false;
     var visibleFaqs = document.querySelectorAll('#faq-grid [data-faq-item]').length;
-    var ingFaqH = Math.round(document.getElementById('ingenuity').getBoundingClientRect().height);
-    var matTab = document.querySelector('[data-ing-tab="matrix"]');
-    if (matTab) matTab.click();
 
     var builderTab = document.querySelector('[data-price-view="builder"]');
     if (builderTab) builderTab.click();
     var priceBuilderH = Math.round(document.getElementById('pricing').getBoundingClientRect().height);
+    var builderPressed = builderTab ? builderTab.getAttribute('aria-pressed') : '';
+    var builderCardOverflows = scanCards('.configurator-card');
     var tiersTab = document.querySelector('[data-price-view="tiers"]');
     if (tiersTab) tiersTab.click();
 
@@ -535,48 +558,67 @@ document.addEventListener('DOMContentLoaded', function() {
     var tierNoteTxt = document.getElementById('portal-tier-note').textContent;
     var leadBudgetVal = document.getElementById('lead-budget').value;
 
-    // Hero Interactive Vertical Row & Reset checks
-    var heroHospRow = document.querySelector('.hlc-vrow[data-hero-ind="hospitality"]');
-    if (heroHospRow) heroHospRow.click();
+    // Hero preview: a tab or a bar row inspects one vertical, the Group overview tab returns
+    var heroHospTab = document.querySelector('#hlc-tabs [data-hero-ind="hospitality"]');
+    if (heroHospTab) heroHospTab.click();
     var heroHospVal = document.getElementById('hlc-kpi1-val').textContent;
-    var hasHeroReset = !!document.getElementById('hlc-reset-ind');
-    var heroResetBtn = document.getElementById('hlc-reset-ind');
-    if (heroResetBtn) heroResetBtn.click();
+    var heroHospPressed = heroHospTab ? heroHospTab.getAttribute('aria-pressed') : '';
+    var heroHospLink = document.getElementById('hlc-open-portal-link').getAttribute('href');
+    var heroAllTab = document.querySelector('#hlc-tabs [data-hero-ind="all"]');
+    if (heroAllTab) heroAllTab.click();
     var heroResetVal = document.getElementById('hlc-kpi1-val').textContent;
+    var heroBarRow = document.querySelector('#hlc-stage .d-bar-row[data-hero-ind="trading"]');
+    if (heroBarRow) heroBarRow.click();
+    var heroBarVal = document.getElementById('hlc-kpi1-val').textContent;
+    if (heroAllTab) heroAllTab.click();
 
     var lightChecks = {
-      askTrigger: parseRgbSum(document.querySelector('.ask-isabi-trigger')),
-      hlcTop: parseRgbSum(document.querySelector('.hlc-top')),
+      hlcTop: parseRgbSum(document.querySelector('.d-prev-top')),
       sboxPosReceipt: lightPosReceiptRgb,
       sboxRail: parseRgbSum(document.querySelector('.rail')),
       aiConsole: parseRgbSum(document.querySelector('.ai-console')),
       aiConsoleHdr: parseRgbSum(document.querySelector('.ai-console-hdr')),
       aiBotBubble: parseRgbSum(document.querySelector('.ai-bot-bubble')),
       aiDrawer: parseRgbSum(document.querySelector('.ai-drawer')),
-      portalDirect: parseRgbSum(document.querySelector('.portal-direct-card')),
-      directChannel: parseRgbSum(document.querySelector('.direct-channel-box')),
-      siteFooter: parseRgbSum(document.querySelector('.site-footer'))
+      portalDirect: parseRgbSum(document.querySelector('.d-direct')),
+      directChannel: parseRgbSum(document.querySelector('.d-channel')),
+      logoCard: parseRgbSum(document.querySelector('.d-logos')),
+      siteFooter: parseRgbSum(document.querySelector('.d-foot'))
     };
 
     var darkBlocksInLight = [];
-    Array.from(document.querySelectorAll('body *')).forEach(function(el) {
-      if (el.classList && el.classList.contains('drawer-backdrop')) return;
-      var r = el.getBoundingClientRect();
-      if (r.width < 80 || r.height < 34) return;
-      var cs = getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden') return;
-      var s = parseRgbSum(el);
-      if (s >= 0 && s < 220) {
-        darkBlocksInLight.push(el.tagName.toLowerCase() + '.' + String(el.className || '').trim().split(/\\s+/).slice(0, 2).join('.') + ':' + s);
-      }
+    function scanDarkBlocks() {
+      Array.from(document.querySelectorAll('body *')).forEach(function(el) {
+        if (el.classList && el.classList.contains('drawer-backdrop')) return;
+        var r = el.getBoundingClientRect();
+        if (r.width < 80 || r.height < 34) return;
+        var cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        var s = parseRgbSum(el);
+        if (s >= 0 && s < 220) {
+          darkBlocksInLight.push(el.tagName.toLowerCase() + '.' + String(el.className || '').trim().split(/\\s+/).slice(0, 2).join('.') + ':' + s);
+        }
+      });
+    }
+    var drawerBd = document.getElementById('ai-drawer-backdrop');
+    if (drawerBd) drawerBd.hidden = true;
+    scanDarkBlocks();
+    ['sandbox', 'industries', 'faq'].forEach(function(sid) {
+      var op = document.querySelector('#site-pages a[href="#' + sid + '"]');
+      if (op) op.click();
+      scanDarkBlocks();
     });
+    var homeLink = document.querySelector('a[href="#top"]');
+    if (homeLink) homeLink.click();
+    var closedByHome = document.querySelectorAll('[data-sheet]:not([hidden])').length === 0 && !document.getElementById('site-pages').hidden;
 
     document.documentElement.setAttribute('data-theme', 'dark');
     var darkChecks = {
-      hlcTop: parseRgbSum(document.querySelector('.hlc-top')),
+      hlcTop: parseRgbSum(document.querySelector('.d-prev-top')),
       aiConsole: parseRgbSum(document.querySelector('.ai-console')),
-      portalDirect: parseRgbSum(document.querySelector('.portal-direct-card')),
-      siteFooter: parseRgbSum(document.querySelector('.site-footer'))
+      portalDirect: parseRgbSum(document.querySelector('.d-direct')),
+      pageGround: parseRgbSum(document.getElementById('hero')),
+      siteFooter: parseRgbSum(document.querySelector('.d-foot'))
     };
     document.documentElement.setAttribute('data-theme', 'light');
 
@@ -584,20 +626,22 @@ document.addEventListener('DOMContentLoaded', function() {
     var i18nOk = false;
     var i18nDiag = {};
     if (window.ISABI_I18N) {
+      var navSel = '#main-nav a[data-sec-link="platform"]';
+      var colSel = '#why .d-row:not(.d-rowhead) .d-cmp-b';
       window.ISABI_I18N.setLang('fr', false);
-      var frNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
-      var frHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
-      var frHeroCard = document.querySelector('.hero-ledger-card')?.textContent || '';
+      var frNav = document.querySelector(navSel)?.textContent || '';
+      var frHeroH1 = (document.querySelector('#hero h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
+      var frHeroCard = document.querySelector('.d-preview')?.textContent || '';
       var frScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
       var frMobBodyW = document.body.scrollWidth;
-      var frColLbl = document.querySelector('#ingenuity .comp-table tbody td:nth-child(3)')?.getAttribute('data-col-lbl') || '';
+      var frColLbl = document.querySelector(colSel)?.getAttribute('data-col-lbl') || '';
       window.ISABI_I18N.setLang('ar', false);
       var arDir = document.documentElement.getAttribute('dir');
-      var arNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
-      var arHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
+      var arNav = document.querySelector(navSel)?.textContent || '';
+      var arHeroH1 = (document.querySelector('#hero h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
       var arScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
       var arMobBodyW = document.body.scrollWidth;
-      var arColLbl = document.querySelector('#ingenuity .comp-table tbody td:nth-child(3)')?.getAttribute('data-col-lbl') || '';
+      var arColLbl = document.querySelector(colSel)?.getAttribute('data-col-lbl') || '';
       var indSel = document.getElementById('lead-industry');
       var arOptTxt = indSel && indSel.options[0] ? indSel.options[0].text : '';
       var arOptVal = indSel && indSel.options[0] ? indSel.options[0].value : '';
@@ -610,52 +654,83 @@ document.addEventListener('DOMContentLoaded', function() {
       var arModBtn = document.querySelector('[data-ind-subtab="modules"]');
       if (arModBtn) arModBtn.click();
       window.ISABI_I18N.translateDom(document.getElementById('industries'));
-      // Layer 3 Showcase Runtime Crawl Gate: audit visible DOM across blueprints, subtabs, 8 sidebar pages & SOA/TB modes
-      document.querySelectorAll('[data-ind-tab]').forEach(function(b) { b.click(); });
-      document.querySelectorAll('[data-ind-subtab]').forEach(function(b) { b.click(); });
-      document.querySelectorAll('[data-demo-tab]').forEach(function(b) { b.click(); });
-      window.ISABI_I18N.translateDom(document.body);
-      var arDomAudit = window.ISABI_I18N.auditDom(document.body, 'ar');
-      window.ISABI_I18N.setLang('fr', false);
-      var frDomAudit = window.ISABI_I18N.auditDom(document.body, 'fr');
+      // Layer 3 Showcase Runtime Crawl Gate: audit the visible DOM of the eight pages (every hero vertical), then each "more" page, 8 sidebar pages & SOA/TB modes
+      var arDomAudit = { count: 0, items: [] };
+      var frDomAudit = { count: 0, items: [] };
+      function auditBoth(rootEl) {
+        window.ISABI_I18N.setLang('ar', false);
+        window.ISABI_I18N.translateDom(rootEl);
+        var a = window.ISABI_I18N.auditDom(rootEl, 'ar');
+        if (a.count) { arDomAudit.count += a.count; arDomAudit.items = arDomAudit.items.concat(a.items); }
+        window.ISABI_I18N.setLang('fr', false);
+        var f = window.ISABI_I18N.auditDom(rootEl, 'fr');
+        if (f.count) { frDomAudit.count += f.count; frDomAudit.items = frDomAudit.items.concat(f.items); }
+      }
+      auditBoth(document.body);
+      ['trading', 'hospitality', 'manufacturing', 'realestate', 'all'].forEach(function(hk) {
+        var hb = document.querySelector('#hlc-tabs [data-hero-ind="' + hk + '"]');
+        if (hb) hb.click();
+        auditBoth(document.getElementById('hero'));
+      });
+      var builderTab2 = document.querySelector('[data-price-view="builder"]');
+      if (builderTab2) builderTab2.click();
+      auditBoth(document.getElementById('pricing'));
+      var tiersTab2 = document.querySelector('[data-price-view="tiers"]');
+      if (tiersTab2) tiersTab2.click();
+      var auditedSheets = 0;
+      ['faq', 'industries', 'sandbox'].forEach(function(sid) {
+        var op = document.querySelector('#site-pages a[href="#' + sid + '"]');
+        if (op) op.click();
+        if (!document.getElementById(sid).hidden) auditedSheets++;
+        auditBoth(document.getElementById('site-header'));
+        if (sid === 'industries') {
+          document.querySelectorAll('[data-ind-id]').forEach(function(b) {
+            var bid = b.getAttribute('data-ind-id');
+            var live = document.querySelector('[data-ind-id="' + bid + '"]');
+            if (live) live.click();
+            ['dayflow', 'modules'].forEach(function(st) {
+              var sb = document.querySelector('[data-ind-subtab="' + st + '"]');
+              if (sb) sb.click();
+              auditBoth(document.getElementById('industries'));
+            });
+          });
+        } else {
+          auditBoth(document.getElementById(sid));
+        }
+      });
       ['Overview','Sales & Revenue','Purchases & Stock','Cash & Treasury','General Ledger','Statements','Business Units','Audit Trail'].forEach(function(nm) {
         var nb = document.querySelector('[data-sbox-nav="' + nm + '"]');
         if (nb) nb.click();
-        window.ISABI_I18N.setLang('ar', false);
-        var aSub = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'ar');
-        if (aSub.count) { arDomAudit.count += aSub.count; arDomAudit.items = arDomAudit.items.concat(aSub.items); }
-        window.ISABI_I18N.setLang('fr', false);
-        var fSub = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'fr');
-        if (fSub.count) { frDomAudit.count += fSub.count; frDomAudit.items = frDomAudit.items.concat(fSub.items); }
+        auditBoth(document.getElementById('sandbox'));
       });
       var soaM = document.querySelector('[data-sbox-mode="soa"]');
       if (soaM) soaM.click();
       ['soa', 'tb'].forEach(function(dk) {
         var db = document.querySelector('[data-soa-doc="' + dk + '"]');
         if (db) db.click();
-        window.ISABI_I18N.setLang('ar', false);
-        var aDoc = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'ar');
-        if (aDoc.count) { arDomAudit.count += aDoc.count; arDomAudit.items = arDomAudit.items.concat(aDoc.items); }
-        window.ISABI_I18N.setLang('fr', false);
-        var fDoc = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'fr');
-        if (fDoc.count) { frDomAudit.count += fDoc.count; frDomAudit.items = frDomAudit.items.concat(fDoc.items); }
+        auditBoth(document.getElementById('sandbox'));
       });
+      var pwaM = document.querySelector('[data-sbox-mode="pwa"]');
+      if (pwaM) pwaM.click();
+      auditBoth(document.getElementById('sandbox'));
       var erpM = document.querySelector('[data-sbox-mode="erp"]');
       if (erpM) erpM.click();
       var ovB = document.querySelector('[data-sbox-nav="Overview"]');
       if (ovB) ovB.click();
-      window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Features': 'Funciones' });
+      var homeLink2 = document.querySelector('a[href="#top"]');
+      if (homeLink2) homeLink2.click();
+      window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Platform': 'Plataforma' });
       window.ISABI_I18N.setLang('es', false);
-      var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      var esNav = document.querySelector(navSel)?.textContent || '';
       window.ISABI_I18N.setLang('en', false);
       var invalidLangRejected = (window.ISABI_I18N.setLang('<scr' + 'ipt>alert(1)</scr' + 'ipt>', false) === false && document.documentElement.getAttribute('lang') === 'en');
-      var enNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      var enNav = document.querySelector(navSel)?.textContent || '';
       var enDir = document.documentElement.getAttribute('dir');
-      var enHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
+      var enHeroH1 = (document.querySelector('#hero h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
       var enLeadPh = document.getElementById('lead-name')?.getAttribute('placeholder') || '';
       i18nDiag = {
         frNav: frNav,
-        frHeroOk: frHeroH1.indexOf("L'ERP sur lequel votre Groupe") !== -1 && /Chiffre d'Affaires/i.test(frHeroCard),
+        frHeroOk: frHeroH1.indexOf("L'ERP sur lequel votre Groupe") !== -1 && /Chiffre d'affaires/i.test(frHeroCard),
         frScrollOk: frScrollOk,
         frMobBodyW: frMobBodyW,
         frColLbl: frColLbl,
@@ -673,6 +748,7 @@ document.addEventListener('DOMContentLoaded', function() {
         arAuditSample: arDomAudit.items.slice(0, 8),
         frAuditMissing: frDomAudit.count,
         frAuditSample: frDomAudit.items.slice(0, 8),
+        auditedSheets: auditedSheets,
         esNav: esNav,
         enNav: enNav,
         enDir: enDir,
@@ -680,12 +756,12 @@ document.addEventListener('DOMContentLoaded', function() {
         enRestoreOk: enHeroH1.indexOf('The ERP Your Group') !== -1 && enLeadPh.indexOf('Karim Mansour') !== -1
       };
       i18nOk = (
-        frNav === 'Fonctionnalités' && i18nDiag.frHeroOk && frScrollOk && frColLbl === 'SaaS Générique' &&
-        arDir === 'rtl' && arNav === 'المميزات' && i18nDiag.arHeroOk &&
+        frNav === 'Plateforme' && i18nDiag.frHeroOk && frScrollOk && frColLbl === 'SaaS Générique' &&
+        arDir === 'rtl' && arNav === 'المنصة' && i18nDiag.arHeroOk &&
         i18nDiag.arScrollOk && /[\\u0600-\\u06FF]/.test(arColLbl) && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
         i18nDiag.arPhOk && i18nDiag.arFlowOk &&
-        arDomAudit.count === 0 && frDomAudit.count === 0 &&
-        esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' &&
+        arDomAudit.count === 0 && frDomAudit.count === 0 && auditedSheets === 3 &&
+        esNav === 'Plataforma' && enNav === 'Platform' && enDir === 'ltr' &&
         invalidLangRejected === true && i18nDiag.enRestoreOk
       );
     }
@@ -693,10 +769,6 @@ document.addEventListener('DOMContentLoaded', function() {
       out.v4Test = {
       i18nOk: i18nOk,
       i18nDiag: i18nDiag,
-      spotTitle: spotTitle,
-      archDefaultIsApps: archDefaultIsApps,
-      hasPillarRibbon: hasPillarRibbon,
-      archPillarsH: archPillarsH,
       soaDocDifferent: soaDocDifferent,
       railBrandSvgCount: railBrandSvgCount,
       distinctSboxPages: distinctSboxPages,
@@ -705,18 +777,18 @@ document.addEventListener('DOMContentLoaded', function() {
       baCardCount: baCardCount,
       hasSoaViewer: hasSoaViewer,
       hasPwaSim: hasPwaSim,
-      roadActive: roadActive,
-      faqActive: faqActive,
       visibleFaqs: visibleFaqs,
-      archAppsH: archAppsH,
-      ingRoadH: ingRoadH,
-      ingFaqH: ingFaqH,
       priceBuilderH: priceBuilderH,
+      builderPressed: builderPressed,
+      builderCardOverflows: builderCardOverflows.slice(0, 8),
       tierNoteTxt: tierNoteTxt,
       leadBudgetVal: leadBudgetVal,
       heroHospVal: heroHospVal,
-      hasHeroReset: hasHeroReset,
+      heroHospPressed: heroHospPressed,
+      heroHospLink: heroHospLink,
       heroResetVal: heroResetVal,
+      heroBarVal: heroBarVal,
+      closedByHome: closedByHome,
       lightChecks: lightChecks,
       darkBlocksInLight: darkBlocksInLight.slice(0, 10),
       darkChecks: darkChecks,
@@ -740,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         def probe_viewport(w, h, label):
             res_vp = subprocess.run(
-                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#industries'],
+                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
             )
             m_vp = html.unescape(res_vp.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
@@ -766,43 +838,50 @@ document.addEventListener('DOMContentLoaded', function() {
             avail_h = dvp['vh'] - dvp['hdrBottom']
             for sec_sel, sec_h in dvp['secHeights'].items():
                 assert abs(sec_h - avail_h) <= 2, f"{vp_lbl} section {sec_sel} height ({sec_h}px) != viewport availH ({avail_h}px)!"
-            for alt_tab_lbl, alt_h in [
-                ('arch:apps', dvp['v4Test']['archAppsH']),
-                ('arch:pillars', dvp['v4Test']['archPillarsH']),
-                ('ing:roadmap', dvp['v4Test']['ingRoadH']),
-                ('ing:faq', dvp['v4Test']['ingFaqH']),
-                ('pricing:builder', dvp['v4Test']['priceBuilderH']),
-            ]:
-                assert abs(alt_h - avail_h) <= 2, f"{vp_lbl} secondary tab {alt_tab_lbl} height ({alt_h}px) != viewport availH ({avail_h}px)!"
+            assert abs(dvp['v4Test']['priceBuilderH'] - avail_h) <= 2, f"{vp_lbl} Custom Scope Builder height ({dvp['v4Test']['priceBuilderH']}px) != viewport availH ({avail_h}px)!"
+            assert dvp['v4Test']['builderCardOverflows'] == [], f"{vp_lbl} scope builder overflows: {dvp['v4Test']['builderCardOverflows']}"
+            for sheet_id in ('sandbox', 'industries', 'faq'):
+                sh = dvp['sheets'][sheet_id]
+                assert sh['hasOpener'] and sh['shown'] and sh['pagesHidden'] and sh['mainNavHidden'] and sh['sheetNavShown'], f"{vp_lbl} page #{sheet_id} did not open from its button: {sh}"
+                assert sh['activeLink'] == ['#' + sheet_id] and sh['hash'] == '#' + sheet_id, f"{vp_lbl} page #{sheet_id} menu or address wrong: {sh}"
+                assert abs(sh['h'] - sh['avail']) <= 2, f"{vp_lbl} page #{sheet_id} height ({sh['h']}px) != viewport availH ({sh['avail']}px)!"
+                assert sh['scrollW'] <= dvp['vw'] and sh['cardOverflows'] == [], f"{vp_lbl} page #{sheet_id} overflows: {sh}"
+            assert abs(dvp['sheets']['industries']['indTabsH'] - dvp['sheets']['industries']['indDetailH']) <= 2, f"{vp_lbl} industry tabs/detail heights mismatch: {dvp['sheets']['industries']}"
+            assert dvp['sheets']['afterBack'] == {'pagesHidden': False, 'openSheets': 0, 'mainNavHidden': False, 'hash': '#pricing'}, f"{vp_lbl} Back to Site did not return to the main pages: {dvp['sheets']['afterBack']}"
+            assert dvp['sheets']['afterEscape']['pagesHidden'] is False and dvp['sheets']['afterEscape']['openSheets'] == 0, f"{vp_lbl} Escape did not close the page: {dvp['sheets']['afterEscape']}"
 
         # Primary Desktop assertions
-        assert d_desk['hdrControlCount'] == 9, f"Expected 9 clean header controls (5 nav + 4 actions), got {d_desk['hdrControlCount']}"
-        assert d_desk['heroControlCount'] == 8, f"Expected 8 clean hero controls (2 CTAs + Full Portal + 4 rows + Demo link), got {d_desk['heroControlCount']}"
-        assert d_desk['activeMain'] == ['#industries'], f"Expected activeMain=['#industries'], got {d_desk['activeMain']}"
-        assert d_desk['archBottom'] <= d_desk['hdrBottom'] + 1, f"Previous section bled through! archBottom={d_desk['archBottom']} > hdrBottom={d_desk['hdrBottom']}"
-        assert abs(d_desk['indTop'] - d_desk['hdrBottom']) <= 4, f"Section top not aligned to header bottom! indTop={d_desk['indTop']}, hdrBottom={d_desk['hdrBottom']}"
-        assert d_desk['ctaRight'] <= d_desk['vw'], f"Header CTA clipped! ctaRight={d_desk['ctaRight']} > vw={d_desk['vw']}"
+        assert d_desk['hdrControlCount'] == 9, f"Expected 9 clean header controls (6 nav + theme, sign in, book), got {d_desk['hdrControlCount']}"
+        assert d_desk['heroControlCount'] == 13, f"Expected 13 hero controls (3 CTAs + 5 tabs + 4 bar rows + portal link), got {d_desk['heroControlCount']}"
+        assert d_desk['activeMain'] == ['#pricing'], f"Expected activeMain=['#pricing'], got {d_desk['activeMain']}"
+        assert d_desk['whyBottom'] <= d_desk['hdrBottom'] + 1, f"Previous page bled through! whyBottom={d_desk['whyBottom']} > hdrBottom={d_desk['hdrBottom']}"
+        assert abs(d_desk['pricingTop'] - d_desk['hdrBottom']) <= 4, f"Page top not aligned to header bottom! pricingTop={d_desk['pricingTop']}, hdrBottom={d_desk['hdrBottom']}"
+        assert 0 < d_desk['ctaRight'] <= d_desk['vw'], f"Header CTA clipped! ctaRight={d_desk['ctaRight']} > vw={d_desk['vw']}"
         assert abs(d_desk['leadContactW'] - d_desk['leadNameW']) <= 1, f"lead-contact width ({d_desk['leadContactW']}) != lead-name width ({d_desk['leadNameW']})"
         assert abs(d_desk['leadIndustryW'] - d_desk['leadCompanyW']) <= 1, f"lead-industry width ({d_desk['leadIndustryW']}) != lead-company width ({d_desk['leadCompanyW']})"
-        assert d_desk['leadIndustryRight'] <= d_desk['portalCardRight'] - 24, f"lead-industry overflows portal card! {d_desk['leadIndustryRight']} vs {d_desk['portalCardRight']}"
-        assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
-        assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']})!"
-        assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
-        assert abs(d_desk['indTabsH'] - d_desk['indDetailH']) <= 2, f"Desktop industry tabs/detail heights mismatch: {d_desk['indTabsH']} vs {d_desk['indDetailH']}"
+        assert d_desk['leadIndustryRight'] <= d_desk['portalCardRight'] - 16, f"lead-industry overflows the brief card! {d_desk['leadIndustryRight']} vs {d_desk['portalCardRight']}"
+        assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .d-prev-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
+        assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero page too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']})!"
+        assert d_desk['moduleCount'] == 18 and d_desk['industryTileCount'] == 6, f"Platform page: expected 18 modules and 6 industry tiles, got {d_desk['moduleCount']} / {d_desk['industryTileCount']}"
+        assert d_desk['logoCount'] == 5 and d_desk['logoOneTone'] is True, f"In Practice page: expected 5 logos in one tone, got {d_desk['logoCount']} / {d_desk['logoOneTone']}"
+        assert d_desk['cmpCols'] == 4, f"Expected a 4-column comparison on desktop, got {d_desk['cmpCols']}"
+        assert abs(d_desk['kpi1W'] - d_desk['kpi2W']) <= 2, f"Hero KPI width mismatch: {d_desk['kpi1W']} vs {d_desk['kpi2W']}"
 
         # Mobile assertions (390x844)
         assert d_mob['scrollW'] <= d_mob['vw'], f"Mobile horizontal overflow! scrollW={d_mob['scrollW']} > vw={d_mob['vw']}"
         assert d_mob['overflows'] == [], f"Mobile element overflows detected: {d_mob['overflows']}"
-        assert d_mob['mockWidth'] <= d_mob['vw'], f"Mobile sandbox .mock overflows! mockWidth={d_mob['mockWidth']} > vw={d_mob['vw']}"
-        assert d_mob['compWidth'] <= d_mob['vw'], f"Mobile .comp-table overflows! compWidth={d_mob['compWidth']} > vw={d_mob['vw']}"
-        assert abs(d_mob['kpi1W'] - d_mob['kpi2W']) <= 2, f"Mobile .hlc-kpi width mismatch: {d_mob['kpi1W']} vs {d_mob['kpi2W']}"
-        assert abs(d_mob['kpi1StrongTop'] - d_mob['kpi2StrongTop']) <= 2, f"Mobile .hlc-kpi strong baseline mismatch: {d_mob['kpi1StrongTop']} vs {d_mob['kpi2StrongTop']}"
-        assert d_mob['activeMob'] == ['#industries'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
-        assert d_mob['dockHiddenMob'] is True, "Duplicate .mobile-dock was not hidden on <= 720px!"
+        assert d_mob['sheets']['sandbox']['mockWidth'] <= d_mob['vw'], f"Mobile sandbox .mock overflows! {d_mob['sheets']['sandbox']}"
+        assert d_mob['compWidth'] <= d_mob['vw'], f"Mobile comparison overflows! compWidth={d_mob['compWidth']} > vw={d_mob['vw']}"
+        assert abs(d_mob['kpi1W'] - d_mob['kpi2W']) <= 2, f"Mobile hero KPI width mismatch: {d_mob['kpi1W']} vs {d_mob['kpi2W']}"
+        assert d_mob['activeMob'] == ['#pricing'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
+        for sheet_id in ('sandbox', 'industries', 'faq'):
+            sh = d_mob['sheets'][sheet_id]
+            assert sh['hasOpener'] and sh['shown'] and sh['pagesHidden'], f"Mobile page #{sheet_id} did not open from its button: {sh}"
+            assert sh['overflows'] == [] and sh['scrollW'] <= d_mob['vw'], f"Mobile page #{sheet_id} overflows: {sh}"
+        assert d_mob['sheets']['afterBack']['pagesHidden'] is False and d_mob['sheets']['afterBack']['openSheets'] == 0, f"Mobile Back to Site failed: {d_mob['sheets']['afterBack']}"
         assert d_mob['langSwitchH'] >= 36, f"Mobile header lang switch height {d_mob['langSwitchH']}px < 36px!"
         assert d_mob['inputFontMin'] >= 16, f"Mobile input font-size {d_mob['inputFontMin']}px < 16px (triggers iOS zoom)!"
-        assert d_mob['suiteRows'] == 2, f"Expected 2-row snap carousel in #app-suite-grid on mobile, got {d_mob['suiteRows']}"
-        assert d_mob['compTdBlock'] is True, "Expected stacked card tds (display:block) in .comp-table at 390x844"
+        assert d_mob['cmpCols'] == 1, f"Expected the comparison stacked in one column at 390x844, got {d_mob['cmpCols']}"
         assert d_mob['v4Test'].get('i18nOk') is True, f"Mobile EN/AR(RTL)/FR i18n check failed: {d_mob['v4Test'].get('i18nDiag')}"
         assert d_mob['v4Test']['i18nDiag']['arMobBodyW'] <= 390 and d_mob['v4Test']['i18nDiag']['frMobBodyW'] <= 390, f"Mobile RTL/FR body overflow: {d_mob['v4Test']['i18nDiag']}"
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
@@ -838,20 +917,18 @@ document.addEventListener('DOMContentLoaded', function() {
         v4 = d_desk['v4Test']
         assert v4.get('i18nOk') is True, f"Showcase ISABI_I18N trilingual & registerLocale check failed: {v4}"
         assert v4['i18nDiag'].get('invalidLangRejected') is True, f"Negative assertion failed: invalid locale tag was not rejected: {v4['i18nDiag']}"
-        assert v4.get('archDefaultIsApps') is True and v4.get('hasPillarRibbon') is True, f"Section 01 did not default to upfront 18 Custom Modules + 4-pillar ribbon: {v4}"
         assert v4.get('soaDocDifferent') is True, f"Negative assertion failed: Statement of Account and Statutory Trial Balance rendered identical view: {v4}"
         assert v4.get('railBrandSvgCount') == 2, f"Expected 2 single-line SVGs (mark + wordmark) in .rail .brand, got {v4.get('railBrandSvgCount')}"
         assert v4.get('distinctSboxPages') == 8, f"Negative assertion failed: expected 8 distinct ERP pages across left-sidebar tabs, got {v4.get('distinctSboxPages')}"
-        assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
         assert v4['indSubtabCount'] == 2, f"Expected 2 streamlined industry sub-tabs, got {v4['indSubtabCount']}"
         assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"
         assert v4['baCardCount'] == 0, f"Negative assertion failed: removed Before/After cards still present ({v4['baCardCount']})"
         assert v4['hasSoaViewer'] is True, "SOA viewer did not render in Sandbox mode 'soa'"
         assert v4['hasPwaSim'] is True, "POS & Kiosk simulator did not update on interactive click in mode 'pwa'"
-        assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate roadmap panel"
-        assert v4['faqActive'] is True and v4['visibleFaqs'] == 6, f"Expected 6 visible FAQs in Why ISABI FAQ tab, got {v4['visibleFaqs']}"
+        assert v4['visibleFaqs'] == 6, f"Expected 6 FAQs on the FAQ page, got {v4['visibleFaqs']}"
+        assert v4['builderPressed'] == 'true' and v4['closedByHome'] is True, f"Pricing view switch or home link failed: {v4['builderPressed']} / {v4['closedByHome']}"
         assert v4['leadBudgetVal'] == 'Operational Foundation ($3,000 Setup + $50/seat/mo)' and 'Operational Foundation' in v4['tierNoteTxt'], f"Tier select did not update portal brief: {v4}"
-        assert v4['heroHospVal'] == '$418,200' and v4['hasHeroReset'] is True and v4['heroResetVal'] == '$1,482,600', f"Hero vertical inspect/reset failed: {v4}"
+        assert v4['heroHospVal'] == '$418,200' and v4['heroHospPressed'] == 'true' and 'industry=hospitality' in v4['heroHospLink'] and v4['heroResetVal'] == '$1,482,600' and v4['heroBarVal'] == '$524,900', f"Hero vertical inspect/reset failed: {v4}"
         assert v4['visibleJargon'] == [], f"Visible technical jargon found in rendered page: {v4['visibleJargon']}"
         for surf_k, surf_rgb in v4['lightChecks'].items():
             assert surf_rgb >= 650, f"Light Mode surface {surf_k} is too dark (RGB sum={surf_rgb} < 650): {v4['lightChecks']}"
@@ -905,7 +982,7 @@ document.addEventListener('DOMContentLoaded', function() {
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_hero}', URL], timeout=25)
         shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_v63.png')
         shot_html = os.path.join(repo_root, '_shot_portal.html')
-        shot_css = "<style>.hero-section,#architecture,#industries,#sandbox,#ingenuity,#pricing{display:none!important;}[data-reveal]{opacity:1!important;transform:none!important;}</style>"
+        shot_css = "<style>#hero,#platform,#ask,#golive,#why,#pricing,#proof{display:none!important;}</style>"
         with open(shot_html, 'w', encoding='utf-8') as f:
             f.write(base_html.replace('</head>', shot_css + '</head>'))
         shot_url = 'file:///' + shot_html.replace('\\', '/')

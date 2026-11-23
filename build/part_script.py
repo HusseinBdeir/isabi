@@ -570,244 +570,6 @@ JS = r"""
   ];
 
   // ---------------- 18-APP INTERACTIVE ECOSYSTEM (ODOO-STYLE SUITE) ----------------
-  const APP_SUITE = [
-    {
-      id: 'gl', cat: 'finance', emoji: ICONS.ledger, tone: 'tone-brass',
-      name: 'General Ledger & COA', sub: 'Double-Entry & Period Locks',
-      kicker: 'Core Accounting · Multi-Currency Ledger',
-      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, month-end cutoff date locks, reversing accruals, and step-up 2FA.',
-      bullets: [
-        ICONS.scale + ' Balanced Debit & Credit validation on every operational posting',
-        ICONS.globe + ' Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
-        ICONS.lock + ' Month-end cutoff date locks with biometric step-up verification on reopens'
-      ],
-      tables: ['Journal Vouchers', 'Chart of Accounts', 'Reversing Accruals', 'Period Close Locks'],
-      sbox: 'holding', ask: 'How does the ISABI General Ledger and Class 1 to 7 Chart of Accounts work?'
-    },
-    {
-      id: 'soa', cat: 'finance', emoji: ICONS.soa, tone: 'tone-steel',
-      name: 'Printable Statements', sub: 'Bilingual A4 & Auto Match',
-      kicker: 'Statutory & Partner Statements · Click-Sortable Print',
-      desc: 'Built-in bilingual printable statements with automated cross-script supplier and bank statement matching, plus one-click executive cover notes.',
-      bullets: [
-        ICONS.soa + ' Click-sortable running balance SOA closed with the double rule',
-        ICONS.sync + ' Automated cross-script (EN/AR/FR) supplier, bank, and POS statement matching',
-        ICONS.partner + ' One-click spoken statement summary and printable A4 cover note'
-      ],
-      tables: ['Statement of Account A4', 'Auto Statement Match', 'Balance Sheet & P&L'],
-      sbox: 'holding', ask: 'Tell me about the printable Statements of Account and P&L reports'
-    },
-    {
-      id: 'pbi', cat: 'finance', emoji: ICONS.analytics, tone: 'tone-good',
-      name: 'Executive Dashboards', sub: 'Cockpit & What-If Studio',
-      kicker: 'Live Analytics · Scenario Studio & Page Guide',
-      desc: 'Single-screen CEO cockpit, What-If margin/FX/cash scenario studio, 30-day liquidity bridge, and interactive page guide with spoken briefings.',
-      bullets: [
-        ICONS.calendar + ' What-If Scenario Studio testing price, volume, cost, FX, and 30-day cash runway',
-        ICONS.trend + ' One-tap Explain Page, interactive spotlight tour, and spoken briefings (EN/AR/FR)',
-        ICONS.bolt + ' Zero third-party BI fees across unlimited internal viewers'
-      ],
-      tables: ['CEO Cockpit', 'What-If Scenario Studio', '30-Day Cash Bridge'],
-      sbox: 'holding', ask: 'How do the interactive executive dashboards work across Operations and Finance?'
-    },
-    {
-      id: 'ai', cat: 'field', emoji: ICONS.ai, tone: 'tone-brass',
-      name: 'Ask ISABI & Watchdogs', sub: 'Cited AI, Voice & 28 Alerts',
-      kicker: 'System Intelligence · EN / AR / FR',
-      desc: 'Two-way live voice and text assistant, Smart Scan with phone QR camera handoff, interactive page guide, and 28 behavioral and off-hours watchdogs.',
-      bullets: [
-        ICONS.search + ' Catches missing tickets, split bills, price creep, and off-hours overrides',
-        ICONS.insurance + ' Biometric step-up 2FA gate on voids, period reopens, and wire releases',
-        ICONS.ai_mark + ' Live Voice Mode, Smart Scan, and cited EN, AR, and FR ledger answers'
-      ],
-      tables: ['Live Voice AI', 'Smart Scan & Phone QR', '28 Audit Watchdogs'],
-      sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
-    },
-    {
-      id: 'ar', cat: 'finance', emoji: ICONS.ar, tone: 'tone-coral',
-      name: 'Receivables & Credit', sub: '0-30-60-90d Aging & Gates',
-      kicker: 'Credit Control & Collections · Automated Watchdogs',
-      desc: 'Real-time customer receivable aging across 0 to 30, 31 to 60, 61 to 90, and 90+ day buckets, with form-level credit caps and one-click WhatsApp SOA dispatch.',
-      bullets: [
-        ICONS.lock + ' Form rules block new sales tickets when a client breaches credit limits',
-        ICONS.trend + ' Live 0-30-60-90+ day aging matrix across all operating branches',
-        ICONS.wa + ' One-click WhatsApp & email payment reminders with attached SOA'
-      ],
-      tables: ['Customer Accounts', 'Aging Matrix', 'Credit Holds', 'WhatsApp SOA'],
-      sbox: 'trading', ask: 'Why did receivables past 60 days increase this month?'
-    },
-    {
-      id: 'partner', cat: 'finance', emoji: ICONS.partner, tone: 'tone-violet',
-      name: 'Partner Equity Splits', sub: 'Capital & Profit Sharing',
-      kicker: 'Multi-Partner Accounting · Automated Allocation',
-      desc: 'Built for co-owned resorts, real estate developments, and trading joint ventures where each property or venture has custom partner equity percentages.',
-      bullets: [
-        ICONS.layers + ' Per-venue and per-project ownership percentage tables',
-        ICONS.ar + ' Tracks partner drawings, capital injections, and management fees',
-        ICONS.soa + ' Generates monthly audited partner distribution statements'
-      ],
-      tables: ['Equity Partners', 'Profit-Split Rules', 'Capital Accounts'],
-      sbox: 'hospitality', ask: 'How does ISABI automate partner profit splits and capital accounts?'
-    },
-    {
-      id: 'bridge', cat: 'finance', emoji: ICONS.scale, tone: 'tone-teal',
-      name: 'Accountant Book Bridge', sub: 'Side-by-Side Accounting Sync',
-      kicker: 'Safe Transition · Side-by-Side Balance Verification',
-      desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until every balance matches cleanly.',
-      bullets: [
-        ICONS.sync + ' Imports monthly trial balances from legacy accounting registers',
-        ICONS.search + ' Highlights any discrepancy down to $1 with instant voucher drilldown',
-        ICONS.check + ' Protects tax and statutory compliance while operations modernize'
-      ],
-      tables: ['Trial Balance Import', 'Line-by-Line Match', 'Reconciliation Pack'],
-      sbox: 'holding', ask: 'How does dual-entry reconciliation work with our existing accountant software?'
-    },
-    {
-      id: 'treasury', cat: 'finance', emoji: ICONS.holding, tone: 'tone-steel',
-      name: 'Treasury & PDC Vault', sub: 'Banks, Cash & Checks',
-      kicker: 'Multi-Entity Cash Management · Class 5 Treasury',
-      desc: 'Track bank accounts, petty cash safes, wire transfers, and post-dated check (PDC) maturity schedules across every subsidiary in real time.',
-      bullets: [
-        ICONS.holding + ' Live cash position across USD, EUR, AED, and local bank accounts',
-        ICONS.calendar + ' Post-dated check (PDC) maturity radar and deposit alerts',
-        ICONS.lock + ' Supervisor digital stamp required on inter-vault transfers'
-      ],
-      tables: ['Bank Accounts', 'Vault Transfers', 'Post-Dated Checks'],
-      sbox: 'holding', ask: 'How does ISABI manage multi-currency treasury and post-dated checks?'
-    },
-    {
-      id: 'hosp', cat: 'ops', emoji: ICONS.hospitality, tone: 'tone-brass',
-      name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas & F&B',
-      kicker: 'Industry App 01 · Hospitality Operations',
-      desc: 'Complete multi-property resort and F&B operations: daily outlet revenue audits, cabana bookings, supplier F&B provisions, and seasonal payroll.',
-      bullets: [
-        ICONS.pos + ' Daily outlet close across entrance, cabanas, restaurants, and bars',
-        ICONS.box + ' Supplier invoice intake, recipe cost ratios, and beverage stock audits',
-        ICONS.hr + ' Seasonal staff contracts, cash advances, tips, and attendance'
-      ],
-      tables: ['Outlet Revenue', 'F&B Cost Control', 'Supplier Bills', 'Seasonal Payroll'],
-      sbox: 'hospitality', ask: 'Show the Hospitality, Resorts & Beach Clubs blueprint'
-    },
-    {
-      id: 'vin', cat: 'ops', emoji: ICONS.trading, tone: 'tone-steel',
-      name: 'VIN & Equipment Trade', sub: 'Chassis, Customs & Parts',
-      kicker: 'Industry App 02 · Trading & Dealership Operations',
-      desc: 'End-to-end vehicle, heavy equipment, and spare-parts trading from FOB shipment and bonded customs to showroom delivery and after-sales parts.',
-      bullets: [
-        ICONS.trading + ' Camera VIN strip scanner and per-VIN registry from customs to showroom',
-        ICONS.globe + ' Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
-        ICONS.box + ' Multi-warehouse spare parts SKU stock and minimum margin locks'
-      ],
-      tables: ['Vehicle VINs', 'Landed Costing', 'Spare Parts SKUs', 'Showroom Orders'],
-      sbox: 'trading', ask: 'Show the Automotive, Heavy Equipment & Parts Trading blueprint'
-    },
-    {
-      id: 'concrete', cat: 'ops', emoji: ICONS.manufacturing, tone: 'tone-good',
-      name: 'Ready-Mix & Batching', sub: 'Tickets, Silos & Controls',
-      kicker: 'Industry App 03 · Manufacturing & Plant Control',
-      desc: '360-degree plant workspace with guided sales tickets, concrete mix grades, cement silo tracking, credit holds, and duplicate-ticket protection.',
-      bullets: [
-        ICONS.soa + ' Sales ticket ledger by m³ poured, mix grade, pump fees, and duplicate guard',
-        ICONS.sql + ' Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
-        ICONS.lock + ' Role-based field locks, locked past dates, and custom column views'
-      ],
-      tables: ['Sales Tickets', 'Mix Designs', 'Silo Inventory', 'Customer Sites'],
-      sbox: 'manufacturing', ask: 'Show the Concrete & Manufacturing blueprint'
-    },
-    {
-      id: 'fleet', cat: 'ops', emoji: ICONS.fleet, tone: 'tone-coral',
-      name: 'Fleet GPS & Workforce Map', sub: 'Live GPS, Fuel & Parts',
-      kicker: 'Heavy Transport & Telematics · Live Plant Map',
-      desc: 'Live Fleet GPS and engine sensor telematics reconciled against fuel tickets, stationary tank-drop alerts, workforce map, and spare parts custody.',
-      bullets: [
-        ICONS.bolt + ' Live truck GPS tracking, fuel-burn sensor reconciliation, and tank-drop alerts',
-        ICONS.fleet + ' Truck revenue vs cost studio plus live site workforce and delivery map',
-        ICONS.scope + ' Defect-first maintenance workflow and 5-stage spare parts custody'
-      ],
-      tables: ['Live Fleet GPS Map', 'Fuel Sensor Audit', 'Truck P&L Studio', 'Spare Parts Custody'],
-      sbox: 'manufacturing', ask: 'How does ISABI track transit mixer fleets, fuel, and inter-company transport?'
-    },
-    {
-      id: 're', cat: 'ops', emoji: ICONS.realestate, tone: 'tone-violet',
-      name: 'Real Estate & Leases', sub: 'Units, Rent & NOI Yield',
-      kicker: 'Industry App 04 · Real Estate Operations',
-      desc: 'Manage commercial and residential towers, retail plazas, and land banks with automated lease escalations, tenant billing, and per-property NOI.',
-      bullets: [
-        ICONS.realestate + ' Property and unit registry (Occupied, Vacant, Reserved, Refurbishment)',
-        ICONS.soa + ' Lease contracts with 60/30-day renewal alerts and rent escalations',
-        ICONS.scope + ' Maintenance work orders tagged automatically to CapEx vs. OpEx'
-      ],
-      tables: ['Properties & Units', 'Lease Schedules', 'Tenant Arrears', 'Work Orders'],
-      sbox: 'realestate', ask: 'Show the Real Estate & Commercial Property Portfolios blueprint'
-    },
-    {
-      id: 'ins', cat: 'ops', emoji: ICONS.insurance, tone: 'tone-teal',
-      name: 'Insurance Bordereaux', sub: 'Policies, Splits & Claims',
-      kicker: 'Industry App 05 · Insurance Brokerage Operations',
-      desc: 'Policy lifecycle management across motor, medical, marine, and property lines with carrier bordereaux, producer splits, and 90/60/30-day renewals.',
-      bullets: [
-        ICONS.soa + ' Policy & endorsement registry with gross/net/commission split math',
-        ICONS.holding + ' One-click printable carrier settlement bordereaux and client SOA',
-        ICONS.bell + ' 90/60/30-day expiring book renewal radar and claims tracker'
-      ],
-      tables: ['Policies & Renewals', 'Endorsements', 'Carrier Bordereaux', 'Claims Files'],
-      sbox: 'insurance', ask: 'Show the Insurance Brokerage & Underwriting Operations blueprint'
-    },
-    {
-      id: 'holding', cat: 'ops', emoji: ICONS.holding, tone: 'tone-brass',
-      name: 'Holding & Group View', sub: '14-Entity Close & Governance',
-      kicker: 'Industry App 06 · Group Consolidation & Isolation',
-      desc: 'Unifies all sister companies into one boardroom console with a 14-entity month-end close gate, What-If group bridge, and strict branch isolation.',
-      bullets: [
-        ICONS.globe + ' One-click 14-entity group close gate and consolidated board pack',
-        ICONS.sync + ' Intercompany loans, management fees, and cross-charge elimination',
-        ICONS.analytics + ' What-If group scenario studio and 30-day liquidity maturity bridge'
-      ],
-      tables: ['14-Entity Close Gate', 'Intercompany Ledger', 'Company Isolation'],
-      sbox: 'holding', ask: 'Show the Multi-Entity Holding Groups & Family Offices blueprint'
-    },
-    {
-      id: 'pos', cat: 'field', emoji: ICONS.pos, tone: 'tone-good',
-      name: 'Offline POS Till', sub: 'Thermal Print & Offline Sync',
-      kicker: 'Field Kiosk Suite · Cashier & Dispatch Terminal',
-      desc: 'Touch cashier and dispatch terminal that keeps working offline and prints wireless thermal receipts (Priced Tax Invoice or Unpriced Gate Pass) in one tap.',
-      bullets: [
-        ICONS.bolt + ' One-tap toggle: Priced Tax Invoice vs Unpriced Gate or Scale Pass',
-        ICONS.sync + ' Works 100% offline during internet cuts and syncs when reconnected',
-        ICONS.ar + ' Per-cashier shift counters and instant end-of-day drawer reconciliation'
-      ],
-      tables: ['Offline Order Queue', 'Priced / Gate Receipts', 'Drawer Close Sync'],
-      sbox: 'hospitality', ask: 'Tell me about the Offline POS Till'
-    },
-    {
-      id: 'kiosk', cat: 'field', emoji: ICONS.kiosk, tone: 'tone-steel',
-      name: 'Live Face & PIN Kiosk', sub: 'Photo-Proof Gate Sign-In',
-      kicker: 'Workforce Attendance Terminal · Any Standard Tablet',
-      desc: 'Verifies staff on any wall-mounted tablet using live face recognition and PIN so photos cannot fake a punch, syncing offline shifts into payroll.',
-      bullets: [
-        ICONS.kiosk + ' Live face check + PIN audit blocks buddy-punching and phone photos',
-        ICONS.sync + ' Saves clock-in, break, and clock-out punches offline at remote sites',
-        ICONS.clock + ' Per-company shift windows, lateness rules, and batch staff face enrolment'
-      ],
-      tables: ['Live Face Sign-In', 'Offline Punch Log', 'Shift & Overtime Sync'],
-      sbox: 'manufacturing', ask: 'Tell me about the Face & PIN Attendance Kiosk'
-    },
-    {
-      id: 'hr', cat: 'field', emoji: ICONS.hr, tone: 'tone-violet',
-      name: 'Recruitment & CV Vault', sub: 'Applicant Intake & HR',
-      kicker: 'HR & Talent Pipeline · Encrypted Document Vault',
-      desc: 'Automated applicant intake that routes candidate CVs straight into encrypted per-company document vaults and structured HR review queues.',
-      bullets: [
-        ICONS.download + ' Public application form auto-routes by target resort, plant, or branch',
-        ICONS.folder + ' Stores PDF CVs inside encrypted per-company document vaults',
-        ICONS.hr + ' HR evaluation workflow from screening to one-click employee onboarding'
-      ],
-      tables: ['Applicant Intake', 'Per-Company CV Vault', 'Employee Onboarding'],
-      sbox: 'holding', ask: 'How does the automated recruitment and CV vault pipeline work?'
-    }
-  ];
-
-  // ---------------- INDUSTRY ICONS & DAY-IN-THE-LIFE TIMELINES ----------------
   const IND_EXTRAS = {
     hospitality: {
       emoji: ICONS.hospitality,
@@ -1002,52 +764,6 @@ JS = r"""
       <div class="d-prev-foot">
         <span class="d-prev-var">Statutory vs operational variance: $0.00</span>
         <a href="${portalHref}" id="hlc-open-portal-link" class="d-textlink"><span>${v.link}</span>${HERO_ARROW_SVG}</a>
-      </div>
-    `;
-  }
-
-  // ---------------- RENDER 18-APP ODOO-STYLE SUITE & SPOTLIGHT ----------------
-  function renderAppSuite() {
-    const gridEl = document.getElementById('app-suite-grid');
-    const spotEl = document.getElementById('app-spotlight');
-    if (!gridEl || !spotEl) return;
-
-    const filtered = state.appCat === 'all'
-      ? APP_SUITE
-      : APP_SUITE.filter(a => a.cat === state.appCat);
-
-    if (!filtered.some(a => a.id === state.activeAppId) && filtered.length) {
-      state.activeAppId = filtered[0].id;
-    }
-
-    gridEl.innerHTML = filtered.map(a => `
-      <button type="button" class="app-tile ${a.id === state.activeAppId ? 'active' : ''}" role="option" aria-selected="${a.id === state.activeAppId}" data-app-id="${a.id}">
-        <span class="app-icon ${a.tone}" aria-hidden="true">${a.emoji}</span>
-        <b>${a.name}</b>
-        <small>${a.sub}</small>
-      </button>
-    `).join('');
-
-    const cur = APP_SUITE.find(a => a.id === state.activeAppId) || APP_SUITE[0];
-    spotEl.innerHTML = `
-      <div class="app-spot-head">
-        <span class="app-icon ${cur.tone}" aria-hidden="true">${cur.emoji}</span>
-        <div>
-          <span class="app-spot-kicker">${cur.kicker}</span>
-          <h3>${cur.name}</h3>
-          <p>${cur.desc}</p>
-        </div>
-      </div>
-      <div class="app-spot-specs">
-        <ul class="app-spot-bullets">
-          ${cur.bullets.map(b => `<li>${b}</li>`).join('')}
-        </ul>
-        <div class="app-spot-tables">
-          ${cur.tables.map(t => `<span>${t}</span>`).join('')}
-        </div>
-      </div>
-      <div class="app-spot-actions">
-        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">${ICONS.erp} Try in Live Demo</button>
       </div>
     `;
   }
@@ -3568,7 +3284,7 @@ JS = r"""
         q: cleanQ,
         conversational: true,
         title: 'Direct Principal Access · Hussein Bdeir',
-        answer: `You work directly with <b>Hussein Bdeir</b>, Founder and Principal Systems Architect. You can message him anytime on WhatsApp at <b>+961 70 444 955</b> or email <b>husseinbdeir@isabisystems.com</b> for a 30-minute walkthrough.`,
+        answer: `You work directly with <b>Hussein Bdeir</b>, Founder and Principal Systems Architect. You can message him anytime on WhatsApp at <b>+961 70 444 955</b> or email <b>hbdeir@isabisystems.com</b> for a 30-minute walkthrough.`,
         promptText: `Would you like to open WhatsApp now, or price out your scope on the page first?`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -3852,7 +3568,7 @@ JS = r"""
   function buildGeminiSystemPrompt(lang, hasAudioInput = false) {
     return [
       'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://isabisystems.com/, Command Center app at https://isabisystems.com/app/).',
-      'Company & Direct Principal Leadership: Isabi Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Beirut, Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: husseinbdeir@isabisystems.com. Never invent regional branch offices or fictional staff counts.',
+      'Company & Direct Principal Leadership: Isabi Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Beirut, Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir@isabisystems.com. Never invent regional branch offices or fictional staff counts.',
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, launch the full interactive Command Center portal demo, or configure a custom quote in the Scope Configurator.',
       'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, voice-to-form dictation and multi-row batch intake, Smart Scan with privacy document/VIN camera and instant phone QR handoff, warehouse stock controls, double-entry general ledgers (Class 1 to 7), automated cross-script statement matching, month-end cutoff date locks, reversing accruals, and a 14-entity group close gate, a single-screen CEO cockpit with an interactive What-If Margin/FX/Cash Scenario Studio and 30-Day Liquidity Maturity Bridge, built-in Explain Page interactive tours and one-tap spoken briefings (EN/AR/FR) across every screen, live fleet GPS and fuel-burn sensor telematics, per-unit fleet P&L filters, bilingual printable A4 statements, biometric/PIN step-up 2FA and 28 behavioral/off-hours audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
@@ -4594,7 +4310,6 @@ JS = r"""
     const savedTheme = (() => { try { return localStorage.getItem('isabi.theme.v2'); } catch (e) { return null; } })() || 'light';
     applyTheme(savedTheme, false);
 
-    renderAppSuite();
     renderIndustries();
     renderSandbox();
     renderAiSection(0, true);
@@ -4607,7 +4322,10 @@ JS = r"""
     if (window.location.hash && window.location.hash.length > 1) {
       const initId = window.location.hash.slice(1);
       scrollToTargetId(initId, false, true);
-      window.addEventListener('load', () => scrollToTargetId(initId, false, true), { once: true });
+      // Re-align once images and fonts have settled, unless the visitor has already moved on.
+      window.addEventListener('load', () => {
+        if (!activeSheetId() && window.location.hash.slice(1) === initId) scrollToTargetId(initId, false, true);
+      }, { once: true });
     } else {
       updateActiveNavOnScroll();
     }
@@ -4685,23 +4403,6 @@ JS = r"""
       if (stackAskCard) {
         document.querySelectorAll('#ms-stack-cards .stack-card').forEach(c => c.classList.toggle('active', c === stackAskCard));
         askIsabiQuestion(stackAskCard.dataset.stackAsk, false, true);
-        return;
-      }
-
-      // 0b. 18-App Suite Category Filter Pills
-      const appCatBtn = e.target.closest('[data-app-cat]');
-      if (appCatBtn) {
-        state.appCat = appCatBtn.dataset.appCat;
-        document.querySelectorAll('[data-app-cat]').forEach(b => b.classList.toggle('active', b === appCatBtn));
-        renderAppSuite();
-        return;
-      }
-
-      // 0c. 18-App Suite Tile Click -> Update Spotlight
-      const appTileBtn = e.target.closest('[data-app-id]');
-      if (appTileBtn) {
-        state.activeAppId = appTileBtn.dataset.appId;
-        renderAppSuite();
         return;
       }
 
