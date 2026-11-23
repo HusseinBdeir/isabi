@@ -1,0 +1,22 @@
+{
+ "app": {
+  "branch": "wt/material-transport-labels",
+  "sha": "817c2a2d2e5767edcd06f9f82c551d41576f508c"
+ },
+ "gates": [
+  "isabi-app: python build/audit_i18n.py",
+  "isabi-app: node build/verify_i18n.py",
+  "isabi-app: node build/verify_mfg.mjs"
+ ],
+ "holder": "THEO hbdei (material-transport-labels)",
+ "id": "20261123T152412Z-6509472b",
+ "pc": "Theo",
+ "queuedAt": "2026-11-23T15:24:12Z",
+ "seenAt": "2026-11-23T15:24:12Z",
+ "site": {
+  "branch": "wt/material-transport-labels-rel",
+  "sha": "56bb8c5a2250e7b791defa744ba7316edfdbe834"
+ },
+ "state": "waiting",
+ "summary": "Manufacturing: rename Quarry/Haulage UI to Material and Transport, remove rawSupplyModeCallout, make Delivery Included self-explanatory (EN/AR/FR)"
+}
