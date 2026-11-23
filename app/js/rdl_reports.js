@@ -1710,7 +1710,7 @@
             voucher: r.ticket_no || r.name || r.id,
             name: r.name || '',
             leg: 'haulage',
-            material: `Haulage · ${r.product || 'Raw Material'}${r.truck ? ' (' + r.truck + ')' : ''}`,
+            material: `Transport · ${r.product || 'Raw Material'}${r.truck ? ' (' + r.truck + ')' : ''}`,
             supplier: haulSup,
             driver: r.driver || '',
             plate: r.truck || '',
@@ -2438,7 +2438,7 @@
       if (Math.abs(tot) < 0.005 && Math.abs(paid) < 0.005) return;
       const sup = r.supplier || (isMfg ? 'Raw Material Supplier' : 'Direct Vendor');
       const ref = String(r.voucher || r.name || 'RM');
-      const src = r.leg === 'haulage' ? (isMfg ? 'Raw Haulage' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply');
+      const src = r.leg === 'haulage' ? (isMfg ? 'Raw Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply');
       const desc = `${r.material || (isMfg ? 'Raw Material' : 'Supply')} · ${fmtNum(r.qty, 2)} ${r.unit || 't'}`;
       if (tot > 0) {
         pushJe(d, ref, src, '601', sup, desc, tot, 0);
@@ -4770,7 +4770,7 @@
           <tr>
             <th>${isMfg ? 'Supplier / Hauler (Account 401)' : 'Supplier / Carrier (Account 401)'}</th>
             <th class="num">${isMfg ? 'Raw Materials ($)' : 'Direct Supply ($)'}</th>
-            <th class="num">${isMfg ? 'Haulage ($)' : 'Freight / Delivery ($)'}</th>
+            <th class="num">${isMfg ? 'Transport ($)' : 'Freight / Delivery ($)'}</th>
             <th class="num">Credit Expenses ($)</th>
             <th class="num">Total Credit ($)</th>
             <th class="num">Settled ($)</th>
@@ -4825,7 +4825,7 @@
     const tx = [];
     (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
       if (!lAp16.books && r.is_settlement_row) return;
-      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? (isMfg ? 'Raw Haulage' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
+      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? (isMfg ? 'Raw Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
       const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
       tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: srcLbl, desc: descLbl, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
     });
@@ -7772,7 +7772,7 @@
       };
       kpis = [
         mkKpi('rm', isMfg ? 'Raw Materials Leg' : 'Direct Supply', 'توريد المواد', 'Approvisionnement', fmtUsd(rmTot), `${rows.length} vendors`, `${rows.length} مورد`, `${rows.length} fournisseurs`),
-        mkKpi('haul', isMfg ? 'Haulage Leg' : 'Freight & Delivery', 'أجور النقل', 'Transport et fret', fmtUsd(haulTot), 'Split haulage leg', 'ذمم النقل المفصولة', 'Volet transport'),
+        mkKpi('haul', isMfg ? 'Transport Leg' : 'Freight & Delivery', 'أجور النقل', 'Transport et fret', fmtUsd(haulTot), 'Split transport leg', 'ذمم النقل المفصولة', 'Volet transport'),
         mkKpi('exp', 'Credit Expenses', 'مصاريف آجلة', 'Charges à crédit', fmtUsd(expTot), canViewBooks ? `Settled ${fmtUsd(sum('paid'))}` : 'Credit bills', canViewBooks ? `مسدد ${fmtUsd(sum('paid'))}` : 'فواتير آجلة', canViewBooks ? `Réglé ${fmtUsd(sum('paid'))}` : 'Factures à crédit'),
         mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', canViewBooks ? fmtUsdSigned(netAp) : 'Restricted', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Account 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'حساب 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
       ];

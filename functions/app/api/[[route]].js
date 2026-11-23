@@ -188,7 +188,15 @@ async function routeAppApi(context) {
   }
 
   if (subPath === '/auth/login' && request.method === 'POST') {
-    return handleAuthLogin(request, env, body, session);
+    const loginRes = await handleAuthLogin(request, env, body, session);
+    if (
+      loginRes.status === 200 &&
+      session &&
+      !(body && (body.verify_only === true || body.step_up === true || body.method === 'Owner Impersonation'))
+    ) {
+      evictCachedMapSession(session);
+    }
+    return loginRes;
   }
   if (subPath === '/auth/logout' && request.method === 'POST') {
     evictCachedMapSession(session || rawSession);

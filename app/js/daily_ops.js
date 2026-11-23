@@ -584,8 +584,8 @@
     if (rt === 'Sales (Delivery)') badge = 'Sales Delivery';
     else if (rt === 'Sales (Pickup)') badge = 'Sales Pickup';
     else if (rt === 'List Price') badge = 'List Price';
-    else if (rt === 'Purchase Price (Site)') badge = 'Quarry Buy';
-    else if (rt === 'Transport Price (Site)') badge = 'Quarry Haul';
+    else if (rt === 'Purchase Price (Site)') badge = 'Material Buy';
+    else if (rt === 'Transport Price (Site)') badge = 'Material Trans';
     else if (/^commission$/i.test(rt)) badge = 'Commission';
 
     const party = r.customer || r.supplier || r.site || r.product || 'General';
@@ -594,7 +594,7 @@
     if (r.site && r.site !== party) subBits.push(r.site);
     const rateBits = [];
     if (up > 0) rateBits.push(`${ctx.fmtUSD(up, Number.isInteger(up) ? 0 : 2)}/${uom}`);
-    if (tp > 0) rateBits.push(`Haul ${ctx.fmtUSD(tp, Number.isInteger(tp) ? 0 : 2)}/${uom}`);
+    if (tp > 0) rateBits.push(`Trans ${ctx.fmtUSD(tp, Number.isInteger(tp) ? 0 : 2)}/${uom}`);
     if (!rateBits.length && ind > 0) rateBits.push(`Flat ${ctx.fmtUSD(ind, 0)}/Truck`);
     return {
       badge,
@@ -1726,8 +1726,8 @@
     // Quarry Sites, Suppliers & 3rd-Party Haulers Breakdown
     const quarryMap = new Map();
     effRaw.forEach(r => {
-      const site = r.site || 'Quarry Site';
-      const supplier = r.site_owner || r.supplier || 'Quarry Supplier';
+      const site = r.site || 'Source Site';
+      const supplier = r.site_owner || r.supplier || 'Material Supplier';
       const product = r.product || 'Raw Material';
       const qk = `${norm(site)}|${norm(supplier)}|${norm(product)}`;
       let cur = quarryMap.get(qk);
@@ -2088,10 +2088,10 @@
       const taStamp = getTaStamp('raw_purchases', r);
       stream.push({
         rkey: 'raw_purchases', rid: r.id, company: r.company || 'WTC',
-        group: 'raw', kindCls: 'raw', kindLbl: 'Quarry',
+        group: 'raw', kindCls: 'raw', kindLbl: 'Material',
         isAfterHours: isAh, isOvertime: Boolean(r.overtime), isPendingPrice: Boolean(r.price_pending), isRepShifted: hasRepShift(r), isTurnaround: Boolean(taStamp && taStamp.turnaround_flagged), turnaroundStamp: taStamp, repDate: repDateOf(r), txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
         ref: r.ticket_no ? `#${r.ticket_no}` : compactRef(r.name, r.id, 'R'),
-        party: r.site_owner || r.truck_owner || r.site || 'Quarry', detail: [r.product, r.site, r.truck].filter(Boolean).join(' · '),
+        party: r.site_owner || r.truck_owner || r.site || 'Material Source', detail: [r.product, r.site, r.truck].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: false, tier: 2,
         sortKey: String(r.time || '12:00').padStart(5, '0') + '_' + String(r.ticket_no || '').padStart(8, '0')
       });
@@ -2544,7 +2544,7 @@
           badge: `${b.salesLoads + b.rawLoads} loads`,
           rows: [
             { label: 'Sales Dispatches', value: `${fmtNum(b.salesLoads)} loads (${fmtUSD(b.salesTtc, 0)})`, color: '#2356A8' },
-            { label: 'Quarry & Haulage', value: `${fmtNum(b.rawLoads)} loads (${fmtUSD(b.rawCost, 0)})`, color: '#C0892F' }
+            { label: 'Material & Transport', value: `${fmtNum(b.rawLoads)} loads (${fmtUSD(b.rawCost, 0)})`, color: '#C0892F' }
           ],
           footer: isAhSlot ? 'Logged via Yesterday After-Hours button' : `Transaction Date ${dm.targetDate}`
         });
@@ -2610,7 +2610,7 @@
         badgeTone: r.opProfit >= 0 ? 'good' : 'crit',
         rows: [
           { label: 'Sales Revenue', value: `${fmtUSD(r.salesTtc, 0)} (${fmtNum(r.salesLoads)} loads)`, color: '#2356A8' },
-          { label: 'Quarry + Expenses', value: `${fmtUSD(r.outlay, 0)} (${fmtNum(r.rawLoads)} quarry)`, color: '#C0892F' },
+          { label: 'Material + Expenses', value: `${fmtUSD(r.outlay, 0)} (${fmtNum(r.rawLoads)} loads)`, color: '#C0892F' },
           { label: 'Day Operating Profit', value: fmtUSD(r.opProfit, 0), color: r.opProfit >= 0 ? '#1F7A4C' : '#C8333B', tone: r.opProfit >= 0 ? 'good' : 'crit', isTotal: true }
         ],
         footer: r.ahLoads > 0 ? `Includes ${r.ahLoads} Yesterday After-Hours tickets · Tx Date Basis` : 'Transaction Date Basis (click bar to open day)'
@@ -2667,7 +2667,7 @@
             badgeTone: r.opProfit >= 0 ? 'good' : 'crit',
             rows: [
               { label: 'Sales Revenue', value: `${fmtUSD(r.salesTtc, 0)} (${fmtNum(r.salesLoads)} loads)`, color: '#2356A8' },
-              { label: 'Quarry + Expenses', value: `${fmtUSD(r.outlay, 0)} (${fmtNum(r.rawLoads)} quarry)`, color: '#C0892F' },
+              { label: 'Material + Expenses', value: `${fmtUSD(r.outlay, 0)} (${fmtNum(r.rawLoads)} loads)`, color: '#C0892F' },
               { label: 'Operating Profit', value: fmtUSD(r.opProfit, 0), color: r.opProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }
             ]
           } : {
@@ -2754,14 +2754,14 @@
                   <tr>
                     <th>Entity (BU)</th>
                     <th class="r">Sales (Loads)</th>
-                    <th class="r">${perms.canFullPnl ? 'Profit · Cash' : (perms.canBooks ? 'Net Cash' : 'Quarry Loads')}</th>
+                    <th class="r">${perms.canFullPnl ? 'Profit · Cash' : (perms.canBooks ? 'Net Cash' : 'Material Loads')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${eRows.map(r => `
                     <tr class="dops-click-row" data-jump-co="${esc(r.key)}">
                       <td class="dops-trunc">${coBadge(r.name)} <strong>${esc(r.name)}</strong></td>
-                      <td class="r"><strong>${fmtUSD(r.salesTtc, 0)}</strong> <small style="color:var(--muted)">(${r.salesLoads} sales${perms.canBooks ? ` · ${r.rawLoads} quarry` : ''})</small></td>
+                      <td class="r"><strong>${fmtUSD(r.salesTtc, 0)}</strong> <small style="color:var(--muted)">(${r.salesLoads} sales${perms.canBooks ? ` · ${r.rawLoads} material` : ''})</small></td>
                       <td class="r">${perms.canFullPnl ? `<strong style="color:${r.opProfit < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(r.opProfit, 0)}</strong> <small style="color:var(--muted)">(${fmtUSD(r.netCash, 0)})</small>` : (perms.canBooks ? `<strong>${fmtUSD(r.netCash, 0)}</strong>` : `${fmtNum(r.rawLoads)} loads`)}</td>
                     </tr>
                   `).join('')}
@@ -2775,7 +2775,7 @@
                   <tr>
                     <th>Material Grade</th>
                     <th class="r">Sold · Sales</th>
-                    <th class="r">${perms.canBooks ? 'Quarry · Cost' : 'Quarry Volume'}</th>
+                    <th class="r">${perms.canBooks ? 'Material · Cost' : 'Material Volume'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2971,11 +2971,11 @@
     const topStripHtml = `
       <div class="dops-stat-strip-3 dops-substrip">
         <div class="dops-stat-box" data-dops-open-drawer="raw">
-          <small>Quarry Material (${fmtNum(dm.rawSum.loads)} loads)</small>
+          <small>Raw Material (${fmtNum(dm.rawSum.loads)} loads)</small>
           <b>${fmtUSD(dm.rawSum.matCost, 0)} <span class="dops-stat-muted">· ${fmtNum(dm.rawSum.m3, 0)} m³ (${fmtNum(dm.rawSum.tons, 0)} t)</span></b>
         </div>
         <div class="dops-stat-box" data-dops-open-drawer="raw">
-          <small>Haulage (Own vs Haulers)</small>
+          <small>Transport (Own vs Haulers)</small>
           <b>${fmtUSD(dm.rawSum.haulCost, 0)} <span class="dops-stat-muted">· Own ${fmtNum(dm.rawSum.ownLoads)} / Haulers ${fmtNum(dm.rawSum.haulerLoads)}</span></b>
         </div>
         <div class="dops-stat-box${dm.belowAgreedLoads > 0 ? ' tone-crit' : (dm.agreedSalesLoads > 0 ? ' tone-good' : '')}" data-dops-lens="deals:audit">
@@ -3166,7 +3166,7 @@
             <colgroup><col style="width:35%"><col style="width:34%"><col style="width:31%"></colgroup>
             <thead>
               <tr>
-                <th>Quarry Site / Agreement</th>
+                <th>Source Site / Agreement</th>
                 <th>Grade · Loads &amp; Haul</th>
                 <th class="r">Cost / Rate</th>
               </tr>
@@ -3195,7 +3195,7 @@
                   return true;
                 }) : [];
                 return `
-                  <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(q.loads)} quarry ${q.loads === 1 ? 'ticket' : 'tickets'} from ${esc(q.site)}">
+                  <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(q.loads)} material ${q.loads === 1 ? 'ticket' : 'tickets'} from ${esc(q.site)}">
                     <td class="dops-trunc">
                       <div class="dops-grp-head">
                         <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
@@ -3203,7 +3203,7 @@
                         ${repBadge}
                         ${renderTurnaroundBadgeHtml(ctx, null, q)}
                       </div>
-                      <small class="dops-cell-sub dops-sub-pad">Quarry · ${relLink('suppliers', q.supplier, q.supplier, true)}</small>
+                      <small class="dops-cell-sub dops-sub-pad">Source · ${relLink('suppliers', q.supplier, q.supplier, true)}</small>
                     </td>
                     <td class="dops-trunc">
                       <strong>${esc(q.product)}</strong> · ${fmtNum(q.loads)} loads (${fmtNum(q.m3, 0)}m³)
@@ -3211,7 +3211,7 @@
                     </td>
                     <td class="r">
                       <strong>${fmtUSD(q.totalCost, 0)}</strong>
-                      <small class="dops-cell-sub">Material ${fmtUSD(q.matCost, 0)} · Haulage ${fmtUSD(q.haulCost, 0)}</small>
+                      <small class="dops-cell-sub">Material ${fmtUSD(q.matCost, 0)} · Transport ${fmtUSD(q.haulCost, 0)}</small>
                     </td>
                   </tr>
                   ${subTkts.map(t => {
@@ -3228,14 +3228,14 @@
                             <span class="dops-sub-indent"></span>
                             <strong class="mono">#${esc(String(t.ticket_no || t.id))}</strong>
                             ${t.time ? `<small class="dops-time-tag">${esc(String(t.time).slice(0, 5))}</small>` : ''}
-                            <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="raw" data-print-id="${esc(String(t.id || ''))}" data-ui-tip="Print Quarry Slip #${esc(String(t.ticket_no || ''))}">${ic('printer')}</button>
+                            <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="raw" data-print-id="${esc(String(t.id || ''))}" data-ui-tip="Print Material Slip #${esc(String(t.ticket_no || ''))}">${ic('printer')}</button>
                             ${renderRepBadge(ctx, txDateOf(t), repDateOf(t))}
                             ${renderTurnaroundBadgeHtml(ctx, tStamp)}
                             ${t.overtime ? `<span class="dops-ot-badge" data-ui-tip="Overtime trip">${ic('overtime')}</span>` : ''}
                           </div>
                         </td>
                         <td class="dops-trunc"><b>${fmtNum(m3, m3 % 1 ? 1 : 0)}m³</b> · ${esc(haulerTag.trim())}</td>
-                        <td class="r"><strong>${fmtUSD(tot, 0)}</strong> <small style="color:var(--muted)">Material ${fmtUSD(mat, 0)} · Haulage ${fmtUSD(haul, 0)}</small></td>
+                        <td class="r"><strong>${fmtUSD(tot, 0)}</strong> <small style="color:var(--muted)">Material ${fmtUSD(mat, 0)} · Transport ${fmtUSD(haul, 0)}</small></td>
                       </tr>
                     `;
                   }).join('')}
@@ -3262,11 +3262,11 @@
                   </tr>
                 `;
               }).join('')}
-              ${!qRows.length && !showRulesUsed.length && !effBelow.length ? `<tr><td colspan="3" class="dops-empty">${qFilter !== 'all' || qNorm ? `No quarry entries match the active spotlight filter on ${esc(fmtShortDay(dm.targetDate))}.` : `No quarry purchases or rate agreements active on ${esc(fmtShortDay(dm.targetDate))}.`}</td></tr>` : ''}
+              ${!qRows.length && !showRulesUsed.length && !effBelow.length ? `<tr><td colspan="3" class="dops-empty">${qFilter !== 'all' || qNorm ? `No material entries match the active spotlight filter on ${esc(fmtShortDay(dm.targetDate))}.` : `No material purchases or rate agreements active on ${esc(fmtShortDay(dm.targetDate))}.`}</td></tr>` : ''}
             </tbody>
             <tfoot>
               <tr>
-                <td>${fmtNum(qRows.length)} Quarry ${qRows.length === 1 ? 'Site' : 'Sites'} (${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³)</td>
+                <td>${fmtNum(qRows.length)} Source ${qRows.length === 1 ? 'Site' : 'Sites'} (${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³)</td>
                 <td>${fmtNum(dm.activeRulesUsed.length)} Active Rules Used</td>
                 <td class="r">${fmtUSD(dm.rawSum.totalCost, 0)}</td>
               </tr>
@@ -3345,7 +3345,7 @@
     // Drawn only when the bar and the profit figure agree (a refund can turn a cost negative, which a bar cannot show).
     const bAgrees = Math.abs((bSales - bCosts) - Number(dm.operatingProfit || 0)) < 1;
     const pnlBarHtml = bBase > 0 && bAgrees ? `
-        <div class="dops-pnl-bar" role="img" aria-label="Where the day's sales went" data-ui-tip="Where the day's sales went: quarry and haulage, expenses, payroll, and what is left as profit. Costs past the mark are a loss.">
+        <div class="dops-pnl-bar" role="img" aria-label="Where the day's sales went" data-ui-tip="Where the day's sales went: material and transport, expenses, payroll, and what is left as profit. Costs past the mark are a loss.">
           <span class="dops-pnl-seg q" style="width:${bPct(bQuarry)}%"></span><span class="dops-pnl-seg e" style="width:${bPct(bExp)}%"></span><span class="dops-pnl-seg p" style="width:${bPct(bPay)}%"></span>${bLoss ? '' : `<span class="dops-pnl-seg g" style="width:${bPct(bSales - bCosts)}%"></span>`}
           ${bLoss ? `<span class="dops-pnl-over" style="inset-inline-start:${bPct(bSales)}%"></span><span class="dops-pnl-mark" style="inset-inline-start:${bPct(bSales)}%"></span>` : ''}
         </div>` : '';
@@ -3358,8 +3358,8 @@
           <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b>
         </div>
         <span class="dops-pnl-op">-</span>
-        <div class="dops-pnl-step" data-ui-tip="Quarry material and haulage">
-          <small><i class="dops-pnl-dot q"></i>Quarry</small>
+        <div class="dops-pnl-step" data-ui-tip="Raw material and transport">
+          <small><i class="dops-pnl-dot q"></i>Material</small>
           <b>${fmtUSD(dm.rawSum.totalCost, 0)}</b>
         </div>
         <span class="dops-pnl-op">-</span>
@@ -4359,7 +4359,7 @@
         : (streamFilter === 'rep_shifted'
           ? `No entries on ${esc(fmtHumanDay(dm.targetDate))} carry a shifted Reporting Date.`
           : (streamFilter === 'costs'
-            ? `No quarry, expense, or payroll cost entries recorded on ${esc(fmtHumanDay(dm.targetDate))}.`
+            ? `No material, expense, or payroll cost entries recorded on ${esc(fmtHumanDay(dm.targetDate))}.`
             : `No matching records on ${esc(fmtHumanDay(dm.targetDate))}.`))}</div>`;
     }
     return `
@@ -4465,16 +4465,16 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico brass">${ic('quarry')}</span>
-            <h2 class="dops-card-title">Quarry &amp; Pricing</h2>
+            <h2 class="dops-card-title">Material &amp; Pricing</h2>
           </div>
           <div class="dops-card-actions">
-            <div class="dops-seg" role="tablist" aria-label="Quarry & Pricing Lens">
-              <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Quarry</button>
+            <div class="dops-seg" role="tablist" aria-label="Material & Pricing Lens">
+              <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Material</button>
               <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules</button>
               <button type="button" class="dops-seg-btn${dm.belowAgreedLoads > 0 ? ' has-alert' : ''}${dealsLens === 'audit' ? ' active' : ''}" data-dops-lens="deals:audit">Audit</button>
               ${(perms.canTax || perms.canJv) ? `<button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">Tax</button>` : ''}
             </div>
-            <button type="button" class="dops-disc-link" data-dops-open-drawer="raw" data-ui-tip="Inspect quarry & agreement records">${fmtNum(rawCnt + agrCnt)}</button>
+            <button type="button" class="dops-disc-link" data-dops-open-drawer="raw" data-ui-tip="Inspect material & agreement records">${fmtNum(rawCnt + agrCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="raw" data-ui-tip="New Raw Material Ticket" aria-label="New Raw Material Ticket">${ic('plus')}</button>
           </div>
         </div>
@@ -4657,16 +4657,16 @@
     });
 
     const rawPop = JSON.stringify({
-      title: `Quarry, Haulage & Pricing · ${fmtHumanDay(dm.targetDate)}`,
+      title: `Material, Transport & Pricing · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.rawSum.loads)} loads`,
       norm: popNorm,
       rows: [
-        withNorm({ label: 'Total Quarry & Haulage', value: fmtUSD(dm.rawSum.totalCost, 0), color: '#C0892F', isTotal: true, go: 'drawer:raw' }, N7 && nUsd(N7.rawTotal), dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
-        withNorm({ label: 'Quarry Material Cost', value: fmtUSD(dm.rawSum.matCost, 0), color: '#2356A8', go: 'drawer:raw' }, N7 && nUsd(N7.rawMat), dm.rawSum.matCost, N7 && N7.rawMat, 50),
-        withNorm({ label: 'Third-Party Haulage', value: fmtUSD(dm.rawSum.haulCost, 0), color: '#4A90D9', go: 'drawer:raw' }, N7 && nUsd(N7.rawHaul), dm.rawSum.haulCost, N7 && N7.rawHaul, 50),
+        withNorm({ label: 'Total Material & Transport', value: fmtUSD(dm.rawSum.totalCost, 0), color: '#C0892F', isTotal: true, go: 'drawer:raw' }, N7 && nUsd(N7.rawTotal), dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
+        withNorm({ label: 'Raw Material Cost', value: fmtUSD(dm.rawSum.matCost, 0), color: '#2356A8', go: 'drawer:raw' }, N7 && nUsd(N7.rawMat), dm.rawSum.matCost, N7 && N7.rawMat, 50),
+        withNorm({ label: 'Third-Party Transport', value: fmtUSD(dm.rawSum.haulCost, 0), color: '#4A90D9', go: 'drawer:raw' }, N7 && nUsd(N7.rawHaul), dm.rawSum.haulCost, N7 && N7.rawHaul, 50),
         { label: 'Rate Compliance', value: `${dm.agreedSalesLoads}/${dm.salesSum.loads} Agreed · ${dm.belowAgreedLoads} Below`, color: dm.belowAgreedLoads > 0 ? '#C8333B' : '#1F7A4C', go: 'drawer:sales' }
       ],
-      footer: 'Click to inspect quarry & haulage tickets'
+      footer: 'Click to inspect material & transport receipts'
     });
 
     const expPop = JSON.stringify(perms.canExp ? {
@@ -4694,8 +4694,8 @@
       norm: popNorm,
       rows: [
         withNorm({ label: 'Sales Revenue (Ex-VAT)', value: fmtUSD(dm.salesSum.grossExVat, 0), color: '#2356A8', go: 'drawer:sales' }, N7 && nUsd(N7.salesExVat), dm.salesSum.grossExVat, N7 && N7.salesExVat, 50),
-        withNorm({ label: 'Less Quarry & Haulage', value: `-${fmtUSD(dm.rawSum.totalCost, 0)}`, color: '#C0892F', go: 'drawer:raw' }, N7 && `-${nUsd(N7.rawTotal)}`, dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
-        withNorm({ label: 'After Quarry & Haulage', value: fmtUSD(ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), 0), color: '#4A90D9' }, N7 && nUsd(N7.afterRaw), ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), N7 && N7.afterRaw, 50),
+        withNorm({ label: 'Less Material & Transport', value: `-${fmtUSD(dm.rawSum.totalCost, 0)}`, color: '#C0892F', go: 'drawer:raw' }, N7 && `-${nUsd(N7.rawTotal)}`, dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
+        withNorm({ label: 'After Material & Transport', value: fmtUSD(ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), 0), color: '#4A90D9' }, N7 && nUsd(N7.afterRaw), ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), N7 && N7.afterRaw, 50),
         withNorm({ label: 'Less Expenses & Payroll', value: `-${fmtUSD(dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, 0)}`, color: '#C96A22', go: 'drawer:costs' }, N7 && `-${nUsd(N7.costsBelowRaw)}`, dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, N7 && N7.costsBelowRaw, 50),
         withNorm({ label: 'Day Operating Profit', value: fmtUSD(dm.operatingProfit, 0), color: dm.operatingProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true, go: 'drawer:costs' }, N7 && nUsd(N7.operatingProfit), dm.operatingProfit, N7 && N7.operatingProfit, 50)
       ],
@@ -4876,11 +4876,11 @@
 
           <div class="dops-kpi accent-raw" data-dops-open-drawer="raw" data-chart-pop="${esc(rawPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
-              <span class="dops-kpi-lbl">Quarry &amp; Haul</span>
+              <span class="dops-kpi-lbl">Material &amp; Trans</span>
               ${dm.belowAgreedLoads > 0
                 ? `<span class="dops-kpi-delta crit">${dm.belowAgreedLoads} Below Rate</span>`
                 : (rawSharePct != null
-                  ? `<span class="dops-kpi-delta ${rawSharePct > 60 ? 'warn' : 'neutral'}" data-ui-tip="Quarry material and haulage as a share of the day's sales before VAT">${rawSharePct}% <span>of sales</span></span>`
+                  ? `<span class="dops-kpi-delta ${rawSharePct > 60 ? 'warn' : 'neutral'}" data-ui-tip="Raw material and transport as a share of the day's sales before VAT">${rawSharePct}% <span>of sales</span></span>`
                   : `<span class="dops-kpi-delta neutral">${fmtNum(dm.rawSum.tons, 0)} t</span>`)}
             </div>
             <div class="dops-kpi-val-row">
@@ -4888,7 +4888,7 @@
               <span class="dops-kpi-unit">${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³</span>
             </div>
             <div class="dops-kpi-sub">
-              Material <b>${kMoney(dm.rawSum.matCost)}</b> · Haulage <b>${kMoney(dm.rawSum.haulCost)}</b>
+              Material <b>${kMoney(dm.rawSum.matCost)}</b> · Transport <b>${kMoney(dm.rawSum.haulCost)}</b>
             </div>
           </div>
 
@@ -4979,7 +4979,7 @@
                 <button type="button" class="dops-dchip is-ah-tab${ahCnt > 0 ? ' has-ah' : ''}${streamFilter === 'after_hours' ? ' active' : ''}" data-dops-stream="after_hours">After-Hours (${fmtNum(ahCnt)})</button>
                 ${turnaroundStreamCnt > 0 || streamFilter === 'turnaround' ? `<button type="button" class="dops-dchip${streamFilter === 'turnaround' ? ' active' : ''}" data-dops-stream="turnaround">Site Wait (${fmtNum(turnaroundStreamCnt)})</button>` : ''}
                 <button type="button" class="dops-dchip${streamFilter === 'sales' ? ' active' : ''}" data-dops-stream="sales">Sales (${fmtNum(cntStream('sales'))})</button>
-                <button type="button" class="dops-dchip${streamFilter === 'raw' ? ' active' : ''}" data-dops-stream="raw">Quarry (${fmtNum(cntStream('raw'))})</button>
+                <button type="button" class="dops-dchip${streamFilter === 'raw' ? ' active' : ''}" data-dops-stream="raw">Material (${fmtNum(cntStream('raw'))})</button>
                 <button type="button" class="dops-dchip${streamFilter === 'agreements' ? ' active' : ''}" data-dops-stream="agreements">Agreements (${fmtNum(cntStream('agreements'))})</button>
                 <button type="button" class="dops-dchip${streamFilter === 'external' ? ' active' : ''}" data-dops-stream="external">External (${fmtNum(cntStream('external'))})</button>
                 <button type="button" class="dops-dchip${streamFilter === 'fx_loans' ? ' active' : ''}" data-dops-stream="fx_loans">FX &amp; Loans (${fmtNum(cntStream('fx_loans'))})</button>

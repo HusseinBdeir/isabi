@@ -2630,7 +2630,7 @@ finally:
           // Sign out: clears session cookie, wipes STATE.users, and purges cached /api/seed/* responses
           const signOutBtn = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
           if (signOutBtn) signOutBtn.click();
-          await new Promise(r => setTimeout(r, 350));
+          await new Promise(r => setTimeout(r, 250));
           const unauthUsersAfterRes = await fetch('./api/users');
           unauthUsersStatusAfterLogout = unauthUsersAfterRes.status;
           usersLenAfterLogout = (window.STATE?.users || []).length;
@@ -2737,6 +2737,61 @@ finally:
       };
     })()`);
 
+    // Capture active cookie before rapid sign-out -> immediate (<50ms) re-login race + immediate unload reload
+    const cookiesBeforeRapid28 = await sendCdp('Network.getCookies', { urls: [`http://127.0.0.1:${PORT}/app/`] });
+    const cookieBeforeRapid28 = String((cookiesBeforeRapid28.cookies || []).find(c => c.name === 'isabi_edge_sess')?.value || '');
+    const preRapidReplayRes = cookieBeforeRapid28
+      ? await httpReq('GET', '/app/api/users', null, { Cookie: `isabi_edge_sess=${cookieBeforeRapid28}` })
+      : { status: 0 };
+
+    const rapidReloginRes28 = await evalJs(`(async () => {
+      const btn = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
+      if (btn) btn.click();
+      const em = document.getElementById('authEmailInput');
+      const pin = document.getElementById('authPinInput');
+      const form = document.getElementById('authLoginForm');
+      if (em) { em.value = 'edge28inherit@bhfirms.com'; em.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (pin) { pin.value = '482915'; pin.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (form) form.requestSubmit();
+      return true;
+    })()`);
+    await sleep(950);
+    const rapidStateAfter28 = await evalJs(`(async () => {
+      const st = window.MFG_FACE_TEST && typeof window.MFG_FACE_TEST.state === 'function' ? window.MFG_FACE_TEST.state() : null;
+      const r = await fetch('./api/users');
+      return { authed: Boolean(st && st.authed), activeEmail: (st && st.activeEmail) || '', usersStatus: r.status };
+    })()`);
+    const oldCookieAfterRapidRes28 = cookieBeforeRapid28
+      ? await httpReq('GET', '/app/api/users', null, { Cookie: `isabi_edge_sess=${cookieBeforeRapid28}` })
+      : { status: 0 };
+
+    const cookiesBeforeReload28 = await sendCdp('Network.getCookies', { urls: [`http://127.0.0.1:${PORT}/app/`] });
+    const cookieBeforeReload28 = String((cookiesBeforeReload28.cookies || []).find(c => c.name === 'isabi_edge_sess')?.value || '');
+    const preReloadReplayRes = cookieBeforeReload28
+      ? await httpReq('GET', '/app/api/users', null, { Cookie: `isabi_edge_sess=${cookieBeforeReload28}` })
+      : { status: 0 };
+    await evalJs(`(() => {
+      const btn = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
+      if (btn) btn.click();
+      location.reload();
+      return true;
+    })()`);
+    await sleep(300);
+    for (let i = 0; i < 40; i++) {
+      const reloadedReady = await evalJs(`Boolean(window.MFG_FACE_TEST && typeof window.MFG_FACE_TEST.state === 'function' && document.getElementById('authEmailInput'))`).catch(() => false);
+      if (reloadedReady) break;
+      await sleep(200);
+    }
+    await sleep(400);
+    const reloadState28 = await evalJs(`(async () => {
+      const st = window.MFG_FACE_TEST && typeof window.MFG_FACE_TEST.state === 'function' ? window.MFG_FACE_TEST.state() : null;
+      const r = await fetch('./api/users');
+      return { authed: Boolean(st && st.authed), usersStatus: r.status };
+    })()`).catch(() => ({ authed: true, usersStatus: 0 }));
+    const oldCookieAfterReloadRes28 = cookieBeforeReload28
+      ? await httpReq('GET', '/app/api/users', null, { Cookie: `isabi_edge_sess=${cookieBeforeReload28}` })
+      : { status: 0 };
+
     if (remoteScript28 && remoteScript28.identifier) {
       try { await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript28.identifier }); } catch (_) {}
     }
@@ -2833,17 +2888,43 @@ finally:
       e28Flow.usersLenAfterLogout === 0 &&
       e28Flow.pinAtDigit4 === '4829' &&
       e28Flow.sixDigitAuthed === true &&
-      e28Flow.sixDigitActiveEmail === 'edge28inherit@bhfirms.com'
+      e28Flow.sixDigitActiveEmail === 'edge28inherit@bhfirms.com' &&
+      Boolean(cookieBeforeRapid28) &&
+      preRapidReplayRes.status === 200 &&
+      rapidReloginRes28 === true &&
+      rapidStateAfter28?.authed === true &&
+      rapidStateAfter28?.activeEmail === 'edge28inherit@bhfirms.com' &&
+      rapidStateAfter28?.usersStatus === 200 &&
+      oldCookieAfterRapidRes28.status === 401 &&
+      Boolean(cookieBeforeReload28) &&
+      cookieBeforeReload28 !== cookieBeforeRapid28 &&
+      preReloadReplayRes.status === 200 &&
+      reloadState28?.authed === false &&
+      reloadState28?.usersStatus === 401 &&
+      oldCookieAfterReloadRes28.status === 401
     ) {
       pass(
         'edge-28-remote-tdz-boot-and-redacted-faceid-e2e',
-        `0 TDZ, cookie-only auth (0 localStorage JWT), R2 seed hydrated & purged on logout, Email+PIN+Face ID d=${e28Flow.fOkDist} OK`
+        `0 TDZ, cookie-only auth (0 localStorage JWT), R2 seed hydrated & purged on logout, Email+PIN+Face ID d=${e28Flow.fOkDist}, rapid re-login & unload cookie revocation OK`
       );
     } else {
       fail('edge-28-remote-tdz-boot-and-redacted-faceid-e2e', JSON.stringify({
         bootConsoleErrors28,
         unexpectedErrors28,
         consoleErrors,
+        rapidCheck: {
+          hasCookie: Boolean(cookieBeforeRapid28),
+          preStatus: preRapidReplayRes.status,
+          rapidStateAfter28,
+          oldCookieAfterRapidStatus: oldCookieAfterRapidRes28.status
+        },
+        reloadCheck: {
+          hasCookie: Boolean(cookieBeforeReload28),
+          rotated: cookieBeforeReload28 !== cookieBeforeRapid28,
+          preStatus: preReloadReplayRes.status,
+          reloadState28,
+          oldCookieAfterReloadStatus: oldCookieAfterReloadRes28.status
+        },
         wsBoth: [wsDefaultBothPinOnlyRes.status, wsDefaultBothPinOnlyRes.json?.two_factor_face_required],
         rateLim: [rateLimitFirstStatus, rateLimitNinthStatus, rateLimitNinthFlag],
         verify2fa: [verifyOnly2faUnauthRes.status, verifyOnly2faAuthRes.status, Boolean(verifyOnly2faAuthRes.json?.token)],

@@ -681,7 +681,7 @@
       const targetNo = norm(tktMatch[1]);
       const pools = [
         { key: 'sales_tickets', label: 'Sales Ticket', view: 'sales' },
-        { key: 'raw_purchases', label: 'Quarry / Raw Ticket', view: 'raw' },
+        { key: 'raw_purchases', label: 'Material / Raw Receipt', view: 'raw' },
         { key: 'expenses', label: 'Expense Voucher', view: 'expenses' },
         { key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }
       ].filter(p => canView(p.view, scope && scope.user));
@@ -904,7 +904,7 @@
       }
       const supBullets = [];
       if (supStat.bundledCnt > 0) {
-        supBullets.push(`Bundled Delivery Basis: <b>${fmtInt(supStat.bundledCnt)}</b> loads (<b>${fmtMoney(supStat.bundledUsd, 2)}</b>) include supplier-provided raw material + transportation in one delivered price (internal transport split unknown).`);
+        supBullets.push(`Delivery Included Basis: <b>${fmtInt(supStat.bundledCnt)}</b> loads (<b>${fmtMoney(supStat.bundledUsd, 2)}</b>) include supplier-provided raw material + transportation in one delivered price (no separate transport charge).`);
       }
       if (bestCust && custStat && custStat.vol > 0) {
         supBullets.push(`Customer Ledger Also Active: <b>${fmtInt(custStat.loadsCnt)}</b> sales loads (<b>${fmtMoney(custStat.billed, 2)}</b>)${recLens.books ? ` · Open AR <b>${fmtMoney(custStat.openAr, 2)}</b>` : ''}`);
@@ -916,8 +916,8 @@
         topic: 'ap',
         title: `Supplier · ${cleanOut(bestSup.name)}`,
         answer: recLens.books
-          ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`
-          : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>) and <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>) (settlements &amp; open AP balance are restricted for this seat).`,
+          ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> material/transport loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`
+          : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> material/transport loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>) and <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>) (settlements &amp; open AP balance are restricted for this seat).`,
         bullets: supBullets.length ? supBullets : undefined,
         promptText: 'Would you like to open this supplier\'s 360° ledger or jump to Suppliers & Payables?',
         actions: [
@@ -935,7 +935,7 @@
 
     if (bestCust && custStat) {
       const dualSupBullets = (recLens.expenses && bestSup && supStat && supStat.vol > 0)
-        ? [`Supplier Ledger Also Active: <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>)${recLens.books && supStat.openAp != null ? ` · Open AP <b>${fmtMoney(supStat.openAp, 2)}</b>` : ''}`]
+        ? [`Supplier Ledger Also Active: <b>${fmtInt(supStat.rawCnt)}</b> material/transport loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>)${recLens.books && supStat.openAp != null ? ` · Open AP <b>${fmtMoney(supStat.openAp, 2)}</b>` : ''}`]
         : undefined;
       return {
         q: cleanQ,
@@ -1882,13 +1882,13 @@
       const pendingExpCnt = doLens.expenses ? expRowsTx.filter(e => (_ctx && typeof _ctx.isPendingPriceExpense === 'function') ? _ctx.isPendingPriceExpense(e) : false).length : 0;
       const attRows = scopedRows('attendance', txScope, { basis: 'tx' });
       const presentCnt = attRows.filter(a => /present|in|full|half|on[- ]site/i.test(String(a.status || a.punch_type || 'present'))).length;
-      const rawNote = (doLens.expenses && unpricedRawCnt > 0) ? `; ${fmtInt(unpricedRawCnt)} own-pit/rate-pending at $0` : '';
+      const rawNote = (doLens.expenses && unpricedRawCnt > 0) ? `; ${fmtInt(unpricedRawCnt)} own-site/rate-pending at $0` : '';
       const bulkNote = (doLens.expenses && bulkFuelRows.length > 0)
         ? `, incl. ${fmtInt(bulkFuelRows.length)} bulk diesel tank intake (${fmtInt(bulkFuelL, 0)} L · ${fmtMoney(bulkFuelUsd, 2)})`
         : '';
       const pendNote = (doLens.expenses && pendingExpCnt > 0) ? `; ${fmtInt(pendingExpCnt)} price-pending at $0.00` : '';
       const rawExpClause = doLens.expenses
-        ? `, against <b>${fmtInt(k.raw_loads)}</b> quarry loads (<b>${fmtMoney(k.raw_cost, 2)}</b>${rawNote}) and <b>${fmtInt(expRowsTx.length)}</b> expense vouchers (<b>${fmtMoney(k.expenses_total, 2)}</b>${bulkNote}${pendNote})`
+        ? `, against <b>${fmtInt(k.raw_loads)}</b> material loads (<b>${fmtMoney(k.raw_cost, 2)}</b>${rawNote}) and <b>${fmtInt(expRowsTx.length)}</b> expense vouchers (<b>${fmtMoney(k.expenses_total, 2)}</b>${bulkNote}${pendNote})`
         : ' (raw purchases & operating expenses restricted for this seat)';
       return {
         q: cleanQ,
@@ -2151,7 +2151,7 @@
     if (/\b(ap|payable|payables|quarry|quarries|raw\s+material|haulage|hauler|haulers|settlement|settlements|supplier\s+balance|suppliers\s+owed|top\s+\d*\s*suppliers?|biggest\s+\d*\s*suppliers?)\b/i.test(effLow) ||
         /(ذمم\s*دائنة|موردين|مقالع|كسارات|نقليات)/.test(cleanQ) ||
         /\b(fournisseur|fournisseurs|dettes?\s+fournisseurs|carrière|carriere)\b/i.test(effLow)) {
-      if (!canHub('raw', user) && !canHub('expenses', user)) return buildRestrictedReply(cleanQ, lang, 'Quarry & Payables');
+      if (!canHub('raw', user) && !canHub('expenses', user)) return buildRestrictedReply(cleanQ, lang, 'Material & Payables');
       const apLens = getSeatLens(user);
       const win = computeWindowSummary(scope);
       const k = win.k;
@@ -2161,9 +2161,9 @@
           lang,
           instantLocal: !isReasoningQuery(cleanQ),
           topic: 'ap',
-          title: `Purchases, Quarry & Payables · ${scope.fullScopeLabel}`,
-          answer: `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads; purchase costs and Accounts Payable balances are restricted for this seat.`,
-          actions: canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : []
+          title: `Purchases, Material & Payables · ${scope.fullScopeLabel}`,
+          answer: `For <b>${esc(scope.fullScopeLabel)}</b>, material and transport intake totaled <b>${fmtInt(k.raw_loads)}</b> loads; purchase costs and Accounts Payable balances are restricted for this seat.`,
+          actions: canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Material & Transport' }] : []
         };
       }
       const model = (_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
@@ -2185,16 +2185,16 @@
           lang,
           instantLocal: !isReasoningQuery(cleanQ),
           topic: 'ap',
-          title: `Top Suppliers & Quarry Partners · ${scope.scopeCoLabel}`,
+          title: `Top Suppliers & Source Partners · ${scope.scopeCoLabel}`,
           answer: leadS
-            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, the largest supplier by cumulative volume is <b>${esc(leadS.name)}</b> with <b>${fmtMoney(leadS.spend, 0)}</b> (${fmtInt(leadS.loads)} quarry/haulage loads${apLens.books ? ` · open AP: <b>${fmtMoney(leadS.ap, 0)}</b>` : ''}).`
+            ? `Across <b>${esc(scope.scopeCoLabel)}</b>, the largest supplier by cumulative volume is <b>${esc(leadS.name)}</b> with <b>${fmtMoney(leadS.spend, 0)}</b> (${fmtInt(leadS.loads)} material/transport loads${apLens.books ? ` · open AP: <b>${fmtMoney(leadS.ap, 0)}</b>` : ''}).`
             : `No supplier activity found for <b>${esc(scope.scopeCoLabel)}</b>.`,
-          headers: topVol.length ? (apLens.books ? ['Supplier', 'Quarry Loads', 'Total Volume', 'Open AP'] : ['Supplier', 'Quarry Loads', 'Total Volume']) : undefined,
+          headers: topVol.length ? (apLens.books ? ['Supplier', 'Material Loads', 'Total Volume', 'Open AP'] : ['Supplier', 'Material Loads', 'Total Volume']) : undefined,
           rows: topVol.map(s => apLens.books ? [s.name, fmtInt(s.loads), fmtMoney(s.spend, 0), fmtMoney(s.ap, 0)] : [s.name, fmtInt(s.loads), fmtMoney(s.spend, 0)]),
-          promptText: 'Would you like to open Suppliers & Payables or Quarry & Haulage?',
+          promptText: 'Would you like to open Suppliers & Payables or Material & Transport?',
           actions: [
             ...(canView('suppliers', user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : []),
-            ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : [])
+            ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Material & Transport' }] : [])
           ],
           followUps: [
             ...(apLens.books ? ['Show Accounts Payable breakdown', 'Show live cash in till'] : []),
@@ -2225,30 +2225,30 @@
         apBullets.push(`Largest open supplier balances: ${topS.map(s => `<b>${esc(cleanOut(s.Supplier || s.name))}</b> (${fmtMoney(s.ap_balance || s.balance || 0, 0)})`).join(', ')}`);
       }
       if (bundledRawRows.length > 0) {
-        apBullets.push(`Bundled Quarry Delivery Note: <b>${fmtInt(bundledRawRows.length)}</b> raw loads (<b>${fmtMoney(bundledRawUsd, 0)}</b>) come from quarry sites where the supplier provides both raw material and transportation in one delivered price; their internal transport split is unknown because neither our fleet nor paid 3rd-party haulers transport them.`);
+        apBullets.push(`Delivery Included Basis: <b>${fmtInt(bundledRawRows.length)}</b> raw loads (<b>${fmtMoney(bundledRawUsd, 0)}</b>) come from supplier-delivered sites where both raw material and transportation are included in one delivered price; their separate transport charge is $0.00.`);
       }
       return {
         q: cleanQ,
         lang,
         instantLocal: !isReasoningQuery(cleanQ),
         topic: 'ap',
-        title: `Purchases, Quarry & Payables · ${scope.fullScopeLabel}`,
+        title: `Purchases, Material & Payables · ${scope.fullScopeLabel}`,
         answer: apLens.books
-          ? `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>), settlements paid totaled <b>${fmtMoney(k.settlements_paid, 0)}</b>, and cumulative open Accounts Payable stands at <b>${fmtMoney(k.ap_balance, 0)}</b>.`
-          : `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>); settlements paid and Accounts Payable balances are restricted for this seat.`,
+          ? `For <b>${esc(scope.fullScopeLabel)}</b>, material and transport intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>), settlements paid totaled <b>${fmtMoney(k.settlements_paid, 0)}</b>, and cumulative open Accounts Payable stands at <b>${fmtMoney(k.ap_balance, 0)}</b>.`
+          : `For <b>${esc(scope.fullScopeLabel)}</b>, material and transport intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>); settlements paid and Accounts Payable balances are restricted for this seat.`,
         headers: ['Payable Component', 'Scope', 'Amount (USD)'],
         rows: [
-          ['1. Quarry Material Leg', 'Owed to quarry / pit owners (incl. bundled Mat+Trans loads)', apLens.books ? fmtMoney(k.ap_material, 0) : 'Restricted'],
-          ['2. Third-Party Haulage Leg', 'Owed to external truck owners', apLens.books ? fmtMoney(k.ap_haulage, 0) : 'Restricted'],
+          ['1. Raw Material Leg', 'Owed to site / material suppliers (incl. Delivery Included loads)', apLens.books ? fmtMoney(k.ap_material, 0) : 'Restricted'],
+          ['2. Third-Party Transport Leg', 'Owed to external truck owners', apLens.books ? fmtMoney(k.ap_haulage, 0) : 'Restricted'],
           ['3. Credit Expenses Leg', 'Unpaid supplier bills & parts', apLens.books ? fmtMoney(k.ap_expense, 0) : 'Restricted'],
           ['Less: AP Settlements Paid', 'Cash & bank payments posted', apLens.books ? ('-' + fmtMoney(k.ap_settled || k.settlements_paid, 0)) : 'Restricted']
         ],
         total: [totLabel, apLens.books ? fmtMoney(totVal, 0) : 'Restricted'],
         bullets: apBullets,
-        promptText: 'Would you like to open Suppliers & Payables, Quarry & Haulage, or post a supplier settlement?',
+        promptText: 'Would you like to open Suppliers & Payables, Material & Transport, or post a supplier settlement?',
         actions: [
           ...(canView('suppliers', user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : []),
-          ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Quarry & Haulage' }] : []),
+          ...(canView('raw', user) ? [{ type: 'view', view: 'raw', label: 'Material & Transport' }] : []),
           ...(apLens.books ? [{ type: 'form', form: 'settlement', label: '+ Settle AP' }] : [])
         ],
         followUps: [
@@ -2530,10 +2530,10 @@
         topic: 'pricing',
         title: `Commercial Pricing & Commissions · ${scope.fullScopeLabel}`,
         answer: `There are <b>${fmtInt(pr.active_agreements || k.active_agreements || 0)}</b> active customer price agreements.${auditPart}${commPart}`,
-        promptText: 'Would you like to inspect Commercial Pricing or Quarry & Haulage Rates?',
+        promptText: 'Would you like to inspect Commercial Pricing or Material & Transport Rates?',
         actions: [
           { type: 'view', view: 'pricing', label: 'Commercial Pricing' },
-          ...(canView('raw_pricing', user) ? [{ type: 'view', view: 'raw_pricing', label: 'Quarry & Haulage Rates' }] : [])
+          ...(canView('raw_pricing', user) ? [{ type: 'view', view: 'raw_pricing', label: 'Material & Transport Rates' }] : [])
         ],
         followUps: [
           ...(prLens.profit ? [`Compare entity sales & operating profit`] : ['Show top customer sales']),
@@ -2556,7 +2556,7 @@
         instantLocal: true,
         topic: 'kiosks',
         title: 'Team Seats, Biometrics & Plant Kiosks',
-        answer: `Your workspace currently has <b>${fmtInt(users.length)}</b> configured user seats (<b>${fmtInt(faceCnt)}</b> enrolled with live photo-proof Face ID) plus <b>4 dedicated plant kiosks</b> (Sales Dispatch, Quarry Receiving, Fuel Dispense, and Biometric Attendance) with wireless Priced Slip and Unpriced Gate Pass thermal printing.`,
+        answer: `Your workspace currently has <b>${fmtInt(users.length)}</b> configured user seats (<b>${fmtInt(faceCnt)}</b> enrolled with live photo-proof Face ID) plus <b>4 dedicated plant kiosks</b> (Sales Dispatch, Material Receiving, Fuel Dispense, and Biometric Attendance) with wireless Priced Slip and Unpriced Gate Pass thermal printing.`,
         promptText: 'Would you like to open Plant Kiosks or Users & Security?',
         actions: [
           ...(canView('kiosks', user) ? [{ type: 'view', view: 'kiosks', label: 'Open Plant Kiosks' }] : []),
@@ -2648,7 +2648,7 @@
           ['Tb9 · 364168 (Partner Truck)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
         ],
         total: ['Fleet Total (3 Trucks)', '+$1,745.54 Recorded / +$18,641.94 Strict Adj'],
-        promptText: 'Open Fleet & Running Costs to inspect all 6 tabs (Executive P&L, 265 Zero-Haulage Audit, 108 Routes Explorer, Diesel De-Dup & 85 Repair Bills, 172 Overtime Trips, and 4 Reconciliation Findings).',
+        promptText: 'Open Fleet & Running Costs to inspect all 6 tabs (Executive P&L, 265 Zero-Transport Audit, 108 Routes Explorer, Diesel De-Dup & 85 Repair Bills, 172 Overtime Trips, and 4 Reconciliation Findings).',
         actions: [
           ...(canView('fleet_equip', user) ? [{ type: 'view', view: 'fleet_equip', label: 'Open Truck Fleet P&L Cockpit' }] : []),
           ...(canView('pbi', user) ? [{ type: 'view', view: 'pbi', label: 'Dashboards & Reports' }] : [])
@@ -3331,8 +3331,8 @@
     sales: 'Sales & Receivables',
     customers: 'Customer Receivables',
     pricing: 'Commercial Pricing & Commissions',
-    raw: 'Quarry, Haulage & JVs',
-    raw_pricing: 'Quarry & Haulage Rates',
+    raw: 'Material, Transport & JVs',
+    raw_pricing: 'Material & Transport Rates',
     raw_jv: 'JV & Partnerships',
     expenses: 'Expenses & Overhead',
     recurring_expenses: 'Recurring Expense Schedules',
@@ -4119,7 +4119,7 @@
     if (candidateTickets.size > 0 && _ctx && _ctx.SEED && _ctx.SEED.records) {
       const pools = [
         ...(canHub('sales', user) ? [{ key: 'sales_tickets', label: 'Sales Ticket', view: 'sales' }] : []),
-        ...(canHub('raw', user) ? [{ key: 'raw_purchases', label: 'Quarry Ticket', view: 'raw' }] : []),
+        ...(canHub('raw', user) ? [{ key: 'raw_purchases', label: 'Material Receipt', view: 'raw' }] : []),
         ...(canHub('expenses', user) ? [{ key: 'expenses', label: 'Expense Voucher', view: 'expenses' }] : []),
         ...(canHub('fleet', user) ? [{ key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }] : [])
       ];
@@ -4225,7 +4225,7 @@
     }
     if (attLens.expenses && matchedSuppliers.length > 0) {
       matchedSuppliers.slice(0, 2).forEach(sItem => {
-        bullets.push(`Matched Supplier Ledger (<b>${esc(sItem.name)}</b>): <b>${fmtInt(sItem.loads)}</b> quarry/haulage loads · Total Spend <b>${fmtMoney(sItem.cost, 2)}</b>${attLens.books ? ` · Open AP <b>${fmtMoney(sItem.ap, 2)}</b>` : ''}.`);
+        bullets.push(`Matched Supplier Ledger (<b>${esc(sItem.name)}</b>): <b>${fmtInt(sItem.loads)}</b> material &amp; transport loads · Total Spend <b>${fmtMoney(sItem.cost, 2)}</b>${attLens.books ? ` · Open AP <b>${fmtMoney(sItem.ap, 2)}</b>` : ''}.`);
       });
       const s0 = matchedSuppliers[0];
       actions.push({ type: 'inspect', crKey: 'suppliers', id: s0.id, label: `360° ${s0.name}` });
@@ -21066,7 +21066,12 @@
   async function unsubscribePushOnSignOut(opts = {}) {
     const tok = (opts && opts.token) ? String(opts.token) : '';
     const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);
+    const aborted = () => Boolean(opts && typeof opts.shouldAbort === 'function' && opts.shouldAbort());
     let ep = String(_chatState.activePushEndpoint || '');
+    _chatState.activePushEndpoint = '';
+    const hasGrantedPerm = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    if (!ep && !hasGrantedPerm) return;
+    if (aborted()) return;
     try {
       const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
       let reg = null;
@@ -21077,6 +21082,7 @@
             new Promise(r => setTimeout(() => r(null), 300))
           ]);
         }
+        if (aborted()) return;
         if (!reg && sw.ready) {
           reg = await Promise.race([
             Promise.resolve(sw.ready).catch(() => null),
@@ -21084,9 +21090,11 @@
           ]);
         }
       }
+      if (aborted()) return;
       const sub = reg && reg.pushManager && typeof reg.pushManager.getSubscription === 'function'
         ? await Promise.resolve(reg.pushManager.getSubscription()).catch(() => null)
         : null;
+      if (aborted()) return;
       if (sub) {
         if (!ep && sub.endpoint) ep = String(sub.endpoint);
         if (!deferBrowserUnsub && typeof sub.unsubscribe === 'function') {
@@ -21094,7 +21102,7 @@
         }
       }
     } catch (_) {}
-    _chatState.activePushEndpoint = '';
+    if (aborted()) return;
     const canApi = Boolean(opts && opts.serverApi);
     if (ep && canApi && typeof fetch === 'function') {
       try {
@@ -21315,7 +21323,7 @@
     return [
       `Industry: Manufacturing & Quarries (${scope.fullScopeLabel})`,
       `${salesLabel(user)}: ${fmtMoney(k.sales_ttc, 0)} across ${fmtInt(k.loads)} loads (${fmtInt(k.tons_sold, 0)} tons)`,
-      lens.expenses ? `Raw Material & Haulage Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Operating Expenses: ${fmtMoney(k.expenses_total, 0)}` : '',
+      lens.expenses ? `Raw Material & Transport Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Operating Expenses: ${fmtMoney(k.expenses_total, 0)}` : '',
       lens.profit ? `Gross Margin: ${fmtMoney(k.gross_margin, 0)} | Operating Profit: ${fmtMoney(k.operating_profit, 0)}` : 'Gross Margin & Operating Profit: Restricted',
       lens.books
         ? `Open Receivables: ${fmtMoney(k.ar_balance, 0)} (Past 60d: ${fmtMoney(k.ar_60_plus, 0)}) | Net Open Payables: ${fmtMoney(k.ap_balance, 0)}`

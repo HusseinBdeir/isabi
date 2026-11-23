@@ -158,12 +158,12 @@
     },
     {
       id: 'mfg_unpriced_raw',
-      label: 'Manufacturing · Unpriced Quarry Weighbridge Slip',
+      label: 'Manufacturing · Unpriced Material Weighbridge Slip',
       sub: 'WTC · Weighbridge slip in Tons with truck 353387 & $0.00 Price Pending',
-      fileName: 'Quarry_Weighbridge_Slip_99204.svg',
+      fileName: 'Material_Weighbridge_Slip_99204.svg',
       spec: {
-        docHeader: 'QUARRY WEIGHBRIDGE DELIVERY SLIP (UNPRICED)',
-        issuerLine: 'Origin Quarry Site: Sibline · Raw Material Intake Ticket',
+        docHeader: 'MATERIAL WEIGHBRIDGE DELIVERY SLIP (UNPRICED)',
+        issuerLine: 'Source Site: Sibline · Raw Material Intake Ticket',
         refNo: '99204',
         date: '2026-10-20',
         company: 'WTC',
@@ -172,7 +172,7 @@
         metaLine1: 'Site: Sibline · Material Product: Raml Bab Thani',
         metaLine2: 'Truck: 353387 · Transported By: Company fleet',
         lines: [
-          { desc: 'Raml Bab Thani (Quarry Aggregate Intake)', qty: '34.80 Ton', price: '$0.00', total: '$0.00' }
+          { desc: 'Raml Bab Thani (Raw Material Intake)', qty: '34.80 Ton', price: '$0.00', total: '$0.00' }
         ],
         subtotal: '$0.00 USD',
         vat: '$0.00 USD',

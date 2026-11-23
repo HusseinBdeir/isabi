@@ -447,7 +447,7 @@
     const rec = getRecords(ctx);
     const sNorm = norm(supplierName);
     if (!sNorm) {
-      return `<div class="pa-subgrid-empty">Select a <b>Supplier / Hauler</b> to inspect open 3-Leg Payables (Material Leg · Haulage Leg · Credit Expense Leg) &amp; live FIFO settlement allocation.</div>`;
+      return `<div class="pa-subgrid-empty">Select a <b>Supplier / Hauler</b> to inspect open 3-Leg Payables (Material Leg · Transport Leg · Credit Expense Leg) &amp; live FIFO settlement allocation.</div>`;
     }
     const allLegs = [];
     let priorCreditReturns = 0;
@@ -465,7 +465,7 @@
       if (norm(r.truck_owner) === sNorm) {
         const hc = Number(r.trans_cost || 0);
         if (hc > 0) {
-          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });
+          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Raw Transport', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });
         } else if (hc < 0) {
           priorCreditReturns += Math.abs(hc);
         }
@@ -478,7 +478,7 @@
       if (m !== 'Credit' && m !== 'CR Return' && m !== 'Credit Return') return;
       const hc = Number(st.trans_price || 0);
       if (m === 'Credit' && hc > 0) {
-        allLegs.push({ date: st.date, ref: `SALE #${st.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Sales Haulage', detail: `${st.truck || ''} · ${st.customer || ''}`, amount: hc });
+        allLegs.push({ date: st.date, ref: `SALE #${st.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Sales Transport', detail: `${st.truck || ''} · ${st.customer || ''}`, amount: hc });
       } else if (hc !== 0) {
         priorCreditReturns += Math.abs(hc);
       }
@@ -758,7 +758,7 @@
           const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
           const isHoldingScope = groupOverride === 'extended' || (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() === 'Holding & Treasury');
           const rawPrTab = showRawPr ? `
-          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Haulage Rate agreement">
+          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Transport Rate agreement">
             <span>Price Agreement</span>
           </button>` : '';
           const rawAnchorObj = showRawPr ? (['settlement', 'expense', 'raw'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
@@ -1051,11 +1051,11 @@
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm || isRawForm })}
           ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
           ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm, hintId: 'hint_pr_site', hint: '' })}
-          ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_pr_regions" placeholder="Select region for site haulage..."') + dl('dl_pr_regions', regNames), { id: 'wrap_pr_site_region', hidden: true, hintId: 'hint_pr_site_region', hint: 'Region and Site are both required when adding transportation with our trucks or associated 3rd-party haulers.' })}
+          ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_pr_regions" placeholder="Select region for site transport..."') + dl('dl_pr_regions', regNames), { id: 'wrap_pr_site_region', hidden: true, hintId: 'hint_pr_site_region', hint: 'Region and Site are both required when adding transportation with our trucks or associated 3rd-party haulers.' })}
           <div class="form-field span-3" id="prAreaSiteWrap" hidden></div>
           <div class="form-field span-3 quarry-landed-callout" id="wrap_pr_incl_transport" hidden>
             <input type="checkbox" id="f_pr_incl_transport" hidden>
-            <div><b>Supplier Provides Material + Transportation (Bundled Delivered Price):</b> Rate includes supplier delivery to plant; transport split unknown ($0 separate haulage · Region optional)</div>
+            <div><b>Supplier Delivers (Delivery Included):</b> Rate includes supplier delivery to plant; no separate transport charge ($0 transport · Region optional)</div>
           </div>
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
@@ -1374,7 +1374,7 @@
         const k = s.toLowerCase();
         if (!s || seen.has(k) || isBu(s) || (exKey && k === exKey)) return;
         seen.add(k);
-        if (rawSupSet.has(k)) tier2.push([s, 'Quarry / Raw Material Counterparty']);
+        if (rawSupSet.has(k)) tier2.push([s, 'Material / Transport Counterparty']);
         else tier3.push([s, 'Registered Counterparty']);
       });
       return tier1.concat(tier2, tier3);
@@ -1390,18 +1390,18 @@
       const haulDeckHtml = isMfgForm ? `
           <div class="form-field span-3" id="quarryHaulageModeDeck">
             <label><span class="pa-fld-lbl">Site Location &amp; Transportation Basis *</span></label>
-            <div class="quarry-mode-deck" role="radiogroup" aria-label="Quarry Transportation Mode">
+            <div class="quarry-mode-deck" role="radiogroup" aria-label="Material Transportation Mode">
               <button type="button" class="quarry-mode-card site-cat-card quarry-mode-separate${!defBundled ? ' active' : ''}" data-quarry-bundled="0" aria-pressed="${!defBundled ? 'true' : 'false'}">
                 <span class="quarry-mode-icon">${ic('truck')}</span>
                 <span class="quarry-mode-body">
                   <span class="quarry-mode-title-row">
-                    <span class="quarry-mode-title">Standard Site · Known Region (Delivery &amp; Ex-Quarry Haul)</span>
+                    <span class="quarry-mode-title">Standard Site · Known Region (Delivery &amp; Separate Transport)</span>
                     <span class="quarry-mode-count" id="quarryModeCountSep">${separateSiteCount} Sites</span>
                   </span>
-                  <span class="quarry-mode-sub">Customer delivery destination or quarry source hauled by our fleet or paid 3rd-party peers</span>
+                  <span class="quarry-mode-sub">Customer delivery destination or material source transported by our fleet or paid 3rd-party haulers</span>
                   <span class="quarry-mode-tags">
                     <span class="quarry-mode-tag">Region * Required</span>
-                    <span class="quarry-mode-tag">Material + Haulage Tracked Separately</span>
+                    <span class="quarry-mode-tag">Material + Transport Tracked Separately</span>
                   </span>
                 </span>
                 <span class="quarry-mode-check site-cat-check" aria-hidden="true">${!defBundled ? '✓ Selected' : 'Select'}</span>
@@ -1410,13 +1410,13 @@
                 <span class="quarry-mode-icon">${ic('box')}</span>
                 <span class="quarry-mode-body">
                   <span class="quarry-mode-title-row">
-                    <span class="quarry-mode-title">Bundled · Supplier Provides Material + Transport</span>
+                    <span class="quarry-mode-title">Delivery Included · Supplier Price Covers Transport</span>
                     <span class="quarry-mode-count" id="quarryModeCountBundled">${bundledSiteCount} Sites</span>
                   </span>
-                  <span class="quarry-mode-sub">Raw material delivered to plant in supplier unit price; region &amp; internal transport split unknown ($0 separate haulage)</span>
+                  <span class="quarry-mode-sub">Supplier delivers material to plant inside unit price ($0 separate transport · Region optional)</span>
                   <span class="quarry-mode-tags">
                     <span class="quarry-mode-tag is-opt">Region Optional</span>
-                    <span class="quarry-mode-tag is-brass">Includes Supplier Transport</span>
+                    <span class="quarry-mode-tag is-brass">Delivery Included</span>
                   </span>
                 </span>
                 <span class="quarry-mode-check site-cat-check" aria-hidden="true">${defBundled ? '✓ Selected' : 'Select'}</span>
@@ -1433,17 +1433,17 @@
             cls: 'geo-link-paste-field',
             afterHtml: '<div class="geo-link-status" id="siteMapLinkStatus" role="status" aria-live="polite" hidden></div>'
           })}
-          ${fld(defBundled ? 'Region (Optional · Supplier Delivers)' : 'Region *', inp('f_region', 'text', '', `list="dl_regions" placeholder="${defBundled ? 'Optional region (required only if we/3P haul)...' : 'Select region or click map zone...'}"`) + dl('dl_regions', regNames), {
+          ${fld(defBundled ? 'Region (Optional · Supplier Delivers)' : 'Region *', inp('f_region', 'text', '', `list="dl_regions" placeholder="${defBundled ? 'Optional region (required only if we/3P transport)...' : 'Select region or click map zone...'}"`) + dl('dl_regions', regNames), {
             id: 'wrap_site_region',
             hint: defBundled
               ? 'Optional while supplier delivers both material & transport. Required if our trucks or paid 3rd-party haulers ever transport from this site.'
               : 'Select the geographic Region first or click inside a zone on the map.',
             hintId: 'hint_site_region'
           })}
-          ${fld(defBundled ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *', inp('f_site', 'text', '', `placeholder="${defBundled ? 'Supplier quarry or delivery source name...' : 'Site name inside selected region...'}"`), {
+          ${fld(defBundled ? 'Source / Supplier Site Name *' : 'Site Name (Inside Region) *', inp('f_site', 'text', '', `placeholder="${defBundled ? 'Supplier delivery source or site name...' : 'Site name inside selected region...'}"`), {
             id: 'wrap_site_name',
             cls: 'span-2',
-            hint: defBundled ? 'Bundled quarry source (material + transport included in supplier price).' : 'Must be located inside the selected Region.',
+            hint: defBundled ? 'Delivery-included source site (material + transport included in supplier price).' : 'Must be located inside the selected Region.',
             hintId: 'hint_site_name'
           })}
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
@@ -1461,13 +1461,13 @@
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
           <div class="form-field span-3" id="sitePriceAgreementsWrap" hidden></div>
-          ${isMfgForm ? fld('Haul Road Surface (Tyre Wear)', sel('f_site_surface', [
-            ['', 'Auto-Detect (Unpaved for Quarry / Raw Sites)'],
+          ${isMfgForm ? fld('Transport Road Surface (Tyre Wear)', sel('f_site_surface', [
+            ['', 'Auto-Detect (Unpaved for Source / Raw Sites)'],
             ['unpaved', 'Unpaved / Loose Gravel (High Tyre Wear)'],
             ['paved', 'Paved Asphalt / Concrete Road']
           ], ''), {
             id: 'wrap_site_surface',
-            hint: 'Auto-detects unpaved quarry & raw intake sites for drive-axle tyre wear weighting.',
+            hint: 'Auto-detects unpaved material source sites for drive-axle tyre wear weighting.',
             hintId: 'hint_site_surface'
           }) : ''}
           ${fld('Site Status', sel('f_site_status', [['open', 'Open'], ['closed', 'Closed']], 'open'), {
@@ -1484,7 +1484,7 @@
     }
 
     if (fType === 'region') {
-      const distLbl = isMfgForm ? 'Reference Haulage Distance (km)' : 'Reference Distance (km)';
+      const distLbl = isMfgForm ? 'Reference Transport Distance (km)' : 'Reference Distance (km)';
       const distPh = isMfgForm ? 'Auto-estimated from WTC Hub' : 'Optional reference km';
       return `
         <div class="form-grid-3">
@@ -2236,7 +2236,7 @@
             <input type="checkbox" id="f_backfill_shift" checked>
             <label for="f_backfill_shift" id="lbl_backfill_shift">Backfill all staff associated with this shift (and BU default staff) plus attendance records from the Effective Start Date</label>
           </div>
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="e.g. Standard quarry & plant shift, holiday or seasonal hours..."'), { id: 'wrap_ws_notes', span: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="e.g. Standard plant & delivery shift, holiday or seasonal hours..."'), { id: 'wrap_ws_notes', span: true })}
         </div>
         <div class="live-calc" id="workShiftLiveCalc">
           <div><small>Regular Window</small><b id="calc_ws_window">08:00 - 16:00 (8.0h)</b></div>

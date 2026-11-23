@@ -6907,7 +6907,7 @@
       const isBundSite = isMfg && !isJvSite && !s._multiIndustrySeed && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
       const dotCls = isJvSite ? 'dual' : 'site';
       const specCls = isJvSite ? 'is-jv' : (isBundSite ? 'is-bund' : '');
-      const specLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Mat+Trans' : '');
+      const specLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Delivered' : '');
       const rCnt = Number(st.raw || 0);
       const sCntLoads = Number(st.sales || 0);
       const siteLoads = isMfg ? Number(st.total || (rCnt + sCntLoads)) : 0;
@@ -7602,7 +7602,7 @@
               <div class="geo-unpinned-ident">
                 <span class="geo-unpinned-count" id="geoUnpinnedCounter" data-no-i18n="1">${STUDIO.unpinnedIdx + 1} / ${unpinnedQueue.length}</span>
                 <strong class="geo-unpinned-name" id="geoUnpinnedTargetName" data-no-i18n="1">${esc(curUnpinned.name)}</strong>
-                ${isMfg ? `<span class="geo-unpinned-cat">${curUnpinned.siteCategory === 'customer' ? 'Delivery Site' : 'Quarry / Supplier'}</span>` : ''}
+                ${isMfg ? `<span class="geo-unpinned-cat">${curUnpinned.siteCategory === 'customer' ? 'Delivery Site' : 'Material Source'}</span>` : ''}
                 <span class="geo-unpinned-vol">${curUnpinned.vol90 > 0 ? `<b data-no-i18n="1">${curUnpinned.vol90}</b> <span>(90d)</span>` : `<b data-no-i18n="1">${curUnpinned.totalVol}</b> <span>total</span>`}</span>
                 ${(STUDIO.unpinnedRegionDraft || curUnpinned.region)
                   ? `<span class="geo-unpinned-regpill" data-no-i18n="1">${esc(STUDIO.unpinnedRegionDraft || curUnpinned.region)}</span>`

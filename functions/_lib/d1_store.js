@@ -1542,14 +1542,26 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
   }
 
+  const authBatch = [
+    env.DB.prepare('UPDATE users SET last_login_at = ?1 WHERE id = ?2').bind(nowIso, row.id),
+    env.DB.prepare(
+      `INSERT OR REPLACE INTO auth_sessions (id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence, ip_hash)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+    ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
+  ];
+  // Defense-in-depth: revoke any caller cookie/token session superseded by a fresh sign-in.
+  if (
+    method !== 'Owner Impersonation' &&
+    verifiedCallerSession &&
+    verifiedCallerSession.sid &&
+    String(verifiedCallerSession.sid) !== sessId
+  ) {
+    authBatch.push(
+      env.DB.prepare('DELETE FROM auth_sessions WHERE id = ?1').bind(String(verifiedCallerSession.sid))
+    );
+  }
   await Promise.all([
-    env.DB.batch([
-      env.DB.prepare('UPDATE users SET last_login_at = ?1 WHERE id = ?2').bind(nowIso, row.id),
-      env.DB.prepare(
-        `INSERT OR REPLACE INTO auth_sessions (id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence, ip_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
-      ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
-    ]),
+    env.DB.batch(authBatch),
     clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && !allowOwnerImpersonation, keepEmail: !pinVerified && !allowOwnerImpersonation })
   ]);
 

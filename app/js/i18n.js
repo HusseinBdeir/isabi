@@ -521,6 +521,156 @@
       "Ask ISABI AI": "استشر ذكاء ISABI",
       "Checking...": "جارٍ التحقق...",
       "Confirm Alias": "اعتماد الاسم البديل",
+      "Cross-Script Material, Transport & Bank 3-Way Match": "المطابقة الثلاثية للمواد والنقل وكشوف البنك عبر اللغات",
+      "Avg Material Transport Rate": "متوسط تعرفة نقل المواد",
+      "Customer Trans ($)": "نقل العميل ($)",
+      "Delivery & Material Transport Rate Lock": "تثبيت سعر التوصيل ونقل المواد",
+      "Enter Sales Dispatch, Material Intake, Fuel & Fleet Defects": "تسجيل المبيعات، استلام المواد، المحروقات وأعطال الأسطول",
+      "Left to Factories & Source Sites": "المتبقي للمصانع ومواقع المصادر",
+      "Material & Transport Accrued": "المستحق للمواد والنقل",
+      "Material & Transport Coverage": "تغطية المواد والنقل",
+      "Material & Transport Rate Type *": "نوع تسعيرة المواد والنقل *",
+      "Material & Transport Remaining": "المتبقي للمواد والنقل",
+      "Material Source Site (Optional)": "موقع مصدر المواد (اختياري)",
+      "Material, Transport & JVs": "المواد والنقل والشراكات",
+      "Purchases, 3-Leg Payables, Material Stock & Fleet": "المشتريات، الذمم الدائنة الثلاثية، مخزون المواد والأسطول",
+      "Raw Material Unit Cost ($/unit)": "كلفة وحدة المواد الأولية ($/وحدة)",
+      "Single 3rd-Party Transport Leg ($)": "شق النقل الخارجي المفرد ($)",
+      "Single Material / Transport Receipt ($)": "إيصال مواد / نقل مفرد ($)",
+      "Source Site Default Supplier Lock": "تثبيت المورّد الافتراضي لموقع المصدر",
+      "Supplier Delivers (Delivery Included)": "المورّد يتولى التوصيل (شامل التوصيل)",
+      "Supplier Trans ($)": "نقل المورّد ($)",
+      "Total Transport ($)": "إجمالي النقل ($)",
+      "Transport Leg": "شق النقل",
+      "Bank IBAN, material supplier terms, or hauler instructions...": "رقم IBAN، شروط مورّد المواد أو تعليمات الناقل...",
+      "Active and closed profit-split agreements by source or project scope": "اتفاقيات تقاسم الأرباح النشطة والمغلقة حسب موقع المصدر أو المشروع",
+      "+ Material Agreement": "+ اتفاقية مواد",
+      "+ Material / Transport Rule": "+ قاعدة مواد / نقل",
+      "+ Transport Rate": "+ تعرفة نقل",
+      "Transport Rate": "تعرفة النقل",
+      "Material price only; transport is billed separately by our fleet or paid haulers": "سعر المادة فقط؛ يُحتسب النقل منفصلاً عبر أسطولنا أو ناقلين مأجورين",
+      "Transported by Company Fleet; internal diesel and driver cost tracked separately": "منقول بأسطول الشركة؛ تُتبع كلفة المازوت والسائقين داخلياً بشكل منفصل",
+      "Select region to enable transport...": "اختر المنطقة لتفعيل النقل...",
+      "After Material & Transport": "بعد المواد والنقل",
+      "Less Material & Transport": "ناقص المواد والنقل",
+      "Material + Expenses": "المواد + المصاريف",
+      "Total Material & Transport": "إجمالي المواد والنقل",
+      "Material & Pricing Lens": "عرض المواد والأسعار",
+      "Inspect material & agreement records": "فحص قيود المواد والاتفاقيات",
+      "Raw material and transport": "المواد الأولية والنقل",
+      "Raw material and transport as a share of the day's sales before VAT": "المواد الأولية والنقل كنسبة من مبيعات اليوم قبل الضريبة",
+      "Where the day's sales went: material and transport, expenses, payroll, and what is left as profit. Costs past the mark are a loss.": "توزّع مبيعات اليوم: المواد والنقل، المصاريف، الرواتب، وما يتبقى كربح. تجاوز الخط يعني خسارة.",
+      "Transport Road Surface (Tyre Wear)": "طبيعة طريق النقل (تآكل الإطارات)",
+      "Material Transportation Mode": "نمط نقل المواد",
+      "Select region for site transport...": "اختر المنطقة لنقل الموقع...",
+      "2 · Transport Leg": "2 · شق النقل",
+      "3rd-Party Trans (Leg 2)": "نقل خارجي (الشق 2)",
+      "3rd-Party Transport (Leg 2)": "النقل الخارجي (الشق 2)",
+      "Active Material & Transport": "اتفاقيات المواد والنقل النشطة",
+      "Company Fleet Transport": "نقل أسطول الشركة",
+      "Delivery Included": "شامل التوصيل",
+      "Leg 2 · 3rd-Party Transport": "الشق 2 · النقل الخارجي",
+      "Material & Transport Agreements": "اتفاقيات المواد والنقل",
+      "Material & Transport Rates": "أسعار المواد والنقل",
+      "Material OT ($)": "إضافي المواد ($)",
+      "Material OT trips": "نقلات المواد الإضافية",
+      "Material OT Trips": "نقلات المواد الإضافية",
+      "Over-Agreed Material Pairs": "مقارنات المواد المتجاوزة للاتفاقية",
+      "Site Purchase & Trans Rules": "اتفاقيات شراء ونقل الموقع",
+      "Site Transport Rate Rules": "قواعد تعرفة نقل الموقع",
+      "Third-Party Transport": "نقل الغير (الناقلون)",
+      "Transport Cost ($)": "كلفة النقل ($)",
+      "Transport Cost (3rd-Party)": "كلفة النقل (نقل خارجي)",
+      "Transport Share %": "نسبة النقل %",
+      "Delivered rate (supplier price includes delivery)": "سعر واصل (سعر المورّد يشمل التوصيل)",
+      "Material & Site Transport Price Agreements": "اتفاقيات أسعار المواد ونقل المواقع",
+      "Region optional while supplier delivers material + transport; required if transported in own trucks or 3rd-party haulers": "المنطقة اختيارية عندما يسلّم المورّد مع التوصيل؛ وإلزامية عند النقل بأسطولنا أو بناقلين خارجيين",
+      "Supplier's price includes delivery; Region optional until transported by own fleet or 3rd-party haulers": "سعر المورّد يشمل التوصيل؛ المنطقة اختيارية ما لم يتم النقل بأسطولنا أو بناقلين خارجيين",
+      "Supplier's price includes delivery; no separate transport charge": "سعر المورّد يشمل التوصيل؛ لا توجد رسوم نقل منفصلة",
+      "Manufacturing · Unpriced Material Weighbridge Slip": "الصناعة · إيصال قبان مواد غير مسعّر",
+      "Material & Transport": "المواد والنقل",
+      "Material Only": "مواد فقط",
+      "Separate Transport": "نقل منفصل",
+      "1 · Material": "1 · المواد",
+      "2 · Transport": "2 · النقل",
+      "Leg 1 · Material ($)": "الشق 1 · المواد ($)",
+      "Leg 2 · Transport ($)": "الشق 2 · النقل ($)",
+      "Material Source Site": "موقع مصدر المواد",
+      "Material Source": "مصدر المواد",
+      "Material Buy": "شراء مواد",
+      "Material Trans": "نقل مواد",
+      "Customer Transport": "نقل للعميل",
+      "Material Volume": "كميات المواد",
+      "Material · Cost": "المواد · الكلفة",
+      "Material Rules": "اتفاقيات المواد",
+      "Material & Pricing": "المواد والتسعير",
+      "2 · Material & Pricing": "2 · المواد والتسعير",
+      "Delivery Agreements Below Transport Breakeven": "اتفاقيات التوصيل دون نقطة تعادل النقل",
+      "Sales & Material Ticket Forms": "نماذج تذاكر المبيعات والمواد",
+      "Sales, Material & Fuel Forms": "نماذج المبيعات والمواد والوقود",
+      "Material & Sales Transport Legs": "أشواط نقل المواد والمبيعات",
+      "in Material & Transport Rates": "في أسعار المواد والنقل",
+      "Open Raw Material Purchase & Site Transport Agreements in Purchases, Expenses & Payables": "فتح اتفاقيات شراء المواد ونقل المواقع في المشتريات والمصاريف",
+      "MATERIAL INTAKE & THIRD-PARTY TRANSPORTATION · 2-LEG PAYABLE ENGINE": "استلام المواد والنقل الخارجي · محرك الذمم ثنائي الشق",
+      "Supplier Trans": "نقل المورّد",
+      "Sales Trans": "نقل المبيعات",
+      "Supplier Transport": "نقل المورّد",
+      "SITE MATERIAL, TRANSPORT & REMAINING EXPENSES": "كلفة المواد والنقل والمصاريف المتبقية بالمواقع",
+      "3P Customer Trans": "نقل خارجي لمواقع العملاء",
+      "Customer Trans": "نقل العميل",
+      "Source + 3P Trans": "موقع المصدر + ناقل خارجي",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered loads)": "فارق $/م³ الشهري بين سعر البيع المحقق دون ضريبة وكلفة المواد الواردة (بما فيها الحمولات الواصلة)",
+      "Raw intake cost split by month · material vs 3rd-party transport ($)": "توزيع كلفة استلام المواد شهرياً · المواد مقابل النقل الخارجي ($)",
+      "Site-owner material cost (Leg 1, incl. supplier-delivered loads) vs 3rd-party transport (Leg 2)": "تكلفة مواد صاحب الموقع (الشق 1، شاملاً الحمولات الواصلة) مقابل النقل الخارجي (الشق 2)",
+      "Material, Transport & JVs Sub-Views": "العروض الفرعية للمواد والنقل والشراكات",
+      "MATERIAL SOURCE & TRANSPORT RATE ENGINE": "محرك تسعير المواد ومصادر النقل",
+      "material transport rules": "قواعد نقل المواد",
+      "transport +": "نقل +",
+      "MATERIAL TRANSPORT RATE COMPARISON: AGREED VS. LAST LOAD BY HAULER & SITE": "مقارنة تعرفة نقل المواد: المتفق عليه مقابل آخر نقلة حسب الناقل والموقع",
+      "site × material pairs include supplier delivery, so compare them against the": "من أزواج الموقع × المادة تشمل التوصيل من المورّد، لذا قارنها بعمود",
+      "column of Material Only sites rather than material price alone.": "لمواقع المواد فقط بدلاً من سعر المادة وحده.",
+      "Purchase Price (Site) agreement vs. last receipt and period average; Delivered sites include transport inside the supplier price": "اتفاقية شراء الموقع مقابل آخر إيصال ومتوسط الفترة؛ المواقع الواصلة تشمل النقل ضمن سعر المورّد",
+      "Material Transport Rate by Hauler & Site · Agreed vs. Last Load ($/Truck Load)": "تعرفة نقل المواد حسب الناقل والموقع · المتفق عليه مقابل آخر نقلة ($/شاحنة)",
+      "Transport Price (Site) agreement rate vs. last 3rd-party transport intake ticket and period average": "تعرفة اتفاقية النقل للموقع مقابل آخر إيصال نقل خارجي ومتوسط الفترة",
+      "Volume and partner 50% stock entitlement comparison across Joint Venture material sites": "مقارنة الكميات واستحقاق الشريك 50% من المخزون عبر مواقع الشراكة",
+      "suppliers, haulers, credit & cash vendors": "المورّدون، الناقلون، ومورّدو الآجل والنقد",
+      "Leg 2 Transport": "الشق 2 النقل",
+      "Trans Leg": "شق النقل",
+      "Monthly 3-leg credit payables accrued (Material + Transport + Credit Expenses) vs supplier settlements paid": "الذمم الدائنة الشهرية المستحقة بالأشق الثلاثة (المواد + النقل + المصاريف الآجلة) مقابل التسديدات المدفوعة",
+      "Largest open 3-leg material supplier, hauler, and vendor payable balances ($)": "أكبر أرصدة ذمم دائنة مفتوحة لمورّدي المواد والناقلين والمصاريف ($)",
+      "Open Material & Transport Receipts": "فتح إيصالات المواد والنقل",
+      "Auto-updating OEM severe-duty field benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)": "معايير صيانة المصنّع المحدّثة تلقائياً: زيت 15W-40 كل 15,000 كم / 250 ساعة · هيدروليك 68 · تشحيم يومي (كغ)",
+      "Tyre & Unpaved": "الإطارات والطرق الترابية",
+      "SALES & MATERIAL TRIPS": "نقلات المبيعات والمواد",
+      "Driver night-trip overtime by driver · sales & material trips": "إضافي النقلات الليلية حسب السائق · نقلات المبيعات والمواد",
+      "external factories & source sites": "المصانع الخارجية ومواقع المصادر",
+      "Source Site Active": "موقع المصدر نشط",
+      "Auto-Detect (Unpaved for Source / Raw Sites)": "كشف تلقائي (غير معبد لمواقع المصادر والمواد الخام)",
+      "Auto-detects unpaved material source sites for drive-axle tyre wear weighting.": "يكتشف تلقائياً مواقع مصادر المواد غير المعبدة لاحتساب تآكل إطارات الدفع.",
+      "Net-Back & Transport Breakeven": "صافي العائد ونقطة تعادل النقل",
+      "Losing on Transport": "خسارة في النقل",
+      "Material, F&B & Landed": "المواد والأغذية والتكلفة الواصلة",
+      "Raw material & transport volume by supplier": "حجم المواد الأولية والنقل حسب المورد",
+      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, transport, expenses, VAT 11%, receipts, settlements): variance $0.00.": "إجمالي المدين مقابل إجمالي الدائن عبر كافة قيود اليومية (المبيعات، المواد، النقل، المصاريف، الضريبة 11%، المقبوضات، التسديدات): الفرق $0.00.",
+      "Material Transport": "نقل المواد",
+      "Delivery is included in Material Cost ($0.00 separate transport charge)": "التوصيل مشمول ضمن تكلفة المواد ($0.00 أجرة نقل منفصلة)",
+      "Delivery is included in Material Credit ($0.00 separate transport charge)": "التوصيل مشمول ضمن ذمم المواد ($0.00 أجرة نقل منفصلة)",
+      "Delivery is included in Material Price ($0.00 separate transport charge)": "التوصيل مشمول ضمن سعر المواد ($0.00 أجرة نقل منفصلة)",
+      "Delivery is included in Material ($) ($0.00 separate transport charge)": "التوصيل مشمول ضمن قيمة المواد ($) ($0.00 أجرة نقل منفصلة)",
+      "Optional (Delivery Included)": "اختيارية (التوصيل مشمول)",
+      "Supplier Delivers (Delivery Included):": "المورّد يتولى التوصيل (شامل التوصيل):",
+      "Unit cost includes supplier delivery to plant; no separate transport charge ($0.00 transport).": "سعر الوحدة يشمل توصيل المورّد إلى المصنع؛ لا توجد أجرة نقل منفصلة ($0.00 نقل).",
+      "Region optional on supplier-delivered intake": "المنطقة اختيارية عند استلام المواد الواصلة من المورّد",
+      "Rate includes supplier delivery to plant; no separate transport charge ($0 transport · Region optional)": "السعر يشمل توصيل المورّد إلى المصنع؛ لا توجد أجرة نقل منفصلة ($0 نقل · المنطقة اختيارية)",
+      "Customer × site delivery transport rate comparison across active weighbridge delivery tickets": "مقارنة تعرفة نقل تسليم العميل × الموقع عبر إيصالات القبان النشطة",
+      "Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.": "يجب تحديد المنطقة والموقع معاً عند إضافة النقل بشاحناتنا أو بالناقلين الخارجيين.",
+      "Region and Site must both be specified when setting driver trip / overtime transport rates.": "يجب تحديد المنطقة والموقع معاً عند تعيين بدل رحلات أو إضافي السائق.",
+      "Optional region (required only if we/3P transport)...": "منطقة اختيارية (مطلوبة فقط عند النقل بأسطولنا أو بناقلين)...",
+      "Region (Optional · Supplier Delivers)": "المنطقة (اختيارية · المورّد يتولى التوصيل)",
+      "Optional supplier driver...": "سائق المورّد (اختياري)...",
+      "Optional supplier driver on supplier-delivered loads": "سائق المورّد اختياري على الحمولات الواصلة من المورّد",
+      "Truck (Optional · Supplier Plate)": "الشاحنة (اختيارية · لوحة المورّد)",
+      "Driver (Optional)": "السائق (اختياري)",
       "Keep Separate": "الإبقاء منفصلاً",
       "Reviewed Rules": "القواعد المراجعة",
       "Hide Reviewed": "إخفاء المراجع",
@@ -8734,7 +8884,7 @@
       "Source + 3P Haul": "المصدر + نقل خارجي",
       "Source Ledger": "السجل المصدر",
       "Source Raw Loads": "نقلات المواد الخام",
-      "Source Site": "موقع المصدر / الكسارة",
+      "Source Site": "موقع المصدر",
       "Source Sites": "مواقع المصدر",
       "Source Vouchers": "السندات المصدرية",
       "South Coast Highway, Lebanon": "الأوتوستراد الساحلي الجنوبي، لبنان",
@@ -9441,7 +9591,6 @@
       "Total Cost": "التكلفة الإجمالية",
       "Total Credit": "إجمالي الدائن",
       "Total Debit": "إجمالي المدين",
-      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance $0.00.": "إجمالي المدين مقابل إجمالي الدائن عبر كافة قيود اليومية (المبيعات، المواد، النقل، المصاريف، الضريبة 11%، المقبوضات، التسديدات): الفرق $0.00.",
       "Total Distributable Pool": "إجمالي الوعاء القابل للتوزيع",
       "Total Driver OT": "إجمالي إضافي السائقين",
       "Total Earned ($)": "إجمالي المستحق ($)",
@@ -14777,6 +14926,156 @@
       "Ask ISABI AI": "Demander à ISABI IA",
       "Checking...": "Vérification...",
       "Confirm Alias": "Confirmer l’alias",
+      "Cross-Script Material, Transport & Bank 3-Way Match": "Rapprochement tripartite Matières, Transport & Banque",
+      "Avg Material Transport Rate": "Tarif moyen transport matières",
+      "Customer Trans ($)": "Transport client ($)",
+      "Delivery & Material Transport Rate Lock": "Verrouillage tarif livraison & transport matières",
+      "Enter Sales Dispatch, Material Intake, Fuel & Fleet Defects": "Saisie ventes, réception matières, carburant & pannes",
+      "Left to Factories & Source Sites": "Reste dû aux usines & sites sources",
+      "Material & Transport Accrued": "Matières & transport accumulés",
+      "Material & Transport Coverage": "Couverture matières & transport",
+      "Material & Transport Rate Type *": "Type de tarif matières & transport *",
+      "Material & Transport Remaining": "Solde matières & transport",
+      "Material Source Site (Optional)": "Site source matières (optionnel)",
+      "Material, Transport & JVs": "Matières, Transport & JV",
+      "Purchases, 3-Leg Payables, Material Stock & Fleet": "Achats, dettes 3 volets, stock matières & flotte",
+      "Raw Material Unit Cost ($/unit)": "Coût unitaire matière brute ($/unité)",
+      "Single 3rd-Party Transport Leg ($)": "Volet transport tiers unique ($)",
+      "Single Material / Transport Receipt ($)": "Reçu matière / transport unique ($)",
+      "Source Site Default Supplier Lock": "Verrouillage fournisseur par défaut du site source",
+      "Supplier Delivers (Delivery Included)": "Livraison par le fournisseur (Livraison incluse)",
+      "Supplier Trans ($)": "Transport fournisseur ($)",
+      "Total Transport ($)": "Total transport ($)",
+      "Transport Leg": "Volet Transport",
+      "Bank IBAN, material supplier terms, or hauler instructions...": "IBAN bancaire, conditions fournisseur ou instructions transporteur...",
+      "Active and closed profit-split agreements by source or project scope": "Accords de partage actifs et clos par source ou projet",
+      "+ Material Agreement": "+ Accord matières",
+      "+ Material / Transport Rule": "+ Tarif matières / transport",
+      "+ Transport Rate": "+ Tarif transport",
+      "Transport Rate": "Tarif transport",
+      "Material price only; transport is billed separately by our fleet or paid haulers": "Prix matière seule ; le transport est géré séparément par notre flotte ou des tiers",
+      "Transported by Company Fleet; internal diesel and driver cost tracked separately": "Transporté par flotte propre ; coût interne gasoil et chauffeur suivi séparément",
+      "Select region to enable transport...": "Sélectionnez la région pour activer le transport...",
+      "After Material & Transport": "Après matières & transport",
+      "Less Material & Transport": "Moins matières & transport",
+      "Material + Expenses": "Matières + Charges",
+      "Total Material & Transport": "Total Matières & Transport",
+      "Material & Pricing Lens": "Vue Matières & Tarifs",
+      "Inspect material & agreement records": "Inspecter les fiches matières & tarifs",
+      "Raw material and transport": "Matières premières et transport",
+      "Raw material and transport as a share of the day's sales before VAT": "Part des matières et transport dans les ventes HT du jour",
+      "Where the day's sales went: material and transport, expenses, payroll, and what is left as profit. Costs past the mark are a loss.": "Répartition des ventes du jour : matières et transport, charges, paie et bénéfice restant. Dépasser le seuil indique une perte.",
+      "Transport Road Surface (Tyre Wear)": "État de la route (usure pneus)",
+      "Material Transportation Mode": "Mode de transport matières",
+      "Select region for site transport...": "Sélectionnez la région pour le transport du site...",
+      "2 · Transport Leg": "2 · Volet Transport",
+      "3rd-Party Trans (Leg 2)": "Transport tiers (Volet 2)",
+      "3rd-Party Transport (Leg 2)": "Transport tiers (Volet 2)",
+      "Active Material & Transport": "Matières & transport actifs",
+      "Company Fleet Transport": "Transport flotte propre",
+      "Delivery Included": "Livraison incluse",
+      "Leg 2 · 3rd-Party Transport": "Volet 2 · Transport tiers",
+      "Material & Transport Agreements": "Accords Matières & Transport",
+      "Material & Transport Rates": "Tarifs Matières & Transport",
+      "Material OT ($)": "HS Matières ($)",
+      "Material OT trips": "Voyages matières HS",
+      "Material OT Trips": "Voyages matières HS",
+      "Over-Agreed Material Pairs": "Paires matières hors accord",
+      "Site Purchase & Trans Rules": "Tarifs achat & transport site",
+      "Site Transport Rate Rules": "Tarifs de transport site",
+      "Third-Party Transport": "Transport par tiers",
+      "Transport Cost ($)": "Coût transport ($)",
+      "Transport Cost (3rd-Party)": "Coût transport (tiers)",
+      "Transport Share %": "Part transport %",
+      "Delivered rate (supplier price includes delivery)": "Tarif livré (prix fournisseur livraison incluse)",
+      "Material & Site Transport Price Agreements": "Accords tarifaires matières & transport site",
+      "Region optional while supplier delivers material + transport; required if transported in own trucks or 3rd-party haulers": "Région facultative si le fournisseur livre ; requise en flotte propre ou par transporteurs tiers",
+      "Supplier's price includes delivery; Region optional until transported by own fleet or 3rd-party haulers": "Le tarif fournisseur inclut la livraison ; région facultative hors transport par notre flotte ou tiers",
+      "Supplier's price includes delivery; no separate transport charge": "Le prix du fournisseur inclut la livraison ; aucun frais de transport séparé",
+      "Manufacturing · Unpriced Material Weighbridge Slip": "Industrie · Ticket bascule matières non chiffré",
+      "Material & Transport": "Matières & Transport",
+      "Material Only": "Matière seule",
+      "Separate Transport": "Transport séparé",
+      "1 · Material": "1 · Matières",
+      "2 · Transport": "2 · Transport",
+      "Leg 1 · Material ($)": "Volet 1 · Matières ($)",
+      "Leg 2 · Transport ($)": "Volet 2 · Transport ($)",
+      "Material Source Site": "Site source matières",
+      "Material Source": "Source matières",
+      "Material Buy": "Achat matières",
+      "Material Trans": "Transport matières",
+      "Customer Transport": "Transport client",
+      "Material Volume": "Volume matières",
+      "Material · Cost": "Matières · Coût",
+      "Material Rules": "Règles matières",
+      "Material & Pricing": "Matières & Tarifs",
+      "2 · Material & Pricing": "2 · Matières & Tarifs",
+      "Delivery Agreements Below Transport Breakeven": "Accords de livraison sous le seuil du transport",
+      "Sales & Material Ticket Forms": "Formulaires Bons Ventes & Matières",
+      "Sales, Material & Fuel Forms": "Formulaires Ventes, Matières & Carburant",
+      "Material & Sales Transport Legs": "Volets Transport Matières & Ventes",
+      "in Material & Transport Rates": "dans Tarifs Matières & Transport",
+      "Open Raw Material Purchase & Site Transport Agreements in Purchases, Expenses & Payables": "Ouvrir les Accords Matières & Transport dans Achats & Charges",
+      "MATERIAL INTAKE & THIRD-PARTY TRANSPORTATION · 2-LEG PAYABLE ENGINE": "ENTRÉES MATIÈRES & TRANSPORT TIERS · MOTEUR 2 VOLETS",
+      "Supplier Trans": "Transp. Fourn.",
+      "Sales Trans": "Transp. Ventes",
+      "Supplier Transport": "Transport fournisseur",
+      "SITE MATERIAL, TRANSPORT & REMAINING EXPENSES": "MATIÈRES, TRANSPORT & CHARGES PAR SITE",
+      "3P Customer Trans": "Transport Tiers Clients",
+      "Customer Trans": "Transp. Client",
+      "Source + 3P Trans": "Site Source + Tiers",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered loads)": "Écart mensuel $/m³ entre prix de vente HT et coût brut (livraisons fournisseur incluses)",
+      "Raw intake cost split by month · material vs 3rd-party transport ($)": "Coût brut mensuel · matières vs transport tiers ($)",
+      "Site-owner material cost (Leg 1, incl. supplier-delivered loads) vs 3rd-party transport (Leg 2)": "Coût matière site (Volet 1, livré inclus) vs transport tiers (Volet 2)",
+      "Material, Transport & JVs Sub-Views": "Sous-vues Matières, Transport & JV",
+      "MATERIAL SOURCE & TRANSPORT RATE ENGINE": "MOTEUR TARIFAIRE MATIÈRES & TRANSPORT",
+      "material transport rules": "règles transport matières",
+      "transport +": "transport +",
+      "MATERIAL TRANSPORT RATE COMPARISON: AGREED VS. LAST LOAD BY HAULER & SITE": "COMPARAISON TARIFS TRANSPORT MATIÈRES : CONVENU VS DERNIER VOYAGE",
+      "site × material pairs include supplier delivery, so compare them against the": "paires site × matière incluent la livraison ; comparez-les à la colonne",
+      "column of Material Only sites rather than material price alone.": "des sites matière seule plutôt qu'au prix matière seul.",
+      "Purchase Price (Site) agreement vs. last receipt and period average; Delivered sites include transport inside the supplier price": "Tarif d'achat site vs dernier bon et moyenne ; les sites livrés incluent le transport",
+      "Material Transport Rate by Hauler & Site · Agreed vs. Last Load ($/Truck Load)": "Tarif transport matières par transporteur & site · Convenu vs Dernier ($/voyage)",
+      "Transport Price (Site) agreement rate vs. last 3rd-party transport intake ticket and period average": "Tarif transport site convenu vs dernier bon tiers et moyenne",
+      "Volume and partner 50% stock entitlement comparison across Joint Venture material sites": "Comparaison volumes et droits stock 50 % sur les sites en joint-venture",
+      "suppliers, haulers, credit & cash vendors": "fournisseurs, transporteurs, créanciers et achats espèces",
+      "Leg 2 Transport": "Volet 2 Transport",
+      "Trans Leg": "Volet Transp.",
+      "Monthly 3-leg credit payables accrued (Material + Transport + Credit Expenses) vs supplier settlements paid": "Dettes mensuelles 3 volets (Matières + Transport + Charges à crédit) vs règlements",
+      "Largest open 3-leg material supplier, hauler, and vendor payable balances ($)": "Principaux soldes fournisseurs matières, transporteurs et charges ouverts ($)",
+      "Open Material & Transport Receipts": "Ouvrir les Reçus Matières & Transport",
+      "Auto-updating OEM severe-duty field benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)": "Repères OEM mis à jour : 15W-40 tous 15 000 km / 250 h · Hydraulique 68 · Graissage quotidien (kg)",
+      "Tyre & Unpaved": "Pneus & Pistes",
+      "SALES & MATERIAL TRIPS": "VOYAGES VENTES & MATIÈRES",
+      "Driver night-trip overtime by driver · sales & material trips": "Heures sup. nuit par chauffeur · voyages ventes & matières",
+      "external factories & source sites": "usines externes & sites sources",
+      "Source Site Active": "Site source actif",
+      "Auto-Detect (Unpaved for Source / Raw Sites)": "Détection auto (non asphalté pour sites sources)",
+      "Auto-detects unpaved material source sites for drive-axle tyre wear weighting.": "Détecte automatiquement les sites sources non asphaltés pour pondérer l'usure des pneus.",
+      "Net-Back & Transport Breakeven": "Net-back et seuil de rentabilité transport",
+      "Losing on Transport": "Déficitaire sur le transport",
+      "Material, F&B & Landed": "Matières, F&B & Coût Rendu",
+      "Raw material & transport volume by supplier": "Volume matières & transport par fournisseur",
+      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, transport, expenses, VAT 11%, receipts, settlements): variance $0.00.": "Total Débits vs Total Crédits sur toutes les lignes du journal (ventes, matières, transport, charges, TVA 11 %, reçus, règlements) : écart 0,00 $.",
+      "Material Transport": "Transport matières",
+      "Delivery is included in Material Cost ($0.00 separate transport charge)": "Livraison incluse dans le coût matière (0,00 $ de transport séparé)",
+      "Delivery is included in Material Credit ($0.00 separate transport charge)": "Livraison incluse dans le crédit matière (0,00 $ de transport séparé)",
+      "Delivery is included in Material Price ($0.00 separate transport charge)": "Livraison incluse dans le prix matière (0,00 $ de transport séparé)",
+      "Delivery is included in Material ($) ($0.00 separate transport charge)": "Livraison incluse dans le coût matière ($) (0,00 $ de transport séparé)",
+      "Optional (Delivery Included)": "Facultatif (Livraison incluse)",
+      "Supplier Delivers (Delivery Included):": "Livraison par le fournisseur (Livraison incluse) :",
+      "Unit cost includes supplier delivery to plant; no separate transport charge ($0.00 transport).": "Le coût unitaire inclut la livraison fournisseur à l'usine ; aucun frais de transport séparé (0,00 $ transport).",
+      "Region optional on supplier-delivered intake": "Région facultative pour les réceptions livrées par le fournisseur",
+      "Rate includes supplier delivery to plant; no separate transport charge ($0 transport · Region optional)": "Le tarif inclut la livraison fournisseur à l'usine ; aucun frais de transport séparé (0 $ transport · Région facultative)",
+      "Customer × site delivery transport rate comparison across active weighbridge delivery tickets": "Comparaison des tarifs de transport livraison client × site sur les bons de bascule actifs",
+      "Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.": "La région et le site doivent tous deux être renseignés pour le transport par notre flotte ou par tiers.",
+      "Region and Site must both be specified when setting driver trip / overtime transport rates.": "La région et le site doivent tous deux être renseignés pour définir les tarifs de trajet ou d'heures sup. chauffeur.",
+      "Optional region (required only if we/3P transport)...": "Région facultative (requise uniquement en flotte propre ou tiers)...",
+      "Region (Optional · Supplier Delivers)": "Région (Facultatif · Livraison fournisseur)",
+      "Optional supplier driver...": "Chauffeur fournisseur (optionnel)...",
+      "Optional supplier driver on supplier-delivered loads": "Chauffeur fournisseur facultatif sur les livraisons fournisseur",
+      "Truck (Optional · Supplier Plate)": "Camion (Optionnel · Plaque fournisseur)",
+      "Driver (Optional)": "Chauffeur (Optionnel)",
       "Keep Separate": "Garder séparé",
       "Reviewed Rules": "Règles vérifiées",
       "Hide Reviewed": "Masquer les règles vérifiées",
@@ -22913,7 +23212,7 @@
       "Site Name (Inside Region)": "Nom du Site (Dans la Région)",
       "Site Override (Optional)": "Exception Site (Facultatif)",
       "Site Owner": "Propriétaire du Site",
-      "Site Owner (Mat.)": "Propriétaire Carrière (Mat.)",
+      "Site Owner (Mat.)": "Propriétaire du Site (Mat.)",
       "Site Owner (Material Payee)": "Propriétaire du Site (Bénéficiaire)",
       "Site Pin": "Repère du site",
       "Site Price Agreements": "Accords tarifaires des sites",
@@ -22990,7 +23289,7 @@
       "Source + 3P Haul": "Source + Transp. tiers",
       "Source Ledger": "Journal Source",
       "Source Raw Loads": "Voyages Matières",
-      "Source Site": "Site Source / Carrière",
+      "Source Site": "Site Source",
       "Source Sites": "Sites Sources",
       "Source Vouchers": "Pièces Justificatives",
       "South Coast Highway, Lebanon": "Autoroute Côtière Sud, Liban",
@@ -23697,7 +23996,6 @@
       "Total Cost": "Coût Total",
       "Total Credit": "Total Crédit",
       "Total Debit": "Total Débit",
-      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance $0.00.": "Total Débits vs Total Crédits sur toutes les lignes du journal (ventes, matières, transport, charges, TVA 11 %, reçus, règlements) : écart 0,00 $.",
       "Total Distributable Pool": "Total masse distribuable",
       "Total Driver OT": "Total H. Sup. Chauffeurs",
       "Total Earned ($)": "Total Acquis ($)",
@@ -28562,6 +28860,8 @@
     "activeaccounts": ["حسابات نشطة", "Comptes actifs"],
     "activecoaaccounts": ["حسابات أستاذ نشطة", "Comptes GL actifs"],
     "activedrivers": ["سائقين نشطين", "chauffeurs actifs"],
+    "activetruck": ["شاحنة نشطة", "Camion actif"],
+    "activetrucks": ["شاحنات نشطة", "camions actifs"],
     "activeglaccounts": ["حساب أستاذ نشط", "comptes généraux actifs"],
     "activejvsites": ["مواقع شراكة نشطة", "Sites JV actifs"],
     "activeleases": ["عقود إيجار نشطة", "Baux actifs"],
@@ -28892,6 +29192,9 @@
     "unmatched": ["غير مطابق", "Non rapproché"],
     "client": ["عميل", "client"],
     "quarrysite": ["موقع كسارة", "site de carrière"],
+    "materialsites": ["مواقع مصادر المواد", "sites sources"],
+    "materialloads": ["نقلات مواد", "chargements matières"],
+    "transportloads": ["نقلات نقل", "voyages transport"],
   };
 
   const SEARCH_TERMS = {
@@ -29615,8 +29918,8 @@
     m = trimmed.match(/^Non-material unit\s*\((.+)\)$/i);
     if (m) return lang === 'ar' ? `وحدة غير حجمية (${m[1]})` : `Unité hors matériau (${m[1]})`;
 
-    m = trimmed.match(/^Ex-Quarry Material Avg\s*\(([^)]+)\)\s*\+\s*Separate 3rd-Party Haul Avg\s*\(([^)]+)\)$/i);
-    if (m) return lang === 'ar' ? `متوسط سعر المادة بأرض الكسارة (${m[1]}) + متوسط النقل الخارجي المنفصل (${m[2]})` : `Moy. matière départ carrière (${m[1]}) + Moy. transport tiers séparé (${m[2]})`;
+    m = trimmed.match(/^(?:Ex-Quarry Material|Material Only) Avg\s*\(([^)]+)\)\s*\+\s*Separate 3rd-Party (?:Haul|Transport) Avg\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `متوسط سعر المادة فقط (${m[1]}) + متوسط النقل الخارجي المنفصل (${m[2]})` : `Moy. matière seule (${m[1]}) + Moy. transport tiers séparé (${m[2]})`;
 
     m = trimmed.match(/^Show\s+(\S+)\s+on the\s+(\d+)-Zone Map above$/i);
     if (m) return lang === 'ar' ? `عرض ${m[1]} على خريطة المناطق (${m[2]}) أعلاه` : `Afficher le ${m[1]} sur la carte à ${m[2]} zones ci-dessus`;
@@ -29792,7 +30095,7 @@
         : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
     }
 
-    m = trimmed.match(/^(Cash|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Haulage Rev|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
+    m = trimmed.match(/^(Cash|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Delivery Rev|Total Haulage Rev|Total Transport|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
     if (m) {
       const kRaw = m[1].trim();
       const val = m[2];
@@ -29902,7 +30205,9 @@
         'ot bonus': ['مكافأة إضافي', 'Prime HS'],
         'net cash flow': ['صافي التدفق النقدي', 'Flux de Trésorerie Net'],
         'total equip cost': ['إجمالي تكلفة الآليات', 'Coût Total Engins'],
+        'total delivery rev': ['إجمالي إيراد التوصيل', 'Total Revenu Livraison'],
         'total haulage rev': ['إجمالي إيراد النقل', 'Total Revenu Transport'],
+        'total transport': ['إجمالي النقل', 'Total Transport'],
         'total haulage': ['إجمالي النقل', 'Total Transport'],
         'total material': ['إجمالي المواد', 'Total Matières'],
         'net open ap': ['صافي الذمم الدائنة المفتوحة', 'Dettes Fourn. Nettes'],
@@ -29991,6 +30296,9 @@
     m = trimmed.match(/^(.+?)\s*·\s*([+-]?\$[\d.,]+[kMB]?)\s+Landed$/i);
     if (m) return lang === 'ar' ? `${m[1]} · ${m[2]} واصل` : `${m[1]} · ${m[2]} rendu`;
 
+    m = trimmed.match(/^([+-]?\$[\d.,]+[kMB]?)\s+Incl\.$/i);
+    if (m) return lang === 'ar' ? `${m[1]} شامل` : `${m[1]} incl.`;
+
     m = trimmed.match(/^Target\s+(\$[\d.,]+[kMB]?)\s*\(([\d.,]+%)\)$/i);
     if (m) return lang === 'ar' ? `المستهدف ${m[1]} (${m[2]})` : `Objectif ${m[1]} (${m[2]})`;
 
@@ -30036,8 +30344,8 @@
     m = trimmed.match(/^(\d+)\s+Unpriced Entr(?:y|ies) Awaiting Rate Sign-Off$/i);
     if (m) return lang === 'ar' ? `${m[1]} قيود غير مسعّرة بانتظار اعتماد السعر` : `${m[1]} Écritures Non Chiffrées en Attente de Tarif`;
 
-    m = trimmed.match(/^(\d+)\s+expense bills?\s*·\s*(\d+)\s+quarry tickets? staged at \$0$/i);
-    if (m) return lang === 'ar' ? `${m[1]} فواتير مصاريف · ${m[2]} إيصالات كسارة مسجلة بسعر $0` : `${m[1]} factures charges · ${m[2]} bons carrière en attente à 0 $`;
+    m = trimmed.match(/^(\d+)\s+expense bills?\s*·\s*(\d+)\s+(?:quarry tickets?|raw receipts?) staged at \$0$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فواتير مصاريف · ${m[2]} إيصالات مواد مسجلة بسعر $0` : `${m[1]} factures charges · ${m[2]} reçus matières en attente à 0 $`;
 
     m = trimmed.match(/^Lebanese CoA Classes 1-7 reconciled across\s+(\d+)\s+(?:operating\s+)?entit(?:y|ies)(.*)$/i);
     if (m) {
@@ -30569,7 +30877,7 @@
     }
 
     // Delivery breakeven Sentinel (site net-back across all sites, fuel at the latest diesel price)
-    m = trimmed.match(/^([\d,]+) delivery and haulage agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance(?: · ([\d,]+) costed from the Region's centre \(site not pinned\))?\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
+    m = trimmed.match(/^([\d,]+) delivery and (?:haulage|transport) agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance(?: · ([\d,]+) costed from the Region's centre \(site not pinned\))?\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
     if (m) {
       const apAr = m[8] ? ` · ${m[8]} محتسبة من وسط المنطقة (الموقع غير مثبّت)` : '';
       const apFr = m[8] ? ` · ${m[8]} chiffrés depuis le centre de la région (site non placé)` : '';
@@ -30686,11 +30994,11 @@
         ? `${m[1]} طن-كم منحدرات (+${m[2]} كم تآكل)`
         : `${m[1]} t-km en pente (+${m[2]} km usure)`;
     }
-    m = trimmed.match(/^([\d,]+)\s*unpaved quarry loads?\s*\(\+?([\d,]+)\s*tyre wear km\)$/i);
+    m = trimmed.match(/^([\d,]+)\s*unpaved (?:quarry|material site) loads?\s*\(\+?([\d,]+)\s*tyre wear km\)$/i);
     if (m) {
       return lang === 'ar'
-        ? `${m[1]} نقلة مقلع غير معبد (+${m[2]} كم تآكل إطارات)`
-        : `${m[1]} voyage(s) carrière non asphaltée (+${m[2]} km usure pneus)`;
+        ? `${m[1]} نقلة موقع غير معبد (+${m[2]} كم تآكل إطارات)`
+        : `${m[1]} voyage(s) site non asphalté (+${m[2]} km usure pneus)`;
     }
     m = trimmed.match(/^(.+?):\s*([\d,]+)\s*t-km\s*\(\+([\d,]+)\s*wear km\)$/i);
     if (m && depth < 3) {
@@ -31315,7 +31623,7 @@
     m = trimmed.match(/^Driver Pay \+ Overtime\s*\((\d+)\s*OT\)$/i);
     if (m) return lang === 'ar' ? `رواتب السائقين + الإضافي (${m[1]} إضافي)` : `Paie Chauffeurs + Heures Sup. (${m[1]} HS)`;
 
-    m = trimmed.match(/^Raw Material Haulage\s*\((\d+)\s*trips\)$/i);
+    m = trimmed.match(/^Raw Material (?:Haulage|Transport)\s*\((\d+)\s*trips\)$/i);
     if (m) return lang === 'ar' ? `نقل المواد الأولية (${m[1]} نقلة)` : `Transport Matières Premières (${m[1]} voyages)`;
 
     m = trimmed.match(/^Sales Delivery Revenue\s*\((\d+)\s*trips\)$/i);
@@ -31598,9 +31906,9 @@
     m = trimmed.match(/^Gross owing\s+(\$[\d.,]+)\s*·\s*Customer credits\s*&\s*advances\s+([+-]?\$[\d.,]+)\s*·\s*Net Open AR\s+([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `إجمالي الذمم المستحقة ${m[1]} · سلف وأرصدة دائنة للعملاء ${m[2]} · صافي الذمم المفتوحة ${m[3]}` : `Encours brut ${m[1]} · Avances & avoirs clients ${m[2]} · Créances nettes ouvertes ${m[3]}`;
 
-    m = trimmed.match(/^(Bundled Delivered|Ex-Quarry Landed):\s*(.+)$/i);
+    m = trimmed.match(/^(Delivered|Material Only|Bundled Delivered|Ex-Quarry Landed):\s*(.+)$/i);
     if (m) {
-      const head = /Bundled/i.test(m[1]) ? (lang === 'ar' ? 'واصل شامل النقل' : 'Rendu Chantier') : (lang === 'ar' ? 'تسليم أرض الكسارة' : 'Départ Carrière');
+      const head = /Delivered|Bundled/i.test(m[1]) ? (lang === 'ar' ? 'شامل التوصيل' : 'Livré (Transport inclus)') : (lang === 'ar' ? 'مواد فقط' : 'Matière seule');
       const rhs = translateCore(m[2].trim(), lang, depth + 1);
       return `${head}: ${rhs}`;
     }
@@ -31799,7 +32107,7 @@
       const rhs = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `معاينة السجل 360° · ${rhs}` : `INSPECTEUR 360° · ${rhs}`;
     }
-    m = trimmed.match(/^(Customer|Supplier|Equipment|Staff|Driver|Site|Quarry|Account|Contract|Property|Lease|Policy|Carrier|Claim|Partner)\s+360°\s+(Master|Ledger)(?::\s*(.+))?$/i);
+    m = trimmed.match(/^(Customer|Supplier|Equipment|Staff|Driver|Site|Quarry|Material|Account|Contract|Property|Lease|Policy|Carrier|Claim|Partner)\s+360°\s+(Master|Ledger)(?::\s*(.+))?$/i);
     if (m) {
       const ent = translateCore(m[1], lang, depth + 1);
       const kind = /ledger/i.test(m[2]) ? (lang === 'ar' ? 'كشف حساب 360°' : 'Grand Livre 360°') : (lang === 'ar' ? 'البطاقة الشاملة 360°' : 'Fiche Maître 360°');
@@ -31810,13 +32118,13 @@
     m = trimmed.match(/^Ex-VAT Rem:\s*([+-]?\$[\d.,]+)\s*[|·]\s*VAT (?:Rem|Due):\s*([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `المتبقي بدون ضريبة: ${m[1]} · متبقي الضريبة: ${m[2]}` : `Reste HT : ${m[1]} · Reste TVA : ${m[2]}`;
 
-    m = trimmed.match(/^Quarry Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Transport Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Expense Ex-VAT:\s*([+-]?\$[\d.,]+)\s*·\s*IVA LBP:\s*([\d.,-]+\s*LL)\s*·\s*Expense Incl\.\s*VAT:\s*([+-]?\$[\d.,]+)$/i);
+    m = trimmed.match(/^(?:Quarry|Material) Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Transport Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Expense Ex-VAT:\s*([+-]?\$[\d.,]+)\s*·\s*IVA LBP:\s*([\d.,-]+\s*LL)\s*·\s*Expense Incl\.\s*VAT:\s*([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar'
-      ? `متبقي الكسارة: ${m[1]} · متبقي النقل: ${m[2]} · مصاريف بدون ضريبة: ${m[3]} · ضريبة ل.ل.: ${m[4]} · مصاريف شاملة الضريبة: ${m[5]}`
-      : `Reste Carrière : ${m[1]} · Reste Transp. : ${m[2]} · Charges HT : ${m[3]} · TVA LBP : ${m[4]} · Charges TTC : ${m[5]}`;
+      ? `متبقي المواد: ${m[1]} · متبقي النقل: ${m[2]} · مصاريف بدون ضريبة: ${m[3]} · ضريبة ل.ل.: ${m[4]} · مصاريف شاملة الضريبة: ${m[5]}`
+      : `Reste Matières : ${m[1]} · Reste Transp. : ${m[2]} · Charges HT : ${m[3]} · TVA LBP : ${m[4]} · Charges TTC : ${m[5]}`;
 
-    m = trimmed.match(/^Quarry Rem:\s*(\$[\d.,-]+)\s*\|\s*Trans Rem:\s*(\$[\d.,-]+)\s*\|\s*Tip Rem:\s*(\$[\d.,-]+)$/i);
-    if (m) return lang === 'ar' ? `متبقي الكسارة: ${m[1]} | متبقي النقل: ${m[2]} | متبقي الإكرامية: ${m[3]}` : `Reste Carrière : ${m[1]} | Reste Transp. : ${m[2]} | Reste Pourboire : ${m[3]}`;
+    m = trimmed.match(/^(?:Quarry|Material) Rem:\s*(\$[\d.,-]+)\s*\|\s*Trans Rem:\s*(\$[\d.,-]+)\s*\|\s*Tip Rem:\s*(\$[\d.,-]+)$/i);
+    if (m) return lang === 'ar' ? `متبقي المواد: ${m[1]} | متبقي النقل: ${m[2]} | متبقي الإكرامية: ${m[3]}` : `Reste Matières : ${m[1]} | Reste Transp. : ${m[2]} | Reste Pourboire : ${m[3]}`;
 
     m = trimmed.match(/^Base:\s*([+-]?\$[\d.,]+)\s*·\s*Reimb:\s*([+-]?\$[\d.,]+)\s*·\s*Extras:\s*([+-]?\$[\d.,]+)\s*·\s*Reimb Ded:\s*([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar'
@@ -32172,13 +32480,13 @@
       const tbl = translateCore(m[2].trim(), lang, depth + 1);
       return lang === 'ar' ? `اضغط لمعاينة ${m[1]} سجلات مرتبطة من ${tbl} مباشرة` : `Cliquer pour prévisualiser ${m[1]} fiches liées (${tbl})`;
     }
-    m = trimmed.match(/^Click to expand\s+(\d+)\s+(individual entr(?:y|ies)|quarry tickets?|fuel entr(?:y|ies))\s+(?:for|from)\s+(.+)$/i);
+    m = trimmed.match(/^Click to expand\s+(\d+)\s+(individual entr(?:y|ies)|(?:quarry|material) tickets?|raw receipts?|fuel entr(?:y|ies))\s+(?:for|from)\s+(.+)$/i);
     if (m) return lang === 'ar' ? `اضغط لتوسيع ${m[1]} قيود تفصيلية لـ ${m[3]}` : `Cliquer pour développer ${m[1]} écritures pour ${m[3]}`;
 
     m = trimmed.match(/^Close 360° Inspector and filter the current register by\s+(.+)$/i);
     if (m) return lang === 'ar' ? `إغلاق معاينة 360° وتصفية السجل الحالي حسب ${m[1]}` : `Fermer l'inspecteur 360° et filtrer sur ${m[1]}`;
 
-    m = trimmed.match(/^Sales Delivery:\s*(\$[\d.,]+)\s*\|\s*Raw Haulage:\s*(\$[\d.,]+)$/i);
+    m = trimmed.match(/^Sales Delivery:\s*(\$[\d.,]+)\s*\|\s*Raw (?:Haulage|Transport):\s*(\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `توصيل مبيعات: ${m[1]} | نقل مواد أولية: ${m[2]}` : `Livraison Ventes : ${m[1]} | Transport Matières : ${m[2]}`;
 
     m = trimmed.match(/^(\S+)\s*·\s*Plate\s+(\S+)\s*\(([^)]+)\)$/i);
@@ -32250,7 +32558,7 @@
     m = trimmed.match(/^(\$[\d.,]+[kKMB]?)\s*>\s*(\d+)D$/i);
     if (m) return lang === 'ar' ? `${m[1]} > ${m[2]} يوم` : `${m[1]} > ${m[2]}J`;
 
-    m = trimmed.match(/^Mat\s+(\$[\d.,]+[kKMB]?)\s*\+\s*Haul\s+(\$[\d.,]+[kKMB]?)$/i);
+    m = trimmed.match(/^Mat\s+(\$[\d.,]+[kKMB]?)\s*\+\s*(?:Haul|Trans)\s+(\$[\d.,]+[kKMB]?)$/i);
     if (m) return lang === 'ar' ? `مواد ${m[1]} + نقل ${m[2]}` : `Mat. ${m[1]} + Transp. ${m[2]}`;
 
     m = trimmed.match(/^Filter Daily Operations to\s+(.+?):\s*Sales\s+([+-]?\$[\d.,]+)\s*·\s*Outlay\s+([+-]?\$[\d.,]+)\s*·\s*Op Profit\s+([+-]?\$[\d.,]+)$/i);
@@ -32278,10 +32586,10 @@
     m = trimmed.match(/^(\d+)\s+rules?\s+across\s+(\d+)\s+products?$/i);
     if (m) return lang === 'ar' ? `${m[1]} قاعدة عبر ${m[2]} أصناف` : `${m[1]} règles sur ${m[2]} produits`;
 
-    m = trimmed.match(/^Ex-Quarry Material\s*\(([^)]+)\)\s*\+\s*Separate Paid Haulage\s*\(([^)]+)\)\s*excluding internal fleet diesel\/driver$/i);
+    m = trimmed.match(/^(?:Ex-Quarry Material|Material Only)\s*\(([^)]+)\)\s*\+\s*Separate Paid (?:Haulage|Transport)\s*\(([^)]+)\)\s*excluding internal fleet diesel\/driver$/i);
     if (m) return lang === 'ar'
-      ? `سعر المادة بأرض الكسارة (${m[1]}) + أجور النقل المنفصلة (${m[2]}) باستثناء مازوت وسائقي أسطول الشركة`
-      : `Matière départ carrière (${m[1]}) + Transport tiers payé (${m[2]}) hors gasoil/chauffeurs flotte propre`;
+      ? `سعر المواد فقط (${m[1]}) + أجور النقل المنفصلة (${m[2]}) باستثناء مازوت وسائقي أسطول الشركة`
+      : `Matière seule (${m[1]}) + Transport tiers payé (${m[2]}) hors gasoil/chauffeurs flotte propre`;
 
     m = trimmed.match(/^Accrued automatically into Credit Leg 3 supplier payables through\s+(\S+)$/i);
     if (m) return lang === 'ar'
@@ -32576,7 +32884,7 @@
     m = trimmed.match(/^Unbundled \/ Benchmark Credit:\s*(\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `رصيد النقل المفصول / المعياري: ${m[1]}` : `Crédit Dégroupé / Référence : ${m[1]}`;
 
-    m = trimmed.match(/^Raw Material Haulage:\s*(\$[\d.,]+)$/i);
+    m = trimmed.match(/^Raw Material (?:Haulage|Transport):\s*(\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `نقل المواد الأولية: ${m[1]}` : `Transport Matières Premières : ${m[1]}`;
 
     m = trimmed.match(/^Diesel Fuel:\s*(\$[\d.,]+)$/i);
@@ -32774,6 +33082,20 @@
     m = trimmed.match(/^Region:\s+(.+?)\s+·\s+(-?[\d.]+,\s*-?[\d.]+)$/);
     if (m) return lang === 'ar' ? `المنطقة: ${m[1]} · ${m[2]}` : `Région : ${m[1]} · ${m[2]}`;
 
+    m = trimmed.match(/^Region:\s+(.+)$/i);
+    if (m) {
+      const regVal = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `المنطقة: ${regVal}` : `Région : ${regVal}`;
+    }
+
+    m = trimmed.match(/^Region\s+(.+?)\s+will\s+be\s+saved\s+onto\s+(.+?)\s+to\s+enable\s+(?:haulage|transport)\s+(pricing|tracking)\.$/i);
+    if (m) {
+      const kind = m[3].toLowerCase() === 'tracking' ? (lang === 'ar' ? 'تتبع النقل' : 'le suivi transport') : (lang === 'ar' ? 'تسعير النقل' : 'la tarification transport');
+      return lang === 'ar'
+        ? `سيتم حفظ المنطقة ${m[1]} على الموقع ${m[2]} لتفعيل ${kind}.`
+        : `La région ${m[1]} sera enregistrée sur ${m[2]} pour activer ${kind}.`;
+    }
+
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;
 
@@ -32783,8 +33105,8 @@
     m = trimmed.match(/^GPS\s+([\d.,\s+-]+)$/i);
     if (m) return `GPS ${m[1]}`;
 
-    m = trimmed.match(/^Quarry & Haulage Agreements at\s+(.+)$/i);
-    if (m) return lang === 'ar' ? `اتفاقيات الكسارة والنقل في ${m[1]}` : `Accords carrière et transport à ${m[1]}`;
+    m = trimmed.match(/^(?:Quarry & Haulage|Material & Transport) Agreements at\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اتفاقيات المواد والنقل في ${m[1]}` : `Accords matières et transport à ${m[1]}`;
 
     m = trimmed.match(/^Sales & Delivery Agreements at\s+(.+)$/i);
     if (m) return lang === 'ar' ? `اتفاقيات المبيعات والتسليم في ${m[1]}` : `Accords ventes et livraison à ${m[1]}`;
@@ -33529,6 +33851,12 @@
         ? `إجمالي المدين (${m[1]}) مقابل إجمالي الدائن (${m[2]}) عبر جميع قيود القيد المزدوج لـ ${ind} (${m[3]} قيد): الفرق ${m[5]}.`
         : `Total Débits (${m[1]}) vs Total Crédits (${m[2]}) sur les ${m[3]} écritures en partie double ${ind} : écart ${m[5]}.`;
     }
+    m = trimmed.match(/^Total\s+Debits\s+vs\s+Total\s+Credits\s+across\s+every\s+SOA\s+journal\s+leg\s+\(sales,\s+raw\s+material,\s+(?:haulage|transport),\s+expenses,\s+VAT\s+11%,\s+receipts,\s+settlements\):\s*variance\s+([$€£]?[+-]?[\d,]+(?:\.\d+)?)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `إجمالي المدين مقابل إجمالي الدائن عبر كافة قيود اليومية (المبيعات، المواد، النقل، المصاريف، الضريبة 11%، المقبوضات، التسديدات): الفرق ${m[1]}.`
+        : `Total Débits vs Total Crédits sur toutes les écritures (ventes, matières, transport, charges, TVA 11 %, reçus, règlements) : écart ${m[1]}.`;
+    }
     m = trimmed.match(/^All\s+(\d+)\s+directed\s+sister-company\s+corridors\s+reconciled\s+against\s+Lebanese\s+Chart\s+of\s+Accounts\s+double-entry\s+control\s+accounts\.$/i);
     if (m) {
       return lang === 'ar'
@@ -34163,7 +34491,7 @@
 
     // Daily Operations spelled-out phrases & Close-of-Day Digest (v19.6.378+)
     // A material figure can be negative (a quarry that pays the company per load, WTC 2026-11-20 quarry rebate).
-    m = trimmed.match(/^Material\s+([-−]?\$[\d.,]+)\s*·\s*Haulage\s+([-−]?\$[\d.,]+)$/i);
+    m = trimmed.match(/^Material\s+([-−]?\$[\d.,]+)\s*·\s*(?:Haulage|Transport)\s+([-−]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `المواد ${m[1]} · النقل ${m[2]}` : `Matériau ${m[1]} · Transport ${m[2]}`;
 
     m = trimmed.match(/^Own\s+([\d,]+)\s*·\s*Haulers\s+([\d,]+)(?:\s*\((.+)\))?$/i);
@@ -34255,8 +34583,8 @@
     m = trimmed.match(/^([\d,]+)\s+Critical$/i);
     if (m) return lang === 'ar' ? `${m[1]} حرج` : `${m[1]} critique`;
 
-    m = trimmed.match(/^\(([\d,]+)\s+sales\s*·\s*([\d,]+)\s+quarry\)$/i);
-    if (m) return lang === 'ar' ? `(${m[1]} مبيعات · ${m[2]} كسارة)` : `(${m[1]} ventes · ${m[2]} carrière)`;
+    m = trimmed.match(/^\(([\d,]+)\s+sales\s*·\s*([\d,]+)\s+(?:quarry|material|loads)\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} مبيعات · ${m[2]} مواد)` : `(${m[1]} ventes · ${m[2]} matières)`;
 
     m = trimmed.match(/^\(([\d,]+)\s+sales\)$/i);
     if (m) return lang === 'ar' ? `(${m[1]} مبيعات)` : `(${m[1]} ventes)`;
@@ -34281,8 +34609,8 @@
       if (unitMap) return `${m[1]} ${lang === 'ar' ? unitMap[0] : unitMap[1]}`;
     }
 
-    m = trimmed.match(/^No quarry, expense, or payroll cost entries recorded on\s+(.+)\.$/i);
-    if (m) return lang === 'ar' ? `لا توجد قيود كسارة أو مصاريف أو رواتب مسجلة بتاريخ ${m[1]}.` : `Aucune écriture carrière, dépense ou paie enregistrée le ${m[1]}.`;
+    m = trimmed.match(/^No (?:quarry|material), expense, or payroll cost entries recorded on\s+(.+)\.$/i);
+    if (m) return lang === 'ar' ? `لا توجد قيود مواد أو مصاريف أو رواتب مسجلة بتاريخ ${m[1]}.` : `Aucune écriture matière, dépense ou paie enregistrée le ${m[1]}.`;
 
     m = trimmed.match(/^No matching customer receipts or supplier settlements on\s+(.+)\.$/i);
     if (m) return lang === 'ar' ? `لا توجد مقبوضات عملاء أو مدفوعات موردين مطابقة بتاريخ ${m[1]}.` : `Aucun encaissement client ni règlement fournisseur correspondant le ${m[1]}.`;
@@ -34917,7 +35245,7 @@
         const trCls = (tr && tr.className && typeof tr.className === 'string') ? tr.className : '';
         const isSummaryRow = /\b(total|subtotal|group-hdr|group-row|summary|footer)\b/i.test(trCls);
         if (!isSummaryRow) {
-          const uiInner = el.closest('button, .btn, .badge, .status-badge, .pill, .chip');
+          const uiInner = el.closest('button, .btn, .badge, .status-badge, .pill, .chip, .quarry-landed-pill');
           if (!uiInner || !td.contains(uiInner)) return true;
         }
       }
