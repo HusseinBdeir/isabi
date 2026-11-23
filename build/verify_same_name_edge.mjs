@@ -155,7 +155,7 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
   ok('2a. MIN_SYNC_SHELL_VER is >= 19.6.354 and effectiveMinSyncShellVer caps below ceiling / holds above ceiling',
     compareShellVer(MIN_SYNC_SHELL_VER, '19.6.354') >= 0
     && effectiveMinSyncShellVer('19.6.352') === '19.6.352'
-    && effectiveMinSyncShellVer('19.6.399') === MIN_SYNC_SHELL_VER
+    && effectiveMinSyncShellVer('9999.0') === MIN_SYNC_SHELL_VER
     && effectiveMinSyncShellVer('') === MIN_SYNC_SHELL_VER,
     { MIN_SYNC_SHELL_VER, DEPLOYED_SHELL_VER, effFloor });
   const expectedSeedStored = compareShellVer(MIN_SYNC_SHELL_VER, DEPLOYED_SHELL_VER) > 0 ? DEPLOYED_SHELL_VER : MIN_SYNC_SHELL_VER;
