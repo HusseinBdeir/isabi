@@ -21,6 +21,7 @@ import {
   DEVICE_UNSENT_HOLD_DAYS,
   DEVICE_UNSENT_LATE_HOURS,
   DEVICE_UNSENT_LATE_MIN_MS,
+  effectiveMinSyncShellVer,
   isDeviceUnsentDoc,
   listDeviceUnsentRows,
   validateDeviceUnsentReport
@@ -379,7 +380,7 @@ console.log('\n[global fx_rates & vat_rates access]');
     { entryFxGet, entryVatGet });
 
   // Seed mfg_web_store with Owner rate rows and verify /api/sync get_mfg serves them while patch blocks limited seats.
-  const ownSyncSeed = await api('sync', { method: 'POST', headers: as(OWNER), body: { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: '19.6.424', customRecords: { fx_rates: [fxRec], vat_rates: [vatRec] } } } } });
+  const ownSyncSeed = await api('sync', { method: 'POST', headers: as(OWNER), body: { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: { minShellVer: effectiveMinSyncShellVer(), customRecords: { fx_rates: [fxRec], vat_rates: [vatRec] } } } } });
   const syncGet = await api('sync', { method: 'POST', headers: as(ENTRY), body: { op: 'get_mfg', doc: 'mfg_web_store' } });
   const gotCr = (syncGet.json && syncGet.json.docs && syncGet.json.docs.mfg_web_store && syncGet.json.docs.mfg_web_store.customRecords) || {};
   ok('Entry/WTC seat reads Owner fx_rates & vat_rates through /api/sync get_mfg',
@@ -409,7 +410,7 @@ console.log('\n[global fx_rates & vat_rates access]');
       doc: 'mfg_web_store',
       patch: {
         mfg_web_store: {
-          minShellVer: '19.6.424',
+          minShellVer: effectiveMinSyncShellVer(),
           customRecords: {
             fx_rates: [Object.assign({}, fxRec, { rate: 12345, voided: true }), forgedFx],
             vat_rates: []
