@@ -3,6 +3,12 @@
   "branch": "wt/raw-sites-above-haul",
   "sha": "b64ea6d26d35a42dea882816d72469c3922d88f6"
  },
+ "batch": {
+  "at": "2026-11-23T23:19:12Z",
+  "holder": "THEO hbdei (raw-sites-above-haul)",
+  "lockId": "579066bbb18449e5b155afd22da140af",
+  "version": "19.6.433"
+ },
  "gates": [],
  "holder": "THEO hbdei (raw-sites-above-haul)",
  "id": "20261123T231820Z-2ead4ee6",
