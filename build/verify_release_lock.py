@@ -526,6 +526,148 @@ def main() -> int:
             os.environ.pop(k, None)
         shutil.rmtree(tmp2, ignore_errors=True)
 
+    # 18. acquire / require_release_lock with wait_s & poll_s (fast lock polling for short releases)
+    tmp3 = pathlib.Path(tempfile.mkdtemp(prefix="isabi-lock-wait-"))
+    orig_mono, orig_sleep = RL._mono, RL._sleep
+    try:
+        origin3 = tmp3 / "origin.git"
+        git(tmp3, "init", "-q", "--bare", "-b", "main", str(origin3))
+        seed3 = tmp3 / "seed"
+        git(tmp3, "clone", "-q", str(origin3), str(seed3))
+        commit_file(seed3, "a.txt")
+        git(seed3, "push", "-q", "origin", "HEAD:main")
+        A3, B3, C3 = tmp3 / "A", tmp3 / "B", tmp3 / "C"
+        for d in (A3, B3, C3):
+            git(tmp3, "clone", "-q", str(origin3), str(d))
+
+        fake_now = [0.0]
+        RL._mono = lambda: fake_now[0]
+
+        def with_sleep_step(fn):
+            sleeps = []
+
+            def step(sec: float) -> None:
+                sleeps.append(sec)
+                fake_now[0] += max(0.0, sec)
+                fn(len(sleeps), sleeps)
+
+            RL._sleep = step
+            return sleeps
+
+        # 18a. Polls every poll_s (12s default) while A3 holds lock, acquires as soon as A3 releases on tick 3
+        quiet(RL.acquire, A3, holder="session A", version="v19.6.900")
+        sleeps_a = with_sleep_step(lambda n, _: quiet(RL.release, A3) if n == 3 else None)
+        got_wait = quiet(RL.acquire, B3, holder="data top-up", wait_s=120, poll_s=12)
+        check(
+            len(sleeps_a) == 3 and sleeps_a == [12.0, 12.0, 12.0] and got_wait.get("holder") == "data top-up" and RL.held_by_me(got_wait, B3),
+            "wait-poll: polls at 12s intervals and acquires immediately once holder releases",
+        )
+        quiet(RL.release, B3)
+
+        # 18b. Timeout at wait_s leaves A3's lock untouched and names --wait-lock
+        fake_now[0] = 0.0
+        quiet(RL.acquire, A3, holder="session A", version="v19.6.900")
+        with_sleep_step(lambda _n, _s: None)
+        msg_to = raises_lock(RL.acquire, B3, holder="data top-up", wait_s=30, poll_s=12)
+        check(
+            "Still held after waiting 30s" in msg_to and "--wait-lock" in msg_to and RL.held_by_me(RL.read_remote_lock(A3)[1], A3),
+            "wait-poll: timeout raises naming --wait-lock and leaves holder intact",
+        )
+
+        # 18c. Survives lost race mid-wait (C3 grabs lock right as A3 releases, then C3 releases on next tick)
+        fake_now[0] = 0.0
+        orig_push = RL._push_lock
+        race_step = [0]
+
+        def raced_push(new_sha: str, expected_old: str, cwd: pathlib.Path) -> bool:
+            if cwd == B3 and race_step[0] == 0:
+                race_step[0] = 1
+                quiet(RL.acquire, C3, holder="session C")  # C3 beats B3 to the free lock
+            return orig_push(new_sha, expected_old, cwd)
+
+        quiet(RL.release, A3)
+        RL._push_lock = raced_push
+        sleeps_c = with_sleep_step(lambda n, _: quiet(RL.release, C3) if n == 2 else None)
+        try:
+            got_race = quiet(RL.acquire, B3, holder="data top-up", wait_s=120, poll_s=12)
+        finally:
+            RL._push_lock = orig_push
+        check(
+            race_step[0] == 1 and len(sleeps_c) == 2 and got_race.get("holder") == "data top-up" and RL.held_by_me(got_race, B3),
+            "wait-poll: survives lost acquire race mid-wait and acquires when C3 releases",
+        )
+        quiet(RL.release, B3)
+
+        # 18d. Fails closed immediately when push fails with remote lock unchanged (no spinning on auth failure)
+        fake_now[0] = 0.0
+        sleeps_d = with_sleep_step(lambda _n, _s: None)
+        RL._push_lock = lambda *_a, **_k: False
+        try:
+            msg_fail = raises_lock(RL.acquire, B3, holder="data top-up", wait_s=120, poll_s=12)
+        finally:
+            RL._push_lock = orig_push
+        check(
+            "could not write" in msg_fail and len(sleeps_d) == 0,
+            "wait-poll: unchanged remote on failed push fails immediately without spinning",
+        )
+
+        # 18e. Expired lock with unpushed deploys fails immediately without waiting
+        fake_now[0] = 0.0
+        quiet(RL.acquire, A3, holder="session A")
+        unpushed_sha = commit_file(A3, "unpushed.txt")
+        quiet(RL.claim_deploy, A3, unpushed_sha, "full deploy")
+        os.environ[NOW] = "2099-01-01T00:00:00Z"
+        sleeps_e = with_sleep_step(lambda _n, _s: None)
+        msg_unp = raises_lock(RL.acquire, B3, holder="data top-up", wait_s=120, poll_s=12)
+        os.environ.pop(NOW)
+        check(
+            "not on origin/main" in msg_unp and len(sleeps_e) == 0,
+            "wait-poll: expired lock with unpushed deploy stops immediately without polling",
+        )
+        quiet(RL.release, A3, force=True)
+
+        # 18f. Rides out transient network errors during wait_s > 0, while corrupt LOCK.json still fails immediately
+        fake_now[0] = 0.0
+        orig_read = RL.read_remote_lock
+        net_tries = [0]
+
+        def flaky_read(cwd: pathlib.Path = origin3):
+            if cwd == B3 and net_tries[0] < 2:
+                net_tries[0] += 1
+                raise RL.LockError("cannot read the release lock from origin (Recv failure: Connection was reset)")
+            return orig_read(cwd)
+
+        RL.read_remote_lock = flaky_read
+        sleeps_f = with_sleep_step(lambda _n, _s: None)
+        try:
+            got_net = quiet(RL.require_release_lock, B3, purpose="data-only release (upload)", holder="data top-up", wait_s=120, poll_s=12)
+        finally:
+            RL.read_remote_lock = orig_read
+        check(
+            net_tries[0] == 2 and len(sleeps_f) == 2 and got_net is not None and RL.held_by_me(got_net, B3),
+            "wait-poll: rides out transient network error and acquires via require_release_lock",
+        )
+        quiet(RL.release, B3)
+
+        blob3 = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(A3), input=b"bad", capture_output=True).stdout.decode().strip()
+        tree3 = subprocess.run(["git", "mktree"], cwd=str(A3), input=f"100644 blob {blob3}\tLOCK.json\n".encode(), capture_output=True).stdout.decode().strip()
+        bad3 = git(A3, "commit-tree", tree3, "-m", "bad lock")
+        git(A3, "push", "-q", "origin", f"{bad3}:{RL.LOCK_REF}")
+        fake_now[0] = 0.0
+        sleeps_g = with_sleep_step(lambda _n, _s: None)
+        msg_bad = raises_lock(RL.acquire, B3, holder="data top-up", wait_s=120, poll_s=12)
+        git(A3, "push", "-q", "origin", f":{RL.LOCK_REF}")
+        check("cannot be read" in msg_bad and len(sleeps_g) == 0, "wait-poll: corrupt LOCK.json fails closed immediately without polling")
+
+        # 18g. CLI validation rejects out-of-range --wait and --poll
+        check(exits(RL.main, ["acquire", "--holder", "x", "--wait", "-1"]) == 2, "CLI: acquire --wait -1 exits 2")
+        check(exits(RL.main, ["acquire", "--holder", "x", "--wait", "4000"]) == 2, "CLI: acquire --wait 4000 exits 2")
+        check(exits(RL.main, ["acquire", "--holder", "x", "--poll", "0"]) == 2, "CLI: acquire --poll 0 exits 2")
+    finally:
+        RL._mono, RL._sleep = orig_mono, orig_sleep
+        os.environ.pop(NOW, None)
+        shutil.rmtree(tmp3, ignore_errors=True)
+
     failed = [n for ok, n in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} checks passed")
     return 1 if failed else 0

@@ -59,6 +59,7 @@ import re
 import socket
 import subprocess
 import sys
+import time
 import urllib.request
 import uuid
 from pathlib import Path
@@ -80,7 +81,23 @@ _PURE_GENERATED_PATHS = ("js/i18n.js", "js/seed_manifest.js", "functions/_lib/de
 REMOTE = os.environ.get("ISABI_RELEASE_LOCK_REMOTE", "origin")
 TOKEN_FILE = "isabi-release-lock.json"  # in this worktree's own git dir: one holder per worktree
 DEFAULT_TTL_MIN = 60
+DEFAULT_POLL_S = 12     # slightly faster than release_batch.py POLL_S (20s) so short top-ups can slip in between batches
 TAKEOVER_GRACE_MIN = 10  # an expired lock is taken over only this long after its expiry (clock skew between PCs)
+_mono = time.monotonic   # swapped in tests to exercise polling without real sleeps
+_sleep = time.sleep
+_LOCK_NET_ERR_RE = re.compile(
+    r"Could not resolve host|Connection (?:was )?reset|Recv failure|Send failure|Failed to connect|"
+    r"Connection timed out|Operation timed out|Connection refused|Network is unreachable|"
+    r"remote end hung up|early EOF|Empty reply from server|SSL connection timeout|gnutls_handshake\(\) failed|"
+    r"did not finish \(TimeoutExpired\)|The requested URL returned error: 5\d\d|"
+    r"schannel: (?:failed to receive handshake|server closed (?:the connection )?abruptly|failed to decrypt data)|"
+    r"cannot lock ref '[^']*': is at [0-9a-f]+ but expected [0-9a-f]+",
+    re.IGNORECASE,
+)
+
+
+def _is_transient_lock_net_error(text: str) -> bool:
+    return bool(_LOCK_NET_ERR_RE.search(text or ""))
 LIVE_BASE = "https://isabisystems.com"
 # Files compared between live, isabi origin/main and isabi-app origin/main (isabi path, isabi-app path, live path).
 COMPARE_FILES = (
@@ -349,49 +366,96 @@ def default_holder(cwd: Path) -> str:
 
 
 def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purpose: str = "release",
-            ttl_min: int = DEFAULT_TTL_MIN, takeover: bool = False, quiet: bool = False) -> dict:
-    sha, info = read_remote_lock(cwd)
-    if info and held_by_me(info, cwd):
-        return renew(cwd, ttl_min=ttl_min, quiet=quiet, _seen=(sha, info))
-    if sha:
-        # A grace period after expiry: another PC's clock may run ahead of the holder's.
-        if not is_expired(info, TAKEOVER_GRACE_MIN):
-            raise LockError(f"RELEASE LOCK: {describe(info)}.\nWait for that release to finish (its session pushes main, then "
-                            "runs `python build/release_lock.py release`), or ask the owner. Do not deploy around it.")
-        left_behind = unpushed_deploys(info, cwd)
-        if left_behind and not takeover:
-            lst = ", ".join(f"{d['sha'][:7]} ({d.get('what', '')})" for d in left_behind)
-            raise LockError(f"RELEASE LOCK: {describe(info)}.\nIt expired, but it deployed {lst}, which is not on origin/main: "
-                            "taking over now could roll that work back. Find that work (the holder's worktree or branch), "
-                            "get it onto main, then run `python build/release_lock.py acquire --takeover --holder ...`.")
-    now = _now()
+            ttl_min: int = DEFAULT_TTL_MIN, takeover: bool = False, quiet: bool = False,
+            wait_s: float = 0, poll_s: float = DEFAULT_POLL_S) -> dict:
+    deadline = (_mono() + max(0.0, float(wait_s))) if wait_s and float(wait_s) > 0 else None
+    eff_poll = max(1.0, float(poll_s))
+    shown_wait = ""
+    last_log: float | None = None
     app_repo = _prune_app_repo(cwd)
-    new = {
-        "lockId": uuid.uuid4().hex,
-        "holder": holder or default_holder(cwd),
-        "pc": socket.gethostname(),
-        "branch": _current_branch(cwd),
-        "worktree": str(cwd),
-        "version": version,
-        "purpose": purpose,
-        "acquiredAt": _iso(now),
-        "expiresAt": _iso(now + dt.timedelta(minutes=ttl_min)),
-        "deployed": [],
-    }
-    if app_repo is not None:
-        app_b = _current_branch(app_repo)
-        if app_b:
-            new["appBranch"] = app_b
-    if sha:
-        new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
-    commit = _make_lock_commit(new, cwd)
-    if not _push_lock(commit, sha, cwd):
-        sha2, info2 = read_remote_lock(cwd)
-        raise LockError(f"RELEASE LOCK: another session took it first: {describe(info2) if sha2 else 'it changed while taking it'}.")
-    _write_token(cwd, new, commit)
-    if not quiet:
-        print(f"Release lock taken: {describe(new)}")
-    return new
+
+    while True:
+        try:
+            sha, info = read_remote_lock(cwd)
+        except LockError as exc:
+            if deadline is not None and _is_transient_lock_net_error(str(exc)) and _mono() < deadline:
+                msg = str(exc).splitlines()[0]
+                if not quiet and msg != shown_wait:
+                    print(f"Release lock read hiccup ({msg[:180]}); retrying in {int(eff_poll)}s...", flush=True)
+                    shown_wait = msg
+                _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                continue
+            raise
+        if info and held_by_me(info, cwd):
+            return renew(cwd, ttl_min=ttl_min, quiet=quiet, _seen=(sha, info))
+        if sha and not is_expired(info, TAKEOVER_GRACE_MIN):
+            desc = describe(info)
+            if deadline is None:
+                raise LockError(f"RELEASE LOCK: {desc}.\nWait for that release to finish (its session pushes main, then "
+                                "runs `python build/release_lock.py release`), or ask the owner. Do not deploy around it.")
+            rem = deadline - _mono()
+            if rem <= 0:
+                raise LockError(f"RELEASE LOCK: {desc}.\nStill held after waiting {int(wait_s)}s; run again with --wait-lock to keep waiting.")
+            now_m = _mono()
+            if not quiet and (desc != shown_wait or last_log is None or now_m - last_log >= 60):
+                print(f"Waiting for release lock (polling every {int(eff_poll)}s, {int(rem)}s left): {desc}", flush=True)
+                shown_wait, last_log = desc, now_m
+            _sleep(min(eff_poll, max(0.0, rem)))
+            continue
+        if sha:
+            # A grace period after expiry: another PC's clock may run ahead of the holder's.
+            left_behind = unpushed_deploys(info, cwd)
+            if left_behind and not takeover:
+                lst = ", ".join(f"{d['sha'][:7]} ({d.get('what', '')})" for d in left_behind)
+                raise LockError(f"RELEASE LOCK: {describe(info)}.\nIt expired, but it deployed {lst}, which is not on origin/main: "
+                                "taking over now could roll that work back. Find that work (the holder's worktree or branch), "
+                                "get it onto main, then run `python build/release_lock.py acquire --takeover --holder ...`.")
+        now = _now()
+        new = {
+            "lockId": uuid.uuid4().hex,
+            "holder": holder or default_holder(cwd),
+            "pc": socket.gethostname(),
+            "branch": _current_branch(cwd),
+            "worktree": str(cwd),
+            "version": version,
+            "purpose": purpose,
+            "acquiredAt": _iso(now),
+            "expiresAt": _iso(now + dt.timedelta(minutes=ttl_min)),
+            "deployed": [],
+        }
+        if app_repo is not None:
+            app_b = _current_branch(app_repo)
+            if app_b:
+                new["appBranch"] = app_b
+        if sha:
+            new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
+        commit = _make_lock_commit(new, cwd)
+        if _push_lock(commit, sha, cwd):
+            _write_token(cwd, new, commit)
+            if not quiet:
+                print(f"Release lock taken: {describe(new)}")
+            return new
+        try:
+            sha2, info2 = read_remote_lock(cwd)
+        except LockError as exc2:
+            if deadline is not None and _is_transient_lock_net_error(str(exc2)) and _mono() < deadline:
+                msg2 = str(exc2).splitlines()[0]
+                if not quiet and msg2 != shown_wait:
+                    print(f"Release lock post-race read hiccup ({msg2[:180]}); retrying in {int(eff_poll)}s...", flush=True)
+                    shown_wait = msg2
+                _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                continue
+            raise
+        if _same_lock(sha2, sha):
+            raise LockError(f"RELEASE LOCK: could not write {LOCK_REF} on {REMOTE} ({describe(info2) if sha2 else 'ref unchanged'}).")
+        desc2 = describe(info2) if sha2 else "it changed while taking it"
+        if deadline is not None and _mono() < deadline:
+            if not quiet:
+                print(f"Release lock race ({desc2}); retrying in {int(eff_poll)}s...", flush=True)
+                shown_wait = desc2
+            _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+            continue
+        raise LockError(f"RELEASE LOCK: another session took it first: {desc2}.")
 
 
 def renew(cwd: Path = ISABI_ROOT, *, ttl_min: int = DEFAULT_TTL_MIN, quiet: bool = False, deployed: dict | None = None,
@@ -445,16 +509,20 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
     return True
 
 
-def require_release_lock(cwd: Path = ISABI_ROOT, *, purpose: str, bypass: bool = False) -> dict | None:
+def require_release_lock(cwd: Path = ISABI_ROOT, *, purpose: str, bypass: bool = False,
+                         holder: str = "", wait_s: float = 0, poll_s: float = DEFAULT_POLL_S) -> dict | None:
     """For deploy scripts: hold the lock (taking it when free, renewing it when held here) or stop."""
     if bypass or os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no"):
         print("WARN: release lock bypassed (--no-release-lock / ISABI_RELEASE_LOCK=off): another session's live work can be rolled back.")
         return None
     try:
+        if wait_s and float(wait_s) > 0:
+            return acquire(cwd, holder=holder, purpose=purpose, version=_worktree_shell_version(cwd),
+                           wait_s=wait_s, poll_s=poll_s)
         sha, info = read_remote_lock(cwd)
         if sha and held_by_me(info, cwd):
             return renew(cwd, ttl_min=DEFAULT_TTL_MIN, quiet=False, _seen=(sha, info))
-        return acquire(cwd, purpose=purpose, version=_worktree_shell_version(cwd))
+        return acquire(cwd, holder=holder, purpose=purpose, version=_worktree_shell_version(cwd))
     except LockError as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         raise SystemExit(2) from None
@@ -1120,6 +1188,8 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--purpose", default="release")
     a.add_argument("--ttl", type=int, default=DEFAULT_TTL_MIN, help="minutes before it expires (default 60)")
     a.add_argument("--takeover", action="store_true", help="take an expired lock even if it deployed commits not on main")
+    a.add_argument("--wait", type=int, default=0, help="seconds to poll until the lock frees (0 = fail immediately; max 3600)")
+    a.add_argument("--poll", type=int, default=DEFAULT_POLL_S, help=f"seconds between lock polls when --wait > 0 (default {DEFAULT_POLL_S})")
     r = sub.add_parser("renew", help="push the expiry out")
     r.add_argument("--ttl", type=int, default=DEFAULT_TTL_MIN)
     rl = sub.add_parser("release", help="give the lock back after pushing main")
@@ -1150,6 +1220,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if fail else 0
     if getattr(args, "ttl", 1) < 1 or getattr(args, "ttl", 1) > 240:  # noqa: PLR2004
         ap.error("--ttl must be 1 to 240 minutes")
+    if args.cmd == "acquire":
+        if args.wait < 0 or args.wait > 3600:  # noqa: PLR2004
+            ap.error("--wait must be 0 to 3600 seconds")
+        if args.poll < 1 or args.poll > 300:  # noqa: PLR2004
+            ap.error("--poll must be 1 to 300 seconds")
     if args.cmd == "prune" and args.days < 1:
         ap.error("--days must be at least 1")
     if args.cmd == "stalled" and args.hours < 0:
@@ -1163,7 +1238,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "stalled":
             return cmd_stalled(cwd, hours=args.hours, as_json=args.json)
         if args.cmd == "acquire":
-            acquire(cwd, holder=args.holder, version=args.version, purpose=args.purpose, ttl_min=args.ttl, takeover=args.takeover)
+            acquire(cwd, holder=args.holder, version=args.version, purpose=args.purpose, ttl_min=args.ttl,
+                    takeover=args.takeover, wait_s=args.wait, poll_s=args.poll)
         elif args.cmd == "renew":
             renew(cwd, ttl_min=args.ttl)
         else:
