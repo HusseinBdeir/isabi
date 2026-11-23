@@ -1148,7 +1148,7 @@ console.log('supervisor domain void snapshots & note clearing without resurrecti
   };
   const postSync = async (patchDoc, sess) => {
     const body = { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: Object.assign({ minShellVer: DEPLOYED_SHELL_VER }, patchDoc) } };
-    const req = new Request('https://example.test/app/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const req = new Request('https://example.test/app/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ISABI-Shell': DEPLOYED_SHELL_VER }, body: JSON.stringify(body) });
     const res = await handleSync(req, env, sess, body, {});
     return { status: res.status, json: await res.json().catch(() => null) };
   };
