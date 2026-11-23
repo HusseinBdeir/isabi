@@ -1109,7 +1109,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "Proven in live trading, manufacturing, and hospitality groups":{"ar":"مُثبت فعلياً في مجموعات التجارة والصناعة والضيافة الحية","fr":"Éprouvé en production dans le négoce, l'industrie et l'hôtellerie"},
 "Every engagement is fixed-scope after a 30-minute discovery call with Hussein Bdeir":{"ar":"كل مشروع محدد النطاق والتكلفة بعد مكالمة استكشافية (30 دقيقة) مع حسين بدير","fr":"Périmètre et budget fixés après un appel de 30 minutes avec Hussein Bdeir"},
 "Automatic audit watchdogs & printable packs flag any gap down to $1":{"ar":"مراقبون آليون وكشوفات مطبوعة تكشف أي فرق حتى $1","fr":"Sentinelles d'audit et états imprimables détectant tout écart dès 1 $"},
-"Touch Field Kiosks: Dispatch, Quarry Receiving, Fuel & Live Face Attendance":{"ar":"أكشاك ميدانية باللمس: التسليم، استلام المقالع، الوقود والحضور بالوجه الحي","fr":"Bornes tactiles terrain : Expédition, Carrière, Carburant & Pointage Visage"},
+"Touch Field Kiosks: Dispatch, Material Receiving, Fuel & Live Face Attendance":{"ar":"أكشاك ميدانية باللمس: التسليم، استلام المواد، الوقود والحضور بالوجه الحي","fr":"Bornes tactiles terrain : Expédition, Réception Matières, Carburant & Pointage Visage"},
 "PIN Unlock & Drawer Float":{"ar":"فتح برمز PIN ورصيد الصندوق","fr":"Déverrouillage PIN & Fond de Caisse"},
 "Offline Save & Auto Sync":{"ar":"حفظ محلي ومزامنة تلقائية","fr":"Sauvegarde Locale & Synchro Auto"},
 "Shift & Overtime Sync":{"ar":"مزامنة الورديات والإضافي","fr":"Synchro Postes & Heures Sup."},
