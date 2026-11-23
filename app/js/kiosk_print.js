@@ -801,8 +801,8 @@
         lr(`Mat. Unit Cost (${d.uom}):`, fmtMoney(d.unitCost));
         if (d.disc > 0) lr('Discount:', '-' + fmtMoney(d.disc));
         lr('Leg 1 Material (Site):', fmtMoney(d.matCost));
-        lr(`Haulage Rate (${d.uom}):`, fmtMoney(d.haulRate));
-        lr('Leg 2 Haulage (Truck):', fmtMoney(d.haulCost));
+        lr(`Transport Rate (${d.uom}):`, fmtMoney(d.haulRate));
+        lr('Leg 2 Transport (Truck):', fmtMoney(d.haulCost));
         line(DSEP);
         emit(P.BOLD_ON, P.TALL_ON);
         lr('TOTAL PAYABLE:', fmtMoney(d.totalUsd));
@@ -1083,8 +1083,8 @@
           <div class="th-kv"><span>Mat. Unit Cost (${escHtml(d.uom)})</span><b>${fmtMoney(d.unitCost)}</b></div>
           ${d.disc > 0 ? `<div class="th-kv"><span>Discount</span><b>-${fmtMoney(d.disc)}</b></div>` : ''}
           <div class="th-kv"><span>Leg 1 · Material (Site)</span><b>${fmtMoney(d.matCost)}</b></div>
-          <div class="th-kv"><span>Haulage Rate (${escHtml(d.uom)})</span><b>${fmtMoney(d.haulRate)}</b></div>
-          <div class="th-kv"><span>Leg 2 · Haulage (Truck)</span><b>${fmtMoney(d.haulCost)}</b></div>
+          <div class="th-kv"><span>Transport Rate (${escHtml(d.uom)})</span><b>${fmtMoney(d.haulRate)}</b></div>
+          <div class="th-kv"><span>Leg 2 · Transport (Truck)</span><b>${fmtMoney(d.haulCost)}</b></div>
           <div class="th-dsep"></div>
           <div class="th-total-row"><span>TOTAL PAYABLE</span><b>${fmtMoney(d.totalUsd)}</b></div>
           <div class="th-kv"><span>Settlement Method</span><b>${escHtml(d.method.toUpperCase())}</b></div>

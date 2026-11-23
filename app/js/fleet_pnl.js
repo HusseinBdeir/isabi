@@ -503,7 +503,7 @@
       var rDrv = String(r.driver || '').trim();
       var rDtStr = recDate(r, st);
       var rYm = rDtStr.slice(0, 7);
-      var rParty = String(r.site_owner || r.supplier || 'Quarry');
+      var rParty = String(r.site_owner || r.supplier || 'Material Source');
       var rSite = String(r.site || r.work_site || 'Plant');
       var rMat = String(r.product || r.material || 'Aggregate');
 
@@ -537,7 +537,7 @@
           material: rMat, qty_m3: rQty,
           unit_price: Number(r.unit_price || r.material_unit_cost_usd || 0),
           total_product: Number(r.total_usd || r.total_material_usd || 0) * rSign, recorded_haul: 0,
-          classification: isInternalQuarry ? 'Internal Quarry / Plant Transfer ($60 Benchmark)' : 'Missing External Raw Haul Rate ($60/trip)',
+          classification: isInternalQuarry ? 'Internal Source / Plant Transfer ($60 Benchmark)' : 'Missing External Raw Transport Rate ($60/trip)',
           shadow_credit: rShadow > 0 ? rShadow : rBench, benchmark_credit: rBench
         });
       }
@@ -829,9 +829,9 @@
       {
         id: 'internal_raw_haul',
         severity: 'warning',
-        badge: 'Internal Quarry Haulage',
-        title: 'Inbound Quarry & Inter-Plant Raw Material Hauls Logged at $0.00 Freight',
-        summary: 'Company trucks hauling aggregates from quarry or between WTC and BBConstruction plants often leave internal freight at $0.00. "+ Unbundled Delivery" credits $1.44/m³ ($40 floor) per load.',
+        badge: 'Internal Material Transport',
+        title: 'Inbound Source & Inter-Plant Raw Material Trips Logged at $0.00 Freight',
+        summary: 'Company trucks transporting aggregates from source sites or between WTC and BBConstruction plants often leave internal freight at $0.00. "+ Unbundled Delivery" credits $1.44/m³ ($40 floor) per load.',
         impact: fmtInt(zeroRows.filter(function (z) { return z.stream === 'Raw Material Inbound'; }).length) + ' inbound raw hauls in active range',
         targetTab: 'zero'
       },
@@ -1234,7 +1234,7 @@
           '</div>' +
           '<div class="fpnl-stack-bar">' +
             '<span class="fpnl-seg-indigo" style="width:' + salesPct + '%" title="Sales Delivery: ' + esc(fmtMoney(r.salesRev)) + '"></span>' +
-            '<span class="fpnl-seg-teal" style="width:' + rawPct + '%" title="Raw Material Haulage: ' + esc(fmtMoney(r.rawRev)) + '"></span>' +
+            '<span class="fpnl-seg-teal" style="width:' + rawPct + '%" title="Raw Material Transport: ' + esc(fmtMoney(r.rawRev)) + '"></span>' +
             (r.creditRev > 0 ? '<span class="fpnl-seg-emerald" style="width:' + credPct + '%" title="Unbundled / Benchmark Credit: ' + esc(fmtMoney(r.creditRev)) + '"></span>' : '') +
           '</div>' +
           '<div class="fpnl-chip-strip">' +
@@ -1500,7 +1500,7 @@
           buildRow('Total Trips (Paid / $0.00)', function (x) { return x; }, function (x) { return fmtInt(x.totalTrips) + ' (' + fmtInt(x.totalPaidTrips) + ' / ' + fmtInt(x.totalZeroTrips) + ')'; }) +
           buildRow('Volume Hauled (m³)', function (x) { return x.totalQtyM3; }, function (v) { return fmtNum(v, 1) + ' m³'; }) +
           buildRow('Sales Delivery Revenue', function (x) { return x.salesRev; }, function (v) { return fmtMoney(v); }) +
-          buildRow('Raw Material Haulage Revenue', function (x) { return x.rawRev; }, function (v) { return fmtMoney(v); }) +
+          buildRow('Raw Material Transport Revenue', function (x) { return x.rawRev; }, function (v) { return fmtMoney(v); }) +
           buildRow('Unbundled / Benchmark Credit', function (x) { return x.creditRev; }, function (v) { return fmtSignedMoney(v); }, 'pos') +
           buildRow('Total Transportation Revenue', function (x) { return x.totalRev; }, function (v) { return fmtMoney(v); }, '', true) +
           buildRow('Diesel Fuel (Tank Out Logs)', function (x) { return -x.dieselCost; }, function (v) { return fmtMoney(v); }, 'neg') +
@@ -1583,8 +1583,8 @@
     return '<div class="fpnl-section-card">' +
       '<div class="fpnl-section-head">' +
         '<div>' +
-          '<h4 class="fpnl-section-title">Unpriced ($0.00) Haulage Explorer &amp; Transfer Credit</h4>' +
-          '<p class="fpnl-section-sub">Click a category card below to filter unbundled sales deliveries vs. internal quarry raw material hauls</p>' +
+          '<h4 class="fpnl-section-title">Unpriced ($0.00) Transport Explorer &amp; Transfer Credit</h4>' +
+          '<p class="fpnl-section-sub">Click a category card below to filter unbundled sales deliveries vs. internal source raw material trips</p>' +
         '</div>' +
         '<div class="fpnl-controls-row">' +
           '<select id="fpnlZeroTruck" class="fpnl-select">' + truckOpts + '</select>' +
@@ -1602,7 +1602,7 @@
           '<div class="fpnl-cat-sub">All-in C&amp;D ($5.00/m³ credit): +' + fmtMoney(salesCred) + '</div>' +
         '</div>' +
         '<div class="fpnl-cat-card' + (STATE.zeroStream === 'Raw Material Inbound' ? ' active' : '') + '" data-fpnl-zero-card="Raw Material Inbound">' +
-          '<div class="fpnl-cat-lbl">INTERNAL QUARRY / PLANT RAW HAULS</div>' +
+          '<div class="fpnl-cat-lbl">INTERNAL SOURCE / PLANT RAW TRIPS</div>' +
           '<div class="fpnl-cat-val">' + fmtInt(rawZero.length) + ' Trips</div>' +
           '<div class="fpnl-cat-sub">Internal rate ($1.44/m³ · $40 floor): +' + fmtMoney(rawCred) + '</div>' +
         '</div>' +
@@ -1610,7 +1610,7 @@
       '<div class="fpnl-table-wrap">' +
         '<table class="fpnl-table">' +
           '<thead><tr><th>DATE</th><th>CO.</th><th>STREAM</th><th>TRUCK</th><th>COUNTERPARTY &amp; SITE</th><th>MATERIAL</th><th class="num">QTY</th><th class="num">UNIT PRICE</th><th>CLASSIFICATION</th><th class="num">SHADOW CREDIT</th></tr></thead>' +
-          '<tbody>' + (rowsHtml || '<tr><td colspan="10" class="fpnl-empty-mini">No $0.00 haulage trips match the current filter.</td></tr>') + '</tbody>' +
+          '<tbody>' + (rowsHtml || '<tr><td colspan="10" class="fpnl-empty-mini">No $0.00 transport trips match the current filter.</td></tr>') + '</tbody>' +
         '</table>' +
       '</div>' +
     '</div>';
@@ -1675,7 +1675,7 @@
           '<p class="fpnl-section-sub">Ranked by trip frequency, volume hauled, and total commercial value</p>' +
         '</div>' +
         '<div class="fpnl-controls-row">' +
-          '<input type="search" id="fpnlRouteSearch" class="fpnl-input" placeholder="Search customer, quarry, site, material..." value="' + esc(STATE.routeSearch) + '" />' +
+          '<input type="search" id="fpnlRouteSearch" class="fpnl-input" placeholder="Search customer, source, site, material..." value="' + esc(STATE.routeSearch) + '" />' +
           '<select id="fpnlRouteTruck" class="fpnl-select">' + truckOpts + '</select>' +
           '<select id="fpnlRouteCompany" class="fpnl-select">' +
             '<option value="ALL"' + (STATE.routeCompany === 'ALL' ? ' selected' : '') + '>All Companies</option>' +

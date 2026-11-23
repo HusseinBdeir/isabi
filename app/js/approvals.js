@@ -763,12 +763,13 @@
     const tok = (opts && opts.token) ? String(opts.token) : '';
     const allowed = opts && 'serverApi' in opts ? Boolean(opts.serverApi) : pushCallsAllowed();
     const deferBrowserUnsub = Boolean(opts && opts.deferBrowserUnsub);
+    const aborted = () => Boolean(opts && typeof opts.shouldAbort === 'function' && opts.shouldAbort());
     const sk = (opts && opts.seatId) ? String(opts.seatId) : seatKey();
     const hasPrefOn = Boolean(allowed && pushSupported() && prefGet(sk) === 'on');
     setBadge(0);
     if (!ep && !hasPrefOn) return;
     const postUnsub = targetEp => {
-      if (!targetEp || !allowed) return Promise.resolve();
+      if (!targetEp || !allowed || aborted()) return Promise.resolve();
       const hdrs = { 'Content-Type': 'application/json' };
       if (tok) {
         hdrs['X-ISABI-Session'] = tok;
@@ -785,15 +786,19 @@
     };
     const jobs = [];
     if (ep) jobs.push(postUnsub(ep));
-    jobs.push((async () => {
-      try {
-        const reg = await swRegistration(600);
-        const s = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
-        if (!s) return;
-        if (!ep && allowed && s.endpoint) await postUnsub(s.endpoint);
-        if (!deferBrowserUnsub) await s.unsubscribe().catch(() => {});
-      } catch (_) {}
-    })());
+    const hasGrantedPerm = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    if (!aborted() && (hasGrantedPerm || ep)) {
+      jobs.push((async () => {
+        try {
+          const reg = await swRegistration(600);
+          if (aborted()) return;
+          const s = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+          if (!s || aborted()) return;
+          if (!ep && allowed && s.endpoint) await postUnsub(s.endpoint);
+          if (!deferBrowserUnsub && !aborted()) await s.unsubscribe().catch(() => {});
+        } catch (_) {}
+      })());
+    }
     await Promise.allSettled(jobs);
   }
 
@@ -880,7 +885,7 @@
       pr.rows.slice(0, LIST_CAP).forEach(x => parts.push(`
         <div class="apv-row">
           <div class="apv-row-main">
-            <div class="apv-row-title"><b>${esc(x.supplier || 'Quarry ticket')}</b> · ${esc(x.product || x.name || '')}</div>
+            <div class="apv-row-title"><b>${esc(x.supplier || 'Material ticket')}</b> · ${esc(x.product || x.name || '')}</div>
             <div class="apv-row-meta">${esc(D.recordDateDMY(x))} · ${esc(x.company || '')} · ${esc(x.name || x.id)}</div>
           </div>
           <div class="apv-row-acts"><button type="button" class="btn btn-primary" data-apv-raw-price="${esc(x.id)}">${ic('dollar')} Enter Price</button></div>

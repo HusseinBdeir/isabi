@@ -11,7 +11,7 @@
 
   const MODULE_LABELS = {
     sales_tickets: 'Sales & Deliveries',
-    raw_purchases: 'Quarry & Haulage',
+    raw_purchases: 'Material & Transport',
     expenses: 'Expenses & Overhead',
     expense_items: 'Expense Line Items',
     customer_receipts: 'Customer Receipts',

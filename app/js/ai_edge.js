@@ -2484,7 +2484,7 @@
       const parts = line.split('|').map(p => p.trim());
       const supRaw = parts[0] || `Supplier ${idx + 1}`;
       const ticketRef = parts[1] || `#ST-${100 + idx}`;
-      const itemDesc = parts[2] || 'Quarry Aggregate';
+      const itemDesc = parts[2] || 'Raw Aggregate';
       const qtyMatch = line.match(/([\d,.]+)\s*(?:ton|t\b|m3|m³|طن)/i);
       const rateMatch = line.match(/rate\s*:\s*\$?([\d,.]+)/i);
       const billedMatch = line.match(/billed\s*:\s*\$?([\d,.]+)/i);
@@ -2602,7 +2602,7 @@
       <div class="aie-head">
         <div class="aie-title-wrap">
           <span class="aie-pill">${ic('sparkles')} ${esc(tr('AI Supplier Weighbridge & Statement Reconciler'))}</span>
-          <strong>${esc(tr('Cross-Script Quarry, Haulage & Bank 3-Way Match'))} (${rows.length})</strong>
+          <strong>${esc(tr('Cross-Script Material, Transport & Bank 3-Way Match'))} (${rows.length})</strong>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
           <button type="button" class="aie-btn is-brass" id="mfgAiToggleReconBtn">${esc(tr(EDGE_STATE.mfgReconOpen ? 'Hide Statement Studio' : 'Open Statement Studio'))}</button>
