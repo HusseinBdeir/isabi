@@ -120,6 +120,10 @@ async function main() {
   const project = projectName();
   console.log(`ISABI notifications key: Cloudflare Pages project "${project}"`);
 
+  if (args.has('--subject') && args.has('--rotate')) {
+    console.error('Use --subject or --rotate, not both: --rotate already stores the contact address with the new key.');
+    process.exit(2);
+  }
   if (args.has('--dry-run') && args.has('--subject')) {
     console.log(`Dry run: would read the project settings and, if a notifications key is set, store only VAPID_SUBJECT`);
     console.log(`  (${SUBJECT})`);
@@ -144,10 +148,6 @@ async function main() {
   }
 
   if (args.has('--subject')) {
-    if (args.has('--rotate')) {
-      console.error('Use --subject or --rotate, not both: --rotate already stores the contact address with the new key.');
-      process.exit(2);
-    }
     if (!have.includes('VAPID_PRIVATE_KEY') || !have.includes('VAPID_PUBLIC_KEY')) {
       console.log('No notifications key is set on this project yet, so there is no contact address to update.');
       console.log('Run this script without --subject to set the key and the contact address together.');

@@ -860,7 +860,9 @@ JS = r"""
   // visitor is going. Two steps back would walk the visitor off the site.
   function stepBackOffSheet(exit) {
     if (sheetStepBack) {
-      if (exit) { sheetStepBack.exit = exit; sheetStepBack.reopen = ''; }
+      // The latest press wins: leaving (with or without a link target) cancels a page opened again meanwhile.
+      sheetStepBack.reopen = '';
+      if (exit) sheetStepBack.exit = exit;
       return;
     }
     const job = { exit: exit || null, reopen: '' };
@@ -4412,7 +4414,14 @@ JS = r"""
       updateActiveNavOnScroll();
     }
 
+    // A step through history that closes or opens a "more" page places the visitor itself (back where they were,
+    // or on the link they pressed). The address change that follows it must not move them again to the section
+    // named in the address, which may be a different one from where they had scrolled to.
+    let popPlacedHash = null;
     window.addEventListener('hashchange', () => {
+      const placed = popPlacedHash;
+      popPlacedHash = null;
+      if (placed !== null && window.location.hash === placed) return;
       if (window.location.hash && window.location.hash.length > 1) {
         scrollToTargetId(window.location.hash.slice(1), false, false);
       }
@@ -4423,6 +4432,7 @@ JS = r"""
       const wanted = SEC_ALIAS[hashId] || hashId;
       const job = sheetStepBack;
       sheetStepBack = null;
+      const sheetBefore = activeSheetId();
       if (SHEET_IDS.includes(wanted)) {
         if (activeSheetId() !== wanted) showSheet(wanted);
       } else {
@@ -4430,6 +4440,17 @@ JS = r"""
         // Our own step back off a "more" page has arrived: finish what the visitor pressed (the link's target,
         // or the page they opened again meanwhile).
         if (job) settleSheetStepBack(job, true);
+        // Back on the main pages: hand scroll placement on reload back to the browser once this step has settled.
+        setTimeout(() => {
+          if (!activeSheetId() && !(history.state && history.state.sheet)) {
+            try { history.scrollRestoration = 'auto'; } catch (e) {}
+          }
+        }, 1000);
+      }
+      if (job || sheetBefore !== activeSheetId()) {
+        const placedHash = window.location.hash;
+        popPlacedHash = placedHash;
+        setTimeout(() => { if (popPlacedHash === placedHash) popPlacedHash = null; }, 300);
       }
     });
 

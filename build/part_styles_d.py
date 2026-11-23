@@ -1249,6 +1249,12 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-foot-top, .d-foot-bottom { flex-direction: column; align-items: flex-start; }
   .d-field input, .d-field select, .d-field textarea, .d-console #ai-inline-input { font-size: 16px !important; }
 }
+/* Six logos need about 930px for one row. Below that they sit three to a row (two even rows) at every width,
+   never five and one. The phone block above keeps its own smaller sizes. */
+@media (max-width: 1040px) {
+  .d-logos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; }
+  .d-logo { max-width: 100%; }
+}
 @media (hover: none) {
   .d-logo { filter: grayscale(1) sepia(0.28) contrast(0.82) brightness(1.04); opacity: 0.66; }
   .d-logo.d-logo-lit { filter: none; opacity: 1; }

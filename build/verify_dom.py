@@ -316,6 +316,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // More pages (Live Demo, Industry Blueprints, FAQ): each opens from a button, swaps the header menu, and closes with Back to Site or Escape
     var sheetInfo = {};
     var sheetIds = ['sandbox', 'industries', 'faq'];
+    // A floor under the page: one history entry below the one the visitor is on. In this test the page is the tab's
+    // first entry, so a press that wrongly stepped back twice would otherwise go nowhere and pass unnoticed.
+    history.replaceState({ probeFloor: 1 }, '', location.href);
+    history.pushState(null, '', location.href);
+    var onFloor = function() { return !!(history.state && history.state.probeFloor); };
+    var floorHits = [];
+    var pricingTopNow = function() { return Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom); };
     for (var shI = 0; shI < sheetIds.length; shI++) {
       var sid = sheetIds[shI];
       var opener = document.querySelector('#site-pages a[href="#' + sid + '"]');
@@ -358,11 +365,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     sheetInfo.afterBackPricingTop = Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom);
     await tick(60);
     sheetInfo.afterBackPricingTopLater = Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom);
+    if (onFloor()) floorHits.push('Back to Site');
     var faqOpener = document.querySelector('#site-pages a[href="#faq"]');
     if (faqOpener) faqOpener.click();
     await tick(30);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await tick(120);
+    if (onFloor()) floorHits.push('Escape pressed twice');
     sheetInfo.afterEscape = {
       pagesHidden: document.getElementById('site-pages').hidden,
       openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
@@ -381,6 +391,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (footLink) { footLink.click(); footLink.click(); }
     footInfo.shownAtOnce = { pagesHidden: document.getElementById('site-pages').hidden, openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length };
     await tick(90);
+    if (onFloor()) floorHits.push('footer link pressed twice');
     footInfo.afterClick = {
       pagesHidden: document.getElementById('site-pages').hidden,
       openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
@@ -402,7 +413,40 @@ document.addEventListener('DOMContentLoaded', async function() {
       openSheets: document.querySelectorAll('[data-sheet]:not([hidden])').length,
       hash: location.hash
     };
+    if (onFloor()) floorHits.push('Back to Site pressed twice');
     sheetInfo.footerLink = footInfo;
+
+    // The visitor scrolled away from the section named in the address (#pricing) before opening a page:
+    // Back to Site returns them to where they were (Why ISABI), not to the section in the address.
+    var whyTopNow = function() { return Math.round(document.getElementById('why').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom); };
+    window.scrollTo(0, window.scrollY + whyTopNow());
+    await tick(30);
+    var awayInfo = { hashBefore: location.hash, whyTopBefore: whyTopNow() };
+    var faqOpener3 = document.querySelector('#site-pages a[href="#faq"]');
+    if (faqOpener3) faqOpener3.click();
+    await tick(30);
+    awayInfo.faqShown = !document.getElementById('faq').hidden;
+    var backBtn3 = document.querySelector('#sheet-nav [data-sheet-close]');
+    if (backBtn3) backBtn3.click();
+    await tick(60);
+    awayInfo.whyTopAfter = whyTopNow();
+    await tick(400);
+    awayInfo.whyTopSettled = whyTopNow();
+    awayInfo.openSheets = document.querySelectorAll('[data-sheet]:not([hidden])').length;
+    awayInfo.hashAfter = location.hash;
+    if (onFloor()) floorHits.push('Back to Site after scrolling away');
+    sheetInfo.scrolledAway = awayInfo;
+    window.scrollTo(0, window.scrollY + pricingTopNow());
+    await tick(30);
+
+    // Control: one more step back from the main pages does reach the floor (so the floor checks above can fail)
+    history.back();
+    await tick(90);
+    sheetInfo.floorReachable = onFloor();
+    history.forward();
+    await tick(90);
+    sheetInfo.floorLeft = !onFloor();
+    sheetInfo.floorHits = floorHits;
     document.documentElement.setAttribute('data-diag-step', 'after-footer-link');
     out.sheets = sheetInfo;
 
@@ -887,7 +931,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         def probe_viewport(w, h, label):
             res_vp = subprocess.run(
-                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
+                [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=6000', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#pricing'],
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
             )
             if '<pre id="diag-json">' not in res_vp.stdout:
@@ -951,6 +995,96 @@ document.addEventListener('DOMContentLoaded', async function() {
         assert d_deep['stillOnPage'] and d_deep['pagesHidden'] is False and d_deep['openSheets'] == 0 and d_deep['hashAfter'] == '' and d_deep['lenEnd'] == d_deep['lenStart'], f"Back to Site after a shared link must return to the eight pages on the same site: {d_deep}"
         print('[DEEP-LINK] Shared link #faq, switch to Live Demo, Back to Site: stays on the site')
 
+        # 2c. Reload on a page's own history entry (manual reload, a phone restoring the tab, the update reload), then
+        # a footer link: the step back must stay inside this page (no third load) and land on the link's target.
+        def run_side_probe(file_name, script, pre_id, hash_part, win_w=1366, win_h=768, budget=6000):
+            probe_path = os.path.join(repo_root, file_name)
+            with open(probe_path, 'w', encoding='utf-8') as pf:
+                pf.write(base_html.replace('</body>', script + '</body>'))
+            try:
+                res_p = subprocess.run(
+                    [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', f'--virtual-time-budget={budget}', f'--user-data-dir={ud}', f'--window-size={win_w},{win_h}', '--dump-dom', 'file:///' + probe_path.replace('\\', '/') + hash_part],
+                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=90
+                )
+            finally:
+                if os.path.exists(probe_path):
+                    os.remove(probe_path)
+            marker = f'<pre id="{pre_id}">'
+            assert marker in res_p.stdout, f"Side probe {file_name} did not finish (output {len(res_p.stdout)} chars)"
+            return json.loads(html.unescape(res_p.stdout.split(marker)[1].split('</pre>')[0]))
+
+        reload_script = """
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+  var tick = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+  var put = function(o) { var pre = document.createElement('pre'); pre.id = 'reload-json'; pre.textContent = JSON.stringify(o); document.body.appendChild(pre); };
+  var n = Number(sessionStorage.getItem('isabiProbeLoads') || 0) + 1;
+  sessionStorage.setItem('isabiProbeLoads', String(n));
+  try {
+    if (n === 1) {
+      await tick(60);
+      document.querySelector('#site-pages a[href="#faq"]').click();
+      await tick(60);
+      sessionStorage.setItem('isabiProbeOwn', history.state && history.state.sheet ? '1' : '0');
+      location.reload();
+      return;
+    }
+    if (n === 2) {
+      var o = { ownBeforeReload: sessionStorage.getItem('isabiProbeOwn') === '1', ownAfterReload: !!(history.state && history.state.sheet), faqShown: !document.getElementById('faq').hidden };
+      var pops = 0;
+      window.addEventListener('popstate', function() { pops++; });
+      await tick(60);
+      document.querySelector('.d-foot-links a[href="#pricing"]').click();
+      await tick(500);
+      o.pops = pops;
+      o.loads = Number(sessionStorage.getItem('isabiProbeLoads'));
+      o.hashAfter = location.hash;
+      o.onSheetEntry = !!(history.state && history.state.sheet);
+      o.openSheets = document.querySelectorAll('[data-sheet]:not([hidden])').length;
+      o.pagesHidden = document.getElementById('site-pages').hidden;
+      o.pricingTop = Math.round(document.getElementById('pricing').getBoundingClientRect().top - document.getElementById('site-header').getBoundingClientRect().bottom);
+      put(o);
+      return;
+    }
+    put({ loads: n, thirdLoad: true, hashAfter: location.hash });
+  } catch (err) {
+    put({ error: String(err), loads: n });
+  }
+});
+</script>
+"""
+        d_rl = run_side_probe('_diag_reload.html', reload_script, 'reload-json', '#why')
+        assert 'error' not in d_rl and not d_rl.get('thirdLoad'), f"Reload probe: a footer link after a reload on the FAQ page loaded the site again: {d_rl}"
+        assert d_rl['ownBeforeReload'] and d_rl['ownAfterReload'] and d_rl['faqShown'], f"Reload probe could not start (FAQ on its own history entry, kept across the reload): {d_rl}"
+        assert d_rl['loads'] == 2 and d_rl['pops'] == 1 and d_rl['hashAfter'] == '#pricing' and d_rl['onSheetEntry'] is False and d_rl['openSheets'] == 0 and d_rl['pagesHidden'] is False and abs(d_rl['pricingTop']) <= 4, f"Reload probe: a footer link after a reload on the FAQ page must step back inside the page and land on Pricing: {d_rl}"
+        print('[RELOAD] Reload on the FAQ page, then footer Pricing link: one step back inside the page, lands on Pricing')
+
+        # 2d. Logo row between phone and desktop widths: one row of six, or two rows of three. Never a short last row.
+        logo_script = """
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var pre = document.createElement('pre');
+  pre.id = 'logo-json';
+  try {
+    var mids = Array.from(document.querySelectorAll('#proof .d-logo')).map(function(im){ var r = im.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2); }).sort(function(a, b){ return a - b; });
+    var rows = [];
+    mids.forEach(function(m, i) { if (i === 0 || m - mids[i - 1] > 12) rows.push(1); else rows[rows.length - 1]++; });
+    var card = document.querySelector('.d-logos').getBoundingClientRect();
+    var out = Array.from(document.querySelectorAll('#proof .d-logo')).filter(function(im){ var r = im.getBoundingClientRect(); return r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.width < 20; }).length;
+    pre.textContent = JSON.stringify({ vw: window.innerWidth, rows: rows, outside: out, scrollW: document.documentElement.scrollWidth });
+  } catch (err) {
+    pre.textContent = JSON.stringify({ error: String(err) });
+  }
+  document.body.appendChild(pre);
+});
+</script>
+"""
+        for win_w in (798, 930, 1054, 1100, 1180):
+            d_lg = run_side_probe('_diag_logos.html', logo_script, 'logo-json', '#proof', win_w=win_w, win_h=900, budget=2000)
+            assert 'error' not in d_lg, f"Logo row probe JS error at window {win_w}: {d_lg}"
+            assert d_lg['rows'] in ([6], [3, 3]) and d_lg['outside'] == 0 and d_lg['scrollW'] <= d_lg['vw'], f"Logo row at {d_lg['vw']}px wide must be one row of six or two rows of three, inside its card: {d_lg}"
+            print(f"[LOGO-ROW] {d_lg['vw']}px wide: rows {d_lg['rows']}")
+
         d_desk = probe_viewport(1366, 768, 'DESK')
         d_desk_1440 = probe_viewport(1440, 810, 'DESK')
         d_desk_1536 = probe_viewport(1536, 864, 'DESK')
@@ -979,6 +1113,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             assert dvp['sheets']['afterBack'] == {'pagesHidden': False, 'openSheets': 0, 'mainNavHidden': False, 'hash': '#pricing'}, f"{vp_lbl} Back to Site did not return to the main pages: {dvp['sheets']['afterBack']}"
             assert abs(dvp['sheets']['afterBackPricingTop']) <= 4 and abs(dvp['sheets']['afterBackPricingTopLater']) <= 4, f"{vp_lbl} Back to Site did not return the visitor to where they were (Pricing): top offset {dvp['sheets']['afterBackPricingTop']} then {dvp['sheets']['afterBackPricingTopLater']}"
             assert dvp['sheets']['afterEscape']['pagesHidden'] is False and dvp['sheets']['afterEscape']['openSheets'] == 0, f"{vp_lbl} Escape did not close the page: {dvp['sheets']['afterEscape']}"
+            assert dvp['sheets']['floorReachable'] is True and dvp['sheets']['floorLeft'] is True, f"{vp_lbl} history floor control failed (the double-press checks would be blind): {dvp['sheets'].get('floorReachable')} / {dvp['sheets'].get('floorLeft')}"
+            assert dvp['sheets']['floorHits'] == [], f"{vp_lbl} a press stepped back twice (the visitor would leave the site): {dvp['sheets']['floorHits']}"
+            aw = dvp['sheets']['scrolledAway']
+            assert aw['hashBefore'] == '#pricing' and abs(aw['whyTopBefore']) <= 4 and aw['faqShown'] is True, f"{vp_lbl} scrolled-away probe could not start: {aw}"
+            assert abs(aw['whyTopAfter']) <= 4 and abs(aw['whyTopSettled']) <= 4 and aw['openSheets'] == 0, f"{vp_lbl} Back to Site moved the visitor to the section in the address instead of where they were (Why ISABI): {aw}"
             fl = dvp['sheets']['footerLink']
             assert fl['hasLink'] and fl['ownEntry'] and fl['faqShown'], f"{vp_lbl} footer-link probe could not start (FAQ open on its own history entry, footer Pricing link present): {fl}"
             assert fl['shownAtOnce'] == {'pagesHidden': False, 'openSheets': 0}, f"{vp_lbl} footer link inside a page must show the main pages at once: {fl}"
@@ -1020,6 +1159,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             assert sh['hasOpener'] and sh['shown'] and sh['pagesHidden'], f"Mobile page #{sheet_id} did not open from its button: {sh}"
             assert sh['overflows'] == [] and sh['scrollW'] <= d_mob['vw'], f"Mobile page #{sheet_id} overflows: {sh}"
         assert d_mob['sheets']['afterBack']['pagesHidden'] is False and d_mob['sheets']['afterBack']['openSheets'] == 0, f"Mobile Back to Site failed: {d_mob['sheets']['afterBack']}"
+        assert d_mob['sheets']['floorReachable'] is True and d_mob['sheets']['floorHits'] == [], f"Mobile: a press stepped back twice (the visitor would leave the site): {d_mob['sheets'].get('floorHits')} / control {d_mob['sheets'].get('floorReachable')}"
+        assert d_mob['sheets']['footerLink']['afterForward'] == {'faqShown': True, 'hash': '#faq'} and d_mob['sheets']['footerLink']['end']['openSheets'] == 0, f"Mobile footer link inside a page replaced the page's history entry: {d_mob['sheets']['footerLink']}"
         assert d_mob['langSwitchH'] >= 36, f"Mobile header lang switch height {d_mob['langSwitchH']}px < 36px!"
         assert d_mob['inputFontMin'] >= 16, f"Mobile input font-size {d_mob['inputFontMin']}px < 16px (triggers iOS zoom)!"
         assert d_mob['cmpCols'] == 1, f"Expected the comparison stacked in one column at 390x844, got {d_mob['cmpCols']}"
