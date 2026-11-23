@@ -1160,7 +1160,7 @@
     } catch (_) {}
     return true;
   }
-  function resetGeoStoreSession(opts = {}) {
+  function resetGeoStoreSession() {
     _geoSessionEpoch++;
     _geoExplicitlySignedOut = true;
     resetGeoUiState();
@@ -1175,9 +1175,6 @@
     GEO_STORE._deletedKeys = {};
     GEO_STORE.updatedAt = '';
     try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
-    if (opts && opts.clearPendingPush) {
-      try { localStorage.removeItem(PENDING_GEO_PUSH_KEY); } catch (_) {}
-    }
     try { sessionStorage.removeItem('demo_sbx_' + STORAGE_KEY); } catch (_) {}
     try { localStorage.removeItem(GEO_SEAT_KEY); } catch (_) {}
     try { sessionStorage.removeItem('demo_sbx_' + GEO_SEAT_KEY); } catch (_) {}
@@ -1299,8 +1296,6 @@
     return out;
   }
 
-  const PENDING_GEO_PUSH_KEY = 'isabi_mfg_pending_geo_push_v1';
-
   function saveStoredConfig(pushServer = true, opts = {}) {
     GEO_STORE.updatedAt = new Date().toISOString();
     const isDemoGeo = isDemoGeoMode();
@@ -1325,64 +1320,11 @@
     if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
         const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
-        const _SCOPED_GEO_BUCKETS = ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes', '_pairKmTs', '_deletedKeys'];
-        const _mergeScopedGeoCfg = (prevSc, nextSc) => {
-          const p = (prevSc && typeof prevSc === 'object') ? prevSc : null;
-          const n = (nextSc && typeof nextSc === 'object') ? nextSc : null;
-          if (!p) return n ? Object.assign({}, n) : null;
-          if (!n) return Object.assign({}, p);
-          const merged = Object.assign({}, p, n);
-          for (const bk of _SCOPED_GEO_BUCKETS) {
-            if ((p[bk] && typeof p[bk] === 'object') || (n[bk] && typeof n[bk] === 'object')) {
-              merged[bk] = Object.assign({}, (p[bk] && typeof p[bk] === 'object') ? p[bk] : {}, (n[bk] && typeof n[bk] === 'object') ? n[bk] : {});
-            }
-          }
-          return merged;
-        };
-        const _getCurSeatEmail = () => String((typeof window !== 'undefined' && typeof window.MFG_SEAT_EMAIL === 'function' ? window.MFG_SEAT_EMAIL() : '') || '').trim().toLowerCase();
-        const _readSameSeatPendingGeo = () => {
-          try {
-            const rawPrev = localStorage.getItem(PENDING_GEO_PUSH_KEY) || '';
-            const prevQ = rawPrev ? JSON.parse(rawPrev) : null;
-            if (!prevQ || typeof prevQ !== 'object') return null;
-            const prevEm = String(prevQ.email || '').trim().toLowerCase();
-            const curEm = _getCurSeatEmail();
-            if (prevEm && curEm && prevEm !== curEm) return null;
-            return prevQ;
-          } catch (_) { return null; }
-        };
-        const prePushQ = _readSameSeatPendingGeo();
-        const pushStartedTs = (prePushQ && Number(prePushQ.ts)) || Date.now();
-        if (hasFullGeoWrite && prePushQ && prePushQ.fullConfig && typeof prePushQ.fullConfig === 'object' && !_hasGeoStoreData()) {
-          importGeoConfig(prePushQ.fullConfig);
-        }
-        const postCfg = (!hasFullGeoWrite && allowGeoApi)
-          ? _mergeScopedGeoCfg(
-              prePushQ && prePushQ.scopedConfig,
-              (o.scopedConfig && typeof o.scopedConfig === 'object') ? o.scopedConfig : exportScopedGeoConfigForCaller()
-            )
+        const postCfg = (!hasFullGeoWrite && allowGeoApi && o.scopedConfig && typeof o.scopedConfig === 'object')
+          ? o.scopedConfig
           : exportScopedGeoConfigForCaller();
         const saveEpoch = _geoSessionEpoch;
         const payloadBody = JSON.stringify({ config: postCfg });
-        const _enqueuePendingGeoWrite = (allowGeo, scopedCfg) => {
-          try {
-            const curEm = _getCurSeatEmail();
-            const prevQ = _readSameSeatPendingGeo();
-            const nextAllow = Boolean((prevQ && prevQ.allowGeoApi) || allowGeo);
-            let nextScoped = null;
-            if (!hasFullGeoWrite) {
-              const incomingSc = (allowGeo && scopedCfg && typeof scopedCfg === 'object') ? scopedCfg : null;
-              nextScoped = prevQ ? _mergeScopedGeoCfg(prevQ.scopedConfig, incomingSc) : incomingSc;
-            }
-            localStorage.setItem(PENDING_GEO_PUSH_KEY, JSON.stringify({
-              ts: Date.now(),
-              email: curEm,
-              allowGeoApi: nextAllow,
-              scopedConfig: nextScoped,
-              fullConfig: exportGeoConfig()
-            }));
-          } catch (_) {}
-        };
         const pushP = _geoConfigPushChain.catch(() => {}).then(() => edgeFetch('./api/geo_config', {
           method: 'POST',
           credentials: 'same-origin',
@@ -1391,10 +1333,6 @@
         }).then(async res => {
           if (saveEpoch !== _geoSessionEpoch) return res;
           if (res && res.ok) {
-            const latestQ = _readSameSeatPendingGeo();
-            if (!latestQ || !(Number(latestQ.ts) > pushStartedTs)) {
-              try { localStorage.removeItem(PENDING_GEO_PUSH_KEY); } catch (_) {}
-            }
             if (!o.skipCloudPush && typeof window.__mfgScheduleCloudPush === 'function') {
               try { window.__mfgScheduleCloudPush(); } catch (_) {}
             }
@@ -1408,58 +1346,23 @@
             return res;
           }
           let errMsg = 'Map update was rejected by the server.';
-          let errJson = null;
           try {
-            errJson = res ? await (typeof res.clone === 'function' ? res.clone() : res).json().catch(() => null) : null;
+            const errJson = res ? await (typeof res.clone === 'function' ? res.clone() : res).json().catch(() => null) : null;
             if (errJson && errJson.error) errMsg = String(errJson.error);
           } catch (_) {}
           try { if (res && typeof res === 'object') res._parsedError = errMsg; } catch (_) {}
-          if (res && (res.status === 426 || (errJson && errJson.code === 'shell_outdated'))) {
-            _enqueuePendingGeoWrite(allowGeoApi, (!hasFullGeoWrite && allowGeoApi && postCfg) ? postCfg : null);
-            if (typeof window !== 'undefined' && typeof window.__mfgHandleShellOutdated426 === 'function') {
-              try { window.__mfgHandleShellOutdated426(errJson); } catch (_) {}
-            }
-            return {
-              ok: false,
-              status: 426,
-              code: 'shell_outdated',
-              networkErr: true,
-              networkError: true,
-              shellOutdated: true,
-              _parsedError: errMsg,
-              error: errMsg
-            };
-          }
-          const stNum = res && res.status != null ? Number(res.status) : 0;
-          if (res && !res.ok && stNum >= 500 && !o.pairedTwoStore) {
-            if (!o.skipCloudPush) {
-              _enqueuePendingGeoWrite(allowGeoApi, (!hasFullGeoWrite && allowGeoApi && postCfg) ? postCfg : null);
-            }
-            return {
-              ok: false,
-              status: stNum,
-              networkErr: true,
-              networkError: true,
-              _parsedError: errMsg,
-              error: errMsg
-            };
-          }
-          if (res && !res.ok && (res.status == null || stNum >= 400)) {
+          if (res && !res.ok && (res.status == null || Number(res.status) >= 400)) {
             let restored = false;
-            let hasPendingGeoQueue = false;
-            try { hasPendingGeoQueue = Boolean(localStorage.getItem(PENDING_GEO_PUSH_KEY)); } catch (_) {}
-            if (!hasPendingGeoQueue) {
-              try {
-                const pullRes = await edgeFetch('./api/geo_config', { method: 'GET', credentials: 'same-origin' });
-                if (pullRes && pullRes.ok) {
-                  const pullJson = await pullRes.json().catch(() => null);
-                  const srvCfg = pullJson && pullJson.config && typeof pullJson.config === 'object' ? pullJson.config : null;
-                  if (srvCfg) {
-                    restored = _replaceGeoConfigStore(srvCfg);
-                  }
+            try {
+              const pullRes = await edgeFetch('./api/geo_config', { method: 'GET', credentials: 'same-origin' });
+              if (pullRes && pullRes.ok) {
+                const pullJson = await pullRes.json().catch(() => null);
+                const srvCfg = pullJson && pullJson.config && typeof pullJson.config === 'object' ? pullJson.config : null;
+                if (srvCfg) {
+                  restored = _replaceGeoConfigStore(srvCfg);
                 }
-              } catch (_) {}
-            }
+              }
+            } catch (_) {}
             if (!restored && o.prevGeoStoreSnap && typeof o.prevGeoStoreSnap === 'object') {
               _replaceGeoConfigStore(o.prevGeoStoreSnap);
             }
@@ -1482,12 +1385,7 @@
             }
           }
           return res;
-        })).catch(() => {
-          if (saveEpoch === _geoSessionEpoch && !o.skipCloudPush) {
-            _enqueuePendingGeoWrite(allowGeoApi, (!hasFullGeoWrite && allowGeoApi && postCfg) ? postCfg : null);
-          }
-          return { ok: false, networkErr: true, networkError: true };
-        });
+        })).catch(() => {});
         _geoConfigPushChain = pushP;
         return pushP;
       } catch (_) {}
@@ -1495,43 +1393,6 @@
       try { window.__mfgScheduleCloudPush(); } catch (_) {}
     }
     return Promise.resolve({ ok: true, localOnly: true });
-  }
-
-  async function flushPendingGeoPush(curEmail = '') {
-    if (isDemoGeoMode()) return false;
-    let raw = '';
-    try { raw = localStorage.getItem(PENDING_GEO_PUSH_KEY) || ''; } catch (_) {}
-    if (!raw) return false;
-    let parsed = null;
-    try { parsed = JSON.parse(raw); } catch (_) { parsed = {}; }
-    const savedEmail = String((parsed && parsed.email) || '').trim().toLowerCase();
-    const nowEmail = String(curEmail || '').trim().toLowerCase();
-    if (savedEmail && nowEmail && savedEmail !== nowEmail) {
-      try { localStorage.removeItem(PENDING_GEO_PUSH_KEY); } catch (_) {}
-      return false;
-    }
-    if ((!parsed || !parsed.scopedConfig) && parsed && parsed.fullConfig && typeof parsed.fullConfig === 'object') {
-      if (!_hasGeoStoreData()) {
-        _replaceGeoConfigStore(parsed.fullConfig);
-      } else {
-        importGeoConfig(parsed.fullConfig);
-      }
-    }
-    const res = await saveStoredConfig(true, {
-      skipCloudPush: true,
-      toastOnReject: false,
-      allowNewSiteModal: Boolean(parsed && parsed.allowGeoApi),
-      scopedConfig: (parsed && parsed.scopedConfig && typeof parsed.scopedConfig === 'object') ? parsed.scopedConfig : undefined
-    });
-    if (res && res.ok && !res.localOnly) {
-      try { localStorage.removeItem(PENDING_GEO_PUSH_KEY); } catch (_) {}
-      return true;
-    }
-    const st = Number((res && res.status) || 0);
-    if (res && !res.shellOutdated && !res.networkErr && !res.networkError && st >= 400 && st !== 401 && st < 500) {
-      try { localStorage.removeItem(PENDING_GEO_PUSH_KEY); } catch (_) {}
-    }
-    return false;
   }
 
   function exportGeoConfig() {
@@ -8518,7 +8379,6 @@
     const standaloneCommit = !deferGeoPush && !(ctx && ctx.deferApiPost);
     const geoSaveOpts = {
       allowNewRegionModal: allowNewRegion,
-      pairedTwoStore: true,
       skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
       scopedConfig: { regions: { [storePfx + nk]: regEntry }, updatedAt: nowIso },
       prevGeoStoreSnap: prevGeoSnap,
@@ -8805,7 +8665,6 @@
     const geoSaveOpts = {
       allowNewSiteModal: allowViaNewSiteModal,
       allowTicketMissingPin: allowViaTicketMissing,
-      pairedTwoStore: true,
       skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
       scopedConfig: { sites: writtenSites, updatedAt: nowIso },
       prevGeoStoreSnap: prevGeoSnap,
@@ -8991,7 +8850,6 @@
       const deferGeoPush = Boolean(ctx && ctx.deferStoredConfigPush);
       const geoSaveOpts = {
         allowNewSiteModal: allowNewSite,
-        pairedTwoStore: true,
         skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
         prevGeoStoreSnap: prevGeoSnap,
         toastOnReject: !(ctx && ctx.skipGeoRollback),
@@ -9638,7 +9496,6 @@
             };
             try {
               await saveStoredConfig(true, {
-                pairedTwoStore: true,
                 prevGeoStoreSnap: prevGeoSnap,
                 skipCloudPush: true,
                 toastOnReject: false,
@@ -14372,7 +14229,6 @@
     extractEditablePolyRing,
     exportGeoConfig,
     importGeoConfig,
-    flushPendingGeoPush,
     markGeoSessionActive,
     getGeoSessionSeat,
     hasGeoStoreData: _hasGeoStoreData,

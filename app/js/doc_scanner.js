@@ -4114,7 +4114,6 @@
     syncModalUi,
     runPreviewPrecheck: () => runCameraPreviewPrecheck(true, false, { explicit: true }),
     state: () => S,
-    isCameraActive: () => Boolean(S.camStarting || S.camLive || (S.stream && S.stream.getVideoTracks && S.stream.getVideoTracks().some(t => t.readyState === 'live'))),
     _toast: null
   };
 })();

@@ -14463,9 +14463,7 @@
       "Passkeys are not supported in this browser.": "مفاتيح المرور غير مدعومة في هذا المتصفح.",
       "Passkey sign-in failed.": "فشل تسجيل الدخول بمفتاح المرور.",
       "Passkey (FIDO2)": "مفتاح مرور (FIDO2)",
-      "SUPERVISOR PIN OR PASSKEY REQUIRED": "مطلوب رمز PIN للمشرف أو مفتاح المرور",
-      "Update ready · Reload": "يتوفر تحديث · إعادة التحميل",
-      "You have unsaved form changes. Reload now and discard unsaved edits?": "لديك تعديلات نموذج غير محفوظة. هل تريد إعادة التحميل الآن وتجاهل التعديلات غير المحفوظة؟"
+      "SUPERVISOR PIN OR PASSKEY REQUIRED": "مطلوب رمز PIN للمشرف أو مفتاح المرور"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -28910,9 +28908,7 @@
       "Passkeys are not supported in this browser.": "Les clés d'accès ne sont pas prises en charge dans ce navigateur.",
       "Passkey sign-in failed.": "Échec de la connexion par clé d'accès.",
       "Passkey (FIDO2)": "Clé d'accès (FIDO2)",
-      "SUPERVISOR PIN OR PASSKEY REQUIRED": "PIN OU CLÉ D'ACCÈS SUPERVISEUR REQUIS",
-      "Update ready · Reload": "Mise à jour prête · Recharger",
-      "You have unsaved form changes. Reload now and discard unsaved edits?": "Vous avez des modifications non enregistrées dans le formulaire. Recharger maintenant et annuler les saisies non enregistrées ?"
+      "SUPERVISOR PIN OR PASSKEY REQUIRED": "PIN OU CLÉ D'ACCÈS SUPERVISEUR REQUIS"
     }
   };
 
