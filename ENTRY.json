@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/shell-floor-gate-reload",
+  "sha": "b3d422efc000d6406c2eb7d1f3849238d27eb166"
+ },
+ "gates": [
+  "isabi-app: node build/verify_shell_gate_and_reload.mjs"
+ ],
+ "holder": "agy-f4158a72 (shell-floor-gate-reload)",
+ "id": "20261123T203402Z-697029c9",
+ "pc": "Theo",
+ "queuedAt": "2026-11-23T20:34:02Z",
+ "seenAt": "2026-11-23T20:34:02Z",
+ "site": {
+  "branch": "wt/shell-floor-gate-reload-site",
+  "sha": "66aada40113f4666654a47e9ed3a195655628d82"
+ },
+ "state": "waiting",
+ "summary": "Gate mutating routes with X-ISABI-Shell 426 replay and break SW reload deadlock"
+}
