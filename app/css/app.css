@@ -4634,6 +4634,31 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-behind-note .cf-behind-tail { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; max-width: 100%; font-variant-numeric: tabular-nums; color: var(--ink-2, var(--ink)); border-inline-start: 1px solid var(--line); padding-inline-start: 10px; }
 .cf-behind-note .cf-behind-sep { display: inline-block; margin: 0 4px; color: var(--muted); }
 .cf-behind-note b.crit { color: var(--crit); }
+/* Cash Flow: USD till card cutoff split + unclosed post-cutoff app cash days */
+.cockpit-pill-sub.cf-till-split-sub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.38; }
+.cf-till-split { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; max-width: 100%; font-variant-numeric: tabular-nums; }
+.cf-till-split-seg { display: inline; min-width: 0; max-width: 100%; }
+.cf-till-split .cf-till-sep { color: var(--muted); }
+.cf-till-split b.good { color: var(--good); }
+.cf-till-split b.crit { color: var(--crit); }
+button.cockpit-pill-tag.cf-unclosed-pill { border: 1px solid var(--warn); cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 4px; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease; }
+button.cockpit-pill-tag.cf-unclosed-pill:hover { border-color: var(--hover-ring-border); box-shadow: var(--hover-ring-shadow); }
+button.cockpit-pill-tag.cf-unclosed-pill:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.cf-unclosed-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 14px; background: var(--warn-bg); border-bottom: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--ink); min-width: 0; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.cf-unclosed-strip .cf-unclosed-count { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--warn); border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.cf-unclosed-strip .cf-unclosed-txt { color: var(--ink-2, var(--ink)); min-width: 0; }
+.cf-unclosed-strip .cf-unclosed-pills { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.cf-unclosed-day-pill { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 26px; padding: 2px 9px; border: 1px solid var(--warn); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums; cursor: pointer; max-width: 100%; box-sizing: border-box; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease; }
+.cf-unclosed-day-pill:hover { border-color: var(--hover-ring-border); background: var(--hover-surface-tint); box-shadow: var(--hover-ring-shadow); }
+.cf-unclosed-day-pill:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.cf-unclosed-day-pill.is-active { border-color: var(--brass); background: var(--brass-tint); box-shadow: var(--hover-ring-shadow); }
+.cf-unclosed-day-pill .cf-unclosed-co { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+.cf-unclosed-day-pill .cf-unclosed-amt.good { color: var(--good); font-weight: 700; }
+.cf-unclosed-day-pill .cf-unclosed-amt.crit { color: var(--crit); font-weight: 700; }
+@media (max-width: 860px) {
+  .cf-unclosed-strip { padding: 8px 12px; }
+  .cf-unclosed-day-pill { min-height: 32px; padding: 4px 10px; }
+}
 /* Entries this device has not sent (#unsentEntriesBar) and entries other devices hold (#devicesHoldingBar, Owner):
    strips under the top bar on every page, shown only when there is something to say. */
 .unsent-bar { flex: 0 0 auto; }

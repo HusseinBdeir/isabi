@@ -2444,6 +2444,29 @@
     return 'manufacturing-group';
   }
 
+  function resolveEffectiveModelKeyForUser(coKey, u) {
+    const raw = String(coKey || STATE.company || 'manufacturing-group');
+    const k = (raw === 'ALL' || raw === 'industry:Manufacturing') ? 'manufacturing-group' : raw;
+    const allowed = allowedCompanyNames(u);
+    const hasWtc = allowed.includes('WTC');
+    const hasBbc = allowed.includes('BBConstruction');
+    if (k === 'wtc' || k === 'bbconstruction' || k === 'lionstransport') {
+      const targetBu = COMPANY_BU_MATCH[k];
+      if (!targetBu || !allowed.includes(targetBu)) {
+        if (hasWtc && !hasBbc) return 'wtc';
+        if (!hasWtc && hasBbc) return 'bbconstruction';
+        if (!hasWtc && !hasBbc) return 'lionstransport';
+        return 'manufacturing-group';
+      }
+      return k;
+    }
+    if (k !== 'manufacturing-group') return resolveEffectiveModelKey(k);
+    if (hasWtc && !hasBbc) return 'wtc';
+    if (!hasWtc && hasBbc) return 'bbconstruction';
+    if (!hasWtc && !hasBbc) return 'lionstransport';
+    return 'manufacturing-group';
+  }
+
   function getModel(coOverride) {
     // Not before the script has finished initialising: the spine seeder reads let/const caches declared far
     // below. Today it returns at once then (the seed is not loaded yet), so skipping it changes nothing.
@@ -4435,8 +4458,8 @@
   }
 
   // perDay (optional Map): collects each date's app-entry cash as [inU, outU, inL, outL] (till-on-this-day scrubber).
-  function computeCustomCashDeltas(coKey, range, perDay) {
-    const allowed = allowedCompanyNames();
+  function computeCustomCashDeltas(coKey, range, perDay, userOverride) {
+    const allowed = allowedCompanyNames(userOverride);
     const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
     const inWin = d => {
       if (!range) return true;
@@ -8921,7 +8944,7 @@
     }
   }
 
-  function insightCard({ label, badge = '', badgeHtml = '', badgeCls = '', badgeChip = '', val, valCls = '', pct = null, pct2 = null, sub = '', tone = 'brass', tone2 = '', id = '' }) {
+  function insightCard({ label, badge = '', badgeHtml = '', badgeCls = '', badgeChip = '', val, valCls = '', pct = null, pct2 = null, sub = '', subCls = '', tone = 'brass', tone2 = '', id = '' }) {
     const p1 = pct != null ? Math.max(0, Math.min(100, Number(pct) || 0)) : null;
     const p2 = (tone2 && pct2 != null) ? Math.max(0, Math.min(100 - (p1 || 0), Number(pct2) || 0)) : null;
     const bAttr = badgeChip ? ` data-insight-chip="${esc(badgeChip)}" title="Click to toggle ${esc(badgeChip)} filter"` : '';
@@ -8941,7 +8964,7 @@
             ${p2 != null && p2 > 0 ? `<span class="cockpit-meter-fill secondary${secCls}" style="width:${p2.toFixed(1)}%"></span>` : ''}
           </div>
         ` : ''}
-        ${sub ? `<div class="cockpit-pill-sub">${sub}</div>` : ''}
+        ${sub ? `<div class="cockpit-pill-sub${subCls ? ' ' + esc(subCls) : ''}">${sub}</div>` : ''}
       </div>
     `;
   }
@@ -9218,6 +9241,215 @@
       }
     });
     return { cutoff: /^\d{4}-\d{2}-\d{2}$/.test(lastDay) ? lastDay : genDay, genMs };
+  }
+
+  let _cashTillSplitMemo = null;
+  function doesWorkbookCloseDaily(daily, rate = 89500, maxDate = '') {
+    if (!Array.isArray(daily) || daily.length < 5) return false;
+    const effRate = Number(rate) > 0 ? Number(rate) : 89500;
+    const maxIso = String(maxDate || '').slice(0, 10);
+    const sorted = [];
+    for (let i = 0; i < daily.length; i++) {
+      const row = daily[i];
+      const iso = String((row && row[0]) || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      if (maxIso && iso > maxIso) continue;
+      sorted.push([iso, Number(row[1] || 0), Number(row[2] || 0), Number(row[3] || 0), Number(row[4] || 0)]);
+    }
+    if (sorted.length < 5) return false;
+    sorted.sort((a, b) => (a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0)));
+    let runU = 0;
+    let runL = 0;
+    const closes = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const r = sorted[i];
+      runU = round2(runU + (r[1] - r[2]));
+      runL = Math.round(runL + (r[3] - r[4]));
+      closes.push(round2(runU + runL / effRate));
+    }
+    const recent = closes.slice(-30);
+    if (!recent.length) return false;
+    if (Math.abs(recent[recent.length - 1]) >= 0.05) return false;
+    let zeroDays = 0;
+    for (let i = 0; i < recent.length; i++) {
+      if (Math.abs(recent[i]) < 0.05) zeroDays++;
+    }
+    return (zeroDays / recent.length) >= 0.75;
+  }
+
+  function computeCashTillCutoffSplit(opts = {}) {
+    const u = opts.user || activeUser();
+    const effCo = opts.company || STATE.company;
+    if (!u || effCo === DEMO_COMPANY_KEY || isDemoScopeActive() || isOfficialScopeActive(u)) return null;
+    if (typeof getActiveIndustry === 'function' && getActiveIndustry(effCo) !== 'Manufacturing') return null;
+    const coKey = resolveEffectiveModelKeyForUser(effCo, u);
+    const m = (SEED.models && (SEED.models[coKey] || (coKey === 'manufacturing-group' ? SEED.models['manufacturing-group'] : null))) || null;
+    const cf = m && m.cash_flow_sheet;
+    if (!cf || !cf.live_till || cf.live_till.usd == null || !Array.isArray(cf.daily) || !cf.daily.length) return null;
+    const genIso = String(SEED.generated_at || SEED_MANIFEST.generated_at || '');
+    const genDay = genIso.slice(0, 10);
+    let cutoff = '';
+    for (let i = 0; i < cf.daily.length; i++) {
+      const d = String((cf.daily[i] && cf.daily[i][0]) || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && (!genDay || d <= genDay) && d > cutoff) cutoff = d;
+    }
+    if (!cutoff) return null;
+    const allowed = allowedCompanyNames(u);
+    const fullFin = Boolean(
+      isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' ||
+      ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) ||
+      Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin)
+    );
+    const memoKey = `${effCo}|${coKey}|${allowed.join(',')}|${fullFin ? 1 : 0}|${SEED._customRev || 0}|${STATE._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${genDay}|${cf.daily.length}`;
+    if (_cashTillSplitMemo && _cashTillSplitMemo.key === memoKey) return _cashTillSplitMemo.val;
+
+    const rate = Number(cf.rate_lbp || 89500);
+    const cd = computeCustomCashDeltas(coKey, { from: '', to: cutoff }, null, u);
+    const rawConfU = round2(Number(cf.live_till.usd || 0));
+    const confirmedUsd = Math.abs(rawConfU) < 0.005 ? 0 : rawConfU;
+    const rawLiveU = round2(Number(cf.live_till.usd || 0) + (cd.liveInU - cd.liveOutU));
+    const liveUsd = Math.abs(rawLiveU) < 0.005 ? 0 : rawLiveU;
+    const rawKeyedU = round2(liveUsd - confirmedUsd);
+    const keyedSinceUsd = Math.abs(rawKeyedU) < 0.005 ? 0 : rawKeyedU;
+
+    const rawConfL = Math.round(Number(cf.live_till.lbp || 0));
+    const confirmedLbp = Math.abs(rawConfL) <= CF_LBP_DUST ? 0 : rawConfL;
+    const rawLiveL = Math.round(Number(cf.live_till.lbp || 0) + (cd.liveInL - cd.liveOutL));
+    const liveLbp = Math.abs(rawLiveL) <= CF_LBP_DUST ? 0 : rawLiveL;
+    const rawKeyedL = Math.round(liveLbp - confirmedLbp);
+    const keyedSinceLbp = Math.abs(rawKeyedL) <= CF_LBP_DUST ? 0 : rawKeyedL;
+
+    const postCutoffUsd = round2((cd.liveInU - cd.liveOutU) - cd.endNetU);
+    const upToCutoffDeltaUsd = round2(cd.endNetU);
+
+    const unclosedDays = [];
+    if (fullFin) {
+      for (let wi = 0; wi < WORKBOOK_COMPANY_NAMES.length; wi++) {
+        const coName = WORKBOOK_COMPANY_NAMES[wi];
+        if (!matchesCashScopeCompany({ company: coName }, coKey, allowed)) continue;
+        const coSlug = coName.toLowerCase();
+        const coModel = SEED.models && SEED.models[coSlug];
+        const coCf = coModel && coModel.cash_flow_sheet;
+        const coDaily = (coCf && Array.isArray(coCf.daily)) ? coCf.daily : [];
+        const coRate = Number((coCf && coCf.rate_lbp) || rate || 89500);
+        let coCutoff = '';
+        let wbCloseU = 0;
+        let wbCloseL = 0;
+        for (let i = 0; i < coDaily.length; i++) {
+          const row = coDaily[i];
+          const d = String((row && row[0]) || '').slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || (genDay && d > genDay)) continue;
+          if (d > coCutoff) coCutoff = d;
+          wbCloseU = round2(wbCloseU + Number(row[1] || 0) - Number(row[2] || 0));
+          wbCloseL = Math.round(wbCloseL + Number(row[3] || 0) - Number(row[4] || 0));
+        }
+        if (!coCutoff) coCutoff = cutoff;
+        if (!doesWorkbookCloseDaily(coDaily, coRate, coCutoff)) continue;
+
+        const coPerDay = new Map();
+        const cdPre = computeCustomCashDeltas(coSlug, { from: '', to: coCutoff }, coPerDay, u);
+        const postDates = Array.from(coPerDay.keys()).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d > coCutoff).sort();
+        const preAppU = round2(cdPre.endNetU);
+        const preAppL = Math.round(cdPre.endNetL);
+        const preAppComb = round2(preAppU + preAppL / coRate);
+        let runPostU = round2(wbCloseU);
+        let runPostL = Math.round(wbCloseL);
+        let runAllU = round2(wbCloseU + preAppU);
+        let runAllL = Math.round(wbCloseL + preAppL);
+        let preCarryComb = preAppComb >= 0.05 ? preAppComb : 0;
+        let pending = [];
+        const lbpTol = Math.round(0.05 * coRate);
+        const absorbLeg = (field, rem, wantSign) => {
+          for (let pi = 0; pi < pending.length && rem > (field === 'netLbp' ? CF_LBP_DUST : 0.005); pi++) {
+            const p = pending[pi];
+            if (wantSign > 0 && p[field] > (field === 'netLbp' ? CF_LBP_DUST : 0.005)) {
+              const take = Math.min(p[field], rem);
+              p[field] = field === 'netLbp' ? Math.round(p[field] - take) : round2(p[field] - take);
+              rem = field === 'netLbp' ? Math.round(rem - take) : round2(rem - take);
+            } else if (wantSign < 0 && p[field] < -(field === 'netLbp' ? CF_LBP_DUST : 0.005)) {
+              const take = Math.min(-p[field], rem);
+              p[field] = field === 'netLbp' ? Math.round(p[field] + take) : round2(p[field] + take);
+              rem = field === 'netLbp' ? Math.round(rem - take) : round2(rem - take);
+            }
+          }
+          return rem;
+        };
+        for (let di = 0; di < postDates.length; di++) {
+          const dt = postDates[di];
+          const [iu, ou, il, ol] = coPerDay.get(dt) || [0, 0, 0, 0];
+          const dayNetUsd = round2(iu - ou);
+          const dayNetLbp = Math.round(il - ol);
+          const dayNetCombined = round2(dayNetUsd + dayNetLbp / coRate);
+          runPostU = round2(runPostU + dayNetUsd);
+          runPostL = Math.round(runPostL + dayNetLbp);
+          runAllU = round2(runAllU + dayNetUsd);
+          runAllL = Math.round(runAllL + dayNetLbp);
+          const runPostCombined = round2(runPostU + runPostL / coRate);
+          const runAllCombined = round2(runAllU + runAllL / coRate);
+          const effZeroTarget = preAppComb >= 0.05 ? runAllCombined : runPostCombined;
+          if (Math.abs(effZeroTarget) < 0.05) {
+            pending.length = 0;
+            preCarryComb = 0;
+            continue;
+          }
+          if (Math.abs(dayNetCombined) < 0.05 && Math.abs(dayNetUsd) < 0.05 && Math.abs(dayNetLbp) <= lbpTol) continue;
+          let resUsd = dayNetUsd;
+          let resLbp = dayNetLbp;
+          if (dayNetCombined < -0.005 && preCarryComb > 0.005) {
+            let remTakeUsd = Math.min(preCarryComb, round2(-dayNetCombined));
+            preCarryComb = round2(preCarryComb - remTakeUsd);
+            if (resUsd < -0.005 && remTakeUsd > 0.0001) {
+              const takeU = Math.min(round2(-resUsd), remTakeUsd);
+              resUsd = round2(resUsd + takeU);
+              remTakeUsd = round2(remTakeUsd - takeU);
+            }
+            if (resLbp < -CF_LBP_DUST && remTakeUsd > 0.0001) {
+              const takeL = Math.min(Math.round(-resLbp), Math.round(remTakeUsd * coRate));
+              resLbp = Math.round(resLbp + takeL);
+            }
+          }
+          if (resUsd < -0.005) resUsd = round2(-absorbLeg('netUsd', round2(-resUsd), 1));
+          else if (resUsd > 0.005) resUsd = round2(absorbLeg('netUsd', resUsd, -1));
+          if (resLbp < -CF_LBP_DUST) resLbp = -Math.round(absorbLeg('netLbp', -resLbp, 1));
+          else if (resLbp > CF_LBP_DUST) resLbp = Math.round(absorbLeg('netLbp', resLbp, -1));
+          pending = pending.filter(p => {
+            p.netCombined = round2(p.netUsd + p.netLbp / coRate);
+            return Math.abs(p.netCombined) >= 0.05;
+          });
+          const resComb = round2(resUsd + resLbp / coRate);
+          if (Math.abs(resComb) >= 0.05) {
+            pending.push({
+              date: dt,
+              company: coName,
+              cutoff: coCutoff,
+              inUsd: round2(iu),
+              outUsd: round2(ou),
+              netUsd: resUsd,
+              netLbp: resLbp,
+              netCombined: resComb,
+              showCompany: coKey === 'manufacturing-group'
+            });
+          }
+        }
+        for (let pi = 0; pi < pending.length; pi++) unclosedDays.push(pending[pi]);
+      }
+      unclosedDays.sort((a, b) => (a.date > b.date ? -1 : (a.date < b.date ? 1 : a.company.localeCompare(b.company))));
+    }
+
+    const val = {
+      cutoff,
+      confirmedUsd,
+      keyedSinceUsd,
+      liveUsd,
+      confirmedLbp,
+      keyedSinceLbp,
+      liveLbp,
+      postCutoffUsd,
+      upToCutoffDeltaUsd,
+      unclosedDays
+    };
+    _cashTillSplitMemo = { key: memoKey, val };
+    return val;
   }
 
   // When an entry was keyed in the app, read from its own id (`se-<time in base 36>-<6 chars>`). A workbook row
@@ -28465,7 +28697,7 @@
       STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI,
       filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
       canEnterForm, canAccessPbiPage, canViewPayrollDollarAmounts, allowedCompanyNames,
-      SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
+      SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, getDateGrainCatalog,
       getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml,
       buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
     });
@@ -40620,8 +40852,10 @@
     });
 
     const deriveSupRole = (s, cashAmt) => {
-      const hasMat = Math.abs(Number(s.ap_material || 0)) > 0.005 || Number(s.raw_loads || 0) > 0;
+      // Raw loads count a hauler's trucked loads too, so loads alone never make a material leg
+      // when the party has a transport leg (a pure hauler is not Multi-Leg).
       const hasHaul = Math.abs(Number(s.ap_haulage || 0)) > 0.005;
+      const hasMat = Math.abs(Number(s.ap_material || 0)) > 0.005 || (Number(s.raw_loads || 0) > 0 && !hasHaul);
       const hasExp = Math.abs(Number(s.ap_expense || 0)) > 0.005;
       const legs = (hasMat ? 1 : 0) + (hasHaul ? 1 : 0) + (hasExp ? 1 : 0);
       if (legs >= 2) return 'Multi-Leg';
@@ -52669,6 +52903,7 @@
     moves: opts => buildCashTillMoves(opts || {}),
     daily: opts => buildDailyTillSheetRows(opts || {}),
     sheet: co => { const mm = getModel(co); return (mm && mm.cash_flow_sheet) || null; },
+    split: opts => computeCashTillCutoffSplit(opts || {}),
     setDates: (from, to) => setDateFilter({ from, to }),
     indMoves: (ind, co, o) => buildIndustryCashMoves(ind, co, o || {}),
     kpi: co => getKPI(co),
@@ -53295,7 +53530,7 @@
       card.classList.toggle('cf-till-scrubbed', !atEnd);
       card.classList.toggle('cf-till-sub-stale', !atEnd && spec.id !== 'cfTillValTot');
       const pill = card.querySelector('.cf-till-asof');
-      if (pill) {
+      if (pill && !pill.classList.contains('cf-unclosed-pill')) {
         if (atEnd) {
           pill.innerHTML = spec.pillRestHtml();
           delete pill.dataset.cfScrubNum;
@@ -53355,6 +53590,12 @@
     // Other industries without a whole cash book yet (siblingCashBook, owner 2026-11-13): no till balance anywhere. The
     // cards show the cash entries loaded so far and the sheets still missing; the register lists those real entries.
     const sibTillOff = !tillIsMfg && k.till_tracked === false;
+    const tillSplit = (!tillAsOf && !sibTillOff) ? computeCashTillCutoffSplit({ company: STATE.company, user: u }) : null;
+    const unclosedDays = (tillSplit && tillSplit.unclosedDays) || [];
+    const unclosedByDate = new Map();
+    for (let i = 0; i < unclosedDays.length; i++) {
+      if (!unclosedByDate.has(unclosedDays[i].date)) unclosedByDate.set(unclosedDays[i].date, unclosedDays[i]);
+    }
     const sibMissing = sibTillOff && Array.isArray(k.till_missing) ? k.till_missing : [];
     const sibLoadedLbp = Math.abs(Number(k.live_in_lbp || 0)) > 1 || Math.abs(Number(k.live_out_lbp || 0)) > 1;
     const sibTillOffCardsHtml = sibTillOff ? `${insightCard({
@@ -53390,7 +53631,7 @@
     const focusParty = STATE.cfFocusParty || '';
     const focusPartyNorm = norm(focusParty);
 
-    const scrubDrillBaseMoves = (focusDate && STATE.cfFocusDateFromScrub && tillRange && (focusDate < (tillRange.from || '') || focusDate > (tillRange.to || '')))
+    const scrubDrillBaseMoves = (focusDate && tillRange && (focusDate < (tillRange.from || '') || focusDate > (tillRange.to || '')) && (STATE.cfFocusDateFromScrub || unclosedByDate.has(focusDate)))
       ? buildCashTillMoves({ user: u, ignorePeriod: true })
       : allMoves;
     const drillScopedMoves = (!focusDate && !focusYm && !focusPartyNorm) ? allMoves : scrubDrillBaseMoves.filter(mv => {
@@ -53519,7 +53760,7 @@
     const chipFilteredDaily = (!focusYm && !q && (STATE.chipFilter || 'all') === 'all') ? allDailyRows : allDailyRows.filter(dRow => {
       if (focusYm && dRow.ym !== focusYm) return false;
       const cfChip = (!isHoldingCf && STATE.chipFilter === 'cf_extd') ? 'all' : (STATE.chipFilter || 'all');
-      if (cfChip === 'cf_day_nonzero' && Math.abs(dRow.close_combined) < 0.05) return false;
+      if (cfChip === 'cf_day_nonzero' && Math.abs(dRow.close_combined) < 0.05 && !unclosedByDate.has(dRow.date)) return false;
       if (cfChip === 'cf_day_lbp' && Math.abs(dRow.in_lbp) <= 1 && Math.abs(dRow.out_lbp) <= 1 && Math.abs(dRow.close_lbp) <= 5) return false;
       if (cfChip === 'cf_day_neg' && dRow.close_combined >= -0.05) return false;
       if (q && !`${dRow.date} ${fmtDateDMY(dRow.date)} ${dRow.dow}`.toLowerCase().includes(q)) return false;
@@ -53661,14 +53902,19 @@
         <div class="cockpit-pills insight-grid cols-3">
           ${sibTillOff ? sibTillOffCardsHtml : `${insightCard({
             label: 'USD Cash Till ($)',
-            badgeHtml: tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
+            badgeHtml: (!tillAsOf && unclosedDays.length > 0)
+              ? `<button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" ${unclosedDays.length === 1 ? `data-cf-focus-date="${esc(unclosedDays[0].date)}"` : 'data-cf-unclosed-jump="1"'} data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(unclosedDays.length)}</b> <span>${unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>`
+              : tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
             val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
             valCls: 'emerald',
             id: 'cfTillValUsd',
             pct: 100,
-            sub: Math.abs(tillLbp) > CF_LBP_DUST
-              ? `Combined <b data-no-i18n="1">${fmtUSD(tillTot, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
-              : `Reconciled @ ${fmtNum(rate, 0)} LL/$`,
+            subCls: tillSplit ? 'cf-till-split-sub' : '',
+            sub: tillSplit
+              ? `<span class="cf-till-split" id="cfTillCutoffSplit"><span class="cf-till-split-seg" data-cf-split="confirmed"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(tillSplit.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(tillSplit.confirmedUsd, 2))}</b></span><span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg" data-cf-split="keyed"><span>Keyed since</span>: <b class="${tillSplit.keyedSinceUsd > 0.005 ? 'good' : (tillSplit.keyedSinceUsd < -0.005 ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(tillSplit.keyedSinceUsd, 2))}</b></span>${Math.abs(tillLbp) > CF_LBP_DUST ? `<span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg"><span>Combined</span> <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(tillTot, 2))}</b></span>` : ''}</span>`
+              : (Math.abs(tillLbp) > CF_LBP_DUST
+                ? `Combined <b data-no-i18n="1">${fmtUSD(tillTot, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
+                : `Reconciled @ ${fmtNum(rate, 0)} LL/$`),
             tone: 'emerald'
           })}
           ${insightCard({
@@ -53743,6 +53989,26 @@
         </div>
 
         ${renderCashflowBehindNoteHtml(getActiveCashflowBehindItems(u))}
+
+        ${(tillSplit && unclosedDays.length > 0) ? (() => {
+          const stripCutoff = unclosedDays.reduce((m, x) => (x.cutoff && x.cutoff > m ? x.cutoff : m), '') || tillSplit.cutoff;
+          return `
+        <div class="cf-unclosed-strip" id="cfUnclosedDaysStrip" role="status">
+          <span class="badge badge-warn cf-unclosed-count"><b data-no-i18n="1">${fmtNum(unclosedDays.length)}</b> <span>${unclosedDays.length === 1 ? 'Unclosed App Cash Day' : 'Unclosed App Cash Days'}</span></span>
+          <span class="cf-unclosed-txt"><span>Workbook days close to $0, while cash keyed after</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(stripCutoff))}</b> <span>has no closing hand-over yet:</span></span>
+          <span class="cf-unclosed-pills">
+            ${unclosedDays.map(ud => {
+              const onDay = focusDate === ud.date;
+              const hasU = Math.abs(ud.netUsd) >= 0.005;
+              const hasL = Math.abs(ud.netLbp) > CF_LBP_DUST;
+              const amtHtml = (hasU && hasL)
+                ? `<span class="cf-unclosed-amt ${ud.netUsd > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(ud.netUsd, 2))}</span> <span class="cf-till-sep" aria-hidden="true">·</span> <span class="cf-unclosed-amt ${ud.netLbp > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtSignedLBP(ud.netLbp))}</span>`
+                : `<span class="cf-unclosed-amt ${(hasU ? ud.netUsd : (hasL ? ud.netLbp : ud.netCombined)) > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(hasU ? fmtSignedUSD(ud.netUsd, 2) : fmtSignedLBP(ud.netLbp))}</span>`;
+              return `<button type="button" class="cf-unclosed-day-pill${onDay ? ' is-active' : ''}" data-cf-focus-date="${esc(ud.date)}" aria-pressed="${onDay ? 'true' : 'false'}">${ud.showCompany ? `<span class="cf-unclosed-co" data-no-i18n="1">${esc(ud.company)}</span> ` : ''}<b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(ud.date))}</b> ${amtHtml}</button>`;
+            }).join('')}
+          </span>
+        </div>`;
+        })() : ''}
 
         ${(!isDailyMode && appOnlyMoves.length && cfChip === 'cf_app_only') ? `
         <div class="cf-app-only-strip" id="cfAppOnlyStrip" role="status">
@@ -53839,9 +54105,11 @@
             </thead>
             <tbody>
               ${shownDaily.map(d => {
-                const statusBadge = Math.abs(d.close_combined) < 0.05
-                  ? '<span class="badge badge-ok" style="margin-left:5px">Balanced $0</span>'
-                  : (d.close_combined < 0 ? '<span class="badge badge-warn" style="margin-left:5px">Timing Deficit</span>' : '');
+                const statusBadge = unclosedByDate.has(d.date)
+                  ? '<span class="badge badge-warn cf-unclosed-day-badge" style="margin-left:5px">Unclosed Day</span>'
+                  : (Math.abs(d.close_combined) < 0.05
+                    ? '<span class="badge badge-ok" style="margin-left:5px">Balanced $0</span>'
+                    : (d.close_combined < 0 ? '<span class="badge badge-warn" style="margin-left:5px">Timing Deficit</span>' : ''));
                 return `
                 <tr class="cf-day-row" data-cf-focus-date="${esc(d.date)}" title="Click to inspect ${fmtNum(d.entries_cnt)} cash entries on ${esc(fmtDateDMY(d.date))}">
                   <td class="mono"><strong>${esc(fmtDateDMY(d.date))}</strong> <span class="mu">${esc(d.dow)}</span></td>
@@ -181994,7 +182262,7 @@
       case 'ins_claims': wsHtml = renderInsuranceClaims('main'); break;
       case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
       case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
-      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, activeUser, seatLens, canViewPayrollDollarAmounts, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
+      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, activeUser, seatLens, canViewPayrollDollarAmounts, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, activeUser, seatLens, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
@@ -183260,6 +183528,35 @@
         STATE.cfFocusByChip = false;
         STATE.shown = {};
         renderApp();
+        return;
+      }
+
+      const cfUnclosedJumpBtn = t.closest('[data-cf-unclosed-jump]');
+      if (cfUnclosedJumpBtn && container.contains(cfUnclosedJumpBtn)) {
+        e.stopPropagation();
+        const tillR = periodRange(STATE.period);
+        const splitNow = computeCashTillCutoffSplit();
+        const hasOutOfWin = Boolean(tillR && splitNow && (splitNow.unclosedDays || []).some(d => d.date < (tillR.from || '') || d.date > (tillR.to || '')));
+        STATE.cfFocusDate = '';
+        STATE.cfFocusDateFromScrub = false;
+        clearCfScrubChipState();
+        STATE.cfFocusYm = '';
+        STATE.cfEntryMode = 'daily';
+        STATE.chipFilter = 'cf_day_nonzero';
+        if (STATE.search) {
+          STATE.search = '';
+          const sInp = $('tableSearchInput');
+          if (sInp) sInp.value = '';
+        }
+        STATE.shown = {};
+        if (hasOutOfWin) {
+          setDateFilter({ reset: true });
+          syncTopbarDateControls();
+        } else {
+          renderApp();
+        }
+        const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
+        if (target) scrollWorkspaceTo(target, 10);
         return;
       }
 
@@ -184865,12 +185162,22 @@
     container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
       ev.stopPropagation();
       const dt = el.getAttribute('data-cf-focus-date') || '';
+      const isUnclosedTrigger = el.classList.contains('cf-unclosed-day-pill') || el.classList.contains('cf-unclosed-pill');
       STATE.cfFocusDate = STATE.cfFocusDate === dt ? '' : dt;
       STATE.cfFocusDateFromScrub = false;
       clearCfScrubChipState();
       STATE.cfFocusYm = '';
       STATE.cfEntryMode = 'entries';
-      if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+      if (isUnclosedTrigger && STATE.cfFocusDate) {
+        STATE.chipFilter = 'all';
+        if (STATE.search) {
+          STATE.search = '';
+          const sInp = $('tableSearchInput');
+          if (sInp) sInp.value = '';
+        }
+      } else if (String(STATE.chipFilter || '').startsWith('cf_day_') || STATE.chipFilter === 'cf_app_only') {
+        STATE.chipFilter = 'all';
+      }
       STATE.shown = {};
       renderApp();
       const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
@@ -184923,7 +185230,7 @@
       const p = el.getAttribute('data-cf-focus-party') || '';
       STATE.cfFocusParty = STATE.cfFocusParty === p ? '' : p;
       STATE.cfEntryMode = 'entries';
-      if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+      if (String(STATE.chipFilter || '').startsWith('cf_day_') || STATE.chipFilter === 'cf_app_only') STATE.chipFilter = 'all';
       STATE.shown = {};
       renderApp();
       const target = $('tillRecentPanel') || $('extEntriesPanel') || $('pbiCfEntriesPanel');
@@ -190434,6 +190741,7 @@
     if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
     _cashMovesCacheVal = null;
+    _cashTillSplitMemo = null;
     _otSnapGlobalCache = { sig: '', data: null };
     if (typeof _hspOpsCache !== 'undefined' && _hspOpsCache) _hspOpsCache.clear();
     _reOpsCache = null;
@@ -191803,6 +192111,7 @@
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
+    cashTillSplit: computeCashTillCutoffSplit,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
     state: STATE,

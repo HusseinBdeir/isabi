@@ -3707,7 +3707,7 @@
               <div class="pbi-kpi-card ${esc(tone)}" ${navAttr}>
                 <div class="k">${esc(c.label)}${c.navPage ? ' <span style="color:var(--brass)">↗</span>' : ''}</div>
                 <div class="v">${esc(c.value)}</div>
-                ${c.sub ? `<div class="d">${esc(c.sub)}</div>` : ''}
+                ${c.subHtml ? `<div class="d">${c.subHtml}</div>` : (c.sub ? `<div class="d">${esc(c.sub)}</div>` : '')}
               </div>
             `;
           }).join('')}
@@ -9022,9 +9022,22 @@
         mvLbpSum = Math.round(Number(k.net_cash_lbp != null ? k.net_cash_lbp : mvLbpSum));
       }
 
+      const pbiRange = typeof ctx.periodRange === 'function' ? ctx.periodRange(STATE.period) : null;
+      const pbiToday = typeof ctx.todayISO === 'function' ? ctx.todayISO() : new Date().toISOString().slice(0, 10);
+      const pbiTillAsOf = Boolean(pbiRange && pbiRange.to && pbiRange.to < pbiToday);
+      const pbiSplit = (!tillOffK(k) && !pbiTillAsOf && typeof ctx.computeCashTillCutoffSplit === 'function')
+        ? ctx.computeCashTillCutoffSplit({ company: STATE.company })
+        : null;
+      const pbiUnclosedByDate = new Map();
+      if (pbiSplit && Array.isArray(pbiSplit.unclosedDays)) {
+        for (let i = 0; i < pbiSplit.unclosedDays.length; i++) {
+          if (!pbiUnclosedByDate.has(pbiSplit.unclosedDays[i].date)) pbiUnclosedByDate.set(pbiSplit.unclosedDays[i].date, pbiSplit.unclosedDays[i]);
+        }
+      }
+
       const filteredDaily = allDailyRows.filter(dRow => {
         if (focusYm && dRow.ym !== focusYm) return false;
-        if (cfChip === 'cf_day_nonzero' && Math.abs(dRow.close_combined) < 0.05) return false;
+        if (cfChip === 'cf_day_nonzero' && Math.abs(dRow.close_combined) < 0.05 && !pbiUnclosedByDate.has(dRow.date)) return false;
         if (cfChip === 'cf_day_lbp' && Math.abs(dRow.in_lbp) <= 1 && Math.abs(dRow.out_lbp) <= 1 && Math.abs(dRow.close_lbp) <= 5) return false;
         if (cfChip === 'cf_day_neg' && dRow.close_combined >= -0.05) return false;
         if (qComb && !`${dRow.date} ${fmtDateDMY(dRow.date)} ${dRow.dow}`.toLowerCase().includes(qComb)) return false;
@@ -9047,7 +9060,15 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Cash Flow & Daily Plant Till', [
-            { label: 'USD Cash Till ($)', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till), 2), sub: `In ${fmtUSD(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow, 0)} · Out ${fmtUSD(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow, 0)}`, tone: 'good' },
+            {
+              label: 'USD Cash Till ($)',
+              value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till), 2),
+              sub: `In ${fmtUSD(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow, 0)} · Out ${fmtUSD(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow, 0)}`,
+              subHtml: pbiSplit
+                ? `<span class="cf-till-split" id="pbiCfTillCutoffSplit"><span class="cf-till-split-seg"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(pbiSplit.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(pbiSplit.confirmedUsd, 2))}</b></span><span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg"><span>Keyed since</span>: <b class="${pbiSplit.keyedSinceUsd > 0.005 ? 'good' : (pbiSplit.keyedSinceUsd < -0.005 ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(pbiSplit.keyedSinceUsd, 2))}</b></span>${pbiUnclosedByDate.size > 0 ? `<span class="cf-till-sep" aria-hidden="true">·</span><button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" data-nav-jump="cashflow" data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(pbiSplit.unclosedDays.length)}</b> <span>${pbiSplit.unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>` : ''}</span>`
+                : '',
+              tone: pbiUnclosedByDate.size > 0 ? 'warn' : 'good'
+            },
             { label: 'LBP Cash Till (LL)', value: tillOffK(k) ? 'Not Tracked Yet' : fmtLL(k.cash_till_lbp || 0), sub: `Rate ${fmtNum(rateLbp, 0)} LL/$`, tone: 'good' },
             { label: 'Closing Cash Till', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till), 2), sub: 'Combined USD + LBP book till', tone: 'brass' },
             { label: 'Cash Inflows (Total)', value: fmtUSD(k.cash_inflow, 0), sub: 'Op. Sales/AR + Treasury/FX in', tone: 'good' },
@@ -9250,9 +9271,11 @@
                 </thead>
                 <tbody>
                   ${shownDaily.map(d => {
-                    const statusBadge = Math.abs(d.close_combined) < 0.05
-                      ? '<span class="badge badge-ok" style="margin-left:5px">Balanced $0</span>'
-                      : (d.close_combined < 0 ? '<span class="badge badge-warn" style="margin-left:5px">Timing Deficit</span>' : '');
+                    const statusBadge = pbiUnclosedByDate.has(d.date)
+                      ? '<span class="badge badge-warn cf-unclosed-day-badge" style="margin-left:5px">Unclosed Day</span>'
+                      : (Math.abs(d.close_combined) < 0.05
+                        ? '<span class="badge badge-ok" style="margin-left:5px">Balanced $0</span>'
+                        : (d.close_combined < 0 ? '<span class="badge badge-warn" style="margin-left:5px">Timing Deficit</span>' : ''));
                     return `
                     <tr class="cf-day-row" data-cf-focus-date="${esc(d.date)}" title="Click to inspect ${fmtNum(d.entries_cnt)} cash entries on ${esc(fmtDateDMY(d.date))}">
                       <td class="mono"><strong>${esc(fmtDateDMY(d.date))}</strong> <span class="mu">${esc(d.dow)}</span></td>

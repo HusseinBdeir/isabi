@@ -14465,7 +14465,16 @@
       "Passkey (FIDO2)": "مفتاح مرور (FIDO2)",
       "SUPERVISOR PIN OR PASSKEY REQUIRED": "مطلوب رمز PIN للمشرف أو مفتاح المرور",
       "Update ready · Reload": "يتوفر تحديث · إعادة التحميل",
-      "You have unsaved form changes. Reload now and discard unsaved edits?": "لديك تعديلات نموذج غير محفوظة. هل تريد إعادة التحميل الآن وتجاهل التعديلات غير المحفوظة؟"
+      "You have unsaved form changes. Reload now and discard unsaved edits?": "لديك تعديلات نموذج غير محفوظة. هل تريد إعادة التحميل الآن وتجاهل التعديلات غير المحفوظة؟",
+      "Confirmed to": "مؤكّد حتى",
+      "Keyed since": "مسجّل بعدها",
+      "Unclosed Day": "يوم غير مُقفَل",
+      "Unclosed Days": "أيام غير مُقفَلة",
+      "Unclosed App Cash Day": "يوم نقدي في التطبيق غير مُقفَل",
+      "Unclosed App Cash Days": "أيام نقدية في التطبيق غير مُقفَلة",
+      "Workbook days close to $0, while cash keyed after": "أيام الدفتر تُقفَل على 0$، بينما النقد المسجّل بعد",
+      "has no closing hand-over yet:": "لم يُسلَّم إقفاله بعد:",
+      "Workbook days close to $0, while cash keyed since the last update has not closed to $0": "أيام الدفتر تُقفَل على 0$، بينما النقد المسجّل منذ آخر تحديث لم يُقفَل على 0$"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -28912,7 +28921,16 @@
       "Passkey (FIDO2)": "Clé d'accès (FIDO2)",
       "SUPERVISOR PIN OR PASSKEY REQUIRED": "PIN OU CLÉ D'ACCÈS SUPERVISEUR REQUIS",
       "Update ready · Reload": "Mise à jour prête · Recharger",
-      "You have unsaved form changes. Reload now and discard unsaved edits?": "Vous avez des modifications non enregistrées dans le formulaire. Recharger maintenant et annuler les saisies non enregistrées ?"
+      "You have unsaved form changes. Reload now and discard unsaved edits?": "Vous avez des modifications non enregistrées dans le formulaire. Recharger maintenant et annuler les saisies non enregistrées ?",
+      "Confirmed to": "Confirmé au",
+      "Keyed since": "Saisi depuis",
+      "Unclosed Day": "Journée non clôturée",
+      "Unclosed Days": "Journées non clôturées",
+      "Unclosed App Cash Day": "Journée caisse appli non clôturée",
+      "Unclosed App Cash Days": "Journées caisse appli non clôturées",
+      "Workbook days close to $0, while cash keyed after": "Les journées du classeur clôturent à 0 $, tandis que la caisse saisie après le",
+      "has no closing hand-over yet:": "n'a pas encore de remise de clôture :",
+      "Workbook days close to $0, while cash keyed since the last update has not closed to $0": "Les journées du classeur clôturent à 0 $, tandis que la caisse saisie depuis la dernière mise à jour n'est pas revenue à 0 $"
     }
   };
 
@@ -29637,6 +29655,7 @@
         'html[dir="rtl"] .ceo-pr-sub,',
         'html[dir="rtl"] .ceo-pr-meta,',
         'html[dir="rtl"] .pbi-panel-sub,',
+        'html[dir="rtl"] .pbi-kpi-card .d,',
         'html[dir="rtl"] .cockpit-pill-sub,',
         'html[dir="rtl"] .sentinel-detail,',
         'html[dir="rtl"] .dops-kpi-unit,',
