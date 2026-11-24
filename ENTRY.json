@@ -3,6 +3,12 @@
   "branch": "wt/sup-role-hauler",
   "sha": "19f50f67cae54bdb0f865fdf96fa5387c568539e"
  },
+ "batch": {
+  "at": "2026-11-24T00:45:24Z",
+  "holder": "agy-1eec7159 (tour-video)",
+  "lockId": "8016533efd614281b2d78a7d035a4448",
+  "version": "19.6.434"
+ },
  "gates": [],
  "holder": "THEO hbdei (sup-role-hauler)",
  "id": "20261124T003257Z-506a91b3",
