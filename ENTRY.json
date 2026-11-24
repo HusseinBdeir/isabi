@@ -3,6 +3,12 @@
   "branch": "wt/rep-shift-calendar-icon",
   "sha": "31b7ce5beee9b16af47f53a6795d6b0fd60e53e3"
  },
+ "batch": {
+  "at": "2026-11-24T11:51:04Z",
+  "holder": "THEO hbdei (rep-shift-cal)",
+  "lockId": "fa6008a9cd57422d9c45302e773ad9e1",
+  "version": "19.6.438"
+ },
  "gates": [
   "isabi-app: node build/verify_rep_shift_calendar_icon.mjs"
  ],
