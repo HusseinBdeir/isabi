@@ -3,6 +3,12 @@
   "branch": "wt/sales-loads-vat-basis",
   "sha": "0615fa775f93e32f291cda1ce28db0ae08eb12a6"
  },
+ "batch": {
+  "at": "2026-11-24T09:32:11Z",
+  "holder": "agy-841960da (sales-loads-vat-basis)",
+  "lockId": "11667048c20a448fa7f21d60dd35131a",
+  "version": "19.6.437"
+ },
  "gates": [
   "isabi-app: node build/verify_sales_loads_vat_basis.mjs",
   "isabi-app: node build/verify_mfg.mjs",
