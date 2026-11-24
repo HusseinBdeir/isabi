@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/insp-360-hub",
+  "sha": "3a6a5656a621e2f9985bd29ce7dcac4b8de026c7"
+ },
+ "gates": [
+  "isabi-app: node build/verify_insp_step_and_rates.mjs"
+ ],
+ "holder": "agy-8e9ba45b",
+ "id": "20261124T121837Z-c9729163",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T12:18:37Z",
+ "seenAt": "2026-11-24T12:18:37Z",
+ "state": "waiting",
+ "summary": "360 Inspector period-scoped AR/AP and >25 row stepping, Hub table tab routing, and Hub/Ask ISABI entity + date filters"
+}
