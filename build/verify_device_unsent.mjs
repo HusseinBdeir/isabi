@@ -24,6 +24,8 @@ import {
   effectiveMinSyncShellVer,
   isDeviceUnsentDoc,
   listDeviceUnsentRows,
+  packSyncVoidRefusals,
+  SYNC_VOID_REFUSED_MAX,
   validateDeviceUnsentReport
 } from '../functions/_lib/d1_store.js';
 
@@ -430,6 +432,68 @@ console.log('\n[global fx_rates & vat_rates access]');
     && afterCr.vat_rates.length === 1 && afterCr.vat_rates[0].id === 'vat-test-01'
     && fxRowD1 && fxRowD1.amount === 90000 && !fxRowD1.voided && !forgedRowD1 && Boolean(vatRowD1),
     { sPatch, afterCr, fxRowD1, forgedRowD1, vatRowD1 });
+}
+
+// Owner 2026-11-25: a hold the Owner could only read as "refused by the cloud". The report now carries the status
+// and the server's own words; voids refused for having no reason are named one by one so the device can set them
+// aside (reason `set_aside`) and send the rest.
+console.log('\n[why the cloud refused]');
+{
+  const DEV_R = 'devrefused00006';
+  const vrText = 'Void reason required (min 3 chars): amount $900 >= $500.';
+  let r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_R, count: 3, reason: 'blocked', refusal: { status: 400, code: 'void_reason_required', error: vrText } }) });
+  let row = kv(`device_unsent:u7:${DEV_R}`);
+  ok('a blocked report keeps the status, code and the server text (">=" kept as a sign, no markup characters)',
+    r.status === 200 && row.refusal_status === 400 && row.refusal_code === 'void_reason_required'
+    && row.refusal_text === 'Void reason required (min 3 chars): amount $900 ≥ $500.', row);
+  r = await api('device_unsent', { headers: as(OWNER) });
+  const d = (r.json.devices || []).find(x => x.device_id === DEV_R);
+  ok('the Owner list carries the refusal', d && d.refusal_status === 400 && d.refusal_code === 'void_reason_required' && /≥ \$500/.test(d.refusal_text), d);
+
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_R, count: 2, reason: 'set_aside', refusal: { status: 400, code: 'void_reason_required', error: vrText } }) });
+  row = kv(`device_unsent:u7:${DEV_R}`);
+  ok('reason set_aside is accepted with its refusal', r.status === 200 && row.reason === 'set_aside' && row.count === 2 && row.refusal_status === 400, row);
+
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_R, count: 2, reason: 'offline', refusal: { status: 400, code: 'x', error: 'nope' } }) });
+  row = kv(`device_unsent:u7:${DEV_R}`);
+  ok('a refusal on any other reason is dropped', r.status === 200 && row.reason === 'offline' && !('refusal_status' in row), row);
+
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_R, count: 2, reason: 'blocked', refusal: { status: 200, code: 'ok', error: 'fine' } }) });
+  row = kv(`device_unsent:u7:${DEV_R}`);
+  ok('a refusal whose status is not 4xx/5xx is dropped', r.status === 200 && !('refusal_status' in row), row);
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_R, count: 2, reason: 'blocked', refusal: { status: 503, code: 'Bad Code!', error: '<b>repair</b> "now" ' + 'x'.repeat(400) } }) });
+  row = kv(`device_unsent:u7:${DEV_R}`);
+  ok('a bad code is blanked and the text is cleaned and cut to 240 characters',
+    row.refusal_status === 503 && row.refusal_code === '' && !/[<>"]/.test(row.refusal_text) && row.refusal_text.length <= 240 && row.refusal_text.startsWith('b repair /b now'), row);
+  ok('a report from an older device (no refusal) still works', validateDeviceUnsentReport(report({ reason: 'blocked' }), NOW).ok === true
+    && validateDeviceUnsentReport(report({ reason: 'blocked' }), NOW).val.refusal === null);
+
+  // The sync names every void it refuses (not only the first)
+  const old = '2026-10-01';
+  const sp = await api('sync', {
+    method: 'POST', headers: as(OWNER),
+    body: { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: {
+      minShellVer: effectiveMinSyncShellVer(),
+      customRecords: {
+        expenses: [
+          { id: 'exp-vr-1', company: 'WTC', date: old, amount_usd: 900, voided: true },
+          { id: 'exp-vr-2', company: 'WTC', date: old, amount_usd: 950, voided: true },
+          { id: 'exp-vr-ok', company: 'WTC', date: old, amount_usd: 900, voided: true, void_reason: 'Duplicate entry' }
+        ]
+      },
+      industryRowEdits: { 'Hospitality::Zz Table::r1': { company: 'Blanca', voided: true, domainTblKey: 'hsp_zz', amount_usd: 900, date: old } }
+    } } }
+  });
+  const ref = (sp.json && sp.json.refused) || [];
+  const keys = ref.map(x => `${x.kind}:${x.table}:${x.id}`).sort();
+  ok('a sync with voids that lack a reason -> 400 naming each refused void (kind, table, id, error), first one kept on top for older devices',
+    sp.status === 400 && sp.json.code === 'void_reason_required' && sp.json.refusedTotal === 3
+    && JSON.stringify(keys) === JSON.stringify(['customRecords:expenses:exp-vr-1', 'customRecords:expenses:exp-vr-2', 'industryRowEdits:hsp_zz:Hospitality::Zz Table::r1'])
+    && ref.every(x => /Void reason required/.test(x.error))
+    && sp.json.table === ref[0].table && sp.json.id === ref[0].id && sp.json.error === ref[0].error, sp.json);
+  const many = Array.from({ length: 60 }, (_, i) => ({ kind: 'customRecords', table: 'expenses', id: 'e' + i, error: 'x' }));
+  const packed = packSyncVoidRefusals(many);
+  ok('at most 50 are listed, with the total', packed.refused.length === SYNC_VOID_REFUSED_MAX && SYNC_VOID_REFUSED_MAX === 50 && packed.refusedTotal === 60 && packSyncVoidRefusals([]) === null, { n: packed.refused.length, t: packed.refusedTotal });
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);
