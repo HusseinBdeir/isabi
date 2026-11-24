@@ -85,6 +85,16 @@
 /* ---------- Saved views: "Views" beside "Columns" on every workspace table ---------- */
 .tbl-col-mgr-wrap .sv-wrap { position: relative; display: inline-flex; }
 .sv-trigger-btn { display: inline-flex; align-items: center; gap: 5px; }
+@media (min-width: 861px) {
+  .panel-card:has(.sv-pop:not([hidden])),
+  .pbi-panel:has(.sv-pop:not([hidden])),
+  .panel:has(.sv-pop:not([hidden])),
+  .pa-subgrid-box:has(.sv-pop:not([hidden])) {
+    overflow: visible !important;
+    position: relative;
+    z-index: 35;
+  }
+}
 .sv-pop {
   position: absolute; top: calc(100% + 6px); inset-inline-end: 0; width: 300px; max-width: calc(100vw - 24px);
   background: var(--surface); color: var(--ink); border: 1px solid var(--brass-border); border-top: 3px solid var(--brass);
@@ -117,7 +127,7 @@
 
 @media (max-width: 860px) {
   .apv-live-card { inset-inline: 12px; bottom: 76px; width: auto; }
-  .sv-pop { position: fixed; inset-inline: 12px; top: auto; bottom: 76px; width: auto; }
+  .sv-pop { position: fixed; inset-inline: 12px; top: auto; bottom: 76px; width: auto; max-width: calc(100vw - 24px); max-height: min(420px, 64vh); overflow-y: auto; z-index: 2650; }
   .sv-name-input { font-size: 16px; }
 }
 @media (pointer: coarse) {
@@ -269,6 +279,19 @@
   padding: 8px; display: grid; gap: 6px;
 }
 .vlog-combo-menu.is-drop-up { top: auto; bottom: calc(100% + 5px); }
+@media (max-width: 860px) {
+  .vlog-combo-menu,
+  .vlog-combo-menu.is-drop-up {
+    position: fixed;
+    inset-inline: 12px;
+    top: auto;
+    bottom: 76px;
+    width: auto;
+    max-width: calc(100vw - 24px);
+    z-index: 2650;
+  }
+  .vlog-combo-search { font-size: 16px; }
+}
 .vlog-combo-search {
   width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--line-strong);
   border-radius: 6px; background: var(--surface-2); color: var(--ink); font-size: 12.5px;

@@ -1017,8 +1017,17 @@
       return { ok: true, filled: Math.max(1, filled), parsed };
     }
 
-    // Switch Smart Entry modal tab if voice clearly names another form
-    if (parsed.formType && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
+    // Switch Smart Entry modal tab if voice clearly names another permitted form in the active industry
+    const curIndForVoice = (D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+    const isMfgForVoice = !curIndForVoice || curIndForVoice === 'Manufacturing';
+    const isFleetForVoice = (D && typeof D.isFleetUniversalIndustry === 'function') ? D.isFleetUniversalIndustry(curIndForVoice) : true;
+    const mfgOnlyForVoice = D && D.MFG_ONLY_MODAL_FORMS;
+    const voiceTargetAllowed = Boolean(
+      parsed.formType &&
+      (isMfgForVoice || !(mfgOnlyForVoice && mfgOnlyForVoice.has(parsed.formType))) &&
+      (isFleetForVoice || (parsed.formType !== 'equipment' && parsed.formType !== 'driver'))
+    );
+    if (voiceTargetAllowed && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
       D.openEntryModal(parsed.formType, null, { forceSwitch: true });
     }
 

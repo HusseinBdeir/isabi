@@ -1873,12 +1873,17 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   width: min(360px, 88vw);
   min-width: 100%;
 }
-@media (max-width: 768px) {
+@media (max-width: 860px) {
+  .geo-place-menu,
   #wrap_f_map_region_search .geo-place-menu {
     left: 0;
     right: 0;
     width: 100%;
     min-width: 0;
+  }
+  .geo-place-inline-anchor .geo-place-menu {
+    width: min(320px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
   }
 }
 [data-theme="dark"] .geo-place-menu {

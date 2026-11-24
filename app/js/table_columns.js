@@ -1112,6 +1112,17 @@
     return null;
   }
 
+  function syncPopoverAlignLeft(popover) {
+    if (!popover) return;
+    popover.classList.remove('align-left');
+    if ((window.innerWidth || 1280) > 860) {
+      try {
+        const r = popover.getBoundingClientRect();
+        if (r.left < 12) popover.classList.add('align-left');
+      } catch (_) {}
+    }
+  }
+
   function mountTableControls(table, idx) {
     const headRow = table.querySelector('thead tr');
     if (!headRow) return;
@@ -1249,6 +1260,7 @@
             popover.innerHTML = renderPopoverInnerHtml(table);
             popover.hidden = false;
             triggerBtn.setAttribute('aria-expanded', 'true');
+            syncPopoverAlignLeft(popover);
           }
         });
 
@@ -1311,6 +1323,7 @@
           pop.innerHTML = renderPopoverInnerHtml(table);
           pop.hidden = false;
           trig.setAttribute('aria-expanded', 'true');
+          syncPopoverAlignLeft(pop);
         }
       }
     }

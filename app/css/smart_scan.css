@@ -236,6 +236,22 @@ body.kiosk-locked #mobileSmartScanBtn {
   flex-direction: column;
   gap: 3px;
 }
+.ss-sample-menu[hidden] {
+  display: none !important;
+}
+@media (max-width: 860px) {
+  .ss-sample-menu {
+    position: fixed;
+    inset-inline: 12px;
+    top: auto;
+    bottom: 76px;
+    width: auto;
+    max-width: calc(100vw - 24px);
+    max-height: 60vh;
+    overflow-y: auto;
+    z-index: 2650;
+  }
+}
 
 .ss-sample-hdr {
   padding: 4px 8px 5px;

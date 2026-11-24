@@ -45,9 +45,9 @@
   ]);
 
   const MFG_ONLY_FORMS = new Set([
-    'sales', 'raw', 'vatinvoice', 'pricerule', 'fuel', 'malfunction',
-    'companyequipment', 'defect', 'repair', 'oillog', 'partlog', 'triprate',
-    'warehousestock', 'jv', 'freelance', 'logistics', 'product'
+    'sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm',
+    'creditterm', 'grouptransfer', 'raw', 'jv', 'fuel', 'repair', 'defect', 'oillog',
+    'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment', 'logistics'
   ]);
 
   const RDL_VERTICAL_INDUSTRY = {
@@ -1323,13 +1323,15 @@
       vatrate: 'vat_rates', currency: 'currencies'
     };
 
+    const mfgOnlyFormsSet = _ctx.MFG_ONLY_MODAL_FORMS || MFG_ONLY_FORMS;
     formGroups.forEach(grp => {
-      const cleanGrpTitle = String((grp && grp.title) || '').replace(/^\d+\s*·\s*/, '');
+      const cleanGrpTitle = String((grp && (grp.label || grp.title)) || '').replace(/^\d+[.·]\s*/, '');
       ((grp && grp.forms) || []).forEach(f => {
         if (!f || !f.id) return;
         if (!_ctx.canEnterForm || !_ctx.canEnterForm(f.id, u)) return;
         if ((f.id === 'vatinvoice' || f.id === 'vatrate') && _ctx.canSeeTaxBreakdown && !_ctx.canSeeTaxBreakdown(u)) return;
-        const isMfgForm = MFG_ONLY_FORMS.has(f.id);
+        if ((f.id === 'equipment' || f.id === 'driver') && _ctx.isFleetUniversalIndustry && !_ctx.isFleetUniversalIndustry(pctx.activeInd)) return;
+        const isMfgForm = mfgOnlyFormsSet.has(f.id);
         if (isMfgForm && !pctx.permittedIndustries.has('Manufacturing')) return;
 
         const linkedTbl = formToTableVolume[f.id] || '';

@@ -56,91 +56,98 @@
     {
       id: 'sales',
       icon: 'sales',
-      label: '1. Sales & Receivables',
+      label: 'Sales & Receivables',
       forms: [
         { id: 'sales', label: 'Sales Ticket', badge: 'bhf_salesticket', crKey: 'sales_tickets', hubView: 'sales', pbiPage: 'p02_sales', title: 'New Sales Ticket' },
-        { id: 'receipt', label: 'Customer Receipt (AR)', badge: 'bhf_customerreceipt', crKey: 'receipts', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Settlement' },
+        { id: 'receipt', label: 'Customer Receipt', badge: 'bhf_customerreceipt', crKey: 'receipts', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Settlement' },
         { id: 'vatinvoice', label: 'VAT Invoice', badge: 'bhf_vatinvoice', crKey: 'vat_invoices', hubView: 'customers', pbiPage: 'p06_ar', title: 'New VAT Invoice' },
-        { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', hubView: 'pricing', pbiPage: 'p03_pricing', title: 'New Price Agreement' },
-        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Credit Terms' }
+        { id: 'pricerule', label: 'Customer Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', hubView: 'pricing', pbiPage: 'p03_pricing', title: 'New Price Agreement' },
+        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Credit Terms' },
+        // One entry for a cost passed to another company of the group: posts the sender's recharge ticket (not a sale)
+        // and, when the receiver is a Manufacturing company, the receiver's expense. Table = Sales Tickets view "Group Transfers & Recharges".
+        { id: 'grouptransfer', label: 'Group Transfer', badge: 'bhf_grouptransfer', crKey: 'sales_tickets', hubView: 'sales', pbiPage: 'p16_financial', title: 'New Group Transfer (Cost Passed to Another Company)' }
       ]
     },
     {
       id: 'raw',
-      icon: 'suppliers',
-      label: '2. Purchases, Expenses & AP',
+      icon: 'raw',
+      label: 'Material & Transport',
       forms: [
-        { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
+        { id: 'raw', label: 'Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
+        { id: 'jv', label: 'JV & Partnership', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
+      ]
+    },
+    {
+      id: 'expenses',
+      icon: 'expenses',
+      label: 'Expenses & Payables',
+      forms: [
         { id: 'expense', label: 'Expense', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
-        // One entry for a cost passed to another company of the group: posts the sender's recharge ticket (not a sale)
-        // and, when the receiver is a Manufacturing company, the receiver's expense. Table = Sales Tickets view "Group Transfers & Recharges".
-        { id: 'grouptransfer', label: 'Group Transfer', badge: 'bhf_grouptransfer', crKey: 'sales_tickets', hubView: 'sales', pbiPage: 'p16_financial', title: 'New Group Transfer (Cost Passed to Another Company)' },
-        { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
-        { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
-        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
-        { id: 'document', label: 'Document & Receipt', badge: 'bhf_document', crKey: 'documents', hubView: 'documents', pbiPage: 'p07_ap', title: 'Save Document, Invoice or Receipt' },
-        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
+        { id: 'settlement', label: 'Supplier Settlement', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
+        { id: 'recurringexpense', label: 'Recurring Schedule', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
+        { id: 'document', label: 'Document & Receipt', badge: 'bhf_document', crKey: 'documents', hubView: 'documents', pbiPage: 'p07_ap', title: 'Save Document, Invoice or Receipt' }
       ]
     },
     {
       id: 'fleet',
       icon: 'fleet',
-      label: '3. Fleet, Fuel & Maint.',
+      label: 'Fleet & Warehouse',
       forms: [
-        { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Fuel & Lubricant Intake' },
-        { id: 'malfunction', label: 'Stock Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Stock Discrepancy' },
-        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', hubView: 'fleet_equip', pbiPage: 'p08_fleet', title: 'New Company Fleet Unit (BU Assignment)' },
-        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Defect' },
+        { id: 'fuel', label: 'Diesel & Lubricant', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Fuel & Lubricant Intake' },
         { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Repair' },
+        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Defect' },
         { id: 'oillog', label: 'Oil & Service Log', badge: 'bhf_equipmentoillog', crKey: 'equipment_oil_logs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Oil & Service Log' },
-        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Part Change, Removal & Disposition' },
-        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', hubView: 'fleet_drivers', pbiPage: 'p08_fleet', title: 'New Overtime Trip Rate' }
+        { id: 'warehousestock', label: 'Warehouse Stock', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
+        { id: 'partlog', label: 'Part & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Part Change, Removal & Disposition' },
+        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', hubView: 'fleet_drivers', pbiPage: 'p08_fleet', title: 'New Overtime Trip Rate' },
+        { id: 'malfunction', label: 'Stock Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Stock Discrepancy' },
+        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', hubView: 'fleet_equip', pbiPage: 'p08_fleet', title: 'New Company Fleet Unit' }
       ]
     },
     {
       id: 'payroll',
       icon: 'payroll',
-      label: '4. Payroll & Workforce',
+      label: 'Payroll & Workforce',
       forms: [
         { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', hubView: 'payroll', pbiPage: 'p12_payroll', title: 'New Salary Payment or Bonus' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Staff Attendance' },
-        { id: 'workshift', label: 'Shift & Clock Timing', badge: 'bhf_workshift', crKey: 'work_shifts', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Shift & Clock Timing' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Employment Contract' },
-        { id: 'staffassignment', label: 'Role & Equipment Log', badge: 'bhf_staffassignment', crKey: 'staff_assignments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Staff Role & Equipment Assignment' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Freelance Work' },
+        { id: 'staffassignment', label: 'Role & Equipment Log', badge: 'bhf_staffassignment', crKey: 'staff_assignments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Staff Role & Equipment Assignment' },
+        { id: 'workshift', label: 'Shift & Clock Timing', badge: 'bhf_workshift', crKey: 'work_shifts', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Shift & Clock Timing' },
         { id: 'logistics', label: 'Site Transport', badge: 'bhf_logistics', crKey: 'logistics_allowances', hubView: 'payroll_allowances', pbiPage: 'p12_payroll', title: 'New Site Transport' }
       ]
     },
     {
       id: 'treasury',
       icon: 'cashflow',
-      label: '5. Cash Flow & Treasury',
+      label: 'Cash Flow & Treasury',
       forms: [
-        { id: 'external', label: 'External Entry', badge: 'bhf_external', crKey: 'external_movements', hubView: 'external', pbiPage: 'p11_cash', title: 'New External Cash Entry' },
+        { id: 'external', label: 'External Cash', badge: 'bhf_external', crKey: 'external_movements', hubView: 'external', pbiPage: 'p11_cash', title: 'New External Cash Entry' },
         { id: 'treasury', label: 'Loan & Settlement', badge: 'bhf_loan', crKey: 'loans', hubView: 'ledger_treasury', pbiPage: 'p11_cash', title: 'New Loan or Settlement' },
         { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', hubView: 'conversions', pbiPage: 'p11_cash', title: 'New FX Conversion (USD to LBP)' }
       ]
     },
     {
       id: 'universal',
-      icon: 'globe',
-      label: '6. Universal (All BUs)',
+      icon: 'universal',
+      label: 'Shared · All Entities',
       universalGroup: true,
       forms: [
-        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', hubView: 'reg_customers', pbiPage: 'p06_ar', title: 'New Customer (Universal Registry)', universal: true },
-        { id: 'supplier', label: 'Supplier', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier (Universal Registry)', universal: true },
-        { id: 'product', label: 'Product', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product (Universal Registry)', universal: true },
-        { id: 'item', label: 'Item', badge: 'bhf_item', crKey: 'items', hubView: 'reg_items', pbiPage: 'p07_ap', title: 'New Catalog Item (Universal Registry)', universal: true },
-        { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', hubView: 'reg_categories', pbiPage: 'p07_ap', title: 'New Expense Category (Universal Registry)', universal: true },
-        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Site (Universal Registry)', universal: true },
-        { id: 'region', label: 'Region', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region (Universal Registry)', universal: true },
-        { id: 'equipment', label: 'Equipment', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment (Universal Registry)', universal: true },
-        { id: 'driver', label: 'Driver', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver (Universal Registry)', universal: true },
-        { id: 'staff', label: 'Staff', badge: 'bhf_staffmember', crKey: 'staff_members', hubView: 'reg_staff', pbiPage: 'p12_payroll', title: 'New Staff Member (Universal Registry)', universal: true },
-        { id: 'staffrole', label: 'Staff Role', badge: 'bhf_staffrole', crKey: 'staff_roles', hubView: 'reg_roles', pbiPage: 'p12_payroll', title: 'New Staff Role (Universal Registry)', universal: true },
-        { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New FX Rate (Universal Registry)', universal: true },
-        { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', hubView: 'reg_vat_rates', pbiPage: 'p06_ar', title: 'New VAT Rate (Universal Registry)', universal: true },
-        { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New Currency (Universal Registry)', universal: true }
+        { id: 'customer', univBucket: 'parties', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', hubView: 'reg_customers', pbiPage: 'p06_ar', title: 'New Customer (Universal Registry)', universal: true },
+        { id: 'supplier', univBucket: 'parties', label: 'Supplier', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier (Universal Registry)', universal: true },
+        { id: 'site', univBucket: 'parties', label: 'Site', badge: 'bhf_site', crKey: 'sites', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Site (Universal Registry)', universal: true },
+        { id: 'region', univBucket: 'parties', label: 'Region', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region (Universal Registry)', universal: true },
+        { id: 'staff', univBucket: 'staff', label: 'Staff', badge: 'bhf_staffmember', crKey: 'staff_members', hubView: 'reg_staff', pbiPage: 'p12_payroll', title: 'New Staff Member (Universal Registry)', universal: true },
+        { id: 'staffrole', univBucket: 'staff', label: 'Staff Role', badge: 'bhf_staffrole', crKey: 'staff_roles', hubView: 'reg_roles', pbiPage: 'p12_payroll', title: 'New Staff Role (Universal Registry)', universal: true },
+        { id: 'equipment', univBucket: 'staff', label: 'Equipment', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment (Universal Registry)', universal: true },
+        { id: 'driver', univBucket: 'staff', label: 'Driver', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver (Universal Registry)', universal: true },
+        { id: 'product', univBucket: 'catalog', label: 'Product', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product (Universal Registry)', universal: true },
+        { id: 'item', univBucket: 'catalog', label: 'Item', badge: 'bhf_item', crKey: 'items', hubView: 'reg_items', pbiPage: 'p07_ap', title: 'New Catalog Item (Universal Registry)', universal: true },
+        { id: 'expensecategory', univBucket: 'catalog', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', hubView: 'reg_categories', pbiPage: 'p07_ap', title: 'New Expense Category (Universal Registry)', universal: true },
+        { id: 'fxrate', univBucket: 'catalog', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New FX Rate (Universal Registry)', universal: true },
+        { id: 'vatrate', univBucket: 'catalog', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', hubView: 'reg_vat_rates', pbiPage: 'p06_ar', title: 'New VAT Rate (Universal Registry)', universal: true },
+        { id: 'currency', univBucket: 'catalog', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New Currency (Universal Registry)', universal: true }
       ]
     }
   ];
@@ -739,43 +746,63 @@
   }
 
   // ==================== MODAL GROUP & TAB BAR RENDERER ====================
-  function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
-    if (groupOverride === 'expenses') groupOverride = 'raw';
+  function renderModalTabsHtml(activeForm, canEnterFn, groupOverride, opts) {
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
     const effectiveGroupId = groupOverride === 'comm' ? 'sales' : (groupOverride === 'extended' ? 'treasury' : groupOverride);
     const activeGroup = (effectiveGroupId && FORM_GROUPS.find(g => g.id === effectiveGroupId)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
+    const domainGroups = (opts && Array.isArray(opts.domainGroups)) ? opts.domainGroups : [];
+    const isFleetIndustry = !(opts && opts.isFleetIndustry === false);
+    const domGroupHtml = domainGroups.map(dg =>
+      `<button type="button" class="pa-group-btn pa-dom-group-btn" data-dom-group="${esc(dg.id)}">${dg.icon ? ic(dg.icon) : ''}<span>${esc(dg.label)}</span></button>`
+    ).join('');
+    const sharedGroupHtml = FORM_GROUPS.map(g => {
+      const visibleForms = g.forms.filter(f => !canEnterFn || canEnterFn(f.id));
+      if (!visibleForms.length) return '';
+      return `<button type="button" class="pa-group-btn${g.universalGroup ? ' is-universal-group' : ''} ${g.id === activeGroup.id ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
+    }).join('');
     return `
       <div class="pa-modal-groups">
-        ${FORM_GROUPS.map(g => {
-          const visibleForms = g.forms.filter(f => !canEnterFn || canEnterFn(f.id));
-          if (!visibleForms.length) return '';
-          return `<button type="button" class="pa-group-btn${g.universalGroup ? ' is-universal-group' : ''} ${g.id === activeGroup.id ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
-        }).join('')}
+        ${domGroupHtml}${sharedGroupHtml}
       </div>
       <div class="pa-modal-subtabs${activeGroup.universalGroup ? ' is-universal-subtabs' : ''}">
         ${(() => {
           const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
+          if (activeGroup.universalGroup) {
+            const buckets = [
+              { id: 'parties', label: 'Counterparties & Sites' },
+              { id: 'staff', label: isFleetIndustry ? 'Staff & Fleet' : 'Staff & Roles' },
+              { id: 'catalog', label: 'Catalog, Categories & Tax' }
+            ];
+            const renderTab = f => `<button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}"><span>${esc(f.label)}</span></button>`;
+            const bucketed = buckets.map(b => {
+              const items = vis.filter(f => f.univBucket === b.id);
+              if (!items.length) return '';
+              return `<div class="pa-univ-bucket" data-univ-bucket="${esc(b.id)}"><span class="pa-univ-bucket-lbl">${esc(b.label)}</span><div class="pa-univ-bucket-tabs">${items.map(renderTab).join('')}</div></div>`;
+            }).join('');
+            const leftovers = vis.filter(f => !buckets.some(b => b.id === f.univBucket)).map(renderTab).join('');
+            return bucketed + leftovers;
+          }
           const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
           const isHoldingScope = groupOverride === 'extended' || (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() === 'Holding & Treasury');
           const rawPrTab = showRawPr ? `
-          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Transport Rate agreement">
-            <span>Price Agreement</span>
+          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" data-ui-tip="Add or update a Material &amp; Transport rate agreement">
+            <span>Material &amp; Transport Rate</span>
           </button>` : '';
-          const rawAnchorObj = showRawPr ? (['settlement', 'expense', 'raw'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
+          const rawAnchorObj = showRawPr ? (['raw', 'jv'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
           let html = vis.map(f => {
             const baseTab = `
           <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
-            <span>${esc(f.label)}</span>${f.universal && !activeGroup.universalGroup ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
+            <span>${esc(f.label)}</span>${f.universal && !activeGroup.universalGroup ? '<span class="tbl-univ-tag">All Entities</span>' : ''}
           </button>`;
             if (activeGroup.id === 'sales' && f.id === 'pricerule') {
               return baseTab + `
-          <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" title="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
+          <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" data-ui-tip="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
             <span>Commission Rule</span>
           </button>`;
             }
             if (activeGroup.id === 'treasury' && f.id === 'external' && isHoldingScope && (!canEnterFn || canEnterFn('external'))) {
               return baseTab + `
-          <button type="button" class="modal-tab ${groupOverride === 'extended' && activeForm === 'external' ? 'active' : ''}" data-form="extended" title="Record a Holding Extended Stakeholder Ledger cash inflow, outflow, or opening balance">
+          <button type="button" class="modal-tab ${groupOverride === 'extended' && activeForm === 'external' ? 'active' : ''}" data-form="extended" data-ui-tip="Record a Holding Extended Stakeholder Ledger cash inflow, outflow, or opening balance">
             <span>Extended Entry</span>
           </button>`;
             }

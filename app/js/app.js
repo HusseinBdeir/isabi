@@ -72522,31 +72522,31 @@
     'Holding & Treasury': [
       { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer', title: 'New Intercompany Sister Transfer', prefill: { party: 'WTC', notes: 'Intercompany transfer (voucher match)' } },
       { id: 'hld_extd', form: 'extended', label: 'Extended Entry', title: 'New Extended Stakeholder Entry', prefill: { co: 'Bdeir Holding', extkind: 'Extended', notes: 'Extended stakeholder ledger movement' } },
-      { id: 'hld_split', form: 'jv', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
+      { id: 'hld_split', form: 'jv', domainView: 'hld_partners', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
       { id: 'hld_loan', form: 'treasury', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
       { id: 'hld_exp', form: 'expense', label: 'Holding Shared Expense', title: 'New Holding Corporate Overhead Voucher', prefill: { notes: 'HQ shared services & statutory advisory' } }
     ],
     'Hospitality & Resorts': [
-      { id: 'hsp_pos', form: 'sales', label: 'Venue POS / Chalet Close', title: 'New Resort Venue POS & Chalet Close', prefill: { notes: 'Daily venue POS & beachfront admission close' } },
-      { id: 'hsp_mem', form: 'receipt', label: 'Seasonal Membership Receipt', title: 'New Seasonal Cabana / Chalet Membership Receipt', prefill: { notes: 'Seasonal membership installment collection' } },
-      { id: 'hsp_stk', form: 'raw', label: 'Kitchen & Cellar Intake', title: 'New Commissary, Kitchen & Cellar Purchase Intake', prefill: { notes: 'F&B commissary & cellar stock delivery' } },
-      { id: 'hsp_gen', form: 'fuel', label: 'Generator Diesel & Solar Log', title: 'New Resort Generator Fuel & Solar Runtime Log', prefill: { notes: 'Generator diesel refill & runtime hours' } }
+      { id: 'hsp_pos', form: 'sales', domainView: 'hsp_revenue', label: 'Venue POS / Chalet Close', title: 'New Resort Venue POS & Chalet Close', prefill: { notes: 'Daily venue POS & beachfront admission close' } },
+      { id: 'hsp_mem', form: 'receipt', domainView: 'hsp_memberships', label: 'Seasonal Membership Receipt', title: 'New Seasonal Cabana / Chalet Membership Receipt', prefill: { notes: 'Seasonal membership installment collection' } },
+      { id: 'hsp_stk', form: 'raw', domainView: 'hsp_stock', label: 'Kitchen & Cellar Intake', title: 'New Commissary, Kitchen & Cellar Purchase Intake', prefill: { notes: 'F&B commissary & cellar stock delivery' } },
+      { id: 'hsp_gen', form: 'fuel', domainView: 'hsp_energy', label: 'Generator Diesel & Solar Log', title: 'New Resort Generator Fuel & Solar Runtime Log', prefill: { notes: 'Generator diesel refill & runtime hours' } }
     ],
     'Automotive & Heavy Trading': [
-      { id: 'trd_inv', form: 'sales', label: 'Vehicle / Spare Parts Invoice', title: 'New Commercial Truck VIN or Spare Parts Invoice', prefill: { notes: 'Pre-printed invoice book sale (Korri Auto / Shacman)' } },
-      { id: 'trd_imp', form: 'raw', label: 'Import Shipment & Landed Cost', title: 'New Import Container & Landed Cost Voucher', prefill: { notes: 'FOB + customs duty + ocean freight allocation' } },
-      { id: 'trd_rcpt', form: 'receipt', label: 'Customer AR / Advance', title: 'New Trading Customer Receipt or Advance Deposit', prefill: { notes: 'Customer trade collection or unapplied reservation deposit' } },
-      { id: 'trd_wh', form: 'warehousestock', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
+      { id: 'trd_inv', form: 'sales', domainView: 'trd_sales', label: 'Vehicle / Spare Parts Invoice', title: 'New Commercial Truck VIN or Spare Parts Invoice', prefill: { notes: 'Pre-printed invoice book sale (Korri Auto / Shacman)' } },
+      { id: 'trd_imp', form: 'raw', domainView: 'trd_purchases', label: 'Import Shipment & Landed Cost', title: 'New Import Container & Landed Cost Voucher', prefill: { notes: 'FOB + customs duty + ocean freight allocation' } },
+      { id: 'trd_rcpt', form: 'receipt', domainView: 'trd_receipts', label: 'Customer AR / Advance', title: 'New Trading Customer Receipt or Advance Deposit', prefill: { notes: 'Customer trade collection or unapplied reservation deposit' } },
+      { id: 'trd_wh', form: 'warehousestock', domainView: 'trd_stock', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
     ],
     'Real Estate & Property': [
-      { id: 're_rent', form: 'sales', label: 'Rent Invoice (4235 VAT)', title: 'New Period Lease Rent Invoice (Properties / 4235 S.A.L)', prefill: { notes: 'Scheduled lease rent billing (11% VAT sequence check)' } },
-      { id: 're_rcpt', form: 'receipt', label: 'Tenant Rent / Buyer Instalment', title: 'New Tenant Rent or Deed Sale Instalment Receipt', prefill: { notes: 'Collected lease rent or property sale buyer instalment' } },
+      { id: 're_rent', form: 'sales', domainView: 're_invoicing', label: 'Rent Invoice (4235 VAT)', title: 'New Period Lease Rent Invoice (Properties / 4235 S.A.L)', prefill: { notes: 'Scheduled lease rent billing (11% VAT sequence check)' } },
+      { id: 're_rcpt', form: 'receipt', domainView: 're_receipts', label: 'Tenant Rent / Buyer Instalment', title: 'New Tenant Rent or Deed Sale Instalment Receipt', prefill: { notes: 'Collected lease rent or property sale buyer instalment' } },
       { id: 're_wo', form: 'expense', label: 'Fit-Out / Repair Work Order', title: 'New Building Fit-Out & Maintenance Work Order', prefill: { notes: 'Building maintenance or tenant-rechargeable work order' } },
       { id: 're_dist', form: 'treasury', label: 'Co-Owner NOI Distribution', title: 'New Mulk (/2400 Shares) Co-Owner NOI Distribution', prefill: { notes: 'Owner net operating income payout by /2400 deed share' } }
     ],
     'Insurance & Brokerage': [
-      { id: 'ins_pol', form: 'sales', label: 'Policy / Endorsement', title: 'New Brokerage Policy or Endorsement Schedule', prefill: { notes: 'Policy issuance with Gross Commission & Client Discount' } },
-      { id: 'ins_col', form: 'receipt', label: 'Policyholder Premium Receipt', title: 'New Policyholder Premium Instalment Collection', prefill: { notes: 'Fiduciary client premium instalment collection' } },
+      { id: 'ins_pol', form: 'sales', domainView: 'ins_policies', label: 'Policy / Endorsement', title: 'New Brokerage Policy or Endorsement Schedule', prefill: { notes: 'Policy issuance with Gross Commission & Client Discount' } },
+      { id: 'ins_col', form: 'receipt', domainView: 'ins_billing', label: 'Policyholder Premium Receipt', title: 'New Policyholder Premium Instalment Collection', prefill: { notes: 'Fiduciary client premium instalment collection' } },
       { id: 'ins_rem', form: 'settlement', label: 'Carrier Bordereau Remittance', title: 'New Insurance Carrier Net Premium Remittance', prefill: { notes: 'Carrier statement reconciliation & net remittance' } },
       { id: 'ins_clm', form: 'expense', label: 'Claim FNOL & Surveyor Log', title: 'New Insurance Claim FNOL & Expert Survey Registration', prefill: { notes: 'First Notice of Loss (FNOL) & adjuster assignment' } }
     ]
@@ -72557,7 +72557,11 @@
     if (!ind || ind === 'Manufacturing') return '';
     const uQuick = activeUser();
     const qLens = seatLens(uQuick);
-    const templates = (INDUSTRY_QUICK_ENTRY_TEMPLATES[ind] || []).filter(t => t && canEnterForm(t.form, uQuick) && (!['receipt', 'settlement', 'treasury', 'extended', 'external'].includes(t.form) || qLens.books));
+    const templates = (INDUSTRY_QUICK_ENTRY_TEMPLATES[ind] || []).filter(t => t && (
+      t.domainView
+        ? canEnterDomainForm(t.domainView)
+        : (canEnterForm(t.form, uQuick) && (!['receipt', 'settlement', 'treasury', 'extended', 'external'].includes(t.form) || qLens.books))
+    ));
     if (!templates.length) return '';
     return `
       <div id="modalIndustryQuickBar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
@@ -72568,8 +72572,10 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${canEnterDomainForm(STATE.view) ? `<button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-ind-open-new="${esc(STATE.view)}">+ Domain Register Form</button>` : ''}
           ${templates.map(t => {
-            const isAct = activeTemplateId ? (activeTemplateId === t.id) : (t.form === 'extended' ? STATE.modalGroupOverride === 'extended' : (activeForm === t.form && (t.form !== 'external' || STATE.modalGroupOverride !== 'extended')));
-            return `<button type="button" class="btn ${isAct ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:3px 9px;font-size:11px" data-ind-quick-tpl="${esc(t.id)}" data-ind-quick-form="${esc(t.form)}">${esc(t.label)}</button>`;
+            const isAct = t.domainView
+              ? false
+              : (activeTemplateId ? (activeTemplateId === t.id) : (t.form === 'extended' ? STATE.modalGroupOverride === 'extended' : (activeForm === t.form && (t.form !== 'external' || STATE.modalGroupOverride !== 'extended'))));
+            return `<button type="button" class="btn ${isAct ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:3px 9px;font-size:11px" data-ind-quick-tpl="${esc(t.id)}" data-ind-quick-form="${esc(t.form)}"${t.domainView ? ` data-ind-quick-domain="${esc(t.domainView)}"` : ''}>${esc(t.label)}</button>`;
           }).join('')}
         </div>
       </div>
@@ -75573,6 +75579,54 @@
     ]
   };
 
+  const INDUSTRY_MODAL_DOMAIN_GROUPS = {
+    'Holding & Treasury': [
+      { id: 'dom_commercial', icon: 'hld_interactions', label: 'Intercompany', formKeys: ['hld_interactions'] },
+      { id: 'dom_ops', icon: 'hld_partners', label: 'Partners & Loans', formKeys: ['hld_extended', 'hld_partners', 'hld_loans'] }
+    ],
+    'Hospitality & Resorts': [
+      { id: 'dom_commercial', icon: 'hsp_revenue', label: 'Venue Revenue & Memberships', formKeys: ['hsp_revenue', 'hsp_pos', 'hsp_memberships', 'hsp_tariffs'] },
+      { id: 'dom_ops', icon: 'hsp_stock', label: 'Resort Stock & Utilities', formKeys: ['hsp_stock', 'hsp_energy'] }
+    ],
+    'Automotive & Heavy Trading': [
+      { id: 'dom_commercial', icon: 'trd_sales', label: 'Invoicing & Imports', formKeys: ['trd_sales', 'trd_receipts', 'trd_targets', 'trd_purchases'] },
+      { id: 'dom_ops', icon: 'trd_trucks', label: 'Showroom & Parts', formKeys: ['trd_trucks', 'trd_stock'] }
+    ],
+    'Real Estate & Property': [
+      { id: 'dom_commercial', icon: 're_leases', label: 'Leases, Rent & Sales', formKeys: ['re_leases', 're_invoicing', 're_receipts', 're_sales'] },
+      { id: 'dom_ops', icon: 're_workorders', label: 'Portfolio & Work Orders', formKeys: ['re_workorders'] }
+    ],
+    'Insurance & Brokerage': [
+      { id: 'dom_commercial', icon: 'ins_policies', label: 'Policies & Billing', formKeys: ['ins_policies', 'ins_billing', 'ins_remittances'] },
+      { id: 'dom_ops', icon: 'ins_claims', label: 'Claims & Rates', formKeys: ['ins_claims', 'ins_agreements'] }
+    ]
+  };
+
+  function getPermittedModalDomainGroups(ind, activeSpecKey = '', isEditMode = false) {
+    const rawGroups = INDUSTRY_MODAL_DOMAIN_GROUPS[ind] || [];
+    const list = INDUSTRY_DOMAIN_FORMS_BY_IND[ind] || [];
+    return rawGroups.map(dg => {
+      const forms = dg.formKeys
+        .map(fk => list.find(x => x && x.key === fk))
+        .filter(f => f && (isEditMode ? (f.key === activeSpecKey || canEnterDomainForm(f.key)) : canEnterDomainForm(f.key)))
+        .map(f => ({
+          key: f.key,
+          label: f.label,
+          active: f.key === activeSpecKey,
+          disabled: Boolean((isEditMode && f.key !== activeSpecKey) || !canManageSiblingChronoSchedule(f.key))
+        }));
+      const firstEnabled = forms.find(f => !f.disabled) || forms[0] || null;
+      return {
+        id: dg.id,
+        icon: dg.icon,
+        label: dg.label,
+        forms,
+        firstEnabledKey: firstEnabled ? firstEnabled.key : '',
+        active: Boolean(activeSpecKey && forms.some(f => f.key === activeSpecKey))
+      };
+    }).filter(dg => dg.forms.length > 0 && dg.firstEnabledKey);
+  }
+
   function resolveDomainFormSpec(viewOrFormKey) {
     const ind = getActiveIndustry(STATE.company);
     const list = INDUSTRY_DOMAIN_FORMS_BY_IND[ind] || INDUSTRY_DOMAIN_FORMS_BY_IND['Holding & Treasury'];
@@ -76651,13 +76705,54 @@
           <button type="button" class="btn btn-primary btn-sm" id="indEntryRunSampleScanBtn">Auto-Fill Sample</button>
         </div>
       </div>`;
+    const domGroups = getPermittedModalDomainGroups(ind, spec.key, isEditMode);
+    const activeDomGroup = domGroups.find(dg => dg.active) || domGroups[0] || { id: '', label: 'Domain Register Forms', forms: [] };
+    const sharedSpineGroupIds = ['expenses', 'payroll', 'treasury', 'universal'];
+    const allFormGroups = (window.MFG_FORMS && Array.isArray(window.MFG_FORMS.FORM_GROUPS)) ? window.MFG_FORMS.FORM_GROUPS : [];
+    const isFleetIndNow = isFleetUniversalIndustry(ind);
+    const ideSharedGroups = sharedSpineGroupIds.map(gid => {
+      const g = allFormGroups.find(x => x && x.id === gid);
+      if (!g) return null;
+      const visForms = (g.forms || []).filter(f => {
+        if (!f || !f.id) return false;
+        if (!isFleetIndNow && (f.id === 'equipment' || f.id === 'driver')) return false;
+        if (MFG_ONLY_MODAL_FORMS.has(f.id)) return false;
+        return canEnterForm(f.id);
+      });
+      if (!visForms.length) return null;
+      return { id: g.id, icon: g.icon, label: g.label, universalGroup: Boolean(g.universalGroup), firstFormId: visForms[0].id };
+    }).filter(Boolean);
+    const sharedBtnTargetId = (ideSharedGroups.find(g => g.id === 'expenses') || ideSharedGroups[0] || {}).id || '';
+    const domGroupBtnsHtml = domGroups.map(dg =>
+      `<button type="button" class="pa-group-btn pa-dom-group-btn${dg.id === activeDomGroup.id ? ' active' : ''}" data-ide-dom-group="${esc(dg.id)}"${isEditMode && dg.id !== activeDomGroup.id ? ' disabled' : ''}>${dg.icon && typeof ic === 'function' ? ic(dg.icon) : ''}<span>${esc(dg.label)}</span></button>`
+    ).join('');
+    const sharedGroupBtnsHtml = ideSharedGroups.map(sg =>
+      `<button type="button" class="pa-group-btn${sg.universalGroup ? ' is-universal-group' : ''}"${sg.id === sharedBtnTargetId ? ' id="ideOpenSharedSpineBtn"' : ''} data-ide-shared-group="${esc(sg.id)}" data-ide-shared-form="${esc(sg.firstFormId)}"${isEditMode ? ' disabled' : ''}>${sg.icon && typeof ic === 'function' ? ic(sg.icon) : ''}<span>${esc(sg.label)}</span></button>`
+    ).join('');
+    const domSubtabsHtml = (activeDomGroup.forms || []).map(f =>
+      `<button type="button" class="modal-tab${f.active ? ' active' : ''}"${f.disabled ? ' disabled' : ''} data-ide-switch-form="${esc(f.key)}"><span>${esc(f.label)}</span></button>`
+    ).join('');
+
     bodyEl.innerHTML = `
       ${datalistsHtml}
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
-          ${list.filter(f => f && (isEditMode ? (f.key === spec.key || canEnterDomainForm(f.key)) : canEnterDomainForm(f.key))).map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${(isEditMode && f.key !== spec.key) || !canManageSiblingChronoSchedule(f.key) ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
+      <div class="modal-tabs ide-unified-tabs">
+        <div class="pa-modal-groups">
+          ${domGroupBtnsHtml}${sharedGroupBtnsHtml}
         </div>
-        <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
+        <div class="pa-modal-subtabs" role="tablist" aria-label="Domain Register Forms">
+          ${domSubtabsHtml}
+        </div>
+      </div>
+      <div class="entry-unsaved-prompt" id="ideUnsavedPrompt" role="region" aria-label="Unsaved entry changes" hidden>
+        <div class="entry-unsaved-copy">
+          <span class="entry-unsaved-badge">Unfinished Entry</span>
+          <span class="entry-unsaved-text" id="ideUnsavedText">You have unsaved changes on this entry. Would you like to Discard Changes or Post before moving to another entry?</span>
+        </div>
+        <div class="entry-unsaved-actions">
+          <button type="button" class="btn-ghost-bar" id="ideUnsavedStayBtn">Keep Editing</button>
+          <button type="button" class="btn-ghost-bar unsaved-discard-btn" id="ideUnsavedDiscardBtn">Discard Changes</button>
+          <button type="button" class="btn btn-brass" id="ideUnsavedPostBtn">Post</button>
+        </div>
       </div>
       ${indScanBarHtml}
       <form id="indDomainEntryForm" autocomplete="off">
@@ -76694,17 +76789,98 @@
       </form>
     `;
 
+    let _ideInitialSig = '';
+    let _idePendingSwitch = null;
+    let _idePendingAfterSave = null;
+    const captureIdeFormSig = () => {
+      const formElNow = $('indDomainEntryForm');
+      if (!formElNow) return '';
+      const vals = Array.from(formElNow.querySelectorAll('input, select, textarea')).map(el =>
+        (el.type === 'checkbox' || el.type === 'radio') ? `${el.id}:${el.checked ? '1' : '0'}` : `${el.id}:${el.value || ''}`
+      );
+      vals.push(`atts:${pendingDomainFiles.length}`);
+      return vals.join('\n');
+    };
+    const isIdeModalDirty = () => Boolean(!isEditMode && _ideInitialSig && (captureIdeFormSig() !== _ideInitialSig || pendingDomainFiles.length > 0));
+    const hideIdeUnsavedPrompt = () => {
+      _idePendingSwitch = null;
+      const promptEl = $('ideUnsavedPrompt');
+      if (promptEl) promptEl.hidden = true;
+      bodyEl.querySelectorAll('.ide-unified-tabs .is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+    };
+    const requestIdeSwitch = (trigBtn, actionFn) => {
+      if (isEditMode) return;
+      if (!isIdeModalDirty()) {
+        actionFn();
+        return;
+      }
+      _idePendingSwitch = actionFn;
+      bodyEl.querySelectorAll('.ide-unified-tabs .is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+      if (trigBtn && !trigBtn.classList.contains('active')) trigBtn.classList.add('is-pending-target');
+      const promptEl = $('ideUnsavedPrompt');
+      if (promptEl) {
+        promptEl.hidden = false;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+          window.MFG_I18N.translateDom(promptEl);
+        }
+      }
+    };
+    const ideStayBtn = $('ideUnsavedStayBtn');
+    const ideDiscardBtn = $('ideUnsavedDiscardBtn');
+    const idePostBtn = $('ideUnsavedPostBtn');
+    if (ideStayBtn) ideStayBtn.addEventListener('click', hideIdeUnsavedPrompt);
+    if (ideDiscardBtn) {
+      ideDiscardBtn.addEventListener('click', () => {
+        const fn = _idePendingSwitch;
+        hideIdeUnsavedPrompt();
+        _auxModalDirty = false;
+        if (typeof fn === 'function') fn();
+      });
+    }
+    if (idePostBtn) {
+      idePostBtn.addEventListener('click', () => {
+        _idePendingAfterSave = _idePendingSwitch;
+        hideIdeUnsavedPrompt();
+        const formElNow = $('indDomainEntryForm');
+        if (formElNow && typeof formElNow.requestSubmit === 'function') formElNow.requestSubmit();
+        else if ($('ideSaveBtn')) $('ideSaveBtn').click();
+      });
+    }
+
+    bodyEl.querySelectorAll('[data-ide-dom-group]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (isEditMode) return;
+        if (btn.classList.contains('active')) {
+          hideIdeUnsavedPrompt();
+          return;
+        }
+        const domGid = btn.getAttribute('data-ide-dom-group');
+        const dg = domGroups.find(x => x.id === domGid);
+        if (dg && dg.firstEnabledKey) requestIdeSwitch(btn, () => openIndustryDomainEntryModal(dg.firstEnabledKey));
+      });
+    });
     bodyEl.querySelectorAll('[data-ide-switch-form]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (isEditMode) return;
-        openIndustryDomainEntryModal(btn.getAttribute('data-ide-switch-form'));
+        if (btn.classList.contains('active')) {
+          hideIdeUnsavedPrompt();
+          return;
+        }
+        const nextKey = btn.getAttribute('data-ide-switch-form');
+        if (nextKey) requestIdeSwitch(btn, () => openIndustryDomainEntryModal(nextKey));
       });
     });
-    const sharedBtn = $('ideOpenSharedSpineBtn');
-    if (sharedBtn) sharedBtn.onclick = () => {
-      closeIndustryDomainEntryModal();
-      openEntryModal('expense');
-    };
+    bodyEl.querySelectorAll('[data-ide-shared-group]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (isEditMode) return;
+        const sgid = btn.getAttribute('data-ide-shared-group');
+        const targetForm = btn.getAttribute('data-ide-shared-form') || 'expense';
+        requestIdeSwitch(btn, () => {
+          closeIndustryDomainEntryModal();
+          openEntryModal(targetForm, null, { groupId: sgid });
+        });
+      });
+    });
     const cancelBtn = $('ideCancelBtn');
     if (cancelBtn) cancelBtn.onclick = closeIndustryDomainEntryModal;
 
@@ -77470,6 +77646,8 @@
 
     formEl.onsubmit = async ev => {
       ev.preventDefault();
+      const afterSaveSwitch = _idePendingAfterSave;
+      _idePendingAfterSave = null;
       // True only for the run the form starts itself right after the person confirmed a rate change's impact: that
       // run already passed the sign-off of the first run a moment ago, so it is not asked for again
       const impactResubmit = formEl._rateImpactResubmit === true;
@@ -78503,6 +78681,7 @@
           if (!okImpact) return;
           formEl._rateImpactOkSig = impSig;
           formEl._rateImpactResubmit = true;
+          _idePendingAfterSave = afterSaveSwitch;
           if (typeof formEl.requestSubmit === 'function') formEl.requestSubmit();
           else formEl.dispatchEvent(new Event('submit', { cancelable: true }));
           return;
@@ -78607,6 +78786,7 @@
           amount: amtGuess
         }, filesToAttach, filesToAttach[0]._captureMethod || 'File Upload');
       }
+      if (typeof afterSaveSwitch === 'function') afterSaveSwitch();
     };
 
     const renderPendingDomainAtts = () => {
@@ -78748,6 +78928,7 @@
 
     modal.hidden = false;
     _auxModalDirty = false;
+    _ideInitialSig = captureIdeFormSig();
     if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
@@ -112844,7 +113025,14 @@
       const syncMenuAlign = () => {
         try {
           const r = wrap.getBoundingClientRect();
-          wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+          const vw = window.innerWidth || 800;
+          const isCatalog = Boolean(wrap.querySelector('[data-catalog-reg="1"]'));
+          const estW = isCatalog ? Math.min(356, vw - 24) : Math.max(r.width || 0, Math.min(276, vw - 28));
+          const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(wrap).direction === 'rtl';
+          const flip = isRtl
+            ? ((r.right - estW < 12 || r.right < vw * 0.58) && (r.left + estW <= vw - 12))
+            : ((r.left + estW > vw - 12 || r.left > vw * 0.42) && (r.right - estW >= 12));
+          wrap.classList.toggle('menu-align-right', flip);
           const scrollBox = wrap.closest('#modalBody');
           if (scrollBox) {
             const sb = scrollBox.getBoundingClientRect();
@@ -113399,10 +113587,16 @@
 
         try {
           const r = wrap.getBoundingClientRect();
+          const vw = window.innerWidth || 800;
           const vh = window.innerHeight || 800;
+          const estW = Math.max(r.width || 0, Math.min(276, vw - 28));
+          const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(wrap).direction === 'rtl';
           const spaceBelow = vh - r.bottom;
           const spaceAbove = r.top;
-          wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+          const flip = isRtl
+            ? ((r.right - estW < 12 || r.right < vw * 0.58) && (r.left + estW <= vw - 12))
+            : ((r.left + estW > vw - 12 || r.left > vw * 0.42) && (r.right - estW >= 12));
+          wrap.classList.toggle('menu-align-right', flip);
           wrap.classList.toggle('menu-drop-up', spaceBelow < 230 && spaceAbove > spaceBelow + 40);
         } catch (_) {}
         renderRows('');
@@ -113990,11 +114184,49 @@
 
       const positionMenuSmart = () => {
         menu.classList.remove('menu-drop-up', 'menu-align-right');
+        menu.style.position = '';
+        menu.style.left = '';
+        menu.style.right = '';
+        menu.style.top = '';
+        menu.style.bottom = '';
+        menu.style.width = '';
+        menu.style.minWidth = '';
+        menu.style.maxHeight = '';
+        menu.style.overflowY = '';
+        menu.style.overscrollBehavior = '';
+        menu.style.zIndex = '';
         const rect = wrap.getBoundingClientRect();
         const vw = window.innerWidth || 1280;
         const vh = window.innerHeight || 800;
-        if (rect.left + 324 > vw - 12) menu.classList.add('menu-align-right');
-        if (rect.bottom + 340 > vh - 12 && rect.top > 320) menu.classList.add('menu-drop-up');
+        const popW = Math.min(320, vw - 24);
+        const fitsLeft = rect.left + 324 <= vw - 12;
+        const fitsRight = rect.right - 324 >= 12;
+        if (vw <= 640 || vh < 480 || (!fitsLeft && !fitsRight)) {
+          const leftPx = Math.max(12, Math.min(Math.round(rect.left), Math.max(12, vw - popW - 12)));
+          menu.style.position = 'fixed';
+          menu.style.width = `${popW}px`;
+          menu.style.minWidth = '0';
+          menu.style.right = 'auto';
+          menu.style.bottom = 'auto';
+          menu.style.left = `${leftPx}px`;
+          menu.style.maxHeight = `${Math.max(180, vh - 24)}px`;
+          menu.style.overflowY = 'auto';
+          menu.style.overscrollBehavior = 'contain';
+          menu.style.zIndex = '2650';
+          const popH = Math.min(menu.offsetHeight || 340, vh - 24);
+          let topPx;
+          if (rect.bottom + 6 + popH <= vh - 12) {
+            topPx = Math.round(rect.bottom + 6);
+          } else if (rect.top - 6 - popH >= 12) {
+            topPx = Math.round(rect.top - 6 - popH);
+          } else {
+            topPx = Math.max(12, Math.min(Math.round(rect.bottom + 6), vh - popH - 12));
+          }
+          menu.style.top = `${topPx}px`;
+        } else {
+          if (!fitsLeft && fitsRight) menu.classList.add('menu-align-right');
+          if (rect.bottom + 340 > vh - 12 && rect.top > 320) menu.classList.add('menu-drop-up');
+        }
       };
 
       const openTimeMenu = () => {
@@ -114003,8 +114235,8 @@
         renderTime24PresetChips();
         menu.hidden = false;
         wrap.classList.add('open');
-        positionMenuSmart();
         syncActiveCells();
+        positionMenuSmart();
       };
 
       const commitTimeValue = (nextVal, closeAfter = false) => {
@@ -114058,10 +114290,14 @@
           if (drw) {
             drw.hidden = !drw.hidden;
             toggleExactBtn.classList.toggle('active', !drw.hidden);
+            if (!menu.hidden) positionMenuSmart();
           }
         };
         toggleExactBtn.addEventListener('mousedown', doToggleExact);
       }
+      window.addEventListener('resize', () => {
+        if (!menu.hidden && menu.isConnected) positionMenuSmart();
+      });
 
       menu.querySelectorAll('[data-t24-hr]').forEach(btn => {
         const pickHr = ev => {
@@ -122291,7 +122527,16 @@
             delete nextPf._origSiteOnDiscard;
             delete nextPf._fromSiteFormSwitch;
           }
-          openEntryModal(afterSaveTarget.formType, nextPf, { forceSwitch: true });
+          openEntryModal(afterSaveTarget.formType, nextPf, {
+            forceSwitch: true,
+            ...(afterSaveTarget.indQuickTpl ? { indQuickTpl: afterSaveTarget.indQuickTpl, label: afterSaveTarget.label || '' } : {})
+          });
+        } else if (afterSaveTarget.type === 'domain_form' && afterSaveTarget.domainFormKey) {
+          closeEntryModal(true);
+          if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+            window.MFG_GEO.cleanupTicketOriginMiniMap();
+          }
+          openIndustryDomainEntryModal(afterSaveTarget.domainFormKey);
         } else if (afterSaveTarget.type === 'inspector' && afterSaveTarget.crKey) {
           closeEntryModal(true);
           const nextRowId = (record && String(afterSaveTarget.crKey) === String(crKey))
@@ -124096,6 +124341,9 @@
           const tBtn = tabsWrap.querySelector(`.modal-tab[data-form="${targetSpec.formType}"]`);
           if (tBtn && !tBtn.classList.contains('active')) tBtn.classList.add('is-pending-target');
         }
+      } else if (targetSpec && targetSpec.type === 'domain_form' && targetSpec.domGroupId) {
+        const dBtn = tabsWrap.querySelector(`[data-dom-group="${targetSpec.domGroupId}"]`);
+        if (dBtn && !dBtn.classList.contains('active')) dBtn.classList.add('is-pending-target');
       }
     }
     const curTitleEl = $('modalTitle');
@@ -124154,6 +124402,14 @@
       closeEntryModal(true);
       return;
     }
+    if (target.type === 'domain_form' && target.domainFormKey) {
+      closeEntryModal(true);
+      if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+        window.MFG_GEO.cleanupTicketOriginMiniMap();
+      }
+      openIndustryDomainEntryModal(target.domainFormKey);
+      return;
+    }
     if (target.type === 'form' && target.formType) {
       const nextPf = target.prefill ? Object.assign({}, target.prefill) : null;
       if (nextPf && Object.prototype.hasOwnProperty.call(nextPf, '_origSiteOnDiscard')) {
@@ -124161,7 +124417,10 @@
         delete nextPf._origSiteOnDiscard;
         delete nextPf._fromSiteFormSwitch;
       }
-      openEntryModal(target.formType, nextPf, { forceSwitch: true });
+      openEntryModal(target.formType, nextPf, {
+        forceSwitch: true,
+        ...(target.indQuickTpl ? { indQuickTpl: target.indQuickTpl, label: target.label || '' } : {})
+      });
       return;
     }
     if (target.type === 'inspector' && target.crKey && target.rowId) {
@@ -124216,7 +124475,12 @@
     }
   }
 
-  const MFG_ONLY_MODAL_FORMS = new Set(['sales', 'raw', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'fuel', 'malfunction', 'triprate']);
+  const MFG_ONLY_MODAL_FORMS = new Set([
+    'sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'creditterm', 'grouptransfer',
+    'raw', 'jv',
+    'fuel', 'repair', 'defect', 'oillog', 'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment',
+    'logistics'
+  ]);
 
   function openEntryModal(formType, prefill = null, opts = null) {
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
@@ -124253,6 +124517,7 @@
           formType,
           prefill,
           groupId: (opts && opts.groupId) || '',
+          indQuickTpl: (opts && opts.indQuickTpl) || '',
           label: targetLabel
         });
         return;
@@ -124442,21 +124707,57 @@
       }
     }
     if (tabsWrap) tabsWrap.hidden = Boolean(pendingTargetRow || (editTargetRow && (form === 'site' || form === 'region')));
-    const tabPermCheck = fId => ((editTargetRow && fId === form) || (opts && opts.indQuickTpl && fId === form))
-      ? true
-      : ((!isNonMfgModalScope || !MFG_ONLY_MODAL_FORMS.has(fId)) && canEnterForm(fId));
+    const isFleetIndForTabs = !isNonMfgModalScope || isFleetUniversalIndustry(curIndForModalScope);
+    const modalDomGroups = (isNonMfgModalScope && !editTargetRow && !pendingTargetRow)
+      ? getPermittedModalDomainGroups(curIndForModalScope)
+      : [];
+    const tabPermCheck = fId => {
+      if ((editTargetRow && fId === form) || (opts && opts.indQuickTpl && fId === form)) return true;
+      if (!isFleetIndForTabs && (fId === 'equipment' || fId === 'driver')) return false;
+      return (!isNonMfgModalScope || !MFG_ONLY_MODAL_FORMS.has(fId)) && canEnterForm(fId);
+    };
     if (tabsWrap && window.MFG_FORMS) {
       const prevGroupsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-groups') : null;
       const prevSubtabsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-subtabs') : null;
       const prevGroupsScroll = prevGroupsEl ? prevGroupsEl.scrollLeft : 0;
       const prevSubtabsScroll = prevSubtabsEl ? prevSubtabsEl.scrollLeft : 0;
       const prevGroupActive = prevGroupsEl && prevGroupsEl.querySelector('.active') ? prevGroupsEl.querySelector('.active').getAttribute('data-pa-group') : '';
-      tabsWrap.innerHTML = renderModalIndustryQuickBar(form, opts && opts.indQuickTpl) + window.MFG_FORMS.renderModalTabsHtml(form, tabPermCheck, modalGroupOverride);
+      tabsWrap.innerHTML = renderModalIndustryQuickBar(form, opts && opts.indQuickTpl) + window.MFG_FORMS.renderModalTabsHtml(form, tabPermCheck, modalGroupOverride, {
+        domainGroups: modalDomGroups,
+        isFleetIndustry: isFleetIndForTabs
+      });
+      const openDomainTargetFromEntryModal = (targetKey, domGroupId = '', label = '') => {
+        if (!targetKey) return;
+        if (isEntryModalDirty()) {
+          if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+            window.MFG_GEO.exitInlinePickerFullWindow();
+          }
+          promptUnsavedEntrySwitch({
+            type: 'domain_form',
+            domainFormKey: targetKey,
+            domGroupId: domGroupId || '',
+            label: label || targetKey
+          });
+          return;
+        }
+        closeEntryModal(true);
+        if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+          window.MFG_GEO.cleanupTicketOriginMiniMap();
+        }
+        openIndustryDomainEntryModal(targetKey);
+      };
       tabsWrap.querySelectorAll('[data-ind-open-new]').forEach(dBtn => {
         dBtn.addEventListener('click', () => {
           const targetV = dBtn.getAttribute('data-ind-open-new') || STATE.view;
-          closeEntryModal(true);
-          openIndustryDomainEntryModal(targetV);
+          openDomainTargetFromEntryModal(targetV, '', dBtn.textContent ? dBtn.textContent.trim() : '');
+        });
+      });
+      tabsWrap.querySelectorAll('[data-dom-group]').forEach(dBtn => {
+        dBtn.addEventListener('click', () => {
+          const domGid = dBtn.getAttribute('data-dom-group');
+          const dg = modalDomGroups.find(x => x.id === domGid);
+          const targetKey = dg && dg.firstEnabledKey;
+          openDomainTargetFromEntryModal(targetKey, domGid, (dg && dg.label) || '');
         });
       });
       tabsWrap.querySelectorAll('[data-ind-quick-tpl]').forEach(qBtn => {
@@ -124465,11 +124766,15 @@
           const ind = getActiveIndustry(STATE.company);
           const tplList = INDUSTRY_QUICK_ENTRY_TEMPLATES[ind] || [];
           const hit = tplList.find(x => x.id === tplId);
-          if (hit) {
-            openEntryModal(hit.form, hit.prefill || null, { indQuickTpl: hit.id, label: hit.title });
-            const titleEl = $('modalTitle');
-            if (titleEl && hit.title) titleEl.textContent = hit.title;
+          if (!hit) return;
+          if (hit.domainView) {
+            openDomainTargetFromEntryModal(hit.domainView, '', hit.label || hit.title);
+            return;
           }
+          openEntryModal(hit.form, hit.prefill || null, { indQuickTpl: hit.id, label: hit.title });
+          const promptEl = $('entryUnsavedPrompt');
+          const titleEl = $('modalTitle');
+          if (titleEl && hit.title && (!promptEl || promptEl.hidden)) titleEl.textContent = hit.title;
         });
       });
       const nextGroupsEl = tabsWrap.querySelector('.pa-modal-groups');
@@ -144012,6 +144317,71 @@
     return true;
   }
 
+  function positionUserPopover(wrapEl, popEl, maxW) {
+    if (!wrapEl || !popEl || popEl.hidden) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+    const clearInline = () => {
+      popEl.style.position = '';
+      popEl.style.left = '';
+      popEl.style.right = '';
+      popEl.style.top = '';
+      popEl.style.bottom = '';
+      popEl.style.width = '';
+      popEl.style.maxHeight = '';
+      popEl.style.overflowY = '';
+      popEl.style.zIndex = '';
+    };
+    clearInline();
+    popEl.classList.remove('align-right', 'drop-up');
+    if (vw <= 860) return;
+    const rect = wrapEl.getBoundingClientRect();
+    const popW = Math.min(maxW, vw - 32);
+    const fitsLeft = rect.left + popW <= vw - 12;
+    const fitsRight = rect.right - popW >= 12;
+    if (!fitsLeft && fitsRight) {
+      popEl.classList.add('align-right');
+    }
+    const popH = Math.min(popEl.offsetHeight || 360, vh - 24);
+    const spaceBelow = vh - rect.bottom - 14;
+    const spaceAbove = rect.top - 14;
+    if (!fitsLeft && !fitsRight) {
+      popEl.style.position = 'fixed';
+      popEl.style.left = '12px';
+      popEl.style.right = '12px';
+      popEl.style.width = 'auto';
+      popEl.style.zIndex = '2650';
+      const maxH = Math.max(140, vh - 24);
+      let topPx;
+      if (rect.bottom + 6 + popH <= vh - 12) {
+        topPx = Math.round(rect.bottom + 6);
+      } else if (rect.top - 6 - popH >= 12) {
+        topPx = Math.round(rect.top - 6 - popH);
+      } else if (spaceAbove > spaceBelow) {
+        const useH = Math.max(140, Math.min(popH, Math.floor(spaceAbove)));
+        popEl.style.maxHeight = `${useH}px`;
+        popEl.style.overflowY = 'auto';
+        topPx = Math.max(12, Math.round(rect.top - 6 - useH));
+      } else {
+        topPx = Math.max(12, Math.min(Math.round(rect.bottom + 6), vh - maxH - 12));
+        popEl.style.maxHeight = `${Math.max(140, Math.min(maxH, vh - topPx - 12))}px`;
+        popEl.style.overflowY = 'auto';
+      }
+      popEl.style.top = `${topPx}px`;
+      return;
+    }
+    if (popH > spaceBelow && spaceAbove > spaceBelow) {
+      popEl.classList.add('drop-up');
+      if (popH > spaceAbove) {
+        popEl.style.maxHeight = `${Math.max(140, Math.floor(spaceAbove))}px`;
+        popEl.style.overflowY = 'auto';
+      }
+    } else if (popH > spaceBelow) {
+      popEl.style.maxHeight = `${Math.max(140, Math.floor(spaceBelow))}px`;
+      popEl.style.overflowY = 'auto';
+    }
+  }
+
   function wireCompanyMultiSelect(root) {
     const wrap = root.querySelector('#nuCompanySelector');
     if (!wrap) return;
@@ -144136,10 +144506,16 @@
       wrap.classList.toggle('open', !!open);
       if (popoverEl) popoverEl.hidden = !open;
       if (triggerBtn) triggerBtn.setAttribute('aria-expanded', String(!!open));
-      if (open && searchEl) {
-        setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
+      if (open) {
+        positionUserPopover(wrap, popoverEl, 540);
+        if (searchEl && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+          setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
+        }
       }
     };
+    window.addEventListener('resize', () => {
+      if (popoverEl && !popoverEl.hidden && popoverEl.isConnected) positionUserPopover(wrap, popoverEl, 540);
+    });
 
     if (triggerBtn) {
       triggerBtn.addEventListener('click', e => {
@@ -144333,7 +144709,11 @@
       if (popoverEl) popoverEl.hidden = false;
       if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'true');
       showPreviewForRole(roleEl ? roleEl.value : 'Entry');
+      positionUserPopover(wrap, popoverEl, 700);
     };
+    window.addEventListener('resize', () => {
+      if (popoverEl && !popoverEl.hidden && popoverEl.isConnected) positionUserPopover(wrap, popoverEl, 700);
+    });
 
     if (triggerBtn) {
       triggerBtn.addEventListener('click', e => {
@@ -146975,12 +147355,12 @@
         : allowedIndGroups;
       const indTabsHtml = [
         `<button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === 'all' ? 'active' : ''}" data-ep-ind="all" data-ui-tip="Show all ${allowedNames.length} permitted companies across ${allowedIndCount} industries">
-          <span class="ep-ind-tab-name">All Industries</span>
+          <span class="ep-ind-tab-name"><span class="ep-ind-tab-txt">All Industries</span></span>
           <em class="ep-ind-tab-cnt">${allowedNames.length}</em>
         </button>`
       ].concat(displayIndGroups.map(g => `
         <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" data-ui-tip="${esc(g.label)} (${g.permittedCos.length} permitted${g.id === liveInd ? ' · Active' : ''})">
-          <span class="ep-ind-tab-name">${g.id === liveInd ? '<span class="ep-ind-live-dot" aria-hidden="true"></span>' : ''}${esc(g.label)}</span>
+          <span class="ep-ind-tab-name">${g.id === liveInd ? '<span class="ep-ind-live-dot" aria-hidden="true"></span>' : ''}<span class="ep-ind-tab-txt">${esc(g.label)}</span></span>
           <em class="ep-ind-tab-cnt">${g.permittedCos.length}</em>
         </button>
       `)).join('');
@@ -147220,11 +147600,7 @@
       }
     }
 
-    const popElAlign = $('companySwitchPopover');
-    if (popElAlign && !popElAlign.hidden) {
-      const rect = switchEl.getBoundingClientRect();
-      popElAlign.classList.toggle('align-right', rect.left + 585 > window.innerWidth - 12);
-    }
+    positionCompanySwitchPopover();
 
     const coHeadEl = $('companySwitchCoHead');
     if (coHeadEl) {
@@ -147259,6 +147635,57 @@
     }
   }
 
+  function positionCompanySwitchPopover() {
+    const switchEl = $('companySwitch');
+    const popEl = $('companySwitchPopover');
+    if (!switchEl || !popEl || popEl.hidden) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 844;
+    const rect = switchEl.getBoundingClientRect();
+    const clearInline = () => {
+      popEl.style.position = '';
+      popEl.style.left = '';
+      popEl.style.right = '';
+      popEl.style.width = '';
+      popEl.style.top = '';
+      popEl.style.maxHeight = '';
+      popEl.classList.remove('is-viewport-clamped');
+    };
+    if (vw <= 860) {
+      popEl.classList.remove('align-right');
+      popEl.classList.add('is-viewport-clamped');
+      const topPx = Math.max(8, Math.min(Math.round(rect.bottom + 6), Math.max(8, vh - 260)));
+      popEl.style.position = 'fixed';
+      popEl.style.left = '8px';
+      popEl.style.right = '8px';
+      popEl.style.width = 'auto';
+      popEl.style.top = `${topPx}px`;
+      const maxH = Math.max(220, Math.min(620, vh - topPx - 76));
+      popEl.style.maxHeight = `${maxH}px`;
+      return;
+    }
+    clearInline();
+    const popW = Math.min(580, vw - 24);
+    const fitsLeft = rect.left + popW <= vw - 12;
+    const fitsRight = rect.right - popW >= 12;
+    if (!fitsLeft && fitsRight) {
+      popEl.classList.add('align-right');
+    } else if (!fitsLeft && !fitsRight) {
+      popEl.classList.remove('align-right');
+      popEl.classList.add('is-viewport-clamped');
+      const topPx = Math.max(8, Math.round(rect.bottom + 5));
+      const leftPx = Math.max(12, Math.min(Math.round(rect.left), Math.max(12, vw - popW - 12)));
+      popEl.style.position = 'fixed';
+      popEl.style.top = `${topPx}px`;
+      popEl.style.left = `${leftPx}px`;
+      popEl.style.right = 'auto';
+      popEl.style.width = `${popW}px`;
+      popEl.style.maxHeight = `${Math.max(260, vh - topPx - 16)}px`;
+    } else {
+      popEl.classList.remove('align-right');
+    }
+  }
+
   function wireCompanySwitch() {
     const switchEl = $('companySwitch');
     if (!switchEl || switchEl.dataset.pickerWired === '1') return;
@@ -147278,8 +147705,20 @@
       if (trigBtn) trigBtn.setAttribute('aria-expanded', String(!!open));
       if (open) {
         syncCompanySwitchUi();
-        if (searchEl) setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
+        positionCompanySwitchPopover();
+        if (searchEl && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+          setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
+        }
       } else {
+        if (popEl) {
+          popEl.style.position = '';
+          popEl.style.left = '';
+          popEl.style.right = '';
+          popEl.style.width = '';
+          popEl.style.top = '';
+          popEl.style.maxHeight = '';
+          popEl.classList.remove('is-viewport-clamped');
+        }
         if (searchEl && searchEl.value) {
           searchEl.value = '';
           syncCompanySwitchUi();
@@ -147403,8 +147842,12 @@
     });
     window.addEventListener('resize', () => {
       if (popEl && !popEl.hidden) {
-        const rect = switchEl.getBoundingClientRect();
-        popEl.classList.toggle('align-right', rect.left + 585 > window.innerWidth - 12);
+        positionCompanySwitchPopover();
+      }
+    });
+    window.addEventListener('orientationchange', () => {
+      if (popEl && !popEl.hidden) {
+        setTimeout(() => positionCompanySwitchPopover(), 60);
       }
     });
   }
@@ -149470,6 +149913,7 @@
 
   function contextFormForView(view, user) {
     user = user || activeUser();
+    const activeIndForForm = getActiveIndustry(STATE.company);
     if (view === 'kiosks') {
       const kf = STATE.activeKiosk === 'raw' ? 'raw' : (STATE.activeKiosk === 'fuel' ? (STATE.kioskFuelSubmode === 'refill' ? 'expense' : (STATE.kioskFuelSubmode === 'malfunction' ? 'malfunction' : 'fuel')) : (STATE.activeKiosk === 'attendance' ? 'attendance' : 'sales'));
       if (canEnterForm(kf, user)) return kf;
@@ -149480,7 +149924,8 @@
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
-      cashflow: 'receipt', cashflow_analytics: 'receipt',
+      cashflow: activeIndForForm !== 'Manufacturing' ? 'external' : 'receipt',
+      cashflow_analytics: activeIndForForm !== 'Manufacturing' ? 'external' : 'receipt',
       external: 'external', conversions: 'conversion',
       customers: 'receipt', ar: 'receipt',
       suppliers: 'settlement', ap: 'settlement',
@@ -149511,7 +149956,6 @@
       reg_fx_rates: 'fxrate', reg_currencies: 'currency', reg_vat_rates: 'vatrate'
     };
     let preferred = map[view] || 'sales';
-    const activeIndForForm = getActiveIndustry(STATE.company);
     if (activeIndForForm !== 'Manufacturing' && ['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(view)) {
       const indTpl0 = (INDUSTRY_QUICK_ENTRY_TEMPLATES[activeIndForForm] || [])[0];
       if (indTpl0 && indTpl0.form && FORM_TITLES[indTpl0.form]) preferred = indTpl0.form;
@@ -149830,8 +150274,7 @@
           fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
         };
         const ctxEntryForm = contextFormForView(v, user);
-        const mfgOnlyEntryForms = { sales: 1, raw: 1, fuel: 1, malfunction: 1, pricerule_raw: 1, jv: 1 };
-        const siblingDomainEntry = activeInd !== 'Manufacturing' && (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(v || '')) || mfgOnlyEntryForms[ctxEntryForm]);
+        const siblingDomainEntry = activeInd !== 'Manufacturing' && (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(v || '')) || MFG_ONLY_MODAL_FORMS.has(ctxEntryForm));
         dEntryLbl.textContent = siblingDomainEntry ? 'New Entry' : (formLabels[ctxEntryForm] || 'Post Entry');
       } else {
         dEntry.hidden = true;
@@ -189110,6 +189553,8 @@
         defaultWarehouseLocationForCompany,
         ensureMultiIndustrySpineSeeded,
         getActiveIndustry,
+        isFleetUniversalIndustry,
+        MFG_ONLY_MODAL_FORMS,
         selectCompanyScope,
         contextFormForView,
         canEnterForm,
@@ -189157,6 +189602,8 @@
         activeUser,
         isDemoScopeActive,
         getActiveIndustry,
+        isFleetUniversalIndustry,
+        MFG_ONLY_MODAL_FORMS,
         canEnterForm,
         canEnterAny,
         canModifyData,
@@ -189264,6 +189711,8 @@
         allowedCompanyNames,
         getCompanyCatalog,
         getActiveIndustry,
+        isFleetUniversalIndustry,
+        MFG_ONLY_MODAL_FORMS,
         selectCompanyScope,
         isDemoScopeActive,
         isOfficialScopeActive,
@@ -192061,6 +192510,8 @@
     restoreVoidedRecord: typeof restoreVoidedRecord === 'function' ? restoreVoidedRecord : null,
     restoreVoidedIndustryDomainRow: typeof restoreVoidedIndustryDomainRow === 'function' ? restoreVoidedIndustryDomainRow : null,
     canEnterForm: typeof canEnterForm === 'function' ? canEnterForm : null,
+    isFleetUniversalIndustry: typeof isFleetUniversalIndustry === 'function' ? isFleetUniversalIndustry : null,
+    MFG_ONLY_MODAL_FORMS,
     canAccessTable: typeof canAccessTable === 'function' ? canAccessTable : null,
     activeUser: typeof activeUser === 'function' ? activeUser : null,
     isOwner: typeof isOwner === 'function' ? isOwner : null,

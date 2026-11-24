@@ -220,6 +220,7 @@ html[data-theme="dark"] .fpnl-filter-lbl { color: var(--brass); }
   left: 0;
   z-index: 60;
   width: 310px;
+  max-width: calc(100vw - 24px);
   max-height: 320px;
   overflow-y: auto;
   background: var(--card);
@@ -227,6 +228,23 @@ html[data-theme="dark"] .fpnl-filter-lbl { color: var(--brass); }
   border-radius: 9px;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
   padding: 8px;
+}
+@media (max-width: 860px) {
+  .fpnl-picker-popover {
+    position: fixed;
+    inset-inline: 12px;
+    top: auto;
+    bottom: 76px;
+    width: auto;
+    max-width: calc(100vw - 24px);
+    max-height: min(380px, 60vh);
+    z-index: 2650;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fpnl-picker-search {
+    font-size: 16px;
+  }
 }
 .fpnl-picker-search, .fpnl-input, .fpnl-select {
   border: 1px solid var(--border);

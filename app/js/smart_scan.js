@@ -2157,16 +2157,34 @@
       }
     }
 
-    // Never route non-Manufacturing vendor/delivery bills into quarry-only forms ('raw'/'fuel'/'malfunction')
+    // Never route non-Manufacturing scans into MFG-only tabs or non-fleet Universal tabs unless explicitly permitted
     let resolvedIndQuickTpl = overrideFormType ? '' : (parsed.indQuickTpl || '');
     if (resolvedNextInd && resolvedNextInd !== 'Manufacturing') {
-      if (['raw', 'fuel', 'malfunction', 'pricerule', 'triprate'].includes(targetForm)) {
-        targetForm = canEnter('expense') ? 'expense' : (canEnter('document') ? 'document' : targetForm);
-      } else if (targetForm === 'sales' && !resolvedIndQuickTpl) {
-        if (parsed.supplier && !parsed.customer && canEnter('expense')) {
+      const mfgOnlySet = D && D.MFG_ONLY_MODAL_FORMS;
+      const isFleetInd = (D && typeof D.isFleetUniversalIndustry === 'function')
+        ? D.isFleetUniversalIndustry(resolvedNextInd)
+        : true;
+      const isNonMfgRestricted = fid => Boolean(fid && (
+        (mfgOnlySet ? mfgOnlySet.has(fid) : ['sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'creditterm', 'grouptransfer', 'raw', 'jv', 'fuel', 'repair', 'defect', 'oillog', 'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment', 'logistics'].includes(fid))
+        || (!isFleetInd && (fid === 'equipment' || fid === 'driver'))
+      ));
+      const pickSharedFallback = prefList => prefList.find(f => canEnter(f) && !isNonMfgRestricted(f)) || '';
+      if (targetForm === 'sales') {
+        if (!overrideFormType && parsed.supplier && !parsed.customer && canEnter('expense')) {
           targetForm = 'expense';
         } else {
-          resolvedIndQuickTpl = 'ss_ind_sales';
+          resolvedIndQuickTpl = resolvedIndQuickTpl || 'ss_ind_sales';
+        }
+      } else if (isNonMfgRestricted(targetForm)) {
+        if (targetForm === 'receipt') {
+          targetForm = pickSharedFallback(['external', 'settlement', 'expense', 'document']) || targetForm;
+        } else if (targetForm === 'companyequipment') {
+          targetForm = pickSharedFallback(['equipment', 'expense', 'document', 'external']) || targetForm;
+        } else {
+          targetForm = pickSharedFallback(['expense', 'document', 'external', 'settlement']) || targetForm;
+        }
+        if (isNonMfgRestricted(targetForm)) {
+          resolvedIndQuickTpl = resolvedIndQuickTpl || 'ss_ind_scan';
         }
       }
     }
@@ -2476,14 +2494,16 @@
         setInputValueAndFire('f_amount', parsed.totalAmount || convertedLbpUsd, filledSet, warnSet, convertedLbpUsd > 0);
       }
     } else if (targetForm === 'external' || targetForm === 'treasury' || targetForm === 'conversion') {
-      if (matched.counterparty && $('f_counterparty')) {
-        setInputValueAndFire('f_counterparty', matched.counterparty, filledSet, warnSet, false);
+      const extParty = matched.counterparty || matched.customer || parsed.customer || parsed.counterparty || matched.supplier || parsed.supplier;
+      if (extParty && $('f_counterparty')) {
+        setInputValueAndFire('f_counterparty', extParty, filledSet, warnSet, false);
       }
       if (parsed.direction && $('f_direction')) {
         setInputValueAndFire('f_direction', parsed.direction === 'Out' ? 'Outflow' : 'Inflow', filledSet, warnSet, false);
       }
-      if (parsed.totalAmount > 0 && $('f_usd')) {
-        setInputValueAndFire('f_usd', parsed.totalAmount, filledSet, warnSet, false);
+      const extUsd = parsed.totalAmount > 0 ? parsed.totalAmount : convertedLbpUsd;
+      if (extUsd > 0 && $('f_usd')) {
+        setInputValueAndFire('f_usd', extUsd, filledSet, warnSet, convertedLbpUsd > 0 && !(parsed.totalAmount > 0));
       }
       if (parsed.lbpAmount > 0 && $('f_lbp')) {
         setInputValueAndFire('f_lbp', parsed.lbpAmount, filledSet, warnSet, false);
@@ -3262,8 +3282,8 @@
     if (!modal || modal.hidden) {
       SCAN_STATE.suppressResetOnModalSwitch = true;
       try {
-        const initForm = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
-        D.openEntryModal(D.canEnterForm && !D.canEnterForm(initForm) ? 'sales' : initForm);
+        const initSpec = resolveSafeEntryScanInitForm();
+        D.openEntryModal(initSpec.form, null, initSpec.opts || undefined);
       } finally {
         SCAN_STATE.suppressResetOnModalSwitch = false;
       }
@@ -3694,8 +3714,14 @@
       const pageCnt = Math.max(1, Number((scan.parsed && scan.parsed.pageCount) || (scan.attObjs && scan.attObjs.length) || 1));
       const vinAudit = scan.parsed && scan.parsed.vinAudit && scan.parsed.vinAudit.isVin17 ? scan.parsed.vinAudit : null;
       const canEnter = D && D.canEnterForm ? D.canEnterForm : (() => true);
+      const curIndAlt = (D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+      const isMfgAlt = !curIndAlt || curIndAlt === 'Manufacturing';
+      const isFleetAlt = (D && typeof D.isFleetUniversalIndustry === 'function') ? D.isFleetUniversalIndustry(curIndAlt) : true;
+      const mfgOnlyAlt = D && D.MFG_ONLY_MODAL_FORMS;
       const alts = Array.from(new Set([scan.parsed.formType].concat(scan.parsed.altForms || [])))
-        .filter(f => f && f !== scan.appliedForm && canEnter(f))
+        .filter(f => f && f !== scan.appliedForm && canEnter(f)
+          && (isMfgAlt || !(mfgOnlyAlt && mfgOnlyAlt.has(f)))
+          && (isFleetAlt || (f !== 'equipment' && f !== 'driver')))
         .slice(0, 4);
 
       const warningsList = ((scan.matched && scan.matched.warnings) || []);
@@ -4115,13 +4141,36 @@
   }
 
   // ==================== TOPBAR & DOCUMENT VAULT BUTTONS ====================
+  function resolveSafeEntryScanInitForm() {
+    const rawInit = (D && D.contextFormForView && D.contextFormForView(D.STATE && D.STATE.view)) || 'expense';
+    const curInd = (D && typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+    const isMfgScope = !curInd || curInd === 'Manufacturing';
+    const mfgOnly = D && D.MFG_ONLY_MODAL_FORMS;
+    const allowed = f => Boolean(f && (!D.canEnterForm || D.canEnterForm(f)) && (isMfgScope || !(mfgOnly && mfgOnly.has(f))));
+    if (allowed(rawInit)) return { form: rawInit, opts: null };
+    const sharedPool = isMfgScope
+      ? ['sales', 'expense', 'external', 'extended', 'settlement', 'document', 'salary', 'customer']
+      : ['expense', 'external', 'extended', 'settlement', 'document', 'salary', 'customer'];
+    const hit = sharedPool.find(allowed);
+    if (hit) return { form: hit, opts: null };
+    const safeRaw = (!D.canEnterForm || D.canEnterForm(rawInit)) ? rawInit : 'sales';
+    return { form: safeRaw, opts: isMfgScope ? null : { indQuickTpl: 'ss_ind_scan' } };
+  }
+
   function openSmartScanEntryDesk(triggerPicker = false) {
     if (!D) return;
     const modal = $('entryModal');
+    const domModal = $('indDomainEntryModal');
+    if (triggerPicker && (!modal || modal.hidden) && domModal && !domModal.hidden) {
+      const domInp = $('indEntryScanFileInput');
+      if (domInp) {
+        domInp.click();
+        return;
+      }
+    }
     if (!modal || modal.hidden) {
-      const form = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
-      const safeForm = (D.canEnterForm && D.canEnterForm(form)) ? form : 'sales';
-      D.openEntryModal(safeForm);
+      const initSpec = resolveSafeEntryScanInitForm();
+      D.openEntryModal(initSpec.form, null, initSpec.opts || undefined);
     }
     if (triggerPicker) {
       const { fInp } = ensureGlobalFileInputs();
