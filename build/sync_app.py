@@ -98,6 +98,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_geo_audit_gate_dwell_edge.mjs", "node"), # Geo audit log, gt1.* gate pins & RLS parity
     ("isabi", "build/verify_web_push_unit.mjs", "node"),             # RFC 8291 / VAPID / CAS / sibling digest unit gate
     ("isabi", "build/verify_device_unsent.mjs", "node"),             # device reports of unsent entries: seat-owned rows, Owner-only list
+    ("isabi-app", "build/verify_void_set_aside.mjs", "node"),        # voids the cloud refuses are set aside, the rest of the sync goes; refusal shown to the Owner
     ("isabi", "build/verify_release_data_only.py", "python"),        # data-only release runs desktop suite against candidate bundle before commit
     ("isabi", "build/verify_speed_gate_wiring.py", "python"),        # the screen speed gate (SPEED_GATE below) runs on every sync
     ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
