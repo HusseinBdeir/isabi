@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/batch-payday-panel6",
+  "sha": "28ee3ef93dee02135d6c08bcbcd2138abba72e9c"
+ },
+ "gates": [
+  "isabi-app: node build/verify_batch_payday_and_panel6.mjs"
+ ],
+ "holder": "theo-batch-payday-panel6",
+ "id": "20261124T130800Z-f695a98e",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T13:08:00Z",
+ "seenAt": "2026-11-24T13:08:00Z",
+ "state": "waiting",
+ "summary": "Batch Payday 1-sheet disbursement grid and Daily Ops Panel 6 monthly balance pills"
+}
