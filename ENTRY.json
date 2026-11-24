@@ -3,6 +3,12 @@
   "branch": "wt/dops-panel6-payroll",
   "sha": "140d50b3a1e215a3370cfbd88337b6a4cb1542ff"
  },
+ "batch": {
+  "at": "2026-11-24T07:52:05Z",
+  "holder": "THEO hbdei (dops-cash-groups)",
+  "lockId": "6d11aafea8a1494e9fa6a99181fe7637",
+  "version": "19.6.436"
+ },
  "gates": [
   "isabi-app: node build/verify_dops_handover.mjs --skip-live-ai",
   "isabi-app: node build/verify_entry_daily_ops.mjs"
