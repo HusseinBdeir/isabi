@@ -1,0 +1,23 @@
+{
+ "app": {
+  "branch": "wt/modal-hub-slim-ai",
+  "sha": "bb411fa2c0408b8811e3082ecb3e2260c6fdc60a"
+ },
+ "gates": [
+  "isabi-app: node build/verify_modal_hub_slim_ai.mjs",
+  "isabi-app: node build/verify_modal_regroup.mjs",
+  "isabi-app: node build/verify_smart_scan.mjs",
+  "isabi: node build/verify_live_parity.mjs"
+ ],
+ "holder": "agy-e28150c2 (modal-hub-slim-ai)",
+ "id": "20261124T130932Z-6203bdf9",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T13:09:32Z",
+ "seenAt": "2026-11-24T13:09:32Z",
+ "site": {
+  "branch": "wt/modal-hub-slim-ai-site",
+  "sha": "8cf21760cded212b76ae2d216eeed5d6426d3506"
+ },
+ "state": "waiting",
+ "summary": "Hub-scoped single-row Module switcher, slim 1-line AI quick bar across desktop & mobile, and 6-vertical industry-aware entry modal"
+}
