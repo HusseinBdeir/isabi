@@ -1,20 +1,17 @@
 {
- "batch": {
-  "at": "2026-11-24T00:45:24Z",
-  "holder": "agy-1eec7159 (tour-video)",
-  "lockId": "8016533efd614281b2d78a7d035a4448",
-  "version": "19.6.434"
- },
  "gates": [],
  "holder": "agy-1eec7159 (tour-video)",
  "id": "20261123T234312Z-3e942f18",
  "pc": "Theo",
  "queuedAt": "2026-11-23T23:43:12Z",
  "seenAt": "2026-11-24T00:43:15Z",
+ "shippedAt": "2026-11-24T04:02:44Z",
+ "shippedBy": "agy-1eec7159 (tour-video)",
+ "shippedVersion": "19.6.434",
  "site": {
   "branch": "wt/tour-video",
   "sha": "cb77d976ef4029129a840b7dcb1d0cdccf07c820"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Showcase v6.40: 90-second product tour video with EN/AR/FR subtitles"
 }
