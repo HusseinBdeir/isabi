@@ -4,9 +4,9 @@
   "sha": "bb411fa2c0408b8811e3082ecb3e2260c6fdc60a"
  },
  "batch": {
-  "at": "2026-11-24T19:32:15Z",
-  "holder": "agy-8e9ba45b",
-  "lockId": "6601ac62496440ff987fb9cb1fc7fe73",
+  "at": "2026-11-24T20:43:55Z",
+  "holder": "agy-9d4b4cf4 (single-bu-overview)",
+  "lockId": "17e463716d814eaf90e426bd9ef439e1",
   "version": "19.6.439"
  },
  "gates": [
