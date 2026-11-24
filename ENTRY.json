@@ -1,0 +1,21 @@
+{
+ "app": {
+  "branch": "wt/kiosk-sw-heal",
+  "sha": "9e6c7d72d62c43899249b927c6df3f4ec201048f"
+ },
+ "gates": [
+  "isabi: node build/verify_sw_navigation.mjs",
+  "isabi-app: node build/verify_shell_gate_and_reload.mjs"
+ ],
+ "holder": "agy-7a9108ec (kiosk-sw-heal)",
+ "id": "20261124T142646Z-873e6e61",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T14:26:46Z",
+ "seenAt": "2026-11-24T14:26:46Z",
+ "site": {
+  "branch": "wt/kiosk-sw-heal-site",
+  "sha": "08ce39de4c7e2938acd492cb72850b665ca01eb6"
+ },
+ "state": "waiting",
+ "summary": "Fix pre-v19.6.218 kiosk & PWA net::ERR_FAILED deadlock via direct 200 OK /index.html & /app/index.html Edge serving, preserve ?kiosk= on /app/reset.html, and reload mismatched legacy-SW shells on controllerchange"
+}
