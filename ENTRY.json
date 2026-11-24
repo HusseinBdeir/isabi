@@ -14,7 +14,7 @@
  "id": "20261124T003257Z-506a91b3",
  "pc": "Theo",
  "queuedAt": "2026-11-24T00:32:57Z",
- "seenAt": "2026-11-24T00:52:25Z",
+ "seenAt": "2026-11-24T01:02:20Z",
  "state": "waiting",
  "summary": "Suppliers & Payables: pure haulers read Hauler, not Multi-Leg (a hauler's trucked raw loads no longer count as a material leg)"
 }
