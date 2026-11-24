@@ -3,6 +3,12 @@
   "branch": "wt/modal-hub-slim-ai",
   "sha": "bb411fa2c0408b8811e3082ecb3e2260c6fdc60a"
  },
+ "batch": {
+  "at": "2026-11-24T18:19:22Z",
+  "holder": "agy-18b24a14 (raw-site-trans-payables)",
+  "lockId": "4c25c80f3ae74b8c81ab417207016ba7",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi-app: node build/verify_modal_hub_slim_ai.mjs",
   "isabi-app: node build/verify_modal_regroup.mjs",
