@@ -110,7 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_fuel_malfunctions_co_date ON fuel_malfunctions (c
 CREATE TABLE IF NOT EXISTS expenses (
   id TEXT PRIMARY KEY, name TEXT DEFAULT '', date TEXT DEFAULT '', rep_date TEXT DEFAULT '', company TEXT DEFAULT '',
   category TEXT DEFAULT '', subcategory TEXT DEFAULT '', supplier TEXT DEFAULT '', equipment TEXT DEFAULT '', method TEXT DEFAULT '',
-  qty REAL DEFAULT 0, amount REAL DEFAULT 0, reference TEXT DEFAULT '',
+  qty REAL DEFAULT 0, gross_amount REAL DEFAULT 0, discount REAL DEFAULT 0, amount REAL DEFAULT 0, reference TEXT DEFAULT '',
   for_equipment INTEGER DEFAULT 0, item_summary TEXT DEFAULT '',
   source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '',
   voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '',
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS expense_items (
   id TEXT PRIMARY KEY, name TEXT DEFAULT '', expense_id TEXT DEFAULT '', expense_ref TEXT DEFAULT '',
   date TEXT DEFAULT '', rep_date TEXT DEFAULT '', company TEXT DEFAULT '', supplier TEXT DEFAULT '',
   category TEXT DEFAULT '', subcategory TEXT DEFAULT '', item_name TEXT DEFAULT '',
-  qty REAL DEFAULT 1, uom TEXT DEFAULT '', unit_cost REAL DEFAULT 0, line_total REAL DEFAULT 0,
+  qty REAL DEFAULT 1, uom TEXT DEFAULT '', unit_cost REAL DEFAULT 0, net_unit_cost REAL DEFAULT 0, gross_line_total REAL DEFAULT 0, line_discount REAL DEFAULT 0, line_total REAL DEFAULT 0,
   allocation_mode TEXT DEFAULT '', target_equipment TEXT DEFAULT '', warehouse_location TEXT DEFAULT '',
   historical_consumed INTEGER DEFAULT 0,
   source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '',
