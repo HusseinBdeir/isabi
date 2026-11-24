@@ -3,6 +3,12 @@
   "branch": "wt/ot-rep-date",
   "sha": "9c67602e15ece970c9b2942357d1d1fb72a93917"
  },
+ "batch": {
+  "at": "2026-11-24T11:51:04Z",
+  "holder": "THEO hbdei (rep-shift-cal)",
+  "lockId": "fa6008a9cd57422d9c45302e773ad9e1",
+  "version": "19.6.438"
+ },
  "gates": [
   "isabi-app: node build/verify_ot_rep_month.mjs"
  ],
