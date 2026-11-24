@@ -1,0 +1,21 @@
+{
+ "app": {
+  "branch": "wt/void-set-aside",
+  "sha": "ae9c9a65dee968b7fafee1835c075c15ff9e89ad"
+ },
+ "gates": [
+  "isabi-app: node build/verify_void_set_aside.mjs",
+  "isabi: node build/verify_device_unsent.mjs"
+ ],
+ "holder": "THEO hbdei (void-set-aside)",
+ "id": "20261124T235004Z-ac77b1df",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T23:50:04Z",
+ "seenAt": "2026-11-24T23:50:04Z",
+ "site": {
+  "branch": "wt/void-set-aside-site",
+  "sha": "ccff010d76af84cbe7ba77ad3d01383f7757b027"
+ },
+ "state": "waiting",
+ "summary": "Voids the cloud refuses for no reason are set aside and the rest of the sync goes (Add Reason on the device Not Sent bar); the Owner's Held on Device bar shows the refusal status and server text; device void-reason check matches the cloud's (EN/AR/FR)"
+}
