@@ -3,12 +3,6 @@
   "branch": "wt/batch-payday-panel6",
   "sha": "28ee3ef93dee02135d6c08bcbcd2138abba72e9c"
  },
- "batch": {
-  "at": "2026-11-24T18:19:22Z",
-  "holder": "agy-18b24a14 (raw-site-trans-payables)",
-  "lockId": "4c25c80f3ae74b8c81ab417207016ba7",
-  "version": "19.6.439"
- },
  "gates": [
   "isabi-app: node build/verify_batch_payday_and_panel6.mjs"
  ],
