@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/dops-declutter",
+  "sha": "50359d6b33a3628d11a5a4735a3ffc1b29b5e87d"
+ },
+ "gates": [
+  "isabi-app: node build/verify_dops_declutter.mjs",
+  "isabi-app: node build/verify_dops_handover.mjs"
+ ],
+ "holder": "THEO hbdei (dops-declutter)",
+ "id": "20261124T123309Z-e06bfdfd",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T12:33:09Z",
+ "seenAt": "2026-11-24T12:33:09Z",
+ "state": "waiting",
+ "summary": "Daily Operations: one home per figure. Panel 6 opens on Payroll & Attendance with staff filters in all 6 industries, Profit & Expenses opens on a Costs table tied to the day's profit, bills one row per supplier, profit bar on the Operating Profit card, cash strip and P&L steps no longer repeat the scorecard (EN/AR/FR)"
+}
