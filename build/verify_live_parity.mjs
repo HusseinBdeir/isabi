@@ -963,19 +963,40 @@ async function main() {
       });
 
       // Touch Trading VIN/Chassis controls + Insurance chrono schedule controls on #indDomainEntryModal
+      const clickDomainFormTab = async (matchFn, tag) => {
+        const findTab = () => Array.from(document.querySelectorAll('#indDomainEntryModal [data-ide-switch-form]')).find(matchFn);
+        if (!findTab()) {
+          for (const g of document.querySelectorAll('#indDomainEntryModal [data-ide-dom-group]')) {
+            if (g.classList.contains('active')) continue;
+            g.click();
+            await sleep(90);
+            const discG = $('ideUnsavedDiscardBtn');
+            if (discG && vis(discG)) { discG.click(); await sleep(90); }
+            if (findTab()) break;
+          }
+        }
+        const tab = findTab();
+        if (tab) {
+          if (!tab.classList.contains('active')) {
+            tab.click();
+            await sleep(140);
+            const discT = $('ideUnsavedDiscardBtn');
+            if (discT && vis(discT)) { discT.click(); await sleep(100); }
+          }
+          await sleep(60);
+          scanAllIds(tag);
+        }
+      };
       await test('trading-new-entry-vin-controls', TRD, 'trd_sales', newEntryBtn, ['indDomainEntryModal', 'ide_chassis'], {
         wait: 220,
         afterClick: async () => {
-          const trkTab = document.querySelector('#indDomainEntryModal [data-ide-switch-form="trd_trucks"]');
-          if (trkTab) { trkTab.click(); await sleep(140); scanAllIds('trd-trucks-tab'); }
+          await clickDomainFormTab(b => b.getAttribute('data-ide-switch-form') === 'trd_trucks', 'trd-trucks-tab');
         }
       });
       await test('insurance-new-entry-chrono-controls', INS, 'ins_policies', newEntryBtn, ['indDomainEntryModal', 'ideRateSourceHint'], {
         wait: 220,
         afterClick: async () => {
-          const agrTab = document.querySelector('#indDomainEntryModal [data-ide-switch-form]') &&
-            Array.from(document.querySelectorAll('#indDomainEntryModal [data-ide-switch-form]')).find(b => /agr|carrier|schedule|rate/i.test(b.getAttribute('data-ide-switch-form') || '') || /Agreement|Schedule/i.test(b.textContent || ''));
-          if (agrTab) { agrTab.click(); await sleep(140); scanAllIds('ins-agr-tab'); }
+          await clickDomainFormTab(b => /agr|carrier|schedule|rate/i.test(b.getAttribute('data-ide-switch-form') || '') || /Agreement|Schedule/i.test(b.textContent || ''), 'ins-agr-tab');
         }
       });
 

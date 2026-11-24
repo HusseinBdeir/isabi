@@ -163,11 +163,17 @@
   }
 
   function saleTicketSign(s) {
-    if (!s || s.voided || normKey(s.product) === 'remove') return 0;
+    if (!s || s.voided) return 0;
     const mth = String((s && s.method) || '').trim();
+    if (s.removed_slip === true || s.ticket_disposition === 'remove_slip' || /^remove$/i.test(mth)) return 0;
+    if (normKey(s.product) === 'remove' || normKey(s.site) === 'remove' || normKey(s.customer) === 'remove') return 0;
     if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') return -1;
     if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') return 0;
+    if (s.return_to_wtc === true && s.in_place_return === true) return 0;
     return 1;
+  }
+  function isPbiSalesTruckLoad(s) {
+    return Boolean(s && (s.sale_type === 'Delivery' || s.sale_type === 'Pickup'));
   }
 
   const _NON_AGG_PROD_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity)\b/i;
@@ -247,7 +253,7 @@
     const scopeCo = opts.company || (typeof window !== 'undefined' && window.STATE && window.STATE.company ? window.STATE.company : 'ALL');
     const payUsdAuth = (_otSnapE && typeof _otSnapE.canViewPayrollDollarAmounts === 'function' && _otSnapE.canViewPayrollDollarAmounts()) ? '1' : '0';
     const actUserIdx = (typeof window !== 'undefined' && window.STATE && window.STATE.activeUserIdx != null) ? window.STATE.activeUserIdx : '';
-    const eKey = `${seedRev}|${otSnapSig}|${payUsdAuth}|${actUserIdx}|${scopeCo}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
+    const eKey = `${seedRev}|${otSnapSig}|${payUsdAuth}|${actUserIdx}|${scopeCo}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${typeof opts.ticketSign === 'function' ? '1' : '0'}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
     if (_enrichMonthsCache.has(eKey)) return _enrichMonthsCache.get(eKey);
     const otSnapAlloc = (_otSnapE && typeof _otSnapE.computeJobOtSnapAllocation === 'function')
       ? _otSnapE.computeJobOtSnapAllocation({ industry: 'Manufacturing', company: scopeCo, basis: opts.basis || 'rep', ignorePeriod: true })
@@ -255,6 +261,7 @@
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const rList = Array.isArray(rawRows) ? rawRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
+    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : saleTicketSign;
     const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
     const isAggFn = typeof opts.isAggregateMaterialProduct === 'function' ? opts.isAggregateMaterialProduct : null;
     const catArr = Array.isArray(opts.productsCatalog) ? opts.productsCatalog : [];
@@ -284,13 +291,13 @@
       const s = sList[i];
       if (!s || s.voided) continue;
       const mth = String(s.method || '').trim();
-      const sgn = (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') ? -1
-        : ((mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') ? 0 : 1);
+      const sgn = ticketSignFn(s);
       if (sgn === 0) continue;
       const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
       if (!ymSet.has(ym)) continue;
 
-      const ttcAll = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+      const ttcRaw = Number(s.total_ttc != null ? s.total_ttc : (Number(s.total || 0) + Number(s.vat || 0)));
+      const ttcAll = sgn * ttcRaw;
       let tb = ttcByYm.get(ym);
       if (!tb) { tb = { cashTtc: 0, credTtc: 0 }; ttcByYm.set(ym, tb); }
       if (mth === 'Cash' || mth === 'C Return' || mth === 'Cash Return') tb.cashTtc += ttcAll;
@@ -299,6 +306,7 @@
       const trVal = sgn * Number(s.trans_price || 0);
       const isOwnFleet = /company/i.test(String(s.transport_by || ''));
       const isDeliv = /deliv/i.test(String(s.sale_type || ''));
+      const isPickup = /^pickup$/i.test(String(s.sale_type || '').trim());
       let db = delivByYm.get(ym);
       if (!db) {
         db = { ownTrans: 0, thirdTrans: 0, delivLoads: 0, pickupLoads: 0 };
@@ -310,7 +318,7 @@
       }
       if (sgn > 0) {
         if (isDeliv) db.delivLoads += 1;
-        else db.pickupLoads += 1;
+        else if (isPickup) db.pickupLoads += 1;
       }
 
       const qUnit = ticketMetersFn
@@ -318,8 +326,8 @@
         : (/truck/i.test(String(s.uom || '')) ? Number(s.qty || 0) * 27 : Number(s.qty || 0));
       const m3 = sgn * qUnit;
       if (m3 === 0 || !isAggTicket(s)) continue;
-      const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-      const net = sgn * Number(s.total != null ? s.total : (ttc - sgn * Number(s.vat || 0)));
+      const ttc = sgn * ttcRaw;
+      const net = sgn * Number(s.total != null ? s.total : (ttcRaw - Number(s.vat || 0)));
       const b = salesByYm.get(ym);
       if (b) { b.m3 += m3; b.net += net; b.ttc += ttc; }
       else salesByYm.set(ym, { m3, net, ttc });
@@ -399,25 +407,18 @@
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const dKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}`;
+    const dKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasTicketSource}|${typeof opts.ticketSign === 'function' ? '1' : '0'}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}`;
     if (_delivMonthsCache.has(dKey)) return _delivMonthsCache.get(dKey);
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
-    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
+    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : saleTicketSign;
     const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
     const ymSet = new Set(mList.map(monthRowToYmKey).filter(Boolean));
     const byYm = new Map();
     for (let i = 0; i < sList.length; i++) {
       const s = sList[i];
       if (!s || s.voided) continue;
-      let sgn = 1;
-      if (ticketSignFn) {
-        sgn = ticketSignFn(s);
-      } else {
-        const mth = String(s.method || '').trim();
-        if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') sgn = -1;
-        else if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') sgn = 0;
-      }
+      const sgn = ticketSignFn(s);
       if (sgn === 0) continue;
       const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
       if (!ymSet.has(ym)) continue;
@@ -470,11 +471,11 @@
     const pList = Array.isArray(topProds) ? topProds : [];
     const tickets = Array.isArray(salesRows) ? salesRows : [];
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const gKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${_monthsSig(mList)}|${pList.map(p => `${(p && p.Product) || ''}:${(p && p.avg_price_net) || 0}`).join(',')}|${_pbiArrUid(tickets)}:${tickets.length}`;
+    const gKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${typeof opts.ticketSign === 'function' ? '1' : '0'}|${_monthsSig(mList)}|${pList.map(p => `${(p && p.Product) || ''}:${(p && p.avg_price_net) || 0}`).join(',')}|${_pbiArrUid(tickets)}:${tickets.length}`;
     if (_gradeSeriesCache.has(gKey)) return _gradeSeriesCache.get(gKey);
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
+    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : saleTicketSign;
     const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
-    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
     const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
     const ymSet = new Set(mList.map(monthRowToYmKey).filter(Boolean));
@@ -488,14 +489,7 @@
         if (!r || r.voided) continue;
         const pk = normKey(r.product);
         if (!prodSet.has(pk)) continue;
-        let sgn = 1;
-        if (ticketSignFn) {
-          sgn = ticketSignFn(r);
-        } else {
-          const mth = String(r.method || '').trim();
-          if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') sgn = -1;
-          else if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') sgn = 0;
-        }
+        const sgn = ticketSignFn(r);
         if (sgn === 0) continue;
         const ym = String((basis === 'tx' ? r.date : (r.rep_date || r.date)) || '').slice(0, 7);
         if (!ymSet.has(ym)) continue;
@@ -2439,7 +2433,7 @@
         const cur = ensureCC(s.customer);
         if (!cur) return;
         const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-        if (sgn === 1) cur.loads += 1;
+        if (sgn === 1 && isPbiSalesTruckLoad(s)) cur.loads += 1;
         cur.ttc += ttc;
         const mth = String(s.method || '').trim();
         if (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return') cur.crTtc += ttc;
@@ -4633,7 +4627,8 @@
 
   function renderPbiStudio(ctx, overridePageId, bodyOnly) {
     if (ctx && !overridePageId && !bodyOnly) _lastPbiRenderCtx = ctx;
-    const { STATE, SEED, COMPANY_LABELS, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct } = ctx;
+    const { STATE, SEED, COMPANY_LABELS, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, ticketTons, ticketSign, ticketMeters, productMeters, isAggregateMaterialProduct } = ctx;
+    const pbiTicketSign = typeof ticketSign === 'function' ? ticketSign : saleTicketSign;
     _activePbiState = STATE;
     const m = getModel();
     const k = getKPI();
@@ -4712,7 +4707,7 @@
       const baseRecRows = filterRecords(rec.receipts, { ignoreSearch: true });
       const baseSetRows = filterRecords(rec.settlements, { ignoreSearch: true });
       const baseFuelRows = filterRecords(rec.fuel_intakes, { ignoreSearch: true });
-      const sampleAllTtc = baseSalesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc || 0), 0) || 1;
+      const sampleAllTtc = baseSalesRows.reduce((a, r) => a + pbiTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))), 0) || 1;
 
       let baseProds = (m.products || []).map(p => {
         if (!productMeters) return p;
@@ -4727,21 +4722,19 @@
         });
       });
 
-      const buildScopedProds = (salesPool, rawPool) => {
+      const buildScopedProds = (salesPool, rawPool, forceScope = false) => {
         const pMap = new Map();
         salesPool.forEach(s => {
           const pk = norm(s.product);
           if (!pk) return;
-          const mth = String(s.method || '').trim();
-          const sgn = (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') ? -1
-            : ((mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') ? 0 : 1);
+          const sgn = pbiTicketSign(s);
           if (sgn === 0) return;
-          const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+          const cur = pMap.get(pk) || { displayName: s.product || pk, uom: s.uom || 'm³', loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
           const q = sgn * (ticketMeters ? ticketMeters(s) : Number(s.qty || 0));
           const rawQ = sgn * Number(s.qty || 0);
-          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : (Number(s.total || 0) + Number(s.vat || 0)));
           const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
-          if (sgn === 1) cur.loads += 1;
+          if (sgn === 1 && isPbiSalesTruckLoad(s)) cur.loads += 1;
           cur.qty_sold += q;
           cur.native_qty_sold += rawQ;
           cur.tons_sold += sgn * (ticketTons ? ticketTons(s) : (s.uom === 'm³' ? Number(s.qty || 0) * 1.5 : Number(s.qty || 0)));
@@ -4753,13 +4746,16 @@
         rawPool.forEach(r => {
           const pk = norm(r.product);
           if (!pk) return;
-          const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+          const cur = pMap.get(pk) || { displayName: r.product || pk, uom: r.uom || 'm³', loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
           cur.raw_qty += ticketMeters ? ticketMeters(r) : Number(r.qty || 0);
           cur.raw_cost += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
           pMap.set(pk, cur);
         });
-        return (m.products || []).map(p => {
-          const st = pMap.get(norm(p.Product)) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+        const seenProdNorm = new Set();
+        const mappedProds = (m.products || []).map(p => {
+          const pk = norm(p.Product);
+          const st = (!pk || !seenProdNorm.has(pk)) ? (pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 }) : { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+          if (pk) seenProdNorm.add(pk);
           const denom = st.qty_sold > 0 ? st.qty_sold : st.native_qty_sold;
           return Object.assign({}, p, {
             loads: st.loads,
@@ -4775,7 +4771,32 @@
             avg_price_net: denom > 0 ? round2(st.net_sales / denom) : 0,
             avg_raw_cost: st.raw_qty > 0 ? round2(st.raw_cost / st.raw_qty) : null
           });
-        }).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.raw_cost || 0) - Number(a.raw_cost || 0));
+        });
+        pMap.forEach((st, pk) => {
+          if (!pk || seenProdNorm.has(pk)) return;
+          if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(st.net_sales) <= 0.005 && Math.abs(st.raw_cost) <= 0.005) return;
+          const recProd = (rec.products || []).find(rp => norm(rp.name || rp.Product) === pk);
+          const denom = st.qty_sold > 0 ? st.qty_sold : st.native_qty_sold;
+          mappedProds.push({
+            Product: st.displayName || (recProd && (recProd.name || recProd.Product)) || pk,
+            'Material Family': (recProd && (recProd['Material Family'] || recProd.type)) || 'Aggregate',
+            UoM: (recProd && (recProd.UoM || recProd.uom)) || st.uom || 'm³',
+            list_price: recProd && recProd.list_price != null ? recProd.list_price : null,
+            loads: st.loads,
+            native_qty_sold: round2(st.native_qty_sold),
+            qty_sold: round2(st.qty_sold),
+            tons_sold: round2(st.tons_sold),
+            sales_ttc: round2(st.sales_ttc),
+            net_sales: round2(st.net_sales),
+            trans_rev: round2(st.trans_rev),
+            raw_qty: round2(st.raw_qty),
+            raw_cost: round2(st.raw_cost),
+            avg_price_ttc: denom > 0 ? round2(st.sales_ttc / denom) : 0,
+            avg_price_net: denom > 0 ? round2(st.net_sales / denom) : 0,
+            avg_raw_cost: st.raw_qty > 0 ? round2(st.raw_cost / st.raw_qty) : null
+          });
+        });
+        return mappedProds.sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.raw_cost || 0) - Number(a.raw_cost || 0));
       };
 
       const recDateForBasis = r => String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 10);
@@ -4841,13 +4862,13 @@
         }
         salesPool.forEach(s => {
           if (!s.customer) return;
-          const sgn = saleTicketSign(s);
+          const sgn = pbiTicketSign(s);
           if (sgn === 0) return;
           const cur = ensureCust(s.customer);
-          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : (Number(s.total || 0) + Number(s.vat || 0)));
           const vat = sgn * Number(s.vat || 0);
           const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
-          if (sgn === 1) cur.loads += 1;
+          if (sgn === 1 && isPbiSalesTruckLoad(s)) cur.loads += 1;
           cur.sales_ttc += ttc;
           cur.net_sales += net;
           cur.sales_vat += vat;
@@ -5389,13 +5410,13 @@
           return stMap.get(sk);
         };
         salesPool.forEach(s => {
-          const sgn = saleTicketSign(s);
+          const sgn = pbiTicketSign(s);
           if (sgn === 0) return;
-          if (!s.site && Number(s.total_ttc || s.total || 0) === 0) return;
+          if (!s.site && Number(s.total_ttc != null ? s.total_ttc : (Number(s.total || 0) + Number(s.vat || 0))) === 0) return;
           const cur = ensureSite(s.site || '(Unassigned Site)');
-          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : (Number(s.total || 0) + Number(s.vat || 0)));
           const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
-          if (sgn === 1) cur.loads += 1;
+          if (sgn === 1 && isPbiSalesTruckLoad(s)) cur.loads += 1;
           cur.tons_sold += sgn * (ticketTons ? ticketTons(s) : Number(s.qty || 0));
           cur.trans_rev += sgn * Number(s.trans_price || 0);
           cur.sales_ttc += ttc;
@@ -5955,6 +5976,7 @@
     const months = enrichMonthsWithTicketUnitEconomics(scaledMonths, monthSalesPool, monthRawPool, {
       company: STATE.company,
       basis: STATE.basis,
+      ticketSign: pbiTicketSign,
       ticketMeters,
       isAggregateMaterialProduct,
       productsCatalog: rec.products,
@@ -6395,6 +6417,7 @@
       const prodColors = [C.navy, C.brass, C.steel, C.amber];
       const priceSeries = buildMonthlyGradePriceSeries(months, top4Prods, trendSalesPool, {
         basis: STATE.basis,
+        ticketSign: pbiTicketSign,
         ticketMeters,
         colors: prodColors
       });
@@ -10699,7 +10722,7 @@
           : rlsScopedRaw.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')))
       : rlsScopedRaw;
     const rawActiveCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
-    const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeView.id === 'iva');
+    const taxColsVisibleOnHub = Boolean(STATE._canSeeTaxBreakdown && (STATE.showSalesTaxBreakdown || STATE._officialScopeActive || activeView.id === 'iva'));
     const baseActiveCols = (meta.key === 'sales_tickets' && !taxColsVisibleOnHub)
       ? rawActiveCols.filter(c => c !== 'vat')
       : ((meta.key === 'external_movements' && !isHoldingTbl)
@@ -11683,7 +11706,7 @@
 
     const q = norm(STATE.univConnSearch || '');
     const rawActiveCols = (activeConnView && Array.isArray(activeConnView.cols) && activeConnView.cols.length) ? activeConnView.cols : connMeta.cols;
-    const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeConnView.id === 'iva');
+    const taxColsVisibleOnHub = Boolean(STATE._canSeeTaxBreakdown && (STATE.showSalesTaxBreakdown || STATE._officialScopeActive || activeConnView.id === 'iva'));
     const baseConnCols = (connKey === 'sales_tickets' && !taxColsVisibleOnHub)
       ? rawActiveCols.filter(c => c !== 'vat')
       : rawActiveCols;
@@ -13914,6 +13937,7 @@
     const mRows = enrichMonthsWithTicketUnitEconomics(rawMonths, salesRows, rawRows, {
       company: (ctx && ctx.company) || (typeof window !== 'undefined' && window.STATE && window.STATE.company) || 'ALL',
       basis: ctx && ctx.basis,
+      ticketSign: ctx && ctx.ticketSign,
       ticketMeters: ctx && ctx.ticketMeters,
       isAggregateMaterialProduct: ctx && ctx.isAggregateMaterialProduct,
       productsCatalog: ctx && ctx.productsCatalog,
@@ -14533,7 +14557,7 @@
 
     const baseSampleTtc = baseSalesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : r.total || 0), 0) || 1;
     const filtSalesUsd = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : r.total || 0), 0));
-    const filtSalesLoads = salesRows.reduce((a, r) => a + (saleTicketSign(r) > 0 ? 1 : 0), 0);
+    const filtSalesLoads = salesRows.reduce((a, r) => a + (saleTicketSign(r) > 0 && isPbiSalesTruckLoad(r) ? 1 : 0), 0);
     const filtDelivLoads = salesRows.reduce((a, r) => a + (saleTicketSign(r) > 0 && /deliv/i.test(String(r.sale_type || '')) ? 1 : 0), 0);
     const filtTransRevUsd = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.trans_price || 0), 0));
     const filtMeters = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * ticketMetersFn(r), 0));

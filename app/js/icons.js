@@ -126,6 +126,7 @@
     rep_shift: s('<rect x="3" y="4.2" width="14.5" height="15.8" rx="2"/><line x1="7" y1="2.3" x2="7" y2="5.6"/><line x1="13.5" y1="2.3" x2="13.5" y2="5.6"/><line x1="3" y1="8.8" x2="17.5" y2="8.8"/><path d="M11.5 14.2h9.5"/><polyline points="18 11.2 21 14.2 18 17.2"/>'),
     search: s('<circle cx="10.8" cy="10.8" r="6.8"/><line x1="15.8" y1="15.8" x2="20.8" y2="20.8"/>'),
     chevron_down: s('<polyline points="6 9 12 15 18 9"/>'),
+    chevron_left: s('<polyline points="15 6 9 12 15 18"/>'),
     chevron_right: s('<polyline points="9 6 15 12 9 18"/>'),
     calendar_grid: s('<rect x="3.5" y="4.5" width="17" height="16" rx="2"/><line x1="8" y1="2.5" x2="8" y2="6.2"/><line x1="16" y1="2.5" x2="16" y2="6.2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="9.2" y1="9.5" x2="9.2" y2="20.5"/><line x1="14.8" y1="9.5" x2="14.8" y2="20.5"/><line x1="3.5" y1="15" x2="20.5" y2="15"/>'),
     calendar_week: s('<rect x="3.5" y="4.5" width="17" height="16" rx="2"/><line x1="8" y1="2.5" x2="8" y2="6.2"/><line x1="16" y1="2.5" x2="16" y2="6.2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><rect x="6.5" y="12.5" width="11" height="4.5" rx="1"/>'),
