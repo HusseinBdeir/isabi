@@ -3,12 +3,6 @@
   "branch": "wt/sales-loads-vat-basis",
   "sha": "0615fa775f93e32f291cda1ce28db0ae08eb12a6"
  },
- "batch": {
-  "at": "2026-11-24T09:32:11Z",
-  "holder": "agy-841960da (sales-loads-vat-basis)",
-  "lockId": "11667048c20a448fa7f21d60dd35131a",
-  "version": "19.6.437"
- },
  "gates": [
   "isabi-app: node build/verify_sales_loads_vat_basis.mjs",
   "isabi-app: node build/verify_mfg.mjs",
@@ -19,6 +13,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-24T08:09:34Z",
  "seenAt": "2026-11-24T09:21:13Z",
- "state": "waiting",
+ "shippedAt": "2026-11-24T11:45:26Z",
+ "shippedBy": "agy-841960da (sales-loads-vat-basis)",
+ "shippedVersion": "19.6.437",
+ "state": "shipped",
  "summary": "Sales & Deliveries (#sales): true Pickup+Delivery truck-load count & per-load averages + seatLens-gated Incl. VAT labels and 1-click Incl. VAT | Ex-VAT switch"
 }
