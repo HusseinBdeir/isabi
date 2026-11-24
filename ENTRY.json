@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/jv-logs-tank-i18n",
+  "sha": "0d99d5401514eb7a3d14eb9a9b7a3067987bd1ea"
+ },
+ "gates": [
+  "isabi-app: python build/verify_truck_log_reopen.py"
+ ],
+ "holder": "THEO hbdei (jv-truck-logs)",
+ "id": "20261124T172011Z-5f8a90a3",
+ "pc": "Theo",
+ "queuedAt": "2026-11-24T17:20:11Z",
+ "seenAt": "2026-11-24T17:20:11Z",
+ "state": "waiting",
+ "summary": "Top-up loader: JV truck logs end with the JV's last load, truck owner from its normal loads, Balhas Beton sub-truck logs ended; Daily Operations tank label translated when negative (EN/AR/FR)"
+}
