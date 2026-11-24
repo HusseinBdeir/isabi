@@ -3,6 +3,12 @@
   "branch": "wt/repdate-typo-check",
   "sha": "e1aa05d724fed89c1ac6d6689a11bab38833a2e3"
  },
+ "batch": {
+  "at": "2026-11-24T19:32:15Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "6601ac62496440ff987fb9cb1fc7fe73",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi-app: node build/verify_repdate_typo_check.mjs"
  ],
