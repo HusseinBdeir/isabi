@@ -16,7 +16,7 @@
  "id": "20261124T190027Z-feb5048d",
  "pc": "Theo",
  "queuedAt": "2026-11-24T19:00:27Z",
- "seenAt": "2026-11-24T21:24:42Z",
+ "seenAt": "2026-11-24T21:37:07Z",
  "state": "waiting",
  "summary": "Reporting-date typo check: Sentinel S8 lists likely reporting-date typos first (lone later dates or dates after today, apart from batch moves and late entries), register date icon turns amber past 31 days with the gap in its popover, entry note required from 31 days (was 60)"
 }
