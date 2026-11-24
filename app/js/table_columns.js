@@ -223,13 +223,14 @@
     const stEl = document.createElement('style');
     stEl.id = 'mfg-col-mgr-first-vis';
     stEl.textContent = [
-      'table.ledger-table th.tbl-first-vis-cell, table.ledger-table td.tbl-first-vis-cell { padding-left: 12px; }',
-      'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-left: 14px; }',
+      'table.ledger-table th.tbl-first-vis-cell, table.ledger-table td.tbl-first-vis-cell { padding-inline-start: 12px; }',
+      'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-inline-start: 14px; }',
       'tr.rrow td.tbl-first-vis-cell { position: relative; }',
-      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 1; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
-      '.ledger-table tbody td.tbl-first-vis-cell.td-has-inline-act u.row-sel-dot { position: static; right: auto; top: auto; transform: none; margin-left: 4px; vertical-align: middle; box-shadow: none; }',
-      'td.tbl-first-vis-cell.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }',
-      '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-left: 3px; }'
+      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; inset-inline-end: 3px; top: 50%; transform: translateY(-50%); margin-inline-start: 0; z-index: 3; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
+      '.ledger-table tbody td.tbl-first-vis-cell.td-has-inline-act u.row-sel-dot { position: static; inset-inline-end: auto; top: auto; transform: none; margin-inline-start: 4px; vertical-align: middle; box-shadow: none; }',
+      'td.tbl-first-vis-cell.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 22px; }',
+      'td.tbl-first-vis-cell.td-has-inline-act.td-has-sel-dot > .void-btn.row-void-hover { inset-inline-end: 4px; }',
+      '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-inline-start: 3px; }'
     ].join('\n');
     document.head.appendChild(stEl);
   }
@@ -459,7 +460,7 @@
         if (start === firstVisCol) firstVisTd = cell;
       }
       if (firstVisCol > 0 && col0Td && firstVisTd && col0Td !== firstVisTd) {
-        col0Td.querySelectorAll('.badge-app, button.void-btn').forEach(el => {
+        col0Td.querySelectorAll('.badge-app, .att-inline-badge, button.void-btn').forEach(el => {
           el.setAttribute('data-from-col0', '1');
           firstVisTd.appendChild(el);
         });
@@ -468,9 +469,12 @@
         });
         const dot = tr.querySelector('u.row-sel-dot');
         if (dot) firstVisTd.appendChild(dot);
-        col0Td.classList.remove('td-has-sel-dot', 'td-has-inline-act');
+        col0Td.classList.remove('td-has-sel-dot', 'td-has-inline-act', 'td-has-void-hover', 'td-has-rep-shift', 'td-void-armed');
         firstVisTd.classList.toggle('td-has-sel-dot', Boolean(dot));
-        firstVisTd.classList.toggle('td-has-inline-act', Boolean(firstVisTd.querySelector('.badge-app, .void-btn:not(.row-void-hover)')));
+        firstVisTd.classList.toggle('td-has-void-hover', Boolean(firstVisTd.querySelector('.void-btn.row-void-hover')));
+        firstVisTd.classList.toggle('td-has-rep-shift', Boolean(firstVisTd.querySelector('.rep-shift-ico')));
+        firstVisTd.classList.toggle('td-void-armed', Boolean(firstVisTd.querySelector('.void-btn.row-void-hover.armed')));
+        firstVisTd.classList.toggle('td-has-inline-act', Boolean(firstVisTd.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')));
       } else if (firstVisCol === 0 && col0Td) {
         let restoredAny = false;
         tr.querySelectorAll('[data-from-col0="1"]').forEach(el => {
@@ -481,12 +485,15 @@
         const movedDot = tr.querySelector('td u.row-sel-dot');
         if (movedDot && (movedDot.parentElement !== col0Td || restoredAny)) {
           if (movedDot.parentElement && movedDot.parentElement !== col0Td) {
-            movedDot.parentElement.classList.remove('td-has-sel-dot', 'td-has-inline-act');
+            movedDot.parentElement.classList.remove('td-has-sel-dot', 'td-has-inline-act', 'td-has-void-hover', 'td-has-rep-shift', 'td-void-armed');
           }
           col0Td.appendChild(movedDot);
         }
         col0Td.classList.toggle('td-has-sel-dot', Boolean(movedDot));
-        col0Td.classList.toggle('td-has-inline-act', Boolean(col0Td.querySelector('.badge-app, .void-btn:not(.row-void-hover)')));
+        col0Td.classList.toggle('td-has-void-hover', Boolean(col0Td.querySelector('.void-btn.row-void-hover')));
+        col0Td.classList.toggle('td-has-rep-shift', Boolean(col0Td.querySelector('.rep-shift-ico')));
+        col0Td.classList.toggle('td-void-armed', Boolean(col0Td.querySelector('.void-btn.row-void-hover.armed')));
+        col0Td.classList.toggle('td-has-inline-act', Boolean(col0Td.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')));
       }
     });
   }

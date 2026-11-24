@@ -9209,12 +9209,166 @@
     return `<span class="tkt-dwell-badge${st.turnaround_flagged ? ' is-warn' : ''}" data-no-i18n="1" data-ui-tip="${esc(tip)}">${fmtNum(st.unload_dwell_min, 0)}m${st.on_site_now ? ' live' : ''}</span>`;
   }
 
+  let _repShiftPopAnchor = null;
+
+  function closeRepShiftPopover(opts = {}) {
+    const restoreFocus = Boolean(opts && opts.restoreFocus);
+    const pop = $('repShiftPopover');
+    const prevAnchor = _repShiftPopAnchor;
+    if (prevAnchor && prevAnchor.isConnected) {
+      prevAnchor.setAttribute('aria-expanded', 'false');
+    }
+    _repShiftPopAnchor = null;
+    if (pop && !pop.hidden) {
+      pop.hidden = true;
+    }
+    if (restoreFocus && prevAnchor && prevAnchor.isConnected) {
+      try { prevAnchor.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function positionRepShiftPopover() {
+    const pop = $('repShiftPopover');
+    const anchor = _repShiftPopAnchor;
+    if (!pop || pop.hidden || !anchor || !anchor.isConnected) {
+      if (pop && !pop.hidden) closeRepShiftPopover();
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      closeRepShiftPopover();
+      return;
+    }
+    const pw = pop.offsetWidth || 248;
+    const ph = pop.offsetHeight || 136;
+    let left = rect.left + (rect.width / 2) - (pw / 2);
+    left = Math.max(8, Math.min(window.innerWidth - pw - 8, left));
+    let top = rect.top - ph - 8;
+    if (top < 10) top = Math.min(window.innerHeight - ph - 8, rect.bottom + 8);
+    if (top < 8) top = 8;
+    pop.style.left = Math.round(left) + 'px';
+    pop.style.top = Math.round(top) + 'px';
+  }
+
+  function ensureRepShiftPopover() {
+    let pop = $('repShiftPopover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.id = 'repShiftPopover';
+    pop.className = 'rep-shift-popover no-print';
+    pop.setAttribute('role', 'region');
+    pop.setAttribute('aria-label', 'Reporting Date Shift');
+    pop.hidden = true;
+    document.body.appendChild(pop);
+
+    pop.addEventListener('click', e => {
+      const t = e.target && e.target.closest ? e.target : null;
+      if (!t) return;
+      if (t.closest('[data-rep-shift-close]')) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeRepShiftPopover({ restoreFocus: true });
+        return;
+      }
+      if (t.closest('[data-rep-shift-open-entry]')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const rrow = _repShiftPopAnchor && _repShiftPopAnchor.closest ? _repShiftPopAnchor.closest('tr.rrow[data-rkey][data-rid]') : null;
+        closeRepShiftPopover();
+        if (rrow) {
+          openRecordFromTableRow(rrow.getAttribute('data-rkey'), rrow.getAttribute('data-rid'), rrow);
+        }
+      }
+    });
+
+    if (!window.__repShiftPopListenersWired) {
+      window.__repShiftPopListenersWired = true;
+      document.addEventListener('pointerdown', e => {
+        const curPop = $('repShiftPopover');
+        if (!curPop || curPop.hidden) return;
+        const t = e.target && e.target.nodeType === 1 ? e.target : null;
+        if (t && (curPop.contains(t) || (t.closest && t.closest('[data-rep-shift-btn]')))) return;
+        closeRepShiftPopover();
+      }, true);
+      document.addEventListener('scroll', e => {
+        const curPop = $('repShiftPopover');
+        if (!curPop || curPop.hidden) return;
+        const t = e.target && e.target.nodeType === 1 ? e.target : null;
+        if (t && curPop.contains(t)) return;
+        closeRepShiftPopover();
+      }, { capture: true, passive: true });
+      document.addEventListener('wheel', e => {
+        const curPop = $('repShiftPopover');
+        if (!curPop || curPop.hidden) return;
+        const t = e.target && e.target.nodeType === 1 ? e.target : null;
+        if (t && curPop.contains(t)) return;
+        closeRepShiftPopover();
+      }, { capture: true, passive: true });
+      window.addEventListener('resize', () => {
+        const curPop = $('repShiftPopover');
+        if (curPop && !curPop.hidden) positionRepShiftPopover();
+      }, { passive: true });
+    }
+    return pop;
+  }
+
+  function toggleRepShiftPopover(btnEl) {
+    if (!btnEl || !btnEl.isConnected) {
+      closeRepShiftPopover();
+      return;
+    }
+    const existing = $('repShiftPopover');
+    if (_repShiftPopAnchor === btnEl && existing && !existing.hidden) {
+      closeRepShiftPopover();
+      return;
+    }
+    closeRepShiftPopover();
+    if (typeof hideUiTooltip === 'function') hideUiTooltip();
+
+    const pop = ensureRepShiftPopover();
+    _repShiftPopAnchor = btnEl;
+    btnEl.setAttribute('aria-expanded', 'true');
+
+    const txDate = (btnEl.getAttribute('data-tx-date') || '').trim();
+    const repDate = (btnEl.getAttribute('data-rep-date') || '').trim();
+    const repSummary = (btnEl.getAttribute('data-rep-summary') || '').trim();
+    const curBasisIsTx = isTxOnlyBasisView(STATE.view) || STATE.basis === 'tx';
+    const canOpenEntry = Boolean(btnEl.closest('tr.rrow[data-rkey][data-rid]'));
+
+    pop.innerHTML = `
+      <div class="rep-shift-pop-head">
+        <span class="rep-shift-pop-title">${ic('rep_shift')}<strong>Reporting Date Shift</strong></span>
+        <button type="button" class="rep-shift-pop-close" data-rep-shift-close="1" aria-label="Close">✕</button>
+      </div>
+      <div class="rep-shift-pop-body">
+        <div class="rep-shift-pop-row"><span>Transaction Date</span><b class="mono" data-no-i18n="1">${esc(txDate || '—')}</b></div>
+        <div class="rep-shift-pop-row"><span>Reporting Date</span><b class="mono brass" data-no-i18n="1">${esc(repDate || repSummary || '—')}</b></div>
+      </div>
+      <div class="rep-shift-pop-basis">${curBasisIsTx ? 'Showing Transaction Date' : 'Showing Reporting Date'}</div>
+      ${canOpenEntry ? '<div class="rep-shift-pop-foot"><button type="button" class="btn btn-outline-bar btn-sm rep-shift-open-btn" data-rep-shift-open-entry="1">Open Entry</button></div>' : ''}
+    `;
+
+    const curLang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    pop.dir = curLang === 'ar' ? 'rtl' : 'ltr';
+    if (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    pop.style.visibility = 'hidden';
+    pop.hidden = false;
+    positionRepShiftPopover();
+    pop.style.visibility = '';
+  }
+
   function repDateShiftBadge(r) {
     if (!r || !r.date) return '';
     const dTx = String(r.date).slice(0, 10);
     const dRep = String(r.rep_date || r.set_date || '').slice(0, 10);
     if (!dTx || !dRep || dTx === dRep) return '';
-    return `<span class="rep-shift-ico" data-ui-tip="Reporting Date differs · Tx Date ${esc(fmtDateDMY(dTx))} · Reporting Date ${esc(fmtDateDMY(dRep))}">${ic('rep_shift')}</span>`;
+    const txDisp = fmtDateDMY(dTx);
+    const repDisp = fmtDateDMY(dRep);
+    const tip = `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${repDisp}`;
+    return `<button type="button" class="rep-shift-ico" data-rep-shift-btn="1" data-tx-date="${esc(txDisp)}" data-rep-date="${esc(repDisp)}" data-ui-tip="${esc(tip)}" aria-label="${esc(tip)}" aria-expanded="false">${ic('rep_shift')}</button>`;
   }
 
   function appPill(crKey, amountKey, label) {
@@ -11788,7 +11942,7 @@
                 const refParts = [x.equipment ? `Unit: ${x.equipment}` : '', x.reference || '', x.notes || ''].filter(Boolean).join(' · ');
                 return `
                   <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
-                    <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
+                    <td class="mono">${esc(recordDateDMY(x))}${repDateShiftBadge(x)}${appCell(x, 'expenses')}</td>
                     <td class="mono"><strong>${esc(x.name || x.id)}</strong></td>
                     <td>${coBadge(x.company)}</td>
                     <td>${x.supplier ? relLink('suppliers', x.supplier, x.supplier, true) : '<span class="mu">Unassigned</span>'}</td>
@@ -45342,7 +45496,7 @@
   }
 
   function cleanDomainCellText(tdEl) {
-    return walkBlockSeparatedCellText(tdEl, '.att-inline-badge, .sr-only, .ind-agr-pill, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select');
+    return walkBlockSeparatedCellText(tdEl, '.att-inline-badge, .sr-only, .ind-agr-pill, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select');
   }
 
   // English text of a register cell (the translator keeps the original on each text node as __enText),
@@ -47287,14 +47441,17 @@
       const hrStr = tmS.includes(':') ? tmS.split(':')[0] : '';
       const hr = /^\d+$/.test(hrStr) ? parseInt(hrStr, 10) : 0;
       const shiftDate = (d && hr >= 18) ? shiftIsoPlus1(d) : d;
+      // Owner rule 2026-11-24: a night trip is paid in the month of its reporting date, as the workbook does (sales
+      // and material, workbook and app rows alike), and its pay never moves to the next day after 18:00.
       const repDate = String(t.rep_date || d).slice(0, 10);
       const isApp = isAppRecord(t);
       const hasCustomRep = Boolean(isApp && t.rep_date && repDate && repDate !== d);
-      const repShiftDate = hasCustomRep ? ((hr >= 18) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
       const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
       const coSiteRegs = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
       let siteN = t.site ? norm(t.site) : '';
       const isIntSale = Boolean(isSale && t.is_internal_sale);
+      // The night rate is looked up as before (sales on the reporting date, material on the trip day), which
+      // matches the workbook's pay for every past trip; only the pay month follows the reporting date.
       const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
       const regOfSite = sN => ((isIntSale || !sN || sN === 'excluded')
         ? 'excluded'
@@ -47357,7 +47514,6 @@
         date: d,
         shift_date: shiftDate,
         rep_date: repDate,
-        rep_shift_date: repShiftDate,
         is_app: isApp,
         has_custom_rep: hasCustomRep,
         is_sale: Boolean(isSale),
@@ -48188,10 +48344,10 @@
     const scopedDriverOtTrips = filterRecords(idx.driverOtTrips || [], { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
     scopedDriverOtTrips.forEach(tr => {
       if (matchFn && !matchFn({ company: tr.company, staff: tr.staff, driver: tr.driver })) return;
-      const useAppRepDate = Boolean(STATE.basis === 'rep' && tr.is_app && tr.has_custom_rep && tr.rep_date);
-      const drvD = STATE.basis === 'rep' ? (useAppRepDate ? tr.rep_date : (tr.is_sale ? tr.rep_date : tr.shift_date)) : tr.date;
+      // Rep Date basis: the trip's reporting date sets both the day and the pay month (no 18:00 roll).
+      const drvD = STATE.basis === 'rep' ? (tr.rep_date || tr.date) : tr.date;
       const inDrvWin = drvD >= effFromDate && drvD <= effToDate && drvD.slice(0, 7) <= effEndYm;
-      const salD = STATE.basis === 'rep' ? (useAppRepDate ? tr.rep_date : tr.shift_date) : tr.date;
+      const salD = drvD;
       const ym = salD.slice(0, 7);
       const inSalWin = salD >= effFromDate && salD <= effToDate && ym <= effEndYm;
       if (!inDrvWin && !inSalWin) return;
@@ -51933,7 +52089,7 @@
                   const rowTot = Number(f.total != null ? f.total : (Number(f.hours || 0) * Number(f.rate_usd || 0)));
                   return `
                   <tr class="rrow" data-rkey="freelance_entries" data-rid="${esc(f.id || f.name)}">
-                    <td class="mono">${esc(recordDateDMY(f))}${appCell(f, 'freelance_entries')}</td>
+                    <td class="mono">${esc(recordDateDMY(f))}${repDateShiftBadge(f)}${appCell(f, 'freelance_entries')}</td>
                     <td class="mono"><strong>${esc(f.name || f.id || '—')}</strong></td>
                     <td>${coBadge(f.company || 'WTC')}</td>
                     <td><strong>${relLink('employments', f.staff, f.staff, true)}</strong></td>
@@ -52042,7 +52198,7 @@
                 const safeSalTip = canShowAttDollars && s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : '';
                 return `
                 <tr class="rrow" data-rkey="salaries" data-rid="${esc(s.id)}">
-                  <td class="mono">${esc(recordDateDMY(s))}${appCell(s, 'salaries')}</td>
+                  <td class="mono">${esc(recordDateDMY(s))}${repDateShiftBadge(s)}${appCell(s, 'salaries')}</td>
                   <td class="mono">${esc(s.payroll_month)}</td>
                   <td>${coBadge(s.company)}</td>
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
@@ -60452,7 +60608,7 @@
               <tbody>
                 ${shownAssets.length ? shownAssets.map(x => `
                   <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
-                    <td class="mono">${esc(recordDateDMY(x))}</td>
+                    <td class="mono">${esc(recordDateDMY(x))}${repDateShiftBadge(x)}</td>
                     <td class="mono"><strong>${esc(x.name || x.id)}</strong>${renderSpineInlineAttBadgeHtml('expenses', x)}</td>
                     <td>${coBadge(x.company)}</td>
                     <td><strong>${esc([x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay')}</strong></td>
@@ -71392,7 +71548,7 @@
                     ${!canViewExp ? `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">Expense bills require Expenses hub permission.</td></tr>` : ((p3ExpRows.length || p3DocRows.length) ? `
                       ${p3ExpRows.slice(0, 4).map(ex => `
                         <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
-                          <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong> ${repDateShiftBadge(ex)}</td>
+                          <td class="dops-trunc"><div class="dops-grp-head"><strong>${esc(ex.supplier || ex.name)}</strong>${repDateShiftBadge(ex)}</div></td>
                           <td class="dops-trunc">${esc(ex.category || 'Expense')} · ${esc(ex.method || 'Credit')}</td>
                           <td class="r mono"><strong>${fmtUSD(ex.total_ttc || ex.amount || 0, 0)}</strong></td>
                         </tr>
@@ -128948,7 +129104,7 @@
   }
 
   function extractTdCellCleanText(td) {
-    return walkBlockSeparatedCellText(td, 'button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select, .att-inline-badge, .ind-agr-pill');
+    return walkBlockSeparatedCellText(td, 'button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select, .att-inline-badge, .ind-agr-pill, .rep-shift-ico');
   }
 
   function canMobPeekEditRrow(checkKey, row) {
@@ -149034,6 +149190,7 @@
       try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
     if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
+    if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     renderApp();
@@ -151673,6 +151830,7 @@
   function openPocketBrief(opts = {}) {
     if (!canUsePocketBrief(activeUser())) return false;
     if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
+    if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (typeof closeMobileTopSheets === 'function') closeMobileTopSheets();
@@ -184605,6 +184763,7 @@
     _mapsQuotaSigBuilt = null;
     const popEl = $('mfgChartPopover');
     if (popEl && !popEl.hidden) popEl.hidden = true;
+    if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
     lockShellScroll();
     document.documentElement.setAttribute('data-theme', STATE.theme);
     syncRailCollapseUi();
@@ -185278,7 +185437,9 @@
         if (firstTd && firstTd.tagName === 'TD') {
           tr._hasSelDot = true;
           firstTd.classList.add('td-has-sel-dot');
-          if (firstTd.querySelector('.badge-app, .void-btn:not(.row-void-hover)')) {
+          firstTd.classList.toggle('td-has-void-hover', Boolean(firstTd.querySelector('.void-btn.row-void-hover')));
+          firstTd.classList.toggle('td-has-rep-shift', Boolean(firstTd.querySelector('.rep-shift-ico')));
+          if (firstTd.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')) {
             firstTd.classList.add('td-has-inline-act');
           }
           firstTd.appendChild(protoDot.cloneNode(true));
@@ -185401,7 +185562,7 @@
     };
 
     container.addEventListener('keydown', e => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.repeat || (e.key !== 'Enter' && e.key !== ' ')) return;
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
       const pbiJumpEl = t.closest('[data-pbi-jump][role="button"]');
@@ -185481,14 +185642,35 @@
         return;
       }
 
+      const repShiftBtn = t.closest('[data-rep-shift-btn]');
+      if (repShiftBtn && container.contains(repShiftBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleRepShiftPopover(repShiftBtn);
+        return;
+      }
+
       const voidBtn = t.closest('[data-void]');
       if (voidBtn && container.contains(voidBtn)) {
         e.stopPropagation();
-        if (voidBtn.dataset.armed === '1') { voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id')); return; }
+        const voidTd = voidBtn.parentElement && voidBtn.parentElement.tagName === 'TD' ? voidBtn.parentElement : null;
+        if (voidBtn.dataset.armed === '1') {
+          if (voidTd) voidTd.classList.remove('td-void-armed');
+          voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id'));
+          return;
+        }
         voidBtn.dataset.armed = '1';
         voidBtn.textContent = 'Void?';
         voidBtn.classList.add('armed');
-        setTimeout(() => { if (voidBtn.isConnected) { voidBtn.dataset.armed = ''; voidBtn.textContent = '✕'; voidBtn.classList.remove('armed'); } }, 4000);
+        if (voidTd) voidTd.classList.add('td-void-armed');
+        setTimeout(() => {
+          if (voidBtn.isConnected) {
+            voidBtn.dataset.armed = '';
+            voidBtn.textContent = '✕';
+            voidBtn.classList.remove('armed');
+          }
+          if (voidTd && voidTd.isConnected) voidTd.classList.remove('td-void-armed');
+        }, 4000);
         return;
       }
 
@@ -186604,16 +186786,26 @@
       }
     });
 
-    container.addEventListener('keydown', ev => {
-      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    container.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const t = e.target && typeof e.target.closest === 'function' ? e.target : null;
+      if (!t) return;
+      const repShiftBtn = t.closest('[data-rep-shift-btn]');
+      if (repShiftBtn && container.contains(repShiftBtn)) {
+        if (e.repeat) return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleRepShiftPopover(repShiftBtn);
+        return;
+      }
       if (getActiveIndustry(STATE.company) === 'Manufacturing') return;
-      const t = ev.target;
-      if (!t || typeof t.closest !== 'function' || t.closest('button, a, .rel-link, input, select, textarea')) return;
+      if (t.closest('button, a, [data-rep-shift-btn], .dops-rep-badge, .rel-link, input, select, textarea')) return;
       const dopsExpRow = t.closest('tr[data-dops-expand]');
       if (dopsExpRow && container.contains(dopsExpRow)) {
+        if (e.repeat) return;
         const k = dopsExpRow.getAttribute('data-dops-expand');
         if (k) {
-          ev.preventDefault();
+          e.preventDefault();
           if (!STATE.dailyOpsExpanded) STATE.dailyOpsExpanded = {};
           STATE.dailyOpsExpanded[k] = !STATE.dailyOpsExpanded[k];
           renderApp();
@@ -189454,6 +189646,7 @@
     _lastUserNavAt = Date.now();
     cancelIdleHubPrewarm();
     if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
+    if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
@@ -191743,6 +191936,13 @@
         if (fifoPop && !fifoPop.hidden) {
           e.preventDefault();
           closeFifoSplitPeekPopover(true);
+          return;
+        }
+        const repPop = $('repShiftPopover');
+        if (repPop && !repPop.hidden) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          closeRepShiftPopover({ restoreFocus: true });
           return;
         }
         const hc = $('roleHoverPreviewCard');

@@ -4598,8 +4598,9 @@ th.sortable i:empty { display: none; margin: 0; }
 .void-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); color: var(--muted); border-radius: 4px; font-size: 9.5px; font-weight: 700; padding: 0 4px; margin-left: 4px; line-height: 1; vertical-align: middle; cursor: pointer; }
 .void-btn:hover, .void-btn.armed { border-color: var(--crit); color: var(--crit); background: var(--crit-bg); }
 .ledger-table tbody td:first-child { position: relative; }
-.void-btn.row-void-hover { display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 1; margin-left: 0; background: var(--surface); box-shadow: 0 1px 4px rgba(11, 23, 48, 0.14); padding: 0 4.5px; }
-td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
+.void-btn.row-void-hover { display: none; position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%); z-index: 2; margin-inline-start: 0; background: var(--surface); box-shadow: 0 1px 4px rgba(11, 23, 48, 0.14); padding: 0 4.5px; }
+td.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 22px; }
+td.td-has-inline-act.td-has-sel-dot > .void-btn.row-void-hover { inset-inline-end: 4px; }
 .ledger-table tbody tr:hover .void-btn.row-void-hover,
 .void-btn.row-void-hover.armed,
 .void-btn.row-void-hover:focus-visible { display: inline-flex; align-items: center; }
@@ -17058,15 +17059,149 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-left: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-inline-start: 4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--brass);
-  vertical-align: -1px;
-  cursor: help;
+  vertical-align: middle;
+  cursor: pointer;
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s;
+}
+.rep-shift-ico:hover,
+.rep-shift-ico:focus-visible,
+.rep-shift-ico[aria-expanded="true"] {
+  border-color: var(--brass-border);
+  background: var(--brass-tint);
+  outline: none;
 }
 .rep-shift-ico svg.ic {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+  pointer-events: none;
+}
+table.ledger-table:is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) .rep-shift-ico,
+#salesPanel table.ledger-table .rep-shift-ico,
+#payStaffRegPanel table.ledger-table .rep-shift-ico {
+  width: 16px;
+  height: 16px;
+  margin-inline-start: 2px;
+}
+table.ledger-table:is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) .rep-shift-ico svg.ic,
+#salesPanel table.ledger-table .rep-shift-ico svg.ic,
+#payStaffRegPanel table.ledger-table .rep-shift-ico svg.ic {
   width: 11px;
   height: 11px;
-  stroke-width: 2;
+}
+.rep-shift-popover {
+  position: fixed;
+  z-index: 1500;
+  min-width: 228px;
+  max-width: min(300px, calc(100vw - 16px));
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 28px rgba(15, 30, 56, 0.14);
+}
+.rep-shift-popover[hidden] {
+  display: none !important;
+}
+:root[data-theme="dark"] .rep-shift-popover {
+  background: #122038;
+  border-color: var(--line-strong);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.56);
+}
+.rep-shift-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+.rep-shift-pop-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.rep-shift-pop-title svg.ic {
+  width: 14px;
+  height: 14px;
+  color: var(--brass);
+  flex-shrink: 0;
+}
+.rep-shift-pop-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.rep-shift-pop-close:hover,
+.rep-shift-pop-close:focus-visible {
+  border-color: var(--brass);
+  color: var(--ink);
+  outline: none;
+}
+.rep-shift-pop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rep-shift-pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.rep-shift-pop-row > span {
+  color: var(--muted);
+}
+.rep-shift-pop-row > b {
+  font-weight: 700;
+  color: var(--ink);
+}
+.rep-shift-pop-row > b.brass {
+  color: var(--brass);
+}
+.rep-shift-pop-basis {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.rep-shift-pop-foot {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+.rep-shift-open-btn {
+  padding: 3px 10px;
+  font-size: 11.5px;
 }
 .tkt-print-mini {
   display: inline-flex;
@@ -22881,21 +23016,73 @@ tr.rrow td:first-child {
 }
 .ledger-table tbody td:is(:first-child, .tbl-first-vis-cell) u.row-sel-dot {
   position: absolute;
-  right: 3px;
+  inset-inline-end: 3px;
   top: 50%;
   transform: translateY(-50%);
-  margin-left: 0;
+  margin-inline-start: 0;
   z-index: 3;
   box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10);
 }
 .ledger-table tbody td.td-has-inline-act:is(:first-child, .tbl-first-vis-cell) u.row-sel-dot {
   position: static;
-  right: auto;
+  inset-inline-end: auto;
   top: auto;
   transform: none;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   vertical-align: middle;
   box-shadow: none;
+  pointer-events: auto;
+}
+/* Reserved inline-end gutter on <10-col tables so hover [✕], Void? and [□] never collide with date text, rep-shift badge or inline attachment pills */
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 24px;
+}
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-void-hover:not(.td-has-sel-dot):not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-inline-act.td-has-void-hover:is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 26px;
+}
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot.td-has-void-hover:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 46px;
+}
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot.td-has-void-hover.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 68px;
+}
+table.ledger-table:not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-inline-act.td-has-void-hover.td-void-armed:is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 50px;
+}
+/* Dense 10+ column tables (#rawPanel, #documentsPanel, #pricingPanel, #salesPanel, #payStaffRegPanel, tbl-cols-10/13/16): 0px added horizontal width via a clean 22px bottom action tray */
+table.ledger-table:is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#salesPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#pricingPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#rawPricingPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#payAttStaffSumPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#payStaffRegPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) {
+  vertical-align: top;
+  padding-top: 6px;
+  padding-bottom: 22px;
+  padding-inline-end: 4px;
+}
+table.ledger-table:is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#salesPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#pricingPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#rawPricingPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#payAttStaffSumPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#payStaffRegPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot {
+  top: auto;
+  bottom: 3px;
+  transform: none;
+  inset-inline-end: 3px;
+}
+table.ledger-table:is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#salesPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#pricingPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#rawPricingPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#payAttStaffSumPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#payStaffRegPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover {
+  top: auto;
+  bottom: 3px;
+  transform: none;
 }
 u.row-sel-dot {
   display: inline-flex;
@@ -22912,9 +23099,10 @@ u.row-sel-dot {
   font-size: 9.5px;
   font-weight: 800;
   line-height: 1;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   vertical-align: middle;
   opacity: 0;
+  pointer-events: none;
   cursor: pointer;
   transition: opacity 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
 }
@@ -22923,17 +23111,23 @@ u.row-sel-dot::after {
 }
 tr.rrow:hover u.row-sel-dot {
   opacity: 0.72;
+  pointer-events: auto;
 }
 /* Hover shows an empty brass-edged box (no check, so it never reads as Approve next to the Void x);
    the single check appears only once the row is selected. */
 u.row-sel-dot:hover {
   opacity: 1 !important;
+  pointer-events: auto;
   border-color: var(--brass);
   background: rgba(192, 137, 47, 0.12);
   color: transparent;
 }
-tr.rrow.is-row-selected u.row-sel-dot {
+tr.rrow.is-row-selected u.row-sel-dot,
+u.row-sel-dot:focus-visible {
   opacity: 1;
+  pointer-events: auto;
+}
+tr.rrow.is-row-selected u.row-sel-dot {
   background: var(--brass);
   border-color: var(--brass);
   color: #0B1730;

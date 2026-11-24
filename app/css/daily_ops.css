@@ -1849,6 +1849,8 @@ body.is-daily-ops-view .period-basis-row {
 
 /* Dedicated Reporting-Date-Differs Badge (Tx Date != Rep Date / Set Date) */
 .dops-rep-badge {
+  appearance: none;
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 2.5px;
@@ -1866,7 +1868,12 @@ body.is-daily-ops-view .period-basis-row {
   flex-shrink: 0;
   margin-right: 2px;
   vertical-align: middle;
+  cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
+}
+.dops-rep-badge:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
 }
 
 .dops-rep-badge .ic {
@@ -2122,7 +2129,20 @@ body.is-daily-ops-view .period-basis-row {
 
 .dops-grp-head > .dops-kind,
 .dops-grp-head > .dops-rep-badge,
-.dops-grp-head > .badge {
+.dops-grp-head > .rep-shift-ico,
+.dops-grp-head > .badge,
+.dops-grp-head > .co-badge {
+  flex-shrink: 0;
+}
+
+.dops-sub-cell > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dops-sub-cell > .rep-shift-ico {
   flex-shrink: 0;
 }
 

@@ -39,8 +39,10 @@
     const txD = String(txIso || '').slice(0, 10);
     const rpD = String(repIso || '').slice(0, 10);
     if (!txD || !rpD || txD === rpD || !/^\d{4}-\d{2}-\d{2}$/.test(rpD)) return '';
-    const tip = `Reporting Date differs · Tx Date ${fmtDmy(txD)} · Reporting Date ${fmtDmy(rpD)}`;
-    return `<span class="dops-rep-badge${extraCls ? ' ' + extraCls : ''}" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(fmtShortDay(rpD))}</span></span>`;
+    const txDisp = fmtDmy(txD);
+    const rpDisp = fmtDmy(rpD);
+    const tip = `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${rpDisp}`;
+    return `<button type="button" class="dops-rep-badge${extraCls ? ' ' + extraCls : ''}" data-rep-shift-btn="1" data-tx-date="${ctx.esc(txDisp)}" data-rep-date="${ctx.esc(rpDisp)}" aria-expanded="false" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(fmtShortDay(rpD))}</span></button>`;
   }
 
   function renderGroupRepBadge(ctx, shiftedCount, totalCount, repDates, txIso) {
@@ -51,8 +53,10 @@
     const badgeLbl = (uniq.length === 1 && cnt === Number(totalCount || 0))
       ? fmtShortDay(uniq[0])
       : `${ctx.fmtNum(cnt)}${uniq.length === 1 ? ' · ' + fmtShortDay(uniq[0]) : ' shifted'}`;
-    const tip = `Reporting Date differs · ${cnt} of ${totalCount || cnt} ${(totalCount || cnt) === 1 ? 'entry' : 'entries'}${datesLbl ? ' (' + datesLbl + ')' : ''} · Tx Date ${fmtDmy(txIso)}`;
-    return `<span class="dops-rep-badge is-group" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(badgeLbl)}</span></span>`;
+    const txDisp = fmtDmy(txIso);
+    const repSummary = `${cnt} / ${totalCount || cnt}${datesLbl ? ' (' + datesLbl + ')' : ''}`;
+    const tip = `Reporting Date differs · ${cnt} of ${totalCount || cnt} ${(totalCount || cnt) === 1 ? 'entry' : 'entries'}${datesLbl ? ' (' + datesLbl + ')' : ''} · Tx Date ${txDisp}`;
+    return `<button type="button" class="dops-rep-badge is-group" data-rep-shift-btn="1" data-tx-date="${ctx.esc(txDisp)}" data-rep-summary="${ctx.esc(repSummary)}" aria-expanded="false" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(badgeLbl)}</span></button>`;
   }
 
   function describeRegAddition(ad) {
@@ -1185,6 +1189,9 @@
         counterparty: ex.counterparty || (isOut ? 'External Outflow' : 'External Inflow'),
         noParty: !String(ex.counterparty || '').trim(),
         kind: ex.kind || 'External',
+        txDate: txDateOf(ex),
+        repDate: repDateOf(ex),
+        isRepShifted: hasRepShift(ex),
         usd: round2(usd),
         lbp: Math.round(lbp),
         eqAmt,
@@ -3194,7 +3201,7 @@
             <tbody>
               ${effBelow.filter(ev => matchesQuickSearch(qNorm, [ev.ticket && ev.ticket.customer, ev.ticket && ev.ticket.product])).map(ev => `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(String(ev.ticket.id || ''))}">
-                  <td class="dops-trunc"><span class="dops-kind crit">Below Rate</span> <strong>${esc(ev.ticket.customer || '-')}</strong> ${renderRepBadge(ctx, txDateOf(ev.ticket), repDateOf(ev.ticket))}</td>
+                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Below Rate</span><strong>${esc(ev.ticket.customer || '-')}</strong>${renderRepBadge(ctx, txDateOf(ev.ticket), repDateOf(ev.ticket))}</div></td>
                   <td class="dops-trunc">${esc(ev.ticket.product || '')} · ${fmtUSD(ev.soldPrice, 1)} vs ${fmtUSD(ev.agreedPrice, 1)}</td>
                   <td class="r"><strong style="color:var(--crit)">-${fmtUSD(ev.shortfall, 0)}</strong></td>
                 </tr>
@@ -3660,9 +3667,11 @@
     const dates = g.repDates || [];
     if (dates.length > 2) return renderGroupRepBadge(ctx, g.repShiftCount, g.count, Array.from(new Set(dates.map(d => d.date))), txIso);
     return dates.map(d => {
-      const tip = `Reporting Date differs · ${d.count} of ${g.count} ${g.count === 1 ? 'entry' : 'entries'} (${fmtShortDay(d.date)}) · Tx Date ${fmtDmy(d.txDate || txIso)}`;
+      const txDisp = fmtDmy(d.txDate || txIso);
+      const tip = `Reporting Date differs · ${d.count} of ${g.count} ${g.count === 1 ? 'entry' : 'entries'} (${fmtShortDay(d.date)}) · Tx Date ${txDisp}`;
       const amtTxt = g.isFx ? ctx.fmtUSD(Math.abs(d.amount), 0) : `${d.amount >= 0 ? '+' : '-'}${ctx.fmtUSD(Math.abs(d.amount), 0)}`;
-      return `<span class="dops-rep-badge is-group is-cash-rep" data-cash-rep-date="${ctx.esc(d.date)}" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(fmtShortDay(d.date))}</span><b class="dops-rep-amt">${ctx.esc(amtTxt)}</b></span>`;
+      const repSummary = `${d.count} / ${g.count} (${fmtShortDay(d.date)}) · ${amtTxt}`;
+      return `<button type="button" class="dops-rep-badge is-group is-cash-rep" data-rep-shift-btn="1" data-tx-date="${ctx.esc(txDisp)}" data-rep-summary="${ctx.esc(repSummary)}" data-cash-rep-date="${ctx.esc(d.date)}" aria-expanded="false" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(fmtShortDay(d.date))}</span><b class="dops-rep-amt">${ctx.esc(amtTxt)}</b></button>`;
     }).join('');
   }
 
@@ -4054,7 +4063,7 @@
                   const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                   return `
                     <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
-                      <td class="dops-trunc"><span class="dops-kind crit">Variance</span> <strong>${esc(mfItem)}</strong> ${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</td>
+                      <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Variance</span><strong>${esc(mfItem)}</strong>${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</div></td>
                       <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.discrepancy_type || '-')}</td>
                       <td class="r"><strong>${fmtNum(mfQty, 0)} ${esc(mfUom)}</strong></td>
                     </tr>
@@ -4062,7 +4071,7 @@
                 }).join('')}
                 ${repFiltered.map(rp => `
                   <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong> ${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</td>
+                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(rp.equipment || '-')}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
                     <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
                     <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                   </tr>
@@ -4130,7 +4139,7 @@
                   const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                   return `
                     <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
-                      <td class="dops-trunc"><span class="dops-kind crit">Tank Variance</span> <strong>${esc(mfItem)}</strong> ${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</td>
+                      <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Tank Variance</span><strong>${esc(mfItem)}</strong>${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</div></td>
                       <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.discrepancy_type || '-')}</td>
                       <td class="r"><strong style="color:${mfQty < 0 ? 'var(--good)' : 'var(--crit)'}">${fmtNum(mfQty, 0)} ${esc(mfUom)}</strong></td>
                     </tr>
@@ -4232,7 +4241,7 @@
                 const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                 return `
                   <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind crit">Tank Variance</span> <strong>${esc(mfItem)}</strong> ${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</td>
+                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Tank Variance</span><strong>${esc(mfItem)}</strong>${renderRepBadge(ctx, txDateOf(mf), repDateOf(mf))}</div></td>
                     <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.discrepancy_type || '-')}</td>
                     <td class="r"><strong style="color:${mfQty < 0 ? 'var(--good)' : 'var(--crit)'}">${fmtNum(mfQty, 0)} ${esc(mfUom)}</strong></td>
                   </tr>
@@ -4240,7 +4249,7 @@
               }).join('')}
               ${repFiltered.map(rp => `
                 <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
-                  <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong> ${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</td>
+                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(rp.equipment || '-')}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
                   <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
                   <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                 </tr>
@@ -5440,8 +5449,8 @@
       const t = ev.target;
       if (!t || typeof t.closest !== 'function') return;
 
-      // Let global workspace delegation handle lookup links, thermal print slips, + modals, and BU jumps
-      if (t.closest('[data-rel-key], [data-print-ticket], [data-open-modal], [data-jump-co], a')) return;
+      // Let global workspace delegation handle lookup links, thermal print slips, reporting-date badges, + modals, and BU jumps
+      if (t.closest('[data-rel-key], [data-print-ticket], [data-open-modal], [data-jump-co], [data-rep-shift-btn], .dops-rep-badge, a')) return;
 
       // 0a. 1-Tap Shift Handover Brief & Anomaly Digest Popover ([data-dops-handover])
       const handoverBtn = t.closest('[data-dops-handover]');
@@ -5568,7 +5577,7 @@
       if (ev.key !== 'Enter' && ev.key !== ' ') return;
       const t = ev.target;
       if (!t || typeof t.closest !== 'function') return;
-      if (t.matches && t.matches('input, select, textarea, button, a')) return;
+      if ((t.matches && t.matches('input, select, textarea, button, a')) || (t.closest && t.closest('button, a, [data-rep-shift-btn], .dops-rep-badge'))) return;
       const expEl = t.closest('[data-dops-expand]');
       if (expEl && stage.contains(expEl)) {
         ev.preventDefault();
@@ -5639,7 +5648,9 @@
     if (!window.__dopsEscBound) {
       window.__dopsEscBound = true;
       document.addEventListener('keydown', ev => {
-        if (ev.key !== 'Escape' || STATE.view !== 'daily_ops') return;
+        if (ev.defaultPrevented || ev.key !== 'Escape' || STATE.view !== 'daily_ops') return;
+        const repPop = document.getElementById('repShiftPopover');
+        if (repPop && !repPop.hidden) return;
         const insp = document.getElementById('recordInspector');
         if (insp && (insp.classList.contains('open') || !insp.hidden)) return;
         const em = document.getElementById('entryModal');
