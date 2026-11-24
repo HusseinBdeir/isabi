@@ -3,12 +3,6 @@
   "branch": "wt/ot-rep-date",
   "sha": "9c67602e15ece970c9b2942357d1d1fb72a93917"
  },
- "batch": {
-  "at": "2026-11-24T15:13:01Z",
-  "holder": "THEO hbdei (rep-shift-cal)",
-  "lockId": "fa6008a9cd57422d9c45302e773ad9e1",
-  "version": "19.6.438"
- },
  "gates": [
   "isabi-app: node build/verify_ot_rep_month.mjs"
  ],
@@ -17,6 +11,9 @@
  "pc": "Theo",
  "queuedAt": "2026-11-24T11:42:24Z",
  "seenAt": "2026-11-24T16:31:53Z",
- "state": "waiting",
+ "shippedAt": "2026-11-24T16:37:10Z",
+ "shippedBy": "THEO hbdei (rep-shift-cal)",
+ "shippedVersion": "19.6.438",
+ "state": "shipped",
  "summary": "Payroll: driver night-trip overtime paid in the month of its reporting date, as the workbook (no 18:00 roll; rate lookup unchanged)"
 }
