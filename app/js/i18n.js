@@ -6707,7 +6707,6 @@
       "Page Guide, Spoken Walkthrough, Smart Scan, Language & Theme": "دليل الصفحة والشرح الصوتي والمسح الذكي واللغة والمظهر",
       "Page captured! Turn to next page or click Attach.": "تم التقاط الصفحة! اقلب للصفحة التالية أو اضغط إرفاق.",
       "Pages": "الصفحات",
-      "Paid": "المدفوع",
       "Paid ($)": "المدفوع ($)",
       "Paid (for period)": "المدفوع (عن الفترة)",
       "Paid (oldest first)": "المدفوع (الأقدم أولاً FIFO)",
@@ -10715,7 +10714,6 @@
       "to inspect open Credit Tickets & live FIFO receipt allocation.": "لمعاينة الإيصالات الآجلة المفتوحة وتوزيع سند القبض تلقائياً حسب الأقدمية (FIFO).",
       "to keep confirmed statements unchanged, or use Supervisor Override.": "للحفاظ على الكشوفات المؤكدة دون تغيير، أو استخدم تجاوز المشرف.",
       "transfer net cash to/from central treasury so physical cash on hand stays near": "اليومية بتحويل صافي النقد من/إلى الخزينة المركزية ليبقى رصيد الصندوق الفعلي قريباً من",
-      "trip": "رحلة",
       "truck,": "شاحنة،",
       "trucks /": "شاحنات /",
       "undefined to undefined": "كامل الفترة",
@@ -14225,6 +14223,24 @@
       "Restricted by seat permissions": "مقيد حسب صلاحيات المقعد",
       "Requires Full Books": "يتطلب صلاحية الدفاتر الكاملة",
       "Requires Expenses hub": "يتطلب قسم المصاريف",
+      "Payroll & Attendance": "الرواتب والحضور",
+      "Team & Attendance": "الفريق والحضور",
+      "Master Additions": "الإضافات الرئيسية",
+      "New Salary Payment": "دفعة راتب جديدة",
+      "Shifts Logged": "الورديات المسجلة",
+      "On Duty Today": "في الخدمة اليوم",
+      "Shift / Detail": "الوردية / التفاصيل",
+      "Paid / Hours": "المدفوع / الساعات",
+      "No clock-in": "لم يسجل دخول",
+      "Regular shift": "وردية عادية",
+      "New Master Addition": "إضافة رئيسية جديدة",
+      "New Master Additions": "إضافات رئيسية جديدة",
+      "Worked": "عمل",
+      "Paid": "مدفوع",
+      "voucher": "سند",
+      "vouchers": "سندات",
+      "trip": "نقلة",
+      "trips": "نقلات",
       "Deposits & cash balances require Cash Flow & Ledger access": "تتطلب الودائع والأرصدة النقدية صلاحية السيولة والأستاذ العام",
       "Stock valuation requires Treasury & Ledger access": "يتطلب تقييم المخزون صلاحية الخزينة والأستاذ العام",
       "Trial Balance and treasury books require Cash Flow & Ledger permissions": "يتطلب ميزان المراجعة ودفاتر الخزينة صلاحية السيولة والأستاذ العام",
@@ -21182,7 +21198,6 @@
       "Page Guide, Spoken Walkthrough, Smart Scan, Language & Theme": "Guide de la page, visite vocale, scan intelligent, langue et thème",
       "Page captured! Turn to next page or click Attach.": "Page capturée ! Tournez la page suivante ou cliquez sur Joindre.",
       "Pages": "Pages",
-      "Paid": "Payé",
       "Paid ($)": "Payé ($)",
       "Paid (for period)": "Payé (sur la période)",
       "Paid (oldest first)": "Payé (plus ancien d'abord)",
@@ -25190,7 +25205,6 @@
       "to inspect open Credit Tickets & live FIFO receipt allocation.": "pour inspecter les bons à crédit ouverts et l'allocation FIFO en direct.",
       "to keep confirmed statements unchanged, or use Supervisor Override.": "pour conserver les relevés confirmés intacts, ou utilisez la dérogation Superviseur.",
       "transfer net cash to/from central treasury so physical cash on hand stays near": "quotidiens transfèrent le solde vers la trésorerie centrale pour maintenir l'encaisse proche de",
-      "trip": "trajet",
       "truck,": "camion,",
       "trucks /": "camions /",
       "undefined to undefined": "Toutes Périodes",
@@ -28700,6 +28714,24 @@
       "Restricted by seat permissions": "Restreint selon les droits du poste",
       "Requires Full Books": "Nécessite les livres complets",
       "Requires Expenses hub": "Nécessite le module Dépenses",
+      "Payroll & Attendance": "Paie & Pointage",
+      "Team & Attendance": "Équipe & Pointage",
+      "Master Additions": "Ajouts au Répertoire",
+      "New Salary Payment": "Nouveau paiement de salaire",
+      "Shifts Logged": "Postes enregistrés",
+      "On Duty Today": "En service aujourd'hui",
+      "Shift / Detail": "Poste / Détail",
+      "Paid / Hours": "Payé / Heures",
+      "No clock-in": "Aucun pointage",
+      "Regular shift": "Poste normal",
+      "New Master Addition": "Nouvel ajout au répertoire",
+      "New Master Additions": "Ajouts au répertoire",
+      "Worked": "Travaillé",
+      "Paid": "Payé",
+      "voucher": "bon",
+      "vouchers": "bons",
+      "trip": "voyage",
+      "trips": "voyages",
       "Deposits & cash balances require Cash Flow & Ledger access": "Les dépôts et soldes de caisse nécessitent Trésorerie et Grand Livre",
       "Stock valuation requires Treasury & Ledger access": "La valorisation des stocks nécessite Trésorerie et Grand Livre",
       "Trial Balance and treasury books require Cash Flow & Ledger permissions": "La balance et la trésorerie nécessitent les droits Trésorerie et Grand Livre",
@@ -29745,6 +29777,12 @@
       const mnTr = (map && map[mnKey]) || m[3];
       return `${dwTr} ${m[2]} ${mnTr}${m[4] ? ' ' + m[4] : ''}`;
     }
+    m = trimmed.match(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat),?\s+(\d{1,2})$/i);
+    if (m) {
+      const dwKey = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+      const dwTr = (map && map[dwKey]) || m[1];
+      return `${dwTr} ${m[2]}`;
+    }
     m = trimmed.match(/^All-Time\s*\(([^)]+)\)$/i);
     if (m) return lang === 'ar' ? `كامل الفترة (${m[1]})` : `Toutes Périodes (${m[1]})`;
 
@@ -30236,12 +30274,13 @@
         : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
     }
 
-    m = trimmed.match(/^(Cash|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Delivery Rev|Total Haulage Rev|Total Transport|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
+    m = trimmed.match(/^(Cash|Other|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Delivery Rev|Total Haulage Rev|Total Transport|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
     if (m) {
       const kRaw = m[1].trim();
       const val = m[2];
       const lblDict = {
         'cash': ['نقدي', 'Espèces'],
+        'other': ['أخرى', 'Autre'],
         'credit': ['ذمم', 'Crédit'],
         'gross': ['المجمل', 'Brut'],
         'raw': ['المواد الأولية', 'Matières'],
@@ -32624,6 +32663,9 @@
     m = trimmed.match(/^Click to expand\s+(\d+)\s+(individual entr(?:y|ies)|(?:quarry|material) tickets?|raw receipts?|fuel entr(?:y|ies))\s+(?:for|from)\s+(.+)$/i);
     if (m) return lang === 'ar' ? `اضغط لتوسيع ${m[1]} قيود تفصيلية لـ ${m[3]}` : `Cliquer pour développer ${m[1]} écritures pour ${m[3]}`;
 
+    m = trimmed.match(/^Click to collapse\s+([\d,]+)\s+individual entr(?:y|ies)\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اضغط لطي ${m[1]} قيود تفصيلية لـ ${m[2]}` : `Cliquer pour replier ${m[1]} écritures pour ${m[2]}`;
+
     m = trimmed.match(/^Close 360° Inspector and filter the current register by\s+(.+)$/i);
     if (m) return lang === 'ar' ? `إغلاق معاينة 360° وتصفية السجل الحالي حسب ${m[1]}` : `Fermer l'inspecteur 360° et filtrer sur ${m[1]}`;
 
@@ -34693,6 +34735,65 @@
 
     m = trimmed.match(/^Overtime\s+\+([\d.,]+)h$/i);
     if (m) return lang === 'ar' ? `إضافي +${m[1]} س` : `H. sup. +${m[1]}h`;
+
+    m = trimmed.match(/^\+([\d.,]+)h\s+Overtime$/i);
+    if (m) return lang === 'ar' ? `+${m[1]} س إضافي` : `+${m[1]}h H. sup.`;
+
+    m = trimmed.match(/^Payroll\s+(\$[\d.,kM]+)\s+\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `الرواتب ${m[1]} (${m[2]})` : `Paie ${m[1]} (${m[2]})`;
+
+    m = trimmed.match(/^([\d,]+)\s+Paid\s*·\s*([\d,]+)\s+Shifts?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوع · ${m[2]} وردية` : `${m[1]} payés · ${m[2]} postes`;
+
+    m = trimmed.match(/^([\d,]+)\s+Paid$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوع` : `${m[1]} payés`;
+
+    m = trimmed.match(/^([·•]\s*)?([\d,]+)\s+Shifts?$/i);
+    if (m) return lang === 'ar' ? `${m[1] ? '· ' : ''}${m[2]} وردية` : `${m[1] ? '· ' : ''}${m[2]} poste(s)`;
+
+    m = trimmed.match(/^([\d,]+)\s+Staff Members?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} موظف` : `${m[1]} employé(s)`;
+
+    m = trimmed.match(/^([·•]\s*)?([\d,]+)\s+vouchers?$/i);
+    if (m) return lang === 'ar' ? `${m[1] ? '· ' : ''}${m[2]} سندات` : `${m[1] ? '· ' : ''}${m[2]} bon(s)`;
+
+    m = trimmed.match(/^([\d,]+)\s+Worked(?:\s*·\s*([\d,]+)\s+Absent)?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} دوام${m[2] ? ' · ' + m[2] + ' غائب' : ''}` : `${m[1]} travaillés${m[2] ? ' · ' + m[2] + ' absents' : ''}`;
+
+    m = trimmed.match(/^([\d,]+)\s+Active$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نشط` : `${m[1]} actifs`;
+
+    m = trimmed.match(/^([\d.,]+h)\s+Worked(?:\s*·\s*([\d,]+)\s+Absent)?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عمل${m[2] ? ' · ' + m[2] + ' غائب' : ''}` : `${m[1]} travaillées${m[2] ? ' · ' + m[2] + ' absents' : ''}`;
+
+    m = trimmed.match(/^([\d,]+)\s+Polic(?:y|ies)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سياسة` : `${m[1]} politique(s)`;
+
+    m = trimmed.match(/^([·•]\s*)?([\d,]+)\s+loads?$/i);
+    if (m) return lang === 'ar' ? `${m[1] ? '· ' : ''}${m[2]} نقلة` : `${m[1] ? '· ' : ''}${m[2]} voyage(s)`;
+
+    m = trimmed.match(/^([\d,]+)\s+trips?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نقلة` : `${m[1]} voyage(s)`;
+
+    m = trimmed.match(/^Click to (expand|collapse) ([\d,]+) entr(?:y|ies) for (.+)$/i);
+    if (m) return lang === 'ar'
+      ? `اضغط ${m[1] === 'expand' ? 'لفتح' : 'لطي'} ${m[2]} قيود لـ ${m[3]}`
+      : `Cliquer pour ${m[1] === 'expand' ? 'déplier' : 'replier'} ${m[2]} écritures pour ${m[3]}`;
+
+    m = trimmed.match(/^No matching attendance logs or salaries on\s+(.+?)\s+\(([\d,]+)\s+active (dispatch drivers|staff)\)\.?$/i);
+    if (m) {
+      const whoAr = /driver/i.test(m[3]) ? 'سائق نشط' : 'موظف نشط';
+      const whoFr = /driver/i.test(m[3]) ? 'chauffeurs actifs' : 'employés actifs';
+      return lang === 'ar'
+        ? `لا توجد سجلات حضور أو رواتب مطابقة في ${m[1]} (${m[2]} ${whoAr}).`
+        : `Aucun pointage ni salaire correspondant le ${m[1]} (${m[2]} ${whoFr}).`;
+    }
+
+    m = trimmed.match(/^([\d.,]+)d\s+Leave$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ي إجازة` : `${m[1]}j Congé`;
+
+    m = trimmed.match(/^([\d.,]+)d\/mo$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ي/شهر` : `${m[1]}j/mois`;
 
     m = trimmed.match(/^([\d,]+)\s+Booked to Another Day$/i);
     if (m) return lang === 'ar' ? `${m[1]} مرحّلة ليوم آخر` : `${m[1]} reportée(s) à un autre jour`;

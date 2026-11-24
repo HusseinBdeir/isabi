@@ -2193,6 +2193,69 @@ body.is-daily-ops-view .period-basis-row {
   flex-shrink: 0;
 }
 
+/* Cash Flow panel: one row per flow and counterparty, external rows pinned first */
+.dops-cash-grp .dops-grp-head > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dops-exp-chev.is-blank {
+  visibility: hidden;
+}
+
+.dops-cash-count {
+  font-weight: 700;
+  color: var(--ink-2, var(--ink));
+}
+
+.dops-cash-sum {
+  color: var(--muted);
+}
+
+/* A grouped row with a second line (reporting-day chips, In and Out behind a net): first lines stay level */
+.dops-table tbody tr.dops-cash-grp.has-sub td {
+  vertical-align: top;
+}
+
+.dops-cash-rep-line {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  padding-inline-start: 17px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dops-table.dops-fixed-3 .dops-cash-ways {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dops-rep-badge.is-cash-rep .dops-rep-amt {
+  font-weight: 800;
+  padding-inline-start: 3.5px;
+  margin-inline-start: 1px;
+  border-inline-start: 1px solid rgba(217, 119, 6, 0.36);
+  unicode-bidi: isolate;
+}
+
+:root[data-theme="dark"] .dops-rep-badge.is-cash-rep .dops-rep-amt {
+  border-inline-start-color: rgba(246, 173, 85, 0.42);
+}
+
+.dops-cash-sub .dops-sub-cell > .dops-kind,
+.dops-cash-sub .dops-sub-cell > .dops-rep-badge {
+  flex-shrink: 0;
+}
+
+.dops-table tbody tr.dops-cash-pin-end td {
+  border-bottom: 2px solid var(--line-strong, var(--line));
+}
+
 .dops-print-mini {
   display: inline-flex;
   align-items: center;

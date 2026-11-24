@@ -1078,6 +1078,7 @@
         invoice: x.invoice || x.reference || '',
         company: x.company || 'WTC',
         supplier: x.supplier || x.category || 'Expense',
+        noSupplier: !String(x.supplier || '').trim(),
         category: x.category || 'General',
         subcategory: x.subcategory || '',
         catLabel: catLbl,
@@ -1182,6 +1183,7 @@
         company: ex.company || 'WTC',
         isOut,
         counterparty: ex.counterparty || (isOut ? 'External Outflow' : 'External Inflow'),
+        noParty: !String(ex.counterparty || '').trim(),
         kind: ex.kind || 'External',
         usd: round2(usd),
         lbp: Math.round(lbp),
@@ -1248,6 +1250,7 @@
         badge: isBorrow ? 'Loan Borrowed' : 'Loan Lent',
         isInflow: isBorrow,
         party: ln.counterparty || ln.lender || 'Partner',
+        noParty: !String(ln.counterparty || ln.lender || '').trim(),
         usd: round2(usd || (!lbp ? eq : 0)),
         lbp: Math.round(lbp),
         eqAmt: eq,
@@ -1268,6 +1271,7 @@
         badge: isIn ? 'Repay In' : 'Repay Out',
         isInflow: isIn,
         party: ls.counterparty || ls.borrower || 'Partner',
+        noParty: !String(ls.counterparty || ls.borrower || '').trim(),
         usd: round2(usd),
         lbp: Math.round(lbp),
         eqAmt: eq,
@@ -1344,13 +1348,18 @@
     let dieselIssuedL = 0, dieselBoughtL = 0, lubeL = 0, greaseKg = 0;
     const activeTruckSet = new Set();
     const activeStaffSet = new Set();
+    const driverTripsByNorm = new Map();
     let companyFleetTrips = 0, haulerTrips = 0;
 
     effSales.forEach(s => {
       if (s.truck) activeTruckSet.add(norm(s.truck));
       if (s.transport_by === 'Company fleet') {
         companyFleetTrips += 1;
-        if (s.driver) activeStaffSet.add(norm(s.driver));
+        if (s.driver) {
+          const dk = norm(s.driver);
+          activeStaffSet.add(dk);
+          driverTripsByNorm.set(dk, (driverTripsByNorm.get(dk) || 0) + 1);
+        }
       } else if (s.truck) {
         haulerTrips += 1;
       }
@@ -1359,7 +1368,11 @@
       if (r.truck) activeTruckSet.add(norm(r.truck));
       if (r.transport_by === 'Company fleet') {
         companyFleetTrips += 1;
-        if (r.driver) activeStaffSet.add(norm(r.driver));
+        if (r.driver) {
+          const dk = norm(r.driver);
+          activeStaffSet.add(dk);
+          driverTripsByNorm.set(dk, (driverTripsByNorm.get(dk) || 0) + 1);
+        }
       } else if (r.truck) {
         haulerTrips += 1;
       }
@@ -1847,6 +1860,7 @@
         badgeCls: 'cash',
         badgeTxt: 'Customer Receipt',
         party: r.customer || 'Customer',
+        noParty: !String(r.customer || '').trim(),
         detail: [r.reference ? `#${r.reference}` : '', `${r.method || 'Cash'} Receipt`, Number(r.discount || 0) > 0 ? `Discount ${ctx.fmtUSD(r.discount, 0)}` : ''].filter(Boolean).join(' · '),
         txDate: txDateOf(r) || targetDate,
         repDate: repDateOf(r),
@@ -1890,6 +1904,7 @@
         badgeCls: ex.isOut ? 'exp' : 'ext',
         badgeTxt: ex.isOut ? 'External Out' : 'External In',
         party: ex.counterparty,
+        noParty: Boolean(ex.noParty),
         detail: [ex.notes || ex.kind, refStr && !(ex.notes || '').includes(refStr) ? refStr : '', ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : ''].filter(Boolean).join(' · '),
         txDate: txDateOf(ex.row) || targetDate,
         repDate: repDateOf(ex.row),
@@ -1908,6 +1923,7 @@
         badgeCls: 'loan',
         badgeTxt: ln.isInflow ? 'Loan In' : 'Loan Out',
         party: ln.party,
+        noParty: Boolean(ln.noParty),
         detail: [ln.badge, ln.notes || '', ln.lbp ? fmtCompactLbp(ln.lbp) : ''].filter(Boolean).join(' · '),
         txDate: targetDate,
         repDate: '',
@@ -1928,6 +1944,7 @@
         badgeCls: 'pay',
         badgeTxt: 'Supplier Payment',
         party: s.supplier || 'Supplier',
+        noParty: !String(s.supplier || '').trim(),
         detail: [s.invoice || s.reference || '', `${s.method || 'Cash'} Settlement`].filter(Boolean).join(' · '),
         txDate: txDateOf(s) || targetDate,
         repDate: repDateOf(s),
@@ -1949,6 +1966,7 @@
         badgeCls: 'team',
         badgeTxt: 'Salary Out',
         party: sa.staff || 'Staff',
+        noParty: !String(sa.staff || '').trim(),
         detail: [sa.payroll_month, sa.method || 'Cash', lbp ? fmtCompactLbp(lbp) : ''].filter(Boolean).join(' · '),
         txDate: txDateOf(sa) || targetDate,
         repDate: repDateOf(sa),
@@ -1967,6 +1985,7 @@
         badgeCls: 'exp',
         badgeTxt: 'Cash Expense',
         party: b.supplier,
+        noParty: Boolean(b.noSupplier),
         detail: [b.equipment, b.subcategory || b.category, b.notes].filter(Boolean).join(' · '),
         txDate: b.txDate || targetDate,
         repDate: b.repDate || '',
@@ -2486,6 +2505,7 @@
       dayFlEntries,
       dayFlPays,
       dayRegAdds,
+      driverTripsByNorm,
       otTotalLoads: salesSum.otLoads + rawSum.otLoads,
       attOtHours: round2(attOtHours),
       attOtStaffCount,
@@ -3294,7 +3314,7 @@
       return {
         canBooks: Boolean(l.books),
         canExp: Boolean(l.expenses),
-        canPayroll: Boolean(l.payroll),
+        canPayroll: Boolean(l.payrollDollars != null ? l.payrollDollars : l.payroll),
         canFullPnl: Boolean(l.profit),
         canTax: Boolean(l.tax),
         canJv: Boolean(l.partnerSplits)
@@ -3369,7 +3389,7 @@
         </div>
         ${payAndComm > 0 ? `
           <span class="dops-pnl-op">-</span>
-          <div class="dops-pnl-step" data-ui-tip="Salaries and sales commissions paid">
+          <div class="dops-pnl-step" data-dops-lens="plant:overview" style="cursor:pointer" data-ui-tip="Salaries and sales commissions paid">
             <small><i class="dops-pnl-dot p"></i>Payroll</small>
             <b>${fmtUSD(payAndComm, 0)}</b>
           </div>
@@ -3554,6 +3574,153 @@
     `;
   }
 
+  // ---- Cash Flow panel: one row per flow and counterparty (owner 2026-11-24) ----
+  // Entries of one flow kind to one counterparty fold into a single row that opens to its entries.
+  // External In and External Out of one counterparty net into one row, named by the sign of the net,
+  // and lead the table when pinExternal is set. Sums of the day's rows only: nothing is re-derived.
+  function cashPartyKey(name) {
+    return String(name == null ? '' : name).trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function groupCashMoves(moves, opts) {
+    const o = opts || {};
+    const cents = v => Math.round(Number(v || 0) * 100);
+    const byKey = new Map();
+    const groups = [];
+    (moves || []).forEach(m => {
+      const isExt = m.rkey === 'external_movements';
+      // An entry saved with no counterparty carries a stand-in label ("External Inflow", "Supplier"...):
+      // nothing says two of those are the same party, so each keeps its own row.
+      const key = m.noParty
+        ? ['solo', String(m.rkey || ''), String(m.rid == null ? '' : m.rid), String(groups.length)].join('|')
+        : [
+          isExt ? 'ext' : String(m.badgeTxt || '').toLowerCase(),
+          o.splitByCompany ? String(m.company || '').toLowerCase() : '',
+          cashPartyKey(m.party)
+        ].join('|');
+      let g = byKey.get(key);
+      if (!g) {
+        g = {
+          key, isExt, isFx: Boolean(m.isFx), company: m.company, badgeCls: m.badgeCls, badgeTxt: m.badgeTxt,
+          party: m.party, items: [], netC: 0, inC: 0, outC: 0, inCount: 0, outCount: 0,
+          orderGroup: Number(m.orderGroup || 9), repShiftCount: 0, repByDate: new Map(), names: new Map()
+        };
+        byKey.set(key, g);
+        groups.push(g);
+      }
+      const c = cents(m.amount);
+      g.items.push(m);
+      g.netC += c;
+      // An amount that rounds to zero still counts on its own side (In or Out).
+      const onInSide = c > 0 || (c === 0 && m.isInflow !== false);
+      if (onInSide) { g.inC += c; g.inCount += 1; } else { g.outC += -c; g.outCount += 1; }
+      g.orderGroup = Math.min(g.orderGroup, Number(m.orderGroup || 9));
+      const nm = String(m.party == null ? '' : m.party).trim();
+      g.names.set(nm, (g.names.get(nm) || 0) + 1);
+      if (m.isRepShifted && m.repDate) {
+        // Keyed by both days: yesterday's after-hours entries carry their own transaction day.
+        const tx = String(m.txDate || '').slice(0, 10);
+        const rk = `${tx}|${m.repDate}`;
+        const cur = g.repByDate.get(rk) || { date: m.repDate, txDate: tx, c: 0, count: 0 };
+        cur.c += c;
+        cur.count += 1;
+        g.repByDate.set(rk, cur);
+        g.repShiftCount += 1;
+      }
+    });
+    groups.forEach(g => {
+      g.net = g.netC / 100;
+      g.inSum = g.inC / 100;
+      g.outSum = g.outC / 100;
+      g.mag = Math.abs(g.net);
+      g.count = g.items.length;
+      // One counterparty typed two ways (all lowercase and capitalised): show a capitalised spelling when there is one, else the one used most.
+      let best = g.party, bestN = -1;
+      g.names.forEach((n, nm) => {
+        const score = n + (/^[^a-z]/.test(nm) ? 100000 : 0);
+        if (score > bestN) { bestN = score; best = nm; }
+      });
+      g.party = best || g.party;
+      if (g.isExt && g.count > 1) {
+        g.badgeTxt = g.netC > 0 ? 'External In' : (g.netC < 0 ? 'External Out' : 'External');
+        g.badgeCls = g.netC < 0 ? 'exp' : 'ext';
+      }
+      g.isInflow = g.count === 1 ? Boolean(g.items[0].isInflow) : g.netC >= 0;
+      g.repDates = Array.from(g.repByDate.values())
+        .map(r => ({ date: r.date, txDate: r.txDate, amount: r.c / 100, count: r.count }))
+        .sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : (a.txDate < b.txDate ? -1 : (a.txDate > b.txDate ? 1 : 0)))));
+    });
+    groups.sort((a, b) => (o.pinExternal ? ((a.isExt ? 0 : 1) - (b.isExt ? 0 : 1)) : 0) || (b.mag - a.mag) || (a.orderGroup - b.orderGroup));
+    return groups;
+  }
+
+  // Reporting-day chips of a grouped cash row: each other day the group books to, with the amount booked there.
+  function renderCashGroupRepBadges(ctx, g, txIso) {
+    if (!g || !(g.repShiftCount > 0)) return '';
+    const dates = g.repDates || [];
+    if (dates.length > 2) return renderGroupRepBadge(ctx, g.repShiftCount, g.count, Array.from(new Set(dates.map(d => d.date))), txIso);
+    return dates.map(d => {
+      const tip = `Reporting Date differs · ${d.count} of ${g.count} ${g.count === 1 ? 'entry' : 'entries'} (${fmtShortDay(d.date)}) · Tx Date ${fmtDmy(d.txDate || txIso)}`;
+      const amtTxt = g.isFx ? ctx.fmtUSD(Math.abs(d.amount), 0) : `${d.amount >= 0 ? '+' : '-'}${ctx.fmtUSD(Math.abs(d.amount), 0)}`;
+      return `<span class="dops-rep-badge is-group is-cash-rep" data-cash-rep-date="${ctx.esc(d.date)}" data-ui-tip="${ctx.esc(tip)}">${ctx.ic('rep_shift')}<span>${ctx.esc(fmtShortDay(d.date))}</span><b class="dops-rep-amt">${ctx.esc(amtTxt)}</b></span>`;
+    }).join('');
+  }
+
+  function renderCashGroupRows(ctx, dm, groups, isSingleCo, opts) {
+    const o = opts || {};
+    const { esc, ic, fmtUSD, fmtNum, coBadge } = ctx;
+    const expMap = ctx.STATE.dailyOpsExpanded || {};
+    const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
+    const amtHtml = (amount, isFx, isInflow, nativeAmt) => {
+      // A figure that rounds to zero takes its sign from the flow's direction.
+      const sign = amount > 0 ? '+' : (amount < 0 ? '-' : (isInflow === false ? '-' : '+'));
+      const txt = isFx ? fmtUSD(amount, 0) : `${sign}${nativeAmt || fmtUSD(Math.abs(amount), 0)}`;
+      return `<strong style="color:${isFx ? 'var(--chart-navy)' : (isInflow ? 'var(--good)' : 'var(--ink)')}">${txt}</strong>`;
+    };
+    const lastExtIdx = o.pinExternal ? groups.reduce((acc, g, i) => (g.isExt ? i : acc), -1) : -1;
+    const pinEnds = lastExtIdx >= 0 && lastExtIdx < groups.length - 1;
+    // Lone rows keep the arrow's width when the table has rows that open, so every flow label starts on one line.
+    const blankChev = groups.some(g => g.count > 1) ? '<span class="dops-exp-chev is-blank" aria-hidden="true"></span>' : '';
+    return groups.map((g, gi) => {
+      const pinCls = (o.pinExternal && g.isExt) ? ' dops-cash-pinned' : '';
+      const endCls = (pinEnds && gi === lastExtIdx) ? ' dops-cash-pin-end' : '';
+      if (g.count === 1) {
+        const m = g.items[0];
+        return `
+                <tr class="rrow${pinCls}${endCls}" data-rkey="${esc(m.rkey)}" data-rid="${esc(String(m.rid || ''))}">
+                  <td class="dops-trunc"><div class="dops-grp-head">${blankChev}<span class="dops-kind ${m.badgeCls}">${esc(m.badgeTxt)}</span>${!isSingleCo ? `${coBadge(m.company)}` : ''}<strong>${esc(m.party)}</strong>${renderRepBadge(ctx, m.txDate, m.repDate)}</div></td>
+                  <td class="dops-trunc"><span style="color:var(--muted)">${esc(m.detail || '-')}</span></td>
+                  <td class="r">${amtHtml(m.amount, m.isFx, m.isInflow, m.nativeAmt)}</td>
+                </tr>`;
+      }
+      const expKey = `cash:${g.key}`;
+      // A search that hits an entry's reference, not the counterparty, opens the group on that entry.
+      const innerHit = Boolean(qNorm && !matchesQuickSearch(qNorm, [g.party, g.badgeTxt, g.company]));
+      const isExp = Boolean(expMap[expKey] || innerHit);
+      const bothWays = g.isExt && g.inCount > 0 && g.outCount > 0;
+      const details = [];
+      g.items.forEach(m => { const d = String(m.detail || '').trim(); if (d && d !== '-' && !details.includes(d)) details.push(d); });
+      // Second line, only when there is something to say: the In and Out behind a netted external row,
+      // and the other day(s) part of the row is reported on, with the amount booked there.
+      const waysLine = bothWays ? `In +${fmtUSD(g.inSum, 0)} · Out -${fmtUSD(g.outSum, 0)}` : '';
+      const oneDetail = details.length === 1 ? details[0] : '';
+      const repLine = renderCashGroupRepBadges(ctx, g, dm.targetDate);
+      const twoLine = Boolean(waysLine || repLine);
+      const subEnd = isExp ? '' : endCls;
+      return `
+                <tr class="dops-group-row dops-cash-grp${twoLine ? ' has-sub' : ''}${isExp ? ' is-expanded' : ''}${pinCls}${subEnd}" data-dops-expand="${esc(expKey)}" data-cash-group="${esc(g.key)}" data-cash-count="${g.count}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(g.count)} individual entries for ${esc(g.party)}">
+                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span><span class="dops-kind ${g.badgeCls}">${esc(g.badgeTxt)}</span>${!isSingleCo ? `${coBadge(g.company)}` : ''}<strong>${esc(g.party)}</strong></div>${repLine ? `<div class="dops-cash-rep-line">${repLine}</div>` : ''}</td>
+                  <td class="dops-trunc"><span class="dops-cash-count">${fmtNum(g.count)} entries</span>${oneDetail ? `<span class="dops-cash-sum"> · ${esc(oneDetail)}</span>` : ''}${waysLine ? ` <small class="dops-cell-sub dops-cash-ways">${esc(waysLine)}</small>` : ''}</td>
+                  <td class="r">${amtHtml(g.net, g.isFx, g.isInflow)}</td>
+                </tr>${isExp ? g.items.map((m, mi) => `
+                <tr class="rrow dops-subrow dops-cash-sub${pinCls}${(mi === g.items.length - 1) ? endCls : ''}" data-rkey="${esc(m.rkey)}" data-rid="${esc(String(m.rid || ''))}">
+                  <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><span class="dops-kind ${m.badgeCls}">${esc(m.badgeTxt)}</span>${renderRepBadge(ctx, m.txDate, m.repDate)}</div></td>
+                  <td class="dops-trunc"><span style="color:var(--muted)">${esc([m.detail || '', m.nativeAmt || ''].filter(Boolean).join(' · ') || '-')}</span></td>
+                  <td class="r">${amtHtml(m.amount, m.isFx, m.isInflow)}</td>
+                </tr>`).join('') : ''}`;
+    }).join('');
+  }
+
   function renderPanel4Treasury(ctx, dm, lens, isSingleCo) {
     const { esc, fmtUSD, fmtNum, coBadge } = ctx;
     const perms = resolveDopsPerms(ctx);
@@ -3581,10 +3748,28 @@
 
     if (lens === 'external') {
       const extRows = dm.extItems.filter(ex => {
-        if (qFilter === 'rep_shifted' && !ex.isRepShifted) return false;
+        if (qFilter === 'rep_shifted' && !hasRepShift(ex.row)) return false;
         if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [ex.counterparty, ex.notes, ex.kind, ex.company]);
       });
+      // Same one-row-per-counterparty rule as the All lens: In and Out of one counterparty net into one row.
+      const extGroups = groupCashMoves(extRows.map(ex => ({
+        rkey: 'external_movements',
+        rid: ex.id,
+        company: ex.company,
+        badgeCls: ex.isOut ? 'exp' : 'ext',
+        badgeTxt: ex.isOut ? 'External Out' : 'External In',
+        party: ex.counterparty,
+        noParty: Boolean(ex.noParty),
+        detail: ex.notes || ex.kind,
+        txDate: txDateOf(ex.row) || dm.targetDate,
+        repDate: repDateOf(ex.row),
+        isRepShifted: hasRepShift(ex.row),
+        amount: ex.isOut ? -ex.eqAmt : ex.eqAmt,
+        isInflow: !ex.isOut,
+        nativeAmt: ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : '',
+        orderGroup: ex.isOut ? 4 : 3
+      })), { splitByCompany: !isSingleCo });
       if (!extRows.length) {
         return `<div class="dops-card-body no-pad dops-flex-col">${cashTopBarHtml}<div class="dops-empty">No matching external treasury movements on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
       }
@@ -3602,13 +3787,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${extRows.map(ex => `
-                  <tr class="rrow" data-rkey="external_movements" data-rid="${esc(String(ex.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind ${ex.isOut ? 'exp' : 'cash'}">${ex.isOut ? 'Out' : 'In'}</span> ${!isSingleCo ? `${coBadge(ex.company)} ` : ''}<strong>${esc(ex.counterparty)}</strong> ${renderRepBadge(ctx, ex.txDate, ex.repDate)}</td>
-                    <td class="dops-trunc" style="color:var(--muted)">${esc(ex.notes || ex.kind)}</td>
-                    <td class="r"><strong style="color:${ex.isOut ? 'var(--ink)' : 'var(--good)'}">${ex.isOut ? '-' : '+'}${ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : fmtUSD(ex.eqAmt, 0)}</strong></td>
-                  </tr>
-                `).join('')}
+                ${renderCashGroupRows(ctx, dm, extGroups, isSingleCo)}
               </tbody>
               <tfoot>
                 <tr>
@@ -3689,6 +3868,28 @@
       if (!rcptRows.length && !setRows.length) {
         return `<div class="dops-card-body no-pad dops-flex-col">${cashTopBarHtml}<div class="dops-empty">No matching customer receipts or supplier settlements on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
       }
+      // One row per customer and one per supplier (receipts first, then payments, each by size).
+      const arapMove = (row, isRcpt) => {
+        const amt = ctx.round2(Number(row.amount || 0) + Number(row.discount || 0));
+        return {
+          rkey: isRcpt ? 'receipts' : 'settlements',
+          rid: row.id,
+          company: row.company || 'WTC',
+          badgeCls: isRcpt ? 'cash' : 'pay',
+          badgeTxt: isRcpt ? 'Customer Receipt' : 'Supplier Payment',
+          party: (isRcpt ? row.customer : row.supplier) || '-',
+          noParty: !String((isRcpt ? row.customer : row.supplier) || '').trim(),
+          detail: `${row.method || 'Cash'}${row.reference ? ` · #${row.reference}` : ''}`,
+          txDate: txDateOf(row) || dm.targetDate,
+          repDate: repDateOf(row),
+          isRepShifted: hasRepShift(row),
+          amount: isRcpt ? amt : -amt,
+          isInflow: isRcpt,
+          orderGroup: isRcpt ? 1 : 5
+        };
+      };
+      const arapGroups = groupCashMoves(rcptRows.map(r => arapMove(r, true)), { splitByCompany: !isSingleCo })
+        .concat(groupCashMoves(setRows.map(s => arapMove(s, false)), { splitByCompany: !isSingleCo }));
       return `
         <div class="dops-card-body no-pad dops-flex-col">
           ${cashTopBarHtml}
@@ -3703,20 +3904,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${rcptRows.map(r => `
-                  <tr class="rrow" data-rkey="receipts" data-rid="${esc(String(r.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind cash">Customer Receipt</span> <strong>${esc(r.customer || '-')}</strong> ${renderRepBadge(ctx, txDateOf(r), repDateOf(r))}</td>
-                    <td>${esc(r.method || 'Cash')}${r.reference ? ` · #${esc(r.reference)}` : ''}</td>
-                    <td class="r"><strong style="color:var(--good)">+${fmtUSD(Number(r.amount || 0) + Number(r.discount || 0), 0)}</strong></td>
-                  </tr>
-                `).join('')}
-                ${setRows.map(s => `
-                  <tr class="rrow" data-rkey="settlements" data-rid="${esc(String(s.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind pay">Supplier Payment</span> <strong>${esc(s.supplier || '-')}</strong> ${renderRepBadge(ctx, txDateOf(s), repDateOf(s))}</td>
-                    <td>${esc(s.method || 'Cash')}${s.reference ? ` · #${esc(s.reference)}` : ''}</td>
-                    <td class="r"><strong>-${fmtUSD(Number(s.amount || 0) + Number(s.discount || 0), 0)}</strong></td>
-                  </tr>
-                `).join('')}
+                ${renderCashGroupRows(ctx, dm, arapGroups, isSingleCo)}
               </tbody>
               <tfoot>
                 <tr>
@@ -3750,13 +3938,7 @@
               </tr>
             </thead>
             <tbody>
-              ${moves.map(m => `
-                <tr class="rrow" data-rkey="${esc(m.rkey)}" data-rid="${esc(String(m.rid || ''))}">
-                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind ${m.badgeCls}">${esc(m.badgeTxt)}</span>${!isSingleCo ? `${coBadge(m.company)}` : ''}<strong>${esc(m.party)}</strong>${renderRepBadge(ctx, m.txDate, m.repDate)}</div></td>
-                  <td class="dops-trunc"><span style="color:var(--muted)">${esc(m.detail || '-')}</span></td>
-                  <td class="r"><strong style="color:${m.isFx ? 'var(--chart-navy)' : (m.isInflow ? 'var(--good)' : 'var(--ink)')}">${m.isFx ? fmtUSD(m.amount, 0) : `${m.amount >= 0 ? '+' : '-'}${fmtUSD(Math.abs(m.amount), 0)}`}</strong></td>
-                </tr>
-              `).join('') || `<tr><td colspan="3" class="dops-empty">No matching cash, receipts, payables, external, or loan movements on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
+              ${renderCashGroupRows(ctx, dm, groupCashMoves(moves, { splitByCompany: !isSingleCo, pinExternal: true }), isSingleCo, { pinExternal: true }) || `<tr><td colspan="3" class="dops-empty">No matching cash, receipts, payables, external, or loan movements on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
             </tbody>
             <tfoot>
               <tr>
@@ -4102,9 +4284,10 @@
     `;
   }
 
-  function renderPanel6TrendBody(ctx, dm, digestPills, perms) {
-    const { fmtNum, ic } = ctx;
+  function renderPanel6TrendBody(ctx, dm, perms) {
+    const { fmtNum, fmtUSD, ic } = ctx;
     const canBooks = Boolean(perms && perms.canFullPnl);
+    const canPay = Boolean(perms && perms.canPayroll);
     return `
       <div class="dops-card-body no-pad dops-flex-col dops-trend-body">
         <div class="dops-trend-legend">
@@ -4116,60 +4299,25 @@
           ${renderPulseSvg(ctx, dm, 'pulse')}
         </div>
         <div class="dops-digest-bar dops-workforce-foot">
+          ${canPay && dm.salCount > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} Payroll ${fmtUSD(dm.salariesPaid, 0)} (${fmtNum(dm.salCount)})</button>` : ''}
           <button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} ${fmtNum(dm.activeStaffCount)} Staff${dm.absentCount > 0 ? ` (${fmtNum(dm.absentCount)} Absent)` : ''}</button>
-          ${dm.attOtHours > 0 ? `<button type="button" class="dops-dpill" data-dops-qfilter="overtime">${ic('overtime')} Overtime +${fmtNum(dm.attOtHours, 1)}h</button>` : ''}
-          ${digestPills[0] || ''}
+          ${dm.attOtHours > 0
+            ? `<button type="button" class="dops-dpill" data-dops-qfilter="overtime">${ic('overtime')} Overtime +${fmtNum(dm.attOtHours, 1)}h</button>`
+            : (dm.dayRegAdds.length > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:master_gov">${ic('plus')} ${fmtNum(dm.dayRegAdds.length)} New Master ${dm.dayRegAdds.length === 1 ? 'Record' : 'Records'}</button>` : '')}
         </div>
       </div>
     `;
   }
 
   function renderPanel6Workforce(ctx, dm, lens, isSingleCo) {
-    const { esc, ic, fmtUSD, fmtNum } = ctx;
+    const { esc, ic, fmtUSD, fmtNum, norm, coBadge, relLink } = ctx;
     const perms = resolveDopsPerms(ctx);
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
-
-    const topStripHtml = `
-      <div class="dops-stat-strip-3 dops-substrip">
-        <div class="dops-stat-box" data-dops-lens="plant:overview">
-          <small>Active Workforce</small>
-          <b>${fmtNum(dm.activeStaffCount)} Staff <span class="dops-stat-muted">· ${fmtNum(dm.presentAttCount)} Shift · ${fmtNum(dm.absentCount)} Absent</span></b>
-        </div>
-        <div class="dops-stat-box${qFilter === 'overtime' ? ' tone-brass' : (dm.attOtHours > 0 || dm.otTotalLoads > 0 ? ' tone-brass' : '')}" data-dops-qfilter="overtime" data-ui-tip="Click to filter Daily Operations to Overtime dispatches and shifts">
-          <small>Overtime (${fmtNum(dm.attOtStaffCount)} staff)</small>
-          <b>+${fmtNum(dm.attOtHours, 1)}h <span class="dops-stat-muted">${perms.canPayroll && dm.attOtPayUsd > 0 ? `(${fmtUSD(dm.attOtPayUsd, 0)})` : ''} · ${fmtNum(dm.otTotalLoads)} Overtime loads</span></b>
-        </div>
-        <div class="dops-stat-box${dm.dayRegAdds.length > 0 ? ' tone-good' : ''}" data-dops-lens="plant:master_gov">
-          <small>Master &amp; Governance</small>
-          <b>+${fmtNum(dm.dayRegAdds.length)} Master <span class="dops-stat-muted">· ${fmtNum(dm.repShiftedCount)} Booked to Another Day</span></b>
-        </div>
-      </div>
-    `;
-
-    const digestPills = [];
-    if (dm.ahAvailableCount > 0) {
-      if (dm.includeAh) {
-        digestPills.push(`<button type="button" class="dops-dpill ah" data-dops-open-drawer="after_hours">${ic('moon')} +${fmtNum(dm.ahAvailableCount)} After-Hours (${fmtUSD(dm.ahAvailableUsd, 0)})</button>`);
-      } else {
-        digestPills.push(`<button type="button" class="dops-dpill warn" data-dops-toggle-ah="1">${ic('moon')} ${fmtNum(dm.ahAvailableCount)} After-Hours Off · Include</button>`);
-      }
-    }
-    if (dm.pendingExps.length > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill warn" data-dops-lens="exp:bills">${ic('clock')} ${fmtNum(dm.pendingExps.length)} Pending Price ($0)</button>`);
-    }
-    if (dm.repShiftedCount > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill rep-shift${qFilter === 'rep_shifted' ? ' active' : ''}" data-dops-qfilter="rep_shifted" data-ui-tip="${dm.repShiftedCount} entries transacted on ${fmtDmy(dm.targetDate)} carry a different Reporting Date. Click to spotlight shifted entries across all 6 panels.">${ic('rep_shift')} ${fmtNum(dm.repShiftedCount)} Booked to Another Day</button>`);
-    }
-    if (dm.dayRegAdds.length > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill" data-dops-lens="plant:master_gov">${ic('plus')} ${fmtNum(dm.dayRegAdds.length)} New Master ${dm.dayRegAdds.length === 1 ? 'Record' : 'Records'}</button>`);
-    }
-    if (!digestPills.length) {
-      digestPills.push(`<span class="dops-dpill good">${ic('check_circle')} All plant, fuel &amp; ledger controls clean</span>`);
-    }
+    const expMap = ctx.STATE.dailyOpsExpanded || {};
 
     if (lens === 'trend') {
-      return renderPanel6TrendBody(ctx, dm, digestPills, perms);
+      return renderPanel6TrendBody(ctx, dm, perms);
     }
 
     if (lens === 'master' || lens === 'master_gov') {
@@ -4177,9 +4325,10 @@
         if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
         return matchesQuickSearch(qNorm, [ad.cleanName, ad.cleanSub, ad.cleanLabel]);
       });
+      const addCnt = (dm.dayRegAdds || []).length;
+      const polCnt = Number(dm.newPoliciesCount || 0);
       return `
         <div class="dops-card-body no-pad dops-flex-col">
-          ${topStripHtml}
           <div class="dops-tbl-scroll">
             <table class="dops-table dops-fixed-3">
               <colgroup><col style="width:48%"><col style="width:32%"><col style="width:20%"></colgroup>
@@ -4206,18 +4355,41 @@
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="2">${fmtNum((dm.dayRegAdds || []).length)} New Master Additions</td>
-                  <td class="r">${fmtNum(dm.repShiftedCount)} Booked to Another Day</td>
+                  <td colspan="2">${fmtNum(addCnt)} New Master ${addCnt === 1 ? 'Addition' : 'Additions'}</td>
+                  <td class="r">${fmtNum(polCnt)} ${polCnt === 1 ? 'Policy' : 'Policies'}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
-          <div class="dops-digest-bar dops-workforce-foot">${digestPills.slice(0, 3).join('')}</div>
         </div>
       `;
     }
 
-    // Default ('overview' or 'team'): 3-Stat Strip + Exceptions, Salaries, New Master & Overtime Attendance Table + Governance Bar
+    // Team ('overview' or 'team'): distinct 3-stat strip + unified per-staff Payroll & Attendance table + Total Salaries footer
+    const topStripHtml = `
+      <div class="dops-stat-strip-3 dops-substrip">
+        ${perms.canPayroll ? `
+          <div class="dops-stat-box" data-dops-open-drawer="team">
+            <small>Salaries Paid</small>
+            <b>${fmtUSD(dm.salariesPaid, 0)} <span class="dops-stat-muted">· ${fmtNum(dm.salCount)} ${dm.salCount === 1 ? 'voucher' : 'vouchers'}</span></b>
+          </div>
+        ` : `
+          <div class="dops-stat-box" data-dops-open-drawer="team">
+            <small>Shifts Logged</small>
+            <b>${fmtNum(dm.presentAttCount)} Worked <span class="dops-stat-muted">· ${fmtNum(dm.absentCount)} Absent</span></b>
+          </div>
+        `}
+        <div class="dops-stat-box" data-dops-open-drawer="team">
+          <small>On Duty Today</small>
+          <b>${fmtNum(dm.activeStaffCount)} Active <span class="dops-stat-muted">${perms.canPayroll ? `· ${fmtNum(dm.presentAttCount)} Shifts${dm.absentCount > 0 ? ` · ${fmtNum(dm.absentCount)} Absent` : ''}` : `· ${fmtNum(dm.companyFleetTrips)} Own Trips`}</span></b>
+        </div>
+        <div class="dops-stat-box${qFilter === 'overtime' ? ' tone-brass' : (dm.attOtHours > 0 || dm.otTotalLoads > 0 ? ' tone-brass' : '')}" data-dops-qfilter="overtime" data-ui-tip="Click to filter Daily Operations to Overtime dispatches and shifts">
+          <small>Overtime (${fmtNum(dm.attOtStaffCount)} staff)</small>
+          <b>+${fmtNum(dm.attOtHours, 1)}h <span class="dops-stat-muted">${perms.canPayroll && dm.attOtPayUsd > 0 ? `(${fmtUSD(dm.attOtPayUsd, 0)}) ` : ''}${dm.otTotalLoads > 0 ? `· ${fmtNum(dm.otTotalLoads)} ${dm.otTotalLoads === 1 ? 'load' : 'loads'}` : ''}</span></b>
+        </div>
+      </div>
+    `;
+
     const empRows = perms.canPayroll ? dm.dayEmps.filter(em => {
       if (qFilter === 'rep_shifted' && !hasRepShift(em)) return false;
       if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
@@ -4228,10 +4400,6 @@
       if (qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [sa.staff, sa.payroll_month, sa.method, sa.notes, sa.company]);
     }) : [];
-    const adds = (dm.dayRegAdds || []).filter(ad => {
-      if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions' || qFilter === 'turnaround') return false;
-      return matchesQuickSearch(qNorm, [ad.cleanName, ad.cleanSub, ad.cleanLabel]);
-    });
     const attRows = (dm.attSortedRows || []).filter(at => {
       const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
       const oth = Number(at.overtime_hours || 0);
@@ -4241,6 +4409,147 @@
       if (qFilter === 'turnaround') return false;
       return matchesQuickSearch(qNorm, [at.staff, at.status, at.type, at.in_time, at.out_time, at.notes, at.company]);
     });
+
+    const targetMonth = String(dm.targetDate || '').slice(0, 7);
+    const staffGroupMap = new Map();
+    let anonSeq = 0;
+    const ensureGroup = (staffName, company) => {
+      const rawName = String(staffName || '').trim();
+      const k = rawName ? norm(rawName) : `_anon_${++anonSeq}`;
+      let g = staffGroupMap.get(k);
+      if (!g) {
+        g = {
+          key: k,
+          name: rawName || 'Staff',
+          company: company || 'WTC',
+          sals: [],
+          atts: [],
+          emps: [],
+          records: [],
+          salUsd: 0,
+          salCashUsd: 0,
+          salOtherUsd: 0,
+          salLbp: 0,
+          months: [],
+          methods: [],
+          salNotes: [],
+          isAbs: false,
+          workedHours: 0,
+          otHours: 0,
+          otPayUsd: 0,
+          leaveDays: 0,
+          shiftWindow: '',
+          attNotes: [],
+          repShiftCount: 0,
+          repShiftDates: []
+        };
+        staffGroupMap.set(k, g);
+      }
+      return g;
+    };
+    const trackRep = (g, row) => {
+      if (!hasRepShift(row)) return;
+      const rpD = repDateOf(row);
+      g.repShiftCount += 1;
+      if (rpD && !g.repShiftDates.includes(rpD)) g.repShiftDates.push(rpD);
+    };
+
+    salRows.forEach(sa => {
+      const g = ensureGroup(sa.staff, sa.company);
+      g.sals.push(sa);
+      trackRep(g, sa);
+      const eq = ctx.round2(salaryRowUsd(sa, dm.fxRate));
+      const mth = String(sa.payroll_month || '').trim();
+      const mthMethod = String(sa.method || 'Cash').trim() || 'Cash';
+      const lbp = Number(sa.lbp_amount || 0);
+      const nt = safeNotes(ctx, sa.notes);
+      g.salUsd = ctx.round2(g.salUsd + eq);
+      if (/^cash$/i.test(mthMethod)) g.salCashUsd = ctx.round2(g.salCashUsd + eq);
+      else g.salOtherUsd = ctx.round2(g.salOtherUsd + eq);
+      g.salLbp += lbp;
+      if (mth && !g.months.includes(mth)) g.months.push(mth);
+      if (mthMethod && !g.methods.includes(mthMethod)) g.methods.push(mthMethod);
+      if (nt && !g.salNotes.includes(nt)) g.salNotes.push(nt);
+      g.records.push({
+        rkey: 'salaries',
+        row: sa,
+        kindLbl: 'Salary',
+        kindCls: 'pay',
+        subTxt: [mth, mthMethod, lbp ? fmtCompactLbp(lbp) : '', nt].filter(Boolean).join(' · '),
+        valHtml: `<strong>${sa.lbp_amount ? fmtCompactLbp(sa.lbp_amount) : fmtUSD(eq, 0)}</strong>`
+      });
+    });
+
+    attRows.forEach(at => {
+      const g = ensureGroup(at.staff, at.company);
+      g.atts.push(at);
+      trackRep(g, at);
+      const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
+      const wh = Number(at.worked_hours || 0);
+      const oth = Number(at.overtime_hours || 0);
+      const payUsd = Number(at.payroll_impact_usd || 0);
+      const ld = Number(at.leave_days || 0);
+      const win = at.in_time && at.out_time ? `${at.in_time}-${at.out_time}` : '';
+      const nt = safeNotes(ctx, at.notes);
+      if (isAbs) g.isAbs = true;
+      g.workedHours = ctx.round2(g.workedHours + wh);
+      g.otHours = ctx.round2(g.otHours + oth);
+      g.otPayUsd = ctx.round2(g.otPayUsd + payUsd);
+      g.leaveDays = ctx.round2(g.leaveDays + ld);
+      if (!g.shiftWindow && win) g.shiftWindow = win;
+      if (nt && !g.attNotes.includes(nt)) g.attNotes.push(nt);
+      g.records.push({
+        rkey: 'attendance',
+        row: at,
+        kindLbl: isAbs ? 'Absent' : (oth > 0 ? `+${fmtNum(oth, 0)}h Overtime` : 'Shift'),
+        kindCls: isAbs ? 'crit' : (oth > 0 ? 'loan' : 'team'),
+        subTxt: [win || (isAbs ? (ld > 0 ? `${fmtNum(ld, 0)}d Leave` : 'No clock-in') : 'Regular shift'), wh > 0 ? `${fmtNum(wh, 0)}h` : '', nt].filter(Boolean).join(' · '),
+        valHtml: isAbs ? '<span style="color:var(--muted)">-</span>' : (perms.canPayroll && payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(wh, 0)}h`))
+      });
+    });
+
+    empRows.forEach(em => {
+      const g = ensureGroup(em.staff, em.company);
+      g.emps.push(em);
+      trackRep(g, em);
+      g.records.push({
+        rkey: 'employments',
+        row: em,
+        kindLbl: 'Contract',
+        kindCls: 'team',
+        subTxt: `${em.type || 'Staff'} · ${fmtNum(em.working_days || 30)}d/mo`,
+        valHtml: `<strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong>`
+      });
+    });
+
+    const staffGroups = Array.from(staffGroupMap.values()).sort((a, b) =>
+      (b.salUsd - a.salUsd) ||
+      ((b.isAbs ? 1 : 0) - (a.isAbs ? 1 : 0)) ||
+      (b.otHours - a.otHours) ||
+      (b.workedHours - a.workedHours)
+    );
+
+    const shownSalStaffCount = staffGroups.filter(g => g.sals.length > 0).length;
+    const shownAttOnlyCount = staffGroups.filter(g => g.sals.length === 0 && g.atts.length > 0).length;
+    const shownEmpOnlyCount = staffGroups.filter(g => g.sals.length === 0 && g.atts.length === 0 && g.emps.length > 0).length;
+    const shownSalTotalUsd = ctx.round2(staffGroups.reduce((a, g) => a + g.salUsd, 0));
+    const shownSalCashUsd = ctx.round2(staffGroups.reduce((a, g) => a + g.salCashUsd, 0));
+    const shownSalOtherUsd = ctx.round2(staffGroups.reduce((a, g) => a + g.salOtherUsd, 0));
+    const shownOtPayUsd = ctx.round2(staffGroups.reduce((a, g) => a + g.otPayUsd, 0));
+    const shownWorkedHours = ctx.round2(staffGroups.reduce((a, g) => a + g.workedHours, 0));
+    const shownOtHours = ctx.round2(staffGroups.reduce((a, g) => a + g.otHours, 0));
+    const shownAbsCount = staffGroups.filter(g => g.isAbs).length;
+
+    const allSalMonths = new Set();
+    salRows.forEach(sa => { if (sa.payroll_month) allSalMonths.add(String(sa.payroll_month).trim()); });
+    const commonMonth = allSalMonths.size === 1 ? Array.from(allSalMonths)[0] : '';
+
+    const col3Hdr = (perms.canPayroll && shownSalStaffCount > 0 && shownAttOnlyCount === 0 && shownEmpOnlyCount === 0)
+      ? 'Salary Paid'
+      : ((perms.canPayroll && (shownSalStaffCount > 0 || shownOtPayUsd > 0 || shownEmpOnlyCount > 0)) ? 'Paid / Hours' : 'Hours');
+
+    const driverTripsMap = dm.driverTripsByNorm || new Map();
+
     return `
       <div class="dops-card-body no-pad dops-flex-col">
         ${topStripHtml}
@@ -4249,64 +4558,110 @@
             <colgroup><col style="width:46%"><col style="width:32%"><col style="width:22%"></colgroup>
             <thead>
               <tr>
-                <th>Status &amp; Staff</th>
-                <th>Shift / Role / Detail</th>
-                <th class="r">Overtime / Impact</th>
+                <th>Staff</th>
+                <th>Shift / Detail</th>
+                <th class="r">${col3Hdr}</th>
               </tr>
             </thead>
             <tbody>
-              ${empRows.map(em => `
-                <tr class="rrow" data-rkey="employments" data-rid="${esc(String(em.id || ''))}">
-                  <td class="dops-trunc"><span class="dops-kind team">Contract</span> <strong>${esc(em.staff || '-')}</strong></td>
-                  <td class="dops-trunc">${esc(em.type || 'Staff')} · ${fmtNum(em.working_days || 30)}d/mo</td>
-                  <td class="r"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
-                </tr>
-              `).join('')}
-              ${salRows.map(sa => `
-                <tr class="rrow" data-rkey="salaries" data-rid="${esc(String(sa.id || ''))}">
-                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind pay">Salary</span><strong>${esc(sa.staff || '-')}</strong>${renderRepBadge(ctx, txDateOf(sa), repDateOf(sa))}</div></td>
-                  <td class="dops-trunc">${esc(sa.payroll_month || '')} · ${esc(sa.method || 'Cash')}</td>
-                  <td class="r"><strong>${sa.lbp_amount ? fmtCompactLbp(sa.lbp_amount) : fmtUSD(sa.amount || 0, 0)}</strong></td>
-                </tr>
-              `).join('')}
-              ${adds.map(ad => {
-                const r = ad.row || {};
-                const nm = ad.cleanName || r.name || r.staff || r.equipment || r.site || r.product || r.id || '-';
-                const sub = ad.cleanSub || r.role || r.category || r.type || r.company || 'Added Today';
+              ${staffGroups.map(g => {
+                const isMulti = g.records.length > 1;
+                const expKey = `team:${g.key}`;
+                const isExp = Boolean(isMulti && expMap[expKey]);
+                const singleRec = !isMulti ? g.records[0] : null;
+                const repBadge = renderGroupRepBadge(ctx, g.repShiftCount, g.records.length, g.repShiftDates, dm.targetDate);
+                const statusBadge = g.isAbs
+                  ? `<span class="dops-kind crit">Absent</span>`
+                  : (g.salUsd === 0 && g.otHours > 0
+                    ? `<span class="dops-kind loan">+${fmtNum(g.otHours, 0)}h Overtime</span>`
+                    : (g.salUsd === 0 && g.atts.length === 0 && g.emps.length > 0 ? `<span class="dops-kind team">Contract</span>` : ''));
+                const otChip = (g.otHours > 0 && g.salUsd > 0)
+                  ? `<span class="dops-ot-badge" data-ui-tip="+${fmtNum(g.otHours, 1)}h overtime">${ic('overtime')}+${fmtNum(g.otHours, 0)}h</span>`
+                  : '';
+
+                const detParts = [];
+                if (g.isAbs) {
+                  if (g.attNotes[0]) detParts.push(`<span data-no-i18n="1">${esc(g.attNotes[0])}</span>`);
+                  else detParts.push(g.leaveDays > 0 ? `${fmtNum(g.leaveDays, 0)}d Leave` : 'No clock-in');
+                } else if (g.atts.length > 0) {
+                  if (g.salUsd !== 0) {
+                    if (g.shiftWindow) detParts.push(`<span data-no-i18n="1">${esc(g.shiftWindow)}</span>`);
+                    if (g.workedHours > 0) detParts.push(`${fmtNum(g.workedHours, 0)}h`);
+                    if (g.otHours > 0) detParts.push(`+${fmtNum(g.otHours, 1)}h Overtime`);
+                    if (!detParts.length) detParts.push(g.attNotes[0] ? `<span data-no-i18n="1">${esc(g.attNotes[0])}</span>` : 'Shift');
+                  } else if (g.otHours > 0) {
+                    detParts.push(g.shiftWindow ? `<span data-no-i18n="1">${esc(g.shiftWindow)}</span>` : 'Shift');
+                    if (g.workedHours > 0) detParts.push(`${fmtNum(g.workedHours, 0)}h`);
+                  } else {
+                    if (g.shiftWindow) detParts.push(`<span data-no-i18n="1">${esc(g.shiftWindow)}</span>`);
+                    else if (g.attNotes[0]) detParts.push(`<span data-no-i18n="1">${esc(g.attNotes[0])}</span>`);
+                    else detParts.push('Regular shift');
+                  }
+                }
+                if (g.sals.length > 0) {
+                  const offMonths = g.months.filter(m => m && m !== targetMonth);
+                  if (offMonths.length) detParts.push(`<span data-no-i18n="1">${esc(offMonths.join(', '))}</span>`);
+                  if (g.salLbp) detParts.push(`<span data-no-i18n="1">${esc(fmtCompactLbp(g.salLbp))}</span>`);
+                  if (g.salNotes.length) detParts.push(`<span data-no-i18n="1">${esc(g.salNotes[0])}</span>`);
+                  const nonCash = g.methods.filter(m => m && !/^cash$/i.test(m));
+                  if (nonCash.length) detParts.push(`<span data-no-i18n="1">${esc(nonCash.join(', '))}</span>`);
+                  if (!detParts.length) {
+                    const trips = driverTripsMap.get(g.key) || 0;
+                    if (trips > 0) detParts.push(`${fmtNum(trips)} ${trips === 1 ? 'trip' : 'trips'}`);
+                    if (g.methods[0] && !/^cash$/i.test(g.methods[0])) detParts.push(`<span data-no-i18n="1">${esc(g.methods[0])}</span>`);
+                    else detParts.push('Cash');
+                  }
+                } else if (g.emps.length > 0 && !detParts.length) {
+                  if (g.emps[0].type) detParts.push(`<span data-no-i18n="1">${esc(g.emps[0].type)}</span>`);
+                  else detParts.push('Staff');
+                  detParts.push(`${fmtNum(g.emps[0].working_days || 30)}d/mo`);
+                }
+                const detailHtml = detParts.join(' · ') || '-';
+
+                let valHtml = '';
+                if (g.salUsd !== 0) valHtml = `<strong>${fmtUSD(g.salUsd, 0)}</strong>`;
+                else if (g.emps.length > 0) valHtml = `<strong>${fmtUSD(g.emps[0].salary_usd || 0, 0)}/mo</strong>`;
+                else if (g.isAbs) valHtml = '<span style="color:var(--muted)">-</span>';
+                else if (perms.canPayroll && g.otPayUsd > 0) valHtml = `<strong>+${fmtUSD(g.otPayUsd, 0)}</strong>`;
+                else if (g.otHours > 0) valHtml = `<strong>+${fmtNum(g.otHours, 1)}h</strong>`;
+                else valHtml = `${fmtNum(g.workedHours || 0, 0)}h`;
+
+                const rowAttrs = isMulti
+                  ? `class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(g.records.length)} entries for ${esc(g.name)}"`
+                  : `class="rrow" data-rkey="${esc(singleRec.rkey)}" data-rid="${esc(String((singleRec.row && singleRec.row.id) || ''))}"`;
+
                 return `
-                  <tr class="rrow" data-rkey="${esc(ad.rkey)}" data-rid="${esc(String(r.id || ''))}">
-                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind rule">${esc(ad.cleanLabel || ad.label)}</span><strong>${esc(nm)}</strong></div></td>
-                    <td class="dops-trunc"><span style="color:var(--muted)">${esc(sub)}</span></td>
-                    <td class="r"><span class="dops-kind cash">New</span></td>
+                  <tr ${rowAttrs}>
+                    <td class="dops-trunc"><div class="dops-grp-head">${isMulti ? `<span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>` : ''}${!isSingleCo ? `${coBadge(g.company)}` : ''}${statusBadge}${relLink('staff_members', g.name, g.name, true)}${repBadge}${otChip}</div></td>
+                    <td class="dops-trunc"><span style="color:var(--muted)">${detailHtml}</span></td>
+                    <td class="r">${valHtml}</td>
                   </tr>
+                  ${isExp ? g.records.map(rec => `
+                    <tr class="rrow dops-subrow" data-rkey="${esc(rec.rkey)}" data-rid="${esc(String((rec.row && rec.row.id) || ''))}">
+                      <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><span class="dops-kind ${rec.kindCls}">${esc(rec.kindLbl)}</span>${renderRepBadge(ctx, txDateOf(rec.row), repDateOf(rec.row))}</div></td>
+                      <td class="dops-trunc"><span style="color:var(--muted)">${esc(rec.subTxt || '-')}</span></td>
+                      <td class="r">${rec.valHtml}</td>
+                    </tr>
+                  `).join('') : ''}
                 `;
-              }).join('')}
-              ${attRows.map(at => {
-                const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
-                const oth = Number(at.overtime_hours || 0);
-                const payUsd = Number(at.payroll_impact_usd || 0);
-                const shiftTxt = at.in_time && at.out_time ? `${at.in_time}-${at.out_time}` : (at.status || 'Shift');
-                return `
-                  <tr class="rrow" data-rkey="attendance" data-rid="${esc(String(at.id || ''))}">
-                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind ${isAbs ? 'crit' : (oth > 0 ? 'loan' : 'team')}">${isAbs ? 'Absent' : (oth > 0 ? `+${fmtNum(oth, 0)}h Overtime` : 'Shift')}</span><strong>${esc(at.staff || '-')}</strong>${renderRepBadge(ctx, txDateOf(at), repDateOf(at))}</div></td>
-                    <td class="dops-trunc"><span style="color:var(--muted)">${esc(shiftTxt)}${at.worked_hours ? ` · ${fmtNum(at.worked_hours, 0)}h` : ''}</span></td>
-                    <td class="r">${isAbs ? '<strong style="color:var(--crit)">Absent</strong>' : (perms.canPayroll && payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(at.worked_hours || 0, 0)}h`))}</td>
-                  </tr>
-                `;
-              }).join('')}
-              ${!attRows.length && !adds.length && !salRows.length && !empRows.length ? `<tr><td colspan="3" class="dops-empty">No matching attendance logs, salaries, or master additions on ${esc(fmtShortDay(dm.targetDate))} (${fmtNum(dm.activeStaffCount)} active dispatch drivers).</td></tr>` : ''}
+              }).join('') || `<tr><td colspan="3" class="dops-empty">No matching attendance logs or salaries on ${esc(fmtShortDay(dm.targetDate))} (${fmtNum(dm.activeStaffCount)} active dispatch drivers).</td></tr>`}
             </tbody>
             <tfoot>
-              <tr>
-                <td>Active ${fmtNum(dm.activeStaffCount)} · Absent ${fmtNum(dm.absentCount)}</td>
-                <td>Overtime +${fmtNum(dm.attOtHours, 1)}h · ${fmtNum(dm.otTotalLoads)} Overtime Loads</td>
-                <td class="r">${perms.canPayroll ? fmtUSD(dm.attOtPayUsd, 0) : `+${fmtNum(dm.attOtHours, 1)}h`}</td>
-              </tr>
+              ${perms.canPayroll && salRows.length > 0 ? `
+                <tr>
+                  <td>${fmtNum(shownSalStaffCount)} Paid${shownAttOnlyCount > 0 ? ` · ${fmtNum(shownAttOnlyCount)} ${shownAttOnlyCount === 1 ? 'Shift' : 'Shifts'}` : ''}</td>
+                  <td>${commonMonth ? `${esc(commonMonth)} · ` : ''}Cash ${fmtUSD(shownSalCashUsd, 0)}${Math.abs(shownSalOtherUsd) >= 0.5 ? ` · Other ${fmtUSD(shownSalOtherUsd, 0)}` : ''}</td>
+                  <td class="r">${fmtUSD(shownSalTotalUsd, 0)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td>${fmtNum(staffGroups.length)} ${staffGroups.length === 1 ? 'Staff Member' : 'Staff Members'}</td>
+                  <td>${fmtNum(shownWorkedHours, 0)}h Worked${shownAbsCount > 0 ? ` · ${fmtNum(shownAbsCount)} Absent` : ''}</td>
+                  <td class="r">${perms.canPayroll && shownOtPayUsd > 0 ? fmtUSD(shownOtPayUsd, 0) : (shownOtHours > 0 ? `+${fmtNum(shownOtHours, 1)}h` : `${fmtNum(shownWorkedHours, 0)}h`)}</td>
+                </tr>
+              `}
             </tfoot>
           </table>
-        </div>
-        <div class="dops-digest-bar dops-workforce-foot">
-          ${digestPills.slice(0, 3).join('')}
         </div>
       </div>
     `;
@@ -4544,21 +4899,34 @@
 
       <!-- PANEL 6: 7-DAY SALES & PROFIT TREND, TEAM & AUDIT -->
       <div class="dops-card" id="dopsPlantCard">
+        ${(() => {
+          const isTeamLens = plantLens === 'overview' || plantLens === 'team';
+          const isAuditLens = plantLens === 'master_gov' || plantLens === 'master';
+          const p6IcoCls = isTeamLens || isAuditLens ? 'brass' : 'navy';
+          const p6IcoName = isTeamLens ? 'payroll' : (isAuditLens ? 'ledger' : 'sales');
+          const p6Title = isTeamLens
+            ? (perms.canPayroll ? 'Payroll &amp; Attendance' : 'Team &amp; Attendance')
+            : (isAuditLens ? 'Master Additions' : (perms.canFullPnl ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend'));
+          const p6Count = isAuditLens ? dm.dayRegAdds.length : teamCnt;
+          const p6AddModal = (isTeamLens && perms.canPayroll) ? 'salary' : 'attendance';
+          const p6AddTip = (isTeamLens && perms.canPayroll) ? 'New Salary Payment' : 'New Attendance / Shift Entry';
+          return `
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
-            <span class="dops-card-ico navy">${ic('sales')}</span>
-            <h2 class="dops-card-title">${perms.canFullPnl ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend'}</h2>
+            <span class="dops-card-ico ${p6IcoCls}">${ic(p6IcoName)}</span>
+            <h2 class="dops-card-title">${p6Title}</h2>
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Trend & Team Lens">
               <button type="button" class="dops-seg-btn${plantLens === 'trend' ? ' active' : ''}" data-dops-lens="plant:trend">Trend</button>
-              <button type="button" class="dops-seg-btn${plantLens === 'overview' || plantLens === 'team' ? ' active' : ''}" data-dops-lens="plant:overview">Team</button>
-              <button type="button" class="dops-seg-btn${zc(dm.dayRegAdds.length)}${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${plantLens === 'master_gov' || plantLens === 'master' ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit</button>
+              <button type="button" class="dops-seg-btn${isTeamLens ? ' active' : ''}" data-dops-lens="plant:overview">Team</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayRegAdds.length)}${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${isAuditLens ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit</button>
             </div>
-            <button type="button" class="dops-disc-link" data-dops-open-drawer="team" data-ui-tip="Inspect attendance, salaries & master records">${fmtNum(teamCnt)}</button>
-            <button type="button" class="dops-add-btn" data-open-modal="attendance" data-ui-tip="New Attendance / Shift Entry" aria-label="New Attendance Entry">${ic('plus')}</button>
+            <button type="button" class="dops-disc-link" data-dops-open-drawer="team" data-ui-tip="Inspect attendance, salaries & master records">${fmtNum(p6Count)}</button>
+            <button type="button" class="dops-add-btn" data-open-modal="${p6AddModal}" data-ui-tip="${p6AddTip}" aria-label="${p6AddTip}">${ic('plus')}</button>
           </div>
-        </div>
+        </div>`;
+        })()}
         ${renderPanel6Workforce(ctx, dm, plantLens, isSingleCo)}
       </div>
     `;
@@ -5040,8 +5408,8 @@
       const isSingleCo = STATE.company !== 'manufacturing-group' && !String(STATE.company || '').startsWith('industry:') || allowedCos.length === 1;
       bentoEl.innerHTML = renderBentoGridHtml(lCtx, lDm, isSingleCo);
       if (typeof stripNativeTitles === 'function') stripNativeTitles(bentoEl);
-      if (window.MFG_I18N && typeof window.MFG_I18N.apply === 'function' && STATE.lang && STATE.lang !== 'en') {
-        try { window.MFG_I18N.apply(bentoEl); } catch (_) {}
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && STATE.lang && STATE.lang !== 'en') {
+        try { window.MFG_I18N.translateDom(bentoEl); } catch (_) {}
       }
       // Sync header filter button states without touching focused input
       const qf = String(STATE.dailyOpsQuickFilter || 'all');

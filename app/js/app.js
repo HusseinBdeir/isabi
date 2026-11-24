@@ -587,7 +587,7 @@
     dailyOpsExpLens: 'bills',
     dailyOpsTreasuryLens: 'bridge',
     dailyOpsFuelLens: 'units',
-    dailyOpsPlantLens: 'overview',
+    dailyOpsPlantLens: 'trend',
     dailyOpsQuickFilter: 'all',
     dailyOpsQuickSearch: '',
     dailyOpsExpanded: {},
@@ -69180,6 +69180,7 @@
     const canViewExp = dopsLens.expenses;
     const canViewDirect = dopsLens.profit;
     const canViewProfit = dopsLens.profit;
+    const canViewPayroll = Boolean(dopsLens.payrollDollars != null ? dopsLens.payrollDollars : dopsLens.payroll);
     // Holding's day is group treasury (per-company profit, partner splits): seats without the books get the
     // restricted view, as the handover does (Entry seats reach Daily Operations since 2026-11-20).
     if (!canViewBooks && ind === 'Holding & Treasury') {
@@ -69215,6 +69216,7 @@
     const extRows = filterRecords(SEED.records.external_movements || [], { ignorePeriod: true, tableKey: 'external_movements' });
     const loanRows = filterRecords(SEED.records.loans || [], { ignorePeriod: true, tableKey: 'loans' });
     const empRows = filterRecords(SEED.records.employments || [], { ignorePeriod: true, tableKey: 'employments' });
+    const salRows = canViewPayroll ? filterRecords(SEED.records.salaries || [], { ignorePeriod: true, tableKey: 'salaries' }) : [];
     const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
     const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
     const cashMoves = buildIndustryCashMoves(ind, STATE.company, { ignorePeriod: true });
@@ -69290,6 +69292,7 @@
       ...expRows.map(r => String(r.date || r.rep_date || '').slice(0, 10)),
       ...docRows.map(r => String(r.date || '').slice(0, 10)),
       ...extRows.map(r => String(r.date || '').slice(0, 10)),
+      ...salRows.map(r => String(r.date || '').slice(0, 10)),
       ...attRows.map(r => String(r.date || '').slice(0, 10)),
       ...cashMoves.map(m => String(m.date || '').slice(0, 10))
     ].filter(isValidOpIso))).sort();
@@ -69358,6 +69361,21 @@
     const dayDocList = docRows.filter(r => String(r.date || '').slice(0, 10) === targetDate);
     const dayCashList = cashMoves.filter(m => String(m.date || '').slice(0, 10) === targetDate);
     const dayAttList = attRows.filter(a => String(a.date || '').slice(0, 10) === targetDate);
+    const daySalList = salRows.filter(s => String(s.date || '').slice(0, 10) === targetDate);
+    const sibFxRate = Number((typeof getLbpFxRate === 'function' ? getLbpFxRate(targetDate) : 89500) || 89500);
+    const sibSalRowUsd = s => {
+      if (!s) return 0;
+      const lbp = Number(s.lbp_amount || 0);
+      const usd = lbp ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : (s.amount || s.total || 0));
+      return usd + (lbp ? lbp / sibFxRate : 0);
+    };
+    const daySalUsd = round2(daySalList.reduce((acc, s) => acc + sibSalRowUsd(s), 0));
+    const dayOtHours = round2(dayAttList.reduce((acc, a) => acc + Number(a.overtime_hours || 0), 0));
+    const dayOtStaff = dayAttList.filter(a => Number(a.overtime_hours || 0) > 0).length;
+    const dayOtPayUsd = round2(dayAttList.reduce((acc, a) => acc + Number(a.payroll_impact_usd || 0), 0));
+    const dayAbsCount = dayAttList.filter(a => /absent|leave|off|sick/i.test(String(a.status || a.type || '')) || Number(a.leave_days || 0) > 0).length;
+    const dayPresentCount = dayAttList.length - dayAbsCount;
+    const dayEmpStarts = canViewPayroll ? empRows.filter(em => String(em.start_date || em.date || '').slice(0, 10) === targetDate) : [];
 
     const dayRevUsd = round2(dayRevRows.reduce((s, e) => s + Number(e.usd || 0), 0));
     const dayRevNetUsd = round2(dayRevRows.reduce((s, e) => s + Number(e.netUsd != null ? e.netUsd : e.usd || 0), 0));
@@ -69966,16 +69984,27 @@
           </div>
 
           <div class="dops-card" id="dopsPlantCard">
-            <div class="dops-card-hd">
-              <div class="dops-card-title-wrap">
-                <span class="dops-card-ico navy">${ic('sales')}</span>
-                <h2 class="dops-card-title">${canViewProfit ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend'}</h2>
-              </div>
-              <div class="dops-card-actions">
-                ${sibCanSn ? `<button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>` : ''}
-                <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(p6EmpRows.length)}</button>
-              </div>
-            </div>
+            ${(() => {
+              const sibPlantLens = STATE.dailyOpsPlantLens || 'trend';
+              const isSibTeam = sibPlantLens === 'overview' || sibPlantLens === 'team';
+              const p6SibTitle = isSibTeam
+                ? (canViewPayroll ? 'Payroll &amp; Attendance' : 'Team &amp; Attendance')
+                : (canViewProfit ? '7-Day Sales &amp; Profit' : '7-Day Sales Trend');
+              const p6SibIcoCls = isSibTeam ? 'brass' : 'navy';
+              const p6SibIcoName = isSibTeam ? 'payroll' : 'sales';
+              const qSalRows = daySalList.filter(sa => !dopsQ || norm(`${sa.staff || ''} ${sa.payroll_month || ''} ${sa.method || ''} ${sa.notes || ''} ${sa.company || ''}`).includes(dopsQ));
+              const qAttRows = dayAttList.filter(at => !dopsQ || norm(`${at.staff || ''} ${at.status || ''} ${at.type || ''} ${at.in_time || ''} ${at.out_time || ''} ${at.notes || ''} ${at.company || ''}`).includes(dopsQ));
+              const qEmpRows = dayEmpStarts.filter(em => !dopsQ || norm(`${em.staff || ''} ${em.type || ''} ${em.company || ''}`).includes(dopsQ));
+              const sibCompactLbp = v => {
+                const abs = Math.abs(Number(v || 0));
+                const sgn = Number(v || 0) < 0 ? '-' : '';
+                if (abs >= 1e6) return `${sgn}${(abs / 1e6).toFixed(1)}M LBP`;
+                if (abs >= 1e3) return `${sgn}${Math.round(abs / 1e3)}k LBP`;
+                return `${sgn}${Math.round(abs)} LBP`;
+              };
+              let sibBodyHtml = '';
+              if (!isSibTeam) {
+                sibBodyHtml = `
             <div class="dops-card-body no-pad dops-flex-col dops-trend-body">
               <div class="dops-trend-legend">
                 <span><i class="dops-trend-dot sales"></i>Sales</span>
@@ -69986,11 +70015,241 @@
                 ${sibTrendSvg}
               </div>
               <div class="dops-digest-bar dops-workforce-foot">
-                <button type="button" class="dops-dpill" data-nav-jump="payroll">${ic('payroll')} ${fmtNum(empRows.length)} Staff</button>
-                ${sibCanSn ? `<button type="button" class="dops-dpill${openSn.length > 0 ? ' warn' : ' good'}" data-nav-jump="sentinels">${ic(openSn.length > 0 ? 'warn' : 'check_circle')} ${fmtNum(openSn.length)} Alerts</button>` : ''}
-                ${canViewExp ? `<button type="button" class="dops-dpill" data-nav-jump="documents">${ic('expenses')} ${fmtNum(docRows.length)} Documents</button>` : ''}
+                ${canViewPayroll && daySalList.length > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} Payroll ${fmtUSD(daySalUsd, 0)} (${fmtNum(daySalList.length)})</button>` : ''}
+                <button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} ${fmtNum(empRows.length)} Staff${dayAbsCount > 0 ? ` (${fmtNum(dayAbsCount)} Absent)` : ''}</button>
+                ${dayOtHours > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('overtime')} Overtime +${fmtNum(dayOtHours, 1)}h</button>` : ''}
+              </div>
+            </div>`;
+              } else {
+                const isSibSingleCo = (!String(STATE.company || '').startsWith('industry:') && !/-group$/i.test(String(STATE.company || ''))) || indCos.length <= 1;
+                const sibExpMap = STATE.dailyOpsExpanded || {};
+                const sgMap = new Map();
+                let sSeq = 0;
+                const ensureSg = (nm, co) => {
+                  const raw = String(nm || '').trim();
+                  const k = raw ? norm(raw) : `_s_${++sSeq}`;
+                  let g = sgMap.get(k);
+                  if (!g) {
+                    g = { key: k, name: raw || 'Staff', company: co || '', sals: [], atts: [], emps: [], recs: [], salUsd: 0, salCashUsd: 0, salOtherUsd: 0, salLbp: 0, months: [], methods: [], salNotes: [], isAbs: false, workedHours: 0, otHours: 0, otPayUsd: 0, leaveDays: 0, shiftWindow: '', attNotes: [] };
+                    sgMap.set(k, g);
+                  }
+                  return g;
+                };
+                qSalRows.forEach(sa => {
+                  const g = ensureSg(sa.staff, sa.company);
+                  g.sals.push(sa);
+                  const eq = round2(sibSalRowUsd(sa));
+                  const mth = String(sa.payroll_month || '').trim();
+                  const meth = String(sa.method || 'Cash').trim() || 'Cash';
+                  const lbp = Number(sa.lbp_amount || 0);
+                  const nt = cleanNotesText(sa.notes || '');
+                  g.salUsd = round2(g.salUsd + eq);
+                  if (/^cash$/i.test(meth)) g.salCashUsd = round2(g.salCashUsd + eq);
+                  else g.salOtherUsd = round2(g.salOtherUsd + eq);
+                  g.salLbp += lbp;
+                  if (mth && !g.months.includes(mth)) g.months.push(mth);
+                  if (meth && !g.methods.includes(meth)) g.methods.push(meth);
+                  if (nt && !g.salNotes.includes(nt)) g.salNotes.push(nt);
+                  g.recs.push({
+                    rkey: 'salaries',
+                    row: sa,
+                    kindLbl: 'Salary',
+                    kindCls: 'pay',
+                    subTxt: [mth, meth, lbp ? sibCompactLbp(lbp) : '', nt].filter(Boolean).join(' · '),
+                    valHtml: `<strong>${sa.lbp_amount ? sibCompactLbp(sa.lbp_amount) : fmtUSD(eq, 0)}</strong>`
+                  });
+                });
+                qAttRows.forEach(at => {
+                  const g = ensureSg(at.staff, at.company);
+                  g.atts.push(at);
+                  const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
+                  const wh = Number(at.worked_hours || 0);
+                  const oth = Number(at.overtime_hours || 0);
+                  const payUsd = Number(at.payroll_impact_usd || 0);
+                  const ld = Number(at.leave_days || 0);
+                  const win = at.in_time && at.out_time ? `${at.in_time}-${at.out_time}` : '';
+                  const nt = cleanNotesText(at.notes || '');
+                  if (isAbs) g.isAbs = true;
+                  g.workedHours = round2(g.workedHours + wh);
+                  g.otHours = round2(g.otHours + oth);
+                  g.otPayUsd = round2(g.otPayUsd + payUsd);
+                  g.leaveDays = round2(g.leaveDays + ld);
+                  if (!g.shiftWindow && win) g.shiftWindow = win;
+                  if (nt && !g.attNotes.includes(nt)) g.attNotes.push(nt);
+                  g.recs.push({
+                    rkey: 'attendance',
+                    row: at,
+                    kindLbl: isAbs ? 'Absent' : (oth > 0 ? `+${fmtNum(oth, 0)}h Overtime` : 'Shift'),
+                    kindCls: isAbs ? 'crit' : (oth > 0 ? 'loan' : 'team'),
+                    subTxt: [win || (isAbs ? (ld > 0 ? `${fmtNum(ld, 0)}d Leave` : 'No clock-in') : 'Regular shift'), wh > 0 ? `${fmtNum(wh, 0)}h` : '', nt].filter(Boolean).join(' · '),
+                    valHtml: isAbs ? '<span style="color:var(--muted)">-</span>' : (canViewPayroll && payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(wh, 0)}h`))
+                  });
+                });
+                qEmpRows.forEach(em => {
+                  const g = ensureSg(em.staff, em.company);
+                  g.emps.push(em);
+                  g.recs.push({
+                    rkey: 'employments',
+                    row: em,
+                    kindLbl: 'Contract',
+                    kindCls: 'team',
+                    subTxt: `${em.type || 'Staff'} · ${fmtNum(em.working_days || 30)}d/mo`,
+                    valHtml: `<strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong>`
+                  });
+                });
+                const sgList = Array.from(sgMap.values()).sort((a, b) => (b.salUsd - a.salUsd) || ((b.isAbs ? 1 : 0) - (a.isAbs ? 1 : 0)) || (b.otHours - a.otHours) || (b.workedHours - a.workedHours));
+                const shSalCnt = sgList.filter(g => g.sals.length > 0).length;
+                const shAttOnly = sgList.filter(g => g.sals.length === 0 && g.atts.length > 0).length;
+                const shEmpOnly = sgList.filter(g => g.sals.length === 0 && g.atts.length === 0 && g.emps.length > 0).length;
+                const shSalTot = round2(sgList.reduce((a, g) => a + g.salUsd, 0));
+                const shSalCash = round2(sgList.reduce((a, g) => a + g.salCashUsd, 0));
+                const shSalOther = round2(sgList.reduce((a, g) => a + g.salOtherUsd, 0));
+                const shOtPay = round2(sgList.reduce((a, g) => a + g.otPayUsd, 0));
+                const shWh = round2(sgList.reduce((a, g) => a + g.workedHours, 0));
+                const shOtH = round2(sgList.reduce((a, g) => a + g.otHours, 0));
+                const shAbs = sgList.filter(g => g.isAbs).length;
+                const sMonths = new Set();
+                qSalRows.forEach(sa => { if (sa.payroll_month) sMonths.add(String(sa.payroll_month).trim()); });
+                const sibCommonMth = sMonths.size === 1 ? Array.from(sMonths)[0] : '';
+                const sibCol3Hdr = (canViewPayroll && shSalCnt > 0 && shAttOnly === 0 && shEmpOnly === 0)
+                  ? 'Salary Paid'
+                  : ((canViewPayroll && (shSalCnt > 0 || shOtPay > 0 || shEmpOnly > 0)) ? 'Paid / Hours' : 'Hours');
+                const tgtYm = String(targetDate || '').slice(0, 7);
+                sibBodyHtml = `
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-stat-strip-3 dops-substrip">
+                ${canViewPayroll ? `
+                  <div class="dops-stat-box" data-nav-jump="payroll">
+                    <small>Salaries Paid</small>
+                    <b>${fmtUSD(daySalUsd, 0)} <span class="dops-stat-muted">· ${fmtNum(daySalList.length)} ${daySalList.length === 1 ? 'voucher' : 'vouchers'}</span></b>
+                  </div>
+                ` : `
+                  <div class="dops-stat-box" data-nav-jump="payroll_attendance">
+                    <small>Shifts Logged</small>
+                    <b>${fmtNum(dayPresentCount)} Worked <span class="dops-stat-muted">· ${fmtNum(dayAbsCount)} Absent</span></b>
+                  </div>
+                `}
+                <div class="dops-stat-box" data-nav-jump="payroll">
+                  <small>On Duty Today</small>
+                  <b>${fmtNum(empRows.length)} Staff <span class="dops-stat-muted">${dayPresentCount > 0 ? `· ${fmtNum(dayPresentCount)} Shifts` : ''}${dayAbsCount > 0 ? ` · ${fmtNum(dayAbsCount)} Absent` : ''}</span></b>
+                </div>
+                <div class="dops-stat-box${dayOtHours > 0 ? ' tone-brass' : ''}" data-nav-jump="payroll_attendance">
+                  <small>Overtime (${fmtNum(dayOtStaff)} staff)</small>
+                  <b>+${fmtNum(dayOtHours, 1)}h <span class="dops-stat-muted">${canViewPayroll && dayOtPayUsd > 0 ? `(${fmtUSD(dayOtPayUsd, 0)})` : ''}</span></b>
+                </div>
+              </div>
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:46%"><col style="width:32%"><col style="width:22%"></colgroup>
+                  <thead><tr><th>Staff</th><th>Shift / Detail</th><th class="r">${sibCol3Hdr}</th></tr></thead>
+                  <tbody>
+                    ${sgList.length ? sgList.map(g => {
+                      const isMulti = g.recs.length > 1;
+                      const expKey = `sibteam:${g.key}`;
+                      const isExp = Boolean(isMulti && sibExpMap[expKey]);
+                      const singleRec = !isMulti ? g.recs[0] : null;
+                      const badge = g.isAbs
+                        ? '<span class="dops-kind crit">Absent</span>'
+                        : (g.salUsd === 0 && g.otHours > 0
+                          ? `<span class="dops-kind loan">+${fmtNum(g.otHours, 0)}h Overtime</span>`
+                          : (g.salUsd === 0 && g.atts.length === 0 && g.emps.length > 0 ? '<span class="dops-kind team">Contract</span>' : ''));
+                      const otChip = (g.otHours > 0 && g.salUsd > 0)
+                        ? `<span class="dops-ot-badge" data-ui-tip="+${fmtNum(g.otHours, 1)}h overtime">${ic('overtime')}+${fmtNum(g.otHours, 0)}h</span>`
+                        : '';
+                      const parts = [];
+                      if (g.isAbs) {
+                        if (g.attNotes[0]) parts.push(`<span data-no-i18n="1">${esc(g.attNotes[0])}</span>`);
+                        else parts.push(g.leaveDays > 0 ? `${fmtNum(g.leaveDays, 0)}d Leave` : 'No clock-in');
+                      } else if (g.atts.length > 0) {
+                        if (g.salUsd !== 0) {
+                          if (g.shiftWindow) parts.push(`<span data-no-i18n="1">${esc(g.shiftWindow)}</span>`);
+                          if (g.workedHours > 0) parts.push(`${fmtNum(g.workedHours, 0)}h`);
+                          if (g.otHours > 0) parts.push(`+${fmtNum(g.otHours, 1)}h Overtime`);
+                          if (!parts.length) parts.push(g.attNotes[0] ? `<span data-no-i18n="1">${esc(g.attNotes[0])}</span>` : 'Shift');
+                        } else if (g.otHours > 0) {
+                          parts.push(g.shiftWindow ? `<span data-no-i18n="1">${esc(g.shiftWindow)}</span>` : 'Shift');
+                          if (g.workedHours > 0) parts.push(`${fmtNum(g.workedHours, 0)}h`);
+                        } else {
+                          if (g.shiftWindow) parts.push(`<span data-no-i18n="1">${esc(g.shiftWindow)}</span>`);
+                          else if (g.attNotes[0]) parts.push(`<span data-no-i18n="1">${esc(g.attNotes[0])}</span>`);
+                          else parts.push('Regular shift');
+                        }
+                      }
+                      if (g.sals.length > 0) {
+                        const offM = g.months.filter(m => m && m !== tgtYm);
+                        if (offM.length) parts.push(`<span data-no-i18n="1">${esc(offM.join(', '))}</span>`);
+                        if (g.salLbp) parts.push(`<span data-no-i18n="1">${esc(sibCompactLbp(g.salLbp))}</span>`);
+                        if (g.salNotes.length) parts.push(`<span data-no-i18n="1">${esc(g.salNotes[0])}</span>`);
+                        const nonC = g.methods.filter(m => m && !/^cash$/i.test(m));
+                        if (nonC.length) parts.push(`<span data-no-i18n="1">${esc(nonC.join(', '))}</span>`);
+                        if (!parts.length) {
+                          if (g.methods[0] && !/^cash$/i.test(g.methods[0])) parts.push(`<span data-no-i18n="1">${esc(g.methods[0])}</span>`);
+                          else parts.push('Cash');
+                        }
+                      } else if (g.emps.length > 0 && !parts.length) {
+                        if (g.emps[0].type) parts.push(`<span data-no-i18n="1">${esc(g.emps[0].type)}</span>`);
+                        else parts.push('Staff');
+                        parts.push(`${fmtNum(g.emps[0].working_days || 30)}d/mo`);
+                      }
+                      const vHtml = g.salUsd !== 0
+                        ? `<strong>${fmtUSD(g.salUsd, 0)}</strong>`
+                        : (g.emps.length > 0
+                          ? `<strong>${fmtUSD(g.emps[0].salary_usd || 0, 0)}/mo</strong>`
+                          : (g.isAbs ? '<span style="color:var(--muted)">-</span>' : (canViewPayroll && g.otPayUsd > 0 ? `<strong>+${fmtUSD(g.otPayUsd, 0)}</strong>` : (g.otHours > 0 ? `<strong>+${fmtNum(g.otHours, 1)}h</strong>` : `${fmtNum(g.workedHours || 0, 0)}h`))));
+                      const rowAttrs = isMulti
+                        ? `class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(g.recs.length)} entries for ${esc(g.name)}"`
+                        : `class="rrow" data-rkey="${esc(singleRec.rkey)}" data-rid="${esc(String((singleRec.row && singleRec.row.id) || ''))}"`;
+                      return `
+                        <tr ${rowAttrs}>
+                          <td class="dops-trunc"><div class="dops-grp-head">${isMulti ? `<span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>` : ''}${!isSibSingleCo && g.company ? `${coBadge(g.company)}` : ''}${badge}${relLink('staff_members', g.name, g.name, true)}${otChip}</div></td>
+                          <td class="dops-trunc"><span style="color:var(--muted)">${parts.join(' · ') || '-'}</span></td>
+                          <td class="r">${vHtml}</td>
+                        </tr>
+                        ${isExp ? g.recs.map(rec => `
+                          <tr class="rrow dops-subrow" data-rkey="${esc(rec.rkey)}" data-rid="${esc(String((rec.row && rec.row.id) || ''))}">
+                            <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><span class="dops-kind ${rec.kindCls}">${esc(rec.kindLbl)}</span>${repDateShiftBadge(rec.row)}</div></td>
+                            <td class="dops-trunc"><span style="color:var(--muted)">${esc(rec.subTxt || '-')}</span></td>
+                            <td class="r">${rec.valHtml}</td>
+                          </tr>
+                        `).join('') : ''}
+                      `;
+                    }).join('') : `<tr><td colspan="3" class="dops-empty">No matching attendance logs or salaries on ${esc(targetDate)} (${fmtNum(empRows.length)} active staff).</td></tr>`}
+                  </tbody>
+                  <tfoot>
+                    ${canViewPayroll && qSalRows.length > 0 ? `
+                      <tr>
+                        <td>${fmtNum(shSalCnt)} Paid${shAttOnly > 0 ? ` · ${fmtNum(shAttOnly)} ${shAttOnly === 1 ? 'Shift' : 'Shifts'}` : ''}</td>
+                        <td>${sibCommonMth ? `${esc(sibCommonMth)} · ` : ''}Cash ${fmtUSD(shSalCash, 0)}${Math.abs(shSalOther) >= 0.5 ? ` · Other ${fmtUSD(shSalOther, 0)}` : ''}</td>
+                        <td class="r">${fmtUSD(shSalTot, 0)}</td>
+                      </tr>
+                    ` : `
+                      <tr>
+                        <td>${fmtNum(sgList.length)} ${sgList.length === 1 ? 'Staff Member' : 'Staff Members'}</td>
+                        <td>${fmtNum(shWh, 0)}h Worked${shAbs > 0 ? ` · ${fmtNum(shAbs)} Absent` : ''}</td>
+                        <td class="r">${canViewPayroll && shOtPay > 0 ? fmtUSD(shOtPay, 0) : (shOtH > 0 ? `+${fmtNum(shOtH, 1)}h` : `${fmtNum(shWh, 0)}h`)}</td>
+                      </tr>
+                    `}
+                  </tfoot>
+                </table>
+              </div>
+            </div>`;
+              }
+              return `
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico ${p6SibIcoCls}">${ic(p6SibIcoName)}</span>
+                <h2 class="dops-card-title">${p6SibTitle}</h2>
+              </div>
+              <div class="dops-card-actions">
+                <div class="dops-seg" role="tablist" aria-label="Trend & Team Lens">
+                  <button type="button" class="dops-seg-btn${!isSibTeam ? ' active' : ''}" data-dops-lens="plant:trend">Trend</button>
+                  <button type="button" class="dops-seg-btn${isSibTeam ? ' active' : ''}" data-dops-lens="plant:overview">Team</button>
+                </div>
+                <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(isSibTeam ? (daySalList.length + dayAttList.length || p6EmpRows.length) : p6EmpRows.length)}</button>
               </div>
             </div>
+            ${sibBodyHtml}`;
+            })()}
           </div>
         </div>
       </div>
@@ -184600,6 +184859,20 @@
         return;
       }
 
+      const dopsExpRow = (getActiveIndustry(STATE.company) !== 'Manufacturing') ? t.closest('tr[data-dops-expand]') : null;
+      if (dopsExpRow && container.contains(dopsExpRow)) {
+        if (!t.closest('button, a, .rel-link')) {
+          const k = dopsExpRow.getAttribute('data-dops-expand');
+          if (k) {
+            e.preventDefault();
+            if (!STATE.dailyOpsExpanded) STATE.dailyOpsExpanded = {};
+            STATE.dailyOpsExpanded[k] = !STATE.dailyOpsExpanded[k];
+            renderApp();
+            return;
+          }
+        }
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -184640,7 +184913,7 @@
       }
 
       const indRow = t.closest('tr[data-ind-inspect-row]') || (getActiveIndustry(STATE.company) !== 'Manufacturing' ? t.closest('tbody tr') : null);
-      if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
+      if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-dops-expand') && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
         const agrPillHit = t.closest('[data-ind-agr-pill]');
         if (!agrPillHit && t.closest('[data-rel-key], button, a, input, select, label')) return;
         const explorerWrap = indRow.closest('#industryDomainTablesExplorer');
@@ -184766,6 +185039,23 @@
             suggested_lng: hit.dwellLng,
             access_note: `Observed ${Number(hit.stopCount || 1)} Teltonika stops (${Math.round(Number(hit.totalMin || 0))} min dwell)`
           });
+        }
+      }
+    });
+
+    container.addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      if (getActiveIndustry(STATE.company) === 'Manufacturing') return;
+      const t = ev.target;
+      if (!t || typeof t.closest !== 'function' || t.closest('button, a, .rel-link, input, select, textarea')) return;
+      const dopsExpRow = t.closest('tr[data-dops-expand]');
+      if (dopsExpRow && container.contains(dopsExpRow)) {
+        const k = dopsExpRow.getAttribute('data-dops-expand');
+        if (k) {
+          ev.preventDefault();
+          if (!STATE.dailyOpsExpanded) STATE.dailyOpsExpanded = {};
+          STATE.dailyOpsExpanded[k] = !STATE.dailyOpsExpanded[k];
+          renderApp();
         }
       }
     });
@@ -185017,6 +185307,16 @@
       });
     }
     if (STATE.view === 'daily_ops' && getActiveIndustry(STATE.company) !== 'Manufacturing') {
+      container.querySelectorAll('[data-dops-lens]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const spec = String(btn.getAttribute('data-dops-lens') || '');
+          const [quad, tab] = spec.split(':');
+          if (quad === 'plant' && tab) {
+            STATE.dailyOpsPlantLens = tab;
+            renderApp();
+          }
+        });
+      });
       container.querySelectorAll('[data-dops-pick-date]').forEach(btn => {
         btn.addEventListener('click', () => {
           const dt = btn.getAttribute('data-dops-pick-date') || '';
