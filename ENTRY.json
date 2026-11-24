@@ -3,6 +3,12 @@
   "branch": "wt/jv-logs-tank-i18n",
   "sha": "0d99d5401514eb7a3d14eb9a9b7a3067987bd1ea"
  },
+ "batch": {
+  "at": "2026-11-24T19:32:15Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "6601ac62496440ff987fb9cb1fc7fe73",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi-app: python build/verify_truck_log_reopen.py"
  ],
