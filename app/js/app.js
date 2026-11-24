@@ -30864,6 +30864,60 @@
       ${rawVisualsHtml}
 
       <div class="split-grid-2">
+        <div class="panel-card" id="sitesPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>SITE MATERIAL, TRANSPORT &amp; REMAINING EXPENSES</span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="chip-bar">${siteChip('expense', `All Payable Sites (${siteAllList.length})`)}${siteChip('source', `Source Sites (${srcSiteCnt})`)}${siteChip('bundled', `Delivery Included (${bundledSiteCnt})`)}${siteChip('custhaul', `3P Customer Trans (${custHaulSiteCnt})`)}</div>
+              <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
+                ${canViewView('raw_jv') ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="raw_jv">JV &amp; Partnerships</button>' : ''}
+                ${exportBtn('sitesPanel', 'Sites_Material_Transport_Balances')}
+              </span>
+            </div>
+          </div>
+          ${renderColFilterBar('sites')}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${th('sites', 'Site Name', 'site')}${th('sites', 'Type', 'site_kind')}${th('sites', 'Qty (m³)', 'mat_qty', 'r')}${th('sites', 'Mat. Credit', 'mat_credit', 'r')}
+                  ${th('sites', 'Supplier Trans', 'quarry_haul', 'r')}${th('sites', 'Customer Trans', 'sales_haul', 'r')}${th('sites', 'Total Credit', 'total_credit', 'r')}
+                  ${th('sites', 'Paid ($)', 'paid', 'r')}${th('sites', 'Remaining ($)', 'remaining', 'r')}
+                </tr>
+              </thead>
+              <tbody>
+                ${shownSites.map(s => `
+                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site, s.site_kind === '3P Customer Trans' ? 'sales' : 'raw') || {}).id || s.site)}">
+                    <td>${s.site.startsWith('(') ? esc(s.site) : relLink('sites', s.site, s.site, true)}</td>
+                    <td><span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span></td>
+                    <td class="r">${s.mat_qty > 0 ? `${fmtNum(s.mat_qty, 0)} m³` : '—'}</td>
+                    <td class="r">${s.mat_credit !== 0 ? fmtUSD(s.mat_credit, 2) : '—'}</td>
+                    <td class="r">${s.quarry_haul !== 0 ? fmtUSD(s.quarry_haul, 2) : (s.is_bundled_only ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivery is included in Material Credit ($0.00 separate transport charge)">Included</span>' : '—')}</td>
+                    <td class="r">${s.sales_haul !== 0 ? fmtUSD(s.sales_haul, 2) : '—'}</td>
+                    <td class="r"><strong>${s.total_credit !== 0 ? fmtUSD(s.total_credit, 2) : '—'}</strong></td>
+                    <td class="r">${s.paid !== 0 ? fmtUSD(s.paid, 2) : '—'}</td>
+                    <td class="r">${s.total_credit !== 0 || s.paid !== 0 ? fmtRemCell(s.remaining) : '—'}</td>
+                  </tr>
+                `).join('') || emptyRow(9, qRaw ? `No sites match "${STATE.search}".` : 'No site expenses in this scope')}
+                ${showMoreRow('sites', siteRows.length, 9)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2"><b>TOTAL (${fmtNum(siteRows.length)} SITES)</b></td>
+                  <td class="r"><b>${fmtNum(stSumQty, 0)} m³</b></td>
+                  <td class="r"><b>${fmtUSD(stSumMat, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(stSumQHaul, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(stSumSHaul, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(stSumCred, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(stSumPaid, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(stSumRem, 2)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
         <div class="panel-card" id="rawSalesHaulPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>THIRD-PARTY CUSTOMER-SITE TRANSPORTATION REGISTER (SALES DELIVERIES BY HAULER)</span></div>
@@ -30919,60 +30973,6 @@
                   <td class="r"><b>${fmtNum(shSumQty, 0)} m³</b></td>
                   <td class="r"><b>${fmtUSD(shSumAmt, 2)}</b></td>
                   <td></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-
-        <div class="panel-card" id="sitesPanel">
-          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-            <div class="panel-title"><span>SITE MATERIAL, TRANSPORT &amp; REMAINING EXPENSES</span></div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${siteChip('expense', `All Payable Sites (${siteAllList.length})`)}${siteChip('source', `Source Sites (${srcSiteCnt})`)}${siteChip('bundled', `Delivery Included (${bundledSiteCnt})`)}${siteChip('custhaul', `3P Customer Trans (${custHaulSiteCnt})`)}</div>
-              <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-                <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
-                ${canViewView('raw_jv') ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="raw_jv">JV &amp; Partnerships</button>' : ''}
-                ${exportBtn('sitesPanel', 'Sites_Material_Transport_Balances')}
-              </span>
-            </div>
-          </div>
-          ${renderColFilterBar('sites')}
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('sites', 'Site Name', 'site')}${th('sites', 'Type', 'site_kind')}${th('sites', 'Qty (m³)', 'mat_qty', 'r')}${th('sites', 'Mat. Credit', 'mat_credit', 'r')}
-                  ${th('sites', 'Supplier Trans', 'quarry_haul', 'r')}${th('sites', 'Customer Trans', 'sales_haul', 'r')}${th('sites', 'Total Credit', 'total_credit', 'r')}
-                  ${th('sites', 'Paid ($)', 'paid', 'r')}${th('sites', 'Remaining ($)', 'remaining', 'r')}
-                </tr>
-              </thead>
-              <tbody>
-                ${shownSites.map(s => `
-                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site, s.site_kind === '3P Customer Trans' ? 'sales' : 'raw') || {}).id || s.site)}">
-                    <td>${s.site.startsWith('(') ? esc(s.site) : relLink('sites', s.site, s.site, true)}</td>
-                    <td><span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span></td>
-                    <td class="r">${s.mat_qty > 0 ? `${fmtNum(s.mat_qty, 0)} m³` : '—'}</td>
-                    <td class="r">${s.mat_credit !== 0 ? fmtUSD(s.mat_credit, 2) : '—'}</td>
-                    <td class="r">${s.quarry_haul !== 0 ? fmtUSD(s.quarry_haul, 2) : (s.is_bundled_only ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivery is included in Material Credit ($0.00 separate transport charge)">Included</span>' : '—')}</td>
-                    <td class="r">${s.sales_haul !== 0 ? fmtUSD(s.sales_haul, 2) : '—'}</td>
-                    <td class="r"><strong>${s.total_credit !== 0 ? fmtUSD(s.total_credit, 2) : '—'}</strong></td>
-                    <td class="r">${s.paid !== 0 ? fmtUSD(s.paid, 2) : '—'}</td>
-                    <td class="r">${s.total_credit !== 0 || s.paid !== 0 ? fmtRemCell(s.remaining) : '—'}</td>
-                  </tr>
-                `).join('') || emptyRow(9, qRaw ? `No sites match "${STATE.search}".` : 'No site expenses in this scope')}
-                ${showMoreRow('sites', siteRows.length, 9)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="2"><b>TOTAL (${fmtNum(siteRows.length)} SITES)</b></td>
-                  <td class="r"><b>${fmtNum(stSumQty, 0)} m³</b></td>
-                  <td class="r"><b>${fmtUSD(stSumMat, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(stSumQHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(stSumSHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(stSumCred, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(stSumPaid, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(stSumRem, 2)}</b></td>
                 </tr>
               </tfoot>
             </table>
