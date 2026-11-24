@@ -1,16 +1,16 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.39';
+const CACHE_NAME = 'isabi-systems-pwa-v6.40';
 const CACHE_VER = CACHE_NAME.replace(/^isabi-systems-pwa-v/, '');
 const SHELL_DIR = new URL('./', self.location.href).pathname;
 const STATIC_ASSETS = [
-  './manifest.json?v=6.39',
-  './favicon.ico?v=6.39',
-  './favicon-dark.ico?v=6.39',
-  './icon.svg?v=6.39',
-  './icon-dark.svg?v=6.39',
-  './icon-180.png?v=6.39',
-  './icon-192.png?v=6.39',
-  './icon-512.png?v=6.39',
-  './icon-512-maskable.png?v=6.39',
+  './manifest.json?v=6.40',
+  './favicon.ico?v=6.40',
+  './favicon-dark.ico?v=6.40',
+  './icon.svg?v=6.40',
+  './icon-dark.svg?v=6.40',
+  './icon-180.png?v=6.40',
+  './icon-192.png?v=6.40',
+  './icon-512.png?v=6.40',
+  './icon-512-maskable.png?v=6.40',
   './logo-wtc.png?v=1',
   './logo-blanca.png?v=1',
   './logo-la-una.png?v=1',
@@ -87,6 +87,9 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
   if (req.cache === 'only-if-cached' && req.mode !== 'same-origin') return;
   const url = new URL(req.url);
+
+  // Bypass service worker cache for byte-range requests and video/subtitle media assets
+  if (req.headers.has('range') || /\.(?:mp4|webm|m4v|vtt)$/i.test(url.pathname)) return;
 
   // Delegate /app/ (ISABI Command Center PWA), /reset, /api/, and crawler index files to their own service worker / network
   if (

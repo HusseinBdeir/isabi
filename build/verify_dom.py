@@ -98,6 +98,8 @@ def run_dom_and_screenshots():
         assert len(sw_doc.get('offers', [])) == 2 and sw_doc['offers'][0]['priceSpecification'][0]['price'] == 3000, f"Unexpected SoftwareApplication offers: {sw_doc.get('offers')}"
         assert sw_doc['offers'][0]['priceSpecification'][1]['price'] == 50 and sw_doc['offers'][0]['priceSpecification'][1]['billingDuration'] == 'P1M' and sw_doc['offers'][0]['priceSpecification'][1]['unitText'] == 'seat'
         assert sw_doc['offers'][1]['priceSpecification'][0]['minPrice'] == 5600 and sw_doc['offers'][1]['priceSpecification'][1]['minPrice'] == 80 and sw_doc['offers'][1]['priceSpecification'][1]['maxPrice'] == 100 and sw_doc['offers'][1]['priceSpecification'][1]['billingDuration'] == 'P1M'
+        v_obj = sw_doc.get('video', {})
+        assert v_obj.get('@type') == 'VideoObject' and v_obj.get('contentUrl') == 'https://isabisystems.com/isabi-tour.mp4' and v_obj.get('thumbnailUrl') == 'https://isabisystems.com/isabi-tour-poster.jpg' and v_obj.get('duration') == 'PT1M31S', f"Invalid VideoObject JSON-LD: {v_obj}"
         bot_res = subprocess.run(
             [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
@@ -776,6 +778,139 @@ document.addEventListener('DOMContentLoaded', async function() {
     var homeLink = document.querySelector('a[href="#top"]');
     if (homeLink) homeLink.click();
     var closedByHome = document.querySelectorAll('[data-sheet]:not([hidden])').length === 0 && !document.getElementById('site-pages').hidden;
+    await tick(150);
+
+    // Tour Modal: opens from #hero-tour-btn, traps Tab focus, sets background inert, stays clean in Light & Dark Mode, syncs <track> exclusively on EN/AR/FR, closes cleanly on Escape/CTA
+    var tourModalOk = false;
+    var tourModalDiag = {};
+    var tourBtn = document.getElementById('hero-tour-btn');
+    var tourBd = document.getElementById('tour-modal-backdrop');
+    var tourModalEl = document.getElementById('tour-modal');
+    var tourVid = document.getElementById('isabi-tour-video');
+    if (tourBtn && tourBd && tourModalEl && tourVid) {
+      tourBtn.focus();
+      tourBtn.click();
+      await tick(60);
+      var openVis = !tourBd.hidden && location.hash === '#tour';
+      var bgInert = Boolean(document.getElementById('site-header')?.inert && document.getElementById('top')?.inert && document.querySelector('footer.d-foot')?.inert);
+      var focusInside = tourModalEl.contains(document.activeElement);
+      var rectT = tourModalEl.getBoundingClientRect();
+      var modalInVp = rectT.left >= -1 && rectT.right <= window.innerWidth + 1;
+      // Negative Tab-trap test: Tab / Shift+Tab stays inside #tour-modal
+      var focusablesT = Array.from(tourModalEl.querySelectorAll('#close-tour-modal, video[controls], a[href], button:not([disabled])'));
+      if (focusablesT.length >= 2) {
+        focusablesT[focusablesT.length - 1].focus();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      }
+      var tabWrapped = document.activeElement === focusablesT[0];
+      scanDarkBlocks();
+      var trackModesOk = true;
+      if (window.ISABI_I18N) {
+        for (var tlIdx = 0; tlIdx < 3; tlIdx++) {
+          var tl = ['ar', 'fr', 'en'][tlIdx];
+          window.ISABI_I18N.setLang(tl, false);
+          await tick(20);
+          var list = Array.from(tourVid.textTracks || []);
+          if (!list.length || !list.every(function(t){ return t.language === tl ? t.mode === 'showing' : t.mode === 'disabled'; })) {
+            trackModesOk = false;
+          }
+        }
+      }
+      // Dark Mode parity on #tour-modal while visible
+      document.documentElement.setAttribute('data-theme', 'dark');
+      var darkTourHdr = parseRgbSum(document.querySelector('.d-tour-hdr'));
+      var darkTourFtr = parseRgbSum(document.querySelector('.d-tour-ftr'));
+      var darkTourCard = parseRgbSum(tourModalEl);
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await tick(80);
+      var escPaused = tourVid.paused === true && tourBd.hidden && location.hash !== '#tour';
+      var bgUninert = !document.getElementById('site-header')?.inert && !document.getElementById('top')?.inert;
+      // Test CTA navigation (#sandbox) from footer tour opener -> closes modal cleanly & Back to Site does not re-open #tour-modal
+      var ftrTour = document.querySelector('.d-foot-more [data-tour-open]');
+      var ctaSandboxOk = false;
+      if (ftrTour) {
+        ftrTour.click();
+        await tick(50);
+        var toSbox = tourModalEl.querySelector('a[data-tour-close-nav][href="#sandbox"]');
+        if (toSbox) toSbox.click();
+        await tick(120);
+        var sboxOpened = tourBd.hidden && !document.getElementById('sandbox').hidden && location.hash === '#sandbox';
+        var bBtn = document.querySelector('#sheet-nav [data-sheet-close]');
+        if (bBtn) bBtn.click();
+        await tick(120);
+        ctaSandboxOk = Boolean(sboxOpened && tourBd.hidden && location.hash !== '#tour' && !document.getElementById('site-pages').hidden);
+      }
+      // Also test footer tour opened from inside a sheet (#faq -> tour -> #sandbox -> Back to Site)
+      var sheetTourOk = true;
+      var faqBtn = document.querySelector('#site-pages a[href="#faq"]');
+      if (faqBtn && ftrTour) {
+        faqBtn.click();
+        await tick(80);
+        ftrTour.click();
+        await tick(80);
+        var toSboxFromFaq = tourModalEl.querySelector('a[data-tour-close-nav][href="#sandbox"]');
+        if (toSboxFromFaq) toSboxFromFaq.click();
+        await tick(140);
+        var sboxFromFaq = tourBd.hidden && !document.getElementById('sandbox').hidden && location.hash === '#sandbox';
+        var bBtn2 = document.querySelector('#sheet-nav [data-sheet-close]');
+        if (bBtn2) bBtn2.click();
+        await tick(120);
+        sheetTourOk = Boolean(sboxFromFaq && tourBd.hidden && !document.getElementById('site-pages').hidden);
+      }
+      // Test CTA navigation (#portal) closes modal and keeps scroll at #portal (no snap back)
+      var ctaPortalOk = false;
+      tourBtn.click();
+      await tick(60);
+      var toPortal = tourModalEl.querySelector('a[data-tour-close-nav][href="#portal"]');
+      if (toPortal) toPortal.click();
+      await tick(140);
+      ctaPortalOk = Boolean(tourBd.hidden && location.hash !== '#tour' && document.activeElement !== tourBtn);
+      // Closing #tour-modal via Close button over a non-empty section hash (#pricing) must keep visitor scrolled at footer (no snap back)
+      var footerHashCloseOk = false;
+      var pricingLink = document.querySelector('#main-nav a[data-sec-link="pricing"]');
+      if (pricingLink && ftrTour) {
+        pricingLink.click();
+        await tick(40);
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await tick(40);
+        var scrollBeforeTour = Math.round(window.scrollY);
+        var closeScrollAsks = [];
+        var origScrollToT = window.scrollTo;
+        window.scrollTo = function() {
+          closeScrollAsks.push(Array.from(arguments));
+          return origScrollToT.apply(window, arguments);
+        };
+        try {
+          ftrTour.click();
+          await tick(60);
+          var closeTourBtn = document.getElementById('close-tour-modal');
+          if (closeTourBtn) closeTourBtn.click();
+          await tick(180);
+        } finally {
+          window.scrollTo = origScrollToT;
+        }
+        footerHashCloseOk = Boolean(
+          tourBd.hidden &&
+          location.hash === '#pricing' &&
+          closeScrollAsks.length === 0 &&
+          Math.abs(Math.round(window.scrollY) - scrollBeforeTour) <= 4
+        );
+        if (history.replaceState) {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        window.scrollTo(0, 0);
+      }
+      if (homeLink) homeLink.click();
+      tourModalDiag = {
+        openVis: openVis, bgInert: bgInert, focusInside: focusInside, modalInVp: modalInVp,
+        tabWrapped: tabWrapped, trackModesOk: trackModesOk, darkTourHdr: darkTourHdr,
+        darkTourFtr: darkTourFtr, darkTourCard: darkTourCard, escPaused: escPaused,
+        bgUninert: bgUninert, ctaSandboxOk: ctaSandboxOk, sheetTourOk: sheetTourOk, ctaPortalOk: ctaPortalOk,
+        footerHashCloseOk: footerHashCloseOk
+      };
+      tourModalOk = Boolean(openVis && bgInert && focusInside && modalInVp && tabWrapped && trackModesOk && darkTourHdr <= 120 && darkTourFtr <= 120 && darkTourCard <= 120 && escPaused && bgUninert && ctaSandboxOk && sheetTourOk && ctaPortalOk && footerHashCloseOk);
+    }
 
     document.documentElement.setAttribute('data-theme', 'dark');
     var darkChecks = {
@@ -962,6 +1097,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       heroResetVal: heroResetVal,
       heroBarVal: heroBarVal,
       closedByHome: closedByHome,
+      tourModalOk: tourModalOk,
+      tourModalDiag: tourModalDiag,
       lightChecks: lightChecks,
       darkBlocksInLight: darkBlocksInLight.slice(0, 10),
       darkChecks: darkChecks,
@@ -1139,6 +1276,36 @@ document.addEventListener('DOMContentLoaded', function() {
             assert d_lg['rows'] in ([6], [3, 3]) and d_lg['outside'] == 0 and d_lg['scrollW'] <= d_lg['vw'], f"Logo row at {d_lg['vw']}px wide must be one row of six or two rows of three, inside its card: {d_lg}"
             print(f"[LOGO-ROW] {d_lg['vw']}px wide: rows {d_lg['rows']}")
 
+        # 2e. Shared link #tour opens the tour modal immediately on load; close button stays on the site cleanly
+        tour_deep_script = """
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+  var pre = document.createElement('pre');
+  pre.id = 'tdeep-json';
+  var tick = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+  try {
+    await tick(60);
+    var bd = document.getElementById('tour-modal-backdrop');
+    var o = { lenStart: history.length, openedOnLoad: Boolean(bd && !bd.hidden), hashOnLoad: location.hash };
+    var cb = document.getElementById('close-tour-modal');
+    if (cb) cb.click();
+    await tick(80);
+    o.stillOnPage = /_diag_tourdeep\\.html/.test(location.href);
+    o.closedOnClose = Boolean(bd && bd.hidden);
+    o.hashAfter = location.hash;
+    o.lenEnd = history.length;
+    pre.textContent = JSON.stringify(o);
+  } catch (err) {
+    pre.textContent = JSON.stringify({ error: String(err) });
+  }
+  document.body.appendChild(pre);
+});
+</script>
+"""
+        d_td = run_side_probe('_diag_tourdeep.html', tour_deep_script, 'tdeep-json', '#tour', win_w=1366, win_h=768, budget=3000)
+        assert 'error' not in d_td and d_td['openedOnLoad'] and d_td['stillOnPage'] and d_td['closedOnClose'] and d_td['hashAfter'] == '' and d_td['lenEnd'] == d_td['lenStart'], f"Shared link #tour probe failed: {d_td}"
+        print('[DEEP-LINK] Shared link #tour opens walkthrough modal & closes without leaving page')
+
         d_desk = probe_viewport(1366, 768, 'DESK')
         d_desk_1440 = probe_viewport(1440, 810, 'DESK')
         d_desk_1536 = probe_viewport(1536, 864, 'DESK')
@@ -1204,6 +1371,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_mob['logoRows'] == 2, f"In Practice page on a phone: the six logos must sit in two rows of three, got {d_mob['logoRows']} rows"
         assert d_desk['logoAlts'] == {'ar': 6, 'fr': 6} and d_desk['logoAltSamples']['enRestored'] is True, f"Logo descriptions must follow Arabic and French and return to English: {d_desk['logoAlts']} {d_desk.get('logoAltSamples')}"
         assert d_desk['cmpCols'] == 4, f"Expected a 4-column comparison on desktop, got {d_desk['cmpCols']}"
+        assert d_desk['v4Test'].get('tourModalOk') is True, f"Desktop #tour-modal check failed: {d_desk['v4Test'].get('tourModalDiag')}"
         assert abs(d_desk['kpi1W'] - d_desk['kpi2W']) <= 2, f"Hero KPI width mismatch: {d_desk['kpi1W']} vs {d_desk['kpi2W']}"
 
         # Mobile assertions (390x844)
@@ -1224,6 +1392,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_mob['inputFontMin'] >= 16, f"Mobile input font-size {d_mob['inputFontMin']}px < 16px (triggers iOS zoom)!"
         assert d_mob['cmpCols'] == 1, f"Expected the comparison stacked in one column at 390x844, got {d_mob['cmpCols']}"
         assert d_mob['v4Test'].get('i18nOk') is True, f"Mobile EN/AR(RTL)/FR i18n check failed: {d_mob['v4Test'].get('i18nDiag')}"
+        assert d_mob['v4Test'].get('tourModalOk') is True, f"Mobile #tour-modal open/Tab-trap/RTL/overflow/CTA check failed: {d_mob['v4Test']}"
         assert d_mob['v4Test']['i18nDiag']['arMobBodyW'] <= 390 and d_mob['v4Test']['i18nDiag']['frMobBodyW'] <= 390, f"Mobile RTL/FR body overflow: {d_mob['v4Test']['i18nDiag']}"
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
 
@@ -1274,6 +1443,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for surf_k, surf_rgb in v4['lightChecks'].items():
             assert surf_rgb >= 650, f"Light Mode surface {surf_k} is too dark (RGB sum={surf_rgb} < 650): {v4['lightChecks']}"
         assert v4['darkBlocksInLight'] == [], f"Dark-navy blocks found in Light Mode: {v4['darkBlocksInLight']}"
+        assert v4.get('tourModalOk') is True, f"Hero #tour-modal open/Light-Mode/track-sync/Escape check failed: {v4}"
         for d_k, d_rgb in v4['darkChecks'].items():
             assert 0 <= d_rgb <= 120, f"Dark Mode surface {d_k} did not switch to dark palette (RGB sum={d_rgb}): {v4['darkChecks']}"
 

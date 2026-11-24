@@ -66,3 +66,22 @@
 
 /app/js/seed_demo_industries.json
   Cache-Control: public, max-age=31536000, immutable
+
+/isabi-tour.mp4
+  Cache-Control: public, max-age=86400
+  Content-Type: video/mp4
+
+/isabi-tour-poster.jpg
+  Cache-Control: public, max-age=86400
+
+/isabi-tour-en.vtt
+  Cache-Control: public, max-age=86400
+  Content-Type: text/vtt; charset=utf-8
+
+/isabi-tour-ar.vtt
+  Cache-Control: public, max-age=86400
+  Content-Type: text/vtt; charset=utf-8
+
+/isabi-tour-fr.vtt
+  Cache-Control: public, max-age=86400
+  Content-Type: text/vtt; charset=utf-8

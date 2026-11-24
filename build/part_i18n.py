@@ -1602,7 +1602,15 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "FR Ready":{"ar":"جاهز FR","fr":"Prêt FR"},
 "Balance":{"ar":"الرصيد","fr":"Solde"},
 "Opening Balance":{"ar":"الرصيد الافتتاحي","fr":"Solde d'Ouverture"},
-"Running Balance":{"ar":"الرصيد المتحرك","fr":"Solde Progressif"}
+"Running Balance":{"ar":"الرصيد المتحرك","fr":"Solde Progressif"},
+"Watch the 90-Second Tour":{"ar":"شاهد الجولة (90 ثانية)","fr":"Voir la visite (90 s)"},
+"90-Second Tour":{"ar":"جولة 90 ثانية","fr":"Visite 90 secondes"},
+"90-Second Product Walkthrough":{"ar":"جولة تعريفية في النظام (90 ثانية)","fr":"Visite guidée du système (90 s)"},
+"Unified operations, double-entry books, dashboards and field kiosks":{"ar":"عمليات موحدة، قيد مزدوج، لوحات تحليلية وأكشاك ميدانية","fr":"Opérations unifiées, partie double, tableaux de bord et bornes"},
+"Close Walkthrough":{"ar":"إغلاق الجولة","fr":"Fermer la visite"},
+"ISABI Systems 90-Second Product Tour":{"ar":"جولة ISABI Systems التعريفية (90 ثانية)","fr":"Visite produit ISABI Systems (90 secondes)"},
+"Runs on isolated sample company data":{"ar":"يعمل على بيانات شركة تجريبية معزولة بالكامل","fr":"Exécuté sur des données d'entreprise de démonstration isolées"},
+"Book Discovery Call":{"ar":"احجز مكالمة استكشافية","fr":"Réserver un appel"}
 };;
 
     const SHOWCASE_LOWER = {};

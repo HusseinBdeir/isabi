@@ -1259,11 +1259,33 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-logo { filter: grayscale(1) sepia(0.28) contrast(0.82) brightness(1.04); opacity: 0.66; }
   .d-logo.d-logo-lit { filter: none; opacity: 1; }
 }
+/* 90-Second Tour Modal */
+.d-tour-backdrop { justify-content: center; align-items: center; padding: 20px; }
+.d-tour-backdrop[hidden] { display: none !important; }
+.d-tour-modal { width: min(980px, 100%); max-height: 94vh; overflow-y: auto; background: var(--d-card); color: var(--d-ink); border: 1px solid var(--d-line); border-radius: 18px; box-shadow: var(--d-shadow); display: flex; flex-direction: column; }
+.d-tour-hdr { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: var(--d-soft); border-bottom: 1px solid var(--d-line); border-radius: 18px 18px 0 0; }
+.d-tour-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.d-tour-title b { display: block; font-family: 'Archivo', system-ui, sans-serif; font-size: 16px; font-weight: 700; color: var(--d-ink); }
+.d-tour-title small { display: block; font-size: 12.5px; color: var(--d-muted); }
+.d-tour-stage { padding: 14px 18px; background: var(--d-card); }
+.d-tour-stage video { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 12px; background: var(--d-soft); border: 1px solid var(--d-line); }
+.d-tour-ftr { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; background: var(--d-soft); border-top: 1px solid var(--d-line); border-radius: 0 0 18px 18px; }
+.d-tour-note { font-size: 12.5px; color: var(--d-muted); }
+.d-tour-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.d-tour-modal button:focus-visible, .d-tour-modal a:focus-visible, .d-tour-modal video:focus-visible { outline: 2px solid var(--d-brass); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .d-tour-backdrop { padding: 10px; }
+  .d-tour-hdr { padding: 12px 14px; }
+  .d-tour-stage { padding: 10px 12px; }
+  .d-tour-ftr { padding: 10px 12px 14px; }
+  .d-tour-acts { width: 100%; }
+  .d-tour-acts .d-btn { flex: 1; justify-content: center; }
+}
 @media (prefers-reduced-motion: reduce) {
   .d-logo, .d-btn, .d-nav a { transition: none; }
 }
 @media print {
-  .d-header, .d-foot-more, .d-strip { display: none !important; }
+  .d-header, .d-foot-more, .d-strip, .d-tour-backdrop { display: none !important; }
   .d-page { min-height: 0; break-inside: avoid; }
 }
 """
