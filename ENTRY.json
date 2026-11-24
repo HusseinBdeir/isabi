@@ -3,6 +3,12 @@
   "branch": "wt/sales-loads-vat-basis",
   "sha": "0615fa775f93e32f291cda1ce28db0ae08eb12a6"
  },
+ "batch": {
+  "at": "2026-11-24T09:09:31Z",
+  "holder": "agy-291155f2 (fleet-pnl-rev10)",
+  "lockId": "b63a71598b1445519f0246c783843816",
+  "version": "19.6.437"
+ },
  "gates": [
   "isabi-app: node build/verify_sales_loads_vat_basis.mjs",
   "isabi-app: node build/verify_mfg.mjs",
