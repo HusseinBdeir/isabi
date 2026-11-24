@@ -3,12 +3,6 @@
   "branch": "wt/dops-declutter",
   "sha": "50359d6b33a3628d11a5a4735a3ffc1b29b5e87d"
  },
- "batch": {
-  "at": "2026-11-24T17:53:13Z",
-  "holder": "agy-18b24a14 (raw-site-trans-payables)",
-  "lockId": "0eaccc50e99f458fa17340a20e37fee5",
-  "version": "19.6.439"
- },
  "gates": [
   "isabi-app: node build/verify_dops_declutter.mjs",
   "isabi-app: node build/verify_dops_handover.mjs"
