@@ -5,14 +5,23 @@ Why
 build/release_lock.py lets one session release at a time. With eight sessions finishing changes, each one still waited
 for its own turn and then ran its own version bump, sync, gates and deploy: 53 pushes to main in one day. The owner's
 rule: a finished change releases at once when nothing is releasing; changes that finish while a release is running
-wait in a line, and when that release ends everything in the line ships together as ONE version.
+wait in a line, and when that release ends the changes at the front of the line ship together as ONE version.
+
+One or a few at a time (owner 2026-11-25): a batch takes at most MAX_BATCH (3) changes, in line order; the rest stay
+in line and the next leader takes the next few. A batch of 14 took 98 minutes to form and one failing change held
+back all the others; small batches form in minutes and a failure costs one short round. The leader's own change is
+always in its batch, and a waiting change that a picked one is built on rides along (see _pick_batch).
+`take --max N` / `ship --max N` or ISABI_BATCH_MAX change the limit for one command (0 = no limit).
 
 How it works
 ------------
-The line is a set of refs `refs/release-queue/<time>-<id>` on `origin` (HusseinBdeir/isabi), one per finished change.
-Each holds one file, ENTRY.json: who, a one-line summary, the pushed isabi-app branch and/or isabi branch with the
-exact commits, and the gates that change needs. Joining is a push that creates a new ref, so two sessions never
-collide; every later change to an entry is a compare-and-swap on the value this session read.
+The line and the release lock live in Cloudflare (owner 2026-11-25): the Durable Object `IsabiReleaseRoom` behind
+`theo-edge-relay` `/release/*`, one row per finished change (release_lock.py: _release_backend, _cf_request). GitHub
+no longer carries them; a local bare-repo remote (the offline gates) still uses the refs
+`refs/release-queue/<time>-<id>` described next, and the rules are the same on both.
+Each entry holds one document, ENTRY.json: who, a one-line summary, the pushed isabi-app branch and/or isabi branch
+with the exact commits, and the gates that change needs. Joining creates a new entry, so two sessions never
+collide; every later change to an entry is a compare-and-swap on the version this session read.
 
   ship   join the line, then: nothing releasing and you are first -> you lead the batch (same as `take`);
          a release is running -> wait until your change is live (shipped by another leader), left out, or it is
@@ -112,6 +121,8 @@ HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock
 DEFAULT_WAIT_S = 540    # under the 10 minute limit of a foreground command; run again to keep waiting
 TAKE_BUDGET_S = 180     # ship does not start forming a batch with less than this left after a long wait
 POLL_S = 20
+MAX_BATCH = 3           # a leader takes at most this many changes per batch (owner 2026-11-25); 0 = no limit
+MAX_BATCH_ENV = "ISABI_BATCH_MAX"   # overrides MAX_BATCH for one command (take/ship --max N does the same)
 _IDENT = {"GIT_AUTHOR_NAME": "ISABI release batch", "GIT_AUTHOR_EMAIL": "release-batch@isabi.invalid",
           "GIT_COMMITTER_NAME": "ISABI release batch", "GIT_COMMITTER_EMAIL": "release-batch@isabi.invalid"}
 
@@ -1176,13 +1187,78 @@ def _reset_batch_worktrees(cwd: Path, branch: str) -> None:
                 _run(["clean", "-fdq", "--", SITE_GENERATED_DIR], cwd, check=False)
 
 
+def batch_cap(asked: int | None = None) -> int:
+    """How many changes one batch takes at most: `asked` (take/ship --max), else ISABI_BATCH_MAX, else MAX_BATCH.
+    0 = no limit."""
+    if asked is None:
+        raw = os.environ.get(MAX_BATCH_ENV, "").strip()
+        if not raw:
+            return MAX_BATCH
+        try:
+            asked = int(raw)
+        except ValueError:
+            raise BatchError(f"{MAX_BATCH_ENV} must be a whole number (0 = no limit), not {raw!r}") from None
+    if asked < 0:
+        raise BatchError("the batch size limit must be 0 (no limit) or more")
+    return asked
+
+
+def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[list[dict], list[dict], list[str]]:
+    """Owner rule 2026-11-25: release one or a few changes at a time. From the changes a leader could ship (`waiting`,
+    in line order) pick this batch: the first `cap`. Returns (this batch, the changes that wait for the next one,
+    notes), both lists in line order.
+      - The leader's own change (joined from this worktree) is always in its batch: when it stands further back, it
+        takes the last place, so a session never leads a batch that leaves its own change waiting.
+      - A waiting change whose commits a picked change is built on rides in the same batch, above the limit: its
+        commits would ship with the picked one anyway, and this way its gates run and its entry is marked."""
+    if cap <= 0 or len(waiting) <= cap:
+        return list(waiting), [], []
+    own = set(_local_json(cwd, JOINED_FILE))
+    picked = {e["id"] for e in waiting[:cap]}
+    if not picked & own:
+        mine = next((e["id"] for e in waiting[cap:] if e["id"] in own), "")
+        if mine:
+            picked = {e["id"] for e in waiting[:cap - 1]} | {mine}
+    notes: list[str] = []
+    repos = {"app": app, "site": cwd}
+    tips: list[tuple[str, str]] = []  # (kind, commit) of every picked change, fetched so its ancestors are known here
+    for e in waiting:
+        if e["id"] not in picked:
+            continue
+        for kind, repo in repos.items():
+            part = e.get(kind) or {}
+            sha, branch = part.get("sha"), part.get("branch", "")
+            if not sha:
+                continue
+            if not _known_commit(repo, sha):
+                _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, f"+refs/heads/{branch}:refs/remotes/{RL.REMOTE}/{branch}"],
+                     repo, check=False, timeout=180)
+            if _known_commit(repo, sha):
+                tips.append((kind, sha))
+    for e in waiting:
+        if e["id"] in picked:
+            continue
+        for kind, repo in repos.items():
+            sha = (e.get(kind) or {}).get("sha")
+            if not sha or not _known_commit(repo, sha) or RL._in(repo, sha, f"{RL.REMOTE}/main"):
+                continue
+            if any(k == kind and RL._in(repo, sha, tip) for k, tip in tips):
+                picked.add(e["id"])
+                notes.append(f"{e['id']} ({e.get('summary')}) rides in this batch above the limit of {cap}: a change in "
+                             "the batch is built on top of it")
+                break
+    return ([e for e in waiting if e["id"] in picked], [e for e in waiting if e["id"] not in picked], notes)
+
+
 def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int = RL.DEFAULT_TTL_MIN,
-         quiet: bool = False) -> dict:
-    """Lead a batch: take the release lock and merge everything waiting in the line. Raises RL.LockError (not a
-    BatchError) when another session holds the lock."""
+         quiet: bool = False, max_changes: int | None = None) -> dict:
+    """Lead a batch: take the release lock and merge the first changes waiting in the line, at most batch_cap() of
+    them (see _pick_batch); the rest stay in line for the next batch. Raises RL.LockError (not a BatchError) when
+    another session holds the lock."""
     holder = holder.strip()
     if not holder:
         raise BatchError("--holder is needed (who is releasing)")
+    cap = batch_cap(max_changes)
     app = app_root(cwd)
     old = _local_json(cwd, BATCH_FILE)
     if old:
@@ -1215,14 +1291,17 @@ def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int
                          "its).") from None
     try:
         line = read_line(cwd)  # the line as it is under the lock
-        cands = _waiting(line)
         for repo in (cwd, app):
             RL._fetch_main(repo)
+        cands, later, pick_notes = _pick_batch(cwd, app, _waiting(line), cap)
         ver = batch_version(cwd, app, version)
         batch = _assemble(cwd, app, lock, holder, cands, ver)
+        batch["notes"] += pick_notes
         batch["notes"] += [f"{e['id']} ({e.get('summary')}; {e.get('holder')}) skipped: no sign of its session for "
                            f"{STALE_AFTER_MIN // 60} h; it ships when that session joins again"
                            for e in line if e.get("state") == "waiting" and _is_stale(e)]
+        batch["later"] = [{"id": e["id"], "holder": e.get("holder"), "summary": e.get("summary")} for e in later]
+        batch["cap"] = cap
     except BaseException:
         _give_up(cwd, lock["lockId"])
         raise
@@ -1251,7 +1330,12 @@ def _print_batch(cwd: Path, app: Path, batch: dict) -> None:
         print(f"  left out: {x.get('summary')} ({x.get('holder')}) [{x['id']}]: {x['why']}")
     for note in batch.get("notes") or []:
         print(f"  NOTE: {note}")
-    gates = [(e["id"], g) for e in batch["entries"] for g in e.get("gates") or []]
+    later = batch.get("later") or []
+    if later:
+        print(f"  {len(later)} more waiting: they ship in the next batch{'es' if len(later) > (batch.get('cap') or 0) else ''} "
+              f"(at most {batch.get('cap')} changes per batch), in line order, next: "
+              + "; ".join(f"{x.get('summary')} ({x.get('holder')})" for x in later[:3]))
+    gates =[(e["id"], g) for e in batch["entries"] for g in e.get("gates") or []]
     if not n:
         return
     if gates:
@@ -1420,11 +1504,12 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
 
 def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str = "", site_branch: str = "",
          gates: tuple[str, ...] | list[str] = (), version: str = "", wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S,
-         quiet: bool = False, force: bool = False) -> tuple[str, str, dict | None]:
+         quiet: bool = False, force: bool = False, max_changes: int | None = None) -> tuple[str, str, dict | None]:
     """Join the line, then lead the batch when nothing is releasing, or wait for the batch this change goes out in.
     Returns (state, message, the batch when LEADER). States: LEADER (this worktree holds the lock: run the release
     steps), SHIPPED (live), LEFT_OUT, GONE, WAITING (run again), TURN (too little time left to form the batch here:
     run take), HALF_FORMED (a take here was cut off: run abort)."""
+    batch_cap(max_changes)  # a bad limit stops here, before the change joins the line
     app = app_root(cwd)
     # First of all: is the release already this worktree's own? (Its tree is then on the batch branch, maybe with
     # sync_app.py output in it, and must not be asked to be clean.)
@@ -1449,7 +1534,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
             # being cut off with the lock held: hand the turn back to the session to run take on its own clock.
             return "TURN", msg + " Too little of this command's time is left to form the batch safely.", None
         try:
-            batch = take(cwd, holder=holder, version=version, quiet=quiet)
+            batch = take(cwd, holder=holder, version=version, quiet=quiet, max_changes=max_changes)
         except BatchError:
             raise
         except RL.LockError as exc:  # another waiter took the lock first, or an expired lock cannot be taken yet
@@ -1559,14 +1644,18 @@ def main(argv: list[str] | None = None) -> int:
     _add_ship_args(sh)
     sh.add_argument("--version", default="", help="shell version for the batch if you lead it (default: one above live and main)")
     sh.add_argument("--wait", type=int, default=DEFAULT_WAIT_S, help="seconds to wait before returning WAITING (default 540)")
+    sh.add_argument("--max", type=int, default=None, dest="max_changes", metavar="N",
+                    help=f"if you lead: at most N changes in the batch (default {MAX_BATCH}, or {MAX_BATCH_ENV}; 0 = no limit)")
     j = sub.add_parser("join", help="join the line without waiting")
     _add_ship_args(j)
     w = sub.add_parser("wait", help="wait for an entry: shipped, left out, or its turn to lead")
     w.add_argument("--id", required=True)
     w.add_argument("--wait", type=int, default=DEFAULT_WAIT_S)
-    t = sub.add_parser("take", help="lead a batch now: take the lock and merge everything waiting")
+    t = sub.add_parser("take", help="lead a batch now: take the lock and merge the first changes waiting")
     t.add_argument("--holder", required=True)
     t.add_argument("--version", default="")
+    t.add_argument("--max", type=int, default=None, dest="max_changes", metavar="N",
+                   help=f"at most N changes in the batch (default {MAX_BATCH}, or {MAX_BATCH_ENV}; 0 = no limit)")
     d = sub.add_parser("drop", help="leader: leave a change out (its gate failed) and rebuild the batch")
     d.add_argument("entry")
     d.add_argument("--reason", required=True)
@@ -1591,7 +1680,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "ship":
             state, msg, _batch = ship(cwd, holder=args.holder, summary=args.summary, app_branch=args.app_branch,
                                       site_branch=args.site_branch, gates=args.gate, version=args.version, wait_s=args.wait,
-                                      force=args.force)
+                                      force=args.force, max_changes=args.max_changes)
             print(f"RESULT: {state}: {msg}")
             if state == "WAITING" and "wait --id" not in msg:  # offline: the message names the wait command instead
                 print("Run the same ship command again to keep waiting (a place in line is kept).")
@@ -1609,7 +1698,7 @@ def main(argv: list[str] | None = None) -> int:
                 print('Lead the batch: python build/release_batch.py take --holder "<session>"')
             return 3 if state in ("LEFT_OUT", "GONE", "HALF_FORMED") else 0
         elif args.cmd == "take":
-            batch = take(cwd, holder=args.holder, version=args.version)
+            batch = take(cwd, holder=args.holder, version=args.version, max_changes=args.max_changes)
             if batch["entries"]:
                 shell = batch.get("shell")
                 print(f"RESULT: LEADER: batch {('v' + shell) if shell else '(no shell change)'} with {len(batch['entries'])} change(s).")

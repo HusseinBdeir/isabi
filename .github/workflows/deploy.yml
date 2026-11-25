@@ -92,6 +92,11 @@ jobs:
         timeout-minutes: 10
         run: python3 build/verify_release_batch.py
 
+      # One or a few changes per batch (owner 2026-11-25): the size limit, the leader's own change, stacked changes.
+      - name: Batch size limit gate (build/release_batch.py, offline)
+        timeout-minutes: 10
+        run: python3 build/verify_release_batch_cap.py
+
       - name: Shell version in this commit
         id: ver
         run: echo "sw=$(head -n 1 app/sw.js)" >> "$GITHUB_OUTPUT"
