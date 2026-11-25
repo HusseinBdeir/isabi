@@ -1,0 +1,18 @@
+{
+ "app": {
+  "branch": "wt/single-bu-overview-scope",
+  "sha": "a4d12dbf348d5ac7f5788816b56917a2b27f1b07"
+ },
+ "gates": [
+  "isabi-app: python build/audit_i18n.py",
+  "isabi-app: node build/verify_single_bu_overview.mjs",
+  "isabi-app: node build/verify_seat_lens_and_overview.mjs"
+ ],
+ "holder": "agy-9d4b4cf4 (single-bu-overview)",
+ "id": "20261125T160548Z-b767dc6b",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T16:05:48Z",
+ "seenAt": "2026-11-25T16:05:48Z",
+ "state": "waiting",
+ "summary": "Strict single-BU Executive Overview scope across all 6 industries (hide multi-entity scorecard, fix Group/Consolidated/entities labels, keep Bdeir Holding 14-entity oversight, EN/AR/FR)"
+}
