@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/daily-ops-first",
+  "sha": "b10c03f208514761701a30d61b6abf6862e42b4a"
+ },
+ "gates": [
+  "isabi-app: node build/verify_entry_daily_ops.mjs",
+  "isabi-app: node build/verify_overview_kpi_explain.mjs"
+ ],
+ "holder": "THEO hbdei dops-first-tab",
+ "id": "20261125T003206Z-1ca18925",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T00:32:06Z",
+ "seenAt": "2026-11-25T00:32:06Z",
+ "state": "waiting",
+ "summary": "Executive Overview hub: Daily Operations first tab, period tab renamed Period Overview"
+}
