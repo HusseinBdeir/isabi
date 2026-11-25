@@ -529,7 +529,7 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                                      f"live and not part of {sha[:7]}; deploying would roll that work back. Get that work "
                                      "onto main (or take the lock over by hand), then re-run this workflow.")
             try:
-                acquire(cwd, holder=holder or f"GitHub Actions {sha[:7]}", purpose="push-to-main deploy",
+                acquire(cwd, holder=holder or f"GitHub Actions {sha[:7]}", purpose="emergency deploy from the runner",
                         version=_worktree_shell_version(cwd), ttl_min=30, takeover=True, quiet=True)
                 got = True
             except LockError as exc:
@@ -552,7 +552,7 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                     return False, True, f"cannot take the release lock (the push of {LOCK_REF} failed): {exc}"
             if got:
                 try:
-                    claim_deploy(cwd, sha, "push-to-main deploy")
+                    claim_deploy(cwd, sha, "emergency deploy from the runner")
                     return True, False, f"release lock taken for {sha[:7]}"
                 except LockError as exc:
                     try:
@@ -750,9 +750,10 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
         last = last_deploy(info)
         main_sha = _git(["rev-parse", f"{REMOTE}/main"], cwd, check=False).stdout.strip()
         if last and main_sha and main_sha != last["sha"]:
-            print(f"NOTE: live is {last['sha'][:7]} but origin/main is {main_sha[:7]}. If the push-to-main run for "
-                  f"{main_sha[:7]} gave up waiting for this lock, re-run it (GitHub, Actions, Deploy to Cloudflare Pages, "
-                  "Run workflow on main) or deploy origin/main.")
+            print(f"NOTE: live is {last['sha'][:7]} but origin/main is {main_sha[:7]}, and a push to main no longer "
+                  "deploys. Deploy origin/main from a PC: check it out, then python build/deploy_cloudflare.py "
+                  "--pages-only (emergency only, no PC can deploy: GitHub, Actions, Run workflow on main with deploy "
+                  "ticked).")
     return True
 
 

@@ -576,6 +576,24 @@ def _run_suite() -> int:
                 "pages-only-schema-failure-aborts-before-deploy-and-releases-new-lock",
                 f"rc={rc_sch}, deps={deploy_pages_calls}, events={schema_events}, lock={rl.read_remote_lock(site)}",
             )
+            # Case 2d-iii: the same failure for a batch leader, who holds the lock before the deploy starts: its lock stays.
+            rl.acquire(site, holder="batch-leader-test", version="v19.6.999", quiet=True)
+            schema_events.clear()
+            deploy_pages_calls = 0
+            rc_sch_held = None
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    dc.main(["--pages-only", "--skip-live-parity", "--skip-indexnow", "--allow-claimed-version"])
+                except SystemExit as ex:
+                    rc_sch_held = ex.code
+            lock_sha_sch, lock_info_sch = rl.read_remote_lock(site)
+            check(
+                rc_sch_held == 2 and deploy_pages_calls == 0 and schema_events == ["schema"] and bool(lock_sha_sch)
+                and lock_info_sch.get("holder") == "batch-leader-test" and not (lock_info_sch.get("deployed") or []),
+                "pages-only-schema-failure-keeps-a-leaders-lock-and-records-no-deploy",
+                f"rc={rc_sch_held}, deps={deploy_pages_calls}, events={schema_events}, lock={lock_info_sch}",
+            )
+            rl.release(site, force=True, quiet=True)
             schema_fail = False
             r2_remote["core"] = core_v1
 

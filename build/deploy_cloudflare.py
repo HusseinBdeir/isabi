@@ -836,8 +836,10 @@ def apply_d1_schema_for_pages_only(env: dict) -> None:
     """A code deploy from a PC applies the idempotent D1 schema first, every time, exactly as the push-to-main
     workflow did on each run (owner 2026-11-26: the leader's PC deploys, not GitHub Actions). Every time, and not
     "when it changed": what the remote database holds cannot be told from this checkout (exports/ is per checkout,
-    and a batch already pushed to main shows no difference), and Edge functions must never go live ahead of a column
-    they read. A failure stops the deploy before anything is live."""
+    and a batch already pushed to main shows no difference), and Edge functions must never go live ahead of a table
+    or an index they read. The file only creates what is missing (CREATE ... IF NOT EXISTS, kept so by
+    verify_deploy_preflight.py); a new column on an existing table is added by functions/_lib/d1_store.js, never
+    here. A failure stops the deploy before anything is live."""
     if not SCHEMA_SQL.is_file():
         print(f"ERROR: {SCHEMA_SQL} is missing; refusing to deploy Edge functions without the D1 schema they expect.",
               file=sys.stderr)
@@ -848,8 +850,8 @@ def apply_d1_schema_for_pages_only(env: dict) -> None:
         run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={SCHEMA_SQL}", "-y"], env, check=True, retry=True)
     except subprocess.CalledProcessError as exc:
         reason = wrangler_failure_reason(exc)
-        print(f"ERROR: could not apply the D1 schema ({reason}); nothing was deployed. Run the same command again.",
-              file=sys.stderr)
+        print(f"ERROR: could not apply the D1 schema ({reason}); nothing was deployed. Cloudflare unavailable: run the "
+              "same command again. A sign-in or permission error: fix that first (wrangler whoami).", file=sys.stderr)
         raise SystemExit(2) from None
 
 
