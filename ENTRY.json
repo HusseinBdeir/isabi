@@ -1,0 +1,22 @@
+{
+ "app": {
+  "branch": "wt/dh-confirm-and-swap",
+  "sha": "40362b4cf066ffdf1e3901dca92003a4c21b37f5"
+ },
+ "gates": [
+  "isabi-app: python build/verify_sum_twins.py",
+  "isabi-app: node build/verify_typo_hygiene_unit.mjs",
+  "isabi-app: node build/verify_all_5_typo_hygiene_recs.mjs"
+ ],
+ "holder": "THEO hbdei (dh-confirm-and-swap)",
+ "id": "20261125T110802Z-4ae5c24c",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T11:08:02Z",
+ "seenAt": "2026-11-25T11:08:02Z",
+ "site": {
+  "branch": "wt/dh-confirm-and-swap-site",
+  "sha": "297302aa2f4564a5640f616399c1eb0f97e4b97b"
+ },
+ "state": "waiting",
+ "summary": "Data Hygiene (#dataHygienePanel): stop 60fps MutationObserver DOM rebuild loop breaking Confirm Alias clicks, add Keep/Alias Switch on pending and confirmed rules with 2-cycle breaking across client/server/D1/reconciler, and renew candidate pools mid-session (EN/AR/FR)"
+}
