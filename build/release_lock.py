@@ -475,7 +475,7 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                 print(f"waiting for transient release lock error: {last_msg}", flush=True)
                 time.sleep(poll_s)
                 continue
-            return False, True, f"cannot read the release lock: {exc}"
+            raise  # a lock that cannot be read is never free: the run fails (main() turns this into fail=True)
         # mine: an earlier attempt of this run wrote the lock and lost the answer (acquire below then renews it).
         mine = bool(lsha) and held_by_me(info, cwd) and not is_expired(info)
         if mine or not lsha or is_expired(info, TAKEOVER_GRACE_MIN):
