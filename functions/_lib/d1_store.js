@@ -32,7 +32,9 @@ import {
   signEdgeSession,
   verifyActiveEdgeSession,
   verifyDriverGateToken,
-  verifySeatPin
+  verifySeatPin,
+  isSeatPreviewSessionRow,
+  SEAT_PREVIEW_TTL_SEC
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
@@ -1247,11 +1249,9 @@ async function upgradePlaintextSeatPinIfNeeded(db, row, rawPin) {
 }
 
 // A seat preview (an Owner pressing Impersonate) is a look at another seat, not that person's own sign-in:
-// its session is marked by `auth_sessions.method`, lasts hours instead of two weeks, and `/auth/me` reports
-// it so a freshly opened app asks who is at the device instead of carrying the preview on.
-const SEAT_PREVIEW_METHOD = 'Owner Impersonation';
+// its session is marked by `auth_sessions.method`, lasts 12 hours instead of two weeks (security.js), and
+// `/auth/me` reports it so a freshly opened app asks who is at the device instead of carrying the preview on.
 const SESSION_TTL_SEC = 60 * 60 * 24 * 14;
-const SEAT_PREVIEW_TTL_SEC = 60 * 60 * 12;
 
 export async function handleAuthLogin(request, env, body, verifiedCallerSession) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable' }, 503);
@@ -8779,8 +8779,22 @@ export function isKioskOwnedDoc(docKey) {
   return k === 'kiosk_station_keys' || k === 'kiosk_station_auth' || k === 'pos_revenue_posting' || k.startsWith('kiosk_key_seen:');
 }
 
-export async function handleAuthMe(env, session) {
+export async function handleAuthMe(env, session, url = null) {
   if (!session || !env || !env.DB) {
+    return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+  }
+  // A session opened by an Owner's seat preview is reported as such, and only to an app that asks with
+  // `?pv=1` (it knows never to resume one on a fresh start). An app version from before that rule asks
+  // without it and is told there is no session to resume, so it shows its sign-in screen.
+  let impersonated = false;
+  try {
+    const sid = String(session.sid || '').trim();
+    if (sid) {
+      const sRow = await env.DB.prepare('SELECT method FROM auth_sessions WHERE id = ?1 LIMIT 1').bind(sid).first();
+      impersonated = isSeatPreviewSessionRow(sRow);
+    }
+  } catch (_) {}
+  if (impersonated && !(url && url.searchParams && url.searchParams.get('pv') === '1')) {
     return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
   }
   let userOut = null;
@@ -8795,16 +8809,6 @@ export async function handleAuthMe(env, session) {
     }
     userOut = hydrateUserRow(row, true, false);
     if (userOut) await attachUserPasskeysMeta(env.DB, [userOut], session);
-  } catch (_) {}
-  // A session opened by an Owner's seat preview is reported as such (see SEAT_PREVIEW_METHOD): the app
-  // never resumes one on a fresh open.
-  let impersonated = false;
-  try {
-    const sid = String(session.sid || '').trim();
-    if (sid) {
-      const sRow = await env.DB.prepare('SELECT method FROM auth_sessions WHERE id = ?1 LIMIT 1').bind(sid).first();
-      impersonated = Boolean(sRow && String(sRow.method || '').trim() === SEAT_PREVIEW_METHOD);
-    }
   } catch (_) {}
   return jsonResponse({ ok: true, edge: true, authenticated: true, impersonated, session, user: userOut });
 }
