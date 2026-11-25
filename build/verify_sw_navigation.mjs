@@ -3,13 +3,49 @@ import { spawn, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = 8840 + Math.floor(Math.random() * 40);
-const DBG = 9740 + Math.floor(Math.random() * 40);
+const APP_SRC_DIR = [
+  process.env.ISABI_APP_SRC,
+  path.resolve(ROOT, '..', 'isabi-app'),
+  path.resolve(ROOT, '..', 'mfg-web')
+].find(p => p && fs.existsSync(path.join(p, 'index.html')));
+const DEPLOYED_APP_IDX = path.join(ROOT, 'app', 'index.html');
+const DEPLOYED_APP_SW = path.join(ROOT, 'app', 'sw.js');
+
+function resolveCandidateAppShellHtml() {
+  if (!APP_SRC_DIR || !fs.existsSync(DEPLOYED_APP_IDX)) return null;
+  const deployedBuf = fs.readFileSync(DEPLOYED_APP_IDX);
+  const srcBuf = fs.readFileSync(path.join(APP_SRC_DIR, 'index.html'));
+  if (srcBuf.equals(deployedBuf)) return null;
+  const swTxt = fs.existsSync(DEPLOYED_APP_SW) ? fs.readFileSync(DEPLOYED_APP_SW, 'utf8') : '';
+  const swVerMatch = swTxt.match(/SHELL_CACHE\s*=\s*['"]isabi-mfg-v([0-9.]+)['"]/);
+  let html = srcBuf.toString('utf8');
+  if (swVerMatch) {
+    const swVer = swVerMatch[1];
+    const srcVerMatch = html.match(/window\.__MFG_SHELL_VER\s*=\s*['"]([0-9.]+)['"]/);
+    if (srcVerMatch && srcVerMatch[1] !== swVer) {
+      html = html.split(srcVerMatch[1]).join(swVer);
+    }
+  }
+  return Buffer.from(html, 'utf8');
+}
+
+const freePort = () => new Promise((resolve, reject) => {
+  const srv = net.createServer();
+  srv.unref();
+  srv.on('error', reject);
+  srv.listen(0, '127.0.0.1', () => {
+    const { port } = srv.address();
+    srv.close(() => resolve(port));
+  });
+});
+const PORT = await freePort();
+const DBG = await freePort();
 
 const WRANGLER_JS = [
   path.join(os.homedir(), '.local', 'node', 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
@@ -145,17 +181,28 @@ async function main() {
     }
     if (!ready) throw new Error(`Wrangler Pages Dev failed to start on :${PORT}\n${wranglerLog.slice(-1200)}`);
 
-    // Test 0: Cloudflare Pages 308 pretty-URL behavior on index.html + Direct 200 OK (0 redirect) on /app/reset.html & /reset.html
-    const redirAppIdx = await httpGetOrHead('HEAD', '/app/index.html?v=test');
+    // Test 0: Direct 200 OK (0 redirect) on /index.html & /app/index.html?v=... + /app/reset.html?kiosk=... & /reset.html
+    const directAppIdxHead = await httpGetOrHead('HEAD', '/app/index.html?v=19.6.190');
+    const directAppIdxGet = await httpGetOrHead('GET', '/app/index.html?v=19.6.190');
+    const directRootIdxHead = await httpGetOrHead('HEAD', '/index.html');
     const directSlash = await httpGetOrHead('HEAD', '/app/?v=test');
     const appResetHtml = await httpGetOrHead('GET', '/app/reset.html');
     const appResetPretty = await httpGetOrHead('HEAD', '/app/reset');
     const rootResetHtml = await httpGetOrHead('GET', '/reset.html');
     const rootResetPretty = await httpGetOrHead('HEAD', '/reset');
+    const appIdxCc = String(directAppIdxHead.headers['cache-control'] || '');
+    const rootIdxCc = String(directRootIdxHead.headers['cache-control'] || '');
     const appResetCc = String(appResetHtml.headers['cache-control'] || '');
     const rootResetCc = String(rootResetHtml.headers['cache-control'] || '');
     if (
-      redirAppIdx.status === 308 &&
+      directAppIdxHead.status === 200 &&
+      !directAppIdxHead.headers['location'] &&
+      appIdxCc.includes('no-store') &&
+      directAppIdxGet.status === 200 &&
+      directAppIdxGet.body.includes('id="appShell"') &&
+      directRootIdxHead.status === 200 &&
+      !directRootIdxHead.headers['location'] &&
+      rootIdxCc.includes('no-store') &&
       directSlash.status === 200 &&
       appResetHtml.status === 200 &&
       appResetPretty.status === 200 &&
@@ -164,12 +211,14 @@ async function main() {
       appResetCc.includes('no-store') &&
       rootResetCc.includes('no-store') &&
       appResetHtml.body.includes('navigator.serviceWorker.getRegistrations') &&
+      appResetHtml.body.includes('URLSearchParams') &&
       rootResetHtml.body.includes('navigator.serviceWorker.getRegistrations')
     ) {
-      pass('sw-nav-00-cf-pages-308-and-direct-200-reset-endpoints', `/app/index.html=308, /app/?v=test=200, /app/reset(.html)=200 no-store, /reset(.html)=200 no-store`);
+      pass('sw-nav-00-direct-200-index-html-and-reset-endpoints', `/app/index.html?v=19.6.190=200 (0 redir), /index.html=200, /app/reset(.html)=200 no-store`);
     } else {
-      fail('sw-nav-00-cf-pages-308-and-direct-200-reset-endpoints', JSON.stringify({
-        appIdx: redirAppIdx.status,
+      fail('sw-nav-00-direct-200-index-html-and-reset-endpoints', JSON.stringify({
+        appIdx: [directAppIdxHead.status, directAppIdxHead.headers['location'], appIdxCc, directAppIdxGet.status],
+        rootIdx: [directRootIdxHead.status, directRootIdxHead.headers['location'], rootIdxCc],
         slash: directSlash.status,
         appReset: [appResetHtml.status, appResetPretty.status, appResetCc],
         rootReset: [rootResetHtml.status, rootResetPretty.status, rootResetCc]
@@ -308,7 +357,7 @@ async function main() {
       const keys = await caches.keys();
       const shKey = keys.find(k => /^isabi-mfg-v\\d/.test(k));
       const c = await caches.open(shKey);
-      const redirRes = await fetch('/app/index.html?poison=1', { cache: 'reload' });
+      const redirRes = await fetch('/isabi/app/?poison=1', { cache: 'reload' });
       await c.put('./', redirRes.clone());
       await c.put('./index.html', redirRes.clone());
       const check = await c.match('./index.html');
@@ -428,11 +477,7 @@ async function main() {
       fail('sw-nav-05-adversarial-captive-non-html-and-503-rejection', JSON.stringify({ captiveJsonNav, upstream503Nav, afterJsonProbe, after503HasShell }));
     }
 
-    // Test 6 (Adversarial #4 - Stuck Legacy `v19.6.217` Browser 1st-Click `/app/reset.html` & `/reset.html` Escape Hatch)
-    // Stand up a real HTTP reverse-proxy to wrangler pages dev that initially serves the broken `v19.6.217` `/app/sw.js`
-    // (which ONLY bypasses `.endsWith('/reset.html')` and returns `redirected: true` on `/app/reset` & `/app/`),
-    // verify Chromium genuinely hits `ERR_FAILED` on `/app/`, then flip the server to the fixed `v19.6.218` `/app/sw.js`
-    // while the browser is STILL stuck on `v19.6.217` and prove `/app/reset.html` rescues it on the VERY FIRST CLICK!
+    // Test 6 (Adversarial #4 - Stuck Legacy Redirecting SW 1st-Click `/app/reset.html` & `/reset.html` Escape Hatch + ?kiosk= preservation)
     const legacyBrokenSwCode = `
       self.addEventListener('install', e => { self.skipWaiting(); });
       self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
@@ -440,7 +485,7 @@ async function main() {
         const u = new URL(e.request.url);
         if (u.pathname.endsWith('/reset.html') || u.pathname.includes('/api/')) return;
         if (e.request.mode === 'navigate') {
-          e.respondWith(fetch(new Request('/app/index.html?broken=217', { cache: 'no-store' })));
+          e.respondWith(fetch(new Request('/app/?broken_redir=1', { cache: 'no-store' })));
         }
       });
     `;
@@ -453,6 +498,11 @@ async function main() {
           'Cache-Control': 'no-cache, no-store, must-revalidate'
         });
         res.end(legacyBrokenSwCode);
+        return;
+      }
+      if (serveBroken217 && u.pathname === '/app/' && u.searchParams.has('broken_redir')) {
+        res.writeHead(308, { Location: '/app/?landed=1' });
+        res.end();
         return;
       }
       const proxyReq = http.request({
@@ -502,6 +552,19 @@ async function main() {
         hasShell: Boolean(document.getElementById('appShell'))
       })`);
 
+      // Also verify `/app/reset.html?kiosk=attendance` preserves `?kiosk=attendance&reset=...`
+      var rescueKioskReset = await sendCdp('Page.navigate', { url: `${SIM_BASE}/app/reset.html?kiosk=attendance` });
+      for (let i = 0; i < 30; i++) {
+        const initSearch = await evalJs(`window.__INITIAL_SEARCH || ''`).catch(() => '');
+        if (initSearch.includes('kiosk=attendance') && initSearch.includes('reset=')) break;
+        await sleep(250);
+      }
+      await sleep(500);
+      var rescuedKioskProbe = await evalJs(`({
+        initialSearch: window.__INITIAL_SEARCH || '',
+        kioskPrelock: document.documentElement.classList.contains('kiosk-prelock')
+      })`);
+
       // Also verify `/reset.html` at root unregisters SWs and lands cleanly on `/?reset=...`
       var rescueRootReset = await sendCdp('Page.navigate', { url: `${SIM_BASE}/reset.html` });
       for (let i = 0; i < 30; i++) {
@@ -522,19 +585,265 @@ async function main() {
       !rescueAppReset.errorText &&
       rescuedAppProbe?.initialSearch.startsWith('?reset=') &&
       rescuedAppProbe?.hasShell &&
+      !rescueKioskReset.errorText &&
+      rescuedKioskProbe?.initialSearch.startsWith('?kiosk=attendance&reset=') &&
+      rescuedKioskProbe?.kioskPrelock === true &&
       !rescueRootReset.errorText &&
       rescuedRootProbe?.href.includes('/?reset=') &&
       rescuedRootProbe?.h1.includes('The ERP Your Group')
     ) {
-      pass('sw-nav-06-adversarial-stuck-v217-1st-click-reset-html-rescue', 'Confirmed ERR_FAILED on simulated v19.6.217 -> rescued in 1 click via /app/reset.html & /reset.html');
+      pass('sw-nav-06-adversarial-stuck-v217-1st-click-reset-html-rescue', 'Confirmed ERR_FAILED on simulated legacy SW -> rescued via /app/reset.html (?kiosk= preserved) & /reset.html');
     } else {
       fail('sw-nav-06-adversarial-stuck-v217-1st-click-reset-html-rescue', JSON.stringify({
         confirmedBrokenOn217,
         rescueAppReset,
         rescuedAppProbe,
+        rescueKioskReset,
+        rescuedKioskProbe,
         rescueRootReset,
         rescuedRootProbe
       }));
+    }
+
+    // Test 7 (Zero-Touch OTA Self-Heal from v19.6.190 Kiosk SW) + Test 8 (Non-Kiosk Legacy SW controllerchange Reload)
+    const legacy190SwCode = `
+      const CACHE = 'isabi-mfg-v19.6.190';
+      self.addEventListener('install', e => {
+        self.skipWaiting();
+        e.waitUntil((async () => {
+          const c = await caches.open(CACHE);
+          const markerJs = new Response('window.__LEGACY_190_APPJS = true;', {
+            status: 200,
+            headers: { 'Content-Type': 'application/javascript; charset=utf-8' }
+          });
+          await c.put('./js/app.js?v=19.6.190', markerJs);
+        })());
+      });
+      self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+      self.addEventListener('fetch', e => {
+        const u = new URL(e.request.url);
+        if (u.pathname.endsWith('/reset.html') || u.pathname.includes('/api/')) return;
+        if (e.request.mode === 'navigate') {
+          e.respondWith((async () => {
+            const c = await caches.open(CACHE);
+            try {
+              const res = await fetch(new Request('/app/index.html?v=19.6.190', { cache: 'no-cache' }));
+              if (res && res.status === 200) await c.put('./index.html', res.clone());
+              return res;
+            } catch (_) {
+              return (await c.match('./index.html')) || Response.error();
+            }
+          })());
+          return;
+        }
+        if (u.searchParams.has('v')) {
+          e.respondWith(caches.open(CACHE).then(async c => {
+            const cached = (await c.match(e.request)) || (await c.match(e.request, { ignoreSearch: true }));
+            if (cached) return cached;
+            return fetch(e.request);
+          }));
+        }
+      });
+    `;
+    let serveLegacy190 = true;
+    const sim190Server = http.createServer((req, res) => {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      if (serveLegacy190 && u.pathname === '/app/sw.js') {
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        res.end(legacy190SwCode);
+        return;
+      }
+      const proxyReq = http.request({
+        hostname: '127.0.0.1',
+        port: PORT,
+        path: req.url,
+        method: req.method,
+        headers: Object.assign({}, req.headers, { host: `127.0.0.1:${PORT}` })
+      }, proxyRes => {
+        const hdrs = Object.assign({}, proxyRes.headers);
+        if (hdrs.location) {
+          hdrs.location = String(hdrs.location).replace(`:${PORT}`, `:${sim190Server.address().port}`);
+        }
+        const isAppHtmlReq = !serveLegacy190 &&
+          req.method === 'GET' &&
+          (u.pathname === '/app/' || u.pathname === '/app/index.html') &&
+          proxyRes.statusCode === 200 &&
+          String(hdrs['content-type'] || '').toLowerCase().includes('text/html');
+        const overrideBuf = isAppHtmlReq ? resolveCandidateAppShellHtml() : null;
+        if (overrideBuf) {
+          proxyRes.resume();
+          delete hdrs['transfer-encoding'];
+          delete hdrs['content-encoding'];
+          hdrs['content-length'] = String(overrideBuf.length);
+          res.writeHead(proxyRes.statusCode, hdrs);
+          res.end(overrideBuf);
+          return;
+        }
+        res.writeHead(proxyRes.statusCode, hdrs);
+        proxyRes.pipe(res);
+      });
+      proxyReq.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+      req.pipe(proxyReq);
+    });
+    await new Promise((resolve, reject) => {
+      sim190Server.listen(0, '127.0.0.1', resolve);
+      sim190Server.on('error', reject);
+    });
+    const SIM190_BASE = `http://127.0.0.1:${sim190Server.address().port}`;
+    try {
+      // Seed legacy v19.6.190 SW + localStorage + IndexedDB + poisoned redirected `./index.html`
+      await sendCdp('Page.navigate', { url: `${SIM190_BASE}/app/?kiosk=attendance#kiosks` });
+      for (let i = 0; i < 35; i++) {
+        const ctrlOk = await evalJs(`Boolean(navigator.serviceWorker && navigator.serviceWorker.controller)`).catch(() => false);
+        if (ctrlOk) break;
+        await sleep(200);
+      }
+      await sleep(300);
+      const seededOk = await evalJs(`(async () => {
+        localStorage.setItem('isabi_mfg_kiosk_station_seat', 'u-att-seat-1');
+        localStorage.setItem('isabi_mfg_kiosk_station_cfg_v1', JSON.stringify({ activeKiosk: 'attendance', company: 'wtc', kioskAttSite: 'WTC Main Plant' }));
+        await new Promise((res, rej) => {
+          const req = indexedDB.open('isabi_test_kiosk_db', 1);
+          req.onupgradeneeded = () => { req.result.createObjectStore('punches', { keyPath: 'id' }); };
+          req.onsuccess = () => {
+            const tx = req.result.transaction('punches', 'readwrite');
+            tx.objectStore('punches').put({ id: 'p-legacy-1', staff: 'Station Worker', ts: 1700000000000 });
+            tx.oncomplete = () => { req.result.close(); res(true); };
+            tx.onerror = () => rej(tx.error);
+          };
+          req.onerror = () => rej(req.error);
+        });
+        const c = await caches.open('isabi-mfg-v19.6.190');
+        const redir = await fetch('/isabi/app/?poison=190', { cache: 'reload' });
+        await c.put('./index.html', redir.clone());
+        const hit = await c.match('./index.html');
+        return Boolean(hit && hit.redirected === true);
+      })()`);
+
+      // Flip proxy to real Wrangler server (direct 200 OK /app/index.html + current sw.js) and navigate just like the bricked tablet
+      serveLegacy190 = false;
+      const healNav1 = await sendCdp('Page.navigate', { url: `${SIM190_BASE}/app/?kiosk=attendance#kiosks` });
+      for (let i = 0; i < 45; i++) {
+        const keys = await evalJs(`caches.keys()`).catch(() => []);
+        if (Array.isArray(keys) && keys.some(k => /^isabi-mfg-v\d/.test(k) && k !== 'isabi-mfg-v19.6.190') && !keys.includes('isabi-mfg-v19.6.190')) break;
+        await sleep(250);
+      }
+      await sleep(700);
+      const healNav2 = await sendCdp('Page.navigate', { url: `${SIM190_BASE}/app/?kiosk=attendance#kiosks` });
+      for (let i = 0; i < 40; i++) {
+        const ready = await evalJs(`Boolean(document.documentElement && document.getElementById('appShell'))`).catch(() => false);
+        if (ready) break;
+        await sleep(250);
+      }
+      const healProbe = await evalJs(`(async () => {
+        const keys = await caches.keys();
+        const cfg = JSON.parse(localStorage.getItem('isabi_mfg_kiosk_station_cfg_v1') || 'null');
+        const idbRow = await new Promise(res => {
+          const req = indexedDB.open('isabi_test_kiosk_db', 1);
+          req.onsuccess = () => {
+            const tx = req.result.transaction('punches', 'readonly');
+            const g = tx.objectStore('punches').get('p-legacy-1');
+            g.onsuccess = () => { req.result.close(); res(g.result || null); };
+            g.onerror = () => { req.result.close(); res(null); };
+          };
+          req.onerror = () => res(null);
+        });
+        return {
+          seat: localStorage.getItem('isabi_mfg_kiosk_station_seat'),
+          site: cfg && cfg.kioskAttSite,
+          idbId: idbRow && idbRow.id,
+          caches: keys,
+          shellVer: window.__MFG_SHELL_VER || '',
+          kioskMode: Boolean(document.documentElement && document.documentElement.classList.contains('kiosk-prelock')) || Boolean(document.body && document.body.classList.contains('kiosk-locked')),
+          hasShell: Boolean(document.getElementById('appShell'))
+        };
+      })()`);
+      if (
+        seededOk &&
+        !healNav1.errorText &&
+        !healNav2.errorText &&
+        healProbe?.seat === 'u-att-seat-1' &&
+        healProbe?.site === 'WTC Main Plant' &&
+        healProbe?.idbId === 'p-legacy-1' &&
+        Array.isArray(healProbe?.caches) &&
+        !healProbe.caches.includes('isabi-mfg-v19.6.190') &&
+        healProbe.caches.some(k => /^isabi-mfg-v\d/.test(k)) &&
+        healProbe?.kioskMode === true &&
+        healProbe?.hasShell === true
+      ) {
+        pass('sw-nav-07-legacy-v190-kiosk-zero-touch-ota-self-heal', `v19.6.190 kiosk self-healed to v${healProbe.shellVer} with 0 ERR_FAILED and 100% localStorage/IDB preserved`);
+      } else {
+        fail('sw-nav-07-legacy-v190-kiosk-zero-touch-ota-self-heal', JSON.stringify({ seededOk, healNav1, healNav2, healProbe }));
+      }
+
+      // Test 8: Non-kiosk `/app/` client upgrading from v19.6.190 SW (ignoreSearch: true) must reload via bootShellCachePromise
+      const nonKioskWdScript = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+        source: `try { Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true }); } catch (_) {}`
+      });
+      try {
+        await evalJs(`(async () => {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) await r.unregister();
+          for (const k of await caches.keys()) await caches.delete(k);
+        })()`);
+        serveLegacy190 = true;
+        await sendCdp('Page.navigate', { url: `${SIM190_BASE}/app/?noredir_probe=1` });
+        for (let i = 0; i < 35; i++) {
+          const hasLegacy = await evalJs(`(async () => {
+            const ks = await caches.keys();
+            return Boolean(navigator.serviceWorker && navigator.serviceWorker.controller && ks.includes('isabi-mfg-v19.6.190'));
+          })()`).catch(() => false);
+          if (hasLegacy) break;
+          await sleep(200);
+        }
+        await sleep(300);
+        serveLegacy190 = false;
+        let navCount = 0;
+        const onFrameNav = () => { navCount++; };
+        eventListeners.set('Page.frameNavigated', onFrameNav);
+        await sendCdp('Page.navigate', { url: `${SIM190_BASE}/app/?nonkiosk_heal=1` });
+        for (let i = 0; i < 50; i++) {
+          const st = await evalJs(`({
+            navCount: ${navCount},
+            legacyApp: Boolean(window.__LEGACY_190_APPJS),
+            hasShell: Boolean(document.getElementById('appShell')),
+            newSw: Boolean(navigator.serviceWorker?.controller)
+          })`).catch(() => null);
+          const ks = await evalJs(`caches.keys()`).catch(() => []);
+          if (st && st.hasShell && !st.legacyApp && navCount >= 2 && Array.isArray(ks) && !ks.includes('isabi-mfg-v19.6.190') && ks.some(k => /^isabi-mfg-v\d/.test(k))) {
+            break;
+          }
+          await sleep(250);
+        }
+        eventListeners.delete('Page.frameNavigated');
+        const nonKioskProbe = await evalJs(`(async () => ({
+          legacyApp: Boolean(window.__LEGACY_190_APPJS),
+          hasShell: Boolean(document.getElementById('appShell')),
+          caches: await caches.keys()
+        }))()`);
+        if (
+          navCount >= 2 &&
+          nonKioskProbe?.legacyApp === false &&
+          nonKioskProbe?.hasShell === true &&
+          Array.isArray(nonKioskProbe?.caches) &&
+          !nonKioskProbe.caches.includes('isabi-mfg-v19.6.190') &&
+          nonKioskProbe.caches.some(k => /^isabi-mfg-v\d/.test(k))
+        ) {
+          pass('sw-nav-08-legacy-v190-nonkiosk-bootShellCache-reload', `Non-kiosk upgraded from v19.6.190 via controllerchange reload (navCount=${navCount})`);
+        } else {
+          fail('sw-nav-08-legacy-v190-nonkiosk-bootShellCache-reload', JSON.stringify({ navCount, nonKioskProbe }));
+        }
+      } finally {
+        eventListeners.delete('Page.frameNavigated');
+        if (nonKioskWdScript && nonKioskWdScript.identifier) {
+          await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: nonKioskWdScript.identifier }).catch(() => {});
+        }
+      }
+    } finally {
+      try { sim190Server.close(); } catch (_) {}
     }
 
   } finally {
