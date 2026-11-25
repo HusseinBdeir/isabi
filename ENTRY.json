@@ -3,6 +3,12 @@
   "branch": "wt/void-delete-icon-polish",
   "sha": "c9b111c58237851b4812b080258c2e823ba3a3e6"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: node build/verify_void_btn_ui.mjs",
   "isabi-app: node build/verify_rep_shift_calendar_icon.mjs"
