@@ -3,6 +3,12 @@
   "branch": "wt/overview-kpi-structure",
   "sha": "3751e1aafca93f31ba88ce972dd30ffeef4e69aa"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: node build/verify_overview_kpi_explain.mjs",
   "isabi-app: node build/verify_seat_lens_and_overview.mjs",
