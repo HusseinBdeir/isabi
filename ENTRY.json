@@ -3,12 +3,6 @@
   "branch": "wt/modal-hub-slim-ai",
   "sha": "bb411fa2c0408b8811e3082ecb3e2260c6fdc60a"
  },
- "batch": {
-  "at": "2026-11-25T15:57:40Z",
-  "holder": "agy-8e9ba45b",
-  "lockId": "783df262b8694d6c871e828e7225c59d",
-  "version": "19.6.441"
- },
  "gates": [
   "isabi-app: node build/verify_modal_hub_slim_ai.mjs",
   "isabi-app: node build/verify_modal_regroup.mjs",
@@ -17,6 +11,9 @@
  ],
  "holder": "agy-e28150c2 (modal-hub-slim-ai)",
  "id": "20261124T130932Z-6203bdf9",
+ "leftOutAt": "2026-11-25T20:41:37Z",
+ "leftOutBy": "THEO hbdei (seat-preview-resume)",
+ "note": "does not merge cleanly with main plus the changes ahead of it in the batch (isabi-app: js/app.js)",
  "pc": "Theo",
  "queuedAt": "2026-11-24T13:09:32Z",
  "seenAt": "2026-11-25T18:02:04Z",
@@ -24,6 +21,6 @@
   "branch": "wt/modal-hub-slim-ai-site",
   "sha": "8cf21760cded212b76ae2d216eeed5d6426d3506"
  },
- "state": "waiting",
+ "state": "left_out",
  "summary": "Hub-scoped single-row Module switcher, slim 1-line AI quick bar across desktop & mobile, and 6-vertical industry-aware entry modal"
 }
