@@ -3,6 +3,12 @@
   "branch": "wt/expense-discount",
   "sha": "ac0ef4e9c01f314d98d5cbec06393240410de3b2"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: node build/verify_expense_discount.mjs"
  ],
