@@ -3,6 +3,12 @@
   "branch": "wt/authentic-statements",
   "sha": "de35c27d891f309fee544ef1811e014946f740f8"
  },
+ "batch": {
+  "at": "2026-11-25T02:44:08Z",
+  "holder": "THEO hbdei (batch-repdate-shift)",
+  "lockId": "45f61cc48cbc499394735802f6dcb97b",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi-app: node build/verify_statement_books.mjs"
  ],
