@@ -3,18 +3,15 @@
   "branch": "wt/void-set-aside",
   "sha": "ae9c9a65dee968b7fafee1835c075c15ff9e89ad"
  },
- "batch": {
-  "at": "2026-11-25T02:44:08Z",
-  "holder": "THEO hbdei (batch-repdate-shift)",
-  "lockId": "45f61cc48cbc499394735802f6dcb97b",
-  "version": "19.6.439"
- },
  "gates": [
   "isabi-app: node build/verify_void_set_aside.mjs",
   "isabi: node build/verify_device_unsent.mjs"
  ],
  "holder": "THEO hbdei (void-set-aside)",
  "id": "20261124T235004Z-ac77b1df",
+ "leftOutAt": "2026-11-25T04:54:31Z",
+ "leftOutBy": "agy-d1737910 (kiosk-sw-heal-lead)",
+ "note": "does not merge cleanly with main plus the changes ahead of it in the batch (isabi-app: build/i18n_dict.json, js/i18n.js)",
  "pc": "Theo",
  "queuedAt": "2026-11-24T23:50:04Z",
  "seenAt": "2026-11-25T00:38:49Z",
@@ -22,6 +19,6 @@
   "branch": "wt/void-set-aside-site",
   "sha": "ccff010d76af84cbe7ba77ad3d01383f7757b027"
  },
- "state": "waiting",
+ "state": "left_out",
  "summary": "Voids the cloud refuses for no reason are set aside and the rest of the sync goes (Add Reason on the device Not Sent bar); the Owner's Held on Device bar shows the refusal status and server text; device void-reason check matches the cloud's (EN/AR/FR)"
 }
