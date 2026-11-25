@@ -1,0 +1,16 @@
+{
+ "gates": [
+  "isabi: python build/verify_dom.py"
+ ],
+ "holder": "THEO hbdei (video-uploaddate-iso)",
+ "id": "20261125T125338Z-1eee7583",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T12:53:38Z",
+ "seenAt": "2026-11-25T12:53:38Z",
+ "site": {
+  "branch": "wt/video-uploaddate-iso",
+  "sha": "46d63ff4c4f24f34afc8b1f5ad2db264ae02054c"
+ },
+ "state": "waiting",
+ "summary": "Showcase v6.41: VideoObject uploadDate ISO 8601 DateTime with +02:00 timezone, verify_dom guard, and 1366x768 short-window sheet fit"
+}
