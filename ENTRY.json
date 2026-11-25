@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/seat-preview-resume",
+  "sha": "b32161412e88f80fe58552cdedae47b811147964"
+ },
+ "gates": [
+  "isabi-app: node build/verify_seat_preview_resume.mjs"
+ ],
+ "holder": "THEO hbdei (seat-preview-resume)",
+ "id": "20261125T130646Z-bd088070",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T13:06:46Z",
+ "seenAt": "2026-11-25T13:06:46Z",
+ "site": {
+  "branch": "wt/seat-preview-resume-site",
+  "sha": "20a134a212963265147ce89770b88968a1628f09"
+ },
+ "state": "waiting",
+ "summary": "Sign-in: a seat preview (Impersonate) is never resumed when the app is reopened, so Face ID or the PIN decides who is signed in; a preview ends after 12 hours and is not remembered as the device's seat"
+}
