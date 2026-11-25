@@ -218,7 +218,7 @@ async function routeAppApi(context) {
     return handleAuthLogout(request, env, session || rawSession);
   }
   if (subPath === '/auth/me' && request.method === 'GET') {
-    return handleAuthMe(env, session);
+    return handleAuthMe(env, session, url);
   }
   if (subPath === '/phone-scan') {
     return handlePhoneScan(request, env, url, body, session);
