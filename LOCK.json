@@ -1,0 +1,19 @@
+{
+ "acquiredAt": "2026-11-25T19:51:31Z",
+ "branch": "main",
+ "deployed": [],
+ "expiresAt": "2099-01-01T00:00:00Z",
+ "holder": "MOVED TO CLOUDFLARE (owner 2026-11-25): nothing releases through this GitHub lock any more and your release scripts are out of date. In your isabi worktree run: git fetch origin, then git checkout --detach origin/main (your pushed branches stay exactly as they are; do not rebase them for this), then the same ship command again with the same --holder: your place in line is kept. Batches now take 3 changes at a time",
+ "lockId": "adacedb895f244d58dc5ef09f94f633f",
+ "pc": "Theo",
+ "purpose": "retired: the release lock and line live in Cloudflare",
+ "tookOverFrom": {
+  "acquiredAt": "2026-11-25T15:50:50Z",
+  "deployed": [],
+  "expiresAt": "2026-11-25T19:00:08Z",
+  "holder": "agy-8e9ba45b",
+  "pc": "Theo"
+ },
+ "version": "",
+ "worktree": ""
+}
