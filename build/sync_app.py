@@ -106,6 +106,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_browser_slot.mjs", "node"),          # per-PC single-slot mutex for heavy headless browser suites
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
     ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
+    ("isabi", "build/verify_sync_delta_edge.mjs", "node"),         # 64MB unstick /sync gate, shift-backfill prune parity & deltaSyncV1 + RLS
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
     # The leader's PC deploys (owner 2026-11-26); these stood before a deploy only on the GitHub runner (2 s together).
     ("isabi", "build/verify_deploy_preflight.py", "python"),         # Edge entry files parse; 0001_schema.sql can run on every deploy

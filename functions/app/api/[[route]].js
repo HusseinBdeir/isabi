@@ -83,6 +83,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
 
 const DEMO_AI_MAX_BYTES = 1572864; // 1.5 MB ceiling on unauthenticated Demo AI payloads
 const AUTHED_MAX_BODY_BYTES = 16777216; // 16 MB hard ceiling on authenticated sync/blob bodies
+const SYNC_MAX_BODY_BYTES = 67108864; // 64 MB ceiling on authenticated /sync so bloated legacy clients self-heal via retiredDropped
 
 const _UTF8_ENC = new TextEncoder();
 
@@ -184,7 +185,7 @@ async function routeAppApi(context) {
       ? 16384
       : (subPath === '/auth/passkeys'
         ? 65536
-        : (session ? AUTHED_MAX_BODY_BYTES : 6291456))); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
+        : (session ? (subPath === '/sync' ? SYNC_MAX_BODY_BYTES : AUTHED_MAX_BODY_BYTES) : 6291456))); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
   const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
   if (tooLarge) {
     return jsonResponse({ ok: false, error: 'Request payload exceeds size limit.' }, 413);
