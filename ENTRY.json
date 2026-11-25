@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/passed-on-not-received",
+  "sha": "0a7631c49ef8c2b98b025170e34dad710c68ce66"
+ },
+ "gates": [
+  "isabi-app: node build/verify_passed_on_not_received.mjs",
+  "isabi-app: node build/verify_group_transfer.mjs"
+ ],
+ "holder": "THEO hbdei (passed-on-not-received)",
+ "id": "20261125T002636Z-c815f25b",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T00:26:36Z",
+ "seenAt": "2026-11-25T00:26:36Z",
+ "state": "waiting",
+ "summary": "Expenses: Passed On, Not Received list (tickets between Manufacturing companies with no matching expense in the receiver's books) with a Record Expense entry on the Group Transfer form (EN/AR/FR)"
+}
