@@ -1,4 +1,10 @@
 {
+ "batch": {
+  "at": "2026-11-25T15:57:40Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "783df262b8694d6c871e828e7225c59d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi: python build/verify_dom.py"
  ],
