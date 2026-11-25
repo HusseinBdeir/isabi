@@ -1,0 +1,16 @@
+{
+ "gates": [
+  "isabi: python build/verify_release_cloudflare.py"
+ ],
+ "holder": "THEO (cf-release-queue)",
+ "id": "20261125T045133Z-a30ab0c2",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T04:51:33Z",
+ "seenAt": "2026-11-25T04:51:33Z",
+ "site": {
+  "branch": "wt/cf-release-queue",
+  "sha": "21fe812136febdd896abe3161839e89f3a391e7d"
+ },
+ "state": "waiting",
+ "summary": "Move ISABI release lock and batch queue to Cloudflare Durable Object (IsabiReleaseRoom)"
+}
