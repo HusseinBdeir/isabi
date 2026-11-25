@@ -3,6 +3,12 @@
   "branch": "wt/overpaid-payables-sentinel",
   "sha": "8a04923048526e9e082ec2e78d3a1111b6a31e8f"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: python build/overpaid_payables_audit.py --dry",
   "isabi-app: node build/verify_overpaid_payables.mjs"
