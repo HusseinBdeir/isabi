@@ -3,6 +3,12 @@
   "branch": "wt/mob-popovers-vv",
   "sha": "5bb8e763a752615fb3188b2a666d23313f30ba92"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: node build/verify_mobile_popovers.mjs --force"
  ],
