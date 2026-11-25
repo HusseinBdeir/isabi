@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/mob-popovers-vv",
+  "sha": "5bb8e763a752615fb3188b2a666d23313f30ba92"
+ },
+ "gates": [
+  "isabi-app: node build/verify_mobile_popovers.mjs --force"
+ ],
+ "holder": "agy-2fc4cc5f (mob-popovers-vv)",
+ "id": "20261125T060959Z-9abf4e83",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T06:09:59Z",
+ "seenAt": "2026-11-25T06:09:59Z",
+ "site": {
+  "branch": "wt/mob-popovers-vv-site",
+  "sha": "662bd1ae8dd920a1d48f14742ba5c3f329245c0a"
+ },
+ "state": "waiting",
+ "summary": "Mobile popovers RELEASE_GATES + Map Studio geo-place-menu + visualViewport iPhone keyboard fit"
+}
