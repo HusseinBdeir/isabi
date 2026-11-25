@@ -3,6 +3,12 @@
   "branch": "wt/dops-entry-full",
   "sha": "f95206382a94d3420c4b9dfb3008e38ee0b9e7d5"
  },
+ "batch": {
+  "at": "2026-11-25T01:27:19Z",
+  "holder": "agy-d1737910 (kiosk-sw-heal-lead)",
+  "lockId": "b4436448c1714b17ac7e8f66b5f3d62a",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi-app: node build/verify_entry_daily_ops.mjs"
  ],
