@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/tier1-tier2-impact",
+  "sha": "6821fb1475d213cc41db3121605c11c88e039621"
+ },
+ "gates": [
+  "isabi-app: node build/verify_tier1_tier2_impact.mjs"
+ ],
+ "holder": "agy-0e642cf7 (tier1-tier2-impact)",
+ "id": "20261125T155341Z-960251eb",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T15:53:41Z",
+ "seenAt": "2026-11-25T15:53:41Z",
+ "state": "waiting",
+ "summary": "Tier 1 (#raw_pricing Implied Landed $/m3, 6-industry EN/AR/FR outward share toggle, Trading freight basis badges and Incoterm Smart Scan) + Tier 2 (Hospitality multi-dept invoice split with 0% Never VAT Diesel/Tips, Holding deterministic scope and elimination strips)"
+}
