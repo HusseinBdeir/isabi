@@ -3,6 +3,12 @@
   "branch": "wt/kiosk-sw-heal",
   "sha": "9e6c7d72d62c43899249b927c6df3f4ec201048f"
  },
+ "batch": {
+  "at": "2026-11-25T01:27:19Z",
+  "holder": "agy-d1737910 (kiosk-sw-heal-lead)",
+  "lockId": "b4436448c1714b17ac7e8f66b5f3d62a",
+  "version": "19.6.439"
+ },
  "gates": [
   "isabi: node build/verify_sw_navigation.mjs",
   "isabi-app: node build/verify_shell_gate_and_reload.mjs"
