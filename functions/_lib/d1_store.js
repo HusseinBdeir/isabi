@@ -1246,6 +1246,13 @@ async function upgradePlaintextSeatPinIfNeeded(db, row, rawPin) {
   } catch (_) {}
 }
 
+// A seat preview (an Owner pressing Impersonate) is a look at another seat, not that person's own sign-in:
+// its session is marked by `auth_sessions.method`, lasts hours instead of two weeks, and `/auth/me` reports
+// it so a freshly opened app asks who is at the device instead of carrying the preview on.
+const SEAT_PREVIEW_METHOD = 'Owner Impersonation';
+const SESSION_TTL_SEC = 60 * 60 * 24 * 14;
+const SEAT_PREVIEW_TTL_SEC = 60 * 60 * 12;
+
 export async function handleAuthLogin(request, env, body, verifiedCallerSession) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable' }, 503);
   if (isDemoHeader(request)) {
@@ -1538,6 +1545,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const sessId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const sessTtlSec = allowOwnerImpersonation ? SEAT_PREVIEW_TTL_SEC : SESSION_TTL_SEC;
 
   let token = '';
   try {
@@ -1559,7 +1567,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
           ? safeJsonParse(row.custom_perms, row.custom_perms)
           : row.custom_perms
       })
-    }, env);
+    }, env, sessTtlSec);
   } catch (_) {
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
   }
@@ -1599,7 +1607,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   return jsonResponse(
     loginPayload,
     200,
-    { 'Set-Cookie': buildSessionCookie(token, 60 * 60 * 24 * 14, isHttps) }
+    { 'Set-Cookie': buildSessionCookie(token, sessTtlSec, isHttps) }
   );
 }
 
@@ -8788,7 +8796,17 @@ export async function handleAuthMe(env, session) {
     userOut = hydrateUserRow(row, true, false);
     if (userOut) await attachUserPasskeysMeta(env.DB, [userOut], session);
   } catch (_) {}
-  return jsonResponse({ ok: true, edge: true, authenticated: true, session, user: userOut });
+  // A session opened by an Owner's seat preview is reported as such (see SEAT_PREVIEW_METHOD): the app
+  // never resumes one on a fresh open.
+  let impersonated = false;
+  try {
+    const sid = String(session.sid || '').trim();
+    if (sid) {
+      const sRow = await env.DB.prepare('SELECT method FROM auth_sessions WHERE id = ?1 LIMIT 1').bind(sid).first();
+      impersonated = Boolean(sRow && String(sRow.method || '').trim() === SEAT_PREVIEW_METHOD);
+    }
+  } catch (_) {}
+  return jsonResponse({ ok: true, edge: true, authenticated: true, impersonated, session, user: userOut });
 }
 
 function pickSyncBase(dbr, pr) {

@@ -1936,6 +1936,40 @@ finally:
       email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
+    // 26b. A seat preview (Owner Impersonation) is reported by /auth/me and lasts 12 hours, not two weeks;
+    //      an ordinary sign-in is neither (the app never resumes a preview on a fresh open).
+    const impersTok26 = String(impersBeforeLogout.json?.token || '');
+    const impersMe26 = await httpReq('GET', '/app/api/auth/me', null, { 'X-ISABI-Session': impersTok26 });
+    const ownerMe26 = await httpReq('GET', '/app/api/auth/me', null, { 'X-ISABI-Session': tempOwnerTok26 });
+    const cookieOf26 = res => [].concat(res.headers['set-cookie'] || []).join('; ');
+    const jwtLife26 = tok => {
+      try {
+        const p = JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8'));
+        return Number(p.exp) - Number(p.iat);
+      } catch (_) { return -1; }
+    };
+    const preview26 = {
+      impersMe: [impersMe26.status, impersMe26.json?.authenticated, impersMe26.json?.impersonated, String(impersMe26.json?.user?.email || '').toLowerCase()],
+      ownerMe: [ownerMe26.status, ownerMe26.json?.authenticated, ownerMe26.json?.impersonated],
+      impersLife: jwtLife26(impersTok26),
+      ownerLife: jwtLife26(tempOwnerTok26),
+      impersCookie12h: /isabi_edge_sess=[^;]+;.*Max-Age=43200\b/.test(cookieOf26(impersBeforeLogout)),
+      ownerCookie14d: /isabi_edge_sess=[^;]+;.*Max-Age=1209600\b/.test(cookieOf26(tempOwnerLogin26))
+    };
+    if (
+      preview26.impersMe[0] === 200 && preview26.impersMe[1] === true && preview26.impersMe[2] === true &&
+      preview26.impersMe[3] === String(ENTRY_TEST_EMAIL).toLowerCase() &&
+      preview26.ownerMe[0] === 200 && preview26.ownerMe[1] === true && preview26.ownerMe[2] === false &&
+      preview26.impersLife === 43200 && preview26.ownerLife === 1209600 &&
+      preview26.impersCookie12h && preview26.ownerCookie14d
+    ) {
+      pass(
+        'edge-26b-seat-preview-session-flagged-and-short-lived',
+        '/auth/me impersonated=true for a seat preview and false for an ordinary sign-in; preview token and cookie 12 h, ordinary 14 d'
+      );
+    } else {
+      fail('edge-26b-seat-preview-session-flagged-and-short-lived', JSON.stringify(preview26));
+    }
     await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
     const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
       email: ENTRY_TEST_EMAIL,
