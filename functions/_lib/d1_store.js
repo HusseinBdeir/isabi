@@ -8793,7 +8793,11 @@ export async function handleAuthMe(env, session, url = null) {
       const sRow = await env.DB.prepare('SELECT method FROM auth_sessions WHERE id = ?1 LIMIT 1').bind(sid).first();
       impersonated = isSeatPreviewSessionRow(sRow);
     }
-  } catch (_) {}
+  } catch (_) {
+    // The kind of session could not be read: say there is none to resume, never take a preview for an
+    // ordinary sign-in.
+    return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+  }
   if (impersonated && !(url && url.searchParams && url.searchParams.get('pv') === '1')) {
     return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
   }
