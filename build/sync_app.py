@@ -106,6 +106,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
     ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
+    ("isabi-app", "build/verify_statement_books.mjs", "node"),       # statements 02-05 and 19: only what was recorded, cash at the counted till, sample figures in the demo only
 ]
 
 
