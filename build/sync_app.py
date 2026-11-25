@@ -107,6 +107,11 @@ RELEASE_GATES = [
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
     ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
+    # The leader's PC deploys (owner 2026-11-26); these stood before a deploy only on the GitHub runner (2 s together).
+    ("isabi", "build/verify_deploy_preflight.py", "python"),         # Edge entry files parse; 0001_schema.sql can run on every deploy
+    ("isabi", "build/verify_kiosk_cloud.mjs", "node"),               # tablet kiosk routes: station keys, pos_sales, <site>__att
+    ("isabi", "build/verify_build_ticket.mjs", "node"),              # build-ticket sign-in through the real Edge router
+    ("isabi", "build/verify_build_ticket_guard.py", "python"),       # build scripts never issue a ticket in a gate or a dry run
 ]
 
 
