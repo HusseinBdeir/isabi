@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/dops-entry-full",
+  "sha": "f95206382a94d3420c4b9dfb3008e38ee0b9e7d5"
+ },
+ "gates": [
+  "isabi-app: node build/verify_entry_daily_ops.mjs"
+ ],
+ "holder": "THEO hbdei (dops-entry-full)",
+ "id": "20261125T010528Z-42f85ede",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T01:05:28Z",
+ "seenAt": "2026-11-25T01:05:28Z",
+ "state": "waiting",
+ "summary": "Daily Operations: Entry seats see the whole page, expense, profit and treasury cards and the Cash Flow table, in all industries (Holding day, tax, partner splits and AI briefings unchanged)"
+}
