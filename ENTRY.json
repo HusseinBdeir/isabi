@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/authentic-statements",
+  "sha": "de35c27d891f309fee544ef1811e014946f740f8"
+ },
+ "gates": [
+  "isabi-app: node build/verify_statement_books.mjs"
+ ],
+ "holder": "THEO hbdei (authentic-statements)",
+ "id": "20261125T013615Z-4790c919",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T01:36:15Z",
+ "seenAt": "2026-11-25T01:36:15Z",
+ "site": {
+  "branch": "wt/authentic-statements",
+  "sha": "6998c4bfb519fd1cfa49c7a1bd9ea7e7b5e67cd3"
+ },
+ "state": "waiting",
+ "summary": "Statements 02-05 and 19 hold only what was recorded: no sample opening balances for a real company, cash at the counted till, a real P&L reconciliation, plant-owner commission in the Income Statement, and a Not Kept in ISABI Yet page for companies without full books (EN/AR/FR)"
+}
