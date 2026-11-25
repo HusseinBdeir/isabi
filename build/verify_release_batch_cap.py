@@ -119,6 +119,28 @@ def main() -> int:  # noqa: PLR0915
         finish(3)
         check(RL.read_remote_lock(S[0]) == ("", {}) and not V.line_ids(S[0], "waiting"), "that batch ships all four")
 
+        # 3b. a change never goes live in part: `upper` is built on the first push of `lower`; lower then pushes a fix
+        # and joins again (a new entry at the back of the line). Shipping upper alone would take lower's first push
+        # live without the fix, so lower rides with it.
+        low1 = join(5, "lower")
+        upper = join(2, "upper", on="wt/lower")
+        put(apps[4] / "js" / "lower.js", "lower, fixed\n")
+        git(apps[4], "checkout", "-q", "wt/lower")
+        git(apps[4], "add", "-A")
+        git(apps[4], "commit", "-q", "-m", "lower: the fix")
+        git(apps[4], "push", "-q", "origin", "wt/lower")
+        tick()
+        low2 = quiet(RB.join, S[4], holder="session 5", summary="lower change", app_branch="wt/lower")
+        check(low2["id"] != low1["id"] and V.line_ids(S[0], "waiting") == [upper["id"], low2["id"]],
+              "a change pushed again with a fix joins again at the back of the line")
+        tick()
+        b2b = quiet(RB.take, S[1], holder="session 2", max_changes=1)
+        check(ids(b2b) == [upper["id"], low2["id"]] and not b2b["left_out"]
+              and V.text(apps[1] / "js" / "lower.js") == "lower, fixed\n",
+              "a waiting change that shares unreleased commits with a picked one ships with it, fix included")
+        finish(2)
+        check(RL.read_remote_lock(S[0]) == ("", {}) and not V.line_ids(S[0], "waiting"), "that batch ships both")
+
         # 4. one at a time, a limit for one command, and no limit
         q = [join(i, f"q{i}") for i in (1, 2, 4)]
         tick()

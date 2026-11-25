@@ -45,7 +45,7 @@ An entry is cleared only from the worktree that joined it (leave --force when th
 A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
 skipped by leaders (never shipped behind its session's back) until that session joins again.
 A dropped connection is waited out: reading the line retries twice, and a session waiting in line keeps its place and
-keeps polling until GitHub answers again, so one network blip never ends a wait. Still offline when the wait runs out:
+keeps polling until the line answers again, so one network blip never ends a wait. Still offline when the wait runs out:
 WAITING, and the message names `wait --id <entry>` (which waits out an outage; ship re-joins first and does not).
 The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
 of a batch, never what ships.
@@ -770,7 +770,7 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     if pos == 0 or free_for_s >= pos * HEAD_START_S:
         return "TURN", f"nothing is releasing and {e['id']} is {'first' if pos == 0 else 'next'} in line: lead the batch.", free
     return "WAITING", (f"nothing is releasing; {waiting[0].get('holder', '?')} is first in line and leads the batch "
-                       f"({e['id']} goes with it)."), free
+                       f"({e['id']} is {pos + 1} of {len(waiting)} in line; a batch takes {_cap_text()})."), free
 
 
 def _app_main_shell(cwd: Path) -> str:
@@ -838,7 +838,7 @@ def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int, known: dict | N
             free_since = None
             why = re.sub(r"\s*after \d+ ms", "", str(exc).splitlines()[0])[:200]  # the same text each poll: printed once
             # The hint is `wait`, not ship: ship reads the lock and joins again first, and neither waits out an outage.
-            msg = (f"{entry_id}: GitHub cannot be reached ({why}); your place in line is kept. Still offline when this "
+            msg = (f"{entry_id}: the release line cannot be reached ({why}); your place in line is kept. Still offline when this "
                    f"command ends? Keep waiting with: python build/release_batch.py wait --id {entry_id}")
             if not quiet and msg != shown:
                 print(msg, flush=True)
@@ -1203,14 +1203,25 @@ def batch_cap(asked: int | None = None) -> int:
     return asked
 
 
+def _cap_text() -> str:
+    """For messages only: the limit in force (a bad ISABI_BATCH_MAX is reported by take, not here)."""
+    try:
+        cap = batch_cap()
+    except BatchError:
+        cap = MAX_BATCH
+    return f"the first {cap}" if cap else "everything waiting"
+
+
 def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[list[dict], list[dict], list[str]]:
     """Owner rule 2026-11-25: release one or a few changes at a time. From the changes a leader could ship (`waiting`,
     in line order) pick this batch: the first `cap`. Returns (this batch, the changes that wait for the next one,
     notes), both lists in line order.
       - The leader's own change (joined from this worktree) is always in its batch: when it stands further back, it
         takes the last place, so a session never leads a batch that leaves its own change waiting.
-      - A waiting change whose commits a picked change is built on rides in the same batch, above the limit: its
-        commits would ship with the picked one anyway, and this way its gates run and its entry is marked."""
+      - A waiting change that shares unreleased commits with a picked one rides in the same batch, above the limit
+        (a picked change built on top of it, or on an earlier push of it that it has since fixed, or both built on
+        the same unreleased work): those commits ship with the picked change anyway, and a change must never go live
+        in part, without its later fix, its gates or its entry being marked. Repeated until nothing more rides."""
     if cap <= 0 or len(waiting) <= cap:
         return list(waiting), [], []
     own = set(_local_json(cwd, JOINED_FILE))
@@ -1219,35 +1230,51 @@ def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[li
         mine = next((e["id"] for e in waiting[cap:] if e["id"] in own), "")
         if mine:
             picked = {e["id"] for e in waiting[:cap - 1]} | {mine}
-    notes: list[str] = []
     repos = {"app": app, "site": cwd}
-    tips: list[tuple[str, str]] = []  # (kind, commit) of every picked change, fetched so its ancestors are known here
-    for e in waiting:
-        if e["id"] not in picked:
-            continue
-        for kind, repo in repos.items():
-            part = e.get(kind) or {}
-            sha, branch = part.get("sha"), part.get("branch", "")
-            if not sha:
+    for kind, repo in repos.items():  # every waiting branch, so each change's commits are known here
+        _fetch_branches(repo, [(e.get(kind) or {}).get("branch", "") for e in waiting if (e.get(kind) or {}).get("sha")])
+    seen: dict[tuple[str, str], frozenset[str]] = {}
+
+    def unreleased(kind: str, sha: str) -> frozenset[str]:
+        """The commits of `sha` that are not on main (none when the commit is not known here: _assemble says so)."""
+        if (kind, sha) not in seen:
+            r = _run(["rev-list", sha, "--not", f"{RL.REMOTE}/main"], repos[kind], check=False)
+            seen[(kind, sha)] = (frozenset(r.stdout.decode("utf-8", errors="replace").split())
+                                 if r.returncode == 0 else frozenset())
+        return seen[(kind, sha)]
+
+    def shares(a: dict, b: dict) -> bool:
+        for kind in repos:
+            sa, sb = (a.get(kind) or {}).get("sha"), (b.get(kind) or {}).get("sha")
+            if sa and sb and unreleased(kind, sa) & unreleased(kind, sb):
+                return True
+        return False
+
+    notes: list[str] = []
+    grew = True
+    while grew:
+        grew = False
+        for e in waiting:
+            if e["id"] in picked:
                 continue
-            if not _known_commit(repo, sha):
-                _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, f"+refs/heads/{branch}:refs/remotes/{RL.REMOTE}/{branch}"],
-                     repo, check=False, timeout=180)
-            if _known_commit(repo, sha):
-                tips.append((kind, sha))
-    for e in waiting:
-        if e["id"] in picked:
-            continue
-        for kind, repo in repos.items():
-            sha = (e.get(kind) or {}).get("sha")
-            if not sha or not _known_commit(repo, sha) or RL._in(repo, sha, f"{RL.REMOTE}/main"):
-                continue
-            if any(k == kind and RL._in(repo, sha, tip) for k, tip in tips):
+            with_ = next((p for p in waiting if p["id"] in picked and shares(e, p)), None)
+            if with_ is not None:
                 picked.add(e["id"])
-                notes.append(f"{e['id']} ({e.get('summary')}) rides in this batch above the limit of {cap}: a change in "
-                             "the batch is built on top of it")
-                break
+                grew = True
+                notes.append(f"{e['id']} ({e.get('summary')}) rides in this batch above the limit of {cap}: it shares "
+                             f"unreleased commits with {with_['id']} ({with_.get('summary')}), so the two ship together")
     return ([e for e in waiting if e["id"] in picked], [e for e in waiting if e["id"] not in picked], notes)
+
+
+def _fetch_branches(repo: Path, branches: list[str]) -> None:
+    """Fetch several branches of `origin` in one go. A branch that is gone fails the whole fetch: then one by one
+    (what is still missing after that is reported by _assemble, which names the branch)."""
+    specs = [f"+refs/heads/{b}:refs/remotes/{RL.REMOTE}/{b}" for b in sorted({b for b in branches if b})]
+    if not specs:
+        return
+    if _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, *specs], repo, check=False, timeout=240).returncode != 0:
+        for spec in specs:
+            _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, spec], repo, check=False, timeout=180)
 
 
 def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int = RL.DEFAULT_TTL_MIN,

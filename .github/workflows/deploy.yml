@@ -36,7 +36,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # up to 10 of them waiting for a session's release lock
+    timeout-minutes: 40  # up to 10 of them waiting for a session's release lock; the two batch gates have 10 each
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

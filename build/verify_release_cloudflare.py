@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import shutil
+import socket
 import socketserver
 import subprocess
 import sys
@@ -73,6 +74,7 @@ class MockReleaseCoordinator:
         self.calls: list[str] = []
         self.transient_503_once = False
         self.transient_cas_503_once = False
+        self.lose_cas_reply_once = False  # the lock write lands, the connection drops before the answer
         self.ci_headers_seen: list[tuple[str, str]] = []
 
     def check_auth(self, headers) -> bool:
@@ -151,6 +153,11 @@ def start_mock_server(coord: MockReleaseCoordinator):
                             return
                         coord.lock_ver = uuid.uuid4().hex
                         coord.lock_doc = lock
+                        if coord.lose_cas_reply_once:
+                            coord.lose_cas_reply_once = False
+                            self.close_connection = True
+                            self.connection.shutdown(socket.SHUT_RDWR)
+                            return
                         self._send(200, {"ok": True, "swapped": True, "version": coord.lock_ver, "lock": lock})
                         return
                     if coord.lock_doc is None or coord.lock_ver != exp:
@@ -296,6 +303,25 @@ def main() -> int:
         finally:
             RL._load_theo_creds = orig_creds
         os.environ["ISABI_RELEASE_API_TOKEN"] = "test-bearer-tok"
+
+        # 4b. A lock write that lands while its answer is lost: the run knows the lock as its own and deploys under
+        # it, instead of waiting behind itself until the lock expires (and a session's acquire renews the same way).
+        coord.lose_cas_reply_once = True
+        ok, fail, _msg = quiet(RL.ci_acquire, sb, main_sha, wait_s=20, poll_s=1)
+        held = RL.read_remote_lock(sa)[1]
+        check(ok is True and fail is False and not coord.lose_cas_reply_once and RL.held_by_me(held, sb)
+              and (RL.last_deploy(held) or {}).get("sha") == main_sha,
+              "ci_acquire keeps a lock whose write landed though the answer was lost, and records its deploy")
+        quiet(RL.release, sb)
+        coord.lose_cas_reply_once = True
+        lost = raises_lock(RL.acquire, sa, holder="session-A")
+        l_again = quiet(RL.acquire, sa, holder="session-A")
+        check("URLError" in lost and bool(l_again.get("lockId")) and RL.held_by_me(RL.read_remote_lock(sb)[1], sa)
+              and "held by session-A" in raises_lock(RL.acquire, sb, holder="session-B"),
+              "a session whose lock write lost its answer holds that lock on its next acquire; nobody else can take it")
+        quiet(RL.release, sa)
+        check(RL.read_remote_lock(sb) == ("", {}) and not RL.read_token(sb) and not RL.read_token(sa),
+              "both give the lock back and keep no token")
 
         # 5. Batch queue lifecycle on DO (join, transient 503 wait-out, take, sync, deploy, done, leave)
         git(A / "isabi-app", "checkout", "-q", "-B", "wt/feat-a", "origin/main")

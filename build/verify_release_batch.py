@@ -26,6 +26,10 @@ sys.path.insert(0, str(BUILD))
 import release_batch as RB  # noqa: E402
 import release_lock as RL  # noqa: E402
 
+# Offline means offline: an inherited backend choice must never point this gate at the live Cloudflare coordinator.
+for _k in ("ISABI_RELEASE_BACKEND", "ISABI_RELEASE_API_URL", "ISABI_BATCH_MAX"):
+    os.environ.pop(_k, None)
+
 RESULTS: list[tuple[bool, str]] = []
 NOW = "ISABI_RELEASE_LOCK_NOW"
 LIVE = "ISABI_RELEASE_LIVE_SHELL"

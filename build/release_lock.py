@@ -58,6 +58,7 @@ import json
 import os
 import re
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -124,7 +125,9 @@ def _release_backend(cwd: Path = ISABI_ROOT) -> str:
     if key in _BACKEND_CACHE:
         return _BACKEND_CACHE[key]
     r = _git(["remote", "get-url", remote_name], cwd, check=False, timeout=15)
-    mode = "git" if (r.returncode == 0 and _is_local_git_remote(r.stdout.strip())) else "cloudflare"
+    # No such remote (a wrong ISABI_RELEASE_LOCK_REMOTE, a broken checkout): the git backend, which then fails on
+    # its first read, never the live coordinator.
+    mode = "git" if (r.returncode != 0 or _is_local_git_remote(r.stdout.strip())) else "cloudflare"
     _BACKEND_CACHE[key] = mode
     return mode
 
@@ -217,6 +220,10 @@ def _cf_request(method: str, subpath: str, payload: dict | None = None, *, timeo
             f"Cloudflare release coordinator rejected {subpath} (HTTP {exc.code}): {detail[:240]}"
         ) from None
     except (urllib.error.URLError, TimeoutError, socket.timeout, http.client.HTTPException, OSError) as exc:
+        if isinstance(exc, ssl.SSLCertVerificationError) or isinstance(getattr(exc, "reason", None), ssl.SSLCertVerificationError):
+            # Stays until someone fixes it (a proxy or an antivirus intercepting TLS): reported, never waited out.
+            raise LockError(f"TLS certificate check failed for the Cloudflare release coordinator ({subpath}): "
+                            f"{getattr(exc, 'reason', exc)}") from None
         raise LockError(
             f"URLError contacting Cloudflare release coordinator ({subpath}): {type(exc).__name__}: {exc}"
         ) from None
@@ -469,8 +476,10 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                 time.sleep(poll_s)
                 continue
             return False, True, f"cannot read the release lock: {exc}"
-        if not lsha or is_expired(info, TAKEOVER_GRACE_MIN):
-            last = last_deploy(info) if lsha else None
+        # mine: an earlier attempt of this run wrote the lock and lost the answer (acquire below then renews it).
+        mine = bool(lsha) and held_by_me(info, cwd) and not is_expired(info)
+        if mine or not lsha or is_expired(info, TAKEOVER_GRACE_MIN):
+            last = last_deploy(info) if (lsha and not mine) else None
             if last and not (last["sha"] == sha or _in(cwd, last["sha"], sha)):
                 return False, True, (f"release lock {describe(info)}: it expired with its latest deploy {last['sha'][:7]} "
                                      f"live and not part of {sha[:7]}; deploying would roll that work back. Get that work "
@@ -601,6 +610,10 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             new["appBranch"] = app_branch_name
         if sha:
             new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
+        # The token goes down before the write: when the write lands but its answer is lost (a dropped connection),
+        # the next read still knows this lock as this worktree's own (held_by_me) and renews it, instead of waiting
+        # behind itself until it expires. lockId is random, so the token matches only a write that really landed.
+        _write_token(cwd, new, "")
         try:
             ok_swap, commit = _write_remote_lock(new, sha, cwd)
         except LockError as exc:
@@ -617,6 +630,7 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             if not quiet:
                 print(f"Release lock taken: {describe(new)}")
             return new
+        _drop_token(cwd)  # the write was refused: that lock does not exist
         try:
             sha2, info2 = read_remote_lock(cwd)
         except LockError as exc2:
@@ -629,7 +643,8 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
                 continue
             raise
         if _same_lock(sha2, sha):
-            raise LockError(f"RELEASE LOCK: could not write {LOCK_REF} on {REMOTE} ({describe(info2) if sha2 else 'ref unchanged'}).")
+            raise LockError(f"RELEASE LOCK: could not write the lock ({LOCK_REF} on {REMOTE}, or the Cloudflare coordinator: "
+                            f"{describe(info2) if sha2 else 'unchanged'}).")
         desc2 = describe(info2) if sha2 else "it changed while taking it"
         if deadline is not None and _mono() < deadline:
             if not quiet:

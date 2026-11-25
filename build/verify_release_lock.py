@@ -22,6 +22,10 @@ sys.path.insert(0, str(BUILD))
 
 import release_lock as RL  # noqa: E402
 
+# Offline means offline: an inherited backend choice must never point this gate at the live Cloudflare coordinator.
+for _k in ("ISABI_RELEASE_BACKEND", "ISABI_RELEASE_API_URL"):
+    os.environ.pop(_k, None)
+
 RESULTS: list[tuple[bool, str]] = []
 NOW = "ISABI_RELEASE_LOCK_NOW"
 
@@ -264,8 +268,10 @@ def main() -> int:
         wf = (BUILD.parent / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
         i_acq, i_renew, i_dep, i_rel = (wf.find("release_lock.py ci-acquire"), wf.find("release_lock.py renew"),
                                         wf.find("- name: Deploy"), wf.find("release_lock.py release"))
-        check(0 < i_acq < i_renew < i_dep < i_rel and "contents: write" in wf and wf.count("steps.lock.outputs.deploy == 'true'") >= 5,
+        check(0 < i_acq < i_renew < i_dep < i_rel and wf.count("steps.lock.outputs.deploy == 'true'") >= 5,
               "workflow: takes the lock, renews it right before Deploy, gives it back; live steps gated on it")
+        check("contents: write" not in wf and "contents: read" in wf and "GH_LOCK_TOKEN" not in wf and "github.token" not in wf,
+              "workflow: the lock is in Cloudflare, so the run holds no GitHub write permission and no GitHub token")
 
         # 16. prune (--days < 1 rejected; --dry deletes nothing; deletes >=7d merged/patch-equiv/shipped, keeps <7d, waiting/left_out/locked, and >=7d unmerged)
         check(exits(RL.main, ["prune", "--days", "0"]) == 2, "prune --days 0 exits 2")
