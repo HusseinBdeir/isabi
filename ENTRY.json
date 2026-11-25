@@ -1,0 +1,18 @@
+{
+ "app": {
+  "branch": "wt/overview-kpi-structure",
+  "sha": "3751e1aafca93f31ba88ce972dd30ffeef4e69aa"
+ },
+ "gates": [
+  "isabi-app: node build/verify_overview_kpi_explain.mjs",
+  "isabi-app: node build/verify_seat_lens_and_overview.mjs",
+  "isabi-app: node build/verify_hover_borders.mjs"
+ ],
+ "holder": "THEO hbdei (overview-kpi-structure)",
+ "id": "20261125T052233Z-53d5c9ba",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T05:22:33Z",
+ "seenAt": "2026-11-25T05:22:33Z",
+ "state": "waiting",
+ "summary": "Executive Overview KPI breakdown Rev 10 redesign across 6 industries"
+}
