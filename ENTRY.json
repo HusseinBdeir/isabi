@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/void-delete-icon-polish",
+  "sha": "c9b111c58237851b4812b080258c2e823ba3a3e6"
+ },
+ "gates": [
+  "isabi-app: node build/verify_void_btn_ui.mjs",
+  "isabi-app: node build/verify_rep_shift_calendar_icon.mjs"
+ ],
+ "holder": "agy-80239604 (void-delete-icon-polish)",
+ "id": "20261125T064924Z-27bbe9e4",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T06:49:24Z",
+ "seenAt": "2026-11-25T06:49:24Z",
+ "state": "waiting",
+ "summary": "Replace raw x void/delete dingbats with crisp Rev 10 trash vector pills across registers, subgrids, entry modal, copilot studios and sibling inspectors (EN/AR/FR + RTL)"
+}
