@@ -215,6 +215,63 @@
     if (!op) return;
     await op.flush(true);
   }
+  // A seat preview (an Owner pressing Impersonate) lives only in the page that started it. True from that
+  // sign-in until the next sign-in or sign-in screen; a page that starts up never has it set.
+  let _seatPreviewActive = false;
+  // The app asks who the saved session belongs to with `?pv=1`: the server then also reports a seat
+  // preview (`impersonated`), which this version never resumes. Asked without it (an older app version),
+  // the server answers that a preview is no session at all.
+  const AUTH_ME_URL = './api/auth/me?pv=1';
+  // Ends the saved seat-preview session on the server, for a page that found one at start-up.
+  function sendSeatPreviewSignOut(opts = {}, triesLeft = 150) {
+    // `stationBoot`: a kiosk station is on screen under its station seat, with no sign-in screen involved.
+    const stationBoot = Boolean(opts && opts.stationBoot);
+    if ((STATE.authed && !stationBoot) || _pendingSignOutOp) return;
+    // A sign-in already on its way replaces the saved session by itself (the server retires the one it
+    // supersedes); a sign-out sent beside it could clear the cookie that sign-in is about to set. So this
+    // waits for that sign-in: when it succeeds nothing is sent, when it fails the preview is ended then.
+    if (authUiLoginBusy || authPinProbeInFlight || FACE_STATE.edgeProbeBusy) {
+      if (triesLeft > 0) setTimeout(() => sendSeatPreviewSignOut(opts, triesLeft - 1), 400);
+      return;
+    }
+    const op = { cancelled: false, sent: true, promise: null, flush: null };
+    const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    op.promise = Promise.resolve(
+      fetch('./api/auth/logout', { method: 'POST', credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined })
+    ).then(() => {}).catch(() => {}).finally(() => {
+      if (_pendingSignOutOp === op) _pendingSignOutOp = null;
+    });
+    // Registered as the pending sign-out: a sign-in started meanwhile waits for it to finish first, though
+    // never longer than 4 seconds (a hung network must not keep anyone from signing in). A sign-out given
+    // up on is cancelled, so a late answer can never clear the cookie the sign-in is about to receive.
+    op.flush = () => Promise.race([
+      op.promise,
+      new Promise(res => setTimeout(() => { if (ctrl) { try { ctrl.abort(); } catch (_) {} } res(); }, 4000))
+    ]);
+    _pendingSignOutOp = op;
+  }
+  // A page that starts up and finds the saved session to be a seat preview never carries it on: the sign-in
+  // screen is shown, the preview session is ended on the server, and the previewed seat's email is taken out
+  // of the sign-in form, so the person at the device signs in as themselves.
+  function endSeatPreviewSessionAtBoot(previewUser) {
+    if (STATE.authed) return;
+    const previewEmail = norm(previewUser && previewUser.email);
+    if (previewEmail) {
+      try {
+        if (norm(localStorage.getItem('isabi_mfg_last_seat') || '') === previewEmail) localStorage.removeItem('isabi_mfg_last_seat');
+      } catch (_) {}
+      const emEl = $('authEmailInput');
+      if (emEl && norm(emEl.value) === previewEmail) emEl.value = '';
+      if (norm(FACE_STATE.selectedAuthEmail) === previewEmail) {
+        setAuthSeatDrawerOpen(true, { silentFocus: true });
+        updateAuthFaceUi();
+      }
+    }
+    if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+      try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+    }
+    sendSeatPreviewSignOut();
+  }
   let _edgeSessionToken = '';
   let _edgeCookieAuthed = false;
   if (!PARAMS.get('autologin') && (IS_LOCAL || window.__ISABI_TEST_EDGE || PARAMS.get('demo') !== '1')) {
@@ -143219,7 +143276,8 @@
     saveLocalAuthAndRecords();
     let resumeObj = null;
     try {
-      if (STATE.authed && activeUser() && activeUser().email) {
+      // A seat preview is not carried through an update reload: the reloaded app opens on the sign-in screen.
+      if (STATE.authed && !_seatPreviewActive && activeUser() && activeUser().email) {
         resumeObj = {
           email: activeUser().email,
           company: STATE.company === DEMO_COMPANY_KEY ? (_demoCompanyPrevRealCo || 'manufacturing-group') : STATE.company,
@@ -144351,7 +144409,7 @@
       const ctrlMe = new AbortController();
       const tMe = setTimeout(() => ctrlMe.abort(), 6000);   // a dead network must not hold the rest of the sync open
       try {
-        const rMe = await edgeApiFetch('./api/auth/me', { signal: ctrlMe.signal });
+        const rMe = await edgeApiFetch(AUTH_ME_URL, { signal: ctrlMe.signal });
         if (abortedByAuthChange()) return;
         if (rMe && rMe.ok) {
           const jMe = await rMe.json().catch(() => null);
@@ -145227,7 +145285,22 @@
 
   async function completeFaceLogin(user, dist, snapshotUrl, methodLabel, opts = {}) {
     if (!user) return false;
-    if (STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) return true;
+    if (STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      // Already signed in: nothing to do, unless the server has just opened a session for this face
+      // (serverToken) while the screen shows another seat (a saved session resumed in the meantime).
+      // The screen then follows the person Face ID verified, never the other seat.
+      const shownSeat = activeUser();
+      const sameSeat = Boolean(shownSeat && norm(shownSeat.email) === norm(user.email));
+      if (sameSeat || !(opts && opts.serverToken)) return true;
+      // The seat on screen has no session any more (the server retired it for this sign-in), and the
+      // browser now holds the verified person's session. Start the app afresh on that session: nothing
+      // loaded or still in flight for the other seat is carried over.
+      purgeOverlaysOnSessionOrKioskLock();   // also retires that seat's sync in flight
+      try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
+      STATE.authed = false;   // nothing more is sent for the seat that was on screen while the page goes
+      location.reload();
+      return true;
+    }
     const verifiedDesc = (opts && Array.isArray(opts.faceDescriptor) && opts.faceDescriptor.length === 128)
       ? opts.faceDescriptor
       : (Array.isArray(FACE_STATE.lastVerifiedDescriptor) && FACE_STATE.lastVerifiedDescriptor.length === 128 ? FACE_STATE.lastVerifiedDescriptor : null);
@@ -147756,8 +147829,11 @@
     root.querySelectorAll('[data-sim-user]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       if (!isOwner()) return;
-      const u = STATE.users[Number(btn.getAttribute('data-sim-user'))];
-      if (u) performLogin(u.email, '', { bypass2FA: true, method: 'Owner Impersonation' });
+      const simIdx = Number(btn.getAttribute('data-sim-user'));
+      const u = STATE.users[simIdx];
+      // The seat already on screen is not a preview of anything: its own session stays as it is.
+      if (!u || simIdx === STATE.activeUserIdx) return;
+      performLogin(u.email, '', { bypass2FA: true, method: 'Owner Impersonation' });
     }));
     root.querySelectorAll('[data-invite-user]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -150576,6 +150652,7 @@
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
     clearCatchUpBatchRepDate();
     STATE.authed = false;
+    _seatPreviewActive = false;
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
@@ -151378,10 +151455,14 @@
     if (!isDemoSandboxSession()) {
       try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     }
-    if (serverVerifiedLogin && !isDemoScopeActive() && finalAuthedUser && finalAuthedUser.email) {
+    // A seat preview (Owner pressing Impersonate) is not that person signing in on this device: it is never
+    // remembered as the device's seat, so the next sign-in screen still belongs to whoever really uses it.
+    const isSeatPreviewLogin = authMethod === 'Owner Impersonation';
+    _seatPreviewActive = isSeatPreviewLogin;
+    if (serverVerifiedLogin && !isSeatPreviewLogin && !isDemoScopeActive() && finalAuthedUser && finalAuthedUser.email) {
       rememberVerifiedDeviceSeat(finalAuthedUser);
     }
-    if (!IS_DEMO && !isDemoSandboxSession() && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+    if (!isSeatPreviewLogin && !IS_DEMO && !isDemoSandboxSession() && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
       try { localStorage.setItem('isabi_mfg_last_seat', finalAuthedUser.email); } catch (_) {}
       if (STATE.kioskLocked || STATE.view === 'kiosks') {
         try { localStorage.setItem('isabi_mfg_kiosk_station_seat', JSON.stringify({ email: finalAuthedUser.email, ts: Date.now() })); } catch (_) {}
@@ -152829,7 +152910,7 @@
   function stashKioskSwResumeAndReload() {
     try {
       const u = activeUser();
-      if (u && u.email) {
+      if (u && u.email && !_seatPreviewActive) {
         sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: u.email, ts: Date.now() }));
       }
       saveKioskStationConfig();
@@ -190194,7 +190275,7 @@
       }
       closeAuthGate();
       if (!isDemoSandboxSession() && (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))) {
-        edgeApiFetch('./api/auth/me', { cache: 'no-store' })
+        edgeApiFetch(AUTH_ME_URL, { cache: 'no-store' })
           .then(async r => {
             if (!r) return;
             if (r.status === 401) {
@@ -190209,6 +190290,15 @@
               if (STATE.authed && typeof handleEdgeSessionExpired === 'function') {
                 handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
               }
+              return;
+            }
+            if (d.impersonated) {
+              // The session is an Owner's seat preview, carried here by an update reload of an older app
+              // version: a preview never outlives the page that started it. Back to the sign-in screen.
+              if (STATE.authed && typeof handleEdgeSessionExpired === 'function') {
+                handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
+              }
+              endSeatPreviewSessionAtBoot(d.user);
               return;
             }
             _edgeCookieAuthed = true;
@@ -190232,12 +190322,21 @@
           );
           if (!hasStationKey) openAuthGate(savedKioskSeatEmail || '');
         };
-        edgeApiFetch('./api/auth/me')
+        edgeApiFetch(AUTH_ME_URL)
           .then(r => (r && r.ok ? r.json() : null))
           .then(d => {
-            if (d && d.authenticated) {
+            if (d && d.authenticated && !d.impersonated) {
               _edgeCookieAuthed = true;
             } else {
+              // A saved seat preview is not a station sign-in: it is ended, and the station is treated as
+              // having no session.
+              if (d && d.authenticated && d.impersonated) {
+                try {
+                  const pvEmail = norm(d.user && d.user.email);
+                  if (pvEmail && norm(localStorage.getItem('isabi_mfg_last_seat') || '') === pvEmail) localStorage.removeItem('isabi_mfg_last_seat');
+                } catch (_) {}
+                sendSeatPreviewSignOut({ stationBoot: true });
+              }
               lockKioskIfNoStationKey();
             }
           })
@@ -190254,7 +190353,7 @@
       );
       openAuthGate(inviteEmail || '', { preserveStoredGeo: shouldProbeCookieResume });
       if (shouldProbeCookieResume) {
-        const probeBootAuthMe = (attempt = 0) => edgeApiFetch('./api/auth/me', { cache: 'no-store' })
+        const probeBootAuthMe = (attempt = 0) => edgeApiFetch(AUTH_ME_URL, { cache: 'no-store' })
           .then(r => {
             if (r && r.status >= 500 && attempt < 2) {
               return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
@@ -190276,6 +190375,13 @@
               return;
             }
             if (STATE.authed) return;
+            if (d.impersonated) {
+              // The saved session is an Owner's seat preview (Impersonate). It is never carried into a
+              // freshly opened app: end it and keep the sign-in screen up, so Face ID or the PIN decides
+              // who is at the device.
+              endSeatPreviewSessionAtBoot(d.user);
+              return;
+            }
             _edgeCookieAuthed = true;
             const resumedSeat = ensureCanonicalMultiIndustrySeat(Object.assign({}, d.user, { pin_redacted: true }));
             delete resumedSeat.pin_code;
