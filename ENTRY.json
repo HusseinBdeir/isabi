@@ -1,0 +1,20 @@
+{
+ "app": {
+  "branch": "wt/expense-discount",
+  "sha": "ac0ef4e9c01f314d98d5cbec06393240410de3b2"
+ },
+ "gates": [
+  "isabi-app: node build/verify_expense_discount.mjs"
+ ],
+ "holder": "theo-expense-discount",
+ "id": "20261125T074107Z-21db1b45",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T07:41:07Z",
+ "seenAt": "2026-11-25T07:41:07Z",
+ "site": {
+  "branch": "wt/isabi-exp-disc-schema",
+  "sha": "1ed1168ccee54299c1ee810faf06ee1686ae8898"
+ },
+ "state": "waiting",
+ "summary": "Expense form: add Subtotal & Discount ($) box with net payable math"
+}
