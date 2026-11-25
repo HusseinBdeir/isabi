@@ -7580,6 +7580,100 @@
       "Period Rent Billing": "فوترة إيجارات الفترة",
       "Period Rent Invoiced": "إيجارات الفترة المفوترة",
       "Period Rent Invoices": "فواتير إيجار الفترة",
+      "Open in Hub": "فتح في الوحدة",
+      "Open in Hub ↗": "فتح في الوحدة ↗",
+      "All-Time (Filter Paused)": "كل الفترات (الفترة متوقفة)",
+      "SCOPED SALES & LOADS": "المبيعات والنقلات ضمن الفترة",
+      "0 rows": "0 سطر",
+      "No matching rows for": "لا توجد صفوف مطابقة لـ",
+      "Active Rate Rules": "اتفاقيات الأسعار السارية",
+      "Transport Loads": "نقلات النقل",
+      "Supplier & Hauler 360° Master": "البطاقة الشاملة للمورد والناقل 360°",
+      "Net 3-Leg AP Balance": "صافي رصيد الذمم الدائنة (3 فروع)",
+      "3-Leg AP": "ذمم 3 فروع",
+      "3-LEG AP": "ذمم 3 فروع",
+      "Material & Haulage Loads": "نقلات المواد والنقل",
+      "As Site Owner": "بصفته مالك موقع",
+      "As Hauler": "بصفته ناقلاً",
+      "Expenses Billed": "المصاريف المفوترة",
+      "Settlements Disbursed": "التسديدات المصروفة",
+      "IVA Registered": "مسجّل في الضريبة (IVA)",
+      "Hauler Fleet": "أسطول ناقل",
+      "Drivers Linked": "السائقون المرتبطون",
+      "Active Price Rules": "اتفاقيات الأسعار النشطة",
+      "Box Capacity": "سعة الصندوق",
+      "Supplier / Hauler Name": "اسم المورد / الناقل",
+      "Primary Supplier Category": "فئة المورد الرئيسية",
+      "Secondary Category": "الفئة الثانوية",
+      "Raw Material Settlements": "تسديدات المواد الأولية",
+      "Trucks Count": "عدد الشاحنات",
+      "Default Settlement Method": "طريقة التسديد الافتراضية",
+      "Site Owner Leg": "شق مالك الموقع",
+      "Truck Owner Leg": "شق مالك الشاحنة",
+      "Trans Cost": "تكلفة النقل",
+      "Supplier AP Settlements": "تسديدات ذمم الموردين",
+      "Registered Trucks & Equipment": "الشاحنات والآليات المسجلة",
+      "Registered Drivers": "السائقون المسجلون",
+      "the current snapshot": "اللقطة الحالية",
+      "Material & Transportation": "المواد والنقل",
+      "Open FIFO AR Balance": "رصيد الذمم المدينة المفتوحة (FIFO)",
+      "Receipts Collected": "المقبوضات المحصّلة",
+      "Agreements & Credit Terms": "الاتفاقيات وشروط الائتمان",
+      "Lifetime Sales & Loads": "إجمالي المبيعات والنقلات",
+      "Scoped Sales & Loads": "مبيعات ونقلات الفترة",
+      "Fleet & Agreements": "الأسطول والاتفاقيات",
+      "Customer 360° Master": "البطاقة الشاملة للعميل 360°",
+      "+ New Raw Ticket": "+ تذكرة مواد خام جديدة",
+      "360° Customer Account": "حساب العميل 360°",
+      "360° Supplier Account": "حساب المورد 360°",
+      "Automated GL": "الأستاذ العام الآلي",
+      "COA Classes 1-7": "فئات الدليل المحاسبي 1-7",
+      "Carrier Settlements": "تسويات شركات التأمين",
+      "Claims & Subrogation": "المطالبات والحلول",
+      "Customer Accounts": "حسابات العملاء",
+      "Customer SOA": "كشف حساب العميل",
+      "Expense Voucher": "سند مصروف",
+      "Fuel & Diesel Hub": "مركز المحروقات والمازوت",
+      "Fuel Entry": "قيد محروقات",
+      "Hospitality Dashboards": "لوحات الضيافة",
+      "Material / Raw Receipt": "إيصال استلام مواد خام",
+      "Material Receipt": "استلام مواد",
+      "Materials Hub": "مركز المواد الخام",
+      "Memberships & Pool": "الاشتراكات والمسبح",
+      "Memberships Hub": "مركز الاشتراكات",
+      "Open Truck Fleet P&L Cockpit": "فتح لوحة أرباح وخسائر الأسطول",
+      "Partner Split & Equity": "حصص الشركاء ورأس المال",
+      "Partners & Splits Hub": "مركز الشركاء والحصص",
+      "Printable SOA": "كشف حساب قابل للطباعة",
+      "Printable Statements": "كشوفات قابلة للطباعة",
+      "Real Estate Dashboards": "لوحات العقارات",
+      "Repairs & Oil Logs": "سجلات الصيانة والزيوت",
+      "Shacman VIN Registry": "سجل شاسيه شاكمان VIN",
+      "Staff Registry": "سجل الموظفين",
+      "Tenant Collections & AR": "تحصيلات وذمم المستأجرين",
+      "Trading Dashboards": "لوحات التجارة",
+      "Treasury & Loans": "الخزينة والقروض",
+      "Workforce Map": "خريطة توزيع الموظفين",
+      "Close 13-Week Runway Studio": "إغلاق استوديو سيولة 13 أسبوعاً",
+      "Close Stock & EOQ Studio": "إغلاق استوديو المخزون والطلب الاقتصادي",
+      "Custom reorder par quantity": "تخصيص كمية إعادة الطلب",
+      "Delete saved payment hold": "حذف حجز الدفعة المحفوظ",
+      "Delete saved scenario": "حذف السيناريو المحفوظ",
+      "Override order quantity": "تعديل كمية الطلب",
+      "Preparing follow-up": "جاري تجهيز المتابعة",
+      "Scenario Note Language": "لغة ملاحظة السيناريو",
+      "Select SKU for reorder override": "اختر الصنف لتعديل إعادة الطلب",
+      "Target sweep week": "الأسبوع المستهدف للتحويل",
+      "Treasury sweep amount USD": "مبلغ تحويل الخزينة بالدولار",
+      "Order Qty": "كمية الطلب",
+      "Par / ROP": "حد إعادة الطلب",
+      "WhatsApp purchase or working-capital dispatch...": "رسالة واتساب للشراء أو رأس المال العامل...",
+      "WhatsApp treasury sweep instruction...": "رسالة واتساب لتعليمات تحويل الخزينة...",
+      "Rent Invoices Hub": "مركز فواتير الإيجار",
+      "VIN Registry Hub": "مركز سجل الشاسيه",
+      "Trading Sales Hub": "مركز مبيعات التجارة",
+      "Claims Hub": "مركز المطالبات",
+      "Policies Hub": "مركز البوالص",
       "Period Rent Invoices & VAT Sequence": "فواتير إيجار الفترة والتسلسل الضريبي",
       "Period Rent Invoicing": "فوترة إيجارات الفترة",
       "Period Rent Invoicing & AR Audit": "تدقيق فوترة الإيجارات الدورية والذمم",
@@ -14799,6 +14893,18 @@
       "New Salary Payment": "دفعة راتب جديدة",
       "Shifts Logged": "الورديات المسجلة",
       "On Duty Today": "في الخدمة اليوم",
+      "Share of Costs": "الحصة من التكاليف",
+      "Share of Expenses": "الحصة من المصاريف",
+      "Sales Commissions": "عمولات المبيعات",
+      "Payroll & Commissions": "الرواتب والعمولات",
+      "VAT on Bills · Not Counted as a Cost": "ضريبة القيمة المضافة على الفواتير · لا تُحتسب تكلفة",
+      "Salaries paid on this day. Click to see who was paid.": "الرواتب المدفوعة في هذا اليوم. اضغط لمعرفة من قبض.",
+      "Raw material and third-party transport of the day. Click to see the receipts.": "المواد الخام والنقل الخارجي لهذا اليوم. اضغط لعرض الإيصالات.",
+      "Commissions due on the day's sales tickets. Click to see the tickets.": "العمولات المستحقة على تذاكر مبيعات اليوم. اضغط لعرض التذاكر.",
+      "Every cost of the day: material and transport, expenses before VAT, payroll and commissions": "كل تكاليف اليوم: المواد والنقل، المصاريف دون الضريبة، الرواتب والعمولات",
+      "Operating profit: sales before VAT less every cost of the day": "الربح التشغيلي: المبيعات دون الضريبة ناقص كل تكاليف اليوم",
+      "Click to show only the staff paid on this day. Click again to show everyone.": "اضغط لعرض الموظفين الذين قبضوا في هذا اليوم فقط. اضغط مجدداً لعرض الجميع.",
+      "Click to show only the staff absent on this day. Click again to show everyone.": "اضغط لعرض الموظفين الغائبين في هذا اليوم فقط. اضغط مجدداً لعرض الجميع.",
       "Shift / Detail": "الوردية / التفاصيل",
       "Paid / Hours": "المدفوع / الساعات",
       "No clock-in": "لم يسجل دخول",
@@ -22706,6 +22812,100 @@
       "Period Rent Billing": "Facturation des Loyers",
       "Period Rent Invoiced": "Loyers Facturés sur la Période",
       "Period Rent Invoices": "Factures de Loyer",
+      "Open in Hub": "Ouvrir dans le module",
+      "Open in Hub ↗": "Ouvrir dans le module ↗",
+      "All-Time (Filter Paused)": "Toutes périodes (filtre en pause)",
+      "SCOPED SALES & LOADS": "VENTES ET VOYAGES FILTRÉS",
+      "0 rows": "0 ligne",
+      "No matching rows for": "Aucune ligne correspondante pour",
+      "Active Rate Rules": "Accords tarifs actifs",
+      "Transport Loads": "Voyages Transport",
+      "Supplier & Hauler 360° Master": "Fiche Maître Fournisseur & Transporteur 360°",
+      "Net 3-Leg AP Balance": "Solde Net Dettes Fourn. (3 Volets)",
+      "3-Leg AP": "Dettes 3 Volets",
+      "3-LEG AP": "DETTES 3 VOLETS",
+      "Material & Haulage Loads": "Voyages Matières & Transport",
+      "As Site Owner": "Propriétaire site",
+      "As Hauler": "Transporteur",
+      "Expenses Billed": "Charges Facturées",
+      "Settlements Disbursed": "Règlements Décaissés",
+      "IVA Registered": "Assujetti TVA",
+      "Hauler Fleet": "Flotte Transporteur",
+      "Drivers Linked": "Chauffeurs Liés",
+      "Active Price Rules": "Accords Tarifaires Actifs",
+      "Box Capacity": "Capacité Benne",
+      "Supplier / Hauler Name": "Nom Fournisseur / Transporteur",
+      "Primary Supplier Category": "Catégorie Principale Fournisseur",
+      "Secondary Category": "Catégorie Secondaire",
+      "Raw Material Settlements": "Règlements Matières Premières",
+      "Trucks Count": "Nombre de Camions",
+      "Default Settlement Method": "Mode de Règlement par Défaut",
+      "Site Owner Leg": "Volet Propriétaire Site",
+      "Truck Owner Leg": "Volet Propriétaire Camion",
+      "Trans Cost": "Coût Transp.",
+      "Supplier AP Settlements": "Règlements Dettes Fournisseurs",
+      "Registered Trucks & Equipment": "Camions & Engins Enregistrés",
+      "Registered Drivers": "Chauffeurs Enregistrés",
+      "the current snapshot": "l'instantané actuel",
+      "Material & Transportation": "Matières & Transport",
+      "Open FIFO AR Balance": "Solde Créances Clients Ouvert (FIFO)",
+      "Receipts Collected": "Encaissements Reçus",
+      "Agreements & Credit Terms": "Accords & Conditions Crédit",
+      "Lifetime Sales & Loads": "Ventes & Voyages Cumulés",
+      "Scoped Sales & Loads": "Ventes & Voyages Période",
+      "Fleet & Agreements": "Flotte & Accords",
+      "Customer 360° Master": "Fiche Maître Client 360°",
+      "+ New Raw Ticket": "+ Nouveau bon matière première",
+      "360° Customer Account": "Compte client 360°",
+      "360° Supplier Account": "Compte fournisseur 360°",
+      "Automated GL": "Grand Livre automatisé",
+      "COA Classes 1-7": "Classes du plan comptable 1-7",
+      "Carrier Settlements": "Règlements assureurs",
+      "Claims & Subrogation": "Sinistres & recours",
+      "Customer Accounts": "Comptes clients",
+      "Customer SOA": "Relevé de compte client",
+      "Expense Voucher": "Pièce de charge",
+      "Fuel & Diesel Hub": "Centre carburant & diesel",
+      "Fuel Entry": "Saisie carburant",
+      "Hospitality Dashboards": "Tableaux de bord hôtellerie",
+      "Material / Raw Receipt": "Bon de réception matière",
+      "Material Receipt": "Réception matières",
+      "Materials Hub": "Centre des matériaux",
+      "Memberships & Pool": "Abonnements & piscine",
+      "Memberships Hub": "Centre des abonnements",
+      "Open Truck Fleet P&L Cockpit": "Ouvrir le cockpit R&P flotte",
+      "Partner Split & Equity": "Quotes-parts & capitaux associés",
+      "Partners & Splits Hub": "Centre associés & répartitions",
+      "Printable SOA": "Relevé imprimable",
+      "Printable Statements": "États imprimables",
+      "Real Estate Dashboards": "Tableaux de bord immobilier",
+      "Repairs & Oil Logs": "Réparations & vidanges",
+      "Shacman VIN Registry": "Registre châssis Shacman VIN",
+      "Staff Registry": "Registre du personnel",
+      "Tenant Collections & AR": "Encaissements & créances locataires",
+      "Trading Dashboards": "Tableaux de bord négoce",
+      "Treasury & Loans": "Trésorerie & emprunts",
+      "Workforce Map": "Carte des effectifs",
+      "Close 13-Week Runway Studio": "Fermer le studio de trésorerie 13 semaines",
+      "Close Stock & EOQ Studio": "Fermer le studio stock & EOQ",
+      "Custom reorder par quantity": "Quantité de réapprovisionnement personnalisée",
+      "Delete saved payment hold": "Supprimer le blocage de paiement enregistré",
+      "Delete saved scenario": "Supprimer le scénario enregistré",
+      "Override order quantity": "Modifier la quantité commandée",
+      "Preparing follow-up": "Préparation du suivi",
+      "Scenario Note Language": "Langue de la note du scénario",
+      "Select SKU for reorder override": "Sélectionner l'article à ajuster",
+      "Target sweep week": "Semaine cible de transfert",
+      "Treasury sweep amount USD": "Montant du transfert de trésorerie USD",
+      "Order Qty": "Qté commandée",
+      "Par / ROP": "Seuil / Stock min",
+      "WhatsApp purchase or working-capital dispatch...": "Message WhatsApp achat ou fonds de roulement...",
+      "WhatsApp treasury sweep instruction...": "Instruction WhatsApp de virement trésorerie...",
+      "Rent Invoices Hub": "Centre factures de loyer",
+      "VIN Registry Hub": "Centre registre châssis",
+      "Trading Sales Hub": "Centre ventes négoce",
+      "Claims Hub": "Centre des sinistres",
+      "Policies Hub": "Centre des polices",
       "Period Rent Invoices & VAT Sequence": "Factures de Loyers & Séquence TVA",
       "Period Rent Invoicing": "Quittancement de la Période",
       "Period Rent Invoicing & AR Audit": "Audit facturation des loyers et créances",
@@ -29925,6 +30125,18 @@
       "New Salary Payment": "Nouveau paiement de salaire",
       "Shifts Logged": "Postes enregistrés",
       "On Duty Today": "En service aujourd'hui",
+      "Share of Costs": "Part des Coûts",
+      "Share of Expenses": "Part des Charges",
+      "Sales Commissions": "Commissions sur Ventes",
+      "Payroll & Commissions": "Paie & Commissions",
+      "VAT on Bills · Not Counted as a Cost": "TVA sur Factures · Non Comptée comme Coût",
+      "Salaries paid on this day. Click to see who was paid.": "Salaires versés ce jour. Cliquer pour voir qui a été payé.",
+      "Raw material and third-party transport of the day. Click to see the receipts.": "Matières premières et transport tiers du jour. Cliquer pour voir les reçus.",
+      "Commissions due on the day's sales tickets. Click to see the tickets.": "Commissions dues sur les tickets de vente du jour. Cliquer pour voir les tickets.",
+      "Every cost of the day: material and transport, expenses before VAT, payroll and commissions": "Tous les coûts du jour : matières et transport, charges HT, paie et commissions",
+      "Operating profit: sales before VAT less every cost of the day": "Résultat d'exploitation : ventes HT moins tous les coûts du jour",
+      "Click to show only the staff paid on this day. Click again to show everyone.": "Cliquer pour n'afficher que le personnel payé ce jour. Cliquer à nouveau pour afficher tout le monde.",
+      "Click to show only the staff absent on this day. Click again to show everyone.": "Cliquer pour n'afficher que le personnel absent ce jour. Cliquer à nouveau pour afficher tout le monde.",
       "Shift / Detail": "Poste / Détail",
       "Paid / Hours": "Payé / Heures",
       "No clock-in": "Aucun pointage",
@@ -31406,6 +31618,11 @@
       const col = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `تصفية عمود ${col}` : `Filtrer la colonne ${col}`;
     }
+    m = trimmed.match(/^Filter\s+(.+?)(?:\.\.\.|…)$/i);
+    if (m) {
+      const col = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تصفية ${col}...` : `Filtrer ${col}...`;
+    }
     m = trimmed.match(/^Filter entries to\s+(\S+)$/i);
     if (m) return lang === 'ar' ? `تصفية القيود لتاريخ ${m[1]}` : `Filtrer les écritures au ${m[1]}`;
 
@@ -31515,6 +31732,9 @@
 
     m = trimmed.match(/^M\s+([+-]?\$[\d.,]+[kMB]?)$/i);
     if (m) return lang === 'ar' ? `مواد ${m[1]}` : `Mat. ${m[1]}`;
+
+    m = trimmed.match(/^AP:?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
+    if (m) return lang === 'ar' ? `ذمم دائنة ${m[1]}` : `Dettes ${m[1]}`;
 
     m = trimmed.match(/^H\s+([+-]?\$[\d.,]+[kMB]?)$/i);
     if (m) return lang === 'ar' ? `نقل ${m[1]}` : `Transp. ${m[1]}`;
@@ -31651,6 +31871,7 @@
         'own': ['أسطولنا', 'Propre'],
         'cr': ['ذمم', 'Crédit'],
         'ar': ['ذمم مدينة', 'Créances'],
+        'ap': ['ذمم دائنة', 'Dettes'],
         'mat': ['مواد', 'Mat.'],
         'haul': ['نقل', 'Transp.'],
         'trans': ['نقل', 'Transp.'],
@@ -33000,8 +33221,8 @@
     m = trimmed.match(/^Page\s+(\d+)\s+Slicers\s*(·?)$/i);
     if (m) return lang === 'ar' ? `محددات صفحة ${m[1]} ${m[2]}`.trim() : `Filtres page ${m[1]} ${m[2]}`.trim();
 
-    m = trimmed.match(/^Page\s+(\d+)\s+of\s+(\d+)$/i);
-    if (m) return lang === 'ar' ? `صفحة ${m[1]} من ${m[2]}` : `Page ${m[1]} sur ${m[2]}`;
+    m = trimmed.match(/^Page\s+(\d+)\s*(?:of|\/)\s*(\d+)$/i);
+    if (m) return trimmed.includes('/') ? (lang === 'ar' ? `صفحة ${m[1]} / ${m[2]}` : `Page ${m[1]} / ${m[2]}`) : (lang === 'ar' ? `صفحة ${m[1]} من ${m[2]}` : `Page ${m[1]} sur ${m[2]}`);
 
     m = trimmed.match(/^p\.(\d+\/\d+)$/i);
     if (m) return lang === 'ar' ? `ص.${m[1]}` : `p.${m[1]}`;
@@ -33014,8 +33235,42 @@
       return lang === 'ar' ? `${mapAr[k]} · صفحة` : `${mapFr[k]} · Page`;
     }
 
-    m = trimmed.match(/^(\d+)[–-](\d+)\s+of\s+([\d,]+)\s+rows$/i);
-    if (m) return lang === 'ar' ? `${m[1]}–${m[2]} من أصل ${m[3]} سطر` : `${m[1]}–${m[2]} sur ${m[3]} lignes`;
+    m = trimmed.match(/^(?:Showing\s+)?(\d+)[–-](\d+)\s+of\s+([\d,]+)(?:\s+rows)?$/i);
+    if (m) {
+      if (/^showing/i.test(trimmed)) return lang === 'ar' ? `عرض ${m[1]}-${m[2]} من ${m[3]}` : `Affichage ${m[1]}-${m[2]} sur ${m[3]}`;
+      if (/rows$/i.test(trimmed)) return lang === 'ar' ? `${m[1]}-${m[2]} من أصل ${m[3]} سطر` : `${m[1]}-${m[2]} sur ${m[3]} lignes`;
+      return lang === 'ar' ? `${m[1]}-${m[2]} من ${m[3]}` : `${m[1]}-${m[2]} sur ${m[3]}`;
+    }
+    m = trimmed.match(/^Scoped:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `النطاق: ${m[1]}` : `Période : ${m[1]}`;
+
+    m = trimmed.match(/^([\d,]+)\s*\/\s*([\d,]+)\s+rows$/i);
+    if (m) return lang === 'ar' ? `${m[1]} / ${m[2]} سطر` : `${m[1]} / ${m[2]} lignes`;
+
+    m = trimmed.match(/^([\d,]+)\s+rows?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سطر` : `${m[1]} lignes`;
+
+    m = trimmed.match(/^Expenses Billed:\s*([\d,]+)\s+vouchers?$/i);
+    if (m) return lang === 'ar' ? `المصاريف المفوترة: ${m[1]} سندات` : `Charges facturées : ${m[1]} pièces`;
+
+    m = trimmed.match(/^([\d,]+)\s+tickets in\s+(period|register)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قسيمة في ${m[2] === 'period' ? 'الفترة' : 'السجل'}` : `${m[1]} bons dans ${m[2] === 'period' ? 'la période' : 'le registre'}`;
+
+    m = trimmed.match(/^([\d,]+)\s+settlement vouchers in\s+(period|register)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سند تسديد في ${m[2] === 'period' ? 'الفترة' : 'السجل'}` : `${m[1]} règlements dans ${m[2] === 'period' ? 'la période' : 'le registre'}`;
+
+    m = trimmed.match(/^([\d,]+)\s+(period|total)\s+price agreements on file$/i);
+    if (m) return lang === 'ar' ? `${m[1]} اتفاقية أسعار ${m[2] === 'period' ? 'ضمن الفترة' : 'مسجلة'}` : `${m[1]} accords tarifaires ${m[2] === 'period' ? 'sur la période' : 'au dossier'}`;
+
+    m = trimmed.match(/^No matching rows for\s+"(.*)"\.?$/i);
+    if (m) return lang === 'ar' ? `لا توجد صفوف مطابقة لـ "${m[1]}".` : `Aucune ligne pour « ${m[1]} ».`;
+
+    m = trimmed.match(/^No linked rows in\s+(.+?)\s+for this record in\s+(.+?)\.?$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      const rng = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `لا توجد صفوف مرتبطة في ${inner} لهذا السجل (${rng}).` : `Aucune ligne liée dans ${inner} pour cet élément (${rng}).`;
+    }
 
     m = trimmed.match(/^(\d+)[–-](\d+)\s+Days$/i);
     if (m) return lang === 'ar' ? `${m[1]}–${m[2]} يوماً` : `${m[1]}–${m[2]} Jours`;
@@ -33528,7 +33783,7 @@
     m = trimmed.match(/^([\d.]+h)\s+base$/i);
     if (m) return lang === 'ar' ? `${m[1]} دوام أساسي` : `${m[1]} base`;
 
-    m = trimmed.match(/^(Issued|Tank)\s+([\d,]+)\s*L$/i);
+    m = trimmed.match(/^(Issued|Tank)\s+([+-]?[\d,]+)\s*L$/i);
     if (m) {
       const w = /^issued$/i.test(m[1]) ? (lang === 'ar' ? 'المصروف' : 'Distribué') : (lang === 'ar' ? 'الخزان' : 'Cuve');
       return `${w} ${m[2]} L`;
@@ -33563,12 +33818,33 @@
       const rhs = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `معاينة السجل 360° · ${rhs}` : `INSPECTEUR 360° · ${rhs}`;
     }
-    m = trimmed.match(/^(Customer|Supplier|Equipment|Staff|Driver|Site|Quarry|Material|Account|Contract|Property|Lease|Policy|Carrier|Claim|Partner)\s+360°\s+(Master|Ledger)(?::\s*(.+))?$/i);
+    m = trimmed.match(/^(Customer|Supplier|Equipment|Staff|Driver|Site|Quarry|Material|Account|Contract|Property|Lease|Policy|Carrier|Claim|Partner)\s+360°\s+(Master|Ledger)(?:\s*\(([^)]+)\))?(?::\s*(.+))?$/i);
     if (m) {
       const ent = translateCore(m[1], lang, depth + 1);
       const kind = /ledger/i.test(m[2]) ? (lang === 'ar' ? 'كشف حساب 360°' : 'Grand Livre 360°') : (lang === 'ar' ? 'البطاقة الشاملة 360°' : 'Fiche Maître 360°');
-      const tail = m[3] ? `: ${m[3]}` : '';
-      return `${kind} · ${ent}${tail}`;
+      const rng = m[3] ? ` (${m[3]})` : '';
+      const tail = m[4] ? `: ${m[4]}` : '';
+      return `${kind} · ${ent}${rng}${tail}`;
+    }
+    m = trimmed.match(/^Supplier & Hauler\s+(3-Leg AP Ledger|360° Profile|360° Master)(?:\s*\(([^)]+)\))?(?:\s*([:·])\s*(.+))?$/i);
+    if (m) {
+      const head = /ledger/i.test(m[1])
+        ? (lang === 'ar' ? 'أستاذ الموردين والناقلين (3 فروع)' : 'Grand Livre Fournisseurs & Transporteurs (3 volets)')
+        : (/master/i.test(m[1])
+          ? (lang === 'ar' ? 'البطاقة الشاملة للمورد والناقل 360°' : 'Fiche Maître Fournisseur & Transporteur 360°')
+          : (lang === 'ar' ? 'ملف المورد والناقل 360°' : 'Profil Fournisseur & Transporteur 360°'));
+      const rng = m[2] ? ` (${m[2]})` : '';
+      const sep = m[3] === '·' ? ' · ' : (lang === 'fr' ? ' : ' : ': ');
+      const tail = m[4] ? `${sep}${m[4]}` : '';
+      return `${head}${rng}${tail}`;
+    }
+    m = trimmed.match(/^Manufacturing\s*\(([^)]+)\)\s*(supplier|customer)\s*[—-]\s*seeded from the workbooks\s*(\S+)\.\s*Purpose:\s*(.+)$/i);
+    if (m) {
+      const roleLbl = /supplier/i.test(m[2]) ? (lang === 'ar' ? 'مورد تصنيع' : 'Fournisseur industrie') : (lang === 'ar' ? 'عميل تصنيع' : 'Client industrie');
+      const purp = translateCore(m[4].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `${roleLbl} (${m[1]}) · محمّل من دفاتر العمل ${m[3]}. الغرض: ${purp}`
+        : `${roleLbl} (${m[1]}) · importé des classeurs ${m[3]}. Objet : ${purp}`;
     }
     // Dynamic UI Tooltip Templates
     m = trimmed.match(/^Ex-VAT Rem:\s*([+-]?\$[\d.,]+)\s*[|·]\s*VAT (?:Rem|Due):\s*([+-]?\$[\d.,]+)$/i);
@@ -36051,6 +36327,34 @@
     m = trimmed.match(/^([\d,]+)\s+trips?$/i);
     if (m) return lang === 'ar' ? `${m[1]} نقلة` : `${m[1]} voyage(s)`;
 
+    // Daily Operations: cost table, bills grouped per supplier, staff filters
+    m = trimmed.match(/^([·•]\s*)?([\d,]+)\s+bills?$/i);
+    if (m) return lang === 'ar' ? `${m[1] ? '· ' : ''}${m[2]} فاتورة` : `${m[1] ? '· ' : ''}${m[2]} facture(s)`;
+
+    m = trimmed.match(/^·\s*([\d,]+)\s+(Active|Staff)$/i);
+    if (m) return lang === 'ar'
+      ? `· ${m[1]} ${/active/i.test(m[2]) ? 'نشط' : 'موظف'}`
+      : `· ${m[1]} ${/active/i.test(m[2]) ? 'actifs' : 'employé(s)'}`;
+
+    m = trimmed.match(/^([\d,]+)\s+Absent$/i);
+    if (m) return lang === 'ar' ? `${m[1]} غائب` : `${m[1]} absent(s)`;
+
+    m = trimmed.match(/^Click to (expand|collapse) ([\d,]+) expense bills?$/i);
+    if (m) return lang === 'ar'
+      ? `اضغط ${m[1].toLowerCase() === 'expand' ? 'لفتح' : 'لطي'} ${m[2]} فواتير مصاريف`
+      : `Cliquer pour ${m[1].toLowerCase() === 'expand' ? 'déplier' : 'replier'} ${m[2]} facture(s) de charges`;
+
+    m = trimmed.match(/^Click to (expand|collapse) ([\d,]+) bills from (.+)$/i);
+    if (m) return lang === 'ar'
+      ? `اضغط ${m[1].toLowerCase() === 'expand' ? 'لفتح' : 'لطي'} ${m[2]} فواتير من ${m[3]}`
+      : `Cliquer pour ${m[1].toLowerCase() === 'expand' ? 'déplier' : 'replier'} ${m[2]} factures de ${m[3]}`;
+
+    m = trimmed.match(/^([\d,]+) Line Items\s*·\s*([\d,]+) Stock Moves$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بنود · ${m[2]} حركات مخزون` : `${m[1]} lignes · ${m[2]} mouvements de stock`;
+
+    m = trimmed.match(/^No costs recorded on\s+(.+?)\.?$/i);
+    if (m) return lang === 'ar' ? `لا توجد تكاليف مسجلة في ${m[1]}.` : `Aucun coût enregistré le ${m[1]}.`;
+
     m = trimmed.match(/^Click to (expand|collapse) ([\d,]+) entr(?:y|ies) for (.+)$/i);
     if (m) return lang === 'ar'
       ? `اضغط ${m[1] === 'expand' ? 'لفتح' : 'لطي'} ${m[2]} قيود لـ ${m[3]}`
@@ -36255,6 +36559,11 @@
         const inner = evalCore(m[2].trim(), lang, depth + 1);
         if (inner.ok) return { out: `${m[1]} ${inner.out}`, ok: true };
       }
+      m = trimmed.match(/^\+\s*Set\s+(.+)$/i);
+      if (m) {
+        const inner = evalCore(m[1].trim(), lang, depth + 1);
+        if (inner.ok) return { out: lang === 'ar' ? `+ تعيين ${inner.out}` : `+ Définir ${inner.out}`, ok: true };
+      }
       m = trimmed.match(/^\+\s*(New\s+)?(.+)$/);
       if (m) {
         if (m[1]) {
@@ -36388,10 +36697,11 @@
       const g = evalCore(m[1].trim(), lang, depth + 1);
       return { out: lang === 'ar' ? `تجميع حسب ${g.out}` : `Grouper par ${g.out}`, ok: g.ok };
     }
-    m = trimmed.match(/^Open\s+(.+?)\s+in Hub$/i);
+    m = trimmed.match(/^Open\s+(.+?)\s+in Hub(?:\s*↗)?$/i);
     if (m) {
       const g = evalCore(m[1].trim(), lang, depth + 1);
-      return { out: lang === 'ar' ? `فتح ${g.out} في الوحدة` : `Ouvrir ${g.out} dans le Module`, ok: g.ok };
+      const arr = trimmed.includes('↗') ? ' ↗' : '';
+      return { out: (lang === 'ar' ? `فتح ${g.out} في الوحدة` : `Ouvrir ${g.out} dans le Module`) + arr, ok: g.ok };
     }
     m = trimmed.match(/^Open in\s+(.+)$/i);
     if (m) {
