@@ -53,6 +53,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -60,6 +61,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -90,10 +92,136 @@ _LOCK_NET_ERR_RE = re.compile(
     r"Connection timed out|Operation timed out|Connection refused|Network is unreachable|"
     r"remote end hung up|early EOF|Empty reply from server|SSL connection timeout|gnutls_handshake\(\) failed|"
     r"did not finish \(TimeoutExpired\)|The requested URL returned error: 5\d\d|"
+    r"HTTP Error (?:429|5\d\d)|URLError|RemoteDisconnected|timed out|EOF occurred in violation of protocol|"
     r"schannel: (?:failed to receive handshake|server closed (?:the connection )?abruptly|failed to decrypt data)|"
     r"cannot lock ref '[^']*': is at [0-9a-f]+ but expected [0-9a-f]+",
     re.IGNORECASE,
 )
+
+DEFAULT_CF_RELEASE_URL = "https://theo-edge-relay.husseinbdeir.workers.dev/release"
+_BACKEND_CACHE: dict[tuple[str, str], str] = {}
+
+
+def _is_local_git_remote(url: str) -> bool:
+    u = (url or "").strip()
+    if not u:
+        return True
+    if u.startswith("file://"):
+        return True
+    if "://" in u or re.match(r"^[^/\s@]+@[^:\s]+:", u):
+        return False
+    return True
+
+
+def _release_backend(cwd: Path = ISABI_ROOT) -> str:
+    explicit = os.environ.get("ISABI_RELEASE_BACKEND", "").strip().lower()
+    if explicit in ("cloudflare", "git"):
+        return explicit
+    if os.environ.get("ISABI_RELEASE_API_URL", "").strip():
+        return "cloudflare"
+    remote_name = REMOTE
+    key = (str(Path(cwd).resolve()), remote_name)
+    if key in _BACKEND_CACHE:
+        return _BACKEND_CACHE[key]
+    r = _git(["remote", "get-url", remote_name], cwd, check=False, timeout=15)
+    mode = "git" if (r.returncode == 0 and _is_local_git_remote(r.stdout.strip())) else "cloudflare"
+    _BACKEND_CACHE[key] = mode
+    return mode
+
+
+def _load_theo_creds() -> dict:
+    p = Path.home() / ".theo" / "credentials.json"
+    try:
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def _cf_config() -> tuple[str, dict[str, str]]:
+    creds = _load_theo_creds()
+    base_url = os.environ.get("ISABI_RELEASE_API_URL", "").strip()
+    if not base_url:
+        relay_ws = str(creds.get("edgeRelayUrl") or "").strip()
+        if relay_ws:
+            http_base = re.sub(r"^wss://", "https://", relay_ws, flags=re.I)
+            http_base = re.sub(r"^ws://", "http://", http_base, flags=re.I)
+            http_base = re.sub(r"/ws/?$", "", http_base.rstrip("/"))
+            base_url = f"{http_base}/release"
+        else:
+            base_url = DEFAULT_CF_RELEASE_URL
+    base_url = base_url.rstrip("/")
+
+    api_tok = os.environ.get("ISABI_RELEASE_API_TOKEN", "").strip()
+    if api_tok:
+        return base_url, {"Authorization": f"Bearer {api_tok}"}
+
+    edge_key = (os.environ.get("THEO_EDGE_KEY", "") or str(creds.get("edgeAccessKey") or "")).strip()
+    if edge_key:
+        auth_tok = hashlib.sha256(f"theo-edge-v1:{edge_key}".encode("utf-8")).hexdigest()
+        return base_url, {"Authorization": f"Bearer {auth_tok}"}
+
+    cf_tok = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    cf_acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    if cf_tok and cf_acct:
+        return base_url, {
+            "Authorization": f"Bearer {cf_tok}",
+            "X-CF-Account-Id": cf_acct,
+            "X-CF-Verify-Token": "1",
+        }
+
+    raise LockError(
+        "Cannot authenticate to Cloudflare release coordinator: pair this PC (~/.theo/credentials.json) "
+        "or set ISABI_RELEASE_API_TOKEN / CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID."
+    )
+
+
+def _cf_request(method: str, subpath: str, payload: dict | None = None, *, timeout: int = 20) -> dict:
+    base_url, auth_headers = _cf_config()
+    url = f"{base_url}{subpath}"
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    headers = {
+        "User-Agent": "ISABI-ReleaseLock/2.0",
+        "Cache-Control": "no-store",
+        **auth_headers,
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json; charset=utf-8"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        parsed = json.loads(raw) if raw else {}
+        if not isinstance(parsed, dict) or not parsed.get("ok"):
+            raise LockError(f"Cloudflare release coordinator error on {subpath}: {raw[:240]}")
+        return parsed
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        detail = body
+        try:
+            j = json.loads(body)
+            if isinstance(j, dict) and j.get("error"):
+                detail = str(j["error"])
+        except Exception:
+            pass
+        if exc.code in (429, 500, 502, 503, 504):
+            raise LockError(f"HTTP Error {exc.code} from Cloudflare release coordinator ({subpath}): {detail[:240]}") from None
+        raise LockError(
+            f"Cloudflare release coordinator rejected {subpath} (HTTP {exc.code}): {detail[:240]}"
+        ) from None
+    except (urllib.error.URLError, TimeoutError, socket.timeout, http.client.HTTPException, OSError) as exc:
+        raise LockError(
+            f"URLError contacting Cloudflare release coordinator ({subpath}): {type(exc).__name__}: {exc}"
+        ) from None
+    except ValueError as exc:
+        raise LockError(f"Invalid JSON from Cloudflare release coordinator ({subpath}): {exc}") from None
 
 
 def _is_transient_lock_net_error(text: str) -> bool:
@@ -166,7 +294,19 @@ def _current_branch(cwd: Path) -> str:
 
 
 def read_remote_lock(cwd: Path = ISABI_ROOT) -> tuple[str, dict]:
-    """(sha, LOCK.json) of the lock on the remote, or ("", {}) when nobody holds it."""
+    """(version_or_sha, LOCK.json) of the lock, or ("", {}) when nobody holds it."""
+    if _release_backend(cwd) == "cloudflare":
+        res = _cf_request("GET", "/lock")
+        info = res.get("lock")
+        ver = str(res.get("version") or "")
+        if info is None:
+            return "", {}
+        if not isinstance(info, dict) or not info.get("lockId") or not info.get("expiresAt") or not ver:
+            raise LockError(
+                "the release lock on Cloudflare Durable Object cannot be read (malformed LOCK payload); "
+                "refusing to treat it as free."
+            )
+        return ver, info
     r = _git(["fetch", "--no-tags", "--quiet", REMOTE, f"+{LOCK_REF}:{SEEN_REF}"], cwd, check=False, timeout=90)
     if r.returncode != 0:
         err = (r.stderr or r.stdout or "").lower()
@@ -187,6 +327,17 @@ def read_remote_lock(cwd: Path = ISABI_ROOT) -> tuple[str, dict]:
                         "refusing to treat it as free. Check it with `git fetch origin refs/locks/release` and "
                         "`git show FETCH_HEAD:LOCK.json`; delete it only if it is broken: git push origin :refs/locks/release")
     return sha, info
+
+
+def _write_remote_lock(new_info: dict | None, expected_old: str, cwd: Path, *, parent: str = "") -> tuple[bool, str]:
+    """Atomic CAS on the release lock (Cloudflare DO or GitHub ref)."""
+    if _release_backend(cwd) == "cloudflare":
+        res = _cf_request("POST", "/lock/cas", {"expectedVersion": expected_old, "lock": new_info})
+        return bool(res.get("swapped")), str(res.get("version") or "")
+    if new_info is None:
+        return _push_lock("", expected_old, cwd), ""
+    commit = _make_lock_commit(new_info, cwd, parent=parent)
+    return _push_lock(commit, expected_old, cwd), commit
 
 
 def _make_lock_commit(info: dict, cwd: Path, parent: str = "") -> str:
@@ -307,8 +458,17 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
     import time  # noqa: PLC0415
 
     deadline = time.monotonic() + max(0, wait_s)
+    last_msg = ""
     while True:
-        lsha, info = read_remote_lock(cwd)
+        try:
+            lsha, info = read_remote_lock(cwd)
+        except LockError as exc:
+            if _is_transient_lock_net_error(str(exc)) and time.monotonic() < deadline:
+                last_msg = str(exc).splitlines()[0]
+                print(f"waiting for transient release lock error: {last_msg}", flush=True)
+                time.sleep(poll_s)
+                continue
+            return False, True, f"cannot read the release lock: {exc}"
         if not lsha or is_expired(info, TAKEOVER_GRACE_MIN):
             last = last_deploy(info) if lsha else None
             if last and not (last["sha"] == sha or _in(cwd, last["sha"], sha)):
@@ -321,9 +481,21 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                 got = True
             except LockError as exc:
                 got, last_msg = False, str(exc)
+                if _is_transient_lock_net_error(last_msg) and time.monotonic() < deadline:
+                    print(f"waiting for transient release lock acquire error: {last_msg.splitlines()[0]}", flush=True)
+                    time.sleep(poll_s)
+                    continue
                 # A lost race leaves the lock changed. Unchanged (or still free) means this run cannot write the
                 # lock at all (token, permissions, network): fail loudly instead of never deploying again.
-                if _same_lock(read_remote_lock(cwd)[0], lsha):
+                try:
+                    cur_lsha = read_remote_lock(cwd)[0]
+                except LockError as exc2:
+                    if _is_transient_lock_net_error(str(exc2)) and time.monotonic() < deadline:
+                        print(f"waiting for transient release lock check error: {str(exc2).splitlines()[0]}", flush=True)
+                        time.sleep(poll_s)
+                        continue
+                    return False, True, f"cannot take the release lock ({exc}; post-check: {exc2})"
+                if _same_lock(cur_lsha, lsha):
                     return False, True, f"cannot take the release lock (the push of {LOCK_REF} failed): {exc}"
             if got:
                 try:
@@ -368,11 +540,13 @@ def default_holder(cwd: Path) -> str:
 def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purpose: str = "release",
             ttl_min: int = DEFAULT_TTL_MIN, takeover: bool = False, quiet: bool = False,
             wait_s: float = 0, poll_s: float = DEFAULT_POLL_S) -> dict:
-    deadline = (_mono() + max(0.0, float(wait_s))) if wait_s and float(wait_s) > 0 else None
     eff_poll = max(1.0, float(poll_s))
     shown_wait = ""
     last_log: float | None = None
     app_repo = _prune_app_repo(cwd)
+    branch_name = _current_branch(cwd)
+    app_branch_name = _current_branch(app_repo) if app_repo is not None else ""
+    deadline = (_mono() + max(0.0, float(wait_s))) if wait_s and float(wait_s) > 0 else None
 
     while True:
         try:
@@ -415,7 +589,7 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             "lockId": uuid.uuid4().hex,
             "holder": holder or default_holder(cwd),
             "pc": socket.gethostname(),
-            "branch": _current_branch(cwd),
+            "branch": branch_name,
             "worktree": str(cwd),
             "version": version,
             "purpose": purpose,
@@ -423,14 +597,22 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             "expiresAt": _iso(now + dt.timedelta(minutes=ttl_min)),
             "deployed": [],
         }
-        if app_repo is not None:
-            app_b = _current_branch(app_repo)
-            if app_b:
-                new["appBranch"] = app_b
+        if app_branch_name:
+            new["appBranch"] = app_branch_name
         if sha:
             new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
-        commit = _make_lock_commit(new, cwd)
-        if _push_lock(commit, sha, cwd):
+        try:
+            ok_swap, commit = _write_remote_lock(new, sha, cwd)
+        except LockError as exc:
+            if deadline is not None and _is_transient_lock_net_error(str(exc)) and _mono() < deadline:
+                msg_w = str(exc).splitlines()[0]
+                if not quiet and msg_w != shown_wait:
+                    print(f"Release lock write hiccup ({msg_w[:180]}); retrying in {int(eff_poll)}s...", flush=True)
+                    shown_wait = msg_w
+                _sleep(min(eff_poll, max(0.0, deadline - _mono())))
+                continue
+            raise
+        if ok_swap:
             _write_token(cwd, new, commit)
             if not quiet:
                 print(f"Release lock taken: {describe(new)}")
@@ -470,8 +652,8 @@ def renew(cwd: Path = ISABI_ROOT, *, ttl_min: int = DEFAULT_TTL_MIN, quiet: bool
     new["expiresAt"] = _iso(_now() + dt.timedelta(minutes=ttl_min))
     if deployed:
         new["deployed"] = [*(info.get("deployed") or []), deployed]
-    commit = _make_lock_commit(new, cwd, parent=sha)
-    if not _push_lock(commit, sha, cwd):
+    ok_swap, commit = _write_remote_lock(new, sha, cwd, parent=sha)
+    if not ok_swap:
         raise LockError("RELEASE LOCK: it changed on the remote while renewing it (taken over?); stop and run status.")
     _write_token(cwd, new, commit)
     if not quiet:
@@ -495,7 +677,8 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
                         "(git push origin HEAD:main), then release. If the push was refused and you rebased, the rebased "
                         "commit is not what is live: deploy the rebased HEAD again (it is recorded here), push, then "
                         "release. --force only if that deploy was rolled back on purpose.")
-    if not _push_lock("", sha, cwd):
+    ok_swap, _ = _write_remote_lock(None, sha, cwd)
+    if not ok_swap:
         raise LockError("RELEASE LOCK: it changed on the remote while releasing it; run status.")
     _drop_token(cwd)
     if not quiet:
@@ -727,7 +910,7 @@ def _protected_worktree_branches(repo: Path) -> set[str]:
 def _read_queue_details(
     cwd: Path, locked_batch_ids: set[str] | None = None
 ) -> tuple[set[tuple[str, str]], set[tuple[str, str, str]], set[tuple[str, str]], set[tuple[str, str]]]:
-    """Read `refs/release-queue/*` directly via git without importing `release_batch.py`.
+    """Read queue entries (Cloudflare DO or `refs/release-queue/*`) directly without importing `release_batch.py`.
     Returns (protected, shipped, fresh_heartbeat, batch_locked)."""
     protected: set[tuple[str, str]] = set()
     shipped: set[tuple[str, str, str]] = set()
@@ -735,6 +918,41 @@ def _read_queue_details(
     batch_locked: set[tuple[str, str]] = set()
     batch_ids = set(locked_batch_ids or ())
     now_dt = _now()
+
+    def _consume_entry(entry: object) -> None:
+        if not isinstance(entry, dict):
+            return
+        eid = str(entry.get("id") or "")
+        state = entry.get("state")
+        hb_dt = _parse_iso(str(entry.get("seenAt") or entry.get("queuedAt") or ""))
+        is_fresh = hb_dt is not None and (now_dt - hb_dt).total_seconds() <= STALLED_QUEUE_HEARTBEAT_MIN * 60
+        for kind, repo_label in (("app", "isabi-app"), ("site", "isabi")):
+            part = entry.get(kind)
+            if not isinstance(part, dict):
+                continue
+            branch = str(part.get("branch") or "").removeprefix("origin/").removeprefix("refs/heads/")
+            psha = str(part.get("sha") or "")
+            if not branch:
+                continue
+            if eid and eid in batch_ids:
+                batch_locked.add((repo_label, branch))
+            if state in ("waiting", "left_out"):
+                protected.add((repo_label, branch))
+                if is_fresh:
+                    fresh_heartbeat.add((repo_label, branch))
+            elif state == "shipped" and psha:
+                shipped.add((repo_label, branch, psha))
+
+    if _release_backend(cwd) == "cloudflare":
+        try:
+            res = _cf_request("GET", "/queue")
+        except LockError as exc:
+            raise LockError(f"cannot inspect release queue before pruning ({exc})") from None
+        for item in res.get("entries") or []:
+            if isinstance(item, dict):
+                _consume_entry(item.get("entry"))
+        return protected, shipped, fresh_heartbeat, batch_locked
+
     r = _git(["fetch", "--no-tags", "--quiet", "--prune", REMOTE, f"+{QUEUE_NS}/*:{QUEUE_SEEN_NS}/*"],
              cwd, check=False, timeout=90)
     if r.returncode != 0:
@@ -756,28 +974,7 @@ def _read_queue_details(
                 entry = json.loads(raw.stdout)
             except ValueError:
                 continue
-            if not isinstance(entry, dict):
-                continue
-            eid = str(entry.get("id") or "")
-            state = entry.get("state")
-            hb_dt = _parse_iso(str(entry.get("seenAt") or entry.get("queuedAt") or ""))
-            is_fresh = hb_dt is not None and (now_dt - hb_dt).total_seconds() <= STALLED_QUEUE_HEARTBEAT_MIN * 60
-            for kind, repo_label in (("app", "isabi-app"), ("site", "isabi")):
-                part = entry.get(kind)
-                if not isinstance(part, dict):
-                    continue
-                branch = str(part.get("branch") or "").removeprefix("origin/").removeprefix("refs/heads/")
-                psha = str(part.get("sha") or "")
-                if not branch:
-                    continue
-                if eid and eid in batch_ids:
-                    batch_locked.add((repo_label, branch))
-                if state in ("waiting", "left_out"):
-                    protected.add((repo_label, branch))
-                    if is_fresh:
-                        fresh_heartbeat.add((repo_label, branch))
-                elif state == "shipped" and psha:
-                    shipped.add((repo_label, branch, psha))
+            _consume_entry(entry)
     finally:
         for ln in refs.splitlines():
             ref = ln.strip().split(maxsplit=1)[0]

@@ -90,7 +90,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_lock as RL  # noqa: E402
 
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 except Exception:
     pass
 
@@ -131,6 +131,7 @@ _NET_ERR_RE = re.compile(
     r"Connection timed out|Operation timed out|Connection refused|Network is unreachable|"
     r"remote end hung up|early EOF|Empty reply from server|SSL connection timeout|gnutls_handshake\(\) failed|"
     r"did not finish \(TimeoutExpired\)|The requested URL returned error: 5\d\d|"
+    r"HTTP Error (?:429|5\d\d)|URLError|RemoteDisconnected|timed out|EOF occurred in violation of protocol|"
     # Only the schannel errors that clear by themselves: an untrusted root or a failed revocation check (a proxy or an
     # antivirus intercepting TLS) stays until someone fixes it, so it must be reported, not waited out.
     r"schannel: (?:failed to receive handshake|server closed (?:the connection )?abruptly|failed to decrypt data)|"
@@ -318,9 +319,35 @@ def _push_ref(ref: str, new_sha: str, expected_old: str, cwd: Path) -> bool:
 
 
 def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
-    """Every entry in the line, oldest first. Each carries `_ref` and `_sha` (the value to compare-and-swap on).
+    """Every entry in the line, oldest first. Each carries `_ref` and `_sha` (the version/sha to compare-and-swap on).
     An entry that cannot be read is listed with state "unreadable" and never shipped."""
     pauses = list(NET_RETRY_S) if _inner_retries[0] else []
+    if RL._release_backend(cwd) == "cloudflare":
+        while True:
+            try:
+                res = RL._cf_request("GET", "/queue")
+                break
+            except RL.LockError as exc:
+                err = str(exc)
+                if not pauses or not _is_net_error(err):
+                    raise BatchError(f"cannot read the release line from Cloudflare ({err[:300]})") from None
+                _sleep(pauses.pop(0))
+        entries: list[dict] = []
+        for item in res.get("entries") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("id") or "")
+            ver = str(item.get("version") or "")
+            e = item.get("entry")
+            if not name:
+                continue
+            if not isinstance(e, dict) or e.get("id") != name or e.get("state") not in STATES:
+                e = {"id": name, "state": "unreadable", "holder": "?", "summary": "(entry cannot be read)"}
+            e["_ref"], e["_sha"] = f"cf:{name}", ver
+            entries.append(e)
+        entries.sort(key=lambda e: e["id"])
+        return entries
+
     while True:
         try:
             r = RL._git(["fetch", "--no-tags", "--quiet", "--prune", RL.REMOTE, f"+{QUEUE_NS}/*:{SEEN_NS}/*"], cwd,
@@ -334,7 +361,7 @@ def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
             raise BatchError(f"cannot read the release line from {RL.REMOTE} ({err[:300]})")
         _sleep(pauses.pop(0))
     out = RL._git(["for-each-ref", "--format=%(refname) %(objectname)", f"{SEEN_NS}/"], cwd).stdout
-    entries: list[dict] = []
+    entries = []
     for ln in out.splitlines():
         if not ln.strip():
             continue
@@ -353,6 +380,24 @@ def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
     return entries
 
 
+def _create_entry(cwd: Path, entry: dict) -> dict:
+    """Insert a brand-new entry into the line."""
+    if RL._release_backend(cwd) == "cloudflare":
+        res = RL._cf_request("POST", "/queue/cas", {"entryId": entry["id"], "expectedVersion": "", "entry": _pub(entry)})
+        if not res.get("swapped"):
+            raise BatchError(f"could not write {entry['id']} to Cloudflare release queue (already exists)")
+        out = dict(entry)
+        out["_ref"], out["_sha"] = f"cf:{entry['id']}", str(res.get("version") or "")
+        return out
+    commit = _entry_commit(entry, cwd)
+    ref = f"{QUEUE_NS}/{entry['id']}"
+    if not _push_ref(ref, commit, "", cwd):
+        raise BatchError(f"could not write {ref} on {RL.REMOTE} (network, or no push rights)")
+    out = dict(entry)
+    out["_ref"], out["_sha"] = ref, commit
+    return out
+
+
 def _update_entry(cwd: Path, entry: dict, **changes) -> dict | None:
     """Write changed fields into an entry. None when it changed or went away on the remote since it was read."""
     new = _pub(entry)
@@ -361,6 +406,12 @@ def _update_entry(cwd: Path, entry: dict, **changes) -> dict | None:
             new.pop(k, None)
         else:
             new[k] = v
+    if RL._release_backend(cwd) == "cloudflare":
+        res = RL._cf_request("POST", "/queue/cas", {"entryId": entry["id"], "expectedVersion": entry["_sha"], "entry": new})
+        if not res.get("swapped"):
+            return None
+        new["_ref"], new["_sha"] = entry["_ref"], str(res.get("version") or "")
+        return new
     commit = _entry_commit(new, cwd, parent=entry["_sha"])
     if not _push_ref(entry["_ref"], commit, entry["_sha"], cwd):
         return None
@@ -369,6 +420,9 @@ def _update_entry(cwd: Path, entry: dict, **changes) -> dict | None:
 
 
 def _delete_entry(cwd: Path, entry: dict) -> bool:
+    if RL._release_backend(cwd) == "cloudflare":
+        res = RL._cf_request("POST", "/queue/cas", {"entryId": entry["id"], "expectedVersion": entry["_sha"], "entry": None})
+        return bool(res.get("swapped"))
     return _push_ref(entry["_ref"], "", entry["_sha"], cwd)
 
 
@@ -540,11 +594,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         "state": "waiting",
         **parts,
     }
-    commit = _entry_commit(entry, cwd)
-    ref = f"{QUEUE_NS}/{entry['id']}"
-    if not _push_ref(ref, commit, "", cwd):
-        raise BatchError(f"could not write {ref} on {RL.REMOTE} (network, or no push rights)")
-    entry["_ref"], entry["_sha"] = ref, commit
+    entry = _create_entry(cwd, entry)
     _remember(cwd, entry)
     if not quiet:
         print(f"In line: {entry['id']} ({_parts_text(entry)}).")
@@ -873,7 +923,8 @@ def _normalised_site_commit(cwd: Path, sha: str) -> tuple[str, bool]:
     return commit, own_app
 
 
-def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str]) -> tuple[bool, str, list[str], bool]:
+def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str],
+                 fetched_branches: set[tuple[str, str]] | None = None) -> tuple[bool, str, list[str], bool]:
     """Merge one entry's branches into the batch branches. All or nothing across the two repos. Returns (merged
     cleanly?, why not, which parts brought new commits: "app" / "site", is every part already on origin/main?).
     A part that is in the batch already but NOT on main came in with a change ahead of it that was built on top of
@@ -893,8 +944,12 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
         if not sha:
             continue
         branch = part.get("branch", "")
-        _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, f"+refs/heads/{branch}:refs/remotes/{RL.REMOTE}/{branch}"], repo,
-             check=False, timeout=180)
+        fetch_key = (str(repo), branch)
+        if fetched_branches is None or fetch_key not in fetched_branches or not _known_commit(repo, sha):
+            _run(["fetch", "--no-tags", "--quiet", RL.REMOTE, f"+refs/heads/{branch}:refs/remotes/{RL.REMOTE}/{branch}"], repo,
+                 check=False, timeout=180)
+            if fetched_branches is not None:
+                fetched_branches.add(fetch_key)
         if not _known_commit(repo, sha):
             undo()
             return False, f"{label} {branch} no longer has {sha[:7]} on {RL.REMOTE} (rewritten or deleted since it joined)", [], False
@@ -1008,6 +1063,7 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
             block(x, f"no sign of its session ({x.get('holder', '?')}) for {STALE_AFTER_MIN // 60} h")
     for x, why in out.values():
         block(x, why)
+    fetched_branches: set[tuple[str, str]] = set()
     while True:
         # One pass builds the batch from origin/main without everything left out so far. A change left out may have
         # commits in the batch through a change built on top of it (on either of its halves, in this batch or a
@@ -1021,7 +1077,7 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
         for cur in live:
             if cur["id"] in out or cur["id"] in shipped:
                 continue
-            ok, why, brought, all_on_main = _merge_entry(cwd, app, cur, base_ver, pass_notes)
+            ok, why, brought, all_on_main = _merge_entry(cwd, app, cur, base_ver, pass_notes, fetched_branches=fetched_branches)
             if ok and all_on_main:
                 # A leader pushed it to main and never ran done. With evidence that it is live it is marked shipped
                 # and not released again; without, it stays in this batch, so this release takes it live.
