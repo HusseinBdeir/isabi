@@ -28,10 +28,12 @@ after its TTL (60 minutes by default; each deploy renews it) and is taken over o
 between PCs), and only when its latest deploy is already on origin/main; otherwise `acquire --takeover` is needed,
 after checking what that session left unpushed. A lock that exists but cannot be read is never treated as free.
 
-The push-to-main workflow (.github/workflows/deploy.yml) is one more holder: `ci-acquire` waits up to 10 minutes for
-a session's release, takes the lock, records the pushed commit; the workflow renews it right before going live and
+The GitHub workflow (.github/workflows/deploy.yml) no longer deploys on a push to main (owner 2026-11-26: the release
+leader's PC deploys, `deploy_cloudflare.py --pages-only`); a push only runs its offline checks. Run by hand on main
+with "deploy" ticked (emergency: no PC can deploy) it is one more holder: `ci-acquire` waits up to 10 minutes for
+a session's release, takes the lock, records the commit; the workflow renews it right before going live and
 releases it at the end. It does not deploy when the lock stays held, and fails when an expired lock's live deploy is
-not part of the pushed commit (deploying would roll that work back).
+not part of that commit (deploying would roll that work back).
 
 Commands
   python build/release_lock.py status [--json]          who holds it, and whether live and both mains match
