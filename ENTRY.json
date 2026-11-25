@@ -3,6 +3,12 @@
   "branch": "wt/raw-site-trans-payables",
   "sha": "c24c8d3144fb32e6193a81c48e2e530f2782dd61"
  },
+ "batch": {
+  "at": "2026-11-25T15:57:40Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "783df262b8694d6c871e828e7225c59d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: python build/audit_i18n.py",
   "isabi-app: node build/verify_raw_payables_tables.mjs"
