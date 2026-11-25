@@ -319,9 +319,30 @@ def main() -> int:
         check("URLError" in lost and bool(l_again.get("lockId")) and RL.held_by_me(RL.read_remote_lock(sb)[1], sa)
               and "held by session-A" in raises_lock(RL.acquire, sb, holder="session-B"),
               "a session whose lock write lost its answer holds that lock on its next acquire; nobody else can take it")
+        # A second command in the same worktree that read the lock as free a moment too early: its write is refused,
+        # and that must not cost the first command its token (it would hold a lock it can neither renew nor release).
+        real_read, reads = RL.read_remote_lock, [0]
+
+        def early_read(cwd=RL.ISABI_ROOT):
+            reads[0] += 1
+            return ("", {}) if reads[0] == 1 else real_read(cwd)
+
+        RL.read_remote_lock = early_read
+        try:
+            lost_race = raises_lock(RL.acquire, sa, holder="second command")
+        finally:
+            RL.read_remote_lock = real_read
+        check("took it first" in lost_race and RL.held_by_me(RL.read_remote_lock(sb)[1], sa)
+              and RL.read_token(sa).get("lockId") == l_again["lockId"]
+              and not list(RL.git_dir(sa).glob(f"{RL.PENDING_PREFIX}*.json")),
+              "a refused write from the same worktree leaves the holder's token alone and no pending file behind")
+        quiet(RL.renew, sa, ttl_min=30)
         quiet(RL.release, sa)
-        check(RL.read_remote_lock(sb) == ("", {}) and not RL.read_token(sb) and not RL.read_token(sa),
-              "both give the lock back and keep no token")
+        # (A write that was refused outright, like the 503 of section 4, may leave its own pending file: it names a
+        # lockId that never existed, matches nothing, and is cleared a day later.)
+        check(RL.read_remote_lock(sb) == ("", {}) and not RL.read_token(sb) and not RL.read_token(sa)
+              and not RL._is_pending(sb, held["lockId"]) and not RL._is_pending(sa, l_again["lockId"]),
+              "both give the lock back and keep no token or pending file for a lock they held")
 
         # 5. Batch queue lifecycle on DO (join, transient 503 wait-out, take, sync, deploy, done, leave)
         git(A / "isabi-app", "checkout", "-q", "-B", "wt/feat-a", "origin/main")

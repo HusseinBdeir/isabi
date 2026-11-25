@@ -406,6 +406,7 @@ def read_token(cwd: Path = ISABI_ROOT) -> dict:
 def _write_token(cwd: Path, info: dict, sha: str) -> None:
     _token_path(cwd).write_text(json.dumps({"lockId": info["lockId"], "sha": sha, "holder": info.get("holder")}, indent=1) + "\n",
                                 encoding="utf-8")
+    _drop_pending(cwd, info["lockId"])
 
 
 def _drop_token(cwd: Path) -> None:
@@ -413,6 +414,46 @@ def _drop_token(cwd: Path) -> None:
         _token_path(cwd).unlink()
     except OSError:
         pass
+
+
+# A lock write whose answer is lost (a dropped connection) may have landed. Each attempt leaves its own small file
+# first, named by its random lockId, so the next read knows such a lock as this worktree's own (held_by_me) and renews
+# it instead of waiting behind itself until it expires. Its own file per attempt: two commands started in the same
+# worktree at the same moment never touch each other's, or the token of the one that won.
+PENDING_PREFIX = "isabi-release-lock.pending-"
+PENDING_KEEP_S = 24 * 3600
+_LOCK_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _pending_path(cwd: Path, lock_id: str) -> Path | None:
+    return git_dir(cwd) / f"{PENDING_PREFIX}{lock_id}.json" if _LOCK_ID_RE.match(str(lock_id or "")) else None
+
+
+def _write_pending(cwd: Path, info: dict) -> None:
+    p = _pending_path(cwd, info["lockId"])
+    if p is None:
+        return
+    try:
+        for old in p.parent.glob(f"{PENDING_PREFIX}*.json"):  # attempts that never landed
+            if time.time() - old.stat().st_mtime > PENDING_KEEP_S:
+                old.unlink()
+    except OSError:
+        pass
+    p.write_text(json.dumps({"lockId": info["lockId"], "holder": info.get("holder"), "at": _iso(_now())}) + "\n", encoding="utf-8")
+
+
+def _drop_pending(cwd: Path, lock_id: str) -> None:
+    p = _pending_path(cwd, lock_id)
+    try:
+        if p is not None:
+            p.unlink()
+    except OSError:
+        pass
+
+
+def _is_pending(cwd: Path, lock_id: str) -> bool:
+    p = _pending_path(cwd, lock_id)
+    return p is not None and p.is_file()
 
 
 # ------------------------------------------------------------------------------------------------------ lock logic
@@ -429,7 +470,8 @@ def minutes_left(info: dict) -> float:
 
 def held_by_me(info: dict, cwd: Path = ISABI_ROOT) -> bool:
     tok = read_token(cwd)
-    return bool(info.get("lockId")) and tok.get("lockId") == info.get("lockId")
+    lock_id = info.get("lockId")
+    return bool(lock_id) and (tok.get("lockId") == lock_id or _is_pending(cwd, lock_id))
 
 
 def last_deploy(info: dict) -> dict | None:
@@ -556,6 +598,7 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
     branch_name = _current_branch(cwd)
     app_branch_name = _current_branch(app_repo) if app_repo is not None else ""
     deadline = (_mono() + max(0.0, float(wait_s))) if wait_s and float(wait_s) > 0 else None
+    tried: list[str] = []  # lockIds this call tried to write and got no answer for
 
     while True:
         try:
@@ -569,6 +612,10 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
                 _sleep(min(eff_poll, max(0.0, deadline - _mono())))
                 continue
             raise
+        for lid in tried:  # an earlier attempt of this call that the lock does not show did not land
+            if lid != (info or {}).get("lockId"):
+                _drop_pending(cwd, lid)
+        tried = [lid for lid in tried if lid == (info or {}).get("lockId")]
         if info and held_by_me(info, cwd):
             return renew(cwd, ttl_min=ttl_min, quiet=quiet, _seen=(sha, info))
         if sha and not is_expired(info, TAKEOVER_GRACE_MIN):
@@ -610,10 +657,9 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             new["appBranch"] = app_branch_name
         if sha:
             new["tookOverFrom"] = {k: info.get(k) for k in ("holder", "pc", "acquiredAt", "expiresAt", "deployed")}
-        # The token goes down before the write: when the write lands but its answer is lost (a dropped connection),
-        # the next read still knows this lock as this worktree's own (held_by_me) and renews it, instead of waiting
-        # behind itself until it expires. lockId is random, so the token matches only a write that really landed.
-        _write_token(cwd, new, "")
+        # Before the write (see PENDING_PREFIX): lockId is random, so the file matches only a write that really landed.
+        _write_pending(cwd, new)
+        tried.append(new["lockId"])
         try:
             ok_swap, commit = _write_remote_lock(new, sha, cwd)
         except LockError as exc:
@@ -630,7 +676,7 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
             if not quiet:
                 print(f"Release lock taken: {describe(new)}")
             return new
-        _drop_token(cwd)  # the write was refused: that lock does not exist
+        _drop_pending(cwd, new["lockId"])  # the write was refused: that lock does not exist (the token is not touched)
         try:
             sha2, info2 = read_remote_lock(cwd)
         except LockError as exc2:
@@ -696,6 +742,7 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
     if not ok_swap:
         raise LockError("RELEASE LOCK: it changed on the remote while releasing it; run status.")
     _drop_token(cwd)
+    _drop_pending(cwd, info.get("lockId", ""))
     if not quiet:
         print("Release lock released.")
         last = last_deploy(info)
