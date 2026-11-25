@@ -3,6 +3,12 @@
   "branch": "wt/sync-delta-unstick",
   "sha": "a4fc6509aea9fb03bd826a5a7cacaa97c3d1a021"
  },
+ "batch": {
+  "at": "2026-11-25T15:57:40Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "783df262b8694d6c871e828e7225c59d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi: node build/verify_sync_delta_edge.mjs",
   "isabi-app: node build/verify_sync_delta_unstick.mjs"
