@@ -1,0 +1,16 @@
+{
+ "app": {
+  "branch": "wt/fleet-pnl-rev10",
+  "sha": "4071913782ad363bfc8975f397baa7c5aa36420b"
+ },
+ "gates": [
+  "isabi-app: node build/verify_fleet_pnl_redesign.mjs"
+ ],
+ "holder": "agy-291155f2 (fleet-pnl-rev10)",
+ "id": "20261125T061626Z-d8549c74",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T06:16:26Z",
+ "seenAt": "2026-11-25T06:16:26Z",
+ "state": "waiting",
+ "summary": "Fleet & Running Costs Rev 10 Studio redesign, 1:1 focus sync and seatLens redaction"
+}
