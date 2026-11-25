@@ -3,20 +3,17 @@
   "branch": "wt/batch-payday-panel6",
   "sha": "28ee3ef93dee02135d6c08bcbcd2138abba72e9c"
  },
- "batch": {
-  "at": "2026-11-25T15:57:40Z",
-  "holder": "agy-8e9ba45b",
-  "lockId": "783df262b8694d6c871e828e7225c59d",
-  "version": "19.6.441"
- },
  "gates": [
   "isabi-app: node build/verify_batch_payday_and_panel6.mjs"
  ],
  "holder": "theo-batch-payday-panel6",
  "id": "20261124T130800Z-f695a98e",
+ "leftOutAt": "2026-11-25T20:41:36Z",
+ "leftOutBy": "THEO hbdei (seat-preview-resume)",
+ "note": "does not merge cleanly with main plus the changes ahead of it in the batch (isabi-app: build/i18n_dict.json, js/i18n.js)",
  "pc": "Theo",
  "queuedAt": "2026-11-24T13:08:00Z",
- "seenAt": "2026-11-25T23:24:49Z",
- "state": "waiting",
+ "seenAt": "2026-11-25T17:51:07Z",
+ "state": "left_out",
  "summary": "Batch Payday 1-sheet disbursement grid and Daily Ops Panel 6 monthly balance pills"
 }
