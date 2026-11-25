@@ -3,6 +3,12 @@
   "branch": "wt/insp-360-hub",
   "sha": "3a6a5656a621e2f9985bd29ce7dcac4b8de026c7"
  },
+ "batch": {
+  "at": "2026-11-25T13:42:19Z",
+  "holder": "agy-8e9ba45b",
+  "lockId": "9ebb0b91b8b74892a234b3a23cd5c79d",
+  "version": "19.6.441"
+ },
  "gates": [
   "isabi-app: node build/verify_insp_step_and_rates.mjs"
  ],
