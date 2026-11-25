@@ -15134,7 +15134,17 @@
       "Material sales revenue": "إيرادات مبيعات المواد",
       "Total billed sales": "إجمالي المبيعات المفوترة",
       "Net sales revenue excluding VAT": "صافي إيرادات المبيعات دون الضريبة",
-      "Gross billed sales including 11% VAT": "إجمالي المبيعات المفوترة شاملة ضريبة 11%"
+      "Gross billed sales including 11% VAT": "إجمالي المبيعات المفوترة شاملة ضريبة 11%",
+      "Catch-Up Batch Date": "تاريخ الدفعة المرحلة",
+      "Reporting Date pinned for consecutive new entries": "تاريخ التقرير مثبت للقيود الجديدة المتتالية",
+      "Pin for Batch": "تثبيت للدفعة",
+      "Pinned for Batch": "مثبت للدفعة",
+      "Keep this Reporting Date pinned across consecutive new entries until cleared": "إبقاء تاريخ التقرير هذا مثبتاً للقيود الجديدة المتتالية حتى يتم مسحه",
+      "Date Shifted": "تاريخ مرحّل",
+      "Cross-Month": "عبر الأشهر",
+      "Reporting Date differs from Transaction Date": "تاريخ التقرير يختلف عن تاريخ العملية",
+      "Reporting Date is in a different month than Transaction Date": "تاريخ التقرير في شهر مختلف عن تاريخ العملية",
+      "Pick a Reporting Date different from Transaction Date first": "اختر تاريخ تقرير مختلفاً عن تاريخ العملية أولاً"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -30250,7 +30260,17 @@
       "Material sales revenue": "Chiffre d'affaires matériaux",
       "Total billed sales": "Total des ventes facturées",
       "Net sales revenue excluding VAT": "Chiffre d'affaires net HT",
-      "Gross billed sales including 11% VAT": "Ventes brutes facturées TTC (TVA 11 %)"
+      "Gross billed sales including 11% VAT": "Ventes brutes facturées TTC (TVA 11 %)",
+      "Catch-Up Batch Date": "Date de lot de rattrapage",
+      "Reporting Date pinned for consecutive new entries": "Date comptable épinglée pour les nouvelles saisies consécutives",
+      "Pin for Batch": "Épingler pour le lot",
+      "Pinned for Batch": "Épinglé pour le lot",
+      "Keep this Reporting Date pinned across consecutive new entries until cleared": "Garder cette date comptable épinglée pour les prochaines saisies jusqu'à suppression",
+      "Date Shifted": "Date décalée",
+      "Cross-Month": "Inter-mois",
+      "Reporting Date differs from Transaction Date": "La date comptable diffère de la date d'opération",
+      "Reporting Date is in a different month than Transaction Date": "La date comptable est dans un autre mois que la date d'opération",
+      "Pick a Reporting Date different from Transaction Date first": "Choisissez d'abord une date comptable différente de la date d'opération"
     }
   };
 
@@ -36056,6 +36076,15 @@
 
     m = trimmed.match(/^Booked to Another Day\s*\(([\d,]+)\)$/i);
     if (m) return lang === 'ar' ? `مرحّلة ليوم آخر (${m[1]})` : `Reportées (${m[1]})`;
+
+    m = trimmed.match(/^Date Shifted\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `تاريخ مرحّل (${m[1]})` : `Date décalée (${m[1]})`;
+
+    m = trimmed.match(/^Cross-Month\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `عبر الأشهر (${m[1]})` : `Inter-mois (${m[1]})`;
+
+    m = trimmed.match(/^([\d,]+)\s+cross-month$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عبر الأشهر` : `${m[1]} inter-mois`;
 
     m = trimmed.match(/^Costs\s*\(([\d,]+)\)$/i);
     if (m) return lang === 'ar' ? `التكاليف (${m[1]})` : `Coûts (${m[1]})`;

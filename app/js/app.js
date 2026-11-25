@@ -535,6 +535,8 @@
     railWidth: clampRailWidth(localStorage.getItem('isabi_mfg_rail_width') || RAIL_DEFAULT_W),
     search: '',
     chipFilter: 'all',
+    catchUpBatchRepDate: '',
+    catchUpBatchScope: '',
     mobRegSummaryOpen: false,
     cfEntryMode: 'entries',
     cfBridgeMode: 'streams',
@@ -9358,6 +9360,49 @@
     pop.hidden = false;
     positionRepShiftPopover();
     pop.style.visibility = '';
+  }
+
+  function isRowDateShifted(r) {
+    if (!r || !r.date) return false;
+    const dTx = String(r.date).slice(0, 10);
+    const dRep = String(r.rep_date || r.set_date || '').slice(0, 10);
+    return Boolean(dTx && dRep && dTx !== dRep);
+  }
+  function isRowCrossMonthShifted(r) {
+    if (!isRowDateShifted(r)) return false;
+    const dTx = String(r.date).slice(0, 7);
+    const dRep = String(r.rep_date || r.set_date || '').slice(0, 7);
+    return dTx !== dRep;
+  }
+  function countDateShiftedRows(rows) {
+    let shifted = 0;
+    let crossMonth = 0;
+    if (!Array.isArray(rows)) return { shifted: 0, crossMonth: 0 };
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r.date) continue;
+      const dTx = String(r.date).slice(0, 10);
+      const dRep = String(r.rep_date || r.set_date || '').slice(0, 10);
+      if (dTx && dRep && dTx !== dRep) {
+        shifted++;
+        if (dTx.slice(0, 7) !== dRep.slice(0, 7)) crossMonth++;
+      }
+    }
+    return { shifted, crossMonth };
+  }
+  function renderDateShiftChipsHtml(stats) {
+    const n = (stats && stats.shifted) || 0;
+    const cm = (stats && stats.crossMonth) || 0;
+    const activeShift = STATE.chipFilter === 'date_shifted' || STATE.chipFilter === 'cross_month_shift';
+    if (n === 0 && !activeShift) return '';
+    const tipShift = cm > 0
+      ? `Reporting Date differs from Transaction Date (${fmtNum(cm)} cross-month)`
+      : 'Reporting Date differs from Transaction Date';
+    let html = `<button type="button" class="filter-chip chip-date-shift ${STATE.chipFilter === 'date_shifted' ? 'active' : ''}" data-chip="date_shifted" data-ui-tip="${esc(tipShift)}">${ic('rep_shift')} Date Shifted (${fmtNum(n)})</button>`;
+    if (activeShift && cm > 0 && cm < n) {
+      html += `<button type="button" class="filter-chip chip-date-shift ${STATE.chipFilter === 'cross_month_shift' ? 'active' : ''}" data-chip="cross_month_shift" data-ui-tip="Reporting Date is in a different month than Transaction Date">Cross-Month (${fmtNum(cm)})</button>`;
+    }
+    return html;
   }
 
   function repDateShiftBadge(r) {
@@ -31396,6 +31441,12 @@
     const showTaxCols = salesShowTaxCols();
     if (!showTaxCols && STATE.chipFilter === 'vat') STATE.chipFilter = 'all';
     const base = filterRecords(SEED.records.sales_tickets);
+    const salesShiftRevKey = `${SEED._customRev || 0}|${_WIN_REV}`;
+    if (base._dateShiftRevKey !== salesShiftRevKey) {
+      base._dateShiftStats = countDateShiftedRows(base);
+      base._dateShiftRevKey = salesShiftRevKey;
+    }
+    const salesShiftStats = base._dateShiftStats;
     const chipPredicate = r => {
       if (STATE.chipFilter === 'delivery') return r.sale_type === 'Delivery';
       if (STATE.chipFilter === 'pickup') return r.sale_type === 'Pickup';
@@ -31405,6 +31456,8 @@
       if (STATE.chipFilter === 'vat') return Number(r.vat || 0) > 0;
       if (STATE.chipFilter === 'returned_wtc') return isReturnTicket(r);
       if (STATE.chipFilter === 'removed_slip') return isRemovedTicket(r);
+      if (STATE.chipFilter === 'date_shifted') return isRowDateShifted(r);
+      if (STATE.chipFilter === 'cross_month_shift') return isRowCrossMonthShifted(r);
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
     };
@@ -31788,7 +31841,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, customer, product, site, truck, driver...')}
             <div class="chip-bar">
-              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${showTaxCols ? chip('vat', 'VAT') : ''}${chip('overtime', 'Overtime')}${chip('returned_wtc', 'Returned to WTC')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button>
+              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${showTaxCols ? chip('vat', 'VAT') : ''}${chip('overtime', 'Overtime')}${chip('returned_wtc', 'Returned to WTC')}${chip('removed_slip', 'Removed (0 KM)')}${renderDateShiftChipsHtml(salesShiftStats)}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button>
             </div>
           </div>
           <div class="sales-toolbar-actions">
@@ -32088,11 +32141,13 @@
       base._pendingRawCnt = base.filter(isPendingPriceRaw).length;
       base._otRawCnt = base.filter(r => !!(r && r.overtime)).length;
       base._bundledRawCnt = base.filter(isBundledRawTicket).length;
+      base._dateShiftStats = countDateShiftedRows(base);
       base._pendingRawKey = rawRevKey;
     }
     const pendingRawCnt = base._pendingRawCnt || 0;
     const otRawBaseCnt = base._otRawCnt || 0;
     const bundledRawBaseCnt = base._bundledRawCnt || 0;
+    const rawShiftStats = base._dateShiftStats;
     const rawChipPred = r => {
       if (STATE.chipFilter === 'fleet') return r.transport_by === 'Company fleet';
       if (STATE.chipFilter === 'third') return r.transport_by === 'Third-party truck';
@@ -32101,6 +32156,8 @@
       if (STATE.chipFilter === 'pending_price') return isPendingPriceRaw(r);
       if (STATE.chipFilter === 'returned_wtc') return isReturnTicket(r);
       if (STATE.chipFilter === 'removed_slip') return isRemovedTicket(r);
+      if (STATE.chipFilter === 'date_shifted') return isRowDateShifted(r);
+      if (STATE.chipFilter === 'cross_month_shift') return isRowCrossMonthShifted(r);
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
     };
@@ -32651,7 +32708,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, supplier, hauler, site, product...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('bundled', bundledRawBaseCnt > 0 ? `Delivery Included (${bundledRawBaseCnt})` : 'Delivery Included')}${chip('overtime', otRawBaseCnt > 0 ? `Overtime (${otRawBaseCnt})` : 'Overtime')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button></div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('bundled', bundledRawBaseCnt > 0 ? `Delivery Included (${bundledRawBaseCnt})` : 'Delivery Included')}${chip('overtime', otRawBaseCnt > 0 ? `Overtime (${otRawBaseCnt})` : 'Overtime')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${renderDateShiftChipsHtml(rawShiftStats)}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button></div>
           </div>
           <div style="display:flex;gap:5px;flex-wrap:nowrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} AP</button>
@@ -42048,8 +42105,11 @@
     const over60CustSet = new Set(custAll.filter(c => Number(c.ar_60_plus || 0) > 0).map(c => norm(c.Customer)));
     const vatRegCustSet = new Set(custAll.filter(c => c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0).map(c => norm(c.Customer)));
     const base = filterRecords(SEED.records.receipts);
+    const rcptShiftStats = countDateShiftedRows(base);
     const rcpts = sortRows(base.filter(r => {
       if (STATE.chipFilter === 'app') return isAppRecord(r);
+      if (STATE.chipFilter === 'date_shifted') return isRowDateShifted(r);
+      if (STATE.chipFilter === 'cross_month_shift') return isRowCrossMonthShifted(r);
       if (STATE.chipFilter === 'settlement_only') return receiptKind(r) === 'Settlement';
       if (STATE.chipFilter === 'vat_rec') return receiptKind(r) === 'VAT received';
       if (STATE.chipFilter === 'open_ar') return openArCustSet.has(norm(r.customer));
@@ -42271,7 +42331,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, customer, invoice #, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${canArBooks ? `${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}` : ''}${canTax ? chip('vat_reg', '11% VAT') : ''}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${canArBooks ? `${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}` : ''}${canTax ? chip('vat_reg', '11% VAT') : ''}${renderDateShiftChipsHtml(rcptShiftStats)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="arCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="customers" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior, FIFO Aging &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
@@ -42598,8 +42658,11 @@
     const cashSupSet = new Set(supAll.filter(s => Math.abs(Number(s.cash_expense || 0)) > 0.005).map(s => norm(s.Supplier)));
     const ivaSupSet = new Set(supAll.filter(s => s.IVA === 'Yes').map(s => norm(s.Supplier)));
     const base = filterRecords(SEED.records.settlements);
+    const settleShiftStats = countDateShiftedRows(base);
     const spays = sortRows(base.filter(r => {
       if (STATE.chipFilter === 'app') return isAppRecord(r);
+      if (STATE.chipFilter === 'date_shifted') return isRowDateShifted(r);
+      if (STATE.chipFilter === 'cross_month_shift') return isRowCrossMonthShifted(r);
       if (STATE.chipFilter === 'payments_only') return settlementKind(r) === 'Payment';
       if (STATE.chipFilter === 'vat_paid') return settlementKind(r) === 'VAT paid';
       if (STATE.chipFilter === 'open_ap') return openApSupSet.has(norm(r.supplier));
@@ -42720,7 +42783,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, supplier, hauler, vendor, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Transport Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Transport Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${renderDateShiftChipsHtml(settleShiftStats)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="apPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="suppliers" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
@@ -42933,13 +42996,14 @@
     const hasExpColFilters = Boolean((STATE.colFilters && STATE.colFilters.expenses && Object.keys(STATE.colFilters.expenses).length) || getRegDrill('expenses'));
     const isDefaultExpAgg = !String(STATE.search || '').trim() && (STATE.chipFilter || 'all') === 'all' && !hasExpColFilters;
     const expCacheKey = isDefaultExpAgg
-      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.expenses) || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.dateMode}|${STATE.officialBookScope ? 1 : 0}|${base.length}|${base[0] ? (base[0].id + ':' + base[0].amount + ':' + base[0].pending_price) : ''}|${base[base.length - 1] ? (base[base.length - 1].id + ':' + base[base.length - 1].amount + ':' + base[base.length - 1].pending_price) : ''}|${(SEED.records.expenses || []).length}|${(SEED.records.expense_items || []).length}|${(SEED.records.items || []).length}`
+      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.expenses) || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${STATE.dateMode}|${STATE.officialBookScope ? 1 : 0}|${base.length}|${base[0] ? (base[0].id + ':' + base[0].amount + ':' + base[0].pending_price) : ''}|${base[base.length - 1] ? (base[base.length - 1].id + ':' + base[base.length - 1].amount + ':' + base[base.length - 1].pending_price) : ''}|${(SEED.records.expenses || []).length}|${(SEED.records.expense_items || []).length}|${(SEED.records.items || []).length}`
       : '';
     const cachedExpAgg = (expCacheKey && _expViewAggCache.key === expCacheKey) ? _expViewAggCache.val : null;
 
     const pendingPriceCnt = cachedExpAgg ? cachedExpAgg.pendingPriceCnt : base.filter(isPendingPriceExpense).length;
     const storedWhCnt = cachedExpAgg ? cachedExpAgg.storedWhCnt : base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
     const withItemsCnt = cachedExpAgg ? cachedExpAgg.withItemsCnt : base.filter(x => Boolean(x.item_summary) && expenseSign(x) !== 0).length;
+    const expShiftStats = (cachedExpAgg && cachedExpAgg.expShiftStats) ? cachedExpAgg.expShiftStats : countDateShiftedRows(base);
     const expRows = sortRows(STATE.chipFilter === 'all' ? base : base.filter(x => {
       if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
@@ -42948,6 +43012,8 @@
       if (STATE.chipFilter === 'fleet_exp') return Boolean(x.equipment) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'stored_wh') return Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'overhead_exp') return !x.equipment && !x.stored_in_warehouse && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'date_shifted') return isRowDateShifted(x);
+      if (STATE.chipFilter === 'cross_month_shift') return isRowCrossMonthShifted(x);
       if (STATE.chipFilter === 'app') return isAppRecord(x);
       return true;
     }), 'expenses', 'date', 'desc');
@@ -43142,7 +43208,7 @@
         _expViewAggCache = {
           key: expCacheKey,
           val: {
-            pendingPriceCnt, storedWhCnt, withItemsCnt,
+            pendingPriceCnt, storedWhCnt, withItemsCnt, expShiftStats,
             sumExp, sumCashExp, sumCredExp, byCoExp,
             catAggVals, expMonths, expItemBase, expCatalogAll, itemGroupAggMap, catalogMap,
             purchasedCatalogCnt, sparePartsCatCnt, oilsCatCnt, toolsCatCnt, inWhCatCnt,
@@ -43325,7 +43391,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search category, subcategory, item, supplier, equipment, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('with_items', `With Items (${withItemsCnt})`)}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('with_items', `With Items (${withItemsCnt})`)}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${renderDateShiftChipsHtml(expShiftStats)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="documents">${ic('receipt')} Document Vault</button>
@@ -99508,7 +99574,7 @@
     const repDateField = fld('Reporting Date *', inp('f_repdate', 'date', today, dateAttrs), {
       id: 'wrap_f_repdate',
       hidden: true,
-      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><span class="hint" id="hint_repdate"></span></div>`
+      afterHtml: `<div class="repdate-bar"><div class="repdate-actions"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><button type="button" class="repdate-pin-btn" id="pinBatchRepDateBtn" aria-pressed="false" data-ui-tip="Keep this Reporting Date pinned across consecutive new entries until cleared">${ic('calendar')} Pin for Batch</button></div><span class="hint" id="hint_repdate"></span></div>`
     });
     const initTime = nowHHMM();
     const initOt = isOvertimeTime(initTime);
@@ -101777,6 +101843,7 @@
       }
     }
     FORM_UI.lastDate = d;
+    syncCatchUpBatchDateBar();
     const backdateDays = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
     const skipLockedPendBackdate = Boolean((STATE.editingPendingExpenseId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date'));
     if (d > today) setHint('hint_date', 'Future dates are blocked', 'crit');
@@ -117529,6 +117596,31 @@
         recalcForm();
       });
     }
+    const pinBatchBtn = $('pinBatchRepDateBtn');
+    if (pinBatchBtn) {
+      pinBatchBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const curRep = val('f_repdate');
+        if (STATE.catchUpBatchRepDate && curRep === STATE.catchUpBatchRepDate) {
+          clearCatchUpBatchRepDate({ resetCurrentForm: false });
+          return;
+        }
+        if (!isValidBatchRepDate(curRep)) {
+          toast(`Reporting Date must be between ${fmtDateDMY(MIN_DATE)} and today`, 'err');
+          return;
+        }
+        if (curRep === val('f_date')) {
+          toast('Pick a Reporting Date different from Transaction Date first', 'warn');
+          return;
+        }
+        setCatchUpBatchRepDate(curRep);
+        if (entryModalUserChangedValue() === false) {
+          FORM_UI.userInteracted = false;
+          FORM_UI.initialModalSig = getEntryModalStateSignature();
+          markEntryModalBaseline();
+        }
+      });
+    }
     const toggleAhBtn = $('toggleAfterHoursBtn');
     if (toggleAhBtn) {
       toggleAhBtn.addEventListener('click', ev => {
@@ -126376,6 +126468,140 @@
     closeEntryModal(true);
   }
 
+  function isValidBatchRepDate(iso) {
+    const s = String(iso || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) && s >= MIN_DATE && s <= todayISO();
+  }
+
+  function canUseCatchUpBatchDateInCurrentModal() {
+    if (STATE.kioskLocked) return false;
+    if (STATE.editingRecord) return false;
+    if (STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) return false;
+    const modal = $('entryModal');
+    const body = $('modalBody');
+    const rEl = $('f_repdate');
+    return Boolean(modal && !modal.hidden && body && rEl && body.contains(rEl));
+  }
+
+  function syncCatchUpBatchDateBar() {
+    const bar = $('entryBatchDateBar');
+    const pinBtn = $('pinBatchRepDateBtn');
+    const canPin = canUseCatchUpBatchDateInCurrentModal();
+    const pinned = isValidBatchRepDate(STATE.catchUpBatchRepDate) ? STATE.catchUpBatchRepDate : '';
+    const curRep = val('f_repdate');
+    const curDate = val('f_date');
+
+    if (bar) {
+      const showBar = Boolean(pinned && canPin);
+      bar.hidden = !showBar;
+      if (showBar) {
+        const badgeEl = $('entryBatchDateBadge');
+        if (badgeEl) {
+          badgeEl.innerHTML = `${ic('calendar')} <span>Catch-Up Batch Date</span> · <span data-no-i18n="1">${esc(fmtDateDMY(pinned))}</span>`;
+        }
+        const inpEl = $('batchRepDateInput');
+        if (inpEl) {
+          inpEl.min = MIN_DATE;
+          inpEl.max = todayISO();
+          if (inpEl.value !== pinned) inpEl.value = pinned;
+        }
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+          window.MFG_I18N.translateDom(bar);
+        }
+      }
+    }
+
+    if (pinBtn) {
+      if (!canPin) {
+        pinBtn.hidden = true;
+      } else {
+        pinBtn.hidden = false;
+        const isPinnedNow = Boolean(pinned && curRep === pinned);
+        pinBtn.classList.toggle('is-pinned', isPinnedNow);
+        pinBtn.setAttribute('aria-pressed', isPinnedNow ? 'true' : 'false');
+        pinBtn.disabled = !isPinnedNow && (!isValidBatchRepDate(curRep) || curRep === curDate);
+        pinBtn.innerHTML = `${ic('calendar')} <span>${isPinnedNow ? 'Pinned for Batch' : 'Pin for Batch'}</span>`;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+          window.MFG_I18N.translateDom(pinBtn);
+        }
+      }
+    }
+  }
+
+  function setCatchUpBatchRepDate(iso) {
+    const v = String(iso || '').trim();
+    if (!isValidBatchRepDate(v)) return false;
+    STATE.catchUpBatchRepDate = v;
+    STATE.catchUpBatchScope = String(STATE.company || '');
+    syncCatchUpBatchDateBar();
+    return true;
+  }
+
+  function clearCatchUpBatchRepDate({ resetCurrentForm = false } = {}) {
+    STATE.catchUpBatchRepDate = '';
+    STATE.catchUpBatchScope = '';
+    if (resetCurrentForm && $('entryModal') && !$('entryModal').hidden && canUseCatchUpBatchDateInCurrentModal()) {
+      const rEl = $('f_repdate');
+      const dVal = val('f_date');
+      if (rEl && dVal) rEl.value = dVal;
+      FORM_UI.showRepDate = (STATE.modalForm === 'attendance');
+      FORM_UI.repDateManual = false;
+      recalcForm();
+      return;
+    }
+    syncCatchUpBatchDateBar();
+  }
+
+  function wireEntryBatchDateBarDom() {
+    const bar = $('entryBatchDateBar');
+    if (!bar || bar.dataset.batchDateWired) return;
+    bar.dataset.batchDateWired = '1';
+    const inpEl = $('batchRepDateInput');
+    const clrBtn = $('clearBatchRepDateBtn');
+    if (inpEl) {
+      inpEl.addEventListener('change', () => {
+        const nextIso = String(inpEl.value || '').trim();
+        if (!isValidBatchRepDate(nextIso)) {
+          if (isValidBatchRepDate(STATE.catchUpBatchRepDate)) inpEl.value = STATE.catchUpBatchRepDate;
+          toast(`Catch-Up Batch Date must be between ${fmtDateDMY(MIN_DATE)} and today`, 'err');
+          return;
+        }
+        if (nextIso === val('f_date')) {
+          if (isValidBatchRepDate(STATE.catchUpBatchRepDate)) inpEl.value = STATE.catchUpBatchRepDate;
+          toast('Pick a Reporting Date different from Transaction Date first', 'warn');
+          return;
+        }
+        const wasClean = entryModalUserChangedValue() === false;
+        STATE.catchUpBatchRepDate = nextIso;
+        STATE.catchUpBatchScope = String(STATE.company || '');
+        if (canUseCatchUpBatchDateInCurrentModal() && $('f_repdate')) {
+          $('f_repdate').value = nextIso;
+          FORM_UI.showRepDate = true;
+          FORM_UI.repDateManual = true;
+          recalcForm();
+          if (wasClean && entryModalUserChangedValue() === false) {
+            FORM_UI.userInteracted = false;
+            FORM_UI.initialModalSig = getEntryModalStateSignature();
+            markEntryModalBaseline();
+          }
+          return;
+        }
+        syncCatchUpBatchDateBar();
+      });
+    }
+    if (clrBtn) {
+      clrBtn.addEventListener('click', () => {
+        const wasClean = entryModalUserChangedValue() === false;
+        clearCatchUpBatchRepDate({ resetCurrentForm: true });
+        if (wasClean && entryModalUserChangedValue() === false) {
+          FORM_UI.userInteracted = false;
+          FORM_UI.initialModalSig = getEntryModalStateSignature();
+          markEntryModalBaseline();
+        }
+      });
+    }
+  }
+
   function wireEntryUnsavedPromptDom() {
     const promptEl = $('entryUnsavedPrompt');
     if (!promptEl || promptEl.dataset.unsavedWired) return;
@@ -126415,6 +126641,7 @@
       window.MFG_ASK.closeDayCloseDigest();
     }
     wireEntryUnsavedPromptDom();
+    wireEntryBatchDateBarDom();
     if (!(opts && opts.forceSwitch)) {
       const modalCheck = $('entryModal');
       if (modalCheck && !modalCheck.hidden && isEntryModalDirty()) {
@@ -126896,7 +127123,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#nearCopyAmtJump, #ideNearCopyAmtJump, .party-typo-keep-btn, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#pinBatchRepDateBtn, #nearCopyAmtJump, #ideNearCopyAmtJump, .party-typo-keep-btn, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -127199,6 +127426,16 @@
       }
       recalcForm();
     }
+    const prefillHasRepDate = Boolean(prefill && typeof prefill === 'object' && (prefill.rep_date || prefill.repDate || prefill.set_date || prefill.setDate));
+    if (!editTargetRow && !pendingTargetRow && !prefillHasRepDate && isValidBatchRepDate(STATE.catchUpBatchRepDate)) {
+      const rEl = $('f_repdate');
+      if (rEl) {
+        rEl.value = STATE.catchUpBatchRepDate;
+        FORM_UI.showRepDate = true;
+        FORM_UI.repDateManual = (STATE.catchUpBatchRepDate !== val('f_date'));
+        recalcForm();
+      }
+    }
     if (window.MFG_SMART_SCAN) {
       if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') window.MFG_SMART_SCAN.resetModalState();
       if (typeof window.MFG_SMART_SCAN.mountOnEntryModal === 'function') window.MFG_SMART_SCAN.mountOnEntryModal();
@@ -127408,6 +127645,7 @@
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(modal || document.body);
     }
+    syncCatchUpBatchDateBar();
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
   }
@@ -149034,6 +149272,7 @@
     if (STATE.company && STATE.company !== DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
+    if (STATE.catchUpBatchRepDate) clearCatchUpBatchRepDate();
     STATE.company = DEMO_COMPANY_KEY;
     STATE.demoCompanyIndustry = indId;
     if (!prevDemo) syncDemoScopeDataState();
@@ -149105,6 +149344,9 @@
       syncDemoScopeDataState();
     }
     if (prevCompany !== coKey) {
+      if (STATE.catchUpBatchRepDate && STATE.catchUpBatchScope && String(coKey || '') !== STATE.catchUpBatchScope) {
+        clearCatchUpBatchRepDate();
+      }
       STATE.cfTillScrubDate = '';
       STATE.cfTillScrubKey = '';
       if (window.MFG_ASK && typeof window.MFG_ASK.closeDayCloseDigest === 'function') window.MFG_ASK.closeDayCloseDigest();
@@ -149825,7 +150067,10 @@
       const hit = catalog.find(c => c.name.toLowerCase() === n.toLowerCase());
       return hit && hit.industry === String(STATE.company).slice(9);
     });
-    if (!STATE.kioskLocked && !allowedCos.includes(STATE.company) && !isPermittedIndScope) STATE.company = allowedCos[0];
+    if (!STATE.kioskLocked && !allowedCos.includes(STATE.company) && !isPermittedIndScope) {
+      STATE.company = allowedCos[0];
+      clearCatchUpBatchRepDate();
+    }
     const activeIndNow = getActiveIndustry(STATE.company);
     let compatViewNow = STATE.kioskLocked ? 'kiosks' : resolveIndustryCompatibleView(STATE.view, activeIndNow);
     if (!STATE.kioskLocked && !canViewView(compatViewNow, user)) {
@@ -150329,6 +150574,7 @@
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
+    clearCatchUpBatchRepDate();
     STATE.authed = false;
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
@@ -150541,6 +150787,7 @@
     }
     closeTabletKeysModal();
     resetQuoteDrafts();
+    clearCatchUpBatchRepDate();
     // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
@@ -151117,6 +151364,9 @@
     const prevSeatObj = STATE.authed ? activeUser() : null;
     const prevSeatEmail = (prevSeatObj && prevSeatObj.email) ? norm(prevSeatObj.email) : '';
     const nextSeatEmail = norm(finalAuthedUser && finalAuthedUser.email);
+    if (!prevSeatEmail || prevSeatEmail !== nextSeatEmail) {
+      clearCatchUpBatchRepDate();
+    }
     if (prevSeatEmail && prevSeatEmail !== nextSeatEmail && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
       try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
     }
@@ -151151,7 +151401,10 @@
     STATE.sessions = STATE.sessions.slice(0, 50);
     saveLocalAuthAndRecords();
 
-    if (!getAllowedCompanyKeys(finalAuthedUser).includes(STATE.company)) STATE.company = getAllowedCompanyKeys(finalAuthedUser)[0];
+    if (!getAllowedCompanyKeys(finalAuthedUser).includes(STATE.company)) {
+      STATE.company = getAllowedCompanyKeys(finalAuthedUser)[0];
+      clearCatchUpBatchRepDate();
+    }
     if (!canViewView(STATE.view, finalAuthedUser)) STATE.view = defaultViewFor(finalAuthedUser);
     closeAuthGate();
     STATE.search = '';

@@ -2597,6 +2597,16 @@ table.m-grid tfoot tr td {
   border-color: var(--brass);
   font-weight: 600;
 }
+.filter-chip.chip-date-shift {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.filter-chip.chip-date-shift svg.ic {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
 
 /* ==================== PRINTABLE A4 STATEMENT SHEET ==================== */
 .statements-grid {
@@ -15796,7 +15806,8 @@ td.user-role-perm-cell {
   margin-top: 0;
 }
 .repdate-toggle-btn,
-.repdate-reset-btn {
+.repdate-reset-btn,
+.repdate-pin-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -15811,6 +15822,25 @@ td.user-role-perm-cell {
   line-height: 1.35;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.repdate-pin-btn svg.ic {
+  width: 11px;
+  height: 11px;
+  margin-right: 0;
+  flex-shrink: 0;
+}
+.repdate-pin-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.repdate-pin-btn.is-pinned {
+  border-style: solid;
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: #8A5D12;
+}
+:root[data-theme="dark"] .repdate-pin-btn.is-pinned {
+  color: #F3C677;
 }
 .repdate-bar.has-afterhours .repdate-actions {
   gap: 4px;
@@ -15828,7 +15858,8 @@ td.user-role-perm-cell {
   flex-shrink: 0;
 }
 .repdate-toggle-btn:hover,
-.repdate-reset-btn:hover {
+.repdate-reset-btn:hover,
+.repdate-pin-btn:not(:disabled):hover {
   border-color: var(--brass);
   background: var(--brass-tint);
   color: var(--ink);
@@ -32464,8 +32495,111 @@ body.kiosk-locked.kiosk-night-sleep .app-shell {
 }
 
 /* ==================== UNSAVED ENTRY MID-WAY SWITCH GUARD (#entryUnsavedPrompt) ==================== */
+.entry-batch-date-bar[hidden],
 .entry-unsaved-prompt[hidden] {
   display: none !important;
+}
+.entry-batch-date-bar {
+  position: sticky;
+  top: 0;
+  z-index: 34;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px 22px;
+  background: linear-gradient(180deg, #FFFDF7 0%, #FDF6E7 100%);
+  border-bottom: 1px solid rgba(200, 157, 84, 0.45);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .entry-batch-date-bar {
+  background: linear-gradient(180deg, #272017 0%, #211B13 100%);
+  border-bottom-color: rgba(217, 165, 74, 0.4);
+}
+.entry-batch-date-copy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.entry-batch-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(200, 157, 84, 0.22);
+  border: 1px solid rgba(184, 130, 40, 0.45);
+  color: #8A5D12;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.entry-batch-date-badge svg.ic {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+:root[data-theme="dark"] .entry-batch-date-badge {
+  background: rgba(217, 165, 74, 0.2);
+  border-color: rgba(217, 165, 74, 0.45);
+  color: #F3C677;
+}
+.entry-batch-date-text {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.entry-batch-date-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.entry-batch-date-input {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--brass-border);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.entry-batch-date-clear {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+@media (max-width: 768px) {
+  .entry-batch-date-bar {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+  .entry-batch-date-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .entry-batch-date-input {
+    -webkit-appearance: none;
+    appearance: none;
+    font-size: 16px !important;
+    height: 36px;
+    flex: 1 1 auto;
+  }
+  .entry-batch-date-clear {
+    height: 36px;
+  }
 }
 .entry-unsaved-prompt {
   position: sticky;

@@ -867,7 +867,7 @@
     const collapsibleRepDateField = () => fld('Reporting Date *', inp('f_repdate', 'date', today, dateAttrs), {
       id: 'wrap_f_repdate',
       hidden: true,
-      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><span class="hint" id="hint_repdate"></span></div>`
+      afterHtml: `<div class="repdate-bar"><div class="repdate-actions"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><button type="button" class="repdate-pin-btn" id="pinBatchRepDateBtn" aria-pressed="false" data-ui-tip="Keep this Reporting Date pinned across consecutive new entries until cleared">${ic('calendar')} Pin for Batch</button></div><span class="hint" id="hint_repdate"></span></div>`
     });
     const fIdx = (helpers && typeof helpers.getFreqIndex === 'function')
       ? helpers.getFreqIndex()
@@ -2325,6 +2325,7 @@
             ${fld('Reporting Date (Set Date) *', inp('f_repdate', 'date', today, dateAttrs), {
               id: 'wrap_f_repdate',
               labelRightHtml: attStepBtns,
+              afterHtml: `<div class="repdate-bar"><div class="repdate-actions"><button type="button" class="repdate-pin-btn" id="pinBatchRepDateBtn" aria-pressed="false" data-ui-tip="Keep this Reporting Date pinned across consecutive new entries until cleared">${ic('calendar')} Pin for Batch</button></div></div>`,
               hintId: 'hint_att_date',
               hint: ''
             })}
