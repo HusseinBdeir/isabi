@@ -1,0 +1,17 @@
+{
+ "app": {
+  "branch": "wt/overpaid-payables-sentinel",
+  "sha": "8a04923048526e9e082ec2e78d3a1111b6a31e8f"
+ },
+ "gates": [
+  "isabi-app: python build/overpaid_payables_audit.py --dry",
+  "isabi-app: node build/verify_overpaid_payables.mjs"
+ ],
+ "holder": "agy-86606bbe (overpaid-payables-sentinel)",
+ "id": "20261125T002041Z-441112e3",
+ "pc": "Theo",
+ "queuedAt": "2026-11-25T00:20:41Z",
+ "seenAt": "2026-11-25T00:20:41Z",
+ "state": "waiting",
+ "summary": "Overpaid & unbacked payables Sentinel (S20/#32), #raw/#suppliers/#expenses flags, Settlement Notes guard & top-up audit across all 6 industries"
+}
