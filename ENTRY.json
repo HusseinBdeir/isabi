@@ -4,9 +4,9 @@
   "sha": "0a7631c49ef8c2b98b025170e34dad710c68ce66"
  },
  "batch": {
-  "at": "2026-11-25T01:27:19Z",
-  "holder": "agy-d1737910 (kiosk-sw-heal-lead)",
-  "lockId": "b4436448c1714b17ac7e8f66b5f3d62a",
+  "at": "2026-11-25T02:44:08Z",
+  "holder": "THEO hbdei (batch-repdate-shift)",
+  "lockId": "45f61cc48cbc499394735802f6dcb97b",
   "version": "19.6.439"
  },
  "gates": [
