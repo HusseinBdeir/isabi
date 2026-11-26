@@ -3861,12 +3861,43 @@ finally:
     const e36OptStatusEvil = await httpReq('OPTIONS', '/api/status', null, { Origin: 'https://evil.example' });
     const e36OptKioskGh = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://husseinbdeir.github.io' });
     const e36OptUsersGh = await httpReq('OPTIONS', '/app/api/users', null, { Origin: 'https://husseinbdeir.github.io' });
+    const e36OptKioskPos = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://pos.isabisystems.com' });
+    const e36OptUsersPos = await httpReq('OPTIONS', '/app/api/users', null, { Origin: 'https://pos.isabisystems.com' });
+    const e36OptKioskAtt = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://attendance.isabisystems.com' });
+    const e36OptUsersAtt = await httpReq('OPTIONS', '/app/api/users', null, { Origin: 'https://attendance.isabisystems.com' });
+    const e36OptRootKioskPos = await httpReq('OPTIONS', '/api/kiosk/verify', null, { Origin: 'https://pos.isabisystems.com' });
+    const e36OptKioskPrefixEvil = await httpReq('OPTIONS', '/app/api/kiosk-evil', null, { Origin: 'https://pos.isabisystems.com' });
+    const e36OptKioskHttpPos = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'http://pos.isabisystems.com' });
+    const e36OptKioskSpoofPos = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://pos.isabisystems.com.evil.example' });
+    const e36PostKioskPos = await httpReq('POST', '/app/api/kiosk/verify', { op: 'list_station_keys' }, {
+      Origin: 'https://pos.isabisystems.com',
+      Cookie: `isabi_edge_sess=${encodeURIComponent(ownerToken)}`
+    });
+    const e36PostKioskAtt = await httpReq('POST', '/app/api/kiosk/verify', { op: 'list_station_keys' }, {
+      Origin: 'https://attendance.isabisystems.com',
+      Cookie: `isabi_edge_sess=${encodeURIComponent(ownerToken)}`
+    });
+    const e36PostAskPosDemo = await httpReq('POST', '/api/ask', { question: 'hello' }, {
+      Origin: 'https://pos.isabisystems.com',
+      'X-ISABI-Demo': '1'
+    });
     const e36CorsStrictOk =
       e36OptAskEvil.status === 204 && !e36OptAskEvil.headers['access-control-allow-origin'] &&
       e36OptKioskEvil.status === 204 && !e36OptKioskEvil.headers['access-control-allow-origin'] &&
       e36OptStatusEvil.status === 204 && !e36OptStatusEvil.headers['access-control-allow-origin'] &&
       e36OptKioskGh.status === 204 && e36OptKioskGh.headers['access-control-allow-origin'] === 'https://husseinbdeir.github.io' &&
-      e36OptUsersGh.status === 204 && !e36OptUsersGh.headers['access-control-allow-origin'];
+      e36OptUsersGh.status === 204 && !e36OptUsersGh.headers['access-control-allow-origin'] &&
+      e36OptKioskPos.status === 204 && e36OptKioskPos.headers['access-control-allow-origin'] === 'https://pos.isabisystems.com' &&
+      e36OptUsersPos.status === 204 && !e36OptUsersPos.headers['access-control-allow-origin'] &&
+      e36OptKioskAtt.status === 204 && e36OptKioskAtt.headers['access-control-allow-origin'] === 'https://attendance.isabisystems.com' &&
+      e36OptUsersAtt.status === 204 && !e36OptUsersAtt.headers['access-control-allow-origin'] &&
+      e36OptRootKioskPos.status === 204 && e36OptRootKioskPos.headers['access-control-allow-origin'] === 'https://pos.isabisystems.com' &&
+      e36OptKioskPrefixEvil.status === 204 && !e36OptKioskPrefixEvil.headers['access-control-allow-origin'] &&
+      e36OptKioskHttpPos.status === 204 && !e36OptKioskHttpPos.headers['access-control-allow-origin'] &&
+      e36OptKioskSpoofPos.status === 204 && !e36OptKioskSpoofPos.headers['access-control-allow-origin'] &&
+      e36PostKioskPos.status === 401 && e36PostKioskPos.headers['access-control-allow-origin'] === 'https://pos.isabisystems.com' && /Origin/i.test(String(e36PostKioskPos.headers['vary'] || '')) &&
+      e36PostKioskAtt.status === 401 && e36PostKioskAtt.headers['access-control-allow-origin'] === 'https://attendance.isabisystems.com' && /Origin/i.test(String(e36PostKioskAtt.headers['vary'] || '')) &&
+      e36PostAskPosDemo.status === 403 && !e36PostAskPosDemo.headers['access-control-allow-origin'];
 
     // Seed multi-BU clerk + Custom unlock seat for override boundary checks
     await httpReq('POST', '/app/api/users', {
@@ -4054,7 +4085,18 @@ finally:
           kioskEvil: [e36OptKioskEvil.status, e36OptKioskEvil.headers['access-control-allow-origin']],
           statusEvil: [e36OptStatusEvil.status, e36OptStatusEvil.headers['access-control-allow-origin']],
           kioskGh: [e36OptKioskGh.status, e36OptKioskGh.headers['access-control-allow-origin']],
-          usersGh: [e36OptUsersGh.status, e36OptUsersGh.headers['access-control-allow-origin']]
+          usersGh: [e36OptUsersGh.status, e36OptUsersGh.headers['access-control-allow-origin']],
+          kioskPos: [e36OptKioskPos.status, e36OptKioskPos.headers['access-control-allow-origin']],
+          usersPos: [e36OptUsersPos.status, e36OptUsersPos.headers['access-control-allow-origin']],
+          kioskAtt: [e36OptKioskAtt.status, e36OptKioskAtt.headers['access-control-allow-origin']],
+          usersAtt: [e36OptUsersAtt.status, e36OptUsersAtt.headers['access-control-allow-origin']],
+          rootKioskPos: [e36OptRootKioskPos.status, e36OptRootKioskPos.headers['access-control-allow-origin']],
+          prefixEvil: [e36OptKioskPrefixEvil.status, e36OptKioskPrefixEvil.headers['access-control-allow-origin']],
+          httpPos: [e36OptKioskHttpPos.status, e36OptKioskHttpPos.headers['access-control-allow-origin']],
+          spoofPos: [e36OptKioskSpoofPos.status, e36OptKioskSpoofPos.headers['access-control-allow-origin']],
+          postKioskPos: [e36PostKioskPos.status, e36PostKioskPos.headers['access-control-allow-origin'], e36PostKioskPos.headers['vary']],
+          postKioskAtt: [e36PostKioskAtt.status, e36PostKioskAtt.headers['access-control-allow-origin'], e36PostKioskAtt.headers['vary']],
+          postAskPosDemo: [e36PostAskPosDemo.status, e36PostAskPosDemo.headers['access-control-allow-origin']]
         },
         customKeys: [e36CustomMalfUom.status, e36CustomAmount.status, e36CustomPriceDenied.status],
         crossBuWrongPin: e36CrossBuWrongPin.status,
