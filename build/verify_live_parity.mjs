@@ -91,7 +91,9 @@ const RETIRED_RELEASE_ANCHORS = new Set([
   'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfTillValTot', 'cfTillStartWarn', 'cfSiblingTillOff',
   'cfTillScrub', 'cfTillScrubDayBtn', 'cfTillScrubHover', 'cfTillScrubNext', 'cfTillScrubPrev',
   'cfTillScrubRange', 'cfTillScrubSegPill', 'cfTillScrubUsd', 'cfTillScrubZoom',
-  'cfTillScrubDate', 'cfTillScrubIn', 'cfTillScrubOut', 'cfTillScrubLbp', 'cfTillScrubReset'
+  'cfTillScrubDate', 'cfTillScrubIn', 'cfTillScrubOut', 'cfTillScrubLbp', 'cfTillScrubReset',
+  // Entry modal Module switcher: retired v19.6.435 #modalIndustryQuickBar and replaced #ideUnsavedPrompt with #indUnsavedPrompt
+  'modalIndustryQuickBar', 'ideUnsavedPrompt'
 ]);
 
 const NON_VISUAL_DOM_IDS = new Set([
@@ -110,7 +112,7 @@ const CONDITIONAL_ROUTE_OR_STATE_IDS = new Set([
   'thermalPrintModal', 'docCamModal', 'docCamCardSubBar', 'docCamTopDeck', 'docCamConfirmBtn',
   'docCamGuide', 'docCamPhoneQrBtn', 'pscCardSubBar', 'phoneScanCompanionShell',
   'ssPageSwitcher', 'ssSplitPreviewPane', 'faceCamVideo', 'faceEnrollModal',
-  'entryUnsavedPrompt', 'telHistoryReconDrawer',
+  'entryUnsavedPrompt', 'indUnsavedPrompt', 'telHistoryReconDrawer',
   // Conditional transient states (mutually exclusive reopen toggle, fuzzy hint, pinned cover note, tour spotlight, folded/chip-only Cash Flow panels)
   'hldReopenAllEntitiesBtn', 'pgTourSpotlight', 'pgTourCard', 'pgInlineAnswerBox', 'stmtPinnedCoverNote', 'aieFuzzyPartyHint',
   'cfAppOnlyStrip', 'cfSalesPanel', 'cfExpPanel', 'cfBorPanel', 'cfBorUnsplitRow',
@@ -865,9 +867,13 @@ async function main() {
       await test('insurance-period-close', INS, 'ledger', toggleIn('insPeriodClosePanel'), ['insPeriodClosePanel', 'insAiRenewalBriefBtn']);
 
       // 27-29: + New Entry Voice-to-Form & Batch Table (Manufacturing + Sibling Industry across tab switches)
-      await test('mfg-new-entry-voice-and-batch', M, 'sales', newEntryBtn, ['entryModal', 'entrySmartScanBar', 'aieMfgVoiceStrip', 'aieMfgOpenBatchBtn', 'entryAttachmentsBar'], {
+      await test('mfg-new-entry-voice-and-batch', M, 'sales', newEntryBtn, ['entryModal', 'entryModuleSwitchBtn', 'entryMobAiQuickBar', 'entrySmartScanBar', 'aieMfgVoiceStrip', 'aieMfgOpenBatchBtn', 'entryAttachmentsBar'], {
         wait: 260,
-        afterClick: async row => {
+        afterClick: async (row, captureExpected) => {
+          const qScan = document.querySelector('#entryMobAiQuickBar [data-mob-ai="scan"]');
+          if (qScan) { qScan.click(); await sleep(80); captureExpected('mfg-scan-open'); scanAllIds('mfg-scan-open'); }
+          const qVoice = document.querySelector('#entryMobAiQuickBar [data-mob-ai="voice"]');
+          if (qVoice) { qVoice.click(); await sleep(80); captureExpected('mfg-voice-open'); scanAllIds('mfg-voice-open'); }
           const batchBtn = $('aieMfgOpenBatchBtn');
           if (batchBtn && vis(batchBtn)) {
             batchBtn.click();
@@ -905,9 +911,16 @@ async function main() {
             await sleep(80);
             scanAllIds('mfg-eq-vin-hint');
           }
-          const extdGrp = document.querySelector('#entryModal [data-ind-quick-form="extended"], #entryModal [data-pa-group="extended"]');
-          if (extdGrp) {
-            extdGrp.click();
+          const treGrp = document.querySelector('#entryModal [data-pa-group="treasury"]');
+          if (treGrp) {
+            treGrp.click();
+            await sleep(90);
+            const d1 = $('unsavedEntryDiscardBtn');
+            if (d1 && vis(d1)) { d1.click(); await sleep(80); }
+          }
+          const extdBtn = document.querySelector('#entryModal .modal-tab[data-form="extended"]');
+          if (extdBtn) {
+            extdBtn.click();
             await sleep(120);
             const discard = $('unsavedEntryDiscardBtn');
             if (discard && vis(discard)) { discard.click(); await sleep(100); }
@@ -928,15 +941,14 @@ async function main() {
           g.click();
           await sleep(60);
         }
-        const extTab = document.querySelector('#entryModal .modal-tab[data-form="external"]');
+        const qExtd = document.querySelector('#entryModal .modal-tab[data-form="extended"]');
+        const extTab = qExtd || document.querySelector('#entryModal .modal-tab[data-form="external"]');
         if (extTab) {
           extTab.click();
           await sleep(120);
           const discard = $('unsavedEntryDiscardBtn');
           if (discard && vis(discard)) { discard.click(); await sleep(100); }
         }
-        const qExtd = document.querySelector('#entryModal [data-ind-quick-form="extended"]');
-        if (qExtd && vis(qExtd)) { qExtd.click(); await sleep(120); }
         const coSelAll = $('f_company');
         if (coSelAll && !vis($('wrap_ext_kind'))) {
           coSelAll.value = 'Bdeir Holding';
@@ -948,9 +960,13 @@ async function main() {
         await closeAll();
       }
 
-      await test('sibling-new-entry-voice-and-tab-switch', HSP, 'hsp_revenue', newEntryBtn, ['indDomainEntryModal', 'indEntrySmartScanBar', 'aieIndVoiceStrip', 'aieIndOpenBatchBtn', 'indEntryAttachmentsBar'], {
+      await test('sibling-new-entry-voice-and-tab-switch', HSP, 'hsp_revenue', newEntryBtn, ['indDomainEntryModal', 'ideModuleSwitchBtn', 'indMobAiQuickBar', 'indEntrySmartScanBar', 'aieIndVoiceStrip', 'aieIndOpenBatchBtn', 'indEntryAttachmentsBar'], {
         wait: 260,
-        afterClick: async row => {
+        afterClick: async (row, captureExpected) => {
+          const qScan = document.querySelector('#indMobAiQuickBar [data-mob-ai="scan"]');
+          if (qScan) { qScan.click(); await sleep(80); captureExpected('ind-scan-open'); scanAllIds('ind-scan-open'); }
+          const qVoice = document.querySelector('#indMobAiQuickBar [data-mob-ai="voice"]');
+          if (qVoice) { qVoice.click(); await sleep(80); captureExpected('ind-voice-open'); scanAllIds('ind-voice-open'); }
           const altTab = Array.from(document.querySelectorAll('#indDomainEntryModal [data-ide-switch-form]'))
             .find(b => b.getAttribute('data-ide-switch-form') !== 'hsp_revenue');
           if (altTab) {
@@ -970,7 +986,7 @@ async function main() {
             if (g.classList.contains('active')) continue;
             g.click();
             await sleep(90);
-            const discG = $('ideUnsavedDiscardBtn');
+            const discG = $('unsavedIndDiscardBtn') || $('ideUnsavedDiscardBtn');
             if (discG && vis(discG)) { discG.click(); await sleep(90); }
             if (findTab()) break;
           }
@@ -980,7 +996,7 @@ async function main() {
           if (!tab.classList.contains('active')) {
             tab.click();
             await sleep(140);
-            const discT = $('ideUnsavedDiscardBtn');
+            const discT = $('unsavedIndDiscardBtn') || $('ideUnsavedDiscardBtn');
             if (discT && vis(discT)) { discT.click(); await sleep(100); }
           }
           await sleep(60);
