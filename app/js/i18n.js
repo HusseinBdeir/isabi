@@ -15922,7 +15922,35 @@
       "Outlet Revenue Breakdown": "تفصيل إيرادات المنافذ",
       "Outlet & Membership Breakdown": "تفصيل المنافذ والاشتراكات",
       "Other Outlets": "منافذ أخرى",
-      "TILLS MATCHED": "الصناديق مطابقة"
+      "TILLS MATCHED": "الصناديق مطابقة",
+      "Compare by Grade": "مقارنة حسب الصنف",
+      "Close Matrix": "إغلاق المصفوفة",
+      "CHEAPEST LANDED SOURCE BY AGGREGATE GRADE": "أرخص مصدر واصل حسب صنف المواد",
+      "CHEAPEST LANDED SOURCE BY AGGREGATE GRADE ($/M³)": "أرخص مصدر واصل حسب صنف المواد ($/م³)",
+      "Landed cost comparison by grade is restricted to seats with Expenses access.": "مقارنة التكلفة الواصلة حسب الصنف محصورة بصلاحية المصاريف.",
+      "Awaiting Haulage Rates": "بانتظار تسعيرة النقل",
+      "#1 Cheapest": "#1 الأرخص",
+      "(General Site)": "(موقع عام)",
+      "No active source has a complete landed rate for this grade yet.": "لا يوجد مصدر نشط بتسعيرة واصلة مكتملة لهذا الصنف بعد.",
+      "Ex-Quarry Base Only": "سعر المقالع فقط (دون نقل)",
+      "No active quarry purchase agreements match the current filter.": "لا توجد اتفاقيات شراء مقالع نشطة مطابقة للتصفية الحالية.",
+      "Split Multi-Dept (Last Split)": "توزيع على الأقسام (آخر تقسيم)",
+      "Split Multi-Category (Last Split)": "توزيع على الفئات (آخر تقسيم)",
+      "Apply 11% VAT to taxable categories (Diesel/Fuel & Exempt fees stay $0.00 Never VAT)": "تطبيق ضريبة 11% على الفئات الخاضعة (المازوت/الوقود والرسوم المعفاة تبقى $0.00 معفى دائماً)",
+      "Saved Split": "تقسيم محفوظ",
+      "Apply Last Split": "تطبيق آخر تقسيم",
+      "Last Split Applied": "تم تطبيق آخر تقسيم",
+      "Undo Split": "تراجع عن التقسيم",
+      "Domestic · Local Supply": "محلي · توريد داخلي",
+      "Missing Freight & Customs": "شحن وجمارك مفقود",
+      "Missing Customs & Clearance": "جمارك وتخليص مفقود",
+      "Missing Landed": "تكلفة وصول مفقودة",
+      "UNALLOCATED & MISSING LANDED COST IMPORT FILES": "ملفات الاستيراد غير الموزعة أو المفقودة التكلفة",
+      "Domestic sister-entity or local supply: zero overseas freight or customs duty uplift required.": "توريد محلي أو من شركة شقيقة: لا يتطلب إضافة شحن بحري أو رسوم جمركية.",
+      "Cleared & Costed": "مُخلّص ومُكلّف",
+      "Best Landed:": "أفضل واصل:",
+      "mat": "مواد",
+      "haul": "نقل"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31826,7 +31854,35 @@
       "Outlet Revenue Breakdown": "Ventilation des Revenus par Point de Vente",
       "Outlet & Membership Breakdown": "Ventilation Points de Vente & Abonnements",
       "Other Outlets": "Autres Points de Vente",
-      "TILLS MATCHED": "CAISSES CONCORDANTES"
+      "TILLS MATCHED": "CAISSES CONCORDANTES",
+      "Compare by Grade": "Comparer par calibre",
+      "Close Matrix": "Fermer la matrice",
+      "CHEAPEST LANDED SOURCE BY AGGREGATE GRADE": "SOURCE RENDUE LA MOINS CHÈRE PAR CALIBRE",
+      "CHEAPEST LANDED SOURCE BY AGGREGATE GRADE ($/M³)": "SOURCE RENDUE LA MOINS CHÈRE PAR CALIBRE ($/M³)",
+      "Landed cost comparison by grade is restricted to seats with Expenses access.": "La comparaison du coût rendu par calibre est réservée aux comptes ayant accès aux charges.",
+      "Awaiting Haulage Rates": "En attente des tarifs de transport",
+      "#1 Cheapest": "#1 Moins cher",
+      "(General Site)": "(Site général)",
+      "No active source has a complete landed rate for this grade yet.": "Aucune source active n'a encore de tarif rendu complet pour ce calibre.",
+      "Ex-Quarry Base Only": "Prix carrière seul",
+      "No active quarry purchase agreements match the current filter.": "Aucun accord d'achat carrière actif ne correspond au filtre actuel.",
+      "Split Multi-Dept (Last Split)": "Ventiler par département (Dernier modèle)",
+      "Split Multi-Category (Last Split)": "Ventiler par catégorie (Dernier modèle)",
+      "Apply 11% VAT to taxable categories (Diesel/Fuel & Exempt fees stay $0.00 Never VAT)": "Appliquer la TVA 11 % aux catégories taxables (Gasoil et frais exonérés à $0.00)",
+      "Saved Split": "Répartition enregistrée",
+      "Apply Last Split": "Appliquer dernière répartition",
+      "Last Split Applied": "Dernière répartition appliquée",
+      "Undo Split": "Annuler la répartition",
+      "Domestic · Local Supply": "Local · Fourniture interne",
+      "Missing Freight & Customs": "Fret et douane manquants",
+      "Missing Customs & Clearance": "Douane et dédouanement manquants",
+      "Missing Landed": "Coût rendu manquant",
+      "UNALLOCATED & MISSING LANDED COST IMPORT FILES": "DOSSIERS IMPORT NON RÉPARTIS OU SANS COÛT RENDU",
+      "Domestic sister-entity or local supply: zero overseas freight or customs duty uplift required.": "Approvisionnement local ou entité sœur : aucun frais de fret maritime ou douane requis.",
+      "Cleared & Costed": "Dédouané et valorisé",
+      "Best Landed:": "Meilleur rendu :",
+      "mat": "mat.",
+      "haul": "trsp."
     }
   };
 
@@ -38701,10 +38757,91 @@
 
     m = trimmed.match(/^((?:CIF|CFR|DDP|EXW|FCA|FOB) contract: [^(]+?)(?: \(([^)]+)\))?$/);
     if (m) {
-      const tipCore = evalCore(m[1].trim(), lang, depth + 1);
-      if (tipCore.ok) {
-        return { out: m[2] ? `${tipCore.out} (${m[2]})` : tipCore.out, ok: true };
+      const missMarker = 'Received foreign import has zero landed additions logged yet; link or add freight/customs via + Landed.';
+      let rawCore = m[1].trim();
+      let missSuffix = '';
+      if (rawCore.includes(missMarker)) {
+        rawCore = rawCore.replace(missMarker, '').trim();
+        missSuffix = lang === 'ar'
+          ? ' الاستيراد الأجنبي المستلم مسجّل بدون مصاريف وصول حتى الآن؛ اربط أو أضف الشحن والجمارك عبر + Landed.'
+          : ' L\'importation étrangère reçue n\'affiche encore aucun frais d\'approche ; liez ou ajoutez le fret/douane via + Landed.';
       }
+      const tipCore = evalCore(rawCore, lang, depth + 1);
+      if (tipCore.ok) {
+        return { out: `${tipCore.out}${missSuffix}${m[2] ? ' (' + m[2] + ')' : ''}`, ok: true };
+      }
+    }
+
+    m = trimmed.match(/^Split Multi-Category \((\d+) Lines?\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `توزيع على الفئات (${m[1]} سطور)` : `Ventiler par catégorie (${m[1]} lignes)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Missing Landed Cost \((\d+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `تكلفة وصول مفقودة (${m[1]})` : `Coût rendu manquant (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+)\s+Grades\s*·\s*(\d+)\s+Landed Sources?$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `${m[1]} أصناف · ${m[2]} مصدر واصل` : `${m[1]} calibres · ${m[2]} sources rendues`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+)\s+Landed Sources?$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `${m[1]} مصدر واصل` : `${m[1]} sources rendues`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^All Grades \((\d+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `كل الأصناف (${m[1]})` : `Tous calibres (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Ex-Quarry Only · Separate Haul Not Yet Rated \((\d+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `مواد فقط · نقل منفصل غير مسعّر بعد (${m[1]})` : `Matière seule · Transport séparé non tarifé (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Separate Haul Not Yet Rated \((\d+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `نقل منفصل غير مسعّر بعد (${m[1]})` : `Transport séparé non tarifé (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^#(\d+) Tied$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `#${m[1]} متعادل` : `#${m[1]} à égalité`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^#(\d+)\s*·\s*\+(\$[\d.,]+)\/m³$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `#${m[1]} · +${m[2]}/م³` : `#${m[1]} · +${m[2]}/m³`,
+        ok: true
+      };
     }
 
     m = trimmed.match(/^(Net .+? \+ VAT .+? = .+)$/);

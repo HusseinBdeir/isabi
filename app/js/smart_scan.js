@@ -3881,21 +3881,36 @@
         .slice(0, 4);
 
       const warningsList = ((scan.matched && scan.matched.warnings) || []);
+      let resolvedSsCo = '';
       const resolvedSsInd = (() => {
         const curCo = $('f_company') ? $('f_company').value : ((scan.matched && scan.matched.targetCompany) || (D && D.STATE && D.STATE.company));
+        resolvedSsCo = curCo || '';
         const coKey = (D && D.COMPANY_KEY_BY_NAME && D.COMPANY_KEY_BY_NAME[curCo]) || curCo;
         return (D && typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(coKey) : '';
       })();
       const ssLinesCount = Array.isArray(scan.parsed && scan.parsed.lineItems) ? scan.parsed.lineItems.length : 0;
+      const matchedSupForSplit = (scan.matched && scan.matched.supplier) || (scan.parsed && scan.parsed.supplier) || '';
+      const hasSavedSplit = Boolean(
+        matchedSupForSplit
+        && window.MFG_AI_EDGE
+        && typeof window.MFG_AI_EDGE.hasVendorSplitTemplate === 'function'
+        && window.MFG_AI_EDGE.hasVendorSplitTemplate(resolvedSsInd, matchedSupForSplit, resolvedSsCo)
+      );
+      const isSplitInd = resolvedSsInd === 'Hospitality & Resorts' || resolvedSsInd === 'Manufacturing';
+      const isExpenseScanContext = scan.appliedForm === 'expense' || (scan.parsed && scan.parsed.formType === 'expense');
       const canSplitMultiDept = Boolean(
-        resolvedSsInd === 'Hospitality & Resorts'
-        && ssLinesCount >= 2
+        isSplitInd
+        && isExpenseScanContext
+        && (ssLinesCount >= 2 || (hasSavedSplit && Number((scan.parsed && scan.parsed.totalAmount) || 0) > 0))
         && !(D && D.STATE && D.STATE.kioskLocked)
         && canEnter('expense')
         && typeof window !== 'undefined'
         && window.MFG_AI_EDGE
         && typeof window.MFG_AI_EDGE.openBatchIntakeModal === 'function'
       );
+      const splitBtnLabel = resolvedSsInd === 'Hospitality & Resorts'
+        ? (ssLinesCount >= 2 ? `Split Multi-Dept (${ssLinesCount} Lines)` : 'Split Multi-Dept (Last Split)')
+        : (ssLinesCount >= 2 ? `Split Multi-Category (${ssLinesCount} Lines)` : 'Split Multi-Category (Last Split)');
       reviewHtml = `
         <div class="ss-review-strip" id="ssReviewStrip">
           <div class="ss-review-top">
@@ -3908,7 +3923,7 @@
               ${warnCnt > 0 ? `<span class="ss-stat-pill is-warn">${ic('warn')} ${warnCnt} Item${warnCnt === 1 ? '' : 's'} to Verify</span>` : ''}
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              ${canSplitMultiDept ? `<button type="button" class="ss-alt-form-chip" id="ssSplitMultiDeptBtn">${ic('layers')} Split Multi-Dept (${ssLinesCount} Lines)</button>` : ''}
+              ${canSplitMultiDept ? `<button type="button" class="ss-alt-form-chip" id="ssSplitMultiDeptBtn">${ic('layers')} ${esc(splitBtnLabel)}</button>` : ''}
               <button type="button" class="ss-alt-form-chip" id="ssToggleSplitBtn">${ic('eye')} ${SCAN_STATE.splitOpen ? 'Hide Document Preview' : 'Side-by-Side Preview'}</button>
               <button type="button" class="ss-alt-form-chip" id="ssClearScanBtn">${ic('trash')} Clear Scan</button>
             </div>
@@ -4044,9 +4059,15 @@
         const items = Array.isArray(sc.parsed.lineItems) ? sc.parsed.lineItems : [];
         const supName = (sc.matched && sc.matched.supplier) || sc.parsed.supplier || 'General Vendor';
         const rowDt = sc.parsed.date || ((D && typeof D.todayISO === 'function') ? D.todayISO() : '2026-11-06');
-        const sumLines = items.reduce((s, it) => s + Number(it.lineTotal || (Number(it.qty || 1) * Number(it.unitCost || 0))), 0);
+        const effectiveItems = items.length ? items : [{
+          description: sc.parsed.summary || sc.parsed.description || 'Monthly Supplier Invoice',
+          qty: 1,
+          unitCost: Number(sc.parsed.subtotalExVat > 0 ? sc.parsed.subtotalExVat : (sc.parsed.totalAmount || 0)),
+          lineTotal: Number(sc.parsed.subtotalExVat > 0 ? sc.parsed.subtotalExVat : (sc.parsed.totalAmount || 0))
+        }];
+        const sumLines = effectiveItems.reduce((s, it) => s + Number(it.lineTotal || (Number(it.qty || 1) * Number(it.unitCost || 0))), 0);
         const hasTaxedExtra = Boolean(sc.parsed.vatAmount > 0 && sc.parsed.totalAmount > 0 && (sc.parsed.subtotalExVat > 0 ? Math.abs(sumLines - sc.parsed.subtotalExVat) <= 1 : (sc.parsed.totalAmount - sumLines) > 0.5));
-        const preparsedRows = items.map(it => {
+        const preparsedRows = effectiveItems.map(it => {
           const q = Number(it.qty || 1) || 1;
           const up = Number(it.unitCost || 0) || (q > 0 ? Number(it.lineTotal || 0) / q : 0);
           return {
