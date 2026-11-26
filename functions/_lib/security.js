@@ -189,13 +189,19 @@ export function parseCookieHeader(cookieHdr) {
   return out;
 }
 
+const KIOSK_ONLY_CORS_ORIGINS = new Set([
+  'https://husseinbdeir.github.io',
+  'https://pos.isabisystems.com',
+  'https://attendance.isabisystems.com'
+]);
+
 export function isAllowedCorsOrigin(origin, request = null, env = null) {
   const o = String(origin || '').trim();
   if (!o) return false;
   if (o === 'https://isabisystems.com' || o === 'https://www.isabisystems.com') {
     return true;
   }
-  if (o === 'https://husseinbdeir.github.io' && request) {
+  if (KIOSK_ONLY_CORS_ORIGINS.has(o) && request) {
     try {
       const reqPath = new URL(request.url).pathname || '';
       if (reqPath === '/app/api/kiosk' || reqPath.startsWith('/app/api/kiosk/') || reqPath === '/api/kiosk' || reqPath.startsWith('/api/kiosk/')) {
@@ -250,9 +256,9 @@ export async function extractRequestSession(request, env) {
         try { refOrigin = new URL(reqRef).origin; } catch (_) {}
       }
       if (reqOrigin) {
-        if (reqOrigin !== selfOrigin && !isAllowedCorsOrigin(reqOrigin, request, env)) return null;
+        if (KIOSK_ONLY_CORS_ORIGINS.has(reqOrigin) || (reqOrigin !== selfOrigin && !isAllowedCorsOrigin(reqOrigin, request, env))) return null;
       } else if (refOrigin) {
-        if (refOrigin !== selfOrigin && !isAllowedCorsOrigin(refOrigin, request, env)) return null;
+        if (KIOSK_ONLY_CORS_ORIGINS.has(refOrigin) || (refOrigin !== selfOrigin && !isAllowedCorsOrigin(refOrigin, request, env))) return null;
       } else {
         const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
         if (fetchSite !== 'same-origin') return null;
