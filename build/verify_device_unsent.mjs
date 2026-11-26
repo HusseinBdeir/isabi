@@ -122,7 +122,7 @@ console.log('\n[who may call]');
   r = await api('device_unsent', { method: 'POST', body: report() });
   ok('POST without a sign-in -> 401, nothing stored', r.status === 401 && d1.rows("SELECT doc_key FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%'").length === 0, r);
   r = await api('device_unsent', { headers: { 'X-ISABI-Demo': '1' } });
-  ok('GET from the Demo sandbox -> an empty list', r.status === 200 && r.json.demo === true && Array.isArray(r.json.devices) && r.json.devices.length === 0, r);
+  ok('GET from the Demo sandbox -> an empty list with minSyncShellVer', r.status === 200 && r.json.demo === true && Array.isArray(r.json.devices) && r.json.devices.length === 0 && r.json.minSyncShellVer === effectiveMinSyncShellVer(), r);
   r = await api('device_unsent', { method: 'POST', body: report(), headers: Object.assign({ 'X-ISABI-Demo': '1' }, as(ENTRY)) });
   ok('POST with the Demo header -> 403, nothing stored', r.status === 403 && d1.rows("SELECT doc_key FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%'").length === 0, r);
   r = await api('device_unsent', { headers: as(ENTRY) });
@@ -130,7 +130,7 @@ console.log('\n[who may call]');
   r = await api('device_unsent', { headers: as(SUP) });
   ok('GET as a Supervisor -> 403', r.status === 403, r);
   r = await api('device_unsent', { headers: as(OWNER) });
-  ok('GET as the Owner -> 200 with an empty list', r.status === 200 && r.json.ok === true && r.json.devices.length === 0, r);
+  ok('GET as the Owner -> 200 with an empty list and minSyncShellVer', r.status === 200 && r.json.ok === true && r.json.devices.length === 0 && r.json.minSyncShellVer === effectiveMinSyncShellVer(), r);
   r = await api('device_unsent', { method: 'PUT', body: report(), headers: as(OWNER) });
   ok('another method -> 405', r.status === 405, r);
 }
@@ -343,6 +343,54 @@ console.log('\n[owner dismiss]');
 
   r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss', user_id: 'u7', device_id: DEV_D } });
   ok('dismissing a sent_late row deletes it from edge_kv_store', r.status === 200 && r.json.dismissed === true && r.json.state === 'sent_late' && !kv(`device_unsent:u7:${DEV_D}`), r);
+
+  // Bulk dismiss_late: Owner-only, validated keys, deletes ONLY targeted sent_late rows and preserves holding + untargeted late rows.
+  const DEV_BL1 = 'devbulklate0001';
+  const DEV_BL2 = 'devbulklate0002';
+  const DEV_BL_KEEP = 'devbulklate0003';
+  const DEV_BH_HOLD = 'devbulkhold0004';
+  const lateSince = iso(NOW - 3 * 3600000);
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: DEV_BL1, label: 'Tab 1', count: 2, since: lateSince, sent_late: true } });
+  await api('device_unsent', { method: 'POST', headers: as(SUP), body: { device_id: DEV_BL2, label: 'Tab 2', count: 4, since: lateSince, sent_late: true } });
+  await api('device_unsent', { method: 'POST', headers: as(BBC), body: { device_id: DEV_BL_KEEP, label: 'Tab 3', count: 1, since: lateSince, sent_late: true } });
+  await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_BH_HOLD, count: 5, since: lateSince, reason: 'offline' }) });
+
+  ok('Entry cannot bulk dismiss_late -> 403', (await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { action: 'dismiss_late', keys: [`u7:${DEV_BL1}`] } })).status === 403 && Boolean(kv(`device_unsent:u7:${DEV_BL1}`)));
+  ok('Supervisor cannot bulk dismiss_late -> 403', (await api('device_unsent', { method: 'POST', headers: as(SUP), body: { action: 'dismiss_late', keys: [`u7:${DEV_BL1}`] } })).status === 403 && Boolean(kv(`device_unsent:u7:${DEV_BL1}`)));
+  ok('dismiss_late rejects empty keys -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: [] } })).status === 400);
+  ok('dismiss_late rejects non-array keys -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: `u7:${DEV_BL1}` } })).status === 400);
+  ok('dismiss_late rejects > 40 keys -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: Array.from({ length: 41 }, (_, i) => `u7:devkey0000000${String(i).padStart(2, '0')}`) } })).status === 400);
+  ok('dismiss_late rejects malformed key -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: ['../u7:abc'] } })).status === 400);
+  ok('dismiss_late rejects non-string element -> 400', (await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: [123] } })).status === 400);
+
+  const bulkRes = await api('device_unsent', {
+    method: 'POST',
+    headers: as(OWNER),
+    body: { action: 'dismiss_late', keys: [`u7:${DEV_BL1}`, `u3:${DEV_BL2}`, `u7:${DEV_BL1}`, `u7:${DEV_BH_HOLD}`, 'u7:missingdev00002'] }
+  });
+  ok('Owner dismiss_late deletes only targeted sent_late rows while keeping active holding and untargeted sent_late rows',
+    bulkRes.status === 200 && bulkRes.json && bulkRes.json.ok === true && bulkRes.json.dismissed === 2 && bulkRes.json.state === 'sent_late'
+    && !kv(`device_unsent:u7:${DEV_BL1}`) && !kv(`device_unsent:u3:${DEV_BL2}`)
+    && Boolean(kv(`device_unsent:u9:${DEV_BL_KEEP}`) && kv(`device_unsent:u9:${DEV_BL_KEEP}`).state === 'sent_late')
+    && Boolean(kv(`device_unsent:u7:${DEV_BH_HOLD}`) && kv(`device_unsent:u7:${DEV_BH_HOLD}`).state === 'holding'),
+    bulkRes);
+
+  // 40 max-length (40:32 = 73 chars, ~3.07 KB) keys succeed under the 4 KB dismiss_late limit; >4 KB returns 413.
+  const maxUid = 'u' + 'x'.repeat(39);
+  const maxKeys = [];
+  for (let i = 0; i < 40; i++) {
+    const devMax = 'devmax' + String(i).padStart(26, '0');
+    const rowPayload = JSON.stringify({ state: 'sent_late', device_id: devMax, user_id: maxUid, sent_count: 1, count: 0, since: lateSince, sent_at: iso(NOW) });
+    d1.db.prepare("INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at) VALUES (?,?,?)").run(`device_unsent:${maxUid}:${devMax}`, rowPayload, iso(NOW));
+    maxKeys.push(`${maxUid}:${devMax}`);
+  }
+  const max40Res = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: maxKeys } });
+  const tooBigLateRes = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { action: 'dismiss_late', keys: maxKeys, pad: 'z'.repeat(1500) } });
+  ok('Owner dismiss_late accepts 40 max-length (40:32, ~3 KB) keys and rejects >4 KB with 413',
+    max40Res.status === 200 && max40Res.json && max40Res.json.dismissed === 40
+    && d1.rows("SELECT doc_key FROM edge_kv_store WHERE doc_key LIKE ?", `device_unsent:${maxUid}:%`).length === 0
+    && tooBigLateRes.status === 413,
+    { max40Res, tooBigLateRes });
   // Alias parity on shared-device closing: short aliases ('4235', 'bdeir holding · consolidated jv') canonicalize identically.
   const DEV_AL = 'devalias0000007';
   const S_4235_SHORT = await seat('u10', '4235 Short Seat', 'short4235@example.test', 'Entry', '4235');

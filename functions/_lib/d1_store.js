@@ -6227,14 +6227,36 @@ function cleanDeviceUnsentText(v, max) {
 // { ok: true, val } or { ok: false, error }. nowMs is passed in so the checks can be tested at a fixed time.
 export function validateDeviceUnsentReport(body, nowMs) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'Invalid device report.' };
+  if (Object.prototype.hasOwnProperty.call(body, 'action') && body.action !== undefined) {
+    if (body.action === 'dismiss') {
+      const deviceId = String(body.device_id == null ? '' : body.device_id);
+      if (!/^[a-z0-9]{12,32}$/.test(deviceId)) return { ok: false, error: 'Invalid device id.' };
+      const userId = String(body.user_id == null ? '' : body.user_id).trim();
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(userId)) return { ok: false, error: 'Invalid seat id.' };
+      return { ok: true, val: { action: 'dismiss', user_id: userId, device_id: deviceId } };
+    }
+    if (body.action === 'dismiss_late') {
+      if (!Array.isArray(body.keys) || body.keys.length < 1 || body.keys.length > 40) {
+        return { ok: false, error: 'Invalid late keys.' };
+      }
+      const pairs = [];
+      const seen = new Set();
+      for (const rawKey of body.keys) {
+        if (typeof rawKey !== 'string') return { ok: false, error: 'Invalid late keys.' };
+        const m = /^([A-Za-z0-9_-]{1,40}):([a-z0-9]{12,32})$/.exec(rawKey.trim());
+        if (!m) return { ok: false, error: 'Invalid late keys.' };
+        const k = `${m[1]}:${m[2]}`;
+        if (!seen.has(k)) {
+          seen.add(k);
+          pairs.push({ user_id: m[1], device_id: m[2] });
+        }
+      }
+      return { ok: true, val: { action: 'dismiss_late', pairs } };
+    }
+    return { ok: false, error: 'Invalid action.' };
+  }
   const deviceId = String(body.device_id == null ? '' : body.device_id);
   if (!/^[a-z0-9]{12,32}$/.test(deviceId)) return { ok: false, error: 'Invalid device id.' };
-  if (Object.prototype.hasOwnProperty.call(body, 'action') && body.action !== undefined) {
-    if (body.action !== 'dismiss') return { ok: false, error: 'Invalid action.' };
-    const userId = String(body.user_id == null ? '' : body.user_id).trim();
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(userId)) return { ok: false, error: 'Invalid seat id.' };
-    return { ok: true, val: { action: 'dismiss', user_id: userId, device_id: deviceId } };
-  }
   const count = body.count;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 100000) return { ok: false, error: 'Invalid entry count.' };
   const val = { device_id: deviceId, count, label: cleanDeviceUnsentText(body.label, 60) };
@@ -6294,14 +6316,15 @@ export function listDeviceUnsentRows(rows, nowMs) {
 
 export async function handleDeviceUnsent(request, env, session, body, bodyMeta = null) {
   if (request.method === 'GET') {
-    if (isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, devices: [] });
+    const minSyncShellVer = effectiveMinSyncShellVer();
+    if (isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, devices: [], minSyncShellVer });
     if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
     if (!/\bowner\b/i.test(String(session.role || ''))) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
-    if (!env || !env.DB) return jsonResponse({ ok: true, devices: [] });
+    if (!env || !env.DB) return jsonResponse({ ok: true, devices: [], minSyncShellVer });
     const res = await env.DB.prepare(
       "SELECT payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' ORDER BY updated_at DESC LIMIT ?1"
     ).bind(DEVICE_UNSENT_MAX_ROWS).all();
-    return jsonResponse({ ok: true, devices: listDeviceUnsentRows(res.results || [], Date.now()) });
+    return jsonResponse({ ok: true, devices: listDeviceUnsentRows(res.results || [], Date.now()), minSyncShellVer });
   }
   if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
@@ -6328,8 +6351,9 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
       return jsonResponse({ ok: true, dismissed: false });
     }
     if (tp.state === 'sent_late') {
-      await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(targetKey).run();
-      return jsonResponse({ ok: true, dismissed: true, state: 'sent_late' });
+      const delRes = await env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key = ?1 AND json_extract(payload_json, '$.state') = 'sent_late'").bind(targetKey).run();
+      const deleted = Number(delRes && delRes.meta && delRes.meta.changes) || 0;
+      return jsonResponse({ ok: true, dismissed: deleted > 0, state: 'sent_late' });
     }
     const dismissed = Object.assign({}, tp, {
       dismissed_at: nowIso,
@@ -6339,6 +6363,20 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
       .bind(JSON.stringify(dismissed), nowIso, targetKey).run();
     return jsonResponse({ ok: true, dismissed: true, state: 'holding' });
+  }
+  if (val.action === 'dismiss_late') {
+    if (!/\bowner\b/i.test(String(session.role || ''))) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+    let dismissed = 0;
+    for (const pair of val.pairs) {
+      const targetKey = `${DEVICE_UNSENT_PREFIX}${pair.user_id}:${pair.device_id}`;
+      const tRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(targetKey).first();
+      const tp = tRow ? safeJsonParse(tRow.payload_json, null) : null;
+      if (tp && typeof tp === 'object' && !Array.isArray(tp) && tp.state === 'sent_late') {
+        const delRes = await env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key = ?1 AND json_extract(payload_json, '$.state') = 'sent_late'").bind(targetKey).run();
+        if (delRes && delRes.meta && delRes.meta.changes) dismissed += Number(delRes.meta.changes) || 0;
+      }
+    }
+    return jsonResponse({ ok: true, dismissed, state: 'sent_late' });
   }
   const docKey = `${DEVICE_UNSENT_PREFIX}${seatId}:${val.device_id}`;
   const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
