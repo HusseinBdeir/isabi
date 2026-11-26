@@ -575,7 +575,8 @@ async function getTableColumns(db, table) {
   }
   const realColsByTable = {
     expenses: ['gross_amount', 'discount'],
-    expense_items: ['net_unit_cost', 'gross_line_total', 'line_discount']
+    expense_items: ['net_unit_cost', 'gross_line_total', 'line_discount'],
+    suppliers: ['standing_discount_pct']
   };
   if (realColsByTable[table] && cols.size > 0) {
     let addedRealCol = false;
@@ -4022,6 +4023,75 @@ const CUSTOM_MASTER_TABLES = new Set([
 const CUSTOM_TREASURY_TABLES = new Set(['external_movements', 'loans', 'loan_settlements', 'conversions']);
 const CUSTOM_JV_TABLES = new Set(['jv_partnerships', 'jv_distributions']);
 
+const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
+const WORD_LOCK_META_SKIP_RE = /^(rev|attachment_count|_indCustomRev|version|seq|order|sort_order)$/i;
+const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|gross_usd|discount_usd|deposit_gl4196_usd|allocated_inv_usd|unallocated_adv_usd|paid_usd|total_usd|gross_prem_usd|policy_fee_usd|net_usd|ttc_usd|vat_usd|contract_usd|fob_usd|actual_usd|budget_usd|open_ar_usd|usd|lbp|diff|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|standing_discount_pct|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+
+function enforceStrictNumericLockFromOrig(orig, updated) {
+  if (!orig || !updated || typeof orig !== 'object' || typeof updated !== 'object') return updated;
+  for (const k of Object.keys(orig)) {
+    if (WORD_EDITABLE_ID_KEY_RE.test(k) || WORD_LOCK_META_SKIP_RE.test(k)) continue;
+    if (typeof orig[k] === 'number' || WORD_LOCK_NUMERIC_KEY_RE.test(k) || k.endsWith('_indiff')) {
+      updated[k] = orig[k];
+    }
+  }
+  for (const k of Object.keys(updated)) {
+    if (WORD_EDITABLE_ID_KEY_RE.test(k) || WORD_LOCK_META_SKIP_RE.test(k)) continue;
+    if (!(k in orig) && (typeof updated[k] === 'number' || WORD_LOCK_NUMERIC_KEY_RE.test(k) || k.endsWith('_indiff'))) {
+      delete updated[k];
+    }
+  }
+  return updated;
+}
+
+function isDomainCellNumericLocked(hdrLbl, baseVal) {
+  const lbl = String(hdrLbl || '').trim();
+  const baseKey = lbl.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  if (WORD_EDITABLE_ID_KEY_RE.test(baseKey)) return false;
+  if (WORD_LOCK_NUMERIC_KEY_RE.test(baseKey)) return true;
+  if (/(\$|%|usd|lbp|qty|amount|total|price|cost|rate|disc|vat|net|gross|fee|prem|paid|balance|alloc|deposit|days|hours|km|share)/i.test(lbl)) return true;
+  if (typeof baseVal === 'number') return true;
+  if (/^\s*[-+]?\$?\s*\d[\d,]*(\.\d+)?\s*%?\s*$/.test(String(baseVal ?? ''))) return true;
+  return false;
+}
+
+function enforceStrictNumericLockOnDomainEdit(baseObj, targetObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  if (baseObj && typeof baseObj === 'object') {
+    enforceStrictNumericLockFromOrig(baseObj, targetObj);
+    if (Array.isArray(baseObj.cells) && Array.isArray(targetObj.cells)) {
+      if (baseObj.cells.length > 0 && targetObj.cells.length > baseObj.cells.length) {
+        targetObj.cells = targetObj.cells.slice(0, baseObj.cells.length);
+      }
+      const lim = Math.min(baseObj.cells.length, targetObj.cells.length);
+      for (let idx = 0; idx < lim; idx++) {
+        const hdrLbl = (Array.isArray(targetObj.headers) && targetObj.headers[idx]) || (Array.isArray(baseObj.headers) && baseObj.headers[idx]) || '';
+        if (isDomainCellNumericLocked(hdrLbl, baseObj.cells[idx])) {
+          targetObj.cells[idx] = baseObj.cells[idx];
+        }
+      }
+    } else if (Array.isArray(targetObj.cells) && !Array.isArray(baseObj.cells)) {
+      delete targetObj.cells;
+    }
+    return targetObj;
+  }
+  for (const k of Object.keys(targetObj)) {
+    if (WORD_EDITABLE_ID_KEY_RE.test(k) || WORD_LOCK_META_SKIP_RE.test(k)) continue;
+    if (typeof targetObj[k] === 'number' || WORD_LOCK_NUMERIC_KEY_RE.test(k) || k.endsWith('_indiff')) {
+      delete targetObj[k];
+    }
+  }
+  delete targetObj.cells;
+  return targetObj;
+}
+
+function canCompletePendingForWordsOnly(perms, canonTable, orig) {
+  if (!orig || !perms || !canCreateTableRecord(perms, canonTable)) return false;
+  if ((canonTable === 'expenses' || canonTable === 'raw_purchases') && Boolean(orig.price_pending)) return true;
+  if (canonTable === 'employments' && Boolean(orig.salary_pending)) return true;
+  return false;
+}
+
 function canCreateTableRecord(perms, canonTable) {
   if (!perms) return false;
   if (canonTable === 'sites' || canonTable === 'regions') {
@@ -4329,6 +4399,14 @@ export async function handleRecordsPost(request, env, session, body) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify haul road surface.', 'site');
       }
       applyCanonSiteLatLngAliases(recordToWrite);
+      if (perms.modifyText && !perms.modifyData) {
+        const pinLat = recordToWrite.latitude;
+        const pinLng = recordToWrite.longitude;
+        enforceStrictNumericLockFromOrig(exHydrated, recordToWrite);
+        if (pinLat !== undefined) recordToWrite.latitude = pinLat;
+        if (pinLng !== undefined) recordToWrite.longitude = pinLng;
+        applyCanonSiteLatLngAliases(recordToWrite);
+      }
       recordToWrite._pinCleared = false;
       delete recordToWrite.pin_cleared;
       delete recordToWrite.pinCleared;
@@ -4356,6 +4434,13 @@ export async function handleRecordsPost(request, env, session, body) {
           recordToWrite = Object.assign({}, exHydrated);
           applyExplicitVoidReason(recordToWrite, record);
         }
+      } else if (perms.modifyText && !perms.modifyData && !allowVoidOnly && !canCompletePendingForWordsOnly(perms, canonTable, exHydrated)) {
+        enforceStrictNumericLockFromOrig(exHydrated, recordToWrite);
+      }
+    }
+    if (!isSparsePureVoid && !(perms.modifyText && !perms.modifyData) && (canonTable === 'customer_receipts' || canonTable === 'supplier_payments' || canonTable === 'receipts' || canonTable === 'settlements') && Object.prototype.hasOwnProperty.call(record, 'amount')) {
+      for (const lk of ['usd_amount', 'lbp_amount', 'diff']) {
+        if (!Object.prototype.hasOwnProperty.call(record, lk)) delete recordToWrite[lk];
       }
     }
     sanitizeIncomingTwinKeys(recordToWrite, exHydrated, session, perms);
@@ -6686,6 +6771,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
           continue;
         }
+        if (perms.modifyText && !perms.modifyData) {
+          enforceStrictNumericLockFromOrig(exObj, rowToWrite);
+        }
         sanitizeIncomingTwinKeys(rowToWrite, exObj, session, perms);
         if (!exVoid && incVoid) {
           const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
@@ -6826,6 +6914,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
         continue;
       }
+      if (perms.modifyText && !perms.modifyData && !isSparsePureVoid && !(isPeriodLockWf || isStmtMark)) {
+        enforceStrictNumericLockOnDomainEdit(exObj, editToWrite);
+      }
       sanitizeIncomingTwinKeys(editToWrite, exObj, session, perms);
       if (!exVoid && incVoid && !/^WF::/i.test(ek)) {
         const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
@@ -6860,6 +6951,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       if (!gpsValidE) {
         if (!deferredNon403) deferredNon403 = { body: { ok: false, error: 'Invalid GPS coordinates.' }, status: 400 };
         continue;
+      }
+      if (perms.modifyText && !perms.modifyData && !(isPeriodLockWf || isStmtMark)) {
+        enforceStrictNumericLockOnDomainEdit(null, editToWrite);
       }
       sanitizeIncomingTwinKeys(editToWrite, null, session, perms);
       if (incVoid && !/^WF::/i.test(ek)) {
@@ -9415,6 +9509,18 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             restoreSiteSurfaceFromBase(mergedIr, pr);
           }
         }
+        if (perms.modifyText && !perms.modifyData && !allowVoidSync && !canCompletePendingForWordsOnly(perms, canonTable, pr)) {
+          if (allowUnpinnedPinAdd) {
+            const pinLat = mergedIr.latitude;
+            const pinLng = mergedIr.longitude;
+            enforceStrictNumericLockFromOrig(pr, mergedIr);
+            if (pinLat !== undefined) mergedIr.latitude = pinLat;
+            if (pinLng !== undefined) mergedIr.longitude = pinLng;
+            mergedIr = normalizeIncomingSiteCoordAliases(mergedIr);
+          } else {
+            enforceStrictNumericLockFromOrig(pr, mergedIr);
+          }
+        }
         outList.push(mergedIr);
         keptIds.add(rid);
       }
@@ -9561,6 +9667,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           }
           restoreGpsFieldsFromBase(mergedIr, pr);
         }
+        if (perms.modifyText && !perms.modifyData && !isSparsePureVoid) {
+          enforceStrictNumericLockFromOrig(pr, mergedIr);
+        }
         outB.push(mergedIr);
         kept.add(rid);
       }
@@ -9700,6 +9809,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             }
             restoreGpsFieldsFromBase(mergedIv, pv);
           }
+          if (perms.modifyText && !perms.modifyData && !isSparsePureVoid) {
+            enforceStrictNumericLockOnDomainEdit(pv, mergedIv);
+          }
           safeIre[ek] = mergedIv;
         }
       } else {
@@ -9747,6 +9859,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           if (!perms.canWriteGeoConfig || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
           else cleanedNew = normalizeIncomingSiteCoordAliases(cleanedNew);
           if (!perms.voidData && Boolean(cleanedNew.voided)) stripVoidFields(cleanedNew);
+          if (perms.modifyText && !perms.modifyData) {
+            enforceStrictNumericLockOnDomainEdit(null, cleanedNew);
+          }
           safeIre[ek] = cleanedNew;
         }
       }
