@@ -7851,6 +7851,40 @@ function mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session) {
       updated_by: String(iv.updated_by || '').slice(0, 120)
     };
   }
+  const dhNorm = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  for (const [rk, rv] of Object.entries(safeRules)) {
+    if (!rv || typeof rv !== 'object') continue;
+    const st = String(rv.status || '').toLowerCase();
+    if (st !== 'confirmed' && st !== 'dismissed') continue;
+    const rInd = String(rv.industry || 'Manufacturing').trim();
+    const rKind = String(rv.kind || '').trim().toLowerCase();
+    const aliasNorm = dhNorm(rv.alias);
+    const canonNorm = dhNorm(rv.canonical);
+    if (!rInd || !rKind || !aliasNorm || !canonNorm || aliasNorm === canonNorm) continue;
+    const revRk = `${rInd}::${rKind}::${canonNorm}`;
+    const rev = revRk !== rk ? safeRules[revRk] : null;
+    if (!rev || typeof rev !== 'object') continue;
+    const revSt = String(rev.status || '').toLowerCase();
+    if (revSt !== 'confirmed' && revSt !== 'dismissed') continue;
+    if (dhNorm(rev.canonical) !== aliasNorm) continue;
+    if (!isOwner && (!canAccessGeoIndustrySession(session, rInd) || !canAccessGeoIndustrySession(session, String(rev.industry || rInd)))) continue;
+    const cmp = compareIsoTsMs(rv.updated_at, rev.updated_at);
+    const loseKey = (cmp < 0 || (cmp === 0 && rk < revRk)) ? rk : revRk;
+    const winKey = loseKey === rk ? revRk : rk;
+    const winRule = safeRules[winKey];
+    const loser = safeRules[loseKey];
+    if (loser && loser.status !== 'undone') {
+      const demoted = {
+        ...loser,
+        status: 'undone',
+        reason: 'Superseded by newer reversed alias direction'
+      };
+      if (winRule && compareIsoTsMs(winRule.updated_at, loser.updated_at) > 0) {
+        demoted.updated_at = winRule.updated_at;
+      }
+      safeRules[loseKey] = demoted;
+    }
+  }
   incomingDoc.partyHygiene = { rules: safeRules };
 }
 
