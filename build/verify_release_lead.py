@@ -87,12 +87,14 @@ def main() -> int:  # noqa: PLR0915
 
         # The commands a leader runs, stood in for: recorded, failing on request, and doing what the real ones leave behind.
         calls: list[tuple[str, str, str]] = []
+        gate_limits: set[str] = set()
         fail: dict[str, int] = {}
         extra: dict[str, object] = {}
 
         def fake_exec(unit: dict, log: pathlib.Path, env: dict, cwd: pathlib.Path) -> int:
             key = unit["key"]
             calls.append((key, env.get("ISABI_BROWSER_SLOT_PRIORITY", ""), env.get("ISABI_RELEASE_HOLDER", "")))
+            gate_limits.add(env.get(RB.LEAD_GATE_TIMEOUT_ENV, ""))
             log.write_text(f"$ {' '.join(unit['argv'])}\nfirst line\nlast line of {key}\n", encoding="utf-8")
             for k in list(fail):
                 if k in key and fail[k] > 0:
@@ -163,6 +165,8 @@ def main() -> int:  # noqa: PLR0915
               "then mobile then the saved-scope boot, sync_app.py, the deploy, isabi-app main, isabi main")
         check(all(c[1] == "leader" and c[2] == "driver" for c in calls),
               "every command lead runs is marked as the release leader's, so its suites take the PC's browser slot next")
+        check(gate_limits == {str(RB.LEAD_GATE_TIMEOUT_S)} and RB.LEAD_GATE_TIMEOUT_S >= 1800,
+              "lead allows each release gate of sync_app.py 30 minutes: a gate queued for the browser slot is not stopped at 600 s")
         check("the line is long (7 changes waiting, more than 6)" in out and "1 more waiting" in out,
               "the batch says why it takes 6 and that one change waits for the next batch")
         line = RB.read_line(S[0])

@@ -116,6 +116,21 @@ RELEASE_GATES = [
 
 
 GATE_TIMEOUT_S = 600   # a gate that hangs (e.g. OneDrive fetching a cloud-only workbook) stops the sync, not the PC
+# A browser gate first queues for this PC's one browser slot (isabi-app build/_browser_slot.mjs), and the limit counts
+# that wait: on 2026-11-26 the leader of v19.6.444 lost its sync because verify_shell_gate_and_reload.mjs stood 576 s
+# behind another session's speed suite. ISABI_GATE_TIMEOUT_S raises the limit for one run (never below 600 s, at most
+# an hour); `release_batch.py lead` sets it, because a release leader never interrupts a suite that is running.
+GATE_TIMEOUT_ENV = "ISABI_GATE_TIMEOUT_S"
+GATE_TIMEOUT_MAX_S = 3600
+
+
+def gate_timeout_s() -> int:
+    """Seconds one release gate may take: 600, or ISABI_GATE_TIMEOUT_S when that is a larger whole number (capped)."""
+    raw = (os.environ.get(GATE_TIMEOUT_ENV) or "").strip()
+    if not raw.isdigit():
+        return GATE_TIMEOUT_S
+    return max(GATE_TIMEOUT_S, min(int(raw), GATE_TIMEOUT_MAX_S))
+
 
 # The screen speed gate (owner 2026-11-20, after v19.6.384 shipped Sales and Fleet at twice the 150 ms budget and stayed
 # live two days): runs after RELEASE_GATES on every sync. --skip-release-gates does not skip it (leaders pass that flag
@@ -189,6 +204,9 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
                              cwd=roots[repo], env=env, timeout=timeout_s, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         print(f"ERROR: release gate {repo}/{rel} did not finish within {timeout_s} s; sync stopped.", file=sys.stderr)
+        if interp != "python":
+            print(f"  A browser gate first waits for this PC's one browser slot, and that wait counts. Run sync_app.py again,\n"
+                  f"  or allow longer for this run: set {GATE_TIMEOUT_ENV}=1800 (release_batch.py lead does).", file=sys.stderr)
         raise SystemExit(1)
     tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
     if chk.returncode != 0:
@@ -210,7 +228,7 @@ def run_release_gates(*, skip_release_gates: bool = False, sync_in_progress: boo
         return
     gate_extra = {"ISABI_SYNC_IN_PROGRESS": "1"} if sync_in_progress else None
     for repo, rel, interp in RELEASE_GATES:
-        _run_gate(repo, rel, interp, GATE_TIMEOUT_S, "--skip-release-gates", extra_env=gate_extra)
+        _run_gate(repo, rel, interp, gate_timeout_s(), "--skip-release-gates", extra_env=gate_extra)
 
 
 def run_speed_gate(*, skip_reason: str = "") -> None:
@@ -585,8 +603,8 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
                     raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
 
     if not skip_release_gates and os.environ.get("ISABI_SKIP_RELEASE_GATES") != "1":
-        _run_gate("isabi", "build/verify_deployed_shell.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
-        _run_gate("isabi", "build/verify_min_shell_parity.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
+        _run_gate("isabi", "build/verify_deployed_shell.py", "python", gate_timeout_s(), "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
+        _run_gate("isabi", "build/verify_min_shell_parity.py", "python", gate_timeout_s(), "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

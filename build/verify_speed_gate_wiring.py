@@ -9,6 +9,8 @@ This gate keeps that wiring in place. Nothing is run: subprocess is replaced by 
   3. --skip-release-gates still runs it; --skip-speed-gate "<reason>" skips it and prints the reason; a blank reason
      is refused
   4. a failing speed gate stops the sync (SystemExit), with the gate's own output
+  4b. a release gate has 600 s; ISABI_GATE_TIMEOUT_S (set by release_batch.py lead) allows longer, because a
+      browser gate first queues for the PC's one browser slot
   5. sync_command_app runs it after the RELEASE_GATES and before any file is copied
 
 Usage: python build/verify_speed_gate_wiring.py
@@ -132,6 +134,63 @@ with tempfile.TemporaryDirectory() as td:
         sa.subprocess.run = orig["run"]
         sa._node_runtime = orig["node"]
         sa.APP_SRC_ROOT = orig["src"]
+
+# 4b. the per-gate limit: 600 s, longer only when ISABI_GATE_TIMEOUT_S asks (a browser gate queues for the browser slot)
+saved_limit = os.environ.pop(sa.GATE_TIMEOUT_ENV, None)
+try:
+    check(sa.gate_timeout_s() == sa.GATE_TIMEOUT_S == 600, "4b a release gate has 600 s by default")
+    seen = {}
+    for raw in ("1800", "60", "few", "", "-5", "999999", " 900 "):
+        os.environ[sa.GATE_TIMEOUT_ENV] = raw
+        seen[raw] = sa.gate_timeout_s()
+    check(seen == {"1800": 1800, "60": 600, "few": 600, "": 600, "-5": 600, "999999": sa.GATE_TIMEOUT_MAX_S, " 900 ": 900},
+          "4b ISABI_GATE_TIMEOUT_S raises the limit, never below 600 s, at most an hour; anything else is ignored", repr(seen))
+    os.environ[sa.GATE_TIMEOUT_ENV] = "1500"
+    with tempfile.TemporaryDirectory() as td:
+        os.makedirs(os.path.join(td, "build"))
+        open(os.path.join(td, "build", "verify_speed_budget.mjs"), "w").close()
+        for g in sa.RELEASE_GATES:
+            if g[0] == "isabi-app":
+                os.makedirs(os.path.dirname(os.path.join(td, *g[1].split("/"))), exist_ok=True)
+                open(os.path.join(td, *g[1].split("/")), "w").close()
+        try:
+            sa.subprocess.run = fake_run
+            sa._node_runtime = lambda: ("node", dict(os.environ))
+            sa.APP_SRC_ROOT = td
+            calls.clear()
+            with contextlib.redirect_stdout(io.StringIO()):
+                sa.run_release_gates()
+                sa.run_speed_gate(skip_reason="")
+            rel_calls = [c for c in calls if c not in speed_calls()]
+            check(len(rel_calls) > 10 and all(c["timeout"] == 1500 for c in rel_calls),
+                  "4b every release gate of the sync runs with the raised limit", repr(sorted({c["timeout"] for c in rel_calls})))
+            check(len(speed_calls()) == 1 and speed_calls()[0]["timeout"] == sa.SPEED_GATE_TIMEOUT_S,
+                  "4b the speed gate keeps its own limit")
+
+            def slow_run(cmd, **kw):
+                raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+
+            sa.subprocess.run = slow_run
+            err = io.StringIO()
+            stopped = False
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    sa._run_gate(*sa.SPEED_GATE, 1500, "--skip-release-gates")
+                except SystemExit as ex:
+                    stopped = ex.code not in (0, None)
+            check(stopped and "did not finish within 1500 s" in err.getvalue() and sa.GATE_TIMEOUT_ENV in err.getvalue()
+                  and "browser slot" in err.getvalue(),
+                  "4b a browser gate stopped at its limit says the wait for the browser slot counts, and how to allow longer",
+                  err.getvalue().strip()[-200:])
+        finally:
+            sa.subprocess.run = orig["run"]
+            sa._node_runtime = orig["node"]
+            sa.APP_SRC_ROOT = orig["src"]
+finally:
+    if saved_limit is None:
+        os.environ.pop(sa.GATE_TIMEOUT_ENV, None)
+    else:
+        os.environ[sa.GATE_TIMEOUT_ENV] = saved_limit
 
 # 5. order inside sync_command_app
 src = inspect.getsource(sa.sync_command_app)

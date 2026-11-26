@@ -1634,6 +1634,10 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
 # carries on where the first stopped. Nothing here decides which change is at fault: that stays with the session.
 LEAD_STEPS = ("gates", "main", "sync", "commit", "deploy", "push", "done")
 LEAD_FROM = ("gates", "main", "sync", "deploy", "push")   # lead --from: the steps before it were done by hand
+# sync_app.py stops a release gate after 600 s, and a browser gate spends part of that queued for the PC's one browser
+# slot. The leader goes next but never interrupts a running suite (a speed run takes 10 to 20 minutes), so lead allows
+# each gate this long instead (sync_app.py reads ISABI_GATE_TIMEOUT_S; a value the caller already set is kept).
+LEAD_GATE_TIMEOUT_ENV, LEAD_GATE_TIMEOUT_S = "ISABI_GATE_TIMEOUT_S", 1800
 # A named gate is a check: build/verify_*, build/audit_* or build/check_* (in a subfolder too). Never a script that
 # releases, deploys, syncs, seeds or pushes: with the release lock held by this worktree, `deploy_cloudflare.py` named
 # as a "gate" would take the batch live before its checks ran, and `release_lock.py release` would free the lock.
@@ -1947,6 +1951,7 @@ def _lead(cwd: Path, *, holder: str, version: str, max_changes: int | None, from
                # The release leader's suites take this PC's browser slot next (isabi-app build/_browser_slot.mjs).
                ISABI_BROWSER_SLOT_PRIORITY="leader", ISABI_RELEASE_HOLDER=str(batch.get("holder") or holder or ""))
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    env.setdefault(LEAD_GATE_TIMEOUT_ENV, str(LEAD_GATE_TIMEOUT_S))
     say(f"[lead] batch {name}: {len(ids)} change{'s' if len(ids) != 1 else ''}, {len(units)} steps"
         + (f" ({len(st['done'])} done earlier)" if st["done"] else "") + f"; logs in {logs}")
 
