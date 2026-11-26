@@ -137,7 +137,10 @@ LONG_LINE_OVER = 6      # the line is long when more than this many changes wait
 MAX_BATCH_ENV = "ISABI_BATCH_MAX"   # fixes the limit for one command, long line or not (take/ship --max N does the same)
 LEAD_FILE = "isabi-release-lead.json"      # in this worktree's git dir: how far `lead` got with the batch led here
 LEAD_LOG_DIR = "isabi-release-lead-logs"   # in this worktree's git dir: one log per step of `lead`
+LEAD_PID_FILE = "isabi-release-lead.pid"   # in this worktree's git dir: the one `lead` running here
 LEAD_RENEW_S = 600      # `lead` renews the release lock this often while a step runs
+LEAD_POLL_S = 15        # ...and looks at the running step this often
+DRIVE_BUSY_MAX = 30     # `drive` gives up after this many batches in a row that another session took first
 LEAD_RESULT_ENV = "ISABI_LEAD_RESULT_FILE"         # `drive` reads each batch's outcome from this file
 BATCH_LOG_ENV = "ISABI_RELEASE_BATCH_LOG"          # where `lead` keeps one line per batch (default ~/.theo/...)
 DRIVE_WAIT_S = 1800     # `drive` waits this long for another session's release to end before returning WAITING
@@ -1405,7 +1408,8 @@ def _print_batch(cwd: Path, app: Path, batch: dict) -> None:
           " (it uploads them), from a checkout that has them.")
     print("  3. push main: isabi-app (git push origin HEAD:main), then isabi (git push origin HEAD:main)")
     print("  4. python build/release_batch.py done")
-    print("  Or all four as one command (it stops at the first failure with the lock held): python build/release_batch.py lead")
+    print("  Or all four as one command, in the background (about half an hour; it stops at the first failure with the lock "
+          "held): python build/release_batch.py lead")
     print('  A gate fails: python build/release_batch.py drop <entry> --reason "<gate>" --reset, then gate again.')
     print("  The lock lasts 60 minutes from here (each deploy renews it). Gates running long: python build/release_lock.py renew")
 
@@ -1630,7 +1634,10 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
 # carries on where the first stopped. Nothing here decides which change is at fault: that stays with the session.
 LEAD_STEPS = ("gates", "main", "sync", "commit", "deploy", "push", "done")
 LEAD_FROM = ("gates", "main", "sync", "deploy", "push")   # lead --from: the steps before it were done by hand
-_GATE_SCRIPT_RE = re.compile(r"^build/[A-Za-z0-9_./-]+\.(?:mjs|cjs|js|py)$")
+# A named gate is a check: build/verify_*, build/audit_* or build/check_* (in a subfolder too). Never a script that
+# releases, deploys, syncs, seeds or pushes: with the release lock held by this worktree, `deploy_cloudflare.py` named
+# as a "gate" would take the batch live before its checks ran, and `release_lock.py release` would free the lock.
+_GATE_SCRIPT_RE = re.compile(r"^build/(?:[A-Za-z0-9_-]+/)*(?:verify|audit|check)_[A-Za-z0-9_.-]+\.(?:mjs|cjs|js|py)$")
 _TEXT_SUFFIXES = (".js", ".mjs", ".html", ".css", ".json", ".svg", ".txt", ".webmanifest", ".xml", ".md")
 
 
@@ -1644,15 +1651,16 @@ def _gate_command(gate: str, cwd: Path, app: Path) -> tuple[Path, list[str]]:
         raise BatchError(f'gate {gate!r} does not say where it runs ("isabi-app: ..." or "isabi: ...")')
     repo = cwd if where == "isabi" else app
     try:
-        argv = shlex.split(cmd.strip())
+        argv = shlex.split(cmd.strip().replace("\\", "/"))  # build\verify_x.mjs, as typed on Windows
     except ValueError:
         raise BatchError(f"gate {gate!r} cannot be read as a command") from None
     if len(argv) < 2 or argv[0] not in ("node", "python", "python3", "py"):
         raise BatchError(f"gate {gate!r} is not `node build/<file>` or `python build/<file>`: run it by hand on this batch, "
                          "then lead --from main")
-    script = argv[1].replace("\\", "/")
+    script = argv[1]
     if not _GATE_SCRIPT_RE.match(script) or ".." in script:
-        raise BatchError(f"gate {gate!r} does not name a script under build/: run it by hand on this batch, then lead --from main")
+        raise BatchError(f"gate {gate!r} does not name a check under build/ (verify_*, audit_* or check_*): lead runs nothing "
+                         "else from the line. Run it by hand on this batch if it is one, then lead --from main")
     if not (repo / script).is_file():
         raise BatchError(f"gate {gate!r}: {script} is not in this batch ({repo})")
     return repo, [("node" if argv[0] == "node" else sys.executable), script, *argv[2:]]
@@ -1717,7 +1725,7 @@ def _lead_exec(unit: dict, log: Path, env: dict, cwd: Path) -> int:
             started = renewed = time.monotonic()
             while True:
                 try:
-                    return proc.wait(timeout=15)
+                    return proc.wait(timeout=LEAD_POLL_S)
                 except subprocess.TimeoutExpired:
                     pass
                 if time.monotonic() - started > unit.get("timeout", 3600):
@@ -1752,6 +1760,8 @@ def _lead_commit(cwd: Path, app: Path, batch: dict) -> tuple[bool, str]:
         return False, (f"sync_app.py left changes outside {SITE_GENERATED_DIR}/ and {SITE_GENERATED_FILE} "
                        f"({', '.join(outside[:5])}{', ...' if len(outside) > 5 else ''}): not committed")
     if not paths:
+        if batch.get("shell"):
+            return _synced_shell(cwd, batch)
         return True, "nothing to commit (no Command Center change in this batch)"
     _run(["add", "-A", "--", *[f for f in (SITE_GENERATED_DIR, SITE_GENERATED_FILE) if any(x == f or x.startswith(f + "/") for x in paths)]],
          cwd)
@@ -1766,7 +1776,20 @@ def _lead_commit(cwd: Path, app: Path, batch: dict) -> tuple[bool, str]:
     what = "; ".join(" ".join(str(e.get("summary") or "").split())[:110] for e in batch["entries"])
     _run(["commit", "-q", "-m", f"v{shell}: sync Command Center bundle (batch of {n}: {what})"], cwd, env_extra=_ident_env(cwd),
          timeout=900)
-    return True, f"{len(staged)} file(s) committed as v{shell}"
+    ok, why = _synced_shell(cwd, batch)
+    return (True, f"{len(staged)} file(s) committed as v{shell}") if ok else (False, why)
+
+
+def _synced_shell(cwd: Path, batch: dict) -> tuple[bool, str]:
+    """A batch with a shell version goes live only with that version in the committed bundle. (sync_app.py passed, then
+    its output was cleaned away with a stray file: the commit step would find nothing to commit and the deploy would
+    send the old app/ with the batch's functions/.)"""
+    want = batch.get("shell") or ""
+    have = shell_ver_of(_blob(cwd, f"HEAD:{SITE_GENERATED_DIR}/sw.js"))
+    if want and have != want:
+        return False, (f"the bundle committed in isabi is shell v{have or '?'}, not the batch's v{want}: sync_app.py's output is "
+                       "not in this commit. Run: python build/release_batch.py lead --from sync")
+    return True, f"the bundle in isabi is v{want}" if want else ""
 
 
 def _batch_log_path() -> Path:
@@ -1800,13 +1823,20 @@ def lead(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", max_cha
     BUSY     another session holds the release lock
     FAILED   a step failed; the lock is still held by this worktree: fix or drop, then lead again (or abort)"""
     result: dict = {}
+    pid_file: Path | None = None
     try:
+        pid_file = _lead_claim(cwd)
         state, msg = _lead(cwd, holder=holder, version=version, max_changes=max_changes, from_step=from_step,
                            retries=max(0, retries), quiet=quiet, result=result)
     except RL.LockError as exc:
         result.update({"state": "ERROR", "message": str(exc)})
         raise
     finally:
+        if pid_file is not None:
+            try:
+                pid_file.unlink()
+            except OSError:
+                pass
         out = os.environ.get(LEAD_RESULT_ENV, "").strip()
         if out:
             try:
@@ -1814,6 +1844,31 @@ def lead(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", max_cha
             except OSError:
                 pass
     return state, msg
+
+
+def _lead_claim(cwd: Path) -> Path:
+    """One lead per worktree: a second one (the same command run again after a foreground time limit, or a lead beside
+    a drive) would run sync_app.py, the commit and the deploy twice in the same tree. Returns the file to remove."""
+    p = RL.git_dir(cwd) / LEAD_PID_FILE
+    for _ in range(2):
+        try:
+            with open(p, "x", encoding="utf-8") as fh:
+                fh.write(json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "at": RL._iso(RL._now())}) + "\n")
+            return p
+        except FileExistsError:
+            try:
+                cur = json.loads(p.read_text(encoding="utf-8"))
+                pid = int(cur.get("pid") or 0)
+            except (OSError, ValueError, TypeError, AttributeError):
+                cur, pid = {}, 0
+            if cur.get("host") == socket.gethostname() and pid != os.getpid() and _pid_alive(pid):
+                raise BatchError(f"lead is already running in this worktree (process {pid}, since {cur.get('at', '?')}): let it "
+                                 "finish; its output and the logs in the git dir say where it is.") from None
+            try:
+                p.unlink()  # left by a lead that was killed
+            except OSError:
+                pass
+    raise BatchError(f"could not write {p}")
 
 
 def _lead(cwd: Path, *, holder: str, version: str, max_changes: int | None, from_step: str, retries: int, quiet: bool,
@@ -1830,14 +1885,26 @@ def _lead(cwd: Path, *, holder: str, version: str, max_changes: int | None, from
         raise BatchError(f"--from must be one of: {', '.join(LEAD_FROM)}")
     app = app_root(cwd)
     if not _local_json(cwd, BATCH_FILE):
+        if from_step:
+            # The steps before --from were "done by hand": impossible on a batch that does not exist yet.
+            raise BatchError("--from is for a batch this worktree already leads (its earlier steps were done by hand); it "
+                             "leads none. Run lead without --from: it takes a batch and runs every step.")
         if not holder.strip():
             raise BatchError("this worktree leads no batch: --holder is needed to take one (who is releasing)")
         try:
             batch = take(cwd, holder=holder, version=version, max_changes=max_changes, quiet=quiet)
         except BatchError:
             raise
-        except RL.LockError as exc:  # another session holds the lock, or took it first
-            return end("BUSY", str(exc).splitlines()[0])
+        except RL.LockError as exc:
+            # BUSY only when another session really holds the lock now (drive then waits for it). Anything else
+            # (an expired lock whose deploy is not on main, a lock that cannot be written) needs someone to look.
+            try:
+                now_sha, now_lock = RL.read_remote_lock(cwd)
+            except RL.LockError:
+                raise exc from None
+            if now_sha and not RL.held_by_me(now_lock, cwd) and not RL.is_expired(now_lock, 0):
+                return end("BUSY", str(exc).splitlines()[0])
+            raise
         if not batch["entries"]:
             return end("NOTHING", "no change to release; the release lock is free.", left_out=batch.get("left_out") or [])
     batch, lock = _leading(cwd)
@@ -1899,6 +1966,8 @@ def _lead(cwd: Path, *, holder: str, version: str, max_changes: int | None, from
                 st["siteAfterCommit"] = _head(cwd)
         elif key == "done":
             done(cwd, quiet=quiet)
+        elif key == "deploy" and not _synced_shell(cwd, batch)[0]:
+            ok, note = _synced_shell(cwd, batch)
         else:
             try:
                 if unit.get("gate"):
@@ -2009,7 +2078,7 @@ def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None
     batch_cap(max_changes)
     app_root(cwd)
     shipped: list[dict] = []
-    nothing = 0
+    nothing = busy = 0
     wait_from: float | None = None
     idle_from: float | None = None
     shown = ""
@@ -2065,9 +2134,10 @@ def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None
             say(f"[drive] the release line cannot be reached ({str(exc).splitlines()[0][:160]}); trying again")
             _sleep(max(0, poll_s))
             continue
-        wait_from = None
         res = _spawn_lead(cwd, holder=holder, max_changes=max_changes, retries=retries)
         state = res.get("state")
+        if state != "BUSY":
+            wait_from, busy = None, 0
         if state == "SHIPPED":
             nothing = 0
             shipped.append(res)
@@ -2078,6 +2148,12 @@ def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None
             if nothing >= 3:
                 return "FAILED", f"three batches in a row had nothing to release though changes wait: run status. {tally()}."
         elif state == "BUSY":
+            # Another session took the lock between the look above and the take: wait for it like any release, on the
+            # same clock (wait_s) and never without end.
+            busy += 1
+            wait_from = _mono() if wait_from is None else wait_from
+            if busy >= DRIVE_BUSY_MAX or _mono() - wait_from >= max(0, wait_s):
+                return "WAITING", f"another session keeps taking the release lock first ({res.get('message')}); {tally()}. Run drive again."
             say(f"[drive] {res.get('message')}")
             _sleep(max(0, poll_s))
         else:
@@ -2190,7 +2266,8 @@ def main(argv: list[str] | None = None) -> int:
     lv.add_argument("--force", action="store_true",
                     help="clear a waiting or left-out entry another session joined (only when the owner says that change is abandoned)")
     ld = sub.add_parser("lead", help="lead one batch from start to finish: take (when not leading yet), gates, sync_app.py, "
-                                     "commit, deploy, push, done; stops at the first failure with the lock held")
+                                     "commit, deploy, push, done; stops at the first failure with the lock held. About half "
+                                     "an hour: run it in the background")
     ld.add_argument("--holder", default="", help="who is releasing (needed to take a batch; not to carry on with one)")
     ld.add_argument("--version", default="")
     ld.add_argument("--max", type=int, default=None, dest="max_changes", metavar="N",
@@ -2199,7 +2276,8 @@ def main(argv: list[str] | None = None) -> int:
     ld.add_argument("--from", default="", dest="from_step", choices=LEAD_FROM,
                     help="start at this step (the ones before it were done by hand); default: where the last run stopped")
     ld.add_argument("--retries", type=int, default=1, help="run a failed gate again this many times (default 1)")
-    dv = sub.add_parser("drive", help="lead batch after batch until the line is empty (one driver session for the line)")
+    dv = sub.add_parser("drive", help="lead batch after batch until the line is empty (one driver session for the line); "
+                                      "run it in the background")
     dv.add_argument("--holder", required=True)
     dv.add_argument("--max", type=int, default=None, dest="max_changes", metavar="N")
     dv.add_argument("--batches", type=int, default=0, metavar="N", help="stop after N batches (default: until the line is empty)")

@@ -53,7 +53,8 @@ def main() -> int:  # noqa: PLR0915
     os.environ[V.LIVE] = "19.6.100"
     batch_log = tmp / "batches.log"
     os.environ[RB.BATCH_LOG_ENV] = str(batch_log)
-    real_exec, real_spawn, real_sleep = RB._lead_exec, RB._spawn_lead, RB._sleep
+    real_exec, real_spawn, real_sleep, real_mono = RB._lead_exec, RB._spawn_lead, RB._sleep, RB._mono
+    real_poll, real_renew = RB.LEAD_POLL_S, RB.LEAD_RENEW_S
     tick()
     try:
         for name in ("isabi.git", "isabi-app.git"):
@@ -125,7 +126,14 @@ def main() -> int:  # noqa: PLR0915
                 os.environ.pop(RB.LEAD_RESULT_ENV, None)
             return json.loads(out.read_text(encoding="utf-8"))
 
-        RB._lead_exec, RB._spawn_lead, RB._sleep = fake_exec, spawn_here, (lambda _s: tick(20))
+        spawned = [0]
+
+        def spawn_counted(cwd: pathlib.Path, **kw) -> dict:
+            spawned[0] += 1
+            return spawn_here(cwd, **kw)
+
+        # Waits run on the gate's own clock: a sleep moves it 20 s on, so no check waits in real time.
+        RB._lead_exec, RB._spawn_lead, RB._sleep, RB._mono = fake_exec, spawn_counted, (lambda _s: tick(20)), (lambda: float(V.CLOCK[0]))
 
         def keys(since: int = 0) -> list[str]:
             return [c[0] for c in calls[since:]]
@@ -190,8 +198,35 @@ def main() -> int:  # noqa: PLR0915
         check(RL.held_by_me(lock, D) and lock.get("batch") == [p[6]["id"], q[0]["id"], q[1]["id"]]
               and V.line_ids(S[0], "waiting") == [p[6]["id"], q[0]["id"], q[1]["id"]] and os.environ[V.LIVE] == "19.6.101",
               "the lock stays with the leader, the changes stay in the batch and nothing went live")
+        # 3b. the real step runner (stood in for everywhere else): the time limit, the lock kept alive, a program that is missing
+        RB.LEAD_POLL_S, RB.LEAD_RENEW_S = 0.3, 0
+        exp0 = RL.read_remote_lock(S[0])[1]["expiresAt"]
+        tick(120)
+        import time as _time  # noqa: PLC0415
+        t_real = _time.monotonic()
+        rc_slow = real_exec({"key": "t", "argv": [sys.executable, "-c", "import time; time.sleep(120)"], "cwd": D, "timeout": 1},
+                            tmp / "t-slow.log", dict(os.environ), D)
+        took = _time.monotonic() - t_real
+        exp1 = RL.read_remote_lock(S[0])[1]["expiresAt"]
+        check(rc_slow == -9 and took < 60 and "over its limit" in text(tmp / "t-slow.log"),
+              "a step over its time limit is stopped (with what it started) and counts as failed")
+        check(exp1 > exp0 and RL.held_by_me(RL.read_remote_lock(S[0])[1], D),
+              "while a step runs, the release lock is renewed, so a long gate never lets it expire")
+        rc_ok = real_exec({"key": "t", "argv": [sys.executable, "-c", "print('gate says hi')"], "cwd": D}, tmp / "t-ok.log", dict(os.environ), D)
+        rc_none = real_exec({"key": "t", "argv": ["no-such-program-isabi"], "cwd": D}, tmp / "t-none.log", dict(os.environ), D)
+        check(rc_ok == 0 and "gate says hi" in text(tmp / "t-ok.log") and rc_none == -2 and "could not start" in text(tmp / "t-none.log"),
+              "a step's output is kept in its log; a program that cannot start is a failed step, not a crash")
+        RB.LEAD_POLL_S, RB.LEAD_RENEW_S = real_poll, real_renew
+        # 3c. one lead at a time in a worktree
+        pid_file = RL.git_dir(D) / RB.LEAD_PID_FILE
+        pid_file.write_text(json.dumps({"pid": os.getppid(), "host": RB.socket.gethostname(), "at": "now"}), encoding="utf-8")
         n1 = len(calls)
+        kind, why = raises(RB.lead, D)
+        check(kind == "BatchError" and "already running in this worktree" in why and keys(n1) == [] and pid_file.exists(),
+              "a second lead in the same worktree is refused while the first one runs (no step runs twice)")
+        pid_file.write_text(json.dumps({"pid": 99999999, "host": RB.socket.gethostname()}), encoding="utf-8")
         (state, msg), out = said(RB.lead, D)
+        check(state == "SHIPPED" and not pid_file.exists(), "a mark left by a lead that was killed does not hold the next one back")
         check(state == "SHIPPED" and "v19.6.102" in msg and keys(n1) == ["main:mobile", "main:boot", "sync", "deploy", "push:app", "push:site"],
               "lead again (no --holder needed) carries on from the step that failed: what passed is not run twice")
         check(RL.read_remote_lock(S[0]) == ("", {}) and not V.line_ids(S[0], "waiting"), "that batch shipped all three")
@@ -230,6 +265,17 @@ def main() -> int:  # noqa: PLR0915
         check(cwd_a == D_app and argv_a == ["node", "build/verify_a.mjs", "--mobile"] and cwd_y == D
               and argv_y == [sys.executable, "build/verify_y.py"],
               "a named gate runs in the repo it names, with its own arguments (python gates on this interpreter)")
+        check(RB._gate_command("isabi-app: node build\\verify_a.mjs", D, D_app)[1] == ["node", "build/verify_a.mjs"],
+              "a gate path typed with backslashes is read the same")
+        put(D / "build" / "deploy_cloudflare.py", "raise SystemExit('never run as a gate')\n")
+        put(D / "build" / "release_lock.py.bak", "")
+        put(D / "build" / "sync_app.py", "raise SystemExit('never run as a gate')\n")
+        refused = ["isabi: python build/deploy_cloudflare.py --pages-only", "isabi: python build/release_lock.py release --force",
+                   "isabi: python build/sync_app.py", "isabi: python build/release_batch.py done", "isabi-app: node build/_browser_slot.mjs"]
+        check(all(raises(RB._gate_command, g, D, D_app)[0] == "BatchError" for g in refused),
+              "a script that deploys, releases the lock or syncs is never run as a named gate: only verify_*, audit_* and check_*")
+        for f in ("deploy_cloudflare.py", "release_lock.py.bak", "sync_app.py"):
+            (D / "build" / f).unlink()
         bad = ["node build/verify_a.mjs", "isabi-app: powershell -c Remove-Item x", "isabi-app: node ../outside.mjs",
                "isabi-app: node build/../../outside.mjs", "isabi-app: node build/missing.mjs", "isabi-app: node", "elsewhere: node build/verify_a.mjs",
                'isabi-app: node "build/verify_a.mjs', "isabi-app: node -e process.exit(0)"]
@@ -269,11 +315,15 @@ def main() -> int:  # noqa: PLR0915
         check(state == "FAILED" and "CRLF" in msg and not git(D, "diff", "--cached", "--name-only"),
               "a bundle staged with CRLF line endings is not committed (live would differ from main)")
         extra.clear()
-        quiet(RB.abort, D)
-        check(RL.read_remote_lock(S[0]) == ("", {}) and V.line_ids(S[0], "waiting") == [w2["id"]], "abort gives the batch up as before")
-        tick()
-        (state, msg), out = said(RB.lead, D, holder="driver")
-        check(state == "SHIPPED", "and the same change ships with the next lead")
+        git(D, "checkout", "--", ".")     # the leader "cleans up", and sync_app.py's output goes with it
+        git(D, "clean", "-fdq")
+        n_c = len(calls)
+        (state, msg), out = said(RB.lead, D)
+        check(state == "FAILED" and "not the batch's v" in msg and "lead --from sync" in out and "deploy" not in keys(n_c),
+              "a bundle that lost sync_app.py's output is never deployed as if there were nothing to commit")
+        (state, msg), out = said(RB.lead, D, from_step="sync")
+        check(state == "SHIPPED" and keys(n_c) == ["sync", "deploy", "push:app", "push:site"],
+              "lead --from sync runs sync_app.py again and ships the batch")
 
         # 8. lead when there is nothing to do, and when another session is releasing
         tick()
@@ -286,12 +336,28 @@ def main() -> int:  # noqa: PLR0915
         (state, msg), out = said(RB.lead, D, holder="driver")
         check(state == "BUSY" and "another session" in msg and V.exits(RB.main, ["lead", "--from", "commit"]) == 2,
               "another session holds the lock: BUSY, naming it (and --from only takes a step a leader can start at)")
+        kind, why = raises(RB.lead, D, holder="driver", from_step="deploy")
+        check(kind == "BatchError" and "--from is for a batch this worktree already leads" in why and RL.held_by_me(RL.read_remote_lock(S[0])[1], S[1]),
+              "lead --from never skips the gates of a batch it would only now take")
 
         # 9. drive: batch after batch until the line is empty
         (state, msg), out = said(RB.drive, D, holder="driver", wait_s=0, poll_s=0)
         check(state == "WAITING" and "another session" in msg and "1 waiting" in msg,
               "drive behind another session's release: WAITING after its wait, naming who releases")
-        quiet(RL.release, S[1])
+        git(S[1], "fetch", "-q", "origin")
+        git(S[1], "checkout", "-q", "--detach", "origin/main")
+        git(S[1], "commit", "-q", "--allow-empty", "-m", "live, never pushed")
+        quiet(RL.claim_deploy, S[1], git(S[1], "rev-parse", "HEAD"), "pages-only deploy")
+        tick(90 * 60)   # that session is gone: its lock is long expired, with a deploy that is not on main
+        spawned[0] = 0
+        try:
+            (state, msg), out = said(RB.drive, D, holder="driver", wait_s=600, poll_s=0)
+        except RL.LockError as exc:
+            state, msg = "RAISED", str(exc)
+        check(state in ("FAILED", "RAISED") and "not on origin/main" in msg and spawned[0] == 1
+              and V.line_ids(S[0], "waiting") == [v["id"]],
+              "an expired lock whose deploy is not on main stops drive at once, saying so: it never loops on it")
+        quiet(RL.release, S[1], force=True)
         d = [join(1 + i % 3, f"d{i}") for i in range(1, 9)]
         tick()
         n8 = len(calls)
@@ -351,7 +417,8 @@ def main() -> int:  # noqa: PLR0915
         check('ISABI_BROWSER_SLOT_PRIORITY="leader"' in src and "deploy_cloudflare.py\", \"--pages-only\"" in src,
               "lead marks its commands as the release leader's and deploys from this PC (--pages-only)")
     finally:
-        RB._lead_exec, RB._spawn_lead, RB._sleep = real_exec, real_spawn, real_sleep
+        RB._lead_exec, RB._spawn_lead, RB._sleep, RB._mono = real_exec, real_spawn, real_sleep, real_mono
+        RB.LEAD_POLL_S, RB.LEAD_RENEW_S = real_poll, real_renew
         for k, v in saved.items():
             if v is None:
                 os.environ.pop(k, None)
