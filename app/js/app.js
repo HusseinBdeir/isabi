@@ -5314,7 +5314,8 @@
     } else {
       const book = typeof siblingCashBook === 'function' ? siblingCashBook(effInd) : { tracked: false };
       if (!book.tracked || typeof buildIndustryCashMoves !== 'function') return null;
-      const moves = buildIndustryCashMoves(effInd, rawKey, { ignorePeriod: true });
+      // A till is the whole cash book whatever the seat (as the Manufacturing till, buildCashTillMoves forceFullFin).
+      const moves = buildIndustryCashMoves(effInd, rawKey, { ignorePeriod: true, forceFullFin: true });
       if (!Array.isArray(moves) || !moves.length) return null;
       let minMoveIso = '';
       for (let i = 0; i < moves.length; i++) {
@@ -14637,6 +14638,27 @@
       canSignOffSentinels,
       voidLog
     };
+  }
+
+  // Entry seats see the whole Daily Operations page: the expense, profit and treasury cards and the Cash Flow table
+  // (owner 2026-11-25). Page-only: every other screen, the hubs, Ask ISABI and the Edge keep seatLens, and tax and
+  // partner splits stay as seatLens has them. Sales and Custom roles are unchanged.
+  function isDailyOpsFullEntrySeat(u) {
+    if (!u || u.id === 'u-locked' || STATE.kioskLocked || String(u.status || '') === 'Suspended' || u.locked) return false;
+    const role = String(u.role || '');
+    if (/^Custom/i.test(role) || u.pbi_access === 'custom' || /Sales/i.test(role) || !/Entry/i.test(role)) return false;
+    // A Cash Flow or Expenses hub switched off for this one person stays off here too (Ledger is off for Entry anyway).
+    const hp = getEffectiveHubPagePolicy(u);
+    if (hp && hp.customized && hp.source === 'seat' && !hp.selectAll
+      && (!canViewHub('cashflow', u) || !canViewHub('expenses', u))) return false;
+    return Boolean(canViewView('daily_ops', u));
+  }
+
+  function dailyOpsSeatLens(u) {
+    if (u === undefined) u = activeUser();
+    const l = seatLens(u);
+    if (l.owner || !isDailyOpsFullEntrySeat(u)) return l;
+    return Object.assign({}, l, { books: true, cashflow: true, ledger: true, expenses: true, profit: true });
   }
 
   const RDL_VERTICAL_INDUSTRY = {
@@ -24392,7 +24414,7 @@
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}" fill="transparent"/>`
         + `<line class="pbi-col-guide" x1="${(x0 + bw / 2).toFixed(1)}" x2="${(x0 + bw / 2).toFixed(1)}" y1="${mt}" y2="${mt + ph}"/>`
         + `${bars}</g>`;
-      g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle">${esc(shortLbl)}</text>`;
+      g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle"${row.noI18nLabel ? ' data-no-i18n="1"' : ''}>${esc(shortLbl)}</text>`;
     });
 
     g += `<line class="axis" x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}"/>`;
@@ -63796,6 +63818,77 @@
     return { salDup, ncd };
   }
 
+  function _bpEnsureDupIndex(st) {
+    const seedSals = SEED && SEED.records && SEED.records.salaries;
+    const custSals = STATE && STATE.customRecords && STATE.customRecords.salaries;
+    const rev = `${(SEED && SEED._customRev) || 0}:${(STATE && STATE._customRev) || 0}:${Array.isArray(seedSals) ? seedSals.length : 0}:${Array.isArray(custSals) ? custSals.length : 0}`;
+    const key = `${rev}|${st.company}|${st.payDate}`;
+    if (st._dupIndex && st._dupIndex.key === key) return st._dupIndex;
+    const d0 = String(st.payDate || '').slice(0, 10);
+    const days = new Set([d0, nearCopyShiftDay(d0, -1), nearCopyShiftDay(d0, 1)].filter(Boolean));
+    const coNorm = norm(st.company || '');
+    const coDefaultNorm = norm(st.company || 'WTC');
+    let hasNearby = false;
+    const scanArr = arr => {
+      if (hasNearby || !Array.isArray(arr)) return;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || r.voided || r.voided_at) continue;
+        const rDate = String(r.date || '').slice(0, 10);
+        if (!days.has(rDate)) continue;
+        const rCoStrict = norm(r.company || '');
+        const rCoWtc = norm(r.company || 'WTC');
+        if (rCoStrict === coNorm || rCoWtc === coDefaultNorm) {
+          hasNearby = true;
+          return;
+        }
+      }
+    };
+    scanArr(SEED && SEED.records && SEED.records.salaries);
+    scanArr(STATE && STATE.customRecords && STATE.customRecords.salaries);
+    st._dupIndex = { key, hasNearby, cache: new Map() };
+    return st._dupIndex;
+  }
+
+  function _bpCheckRowDupCached(st, row, mth, usd, lbp, totalUsdEq, dupConfirmed) {
+    if (!(totalUsdEq > 0)) return { salDup: null, ncd: { hit: null, block: false } };
+    const idx = _bpEnsureDupIndex(st);
+    if (!idx.hasNearby) return { salDup: null, ncd: { hit: null, block: false } };
+    const cKey = `${row.key}|${st.payMonth}|${mth}|${usd}|${lbp}|${totalUsdEq}|${dupConfirmed ? 1 : 0}`;
+    if (idx.cache.has(cKey)) return idx.cache.get(cKey);
+    const res = _bpCheckRowDup(st.company, st.payDate, st.payMonth, row.staff, mth, usd, lbp, totalUsdEq, dupConfirmed);
+    idx.cache.set(cKey, res);
+    return res;
+  }
+
+  function _bpRowMatchesFilter(st, row, edit, q) {
+    return (st.showInactive || row.isActive)
+      && (st.filter === 'all'
+        || (st.filter === 'due' && row.dueUsd > 0.01)
+        || (st.filter === 'selected' && Boolean(edit && edit.checked)))
+      && (!q || norm(row.staff).includes(q) || norm(row.role).includes(q));
+  }
+
+  function _bpApplyRowVisibilityOnly() {
+    const st = _batchPaydayState;
+    const modal = $('batchPaydayModal');
+    if (!st || !modal) return;
+    const q = norm(st.search || '');
+    let visibleCount = 0;
+    st.roster.forEach(row => {
+      const edit = _bpBuildEditState(st, row);
+      const matchesFilter = _bpRowMatchesFilter(st, row, edit, q);
+      const refs = st.rowEls && st.rowEls.get(row.key);
+      const tr = refs ? refs.tr : modal.querySelector(`tr[data-bp-row="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+      if (tr) {
+        tr.hidden = !matchesFilter;
+        if (matchesFilter) visibleCount++;
+      }
+    });
+    const emptyTr = $('bpEmptySearchRow');
+    if (emptyTr) emptyTr.hidden = visibleCount > 0;
+  }
+
   function _bpTranslateNode(el) {
     if (!el || !window.MFG_I18N || typeof window.MFG_I18N.getLang !== 'function') return;
     if (window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
@@ -63863,18 +63956,15 @@
     st.roster.forEach(row => {
       const edit = _bpBuildEditState(st, row);
       const { valid, usd, lbp, totalUsdEq } = _bpParseEditAmounts(edit, fxRate);
-      const matchesFilter = (st.showInactive || row.isActive)
-        && (st.filter === 'all'
-          || (st.filter === 'due' && row.dueUsd > 0.01)
-          || (st.filter === 'selected' && edit.checked))
-        && (!q || norm(row.staff).includes(q) || norm(row.role).includes(q));
+      const matchesFilter = _bpRowMatchesFilter(st, row, edit, q);
 
-      const tr = modal.querySelector(`tr[data-bp-row="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+      const refs = st.rowEls && st.rowEls.get(row.key);
+      const tr = refs ? refs.tr : modal.querySelector(`tr[data-bp-row="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
       if (tr) {
         tr.hidden = !matchesFilter;
         tr.classList.toggle('is-selected', Boolean(edit.checked));
         if (matchesFilter) visibleCount++;
-        const afterCell = tr.querySelector('.bp-after-cell');
+        const afterCell = refs ? refs.afterCell : tr.querySelector('.bp-after-cell');
         const afterState = _bpComputeAfterState(row, edit.checked ? totalUsdEq : 0, st.payMonth, st.payDate);
         if (afterCell) {
           const nextHtml = `<span class="badge ${esc(afterState.cls)}">${esc(afterState.label)}</span>`;
@@ -63884,10 +63974,10 @@
             _bpTranslateNode(afterCell);
           }
         }
-        const dupSpan = tr.querySelector('.bp-dup-badge');
+        const dupSpan = refs ? refs.dupSpan : tr.querySelector('.bp-dup-badge');
         if (edit.checked && totalUsdEq > 0) {
           const mth = edit.method || st.defaultMethod;
-          const { salDup, ncd } = _bpCheckRowDup(st.company, st.payDate, st.payMonth, row.staff, mth, usd, lbp, totalUsdEq, dupConfirmed);
+          const { salDup, ncd } = _bpCheckRowDupCached(st, row, mth, usd, lbp, totalUsdEq, dupConfirmed);
           if (salDup || (ncd && ncd.hit)) {
             const sigPart = `${row.key}|${mth}|${totalUsdEq}|${salDup ? 'dup' : 'nc'}`;
             dupWarnings.push({ staff: row.staff, sigPart, reason: salDup ? 'Same-day duplicate voucher' : 'Possible second copy' });
@@ -64005,7 +64095,7 @@
           </div>
           <div class="modal-header-actions">
             <span class="badge" id="bpFxBadge" data-no-i18n="1">${esc(fxShort)} LL/$</span>
-            <button type="button" class="modal-close-btn" id="bpCloseBtn" aria-label="Close">✕</button>
+            <button type="button" class="modal-close-btn" id="bpCloseBtn" aria-label="Close">${ic('close_x')}</button>
           </div>
         </div>
         <div class="modal-body bp-modal-body">
@@ -64128,6 +64218,23 @@
       </div>
     `;
 
+    st.rosterByKey = new Map(st.roster.map(r => [r.key, r]));
+    st.rowEls = new Map();
+    modal.querySelectorAll('tr[data-bp-row]').forEach(tr => {
+      const k = tr.getAttribute('data-bp-row');
+      if (!k) return;
+      st.rowEls.set(k, {
+        tr,
+        chk: tr.querySelector('input[data-bp-check]'),
+        usd: tr.querySelector('input[data-bp-usd]'),
+        lbp: tr.querySelector('input[data-bp-lbp]'),
+        method: tr.querySelector('select[data-bp-method]'),
+        note: tr.querySelector('input[data-bp-note]'),
+        afterCell: tr.querySelector('.bp-after-cell'),
+        dupSpan: tr.querySelector('.bp-dup-badge')
+      });
+    });
+
     _bpWireModalEvents();
     _bpRefreshSummaryAndRowsInPlace();
     _bpTranslateNode(modal);
@@ -64168,7 +64275,8 @@
       st.roster.forEach(row => {
         const edit = _bpBuildEditState(st, row);
         edit.method = selM;
-        const selEl = modal.querySelector(`select[data-bp-method="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+        const refs = st.rowEls && st.rowEls.get(row.key);
+        const selEl = refs ? refs.method : modal.querySelector(`select[data-bp-method="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
         if (selEl) selEl.value = selM;
       });
       _bpRefreshSummaryAndRowsInPlace();
@@ -64178,12 +64286,12 @@
     });
     $('bpSearch')?.addEventListener('input', e => {
       st.search = e.target.value || '';
-      _bpRefreshSummaryAndRowsInPlace();
+      _bpApplyRowVisibilityOnly();
     });
     modal.querySelectorAll('[data-bp-filter]').forEach(btn => btn.addEventListener('click', () => {
       st.filter = btn.getAttribute('data-bp-filter') || 'all';
       modal.querySelectorAll('[data-bp-filter]').forEach(b => b.classList.toggle('active', b === btn));
-      _bpRefreshSummaryAndRowsInPlace();
+      _bpApplyRowVisibilityOnly();
     }));
     $('bpShowInactiveBtn')?.addEventListener('click', () => {
       st.showInactive = !st.showInactive;
@@ -64195,12 +64303,13 @@
         if (!(row.dueUsd > 0.01)) return;
         const edit = _bpBuildEditState(st, row);
         edit.checked = true;
+        const refs = st.rowEls && st.rowEls.get(row.key);
         if (!String(edit.usd || '').trim() && !String(edit.lbp || '').trim()) {
           edit.usd = row.dueUsd.toFixed(2);
-          const uInp = modal.querySelector(`input[data-bp-usd="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+          const uInp = refs ? refs.usd : modal.querySelector(`input[data-bp-usd="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
           if (uInp) uInp.value = edit.usd;
         }
-        const chkEl = modal.querySelector(`input[data-bp-check="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+        const chkEl = refs ? refs.chk : modal.querySelector(`input[data-bp-check="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
         if (chkEl) chkEl.checked = true;
       });
       _bpRefreshSummaryAndRowsInPlace();
@@ -64215,10 +64324,11 @@
         edit.checked = true;
         edit.usd = half.toFixed(2);
         edit.lbp = '';
+        const refs = st.rowEls && st.rowEls.get(row.key);
         const keyEsc = CSS.escape ? CSS.escape(row.key) : row.key;
-        const uInp = modal.querySelector(`input[data-bp-usd="${keyEsc}"]`);
-        const lInp = modal.querySelector(`input[data-bp-lbp="${keyEsc}"]`);
-        const chkEl = modal.querySelector(`input[data-bp-check="${keyEsc}"]`);
+        const uInp = refs ? refs.usd : modal.querySelector(`input[data-bp-usd="${keyEsc}"]`);
+        const lInp = refs ? refs.lbp : modal.querySelector(`input[data-bp-lbp="${keyEsc}"]`);
+        const chkEl = refs ? refs.chk : modal.querySelector(`input[data-bp-check="${keyEsc}"]`);
         if (uInp) uInp.value = edit.usd;
         if (lInp) lInp.value = '';
         if (chkEl) chkEl.checked = true;
@@ -64232,11 +64342,12 @@
         edit.usd = '';
         edit.lbp = '';
         edit.note = '';
+        const refs = st.rowEls && st.rowEls.get(row.key);
         const keyEsc = CSS.escape ? CSS.escape(row.key) : row.key;
-        const uInp = modal.querySelector(`input[data-bp-usd="${keyEsc}"]`);
-        const lInp = modal.querySelector(`input[data-bp-lbp="${keyEsc}"]`);
-        const nInp = modal.querySelector(`input[data-bp-note="${keyEsc}"]`);
-        const chkEl = modal.querySelector(`input[data-bp-check="${keyEsc}"]`);
+        const uInp = refs ? refs.usd : modal.querySelector(`input[data-bp-usd="${keyEsc}"]`);
+        const lInp = refs ? refs.lbp : modal.querySelector(`input[data-bp-lbp="${keyEsc}"]`);
+        const nInp = refs ? refs.note : modal.querySelector(`input[data-bp-note="${keyEsc}"]`);
+        const chkEl = refs ? refs.chk : modal.querySelector(`input[data-bp-check="${keyEsc}"]`);
         if (uInp) uInp.value = '';
         if (lInp) lInp.value = '';
         if (nInp) nInp.value = '';
@@ -64257,18 +64368,18 @@
         if (!t) return;
         const chkKey = t.getAttribute('data-bp-check');
         if (chkKey) {
-          const row = st.roster.find(r => r.key === chkKey);
+          const row = st.rosterByKey ? st.rosterByKey.get(chkKey) : st.roster.find(r => r.key === chkKey);
           if (!row) return;
           const edit = _bpBuildEditState(st, row);
           edit.checked = Boolean(t.checked);
+          const refs = st.rowEls && st.rowEls.get(row.key);
+          const uInp = refs ? refs.usd : modal.querySelector(`input[data-bp-usd="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
           if (edit.checked && !String(edit.usd || '').trim() && !String(edit.lbp || '').trim()) {
             if (row.dueUsd > 0.01) {
               edit.usd = row.dueUsd.toFixed(2);
-              const uInp = modal.querySelector(`input[data-bp-usd="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
               if (uInp) uInp.value = edit.usd;
-            } else {
-              const uInp = modal.querySelector(`input[data-bp-usd="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
-              if (uInp) try { uInp.focus({ preventScroll: true }); } catch (_) {}
+            } else if (uInp) {
+              try { uInp.focus({ preventScroll: true }); } catch (_) {}
             }
           }
           _bpRefreshSummaryAndRowsInPlace();
@@ -64276,7 +64387,7 @@
         }
         const mKey = t.getAttribute('data-bp-method');
         if (mKey) {
-          const row = st.roster.find(r => r.key === mKey);
+          const row = st.rosterByKey ? st.rosterByKey.get(mKey) : st.roster.find(r => r.key === mKey);
           if (!row) return;
           _bpBuildEditState(st, row).method = t.value || st.defaultMethod;
           _bpRefreshSummaryAndRowsInPlace();
@@ -64290,17 +64401,21 @@
         const nKey = t.getAttribute('data-bp-note');
         const key = uKey || lKey || nKey;
         if (!key) return;
-        const row = st.roster.find(r => r.key === key);
+        const row = st.rosterByKey ? st.rosterByKey.get(key) : st.roster.find(r => r.key === key);
         if (!row) return;
         const edit = _bpBuildEditState(st, row);
         if (uKey) edit.usd = t.value;
         else if (lKey) edit.lbp = t.value;
-        else if (nKey) edit.note = t.value;
+        else if (nKey) {
+          edit.note = t.value;
+          return;
+        }
         if (uKey || lKey) {
           const fxRate = getLbpFxRate(st.payDate, 'LBP') || DEFAULT_LBP_FX_RATE;
           const { valid, totalUsdEq } = _bpParseEditAmounts(edit, fxRate);
           edit.checked = Boolean(valid && totalUsdEq > 0);
-          const chkEl = modal.querySelector(`input[data-bp-check="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
+          const refs = st.rowEls && st.rowEls.get(row.key);
+          const chkEl = refs ? refs.chk : modal.querySelector(`input[data-bp-check="${CSS.escape ? CSS.escape(row.key) : row.key}"]`);
           if (chkEl) chkEl.checked = edit.checked;
         }
         _bpRefreshSummaryAndRowsInPlace();
@@ -73537,10 +73652,90 @@
           cls: 'good', tip: 'Restricted by seat permissions'
         }
       ];
-      chartTitle = lens.profit ? 'Resort Revenue, Kitchen Cost & Profit Trajectory' : 'Resort Revenue Trajectory';
-      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Hospitality & Resorts'))} · Daily Venue Revenue & Memberships`;
       s1Label = 'Revenue'; s2Label = 'F&B Cost'; s3Label = 'Profit';
-      chartBars = indEntities.map(e => ({ label: cleanCeoText(e.name), fullLabel: cleanCeoText(e.name), rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit, badge: `${fmtNum(e.k.loads || 0)} sheets` }));
+      if (isGroupScope) {
+        chartTitle = lens.profit ? 'Resort Revenue, Kitchen Cost & Profit Trajectory' : 'Resort Revenue Trajectory';
+        chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Hospitality & Resorts'))} · Daily Venue Revenue & Memberships`;
+        chartBars = indEntities.map(e => ({ label: cleanCeoText(e.name), fullLabel: cleanCeoText(e.name), rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit, badge: `${fmtNum(e.k.loads || 0)} sheets` }));
+      } else {
+        const byMonth = new Map();
+        const touchMonth = mo => {
+          if (!byMonth.has(mo)) byMonth.set(mo, { revTtc: 0, revHt: 0, stockUsd: 0, maintUsd: 0, cnt: 0 });
+          return byMonth.get(mo);
+        };
+        (hsp.venueRows || []).forEach(r => {
+          const mo = String((r && r.date) || '').slice(0, 7);
+          if (!/^\d{4}-\d{2}$/.test(mo)) return;
+          const b = touchMonth(mo);
+          const ttc = Number(r.ttc_usd || 0);
+          const ht = Number(r.ht_usd != null ? r.ht_usd : ttc);
+          b.revTtc += ttc; b.revHt += ht; b.cnt += 1;
+        });
+        const sortedMonths = Array.from(byMonth.keys()).sort();
+        if (sortedMonths.length >= 2) {
+          (hsp.stockRows || []).forEach(r => {
+            const mo = String((r && r.date) || '').slice(0, 7);
+            if (byMonth.has(mo)) byMonth.get(mo).stockUsd += Number(r.recipe_usage_usd || 0);
+          });
+          (hsp.maintRows || []).forEach(r => {
+            const mo = String((r && r.date) || '').slice(0, 7);
+            if (byMonth.has(mo)) byMonth.get(mo).maintUsd += Number(r.cost_usd || 0);
+          });
+          chartTitle = lens.profit ? 'Monthly Venue Revenue, Kitchen Cost & Profit' : 'Monthly Venue Revenue Trajectory';
+          chartSub = `<span data-no-i18n="1">${esc(cleanCeoText(singleCoName))} · </span><span>Monthly Performance & Profit Trajectory</span>`;
+          chartBars = sortedMonths.slice(-6).map(mo => {
+            const b = byMonth.get(mo);
+            const rev = round2(b.revTtc);
+            const ht = round2(b.revHt);
+            const cost = round2(b.stockUsd);
+            const op = round2((ht - cost) - b.maintUsd);
+            return { label: mo, fullLabel: `${cleanCeoText(singleCoName)} · ${mo}`, rev, cost, op, badge: `${fmtNum(b.cnt)} sheets`, noI18nLabel: true };
+          });
+        } else {
+          const byOutlet = new Map();
+          let venueHtTot = 0;
+          (hsp.venueRows || []).forEach(r => {
+            const outName = cleanCeoText((r && (r.outlet || r.category)) || singleCoName) || cleanCeoText(singleCoName);
+            if (!byOutlet.has(outName)) byOutlet.set(outName, { name: outName, revTtc: 0, revHt: 0, cnt: 0 });
+            const b = byOutlet.get(outName);
+            const ttc = Number(r.ttc_usd || 0);
+            const ht = Number(r.ht_usd != null ? r.ht_usd : ttc);
+            b.revTtc += ttc; b.revHt += ht; b.cnt += 1;
+            venueHtTot += ht;
+          });
+          const outlets = Array.from(byOutlet.values()).sort((a, b) => b.revTtc - a.revTtc);
+          const topOutlets = outlets.slice(0, 5);
+          if (outlets.length > 5) {
+            const rest = outlets.slice(5).reduce((acc, o) => {
+              acc.revTtc += o.revTtc; acc.revHt += o.revHt; acc.cnt += o.cnt; return acc;
+            }, { name: 'Other Outlets', label: 'Other', revTtc: 0, revHt: 0, cnt: 0, _translatable: true });
+            topOutlets.push(rest);
+          }
+          const bars = topOutlets.map(o => {
+            const share = venueHtTot > 0 ? (o.revHt / venueHtTot) : 0;
+            const cost = round2(s.totalStockUsage * share);
+            const maint = round2(s.totalMaintUsd * share);
+            const op = round2((o.revHt - cost) - maint);
+            return { label: o.label || o.name, fullLabel: o.name, rev: round2(o.revTtc), cost, op, badge: `${fmtNum(o.cnt)} sheets`, noI18nLabel: !o._translatable };
+          });
+          if (s.totalMemContract > 0) {
+            bars.push({
+              label: 'Memberships',
+              fullLabel: 'Memberships',
+              rev: round2(s.totalMemContract),
+              cost: 0,
+              op: round2(s.totalMemContract),
+              badge: `${fmtNum((hsp.membershipRows || []).length)} contracts`
+            });
+          }
+          if (!bars.length && focusedEnt) {
+            bars.push({ label: cleanCeoText(focusedEnt.name), fullLabel: cleanCeoText(focusedEnt.name), rev: focusedEnt.k.sales_ttc, cost: focusedEnt.k.raw_cost, op: focusedEnt.k.operating_profit, badge: `${fmtNum(focusedEnt.k.loads || 0)} sheets`, noI18nLabel: true });
+          }
+          chartTitle = lens.profit ? 'Outlet Revenue, Kitchen Cost & Profit Breakdown' : 'Outlet Revenue Breakdown';
+          chartSub = `<span data-no-i18n="1">${esc(cleanCeoText(singleCoName))} · </span><span>Outlet & Membership Breakdown</span>`;
+          chartBars = bars;
+        }
+      }
       pnlBridge = lens.profit ? {
         title: lens.tax
           ? (isGroupScope ? 'Consolidated Resort P&L Value Bridge (Ex-VAT)' : 'Resort P&L Value Bridge (Ex-VAT)')
@@ -76129,7 +76324,13 @@
     STATE._lastIndDopsScope = scopeSig;
 
     const dopsUser = activeUser();
-    const dopsLens = seatLens(dopsUser);
+    const dopsLens = dailyOpsSeatLens(dopsUser);
+    // Jumps out of this page (Cash Flow, Expenses, Ledger hubs) follow the seat's own lens, not the page's.
+    const seatOwnLens = seatLens(dopsUser);
+    const canOpenCashHub = Boolean(seatOwnLens.books);
+    const canOpenExpHub = Boolean(seatOwnLens.expenses);
+    const canOpenLedgerHub = Boolean(seatOwnLens.profit);
+    const dayLossJump = seatOwnLens.expenses ? 'expenses' : (seatOwnLens.books ? 'ledger' : '');
     const canViewBooks = dopsLens.books;
     const canViewExp = dopsLens.expenses;
     const canViewDirect = dopsLens.profit;
@@ -76137,11 +76338,16 @@
     const canViewPayroll = Boolean(dopsLens.payrollDollars != null ? dopsLens.payrollDollars : dopsLens.payroll);
     // Holding's day is group treasury (per-company profit, partner splits): seats without the books get the
     // restricted view, as the handover does (Entry seats reach Daily Operations since 2026-11-20).
-    if (!canViewBooks && ind === 'Holding & Treasury') {
+    // Stays on the seat's own lens: the page lens opens the day to Entry seats, not group treasury.
+    if (!seatOwnLens.books && ind === 'Holding & Treasury') {
       return `<div class="dops-stage" id="dailyOpsStage"><div class="dops-empty"><strong>Restricted Treasury Scope</strong><p>Treasury and external cash flows require Cash Flow &amp; General Ledger permissions.</p></div></div>`;
     }
 
-    const dopsLensFlags = lensFlagsFromSeat(dopsUser);
+    const dopsLensFlags = Object.assign(lensFlagsFromSeat(dopsUser), {
+      canViewBooks: dopsLens.books,
+      canViewProfit: dopsLens.profit,
+      canViewExpenses: dopsLens.expenses
+    });
     const ds0 = sanitizeDomainDatasetForLens(buildIndustryDomainDataset(ind, 0), dopsLensFlags);
     const ds1 = sanitizeDomainDatasetForLens(buildIndustryDomainDataset(ind, 1), dopsLensFlags);
     const ds2 = sanitizeDomainDatasetForLens(buildIndustryDomainDataset(ind, 2), dopsLensFlags);
@@ -76151,7 +76357,7 @@
     const rawSentinels = buildSentinelItems();
     // Seats that cannot open Sentinels (Entry) get no alert titles or counts here.
     const sibCanSn = canViewView('sentinels', dopsUser);
-    const sentinels = !sibCanSn ? [] : (canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1'));
+    const sentinels = !sibCanSn ? [] : (seatOwnLens.books ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1'));
     const openSn = sentinels.filter(s => s && s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
@@ -76173,7 +76379,11 @@
     const salRows = canViewPayroll ? filterRecords(SEED.records.salaries || [], { ignorePeriod: true, tableKey: 'salaries' }) : [];
     const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
     const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
-    const cashMoves = buildIndustryCashMoves(ind, STATE.company, { ignorePeriod: true });
+    // The page lens shows Entry seats the day's cash: the same whole cash book the Owner sees (salary rows only
+    // when the seat may see payroll dollars), not the seat's own narrower book.
+    const cashMoves = buildIndustryCashMoves(ind, STATE.company, dopsLens.books && !seatOwnLens.books
+      ? { ignorePeriod: true, forceFullFin: true, forceSalaries: canViewPayroll }
+      : { ignorePeriod: true });
 
     const revEvents = [];
     const directEvents = [];
@@ -76654,8 +76864,8 @@
           <div class="dops-bar-controls">
             <div class="dops-att-strip" id="dopsAttentionStrip" role="group" aria-label="Needs Attention">
               ${sibHasAtt ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">${sibCanSn ? 'All Clear' : 'No Exceptions'}</span></span>`}
-              ${sibDayLoss ? `<button type="button" class="dops-att-chip crit" data-nav-jump="${canViewExp ? 'expenses' : 'ledger'}" data-ui-tip="Costs were higher than sales on this day. Click to see the cost breakdown.">${ic('warn')}<span class="dops-att-lbl">Day Loss</span><bdi class="dops-att-val">${fmtUSD(dayOpProfit, 0)}</bdi></button>` : ''}
-              ${sibTillNeg ? `<button type="button" class="dops-att-chip crit" data-nav-jump="cashflow" data-ui-tip="The US dollar cash till is below zero as of this day. Click to review cash movements.">${ic('cashflow')}<span class="dops-att-lbl">Till Negative</span><bdi class="dops-att-val">${fmtUSD(closingTillUsd, 0)}</bdi></button>` : ''}
+              ${sibDayLoss ? `<button type="button" class="dops-att-chip crit"${dayLossJump ? ` data-nav-jump="${dayLossJump}"` : ''} data-ui-tip="Costs were higher than sales on this day. Click to see the cost breakdown.">${ic('warn')}<span class="dops-att-lbl">Day Loss</span><bdi class="dops-att-val">${fmtUSD(dayOpProfit, 0)}</bdi></button>` : ''}
+              ${sibTillNeg ? `<button type="button" class="dops-att-chip crit"${canOpenCashHub ? ' data-nav-jump="cashflow"' : ''} data-ui-tip="The US dollar cash till is below zero as of this day. Click to review cash movements.">${ic('cashflow')}<span class="dops-att-lbl">Till Negative</span><bdi class="dops-att-val">${fmtUSD(closingTillUsd, 0)}</bdi></button>` : ''}
               ${sibSalesLow ? `<button type="button" class="dops-att-chip warn" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" data-ui-tip="Compared with the average of the last 7 active days">${ic('sales')}<span class="dops-att-lbl">Sales Below Usual</span><bdi class="dops-att-val">${sibSalesVs7}%</bdi></button>` : ''}
               ${openSn.length > 0 ? `<button type="button" class="dops-att-chip warn" data-nav-jump="sentinels" data-ui-tip="Open alerts raised by the automatic checks. Click to review them.">${ic('warn')}<span class="dops-att-lbl">Open Alerts</span><bdi class="dops-att-val">${fmtNum(openSn.length)}</bdi></button>` : ''}
               ${sibTurnDigest.flaggedCount > 0 ? `<button type="button" class="dops-att-chip warn" id="dopsTurnaroundBtn"${sibAssetJumpView ? ` data-nav-jump="${esc(sibAssetJumpView)}"` : ''} data-ui-tip="Geofenced site stops exceeding ${fmtNum(sibTurnDigest.maxSiteWaitMin, 0)} minutes">${ic('clock')}<span class="dops-att-lbl">Site Wait &gt; ${fmtNum(sibTurnDigest.maxSiteWaitMin, 0)}m</span><bdi class="dops-att-val">${fmtNum(sibTurnDigest.flaggedCount)}</bdi></button>` : ''}
@@ -76708,7 +76918,7 @@
             <div class="dops-kpi-sub">${canViewDirect ? (canViewBooks ? `Open Payables <b>${fmtUSDk(kSnap.ap_balance || 0)}</b>` : 'Payables Restricted') : 'Books Restricted'}</div>
           </div>
 
-          <div class="dops-kpi accent-exp" ${canViewExp ? 'data-nav-jump="expenses"' : ''} data-chart-pop="${esc(sibExpPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-exp" ${canOpenExpHub ? 'data-nav-jump="expenses"' : ''} data-chart-pop="${esc(sibExpPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Expenses</span>
               <span class="dops-kpi-delta neutral">${canViewExp ? `${fmtNum(dayExpList.length)} ${dayExpList.length === 1 ? 'bill' : 'bills'}` : 'Books Restricted'}</span>
@@ -76720,7 +76930,7 @@
             <div class="dops-kpi-sub">${canViewExp ? `Period Bills <b>${fmtUSDk(expTotal)}</b>` : 'Books Restricted'}</div>
           </div>
 
-          <div class="dops-kpi accent-profit${canViewProfit && dayOpProfit < 0 ? ' is-neg' : ''}" ${canViewProfit ? 'data-nav-jump="ledger"' : ''} data-chart-pop="${esc(sibProfPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-profit${canViewProfit && dayOpProfit < 0 ? ' is-neg' : ''}" ${canOpenLedgerHub ? 'data-nav-jump="ledger"' : ''} data-chart-pop="${esc(sibProfPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Day Profit</span>
               <span class="dops-kpi-delta ${canViewProfit ? (dayOpProfit >= 0 ? 'good' : 'crit') : 'neutral'}">${canViewProfit ? `<span>Margin</span> ${dayMarginPct}%` : 'Books Restricted'}</span>
@@ -76732,7 +76942,7 @@
             <div class="dops-kpi-sub">${canViewProfit ? (avg7SibProfit != null ? `7-Day Average <b>${fmtUSDk(avg7SibProfit)}</b>` : `Period Profit <b>${fmtUSDk(opProfit)}</b>`) : 'Books Restricted'}</div>
           </div>
 
-          <div class="dops-kpi accent-cash" ${canViewBooks ? 'data-nav-jump="cashflow"' : ''} data-chart-pop="${esc(sibCashPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-cash" ${canOpenCashHub ? 'data-nav-jump="cashflow"' : ''} data-chart-pop="${esc(sibCashPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Cash Flow</span>
               <span class="dops-kpi-delta ${canViewBooks ? (dayNetCash > 0 ? 'good' : (dayNetCash < 0 ? 'warn' : 'neutral')) : 'neutral'}">${canViewBooks ? (dayNetCash > 0 ? 'Net In' : (dayNetCash < 0 ? 'Net Out' : 'Even')) : 'Books Restricted'}</span>
@@ -76823,7 +77033,7 @@
                 <h2 class="dops-card-title">P&amp;L, Bills &amp; Document Vault</h2>
               </div>
               <div class="dops-card-actions">
-                ${canViewExp ? `<button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
+                ${canOpenExpHub ? `<button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
                 <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(p3ExpRows.length)}</button>` : ''}
               </div>
             </div>
@@ -76862,7 +77072,7 @@
                 <h2 class="dops-card-title">Treasury, External &amp; Loans</h2>
               </div>
               <div class="dops-card-actions">
-                ${canViewBooks ? `<button type="button" class="dops-seg-btn" data-nav-jump="external">External (${fmtNum(p4ExtRows.length)})</button>
+                ${canOpenCashHub ? `<button type="button" class="dops-seg-btn" data-nav-jump="external">External (${fmtNum(p4ExtRows.length)})</button>
                 <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(p4LoanRows.length)}</button>` : ''}
               </div>
             </div>
@@ -77690,13 +77900,17 @@
     const allowed = effRawKey === DEMO_COMPANY_KEY ? null : allowedCompanyNames(opts.user);
     // External, Extended, Salary and Borrowing rows are for Owner / Supervisor / finance seats only, as in Manufacturing.
     const u = opts.user || activeUser();
-    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const seatFullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    // forceFullFin: the whole cash book whatever the seat (tills, as buildCashTillMoves; the Daily Operations page lens).
+    // A forced book carries salary rows unless forceSalaries is false (a seat that may not see payroll dollars).
+    const fullFin = Boolean(opts.forceFullFin) || seatFullFin;
+    const salaryFin = Boolean(seatFullFin || (fullFin && opts.forceSalaries !== false));
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
-    const cacheKey = `${ind}|${effScopeKey}|${(allowed || []).join(',')}|${fullFin ? 1 : 0}|${isDemoScopeActive() ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}|${((SEED.records && SEED.records.sales_tickets) || []).length}`;
+    const cacheKey = `${ind}|${effScopeKey}|${(allowed || []).join(',')}|${fullFin ? 1 : 0}${salaryFin ? 1 : 0}|${isDemoScopeActive() ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}|${((SEED.records && SEED.records.sales_tickets) || []).length}`;
     const _indCashMovesCache = buildIndustryCashMoves._cache || (buildIndustryCashMoves._cache = new Map());
     let all = _indCashMovesCache.get(cacheKey);
     if (!all) {
-      all = buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin);
+      all = buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin);
       if (_indCashMovesCache.size > 24) _indCashMovesCache.clear();
       _indCashMovesCache.set(cacheKey, all);
     }
@@ -77708,7 +77922,7 @@
     return rows;
   }
 
-  function buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin) {
+  function buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin = fullFin) {
     const rows = [];
     let forceRow = false;
     const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
@@ -77877,7 +78091,7 @@
       const l = knd === 'Payment' ? -Math.round(lRaw) : -Math.round(lRaw || Math.round(Number(sp.amount || 0) * 89500));
       addMv(sp.id, sp.date, sp.company, 'exp', 'Supplier Settlement', sp.supplier || 'Supplier', cleanLedgerNote(sp.notes) || 'Supplier payment', shortVoucherRef(sp.reference || sp.name || sp.id), sp.method || 'Payment', u, l, 'settlements', sp);
     });
-    if (fullFin) effectiveRows('salaries', scopedSeed('salaries'), null).forEach(sa => {
+    if (salaryFin) effectiveRows('salaries', scopedSeed('salaries'), null).forEach(sa => {
       const lRaw = Math.round(Number(sa.lbp_amount || 0));
       const uRaw = Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0));
       const det = [sa.payroll_month ? `Payroll ${sa.payroll_month}` : '', cleanLedgerNote(sa.notes)].filter(Boolean).join(' · ');
@@ -194704,7 +194918,7 @@
       case 'overview_profit':
       case 'overview_cash':
       case 'overview_wc': wsHtml = renderOverviewKpiBreakdown(STATE.view); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, seatLens, canViewHub, canSeeTaxBreakdown, canAccessTable, computeStaffMonthPayrollPosition, salaryVoucherUsd895, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, seatLens: dailyOpsSeatLens, canViewHub, canSeeTaxBreakdown, canAccessTable, computeStaffMonthPayrollPosition, salaryVoucherUsd895, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -204863,6 +205077,7 @@
     canViewPayrollDollarAmounts: typeof canViewPayrollDollarAmounts === 'function' ? canViewPayrollDollarAmounts : null,
     canAccessRdlReport: typeof canAccessRdlReport === 'function' ? canAccessRdlReport : null,
     seatLens: typeof seatLens === 'function' ? seatLens : null,
+    dailyOpsSeatLens: typeof dailyOpsSeatLens === 'function' ? dailyOpsSeatLens : null,
     canSeeFleetBurn: () => (typeof canSeeFleetBurn === 'function' ? Boolean(canSeeFleetBurn()) : true),
     findPriceRule: q => (typeof findRule === 'function' && q ? findRule(q) : null),
     getVerifiedCorridorBurn: (company, siteName) => {

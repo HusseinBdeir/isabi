@@ -15242,7 +15242,7 @@
       "Open Invoiced Sales": "المبيعات المفوترة المفتوحة",
       "Sales & Deposits": "المبيعات والودائع",
       "Cash in vs cash out by month": "التدفقات النقدية الداخلة مقابل الخارجة حسب الشهر",
-      "Monthly Performance & Profit Trajectory": "مسار الأداء والأرباح الشهري",
+      "Monthly Performance & Profit Trajectory": "مسار الأداء الشهري والربحية",
       "Trial balance requires review ($0.00 target)": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00)",
       "Trial balance requires review ($0.00 target).": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00).",
       "POS Till #1": "صندوق نقطة البيع #1",
@@ -15915,7 +15915,14 @@
       "Receiver Records": "ما تسجّله الشركة المستلمة",
       "The receiving company already has this cost on file": "هذه الكلفة مسجّلة مسبقاً لدى الشركة المستلمة",
       "A seat with access to both companies must do this": "يجب أن ينفّذ ذلك مستخدم له صلاحية على الشركتين",
-      "This ticket is no longer waiting: the receiving company has its expense, or the ticket was voided.": "هذا الإيصال لم يعد بالانتظار: الشركة المستلمة سجّلت مصروفها أو أُلغي الإيصال."
+      "This ticket is no longer waiting: the receiving company has its expense, or the ticket was voided.": "هذا الإيصال لم يعد بالانتظار: الشركة المستلمة سجّلت مصروفها أو أُلغي الإيصال.",
+      "Monthly Venue Revenue, Kitchen Cost & Profit": "إيرادات الفروع الشهرية وتكلفة المطبخ والربح",
+      "Monthly Venue Revenue Trajectory": "مسار إيرادات الفروع الشهرية",
+      "Outlet Revenue, Kitchen Cost & Profit Breakdown": "تفصيل إيرادات المنافذ وتكلفة المطبخ والربح",
+      "Outlet Revenue Breakdown": "تفصيل إيرادات المنافذ",
+      "Outlet & Membership Breakdown": "تفصيل المنافذ والاشتراكات",
+      "Other Outlets": "منافذ أخرى",
+      "TILLS MATCHED": "الصناديق مطابقة"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31139,7 +31146,7 @@
       "Open Invoiced Sales": "Ventes facturées ouvertes",
       "Sales & Deposits": "Ventes et dépôts",
       "Cash in vs cash out by month": "Encaissements vs décaissements par mois",
-      "Monthly Performance & Profit Trajectory": "Trajectoire mensuelle de performance et de profit",
+      "Monthly Performance & Profit Trajectory": "Trajectoire Mensuelle des Revenus & Résultats",
       "Trial balance requires review ($0.00 target)": "La balance générale nécessite une révision (objectif $0.00)",
       "Trial balance requires review ($0.00 target).": "La balance générale nécessite une révision (objectif $0.00).",
       "POS Till #1": "Caisse PDV n°1",
@@ -31812,7 +31819,14 @@
       "Receiver Records": "Montant enregistré par le destinataire",
       "The receiving company already has this cost on file": "La société destinataire a déjà enregistré ce coût",
       "A seat with access to both companies must do this": "Un poste ayant accès aux deux sociétés doit le faire",
-      "This ticket is no longer waiting: the receiving company has its expense, or the ticket was voided.": "Ce bon n'est plus en attente : la société destinataire a sa dépense, ou le bon a été annulé."
+      "This ticket is no longer waiting: the receiving company has its expense, or the ticket was voided.": "Ce bon n'est plus en attente : la société destinataire a sa dépense, ou le bon a été annulé.",
+      "Monthly Venue Revenue, Kitchen Cost & Profit": "Revenus Mensuels des Points de Vente, Coût Cuisine & Profit",
+      "Monthly Venue Revenue Trajectory": "Trajectoire Mensuelle des Revenus des Points de Vente",
+      "Outlet Revenue, Kitchen Cost & Profit Breakdown": "Ventilation Revenus des Points de Vente, Coût Cuisine & Profit",
+      "Outlet Revenue Breakdown": "Ventilation des Revenus par Point de Vente",
+      "Outlet & Membership Breakdown": "Ventilation Points de Vente & Abonnements",
+      "Other Outlets": "Autres Points de Vente",
+      "TILLS MATCHED": "CAISSES CONCORDANTES"
     }
   };
 

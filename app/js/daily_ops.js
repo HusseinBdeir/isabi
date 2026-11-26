@@ -3315,7 +3315,9 @@
     const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
     const getUser = (ctx && typeof ctx.activeUser === 'function') ? ctx.activeUser : (ent && typeof ent.activeUser === 'function' ? ent.activeUser : null);
     const u = getUser ? getUser() : null;
-    const lensFn = (ctx && typeof ctx.seatLens === 'function') ? ctx.seatLens : (ent && typeof ent.seatLens === 'function' ? ent.seatLens : null);
+    // The page lens (Entry seats see the whole day, owner 2026-11-25) when the caller passes none.
+    const entLens = ent ? (typeof ent.dailyOpsSeatLens === 'function' ? ent.dailyOpsSeatLens : (typeof ent.seatLens === 'function' ? ent.seatLens : null)) : null;
+    const lensFn = (ctx && typeof ctx.seatLens === 'function') ? ctx.seatLens : entLens;
     const hasExplicitSeatLens = Boolean(ctx && typeof ctx.seatLens === 'function');
     const hasCustomMockHooks = Boolean(
       !hasExplicitSeatLens && ctx && (

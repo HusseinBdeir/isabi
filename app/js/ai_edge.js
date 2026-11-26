@@ -2513,7 +2513,8 @@
 
     const safeKpis = kpiPairs.filter(p => !(
       (!lens.profit && /\b(profit|margin|gm|cost|cogs|noi|commission|brokerage)\b/i.test(p.lbl)) ||
-      (!lens.books && /\b(cash|till|fiduciary|trial balance|payable|ap)\b/i.test(p.lbl))
+      (!lens.books && /\b(cash|till|fiduciary|trial balance|payable|ap)\b/i.test(p.lbl)) ||
+      (lens.expenses === false && /\b(expenses?|bills?)\b/i.test(p.lbl))
     ));
     const bullets = [];
     if (safeKpis.length >= 2) {
