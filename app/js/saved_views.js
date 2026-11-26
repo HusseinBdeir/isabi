@@ -27,6 +27,7 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   const ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5h9v11l-4.5-3-4.5 3z"/></svg>';
+  const TRASH_ICON = '<svg class="ic" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6h17M8.5 6V4a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 4v2M18.5 6v13a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V6M10 10.5v6M14 10.5v6"/></svg>';
 
   function seatId() {
     const u = D && D.activeUser ? D.activeUser() : null;
@@ -229,7 +230,7 @@
           <button type="button" class="sv-apply" data-sv-apply="${esc(v.id)}" data-no-i18n="1">
             <span class="sv-name">${esc(v.name)}</span><span class="sv-desc">${esc(describe(v.payload))}</span>
           </button>
-          <button type="button" class="sv-del" data-sv-del="${esc(v.id)}" aria-label="Delete this view" data-ui-tip="Delete this view">✕</button>
+          <button type="button" class="sv-del" data-sv-del="${esc(v.id)}" aria-label="Delete this view" data-ui-tip="Delete this view">${window.ic ? window.ic('trash') : TRASH_ICON}</button>
         </div>`).join('')}</div>` : '<div class="sv-empty">No saved views for this table yet.</div>'}
       <form class="sv-save" data-sv-save="1">
         <input type="text" class="sv-name-input" maxlength="60" placeholder="Name this view" aria-label="Name this view" autocomplete="off">

@@ -639,6 +639,7 @@
     sentinelFilter: 'all',
     geoAuditFilter: 'all',
     userGeoAuditFilter: 'all',
+    hubInspectorReturn: null,
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
     dailyOpsCommLens: 'pulse',
@@ -7539,6 +7540,10 @@
     driver: ['default_driver', 'driver', 'drivers_list', 'day_operator', 'night_operator'],
     truck: ['name', 'plate_no', 'truck', 'equipment', 'Equipment', 'assigned_trucks', 'trucks_list'],
     plate: ['plate_no', 'name', 'truck', 'equipment', 'Equipment', 'trucks_list'],
+    vin: ['chassis_vin', 'vin'],
+    chassis_vin: ['chassis_vin', 'vin'],
+    item_group: ['item_group', 'group'],
+    partners_summary: ['partners_summary', 'partner'],
     company: ['company', 'companies_list', 'bu'],
     bu: ['company', 'companies_list', 'bu'],
     site: ['site', 'Site', 'location'],
@@ -7636,7 +7641,54 @@
     sal_status_lbl: 'Month Status',
     set_date: 'Set Date',
     eff_date: 'Set Date',
-    tx_date: 'Tx Date'
+    tx_date: 'Tx Date',
+    tenant: 'Tenant',
+    client: 'Client',
+    carrier: 'Carrier',
+    member: 'Member',
+    buyer: 'Buyer',
+    contractor: 'Contractor',
+    property: 'Property',
+    unit: 'Unit',
+    line: 'Insurance Line',
+    peril: 'Peril',
+    stage: 'Stage',
+    vin: 'VIN',
+    chassis_vin: 'VIN / Chassis',
+    item_group: 'Item Group',
+    partners_summary: 'Partners',
+    model: 'Model',
+    warehouse: 'Warehouse',
+    terminal: 'Terminal',
+    cashier: 'Cashier',
+    store: 'Store',
+    season: 'Season',
+    frequency: 'Billing',
+    deed_status: 'Deed Status',
+    job_type: 'Job Type',
+    fromCo: 'From Company',
+    toCo: 'To Company',
+    counterparty: 'Counterparty',
+    direction: 'Direction',
+    open_ar_usd: 'Open AR ($)',
+    open_ar_4112_usd: 'Open AR ($)',
+    net_payable_4017_usd: 'Carrier Payable ($)',
+    broker_comm_7063_usd: 'Retained Comm ($)',
+    expected_comm_4117_usd: 'Expected Comm ($)',
+    client_billed_4112_usd: 'Net Billed ($)',
+    deposit_gl4196_usd: 'Security Deposit ($)',
+    gross_ar_usd: 'Gross AR ($)',
+    advance_usd: 'Advance ($)',
+    balance_usd: 'Open Balance ($)',
+    collected_usd: 'Collected ($)',
+    amount_ttc_usd: 'Amount ($)',
+    net_usd: 'Net ($)',
+    vat_usd: 'VAT ($)',
+    ttc_usd: 'Total ($)',
+    net_comm_usd: 'Net Comm ($)',
+    gross_comm_usd: 'Gross Comm ($)',
+    gross_prem_usd: 'Gross Prem ($)',
+    annual_ttc_usd: 'Annual Rent ($)'
   };
 
   const VIEW_COL_DEFS = {
@@ -8123,6 +8175,10 @@
     }
     if (colKey === 'set_date' || colKey === 'eff_date') return String(r.set_date || r.rep_date || r.date || '').slice(0, 10) || null;
     if (colKey === 'tx_date') return String(r.date || '').slice(0, 10) || null;
+    if (view === 'hld_loans') {
+      if (colKey === 'counterparty') return r.counterparty || r.party || r.borrower || r.lender || '';
+      if (colKey === 'direction') return String(r.side || r.type || r.direction || 'Loan Given');
+    }
     if (colKey === 'date' && r.date !== undefined) return isTxOnlyTableViewKey(view) ? recordDateFor(r, 'tx') : recordDate(r);
     if (colKey === 'tank_rem' || colKey === 'tank_remaining_litres') {
       const dt = getDieselTankLedger();
@@ -8552,6 +8608,19 @@
   // panel, the rows that are not in the bar are taken out and the caller draws from what comes back, so
   // its count, paging and TOTAL follow. `mapFn` builds the chart row of a source row when the chart reads
   // extra fields; the source rows are returned.
+  const PANEL_TO_CF_VIEW = {
+    hspPosPanel: 'hsp_pos',
+    trdWarrantyPanel: 'trd_warranty',
+    hspPartnersPanel: 'hsp_partners',
+    hspTariffsPanel: 'hsp_tariffs',
+    hldDueMatrixPanel: 'hld_consolidation',
+    hldPartnerChronoPanel: 'hld_partners'
+  };
+  function hasDirectColFilter(view) {
+    const cf = view && STATE.colFilters && STATE.colFilters[view];
+    if (!cf) return false;
+    return Object.values(cf).some(v => Boolean(v && String(v).trim()));
+  }
   function regPanelRows(panelId, rows, shownKey, mapFn) {
     const src = Array.isArray(rows) ? rows : [];
     let chartRows = typeof mapFn === 'function' ? src.map(mapFn) : src;
@@ -8559,10 +8628,23 @@
     // Rows compares the listed rows with them.
     const allChartRows = chartRows;
     let out = src;
+    const mappedPanelView = PANEL_TO_CF_VIEW[panelId] || '';
+    const cfKey = (shownKey && hasDirectColFilter(shownKey))
+      ? shownKey
+      : ((mappedPanelView && hasDirectColFilter(mappedPanelView))
+        ? mappedPanelView
+        : (shownKey || mappedPanelView || panelId || ''));
+    if (cfKey) _tablePoolCache[cfKey] = allChartRows;
+    if (cfKey && hasDirectColFilter(cfKey)) {
+      const keptChart = applyColFiltersForView(chartRows, cfKey);
+      const keptSet = new Set(keptChart);
+      out = out.filter((_, i) => keptSet.has(chartRows[i]));
+      chartRows = keptChart;
+    }
     const drill = panelId ? getRegDrill(panelId) : null;
     if (drill) {
       const keep = chartRows.map(r => regDrillMatch(r, drill, panelId, ''));
-      out = src.filter((_, i) => keep[i]);
+      out = out.filter((_, i) => keep[i]);
       chartRows = chartRows.filter((_, i) => keep[i]);
     }
     if (panelId) _regPanelRows[panelId] = { rows: chartRows, all: allChartRows, shownKey: shownKey || '' };
@@ -9325,6 +9407,59 @@
     return Boolean(keptOverWorkbookId(r, info));
   }
 
+  function _translateVoidEl(el) {
+    if (el && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(el);
+    }
+  }
+
+  function _setVoidBtnEnAria(btn, enStr) {
+    if (!btn) return;
+    btn['__enAttr_aria-label'] = enStr;
+    delete btn['__enAttrApp_aria-label'];
+    btn.setAttribute('aria-label', enStr);
+  }
+
+  function armOrRunInlineVoidBtn(btn, onConfirm) {
+    if (!btn) return;
+    const voidTd = btn.parentElement && btn.parentElement.tagName === 'TD' ? btn.parentElement : null;
+    if (btn.dataset.armed === '1') {
+      clearTimeout(btn._voidArmTimer);
+      btn._voidArmTimer = null;
+      btn.dataset.armed = '';
+      btn.classList.remove('armed');
+      if (voidTd) voidTd.classList.remove('td-void-armed');
+      btn.innerHTML = ic('trash');
+      const baseEn = btn.dataset.baseAria || 'Void or delete record';
+      delete btn.dataset.baseAria;
+      _setVoidBtnEnAria(btn, baseEn);
+      _translateVoidEl(btn);
+      onConfirm();
+      return;
+    }
+    btn.dataset.baseAria = btn.dataset.baseAria || btn['__enAttr_aria-label'] || btn.getAttribute('aria-label') || 'Void or delete record';
+    clearTimeout(btn._voidArmTimer);
+    btn.dataset.armed = '1';
+    btn.classList.add('armed');
+    if (voidTd) voidTd.classList.add('td-void-armed');
+    btn.innerHTML = `${ic('trash')}<span>Void?</span>`;
+    _setVoidBtnEnAria(btn, 'Void?');
+    _translateVoidEl(btn);
+    btn._voidArmTimer = setTimeout(() => {
+      btn._voidArmTimer = null;
+      if (btn.isConnected) {
+        btn.dataset.armed = '';
+        btn.classList.remove('armed');
+        btn.innerHTML = ic('trash');
+        const baseEn = btn.dataset.baseAria || 'Void or delete record';
+        delete btn.dataset.baseAria;
+        _setVoidBtnEnAria(btn, baseEn);
+        _translateVoidEl(btn);
+      }
+      if (voidTd && voidTd.isConnected) voidTd.classList.remove('td-void-armed');
+    }, 4000);
+  }
+
   function appCell(r, crKey) {
     if (!r || r.voided) return '';
     const rid = r.id || r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment;
@@ -9341,13 +9476,13 @@
     }
     if (!isAppRecord(r)) {
       return attHtml + ((canVoid() && rid)
-        ? `<button type="button" class="void-btn row-void-hover" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" title="Void / Delete this record (click once to arm, click again to confirm)">✕</button>`
+        ? `<button type="button" class="void-btn row-void-hover" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" data-ui-tip="Void / Delete this record (click once to arm, click again to confirm)" aria-label="Void or delete record">${ic('trash')}</button>`
         : '');
     }
     const who = r.entered_by ? ' by ' + r.entered_by : '';
     const when = r.entered_at ? ' · ' + r.entered_at : '';
-    return attHtml + ` <span class="badge badge-app" title="Entered in this web app${esc(who + when)}">APP</span>` +
-      (canVoid() ? `<button type="button" class="void-btn" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" title="Void / Delete this app entry (keeps a tombstone so other devices drop it too)">✕</button>` : '');
+    return attHtml + ` <span class="badge badge-app" data-ui-tip="Entered in this web app${esc(who + when)}">APP</span>` +
+      (canVoid() ? `<button type="button" class="void-btn" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" data-ui-tip="Void / Delete this app entry (keeps a tombstone so other devices drop it too)" aria-label="Void or delete record">${ic('trash')}</button>` : '');
   }
 
   function tktOtBadge(r) {
@@ -24470,7 +24605,7 @@
                 const rowCls = isFinal ? 'ovk-wf-final' : (isSub ? 'ovk-wf-sub' : '');
                 const canJump = Boolean(r.jump && canViewView(r.jump, u));
                 return `
-                  <tr class="${rowCls}${canJump ? ' clickable-row' : ''}"${canJump ? ` data-nav-jump="${esc(r.jump)}" role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
+                  <tr class="${rowCls}${canJump ? ' clickable-row' : ''}"${canJump ? ` data-nav-jump="${esc(r.jump)}"${r.jumpChip ? ` data-nav-chip="${esc(r.jumpChip)}"` : ''}${r.jumpScroll ? ` data-nav-scroll="${esc(r.jumpScroll)}"` : ''} role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
                     <td>
                       <div class="ovk-wf-comp-cell">
                         <span class="ovk-op-badge ${opBadgeCls}" data-no-i18n="1">${esc(r.op || '+')}</span>
@@ -24568,8 +24703,8 @@
             }
             pushOverviewWaterfallResidual(wfRows, 'Basis & Internal Reclassification Adj.', 'Timing and inter-account reclassifications on the active basis', salesVal, round2(netSales + vatPart), 'sales', 'Sales Register');
           } else {
-            wfRows.push({ op: '+', label: 'Cash Sales Billed', source: 'Immediate cash dispatches in the active window', signedAmount: cashTtc, jump: 'sales', jumpLabel: 'Cash Tickets' });
-            wfRows.push({ op: '+', label: 'Credit Sales Billed', source: 'On-account customer deliveries billed in period', signedAmount: crTtc, jump: 'sales', jumpLabel: 'Credit Tickets' });
+            wfRows.push({ op: '+', label: 'Cash Sales Billed', source: 'Immediate cash dispatches in the active window', signedAmount: cashTtc, jump: 'sales', jumpChip: 'cash', jumpLabel: 'Cash Tickets' });
+            wfRows.push({ op: '+', label: 'Credit Sales Billed', source: 'On-account customer deliveries billed in period', signedAmount: crTtc, jump: 'sales', jumpChip: 'credit', jumpLabel: 'Credit Tickets' });
             pushOverviewWaterfallResidual(wfRows, 'Recharges, Discounts & Basis Adj.', 'Freight recharges, rebates and date-basis variance', salesVal, round2(cashTtc + crTtc), 'sales', 'Sales Register');
           }
           wfRows.push({ op: '=', label: 'Group Revenue', sourcePrefix: `${fmtNum(k.loads)} (${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'})`, source: 'Total billed revenue on the active date basis', signedAmount: salesVal, amountText: fmtUSD(salesVal, 2), isFinal: true, jump: 'sales', jumpLabel: 'Open Sales' });
@@ -24593,8 +24728,8 @@
             waterfallMeta: salesVal,
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Cash Sales', value: fmtUSD(cashTtc, 0), subPrefix: `${(cashTtc + crTtc) > 0 ? ((cashTtc / (cashTtc + crTtc)) * 100).toFixed(1) : '0.0'}%`, sub: 'Share of billed sales', jump: 'sales' },
-              { label: 'Credit Sales', value: fmtUSD(crTtc, 0), subPrefix: `${(cashTtc + crTtc) > 0 ? ((crTtc / (cashTtc + crTtc)) * 100).toFixed(1) : '0.0'}%`, sub: 'Share of billed sales', jump: 'customers' },
+              { label: 'Cash Sales', value: fmtUSD(cashTtc, 0), subPrefix: `${(cashTtc + crTtc) > 0 ? ((cashTtc / (cashTtc + crTtc)) * 100).toFixed(1) : '0.0'}%`, sub: 'Share of billed sales', jump: 'sales', jumpChip: 'cash' },
+              { label: 'Credit Sales', value: fmtUSD(crTtc, 0), subPrefix: `${(cashTtc + crTtc) > 0 ? ((crTtc / (cashTtc + crTtc)) * 100).toFixed(1) : '0.0'}%`, sub: 'Share of billed sales', jump: 'sales', jumpChip: 'credit' },
               { label: 'Dispatch Mix', value: `${fmtNum(k.loads)} loads`, subPrefix: `${fmtNum(k.delivery_loads || 0)} / ${fmtNum(k.pickup_loads || 0)}`, sub: 'Delivery vs pickup', jump: 'sales' },
               { label: 'Blended Sell Rate', value: `$${Number(k.avg_price_ttc || 0).toFixed(2)}/m³`, subPrefix: `${fmtNum(k.qty_sold || 0, 0)} m³`, sub: 'Total billed volume', jump: 'pricing' }
             ],
@@ -24741,8 +24876,8 @@
           const usdOut = Number(k.cash_out_usd != null ? k.cash_out_usd : cashOut) || 0;
           const netUsdPeriod = round2(usdIn - usdOut);
           const wfRows = [
-            { op: '+', label: 'USD Cash Inflows (Period)', source: 'Cash sales & USD customer receipt vouchers in period', signedAmount: usdIn, jump: 'cashflow', jumpLabel: 'Cash Ledger' },
-            { op: '-', label: 'USD Cash Outflows (Period)', source: 'Cash expenses, payroll & supplier settlements paid out', absAmount: usdOut, signedAmount: -usdOut, jump: 'cashflow', jumpLabel: 'Disbursements' },
+            { op: '+', label: 'USD Cash Inflows (Period)', source: 'Cash sales & USD customer receipt vouchers in period', signedAmount: usdIn, jump: 'cashflow', jumpChip: 'cf_in', jumpLabel: 'Cash Ledger' },
+            { op: '-', label: 'USD Cash Outflows (Period)', source: 'Cash expenses, payroll & supplier settlements paid out', absAmount: usdOut, signedAmount: -usdOut, jump: 'cashflow', jumpChip: 'cf_out', jumpLabel: 'Disbursements' },
             { op: '=', label: 'Net Period USD Flow', source: 'Inflows minus outflows across the active filter', signedAmount: netUsdPeriod, isSubtotal: true }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Opening Carryover & Out-of-Window Till', 'Live USD cash accumulated outside the active period filter', tillUsd, netUsdPeriod, 'cashflow', 'Till Register');
@@ -24763,8 +24898,8 @@
             subMetrics: [
               { label: 'Physical LBP Till', value: fmtLBP(k.cash_till_lbp || 0), subPrefix: fmtNum(k.rate_lbp || 89500), sub: 'Exchange rate', jump: 'cashflow' },
               { label: 'AR Collected', value: fmtUSD(rcptsCollected, 0), subPrefix: crTtc > 0 ? `${collPct.toFixed(1)}%` : '', sub: crTtc > 0 ? 'Of credit sales' : 'No credit billed', jump: 'customers' },
-              { label: 'Total Cash In', value: fmtUSD(cashIn, 0), sub: 'All currencies USD eq.', jump: 'cashflow' },
-              { label: 'Total Cash Out', value: fmtUSD(cashOut, 0), sub: 'All currencies USD eq.', jump: 'cashflow' }
+              { label: 'Total Cash In', value: fmtUSD(cashIn, 0), sub: 'All currencies USD eq.', jump: 'cashflow', jumpChip: 'cf_in' },
+              { label: 'Total Cash Out', value: fmtUSD(cashOut, 0), sub: 'All currencies USD eq.', jump: 'cashflow', jumpChip: 'cf_out' }
             ],
             driverTables: [
               {
@@ -24785,8 +24920,8 @@
         },
         overview_wc: () => {
           const wfRows = [
-            { op: '+', label: 'Current Receivables (0-30 Days)', source: 'Unsettled invoices within standard 30-day credit terms', signedAmount: arCur, jump: 'customers', jumpLabel: 'Current AR' },
-            { op: '+', label: 'Overdue Receivables (Over 30 Days)', source: 'Past-due customer balances requiring follow-up', signedAmount: arOvd, jump: 'customers', jumpLabel: 'Overdue AR' }
+            { op: '+', label: 'Current Receivables (0-30 Days)', source: 'Unsettled invoices within standard 30-day credit terms', signedAmount: arCur, jump: 'customers', jumpChip: lens.books ? 'current_ar' : '', jumpScroll: lens.books ? 'custPanel' : '', jumpLabel: 'Current AR' },
+            { op: '+', label: 'Overdue Receivables (Over 30 Days)', source: 'Past-due customer balances requiring follow-up', signedAmount: arOvd, jump: 'customers', jumpChip: lens.books ? 'overdue_ar' : '', jumpScroll: lens.books ? 'custPanel' : '', jumpLabel: 'Overdue AR' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Unapplied Credits & Advances', 'Customer prepayments and rounding adjustments', arBal, round2(arCur + arOvd), 'customers', 'AR Ledger');
           wfRows.push({ op: '=', label: 'Open AR', source: 'Net receivable position owed by active customers', signedAmount: arBal, amountText: fmtUSD(arBal, 2), isFinal: true, jump: 'customers', jumpLabel: 'All Clients' });
@@ -24856,7 +24991,7 @@
             extraWaterfallHtml: extraTableHtml,
             subMetrics: [
               { label: 'DSO Velocity', value: `${Math.round(Number(k.dso_days || 0))} days`, sub: 'Weighted collection days', jump: 'customers' },
-              { label: 'Overdue Share', value: arBal > 0 ? `${((arOvd / arBal) * 100).toFixed(1)}%` : '0.0%', sub: fmtUSD(arOvd, 0), subNoI18n: true, jump: 'customers' },
+              { label: 'Overdue Share', value: arBal > 0 ? `${((arOvd / arBal) * 100).toFixed(1)}%` : '0.0%', sub: fmtUSD(arOvd, 0), subNoI18n: true, jump: 'customers', jumpChip: lens.books ? 'overdue_ar' : '', jumpScroll: lens.books ? 'custPanel' : '' },
               ...(lens.books ? [{ label: 'Open AP Balance', value: fmtUSD(k.ap_balance || 0, 0), sub: '3-Leg vendor ledger', jump: 'suppliers' }] : [])
             ],
             driverTables: drivers
@@ -25924,7 +26059,7 @@
         ${activeMeta.subMetrics.map(sm => {
           const canSmJump = Boolean(sm.jump && canViewView(sm.jump, ovUser));
           return `
-            <button type="button" class="ovk-submetric${canSmJump ? ' is-clickable' : ''}" ${canSmJump ? `data-nav-jump="${esc(sm.jump)}"` : 'disabled'}>
+            <button type="button" class="ovk-submetric${canSmJump ? ' is-clickable' : ''}" ${canSmJump ? `data-nav-jump="${esc(sm.jump)}"${sm.jumpChip ? ` data-nav-chip="${esc(sm.jumpChip)}"` : ''}${sm.jumpScroll ? ` data-nav-scroll="${esc(sm.jumpScroll)}"` : ''}` : 'disabled'}>
               <div class="ovk-sm-k">${esc(sm.label)}</div>
               <div class="ovk-sm-v num" data-no-i18n="1">${esc(sm.value)}</div>
               ${sm.subNoI18n
@@ -32076,8 +32211,8 @@
     const chipPredicate = r => {
       if (STATE.chipFilter === 'delivery') return r.sale_type === 'Delivery';
       if (STATE.chipFilter === 'pickup') return r.sale_type === 'Pickup';
-      if (STATE.chipFilter === 'credit') return r.method === 'Credit';
-      if (STATE.chipFilter === 'cash') return r.method === 'Cash';
+      if (STATE.chipFilter === 'credit') return isCreditSaleTicket(r);
+      if (STATE.chipFilter === 'cash') return isCashSaleTicket(r);
       if (STATE.chipFilter === 'overtime') return !!r.overtime;
       if (STATE.chipFilter === 'vat') return Number(r.vat || 0) > 0;
       if (STATE.chipFilter === 'returned_wtc') return isReturnTicket(r);
@@ -42723,8 +42858,12 @@
   function renderAR() {
     const k = getKPI();
     const m = getModel();
+    const canArBooks = Boolean(seatLens().books);
     const canTax = canSeeTaxBreakdown();
     const showTaxCols = canTax && Boolean(STATE.showSalesTaxBreakdown);
+    if (!canArBooks && (STATE.chipFilter === 'open_ar' || STATE.chipFilter === 'current_ar' || STATE.chipFilter === 'overdue_ar' || STATE.chipFilter === 'overdue60')) {
+      STATE.chipFilter = 'all';
+    }
     if (!canTax && (STATE.chipFilter === 'vat_rec' || STATE.chipFilter === 'vat_reg' || /^vat/i.test(String(STATE.chipFilter || '')))) {
       STATE.chipFilter = 'all';
     }
@@ -42753,15 +42892,22 @@
         vat_receivable: round2(Number(c.vat_receivable || 0))
       };
     });
+    const custOverdueAmt = c => c.ar_overdue != null ? Number(c.ar_overdue || 0) : ((c.ar_31_60 != null || c.ar_60_plus != null) ? (Number(c.ar_31_60 || 0) + Number(c.ar_60_plus || 0)) : Math.max(0, Number(c.ar_balance || 0) - Number(c.ar_current || 0)));
+    const isOverdueArCust = c => Number(c.ar_balance || 0) > 0 && custOverdueAmt(c) > 0.005;
+    const isCurrentArCust = c => Number(c.ar_balance || 0) > 0 && custOverdueAmt(c) <= 0.005;
     const custs = sortRows(custAll.filter(c => {
       if (q && !String(c.Customer || '').toLowerCase().includes(q)) return false;
       if (STATE.chipFilter === 'open_ar') return Number(c.ar_balance || 0) > 0;
+      if (STATE.chipFilter === 'current_ar') return isCurrentArCust(c);
+      if (STATE.chipFilter === 'overdue_ar') return isOverdueArCust(c);
       if (STATE.chipFilter === 'overdue60') return Number(c.ar_60_plus || 0) > 0;
       if (STATE.chipFilter === 'vat_reg') return c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0;
       return true;
     }), 'custs', 'ar_balance', 'desc');
     const shownCusts = custs.slice(0, shownCount('custs'));
     const openArCustSet = new Set(custAll.filter(c => Number(c.ar_balance || 0) > 0).map(c => norm(c.Customer)));
+    const currentArCustSet = new Set(custAll.filter(isCurrentArCust).map(c => norm(c.Customer)));
+    const overdueArCustSet = new Set(custAll.filter(isOverdueArCust).map(c => norm(c.Customer)));
     const over60CustSet = new Set(custAll.filter(c => Number(c.ar_60_plus || 0) > 0).map(c => norm(c.Customer)));
     const vatRegCustSet = new Set(custAll.filter(c => c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0).map(c => norm(c.Customer)));
     const base = filterRecords(SEED.records.receipts);
@@ -42773,6 +42919,8 @@
       if (STATE.chipFilter === 'settlement_only') return receiptKind(r) === 'Settlement';
       if (STATE.chipFilter === 'vat_rec') return receiptKind(r) === 'VAT received';
       if (STATE.chipFilter === 'open_ar') return openArCustSet.has(norm(r.customer));
+      if (STATE.chipFilter === 'current_ar') return currentArCustSet.has(norm(r.customer));
+      if (STATE.chipFilter === 'overdue_ar') return overdueArCustSet.has(norm(r.customer));
       if (STATE.chipFilter === 'overdue60') return over60CustSet.has(norm(r.customer));
       if (STATE.chipFilter === 'vat_reg') return vatRegCustSet.has(norm(r.customer));
       return STATE.chipFilter === 'all' || r.method === STATE.chipFilter;
@@ -42847,7 +42995,7 @@
     const over60Pct = Math.max(0, Math.min(100, (ar60 / arBucketTot) * 100));
     const openCustCount = custAll.filter(c => Number(c.ar_balance || 0) > 0).length;
     const over60CustCount = custAll.filter(c => Number(c.ar_60_plus || 0) > 0).length;
-    const isCustFiltered = Boolean(q || STATE.chipFilter === 'open_ar' || STATE.chipFilter === 'overdue60' || STATE.chipFilter === 'vat_reg');
+    const isCustFiltered = Boolean(q || STATE.chipFilter === 'open_ar' || STATE.chipFilter === 'current_ar' || STATE.chipFilter === 'overdue_ar' || STATE.chipFilter === 'overdue60' || STATE.chipFilter === 'vat_reg');
     const bucketSrc = isCustFiltered ? custs : custAll;
     const sumCustField = fld => round2(bucketSrc.reduce((s, r) => s + Number(r[fld] || 0), 0));
     const useCustSums = isCustFiltered || (k.ar_current == null && k.ar_balance == null);
@@ -42917,7 +43065,6 @@
         })
       : '';
     const custCols = showTaxCols ? 12 : 10;
-    const canArBooks = Boolean(seatLens().books);
 
     return `
       <div class="cockpit-banner has-insights">
@@ -42991,7 +43138,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, customer, invoice #, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${canArBooks ? `${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}` : ''}${canTax ? chip('vat_reg', '11% VAT') : ''}${renderDateShiftChipsHtml(rcptShiftStats)}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${canArBooks ? `${chip('open_ar', 'Open AR')}${chip('current_ar', 'Current AR')}${chip('overdue_ar', 'Overdue AR')}${chip('overdue60', 'Overdue 60+')}` : ''}${canTax ? chip('vat_reg', '11% VAT') : ''}${renderDateShiftChipsHtml(rcptShiftStats)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="arCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="customers" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior, FIFO Aging &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
@@ -43099,6 +43246,10 @@
             ${exportBtn('custPanel', 'AR_Aging_SubLedger')}
           </span>
         </div>
+        ${canArBooks ? `
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">${chip('all', 'All')}${chip('open_ar', 'Open AR')}${chip('current_ar', 'Current AR')}${chip('overdue_ar', 'Overdue AR')}${chip('overdue60', 'Overdue 60+')}</div>
+        </div>` : ''}
         ${renderColFilterBar('custs')}
         <div class="table-wrap">
           <table class="ledger-table">
@@ -45385,7 +45536,7 @@
             <div class="doc-cam-batch-chip ${active ? 'active' : ''}" data-doc-pick-idx="${idx}">
               ${u ? `<img src="${esc(u)}" alt="Page ${idx + 1}">` : ''}
               <span>Page ${idx + 1}</span>
-              <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" aria-label="Remove page ${idx + 1}">✕</button>
+              <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" data-ui-tip="Remove page" aria-label="Remove page">${ic('trash')}</button>
             </div>
           `;
         }).join('');
@@ -58872,7 +59023,7 @@
       const bList = regPanelRows('hldDueMatrixPanel', icRes.byBilateral || []);
       // Filtered from the chart: the TOTAL adds up the pairs listed.
       const bFoot = (() => {
-        if (!getRegDrill('hldDueMatrixPanel')) return icRes;
+        if (!getRegDrill('hldDueMatrixPanel') && !hasDirectColFilter('hld_consolidation')) return icRes;
         const s = f => bList.reduce((a, c) => a + Number(f(c) || 0), 0);
         const given = round2(s(c => c.givenUsd));
         const paid = round2(s(c => c.paidBackUsd));
@@ -59671,7 +59822,7 @@
     const partnersList = regPanelRows('hldPartnersTablePanel', partners, 'hld_partners', p => Object.assign({}, p, { _companies_str: Array.from(p.companies || []).join(', ') }));
     const shownPartners = partnersList.slice(0, shownCount('hld_partners'));
     // Filtered from the chart: the TOTAL adds up the partner accounts listed.
-    const prtDrill = Boolean(getRegDrill('hldPartnersTablePanel'));
+    const prtDrill = Boolean(getRegDrill('hldPartnersTablePanel') || hasDirectColFilter('hld_partners'));
     const prtFootMoves = prtDrill ? partnersList.reduce((a, p) => a + Number(p.count || 0), 0) : partnerMoves.length;
     const prtFootIn = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.inUsd || 0), 0)) : totInUsd;
     const prtFootOut = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.outUsd || 0), 0)) : totOutUsd;
@@ -75326,34 +75477,8 @@
     ]
   };
 
-  function renderModalIndustryQuickBar(activeForm, activeTemplateId) {
-    const ind = getActiveIndustry(STATE.company);
-    if (!ind || ind === 'Manufacturing') return '';
-    const uQuick = activeUser();
-    const qLens = seatLens(uQuick);
-    const templates = (INDUSTRY_QUICK_ENTRY_TEMPLATES[ind] || []).filter(t => t && (
-      t.domainView
-        ? canEnterDomainForm(t.domainView)
-        : (canEnterForm(t.form, uQuick) && (!['receipt', 'settlement', 'treasury', 'extended', 'external'].includes(t.form) || qLens.books))
-    ));
-    if (!templates.length) return '';
-    return `
-      <div id="modalIndustryQuickBar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
-        <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--ink)">
-          <span class="badge badge-brass">${esc(ind)}</span>
-          <span>Domain Workflows:</span>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${canEnterDomainForm(STATE.view) ? `<button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-ind-open-new="${esc(STATE.view)}">+ Domain Register Form</button>` : ''}
-          ${templates.map(t => {
-            const isAct = t.domainView
-              ? false
-              : (activeTemplateId ? (activeTemplateId === t.id) : (t.form === 'extended' ? STATE.modalGroupOverride === 'extended' : (activeForm === t.form && (t.form !== 'external' || STATE.modalGroupOverride !== 'extended'))));
-            return `<button type="button" class="btn ${isAct ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:3px 9px;font-size:11px" data-ind-quick-tpl="${esc(t.id)}" data-ind-quick-form="${esc(t.form)}"${t.domainView ? ` data-ind-quick-domain="${esc(t.domainView)}"` : ''}>${esc(t.label)}</button>`;
-          }).join('')}
-        </div>
-      </div>
-    `;
+  function renderModalIndustryQuickBar() {
+    return '';
   }
 
   function getIndustryRowEditStore() {
@@ -78401,6 +78526,54 @@
     }).filter(dg => dg.forms.length > 0 && dg.firstEnabledKey);
   }
 
+  let _modulePopoverGlobalsWired = false;
+  function closeAllModalModulePopovers() {
+    [['entryModulePopover', 'entryModuleSwitchBtn'], ['indModulePopover', 'ideModuleSwitchBtn']].forEach(([popId, btnId]) => {
+      const pop = $(popId);
+      const btn = $(btnId);
+      if (pop && !pop.hidden) pop.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+  }
+  function wireModulePopoverHandlersOnce() {
+    if (_modulePopoverGlobalsWired) return;
+    _modulePopoverGlobalsWired = true;
+    document.addEventListener('pointerdown', e => {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('.pa-module-switch-wrap')) return;
+      if (t === $('entryModal') || t === $('indDomainEntryModal')) return;
+      closeAllModalModulePopovers();
+    }, true);
+    document.addEventListener('pointerdown', e => {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('.pa-module-switch-wrap')) return;
+      closeAllModalModulePopovers();
+    }, false);
+    document.addEventListener('click', e => {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('.pa-module-switch-wrap')) return;
+      closeAllModalModulePopovers();
+    }, false);
+    document.addEventListener('keydown', e => {
+      if (!e || e.key !== 'Escape') return;
+      const openPair = [
+        { modalId: 'entryModal', popId: 'entryModulePopover', btnId: 'entryModuleSwitchBtn' },
+        { modalId: 'indDomainEntryModal', popId: 'indModulePopover', btnId: 'ideModuleSwitchBtn' }
+      ].find(x => {
+        const m = $(x.modalId);
+        const p = $(x.popId);
+        return Boolean(m && !m.hidden && p && !p.hidden);
+      });
+      if (!openPair) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      closeAllModalModulePopovers();
+      const b = $(openPair.btnId);
+      if (b) { try { b.focus(); } catch (_) {} }
+    }, true);
+  }
+
   function resolveDomainFormSpec(viewOrFormKey) {
     const ind = getActiveIndustry(STATE.company);
     const list = INDUSTRY_DOMAIN_FORMS_BY_IND[ind] || INDUSTRY_DOMAIN_FORMS_BY_IND['Holding & Treasury'];
@@ -78759,7 +78932,101 @@
     return { openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
   }
 
-  function closeIndustryDomainEntryModal() {
+  let _indPendingSwitchTarget = null;
+  let _indPostAfterSaveTarget = null;
+
+  function hideIndUnsavedPrompt() {
+    _indPendingSwitchTarget = null;
+    const promptEl = $('indUnsavedPrompt');
+    if (promptEl) {
+      promptEl.hidden = true;
+      promptEl.classList.remove('is-validation-needed');
+    }
+    const txtEl = $('indUnsavedText');
+    if (txtEl) txtEl.textContent = 'You have unsaved changes on this entry. Would you like to Discard Changes or Post before moving to another entry?';
+    const tabsEl = $('indModalTabs');
+    if (tabsEl) tabsEl.querySelectorAll('.is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+  }
+
+  function isIndDomainModalDirty() {
+    const modal = $('indDomainEntryModal');
+    if (!modal || modal.hidden || modal._domHydrating) return false;
+    return Boolean(modal._domDirty);
+  }
+
+  function promptUnsavedIndSwitch(targetSpec) {
+    const modal = $('indDomainEntryModal');
+    const promptEl = $('indUnsavedPrompt');
+    if (!modal || modal.hidden || !promptEl) return false;
+    _indPendingSwitchTarget = targetSpec || { type: 'close' };
+    _indPostAfterSaveTarget = null;
+    promptEl.classList.remove('is-validation-needed');
+    const txtEl = $('indUnsavedText');
+    if (txtEl) txtEl.textContent = 'You have unsaved changes on this entry. Would you like to Discard Changes or Post before moving to another entry?';
+    const tabsEl = $('indModalTabs');
+    if (tabsEl) {
+      tabsEl.querySelectorAll('.is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+      if (targetSpec && targetSpec.domGroupId) {
+        const dBtn = tabsEl.querySelector(`[data-ide-dom-group="${targetSpec.domGroupId}"]`);
+        if (dBtn && !dBtn.classList.contains('active')) dBtn.classList.add('is-pending-target');
+      } else if (targetSpec && targetSpec.type === 'dom_form' && targetSpec.formKey) {
+        const fBtn = tabsEl.querySelector(`[data-ide-switch-form="${targetSpec.formKey}"]`);
+        if (fBtn && !fBtn.classList.contains('active')) fBtn.classList.add('is-pending-target');
+      } else if (targetSpec && targetSpec.type === 'shared_group' && targetSpec.groupId) {
+        const sBtn = tabsEl.querySelector(`[data-ide-shared-group="${targetSpec.groupId}"]`);
+        if (sBtn) sBtn.classList.add('is-pending-target');
+      } else if (targetSpec && targetSpec.type === 'shared_univ' && targetSpec.bucket) {
+        const uBtn = tabsEl.querySelector(`[data-ide-shared-univ-hub="${targetSpec.bucket}"]`);
+        if (uBtn) uBtn.classList.add('is-pending-target');
+      }
+      if (targetSpec && targetSpec.type !== 'close' && (targetSpec.type !== 'dom_form' || targetSpec.domGroupId)) {
+        const mBtn = $('ideModuleSwitchBtn');
+        if (mBtn) mBtn.classList.add('is-pending-target');
+      }
+    }
+    promptEl.hidden = false;
+    return true;
+  }
+
+  function executeDiscardAndSwitchInd() {
+    const target = _indPendingSwitchTarget;
+    const modal = $('indDomainEntryModal');
+    _indPostAfterSaveTarget = null;
+    hideIndUnsavedPrompt();
+    if (modal) modal._domDirty = false;
+    _auxModalDirty = false;
+    if (!target || target.type === 'close') {
+      closeIndustryDomainEntryModal(true);
+      return;
+    }
+    if (target.type === 'dom_form' && target.formKey) {
+      openIndustryDomainEntryModal(target.formKey);
+      return;
+    }
+    if (target.type === 'shared_group') {
+      closeIndustryDomainEntryModal(true);
+      openEntryModal(target.targetForm || 'expense', null, { groupId: target.groupId, label: target.label || '' });
+      return;
+    }
+    if (target.type === 'shared_univ') {
+      closeIndustryDomainEntryModal(true);
+      openEntryModal(target.targetForm || 'customer', null, { groupId: 'univ_' + target.bucket, label: target.label || '' });
+    }
+  }
+
+  function closeIndustryDomainEntryModal(force = false, ev = null) {
+    if (force && typeof force === 'object') {
+      ev = force;
+      force = false;
+    }
+    closeAllModalModulePopovers();
+    const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
+    if (force !== true && isInteractiveClose && isIndDomainModalDirty()) {
+      promptUnsavedIndSwitch({ type: 'close' });
+      return;
+    }
+    _indPostAfterSaveTarget = null;
+    hideIndUnsavedPrompt();
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetDomainScanState === 'function') {
@@ -78769,16 +79036,24 @@
     FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
-    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
-      window.MFG_AI_EDGE.stopVoiceCapture();
+    if (window.MFG_AI_EDGE) {
+      if (typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') window.MFG_AI_EDGE.stopVoiceCapture();
+      if (typeof window.MFG_AI_EDGE.clearVoicePrompt === 'function') window.MFG_AI_EDGE.clearVoicePrompt(true);
     }
     const modal = $('indDomainEntryModal');
-    if (modal) modal.hidden = true;
+    if (modal) {
+      modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open', 'is-dragover');
+      modal._domDirty = false;
+      modal._domHydrating = false;
+      modal.hidden = true;
+    }
     _auxModalDirty = false;
     if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    wireModulePopoverHandlersOnce();
+    closeAllModalModulePopovers();
     FORM_UI.domainFifoSplitPreview = null;
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
@@ -78791,11 +79066,11 @@
     const isEditMode = Boolean(prefill && prefill._editMode);
     if (isEditMode && !canModifyRecord()) {
       toast('Your seat has Read-Only view access', 'err');
-      return;
+      return false;
     }
     if (isEditMode && canModifyTextOnly()) {
       toast('Supervisor permission required to edit financial amounts in Smart Form', 'err');
-      return;
+      return false;
     }
     const resolvedSpecInfo = resolveDomainFormSpec(viewOrFormKey);
     const ind = resolvedSpecInfo.ind;
@@ -78803,24 +79078,24 @@
     let spec = resolvedSpecInfo.spec;
     if (!isEditMode && !canEnterDomainForm(spec.key)) {
       toast('Your seat cannot create new domain records', 'err');
-      return;
+      return false;
     }
     if (!canManageSiblingChronoSchedule(spec.key)) {
       const explicitTarget = String(viewOrFormKey || '').trim();
       if (isEditMode || isSiblingChronoFormKey(explicitTarget)) {
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
-        return;
+        return false;
       }
       const fallbackSpec = list.find(f => f && !isSiblingChronoFormKey(f.key) && canEnterDomainForm(f.key)) || null;
       if (!fallbackSpec) {
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
-        return;
+        return false;
       }
       spec = fallbackSpec;
     }
     if (!isEditMode && !canEnterDomainForm(spec.key)) {
       toast('Your seat has no entry rights for this form', 'err');
-      return;
+      return false;
     }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.recordUsage === 'function' && spec && spec.key) {
       window.MFG_CMD_PALETTE.recordUsage('form', spec.key);
@@ -78831,7 +79106,7 @@
     const indCos = freqRankCandidates('company', cat.filter(c => c.industry === ind && (isOwner(activeUser()) || allowedCos.some(a => a.toLowerCase() === c.name.toLowerCase()))).map(c => c.name));
     if (!indCos.length && allIndCos.length && !isOwner(activeUser())) {
       toast('Your seat has no assigned companies in this industry', 'err');
-      return;
+      return false;
     }
     const entityOptions = indCos.length ? indCos : [defaultEntryCompany() || 'Bdeir Holding'];
     const curMatch = COMPANY_BU_MATCH[STATE.company];
@@ -78842,12 +79117,14 @@
     }
 
     let modal = $('indDomainEntryModal');
+    const wasIndModalClosed = !modal || modal.hidden;
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'indDomainEntryModal';
       modal.className = 'modal-backdrop';
+      modal.hidden = true;
       modal.innerHTML = `
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="indEntryModalTitle" style="max-width:820px;width:95vw;background:var(--card,#ffffff);color:var(--ink,#0F172A)">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="indEntryModalTitle" style="max-width:960px;width:95vw;background:var(--card,#ffffff);color:var(--ink,#0F172A)">
           <div class="modal-header" style="background:var(--card,#ffffff);border-bottom:1px solid var(--line,#E2E8F0)">
             <div>
               <span class="modal-eyebrow" id="indEntryModalEyebrow"></span>
@@ -78855,12 +79132,80 @@
             </div>
             <button type="button" class="modal-close-btn" id="indEntryModalCloseBtn" aria-label="Close">✕</button>
           </div>
+          <div class="modal-tabs ide-unified-tabs" id="indModalTabs"></div>
+          <div class="entry-unsaved-prompt" id="indUnsavedPrompt" role="region" aria-label="Unsaved entry changes" hidden>
+            <div class="entry-unsaved-copy">
+              <span class="entry-unsaved-badge" id="indUnsavedBadge">Unfinished Entry</span>
+              <span class="entry-unsaved-text" id="indUnsavedText">You have unsaved changes on this entry. Would you like to Discard Changes or Post before moving to another entry?</span>
+            </div>
+            <div class="entry-unsaved-actions">
+              <button type="button" class="btn-ghost-bar" id="unsavedIndStayBtn">Keep Editing</button>
+              <button type="button" class="btn-ghost-bar unsaved-discard-btn" id="unsavedIndDiscardBtn">Discard Changes</button>
+              <button type="button" class="btn btn-brass" id="unsavedIndPostBtn">Post</button>
+            </div>
+          </div>
           <div class="modal-body" id="indEntryModalBody" style="background:var(--card,#ffffff);padding:14px 18px"></div>
         </div>
       `;
       document.body.appendChild(modal);
       wireBackdropDismiss(modal, closeIndustryDomainEntryModal);
-      $('indEntryModalCloseBtn').addEventListener('click', closeIndustryDomainEntryModal);
+      $('indEntryModalCloseBtn').addEventListener('click', ev => closeIndustryDomainEntryModal(false, ev));
+    }
+    const indUnsavedEl = $('indUnsavedPrompt');
+    if (indUnsavedEl && !indUnsavedEl.dataset.unsavedWired) {
+      indUnsavedEl.dataset.unsavedWired = '1';
+      $('unsavedIndStayBtn')?.addEventListener('click', () => {
+        _indPostAfterSaveTarget = null;
+        hideIndUnsavedPrompt();
+      });
+      $('unsavedIndDiscardBtn')?.addEventListener('click', () => executeDiscardAndSwitchInd());
+      $('unsavedIndPostBtn')?.addEventListener('click', () => {
+        _indPostAfterSaveTarget = _indPendingSwitchTarget;
+        $('ideSaveBtn')?.click();
+      });
+    }
+    if (modal && modal.dataset.indSsDropWired !== '1') {
+      modal.dataset.indSsDropWired = '1';
+      modal.addEventListener('dragover', e => {
+        if (modal.hidden) return;
+        const bar = $('indEntrySmartScanBar');
+        if (!bar) return;
+        if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+          e.preventDefault();
+          bar.classList.add('is-dragover');
+        }
+      });
+      modal.addEventListener('dragleave', e => {
+        const bar = $('indEntrySmartScanBar');
+        if (bar && (e.target === modal || e.target === bar)) {
+          bar.classList.remove('is-dragover');
+        }
+      });
+      modal.addEventListener('drop', async e => {
+        if (modal.hidden) return;
+        const bar = $('indEntrySmartScanBar');
+        if (bar) bar.classList.remove('is-dragover');
+        if (!bar) return;
+        if (e.target && e.target.closest && e.target.closest('#indEntryAttachmentsBar')) return;
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+          e.preventDefault();
+          e.stopPropagation();
+          modal.classList.add('mob-ai-scan-open');
+          modal.classList.remove('mob-ai-voice-open');
+          if (typeof modal._syncIndMobAiUi === 'function') modal._syncIndMobAiUi();
+          await window.MFG_SMART_SCAN.scanIntoDomainModal(Array.from(files), { captureMethod: 'Drag & Drop Smart Scan' });
+          if (typeof modal._syncIndMobAiUi === 'function') modal._syncIndMobAiUi();
+        }
+      });
+    }
+    let indTabsEl = $('indModalTabs');
+    if (!indTabsEl && modal) {
+      indTabsEl = document.createElement('div');
+      indTabsEl.id = 'indModalTabs';
+      indTabsEl.className = 'modal-tabs ide-unified-tabs';
+      const hdrEl = modal.querySelector('.modal-header');
+      if (hdrEl && hdrEl.parentElement) hdrEl.insertAdjacentElement('afterend', indTabsEl);
     }
 
     $('indEntryModalEyebrow').textContent = `${ind.toUpperCase()} · ${isEditMode ? 'EDIT DOMAIN RECORD' : 'SMART DOMAIN REGISTER ENTRY'}`;
@@ -79436,6 +79781,7 @@
     modal._addPendingDomainFile = (fileObj) => {
       if (fileObj) {
         pendingDomainFiles.push(fileObj);
+        if (!modal._domHydrating) modal._domDirty = true;
         if (typeof modal._renderPendingDomainAtts === 'function') modal._renderPendingDomainAtts();
       }
     };
@@ -79452,9 +79798,15 @@
     cancelDomainNearCopyLiveCheck();
     FORM_UI.lastDomainNearCopySig = '';
     const bodyEl = $('indEntryModalBody');
-    modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+    if (wasIndModalClosed || isEditMode) {
+      modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearVoicePrompt === 'function') {
+        window.MFG_AI_EDGE.clearVoicePrompt(true);
+      }
+    }
     const indScanBarHtml = isEditMode ? '' : `
       <div class="mob-ai-quick-bar no-print" id="indMobAiQuickBar">
+        <span class="mob-ai-qhint">${ic('sparkles')} <span>AI Auto-Fill · Drop or paste a slip or PDF anywhere</span></span>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
@@ -79480,7 +79832,7 @@
         </div>
       </div>`;
     const domGroups = getPermittedModalDomainGroups(ind, spec.key, isEditMode);
-    const activeDomGroup = domGroups.find(dg => dg.active) || domGroups[0] || { id: '', label: 'Domain Register Forms', forms: [] };
+    const activeDomGroup = domGroups.find(dg => dg.active) || domGroups[0] || { id: '', icon: '', label: 'Domain Register Forms', forms: [] };
     const sharedSpineGroupIds = ['expenses', 'payroll', 'treasury', 'universal'];
     const allFormGroups = (window.MFG_FORMS && Array.isArray(window.MFG_FORMS.FORM_GROUPS)) ? window.MFG_FORMS.FORM_GROUPS : [];
     const isFleetIndNow = isFleetUniversalIndustry(ind);
@@ -79503,31 +79855,145 @@
     const sharedGroupBtnsHtml = ideSharedGroups.map(sg =>
       `<button type="button" class="pa-group-btn${sg.universalGroup ? ' is-universal-group' : ''}"${sg.id === sharedBtnTargetId ? ' id="ideOpenSharedSpineBtn"' : ''} data-ide-shared-group="${esc(sg.id)}" data-ide-shared-form="${esc(sg.firstFormId)}"${isEditMode ? ' disabled' : ''}>${sg.icon && typeof ic === 'function' ? ic(sg.icon) : ''}<span>${esc(sg.label)}</span></button>`
     ).join('');
+    const ideUnivVis = (allFormGroups.find(x => x && x.id === 'universal')?.forms || []).filter(f => {
+      if (!f || !f.id) return false;
+      if (!isFleetIndNow && (f.id === 'equipment' || f.id === 'driver')) return false;
+      return canEnterForm(f.id);
+    });
+    const ideUnivBuckets = [
+      { id: 'parties', label: 'Counterparties & Sites', icon: 'univ_parties' },
+      { id: 'staff', label: isFleetIndNow ? 'Staff & Fleet' : 'Staff & Roles', icon: isFleetIndNow ? 'univ_fleet' : 'univ_staff' },
+      { id: 'catalog', label: 'Catalog, Categories & Tax', icon: 'univ_catalog' }
+    ];
+    const ideUnivSubHubBtnsHtml = ideUnivVis.length
+      ? ideUnivBuckets.map(b => {
+          const fMatch = ideUnivVis.find(f => f.univBucket === b.id);
+          if (!fMatch) return '';
+          return `<button type="button" class="pa-group-btn pa-univ-hub-btn" data-ide-shared-univ-hub="${esc(b.id)}" data-ide-shared-form="${esc(fMatch.id)}"${isEditMode ? ' disabled' : ''}>${typeof ic === 'function' ? ic(b.icon) : ''}<span>${esc(b.label)}</span></button>`;
+        }).join('')
+      : '';
     const domSubtabsHtml = (activeDomGroup.forms || []).map(f =>
       `<button type="button" class="modal-tab${f.active ? ' active' : ''}"${f.disabled ? ' disabled' : ''} data-ide-switch-form="${esc(f.key)}"><span>${esc(f.label)}</span></button>`
     ).join('');
+    if (indTabsEl) {
+      const prevSubEl = !wasIndModalClosed ? indTabsEl.querySelector('.pa-modal-subtabs') : null;
+      const prevSubScroll = prevSubEl ? prevSubEl.scrollLeft : 0;
+      const prevDomGrpAct = prevSubEl && indTabsEl.querySelector('[data-ide-dom-group].active') ? indTabsEl.querySelector('[data-ide-dom-group].active').getAttribute('data-ide-dom-group') : '';
+      indTabsEl.innerHTML = `
+        <div class="pa-modal-hub-row">
+          <div class="pa-module-switch-wrap" id="ideModuleSwitchWrap">
+            <button type="button" class="pa-module-switch-btn" id="ideModuleSwitchBtn" aria-haspopup="true" aria-expanded="false"${isEditMode ? ' disabled' : ''}>
+              ${activeDomGroup.icon && typeof ic === 'function' ? ic(activeDomGroup.icon) : ''}<span class="pa-mod-kicker">Module:</span><span class="pa-mod-name">${esc(activeDomGroup.label)}</span><span class="pa-mod-caret" aria-hidden="true">${typeof ic === 'function' ? ic('chevron_down') : ''}</span>
+            </button>
+            <div class="pa-modal-groups pa-module-popover" id="indModulePopover" hidden>
+              ${domGroupBtnsHtml}${sharedGroupBtnsHtml}${ideUnivSubHubBtnsHtml}
+            </div>
+          </div>
+          <div class="pa-modal-subtabs" role="tablist" aria-label="Domain Register Forms">
+            ${domSubtabsHtml}
+          </div>
+        </div>
+      `;
+      const modSwitchBtn = $('ideModuleSwitchBtn');
+      const modPop = $('indModulePopover');
+      if (modSwitchBtn && modPop) {
+        modSwitchBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          if (modSwitchBtn.disabled) return;
+          const nextOpen = modPop.hidden;
+          closeAllModalModulePopovers();
+          modPop.hidden = !nextOpen;
+          modSwitchBtn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+        });
+      }
+      indTabsEl.querySelectorAll('[data-ide-dom-group]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
+          if (isEditMode) return;
+          const domGid = btn.getAttribute('data-ide-dom-group');
+          const dg = domGroups.find(x => x.id === domGid);
+          if (!dg || !dg.firstEnabledKey) return;
+          if (dg.id === activeDomGroup.id) {
+            hideIndUnsavedPrompt();
+            return;
+          }
+          if (isIndDomainModalDirty()) {
+            promptUnsavedIndSwitch({ type: 'dom_form', formKey: dg.firstEnabledKey, domGroupId: dg.id, label: dg.label });
+            return;
+          }
+          openIndustryDomainEntryModal(dg.firstEnabledKey);
+        });
+      });
+      indTabsEl.querySelectorAll('[data-ide-switch-form]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
+          if (isEditMode) return;
+          const nextKey = btn.getAttribute('data-ide-switch-form');
+          if (!nextKey || nextKey === spec.key) {
+            hideIndUnsavedPrompt();
+            return;
+          }
+          if (isIndDomainModalDirty()) {
+            promptUnsavedIndSwitch({ type: 'dom_form', formKey: nextKey, label: (btn.textContent || '').trim() });
+            return;
+          }
+          openIndustryDomainEntryModal(nextKey);
+        });
+      });
+      indTabsEl.querySelectorAll('[data-ide-shared-group]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
+          if (isEditMode) return;
+          const sgid = btn.getAttribute('data-ide-shared-group');
+          const targetForm = btn.getAttribute('data-ide-shared-form') || 'expense';
+          const lbl = (btn.textContent || '').trim();
+          if (isIndDomainModalDirty()) {
+            promptUnsavedIndSwitch({ type: 'shared_group', groupId: sgid, targetForm, label: lbl });
+            return;
+          }
+          closeIndustryDomainEntryModal(true);
+          openEntryModal(targetForm, null, { groupId: sgid, label: lbl });
+        });
+      });
+      indTabsEl.querySelectorAll('[data-ide-shared-univ-hub]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
+          if (isEditMode) return;
+          const bucket = btn.getAttribute('data-ide-shared-univ-hub');
+          const targetForm = btn.getAttribute('data-ide-shared-form') || 'customer';
+          const lbl = (btn.textContent || '').trim();
+          if (isIndDomainModalDirty()) {
+            promptUnsavedIndSwitch({ type: 'shared_univ', bucket, targetForm, label: lbl });
+            return;
+          }
+          closeIndustryDomainEntryModal(true);
+          openEntryModal(targetForm, null, { groupId: 'univ_' + bucket, label: lbl });
+        });
+      });
+      const nextSubEl = indTabsEl.querySelector('.pa-modal-subtabs');
+      if (nextSubEl && prevSubScroll > 0 && prevDomGrpAct === activeDomGroup.id) {
+        nextSubEl.scrollLeft = prevSubScroll;
+      }
+      requestAnimationFrame(() => {
+        const strip = indTabsEl.querySelector('.pa-modal-subtabs');
+        const act = strip && strip.querySelector('.active');
+        if (strip && act && strip.scrollWidth > strip.clientWidth) {
+          const pad = 8;
+          const actLeft = act.offsetLeft;
+          const actRight = actLeft + act.offsetWidth;
+          const viewLeft = strip.scrollLeft;
+          const viewRight = viewLeft + strip.clientWidth;
+          if (actLeft < viewLeft + pad) strip.scrollLeft = Math.max(0, actLeft - pad);
+          else if (actRight > viewRight - pad) strip.scrollLeft = Math.max(0, actRight - strip.clientWidth + pad);
+        }
+      });
+    }
 
+    modal._domHydrating = true;
+    modal._domDirty = false;
+    hideIndUnsavedPrompt();
     bodyEl.innerHTML = `
       ${datalistsHtml}
-      <div class="modal-tabs ide-unified-tabs">
-        <div class="pa-modal-groups">
-          ${domGroupBtnsHtml}${sharedGroupBtnsHtml}
-        </div>
-        <div class="pa-modal-subtabs" role="tablist" aria-label="Domain Register Forms">
-          ${domSubtabsHtml}
-        </div>
-      </div>
-      <div class="entry-unsaved-prompt" id="ideUnsavedPrompt" role="region" aria-label="Unsaved entry changes" hidden>
-        <div class="entry-unsaved-copy">
-          <span class="entry-unsaved-badge">Unfinished Entry</span>
-          <span class="entry-unsaved-text" id="ideUnsavedText">You have unsaved changes on this entry. Would you like to Discard Changes or Post before moving to another entry?</span>
-        </div>
-        <div class="entry-unsaved-actions">
-          <button type="button" class="btn-ghost-bar" id="ideUnsavedStayBtn">Keep Editing</button>
-          <button type="button" class="btn-ghost-bar unsaved-discard-btn" id="ideUnsavedDiscardBtn">Discard Changes</button>
-          <button type="button" class="btn btn-brass" id="ideUnsavedPostBtn">Post</button>
-        </div>
-      </div>
       ${indScanBarHtml}
       <form id="indDomainEntryForm" autocomplete="off">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px" id="indEntryFieldsGrid">
@@ -79563,100 +80029,8 @@
       </form>
     `;
 
-    let _ideInitialSig = '';
-    let _idePendingSwitch = null;
-    let _idePendingAfterSave = null;
-    const captureIdeFormSig = () => {
-      const formElNow = $('indDomainEntryForm');
-      if (!formElNow) return '';
-      const vals = Array.from(formElNow.querySelectorAll('input, select, textarea')).map(el =>
-        (el.type === 'checkbox' || el.type === 'radio') ? `${el.id}:${el.checked ? '1' : '0'}` : `${el.id}:${el.value || ''}`
-      );
-      vals.push(`atts:${pendingDomainFiles.length}`);
-      return vals.join('\n');
-    };
-    const isIdeModalDirty = () => Boolean(!isEditMode && _ideInitialSig && (captureIdeFormSig() !== _ideInitialSig || pendingDomainFiles.length > 0));
-    const hideIdeUnsavedPrompt = () => {
-      _idePendingSwitch = null;
-      const promptEl = $('ideUnsavedPrompt');
-      if (promptEl) promptEl.hidden = true;
-      bodyEl.querySelectorAll('.ide-unified-tabs .is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
-    };
-    const requestIdeSwitch = (trigBtn, actionFn) => {
-      if (isEditMode) return;
-      if (!isIdeModalDirty()) {
-        actionFn();
-        return;
-      }
-      _idePendingSwitch = actionFn;
-      bodyEl.querySelectorAll('.ide-unified-tabs .is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
-      if (trigBtn && !trigBtn.classList.contains('active')) trigBtn.classList.add('is-pending-target');
-      const promptEl = $('ideUnsavedPrompt');
-      if (promptEl) {
-        promptEl.hidden = false;
-        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
-          window.MFG_I18N.translateDom(promptEl);
-        }
-      }
-    };
-    const ideStayBtn = $('ideUnsavedStayBtn');
-    const ideDiscardBtn = $('ideUnsavedDiscardBtn');
-    const idePostBtn = $('ideUnsavedPostBtn');
-    if (ideStayBtn) ideStayBtn.addEventListener('click', hideIdeUnsavedPrompt);
-    if (ideDiscardBtn) {
-      ideDiscardBtn.addEventListener('click', () => {
-        const fn = _idePendingSwitch;
-        hideIdeUnsavedPrompt();
-        _auxModalDirty = false;
-        if (typeof fn === 'function') fn();
-      });
-    }
-    if (idePostBtn) {
-      idePostBtn.addEventListener('click', () => {
-        _idePendingAfterSave = _idePendingSwitch;
-        hideIdeUnsavedPrompt();
-        const formElNow = $('indDomainEntryForm');
-        if (formElNow && typeof formElNow.requestSubmit === 'function') formElNow.requestSubmit();
-        else if ($('ideSaveBtn')) $('ideSaveBtn').click();
-      });
-    }
-
-    bodyEl.querySelectorAll('[data-ide-dom-group]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (isEditMode) return;
-        if (btn.classList.contains('active')) {
-          hideIdeUnsavedPrompt();
-          return;
-        }
-        const domGid = btn.getAttribute('data-ide-dom-group');
-        const dg = domGroups.find(x => x.id === domGid);
-        if (dg && dg.firstEnabledKey) requestIdeSwitch(btn, () => openIndustryDomainEntryModal(dg.firstEnabledKey));
-      });
-    });
-    bodyEl.querySelectorAll('[data-ide-switch-form]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (isEditMode) return;
-        if (btn.classList.contains('active')) {
-          hideIdeUnsavedPrompt();
-          return;
-        }
-        const nextKey = btn.getAttribute('data-ide-switch-form');
-        if (nextKey) requestIdeSwitch(btn, () => openIndustryDomainEntryModal(nextKey));
-      });
-    });
-    bodyEl.querySelectorAll('[data-ide-shared-group]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (isEditMode) return;
-        const sgid = btn.getAttribute('data-ide-shared-group');
-        const targetForm = btn.getAttribute('data-ide-shared-form') || 'expense';
-        requestIdeSwitch(btn, () => {
-          closeIndustryDomainEntryModal();
-          openEntryModal(targetForm, null, { groupId: sgid });
-        });
-      });
-    });
     const cancelBtn = $('ideCancelBtn');
-    if (cancelBtn) cancelBtn.onclick = closeIndustryDomainEntryModal;
+    if (cancelBtn) cancelBtn.onclick = ev => closeIndustryDomainEntryModal(false, ev);
 
     const numVal = id => {
       const el = $(id);
@@ -79670,6 +80044,10 @@
     };
     const msgEl = $('indEntryValidationMsg');
     const showMsg = (txt, isErr = true) => {
+      if (isErr && txt) {
+        const indPromptEl = $('indUnsavedPrompt');
+        if (indPromptEl && !indPromptEl.hidden) indPromptEl.classList.add('is-validation-needed');
+      }
       if (!msgEl) return;
       if (!txt) { msgEl.style.display = 'none'; msgEl.textContent = ''; return; }
       msgEl.style.display = 'block';
@@ -80010,12 +80388,20 @@
     };
 
     const formEl = $('indDomainEntryForm');
+    if (formEl) {
+      const markDomDirty = () => {
+        if (!modal._domHydrating) modal._domDirty = true;
+      };
+      formEl.addEventListener('input', markDomDirty);
+      formEl.addEventListener('change', markDomDirty);
+    }
     const clrEndBtn = $('ideClearEndDateBtn');
     if (clrEndBtn) {
       clrEndBtn.addEventListener('click', () => {
         const edEl = $('ide_end_date');
         if (edEl) {
           edEl.value = '';
+          if (!modal._domHydrating) modal._domDirty = true;
           recalcLive();
         }
       });
@@ -80420,12 +80806,25 @@
 
     formEl.onsubmit = async ev => {
       ev.preventDefault();
-      const afterSaveSwitch = _idePendingAfterSave;
-      _idePendingAfterSave = null;
       // True only for the run the form starts itself right after the person confirmed a rate change's impact: that
       // run already passed the sign-off of the first run a moment ago, so it is not asked for again
       const impactResubmit = formEl._rateImpactResubmit === true;
       formEl._rateImpactResubmit = false;
+      const pendingAfterSave = impactResubmit ? (formEl._rateImpactAfterIndTarget || null) : _indPostAfterSaveTarget;
+      _indPostAfterSaveTarget = null;
+      formEl._rateImpactAfterIndTarget = null;
+      const flagIndPromptValidation = errTxt => {
+        if (!pendingAfterSave) return;
+        const pEl = $('indUnsavedPrompt');
+        if (pEl && !pEl.hidden) {
+          pEl.classList.add('is-validation-needed');
+          const txtEl = $('indUnsavedText');
+          if (txtEl && errTxt) {
+            const cleanErr = String(errTxt).replace(/[—→]/g, '-');
+            txtEl.innerHTML = `Complete required fields before posting (<b>${esc(cleanErr)}</b>), or click <b>Discard Changes</b> to switch.`;
+          }
+        }
+      };
       cancelDomainNearCopyLiveCheck();
       if (!isEditMode && !(spec.key === 'trd_receipts' ? canEnterForm('receipt') : canEnterAny())) {
         toast('Your seat cannot create new domain records', 'err');
@@ -80444,6 +80843,7 @@
         return;
       }
       if (!recalcLive()) {
+        flagIndPromptValidation((msgEl && msgEl.textContent) || 'Resolve the domain guardrail error before posting');
         toast('Please resolve the domain guardrail error before posting', 'err');
         return;
       }
@@ -81454,8 +81854,8 @@
           const okImpact = await promptRateChangeImpact({ mode: 'save', impact: domImpact, kept: keptSplit, isNew: !isEditMode });
           if (!okImpact) return;
           formEl._rateImpactOkSig = impSig;
+          formEl._rateImpactAfterIndTarget = pendingAfterSave;
           formEl._rateImpactResubmit = true;
-          _idePendingAfterSave = afterSaveSwitch;
           if (typeof formEl.requestSubmit === 'function') formEl.requestSubmit();
           else formEl.dispatchEvent(new Event('submit', { cancelable: true }));
           return;
@@ -81542,11 +81942,25 @@
         try { prefill._onPosted(recId); } catch (_) {}
       }
 
-      closeIndustryDomainEntryModal();
+      const afterIndTarget = pendingAfterSave;
+      _indPostAfterSaveTarget = null;
+      formEl._rateImpactAfterIndTarget = null;
+      hideIndUnsavedPrompt();
+      closeIndustryDomainEntryModal(true);
       renderApp();
       syncWithCloud(true);
       toast((isEditMode && !keptSplit) ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
       if (keptSplit) toast(chronoKeptPeriodToastText(keptSplit), 'ok');
+
+      if (afterIndTarget && afterIndTarget.type && afterIndTarget.type !== 'close') {
+        if (afterIndTarget.type === 'dom_form' && afterIndTarget.formKey) {
+          openIndustryDomainEntryModal(afterIndTarget.formKey);
+        } else if (afterIndTarget.type === 'shared_group') {
+          openEntryModal(afterIndTarget.targetForm || 'expense', null, { groupId: afterIndTarget.groupId, label: afterIndTarget.label || '' });
+        } else if (afterIndTarget.type === 'shared_univ') {
+          openEntryModal(afterIndTarget.targetForm || 'customer', null, { groupId: 'univ_' + afterIndTarget.bucket, label: afterIndTarget.label || '' });
+        }
+      }
 
       if (filesToAttach.length > 0) {
         const domCrKey = inferDomainTblKey(ind, spec.key, recId);
@@ -81560,7 +81974,6 @@
           amount: amtGuess
         }, filesToAttach, filesToAttach[0]._captureMethod || 'File Upload');
       }
-      if (typeof afterSaveSwitch === 'function') afterSaveSwitch();
     };
 
     const renderPendingDomainAtts = () => {
@@ -81574,7 +81987,7 @@
         listEl.innerHTML = pendingDomainFiles.map((f, i) => `
           <span class="chip" style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px">
             ${ic('receipt')} <b>${esc(f.name || f.file_name || ('Attachment ' + (i + 1)))}</b>
-            <button type="button" data-ind-entry-rm-att="${i}" style="border:none;background:transparent;cursor:pointer;color:var(--crit,#DC2626);font-weight:800;padding:0 2px" aria-label="Remove">✕</button>
+            <button type="button" class="stm-exc-chip-rm" data-ind-entry-rm-att="${i}" data-ui-tip="Remove attachment" aria-label="Remove attachment">${ic('trash')}</button>
           </span>
         `).join('');
         listEl.querySelectorAll('[data-ind-entry-rm-att]').forEach(btn => {
@@ -81582,6 +81995,7 @@
             const idx = Number(btn.getAttribute('data-ind-entry-rm-att'));
             if (idx >= 0 && idx < pendingDomainFiles.length) {
               pendingDomainFiles.splice(idx, 1);
+              if (!modal._domHydrating) modal._domDirty = true;
               renderPendingDomainAtts();
             }
           });
@@ -81599,6 +82013,7 @@
       attInput.addEventListener('change', () => {
         if (attInput.files && attInput.files.length) {
           Array.from(attInput.files).forEach(f => { f._captureMethod = 'File Upload'; pendingDomainFiles.push(f); });
+          if (!modal._domHydrating) modal._domDirty = true;
           renderPendingDomainAtts();
         }
         attInput.value = '';
@@ -81607,7 +82022,9 @@
     if (attSnapBtn) {
       attSnapBtn.addEventListener('click', () => {
         openDocumentCameraCapture((files, method) => {
-          Array.from(files || []).forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
+          const picked = Array.from(files || []);
+          picked.forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
+          if (picked.length && !modal._domHydrating) modal._domDirty = true;
           renderPendingDomainAtts();
         });
       });
@@ -81629,6 +82046,7 @@
         vBtn.setAttribute('aria-expanded', voiceOn ? 'true' : 'false');
       }
     };
+    modal._syncIndMobAiUi = syncIndMobAiUi;
     if (indQuickBar) {
       indQuickBar.querySelectorAll('[data-mob-ai]').forEach(btn => btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -81652,6 +82070,7 @@
           if (batchBtn) batchBtn.click();
         }
       }));
+      syncIndMobAiUi();
     }
     const scanUpBtn = $('indEntryScanUploadBtn');
     const scanFileInp = $('indEntryScanFileInput');
@@ -81700,9 +82119,10 @@
       });
     }
 
+    modal._domHydrating = false;
+    modal._domDirty = false;
     modal.hidden = false;
     _auxModalDirty = false;
-    _ideInitialSig = captureIdeFormSig();
     if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
@@ -81711,6 +82131,7 @@
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(modal);
     }
+    return true;
   }
 
   function lookupIndustryDomainRecord(queryStr) {
@@ -93735,6 +94156,9 @@
   }
 
   function openIndustryDomainInspector(opts = {}) {
+    if (!(opts && opts._fromInspReturn)) {
+      STATE.hubInspectorReturn = null;
+    }
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
       window.MFG_GEO.cleanupInspectorGeoMap();
     }
@@ -94085,7 +94509,7 @@
                     <div class="att-chip-actions">
                       <button type="button" class="btn btn-sm" data-ind-insp-preview-att="${idx}">Preview</button>
                       ${dUrl ? `<button type="button" class="btn btn-sm" data-ind-insp-dl-att="${idx}">Download</button>` : ''}
-                      ${canDeleteAtt ? `<button type="button" class="btn btn-sm" data-ind-insp-del-att="${idx}" aria-label="Remove attachment">✕</button>` : ''}
+                      ${canDeleteAtt ? `<button type="button" class="btn btn-sm btn-icon-danger" data-ind-insp-del-att="${idx}" data-ui-tip="Remove attachment" aria-label="Remove attachment">${ic('trash')}</button>` : ''}
                     </div>
                   </div>
                 `;
@@ -94122,6 +94546,8 @@
       relArgs,
       relatedAgreementsInfo,
       lastOpenOpts: Object.assign({}, opts, {
+        trEl: null,
+        sourceTr: null,
         ind,
         headers: headers.slice(),
         cells: cells.slice(),
@@ -94334,7 +94760,7 @@
               : (window.MFG_I18N ? window.MFG_I18N.t('Optional void reason') : 'Optional void reason');
             return `<input type="text" id="indInspVoidReasonInput" class="insp-edit-inp${_indVoidReq.required ? ' is-required-hint' : ''}" data-init-val="" placeholder="${esc(_vrPh)}" aria-label="${esc(_vrPh)}" data-void-required="${_indVoidReq.required ? '1' : '0'}" style="max-width:230px;padding:6px 10px;font-size:12px">`;
           })() : ''}
-              ${allowVoid ? '<button type="button" class="btn btn-ghost-bar" id="indInspVoidRowBtn" style="color:var(--crit,#DC2626)">Void / Delete Row</button>' : ''}
+              ${allowVoid ? `<button type="button" class="btn btn-danger-outline" id="indInspVoidRowBtn">${ic('trash')} <span>Void / Delete Row</span></button>` : ''}
             </div>
             <button type="button" class="btn btn-ghost-bar" id="indInspCloseFooterBtn">Close Inspector</button>
           </div>
@@ -95688,6 +96114,15 @@
     }
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
+    if (opts && opts.scrollSnap && bodyEl) {
+      restoreScrollSnapshot(bodyEl, opts.scrollSnap);
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          const bNow = $('inspectorBody');
+          if (bNow) restoreScrollSnapshot(bNow, opts.scrollSnap);
+        });
+      }
     }
     restoreInspStepFocus(opts);
   }
@@ -97140,7 +97575,7 @@
     return shown.map(name => `
       <span class="co-multi-chip" data-co-chip="${esc(name)}">
         <span>${esc(name)}</span>
-        <button type="button" data-remove-co="${esc(name)}" aria-label="Remove ${esc(name)}">✕</button>
+        <button type="button" class="stm-exc-chip-rm" data-remove-co="${esc(name)}" data-ui-tip="Remove company" aria-label="Remove company">${ic('trash')}</button>
       </span>
     `).join('') + (extra > 0 ? `<span class="co-multi-chip co-multi-chip-more"><span>+${extra} more selected</span></span>` : '');
   }
@@ -100521,7 +100956,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets, malfunctionItemMeta, getMalfunctionQuickItems, groupTransferOptions
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets, malfunctionItemMeta, getMalfunctionQuickItems, groupTransferOptions, isFleetIndustry: isFleetUniversalIndustry(), isMfgIndustry: getActiveIndustry(STATE.company) === 'Manufacturing'
       });
     }
 
@@ -100787,9 +101222,12 @@
           })
         : repDateField;
       const expNotesField = fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or approval note (required if back-dated)..."'), { id: 'wrap_f_notes', span: false });
+      const expIndNow = getActiveIndustry((typeof COMPANY_KEY_BY_NAME !== 'undefined' && COMPANY_KEY_BY_NAME[expCoVal]) || STATE.company);
+      const isMfgExpInd = expIndNow === 'Manufacturing';
+      const isFleetExpInd = isFleetUniversalIndustry(expIndNow);
       const whItemsMeta = pendEditRow ? [] : warehouseCatalogItemMeta(expCoVal);
       const whLocsList = uniqSorted(
-        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+        (isMfgExpInd ? ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'] : [])
           .concat((SEED.records.warehouse_movements || []).map(r => r && r.location))
           .concat((SEED.records.expense_items || []).map(r => r && r.warehouse_location))
           .concat((SEED.records.items || []).map(r => r && r.warehouse_location)),
@@ -100831,7 +101269,7 @@
               <div class="exp-items-head-left">
                 <div class="exp-single-dest-bar" id="expSingleDestBar" role="group" aria-label="Expense destination">
                   <button type="button" class="exp-dest-pill ${expEqVal ? '' : 'active'}" data-exi-mode-pill="general" data-exi-row-idx="0">${ic('plant')} <span>Overhead</span></button>
-                  <button type="button" class="exp-dest-pill ${expEqVal ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="0">${ic('truck')} <span>Equipment</span></button>
+                  <button type="button" class="exp-dest-pill ${expEqVal ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="0"${(isFleetExpInd || expEqVal) ? '' : ' hidden'}>${ic('truck')} <span>Equipment</span></button>
                   <button type="button" class="exp-dest-pill is-wh" data-exi-mode-pill="warehouse" data-exi-row-idx="0">${ic('warehouse')} <span>Warehouse</span></button>
                 </div>
                 <span class="exp-items-head-title" id="expItemsModeBadge" hidden>Invoice Lines</span>
@@ -100866,7 +101304,7 @@
                     <option value="Spare Parts">Spare Parts</option>
                     <option value="Oils &amp; Lubricants">Oils &amp; Lubricants</option>
                     <option value="Tools &amp; Garage">Tools &amp; Garage</option>
-                    <option value="Plant Consumables">Plant Consumables</option>
+                    ${isMfgExpInd ? '<option value="Plant Consumables">Plant Consumables</option>' : ''}
                     <option value="Fuel">Fuel</option>
                   </select>
                 </div>
@@ -101066,7 +101504,7 @@
             <small><span data-no-i18n="1">${esc(formatFileSizeShort(fSize))}</span> · <span>${esc(a.capture_method || 'File Upload')}</span></small>
           </div>
           <button type="button" class="btn btn-ghost-bar btn-sm" data-entry-att-preview="${idx}">Preview</button>
-          ${canEdit ? `<button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" aria-label="Remove attachment">✕</button>` : ''}
+          ${canEdit ? `<button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" data-ui-tip="Remove attachment" aria-label="Remove attachment">${ic('trash')}</button>` : ''}
         </div>
       `;
     }).join('');
@@ -101619,10 +102057,12 @@
     const isMulti = items.length > 1;
     const pricePending = val('f_price_pending') === '1';
     const defWhLoc = defaultWarehouseLocationForCompany(curCo);
+    const isFleetExpBuilder = isFleetUniversalIndustry(getActiveIndustry((typeof COMPANY_KEY_BY_NAME !== 'undefined' && COMPANY_KEY_BY_NAME[curCo]) || STATE.company));
+    const hasEquipExpItem = items.some(x => normExpRowDest(x && x.allocation_mode) === 'equipment');
     const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
     const destOpts = [
       ['general', 'Overhead'],
-      ['equipment', 'Equipment'],
+      ...(isFleetExpBuilder || hasEquipExpItem ? [['equipment', 'Equipment']] : []),
       ['warehouse', 'Warehouse']
     ];
     ensureItemsCatalogSeeded();
@@ -101759,11 +102199,11 @@
                   <div class="exp-split-mob-actions">
                     <strong class="exp-line-tot-val" data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong>
                     <button type="button" class="exp-row-ghost-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
-                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
+                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">${ic('trash')}</button>
                   </div>
                 </div>
                 <div class="exp-split-cell-dest" role="group" aria-label="Line ${idx + 1} destination">
-                  <button type="button" class="exp-item-rpill ${dest === 'equipment' ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="${idx}">Equipment</button>
+                  <button type="button" class="exp-item-rpill ${dest === 'equipment' ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="${idx}"${(isFleetUniversalIndustry(getActiveIndustry((typeof COMPANY_KEY_BY_NAME !== 'undefined' && COMPANY_KEY_BY_NAME[val('f_company')]) || STATE.company)) || dest === 'equipment') ? '' : ' hidden'}>Equipment</button>
                   <button type="button" class="exp-item-rpill is-wh ${dest === 'warehouse' ? 'active' : ''}" data-exi-mode-pill="warehouse" data-exi-row-idx="${idx}">Warehouse</button>
                   <button type="button" class="exp-item-rpill is-gen ${dest === 'general' ? 'active' : ''}" data-exi-mode-pill="general" data-exi-row-idx="${idx}">Overhead</button>
                 </div>
@@ -101790,7 +102230,7 @@
                 <div class="exp-split-cell-actions">
                   <div class="exp-row-ghost-group">
                     <button type="button" class="exp-row-ghost-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
-                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
+                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">${ic('trash')}</button>
                   </div>
                 </div>
               </div>
@@ -101799,7 +102239,7 @@
         </div>
         <div class="exp-items-footer-bar">
           <div class="exp-items-quick-add-group">
-            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="equipment">${ic('plus')} <span>Equipment Line</span></button>
+            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="equipment"${isFleetExpBuilder ? '' : ' hidden'}>${ic('plus')} <span>Equipment Line</span></button>
             <button type="button" class="exp-quick-add-pill is-wh" data-exi-add-mode="warehouse">${ic('plus')} <span>Warehouse Line</span></button>
             <button type="button" class="exp-quick-add-pill" data-exi-add-mode="general">${ic('plus')} <span>Overhead Line</span></button>
           </div>
@@ -101900,7 +102340,7 @@
             <div class="li-cell"><input type="number" id="f_repi_qty_${idx}" data-repi-idx="${idx}" data-repi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}"></div>
             <div class="li-cell"><select id="f_repi_uom_${idx}" data-repi-idx="${idx}" data-repi-field="uom" data-plain-options="1"${isUomLocked ? ' disabled data-locked-by-item="1"' : ''}>${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></div>
             <div class="li-cell"><input type="number" id="f_repi_cost_${idx}" data-repi-idx="${idx}" data-repi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="0.00"></div>
-            <div class="li-cell line-item-tot-cell"><strong data-repi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong><button type="button" class="line-item-del-btn" data-repi-remove="${idx}" aria-label="Remove repair item">×</button></div>
+            <div class="li-cell line-item-tot-cell"><strong data-repi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong><button type="button" class="line-item-del-btn" data-repi-remove="${idx}" data-ui-tip="Remove repair item" aria-label="Remove repair item">${ic('trash')}</button></div>
           </div>
         `;
       }).join('')}
@@ -113708,7 +114148,7 @@
               ? fmtDateDMY(item.start_date)
               : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
             const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-            return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ws-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+            return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ws-rm-date="${esc(item.id)}" data-ui-tip="Remove date timing" aria-label="Remove date timing">${ic('trash')}</button></span>`;
           }).join('');
         };
         const dtWrap = $('wrap_ws_date_timings');
@@ -113962,7 +114402,7 @@
         const cats = parseSupplierCategories(val('f_category'));
         const stagedDrvs = Array.isArray(FORM_UI.stagedOwnerDrivers) ? FORM_UI.stagedOwnerDrivers : [];
         const isTo = isHaulerCategoryList(cats) || stagedDrvs.length > 0;
-        setFieldVisible('wrap_sup_drivers', isTo);
+        setFieldVisible('wrap_sup_drivers', isTo && (isFleetUniversalIndustry() || stagedDrvs.length > 0));
         const dlEq = $('dl_equip');
         if (dlEq && supName) {
           const pool = oTrucks.length ? oTrucks.concat(equipmentNames().filter(t => !oTrucks.some(ot => norm(ot) === norm(t)))) : equipmentNames();
@@ -115932,7 +116372,7 @@
                     <td>${esc(w.own || targetEq.supplier || defLogOwner || '-')}</td>
                     <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '-'}</td>
                     <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                    ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
+                    ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm btn-icon-danger" data-del-modal-tw-idx="${origIdx}" data-ui-tip="Remove window" aria-label="Remove window">${ic('trash')}</button>` : ''}</td>` : ''}
                   </tr>
                 `;
               }).join('') : `
@@ -116239,7 +116679,7 @@
     const hasHauler = isHaulerCategoryList(cats);
     if (cats.length === 0) {
       setHint('hint_sup_category', 'Select at least one category', 'warn');
-    } else if (hasHauler) {
+    } else if (hasHauler && isFleetUniversalIndustry()) {
       setHint('hint_sup_category', `Hauler Fleet & Drivers active below`, 'ok');
     } else {
       setHint('hint_sup_category', `${cats.join(' · ')}`, '');
@@ -116320,7 +116760,7 @@
               ${r.phone ? `<span class="muted">${esc(r.phone)}</span>` : ''}
               ${r.staged ? `<span class="badge badge-ok">NEW</span>` : `<span class="badge">REGISTERED</span>`}
             </div>
-            ${r.staged ? `<button type="button" class="pa-owner-drv-rm" data-rm-staged-drv="${r.stagedIdx}" title="Remove driver">✕</button>` : ''}
+            ${r.staged ? `<button type="button" class="btn btn-sm btn-icon-danger" data-rm-staged-drv="${r.stagedIdx}" data-ui-tip="Remove driver" aria-label="Remove driver">${ic('trash')}</button>` : ''}
           </div>
         `).join('')}
       </div>
@@ -122607,7 +123047,7 @@
         category: itemCat,
         subcategory: itemSubcat,
         default_cost: round2($('f_default_cost') ? num('f_default_cost') : num('f_unitprice')),
-        default_location: val('f_wh_loc') || val('f_location') || 'WTC Main Warehouse',
+        default_location: val('f_wh_loc') || val('f_location') || (getActiveIndustry(STATE.company) === 'Manufacturing' ? 'WTC Main Warehouse' : 'Main Store'),
         min_stock: Math.max(0, num('f_min_stock'))
       };
     } else if (f === 'site') {
@@ -126248,7 +126688,8 @@
           }
           openEntryModal(afterSaveTarget.formType, nextPf, {
             forceSwitch: true,
-            ...(afterSaveTarget.indQuickTpl ? { indQuickTpl: afterSaveTarget.indQuickTpl, label: afterSaveTarget.label || '' } : {})
+            groupId: afterSaveTarget.groupId || undefined,
+            label: afterSaveTarget.label || undefined
           });
         } else if (afterSaveTarget.type === 'domain_form' && afterSaveTarget.domainFormKey) {
           closeEntryModal(true);
@@ -127068,6 +127509,7 @@
     const seedList = (SEED.records && SEED.records[crKey]) || [];
     const seedRow = seedList.find(matchRow);
     if (!r && !seedRow) { toast('Record not found', 'err'); return; }
+    if ((r && r.voided) || (!r && seedRow && seedRow.voided)) return false;
     const scopeErr = _checkVoidRestoreScopeAllowed(crKey, r || seedRow);
     if (scopeErr) { toast(scopeErr, 'err'); return false; }
     // A customer's own site that still holds moved customers: voiding it would send their records back
@@ -128052,9 +128494,16 @@
     if (tabsWrap) {
       tabsWrap.querySelectorAll('.is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
       if (targetSpec && targetSpec.type === 'form') {
-        if (targetSpec.groupId) {
+        if (targetSpec.groupId && ['univ_parties', 'univ_staff', 'univ_catalog'].includes(targetSpec.groupId)) {
+          const uBtn = tabsWrap.querySelector(`[data-pa-univ-hub="${targetSpec.groupId.slice(5)}"]`);
+          if (uBtn && !uBtn.classList.contains('active')) uBtn.classList.add('is-pending-target');
+          const mBtn = $('entryModuleSwitchBtn');
+          if (mBtn) mBtn.classList.add('is-pending-target');
+        } else if (targetSpec.groupId) {
           const gBtn = tabsWrap.querySelector(`[data-pa-group="${targetSpec.groupId}"]`);
           if (gBtn && !gBtn.classList.contains('active')) gBtn.classList.add('is-pending-target');
+          const mBtn = $('entryModuleSwitchBtn');
+          if (mBtn && gBtn && !gBtn.classList.contains('active')) mBtn.classList.add('is-pending-target');
         }
         if (targetSpec.formType) {
           const tBtn = tabsWrap.querySelector(`.modal-tab[data-form="${targetSpec.formType}"]`);
@@ -128063,6 +128512,8 @@
       } else if (targetSpec && targetSpec.type === 'domain_form' && targetSpec.domGroupId) {
         const dBtn = tabsWrap.querySelector(`[data-dom-group="${targetSpec.domGroupId}"]`);
         if (dBtn && !dBtn.classList.contains('active')) dBtn.classList.add('is-pending-target');
+        const mBtn = $('entryModuleSwitchBtn');
+        if (mBtn) mBtn.classList.add('is-pending-target');
       }
     }
     const curTitleEl = $('modalTitle');
@@ -128138,7 +128589,8 @@
       }
       openEntryModal(target.formType, nextPf, {
         forceSwitch: true,
-        ...(target.indQuickTpl ? { indQuickTpl: target.indQuickTpl, label: target.label || '' } : {})
+        groupId: target.groupId || undefined,
+        label: target.label || undefined
       });
       return;
     }
@@ -128332,10 +128784,12 @@
     'sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'creditterm', 'grouptransfer',
     'raw', 'jv',
     'fuel', 'repair', 'defect', 'oillog', 'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment',
-    'logistics'
+    'logistics', 'freelance'
   ]);
 
   function openEntryModal(formType, prefill = null, opts = null) {
+    wireModulePopoverHandlersOnce();
+    closeAllModalModulePopovers();
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -128353,7 +128807,11 @@
         const preExtd = formType === 'extended';
         const nextResolved = (preRaw || preHaul || preComm) ? 'pricerule' : (preExtd ? 'external' : formType);
         const nextForm = FORM_TITLES[nextResolved] ? nextResolved : 'sales';
-        const nextGrpOverride = (preRaw || preHaul) ? 'raw' : (preComm ? 'comm' : (preExtd ? 'extended' : null));
+        const nextExplicitGrp = (opts && opts.groupId) || '';
+        const isNextUnivScope = ['universal', 'univ_parties', 'univ_staff', 'univ_catalog'].includes(nextExplicitGrp);
+        const nextGrpOverride = (preRaw || preHaul)
+          ? 'raw'
+          : (preComm ? 'comm' : (preExtd ? 'extended' : (isNextUnivScope ? nextExplicitGrp : null)));
         if (!prefill && nextForm === STATE.modalForm && nextGrpOverride === STATE.modalGroupOverride) {
           hideEntryUnsavedPrompt();
           return;
@@ -128371,7 +128829,6 @@
           formType,
           prefill,
           groupId: (opts && opts.groupId) || '',
-          indQuickTpl: (opts && opts.indQuickTpl) || '',
           label: targetLabel
         });
         return;
@@ -128392,9 +128849,25 @@
     const preselectExtended = formType === 'extended'
       || Boolean(prefill && typeof prefill === 'object' && /^extended$/i.test(String(prefill.extkind || prefill.extKind || '')))
       || Boolean(editTargetRow && /^extended$/i.test(String(editTargetRow.kind || '')));
-    const modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : (preselectCommPrice ? 'comm' : (preselectExtended ? 'extended' : null));
-    const resolvedForm = (preselectRawPrice || preselectHaulPrice || preselectCommPrice) ? 'pricerule' : (formType === 'extended' ? 'external' : formType);
+    let modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : (preselectCommPrice ? 'comm' : (preselectExtended ? 'extended' : null));
+    let resolvedForm = (preselectRawPrice || preselectHaulPrice || preselectCommPrice) ? 'pricerule' : (formType === 'extended' ? 'external' : formType);
+    const curIndForModalScope = getActiveIndustry(STATE.company);
+    const isNonMfgModalScope = Boolean(curIndForModalScope && curIndForModalScope !== 'Manufacturing');
+    const isFleetScopeNow = !isNonMfgModalScope || isFleetUniversalIndustry(curIndForModalScope);
+    if (!editTargetRow && !isFleetScopeNow && (resolvedForm === 'equipment' || resolvedForm === 'driver')) {
+      resolvedForm = 'staff';
+    }
     const form = FORM_TITLES[resolvedForm] ? resolvedForm : 'sales';
+    const explicitGroupOpt = (opts && opts.groupId) || '';
+    const isUnivModalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
+    if (!editTargetRow && isUnivModalForm) {
+      if (['universal', 'univ_parties', 'univ_staff', 'univ_catalog'].includes(explicitGroupOpt)) {
+        modalGroupOverride = explicitGroupOpt;
+      } else if (!modalGroupOverride) {
+        const uMeta = window.MFG_FORMS && window.MFG_FORMS.FORM_MAP && window.MFG_FORMS.FORM_MAP[form];
+        if (uMeta && uMeta.univBucket) modalGroupOverride = 'univ_' + uMeta.univBucket;
+      }
+    }
     const editTargetCrKey = editSpec ? String(editSpec.crKey || FORM_CR_KEY[form] || 'sales_tickets') : '';
     const pendingTargetId = (!editTargetRow && prefill && typeof prefill === 'object' && prefill.completePendingId)
       ? String(prefill.completePendingId).trim()
@@ -128409,9 +128882,7 @@
     const pendingRawRow = (form === 'raw' && pendingRawTargetId) ? findRawPurchaseRecordById(pendingRawTargetId) : null;
     const pendingSalRow = ((form === 'employment' || form === 'freelance') && pendingSalTargetId) ? findEmploymentRecordById(pendingSalTargetId) : null;
     const pendingTargetRow = pendingExpRow || pendingRawRow || pendingSalRow;
-    const curIndForModalScope = getActiveIndustry(STATE.company);
-    const isNonMfgModalScope = Boolean(curIndForModalScope && curIndForModalScope !== 'Manufacturing');
-    if (isNonMfgModalScope && !editTargetRow && !pendingTargetRow && !(opts && opts.indQuickTpl) && (MFG_ONLY_MODAL_FORMS.has(formType) || MFG_ONLY_MODAL_FORMS.has(form))) {
+    if (isNonMfgModalScope && !editTargetRow && !pendingTargetRow && (MFG_ONLY_MODAL_FORMS.has(formType) || MFG_ONLY_MODAL_FORMS.has(form))) {
       closeEntryModal(true);
       if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
         window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -128453,7 +128924,6 @@
     const title = $('modalTitle');
     const modalEye = $('modalEyebrow');
     const tabsWrap = $('modalTabs');
-    const isUnivModalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
     const activeRowForHeader = editTargetRow || pendingTargetRow;
     const isRowAfterHours = Boolean(
       activeRowForHeader && (
@@ -128485,14 +128955,6 @@
           : String(editTargetRow.invoice_no || editTargetRow.name || editTargetRow.id || '').replace(/[—→]/g, '-');
         title.textContent = 'Edit ' + cleanBaseTitle + (recIdent ? ' · ' + recIdent : '');
       } else {
-        const curIndForModal = getActiveIndustry(STATE.company);
-        const indTplMatch = (curIndForModal && curIndForModal !== 'Manufacturing' && Array.isArray(INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal]))
-          ? (opts && opts.indQuickTpl
-            ? INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal].find(t => t.id === opts.indQuickTpl)
-            : (['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(STATE.view)
-              ? INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal].find(t => t.form === (preselectExtended ? 'extended' : form))
-              : null))
-          : null;
         title.textContent = pendingSalRow
           ? ('Enter Final Salary · ' + (pendingSalRow.staff || pendingSalRow.name || pendingSalRow.id))
           : (pendingTargetRow
@@ -128509,7 +128971,7 @@
                       ? 'New Site Transport Agreement'
                       : (preselectCommPrice
                         ? 'New Sales Commission Agreement'
-                        : ((indTplMatch && indTplMatch.title) || FORM_TITLES[form]))))))));
+                        : FORM_TITLES[form])))))));
       }
     }
     const openInspBtn = $('modalOpenInspectorBtn');
@@ -128566,78 +129028,61 @@
       ? getPermittedModalDomainGroups(curIndForModalScope)
       : [];
     const tabPermCheck = fId => {
-      if ((editTargetRow && fId === form) || (opts && opts.indQuickTpl && fId === form)) return true;
+      if (editTargetRow && fId === form) return true;
       if (!isFleetIndForTabs && (fId === 'equipment' || fId === 'driver')) return false;
       return (!isNonMfgModalScope || !MFG_ONLY_MODAL_FORMS.has(fId)) && canEnterForm(fId);
     };
     if (tabsWrap && window.MFG_FORMS) {
-      const prevGroupsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-groups') : null;
       const prevSubtabsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-subtabs') : null;
-      const prevGroupsScroll = prevGroupsEl ? prevGroupsEl.scrollLeft : 0;
       const prevSubtabsScroll = prevSubtabsEl ? prevSubtabsEl.scrollLeft : 0;
-      const prevGroupActive = prevGroupsEl && prevGroupsEl.querySelector('.active') ? prevGroupsEl.querySelector('.active').getAttribute('data-pa-group') : '';
+      const prevModuleName = !wasClosed && tabsWrap.querySelector('.pa-mod-name') ? tabsWrap.querySelector('.pa-mod-name').textContent : '';
       tabsWrap.innerHTML = renderModalIndustryQuickBar(form, opts && opts.indQuickTpl) + window.MFG_FORMS.renderModalTabsHtml(form, tabPermCheck, modalGroupOverride, {
         domainGroups: modalDomGroups,
-        isFleetIndustry: isFleetIndForTabs
+        isFleetIndustry: isFleetIndForTabs || Boolean(editTargetRow && (form === 'equipment' || form === 'driver'))
       });
-      const openDomainTargetFromEntryModal = (targetKey, domGroupId = '', label = '') => {
-        if (!targetKey) return;
-        if (isEntryModalDirty()) {
-          if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
-            window.MFG_GEO.exitInlinePickerFullWindow();
-          }
-          promptUnsavedEntrySwitch({
-            type: 'domain_form',
-            domainFormKey: targetKey,
-            domGroupId: domGroupId || '',
-            label: label || targetKey
-          });
-          return;
-        }
-        closeEntryModal(true);
-        if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
-          window.MFG_GEO.cleanupTicketOriginMiniMap();
-        }
-        openIndustryDomainEntryModal(targetKey);
-      };
-      tabsWrap.querySelectorAll('[data-ind-open-new]').forEach(dBtn => {
-        dBtn.addEventListener('click', () => {
-          const targetV = dBtn.getAttribute('data-ind-open-new') || STATE.view;
-          openDomainTargetFromEntryModal(targetV, '', dBtn.textContent ? dBtn.textContent.trim() : '');
+      const entryModSwitchBtn = $('entryModuleSwitchBtn');
+      const entryModPop = $('entryModulePopover');
+      if (entryModSwitchBtn && entryModPop) {
+        entryModSwitchBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const nextOpen = entryModPop.hidden;
+          closeAllModalModulePopovers();
+          entryModPop.hidden = !nextOpen;
+          entryModSwitchBtn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
         });
-      });
+      }
       tabsWrap.querySelectorAll('[data-dom-group]').forEach(dBtn => {
         dBtn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
           const domGid = dBtn.getAttribute('data-dom-group');
           const dg = modalDomGroups.find(x => x.id === domGid);
           const targetKey = dg && dg.firstEnabledKey;
-          openDomainTargetFromEntryModal(targetKey, domGid, (dg && dg.label) || '');
-        });
-      });
-      tabsWrap.querySelectorAll('[data-ind-quick-tpl]').forEach(qBtn => {
-        qBtn.addEventListener('click', () => {
-          const tplId = qBtn.getAttribute('data-ind-quick-tpl');
-          const ind = getActiveIndustry(STATE.company);
-          const tplList = INDUSTRY_QUICK_ENTRY_TEMPLATES[ind] || [];
-          const hit = tplList.find(x => x.id === tplId);
-          if (!hit) return;
-          if (hit.domainView) {
-            openDomainTargetFromEntryModal(hit.domainView, '', hit.label || hit.title);
+          if (!targetKey) return;
+          if (isEntryModalDirty()) {
+            if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+              window.MFG_GEO.exitInlinePickerFullWindow();
+            }
+            promptUnsavedEntrySwitch({
+              type: 'domain_form',
+              domainFormKey: targetKey,
+              domGroupId: domGid,
+              label: dg.label
+            });
             return;
           }
-          openEntryModal(hit.form, hit.prefill || null, { indQuickTpl: hit.id, label: hit.title });
-          const promptEl = $('entryUnsavedPrompt');
-          const titleEl = $('modalTitle');
-          if (titleEl && hit.title && (!promptEl || promptEl.hidden)) titleEl.textContent = hit.title;
+          closeEntryModal(true);
+          if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+            window.MFG_GEO.cleanupTicketOriginMiniMap();
+          }
+          openIndustryDomainEntryModal(targetKey);
         });
       });
-      const nextGroupsEl = tabsWrap.querySelector('.pa-modal-groups');
       const nextSubtabsEl = tabsWrap.querySelector('.pa-modal-subtabs');
-      const nextGroupActive = nextGroupsEl && nextGroupsEl.querySelector('.active') ? nextGroupsEl.querySelector('.active').getAttribute('data-pa-group') : '';
-      if (nextGroupsEl && prevGroupsScroll > 0) nextGroupsEl.scrollLeft = prevGroupsScroll;
-      if (nextSubtabsEl && prevSubtabsScroll > 0 && prevGroupActive === nextGroupActive) nextSubtabsEl.scrollLeft = prevSubtabsScroll;
+      const nextModuleName = tabsWrap.querySelector('.pa-mod-name') ? tabsWrap.querySelector('.pa-mod-name').textContent : '';
+      if (nextSubtabsEl && prevSubtabsScroll > 0 && prevModuleName === nextModuleName) nextSubtabsEl.scrollLeft = prevSubtabsScroll;
       tabsWrap.querySelectorAll('[data-pa-group]').forEach(gBtn => {
         gBtn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
           const gid = gBtn.getAttribute('data-pa-group');
           if (gBtn.classList.contains('active') && !editTargetRow && !pendingTargetRow) {
             hideEntryUnsavedPrompt();
@@ -128645,7 +129090,25 @@
           }
           const grp = (window.MFG_FORMS.FORM_GROUPS || []).find(g => g.id === gid);
           const firstForm = grp && grp.forms.find(f => tabPermCheck(f.id));
-          if (firstForm) openEntryModal(firstForm.id, null, { groupId: gid, label: firstForm.label || FORM_TITLES[firstForm.id] || firstForm.id });
+          if (firstForm) openEntryModal(firstForm.id, null, { groupId: gid, label: (grp && grp.label) || firstForm.label || FORM_TITLES[firstForm.id] || firstForm.id });
+        });
+      });
+      tabsWrap.querySelectorAll('[data-pa-univ-hub]').forEach(uBtn => {
+        uBtn.addEventListener('click', () => {
+          closeAllModalModulePopovers();
+          const bucket = uBtn.getAttribute('data-pa-univ-hub');
+          if (uBtn.classList.contains('active') && !editTargetRow && !pendingTargetRow) {
+            hideEntryUnsavedPrompt();
+            return;
+          }
+          const uGrp = (window.MFG_FORMS.FORM_GROUPS || []).find(g => g.id === 'universal');
+          const firstForm = uGrp && uGrp.forms.find(f => f.univBucket === bucket && tabPermCheck(f.id));
+          if (firstForm) {
+            openEntryModal(firstForm.id, null, {
+              groupId: 'univ_' + bucket,
+              label: (uBtn.textContent || '').trim() || firstForm.label || FORM_TITLES[firstForm.id]
+            });
+          }
         });
       });
       tabsWrap.querySelectorAll('.modal-tab[data-form]').forEach(tBtn => {
@@ -128655,11 +129118,21 @@
             hideEntryUnsavedPrompt();
             return;
           }
-          openEntryModal(nextForm, null, { label: (tBtn.textContent || '').trim() });
+          const keepUnivGroup = ['universal', 'univ_parties', 'univ_staff', 'univ_catalog'].includes(STATE.modalGroupOverride)
+            && window.MFG_FORMS && window.MFG_FORMS.FORM_MAP && window.MFG_FORMS.FORM_MAP[nextForm] && window.MFG_FORMS.FORM_MAP[nextForm].universal
+            ? STATE.modalGroupOverride
+            : undefined;
+          openEntryModal(nextForm, null, {
+            groupId: keepUnivGroup,
+            label: (tBtn.textContent || '').trim()
+          });
         });
       });
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        window.MFG_I18N.translateDom(tabsWrap);
+      }
       requestAnimationFrame(() => {
-        ['.pa-modal-groups', '.pa-modal-subtabs'].forEach(selStr => {
+        ['.pa-modal-subtabs'].forEach(selStr => {
           const strip = tabsWrap.querySelector(selStr);
           const act = strip && strip.querySelector('.active');
           if (strip && act && strip.scrollWidth > strip.clientWidth) {
@@ -128710,7 +129183,7 @@
         ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" data-ui-tip="Customer rejected product: return load to plant at $0 and log Round-Trip KM (2x One-Way KM)">${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" data-ui-tip="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
         : '';
       const voidBtnHtml = canVoidCurrent
-        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" data-ui-tip="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Ticket instead for spoiled pad tickets)' : 'Void / Delete record'}">Void / Delete</button>`
+        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" data-ui-tip="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Ticket instead for spoiled pad tickets)' : 'Void / Delete record'}">${ic('trash')} <span>Void / Delete</span></button>`
         : '';
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
@@ -128769,17 +129242,22 @@
         vBtn.addEventListener('click', () => {
           if (!vBtn.classList.contains('is-armed')) {
             vBtn.classList.add('is-armed');
-            vBtn.textContent = 'Confirm Void';
+            vBtn.innerHTML = `${ic('trash')} <span>Confirm Void</span>`;
+            _translateVoidEl(vBtn);
             clearTimeout(voidArmTimer);
             voidArmTimer = setTimeout(() => {
               if (vBtn.isConnected) {
                 vBtn.classList.remove('is-armed');
-                vBtn.textContent = 'Void / Delete';
+                vBtn.innerHTML = `${ic('trash')} <span>Void / Delete</span>`;
+                _translateVoidEl(vBtn);
               }
             }, 4000);
             return;
           }
           clearTimeout(voidArmTimer);
+          vBtn.classList.remove('is-armed');
+          vBtn.innerHTML = `${ic('trash')} <span>Void / Delete</span>`;
+          _translateVoidEl(vBtn);
           const targetKey = editTargetCrKey;
           const targetId = String(editTargetRow.id);
           voidRecord(targetKey, targetId, {
@@ -129138,8 +129616,11 @@
         recalcForm();
       }
     }
+    const preserveVoiceAcrossTab = Boolean(!wasClosed && !editTargetRow && !pendingTargetRow && !isUnivModalForm);
     if (window.MFG_SMART_SCAN) {
-      if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') window.MFG_SMART_SCAN.resetModalState();
+      if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
+        window.MFG_SMART_SCAN.resetModalState({ preserveVoice: preserveVoiceAcrossTab });
+      }
       if (typeof window.MFG_SMART_SCAN.mountOnEntryModal === 'function') window.MFG_SMART_SCAN.mountOnEntryModal();
     }
     if (form === 'staff') {
@@ -129354,6 +129835,7 @@
 
   function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
+    closeAllModalModulePopovers();
     cancelNearCopyLiveCheck();
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'mfg');
     FORM_UI.nearCopyPeekItems = [];
@@ -129371,8 +129853,9 @@
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
     }
-    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
-      window.MFG_AI_EDGE.stopVoiceCapture();
+    if (window.MFG_AI_EDGE) {
+      if (typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') window.MFG_AI_EDGE.stopVoiceCapture();
+      if (typeof window.MFG_AI_EDGE.clearVoicePrompt === 'function') window.MFG_AI_EDGE.clearVoicePrompt(false);
     }
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -136288,7 +136771,7 @@
       return false;
     };
     const hasOpenDropdownMenu = () => Boolean(
-      backdropEl.querySelector('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])')
+      backdropEl.querySelector('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden]), .pa-module-popover:not([hidden])')
       || document.getElementById('inspAccountBriefPopover')
     );
     const onDown = e => {
@@ -136318,6 +136801,7 @@
       const shouldClose = (e.target === backdropEl)
         && !isPointInsideCard(e)
         && !downHadOpenMenu
+        && !hasOpenDropdownMenu()
         && (isPointerClick
           ? (downOnBackdrop === true && upOnBackdrop === true)
           : (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false)));
@@ -137330,15 +137814,241 @@
     };
   }
 
+  function captureInspectorReturnSnapshot(extra = {}) {
+    const panel = $('recordInspector');
+    const bodyEl = $('inspectorBody');
+    const ctx = STATE.activeInspectorCtx;
+    if (!panel || panel.hidden || !ctx) return null;
+    const row = ctx.row || {};
+    const rawLabel = ctx.mode === 'domain'
+      ? (ctx.secondaryLbl || ctx.primaryId || '')
+      : (row.ticket_no ? ('#' + row.ticket_no) : (row.name || row.Customer || row.Supplier || row.customer || row.supplier || row.staff || row.equipment || row.site || row.product || ctx.secondaryLbl || ctx.primaryId || ''));
+    const label = String(rawLabel || '').trim() || '360° Record';
+    const scrollSnap = captureScrollSnapshot(bodyEl);
+    const subgridUiSnap = Object.create(null);
+    Object.keys(_inspSubgridUiState || {}).forEach(k => {
+      const st = _inspSubgridUiState[k];
+      if (!st) return;
+      subgridUiSnap[k] = {
+        page: Number(st.page || 0),
+        query: String(st.query || ''),
+        sortKey: String(st.sortKey || ''),
+        sortDir: String(st.sortDir || 'desc')
+      };
+    });
+    const actTabBtn = bodyEl ? bodyEl.querySelector('.pa-rec-tab[data-insp-tab].active') : null;
+    const histSnap = Array.isArray(STATE.inspectorHistory)
+      ? STATE.inspectorHistory.map(h => Object.assign({}, h))
+      : [];
+    if (ctx.mode === 'domain') {
+      const cleanOpts = Object.assign({}, ctx.lastOpenOpts || {});
+      delete cleanOpts.trEl;
+      delete cleanOpts.sourceTr;
+      return {
+        mode: 'domain',
+        company: String(STATE.company || ''),
+        demoCompanyIndustry: isDemoScopeActive() ? String(STATE.demoCompanyIndustry || '') : '',
+        label,
+        scrollSnap,
+        sgId: String((extra && extra.sgId) || ''),
+        forceAllTime: Boolean(_inspForceAllTime),
+        domainTblKey: String(ctx.domainTblKey || ''),
+        lastOpenOpts: cleanOpts
+      };
+    }
+    return {
+      mode: 'mfg',
+      company: String(STATE.company || ''),
+      demoCompanyIndustry: isDemoScopeActive() ? String(STATE.demoCompanyIndustry || '') : '',
+      label,
+      scrollSnap,
+      sgId: String((extra && extra.sgId) || ''),
+      subgridUiSnap,
+      forceAllTime: Boolean(_inspForceAllTime),
+      inspectorHistory: histSnap,
+      key: String(ctx.key || ''),
+      id: ctx.id,
+      tab: actTabBtn ? (actTabBtn.getAttribute('data-insp-tab') || 'general') : 'general',
+      full360: Boolean(ctx.full360),
+      tableContext: (bodyEl && bodyEl._activeTableContext) || ctx.tableContext || null
+    };
+  }
+
+  function restoreInspectorFromHubReturn() {
+    const snap = STATE.hubInspectorReturn;
+    if (!snap || !STATE.authed || STATE.kioskLocked) return false;
+    if (snap.company && String(STATE.company || '') !== snap.company) {
+      STATE.hubInspectorReturn = null;
+      return false;
+    }
+    STATE.hubInspectorReturn = null;
+    document.querySelectorAll('#hubInspReturnGroup, [data-insp-return-bar="1"]').forEach(el => el.remove());
+    if (snap.demoCompanyIndustry && isDemoScopeActive() && snap.demoCompanyIndustry !== String(STATE.demoCompanyIndustry || '')) {
+      setDemoCompanyIndustry(snap.demoCompanyIndustry, { skipRender: false });
+    } else if (snap.originCompany && String(STATE.company || '') !== snap.originCompany) {
+      if (typeof isStudioCoKeyAllowedForUser === 'function' && !isStudioCoKeyAllowedForUser(snap.originCompany)) {
+        toast('Your seat has no access to that company', 'err');
+        return false;
+      }
+      selectCompanyScope(snap.originCompany, true, { skipRender: false });
+    }
+    if (snap.mode === 'domain') {
+      const domView = (DOMAIN_PARENT_VIEW_MAP[snap.domainTblKey] && DOMAIN_PARENT_VIEW_MAP[snap.domainTblKey].view) || '';
+      if (domView && !canViewView(domView)) {
+        toast('Your seat has no access to that module', 'err');
+        return false;
+      }
+      _inspForceAllTime = Boolean(snap.forceAllTime);
+      openIndustryDomainInspector(Object.assign({}, snap.lastOpenOpts || {}, {
+        trEl: null,
+        sourceTr: null,
+        preserveScopeMode: true,
+        scrollSnap: snap.scrollSnap || null,
+        _fromInspReturn: true
+      }));
+      return true;
+    }
+    if (snap.key && !canAccessTable(snap.key)) {
+      toast('Your seat has no access to that module', 'err');
+      return false;
+    }
+    _inspForceAllTime = Boolean(snap.forceAllTime);
+    STATE.inspectorHistory = Array.isArray(snap.inspectorHistory) && snap.inspectorHistory.length
+      ? snap.inspectorHistory.map(h => Object.assign({}, h))
+      : [];
+    _inspSubgridUiState = Object.create(null);
+    if (snap.subgridUiSnap) {
+      Object.keys(snap.subgridUiSnap).forEach(k => {
+        _inspSubgridUiState[k] = Object.assign({}, snap.subgridUiSnap[k]);
+      });
+    }
+    const crumbIdx = STATE.inspectorHistory.length ? (STATE.inspectorHistory.length - 1) : undefined;
+    showRecordInspector(snap.key, snap.id, {
+      ...(crumbIdx != null ? { fromCrumbIdx: crumbIdx } : {}),
+      tab: snap.tab || 'general',
+      full360: Boolean(snap.full360),
+      tableContext: snap.tableContext || null,
+      preserveScopeMode: true,
+      scrollSnap: snap.scrollSnap || null,
+      _fromInspReturn: true
+    });
+    const hasNonZeroScroll = Boolean(snap.scrollSnap && (snap.scrollSnap.rootTop > 0 || snap.scrollSnap.cardTop > 0));
+    if (!hasNonZeroScroll && snap.sgId) {
+      const sgEl = $('subgrid_' + snap.sgId);
+      if (sgEl) sgEl.scrollIntoView({ block: 'start' });
+    }
+    return true;
+  }
+
+  function getViewFilterPool(view, coKeyOverride) {
+    const v = String(view || '').trim();
+    if (!v) return [];
+    const targetCo = coKeyOverride || STATE.company;
+    const prevCo = STATE.company;
+    try {
+      if (targetCo && targetCo !== prevCo) STATE.company = targetCo;
+      if (v.startsWith('re_') && typeof computeRealEstateOperations === 'function') {
+        const d = computeRealEstateOperations({ ignoreSearch: true }) || {};
+        const mapRe = {
+          re_leases: d.leases, re_invoicing: d.invoices, re_receipts: d.receipts,
+          re_sales: d.sales, re_instalments: d.instalments, re_properties: d.properties,
+          re_units: d.units, re_valuations: d.valuations, re_ownership: d.ownership,
+          re_workorders: d.workorders, re_recharges: d.recharges
+        };
+        return Array.isArray(mapRe[v]) ? mapRe[v] : [];
+      }
+      if (v.startsWith('trd_') && typeof computeTradingOperations === 'function') {
+        const d = computeTradingOperations({ ignoreSearch: true }) || {};
+        const mapTrd = {
+          trd_sales: d.salesRows, trd_receivables: d.receivableRows, trd_targets: d.targetRows,
+          trd_purchases: d.importRows, trd_landed: d.landedRows, trd_grn: d.grnRows,
+          trd_trucks: d.serialUnits, trd_warranty: d.warrantyRows, trd_stock: d.stockRows,
+          trd_movements: d.movementRows, trd_recon: d.reconRows
+        };
+        return Array.isArray(mapTrd[v]) ? mapTrd[v] : [];
+      }
+      if (v.startsWith('hsp_') && typeof computeHospitalityOperations === 'function') {
+        const d = computeHospitalityOperations({ ignoreSearch: true }) || {};
+        const mapHsp = {
+          hsp_revenue: d.venueRows, hsp_pos: d.posRows, hsp_vat: d.vatRows,
+          hsp_memberships: d.membershipRows, hsp_tariffs: d.tariffRows,
+          hsp_partners: d.partnerSplitRows, hsp_stock: d.stockRows,
+          hsp_menu: d.menuRows, hsp_energy: d.energyRows, hsp_maint: d.maintRows
+        };
+        return Array.isArray(mapHsp[v]) ? mapHsp[v] : [];
+      }
+      if (v.startsWith('ins_') && typeof computeInsuranceOperations === 'function') {
+        const d = computeInsuranceOperations({ ignoreSearch: true }) || {};
+        const mapIns = {
+          ins_policies: d.policies, ins_renewals: d.renewals, ins_items: d.items,
+          ins_billing: d.billing, ins_remittances: d.remittances, ins_statements: d.statements,
+          ins_claims: d.claims, ins_catalogue: d.catalogue, ins_agreements: d.agreements
+        };
+        return Array.isArray(mapIns[v]) ? mapIns[v] : [];
+      }
+      if (v === 'hld_interactions' || v === 'hld_consolidation' || v === 'hld_open_recon') {
+        const icRes = typeof computeIntercompanyInteractions === 'function' ? (computeIntercompanyInteractions({ ignoreSearch: true }) || {}) : {};
+        if (v === 'hld_consolidation') return Array.isArray(icRes.byBilateral) ? icRes.byBilateral : [];
+        if (v === 'hld_open_recon') return Array.isArray(icRes.openRows) ? icRes.openRows : [];
+        return Array.isArray(icRes.interactions) ? icRes.interactions : [];
+      }
+      if (v === 'hld_partners' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+        const d = window.MFG_HOLDING.compute({ company: STATE.company, ignoreSearch: true }) || {};
+        return Array.isArray(d.partners) ? d.partners : [];
+      }
+      if (v === 'hld_loans') {
+        return filterRecords((SEED.records && SEED.records.loans) || [], { ignoreSearch: true, ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
+      }
+      return [];
+    } catch (_) {
+      return [];
+    } finally {
+      if (targetCo && targetCo !== prevCo) STATE.company = prevCo;
+    }
+  }
+
   function openHubWithFilter(opts = {}) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    const rawDest = String(o.view || o.hubView || '').trim() || 'sales';
+    let destView = rawDest;
+    const fallbackTableKey = String(o.fallbackTableKey || o.targetKey || '').trim();
+    let useFallbackTable = false;
+    if (!canViewView(destView)) {
+      const hubId = VIEW_TO_HUB[destView];
+      if (hubId && canViewHub(hubId)) {
+        destView = resolveHubView(hubId);
+      } else if (fallbackTableKey && canViewView('tables') && canAccessTable(fallbackTableKey)) {
+        useFallbackTable = true;
+        destView = 'tables';
+      } else {
+        toast('Your seat has no access to that module', 'err');
+        return false;
+      }
+    }
     if (typeof closeInspectorBriefPopover === 'function') {
       try { closeInspectorBriefPopover(); } catch (_) {}
     }
     const inspPanel = $('recordInspector');
+    const wasInspOpen = Boolean(inspPanel && !inspPanel.hidden && STATE.activeInspectorCtx);
+    const providedRetSnap = (o.inspectorReturnSnap && typeof o.inspectorReturnSnap === 'object') ? o.inspectorReturnSnap : null;
+    const autoRetSnap = (!providedRetSnap && !o.skipInspectorReturn && wasInspOpen) ? captureInspectorReturnSnapshot() : null;
+    const baseRetSnap = providedRetSnap || autoRetSnap;
     if (inspPanel && !inspPanel.hidden) {
       closeRecordInspector({ restoreFocus: false });
     }
+    if (o.coKey && String(o.coKey) !== String(STATE.company || '')) {
+      if (isDemoScopeActive()) {
+        const demoInd = o.coKey === 'manufacturing-group'
+          ? 'Manufacturing'
+          : (String(o.coKey).startsWith('industry:') ? String(o.coKey).slice(9) : getActiveIndustry(o.coKey));
+        if (demoInd && demoInd !== String(STATE.demoCompanyIndustry || '')) {
+          setDemoCompanyIndustry(demoInd, { skipRender: true });
+        }
+      } else if (typeof isStudioCoKeyAllowedForUser === 'function' && isStudioCoKeyAllowedForUser(o.coKey)) {
+        selectCompanyScope(o.coKey, true, { skipRender: true, skipHistory: true });
+      }
+    }
+    if (useFallbackTable) STATE.activeTableKey = fallbackTableKey;
     if (o.resetDates) {
       setDateFilter({ reset: true });
     } else if (o.periodSpec && o.periodSpec !== 'custom') {
@@ -137346,21 +138056,6 @@
       else setDateFilter({ period: o.periodSpec });
     } else if (o.dateRange && (o.dateRange.from || o.dateRange.to)) {
       setDateFilter({ from: o.dateRange.from || MIN_DATE, to: o.dateRange.to || MAX_DATE });
-    }
-    const rawDest = String(o.view || o.hubView || '').trim() || 'sales';
-    let destView = rawDest;
-    const fallbackTableKey = String(o.fallbackTableKey || o.targetKey || '').trim();
-    if (!canViewView(destView)) {
-      const hubId = VIEW_TO_HUB[destView];
-      if (hubId && canViewHub(hubId)) {
-        destView = resolveHubView(hubId);
-      } else if (fallbackTableKey && canViewView('tables') && canAccessTable(fallbackTableKey)) {
-        STATE.activeTableKey = fallbackTableKey;
-        destView = 'tables';
-      } else {
-        toast('Your seat has no access to that module', 'err');
-        return false;
-      }
     }
     const clearOther = o.clearOther !== false;
     if (clearOther) {
@@ -137373,8 +138068,15 @@
       Object.entries(colMap).forEach(([colKey, rawVal]) => {
         const valStr = String(rawVal == null ? '' : rawVal).trim();
         if (!valStr) return;
-        const specVal = (valStr.startsWith('=') || valStr.startsWith('__')) ? valStr : ('=' + valStr);
-        STATE.colFilters[cfView][colKey] = specVal;
+        let specVal;
+        if (valStr.startsWith('~')) {
+          specVal = valStr.slice(1).trim();
+        } else if (valStr.startsWith('=') || valStr.startsWith('__') || /^(?:>=|<=|!=|>|<)\s*-?\d/.test(valStr) || /^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d+(?:\.\d+)?$/.test(valStr)) {
+          specVal = valStr;
+        } else {
+          specVal = '=' + valStr;
+        }
+        if (specVal) STATE.colFilters[cfView][colKey] = specVal;
       });
     };
     if (o.multiColFilters && typeof o.multiColFilters === 'object') {
@@ -137384,10 +138086,23 @@
     } else if (o.colFilters && typeof o.colFilters === 'object') {
       applyColMap(o.cfView || destView, o.colFilters);
     }
+    if (baseRetSnap) {
+      STATE.hubInspectorReturn = Object.assign({}, baseRetSnap, {
+        originCompany: baseRetSnap.originCompany || baseRetSnap.company || String(STATE.company || ''),
+        company: String(STATE.company || ''),
+        destView,
+        cfView: o.cfView || destView,
+        panelId: o.panelId || ''
+      });
+    } else {
+      STATE.hubInspectorReturn = null;
+    }
     setView(destView, {
       reset: true,
+      chipFilter: o.chipFilter || 'all',
       initialSearch: o.search != null ? String(o.search) : '',
-      scrollPanelId: o.panelId || ''
+      scrollPanelId: o.panelId || '',
+      _keepInspReturn: Boolean(baseRetSnap)
     });
     if (o.toastText) toast(o.toastText);
     return true;
@@ -137408,12 +138123,14 @@
     const key = String(o.recordKey || ctx.key || '').trim();
     const row = o.row || ctx.row || {};
     const sgId = String(o.sgId || o.subgridId || '').trim();
+    const inspReturnSnap = captureInspectorReturnSnapshot({ sgId });
     const targetKey = String(o.targetKey || o.key || key || '').trim();
     const domKey = String(o.domainTblKey || ctx.domainTblKey || '').trim();
     const entFallback = String(o.entityName || ctx.secondaryLbl || (row && (row.name || row.Customer || row.Supplier || row.customer || row.supplier || row.site_owner || row.truck_owner || row.site || row.product || row.equipment || row.driver || row.staff || row.item_name || row.item || row.counterparty)) || ctx.primaryId || o.primaryId || '').trim();
     const periodPass = {};
     if (o.periodSpec) periodPass.periodSpec = o.periodSpec;
     if (o.dateRange) periodPass.dateRange = o.dateRange;
+    if (inspReturnSnap) periodPass.inspectorReturnSnap = inspReturnSnap;
 
     if (domKey && DOMAIN_PARENT_VIEW_MAP[domKey]) {
       const domEntry = DOMAIN_PARENT_VIEW_MAP[domKey];
@@ -137424,14 +138141,32 @@
         return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
       };
       const rawPartyCell = findCell(/tenant|client|insured|customer|counterparty|partner|borrower|lender|carrier|member|vendor|supplier/i);
-      const partyCell = String(rawPartyCell || '').split('·')[0].trim();
-      const fallbackParty = String(entFallback || o.primaryId || ctx.primaryId || '').split('·')[0].trim();
-      const searchQ = (partyCell && !/^(all|n\/a|-|vacant)$/i.test(partyCell))
-        ? partyCell
+      const partyFirstLine = String(rawPartyCell || '').split(/\r?\n/)[0].split('·')[0].trim();
+      const fallbackParty = String(entFallback || o.primaryId || ctx.primaryId || '').split(/\r?\n/)[0].split('·')[0].trim();
+      const searchQ = (partyFirstLine && !/^(all|n\/a|-|vacant)$/i.test(partyFirstLine))
+        ? partyFirstLine
         : fallbackParty;
+      const sibPartyColMap = {
+        re_leases: 'tenant', re_invoicing: 'tenant', re_receipts: 'tenant',
+        re_sales: 'buyer', re_workorders: 'contractor',
+        ins_policies: 'client', ins_billing: 'client', ins_claims: 'client', ins_renewals: 'client',
+        ins_agreements: 'carrier', ins_remittances: 'carrier', ins_statements: 'carrier',
+        hsp_memberships: 'member',
+        trd_sales: 'customer', trd_receivables: 'customer', trd_purchases: 'supplier',
+        hld_partners: 'partner', hld_loans: 'counterparty'
+      };
+      const sibCol = sibPartyColMap[domEntry.view] || '';
+      let exactPartyVal = '';
+      if (sibCol && searchQ) {
+        const pool = getViewFilterPool(domEntry.view, STATE.company);
+        const rawLow = searchQ.toLowerCase();
+        const hit = pool.find(r => r && r[sibCol] && (String(r[sibCol]).trim().toLowerCase() === rawLow || rawLow.startsWith(String(r[sibCol]).trim().toLowerCase())));
+        if (hit) exactPartyVal = String(hit[sibCol]).trim();
+      }
       return openHubWithFilter(Object.assign({
         view: domEntry.view,
-        search: searchQ,
+        cfView: domEntry.view,
+        ...(sibCol && exactPartyVal ? { col: sibCol, val: exactPartyVal } : { search: searchQ }),
         fallbackTableKey: domKey
       }, periodPass));
     }
@@ -137905,6 +138640,9 @@
   }
 
   function showRecordInspector(key, idOrName, opts = {}) {
+    if (!(opts && opts._fromInspReturn)) {
+      STATE.hubInspectorReturn = null;
+    }
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -137999,9 +138737,9 @@
     const tc = opts.full360
       ? null
       : (opts.tableContext || (targetHist && targetHist.tableContext) || (isSameInspectorRecord && existingBody && existingBody._activeTableContext) || null);
-    if (!(opts && (opts.preserveScroll || isSameInspectorRecord || opts.fromCrumbIdx != null || opts.tab))) {
+    if (!(opts && (opts.preserveScroll || isSameInspectorRecord || opts.fromCrumbIdx != null || opts.tab || opts._fromInspReturn))) {
       _inspSubgridUiState = Object.create(null);
-    } else if (opts && opts.fromCrumbIdx != null && targetHist && targetHist.subgridUiState) {
+    } else if (opts && opts.fromCrumbIdx != null && targetHist && targetHist.subgridUiState && !opts._fromInspReturn) {
       restoreSubgridUiState(targetHist.subgridUiState);
     }
     const activeTab = opts.tab || (targetHist && targetHist.tab) || (isSameInspectorRecord ? prevActiveTab : 'general');
@@ -138333,7 +139071,7 @@
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Material Agreement</button>` : ''}
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
-          ${(!row.voided && !isInspGlobalRateLocked && canVoid()) ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
+          ${(!row.voided && !isInspGlobalRateLocked && canVoid()) ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" data-ui-tip="Void or delete this record (2-click confirmation)">${ic('trash')} <span>Void / Delete</span></button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
           ${inspTicketGatePin && inspTicketGatePin.whatsappUrl ? `<a class="pa-cmd-btn btn-brass" id="inspWhatsAppGatePinBtn" href="${esc(inspTicketGatePin.whatsappUrl)}" target="_blank" rel="noopener">${ic('send')} WhatsApp Gate Pin</a>` : ''}
           ${allowInspGeoPinEdit && !hasInspSitePin ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
@@ -138645,7 +139383,7 @@
                       <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '-'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
                       <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                      ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
+                      ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm btn-icon-danger" data-del-tw-idx="${origIdx}" data-ui-tip="Remove window" aria-label="Remove window">${ic('trash')}</button>` : ''}</td>` : ''}
                     </tr>
                   `;
                 }).join('') : `<tr><td colspan="${canSwitchEquipmentDriver() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
@@ -138699,7 +139437,7 @@
                         <div class="att-chip-actions">
                           <button type="button" class="btn btn-sm" data-insp-preview-att-idx="${idx}">Preview</button>
                           ${dUrl ? `<button type="button" class="btn btn-sm" data-insp-dl-att-idx="${idx}">Download</button>` : ''}
-                          ${canUploadAtt && key !== 'documents' ? `<button type="button" class="btn btn-sm" data-insp-del-att-idx="${idx}" aria-label="Remove attachment">✕</button>` : ''}
+                          ${canUploadAtt && key !== 'documents' ? `<button type="button" class="btn btn-sm btn-icon-danger" data-insp-del-att-idx="${idx}" data-ui-tip="Remove attachment" aria-label="Remove attachment">${ic('trash')}</button>` : ''}
                         </div>
                       </div>
                     `;
@@ -138724,7 +139462,7 @@
       <div class="modal-foot">
         <span class="form-note">${app ? `Posted by <b>${esc(row.entered_by || '—')}</b> · ${esc(row.entered_at || '')}${row.voided ? ' · <b>VOIDED</b>' : ''}` : 'Click any blue lookup pill or related subgrid row to navigate across connected relational records.'}</span>
         <div>
-          ${!row.voided && !isInspGlobalRateLocked && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} Void / Delete Record</button>` : ''}
+          ${!row.voided && !isInspGlobalRateLocked && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} <span>Void / Delete Record</span></button>` : ''}
           <button type="button" class="btn btn-brass" id="inspectorDoneBtn">Close</button>
         </div>
       </div>
@@ -138764,6 +139502,12 @@
       if (!btn) return;
       btn.addEventListener('click', () => {
         if (btn.dataset.armed === '1') {
+          clearTimeout(btn._inspVoidTimer);
+          btn._inspVoidTimer = null;
+          btn.dataset.armed = '';
+          btn.innerHTML = defaultHtml;
+          btn.classList.remove('armed');
+          _translateVoidEl(btn);
           if (STATE.inspectorHistory && STATE.inspectorHistory.length > 1) {
             const prevIdx = STATE.inspectorHistory.length - 2;
             const prev = STATE.inspectorHistory[prevIdx];
@@ -138782,21 +139526,25 @@
             onComplete: () => { closeRecordInspector({ restoreFocus: false }); }
           });
         } else {
+          clearTimeout(btn._inspVoidTimer);
           btn.dataset.armed = '1';
-          btn.innerHTML = `${ic('warn')} Confirm Void / Delete?`;
+          btn.innerHTML = `${ic('warn')} <span>Confirm Void / Delete?</span>`;
           btn.classList.add('armed');
-          setTimeout(() => {
+          _translateVoidEl(btn);
+          btn._inspVoidTimer = setTimeout(() => {
+            btn._inspVoidTimer = null;
             if (btn.isConnected) {
               btn.dataset.armed = '';
               btn.innerHTML = defaultHtml;
               btn.classList.remove('armed');
+              _translateVoidEl(btn);
             }
           }, 4500);
         }
       });
     };
-    wireInspectorVoidBtn($('inspectorVoidBtn'), `${ic('trash')} Void / Delete Record`);
-    wireInspectorVoidBtn($('inspCmdVoidBtn'), `${ic('trash')} Void / Delete`);
+    wireInspectorVoidBtn($('inspectorVoidBtn'), `${ic('trash')} <span>Void / Delete Record</span>`);
+    wireInspectorVoidBtn($('inspCmdVoidBtn'), `${ic('trash')} <span>Void / Delete</span>`);
 
     const backBtn = $('inspBackBtn');
     if (backBtn) backBtn.addEventListener('click', () => {
@@ -138832,10 +139580,12 @@
         const valStr = qfBtn.getAttribute('data-qf-val');
         const cfView = STATE.view === 'fleet' ? 'fuel' : (STATE.view === 'customers' ? 'receipts' : (STATE.view === 'suppliers' ? 'settle' : STATE.view));
         if (col && valStr) {
+          const snap = captureInspectorReturnSnapshot();
           if (!STATE.colFilters[cfView]) STATE.colFilters[cfView] = {};
           STATE.colFilters[cfView][col] = valStr;
           STATE.shown = {};
           closeRecordInspector({ restoreFocus: false });
+          STATE.hubInspectorReturn = snap ? Object.assign({}, snap, { destView: STATE.view, cfView }) : null;
           renderApp();
           toast(`Filtered by ${getColLabel(col)}: ${valStr}`);
         }
@@ -141560,27 +142310,30 @@
         }
 
         const voidBtn = e.target.closest('[data-void]');
-        if (voidBtn) {
+        if (voidBtn && bodyEl.contains(voidBtn)) {
           e.stopPropagation();
-          if (voidBtn.dataset.armed === '1') {
-            const curCtx = STATE.activeInspectorCtx || {};
-            voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id'));
-            if (curCtx.key) {
-              const actTabBtn = bodyEl.querySelector('.pa-rec-tab[data-insp-tab].active');
-              showRecordInspector(curCtx.key, curCtx.id, {
-                fromCrumbIdx: Math.max(0, (STATE.inspectorHistory || []).length - 1),
-                tab: actTabBtn ? actTabBtn.getAttribute('data-insp-tab') : 'general',
-                tableContext: bodyEl._activeTableContext || curCtx.tableContext || null,
-                preserveScroll: true,
-                preserveScopeMode: true
-              });
-            }
-            return;
-          }
-          voidBtn.dataset.armed = '1';
-          voidBtn.textContent = 'Void?';
-          voidBtn.classList.add('armed');
-          setTimeout(() => { if (voidBtn.isConnected) { voidBtn.dataset.armed = ''; voidBtn.textContent = '✕'; voidBtn.classList.remove('armed'); } }, 4000);
+          const clickCtx = Object.assign({}, STATE.activeInspectorCtx || {});
+          const clickTabBtn = bodyEl.querySelector('.pa-rec-tab[data-insp-tab].active');
+          const clickTab = clickTabBtn ? clickTabBtn.getAttribute('data-insp-tab') : 'general';
+          const clickTableCtx = bodyEl._activeTableContext || clickCtx.tableContext || null;
+          armOrRunInlineVoidBtn(voidBtn, () => {
+            voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id'), {
+              onComplete: () => {
+                const panelOpen = $('recordInspector');
+                const liveCtx = (STATE.activeInspectorCtx && STATE.activeInspectorCtx.key) ? STATE.activeInspectorCtx : clickCtx;
+                if (panelOpen && !panelOpen.hidden && liveCtx.key) {
+                  const actTabBtn = bodyEl.querySelector('.pa-rec-tab[data-insp-tab].active');
+                  showRecordInspector(liveCtx.key, liveCtx.id, {
+                    fromCrumbIdx: Math.max(0, (STATE.inspectorHistory || []).length - 1),
+                    tab: actTabBtn ? actTabBtn.getAttribute('data-insp-tab') : clickTab,
+                    tableContext: bodyEl._activeTableContext || liveCtx.tableContext || clickTableCtx || null,
+                    preserveScroll: true,
+                    preserveScopeMode: true
+                  });
+                }
+              }
+            });
+          });
           return;
         }
 
@@ -141637,11 +142390,18 @@
       }
       if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
     }
-    const targetInspSnap = (opts.preserveScroll || isSameInspectorRecord)
-      ? (prevInspSnap || (targetHist && targetHist.scrollSnap))
-      : ((opts.fromCrumbIdx != null && targetHist && targetHist.scrollSnap) ? targetHist.scrollSnap : null);
+    const targetInspSnap = opts.scrollSnap
+      || ((opts.preserveScroll || isSameInspectorRecord)
+        ? (prevInspSnap || (targetHist && targetHist.scrollSnap))
+        : ((opts.fromCrumbIdx != null && targetHist && targetHist.scrollSnap) ? targetHist.scrollSnap : null));
     if (targetInspSnap) {
       restoreScrollSnapshot(bodyEl, targetInspSnap);
+      if (opts._fromInspReturn && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          const bNow = $('inspectorBody');
+          if (bNow) restoreScrollSnapshot(bNow, targetInspSnap);
+        });
+      }
     } else if (!opts.focusModifyField) {
       bodyEl.scrollTop = 0;
       const inspCard = panel.querySelector('.modal-card');
@@ -144895,6 +145655,37 @@
   }
   // The panel and table of a register, found without the chart's own checks, so a drilled register can
   // always show its strip and be cleared (a drill must never become a filter nobody can see).
+  const CF_VIEW_TO_PANEL_ID = {
+    hld_consolidation: 'hldDueMatrixPanel',
+    hld_interactions: 'hldInteractionsPanel',
+    hld_open_recon: 'hldOpenReconPanel',
+    hld_partners: 'hldPartnersTablePanel',
+    hld_distributions: 'hldJvAgreementsPanel',
+    hld_loans: 'hldLoansPanel',
+    hld_assets: 'hldAssetsPanel',
+    hsp_revenue: 'hspRevenuePanel',
+    hsp_pos: 'hspPosPanel',
+    hsp_vat: 'hspVatPanel',
+    hsp_memberships: 'hspMembershipsPanel',
+    hsp_partners: 'hspPartnersPanel',
+    hsp_stock: 'hspStockPanel',
+    hsp_menu: 'hspMenuPanel',
+    hsp_energy: 'hspEnergyPanel',
+    hsp_maint: 'hspMaintPanel',
+    trd_sales: 'trdSalesPanel',
+    trd_receivables: 'trdReceivablesPanel',
+    trd_targets: 'trdTargetsPanel',
+    trd_purchases: 'trdPurchasesPanel',
+    trd_landed: 'trdLandedPanel',
+    trd_grn: 'trdGrnPanel',
+    trd_trucks: 'trdTrucksPanel',
+    trd_warranty: 'trdWarrantyPanel',
+    trd_stock: 'trdStockPanel',
+    trd_movements: 'trdMovementsPanel',
+    trd_recon: 'trdReconPanel',
+    re_leases: 'reLeasesPanel',
+    ins_policies: 'insPoliciesPanel'
+  };
   function findRegisterPanelAndTable(container, view) {
     let panel = container.querySelector(`[data-regc-panel="${CSS.escape(view)}"]`);
     let table = panel ? panel.querySelector(`table[data-regc-table="${CSS.escape(view)}"]`) : null;
@@ -144905,14 +145696,121 @@
         const wrapEl = table.closest('.table-wrap') || table;
         panel = table.closest('.panel-card, .panel') || wrapEl.parentElement;
       } else {
-        const byId = document.getElementById(view);
-        if (byId && container.contains(byId)) {
-          panel = byId;
-          table = Array.from(byId.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === byId) || null;
+        const mappedPanelId = CF_VIEW_TO_PANEL_ID[view];
+        if (mappedPanelId) {
+          const pEl = document.getElementById(mappedPanelId);
+          if (pEl && container.contains(pEl)) {
+            panel = pEl;
+            table = pEl.querySelector('.table-wrap table') || pEl.querySelector('table');
+          }
+        }
+        if (!panel || !table) {
+          const indRow = container.querySelector(`table tbody tr[data-ind-row-tbl="${CSS.escape(view)}"]`);
+          if (indRow) {
+            table = indRow.closest('table');
+            panel = table ? (table.closest('.panel-card, .panel') || table.parentElement) : null;
+          }
+        }
+        if (!panel || !table) {
+          const byId = document.getElementById(view);
+          if (byId && container.contains(byId)) {
+            panel = byId;
+            table = Array.from(byId.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === byId) || null;
+          }
         }
       }
     }
     return panel && table ? { panel, table } : null;
+  }
+  function mountMissingColFilterBars(container) {
+    const cfMap = STATE.colFilters;
+    if (!container || !cfMap) return;
+    const cfKeys = Object.keys(cfMap);
+    if (!cfKeys.length) return;
+    for (let i = 0; i < cfKeys.length; i++) {
+      const cfView = cfKeys[i];
+      const cf = cfMap[cfView];
+      if (!cf || typeof cf !== 'object') continue;
+      const tkBar = viewToTableKey(cfView);
+      const activeEntries = Object.entries(cf).filter(([k, v]) => Boolean(v && String(v).trim()) && !isMaskedFieldAccessBlocked(tkBar, k));
+      if (!activeEntries.length) continue;
+      if (container.querySelector(`.col-filter-bar[data-cf-bar="${CSS.escape(cfView)}"]`)) continue;
+      const found = findRegisterPanelAndTable(container, cfView)
+        || (cfView === STATE.view ? (() => {
+          const p = container.querySelector('.panel-card, .panel');
+          const t = p ? (p.querySelector('.table-wrap table') || p.querySelector('table')) : null;
+          return p && t ? { panel: p, table: t } : null;
+        })() : null);
+      if (!found || !found.table) continue;
+      const wrap = found.table.closest('.table-wrap') || found.table;
+      if (!wrap.parentNode) continue;
+      const pool = _tablePoolCache[cfView] || [];
+      const shownRows = _tableShownRows[cfView] || (_regPanelRows[found.panel.id] && _regPanelRows[found.panel.id].rows) || [];
+      const totalN = pool.length || shownRows.length;
+      const shownN = shownRows.length || tableDataTrs(found.table).length;
+      const bar = document.createElement('div');
+      bar.className = 'col-filter-bar has-active';
+      bar.setAttribute('data-cf-bar', cfView);
+      bar.setAttribute('data-cf-mounted', '1');
+      bar.innerHTML = `
+        <div class="cf-active-strip">
+          <span class="cf-active-lbl">${TH_FUNNEL_SVG}<span>Active Column Filters:</span></span>
+          ${activeEntries.map(([ck, spec]) => `
+            <button type="button" class="cf-active-pill" data-cf-clear-view="${esc(cfView)}" data-cf-clear-key="${esc(ck)}" data-ui-tip="Remove ${esc(getColLabel(ck))} filter">
+              <span>${esc(getColLabel(ck))}:</span> <b data-no-i18n="1">${esc(formatFilterSpecHuman(spec))}</b>
+              <span class="cf-pill-x">✕</span>
+            </button>
+          `).join('')}
+          <button type="button" class="cf-clear-all-btn" data-cf-clear-all="${esc(cfView)}" data-ui-tip="Clear all column filters">✕ Reset${totalN ? ` (${fmtNum(shownN)}/${fmtNum(totalN)})` : ''}</button>
+        </div>
+      `;
+      wrap.parentNode.insertBefore(bar, wrap);
+    }
+  }
+  function mountInspectorReturnBar(container) {
+    const snap = STATE.hubInspectorReturn;
+    if (!container || !snap || !STATE.authed || STATE.kioskLocked) return;
+    if (snap.destView !== STATE.view || String(STATE.company || '') !== String(snap.company || '')) return;
+    const cfView = snap.cfView || STATE.view;
+    const targetPanel = (snap.panelId && container.querySelector('#' + CSS.escape(snap.panelId)))
+      || (findRegisterPanelAndTable(container, cfView) || {}).panel
+      || container.querySelector('.panel-card, .panel');
+    const existingBar = (targetPanel && targetPanel.querySelector('.col-filter-bar.has-active'))
+      || container.querySelector(`.col-filter-bar.has-active[data-cf-bar="${CSS.escape(cfView)}"]`);
+    const arrowSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>';
+    const groupHtml = `
+      <span class="cf-insp-return-group" id="hubInspReturnGroup">
+        <button type="button" class="cf-insp-return-pill" id="hubInspReturnBtn" data-insp-hub-return="1" data-ui-tip="Return to the 360° Inspector at your previous position">
+          ${arrowSvg}<span>Back to 360°:</span> <b data-no-i18n="1">${esc(snap.label)}</b>
+        </button>
+        <button type="button" class="cf-insp-return-dismiss" id="hubInspReturnDismissBtn" data-insp-hub-return-dismiss="1" aria-label="Dismiss return link" data-ui-tip="Dismiss">✕</button>
+      </span>
+    `;
+    const prevGroup = $('hubInspReturnGroup');
+    if (prevGroup) prevGroup.remove();
+    container.querySelectorAll('[data-insp-return-bar="1"]').forEach(el => el.remove());
+    if (existingBar) {
+      const strip = existingBar.querySelector('.cf-active-strip');
+      if (strip) {
+        strip.insertAdjacentHTML('afterbegin', groupHtml);
+        return;
+      }
+    }
+    const found = findRegisterPanelAndTable(container, cfView);
+    const wrap = (targetPanel && (targetPanel.querySelector('.table-wrap') || targetPanel.querySelector('table')))
+      || (found && (found.table.closest('.table-wrap') || found.table))
+      || container.querySelector('.table-wrap');
+    const bar = document.createElement('div');
+    bar.className = 'col-filter-bar has-active is-insp-return-only';
+    bar.setAttribute('data-insp-return-bar', '1');
+    bar.innerHTML = `<div class="cf-active-strip">${groupHtml}</div>`;
+    if (wrap && wrap.parentNode) {
+      wrap.parentNode.insertBefore(bar, wrap);
+    } else if (targetPanel) {
+      targetPanel.insertBefore(bar, targetPanel.firstChild);
+    } else {
+      container.insertBefore(bar, container.firstChild);
+    }
   }
   function mountRegisterDrillStrips(container) {
     const drills = STATE.regDrill || {};
@@ -152271,7 +153169,7 @@
     if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
   }
 
-  function setDemoCompanyIndustry(indId) {
+  function setDemoCompanyIndustry(indId, opts = null) {
     if (!indId || !INDUSTRY_SIDEBAR_SPEC[indId]) return;
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
@@ -152325,7 +153223,7 @@
     syncIndustrySidebarDom(indId);
     _companySwitchUiSig = '';
     syncCompanySwitchUi();
-    renderApp();
+    if (!(opts && opts.skipRender)) renderApp();
   }
   window.__mfgSetDemoCompanyIndustry = setDemoCompanyIndustry;
 
@@ -152351,6 +153249,7 @@
       syncDemoScopeDataState();
     }
     if (prevCompany !== coKey) {
+      STATE.hubInspectorReturn = null;
       if (STATE.catchUpBatchRepDate && STATE.catchUpBatchScope && String(coKey || '') !== STATE.catchUpBatchScope) {
         clearCatchUpBatchRepDate();
       }
@@ -152394,7 +153293,7 @@
       const ws = $('workspace');
       if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
     }
-    if (STATE.authed && VIEW_TITLES[STATE.view]) {
+    if (STATE.authed && VIEW_TITLES[STATE.view] && !(opts && opts.skipHistory)) {
       const targetHash = '#' + STATE.view;
       if (!fromHistory && prevCompany !== coKey) {
         // A company switch is its own history entry, so browser Back returns to the previous company.
@@ -152442,7 +153341,7 @@
     if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
-    renderApp();
+    if (!(opts && opts.skipRender)) renderApp();
     if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('scope');
   }
 
@@ -153378,7 +154277,7 @@
               </div>
               <span class="quick-seat-cue">PIN</span>
             </button>
-            <button type="button" class="quick-seat-forget" data-forget-device-seat="${esc(s.email)}" aria-label="Forget ${esc(s.full_name)}" data-ui-tip="Remove remembered account from this browser">✕</button>
+            <button type="button" class="quick-seat-forget" data-forget-device-seat="${esc(s.email)}" aria-label="Remove remembered account from this browser" data-ui-tip="Remove remembered account from this browser">${ic('trash')}</button>
           </div>
         `;
       }).join('');
@@ -153781,6 +154680,7 @@
   }
 
   function signOut() {
+    STATE.hubInspectorReturn = null;
     purgeOverlaysOnSessionOrKioskLock();
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
@@ -154381,6 +155281,7 @@
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function' && STATE.activeUserIdx !== idx) {
       window.MFG_ASK.clearSessionState();
     }
+    STATE.hubInspectorReturn = null;
     finalAuthedUser.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
     if (!isDemoSandboxSession()) {
@@ -155189,10 +156090,22 @@
       const meta = (window.MFG_PBI.TABLE_CATALOG || []).find(t => t.key === (STATE.activeUnivRegKey || UNIV_VIEW_TO_TABLE_KEY[view]));
       if (meta && meta.form && FORM_TITLES[meta.form]) preferred = meta.form;
     }
+    if (activeIndForForm !== 'Manufacturing' && !isFleetUniversalIndustry(activeIndForForm) && (preferred === 'equipment' || preferred === 'driver')) {
+      preferred = 'staff';
+    }
+    if (activeIndForForm !== 'Manufacturing' && MFG_ONLY_MODAL_FORMS.has(preferred)) {
+      preferred = canEnterForm('expense', user) ? 'expense' : 'external';
+    }
     if (canEnterForm(preferred, user)) return preferred;
-    if (canEnterForm('sales', user)) return 'sales';
-    if (canEnterForm('receipt', user)) return 'receipt';
-    return 'sales';
+    if (canEnterForm('expense', user)) return 'expense';
+    if (activeIndForForm === 'Manufacturing') {
+      if (canEnterForm('sales', user)) return 'sales';
+      if (canEnterForm('receipt', user)) return 'receipt';
+      return 'sales';
+    }
+    const nonMfgSafeFallback = ['document', 'external', 'salary', 'customer', 'supplier'].find(f => canEnterForm(f, user));
+    if (nonMfgSafeFallback) return nonMfgSafeFallback;
+    return preferred || 'expense';
   }
 
   let _hubSubtabAndSubnavDelegated = false;
@@ -155494,7 +156407,11 @@
           fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
         };
         const ctxEntryForm = contextFormForView(v, user);
-        const siblingDomainEntry = activeInd !== 'Manufacturing' && (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(v || '')) || MFG_ONLY_MODAL_FORMS.has(ctxEntryForm));
+        const siblingDomainEntry = activeInd !== 'Manufacturing' && (
+          /^(hld_|hsp_|trd_|re_|ins_)/.test(String(v || '')) ||
+          MFG_ONLY_MODAL_FORMS.has(ctxEntryForm) ||
+          (['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(String(v || '')) && getPermittedModalDomainGroups(activeInd).length > 0)
+        );
         dEntryLbl.textContent = siblingDomainEntry ? 'New Entry' : (formLabels[ctxEntryForm] || 'Post Entry');
       } else {
         dEntry.hidden = true;
@@ -156982,6 +157899,7 @@
       }
     }
     if (locked) {
+      STATE.hubInspectorReturn = null;
       clearKioskAdminTimers();
       KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
@@ -160268,7 +161186,7 @@
           const wThresh = w.ot_threshold_min != null ? `OT ≥${w.ot_threshold_min}m` : '';
           return `<span class="att-co-win-chip">
             <span>${esc(fmtDateDMY(w.start_date))}-${esc(wEnd)}: <b>${esc(wGrpLbl)}</b> · $/min${wThresh ? ` · ${wThresh}` : ''}${wSnapLbl ? esc(wSnapLbl) : ''}</span>
-            <button type="button" class="stm-exc-chip-rm" data-co-policy-rm-win="${esc(w.id)}" data-co-policy-co="${esc(bu)}" aria-label="Remove window"${canWriteCo ? '' : ' disabled'}>✕</button>
+            <button type="button" class="stm-exc-chip-rm" data-co-policy-rm-win="${esc(w.id)}" data-co-policy-co="${esc(bu)}" data-ui-tip="Remove window" aria-label="Remove window"${canWriteCo ? '' : ' disabled'}>${ic('trash')}</button>
           </span>`;
         }).join('')}
       </div>
@@ -174815,7 +175733,7 @@
                             ? fmtDateDMY(item.start_date)
                             : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
                           const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-                          return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ssm-rm-date-exc="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+                          return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ssm-rm-date-exc="${esc(item.id)}" data-ui-tip="Remove date timing" aria-label="Remove date timing">${ic('trash')}</button></span>`;
                         }).join('') : `<span class="muted" style="font-size:11.5px">No specific calendar date overrides added yet.</span>`}
                       </div>
                     </div>
@@ -175133,7 +176051,7 @@
                         ${w.note ? `<span class="muted">${esc(w.note)}</span>` : '<span></span>'}
                         <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
                           <button type="button" class="btn kiosk-mini-btn" data-ssm-pol-edit-win="${esc(w.id)}">Edit</button>
-                          <button type="button" class="btn kiosk-mini-btn" data-ssm-pol-del-win="${esc(w.id)}">Delete</button>
+                          <button type="button" class="btn btn-sm btn-icon-danger" data-ssm-pol-del-win="${esc(w.id)}" data-ui-tip="Delete" aria-label="Delete">${ic('trash')}</button>
                         </span>
                       </div>`;
                     }).join('')}
@@ -175304,7 +176222,7 @@
                         <span class="muted">m = Bill</span>
                         <input type="number" class="mono" min="1" max="720" step="1" data-ssm-brk-pen="${idx}" value="${Number(b.penalty_min || 30)}" aria-label="Penalty minutes billed">
                         <span class="muted">m</span>
-                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn kiosk-mini-btn" data-ssm-brk-rm="${idx}" aria-label="Remove tier">&times;</button>` : ''}
+                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn btn-sm btn-icon-danger" data-ssm-brk-rm="${idx}" data-ui-tip="Remove tier" aria-label="Remove tier">${ic('trash')}</button>` : ''}
                       </div>
                     `).join('')}
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
@@ -175492,7 +176410,7 @@
                           ${p.max_hours > 0 ? ` · Max ${fmtNum(p.max_hours, 1)}h/day` : ' · Open hours'}
                           ${p.note ? ` · <span class="muted">${esc(p.note)}</span>` : ''}
                         </span>
-                        <button type="button" class="tkt-print-mini" data-remove-ot-pass="${esc(p.id)}" aria-label="Remove OT pass">✕</button>
+                        <button type="button" class="void-btn is-static-row-del" data-remove-ot-pass="${esc(p.id)}" data-ui-tip="Remove OT pass" aria-label="Remove OT pass">${ic('trash')}</button>
                       </div>
                     `).join('') : '<div class="ssm-helper">Pick a single day or date range above (saving will automatically include the selected dates).</div>'}
                   </div>
@@ -175527,7 +176445,7 @@
                     return `
                       <div class="ot-pass-row">
                         <span><b>${esc(ovLbl)}</b> · ${ov.start_date === (ov.end_date || ov.start_date) ? esc(fmtDateDMY(ov.start_date)) : `${esc(fmtDateDMY(ov.start_date))} to ${esc(fmtDateDMY(ov.end_date))}`}</span>
-                        <button type="button" class="tkt-print-mini" data-remove-shift-ov="${esc(ov.id)}" aria-label="Remove rotation">✕</button>
+                        <button type="button" class="void-btn is-static-row-del" data-remove-shift-ov="${esc(ov.id)}" data-ui-tip="Remove rotation" aria-label="Remove rotation">${ic('trash')}</button>
                       </div>
                     `;
                   }).join('')}
@@ -177262,7 +178180,7 @@
       return Array.from(grouped.values()).map(g => {
         const dayLbl = g.days.map(k => SHIFT_DAY_SHORT_NAMES[k] || 'Day').join(', ');
         const hrs = computeShiftWorkedHours(g.start_time, g.end_time) || 0;
-        return `<span class="stm-exc-chip"><span><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" aria-label="Remove weekday timing">✕</button></span>`;
+        return `<span class="stm-exc-chip"><span><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" data-ui-tip="Remove weekday timing" aria-label="Remove weekday timing">${ic('trash')}</button></span>`;
       }).join('');
     };
 
@@ -177275,7 +178193,7 @@
           ? fmtDateDMY(item.start_date)
           : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
         const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-        return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dateLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+        return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dateLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-date="${esc(item.id)}" data-ui-tip="Remove date timing" aria-label="Remove date timing">${ic('trash')}</button></span>`;
       }).join('');
     };
 
@@ -177477,7 +178395,7 @@
         </div>
         <div class="modal-foot" style="justify-content:space-between">
           <div>
-            ${!cohortProp && existing && !existing.isBuiltin ? `<button type="button" class="btn" id="stmDeleteBtn">Delete Shift Type</button>` : ''}
+            ${!cohortProp && existing && !existing.isBuiltin ? `<button type="button" class="btn btn-danger-outline" id="stmDeleteBtn">${ic('trash')}<span>Delete Shift Type</span></button>` : ''}
           </div>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn" id="stmCancelBtn">Cancel</button>
@@ -179079,7 +179997,7 @@
           <td><input type="text" class="scp-name" data-scp-row-name="${i}" maxlength="60" value="${esc(r.name)}"></td>
           <td><input type="date" data-scp-row-from="${i}" value="${esc(r.start_date)}"></td>
           <td><input type="date" data-scp-row-to="${i}" value="${esc(r.end_date)}"></td>
-          <td class="c"><button type="button" class="stm-exc-chip-rm" data-scp-row-rm="${i}" aria-label="Remove date">✕</button></td>
+          <td class="c"><button type="button" class="stm-exc-chip-rm" data-scp-row-rm="${i}" data-ui-tip="Remove date" aria-label="Remove date">${ic('trash')}</button></td>
         </tr>`).join('') : `<tr><td colspan="${isHol ? 6 : 5}" class="muted">No dates yet. Add one below.</td></tr>`;
       modal.innerHTML = `
         <div class="modal-card scp-card" style="width:min(760px,96vw);max-width:760px">
@@ -179200,7 +180118,7 @@
           </div>
           <div class="modal-foot" style="justify-content:space-between">
             <div>
-              ${canWrite ? `<button type="button" class="btn ${st.removeArmed ? 'btn-danger' : ''}" id="scpRemoveBtn">${st.removeArmed ? 'Confirm Remove' : 'Remove This Preset'}</button>` : ''}
+              ${canWrite ? `<button type="button" class="btn btn-danger-outline${st.removeArmed ? ' armed' : ''}" id="scpRemoveBtn" data-ui-tip="Remove This Preset">${ic('trash')}<span>${st.removeArmed ? 'Confirm Remove' : 'Remove This Preset'}</span></button>` : ''}
             </div>
             <div style="display:flex;gap:8px">
               <button type="button" class="btn" id="scpCancelBtn">Cancel</button>
@@ -182337,7 +183255,7 @@
                                 ${o.canWrite && !STATE.kioskLocked ? `
                                   <div class="pdr-prop-actions">
                                     <button type="button" class="btn kiosk-mini-btn" data-pdr-retune-outcome="${esc(o.key)}">${ic('sliders')} <span>Re-Tune Draft</span></button>
-                                    <button type="button" class="btn kiosk-mini-btn ${isArmedRm ? 'btn-primary' : ''}" data-pdr-rm-outcome="${esc(o.key)}">${isArmedRm ? 'Confirm Remove' : 'Remove Cohort Rule'}</button>
+                                    <button type="button" class="btn kiosk-mini-btn btn-danger-outline${isArmedRm ? ' armed' : ''}" data-pdr-rm-outcome="${esc(o.key)}" data-ui-tip="Remove Cohort Rule">${ic('trash')}<span>${isArmedRm ? 'Confirm Remove' : 'Remove Cohort Rule'}</span></button>
                                   </div>
                                 ` : '<div class="pdr-prop-actions"><span class="badge badge-muted">View Only</span></div>'}
                               </div>
@@ -182359,7 +183277,7 @@
                     <span class="pdr-sub" data-no-i18n="1">${esc(r.company)}</span>
                     <span class="mono" data-no-i18n="1">${esc(fmtDateDMY(r.item.start_date))} - ${esc(fmtDateDMY(r.item.end_date))}</span>
                     <span class="mono">${esc(fmtRelativeDateTimingText(r.item))}</span>
-                    ${canWrite ? `<button type="button" class="btn kiosk-mini-btn ${st.armed === `rule:${r.item.id}` ? 'btn-primary' : ''}" data-pdr-rm-rule="${esc(r.item.id)}">${st.armed === `rule:${r.item.id}` ? 'Confirm Remove' : 'Remove'}</button>` : ''}
+                    ${canWrite ? `<button type="button" class="btn kiosk-mini-btn btn-danger-outline${st.armed === `rule:${r.item.id}` ? ' armed' : ''}" data-pdr-rm-rule="${esc(r.item.id)}" data-ui-tip="Remove">${ic('trash')}<span>${st.armed === `rule:${r.item.id}` ? 'Confirm Remove' : 'Remove'}</span></button>` : ''}
                   </div>`).join('')}
               </div>` : ''}
           </div>
@@ -183113,7 +184031,7 @@
                         <span>m = Bill</span>
                         <input type="number" class="mono" min="1" max="720" step="5" data-pgm-brk-pen="${bIdx}" value="${bk.penalty_min}" aria-label="Penalty minutes billed">
                         <span>m</span>
-                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn kiosk-mini-btn" data-pgm-brk-del="${bIdx}" aria-label="Remove tier">✕</button>` : ''}
+                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn btn-sm btn-icon-danger" data-pgm-brk-del="${bIdx}" data-ui-tip="Remove tier" aria-label="Remove tier">${ic('trash')}</button>` : ''}
                       </div>
                     `).join('')}
                     <div class="att-bracket-row">
@@ -183231,7 +184149,7 @@
                       ${v.note ? `<span class="muted">${esc(v.note)}</span>` : '<span></span>'}
                       <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
                         <button type="button" class="btn kiosk-mini-btn" data-pgm-edit-ver="${esc(v.id)}">Edit</button>
-                        <button type="button" class="btn kiosk-mini-btn" data-pgm-del-ver="${esc(v.id)}">Delete</button>
+                        <button type="button" class="btn btn-sm btn-icon-danger" data-pgm-del-ver="${esc(v.id)}" data-ui-tip="Delete" aria-label="Delete">${ic('trash')}</button>
                       </span>
                     </div>`;
                   }).join('')}
@@ -183315,7 +184233,7 @@
           </div>
           <div class="modal-foot" style="justify-content:space-between">
             <div>
-              ${existing && !existing.isBuiltin && !isRo ? `<button type="button" class="btn" id="pgmDeleteBtn">Delete Group</button>` : ''}
+              ${existing && !existing.isBuiltin && !isRo ? `<button type="button" class="btn btn-danger-outline" id="pgmDeleteBtn">${ic('trash')}<span>Delete Group</span></button>` : ''}
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn" id="pgmCancelBtn">${isRo ? 'Close' : 'Cancel'}</button>
@@ -188277,8 +189195,10 @@
       settleChartRowsAtPageBottom(container, STATE.view);
       wireChartToolsOnce();
       try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
+      try { mountMissingColFilterBars(container); } catch (err) { console.warn('missing col filter bar', err); }
       // On its own, so a fault in any chart above can never leave a drill filtering rows with no strip.
       try { mountRegisterDrillStrips(container); } catch (err) { console.warn('register drill strip', err); }
+      try { mountInspectorReturnBar(container); } catch (err) { console.warn('inspector return bar', err); }
       try { mountHubChartDrills(container); } catch (err) { console.warn('hub chart drill', err); }
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
@@ -188795,12 +189715,28 @@
       const stmt = btn.getAttribute('data-stmt-jump');
       if (stmt) STATE.activeStatement = stmt;
       const targetView = btn.getAttribute('data-nav-jump');
+      const navChip = btn.getAttribute('data-nav-chip') || '';
+      const navScroll = btn.getAttribute('data-nav-scroll') || '';
       const modJump = btn.getAttribute('data-mod-jump');
       if (modJump && targetView) {
         if (!STATE.moduleSection) STATE.moduleSection = {};
         STATE.moduleSection[targetView] = modJump;
       }
-      setView(targetView);
+      if (navChip && targetView) {
+        const cfViews = targetView === 'customers'
+          ? [targetView, 'custs', 'receipts']
+          : (targetView === 'cashflow' ? [targetView, 'cf_moves'] : [targetView]);
+        cfViews.forEach(vk => {
+          if (STATE.colFilters) delete STATE.colFilters[vk];
+          if (STATE.regDrill) delete STATE.regDrill[vk];
+        });
+      }
+      setView(targetView, navChip ? { chipFilter: navChip } : undefined);
+      if (navScroll && STATE.view === targetView) {
+        if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+        const scrollEl = $(navScroll);
+        if (scrollEl && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(scrollEl, 10);
+      }
     };
 
     const activateModSec = btn => {
@@ -188934,24 +189870,9 @@
       const voidBtn = t.closest('[data-void]');
       if (voidBtn && container.contains(voidBtn)) {
         e.stopPropagation();
-        const voidTd = voidBtn.parentElement && voidBtn.parentElement.tagName === 'TD' ? voidBtn.parentElement : null;
-        if (voidBtn.dataset.armed === '1') {
-          if (voidTd) voidTd.classList.remove('td-void-armed');
+        armOrRunInlineVoidBtn(voidBtn, () => {
           voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id'));
-          return;
-        }
-        voidBtn.dataset.armed = '1';
-        voidBtn.textContent = 'Void?';
-        voidBtn.classList.add('armed');
-        if (voidTd) voidTd.classList.add('td-void-armed');
-        setTimeout(() => {
-          if (voidBtn.isConnected) {
-            voidBtn.dataset.armed = '';
-            voidBtn.textContent = '✕';
-            voidBtn.classList.remove('armed');
-          }
-          if (voidTd && voidTd.isConnected) voidTd.classList.remove('td-void-armed');
-        }, 4000);
+        });
         return;
       }
 
@@ -189089,6 +190010,21 @@
         e.stopPropagation();
         const targetInd = demoIndBtn.getAttribute('data-demo-co-ind');
         if (targetInd) setDemoCompanyIndustry(targetInd);
+        return;
+      }
+
+      const inspRetBtn = t.closest('[data-insp-hub-return]');
+      if (inspRetBtn && container.contains(inspRetBtn)) {
+        e.stopPropagation();
+        restoreInspectorFromHubReturn();
+        return;
+      }
+
+      const inspRetDismissBtn = t.closest('[data-insp-hub-return-dismiss]');
+      if (inspRetDismissBtn && container.contains(inspRetDismissBtn)) {
+        e.stopPropagation();
+        STATE.hubInspectorReturn = null;
+        renderApp();
         return;
       }
 
@@ -190191,9 +191127,11 @@
             el.hidden = true;
           } else {
             el.removeAttribute('data-nav-jump');
+            el.removeAttribute('data-nav-chip');
+            el.removeAttribute('data-nav-scroll');
             el.removeAttribute('role');
             el.removeAttribute('tabindex');
-            el.classList.remove('kpi-link');
+            el.classList.remove('kpi-link', 'clickable-row');
           }
         }
       }
@@ -193002,6 +193940,9 @@
       stopKioskAttCamera();
     }
     const prevView = STATE.view;
+    if (!(opts && opts._keepInspReturn)) {
+      STATE.hubInspectorReturn = null;
+    }
     STATE.view = view;
     if (UNIV_VIEW_TO_TABLE_KEY[view]) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[view];
@@ -194831,10 +195772,14 @@
     const mobileNewEntryBtn = $('mobileNewEntryBtn');
     const mobileDockEntryBtn = $('mobileDockEntryBtn');
     const triggerSmartNewEntry = () => {
-      if (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(STATE.view || ''))) {
-        openIndustryDomainEntryModal(STATE.view);
+      const v = String(STATE.view || '');
+      const indNow = getActiveIndustry(STATE.company);
+      if (/^(hld_|hsp_|trd_|re_|ins_)/.test(v)) {
+        openIndustryDomainEntryModal(v);
+      } else if (indNow !== 'Manufacturing' && ['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(v) && getPermittedModalDomainGroups(indNow).length > 0) {
+        openIndustryDomainEntryModal(v);
       } else {
-        openEntryModal(contextFormForView(STATE.view));
+        openEntryModal(contextFormForView(v));
       }
     };
     if (newTicketBtn) newTicketBtn.addEventListener('click', triggerSmartNewEntry);
@@ -194928,6 +195873,7 @@
         VIEW_TITLES,
         openHubWithFilter,
         openInspectorTargetInHub,
+        getViewFilterPool,
         setDateFilter,
         openEntryModal,
         showRecordInspector,
@@ -194961,11 +195907,15 @@
         getActiveIndustry,
         isFleetUniversalIndustry,
         MFG_ONLY_MODAL_FORMS,
+        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
         selectCompanyScope,
         contextFormForView,
         canEnterForm,
+        canEnterDomainForm,
         openEntryModal,
+        closeEntryModal,
         openIndustryDomainEntryModal,
+        closeIndustryDomainEntryModal,
         resolveDomainFormSpec,
         computeTradingOperations,
         recalcForm,
@@ -195010,6 +195960,7 @@
         getActiveIndustry,
         isFleetUniversalIndustry,
         MFG_ONLY_MODAL_FORMS,
+        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
         canEnterForm,
         canEnterAny,
         canModifyData,
@@ -195120,6 +196071,7 @@
         getActiveIndustry,
         isFleetUniversalIndustry,
         MFG_ONLY_MODAL_FORMS,
+        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
         selectCompanyScope,
         isDemoScopeActive,
         isOfficialScopeActive,
@@ -195145,6 +196097,7 @@
         VIEW_TITLES,
         openHubWithFilter,
         openInspectorTargetInHub,
+        getViewFilterPool,
         setDateFilter,
         openEntryModal,
         closeEntryModal,
@@ -195417,6 +196370,13 @@
           const modDrawer = $('inspModifyDrawer');
           if (modDrawer && !modDrawer.hidden) { if (typeof modDrawer._closeAndReset === 'function') modDrawer._closeAndReset(); else modDrawer.hidden = true; return; }
           closeRecordInspector();
+          return;
+        }
+        const indM = $('indDomainEntryModal');
+        if (indM && !indM.hidden) {
+          const indPrompt = $('indUnsavedPrompt');
+          if (indPrompt && !indPrompt.hidden) { hideIndUnsavedPrompt(); return; }
+          closeIndustryDomainEntryModal(false, e);
           return;
         }
         const m = $('entryModal');
@@ -197941,6 +198901,7 @@
     canEnterForm: typeof canEnterForm === 'function' ? canEnterForm : null,
     isFleetUniversalIndustry: typeof isFleetUniversalIndustry === 'function' ? isFleetUniversalIndustry : null,
     MFG_ONLY_MODAL_FORMS,
+    isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
     canAccessTable: typeof canAccessTable === 'function' ? canAccessTable : null,
     activeUser: typeof activeUser === 'function' ? activeUser : null,
     isOwner: typeof isOwner === 'function' ? isOwner : null,
