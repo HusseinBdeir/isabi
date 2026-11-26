@@ -95,6 +95,7 @@ def main() -> int:  # noqa: PLR0915
             key = unit["key"]
             calls.append((key, env.get("ISABI_BROWSER_SLOT_PRIORITY", ""), env.get("ISABI_RELEASE_HOLDER", "")))
             gate_limits.add(env.get(RB.LEAD_GATE_TIMEOUT_ENV, ""))
+            gate_limits.add("unbuffered" if env.get("PYTHONUNBUFFERED") == "1" else "buffered")
             log.write_text(f"$ {' '.join(unit['argv'])}\nfirst line\nlast line of {key}\n", encoding="utf-8")
             for k in list(fail):
                 if k in key and fail[k] > 0:
@@ -165,6 +166,9 @@ def main() -> int:  # noqa: PLR0915
               "then mobile then the saved-scope boot, sync_app.py, the deploy, isabi-app main, isabi main")
         check(all(c[1] == "leader" and c[2] == "driver" for c in calls),
               "every command lead runs is marked as the release leader's, so its suites take the PC's browser slot next")
+        check("buffered" not in gate_limits and "unbuffered" in gate_limits,
+              "lead runs its Python steps unbuffered, so a failing step's ERROR line ends its log")
+        gate_limits.discard("unbuffered")
         check(gate_limits == {str(RB.LEAD_GATE_TIMEOUT_S)} and RB.LEAD_GATE_TIMEOUT_S >= 1800,
               "lead allows each release gate of sync_app.py 30 minutes: a gate queued for the browser slot is not stopped at 600 s")
         check("the line is long (7 changes waiting, more than 6)" in out and "1 more waiting" in out,

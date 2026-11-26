@@ -1947,7 +1947,9 @@ def _lead(cwd: Path, *, holder: str, version: str, max_changes: int | None, from
         except OSError:
             pass
     tag = (shell or batch["lockId"][:8]).replace(".", "_")
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8",
+    # PYTHONUNBUFFERED: a step's stdout and stderr reach its log in the order they were written, so the ERROR line
+    # of a failing sync_app.py is at the end of the log (the part shown), not above sixty passing gates.
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",
                # The release leader's suites take this PC's browser slot next (isabi-app build/_browser_slot.mjs).
                ISABI_BROWSER_SLOT_PRIORITY="leader", ISABI_RELEASE_HOLDER=str(batch.get("holder") or holder or ""))
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
