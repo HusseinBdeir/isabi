@@ -110,6 +110,12 @@ jobs:
         timeout-minutes: 10
         run: python3 build/verify_release_batch_cap.py
 
+      # The limit follows the line (3, or 6 while more than 6 wait), `lead` (one batch, one command) and `drive`
+      # (batch after batch until the line is empty) (owner 2026-11-26).
+      - name: Release leader and driver gate (build/release_batch.py lead / drive, offline)
+        timeout-minutes: 10
+        run: python3 build/verify_release_lead.py
+
       - name: Shell version in this commit
         id: ver
         run: echo "sw=$(head -n 1 app/sw.js)" >> "$GITHUB_OUTPUT"
