@@ -958,6 +958,9 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .sec.d-sheet > .wrap { --sheet-zoom: 1.05; zoom: var(--sheet-zoom); max-width: calc(min(95vw, 1720px) / var(--sheet-zoom)); }
   #faq.d-sheet > .wrap { --sheet-zoom: 1.2; max-width: calc(min(95vw, 1500px) / var(--sheet-zoom)); }
 }
+@media (min-width: 1081px) and (max-height: 655px) {
+  .sec.d-sheet > .wrap { --sheet-zoom: 1; }
+}
 @media (min-width: 1081px) and (min-height: 700px) {
   .sec.d-sheet > .wrap { --sheet-zoom: 1.06; }
   #faq.d-sheet > .wrap { --sheet-zoom: 1.25; }
