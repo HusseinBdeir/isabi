@@ -22,6 +22,9 @@
     if (window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function') {
       return window.MFG_ICONS.svg(name);
     }
+    if (name === 'trash') {
+      return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6h17M8.5 6V4a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 4v2M18.5 6v13a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V6M10 10.5v6M14 10.5v6"/></svg>';
+    }
     return '';
   }
 
@@ -2006,7 +2009,7 @@
           <div class="doc-cam-batch-chip ${idx === S.activeIdx ? 'active' : ''}" data-doc-pick-idx="${idx}">
             ${pPdf ? '<span style="font-size:11px;font-weight:800;letter-spacing:.04em">PDF</span>' : (p.previewUrl ? `<img src="${esc(p.previewUrl)}" alt="Page ${idx + 1}">` : '')}
             <span>Page ${idx + 1}</span>
-            <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" aria-label="Remove page ${idx + 1}">✕</button>
+            <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" data-ui-tip="Remove page" aria-label="Remove page">${ic('trash')}</button>
           </div>`;
         }).join('');
         tray.querySelectorAll('[data-doc-pick-idx]').forEach(chip => {

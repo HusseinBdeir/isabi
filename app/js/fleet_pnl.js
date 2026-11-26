@@ -188,13 +188,136 @@
     var canExp = sl ? Boolean(sl.expenses) : true;
     var canProfit = sl ? Boolean(sl.profit) : true;
     var canBooks = sl ? Boolean(sl.books) : true;
+    var canBurn = (ent && typeof ent.canSeeFleetBurn === 'function') ? Boolean(ent.canSeeFleetBurn()) : canExp;
+    var canPriceRuleSales = (ent && typeof ent.canEnterForm === 'function') ? Boolean(ent.canEnterForm('pricerule')) : false;
+    var canPriceRuleHaul = (ent && typeof ent.canEnterForm === 'function') ? Boolean(ent.canEnterForm('pricerule_haul')) : false;
+    var canPriceRule = Boolean(canPriceRuleSales || canPriceRuleHaul);
     return {
       canExp: canExp,
       canPay: canPay,
       canAllCost: Boolean(canExp && canPay),
       canProfit: canProfit,
-      canBooks: canBooks
+      canBooks: canBooks,
+      canBurn: canBurn,
+      canPriceRuleSales: canPriceRuleSales,
+      canPriceRuleHaul: canPriceRuleHaul,
+      canPriceRule: canPriceRule,
+      canSettle: Boolean((canBooks || canProfit) && canExp && canPay)
     };
+  }
+
+  function canEnterCorridorForm(perm, formName) {
+    if (!perm) return false;
+    return formName === 'pricerule_haul' ? Boolean(perm.canPriceRuleHaul) : Boolean(perm.canPriceRuleSales);
+  }
+
+  var SETTLE_STATE = {
+    open: false,
+    truck: '',
+    ym: '',
+    basisMode: 'recorded'
+  };
+
+  function nextDayAfterIso(isoStr) {
+    if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(isoStr).slice(0, 10))) return '';
+    var d = new Date(String(isoStr).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return '';
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function resolvePartyWatermarkThrough(tableKey, company, party) {
+    var lkApi = window.MFG_STMT_LOCK;
+    if (!lkApi || !party) return '';
+    var tbl = tableKey === 'raw_purchases' ? 'raw_purchases' : 'sales_tickets';
+    if (typeof lkApi.lockFor === 'function') {
+      var lk = lkApi.lockFor(tbl, company || 'WTC', party, '1900-01-01', tbl === 'raw_purchases' ? 'cost' : 'sale');
+      if (lk && lk.through) return String(lk.through).slice(0, 10);
+    }
+    if (typeof lkApi.get === 'function') {
+      var sm = lkApi.get({
+        industry: 'Manufacturing',
+        company: company || 'WTC',
+        partyType: tbl === 'raw_purchases' ? 'supplier' : 'customer',
+        partyName: party
+      });
+      if (sm && sm.through) return String(sm.through).slice(0, 10);
+    }
+    return '';
+  }
+
+  function classifySalesZeroGuard(ent, s, comp, siteStr, unitP, qty, dtStr, ruleCache) {
+    if (!s.site && !s.work_site) {
+      return {
+        isProtected: true,
+        reason: 'missing_site',
+        badge: 'Missing Site',
+        tip: 'Ticket has no site assigned; assign a site on the ticket before setting a corridor rate'
+      };
+    }
+    var saleType = String(s.sale_type || 'Delivery');
+    if (saleType !== 'Delivery') {
+      return {
+        isProtected: true,
+        reason: 'pickup_or_unreg',
+        badge: 'Pickup / Non-Delivery',
+        tip: 'Pickup or unregistered tickets do not carry a delivery haulage rate'
+      };
+    }
+    var revApi = (ent && ent.revenueClass) || window.__mfgRevenueClass || null;
+    var revCls = (typeof revApi === 'function')
+      ? revApi(s)
+      : (revApi && typeof revApi.classOf === 'function' ? revApi.classOf(s) : 'sale');
+    if (revCls && revCls !== 'sale') {
+      return {
+        isProtected: true,
+        reason: 'non_sale',
+        badge: 'Recharge / Non-Sale',
+        tip: 'Group recharges and non-sale tickets are excluded from Customer AR haulage backfill'
+      };
+    }
+    if (/customer/i.test(String(s.transport_by || ''))) {
+      return {
+        isProtected: true,
+        reason: 'customer_truck',
+        badge: 'Customer Truck',
+        tip: 'Delivered on customer transport; no company delivery charge'
+      };
+    }
+    if (unitP >= 55 && qty > 0) {
+      return {
+        isProtected: true,
+        reason: 'all_in_cd',
+        badge: 'All-In AR Protected',
+        tip: 'All-in C&D concrete price already includes delivery; setting a transport rate would double-bill Customer AR'
+      };
+    }
+    if (ent && typeof ent.findPriceRule === 'function' && s.customer && s.product) {
+      var rk = `${comp}|${s.customer}|${s.product}|${siteStr}|${dtStr}`;
+      var activeRule;
+      if (ruleCache && Object.prototype.hasOwnProperty.call(ruleCache, rk)) {
+        activeRule = ruleCache[rk];
+      } else {
+        activeRule = ent.findPriceRule({
+          company: comp,
+          customer: s.customer,
+          product: s.product,
+          site: siteStr,
+          date: dtStr,
+          types: ['Sales (Delivery)']
+        });
+        if (ruleCache) ruleCache[rk] = activeRule || null;
+      }
+      if (activeRule && (Number(activeRule.unit_price || activeRule.price || activeRule.indiff_price || 0) > 0) && (Number(activeRule.trans_unit_price || activeRule.trans_price || activeRule.trans_indiff_price || 0) <= 0)) {
+        return {
+          isProtected: true,
+          reason: 'all_in_contract',
+          badge: 'All-In AR Protected',
+          tip: 'Active Sales (Delivery) contract prices all-in material without separate haulage'
+        };
+      }
+    }
+    return { isProtected: false, reason: 'open_delivery', badge: '', tip: '' };
   }
 
   function maskCell() {
@@ -384,12 +507,17 @@
     var seedRev = (seed && (seed._customRev || (seed.meta && seed.meta.rev))) || 0;
     var otSnapSig = (ent && typeof ent.getOtSnapAllocSig === 'function') ? ent.getOtSnapAllocSig() : '';
     var nbSig = (window.MFG_NAMEBOOK && window.MFG_NAMEBOOK.rev) ? window.MFG_NAMEBOOK.rev : 0;
+    var geoStamp = (window.MFG_GEO && typeof window.MFG_GEO.getConfigStamp === 'function') ? window.MFG_GEO.getConfigStamp() : '';
+    var wmSig = (window.MFG_STMT_LOCK && typeof window.MFG_STMT_LOCK.watermarkSig === 'function')
+      ? window.MFG_STMT_LOCK.watermarkSig('Manufacturing') : '';
+    var spdOff = window.__MFG_SPEED_CACHES_OFF ? '1' : '0';
     var cacheKey = [
       st.company || '', st.period || '', st.dateGrain || '', st.dateFrom || '', st.dateTo || '',
       st.basis || st.dateBasis || 'rep', st.officialBookScope || '', st._officialScopeActive ? '1' : '0',
       st.activeUserId || st.userId || '', st.activeUserIdx != null ? st.activeUserIdx : '',
       perm.canPay ? '1' : '0', perm.canExp ? '1' : '0', perm.canProfit ? '1' : '0', perm.canBooks ? '1' : '0',
-      allowedKey, seedRev, st._indCustomRev || 0, otSnapSig, nbSig
+      perm.canBurn ? '1' : '0', perm.canPriceRuleSales ? '1' : '0', perm.canPriceRuleHaul ? '1' : '0',
+      allowedKey, seedRev, st._indCustomRev || 0, st._watermarkRev || 0, wmSig, otSnapSig, nbSig, geoStamp, spdOff
     ].join('|');
 
     if (LIVE_CACHE && LIVE_CACHE_KEY === cacheKey) return LIVE_CACHE;
@@ -409,6 +537,9 @@
     var trucks = {};
     var monthsMap = {};
     var ownEquipSet = {};
+    var equipByCode = {};
+    var allInRuleCache = {};
+    var wmPartyCache = {};
 
     coEquip.forEach(function (ce) {
       if (!ce || ce.end_date) return;
@@ -419,9 +550,10 @@
     });
     equipMaster.forEach(function (eq) {
       if (!eq) return;
+      var ec = normTruckCode(eq.name || eq.equipment || '');
+      if (ec && !equipByCode[ec]) equipByCode[ec] = eq;
       if (/^own/i.test(String(eq.ownership || '')) && /truck/i.test(String(eq.type || ''))) {
-        var c = normTruckCode(eq.name || eq.equipment || '');
-        if (c) ownEquipSet[c] = true;
+        if (ec) ownEquipSet[ec] = true;
       }
     });
 
@@ -430,9 +562,11 @@
       if (!c) return null;
       if (!trucks[c]) {
         var m = getTruckMeta(c);
+        var resolvedOwner = ownEquipSet[c] ? (m.owner === 'Partner Truck' ? 'Partner Truck' : 'Company Fleet') : m.owner;
         trucks[c] = {
           code: c, displayCode: m.displayCode, plate: m.plate,
-          owner: ownEquipSet[c] ? (m.owner === 'Partner Truck' ? 'Partner Truck' : 'Company Fleet') : m.owner,
+          owner: resolvedOwner,
+          isPartnerOrHauler: false,
           driver: m.driver, driverShort: m.driverShort,
           colorVar: m.colorVar,
           salesTrips: 0, salesPaidTrips: 0, salesZeroTrips: 0,
@@ -471,10 +605,62 @@
 
     var routeAgg = {};
     var zeroRows = [];
+    var corridorActionMap = {};
+    var highCdSiteMap = {};
+    var dieselRows = [];
     var costRows = [];
     var overtimeRows = [];
     var driverBaseRows = [];
     var driverMap = {};
+
+    function noteOpenCorridorAction(rowInfo) {
+      if (!rowInfo || rowInfo.isArProtected) return;
+      var ck = rowInfo.corridorKey;
+      if (!ck) return;
+      if (!corridorActionMap[ck]) {
+        var wmParty = rowInfo.table === 'sales_tickets' ? rowInfo.counterparty : (rowInfo.haulSupplier || rowInfo.counterparty);
+        var wmKey = `${rowInfo.table}|${rowInfo.company}|${wmParty}`;
+        if (!Object.prototype.hasOwnProperty.call(wmPartyCache, wmKey)) {
+          wmPartyCache[wmKey] = resolvePartyWatermarkThrough(rowInfo.table, rowInfo.company, wmParty);
+        }
+        var lockedThrough = wmPartyCache[wmKey];
+        corridorActionMap[ck] = {
+          key: ck,
+          form: rowInfo.table === 'raw_purchases' ? 'pricerule_haul' : 'pricerule',
+          table: rowInfo.table,
+          stream: rowInfo.stream,
+          company: rowInfo.company,
+          counterparty: rowInfo.counterparty,
+          haulSupplier: rowInfo.table === 'raw_purchases' ? String(rowInfo.haulSupplier || '') : String(rowInfo.counterparty || ''),
+          site: rowInfo.site,
+          material: rowInfo.material,
+          uom: rowInfo.uom || 'm³',
+          lockedThrough: lockedThrough,
+          openCount: 0,
+          lockedCount: 0,
+          earliestOpenDate: '',
+          uniformMatPrice: null,
+          hasSiteHighCd: false,
+          _matPriceSet: {}
+        };
+      }
+      var act = corridorActionMap[ck];
+      var dt = String(rowInfo.date || '').slice(0, 10);
+      var txDt = String(rowInfo.txDate || dt).slice(0, 10);
+      var effLockDt = (txDt && (!dt || txDt < dt)) ? txDt : dt;
+      if (act.lockedThrough && effLockDt && effLockDt <= act.lockedThrough) {
+        act.lockedCount += 1;
+        return;
+      }
+      act.openCount += 1;
+      if (dt && (!act.earliestOpenDate || dt < act.earliestOpenDate)) {
+        act.earliestOpenDate = dt;
+      }
+      if (rowInfo.table === 'sales_tickets') {
+        var upNum = Number(rowInfo.unit_price || 0);
+        act._matPriceSet[upNum.toFixed(4)] = upNum;
+      }
+    }
 
     function recordTripOvertime(row, tableKey, streamLabel, tObj, dt, comp, drv, qty) {
       var otFlag = Number(row.overtime) || 0;
@@ -541,22 +727,34 @@
         t.salesZeroTrips += 1;
         t.salesZeroQtyM3 += qty;
         var isUnbundled = unitP >= 55 && qty > 0;
+        if (isUnbundled && s.customer && siteStr) {
+          highCdSiteMap[`${comp}||${String(s.customer)}||${siteStr}`] = true;
+        }
         var shadow = qty > 0 ? (qty * 4.0) : 75.0;
         var bench = Math.max(qty * 5.0, 75.0);
         strictAdd = shadow;
         fullAdd = bench;
         t.salesUnbundledCredit += shadow;
         t.salesBenchmarkCredit += bench;
-        zeroRows.push({
-          id: s.id || '', table: 'sales_tickets', date: dtStr,
+        var sGuard = classifySalesZeroGuard(ent, s, comp, siteStr, unitP, qty, dtStr, allInRuleCache);
+        var sCorrKey = [comp, 'Sales Delivery', String(s.customer || 'Customer'), siteStr, String(s.product || 'Concrete')].join('||');
+        var sZeroItem = {
+          id: s.id || '', table: 'sales_tickets', date: dtStr, txDate: String(s.date || dtStr).slice(0, 10),
           company: comp, stream: 'Sales Delivery', truck: t.code, driver: drv || t.driverShort,
           counterparty: String(s.customer || 'Customer'), site: siteStr,
-          material: String(s.product || 'Concrete'), qty_m3: qty, unit_price: unitP,
+          material: String(s.product || 'Concrete'), uom: String(s.uom || 'm³'), qty_m3: qty, unit_price: unitP,
           total_product: Number(s.total_usd || s.total_sale_usd || 0) * sSign, recorded_haul: 0,
           classification: isUnbundled ? 'Unbundled C&D Price (>=$55/m³)' : 'Sales Delivery at $0.00 Haul Split',
+          isArProtected: sGuard.isProtected,
+          guardReason: sGuard.reason,
+          guardBadge: sGuard.badge,
+          guardTip: sGuard.tip,
+          corridorKey: sCorrKey,
           strictCredit: shadow, fullCredit: bench,
           shadow_credit: shadow, benchmark_credit: bench
-        });
+        };
+        zeroRows.push(sZeroItem);
+        noteOpenCorridorAction(sZeroItem);
       }
 
       var mObj = ensureMonth(ym);
@@ -616,23 +814,42 @@
         rt.rawZeroTrips += 1;
         rt.rawZeroQtyM3 += rQty;
         var isInternalQuarry = /al\s*jawad|wtc/i.test(`${rSite} ${rParty}`);
+        var isCoRawFleet = /^company/i.test(String(r.transport_by || ''));
+        var isSuppDelivRaw = Boolean(r.includes_transport || /^supplier/i.test(String(r.transport_by || '')));
+        var isMissingRawSite = !r.site && !r.work_site;
+        var rawProtected = Boolean(isInternalQuarry || isCoRawFleet || isSuppDelivRaw || isMissingRawSite);
+        var rawGuardBadge = isInternalQuarry
+          ? 'Internal Transfer ($0 Ledger)'
+          : (isMissingRawSite ? 'Missing Site' : (isSuppDelivRaw ? 'Supplier Delivers ($0 Haul)' : (isCoRawFleet ? 'Company Fleet ($0 Haul)' : '')));
+        var rawGuardTip = isInternalQuarry
+          ? 'Internal quarry or plant transfer has no separate hauler AP ledger fee'
+          : (isMissingRawSite ? 'Ticket has no site assigned; assign a site on the ticket before setting a corridor rate' : (isSuppDelivRaw ? 'Supplier price already includes delivery to plant' : (isCoRawFleet ? 'Hauled by company fleet unit with no third-party hauler AP fee' : '')));
+        var rHaulSupplier = String(r.truck_owner || '').trim();
+        var rCorrKey = [rComp, 'Raw Material Inbound', rHaulSupplier || rParty, rSite, rMat].join('||');
         var rShadow = isInternalQuarry ? 0 : 60.0;
         var rBench = 60.0;
         rStrictAdd = rShadow;
         rFullAdd = rBench;
         rt.rawMissingRateCredit += rShadow;
         rt.rawBenchmarkCredit += rBench;
-        zeroRows.push({
-          id: r.id || '', table: 'raw_purchases', date: rDtStr,
+        var rZeroItem = {
+          id: r.id || '', table: 'raw_purchases', date: rDtStr, txDate: String(r.date || rDtStr).slice(0, 10),
           company: rComp, stream: 'Raw Material Inbound', truck: rt.code, driver: rDrv || rt.driverShort,
-          counterparty: rParty, site: rSite,
-          material: rMat, qty_m3: rQty,
+          counterparty: rParty, haulSupplier: rHaulSupplier, site: rSite,
+          material: rMat, uom: String(r.uom || 'm³'), qty_m3: rQty,
           unit_price: Number(r.unit_price || r.material_unit_cost_usd || 0),
           total_product: Number(r.total_usd || r.total_material_usd || 0) * rSign, recorded_haul: 0,
           classification: isInternalQuarry ? 'Internal Quarry / Plant Transfer ($0 Strict / $60 Bench)' : 'Missing External Raw Transport Rate ($60/trip)',
+          isArProtected: rawProtected,
+          guardReason: isInternalQuarry ? 'internal_transfer' : (isMissingRawSite ? 'missing_site' : (rawProtected ? 'company_or_supp_raw' : 'open_raw_haul')),
+          guardBadge: rawGuardBadge,
+          guardTip: rawGuardTip,
+          corridorKey: rCorrKey,
           strictCredit: rStrictAdd, fullCredit: rFullAdd,
           shadow_credit: rStrictAdd, benchmark_credit: rFullAdd
-        });
+        };
+        zeroRows.push(rZeroItem);
+        noteOpenCorridorAction(rZeroItem);
       }
 
       var rmObj = ensureMonth(rYm);
@@ -642,11 +859,12 @@
       rtmObj.trips += 1; rtmObj.qtyM3 += rQty; rtmObj.recordedRev += rDeliv; rtmObj.hasActivity = true;
       rtmObj.strictCredit += rStrictAdd; rtmObj.fullCredit += rFullAdd;
 
-      var rrKey = [rComp, 'Raw Material Inbound', rt.code, rParty, rSite, rMat].join('||');
+      var rRouteHaulSup = String(r.truck_owner || '').trim();
+      var rrKey = [rComp, 'Raw Material Inbound', rt.code, rParty, rSite, rMat, rRouteHaulSup].join('||');
       if (!routeAgg[rrKey]) {
         routeAgg[rrKey] = {
           key: rrKey, company: rComp, stream: 'Raw Material Inbound', truck: rt.code,
-          counterparty: rParty, site: rSite,
+          counterparty: rParty, haulSupplier: rRouteHaulSup, site: rSite,
           material: rMat, trips: 0, paidTrips: 0, zeroTrips: 0,
           qtyM3: 0, rev: 0, strictCredit: 0, fullCredit: 0, shadowCredit: 0
         };
@@ -703,6 +921,19 @@
       var dtmObj = ensureTruckMonth(dt, dYm);
       dtmObj.dieselCost += dCost;
       dtmObj.hasActivity = true;
+
+      dieselRows.push({
+        id: dl.id || '',
+        table: 'fuel_intakes',
+        date: dDt,
+        company: String(dl.company || 'WTC'),
+        truck: dt.code,
+        ticketNo: tno || String(dl.name || '-'),
+        driver: String(dl.driver || '').trim(),
+        liters: ltrs,
+        unitRate: unitFuelPrice,
+        totalUsd: dCost
+      });
 
       costRows.push({
         id: dl.id || '',
@@ -932,6 +1163,12 @@
       t.totalPaidTrips = t.salesPaidTrips + t.rawPaidTrips;
       t.totalZeroTrips = t.salesZeroTrips + t.rawZeroTrips;
       t.totalQtyM3 = t.salesQtyM3 + t.rawQtyM3;
+      var eqRec = equipByCode[c] || null;
+      t.isPartnerOrHauler = Boolean(
+        CORE_PARTNER_CODES.indexOf(c) >= 0 ||
+        t.owner === 'Partner Truck' ||
+        (!ownEquipSet[c] && t.totalTrips > 0 && (!eqRec || !/loader|excavator|dozer|grader|generator|pump|skid|forklift/i.test(String(eqRec.type || ''))))
+      );
 
       var drvKeys = Object.keys(t.driverTripsMap);
       if (drvKeys.length) {
@@ -1009,17 +1246,60 @@
       else if (ch.id === 'top5') ch.trucks = allTruckList.slice(0, 5).map(function (t) { return t.code; });
     });
 
+    Object.keys(corridorActionMap).forEach(function (ck) {
+      var act = corridorActionMap[ck];
+      var priceKeys = Object.keys(act._matPriceSet || {});
+      if (priceKeys.length === 1) {
+        var singleP = act._matPriceSet[priceKeys[0]];
+        if (singleP > 0 && singleP < 55) act.uniformMatPrice = singleP;
+      }
+      if (act.table === 'sales_tickets') {
+        act.hasSiteHighCd = Boolean(highCdSiteMap[`${act.company}||${act.counterparty}||${act.site}`]);
+      }
+      delete act._matPriceSet;
+    });
+
+    var corridorBurnCache = {};
+    var getMemoizedCorridorBurn = function (coName, siteName) {
+      var sn = String(siteName || '').trim();
+      if (!sn || sn === 'Site' || sn === 'Plant') return { verified: false, restricted: !perm.canBurn };
+      var bk = `${String(coName || 'WTC')}||${sn.toLowerCase()}`;
+      if (!Object.prototype.hasOwnProperty.call(corridorBurnCache, bk)) {
+        corridorBurnCache[bk] = (ent && typeof ent.getVerifiedCorridorBurn === 'function')
+          ? ent.getVerifiedCorridorBurn(coName, sn)
+          : { verified: false, restricted: !perm.canBurn };
+      }
+      return corridorBurnCache[bk];
+    };
+
     var routesList = Object.keys(routeAgg).map(function (rk) {
       var r = routeAgg[rk];
       r.avgRateM3 = r.qtyM3 > 0 ? (r.rev / r.qtyM3) : 0;
       r.adjRev = r.rev + r.strictCredit;
+      var burn = getMemoizedCorridorBurn(r.company, r.site);
+      r.routeVerified = Boolean(burn && burn.verified);
+      r.burnRestricted = Boolean(burn && burn.restricted);
+      r.roundTripKm = (burn && burn.verified) ? Number(burn.roundTripKm || 0) : null;
+      r.elevAvailable = Boolean(burn && burn.verified && burn.elevAvailable);
+      r.elevGainM = (burn && burn.verified && burn.elevGainM != null) ? Number(burn.elevGainM) : null;
+      r.maxGradePct = (burn && burn.verified && burn.maxGradePct != null) ? Number(burn.maxGradePct) : null;
+      r.modeledLPerTrip = (burn && burn.verified && burn.totalLitres > 0) ? Number(burn.totalLitres) : null;
+      r.modeledLPer100M3 = (r.modeledLPerTrip != null && r.trips > 0 && r.qtyM3 > 0)
+        ? Math.round((((r.trips * r.modeledLPerTrip) / r.qtyM3) * 100) * 10) / 10
+        : null;
+      r.isSteepGrade = Boolean(r.routeVerified && ((r.maxGradePct != null && r.maxGradePct >= 8) || (r.elevGainM != null && r.elevGainM >= 250)));
       return r;
     });
 
-    costRows.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
-    zeroRows.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
-    overtimeRows.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
-    driverBaseRows.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    var cmpIsoDesc = function (a, b) {
+      var ad = String(a.date || ''), bd = String(b.date || '');
+      return bd < ad ? -1 : (bd > ad ? 1 : 0);
+    };
+    dieselRows.sort(cmpIsoDesc);
+    costRows.sort(cmpIsoDesc);
+    zeroRows.sort(cmpIsoDesc);
+    overtimeRows.sort(cmpIsoDesc);
+    driverBaseRows.sort(cmpIsoDesc);
 
     var monthsList = Object.keys(monthsMap)
       .filter(function (mk) { return mk && mk !== 'Unspecified'; })
@@ -1091,6 +1371,8 @@
       allTruckList: allTruckList,
       routes: routesList,
       zeroRows: zeroRows,
+      corridorActionMap: corridorActionMap,
+      dieselRows: dieselRows,
       costRows: costRows,
       overtimeRows: overtimeRows,
       driverBaseRows: driverBaseRows,
@@ -1199,7 +1481,7 @@
 
     return {
       code: t.code, displayCode: t.displayCode, plate: t.plate,
-      owner: t.owner, driver: t.driver, driverShort: t.driverShort,
+      owner: t.owner, isPartnerOrHauler: Boolean(t.isPartnerOrHauler), driver: t.driver, driverShort: t.driverShort,
       colorVar: t.colorVar || 'var(--chart-navy)',
       salesTrips: t.salesTrips, salesPaidTrips: t.salesPaidTrips, salesZeroTrips: t.salesZeroTrips,
       salesWtcTrips: t.salesWtcTrips, salesBbcTrips: t.salesBbcTrips,
@@ -1322,7 +1604,9 @@
     var allowExp = Boolean(perm.canExp);
     var allowPay = Boolean(perm.canPay);
     var allowAllCost = Boolean(perm.canAllCost);
-    if (allowRev && allowExp && allowPay && allowAllCost && perm.canProfit) return ds;
+    var allowBurn = Boolean(perm.canBurn);
+    var allowPriceRule = Boolean(perm.canPriceRule);
+    if (allowRev && allowExp && allowPay && allowAllCost && perm.canProfit && allowBurn && perm.canPriceRuleSales && perm.canPriceRuleHaul) return ds;
 
     var redactTruckObj = function (t) {
       if (!t) return t;
@@ -1358,13 +1642,39 @@
     });
     var safeAllTruckList = (ds.allTruckList || []).map(function (t) { return safeTrucks[t.code] || redactTruckObj(t); });
     var safeRoutes = (ds.routes || []).map(function (r) {
-      if (allowRev) return r;
-      return Object.assign({}, r, { rev: null, strictCredit: null, fullCredit: null, shadowCredit: null, avgRateM3: null, adjRev: null });
+      if (allowRev && allowBurn) return r;
+      var nr = Object.assign({}, r);
+      if (!allowRev) {
+        nr.rev = null; nr.strictCredit = null; nr.fullCredit = null;
+        nr.shadowCredit = null; nr.avgRateM3 = null; nr.adjRev = null;
+      }
+      if (!allowBurn) {
+        nr.modeledLPerTrip = null; nr.modeledLPer100M3 = null;
+        nr.maxGradePct = null; nr.elevGainM = null; nr.roundTripKm = null;
+        nr.burnRestricted = true;
+      }
+      return nr;
     });
     var safeZeroRows = (ds.zeroRows || []).map(function (z) {
       if (allowRev) return z;
       return Object.assign({}, z, { unit_price: null, total_product: null, recorded_haul: null, strictCredit: null, fullCredit: null, shadow_credit: null, benchmark_credit: null });
     });
+    var safeDieselRows = (ds.dieselRows || []).map(function (d) {
+      if (allowExp && allowBurn) return d;
+      return Object.assign({}, d, {
+        liters: allowBurn ? d.liters : null,
+        unitRate: allowExp ? d.unitRate : null,
+        totalUsd: allowExp ? d.totalUsd : null
+      });
+    });
+    var safeCorridorMap = {};
+    if (allowPriceRule && ds.corridorActionMap) {
+      Object.keys(ds.corridorActionMap).forEach(function (ck) {
+        var act = ds.corridorActionMap[ck];
+        if (!act || !canEnterCorridorForm(perm, act.form)) return;
+        safeCorridorMap[ck] = allowRev ? act : Object.assign({}, act, { uniformMatPrice: null });
+      });
+    }
     var safeCostRows = (ds.costRows || []).map(function (c) {
       var allowRow = c.isOtRow ? allowPay : allowExp;
       if (allowRow) return c;
@@ -1411,6 +1721,8 @@
       allTruckList: safeAllTruckList,
       routes: safeRoutes,
       zeroRows: safeZeroRows,
+      corridorActionMap: safeCorridorMap,
+      dieselRows: safeDieselRows,
       costRows: safeCostRows,
       overtimeRows: safeOtRows,
       driverBaseRows: safeBaseRows,
@@ -1829,6 +2141,10 @@
           <div><div class="fpnl-mini-k">Fuel Burn</div><div class="fpnl-mini-v">${fmtNum(m.litersPerTrip, 1)} L/trip · ${fmtNum(m.litersPer100M3, 0)} L/100m³</div></div>
           ${unitPlantCol}
         </div>
+        ${(m.isPartnerOrHauler && perm.canSettle) ? `<div class="fpnl-card-settle-row">
+          <span class="fpnl-sub-note">${esc(m.owner)}</span>
+          <button type="button" class="btn btn-ghost-bar fpnl-settle-btn" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="Open printable monthly hauler settlement sheet (defaults to Booked Revenue)"><span>Settlement Sheet</span></button>
+        </div>` : ''}
       </article>`;
   }
 
@@ -1970,7 +2286,7 @@
     if (STATE.pnlView === 'table') {
       var matrixRows = metrics.map(function (m) {
         return `<tr class="rrow" data-fpnl-focus="${esc(m.code)}" data-ui-tip="Toggle focus between selected truck and active cohort">
-          <td class="mono">${relLinkHtml('equipment', m.displayCode, m.displayCode, true)} ${healthBadgeHtml(m.displayCode)}<div class="fpnl-sub-note">${esc(m.plate)} · ${esc(m.driverShort)}</div></td>
+          <td class="mono">${relLinkHtml('equipment', m.displayCode, m.displayCode, true)} ${healthBadgeHtml(m.displayCode)}${(m.isPartnerOrHauler && p.canSettle) ? `<button type="button" class="btn btn-ghost-bar fpnl-settle-btn fpnl-settle-btn-sm" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="Open printable monthly hauler settlement sheet (defaults to Booked Revenue)"><span>Settlement</span></button>` : ''}<div class="fpnl-sub-note">${esc(m.plate)} · ${esc(m.driverShort)}</div></td>
           <td class="r"><strong>${fmtInt(m.totalTrips)}</strong></td>
           <td class="r">${fmtNum(m.totalQtyM3, 1)}</td>
           <td class="r">${(!p.canBooks && !p.canProfit) ? maskCell() : esc(fmtMoney(m.recordedRev, 2))}</td>
@@ -2039,6 +2355,7 @@
 
     var sortKey = STATE.routeColSort || 'trips';
     if (!canSeeRev && (sortKey === 'rev' || sortKey === 'shadowCredit')) sortKey = 'trips';
+    if (!p.canBurn && sortKey === 'modeledLPer100M3') sortKey = 'trips';
     var dirMul = STATE.routeColDir === 'asc' ? 1 : -1;
     if (STATE.routeSort && STATE.routeColSort === 'trips' && STATE.routeColDir === 'desc') {
       rows.sort(function (a, b) {
@@ -2047,12 +2364,26 @@
           return (Number(b.rev || 0) + creditForMode(b, STATE.mode)) - (Number(a.rev || 0) + creditForMode(a, STATE.mode));
         }
         if (STATE.routeSort === 'zero_desc') return b.zeroTrips - a.zeroTrips;
+        if (STATE.routeSort === 'burn_desc' && p.canBurn) {
+          var ba = a.modeledLPer100M3 != null ? a.modeledLPer100M3 : -1;
+          var bb = b.modeledLPer100M3 != null ? b.modeledLPer100M3 : -1;
+          if (bb !== ba) return bb - ba;
+          return ((b.maxGradePct || -1) - (a.maxGradePct || -1)) || (b.trips - a.trips);
+        }
         return b.trips - a.trips;
       });
     } else {
       rows.sort(function (a, b) {
         if (sortKey === 'shadowCredit') {
           return (creditForMode(a, STATE.mode) - creditForMode(b, STATE.mode)) * dirMul;
+        }
+        if (sortKey === 'modeledLPer100M3') {
+          var ma = a.modeledLPer100M3;
+          var mb = b.modeledLPer100M3;
+          if (ma == null && mb == null) return b.trips - a.trips;
+          if (ma == null) return 1;
+          if (mb == null) return -1;
+          return (ma - mb) * dirMul;
         }
         var va = a[sortKey];
         var vb = b[sortKey];
@@ -2111,7 +2442,7 @@
     var rows = getFilteredRoutes(model);
     var shown = rows.slice(0, STATE.routeLimit);
 
-    var totTrips = 0, totQty = 0, totRev = 0, totShad = 0, totZero = 0;
+    var totTrips = 0, totQty = 0, totRev = 0, totShad = 0, totZero = 0, verifiedBurnCount = 0;
     rows.forEach(function (r) {
       totTrips += r.trips;
       totQty += r.qtyM3;
@@ -2119,6 +2450,7 @@
         totRev += Number(r.rev || 0);
         totShad += creditForMode(r, STATE.mode);
       }
+      if (r.routeVerified) verifiedBurnCount += 1;
       totZero += r.zeroTrips;
     });
 
@@ -2127,7 +2459,40 @@
         return `<option value="${esc(c)}"${STATE.routeTruck === c ? ' selected' : ''}>${esc(c)}</option>`;
       }).join('');
 
-    var colCount = hideCo ? 10 : 11;
+    var colCount = hideCo ? 11 : 12;
+
+    var formatBurnCellHtml = function (r) {
+      if (!p.canBurn) return maskCell();
+      if (!r.routeVerified || r.modeledLPer100M3 == null) {
+        return '<span class="fpnl-muted" data-ui-tip="Pin site in Map Studio to model route grade burn">Unverified route</span>';
+      }
+      var gradeSub = r.elevAvailable
+        ? `<span class="badge ${r.isSteepGrade ? 'badge-warn' : 'badge-info'}">${r.isSteepGrade ? '<span>Steep</span> ' : ''}<span data-no-i18n="1">${fmtNum(r.maxGradePct || 0, 1)}% · +${fmtInt(r.elevGainM || 0)}m</span></span>`
+        : '<span>Flat est.</span>';
+      return `<div class="fpnl-burn-cell">
+        <span class="fpnl-burn-main"><strong>${fmtNum(r.modeledLPer100M3, 1)}</strong> <span data-no-i18n="1">L/100m³</span> <span class="fpnl-burn-model-tag">Modeled</span></span>
+        <span class="fpnl-burn-sub">${gradeSub} · <span data-no-i18n="1">${fmtNum(r.roundTripKm || 0, 1)} km</span></span>
+      </div>`;
+    };
+
+    var findCorridorRateActionForRoute = function (r) {
+      if (!p.canPriceRule || !r || !(r.zeroTrips > 0) || !model.dataset.corridorActionMap) return null;
+      var keys = Object.keys(model.dataset.corridorActionMap);
+      for (var ki = 0; ki < keys.length; ki++) {
+        var act = model.dataset.corridorActionMap[keys[ki]];
+        if (!act || !(act.openCount > 0) || !canEnterCorridorForm(p, act.form)) continue;
+        if (act.table === 'sales_tickets' && act.hasSiteHighCd && act.uniformMatPrice == null) continue;
+        if (act.company === r.company && act.stream === r.stream && act.site === r.site && act.material === r.material) {
+          if (r.stream === 'Sales Delivery') {
+            if (act.counterparty !== r.counterparty) continue;
+          } else {
+            if ((act.haulSupplier || '') !== (r.haulSupplier || '')) continue;
+          }
+          return act;
+        }
+      }
+      return null;
+    };
 
     var bodyHtml = shown.map(function (r) {
       var isExp = STATE.expandedRouteKey === r.key;
@@ -2144,12 +2509,17 @@
         <td class="r">${fmtNum(r.qtyM3, 1)}</td>
         <td class="r">${!canSeeRev ? maskCell() : esc(fmtMoney(r.rev, 2))}</td>
         <td class="r">${!canSeeRev ? maskCell() : (addonVal > 0 ? `<span class="fpnl-pos">+${esc(fmtMoney(addonVal, 0))}</span>` : '—')}</td>
+        <td class="r">${formatBurnCellHtml(r)}</td>
         <td class="r"><button type="button" class="fpnl-only-btn${isExp ? ' is-active' : ''}" data-fpnl-corridor-expand="${esc(r.key)}"><span>${isExp ? 'Hide' : 'Tickets'}</span> (${fmtInt(r.trips)})</button></td>
       </tr>`;
 
       if (isExp) {
         var cTix = getCorridorTickets(r);
         var sliceTix = cTix.slice(0, 25);
+        var drawerRateAct = findCorridorRateActionForRoute(r);
+        var drawerRateBtn = drawerRateAct
+          ? `<button type="button" class="fpnl-set-rate-btn" data-fpnl-set-rate="${esc(drawerRateAct.key)}" data-ui-tip="Prefill effective-dated haulage rate agreement and preview backfill across open trips"><span>+ Set Corridor Rate</span> <span class="fpnl-rate-cnt" data-no-i18n="1">(${fmtInt(drawerRateAct.openCount)})</span></button>`
+          : '';
         var innerRows = sliceTix.map(function (t) {
           return `<tr class="rrow" data-rkey="${esc(t.table)}" data-rid="${esc(t.id)}">
             <td class="mono">${esc(fmtDateDisplay(t.date))}</td>
@@ -2165,7 +2535,10 @@
           <td colspan="${colCount}">
             <div class="fpnl-drawer-head">
               <strong><span>Corridor Tickets</span>: ${esc(r.truck)} · ${esc(r.counterparty)} · ${esc(r.site)} (${fmtInt(cTix.length)} <span>tickets</span>)</strong>
-              <span class="fpnl-sub-note">Click any ticket row below to inspect or edit record</span>
+              <div class="fpnl-toolbar-right">
+                ${drawerRateBtn}
+                <span class="fpnl-sub-note">Click any ticket row below to inspect or edit record</span>
+              </div>
             </div>
             <table class="ledger-table fpnl-drawer-table">
               <thead><tr><th>Date</th><th>Ref #</th><th>Driver</th><th class="r">Qty (m³)</th><th class="r">Haul Fee ($)</th><th>OT</th></tr></thead>
@@ -2191,6 +2564,7 @@
             <option value="qty_desc"${STATE.routeSort === 'qty_desc' ? ' selected' : ''}>Sort: Volume Desc</option>
             <option value="rev_desc"${STATE.routeSort === 'rev_desc' ? ' selected' : ''}>Sort: Est. Revenue Desc</option>
             <option value="zero_desc"${STATE.routeSort === 'zero_desc' ? ' selected' : ''}>Sort: Zero-Priced Trips</option>
+            ${p.canBurn ? `<option value="burn_desc"${STATE.routeSort === 'burn_desc' ? ' selected' : ''}>Sort: Modeled Burn &amp; Climb</option>` : ''}
           </select>
         </div>
         <div class="fpnl-toolbar-right">
@@ -2211,6 +2585,7 @@
             <th class="r sortable" data-fpnl-sort="routes:qtyM3"><span>Vol (m³)</span>${sortIndicator(STATE.routeColSort, STATE.routeColDir, 'qtyM3')}</th>
             <th class="r sortable" data-fpnl-sort="routes:rev"><span>Booked ($)</span>${sortIndicator(STATE.routeColSort, STATE.routeColDir, 'rev')}</th>
             <th class="r sortable" data-fpnl-sort="routes:shadowCredit"><span>Add-on ($)</span>${sortIndicator(STATE.routeColSort, STATE.routeColDir, 'shadowCredit')}</th>
+            <th class="r sortable" data-fpnl-sort="routes:modeledLPer100M3" data-ui-tip="Route-modeled grade fuel burn on verified routes (L/100m³ and climb grade). Actual pump diesel stays per truck on Scorecards."><span>Modeled Burn &amp; Grade</span>${sortIndicator(STATE.routeColSort, STATE.routeColDir, 'modeledLPer100M3')}</th>
             <th class="r">Inspect</th>
           </tr></thead>
           <tbody>${bodyHtml}</tbody>
@@ -2220,6 +2595,7 @@
             <td class="r"><b>${fmtNum(totQty, 1)}</b></td>
             <td class="r"><b>${!canSeeRev ? maskCell() : esc(fmtMoney(totRev, 2))}</b></td>
             <td class="r"><b>${!canSeeRev ? maskCell() : esc(fmtMoney(totShad, 0))}</b></td>
+            <td class="r">${p.canBurn ? `<span class="fpnl-muted">${fmtInt(verifiedBurnCount)} <span>verified</span></span>` : maskCell()}</td>
             <td class="r">${totZero > 0 ? `<b>${fmtInt(totZero)}</b> <span data-t="unpriced">unpriced</span>` : '—'}</td>
           </tr></tfoot>
         </table>
@@ -2267,13 +2643,31 @@
       if (canSeeRev) totCred += creditForMode(z, STATE.mode);
     });
 
-    var colCount = hideCo ? 9 : 10;
+    var colCount = hideCo ? 10 : 11;
+    var corridorActionMap = model.dataset.corridorActionMap || {};
     var bodyHtml = shown.map(function (z) {
       var cpType = z.table === 'sales_tickets' ? 'customers' : 'suppliers';
       var creditVal = canSeeRev ? creditForMode(z, STATE.mode) : null;
       var creditHtml = !canSeeRev
         ? maskCell()
         : (creditVal > 0 ? `+${esc(fmtMoney(creditVal, 2))}` : '<span class="fpnl-muted">$0.00</span>');
+      var actionCellHtml = '';
+      if (z.isArProtected) {
+        var arCls = (z.guardReason === 'all_in_cd' || z.guardReason === 'all_in_contract') ? ' is-ar-protected' : '';
+        actionCellHtml = `<span class="fpnl-ar-guard-pill${arCls}" data-ui-tip="${esc(z.guardTip || 'Protected from automatic haulage backfill')}">${esc(z.guardBadge || 'Protected')}</span>`;
+      } else {
+        var cInfo = corridorActionMap[z.corridorKey];
+        var zForm = z.table === 'raw_purchases' ? 'pricerule_haul' : 'pricerule';
+        if (!canEnterCorridorForm(p, zForm)) {
+          actionCellHtml = '<span class="fpnl-muted" data-ui-tip="Price Agreement entry requires Master Data rights">View Only</span>';
+        } else if (cInfo && cInfo.table === 'sales_tickets' && cInfo.hasSiteHighCd && cInfo.uniformMatPrice == null) {
+          actionCellHtml = '<span class="fpnl-ar-guard-pill is-ar-protected" data-ui-tip="All-in C&amp;D concrete price already includes delivery; setting a transport rate would double-bill Customer AR">All-In AR Protected</span>';
+        } else if (!cInfo || (cInfo.openCount === 0 && cInfo.lockedCount > 0)) {
+          actionCellHtml = '<span class="fpnl-ar-guard-pill is-locked" data-ui-tip="All unpriced loads on this corridor fall within a sent statement period">Statement Sent</span>';
+        } else {
+          actionCellHtml = `<button type="button" class="fpnl-set-rate-btn" data-fpnl-set-rate="${esc(z.corridorKey)}" data-ui-tip="Prefill effective-dated haulage rate agreement and preview backfill across open trips"><span>+ Set Corridor Rate</span> <span class="fpnl-rate-cnt" data-no-i18n="1">(${fmtInt(cInfo.openCount)})</span></button>`;
+        }
+      }
       return `<tr class="rrow" data-rkey="${esc(z.table)}" data-rid="${esc(z.id)}">
         <td class="mono">${esc(fmtDateDisplay(z.date))}</td>
         ${hideCo ? '' : `<td>${coBadgeHtml(z.company)}</td>`}
@@ -2285,6 +2679,7 @@
         <td><span class="fpnl-class-note">${esc(z.classification)}</span></td>
         <td class="r fpnl-neg">$0.00</td>
         <td class="r ${creditVal > 0 ? 'fpnl-pos' : ''}"><strong>${creditHtml}</strong></td>
+        <td class="r">${actionCellHtml}</td>
       </tr>`;
     }).join('') || `<tr><td colspan="${colCount}" class="fpnl-empty">Zero unpriced trips in the active filter.</td></tr>`;
 
@@ -2321,6 +2716,7 @@
             <th>Classification</th>
             <th class="r">Recorded Fee</th>
             <th class="r sortable" data-fpnl-sort="zero:shadow_credit"><span>Est. Credit ($)</span>${sortIndicator(STATE.zeroColSort, STATE.zeroColDir, 'shadow_credit')}</th>
+            <th class="r">Action</th>
           </tr></thead>
           <tbody>${bodyHtml}</tbody>
           <tfoot><tr>
@@ -2328,6 +2724,7 @@
             <td class="r"><b>${fmtNum(totQty, 1)}</b></td>
             <td></td><td class="r"><b>$0.00</b></td>
             <td class="r"><b>${!canSeeRev ? maskCell() : esc(fmtMoney(totCred, 2))}</b></td>
+            <td></td>
           </tr></tfoot>
         </table>
       </div>
@@ -2582,9 +2979,73 @@
       `<div class="fpnl-body">${renderBody(model)}</div>`;
   }
 
+  var _fpnlVvUnsub = null;
+  function syncFpnlPickerPopoverViewport() {
+    var pop = typeof document !== 'undefined' ? document.querySelector('.fpnl-picker-pop, .fpnl-picker-popover') : null;
+    if (!pop || !STATE.truckPickerOpen || !pop.isConnected) {
+      if (_fpnlVvUnsub) { _fpnlVvUnsub(); _fpnlVvUnsub = null; }
+      return;
+    }
+    try {
+      var vw = (typeof window !== 'undefined' && window.innerWidth) || 390;
+      var vh = (typeof window !== 'undefined' && window.innerHeight) || 844;
+      var vbox = (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.getBox === 'function')
+        ? window.MFG_VV.getBox()
+        : { layoutW: vw, layoutH: vh, left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh, kbInset: 0 };
+      var isFixed = vbox.layoutW <= 768 || (typeof getComputedStyle === 'function' && getComputedStyle(pop).position === 'fixed');
+      if (isFixed) {
+        if (vbox.kbInset > 60) {
+          pop.style.top = Math.round(vbox.top + 8) + 'px';
+          pop.style.bottom = 'auto';
+          pop.style.maxHeight = Math.max(148, Math.floor(vbox.height - 16)) + 'px';
+        } else {
+          pop.style.top = '';
+          pop.style.bottom = '';
+          pop.style.maxHeight = '';
+        }
+      } else if (vbox.kbInset > 40) {
+        var wrap = (pop.closest && pop.closest('.fpnl-picker-wrap')) || pop;
+        var wr = wrap.getBoundingClientRect();
+        var below = vbox.bottom - wr.bottom - 10;
+        var above = wr.top - vbox.top - 10;
+        if (below < 160 && above > below) {
+          pop.style.top = 'auto';
+          pop.style.bottom = 'calc(100% + 6px)';
+          pop.style.maxHeight = Math.max(140, Math.min(300, Math.floor(above - 4))) + 'px';
+        } else {
+          pop.style.top = '';
+          pop.style.bottom = '';
+          pop.style.maxHeight = Math.max(148, Math.min(320, Math.floor(below - 4))) + 'px';
+        }
+      } else {
+        pop.style.top = '';
+        pop.style.bottom = '';
+        pop.style.maxHeight = '';
+      }
+    } catch (_) {}
+  }
+
+  function armFpnlPickerVv() {
+    if (STATE.truckPickerOpen) {
+      syncFpnlPickerPopoverViewport();
+      if (!_fpnlVvUnsub && typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.subscribe === 'function') {
+        _fpnlVvUnsub = window.MFG_VV.subscribe(syncFpnlPickerPopoverViewport);
+      }
+    } else if (_fpnlVvUnsub) {
+      _fpnlVvUnsub();
+      _fpnlVvUnsub = null;
+    }
+  }
+
   function renderCockpitHtml(opts) {
     opts = opts || {};
     var cid = opts.containerId || 'fleetRevCostCockpit';
+    if (STATE.truckPickerOpen && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(armFpnlPickerVv);
+    } else if (!STATE.truckPickerOpen && _fpnlVvUnsub) {
+      _fpnlVvUnsub();
+      _fpnlVvUnsub = null;
+    }
     return `<section class="fpnl-cockpit" id="${esc(cid)}" data-fpnl-root="1">${buildInnerHtml(cid, opts.slicerEquipment)}</section>`;
   }
 
@@ -2599,6 +3060,7 @@
     if (tc && typeof tc.enhanceAllTables === 'function') {
       try { tc.enhanceAllTables(el, (ent && ent.state) || window.STATE); } catch (_) {}
     }
+    armFpnlPickerVv();
   }
 
   function renderFullCockpit(el) {
@@ -2608,10 +3070,16 @@
   }
 
   function refreshAllMountedCockpits() {
+    LIVE_CACHE = null;
+    LIVE_CACHE_KEY = '';
     ['fleetRevCostCockpit', 'pbiFleetRevCostCockpit'].forEach(function (cid) {
       var el = document.getElementById(cid);
       if (el) renderFullCockpit(el);
     });
+    if (SETTLE_STATE.open) {
+      if (!getSeatPermissions().canSettle) closePartnerSettlementModal();
+      else renderPartnerSettlementModal();
+    }
   }
 
   function syncAppOnFocusChange(scrollToStudio) {
@@ -2636,6 +3104,9 @@
 
   function csvCell(v) {
     var s = String(v == null ? '' : v).replace(/\r?\n/g, ' ');
+    if (typeof v !== 'number' && !/^-?\d+(?:\.\d+)?$/.test(s.trim()) && /^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
     return `"${s.replace(/"/g, '""')}"`;
   }
 
@@ -2662,15 +3133,38 @@
     } else if (kind === 'routes') {
       filename = 'Fleet_Corridors.csv';
       var canSeeRouteRev = Boolean(p.canBooks || p.canProfit);
-      lines.push(['Company', 'Stream', 'Truck', 'Counterparty', 'Site', 'Material', 'Trips', 'ZeroTrips', 'Qty_m3', 'Booked_USD', 'Addon_USD'].join(','));
+      lines.push(['Company', 'Stream', 'Truck', 'Counterparty', 'Site', 'Material', 'Trips', 'ZeroTrips', 'Qty_m3', 'Booked_USD', 'Addon_USD', 'Modeled_L_per_100m3', 'Max_Grade_Pct', 'Climb_m', 'RoundTrip_Km'].join(','));
       getFilteredRoutes(model).forEach(function (r) {
         lines.push([
           r.company, r.stream, r.truck, r.counterparty, r.site, r.material,
           r.trips, r.zeroTrips, r.qtyM3.toFixed(2),
           canSeeRouteRev ? Number(r.rev || 0).toFixed(2) : 'Restricted',
-          canSeeRouteRev ? creditForMode(r, STATE.mode).toFixed(2) : 'Restricted'
+          canSeeRouteRev ? creditForMode(r, STATE.mode).toFixed(2) : 'Restricted',
+          !p.canBurn ? 'Restricted' : (r.modeledLPer100M3 != null ? r.modeledLPer100M3.toFixed(1) : 'Unverified'),
+          !p.canBurn ? 'Restricted' : (r.maxGradePct != null ? r.maxGradePct.toFixed(1) : ''),
+          !p.canBurn ? 'Restricted' : (r.elevGainM != null ? Math.round(r.elevGainM) : ''),
+          !p.canBurn ? 'Restricted' : (r.roundTripKm != null ? r.roundTripKm.toFixed(1) : '')
         ].map(csvCell).join(','));
       });
+    } else if (kind === 'settlement') {
+      if (!p.canSettle) return;
+      var sData = buildPartnerSettlementData(SETTLE_STATE.truck, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
+      if (!sData) return;
+      filename = `Partner_Settlement_${sData.truck.code}_${sData.ym === 'ALL' ? 'Scope' : sData.ym}.csv`;
+      lines.push(['Section', 'Date_or_Stream', 'Company', 'Counterparty_or_Vendor', 'Reference_or_Site', 'Detail', 'Qty_or_Hours', 'Amount_USD'].join(','));
+      sData.haulRows.forEach(function (h) {
+        lines.push(['Haulage Credit', h.stream, h.company, h.counterparty, h.site, `${h.material} (${h.trips} trips)`, h.qtyM3.toFixed(2), h.creditUsd.toFixed(2)].map(csvCell).join(','));
+      });
+      sData.dieselRows.forEach(function (d) {
+        lines.push(['Metered Diesel Out', fmtDateDisplay(d.date), d.company, 'Plant Diesel Tank', d.ticketNo, d.unitRate > 0 ? `@ ${d.unitRate.toFixed(3)}/L` : '-', d.liters.toFixed(1), (-d.totalUsd).toFixed(2)].map(csvCell).join(','));
+      });
+      sData.workshopRows.forEach(function (w) {
+        lines.push(['Workshop & Permits', fmtDateDisplay(w.date), w.company, w.supplier, w.bill_number === '—' ? '-' : w.bill_number, `${w.bucket}: ${w.subcategory}`, '', (-w.total_usd).toFixed(2)].map(csvCell).join(','));
+      });
+      sData.driverRows.forEach(function (dv) {
+        lines.push(['Driver Pay & OT', fmtDateDisplay(dv.date), dv.company, dv.supplier, dv.bill_number === '—' ? '-' : dv.bill_number, dv.subcategory, dv.hours ? dv.hours.toFixed(1) : '', (-dv.total_usd).toFixed(2)].map(csvCell).join(','));
+      });
+      lines.push(['NET SETTLEMENT PAYABLE', sData.periodLabel, sData.scope.companyLabel, sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Revenue' : 'Includes Internal Unbundled Credit', '', sData.netPayable.toFixed(2)].map(csvCell).join(','));
     } else if (kind === 'zero') {
       filename = 'Fleet_Unpriced_Loads.csv';
       var canSeeZeroRev = Boolean(p.canBooks || p.canProfit);
@@ -2705,6 +3199,491 @@
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 250);
   }
 
+  function triggerSetCorridorRate(corridorKeyOrRowId) {
+    var ent = window.MFG_ENTERPRISE;
+    var perm = getSeatPermissions();
+    if (!perm.canPriceRule) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Price Agreement entry requires Master Data rights', 'err');
+      return { ok: false, reason: 'forbidden_seat' };
+    }
+    var ds = getActiveDataset();
+    var actMap = ds.corridorActionMap || {};
+    var act = actMap[corridorKeyOrRowId] || null;
+    if (!act && corridorKeyOrRowId) {
+      var zHit = (ds.zeroRows || []).filter(function (z) {
+        return String(z.id) === String(corridorKeyOrRowId) || String(z.corridorKey) === String(corridorKeyOrRowId);
+      })[0];
+      if (!zHit) return { ok: false, reason: 'not_found' };
+      var zHitForm = zHit.table === 'raw_purchases' ? 'pricerule_haul' : 'pricerule';
+      if (!canEnterCorridorForm(perm, zHitForm)) {
+        if (ent && typeof ent.toast === 'function') ent.toast('Price Agreement entry requires Master Data rights', 'err');
+        return { ok: false, reason: 'forbidden_seat' };
+      }
+      if (zHit.isArProtected) {
+        if (ent && typeof ent.toast === 'function') ent.toast(zHit.guardTip || 'Protected from automatic haulage backfill', 'warn');
+        return { ok: false, reason: zHit.guardReason || 'protected' };
+      }
+      act = actMap[zHit.corridorKey] || null;
+    }
+    if (!act) return { ok: false, reason: 'protected_or_missing' };
+    if (!canEnterCorridorForm(perm, act.form)) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Price Agreement entry requires Master Data rights', 'err');
+      return { ok: false, reason: 'forbidden_seat' };
+    }
+    if (!(act.openCount > 0)) {
+      if (ent && typeof ent.toast === 'function') ent.toast('All unpriced loads on this corridor fall within a sent statement period', 'warn');
+      return { ok: false, reason: 'statement_locked' };
+    }
+    if (!ent || typeof ent.openEntryModal !== 'function') return { ok: false, reason: 'no_modal' };
+    var startIso = act.earliestOpenDate || '';
+    if (act.lockedThrough && (!startIso || startIso <= act.lockedThrough)) {
+      startIso = nextDayAfterIso(act.lockedThrough) || startIso;
+    }
+    if (act.table === 'raw_purchases') {
+      ent.openEntryModal('pricerule_haul', {
+        _corridorRate: true,
+        company: act.company,
+        ruletype: 'Transport Price (Site)',
+        supplier: act.haulSupplier || '',
+        site: act.site,
+        prod: act.material,
+        uom: act.uom || 'm³',
+        startdate: startIso
+      });
+      return { ok: true, form: 'pricerule_haul', corridorKey: act.key };
+    }
+    if (act.hasSiteHighCd && act.uniformMatPrice == null) {
+      if (ent && typeof ent.toast === 'function') ent.toast('All-in C&D concrete price already includes delivery; setting a transport rate would double-bill Customer AR', 'warn');
+      return { ok: false, reason: 'all_in_cd' };
+    }
+    var useUniformMat = act.uniformMatPrice != null && act.uniformMatPrice > 0 && act.uniformMatPrice < 55;
+    ent.openEntryModal('pricerule', {
+      _corridorRate: true,
+      company: act.company,
+      ruletype: 'Sales (Delivery)',
+      customer: act.counterparty,
+      site: act.site,
+      prod: useUniformMat ? act.material : '',
+      uom: act.uom || 'm³',
+      unitprice: useUniformMat ? act.uniformMatPrice : '',
+      startdate: startIso
+    });
+    return { ok: true, form: 'pricerule', corridorKey: act.key };
+  }
+
+  function cleanNoEmDash(s) {
+    return String(s == null ? '' : s).replace(/—/g, '-').replace(/→/g, 'to').replace(/THEO/gi, 'ISABI');
+  }
+
+  function buildPartnerSettlementData(truckCode, ymKey, basisMode) {
+    var perm = getSeatPermissions();
+    if (!perm.canSettle) return null;
+    var ds = getActiveDataset();
+    var code = normTruckCode(truckCode);
+    var tObj = code ? ds.trucks[code] : null;
+    if (!tObj || !tObj.isPartnerOrHauler) return null;
+    var mode = (basisMode === 'strict' || basisMode === 'full') ? basisMode : 'recorded';
+    var ym = ymKey || 'ALL';
+    var ent = window.MFG_ENTERPRISE;
+    var st = (ent && ent.state) || window.STATE || {};
+
+    var availableMonths = Object.keys(tObj.monthsMap || {}).filter(function (k) {
+      var m = tObj.monthsMap[k];
+      return k && k !== 'Unspecified' && m && (m.trips > 0 || m.dieselCost > 0 || m.maintCost > 0 || m.otPay > 0 || m.basePay > 0);
+    }).sort().reverse();
+
+    var haulMap = {};
+    var sales = scopedTableRows('sales_tickets', false);
+    for (var si = 0; si < sales.length; si++) {
+      var s = sales[si];
+      if (!s || s.voided) continue;
+      if (normTruckCode(s.truck || s.truck_code || s.equipment || s.transporter) !== code) continue;
+      var sSign = (ent && typeof ent.ticketSign === 'function') ? ent.ticketSign(s) : 1;
+      if (sSign === 0) continue;
+      var dtStr = recDate(s, st);
+      if (ym !== 'ALL' && dtStr.slice(0, 7) !== ym) continue;
+      var qty = Number(s.qty != null ? s.qty : (s.qty_m3 || 0)) * sSign;
+      var deliv = Number(s.trans_price != null ? s.trans_price : (s.trans_total_usd != null ? s.trans_total_usd : (s.total_delivery_usd || 0))) * sSign;
+      var addOn = 0;
+      if (Math.abs(deliv) <= 0.001 && mode !== 'recorded') {
+        addOn = mode === 'full' ? Math.max(qty * 5.0, 75.0) : (qty > 0 ? qty * 4.0 : 75.0);
+      }
+      var comp = String(s.company || 'WTC');
+      var cp = String(s.customer || 'Customer');
+      var site = String(s.site || s.work_site || 'Site');
+      var mat = String(s.product || 'Concrete');
+      var hk = [comp, 'Sales Delivery', cp, site, mat].join('||');
+      if (!haulMap[hk]) haulMap[hk] = { company: comp, stream: 'Sales Delivery', counterparty: cp, site: site, material: mat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
+      haulMap[hk].trips += 1;
+      haulMap[hk].qtyM3 += qty;
+      haulMap[hk].bookedUsd += deliv;
+      haulMap[hk].addonUsd += addOn;
+      haulMap[hk].creditUsd += deliv + addOn;
+    }
+
+    var raw = scopedTableRows('raw_purchases', false);
+    if (!raw.length) raw = scopedTableRows('raw_materials', false);
+    for (var ri = 0; ri < raw.length; ri++) {
+      var r = raw[ri];
+      if (!r || r.voided) continue;
+      if (normTruckCode(r.truck || r.truck_code || r.equipment || r.transporter) !== code) continue;
+      var rSign = (ent && typeof ent.rawSign === 'function') ? ent.rawSign(r) : 1;
+      if (rSign === 0) continue;
+      var rDt = recDate(r, st);
+      if (ym !== 'ALL' && rDt.slice(0, 7) !== ym) continue;
+      var rQty = Number(r.qty != null ? r.qty : (r.qty_m3 || 0)) * rSign;
+      var rDeliv = Number(r.trans_cost != null ? r.trans_cost : (r.transport_usd != null ? r.transport_usd : (r.total_delivery_usd || 0))) * rSign;
+      var rComp = String(r.company || 'WTC');
+      var rParty = String(r.site_owner || r.supplier || 'Material Source');
+      var rSite = String(r.site || r.work_site || 'Plant');
+      var rMat = String(r.product || r.material || 'Aggregate');
+      var rAddOn = 0;
+      if (Math.abs(rDeliv) <= 0.001 && mode !== 'recorded') {
+        var isIntQ = /al\s*jawad|wtc/i.test(`${rSite} ${rParty}`);
+        rAddOn = mode === 'full' ? 60.0 : (isIntQ ? 0 : 60.0);
+      }
+      var rhk = [rComp, 'Raw Material Inbound', rParty, rSite, rMat].join('||');
+      if (!haulMap[rhk]) haulMap[rhk] = { company: rComp, stream: 'Raw Material Inbound', counterparty: rParty, site: rSite, material: rMat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
+      haulMap[rhk].trips += 1;
+      haulMap[rhk].qtyM3 += rQty;
+      haulMap[rhk].bookedUsd += rDeliv;
+      haulMap[rhk].addonUsd += rAddOn;
+      haulMap[rhk].creditUsd += rDeliv + rAddOn;
+    }
+
+    var haulRows = Object.keys(haulMap).map(function (k) { return haulMap[k]; })
+      .sort(function (a, b) { return (b.creditUsd - a.creditUsd) || (b.trips - a.trips); });
+
+    var dieselList = (ds.dieselRows || []).filter(function (d) {
+      return d.truck === code && (ym === 'ALL' || String(d.date || '').slice(0, 7) === ym);
+    });
+    var workshopList = (ds.costRows || []).filter(function (c) {
+      return c.truck === code && c.bucket !== 'Diesel Fuel' && !c.isOtRow && (ym === 'ALL' || String(c.date || '').slice(0, 7) === ym);
+    });
+    var driverList = mapDriverOtLedgerRows(ds, true, false).filter(function (dv) {
+      return dv.truck === code && (ym === 'ALL' || String(dv.date || '').slice(0, 7) === ym);
+    }).sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
+
+    var roundCents = function (n) { return Math.round(((Number(n || 0)) + Number.EPSILON) * 100) / 100; };
+    var bookedTotal = 0, addonTotal = 0, totalTrips = 0, totalQty = 0;
+    haulRows.forEach(function (h) {
+      totalTrips += h.trips;
+      totalQty += h.qtyM3;
+      bookedTotal += h.bookedUsd;
+      addonTotal += h.addonUsd;
+    });
+    var grossCredits = roundCents(bookedTotal + (mode === 'recorded' ? 0 : addonTotal));
+    var dieselTotal = 0, dieselLiters = 0;
+    dieselList.forEach(function (d) { dieselTotal += Number(d.totalUsd || 0); dieselLiters += Number(d.liters || 0); });
+    dieselTotal = roundCents(dieselTotal);
+    var workshopTotal = 0;
+    workshopList.forEach(function (w) { workshopTotal += Number(w.total_usd || 0); });
+    workshopTotal = roundCents(workshopTotal);
+    var driverTotal = 0, driverHours = 0;
+    driverList.forEach(function (dv) { driverTotal += Number(dv.total_usd || 0); driverHours += Number(dv.hours || 0); });
+    driverTotal = roundCents(driverTotal);
+
+    var netPayable = roundCents(grossCredits - dieselTotal - workshopTotal - driverTotal);
+    var scope = getTopbarScopeSummary();
+    var partnerList = (ds.allTruckList || []).filter(function (x) { return x.isPartnerOrHauler; });
+
+    return {
+      truck: tObj,
+      ym: ym,
+      basisMode: mode,
+      periodLabel: ym === 'ALL' ? cleanNoEmDash(scope.periodLabel) : ym,
+      availableMonths: availableMonths,
+      partnerTrucks: partnerList,
+      scope: scope,
+      haulRows: haulRows,
+      dieselRows: dieselList,
+      workshopRows: workshopList,
+      driverRows: driverList,
+      totalTrips: totalTrips,
+      totalQty: totalQty,
+      bookedTotal: bookedTotal,
+      addonTotal: mode === 'recorded' ? 0 : addonTotal,
+      grossCredits: grossCredits,
+      dieselTotal: dieselTotal,
+      dieselLiters: dieselLiters,
+      workshopTotal: workshopTotal,
+      driverTotal: driverTotal,
+      driverHours: driverHours,
+      netPayable: netPayable
+    };
+  }
+
+  function closePartnerSettlementModal() {
+    SETTLE_STATE.open = false;
+    document.body.classList.remove('fpnl-printing-settlement');
+    var bd = document.getElementById('fpnlSettlementBackdrop');
+    if (bd) bd.remove();
+  }
+
+  function printPartnerSettlementSheet() {
+    if (!SETTLE_STATE.open || !getSeatPermissions().canSettle) return;
+    document.body.classList.add('fpnl-printing-settlement');
+    var cleanup = function () { document.body.classList.remove('fpnl-printing-settlement'); };
+    window.addEventListener('afterprint', cleanup, { once: true });
+    setTimeout(cleanup, 2000);
+    if (typeof window.print === 'function') window.print();
+  }
+
+  function renderPartnerSettlementModal() {
+    var existing = document.getElementById('fpnlSettlementBackdrop');
+    var perm = getSeatPermissions();
+    if (!SETTLE_STATE.open || !perm.canSettle) {
+      if (existing) existing.remove();
+      return;
+    }
+    var data = buildPartnerSettlementData(SETTLE_STATE.truck, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
+    if (!data) {
+      closePartnerSettlementModal();
+      return;
+    }
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'fpnlSettlementBackdrop';
+      existing.className = 'fpnl-settle-backdrop';
+      document.body.appendChild(existing);
+    }
+
+    var basisLbl = data.basisMode === 'recorded'
+      ? 'Booked Revenue (Contract)'
+      : (data.basisMode === 'strict' ? '+ Unbundled Credit (Management)' : 'Full Commercial Value (Management)');
+
+    var trOptWord = function (txt) {
+      var s = String(txt || '');
+      var i18n = window.MFG_I18N;
+      if (i18n && typeof i18n.getLang === 'function' && i18n.getLang() !== 'en' && typeof i18n.translateDom === 'function') {
+        try {
+          var tmp = document.createElement('span');
+          tmp.textContent = s;
+          i18n.translateDom(tmp);
+          return tmp.textContent || s;
+        } catch (_) {}
+      }
+      return s;
+    };
+
+    var monthOpts = `<option value="ALL" data-no-i18n="1"${data.ym === 'ALL' ? ' selected' : ''}>${esc(trOptWord('Active Scope'))} (${esc(trOptWord(cleanNoEmDash(data.scope.periodLabel)))})</option>` +
+      data.availableMonths.map(function (mk) {
+        return `<option value="${esc(mk)}" data-no-i18n="1"${data.ym === mk ? ' selected' : ''}>${esc(mk)}</option>`;
+      }).join('');
+
+    var truckOpts = data.partnerTrucks.map(function (t) {
+      return `<option value="${esc(t.code)}" data-no-i18n="1"${t.code === data.truck.code ? ' selected' : ''}>${esc(t.displayCode)} - ${esc(t.plate)} (${esc(trOptWord(t.owner))})</option>`;
+    }).join('');
+
+    var warnBanner = data.basisMode !== 'recorded'
+      ? '<div class="fpnl-settle-warn-banner"><span>INTERNAL MANAGEMENT VALUATION - INCLUDES UNBUNDLED SHADOW CREDITS (NOT CONTRACT AP PAYABLE)</span></div>'
+      : '';
+
+    var haulRowsHtml = data.haulRows.map(function (h) {
+      return `<tr>
+        <td>${esc(cleanNoEmDash(h.stream))}</td>
+        <td>${esc(cleanNoEmDash(h.company))}</td>
+        <td>${esc(cleanNoEmDash(h.counterparty))}</td>
+        <td>${esc(cleanNoEmDash(h.site))}</td>
+        <td>${esc(cleanNoEmDash(h.material))}</td>
+        <td class="r">${fmtInt(h.trips)}</td>
+        <td class="r">${fmtNum(h.qtyM3, 1)}</td>
+        <td class="r"><strong>${esc(fmtMoney(h.creditUsd, 2))}</strong></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8" class="fpnl-empty">No haulage trips recorded in this period.</td></tr>';
+
+    var dieselRowsHtml = data.dieselRows.map(function (d) {
+      return `<tr>
+        <td class="mono">${esc(fmtDateDisplay(d.date))}</td>
+        <td>${esc(cleanNoEmDash(d.company))}</td>
+        <td class="mono">${esc(cleanNoEmDash(d.ticketNo))}</td>
+        <td class="r">${fmtNum(d.liters, 1)}</td>
+        <td class="r">${d.unitRate > 0 ? esc(fmtMoney(d.unitRate, 3)) : '-'}</td>
+        <td class="r fpnl-neg">-${esc(fmtMoney(d.totalUsd, 2))}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No metered diesel draws recorded in this period.</td></tr>';
+
+    var workRowsHtml = data.workshopRows.map(function (w) {
+      return `<tr>
+        <td class="mono">${esc(fmtDateDisplay(w.date))}</td>
+        <td>${esc(cleanNoEmDash(w.company))}</td>
+        <td>${esc(cleanNoEmDash(w.bucket))}</td>
+        <td>${esc(cleanNoEmDash(w.supplier))}</td>
+        <td class="mono">${esc(cleanNoEmDash(w.bill_number))}</td>
+        <td>${esc(cleanNoEmDash(w.subcategory))}</td>
+        <td class="r fpnl-neg">-${esc(fmtMoney(w.total_usd, 2))}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" class="fpnl-empty">No workshop parts, repairs or permit charges recorded in this period.</td></tr>';
+
+    var drvRowsHtml = data.driverRows.map(function (dv) {
+      return `<tr>
+        <td class="mono">${esc(fmtDateDisplay(dv.date))}</td>
+        <td>${esc(cleanNoEmDash(dv.company))}</td>
+        <td>${esc(cleanNoEmDash(dv.supplier))}</td>
+        <td>${esc(cleanNoEmDash(dv.subcategory))}</td>
+        <td class="r">${dv.hours ? `${fmtNum(dv.hours, 1)} h` : '-'}</td>
+        <td class="r fpnl-neg">-${esc(fmtMoney(dv.total_usd, 2))}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No driver base pay, overtime or advances recorded in this period.</td></tr>';
+
+    existing.innerHTML = `<div id="fpnlSettlementModal" class="fpnl-settle-modal" role="dialog" aria-modal="true" aria-label="Partner Truck Monthly Settlement Sheet">
+      <div class="fpnl-settle-toolbar">
+        <div class="fpnl-settle-controls">
+          <select id="fpnlSettleTruck" class="fpnl-select" aria-label="Partner or Hauler Truck">${truckOpts}</select>
+          <select id="fpnlSettleMonth" class="fpnl-select" aria-label="Settlement Month">${monthOpts}</select>
+          <div class="seg fpnl-mode-bar" role="group" aria-label="Settlement Valuation Basis">
+            <button type="button" class="seg-btn fpnl-mode-btn${data.basisMode === 'recorded' ? ' active' : ''}" data-fpnl-settle-basis="recorded">Booked Revenue</button>
+            <button type="button" class="seg-btn fpnl-mode-btn${data.basisMode === 'strict' ? ' active' : ''}" data-fpnl-settle-basis="strict">+ Unbundled Credit</button>
+          </div>
+        </div>
+        <div class="fpnl-settle-controls">
+          <button type="button" class="btn" id="fpnlSettleCsvBtn">CSV</button>
+          <button type="button" class="btn btn-primary" id="fpnlSettlePrintBtn">Print / PDF</button>
+          <button type="button" class="fpnl-icon-close" data-fpnl-settle-close="1" aria-label="Close">×</button>
+        </div>
+      </div>
+
+      <div class="fpnl-settle-sheet">
+        <div class="fpnl-settle-head">
+          <div>
+            <div class="fpnl-settle-eyebrow"><span>PARTNER &amp; HAULER MONTHLY SETTLEMENT STATEMENT</span></div>
+            <h3 class="fpnl-settle-title"><span data-no-i18n="1">${esc(data.truck.displayCode)} (${esc(data.truck.plate)})</span> - <span>${esc(cleanNoEmDash(data.truck.owner))}</span></h3>
+            <div class="fpnl-settle-meta">
+              <span><span>Entity</span>: <b>${esc(cleanNoEmDash(data.scope.companyLabel))}</b></span>
+              <span><span>Period</span>: <b data-no-i18n="1">${esc(data.periodLabel)}</b></span>
+              <span><span>Basis</span>: <b>${esc(cleanNoEmDash(data.scope.basisLabel))}</b></span>
+              <span><span>Driver</span>: <b>${esc(cleanNoEmDash(data.truck.driverShort || 'Assigned Driver'))}</b></span>
+              <span><span>Valuation</span>: <b>${esc(basisLbl)}</b></span>
+            </div>
+          </div>
+        </div>
+
+        ${warnBanner}
+
+        <div class="fpnl-settle-kpi-grid">
+          <div class="fpnl-settle-kpi">
+            <div class="fpnl-settle-kpi-lbl"><span>Gross Haulage Credits</span> (+)</div>
+            <div class="fpnl-settle-kpi-val fpnl-pos">${esc(fmtMoney(data.grossCredits, 2))}</div>
+            <div class="fpnl-sub-note">${fmtInt(data.totalTrips)} <span>trips</span> (${fmtNum(data.totalQty, 1)} m³)</div>
+          </div>
+          <div class="fpnl-settle-kpi">
+            <div class="fpnl-settle-kpi-lbl"><span>Metered Diesel Draws</span> (-)</div>
+            <div class="fpnl-settle-kpi-val fpnl-neg">-${esc(fmtMoney(data.dieselTotal, 2))}</div>
+            <div class="fpnl-sub-note">${fmtNum(data.dieselLiters, 0)} L (${fmtInt(data.dieselRows.length)})</div>
+          </div>
+          <div class="fpnl-settle-kpi">
+            <div class="fpnl-settle-kpi-lbl"><span>Workshop &amp; Parts</span> (-)</div>
+            <div class="fpnl-settle-kpi-val fpnl-neg">-${esc(fmtMoney(data.workshopTotal, 2))}</div>
+            <div class="fpnl-sub-note">${fmtInt(data.workshopRows.length)} <span>entries</span></div>
+          </div>
+          <div class="fpnl-settle-kpi">
+            <div class="fpnl-settle-kpi-lbl"><span>Driver Pay &amp; OT</span> (-)</div>
+            <div class="fpnl-settle-kpi-val fpnl-neg">-${esc(fmtMoney(data.driverTotal, 2))}</div>
+            <div class="fpnl-sub-note">${fmtNum(data.driverHours, 0)} h · ${fmtInt(data.driverRows.length)} <span>entries</span></div>
+          </div>
+          <div class="fpnl-settle-kpi is-net">
+            <div class="fpnl-settle-kpi-lbl"><span>Net Settlement Payable</span></div>
+            <div class="fpnl-settle-kpi-val ${data.netPayable >= 0 ? 'fpnl-pos' : 'fpnl-neg'}">${esc(fmtSignedMoney(data.netPayable, 2))}</div>
+            <div class="fpnl-sub-note">${data.netPayable >= 0 ? '<span>Payable to Hauler</span>' : '<span>Balance Due from Hauler</span>'}</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="fpnl-settle-sec-hdr">
+            <h4><span data-no-i18n="1">A.</span> <span>Haulage Credits by Corridor</span> <span data-no-i18n="1">(${fmtInt(data.haulRows.length)})</span></h4>
+            <span class="fpnl-sub-note">${esc(fmtMoney(data.grossCredits, 2))}</span>
+          </div>
+          <div class="table-wrap fpnl-table-wrap">
+            <table class="ledger-table">
+              <thead><tr><th>Stream</th><th>Co.</th><th>Counterparty</th><th>Site</th><th>Material</th><th class="r">Trips</th><th class="r">Vol (m³)</th><th class="r">Credit ($)</th></tr></thead>
+              <tbody>${haulRowsHtml}</tbody>
+              <tfoot><tr><td colspan="5"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtInt(data.totalTrips)}</b></td><td class="r"><b>${fmtNum(data.totalQty, 1)}</b></td><td class="r"><b>${esc(fmtMoney(data.grossCredits, 2))}</b></td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="fpnl-settle-sec-hdr">
+            <h4><span data-no-i18n="1">B.</span> <span>Metered Plant Diesel Draws (Out)</span> <span data-no-i18n="1">(${fmtInt(data.dieselRows.length)})</span></h4>
+            <span class="fpnl-sub-note">-${esc(fmtMoney(data.dieselTotal, 2))}</span>
+          </div>
+          <div class="table-wrap fpnl-table-wrap">
+            <table class="ledger-table">
+              <thead><tr><th>Date</th><th>Co.</th><th>Ref #</th><th class="r">Litres</th><th class="r">Rate ($/L)</th><th class="r">Deduction ($)</th></tr></thead>
+              <tbody>${dieselRowsHtml}</tbody>
+              <tfoot><tr><td colspan="3"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.dieselLiters, 1)}</b></td><td></td><td class="r"><b>-${esc(fmtMoney(data.dieselTotal, 2))}</b></td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="fpnl-settle-sec-hdr">
+            <h4><span data-no-i18n="1">C.</span> <span>Workshop Parts, Repairs, Lubes &amp; Permits</span> <span data-no-i18n="1">(${fmtInt(data.workshopRows.length)})</span></h4>
+            <span class="fpnl-sub-note">-${esc(fmtMoney(data.workshopTotal, 2))}</span>
+          </div>
+          <div class="table-wrap fpnl-table-wrap">
+            <table class="ledger-table">
+              <thead><tr><th>Date</th><th>Co.</th><th>Bucket</th><th>Vendor</th><th>Ref #</th><th>Detail</th><th class="r">Deduction ($)</th></tr></thead>
+              <tbody>${workRowsHtml}</tbody>
+              <tfoot><tr><td colspan="6"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.workshopTotal, 2))}</b></td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="fpnl-settle-sec-hdr">
+            <h4><span data-no-i18n="1">D.</span> <span>Driver Salary, Overtime &amp; Advances</span> <span data-no-i18n="1">(${fmtInt(data.driverRows.length)})</span></h4>
+            <span class="fpnl-sub-note">-${esc(fmtMoney(data.driverTotal, 2))}</span>
+          </div>
+          <div class="table-wrap fpnl-table-wrap">
+            <table class="ledger-table">
+              <thead><tr><th>Date</th><th>Co.</th><th>Driver</th><th>Detail</th><th class="r">Hours</th><th class="r">Deduction ($)</th></tr></thead>
+              <tbody>${drvRowsHtml}</tbody>
+              <tfoot><tr><td colspan="4"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.driverHours, 1)}</b></td><td class="r"><b>-${esc(fmtMoney(data.driverTotal, 2))}</b></td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="fpnl-settle-signs">
+          <div><div class="fpnl-settle-sign-line"><span>Prepared By</span></div></div>
+          <div><div class="fpnl-settle-sign-line"><span>Hauler / Partner Confirmation</span></div></div>
+          <div><div class="fpnl-settle-sign-line"><span>Date</span></div></div>
+        </div>
+      </div>
+    </div>`;
+
+    enhanceContainerDom(existing);
+  }
+
+  function openPartnerSettlementModal(truckCode, ymOverride) {
+    var perm = getSeatPermissions();
+    var ent = window.MFG_ENTERPRISE;
+    if (!perm.canSettle) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Settlement sheet requires full finance and payroll access', 'err');
+      return false;
+    }
+    var ds = getActiveDataset();
+    var code = normTruckCode(truckCode);
+    var tObj = code ? ds.trucks[code] : null;
+    if (!tObj || !tObj.isPartnerOrHauler) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Settlement sheet applies to partner and hauler units', 'warn');
+      return false;
+    }
+    // Guardrail #3: Always hard-reset valuation basis to Booked Revenue on open.
+    SETTLE_STATE.basisMode = 'recorded';
+    SETTLE_STATE.truck = code;
+    var scope = getTopbarScopeSummary();
+    var activeMonth = (scope.period && /^month:(\d{4}-\d{2})$/.test(scope.period)) ? scope.period.slice(6) : '';
+    var months = Object.keys(tObj.monthsMap || {}).filter(function (k) {
+      var m = tObj.monthsMap[k];
+      return k && k !== 'Unspecified' && m && (m.trips > 0 || m.dieselCost > 0 || m.maintCost > 0 || m.otPay > 0 || m.basePay > 0);
+    }).sort().reverse();
+    SETTLE_STATE.ym = ymOverride || activeMonth || months[0] || 'ALL';
+    SETTLE_STATE.open = true;
+    renderPartnerSettlementModal();
+    return true;
+  }
+
   function findCockpitRoot(el) {
     return el && el.closest ? el.closest('[data-fpnl-root="1"]') : null;
   }
@@ -2714,16 +3693,57 @@
     window.__fpnlEventsBound = true;
 
     document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Escape' && (STATE.rulesOpen || STATE.truckPickerOpen)) {
-        STATE.rulesOpen = false;
-        STATE.truckPickerOpen = false;
-        refreshAllMountedCockpits();
+      if (ev.key === 'Escape') {
+        if (SETTLE_STATE.open) {
+          closePartnerSettlementModal();
+          return;
+        }
+        if (STATE.rulesOpen || STATE.truckPickerOpen) {
+          STATE.rulesOpen = false;
+          STATE.truckPickerOpen = false;
+          refreshAllMountedCockpits();
+        }
       }
     });
 
     document.addEventListener('click', function (ev) {
       var t = ev.target;
       if (!t || !t.closest) return;
+
+      if (t.closest('[data-fpnl-settle-close]') || t.id === 'fpnlSettlementBackdrop') {
+        closePartnerSettlementModal();
+        return;
+      }
+      var sBasisBtn = t.closest('[data-fpnl-settle-basis]');
+      if (sBasisBtn && SETTLE_STATE.open) {
+        SETTLE_STATE.basisMode = sBasisBtn.getAttribute('data-fpnl-settle-basis') === 'strict' ? 'strict' : 'recorded';
+        renderPartnerSettlementModal();
+        return;
+      }
+      if (t.closest('#fpnlSettlePrintBtn')) {
+        printPartnerSettlementSheet();
+        return;
+      }
+      if (t.closest('#fpnlSettleCsvBtn')) {
+        downloadCsvFile('settlement');
+        return;
+      }
+
+      var settleBtn = t.closest('[data-fpnl-settle-truck]');
+      if (settleBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openPartnerSettlementModal(settleBtn.getAttribute('data-fpnl-settle-truck') || '');
+        return;
+      }
+
+      var setRateBtn = t.closest('[data-fpnl-set-rate]');
+      if (setRateBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        triggerSetCorridorRate(setRateBtn.getAttribute('data-fpnl-set-rate') || '');
+        return;
+      }
 
       var extUnitBtn = t.closest('[data-fpnl-focus-unit]');
       if (extUnitBtn) {
@@ -2977,8 +3997,18 @@
 
     document.addEventListener('change', function (ev) {
       var el = ev.target;
+      if (!el) return;
+      if (el.id === 'fpnlSettleTruck' && SETTLE_STATE.open) {
+        openPartnerSettlementModal(el.value);
+        return;
+      }
+      if (el.id === 'fpnlSettleMonth' && SETTLE_STATE.open) {
+        SETTLE_STATE.ym = el.value || 'ALL';
+        renderPartnerSettlementModal();
+        return;
+      }
       var container = findCockpitRoot(el);
-      if (!el || !container) return;
+      if (!container) return;
       if (el.id === 'fpnlZeroTruck') { STATE.zeroTruck = el.value; STATE.zeroLimit = PAGE_SIZE; renderFullCockpit(container); }
       else if (el.id === 'fpnlRouteTruck') { STATE.routeTruck = el.value; STATE.routeLimit = PAGE_SIZE; renderFullCockpit(container); }
       else if (el.id === 'fpnlRouteSort') {
@@ -3033,7 +4063,11 @@
     refresh: refreshAllMountedCockpits,
     computeModel: computeModel,
     getEquipmentSyncFilter: getEquipmentSyncFilter,
-    searchTruckCatalog: searchTruckCatalog
+    searchTruckCatalog: searchTruckCatalog,
+    triggerSetCorridorRate: triggerSetCorridorRate,
+    openPartnerSettlementModal: openPartnerSettlementModal,
+    closePartnerSettlementModal: closePartnerSettlementModal,
+    getSettlementState: function () { return Object.assign({}, SETTLE_STATE); }
   };
 
   window.MFG_FLEET_PNL = api;
