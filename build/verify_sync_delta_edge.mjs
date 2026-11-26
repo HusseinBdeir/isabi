@@ -153,8 +153,8 @@ console.log('\n[1. 64MB /sync route ceiling vs 16MB non-sync route ceiling & blo
     id: 'at_aaaaaaaa0002',
     company: 'WTC',
     date: '2026-10-06',
-    staff: 'Zeinab',
-    modified_by: 'aya@example.test',
+    staff: 'ZzTestStaffAlpha',
+    modified_by: 'zztest.editor@example.test',
     modified_at: '2026-11-24T14:00:00Z',
     _pre_void_edits: [{ at: '2026-11-24T13:26:15.123Z', by: 'System' }]
   };
@@ -162,7 +162,7 @@ console.log('\n[1. 64MB /sync route ceiling vs 16MB non-sync route ceiling & blo
     id: 'at_aaaaaaaa0003',
     company: 'WTC',
     date: '2026-10-07',
-    staff: 'Hussein',
+    staff: 'ZzTestStaffBeta',
     manual_override: true,
     _pre_void_edits: [{ at: '2026-11-24T13:26:15.123Z', by: 'System' }]
   };
@@ -170,14 +170,14 @@ console.log('\n[1. 64MB /sync route ceiling vs 16MB non-sync route ceiling & blo
     id: 'at_aaaaaaaa0004',
     company: 'WTC',
     date: '2026-10-08',
-    staff: 'Other Day Edit',
+    staff: 'ZzTestOtherDayEdit',
     _pre_void_edits: [{ at: '2026-11-22T09:10:00.000Z', by: 'owner@example.test' }]
   };
   const keepAppRow = {
     id: 'at-1732500001-01',
     company: 'WTC',
     date: '2026-11-25',
-    staff: 'Aya Hammoud',
+    staff: 'ZzTestStaffGamma',
     source: 'app',
     notes: 'Held entry finally lands'
   };
@@ -220,11 +220,11 @@ console.log('\n[1. 64MB /sync route ceiling vs 16MB non-sync route ceiling & blo
           'WF::statement_watermark::WTC::2026-11': { id: 'WF::statement_watermark::WTC::2026-11', company: 'WTC', watermark_seq: 9, updated_at: '2026-11-24T08:00:00Z' }
         },
         kioskPunches: [
-          { id: 'kp-keep-1', company: 'WTC', staff: 'Aya Hammoud', date: '2026-11-25', direction: 'IN', time: '08:00', punched_at: '2026-11-25T08:00:00Z' },
+          { id: 'kp-keep-1', company: 'WTC', staff: 'ZzTestStaffGamma', date: '2026-11-25', direction: 'IN', time: '08:00', punched_at: '2026-11-25T08:00:00Z' },
           { id: 'kp-del-1', company: 'WTC', staff: 'Temp', date: '2026-11-25', direction: 'IN', time: '09:00', punched_at: '2026-11-25T09:00:00Z' }
         ],
         staffBiometrics: {
-          'wtc|aya hammoud': { company: 'WTC', staff: 'Aya Hammoud', face_enrolled: true, updated_at: '2026-11-25T08:00:00Z' },
+          'wtc|zzteststaffgamma': { company: 'WTC', staff: 'ZzTestStaffGamma', face_enrolled: true, updated_at: '2026-11-25T08:00:00Z' },
           'wtc|old temp': { company: 'WTC', staff: 'Old Temp', face_enrolled: true, updated_at: '2026-11-25T07:00:00Z' }
         },
         sentinelReviews: {
@@ -278,11 +278,11 @@ console.log('\n[1. 64MB /sync route ceiling vs 16MB non-sync route ceiling & blo
       'WF::statement_watermark::WTC::2026-11': { id: 'WF::statement_watermark::WTC::2026-11', company: 'WTC', watermark_seq: 9, updated_at: '2026-11-24T08:00:00Z' }
     },
     kioskPunches: [
-      { id: 'kp-keep-1', company: 'WTC', staff: 'Aya Hammoud', date: '2026-11-25', direction: 'IN', time: '08:00', punched_at: '2026-11-25T08:00:00Z' },
+      { id: 'kp-keep-1', company: 'WTC', staff: 'ZzTestStaffGamma', date: '2026-11-25', direction: 'IN', time: '08:00', punched_at: '2026-11-25T08:00:00Z' },
       { id: 'kp-del-1', company: 'WTC', staff: 'Temp', date: '2026-11-25', direction: 'IN', time: '09:00', punched_at: '2026-11-25T09:00:00Z' }
     ],
     staffBiometrics: {
-      'wtc|aya hammoud': { company: 'WTC', staff: 'Aya Hammoud', face_enrolled: true, updated_at: '2026-11-25T08:00:00Z' },
+      'wtc|zzteststaffgamma': { company: 'WTC', staff: 'ZzTestStaffGamma', face_enrolled: true, updated_at: '2026-11-25T08:00:00Z' },
       'wtc|old temp': { company: 'WTC', staff: 'Old Temp', face_enrolled: true, updated_at: '2026-11-25T07:00:00Z' }
     },
     sentinelReviews: {
@@ -358,7 +358,7 @@ console.log('\n[2. deltaSyncV1 guards, cross-industry add/edit/delete & CAS retr
           updatedBy: 'owner@example.test',
           customRecords: {
             attendance: [
-              { id: 'at-1732500002-02', company: 'WTC', date: '2026-11-25', staff: 'Zeinab Rkein', source: 'app', notes: 'New delta entry' }
+              { id: 'at-1732500002-02', company: 'WTC', date: '2026-11-25', staff: 'ZzTestStaffDelta', source: 'app', notes: 'New delta entry' }
             ]
           },
           _deletedCrIds: {
@@ -425,7 +425,7 @@ console.log('\n[2. deltaSyncV1 guards, cross-industry add/edit/delete & CAS retr
     && !Object.prototype.hasOwnProperty.call(s1.doc.industryRowEdits || {}, 'wtc_del_edit_1')
     && s1.doc.industryRowEdits?.bbc_seed_1?.notes === 'BBC intact'
     && s1PunchIds.includes('kp-keep-1') && !s1PunchIds.includes('kp-del-1')
-    && Boolean(s1.doc.staffBiometrics?.['wtc|aya hammoud']) && !s1.doc.staffBiometrics?.['wtc|old temp']
+    && Boolean(s1.doc.staffBiometrics?.['wtc|zzteststaffgamma']) && !s1.doc.staffBiometrics?.['wtc|old temp']
     && Boolean(s1.doc.sentinelReviews?.['sr-keep-1']) && !s1.doc.sentinelReviews?.['sr-del-1']
     && s1.doc.partyHygiene?.rules?.['Manufacturing::customer::alpha']?.status === 'confirmed'
     && s1.doc.partyHygiene?.rules?.['Manufacturing::customer::beta']?.status === 'undone'
@@ -433,7 +433,7 @@ console.log('\n[2. deltaSyncV1 guards, cross-industry add/edit/delete & CAS retr
     && !d1TrdRows.has('trd-1') && d1TrdRows.has('trd-2')
     && d1IreKeys.has('wtc_seed_1') && !d1IreKeys.has('wtc_del_edit_1')
     && d1PunchRows.has('kp-keep-1')
-    && d1BioKeys.has('wtc|aya hammoud') && !d1BioKeys.has('wtc|old temp')
+    && d1BioKeys.has('wtc|zzteststaffgamma') && !d1BioKeys.has('wtc|old temp')
     && d1SrKeys.has('sr-keep-1') && !d1SrKeys.has('sr-del-1'),
     {
       delta1: delta1.json, s1CrAtt, s1Hold, s1Trd, hasWireKeys,
