@@ -573,6 +573,31 @@ async function getTableColumns(db, table) {
       cols = new Set((res.results || []).map(r => String(r.name)));
     } catch (_) {}
   }
+  const realColsByTable = {
+    expenses: ['gross_amount', 'discount'],
+    expense_items: ['net_unit_cost', 'gross_line_total', 'line_discount']
+  };
+  if (realColsByTable[table] && cols.size > 0) {
+    let addedRealCol = false;
+    for (const rcol of realColsByTable[table]) {
+      if (!cols.has(rcol)) {
+        try {
+          await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${rcol} REAL DEFAULT 0`).run();
+          addedRealCol = true;
+        } catch (_) {}
+      }
+    }
+    if (addedRealCol) {
+      if (table === 'expenses') {
+        try { await db.prepare('UPDATE expenses SET gross_amount = amount WHERE (gross_amount IS NULL OR gross_amount = 0) AND (discount IS NULL OR discount = 0) AND amount > 0').run(); } catch (_) {}
+      } else if (table === 'expense_items') {
+        try { await db.prepare('UPDATE expense_items SET net_unit_cost = unit_cost WHERE (net_unit_cost IS NULL OR net_unit_cost = 0) AND (line_discount IS NULL OR line_discount = 0) AND unit_cost > 0').run(); } catch (_) {}
+        try { await db.prepare('UPDATE expense_items SET gross_line_total = line_total WHERE (gross_line_total IS NULL OR gross_line_total = 0) AND (line_discount IS NULL OR line_discount = 0) AND line_total > 0').run(); } catch (_) {}
+      }
+      res = await db.prepare(`PRAGMA table_info(${table})`).all();
+      cols = new Set((res.results || []).map(r => String(r.name)));
+    }
+  }
   if (perDb && cols.size > 0) perDb.set(table, cols);
   return cols;
 }
