@@ -47,7 +47,7 @@
   const MFG_ONLY_FORMS = new Set([
     'sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm',
     'creditterm', 'grouptransfer', 'raw', 'jv', 'fuel', 'repair', 'defect', 'oillog',
-    'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment', 'logistics'
+    'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment', 'logistics', 'freelance'
   ]);
 
   const RDL_VERTICAL_INDUSTRY = {
@@ -1333,11 +1333,15 @@
         if ((f.id === 'equipment' || f.id === 'driver') && _ctx.isFleetUniversalIndustry && !_ctx.isFleetUniversalIndustry(pctx.activeInd)) return;
         const isMfgForm = mfgOnlyFormsSet.has(f.id);
         if (isMfgForm && !pctx.permittedIndustries.has('Manufacturing')) return;
+        const isFleetOnlyForm = f.id === 'equipment' || f.id === 'driver';
+        const inFleetActive = !isFleetOnlyForm || isFleetHubInInd(pctx.activeInd);
+        const fleetTargetInd = inFleetActive ? '' : resolveFallbackFleetIndustry(pctx);
+        if (isFleetOnlyForm && !inFleetActive && !fleetTargetInd) return;
 
         const linkedTbl = formToTableVolume[f.id] || '';
         const baseVol = linkedTbl ? getScopedRows(linkedTbl, false).length : 20;
         const aliasStr = FORM_ALIASES[f.id] || '';
-        const targetInd = isMfgForm ? 'Manufacturing' : '';
+        const targetInd = isMfgForm ? 'Manufacturing' : (isFleetOnlyForm && !inFleetActive ? fleetTargetInd : '');
 
         items.push(makeCandidate({
           id: `form:${f.id}`,
@@ -1345,13 +1349,13 @@
           icon: 'edit',
           titleEn: f.label,
           subEn: cleanGrpTitle || 'Entry Form',
-          industry: isMfgForm && pctx.activeInd !== 'Manufacturing' ? 'Manufacturing' : '',
+          industry: targetInd && pctx.activeInd !== targetInd ? targetInd : '',
           badgeEn: 'Entry Form',
           freq: usageScore('form', f.id) + indBoost(targetInd) + Math.min(35000, baseVol),
           exactAliases: [f.label, `new ${f.label}`, `enter ${f.label}`, `add ${f.label}`],
           aliases: `${aliasStr} form new enter add create post ادخال اضافة جديد نموذج فورم saisir ajouter nouveau formulaire`,
           run: () => {
-            if (isMfgForm) ensureIndustryScope('Manufacturing', pctx);
+            if (targetInd) ensureIndustryScope(targetInd, pctx);
             _ctx.openEntryModal(f.id);
           }
         }));
