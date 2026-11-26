@@ -3048,7 +3048,7 @@
       "Delete": "حذف",
       "Delete Group": "حذف المجموعة",
       "Delete Shift Type": "حذف نوع الوردية",
-      "Delete saved payment hold": "حذف تعليق الدفعة المحفوظ",
+      "Delete saved payment hold": "حذف حجز الدفعة المحفوظ",
       "Delete saved payment promise": "حذف وعد السداد المحفوظ",
       "Delete saved reorder override": "حذف أمر إعادة الطلب المحفوظ",
       "Delete saved scenario": "حذف السيناريو المحفوظ",
@@ -5526,7 +5526,7 @@
       "Item / Truck VIN": "الصنف / شاسيه الشاحنة",
       "Item Category": "فئة الصنف",
       "Item Code & Description": "رمز الصنف والوصف",
-      "Item Group": "مجموعة الأصناف",
+      "Item Group": "فئة الصنف",
       "Item Name": "اسم الصنف / القطعة",
       "Item Routing *": "توجيه الصنف *",
       "Item Source *": "مصدر القطعة *",
@@ -7858,8 +7858,6 @@
       "Close 13-Week Runway Studio": "إغلاق استوديو سيولة 13 أسبوعاً",
       "Close Stock & EOQ Studio": "إغلاق استوديو المخزون والطلب الاقتصادي",
       "Custom reorder par quantity": "تخصيص كمية إعادة الطلب",
-      "Delete saved payment hold": "حذف حجز الدفعة المحفوظ",
-      "Delete saved scenario": "حذف السيناريو المحفوظ",
       "Override order quantity": "تعديل كمية الطلب",
       "Preparing follow-up": "جاري تجهيز المتابعة",
       "Scenario Note Language": "لغة ملاحظة السيناريو",
@@ -10980,7 +10978,7 @@
       "VATConfig": "تسوية ضريبة",
       "VATRent": "ضريبة إيجار",
       "VENUE REVENUE & CHALET OCCUPANCY LEDGER": "سجل إيرادات الفروع وإشغال الشاليهات",
-      "VIN / Chassis": "رقم الشاسيه VIN",
+      "VIN / Chassis": "رقم الهيكل (VIN)",
       "VIN / Chassis Strip (4.5:1)": "شريط رقم الشاسيه VIN (4.5:1)",
       "VIN Floorplan Accrual, Deposit Cutoff & Aging Reserve": "استحقاق فوائد الشاصيات وقطع الدفعات المسبقة ومؤونة التقادم",
       "VIN Units Trued Up": "وحدات الشاصي المسواة",
@@ -15521,7 +15519,25 @@
       "Spare Parts & Commercial Trading": "قطع الغيار وتجارة السيارات",
       "Portfolio Rent Roll & NOI": "سجل إيجارات المحفظة وصافي الدخل التشغيلي",
       "Zero Unpriced Expense or Material Queues": "صفر مصاريف أو نقلات مواد غير مسعّرة",
-      "Daily Venue Revenue & Memberships": "الإيرادات اليومية والاشتراكات"
+      "Daily Venue Revenue & Memberships": "الإيرادات اليومية والاشتراكات",
+      "Back to 360°:": "العودة إلى 360°:",
+      "Back to 360°": "العودة إلى 360°",
+      "Dismiss return link": "إخفاء رابط العودة",
+      "Clear all column filters": "مسح جميع تصفيات الأعمدة",
+      "Return to the 360° Inspector at your previous position": "العودة إلى فاحص 360° عند موضعك السابق",
+      "Active Column Filters:": "تصفيات الأعمدة النشطة:",
+      "Peril": "الخطر المغطى",
+      "VIN": "رقم الشاسيه",
+      "Store": "المخزن",
+      "From Company": "من الشركة",
+      "To Company": "إلى الشركة",
+      "Open AR ($)": "الذمم المدينة المفتوحة ($)",
+      "Gross AR ($)": "إجمالي الذمم المدينة ($)",
+      "Advance ($)": "سلفة ($)",
+      "Open Balance ($)": "الرصيد المفتوح ($)",
+      "VAT ($)": "ض.ق.م ($)",
+      "Annual Rent ($)": "الإيجار السنوي ($)",
+      "Partners": "الشركاء"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -18551,7 +18567,7 @@
       "Delete": "Supprimer",
       "Delete Group": "Supprimer le Groupe",
       "Delete Shift Type": "Supprimer le Poste",
-      "Delete saved payment hold": "Supprimer la retenue de paiement enregistrée",
+      "Delete saved payment hold": "Supprimer le blocage de paiement enregistré",
       "Delete saved payment promise": "Supprimer la promesse enregistrée",
       "Delete saved reorder override": "Supprimer la consigne de réapprovisionnement enregistrée",
       "Delete saved scenario": "Supprimer le scénario enregistré",
@@ -21029,7 +21045,7 @@
       "Item / Truck VIN": "Article / VIN Camion",
       "Item Category": "Catégorie d'Article",
       "Item Code & Description": "Code & Désignation Article",
-      "Item Group": "Famille d'Articles",
+      "Item Group": "Famille d'articles",
       "Item Name": "Nom de l'Article",
       "Item Routing *": "Affectation de l'article *",
       "Item Source *": "Origine de la Pièce *",
@@ -23361,8 +23377,6 @@
       "Close 13-Week Runway Studio": "Fermer le studio de trésorerie 13 semaines",
       "Close Stock & EOQ Studio": "Fermer le studio stock & EOQ",
       "Custom reorder par quantity": "Quantité de réapprovisionnement personnalisée",
-      "Delete saved payment hold": "Supprimer le blocage de paiement enregistré",
-      "Delete saved scenario": "Supprimer le scénario enregistré",
       "Override order quantity": "Modifier la quantité commandée",
       "Preparing follow-up": "Préparation du suivi",
       "Scenario Note Language": "Langue de la note du scénario",
@@ -26483,7 +26497,7 @@
       "VATConfig": "Ajust. TVA",
       "VATRent": "TVA Loyer",
       "VENUE REVENUE & CHALET OCCUPANCY LEDGER": "REGISTRE DES REVENUS & OCCUPATION CHALETS",
-      "VIN / Chassis": "Châssis / VIN",
+      "VIN / Chassis": "VIN / Châssis",
       "VIN / Chassis Strip (4.5:1)": "Bande VIN / Châssis (4.5:1)",
       "VIN Floorplan Accrual, Deposit Cutoff & Aging Reserve": "Interets de stock VIN, coupure des acomptes et provision pieces",
       "VIN Units Trued Up": "Unites VIN ajustees",
@@ -31024,7 +31038,25 @@
       "Spare Parts & Commercial Trading": "Pièces Détachées & Négoce Automobile",
       "Portfolio Rent Roll & NOI": "État Locatif & NOI du Portefeuille",
       "Zero Unpriced Expense or Material Queues": "Zéro Charge ou Bon Matière Non Valorisé en Attente",
-      "Daily Venue Revenue & Memberships": "Recettes Journalières & Abonnements"
+      "Daily Venue Revenue & Memberships": "Recettes Journalières & Abonnements",
+      "Back to 360°:": "Retour à la vue 360° :",
+      "Back to 360°": "Retour à la vue 360°",
+      "Dismiss return link": "Masquer le lien de retour",
+      "Clear all column filters": "Effacer tous les filtres de colonnes",
+      "Return to the 360° Inspector at your previous position": "Revenir à l'inspecteur 360° à votre position précédente",
+      "Active Column Filters:": "Filtres de colonnes actifs :",
+      "Peril": "Sinistre / Péril",
+      "VIN": "NIV (Châssis)",
+      "Store": "Magasin",
+      "From Company": "De la société",
+      "To Company": "Vers la société",
+      "Open AR ($)": "Créances ouvertes ($)",
+      "Gross AR ($)": "Créances brutes ($)",
+      "Advance ($)": "Avance ($)",
+      "Open Balance ($)": "Solde ouvert ($)",
+      "VAT ($)": "TVA ($)",
+      "Annual Rent ($)": "Loyer annuel ($)",
+      "Partners": "Associés"
     }
   };
 
@@ -35208,6 +35240,12 @@
 
     m = trimmed.match(/^Showing Only\s+(.+)$/i);
     if (m) return lang === 'ar' ? `عرض ${m[1]} فقط` : `Affichage unique : ${m[1]}`;
+
+    m = trimmed.match(/^Remove\s+(.+?)\s+filter$/i);
+    if (m) {
+      const colT = translateCore(m[1].trim(), lang, depth + 1) || m[1];
+      return lang === 'ar' ? `إزالة تصفية ${colT}` : `Retirer le filtre ${colT}`;
+    }
 
     m = trimmed.match(/^Focus\s+(\S+)$/i);
     if (m) return lang === 'ar' ? `تركيز ${m[1]}` : `Cibler ${m[1]}`;
