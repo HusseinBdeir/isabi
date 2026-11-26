@@ -19,6 +19,9 @@
     voiceActive: false,
     speechRec: null,
     lastVoiceStatus: '',
+    mfgVoiceText: '',
+    indVoiceText: '',
+    voiceTargetDom: false,
     batchOpen: false,
     batchPreset: 'auto',
     batchRawText: '',
@@ -101,6 +104,7 @@
     boardAudioSrc: '',
     boardSpeaking: false,
     hygieneAiSuggestions: {},
+    hygieneSwappedPairs: {},
     hygieneBusy: false,
     hygieneReqGen: 0,
     hygieneShowResolved: false,
@@ -838,6 +842,7 @@
       formType: '',
       qty: null,
       amount: null,
+      discount: null,
       meter: null,
       uom: '',
       paymentMethod: '',
@@ -851,18 +856,18 @@
     };
 
     // Form intent detection across EN / AR / FR
-    if (/\b(diesel|mazout|fuel|litres?|liters?)\b|مازوت|ديزل|وقود|ليتر/.test(low)) {
+    if (activeInd === 'Manufacturing' && /\b(diesel|mazout|fuel|litres?|liters?)\b|مازوت|ديزل|وقود|ليتر/.test(low)) {
       out.formType = 'fuel';
       out.uom = 'Litre';
-    } else if (/\b(repair|mechanic|hydraulic|brake|overhaul)\b|تصليح|صيانة/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(repair|mechanic|hydraulic|brake|overhaul)\b|تصليح|صيانة/.test(low)) {
       out.formType = 'repair';
-    } else if (/\b(quarry|raw|hauler)\b|مقلع|كسارة/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(quarry|raw|hauler)\b|مقلع|كسارة/.test(low)) {
       out.formType = 'raw';
     } else if (/\b(intercompany|sister|sweep|wire)\b|تحويل بين/.test(low)) {
       out.formType = 'external';
-    } else if (/\b(expense|bill|supplier|invoice)\b|فاتورة|مصاريف|مصروف/.test(low) && activeInd === 'Manufacturing') {
+    } else if (/\b(expense|bill|supplier|invoice)\b|فاتورة|مصاريف|مصروف/.test(low)) {
       out.formType = 'expense';
-    } else if (/\b(mghasal|bodra|sakher|sand|aggregate|ton|m3|delivery)\b|مغسل|بودرة|صخر|بحص|رمل/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(mghasal|bodra|sakher|sand|aggregate|ton|m3|delivery)\b|مغسل|بودرة|صخر|بحص|رمل/.test(low)) {
       out.formType = 'sales';
     }
 
@@ -877,7 +882,12 @@
     const qtyM = low.match(/(\d+(?:\.\d+)?)\s*(?:litres?|liters?|l\b|tons?|t\b|m3|m³|trucks?|ليتر|لتر|طن|متر)/i);
     if (qtyM) out.qty = Number(qtyM[1]);
 
-    const amtM = low.match(/(?:\$\s*(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s*(?:usd|dollars?|دولار|\$))/i);
+    const discM = low.match(/(?:discount|rebate|remise|خصم|حسم)\s*(?:of|:)?\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:usd|dollars?|دولار|\$)?/i)
+      || low.match(/\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:usd|dollars?|دولار|\$)?\s*(?:discount|rebate|remise|خصم|حسم)\b/i);
+    if (discM) out.discount = Number(String(discM[1]).replace(/,/g, ''));
+
+    const lowNoDisc = discM ? low.replace(discM[0], ' ') : low;
+    const amtM = lowNoDisc.match(/(?:\$\s*(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s*(?:usd|dollars?|دولار|\$))/i);
     if (amtM) out.amount = Number(String(amtM[1] || amtM[2]).replace(/,/g, ''));
 
     if (/mghasal|مغسل/i.test(low)) out.product = 'Mghasal';
@@ -984,7 +994,7 @@
     let parsed = parseVoiceUtteranceLocal(clean);
     const cloudParsed = await callAiEdgeJson(
       'voice_fill',
-      `Extract ERP form fields as strict JSON {"formType":"sales|raw|fuel|expense|repair|external","qty":0,"amount":0,"meter":0,"uom":"","paymentMethod":"Cash|Credit|Check|Bank Transfer","customer":"","supplier":"","product":"","equipment":"","site":"","notes":""} from utterance: ${clean}`
+      `Extract ERP form fields as strict JSON {"formType":"sales|raw|fuel|expense|repair|external","qty":0,"amount":0,"discount":0,"meter":0,"uom":"","paymentMethod":"Cash|Credit|Check|Bank Transfer","customer":"","supplier":"","product":"","equipment":"","site":"","notes":""} from utterance: ${clean}`
     );
     if (cloudParsed && typeof cloudParsed === 'object') {
       Object.keys(cloudParsed).forEach(k => {
@@ -994,8 +1004,24 @@
       });
     }
 
+    const markVoiceExpanded = domFlag => {
+      const m = $(domFlag ? 'indDomainEntryModal' : 'entryModal');
+      if (!m || m.hidden) return;
+      m.classList.add('mob-ai-voice-open');
+      m.classList.remove('mob-ai-scan-open');
+      const qb = $(domFlag ? 'indMobAiQuickBar' : 'entryMobAiQuickBar');
+      if (qb) {
+        const sBtn = qb.querySelector('[data-mob-ai="scan"]');
+        const vBtn = qb.querySelector('[data-mob-ai="voice"]');
+        if (sBtn) { sBtn.classList.remove('is-open'); sBtn.setAttribute('aria-expanded', 'false'); }
+        if (vBtn) { vBtn.classList.add('is-open'); vBtn.setAttribute('aria-expanded', 'true'); }
+      }
+    };
+
     let filled = 0;
     if (isDomainModal) {
+      EDGE_STATE.indVoiceText = clean;
+      markVoiceExpanded(true);
       if (parsed.amount != null) {
         ['ide_tot', 'ide_gwp', 'ide_usd', 'ide_ttc', 'ide_contract', 'ide_claimed', 'ide_actual'].forEach(fid => {
           if (setInputVal(fid, parsed.amount)) filled++;
@@ -1017,19 +1043,21 @@
       return { ok: true, filled: Math.max(1, filled), parsed };
     }
 
-    // Switch Smart Entry modal tab if voice clearly names another permitted form in the active industry
-    const curIndForVoice = (D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-    const isMfgForVoice = !curIndForVoice || curIndForVoice === 'Manufacturing';
-    const isFleetForVoice = (D && typeof D.isFleetUniversalIndustry === 'function') ? D.isFleetUniversalIndustry(curIndForVoice) : true;
-    const mfgOnlyForVoice = D && D.MFG_ONLY_MODAL_FORMS;
-    const voiceTargetAllowed = Boolean(
-      parsed.formType &&
-      (isMfgForVoice || !(mfgOnlyForVoice && mfgOnlyForVoice.has(parsed.formType))) &&
-      (isFleetForVoice || (parsed.formType !== 'equipment' && parsed.formType !== 'driver'))
+    EDGE_STATE.mfgVoiceText = clean;
+    // Switch Smart Entry modal tab if voice clearly names another form (strictly within active industry policy)
+    const voiceInd = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
+      ? D.getActiveIndustry(D.STATE.company)
+      : 'Manufacturing';
+    const isBlockedVoiceForm = Boolean(
+      voiceInd && voiceInd !== 'Manufacturing' && parsed.formType && (
+        (D && (typeof D.isMfgOnlyModalForm === 'function' ? D.isMfgOnlyModalForm(parsed.formType) : Boolean(D.MFG_ONLY_MODAL_FORMS && D.MFG_ONLY_MODAL_FORMS.has(parsed.formType)))) ||
+        (D && typeof D.isFleetUniversalIndustry === 'function' && !D.isFleetUniversalIndustry(voiceInd) && (parsed.formType === 'equipment' || parsed.formType === 'driver'))
+      )
     );
-    if (voiceTargetAllowed && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
+    if (parsed.formType && !isBlockedVoiceForm && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
       D.openEntryModal(parsed.formType, null, { forceSwitch: true });
     }
+    markVoiceExpanded(false);
 
     if (parsed.equipment) {
       if (setInputVal('f_truck', parsed.equipment)) filled++;
@@ -1058,10 +1086,17 @@
       if (setInputVal('f_odometer', parsed.meter)) filled++;
     }
     if (parsed.amount != null) {
-      if (setInputVal('f_amount', parsed.amount)) filled++;
+      if (D && D.STATE && D.STATE.modalForm === 'expense' && parsed.discount > 0 && $('f_gross_amount')) {
+        if (setInputVal('f_gross_amount', parsed.amount)) filled++;
+      } else {
+        if (setInputVal('f_amount', parsed.amount)) filled++;
+      }
       if (setInputVal('f_usd', parsed.amount)) filled++;
       if (setInputVal('f_unitprice', parsed.amount)) filled++;
       if (setInputVal('f_price', parsed.amount)) filled++;
+    }
+    if (D && D.STATE && D.STATE.modalForm === 'expense' && parsed.discount != null && parsed.discount > 0) {
+      if (setInputVal('f_discount', parsed.discount)) filled++;
     }
     if (setInputVal('f_notes', sanitizeOutward(parsed.notes || clean))) filled++;
 
@@ -1073,6 +1108,18 @@
     EDGE_STATE.lastVoiceStatus = `${tr('Voice Auto-Fill Applied')} (${filled || 1})`;
     if (D && typeof D.toast === 'function') D.toast(tr('Voice fields populated: review deterministic totals before posting'), 'ok');
     return { ok: true, filled: Math.max(1, filled), parsed };
+  }
+
+  function clearVoicePrompt(isDomainModal) {
+    if (isDomainModal) {
+      EDGE_STATE.indVoiceText = '';
+      const el = $('aieIndVoicePromptInput');
+      if (el) el.value = '';
+    } else {
+      EDGE_STATE.mfgVoiceText = '';
+      const el = $('aieMfgVoicePromptInput');
+      if (el) el.value = '';
+    }
   }
 
   function stopVoiceCapture() {
@@ -1088,7 +1135,7 @@
     }
   }
 
-  function startLiveSpeechCapture(inputEl, micBtn) {
+  function startLiveSpeechCapture(inputEl, micBtn, isDomainModal) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       if (inputEl) inputEl.focus({ preventScroll: true });
@@ -1099,6 +1146,7 @@
       stopVoiceCapture();
       return;
     }
+    EDGE_STATE.voiceTargetDom = Boolean(isDomainModal);
     const rec = new SR();
     const bcpMap = { en: 'en-US', ar: 'ar-LB', fr: 'fr-FR' };
     rec.lang = bcpMap[EDGE_STATE.voiceLang] || 'en-US';
@@ -1108,24 +1156,36 @@
     EDGE_STATE.voiceActive = true;
     if (micBtn) micBtn.classList.add('is-recording');
 
+    const syncMicBtns = active => {
+      if (typeof document === 'undefined') return;
+      const targetBtn = $(EDGE_STATE.voiceTargetDom ? 'aieIndVoiceMicBtn' : 'aieMfgVoiceMicBtn') || micBtn;
+      document.querySelectorAll('#aieMfgVoiceMicBtn.is-recording, #aieIndVoiceMicBtn.is-recording').forEach(b => {
+        if (!active || b !== targetBtn) b.classList.remove('is-recording');
+      });
+      if (active && targetBtn) targetBtn.classList.add('is-recording');
+    };
     rec.onresult = ev => {
       let transcript = '';
       for (let i = 0; i < ev.results.length; i++) {
         transcript += ev.results[i][0].transcript + ' ';
       }
-      if (inputEl) inputEl.value = transcript.trim();
+      const txt = transcript.trim();
+      if (EDGE_STATE.voiceTargetDom) EDGE_STATE.indVoiceText = txt;
+      else EDGE_STATE.mfgVoiceText = txt;
+      const liveInp = $(EDGE_STATE.voiceTargetDom ? 'aieIndVoicePromptInput' : 'aieMfgVoicePromptInput') || inputEl;
+      if (liveInp) liveInp.value = txt;
     };
     rec.onend = () => {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     };
     rec.onerror = () => {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     };
     try { rec.start(); } catch (_) {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     }
   }
 
@@ -1176,6 +1236,16 @@
     const isSingleRecordEdit = isDomainModal
       ? Boolean($('indEntryModalEyebrow') && /EDIT DOMAIN RECORD/i.test($('indEntryModalEyebrow').textContent || ''))
       : isEditingAnyMfgRecord();
+    if (inp) {
+      inp.value = String((isDomainModal ? EDGE_STATE.indVoiceText : EDGE_STATE.mfgVoiceText) || '');
+      inp.addEventListener('input', () => {
+        if (isDomainModal) EDGE_STATE.indVoiceText = inp.value;
+        else EDGE_STATE.mfgVoiceText = inp.value;
+      });
+    }
+    if (micBtn && EDGE_STATE.voiceActive && EDGE_STATE.voiceTargetDom === Boolean(isDomainModal)) {
+      micBtn.classList.add('is-recording');
+    }
     if (batchBtn && (isSingleRecordEdit || !canUseBatchIntake())) batchBtn.hidden = true;
     const qBarMob = $(isDomainModal ? 'indMobAiQuickBar' : 'entryMobAiQuickBar');
     const qBatchMob = qBarMob ? qBarMob.querySelector('[data-mob-ai="batch"]') : null;
@@ -1191,7 +1261,7 @@
     if (micBtn) {
       micBtn.addEventListener('click', e => {
         e.stopPropagation();
-        startLiveSpeechCapture(inp, micBtn);
+        startLiveSpeechCapture(inp, micBtn, isDomainModal);
       });
     }
     if (applyBtn) {
@@ -1213,6 +1283,8 @@
         e.stopPropagation();
         const txt = smpBtn.getAttribute('data-sample-voice') || '';
         if (inp) inp.value = txt;
+        if (isDomainModal) EDGE_STATE.indVoiceText = txt;
+        else EDGE_STATE.mfgVoiceText = txt;
         await applyVoiceToActiveModal(txt, isDomainModal);
       });
     }
@@ -6213,11 +6285,13 @@
       EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
       EDGE_STATE.hygieneBusy = false;
       EDGE_STATE.hygieneAiSuggestions = {};
+      EDGE_STATE.hygieneSwappedPairs = {};
       EDGE_STATE.hygieneLastStatus = '';
       EDGE_STATE.hygieneLastStatusSpec = null;
     } else if (_lastHygieneView !== null && _lastHygieneView !== curHygieneView) {
       EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
       EDGE_STATE.hygieneBusy = false;
+      EDGE_STATE.hygieneSwappedPairs = {};
       EDGE_STATE.hygieneLastStatus = '';
       EDGE_STATE.hygieneLastStatusSpec = null;
     }
@@ -6239,6 +6313,7 @@
       EDGE_STATE.batchRows = [];
       resetCloseStudioState();
       EDGE_STATE.hygieneAiSuggestions = {};
+      EDGE_STATE.hygieneSwappedPairs = {};
       EDGE_STATE.hygieneLastStatus = '';
       EDGE_STATE.hygieneLastStatusSpec = null;
     }
@@ -6303,7 +6378,7 @@
       mountVoiceAndBatchOnEntryBar(indScanBar, true);
     }
 
-    if (EDGE_STATE.voiceActive && (!mfgModal || mfgModal.hidden) && (!indModal || indModal.hidden)) {
+    if (EDGE_STATE.voiceActive && ((EDGE_STATE.voiceTargetDom && !indEditable) || (!EDGE_STATE.voiceTargetDom && !mfgEditable))) {
       stopVoiceCapture();
     }
 
@@ -6356,8 +6431,12 @@
       el._aieObserved = true;
       obs.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
     };
-    obs = new MutationObserver(() => {
+    obs = new MutationObserver(records => {
       observeModalTarget($('indDomainEntryModal'));
+      const dhPanel = $('dataHygienePanel');
+      if (dhPanel && records && records.length && records.every(r => r && dhPanel.contains(r.target))) {
+        return;
+      }
       scheduleSyncSurfaces();
     });
     const shell = $('appShell') || document.body;
@@ -6408,6 +6487,7 @@
     EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
     EDGE_STATE.hygieneBusy = false;
     EDGE_STATE.hygieneAiSuggestions = {};
+    EDGE_STATE.hygieneSwappedPairs = {};
     EDGE_STATE.hygieneLastStatus = '';
     EDGE_STATE.hygieneLastStatusSpec = null;
   }
@@ -9216,8 +9296,33 @@
       : {};
 
     const symPairKey = (a, b) => [dhNormBasic(a), dhNormBasic(b)].sort().join('|');
+    const tsCmp = (a, b) => {
+      if (D && typeof D.comparePartyHygieneTs === 'function') return D.comparePartyHygieneTs(a, b);
+      const ma = Date.parse(String(a || ''));
+      const mb = Date.parse(String(b || ''));
+      if (Number.isFinite(ma) && Number.isFinite(mb)) return ma < mb ? -1 : (ma > mb ? 1 : 0);
+      return String(a || '') < String(b || '') ? -1 : (String(a || '') > String(b || '') ? 1 : 0);
+    };
+    const coScope = (D && D.STATE && D.STATE.company) || '';
+    const resolveAnchorTarget = nm => {
+      if (D && typeof D.canonicalizePartyByHygiene === 'function') {
+        return D.canonicalizePartyByHygiene(spec.kind, nm, coScope, ind) || nm;
+      }
+      let cur = nm;
+      const seen = new Set();
+      for (let hop = 0; hop < 5; hop++) {
+        const curN = dhNormBasic(cur);
+        if (!curN || seen.has(curN)) break;
+        seen.add(curN);
+        const r = rulesStore[dhRuleKey(ind, spec.kind, cur)];
+        if (!r || r.status !== 'confirmed' || !r.canonical || dhNormBasic(r.canonical) === curN) break;
+        cur = r.canonical;
+      }
+      return cur;
+    };
+
     const pairMap = new Map();
-    const pushPair = (canonName, aliasName, source, reason, skelKey) => {
+    const pushPair = (canonName, aliasName, source, reason, skelKey, keepCaCanonical) => {
       const ca = String(canonName || '').trim();
       const al = String(aliasName || '').trim();
       if (!ca || !al) return;
@@ -9227,24 +9332,45 @@
       const digB = normalizeDigits(al).replace(/\D+/g, '');
       if (digA !== digB) return;
 
-      // Always choose higher MFG_FREQ count as canonical (Hard Rule 11)
+      // Always choose higher MFG_FREQ count as canonical (Hard Rule 11) unless cluster anchor or user swap overrides
       let topCanon = ca;
       let subAlias = al;
-      if (scoreOf(subAlias) > scoreOf(topCanon)) {
+      if (!keepCaCanonical && scoreOf(subAlias) > scoreOf(topCanon)) {
         topCanon = al;
         subAlias = ca;
       }
       const pk = symPairKey(topCanon, subAlias);
-      if (pairMap.has(pk)) return;
-      const rSub = rulesStore[dhRuleKey(ind, spec.kind, subAlias)] || null;
-      const rTop = rulesStore[dhRuleKey(ind, spec.kind, topCanon)] || null;
-      const matchesPartner = (r, partnerName) => Boolean(r && (r.status === 'confirmed' || r.status === 'dismissed') && dhNormBasic(r.canonical) === dhNormBasic(partnerName));
-      const ruleObj = matchesPartner(rSub, topCanon) ? rSub : (matchesPartner(rTop, subAlias) ? rTop : null);
-      pairMap.set(pk, {
-        canonical: ruleObj ? (ruleObj.canonical || topCanon) : topCanon,
-        alias: ruleObj ? (ruleObj.alias || subAlias) : subAlias,
-        canonFreq: scoreOf(topCanon),
-        aliasFreq: scoreOf(subAlias),
+      const kSub = dhRuleKey(ind, spec.kind, subAlias);
+      const kTop = dhRuleKey(ind, spec.kind, topCanon);
+      const rSub = rulesStore[kSub] || null;
+      const rTop = rulesStore[kTop] || null;
+      const matchesPartner = (r, aliasNm, partnerName) => Boolean(r && (
+        ((r.status === 'confirmed' || r.status === 'dismissed') && dhNormBasic(r.canonical) === dhNormBasic(partnerName))
+        || (r.status === 'confirmed' && dhNormBasic(resolveAnchorTarget(aliasNm)) === dhNormBasic(partnerName))
+      ));
+      const mSub = matchesPartner(rSub, subAlias, topCanon);
+      const mTop = matchesPartner(rTop, topCanon, subAlias);
+      let ruleObj = null;
+      if (mSub && mTop) {
+        const cmp = tsCmp(rSub.updated_at, rTop.updated_at);
+        ruleObj = (cmp > 0 || (cmp === 0 && kSub >= kTop)) ? rSub : rTop;
+      } else {
+        ruleObj = mSub ? rSub : (mTop ? rTop : null);
+      }
+      const swapKey = `${ind}|${spec.kind}|${pk}`;
+      const swapped = Boolean(!ruleObj && EDGE_STATE.hygieneSwappedPairs && EDGE_STATE.hygieneSwappedPairs[swapKey]);
+      const effCanon = ruleObj ? (ruleObj.canonical || topCanon) : (swapped ? subAlias : topCanon);
+      const effAlias = ruleObj ? (ruleObj.alias || subAlias) : (swapped ? topCanon : subAlias);
+      const effPk = ruleObj ? symPairKey(effCanon, effAlias) : pk;
+      if (pairMap.has(effPk) || pairMap.has(pk)) return;
+      pairMap.set(effPk, {
+        pairKey: effPk,
+        swapKey,
+        swapped,
+        canonical: effCanon,
+        alias: effAlias,
+        canonFreq: scoreOf(effCanon),
+        aliasFreq: scoreOf(effAlias),
         skeleton: skelKey || '',
         source: source || 'deterministic',
         reason: sanitizeOutward(reason || 'Phonetic / transliteration match'),
@@ -9255,9 +9381,19 @@
 
     buckets.forEach((arr, skelKey) => {
       if (!arr || arr.length < 2) return;
-      const canon = arr[0];
-      for (let i = 1; i < arr.length; i++) {
-        pushPair(canon, arr[i], 'deterministic', `Phonetic / cross-script skeleton "${skelKey}"`, skelKey);
+      let canon = arr[0];
+      let anchorPinned = false;
+      const target0 = resolveAnchorTarget(canon);
+      if (target0 && dhNormBasic(target0) !== dhNormBasic(canon)) {
+        const memberHit = arr.find(x => dhNormBasic(x) === dhNormBasic(target0));
+        if (memberHit) {
+          canon = memberHit;
+          anchorPinned = true;
+        }
+      }
+      for (let i = 0; i < arr.length; i++) {
+        if (dhNormBasic(arr[i]) === dhNormBasic(canon)) continue;
+        pushPair(canon, arr[i], 'deterministic', `Phonetic / cross-script skeleton "${skelKey}"`, skelKey, anchorPinned);
       }
     });
 
@@ -9275,27 +9411,34 @@
 
     const pending = [];
     const resolved = [];
+    const resolvedByPk = new Map();
     pairMap.forEach(entry => {
       if (entry.status === 'pending') pending.push(entry);
-      else resolved.push(entry);
+      else resolvedByPk.set(entry.pairKey || symPairKey(entry.canonical, entry.alias), entry);
     });
     Object.values(rulesStore || {}).forEach(rv => {
       if (!rv || typeof rv !== 'object' || (rv.status !== 'confirmed' && rv.status !== 'dismissed')) return;
       const pk = symPairKey(rv.canonical, rv.alias);
       if (!pairMap.has(pk)) {
-        resolved.push({
-          canonical: rv.canonical,
-          alias: rv.alias,
-          canonFreq: scoreOf(rv.canonical),
-          aliasFreq: scoreOf(rv.alias),
-          skeleton: 'saved',
-          source: rv.source || 'deterministic',
-          reason: sanitizeOutward(rv.reason || 'Saved alias decision'),
-          rule: rv,
-          status: rv.status
-        });
+        const prevRes = resolvedByPk.get(pk);
+        const cmp = prevRes ? tsCmp(rv.updated_at, prevRes.rule && prevRes.rule.updated_at) : 1;
+        if (!prevRes || cmp > 0 || (cmp === 0 && String(rv.key || '') > String((prevRes.rule && prevRes.rule.key) || ''))) {
+          resolvedByPk.set(pk, {
+            pairKey: pk,
+            canonical: rv.canonical,
+            alias: rv.alias,
+            canonFreq: scoreOf(rv.canonical),
+            aliasFreq: scoreOf(rv.alias),
+            skeleton: 'saved',
+            source: rv.source || 'deterministic',
+            reason: sanitizeOutward(rv.reason || 'Saved alias decision'),
+            rule: rv,
+            status: rv.status
+          });
+        }
       }
     });
+    resolvedByPk.forEach(entry => resolved.push(entry));
 
     return {
       view: viewKey,
@@ -9439,12 +9582,12 @@
     } finally {
       if (EDGE_STATE.hygieneReqGen === startGen) {
         EDGE_STATE.hygieneBusy = false;
-        if (isStillCurrent()) mountDataHygienePanel();
+        if (isStillCurrent()) mountDataHygienePanel(true);
       }
     }
   }
 
-  function mountDataHygienePanel() {
+  function mountDataHygienePanel(forceRebuild) {
     const viewKey = (D && D.STATE && D.STATE.view) || '';
     const spec = DH_VIEW_SPEC[viewKey];
     const oldPanel = $('dataHygienePanel');
@@ -9461,19 +9604,45 @@
     const data = computeDataHygieneClusters(viewKey);
     const pendingCnt = data.pending.length;
     const resolvedCnt = data.resolved.length;
+    const curLang = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
+      ? String(window.MFG_I18N.getLang() || 'en')
+      : 'en';
+    const dhSig = [
+      viewKey,
+      data.industry,
+      data.kind,
+      curLang,
+      EDGE_STATE.hygieneBusy ? 1 : 0,
+      EDGE_STATE.hygieneShowResolved ? 1 : 0,
+      EDGE_STATE.hygieneCollapsed ? 1 : 0,
+      pendingCnt,
+      resolvedCnt,
+      EDGE_STATE.hygieneLastStatus || '',
+      data.pending.slice(0, 30).map(it => `${it.canonical}\x1f${it.alias}\x1f${it.status}\x1f${it.source}\x1f${it.skeleton}\x1f${it.swapped ? 1 : 0}`).join('\x1e'),
+      EDGE_STATE.hygieneShowResolved
+        ? data.resolved.slice(0, 40).map(it => `${it.canonical}\x1f${it.alias}\x1f${it.status}\x1f${(it.rule && it.rule.updated_at) || ''}`).join('\x1e')
+        : ''
+    ].join('\x1d');
+
+    if (!forceRebuild && oldPanel && oldPanel.isConnected && oldPanel.parentElement === hostPanel && oldPanel.getAttribute('data-dh-sig') === dhSig) {
+      return oldPanel;
+    }
 
     const panel = oldPanel || document.createElement('div');
     panel.id = 'dataHygienePanel';
     panel.className = 'aie-hygiene-panel';
     panel.setAttribute('data-dh-view', viewKey);
     panel.setAttribute('data-dh-kind', data.kind);
+    panel.setAttribute('data-dh-sig', dhSig);
 
     const rowsHtml = data.pending.length
       ? data.pending.slice(0, 30).map((item, idx) => `
           <div class="aie-dh-row" data-dh-row="${idx}">
             <div class="aie-dh-pair">
+              <span class="aie-dh-keep-lbl">Keep</span>
               <span class="aie-dh-canon" data-no-i18n="1">${esc(item.canonical)}</span>
-              <span class="aie-dh-meta">matches</span>
+              <button type="button" class="btn btn-ghost-bar btn-sm aie-dh-swap-btn" data-dh-swap="${idx}" data-ui-tip="Switch which name is kept" aria-label="Switch which name is kept">${ic('swap')} <span>Switch</span></button>
+              <span class="aie-dh-meta">alias</span>
               <span class="aie-dh-alias" data-no-i18n="1">${esc(item.alias)}</span>
               <span class="aie-dh-meta"><span data-no-i18n="1">(</span><span class="aie-dh-src">${item.source === 'ai' ? 'AI Edge' : 'Local'}</span><span data-no-i18n="1"> · </span>${renderDhReasonHtml(item)}<span data-no-i18n="1">)</span></span>
             </div>
@@ -9489,11 +9658,13 @@
       ? `<div class="aie-dh-list" id="dhResolvedList">${data.resolved.slice(0, 40).map((item, idx) => `
           <div class="aie-dh-row" data-dh-res-row="${idx}">
             <div class="aie-dh-pair">
+              ${item.status === 'confirmed' ? '<span class="aie-dh-keep-lbl">Keep</span>' : ''}
               <span class="aie-dh-canon" data-no-i18n="1">${esc(item.canonical)}</span>
               <span class="aie-dh-meta">${item.status === 'confirmed' ? 'Confirmed Alias' : 'Kept Separate'}</span>
               <span class="aie-dh-alias" data-no-i18n="1">${esc(item.alias)}</span>
             </div>
             <div class="aie-dh-row-btns">
+              ${item.status === 'confirmed' ? `<button type="button" class="btn btn-ghost-bar btn-sm aie-dh-swap-btn" data-dh-flip-resolved="${idx}" data-ui-tip="Switch which name is kept" aria-label="Switch which name is kept">${ic('swap')} <span>Switch</span></button>` : ''}
               <button type="button" class="btn btn-ghost-bar btn-sm" data-dh-undo="${idx}">Undo</button>
             </div>
           </div>
@@ -9533,16 +9704,51 @@
     if (togBtn) {
       togBtn.onclick = () => {
         EDGE_STATE.hygieneShowResolved = !EDGE_STATE.hygieneShowResolved;
-        mountDataHygienePanel();
+        mountDataHygienePanel(true);
       };
     }
     const colBtn = $('dhCollapseBtn');
     if (colBtn) {
       colBtn.onclick = () => {
         EDGE_STATE.hygieneCollapsed = !EDGE_STATE.hygieneCollapsed;
-        mountDataHygienePanel();
+        mountDataHygienePanel(true);
       };
     }
+    panel.querySelectorAll('[data-dh-swap]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-dh-swap'));
+        const item = data.pending[idx];
+        if (!item || !item.swapKey) return;
+        if (!EDGE_STATE.hygieneSwappedPairs || typeof EDGE_STATE.hygieneSwappedPairs !== 'object') {
+          EDGE_STATE.hygieneSwappedPairs = {};
+        }
+        if (EDGE_STATE.hygieneSwappedPairs[item.swapKey]) {
+          delete EDGE_STATE.hygieneSwappedPairs[item.swapKey];
+        } else {
+          EDGE_STATE.hygieneSwappedPairs[item.swapKey] = true;
+        }
+        mountDataHygienePanel(true);
+      });
+    });
+    panel.querySelectorAll('[data-dh-flip-resolved]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-dh-flip-resolved'));
+        const item = data.resolved[idx];
+        if (!item || item.status !== 'confirmed' || !D.savePartyHygieneDecision) return;
+        D.savePartyHygieneDecision({
+          industry: data.industry,
+          kind: data.kind,
+          alias: item.canonical,
+          canonical: item.alias,
+          status: 'confirmed',
+          source: item.source,
+          reason: item.reason
+        });
+        EDGE_STATE.hygieneLastStatusSpec = { type: 'confirm', alias: item.canonical, canonical: item.alias };
+        EDGE_STATE.hygieneLastStatus = `Confirmed Alias: ${item.canonical} maps to ${item.alias} (forms only; historical balances unchanged).`;
+        mountDataHygienePanel(true);
+      });
+    });
     panel.querySelectorAll('[data-dh-confirm]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = Number(btn.getAttribute('data-dh-confirm'));
@@ -9557,9 +9763,12 @@
           source: item.source,
           reason: item.reason
         });
+        if (item.swapKey && EDGE_STATE.hygieneSwappedPairs) {
+          delete EDGE_STATE.hygieneSwappedPairs[item.swapKey];
+        }
         EDGE_STATE.hygieneLastStatusSpec = { type: 'confirm', alias: item.alias, canonical: item.canonical };
         EDGE_STATE.hygieneLastStatus = `Confirmed Alias: ${item.alias} maps to ${item.canonical} (forms only; historical balances unchanged).`;
-        mountDataHygienePanel();
+        mountDataHygienePanel(true);
       });
     });
     panel.querySelectorAll('[data-dh-dismiss]').forEach(btn => {
@@ -9576,9 +9785,12 @@
           source: item.source,
           reason: item.reason
         });
+        if (item.swapKey && EDGE_STATE.hygieneSwappedPairs) {
+          delete EDGE_STATE.hygieneSwappedPairs[item.swapKey];
+        }
         EDGE_STATE.hygieneLastStatusSpec = { type: 'dismiss', alias: item.alias, canonical: item.canonical };
         EDGE_STATE.hygieneLastStatus = `Kept Separate: ${item.alias} / ${item.canonical} (will not be flagged together).`;
-        mountDataHygienePanel();
+        mountDataHygienePanel(true);
       });
     });
     panel.querySelectorAll('[data-dh-undo]').forEach(btn => {
@@ -9597,7 +9809,7 @@
         });
         EDGE_STATE.hygieneLastStatusSpec = { type: 'undo', alias: item.alias, canonical: item.canonical };
         EDGE_STATE.hygieneLastStatus = `Restored pair for review: ${item.alias} / ${item.canonical}.`;
-        mountDataHygienePanel();
+        mountDataHygienePanel(true);
       });
     });
 
@@ -9669,6 +9881,7 @@
     getPhase17CloseSnapshot,
     parseVoiceUtteranceLocal,
     applyVoiceToActiveModal,
+    clearVoicePrompt,
     stopVoiceCapture,
     parseBatchTextToRows,
     openBatchIntakeModal,

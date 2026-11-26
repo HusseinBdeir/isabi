@@ -916,11 +916,9 @@
   }
 }
 
-@media (max-width: 768px) {
-  #entryModal:not(.mob-ai-voice-open) #aieMfgVoiceStrip,
-  #indDomainEntryModal:not(.mob-ai-voice-open) #aieIndVoiceStrip {
-    display: none !important;
-  }
+#entryModal:not(.mob-ai-voice-open) #aieMfgVoiceStrip,
+#indDomainEntryModal:not(.mob-ai-voice-open) #aieIndVoiceStrip {
+  display: none !important;
 }
 
 /* Data Hygiene Alias Clustering Panel inside Universal Registry Panels */
@@ -1007,6 +1005,46 @@
   color: #281D15;
 }
 :root[data-theme="dark"] .aie-dh-canon {
+  color: #FEF3C7;
+}
+.aie-dh-keep-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #8A5A19;
+  background: rgba(183, 121, 31, 0.10);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+:root[data-theme="dark"] .aie-dh-keep-lbl {
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.18);
+}
+.aie-dh-swap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.25;
+  border: 1px solid #DEC9AE;
+  background: #FFFDF9;
+  color: #6E512D;
+}
+.aie-dh-swap-btn:hover {
+  background: #FAF3E8;
+  border-color: #C9A97E;
+  color: #281D15;
+}
+:root[data-theme="dark"] .aie-dh-swap-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(240, 144, 69, 0.28);
+  color: #E5D9C3;
+}
+:root[data-theme="dark"] .aie-dh-swap-btn:hover {
+  background: rgba(240, 144, 69, 0.14);
+  border-color: rgba(240, 144, 69, 0.55);
   color: #FEF3C7;
 }
 .aie-dh-alias {
