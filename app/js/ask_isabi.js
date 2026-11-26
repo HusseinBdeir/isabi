@@ -291,8 +291,11 @@
   function isHubNavigationPrompt(cleanQ) {
     const low = String(cleanQ || '').toLowerCase().trim();
     if (!low) return false;
+    const isAnalyticalQ = /\b(?:addeh|addesh|2addeh|kam|lesh|leysh|how\s+many|what\s+is|what\s+are|why\b|total\s+of)\b/i.test(low);
     return /\b(?:take\s+me\s+(?:straight\s+|right\s+)?to|bring\s+me\s+to|go\s+to|jump\s+to|switch\s+to|navigate\s+to|open(?:\s+it|\s+this|\s+me)?\s+in(?:\s+the)?\s+(?:hub|tab|register|page)|(?:open|filter)\s+(?:the\s+)?[^.!?\n]{0,120}?\b(?:hub|tab|register))\b/i.test(low)
-      || (!/\b(?:how\s+many|what\s+is|what\s+are|why\b|total\s+of)\b/i.test(low) && /^(?:please\s+)?(?:open|filter)\s+(?:the\s+)?[^.!?\n]{0,120}?\b(?:loans?|splits?|stock|yard|chassis|leases?|policies|remittances?|renewals?)\b/i.test(low))
+      || (!isAnalyticalQ && /^(?:please\s+)?(?:open|filter)\s+(?:the\s+)?[^.!?\n]{0,120}?\b(?:sales|raw|materials?|expenses?|suppliers?|customers?|payroll|fleet|warehouse|loans?|splits?|stock|yard|chassis|leases?|invoices?|policies|remittances?|renewals?|claims?|billing)\b/i.test(low))
+      || (!isAnalyticalQ && /\b(?:efta7|afta7|ifta7|farjine|farjini|warjine|warjini|5odne|khodne|khodni|rou7\s+3a|ruh\s+3a|falter|saffe|saffi)\b/i.test(low)
+        && /\b(?:hub|tab|register|page|fawatir|fawateer|fatoura|mabi3at|mawad|kasara|kassara|na2el|na2l|sha7en|masarif|masrouf|mowarridin|mowarrid|zbayen|3omala|mazout|astoul|siyane|a3tal|ma3ashat|rawateb|dawam|7odour|makhzan|as3ar|ijarat|ijar|4235|shalehat|ishtirakat|bawales|mutalabat|tajdid|shoraka|2ouroud|sales|raw|materials?|expenses?|suppliers?|customers?|payroll|fleet|warehouse|leases?|invoices?|policies|claims|loans?)\b/i.test(low))
       || /^(?:to\s+the\s+hub|open\s+hub|go\s+to\s+hub)[\s!.,?]*$/i.test(low)
       || /(خذني|انتقل|توجه|افتح|فلتر|صفي).*(المركز|التبويب|السجل|الصفحة|المواد|المبيعات|المصاريف|الموردين|العملاء|الرواتب|الأسطول|المستودع|الإيجارات|العقود|البوالص|الشركاء|الفواتير|المطالبات|القروض)/.test(cleanQ)
       || /\b(?:emm[èe]ne|am[èe]ne|ouvre|ouvrir|aller|va|filtre|filtrer)\b.*\b(?:hub|onglet|registre|mat[ée]riaux|ventes|d[ée]penses|fournisseurs|clients|paie|baux|contrats|polices|associ[ée]s|factures|sinistres|pr[êe]ts)\b/i.test(low);
@@ -392,6 +395,15 @@
         if (c && c.name && c.name.length >= 4 && low.includes(c.name.toLowerCase())) {
           mentionedCo = { name: c.name, key: mapCompanyNameToKey(c.name) };
           break;
+        }
+      }
+      if (!mentionedCo && /\b4235\b/.test(low) && !/(?:ticket|tkt|no|#)\s*4235\b/i.test(low)) {
+        const curInd = (_ctx && typeof _ctx.getActiveIndustry === 'function' && _ctx.STATE)
+          ? _ctx.getActiveIndustry(_ctx.STATE.company)
+          : '';
+        if (curInd === 'Real Estate & Property' || /\b(?:4235\s+company|real\s+estate|rent|leases?|fawatir|fawateer|ijarat?|invoices?)\b|فواتير|إيجار/i.test(low)) {
+          const co4235 = catalog.find(c => c && /4235/i.test(c.name));
+          if (co4235) mentionedCo = { name: co4235.name, key: co4235.key || mapCompanyNameToKey(co4235.name) };
         }
       }
     }
@@ -1620,6 +1632,467 @@
     return null;
   }
 
+  const HUB_NUMERIC_COL_PRIORITY = {
+    sales: ['total_ttc', 'total', 'qty'],
+    raw: ['total', 'cost', 'trans_cost', 'qty'],
+    expenses: ['amount'],
+    settle: ['amount'],
+    sups: ['ap_balance', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_settled'],
+    receipts: ['amount'],
+    custs: ['ar_balance', 'ar_60_plus', 'ar_1_60'],
+    vatinv: ['total_ttc', 'vat', 'total'],
+    fuel: ['total', 'litres'],
+    pay_sal: ['amount', 'month_earnings'],
+    payroll: ['amount', 'month_earnings'],
+    re_leases: ['annual_ttc_usd', 'ttc_period_usd', 'deposit_usd'],
+    re_invoicing: ['amount_ttc_usd', 'open_ar_usd', 'collected_usd', 'net_usd'],
+    re_receipts: ['gross_usd', 'allocated_inv_usd', 'unallocated_adv_usd'],
+    re_sales: ['contract_usd', 'balance_usd', 'paid_usd'],
+    re_workorders: ['actual_usd', 'budget_usd'],
+    trd_sales: ['ttc_usd', 'net_usd', 'qty'],
+    trd_trucks: ['list_price_usd', 'landed_cost_usd', 'fob_usd', 'margin_usd'],
+    trd_purchases: ['total_landed_usd', 'fob_usd'],
+    trd_receivables: ['gross_ar_usd', 'invoiced_ttc', 'settled_usd'],
+    trd_stock: ['stock_val_usd', 'on_hand', 'wac_usd', 'retail_usd'],
+    hsp_revenue: ['ttc_usd', 'ht_usd', 'covers'],
+    hsp_memberships: ['contract_usd', 'balance_usd', 'paid_usd'],
+    hsp_pos: ['pos_billed_ttc', 'cash_usd', 'variance_usd'],
+    hsp_stock: ['closing_usd', 'purchases_in_usd'],
+    hsp_energy: ['diesel_used_l', 'kwh_gen', 'run_hours'],
+    hsp_partners: ['gross_pool_usd', 'open_payable_usd'],
+    hld_interactions: ['usd', 'givenUsd', 'paidBackUsd'],
+    hld_consolidation: ['netUnpaidUsd', 'givenUsd', 'paidBackUsd'],
+    hld_partners: ['netUsd', 'inUsd', 'outUsd'],
+    hld_loans: ['principal'],
+    ins_policies: ['gross_prem_usd', 'net_comm_usd', 'net_payable_4017_usd'],
+    ins_billing: ['client_billed_4112_usd', 'open_ar_4112_usd', 'collected_usd'],
+    ins_claims: ['claimed_usd', 'approved_usd'],
+    ins_remittances: ['net_payable_4017_usd', 'gross_prem_usd', 'client_cash_held_usd'],
+    ins_statements: ['expected_comm_4117_usd', 'statement_comm_usd', 'variance_usd']
+  };
+
+  const HUB_UNPAID_NUMERIC_COL = {
+    re_invoicing: 'open_ar_usd',
+    ins_billing: 'open_ar_4112_usd',
+    customers: 'ar_balance',
+    custs: 'ar_balance',
+    suppliers: 'ap_balance',
+    sups: 'ap_balance',
+    trd_receivables: 'gross_ar_usd',
+    re_sales: 'balance_usd',
+    hsp_memberships: 'balance_usd',
+    ins_remittances: 'net_payable_4017_usd'
+  };
+
+  const HUB_QTY_NUMERIC_COL = {
+    sales: 'qty',
+    raw: 'qty',
+    fuel: 'litres',
+    trd_sales: 'qty',
+    trd_stock: 'on_hand',
+    hsp_energy: 'diesel_used_l'
+  };
+
+  const HUB_NAV_STOPWORDS = new Set([
+    'open', 'show', 'filter', 'take', 'bring', 'go', 'jump', 'switch', 'navigate', 'please', 'me', 'straight',
+    'right', 'to', 'the', 'a', 'an', 'for', 'with', 'in', 'on', 'of', 'and', 'or', 'by', 'from', 'at', 'as',
+    'hub', 'tab', 'register', 'registers', 'page', 'view', 'list', 'all', 'only', 'records', 'record', 'rows',
+    'entries', 'entry', 'usd', 'lbp', 'll', 'dollars', 'dollar', 'over', 'above', 'more', 'than', 'under',
+    'below', 'less', 'least', 'most', 'up', 'between', 'no', 'not',
+    'ouvre', 'ouvrir', 'aller', 'va', 'filtre', 'filtrer', 'emmmene', 'emmene', 'amene', 'onglet', 'registre',
+    'pour', 'sur', 'dans', 'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'avec', 'plus', 'moins',
+    'entre', 'au',
+    'efta7', 'afta7', 'ifta7', 'farjine', 'farjini', 'warjine', 'warjini', '5odne', 'khodne', 'khodni', 'rou7',
+    'ruh', '3a', 'falter', 'saffe', 'saffi', 'men', 'min', 'el', 'al', 'li', 'bil', 'bi', 'fi', '3an', 'ma3', 'w',
+    'aktar', 'akthar', '2aktar', 'a2al', '2a2al', 'fo2', 'faw2', 'ta7et', 'ta7t', '3al', 'ben', 'bas', 'kel',
+    'افتح', 'خذني', 'انتقل', 'توجه', 'فلتر', 'صفي', 'إلى', 'الى', 'في', 'من', 'على', 'عن', 'مع', 'و', 'ال',
+    'تبويب', 'سجل', 'مركز', 'صفحة', 'أكثر', 'اكثر', 'أقل', 'اقل', 'فوق', 'تحت', 'بين', 'كل', 'فقط', 'دولار'
+  ]);
+
+  function parseHubNumToken(raw) {
+    let s = String(raw || '').trim().toLowerCase().replace(/[\s$,]/g, '');
+    if (!s) return NaN;
+    let mult = 1;
+    if (s.endsWith('k')) {
+      mult = 1000;
+      s = s.slice(0, -1);
+    }
+    const n = Number(s);
+    return Number.isFinite(n) ? (Math.round(n * mult * 100) / 100) : NaN;
+  }
+
+  function extractNumericHubThreshold(cleanQ, scope, destView, cfView, targetInd, pool, flags, user) {
+    let text = String(cleanQ || '');
+    if (!text) return null;
+    if (scope && scope.customDateOverride && scope.dateRange && scope.dateRange.label) {
+      text = text.replace(new RegExp(String(scope.dateRange.label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), ' ');
+    }
+    if (targetInd === 'Real Estate & Property' || /\b4235\s+company\b/i.test(text)) {
+      text = text.replace(/\b4235(?:\s+company(?:\s+s\.?a\.?l\.?)?)?\b/ig, ' ');
+    }
+    text = text
+      .replace(/\b(?:from|between|du|entre)\s+202[4-9]\s+(?:and|to|et|au|-)\s+202[4-9]\b/ig, ' ')
+      .replace(/(?:من|بين)\s+202[4-9]\s+(?:إلى|الى|و|حتى)\s+202[4-9]/g, ' ')
+      .replace(/\b(?:in|during|for|year|en|dans|في|سنة)\s+202[4-9]\b/ig, ' ')
+      .replace(/\b202[4-9]-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?\b/g, ' ')
+      .replace(/\b\d[\d,]*(?:\.\d+)?\s*(?:days?|day|weeks?|wks?|months?|mos?|years?|yrs?|hours?|hrs?|min(?:ute)?s?|jours?|mois|ans?|heures?|iyem|youm)\b/ig, ' ')
+      .replace(/\d[\d,]*(?:\.\d+)?\s*(?:أيام|يوم|أسابيع|أشهر|شهر|سنة|سنوات|ساعات)/g, ' ');
+
+    const numPat = '(\\$?\\s*-?\\d[\\d,]*(?:\\.\\d+)?k?)';
+    const posNumPat = '(\\$?\\s*\\d[\\d,]*(?:\\.\\d+)?k?)';
+    let expr = '';
+    let matchedSpan = '';
+    let postUnitText = '';
+
+    const rangeChecks = [
+      new RegExp(`(?:\\bbetween|\\bfrom)\\s+${posNumPat}\\s+(?:and|to|-|\\.\\.)\\s+${posNumPat}`, 'i'),
+      new RegExp(`\\bentre\\s+${posNumPat}\\s+et\\s+${posNumPat}`, 'i'),
+      new RegExp(`بين\\s+${posNumPat}\\s+و\\s*${posNumPat}`, 'i'),
+      new RegExp(`\\bben\\s+${posNumPat}\\s+w\\s+${posNumPat}`, 'i'),
+      new RegExp(`${posNumPat}\\s*\\.\\.\\s*${posNumPat}`, 'i')
+    ];
+    for (const rx of rangeChecks) {
+      const m = text.match(rx);
+      if (m) {
+        const a = parseHubNumToken(m[1]);
+        const b = parseHubNumToken(m[2]);
+        const bothYears = /^202[4-9]$/.test(String(m[1]).trim()) && /^202[4-9]$/.test(String(m[2]).trim());
+        if (Number.isFinite(a) && Number.isFinite(b) && !bothYears) {
+          expr = `${Math.min(a, b)}..${Math.max(a, b)}`;
+          matchedSpan = m[0];
+          postUnitText = text.slice((m.index || 0) + m[0].length, (m.index || 0) + m[0].length + 24);
+          break;
+        }
+      }
+    }
+
+    if (!expr) {
+      const opChecks = [
+        { op: '>=', re: new RegExp(`(?:>=|\\bat\\s+least|\\bno\\s+less\\s+than|\\bnot\\s+less\\s+than|\\bmin(?:imum)?(?:\\s+of)?|\\bau\\s+moins|\\b3al\\s+a2al|على\\s+الأقل)\\s*${numPat}`, 'i') },
+        { op: '<=', re: new RegExp(`(?:<=|\\bat\\s+most|\\bno\\s+more\\s+than|\\bnot\\s+more\\s+than|\\bup\\s+to|\\bmax(?:imum)?(?:\\s+of)?|\\bau\\s+plus|على\\s+الأكثر|حتى)\\s*${numPat}`, 'i') },
+        { op: '>', re: new RegExp(`(?:>|\\bover|\\babove|\\bmore\\s+than|\\bgreater\\s+than|\\bexceeding|\\bplus\\s+de|\\bsup[ée]rieur\\s+[àa]|\\baktar\\s+men|\\bakthar\\s+men|\\b2aktar\\s+men|\\bfo2|\\bfaw2|أكثر\\s+من|اكثر\\s+من|أكبر\\s+من|اكبر\\s+من|فوق|أعلى\\s+من)\\s*${numPat}`, 'i') },
+        { op: '<', re: new RegExp(`(?:<|\\bunder|\\bbelow|\\bless\\s+than|\\bfewer\\s+than|\\bsmaller\\s+than|\\bmoins\\s+de|\\binf[ée]rieur\\s+[àa]|\\ba2al\\s+men|\\b2a2al\\s+men|\\bta7et|\\bta7t|أقل\\s+من|اقل\\s+من|أصغر\\s+من|تحت|دون)\\s*${numPat}`, 'i') }
+      ];
+      for (const chk of opChecks) {
+        const m = text.match(chk.re);
+        if (m) {
+          const val = parseHubNumToken(m[1]);
+          if (Number.isFinite(val)) {
+            expr = `${chk.op}${val}`;
+            matchedSpan = m[0];
+            postUnitText = text.slice((m.index || 0) + m[0].length, (m.index || 0) + m[0].length + 24);
+            break;
+          }
+        }
+      }
+    }
+    if (!expr) return null;
+
+    const tk = (_ctx && typeof _ctx.viewToTableKey === 'function') ? _ctx.viewToTableKey(cfView || destView) : (cfView || destView);
+    const isBlocked = col => (
+      (_ctx && typeof _ctx.isMaskedFieldAccessBlocked === 'function' && _ctx.isMaskedFieldAccessBlocked(tk, col, user))
+      || (typeof window !== 'undefined' && typeof window.__mfgIsTableColRestricted === 'function' && window.__mfgIsTableColRestricted(tk, col, null, user, cfView || destView))
+    );
+    const finAllowed = (_ctx && typeof _ctx.canShowAskSliceFinancials === 'function')
+      ? _ctx.canShowAskSliceFinancials(destView, cfView, user)
+      : true;
+    const wantsQty = /^\s*(?:m3|m³|tons?|tonnes?|litres?|liters?|l\b|hrs?|hours?|units?)/i.test(postUnitText);
+    const wantsCurrency = /\$|\b(?:usd|dollars?|lbp|ll)\b|دولار/i.test(matchedSpan) || /\$|\b(?:usd|dollars?|lbp|ll)\b|دولار/i.test(postUnitText);
+
+    let targetCol = '';
+    if (wantsQty && !wantsCurrency && HUB_QTY_NUMERIC_COL[cfView]) {
+      const qc = HUB_QTY_NUMERIC_COL[cfView];
+      if (!isBlocked(qc)) targetCol = qc;
+    }
+    if (!targetCol && flags && flags.isUnpaidQ && HUB_UNPAID_NUMERIC_COL[cfView]) {
+      const uc = HUB_UNPAID_NUMERIC_COL[cfView];
+      if (finAllowed && !isBlocked(uc)) targetCol = uc;
+    }
+    if (!targetCol) {
+      const cands = HUB_NUMERIC_COL_PRIORITY[cfView] || HUB_NUMERIC_COL_PRIORITY[destView] || [];
+      const qtyOnlySet = new Set(['qty', 'litres', 'on_hand', 'diesel_used_l', 'kwh_gen', 'run_hours', 'covers']);
+      for (const c of cands) {
+        if (isBlocked(c)) continue;
+        if (wantsCurrency && qtyOnlySet.has(c)) continue;
+        if (!qtyOnlySet.has(c) && !finAllowed) continue;
+        if (Array.isArray(pool) && pool.length && pool.some(r => r && r[c] !== undefined && r[c] !== null && r[c] !== '')) {
+          targetCol = c;
+          break;
+        }
+        if (!Array.isArray(pool) || !pool.length || targetInd === 'Manufacturing') {
+          targetCol = c;
+          break;
+        }
+      }
+    }
+    if (!targetCol) {
+      return { col: '', expr: '', matchedSpan, blockedByRbac: true };
+    }
+    return { col: targetCol, expr, matchedSpan, blockedByRbac: false };
+  }
+
+  function computeUnresolvedNavTokens(cleanQ, scope, extraSpans = []) {
+    let rem = String(cleanQ || '').toLowerCase();
+    const stripReList = [
+      /\b(?:take\s+me\s+(?:straight\s+|right\s+)?to|bring\s+me\s+to|go\s+to|jump\s+to|switch\s+to|navigate\s+to)\b/ig,
+      /\b(?:efta7|afta7|ifta7|farjine|farjini|warjine|warjini|5odne|khodne|khodni|rou7\s+3a|ruh\s+3a|falter|saffe|saffi)\b/ig,
+      /\b(?:unpriced|pending\s+price|missing\s+price|no\s+price|sans\s+prix|non\s+tarif[ée]|mesh\s+msa3ar|mish\s+msa3ar|bala\s+se3er|bdoon\s+se3er)\b|غير\s*مسع[رّ]|بدون\s*سعر|بانتظار\s*السعر/ig,
+      /\b(?:unpaid|overdue|arrears|outstanding|open\s+balance|impay[ée]|en\s+retard|mesh\s+madfou3|mish\s+madfou3|mish\s+madfu3)\b|غير\s*مدفوع|متأخر/ig,
+      /\b(?:paid|settled|pay[ée]|r[ée]gl[ée]|madfou3|madfu3|cash|esp[èe]ces|comptant|na2de|na2di|credit|[àa]\s+cr[ée]dit|3al\s+7seb|3al\s+7sab)\b|مدفوع|مسدد|نقد[يا]|كاش|آجل|على\s+الحساب/ig,
+      /\b(?:deliver(?:y|ies)|livraison|tawsil|tawseel|pickup|pick-up|enl[èe]vement|istilam|overtime|night\s+trip|after[- ]hours|heures\s+sup)\b|توصيل|تسليم|استلام|إضافي|ليلي/ig,
+      /\b(?:available|showroom|in\s+pdi|reserved|sold|chalet|beach|event|wedding|restaurant|lounge|1[- ]sided|one[- ]sided|2[- ]sided|two[- ]sided|reconciled|unmatched|open|active|expired|expiring|within)\b/ig,
+      /\b(?:company\s+fleet|own\s+fleet|third[- ]party|hired\s+truck|heavy\s+truck|spare\s+parts|low\s*stock|reorder|backorder|gaps?|partial|variance|spike)\b/ig,
+      /\b(?:wtc|bbconstruction|bb\s+construction|bbc|lions\s+transport|lions|bdeir\s+holding|blanca|la\s+una|palms|voile|platinum|korri\s+auto|shacman|properties|4235(?:\s+company(?:\s+s\.?a\.?l\.?)?)?|insurance)\b/ig,
+      /\b(?:sales|raw|material|materials|quarry|transport|haul|haulage|expense|expenses|voucher|bill|supplier|suppliers|payable|settlement|customer|customers|receivable|receipt|repair|warning|defect|maint\w*|fuel|diesel|fleet|attendance|shift|payroll|salary|salaries|warehouse|stock|inventory|pricing|price|rates|agreement|ledger|gl|soa)\b/ig,
+      /\b(?:leases?|tenant|rent\s+roll|rent\s+invoices?|invoicing|billing|receipts?|payments?|collections?|property|properties|units?|work\s*orders?|sale\s+contracts?|buyers?|trucks?|yard|vin|chassis|warrant(?:y|ies)|imports?|landed|grn|customs|purchases?|receivables?|targets?|cabanas?|members?|memberships?|gym|pool|packages?|pos|till|energy|generators?|partners?|splits?|shareholders?|distributions?|loans?|facilit(?:y|ies)|banks?|treasury|intercompany|consolidation|renewals?|claims?|fnol|remittances?|bordereau[x]?|statements?|commissions?|policies|policy)\b/ig,
+      /\b(?:fawatir|fawateer|fatoura|mabi3at|mawad|kasara|kassara|na2el|na2l|sha7en|masarif|masrouf|mowarridin|mowarrid|zbayen|3omala|mazout|astoul|siyane|a3tal|ma3ashat|rawateb|dawam|7odour|makhzan|as3ar|ijarat|ijar|shalehat|ishtirakat|bawales|mutalabat|tajdid|shoraka|2ouroud)\b/ig,
+      /(?:المبيعات|المواد|المصاريف|المورد|فواتير|العملاء|صيانة|أعطال|مازوت|أسطول|دوام|حضور|رواتب|مستودع|أسعار|أستاذ|الإيجارات|العقود|البوالص|المطالبات|الشركاء|القروض|توصيل|شاليه|شاحن|نقل)/g,
+      /\b(?:ventes|mat[ée]riaux|d[ée]penses|fournisseurs?|clients?|pr[ée]sence|paie|tarif|baux|contrats|polices|associ[ée]s|factures?|sinistres?|pr[êe]ts|sans\s+prix)\b/ig,
+      /\b(?:today|today's|yesterday|yesterday's|this\s+month|current\s+month|last\s+month|previous\s+month|all[- ]time|overall|lifetime|hier|aujourd'hui|اليوم|أمس|امس)\b/ig,
+      /\b202[4-9](?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?\b/g,
+      /\b\d[\d,]*(?:\.\d+)?\s*(?:days?|day|weeks?|wks?|months?|mos?|years?|yrs?|hours?|hrs?|jours?|mois|ans?|heures?|iyem|youm)\b/ig
+    ];
+    stripReList.forEach(rx => { rem = rem.replace(rx, ' '); });
+    if (scope && scope.dateRange && scope.dateRange.label) {
+      rem = rem.replace(new RegExp(String(scope.dateRange.label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), ' ');
+    }
+    (extraSpans || []).forEach(sp => {
+      const s = String(sp || '').trim().toLowerCase();
+      if (!s) return;
+      const escS = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      rem = rem.replace(new RegExp(escS, 'ig'), ' ');
+    });
+    const out = [];
+    const seen = new Set();
+    rem.replace(/[?!.,;:"'()\[\]{}$€£]/g, ' ').split(/\s+/).forEach(tok => {
+      const t = tok.trim();
+      if (!t || t.length < 2 || /^\d+(?:\.\d+)?k?$/.test(t)) return;
+      if (HUB_NAV_STOPWORDS.has(t)) return;
+      if (!seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    });
+    return out.slice(0, 8);
+  }
+
+  function buildAllowedHubFilterSpec(destView, cfView, targetInd, coKey, user) {
+    const tk = (_ctx && typeof _ctx.viewToTableKey === 'function') ? _ctx.viewToTableKey(cfView || destView) : (cfView || destView);
+    const isBlocked = col => (
+      (_ctx && typeof _ctx.isMaskedFieldAccessBlocked === 'function' && _ctx.isMaskedFieldAccessBlocked(tk, col, user))
+      || (typeof window !== 'undefined' && typeof window.__mfgIsTableColRestricted === 'function' && window.__mfgIsTableColRestricted(tk, col, null, user, cfView || destView))
+    );
+    const finAllowed = (_ctx && typeof _ctx.canShowAskSliceFinancials === 'function')
+      ? _ctx.canShowAskSliceFinancials(destView, cfView, user)
+      : true;
+    const strColsByView = {
+      sales: ['customer', 'product', 'site', 'sale_type', 'method'],
+      raw: ['site_owner', 'truck_owner', 'site', 'product'],
+      expenses: ['supplier', 'category', 'equipment', 'method'],
+      customers: ['customer'],
+      suppliers: ['supplier'],
+      re_leases: ['tenant', 'property', 'unit', 'frequency', 'status'],
+      re_invoicing: ['tenant', 'period', 'status'],
+      re_receipts: ['tenant', 'property', 'method'],
+      re_workorders: ['property', 'contractor', 'unit', 'status'],
+      re_sales: ['property', 'buyer', 'unit'],
+      trd_sales: ['customer', 'category'],
+      trd_trucks: ['model', 'status', 'buyer'],
+      trd_purchases: ['supplier', 'status'],
+      trd_stock: ['warehouse', 'category'],
+      trd_receivables: ['customer'],
+      hsp_revenue: ['category', 'company'],
+      hsp_memberships: ['member', 'unit', 'season', 'status'],
+      hsp_pos: ['terminal', 'cashier', 'status'],
+      hsp_stock: ['store', 'item_group'],
+      hsp_partners: getSeatLens(user).partnerSplits ? ['partners_summary', 'category'] : [],
+      hld_interactions: ['fromCo', 'toCo', 'status'],
+      hld_consolidation: ['lenderCo', 'borrowerCo'],
+      hld_partners: getSeatLens(user).partnerSplits ? ['partner'] : [],
+      hld_loans: ['counterparty', 'direction'],
+      ins_policies: ['client', 'carrier', 'line', 'status'],
+      ins_billing: ['client', 'carrier', 'status'],
+      ins_claims: ['client', 'carrier', 'peril', 'status'],
+      ins_renewals: ['client', 'carrier', 'line', 'stage'],
+      ins_remittances: ['carrier'],
+      ins_statements: ['carrier', 'period']
+    };
+    const rawStrCols = (strColsByView[cfView] || strColsByView[destView] || []).filter(c => !isBlocked(c));
+    const rawNumCols = (HUB_NUMERIC_COL_PRIORITY[cfView] || HUB_NUMERIC_COL_PRIORITY[destView] || []).filter(c => {
+      if (isBlocked(c)) return false;
+      const isQtyOnly = /^(?:qty|litres|on_hand|diesel_used_l|kwh_gen|run_hours|covers)$/i.test(c);
+      return isQtyOnly || finAllowed;
+    });
+    const valuesByCol = {};
+    let pool = [];
+    if (targetInd === 'Manufacturing') {
+      const seedRecs = (_ctx && _ctx.SEED && _ctx.SEED.records) || {};
+      const tbl = destView === 'sales' ? 'sales_tickets' : (destView === 'raw' ? 'raw_purchases' : (destView === 'expenses' ? 'expenses' : ''));
+      if (tbl) {
+        pool = (_ctx && typeof _ctx.filterRecords === 'function')
+          ? _ctx.filterRecords(seedRecs[tbl] || [], { ignoreSearch: true, ignorePeriod: true, company: coKey, tableKey: tbl })
+          : (seedRecs[tbl] || []).filter(r => r && !r.voided);
+      }
+    } else if (_ctx && typeof _ctx.getViewFilterPool === 'function') {
+      pool = _ctx.getViewFilterPool(cfView, coKey) || [];
+    }
+    const freqApi = (typeof window !== 'undefined' && window.MFG_FREQ) ? window.MFG_FREQ() : null;
+    rawStrCols.forEach(c => {
+      const counts = new Map();
+      const dispByNorm = new Map();
+      pool.forEach(r => {
+        if (!r) return;
+        let v = r[c];
+        if (cfView === 'hld_loans' && c === 'counterparty') v = r.counterparty || r.party || r.borrower || r.lender;
+        if (cfView === 'hld_loans' && c === 'direction') v = r.side || r.type || r.direction;
+        if (c === 'partners_summary' && v) {
+          String(v).split('·').forEach(seg => {
+            const nm = seg.replace(/\s*\([^)]*%[^)]*\)\s*$/g, '').trim();
+            if (nm) {
+              const nk = norm(nm);
+              counts.set(nk, (counts.get(nk) || 0) + 1);
+              if (!dispByNorm.has(nk)) dispByNorm.set(nk, nm);
+            }
+          });
+          return;
+        }
+        const sv = String(v == null ? '' : v).trim();
+        if (!sv) return;
+        const nk = norm(sv);
+        counts.set(nk, (counts.get(nk) || 0) + 1);
+        if (!dispByNorm.has(nk)) dispByNorm.set(nk, sv);
+      });
+      const sortedVals = Array.from(dispByNorm.values()).sort((a, b) => {
+        const fa = (freqApi && typeof freqApi.score === 'function') ? Number(freqApi.score(c, a) || 0) : 0;
+        const fb = (freqApi && typeof freqApi.score === 'function') ? Number(freqApi.score(c, b) || 0) : 0;
+        return (fb - fa) || ((counts.get(norm(b)) || 0) - (counts.get(norm(a)) || 0));
+      }).slice(0, 40);
+      if (sortedVals.length) valuesByCol[c] = sortedVals;
+    });
+    const columns = rawStrCols.filter(c => Array.isArray(valuesByCol[c]) && valuesByCol[c].length).concat(rawNumCols);
+    return { view: String(cfView || destView || ''), columns, valuesByCol, numericCols: rawNumCols };
+  }
+
+  function scheduleAskHubAiEdgeFallback(turnRef, opts = {}) {
+    if (!turnRef || !opts || !opts.unresolvedTokens || !opts.unresolvedTokens.length) return;
+    const allowHeadless = typeof window !== 'undefined' && Boolean(window.__MFG_ALLOW_HEADLESS_AI_EDGE_NAV);
+    if ((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST)) {
+      if (!allowHeadless) return;
+    }
+    const spec = buildAllowedHubFilterSpec(opts.destView, opts.cfView, opts.targetInd, opts.coKey, opts.user);
+    if (!spec.columns.length) return;
+
+    const reqUser = opts.user || getActiveUser();
+    const reqUid = reqUser ? String(reqUser.id || reqUser.email || '') : '';
+    const reqEpoch = _chatState.sessionEpoch;
+    const initSt = (_ctx && _ctx.STATE) || (typeof window !== 'undefined' && window.STATE) || {};
+    const reqCo = initSt.company ? String(initSt.company) : '';
+    const base = (typeof window !== 'undefined' && window.ISABI_LOCAL_API) ? String(window.ISABI_LOCAL_API).replace(/\/$/, '') : '.';
+    const edgeFetch = (typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) ? window.ISABI_EDGE_FETCH : fetch;
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 4500) : null;
+    const promptTxt = [
+      `Map unresolved user navigation words into up to 3 candidate filter chips for register "${opts.cfView}".`,
+      `User query: ${JSON.stringify(String(opts.cleanQ || '').slice(0, 320))}`,
+      `Unresolved terms: ${JSON.stringify(opts.unresolvedTokens)}`,
+      `Allowed columns & exact values: ${JSON.stringify(spec)}`,
+      `Return ONLY valid JSON: {"suggestions":[{"label":"Short filter label","colFilters":{"col":"exact value or >N"}}]}.`,
+      `Rules: use ONLY columns in allowedFilterSpec.columns; for string columns use exact strings from valuesByCol; for numericCols use >N, >=N, <N, <=N, or A..B. Never use em-dashes or arrows.`
+    ].join('\n');
+
+    edgeFetch(`${base}/api/ai-edge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'ask_hub_nav_filters',
+        tier: 'fast',
+        prompt: promptTxt,
+        allowedFilterSpec: spec
+      }),
+      ...(ctrl ? { signal: ctrl.signal } : {})
+    }).then(r => (r && r.ok ? r.json() : null)).then(j => {
+      if (timer) clearTimeout(timer);
+      if (!j || !j.result || !Array.isArray(j.result.suggestions)) return;
+      const curSt = (_ctx && _ctx.STATE) || (typeof window !== 'undefined' && window.STATE) || {};
+      if (!curSt.authed || curSt.kioskLocked || _chatState.sessionEpoch !== reqEpoch) return;
+      if (reqCo && String(curSt.company || '') !== reqCo) return;
+      if (!_chatState.history.includes(turnRef)) return;
+      const curU = getActiveUser();
+      const curUid = curU ? String(curU.id || curU.email || '') : '';
+      if (reqUid && curUid !== reqUid) return;
+
+      const tk = (_ctx && typeof _ctx.viewToTableKey === 'function') ? _ctx.viewToTableKey(opts.cfView || opts.destView) : (opts.cfView || opts.destView);
+      const isBlocked = col => (
+        (_ctx && typeof _ctx.isMaskedFieldAccessBlocked === 'function' && _ctx.isMaskedFieldAccessBlocked(tk, col, curU))
+        || (typeof window !== 'undefined' && typeof window.__mfgIsTableColRestricted === 'function' && window.__mfgIsTableColRestricted(tk, col, null, curU, opts.cfView || opts.destView))
+      );
+      const allowedCols = new Set(spec.columns);
+      const numColSet = new Set(spec.numericCols);
+      const valLookupByCol = {};
+      Object.entries(spec.valuesByCol || {}).forEach(([ck, arr]) => {
+        const m = new Map();
+        (arr || []).forEach(v => {
+          const nk = norm(v);
+          if (nk && !m.has(nk)) m.set(nk, v);
+        });
+        valLookupByCol[ck] = m;
+      });
+
+      const validChips = [];
+      for (const s of j.result.suggestions) {
+        if (!s || typeof s !== 'object' || !s.colFilters || typeof s.colFilters !== 'object') continue;
+        const cleanCf = {};
+        let badField = false;
+        for (const [rawCol, rawVal] of Object.entries(s.colFilters)) {
+          const ck = String(rawCol || '').trim();
+          const sv = String(rawVal == null ? '' : rawVal).trim();
+          if (!ck || !sv || !allowedCols.has(ck) || isBlocked(ck)) {
+            badField = true;
+            break;
+          }
+          if (numColSet.has(ck)) {
+            if (!/^(?:>=|<=|!=|>|<|=)\s*-?\d+(?:\.\d+)?$/.test(sv) && !/^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d+(?:\.\d+)?$/.test(sv)) {
+              badField = true;
+              break;
+            }
+            cleanCf[ck] = sv;
+          } else {
+            const stripped = sv.replace(/^[=~]/, '').trim();
+            const exact = valLookupByCol[ck] ? valLookupByCol[ck].get(norm(stripped)) : '';
+            if (!exact) {
+              badField = true;
+              break;
+            }
+            cleanCf[ck] = ck === 'partners_summary' ? ('~' + exact) : exact;
+          }
+        }
+        if (badField || !Object.keys(cleanCf).length) continue;
+        const mergedCf = Object.assign({}, opts.baseColFilters || {}, cleanCf);
+        const lbl = cleanOut(String(s.label || Object.values(cleanCf).join(' · ')).replace(/\bTHEO\b/ig, '').trim()).slice(0, 48);
+        if (!lbl) continue;
+        validChips.push({
+          type: 'view',
+          isAiEdgeChip: true,
+          view: opts.destView,
+          cfView: opts.cfView,
+          coKey: opts.coKey || '',
+          colFilters: mergedCf,
+          chipFilter: opts.chipFilter || '',
+          panelId: opts.panelId || '',
+          periodSpec: opts.periodSpec || '',
+          dateRange: opts.dateRange || null,
+          label: lbl
+        });
+        if (validChips.length >= 3) break;
+      }
+      if (!validChips.length) return;
+      turnRef.actions = (Array.isArray(turnRef.actions) ? turnRef.actions : []).concat(validChips);
+      renderThread(false);
+    }).catch(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
   // ============================================================================
   // CORE LIVE-SQL DETERMINISTIC COPILOT INTENTS (EN / AR / FR)
   // ============================================================================
@@ -1759,14 +2232,18 @@
     const out = {};
     let chipFilter = '';
     const extraLabels = [];
+    const matchedSpans = [];
     const lens = getSeatLens(scope && scope.user);
     const freqApi = (typeof window !== 'undefined' && window.MFG_FREQ) ? window.MFG_FREQ() : null;
+    const activeIndCoName = (scope && scope.mentionedCo && scope.mentionedCo.name)
+      || (_ctx && _ctx.COMPANY_BU_MATCH && _ctx.COMPANY_BU_MATCH[targetCoKey || (scope && scope.coKey)])
+      || '';
 
-    const hasWholeVal = cand => {
+    const hasWholeVal = (cand, haystack = low) => {
       const sCand = String(cand || '').trim().toLowerCase();
       if (!sCand) return false;
       const escC = sCand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`(?:^|[^a-z0-9\\u0600-\\u06FF])${escC}(?:$|[^a-z0-9\\u0600-\\u06FF])`, 'i').test(low);
+      return new RegExp(`(?:^|[^a-z0-9_\\u0600-\\u06FF])${escC}(?:$|[^a-z0-9_\\u0600-\\u06FF])`, 'i').test(haystack);
     };
     const coStopSet = new Set([
       'all', 'n/a', 'na', '-', 'none', 'open', 'paid', 'active', 'cash', 'credit', 'delivery', 'pickup',
@@ -1781,11 +2258,39 @@
       'blanca', 'la una', 'palms', 'voile', 'platinum', 'korri auto', 'shacman', 'properties',
       '4235 company s.a.l', 'insurance'
     ]);
+    const colToHygieneKind = colKey => {
+      if (colKey === 'customer' || colKey === 'client' || colKey === 'tenant' || colKey === 'buyer' || colKey === 'member') return 'customer';
+      if (colKey === 'supplier' || colKey === 'site_owner' || colKey === 'truck_owner' || colKey === 'carrier' || colKey === 'contractor') return 'supplier';
+      if (colKey === 'site') return 'site';
+      if (colKey === 'staff') return 'staff';
+      if (colKey === 'counterparty') return 'counterparty';
+      return '';
+    };
     const rankCandidate = (valStr, colKey, countMap) => {
       const fScore = (freqApi && typeof freqApi.score === 'function') ? Number(freqApi.score(colKey, valStr) || 0) : 0;
       const cScore = countMap ? Number(countMap.get(norm(valStr)) || 0) : 0;
       return fScore + cScore;
     };
+    const buildResidualNgrams = () => {
+      let cleaned = low
+        .replace(/\b(?:over|above|more\s+than|at\s+least|no\s+less\s+than|under|below|less\s+than|at\s+most|up\s+to|no\s+more\s+than|between|plus\s+de|moins\s+de|entre|aktar\s+men|akthar\s+men|a2al\s+men|ben)\s+\$?\s*-?\d[\d,]*(?:\.\d+)?k?(?:\s+(?:and|to|et|w)\s+\$?\s*\d[\d,]*(?:\.\d+)?k?)?/ig, ' ')
+        .replace(/\b202[4-9](?:-\d{2}-\d{2})?\b/g, ' ');
+      const words = cleaned.replace(/[?!.,;:"'()\[\]{}]/g, ' ').split(/\s+/).filter(w => {
+        if (!w || /^\d+$/.test(w)) return false;
+        if (HUB_NAV_STOPWORDS.has(w) || coStopSet.has(w) || coNameStopSet.has(w)) return false;
+        if (/^(?:sales|raw|materials?|expenses?|suppliers?|customers?|payroll|fleet|warehouse|leases?|invoices?|policies|claims|loans?|billing|fawatir|fawateer|mabi3at|masarif|na2el|4235)$/.test(w)) return false;
+        return true;
+      });
+      const grams = [];
+      for (let len = 3; len >= 1; len--) {
+        for (let i = 0; i <= words.length - len; i++) {
+          const g = words.slice(i, i + len).join(' ');
+          if (g.length >= 4 && !coStopSet.has(g) && !coNameStopSet.has(g)) grams.push(g);
+        }
+      }
+      return grams;
+    };
+    let cachedNgrams = null;
     const pickBestCandidate = (candidates, colKey, minLen = 3, excludeNormSet = null) => {
       const allowCoNames = (colKey === 'company' || colKey === 'partners_summary' || (cfView === 'hld_loans' && colKey === 'counterparty'));
       const counts = new Map();
@@ -1797,10 +2302,11 @@
         counts.set(ns, (counts.get(ns) || 0) + 1);
         if (!uniq.has(ns)) uniq.set(ns, s);
       }
+      // Pass 1: exact whole-token match (highest priority)
       let best = '';
       let bestLen = 0;
       let bestFreq = -1;
-      uniq.forEach((rawVal, ns) => {
+      uniq.forEach(rawVal => {
         if (!hasWholeVal(rawVal)) return;
         const fr = rankCandidate(rawVal, colKey, counts);
         if (rawVal.length > bestLen || (rawVal.length === bestLen && fr > bestFreq)) {
@@ -1809,17 +2315,65 @@
           bestFreq = fr;
         }
       });
-      return best;
+      if (best) {
+        matchedSpans.push(best);
+        return best;
+      }
+
+      // Pass 2: confirmed Data Hygiene alias match
+      const hKind = colToHygieneKind(colKey);
+      const rankedCands = Array.from(uniq.values()).sort((a, b) => rankCandidate(b, colKey, counts) - rankCandidate(a, colKey, counts));
+      if (hKind && _ctx && typeof _ctx.getConfirmedAliasesForCanonical === 'function') {
+        for (let i = 0; i < rankedCands.length; i++) {
+          const canon = rankedCands[i];
+          const aliases = _ctx.getConfirmedAliasesForCanonical(hKind, canon, activeIndCoName, targetInd) || [];
+          for (let j = 0; j < aliases.length; j++) {
+            const al = String(aliases[j] || '').trim();
+            if (al && hasWholeVal(al)) {
+              matchedSpans.push(al);
+              return canon;
+            }
+          }
+        }
+      }
+
+      // Pass 3: deterministic 1-edit-distance typo resolution via findNearPartyMatch
+      if (hKind && _ctx && typeof _ctx.findNearPartyMatch === 'function' && rankedCands.length) {
+        if (!cachedNgrams) cachedNgrams = buildResidualNgrams();
+        const strippedMap = new Map();
+        const candPool = [];
+        rankedCands.forEach(c => {
+          candPool.push(c);
+          const base = c.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+          if (base && base.length >= 4 && !strippedMap.has(norm(base))) {
+            strippedMap.set(norm(base), c);
+            if (norm(base) !== norm(c)) candPool.push(base);
+          }
+        });
+        for (let i = 0; i < cachedNgrams.length; i++) {
+          const ng = cachedNgrams[i];
+          if (excludeNormSet && excludeNormSet.has(norm(ng))) continue;
+          const hit = _ctx.findNearPartyMatch(ng, candPool, { kind: hKind, company: activeIndCoName, ind: targetInd });
+          if (hit) {
+            const resolved = strippedMap.get(norm(hit)) || hit;
+            matchedSpans.push(ng);
+            matchedSpans.push(resolved);
+            return resolved;
+          }
+        }
+      }
+      return '';
     };
 
-    const isUnpricedQ = /\b(unpriced|pending\s+price|missing\s+price|no\s+price|sans\s+prix|non\s+tarif[ée])\b|غير\s*مسع[رّ]|بدون\s*سعر|بانتظار\s*السعر/i.test(low);
-    const isUnpaidQ = /\b(unpaid|overdue|arrears|outstanding|open\s+balance|impay[ée]|en\s+retard)\b|غير\s*مدفوع|متأخر/i.test(low);
-    const isPaidQ = !isUnpaidQ && (/\b(paid|settled|pay[ée]|r[ée]gl[ée])\b|مدفوع|مسدد/i.test(low));
-    const isCashQ = !/\bcash\s*flow\b/i.test(low) && (/\b(cash|esp[èe]ces|comptant)\b|نقد[يا]|كاش/i.test(low));
-    const isCreditQ = !/\bcredit\s*(?:limit|note|return)\b/i.test(low) && (/\b(credit|[àa]\s+cr[ée]dit)\b|آجل|على\s+الحساب/i.test(low));
-    const isDeliveryQ = /\b(deliver(?:y|ies)|livraison)\b|توصيل|تسليم/i.test(low);
-    const isPickupQ = /\b(pickup|pick-up|enl[èe]vement)\b|استلام/i.test(low);
+    const isUnpricedQ = /\b(unpriced|pending\s+price|missing\s+price|no\s+price|sans\s+prix|non\s+tarif[ée]|mesh\s+msa3ar|mish\s+msa3ar|bala\s+se3er|bdoon\s+se3er)\b|غير\s*مسع[رّ]|بدون\s*سعر|بانتظار\s*السعر/i.test(low);
+    const isUnpaidQ = /\b(unpaid|overdue|arrears|outstanding|open\s+balance|impay[ée]|en\s+retard|mesh\s+madfou3|mish\s+madfou3|mish\s+madfu3)\b|غير\s*مدفوع|متأخر/i.test(low);
+    const isPaidQ = !isUnpaidQ && (/\b(paid|settled|pay[ée]|r[ée]gl[ée]|madfou3|madfu3)\b|مدفوع|مسدد/i.test(low));
+    const isCashQ = !/\bcash\s*flow\b/i.test(low) && (/\b(cash|esp[èe]ces|comptant|na2de|na2di)\b|نقد[يا]|كاش/i.test(low));
+    const isCreditQ = !/\bcredit\s*(?:limit|note|return)\b/i.test(low) && (/\b(credit|[àa]\s+cr[ée]dit|3al\s+7seb|3al\s+7sab)\b|آجل|على\s+الحساب/i.test(low));
+    const isDeliveryQ = /\b(deliver(?:y|ies)|livraison|tawsil|tawseel)\b|توصيل|تسليم/i.test(low);
+    const isPickupQ = /\b(pickup|pick-up|enl[èe]vement|istilam)\b|استلام/i.test(low);
     const isOvertimeQ = /\b(overtime|night\s+trip|after[- ]hours|heures\s+sup)\b|إضافي|ليلي/i.test(low);
+    let activePool = null;
 
     if (targetInd === 'Manufacturing') {
       const seedRecs = (_ctx && _ctx.SEED && _ctx.SEED.records) || {};
@@ -1832,6 +2386,7 @@
       const scopedSales = (destView === 'sales' || destView === 'pricing' || destView === 'customers') ? scopedMfg('sales_tickets') : [];
       const scopedRaw = (destView === 'raw' || destView === 'raw_pricing' || destView === 'suppliers') ? scopedMfg('raw_purchases') : [];
       const scopedExp = (destView === 'expenses') ? scopedMfg('expenses') : [];
+      activePool = destView === 'sales' ? scopedSales : (destView === 'raw' ? scopedRaw : (destView === 'expenses' ? scopedExp : null));
 
       if (destView === 'sales' || destView === 'pricing' || destView === 'customers') {
         const custHit = pickBestCandidate(
@@ -1846,8 +2401,8 @@
         const sup1 = pickBestCandidate(supPool, destView === 'raw' ? 'site_owner' : 'supplier', 4);
         if (sup1) {
           if (destView === 'raw') {
-            const isTransWord = /\b(transport|haul|haulage|hauler|truck|lorry|transporteur)\b|شاحن|نقل/i.test(low);
-            const isMatWord = /\b(material|materials|quarry|raw|sand|aggregate|mat[ée]riaux)\b|مواد|كسارة|رمل|بحص/i.test(low);
+            const isTransWord = /\b(transport|haul|haulage|hauler|truck|lorry|transporteur|na2el|na2l|sha7en)\b|شاحن|نقل/i.test(low);
+            const isMatWord = /\b(material|materials|quarry|raw|sand|aggregate|mat[ée]riaux|mawad|kasara|kassara)\b|مواد|كسارة|رمل|بحص/i.test(low);
             const sup2 = pickBestCandidate(supPool, 'truck_owner', 4, new Set([norm(sup1)]));
             if (sup2 && isTransWord && isMatWord) {
               const s1IsMat = scopedRaw.some(r => norm(r.site_owner) === norm(sup1));
@@ -1936,6 +2491,7 @@
       }
     } else if (_ctx && typeof _ctx.getViewFilterPool === 'function') {
       const pool = _ctx.getViewFilterPool(cfView, targetCoKey || scope.coKey) || [];
+      activePool = pool;
       const colSpecsByView = {
         re_leases: [{ key: 'tenant', min: 4 }, { key: 'property', min: 3 }, { key: 'unit', min: 3 }, { key: 'frequency', min: 4 }],
         re_invoicing: [{ key: 'tenant', min: 4 }, { key: 'period', min: 4 }, { key: 'status', min: 4 }],
@@ -1978,6 +2534,7 @@
           if (hitCo) {
             out[sp.key] = hitCo;
             usedVals.add(norm(hitCo));
+            matchedSpans.push(hitCo);
           }
           return;
         }
@@ -2065,10 +2622,27 @@
       }
     }
 
+    const numHit = extractNumericHubThreshold(
+      cleanQ,
+      scope,
+      destView,
+      cfView,
+      targetInd,
+      activePool,
+      { isUnpaidQ },
+      scope && scope.user
+    );
+    if (numHit) {
+      if (numHit.matchedSpan) matchedSpans.push(numHit.matchedSpan);
+      if (numHit.col && numHit.expr) {
+        out[numHit.col] = numHit.expr;
+      }
+    }
+
     if (!Object.keys(out).length && allowInherited && !hasTurnEntity && baseEnt && baseEnt.col && (baseEnt.val || baseEnt.entityName)) {
       out[baseEnt.col] = baseEnt.val || baseEnt.entityName;
     }
-    return { colFilters: out, chipFilter, extraLabels };
+    return { colFilters: out, chipFilter, extraLabels, matchedSpans, numericBlockedByRbac: Boolean(numHit && numHit.blockedByRbac) };
   }
 
   function resolveRawSupColLocal(supName) {
@@ -2133,20 +2707,21 @@
     const entType = baseEnt ? String(baseEnt.crKey || '') : '';
     const entName = baseEnt ? String(baseEnt.entityName || val || '') : '';
     const isMfgEnt = ['customers', 'suppliers', 'products', 'equipment', 'company_equipment', 'employments', 'staff_members', 'items', 'raw_purchases', 'sales_tickets', 'expenses'].includes(entType);
-    const reCueRe = /\b(lease|leases|tenant|rent\s+roll|rent\s+invoices?|re_leases|re_invoicing|re_receipts|4235|real\s+estate)\b|الإيجارات|العقود|فواتير\s+الإيجار/i;
+    const reCueRe = /\b(lease|leases|tenant|rent\s+roll|rent\s+invoices?|re_leases|re_invoicing|re_receipts|4235|real\s+estate|ijarat|ijar)\b|الإيجارات|العقود|فواتير\s+الإيجار/i;
     const trdCueRe = /\b(shacman|korri\s+auto|vin\b|chassis|warranty|trucks?\s+yard|trd_)\b/i;
-    const hspCueRe = /\b(cabana|membership|blanca|la\s+una|palms|voile|platinum|resort|hospitality|hsp_)\b/i;
-    const hldCueRe = /\b(bdeir\s+holding|intercompany|partner\s+splits?|due[- ]from|due[- ]to|holding\s+loans?|hld_)\b|الشركاء/i;
-    const insCueRe = /\b(policy|policies|renewal|claim|fnol|bordereau|remit|underwriter|insurance|ins_)\b|البوالص|المطالبات/i;
+    const hspCueRe = /\b(cabana|membership|blanca|la\s+una|palms|voile|platinum|resort|hospitality|hsp_|shalehat|ishtirakat)\b/i;
+    const hldCueRe = /\b(bdeir\s+holding|intercompany|partner\s+splits?|due[- ]from|due[- ]to|holding\s+loans?|hld_|shoraka|2ouroud)\b|الشركاء/i;
+    const insCueRe = /\b(policy|policies|renewal|claim|fnol|bordereau|remit|underwriter|insurance|ins_|bawales|mutalabat|tajdid)\b|البوالص|المطالبات/i;
+    const reInvCueRe = /\b(?:fawatir|fawateer|fatoura)\b/i;
 
     const useSiblingRouting = activeNavInd !== 'Manufacturing'
       || reCueRe.test(low) || trdCueRe.test(low) || hspCueRe.test(low) || hldCueRe.test(low) || insCueRe.test(low)
       || /\b(work\s*orders?|property|properties|baux|contrats|polices|associ[ée]s|facility|loan)\b/i.test(low);
 
-    if (useSiblingRouting && (reCueRe.test(low) || (activeNavInd === 'Real Estate & Property' && !trdCueRe.test(low) && !hspCueRe.test(low) && !hldCueRe.test(low) && !insCueRe.test(low) && /\b(property|properties|unit|work\s*orders?|invoices?|invoicing|billing|receipts?|payments?|collections?|sale\s+contracts?|buyers?|instalments?)\b/i.test(low)))) {
+    if (useSiblingRouting && (reCueRe.test(low) || (activeNavInd === 'Real Estate & Property' && !trdCueRe.test(low) && !hspCueRe.test(low) && !hldCueRe.test(low) && !insCueRe.test(low) && (reInvCueRe.test(low) || /\b(property|properties|unit|work\s*orders?|invoices?|invoicing|billing|receipts?|payments?|collections?|sale\s+contracts?|buyers?|instalments?)\b/i.test(low))))) {
       targetInd = 'Real Estate & Property';
       col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
-      if (/\b(invoices?|invoicing|billing|arrears|rent\s+invoices?)\b|فواتير|factures?/i.test(low)) destView = 're_invoicing';
+      if (reInvCueRe.test(low) || /\b(invoices?|invoicing|billing|arrears|rent\s+invoices?)\b|فواتير|factures?/i.test(low)) destView = 're_invoicing';
       else if (/\b(receipts?|payments?|collections?)\b/i.test(low)) destView = 're_receipts';
       else if (/\b(property|properties|units?|building|occupancy)\b/i.test(low)) destView = 're_properties';
       else if (/\b(work\s*orders?|repairs?|capex|fit[- ]out|maint\w*)\b/i.test(low)) destView = 're_workorders';
@@ -2154,7 +2729,7 @@
       else destView = 're_leases';
       cfView = destView;
       explicitModuleMatched = true;
-    } else if (useSiblingRouting && (trdCueRe.test(low) || (activeNavInd === 'Automotive & Heavy Trading' && !hspCueRe.test(low) && !hldCueRe.test(low) && !insCueRe.test(low) && /\b(trucks?|yard|warrant(?:y|ies)|pdi|stock|parts?|spares?|fifo|warehouses?|imports?|landed|grn|customs|purchases?|receivables?|targets?|price\s+lists?|sales)\b/i.test(low)))) {
+    } else if (useSiblingRouting && (trdCueRe.test(low) || (activeNavInd === 'Automotive & Heavy Trading' && !hspCueRe.test(low) && !hldCueRe.test(low) && !insCueRe.test(low) && (reInvCueRe.test(low) || /\b(trucks?|yard|warrant(?:y|ies)|pdi|stock|parts?|spares?|fifo|warehouses?|imports?|landed|grn|customs|purchases?|receivables?|targets?|price\s+lists?|sales|mabi3at)\b/i.test(low))))) {
       targetInd = 'Automotive & Heavy Trading';
       col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
       if (/\b(vin\b|chassis|trucks?|yard)\b/i.test(low)) destView = 'trd_trucks';
@@ -2166,107 +2741,107 @@
       else destView = 'trd_sales';
       cfView = destView;
       explicitModuleMatched = true;
-    } else if (useSiblingRouting && (hspCueRe.test(low) || (activeNavInd === 'Hospitality & Resorts' && !hldCueRe.test(low) && !insCueRe.test(low) && /\b(cabanas?|members?|memberships?|gym|pool|packages?|pos|till|shifts?|stock|menu|cellar|commissary|energy|generators?|maint\w*|diesel|partners?|splits?|venue|revenue)\b/i.test(low)))) {
+    } else if (useSiblingRouting && (hspCueRe.test(low) || (activeNavInd === 'Hospitality & Resorts' && !hldCueRe.test(low) && !insCueRe.test(low) && /\b(cabanas?|members?|memberships?|gym|pool|packages?|pos|till|shifts?|stock|menu|cellar|commissary|energy|generators?|maint\w*|diesel|partners?|splits?|venue|revenue|shalehat|ishtirakat)\b/i.test(low)))) {
       targetInd = 'Hospitality & Resorts';
       col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
-      if (/\b(cabanas?|members?|memberships?|gym|pool|packages?)\b/i.test(low)) destView = 'hsp_memberships';
+      if (/\b(cabanas?|members?|memberships?|gym|pool|packages?|shalehat|ishtirakat)\b/i.test(low)) destView = 'hsp_memberships';
       else if (/\b(pos|till|shifts?)\b/i.test(low)) destView = 'hsp_pos';
       else if (/\b(stock|menu|cellar|commissary)\b/i.test(low)) destView = 'hsp_stock';
-      else if (/\b(energy|generators?|maint\w*|diesel)\b/i.test(low)) destView = 'hsp_energy';
-      else if (/\b(partners?|splits?)\b/i.test(low)) destView = 'hsp_partners';
+      else if (/\b(energy|generators?|maint\w*|diesel|mazout)\b/i.test(low)) destView = 'hsp_energy';
+      else if (/\b(partners?|splits?|shoraka)\b/i.test(low)) destView = 'hsp_partners';
       else destView = 'hsp_revenue';
       cfView = destView;
       explicitModuleMatched = true;
-    } else if (useSiblingRouting && (hldCueRe.test(low) || (activeNavInd === 'Holding & Treasury' && !insCueRe.test(low) && /\b(partners?|splits?|shareholders?|distributions?|loans?|facilit(?:y|ies)|banks?|treasury|intercompany|1[- ]sided|2[- ]sided|consolidation)\b/i.test(low)))) {
+    } else if (useSiblingRouting && (hldCueRe.test(low) || (activeNavInd === 'Holding & Treasury' && !insCueRe.test(low) && /\b(partners?|splits?|shareholders?|distributions?|loans?|facilit(?:y|ies)|banks?|treasury|intercompany|1[- ]sided|2[- ]sided|consolidation|shoraka|2ouroud)\b/i.test(low)))) {
       targetInd = 'Holding & Treasury';
       col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
-      if (/\b(partners?|splits?|shareholders?|distributions?)\b|الشركاء|associ[ée]s/i.test(low)) destView = 'hld_partners';
-      else if (/\b(loans?|facilit(?:y|ies)|banks?|treasury)\b|القروض/i.test(low)) destView = 'hld_loans';
+      if (/\b(partners?|splits?|shareholders?|distributions?|shoraka)\b|الشركاء|associ[ée]s/i.test(low)) destView = 'hld_partners';
+      else if (/\b(loans?|facilit(?:y|ies)|banks?|treasury|2ouroud)\b|القروض/i.test(low)) destView = 'hld_loans';
       else if (/\b(intercompany|due[- ]from|due[- ]to|ic\b|1[- ]sided|2[- ]sided)\b/i.test(low)) destView = 'hld_interactions';
       else destView = 'hld_consolidation';
       cfView = destView;
       explicitModuleMatched = true;
-    } else if (useSiblingRouting && (insCueRe.test(low) || (activeNavInd === 'Insurance & Brokerage' && /\b(renewals?|expir\w*|claims?|fnol|loss(?:es)?|remittances?|bordereau[x]?|statements?|commissions?|billing|premiums?|invoices?|agreements?|tariffs?|policies)\b|فواتير|factures?/i.test(low)))) {
+    } else if (useSiblingRouting && (insCueRe.test(low) || (activeNavInd === 'Insurance & Brokerage' && (reInvCueRe.test(low) || /\b(renewals?|expir\w*|claims?|fnol|loss(?:es)?|remittances?|bordereau[x]?|statements?|commissions?|billing|premiums?|invoices?|agreements?|tariffs?|policies|bawales|mutalabat|tajdid)\b|فواتير|factures?/i.test(low))))) {
       targetInd = 'Insurance & Brokerage';
       col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
-      if (/\b(renewals?|expir\w*)\b/i.test(low)) destView = 'ins_renewals';
-      else if (/\b(claims?|fnol|loss(?:es)?)\b|المطالبات|sinistres?/i.test(low)) destView = 'ins_claims';
+      if (/\b(renewals?|expir\w*|tajdid)\b/i.test(low)) destView = 'ins_renewals';
+      else if (/\b(claims?|fnol|loss(?:es)?|mutalabat)\b|المطالبات|sinistres?/i.test(low)) destView = 'ins_claims';
       else if (/\b(remittances?|bordereau[x]?)\b/i.test(low)) destView = 'ins_remittances';
       else if (/\b(statements?|commissions?)\b/i.test(low)) destView = 'ins_statements';
-      else if (/\b(billing|premiums?|invoices?)\b|فواتير|factures?/i.test(low)) destView = 'ins_billing';
+      else if (reInvCueRe.test(low) || /\b(billing|premiums?|invoices?)\b|فواتير|factures?/i.test(low)) destView = 'ins_billing';
       else if (/\b(agreements?|tariffs?)\b/i.test(low)) destView = 'ins_agreements';
       else destView = 'ins_policies';
       cfView = destView;
       explicitModuleMatched = true;
-    } else if (/\b(sales|delivery|deliveries|المبيعات|ventes)\b/i.test(low)) {
+    } else if (/\b(sales|delivery|deliveries|mabi3at|ventes)\b|المبيعات|مبيعات/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'sales'; cfView = 'sales'; panelId = 'salesPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'customers') { col = 'customer'; val = entName; }
       else if (hasTurnEntity && entName && entType === 'products') { col = 'product'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(transport|haul|haulage|شاحن|نقل)\b/i.test(low) && !/\b(fleet|repair|defect|warning|maint)\b/i.test(low)) {
+    } else if (/\b(transport|haul|haulage|na2el|na2l|sha7en)\b|شاحن|نقل/i.test(low) && !/\b(fleet|repair|defect|warning|maint)\b/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'raw'; cfView = 'raw'; panelId = 'rawPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'suppliers') { col = 'truck_owner'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(material|materials|raw|quarry|المواد|mat[ée]riaux)\b/i.test(low)) {
+    } else if (/\b(material|materials|raw|quarry|mawad|kasara|kassara|mat[ée]riaux)\b|المواد|مواد/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'raw'; cfView = 'raw'; panelId = 'rawPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'suppliers') { col = 'site_owner'; val = entName; }
       else if (hasTurnEntity && entName && entType === 'products') { col = 'product'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(expense|expenses|voucher|bill|مصروف|مصاريف|d[ée]pense)\b/i.test(low)) {
+    } else if (/\b(expense|expenses|voucher|bill|masarif|masrouf|d[ée]pense)\b|مصروف|مصاريف/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'expenses'; cfView = 'expenses'; panelId = 'expPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'suppliers') { col = 'supplier'; val = entName; }
       else if (hasTurnEntity && entName && entType === 'equipment') { col = 'equipment'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(supplier|suppliers|payable|settlement|المورد|فواتير|fournisseur)\b/i.test(low)) {
+    } else if (/\b(supplier|suppliers|payable|settlement|mowarridin|mowarrid|fawatir|fawateer|fournisseur)\b|المورد|مورد|فواتير/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'suppliers'; cfView = 'settle'; panelId = 'supPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'suppliers') { col = 'supplier'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(customer|customers|receivable|receipt|العملاء|clients)\b/i.test(low)) {
+    } else if (/\b(customer|customers|receivable|receipt|zbayen|3omala|clients)\b|العملاء|عملاء/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'customers'; cfView = 'receipts'; panelId = 'custPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && entType === 'customers') { col = 'customer'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(repair|warning|defect|maint|صيانة|أعطال)\b/i.test(low)) {
+    } else if (/\b(repair|warning|defect|maint|siyane|a3tal)\b|صيانة|أعطال/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'fleet_maint'; cfView = 'defects'; panelId = 'defectsPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && (entType === 'equipment' || entType === 'company_equipment')) { col = 'equipment'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(fuel|diesel|fleet|مازوت|أسطول)\b/i.test(low)) {
+    } else if (/\b(fuel|diesel|fleet|mazout|astoul)\b|مازوت|أسطول/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'fleet'; cfView = 'fuel'; panelId = 'fuelPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && (entType === 'equipment' || entType === 'company_equipment')) { col = 'equipment'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(attendance|shift|دوام|حضور|pr[ée]sence)\b/i.test(low)) {
+    } else if (/\b(attendance|shift|dawam|7odour|pr[ée]sence)\b|دوام|حضور/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'payroll_attendance'; cfView = 'pay_att'; panelId = 'payAttPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && (entType === 'employments' || entType === 'staff_members')) { col = 'staff'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(payroll|salary|salaries|رواتب|paie)\b/i.test(low)) {
+    } else if (/\b(payroll|salary|salaries|ma3ashat|rawateb|paie)\b|رواتب/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'payroll'; cfView = 'pay_sal'; panelId = 'paySalPanel';
       col = ''; val = ''; search = '';
       if (hasTurnEntity && entName && (entType === 'employments' || entType === 'staff_members')) { col = 'staff'; val = entName; }
       explicitModuleMatched = true;
-    } else if (/\b(warehouse|stock|inventory|مستودع)\b/i.test(low)) {
+    } else if (/\b(warehouse|stock|inventory|makhzan)\b|مستودع/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'warehouse'; cfView = 'whitems'; col = ''; val = ''; panelId = '';
       search = (hasTurnEntity && entName && entType === 'items') ? entName : '';
       explicitModuleMatched = true;
-    } else if (/\b(pricing|price|rates|agreement|أسعار|tarif)\b/i.test(low)) {
+    } else if (/\b(pricing|price|rates|agreement|as3ar|tarif)\b|أسعار/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = (entType === 'suppliers') ? 'raw_pricing' : 'pricing';
       cfView = destView;
@@ -2278,7 +2853,7 @@
         else if (entType === 'suppliers') { col = 'supplier'; val = entName; }
       }
       explicitModuleMatched = true;
-    } else if (/\b(ledger|gl|soa|أستاذ)\b/i.test(low)) {
+    } else if (/\b(ledger|gl|soa)\b|أستاذ/i.test(low)) {
       targetInd = 'Manufacturing';
       destView = 'ledger'; cfView = 'gl'; col = ''; val = ''; panelId = ''; search = hasTurnEntity ? (entName || '') : '';
       explicitModuleMatched = true;
@@ -2385,6 +2960,20 @@
       _ctx.openHubWithFilter(navOpts);
     }
 
+    const sliceMeta = (_ctx && typeof _ctx.inspectActiveRegisterSlice === 'function')
+      ? _ctx.inspectActiveRegisterSlice({
+          view: destView,
+          cfView,
+          panelId,
+          colFilters: colMap,
+          user: scope && scope.user
+        })
+      : null;
+
+    const unresolvedTokens = compound.numericBlockedByRbac
+      ? []
+      : computeUnresolvedNavTokens(cleanQ, scope, (compound.matchedSpans || []).concat(Object.values(colMap)));
+
     const filterHumanMap = (k, rawV) => {
       const s = String(rawV || '').replace(/^[=~]/, '').trim();
       if (!s) return '';
@@ -2395,6 +2984,10 @@
         if (k === 'net_payable_4017_usd') return 'Open Payable';
       }
       if (s === '=0' && k === 'total_ttc') return 'Unpriced';
+      if (/^(?:>=|<=|!=|>|<)\s*-?\d/.test(s) || /^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d+(?:\.\d+)?$/.test(s)) {
+        const colLbl = (_ctx && typeof _ctx.getColLabel === 'function') ? _ctx.getColLabel(k) : k;
+        return cleanOut(String(colLbl || k).replace(/\s*\(\$\)\s*$/, '')) + ' ' + s;
+      }
       return s;
     };
     const filterValuesList = Object.entries(colMap).map(([k, v]) => filterHumanMap(k, v)).filter(Boolean).concat(extraLabels);
@@ -2407,6 +3000,51 @@
     else if (scope && scope.periodLabel && scope.periodLabel !== 'All-Time') scopeBits.push(`<b>${esc(scope.periodLabel)}</b>`);
     const filterDesc = scopeBits.length ? ` filtered by ${scopeBits.join(' · ')}` : '';
     const viewLbl = (_ctx && _ctx.VIEW_TITLES && _ctx.VIEW_TITLES[destView]) || destView;
+
+    let slicePreviewEn = '';
+    let slicePreviewAr = '';
+    let slicePreviewFr = '';
+    if (sliceMeta && sliceMeta.ok) {
+      const cntTxt = fmtInt(sliceMeta.rowCount || 0);
+      const totBit = sliceMeta.totalFormatted ? ` · <b>${esc(sliceMeta.totalFormatted)}</b>` : '';
+      slicePreviewEn = ` (<b>${cntTxt}</b> ${sliceMeta.rowCount === 1 ? 'row' : 'rows'}${totBit})`;
+      slicePreviewAr = ` (<b>${cntTxt}</b> ${sliceMeta.rowCount === 1 ? 'سجل' : 'سجلات'}${totBit})`;
+      slicePreviewFr = ` (<b>${cntTxt}</b> ${sliceMeta.rowCount === 1 ? 'ligne' : 'lignes'}${totBit})`;
+    }
+    let unmatchedEn = '';
+    let unmatchedAr = '';
+    let unmatchedFr = '';
+    if (unresolvedTokens.length) {
+      const joinedU = unresolvedTokens.map(t => esc(t)).join(', ');
+      unmatchedEn = ` Unmatched terms left unfiltered: <b>${joinedU}</b>.`;
+      unmatchedAr = ` كلمات غير مصفاة: <b>${joinedU}</b>.`;
+      unmatchedFr = ` Termes non filtrés: <b>${joinedU}</b>.`;
+    }
+
+    const curStSnap = (_ctx && _ctx.STATE) || (typeof window !== 'undefined' && window.STATE) || {};
+    const actionsOut = [
+      { type: 'view', view: destView, cfView, coKey: targetCoKey || '', col: primaryCol, val: primaryVal, colFilters: hasColMap ? colMap : null, chipFilter, search: hasColMap ? '' : search, panelId, periodSpec: effPeriodSpec, dateRange: effDateRange, label: lang === 'ar' ? 'إعادة الفتح في المركز' : (lang === 'fr' ? 'Rouvrir dans le hub' : `Open ${cleanOut(viewLbl)}`) },
+      ...(sliceMeta && sliceMeta.canExportCsv ? [{
+        type: 'export_csv',
+        view: destView,
+        cfView,
+        coKey: targetCoKey || '',
+        colFilters: hasColMap ? colMap : null,
+        multiColFilters,
+        chipFilter,
+        search: hasColMap ? '' : search,
+        panelId: sliceMeta.csvTarget || panelId,
+        csvTarget: sliceMeta.csvTarget || panelId,
+        csvName: sliceMeta.csvName || '',
+        periodSpec: effPeriodSpec,
+        dateRange: effDateRange,
+        capturedPeriod: String(curStSnap.period || 'all'),
+        capturedFrom: String(curStSnap.dateFrom || ''),
+        capturedTo: String(curStSnap.dateTo || ''),
+        label: lang === 'ar' ? 'تصدير CSV' : (lang === 'fr' ? 'Exporter CSV' : 'Export CSV')
+      }] : []),
+      ...(baseEnt && baseEnt.crKey && baseEnt.id ? [{ type: 'inspect', crKey: baseEnt.crKey, id: baseEnt.id, label: `360° ${entName || primaryVal}` }] : [])
+    ];
 
     return {
       q: cleanQ,
@@ -2431,14 +3069,27 @@
       },
       title: lang === 'ar' ? 'الانتقال إلى المركز التشغيلي' : (lang === 'fr' ? 'Navigation vers le module' : `Opened ${cleanOut(viewLbl)}`),
       answer: lang === 'ar'
-        ? `تم فتح تبويب <b>${esc(viewLbl)}</b>${shownFilter ? ` مع تصفية <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` للفترة <b>${esc(effDateRange.label)}</b>` : ''}.`
+        ? `تم فتح تبويب <b>${esc(viewLbl)}</b>${shownFilter ? ` مع تصفية <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` للفترة <b>${esc(effDateRange.label)}</b>` : ''}${slicePreviewAr}.${unmatchedAr}`
         : (lang === 'fr'
-          ? `Ouverture de l'onglet <b>${esc(viewLbl)}</b>${shownFilter ? ` filtré sur <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` pour la période <b>${esc(effDateRange.label)}</b>` : ''}.`
-          : `Opened <b>${esc(viewLbl)}</b>${filterDesc}.`),
-      actions: [
-        { type: 'view', view: destView, cfView, coKey: targetCoKey || '', col: primaryCol, val: primaryVal, colFilters: hasColMap ? colMap : null, chipFilter, search: hasColMap ? '' : search, panelId, periodSpec: effPeriodSpec, dateRange: effDateRange, label: lang === 'ar' ? 'إعادة الفتح في المركز' : (lang === 'fr' ? 'Rouvrir dans le hub' : `Open ${cleanOut(viewLbl)}`) },
-        ...(baseEnt && baseEnt.crKey && baseEnt.id ? [{ type: 'inspect', crKey: baseEnt.crKey, id: baseEnt.id, label: `360° ${entName || primaryVal}` }] : [])
-      ]
+          ? `Ouverture de l'onglet <b>${esc(viewLbl)}</b>${shownFilter ? ` filtré sur <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` pour la période <b>${esc(effDateRange.label)}</b>` : ''}${slicePreviewFr}.${unmatchedFr}`
+          : `Opened <b>${esc(viewLbl)}</b>${filterDesc}${slicePreviewEn}.${unmatchedEn}`),
+      actions: actionsOut,
+      ...(unresolvedTokens.length ? {
+        _aiEdgeNavFallback: {
+          cleanQ,
+          unresolvedTokens,
+          destView,
+          cfView,
+          targetInd,
+          coKey: targetCoKey || (scope && scope.coKey) || '',
+          user: scope && scope.user,
+          baseColFilters: colMap,
+          chipFilter,
+          panelId,
+          periodSpec: effPeriodSpec,
+          dateRange: effDateRange
+        }
+      } : {})
     };
   }
 
@@ -23076,10 +23727,14 @@
           if (a.type === 'form') {
             return `<button type="button" class="ai-act-btn" data-ai-open-form="${esc(a.form)}">${esc(a.label)}</button>`;
           }
+          if (a.type === 'export_csv') {
+            return `<button type="button" class="ai-act-btn" data-ai-export-csv="1" data-turn-idx="${turnIdx}" data-act-idx="${idx}"><span class="ai-act-ico">${AI_SVGS.download}</span><span>${esc(a.label || 'Export CSV')}</span></button>`;
+          }
           if (a.type === 'speak') {
             return `<button type="button" class="ai-act-btn ai-speak-btn" data-ai-speak="${esc(a.lang || 'en')}" data-turn-idx="${turnIdx}"><span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(a.label || speakIdleLabel(a.lang || 'en'))}</span></button>`;
           }
           const extraAttrs = [
+            a.isAiEdgeChip ? ' data-ai-edge-chip="1"' : '',
             a.cfView ? ` data-ai-cf-view="${esc(a.cfView)}"` : '',
             a.coKey ? ` data-ai-co-key="${esc(a.coKey)}"` : '',
             a.col ? ` data-ai-filter-col="${esc(a.col)}"` : '',
@@ -23460,6 +24115,11 @@
       _chatState.history.push(syncAns);
       if (_chatState.history.length > 12) _chatState.history.shift();
       renderThread(true);
+      if (syncAns && syncAns._aiEdgeNavFallback) {
+        const fbSpec = syncAns._aiEdgeNavFallback;
+        delete syncAns._aiEdgeNavFallback;
+        scheduleAskHubAiEdgeFallback(syncAns, fbSpec);
+      }
       return;
     }
 
@@ -23493,6 +24153,11 @@
           renderThread(true);
           syncVoiceModeDeckUi();
           maybeAutoSpeakTurn(decoratedFast);
+          if (decoratedFast && decoratedFast._aiEdgeNavFallback) {
+            const fbSpec = decoratedFast._aiEdgeNavFallback;
+            delete decoratedFast._aiEdgeNavFallback;
+            scheduleAskHubAiEdgeFallback(decoratedFast, fbSpec);
+          }
           setTimeout(() => {
             _chatState.typingFollowup = false;
             renderThread(true);
@@ -24028,6 +24693,15 @@
           const totEl = botBubble ? botBubble.querySelector('.ai-mini-tot') : null;
           const combinedHtml = [pEl ? pEl.textContent.trim() : '', ...bulletTexts, totEl ? totEl.textContent.trim() : ''].filter(Boolean).join('. ');
           speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en', speakBtn);
+          return;
+        }
+        const exportAskCsvBtn = e.target.closest('[data-ai-export-csv]');
+        if (exportAskCsvBtn && _ctx && typeof _ctx.exportAskHubSliceCsv === 'function') {
+          const tIdx = Number(exportAskCsvBtn.getAttribute('data-turn-idx'));
+          const aIdx = Number(exportAskCsvBtn.getAttribute('data-act-idx'));
+          const turn = Number.isInteger(tIdx) ? _chatState.history[tIdx] : null;
+          const act = turn && Array.isArray(turn.actions) && Number.isInteger(aIdx) ? turn.actions[aIdx] : null;
+          if (act) _ctx.exportAskHubSliceCsv(act);
           return;
         }
         const inspBtn = e.target.closest('[data-ai-inspect-key]');

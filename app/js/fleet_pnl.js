@@ -192,6 +192,7 @@
     var canPriceRuleSales = (ent && typeof ent.canEnterForm === 'function') ? Boolean(ent.canEnterForm('pricerule')) : false;
     var canPriceRuleHaul = (ent && typeof ent.canEnterForm === 'function') ? Boolean(ent.canEnterForm('pricerule_haul')) : false;
     var canPriceRule = Boolean(canPriceRuleSales || canPriceRuleHaul);
+    var canEnterSettlement = (ent && typeof ent.canEnterForm === 'function') ? Boolean(ent.canEnterForm('settlement')) : false;
     return {
       canExp: canExp,
       canPay: canPay,
@@ -202,6 +203,7 @@
       canPriceRuleSales: canPriceRuleSales,
       canPriceRuleHaul: canPriceRuleHaul,
       canPriceRule: canPriceRule,
+      canEnterSettlement: canEnterSettlement,
       canSettle: Boolean((canBooks || canProfit) && canExp && canPay)
     };
   }
@@ -340,35 +342,61 @@
     return s;
   }
 
+  function isGenericOwnerPlaceholder(s) {
+    var v = String(s || '').trim();
+    if (!v) return true;
+    return /^(partner\s*truck|company\s*fleet|active\s*fleet|wtc\s*fleet|pool|assigned\s*driver|wtc|bbconstruction|lions\s*transport|sibline|excluded|none|unspecified)$/i.test(v);
+  }
+
+  function normPartyKey(s) {
+    var v = String(s || '').trim().replace(/\s+/g, ' ');
+    if (!v) return '';
+    var ent = window.MFG_ENTERPRISE;
+    if (ent && typeof ent.canonicalizePartyByHygiene === 'function') {
+      try {
+        var c = ent.canonicalizePartyByHygiene(v);
+        if (c && String(c).trim()) v = String(c).trim();
+      } catch (_) {}
+    }
+    return v.toLowerCase();
+  }
+
   function getEquipmentRec(code) {
     var seed = window.MFG_SEED || window.SEED || {};
     var eqs = (seed.records && seed.records.equipment) || [];
     var normC = String(code || '').trim().toLowerCase();
     for (var i = 0; i < eqs.length; i++) {
       var e = eqs[i];
-      if (e && String(e.name || e.equipment || '').trim().toLowerCase() === normC) return e;
+      if (e && !e.voided && String(e.name || e.equipment || '').trim().toLowerCase() === normC) return e;
     }
     return null;
   }
 
   function getTruckMeta(code) {
     var c = normTruckCode(code);
+    var eq = getEquipmentRec(c);
     if (TRUCK_META[c]) {
       var ppl = nbMap('truck_people')[c];
-      if (!ppl || typeof ppl !== 'object') return TRUCK_META[c];
       var merged = Object.assign({}, TRUCK_META[c]);
-      ['owner', 'driver', 'driverShort'].forEach(function (k) { if (ppl[k]) merged[k] = String(ppl[k]); });
+      if (ppl && typeof ppl === 'object') {
+        ['owner', 'driver', 'driverShort'].forEach(function (k) { if (ppl[k]) merged[k] = String(ppl[k]); });
+      }
+      if (isGenericOwnerPlaceholder(merged.owner) && eq && eq.supplier && !isGenericOwnerPlaceholder(eq.supplier) && !/^own/i.test(eq.ownership || '')) {
+        merged.owner = String(eq.supplier).trim();
+      }
       return merged;
     }
-    var eq = getEquipmentRec(c);
     var hash = 0;
     for (var i = 0; i < c.length; i++) hash = ((hash << 5) - hash) + c.charCodeAt(i);
     var colorVar = CORE_ACCENT_VARS[Math.abs(hash) % CORE_ACCENT_VARS.length];
+    var eqOwner = (eq && !/^own/i.test(eq.ownership || '') && eq.supplier && !isGenericOwnerPlaceholder(eq.supplier))
+      ? String(eq.supplier).trim()
+      : (eq && /^own/i.test(eq.ownership || '') ? 'Company Fleet' : 'Active Fleet');
     return {
       code: c,
       displayCode: c,
       plate: eq && eq.plate ? String(eq.plate) : 'Fleet Unit',
-      owner: eq && /^own/i.test(eq.ownership || '') ? 'Company Fleet' : 'Active Fleet',
+      owner: eqOwner,
       driver: 'Assigned Driver',
       driverShort: 'Driver',
       colorVar: colorVar
@@ -517,6 +545,9 @@
       st.activeUserId || st.userId || '', st.activeUserIdx != null ? st.activeUserIdx : '',
       perm.canPay ? '1' : '0', perm.canExp ? '1' : '0', perm.canProfit ? '1' : '0', perm.canBooks ? '1' : '0',
       perm.canBurn ? '1' : '0', perm.canPriceRuleSales ? '1' : '0', perm.canPriceRuleHaul ? '1' : '0',
+      perm.canEnterSettlement ? '1' : '0',
+      (seed.records && seed.records.settlements ? seed.records.settlements.length : 0),
+      (seed.records && seed.records.suppliers ? seed.records.suppliers.length : 0),
       allowedKey, seedRev, st._indCustomRev || 0, st._watermarkRev || 0, wmSig, otSnapSig, nbSig, geoStamp, spdOff
     ].join('|');
 
@@ -566,6 +597,7 @@
         trucks[c] = {
           code: c, displayCode: m.displayCode, plate: m.plate,
           owner: resolvedOwner,
+          supplierName: !isGenericOwnerPlaceholder(resolvedOwner) ? resolvedOwner : '',
           isPartnerOrHauler: false,
           driver: m.driver, driverShort: m.driverShort,
           colorVar: m.colorVar,
@@ -578,14 +610,30 @@
           rawQtyM3: 0, rawPaidQtyM3: 0, rawZeroQtyM3: 0,
           rawRev: 0, rawMissingRateCredit: 0, rawBenchmarkCredit: 0,
           dieselEvents: 0, dieselLiters: 0, dieselCost: 0,
+          burnEvalTrips: 0, burnEvalQtyM3: 0,
+          verifiedBurnTrips: 0, verifiedBurnQtyM3: 0, modeledBurnLiters: 0,
           repairs: 0, lubes: 0, insurance: 0, capex: 0, expCount: 0,
           driverBasePay: 0, driverOtHours: 0, driverOtPay: 0, driverTotalPay: 0,
           driverOtSnapMin: 0, driverOtSnapUsd: null,
+          ticketOwnerCounts: {},
           driverTripsMap: {}, monthsMap: {}
         };
       }
       return trucks[c];
     }
+
+    var corridorBurnCache = {};
+    var getMemoizedCorridorBurn = function (coName, siteName) {
+      var sn = String(siteName || '').trim();
+      if (!sn || sn === 'Site' || sn === 'Plant') return { verified: false, restricted: !perm.canBurn };
+      var bk = `${String(coName || 'WTC')}||${sn.toLowerCase()}`;
+      if (!Object.prototype.hasOwnProperty.call(corridorBurnCache, bk)) {
+        corridorBurnCache[bk] = (ent && typeof ent.getVerifiedCorridorBurn === 'function')
+          ? ent.getVerifiedCorridorBurn(coName, sn)
+          : { verified: false, restricted: !perm.canBurn };
+      }
+      return corridorBurnCache[bk];
+    };
 
     function ensureMonth(ym) {
       var k = ym || 'Unspecified';
@@ -598,7 +646,7 @@
     function ensureTruckMonth(tObj, ym) {
       var k = ym || 'Unspecified';
       if (!tObj.monthsMap[k]) {
-        tObj.monthsMap[k] = { ym: k, trips: 0, qtyM3: 0, recordedRev: 0, strictCredit: 0, fullCredit: 0, dieselCost: 0, maintCost: 0, otPay: 0, basePay: 0, hasActivity: false };
+        tObj.monthsMap[k] = { ym: k, trips: 0, qtyM3: 0, recordedRev: 0, strictCredit: 0, fullCredit: 0, dieselCost: 0, maintCost: 0, otPay: 0, basePay: 0, hasActivity: false, revByCo: {}, tripsByCo: {} };
       }
       return tObj.monthsMap[k];
     }
@@ -716,6 +764,22 @@
       if (comp.toLowerCase().indexOf('bbc') >= 0) t.salesBbcTrips += 1;
       else t.salesWtcTrips += 1;
       if (drv) t.driverTripsMap[drv] = (t.driverTripsMap[drv] || 0) + 1;
+      if (s.truck_owner && !isGenericOwnerPlaceholder(s.truck_owner)) {
+        var sOwn = String(s.truck_owner).trim();
+        t.ticketOwnerCounts[sOwn] = (t.ticketOwnerCounts[sOwn] || 0) + 1;
+      }
+      var isPhysicalSalesDispatch = String(s.sale_type || 'Delivery') === 'Delivery' && !/customer/i.test(String(s.transport_by || ''));
+      if (isPhysicalSalesDispatch) {
+        var absSqty = Math.abs(qty);
+        t.burnEvalTrips += 1;
+        t.burnEvalQtyM3 += absSqty;
+        var sBurn = getMemoizedCorridorBurn(comp, siteStr);
+        if (sBurn && sBurn.verified && Number(sBurn.totalLitres) > 0) {
+          t.verifiedBurnTrips += 1;
+          t.verifiedBurnQtyM3 += absSqty;
+          t.modeledBurnLiters += Number(sBurn.totalLitres);
+        }
+      }
       recordTripOvertime(s, 'sales_tickets', 'Sales Delivery', t, dtStr, comp, drv, qty);
 
       var strictAdd = 0;
@@ -763,6 +827,8 @@
       var tmObj = ensureTruckMonth(t, ym);
       tmObj.trips += 1; tmObj.qtyM3 += qty; tmObj.recordedRev += deliv; tmObj.hasActivity = true;
       tmObj.strictCredit += strictAdd; tmObj.fullCredit += fullAdd;
+      tmObj.revByCo[comp] = (tmObj.revByCo[comp] || 0) + deliv;
+      tmObj.tripsByCo[comp] = (tmObj.tripsByCo[comp] || 0) + 1;
 
       var rKey = [comp, 'Sales Delivery', t.code, s.customer || '—', siteStr, s.product || '—'].join('||');
       if (!routeAgg[rKey]) {
@@ -803,6 +869,23 @@
       if (rComp.toLowerCase().indexOf('bbc') >= 0) rt.rawBbcTrips += 1;
       else rt.rawWtcTrips += 1;
       if (rDrv) rt.driverTripsMap[rDrv] = (rt.driverTripsMap[rDrv] || 0) + 1;
+      if (r.truck_owner && !isGenericOwnerPlaceholder(r.truck_owner)) {
+        var rOwn = String(r.truck_owner).trim();
+        rt.ticketOwnerCounts[rOwn] = (rt.ticketOwnerCounts[rOwn] || 0) + 1;
+      }
+      var isSuppOwnTruck = Boolean(r.includes_transport || /^supplier/i.test(String(r.transport_by || ''))) && !ownEquipSet[rCode] && CORE_PARTNER_CODES.indexOf(rCode) < 0;
+      var isPhysicalRawDispatch = !isSuppOwnTruck;
+      if (isPhysicalRawDispatch) {
+        var absRqty = Math.abs(rQty);
+        rt.burnEvalTrips += 1;
+        rt.burnEvalQtyM3 += absRqty;
+        var rBurn = getMemoizedCorridorBurn(rComp, rSite);
+        if (rBurn && rBurn.verified && Number(rBurn.totalLitres) > 0) {
+          rt.verifiedBurnTrips += 1;
+          rt.verifiedBurnQtyM3 += absRqty;
+          rt.modeledBurnLiters += Number(rBurn.totalLitres);
+        }
+      }
       recordTripOvertime(r, 'raw_purchases', 'Raw Material Inbound', rt, rDtStr, rComp, rDrv, rQty);
 
       var rStrictAdd = 0;
@@ -858,6 +941,8 @@
       var rtmObj = ensureTruckMonth(rt, rYm);
       rtmObj.trips += 1; rtmObj.qtyM3 += rQty; rtmObj.recordedRev += rDeliv; rtmObj.hasActivity = true;
       rtmObj.strictCredit += rStrictAdd; rtmObj.fullCredit += rFullAdd;
+      rtmObj.revByCo[rComp] = (rtmObj.revByCo[rComp] || 0) + rDeliv;
+      rtmObj.tripsByCo[rComp] = (rtmObj.tripsByCo[rComp] || 0) + 1;
 
       var rRouteHaulSup = String(r.truck_owner || '').trim();
       var rrKey = [rComp, 'Raw Material Inbound', rt.code, rParty, rSite, rMat, rRouteHaulSup].join('||');
@@ -1169,6 +1254,19 @@
         t.owner === 'Partner Truck' ||
         (!ownEquipSet[c] && t.totalTrips > 0 && (!eqRec || !/loader|excavator|dozer|grader|generator|pump|skid|forklift/i.test(String(eqRec.type || ''))))
       );
+      if (!t.supplierName) {
+        if (eqRec && eqRec.supplier && !isGenericOwnerPlaceholder(eqRec.supplier) && !/^own/i.test(eqRec.ownership || '')) {
+          t.supplierName = String(eqRec.supplier).trim();
+        } else {
+          var ownKeys = Object.keys(t.ticketOwnerCounts || {}).sort(function (a, b) {
+            return (t.ticketOwnerCounts[b] || 0) - (t.ticketOwnerCounts[a] || 0);
+          });
+          if (ownKeys.length) t.supplierName = ownKeys[0];
+        }
+      }
+      if (t.isPartnerOrHauler && t.supplierName && isGenericOwnerPlaceholder(t.owner)) {
+        t.owner = t.supplierName;
+      }
 
       var drvKeys = Object.keys(t.driverTripsMap);
       if (drvKeys.length) {
@@ -1258,19 +1356,6 @@
       }
       delete act._matPriceSet;
     });
-
-    var corridorBurnCache = {};
-    var getMemoizedCorridorBurn = function (coName, siteName) {
-      var sn = String(siteName || '').trim();
-      if (!sn || sn === 'Site' || sn === 'Plant') return { verified: false, restricted: !perm.canBurn };
-      var bk = `${String(coName || 'WTC')}||${sn.toLowerCase()}`;
-      if (!Object.prototype.hasOwnProperty.call(corridorBurnCache, bk)) {
-        corridorBurnCache[bk] = (ent && typeof ent.getVerifiedCorridorBurn === 'function')
-          ? ent.getVerifiedCorridorBurn(coName, sn)
-          : { verified: false, restricted: !perm.canBurn };
-      }
-      return corridorBurnCache[bk];
-    };
 
     var routesList = Object.keys(routeAgg).map(function (rk) {
       var r = routeAgg[rk];
@@ -1363,7 +1448,28 @@
         impactLabel: 'metered dispensing events',
         targetTab: 'expenses',
         targetCat: 'Diesel Fuel'
-      }
+      },
+      (function () {
+        var highBurnList = allTruckList.filter(function (t) {
+          var tm = computeTruckMetrics(t, STATE.mode);
+          return tm.burnOverFlag;
+        });
+        return {
+          id: 'burn_variance_guard',
+          badge: 'Fuel Variance',
+          tone: highBurnList.length > 0 ? 'warn' : 'good',
+          title: 'Per-Truck Metered vs. Route-Modeled Fuel Burn (>20%)',
+          summaryPrefix: '',
+          summaryAmt: '',
+          summaryText: highBurnList.length > 0
+            ? 'Flags trucks whose metered pump diesel exceeds route-modeled grade burn by >20% across >=5 verified loads (>=80% verified route coverage).'
+            : 'All trucks with >=80% verified route coverage (>=5 loads) remain within +20% of route-modeled grade fuel burn.',
+          impactCount: !perm.canBurn ? 'Restricted' : fmtInt(highBurnList.length),
+          impactLabel: 'trucks above +20% modeled burn',
+          targetTab: 'pnl',
+          targetCat: ''
+        };
+      })()
     ];
 
     LIVE_CACHE = {
@@ -1478,10 +1584,34 @@
     var marginPct = totalRev > 0 ? ((netProfit / totalRev) * 100) : (totalCost > 0 ? -100 : 0);
     var trips = Number(t.totalTrips || 0);
     var qtyM3 = Number(t.totalQtyM3 || 0);
+    var burnEvalTrips = Number(t.burnEvalTrips || 0);
+    var burnEvalQtyM3 = Number(t.burnEvalQtyM3 || 0);
+    var verifiedBurnTrips = Number(t.verifiedBurnTrips || 0);
+    var verifiedBurnQtyM3 = Number(t.verifiedBurnQtyM3 || 0);
+    var verifiedBurnShare = burnEvalTrips > 0 ? (verifiedBurnTrips / burnEvalTrips) : 0;
+    var modeledBurnLiters = Math.round((Number(t.modeledBurnLiters || 0) + Number.EPSILON) * 10) / 10;
+    var modeledBurnL100 = (verifiedBurnTrips > 0 && verifiedBurnQtyM3 > 0 && modeledBurnLiters > 0)
+      ? Math.round((((modeledBurnLiters / verifiedBurnQtyM3) * 100) + Number.EPSILON) * 10) / 10
+      : null;
+    var actualDispatchL100 = (burnEvalTrips > 0 && burnEvalQtyM3 > 0 && Number(t.dieselLiters || 0) > 0)
+      ? Math.round((((Number(t.dieselLiters) / burnEvalQtyM3) * 100) + Number.EPSILON) * 10) / 10
+      : null;
+    var burnCompareEligible = Boolean(
+      burnEvalTrips >= 5 &&
+      verifiedBurnTrips >= 5 &&
+      verifiedBurnShare >= 0.8 &&
+      modeledBurnLiters > 0 &&
+      modeledBurnL100 != null &&
+      modeledBurnL100 > 0
+    );
+    var burnVariancePct = (burnCompareEligible && Number(t.dieselEvents || 0) > 0 && actualDispatchL100 != null)
+      ? Math.round((((actualDispatchL100 - modeledBurnL100) / modeledBurnL100) * 100) * 10) / 10
+      : null;
+    var burnOverFlag = Boolean(burnVariancePct != null && burnVariancePct > 20.0);
 
     return {
       code: t.code, displayCode: t.displayCode, plate: t.plate,
-      owner: t.owner, isPartnerOrHauler: Boolean(t.isPartnerOrHauler), driver: t.driver, driverShort: t.driverShort,
+      owner: t.owner, supplierName: t.supplierName || '', isPartnerOrHauler: Boolean(t.isPartnerOrHauler), driver: t.driver, driverShort: t.driverShort,
       colorVar: t.colorVar || 'var(--chart-navy)',
       salesTrips: t.salesTrips, salesPaidTrips: t.salesPaidTrips, salesZeroTrips: t.salesZeroTrips,
       salesWtcTrips: t.salesWtcTrips, salesBbcTrips: t.salesBbcTrips,
@@ -1493,6 +1623,11 @@
       wtcTrips: t.salesWtcTrips + t.rawWtcTrips, bbcTrips: t.salesBbcTrips + t.rawBbcTrips,
       totalQtyM3: qtyM3, recordedRev: recordedRev, creditRev: creditRev, totalRev: totalRev,
       dieselEvents: t.dieselEvents, dieselLiters: t.dieselLiters, dieselCost: dieselCost,
+      burnEvalTrips: burnEvalTrips, burnEvalQtyM3: burnEvalQtyM3,
+      verifiedBurnTrips: verifiedBurnTrips, verifiedBurnQtyM3: verifiedBurnQtyM3,
+      verifiedBurnShare: verifiedBurnShare, modeledBurnLiters: modeledBurnLiters,
+      modeledBurnL100: modeledBurnL100, actualDispatchL100: actualDispatchL100,
+      burnCompareEligible: burnCompareEligible, burnVariancePct: burnVariancePct, burnOverFlag: burnOverFlag,
       repairs: Number(t.repairs || 0), lubes: Number(t.lubes || 0),
       insurance: Number(t.insurance || 0), maintCost: maintCost, expCount: t.expCount,
       capex: Number(t.capex || 0),
@@ -1518,6 +1653,7 @@
       totalTrips: 0, totalPaidTrips: 0, totalZeroTrips: 0, totalQtyM3: 0,
       wtcTrips: 0, bbcTrips: 0, recordedRev: 0, creditRev: 0, totalRev: 0,
       dieselEvents: 0, dieselLiters: 0, dieselCost: 0,
+      highBurnTruckCount: 0,
       repairs: 0, lubes: 0, insurance: 0, maintCost: 0, expCount: 0, capex: 0,
       driverBasePay: 0, driverOtHours: 0, driverOtPay: 0, driverCost: 0,
       driverOtSnapMin: 0, driverOtSnapUsd: null,
@@ -1535,6 +1671,7 @@
       tot.totalQtyM3 += m.totalQtyM3; tot.wtcTrips += m.wtcTrips; tot.bbcTrips += m.bbcTrips;
       tot.recordedRev += m.recordedRev; tot.creditRev += m.creditRev; tot.totalRev += m.totalRev;
       tot.dieselEvents += m.dieselEvents; tot.dieselLiters += m.dieselLiters; tot.dieselCost += m.dieselCost;
+      if (m.burnOverFlag) tot.highBurnTruckCount += 1;
       tot.repairs += m.repairs; tot.lubes += m.lubes; tot.insurance += m.insurance;
       tot.maintCost += m.maintCost; tot.expCount += m.expCount; tot.capex += m.capex;
       tot.driverBasePay += m.driverBasePay; tot.driverOtHours += m.driverOtHours;
@@ -1560,7 +1697,8 @@
     var allowPay = Boolean(perm.canPay);
     var allowAllCost = Boolean(perm.canAllCost);
     var allowProfit = Boolean(perm.canProfit && perm.canAllCost);
-    if (allowRev && allowExp && allowPay && allowAllCost && allowProfit) return m;
+    var allowBurn = Boolean(perm.canBurn);
+    if (allowRev && allowExp && allowPay && allowAllCost && allowProfit && allowBurn) return m;
     var out = Object.assign({}, m);
     if (!allowRev) {
       out.salesRev = null;
@@ -1578,6 +1716,19 @@
       out.insurance = null;
       out.maintCost = null;
       out.capex = null;
+    }
+    if (!allowBurn) {
+      out.dieselLiters = null;
+      out.litersPerTrip = null;
+      out.litersPer100M3 = null;
+      out.modeledBurnLiters = null;
+      out.modeledBurnL100 = null;
+      out.actualDispatchL100 = null;
+      out.verifiedBurnShare = null;
+      out.burnVariancePct = null;
+      out.burnCompareEligible = false;
+      out.burnOverFlag = false;
+      out.highBurnTruckCount = 0;
     }
     if (!allowPay) {
       out.driverBasePay = null;
@@ -1619,6 +1770,10 @@
       if (!allowExp) {
         nt.dieselCost = null; nt.repairs = null; nt.lubes = null;
         nt.insurance = null; nt.capex = null;
+      }
+      if (!allowBurn) {
+        nt.dieselLiters = null;
+        nt.modeledBurnLiters = null;
       }
       if (!allowPay) {
         nt.driverBasePay = null; nt.driverOtPay = null;
@@ -1712,6 +1867,13 @@
     var safeRules = (ds.rulesList || []).map(function (r) {
       if (r.id === 'capex_guard' && !allowExp) {
         return Object.assign({}, r, { summaryAmt: r.summaryAmt ? 'Restricted' : '', impactCount: 'Restricted' });
+      }
+      if (r.id === 'burn_variance_guard' && !allowBurn) {
+        return Object.assign({}, r, {
+          tone: 'good',
+          summaryText: 'Per-truck metered diesel variance checks require Fuel Burn access.',
+          impactCount: 'Restricted'
+        });
       }
       return r;
     });
@@ -2130,7 +2292,7 @@
             <span class="fpnl-seg-violet" style="width:${wDrv}%"></span>
           </div>
           <div class="fpnl-mix-legend">
-            <button type="button" class="fpnl-drill-chip" data-fpnl-drill="expenses" data-fpnl-drill-cat="Diesel Fuel" data-fpnl-drill-truck="${esc(m.code)}"><i style="background:var(--chart-brass)"></i><span>Fuel</span> (${fmtNum(m.dieselLiters, 0)} L) ${fuelCostHtml}</button>
+            <button type="button" class="fpnl-drill-chip" data-fpnl-drill="expenses" data-fpnl-drill-cat="Diesel Fuel" data-fpnl-drill-truck="${esc(m.code)}"><i style="background:var(--chart-brass)"></i><span>Fuel</span>${perm.canBurn ? ` <span data-no-i18n="1">(${fmtNum(m.dieselLiters, 0)} L)</span>` : ''} ${fuelCostHtml}</button>
             <button type="button" class="fpnl-drill-chip" data-fpnl-drill="expenses" data-fpnl-drill-cat="Repairs &amp; Parts" data-fpnl-drill-truck="${esc(m.code)}"><i style="background:var(--chart-crit)"></i><span>Repairs &amp; Lubes</span> (${fmtInt(m.expCount)}) ${maintCostHtml}</button>
             <button type="button" class="fpnl-drill-chip" data-fpnl-drill="overtime" data-fpnl-drill-truck="${esc(m.code)}"><i style="background:var(--chart-plum)"></i><span>Driver &amp; OT</span> (${fmtNum(m.driverOtHours, 0)}h) ${drvCostHtml}${otSnapChip}</button>
           </div>
@@ -2138,7 +2300,7 @@
 
         <div class="fpnl-card-footer${hideCo ? ' cols-2' : ''}">
           <div><div class="fpnl-mini-k">Net / Trip</div><div class="fpnl-mini-v ${(perm.canProfit && perm.canAllCost) ? (m.netPerTrip >= 0 ? 'fpnl-pos' : 'fpnl-neg') : ''}">${(perm.canProfit && perm.canAllCost) ? esc(fmtSignedMoney(m.netPerTrip, 2)) : maskCell()}</div></div>
-          <div><div class="fpnl-mini-k">Fuel Burn</div><div class="fpnl-mini-v">${fmtNum(m.litersPerTrip, 1)} L/trip · ${fmtNum(m.litersPer100M3, 0)} L/100m³</div></div>
+          <div><div class="fpnl-mini-k">Fuel Burn</div><div class="fpnl-mini-v">${!perm.canBurn ? maskCell() : `${fmtNum(m.litersPerTrip, 1)} L/trip · ${fmtNum(m.litersPer100M3, 0)} L/100m³${m.burnCompareEligible ? (m.burnOverFlag ? `<div><button type="button" class="fpnl-burn-var-flag" data-fpnl-drill="expenses" data-fpnl-drill-cat="Diesel Fuel" data-fpnl-drill-truck="${esc(m.code)}" data-ui-tip="Metered diesel burn exceeds route-modeled grade burn by >20% across >=5 verified loads"><span>High Burn</span> <span data-no-i18n="1">+${fmtNum(m.burnVariancePct, m.burnVariancePct < 21 ? 1 : 0)}%</span></button></div>` : (m.dieselEvents > 0 && m.burnVariancePct != null ? `<div class="fpnl-burn-model-cmp"><span>Modeled</span> <span data-no-i18n="1">${fmtNum(m.modeledBurnL100, 1)} L/100m³ (${m.burnVariancePct >= 0 ? '+' : ''}${fmtNum(m.burnVariancePct, 0)}%)</span></div>` : `<div class="fpnl-burn-model-cmp"><span>Modeled</span> <span data-no-i18n="1">${fmtNum(m.modeledBurnL100, 1)} L/100m³</span> · <span>No tank draws</span></div>`)) : ''}`}</div></div>
           ${unitPlantCol}
         </div>
         ${(m.isPartnerOrHauler && perm.canSettle) ? `<div class="fpnl-card-settle-row">
@@ -2163,6 +2325,7 @@
       </div>
       <div class="fpnl-sub-meta">
         <span><span>Active</span>: <b>${metrics.length}</b> <span>${metrics.length === 1 ? 'truck' : 'trucks'}</span> · <b>${fmtInt(k.totalTrips)}</b> <span>trips</span> · <b>${fmtNum(k.totalQtyM3, 1)}</b> m³</span>
+        ${(p.canBurn && k.highBurnTruckCount > 0) ? `<span class="badge badge-warn" data-ui-tip="Trucks exceeding route-modeled grade burn by >20% across >=5 verified loads">${fmtInt(k.highBurnTruckCount)} <span>High Burn</span></span>` : ''}
         ${model.scope.period !== 'all' ? '<button type="button" class="fpnl-link-btn" data-fpnl-reset-period="1">Reset Period</button>' : ''}
       </div>
     </div>`;
@@ -2285,8 +2448,11 @@
 
     if (STATE.pnlView === 'table') {
       var matrixRows = metrics.map(function (m) {
+        var burnPill = (p.canBurn && m.burnOverFlag)
+          ? `<span class="badge badge-warn fpnl-burn-var-pill" data-ui-tip="Metered diesel burn exceeds route-modeled grade burn by >20% across >=5 verified loads"><span>High Burn</span> <span data-no-i18n="1">+${fmtNum(m.burnVariancePct, m.burnVariancePct < 21 ? 1 : 0)}%</span></span>`
+          : '';
         return `<tr class="rrow" data-fpnl-focus="${esc(m.code)}" data-ui-tip="Toggle focus between selected truck and active cohort">
-          <td class="mono">${relLinkHtml('equipment', m.displayCode, m.displayCode, true)} ${healthBadgeHtml(m.displayCode)}${(m.isPartnerOrHauler && p.canSettle) ? `<button type="button" class="btn btn-ghost-bar fpnl-settle-btn fpnl-settle-btn-sm" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="Open printable monthly hauler settlement sheet (defaults to Booked Revenue)"><span>Settlement</span></button>` : ''}<div class="fpnl-sub-note">${esc(m.plate)} · ${esc(m.driverShort)}</div></td>
+          <td class="mono">${relLinkHtml('equipment', m.displayCode, m.displayCode, true)} ${healthBadgeHtml(m.displayCode)}${burnPill}${(m.isPartnerOrHauler && p.canSettle) ? `<button type="button" class="btn btn-ghost-bar fpnl-settle-btn fpnl-settle-btn-sm" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="Open printable monthly hauler settlement sheet (defaults to Booked Revenue)"><span>Settlement</span></button>` : ''}<div class="fpnl-sub-note">${esc(m.plate)} · ${esc(m.driverShort)}</div></td>
           <td class="r"><strong>${fmtInt(m.totalTrips)}</strong></td>
           <td class="r">${fmtNum(m.totalQtyM3, 1)}</td>
           <td class="r">${(!p.canBooks && !p.canProfit) ? maskCell() : esc(fmtMoney(m.recordedRev, 2))}</td>
@@ -3116,8 +3282,11 @@
     var lines = [];
     var filename = `Fleet_Studio_${kind}.csv`;
     if (kind === 'matrix') {
-      lines.push(['Truck', 'Plate', 'Trips', 'Qty_m3', 'Booked_USD', 'Unbundled_USD', 'TotalRev_USD', 'Diesel_USD', 'Maint_USD', 'DriverOT_USD', 'TotalCost_USD', 'NetMargin_USD'].join(','));
+      lines.push(['Truck', 'Plate', 'Trips', 'Qty_m3', 'Booked_USD', 'Unbundled_USD', 'TotalRev_USD', 'Diesel_USD', 'Maint_USD', 'DriverOT_USD', 'TotalCost_USD', 'NetMargin_USD', 'Actual_L_per_100m3', 'Modeled_L_per_100m3', 'Burn_Variance_Pct', 'Burn_Status'].join(','));
       model.activeMetrics.forEach(function (m) {
+        var burnStatus = !p.canBurn
+          ? 'Restricted'
+          : (m.burnOverFlag ? 'High Burn (>20%)' : (m.burnCompareEligible ? (m.dieselEvents > 0 ? 'Normal' : 'No Tank Draws') : 'Unverified'));
         lines.push([
           m.displayCode, m.plate, m.totalTrips, m.totalQtyM3.toFixed(2),
           (p.canBooks || p.canProfit) ? m.recordedRev.toFixed(2) : 'Restricted',
@@ -3127,7 +3296,11 @@
           p.canExp ? m.maintCost.toFixed(2) : 'Restricted',
           p.canPay ? m.driverCost.toFixed(2) : 'Restricted',
           p.canAllCost ? m.totalCost.toFixed(2) : 'Restricted',
-          (p.canProfit && p.canAllCost) ? m.netProfit.toFixed(2) : 'Restricted'
+          (p.canProfit && p.canAllCost) ? m.netProfit.toFixed(2) : 'Restricted',
+          !p.canBurn ? 'Restricted' : (m.actualDispatchL100 != null ? m.actualDispatchL100.toFixed(1) : ''),
+          !p.canBurn ? 'Restricted' : (m.modeledBurnL100 != null ? m.modeledBurnL100.toFixed(1) : ''),
+          !p.canBurn ? 'Restricted' : (m.burnVariancePct != null ? m.burnVariancePct.toFixed(1) : ''),
+          burnStatus
         ].map(csvCell).join(','));
       });
     } else if (kind === 'routes') {
@@ -3164,7 +3337,11 @@
       sData.driverRows.forEach(function (dv) {
         lines.push(['Driver Pay & OT', fmtDateDisplay(dv.date), dv.company, dv.supplier, dv.bill_number === '—' ? '-' : dv.bill_number, dv.subcategory, dv.hours ? dv.hours.toFixed(1) : '', (-dv.total_usd).toFixed(2)].map(csvCell).join(','));
       });
-      lines.push(['NET SETTLEMENT PAYABLE', sData.periodLabel, sData.scope.companyLabel, sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Revenue' : 'Includes Internal Unbundled Credit', '', sData.netPayable.toFixed(2)].map(csvCell).join(','));
+      (sData.settlementRows || []).forEach(function (sp) {
+        lines.push(['Transportation Settlement Paid', fmtDateDisplay(sp.date), sp.company, sp.supplier, sp.reference === '-' ? '-' : sp.reference, sp.detail || sp.method, '', (-sp.paidUsd).toFixed(2)].map(csvCell).join(','));
+      });
+      lines.push(['NET OPERATING PAYABLE', sData.periodLabel, sData.scope.companyLabel, sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Revenue' : 'Includes Internal Unbundled Credit', '', sData.netPayable.toFixed(2)].map(csvCell).join(','));
+      lines.push(['UNPAID BALANCE REMAINING', sData.periodLabel, sData.scope.companyLabel, sData.supplierName || sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Contract Remainder' : 'Management Valuation Remainder', '', sData.remainingPayable.toFixed(2)].map(csvCell).join(','));
     } else if (kind === 'zero') {
       filename = 'Fleet_Unpriced_Loads.csv';
       var canSeeZeroRev = Boolean(p.canBooks || p.canProfit);
@@ -3366,29 +3543,215 @@
 
     var roundCents = function (n) { return Math.round(((Number(n || 0)) + Number.EPSILON) * 100) / 100; };
     var bookedTotal = 0, addonTotal = 0, totalTrips = 0, totalQty = 0;
+    var bookedCreditsByCo = {}, dieselByCo = {}, workshopByCo = {}, driverByCo = {};
     haulRows.forEach(function (h) {
       totalTrips += h.trips;
       totalQty += h.qtyM3;
       bookedTotal += h.bookedUsd;
       addonTotal += h.addonUsd;
+      bookedCreditsByCo[h.company] = (bookedCreditsByCo[h.company] || 0) + h.bookedUsd;
     });
     var grossCredits = roundCents(bookedTotal + (mode === 'recorded' ? 0 : addonTotal));
     var dieselTotal = 0, dieselLiters = 0;
-    dieselList.forEach(function (d) { dieselTotal += Number(d.totalUsd || 0); dieselLiters += Number(d.liters || 0); });
+    dieselList.forEach(function (d) {
+      var du = Number(d.totalUsd || 0);
+      dieselTotal += du;
+      dieselLiters += Number(d.liters || 0);
+      var dCo = String(d.company || 'WTC');
+      dieselByCo[dCo] = (dieselByCo[dCo] || 0) + du;
+    });
     dieselTotal = roundCents(dieselTotal);
     var workshopTotal = 0;
-    workshopList.forEach(function (w) { workshopTotal += Number(w.total_usd || 0); });
+    workshopList.forEach(function (w) {
+      var wu = Number(w.total_usd || 0);
+      workshopTotal += wu;
+      var wCo = String(w.company || 'WTC');
+      workshopByCo[wCo] = (workshopByCo[wCo] || 0) + wu;
+    });
     workshopTotal = roundCents(workshopTotal);
     var driverTotal = 0, driverHours = 0;
-    driverList.forEach(function (dv) { driverTotal += Number(dv.total_usd || 0); driverHours += Number(dv.hours || 0); });
+    driverList.forEach(function (dv) {
+      var dvu = Number(dv.total_usd || 0);
+      driverTotal += dvu;
+      driverHours += Number(dv.hours || 0);
+      var dvCo = String(dv.company || 'WTC');
+      driverByCo[dvCo] = (driverByCo[dvCo] || 0) + dvu;
+    });
     driverTotal = roundCents(driverTotal);
 
     var netPayable = roundCents(grossCredits - dieselTotal - workshopTotal - driverTotal);
+    var bookedOperatingNet = roundCents(roundCents(bookedTotal) - dieselTotal - workshopTotal - driverTotal);
     var scope = getTopbarScopeSummary();
     var partnerList = (ds.allTruckList || []).filter(function (x) { return x.isPartnerOrHauler; });
+    var supplierName = String(tObj.supplierName || (!isGenericOwnerPlaceholder(tObj.owner) ? tObj.owner : '') || '').trim();
+    var supNorm = normPartyKey(supplierName);
+
+    var bookedByCo = {};
+    [bookedCreditsByCo, dieselByCo, workshopByCo, driverByCo].forEach(function (mp) {
+      Object.keys(mp).forEach(function (co) {
+        if (!Object.prototype.hasOwnProperty.call(bookedByCo, co)) {
+          bookedByCo[co] = roundCents((bookedCreditsByCo[co] || 0) - (dieselByCo[co] || 0) - (workshopByCo[co] || 0) - (driverByCo[co] || 0));
+        }
+      });
+    });
+
+    var allScopedSettle = scopedTableRows('settlements', true);
+    var periodSettleSet = new Set(scopedTableRows('settlements', false));
+    var availMonthSet = {};
+    availableMonths.forEach(function (mk) { availMonthSet[mk] = true; });
+    var isStdPayMethod = function (mthStr, allowCfg) {
+      if (mthStr === 'Config') return Boolean(allowCfg);
+      return mthStr === 'Payment' || mthStr === 'Barter' || mthStr === 'Cash' || mthStr === 'Bank Transfer' || mthStr === 'Check' || mthStr === 'Cheque' || mthStr === 'Credit Discount' || mthStr === 'Credit Return';
+    };
+    var settlementRows = [];
+    var paidByCo = {};
+    var settlementsTotal = 0;
+    for (var spi = 0; spi < allScopedSettle.length; spi++) {
+      var sp = allScopedSettle[spi];
+      if (!sp || sp.voided || sp.wb_lbp_paid != null) continue;
+      var spMth = String(sp.method || 'Payment').trim();
+      var spNotes = String(sp.notes || '');
+      var spRef = String(sp.reference || '').trim();
+      var bracketMatch = spNotes.match(/\[Truck:\s*([^\]]+)\]/i);
+      var psMatch = spNotes.match(/Partner settlement\s*[-\u00b7]\s*(.+?)\s*[-\u00b7]\s*(\d{4}-\d{2}|ALL)(?=\s|$|\[)/i);
+      var tagTruck = normTruckCode((bracketMatch && bracketMatch[1]) || (psMatch && psMatch[1]) || '');
+      var tagYm = (psMatch && psMatch[2]) ? String(psMatch[2]).trim() : '';
+      if (tagTruck && tagTruck !== code) continue;
+
+      var spSupNorm = normPartyKey(sp.supplier || '');
+      if (tagTruck) {
+        if (supNorm && spSupNorm && spSupNorm !== supNorm) continue;
+      } else {
+        if (!supNorm || !spSupNorm || spSupNorm !== supNorm) continue;
+      }
+
+      var spLeg = String(sp.payable_leg || sp.leg || '').trim().toLowerCase();
+      if (spLeg === 'quarry' || spLeg === 'expense') continue;
+      if (!spLeg && !tagTruck) {
+        var spCoKey = String(sp.company || 'WTC');
+        var legInfo = (ent && typeof ent.getSupplierPayableLegsInfo === 'function')
+          ? ent.getSupplierPayableLegsInfo(sp.supplier, spCoKey)
+          : null;
+        if (legInfo && (legInfo.hasQ || legInfo.hasE)) {
+          spLeg = (ent && typeof ent.inferSettlementPayableLeg === 'function')
+            ? String(ent.inferSettlementPayableLeg(sp.supplier, spMth, spCoKey) || '').trim().toLowerCase()
+            : '';
+        } else if ((legInfo && legInfo.hasT) || ((bookedCreditsByCo[spCoKey] || 0) > 0.005)) {
+          spLeg = 'transportation';
+        }
+        if (spLeg !== 'transportation' && spLeg !== 'transport') continue;
+      }
+      if (spLeg && spLeg !== 'transportation' && spLeg !== 'transport') continue;
+
+      var spDt = recDate(sp, st);
+      var spYm = spDt.slice(0, 7);
+      if (ym === 'ALL') {
+        if (!isStdPayMethod(spMth, true)) continue;
+        if (tagTruck && tagYm && tagYm !== 'ALL') {
+          if (!periodSettleSet.has(sp) && !availMonthSet[tagYm]) continue;
+        } else {
+          if (!periodSettleSet.has(sp)) continue;
+        }
+      } else {
+        if (!isStdPayMethod(spMth, false)) continue;
+        if (tagTruck && tagYm && tagYm !== 'ALL') {
+          if (tagYm !== ym) continue;
+        } else {
+          if (spYm !== ym) continue;
+        }
+      }
+
+      var rawPaid = Number(sp.amount || 0) + Number(sp.discount || 0);
+      if (Math.abs(rawPaid) <= 0.004) continue;
+      var spCo = String(sp.company || 'WTC');
+      var weight = 1;
+      var isAllocated = false;
+      if (!tagTruck && supNorm && spYm && /^\d{4}-\d{2}$/.test(spYm)) {
+        var sibs = partnerList.filter(function (x) {
+          if (normPartyKey(x.supplierName || (!isGenericOwnerPlaceholder(x.owner) ? x.owner : '')) !== supNorm) return false;
+          var xm = x.monthsMap && x.monthsMap[spYm];
+          return Boolean(xm && xm.tripsByCo && Number(xm.tripsByCo[spCo] || 0) > 0);
+        });
+        if (sibs.length > 1) {
+          var myInSib = sibs.some(function (x) { return x.code === code; });
+          if (!myInSib) continue;
+          var totPosRev = 0;
+          var myRev = 0;
+          var totSibTrips = 0;
+          var myTrips = 0;
+          sibs.forEach(function (x) {
+            var xm = x.monthsMap[spYm];
+            var rv = Math.max(0, Number((xm.revByCo && xm.revByCo[spCo]) || 0));
+            var tr = Number((xm.tripsByCo && xm.tripsByCo[spCo]) || 0);
+            totPosRev += rv;
+            totSibTrips += tr;
+            if (x.code === code) { myRev = rv; myTrips = tr; }
+          });
+          weight = totPosRev > 0.005 ? (myRev / totPosRev) : (totSibTrips > 0 ? (myTrips / totSibTrips) : (1 / sibs.length));
+          if (weight <= 0.0001) continue;
+          isAllocated = weight < 0.9999;
+        }
+      }
+
+      var allocPaid = roundCents(rawPaid * weight);
+      if (Math.abs(allocPaid) <= 0.004) continue;
+      settlementsTotal = roundCents(settlementsTotal + allocPaid);
+      paidByCo[spCo] = roundCents((paidByCo[spCo] || 0) + allocPaid);
+      var displayNote = cleanNoEmDash(spNotes.replace(/\s*\[Truck:\s*[^\]]+\]/ig, '').trim());
+      settlementRows.push({
+        id: sp.id || '',
+        date: spDt,
+        company: spCo,
+        supplier: String(sp.supplier || supplierName || tObj.owner || '-'),
+        method: spMth,
+        reference: spRef || '-',
+        detail: isAllocated ? `Allocated (${Math.round(weight * 100)}%)` : (displayNote || 'Transportation settlement'),
+        userNote: !isAllocated && displayNote ? displayNote : '',
+        allocPct: isAllocated ? Math.round(weight * 100) : 100,
+        paidUsd: allocPaid,
+        isAllocated: isAllocated
+      });
+    }
+    settlementRows.sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
+
+    var remainingPayable = roundCents(netPayable - settlementsTotal);
+    var bookedRemainingPayable = roundCents(bookedOperatingNet - settlementsTotal);
+
+    var allowedCos = (ent && typeof ent.allowedCompanyNames === 'function')
+      ? ent.allowedCompanyNames()
+      : ['WTC', 'BBConstruction', 'Lions Transport'];
+    var remByCo = {};
+    Object.keys(bookedByCo).forEach(function (co) { remByCo[co] = roundCents((bookedByCo[co] || 0) - (paidByCo[co] || 0)); });
+    Object.keys(paidByCo).forEach(function (co) {
+      if (!Object.prototype.hasOwnProperty.call(remByCo, co)) remByCo[co] = roundCents(-(paidByCo[co] || 0));
+    });
+    var payPlan = null;
+    if (scope.companyKey !== 'manufacturing-group') {
+      var singleTargetCo = scope.companyLabel;
+      if (allowedCos.indexOf(singleTargetCo) >= 0 && bookedRemainingPayable > 0.004) {
+        payPlan = { company: singleTargetCo, amount: bookedRemainingPayable, multiCompanySplit: false };
+      }
+    } else {
+      var posCos = bookedRemainingPayable > 0.004
+        ? Object.keys(remByCo)
+            .filter(function (co) { return allowedCos.indexOf(co) >= 0 && remByCo[co] > 0.004; })
+            .sort(function (a, b) { return remByCo[b] - remByCo[a]; })
+        : [];
+      if (posCos.length === 1) {
+        payPlan = { company: posCos[0], amount: roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable)), multiCompanySplit: false };
+      } else if (posCos.length > 1) {
+        var topAmt = roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable));
+        payPlan = {
+          company: posCos[0],
+          amount: topAmt,
+          multiCompanySplit: bookedRemainingPayable > (remByCo[posCos[0]] + 0.004)
+        };
+      }
+    }
 
     return {
       truck: tObj,
+      supplierName: supplierName,
       ym: ym,
       basisMode: mode,
       periodLabel: ym === 'ALL' ? cleanNoEmDash(scope.periodLabel) : ym,
@@ -3399,6 +3762,7 @@
       dieselRows: dieselList,
       workshopRows: workshopList,
       driverRows: driverList,
+      settlementRows: settlementRows,
       totalTrips: totalTrips,
       totalQty: totalQty,
       bookedTotal: bookedTotal,
@@ -3409,7 +3773,12 @@
       workshopTotal: workshopTotal,
       driverTotal: driverTotal,
       driverHours: driverHours,
-      netPayable: netPayable
+      netPayable: netPayable,
+      bookedOperatingNet: bookedOperatingNet,
+      settlementsTotal: settlementsTotal,
+      remainingPayable: remainingPayable,
+      bookedRemainingPayable: bookedRemainingPayable,
+      payPlan: payPlan
     };
   }
 
@@ -3526,6 +3895,52 @@
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="fpnl-empty">No driver base pay, overtime or advances recorded in this period.</td></tr>';
 
+    var settleRowsHtml = (data.settlementRows || []).map(function (sp) {
+      var detailHtml = sp.isAllocated
+        ? `<span>Allocated</span> <span data-no-i18n="1">(${fmtInt(sp.allocPct)}%)</span>`
+        : (sp.userNote ? `<span data-no-i18n="1">${esc(sp.userNote)}</span>` : '<span>Transportation settlement</span>');
+      return `<tr>
+        <td class="mono">${esc(fmtDateDisplay(sp.date))}</td>
+        <td>${esc(cleanNoEmDash(sp.company))}</td>
+        <td>${esc(cleanNoEmDash(sp.method))}</td>
+        <td class="mono">${esc(cleanNoEmDash(sp.reference))}</td>
+        <td>${detailHtml}</td>
+        <td class="r fpnl-neg">-${esc(fmtMoney(sp.paidUsd, 2))}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No transportation settlements recorded in this period.</td></tr>';
+
+    var payBtnHtml = '';
+    if (perm.canEnterSettlement) {
+      var canRecordNow = Boolean(data.basisMode === 'recorded' && data.supplierName && data.payPlan && data.payPlan.amount > 0.004);
+      var payBtnLblHtml = '';
+      var payBtnTip = '';
+      if (data.basisMode !== 'recorded') {
+        payBtnLblHtml = '<span>Record Settlement (Booked Only)</span>';
+        payBtnTip = 'Switch back to Booked Revenue to post a contract settlement payment';
+      } else if (!data.supplierName) {
+        payBtnLblHtml = '<span>No Payable Due</span>';
+        payBtnTip = 'Assign a supplier owner on this hauler unit before posting a settlement';
+      } else if (canRecordNow) {
+        payBtnLblHtml = data.payPlan.multiCompanySplit
+          ? `<span>Record Settlement Payment</span> <span data-no-i18n="1">(${esc(data.payPlan.company)} · ${esc(fmtMoney(data.payPlan.amount, 2))})</span>`
+          : `<span>Record Settlement Payment</span> <span data-no-i18n="1">(${esc(fmtMoney(data.payPlan.amount, 2))})</span>`;
+        payBtnTip = 'Close sheet and open Settlement (Transportation leg) prefilled for unpaid Booked balance';
+      } else if (Math.abs(data.bookedRemainingPayable) <= 0.004) {
+        payBtnLblHtml = '<span>Settled ($0.00)</span>';
+        payBtnTip = 'Unpaid Booked balance is $0.00 for this period';
+      } else {
+        payBtnLblHtml = '<span>No Payable Due</span>';
+        payBtnTip = 'No unpaid Booked balance remaining for this hauler in this period';
+      }
+      payBtnHtml = `<button type="button" class="btn btn-primary fpnl-settle-pay-btn" id="fpnlSettlePayBtn"${canRecordNow ? '' : ' disabled'} data-ui-tip="${esc(payBtnTip)}">${payBtnLblHtml}</button>`;
+    }
+
+    var remBal = Number(data.remainingPayable || 0);
+    var remStatusCls = Math.abs(remBal) <= 0.004 ? 'is-settled' : (remBal > 0 ? 'is-unpaid' : 'is-over');
+    var remStatusTxt = Math.abs(remBal) <= 0.004
+      ? 'Settled ($0.00)'
+      : (remBal > 0 ? 'Unpaid to Hauler' : 'Balance Due from Hauler');
+
     existing.innerHTML = `<div id="fpnlSettlementModal" class="fpnl-settle-modal" role="dialog" aria-modal="true" aria-label="Partner Truck Monthly Settlement Sheet">
       <div class="fpnl-settle-toolbar">
         <div class="fpnl-settle-controls">
@@ -3537,6 +3952,7 @@
           </div>
         </div>
         <div class="fpnl-settle-controls">
+          ${payBtnHtml}
           <button type="button" class="btn" id="fpnlSettleCsvBtn">CSV</button>
           <button type="button" class="btn btn-primary" id="fpnlSettlePrintBtn">Print / PDF</button>
           <button type="button" class="fpnl-icon-close" data-fpnl-settle-close="1" aria-label="Close">×</button>
@@ -3547,12 +3963,12 @@
         <div class="fpnl-settle-head">
           <div>
             <div class="fpnl-settle-eyebrow"><span>PARTNER &amp; HAULER MONTHLY SETTLEMENT STATEMENT</span></div>
-            <h3 class="fpnl-settle-title"><span data-no-i18n="1">${esc(data.truck.displayCode)} (${esc(data.truck.plate)})</span> - <span>${esc(cleanNoEmDash(data.truck.owner))}</span></h3>
+            <h3 class="fpnl-settle-title"><span data-no-i18n="1">${esc(data.truck.displayCode)} (${esc(data.truck.plate)})</span> - <span${isGenericOwnerPlaceholder(data.truck.owner) ? '' : ' data-no-i18n="1"'}>${esc(cleanNoEmDash(data.truck.owner))}</span></h3>
             <div class="fpnl-settle-meta">
               <span><span>Entity</span>: <b>${esc(cleanNoEmDash(data.scope.companyLabel))}</b></span>
               <span><span>Period</span>: <b data-no-i18n="1">${esc(data.periodLabel)}</b></span>
               <span><span>Basis</span>: <b>${esc(cleanNoEmDash(data.scope.basisLabel))}</b></span>
-              <span><span>Driver</span>: <b>${esc(cleanNoEmDash(data.truck.driverShort || 'Assigned Driver'))}</b></span>
+              <span><span>Driver</span>: <b${(data.truck.driverShort && data.truck.driverShort !== 'Assigned Driver') ? ' data-no-i18n="1"' : ''}>${esc(cleanNoEmDash(data.truck.driverShort || 'Assigned Driver'))}</b></span>
               <span><span>Valuation</span>: <b>${esc(basisLbl)}</b></span>
             </div>
           </div>
@@ -3644,6 +4060,31 @@
           </div>
         </div>
 
+        <div>
+          <div class="fpnl-settle-sec-hdr">
+            <h4><span data-no-i18n="1">E.</span> <span>Transportation Settlements Paid</span> <span data-no-i18n="1">(-) (${fmtInt((data.settlementRows || []).length)})</span></h4>
+            <span class="fpnl-sub-note">-${esc(fmtMoney(data.settlementsTotal, 2))}</span>
+          </div>
+          <div class="table-wrap fpnl-table-wrap">
+            <table class="ledger-table">
+              <thead><tr><th>Date</th><th>Co.</th><th>Method</th><th>Ref #</th><th>Detail</th><th class="r">Paid ($)</th></tr></thead>
+              <tbody>${settleRowsHtml}</tbody>
+              <tfoot><tr><td colspan="5"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.settlementsTotal, 2))}</b></td></tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="fpnl-settle-balance-bar" id="fpnlSettleBalanceBar">
+          <div class="fpnl-settle-balance-eq">
+            <span><span>Operating Net</span>: <b>${esc(fmtSignedMoney(data.netPayable, 2))}</b></span>
+            <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
+            <span><span>Less Settlements Paid</span>: <b class="fpnl-neg">-${esc(fmtMoney(data.settlementsTotal, 2))}</b></span>
+            <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
+            <span><span>Unpaid Balance Remaining</span>: <strong class="${remBal >= 0 ? 'fpnl-pos' : 'fpnl-neg'}">${esc(fmtSignedMoney(remBal, 2))}</strong></span>
+          </div>
+          <span class="fpnl-settle-balance-tag ${remStatusCls}">${esc(remStatusTxt)}</span>
+        </div>
+
         <div class="fpnl-settle-signs">
           <div><div class="fpnl-settle-sign-line"><span>Prepared By</span></div></div>
           <div><div class="fpnl-settle-sign-line"><span>Hauler / Partner Confirmation</span></div></div>
@@ -3684,6 +4125,71 @@
     return true;
   }
 
+  function triggerRecordPartnerSettlement(truckOverride, ymOverride) {
+    var perm = getSeatPermissions();
+    var ent = window.MFG_ENTERPRISE;
+    if (!perm.canSettle || !perm.canEnterSettlement) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Recording supplier settlements requires Finance Entry rights', 'err');
+      return { ok: false, reason: 'forbidden_seat' };
+    }
+    var tCode = truckOverride ? normTruckCode(truckOverride) : SETTLE_STATE.truck;
+    var ymVal = ymOverride != null ? ymOverride : SETTLE_STATE.ym;
+    if (!SETTLE_STATE.open && !truckOverride) {
+      return { ok: false, reason: 'not_open' };
+    }
+    var basis = SETTLE_STATE.open && !truckOverride ? SETTLE_STATE.basisMode : 'recorded';
+    var data = buildPartnerSettlementData(tCode, ymVal, basis);
+    if (!data) {
+      return { ok: false, reason: 'not_partner' };
+    }
+    if (data.basisMode !== 'recorded') {
+      if (ent && typeof ent.toast === 'function') ent.toast('Switch back to Booked Revenue to post a contract settlement payment', 'warn');
+      return { ok: false, reason: 'shadow_basis_blocked' };
+    }
+    if (!data.supplierName) {
+      if (ent && typeof ent.toast === 'function') ent.toast('Assign a supplier owner on this hauler unit before posting a settlement', 'warn');
+      return { ok: false, reason: 'missing_supplier' };
+    }
+    if (!data.payPlan || !(data.payPlan.amount > 0.004)) {
+      if (ent && typeof ent.toast === 'function') ent.toast('No unpaid Booked balance remaining for this hauler in this period', 'warn');
+      return { ok: false, reason: 'nothing_due' };
+    }
+    if (!ent || typeof ent.openEntryModal !== 'function') {
+      return { ok: false, reason: 'no_modal' };
+    }
+    var todayIso = (typeof ent.todayISO === 'function') ? ent.todayISO() : new Date().toISOString().slice(0, 10);
+    var repDateIso = todayIso;
+    if (data.ym && /^\d{4}-\d{2}$/.test(data.ym)) {
+      var y = Number(data.ym.slice(0, 4));
+      var m = Number(data.ym.slice(5, 7));
+      var endDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      var moEnd = `${data.ym}-${String(endDay).padStart(2, '0')}`;
+      repDateIso = moEnd > todayIso ? todayIso : moEnd;
+    }
+    var noteStr = `Partner settlement - ${data.truck.displayCode} - ${data.ym === 'ALL' ? 'ALL' : data.ym} [Truck: ${data.truck.code}]`;
+    var targetCo = data.payPlan.company;
+    var payAmt = Math.round(((Number(data.payPlan.amount || 0)) + Number.EPSILON) * 100) / 100;
+    closePartnerSettlementModal();
+    ent.openEntryModal('settlement', {
+      _partnerSettlement: true,
+      company: targetCo,
+      supplier: data.supplierName,
+      method: 'Payment',
+      payable_leg: 'transportation',
+      amount: payAmt,
+      rep_date: repDateIso,
+      notes: noteStr
+    });
+    return {
+      ok: true,
+      company: targetCo,
+      supplier: data.supplierName,
+      payable_leg: 'transportation',
+      amount: payAmt,
+      rep_date: repDateIso
+    };
+  }
+
   function findCockpitRoot(el) {
     return el && el.closest ? el.closest('[data-fpnl-root="1"]') : null;
   }
@@ -3718,6 +4224,10 @@
       if (sBasisBtn && SETTLE_STATE.open) {
         SETTLE_STATE.basisMode = sBasisBtn.getAttribute('data-fpnl-settle-basis') === 'strict' ? 'strict' : 'recorded';
         renderPartnerSettlementModal();
+        return;
+      }
+      if (t.closest('#fpnlSettlePayBtn') && SETTLE_STATE.open) {
+        triggerRecordPartnerSettlement();
         return;
       }
       if (t.closest('#fpnlSettlePrintBtn')) {
@@ -4067,6 +4577,7 @@
     triggerSetCorridorRate: triggerSetCorridorRate,
     openPartnerSettlementModal: openPartnerSettlementModal,
     closePartnerSettlementModal: closePartnerSettlementModal,
+    triggerRecordPartnerSettlement: triggerRecordPartnerSettlement,
     getSettlementState: function () { return Object.assign({}, SETTLE_STATE); }
   };
 

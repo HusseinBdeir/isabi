@@ -3674,6 +3674,416 @@
     };
   }
 
+  // ══ Passed on, not received (owner 2026-11-25) ════════════════════════════════════════════════════════════════════
+  // A ticket one Manufacturing company issues to another is a cost in the receiver's books. Entered through Group
+  // Transfer, both rows are posted together. A ticket keyed as a plain ticket, or loaded from the workbooks, has no
+  // linked row: the receiver records its own expense, and when it does not, the group's costs are understated.
+  // This lists those tickets. Deterministic, one ticket to one expense (or to the rows of one invoice), in this order:
+  //   1. the link itself (a Group Transfer pair, or an expense recorded from this list);
+  //   2. same reference and same amount;
+  //   3. same reference, and the receiver's rows of that reference add up to the ticket;
+  //   4. same amount within PONR_EXACT_DAYS days, nearest date first;
+  //   5. same amount and the same reference digits ("siz-008751" is "8751"), at any date;
+  //   6. same amount within PONR_ANY_SUPPLIER_DAYS days, nearest date first;
+  //   7. amount within PONR_NEAR_PCT and PONR_NEAR_DAYS days, nearest date first.
+  // Steps 2, 3, 4 and 7 read the receiver's expenses whose supplier is the sender. The receiver often books the cost
+  // under the outside supplier the sender paid (the fuel company, the garage), so steps 5 and 6 read its expenses
+  // from every other supplier, to the cent only. A small round amount can meet an unrelated expense in step 6 and
+  // stay off the list; that is preferred to offering a cost the receiver already holds for a second posting.
+  // Left out: material sold as a product (the buyer records it as a raw material purchase), tickets dated before the
+  // receiver's first expense on file (its books had not started), returns and zero tickets, and receivers outside
+  // Manufacturing. Scrap (iron) stays in: the receiver books the steel it took as a cost.
+  // An expense recorded from this list keeps its ticket's id (passed_on_ticket_id). It is not voided with the ticket:
+  // when its ticket is voided, replaced or re-priced afterwards, or two expenses hold one ticket, the list says so
+  // (issues). An expense whose ticket is gone is free again to answer the ticket that replaced it.
+  const PONR_EXACT_DAYS = 45;
+  const PONR_NEAR_DAYS = 10;
+  const PONR_NEAR_PCT = 0.02;
+  const PONR_ANY_SUPPLIER_DAYS = 7;
+  const PONR_PANEL_MAX_ROWS = 50;
+  let _ponrCache = { key: '', val: null };
+  function _ponrLive(r) {
+    return Boolean(r && !r.voided && !r.voided_at && !r._absorbedSeedTwin && !r._scheduleVoided);
+  }
+  function _ponrRefKey(v) {
+    const k = String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (k && k !== 'nonumber') ? k : '';
+  }
+  function _ponrDayNo(v) {
+    const t = Date.parse(String(v || '').slice(0, 10) + 'T00:00:00Z');
+    return Number.isFinite(t) ? Math.round(t / 86400000) : NaN;
+  }
+  // The digits of a reference, without leading zeros: an invoice prefix or padding does not hide the same number.
+  function _ponrDigits(v) {
+    const k = String(v == null ? '' : v).replace(/\D/g, '').replace(/^0+/, '');
+    return k.length >= 3 ? k : '';
+  }
+  // Material the seller sells as its product: the buyer books it as a raw material purchase, not as an expense.
+  function _ponrIsMaterialSale(s) {
+    if (saleRevenueClass(s) !== 'sale') return false;
+    const p = s.product ? productByName(String(s.product).trim()) : null;
+    const t = String((p && p.type) || '').trim().toLowerCase();
+    return t ? t === 'material' : Boolean(isAggregateMaterialProduct(s.product, s.uom));
+  }
+  function passedOnNotReceived() {
+    const tickets = SEED && SEED.records && SEED.records.sales_tickets;
+    const expenses = SEED && SEED.records && SEED.records.expenses;
+    if (!Array.isArray(tickets) || !Array.isArray(expenses) || !tickets.length) return { rows: [], ids: new Set(), total: 0, issues: [] };
+    const key = `${(SEED && SEED._customRev) || 0}|${tickets.length}|${expenses.length}|${_revClassBypass ? 1 : 0}`;
+    if (_ponrCache.key === key && _ponrCache.val) return _ponrCache.val;
+    // pools: the receiver's expenses whose supplier is another Manufacturing company, per "sender>receiver".
+    // otherByAmt: the receiver's expenses from every other supplier, per "receiver|amount in cents".
+    const pools = new Map();
+    const otherByAmt = new Map();
+    const firstExpDay = new Map();
+    // linked: the live expenses recorded from this list, per ticket id.
+    const linked = new Map();
+    const liveTransferIds = new Set();
+    for (let i = 0; i < expenses.length; i++) {
+      const e = expenses[i];
+      if (!_ponrLive(e)) continue;
+      const co = String(e.company || '').trim();
+      if (!_MFG_COMPANY_RE.test(co)) continue;
+      const ck = norm(co);
+      const day = _ponrDayNo(e.date);
+      if (Number.isFinite(day) && (!firstExpDay.has(ck) || day < firstExpDay.get(ck))) firstExpDay.set(ck, day);
+      let link = null;
+      if (e.passed_on_ticket_id) {
+        const lk = String(e.passed_on_ticket_id);
+        link = { e, amt: round2(Number(e.amount || 0)), row: null };
+        if (!linked.has(lk)) linked.set(lk, []);
+        linked.get(lk).push(link);
+      }
+      if (e.group_transfer_id) liveTransferIds.add(String(e.group_transfer_id));
+      if (e.price_pending || expenseSign(e) <= 0 || !Number.isFinite(day)) continue;
+      const amt = round2(Number(e.amount || 0));
+      if (!(amt > 0)) continue;
+      const row = {
+        amt, day,
+        refs: [_ponrRefKey(e.invoice), _ponrRefKey(e.reference)].filter(Boolean),
+        digs: [_ponrDigits(e.invoice), _ponrDigits(e.reference)].filter(Boolean),
+        // One side of a Group Transfer belongs to its own ticket. A row recorded from this list is tied to its
+        // ticket further down, once the live tickets are known.
+        used: Boolean(e.group_transfer_id)
+      };
+      if (link) link.row = row;
+      const sup = e.supplier ? groupCompanyByPartyName(e.supplier) : null;
+      if (sup && _MFG_COMPANY_RE.test(String(sup.name || '').trim()) && norm(sup.name) !== ck) {
+        const pk = norm(sup.name) + '>' + ck;
+        let pool = pools.get(pk);
+        if (!pool) { pool = []; pools.set(pk, pool); }
+        pool.push(row);
+      } else {
+        const ak = ck + '|' + Math.round(amt * 100);
+        let list = otherByAmt.get(ak);
+        if (!list) { list = []; otherByAmt.set(ak, list); }
+        list.push(row);
+      }
+    }
+    const receiverByCustomer = new Map();
+    const cands = [];
+    for (let i = 0; i < tickets.length; i++) {
+      const s = tickets[i];
+      if (!_ponrLive(s) || !s.customer) continue;
+      const from = String(s.company || '').trim();
+      if (!_MFG_COMPANY_RE.test(from)) continue;
+      let to;
+      if (s.group_transfer_to) to = groupTransferReceiverName(s);
+      else {
+        const ckey = from + '\u0001' + s.customer;
+        to = receiverByCustomer.get(ckey);
+        if (to === undefined) { to = groupTransferReceiverName(s); receiverByCustomer.set(ckey, to); }
+      }
+      to = String(to || '').trim();
+      if (!to || !_MFG_COMPANY_RE.test(to) || norm(to) === norm(from)) continue;
+      if (ticketSign(s) <= 0) continue;
+      const amt = round2(Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))));
+      if (!(amt > 0)) continue;
+      if (_ponrIsMaterialSale(s)) continue;
+      const day = _ponrDayNo(s.date);
+      const first = firstExpDay.get(norm(to));
+      if (!Number.isFinite(day) || first == null || day < first) continue;
+      cands.push({
+        s, id: String(s.id), from, to, amt, day,
+        ttc: round2(Number(s.total_ttc != null ? s.total_ttc : amt)),
+        refs: [_ponrRefKey(s.ticket_no), _ponrRefKey(s.reference)].filter(Boolean),
+        digs: [_ponrDigits(s.ticket_no), _ponrDigits(s.reference)].filter(Boolean),
+        pk: norm(from) + '>' + norm(to)
+      });
+    }
+    cands.sort((a, b) => (a.day - b.day) || (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)));
+    // An expense recorded from this list is tied to its ticket while that ticket is still one of the tickets above.
+    // When the ticket is gone (voided, replaced by a data load), the expense is left free for steps 2 to 7.
+    const candById = new Map(cands.map(c => [c.id, c]));
+    // A freed expense is picked only when no other row fits, so the receiver's own expense keeps its ticket and the
+    // freed one is what is left over and flagged.
+    linked.forEach((list, tid) => {
+      const tied = candById.has(tid);
+      list.forEach(x => { if (x.row) { if (tied) x.row.used = true; else x.row.released = true; } });
+    });
+    const lastIfReleased = e => (e.released ? 0.5 : 0);
+    const near = (a, b) => Math.abs(a - b) <= 0.011;
+    const amtHit = (c, e) => near(c.amt, e.amt) || (c.ttc !== c.amt && near(c.ttc, e.amt));
+    const matched = new Set();
+    const take = (c, list) => { list.forEach(e => { e.used = true; }); matched.add(c); };
+    // 1. The link itself.
+    cands.forEach(c => {
+      const gid = c.s.group_transfer_id ? String(c.s.group_transfer_id) : '';
+      if (linked.has(c.id) || (gid && liveTransferIds.has(gid))) matched.add(c);
+    });
+    // 2 and 3. Same reference: one row of the same amount, else all the rows of that reference together.
+    cands.forEach(c => {
+      if (matched.has(c) || !c.refs.length) return;
+      const pool = pools.get(c.pk);
+      if (!pool) return;
+      const sameRef = pool.filter(e => !e.used && e.refs.some(r => c.refs.includes(r)))
+        .sort((a, b) => lastIfReleased(a) - lastIfReleased(b));
+      if (!sameRef.length) return;
+      const one = sameRef.find(e => amtHit(c, e));
+      if (one) { take(c, [one]); return; }
+      if (sameRef.length >= 2) {
+        const sum = round2(sameRef.reduce((a, e) => a + e.amt, 0));
+        if (near(sum, c.amt) || near(sum, c.ttc)) take(c, sameRef);
+      }
+    });
+    // 4 and 5. By amount and date, nearest date first (the earlier row on a tie).
+    const nearest = (c, days, test) => {
+      const pool = pools.get(c.pk);
+      if (!pool) return null;
+      let best = null, bestGap = Infinity;
+      for (let i = 0; i < pool.length; i++) {
+        const e = pool[i];
+        if (e.used || !test(e)) continue;
+        const gap = Math.abs(e.day - c.day);
+        if (gap > days) continue;
+        const rank = gap + lastIfReleased(e);
+        if (rank < bestGap) { best = e; bestGap = rank; }
+      }
+      return best;
+    };
+    cands.forEach(c => {
+      if (matched.has(c)) return;
+      const e = nearest(c, PONR_EXACT_DAYS, x => amtHit(c, x));
+      if (e) take(c, [e]);
+    });
+    // 5 and 6. The receiver's expenses from every other supplier, same amount to the cent.
+    const otherRows = c => {
+      const out = [];
+      const seen = new Set();
+      [c.amt, c.ttc].forEach(a => {
+        const cents = Math.round(a * 100);
+        [cents - 1, cents, cents + 1].forEach(k => {
+          const list = otherByAmt.get(norm(c.to) + '|' + k);
+          if (list) list.forEach(e => { if (!e.used && !seen.has(e)) { seen.add(e); out.push(e); } });
+        });
+      });
+      return out;
+    };
+    const nearestOf = (c, list, days) => {
+      let best = null, bestGap = Infinity;
+      list.forEach(e => {
+        const gap = Math.abs(e.day - c.day);
+        const rank = gap + lastIfReleased(e);
+        if (gap <= days && rank < bestGap) { best = e; bestGap = rank; }
+      });
+      return best;
+    };
+    cands.forEach(c => {
+      if (matched.has(c) || !c.digs.length) return;
+      const e = nearestOf(c, otherRows(c).filter(x => x.digs.some(g => c.digs.includes(g))), Infinity);
+      if (e) take(c, [e]);
+    });
+    cands.forEach(c => {
+      if (matched.has(c)) return;
+      const e = nearestOf(c, otherRows(c), PONR_ANY_SUPPLIER_DAYS);
+      if (e) take(c, [e]);
+    });
+    // 7. The sender's rows again, amount within 2% and the dates close.
+    cands.forEach(c => {
+      if (matched.has(c)) return;
+      const tol = Math.max(0.011, c.amt * PONR_NEAR_PCT);
+      const e = nearest(c, PONR_NEAR_DAYS, x => Math.abs(x.amt - c.amt) <= tol);
+      if (e) take(c, [e]);
+    });
+    const rows = [];
+    const ids = new Set();
+    // Expenses recorded from this list that no longer stand as one expense for one ticket of the same amount:
+    //   twice          two live expenses hold one ticket (two devices posted before they synced);
+    //   amount         the ticket's amount was changed after the expense was recorded;
+    //   ticket_gone    the ticket was voided or replaced, and the expense answers no other ticket.
+    const issues = [];
+    linked.forEach((list, tid) => {
+      const c = candById.get(tid);
+      const issueOf = (x, kind) => ({
+        id: tid, kind, expenseId: String(x.e.id),
+        from: c ? c.from : String(x.e.group_transfer_from || x.e.supplier || '').trim(),
+        to: c ? c.to : String(x.e.company || '').trim(),
+        amount: x.amt, ticketAmount: c ? c.amt : null, count: list.length,
+        date: String(x.e.date || '').slice(0, 10),
+        ref: String((c && (c.s.ticket_no || c.s.reference)) || x.e.reference || '').trim()
+      });
+      if (!c) {
+        list.forEach(x => { if (!(x.row && x.row.used)) issues.push(issueOf(x, 'ticket_gone')); });
+      } else if (list.length >= 2) {
+        issues.push(issueOf(list[0], 'twice'));
+      } else if (!amtHit(c, { amt: list[0].amt })) {
+        issues.push(issueOf(list[0], 'amount'));
+      }
+    });
+    let total = 0;
+    cands.forEach(c => {
+      if (matched.has(c)) return;
+      const s = c.s;
+      const d10 = String(s.date || '').slice(0, 10);
+      rows.push({
+        id: c.id, ticket: s, from: c.from, to: c.to, amount: c.amt,
+        date: d10, rep_date: String(s.rep_date || s.date || '').slice(0, 10) || d10,
+        product: String(s.product || '').trim(), qty: Number(s.qty || 0), uom: String(s.uom || ''),
+        ref: String(s.ticket_no || s.reference || '').trim()
+      });
+      ids.add(c.id);
+      total += c.amt;
+    });
+    const out = { rows, ids, total: round2(total), issues };
+    _ponrCache = { key, val: out };
+    return out;
+  }
+  // The rows the seat may see on the active company scope. The receiver decides the scope (the missing cost belongs
+  // to its books), and the seat must be allowed on the sender too, since the row shows the sender's ticket.
+  function passedOnNotReceivedInScope() {
+    const none = { rows: [], total: 0, issues: [] };
+    if (getActiveIndustry() !== 'Manufacturing' || isDemoScopeActive()) return none;
+    // Unregistered tickets are not part of the Official Books, so nothing is listed while that view is on.
+    if (isOfficialScopeActive()) return none;
+    const lens = seatLens(activeUser());
+    if (!lens || !lens.expenses) return none;
+    // The rows are the sender's sales tickets: a seat without that table does not see them here either.
+    if (!canAccessTable('sales_tickets')) return none;
+    const all = passedOnNotReceived();
+    if (!all.rows.length && !all.issues.length) return none;
+    const allowed = allowedCompanyNames();
+    const inScope = list => {
+      const probe = list.map(r => ({ id: r.id, company: r.to, date: r.date, rep_date: r.rep_date || r.date, _ponr: r }));
+      return filterRecords(probe, { ignoreSearch: true, ignorePeriod: true, ignoreBookScope: true })
+        .map(p => p._ponr)
+        .filter(r => allowed.includes(r.from) && allowed.includes(r.to))
+        .sort((a, b) => (a.date < b.date ? 1 : (a.date > b.date ? -1 : (a.id < b.id ? -1 : 1))));
+    };
+    const rows = inScope(all.rows);
+    return { rows, total: round2(rows.reduce((a, r) => a + r.amount, 0)), issues: inScope(all.issues) };
+  }
+  function renderPassedOnNotReceivedPanel() {
+    const scoped = passedOnNotReceivedInScope();
+    if (!scoped.rows.length && !scoped.issues.length) return '';
+    const canPost = canEnterForm('grouptransfer');
+    const shown = scoped.rows.slice(0, PONR_PANEL_MAX_ROWS);
+    const more = scoped.rows.length - shown.length;
+    const issueText = {
+      twice: ['Recorded Twice', 'The receiving company holds two expenses for the same ticket. Void one of the two.'],
+      amount: ['Amount Changed', 'The ticket no longer shows the amount this expense was recorded at. Check the expense.'],
+      ticket_gone: ['Ticket Voided or Changed', 'The sender\'s ticket was voided, replaced or changed after this expense was recorded. Check the expense.']
+    };
+    const issuesHtml = scoped.issues.length ? `
+        <div id="ponrIssuesStrip" style="padding:9px 16px;font-size:12.5px;line-height:1.6;border-top:1px solid var(--line);color:var(--ink-2)">
+          ${scoped.issues.map(r => {
+            const t = issueText[r.kind] || issueText.ticket_gone;
+            return `<div data-ponr-issue="${esc(r.kind)}"><span class="badge badge-warn">${t[0]}</span> <span class="mono"><b>${esc(r.ref || fmtDateDMY(r.date))}</b></span> ${coBadge(r.to)} <span class="mono">${fmtUSD(r.amount, 2)}</span> <span>${t[1]}</span></div>`;
+          }).join('')}
+        </div>` : '';
+    return `
+      <div class="pending-price-queue-card" id="ponrPanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-left:4px solid var(--warn)">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('clock')} ${scoped.rows.length ? `PASSED ON, NOT RECEIVED (${fmtNum(scoped.rows.length)} TICKETS · ${fmtUSD(scoped.total, 2)})` : 'PASSED ON, NOT RECEIVED'}</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="mu" style="font-size:11.5px">Costs another company of the group passed on, with no matching expense in the receiver's books</span>
+            ${exportBtn('ponrPanel', 'Passed_On_Not_Received')}
+          </span>
+        </div>
+        ${issuesHtml}
+        ${scoped.rows.length ? `
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Ticket</th><th>Sender</th><th>Receiver</th><th>Item</th><th class="r">Quantity</th><th class="r">Amount</th>${canPost ? '<th class="r">Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${shown.map(r => {
+                const qv = Number(r.qty || 0);
+                const qtyTxt = qv > 0 ? `${fmtNum(qv, qv % 1 ? 2 : 0)}${r.uom ? ' ' + r.uom : ''}` : '-';
+                return `
+                  <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td class="mono"><strong>${r.ref ? esc(r.ref) : '-'}</strong></td>
+                    <td>${coBadge(r.from)}</td>
+                    <td>${coBadge(r.to)}</td>
+                    <td><strong>${esc(r.product || '-')}</strong></td>
+                    <td class="r mono">${esc(qtyTxt)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.amount, 2)}</strong></td>
+                    ${canPost ? `<td class="r"><button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-ponr-record="${esc(r.id)}" data-ui-tip="Record this cost in the receiving company's expenses">${ic('plus')} Record Expense</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(scoped.rows.length)} TICKETS)</b>${more > 0 ? ` <span class="mu">${fmtNum(more)} more not shown</span>` : ''}</td>
+                <td class="r mono"><b>${fmtUSD(scoped.total, 2)}</b></td>
+                ${canPost ? '<td></td>' : ''}
+              </tr>
+            </tfoot>
+          </table>
+        </div>` : ''}
+      </div>
+    `;
+  }
+  // Opens the Group Transfer form on a ticket that already exists, to record only the receiver's expense.
+  function openPassedOnReceive(ticketId) {
+    const row = passedOnNotReceived().rows.find(r => r.id === String(ticketId));
+    if (!row) {
+      toast('The receiving company already has this cost on file', 'ok');
+      renderApp();
+      return;
+    }
+    if (!canEnterForm('grouptransfer')) { toast('Your seat cannot post this entry', 'err'); return; }
+    const allowed = allowedCompanyNames();
+    if (!allowed.includes(row.from) || !allowed.includes(row.to)) {
+      toast('A seat with access to both companies must do this', 'err');
+      return;
+    }
+    openEntryModal('grouptransfer', { receiveTicketId: row.id }, { forceSwitch: true });
+  }
+  // Fills the Group Transfer form from the ticket and locks what the ticket already fixes. Only the receiver's
+  // expense class and the note stay open. The save reads the money facts from the ticket itself, never from the form.
+  function applyGroupTransferReceivePrefill(ticketId) {
+    const row = passedOnNotReceived().rows.find(r => r.id === String(ticketId));
+    if (!row) return false;
+    FORM_UI.gtReceive = { ticketId: row.id };
+    const setV = (id, v) => { const el = $(id); if (el) el.value = v == null ? '' : String(v); };
+    setV('f_company', row.from);
+    setV('f_date', row.date);
+    setV('f_repdate', row.rep_date || row.date);
+    setV('f_gt_to', row.to);
+    setV('f_product', row.product);
+    setV('f_qty', row.qty > 0 ? row.qty : '');
+    setV('f_amount', row.amount.toFixed(2));
+    setV('f_method', isCashSaleTicket(row.ticket) ? 'Cash' : 'Credit');
+    setV('f_reference', row.ref);
+    setV('f_notes', `Receiver's side of ${row.from} ticket${row.ref ? ' ' + row.ref : ''} dated ${fmtDateDMY(row.date)}`);
+    ['f_company', 'f_date', 'f_gt_to', 'f_product', 'f_qty', 'f_amount', 'f_method', 'f_reference', 'f_repdate'].forEach(id => {
+      const el = $(id);
+      if (el) el.disabled = true;
+    });
+    setFieldVisible('wrap_f_company', true);
+    if (row.rep_date && row.rep_date !== row.date) setFieldVisible('wrap_f_repdate', true);
+    const repToggle = $('toggleRepDateBtn');
+    if (repToggle) repToggle.hidden = true;
+    const title = $('modalTitle');
+    if (title) title.textContent = 'Record Receiver Expense (Ticket Already Posted)';
+    return true;
+  }
+
   function isPendingPriceExpense(x) {
     return Boolean(x && !x.voided && x.price_pending);
   }
@@ -8258,6 +8668,17 @@
     if (t === 'conversions') return /^(?:usd_amount|lbp_amount|exchange_rate|fx_rate|usd_delta|lbp_delta|amount)$/i.test(c);
     if (t === 'external_movements') return /^(?:usd_amount|lbp_amount|amount|usd_delta|lbp_delta|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp)$/i.test(c);
     if (t === 'gl_accounts') return /^(?:debit|credit|balance|soa_legs)$/i.test(c);
+    if (t === 're_invoicing') return /^(?:open_ar_usd|collected_usd)$/i.test(c);
+    if (t === 're_receipts') return /^(?:gross_usd|allocated_inv_usd|unallocated_adv_usd|deposit_gl4196_usd)$/i.test(c);
+    if (t === 're_sales') return /^(?:balance_usd|paid_usd|broker_comm_usd)$/i.test(c);
+    if (t === 'trd_receivables') return /^(?:gross_ar_usd|settled_usd|advance_usd|invoiced_ttc|promise_usd)$/i.test(c);
+    if (t === 'hsp_memberships') return /^(?:balance_usd|paid_usd)$/i.test(c);
+    if (t === 'ins_billing') return /^(?:open_ar_4112_usd|collected_usd)$/i.test(c);
+    if (t === 'ins_remittances') return /^(?:net_payable_4017_usd|settled_to_carrier_usd|client_cash_held_usd|broker_comm_7063_usd)$/i.test(c);
+    if (t === 'ins_statements') return /^(?:expected_comm_4117_usd|statement_comm_usd|variance_usd)$/i.test(c);
+    if (t === 'hld_interactions') return /^(?:givenUsd|paidBackUsd|runningBalanceUsd|usd)$/i.test(c);
+    if (t === 'hld_consolidation') return /^(?:givenUsd|paidBackUsd|netUnpaidUsd)$/i.test(c);
+    if (t === 'ins_policies') return /^(?:gross_prem_usd|net_comm_usd|net_payable_4017_usd)$/i.test(c);
     return false;
   }
 
@@ -8274,6 +8695,8 @@
     if (t === 'jv_partnerships') return /^(?:percentage|share_pct|jv_share|jv_partner|partner_split|owner_share|pool_share|distributions_total)$/i.test(c);
     if (t === 'jv_distributions') return /^(?:amount|difference|total|jv_share|percentage|share_pct)$/i.test(c);
     if (t === 'sites') return /^(?:is_jv|jv_partner|jv_share)$/i.test(c);
+    if (t === 'hsp_partners') return /^(?:partners_summary|gross_pool_usd|open_payable_usd)$/i.test(c);
+    if (t === 'hld_partners') return /^(?:partner|netUsd|inUsd|outUsd)$/i.test(c);
     return false;
   }
 
@@ -8299,11 +8722,50 @@
     return typeof seatLens !== 'function' || !seatLens(usr).expenses;
   }
 
+  function isMaskedTaxAccessBlocked(tableKey, colName, u) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    if (!t || !c) return false;
+    const usr = u === undefined ? activeUser() : u;
+    if (typeof seatLens === 'function' && seatLens(usr).tax) return false;
+    if (t === 'vat_invoices') return /^(?:net_amount|vat_amount|total_ttc)$/i.test(c);
+    if (t === 'vat_rates') return /^(?:vat_percent|vat_fx_rate)$/i.test(c);
+    if (t === 'sales_tickets') return c === 'vat';
+    return /^(?:vat_amount|vat_percent|vat_fx_rate)$/i.test(c);
+  }
+
+  function isMaskedProfitAccessBlocked(tableKey, colName, u) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    if (!t || !c) return false;
+    const usr = u === undefined ? activeUser() : u;
+    if (typeof seatLens === 'function' && seatLens(usr).profit) return false;
+    if (t === 'trd_trucks') return /^(?:margin_usd|landed_cost_usd|list_price_usd)$/i.test(c);
+    if (t === 'trd_stock') return /^(?:stock_val_usd|wac_usd|retail_usd)$/i.test(c);
+    if (t === 'ins_policies') return c === 'net_comm_usd';
+    return false;
+  }
+
+  function isMaskedExpenseTableAccessBlocked(tableKey, colName, u) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    if (!t || !c) return false;
+    const usr = u === undefined ? activeUser() : u;
+    if (typeof seatLens === 'function' && (seatLens(usr).expenses || seatLens(usr).books)) return false;
+    if (t === 'items' || t === 'expense_categories' || t === 'expense_subcategories') {
+      return /^(?:default_cost|total_spent)$/i.test(c);
+    }
+    return false;
+  }
+
   function isMaskedFieldAccessBlocked(tableKey, colName, u) {
     return isMaskedPayrollAccessBlocked(tableKey, colName, u)
       || isMaskedBooksAccessBlocked(tableKey, colName, u)
       || isMaskedPartnerSplitsAccessBlocked(tableKey, colName, u)
-      || isMaskedRawPayablesAccessBlocked(tableKey, colName, u);
+      || isMaskedRawPayablesAccessBlocked(tableKey, colName, u)
+      || isMaskedTaxAccessBlocked(tableKey, colName, u)
+      || isMaskedProfitAccessBlocked(tableKey, colName, u)
+      || isMaskedExpenseTableAccessBlocked(tableKey, colName, u);
   }
 
   window.__mfgIsTableColRestricted = function (tableKey, colName, rowObj, u, viewId) {
@@ -8688,6 +9150,7 @@
     if (view === 'hld_loans') {
       if (colKey === 'counterparty') return r.counterparty || r.party || r.borrower || r.lender || '';
       if (colKey === 'direction') return String(r.side || r.type || r.direction || 'Loan Given');
+      if (colKey === 'principal') return loanPrinUsd(r);
     }
     if (colKey === 'date' && r.date !== undefined) return isTxOnlyTableViewKey(view) ? recordDateFor(r, 'tx') : recordDate(r);
     if (colKey === 'tank_rem' || colKey === 'tank_remaining_litres') {
@@ -11451,7 +11914,11 @@
   }
 
   function _csvQuoteCell(txt) {
-    return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
+    let s = String(txt == null ? '' : txt).replace(/\s+/g, ' ').trim();
+    if (/^[=+@\t\r]/.test(s) || (s.startsWith('-') && s !== '-' && !/^-[\s$€£]*\d+(?:[.,]\d+)*$/.test(s))) {
+      s = "'" + s;
+    }
+    return '"' + s.replace(/"/g, '""') + '"';
   }
 
   function tableToCsv(table) {
@@ -14070,6 +14537,8 @@
   window.__mfgRevenueClass = {
     classOf: saleRevenueClass,
     receiverOf: groupTransferReceiverName,
+    // A ticket to another Manufacturing company whose cost the receiver has not recorded (Sales Tickets view).
+    notReceived: r => Boolean(r && r.id != null && passedOnNotReceived().ids.has(String(r.id))),
     productClass: unregisteredProductClass,
     contraGlCode: rechargeContraGlCode,
     reclass: computeRevenueReclass,
@@ -26483,7 +26952,7 @@
             subMetrics: [
               { label: 'Group Gross Margin', value: fmtUSD(grossGm, 0), subPrefix: `${gmPct.toFixed(1)}%`, sub: 'Share of net revenue', jump: 'hld_consolidation' },
               { label: 'Holding Shared Exp', value: fmtUSD(rollup.hldExpTotal || 0, 0), sub: 'Bdeir Holding OpEx', jump: 'expenses' },
-              { label: 'IC Eliminated', value: fmtUSD(icRes.totalMatchedUsd || 0, 0), subPrefix: fmtNum(icRes.matchedCount), sub: 'Matched pairs', jump: 'hld_interactions' }
+              { label: 'IC Eliminated', value: fmtUSD(icRes.totalMatchedUsd || 0, 0), subPrefix: fmtNum(icRes.matchedCount), sub: 'Matched pairs', jump: 'hld_interactions', jumpChip: 'reconciled', jumpScroll: 'hldInteractionsPanel' }
             ],
             driverTables: [{
               title: 'Sector Profit Contribution',
@@ -26522,8 +26991,9 @@
             waterfallMeta: Math.max(1, Math.abs(totals.cash_till)),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'IC Paired Rate', value: `${icRes.reconRatePct.toFixed(1)}%`, subPrefix: fmtNum(icRes.matchedCount), sub: 'Matched pairs', jump: 'hld_interactions' },
-              { label: 'IC Volume Matched', value: fmtUSD(icRes.totalMatchedUsd || 0, 0), subPrefix: fmtUSDk(icRes.totalOpenUsd || 0), sub: 'Open balance', jump: 'hld_interactions' }
+              { label: 'IC Paired Rate', value: `${icRes.reconRatePct.toFixed(1)}%`, subPrefix: fmtNum(icRes.matchedCount), sub: 'Matched pairs', jump: 'hld_interactions', jumpChip: 'reconciled', jumpScroll: 'hldInteractionsPanel' },
+              { label: 'IC Volume Matched', value: fmtUSD(icRes.totalMatchedUsd || 0, 0), subPrefix: fmtUSDk(icRes.totalOpenUsd || 0), sub: 'Open balance', jump: 'hld_interactions', jumpChip: 'reconciled', jumpScroll: 'hldInteractionsPanel' },
+              { label: 'Open IC Legs', value: fmtNum(icRes.openCount), sub: fmtUSD(icRes.totalOpenUsd || 0, 0), subNoI18n: true, jump: 'hld_interactions', jumpChip: 'open', jumpScroll: 'hldInteractionsPanel' }
             ],
             driverTables: [{
               title: 'Intercompany Corridors',
@@ -26557,7 +27027,7 @@
             waterfallRows: wfRows,
             subMetrics: [
               { label: 'Group Open AP', value: fmtUSD(totals.ap_balance || 0, 0), sub: 'Consolidated vendor & carrier payables', jump: 'hld_consolidation' },
-              { label: 'Sister Net Owed', value: fmtUSD(icRes.totalNetUnpaidUsd || 0, 0), subPrefix: fmtNum(icRes.openCount), sub: 'Open pairs', jump: 'hld_due_matrix' }
+              { label: 'Sister Net Owed', value: fmtUSD(icRes.totalNetUnpaidUsd || 0, 0), subPrefix: fmtNum(icRes.openCount), sub: 'Open pairs', jump: 'hld_due_matrix', jumpChip: lens.books ? 'open_due' : '', jumpScroll: lens.books ? 'hldDueMatrixPanel' : '' }
             ],
             driverTables: [{
               title: 'Intercompany Net Positions',
@@ -26610,7 +27080,7 @@
             waterfallRows: wfRows,
             subMetrics: [
               { label: 'Unit Occupancy', value: `${occPct.toFixed(0)}%`, subPrefix: `${fmtNum(s.occupiedUnits)} / ${fmtNum(s.totalRoomsCap)}`, sub: 'Occupied units', jump: 'hsp_memberships' },
-              { label: 'Venue Close Count', value: fmtNum(hsp.posRows.length), sub: 'Outlet shift closes', jump: 'hsp_revenue' }
+              { label: 'Venue Close Count', value: fmtNum(hsp.posRows.length), sub: 'Outlet shift closes', jump: 'hsp_pos', jumpScroll: 'hspPosPanel' }
             ],
             driverTables: [{
               title: 'Top Engineered Menu Items',
@@ -26667,7 +27137,7 @@
         overview_cash: () => {
           const venueIn = lens.tax ? s.totalRevenueHt : s.totalRevenueTtc;
           const wfRows = [
-            { op: '+', label: 'Seasonal Membership Collections', sourcePrefix: `${memCollPct}%`, source: 'Collected of seasonal contracts to date', signedAmount: s.totalMemPaid, jump: 'hsp_memberships', jumpLabel: 'Memberships' },
+            { op: '+', label: 'Seasonal Membership Collections', sourcePrefix: `${memCollPct}%`, source: 'Collected of seasonal contracts to date', signedAmount: s.totalMemPaid, jump: 'hsp_memberships', jumpChip: lens.books ? 'collected' : '', jumpScroll: lens.books ? 'hspMembershipsPanel' : '', jumpLabel: 'Memberships' },
             { op: '+', label: lens.tax ? 'Venue POS Receipts (Ex-Tax)' : 'Venue POS Receipts', sourcePrefix: fmtNum(hsp.posRows.length), source: 'POS closes settled at outlet registers', signedAmount: venueIn, jump: 'hsp_revenue', jumpLabel: 'Daily POS' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Collection Rounding Adjustment', 'Precision alignment', cashHeadline, round2(s.totalMemPaid + venueIn));
@@ -26680,7 +27150,7 @@
             waterfallMeta: Math.max(1, cashHeadline),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Contract Paid Ratio', value: `${memCollPct}%`, subPrefix: fmtUSD(s.totalMemPaid, 0), sub: 'Collected', jump: 'hsp_memberships' },
+              { label: 'Contract Paid Ratio', value: `${memCollPct}%`, subPrefix: fmtUSD(s.totalMemPaid, 0), sub: 'Collected', jump: 'hsp_memberships', jumpChip: lens.books ? 'collected' : '', jumpScroll: lens.books ? 'hspMembershipsPanel' : '' },
               { label: 'Cash Book Status', value: 'Partial Sheets', sub: 'Salaries & card split pending', jump: 'cashflow' }
             ],
             driverTables: [{
@@ -26701,10 +27171,10 @@
         overview_wc: () => {
           const wfRows = [
             { op: '+', label: 'Total Contracted Memberships', sourcePrefix: fmtNum(hsp.membershipRows.length), source: 'Seasonal unit agreements', signedAmount: s.totalMemContract, jump: 'hsp_memberships', jumpLabel: 'Memberships' },
-            { op: '-', label: 'Membership Installments Paid', source: 'Confirmed collections posted against contracts', absAmount: s.totalMemPaid, signedAmount: -s.totalMemPaid, jump: 'hsp_memberships', jumpLabel: 'Payments' }
+            { op: '-', label: 'Membership Installments Paid', source: 'Confirmed collections posted against contracts', absAmount: s.totalMemPaid, signedAmount: -s.totalMemPaid, jump: 'hsp_memberships', jumpChip: lens.books ? 'collected' : '', jumpScroll: lens.books ? 'hspMembershipsPanel' : '', jumpLabel: 'Payments' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Waivers & Balance Rounding', 'Early settlement or contract variance', s.totalMemArrears, round2(s.totalMemContract - s.totalMemPaid));
-          wfRows.push({ op: '=', label: 'Membership AR', sourcePrefix: fmtNum(s.overdueMemCount), source: 'Overdue member contracts', signedAmount: s.totalMemArrears, amountText: fmtUSD(s.totalMemArrears, 2), isFinal: true, jump: 'hsp_memberships', jumpLabel: 'Memberships' });
+          wfRows.push({ op: '=', label: 'Membership AR', sourcePrefix: fmtNum(s.overdueMemCount), source: 'Overdue member contracts', signedAmount: s.totalMemArrears, amountText: fmtUSD(s.totalMemArrears, 2), isFinal: true, jump: 'hsp_memberships', jumpChip: lens.books ? 'partial' : '', jumpScroll: lens.books ? 'hspMembershipsPanel' : '', jumpLabel: 'Memberships' });
           return {
             summaryDesc: 'Tracks uncollected balances remaining on seasonal resort chalet, cabana and pool memberships.',
             formulaText: 'Membership AR = Contracted Seasonal Memberships - Installments Paid',
@@ -26713,7 +27183,7 @@
             waterfallMeta: Math.max(1, s.totalMemContract),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Overdue Contracts', value: fmtNum(s.overdueMemCount), sub: 'Pending member installments', jump: 'hsp_memberships' },
+              { label: 'Overdue Contracts', value: fmtNum(s.overdueMemCount), sub: 'Pending member installments', jump: 'hsp_memberships', jumpChip: lens.books ? 'overdue' : '', jumpScroll: lens.books ? 'hspMembershipsPanel' : '' },
               ...(lens.partnerSplits ? [{ label: 'Partner Pool', value: fmtUSD(s.totalPartnerPool || 0, 0), sub: 'Allocated profit pool', jump: 'hsp_revenue' }] : [])
             ],
             driverTables: [{
@@ -26750,6 +27220,7 @@
 
       activeMeta = {
         overview_revenue: () => {
+          const isMultiTrd = trd.scopedCompanies.length > 1;
           const wfRows = [];
           if (lens.tax) {
             wfRows.push({ op: '+', label: 'Net Invoiced Sales (Ex-VAT)', sourcePrefix: fmtNum(trdInvCount), source: 'Heavy truck and spare-part invoices', signedAmount: s.totalSalesNet, jump: 'trd_sales', jumpLabel: 'Invoices' });
@@ -26758,8 +27229,8 @@
           } else {
             const shSales = round2(trd.salesRows.filter(r => !r.is_gap && r.company === 'Shacman').reduce((a, r) => a + Number(r.ttc_usd || 0), 0));
             const kaSales = round2(s.totalSalesTtc - shSales);
-            wfRows.push({ op: '+', label: 'Shacman Heavy Truck Sales', sourcePrefix: fmtNum(s.soldUnitsCount), source: 'Commercial truck chassis invoiced', signedAmount: shSales, jump: 'trd_sales', jumpLabel: 'Truck Sales' });
-            wfRows.push({ op: '+', label: 'Korri Auto Spare Parts & Services', source: 'Aftermarket OEM parts, tyres and workshop billing', signedAmount: kaSales, jump: 'trd_sales', jumpLabel: 'Parts Sales' });
+            wfRows.push({ op: '+', label: 'Shacman Heavy Truck Sales', sourcePrefix: fmtNum(s.soldUnitsCount), source: 'Commercial truck chassis invoiced', signedAmount: shSales, jump: 'trd_sales', jumpChip: isMultiTrd ? 'shacman' : 'trucks', jumpScroll: 'trdSalesPanel', jumpLabel: 'Truck Sales' });
+            wfRows.push({ op: '+', label: 'Korri Auto Spare Parts & Services', source: 'Aftermarket OEM parts, tyres and workshop billing', signedAmount: kaSales, jump: 'trd_sales', jumpChip: isMultiTrd ? 'korri' : 'parts', jumpScroll: 'trdSalesPanel', jumpLabel: 'Parts Sales' });
             pushOverviewWaterfallResidual(wfRows, 'Invoice Rounding Adjustment', 'Rounding alignment', s.totalSalesTtc, round2(shSales + kaSales));
           }
           wfRows.push({ op: '=', label: 'Invoiced Revenue', sourcePrefix: `${fmtNum(s.soldUnitsCount)} / ${fmtNum(trdInvCount)}`, source: 'Chassis sold and commercial invoices', signedAmount: s.totalSalesTtc, amountText: fmtUSD(s.totalSalesTtc, 2), isFinal: true, jump: 'trd_sales', jumpLabel: 'Sales Log' });
@@ -26771,8 +27242,8 @@
             waterfallMeta: Math.max(1, s.totalSalesTtc),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Chassis Delivered', value: fmtNum(s.soldUnitsCount), subPrefix: fmtNum(trdInvCount), sub: 'Commercial invoices', jump: 'trd_sales' },
-              { label: 'Active VIN Inventory', value: fmtNum(s.showroomUnitsCount), sub: 'Available showroom fleet', jump: 'trd_stock' }
+              { label: 'Chassis Delivered', value: fmtNum(s.soldUnitsCount), subPrefix: fmtNum(trdInvCount), sub: 'Commercial invoices', jump: 'trd_sales', jumpChip: 'trucks', jumpScroll: 'trdSalesPanel' },
+              { label: 'Active VIN Inventory', value: fmtNum(s.showroomUnitsCount), sub: 'Available showroom fleet', jump: 'trd_trucks', jumpChip: 'in_stock', jumpScroll: 'trdTrucksPanel' }
             ],
             driverTables: [{
               title: 'Recent Commercial Invoices',
@@ -26808,7 +27279,7 @@
             subMetrics: [
               { label: 'Capitalized FOB', value: fmtUSD(s.totalFobUsd || 0, 0), sub: 'Factory invoice cost', jump: 'trd_landed' },
               { label: 'Freight & Customs', value: fmtUSD(s.totalLandedAddUsd || 0, 0), sub: 'Cleared port charges', jump: 'trd_landed' },
-              { label: 'Open PDI / Warranty', value: fmtNum(s.openWarrantyCount || 0), sub: 'Active service claims', jump: 'trd_warranty' }
+              { label: 'Open PDI / Warranty', value: fmtNum(s.openWarrantyCount || 0), sub: 'Active service claims', jump: 'trd_warranty', jumpChip: 'open', jumpScroll: 'trdWarrantyPanel' }
             ],
             driverTables: [{
               title: 'Invoice Margin Breakdown',
@@ -26827,8 +27298,8 @@
         },
         overview_cash: () => {
           const wfRows = [
-            { op: '+', label: 'Showroom Chassis Landed Value', sourcePrefix: fmtNum(s.showroomUnitsCount), source: 'VINs held at cleared landed cost', signedAmount: s.totalUnitsLandedUsd, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Showroom VINs' },
-            { op: '+', label: 'Spare Parts Inventory Valuation', sourcePrefix: fmtNum(s.reorderAlertCount), source: 'Weighted average parts valuation and reorder alerts', signedAmount: s.totalStockValUsd, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Parts Stock' }
+            { op: '+', label: 'Showroom Chassis Landed Value', sourcePrefix: fmtNum(s.showroomUnitsCount), source: 'VINs held at cleared landed cost', signedAmount: s.totalUnitsLandedUsd, isLivePointInTime: true, jump: 'trd_trucks', jumpScroll: 'trdTrucksPanel', jumpLabel: 'Showroom VINs' },
+            { op: '+', label: 'Spare Parts Inventory Valuation', sourcePrefix: fmtNum(s.reorderAlertCount), source: 'Weighted average parts valuation and reorder alerts', signedAmount: s.totalStockValUsd, isLivePointInTime: true, jump: 'trd_stock', jumpScroll: 'trdStockPanel', jumpLabel: 'Parts Stock' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Inventory Valuation Adj.', 'Precision alignment', stockTot, round2(s.totalUnitsLandedUsd + s.totalStockValUsd));
           wfRows.push({ op: '=', label: 'Showroom & Stock', sourcePrefix: fmtUSDk(s.totalUnitsListUsd), source: 'Capitalized stock cost vs retail list value', signedAmount: stockTot, amountText: fmtUSD(stockTot, 2), isFinal: true, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Open Stock' });
@@ -26842,8 +27313,8 @@
             waterfallMeta: Math.max(1, stockTot),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Showroom List Value', value: fmtUSD(s.totalUnitsListUsd || 0, 0), sub: 'Expected retail chassis value', jump: 'trd_stock' },
-              { label: 'Reorder Alerts', value: fmtNum(s.reorderAlertCount || 0), sub: 'SKUs below threshold', jump: 'trd_stock' }
+              { label: 'Showroom List Value', value: fmtUSD(s.totalUnitsListUsd || 0, 0), sub: 'Expected retail chassis value', jump: 'trd_trucks', jumpScroll: 'trdTrucksPanel' },
+              { label: 'Reorder Alerts', value: fmtNum(s.reorderAlertCount || 0), sub: 'SKUs below threshold', jump: 'trd_stock', jumpChip: 'low_stock', jumpScroll: 'trdStockPanel' }
             ],
             driverTables: [{
               title: 'Showroom Chassis & Units',
@@ -26863,11 +27334,11 @@
         overview_wc: () => {
           const unpromised = Math.max(0, round2(s.grossArUsd - s.activePromisesUsd));
           const wfRows = [
-            { op: '+', label: 'Active Payment Promises', source: 'Scheduled buyer post-dated installments and promissory notes', signedAmount: s.activePromisesUsd, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Promises' },
-            { op: '+', label: 'Open Unscheduled Balances', source: 'Delivered balances outside formal payment schedules', signedAmount: unpromised, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Open AR' }
+            { op: '+', label: 'Active Payment Promises', source: 'Scheduled buyer post-dated installments and promissory notes', signedAmount: s.activePromisesUsd, isLivePointInTime: true, jump: 'trd_receivables', jumpChip: lens.books ? 'promises' : '', jumpScroll: lens.books ? 'trdReceivablesPanel' : '', jumpLabel: 'Promises' },
+            { op: '+', label: 'Open Unscheduled Balances', source: 'Delivered balances outside formal payment schedules', signedAmount: unpromised, isLivePointInTime: true, jump: 'trd_receivables', jumpChip: lens.books ? 'unscheduled_ar' : '', jumpScroll: lens.books ? 'trdReceivablesPanel' : '', jumpLabel: 'Open AR' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Advance & Rounding Adjustment', 'Precision alignment', s.grossArUsd, round2(s.activePromisesUsd + unpromised));
-          wfRows.push({ op: '=', label: 'Receivables & AR', sourcePrefix: `${s.weightedDsoDays.toFixed(0)}d`, source: 'Weighted DSO across active buyer accounts', signedAmount: s.grossArUsd, amountText: fmtUSD(s.grossArUsd, 2), isFinal: true, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Receivables' });
+          wfRows.push({ op: '=', label: 'Receivables & AR', sourcePrefix: `${s.weightedDsoDays.toFixed(0)}d`, source: 'Weighted DSO across active buyer accounts', signedAmount: s.grossArUsd, amountText: fmtUSD(s.grossArUsd, 2), isFinal: true, isLivePointInTime: true, jump: 'trd_receivables', jumpChip: lens.books ? 'gross_ar' : '', jumpScroll: lens.books ? 'trdReceivablesPanel' : '', jumpLabel: 'Receivables' });
           return {
             summaryDesc: 'Tracks gross commercial receivables from truck and fleet buyers split between scheduled promissory notes and open balances.',
             formulaText: 'Gross AR = Scheduled Buyer Promises + Open Unscheduled Balances',
@@ -26877,7 +27348,7 @@
             waterfallRows: wfRows,
             subMetrics: [
               { label: 'Weighted DSO', value: `${s.weightedDsoDays.toFixed(0)} days`, sub: 'Credit cycle velocity', jump: 'trd_receivables' },
-              { label: 'Unallocated Advances', value: fmtUSD(s.customerAdvancesUsd || 0, 0), sub: 'Buyer deposits awaiting invoice match', jump: 'trd_receivables' }
+              { label: 'Unallocated Advances', value: fmtUSD(s.customerAdvancesUsd || 0, 0), sub: 'Buyer deposits awaiting invoice match', jump: 'trd_receivables', jumpChip: lens.books ? 'advances' : '', jumpScroll: lens.books ? 'trdReceivablesPanel' : '' }
             ],
             driverTables: [{
               title: 'Top Fleet Buyer Exposure',
@@ -26918,8 +27389,8 @@
           const sumProp = round2(propLeases.reduce((a, l) => a + Number(l.annual_ttc_usd || 0), 0));
           const sum4235 = round2(c4235Leases.reduce((a, l) => a + Number(l.annual_ttc_usd || 0), 0));
           const wfRows = [];
-          if (sumProp > 0) wfRows.push({ op: '+', label: 'Properties BU Leases', sourcePrefix: fmtNum(propLeases.length), source: 'Commercial and residential leases', signedAmount: sumProp, jump: 're_leases', jumpLabel: 'Leases' });
-          if (sum4235 > 0) wfRows.push({ op: '+', label: '4235 Company S.A.L Center Leases', sourcePrefix: fmtNum(c4235Leases.length), source: 'Msaytbeh commercial tenants', signedAmount: sum4235, jump: 're_leases', jumpLabel: 'Leases' });
+          if (sumProp > 0) wfRows.push({ op: '+', label: 'Properties BU Leases', sourcePrefix: fmtNum(propLeases.length), source: 'Commercial and residential leases', signedAmount: sumProp, jump: 're_leases', jumpChip: !re.isSingleEntity ? 'properties_bu' : '', jumpScroll: 'reLeasesPanel', jumpLabel: 'Leases' });
+          if (sum4235 > 0) wfRows.push({ op: '+', label: '4235 Company S.A.L Center Leases', sourcePrefix: fmtNum(c4235Leases.length), source: 'Msaytbeh commercial tenants', signedAmount: sum4235, jump: 're_leases', jumpChip: !re.isSingleEntity ? 'c4235' : '', jumpScroll: 'reLeasesPanel', jumpLabel: 'Leases' });
           pushOverviewWaterfallResidual(wfRows, 'Lease Annualization Adjustment', 'Frequency scaling and lease overlap adjustment', s.contractedAnnualRentUsd, round2(sumProp + sum4235), 're_leases', 'Leases');
           wfRows.push({ op: '=', label: 'Annual Rent Roll', sourcePrefix: `${fmtNum(re.leases.length)} (${s.occupiedUnits}/${s.totalUnits})`, source: 'Active leases and occupied units', signedAmount: s.contractedAnnualRentUsd, amountText: fmtUSD(s.contractedAnnualRentUsd, 2), isFinal: true, jump: 're_leases', jumpLabel: 'All Leases' });
           return {
@@ -26983,8 +27454,8 @@
         },
         overview_cash: () => {
           const wfRows = [
-            { op: '+', label: 'Deed Installments Paid', sourcePrefix: `${salesPaidPct}%`, source: 'Collected across property sale deeds', signedAmount: s.salesPaidUsd, jump: 're_sales', jumpLabel: 'Property Sales' },
-            { op: '+', label: 'Unbilled / Remaining Buyer Tranches', source: 'Contracted deed installments remaining due', signedAmount: s.salesOpenUsd, jump: 're_sales', jumpLabel: 'Tranches' }
+            { op: '+', label: 'Deed Installments Paid', sourcePrefix: `${salesPaidPct}%`, source: 'Collected across property sale deeds', signedAmount: s.salesPaidUsd, jump: 're_sales', jumpChip: lens.books ? 'paid_tranches' : '', jumpScroll: lens.books ? 'reSalesPanel' : '', jumpLabel: 'Property Sales' },
+            { op: '+', label: 'Unbilled / Remaining Buyer Tranches', source: 'Contracted deed installments remaining due', signedAmount: s.salesOpenUsd, jump: 're_sales', jumpChip: lens.books ? 'open_balance' : '', jumpScroll: lens.books ? 'reSalesPanel' : '', jumpLabel: 'Tranches' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Contract Rounding Adjustment', 'Precision alignment', s.salesContractUsd, round2(s.salesPaidUsd + s.salesOpenUsd));
           wfRows.push({ op: '=', label: 'Sales & Deposits', sourcePrefix: fmtUSD(s.securityDepositsHeldUsd || 0, 0), source: 'Tenant security deposits held separately', signedAmount: s.salesContractUsd, amountText: fmtUSD(s.salesContractUsd, 2), isFinal: true, jump: 're_sales', jumpLabel: 'Deed Sales' });
@@ -26996,7 +27467,7 @@
             waterfallMeta: Math.max(1, s.salesContractUsd),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Security Deposits Held', value: fmtUSD(s.securityDepositsHeldUsd || 0, 0), sub: 'Escrow tenant deposits', jump: 're_leases' },
+              { label: 'Security Deposits Held', value: fmtUSD(s.securityDepositsHeldUsd || 0, 0), sub: 'Escrow tenant deposits', jump: 're_leases', jumpChip: lens.books ? 'deposits' : '', jumpScroll: lens.books ? 'reLeasesPanel' : '' },
               { label: 'Deed Settled %', value: `${salesPaidPct}%`, subPrefix: fmtNum(re.sales.length), sub: 'Deed contracts', jump: 're_sales' }
             ],
             driverTables: [{
@@ -27016,8 +27487,8 @@
         },
         overview_wc: () => {
           const wfRows = [
-            { op: '+', label: 'Open Tenant Rent Receivables', source: 'Issued rent schedules awaiting tenant payment', signedAmount: s.openRentArUsd, jump: 're_invoicing', jumpLabel: 'Rent Invoices' },
-            { op: '+', label: 'Unbilled Buyer Deed Tranches', source: 'Future contractual deed installments owed by buyers', signedAmount: s.salesOpenUsd, jump: 're_sales', jumpLabel: 'Deed Sales' }
+            { op: '+', label: 'Open Tenant Rent Receivables', source: 'Issued rent schedules awaiting tenant payment', signedAmount: s.openRentArUsd, jump: 're_invoicing', jumpChip: lens.books ? 'open_ar' : '', jumpScroll: lens.books ? 'reInvoicingPanel' : '', jumpLabel: 'Rent Invoices' },
+            { op: '+', label: 'Unbilled Buyer Deed Tranches', source: 'Future contractual deed installments owed by buyers', signedAmount: s.salesOpenUsd, jump: 're_sales', jumpChip: lens.books ? 'open_balance' : '', jumpScroll: lens.books ? 'reSalesPanel' : '', jumpLabel: 'Deed Sales' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Receivable Rounding Adjustment', 'Precision alignment', totOpenAr, round2(s.openRentArUsd + s.salesOpenUsd));
           wfRows.push({ op: '=', label: 'Rent & Buyer AR', source: 'Total combined open rent and buyer receivable exposure', signedAmount: totOpenAr, amountText: fmtUSD(totOpenAr, 2), isFinal: true, jump: 're_invoicing', jumpLabel: 'Rent Ledger' });
@@ -27029,8 +27500,8 @@
             waterfallMeta: Math.max(1, totOpenAr),
             waterfallRows: wfRows,
             subMetrics: [
-              ...(lens.expenses ? [{ label: 'Unrecharged Work Orders', value: fmtUSD(s.unrechargedUsd || 0, 0), sub: 'Recoverable from tenants', jump: 're_workorders' }] : []),
-              { label: 'Active Leases', value: fmtNum(re.leases.length), subPrefix: fmtNum(s.occupiedUnits), sub: 'Occupied units', jump: 're_leases' }
+              ...(lens.expenses ? [{ label: 'Unrecharged Work Orders', value: fmtUSD(s.unrechargedUsd || 0, 0), sub: 'Recoverable from tenants', jump: 're_recharges', jumpChip: lens.expenses ? 'unrecharged' : '', jumpScroll: lens.expenses ? 'reRechargesPanel' : '' }] : []),
+              { label: 'Active Leases', value: fmtNum(re.leases.length), subPrefix: fmtNum(s.occupiedUnits), sub: 'Occupied units', jump: 're_leases', jumpChip: 'active', jumpScroll: 'reLeasesPanel' }
             ],
             driverTables: [{
               title: 'Open Tenant Rent Invoices',
@@ -27069,11 +27540,15 @@
 
       activeMeta = {
         overview_revenue: () => {
-          const polSum = round2((ins.policies || []).reduce((a, p) => a + Number(p.gross_prem_usd || 0), 0));
+          const basePolSum = round2((ins.policies || []).filter(p => !/endorse/i.test(String(p.type || ''))).reduce((a, p) => a + Number(p.gross_prem_usd || 0), 0));
+          const endPolSum = round2((ins.policies || []).filter(p => /endorse/i.test(String(p.type || ''))).reduce((a, p) => a + Number(p.gross_prem_usd || 0), 0));
           const wfRows = [
-            { op: '+', label: 'Active Policy Gross Premiums', sourcePrefix: `${fmtNum(s.totalPolicyCount)} / ${fmtNum(s.carriersCount)}`, source: 'Active policies across partner carriers', signedAmount: polSum, jump: 'ins_policies', jumpLabel: 'Policies' }
+            { op: '+', label: 'Active Policy Gross Premiums', sourcePrefix: `${fmtNum(s.totalPolicyCount)} / ${fmtNum(s.carriersCount)}`, source: 'Active policies across partner carriers', signedAmount: basePolSum, jump: 'ins_policies', jumpChip: 'base_policies', jumpScroll: 'insPoliciesPanel', jumpLabel: 'Policies' }
           ];
-          pushOverviewWaterfallResidual(wfRows, 'Endorsements & Production Adjustments', 'Policy endorsements and mid-term additions', s.gwpUsd, polSum, 'ins_policies', 'Policies');
+          if (Math.abs(endPolSum) > 0.005) {
+            wfRows.push({ op: endPolSum >= 0 ? '+' : '-', label: 'Mid-Term Policy Endorsements', sourcePrefix: fmtNum(s.endorsementCount), source: 'Policy endorsements and mid-term additions', absAmount: Math.abs(endPolSum), signedAmount: endPolSum, jump: 'ins_policies', jumpChip: 'endorsements', jumpScroll: 'insPoliciesPanel', jumpLabel: 'Endorsements' });
+          }
+          pushOverviewWaterfallResidual(wfRows, 'Endorsements & Production Adjustments', 'Policy endorsements and mid-term additions', s.gwpUsd, round2(basePolSum + endPolSum), 'ins_policies', 'Policies');
           wfRows.push({ op: '=', label: 'Written Premium', source: 'Total gross written premium placed with partner carriers', signedAmount: s.gwpUsd, amountText: fmtUSD(s.gwpUsd, 2), isFinal: true, jump: 'ins_policies', jumpLabel: 'All Policies' });
           return {
             summaryDesc: 'Total gross written premium bound across partner insurance carriers, active policies and endorsements.',
@@ -27083,7 +27558,7 @@
             waterfallMeta: Math.max(1, s.gwpUsd),
             waterfallRows: wfRows,
             subMetrics: [
-              { label: 'Active Policies', value: fmtNum(s.totalPolicyCount), subPrefix: fmtNum(s.endorsementCount), sub: 'Endorsements', jump: 'ins_policies' },
+              { label: 'Active Policies', value: fmtNum(s.totalPolicyCount), subPrefix: fmtNum(s.endorsementCount), sub: 'Endorsements', jump: 'ins_policies', jumpChip: 'base_policies', jumpScroll: 'insPoliciesPanel' },
               { label: 'Partner Carriers', value: fmtNum(s.carriersCount), subPrefix: fmtNum(s.dueRenewals90dCount), sub: 'Renewals within 90 days', jump: 'ins_statements' }
             ],
             driverTables: [{
@@ -27104,8 +27579,8 @@
         overview_profit: () => {
           const wfRows = [
             { op: '+', label: 'Gross Brokerage Commission', sourcePrefix: `${commYieldPct.toFixed(1)}%`, source: 'Blended yield on placed gross written premium', signedAmount: s.grossComm7063Usd, jump: 'ins_statements', jumpLabel: 'Statements' },
-            { op: '+', label: 'Policy Administration Fees', source: 'Broker policy issuance and endorsement service fees', signedAmount: s.policyFees7064Usd, jump: 'ins_policies', jumpLabel: 'Policies' },
-            { op: '-', label: 'Client Rebates & Discounts', source: 'Approved commission discounts granted to insureds', absAmount: s.discount7065Usd, signedAmount: -s.discount7065Usd, jump: 'ins_policies', jumpLabel: 'Policies' }
+            { op: '+', label: 'Policy Administration Fees', source: 'Broker policy issuance and endorsement service fees', signedAmount: s.policyFees7064Usd, jump: 'ins_policies', jumpChip: lens.profit ? 'with_fees' : '', jumpScroll: lens.profit ? 'insPoliciesPanel' : '', jumpLabel: 'Policies' },
+            { op: '-', label: 'Client Rebates & Discounts', source: 'Approved commission discounts granted to insureds', absAmount: s.discount7065Usd, signedAmount: -s.discount7065Usd, jump: 'ins_policies', jumpChip: lens.profit ? 'discounted' : '', jumpScroll: lens.profit ? 'insPoliciesPanel' : '', jumpLabel: 'Policies' }
           ];
           const netCommChk = round2(s.grossComm7063Usd + s.policyFees7064Usd - s.discount7065Usd);
           pushOverviewWaterfallResidual(wfRows, 'Commission Reconciliation Adj.', 'Commission alignment', totRev, netCommChk);
@@ -27151,7 +27626,7 @@
         },
         overview_cash: () => {
           const wfRows = [
-            { op: '+', label: 'Payable to Carriers Covered', source: 'Client funds held ready for upcoming carrier remittances', signedAmount: s.payableToCarriers4017Usd, jump: 'ins_remittances', jumpLabel: 'Remittances' }
+            { op: '+', label: 'Payable to Carriers Covered', source: 'Client funds held ready for upcoming carrier remittances', signedAmount: s.payableToCarriers4017Usd, jump: 'ins_remittances', jumpChip: (lens.books && lens.profit) ? 'open_payable' : '', jumpScroll: (lens.books && lens.profit) ? 'insRemittancesPanel' : '', jumpLabel: 'Remittances' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Excess Cash / Commission Buffer Held', 'Retained brokerage cash above direct carrier remittance due', s.cashHeldUsd, s.payableToCarriers4017Usd, 'ins_remittances', 'Remittances');
           wfRows.push({ op: '=', label: 'Fiduciary Cash', sourcePrefix: `${fidCovPct.toFixed(1)}%`, source: 'Coverage ratio vs carrier payables', signedAmount: s.cashHeldUsd, amountText: fmtUSD(s.cashHeldUsd, 2), isFinal: true, jump: 'ins_remittances', jumpLabel: 'Remittances' });
@@ -27164,7 +27639,7 @@
             waterfallRows: wfRows,
             subMetrics: [
               { label: 'Coverage Ratio', value: `${fidCovPct.toFixed(1)}%`, sub: 'Cash held vs payable', jump: 'ins_remittances' },
-              { label: 'Renewal Retention', value: `${s.retentionPct.toFixed(1)}%`, subPrefix: fmtNum(s.dueRenewals90dCount), sub: 'Renewals within 90 days', jump: 'ins_policies' }
+              { label: 'Renewal Retention', value: `${s.retentionPct.toFixed(1)}%`, subPrefix: fmtNum(s.dueRenewals90dCount), sub: 'Renewals within 90 days', jump: 'ins_renewals', jumpChip: 'due_90d', jumpScroll: 'insRenewalsPanel' }
             ],
             driverTables: [{
               title: 'Carrier Fiduciary Remittances',
@@ -27183,12 +27658,12 @@
         },
         overview_wc: () => {
           const wfRows = [
-            { op: '+', label: 'Open Client Premium Instalments', sourcePrefix: fmtNum(ins.billing.length), source: 'Pending client billing instalments', signedAmount: s.openClientAr4112Usd, jump: 'ins_billing', jumpLabel: 'Billing' }
+            { op: '+', label: 'Open Client Premium Instalments', sourcePrefix: fmtNum(ins.billing.length), source: 'Pending client billing instalments', signedAmount: s.openClientAr4112Usd, jump: 'ins_billing', jumpChip: lens.books ? 'open_ar' : '', jumpScroll: lens.books ? 'insBillingPanel' : '', jumpLabel: 'Billing' }
           ];
           wfRows.push({ op: '=', label: 'Open Client AR', source: 'Gross unpaid client insurance premium balances', signedAmount: s.openClientAr4112Usd, amountText: fmtUSD(s.openClientAr4112Usd, 2), isFinal: true, jump: 'ins_billing', jumpLabel: 'Billing Plan' });
           const carrierRows = [
-            { op: '+', label: 'Payable to Insurance Carriers', source: 'Net premiums owed to carriers across open statements', signedAmount: s.payableToCarriers4017Usd, jump: 'ins_remittances', jumpLabel: 'Remittances' },
-            { op: '=', label: 'Total Carrier Payables', sourcePrefix: fmtNum(s.stmtDiscrepancyCount), source: 'Statement variance alerts tracked', signedAmount: s.payableToCarriers4017Usd, amountText: fmtUSD(s.payableToCarriers4017Usd, 2), isFinal: true, jump: 'ins_statements', jumpLabel: 'Statements' }
+            { op: '+', label: 'Payable to Insurance Carriers', source: 'Net premiums owed to carriers across open statements', signedAmount: s.payableToCarriers4017Usd, jump: 'ins_remittances', jumpChip: (lens.books && lens.profit) ? 'open_payable' : '', jumpScroll: (lens.books && lens.profit) ? 'insRemittancesPanel' : '', jumpLabel: 'Remittances' },
+            { op: '=', label: 'Total Carrier Payables', sourcePrefix: fmtNum(s.stmtDiscrepancyCount), source: 'Statement variance alerts tracked', signedAmount: s.payableToCarriers4017Usd, amountText: fmtUSD(s.payableToCarriers4017Usd, 2), isFinal: true, jump: 'ins_statements', jumpChip: (lens.books && lens.profit) ? 'discrepancy' : '', jumpScroll: (lens.books && lens.profit) ? 'insStatementsPanel' : '', jumpLabel: 'Statements' }
           ];
           const carrierSpec = {
             rows: carrierRows,
@@ -27208,7 +27683,7 @@
             extraWaterfallHtml: carrierTable,
             subMetrics: [
               { label: 'Payable to Carriers', value: fmtUSD(s.payableToCarriers4017Usd, 0), sub: 'Across carrier bordereaux', jump: 'ins_remittances' },
-              { label: 'Statement Variances', value: fmtNum(s.stmtDiscrepancyCount), sub: s.stmtDiscrepancyCount > 0 ? 'Needs reconciliation' : 'Reconciled', jump: 'ins_statements' }
+              { label: 'Statement Variances', value: fmtNum(s.stmtDiscrepancyCount), sub: s.stmtDiscrepancyCount > 0 ? 'Needs reconciliation' : 'Reconciled', jump: 'ins_statements', jumpChip: (lens.books && lens.profit) ? 'discrepancy' : '', jumpScroll: (lens.books && lens.profit) ? 'insStatementsPanel' : '' }
             ],
             driverTables: [{
               title: 'Client Premium Instalments',
@@ -46001,6 +46476,8 @@
       </div>`;
       })()}
 
+      ${renderPassedOnNotReceivedPanel()}
+
       <div class="panel-card" id="expPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -60708,11 +61185,13 @@
     const repaidRowsCount = icRes.interactions.filter(x => x.repayRole === 'repaid').length;
     const unpaidCorridorRowsCount = icRes.interactions.filter(x => (x.corridorRepayPct || 0) < 15).length;
 
+    const hldChip = (!canHldBooks && ['given', 'repaid', 'unpaid_corridors', 'wtc_bbc'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== hldChip && hldChip === 'all') STATE.chipFilter = 'all';
     let filteredRows = icRes.interactions.filter(x => {
-      if (STATE.chipFilter === 'given') return x.repayRole === 'given';
-      if (STATE.chipFilter === 'repaid') return x.repayRole === 'repaid';
-      if (STATE.chipFilter === 'unpaid_corridors') return (x.corridorRepayPct || 0) < 15;
-      if (STATE.chipFilter === 'reconciled') return x.status === 'Reconciled';
+      if (hldChip === 'given') return x.repayRole === 'given';
+      if (hldChip === 'repaid') return x.repayRole === 'repaid';
+      if (hldChip === 'unpaid_corridors') return (x.corridorRepayPct || 0) < 15;
+      if (hldChip === 'reconciled') return x.status === 'Reconciled';
       if (STATE.chipFilter === 'open') return x.status === 'Open';
       if (STATE.chipFilter === '1to1') return x.matchType === '1-to-1';
       if (STATE.chipFilter === 'split') return x.matchType.startsWith('Split');
@@ -60779,10 +61258,19 @@
     `;
 
     if (submode === 'due_matrix') {
-      const bList = regPanelRows('hldDueMatrixPanel', icRes.byBilateral || []);
+      const bf = (!canHldBooks && ['open_due', 'settling', 'unpaid_corridors'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+      if (STATE.chipFilter !== bf && bf === 'all') STATE.chipFilter = 'all';
+      const bChip = (key, label) => `<button type="button" class="filter-chip ${bf === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+      const bFiltered = (icRes.byBilateral || []).filter(c => {
+        if (bf === 'open_due') return Number(c.netUnpaidUsd || 0) > 0.005;
+        if (bf === 'settling') return Number(c.repayPct || 0) >= 50;
+        if (bf === 'unpaid_corridors') return Number(c.repayPct || 0) < 15 && Number(c.netUnpaidUsd || 0) > 0.005;
+        return true;
+      });
+      const bList = regPanelRows('hldDueMatrixPanel', bFiltered);
       // Filtered from the chart: the TOTAL adds up the pairs listed.
       const bFoot = (() => {
-        if (!getRegDrill('hldDueMatrixPanel') && !hasDirectColFilter('hld_consolidation')) return icRes;
+        if (!getRegDrill('hldDueMatrixPanel') && !hasDirectColFilter('hld_consolidation') && bf === 'all') return icRes;
         const s = f => bList.reduce((a, c) => a + Number(f(c) || 0), 0);
         const given = round2(s(c => c.givenUsd));
         const paid = round2(s(c => c.paidBackUsd));
@@ -60804,6 +61292,14 @@
               ${canHldBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>` : ''}
               ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Repayment_Matrix')}
               ${(canHldBooks && canEnterForm('treasury', u)) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
+            </div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${bChip('all', `All (${fmtNum((icRes.byBilateral || []).length)})`)}
+              ${canHldBooks ? bChip('open_due', 'Open Balance') : ''}
+              ${canHldBooks ? bChip('settling', 'Actively Settling') : ''}
+              ${canHldBooks ? bChip('unpaid_corridors', 'Low Repayment') : ''}
             </div>
           </div>
           <div class="table-wrap">
@@ -60975,10 +61471,10 @@
             <div class="panel-title"><span>${ic('hld_interactions')} INTERCOMPANY TRANSFERS &amp; REPAYMENT LEDGER (${fmtNum(filteredRows.length)})</span></div>
             <div class="chip-bar">
               ${chip('all', `All (${fmtNum(icRes.totalCount)})`)}
-              ${chip('given', `Given / Funded (${fmtNum(givenRowsCount)})`)}
-              ${chip('repaid', `Paid Back (${fmtNum(repaidRowsCount)})`)}
-              ${chip('unpaid_corridors', `Not Paying Back (${fmtNum(unpaidCorridorRowsCount)})`)}
-              ${chip('wtc_bbc', 'WTC ↔ BBC (98% Settled)')}
+              ${canHldBooks ? chip('given', `Given / Funded (${fmtNum(givenRowsCount)})`) : ''}
+              ${canHldBooks ? chip('repaid', `Paid Back (${fmtNum(repaidRowsCount)})`) : ''}
+              ${canHldBooks ? chip('unpaid_corridors', `Not Paying Back (${fmtNum(unpaidCorridorRowsCount)})`) : ''}
+              ${canHldBooks ? chip('wtc_bbc', 'WTC ↔ BBC (98% Settled)') : ''}
               ${chip('reconciled', `2-Sided Booked (${fmtNum(icRes.matchedCount)})`)}
               ${chip('open', `1-Sided Book (${fmtNum(icRes.openCount)})`)}
             </div>
@@ -66178,10 +66674,14 @@
       `;
     }
 
+    const memF = (!canHspMemBooks && ['overdue', 'partial', 'collected', 'paid'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== memF && memF === 'all') STATE.chipFilter = 'all';
+    const memChip = (key, label) => `<button type="button" class="filter-chip ${memF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     let filteredMem = hsp.membershipRows.filter(r => {
-      if (f === 'overdue') return r.status === 'Overdue Arrears';
-      if (f === 'partial') return r.balance_usd > 0;
-      if (f === 'paid') return r.balance_usd <= 0;
+      if (memF === 'overdue') return r.status === 'Overdue Arrears';
+      if (memF === 'partial') return r.balance_usd > 0;
+      if (memF === 'collected') return r.paid_usd > 0;
+      if (memF === 'paid') return r.balance_usd <= 0;
       return true;
     });
     filteredMem = regPanelRows('hspMembershipsPanel', filteredMem, 'hsp_memberships');
@@ -66198,10 +66698,11 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div class="panel-title"><span>${ic('hsp_memberships')} SEASONAL MEMBERSHIPS &amp; INSTALLMENT ARREARS (${fmtNum(filteredMem.length)})</span></div>
             <div class="chip-bar">
-              ${chip('all', `All Contracts (${fmtNum(hsp.membershipRows.length)})`)}
-              ${chip('overdue', `Overdue Arrears (${fmtNum(s.overdueMemCount)})`)}
-              ${chip('partial', 'Open Balance')}
-              ${chip('paid', 'Paid in Full')}
+              ${memChip('all', `All Contracts (${fmtNum(hsp.membershipRows.length)})`)}
+              ${canHspMemBooks ? memChip('collected', 'Collected') : ''}
+              ${canHspMemBooks ? memChip('partial', 'Open Balance') : ''}
+              ${canHspMemBooks ? memChip('overdue', `Overdue Arrears (${fmtNum(s.overdueMemCount)})`) : ''}
+              ${canHspMemBooks ? memChip('paid', 'Paid in Full') : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -67464,7 +67965,8 @@
     const s = trd.summary;
     const hideCo = trd.scopedCompanies.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-    const f = STATE.chipFilter || 'all';
+    const f = (hideCo && ['shacman', 'korri'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== f && f === 'all') STATE.chipFilter = 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const gapRows = (trd.salesRows || []).filter(r => r && r.is_gap);
@@ -67514,12 +68016,16 @@
     `;
 
     if (submode === 'receivables') {
+      const arF = (!canTrdSalBooks && ['gross_ar', 'advances', 'promises', 'unscheduled_ar'].includes(f)) ? 'all' : f;
+      if (STATE.chipFilter !== arF && arF === 'all') STATE.chipFilter = 'all';
+      const arChip = (key, label) => `<button type="button" class="filter-chip ${arF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
       let filteredAr = trd.receivableRows.filter(r => {
-        if (f === 'gross_ar') return r.gross_ar_usd > 0;
-        if (f === 'advances') return r.advance_usd > 0;
-        if (f === 'promises') return r.promise_usd > 0;
-        if (f === 'shacman') return r.company === 'Shacman';
-        if (f === 'korri') return r.company === 'Korri Auto';
+        if (arF === 'gross_ar') return r.gross_ar_usd > 0;
+        if (arF === 'advances') return r.advance_usd > 0;
+        if (arF === 'promises') return r.promise_usd > 0;
+        if (arF === 'unscheduled_ar') return Number(r.gross_ar_usd || 0) > Number(r.promise_usd || 0) + 0.005;
+        if (arF === 'shacman') return r.company === 'Shacman';
+        if (arF === 'korri') return r.company === 'Korri Auto';
         return true;
       });
       filteredAr = regPanelRows('trdReceivablesPanel', filteredAr, 'trd_receivables');
@@ -67537,12 +68043,13 @@
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <div class="panel-title"><span>${ic('trd_receivables')} CUSTOMER RECEIVABLES, ADVANCES &amp; COLLECTION PROMISES (${fmtNum(filteredAr.length)})</span></div>
               <div class="chip-bar">
-                ${chip('all', `All Accounts (${fmtNum(trd.receivableRows.length)})`)}
-                ${chip('gross_ar', 'Gross Receivables')}
-                ${chip('advances', 'Customer Advances')}
-                ${chip('promises', 'Collection Promises')}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${arChip('all', `All Accounts (${fmtNum(trd.receivableRows.length)})`)}
+                ${canTrdSalBooks ? arChip('gross_ar', 'Gross Receivables') : ''}
+                ${canTrdSalBooks ? arChip('advances', 'Customer Advances') : ''}
+                ${canTrdSalBooks ? arChip('promises', 'Collection Promises') : ''}
+                ${canTrdSalBooks ? arChip('unscheduled_ar', 'Unscheduled AR') : ''}
+                ${!hideCo ? arChip('shacman', 'Shacman') : ''}
+                ${!hideCo ? arChip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -67636,8 +68143,8 @@
               <div class="chip-bar">
                 ${chip('all', `All Targets (${fmtNum(trd.targetRows.length)})`)}
                 ${chip('exceeded', '100%+ Attained')}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -67706,8 +68213,8 @@
       if (f === 'trucks') return r.category === 'Heavy Truck Sale';
       if (f === 'parts') return r.category !== 'Heavy Truck Sale' && !r.is_gap;
       if (f === 'gaps') return r.is_gap;
-      if (f === 'shacman') return r.company === 'Shacman';
-      if (f === 'korri') return r.company === 'Korri Auto';
+      if (f === 'shacman') return r.company === 'Shacman' && !r.is_gap;
+      if (f === 'korri') return r.company === 'Korri Auto' && !r.is_gap;
       return true;
     });
     filteredSales = regPanelRows('trdSalesPanel', filteredSales, 'trd_sales');
@@ -67730,8 +68237,8 @@
               ${chip('trucks', 'Heavy Truck Sales')}
               ${chip('parts', 'Spare Parts & Tyres')}
               ${chip('gaps', `Book Sequence Gaps (${fmtNum(s.invoiceGapCount)})`)}
-              ${chip('shacman', 'Shacman')}
-              ${chip('korri', 'Korri Auto')}
+              ${!hideCo ? chip('shacman', 'Shacman') : ''}
+              ${!hideCo ? chip('korri', 'Korri Auto') : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -67812,7 +68319,8 @@
     const s = trd.summary;
     const hideCo = trd.scopedCompanies.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-    const f = STATE.chipFilter || 'all';
+    const f = (hideCo && ['shacman', 'korri'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== f && f === 'all') STATE.chipFilter = 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const landedPct = s.totalFobUsd > 0 ? round2((s.totalLandedAddUsd / s.totalFobUsd) * 100) : 0;
@@ -67878,8 +68386,8 @@
                 ${chip('all', `All Landed Files (${fmtNum(trd.landedRows.length)})`)}
                 ${chip('unallocated', `Unallocated (${fmtNum(s.unallocatedLandedCount)})`)}
                 ${chip('allocated', '100% Allocated')}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -67980,8 +68488,8 @@
               <div class="panel-title"><span>${ic('trd_grn')} GOODS RECEIPT NOTES &amp; ARRIVAL INSPECTION (${fmtNum(filteredGrn.length)})</span></div>
               <div class="chip-bar">
                 ${chip('all', `All GRNs (${fmtNum(trd.grnRows.length)})`)}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68085,8 +68593,8 @@
               ${chip('all', `All Import Files (${fmtNum(trd.importRows.length)})`)}
               ${chip('backorder', `Open Backorders (${fmtNum(s.totalBackorderQty)} units)`)}
               ${chip('t5_pending', `Pending Landed Alloc (${fmtNum(s.unallocatedLandedCount)})`)}
-              ${chip('shacman', 'Shacman')}
-              ${chip('korri', 'Korri Auto')}
+              ${!hideCo ? chip('shacman', 'Shacman') : ''}
+              ${!hideCo ? chip('korri', 'Korri Auto') : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68188,7 +68696,8 @@
     });
     const hideCo = trd.scopedCompanies.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-    const f = STATE.chipFilter || 'all';
+    const f = (hideCo && ['shacman', 'korri'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== f && f === 'all') STATE.chipFilter = 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const totUnitGm = round2(s.totalUnitsListUsd - s.totalUnitsLandedUsd);
@@ -68284,8 +68793,8 @@
                 ${chip('open', `Open PDI / Claims (${fmtNum(s.openWarrantyCount)})`)}
                 ${chip('pdi', 'Pre-Delivery Inspection')}
                 ${chip('warranty', 'OEM Warranty Claims')}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68355,12 +68864,16 @@
       `;
     }
 
+    const trkF = (hideCo && ['shacman', 'korri'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== trkF && trkF === 'all') STATE.chipFilter = 'all';
+    const trkChip = (key, label) => `<button type="button" class="filter-chip ${trkF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     let filteredUnits = trd.serialUnits.filter(r => {
-      if (f === 'available') return r.status === 'In Showroom' || r.status === 'In PDI';
-      if (f === 'reserved') return r.status === 'Reserved';
-      if (f === 'sold') return r.status === 'Sold & Delivered';
-      if (f === 'shacman') return r.company === 'Shacman';
-      if (f === 'korri') return r.company === 'Korri Auto';
+      if (trkF === 'in_stock') return r.status !== 'Sold & Delivered';
+      if (trkF === 'available') return r.status === 'In Showroom' || r.status === 'In PDI';
+      if (trkF === 'reserved') return r.status === 'Reserved';
+      if (trkF === 'sold') return r.status === 'Sold & Delivered';
+      if (trkF === 'shacman') return r.company === 'Shacman';
+      if (trkF === 'korri') return r.company === 'Korri Auto';
       return true;
     });
     filteredUnits = regPanelRows('trdTrucksPanel', filteredUnits, 'trd_trucks');
@@ -68378,12 +68891,13 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div class="panel-title"><span>${ic('trd_trucks')} SERIAL UNITS, CHASSIS VIN &amp; ENGINE REGISTRY (${fmtNum(filteredUnits.length)})</span></div>
             <div class="chip-bar">
-              ${chip('all', `All Serial Units (${fmtNum(trd.serialUnits.length)})`)}
-              ${chip('available', 'Available / In PDI')}
-              ${chip('reserved', 'Reserved')}
-              ${chip('sold', 'Sold & Delivered')}
-              ${chip('shacman', 'Shacman')}
-              ${chip('korri', 'Korri Auto')}
+              ${trkChip('all', `All Serial Units (${fmtNum(trd.serialUnits.length)})`)}
+              ${trkChip('in_stock', 'In Stock')}
+              ${trkChip('available', 'Available / In PDI')}
+              ${trkChip('reserved', 'Reserved')}
+              ${trkChip('sold', 'Sold & Delivered')}
+              ${!hideCo ? trkChip('shacman', 'Shacman') : ''}
+              ${!hideCo ? trkChip('korri', 'Korri Auto') : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68462,7 +68976,8 @@
     const s = trd.summary;
     const hideCo = trd.scopedCompanies.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-    const f = STATE.chipFilter || 'all';
+    const f = (hideCo && ['shacman', 'korri'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== f && f === 'all') STATE.chipFilter = 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const kpiHtml = `
@@ -68521,8 +69036,8 @@
               <div class="chip-bar">
                 ${chip('all', `All Movements (${fmtNum(trd.movementRows.length)})`)}
                 ${chip('ic', 'Inter-Company Transfers')}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68612,8 +69127,8 @@
               <div class="panel-title"><span>${ic('trd_recon')} LIVE APP VS. HISTORICAL PARALLEL-RUN RECONCILIATION (${fmtNum(filteredRec.length)})</span></div>
               <div class="chip-bar">
                 ${chip('all', `All Recon Domains (${fmtNum(trd.reconRows.length)})`)}
-                ${chip('shacman', 'Shacman')}
-                ${chip('korri', 'Korri Auto')}
+                ${!hideCo ? chip('shacman', 'Shacman') : ''}
+                ${!hideCo ? chip('korri', 'Korri Auto') : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -68697,8 +69212,8 @@
             <div class="chip-bar">
               ${chip('all', `All Catalog SKUs (${fmtNum(trd.stockRows.length)})`)}
               ${chip('low_stock', `Low-Stock Reorder Alerts (${fmtNum(s.reorderAlertCount)})`)}
-              ${chip('shacman', 'Shacman')}
-              ${chip('korri', 'Korri Auto')}
+              ${!hideCo ? chip('shacman', 'Shacman') : ''}
+              ${!hideCo ? chip('korri', 'Korri Auto') : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -69268,8 +69783,25 @@
       tenant: r => String(r.tenant || '').trim()
     };
     const baseLeases = data.leases.filter(matchQ);
-    const filteredLeases = sortRows(baseLeases.filter(r => matchIndDrawerFilters(r, 're_leases', reExtractors)), 're_leases');
-    const filteredInv = sortRows(data.invoices.filter(matchQ), 're_invoicing');
+    const reLF = ((hideCo && ['properties_bu', 'c4235'].includes(STATE.chipFilter)) || (!canReLBooks && STATE.chipFilter === 'deposits')) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== reLF && reLF === 'all') STATE.chipFilter = 'all';
+    const reLChip = (key, label) => `<button type="button" class="filter-chip ${reLF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const reLChipRows = baseLeases.filter(r => {
+      if (reLF === 'active') return data.rentRollIds ? data.rentRollIds.has(String(r.id || '').trim().toUpperCase()) : !/expir|terminat|closed/i.test(String(r.status || ''));
+      if (reLF === 'deposits') return Number(r.deposit_usd || 0) > 0.005;
+      if (reLF === 'properties_bu') return r.company === 'Properties';
+      if (reLF === 'c4235') return r.company === '4235 Company S.A.L';
+      return true;
+    });
+    const filteredLeases = sortRows(reLChipRows.filter(r => matchIndDrawerFilters(r, 're_leases', reExtractors)), 're_leases');
+    const reInvF = (!canReLBooks && ['open_ar', 'collected'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== reInvF && reInvF === 'all') STATE.chipFilter = 'all';
+    const reInvChip = (key, label) => `<button type="button" class="filter-chip ${reInvF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredInv = sortRows(data.invoices.filter(matchQ).filter(r => {
+      if (reInvF === 'open_ar') return Number(r.open_ar_usd || 0) > 0.005;
+      if (reInvF === 'collected') return Number(r.collected_usd || 0) > 0.005;
+      return true;
+    }), 're_invoicing');
     const filteredRct = sortRows(data.receipts.filter(matchQ), 're_receipts');
     const rePrimaryPodsHtml = buildFreqFilterPodHtml({ scope: 're_leases', key: 'status', title: 'Status', rows: baseLeases, getVal: reExtractors.status, noI18nValues: true });
     const reDrawerPodsHtml = `
@@ -69345,13 +69877,20 @@
       const sumAr = filteredInv.reduce((a, r) => a + r.open_ar_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reInvoicingPanel">
           <div class="panel-head">
             <div>
               <h3>Period Rent Invoices &amp; 4235 Company S.A.L VAT Sequence Ledger ${shownCount('re_invoicing', filteredInv.length, data.invoices.length)}</h3>
               <p>Period rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 &amp; #7-#8)</p>
             </div>
             <div class="panel-actions">${searchBox('Search invoice, tax seq, tenant, period...')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${reInvChip('all', `All (${fmtNum(data.invoices.length)})`)}
+              ${canReLBooks ? reInvChip('open_ar', 'Open Rent AR') : ''}
+              ${canReLBooks ? reInvChip('collected', 'Collected') : ''}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -69545,6 +70084,15 @@
           <div class="panel-actions">${searchBox('Search lease, tenant, property, unit...')}</div>
         </div>
         ${reFilterBarHtml}
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${reLChip('all', `All (${fmtNum(data.leases.length)})`)}
+            ${reLChip('active', 'Active Leases')}
+            ${canReLBooks ? reLChip('deposits', 'With Deposits') : ''}
+            ${!hideCo ? reLChip('properties_bu', '<span data-no-i18n="1">Properties</span>') : ''}
+            ${!hideCo ? reLChip('c4235', '<span data-no-i18n="1">4235 Company S.A.L</span>') : ''}
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
@@ -69613,7 +70161,15 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
-    const filteredSales = sortRows(data.sales.filter(matchQ), 're_sales');
+    const reSalF = (!canReSBooks && ['paid_tranches', 'open_balance', 'settled_deed'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== reSalF && reSalF === 'all') STATE.chipFilter = 'all';
+    const reSalChip = (key, label) => `<button type="button" class="filter-chip ${reSalF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredSales = sortRows(data.sales.filter(matchQ).filter(r => {
+      if (reSalF === 'paid_tranches') return Number(r.paid_usd || 0) > 0.005;
+      if (reSalF === 'open_balance') return Number(r.balance_usd || 0) > 0.005;
+      if (reSalF === 'settled_deed') return Number(r.balance_usd || 0) <= 0.005;
+      return true;
+    }), 're_sales');
     const filteredInst = sortRows(data.instalments.filter(matchQ), 're_instalments');
 
     const bannerHtml = `
@@ -69732,13 +70288,21 @@
 
     return `
       ${bannerHtml}
-      <div class="panel">
+      <div class="panel" id="reSalesPanel">
         <div class="panel-head">
           <div>
             <h3>Property &amp; Unit Sales Contracts ${shownCount('re_sales', filteredSales.length, data.sales.length)}</h3>
             <p>Tracks buyer sales agreements, collected instalments, broker commissions, and deed recognition stage</p>
           </div>
           <div class="panel-actions">${searchBox('Search sale contract, buyer, property...')}</div>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${reSalChip('all', `All (${fmtNum(data.sales.length)})`)}
+            ${canReSBooks ? reSalChip('paid_tranches', 'Paid Tranches') : ''}
+            ${canReSBooks ? reSalChip('open_balance', 'Open Balance') : ''}
+            ${canReSBooks ? reSalChip('settled_deed', 'Settled') : ''}
+          </div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -70166,8 +70730,15 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const reRchF = (!canReWExp && ['unrecharged', 'settled'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== reRchF && reRchF === 'all') STATE.chipFilter = 'all';
+    const reRchChip = (key, label) => `<button type="button" class="filter-chip ${reRchF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const filteredWo = sortRows(data.workorders.filter(matchQ), 're_workorders');
-    const filteredRch = sortRows(data.recharges.filter(matchQ), 're_recharges');
+    const filteredRch = sortRows(data.recharges.filter(matchQ).filter(r => {
+      if (reRchF === 'unrecharged') return r.status === 'Unrecharged';
+      if (reRchF === 'settled') return r.status !== 'Unrecharged';
+      return true;
+    }), 're_recharges');
 
     const bannerHtml = `
       <div class="cockpit-banner">
@@ -70217,13 +70788,20 @@
       const sumTot = filteredRch.reduce((a, r) => a + r.total_recharge_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reRechargesPanel">
           <div class="panel-head">
             <div>
               <h3>Tenant Utility, Generator Diesel &amp; Common-Area Recharges ${shownCount('re_recharges', filteredRch.length, data.recharges.length)}</h3>
               <p>Tracks recoverable landlord expenses and flags unbilled tenant recharges before period close</p>
             </div>
             <div class="panel-actions">${searchBox('Search recharge, tenant, property, expense ref...')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${reRchChip('all', `All (${fmtNum(data.recharges.length)})`)}
+              ${canReWExp ? reRchChip('unrecharged', 'Unrecharged') : ''}
+              ${canReWExp ? reRchChip('settled', 'Settled') : ''}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -70839,8 +71417,24 @@
       type: r => String(r.type || '').trim()
     };
     const basePol = data.policies.filter(matchQ);
-    const filteredPol = sortRows(basePol.filter(r => matchIndDrawerFilters(r, 'ins_policies', insExtractors)), 'ins_policies');
-    const filteredRen = sortRows(data.renewals.filter(matchQ), 'ins_renewals');
+    const insPolF = (!canInsPProfit && ['with_fees', 'discounted'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== insPolF && insPolF === 'all') STATE.chipFilter = 'all';
+    const insPolChip = (key, label) => `<button type="button" class="filter-chip ${insPolF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const insPolChipRows = basePol.filter(r => {
+      if (insPolF === 'base_policies') return !/endorse/i.test(String(r.type || ''));
+      if (insPolF === 'endorsements') return /endorse/i.test(String(r.type || ''));
+      if (insPolF === 'with_fees') return Number(r.policy_fee_usd || 0) > 0.005;
+      if (insPolF === 'discounted') return Number(r.discount_usd || 0) > 0.005;
+      return true;
+    });
+    const filteredPol = sortRows(insPolChipRows.filter(r => matchIndDrawerFilters(r, 'ins_policies', insExtractors)), 'ins_policies');
+    const insRenF = STATE.chipFilter || 'all';
+    const insRenChip = (key, label) => `<button type="button" class="filter-chip ${insRenF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredRen = sortRows(data.renewals.filter(matchQ).filter(r => {
+      if (insRenF === 'due_90d') return Number(r.days_left ?? 999) >= 0 && Number(r.days_left ?? 999) <= 90;
+      if (insRenF === 'expired') return Number(r.days_left ?? 0) < 0;
+      return true;
+    }), 'ins_renewals');
     const filteredItm = sortRows(data.items.filter(matchQ), 'ins_items');
     const insPrimaryPodsHtml = buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'status', title: 'Status', rows: basePol, getVal: insExtractors.status, noI18nValues: true });
     const insDrawerPodsHtml = `
@@ -70913,13 +71507,20 @@
       const sumQuo = filteredRen.reduce((a, r) => a + r.quoted_renewal_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="insRenewalsPanel">
           <div class="panel-head">
             <div>
               <h3>30 / 60 / 90-Day Policy Renewal Queue &amp; Lapsed Policy Tracker ${shownCount('ins_renewals', filteredRen.length, data.renewals.length)}</h3>
               <p>Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion</p>
             </div>
             <div class="panel-actions">${searchBox('Search renewal, client, carrier, bucket...')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${insRenChip('all', `All (${fmtNum(data.renewals.length)})`)}
+              ${insRenChip('due_90d', 'Due 0-90 Days')}
+              ${insRenChip('expired', 'Expired')}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -71062,6 +71663,15 @@
           <div class="panel-actions">${searchBox('Search policy #, client, carrier, line, producer...')}</div>
         </div>
         ${insFilterBarHtml}
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${insPolChip('all', `All (${fmtNum(data.policies.length)})`)}
+            ${insPolChip('base_policies', 'Base Policies')}
+            ${insPolChip('endorsements', 'Endorsements')}
+            ${canInsPProfit ? insPolChip('with_fees', 'Policy Fees') : ''}
+            ${canInsPProfit ? insPolChip('discounted', 'Client Discounts') : ''}
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
@@ -71132,9 +71742,31 @@
     const s = data.summary;
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
-    const filteredBil = sortRows(data.billing.filter(matchQ), 'ins_billing');
-    const filteredRem = sortRows(data.remittances.filter(matchQ), 'ins_remittances');
-    const filteredStm = sortRows(data.statements.filter(matchQ), 'ins_statements');
+    const insBilF = (!canInsBBooks && ['open_ar', 'collected'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== insBilF && insBilF === 'all') STATE.chipFilter = 'all';
+    const insBilChip = (key, label) => `<button type="button" class="filter-chip ${insBilF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredBil = sortRows(data.billing.filter(matchQ).filter(r => {
+      if (insBilF === 'open_ar') return Number(r.open_ar_4112_usd || 0) > 0.005;
+      if (insBilF === 'collected') return Number(r.collected_usd || 0) > 0.005;
+      return true;
+    }), 'ins_billing');
+    const canRemPay = Boolean(canInsBBooks && canInsBProfit);
+    const insRemF = ((!canRemPay && STATE.chipFilter === 'open_payable') || (!canInsBBooks && STATE.chipFilter === 'cash_held')) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== insRemF && insRemF === 'all') STATE.chipFilter = 'all';
+    const insRemChip = (key, label) => `<button type="button" class="filter-chip ${insRemF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredRem = sortRows(data.remittances.filter(matchQ).filter(r => {
+      if (insRemF === 'open_payable') return Number(r.net_payable_4017_usd || 0) > 0.005;
+      if (insRemF === 'cash_held') return Number(r.client_cash_held_usd || 0) > 0.005;
+      return true;
+    }), 'ins_remittances');
+    const insStmF = (!(canInsBBooks && canInsBProfit) && ['discrepancy', 'reconciled'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    if (STATE.chipFilter !== insStmF && insStmF === 'all') STATE.chipFilter = 'all';
+    const insStmChip = (key, label) => `<button type="button" class="filter-chip ${insStmF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const filteredStm = sortRows(data.statements.filter(matchQ).filter(r => {
+      if (insStmF === 'discrepancy') return Math.abs(Number(r.variance_usd || 0)) > 0.005;
+      if (insStmF === 'reconciled') return Math.abs(Number(r.variance_usd || 0)) <= 0.005;
+      return true;
+    }), 'ins_statements');
 
     const bannerHtml = `
       <div class="cockpit-banner">
@@ -71185,13 +71817,20 @@
       const sumCash = filteredRem.reduce((a, r) => a + r.client_cash_held_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="insRemittancesPanel">
           <div class="panel-head">
             <div>
               <h3>Insurer Net Premium Remittance Bordereaux &amp; Cash-vs-Payable Guard ${shownCount('ins_remittances', filteredRem.length, data.remittances.length)}</h3>
               <p>Tracks Gross Premium, Broker Commission retained at source, cumulative carrier remittances, and fiduciary cash coverage</p>
             </div>
             <div class="panel-actions">${searchBox('Search carrier, payable account, status...')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${insRemChip('all', `All (${fmtNum(data.remittances.length)})`)}
+              ${canRemPay ? insRemChip('open_payable', 'Carrier Payable') : ''}
+              ${canInsBBooks ? insRemChip('cash_held', 'Cash Held') : ''}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -71260,13 +71899,20 @@
       const sumVar = filteredStm.reduce((a, r) => a + r.variance_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="insStatementsPanel">
           <div class="panel-head">
             <div>
               <h3>Monthly Carrier Commission Statement Reconciliation Engine ${shownCount('ins_statements', filteredStm.length, data.statements.length)}</h3>
               <p>Matches carrier commission statements line-by-line against expected agreement rates and isolates rounding or rate discrepancies</p>
             </div>
             <div class="panel-actions">${searchBox('Search statement #, carrier, period, status...')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              ${insStmChip('all', `All (${fmtNum(data.statements.length)})`)}
+              ${(canInsBBooks && canInsBProfit) ? insStmChip('discrepancy', 'Discrepancies') : ''}
+              ${(canInsBBooks && canInsBProfit) ? insStmChip('reconciled', 'Reconciled') : ''}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -71331,13 +71977,20 @@
 
     return `
       ${bannerHtml}
-      <div class="panel">
+      <div class="panel" id="insBillingPanel">
         <div class="panel-head">
           <div>
             <h3>Premium Instalment Invoices, Client Receipts &amp; Open Receivables ${shownCount('ins_billing', filteredBil.length, data.billing.length)}</h3>
             <p>Client receivable equals Gross Premium minus Client Discount plus Policy Admin Fee; receipts auto-link on settlement</p>
           </div>
           <div class="panel-actions">${searchBox('Search invoice #, policy #, client, receipt ref...')}${(canInsBBooks && canEnterAny()) ? '<button type="button" class="btn btn-primary" data-ind-open-new="ins_billing">+ Client Receipt</button>' : ''}</div>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${insBilChip('all', `All (${fmtNum(data.billing.length)})`)}
+            ${canInsBBooks ? insBilChip('open_ar', 'Open Client AR') : ''}
+            ${canInsBBooks ? insBilChip('collected', 'Collected') : ''}
+          </div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -119120,10 +119773,12 @@
           if ($('f_category') && (!val('f_category') || val('f_category') === prevDef[0])) $('f_category').value = plan.defaultCategory;
           if ($('f_subcategory') && (!val('f_subcategory') || val('f_subcategory') === prevDef[1])) $('f_subcategory').value = plan.defaultSubcategory;
         }
-        setFieldVisible('wrap_gt_category', plan.mirror);
-        setFieldVisible('wrap_gt_subcategory', plan.mirror);
+        // Opened from the Passed On, Not Received list: the sender's ticket exists, only the receiver's expense is posted.
+        const rcvMode = Boolean(FORM_UI.gtReceive && FORM_UI.gtReceive.ticketId);
+        setFieldVisible('wrap_gt_category', plan.mirror || rcvMode);
+        setFieldVisible('wrap_gt_subcategory', plan.mirror || rcvMode);
         const sameCo = Boolean(toCo && norm(toCo) === norm(fromCo));
-        const wrongItem = Boolean(plan.productName && plan.productClass !== 'recharge');
+        const wrongItem = !rcvMode && Boolean(plan.productName && plan.productClass !== 'recharge');
         setHint('hint_gt_to', sameCo ? 'Pick a different company than the sender.' : '', sameCo ? 'warn' : '');
         setHint('hint_gt_item', wrongItem
           ? (plan.productClass === 'sale' ? 'This is a product you sell. Enter it on a Sales Ticket.' : 'This is scrap. Enter it on a Sales Ticket.')
@@ -119136,7 +119791,19 @@
           } else {
             strip.hidden = false;
             strip.className = 'att-contract-strip' + ((sameCo || wrongItem) ? ' is-warn' : ' is-ok');
-            strip.innerHTML = `
+            strip.innerHTML = rcvMode ? `
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="badge badge-info">Ticket Already Posted</span>
+                <span class="badge badge-brass">Receiver Expense Only</span>
+                <span class="muted">Amount, dates and settlement come from the ticket. Pick the expense category and post.</span>
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>From</small><b>${esc(plan.senderName)}</b></span>
+                <span><small>To</small><b>${esc(plan.buyerName)}</b></span>
+                <span><small>Receiver Records</small><b>${fmtUSD(amt, 2)}</b></span>
+                <span><small>Settlement</small><b>${val('f_method') === 'Cash' ? 'Paid Now' : 'On Account'}</b></span>
+              </div>
+            ` : `
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span class="badge badge-info">Cost Passed On · Not a Sale</span>
                 <span class="badge ${plan.mirror ? 'badge-brass' : 'badge-warn'}">${plan.mirror ? 'Both Sides Posted' : 'Sender Side Only'}</span>
@@ -119152,9 +119819,10 @@
           }
         }
         setText('calc_gt_sales', 'No Change');
-        setText('calc_gt_sender', amt > 0 ? '-' + fmtUSD(amt, 2) : '$0.00');
+        setText('calc_gt_sender', rcvMode ? 'No Change' : (amt > 0 ? '-' + fmtUSD(amt, 2) : '$0.00'));
         setText('calc_gt_receiver', amt > 0 ? '+' + fmtUSD(amt, 2) : '$0.00');
-        setText('calc_gt_group', '$0.00');
+        // The sender's side was counted when its ticket was posted, so recording the receiver's side now adds the cost.
+        setText('calc_gt_group', (rcvMode && amt > 0) ? '+' + fmtUSD(amt, 2) : '$0.00');
         commonDateChecks([]);
         renderAdminLockBar();
         return { company: fromCo, toCo, product: plan.productName, amount: amt, qty: num('f_qty'), plan };
@@ -126098,8 +126766,11 @@
     const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
     const staffCoForSeatCheck = f === 'staff' ? (val('f_staff_company') || (editCtx && editCtx.orig && editCtx.orig.company) || company || defaultEntryCompany()) : company;
     if ((!isUniversalForm || f === 'staff') && staffCoForSeatCheck && !allowedCompanyNames().includes(staffCoForSeatCheck)) addErr(f === 'staff' ? 'f_staff_company' : 'f_company', 'Your seat cannot post to ' + (staffCoForSeatCheck || 'that company') + '.');
+    // Passed On, Not Received: nothing is posted to the sender (its ticket exists), so only the receiver's period
+    // counts, and the receive branch below checks that one.
+    const gtRcvMode = f === 'grouptransfer' && Boolean(FORM_UI.gtReceive && FORM_UI.gtReceive.ticketId);
     if (needsDate) {
-      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+      if (!gtRcvMode && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
         const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(company || STATE.company, date, repDate, {
           industry: 'Manufacturing',
           origTxDate: origEditDate,
@@ -128283,6 +128954,48 @@
           balance: amt,
           start_date: date,
           reference: val('f_reference')
+        };
+      }
+    } else if (gtRcvMode) {
+      // Passed On, Not Received: the sender's ticket exists, so only the receiver's expense is posted. Company,
+      // dates, quantity, amount, settlement and reference are read from the ticket, never from the form.
+      const rcv = passedOnNotReceived().rows.find(r => r.id === String(FORM_UI.gtReceive.ticketId));
+      const expCat = val('f_category'), expSub = val('f_subcategory');
+      if (!rcv) addErr('f_amount', 'This ticket is no longer waiting: the receiving company has its expense, or the ticket was voided.');
+      else {
+        if (!allowedCompanyNames().includes(rcv.to)) addErr('f_gt_to', 'Your seat cannot post to ' + rcv.to + '.');
+        if (!allowedCompanyNames().includes(rcv.from)) addErr('f_company', 'Your seat cannot post to ' + rcv.from + '.');
+        if (!expCat) addErr('f_category', 'Receiver expense category is required.');
+        if (!expSub) addErr('f_subcategory', 'Receiver expense subcategory is required.');
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+          const rGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(rcv.to, rcv.date, rcv.rep_date || rcv.date, { industry: 'Manufacturing' });
+          if (rGuard && rGuard.blocked) addErr(rGuard.field === 'rep_date' ? 'f_repdate' : 'f_date', `${rcv.to}: ${rGuard.message}`);
+        }
+        const rQty = rcv.qty > 0 ? round2(rcv.qty) : 1;
+        crKey = 'expenses';
+        record = {
+          ...base,
+          id: uid('ex'),
+          date: rcv.date,
+          rep_date: rcv.rep_date || rcv.date,
+          company: rcv.to,
+          name: `EXP ${rcv.date} ${rcv.from}`,
+          category: expCat,
+          subcategory: expSub,
+          supplier: rcv.from,
+          equipment: '',
+          for_equipment: false,
+          stored_in_warehouse: false,
+          item_count: 1,
+          item_summary: `${rQty}x ${rcv.product} (from ${rcv.from})`,
+          method: isCashSaleTicket(rcv.ticket) ? 'Cash' : 'Credit',
+          qty: rQty,
+          amount: rcv.amount,
+          price_pending: false,
+          reference: rcv.ref,
+          passed_on_ticket_id: rcv.id,
+          group_transfer_side: 'receiver',
+          group_transfer_from: rcv.from
         };
       }
     } else if (f === 'grouptransfer') {
@@ -133038,6 +133751,8 @@
     }
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
     FORM_UI.nearCopyPeekItems = [];
+    // Set again further down only when the form is opened from the Passed On, Not Received list.
+    FORM_UI.gtReceive = null;
     hideEntryUnsavedPrompt();
     const editSpec = (prefill && typeof prefill === 'object' && prefill.editRecord && prefill.editRecord.row)
       ? prefill.editRecord
@@ -133806,6 +134521,8 @@
         if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
         if (prefill.uom && $('f_rateper') && STATE.modalGroupOverride !== 'raw') $('f_rateper').value = prefill.uom;
       }
+      // Passed On, Not Received: the ticket exists, the form records only the receiver's expense.
+      if (prefill.receiveTicketId && form === 'grouptransfer') applyGroupTransferReceivePrefill(String(prefill.receiveTicketId));
       // Corridor Rate prefill from #fleet_equip Unpriced Loads: seed start date, unit & transport rate focus.
       if (prefill._corridorRate && form === 'pricerule') {
         if (/^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || '')) && $('f_date')) $('f_date').value = prefill.startdate;
@@ -133816,6 +134533,41 @@
         if (prefill.uom && $('f_rateper')) $('f_rateper').value = prefill.uom;
         if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
         if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
+      }
+      // Partner Truck Monthly Settlement prefill from #fleet_equip (#fpnlSettlePayBtn): leg, amount, method & rep_date.
+      if (form === 'settlement') {
+        if (prefill.method && $('f_method')) {
+          setModalControlVal('f_method', String(prefill.method));
+        }
+        if ((prefill.payable_leg || prefill.payableLeg) && $('f_payable_leg')) {
+          setModalControlVal('f_payable_leg', String(prefill.payable_leg || prefill.payableLeg));
+          FORM_UI.settleLegManual = true;
+          FORM_UI.lastSettleSupplier = val('f_supplier') || '';
+        } else {
+          FORM_UI.settleLegManual = false;
+        }
+        if (prefill.amount != null && prefill.amount !== '' && Number.isFinite(Number(prefill.amount)) && $('f_amount')) {
+          setModalControlVal('f_amount', Number(prefill.amount).toFixed(2));
+        }
+        if (prefill.discount != null && prefill.discount !== '' && Number.isFinite(Number(prefill.discount)) && $('f_discount')) {
+          setModalControlVal('f_discount', Number(prefill.discount).toFixed(2));
+        }
+        if (prefill.reference != null && prefill.reference !== '' && $('f_reference')) {
+          setModalControlVal('f_reference', String(prefill.reference));
+        }
+        const pfSettleRep = String(prefill.rep_date || prefill.repDate || '').trim().slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(pfSettleRep) && $('f_repdate')) {
+          const repCo = val('f_company') || defaultEntryCompany();
+          const txRef = val('f_date') || todayISO();
+          const pLock = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+            ? window.MFG_AI_EDGE.checkPeriodCloseGuard(repCo, txRef, pfSettleRep, { industry: 'Manufacturing' })
+            : null;
+          if (!(pLock && pLock.blocked)) {
+            $('f_repdate').value = pfSettleRep;
+            FORM_UI.showRepDate = true;
+            FORM_UI.repDateManual = (pfSettleRep !== txRef);
+          }
+        }
       }
       recalcForm();
       if (prefill._corridorRate && form === 'pricerule' && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
@@ -142435,6 +143187,371 @@
     });
     if (o.toastText) toast(o.toastText);
     return true;
+  }
+
+  const ASK_SLICE_BOOKS_VIEWS = new Set([
+    'customers', 'custs', 'receipts', 'vatinv', 'suppliers', 'sups', 'settle',
+    're_invoicing', 're_receipts', 'trd_receivables',
+    'ins_policies', 'ins_billing', 'ins_remittances', 'ins_statements',
+    'hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_loans',
+    'cashflow', 'ledger', 'external', 'ledger_treasury', 'conversions'
+  ]);
+  const ASK_SLICE_PARTNER_VIEWS = new Set(['hld_partners', 'hld_distributions', 'hsp_partners']);
+  const ASK_SLICE_PAYROLL_VIEWS = new Set(['payroll', 'pay_sal', 'payroll_contracts', 'payroll_allowances']);
+  const ASK_SLICE_EXPENSE_VIEWS = new Set([
+    'expenses', 'raw', 'raw_pricing', 'trd_purchases', 'trd_landed',
+    're_workorders', 're_recharges', 'hsp_stock', 'hsp_energy', 'hsp_maint',
+    'ins_claims', 'fleet', 'fuel'
+  ]);
+  const ASK_SLICE_PROFIT_EXP_VIEWS = new Set(['trd_trucks', 'trd_stock']);
+  const ASK_SLICE_NON_DOLLAR_VIEWS = new Set([
+    'payroll_attendance', 'pay_att', 'fleet_maint', 'defects',
+    'warehouse', 'whitems', 're_properties', 'trd_warranty'
+  ]);
+  const ASK_SLICE_PRIMARY_MONEY_COL = {
+    sales: 'total_ttc',
+    raw: 'total',
+    expenses: 'amount',
+    settle: 'amount',
+    sups: 'ap_balance',
+    receipts: 'amount',
+    custs: 'ar_balance',
+    vatinv: 'total_ttc',
+    fuel: 'total',
+    pay_sal: 'amount',
+    re_leases: 'annual_ttc_usd',
+    re_invoicing: 'amount_ttc_usd',
+    re_receipts: 'gross_usd',
+    re_sales: 'contract_usd',
+    re_workorders: 'actual_usd',
+    trd_sales: 'ttc_usd',
+    trd_trucks: 'list_price_usd',
+    trd_purchases: 'total_landed_usd',
+    trd_receivables: 'gross_ar_usd',
+    trd_stock: 'stock_val_usd',
+    hsp_revenue: 'ttc_usd',
+    hsp_memberships: 'contract_usd',
+    hsp_pos: 'pos_billed_ttc',
+    hsp_stock: 'closing_usd',
+    hsp_partners: 'gross_pool_usd',
+    hld_interactions: 'usd',
+    hld_consolidation: 'netUnpaidUsd',
+    hld_partners: 'netUsd',
+    hld_loans: 'principal',
+    ins_policies: 'gross_prem_usd',
+    ins_billing: 'client_billed_4112_usd',
+    ins_claims: 'claimed_usd',
+    ins_remittances: 'net_payable_4017_usd',
+    ins_statements: 'expected_comm_4117_usd'
+  };
+
+  function canShowAskSliceFinancials(destView, cfView, u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!STATE.authed || STATE.kioskLocked || !usr) return false;
+    const v = String(cfView || destView || '').trim();
+    const dv = String(destView || v).trim();
+    if (!v || !canViewView(dv, usr)) return false;
+    const lens = typeof seatLens === 'function' ? seatLens(usr) : {};
+    if (ASK_SLICE_NON_DOLLAR_VIEWS.has(v) || ASK_SLICE_NON_DOLLAR_VIEWS.has(dv)) return false;
+    if (ASK_SLICE_PAYROLL_VIEWS.has(v) || ASK_SLICE_PAYROLL_VIEWS.has(dv)) return Boolean(lens.payrollDollars);
+    if (ASK_SLICE_PARTNER_VIEWS.has(v) || ASK_SLICE_PARTNER_VIEWS.has(dv)) return Boolean(lens.books && lens.partnerSplits);
+    if (ASK_SLICE_BOOKS_VIEWS.has(v) || ASK_SLICE_BOOKS_VIEWS.has(dv)) return Boolean(lens.books);
+    if (ASK_SLICE_PROFIT_EXP_VIEWS.has(v) || ASK_SLICE_PROFIT_EXP_VIEWS.has(dv)) return Boolean(lens.profit && lens.expenses);
+    if (ASK_SLICE_EXPENSE_VIEWS.has(v) || ASK_SLICE_EXPENSE_VIEWS.has(dv)) return Boolean(lens.expenses || lens.books);
+    const cf = STATE.colFilters && STATE.colFilters[v];
+    if (cf && Object.keys(cf).some(k => /^(?:open_ar_usd|open_ar_4112_usd|ar_balance|ap_balance|balance_usd|gross_ar_usd|net_payable_4017_usd)$/i.test(k))) {
+      return Boolean(lens.books);
+    }
+    const tk = viewToTableKey(v);
+    return !isMaskedFieldAccessBlocked(tk, 'total_ttc', usr) && !isMaskedFieldAccessBlocked(tk, 'amount', usr);
+  }
+
+  function canExportAskSliceCsv(destView, cfView, u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!STATE.authed || STATE.kioskLocked || !usr) return false;
+    const dv = String(destView || cfView || '').trim();
+    const cv = String(cfView || dv).trim();
+    if (!dv || !canViewView(dv, usr)) return false;
+    const lens = typeof seatLens === 'function' ? seatLens(usr) : {};
+    const hasPrivilege = Boolean(lens.owner || lens.books || lens.expenses || lens.profit || String(usr.role || '') === 'Supervisor');
+    if (!hasPrivilege) return false;
+    if (ASK_SLICE_NON_DOLLAR_VIEWS.has(cv) || ASK_SLICE_NON_DOLLAR_VIEWS.has(dv)) return true;
+    return canShowAskSliceFinancials(dv, cv, usr);
+  }
+
+  function resolveAskSlicePanelAndTable(view, cfView, panelId) {
+    const ws = $('workspace');
+    if (!ws) return null;
+    if (panelId) {
+      const p = $(panelId);
+      if (p && ws.contains(p)) {
+        const tbl = Array.from(p.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === p) || p.querySelector('table');
+        if (tbl) return { panel: p, table: tbl };
+      }
+    }
+    const mappedPanelId = CF_VIEW_TO_PANEL_ID[cfView] || CF_VIEW_TO_PANEL_ID[view];
+    if (mappedPanelId) {
+      const mp = $(mappedPanelId);
+      if (mp && ws.contains(mp)) {
+        const tbl = Array.from(mp.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === mp) || mp.querySelector('table');
+        if (tbl) return { panel: mp, table: tbl };
+      }
+    }
+    return findRegisterPanelAndTable(ws, cfView || view) || findRegisterPanelAndTable(ws, view) || null;
+  }
+
+  function inspectActiveRegisterSlice(opts = {}) {
+    const view = String(opts.view || STATE.view || '').trim();
+    const cfView = String(opts.cfView || view).trim();
+    const usr = opts.user === undefined ? activeUser() : opts.user;
+    const found = resolveAskSlicePanelAndTable(view, cfView, opts.panelId || '');
+    const panel = found && found.panel ? found.panel : null;
+    const table = found && found.table ? found.table : null;
+    const thSort = table ? table.querySelector('thead th[data-sort-view]') : null;
+    const sortView = thSort ? String(thSort.getAttribute('data-sort-view') || '') : '';
+    const meta = getRegisterRowsMeta(sortView || cfView || view, panel) || getRegisterRowsMeta(cfView, panel) || getRegisterRowsMeta(view, panel);
+    let rows = (meta && Array.isArray(meta.rows)) ? meta.rows : null;
+    if (!rows && Array.isArray(_tableShownRows[cfView])) rows = _tableShownRows[cfView];
+    if (!rows && Array.isArray(_tableShownRows[view])) rows = _tableShownRows[view];
+    const rowCount = rows ? rows.length : (table ? tableDataTrs(table).length : 0);
+
+    let totalFormatted = '';
+    const finAllowed = canShowAskSliceFinancials(view, cfView || sortView, usr);
+    const tk = viewToTableKey(cfView || sortView || view);
+    const ASK_SLICE_QTY_COLS = new Set([
+      'qty', 'litres', 'on_hand', 'diesel_used_l', 'kwh_gen', 'run_hours',
+      'covers', 'odometer', 'km_run', 'hours', 'days', 'late_hrs', 'ot_hrs', 'working_days'
+    ]);
+    const hasValidNumProbe = (colName) => rows.some(r => {
+      const probe = regColVal(r, colName, cfView || view, sortView);
+      return probe !== undefined && probe !== null && probe !== '' && Number.isFinite(Number(probe));
+    });
+    const isRestrictedSliceCol = (colName) => isMaskedFieldAccessBlocked(tk, colName, usr)
+      || Boolean(typeof window.__mfgIsTableColRestricted === 'function' && window.__mfgIsTableColRestricted(tk, colName, null, usr, cfView || view));
+    if (finAllowed && rows && rows.length) {
+      const cfObj = (opts.colFilters && typeof opts.colFilters === 'object') ? opts.colFilters : ((STATE.colFilters && STATE.colFilters[cfView || view]) || {});
+      let sumCol = '';
+      for (const ck of Object.keys(cfObj || {})) {
+        if (!ASK_SLICE_QTY_COLS.has(String(ck || '').toLowerCase()) && isNumericColKey(ck) && !isRestrictedSliceCol(ck)) {
+          if (hasValidNumProbe(ck)) {
+            sumCol = ck;
+            break;
+          }
+        }
+      }
+      if (!sumCol) {
+        const prefCol = ASK_SLICE_PRIMARY_MONEY_COL[cfView] || ASK_SLICE_PRIMARY_MONEY_COL[sortView] || ASK_SLICE_PRIMARY_MONEY_COL[view] || '';
+        if (prefCol && !ASK_SLICE_QTY_COLS.has(String(prefCol).toLowerCase()) && !isRestrictedSliceCol(prefCol)) {
+          if (hasValidNumProbe(prefCol)) {
+            sumCol = prefCol;
+          }
+        }
+      }
+      if (sumCol) {
+        const rawSum = rows.reduce((acc, r) => {
+          const v = regColVal(r, sumCol, cfView || view, sortView);
+          const n = Number(v);
+          return Number.isFinite(n) ? (acc + n) : acc;
+        }, 0);
+        if (Number.isFinite(rawSum)) {
+          totalFormatted = fmtUSD(round2(rawSum), 2);
+        }
+      }
+    }
+
+    const expBtn = panel
+      ? (Array.from(panel.querySelectorAll('[data-export-csv]')).find(b => b.closest('.panel-card, .panel') === panel) || panel.querySelector('[data-export-csv]'))
+      : null;
+    const canExport = Boolean(expBtn && canExportAskSliceCsv(view, cfView || sortView, usr));
+    return {
+      ok: Boolean(panel && table),
+      rowCount,
+      totalFormatted,
+      canExportCsv: canExport,
+      csvTarget: expBtn ? String(expBtn.getAttribute('data-export-csv') || '') : (panel && panel.id ? String(panel.id) : ''),
+      csvName: expBtn ? String(expBtn.getAttribute('data-export-name') || '') : ''
+    };
+  }
+
+  function exportRegisterPanelCsv(csvTarget, exportNameOverride, fallbackBtnEl) {
+    const wsEl = $('workspace');
+    const panel = $(csvTarget)
+      || (fallbackBtnEl && fallbackBtnEl.closest('.panel-card, .panel, .workspace'))
+      || (wsEl && findRegisterPanelAndTable(wsEl, csvTarget)?.panel)
+      || wsEl;
+    const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
+    if (!tables.length) { toast('Nothing to export', 'err'); return false; }
+    // A register narrowed by a chart drill, a column filter or the search box says so in the file name
+    // and in a first line, so the extract never passes for the full register.
+    const filt = registerExportFilterParts(panel, tables, csvTarget);
+    const filtLine = filt.parts.length ? `"${(wsUiT('Filtered') + ': ' + filt.parts.join(' · ')).replace(/"/g, '""')}"\r\n` : '';
+    const panelSliceKeyMap = {
+      cfSalesPanel: 'cf_sales_t',
+      cfExpPanel: 'cf_exps_t',
+      cfBorPanel: 'cf_bor_t',
+      cfSalPanel: 'cf_sal_t',
+      cfExtPanel: 'cf_ext_t',
+      treasuryOpenLoansPanel: 'tr_open_close'
+    };
+    const panelCtxId = (panel && panel.id) || csvTarget || '';
+    const expandShownKeys = new Map();
+    const tableMasks = tables.map(tbl => {
+      const thEl = tbl.querySelector('thead th[data-sort-view]');
+      const sortView = thEl ? String(thEl.getAttribute('data-sort-view') || '') : '';
+      const tblPanel = (tbl.closest && tbl.closest('.panel-card, .panel')) || panel;
+      const meta = getRegisterRowsMeta(sortView, tblPanel) || (!sortView && panelCtxId ? getRegisterRowsMeta('', { id: panelCtxId }) : null);
+      let truncated = false;
+      if (meta && Array.isArray(meta.rows)) {
+        const sk = meta.shownKey || sortView;
+        if (sk && meta.rows.length > shownCount(sk)) {
+          truncated = true;
+          expandShownKeys.set(sk, Math.max(expandShownKeys.get(sk) || 0, meta.rows.length));
+        }
+      } else {
+        const pId = (tblPanel && tblPanel.id) || panelCtxId;
+        const sKey = panelSliceKeyMap[pId] || sortView;
+        const sMeta = sKey ? _shownSliceMeta[sKey] : null;
+        if (sMeta && sMeta.len > sMeta.lim) {
+          truncated = true;
+          expandShownKeys.set(sKey, Math.max(expandShownKeys.get(sKey) || 0, sMeta.len));
+        }
+      }
+      const sampleTr = Array.from(tbl.querySelectorAll('tbody tr')).find(tr => !tr.classList.contains('empty-row') && !tr.classList.contains('totals-row') && !tr.querySelector('[colspan]') && tr.children.length > 1);
+      const bodyVis = sampleTr ? Array.from(sampleTr.children).map(td => !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none') : null;
+      return { tbl, sortView, truncated, bodyVis };
+    });
+    let csvBody = '';
+    if (expandShownKeys.size > 0) {
+      const prevShown = Object.assign({}, STATE.shown);
+      const prevTblShown = Object.assign({}, _tableShownRows);
+      const prevRegPanels = Object.assign({}, _regPanelRows);
+      const prevSliceMeta = Object.assign({}, _shownSliceMeta);
+      try {
+        expandShownKeys.forEach((len, sk) => { STATE.shown[sk] = len; });
+        const activeIndExp = getActiveIndustry(STATE.company);
+        const isUnivExp = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
+        const univGroupKeysExp = isUnivExp ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
+        let titleExp = VIEW_TITLES[STATE.view] || VIEW_TITLES.overview;
+        if (STATE.view === 'reg_sites' || STATE.view === 'reg_regions') titleExp = 'Sites & Regions';
+        else if (isUnivExp && window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) {
+          const activeUnivMeta = window.MFG_PBI.TABLE_CATALOG.find(tt => tt.key === STATE.activeUnivRegKey);
+          if (activeUnivMeta && activeUnivMeta.label) titleExp = activeUnivMeta.label;
+        }
+        const fullHtml = withReadPass(() => buildActiveWorkspaceViewHtml({
+          activeInd: activeIndExp,
+          univGroupKeys: univGroupKeysExp,
+          canonicalViewTitle: titleExp
+        }));
+        const tmp = document.createElement('div');
+        tmp.innerHTML = fullHtml;
+        const tmpPanel = (csvTarget && tmp.querySelector('#' + CSS.escape(csvTarget))) || (panel && panel.id && tmp.querySelector('#' + CSS.escape(panel.id))) || tmp;
+        const tmpTables = Array.from(tmpPanel.querySelectorAll('table'));
+        const curLang = window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en';
+        csvBody = tableMasks.map((tm, ti) => {
+          if (!tm.truncated) return tableToCsv(tm.tbl);
+          const matchTmp = (tm.sortView ? tmpTables.find(tt => tt.querySelector(`thead th[data-sort-view="${CSS.escape(tm.sortView)}"]`)) : null) || tmpTables[ti];
+          if (!matchTmp) return tableToCsv(tm.tbl);
+          if (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+            const tb = (matchTmp.tBodies && matchTmp.tBodies[0]) || matchTmp.querySelector('tbody');
+            if (tb) window.MFG_I18N.translateDom(tb);
+          }
+          return tableToCsvFromFullBody(tm.tbl, matchTmp, tm.bodyVis);
+        }).join('\r\n\r\n');
+      } finally {
+        STATE.shown = prevShown;
+        for (const k in _tableShownRows) delete _tableShownRows[k];
+        Object.assign(_tableShownRows, prevTblShown);
+        for (const k in _regPanelRows) delete _regPanelRows[k];
+        Object.assign(_regPanelRows, prevRegPanels);
+        for (const k in _shownSliceMeta) delete _shownSliceMeta[k];
+        Object.assign(_shownSliceMeta, prevSliceMeta);
+      }
+    } else {
+      csvBody = tables.map(tableToCsv).join('\r\n\r\n');
+    }
+    const csv = filtLine + csvBody;
+    const slug = filt.parts.length ? exportFilterSlug(filt.values) : '';
+    const exportLabel = exportNameOverride || (fallbackBtnEl && fallbackBtnEl.getAttribute('data-export-name')) || csvTarget || 'export';
+    downloadCsv(`ISABI_${exportLabel}${filt.parts.length ? '_Filtered' + (slug ? '_' + slug : '') : ''}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
+    toast('CSV downloaded');
+    return true;
+  }
+
+  function exportAskHubSliceCsv(navSpec = {}) {
+    const o = navSpec && typeof navSpec === 'object' ? navSpec : {};
+    const usr = activeUser();
+    const view = String(o.view || STATE.view || '').trim();
+    const cfView = String(o.cfView || view).trim();
+    if (!canExportAskSliceCsv(view, cfView, usr)) {
+      toast('Your seat has no access to export this register', 'err');
+      return false;
+    }
+    if (o.coKey && !isDemoScopeActive() && typeof isStudioCoKeyAllowedForUser === 'function' && !isStudioCoKeyAllowedForUser(o.coKey)) {
+      toast('Your seat has no access to that company', 'err');
+      return false;
+    }
+    const normalizeMapForCompare = m => {
+      const out = {};
+      Object.entries(m || {}).forEach(([k, v]) => {
+        const s = String(v == null ? '' : v).trim();
+        if (!s) return;
+        out[k] = (s.startsWith('~') || s.startsWith('=') || s.startsWith('__') || /^(?:>=|<=|!=|>|<)\s*-?\d/.test(s) || /^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d+(?:\.\d+)?$/.test(s))
+          ? (s.startsWith('~') ? s.slice(1).trim() : s)
+          : ('=' + s);
+      });
+      return out;
+    };
+    const wantCf = normalizeMapForCompare((o.multiColFilters ? o.multiColFilters[cfView] : o.colFilters) || {});
+    const curCfRaw = (STATE.colFilters && STATE.colFilters[cfView]) || {};
+    const curCf = {};
+    Object.keys(curCfRaw).sort().forEach(k => {
+      const sv = String(curCfRaw[k] == null ? '' : curCfRaw[k]).trim();
+      if (sv) curCf[k] = sv;
+    });
+    const wantCfSorted = {};
+    Object.keys(wantCf).sort().forEach(k => { wantCfSorted[k] = wantCf[k]; });
+    const wantCoKey = String(o.coKey || '');
+    let coMismatch = false;
+    if (wantCoKey) {
+      if (isDemoScopeActive()) {
+        const wantDemoInd = wantCoKey === 'manufacturing-group'
+          ? 'Manufacturing'
+          : (wantCoKey.startsWith('industry:') ? wantCoKey.slice(9) : getActiveIndustry(wantCoKey));
+        coMismatch = Boolean(wantDemoInd && String(STATE.demoCompanyIndustry || '') !== String(wantDemoInd));
+      } else {
+        coMismatch = String(STATE.company || '') !== wantCoKey;
+      }
+    }
+    const hasActiveDrill = Boolean(STATE.regDrill && Object.keys(STATE.regDrill).some(k => STATE.regDrill[k] && Object.keys(STATE.regDrill[k]).length));
+    const periodMismatch = Boolean(
+      (o.periodSpec && String(STATE.period || '') !== String(o.periodSpec))
+      || (o.capturedPeriod && String(STATE.period || '') !== String(o.capturedPeriod))
+      || (o.dateRange && (String(STATE.dateFrom || '') !== String(o.dateRange.from || MIN_DATE) || String(STATE.dateTo || '') !== String(o.dateRange.to || MAX_DATE)))
+      || (o.capturedFrom !== undefined && String(STATE.dateFrom || '') !== String(o.capturedFrom || ''))
+      || (o.capturedTo !== undefined && String(STATE.dateTo || '') !== String(o.capturedTo || ''))
+    );
+    const needReopen = (
+      STATE.view !== view
+      || coMismatch
+      || String(STATE.chipFilter || 'all') !== String(o.chipFilter || 'all')
+      || String(STATE.search || '').trim() !== String(o.search || '').trim()
+      || hasActiveDrill
+      || periodMismatch
+      || JSON.stringify(curCf) !== JSON.stringify(wantCfSorted)
+    );
+    if (needReopen) {
+      const reopenOpts = Object.assign({}, o, { skipInspectorReturn: true });
+      if (!reopenOpts.periodSpec && o.capturedPeriod) {
+        if (o.capturedPeriod === 'custom' && (o.capturedFrom || o.capturedTo)) {
+          reopenOpts.dateRange = { from: o.capturedFrom || MIN_DATE, to: o.capturedTo || MAX_DATE };
+        } else {
+          reopenOpts.periodSpec = o.capturedPeriod;
+        }
+      }
+      openHubWithFilter(reopenOpts);
+    }
+    const target = String(o.csvTarget || o.panelId || cfView || view).trim();
+    return exportRegisterPanelCsv(target, String(o.csvName || ''), null);
   }
 
   function resolveRawSupplierFilterCol(supName) {
@@ -194514,13 +195631,40 @@
         if (!STATE.moduleSection) STATE.moduleSection = {};
         STATE.moduleSection[targetView] = modJump;
       }
-      if (navChip && targetView) {
-        const cfViews = targetView === 'customers'
-          ? [targetView, 'custs', 'receipts']
-          : (targetView === 'cashflow' ? [targetView, 'cf_moves'] : [targetView]);
+      if (targetView && (navChip || navScroll || (typeof isOverviewKpiView === 'function' && isOverviewKpiView(STATE.view)))) {
+        const NAV_CHIP_CLEAR_KEYS = {
+          customers: ['customers', 'custs', 'receipts', 'custPanel'],
+          cashflow: ['cashflow', 'cf_moves', 'tillRecentPanel'],
+          hld_interactions: ['hld_interactions', 'hldInteractionsPanel'],
+          hld_due_matrix: ['hld_due_matrix', 'hld_consolidation', 'hldDueMatrixPanel'],
+          hsp_revenue: ['hsp_revenue', 'hspRevenuePanel'],
+          hsp_pos: ['hsp_pos', 'hspPosPanel'],
+          hsp_memberships: ['hsp_memberships', 'hspMembershipsPanel'],
+          trd_sales: ['trd_sales', 'trdSalesPanel'],
+          trd_receivables: ['trd_receivables', 'trdReceivablesPanel'],
+          trd_trucks: ['trd_trucks', 'trdTrucksPanel', 'trd_warranty', 'trdWarrantyPanel'],
+          trd_warranty: ['trd_warranty', 'trdWarrantyPanel', 'trd_trucks', 'trdTrucksPanel'],
+          trd_stock: ['trd_stock', 'trdStockPanel'],
+          trd_landed: ['trd_landed', 'trdLandedPanel'],
+          re_leases: ['re_leases', 'reLeasesPanel'],
+          re_invoicing: ['re_invoicing', 'reInvoicingPanel'],
+          re_receipts: ['re_receipts'],
+          re_sales: ['re_sales', 'reSalesPanel'],
+          re_instalments: ['re_instalments'],
+          re_workorders: ['re_workorders'],
+          re_recharges: ['re_recharges', 'reRechargesPanel'],
+          ins_policies: ['ins_policies', 'insPoliciesPanel'],
+          ins_renewals: ['ins_renewals', 'insRenewalsPanel'],
+          ins_billing: ['ins_billing', 'insBillingPanel'],
+          ins_remittances: ['ins_remittances', 'insRemittancesPanel'],
+          ins_statements: ['ins_statements', 'insStatementsPanel']
+        };
+        const cfViews = NAV_CHIP_CLEAR_KEYS[targetView] || [targetView];
         cfViews.forEach(vk => {
           if (STATE.colFilters) delete STATE.colFilters[vk];
           if (STATE.regDrill) delete STATE.regDrill[vk];
+          if (STATE.indDrawerFilters) delete STATE.indDrawerFilters[vk];
+          if (STATE.indAssetSelection) delete STATE.indAssetSelection[vk];
         });
       }
       setView(targetView, navChip ? { chipFilter: navChip } : undefined);
@@ -194865,101 +196009,8 @@
       const exportCsvBtn = t.closest('[data-export-csv]');
       if (exportCsvBtn && container.contains(exportCsvBtn)) {
         const csvTarget = exportCsvBtn.getAttribute('data-export-csv');
-        const panel = $(csvTarget) || exportCsvBtn.closest('.panel-card, .panel, .workspace') || $('workspace');
-        const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
-        if (!tables.length) { toast('Nothing to export', 'err'); return; }
-        // A register narrowed by a chart drill, a column filter or the search box says so in the file name
-        // and in a first line, so the extract never passes for the full register.
-        const filt = registerExportFilterParts(panel, tables, csvTarget);
-        const filtLine = filt.parts.length ? `"${(wsUiT('Filtered') + ': ' + filt.parts.join(' · ')).replace(/"/g, '""')}"\r\n` : '';
-        const panelSliceKeyMap = {
-          cfSalesPanel: 'cf_sales_t',
-          cfExpPanel: 'cf_exps_t',
-          cfBorPanel: 'cf_bor_t',
-          cfSalPanel: 'cf_sal_t',
-          cfExtPanel: 'cf_ext_t',
-          treasuryOpenLoansPanel: 'tr_open_close'
-        };
-        const panelCtxId = (panel && panel.id) || csvTarget || '';
-        const expandShownKeys = new Map();
-        const tableMasks = tables.map(tbl => {
-          const thEl = tbl.querySelector('thead th[data-sort-view]');
-          const sortView = thEl ? String(thEl.getAttribute('data-sort-view') || '') : '';
-          const tblPanel = (tbl.closest && tbl.closest('.panel-card, .panel')) || panel;
-          const meta = getRegisterRowsMeta(sortView, tblPanel) || (!sortView && panelCtxId ? getRegisterRowsMeta('', { id: panelCtxId }) : null);
-          let truncated = false;
-          if (meta && Array.isArray(meta.rows)) {
-            const sk = meta.shownKey || sortView;
-            if (sk && meta.rows.length > shownCount(sk)) {
-              truncated = true;
-              expandShownKeys.set(sk, Math.max(expandShownKeys.get(sk) || 0, meta.rows.length));
-            }
-          } else {
-            const pId = (tblPanel && tblPanel.id) || panelCtxId;
-            const sKey = panelSliceKeyMap[pId] || sortView;
-            const sMeta = sKey ? _shownSliceMeta[sKey] : null;
-            if (sMeta && sMeta.len > sMeta.lim) {
-              truncated = true;
-              expandShownKeys.set(sKey, Math.max(expandShownKeys.get(sKey) || 0, sMeta.len));
-            }
-          }
-          const sampleTr = Array.from(tbl.querySelectorAll('tbody tr')).find(tr => !tr.classList.contains('empty-row') && !tr.classList.contains('totals-row') && !tr.querySelector('[colspan]') && tr.children.length > 1);
-          const bodyVis = sampleTr ? Array.from(sampleTr.children).map(td => !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none') : null;
-          return { tbl, sortView, truncated, bodyVis };
-        });
-        let csvBody = '';
-        if (expandShownKeys.size > 0) {
-          const prevShown = Object.assign({}, STATE.shown);
-          const prevTblShown = Object.assign({}, _tableShownRows);
-          const prevRegPanels = Object.assign({}, _regPanelRows);
-          const prevSliceMeta = Object.assign({}, _shownSliceMeta);
-          try {
-            expandShownKeys.forEach((len, sk) => { STATE.shown[sk] = len; });
-            const activeIndExp = getActiveIndustry(STATE.company);
-            const isUnivExp = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
-            const univGroupKeysExp = isUnivExp ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
-            let titleExp = VIEW_TITLES[STATE.view] || VIEW_TITLES.overview;
-            if (STATE.view === 'reg_sites' || STATE.view === 'reg_regions') titleExp = 'Sites & Regions';
-            else if (isUnivExp && window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) {
-              const activeUnivMeta = window.MFG_PBI.TABLE_CATALOG.find(tt => tt.key === STATE.activeUnivRegKey);
-              if (activeUnivMeta && activeUnivMeta.label) titleExp = activeUnivMeta.label;
-            }
-            const fullHtml = withReadPass(() => buildActiveWorkspaceViewHtml({
-              activeInd: activeIndExp,
-              univGroupKeys: univGroupKeysExp,
-              canonicalViewTitle: titleExp
-            }));
-            const tmp = document.createElement('div');
-            tmp.innerHTML = fullHtml;
-            const tmpPanel = (csvTarget && tmp.querySelector('#' + CSS.escape(csvTarget))) || (panel && panel.id && tmp.querySelector('#' + CSS.escape(panel.id))) || tmp;
-            const tmpTables = Array.from(tmpPanel.querySelectorAll('table'));
-            const curLang = window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en';
-            csvBody = tableMasks.map((tm, ti) => {
-              if (!tm.truncated) return tableToCsv(tm.tbl);
-              const matchTmp = (tm.sortView ? tmpTables.find(tt => tt.querySelector(`thead th[data-sort-view="${CSS.escape(tm.sortView)}"]`)) : null) || tmpTables[ti];
-              if (!matchTmp) return tableToCsv(tm.tbl);
-              if (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
-                const tb = (matchTmp.tBodies && matchTmp.tBodies[0]) || matchTmp.querySelector('tbody');
-                if (tb) window.MFG_I18N.translateDom(tb);
-              }
-              return tableToCsvFromFullBody(tm.tbl, matchTmp, tm.bodyVis);
-            }).join('\r\n\r\n');
-          } finally {
-            STATE.shown = prevShown;
-            for (const k in _tableShownRows) delete _tableShownRows[k];
-            Object.assign(_tableShownRows, prevTblShown);
-            for (const k in _regPanelRows) delete _regPanelRows[k];
-            Object.assign(_regPanelRows, prevRegPanels);
-            for (const k in _shownSliceMeta) delete _shownSliceMeta[k];
-            Object.assign(_shownSliceMeta, prevSliceMeta);
-          }
-        } else {
-          csvBody = tables.map(tableToCsv).join('\r\n\r\n');
-        }
-        const csv = filtLine + csvBody;
-        const slug = filt.parts.length ? exportFilterSlug(filt.values) : '';
-        downloadCsv(`ISABI_${exportCsvBtn.getAttribute('data-export-name') || csvTarget || 'export'}${filt.parts.length ? '_Filtered' + (slug ? '_' + slug : '') : ''}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
-        toast('CSV downloaded');
+        const exportName = exportCsvBtn.getAttribute('data-export-name') || '';
+        exportRegisterPanelCsv(csvTarget, exportName, exportCsvBtn);
         return;
       }
 
@@ -197884,6 +198935,13 @@
         if (expId) openPendingExpensePriceModal(expId);
       });
     });
+    container.querySelectorAll('[data-ponr-record]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const tid = btn.getAttribute('data-ponr-record') || '';
+        if (tid) openPassedOnReceive(tid);
+      });
+    });
     container.querySelectorAll('[data-set-pending-raw-price-id]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -200716,6 +201774,17 @@
         openHubWithFilter,
         openInspectorTargetInHub,
         getViewFilterPool,
+        inspectActiveRegisterSlice,
+        exportAskHubSliceCsv,
+        canShowAskSliceFinancials,
+        canExportAskSliceCsv,
+        isMaskedFieldAccessBlocked,
+        viewToTableKey,
+        getColLabel,
+        findNearPartyMatch,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
+        isPartyHygieneDismissed,
         setDateFilter,
         openEntryModal,
         showRecordInspector,
@@ -200941,6 +202010,17 @@
         openHubWithFilter,
         openInspectorTargetInHub,
         getViewFilterPool,
+        inspectActiveRegisterSlice,
+        exportAskHubSliceCsv,
+        canShowAskSliceFinancials,
+        canExportAskSliceCsv,
+        isMaskedFieldAccessBlocked,
+        viewToTableKey,
+        getColLabel,
+        findNearPartyMatch,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
+        isPartyHygieneDismissed,
         setDateFilter,
         openEntryModal,
         closeEntryModal,
@@ -202115,7 +203195,7 @@
     window.__computeCustomCashDeltas = (co, range) => computeCustomCashDeltas(co, range);
     window.__buildDailyTillSheetRows = co => buildDailyTillSheetRows(co);
     window.__buildLiveCashFlowTables = (cf, co, rate) => buildLiveCashFlowTables(cf, co, rate);
-    if (!window.__navToView) window.__navToView = v => setView(v);
+    if (!window.__navToView) window.__navToView = (v, opts) => setView(v, opts);
 
     window.__swReloadTest = {
       schedule: () => scheduleSwIdleReload(),
@@ -203752,6 +204832,9 @@
     renderStatementSheet: typeof renderStatementSheet === 'function' ? renderStatementSheet : null,
     resolveGroupTransferPlan: typeof resolveGroupTransferPlan === 'function' ? resolveGroupTransferPlan : null,
     groupTransferOptions: typeof groupTransferOptions === 'function' ? groupTransferOptions : null,
+    passedOnNotReceived: typeof passedOnNotReceived === 'function' ? passedOnNotReceived : null,
+    passedOnNotReceivedInScope: typeof passedOnNotReceivedInScope === 'function' ? passedOnNotReceivedInScope : null,
+    openPassedOnReceive: typeof openPassedOnReceive === 'function' ? openPassedOnReceive : null,
     openEntryModal: typeof openEntryModal === 'function' ? openEntryModal : null,
     saveModalEntry: typeof saveModalEntry === 'function' ? saveModalEntry : null,
     openEntryModalForRecord: typeof openEntryModalForRecord === 'function' ? openEntryModalForRecord : null,
@@ -203865,6 +204948,8 @@
     signOut: typeof signOut === 'function' ? signOut : null,
     openAuthGate: typeof openAuthGate === 'function' ? openAuthGate : null,
     applyUserRlsAndPermissions: typeof applyUserRlsAndPermissions === 'function' ? applyUserRlsAndPermissions : null,
+    inferSettlementPayableLeg: typeof inferSettlementPayableLeg === 'function' ? inferSettlementPayableLeg : null,
+    getSupplierPayableLegsInfo: typeof getSupplierPayableLegsInfo === 'function' ? getSupplierPayableLegsInfo : null,
     ensureAlertRulesState: typeof ensureAlertRulesState === 'function' ? ensureAlertRulesState : null,
     invalidateAllSeedCaches: typeof invalidateAllSeedCaches === 'function' ? invalidateAllSeedCaches : null,
     unpackIndustrySeedPayload: typeof unpackIndustrySeedPayload === 'function' ? unpackIndustrySeedPayload : null,
