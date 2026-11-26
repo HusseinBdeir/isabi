@@ -783,6 +783,7 @@
     kioskLastPunch: null,
     editingRecord: null,
     editingPendingSalaryId: '',
+    lastPostedBatchPaydayId: '',
     activeUserIdx: 0,
     authed: false,
     saving: false,
@@ -10214,6 +10215,10 @@
     const txDate = (btnEl.getAttribute('data-tx-date') || '').trim();
     const repDate = (btnEl.getAttribute('data-rep-date') || '').trim();
     const repSummary = (btnEl.getAttribute('data-rep-summary') || '').trim();
+    const farGap = Number(btnEl.getAttribute('data-rep-gap'));
+    const farHtml = btnEl.hasAttribute('data-rep-gap') && Number.isFinite(farGap)
+      ? `<div class="rep-shift-pop-warn">${ic('alert')}<span>${fmtNum(Math.abs(farGap), 0)} days apart · ${farGap > 0 ? 'Reporting Date after the Transaction Date' : 'Transaction Date after the Reporting Date'} · check the Reporting Date for a typo</span></div>`
+      : '';
     const curBasisIsTx = isTxOnlyBasisView(STATE.view) || STATE.basis === 'tx';
     const canOpenEntry = Boolean(btnEl.closest('tr.rrow[data-rkey][data-rid]'));
 
@@ -10226,6 +10231,7 @@
         <div class="rep-shift-pop-row"><span>Transaction Date</span><b class="mono" data-no-i18n="1">${esc(txDate || '—')}</b></div>
         <div class="rep-shift-pop-row"><span>Reporting Date</span><b class="mono brass" data-no-i18n="1">${esc(repDate || repSummary || '—')}</b></div>
       </div>
+      ${farHtml}
       <div class="rep-shift-pop-basis">${curBasisIsTx ? 'Showing Transaction Date' : 'Showing Reporting Date'}</div>
       ${canOpenEntry ? '<div class="rep-shift-pop-foot"><button type="button" class="btn btn-outline-bar btn-sm rep-shift-open-btn" data-rep-shift-open-entry="1">Open Entry</button></div>' : ''}
     `;
@@ -10292,9 +10298,17 @@
     if (!dTx || !dRep || dTx === dRep) return '';
     const txDisp = fmtDateDMY(dTx);
     const repDisp = fmtDateDMY(dRep);
-    const tip = `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${repDisp}`;
-    return `<button type="button" class="rep-shift-ico" data-rep-shift-btn="1" data-tx-date="${esc(txDisp)}" data-rep-date="${esc(repDisp)}" data-ui-tip="${esc(tip)}" aria-label="${esc(tip)}" aria-expanded="false">${ic('rep_shift')}</button>`;
+    // More than the S8 gap apart: amber icon, so a mistyped Reporting Date stands out in the register.
+    const gap = txRepGapDays(r);
+    const farDays = getAlertParam('S8', 'audit_gap_days', 31);
+    const isFar = Number.isFinite(gap) && Math.abs(gap) > farDays;
+    const tip = isFar
+      ? `Reporting Date ${fmtNum(Math.abs(gap), 0)} days from Tx Date · check for a typo · Tx Date ${txDisp} · Reporting Date ${repDisp}`
+      : `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${repDisp}`;
+    return `<button type="button" class="rep-shift-ico${isFar ? ' is-far' : ''}" data-rep-shift-btn="1" data-tx-date="${esc(txDisp)}" data-rep-date="${esc(repDisp)}"${isFar ? ` data-rep-gap="${esc(String(gap))}"` : ''} data-ui-tip="${esc(tip)}" aria-label="${esc(tip)}" aria-expanded="false">${ic('rep_shift')}</button>`;
   }
+  // Test hook for build/verify_repdate_typo_check.mjs
+  window.__mfgRepDateGap = { txRepGapDays, classifyRepDateGap, repDateForwardGroupCounts, repDateShiftBadge, toggleRepShiftPopover, batchMin: () => REP_TYPO_BATCH_MIN };
 
   function appPill(crKey, amountKey, label) {
     const keptIds = keptOverWorkbookVoidedIds(crKey);
@@ -13235,8 +13249,10 @@
       title: HUB_TITLES.overview,
       group: 'exec',
       tabs: [
-        { view: 'overview', match: ['overview', 'overview_revenue', 'overview_profit', 'overview_cash', 'overview_wc'], label: 'Executive Overview', icon: 'overview' },
+        // Daily Operations is Tab 1, so the sidebar hub opens on it (owner 2026-11-25); the period
+        // screen keeps view id 'overview' and page title 'Executive Overview', only its tab reads Period Overview.
         { view: 'daily_ops', label: 'Daily Operations', icon: 'daily_ops' },
+        { view: 'overview', match: ['overview', 'overview_revenue', 'overview_profit', 'overview_cash', 'overview_wc'], label: 'Period Overview', icon: 'overview' },
         { view: 'entities', label: 'Entity Comparison', icon: 'entities' }
       ]
     },
@@ -14042,6 +14058,15 @@
   }
   window.__mfgFilterRecords = filterRecords;
   // Revenue class of sales tickets (sale / recharge / other income) for the dashboards, statements and day cockpit.
+  // Printed statements (rdl_reports.js) read the same rules as the screens: the plant-owner commission of a ticket,
+  // the counted cash till on a day, and whether illustrative figures are allowed (Demo Company / public sandbox).
+  window.__mfgStmtHooks = {
+    commissionOf: s => ticketCommissionUsd(s),
+    tillAt: (rawKey, iso) => computeTillAtDate(rawKey, iso),
+    demoScope: () => isDemoScopeActive(),
+    // Partner, group-company and loan rows are for Owner, Supervisor and full-finance seats (as on Cash Flow).
+    fullFin: () => activeSeatFullFinKey() === 'F1'
+  };
   window.__mfgRevenueClass = {
     classOf: saleRevenueClass,
     receiverOf: groupTransferReceiverName,
@@ -27867,7 +27892,7 @@
       jumpForm: 'sales',
       why: 'Keeps operational P&L statements aligned with cash flow by requiring a clear reason whenever a voucher is assigned to a far-away reporting month.',
       params: [
-        { key: 'repdate_warn_days', label: 'Max Tx-to-Reporting Gap', def: 60, min: 7, max: 365, step: 5, unit: 'days' }
+        { key: 'repdate_warn_days', label: 'Max Tx-to-Reporting Gap', def: 31, min: 7, max: 365, step: 5, unit: 'days' }
       ],
       whatFn: p => `Checks the gap between Transaction Date (cash/till date) and Reporting Date (statement period). Requires a Note when the gap exceeds <b>${fmtNum(p.repdate_warn_days, 0)} days</b>.`,
       threshFn: p => `Gap > ${fmtNum(p.repdate_warn_days, 0)}d needs Note`,
@@ -30395,6 +30420,58 @@
   const _txRepGapWeakMap = new WeakMap();
   let _linkedVatRefsCache = { rev: -1, len: -1, set: null };
 
+  // Days from Transaction Date to Reporting Date (positive = reported later), cached per row and date pair.
+  function txRepGapDays(r) {
+    if (!r || !r.date || !r.rep_date) return NaN;
+    const d1 = String(r.date).slice(0, 10);
+    const d2 = String(r.rep_date).slice(0, 10);
+    if (d1.length < 10 || d2.length < 10) return NaN;
+    if (d1 === d2) return 0;
+    const pairKey = d1 + '|' + d2;
+    const cg = _txRepGapWeakMap.get(r);
+    if (cg && cg.k === pairKey) return cg.g;
+    const t1 = Date.parse(d1 + 'T00:00:00Z');
+    const t2 = Date.parse(d2 + 'T00:00:00Z');
+    const gap = (Number.isFinite(t1) && Number.isFinite(t2)) ? Math.round((t2 - t1) / 86400000) : NaN;
+    _txRepGapWeakMap.set(r, { k: pairKey, g: gap });
+    return gap;
+  }
+
+  // Likely reporting-date typos (owner 2026-11-24, after a 09-02-2026 ticket carried a 18-06-2026 reporting date):
+  // a Reporting Date set later than the Transaction Date by more than the S8 gap is normally a block of rows
+  // moved to a later month together (REP_TYPO_BATCH_MIN or more of one company sharing that reporting date).
+  // One or two alone, or any Reporting Date after today, is most likely a mistyped date. Late entries
+  // (Reporting Date earlier than the Transaction Date) are ordinary and never called typos.
+  const REP_TYPO_BATCH_MIN = 3;
+  const _repFwdGroupCache = new WeakMap();
+  function repDateForwardGroupCounts(list, gapDays) {
+    const out = new Map();
+    if (!Array.isArray(list)) return out;
+    const rev = SEED._customRev || 0;
+    const hit = _repFwdGroupCache.get(list);
+    if (hit && hit.rev === rev && hit.len === list.length && hit.gap === gapDays) return hit.map;
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!r || r.voided || !r.rep_date) continue;
+      const g = txRepGapDays(r);
+      if (!(g > gapDays)) continue;
+      const k = norm(r.company) + '|' + String(r.rep_date).slice(0, 10);
+      out.set(k, (out.get(k) || 0) + 1);
+    }
+    _repFwdGroupCache.set(list, { rev, len: list.length, gap: gapDays, map: out });
+    return out;
+  }
+  function classifyRepDateGap(r, gap, gapDays, fwdCounts, today) {
+    const rep = String((r && r.rep_date) || '').slice(0, 10);
+    if (rep && today && rep > today) return 'future';
+    if (gap > gapDays) {
+      const n = fwdCounts ? (fwdCounts.get(norm(r.company) + '|' + rep) || 0) : 0;
+      return n >= REP_TYPO_BATCH_MIN ? 'batch' : 'typo';
+    }
+    return 'late';
+  }
+  const REP_GAP_KIND_LABEL = { future: 'Likely Typo: Future Date', typo: 'Likely Typo', batch: 'Moved With a Batch', late: 'Late Entry' };
+
   function invalidateAlertRuleCaches() {
     _ALERT_RULES_REV += 1;
     _liveSentinelCache = null;
@@ -31736,26 +31813,23 @@
     // 3. Live Date-Basis Parity > N Days & Unlinked VAT Invoices (S8)
     const s8GapDays = getAlertParam('S8', 'audit_gap_days', 31);
     const dateGaps = [];
+    const s8Today = todayISO();
     const scanDateGaps = (tblLabel, rkey, list, amtFn) => {
+      // Batches are counted over the whole table, so a period or week cut never splits one into "typos".
+      const fwdCounts = repDateForwardGroupCounts(list, s8GapDays);
       filterRecords(list, { ignoreSearch: true }).forEach(r => {
         if (!r || r.voided || !r.date || !r.rep_date || r.date === r.rep_date) return;
         const d1 = String(r.date).slice(0, 10);
         const d2 = String(r.rep_date).slice(0, 10);
         if (d1 === d2 || d1.length < 10 || d2.length < 10) return;
-        const pairKey = d1 + '|' + d2;
-        let gap;
-        const cg = _txRepGapWeakMap.get(r);
-        if (cg && cg.k === pairKey) {
-          gap = cg.g;
-        } else {
-          const t1 = Date.parse(d1 + 'T00:00:00Z');
-          const t2 = Date.parse(d2 + 'T00:00:00Z');
-          gap = (Number.isFinite(t1) && Number.isFinite(t2)) ? Math.round((t2 - t1) / 86400000) : NaN;
-          _txRepGapWeakMap.set(r, { k: pairKey, g: gap });
-        }
+        const gap = txRepGapDays(r);
         if (!Number.isFinite(gap)) return;
         if (Math.abs(gap) > s8GapDays) {
+          const kind = classifyRepDateGap(r, gap, s8GapDays, fwdCounts, s8Today);
           dateGaps.push({
+            gap_kind: kind,
+            likely_typo: kind === 'typo' || kind === 'future',
+            gap_kind_label: REP_GAP_KIND_LABEL[kind] || '',
             id: r.id, rid: r.id, rkey,
             table: tblLabel,
             bu: r.company || 'WTC',
@@ -31772,7 +31846,8 @@
     scanDateGaps('Sales', 'sales_tickets', SEED.records.sales_tickets, r => r.total_ttc != null ? r.total_ttc : r.total);
     scanDateGaps('Raw', 'raw_purchases', SEED.records.raw_purchases, r => r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
     scanDateGaps('Expenses', 'expenses', SEED.records.expenses, r => r.amount);
-    dateGaps.sort((a, b) => Math.abs(b.gap_days) - Math.abs(a.gap_days));
+    dateGaps.sort((a, b) => (Number(b.likely_typo) - Number(a.likely_typo)) || (Math.abs(b.gap_days) - Math.abs(a.gap_days)));
+    const dateGapTypos = dateGaps.filter(g => g.likely_typo).length;
 
     const curSeedRev = SEED._customRev || 0;
     if (!_linkedVatRefsCache.set || _linkedVatRefsCache.rev !== curSeedRev || _linkedVatRefsCache.len !== salesArr.length) {
@@ -31808,6 +31883,7 @@
     const liveParity = Object.assign({}, baseParity, {
       date_basis_anomalies_gt_31d_count: dateGaps.length,
       date_basis_anomalies_gt_31d: dateGaps,
+      date_basis_likely_typos_count: dateGapTypos,
       unlinked_vat_invoices_count: unlinkedVats.length,
       unlinked_vat_invoices_sample: unlinkedVats
     });
@@ -31998,7 +32074,9 @@
     const opSnSig = opSnOff
       ? 'off'
       : (opSn ? `${opSn.restricted ? 'r' : '1'}:${opSn.supOverpaidCount}:${opSn.siteOverpaidCount}:${opSn.unpricedLoadsCount}:${opSn.supOverpaidUsd}:${opSn.siteOverpaidUsd}:${opSn.minUsd}:${opSn.critUsd}` : 'x');
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}|op:${opSnSig}`;
+    const csSnActive = Boolean(STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()) && isAlertRuleEnabled('S21') && _cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
+    const csSig = csSnActive ? `${_cloudStoreHealthSnap.bytes}:${_cloudStoreHealthSnap.updatedAt}` : 'ok';
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}|op:${opSnSig}|cs:${csSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -32028,6 +32106,8 @@
         });
         const opIndItem = buildOverpaidSentinelItem(opSnOff, opSn, scope, activeIndForSn);
         if (opIndItem) rawItems.push(opIndItem);
+        const csIndItem = buildCloudStoreSentinelItem(scope);
+        if (csIndItem) rawItems.push(csIndItem);
       } else {
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
@@ -32151,14 +32231,15 @@
     }
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
+    const repTypos = Number(parity.date_basis_likely_typos_count || 0);
     const unlinkedVatCnt = Number(parity.unlinked_vat_invoices_count || 0);
     const s8AuditDays = getAlertParam('S8', 'audit_gap_days', 31);
     rawItems.push({
       id: 'S8',
       code: 'Rule #08 · Dates & VAT', title: `Transaction vs Reporting Date Gaps > ${fmtNum(s8AuditDays, 0)} Days`,
-      detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
+      detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date${repTypos > 0 ? ` (${fmtNum(repTypos)} likely typo${repTypos === 1 ? '' : 's'}: reported later on their own, listed first)` : ''} · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
       severity: anomalies > 0 || unlinkedVatCnt > 0 ? 'warn' : 'ok',
-      badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC'),
+      badge: repTypos > 0 ? fmtNum(repTypos) + ' LIKELY TYPOS' : (anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC')),
       company: scope,
       rawMetric: anomalies,
       rawSecondary: unlinkedVatCnt,
@@ -32390,6 +32471,8 @@
       }
       const opMfgItem = buildOverpaidSentinelItem(opSnOff, opSn, scope, 'Manufacturing');
       if (opMfgItem) rawItems.push(opMfgItem);
+      const csMfgItem = buildCloudStoreSentinelItem(scope);
+      if (csMfgItem) rawItems.push(csMfgItem);
 
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
       const snAllowedCos = allowedCompanyNames();
@@ -33501,7 +33584,7 @@
                   <span class="badge ${badgeCls}">${esc(s.badge)}</span>
                   <button type="button" class="btn-sn-act sn-ai-act-btn sn-explain-btn" data-sn-explain="${esc(s.id)}" aria-haspopup="dialog" aria-expanded="false">${ic('sparkles')}<span class="sn-exp-lbl">Explain</span></button>
                   <button type="button" class="btn-sn-act sn-ai-act-btn sn-listen-btn" data-sn-summary="${esc(s.id)}" aria-pressed="false">${ic('audio')}<span class="sn-lsn-lbl">Listen</span></button>
-                  ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.ruleId || s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
+                  ${canViewView('alert_rules') && !s.hideRuleTuner ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.ruleId || s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
                   ${s.scrollPanel ? `<button type="button" class="btn-sn-act" data-sn-inspect="${esc(s.id)}">Inspect Rows</button>` : ''}
                   ${s.navView && canViewView(s.navView) ? `<button type="button" class="btn-sn-act" data-sn-open-mod="${esc(s.navView)}">${esc(s.navLabel || 'Open Module')}</button>` : ''}
                   ${canSignOff && s.severity !== 'ok' ? `<button type="button" class="btn-sn-act is-check" data-sn-check="${esc(s.id)}">${ic('check_circle')} Mark Checked</button>` : ''}
@@ -33645,7 +33728,9 @@
         ], 'snPayroll') : ''}
         ${miniTable(`TRANSACTION vs REPORTING DATE GAPS &gt; ${fmtNum(s8DaysUi, 0)} DAYS`, (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'Table', key: 'table' }, { label: 'BU', key: 'bu' }, { label: 'Record', key: 'name' }, { label: 'Ticket', key: 'ticket', mono: true },
-          { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) }, { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
+          { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) },
+          { label: 'Likely Cause', key: 'gap_kind_label', fmt: (v, row) => row && row.likely_typo ? `<span class="rep-gap-typo-pill">${esc(v)}</span>` : esc(v || '') },
+          { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
         ], 'snDates')}
         ${miniTable('VAT INVOICES NOT LINKED TO TICKETS', (parity.unlinked_vat_invoices_sample || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'BU', key: 'bu' }, { label: 'Invoice', key: 'invoice' }, { label: 'No.', key: 'invoiceno', mono: true }, { label: 'Date', key: 'date', mono: true },
@@ -54768,6 +54853,7 @@
           </div>
         </div>
         `)}
+        ${renderPayrollBatchRunsBarHtml(STATE.search && STATE.search.trim() ? filterRecords(SEED.records.salaries, { ignoreSearch: true }) : salAll, canShowAttDollars)}
         ${renderColFilterBar('pay_sal')}
         <div class="table-wrap">
           <table class="ledger-table">
@@ -54784,6 +54870,7 @@
                 const rawSalLbl = String(s.sal_status_lbl || '-');
                 const safeSalLbl = canShowAttDollars ? rawSalLbl : (s.is_advance_sal ? 'Advance' : (/partial/i.test(rawSalLbl) ? 'Partial' : rawSalLbl.replace(/\$[0-9,.]+/g, '').replace(/[+\-·\s]+$/g, '').trim() || '-'));
                 const safeSalTip = canShowAttDollars && s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : '';
+                const bpBatchId = String(s.batch_id || '').trim();
                 return `
                 <tr class="rrow" data-rkey="salaries" data-rid="${esc(s.id)}">
                   <td class="mono">${esc(recordDateDMY(s))}${repDateShiftBadge(s)}${appCell(s, 'salaries')}</td>
@@ -54792,7 +54879,7 @@
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
                   ${canShowAttDollars ? `<td class="mono sal-paid-earned-cell"${safeSalTip}>${monthEarnHtml}</td>` : ''}
-                  <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${safeSalTip}>${esc(safeSalLbl)}</span>${(!s.voided && canShowAttDollars) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" title="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}</div></td>
+                  <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${safeSalTip}>${esc(safeSalLbl)}</span>${(!s.voided && canShowAttDollars) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" data-ui-tip="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}${(!s.voided && canShowAttDollars && bpBatchId) ? `<button type="button" class="hld-share-btn bp-signoff-inline-btn" data-bp-signoff-batch="${esc(bpBatchId)}" data-ui-tip="Batch Sign-Off Sheet" aria-label="Batch Sign-Off Sheet">${ic('printer')}</button>` : ''}</div></td>
                   ${canShowAttDollars ? `<td class="r"><strong>${fmtUSD(rowSalUsd, 2)}</strong></td>` : ''}
                 </tr>`;
               }).join('') || emptyRow(canShowAttDollars ? 8 : 6, 'No salary payments match filter')}
@@ -63381,11 +63468,18 @@
     }
 
     const postBtn = $('bpPostBtn');
+    const postPrintBtn = $('bpPostAndPrintBtn');
+    const blockedByPeriod = Boolean(pGuard && pGuard.blocked);
+    const isBlockedSave = Boolean(STATE.saving || blockedByPeriod || selectedCount === 0 || invalidCount > 0);
     if (postBtn) {
-      const blockedByPeriod = Boolean(pGuard && pGuard.blocked);
-      postBtn.disabled = Boolean(STATE.saving || blockedByPeriod || selectedCount === 0 || invalidCount > 0);
+      postBtn.disabled = isBlockedSave;
       postBtn.textContent = selectedCount > 0 ? `Post ${fmtNum(selectedCount)} ${selectedCount === 1 ? 'Voucher' : 'Vouchers'}` : 'Post Vouchers';
       _bpTranslateNode(postBtn);
+    }
+    if (postPrintBtn) {
+      postPrintBtn.disabled = isBlockedSave;
+      postPrintBtn.innerHTML = `${ic('printer')} ${selectedCount > 0 ? `Post &amp; Sign-Off (${fmtNum(selectedCount)})` : 'Post &amp; Sign-Off Sheet'}`;
+      _bpTranslateNode(postPrintBtn);
     }
   }
 
@@ -63531,6 +63625,7 @@
           <div class="bp-foot-sum" id="bpFootSummary">Selected: 0 · Cash $0.00 · Other $0.00 · Total $0.00</div>
           <div class="bp-foot-actions">
             <button type="button" class="btn btn-ghost-bar" id="bpCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-brass" id="bpPostAndPrintBtn" disabled>${ic('printer')} Post &amp; Sign-Off Sheet</button>
             <button type="button" class="btn btn-primary" id="bpPostBtn" disabled>Post Vouchers</button>
           </div>
         </div>
@@ -63656,7 +63751,8 @@
     $('bpDupConfirm')?.addEventListener('change', () => {
       _bpRefreshSummaryAndRowsInPlace();
     });
-    $('bpPostBtn')?.addEventListener('click', commitBatchPayday);
+    $('bpPostBtn')?.addEventListener('click', () => commitBatchPayday({ openSignOff: false }));
+    $('bpPostAndPrintBtn')?.addEventListener('click', () => commitBatchPayday({ openSignOff: true }));
 
     const tbody = $('bpTableBody');
     if (tbody) {
@@ -63716,7 +63812,7 @@
     }
   }
 
-  async function commitBatchPayday() {
+  async function commitBatchPayday(opts = {}) {
     const st = _batchPaydayState;
     if (!st || STATE.saving) return;
     if (!canEnterForm('salary') || !canViewPayrollDollarAmounts()) {
@@ -63754,6 +63850,7 @@
     const batchId = uid('bp');
     const nowTs = nowStamp();
     const batchNote = String(st.batchNote || '').trim();
+    const coInd = getActiveIndustry(company);
     const vouchers = [];
     const seenStaff = new Set();
     let needsDupConfirm = false;
@@ -63780,6 +63877,7 @@
         date: payDate,
         rep_date: payDate,
         company,
+        ...(coInd && coInd !== 'Manufacturing' ? { _industry: coInd } : {}),
         notes: rowNote,
         source: 'app',
         entered_by: who.full_name,
@@ -63795,6 +63893,7 @@
         lbp_amount: lbp,
         amount: totalUsdEq,
         batch_id: batchId,
+        ...(batchNote ? { batch_note: batchNote } : {}),
         ...(salDup ? { duplicate_confirmed: true } : {}),
         ...(ncd && ncd.nearCopyOf ? { near_copy_of: ncd.nearCopyOf } : {})
       });
@@ -63811,13 +63910,16 @@
     }
 
     const postBtn = $('bpPostBtn');
+    const postPrintBtn = $('bpPostAndPrintBtn');
     const cancelBtn = $('bpCancelBtn');
     const closeBtn = $('bpCloseBtn');
     STATE.saving = true;
     if (postBtn) { postBtn.disabled = true; postBtn.textContent = 'Posting...'; }
+    if (postPrintBtn) { postPrintBtn.disabled = true; }
     if (cancelBtn) cancelBtn.disabled = true;
     if (closeBtn) closeBtn.disabled = true;
 
+    const wantSignOff = Boolean(opts && opts.openSignOff);
     const rbSnap = _captureLedgerAndGeoRollbackSnap(['salaries'], false);
     try {
       if (!Array.isArray(STATE.customRecords.salaries)) STATE.customRecords.salaries = [];
@@ -63840,9 +63942,11 @@
       }
       if (postRes && postRes.networkError) {
         setPendingCloudPush(true);
+        STATE.lastPostedBatchPaydayId = batchId;
         closeBatchPaydayModal({ force: true });
         renderApp();
         toast(`Batch Payday saved locally (offline) · ${fmtNum(vouchers.length)} ${vouchers.length === 1 ? 'voucher' : 'vouchers'} · ${fmtUSD(totUsd, 2)}`, 'warn');
+        if (wantSignOff) openBatchSignOffModal(batchId, { returnFocus: $('payBatchPaydayBtn') || document.activeElement });
         return;
       }
       if (!postRes || !postRes.ok || isServerRejectRes(postRes)) {
@@ -63853,9 +63957,11 @@
       }
 
       syncWithCloud(true);
+      STATE.lastPostedBatchPaydayId = batchId;
       closeBatchPaydayModal({ force: true });
       renderApp();
       toast(`Batch Payday posted · ${fmtNum(vouchers.length)} ${vouchers.length === 1 ? 'voucher' : 'vouchers'} · ${fmtUSD(totUsd, 2)}`, 'ok');
+      if (wantSignOff) openBatchSignOffModal(batchId, { returnFocus: $('payBatchPaydayBtn') || document.activeElement });
     } finally {
       STATE.saving = false;
       const pBtn = $('bpPostBtn');
@@ -63923,6 +64029,883 @@
       }
     };
     document.addEventListener('keydown', _batchPaydayKeyHandler, true);
+    return true;
+  }
+
+  // ==================== Batch Payday Printable A4 Cash Disbursement Sign-Off Sheet ====================
+  const BP_SIGNOFF_LANG_KEY = 'isabi_bp_signoff_lang_v1';
+  const BP_SIGNOFF_LANGS = ['en', 'ar', 'fr'];
+  const BP_SIGNOFF_T = {
+    en: {
+      hdrTag: 'Cashier Disbursement Control',
+      title: 'Cash Disbursement Sign-Off Sheet',
+      batchId: 'Batch ID',
+      payDate: 'Payment Date',
+      payMonth: 'Payroll Month',
+      fxRate: 'FX Rate',
+      batchNote: 'Batch Note',
+      voidNote: n => `${n} voided voucher${n === 1 ? '' : 's'} excluded`,
+      safeCashUsd: 'Safe Withdrawal (USD)',
+      safeCashLbp: 'Safe Withdrawal (LBP)',
+      safeCashEq: 'Total Cash Disbursed',
+      bankOther: 'Bank / Other Paid',
+      batchTotal: 'Total Batch Payout',
+      colIdx: '#',
+      colCo: 'Company',
+      colStaff: 'Employee',
+      colRole: 'Role',
+      colMethod: 'Method',
+      colNet: 'Month Net',
+      colCashUsd: 'Cash USD ($)',
+      colCashLbp: 'Cash LBP (L.L.)',
+      colPaid: 'Total Paid ($)',
+      colRem: 'Remaining Balance',
+      colNote: 'Note',
+      colSig: 'Recipient Signature',
+      noContract: 'No Contract',
+      salPending: 'Salary Pending',
+      settled: 'Settled ($0.00)',
+      advPrefix: 'Advance +',
+      totalLbl: n => `TOTAL (${n} ${n === 1 ? 'EMPLOYEE' : 'EMPLOYEES'})`,
+      prepBy: 'Prepared By',
+      cashierBy: 'Cashier / Disbursed By',
+      appBy: 'Approved By',
+      allCos: 'All Scoped Companies'
+    },
+    ar: {
+      hdrTag: 'رقابة صرف الرواتب النقدية',
+      title: 'كشف استلام وتوقيع صرف الرواتب',
+      batchId: 'رقم الدفعة',
+      payDate: 'تاريخ الصرف',
+      payMonth: 'شهر الراتب',
+      fxRate: 'سعر الصرف',
+      batchNote: 'ملاحظة الدفعة',
+      voidNote: n => `تم استبعاد ${n} ${n === 1 ? 'سند ملغى' : 'سندات ملغاة'}`,
+      safeCashUsd: 'السحب النقدي (دولار)',
+      safeCashLbp: 'السحب النقدي (ل.ل.)',
+      safeCashEq: 'إجمالي المصروف نقداً',
+      bankOther: 'تحويل / طرق أخرى',
+      batchTotal: 'إجمالي الدفعة',
+      colIdx: '#',
+      colCo: 'الشركة',
+      colStaff: 'الموظف',
+      colRole: 'الدور الوظيفي',
+      colMethod: 'طريقة الدفع',
+      colNet: 'صافي الشهر',
+      colCashUsd: 'نقدي ($)',
+      colCashLbp: 'نقدي (ل.ل.)',
+      colPaid: 'المدفوع ($)',
+      colRem: 'الرصيد المتبقي',
+      colNote: 'ملاحظة',
+      colSig: 'توقيع المستلم',
+      noContract: 'بدون عقد',
+      salPending: 'قيد التحديد',
+      settled: 'مسدّد ($0.00)',
+      advPrefix: 'سلفة +',
+      totalLbl: n => `الإجمالي (${n} ${n === 1 ? 'موظف' : 'موظفين'})`,
+      prepBy: 'أُعد بواسطة',
+      cashierBy: 'أمين الصندوق / الصارف',
+      appBy: 'اعتماد الإدارة',
+      allCos: 'جميع الشركات المسموحة'
+    },
+    fr: {
+      hdrTag: 'Contrôle de caisse paie',
+      title: 'Feuille d\'émargement et de décaissement',
+      batchId: 'Réf. lot',
+      payDate: 'Date de paiement',
+      payMonth: 'Mois de paie',
+      fxRate: 'Taux de change',
+      batchNote: 'Note du lot',
+      voidNote: n => `${n} ${n === 1 ? 'bon annulé exclu' : 'bons annulés exclus'}`,
+      safeCashUsd: 'Retrait espèces (USD)',
+      safeCashLbp: 'Retrait espèces (LBP)',
+      safeCashEq: 'Total espèces versées',
+      bankOther: 'Virement / Autre',
+      batchTotal: 'Total du lot',
+      colIdx: '#',
+      colCo: 'Société',
+      colStaff: 'Collaborateur',
+      colRole: 'Poste',
+      colMethod: 'Mode de paiement',
+      colNet: 'Net du mois',
+      colCashUsd: 'Espèces USD ($)',
+      colCashLbp: 'Espèces LBP (L.L.)',
+      colPaid: 'Total payé ($)',
+      colRem: 'Solde restant',
+      colNote: 'Note',
+      colSig: 'Signature du bénéficiaire',
+      noContract: 'Hors contrat',
+      salPending: 'Salaire en attente',
+      settled: 'Soldé ($0.00)',
+      advPrefix: 'Avance +',
+      totalLbl: n => `TOTAL (${n} ${n === 1 ? 'EMPLOYÉ' : 'EMPLOYÉS'})`,
+      prepBy: 'Préparé par',
+      cashierBy: 'Caissier / Payeur',
+      appBy: 'Approuvé par',
+      allCos: 'Toutes les sociétés autorisées'
+    }
+  };
+
+  let _batchSignOffState = null;
+  let _batchSignOffKeyHandler = null;
+  let _batchSignOffAfterPrintHandler = null;
+
+  function _bpSignOffSavedLang() {
+    try {
+      const saved = localStorage.getItem(BP_SIGNOFF_LANG_KEY);
+      if (BP_SIGNOFF_LANGS.includes(saved)) return saved;
+    } catch (_) {}
+    const uiLang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
+      ? String(window.MFG_I18N.getLang() || 'en').toLowerCase()
+      : 'en';
+    return BP_SIGNOFF_LANGS.includes(uiLang) ? uiLang : 'en';
+  }
+
+  function _bpIsCashMethod(m) {
+    return /^cash$/i.test(String(m || 'Cash').trim());
+  }
+
+  function _bpResolveCompanyLabel(coName) {
+    const raw = String(coName || '').trim();
+    if (!raw) return '';
+    const mapped = COMPANY_LABELS[COMPANY_KEY_BY_NAME[raw] || norm(raw)]
+      || COMPANY_BU_MATCH[COMPANY_KEY_BY_NAME[raw] || norm(raw)]
+      || raw;
+    return sanitizeOutwardReceiptText(mapped);
+  }
+
+  function collectScopedBatchPaydayRuns(salRows) {
+    if (!Array.isArray(salRows) || !salRows.length) return [];
+    const byId = new Map();
+    salRows.forEach(s => {
+      if (!s || s.voided) return;
+      const bid = String(s.batch_id || '').trim();
+      if (!bid) return;
+      const txDate = String(s.date || s.rep_date || '').slice(0, 10);
+      const fxRate = getLbpFxRate(txDate || todayISO(), 'LBP') || DEFAULT_LBP_FX_RATE;
+      const amtUsd = round2(salaryVoucherUsd895(s, fxRate));
+      const lbpPart = Math.round(Number(s.lbp_amount || 0));
+      const hasExplicitUsd = s.usd_amount != null && s.usd_amount !== '';
+      const usdPart = round2(hasExplicitUsd ? Number(s.usd_amount || 0) : (lbpPart > 0 ? 0 : amtUsd));
+      const isCash = _bpIsCashMethod(s.method);
+      const co = String(s.company || '').trim();
+      let grp = byId.get(bid);
+      if (!grp) {
+        grp = {
+          batchId: bid,
+          date: txDate,
+          enteredAt: String(s.entered_at || ''),
+          companies: new Set(),
+          staffKeys: new Set(),
+          rowCount: 0,
+          cashCount: 0,
+          cashUsdBills: 0,
+          cashLbpBills: 0,
+          cashTotalUsdEq: 0,
+          otherCount: 0,
+          totalUsdEq: 0,
+          batchNote: String(s.batch_note || '').trim()
+        };
+        byId.set(bid, grp);
+      }
+      if (txDate && (!grp.date || txDate > grp.date)) grp.date = txDate;
+      if (s.entered_at && String(s.entered_at) > grp.enteredAt) grp.enteredAt = String(s.entered_at);
+      if (co) grp.companies.add(co);
+      if (s.staff) grp.staffKeys.add(norm(s.staff));
+      grp.rowCount += 1;
+      grp.totalUsdEq = round2(grp.totalUsdEq + amtUsd);
+      if (isCash) {
+        grp.cashCount += 1;
+        grp.cashUsdBills = round2(grp.cashUsdBills + usdPart);
+        grp.cashLbpBills += lbpPart;
+        grp.cashTotalUsdEq = round2(grp.cashTotalUsdEq + amtUsd);
+      } else {
+        grp.otherCount += 1;
+      }
+      if (!grp.batchNote && s.batch_note) grp.batchNote = String(s.batch_note).trim();
+    });
+    const lastId = String(STATE.lastPostedBatchPaydayId || '');
+    return Array.from(byId.values()).map(g => {
+      const cos = Array.from(g.companies);
+      return {
+        batchId: g.batchId,
+        date: g.date,
+        enteredAt: g.enteredAt,
+        company: cos.length === 1 ? cos[0] : (cos.length > 1 ? cos.join(', ') : ''),
+        staffCount: g.staffKeys.size || g.rowCount,
+        rowCount: g.rowCount,
+        cashCount: g.cashCount,
+        cashUsdBills: g.cashUsdBills,
+        cashLbpBills: g.cashLbpBills,
+        cashTotalUsdEq: g.cashTotalUsdEq,
+        otherCount: g.otherCount,
+        totalUsdEq: g.totalUsdEq,
+        batchNote: g.batchNote
+      };
+    }).sort((a, b) => {
+      if (lastId) {
+        if (a.batchId === lastId && b.batchId !== lastId) return -1;
+        if (b.batchId === lastId && a.batchId !== lastId) return 1;
+      }
+      if (b.date !== a.date) return b.date < a.date ? -1 : 1;
+      if (b.enteredAt !== a.enteredAt) return b.enteredAt < a.enteredAt ? -1 : 1;
+      return b.batchId < a.batchId ? -1 : (b.batchId > a.batchId ? 1 : 0);
+    });
+  }
+
+  function renderPayrollBatchRunsBarHtml(salRows, canShowAttDollars) {
+    if (!canShowAttDollars || !canAccessTable('salaries')) return '';
+    const runs = collectScopedBatchPaydayRuns(salRows);
+    if (!runs.length) return '';
+    const lastId = String(STATE.lastPostedBatchPaydayId || '');
+    const quickRuns = runs.slice(0, 6);
+    const pillsHtml = quickRuns.map(r => {
+      const isLatest = Boolean(lastId && r.batchId === lastId);
+      const coShort = r.company ? `${r.company} · ` : '';
+      const dStr = r.date ? fmtDateDMY(r.date) : '-';
+      const amtDisp = r.cashCount > 0 && r.otherCount > 0
+        ? `${fmtUSD(r.cashTotalUsdEq, 2)} / ${fmtUSD(r.totalUsdEq, 2)}`
+        : fmtUSD(r.totalUsdEq, 2);
+      const label = `${dStr} · ${coShort}${fmtNum(r.staffCount)} · ${amtDisp}`;
+      return `<button type="button" class="btn ${isLatest ? 'btn-brass' : 'btn-ghost-bar'} bpso-run-pill" data-bp-signoff-batch="${esc(r.batchId)}" data-no-i18n="1" data-ui-tip="Batch Sign-Off Sheet">${ic('printer')} <span>${esc(label)}</span></button>`;
+    }).join('');
+    const selectHtml = runs.length > 6
+      ? `<select id="payBatchRunsSelect" class="bpso-runs-select" data-freq-exempt="1" aria-label="Saved Payday Batches">
+          <option value="">All batches (${fmtNum(runs.length)})</option>
+          ${runs.map(r => {
+            const dStr = r.date ? fmtDateDMY(r.date) : '-';
+            const coShort = r.company ? `${r.company} · ` : '';
+            return `<option value="${esc(r.batchId)}" data-no-i18n="1">${esc(`${dStr} · ${coShort}${fmtNum(r.staffCount)} · ${fmtUSD(r.totalUsdEq, 2)} (${r.batchId})`)}</option>`;
+          }).join('')}
+        </select>`
+      : '';
+    return `
+      <div class="bpso-runs-bar" id="payBatchRunsBar">
+        <span class="bpso-runs-lbl">${ic('printer')} <span>Saved Payday Batches (${fmtNum(runs.length)}):</span></span>
+        <div class="bpso-runs-list">${pillsHtml}${selectHtml}</div>
+      </div>
+    `;
+  }
+
+  function buildBatchSignOffContext(batchId, opts = {}) {
+    if (!canAccessTable('salaries') || !canViewPayrollDollarAmounts()) return null;
+    const targetBatchId = String(batchId || '').trim();
+    if (!targetBatchId) return null;
+
+    const byRowId = new Map();
+    const ingestRow = r => {
+      if (!r || String(r.batch_id || '').trim() !== targetBatchId) return;
+      const rid = String(r.id || '').trim();
+      const key = rid || `idx_${byRowId.size}`;
+      if (!byRowId.has(key)) byRowId.set(key, r);
+    };
+    ((SEED && SEED.records && SEED.records.salaries) || []).forEach(ingestRow);
+    ((STATE && STATE.customRecords && STATE.customRecords.salaries) || []).forEach(ingestRow);
+    if (!byRowId.size) return null;
+
+    const isDemoCoScope = isDemoScopeActive();
+    const allowedCos = isDemoCoScope ? null : allowedCompanyNames();
+    const officialOn = isOfficialScopeActive();
+    const permitted = [];
+    byRowId.forEach(r => {
+      if (!isDemoCoScope) {
+        const rcNorm = norm(r.company || '');
+        if (!rcNorm || !allowedCos.some(c => norm(c) === rcNorm)) return;
+      }
+      if (officialOn && !isOfficialRecord(r, 'salaries')) return;
+      permitted.push(r);
+    });
+    if (!permitted.length) return null;
+
+    const voidedCount = permitted.filter(r => Boolean(r.voided)).length;
+    const activeRows = permitted.filter(r => !r.voided);
+    if (!activeRows.length) return null;
+
+    const roleMap = new Map();
+    const registerRole = (staffName, coName, roleText) => {
+      const sk = norm(staffName);
+      const rt = sanitizeOutwardReceiptText(roleText || '');
+      if (!sk || !rt) return;
+      const ck = norm(coName || '');
+      if (ck && !roleMap.has(`${ck}|${sk}`)) roleMap.set(`${ck}|${sk}`, rt);
+      if (!roleMap.has(`*|${sk}`)) roleMap.set(`*|${sk}`, rt);
+    };
+    ((SEED && SEED.records && SEED.records.employments) || []).forEach(e => {
+      if (e && !e.voided) registerRole(e.staff, e.company, e.role || e.type || '');
+    });
+    ((SEED && SEED.records && SEED.records.staff_members) || []).forEach(sm => {
+      if (sm && !sm.voided && !sm.archived) registerRole(sm.name || sm.staff, sm.company, sm.role || '');
+    });
+
+    const sortedActive = activeRows.slice().sort((a, b) => {
+      const ca = String(a.company || '');
+      const cb = String(b.company || '');
+      if (ca !== cb) return ca.localeCompare(cb);
+      const sa = String(a.staff || a.name || '');
+      const sb = String(b.staff || b.name || '');
+      const cmp = sa.localeCompare(sb);
+      if (cmp !== 0) return cmp;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+
+    const explicitBatchNote = sortedActive.map(r => String(r.batch_note || '').trim()).find(Boolean) || '';
+    let fallbackSharedNote = '';
+    if (!explicitBatchNote) {
+      const notesSet = new Set(sortedActive.map(r => String(r.notes || '').trim()).filter(Boolean));
+      if (notesSet.size === 1 && sortedActive.every(r => String(r.notes || '').trim())) {
+        fallbackSharedNote = Array.from(notesSet)[0];
+      }
+    }
+    const batchNote = sanitizeOutwardReceiptText(explicitBatchNote || fallbackSharedNote);
+
+    const allSalSeed = ((SEED && SEED.records && SEED.records.salaries) || []).filter(s =>
+      s && !s.voided && (!officialOn || isOfficialRecord(s, 'salaries'))
+    );
+    const monthVouchersCache = new Map();
+    const getMonthVouchers = (staff, co, ym) => {
+      const mk = `${norm(co)}|${norm(staff)}|${ym}`;
+      if (monthVouchersCache.has(mk)) return monthVouchersCache.get(mk);
+      const sk = norm(staff);
+      const ck = norm(co);
+      const list = allSalSeed.filter(s =>
+        norm(s.staff) === sk
+        && (!ck || !s.company || norm(s.company) === ck)
+        && String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7) === ym
+      ).slice().sort((a, b) => {
+        const da = String(a.date || ''), db = String(b.date || '');
+        if (da !== db) return da < db ? -1 : 1;
+        const ia = String(a.id || ''), ib = String(b.id || '');
+        return ia === ib ? 0 : (ia < ib ? -1 : 1);
+      });
+      monthVouchersCache.set(mk, list);
+      return list;
+    };
+
+    const rowItems = sortedActive.map(r => {
+      const co = String(r.company || 'WTC').trim();
+      const txDate = String(r.date || r.rep_date || '').slice(0, 10);
+      const ym = String(r.payroll_month || txDate.slice(0, 7)).slice(0, 7);
+      const fxRate = getLbpFxRate(txDate || todayISO(), 'LBP') || DEFAULT_LBP_FX_RATE;
+      const amountUsd = round2(salaryVoucherUsd895(r, fxRate));
+      const lbpPart = Math.round(Number(r.lbp_amount || 0));
+      const hasExplicitUsd = r.usd_amount != null && r.usd_amount !== '';
+      const usdPart = round2(hasExplicitUsd ? Number(r.usd_amount || 0) : (lbpPart > 0 ? 0 : amountUsd));
+      const methodRaw = String(r.method || 'Cash').trim() || 'Cash';
+      const isCash = _bpIsCashMethod(methodRaw);
+      const staff = String(r.staff || r.name || '').trim() || 'Staff Member';
+      const role = roleMap.get(`${norm(co)}|${norm(staff)}`) || roleMap.get(`*|${norm(staff)}`) || '';
+      const posDate = txDate ? `${txDate.slice(0, 7)}-15` : todayISO();
+      const pos = computeStaffMonthPayrollPosition(staff, co, ym, posDate, null, true);
+
+      const mVouchers = getMonthVouchers(staff, co, ym);
+      const rowId = String(r.id || '');
+      let cumThroughUsd = 0;
+      let foundSelf = false;
+      for (let i = 0; i < mVouchers.length; i++) {
+        const mv = mVouchers[i];
+        const mvFx = getLbpFxRate(String(mv.date || mv.rep_date || txDate || todayISO()).slice(0, 10), 'LBP') || DEFAULT_LBP_FX_RATE;
+        cumThroughUsd = round2(cumThroughUsd + salaryVoucherUsd895(mv, mvFx));
+        if (rowId && String(mv.id || '') === rowId) {
+          foundSelf = true;
+          break;
+        }
+      }
+      if (!foundSelf) cumThroughUsd = round2(cumThroughUsd + amountUsd);
+
+      const txYm = txDate.slice(0, 7);
+      const isFut = Boolean(ym && txYm && ym > txYm);
+      const hasContract = Boolean(pos && pos.hasContract);
+      const salaryPending = Boolean(pos && pos.hasContract && pos.salaryPending);
+      const baseNetUsd = hasContract ? round2(pos.baseNet || 0) : 0;
+      const monthNetUsd = hasContract ? round2(pos.monthNetEarned || 0) : 0;
+      const refBasisUsd = isFut ? baseNetUsd : monthNetUsd;
+      const remainingAfterUsd = (hasContract && !salaryPending) ? round2(Math.max(0, refBasisUsd - cumThroughUsd)) : 0;
+      const advanceBalanceUsd = (salaryPending || !hasContract)
+        ? cumThroughUsd
+        : round2(Math.max(0, cumThroughUsd - refBasisUsd));
+
+      const rawNote = sanitizeOutwardReceiptText(r.notes || '');
+      const distinctNote = (rawNote && rawNote !== batchNote) ? rawNote : '';
+
+      return {
+        id: rowId,
+        company: co,
+        companyLabel: _bpResolveCompanyLabel(co),
+        staff: sanitizeOutwardReceiptText(staff),
+        role,
+        txDate,
+        ym,
+        fxRate,
+        method: sanitizeOutwardReceiptText(methodRaw),
+        isCash,
+        usdPart,
+        lbpPart,
+        amountUsd,
+        hasContract,
+        salaryPending,
+        isFutureMonth: isFut,
+        refBasisUsd,
+        cumThroughUsd,
+        remainingAfterUsd,
+        advanceBalanceUsd,
+        distinctNote
+      };
+    });
+
+    const cashRows = rowItems.filter(x => x.isCash);
+    const otherRows = rowItems.filter(x => !x.isCash);
+    const hasMixedMethods = cashRows.length > 0 && otherRows.length > 0;
+    const reqScope = String(opts.scopeMode || '').toLowerCase();
+    const scopeMode = hasMixedMethods
+      ? (reqScope === 'all' ? 'all' : 'cash')
+      : 'all';
+    const shownRows = scopeMode === 'cash' ? cashRows : rowItems;
+
+    const cashUsdBills = round2(cashRows.reduce((s, r) => s + r.usdPart, 0));
+    const cashLbpBills = Math.round(cashRows.reduce((s, r) => s + r.lbpPart, 0));
+    const cashTotalUsdEq = round2(cashRows.reduce((s, r) => s + r.amountUsd, 0));
+    const otherTotalUsdEq = round2(otherRows.reduce((s, r) => s + r.amountUsd, 0));
+    const batchTotalUsdEq = round2(cashTotalUsdEq + otherTotalUsdEq);
+
+    const sumUsdBills = round2(shownRows.reduce((s, r) => s + (r.isCash ? r.usdPart : 0), 0));
+    const sumLbpBills = Math.round(shownRows.reduce((s, r) => s + (r.isCash ? r.lbpPart : 0), 0));
+    const sumTotalPaidUsd = round2(shownRows.reduce((s, r) => s + r.amountUsd, 0));
+    const sumRemainingUsd = round2(shownRows.reduce((s, r) => s + (r.hasContract && !r.salaryPending ? r.remainingAfterUsd : 0), 0));
+
+    const uniqueCos = Array.from(new Set(rowItems.map(r => r.company).filter(Boolean)));
+    const companyHeader = uniqueCos.length === 1
+      ? _bpResolveCompanyLabel(uniqueCos[0])
+      : uniqueCos.map(_bpResolveCompanyLabel).join(' · ');
+    const payDate = rowItems[0] ? rowItems[0].txDate : '';
+    const payMonth = rowItems[0] ? rowItems[0].ym : '';
+    const fxRate = rowItems[0] ? rowItems[0].fxRate : (getLbpFxRate(todayISO(), 'LBP') || DEFAULT_LBP_FX_RATE);
+    const enteredBy = sanitizeOutwardReceiptText(sortedActive.map(r => r.entered_by).find(Boolean) || '');
+    const enteredAt = String(sortedActive.map(r => r.entered_at).find(Boolean) || '');
+
+    return {
+      batchId: targetBatchId,
+      companies: uniqueCos,
+      companyHeader,
+      payDate,
+      paidDateDmy: payDate ? fmtDateDMY(payDate) : '-',
+      payMonth,
+      ymLabelEn: formatSalaryReceiptMonthForLang(payMonth, 'en'),
+      ymLabelAr: formatSalaryReceiptMonthForLang(payMonth, 'ar'),
+      ymLabelFr: formatSalaryReceiptMonthForLang(payMonth, 'fr'),
+      fxRate,
+      batchNote,
+      enteredBy,
+      enteredAt,
+      voidedCount,
+      hasMixedMethods,
+      scopeMode,
+      cashCount: cashRows.length,
+      otherCount: otherRows.length,
+      totalCount: rowItems.length,
+      cashUsdBills,
+      cashLbpBills,
+      cashTotalUsdEq,
+      otherTotalUsdEq,
+      batchTotalUsdEq,
+      sumUsdBills,
+      sumLbpBills,
+      sumTotalPaidUsd,
+      sumRemainingUsd,
+      allRows: rowItems,
+      shownRows
+    };
+  }
+
+  function formatBatchSignOffCsv(ctx, lang = 'en') {
+    if (!ctx || !Array.isArray(ctx.shownRows)) return '';
+    const L = BP_SIGNOFF_T[lang] || BP_SIGNOFF_T.en;
+    const csvSafeText = v => {
+      let s = sanitizeOutwardReceiptText(v == null ? '' : String(v)).replace(/\r?\n/g, ' ').trim();
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const csvNum = v => Number.isFinite(Number(v)) ? String(Number(v)) : '0';
+    const headers = [
+      L.colIdx,
+      L.colCo,
+      L.colStaff,
+      L.colRole,
+      L.payDate,
+      L.payMonth,
+      L.colMethod,
+      L.colNet,
+      L.colCashUsd,
+      L.colCashLbp,
+      L.colPaid,
+      L.colRem,
+      L.colNote,
+      L.colSig
+    ];
+    const lines = [headers.map(csvSafeText).join(',')];
+    ctx.shownRows.forEach((r, idx) => {
+      const netStr = !r.hasContract ? L.noContract : (r.salaryPending ? L.salPending : r.refBasisUsd.toFixed(2));
+      const remStr = !r.hasContract
+        ? L.noContract
+        : (r.salaryPending
+            ? L.salPending
+            : (r.advanceBalanceUsd > 0.01 ? `${L.advPrefix}$${r.advanceBalanceUsd.toFixed(2)}` : r.remainingAfterUsd.toFixed(2)));
+      lines.push([
+        csvNum(idx + 1),
+        csvSafeText(r.company),
+        csvSafeText(r.staff),
+        csvSafeText(r.role),
+        csvSafeText(r.txDate),
+        csvSafeText(r.ym),
+        csvSafeText(r.method),
+        /^-?\d+(?:\.\d+)?$/.test(netStr) ? netStr : csvSafeText(netStr),
+        r.isCash ? r.usdPart.toFixed(2) : '0.00',
+        r.isCash ? String(r.lbpPart) : '0',
+        r.amountUsd.toFixed(2),
+        /^-?\d+(?:\.\d+)?$/.test(remStr) ? remStr : csvSafeText(remStr),
+        csvSafeText(r.distinctNote || ctx.batchNote || ''),
+        csvSafeText('')
+      ].join(','));
+    });
+    lines.push([
+      csvSafeText(L.totalLbl(ctx.shownRows.length)),
+      csvSafeText(ctx.batchId),
+      csvSafeText(''),
+      csvSafeText(''),
+      csvSafeText(ctx.payDate),
+      csvSafeText(ctx.payMonth),
+      csvSafeText(ctx.scopeMode === 'cash' ? 'Cash' : 'All'),
+      csvSafeText(''),
+      ctx.sumUsdBills.toFixed(2),
+      String(ctx.sumLbpBills),
+      ctx.sumTotalPaidUsd.toFixed(2),
+      ctx.sumRemainingUsd.toFixed(2),
+      csvSafeText(''),
+      csvSafeText('')
+    ].join(','));
+    return `\uFEFF${lines.join('\r\n')}\r\n`;
+  }
+
+  function renderBatchSignOffSheetHtml(ctx, lang) {
+    const L = BP_SIGNOFF_T[lang] || BP_SIGNOFF_T.en;
+    const isRtl = lang === 'ar';
+    const ymDisp = lang === 'ar' ? ctx.ymLabelAr : (lang === 'fr' ? ctx.ymLabelFr : ctx.ymLabelEn);
+    const fxShort = fmtNum(ctx.fxRate, 0);
+
+    const kpiCards = [
+      `<div class="bpso-kpi is-brass"><span>${esc(L.safeCashUsd)}</span><b class="mono">${esc(fmtUSD(ctx.cashUsdBills, 2))}</b></div>`,
+      `<div class="bpso-kpi is-brass"><span>${esc(L.safeCashLbp)}</span><b class="mono">${esc(`${fmtNum(ctx.cashLbpBills, 0)} L.L.`)}</b></div>`,
+      `<div class="bpso-kpi"><span>${esc(L.safeCashEq)}</span><b class="mono">${esc(fmtUSD(ctx.cashTotalUsdEq, 2))}</b></div>`
+    ];
+    if (ctx.otherCount > 0) {
+      kpiCards.push(`<div class="bpso-kpi"><span>${esc(L.bankOther)}</span><b class="mono">${esc(fmtUSD(ctx.otherTotalUsdEq, 2))}</b></div>`);
+      kpiCards.push(`<div class="bpso-kpi"><span>${esc(L.batchTotal)}</span><b class="mono">${esc(fmtUSD(ctx.batchTotalUsdEq, 2))}</b></div>`);
+    }
+
+    const rowsHtml = ctx.shownRows.map((r, idx) => {
+      const netTxt = !r.hasContract
+        ? `<span class="bpso-muted">${esc(L.noContract)}</span>`
+        : (r.salaryPending ? `<span class="bpso-muted">${esc(L.salPending)}</span>` : esc(fmtUSD(r.refBasisUsd, 2)));
+      const cashUsdTxt = r.isCash && r.usdPart > 0.005 ? esc(fmtUSD(r.usdPart, 2)) : '<span class="bpso-muted">-</span>';
+      const cashLbpTxt = r.isCash && r.lbpPart > 0 ? esc(fmtNum(r.lbpPart, 0)) : '<span class="bpso-muted">-</span>';
+      const paidTxt = r.isCash
+        ? esc(fmtUSD(r.amountUsd, 2))
+        : `${esc(fmtUSD(r.amountUsd, 2))} <span class="bpso-method-tag">(${esc(r.method)})</span>`;
+      let remHtml = `<span class="bpso-muted">${esc(L.noContract)}</span>`;
+      if (r.hasContract) {
+        if (r.salaryPending) {
+          remHtml = `<span class="bpso-muted">${esc(L.salPending)}</span>`;
+        } else if (r.advanceBalanceUsd > 0.01) {
+          remHtml = `<span class="bpso-adv-txt">${esc(`${L.advPrefix}${fmtUSD(r.advanceBalanceUsd, 2)}`)}</span>`;
+        } else if (r.remainingAfterUsd <= 0.01) {
+          remHtml = `<span class="bpso-ok-txt">${esc(L.settled)}</span>`;
+        } else {
+          remHtml = esc(fmtUSD(r.remainingAfterUsd, 2));
+        }
+      }
+      const subParts = [r.role, r.distinctNote].filter(Boolean);
+      const coTag = ctx.companies.length > 1 ? ` <span class="bpso-co-tag">(${esc(r.company)})</span>` : '';
+      return `
+        <tr>
+          <td class="bpso-col-idx mono">${idx + 1}</td>
+          <td class="bpso-col-staff">
+            <div class="bpso-staff-name"><strong>${esc(r.staff)}</strong>${coTag}</div>
+            ${subParts.length ? `<div class="bpso-staff-sub">${esc(subParts.join(' · '))}</div>` : ''}
+          </td>
+          <td class="bpso-col-num mono">${netTxt}</td>
+          <td class="bpso-col-num mono">${cashUsdTxt}</td>
+          <td class="bpso-col-num mono">${cashLbpTxt}</td>
+          <td class="bpso-col-num mono"><strong>${paidTxt}</strong></td>
+          <td class="bpso-col-bal mono">${remHtml}</td>
+          <td class="bpso-col-sig"><div class="bpso-sig-line"></div></td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="bpso-sheet" id="bpSignOffSheet" dir="${isRtl ? 'rtl' : 'ltr'}" lang="${esc(lang)}" data-no-i18n="1">
+        <div class="bpso-sheet-head">
+          <div>
+            <div class="bpso-sheet-eyebrow">${esc(L.hdrTag)}</div>
+            <h3 class="bpso-sheet-title">${esc(L.title)}</h3>
+            <div class="bpso-sheet-co">${esc(ctx.companyHeader || L.allCos)}</div>
+          </div>
+          <div class="bpso-sheet-meta">
+            <div><span>${esc(L.batchId)}:</span> <b class="mono">${esc(ctx.batchId)}</b></div>
+            <div><span>${esc(L.payDate)}:</span> <b class="mono">${esc(ctx.paidDateDmy)}</b></div>
+            <div><span>${esc(L.payMonth)}:</span> <b>${esc(ymDisp)}</b></div>
+            <div><span>${esc(L.fxRate)}:</span> <b class="mono">${esc(fxShort)} LL/$</b></div>
+          </div>
+        </div>
+
+        ${(ctx.batchNote || ctx.voidedCount > 0) ? `
+          <div class="bpso-sheet-notes">
+            ${ctx.batchNote ? `<span><b>${esc(L.batchNote)}:</b> ${esc(ctx.batchNote)}</span>` : ''}
+            ${ctx.voidedCount > 0 ? `<span class="bpso-void-note">${esc(L.voidNote(ctx.voidedCount))}</span>` : ''}
+          </div>
+        ` : ''}
+
+        <div class="bpso-summary-grid">${kpiCards.join('')}</div>
+
+        <div class="bpso-table-wrap">
+          <table class="ledger-table bpso-table" id="bpSignOffTable">
+            <thead>
+              <tr>
+                <th class="bpso-col-idx">${esc(L.colIdx)}</th>
+                <th class="bpso-col-staff">${esc(L.colStaff)}</th>
+                <th class="bpso-col-num">${esc(L.colNet)}</th>
+                <th class="bpso-col-num">${esc(L.colCashUsd)}</th>
+                <th class="bpso-col-num">${esc(L.colCashLbp)}</th>
+                <th class="bpso-col-num">${esc(L.colPaid)}</th>
+                <th class="bpso-col-bal">${esc(L.colRem)}</th>
+                <th class="bpso-col-sig">${esc(L.colSig)}</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3" class="bpso-foot-lbl"><b>${esc(L.totalLbl(ctx.shownRows.length))}</b></td>
+                <td class="bpso-col-num mono"><b>${esc(fmtUSD(ctx.sumUsdBills, 2))}</b></td>
+                <td class="bpso-col-num mono"><b>${esc(fmtNum(ctx.sumLbpBills, 0))}</b></td>
+                <td class="bpso-col-num mono"><b>${esc(fmtUSD(ctx.sumTotalPaidUsd, 2))}</b></td>
+                <td class="bpso-col-bal mono"><b>${esc(fmtUSD(ctx.sumRemainingUsd, 2))}</b></td>
+                <td class="bpso-col-sig"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="bpso-custody-sigs">
+          <div class="bpso-custody-box">
+            <div class="bpso-custody-line"></div>
+            <div class="bpso-custody-lbl">${esc(L.prepBy)}</div>
+            <div class="bpso-custody-sub">${esc(ctx.enteredBy || '-')}</div>
+          </div>
+          <div class="bpso-custody-box">
+            <div class="bpso-custody-line"></div>
+            <div class="bpso-custody-lbl">${esc(L.cashierBy)}</div>
+            <div class="bpso-custody-sub">${esc(ctx.paidDateDmy)}</div>
+          </div>
+          <div class="bpso-custody-box">
+            <div class="bpso-custody-line"></div>
+            <div class="bpso-custody-lbl">${esc(L.appBy)}</div>
+            <div class="bpso-custody-sub">${esc(ctx.batchId)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function closeBatchSignOffModal() {
+    const modal = $('batchSignOffModal');
+    if (modal) {
+      modal.hidden = true;
+      modal.innerHTML = '';
+    }
+    document.body.classList.remove('printing-bp-signoff');
+    if (_batchSignOffAfterPrintHandler) {
+      window.removeEventListener('afterprint', _batchSignOffAfterPrintHandler);
+      _batchSignOffAfterPrintHandler = null;
+    }
+    if (_batchSignOffKeyHandler) {
+      document.removeEventListener('keydown', _batchSignOffKeyHandler, true);
+      _batchSignOffKeyHandler = null;
+    }
+    const rf = _batchSignOffState && _batchSignOffState.returnFocus;
+    _batchSignOffState = null;
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  function _renderBatchSignOffModal() {
+    const modal = $('batchSignOffModal');
+    const st = _batchSignOffState;
+    if (!modal || !st) return false;
+    const ctx = buildBatchSignOffContext(st.batchId, { scopeMode: st.scopeMode });
+    if (!ctx) {
+      closeBatchSignOffModal();
+      return false;
+    }
+    st.scopeMode = ctx.scopeMode;
+    st.ctx = ctx;
+
+    const scopeBarHtml = ctx.hasMixedMethods ? `
+      <div class="chip-bar">
+        <button type="button" class="filter-chip${ctx.scopeMode === 'cash' ? ' active' : ''}" data-bpso-scope="cash">Cash Only (${fmtNum(ctx.cashCount)})</button>
+        <button type="button" class="filter-chip${ctx.scopeMode === 'all' ? ' active' : ''}" data-bpso-scope="all">Full Batch (${fmtNum(ctx.totalCount)})</button>
+      </div>
+    ` : '';
+
+    const langBtns = [
+      { key: 'en', label: 'EN' },
+      { key: 'ar', label: 'عربي' },
+      { key: 'fr', label: 'FR' }
+    ].map(b => `<button type="button" class="hld-share-lang-btn ${st.lang === b.key ? 'active' : ''}" data-bpso-lang="${b.key}" aria-pressed="${st.lang === b.key ? 'true' : 'false'}" data-no-i18n="1">${b.label}</button>`).join('');
+
+    modal.innerHTML = `
+      <div class="modal-card bpso-modal-card" role="dialog" aria-modal="true" aria-labelledby="bpSignOffTitle">
+        <div class="modal-header no-print">
+          <div>
+            <span class="modal-eyebrow">Batch Payday Control</span>
+            <h2 id="bpSignOffTitle">Cash Disbursement Sign-Off Sheet</h2>
+          </div>
+          <div class="modal-header-actions">
+            <span class="badge mono" data-no-i18n="1">${esc(ctx.batchId)}</span>
+            <button type="button" class="modal-close-btn" id="bpsoCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body bpso-modal-body">
+          <div class="bpso-toolbar no-print">
+            <div class="bpso-toolbar-left">
+              ${scopeBarHtml}
+              <div class="hld-share-seg" id="bpSignOffLangBar" role="group" aria-label="Sheet Language">${langBtns}</div>
+            </div>
+            <div class="bpso-toolbar-actions">
+              <button type="button" class="btn btn-ghost-bar" id="bpsoExportCsvBtn">${ic('download')} Export CSV</button>
+              <button type="button" class="btn btn-primary" id="bpsoPrintBtn">${ic('printer')} Print A4 Sheet</button>
+            </div>
+          </div>
+          ${renderBatchSignOffSheetHtml(ctx, st.lang)}
+        </div>
+      </div>
+    `;
+
+    $('bpsoCloseBtn')?.addEventListener('click', closeBatchSignOffModal);
+    modal.querySelectorAll('[data-bpso-scope]').forEach(b => b.addEventListener('click', () => {
+      const nextScope = b.getAttribute('data-bpso-scope') || 'cash';
+      if (!_batchSignOffState || _batchSignOffState.scopeMode === nextScope) return;
+      _batchSignOffState.scopeMode = nextScope;
+      _renderBatchSignOffModal();
+      modal.querySelector(`[data-bpso-scope="${nextScope}"]`)?.focus({ preventScroll: true });
+    }));
+    modal.querySelectorAll('[data-bpso-lang]').forEach(b => b.addEventListener('click', () => {
+      const nextLang = b.getAttribute('data-bpso-lang');
+      if (!BP_SIGNOFF_LANGS.includes(nextLang) || !_batchSignOffState) return;
+      _batchSignOffState.lang = nextLang;
+      try { localStorage.setItem(BP_SIGNOFF_LANG_KEY, nextLang); } catch (_) {}
+      _renderBatchSignOffModal();
+      modal.querySelector(`[data-bpso-lang="${nextLang}"]`)?.focus({ preventScroll: true });
+    }));
+    $('bpsoExportCsvBtn')?.addEventListener('click', () => {
+      if (!_batchSignOffState || !_batchSignOffState.ctx) return;
+      const csvText = formatBatchSignOffCsv(_batchSignOffState.ctx, _batchSignOffState.lang);
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Payday_SignOff_${_batchSignOffState.ctx.batchId}_${_batchSignOffState.ctx.payDate || 'batch'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    $('bpsoPrintBtn')?.addEventListener('click', () => {
+      document.body.classList.add('printing-bp-signoff');
+      const cleanupPrint = () => {
+        document.body.classList.remove('printing-bp-signoff');
+        if (_batchSignOffAfterPrintHandler) {
+          window.removeEventListener('afterprint', _batchSignOffAfterPrintHandler);
+          _batchSignOffAfterPrintHandler = null;
+        }
+      };
+      if (_batchSignOffAfterPrintHandler) window.removeEventListener('afterprint', _batchSignOffAfterPrintHandler);
+      _batchSignOffAfterPrintHandler = cleanupPrint;
+      window.addEventListener('afterprint', _batchSignOffAfterPrintHandler, { once: true });
+      try { window.print(); } catch (_) {}
+      setTimeout(cleanupPrint, 800);
+    });
+    _bpTranslateNode(modal);
+    return true;
+  }
+
+  function refreshOpenBatchSignOffModal() {
+    const modal = $('batchSignOffModal');
+    if (!modal || modal.hidden || !_batchSignOffState) return false;
+    return _renderBatchSignOffModal();
+  }
+
+  function openBatchSignOffModal(batchId, opts = {}) {
+    if (!canAccessTable('salaries') || !canViewPayrollDollarAmounts()) {
+      toast('Your seat does not have permission to view payroll sign-off sheets.', 'err');
+      return false;
+    }
+    const targetId = String(batchId || '').trim();
+    if (!targetId) return false;
+    const reqLang = opts && BP_SIGNOFF_LANGS.includes(opts.lang) ? opts.lang : _bpSignOffSavedLang();
+    const ctx = buildBatchSignOffContext(targetId, { scopeMode: opts && opts.scopeMode });
+    if (!ctx) {
+      toast('No active salary vouchers found in your seat scope for this batch.', 'err');
+      return false;
+    }
+    _batchSignOffState = {
+      batchId: targetId,
+      lang: reqLang,
+      scopeMode: ctx.scopeMode,
+      ctx,
+      returnFocus: (opts && opts.returnFocus) || document.activeElement || null
+    };
+    let modal = $('batchSignOffModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'batchSignOffModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e => { if (e.target === modal) closeBatchSignOffModal(); });
+    } else if (modal.parentNode !== document.body || modal !== document.body.lastElementChild) {
+      document.body.appendChild(modal);
+    }
+    modal.hidden = false;
+    if (!_renderBatchSignOffModal()) return false;
+
+    if (_batchSignOffKeyHandler) document.removeEventListener('keydown', _batchSignOffKeyHandler, true);
+    _batchSignOffKeyHandler = e => {
+      const m = $('batchSignOffModal');
+      if (!m || m.hidden) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && !m.contains(active)) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        closeBatchSignOffModal();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = Array.from(m.querySelectorAll('button, [href], textarea, input, select, [tabindex]:not([tabindex="-1"])'))
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && (active === first || !m.contains(active))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (active === last || !m.contains(active))) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', _batchSignOffKeyHandler, true);
+    const focusEl = $('bpsoCloseBtn');
+    if (focusEl) {
+      try { focusEl.focus({ preventScroll: true }); } catch (_) {}
+    }
     return true;
   }
 
@@ -85817,6 +86800,52 @@
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
 
+      if (rid === 'S21') {
+        const snap = (isOwner(u) && !isDemoScopeActive()) ? _cloudStoreHealthSnap : null;
+        if (!snap) {
+          return {
+            expUsd: 0, rowCnt: 0, topParty: 'Owner Access Only',
+            topSubEn: 'Visible only for signed-in Owner sync pulls', topSubAr: 'متاح فقط لمقعد المالك عند المزامنة', topSubFr: 'Visible uniquement pour le propriétaire connecté',
+            physValEn: 'Owner Only', physValAr: 'للمالك فقط', physValFr: 'Propriétaire seul',
+            bEn: ['Cloud store capacity telemetry is restricted to the signed-in Owner session.'],
+            bAr: ['مؤشر سعة مخزن المزامنة السحابية متاح فقط لجلسة المالك المسجّل.'],
+            bFr: ['La télémétrie de capacité du stockage cloud est réservée à la session propriétaire.']
+          };
+        }
+        const mbStr = (snap.bytes / 1048576).toFixed(1);
+        const pctStr = String(Math.round((snap.bytes / CLOUD_STORE_CAP_BYTES) * 100));
+        const topSec = (snap.topSections && snap.topSections[0]) || null;
+        const trSec = (lbl, lg) => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(lbl, lg) : lbl;
+        const secEn = (snap.topSections || []).map(s => `${s.label} (${Number(s.mb || 0).toFixed(1)} MB)`).join(', ');
+        const secAr = (snap.topSections || []).map(s => `${trSec(s.label, 'ar')} (${Number(s.mb || 0).toFixed(1)} ميغابايت)`).join('، ');
+        const secFr = (snap.topSections || []).map(s => `${trSec(s.label, 'fr')} (${Number(s.mb || 0).toFixed(1)} Mo)`).join(', ');
+        expUsd = 0;
+        rowCnt = Number(snap.chunks || 0);
+        topParty = topSec ? topSec.label : 'No Repeat Offenders';
+        topSubEn = topSec ? `${Number(topSec.mb || 0).toFixed(1)} MB (${pctStr}% store total)` : 'Within 12.0 MB normal operating ceiling';
+        topSubAr = topSec ? `${Number(topSec.mb || 0).toFixed(1)} ميغابايت (${pctStr}% من إجمالي المخزن)` : 'ضمن الحد التشغيلي الطبيعي (12.0 ميغابايت)';
+        topSubFr = topSec ? `${Number(topSec.mb || 0).toFixed(1)} Mo (${pctStr}% du total)` : 'Dans la limite normale (12,0 Mo)';
+        physValEn = `${mbStr} MB / 64 MB (${pctStr}%)`;
+        physValAr = `${mbStr} ميغابايت / 64 ميغابايت (${pctStr}%)`;
+        physValFr = `${mbStr} Mo / 64 Mo (${pctStr} %)`;
+        bEn = [
+          `Cloud sync payload reached ${mbStr} MB across ${fmtNum(rowCnt, 0)} store parts (${pctStr}% of the 64 MB sync limit).`,
+          secEn ? `Largest sections by JSON size: ${secEn}.` : 'All cloud store collections sit inside the compact baseline.',
+          'Schedule archive compaction or inspect Users & Security device sync health before payloads reach 32.0 MB.'
+        ];
+        bAr = [
+          `بلغ حجم حزمة المزامنة السحابية ${mbStr} ميغابايت عبر ${fmtNum(rowCnt, 0)} أجزاء (${pctStr}% من حد 64 ميغابايت).`,
+          secAr ? `أكبر الأقسام حجماً: ${secAr}.` : 'جميع أقسام المخزن السحابي ضمن النطاق المضغوط الطبيعي.',
+          'جدول ضغط الأرشيف أو راجع حالة مزامنة الأجهزة في المستخدمين والأمان قبل بلوغ 32.0 ميغابايت.'
+        ];
+        bFr = [
+          `Le volume de synchronisation cloud atteint ${mbStr} Mo sur ${fmtNum(rowCnt, 0)} segments (${pctStr}% du plafond de 64 Mo).`,
+          secFr ? `Plus grandes sections : ${secFr}.` : 'Toutes les sections restent dans le gabarit normal.',
+          'Planifiez un compactage ou contrôlez Utilisateurs & Sécurité avant d atteindre 32,0 Mo.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
       if (rid === 'S1') {
         expUsd = canViewBooks ? round2(Math.abs(tbDiff)) : 0;
         rowCnt = tbBalanced ? 0 : 1;
@@ -86774,6 +87803,7 @@
         S18: { ar: 'مراقب تآكل المكابح وناقل الحركة على المنحدرات', fr: 'Veille usure freins & transmission en pente' },
         S19: { ar: 'مراقب تكرار الإلغاء والإلغاء بعد الطباعة وإعادة القيد بقيمة أقل', fr: 'Contrôle annulations répétées, après impression & ressaisie minorée' },
         S20: { ar: 'مدفوعات تتجاوز الرصيد الدائن للموردين والمواقع', fr: 'Paiements dépassant le crédit dû aux fournisseurs et sites' },
+        S21: { ar: 'اقتراب سعة مخزن المزامنة السحابية من الحد الأقصى', fr: 'Stockage de synchronisation cloud proche de la limite' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
@@ -105983,7 +107013,7 @@
       }
       if (!isAttModal) {
         const gap = daysBetween(d, repEl.value);
-        const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
         if (isAlertRuleEnabled('G_REPDATE_GAP') && Math.abs(gap) > repGapDays) {
           setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>${fmtNum(repGapDays, 0)}d)`, 'warn');
           warnings.push('repdate_gap');
@@ -113793,6 +114823,170 @@
     };
   }
 
+  const CLOUD_STORE_WARN_BYTES = 12 * 1024 * 1024;
+  const CLOUD_STORE_CRIT_BYTES = 32 * 1024 * 1024;
+  const CLOUD_STORE_CAP_BYTES = 64 * 1024 * 1024;
+  let _cloudStoreHealthSnap = null;
+
+  const CLOUD_STORE_SECTION_LABELS = {
+    customRecords: 'Operational Records',
+    industryCustomRows: 'Industry Custom Records',
+    industryRowEdits: 'Industry Row Edits',
+    workSchedules: 'Work Schedules & Policies',
+    staffBiometrics: 'Face ID Templates',
+    kioskPunches: 'Tablet Punches',
+    users: 'User Seats',
+    sessions: 'Sign-In Sessions',
+    stepUpAudits: 'Override Audit Log',
+    partyHygiene: 'Counterparty Aliases',
+    sentinelReviews: 'Sentinel Reviews',
+    alertRules: 'Alert Rules',
+    roleTabPolicies: 'Role Tab Policies',
+    faceSettings: 'Face ID Settings',
+    sales_tickets: 'Sales Tickets',
+    raw_purchases: 'Raw Material Purchases',
+    expenses: 'Operating Expenses',
+    attendance: 'Attendance Records',
+    fuel_intakes: 'Fuel Intakes',
+    fuel_malfunctions: 'Fuel Malfunctions',
+    receipts: 'Customer Receipts',
+    supplier_payments: 'Supplier Settlements',
+    price_rules: 'Price Agreements',
+    vat_invoices: 'VAT Invoices',
+    equipment: 'Equipment Directory',
+    staff_members: 'Staff Directory',
+    employments: 'Employment Contracts',
+    driver_assignments: 'Driver Assignments',
+    customers: 'Customers',
+    suppliers: 'Suppliers',
+    sites: 'Project Sites',
+    regions: 'Regions & Corridors',
+    products: 'Products',
+    items: 'Catalog Items',
+    conversions: 'FX Conversions',
+    partner_distributions: 'Partner Distributions',
+    maint_defects: 'Maintenance Defects',
+    maint_parts: 'Removed Parts Custody'
+  };
+
+  function humanCloudStoreSectionLabel(rawKey) {
+    const k = String(rawKey || '').trim();
+    if (!k) return 'Other Records';
+    if (CLOUD_STORE_SECTION_LABELS[k]) return CLOUD_STORE_SECTION_LABELS[k];
+    if (typeof TABLE_CATALOG !== 'undefined' && Array.isArray(TABLE_CATALOG)) {
+      const cat = TABLE_CATALOG.find(t => t && (t.key === k || t.crKey === k));
+      if (cat && (cat.label || cat.title)) return String(cat.label || cat.title).trim();
+    }
+    return k
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, ch => ch.toUpperCase()) || 'Other Records';
+  }
+
+  function _utf8ByteLen(str) {
+    const s = String(str || '');
+    if (typeof TextEncoder !== 'undefined') {
+      try { return new TextEncoder().encode(s).byteLength; } catch (_) {}
+    }
+    return s.length;
+  }
+
+  function computeCloudStoreHealthSnap(doc, knownBytes, rawCharLen) {
+    if (!doc || typeof doc !== 'object') return null;
+    let bytes = Number(knownBytes) || 0;
+    let charLen = Number(rawCharLen) || 0;
+    if (!(bytes > 0)) {
+      try {
+        const s = JSON.stringify(doc);
+        charLen = s.length;
+        bytes = _utf8ByteLen(s);
+      } catch (_) {
+        return null;
+      }
+    }
+    const chunks = Math.max(1, Math.ceil((charLen > 0 ? charLen : bytes) / 28000));
+    const updatedAt = String(doc.updatedAt || '');
+    if (bytes < CLOUD_STORE_WARN_BYTES) {
+      return { bytes, chunks, topSections: [], updatedAt };
+    }
+    const sectionSizes = [];
+    const measureSection = (key, val) => {
+      if (val === undefined || val === null) return;
+      try {
+        const b = _utf8ByteLen(JSON.stringify(val));
+        if (b > 0) sectionSizes.push({ key, label: humanCloudStoreSectionLabel(key), bytes: b });
+      } catch (_) {}
+    };
+    Object.keys(doc).forEach(k => {
+      if (k === 'updatedAt' || k === 'updatedBy' || k === 'minShellVer' || k === 'appVersion' || k === '_scopedForSession') return;
+      if (k === 'customRecords' && doc.customRecords && typeof doc.customRecords === 'object') {
+        const cr = doc.customRecords;
+        let hasEntries = false;
+        Object.keys(cr).forEach(tk => {
+          if (Array.isArray(cr[tk]) && cr[tk].length) {
+            hasEntries = true;
+            measureSection(tk, cr[tk]);
+          }
+        });
+        if (!hasEntries) measureSection('customRecords', cr);
+      } else {
+        measureSection(k, doc[k]);
+      }
+    });
+    sectionSizes.sort((a, b) => b.bytes - a.bytes);
+    const topSections = sectionSizes.slice(0, 3).map(s => ({
+      label: s.label,
+      mb: Number((s.bytes / 1048576).toFixed(1)),
+      pct: Math.max(1, Math.round((s.bytes / Math.max(1, bytes)) * 100))
+    }));
+    return { bytes, chunks, topSections, updatedAt };
+  }
+
+  function noteCloudStoreHealthFromSync(rawTxt, parsedResp) {
+    if (!STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return;
+    const doc = parsedResp && parsedResp.docs && parsedResp.docs[CLOUD_DOC_KEY];
+    if (!doc || typeof doc !== 'object' || doc._scopedForSession) return;
+    const prevFlagged = Boolean(_cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
+    const bytes = _utf8ByteLen(rawTxt);
+    _cloudStoreHealthSnap = computeCloudStoreHealthSnap(doc, bytes, String(rawTxt || '').length);
+    const nowFlagged = Boolean(_cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
+    if ((prevFlagged !== nowFlagged || nowFlagged) && typeof _sentinelRawItemsCache !== 'undefined' && _sentinelRawItemsCache instanceof Map) {
+      _sentinelRawItemsCache.clear();
+    }
+  }
+
+  function buildCloudStoreSentinelItem(scope) {
+    if (!STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return null;
+    if (!isAlertRuleEnabled('S21')) return null;
+    const snap = _cloudStoreHealthSnap;
+    if (!snap || !(snap.bytes >= CLOUD_STORE_WARN_BYTES)) return null;
+    const mbStr = (snap.bytes / 1048576).toFixed(1);
+    const pctStr = Math.round((snap.bytes / CLOUD_STORE_CAP_BYTES) * 100);
+    const isCrit = snap.bytes >= CLOUD_STORE_CRIT_BYTES;
+    const topStr = (snap.topSections || []).map(s => `${s.label} (${Number(s.mb || 0).toFixed(1)} MB)`).join(', ');
+    const detail = topStr
+      ? `Cloud sync payload reached ${mbStr} MB across ${fmtNum(snap.chunks)} store parts (${pctStr}% of the 64 MB sync limit, warning at 12.0 MB). Largest sections: ${topStr}.`
+      : `Cloud sync payload reached ${mbStr} MB across ${fmtNum(snap.chunks)} store parts (${pctStr}% of the 64 MB sync limit, warning at 12.0 MB).`;
+    return {
+      id: 'S21',
+      ruleId: 'S21',
+      code: 'Cloud Sync · Store Capacity',
+      title: 'Cloud Sync Store Approaching Capacity Limit',
+      detail,
+      severity: isCrit ? 'crit' : 'warn',
+      badge: `${mbStr} MB / 64 MB (${pctStr}%)`,
+      company: scope,
+      rawMetric: Math.round(snap.bytes / 1048576),
+      rawSecondary: snap.chunks,
+      hideRuleTuner: true,
+      scrollPanel: '',
+      navView: 'users',
+      navLabel: 'Open Users & Security'
+    };
+  }
+
   if (typeof window !== 'undefined') {
     window.__mfgOverpaidPayablesSentinel = {
       data: opts => getOverpaidPayablesSentinelData(opts),
@@ -117317,7 +118511,7 @@
         const attMode = val('f_att_mode') || 'shift';
         const preset = FORM_UI.attPreset || 'regular';
         const attGapDays = Math.abs(daysBetween(txDate, attDate));
-        const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
         const attGapWarn = isAlertRuleEnabled('G_REPDATE_GAP') && attGapDays > attRepGapLimit;
         if (attGapWarn) attWarnings.push('repdate_gap');
 
@@ -124916,7 +126110,7 @@
         }
       }
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
-      const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+      const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
       const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
       const skipLockedPendRepdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_repdate')) || (editCtx && repDate === origEditRepDate && date === origEditDate));
       if (!val('f_date')) addErr('f_date', 'Date is required.');
@@ -142216,6 +143410,7 @@
           ${hasTopbarDateFilterActive() ? `<button type="button" class="pa-cmd-btn pa-cmd-scope-btn${_inspForceAllTime ? ' is-all-time' : ''}" id="inspScopePeriodToggle" data-insp-scope-toggle="1">${ic('calendar')} <span class="insp-scope-lbl">${esc(_inspForceAllTime ? 'All-Time (Filter Paused)' : `Scoped: ${formatInspectorRangeShort(getActiveInspectorDateRange())}`)}</span></button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open in Hub ↗</button>
           ${(['employments', 'staff_members', 'employees', 'attendance', 'salaries', 'freelance_entries', 'staff_assignments', 'drivers'].includes(key) && row && (row.staff || row.name) && (canViewView('payroll_attendance') || canViewView('payroll'))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>` : ''}
+          ${(key === 'salaries' && row && !row.voided && row.batch_id && canAccessTable('salaries') && canViewPayrollDollarAmounts()) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspBatchSignOffBtn" data-bp-signoff-batch="${esc(row.batch_id)}">${ic('printer')} Batch Sign-Off Sheet</button>` : ''}
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
         </div>
       </div>
@@ -142729,6 +143924,13 @@
 
     const prBtn = $('inspPrintBtn');
     if (prBtn) prBtn.addEventListener('click', () => window.print());
+    const inspBatchSignOffBtn = $('inspBatchSignOffBtn');
+    if (inspBatchSignOffBtn) {
+      inspBatchSignOffBtn.addEventListener('click', () => {
+        const bId = String(inspBatchSignOffBtn.getAttribute('data-bp-signoff-batch') || row.batch_id || '').trim();
+        if (bId) openBatchSignOffModal(bId, { returnFocus: inspBatchSignOffBtn });
+      });
+    }
     const inspPpdBtn = $('inspPrePaydayCardBtn');
     if (inspPpdBtn) {
       inspPpdBtn.addEventListener('click', () => {
@@ -151319,7 +152521,10 @@
       if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
       return;
     }
-    const sig = JSON.stringify(list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.reported_at, d.sent_at]));
+    const curShell = String(window.__MFG_SHELL_VER || '').trim();
+    const minSyncFloor = window.ISABI_HAS_EDGE_API ? '19.6.432' : '19.6.436';
+    const effMinSyncVer = (curShell && compareShellVersions(minSyncFloor, curShell) > 0) ? curShell : minSyncFloor;
+    const sig = JSON.stringify([curShell, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
     if (el.dataset.sig === sig && !el.hidden) return;
     const SHOWN = 4;
     const segs = list.slice(0, SHOWN).map(d => {
@@ -151331,10 +152536,18 @@
       const since = fmtUnsentStamp(Date.parse(String(d.since || '')));
       const uid = String(d.user_id || (seat && seat.id) || '').trim();
       const devId = String(d.device_id || '').trim();
+      const rawShell = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(String(d.shell || '').trim()) ? String(d.shell || '').trim() : '';
+      const shellBlocked = Boolean(rawShell && !late && (compareShellVersions(rawShell, effMinSyncVer) < 0 || String(d.reason || '') === 'update'));
+      const shellBehind = Boolean(rawShell && !late && !shellBlocked && curShell && compareShellVersions(rawShell, curShell) < 0);
+      const shellHtml = !rawShell
+        ? ''
+        : (shellBlocked
+            ? ` <span class="dev-hold-shell is-outdated"><span data-no-i18n="1" dir="ltr">v${esc(rawShell)}</span><span data-no-i18n="1"> · </span><span>needs reload</span></span>`
+            : ` <span class="dev-hold-shell${shellBehind ? ' is-behind' : ''}"><span data-no-i18n="1" dir="ltr">v${esc(rawShell)}</span></span>`);
       const dismissHtml = (uid && devId)
         ? ` <button type="button" class="dev-hold-dismiss-btn" data-dismiss-user="${esc(uid)}" data-dismiss-dev="${esc(devId)}"><span>Dismiss</span></button>`
         : '';
-      const head = `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(who)}</span></b>${label ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(label)})</span>` : ''}<span data-no-i18n="1">:</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b>`;
+      const head = `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(who)}</span></b>${label ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(label)})</span>` : ''}${shellHtml}<span data-no-i18n="1">:</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b>`;
       if (late) {
         const sentAt = fmtUnsentStamp(Date.parse(String(d.sent_at || '')));
         return `<span class="cf-behind-co dev-hold-item is-late">${head} <span>${n === 1 ? 'entry keyed from' : 'entries keyed from'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span> <span>reached the cloud late, on</span> <span class="cf-behind-num" data-no-i18n="1">${esc(sentAt)}</span>${dismissHtml}</span>`;
@@ -151849,7 +153062,10 @@
           });
           clearTimeout(timerE);
           if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
-            return await rE.json();
+            const rawTxt = await rE.text();
+            const parsed = JSON.parse(rawTxt);
+            noteCloudStoreHealthFromSync(rawTxt, parsed);
+            return parsed;
           }
           if (rE.status === 401 || rE.status === 403) {
             return { _authDenied: true, _status: rE.status };
@@ -156775,6 +157991,7 @@
       syncDemoScopeDataState();
     }
     if (prevCompany !== coKey) {
+      if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
       STATE.hubInspectorReturn = null;
       if (STATE.catchUpBatchRepDate && STATE.catchUpBatchScope && String(coKey || '') !== STATE.catchUpBatchScope) {
         clearCatchUpBatchRepDate();
@@ -157980,6 +159197,7 @@
   function purgeOverlaysOnSessionOrKioskLock() {
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     if (typeof closeBatchPaydayModal === 'function') closeBatchPaydayModal({ force: true });
+    if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
     if (typeof closeSalaryAdvanceReceiptModal === 'function') closeSalaryAdvanceReceiptModal();
     if (window.MFG_CHART_POP && typeof window.MFG_CHART_POP.close === 'function') window.MFG_CHART_POP.close();
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
@@ -158041,7 +159259,11 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    _cloudStoreHealthSnap = null;
+    if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
+    STATE.lastPostedBatchPaydayId = '';
+    try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -158257,7 +159479,11 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    _cloudStoreHealthSnap = null;
+    if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
+    STATE.lastPostedBatchPaydayId = '';
+    try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -192530,6 +193756,7 @@
     }
     ensureItemsCatalogSeeded();
     ensureMultiIndustrySpineSeeded();
+    if (typeof refreshOpenBatchSignOffModal === 'function') refreshOpenBatchSignOffModal();
     const user = activeUser();
     const k = getKPI();
 
@@ -195516,6 +196743,21 @@
     if (payBatchBtn) {
       payBatchBtn.addEventListener('click', () => {
         openBatchPaydayModal({ returnFocus: payBatchBtn });
+      });
+    }
+    container.querySelectorAll('[data-bp-signoff-batch]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const bId = String(btn.getAttribute('data-bp-signoff-batch') || '').trim();
+      if (bId) openBatchSignOffModal(bId, { returnFocus: btn });
+    }));
+    const payBatchRunsSel = $('payBatchRunsSelect');
+    if (payBatchRunsSel) {
+      payBatchRunsSel.addEventListener('change', () => {
+        const bId = String(payBatchRunsSel.value || '').trim();
+        if (!bId) return;
+        payBatchRunsSel.value = '';
+        openBatchSignOffModal(bId, { returnFocus: payBatchRunsSel });
       });
     }
     container.querySelectorAll('[data-cf-focus-party]').forEach(el => el.addEventListener('click', ev => {
@@ -200439,7 +201681,11 @@
       openSalaryAdvanceReceiptModal: (rowOrId, opts = {}) => openSalaryAdvanceReceiptModal(rowOrId, opts),
       closeSalaryAdvanceReceiptModal: () => closeSalaryAdvanceReceiptModal(),
       openBatchPaydayModal: (opts = {}) => openBatchPaydayModal(opts),
-      closeBatchPaydayModal: () => closeBatchPaydayModal()
+      closeBatchPaydayModal: () => closeBatchPaydayModal(),
+      buildBatchSignOffContext: (batchId, opts = {}) => buildBatchSignOffContext(batchId, opts),
+      formatBatchSignOffCsv: (ctx, lang) => formatBatchSignOffCsv(ctx, lang),
+      openBatchSignOffModal: (batchId, opts = {}) => openBatchSignOffModal(batchId, opts),
+      closeBatchSignOffModal: () => closeBatchSignOffModal()
     };
 
     window.MFG_KIOSK_TEST = {
@@ -200839,7 +202085,14 @@
       refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
       report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
       loadDevices: () => loadDevicesHolding(),
-      device: () => getDeviceIdent()
+      device: () => getDeviceIdent(),
+      setCloudStoreDocForTest: (doc, byteOverride) => {
+        if (!window.__MFG_HEADLESS_TEST && !navigator.webdriver) return null;
+        _cloudStoreHealthSnap = doc ? computeCloudStoreHealthSnap(doc, Number(byteOverride) || 0, Number(byteOverride) || 0) : null;
+        if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
+        return _cloudStoreHealthSnap;
+      },
+      getCloudStoreHealth: () => (_cloudStoreHealthSnap ? Object.assign({}, _cloudStoreHealthSnap) : null)
     };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
@@ -202505,6 +203758,10 @@
     closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
     openBatchPaydayModal: typeof openBatchPaydayModal === 'function' ? openBatchPaydayModal : null,
     closeBatchPaydayModal: typeof closeBatchPaydayModal === 'function' ? closeBatchPaydayModal : null,
+    buildBatchSignOffContext: typeof buildBatchSignOffContext === 'function' ? buildBatchSignOffContext : null,
+    formatBatchSignOffCsv: typeof formatBatchSignOffCsv === 'function' ? formatBatchSignOffCsv : null,
+    openBatchSignOffModal: typeof openBatchSignOffModal === 'function' ? openBatchSignOffModal : null,
+    closeBatchSignOffModal: typeof closeBatchSignOffModal === 'function' ? closeBatchSignOffModal : null,
     signOut: typeof signOut === 'function' ? signOut : null,
     voidRecord: typeof voidRecord === 'function' ? voidRecord : null,
     restoreVoidedRecord: typeof restoreVoidedRecord === 'function' ? restoreVoidedRecord : null,
