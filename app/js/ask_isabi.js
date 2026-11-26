@@ -11590,6 +11590,10 @@
             _ctx.setView(destView, { chipFilter: 'pending_price' });
             return;
           }
+          if (sum.ruleId === 'S20' && destView === 'suppliers') {
+            _ctx.setView(destView, { chipFilter: 'overpaid_ap' });
+            return;
+          }
           _ctx.setView(destView);
         }
       });

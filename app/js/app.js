@@ -1846,6 +1846,8 @@
     _liveSentinelCache = null;
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
+    if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     _cashMovesCacheKey = '';
     if (typeof _localKpiRawCache !== 'undefined' && _localKpiRawCache) _localKpiRawCache.clear();
     _FORM_INTEL_CACHE = null;
@@ -5498,8 +5500,7 @@
     return out;
   }
 
-  let _threeLegApCacheKey = '';
-  let _threeLegApCacheVal = null;
+  const _threeLegApCache = new Map();
 
   function normSupPayable(s) {
     const n = norm(s);
@@ -5544,11 +5545,21 @@
     return false;
   }
 
+  const cleanSiteLabel = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+
   function getSupplierPayableLegsInfo(supplierName, companyName) {
     const sn = normSupPayable(supplierName);
     if (!sn) return { row: null, hasQ: false, hasT: false, hasE: false, activeLegs: [], quarryRem: 0, transRem: 0, expRem: 0 };
-    const targetCo = companyName
-      ? (norm(companyName) === 'bbconstruction' ? 'bbconstruction' : (norm(companyName) === 'lions transport' ? 'lionstransport' : (norm(companyName) === 'wtc' ? 'wtc' : STATE.company)))
+    const rawCo = String(companyName || '').trim();
+    const canonCo = rawCo ? canonCompany(rawCo) : '';
+    const targetCo = canonCo
+      ? (norm(canonCo) === 'bbconstruction'
+          ? 'bbconstruction'
+          : (norm(canonCo) === 'lions transport'
+              ? 'lionstransport'
+              : (norm(canonCo) === 'wtc'
+                  ? 'wtc'
+                  : (COMPANY_KEY_BY_NAME[canonCo] || COMPANY_KEY_BY_NAME[rawCo] || canonCo))))
       : STATE.company;
     const brk = computeThreeLegPayablesBreakdown({ company: targetCo, ignorePeriod: true });
     const row = brk && brk.byNorm ? brk.byNorm.get(sn) : null;
@@ -5588,17 +5599,18 @@
 
   function computeThreeLegPayablesBreakdown(opts = {}) {
     ensureMultiIndustrySpineSeeded();
+    const effUser = opts.user || activeUser();
     const recs = SEED.records || {};
     const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
-    const allowed = allowedCompanyNames();
-    const offScope = isOfficialScopeActive();
+    const allowed = allowedCompanyNames(effUser);
+    const offScope = isOfficialScopeActive(effUser);
     const basis = opts.basis || STATE.basis || 'rep';
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const rangeKey = range ? `${range.from || ''}:${range.to || ''}` : 'ALL';
     const partyResolver = (opts && typeof opts.partyResolver === 'function') ? opts.partyResolver : null;
     const partySig = String((opts && opts.partySig) || '');
-    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}|ps:${partySig}`;
-    if (!opts._noMemo && _threeLegApCacheKey === cacheKey && _threeLegApCacheVal) return _threeLegApCacheVal;
+    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}|ps:${partySig}|pr:${partyResolver ? 1 : 0}|${String((effUser && (effUser.id || effUser.email)) || '')}|${String((effUser && effUser.role) || '')}|${String((effUser && effUser.book_scope) || '')}`;
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF && _threeLegApCache.has(cacheKey)) return _threeLegApCache.get(cacheKey);
     const effSup = (rawName, rowCo, dIso) => {
       if (!partyResolver) return rawName;
       const resolved = partyResolver(rawName, rowCo, dIso);
@@ -5916,9 +5928,12 @@
         exp_payees: expPayees
       }
     };
-    if (!opts._noMemo) {
-      _threeLegApCacheKey = cacheKey;
-      _threeLegApCacheVal = out;
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF) {
+      if (_threeLegApCache.size >= 64) {
+        const oldestKey = _threeLegApCache.keys().next().value;
+        if (oldestKey !== undefined) _threeLegApCache.delete(oldestKey);
+      }
+      _threeLegApCache.set(cacheKey, out);
     }
     return out;
   }
@@ -12086,6 +12101,27 @@
     return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn', targetView: targetView || 'raw' } : null;
   }
 
+  function getOverpaidRawSubtabBadge(u) {
+    if (!canViewView('raw', u) || !seatLens(u).expenses || !isAlertRuleEnabled('S20')) return null;
+    const op = typeof getOverpaidPayablesSentinelData === 'function' ? getOverpaidPayablesSentinelData({ user: u }) : null;
+    if (!op || op.restricted || !op.isMfg) return null;
+    const cnt = Number(op.siteOverpaidCount || 0) > 0 ? Number(op.siteOverpaidCount || 0) : Number(op.unpricedSiteCount || 0);
+    if (cnt <= 0) return null;
+    return { text: `${fmtNum(cnt)} Overpaid`, cls: op.siteOverpaidUsd >= op.critUsd ? 'crit' : 'warn', targetView: 'raw' };
+  }
+
+  function getOverpaidApExceptionBadge(u, targetView) {
+    const allowed = targetView ? canViewView(targetView, u) : canViewView('suppliers', u);
+    if (!allowed || !seatLens(u).expenses || !isAlertRuleEnabled('S20')) return null;
+    const op = typeof getOverpaidPayablesSentinelData === 'function' ? getOverpaidPayablesSentinelData({ user: u }) : null;
+    if (!op || op.restricted || op.supOverpaidCount <= 0) return null;
+    return {
+      text: `${fmtNum(op.supOverpaidCount)} Overpaid`,
+      cls: op.supOverpaidUsd >= op.critUsd ? 'crit' : 'warn',
+      targetView: targetView || 'suppliers'
+    };
+  }
+
   let _pendExpCache = null;
   let _pendExpSig = '';
   function getScopedPendingPriceExpenses(opts) {
@@ -12448,8 +12484,8 @@
       }
       return snB || rcB;
     }
-    if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
-    if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
+    if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u) || getOverpaidRawSubtabBadge(u);
+    if (hubId === 'expenses') return getPendingPriceExceptionBadge(u) || getOverpaidApExceptionBadge(u, 'suppliers');
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
     if (hubId === 'warehouse') return getWarehouseExceptionBadge(u);
     if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
@@ -12572,7 +12608,7 @@
       title: HUB_TITLES.raw,
       group: 'commercial',
       tabs: [
-        { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Material & Transport', icon: 'raw', badgeFn: u => getPendingRawPriceExceptionBadge(u, 'raw') },
+        { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Material & Transport', icon: 'raw', badgeFn: u => getPendingRawPriceExceptionBadge(u, 'raw') || getOverpaidRawSubtabBadge(u) },
         { view: 'raw_pricing', label: 'Material & Transport Rates', icon: 'pricing' },
         { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
       ]
@@ -12583,7 +12619,7 @@
       group: 'commercial',
       tabs: [
         { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers', badgeFn: u => getOverpaidApExceptionBadge(u, 'suppliers') },
         { view: 'documents', label: 'Document Vault', icon: 'receipt' },
         { view: 'recurring_expenses', label: 'Recurring Schedules', icon: 'recurring_expenses' }
       ]
@@ -23806,6 +23842,7 @@
     window.MFG_I18N.registerLocale('ar', arLocale || { dir: 'rtl', label: 'العربية', shortLabel: 'عربي', nativeName: 'العربية', bcp47: 'ar-LB' }, {
       'Executive Pulse': 'النبض التنفيذي',
       'Group Revenue': 'إيرادات المجموعة',
+      'Revenue': 'الإيرادات',
       'Operating Profit': 'الربح التشغيلي',
       'Cash & Velocity': 'السيولة والتحصيل',
       'Working Capital': 'رأس المال العامل',
@@ -23826,6 +23863,12 @@
       'Fiduciary Cash': 'السيولة الائتمانية',
       'Client & Carrier': 'ذمم العملاء والشركات',
       'Monthly Performance & Profit Trajectory': 'مسار الأداء الشهري والربحية',
+      'P&L Value Bridge': 'جسر الأرباح والخسائر',
+      'P&L Value Bridge (Ex-VAT)': 'جسر الأرباح والخسائر (دون الضريبة)',
+      'Resort P&L Value Bridge': 'جسر الأرباح والخسائر للمنتجع',
+      'Resort P&L Value Bridge (Ex-VAT)': 'جسر الأرباح والخسائر للمنتجع (دون الضريبة)',
+      'Trading P&L Bridge (Landed Cost Economics)': 'جسر أرباح وخسائر التجارة (اقتصاديات التكلفة الواصلة)',
+      'Real Estate Income & NOI Bridge': 'جسر الإيرادات العقارية وصافي الدخل التشغيلي',
       'Consolidated P&L Value Bridge (Ex-VAT)': 'جسر الأرباح والخسائر الموحّد (دون الضريبة)',
       'Consolidated 6-Industry P&L Bridge': 'جسر الأرباح والخسائر الموحّد للقطاعات الستة',
       'Operating Entities Scorecard': 'بطاقة أداء الشركات العاملة',
@@ -23857,6 +23900,7 @@
     window.MFG_I18N.registerLocale('fr', frLocale || { dir: 'ltr', label: 'Français', shortLabel: 'FR', nativeName: 'Français', bcp47: 'fr-FR' }, {
       'Executive Pulse': 'Synthèse Exécutive',
       'Group Revenue': 'Revenu du Groupe',
+      'Revenue': "Chiffre d'Affaires",
       'Operating Profit': "Résultat d'Exploitation",
       'Cash & Velocity': 'Trésorerie & Recouvrement',
       'Working Capital': 'Besoin en Fonds de Roulement',
@@ -23877,6 +23921,12 @@
       'Fiduciary Cash': 'Trésorerie Fiduciaire',
       'Client & Carrier': 'Clients & Compagnies',
       'Monthly Performance & Profit Trajectory': 'Trajectoire Mensuelle des Revenus & Résultats',
+      'P&L Value Bridge': 'Pont de Valeur P&L',
+      'P&L Value Bridge (Ex-VAT)': 'Pont de Valeur P&L (HT)',
+      'Resort P&L Value Bridge': 'Pont de Valeur P&L du Resort',
+      'Resort P&L Value Bridge (Ex-VAT)': 'Pont de Valeur P&L du Resort (HT)',
+      'Trading P&L Bridge (Landed Cost Economics)': 'Pont de Résultat Négoce (Économie du Coût Rendu)',
+      'Real Estate Income & NOI Bridge': 'Pont des Revenus Immobiliers & NOI',
       'Consolidated P&L Value Bridge (Ex-VAT)': 'Pont de Valeur P&L Consolidé (HT)',
       'Consolidated 6-Industry P&L Bridge': 'Pont P&L Consolidé des 6 Secteurs',
       'Operating Entities Scorecard': 'Tableau des Entités Opérationnelles',
@@ -23945,6 +23995,14 @@
     const lens = seatLens(ovUser);
     const allowedKeys = getAllowedCompanyKeys(ovUser);
     const mfgAllowedKeys = ['wtc', 'bbconstruction', 'lionstransport'].filter(ek => allowedKeys.includes(ek));
+    const isGroupScope = (STATE.company === 'manufacturing-group' || STATE.company === DEMO_COMPANY_KEY) && mfgAllowedKeys.length >= 2;
+    const showScorecard = isGroupScope;
+    const singleCoKey = !isGroupScope
+      ? (mfgAllowedKeys.includes(STATE.company) ? STATE.company : (mfgAllowedKeys[0] || STATE.company))
+      : '';
+    const singleCoName = !isGroupScope
+      ? (COMPANY_BU_MATCH[singleCoKey] || cleanCeoText(COMPANY_LABELS[singleCoKey] || 'Manufacturing'))
+      : '';
     const tb = lens.books ? tbStatus(k) : { ok: true, label: 'Active' };
 
     if (!modelHasLedger()) {
@@ -24009,7 +24067,7 @@
       {
         jump: 'overview_revenue',
         icon: 'sales',
-        k: 'Group Revenue',
+        k: isGroupScope ? 'Group Revenue' : 'Revenue',
         badge: showAvgMoBadge ? `Avg ${fmtUSDk(avgMoSales)}/mo` : `${fmtNum(k.loads)} loads`,
         badgeTone: 'brass',
         v: fmtUSD(salesVal, 0),
@@ -24092,7 +24150,9 @@
     const avgRawUnit = Number(k.avg_raw_cost || (Number(k.raw_qty || 0) > 0 ? rawVal / Number(k.raw_qty) : 0));
     const spreadMultiple = (avgSellUnit > 0 && avgRawUnit > 0) ? (avgSellUnit / avgRawUnit).toFixed(1) + 'x spread' : '';
     const pnlBridge = lens.profit ? {
-      title: lens.tax ? 'Consolidated P&L Value Bridge (Ex-VAT)' : 'Consolidated P&L Value Bridge',
+      title: lens.tax
+        ? (isGroupScope ? 'Consolidated P&L Value Bridge (Ex-VAT)' : 'P&L Value Bridge (Ex-VAT)')
+        : (isGroupScope ? 'Consolidated P&L Value Bridge' : 'P&L Value Bridge'),
       meta: avgSellUnit > 0 ? `$${avgSellUnit.toFixed(2)}/m³ sell${avgRawUnit > 0 ? ' vs $' + avgRawUnit.toFixed(2) + '/m³ raw (' + spreadMultiple + ')' : ''}` : `${fmtNum(k.loads)} dispatches`,
       steps: [
         { label: lens.tax ? 'Net Sales' : 'Total Sales', pctTxt: netSales > 0 ? '100%' : '0%', valHtml: fmtUSDk(lens.tax ? netSales : salesVal), barPct: salesVal > 0 ? 100 : 0, barTone: 'cobalt', sub: `Billed ${fmtUSDk(salesVal)}`, jump: 'sales' },
@@ -24177,7 +24237,9 @@
         tone: tb.ok === false ? 'crit' : 'good',
         icon: 'ledger',
         title: `Double-Entry Books: ${tb.ok === false ? 'Variance ' + tb.label : 'Balanced ($0.00 Variance)'}`,
-        detail: `Lebanese CoA Classes 1-7 reconciled across ${mfgAllowedKeys.length} entities · Trial Balance $0.00 diff`,
+        detail: isGroupScope
+          ? `Lebanese CoA Classes 1-7 reconciled across ${mfgAllowedKeys.length} entities · Trial Balance $0.00 diff`
+          : `Lebanese CoA Classes 1-7 reconciled for ${singleCoName} · Trial Balance $0.00 diff`,
         pill: tb.ok === false ? 'Inspect TB' : 'Audited',
         jump: 'ledger'
       } : {
@@ -24265,7 +24327,8 @@
           ${renderCeoPnlBridge(pnlBridge)}
         </div>
 
-        <div class="panel ceo-entities-panel">
+        <div class="panel ceo-entities-panel${showScorecard ? '' : ' is-single-entity'}">
+          ${showScorecard ? `
           <div class="ph">
             <div>
               <h3>Operating Entities Scorecard</h3>
@@ -24327,7 +24390,7 @@
                 </tr>
               </tfoot>` : ''}
             </table>
-          </div>
+          </div>` : ''}
           ${renderCeoPulseDeck({
             title: 'Executive Pulse',
             attTabLabel: 'Attention',
@@ -26619,6 +26682,25 @@
       whatFn: p => `Flags any seat or gate till reaching ${fmtNum(p.max_shift_voids, 0)}+ voids in one shift/day, any entry voided after thermal printing, or any void followed within ${fmtNum(p.rekey_window_min, 0)} min by a lower active entry for the same party/cashier.`,
       threshFn: p => `${fmtNum(p.max_shift_voids, 0)}+ shift voids · After-print · Re-key <= ${fmtNum(p.rekey_window_min, 0)}m`,
       previewFn: p => `Live Sentinel: Watches operational Void Log + live gate POS voids across ${fmtNum(p.max_shift_voids, 0)}+ same-day actor voids, printed receipts voided later, and lower-amount re-keys within ${fmtNum(p.rekey_window_min, 0)} min.`
+    },
+    {
+      id: 'S20',
+      code: '#32',
+      name: 'Payments Exceeding Accrued Supplier & Site Credit',
+      domain: 'Payables & Procurement',
+      behavior: 'audit',
+      whereLabel: 'Material & Transport, Suppliers & Payables & AI Sentinels',
+      jumpView: 'suppliers',
+      sentinelId: 'S20',
+      lockedActive: false,
+      why: 'Flags any supplier, counterparty, or site where cumulative settlements exceed accrued credit balances or payments post against $0.00 or missing invoice credits, whether entered in the app or loaded from historical workbooks.',
+      params: [
+        { key: 'min_overpaid_usd', label: 'Min Overpayment Flag ($ USD)', def: 100, min: 10, max: 50000, step: 50, unit: 'USD' },
+        { key: 'crit_overpaid_usd', label: 'Critical Exposure Escalation ($ USD)', def: 5000, min: 500, max: 500000, step: 500, unit: 'USD' }
+      ],
+      whatFn: p => `Audits cumulative settlements versus accrued credit across all payable legs and flags any supplier or site overpaid by >= $${fmtNum(p.min_overpaid_usd, 0)} (critical at >= $${fmtNum(p.crit_overpaid_usd, 0)}) or settled against $0.00 unbacked credits.`,
+      threshFn: p => `>= $${fmtNum(p.min_overpaid_usd, 0)} overpaid · Crit >= $${fmtNum(p.crit_overpaid_usd, 0)}`,
+      previewFn: p => `Live Sentinel: Flags suppliers or sites overpaid by $${fmtNum(p.min_overpaid_usd, 0)}+ (critical at $${fmtNum(p.crit_overpaid_usd, 0)}+) and requires a note when posting a settlement past open AP.`
     }
   ];
 
@@ -27741,6 +27823,36 @@
         detail: `${r.method || 'Cash'}${r.reference ? ' · ' + r.reference : ''}`, value: Number(r.amount || 0)
       }))
     },
+    supplier_overpaid_usd: {
+      label: 'Supplier Overpaid Beyond Credit ($)',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'supplier',
+      explain: 'Amount by which cumulative settlements exceed accrued credit for a supplier across payable legs.',
+      formTypes: ['settlement'], whereLabel: 'Settlement Form & AI Sentinels', jumpView: 'sentinels',
+      formTargetFn: () => val('f_supplier'),
+      formValFn: () => {
+        const sup = val('f_supplier');
+        if (!sup) return 0;
+        const brk = computeThreeLegPayablesBreakdown({ company: val('f_company') || STATE.company, ignorePeriod: true });
+        const row = brk && brk.byNorm ? brk.byNorm.get(normSupPayable(sup)) : null;
+        if (row) {
+          const qO = row.quarry_rem < -0.005 ? -row.quarry_rem : 0;
+          const tO = row.trans_rem < -0.005 ? -row.trans_rem : 0;
+          const eO = (row.exp_rem_ttc < -0.005 && row.exp_rem_usd < -0.005) ? -row.exp_rem_ttc : 0;
+          return round2(Math.max(qO + tO + eO, 0));
+        }
+        const bal = openApBalance(sup);
+        return bal != null && bal < 0 ? round2(-bal) : 0;
+      },
+      recordsFn: () => {
+        const op = typeof getOverpaidPayablesSentinelData === 'function' ? getOverpaidPayablesSentinelData() : null;
+        return ((op && op.rows) || []).map(r => ({
+          id: r.rid || r.supplier, rid: r.rid || r.supplier, rkey: 'suppliers',
+          date: r.last_tx || SEED_DATE, company: r.company || 'WTC',
+          target: r.supplier, party: r.supplier,
+          detail: `${r.leg_label} · ${r.flag_type}`, value: Number(r.overpaid_usd || 0)
+        }));
+      }
+    },
     sales_total_usd: {
       label: 'Single Sales Ticket Total ($)',
       unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
@@ -28644,6 +28756,8 @@
 
   let _customAlertEvalCache = null;
   let _sentinelRawItemsCache = null;
+  const _opSentinelCache = new Map();
+  let _opSentinelScans = 0;
   const _txRepGapWeakMap = new WeakMap();
   let _linkedVatRefsCache = { rev: -1, len: -1, set: null };
 
@@ -28652,6 +28766,8 @@
     _liveSentinelCache = null;
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
+    if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     _ticketAuditCache = null;
     _meterGuardCacheKey = '';
     _meterGuardCacheVal = null;
@@ -28764,6 +28880,8 @@
   function invalidatePartyHygieneCaches() {
     STATE._partyHygieneRev = (STATE._partyHygieneRev || 0) + 1;
     _stmtLockCache = null;
+    if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     try {
       const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
       if (fIdx && fIdx._partyTypoPools) fIdx._partyTypoPools.clear();
@@ -29114,7 +29232,7 @@
       : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
     let indSentByRule = null;
 
-    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON']);
+    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON', 'S20']);
     const scopedBuiltInCatalog = isMfgScope
       ? ALERT_RULE_CATALOG
       : ALERT_RULE_CATALOG.filter(r => universalRuleIds.has(r.id));
@@ -29126,7 +29244,7 @@
       const whyTxt = getAlertRuleWhyText(r.id);
       const snItem = r.sentinelId ? sentById.get(r.sentinelId) : null;
       const isFlagged = Boolean(enabled && snItem && snItem.severity !== 'ok');
-      const cleanWhere = isMfgScope ? r.whereLabel : String(r.whereLabel || '').replace(/Sales,\s*Raw\s*&\s*Fuel/gi, 'Operational & Finance');
+      const cleanWhere = isMfgScope ? r.whereLabel : String(r.whereLabel || '').replace(/Sales,\s*Raw\s*&\s*Fuel/gi, 'Operational & Finance').replace(/Material\s*&\s*Transport,\s*/gi, '');
       const rawWhat = r.whatFn(p);
       const cleanWhat = isMfgScope ? rawWhat : String(rawWhat || '').replace(/,\s*(Quarry|Material Intake),/g, ', Procurement,').replace(/\b(Quarry|Material Intake)\b/g, 'Procurement');
       const cleanWhy = isMfgScope ? whyTxt : String(whyTxt || '').replace(/weighbridge tickets/gi, 'operational vouchers').replace(/\b(Quarry|Material Intake)\b/g, 'Procurement');
@@ -30241,7 +30359,12 @@
       })()
       : 'x';
     const swGeoSig = isNonMfgSn ? 'x' : _geoWearRevToken();
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}`;
+    const opSnOff = !isAlertRuleEnabled('S20');
+    const opSn = opSnOff ? null : getOverpaidPayablesSentinelData();
+    const opSnSig = opSnOff
+      ? 'off'
+      : (opSn ? `${opSn.restricted ? 'r' : '1'}:${opSn.supOverpaidCount}:${opSn.siteOverpaidCount}:${opSn.unpricedLoadsCount}:${opSn.supOverpaidUsd}:${opSn.siteOverpaidUsd}:${opSn.minUsd}:${opSn.critUsd}` : 'x');
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}|op:${opSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -30269,6 +30392,8 @@
         buildIndustrySentinelItems(activeIndForSn).forEach(x => {
           if (x && !x.isCustom) rawItems.push(x);
         });
+        const opIndItem = buildOverpaidSentinelItem(opSnOff, opSn, scope, activeIndForSn);
+        if (opIndItem) rawItems.push(opIndItem);
       } else {
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
@@ -30629,6 +30754,8 @@
       if ((canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.buildVoidSentinelItem === 'function') {
         rawItems.push(window.MFG_VOID_LOG.buildVoidSentinelItem('Manufacturing', { id: 'S19', ruleId: 'S19', company: scope }));
       }
+      const opMfgItem = buildOverpaidSentinelItem(opSnOff, opSn, scope, 'Manufacturing');
+      if (opMfgItem) rawItems.push(opMfgItem);
 
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
       const snAllowedCos = allowedCompanyNames();
@@ -31761,18 +31888,43 @@
       ${(canReviewSentinels() || isOwner() || isDemoScopeActive()) ? renderGeoAuditPanelHtml('sentinelGeoAuditCard', 'geoAuditFilter', { industry: isNonMfgSn ? activeInd : 'all', company: isNonMfgSn ? 'all' : STATE.company }) : ''}
 
       ${renderIndustrySentinelDetailPanel()}
-
-      ${isNonMfgSn ? (customHitRows.length ? `
-      <div class="mini-table-grid">
-        ${miniTable('CUSTOM ALERT EXCEPTIONS', customHitRows, [
-          { label: 'Alert', key: 'rule_name' }, { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
-          { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
-          { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
-        ], 'snCustomAlerts')}
-      </div>` : '') : `
+      ${(() => {
+        const opSnData = (isAlertRuleEnabled('S20') && seatLens().expenses) ? getOverpaidPayablesSentinelData() : null;
+        const hasOpSup = Boolean(opSnData && !opSnData.restricted && opSnData.rows && opSnData.rows.length > 0);
+        const hasOpSites = Boolean(opSnData && !opSnData.restricted && !isNonMfgSn && opSnData.siteRows && opSnData.siteRows.length > 0);
+        const opSupTableHtml = hasOpSup ? miniTable('SUPPLIERS PAID ABOVE ACCRUED CREDIT', opSnData.rows, [
+          { label: 'Supplier', key: 'supplier', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Leg', key: 'leg_label' },
+          { label: 'Flag', key: 'flag_type', fmt: (v, r) => `<span class="badge ${r && r.flag_type === 'Zero Credit Settled' ? 'badge-err' : 'badge-warn'}">${esc(v || 'Overpaid Leg AP')}</span>` },
+          { label: 'Accrued ($)', key: 'accrued_usd', r: true, fmt: usd2 },
+          { label: 'Paid ($)', key: 'paid_usd', r: true, fmt: usd2 },
+          { label: 'Overpaid ($)', key: 'overpaid_usd', r: true, fmt: usd2 }
+        ], 'snOverpaidAp') : '';
+        const opSiteTableHtml = hasOpSites ? miniTable('SITES WITH OVERPAYMENTS OR UNPRICED LOADS', opSnData.siteRows, [
+          { label: 'Site', key: 'site', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Flag', key: 'flag_type', fmt: (v, r) => `<span class="badge ${r && r.flag_type === 'Settlement · No Tickets' ? 'badge-err' : 'badge-warn'}">${esc(v || 'Overpaid Site')}</span>` },
+          { label: 'Qty (m³)', key: 'mat_qty', r: true, fmt: v => `${fmtNum(v || 0, 0)} m³` },
+          { label: 'Total Credit', key: 'total_credit', r: true, fmt: usd2 },
+          { label: 'Paid ($)', key: 'paid', r: true, fmt: usd2 },
+          { label: 'Overpaid ($)', key: 'overpaid_usd', r: true, fmt: usd2 }
+        ], 'snOverpaidSites') : '';
+        if (isNonMfgSn) {
+          const customTblHtml = customHitRows.length ? miniTable('CUSTOM ALERT EXCEPTIONS', customHitRows, [
+            { label: 'Alert', key: 'rule_name' }, { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
+            { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
+            { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
+          ], 'snCustomAlerts') : '';
+          return (opSupTableHtml || customTblHtml)
+            ? `<div class="mini-table-grid">${opSupTableHtml}${customTblHtml}</div>`
+            : '';
+        }
+        return `
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
+        ${opSupTableHtml}
+        ${opSiteTableHtml}
         ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS', overdueArRows || [], [
           { label: 'Customer', key: 'customer' }, { label: 'Open AR ($)', key: 'ar_balance', r: true, fmt: usd2 },
           { label: 'Total Overdue ($)', key: 'ar_overdue', r: true, fmt: usd2 }, { label: 'Overdue > 60d ($)', key: 'ar_60_plus', r: true, fmt: usd2 },
@@ -31900,7 +32052,7 @@
           { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
         ], 'snCustomAlerts') : ''}
       </div>
-      ${moduleAnalyticsHtml('sentinels')}`}
+      ${moduleAnalyticsHtml('sentinels')}`; })()}
     `;
   }
 
@@ -32764,15 +32916,17 @@
       const jvSiteKeys = new Set();
       (SEED.records.sites || []).forEach(st => {
         if (!st || !st.name) return;
-        const sk = norm(st.name);
-        siteCanon.set(sk, String(st.name).trim());
-        if (st.is_jv || /\bjv\b/i.test(st.name)) jvSiteKeys.add(sk);
+        const lbl = cleanSiteLabel(st.name);
+        const sk = norm(lbl);
+        if (sk && !siteCanon.has(sk)) siteCanon.set(sk, lbl);
+        if (st.is_jv || /\bjv\b/i.test(lbl)) jvSiteKeys.add(sk);
       });
       (m.sites || []).forEach(st => {
         if (!st || !st.Site) return;
-        const sk = norm(st.Site);
-        if (!siteCanon.has(sk)) siteCanon.set(sk, String(st.Site).trim());
-        if (st.JV === 'Yes' || /\bjv\b/i.test(st.Site)) jvSiteKeys.add(sk);
+        const lbl = cleanSiteLabel(st.Site);
+        const sk = norm(lbl);
+        if (sk && !siteCanon.has(sk)) siteCanon.set(sk, lbl);
+        if (st.JV === 'Yes' || /\bjv\b/i.test(lbl)) jvSiteKeys.add(sk);
       });
 
       const supAgg = new Map();
@@ -32800,7 +32954,7 @@
 
       const siteAgg = new Map();
       const ensureSite = rawSite => {
-        const label = String(rawSite || '').trim() || '(General / Multi-Site)';
+        const label = cleanSiteLabel(rawSite) || '(General / Multi-Site)';
         const sk = norm(label);
         let o = siteAgg.get(sk);
         if (!o) {
@@ -32813,6 +32967,8 @@
             separate_loads: 0,
             sales_loads: 0,
             sales_haul_loads: 0,
+            unpriced_raw_loads: 0,
+            own_mat_loads: 0,
             mat_qty: 0,
             mat_credit: 0,
             quarry_haul: 0,
@@ -32827,15 +32983,17 @@
 
       for (let i = 0; i < scopeRaws.length; i++) {
         const r = scopeRaws[i];
+        const rSgn = rawSign(r);
+        if (rSgn === 0 || norm(r.product) === 'remove') continue;
         const rm = String(r.method || 'Credit').trim();
-        if (rm === 'Remove' || rm === 'Free') continue;
-        const q = ticketProductQty(r);
-        const mat = rm === 'Cash' ? 0 : Number(r.cost || 0);
-        const haul = rm === 'Cash' ? 0 : Number(r.trans_cost || 0);
+        const isCashRaw = rm === 'Cash' || rm === 'C Return' || rm === 'Cash Return';
+        const q = rSgn * ticketProductQty(r);
+        const mat = isCashRaw ? 0 : (rSgn * Number(r.cost || 0));
+        const haul = isCashRaw ? 0 : (rSgn * Number(r.trans_cost || 0));
         if (r.site_owner || mat !== 0) {
           const so = ensureSup(r.site_owner || '(Own Material / Unassigned)');
           if (so) {
-            so.raw_loads += 1;
+            if (rSgn > 0) so.raw_loads += 1;
             so.mat_qty += q;
             so.mat_credit += mat;
           }
@@ -32843,19 +33001,29 @@
         if (r.truck_owner || haul !== 0) {
           const ho = ensureSup(r.truck_owner || '(Own Fleet / Unassigned)');
           if (ho) {
-            ho.haul_loads += 1;
+            if (rSgn > 0) ho.haul_loads += 1;
             ho.quarry_haul += haul;
           }
           if (r.truck_owner) scopeHaulers.push(ho ? ho.supplier : r.truck_owner);
         } else if (r.transport_by === 'Third-party truck' && r.truck_owner) {
           const ho = ensureSup(r.truck_owner);
-          if (ho) ho.haul_loads += 1;
+          if (ho && rSgn > 0) ho.haul_loads += 1;
           scopeHaulers.push(ho ? ho.supplier : r.truck_owner);
         }
         const st = ensureSite(r.site || '(Unassigned Site)');
-        st.raw_loads += 1;
-        if (isBundledRawTicket(r)) st.bundled_loads += 1;
-        else if (!isReturnTicket(r) && !_QUARRY_NON_AGG_RE.test(String(r.product || '').trim())) st.separate_loads += 1;
+        if (rSgn > 0) st.raw_loads += 1;
+        const soNorm = normSupPayable(r.site_owner);
+        const coNorm = normSupPayable(r.company);
+        const isOwnMat = !soNorm || soNorm === 'excluded' || soNorm === 'none' || soNorm === 'wtc' || soNorm === coNorm;
+        if (isOwnMat && rSgn > 0) st.own_mat_loads += 1;
+        if (rm === 'Credit' && Number(r.cost || 0) === 0 && !isOwnMat) {
+          st.unpriced_raw_loads += 1;
+        }
+        if (isBundledRawTicket(r)) {
+          if (rSgn > 0) st.bundled_loads += 1;
+        } else if (rSgn > 0 && !_QUARRY_NON_AGG_RE.test(String(r.product || '').trim())) {
+          st.separate_loads += 1;
+        }
         st.mat_qty += q;
         st.mat_credit += mat;
         st.quarry_haul += haul;
@@ -32891,6 +33059,7 @@
 
       for (let i = 0; i < scopeSettles.length; i++) {
         const s = scopeSettles[i];
+        if (!s || s.wb_lbp_paid != null) continue;
         const mth = String(s.method || '').trim();
         if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission') continue;
         const notes = String(s.notes || '');
@@ -32900,13 +33069,13 @@
         const pm = notes.match(/Product:\s*([^·\n]+)/i);
         const prod = pm ? pm[1].trim() : '';
         const sm = notes.match(/Site:\s*([^·\n]+)/i);
-        const siteTag = sm ? sm[1].trim() : '';
+        const siteTag = sm ? cleanSiteLabel(sm[1]) : '';
         const legHint = String(s.payable_leg || s.leg || '').trim();
         const nk = normSupKey(s.supplier);
         const existingSup = nk ? supAgg.get(nk) : null;
         const isStockSettle =
           /Raw Material Settlements/i.test(cat) ||
-          /material|quarry|haul/i.test(legHint) ||
+          /material|quarry|haul|transport/i.test(legHint) ||
           (!cat && existingSup && (existingSup.mat_credit !== 0 || existingSup.quarry_haul !== 0 || existingSup.sales_haul !== 0 || existingSup.mat_qty > 0));
         if (!isStockSettle) continue;
         const amt = Number(s.amount || 0) + Number(s.discount || 0);
@@ -32955,6 +33124,7 @@
         o.has_cust_haul = Boolean(o.sales_haul !== 0 || o.sales_haul_loads > 0);
         o.is_bundled_only = Boolean(!o.is_jv && o.bundled_loads > 0 && o.separate_loads === 0 && Math.abs(o.quarry_haul) < 0.005);
         o.is_mixed_bundled = false;
+        o.is_own_material = Boolean(o.raw_loads > 0 && o.own_mat_loads === o.raw_loads && Math.abs(o.mat_credit) < 0.005);
         o.site_kind = o.is_jv
           ? 'JV 50/50'
           : (o.has_raw && o.has_cust_haul
@@ -32962,6 +33132,7 @@
               : (o.is_bundled_only
                   ? 'Delivery Included'
                   : (o.has_raw ? 'Source Site' : (o.has_cust_haul ? '3P Customer Trans' : 'Settlement'))));
+        o.is_overpaid_or_unbacked = Boolean(o.remaining < -0.005 || o.unpriced_raw_loads > 0 || (o.site_kind === 'Settlement' && o.paid > 0.005));
         _siteAllList.push(o);
       });
 
@@ -33054,20 +33225,23 @@
 
     // ---- 3) Site-Level Material, Supplier-Site Haul, Customer-Site Haul, Paid & Remaining ----
     const siteAllList = rawRecon.siteAllList;
-    if (!siteAllList._counts) {
+    if (!siteAllList._counts || siteAllList._counts.overpaid == null) {
       siteAllList._counts = {
         src: siteAllList.filter(s => s.has_raw).length,
         bundled: siteAllList.filter(s => s.is_bundled_only || s.is_mixed_bundled).length,
-        custHaul: siteAllList.filter(s => s.has_cust_haul).length
+        custHaul: siteAllList.filter(s => s.has_cust_haul).length,
+        overpaid: siteAllList.filter(s => s.is_overpaid_or_unbacked).length
       };
     }
     const srcSiteCnt = siteAllList._counts.src;
     const bundledSiteCnt = siteAllList._counts.bundled || 0;
     const custHaulSiteCnt = siteAllList._counts.custHaul;
+    const overpaidSiteCnt = siteAllList._counts.overpaid || 0;
     const rawSitePred = s => {
       if (STATE.rawSiteFilter === 'source') return s.has_raw;
       if (STATE.rawSiteFilter === 'bundled') return s.is_bundled_only || s.is_mixed_bundled;
       if (STATE.rawSiteFilter === 'custhaul') return s.has_cust_haul;
+      if (STATE.rawSiteFilter === 'overpaid') return Boolean(s.is_overpaid_or_unbacked);
       return true;
     };
     const sitePool = !qRaw
@@ -33101,8 +33275,38 @@
     const fmtRemCell = v => {
       if (Math.abs(v) < 0.005) return '<span class="muted">$0.00</span>';
       if (v > 0) return `<strong style="color:var(--crit)" title="Net payable owed to supplier">${fmtUSD(v, 2)}</strong>`;
-      return `<strong style="color:var(--ok)" title="Net advance / overpayment credit with supplier">${fmtUSD(v, 2)}</strong>`;
+      return `<strong style="color:${v <= -5000 ? 'var(--crit)' : 'var(--warn)'}" data-ui-tip="Paid exceeds accrued credit (overpayment or unbacked settlement)">${fmtUSD(v, 2)}</strong>`;
     };
+    const opRawAlert = (isAlertRuleEnabled('S20') && seatLens().expenses && typeof getOverpaidPayablesSentinelData === 'function')
+      ? getOverpaidPayablesSentinelData()
+      : null;
+    const showRawOpBar = Boolean(opRawAlert && !opRawAlert.restricted && (opRawAlert.supOverpaidCount > 0 || opRawAlert.siteOverpaidCount > 0 || opRawAlert.unpricedSiteCount > 0));
+    const rawOpParts = [];
+    if (opRawAlert && opRawAlert.supOverpaidCount > 0) {
+      rawOpParts.push(`${fmtNum(opRawAlert.supOverpaidCount)} suppliers paid ${fmtUSD(opRawAlert.supOverpaidUsd, 2)} above accrued credit`);
+    }
+    if (opRawAlert && opRawAlert.siteOverpaidCount > 0) {
+      rawOpParts.push(`${fmtNum(opRawAlert.siteOverpaidCount)} sites overpaid (${fmtUSD(opRawAlert.siteOverpaidUsd, 0)})`);
+    }
+    rawOpParts.push(`${fmtNum(overpaidSiteCnt)} flagged sites in scope`);
+    if (opRawAlert && opRawAlert.unpricedLoadsCount > 0) {
+      rawOpParts.push(`${fmtNum(opRawAlert.unpricedLoadsCount)} external $0 raw loads`);
+    }
+    const rawOverpaidBarHtml = showRawOpBar ? `
+      <div class="overpaid-ap-alert-bar" id="rawOverpaidAlertBar">
+        <div class="overpaid-ap-alert-main">
+          <span class="overpaid-ap-alert-ico">${ic('alert')}</span>
+          <div class="overpaid-ap-alert-copy">
+            <strong>OVERPAID &amp; UNBACKED MATERIAL / TRANSPORT PAYMENTS FLAGGED (S20)</strong>
+            <span>${esc(rawOpParts.join(' · '))}</span>
+          </div>
+        </div>
+        <div class="overpaid-ap-alert-actions">
+          ${overpaidSiteCnt > 0 ? `<button type="button" class="btn btn-ghost-bar" data-raw-filter-overpaid="1">Filter Overpaid Sites (${fmtNum(overpaidSiteCnt)})</button>` : ''}
+          ${canViewView('suppliers') ? `<button type="button" class="btn btn-ghost-bar" data-ap-jump-overpaid="1">Inspect Overpaid Suppliers</button>` : ''}
+          ${canViewView('sentinels') ? `<button type="button" class="btn btn-primary" data-open-sn-overpaid="1">Open Sentinel Audit</button>` : ''}
+        </div>
+      </div>` : '';
 
     const rawVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderRawVisualsSection === 'function')
       ? window.MFG_PBI.renderRawVisualsSection({
@@ -33152,15 +33356,16 @@
             const qtRem = round2(qRem + tRem);
             const qtCred = round2(legBrk.totals.quarry_cr + legBrk.totals.trans_cr);
             const qtPaid = round2(legBrk.totals.quarry_pd + legBrk.totals.trans_pd);
+            const isQtOver = qtRem < -0.005;
             return insightCard({
               label: 'Material & Transport Remaining',
-              badge: `${fmtNum(legBrk.totals.quarry_payees + legBrk.totals.trans_payees)} Payees`,
-              badgeCls: qtRem > 0 ? 'warn' : 'good',
+              badge: isQtOver ? 'Overpaid' : `${fmtNum(legBrk.totals.quarry_payees + legBrk.totals.trans_payees)} Payees`,
+              badgeCls: isQtOver ? 'crit' : (qtRem > 0 ? 'warn' : 'good'),
               val: `${fmtUSD(qtRem, 2)}`,
-              valCls: qtRem > 0 ? 'amber' : 'emerald',
-              pct: qtCred > 0 ? Math.min(100, Math.round((qtPaid / qtCred) * 100)) : 100,
+              valCls: (isQtOver || qtRem > 0) ? 'amber' : 'emerald',
+              pct: qtRem > 0 && qtCred > 0 ? Math.min(100, Math.round((qtPaid / qtCred) * 100)) : 100,
               sub: `Material <b>${fmtUSD(qRem, 2)}</b> · Transport <b>${fmtUSD(tRem, 2)}</b>`,
-              tone: qtRem > 0 ? 'amber' : 'emerald'
+              tone: (isQtOver || qtRem > 0) ? 'amber' : 'emerald'
             });
           })()}
           ${insightCard({
@@ -33177,6 +33382,8 @@
           ${appPill('raw_purchases', 'total', 'receipts')}
         </div>
       </div>
+
+      ${rawOverpaidBarHtml}
 
       <div class="panel-card" id="rawPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
@@ -33295,7 +33502,7 @@
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>SITE MATERIAL, TRANSPORT &amp; REMAINING EXPENSES</span></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${siteChip('expense', `All Payable Sites (${siteAllList.length})`)}${siteChip('source', `Source Sites (${srcSiteCnt})`)}${siteChip('bundled', `Delivery Included (${bundledSiteCnt})`)}${siteChip('custhaul', `3P Customer Trans (${custHaulSiteCnt})`)}</div>
+              <div class="chip-bar">${siteChip('expense', `All Payable Sites (${siteAllList.length})`)}${siteChip('source', `Source Sites (${srcSiteCnt})`)}${siteChip('bundled', `Delivery Included (${bundledSiteCnt})`)}${siteChip('custhaul', `3P Customer Trans (${custHaulSiteCnt})`)}${siteChip('overpaid', `Overpaid / Unbacked (${overpaidSiteCnt})`)}</div>
               <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
                 <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
                 ${canViewView('raw_jv') ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="raw_jv">JV &amp; Partnerships</button>' : ''}
@@ -33317,7 +33524,7 @@
                 ${shownSites.map(s => `
                   <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site, s.site_kind === '3P Customer Trans' ? 'sales' : 'raw') || {}).id || s.site)}">
                     <td>${s.site.startsWith('(') ? esc(s.site) : relLink('sites', s.site, s.site, true)}</td>
-                    <td><span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span></td>
+                    <td>${(s.site_kind === 'Settlement' && s.paid > 0.005) ? `<span class="badge badge-err" data-ui-tip="Settlements paid against this site with $0.00 material or transport tickets">Settlement · No Tickets</span>` : `<span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span>`}${s.unpriced_raw_loads > 0 ? ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(s.unpriced_raw_loads)})</span>` : (s.is_own_material ? ` <span class="badge badge-neutral" data-ui-tip="Company-owned quarry material ($0.00 external supplier credit expected)">Own Material</span>` : '')}</td>
                     <td class="r">${s.mat_qty > 0 ? `${fmtNum(s.mat_qty, 0)} m³` : '—'}</td>
                     <td class="r">${s.mat_credit !== 0 ? fmtUSD(s.mat_credit, 2) : '—'}</td>
                     <td class="r">${s.quarry_haul !== 0 ? fmtUSD(s.quarry_haul, 2) : (s.is_bundled_only ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivery is included in Material Credit ($0.00 separate transport charge)">Included</span>' : '—')}</td>
@@ -43045,13 +43252,16 @@
 
     const seenSupSet = new Set();
     const legApBrk = computeThreeLegPayablesBreakdown();
+    const opApData = (isAlertRuleEnabled('S20') && seatLens().expenses && typeof getOverpaidPayablesSentinelData === 'function')
+      ? getOverpaidPayablesSentinelData()
+      : null;
     const supAll = [];
     getScopedModelSuppliers(m).forEach(s => {
       const sk = norm(s.Supplier);
       const legRow = legApBrk.byNorm.get(normSupPayable(s.Supplier)) || null;
       const cashAmt = round2(cashExpBySup.get(sk) || 0);
       if (sk) seenSupSet.add(sk);
-      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
+      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005 || Boolean(opApData && opApData.bySupNorm && opApData.bySupNorm.has(normSupPayable(s.Supplier)));
       if (!keep) return;
       supAll.push(Object.assign({}, s, {
         cash_expense: cashAmt,
@@ -43093,9 +43303,15 @@
       });
     });
 
+    const overpaidSupSet = new Set(supAll.filter(s => {
+      if (Number(s.ap_balance || 0) < -0.005) return true;
+      return Boolean(opApData && opApData.bySupNorm && opApData.bySupNorm.has(normSupPayable(s.Supplier)));
+    }).map(s => normSupPayable(s.Supplier)).filter(Boolean));
+    const overpaidSupCnt = overpaidSupSet.size;
     const sups = sortRows(supAll.filter(s => {
       if (q && !String(s.Supplier || '').toLowerCase().includes(q) && !String(s.role || '').toLowerCase().includes(q)) return false;
       if (STATE.chipFilter === 'open_ap') return Number(s.ap_balance || 0) > 0;
+      if (STATE.chipFilter === 'overpaid_ap') return overpaidSupSet.has(normSupPayable(s.Supplier));
       if (STATE.chipFilter === 'mat_leg') return Number(s.ap_material || 0) > 0;
       if (STATE.chipFilter === 'haul_leg') return Number(s.ap_haulage || 0) > 0;
       if (STATE.chipFilter === 'exp_leg') return Number(s.ap_expense || 0) > 0;
@@ -43119,6 +43335,7 @@
       if (STATE.chipFilter === 'payments_only') return settlementKind(r) === 'Payment';
       if (STATE.chipFilter === 'vat_paid') return settlementKind(r) === 'VAT paid';
       if (STATE.chipFilter === 'open_ap') return openApSupSet.has(norm(r.supplier));
+      if (STATE.chipFilter === 'overpaid_ap') return overpaidSupSet.has(normSupPayable(r.supplier));
       if (STATE.chipFilter === 'mat_leg') return matLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'haul_leg') return haulLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'exp_leg') return expLegSupSet.has(norm(r.supplier));
@@ -43232,11 +43449,35 @@
         </div>
       </div>
 
+      ${(opApData && !opApData.restricted && (opApData.supOverpaidCount > 0 || overpaidSupCnt > 0)) ? (() => {
+        const apDispUsd = opApData.supOverpaidUsd > 0
+          ? opApData.supOverpaidUsd
+          : round2(supAll.filter(s => Number(s.ap_balance || 0) < -0.005).reduce((a, s) => a + Math.abs(Number(s.ap_balance || 0)), 0));
+        const apBarParts = [`${fmtNum(opApData.supOverpaidCount || overpaidSupCnt)} accounts overpaid totaling ${fmtUSD(apDispUsd, 2)}`];
+        if (opApData.matOverpaidUsd > 0) apBarParts.push(`Material ${fmtUSD(opApData.matOverpaidUsd, 0)}`);
+        if (opApData.transOverpaidUsd > 0) apBarParts.push(`Transport ${fmtUSD(opApData.transOverpaidUsd, 0)}`);
+        if (opApData.expOverpaidUsd > 0) apBarParts.push(`Expenses ${fmtUSD(opApData.expOverpaidUsd, 0)}`);
+        return `
+      <div class="overpaid-ap-alert-bar" id="apOverpaidAlertBar">
+        <div class="overpaid-ap-alert-main">
+          <span class="overpaid-ap-alert-ico">${ic('alert')}</span>
+          <div class="overpaid-ap-alert-copy">
+            <strong>SUPPLIER PAYMENTS EXCEEDING ACCRUED CREDIT (S20)</strong>
+            <span>${esc(apBarParts.join(' · '))}</span>
+          </div>
+        </div>
+        <div class="overpaid-ap-alert-actions">
+          <button type="button" class="btn btn-ghost-bar" data-chip="overpaid_ap">Filter Overpaid (${fmtNum(overpaidSupCnt)})</button>
+          ${canViewView('sentinels') ? `<button type="button" class="btn btn-primary" data-open-sn-overpaid="1">Open Sentinel Audit</button>` : ''}
+        </div>
+      </div>`;
+      })() : ''}
+
       <div class="panel-card" id="settlePanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, supplier, hauler, vendor, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Transport Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${renderDateShiftChipsHtml(settleShiftStats)}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${overpaidSupCnt > 0 ? chip('overpaid_ap', `Overpaid (${overpaidSupCnt})`) : ''}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Transport Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${renderDateShiftChipsHtml(settleShiftStats)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="apPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="suppliers" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
@@ -43327,7 +43568,7 @@
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>UNIFIED SUPPLIER, HAULER &amp; VENDOR 3-LEG AP + CASH SPEND SUB-LEDGER (${fmtNum(sups.length)} COUNTERPARTIES)</span></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${chip('all', `All (${supAll.length})`)}${chip('open_ap', `Open AP (${openSupCount})`)}${chip('mat_leg', `Leg 1 Material (${matLegSupSet.size})`)}${chip('haul_leg', `Leg 2 Transport (${haulLegSupSet.size})`)}${chip('exp_leg', `Leg 3 Credit Exp. (${expLegSupSet.size})`)}${chip('cash_vendor', `Cash Vendors (${cashSupSet.size})`)}${chip('iva_sup', `IVA (${ivaSupCount})`)}</div>
+              <div class="chip-bar">${chip('all', `All (${supAll.length})`)}${chip('open_ap', `Open AP (${openSupCount})`)}${overpaidSupCnt > 0 ? chip('overpaid_ap', `Overpaid (${overpaidSupCnt})`) : ''}${chip('mat_leg', `Leg 1 Material (${matLegSupSet.size})`)}${chip('haul_leg', `Leg 2 Transport (${haulLegSupSet.size})`)}${chip('exp_leg', `Leg 3 Credit Exp. (${expLegSupSet.size})`)}${chip('cash_vendor', `Cash Vendors (${cashSupSet.size})`)}${chip('iva_sup', `IVA (${ivaSupCount})`)}</div>
               <span class="panel-meta" style="display:flex;gap:6px;align-items:center">${exportBtn('supPanel', 'Unified_Supplier_3Leg_AP_And_Cash')}</span>
             </div>
           </div>
@@ -43358,7 +43599,7 @@
                     <td class="r">${s.cash_expense ? fmtUSD(s.cash_expense, 0) : '—'}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_on_credit, 0)}</strong></td>
                     <td class="r">${fmtUSD(s.ap_settled != null ? s.ap_settled : s.settlements_paid, 0)}</td>
-                    <td class="r" data-ui-tip="${esc(`Material Rem: ${fmtUSD(s.quarry_rem || 0, 2)} · Transport Rem: ${fmtUSD(s.trans_rem || 0, 2)} · Expense Ex-VAT: ${fmtUSD(s.exp_rem_usd || 0, 2)} · IVA LBP: ${fmtNum(s.exp_rem_lbp || 0, 0)} LL · Expense Incl. VAT: ${fmtUSD(s.exp_rem_ttc || 0, 2)}`)}"><strong>${fmtUSD(s.ap_balance, 2)}</strong></td>
+                    <td class="r" data-ui-tip="${esc(`Material Rem: ${fmtUSD(s.quarry_rem || 0, 2)} · Transport Rem: ${fmtUSD(s.trans_rem || 0, 2)} · Expense Ex-VAT: ${fmtUSD(s.exp_rem_usd || 0, 2)} · IVA LBP: ${fmtNum(s.exp_rem_lbp || 0, 0)} LL · Expense Incl. VAT: ${fmtUSD(s.exp_rem_ttc || 0, 2)}`)}">${(Number(s.ap_balance || 0) < -0.005 || (opApData && opApData.bySupNorm && opApData.bySupNorm.has(normSupPayable(s.Supplier)))) ? `<strong style="color:${Number(s.ap_balance || 0) < -0.005 ? 'var(--crit)' : 'var(--warn)'}">${fmtUSD(s.ap_balance, 2)}</strong> <span class="badge badge-warn">Overpaid</span>` : `<strong>${fmtUSD(s.ap_balance, 2)}</strong>`}</td>
                   </tr>`;
                 }).join('') || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
                 ${showMoreRow('sups', sups.length, supColCount)}
@@ -43839,6 +44080,27 @@
       </div>
 
       ${(pendingPriceCnt > 0 || STATE.chipFilter === 'pending_price') ? renderPendingPriceQueuePanel(base.filter(isPendingPriceExpense)) : ''}
+      ${(() => {
+        if (!isAlertRuleEnabled('S20') || !seatLens().expenses || typeof getOverpaidPayablesSentinelData !== 'function') return '';
+        const opExp = getOverpaidPayablesSentinelData();
+        if (!opExp || opExp.restricted || opExp.isMfg || opExp.supOverpaidCount <= 0) return '';
+        const leadExp = opExp.rows[0] || null;
+        const expBarParts = [`${fmtNum(opExp.supOverpaidCount)} suppliers paid ${fmtUSD(opExp.supOverpaidUsd, 2)} above accrued credit`];
+        if (leadExp) expBarParts.push(`Top: ${leadExp.supplier} (${fmtUSD(leadExp.overpaid_usd, 0)})`);
+        return `
+      <div class="overpaid-ap-alert-bar" id="expOverpaidAlertBar">
+        <div class="overpaid-ap-alert-main">
+          <span class="overpaid-ap-alert-ico">${ic('alert')}</span>
+          <div class="overpaid-ap-alert-copy">
+            <strong>SUPPLIER PAYMENTS EXCEEDING ACCRUED CREDIT (S20)</strong>
+            <span>${esc(expBarParts.join(' · '))}</span>
+          </div>
+        </div>
+        <div class="overpaid-ap-alert-actions">
+          ${canViewView('sentinels') ? `<button type="button" class="btn btn-primary" data-open-sn-overpaid="1">Open Sentinel Audit</button>` : ''}
+        </div>
+      </div>`;
+      })()}
 
       <div class="panel-card" id="expPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
@@ -68526,6 +68788,17 @@
     const indEntities = ind === 'Holding & Treasury'
       ? rollup.entities
       : rollup.entities.filter(e => e.industry === ind);
+    const isHoldingGroup = ind === 'Holding & Treasury';
+    const isGroupScope = isHoldingGroup
+      ? indEntities.length >= 2
+      : ((STATE.company === `industry:${ind}` || STATE.company === DEMO_COMPANY_KEY) && indEntities.length >= 2);
+    const showScorecard = isGroupScope;
+    const focusedEnt = !isGroupScope
+      ? (indEntities.find(e => e.key === STATE.company) || (indEntities.length === 1 ? indEntities[0] : null))
+      : null;
+    const singleCoName = !isGroupScope
+      ? (COMPANY_BU_MATCH[STATE.company] || (focusedEnt ? cleanCeoText(focusedEnt.name) : cleanCeoText(COMPANY_LABELS[STATE.company] || ind)))
+      : '';
     const cleanDash = str => String(str || '').replace(/[—–]/g, '-').replace(/→/g, '-');
 
     const sentRules = lens.sentinels ? buildIndustrySentinelItems(ind) : [];
@@ -68544,7 +68817,9 @@
           tone: 'good',
           icon: 'check_circle',
           title: 'Operational Status: Active',
-          detail: `Daily ${ind} operations active across ${indEntities.length} ${indEntities.length === 1 ? 'entity' : 'entities'}`,
+          detail: isGroupScope
+            ? `Daily ${ind} operations active across ${indEntities.length} ${indEntities.length === 1 ? 'entity' : 'entities'}`
+            : `Daily ${ind} operations active for ${singleCoName}`,
           pill: 'No Exceptions',
           jump: 'daily_ops'
         }];
@@ -68552,7 +68827,9 @@
       tone: 'good',
       icon: 'ledger',
       title: 'Double-Entry Books: Balanced ($0.00 Variance)',
-      detail: `Lebanese CoA Classes 1-7 reconciled across ${indEntities.length} operating ${indEntities.length === 1 ? 'entity' : 'entities'}`,
+      detail: isGroupScope
+        ? `Lebanese CoA Classes 1-7 reconciled across ${indEntities.length} operating ${indEntities.length === 1 ? 'entity' : 'entities'}`
+        : `Lebanese CoA Classes 1-7 reconciled for ${singleCoName}`,
       pill: 'Audited',
       jump: 'ledger'
     } : {
@@ -68816,7 +69093,9 @@
       s1Label = 'Revenue'; s2Label = 'F&B Cost'; s3Label = 'Profit';
       chartBars = indEntities.map(e => ({ label: cleanCeoText(e.name), fullLabel: cleanCeoText(e.name), rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit, badge: `${fmtNum(e.k.loads || 0)} sheets` }));
       pnlBridge = lens.profit ? {
-        title: lens.tax ? 'Consolidated Resort P&L Value Bridge (Ex-VAT)' : 'Consolidated Resort P&L Value Bridge',
+        title: lens.tax
+          ? (isGroupScope ? 'Consolidated Resort P&L Value Bridge (Ex-VAT)' : 'Resort P&L Value Bridge (Ex-VAT)')
+          : (isGroupScope ? 'Consolidated Resort P&L Value Bridge' : 'Resort P&L Value Bridge'),
         meta: `Food & Pour Cost ${s.avgFoodCostPct.toFixed(1)}% · Generator Solar Offset ${s.avgSolarOffsetPct.toFixed(1)}%`,
         steps: [
           { label: lens.tax ? 'Net Sales' : 'Total Sales', pctTxt: totHt > 0 ? '100%' : '0%', valHtml: fmtUSDk(lens.tax ? totHt : totRev), barPct: totRev > 0 ? 100 : 0, barTone: 'cobalt', sub: `Billed ${fmtUSDk(totRev)}`, jump: 'hsp_revenue' },
@@ -68952,7 +69231,9 @@
         }
       ];
       chartTitle = lens.profit ? 'Heavy Truck & Parts Revenue, Landed Cost & Margin' : 'Heavy Truck & Parts Revenue Trajectory';
-      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Automotive & Heavy Trading'))} · Shacman Heavy Trucks & Korri Auto Parts`;
+      chartSub = isGroupScope
+        ? `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Automotive & Heavy Trading'))} · Shacman Heavy Trucks & Korri Auto Parts`
+        : `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || singleCoName))} · ${STATE.company === 'shacman' ? 'Heavy Commercial Trucks & Chassis' : 'Spare Parts & Commercial Trading'}`;
       s1Label = 'Invoiced'; s2Label = 'Landed'; s3Label = 'Margin';
       chartBars = trd.salesRows.filter(r => !r.is_gap).slice(0, 6).map(r => ({
         label: `${r.company === 'Shacman' ? 'SH' : 'KA'} #${r.seq}`,
@@ -68961,7 +69242,7 @@
         badge: lens.profit ? `${r.margin_pct.toFixed(1)}% GM` : 'Invoiced'
       }));
       pnlBridge = lens.profit ? {
-        title: 'Consolidated Trading P&L Bridge (Landed Cost Economics)',
+        title: isGroupScope ? 'Consolidated Trading P&L Bridge (Landed Cost Economics)' : 'Trading P&L Bridge (Landed Cost Economics)',
         meta: `Capitalized FOB ${fmtUSDk(s.totalFobUsd)} + Freight/Customs ${fmtUSDk(s.totalLandedAddUsd)} · 100% Parallel Parity`,
         steps: [
           { label: 'Sales', pctTxt: s.totalSalesTtc > 0 ? '100%' : '0%', valHtml: fmtUSDk(s.totalSalesTtc), barPct: s.totalSalesTtc > 0 ? 100 : 0, barTone: 'cobalt', sub: lens.tax ? `Ex-VAT ${fmtUSDk(s.totalSalesNet)}` : `${trdInvCount} invoices`, jump: 'trd_sales' },
@@ -69087,7 +69368,9 @@
         }
       ];
       chartTitle = lens.profit ? 'Annual Rent Roll, Fit-Out & NOI by Property' : 'Annual Rent Roll Trajectory';
-      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Real Estate & Property'))} · Properties & 4235 Company S.A.L`;
+      chartSub = isGroupScope
+        ? `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Real Estate & Property'))} · Properties & 4235 Company S.A.L`
+        : `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || singleCoName))} · Portfolio Rent Roll & NOI`;
       s1Label = 'Rent Roll'; s2Label = 'Fit-Out'; s3Label = 'NOI';
       chartBars = re.properties.filter(p => p.annual_rent_usd > 0).slice(0, 6).map(p => ({
         label: cleanCeoText(p.plot_no), fullLabel: cleanCeoText(`${p.plot_no} · ${p.name || p.location || ''}`),
@@ -69113,7 +69396,7 @@
       const propTaxOpEx = round2(s.woActualUsd * 0.25);
       const netCashNoi = round2(noi - propTaxOpEx);
       pnlBridge = lens.profit ? {
-        title: 'Consolidated Real Estate Income & NOI Bridge',
+        title: isGroupScope ? 'Consolidated Real Estate Income & NOI Bridge' : 'Real Estate Income & NOI Bridge',
         meta: `Portfolio Valuation ${fmtUSDk(s.portfolioGrossUsd)} · ${s.occupiedUnits}/${s.totalUnits} units leased (/2400 shares verified)`,
         steps: [
           { label: 'Rent Roll', pctTxt: s.contractedAnnualRentUsd > 0 ? '100%' : '0%', valHtml: fmtUSDk(s.contractedAnnualRentUsd), barPct: s.contractedAnnualRentUsd > 0 ? 100 : 0, barTone: 'cobalt', sub: `${re.leases.length} active leases`, jump: 're_leases' },
@@ -69352,7 +69635,8 @@
           ${renderCeoPnlBridge(pnlBridge)}
         </div>
 
-        <div class="panel ceo-entities-panel">
+        <div class="panel ceo-entities-panel${showScorecard ? '' : ' is-single-entity'}">
+          ${showScorecard ? `
           <div class="ph">
             <div>
               <h3>Operating Entities Scorecard (${indEntities.length})</h3>
@@ -69406,7 +69690,7 @@
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </div>` : ''}
           ${renderCeoPulseDeck(pulseSpec)}
         </div>
       </section>
@@ -73330,7 +73614,8 @@
         mergeIndustryLiveSpineIntoRecords();
         if (!_applyingCustomRecords && typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
         _PAYROLL_INTEL_CACHE = null;
-        _threeLegApCacheKey = '';
+        _threeLegApCache.clear();
+        if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
         _canonCpCacheKey = '';
         _filterRecordsWeakCache = new WeakMap();
         if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
@@ -74355,7 +74640,8 @@
     if (!_applyingCustomRecords && typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
 
     _PAYROLL_INTEL_CACHE = null;
-    _threeLegApCacheKey = '';
+    _threeLegApCache.clear();
+    if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     _canonCpCacheKey = '';
     _filterRecordsWeakCache = new WeakMap();
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
@@ -82292,6 +82578,80 @@
             ? `La concentration principale concerne ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez les lignes détaillées avant validation.`
             : 'Aucune récurrence anormale de contrepartie ou d actif sur la période active.',
           'Contrôlez les pièces justificatives ou ajustez le seuil dans Alertes & Seuils avant signature.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
+      if (rid === 'S20') {
+        const opPrevCo = STATE.company;
+        let opd = null;
+        try {
+          STATE.company = evalCoKey;
+          opd = getOverpaidPayablesSentinelData({ user: u, company: evalCoKey });
+        } finally {
+          STATE.company = opPrevCo;
+        }
+        if (!opd || opd.restricted) {
+          return {
+            expUsd: 0, rowCnt: 0, topParty: 'Restricted Scope',
+            topSubEn: 'Restricted by seat permissions', topSubAr: 'مقيّد بصلاحيات المقعد', topSubFr: 'Restreint par le rôle',
+            physValEn: 'Restricted', physValAr: 'مقيّد', physValFr: 'Restreint',
+            bEn: ['Supplier payable audit amounts require Expenses & Payables permission.'],
+            bAr: ['تتطلب بيانات تدقيق المدفوعات الزائدة صلاحية المصاريف والذمم الدائنة.'],
+            bFr: ['Les montants d audit des paiements fournisseurs exigent l accès Dépenses & Fournisseurs.']
+          };
+        }
+        const topSup = (opd.rows && opd.rows[0]) || null;
+        const topSite = (opd.siteRows && opd.siteRows[0]) || null;
+        expUsd = round2(safeNum(opd.totalOverpaidUsd));
+        rowCnt = Number(opd.supOverpaidCount || 0) + (opd.isMfg ? Number(opd.siteOverpaidCount || 0) : 0);
+        topParty = topSup
+          ? sanitizePlain(`${topSup.supplier} (${topSup.company})`)
+          : (topSite ? sanitizePlain(topSite.site) : 'No Repeat Offenders');
+        topSubEn = topSup
+          ? `${fmtUSD(topSup.overpaid_usd, 0)} overpaid on ${sanitizePlain(topSup.leg_label)} (${sanitizePlain(topSup.flag_type)})`
+          : (topSite ? `${fmtUSD(topSite.overpaid_usd, 0)} paid above site credit` : 'All settlements covered by accrued credit');
+        topSubAr = topSup
+          ? `فائض دفع ${fmtUSD(topSup.overpaid_usd, 0)} (${sanitizePlain(topSup.leg_label)})`
+          : (topSite ? `فائض دفع للموقع ${fmtUSD(topSite.overpaid_usd, 0)}` : 'جميع التسويات مغطاة برصيد دائن');
+        topSubFr = topSup
+          ? `${fmtUSD(topSup.overpaid_usd, 0)} payés en trop (${sanitizePlain(topSup.leg_label)})`
+          : (topSite ? `${fmtUSD(topSite.overpaid_usd, 0)} payés au-delà du crédit site` : 'Tous les règlements sont couverts par un crédit');
+        physValEn = `${fmtNum(opd.supOverpaidCount, 0)} Suppliers${opd.isMfg ? ` · ${fmtNum(opd.siteOverpaidCount, 0)} Sites` : ''}`;
+        physValAr = `${fmtNum(opd.supOverpaidCount, 0)} مورد${opd.isMfg ? ` · ${fmtNum(opd.siteOverpaidCount, 0)} موقع` : ''}`;
+        physValFr = `${fmtNum(opd.supOverpaidCount, 0)} fournisseurs${opd.isMfg ? ` · ${fmtNum(opd.siteOverpaidCount, 0)} sites` : ''}`;
+        bEn = [
+          rowCnt > 0
+            ? `${fmtNum(opd.supOverpaidCount)} supplier(s) paid ${fmtUSD(opd.supOverpaidUsd, 2)} above accrued payable credit (threshold >= ${fmtUSD(opd.minUsd, 0)})${opd.isMfg && opd.siteOverpaidCount > 0 ? ` and ${fmtNum(opd.siteOverpaidCount)} site(s) carry ${fmtUSD(opd.siteOverpaidUsd, 0)} overpaid balances` : ''} across ${companyEn}.`
+            : `All cumulative supplier${opd.isMfg ? ' and site' : ''} settlement totals remain backed by accrued credit in ${companyEn}.`,
+          topSup || topSite
+            ? `Largest exposure sits on ${topParty}: ${topSubEn}${opd.unpricedLoadsCount > 0 ? `; ${fmtNum(opd.unpricedLoadsCount)} external $0.00 raw loads also await pricing` : ''}.`
+            : 'No historical workbook balance or app settlement exceeds accrued credit.',
+          opd.isMfg
+            ? 'Review Suppliers & Payables and Site Balances to post missing supplier bills, assign missing site/leg tags, or confirm genuine advances before signing off.'
+            : 'Review Suppliers & Payables and Expense bills to post missing invoices or confirm authorized advances before signing off.'
+        ];
+        bAr = [
+          rowCnt > 0
+            ? `تم دفع ${fmtUSD(opd.supOverpaidUsd, 2)} زيادة عن الرصيد الدائن المستحق لدى ${fmtNum(opd.supOverpaidCount)} مورد(ين) (العتبة >= ${fmtUSD(opd.minUsd, 0)})${opd.isMfg && opd.siteOverpaidCount > 0 ? `، كما يحمل ${fmtNum(opd.siteOverpaidCount)} موقعاً فائض دفع بقيمة ${fmtUSD(opd.siteOverpaidUsd, 0)}` : ''} في ${companyAr}.`
+            : `جميع التسويات التراكمية للموردين${opd.isMfg ? ' والمواقع' : ''} مغطاة بأرصدة دائنة مستحقة في ${companyAr}.`,
+          topSup || topSite
+            ? `أكبر تعرض يتركز لدى ${locOffender(topParty, 'ar')}: ${topSubAr}${opd.unpricedLoadsCount > 0 ? `، كما توجد ${fmtNum(opd.unpricedLoadsCount)} نقلة خارجية بقيمة $0.00 بانتظار التسعير` : ''}.`
+            : 'لا توجد أي دفعات تاريخية أو تطبيقية تتجاوز الرصيد الدائن المستحق.',
+          opd.isMfg
+            ? 'راجع صفحة الموردين والمستحقات وأرصدة المواقع لإدخال فواتير المواد الناقصة أو توثيق السلف المعتمدة قبل اعتماد القاعدة.'
+            : 'راجع صفحة الموردين والمصاريف لإدخال الفواتير الناقصة أو توثيق السلف المعتمدة قبل اعتماد القاعدة.'
+        ];
+        bFr = [
+          rowCnt > 0
+            ? `${fmtNum(opd.supOverpaidCount)} fournisseur(s) ont été payés ${fmtUSD(opd.supOverpaidUsd, 2)} au-delà de leur crédit dû (seuil >= ${fmtUSD(opd.minUsd, 0)})${opd.isMfg && opd.siteOverpaidCount > 0 ? ` et ${fmtNum(opd.siteOverpaidCount)} site(s) totalisent ${fmtUSD(opd.siteOverpaidUsd, 0)} de trop-payé` : ''} sur ${companyFr}.`
+            : `Tous les règlements cumulés fournisseurs${opd.isMfg ? ' et sites' : ''} restent couverts par un crédit dû sur ${companyFr}.`,
+          topSup || topSite
+            ? `Le principal écart concerne ${locOffender(topParty, 'fr')} : ${topSubFr}${opd.unpricedLoadsCount > 0 ? ` ; ${fmtNum(opd.unpricedLoadsCount)} chargements externes à $0.00 attendent leur tarif` : ''}.`
+            : 'Aucun solde historique ni règlement saisi ne dépasse le crédit constaté.',
+          opd.isMfg
+            ? 'Contrôlez Fournisseurs & Dettes et Soldes par site pour saisir les factures manquantes ou documenter les avances avant signature.'
+            : 'Contrôlez Fournisseurs & Charges pour saisir les factures manquantes ou confirmer les avances autorisées avant signature.'
         ];
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
@@ -108156,6 +108516,33 @@
     return { method, supplier, amount, grossAmount, disc, qty, pricePending, dupHit };
   }
 
+  function getEditSettlementOrigRelief(targetCo, supplier, targetLeg, targetMethod) {
+    const editCtx = STATE.editingRecord;
+    if (!editCtx || editCtx.crKey !== 'settlements' || !editCtx.orig) return 0;
+    const orig = editCtx.orig;
+    if (orig.voided || orig.wb_lbp_paid != null) return 0;
+    if (/^(VAT|VATConfig|IVA)$/i.test(String(targetMethod || ''))) return 0;
+    const origCo = canonCompany(orig.company || 'WTC');
+    const curCo = canonCompany(targetCo || 'WTC');
+    if (norm(origCo) !== norm(curCo)) return 0;
+    if (normSupPayable(orig.supplier) !== normSupPayable(supplier)) return 0;
+    const om = String(orig.method || 'Payment').trim();
+    const isStdPay = m => m === 'Payment' || m === 'Barter' || m === 'Config' || m === 'Cash' || m === 'Bank Transfer' || m === 'Cheque' || m === 'Credit Discount' || m === 'Credit Return';
+    if (!isStdPay(om)) return 0;
+    let origLeg = String(orig.payable_leg || '').trim();
+    if (!origLeg) {
+      if (om === 'VAT' || om === 'VATConfig' || om === 'IVA') origLeg = 'expense';
+      else {
+        const oInfo = getSupplierPayableLegsInfo(orig.supplier, orig.company || 'WTC');
+        origLeg = (oInfo.hasQ && !oInfo.hasT && !oInfo.hasE)
+          ? 'quarry'
+          : ((oInfo.hasT && !oInfo.hasQ && !oInfo.hasE) ? 'transportation' : 'expense');
+      }
+    }
+    if (origLeg !== targetLeg) return 0;
+    return round2(Number(orig.amount || 0) + Number(orig.discount || 0));
+  }
+
   function recalcSettlement() {
     const supplier = val('f_supplier');
     const settleCo = val('f_company') || defaultEntryCompany();
@@ -108174,10 +108561,37 @@
         legEl.value = inferSettlementPayableLeg(supplier, method, settleCo);
       }
     }
-    const payableLeg = isVatMethod ? 'expense' : (val('f_payable_leg') || inferSettlementPayableLeg(supplier, method, settleCo));
-    const before = openApBalance(supplier);
+    const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.orig && STATE.editingRecord.orig.payable_leg) || '';
+    const payableLeg = isVatMethod ? 'expense' : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(supplier, method, settleCo));
+    const singleScopeBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const sameSingleCo = Boolean(!settleCo || (singleScopeBu && canonCompany(settleCo) === singleScopeBu));
+    const before = sameSingleCo
+      ? openApBalance(supplier)
+      : (legInfo.row ? round2(Number(legInfo.quarryRem || 0) + Number(legInfo.transRem || 0) + Number(legInfo.expRem || 0)) : null);
     const amount = num('f_amount'), disc = num('f_discount');
     const totRelief = round2(amount + disc);
+    const legOpenRem = isVatMethod
+      ? Number(legInfo.row ? (legInfo.row.exp_vat_rem_usd || legInfo.expRem || 0) : 0)
+      : (payableLeg === 'quarry'
+          ? Number(legInfo.row ? (legInfo.quarryRem || 0) : (sameSingleCo ? Number(before || 0) : 0))
+          : (payableLeg === 'transportation'
+              ? Number(legInfo.row ? (legInfo.transRem || 0) : (sameSingleCo ? Number(before || 0) : 0))
+              : Number(legInfo.row ? (legInfo.expRem || 0) : (sameSingleCo ? Number(before || 0) : 0))));
+    const supZeroRawCnt = (!isVatMethod && supplier && getActiveIndustry(settleCo || STATE.company) === 'Manufacturing')
+      ? ((SEED.records && SEED.records.raw_purchases) || []).filter(rp =>
+          rp && !rp.voided && (!settleCo || norm(rp.company) === norm(settleCo))
+          && normSupPayable(rp.site_owner) === normSupPayable(supplier)
+          && String(rp.method || 'Credit').trim() === 'Credit'
+          && norm(rp.product) !== 'remove'
+          && Number(rp.cost || 0) === 0
+        ).length
+      : 0;
+    const minOverWarnUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
+    const editOrigRel = getEditSettlementOrigRelief(settleCo, supplier, payableLeg, method);
+    const legOpenWithEdit = round2(Number(legOpenRem || 0) + editOrigRel);
+    const legExcessUsd = !isVatMethod && !/^(Config|VATConfig|VAT|IVA)$/i.test(method)
+      ? round2(totRelief - Math.max(0, legOpenWithEdit))
+      : 0;
     setHint('hint_supplier', supplier && before == null && !legInfo.row ? 'Not in the AP book - check the spelling' : '', supplier && before == null && !legInfo.row ? 'warn' : '');
     if (isVatMethod) {
       setHint('hint_payable_leg', 'VAT and IVA settlements apply to Leg 3 (Expense VAT)', '');
@@ -108202,8 +108616,13 @@
     const sSub = $('paSupSubgridWrap');
     const subLegFilter = !supplier ? 'all' : (payableLeg === 'quarry' ? 'material' : (payableLeg === 'transportation' ? 'haulage' : 'expense'));
     if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, subLegFilter);
-    if (before != null && totRelief > before + 0.005) setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
-    else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    if (supplier && isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0) {
+      setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${supZeroRawCnt > 0 ? ` (${fmtNum(supZeroRawCnt)} raw loads at $0.00)` : ''}`, 'warn');
+    } else if (before != null && totRelief > before + 0.005) {
+      setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
+    } else {
+      setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    }
     const stStrip = $('settleQuickContextStrip');
     if (stStrip) {
       if (!supplier) {
@@ -108217,9 +108636,9 @@
         const supPendLitres = supPendRows.reduce((a, x) => a + (isBulkDieselExpense(x) ? Number(x.qty || 0) : 0), 0);
         const canSetSupPending = canModifyData() || canEnterForm('expense') || canEnterForm('raw');
         const openVal = Math.max(0, Number(before || 0));
-        const legMat = Math.max(0, legInfo.row ? Number(legInfo.quarryRem || 0) : Number(si.ap_material || 0));
-        const legHaul = Math.max(0, legInfo.row ? Number(legInfo.transRem || 0) : Number(si.ap_haulage || 0));
-        const legExp = Math.max(0, legInfo.row ? Number(legInfo.expRem || 0) : Number(si.ap_expense || 0));
+        const legMat = Math.max(0, legInfo.row ? Number(legInfo.quarryRem || 0) : (sameSingleCo ? Number(si.ap_material || 0) : 0));
+        const legHaul = Math.max(0, legInfo.row ? Number(legInfo.transRem || 0) : (sameSingleCo ? Number(si.ap_haulage || 0) : 0));
+        const legExp = Math.max(0, legInfo.row ? Number(legInfo.expRem || 0) : (sameSingleCo ? Number(si.ap_expense || 0) : 0));
         const isAdv = before != null && totRelief > openVal + 0.005;
         const isFull = before != null && openVal > 0 && Math.abs(totRelief - openVal) <= 0.01;
         const stBadge = isAdv
@@ -108230,10 +108649,12 @@
                   ? `<span class="badge badge-info">Partial Settlement · ${fmtUSD(Math.max(0, openVal - totRelief), 2)} Remaining</span>`
                   : (openVal > 0 ? `<span class="badge badge-brass">Open AP: ${fmtUSD(openVal, 2)}</span>` : `<span class="badge badge-ok">AP Settled ($0.00)</span>`)));
         stStrip.hidden = false;
-        stStrip.className = 'att-contract-strip' + ((isAdv || totalSupPendCnt > 0) ? ' is-warn' : (isFull ? ' is-ok' : ''));
+        stStrip.className = 'att-contract-strip' + ((isAdv || totalSupPendCnt > 0 || supZeroRawCnt > 0 || (isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd)) ? ' is-warn' : (isFull ? ' is-ok' : ''));
         stStrip.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <strong>${esc(supplier)}</strong> ${stBadge}
+            ${isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0 ? `<span class="badge badge-err">Overpaid Leg (+${fmtUSD(legExcessUsd, 2)})</span>` : ''}
+            ${supZeroRawCnt > 0 ? `<span class="badge badge-warn">${fmtNum(supZeroRawCnt)} Unpriced Raw ($0.00)</span>` : ''}
             ${totalSupPendCnt > 0 ? `<span class="badge badge-warn">${fmtNum(totalSupPendCnt)} Pending Price${supPendLitres > 0 ? ' (' + fmtNum(supPendLitres, 0) + ' L)' : ''} at $0.00</span>${canSetSupPending ? (supPendRows.length > 0 ? `<button type="button" class="att-preset-pill" data-set-pending-price-id="${esc(supPendRows[0].id)}">Enter Invoice Price First</button>` : `<button type="button" class="att-preset-pill" data-set-pending-raw-price-id="${esc(supPendRawRows[0].id)}">Enter Invoice Price First</button>`) : ''}` : ''}
             ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
             ${legMat > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legMat - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'quarry' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="quarry" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 2)})</button>` : ''}
@@ -108262,7 +108683,7 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { supplier, before, amount, disc, payableLeg, dupHit };
+    return { supplier, before, amount, disc, payableLeg, dupHit, legOpenRem, legExcessUsd, supZeroRawCnt };
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -109791,7 +110212,7 @@
     _tsSentinelCache = { key, data };
     return data;
   }
-  if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
     // Read by build/verify_truck_size_sentinel.mjs
     window.__mfgTruckSizeSentinel = {
       data: () => getTruckSizeSentinelData(),
@@ -109806,6 +110227,398 @@
         invalidateAlertRuleCaches();
         return isAlertRuleEnabled('S17');
       },
+    };
+  }
+
+  // Overpaid & Unbacked Payables Sentinel (S20, Rule #32): deterministic across all 6 industries (Hard Rule 15)
+  function getOverpaidPayablesSentinelData(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    const u = opts.user || activeUser();
+    const lens = seatLens(u);
+    const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
+    const activeInd = (typeof getActiveIndustry === 'function' ? getActiveIndustry(targetCo) : 'Manufacturing') || 'Manufacturing';
+    const isMfg = activeInd === 'Manufacturing';
+    if (!lens.expenses || (!lens.books && !lens.sentinels && typeof canViewView === 'function' && !canViewView('suppliers', u))) {
+      return {
+        restricted: true, isMfg, industry: activeInd, company: targetCo,
+        minUsd: 100, critUsd: 5000, rows: [], siteRows: [],
+        supOverpaidCount: 0, siteOverpaidCount: 0, unpricedSiteCount: 0,
+        unpricedLoadsCount: 0, supOverpaidUsd: 0, siteOverpaidUsd: 0,
+        totalOverpaidUsd: 0, matOverpaidUsd: 0, transOverpaidUsd: 0, expOverpaidUsd: 0,
+        bySupNorm: new Map(), bySiteNorm: new Map(), unpricedBySupNorm: new Map(), unpricedBySiteNorm: new Map()
+      };
+    }
+    ensureMultiIndustrySpineSeeded();
+    const recs = SEED.records || {};
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const minUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
+    const critUsd = Math.max(minUsd, Number(getAlertParam('S20', 'crit_overpaid_usd', 5000)) || 5000);
+    const key = [
+      SEED._customRev || 0, STATE._customRev || 0, _GLOBAL_RATES_REV,
+      (recs.raw_purchases || []).length, (recs.sales_tickets || []).length,
+      (recs.expenses || []).length, (recs.recurring_expenses || []).length,
+      (recs.settlements || []).length, (recs.suppliers || []).length, (recs.sites || []).length,
+      targetCo, allowed.join(','), offScope ? 1 : 0, _ALERT_RULES_REV,
+      minUsd, critUsd, (u && (u.id || u.email)) || '', String((u && u.role) || ''),
+      String((u && u.book_scope) || ''), `${lens.expenses ? 1 : 0}:${lens.books ? 1 : 0}:${lens.sentinels ? 1 : 0}`,
+      activeInd
+    ].join('|');
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF && _opSentinelCache.has(key)) return _opSentinelCache.get(key);
+    _opSentinelScans += 1;
+
+    const brk = computeThreeLegPayablesBreakdown({ company: targetCo, ignorePeriod: true, user: u });
+    const indTargetSet = targetCo.startsWith('industry:')
+      ? new Set(getCompanyCatalog().filter(x => (x.industry || 'Manufacturing') === targetCo.slice(9)).map(x => x.name))
+      : null;
+    const buTarget = COMPANY_BU_MATCH[targetCo] || null;
+    const isCoInScope = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (targetCo === 'wtc') return c === 'WTC';
+      if (targetCo === 'bbconstruction') return c === 'BBConstruction';
+      if (targetCo === 'lionstransport') return c === 'Lions Transport';
+      if (targetCo === 'manufacturing-group') return c === 'WTC' || c === 'BBConstruction' || c === 'Lions Transport';
+      if (indTargetSet) return indTargetSet.has(c);
+      if (buTarget) return c === buTarget;
+      return norm(c) === norm(targetCo);
+    };
+
+    const supMetaMap = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      if (s.company && !isCoInScope(s.company)) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supMetaMap.has(sn)) supMetaMap.set(sn, s);
+    });
+    const lastTxBySup = new Map();
+    const coBySup = new Map();
+    const noteSupTx = (supRaw, co, dtRaw) => {
+      const sn = normSupPayable(supRaw);
+      if (!sn) return;
+      if (co && !coBySup.has(sn)) coBySup.set(sn, co);
+      const dt = String(dtRaw || '').slice(0, 10);
+      if (dt && (!lastTxBySup.has(sn) || dt > lastTxBySup.get(sn))) lastTxBySup.set(sn, dt);
+    };
+
+    const unpricedBySupNorm = new Map();
+    const unpricedBySiteNorm = new Map();
+    let unpricedLoadsCount = 0;
+
+    const siteCanonMap = new Map();
+    const jvSiteKeysOp = new Set();
+    if (isMfg) {
+      (recs.sites || []).forEach(st => {
+        if (!st || !st.name) return;
+        const lbl = cleanSiteLabel(st.name);
+        const sk = norm(lbl);
+        if (sk && !siteCanonMap.has(sk)) siteCanonMap.set(sk, lbl);
+        if (st.is_jv || /\bjv\b/i.test(lbl)) jvSiteKeysOp.add(sk);
+      });
+    }
+    const siteAggOp = new Map();
+    const ensureOpSite = rawSite => {
+      const lbl = cleanSiteLabel(rawSite) || '(General / Multi-Site)';
+      const sk = norm(lbl);
+      let o = siteAggOp.get(sk);
+      if (!o) {
+        const disp = siteCanonMap.get(sk) || lbl;
+        o = { site: disp, is_jv: jvSiteKeysOp.has(sk) || /\bjv\b/i.test(disp), raw_loads: 0, unpriced_loads: 0, mat_qty: 0, mat_credit: 0, quarry_haul: 0, sales_haul: 0, paid: 0 };
+        siteAggOp.set(sk, o);
+      }
+      return o;
+    };
+
+    const supScopeAgg = isMfg ? new Map() : null;
+    if (isMfg) {
+      const raws = recs.raw_purchases || [];
+      for (let i = 0; i < raws.length; i++) {
+        const rp = raws[i];
+        if (!rp || rp.voided || !isCoInScope(rp.company)) continue;
+        if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+        const rSgn = rawSign(rp);
+        if (rSgn === 0 || norm(rp.product) === 'remove') continue;
+        const mth = String(rp.method || 'Credit').trim();
+        const isCredRaw = mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return';
+        const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+        if (rp.site_owner) noteSupTx(rp.site_owner, rp.company, dt);
+        if (rp.truck_owner) noteSupTx(rp.truck_owner, rp.company, dt);
+        const q = rSgn * ticketProductQty(rp);
+        const mat = isCredRaw ? (rSgn * Number(rp.cost || 0)) : 0;
+        const haul = isCredRaw ? (rSgn * Number(rp.trans_cost || 0)) : 0;
+        const soNorm = normSupPayable(rp.site_owner);
+        const coNorm = normSupPayable(rp.company);
+        const isOwnMat = !soNorm || soNorm === 'excluded' || soNorm === 'none' || soNorm === 'wtc' || soNorm === coNorm;
+        const st = ensureOpSite(rp.site || '(Unassigned Site)');
+        if (rSgn > 0) st.raw_loads += 1;
+        st.mat_qty += q;
+        st.mat_credit += mat;
+        st.quarry_haul += haul;
+        if (rp.site_owner && soNorm && soNorm !== 'excluded' && soNorm !== 'none') {
+          const prev = supScopeAgg.get(soNorm) || { credit: 0, qty: 0 };
+          prev.credit += mat;
+          prev.qty += q;
+          supScopeAgg.set(soNorm, prev);
+        }
+        const rawTo = rp.truck_owner || ((rp.company === 'WTC' && haul !== 0) ? 'WTC' : '');
+        if (rawTo && haul !== 0) {
+          const toNorm = normSupPayable(rawTo);
+          if (toNorm && toNorm !== 'excluded' && toNorm !== 'none') {
+            const prev = supScopeAgg.get(toNorm) || { credit: 0, qty: 0 };
+            prev.credit += haul;
+            supScopeAgg.set(toNorm, prev);
+          }
+        }
+        if (mth === 'Credit' && Number(rp.cost || 0) === 0 && !isOwnMat) {
+          unpricedLoadsCount += 1;
+          st.unpriced_loads += 1;
+          const uSup = unpricedBySupNorm.get(soNorm) || { loads: 0, qty: 0 };
+          uSup.loads += 1;
+          uSup.qty = round2(uSup.qty + q);
+          unpricedBySupNorm.set(soNorm, uSup);
+          const sKey = norm(st.site);
+          const uSite = unpricedBySiteNorm.get(sKey) || { site: st.site, loads: 0, qty: 0 };
+          uSite.loads += 1;
+          uSite.qty = round2(uSite.qty + q);
+          unpricedBySiteNorm.set(sKey, uSite);
+        }
+      }
+      const sales = recs.sales_tickets || [];
+      for (let i = 0; i < sales.length; i++) {
+        const s = sales[i];
+        if (!s || s.voided || s.is_internal_sale || !isCoInScope(s.company)) continue;
+        if (offScope && !isOfficialRecord(s, 'sales_tickets')) continue;
+        if (s.transport_by !== 'Third-party truck') continue;
+        const mth = String(s.method || '').trim();
+        if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') continue;
+        const tp = ((mth === 'CR Return' || mth === 'Credit Return') ? -1 : 1) * Number(s.trans_price || 0);
+        if (!tp) continue;
+        if (s.truck_owner) {
+          noteSupTx(s.truck_owner, s.company, s.rep_date || s.date);
+          const tk = normSupPayable(s.truck_owner);
+          if (tk) {
+            const prev = supScopeAgg.get(tk) || { credit: 0 };
+            prev.credit += tp;
+            supScopeAgg.set(tk, prev);
+          }
+        }
+        const st = ensureOpSite(s.site || '(Unassigned Customer Site)');
+        st.sales_haul += tp;
+      }
+    }
+
+    (recs.expenses || []).forEach(x => {
+      if (!x || x.voided || !isCoInScope(x.company)) return;
+      if (offScope && !isOfficialRecord(x, 'expenses')) return;
+      noteSupTx(x.supplier, x.company, x.rep_date || x.date);
+    });
+    (recs.settlements || []).forEach(sp => {
+      if (!sp || sp.voided || sp.wb_lbp_paid != null || !isCoInScope(sp.company)) return;
+      if (offScope && !isOfficialRecord(sp, 'settlements')) return;
+      noteSupTx(sp.supplier, sp.company, sp.rep_date || sp.date);
+      if (!isMfg) return;
+      const mth = String(sp.method || '').trim();
+      if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission') return;
+      const notes = String(sp.notes || '');
+      const cm = notes.match(/Category:\s*([^·\n]+)/i);
+      const cat = cm ? cm[1].trim() : '';
+      if (mth === 'Config' && !/Raw Material Settlements/i.test(cat)) return;
+      const sm = notes.match(/Site:\s*([^·\n]+)/i);
+      const siteTag = sm ? cleanSiteLabel(sm[1]) : '';
+      const legHint = String(sp.payable_leg || sp.leg || '').trim();
+      const nk = normSupPayable(sp.supplier);
+      const supEntry = nk && supScopeAgg ? supScopeAgg.get(nk) : null;
+      const hasStockCred = Boolean(supEntry && (Math.abs(supEntry.credit) > 0.005 || supEntry.qty > 0));
+      const isStockSettle = /Raw Material Settlements/i.test(cat) || /material|quarry|haul|transport/i.test(legHint) || (!cat && hasStockCred);
+      if (!isStockSettle) return;
+      const amt = Number(sp.amount || 0) + Number(sp.discount || 0);
+      if (!amt) return;
+      const st = ensureOpSite(siteTag || sp.site || '(General / Multi-Site)');
+      st.paid += amt;
+    });
+
+    const rows = [];
+    const bySupNorm = new Map();
+    let matOverpaidUsd = 0, transOverpaidUsd = 0, expOverpaidUsd = 0;
+    const defaultCoLbl = COMPANY_BU_MATCH[targetCo] || (indTargetSet ? activeInd : (targetCo === 'manufacturing-group' ? 'WTC / BBC' : targetCo));
+    (brk && brk.rows ? brk.rows : []).forEach(r => {
+      const qOver = (isMfg && r.quarry_rem < -0.005) ? round2(-r.quarry_rem) : 0;
+      const tOver = (isMfg && r.trans_rem < -0.005) ? round2(-r.trans_rem) : 0;
+      const eOver = (r.exp_rem_ttc < -0.005 && r.exp_rem_usd < -0.005) ? round2(-r.exp_rem_ttc) : 0;
+      const overpaidUsd = round2(qOver + tOver + eOver);
+      if (overpaidUsd < minUsd - 0.005) return;
+      const legs = [];
+      let accruedUsd = 0, paidUsd = 0;
+      if (qOver > 0) { legs.push('Material'); accruedUsd += Number(r.quarry_cr || 0); paidUsd += Number(r.quarry_pd || 0); }
+      if (tOver > 0) { legs.push('Transport'); accruedUsd += Number(r.trans_cr || 0); paidUsd += Number(r.trans_pd || 0); }
+      if (eOver > 0) {
+        legs.push('Expenses');
+        accruedUsd += (Number(r.exp_cr_usd || 0) - Number(r.exp_ret_other_usd || 0) + Number(r.exp_vat_cr_usd || 0));
+        paidUsd += (Number(r.exp_pd_usd || 0) + Number(r.exp_vat_pd_usd || 0));
+      }
+      accruedUsd = round2(accruedUsd);
+      paidUsd = round2(paidUsd);
+      matOverpaidUsd = round2(matOverpaidUsd + qOver);
+      transOverpaidUsd = round2(transOverpaidUsd + tOver);
+      expOverpaidUsd = round2(expOverpaidUsd + eOver);
+      const uInfo = unpricedBySupNorm.get(r.key);
+      const unpLoads = uInfo ? uInfo.loads : 0;
+      const flagType = unpLoads > 0 ? 'Paid on $0 Loads' : (accruedUsd <= 0.005 ? 'Zero Credit Settled' : 'Overpaid Leg AP');
+      const supObj = supMetaMap.get(r.key) || null;
+      const co = (supObj && supObj.company) || coBySup.get(r.key) || defaultCoLbl;
+      const row = {
+        rkey: 'suppliers',
+        rid: (supObj && supObj.id) || r.supplier,
+        supplier: r.supplier,
+        normKey: r.key,
+        company: co,
+        leg_key: legs[0] === 'Material' ? 'quarry' : (legs[0] === 'Transport' ? 'transportation' : 'expense'),
+        leg_label: legs.length > 1 ? legs.join(' + ') : (legs[0] || 'Expenses'),
+        flag_type: flagType,
+        accrued_usd: accruedUsd,
+        paid_usd: paidUsd,
+        overpaid_usd: overpaidUsd,
+        q_over: qOver,
+        t_over: tOver,
+        e_over: eOver,
+        unpriced_loads: unpLoads,
+        last_tx: lastTxBySup.get(r.key) || SEED_DATE
+      };
+      rows.push(row);
+      bySupNorm.set(r.key, row);
+    });
+    rows.sort((a, b) => (b.overpaid_usd - a.overpaid_usd) || (b.unpriced_loads - a.unpriced_loads) || a.supplier.localeCompare(b.supplier));
+
+    const siteRows = [];
+    const bySiteNorm = new Map();
+    if (isMfg) {
+      siteAggOp.forEach((st, sk) => {
+        const totCred = round2(st.mat_credit + st.quarry_haul + st.sales_haul);
+        const pd = round2(st.paid);
+        const rem = round2(totCred - pd);
+        const overUsd = rem < -0.005 ? round2(-rem) : 0;
+        if (overUsd < minUsd - 0.005) return;
+        const siteKind = st.is_jv ? 'JV 50/50' : (st.raw_loads > 0 ? 'Source Site' : (st.sales_haul !== 0 ? '3P Customer Trans' : 'Settlement'));
+        const flagType = siteKind === 'Settlement' ? 'Settlement · No Tickets' : (st.unpriced_loads > 0 ? 'Paid on $0 Loads' : 'Overpaid Site');
+        const siteMeta = siteInfo(st.site, siteKind === '3P Customer Trans' ? 'sales' : 'raw');
+        const row = {
+          rkey: 'sites',
+          rid: (siteMeta && siteMeta.id) || st.site,
+          site: st.site,
+          normKey: sk,
+          site_kind: siteKind,
+          flag_type: flagType,
+          mat_qty: round2(st.mat_qty),
+          total_credit: totCred,
+          paid: pd,
+          overpaid_usd: overUsd,
+          unpriced_loads: st.unpriced_loads
+        };
+        siteRows.push(row);
+        bySiteNorm.set(sk, row);
+      });
+      siteRows.sort((a, b) => (b.overpaid_usd - a.overpaid_usd) || (b.unpriced_loads - a.unpriced_loads) || a.site.localeCompare(b.site));
+    }
+
+    const supOverpaidUsd = round2(rows.reduce((a, r) => a + r.overpaid_usd, 0));
+    const siteOverpaidUsd = round2(siteRows.reduce((a, r) => a + r.overpaid_usd, 0));
+    const data = {
+      restricted: false,
+      isMfg,
+      industry: activeInd,
+      company: targetCo,
+      minUsd,
+      critUsd,
+      rows,
+      siteRows,
+      supOverpaidCount: rows.length,
+      siteOverpaidCount: siteRows.length,
+      unpricedSiteCount: unpricedBySiteNorm.size,
+      unpricedLoadsCount,
+      supOverpaidUsd,
+      siteOverpaidUsd,
+      totalOverpaidUsd: supOverpaidUsd > 0 ? supOverpaidUsd : siteOverpaidUsd,
+      matOverpaidUsd,
+      transOverpaidUsd,
+      expOverpaidUsd,
+      bySupNorm,
+      bySiteNorm,
+      unpricedBySupNorm,
+      unpricedBySiteNorm
+    };
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF) {
+      if (_opSentinelCache.size >= 64) {
+        const oldestKey = _opSentinelCache.keys().next().value;
+        if (oldestKey !== undefined) _opSentinelCache.delete(oldestKey);
+      }
+      _opSentinelCache.set(key, data);
+    }
+    return data;
+  }
+
+  function buildOverpaidSentinelItem(opSnOff, opSn, scope, activeInd) {
+    if (opSn && opSn.restricted) return null;
+    const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const hasAlert = Boolean(!opSnOff && opSn && (opSn.supOverpaidCount > 0 || (isMfg && opSn.siteOverpaidCount > 0)));
+    const isCrit = Boolean(!opSnOff && opSn && (opSn.supOverpaidUsd >= opSn.critUsd || (isMfg && opSn.siteOverpaidUsd >= opSn.critUsd)));
+    const leadSup = (opSn && opSn.rows[0]) || null;
+    const leadSite = (opSn && isMfg && opSn.siteRows[0]) || null;
+    const minStr = fmtUSD((opSn && opSn.minUsd) || getAlertParam('S20', 'min_overpaid_usd', 100), 0);
+    let detail;
+    if (opSnOff) {
+      detail = 'Paused in Alerts & Thresholds.';
+    } else if (hasAlert) {
+      if (isMfg) {
+        const sitePart = opSn.siteOverpaidCount > 0 ? ` · ${fmtNum(opSn.siteOverpaidCount)} site${opSn.siteOverpaidCount === 1 ? '' : 's'} overpaid (${fmtUSD(opSn.siteOverpaidUsd, 0)})` : '';
+        const unpPart = opSn.unpricedLoadsCount > 0 ? ` · ${fmtNum(opSn.unpricedLoadsCount)} external $0 credit raw loads` : '';
+        const topPart = leadSup
+          ? ` Top supplier: ${leadSup.supplier} (${fmtUSD(leadSup.overpaid_usd, 0)} overpaid on ${leadSup.leg_label}).`
+          : (leadSite ? ` Top site: ${leadSite.site} (${fmtUSD(leadSite.overpaid_usd, 0)} overpaid).` : '');
+        detail = `${fmtNum(opSn.supOverpaidCount)} supplier${opSn.supOverpaidCount === 1 ? '' : 's'} paid ${fmtUSD(opSn.supOverpaidUsd, 2)} above accrued credit (threshold >= ${minStr})${sitePart}${unpPart}.${topPart}`;
+      } else {
+        const topPart = leadSup ? ` Top counterparty: ${leadSup.supplier} (${fmtUSD(leadSup.overpaid_usd, 0)} overpaid).` : '';
+        detail = `${fmtNum(opSn.supOverpaidCount)} supplier${opSn.supOverpaidCount === 1 ? '' : 's'} paid ${fmtUSD(opSn.supOverpaidUsd, 2)} above accrued ${activeInd} credit (threshold >= ${minStr}).${topPart}`;
+      }
+    } else {
+      detail = `All cumulative supplier${isMfg ? ' and site' : ''} settlement totals sit within accrued payable credit (tolerance < ${minStr}).`;
+    }
+    const badge = opSnOff
+      ? 'PAUSED'
+      : (hasAlert
+          ? (opSn.supOverpaidCount > 0
+              ? `${fmtNum(opSn.supOverpaidCount)} OVERPAID · ${fmtUSD(opSn.supOverpaidUsd, 0)}`
+              : `${fmtNum(opSn.siteOverpaidCount)} SITES · ${fmtUSD(opSn.siteOverpaidUsd, 0)}`)
+          : 'NO OVERPAYMENTS');
+    return {
+      id: 'S20',
+      ruleId: 'S20',
+      code: isMfg ? 'Rule #32 · Payables & Sites' : 'Rule #20 · Payables Audit',
+      title: isMfg ? 'Payments Exceeding Accrued Supplier & Site Credit' : 'Payments Exceeding Accrued Supplier Credit',
+      detail,
+      severity: isCrit ? 'crit' : (hasAlert ? 'warn' : 'ok'),
+      badge,
+      company: scope,
+      rawMetric: opSn ? (opSn.supOverpaidCount + (isMfg ? opSn.siteOverpaidCount : 0)) : 0,
+      rawSecondary: opSn ? Math.round(opSn.totalOverpaidUsd) : 0,
+      scrollPanel: (opSn && opSn.rows.length > 0) ? 'snOverpaidAp' : ((opSn && isMfg && opSn.siteRows.length > 0) ? 'snOverpaidSites' : ''),
+      navView: isMfg ? 'suppliers' : 'expenses',
+      navLabel: isMfg ? 'Open Payables' : 'Open Expenses'
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.__mfgOverpaidPayablesSentinel = {
+      data: opts => getOverpaidPayablesSentinelData(opts),
+      item: () => (buildSentinelItems() || []).find(x => x && x.id === 'S20') || null,
+      clearCache: () => { _threeLegApCache.clear(); _opSentinelCache.clear(); },
+      scans: () => _opSentinelScans,
+      setRuleEnabledForCheck: on => {
+        if (!window.__MFG_HEADLESS_TEST) return isAlertRuleEnabled('S20');
+        const st = ensureAlertRulesState();
+        st.overrides.S20 = Object.assign({}, st.overrides.S20, { enabled: Boolean(on) });
+        invalidateAlertRuleCaches();
+        return isAlertRuleEnabled('S20');
+      }
     };
   }
 
@@ -121543,6 +122356,18 @@
       const effSettleLeg = /^(VAT|VATConfig|IVA)$/i.test(settleMth)
         ? 'expense'
         : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(c.supplier, settleMth, company));
+      if (isAlertRuleEnabled('S20') && !/^(Config|VATConfig|VAT|IVA)$/i.test(settleMth)) {
+        const minOverNoteUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
+        const stTotRelief = round2(c.amount + c.disc);
+        const editOrigRel = getEditSettlementOrigRelief(company, c.supplier, effSettleLeg, settleMth);
+        const baseLegOpen = c.legOpenRem != null ? Number(c.legOpenRem) : Number(c.before || 0);
+        const stLegOpen = round2(baseLegOpen + editOrigRel);
+        const excessOverLeg = round2(stTotRelief - Math.max(0, stLegOpen));
+        const noteStr = String(val('f_notes') || '').trim();
+        if (stTotRelief > 0 && excessOverLeg >= minOverNoteUsd && noteStr.length < 3) {
+          addErr('f_notes', `Settlement exceeds open ${effSettleLeg === 'quarry' ? 'Material' : (effSettleLeg === 'transportation' ? 'Transport' : 'Expense')} credit by ${fmtUSD(excessOverLeg, 2)}. Enter a reason in Notes (3+ chars) before posting.`);
+        }
+      }
       const settleDup = findSameDayVoucherDuplicate('settlement', {
         company,
         date,
@@ -190505,7 +191330,42 @@
           setView(v, { chipFilter: 'pending_price' });
           return;
         }
+        if (cid === 'S20' && v === 'suppliers') {
+          setView(v, { chipFilter: 'overpaid_ap' });
+          return;
+        }
         setView(v);
+      }
+    }));
+    container.querySelectorAll('[data-raw-filter-overpaid]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      STATE.rawSiteFilter = 'overpaid';
+      STATE.shown.sites = PAGE;
+      renderApp();
+      const sp = $('sitesPanel');
+      if (sp) {
+        scrollWorkspaceTo(sp, 8);
+        sp.classList.remove('sn-panel-flash');
+        void sp.offsetWidth;
+        sp.classList.add('sn-panel-flash');
+      }
+    }));
+    container.querySelectorAll('[data-ap-jump-overpaid]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (canViewView('suppliers')) setView('suppliers', { chipFilter: 'overpaid_ap' });
+    }));
+    container.querySelectorAll('[data-open-sn-overpaid]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!canViewView('sentinels')) return;
+      STATE.sentinelFilter = 'all';
+      if (STATE.view !== 'sentinels') setView('sentinels');
+      else renderApp();
+      const p = $('snOverpaidAp') || $('snOverpaidSites');
+      if (p) {
+        scrollWorkspaceTo(p, 8);
+        p.classList.remove('sn-panel-flash');
+        void p.offsetWidth;
+        p.classList.add('sn-panel-flash');
       }
     }));
     container.querySelectorAll('[data-sn-card]').forEach(card => card.addEventListener('click', ev => {
@@ -192160,6 +193020,7 @@
       STATE.expandedRegions = {};
       STATE.expandAllRegions = false;
       STATE.chipFilter = opts.chipFilter || 'all';
+      if (opts.rawSiteFilter) STATE.rawSiteFilter = opts.rawSiteFilter;
       STATE.salesPadFilter = opts.salesPadFilter || 'all';
       STATE.vatInvFilter = 'all';
       STATE.siteAllowStaffFilter = '';
@@ -195744,6 +196605,8 @@
     _liveSentinelCache = null;
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
+    if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
     _cashMovesCacheVal = null;
@@ -197206,6 +198069,7 @@
     computeSteepCorridorWearIndex: typeof computeSteepCorridorWearIndex === 'function' ? computeSteepCorridorWearIndex : null,
     computeUnitSteepWearSince: typeof computeUnitSteepWearSince === 'function' ? computeUnitSteepWearSince : null,
     getSteepWearSentinelData: typeof getSteepWearSentinelData === 'function' ? getSteepWearSentinelData : null,
+    getOverpaidPayablesSentinelData: typeof getOverpaidPayablesSentinelData === 'function' ? getOverpaidPayablesSentinelData : null,
     resolveSteepWearServicePrefill: typeof resolveSteepWearServicePrefill === 'function' ? resolveSteepWearServicePrefill : null,
     isUnpavedQuarrySite: typeof isUnpavedQuarrySite === 'function' ? isUnpavedQuarrySite : null,
     evaluateDispatchSteepBrakeWarning: typeof evaluateDispatchSteepBrakeWarning === 'function' ? evaluateDispatchSteepBrakeWarning : null,

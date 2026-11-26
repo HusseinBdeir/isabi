@@ -34721,6 +34721,28 @@ html[data-theme="dark"] .ceo-att-pill.crit { color: #FCA5A5; background: rgba(18
   flex-shrink: 0;
 }
 
+.ceo-entities-panel.is-single-entity .ceo-pulse-hdr {
+  padding: 10px 14px 9px;
+}
+
+.ceo-entities-panel.is-single-entity .ceo-pulse-title {
+  font-size: 13.5px;
+}
+
+.ceo-entities-panel.is-single-entity .ceo-pulse-list {
+  padding: 10px 12px;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.ceo-entities-panel.is-single-entity .ceo-pulse-row {
+  padding: 9px 11px;
+}
+
+.ceo-entities-panel.is-single-entity .ceo-pulse-foot {
+  padding: 8px 14px;
+}
+
 @media (min-width: 901px) {
   .workspace > .row2.ceo-stage {
     grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
@@ -34788,6 +34810,11 @@ html[data-theme="dark"] .ceo-att-pill.crit { color: #FCA5A5; background: rgba(18
     overflow-y: auto;
     overflow-x: auto;
     border-bottom: 1px solid var(--line);
+  }
+
+  .ceo-entities-panel.is-single-entity .ceo-pulse-row {
+    flex: 1 1 0;
+    max-height: 92px;
   }
 }
 
@@ -38988,6 +39015,68 @@ video::-webkit-media-controls-start-playback-button {
   color: var(--brass);
 }
 
+/* Overpaid / Unbacked Payables Alert Strip (not a .panel-card so panel order invariants stay exact) */
+.overpaid-ap-alert-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(90deg, rgba(180, 35, 42, 0.08), rgba(217, 119, 6, 0.05));
+  border: 1px solid rgba(180, 35, 42, 0.32);
+  border-inline-start: 4px solid var(--crit, #B4232A);
+  border-radius: 10px;
+}
+.overpaid-ap-alert-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.overpaid-ap-alert-ico {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--crit, #B4232A);
+}
+.overpaid-ap-alert-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink, #0F1E38);
+}
+.overpaid-ap-alert-copy strong {
+  font-size: 12.8px;
+  letter-spacing: 0.01em;
+}
+.overpaid-ap-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+:root[data-theme="dark"] .overpaid-ap-alert-bar {
+  background: linear-gradient(90deg, rgba(220, 68, 70, 0.16), rgba(217, 165, 74, 0.08));
+  border-color: rgba(248, 113, 113, 0.38);
+  border-inline-start-color: #F87171;
+}
+:root[data-theme="dark"] .overpaid-ap-alert-ico {
+  color: #FCA5A5;
+}
+:root[data-theme="dark"] .overpaid-ap-alert-copy {
+  color: #F4F2EE;
+}
+@media print {
+  .overpaid-ap-alert-bar {
+    display: none !important;
+  }
+}
+
 /* ==================== SITE NET-BACK & HAULAGE BREAKEVEN STRIP (Edit Site + Site 360°) ==================== */
 .site-nb-strip {
   border-bottom: 1px solid var(--line);
@@ -39221,10 +39310,12 @@ video::-webkit-media-controls-start-playback-button {
   border-top: 1px solid var(--line);
 }
 
-/* Delivery breakeven Sentinel table: 11 columns, so it takes the full width of the two-column grid. */
+/* Wide Sentinel tables: span full width of the two-column grid to keep .table-wrap free of horizontal clip. */
 .mini-table-grid > #snNetBack,
 .mini-table-grid > #snNetBackNoDist,
-.mini-table-grid > #snNetBackApprox {
+.mini-table-grid > #snNetBackApprox,
+.mini-table-grid > #snOverpaidAp,
+.mini-table-grid > #snOverpaidSites {
   grid-column: 1 / -1;
 }
 

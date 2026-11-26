@@ -5829,7 +5829,7 @@
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود",
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود أدناه",
       "Left to Factories & Quarries": "غادروا إلى المصانع والمقالع",
-      "Leg": "الطرف",
+      "Leg": "الفرع",
       "Leg 1": "الطرف 1",
       "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "الشق 1 (مواد لصاحب الموقع) + الشق 2 (نقل لصاحب الشاحنة) + الشق 3 (مصاريف آجلة) = إجمالي الآجل · إجمالي الآجل − المسدد = رصيد الذمم الدائنة الختامي",
       "Leg 1 Material": "الشق 1: المواد",
@@ -14427,7 +14427,7 @@
       "Direct Costs & Bills": "التكاليف المباشرة والفواتير",
       "Less Direct Costs": "ناقص التكاليف المباشرة",
       "Less Expenses": "ناقص المصاريف",
-      "Open Payables": "الذمم الدائنة المفتوحة",
+      "Open Payables": "فتح الذمم",
       "Operational Units": "الوحدات التشغيلية",
       "Period Direct Cost": "التكلفة المباشرة للفترة",
       "Period In / Out": "داخل / خارج الفترة",
@@ -15066,6 +15066,42 @@
       "Remittance Date *": "تاريخ الحوالة *",
       "Remittance Date": "تاريخ الحوالة",
       "Same day and party, already recorded on another form": "نفس اليوم والطرف، مسجل مسبقاً في نموذج آخر",
+      "Payments Exceeding Accrued Supplier & Site Credit": "مدفوعات تتجاوز الرصيد الدائن للموردين والمواقع",
+      "Payments Exceeding Accrued Supplier Credit": "مدفوعات تتجاوز الرصيد الدائن للموردين",
+      "Payables & Procurement": "الذمم الدائنة والمشتريات",
+      "Rule #32 · Payables & Sites": "القاعدة #32 · الذمم والمواقع",
+      "Rule #20 · Payables Audit": "القاعدة #20 · تدقيق الذمم",
+      "Material & Transport, Suppliers & Payables & AI Sentinels": "المواد والنقل، الموردون والذمم والمراقبة الذكية",
+      "Suppliers & Payables & AI Sentinels": "الموردون والذمم والمراقبة الذكية",
+      "Settlement Form & AI Sentinels": "نموذج التسوية والمراقبة الذكية",
+      "Min Overpayment Flag ($ USD)": "الحد الأدنى لتنبيه فائض الدفع ($ أمريكي)",
+      "Critical Exposure Escalation ($ USD)": "عتبة التصعيد الحرج ($ أمريكي)",
+      "Supplier Overpaid Beyond Credit ($)": "تجاوز الدفع للمورد فوق الرصيد ($)",
+      "NO OVERPAYMENTS": "لا توجد دفعات زائدة",
+      "Paid on $0 Loads": "دفع على نقلات $0",
+      "Zero Credit Settled": "تسوية بلا رصيد دائن",
+      "Overpaid Leg AP": "فرع مدفوع بالزيادة",
+      "Overpaid Site": "موقع مدفوع بالزيادة",
+      "Settlement · No Tickets": "تسوية · بلا قسائم",
+      "Own Material": "مواد خاصة",
+      "Flag": "التنبيه",
+      "Overpaid ($)": "الزيادة ($)",
+      "Material + Transport": "المواد + النقل",
+      "Transport + Expenses": "النقل + المصاريف",
+      "Material + Transport + Expenses": "المواد + النقل + المصاريف",
+      "SUPPLIERS PAID ABOVE ACCRUED CREDIT": "الموردون المدفوعون فوق الرصيد الدائن المستحق",
+      "SITES WITH OVERPAYMENTS OR UNPRICED LOADS": "مواقع بدفعات زائدة أو نقلات غير مسعرة",
+      "OVERPAID & UNBACKED MATERIAL / TRANSPORT PAYMENTS FLAGGED (S20)": "تنبيه دفعات مواد / نقل زائدة أو غير مغطاة (S20)",
+      "SUPPLIER PAYMENTS EXCEEDING ACCRUED CREDIT (S20)": "مدفوعات موردين تتجاوز الرصيد الدائن المستحق (S20)",
+      "Inspect Overpaid Suppliers": "فحص الموردين المدفوعين بالزيادة",
+      "Open Sentinel Audit": "فتح تدقيق المراقبة",
+      "Paid exceeds accrued credit (overpayment or unbacked settlement)": "المدفوع يتجاوز الرصيد الدائن المستحق (دفع زائد أو تسوية غير مغطاة)",
+      "Settlements paid against this site with $0.00 material or transport tickets": "تسويات مدفوعة لهذا الموقع مقابل قسائم مواد أو نقل بقيمة $0.00",
+      "External supplier deliveries logged at $0.00 Credit": "توريدات موردين خارجيين مسجلة برصيد دائن $0.00",
+      "Company-owned quarry material ($0.00 external supplier credit expected)": "مواد محجر مملوكة للشركة (المتوقع $0.00 رصيد مورد خارجي)",
+      "Settlements paid against this site with $0.00 raw material or transport tickets": "تسويات مدفوعة لهذا الموقع مقابل قسائم مواد أولية أو نقل بقيمة $0.00",
+      "Company-owned source material ($0.00 supplier material credit expected)": "مواد مصدرية مملوكة للشركة (المتوقع $0.00 رصيد مواد للمورد)",
+      "Flags any supplier, counterparty, or site where cumulative settlements exceed accrued credit balances or payments post against $0.00 or missing invoice credits, whether entered in the app or loaded from historical workbooks.": "ينبّه عن أي مورد أو طرف أو موقع يتجاوز فيه مجموع التسويات الرصيد الدائن المستحق أو تُقيَّد فيه دفعات مقابل فواتير بقيمة $0.00 أو مفقودة، سواء من التطبيق أو الدفاتر السابقة.",
       "Same party, recorded one day apart on another form": "نفس الطرف، مسجل بفارق يوم واحد في نموذج آخر",
       "Same day and party, entries on another form add up to this amount": "نفس اليوم والطرف، قيود في نموذج آخر يساوي مجموعها هذا المبلغ",
       "One day apart, same party, entries on another form add up to this amount": "بفارق يوم واحد ولنفس الطرف، قيود في نموذج آخر يساوي مجموعها هذا المبلغ",
@@ -15442,7 +15478,18 @@
       "Cross-Month": "عبر الأشهر",
       "Reporting Date differs from Transaction Date": "تاريخ التقرير يختلف عن تاريخ العملية",
       "Reporting Date is in a different month than Transaction Date": "تاريخ التقرير في شهر مختلف عن تاريخ العملية",
-      "Pick a Reporting Date different from Transaction Date first": "اختر تاريخ تقرير مختلفاً عن تاريخ العملية أولاً"
+      "Pick a Reporting Date different from Transaction Date first": "اختر تاريخ تقرير مختلفاً عن تاريخ العملية أولاً",
+      "P&L Value Bridge": "جسر الأرباح والخسائر",
+      "P&L Value Bridge (Ex-VAT)": "جسر الأرباح والخسائر (دون الضريبة)",
+      "Resort P&L Value Bridge": "جسر الأرباح والخسائر للمنتجع",
+      "Resort P&L Value Bridge (Ex-VAT)": "جسر الأرباح والخسائر للمنتجع (دون الضريبة)",
+      "Trading P&L Bridge (Landed Cost Economics)": "جسر أرباح وخسائر التجارة (اقتصاديات التكلفة الواصلة)",
+      "Real Estate Income & NOI Bridge": "جسر الإيرادات العقارية وصافي الدخل التشغيلي",
+      "Heavy Commercial Trucks & Chassis": "الشاحنات التجارية الثقيلة والهياكل",
+      "Spare Parts & Commercial Trading": "قطع الغيار وتجارة السيارات",
+      "Portfolio Rent Roll & NOI": "سجل إيجارات المحفظة وصافي الدخل التشغيلي",
+      "Zero Unpriced Expense or Material Queues": "صفر مصاريف أو نقلات مواد غير مسعّرة",
+      "Daily Venue Revenue & Memberships": "الإيرادات اليومية والاشتراكات"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -16386,7 +16433,7 @@
       "Accrual Cutoff Category": "Categorie de provision de coupure",
       "Accrual Date": "Date de provision",
       "Accrual Trial Balance Drift": "Ecart de balance des provisions",
-      "Accrued ($)": "Couru ($)",
+      "Accrued ($)": "Crédit dû ($)",
       "Accrued ($0.00 Drift)": "Provisionne (ecart $0.00)",
       "Accrued (Raw + Credit Exp)": "Couru (Matières + Charges à crédit)",
       "Accrued Ex-VAT": "Cumulé HT",
@@ -21253,7 +21300,7 @@
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
       "Left to Factories & Quarries": "Sortis vers Usines & Carrières",
-      "Leg": "Volet",
+      "Leg": "Branche",
       "Leg 1": "Volet 1",
       "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "Volet 1 (Matière) + Volet 2 (Transport) + Volet 3 (Charges à crédit) − Réglé = Solde Fournisseurs",
       "Leg 1 Material": "Volet 1 : Matières",
@@ -21632,7 +21679,7 @@
       "Matches every monthly salary payment against active staff employment start/end windows. Flags AI Sentinels when unmatched salary payments exceed": "Rapproche chaque salaire payé des périodes de contrat actives et alerte dès que l'écart dépasse",
       "Matching Results": "Résultats correspondants",
       "Matching rows in active scope": "Lignes correspondantes dans le périmètre",
-      "Material": "Matière",
+      "Material": "Matières",
       "Material & Haulage Accrued": "Matières & Transport Courus",
       "Material & Site Suppliers": "Fournisseurs Matières & Sites",
       "Material ($)": "Matières ($)",
@@ -27510,7 +27557,7 @@
       "Nothing to Pay": "Rien à payer",
       "Pay Reduction": "Réduction de salaire",
       "Salary Amount cannot be negative.": "Le montant du salaire ne peut pas être négatif.",
-      "Overpaid": "Trop-perçu",
+      "Overpaid": "Trop-payé",
       "Paid Another Way": "Payé autrement",
       "Record voided, with the back-pay rows of this salary voucher": "Écriture annulée, avec les lignes de rappel de ce bon de salaire",
       "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire",
@@ -29851,7 +29898,7 @@
       "Direct Costs & Bills": "Coûts directs & factures",
       "Less Direct Costs": "Moins coûts directs",
       "Less Expenses": "Moins dépenses",
-      "Open Payables": "Dettes fournisseurs ouvertes",
+      "Open Payables": "Ouvrir les Dettes",
       "Operational Units": "Unités opérationnelles",
       "Period Direct Cost": "Coût direct de la période",
       "Period In / Out": "Entrées / Sorties période",
@@ -30490,6 +30537,42 @@
       "Remittance Date *": "Date de bordereau *",
       "Remittance Date": "Date de bordereau",
       "Same day and party, already recorded on another form": "Même jour et même tiers, déjà saisi dans un autre formulaire",
+      "Payments Exceeding Accrued Supplier & Site Credit": "Paiements dépassant le crédit dû aux fournisseurs et sites",
+      "Payments Exceeding Accrued Supplier Credit": "Paiements dépassant le crédit dû aux fournisseurs",
+      "Payables & Procurement": "Dettes & Approvisionnements",
+      "Rule #32 · Payables & Sites": "Règle #32 · Dettes & Sites",
+      "Rule #20 · Payables Audit": "Règle #20 · Audit Dettes",
+      "Material & Transport, Suppliers & Payables & AI Sentinels": "Matières & Transport, Fournisseurs & Dettes & Sentinelles IA",
+      "Suppliers & Payables & AI Sentinels": "Fournisseurs & Dettes & Sentinelles IA",
+      "Settlement Form & AI Sentinels": "Formulaire de règlement & Sentinelles IA",
+      "Min Overpayment Flag ($ USD)": "Seuil min. d'alerte trop-perçu ($ USD)",
+      "Critical Exposure Escalation ($ USD)": "Seuil d'escalade critique ($ USD)",
+      "Supplier Overpaid Beyond Credit ($)": "Trop-perçu fournisseur au-delà du crédit ($)",
+      "NO OVERPAYMENTS": "AUCUN TROP-PAYÉ",
+      "Paid on $0 Loads": "Payé sur voyages à 0 $",
+      "Zero Credit Settled": "Réglé sans crédit",
+      "Overpaid Leg AP": "Branche trop payée",
+      "Overpaid Site": "Site trop payé",
+      "Settlement · No Tickets": "Règlement · Sans bons",
+      "Own Material": "Matériau propre",
+      "Flag": "Alerte",
+      "Overpaid ($)": "Trop-payé ($)",
+      "Material + Transport": "Matières + Transport",
+      "Transport + Expenses": "Transport + Charges",
+      "Material + Transport + Expenses": "Matières + Transport + Charges",
+      "SUPPLIERS PAID ABOVE ACCRUED CREDIT": "FOURNISSEURS PAYÉS AU-DELÀ DU CRÉDIT DÛ",
+      "SITES WITH OVERPAYMENTS OR UNPRICED LOADS": "SITES AVEC TROP-PAYÉS OU VOYAGES NON CHIFFRÉS",
+      "OVERPAID & UNBACKED MATERIAL / TRANSPORT PAYMENTS FLAGGED (S20)": "PAIEMENTS MATIÈRES / TRANSPORT EXCÉDENTAIRES OU SANS CRÉDIT (S20)",
+      "SUPPLIER PAYMENTS EXCEEDING ACCRUED CREDIT (S20)": "PAIEMENTS FOURNISSEURS DÉPASSANT LE CRÉDIT DÛ (S20)",
+      "Inspect Overpaid Suppliers": "Inspecter fournisseurs trop payés",
+      "Open Sentinel Audit": "Ouvrir l'audit Sentinelle",
+      "Paid exceeds accrued credit (overpayment or unbacked settlement)": "Le payé dépasse le crédit dû (trop-perçu ou règlement sans pièce)",
+      "Settlements paid against this site with $0.00 material or transport tickets": "Règlements payés pour ce site sans bons matières ni transport (0,00 $)",
+      "External supplier deliveries logged at $0.00 Credit": "Livraisons de fournisseurs externes enregistrées à crédit 0,00 $",
+      "Company-owned quarry material ($0.00 external supplier credit expected)": "Matériau de carrière propre (crédit fournisseur externe attendu 0,00 $)",
+      "Settlements paid against this site with $0.00 raw material or transport tickets": "Règlements payés sur ce site avec 0,00 $ de bons matières ou transport",
+      "Company-owned source material ($0.00 supplier material credit expected)": "Matériau source propre (0,00 $ de crédit matière fournisseur attendu)",
+      "Flags any supplier, counterparty, or site where cumulative settlements exceed accrued credit balances or payments post against $0.00 or missing invoice credits, whether entered in the app or loaded from historical workbooks.": "Signale tout fournisseur, contrepartie ou site dont les règlements cumulés dépassent les crédits dus ou s'imputent sur des factures manquantes ou à 0,00 $, via l'app ou les classeurs.",
       "Same party, recorded one day apart on another form": "Même tiers, saisi à un jour d'écart dans un autre formulaire",
       "Same day and party, entries on another form add up to this amount": "Même jour et même tiers, des écritures d'un autre formulaire totalisent ce montant",
       "One day apart, same party, entries on another form add up to this amount": "À un jour d'écart et pour le même tiers, des écritures d'un autre formulaire totalisent ce montant",
@@ -30866,7 +30949,18 @@
       "Cross-Month": "Inter-mois",
       "Reporting Date differs from Transaction Date": "La date comptable diffère de la date d'opération",
       "Reporting Date is in a different month than Transaction Date": "La date comptable est dans un autre mois que la date d'opération",
-      "Pick a Reporting Date different from Transaction Date first": "Choisissez d'abord une date comptable différente de la date d'opération"
+      "Pick a Reporting Date different from Transaction Date first": "Choisissez d'abord une date comptable différente de la date d'opération",
+      "P&L Value Bridge": "Pont de Valeur P&L",
+      "P&L Value Bridge (Ex-VAT)": "Pont de Valeur P&L (HT)",
+      "Resort P&L Value Bridge": "Pont de Valeur P&L du Resort",
+      "Resort P&L Value Bridge (Ex-VAT)": "Pont de Valeur P&L du Resort (HT)",
+      "Trading P&L Bridge (Landed Cost Economics)": "Pont de Résultat Négoce (Économie du Coût Rendu)",
+      "Real Estate Income & NOI Bridge": "Pont des Revenus Immobiliers & NOI",
+      "Heavy Commercial Trucks & Chassis": "Poids Lourds & Châssis Commerciaux",
+      "Spare Parts & Commercial Trading": "Pièces Détachées & Négoce Automobile",
+      "Portfolio Rent Roll & NOI": "État Locatif & NOI du Portefeuille",
+      "Zero Unpriced Expense or Material Queues": "Zéro Charge ou Bon Matière Non Valorisé en Attente",
+      "Daily Venue Revenue & Memberships": "Recettes Journalières & Abonnements"
     }
   };
 
@@ -31556,7 +31650,7 @@
     if (/^[SHRTPI]\d{1,2}$/.test(t)) return true;
     // Equipment / VIN / Cadastry / Claim / Voucher / Ticket / Seat codes
     if (/^[A-Z]{1,6}[-#][A-Z0-9.,/#&-]*\d[A-Z0-9.,/#&-]*$/i.test(t)) return true;
-    if (/^(Tb?\d+|SH\d+|EX\d+|LD\d+|DZ\d+|GR\d+|KA\s*#\d+|#\d+|\d{5,9})$/i.test(t)) return true;
+    if (/^(Tb?\d+|SH\d+|EX\d+|LD\d+|DZ\d+|GR\d+|(?:KA|SH)\s*#\d+|#\d+|\d{5,9})$/i.test(t)) return true;
     if (/^[\d,.]+\s*(?:m³\s*)?WTC(?:\s*\([^)]+\))?\s*[·/]\s*[\d,.]+\s*(?:m³\s*)?BBC(?:\s*\([^)]+\))?$/i.test(t)) return true;
     if (/^(\d+[,\d/& ]*\s+(Mina el Hosn|Nabatieh el Tahta|Kaakaayit al Snoubar|Chiah|Msaytbeh|Ras Beirut|Mazraa|Sibline)|[\d,]+\/\d+\s+Qrouh)/i.test(t)) return true;
     if (/^(PLOT-|INTL-|WO-|IMP-|ALZ-|AXA-|BNK-|MGF-|CLM-|SU-|TRIP-|KA-\d{4}-)/i.test(t)) return true;
@@ -32416,6 +32510,30 @@
         ? `الأصناف 1–7 في شجرة الحسابات اللبنانية مطابقة عبر ${m[1]} شركات عاملة${sep}`
         : `Classes 1–7 du Plan Comptable Libanais rapprochées sur ${m[1]} entités${sep}`;
     }
+    m = trimmed.match(/^Lebanese CoA Classes 1-7 reconciled for\s+(.+?)(\s*·\s*Trial Balance\s+\$[\d.,]+\s+diff)?$/i);
+    if (m) {
+      const coTr = translateCore(m[1], lang, depth + 1);
+      const tail = m[2] ? translateCore(m[2].replace(/^\s*·\s*/, ''), lang, depth + 1) : '';
+      const sep = tail ? ` · ${tail}` : '';
+      return lang === 'ar'
+        ? `الأصناف 1–7 في شجرة الحسابات اللبنانية مطابقة لـ ${coTr}${sep}`
+        : `Classes 1–7 du Plan Comptable Libanais rapprochées pour ${coTr}${sep}`;
+    }
+    m = trimmed.match(/^Daily\s+(.+?)\s+operations active for\s+(.+)$/i);
+    if (m) {
+      const indTr = translateCore(m[1], lang, depth + 1);
+      const coTr = translateCore(m[2], lang, depth + 1);
+      return lang === 'ar'
+        ? `العمليات اليومية لـ ${indTr} نشطة لـ ${coTr}`
+        : `Opérations quotidiennes ${indTr} actives pour ${coTr}`;
+    }
+    m = trimmed.match(/^Daily\s+(.+?)\s+operations active across\s+(\d+)\s+entit(?:y|ies)$/i);
+    if (m) {
+      const indTr = translateCore(m[1], lang, depth + 1);
+      return lang === 'ar'
+        ? `العمليات اليومية لـ ${indTr} نشطة عبر ${m[2]} شركات`
+        : `Opérations quotidiennes ${indTr} actives sur ${m[2]} entités`;
+    }
     m = trimmed.match(/^Trial Balance\s+(\$[\d.,]+)\s+diff$/i);
     if (m) return lang === 'ar' ? `فرق ميزان المراجعة ${m[1]}` : `Écart Balance ${m[1]}`;
 
@@ -33018,6 +33136,123 @@
       return lang === 'ar'
         ? `تمت مراقبة ${m[1]} نقلة منحدر (${m[2]} طن-كم · +${m[3]} كم تآكل مرجّح): جميع فترات مكابح وناقل حركة الأسطول ضمن الحدود.`
         : `${m[1]} trajet(s) pentu(s) suivi(s) (${m[2]} t-km · +${m[3]} km d'usure pondérée) : tous les intervalles freins et transmission sont conformes.`;
+    }
+
+    // Overpaid & Unbacked Payables Sentinel (#32 / S20)
+    m = trimmed.match(/^(\d[\d,]*)\s+Overpaid$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوع بالزيادة` : `${m[1]} trop payé(s)`;
+
+    m = trimmed.match(/^Overpaid\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `مدفوع بالزيادة (${m[1]})` : `Trop payé (${m[1]})`;
+
+    m = trimmed.match(/^Overpaid\s*\/\s*Unbacked\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `مدفوع بالزيادة / غير مغطى (${m[1]})` : `Trop payé / Sans crédit (${m[1]})`;
+
+    m = trimmed.match(/^Unpriced\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `غير مسعر (${m[1]})` : `Non chiffré (${m[1]})`;
+
+    m = trimmed.match(/^Filter Overpaid Sites\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `تصفية المواقع بالزيادة (${m[1]})` : `Filtrer sites trop payés (${m[1]})`;
+
+    m = trimmed.match(/^Filter Overpaid\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `تصفية الزيادة (${m[1]})` : `Filtrer trop payés (${m[1]})`;
+
+    m = trimmed.match(/^([\d,]+)\s+OVERPAID\s*·\s*(\$[\d,.-]+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوع بالزيادة · ${m[2]}` : `${m[1]} TROP PAYÉ(S) · ${m[2]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+SITES\s*·\s*(\$[\d,.-]+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مواقع · ${m[2]}` : `${m[1]} SITES · ${m[2]}`;
+
+    m = trimmed.match(/^Overpaid Leg\s*\(\+?(\$[\d.,-]+)\)$/i);
+    if (m) return lang === 'ar' ? `فرع مدفوع بالزيادة (+${m[1]})` : `Branche trop payée (+${m[1]})`;
+
+    m = trimmed.match(/^([\d,]+)\s+Unpriced Raw\s*\(\$0\.00\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مواد أولية غير مسعرة ($0.00)` : `${m[1]} matières brutes non chiffrées (0,00 $)`;
+
+    m = trimmed.match(/^>=\s*(\$[\d,.-]+)\s+overpaid\s*·\s*Crit\s*>=\s*(\$[\d,.-]+)$/i);
+    if (m) return lang === 'ar' ? `>= ${m[1]} دفع زائد · حرج >= ${m[2]}` : `>= ${m[1]} trop-payé · Crit. >= ${m[2]}`;
+
+    m = trimmed.match(/^(Rule\s*#\d+\s*·\s*(?:Payables\s*&\s*Sites|Payables\s*Audit))\s*·\s*(.+)$/i);
+    if (m) return `${translateString(m[1], lang)} · ${translateString(m[2], lang)}`;
+
+    m = trimmed.match(/^Audits cumulative settlements versus accrued credit across all payable legs and flags any supplier or site overpaid by >= (\$[\d,.-]+) \(critical at >= (\$[\d,.-]+)\) or settled against \$0\.00 unbacked credits\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يدقّق إجمالي التسويات التراكمية مقابل الرصيد الدائن عبر كل فروع الدفع وينبّه عند تجاوز الدفع لأي مورد أو موقع >= ${m[1]} (حرج >= ${m[2]}) أو عند التسوية مقابل رصيد $0.00 غير مغطى.`
+        : `Contrôle les règlements cumulés par rapport aux crédits dus sur toutes les branches et signale tout fournisseur ou site trop payé de >= ${m[1]} (critique >= ${m[2]}) ou réglé sans crédit (0,00 $).`;
+    }
+
+    m = trimmed.match(/^Live Sentinel: Flags suppliers or sites overpaid by (\$[\d,.-]+)\+ \(critical at (\$[\d,.-]+)\+\) and requires a note when posting a settlement past open AP\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقب حي: ينبّه عند تجاوز دفع الموردين أو المواقع ${m[1]}+ (حرج ${m[2]}+) ويطلب تدوين ملاحظة عند التسوية فوق الرصيد المستحق.`
+        : `Sentinelle active : signale les fournisseurs ou sites payés ${m[1]}+ en trop (critique ${m[2]}+) et exige un motif en Notes au-delà de la dette ouverte.`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+suppliers?\s+paid\s+(\$[\d,.-]+)\s+above accrued credit\s+\(threshold\s*>=\s*(\$[\d,.-]+)\)(?:\s*·\s*([\d,]+)\s+sites?\s+overpaid\s+\((\$[\d,.-]+)\))?(?:\s*·\s*([\d,]+)\s+external \$0 credit raw loads)?\.(?:\s+Top (supplier|site):\s+(.+?)\s+\((\$[\d,.-]+)\s+overpaid(?:\s+on\s+([^)]+))?\)\.)?$/i);
+    if (m) {
+      const siteP = m[4] ? (lang === 'ar' ? ` · ${m[4]} موقع مدفوع بالزيادة (${m[5]})` : ` · ${m[4]} site(s) trop payé(s) (${m[5]})`) : '';
+      const unpP = m[6] ? (lang === 'ar' ? ` · ${m[6]} نقلة مواد خارجية بقيمة $0` : ` · ${m[6]} chargements externes à 0 $`) : '';
+      const topKind = m[7] ? (lang === 'ar' ? (m[7].toLowerCase() === 'site' ? 'أعلى موقع' : 'أعلى مورد') : (m[7].toLowerCase() === 'site' ? 'Site principal' : 'Fournisseur principal')) : '';
+      const legP = m[10] ? (lang === 'ar' ? ` (${translateString(m[10], 'ar')})` : ` (${translateString(m[10], 'fr')})`) : '';
+      const topP = m[7] ? (lang === 'ar' ? ` ${topKind}: ${m[8]} (${m[9]} فائض${legP}).` : ` ${topKind} : ${m[8]} (${m[9]} trop-payé${legP}).`) : '';
+      return lang === 'ar'
+        ? `${m[1]} موردين مدفوعين ${m[2]} فوق الرصيد الدائن المستحق (العتبة >= ${m[3]})${siteP}${unpP}.${topP}`
+        : `${m[1]} fournisseur(s) payés ${m[2]} au-dessus du crédit dû (seuil >= ${m[3]})${siteP}${unpP}.${topP}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+suppliers?\s+paid\s+(\$[\d,.-]+)\s+above accrued\s+(.+?)\s+credit\s+\(threshold\s*>=\s*(\$[\d,.-]+)\)\.(?:\s+Top counterparty:\s+(.+?)\s+\((\$[\d,.-]+)\s+overpaid\)\.)?$/i);
+    if (m) {
+      const indL = translateString(m[3], lang);
+      const topP = m[5] ? (lang === 'ar' ? ` أبرز طرف: ${m[5]} (${m[6]} فائض).` : ` Contrepartie principale : ${m[5]} (${m[6]} trop-payé).`) : '';
+      return lang === 'ar'
+        ? `${m[1]} موردين مدفوعين ${m[2]} فوق الرصيد الدائن لقطاع ${indL} (العتبة >= ${m[4]}).${topP}`
+        : `${m[1]} fournisseur(s) payés ${m[2]} au-dessus du crédit ${indL} (seuil >= ${m[4]}).${topP}`;
+    }
+
+    m = trimmed.match(/^All cumulative supplier( and site)? settlement totals sit within accrued payable credit \(tolerance < (\$[\d,.-]+)\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جميع إجماليات تسويات الموردين${m[1] ? ' والمواقع' : ''} التراكمية ضمن الرصيد الدائن المستحق (الهامش < ${m[2]}).`
+        : `Tous les règlements cumulés fournisseurs${m[1] ? ' et sites' : ''} restent dans la limite des crédits dus (tolérance < ${m[2]}).`;
+    }
+
+    m = trimmed.match(/^Exceeds open leg credit by (\$[\d.,-]+)\s*·\s*Explain in Notes \(3\+ chars\)(?:\s*\(([\d,]+) raw loads at \$0\.00\))?$/i);
+    if (m) {
+      const rl = m[2] ? (lang === 'ar' ? ` (${m[2]} نقلات مواد بسعر $0.00)` : ` (${m[2]} chargements bruts à 0,00 $)`) : '';
+      return lang === 'ar'
+        ? `يتجاوز الرصيد المفتوح لهذا الفرع بمقدار ${m[1]} · اشرح السبب في الملاحظات (3+ أحرف)${rl}`
+        : `Dépasse le crédit ouvert de cette branche de ${m[1]} · Expliquez en Notes (3+ car.)${rl}`;
+    }
+
+    m = trimmed.match(/^Settlement exceeds open (Material|Transport|Expense) credit by (\$[\d.,-]+)\. Enter a reason in Notes \(3\+ chars\) before posting\.$/i);
+    if (m) {
+      const legTr = translateString(m[1], lang);
+      return lang === 'ar'
+        ? `التسوية تتجاوز رصيد فرع ${legTr} المفتوح بمقدار ${m[2]}. أدخل السبب في الملاحظات (3+ أحرف) قبل الحفظ.`
+        : `Le règlement dépasse le crédit ouvert (${legTr}) de ${m[2]}. Saisissez un motif en Notes (3+ car.) avant validation.`;
+    }
+
+    // Overpaid alert strip summary sentences (raw, suppliers, sibling expenses)
+    if (/(?:flagged sites in scope|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+)/i.test(trimmed)) {
+      const segs = trimmed.split(/\s*·\s*/).map(seg => {
+        let mm = seg.match(/^([\d,]+)\s+suppliers paid (\$[\d,.-]+) above accrued credit$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} موردين مدفوعين ${mm[2]} فوق الرصيد الدائن` : `${mm[1]} fournisseurs payés ${mm[2]} au-delà du crédit`;
+        mm = seg.match(/^([\d,]+)\s+sites overpaid \((\$[\d,.-]+)\)$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} مواقع مدفوعة بالزيادة (${mm[2]})` : `${mm[1]} sites trop payés (${mm[2]})`;
+        mm = seg.match(/^([\d,]+)\s+flagged sites in scope$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} مواقع منبّهة ضمن النطاق` : `${mm[1]} sites signalés`;
+        mm = seg.match(/^([\d,]+)\s+external \$0 raw loads$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} نقلات خارجية بسعر $0` : `${mm[1]} voyages externes à 0 $`;
+        mm = seg.match(/^([\d,]+)\s+accounts overpaid totaling (\$[\d,.-]+)$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} حسابات مدفوعة بالزيادة بإجمالي ${mm[2]}` : `${mm[1]} comptes trop payés totalisant ${mm[2]}`;
+        mm = seg.match(/^(Material|Transport|Expenses)\s+(\$[\d,.-]+)$/i);
+        if (mm) return `${translateString(mm[1], lang)} ${mm[2]}`;
+        mm = seg.match(/^Top:\s*(.+?)\s+\((\$[\d,.-]+)\)$/i);
+        if (mm) return lang === 'ar' ? `الأعلى: ${mm[1]} (${mm[2]})` : `Principal : ${mm[1]} (${mm[2]})`;
+        return translateString(seg, lang);
+      });
+      return segs.join(' · ');
     }
     m = trimmed.match(/^(Brake & Drivetrain|Steep Wear)\s*\(([\d,]+)\)$/i);
     if (m) {
