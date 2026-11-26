@@ -23,6 +23,14 @@
       .replace(/'/g, '&#39;');
   }
 
+  const PK_TRASH_SVG = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6h17M8.5 6V4a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 4v2M18.5 6v13a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V6M10 10.5v6M14 10.5v6"/></svg>';
+
+  function pkTrashSvg() {
+    return (window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function')
+      ? window.MFG_ICONS.svg('trash')
+      : PK_TRASH_SVG;
+  }
+
   function getFetchFn() {
     if (typeof window.ISABI_EDGE_FETCH === 'function') return window.ISABI_EDGE_FETCH;
     return window.fetch.bind(window);
@@ -357,7 +365,7 @@
                   ${pk.last_used_at ? `<span>· ${esc(tr('Last used'))} ${esc(String(pk.last_used_at).slice(0, 10))}</span>` : ''}
                 </div>
               </div>
-              <button type="button" class="btn pk-del-btn" data-pk-delete="${esc(pk.id)}">${esc(tr('Remove'))}</button>
+              <button type="button" class="btn btn-danger-outline pk-del-btn" data-pk-delete="${esc(pk.id)}" data-ui-tip="${esc(tr('Remove passkey'))}" aria-label="${esc(tr('Remove passkey'))}">${pkTrashSvg()}<span>${esc(tr('Remove'))}</span></button>
             </div>
           `).join('') : `<div class="pk-empty">${esc(tr('No hardware passkey enrolled yet on your account.'))}</div>`}
         </div>
@@ -371,7 +379,7 @@
                   <div class="pk-row-title"><strong data-no-i18n="1">${esc(u.full_name)}</strong> · <span data-no-i18n="1">${esc(pk.device_label || 'Security Device')}</span></div>
                   <div class="pk-row-meta mono">${pk.alg === -257 ? 'RS256' : 'ES256 P-256'} · ${esc(String(pk.created_at || '').slice(0, 10))}</div>
                 </div>
-                <button type="button" class="btn pk-del-btn" data-pk-delete="${esc(pk.id)}">${esc(tr('Revoke'))}</button>
+                <button type="button" class="btn btn-danger-outline pk-del-btn" data-pk-delete="${esc(pk.id)}" data-ui-tip="${esc(tr('Revoke passkey'))}" aria-label="${esc(tr('Revoke passkey'))}">${pkTrashSvg()}<span>${esc(tr('Revoke'))}</span></button>
               </div>
             `).join('')).join('')}
           </div>

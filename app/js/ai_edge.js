@@ -19,6 +19,9 @@
     voiceActive: false,
     speechRec: null,
     lastVoiceStatus: '',
+    mfgVoiceText: '',
+    indVoiceText: '',
+    voiceTargetDom: false,
     batchOpen: false,
     batchPreset: 'auto',
     batchRawText: '',
@@ -853,18 +856,18 @@
     };
 
     // Form intent detection across EN / AR / FR
-    if (/\b(diesel|mazout|fuel|litres?|liters?)\b|مازوت|ديزل|وقود|ليتر/.test(low)) {
+    if (activeInd === 'Manufacturing' && /\b(diesel|mazout|fuel|litres?|liters?)\b|مازوت|ديزل|وقود|ليتر/.test(low)) {
       out.formType = 'fuel';
       out.uom = 'Litre';
-    } else if (/\b(repair|mechanic|hydraulic|brake|overhaul)\b|تصليح|صيانة/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(repair|mechanic|hydraulic|brake|overhaul)\b|تصليح|صيانة/.test(low)) {
       out.formType = 'repair';
-    } else if (/\b(quarry|raw|hauler)\b|مقلع|كسارة/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(quarry|raw|hauler)\b|مقلع|كسارة/.test(low)) {
       out.formType = 'raw';
     } else if (/\b(intercompany|sister|sweep|wire)\b|تحويل بين/.test(low)) {
       out.formType = 'external';
-    } else if (/\b(expense|bill|supplier|invoice)\b|فاتورة|مصاريف|مصروف/.test(low) && activeInd === 'Manufacturing') {
+    } else if (/\b(expense|bill|supplier|invoice)\b|فاتورة|مصاريف|مصروف/.test(low)) {
       out.formType = 'expense';
-    } else if (/\b(mghasal|bodra|sakher|sand|aggregate|ton|m3|delivery)\b|مغسل|بودرة|صخر|بحص|رمل/.test(low)) {
+    } else if (activeInd === 'Manufacturing' && /\b(mghasal|bodra|sakher|sand|aggregate|ton|m3|delivery)\b|مغسل|بودرة|صخر|بحص|رمل/.test(low)) {
       out.formType = 'sales';
     }
 
@@ -1001,8 +1004,24 @@
       });
     }
 
+    const markVoiceExpanded = domFlag => {
+      const m = $(domFlag ? 'indDomainEntryModal' : 'entryModal');
+      if (!m || m.hidden) return;
+      m.classList.add('mob-ai-voice-open');
+      m.classList.remove('mob-ai-scan-open');
+      const qb = $(domFlag ? 'indMobAiQuickBar' : 'entryMobAiQuickBar');
+      if (qb) {
+        const sBtn = qb.querySelector('[data-mob-ai="scan"]');
+        const vBtn = qb.querySelector('[data-mob-ai="voice"]');
+        if (sBtn) { sBtn.classList.remove('is-open'); sBtn.setAttribute('aria-expanded', 'false'); }
+        if (vBtn) { vBtn.classList.add('is-open'); vBtn.setAttribute('aria-expanded', 'true'); }
+      }
+    };
+
     let filled = 0;
     if (isDomainModal) {
+      EDGE_STATE.indVoiceText = clean;
+      markVoiceExpanded(true);
       if (parsed.amount != null) {
         ['ide_tot', 'ide_gwp', 'ide_usd', 'ide_ttc', 'ide_contract', 'ide_claimed', 'ide_actual'].forEach(fid => {
           if (setInputVal(fid, parsed.amount)) filled++;
@@ -1024,19 +1043,21 @@
       return { ok: true, filled: Math.max(1, filled), parsed };
     }
 
-    // Switch Smart Entry modal tab if voice clearly names another permitted form in the active industry
-    const curIndForVoice = (D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-    const isMfgForVoice = !curIndForVoice || curIndForVoice === 'Manufacturing';
-    const isFleetForVoice = (D && typeof D.isFleetUniversalIndustry === 'function') ? D.isFleetUniversalIndustry(curIndForVoice) : true;
-    const mfgOnlyForVoice = D && D.MFG_ONLY_MODAL_FORMS;
-    const voiceTargetAllowed = Boolean(
-      parsed.formType &&
-      (isMfgForVoice || !(mfgOnlyForVoice && mfgOnlyForVoice.has(parsed.formType))) &&
-      (isFleetForVoice || (parsed.formType !== 'equipment' && parsed.formType !== 'driver'))
+    EDGE_STATE.mfgVoiceText = clean;
+    // Switch Smart Entry modal tab if voice clearly names another form (strictly within active industry policy)
+    const voiceInd = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
+      ? D.getActiveIndustry(D.STATE.company)
+      : 'Manufacturing';
+    const isBlockedVoiceForm = Boolean(
+      voiceInd && voiceInd !== 'Manufacturing' && parsed.formType && (
+        (D && (typeof D.isMfgOnlyModalForm === 'function' ? D.isMfgOnlyModalForm(parsed.formType) : Boolean(D.MFG_ONLY_MODAL_FORMS && D.MFG_ONLY_MODAL_FORMS.has(parsed.formType)))) ||
+        (D && typeof D.isFleetUniversalIndustry === 'function' && !D.isFleetUniversalIndustry(voiceInd) && (parsed.formType === 'equipment' || parsed.formType === 'driver'))
+      )
     );
-    if (voiceTargetAllowed && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
+    if (parsed.formType && !isBlockedVoiceForm && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
       D.openEntryModal(parsed.formType, null, { forceSwitch: true });
     }
+    markVoiceExpanded(false);
 
     if (parsed.equipment) {
       if (setInputVal('f_truck', parsed.equipment)) filled++;
@@ -1089,6 +1110,18 @@
     return { ok: true, filled: Math.max(1, filled), parsed };
   }
 
+  function clearVoicePrompt(isDomainModal) {
+    if (isDomainModal) {
+      EDGE_STATE.indVoiceText = '';
+      const el = $('aieIndVoicePromptInput');
+      if (el) el.value = '';
+    } else {
+      EDGE_STATE.mfgVoiceText = '';
+      const el = $('aieMfgVoicePromptInput');
+      if (el) el.value = '';
+    }
+  }
+
   function stopVoiceCapture() {
     if (EDGE_STATE.speechRec) {
       try { EDGE_STATE.speechRec.stop(); } catch (_) {}
@@ -1102,7 +1135,7 @@
     }
   }
 
-  function startLiveSpeechCapture(inputEl, micBtn) {
+  function startLiveSpeechCapture(inputEl, micBtn, isDomainModal) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       if (inputEl) inputEl.focus({ preventScroll: true });
@@ -1113,6 +1146,7 @@
       stopVoiceCapture();
       return;
     }
+    EDGE_STATE.voiceTargetDom = Boolean(isDomainModal);
     const rec = new SR();
     const bcpMap = { en: 'en-US', ar: 'ar-LB', fr: 'fr-FR' };
     rec.lang = bcpMap[EDGE_STATE.voiceLang] || 'en-US';
@@ -1122,24 +1156,36 @@
     EDGE_STATE.voiceActive = true;
     if (micBtn) micBtn.classList.add('is-recording');
 
+    const syncMicBtns = active => {
+      if (typeof document === 'undefined') return;
+      const targetBtn = $(EDGE_STATE.voiceTargetDom ? 'aieIndVoiceMicBtn' : 'aieMfgVoiceMicBtn') || micBtn;
+      document.querySelectorAll('#aieMfgVoiceMicBtn.is-recording, #aieIndVoiceMicBtn.is-recording').forEach(b => {
+        if (!active || b !== targetBtn) b.classList.remove('is-recording');
+      });
+      if (active && targetBtn) targetBtn.classList.add('is-recording');
+    };
     rec.onresult = ev => {
       let transcript = '';
       for (let i = 0; i < ev.results.length; i++) {
         transcript += ev.results[i][0].transcript + ' ';
       }
-      if (inputEl) inputEl.value = transcript.trim();
+      const txt = transcript.trim();
+      if (EDGE_STATE.voiceTargetDom) EDGE_STATE.indVoiceText = txt;
+      else EDGE_STATE.mfgVoiceText = txt;
+      const liveInp = $(EDGE_STATE.voiceTargetDom ? 'aieIndVoicePromptInput' : 'aieMfgVoicePromptInput') || inputEl;
+      if (liveInp) liveInp.value = txt;
     };
     rec.onend = () => {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     };
     rec.onerror = () => {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     };
     try { rec.start(); } catch (_) {
       EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      syncMicBtns(false);
     }
   }
 
@@ -1190,6 +1236,16 @@
     const isSingleRecordEdit = isDomainModal
       ? Boolean($('indEntryModalEyebrow') && /EDIT DOMAIN RECORD/i.test($('indEntryModalEyebrow').textContent || ''))
       : isEditingAnyMfgRecord();
+    if (inp) {
+      inp.value = String((isDomainModal ? EDGE_STATE.indVoiceText : EDGE_STATE.mfgVoiceText) || '');
+      inp.addEventListener('input', () => {
+        if (isDomainModal) EDGE_STATE.indVoiceText = inp.value;
+        else EDGE_STATE.mfgVoiceText = inp.value;
+      });
+    }
+    if (micBtn && EDGE_STATE.voiceActive && EDGE_STATE.voiceTargetDom === Boolean(isDomainModal)) {
+      micBtn.classList.add('is-recording');
+    }
     if (batchBtn && (isSingleRecordEdit || !canUseBatchIntake())) batchBtn.hidden = true;
     const qBarMob = $(isDomainModal ? 'indMobAiQuickBar' : 'entryMobAiQuickBar');
     const qBatchMob = qBarMob ? qBarMob.querySelector('[data-mob-ai="batch"]') : null;
@@ -1205,7 +1261,7 @@
     if (micBtn) {
       micBtn.addEventListener('click', e => {
         e.stopPropagation();
-        startLiveSpeechCapture(inp, micBtn);
+        startLiveSpeechCapture(inp, micBtn, isDomainModal);
       });
     }
     if (applyBtn) {
@@ -1227,6 +1283,8 @@
         e.stopPropagation();
         const txt = smpBtn.getAttribute('data-sample-voice') || '';
         if (inp) inp.value = txt;
+        if (isDomainModal) EDGE_STATE.indVoiceText = txt;
+        else EDGE_STATE.mfgVoiceText = txt;
         await applyVoiceToActiveModal(txt, isDomainModal);
       });
     }
@@ -6320,7 +6378,7 @@
       mountVoiceAndBatchOnEntryBar(indScanBar, true);
     }
 
-    if (EDGE_STATE.voiceActive && (!mfgModal || mfgModal.hidden) && (!indModal || indModal.hidden)) {
+    if (EDGE_STATE.voiceActive && ((EDGE_STATE.voiceTargetDom && !indEditable) || (!EDGE_STATE.voiceTargetDom && !mfgEditable))) {
       stopVoiceCapture();
     }
 
@@ -9823,6 +9881,7 @@
     getPhase17CloseSnapshot,
     parseVoiceUtteranceLocal,
     applyVoiceToActiveModal,
+    clearVoicePrompt,
     stopVoiceCapture,
     parseBatchTextToRows,
     openBatchIntakeModal,

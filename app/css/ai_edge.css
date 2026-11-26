@@ -916,11 +916,9 @@
   }
 }
 
-@media (max-width: 768px) {
-  #entryModal:not(.mob-ai-voice-open) #aieMfgVoiceStrip,
-  #indDomainEntryModal:not(.mob-ai-voice-open) #aieIndVoiceStrip {
-    display: none !important;
-  }
+#entryModal:not(.mob-ai-voice-open) #aieMfgVoiceStrip,
+#indDomainEntryModal:not(.mob-ai-voice-open) #aieIndVoiceStrip {
+  display: none !important;
 }
 
 /* Data Hygiene Alias Clustering Panel inside Universal Registry Panels */
