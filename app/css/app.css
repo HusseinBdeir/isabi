@@ -29029,6 +29029,24 @@ label.exp-inline-bar-lbl {
   pointer-events: none !important;
   z-index: -1 !important;
 }
+.exp-totals-ref-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(118px, 0.85fr) minmax(118px, 0.85fr) minmax(220px, 1.45fr) minmax(150px, 1.05fr) minmax(190px, 1.65fr);
+  gap: 7px 12px;
+  align-items: start;
+}
+.exp-totals-ref-row > .form-field {
+  min-width: 0;
+}
+@media (max-width: 1080px) {
+  .exp-totals-ref-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .exp-totals-ref-row > #wrap_f_notes {
+    grid-column: span 2;
+  }
+}
 @media (max-width: 768px) {
   .exp-method-seg {
     height: 38px !important;
@@ -29043,6 +29061,19 @@ label.exp-inline-bar-lbl {
     height: 38px !important;
     min-height: 38px !important;
     max-height: 38px !important;
+  }
+  .exp-amt-input-wrap > input {
+    font-size: 16px;
+    height: 38px;
+  }
+  .exp-totals-ref-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+  }
+  .exp-totals-ref-row > #wrap_f_amount,
+  .exp-totals-ref-row > #wrap_f_reference,
+  .exp-totals-ref-row > #wrap_f_notes {
+    grid-column: 1 / -1;
   }
   #wrap_f_amount:has(#expPriceModePills) {
     grid-column: 1 / -1;

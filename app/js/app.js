@@ -11830,10 +11830,10 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
     'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
-    'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_amount', 'f_vat', 'f_net', 'f_total',
+    'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_gross_amount', 'f_amount', 'f_vat', 'f_net', 'f_total',
     'f_usd', 'f_lbp', 'f_fxrate', 'f_rate', 'f_vatpct', 'f_vatfx',
     'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
     'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
@@ -28733,11 +28733,11 @@
 
   function canManageDataHygiene() {
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    if (!u) return false;
+    if (!u || u.suspended || String(u.status || '').toLowerCase() === 'suspended') return false;
     if (typeof isOwner === 'function' && isOwner(u)) return true;
     const role = String(u.role || '').trim();
     const uid = String(u.id || '').trim();
-    return role === 'Owner' || role === 'Supervisor' || role === 'Supervisor + Entry' || uid === 'u1' || uid === 'u2';
+    return role === 'Owner' || role.toLowerCase().includes('supervisor') || uid === 'u1' || uid === 'u2';
   }
 
   function partyHygieneRuleKey(ind, kind, aliasName) {
@@ -28777,10 +28777,24 @@
     const kStr = String(kind || 'supplier').trim().toLowerCase() || 'supplier';
     const aliasStr = String(alias || '').trim();
     const canonStr = String(canonical || '').trim();
+    const aliasNorm = norm(aliasStr).replace(/\s+/g, ' ');
+    const canonNorm = norm(canonStr).replace(/\s+/g, ' ');
     const rk = partyHygieneRuleKey(indStr, kStr, aliasStr);
-    if (!rk || !canonStr) return null;
+    if (!rk || !canonStr || aliasNorm === canonNorm) return null;
     const u = typeof activeUser === 'function' ? activeUser() : {};
+    const byWho = String((u && (u.email || u.full_name)) || 'owner');
     const nextStatus = status === 'dismissed' ? 'dismissed' : (status === 'undone' ? 'undone' : 'confirmed');
+    const revRk = partyHygieneRuleKey(indStr, kStr, canonStr);
+    const ex = st.rules[rk];
+    const rev = (revRk && revRk !== rk) ? st.rules[revRk] : null;
+    const parseTs = r => {
+      const m = (r && r.updated_at) ? Date.parse(String(r.updated_at)) : NaN;
+      return Number.isFinite(m) ? m : 0;
+    };
+    let nowMs = Date.now();
+    const maxPrevMs = Math.max(parseTs(ex), parseTs(rev));
+    if (nowMs <= maxPrevMs) nowMs = maxPrevMs + 1;
+    const ts = new Date(nowMs).toISOString();
     const ruleObj = {
       key: rk,
       industry: indStr,
@@ -28790,10 +28804,28 @@
       status: nextStatus,
       source: String(source || 'deterministic'),
       reason: String(reason || '').slice(0, 180),
-      updated_at: new Date().toISOString(),
-      updated_by: String((u && (u.email || u.full_name)) || 'owner')
+      updated_at: ts,
+      updated_by: byWho
     };
     st.rules[rk] = ruleObj;
+    if ((nextStatus === 'confirmed' || nextStatus === 'dismissed') && rev && typeof rev === 'object') {
+      const revStatus = String(rev.status || '').toLowerCase();
+      const revCanonNorm = norm(rev.canonical || '').replace(/\s+/g, ' ');
+      if ((revStatus === 'confirmed' || revStatus === 'dismissed') && revCanonNorm === aliasNorm) {
+        st.rules[revRk] = {
+          key: revRk,
+          industry: indStr,
+          kind: kStr,
+          alias: String(rev.alias || canonStr).trim(),
+          canonical: String(rev.canonical || aliasStr).trim(),
+          status: 'undone',
+          source: String(rev.source || source || 'deterministic'),
+          reason: 'Superseded by reversed alias direction',
+          updated_at: ts,
+          updated_by: byWho
+        };
+      }
+    }
     invalidatePartyHygieneCaches();
     saveLocalAuthAndRecords();
     if (typeof isDemoScopeActive === 'function' && !isDemoScopeActive()) {
@@ -28825,6 +28857,38 @@
         changed = true;
       }
     });
+    Object.entries(st.rules).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      const stName = String(rv.status || '').toLowerCase();
+      if (stName !== 'confirmed' && stName !== 'dismissed') return;
+      const indStr = String(rv.industry || 'Manufacturing').trim() || 'Manufacturing';
+      const kStr = String(rv.kind || 'supplier').trim().toLowerCase() || 'supplier';
+      const aliasNorm = norm(rv.alias || '').replace(/\s+/g, ' ');
+      const canonNorm = norm(rv.canonical || '').replace(/\s+/g, ' ');
+      if (!aliasNorm || !canonNorm || aliasNorm === canonNorm) return;
+      const revRk = partyHygieneRuleKey(indStr, kStr, rv.canonical);
+      const rev = (revRk && revRk !== rk) ? st.rules[revRk] : null;
+      if (!rev || typeof rev !== 'object') return;
+      const revStatus = String(rev.status || '').toLowerCase();
+      if (revStatus !== 'confirmed' && revStatus !== 'dismissed') return;
+      if (norm(rev.canonical || '').replace(/\s+/g, ' ') !== aliasNorm) return;
+      const cmp = comparePartyHygieneTs(rv.updated_at, rev.updated_at);
+      const loseKey = (cmp < 0 || (cmp === 0 && rk < revRk)) ? rk : revRk;
+      const winKey = loseKey === rk ? revRk : rk;
+      const winRule = st.rules[winKey];
+      const loser = st.rules[loseKey];
+      if (loser && loser.status !== 'undone') {
+        const demoted = Object.assign({}, loser, {
+          status: 'undone',
+          reason: 'Superseded by newer reversed alias direction'
+        });
+        if (winRule && comparePartyHygieneTs(winRule.updated_at, loser.updated_at) > 0) {
+          demoted.updated_at = winRule.updated_at;
+        }
+        st.rules[loseKey] = demoted;
+        changed = true;
+      }
+    });
     if (changed) invalidatePartyHygieneCaches();
     return changed;
   }
@@ -28839,6 +28903,12 @@
     const rk = partyHygieneRuleKey(indStr, kStr, rawName);
     const rule = rk ? st.rules[rk] : null;
     if (rule && rule.status === 'confirmed' && rule.canonical && norm(rule.canonical).replace(/\s+/g, ' ') !== aliasNorm) {
+      const revRk = partyHygieneRuleKey(indStr, kStr, rule.canonical);
+      const rev = (revRk && revRk !== rk) ? st.rules[revRk] : null;
+      if (rev && rev.status === 'confirmed' && norm(rev.canonical || '').replace(/\s+/g, ' ') === aliasNorm) {
+        const cmp = comparePartyHygieneTs(rev.updated_at, rule.updated_at);
+        if (cmp > 0 || (cmp === 0 && revRk > rk)) return '';
+      }
       return String(rule.canonical).trim();
     }
     return '';
@@ -38495,7 +38565,8 @@
       if (!/^warehouse$/i.test(String(r.allocation_mode || '').trim())) return;
       const qty = Number(r.qty != null ? r.qty : 1);
       if (!(qty > 0)) return;
-      const uCost = Number(r.unit_cost != null ? r.unit_cost : (Number(r.line_total || 0) / qty));
+      const hasDiscNet = Number(r.net_unit_cost || 0) > 0 || Number(r.line_discount || 0) > 0;
+      const uCost = Number(hasDiscNet ? r.net_unit_cost : (r.unit_cost != null && Number(r.unit_cost) > 0 ? r.unit_cost : (Number(r.line_total || 0) / qty)));
       const totCost = round2(Number(r.line_total != null ? r.line_total : qty * uCost));
       const it = ensureItem(r.item_name, { category: r.category, uom: r.uom, location: r.warehouse_location, company: r.company });
       if (!it) return;
@@ -43851,7 +43922,7 @@
                   <td class="mono">${esc(recordDateDMY(x))}${repDateShiftBadge(x)}${appCell(x, 'expenses')}</td>
                   <td>${coBadge(x.company)}</td>
                   <td>${relLink('expense_categories', x.category, x.category, true)}</td>
-                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${isStoredWh ? ` <span class="badge badge-ok" style="display:inline-flex;align-items:center;gap:3px">${ic('warehouse')} Warehouse (+Stock)</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${isStoredWh ? ` <span class="badge badge-ok" style="display:inline-flex;align-items:center;gap:3px">${ic('warehouse')} Warehouse (+Stock)</span>` : ''}${!isPend && seatLens().expenses && Number(x.discount || 0) > 0 ? (() => { const trE = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' ? window.MFG_I18N.t(s) : s); return ` <span class="badge badge-ok" style="font-size:10.5px" title="${esc(trE('Subtotal'))} ${fmtUSD(Number(x.gross_amount || 0) > 0 ? x.gross_amount : round2(Number(x.amount || 0) + Number(x.discount || 0)), 2)} - ${esc(trE('Discount'))} ${fmtUSD(x.discount, 2)}">-${fmtUSD(x.discount, 2)} ${esc(trE('disc.'))}</span>`; })() : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
                   <td>${itemCellHtml}</td>
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : 'N/A'}</td>
                   <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : (isStoredWh ? `<span class="badge badge-ok" style="display:inline-flex;align-items:center;gap:3px">${ic('warehouse')} Warehouse</span>` : 'N/A')}</td>
@@ -100324,6 +100395,14 @@
       const expSupVal = pendEditRow ? (pendEditRow.supplier || '') : '';
       const expEqVal = pendEditRow ? (pendEditRow.equipment || '') : '';
       const expQtyVal = pendEditRow ? String(pendEditRow.qty != null ? pendEditRow.qty : 1) : '1';
+      const expDiscNum = pendEditRow ? Number(pendEditRow.discount || 0) : 0;
+      const expDiscVal = expDiscNum > 0 ? expDiscNum.toFixed(2) : '';
+      const expGrossNum = pendEditRow
+        ? (Number(pendEditRow.gross_amount || 0) > 0
+            ? Number(pendEditRow.gross_amount)
+            : (Number(pendEditRow.amount || 0) > 0 ? round2(Number(pendEditRow.amount) + expDiscNum) : 0))
+        : 0;
+      const expGrossVal = expGrossNum > 0 ? expGrossNum.toFixed(2) : '';
       const expAmtVal = (pendEditRow && Number(pendEditRow.amount || 0) > 0) ? String(pendEditRow.amount) : '';
       const expRefVal = pendEditRow ? (pendEditRow.reference || '') : '';
       const expNotesVal = pendEditRow ? (pendEditRow.notes || '') : '';
@@ -100379,7 +100458,7 @@
             ? { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit because unpriced deliveries are booked on Supplier AP; record subsequent cash or bank payment via Supplier Settlement' }
             : { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit while Price is Pending ($0.00 AP)' })}
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
-          ${pendEditRow
+          ${pendEditRow && expSubVal
             ? fld('Subcategory *', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: 'Locked to the subcategory recorded on delivery', hintId: 'hint_subcat', hint: '' })
             : fld('Subcategory *', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
           ${fld(expSupplierLbl, inp('f_supplier', 'text', expSupVal, `list="dl_suppliers" placeholder="Select or type supplier..."${pendEditRow && expSupVal ? ' readonly' : ''}`) + dl('dl_suppliers', supplierNames('expense')), pendEditRow && expSupVal ? { id: 'wrap_f_supplier', lockField: 'f_supplier', lockReason: 'Locked to the supplier recorded on delivery', hintId: 'hint_supplier', hint: '' } : { id: 'wrap_f_supplier', span: isSingleBuScope ? 2 : false, hintId: 'hint_supplier', hint: '' })}
@@ -100467,29 +100546,51 @@
             <div id="expItemsRowsWrap"></div>
           </div>`}
           ${pendEditRow
-            ? fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', expQtyVal, 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to the physical quantity received on delivery', hintId: 'hint_qty', hint: '' })
+            ? fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', expQtyVal, 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to the physical quantity received on delivery', hintId: 'hint_qty', hint: '', span: 3 })
             : ''}
-          <div class="form-field" id="wrap_f_amount">
-            <label for="f_amount" class="exp-inline-bar-lbl">
-              <span class="pa-fld-lbl" id="lbl_exp_amount">Total ($) *</span>
-              ${pendEditRow ? '' : `<span class="exp-price-mode-bar is-inline-lbl" id="expPriceModePills" role="group" aria-label="Invoice price availability"><button type="button" class="uom-qpill active" data-exp-price-mode="priced">Priced</button><button type="button" class="uom-qpill" data-exp-price-mode="pending">Pending $0</button></span>`}
-            </label>
-            <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expAmtInputWrap">
-              <span class="exp-cost-prefix">$</span>
-              ${inp('f_amount', 'number', expAmtVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
-              <button type="button" class="exp-switch-priced-btn" id="expSwitchToPricedBtn" data-exp-price-mode="priced" hidden>${ic('dollar')} Enter Price</button>
+          <div class="exp-totals-ref-row span-3">
+            <div class="form-field" id="wrap_f_gross_amount">
+              <label for="f_gross_amount" class="exp-inline-bar-lbl">
+                <span class="pa-fld-lbl" id="lbl_exp_gross">Subtotal ($)</span>
+              </label>
+              <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expGrossInputWrap">
+                <span class="exp-cost-prefix">$</span>
+                ${inp('f_gross_amount', 'number', expGrossVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
+              </div>
+              <span class="hint" id="hint_gross_amount"></span>
             </div>
-            <span class="hint" id="hint_amount"></span>
+            <div class="form-field" id="wrap_f_discount">
+              <label for="f_discount" class="exp-inline-bar-lbl">
+                <span class="pa-fld-lbl" id="lbl_exp_discount">Discount ($)</span>
+              </label>
+              <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expDiscInputWrap">
+                <span class="exp-cost-prefix">$</span>
+                ${inp('f_discount', 'number', expDiscVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
+              </div>
+              <span class="hint" id="hint_discount"></span>
+            </div>
+            <div class="form-field" id="wrap_f_amount">
+              <label for="f_amount" class="exp-inline-bar-lbl">
+                <span class="pa-fld-lbl" id="lbl_exp_amount">Total ($) *</span>
+                ${pendEditRow ? '' : `<span class="exp-price-mode-bar is-inline-lbl" id="expPriceModePills" role="group" aria-label="Invoice price availability"><button type="button" class="uom-qpill active" data-exp-price-mode="priced">Priced</button><button type="button" class="uom-qpill" data-exp-price-mode="pending">Pending $0</button></span>`}
+              </label>
+              <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expAmtInputWrap">
+                <span class="exp-cost-prefix">$</span>
+                ${inp('f_amount', 'number', expAmtVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
+                <button type="button" class="exp-switch-priced-btn" id="expSwitchToPricedBtn" data-exp-price-mode="priced" hidden>${ic('dollar')} Enter Price</button>
+              </div>
+              <span class="hint" id="hint_amount"></span>
+            </div>
+            ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : 'placeholder="Supplier invoice or slip #"'), { id: 'wrap_f_reference' })}
+            ${expNotesField}
           </div>
           ${pendEditRow ? '' : nearCopyAmtJumpHtml()}
-          ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : 'placeholder="Supplier invoice or slip #"'), { id: 'wrap_f_reference' })}
-          ${expNotesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
           ${nearCopyBoxHtml()}
         </div>
         <div id="expLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
-          <div><small>Amount</small><b id="calc_total">$0.00</b></div>
+          <div><small id="lbl_calc_exp_total">Amount</small><b id="calc_total">$0.00</b></div>
           <div><small>Method</small><b id="calc_post">${esc(expMthVal)}</b></div>
           <div><small>Open AP to supplier</small><b id="calc_before">-</b></div>
           <div><small>Destination</small><b id="calc_gl">General Overhead</b></div>
@@ -101077,13 +101178,16 @@
       }
     }
     if (footEl) {
+      const fDisc = (!pricePending && $('f_discount') && num('f_discount') > 0) ? round2(num('f_discount')) : 0;
+      const fNet = fDisc > 0 ? Math.max(0, round2(sumAmt - fDisc)) : sumAmt;
+      const discHtml = fDisc > 0 ? ` · - Discount <strong>${fmtUSD(fDisc, 2)}</strong> · Net <strong>${fmtUSD(fNet, 2)}</strong>` : '';
       if (!isMulti) {
         footEl.innerHTML = '';
       } else if (isSupIva && !pricePending) {
         const vatPortion = round2(sumAmt - sumPreVat);
-        footEl.innerHTML = `<span class="exp-rollup-meta">Pre-VAT (${items.length} lines) <strong>${fmtUSD(sumPreVat, 2)}</strong> · +11% VAT <strong>${fmtUSD(vatPortion, 2)}</strong> · Total Incl. VAT <strong>${fmtUSD(sumAmt, 2)}</strong></span>`;
+        footEl.innerHTML = `<span class="exp-rollup-meta">Pre-VAT (${items.length} lines) <strong>${fmtUSD(sumPreVat, 2)}</strong> · +11% VAT <strong>${fmtUSD(vatPortion, 2)}</strong> · Subtotal Incl. VAT <strong>${fmtUSD(sumAmt, 2)}</strong>${discHtml}</span>`;
       } else {
-        footEl.innerHTML = `<span class="exp-rollup-meta">Subtotal (${items.length} lines) <strong>${pricePending ? 'Pending ($0.00)' : fmtUSD(sumAmt, 2)}</strong></span>`;
+        footEl.innerHTML = `<span class="exp-rollup-meta">Subtotal (${items.length} lines) <strong>${pricePending ? 'Pending ($0.00)' : fmtUSD(sumAmt, 2)}</strong>${discHtml}</span>`;
       }
     }
   }
@@ -107441,11 +107545,18 @@
     if (switchBackBtn) switchBackBtn.hidden = !pricePending;
 
     const mthEl = $('f_method');
+    const grossEl = $('f_gross_amount');
+    const discEl = $('f_discount');
     const amtEl = $('f_amount');
     const qtyInpEl = $('f_qty');
     const expCoNow = val('f_company') || defaultEntryCompany();
     const isSupIva = isSupplierIvaForCompany(val('f_supplier'), expCoNow);
     const vatMult = isSupIva ? 1.11 : 1;
+    const activeSrc = FORM_UI.lastExpAmtSource
+      || (document.activeElement === grossEl ? 'gross'
+        : (document.activeElement === discEl ? 'discount'
+          : (document.activeElement === amtEl ? 'amount'
+            : (document.activeElement && /^f_exi_(?:cost|qty)_/.test(document.activeElement.id || '') ? 'item' : ''))));
     if (!pendEditRow) {
       if (expCoNow !== FORM_UI.lastExpCompany) {
         const prevDefLoc = defaultWarehouseLocationForCompany(FORM_UI.lastExpCompany || expCoNow);
@@ -107568,9 +107679,33 @@
         mthEl.disabled = false;
         if (mthLocked && mthEl.value !== targetMth) mthEl.value = targetMth;
       }
-      if (amtEl) {
-        amtEl.readOnly = false;
-        amtEl.classList.remove('pa-locked-input');
+      [grossEl, discEl, amtEl].forEach(el => {
+        if (el) {
+          el.readOnly = false;
+          el.classList.remove('pa-locked-input');
+        }
+      });
+      const rawPendDisc = num('f_discount');
+      const effPendDisc = rawPendDisc > 0 ? round2(rawPendDisc) : 0;
+      if (activeSrc === 'gross') {
+        const gPend = num('f_gross_amount');
+        const netPend = gPend > 0 ? Math.max(0, round2(gPend - effPendDisc)) : 0;
+        if (amtEl) amtEl.value = gPend > 0 ? netPend.toFixed(2) : '';
+      } else if (activeSrc === 'discount') {
+        const gPend = num('f_gross_amount') > 0 ? num('f_gross_amount') : num('f_amount');
+        if (grossEl && gPend > 0 && !(num('f_gross_amount') > 0)) grossEl.value = gPend.toFixed(2);
+        const netPend = gPend > 0 ? Math.max(0, round2(gPend - effPendDisc)) : 0;
+        if (amtEl && gPend > 0) amtEl.value = netPend.toFixed(2);
+      } else if (activeSrc === 'amount') {
+        const netPend = num('f_amount');
+        const gPend = (netPend > 0 || effPendDisc > 0) ? round2(netPend + effPendDisc) : 0;
+        if (grossEl && document.activeElement !== grossEl) grossEl.value = gPend > 0 ? gPend.toFixed(2) : '';
+      } else {
+        if (num('f_gross_amount') > 0 && !(num('f_amount') > 0) && amtEl) {
+          amtEl.value = Math.max(0, round2(num('f_gross_amount') - effPendDisc)).toFixed(2);
+        } else if (num('f_amount') > 0 && !(num('f_gross_amount') > 0) && grossEl) {
+          grossEl.value = round2(num('f_amount') + effPendDisc).toFixed(2);
+        }
       }
     } else if (pricePending) {
       if (!FORM_UI.wasPricePending) {
@@ -107582,12 +107717,14 @@
         mthEl.disabled = false;
         if (mthLocked && mthEl.value !== 'Credit') mthEl.value = 'Credit';
       }
-      if (amtEl) {
-        amtEl.value = '0.00';
-        amtEl.readOnly = true;
-        amtEl.classList.add('pa-locked-input');
-        amtEl.dataset.wasPendingZero = '1';
-      }
+      [grossEl, discEl, amtEl].forEach(el => {
+        if (el) {
+          el.value = '0.00';
+          el.readOnly = true;
+          el.classList.add('pa-locked-input');
+          el.dataset.wasPendingZero = '1';
+        }
+      });
       if (qtyInpEl) {
         if (hasItemTickets) {
           const sumQ = round2(FORM_UI.expItems.reduce((s, it) => s + ((it.qty !== '' && it.qty != null && isFinite(Number(it.qty))) ? Number(it.qty) : 0), 0));
@@ -107607,17 +107744,39 @@
           FORM_UI.wasPricePending = false;
         }
       }
+      const clearPendingZeroAttr = el => {
+        if (el && el.dataset.wasPendingZero === '1') {
+          if (el.value === '0.00' || el.value === '0') el.value = '';
+          delete el.dataset.wasPendingZero;
+        }
+      };
+      if (discEl) {
+        discEl.readOnly = false;
+        discEl.classList.remove('pa-locked-input');
+        clearPendingZeroAttr(discEl);
+      }
+      const rawDiscNow = num('f_discount');
+      const effDiscNow = rawDiscNow > 0 ? round2(rawDiscNow) : 0;
       if (isMultiTicketSplit) {
         const sumPreVat = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
-        const sumAmt = round2(sumPreVat * vatMult);
+        const sumGross = round2(sumPreVat * vatMult);
+        const sumNet = sumGross > 0 ? Math.max(0, round2(sumGross - effDiscNow)) : 0;
         const sumQty = round2(FORM_UI.expItems.reduce((s, it) => s + ((it.qty !== '' && it.qty != null && isFinite(Number(it.qty))) ? Number(it.qty) : 0), 0));
+        if (grossEl) {
+          clearPendingZeroAttr(grossEl);
+          grossEl.value = sumGross.toFixed(2);
+          grossEl.readOnly = true;
+          grossEl.classList.add('pa-locked-input');
+        }
         if (amtEl) {
-          if (!(FORM_UI.hydrating && STATE.editingRecord && num('f_amount') > 0 && Math.abs(num('f_amount') - sumAmt) <= 0.05 * FORM_UI.expItems.length)) {
-            amtEl.value = sumAmt.toFixed(2);
+          clearPendingZeroAttr(amtEl);
+          if (!(FORM_UI.hydrating && STATE.editingRecord && num('f_amount') > 0 && Math.abs(num('f_amount') - sumNet) <= 0.05 * FORM_UI.expItems.length)) {
+            amtEl.value = sumNet.toFixed(2);
           }
           amtEl.readOnly = true;
           amtEl.classList.add('pa-locked-input');
         }
+        if (activeSrc === 'discount') syncExpenseItemsSummaryUI();
         if (qtyInpEl) {
           FORM_UI._syncingHiddenQty = true;
           qtyInpEl.value = String(sumQty || 1);
@@ -107631,33 +107790,69 @@
         const linePreVat0 = round2(qCalc * uc0);
         const lineTot0 = round2(linePreVat0 * vatMult);
         const cInp0 = $('f_exi_cost_0');
-        if (amtEl) {
-          amtEl.readOnly = false;
-          amtEl.classList.remove('pa-locked-input');
-          if (amtEl.dataset.wasPendingZero === '1') {
-            if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
-            delete amtEl.dataset.wasPendingZero;
+        [grossEl, amtEl].forEach(el => {
+          if (el) {
+            el.readOnly = false;
+            el.classList.remove('pa-locked-input');
+            clearPendingZeroAttr(el);
           }
-          if (document.activeElement === amtEl) {
-            const typedAmt = num('f_amount');
-            const impliedPreVat = typedAmt > 0 ? (isSupIva ? (typedAmt / vatMult) : typedAmt) : 0;
-            t0.unit_cost = impliedPreVat > 0 ? round2(impliedPreVat / qCalc) : '';
-            if (cInp0 && document.activeElement !== cInp0) {
-              cInp0.value = t0.unit_cost !== '' ? String(t0.unit_cost) : '';
-            }
-            syncExpenseItemsSummaryUI();
-          } else if (cInp0 && document.activeElement === cInp0) {
-            amtEl.value = uc0 > 0 ? lineTot0.toFixed(2) : '';
-          } else if (uc0 > 0) {
-            if (!(FORM_UI.hydrating && STATE.editingRecord && num('f_amount') > 0 && Math.abs(num('f_amount') - lineTot0) <= 0.05)) {
-              amtEl.value = lineTot0.toFixed(2);
-            }
-          } else if (num('f_amount') > 0 && (t0.unit_cost === '' || t0.unit_cost == null || Number(t0.unit_cost) === 0)) {
-            const impliedPreVat = isSupIva ? (num('f_amount') / vatMult) : num('f_amount');
+        });
+        if (activeSrc === 'gross') {
+          const typedGross = num('f_gross_amount');
+          const impliedPreVat = typedGross > 0 ? (isSupIva ? (typedGross / vatMult) : typedGross) : 0;
+          t0.unit_cost = impliedPreVat > 0 ? round2(impliedPreVat / qCalc) : '';
+          if (cInp0 && document.activeElement !== cInp0) {
+            cInp0.value = t0.unit_cost !== '' ? String(t0.unit_cost) : '';
+          }
+          const nextNet = typedGross > 0 ? Math.max(0, round2(typedGross - effDiscNow)) : 0;
+          if (amtEl) amtEl.value = typedGross > 0 ? nextNet.toFixed(2) : '';
+          syncExpenseItemsSummaryUI();
+        } else if (activeSrc === 'item') {
+          if (grossEl) grossEl.value = uc0 > 0 ? lineTot0.toFixed(2) : '';
+          const nextNet = uc0 > 0 ? Math.max(0, round2(lineTot0 - effDiscNow)) : 0;
+          if (amtEl) amtEl.value = uc0 > 0 ? nextNet.toFixed(2) : '';
+        } else if (activeSrc === 'discount') {
+          const typedGrossVal = num('f_gross_amount');
+          const baseGross = typedGrossVal > 0 ? typedGrossVal : (lineTot0 > 0 ? lineTot0 : num('f_amount'));
+          if (grossEl && baseGross > 0 && !(typedGrossVal > 0)) grossEl.value = baseGross.toFixed(2);
+          if (baseGross > 0 && !(uc0 > 0)) {
+            const impliedPreVat = isSupIva ? (baseGross / vatMult) : baseGross;
             t0.unit_cost = round2(impliedPreVat / qCalc);
             if (cInp0 && document.activeElement !== cInp0) cInp0.value = String(t0.unit_cost);
             syncExpenseItemsSummaryUI();
           }
+          const nextNet = baseGross > 0 ? Math.max(0, round2(baseGross - effDiscNow)) : 0;
+          if (amtEl && baseGross > 0) amtEl.value = nextNet.toFixed(2);
+        } else if (activeSrc === 'amount') {
+          const typedAmt = num('f_amount');
+          const impliedGross = typedAmt > 0 ? round2(typedAmt + effDiscNow) : 0;
+          if (grossEl && document.activeElement !== grossEl) grossEl.value = impliedGross > 0 ? impliedGross.toFixed(2) : '';
+          const impliedPreVat = impliedGross > 0 ? (isSupIva ? (impliedGross / vatMult) : impliedGross) : 0;
+          t0.unit_cost = impliedPreVat > 0 ? round2(impliedPreVat / qCalc) : '';
+          if (cInp0 && document.activeElement !== cInp0) {
+            cInp0.value = t0.unit_cost !== '' ? String(t0.unit_cost) : '';
+          }
+          syncExpenseItemsSummaryUI();
+        } else if (uc0 > 0) {
+          const curGrossVal = num('f_gross_amount');
+          const curAmtVal = num('f_amount');
+          const keepTypedGross = curGrossVal > 0 && Math.abs(curGrossVal - lineTot0) <= Math.max(0.05, 0.02 * qCalc * vatMult);
+          const effG = keepTypedGross ? curGrossVal : lineTot0;
+          if (grossEl && !keepTypedGross) {
+            grossEl.value = lineTot0.toFixed(2);
+          }
+          const targetNet = Math.max(0, round2(effG - effDiscNow));
+          const keepTypedAmt = curAmtVal > 0 && Math.abs(curAmtVal - targetNet) <= 0.02;
+          if (amtEl && !(FORM_UI.hydrating && STATE.editingRecord && keepTypedAmt) && !keepTypedAmt) {
+            amtEl.value = targetNet.toFixed(2);
+          }
+        } else if (num('f_amount') > 0) {
+          const effG = num('f_gross_amount') > 0 ? num('f_gross_amount') : round2(num('f_amount') + effDiscNow);
+          if (grossEl && !(num('f_gross_amount') > 0)) grossEl.value = effG.toFixed(2);
+          const impliedPreVat = isSupIva ? (effG / vatMult) : effG;
+          t0.unit_cost = round2(impliedPreVat / qCalc);
+          if (cInp0 && document.activeElement !== cInp0) cInp0.value = String(t0.unit_cost);
+          syncExpenseItemsSummaryUI();
         }
         if (qtyInpEl) {
           FORM_UI._syncingHiddenQty = true;
@@ -107688,6 +107883,10 @@
     }
     const supplier = val('f_supplier');
     const amount = pricePending ? 0 : num('f_amount');
+    const rawDisc = pricePending ? 0 : num('f_discount');
+    const disc = pricePending ? 0 : round2(rawDisc);
+    const grossRaw = pricePending ? 0 : num('f_gross_amount');
+    const grossAmount = pricePending ? 0 : (grossRaw > 0 ? round2(grossRaw) : round2(amount + (disc > 0 ? disc : 0)));
     const qty = num('f_qty');
     const cats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
     let catNow = val('f_category');
@@ -107708,7 +107907,7 @@
         }
       }
     }
-    if (pendEditRow) {
+    if (pendEditRow && pendEditRow.subcategory) {
       applyFieldLockState('f_subcategory', true, 'Locked to the subcategory recorded on delivery');
     } else {
       applyFieldLockState('f_subcategory', false, 'Select or type subcategory');
@@ -107783,7 +107982,10 @@
     const isFuelDiesel = /^diesel$|^mazout$/i.test(subNow) || (/^fuel$/i.test(catNow) && (!subNow || /diesel|mazout/i.test(subNow)));
     const isBulkTankRefill = isFuelDiesel && !hasEquipTarget && !hasWhTarget;
     setText('lbl_exp_qty', isBulkTankRefill ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : (hasEquipTarget || hasWhTarget ? 'Quantity & Unit *' : 'Quantity & Unit')));
+    setText('lbl_exp_gross', pricePending ? 'Subtotal ($)' : (isSupIva ? 'Subtotal Incl. VAT ($)' : 'Subtotal ($)'));
+    setText('lbl_exp_discount', 'Discount ($)');
     setText('lbl_exp_amount', pricePending ? 'Total ($)' : (isSupIva ? 'Total Incl. 11% VAT ($) *' : 'Total ($) *'));
+    setText('lbl_calc_exp_total', (!pricePending && disc > 0) ? 'Net to Pay' : 'Amount');
     setHint('hint_subcat', (FORM_UI.postAttempted && !subNow) ? 'Required' : '', (FORM_UI.postAttempted && !subNow) ? 'crit' : '');
     setText('calc_total', pricePending ? 'PENDING ($0.00)' : fmtUSD(amount, 2));
     setText('calc_post', pricePending ? 'Credit · Pending Price' : (method === 'Cash' ? 'Cash' : 'Credit'));
@@ -107819,11 +108021,39 @@
     } else {
       setHint('hint_qty', '', '');
     }
+    const discWrapEl = $('wrap_f_discount');
+    const isDiscLiveInvalid = Boolean(!pricePending && (rawDisc < 0 || (disc > 0 && grossAmount > 0 && disc > grossAmount + 0.001)));
+    if (discWrapEl) discWrapEl.classList.toggle('field-live-invalid', isDiscLiveInvalid);
+    if (discEl) discEl.setAttribute('aria-invalid', isDiscLiveInvalid ? 'true' : 'false');
+    if (pricePending) {
+      setHint('hint_discount', '', '');
+    } else if (rawDisc < 0) {
+      setHint('hint_discount', 'Discount cannot be negative', 'crit');
+    } else if (disc > 0 && grossAmount > 0 && disc > grossAmount + 0.001) {
+      setHint('hint_discount', `Cannot exceed Subtotal (${fmtUSD(grossAmount, 2)})`, 'crit');
+    } else if (disc > 0 && grossAmount > 0 && Math.abs(disc - grossAmount) < 0.005) {
+      setHint('hint_discount', '100% discount leaves $0.00 Total (use Pending $0 if unpriced)', FORM_UI.postAttempted ? 'crit' : 'warn');
+    } else if (disc > 0 && grossAmount > 0) {
+      const discPct = (disc / grossAmount) * 100;
+      const warnLim = typeof G_DISCOUNT_WARN === 'number' ? G_DISCOUNT_WARN : 0.20;
+      if (disc > grossAmount * warnLim) {
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off Subtotal - high discount, consider adding a note`, 'warn');
+      } else {
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off ${fmtUSD(grossAmount, 2)}`, 'ok');
+      }
+    } else {
+      setHint('hint_discount', '', '');
+    }
+    const discBreakdownSuffix = (!pricePending && disc > 0 && grossAmount > 0)
+      ? ` (Subtotal ${fmtUSD(grossAmount, 2)} - Discount ${fmtUSD(disc, 2)})`
+      : '';
     if (pendEditRow) {
       if (amount > 0 && isBulkTankRefill && qty > 0) {
-        setHint('hint_amount', `Final rate: ${fmtUSD(amount / qty, 3)} / L across ${fmtNum(qty, 0)} L`, 'ok');
-      } else if (amount <= 0 && val('f_amount')) {
-        setHint('hint_amount', 'Enter a final invoice amount above zero', 'crit');
+        setHint('hint_amount', `Final rate: ${fmtUSD(amount / qty, 3)} / L across ${fmtNum(qty, 0)} L${discBreakdownSuffix}`, 'ok');
+      } else if (amount <= 0 && (val('f_amount') || disc > 0)) {
+        setHint('hint_amount', disc > 0 ? 'Net total after discount must be above zero' : 'Enter a final invoice amount above zero', 'crit');
+      } else if (disc > 0 && amount > 0) {
+        setHint('hint_amount', `${fmtUSD(grossAmount, 2)} - ${fmtUSD(disc, 2)} = ${fmtUSD(amount, 2)} to pay`, 'ok');
       } else {
         setHint('hint_amount', 'Enter the final USD invoice amount to clear Pending Price', '');
       }
@@ -107832,22 +108062,26 @@
       syncNearCopyBanner('expenses', null);
     } else if (isMultiTicketSplit) {
       if (amount <= 0 && FORM_UI.postAttempted) {
-        setHint('hint_amount', 'Enter unit prices above (or switch to Pending $0)', 'crit');
+        setHint('hint_amount', disc > 0 && grossAmount > 0 ? 'Net total after discount must be above zero' : 'Enter unit prices above (or switch to Pending $0)', 'crit');
       } else if (isSupIva && amount > 0) {
         const preVatTot = round2(amount / vatMult);
         const vatPortion = round2(amount - preVatTot);
-        setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total`, 'ok');
+        setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total${discBreakdownSuffix}`, 'ok');
+      } else if (disc > 0 && amount > 0) {
+        setHint('hint_amount', `${fmtUSD(grossAmount, 2)} - ${fmtUSD(disc, 2)} = ${fmtUSD(amount, 2)} to pay`, 'ok');
       } else {
         setHint('hint_amount', '', '');
       }
-    } else if (amount <= 0 && val('f_amount')) {
-      setHint('hint_amount', 'Must be above zero (or switch to Pending $0)', FORM_UI.postAttempted ? 'crit' : 'warn');
-    } else if (isBulkTankRefill && !val('f_amount')) {
+    } else if (amount <= 0 && (val('f_amount') || (disc > 0 && grossAmount > 0))) {
+      setHint('hint_amount', disc > 0 && grossAmount > 0 ? 'Net total after discount must be above zero' : 'Must be above zero (or switch to Pending $0)', FORM_UI.postAttempted ? 'crit' : 'warn');
+    } else if (isBulkTankRefill && !val('f_amount') && !(grossAmount > 0)) {
       setHint('hint_amount', 'Price arriving later? Switch to Pending $0 to log Litres now', '');
     } else if (isSupIva && amount > 0) {
       const preVatTot = round2(amount / vatMult);
       const vatPortion = round2(amount - preVatTot);
-      setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total`, 'ok');
+      setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total${discBreakdownSuffix}`, 'ok');
+    } else if (disc > 0 && amount > 0) {
+      setHint('hint_amount', `${fmtUSD(grossAmount, 2)} - ${fmtUSD(disc, 2)} = ${fmtUSD(amount, 2)} to pay`, 'ok');
     } else {
       setHint('hint_amount', '', '');
     }
@@ -107918,7 +108152,8 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { method, supplier, amount, qty, pricePending, dupHit };
+    FORM_UI.lastExpAmtSource = '';
+    return { method, supplier, amount, grossAmount, disc, qty, pricePending, dupHit };
   }
 
   function recalcSettlement() {
@@ -116995,7 +117230,7 @@
     FORM_UI.lastEmpRole = ''; FORM_UI.lastStaffRoleName = '';
     FORM_UI.lastSalStaffMonthKey = '';
     FORM_UI.salBackpayOn = false; FORM_UI.lastSalBackpayKey = '';
-    FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
+    FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = ''; FORM_UI.lastExpAmtSource = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketSeriesTabOpen = false; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
@@ -118617,10 +118852,12 @@
             uom: firstRow ? (firstRow.uom || 'Piece') : 'Piece',
             unit_cost: firstRow ? (firstRow.unit_cost !== undefined ? firstRow.unit_cost : '') : ''
           }];
-          if ($('f_amount') && val('f_price_pending') !== '1') {
-            $('f_amount').readOnly = false;
-            $('f_amount').classList.remove('pa-locked-input');
-          }
+          [$('f_gross_amount'), $('f_amount')].forEach(el => {
+            if (el && val('f_price_pending') !== '1') {
+              el.readOnly = false;
+              el.classList.remove('pa-locked-input');
+            }
+          });
           renderExpenseItemsBuilderRows();
           recalcForm();
         });
@@ -118636,6 +118873,7 @@
         const expCoCur = val('f_company') || defaultEntryCompany();
         if (field === 'qty' || field === 'unit_cost') {
           rowObj[field] = t.value === '' ? '' : Number(t.value);
+          FORM_UI.lastExpAmtSource = 'item';
         } else {
           rowObj[field] = t.value;
         }
@@ -118832,9 +119070,13 @@
         const idx = Number(rmBtn.getAttribute('data-exi-remove'));
         if (idx >= 0 && idx < FORM_UI.expItems.length && FORM_UI.expItems.length > 1) {
           FORM_UI.expItems.splice(idx, 1);
-          if (FORM_UI.expItems.length === 1 && $('f_amount') && val('f_price_pending') !== '1') {
-            $('f_amount').readOnly = false;
-            $('f_amount').classList.remove('pa-locked-input');
+          if (FORM_UI.expItems.length === 1 && val('f_price_pending') !== '1') {
+            [$('f_gross_amount'), $('f_amount')].forEach(el => {
+              if (el) {
+                el.readOnly = false;
+                el.classList.remove('pa-locked-input');
+              }
+            });
           }
           renderExpenseItemsBuilderRows();
           recalcForm();
@@ -119160,6 +119402,11 @@
         }
         if (el.id === 'f_customer' && (!isFieldAdminUnlocked('f_method') || isAutoEditUnlockedField('f_method'))) FORM_UI.methodManual = false;
         if (el.id === 'f_defect_ref') FORM_UI.defectRefPreset = true;
+        if (STATE.modalForm === 'expense') {
+          if (el.id === 'f_gross_amount') FORM_UI.lastExpAmtSource = 'gross';
+          else if (el.id === 'f_discount') FORM_UI.lastExpAmtSource = 'discount';
+          else if (el.id === 'f_amount') FORM_UI.lastExpAmtSource = 'amount';
+        }
         recalcForm();
       };
       el.addEventListener('input', handler);
@@ -119503,7 +119750,7 @@
     const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
     if (fIdx && !fIdx._partyTypoPools) fIdx._partyTypoPools = new Map();
     const dlId = (demoActive && inputEl && inputEl.list && inputEl.list.id) ? inputEl.list.id : '';
-    const indRevSig = `${(STATE && STATE._indCustomRev) || 0}:${(SEED && SEED._industryRev) || 0}:${(STATE && STATE._partyHygieneRev) || 0}`;
+    const indRevSig = `${(STATE && STATE._indCustomRev) || 0}:${(SEED && SEED._industryRev) || 0}:${(SEED && SEED._customRev) || 0}:${(SEED && SEED._recordsReady) ? 1 : 0}:${(STATE && STATE._partyHygieneRev) || 0}`;
     const cacheKey = isRegEdit ? '' : `${ind}|${partyKind}|${demoActive ? 1 : 0}|${opts.isDomainModal ? 1 : 0}|${dlId}|${indRevSig}`;
     if (cacheKey && fIdx && fIdx._partyTypoPools.has(cacheKey)) {
       return fIdx._partyTypoPools.get(cacheKey);
@@ -119824,7 +120071,10 @@
     const co = typeof ctx.getCo === 'function' ? ctx.getCo() : ((isKioskInd ? val('ik_company') : val('f_company')) || '');
     const ind = typeof ctx.getInd === 'function' ? ctx.getInd() : '';
     const aliasKind = kind === 'truck_owner' ? 'supplier' : kind;
-    const aliasMatch = typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias(aliasKind, rawVal, co, ind) : '';
+    const aliasResolved = typeof canonicalizePartyByHygiene === 'function'
+      ? canonicalizePartyByHygiene(aliasKind, rawVal, co, ind)
+      : (typeof resolveConfirmedPartyAlias === 'function' ? resolveConfirmedPartyAlias(aliasKind, rawVal, co, ind) : '');
+    const aliasMatch = (aliasResolved && norm(aliasResolved) !== norm(rawVal)) ? aliasResolved : '';
     const candidates = aliasMatch ? [] : getScopedPartyCandidates(kind, co, el, { ind, modalForm, isDomainModal: isDom || isKioskInd });
     const match = aliasMatch || findNearPartyMatch(rawVal, candidates, { kind: aliasKind, company: co, ind });
     if (!match) { hideBar(); return false; }
@@ -120994,9 +121244,15 @@
       if (!val('f_category')) addErr('f_category', 'Category is required.');
       if (!val('f_subcategory')) addErr('f_subcategory', 'Subcategory is required.');
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
+      if (!c.pricePending) {
+        if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
+        else if (c.disc > 0 && c.grossAmount > 0 && c.disc > c.grossAmount + 0.001) addErr('f_discount', 'Discount cannot exceed Subtotal.');
+      }
       if (pendEditRow) {
-        if (!(c.amount > 0)) addErr('f_amount', 'Enter the final supplier invoice amount above zero.');
+        if (!(c.amount > 0)) addErr('f_amount', c.disc > 0 ? 'Net total after discount must be above zero.' : 'Enter the final supplier invoice amount above zero.');
         const pendExpOrigPre = Object.assign({}, pendEditRow);
+        const effPendDisc = round2(Math.max(0, c.disc || 0));
+        const effPendGross = c.grossAmount > 0 ? round2(c.grossAmount) : round2(c.amount + effPendDisc);
         record = Object.assign({}, pendEditRow, {
           _pend_row_orig: pendExpOrigPre,
           company,
@@ -121008,6 +121264,8 @@
           equipment: val('f_truck'),
           method: isFieldAdminUnlocked('f_method') ? c.method : (pendEditRow.method || 'Credit'),
           qty: c.qty > 0 ? c.qty : (num('f_qty') || Number(pendEditRow.qty) || 1),
+          gross_amount: effPendGross,
+          discount: effPendDisc,
           amount: round2(c.amount),
           price_pending: false,
           reference: val('f_reference'),
@@ -121050,8 +121308,9 @@
               : (rawNm || (mustBeCatalog ? '' : (isSingleEquip ? (val('f_exp_item_name') || subVal || val('f_category')) : (dest === 'general' ? (subVal || val('f_category')) : ''))));
             const q = Number(it.qty) || 0;
             const ucRaw = Number(it.unit_cost) || 0;
-            const uc = (rowsNow.length === 1 && !(ucRaw > 0) && c.amount > 0)
-              ? round2((c.amount / vatMult) / (q > 0 ? q : 1))
+            const singleGrossFallback = c.grossAmount > 0 ? c.grossAmount : round2(c.amount + (c.disc || 0));
+            const uc = (rowsNow.length === 1 && !(ucRaw > 0) && singleGrossFallback > 0)
+              ? round2((singleGrossFallback / vatMult) / (q > 0 ? q : 1))
               : ucRaw;
             const rawRowEq = String(it.target_equipment || '').trim();
             const rowEq = rawRowEq ? resolveCanonicalEquipmentName(rawRowEq, company, false, null, false) : '';
@@ -121101,7 +121360,10 @@
               qty: round2(q || 1),
               uom: lockedUom,
               unit_cost: effUnitCost,
+              net_unit_cost: effUnitCost,
               pre_vat_total: linePreVat,
+              gross_line_total: lineTotTtc,
+              line_discount: 0,
               line_total: lineTotTtc,
               allocation_mode: savedAllocMode,
               target_equipment: dest === 'equipment' ? rowEq : '',
@@ -121114,8 +121376,11 @@
           const nm0 = String(it0.item_name || '').trim();
           const q0 = Number(it0.qty) > 0 ? Number(it0.qty) : (c.qty > 0 ? c.qty : 1);
           const amt0 = c.pricePending ? 0 : round2(c.amount);
-          const preVatAmt0 = c.pricePending ? 0 : round2(isSupIva ? (amt0 / vatMult) : amt0);
-          const uc0 = q0 > 0 ? round2(preVatAmt0 / q0) : preVatAmt0;
+          const grossAmt0 = c.pricePending ? 0 : round2(c.grossAmount > 0 ? c.grossAmount : (amt0 + Math.max(0, c.disc || 0)));
+          const grossPreVat0 = c.pricePending ? 0 : round2(isSupIva ? (grossAmt0 / vatMult) : grossAmt0);
+          const uc0 = q0 > 0 ? round2(grossPreVat0 / q0) : grossPreVat0;
+          const netPreVat0 = c.pricePending ? 0 : round2(isSupIva ? (amt0 / vatMult) : amt0);
+          const netUc0 = q0 > 0 ? round2(netPreVat0 / q0) : netPreVat0;
           let catIt0 = resolveCatalogItem(nm0);
           const isQuarryAgg0 = (typeof productByName === 'function' && Boolean(productByName(nm0)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm0)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm0));
           if (!catIt0 && !isQuarryAgg0 && !isExpenseSubcategoryOrCategoryName(nm0)) {
@@ -121138,7 +121403,10 @@
             qty: round2(q0),
             uom: uom0,
             unit_cost: uc0,
-            pre_vat_total: preVatAmt0,
+            net_unit_cost: netUc0,
+            pre_vat_total: netPreVat0,
+            gross_line_total: grossAmt0,
+            line_discount: c.pricePending ? 0 : round2(Math.max(0, grossAmt0 - amt0)),
             line_total: amt0,
             allocation_mode: 'general',
             target_equipment: '',
@@ -121146,10 +121414,66 @@
             historical_consumed: 0
           });
         }
+        // Pro-rate invoice discount deterministically and absorb any unit-cost / VAT rounding delta so child sums equal header totals
+        const effExpDisc = c.pricePending ? 0 : round2(Math.max(0, c.disc || 0));
+        const effHeaderGross = c.pricePending ? 0 : round2(c.grossAmount > 0 ? c.grossAmount : (c.amount + effExpDisc));
+        const effHeaderNet = c.pricePending ? 0 : round2(c.amount);
+        if (!c.pricePending && stagedItems.length > 0 && !(stagedItems.length === 1 && isSingleOverhead)) {
+          let lastPosIdx = -1;
+          stagedItems.forEach((x, idx) => {
+            if (Number(x.gross_line_total || x.line_total || 0) > 0) lastPosIdx = idx;
+          });
+          if (lastPosIdx >= 0 && effHeaderGross > 0) {
+            const rawGrossSum = round2(stagedItems.reduce((s, x) => s + Number(x.gross_line_total || 0), 0));
+            const grossDelta = round2(effHeaderGross - rawGrossSum);
+            if (grossDelta !== 0 && Math.abs(grossDelta) <= Math.max(0.05, 0.03 * stagedItems.length + 0.02 * stagedItems.reduce((s, x) => s + Number(x.qty || 1), 0))) {
+              stagedItems[lastPosIdx].gross_line_total = round2(Math.max(0, Number(stagedItems[lastPosIdx].gross_line_total || 0) + grossDelta));
+            }
+          }
+          const grossLinesSum = round2(stagedItems.reduce((s, x) => s + Number(x.gross_line_total || x.line_total || 0), 0));
+          if (grossLinesSum > 0 && effExpDisc > 0) {
+            let remDisc = effExpDisc;
+            stagedItems.forEach((x, idx) => {
+              const gTot = round2(Number(x.gross_line_total || 0));
+              if (idx === lastPosIdx) {
+                x.line_discount = round2(Math.max(0, Math.min(gTot, remDisc)));
+              } else {
+                const share = round2(effExpDisc * (gTot / grossLinesSum));
+                const dLine = round2(Math.max(0, Math.min(gTot, Math.min(share, remDisc))));
+                x.line_discount = dLine;
+                remDisc = round2(remDisc - dLine);
+              }
+              x.line_total = round2(Math.max(0, gTot - x.line_discount));
+            });
+          } else {
+            stagedItems.forEach(x => {
+              x.line_discount = 0;
+              x.line_total = round2(Number(x.gross_line_total || x.line_total || 0));
+            });
+          }
+          if (lastPosIdx >= 0 && effHeaderNet > 0) {
+            const netLinesSum = round2(stagedItems.reduce((s, x) => s + Number(x.line_total || 0), 0));
+            const netDelta = round2(effHeaderNet - netLinesSum);
+            if (netDelta !== 0 && Math.abs(netDelta) <= Math.max(0.05, 0.03 * stagedItems.length)) {
+              const lastIt = stagedItems[lastPosIdx];
+              lastIt.line_total = round2(Math.max(0, Number(lastIt.line_total || 0) + netDelta));
+              if (effExpDisc > 0) {
+                lastIt.line_discount = round2(Math.max(0, Number(lastIt.gross_line_total || 0) - lastIt.line_total));
+              } else {
+                lastIt.gross_line_total = lastIt.line_total;
+              }
+            }
+          }
+          stagedItems.forEach(x => {
+            const netPre = round2(isSupIva ? (x.line_total / vatMult) : x.line_total);
+            x.pre_vat_total = netPre;
+            x.net_unit_cost = x.qty > 0 ? round2(netPre / x.qty) : netPre;
+          });
+        }
         if (c.pricePending) {
           if (!(c.qty > 0)) addErr($('f_exi_qty_0') ? 'f_exi_qty_0' : 'f_qty', 'Quantity received (e.g. Litres) must be above zero when Price is Pending.');
         } else {
-          if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero (or switch to "Pending $0").');
+          if (!(c.amount > 0)) addErr('f_amount', c.disc > 0 ? 'Net total after discount must be above zero.' : 'Amount must be above zero (or switch to "Pending $0").');
         }
         const effHeaderEq = stagedItems.some(x => x.allocation_mode === 'same_equipment' || x.allocation_mode === 'different_equipment')
           ? firstEqUnit
@@ -121167,6 +121491,7 @@
               return `${x.qty}x ${x.item_name} (${destLbl})`;
             }).join(' · ')
           : '';
+        const effGrossSave = c.pricePending ? 0 : round2(c.grossAmount > 0 ? c.grossAmount : (c.amount + effExpDisc));
         record = {
           ...base,
           name: `EXP ${date} ${c.supplier || val('f_category')}`,
@@ -121181,6 +121506,8 @@
           item_summary: itemSummary,
           method: c.pricePending ? 'Credit' : c.method,
           qty: c.qty > 0 ? c.qty : (num('f_qty') || 1),
+          gross_amount: effGrossSave,
+          discount: effExpDisc,
           amount: c.pricePending ? 0 : round2(c.amount),
           price_pending: Boolean(c.pricePending),
           reference: val('f_reference'),
@@ -123937,7 +124264,10 @@
           qty: it.qty,
           uom: it.uom || 'Piece',
           unit_cost: it.unit_cost,
+          ...(it.net_unit_cost !== undefined ? { net_unit_cost: it.net_unit_cost } : {}),
           ...(it.pre_vat_total !== undefined ? { pre_vat_total: it.pre_vat_total } : {}),
+          ...(it.gross_line_total !== undefined ? { gross_line_total: it.gross_line_total } : {}),
+          ...(it.line_discount !== undefined ? { line_discount: it.line_discount } : {}),
           line_total: it.line_total,
           allocation_mode: it.allocation_mode,
           target_equipment: it.target_equipment || '',
@@ -124521,6 +124851,52 @@
         };
         ((SEED.records && SEED.records.expense_items) || []).forEach(voidOldExpItem);
         STATE.customRecords.expense_items.forEach(voidOldExpItem);
+      } else if (isUpdatingPending && crKey === 'expenses' && !record.price_pending) {
+        if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
+        const seenPendEi = new Set();
+        const pendChildItems = STATE.customRecords.expense_items
+          .concat((SEED.records && SEED.records.expense_items) || [])
+          .filter(it => {
+            if (!it || it.voided) return false;
+            const matchExp = it.expense_id
+              ? (String(it.expense_id) === String(record.id))
+              : (Boolean(record.name) && norm(it.expense_ref) === norm(record.name));
+            if (!matchExp) return false;
+            if (it.id && seenPendEi.has(String(it.id))) return false;
+            if (it.id) seenPendEi.add(String(it.id));
+            return true;
+          });
+        if (pendChildItems.length > 0) {
+          const isSupIvaPend = isSupplierIvaForCompany(record.supplier, record.company);
+          const vatMultPend = isSupIvaPend ? 1.11 : 1;
+          const totNetPend = round2(Number(record.amount || 0));
+          const totDiscPend = round2(Math.max(0, Number(record.discount || 0)));
+          const totGrossPend = round2(Number(record.gross_amount || 0) > 0 ? Number(record.gross_amount) : (totNetPend + totDiscPend));
+          const sumQ = round2(pendChildItems.reduce((s, it) => s + (Number(it.qty) > 0 ? Number(it.qty) : 1), 0)) || 1;
+          let remG = totGrossPend;
+          let remN = totNetPend;
+          const lastIdx = pendChildItems.length - 1;
+          pendChildItems.forEach((it, idx) => {
+            const q = Number(it.qty) > 0 ? Number(it.qty) : 1;
+            const gLine = idx === lastIdx ? round2(Math.max(0, remG)) : round2(totGrossPend * (q / sumQ));
+            const nLine = idx === lastIdx ? round2(Math.max(0, remN)) : round2(totNetPend * (q / sumQ));
+            remG = round2(remG - gLine);
+            remN = round2(remN - nLine);
+            const gPre = round2(isSupIvaPend ? (gLine / vatMultPend) : gLine);
+            const nPre = round2(isSupIvaPend ? (nLine / vatMultPend) : nLine);
+            it.gross_line_total = gLine;
+            it.line_discount = round2(Math.max(0, gLine - nLine));
+            it.line_total = nLine;
+            it.pre_vat_total = nPre;
+            it.unit_cost = q > 0 ? round2(gPre / q) : gPre;
+            it.net_unit_cost = q > 0 ? round2(nPre / q) : nPre;
+            it.price_pending = false;
+            const ci = STATE.customRecords.expense_items.findIndex(x => x && String(x.id) === String(it.id));
+            if (ci >= 0) Object.assign(STATE.customRecords.expense_items[ci], it);
+            else STATE.customRecords.expense_items.unshift(Object.assign({}, it));
+            extraApiPosts.push(['expense_items', Object.assign({}, it)]);
+          });
+        }
       }
       if (isEditingExisting && crKey === 'equipment_repairs') {
         if (!Array.isArray(STATE.customRecords.repair_items)) STATE.customRecords.repair_items = [];
@@ -128505,6 +128881,13 @@
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_truck', row.equipment || '');
       setModalControlVal('f_qty', row.qty != null ? row.qty : 1);
+      const rDiscVal = Number(row.discount || 0) > 0 ? round2(Number(row.discount)) : 0;
+      const rAmtVal = Number(row.amount || 0);
+      const rGrossVal = Number(row.gross_amount || 0) > 0
+        ? round2(Number(row.gross_amount))
+        : (rAmtVal > 0 ? round2(rAmtVal + rDiscVal) : 0);
+      setModalControlVal('f_gross_amount', rGrossVal > 0 ? fmtEditRate(rGrossVal) : '');
+      setModalControlVal('f_discount', rDiscVal > 0 ? fmtEditRate(rDiscVal) : '');
       setModalControlVal('f_amount', row.amount != null ? row.amount : '');
       setModalControlVal('f_reference', row.reference || '');
       const seenEi = new Set();
@@ -128519,6 +128902,12 @@
           if (it.id && seenEi.has(String(it.id))) return false;
           if (it.id) seenEi.add(String(it.id));
           return true;
+        })
+        .sort((a, b) => {
+          const ma = String((a && a.name) || '').match(/·\s*L(\d+)\s*·/);
+          const mb = String((b && b.name) || '').match(/·\s*L(\d+)\s*·/);
+          if (ma && mb) return Number(ma[1]) - Number(mb[1]);
+          return 0;
         });
       const rowSupIva = isSupplierIvaForCompany(row.supplier, rowCo || defaultEntryCompany());
       if (childItems.length >= 1) {
@@ -128543,7 +128932,7 @@
             : '';
           const qVal = Number(it.qty) || 1;
           let ucVal = it.unit_cost != null ? Number(it.unit_cost) : 0;
-          if (rowSupIva && !it._preVatNormalized && it.pre_vat_total === undefined && childItems.length === 1 && Number(row.amount || 0) > 0 && Math.abs(qVal * ucVal - Number(row.amount || 0)) < 0.05) {
+          if (rowSupIva && !it._preVatNormalized && it.pre_vat_total === undefined && !(rDiscVal > 0) && !(Number(it.line_discount || 0) > 0) && childItems.length === 1 && Number(row.amount || 0) > 0 && Math.abs(qVal * ucVal - Number(row.amount || 0)) < 0.05) {
             ucVal = round2((Number(row.amount || 0) / 1.11) / (qVal > 0 ? qVal : 1));
           }
           return {
@@ -128564,8 +128953,7 @@
         const fallbackItem = isEqExp ? (row.subcategory || row.category || '') : (row.subcategory || '');
         const catIt = fallbackItem ? resolveCatalogItem(fallbackItem) : null;
         const rQty = Number(row.qty) || 1;
-        const rAmt = Number(row.amount) || 0;
-        const rPreVat = rAmt > 0 ? (rowSupIva ? round2(rAmt / 1.11) : rAmt) : 0;
+        const rPreVat = rGrossVal > 0 ? (rowSupIva ? round2(rGrossVal / 1.11) : rGrossVal) : 0;
         FORM_UI.expItems = [{
           item_name: fallbackItem,
           allocation_mode: isEqExp ? 'equipment' : 'general',
@@ -133720,6 +134108,8 @@
         { key: 'supplier', label: 'Supplier *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'equipment', label: 'Equipment (cost centre)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'gross_amount', label: 'Subtotal ($)', type: 'number', step: '0.01', min: '0', sec: 3, getVal: r => Number(r.gross_amount || 0) > 0 ? round2(Number(r.gross_amount)) : (Number(r.amount || 0) > 0 ? round2(Number(r.amount || 0) + Number(r.discount || 0)) : 0) },
+        { key: 'discount', label: 'Discount ($)', type: 'number', step: '0.01', min: '0', sec: 3, getVal: r => Number(r.discount || 0) },
         { key: 'amount', label: 'Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true },
@@ -138153,7 +138543,21 @@
         }
       } else if (key === 'expenses') {
         const mQty = getModNum('qty') || 1;
-        const mAmt = getModNum('amount');
+        let mGross = getModNum('gross_amount');
+        let mDisc = getModNum('discount');
+        let mAmt = getModNum('amount');
+        const modFocusId = (document.activeElement && document.activeElement.id) || (modDrawer && modDrawer.dataset.lastExpFieldId) || '';
+        if (modFocusId === 'insp_edit_gross_amount' || modFocusId === 'insp_edit_discount') {
+          if ($('insp_edit_amount') && (mGross > 0 || $('insp_edit_gross_amount')?.dataset.userEdited === '1')) {
+            mAmt = Math.max(0, round2(mGross - Math.max(0, mDisc)));
+            $('insp_edit_amount').value = mAmt.toFixed(2);
+          }
+        } else if (modFocusId === 'insp_edit_amount') {
+          if ($('insp_edit_gross_amount') && mAmt > 0) {
+            mGross = round2(mAmt + Math.max(0, mDisc));
+            $('insp_edit_gross_amount').value = mGross.toFixed(2);
+          }
+        }
         const mMethod = getModVal('method') || row.method || 'Cash';
         const mCat = getModVal('category') || row.category || '';
         const mSub = getModVal('subcategory') || row.subcategory || '';
@@ -138173,12 +138577,13 @@
           }
         }
         const dispMethod = stillPend ? 'Credit' : mMethod;
+        const discPart = (!stillPend && mDisc > 0) ? `<span>Discount: <b>-${fmtUSD(mDisc, 2)}</b></span>` : '';
         if (stillPend) {
           html = `<span>Quantity Received: <b>${fmtNum(mQty, mQty % 1 ? 2 : 0)}${isFuel ? ' L' : ''}</b></span><span>Status: <b style="color:var(--warn)">Pending Invoice Price ($0.00 AP)</b></span>`;
         } else if (isPendingPriceExpense(row) && mAmt > 0) {
-          html = `<span>Final Invoice Price: <b>${fmtUSD(mAmt, 2)}</b></span>${isFuel && mQty > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}<span>Status: <b style="color:var(--ok)">✓ Clears Pending Price · Books to ${esc(dispMethod)}</b></span>`;
+          html = `<span>Final Invoice Price: <b>${fmtUSD(mAmt, 2)}</b></span>${discPart}${isFuel && mQty > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}<span>Status: <b style="color:var(--ok)">✓ Clears Pending Price · Books to ${esc(dispMethod)}</b></span>`;
         } else {
-          html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(dispMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
+          html = `${!stillPend && mDisc > 0 && mGross > 0 ? `<span>Subtotal: <b>${fmtUSD(mGross, 2)}</b></span>` : ''}${discPart}<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(dispMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
         }
       } else if (key === 'employments') {
         const mDays = getModNum('working_days') || Number(row.working_days || 30) || 30;
@@ -138434,6 +138839,7 @@
         const onFieldMod = () => {
           const initV = el.getAttribute('data-init-val');
           el.dataset.userEdited = (initV === null || String(el.value ?? '') !== String(initV)) ? '1' : '';
+          if (modDrawer && el.id) modDrawer.dataset.lastExpFieldId = el.id;
           syncModifyLiveSummary();
         };
         el.addEventListener('input', onFieldMod);
@@ -139280,13 +139686,52 @@
             row.prior_defect_notified = Boolean(row.defect_ref);
           }
         } else if (key === 'expenses') {
-          const amt = round2(Number(row.amount || 0));
+          let modDisc = round2(Number(row.discount || 0));
+          let modGross = round2(Number(row.gross_amount || 0));
+          let amt = round2(Number(row.amount || 0));
+          if (modDisc < 0) {
+            toast('Discount cannot be negative.', 'err');
+            Object.assign(row, origRowSnap);
+            return;
+          }
+          if (('gross_amount' in pendingUpdates || 'discount' in pendingUpdates) && !('amount' in pendingUpdates)) {
+            if (modGross > 0) amt = Math.max(0, round2(modGross - modDisc));
+            else if (amt > 0 && 'discount' in pendingUpdates) {
+              const prevG = Number(origRowSnap.gross_amount || 0) > 0 ? Number(origRowSnap.gross_amount) : round2(Number(origRowSnap.amount || 0) + Number(origRowSnap.discount || 0));
+              modGross = prevG;
+              amt = Math.max(0, round2(prevG - modDisc));
+            }
+          } else if ('amount' in pendingUpdates && !('gross_amount' in pendingUpdates)) {
+            modGross = round2(amt + modDisc);
+          } else if ('gross_amount' in pendingUpdates && 'amount' in pendingUpdates && !('discount' in pendingUpdates)) {
+            modDisc = round2(modGross - amt);
+            if (modDisc < 0) {
+              toast('Total cannot exceed Subtotal when discount is not negative.', 'err');
+              Object.assign(row, origRowSnap);
+              return;
+            }
+          }
+          if (modGross > 0 && modDisc > modGross + 0.001) {
+            toast('Discount cannot exceed Subtotal.', 'err');
+            Object.assign(row, origRowSnap);
+            return;
+          }
+          const isExplicitPendingSave = ('price_pending' in pendingUpdates && row.price_pending) || (row.price_pending && !('price_pending' in pendingUpdates) && !(amt > 0) && !('amount' in pendingUpdates) && !('gross_amount' in pendingUpdates));
+          if (!isExplicitPendingSave && !(amt > 0)) {
+            toast('Net total after discount must be above zero.', 'err');
+            Object.assign(row, origRowSnap);
+            return;
+          }
+          row.discount = modDisc;
+          row.gross_amount = modGross > 0 ? modGross : (amt > 0 ? round2(amt + modDisc) : 0);
           row.amount = amt;
           if (amt > 0 && row.price_pending && !('price_pending' in pendingUpdates && pendingUpdates.price_pending === true)) {
             row.price_pending = false;
             changedCount++;
           } else if ('price_pending' in pendingUpdates && row.price_pending) {
             row.amount = 0;
+            row.discount = 0;
+            row.gross_amount = 0;
             row.method = 'Credit';
           }
           const expCats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
@@ -139303,7 +139748,7 @@
             }
           }
           if (row.equipment) row.for_equipment = true;
-          if ('subcategory' in pendingUpdates || 'category' in pendingUpdates || 'equipment' in pendingUpdates || 'qty' in pendingUpdates || 'amount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
+          if ('subcategory' in pendingUpdates || 'category' in pendingUpdates || 'equipment' in pendingUpdates || 'qty' in pendingUpdates || 'amount' in pendingUpdates || 'gross_amount' in pendingUpdates || 'discount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
             if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
             const seenModEi = new Set();
             const linkedItems = STATE.customRecords.expense_items
@@ -139318,15 +139763,18 @@
                 if (it.id) seenModEi.add(String(it.id));
                 return true;
               });
-            if (linkedItems.length === 1 && (linkedItems[0].allocation_mode || 'same_equipment') !== 'warehouse') {
+            if (linkedItems.length === 1) {
               const li0 = linkedItems[0];
+              const isWhLine = (li0.allocation_mode || 'same_equipment') === 'warehouse';
               const oldSub = String(origRowSnap.subcategory || '').trim();
               const oldCat = String(origRowSnap.category || '').trim();
-              if ('category' in pendingUpdates && row.category) li0.category = row.category;
-              if ('subcategory' in pendingUpdates) li0.subcategory = row.subcategory || '';
-              if (row.subcategory && (!li0.item_name || norm(li0.item_name) === norm(oldSub) || norm(li0.item_name) === norm(oldCat) || isExpenseSubcategoryOrCategoryName(li0.item_name) || /^fuel$/i.test(row.category || ''))) {
-                li0.item_name = row.subcategory;
-                li0.name = `${row.name || ('EXP ' + (row.date || ''))} · L1 · ${li0.item_name}`;
+              if (!isWhLine) {
+                if ('category' in pendingUpdates && row.category) li0.category = row.category;
+                if ('subcategory' in pendingUpdates) li0.subcategory = row.subcategory || '';
+                if (row.subcategory && (!li0.item_name || norm(li0.item_name) === norm(oldSub) || norm(li0.item_name) === norm(oldCat) || isExpenseSubcategoryOrCategoryName(li0.item_name) || /^fuel$/i.test(row.category || ''))) {
+                  li0.item_name = row.subcategory;
+                  li0.name = `${row.name || ('EXP ' + (row.date || ''))} · L1 · ${li0.item_name}`;
+                }
               }
               if ('equipment' in pendingUpdates && (li0.allocation_mode || 'same_equipment') === 'same_equipment') {
                 li0.target_equipment = row.equipment || '';
@@ -139334,14 +139782,19 @@
               if ('qty' in pendingUpdates && Number(row.qty) > 0) {
                 li0.qty = round2(Number(row.qty));
               }
-              if ('qty' in pendingUpdates || 'amount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
+              if ('qty' in pendingUpdates || 'amount' in pendingUpdates || 'gross_amount' in pendingUpdates || 'discount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
                 const effQ = Number(li0.qty) || 1;
                 const isRowIva = isSupplierIvaForCompany(row.supplier, row.company);
                 const ttcAmt = row.price_pending ? 0 : round2(Number(row.amount || 0));
-                const preVatAmt = row.price_pending ? 0 : round2(isRowIva ? (ttcAmt / 1.11) : ttcAmt);
-                li0.pre_vat_total = preVatAmt;
+                const gTtcAmt = row.price_pending ? 0 : round2(Number(row.gross_amount || 0) > 0 ? Number(row.gross_amount) : (ttcAmt + Number(row.discount || 0)));
+                const preVatNet = row.price_pending ? 0 : round2(isRowIva ? (ttcAmt / 1.11) : ttcAmt);
+                const preVatGross = row.price_pending ? 0 : round2(isRowIva ? (gTtcAmt / 1.11) : gTtcAmt);
+                li0.pre_vat_total = preVatNet;
+                li0.gross_line_total = gTtcAmt;
+                li0.line_discount = row.price_pending ? 0 : round2(Math.max(0, gTtcAmt - ttcAmt));
                 li0.line_total = ttcAmt;
-                li0.unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(preVatAmt / effQ) : preVatAmt);
+                li0.net_unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(preVatNet / effQ) : preVatNet);
+                li0.unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(preVatGross / effQ) : preVatGross);
               }
               const destLbl = li0.allocation_mode === 'warehouse' ? 'Warehouse' : (li0.target_equipment || row.equipment || 'General');
               row.item_summary = `${li0.qty || row.qty || 1}x ${li0.item_name} (${destLbl})`;
@@ -139349,11 +139802,59 @@
               if (ci >= 0) Object.assign(STATE.customRecords.expense_items[ci], li0);
               else STATE.customRecords.expense_items.unshift(Object.assign({}, li0));
               postRecordToLocalApi('expense_items', li0);
+            } else if (linkedItems.length > 1 && ('amount' in pendingUpdates || 'gross_amount' in pendingUpdates || 'discount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates)) {
+              const isRowIvaM = isSupplierIvaForCompany(row.supplier, row.company);
+              const vatMultM = isRowIvaM ? 1.11 : 1;
+              const totNetM = row.price_pending ? 0 : round2(Number(row.amount || 0));
+              const totDiscM = row.price_pending ? 0 : round2(Math.max(0, Number(row.discount || 0)));
+              const totGrossM = row.price_pending ? 0 : round2(Number(row.gross_amount || 0) > 0 ? Number(row.gross_amount) : (totNetM + totDiscM));
+              const sumGrossLinesM = round2(linkedItems.reduce((s, it) => {
+                const gl = Number(it.gross_line_total || 0);
+                if (gl > 0) return s + gl;
+                const q = Number(it.qty) || 1;
+                const uc = Number(it.unit_cost) || 0;
+                const fb = uc > 0 ? round2(round2(q * uc) * vatMultM) : Number(it.line_total || 0);
+                return s + fb;
+              }, 0));
+              let remGrossM = totGrossM;
+              let remNetM = totNetM;
+              const lastIdxM = linkedItems.length - 1;
+              linkedItems.forEach((li, liIdx) => {
+                if ('category' in pendingUpdates && row.category) li.category = row.category;
+                if ('subcategory' in pendingUpdates) li.subcategory = row.subcategory || '';
+                const q = Number(li.qty) || 1;
+                const origGl = Number(li.gross_line_total || 0) > 0
+                  ? Number(li.gross_line_total)
+                  : ((Number(li.unit_cost) || 0) > 0 ? round2(round2(q * Number(li.unit_cost)) * vatMultM) : Number(li.line_total || 0));
+                const gLine = row.price_pending
+                  ? 0
+                  : (liIdx === lastIdxM ? round2(Math.max(0, remGrossM)) : (sumGrossLinesM > 0 ? round2(totGrossM * (origGl / sumGrossLinesM)) : round2(totGrossM / linkedItems.length)));
+                const nLine = row.price_pending
+                  ? 0
+                  : (liIdx === lastIdxM ? round2(Math.max(0, remNetM)) : (sumGrossLinesM > 0 ? round2(totNetM * (origGl / sumGrossLinesM)) : round2(totNetM / linkedItems.length)));
+                remGrossM = round2(remGrossM - gLine);
+                remNetM = round2(remNetM - nLine);
+                const gPre = row.price_pending ? 0 : round2(isRowIvaM ? (gLine / vatMultM) : gLine);
+                const nPre = row.price_pending ? 0 : round2(isRowIvaM ? (nLine / vatMultM) : nLine);
+                li.gross_line_total = gLine;
+                li.line_discount = row.price_pending ? 0 : round2(Math.max(0, gLine - nLine));
+                li.line_total = nLine;
+                li.pre_vat_total = nPre;
+                li.unit_cost = q > 0 ? round2(gPre / q) : gPre;
+                li.net_unit_cost = q > 0 ? round2(nPre / q) : nPre;
+                li.price_pending = Boolean(row.price_pending);
+                const ci = STATE.customRecords.expense_items.findIndex(x => x && String(x.id) === String(li.id));
+                if (ci >= 0) Object.assign(STATE.customRecords.expense_items[ci], li);
+                else STATE.customRecords.expense_items.unshift(Object.assign({}, li));
+                postRecordToLocalApi('expense_items', li);
+              });
             } else if (linkedItems.length === 0 && (row.equipment || row.for_equipment)) {
               const effQ = Number(row.qty) || 1;
               const itNm = row.subcategory || row.category || 'Expense';
               const isRowIva = isSupplierIvaForCompany(row.supplier, row.company);
               const preVatAmt = row.price_pending ? 0 : round2(isRowIva ? (amt / 1.11) : amt);
+              const gAmt = row.price_pending ? 0 : round2(Number(row.gross_amount || 0) > 0 ? Number(row.gross_amount) : (amt + Number(row.discount || 0)));
+              const preVatGrossNew = row.price_pending ? 0 : round2(isRowIva ? (gAmt / 1.11) : gAmt);
               const newLi = {
                 id: `${row.id}-i1`,
                 name: `${row.name || ('EXP ' + (row.date || ''))} · L1 · ${itNm}`,
@@ -139369,8 +139870,11 @@
                 item_name: itNm,
                 qty: round2(effQ),
                 uom: /^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece',
-                unit_cost: row.price_pending ? 0 : round2(preVatAmt / (effQ > 0 ? effQ : 1)),
+                unit_cost: row.price_pending ? 0 : round2(preVatGrossNew / (effQ > 0 ? effQ : 1)),
+                net_unit_cost: row.price_pending ? 0 : round2(preVatAmt / (effQ > 0 ? effQ : 1)),
                 pre_vat_total: preVatAmt,
+                gross_line_total: gAmt,
+                line_discount: row.price_pending ? 0 : round2(Math.max(0, gAmt - amt)),
                 line_total: row.price_pending ? 0 : amt,
                 allocation_mode: 'same_equipment',
                 target_equipment: row.equipment || '',
@@ -142087,6 +142591,7 @@
       }
     });
     if (fleetTouched) _FLEET_IDX = null;
+    if (_FREQ_IDX && _FREQ_IDX._partyTypoPools) _FREQ_IDX._partyTypoPools.clear();
     } finally {
       _applyingCustomRecords = prevApplying;
     }
@@ -193656,6 +194161,7 @@
         canManageDataHygiene,
         getPartyHygieneRules,
         savePartyHygieneDecision,
+        comparePartyHygieneTs,
         resolveConfirmedPartyAlias,
         canonicalizePartyByHygiene,
         getConfirmedAliasesForCanonical,
