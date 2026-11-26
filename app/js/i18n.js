@@ -15763,7 +15763,14 @@
       "Valuation:": "التقييم:",
       "Workshop & Parts": "الورشة وقطع الغيار",
       "Workshop Parts, Repairs, Lubes & Permits": "قطع غيار الورشة والإصلاحات والزيوت والتراخيص",
-      "verified": "موثق"
+      "verified": "موثق",
+      "Likely Cause": "السبب المرجّح",
+      "Gap > 31d needs Note": "فجوة > 31 يوماً تتطلب ملاحظة",
+      "31-Day Gap Guard": "ضابط فجوة 31 يوماً",
+      "Likely Typo": "خطأ مطبعي محتمل",
+      "Likely Typo: Future Date": "خطأ مطبعي محتمل: تاريخ مستقبلي",
+      "Moved With a Batch": "نُقل ضمن دفعة",
+      "Late Entry": "إدخال متأخر"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31508,7 +31515,14 @@
       "Valuation:": "Valorisation :",
       "Workshop & Parts": "Atelier & Pièces",
       "Workshop Parts, Repairs, Lubes & Permits": "Pièces Atelier, Réparations, Lubrifiants & Taxes",
-      "verified": "vérifié(s)"
+      "verified": "vérifié(s)",
+      "Likely Cause": "Cause probable",
+      "Gap > 31d needs Note": "Écart > 31j exige une note",
+      "31-Day Gap Guard": "Contrôle d'écart 31 jours",
+      "Likely Typo": "Faute de saisie probable",
+      "Likely Typo: Future Date": "Faute de saisie probable : date future",
+      "Moved With a Batch": "Déplacé avec un lot",
+      "Late Entry": "Saisie tardive"
     }
   };
 
@@ -33577,8 +33591,26 @@
     m = trimmed.match(/^(\d+)\s+GPS\s+ALERTS?$/i);
     if (m) return lang === 'ar' ? `${m[1]} تنبيهات GPS` : `${m[1]} ALERTE${Number(m[1]) > 1 ? 'S' : ''} GPS`;
 
-    m = trimmed.match(/^(\d+)\s+rows carry a reporting date more than 31 days from the transaction date\s*·\s*(\d+)\s+VAT invoices not linked to tickets\s*·\s*(\d+)\s+VAT header variances\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} سطور يحمل تاريخ تقريرها فارقاً يتجاوز 31 يوماً عن تاريخ العملية · ${m[2]} فواتير ضريبية غير مرتبطة بإيصالات · ${m[3]} فروقات في ترويسة الضريبة.` : `${m[1]} lignes avec écart date reporting > 31 jours · ${m[2]} factures TVA non liées aux bons · ${m[3]} écarts d'entête TVA.`;
+    m = trimmed.match(/^([\d,]+)\s+rows carry a reporting date more than (\d+) days from the transaction date(?:\s*\(([\d,]+) likely typos?: reported later on their own, listed first\))?\s*·\s*([\d,]+)\s+VAT invoices not linked to tickets\s*·\s*([\d,]+)\s+VAT header variances\.?$/i);
+    if (m) {
+      const typoAr = m[3] ? ` (${m[3]} خطأ مطبعي محتمل: تاريخ تقرير لاحق بمفرده، مدرج أولاً)` : '';
+      const typoFr = m[3] ? ` (${m[3]} faute${m[3] === '1' ? '' : 's'} de saisie probable${m[3] === '1' ? '' : 's'} : reportée${m[3] === '1' ? '' : 's'} plus tard isolément, en tête de liste)` : '';
+      return lang === 'ar' ? `${m[1]} سطور يحمل تاريخ تقريرها فارقاً يتجاوز ${m[2]} يوماً عن تاريخ العملية${typoAr} · ${m[4]} فواتير ضريبية غير مرتبطة بإيصالات · ${m[5]} فروقات في ترويسة الضريبة.` : `${m[1]} lignes avec écart date reporting > ${m[2]} jours${typoFr} · ${m[4]} factures TVA non liées aux bons · ${m[5]} écarts d'entête TVA.`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+LIKELY TYPOS?$/i);
+    if (m) return lang === 'ar' ? (m[1] === '1' ? 'خطأ مطبعي محتمل واحد' : `${m[1]} أخطاء مطبعية محتملة`) : `${m[1]} FAUTE${m[1] === '1' ? '' : 'S'} DE SAISIE PROBABLE${m[1] === '1' ? '' : 'S'}`;
+
+    m = trimmed.match(/^Reporting Date\s+([\d,]+)\s+days from Tx Date\s*·\s*check for a typo\s*·\s*Tx Date\s+(\S+)\s*·\s*Reporting Date\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تاريخ التقرير يبعد ${m[1]} يوماً عن تاريخ العملية · تحقق من خطأ مطبعي · تاريخ العملية ${m[2]} · تاريخ التقرير ${m[3]}` : `Date rep. à ${m[1]} jours de la date op. · vérifier une faute de saisie · Date op. ${m[2]} · Date rep. ${m[3]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+days apart\s*·\s*(Reporting Date after the Transaction Date|Transaction Date after the Reporting Date)\s*·\s*check the Reporting Date for a typo$/i);
+    if (m) {
+      const repLater = /^Reporting/i.test(m[2]);
+      return lang === 'ar'
+        ? `فارق ${m[1]} يوماً · ${repLater ? 'تاريخ التقرير بعد تاريخ العملية' : 'تاريخ العملية بعد تاريخ التقرير'} · تحقق من تاريخ التقرير بحثاً عن خطأ مطبعي`
+        : `${m[1]} jours d'écart · ${repLater ? 'date de reporting après la date d\'opération' : 'date d\'opération après la date de reporting'} · vérifier la date de reporting (faute de saisie ?)`;
+    }
 
     m = trimmed.match(/^(\d+)\s+part replacements logged without a prior reported defect\s*·\s*(\d+)\s+critical units flagged Down \/ Do Not Dispatch\s*·\s*(\d+)\s+stored in warehouse\s*·\s*(\d+)\s+in maintenance\s*·\s*(\d+)\s+sold\s*\(([^)]+)\s+proceeds\)\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} عمليات استبدال قطع بدون بلاغ عطل مسبق · ${m[2]} آليات حرجة متوقفة / يمنع إرسالها · ${m[3]} مخزنة بالمستودع · ${m[4]} قيد الصيانة · ${m[5]} مباعة (عائد ${m[6]}).` : `${m[1]} remplacements sans avis de panne préalable · ${m[2]} engins critiques à l'arrêt · ${m[3]} en magasin · ${m[4]} en maintenance · ${m[5]} vendus (${m[6]}).`;

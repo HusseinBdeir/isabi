@@ -10214,6 +10214,10 @@
     const txDate = (btnEl.getAttribute('data-tx-date') || '').trim();
     const repDate = (btnEl.getAttribute('data-rep-date') || '').trim();
     const repSummary = (btnEl.getAttribute('data-rep-summary') || '').trim();
+    const farGap = Number(btnEl.getAttribute('data-rep-gap'));
+    const farHtml = btnEl.hasAttribute('data-rep-gap') && Number.isFinite(farGap)
+      ? `<div class="rep-shift-pop-warn">${ic('alert')}<span>${fmtNum(Math.abs(farGap), 0)} days apart · ${farGap > 0 ? 'Reporting Date after the Transaction Date' : 'Transaction Date after the Reporting Date'} · check the Reporting Date for a typo</span></div>`
+      : '';
     const curBasisIsTx = isTxOnlyBasisView(STATE.view) || STATE.basis === 'tx';
     const canOpenEntry = Boolean(btnEl.closest('tr.rrow[data-rkey][data-rid]'));
 
@@ -10226,6 +10230,7 @@
         <div class="rep-shift-pop-row"><span>Transaction Date</span><b class="mono" data-no-i18n="1">${esc(txDate || '—')}</b></div>
         <div class="rep-shift-pop-row"><span>Reporting Date</span><b class="mono brass" data-no-i18n="1">${esc(repDate || repSummary || '—')}</b></div>
       </div>
+      ${farHtml}
       <div class="rep-shift-pop-basis">${curBasisIsTx ? 'Showing Transaction Date' : 'Showing Reporting Date'}</div>
       ${canOpenEntry ? '<div class="rep-shift-pop-foot"><button type="button" class="btn btn-outline-bar btn-sm rep-shift-open-btn" data-rep-shift-open-entry="1">Open Entry</button></div>' : ''}
     `;
@@ -10292,9 +10297,17 @@
     if (!dTx || !dRep || dTx === dRep) return '';
     const txDisp = fmtDateDMY(dTx);
     const repDisp = fmtDateDMY(dRep);
-    const tip = `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${repDisp}`;
-    return `<button type="button" class="rep-shift-ico" data-rep-shift-btn="1" data-tx-date="${esc(txDisp)}" data-rep-date="${esc(repDisp)}" data-ui-tip="${esc(tip)}" aria-label="${esc(tip)}" aria-expanded="false">${ic('rep_shift')}</button>`;
+    // More than the S8 gap apart: amber icon, so a mistyped Reporting Date stands out in the register.
+    const gap = txRepGapDays(r);
+    const farDays = getAlertParam('S8', 'audit_gap_days', 31);
+    const isFar = Number.isFinite(gap) && Math.abs(gap) > farDays;
+    const tip = isFar
+      ? `Reporting Date ${fmtNum(Math.abs(gap), 0)} days from Tx Date · check for a typo · Tx Date ${txDisp} · Reporting Date ${repDisp}`
+      : `Reporting Date differs · Tx Date ${txDisp} · Reporting Date ${repDisp}`;
+    return `<button type="button" class="rep-shift-ico${isFar ? ' is-far' : ''}" data-rep-shift-btn="1" data-tx-date="${esc(txDisp)}" data-rep-date="${esc(repDisp)}"${isFar ? ` data-rep-gap="${esc(String(gap))}"` : ''} data-ui-tip="${esc(tip)}" aria-label="${esc(tip)}" aria-expanded="false">${ic('rep_shift')}</button>`;
   }
+  // Test hook for build/verify_repdate_typo_check.mjs
+  window.__mfgRepDateGap = { txRepGapDays, classifyRepDateGap, repDateForwardGroupCounts, repDateShiftBadge, toggleRepShiftPopover, batchMin: () => REP_TYPO_BATCH_MIN };
 
   function appPill(crKey, amountKey, label) {
     const keptIds = keptOverWorkbookVoidedIds(crKey);
@@ -27867,7 +27880,7 @@
       jumpForm: 'sales',
       why: 'Keeps operational P&L statements aligned with cash flow by requiring a clear reason whenever a voucher is assigned to a far-away reporting month.',
       params: [
-        { key: 'repdate_warn_days', label: 'Max Tx-to-Reporting Gap', def: 60, min: 7, max: 365, step: 5, unit: 'days' }
+        { key: 'repdate_warn_days', label: 'Max Tx-to-Reporting Gap', def: 31, min: 7, max: 365, step: 5, unit: 'days' }
       ],
       whatFn: p => `Checks the gap between Transaction Date (cash/till date) and Reporting Date (statement period). Requires a Note when the gap exceeds <b>${fmtNum(p.repdate_warn_days, 0)} days</b>.`,
       threshFn: p => `Gap > ${fmtNum(p.repdate_warn_days, 0)}d needs Note`,
@@ -30395,6 +30408,58 @@
   const _txRepGapWeakMap = new WeakMap();
   let _linkedVatRefsCache = { rev: -1, len: -1, set: null };
 
+  // Days from Transaction Date to Reporting Date (positive = reported later), cached per row and date pair.
+  function txRepGapDays(r) {
+    if (!r || !r.date || !r.rep_date) return NaN;
+    const d1 = String(r.date).slice(0, 10);
+    const d2 = String(r.rep_date).slice(0, 10);
+    if (d1.length < 10 || d2.length < 10) return NaN;
+    if (d1 === d2) return 0;
+    const pairKey = d1 + '|' + d2;
+    const cg = _txRepGapWeakMap.get(r);
+    if (cg && cg.k === pairKey) return cg.g;
+    const t1 = Date.parse(d1 + 'T00:00:00Z');
+    const t2 = Date.parse(d2 + 'T00:00:00Z');
+    const gap = (Number.isFinite(t1) && Number.isFinite(t2)) ? Math.round((t2 - t1) / 86400000) : NaN;
+    _txRepGapWeakMap.set(r, { k: pairKey, g: gap });
+    return gap;
+  }
+
+  // Likely reporting-date typos (owner 2026-11-24, after a 09-02-2026 ticket carried a 18-06-2026 reporting date):
+  // a Reporting Date set later than the Transaction Date by more than the S8 gap is normally a block of rows
+  // moved to a later month together (REP_TYPO_BATCH_MIN or more of one company sharing that reporting date).
+  // One or two alone, or any Reporting Date after today, is most likely a mistyped date. Late entries
+  // (Reporting Date earlier than the Transaction Date) are ordinary and never called typos.
+  const REP_TYPO_BATCH_MIN = 3;
+  const _repFwdGroupCache = new WeakMap();
+  function repDateForwardGroupCounts(list, gapDays) {
+    const out = new Map();
+    if (!Array.isArray(list)) return out;
+    const rev = SEED._customRev || 0;
+    const hit = _repFwdGroupCache.get(list);
+    if (hit && hit.rev === rev && hit.len === list.length && hit.gap === gapDays) return hit.map;
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!r || r.voided || !r.rep_date) continue;
+      const g = txRepGapDays(r);
+      if (!(g > gapDays)) continue;
+      const k = norm(r.company) + '|' + String(r.rep_date).slice(0, 10);
+      out.set(k, (out.get(k) || 0) + 1);
+    }
+    _repFwdGroupCache.set(list, { rev, len: list.length, gap: gapDays, map: out });
+    return out;
+  }
+  function classifyRepDateGap(r, gap, gapDays, fwdCounts, today) {
+    const rep = String((r && r.rep_date) || '').slice(0, 10);
+    if (rep && today && rep > today) return 'future';
+    if (gap > gapDays) {
+      const n = fwdCounts ? (fwdCounts.get(norm(r.company) + '|' + rep) || 0) : 0;
+      return n >= REP_TYPO_BATCH_MIN ? 'batch' : 'typo';
+    }
+    return 'late';
+  }
+  const REP_GAP_KIND_LABEL = { future: 'Likely Typo: Future Date', typo: 'Likely Typo', batch: 'Moved With a Batch', late: 'Late Entry' };
+
   function invalidateAlertRuleCaches() {
     _ALERT_RULES_REV += 1;
     _liveSentinelCache = null;
@@ -31736,26 +31801,23 @@
     // 3. Live Date-Basis Parity > N Days & Unlinked VAT Invoices (S8)
     const s8GapDays = getAlertParam('S8', 'audit_gap_days', 31);
     const dateGaps = [];
+    const s8Today = todayISO();
     const scanDateGaps = (tblLabel, rkey, list, amtFn) => {
+      // Batches are counted over the whole table, so a period or week cut never splits one into "typos".
+      const fwdCounts = repDateForwardGroupCounts(list, s8GapDays);
       filterRecords(list, { ignoreSearch: true }).forEach(r => {
         if (!r || r.voided || !r.date || !r.rep_date || r.date === r.rep_date) return;
         const d1 = String(r.date).slice(0, 10);
         const d2 = String(r.rep_date).slice(0, 10);
         if (d1 === d2 || d1.length < 10 || d2.length < 10) return;
-        const pairKey = d1 + '|' + d2;
-        let gap;
-        const cg = _txRepGapWeakMap.get(r);
-        if (cg && cg.k === pairKey) {
-          gap = cg.g;
-        } else {
-          const t1 = Date.parse(d1 + 'T00:00:00Z');
-          const t2 = Date.parse(d2 + 'T00:00:00Z');
-          gap = (Number.isFinite(t1) && Number.isFinite(t2)) ? Math.round((t2 - t1) / 86400000) : NaN;
-          _txRepGapWeakMap.set(r, { k: pairKey, g: gap });
-        }
+        const gap = txRepGapDays(r);
         if (!Number.isFinite(gap)) return;
         if (Math.abs(gap) > s8GapDays) {
+          const kind = classifyRepDateGap(r, gap, s8GapDays, fwdCounts, s8Today);
           dateGaps.push({
+            gap_kind: kind,
+            likely_typo: kind === 'typo' || kind === 'future',
+            gap_kind_label: REP_GAP_KIND_LABEL[kind] || '',
             id: r.id, rid: r.id, rkey,
             table: tblLabel,
             bu: r.company || 'WTC',
@@ -31772,7 +31834,8 @@
     scanDateGaps('Sales', 'sales_tickets', SEED.records.sales_tickets, r => r.total_ttc != null ? r.total_ttc : r.total);
     scanDateGaps('Raw', 'raw_purchases', SEED.records.raw_purchases, r => r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
     scanDateGaps('Expenses', 'expenses', SEED.records.expenses, r => r.amount);
-    dateGaps.sort((a, b) => Math.abs(b.gap_days) - Math.abs(a.gap_days));
+    dateGaps.sort((a, b) => (Number(b.likely_typo) - Number(a.likely_typo)) || (Math.abs(b.gap_days) - Math.abs(a.gap_days)));
+    const dateGapTypos = dateGaps.filter(g => g.likely_typo).length;
 
     const curSeedRev = SEED._customRev || 0;
     if (!_linkedVatRefsCache.set || _linkedVatRefsCache.rev !== curSeedRev || _linkedVatRefsCache.len !== salesArr.length) {
@@ -31808,6 +31871,7 @@
     const liveParity = Object.assign({}, baseParity, {
       date_basis_anomalies_gt_31d_count: dateGaps.length,
       date_basis_anomalies_gt_31d: dateGaps,
+      date_basis_likely_typos_count: dateGapTypos,
       unlinked_vat_invoices_count: unlinkedVats.length,
       unlinked_vat_invoices_sample: unlinkedVats
     });
@@ -32151,14 +32215,15 @@
     }
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
+    const repTypos = Number(parity.date_basis_likely_typos_count || 0);
     const unlinkedVatCnt = Number(parity.unlinked_vat_invoices_count || 0);
     const s8AuditDays = getAlertParam('S8', 'audit_gap_days', 31);
     rawItems.push({
       id: 'S8',
       code: 'Rule #08 · Dates & VAT', title: `Transaction vs Reporting Date Gaps > ${fmtNum(s8AuditDays, 0)} Days`,
-      detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
+      detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date${repTypos > 0 ? ` (${fmtNum(repTypos)} likely typo${repTypos === 1 ? '' : 's'}: reported later on their own, listed first)` : ''} · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
       severity: anomalies > 0 || unlinkedVatCnt > 0 ? 'warn' : 'ok',
-      badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC'),
+      badge: repTypos > 0 ? fmtNum(repTypos) + ' LIKELY TYPOS' : (anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC')),
       company: scope,
       rawMetric: anomalies,
       rawSecondary: unlinkedVatCnt,
@@ -33645,7 +33710,9 @@
         ], 'snPayroll') : ''}
         ${miniTable(`TRANSACTION vs REPORTING DATE GAPS &gt; ${fmtNum(s8DaysUi, 0)} DAYS`, (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'Table', key: 'table' }, { label: 'BU', key: 'bu' }, { label: 'Record', key: 'name' }, { label: 'Ticket', key: 'ticket', mono: true },
-          { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) }, { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
+          { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) },
+          { label: 'Likely Cause', key: 'gap_kind_label', fmt: (v, row) => row && row.likely_typo ? `<span class="rep-gap-typo-pill">${esc(v)}</span>` : esc(v || '') },
+          { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
         ], 'snDates')}
         ${miniTable('VAT INVOICES NOT LINKED TO TICKETS', (parity.unlinked_vat_invoices_sample || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'BU', key: 'bu' }, { label: 'Invoice', key: 'invoice' }, { label: 'No.', key: 'invoiceno', mono: true }, { label: 'Date', key: 'date', mono: true },
@@ -105983,7 +106050,7 @@
       }
       if (!isAttModal) {
         const gap = daysBetween(d, repEl.value);
-        const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
         if (isAlertRuleEnabled('G_REPDATE_GAP') && Math.abs(gap) > repGapDays) {
           setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>${fmtNum(repGapDays, 0)}d)`, 'warn');
           warnings.push('repdate_gap');
@@ -117317,7 +117384,7 @@
         const attMode = val('f_att_mode') || 'shift';
         const preset = FORM_UI.attPreset || 'regular';
         const attGapDays = Math.abs(daysBetween(txDate, attDate));
-        const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
         const attGapWarn = isAlertRuleEnabled('G_REPDATE_GAP') && attGapDays > attRepGapLimit;
         if (attGapWarn) attWarnings.push('repdate_gap');
 
@@ -124916,7 +124983,7 @@
         }
       }
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
-      const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+      const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 31);
       const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
       const skipLockedPendRepdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_repdate')) || (editCtx && repDate === origEditRepDate && date === origEditDate));
       if (!val('f_date')) addErr('f_date', 'Date is required.');

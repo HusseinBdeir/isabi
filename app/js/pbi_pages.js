@@ -9784,7 +9784,7 @@
 
       const _ac = window.MFG_ALERT_CONFIG || null;
       const _s8GapDays = _ac ? _ac.param('S8', 'audit_gap_days', 31) : 31;
-      const _repGapDays = _ac ? _ac.param('G_REPDATE_GAP', 'repdate_warn_days', 60) : 60;
+      const _repGapDays = _ac ? _ac.param('G_REPDATE_GAP', 'repdate_warn_days', 31) : 31;
       const _repGapOn = _ac ? _ac.enabled('G_REPDATE_GAP') : true;
       const visibleDtRows = pbiLens.expenses
         ? dtRows

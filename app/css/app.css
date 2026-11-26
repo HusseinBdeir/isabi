@@ -17501,6 +17501,47 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   background: var(--brass-tint);
   outline: none;
 }
+.rep-shift-ico.is-far {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+.rep-shift-ico.is-far:hover,
+.rep-shift-ico.is-far:focus-visible,
+.rep-shift-ico.is-far[aria-expanded="true"] {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  box-shadow: 0 0 0 2px var(--warn-bg);
+}
+.rep-shift-pop-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.rep-shift-pop-warn svg.ic {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.rep-gap-typo-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .rep-shift-ico svg.ic {
   width: 12px;
   height: 12px;
