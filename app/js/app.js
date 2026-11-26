@@ -158,6 +158,69 @@
       return compiledNameBook().properNounsList.slice();
     }
   };
+
+  function getVisibleViewportBox() {
+    const layoutW = (typeof window !== 'undefined' && window.innerWidth) || (typeof document !== 'undefined' && document.documentElement && document.documentElement.clientWidth) || 390;
+    const layoutH = (typeof window !== 'undefined' && window.innerHeight) || (typeof document !== 'undefined' && document.documentElement && document.documentElement.clientHeight) || 844;
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv || !(Number(vv.height) > 0)) {
+      return { layoutW, layoutH, left: 0, top: 0, right: layoutW, bottom: layoutH, width: layoutW, height: layoutH, kbInset: 0 };
+    }
+    const left = Math.max(0, Number(vv.offsetLeft) || 0);
+    const top = Math.max(0, Number(vv.offsetTop) || 0);
+    const width = Math.min(layoutW, Math.max(120, Number(vv.width) || layoutW));
+    const height = Math.min(layoutH, Math.max(120, Number(vv.height) || layoutH));
+    const right = Math.min(layoutW, left + width);
+    const bottom = Math.min(layoutH, top + height);
+    const kbInset = Math.max(0, Math.round(layoutH - height));
+    return { layoutW, layoutH, left, top, right, bottom, width, height, kbInset };
+  }
+  const _vvSubscribers = new Set();
+  let _vvBoundVv = null;
+  let _vvBoundWin = false;
+  let _vvRaf = 0;
+  function scheduleVvSync() {
+    if (!_vvSubscribers.size || _vvRaf) return;
+    const run = () => {
+      _vvRaf = 0;
+      if (!_vvSubscribers.size) return;
+      const box = getVisibleViewportBox();
+      Array.from(_vvSubscribers).forEach(fn => {
+        try { fn(box); } catch (_) {}
+      });
+    };
+    if (typeof requestAnimationFrame === 'function') _vvRaf = requestAnimationFrame(run);
+    else _vvRaf = setTimeout(run, 16);
+  }
+  function ensureVvListeners() {
+    if (typeof window === 'undefined') return;
+    if (!_vvBoundWin) {
+      _vvBoundWin = true;
+      window.addEventListener('resize', scheduleVvSync, { passive: true });
+    }
+    const vv = window.visualViewport || null;
+    if (vv !== _vvBoundVv) {
+      if (_vvBoundVv && typeof _vvBoundVv.removeEventListener === 'function') {
+        try { _vvBoundVv.removeEventListener('resize', scheduleVvSync); } catch (_) {}
+        try { _vvBoundVv.removeEventListener('scroll', scheduleVvSync); } catch (_) {}
+      }
+      _vvBoundVv = vv;
+      if (vv && typeof vv.addEventListener === 'function') {
+        vv.addEventListener('resize', scheduleVvSync, { passive: true });
+        vv.addEventListener('scroll', scheduleVvSync, { passive: true });
+      }
+    }
+  }
+  window.MFG_VV = {
+    getBox: getVisibleViewportBox,
+    rebind: ensureVvListeners,
+    subscribe(fn) {
+      if (typeof fn !== 'function') return () => {};
+      ensureVvListeners();
+      _vvSubscribers.add(fn);
+      return () => { _vvSubscribers.delete(fn); };
+    }
+  };
   const SEED_RECORD_KEYS = [
     'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'recurring_expenses', 'expense_items', 'warehouse_movements',
     'receipts', 'settlements', 'salaries',
@@ -1050,6 +1113,25 @@
     ind_domain: 'domain record'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
+  function isShiftBackfillBloatedSeedAttRow(r) {
+    if (!r || typeof r !== 'object') return false;
+    const rid = String(r.id || '').trim();
+    if (!/^at_[0-9a-f]{12}$/i.test(rid)) return false;
+    if (r.voided) return false;
+    if (String(r.source || '').trim().toLowerCase() === 'app' || r._is_app_record || r.origin) return false;
+    if (String(r.modified_by || '').trim() || r.manual_override || r.restored_at || r._reopenedExplicitly) return false;
+    const eds = r._pre_void_edits;
+    if (Array.isArray(eds) && eds.length > 0) {
+      return eds.every(e => e && typeof e === 'object' && /^2026-11-24T13:2\d:/.test(String(e.at || '')));
+    }
+    return !String(r.entered_by || '').trim() && !String(r.modified_at || '').trim();
+  }
+  if (Array.isArray(STATE.customRecords.attendance) && STATE.customRecords.attendance.some(isShiftBackfillBloatedSeedAttRow)) {
+    STATE.customRecords.attendance = STATE.customRecords.attendance.filter(r => !isShiftBackfillBloatedSeedAttRow(r));
+    if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
+      try { appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords)); } catch (_) {}
+    }
+  }
   if (!Array.isArray(STATE.users) || (!STATE.users.length && !rosterIsServerHeld())) {
     STATE.users = (isDemoSandboxSession() ? DEMO_SANDBOX_USERS : DEFAULT_USERS).map(seedRosterSeat);
   }
@@ -9051,19 +9133,44 @@
   function closeColFilterPopover() {
     const pop = document.getElementById('colFilterPopover');
     if (pop) {
+      if (typeof pop._vvUnsub === 'function') { pop._vvUnsub(); pop._vvUnsub = null; }
       pop.hidden = true;
       pop.dataset.openKey = '';
       pop._anchorEl = null;
+      pop.style.maxHeight = '';
     }
     if (typeof hideRoleHoverCard === 'function') hideRoleHoverCard(true);
     const roleWrap = document.getElementById('nuRolePermsSelector');
     if (roleWrap && roleWrap.classList.contains('open')) {
       roleWrap.classList.remove('open');
       const rPop = document.getElementById('nuRolePopover');
-      if (rPop) rPop.hidden = true;
+      if (rPop) {
+        if (typeof rPop._vvUnsub === 'function') { rPop._vvUnsub(); rPop._vvUnsub = null; }
+        rPop.hidden = true;
+      }
       const rTrig = document.getElementById('nuRoleTrigger');
       if (rTrig) rTrig.setAttribute('aria-expanded', 'false');
     }
+  }
+
+  function positionColFilterPopover() {
+    const pop = document.getElementById('colFilterPopover');
+    if (!pop || pop.hidden || !pop._anchorEl || !pop._anchorEl.isConnected) {
+      if (pop && typeof pop._vvUnsub === 'function') { pop._vvUnsub(); pop._vvUnsub = null; }
+      return;
+    }
+    const vbox = getVisibleViewportBox();
+    const rect = pop._anchorEl.getBoundingClientRect();
+    const popW = Math.min(284, vbox.width - 16);
+    const left = Math.round(Math.max(vbox.left + 8, Math.min(vbox.right - popW - 8, rect.left)));
+    let top = Math.max(Math.round(vbox.top + 8), Math.round(rect.bottom + 4));
+    if (vbox.bottom - top < 168) {
+      top = Math.max(Math.round(vbox.top + 8), Math.round(vbox.bottom - Math.min(260, vbox.height - 16)));
+    }
+    const availBelow = Math.max(136, Math.floor(vbox.bottom - top - 8));
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+    pop.style.maxHeight = Math.min(380, availBelow) + 'px';
   }
 
   function openColFilterPopover(btnEl) {
@@ -9161,20 +9268,16 @@
     pop.hidden = false;
     let rect = anchorEl.getBoundingClientRect();
     const ws = document.getElementById('workspace');
-    if (ws && window.innerHeight - rect.bottom < 220 && ws.scrollHeight > ws.clientHeight) {
-      const nudge = Math.min(ws.scrollHeight - ws.clientHeight - ws.scrollTop, 230 - Math.max(0, window.innerHeight - rect.bottom));
+    const vbox = getVisibleViewportBox();
+    if (ws && vbox.bottom - rect.bottom < 220 && ws.scrollHeight > ws.clientHeight) {
+      const nudge = Math.min(ws.scrollHeight - ws.clientHeight - ws.scrollTop, 230 - Math.max(0, vbox.bottom - rect.bottom));
       if (nudge > 4) {
         ws.scrollTop += nudge;
-        rect = anchorEl.getBoundingClientRect();
       }
     }
-    const popW = Math.min(284, window.innerWidth - 16);
-    const left = Math.round(Math.max(8, Math.min(window.innerWidth - popW - 8, rect.left)));
-    const top = Math.round(rect.bottom + 4);
-    const availBelow = Math.max(176, Math.floor(window.innerHeight - top - 8));
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-    pop.style.maxHeight = Math.min(380, availBelow) + 'px';
+    positionColFilterPopover();
+    if (typeof pop._vvUnsub === 'function') pop._vvUnsub();
+    pop._vvUnsub = window.MFG_VV.subscribe(positionColFilterPopover);
 
     const applyFilterVal = valStr => {
       if (!STATE.colFilters[view]) STATE.colFilters[view] = {};
@@ -21979,6 +22082,10 @@
         if (ref.company && tr.company && norm(ref.company) !== norm(tr.company)) continue;
         const d = String(tr[dateField] || tr.date || tr.start_date || '').slice(0, 10);
         if (!d || d < rangeFrom || d > rangeTo) continue;
+        const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+          ? window.MFG_AI_EDGE.checkPeriodCloseGuard(tr.company || ref.company || '', d, String(tr.rep_date || d).slice(0, 10))
+          : null;
+        if (closeGuard && closeGuard.blocked) continue;
         let matches = true;
         for (let m = 0; m < matchPairs.length; m++) {
           const [lk, tk] = matchPairs[m];
@@ -38061,6 +38168,7 @@
     // Backfill attendance records in [rangeFrom, rangeTo] for associated staff
     const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    const customAttIds = new Set(STATE.customRecords.attendance.map(x => x && String(x.id || '').trim()).filter(Boolean));
     let attUpdated = 0;
     let handKept = 0;
     for (let i = 0; i < attRows.length; i++) {
@@ -38076,8 +38184,28 @@
       if (!associatedStaff.has(sk) && !matchesExplicitShift) continue;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       if (!inBackfillWindow(d)) continue;
+      // SharePoint workbook seed rows stay untouched unless explicitly customized or given an explicit shift_id.
+      const aId = String(a.id || '').trim();
+      if (/^at_[0-9a-f]{12}$/i.test(aId) && !isAppRecord(a) && !a.origin && !a.shift_id && !customAttIds.has(aId)) {
+        continue;
+      }
+      const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+        ? window.MFG_AI_EDGE.checkPeriodCloseGuard(a.company || co, d, String(a.rep_date || d).slice(0, 10))
+        : null;
+      if (closeGuard && closeGuard.blocked) continue;
       // A preset never rewrites a row someone corrected by hand.
       if (presetOnly && a.modified_by) {
+        handKept++;
+        continue;
+      }
+      const isDoorTab = a.origin === 'door_tablet';
+      const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
+      const isManualEdited = Boolean(a.manual_override) || (
+        isDoorTab
+          ? isHandOwnedTabletRow(a)
+          : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
+      );
+      if (isManualEdited) {
         handKept++;
         continue;
       }
@@ -82072,6 +82200,7 @@
       }));
       syncIndMobAiUi();
     }
+    if (formEl && typeof wireModalSuggestions === 'function') wireModalSuggestions(formEl);
     const scanUpBtn = $('indEntryScanUploadBtn');
     const scanFileInp = $('indEntryScanFileInput');
     const scanCamBtn = $('indEntryScanCameraBtn');
@@ -116874,9 +117003,21 @@
     const closeAll = exceptMenu => {
       document.querySelectorAll('.pa-suggest-menu').forEach(m => {
         if (m !== exceptMenu) {
+          if (typeof m._vvUnsub === 'function') { m._vvUnsub(); m._vvUnsub = null; }
           m.hidden = true;
+          m.style.position = '';
+          m.style.left = '';
+          m.style.right = '';
+          m.style.top = '';
+          m.style.bottom = '';
+          m.style.width = '';
+          m.style.maxHeight = '';
+          m.style.overflowY = '';
+          m.style.overscrollBehavior = '';
+          const rowsB = m.querySelector('.pa-suggest-list-rows');
+          if (rowsB) rowsB.style.maxHeight = '';
           if (!m.classList.contains('pa-time24-menu')) m.innerHTML = '';
-          const w = m.closest('.pa-suggest-wrap');
+          const w = m.closest('.pa-suggest-wrap, .pa-select-wrap');
           if (w) {
             w.classList.remove('open');
             w.classList.remove('menu-drop-up');
@@ -116889,6 +117030,14 @@
       document.addEventListener('mousedown', e => {
         if (!e.target || !e.target.closest('.pa-suggest-wrap')) closeAll(null);
       });
+    }
+    const hostBackdrop = body.closest ? body.closest('.modal-backdrop') : null;
+    if (hostBackdrop && !hostBackdrop._vvSuggestCloseObs && typeof MutationObserver === 'function') {
+      const obs = new MutationObserver(() => {
+        if (hostBackdrop.hidden) closeAll(null);
+      });
+      obs.observe(hostBackdrop, { attributes: true, attributeFilter: ['hidden'] });
+      hostBackdrop._vvSuggestCloseObs = obs;
     }
 
     const highlightMatch = (text, q) => {
@@ -116998,32 +117147,91 @@
 
       const closeOwnMenu = () => {
         clearTimeout(blurTimer);
+        if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
         menu.hidden = true;
+        menu.style.position = '';
+        menu.style.left = '';
+        menu.style.right = '';
+        menu.style.top = '';
+        menu.style.bottom = '';
+        menu.style.width = '';
+        menu.style.maxHeight = '';
+        menu.style.overflowY = '';
+        menu.style.overscrollBehavior = '';
         menu.innerHTML = '';
         wrap.classList.remove('open');
+        wrap.classList.remove('menu-drop-up');
       };
 
       const syncMenuAlign = () => {
         try {
-          const r = wrap.getBoundingClientRect();
-          const vw = window.innerWidth || 800;
+          menu.style.position = '';
+          menu.style.left = '';
+          menu.style.right = '';
+          menu.style.top = '';
+          menu.style.bottom = '';
+          menu.style.width = '';
+          let r = wrap.getBoundingClientRect();
+          const vbox = getVisibleViewportBox();
+          const vw = vbox.width || 800;
           const isCatalog = Boolean(wrap.querySelector('[data-catalog-reg="1"]'));
           const estW = isCatalog ? Math.min(356, vw - 24) : Math.max(r.width || 0, Math.min(276, vw - 28));
           const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(wrap).direction === 'rtl';
-          const flip = isRtl
-            ? ((r.right - estW < 12 || r.right < vw * 0.58) && (r.left + estW <= vw - 12))
-            : ((r.left + estW > vw - 12 || r.left > vw * 0.42) && (r.right - estW >= 12));
-          wrap.classList.toggle('menu-align-right', flip);
-          const scrollBox = wrap.closest('#modalBody');
+          const scrollBox = wrap.closest('#modalBody, #indDomainEntryModal .modal-body, #inspModifyDrawer, #inspectorBody');
+          let effTop = vbox.top + 8;
+          let effBottom = vbox.bottom - 8;
           if (scrollBox) {
             const sb = scrollBox.getBoundingClientRect();
-            const spaceBelow = sb.bottom - r.bottom;
-            const spaceAbove = r.top - sb.top;
-            wrap.classList.toggle('menu-drop-up', spaceBelow < 235 && spaceAbove > spaceBelow);
+            effTop = Math.max(effTop, sb.top + 4);
+            effBottom = Math.min(effBottom, sb.bottom - 4);
+            if (vbox.kbInset > 40 && r.bottom > effBottom - 6) {
+              const prevTop = scrollBox.scrollTop;
+              scrollBox.scrollTop += Math.ceil(r.bottom - (effBottom - 6));
+              if (scrollBox.scrollTop !== prevTop) r = wrap.getBoundingClientRect();
+            }
+          }
+          const flip = isRtl
+            ? ((r.right - estW < vbox.left + 12 || r.right < vbox.left + vw * 0.58) && (r.left + estW <= vbox.right - 12))
+            : ((r.left + estW > vbox.right - 12 || r.left > vbox.left + vw * 0.42) && (r.right - estW >= vbox.left + 12));
+          wrap.classList.toggle('menu-align-right', flip);
+          const spaceBelow = effBottom - r.bottom;
+          const spaceAbove = r.top - effTop;
+          const dropUp = spaceBelow < 220 && spaceAbove > spaceBelow;
+          wrap.classList.toggle('menu-drop-up', dropUp);
+          let availH;
+          if (dropUp && r.top - 4 > effBottom) {
+            const fixW = Math.min(estW, Math.max(200, vw - 16));
+            const fixLeft = Math.round(Math.max(vbox.left + 8, Math.min(vbox.right - fixW - 8, isRtl ? (r.right - fixW) : r.left)));
+            menu.style.position = 'fixed';
+            menu.style.top = 'auto';
+            menu.style.bottom = `${Math.max(8, Math.round(vbox.layoutH - effBottom))}px`;
+            menu.style.left = `${fixLeft}px`;
+            menu.style.right = 'auto';
+            menu.style.width = `${fixW}px`;
+            availH = Math.floor(effBottom - effTop - 6);
           } else {
-            wrap.classList.remove('menu-drop-up');
+            availH = Math.floor((dropUp ? spaceAbove : spaceBelow) - 6);
+          }
+          if (availH < 268 || vbox.kbInset > 40) {
+            menu.style.maxHeight = `${Math.max(108, Math.min(268, availH))}px`;
+            menu.style.overflowY = 'auto';
+            menu.style.overscrollBehavior = 'contain';
+          } else {
+            menu.style.maxHeight = '';
+            menu.style.overflowY = '';
+            menu.style.overscrollBehavior = '';
           }
         } catch (_) {}
+      };
+      const armMenuVv = () => {
+        if (typeof menu._vvUnsub === 'function') menu._vvUnsub();
+        menu._vvUnsub = window.MFG_VV.subscribe(() => {
+          if (menu.hidden || !menu.isConnected) {
+            if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
+            return;
+          }
+          syncMenuAlign();
+        });
       };
 
       menu.addEventListener('mousedown', ev => {
@@ -117118,6 +117326,7 @@
           menu.innerHTML = `<div class="pa-suggest-empty-cat"><span>No connected catalog item matches <b>"${esc(q)}"</b></span><button type="button" class="pa-suggest-reg-btn" data-suggest-register-item="${esc(q)}">+ Register in Catalog</button></div>`;
           menu.hidden = false;
           wrap.classList.add('open');
+          armMenuVv();
           wireSuggestCatReg();
           return;
         }
@@ -117157,6 +117366,7 @@
           : '') + catRegFooterHtml;
         menu.hidden = false;
         wrap.classList.add('open');
+        armMenuVv();
         if (isCatRegInput) wireSuggestCatReg();
 
         const moreBtn = menu.querySelector('[data-suggest-next]');
@@ -117468,9 +117678,11 @@
       const fitHugMenu = () => {
         if (!wrap.classList.contains('pa-select-hug') || menu.hidden) return;
         try {
-          const vw = window.innerWidth || 800;
+          const vbox = getVisibleViewportBox();
           const pad = 8;
-          const fits = r => r.left >= pad && r.right <= vw - pad;
+          const vLeft = vbox.left + pad;
+          const vRight = vbox.right - pad;
+          const fits = r => r.left >= vLeft && r.right <= vRight;
           wrap.classList.remove('menu-flip-x');
           menu.style.maxWidth = '';
           menu.style.minWidth = '';
@@ -117478,8 +117690,8 @@
           wrap.classList.add('menu-flip-x');
           if (fits(menu.getBoundingClientRect())) return;
           const wr = wrap.getBoundingClientRect();
-          const roomGrowRight = vw - pad - wr.left;
-          const roomGrowLeft = wr.right - pad;
+          const roomGrowRight = vRight - wr.left;
+          const roomGrowLeft = wr.right - vLeft;
           const growRight = roomGrowRight >= roomGrowLeft;
           const rtl = getComputedStyle(wrap).direction === 'rtl';
           // Natural side: LTR grows right (left-anchored), RTL grows left (right-anchored).
@@ -117566,24 +117778,79 @@
           });
         };
 
-        try {
-          const r = wrap.getBoundingClientRect();
-          const vw = window.innerWidth || 800;
-          const vh = window.innerHeight || 800;
-          const estW = Math.max(r.width || 0, Math.min(276, vw - 28));
-          const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(wrap).direction === 'rtl';
-          const spaceBelow = vh - r.bottom;
-          const spaceAbove = r.top;
-          const flip = isRtl
-            ? ((r.right - estW < 12 || r.right < vw * 0.58) && (r.left + estW <= vw - 12))
-            : ((r.left + estW > vw - 12 || r.left > vw * 0.42) && (r.right - estW >= 12));
-          wrap.classList.toggle('menu-align-right', flip);
-          wrap.classList.toggle('menu-drop-up', spaceBelow < 230 && spaceAbove > spaceBelow + 40);
-        } catch (_) {}
+        const syncSelectMenuAlign = () => {
+          try {
+            menu.style.position = '';
+            menu.style.left = '';
+            menu.style.right = '';
+            menu.style.top = '';
+            menu.style.bottom = '';
+            menu.style.width = '';
+            menu.style.maxHeight = '';
+            let r = wrap.getBoundingClientRect();
+            const vbox = getVisibleViewportBox();
+            const vw = vbox.width || 800;
+            const estW = Math.max(r.width || 0, Math.min(276, vw - 28));
+            const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(wrap).direction === 'rtl';
+            let effTop = vbox.top + 8;
+            let effBottom = vbox.bottom - 8;
+            const scrollBox = wrap.closest('#modalBody, #indDomainEntryModal .modal-body, #inspModifyDrawer, #inspectorBody');
+            if (scrollBox) {
+              const sb = scrollBox.getBoundingClientRect();
+              effTop = Math.max(effTop, sb.top + 4);
+              effBottom = Math.min(effBottom, sb.bottom - 4);
+              if (vbox.kbInset > 40 && r.bottom > effBottom - 6) {
+                const prevTop = scrollBox.scrollTop;
+                scrollBox.scrollTop += Math.ceil(r.bottom - (effBottom - 6));
+                if (scrollBox.scrollTop !== prevTop) r = wrap.getBoundingClientRect();
+              }
+            }
+            const spaceBelow = effBottom - r.bottom;
+            const spaceAbove = r.top - effTop;
+            const flip = isRtl
+              ? ((r.right - estW < vbox.left + 12 || r.right < vbox.left + vw * 0.58) && (r.left + estW <= vbox.right - 12))
+              : ((r.left + estW > vbox.right - 12 || r.left > vbox.left + vw * 0.42) && (r.right - estW >= vbox.left + 12));
+            wrap.classList.toggle('menu-align-right', flip);
+            const dropUp = spaceBelow < 230 && spaceAbove > spaceBelow + 24;
+            wrap.classList.toggle('menu-drop-up', dropUp);
+            let maxMenuH;
+            if (dropUp && r.top - 4 > effBottom) {
+              const fixW = Math.min(estW, Math.max(200, vw - 16));
+              const fixLeft = Math.round(Math.max(vbox.left + 8, Math.min(vbox.right - fixW - 8, isRtl ? (r.right - fixW) : r.left)));
+              menu.style.position = 'fixed';
+              menu.style.top = 'auto';
+              menu.style.bottom = `${Math.max(8, Math.round(vbox.layoutH - effBottom))}px`;
+              menu.style.left = `${fixLeft}px`;
+              menu.style.right = 'auto';
+              menu.style.width = `${fixW}px`;
+              maxMenuH = Math.max(116, Math.floor(effBottom - effTop - 4));
+            } else {
+              maxMenuH = Math.max(116, Math.floor((dropUp ? spaceAbove : spaceBelow) - 6));
+            }
+            if (maxMenuH < 320 || vbox.kbInset > 40) {
+              menu.style.maxHeight = `${Math.min(320, maxMenuH)}px`;
+            }
+            if (rowsBox) {
+              const filterWrap = menu.querySelector('.pa-select-filter-wrap');
+              const chromeH = filterWrap ? Math.max(44, Math.ceil(filterWrap.offsetHeight + 12)) : 12;
+              const availRows = Math.floor(maxMenuH - chromeH);
+              rowsBox.style.maxHeight = (availRows < 268 || vbox.kbInset > 40) ? `${Math.max(72, Math.min(268, availRows))}px` : '';
+            }
+            fitHugMenu();
+          } catch (_) {}
+        };
         renderRows('');
         menu.hidden = false;
         wrap.classList.add('open');
-        fitHugMenu();
+        syncSelectMenuAlign();
+        if (typeof menu._vvUnsub === 'function') menu._vvUnsub();
+        menu._vvUnsub = window.MFG_VV.subscribe(() => {
+          if (menu.hidden || !menu.isConnected) {
+            if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
+            return;
+          }
+          syncSelectMenuAlign();
+        });
         try {
           const selRow = rowsBox.querySelector('.pa-suggest-item.is-selected');
           if (selRow && rowsBox.scrollHeight > rowsBox.clientHeight) {
@@ -143536,6 +143803,7 @@
       const byId = new Map(mine.map(r => [r.id, r]));
       inc.forEach(r => {
         if (!r || !r.id) return;
+        if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) return;
         if (isRecordPurgedByEntry(k, r, purgeLookup)) return;
         let cur = byId.get(r.id);
         if (!cur && !r.voided && k === 'receipts') {
@@ -144444,12 +144712,17 @@
       }
       return r;
     }
-    if (r.data_url && String(r.data_url).length > 2048) {
-      const copy = Object.assign({}, r);
-      delete copy.data_url;
-      return copy;
+    let copy = r;
+    const ensureCopy = () => { if (copy === r) copy = Object.assign({}, r); return copy; };
+    if (r._seed_orig && typeof r._seed_orig === 'object') {
+      ensureCopy()._seed_orig = buildSeedOrigMeta(r._seed_orig);
     }
-    return r;
+    ['data_url', 'cardDataUrl', 'imageDataUrl', 'photo_data_url'].forEach(bk => {
+      if (r[bk] && String(r[bk]).length > 2048) {
+        delete ensureCopy()[bk];
+      }
+    });
+    return copy;
   }
 
   const CLOUD_CUSTOM_ROW_CAP = 5000;
@@ -144559,6 +144832,334 @@
     };
     if (Object.keys(truncatedCrTables).length) payload._truncatedCrTables = truncatedCrTables;
     return payload;
+  }
+
+  const DELTA_SYNC_TOP_KEYS = [
+    'users', 'sessions', 'stepUpAudits', '_purgedOverrideIds',
+    'workSchedules', 'alertRules', 'roleTabPolicies', 'faceSettings',
+    'lbpFxRate', 'lbpFxUpdatedAt'
+  ];
+
+  function _normalizeTopSyncValue(tk, val) {
+    if (tk === 'users') {
+      return (Array.isArray(val) ? val : []).map(u => {
+        if (!u || typeof u !== 'object') return u;
+        if (Array.isArray(u.face_thumbs) && u.face_thumbs.some(t => String(t || '').length > 1024)) {
+          const copy = Object.assign({}, u);
+          copy.face_thumbs = [];
+          return copy;
+        }
+        return u;
+      });
+    }
+    if (tk === 'sessions') return Array.isArray(val) ? val.slice(0, 25) : [];
+    if (tk === 'stepUpAudits') return Array.isArray(val) ? val.slice(0, 300) : [];
+    if (tk === '_purgedOverrideIds') return Array.isArray(val) ? val.slice(-2000) : [];
+    return val;
+  }
+
+  function snapshotRemoteForDelta(remDoc, fallbackUpdatedAt) {
+    const doc = (remDoc && typeof remDoc === 'object') ? remDoc : {};
+    const topJson = {};
+    DELTA_SYNC_TOP_KEYS.forEach(tk => {
+      if (Object.prototype.hasOwnProperty.call(doc, tk)) {
+        try { topJson[tk] = JSON.stringify(_normalizeTopSyncValue(tk, doc[tk])); } catch (_) {}
+      }
+    });
+    const cr = {};
+    const remCr = (doc.customRecords && typeof doc.customRecords === 'object') ? doc.customRecords : {};
+    Object.keys(remCr).forEach(k => {
+      const list = Array.isArray(remCr[k]) ? remCr[k] : [];
+      const m = new Map();
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        if (!r || typeof r !== 'object' || r.id == null) continue;
+        if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) continue;
+        const rid = String(r.id).trim();
+        if (!rid) continue;
+        try { m.set(rid, { json: JSON.stringify(_slimRecordForCloud(r)), row: r }); } catch (_) {}
+      }
+      cr[k] = m;
+    });
+    const icrRaw = typeof offloadIndustryCustomRowBlobs === 'function'
+      ? offloadIndustryCustomRowBlobs(withoutTillOwnedRows(doc.industryCustomRows || {}))
+      : withoutTillOwnedRows(doc.industryCustomRows || {});
+    const icr = {};
+    Object.keys(icrRaw || {}).forEach(bk => {
+      const list = Array.isArray(icrRaw[bk]) ? icrRaw[bk] : [];
+      const m = new Map();
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        if (!r || typeof r !== 'object') continue;
+        const rid = String(r.id || r.code || '').trim();
+        if (!rid) continue;
+        try { m.set(rid, { json: JSON.stringify(r), row: r }); } catch (_) {}
+      }
+      icr[bk] = m;
+    });
+    const ireRaw = withoutTillOwnedEdits(doc.industryRowEdits || {});
+    const ire = new Map();
+    Object.entries(ireRaw || {}).forEach(([ek, ev]) => {
+      if (!ev || typeof ev !== 'object') return;
+      try { ire.set(ek, { json: JSON.stringify(ev), row: ev }); } catch (_) {}
+    });
+    const punches = new Map();
+    sanitizeKioskPunchesList(doc.kioskPunches).slice(0, 300).forEach(p => {
+      if (!p || typeof p !== 'object' || p.id == null) return;
+      const pid = String(p.id).trim();
+      if (!pid) return;
+      try { punches.set(pid, { json: JSON.stringify(p), row: p }); } catch (_) {}
+    });
+    const bio = new Map();
+    Object.entries(doc.staffBiometrics || {}).forEach(([bk, bv]) => {
+      if (!bv || typeof bv !== 'object') return;
+      let val = bv;
+      if (Array.isArray(bv.face_thumbs) && bv.face_thumbs.some(t => String(t || '').length > 1024)) {
+        val = Object.assign({}, bv, { face_thumbs: [] });
+      }
+      try { bio.set(bk, { json: JSON.stringify(val), row: val }); } catch (_) {}
+    });
+    const sr = new Map();
+    Object.entries(doc.sentinelReviews || {}).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      try { sr.set(rk, { json: JSON.stringify(rv), row: rv }); } catch (_) {}
+    });
+    const ph = new Map();
+    const phRules = (doc.partyHygiene && doc.partyHygiene.rules && typeof doc.partyHygiene.rules === 'object') ? doc.partyHygiene.rules : {};
+    Object.entries(phRules).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      try { ph.set(rk, { json: JSON.stringify(rv), row: rv }); } catch (_) {}
+    });
+    return {
+      updatedAt: String(fallbackUpdatedAt || doc.updatedAt || ''),
+      topJson,
+      cr,
+      icr,
+      ire,
+      punches,
+      bio,
+      sr,
+      ph
+    };
+  }
+
+  function buildDeltaCloudPayload(fullPayload, baseSnap, opts = {}) {
+    if (!fullPayload || !baseSnap) return fullPayload;
+    const isScoped = Boolean(opts.isScopedRemote);
+    const allowedCoSet = opts.allowedCoSet || null;
+    const canPushCoFn = (typeof opts.canPushCo === 'function') ? opts.canPushCo : (() => true);
+    const delta = {
+      _deltaPatch: 1,
+      _legacyPosUpgrades: fullPayload._legacyPosUpgrades,
+      updatedAt: fullPayload.updatedAt,
+      updatedBy: fullPayload.updatedBy,
+      minShellVer: fullPayload.minShellVer,
+      appVersion: fullPayload.appVersion
+    };
+    if (fullPayload._truncatedCrTables) delta._truncatedCrTables = fullPayload._truncatedCrTables;
+
+    DELTA_SYNC_TOP_KEYS.forEach(tk => {
+      let curJson;
+      try { curJson = JSON.stringify(fullPayload[tk]); } catch (_) { curJson = undefined; }
+      if (curJson !== baseSnap.topJson[tk]) delta[tk] = fullPayload[tk];
+    });
+
+    const changedCr = {};
+    const deletedCrIds = {};
+    const fullCr = fullPayload.customRecords || {};
+    const truncMap = fullPayload._truncatedCrTables || {};
+    const crKeys = Array.from(new Set([...Object.keys(fullCr), ...Object.keys(baseSnap.cr || {})]));
+    crKeys.forEach(k => {
+      const fList = Array.isArray(fullCr[k]) ? fullCr[k] : [];
+      const bMap = (baseSnap.cr && baseSnap.cr[k]) || new Map();
+      const seenIds = new Set();
+      const modRows = [];
+      for (let i = 0; i < fList.length; i++) {
+        const r = fList[i];
+        if (!r || typeof r !== 'object' || r.id == null) continue;
+        const rid = String(r.id).trim();
+        if (!rid) continue;
+        seenIds.add(rid);
+        const baseEntry = bMap.get(rid);
+        if (!baseEntry) {
+          modRows.push(r);
+          continue;
+        }
+        let curJson = '';
+        try { curJson = JSON.stringify(r); } catch (_) {}
+        if (curJson !== baseEntry.json) modRows.push(r);
+      }
+      if (modRows.length) changedCr[k] = modRows;
+      const dels = [];
+      bMap.forEach((baseEntry, rid) => {
+        if (seenIds.has(rid)) return;
+        if (truncMap[k] && isDroppableSysTopupStub(k, baseEntry.row)) return;
+        if (isScoped && !unsentCrRowInScope(k, baseEntry.row, allowedCoSet)) return;
+        dels.push(rid);
+      });
+      if (dels.length) deletedCrIds[k] = dels;
+    });
+    delta.customRecords = changedCr;
+    if (Object.keys(deletedCrIds).length) delta._deletedCrIds = deletedCrIds;
+
+    const changedIcr = {};
+    const deletedIndRowIds = {};
+    const fullIcr = fullPayload.industryCustomRows || {};
+    const icrKeys = Array.from(new Set([...Object.keys(fullIcr), ...Object.keys(baseSnap.icr || {})]));
+    icrKeys.forEach(bk => {
+      const fList = Array.isArray(fullIcr[bk]) ? fullIcr[bk] : [];
+      const bMap = (baseSnap.icr && baseSnap.icr[bk]) || new Map();
+      const seenIds = new Set();
+      const modRows = [];
+      for (let i = 0; i < fList.length; i++) {
+        const r = fList[i];
+        if (!r || typeof r !== 'object') continue;
+        const rid = String(r.id || r.code || '').trim();
+        if (!rid) continue;
+        seenIds.add(rid);
+        const baseEntry = bMap.get(rid);
+        if (!baseEntry) {
+          modRows.push(r);
+          continue;
+        }
+        let curJson = '';
+        try { curJson = JSON.stringify(r); } catch (_) {}
+        if (curJson !== baseEntry.json) modRows.push(r);
+      }
+      if (modRows.length) changedIcr[bk] = modRows;
+      const dels = [];
+      bMap.forEach((baseEntry, rid) => {
+        if (seenIds.has(rid)) return;
+        const br = baseEntry.row || {};
+        if (isScoped && !canPushCoFn(br.company || br.fromCo || br.resort || br.entity)) return;
+        dels.push(rid);
+      });
+      if (dels.length) deletedIndRowIds[bk] = dels;
+    });
+    delta.industryCustomRows = changedIcr;
+    if (Object.keys(deletedIndRowIds).length) delta._deletedIndRowIds = deletedIndRowIds;
+
+    const fullIre = fullPayload.industryRowEdits || {};
+    const changedIre = {};
+    const seenIre = new Set();
+    Object.entries(fullIre).forEach(([ek, ev]) => {
+      if (!ev || typeof ev !== 'object') return;
+      seenIre.add(ek);
+      const baseEntry = baseSnap.ire && baseSnap.ire.get(ek);
+      if (!baseEntry) { changedIre[ek] = ev; return; }
+      let curJson = '';
+      try { curJson = JSON.stringify(ev); } catch (_) {}
+      if (curJson !== baseEntry.json) changedIre[ek] = ev;
+    });
+    if (Object.keys(changedIre).length) delta.industryRowEdits = changedIre;
+    const delIre = [];
+    if (baseSnap.ire) {
+      baseSnap.ire.forEach((baseEntry, ek) => {
+        if (seenIre.has(ek)) return;
+        const ev = baseEntry.row || {};
+        if (isScoped && !canPushCoFn(ev.company || ev.fromCo || ev.resort || ev.entity)) return;
+        delIre.push(ek);
+      });
+    }
+    if (delIre.length) delta._deletedIndEditKeys = delIre;
+
+    const fullPunches = Array.isArray(fullPayload.kioskPunches) ? fullPayload.kioskPunches : [];
+    const changedPunches = [];
+    const allCurrentPunchIds = new Set(
+      sanitizeKioskPunchesList(STATE.kioskPunches).map(p => (p && p.id != null) ? String(p.id).trim() : '').filter(Boolean)
+    );
+    fullPunches.forEach(p => {
+      if (!p || typeof p !== 'object' || p.id == null) return;
+      const pid = String(p.id).trim();
+      if (!pid) return;
+      const baseEntry = baseSnap.punches && baseSnap.punches.get(pid);
+      if (!baseEntry) { changedPunches.push(p); return; }
+      let curJson = '';
+      try { curJson = JSON.stringify(p); } catch (_) {}
+      if (curJson !== baseEntry.json) changedPunches.push(p);
+    });
+    if (changedPunches.length) delta.kioskPunches = changedPunches;
+    const delPunches = [];
+    if (baseSnap.punches) {
+      baseSnap.punches.forEach((baseEntry, pid) => {
+        if (allCurrentPunchIds.has(pid)) return;
+        const pr = baseEntry.row || {};
+        if (isScoped && !canPushCoFn(pr.company)) return;
+        delPunches.push(pid);
+      });
+    }
+    if (delPunches.length) delta._deletedPunchIds = delPunches;
+
+    const fullBio = fullPayload.staffBiometrics || {};
+    const changedBio = {};
+    const seenBio = new Set();
+    Object.entries(fullBio).forEach(([bk, bv]) => {
+      if (!bv || typeof bv !== 'object') return;
+      seenBio.add(bk);
+      const baseEntry = baseSnap.bio && baseSnap.bio.get(bk);
+      if (!baseEntry) { changedBio[bk] = bv; return; }
+      let curJson = '';
+      try { curJson = JSON.stringify(bv); } catch (_) {}
+      if (curJson !== baseEntry.json) changedBio[bk] = bv;
+    });
+    if (Object.keys(changedBio).length) delta.staffBiometrics = changedBio;
+    const delBio = [];
+    if (baseSnap.bio) {
+      baseSnap.bio.forEach((baseEntry, bk) => {
+        if (seenBio.has(bk)) return;
+        const bv = baseEntry.row || {};
+        if (isScoped && !canPushCoFn(bv.company)) return;
+        delBio.push(bk);
+      });
+    }
+    if (delBio.length) delta._deletedBioKeys = delBio;
+
+    const fullSr = fullPayload.sentinelReviews || {};
+    const changedSr = {};
+    const seenSr = new Set();
+    Object.entries(fullSr).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      seenSr.add(rk);
+      const baseEntry = baseSnap.sr && baseSnap.sr.get(rk);
+      if (!baseEntry) { changedSr[rk] = rv; return; }
+      let curJson = '';
+      try { curJson = JSON.stringify(rv); } catch (_) {}
+      if (curJson !== baseEntry.json) changedSr[rk] = rv;
+    });
+    if (Object.keys(changedSr).length) delta.sentinelReviews = changedSr;
+    const delSr = [];
+    if (baseSnap.sr) {
+      baseSnap.sr.forEach((baseEntry, rk) => {
+        if (seenSr.has(rk)) return;
+        const rv = baseEntry.row || {};
+        if (isScoped && rv.company && !canPushCoFn(rv.company)) return;
+        delSr.push(rk);
+      });
+    }
+    if (delSr.length) delta._deletedSrKeys = delSr;
+
+    const fullPhRules = (fullPayload.partyHygiene && fullPayload.partyHygiene.rules) || {};
+    const changedPh = {};
+    const seenPh = new Set();
+    Object.entries(fullPhRules).forEach(([rk, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      seenPh.add(rk);
+      const baseEntry = baseSnap.ph && baseSnap.ph.get(rk);
+      if (!baseEntry) { changedPh[rk] = rv; return; }
+      let curJson = '';
+      try { curJson = JSON.stringify(rv); } catch (_) {}
+      if (curJson !== baseEntry.json) changedPh[rk] = rv;
+    });
+    if (Object.keys(changedPh).length) delta.partyHygiene = { rules: changedPh };
+    const delPh = [];
+    if (canManageDataHygiene() && baseSnap.ph) {
+      baseSnap.ph.forEach((_, rk) => {
+        if (!seenPh.has(rk)) delPh.push(rk);
+      });
+    }
+    if (delPh.length) delta._deletedPhKeys = delPh;
+
+    return delta;
   }
 
   let lastPointerDownAt = 0;
@@ -146776,6 +147377,7 @@
   let _lastSyncedMfgScopeKey = '';
   let _lastVerifiedPushSeq = -1;
   let _savedLocalAfterSyncOnce = false;
+  let _serverDeltaSyncCapable = false;
   function resetCloudSyncEtagCache() {
     _lastSyncedMfgEtag = '';
     _lastSyncedMfgScopeKey = '';
@@ -147631,6 +148233,7 @@
       if (!Array.isArray(mine) || !mine.length) return;
       mine.forEach(r => {
         if (!r || !r.id) return;
+        if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) return;
         if (allowed && !unsentCrRowInScope(k, r, allowed)) return;
         const co = unsentClearKey(k, r);
         const held = known.idx.get(`${k}\u0001${r.id}`);
@@ -148399,6 +149002,7 @@
         updateCloudBadges();
         return;
       }
+      if (store && typeof store.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = store.deltaSyncV1;
       if (store && store.notModified === true) {
         if (canSendEtag && _localPushSeq === seqAtSyncStart && !STATE.pushAfterSync && !STATE.pendingCloudPush) {
           STATE.cloudStatus = '● Cloud Live';
@@ -148420,6 +149024,7 @@
           updateCloudBadges();
           return;
         }
+        if (store && typeof store.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = store.deltaSyncV1;
       }
 
       const docs = (store && store.docs) || store || {};
@@ -148448,6 +149053,9 @@
         _unsentLastCount = countCustomRowsCloudLacks(_unsentKnown, lackCos);
         noteCompaniesConfirmed(lackCos);
       }
+      let deltaBaseSnap = (_serverDeltaSyncCapable && docs[CLOUD_DOC_KEY] && !(store && store.storeUnreadable) && (remote.updatedAt || (store && store.updatedAt)))
+        ? snapshotRemoteForDelta(remote, store && store.updatedAt)
+        : null;
       const mRes = mergeRemoteMfgDoc(remote, Boolean(pushChanges));
       let changed = mRes.changed;
       if (mRes.needPush) pushChanges = true;
@@ -148512,6 +149120,7 @@
           const remById = new Map(remList.filter(x => x && x.id).map(x => [String(x.id), x]));
           (STATE.customRecords[k] || []).forEach(r => {
             if (!r || !r.id) return;
+            if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) return;
             // Same rule as the unsent count (unsentCrRowInScope): a shared-register row this seat keyed (a new catalog
             // item, an "All BUs" region) is pushed here too, so a sync never calls the device in step without it.
             if (isScopedRemote && !unsentCrRowInScope(k, r, allowedCoSet)) return;
@@ -148630,12 +149239,16 @@
       if (pushChanges || !docs[CLOUD_DOC_KEY]) {
         resetCloudSyncEtagCache();
         setPendingCloudPush(true);
-        let expectedUpdatedAt = docs[CLOUD_DOC_KEY] ? String(remote.updatedAt || '') : '';
+        let expectedUpdatedAt = docs[CLOUD_DOC_KEY] ? String((store && store.updatedAt) || remote.updatedAt || '') : '';
         let casSucceeded = false;
         for (let casAttempt = 0; casAttempt < 3; casAttempt++) {
           if (abortedByAuthChange()) return;
           const seqBeforePayload = _localPushSeq;
-          const payload = cloudPayload();
+          const fullPayload = cloudPayload();
+          const useDelta = Boolean(_serverDeltaSyncCapable && expectedUpdatedAt && deltaBaseSnap && deltaBaseSnap.updatedAt === expectedUpdatedAt);
+          const payload = useDelta
+            ? buildDeltaCloudPayload(fullPayload, deltaBaseSnap, { isScopedRemote, allowedCoSet, canPushCo })
+            : fullPayload;
           const ctrl2 = new AbortController();
           const timer2 = setTimeout(() => ctrl2.abort(), 25000);
           const putBody = { key: '', op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
@@ -148675,16 +149288,21 @@
           const putJson = await putRes.json().catch(() => null);
           if (abortedByAuthChange()) return;
           if (putJson && putJson.conflict) {
+            if (typeof putJson.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = putJson.deltaSyncV1;
             const cDocs = (putJson.docs && typeof putJson.docs === 'object') ? putJson.docs : {};
             const freshRemote = cDocs[CLOUD_DOC_KEY] || {};
+            expectedUpdatedAt = String(putJson.updatedAt || freshRemote.updatedAt || '');
+            deltaBaseSnap = (_serverDeltaSyncCapable && expectedUpdatedAt && !putJson.storeUnreadable)
+              ? snapshotRemoteForDelta(freshRemote, expectedUpdatedAt)
+              : null;
             noteCloudHeldEntries(freshRemote, isScopedRemote ? allowedCoSet : null);
             if (mergeRemoteMfgDoc(freshRemote, true).changed) changed = true;
             saveLocalAuthAndRecords();
-            expectedUpdatedAt = String(freshRemote.updatedAt || '');
             STATE.cloudUpdatedAt = expectedUpdatedAt;
             continue;
           }
           casSucceeded = true;
+          if (putJson && typeof putJson.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = putJson.deltaSyncV1;
           STATE.cloudStatus = '● Cloud Live';
           if (putJson && putJson.retiredDropped && typeof putJson.retiredDropped === 'object') {
             let prunedByServer = false;
@@ -150394,8 +151012,8 @@
 
   function positionUserPopover(wrapEl, popEl, maxW) {
     if (!wrapEl || !popEl || popEl.hidden) return;
-    const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
-    const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+    const vbox = getVisibleViewportBox();
+    const vw = vbox.layoutW;
     const clearInline = () => {
       popEl.style.position = '';
       popEl.style.left = '';
@@ -150405,11 +151023,27 @@
       popEl.style.width = '';
       popEl.style.maxHeight = '';
       popEl.style.overflowY = '';
+      popEl.style.overscrollBehavior = '';
       popEl.style.zIndex = '';
     };
     clearInline();
     popEl.classList.remove('align-right', 'drop-up');
-    if (vw <= 860) return;
+    if (vw <= 860) {
+      if (vbox.kbInset > 60) {
+        const topPx = Math.round(vbox.top + 8);
+        popEl.style.position = 'fixed';
+        popEl.style.left = '8px';
+        popEl.style.right = '8px';
+        popEl.style.width = 'auto';
+        popEl.style.bottom = 'auto';
+        popEl.style.top = `${topPx}px`;
+        popEl.style.maxHeight = `${Math.max(150, Math.floor(vbox.bottom - topPx - 8))}px`;
+        popEl.style.overflowY = 'auto';
+        popEl.style.overscrollBehavior = 'contain';
+        popEl.style.zIndex = '2650';
+      }
+      return;
+    }
     const rect = wrapEl.getBoundingClientRect();
     const popW = Math.min(maxW, vw - 32);
     const fitsLeft = rect.left + popW <= vw - 12;
@@ -150417,29 +151051,29 @@
     if (!fitsLeft && fitsRight) {
       popEl.classList.add('align-right');
     }
-    const popH = Math.min(popEl.offsetHeight || 360, vh - 24);
-    const spaceBelow = vh - rect.bottom - 14;
-    const spaceAbove = rect.top - 14;
+    const popH = Math.min(popEl.offsetHeight || 360, vbox.height - 24);
+    const spaceBelow = vbox.bottom - rect.bottom - 14;
+    const spaceAbove = rect.top - vbox.top - 14;
     if (!fitsLeft && !fitsRight) {
       popEl.style.position = 'fixed';
       popEl.style.left = '12px';
       popEl.style.right = '12px';
       popEl.style.width = 'auto';
       popEl.style.zIndex = '2650';
-      const maxH = Math.max(140, vh - 24);
+      const maxH = Math.max(140, vbox.height - 24);
       let topPx;
-      if (rect.bottom + 6 + popH <= vh - 12) {
+      if (rect.bottom + 6 + popH <= vbox.bottom - 12) {
         topPx = Math.round(rect.bottom + 6);
-      } else if (rect.top - 6 - popH >= 12) {
+      } else if (rect.top - 6 - popH >= vbox.top + 12) {
         topPx = Math.round(rect.top - 6 - popH);
       } else if (spaceAbove > spaceBelow) {
         const useH = Math.max(140, Math.min(popH, Math.floor(spaceAbove)));
         popEl.style.maxHeight = `${useH}px`;
         popEl.style.overflowY = 'auto';
-        topPx = Math.max(12, Math.round(rect.top - 6 - useH));
+        topPx = Math.max(Math.round(vbox.top + 12), Math.round(rect.top - 6 - useH));
       } else {
-        topPx = Math.max(12, Math.min(Math.round(rect.bottom + 6), vh - maxH - 12));
-        popEl.style.maxHeight = `${Math.max(140, Math.min(maxH, vh - topPx - 12))}px`;
+        topPx = Math.max(Math.round(vbox.top + 12), Math.min(Math.round(rect.bottom + 6), Math.round(vbox.bottom - maxH - 12)));
+        popEl.style.maxHeight = `${Math.max(140, Math.min(maxH, Math.floor(vbox.bottom - topPx - 12)))}px`;
         popEl.style.overflowY = 'auto';
       }
       popEl.style.top = `${topPx}px`;
@@ -150583,14 +151217,23 @@
       if (triggerBtn) triggerBtn.setAttribute('aria-expanded', String(!!open));
       if (open) {
         positionUserPopover(wrap, popoverEl, 540);
+        if (popoverEl) {
+          if (typeof popoverEl._vvUnsub === 'function') popoverEl._vvUnsub();
+          popoverEl._vvUnsub = window.MFG_VV.subscribe(() => {
+            if (!popoverEl || popoverEl.hidden || !popoverEl.isConnected) {
+              if (popoverEl && typeof popoverEl._vvUnsub === 'function') { popoverEl._vvUnsub(); popoverEl._vvUnsub = null; }
+              return;
+            }
+            positionUserPopover(wrap, popoverEl, 540);
+          });
+        }
         if (searchEl && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
           setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
         }
+      } else if (popoverEl) {
+        if (typeof popoverEl._vvUnsub === 'function') { popoverEl._vvUnsub(); popoverEl._vvUnsub = null; }
       }
     };
-    window.addEventListener('resize', () => {
-      if (popoverEl && !popoverEl.hidden && popoverEl.isConnected) positionUserPopover(wrap, popoverEl, 540);
-    });
 
     if (triggerBtn) {
       triggerBtn.addEventListener('click', e => {
@@ -150750,7 +151393,10 @@
 
     const closePop = () => {
       wrap.classList.remove('open');
-      if (popoverEl) popoverEl.hidden = true;
+      if (popoverEl) {
+        if (typeof popoverEl._vvUnsub === 'function') { popoverEl._vvUnsub(); popoverEl._vvUnsub = null; }
+        popoverEl.hidden = true;
+      }
       if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'false');
     };
 
@@ -150776,7 +151422,10 @@
       if (coWrap && coWrap.classList.contains('open')) {
         coWrap.classList.remove('open');
         const coPop = document.getElementById('nuCompanyPopover');
-        if (coPop) coPop.hidden = true;
+        if (coPop) {
+          if (typeof coPop._vvUnsub === 'function') { coPop._vvUnsub(); coPop._vvUnsub = null; }
+          coPop.hidden = true;
+        }
         const coTrig = document.getElementById('nuCompanyTrigger');
         if (coTrig) coTrig.setAttribute('aria-expanded', 'false');
       }
@@ -150785,10 +151434,17 @@
       if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'true');
       showPreviewForRole(roleEl ? roleEl.value : 'Entry');
       positionUserPopover(wrap, popoverEl, 700);
+      if (popoverEl) {
+        if (typeof popoverEl._vvUnsub === 'function') popoverEl._vvUnsub();
+        popoverEl._vvUnsub = window.MFG_VV.subscribe(() => {
+          if (!popoverEl || popoverEl.hidden || !popoverEl.isConnected) {
+            if (popoverEl && typeof popoverEl._vvUnsub === 'function') { popoverEl._vvUnsub(); popoverEl._vvUnsub = null; }
+            return;
+          }
+          positionUserPopover(wrap, popoverEl, 700);
+        });
+      }
     };
-    window.addEventListener('resize', () => {
-      if (popoverEl && !popoverEl.hidden && popoverEl.isConnected) positionUserPopover(wrap, popoverEl, 700);
-    });
 
     if (triggerBtn) {
       triggerBtn.addEventListener('click', e => {
@@ -153331,15 +153987,19 @@
       const popEl = $('companySwitchPopover');
       const trigEl = $('companySwitchTrigger');
       if (switchEl) switchEl.classList.remove('open');
-      if (popEl) popEl.hidden = true;
+      if (popEl) {
+        if (typeof popEl._vvUnsub === 'function') { popEl._vvUnsub(); popEl._vvUnsub = null; }
+        popEl.hidden = true;
+      }
       if (trigEl) trigEl.setAttribute('aria-expanded', 'false');
     }
     if (prevInd !== nextInd && STATE.authed && !nextDemo && canWriteGeoConfig() && window.MFG_GEO && typeof window.MFG_GEO.scheduleIdleGateSatelliteWarmup === 'function') {
       try { window.MFG_GEO.scheduleIdleGateSatelliteWarmup({ SEED, STATE }); } catch (_) {}
     }
-    if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
+    const scopeChanged = prevCompany !== coKey || STATE.view !== prevView;
+    if (scopeChanged && $('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
     if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
-    if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
+    if (scopeChanged && typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (!(opts && opts.skipRender)) renderApp();
     if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('scope');
@@ -153730,9 +154390,13 @@
   function positionCompanySwitchPopover() {
     const switchEl = $('companySwitch');
     const popEl = $('companySwitchPopover');
-    if (!switchEl || !popEl || popEl.hidden) return;
-    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
-    const vh = window.innerHeight || document.documentElement.clientHeight || 844;
+    if (!switchEl || !popEl || popEl.hidden) {
+      if (popEl && typeof popEl._vvUnsub === 'function') { popEl._vvUnsub(); popEl._vvUnsub = null; }
+      return;
+    }
+    const vbox = getVisibleViewportBox();
+    const vw = vbox.layoutW;
+    const vh = vbox.bottom;
     const rect = switchEl.getBoundingClientRect();
     const clearInline = () => {
       popEl.style.position = '';
@@ -153746,13 +154410,21 @@
     if (vw <= 860) {
       popEl.classList.remove('align-right');
       popEl.classList.add('is-viewport-clamped');
-      const topPx = Math.max(8, Math.min(Math.round(rect.bottom + 6), Math.max(8, vh - 260)));
+      let topPx;
+      let maxH;
+      if (vbox.kbInset > 80) {
+        const bottomLimit = vh - 8;
+        topPx = Math.max(Math.round(vbox.top + 8), Math.min(Math.round(rect.bottom + 6), Math.max(Math.round(vbox.top + 8), Math.round(bottomLimit - 190))));
+        maxH = Math.max(150, Math.min(620, Math.floor(bottomLimit - topPx)));
+      } else {
+        topPx = Math.max(8, Math.min(Math.round(rect.bottom + 6), Math.max(8, vh - 260)));
+        maxH = Math.max(220, Math.min(620, vh - topPx - 76));
+      }
       popEl.style.position = 'fixed';
       popEl.style.left = '8px';
       popEl.style.right = '8px';
       popEl.style.width = 'auto';
       popEl.style.top = `${topPx}px`;
-      const maxH = Math.max(220, Math.min(620, vh - topPx - 76));
       popEl.style.maxHeight = `${maxH}px`;
       return;
     }
@@ -153765,16 +154437,19 @@
     } else if (!fitsLeft && !fitsRight) {
       popEl.classList.remove('align-right');
       popEl.classList.add('is-viewport-clamped');
-      const topPx = Math.max(8, Math.round(rect.bottom + 5));
+      const topPx = Math.max(Math.round(vbox.top + 8), Math.round(rect.bottom + 5));
       const leftPx = Math.max(12, Math.min(Math.round(rect.left), Math.max(12, vw - popW - 12)));
       popEl.style.position = 'fixed';
       popEl.style.top = `${topPx}px`;
       popEl.style.left = `${leftPx}px`;
       popEl.style.right = 'auto';
       popEl.style.width = `${popW}px`;
-      popEl.style.maxHeight = `${Math.max(260, vh - topPx - 16)}px`;
+      popEl.style.maxHeight = `${Math.max(220, Math.floor(vh - topPx - 16))}px`;
     } else {
       popEl.classList.remove('align-right');
+      if (vbox.kbInset > 60) {
+        popEl.style.maxHeight = `${Math.max(180, Math.floor(vh - rect.bottom - 14))}px`;
+      }
     }
   }
 
@@ -153798,11 +154473,16 @@
       if (open) {
         syncCompanySwitchUi();
         positionCompanySwitchPopover();
+        if (popEl) {
+          if (typeof popEl._vvUnsub === 'function') popEl._vvUnsub();
+          popEl._vvUnsub = window.MFG_VV.subscribe(() => positionCompanySwitchPopover());
+        }
         if (searchEl && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
           setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
         }
       } else {
         if (popEl) {
+          if (typeof popEl._vvUnsub === 'function') { popEl._vvUnsub(); popEl._vvUnsub = null; }
           popEl.style.position = '';
           popEl.style.left = '';
           popEl.style.right = '';
@@ -154495,6 +155175,7 @@
     _authSessionEpoch++;
     resetCloudSyncEtagCache();
     _savedLocalAfterSyncOnce = false;
+    _serverDeltaSyncCapable = false;
     if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -154709,6 +155390,7 @@
     _authSessionEpoch++;
     resetCloudSyncEtagCache();
     _savedLocalAfterSyncOnce = false;
+    _serverDeltaSyncCapable = false;
     if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
     _WF_AUDIT_KEPT.clear();
     _PAY_WS_AUDIT_KEPT.clear();
@@ -199054,6 +199736,12 @@
     domainNearCopyDecision: typeof domainNearCopyDecision === 'function' ? domainNearCopyDecision : null,
     comparePartyHygieneTs: typeof comparePartyHygieneTs === 'function' ? comparePartyHygieneTs : null,
     doSync: typeof doSync === 'function' ? doSync : null,
+    backfillShiftTimingChange: typeof backfillShiftTimingChange === 'function' ? backfillShiftTimingChange : null,
+    runDeclarativeChronoBackfill: typeof runDeclarativeChronoBackfill === 'function' ? runDeclarativeChronoBackfill : null,
+    isShiftBackfillBloatedSeedAttRow: typeof isShiftBackfillBloatedSeedAttRow === 'function' ? isShiftBackfillBloatedSeedAttRow : null,
+    cloudPayload: typeof cloudPayload === 'function' ? cloudPayload : null,
+    snapshotRemoteForDelta: typeof snapshotRemoteForDelta === 'function' ? snapshotRemoteForDelta : null,
+    buildDeltaCloudPayload: typeof buildDeltaCloudPayload === 'function' ? buildDeltaCloudPayload : null,
     waitForSyncIdle: async () => {
       for (let i = 0; i < 12 && syncInFlight; i++) {
         try { await syncInFlight; } catch (_) {}

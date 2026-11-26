@@ -2582,9 +2582,73 @@
       `<div class="fpnl-body">${renderBody(model)}</div>`;
   }
 
+  var _fpnlVvUnsub = null;
+  function syncFpnlPickerPopoverViewport() {
+    var pop = typeof document !== 'undefined' ? document.querySelector('.fpnl-picker-pop, .fpnl-picker-popover') : null;
+    if (!pop || !STATE.truckPickerOpen || !pop.isConnected) {
+      if (_fpnlVvUnsub) { _fpnlVvUnsub(); _fpnlVvUnsub = null; }
+      return;
+    }
+    try {
+      var vw = (typeof window !== 'undefined' && window.innerWidth) || 390;
+      var vh = (typeof window !== 'undefined' && window.innerHeight) || 844;
+      var vbox = (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.getBox === 'function')
+        ? window.MFG_VV.getBox()
+        : { layoutW: vw, layoutH: vh, left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh, kbInset: 0 };
+      var isFixed = vbox.layoutW <= 768 || (typeof getComputedStyle === 'function' && getComputedStyle(pop).position === 'fixed');
+      if (isFixed) {
+        if (vbox.kbInset > 60) {
+          pop.style.top = Math.round(vbox.top + 8) + 'px';
+          pop.style.bottom = 'auto';
+          pop.style.maxHeight = Math.max(148, Math.floor(vbox.height - 16)) + 'px';
+        } else {
+          pop.style.top = '';
+          pop.style.bottom = '';
+          pop.style.maxHeight = '';
+        }
+      } else if (vbox.kbInset > 40) {
+        var wrap = (pop.closest && pop.closest('.fpnl-picker-wrap')) || pop;
+        var wr = wrap.getBoundingClientRect();
+        var below = vbox.bottom - wr.bottom - 10;
+        var above = wr.top - vbox.top - 10;
+        if (below < 160 && above > below) {
+          pop.style.top = 'auto';
+          pop.style.bottom = 'calc(100% + 6px)';
+          pop.style.maxHeight = Math.max(140, Math.min(300, Math.floor(above - 4))) + 'px';
+        } else {
+          pop.style.top = '';
+          pop.style.bottom = '';
+          pop.style.maxHeight = Math.max(148, Math.min(320, Math.floor(below - 4))) + 'px';
+        }
+      } else {
+        pop.style.top = '';
+        pop.style.bottom = '';
+        pop.style.maxHeight = '';
+      }
+    } catch (_) {}
+  }
+
+  function armFpnlPickerVv() {
+    if (STATE.truckPickerOpen) {
+      syncFpnlPickerPopoverViewport();
+      if (!_fpnlVvUnsub && typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.subscribe === 'function') {
+        _fpnlVvUnsub = window.MFG_VV.subscribe(syncFpnlPickerPopoverViewport);
+      }
+    } else if (_fpnlVvUnsub) {
+      _fpnlVvUnsub();
+      _fpnlVvUnsub = null;
+    }
+  }
+
   function renderCockpitHtml(opts) {
     opts = opts || {};
     var cid = opts.containerId || 'fleetRevCostCockpit';
+    if (STATE.truckPickerOpen && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(armFpnlPickerVv);
+    } else if (!STATE.truckPickerOpen && _fpnlVvUnsub) {
+      _fpnlVvUnsub();
+      _fpnlVvUnsub = null;
+    }
     return `<section class="fpnl-cockpit" id="${esc(cid)}" data-fpnl-root="1">${buildInnerHtml(cid, opts.slicerEquipment)}</section>`;
   }
 
@@ -2599,6 +2663,7 @@
     if (tc && typeof tc.enhanceAllTables === 'function') {
       try { tc.enhanceAllTables(el, (ent && ent.state) || window.STATE); } catch (_) {}
     }
+    armFpnlPickerVv();
   }
 
   function renderFullCockpit(el) {

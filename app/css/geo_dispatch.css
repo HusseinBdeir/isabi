@@ -1867,6 +1867,10 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden]), #docCameraModal:no
   box-shadow: 0 16px 38px rgba(8, 17, 36, 0.22), 0 3px 10px rgba(8, 17, 36, 0.1);
   padding: 5px;
 }
+.geo-place-menu.geo-drop-up {
+  top: auto;
+  bottom: calc(100% + 5px);
+}
 #wrap_f_map_region_search .geo-place-menu {
   left: auto;
   right: 0;

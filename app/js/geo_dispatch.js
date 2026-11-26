@@ -710,6 +710,166 @@
     });
   }
 
+  function syncGeoPlaceMenuViewport(anchorEl, menuEl) {
+    if (!anchorEl || !menuEl || menuEl.hidden) return;
+    try {
+      menuEl.classList.remove('geo-drop-up');
+      menuEl.style.position = '';
+      menuEl.style.top = '';
+      menuEl.style.bottom = '';
+      menuEl.style.left = '';
+      menuEl.style.right = '';
+      menuEl.style.width = '';
+      menuEl.style.maxWidth = '';
+      menuEl.style.maxHeight = '';
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 390;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 844;
+      const vbox = (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.getBox === 'function')
+        ? window.MFG_VV.getBox()
+        : { layoutW: vw, layoutH: vh, left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh, kbInset: 0 };
+      const maxW = Math.max(180, Math.floor(vbox.width - 16));
+      menuEl.style.maxWidth = `${maxW}px`;
+      let ar = anchorEl.getBoundingClientRect();
+      const scrollBox = anchorEl.closest('#modalBody, #indDomainEntryModal .modal-body, #inspModifyDrawer, #inspectorBody, .geo-regions-rail');
+      const inRail = Boolean(scrollBox && scrollBox.classList && scrollBox.classList.contains('geo-regions-rail'));
+      let effTop = vbox.top + 8;
+      let effBottom = vbox.bottom - 8;
+      if (scrollBox) {
+        const sb = scrollBox.getBoundingClientRect();
+        effTop = Math.max(effTop, sb.top + 4);
+        effBottom = Math.min(effBottom, sb.bottom - 4);
+        if (!inRail && vbox.kbInset > 40 && ar.bottom > effBottom - 6) {
+          const prevTop = scrollBox.scrollTop;
+          scrollBox.scrollTop += Math.ceil(ar.bottom - (effBottom - 6));
+          if (scrollBox.scrollTop !== prevTop) ar = anchorEl.getBoundingClientRect();
+        }
+      }
+      let mr = menuEl.getBoundingClientRect();
+      if (mr.width > maxW) {
+        menuEl.style.width = `${maxW}px`;
+        mr = menuEl.getBoundingClientRect();
+      }
+      const padLeft = vbox.left + 8;
+      const padRight = vbox.right - 8;
+      if (mr.right > padRight || mr.left < padLeft) {
+        const targetLeft = Math.max(padLeft, Math.min(mr.left, padRight - mr.width));
+        menuEl.style.left = `${Math.round(targetLeft - ar.left - (anchorEl.clientLeft || 0))}px`;
+        menuEl.style.right = 'auto';
+      }
+      const spaceBelow = effBottom - ar.bottom;
+      const spaceAbove = ar.top - effTop;
+      const vSpaceBelow = (vbox.bottom - 8) - ar.bottom;
+      const vSpaceAbove = ar.top - (vbox.top + 8);
+      const dropUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+      const clippedInRail = inRail && ((dropUp ? spaceAbove : spaceBelow) < 160 || ar.top - 5 > effBottom || ar.bottom + 5 < effTop);
+      let availH;
+      if (clippedInRail) {
+        const fixDropUp = vSpaceBelow < 180 && vSpaceAbove > vSpaceBelow;
+        const fixW = Math.min(maxW, Math.max(220, Math.round(mr.width || ar.width || maxW)));
+        const fixLeft = Math.round(Math.max(padLeft, Math.min(padRight - fixW, ar.left)));
+        menuEl.classList.remove('geo-drop-up');
+        menuEl.style.position = 'fixed';
+        menuEl.style.left = `${fixLeft}px`;
+        menuEl.style.right = 'auto';
+        menuEl.style.width = `${fixW}px`;
+        if (fixDropUp) {
+          const anchorTop = Math.min(ar.top - 5, vbox.bottom - 8);
+          menuEl.style.top = 'auto';
+          menuEl.style.bottom = `${Math.max(8, Math.round((vbox.layoutH || vh) - anchorTop))}px`;
+          availH = Math.floor(anchorTop - (vbox.top + 8) - 2);
+        } else {
+          const anchorBot = Math.max(vbox.top + 8, ar.bottom + 5);
+          menuEl.style.top = `${Math.round(anchorBot)}px`;
+          menuEl.style.bottom = 'auto';
+          availH = Math.floor((vbox.bottom - 8) - anchorBot - 2);
+        }
+      } else if (dropUp && ar.top - 5 > effBottom) {
+        menuEl.classList.add('geo-drop-up');
+        const fixW = Math.min(maxW, Math.max(220, Math.round(mr.width || ar.width || maxW)));
+        const fixLeft = Math.round(Math.max(padLeft, Math.min(padRight - fixW, ar.left)));
+        menuEl.style.position = 'fixed';
+        menuEl.style.top = 'auto';
+        menuEl.style.bottom = `${Math.max(8, Math.round((vbox.layoutH || vh) - effBottom))}px`;
+        menuEl.style.left = `${fixLeft}px`;
+        menuEl.style.right = 'auto';
+        menuEl.style.width = `${fixW}px`;
+        availH = Math.floor(effBottom - effTop - 6);
+      } else {
+        menuEl.classList.toggle('geo-drop-up', dropUp);
+        availH = Math.floor((dropUp ? spaceAbove : spaceBelow) - 6);
+      }
+      if (availH < 248 || vbox.kbInset > 40) {
+        menuEl.style.maxHeight = `${Math.max(108, Math.min(248, availH))}px`;
+      }
+    } catch (_) {}
+  }
+
+  function resetStudioPlacesBoxStyles(boxEl) {
+    if (!boxEl) return;
+    boxEl.style.position = '';
+    boxEl.style.left = '';
+    boxEl.style.right = '';
+    boxEl.style.top = '';
+    boxEl.style.bottom = '';
+    boxEl.style.width = '';
+    boxEl.style.maxHeight = '';
+  }
+
+  function syncStudioPlacesBoxViewport(boxEl) {
+    if (!boxEl || boxEl.hidden) return;
+    try {
+      resetStudioPlacesBoxStyles(boxEl);
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 390;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 844;
+      const vbox = (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.getBox === 'function')
+        ? window.MFG_VV.getBox()
+        : { layoutW: vw, layoutH: vh, left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh, kbInset: 0 };
+      if (vbox.kbInset > 60) {
+        const searchInp = boxEl.parentElement && boxEl.parentElement.querySelector('#geoRegionSearch');
+        const rail = boxEl.closest('.geo-regions-rail');
+        const ws = document.getElementById('workspace');
+        let br = boxEl.getBoundingClientRect();
+        const desiredBottom = Math.max(vbox.top + 88, vbox.bottom - 140);
+        if (br.top > desiredBottom) {
+          const shift = Math.ceil(br.top - desiredBottom);
+          let moved = false;
+          if (rail && rail.scrollHeight > rail.clientHeight + 2) {
+            const pTop = rail.scrollTop;
+            rail.scrollTop += shift;
+            if (rail.scrollTop !== pTop) moved = true;
+          }
+          br = boxEl.getBoundingClientRect();
+          if (br.top > desiredBottom && ws && ws.scrollHeight > ws.clientHeight + 2) {
+            const wTop = ws.scrollTop;
+            ws.scrollTop += Math.ceil(br.top - desiredBottom);
+            if (ws.scrollTop !== wTop) moved = true;
+          }
+          if (!moved && searchInp && typeof searchInp.scrollIntoView === 'function') {
+            try { searchInp.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (_) {}
+          }
+          br = boxEl.getBoundingClientRect();
+        }
+        const availBelow = Math.floor(vbox.bottom - br.top - 8);
+        if (br.top >= vbox.top + 8 && availBelow >= 72) {
+          boxEl.style.maxHeight = `${Math.min(205, availBelow)}px`;
+        } else {
+          const padLeft = vbox.left + 8;
+          const padRight = vbox.right - 8;
+          const fixW = Math.min(Math.max(220, Math.round((br.width || (searchInp && searchInp.getBoundingClientRect().width) || 320))), Math.max(200, Math.floor(vbox.width - 16)));
+          const baseLeft = (searchInp && searchInp.getBoundingClientRect().left) || br.left || padLeft;
+          const fixLeft = Math.round(Math.max(padLeft, Math.min(padRight - fixW, baseLeft)));
+          boxEl.style.position = 'fixed';
+          boxEl.style.top = 'auto';
+          boxEl.style.bottom = `${Math.max(8, Math.round((vbox.layoutH || vh) - (vbox.bottom - 8)))}px`;
+          boxEl.style.left = `${fixLeft}px`;
+          boxEl.style.right = 'auto';
+          boxEl.style.width = `${fixW}px`;
+          boxEl.style.maxHeight = `${Math.max(96, Math.min(205, Math.floor(vbox.height - 16)))}px`;
+        }
+      }
+    } catch (_) {}
+  }
+
   const _placeMenuClosers = new Set();
   function closeAllGeoPlaceMenus(exceptFn) {
     Array.from(_placeMenuClosers).forEach(fn => {
@@ -785,9 +945,33 @@
     let blurTimer = null;
 
     const closeMenu = () => {
+      clearTimeout(blurTimer);
+      if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
       menu.hidden = true;
+      menu.classList.remove('geo-drop-up');
+      menu.style.position = '';
+      menu.style.top = '';
+      menu.style.bottom = '';
+      menu.style.left = '';
+      menu.style.right = '';
+      menu.style.width = '';
+      menu.style.maxWidth = '';
+      menu.style.maxHeight = '';
       wrap.classList.remove('open');
       activeIdx = -1;
+    };
+    const armGeoMenuVv = () => {
+      syncGeoPlaceMenuViewport(wrap, menu);
+      if (typeof menu._vvUnsub === 'function') menu._vvUnsub();
+      if (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.subscribe === 'function') {
+        menu._vvUnsub = window.MFG_VV.subscribe(() => {
+          if (menu.hidden || !menu.isConnected) {
+            if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
+            return;
+          }
+          syncGeoPlaceMenuViewport(wrap, menu);
+        });
+      }
     };
     const trackedClose = () => {
       closeMenu();
@@ -818,6 +1002,7 @@
           menu.innerHTML = `<div class="geo-place-menu-hdr"><span>Map Boundary Search</span><span>0 exact matches</span></div><div style="padding:7px 9px;font-size:11.5px;color:var(--muted)">No pre-mapped boundary for "${esc(queryText)}". Switch Search Zone Shape to Circle or Custom Polygon to outline it on the map.</div>`;
           menu.hidden = false;
           wrap.classList.add('open');
+          armGeoMenuVv();
         } else {
           closeMenu();
         }
@@ -842,10 +1027,14 @@
         if (ow === wrap) return;
         ow.classList.remove('open');
         const om = ow.querySelector('.pa-select-menu, .pa-suggest-menu, .geo-place-menu');
-        if (om) om.hidden = true;
+        if (om) {
+          if (typeof om._vvUnsub === 'function') { om._vvUnsub(); om._vvUnsub = null; }
+          om.hidden = true;
+        }
       });
       menu.hidden = false;
       wrap.classList.add('open');
+      armGeoMenuVv();
       menu.querySelectorAll('[data-geo-place-idx]').forEach(btn => {
         let handled = false;
         const onPick = ev => {
@@ -6248,11 +6437,21 @@
     const closeMenu = () => {
       clearTimeout(debTimer);
       if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} }
+      if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
       if (!inp.isConnected) {
         _placeMenuClosers.delete(closeMenu);
         return;
       }
       menu.hidden = true;
+      menu.classList.remove('geo-drop-up');
+      menu.style.position = '';
+      menu.style.top = '';
+      menu.style.bottom = '';
+      menu.style.left = '';
+      menu.style.right = '';
+      menu.style.width = '';
+      menu.style.maxWidth = '';
+      menu.style.maxHeight = '';
       menu.innerHTML = '';
       items = [];
       activeIdx = -1;
@@ -6320,6 +6519,17 @@
       activeIdx = items.length > 0 ? 0 : -1;
       if (activeIdx >= 0) highlight(0);
       _trGeoDom(menu);
+      syncGeoPlaceMenuViewport(anchor, menu);
+      if (typeof menu._vvUnsub === 'function') menu._vvUnsub();
+      if (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.subscribe === 'function') {
+        menu._vvUnsub = window.MFG_VV.subscribe(() => {
+          if (menu.hidden || !menu.isConnected) {
+            if (typeof menu._vvUnsub === 'function') { menu._vvUnsub(); menu._vvUnsub = null; }
+            return;
+          }
+          syncGeoPlaceMenuViewport(anchor, menu);
+        });
+      }
     };
 
     menu.addEventListener('click', ev => {
@@ -9142,6 +9352,8 @@
       studioPlaceActiveIdx = -1;
       const box = document.getElementById('geoStudioPlacesBox') || placesBox;
       if (box) {
+        if (typeof box._vvUnsub === 'function') { box._vvUnsub(); box._vvUnsub = null; }
+        resetStudioPlacesBoxStyles(box);
         box.innerHTML = '';
         box.hidden = true;
       }
@@ -9149,6 +9361,21 @@
         searchInp.value = '';
         STUDIO.regionSearch = '';
         updateStudioRegionsListInPlace();
+      }
+    };
+    const armStudioPlacesVv = boxEl => {
+      if (!boxEl || boxEl.hidden) return;
+      syncStudioPlacesBoxViewport(boxEl);
+      if (typeof boxEl._vvUnsub === 'function') boxEl._vvUnsub();
+      if (typeof window !== 'undefined' && window.MFG_VV && typeof window.MFG_VV.subscribe === 'function') {
+        boxEl._vvUnsub = window.MFG_VV.subscribe(() => {
+          const live = document.getElementById('geoStudioPlacesBox') || boxEl;
+          if (!live || live.hidden || !live.isConnected) {
+            if (typeof boxEl._vvUnsub === 'function') { boxEl._vvUnsub(); boxEl._vvUnsub = null; }
+            return;
+          }
+          syncStudioPlacesBoxViewport(live);
+        });
       }
     };
     const wirePlacesBoxClicks = boxEl => {
@@ -9229,6 +9456,8 @@
           STUDIO.regionPlacesLoading = false;
           studioPlaceActiveIdx = -1;
           if (liveBoxNow) {
+            if (typeof liveBoxNow._vvUnsub === 'function') { liveBoxNow._vvUnsub(); liveBoxNow._vvUnsub = null; }
+            resetStudioPlacesBoxStyles(liveBoxNow);
             liveBoxNow.innerHTML = '';
             liveBoxNow.hidden = true;
           }
@@ -9250,9 +9479,12 @@
           liveBoxNow.hidden = !initHtml;
           if (initHtml) {
             _trGeoDom(liveBoxNow);
+            armStudioPlacesVv(liveBoxNow);
             const initBtns = getStudioPlaceItems();
             highlightStudioPlace(initBtns.length > 0 ? 0 : -1);
           } else {
+            if (typeof liveBoxNow._vvUnsub === 'function') { liveBoxNow._vvUnsub(); liveBoxNow._vvUnsub = null; }
+            resetStudioPlacesBoxStyles(liveBoxNow);
             studioPlaceActiveIdx = -1;
           }
         }
@@ -9276,9 +9508,12 @@
                 liveBox.hidden = !boxHtml;
                 if (boxHtml) {
                   _trGeoDom(liveBox);
+                  armStudioPlacesVv(liveBox);
                   const btns = getStudioPlaceItems();
                   highlightStudioPlace(btns.length > 0 ? Math.max(0, Math.min(studioPlaceActiveIdx, btns.length - 1)) : -1);
                 } else {
+                  if (typeof liveBox._vvUnsub === 'function') { liveBox._vvUnsub(); liveBox._vvUnsub = null; }
+                  resetStudioPlacesBoxStyles(liveBox);
                   studioPlaceActiveIdx = -1;
                 }
               }
