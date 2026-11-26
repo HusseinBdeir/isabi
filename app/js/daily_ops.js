@@ -1047,7 +1047,9 @@
       if (sgn !== 0) expCount += 1;
       const a = round2(Number(x.amount || 0) * (sgn || 1));
       expTotal += a;
-      if (ctx.expenseKind(x) !== 'VAT') expExVat += a;
+      // A VAT line is not a cost of the day: it stays out of the profit figure and out of the cost breakdown.
+      const isVatKind = ctx.expenseKind(x) === 'VAT';
+      if (!isVatKind) expExVat += a;
       const isCred = Boolean(ctx.isApCreditExpense(x));
       const isCash = !isCred && Boolean(ctx.isCashExpense(x));
       if (isCred) creditExp += a;
@@ -1059,12 +1061,16 @@
       const ck = norm(catLbl);
       let cur = expCatMap.get(ck);
       if (!cur) {
-        cur = { key: ck, label: catLbl, category: x.category || 'General', count: 0, method: x.method || 'Cash', amount: 0, pending: 0, repShiftCount: 0, repShiftDates: [], bills: [], sampleId: x.id };
+        cur = { key: ck, label: catLbl, category: x.category || 'General', subcategory: x.subcategory || '', hasBoth: Boolean(x.category && x.subcategory), count: 0, method: x.method || 'Cash', amount: 0, exVat: 0, costCount: 0, pending: 0, repShiftCount: 0, repShiftDates: [], bills: [], sampleId: x.id };
         expCatMap.set(ck, cur);
       }
       cur.count += 1;
       if (isPend) cur.pending += 1;
       cur.amount = round2(cur.amount + a);
+      if (!isVatKind) {
+        cur.exVat = round2(cur.exVat + a);
+        cur.costCount += 1;
+      }
       const xTxDate = txDateOf(x) || targetDate;
       const xRepDate = repDateOf(x);
       const xShifted = Boolean(xRepDate && xRepDate !== xTxDate);
@@ -1094,6 +1100,7 @@
         isCredit: isCred,
         isCash,
         isPending: isPend,
+        isVat: isVatKind,
         txDate: xTxDate,
         repDate: xRepDate,
         isRepShifted: xShifted,
@@ -3344,8 +3351,31 @@
     return { canBooks, canExp, canPayroll, canFullPnl, canTax, canJv };
   }
 
+  // Where the day's sales went, as one bar: its full width is the larger of sales and total costs, so a loss
+  // shows as costs running past the sales mark. Drawn on the Operating Profit card (the cost table under it
+  // lists the same figures), and only when the bar and the profit figure agree (a refund can turn a cost
+  // negative, which a bar cannot show).
+  function renderDayPnlBarHtml(ctx, dm) {
+    const payAndComm = ctx.round2(dm.salariesPaid + dm.salesSum.commUsd);
+    const bSales = Math.max(0, Number(dm.salesSum.grossExVat) || 0);
+    const bQuarry = Math.max(0, Number(dm.rawSum.totalCost) || 0);
+    const bExp = Math.max(0, Number(dm.expExVat) || 0);
+    const bPay = Math.max(0, Number(payAndComm) || 0);
+    const bCosts = bQuarry + bExp + bPay;
+    const bBase = Math.max(bSales, bCosts);
+    const bPct = v => (bBase > 0 ? Math.max(0, Math.min(100, (v / bBase) * 100)) : 0).toFixed(2);
+    const bLoss = bCosts > bSales;
+    const bAgrees = Math.abs((bSales - bCosts) - Number(dm.operatingProfit || 0)) < 1;
+    if (!(bBase > 0) || !bAgrees) return '';
+    return `
+        <div class="dops-pnl-bar" role="img" aria-label="Where the day's sales went">
+          <span class="dops-pnl-seg q" style="width:${bPct(bQuarry)}%"></span><span class="dops-pnl-seg e" style="width:${bPct(bExp)}%"></span><span class="dops-pnl-seg p" style="width:${bPct(bPay)}%"></span>${bLoss ? '' : `<span class="dops-pnl-seg g" style="width:${bPct(bSales - bCosts)}%"></span>`}
+          ${bLoss ? `<span class="dops-pnl-over" style="inset-inline-start:${bPct(bSales)}%"></span><span class="dops-pnl-mark" style="inset-inline-start:${bPct(bSales)}%"></span>` : ''}
+        </div>`;
+  }
+
   function renderPanel3ExpensesPnl(ctx, dm, lens, isSingleCo) {
-    const { esc, ic, fmtUSD, fmtNum, coBadge, relLink } = ctx;
+    const { esc, ic, fmtUSD, fmtNum, coBadge, relLink, norm } = ctx;
     const perms = resolveDopsPerms(ctx);
     if (!perms.canExp && !perms.canBooks) {
       return `<div class="dops-card-body no-pad dops-flex-col"><div class="dops-empty">Day P&amp;L and Cash Till balances require Treasury &amp; General Ledger hub permissions.</div></div>`;
@@ -3356,130 +3386,13 @@
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
     const expMap = ctx.STATE.dailyOpsExpanded || {};
-    const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
-    const payAndComm = ctx.round2(dm.salariesPaid + dm.salesSum.commUsd);
+    const round2 = ctx.round2;
 
-    // Where the day's sales went: one bar whose full width is the larger of sales and total costs, so a loss
-    // shows as costs running past the sales mark. Same figures as the steps under it.
-    const bSales = Math.max(0, Number(dm.salesSum.grossExVat) || 0);
-    const bQuarry = Math.max(0, Number(dm.rawSum.totalCost) || 0);
-    const bExp = Math.max(0, Number(dm.expExVat) || 0);
-    const bPay = Math.max(0, Number(payAndComm) || 0);
-    const bCosts = bQuarry + bExp + bPay;
-    const bBase = Math.max(bSales, bCosts);
-    const bPct = v => (bBase > 0 ? Math.max(0, Math.min(100, (v / bBase) * 100)) : 0).toFixed(2);
-    const bLoss = bCosts > bSales;
-    // Drawn only when the bar and the profit figure agree (a refund can turn a cost negative, which a bar cannot show).
-    const bAgrees = Math.abs((bSales - bCosts) - Number(dm.operatingProfit || 0)) < 1;
-    const pnlBarHtml = bBase > 0 && bAgrees ? `
-        <div class="dops-pnl-bar" role="img" aria-label="Where the day's sales went" data-ui-tip="Where the day's sales went: material and transport, expenses, payroll, and what is left as profit. Costs past the mark are a loss.">
-          <span class="dops-pnl-seg q" style="width:${bPct(bQuarry)}%"></span><span class="dops-pnl-seg e" style="width:${bPct(bExp)}%"></span><span class="dops-pnl-seg p" style="width:${bPct(bPay)}%"></span>${bLoss ? '' : `<span class="dops-pnl-seg g" style="width:${bPct(bSales - bCosts)}%"></span>`}
-          ${bLoss ? `<span class="dops-pnl-over" style="inset-inline-start:${bPct(bSales)}%"></span><span class="dops-pnl-mark" style="inset-inline-start:${bPct(bSales)}%"></span>` : ''}
-        </div>` : '';
-
-    const pnlStripHtml = perms.canFullPnl ? `
-      <div class="dops-pnl-bridge dops-substrip" data-dops-open-drawer="expenses">
-        ${pnlBarHtml}
-        <div class="dops-pnl-step" data-ui-tip="Sales before VAT">
-          <small>Sales Ex-VAT</small>
-          <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b>
-        </div>
-        <span class="dops-pnl-op">-</span>
-        <div class="dops-pnl-step" data-ui-tip="Raw material and transport">
-          <small><i class="dops-pnl-dot q"></i>Material</small>
-          <b>${fmtUSD(dm.rawSum.totalCost, 0)}</b>
-        </div>
-        <span class="dops-pnl-op">-</span>
-        <div class="dops-pnl-step" data-ui-tip="Expense bills before VAT">
-          <small><i class="dops-pnl-dot e"></i>Expenses</small>
-          <b>${fmtUSD(dm.expExVat, 0)}</b>
-        </div>
-        ${payAndComm > 0 ? `
-          <span class="dops-pnl-op">-</span>
-          <div class="dops-pnl-step" data-dops-lens="plant:overview" style="cursor:pointer" data-ui-tip="Salaries and sales commissions paid">
-            <small><i class="dops-pnl-dot p"></i>Payroll</small>
-            <b>${fmtUSD(payAndComm, 0)}</b>
-          </div>
-        ` : ''}
-        <span class="dops-pnl-op">=</span>
-        <div class="dops-pnl-step is-profit ${dm.operatingProfit < 0 ? 'crit' : 'good'}" data-ui-tip="Operating profit as a share of the day's sales before VAT">
-          <small>${dm.operatingProfit < 0 ? 'Loss' : 'Profit'} <span class="dops-pnl-pct">${esc(profPctTxt)}</span></small>
-          <b>${fmtUSD(dm.operatingProfit, 0)}</b>
-        </div>
-      </div>
-    ` : '';
-
-    if (lens === 'cats' || lens === 'categories') {
-      const rows = (dm.expCategoryRows || []).filter(r => {
-        if (qFilter === 'rep_shifted' && !(r.repShiftCount > 0)) return false;
-        if (qFilter === 'exceptions' && !(r.pending > 0)) return false;
-        if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
-        if (qNorm) {
-          const cHit = matchesQuickSearch(qNorm, [r.label, r.category, r.method]);
-          const bHit = (r.bills || []).some(b => matchesQuickSearch(qNorm, [b.supplier, b.equipment, b.notes, b.invoice]));
-          if (!cHit && !bHit) return false;
-        }
-        return true;
-      });
-      return `
-        <div class="dops-card-body no-pad dops-flex-col">
-          ${pnlStripHtml}
-          <div class="dops-tbl-scroll">
-            <table class="dops-table dops-fixed-3">
-              <colgroup><col style="width:48%"><col style="width:28%"><col style="width:24%"></colgroup>
-              <thead>
-                <tr>
-                  <th>Expense Category &amp; Subcategory</th>
-                  <th>Terms · Bills</th>
-                  <th class="r">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows.map(r => {
-                  const expKey = `expcat:${r.key}`;
-                  const isExp = Boolean(expMap[expKey]);
-                  const repBadge = renderGroupRepBadge(ctx, r.repShiftCount, r.count, r.repShiftDates, dm.targetDate);
-                  const subBills = isExp ? (r.bills || []).filter(b => qFilter !== 'rep_shifted' || b.isRepShifted) : [];
-                  return `
-                    <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(r.count)} expense ${r.count === 1 ? 'bill' : 'bills'}">
-                      <td class="dops-trunc">
-                        <div class="dops-grp-head">
-                          <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
-                          <strong>${esc(r.label)}</strong>
-                          ${repBadge}
-                        </div>
-                      </td>
-                      <td><span class="dops-kind ${r.pending ? 'maint' : (r.method === 'Credit' ? 'pay' : 'exp')}">${r.pending ? 'Pending' : esc(r.method)}</span> · ${fmtNum(r.count)}</td>
-                      <td class="r"><strong>${fmtUSD(r.amount, 0)}</strong></td>
-                    </tr>
-                    ${subBills.map(b => `
-                      <tr class="rrow dops-subrow" data-rkey="expenses" data-rid="${esc(String(b.id || ''))}">
-                        <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><strong>${esc(b.supplier)}</strong>${b.equipment ? ` <small style="color:var(--muted)">· ${esc(b.equipment)}</small>` : ''} ${renderRepBadge(ctx, b.txDate, b.repDate)}</div></td>
-                        <td class="dops-trunc">${esc(b.notes || b.method)}</td>
-                        <td class="r"><strong>${b.isPending && b.amount === 0 ? 'Pending' : fmtUSD(b.amount, 0)}</strong></td>
-                      </tr>
-                    `).join('')}
-                  `;
-                }).join('') || `<tr><td colspan="3" class="dops-empty">No expense categories match on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="2">Cash ${fmtUSD(dm.cashExp, 0)} · Credit ${fmtUSD(dm.creditExp, 0)}</td>
-                  <td class="r">${fmtUSD(dm.expTotal, 0)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      `;
-    }
-
-    if (lens === 'stock') {
+    if (lens === 'stock' || lens === 'items') {
       const items = qFilter === 'turnaround' ? [] : dm.dayExpItems.filter(it => matchesQuickSearch(qNorm, [it.item_name, it.subcategory, it.category, it.target_equipment, it.warehouse_location]));
       const wh = qFilter === 'turnaround' ? [] : dm.dayWhMoves.filter(wm => matchesQuickSearch(qNorm, [wm.item_name, wm.warehouse_location, wm.target_equipment]));
       return `
         <div class="dops-card-body no-pad dops-flex-col">
-          ${pnlStripHtml}
           <div class="dops-tbl-scroll">
             <table class="dops-table dops-fixed-3">
               <colgroup><col style="width:44%"><col style="width:32%"><col style="width:24%"></colgroup>
@@ -3519,18 +3432,45 @@
       `;
     }
 
-    // Default ('bills'): Visual Day P&L Bridge + Itemized Expense Bills & Parts Table
-    const bills = (dm.expenseBillRows || []).filter(b => {
-      if (qFilter === 'rep_shifted' && !b.isRepShifted) return false;
-      if (qFilter === 'exceptions' && !b.isPending) return false;
-      if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
-      if (qNorm && !matchesQuickSearch(qNorm, [b.supplier, b.category, b.subcategory, b.equipment, b.notes, b.invoice, (b.itemNames || []).join(' ')])) return false;
-      return true;
-    });
-    const whBills = (qFilter === 'all' ? dm.dayWhMoves : []).filter(wm => matchesQuickSearch(qNorm, [wm.item_name, wm.warehouse_location, wm.target_equipment]));
-    return `
+    if (lens === 'bills') {
+      // One row per supplier, largest first; a supplier with several bills opens to them. A bill with no
+      // supplier name keeps its own row, and in a group view one supplier stays split by company.
+      const bills = (dm.expenseBillRows || []).filter(b => {
+        if (qFilter === 'rep_shifted' && !b.isRepShifted) return false;
+        if (qFilter === 'exceptions' && !b.isPending) return false;
+        if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
+        if (qNorm && !matchesQuickSearch(qNorm, [b.supplier, b.category, b.subcategory, b.equipment, b.notes, b.invoice, (b.itemNames || []).join(' ')])) return false;
+        return true;
+      });
+      const whBills = (qFilter === 'all' ? dm.dayWhMoves : []).filter(wm => matchesQuickSearch(qNorm, [wm.item_name, wm.warehouse_location, wm.target_equipment]));
+      const supMap = new Map();
+      const supGroups = [];
+      bills.forEach((b, bi) => {
+        const k = b.noSupplier ? `_solo_${bi}` : `${isSingleCo ? '' : `${norm(b.company)}|`}${norm(b.supplier)}`;
+        let g = supMap.get(k);
+        if (!g) {
+          g = { key: k, supplier: b.supplier, company: b.company, bills: [], amount: 0, pending: 0, repShiftCount: 0, repShiftDates: [], methods: [], cats: [] };
+          supMap.set(k, g);
+          supGroups.push(g);
+        }
+        g.bills.push(b);
+        g.amount = round2(g.amount + b.amount);
+        if (b.isPending) g.pending += 1;
+        if (b.isRepShifted) {
+          g.repShiftCount += 1;
+          if (b.repDate && !g.repShiftDates.includes(b.repDate)) g.repShiftDates.push(b.repDate);
+        }
+        if (b.method && !g.methods.includes(b.method)) g.methods.push(b.method);
+        const cl = b.subcategory || b.category;
+        if (cl && !g.cats.includes(cl)) g.cats.push(cl);
+      });
+      supGroups.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+      const blankChev = supGroups.some(g => g.bills.length > 1) ? '<span class="dops-exp-chev is-blank" aria-hidden="true"></span>' : '';
+      const billBadgeCls = b => (b.isPending ? 'maint' : (b.isCredit ? 'rule' : 'exp'));
+      const billAmt = b => (b.isPending && b.amount === 0 ? 'Pending' : fmtUSD(b.amount, 0));
+      const billNote = b => b.notes || (b.itemNames && b.itemNames.length ? b.itemNames.join(', ') : '');
+      return `
       <div class="dops-card-body no-pad dops-flex-col">
-        ${pnlStripHtml}
         <div class="dops-tbl-scroll">
           <table class="dops-table dops-fixed-3">
             <colgroup><col style="width:41%"><col style="width:37%"><col style="width:22%"></colgroup>
@@ -3542,26 +3482,49 @@
               </tr>
             </thead>
             <tbody>
-              ${bills.map(b => {
-                const badgeCls = b.isPending ? 'maint' : (b.isCredit ? 'rule' : 'exp');
-                const noteOrItem = b.notes || (b.itemNames && b.itemNames.length ? b.itemNames.join(', ') : '');
-                return `
+              ${supGroups.map(g => {
+                if (g.bills.length === 1) {
+                  const b = g.bills[0];
+                  const noteOrItem = billNote(b);
+                  return `
                   <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(b.id || ''))}">
                     <td class="dops-trunc">
-                      <div class="dops-grp-head">${!isSingleCo ? `${coBadge(b.company)} ` : ''}${relLink('suppliers', b.supplier, b.supplier, true)}${renderRepBadge(ctx, b.txDate, b.repDate)}</div>
+                      <div class="dops-grp-head">${blankChev}${!isSingleCo ? `${coBadge(b.company)} ` : ''}${relLink('suppliers', b.supplier, b.supplier, true)}${renderRepBadge(ctx, b.txDate, b.repDate)}</div>
                       ${b.equipment ? `<small class="dops-cell-sub">Unit: <b>${esc(b.equipment)}</b></small>` : ''}
                     </td>
                     <td class="dops-trunc">
-                      <span class="dops-kind ${badgeCls}">${esc(b.method)}</span> <strong>${esc(b.subcategory || b.category)}</strong>
+                      <span class="dops-kind ${billBadgeCls(b)}">${esc(b.method)}</span> <strong>${esc(b.subcategory || b.category)}</strong>
                       ${noteOrItem ? `<small class="dops-cell-sub">${esc(noteOrItem)}</small>` : ''}
                     </td>
-                    <td class="r"><strong>${b.isPending && b.amount === 0 ? 'Pending' : fmtUSD(b.amount, 0)}</strong></td>
-                  </tr>
-                `;
+                    <td class="r"><strong>${billAmt(b)}</strong></td>
+                  </tr>`;
+                }
+                const expKey = `expsup:${g.key}`;
+                // A search that hits a bill's note or unit, not the supplier, opens the supplier on that bill.
+                const innerHit = Boolean(qNorm && !matchesQuickSearch(qNorm, [g.supplier, g.company]));
+                const isExp = Boolean(expMap[expKey] || innerHit);
+                const repBadge = renderGroupRepBadge(ctx, g.repShiftCount, g.bills.length, g.repShiftDates, dm.targetDate);
+                const grpBadge = g.pending > 0
+                  ? `<span class="dops-kind maint">${fmtNum(g.pending)} Pending</span>`
+                  : (g.methods.length === 1 ? `<span class="dops-kind ${billBadgeCls(g.bills[0])}">${esc(g.methods[0])}</span>` : '');
+                return `
+                  <tr class="dops-group-row dops-sup-grp${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" data-sup-count="${g.bills.length}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(g.bills.length)} bills from ${esc(g.supplier)}">
+                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>${!isSingleCo ? `${coBadge(g.company)} ` : ''}${relLink('suppliers', g.supplier, g.supplier, true)}${repBadge}</div></td>
+                    <td class="dops-trunc">${grpBadge} <span class="dops-cash-count">${fmtNum(g.bills.length)} bills</span>${g.cats.length ? `<span class="dops-cash-sum" data-no-i18n="1"> · ${esc(g.cats.slice(0, 2).join(', '))}</span>` : ''}</td>
+                    <td class="r"><strong>${fmtUSD(g.amount, 0)}</strong></td>
+                  </tr>${isExp ? g.bills.map(b => {
+                    const noteOrItem = billNote(b);
+                    return `
+                  <tr class="rrow dops-subrow" data-rkey="expenses" data-rid="${esc(String(b.id || ''))}">
+                    <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><strong>${esc(b.subcategory || b.category)}</strong>${b.equipment ? ` <small style="color:var(--muted)">· ${esc(b.equipment)}</small>` : ''} ${renderRepBadge(ctx, b.txDate, b.repDate)}</div></td>
+                    <td class="dops-trunc"><span class="dops-kind ${billBadgeCls(b)}">${esc(b.method)}</span>${noteOrItem ? ` <span style="color:var(--muted)">${esc(noteOrItem)}</span>` : ''}</td>
+                    <td class="r"><strong>${billAmt(b)}</strong></td>
+                  </tr>`;
+                  }).join('') : ''}`;
               }).join('')}
               ${whBills.map(wm => `
                 <tr class="rrow" data-rkey="warehouse_movements" data-rid="${esc(String(wm.id || ''))}">
-                  <td class="dops-trunc"><strong>${esc(wm.item_name || 'Stock Move')}</strong></td>
+                  <td class="dops-trunc"><div class="dops-grp-head">${blankChev}<strong>${esc(wm.item_name || 'Stock Move')}</strong></div></td>
                   <td class="dops-trunc"><span class="dops-kind fuel">Stock</span> ${esc([wm.warehouse_location, wm.target_equipment].filter(Boolean).join(' · '))}</td>
                   <td class="r">${fmtNum(wm.qty_delta || wm.qty || 0, 0)} ${esc(wm.uom || '')}</td>
                 </tr>
@@ -3579,6 +3542,137 @@
         </div>
       </div>
     `;
+    }
+
+    // Default ('costs'): every cost of the day in one ranked table. A seat that sees the day's profit gets
+    // material and transport, each expense category, payroll and commissions, and a footer that ties them to
+    // the profit (sales before VAT less the rows). A seat with expenses only gets the expense categories.
+    const full = Boolean(perms.canFullPnl);
+    const filtersOff = qFilter === 'all' && !qNorm;
+    const tie = full && filtersOff;
+    const catRows = (dm.expCategoryRows || []).filter(r => {
+      if (qFilter === 'rep_shifted' && !(r.repShiftCount > 0)) return false;
+      if (qFilter === 'exceptions' && !(r.pending > 0)) return false;
+      if (qFilter === 'overtime' || qFilter === 'turnaround') return false;
+      // VAT lines are not a cost of the day: a seat that sees the profit never has them in this table,
+      // with or without a search on.
+      if (full && !(r.costCount > 0)) return false;
+      if (qNorm) {
+        const cHit = matchesQuickSearch(qNorm, [r.label, r.category, r.method]);
+        const bHit = (r.bills || []).some(b => matchesQuickSearch(qNorm, [b.supplier, b.equipment, b.notes, b.invoice]));
+        if (!cHit && !bHit) return false;
+      }
+      return true;
+    });
+    const costRows = catRows.map(r => ({
+      kind: 'exp',
+      tone: 'e',
+      cat: r,
+      amount: full ? Number(r.exVat || 0) : Number(r.amount || 0),
+      count: full ? r.costCount : r.count
+    }));
+    if (tie) {
+      const matCost = Number(dm.rawSum.totalCost || 0);
+      const payCost = Number(dm.salariesPaid || 0);
+      const commCost = Number(dm.salesSum.commUsd || 0);
+      if (Math.abs(matCost) >= 0.005) costRows.push({ kind: 'material', tone: 'q', label: 'Material & Transport', amount: matCost, count: Number(dm.rawSum.loads || 0), unit: ['load', 'loads'], attr: 'data-dops-open-drawer="raw"', tip: 'Raw material and third-party transport of the day. Click to see the receipts.' });
+      if (perms.canPayroll) {
+        if (Math.abs(payCost) >= 0.005) costRows.push({ kind: 'payroll', tone: 'p', label: 'Payroll', amount: payCost, count: Number(dm.salCount || 0), unit: ['voucher', 'vouchers'], attr: 'data-dops-lens="plant:overview"', tip: 'Salaries paid on this day. Click to see who was paid.' });
+        if (Math.abs(commCost) >= 0.005) costRows.push({ kind: 'commission', tone: 'p', label: 'Sales Commissions', amount: commCost, count: 0, unit: null, attr: 'data-dops-open-drawer="sales"', tip: 'Commissions due on the day\'s sales tickets. Click to see the tickets.' });
+      } else {
+        // No payroll dollars for this seat: salaries and commissions stay one figure, with no voucher count.
+        const payAndComm = round2(payCost + commCost);
+        if (Math.abs(payAndComm) >= 0.005) costRows.push({ kind: 'payroll', tone: 'p', label: 'Payroll & Commissions', amount: payAndComm, count: 0, unit: null, attr: 'data-dops-lens="plant:overview"', tip: 'Salaries and sales commissions paid' });
+      }
+    }
+    costRows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    const shareBase = costRows.reduce((a, r) => a + Math.max(0, r.amount), 0);
+    // A category name the dictionary knows is shown translated; any other name is the user's own wording and
+    // stays as typed, like every other record value.
+    const i18nApi = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.isTranslated === 'function') ? window.MFG_I18N : null;
+    const rawAttr = txt => ((i18nApi && i18nApi.isTranslated(String(txt || ''), 'ar') && i18nApi.isTranslated(String(txt || ''), 'fr')) ? '' : ' data-no-i18n="1"');
+    const sharePct = v => (shareBase > 0 ? Math.max(0, Math.min(100, (Math.max(0, v) / shareBase) * 100)) : 0);
+    const shareCell = (row, extraHtml) => {
+      const pct = sharePct(row.amount);
+      return `<div class="dops-share-cell"><span class="dops-share-track" aria-hidden="true"><span class="dops-share-fill ${row.tone}" style="width:${pct.toFixed(1)}%"></span></span><span class="dops-share-pct">${Math.round(pct)}%</span>${extraHtml || ''}</div>`;
+    };
+    const costsTotal = tie ? round2(Number(dm.rawSum.totalCost || 0) + Number(dm.expExVat || 0) + Number(dm.salariesPaid || 0) + Number(dm.salesSum.commUsd || 0)) : 0;
+    const vatOnBills = tie ? round2(Number(dm.expTotal || 0) - Number(dm.expExVat || 0)) : 0;
+    const opProfit = Number(dm.operatingProfit || 0);
+    return `
+        <div class="dops-card-body no-pad dops-flex-col">
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3 dops-cost-table">
+              <colgroup><col style="width:52%"><col style="width:26%"><col style="width:22%"></colgroup>
+              <thead>
+                <tr>
+                  <th>${full ? 'Cost' : 'Expense Category'}</th>
+                  <th>${full ? 'Share of Costs' : 'Share of Expenses'}</th>
+                  <th class="r">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${costRows.map(row => {
+                  if (row.kind !== 'exp') {
+                    const cntHtml = row.unit && row.count > 0 ? `<span class="dops-cost-cnt">· ${fmtNum(row.count)} ${row.count === 1 ? row.unit[0] : row.unit[1]}</span>` : '';
+                    return `
+                    <tr class="dops-group-row dops-cost-jump" ${row.attr} data-dops-cost-row="${row.kind}" data-amt="${Number(row.amount).toFixed(2)}" tabindex="0" data-ui-tip="${esc(row.tip)}">
+                      <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-exp-chev is-jump">${ic('chevron_right')}</span><i class="dops-pnl-dot ${row.tone}"></i><strong>${esc(row.label)}</strong>${cntHtml}</div></td>
+                      <td>${shareCell(row)}</td>
+                      <td class="r"><b class="dops-cost-amt">${fmtUSD(row.amount, 0)}</b></td>
+                    </tr>`;
+                  }
+                  const r = row.cat;
+                  const expKey = `expcat:${r.key}`;
+                  const isExp = Boolean(expMap[expKey]);
+                  // The reporting-day chip stays on the bills (opened rows); on a filtered view it marks the category too.
+                  const repBadge = qFilter === 'rep_shifted' ? renderGroupRepBadge(ctx, r.repShiftCount, r.count, r.repShiftDates, dm.targetDate) : '';
+                  const subBills = isExp ? (r.bills || []).filter(b => (qFilter !== 'rep_shifted' || b.isRepShifted) && !(full && b.isVat)) : [];
+                  const cntHtml = r.pending
+                    ? `<span class="dops-kind maint">Pending</span>`
+                    : `<span class="dops-cost-cnt">· ${fmtNum(row.count)} ${row.count === 1 ? 'bill' : 'bills'}</span>`;
+                  return `
+                    <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" data-dops-cost-row="exp" data-amt="${Number(row.amount).toFixed(2)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(row.count)} expense ${row.count === 1 ? 'bill' : 'bills'}">
+                      <td class="dops-trunc">
+                        <div class="dops-grp-head">
+                          <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
+                          <i class="dops-pnl-dot e"></i><strong>${r.hasBoth ? `<span${rawAttr(r.category)}>${esc(r.category)}</span> · <span${rawAttr(r.subcategory)}>${esc(r.subcategory)}</span>` : `<span${rawAttr(r.label)}>${esc(r.label)}</span>`}</strong>${cntHtml}${repBadge}
+                        </div>
+                      </td>
+                      <td>${shareCell(row)}</td>
+                      <td class="r"><b class="dops-cost-amt">${fmtUSD(row.amount, 0)}</b></td>
+                    </tr>
+                    ${subBills.map(b => `
+                      <tr class="rrow dops-subrow" data-rkey="expenses" data-rid="${esc(String(b.id || ''))}">
+                        <td class="dops-trunc"><div class="dops-sub-cell"><span class="dops-sub-indent"></span><strong>${esc(b.supplier)}</strong>${b.equipment ? ` <small style="color:var(--muted)">· ${esc(b.equipment)}</small>` : ''} ${renderRepBadge(ctx, b.txDate, b.repDate)}</div></td>
+                        <td class="dops-trunc">${esc(b.notes || b.method)}</td>
+                        <td class="r"><strong>${b.isPending && b.amount === 0 ? 'Pending' : fmtUSD(b.amount, 0)}</strong></td>
+                      </tr>
+                    `).join('')}
+                  `;
+                }).join('') || `<tr><td colspan="3" class="dops-empty">${filtersOff ? `No costs recorded on ${esc(fmtShortDay(dm.targetDate))}.` : `No expense categories match on ${esc(fmtShortDay(dm.targetDate))}.`}</td></tr>`}
+                ${tie && perms.canTax && Math.abs(vatOnBills) >= 0.005 ? `
+                    <tr class="dops-cost-note-row" data-dops-cost-vat="${vatOnBills.toFixed(2)}">
+                      <td class="dops-trunc" colspan="2"><span style="color:var(--muted)">VAT on Bills · Not Counted as a Cost</span></td>
+                      <td class="r"><span style="color:var(--muted)">${fmtUSD(vatOnBills, 0)}</span></td>
+                    </tr>` : ''}
+              </tbody>
+              <tfoot>
+                ${tie ? `
+                <tr class="dops-cost-foot" data-dops-cost-sales="${Number(dm.salesSum.grossExVat || 0).toFixed(2)}" data-dops-cost-total="${costsTotal.toFixed(2)}" data-dops-cost-profit="${opProfit.toFixed(2)}">
+                  <td data-ui-tip="Sales before VAT">Sales Before VAT <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b></td>
+                  <td data-ui-tip="Every cost of the day: material and transport, expenses before VAT, payroll and commissions">Costs <b>${fmtUSD(costsTotal, 0)}</b></td>
+                  <td class="r ${opProfit < 0 ? 'crit' : 'good'}" data-ui-tip="Operating profit: sales before VAT less every cost of the day"><span class="dops-cost-res">${opProfit < 0 ? 'Loss' : 'Profit'}</span> <b>${fmtUSD(opProfit, 0)}</b></td>
+                </tr>` : `
+                <tr>
+                  <td colspan="2">Cash ${fmtUSD(dm.cashExp, 0)} · Credit ${fmtUSD(dm.creditExp, 0)}</td>
+                  <td class="r">${fmtUSD(dm.expTotal, 0)}</td>
+                </tr>`}
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
   }
 
   // ---- Cash Flow panel: one row per flow and counterparty (owner 2026-11-24) ----
@@ -3738,22 +3832,16 @@
     }
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
-    const totFlow = Math.max(1, dm.cashInflow + dm.cashOutflow);
-    const inPct = (dm.cashInflow + dm.cashOutflow) > 0 ? Math.round((dm.cashInflow / totFlow) * 100) : 0;
-    const outPct = (dm.cashInflow + dm.cashOutflow) > 0 ? (100 - inPct) : 0;
-
-    const cashTopBarHtml = `
+    // In, Out, Net and the closing till are on the Treasury & Cash card above the panels (one place, with the
+    // 7-day comparison behind it); the panel is the list of movements. Only a Lebanese pound till balance, which
+    // the card has no room for, keeps a line here.
+    const cashTopBarHtml = (dm.tillUsd !== null && dm.tillLbp) ? `
       <div class="dops-cash-bar-box dops-substrip">
         <div class="dops-cash-bar-top">
-          <span><strong style="color:var(--good)">In +${fmtUSD(dm.cashInflow, 0)}</strong> · <strong>Out -${fmtUSD(dm.cashOutflow, 0)}</strong> · <strong style="color:${dm.netCashFlow < 0 ? 'var(--warn)' : 'var(--good)'}">Net ${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}</strong></span>
-          <span>Till${dm.tillIsDated ? ` (${esc(fmtShortDay(dm.targetDate))})` : ''}: ${dm.tillUsd === null ? '<strong>Not Tracked Yet</strong>' : `<strong style="${Math.round(dm.tillUsd) < 0 ? 'color:var(--crit)' : ''}">${fmtUSD(dm.tillUsd, 0)}</strong>${dm.tillLbp ? ` + <strong>${fmtCompactLbp(dm.tillLbp)}</strong>` : ''}`}</span>
-        </div>
-        <div class="dops-dual-track" role="img" aria-label="Day cash inflow versus outflow">
-          <div class="dops-dual-seg inflow" style="width:${inPct}%"></div>
-          <div class="dops-dual-seg outflow" style="width:${outPct}%"></div>
+          <span>Till${dm.tillIsDated ? ` (${esc(fmtShortDay(dm.targetDate))})` : ''}: <strong style="${Math.round(dm.tillUsd) < 0 ? 'color:var(--crit)' : ''}">${fmtUSD(dm.tillUsd, 0)}</strong> + <strong>${fmtCompactLbp(dm.tillLbp)}</strong></span>
         </div>
       </div>
-    `;
+    ` : '';
 
     if (lens === 'external') {
       const extRows = dm.extItems.filter(ex => {
@@ -4294,9 +4382,7 @@
   }
 
   function renderPanel6TrendBody(ctx, dm, perms) {
-    const { fmtNum, fmtUSD, ic } = ctx;
     const canBooks = Boolean(perms && perms.canFullPnl);
-    const canPay = Boolean(perms && perms.canPayroll);
     return `
       <div class="dops-card-body no-pad dops-flex-col dops-trend-body">
         <div class="dops-trend-legend">
@@ -4306,13 +4392,6 @@
         </div>
         <div class="dops-pulse-wrap dops-trend-svg-wrap" id="dopsChartWrap">
           ${renderPulseSvg(ctx, dm, 'pulse')}
-        </div>
-        <div class="dops-digest-bar dops-workforce-foot">
-          ${canPay && dm.salCount > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} Payroll ${fmtUSD(dm.salariesPaid, 0)} (${fmtNum(dm.salCount)})</button>` : ''}
-          <button type="button" class="dops-dpill" data-dops-lens="plant:overview">${ic('payroll')} ${fmtNum(dm.activeStaffCount)} Staff${dm.absentCount > 0 ? ` (${fmtNum(dm.absentCount)} Absent)` : ''}</button>
-          ${dm.attOtHours > 0
-            ? `<button type="button" class="dops-dpill" data-dops-qfilter="overtime">${ic('overtime')} Overtime +${fmtNum(dm.attOtHours, 1)}h</button>`
-            : (dm.dayRegAdds.length > 0 ? `<button type="button" class="dops-dpill" data-dops-lens="plant:master_gov">${ic('plus')} ${fmtNum(dm.dayRegAdds.length)} New Master ${dm.dayRegAdds.length === 1 ? 'Record' : 'Records'}</button>` : '')}
         </div>
       </div>
     `;
@@ -4375,10 +4454,19 @@
     }
 
     // Team ('overview' or 'team'): distinct 3-stat strip + unified per-staff Payroll & Attendance table + Total Salaries footer
+    // The first two boxes narrow the table under them (paid staff, absent staff); a second click shows everyone
+    // again. A filter with nothing to show on the day (no salary paid, nobody absent) is ignored.
+    const teamFilterRaw = String(ctx.STATE.dailyOpsTeamFilter || 'all');
+    const canFilterPaid = perms.canPayroll && dm.salCount > 0;
+    const canFilterAbsent = dm.absentCount > 0;
+    const teamFilter = (teamFilterRaw === 'paid' && canFilterPaid) || (teamFilterRaw === 'absent' && canFilterAbsent) ? teamFilterRaw : 'all';
+    const boxAttr = (key, can) => (can
+      ? `data-dops-team-filter="${key}" role="button" tabindex="0" aria-pressed="${teamFilter === key ? 'true' : 'false'}"`
+      : 'data-dops-open-drawer="team"');
     const topStripHtml = `
       <div class="dops-stat-strip-3 dops-substrip">
         ${perms.canPayroll ? `
-          <div class="dops-stat-box" data-dops-open-drawer="team">
+          <div class="dops-stat-box${teamFilter === 'paid' ? ' is-on' : ''}" ${boxAttr('paid', canFilterPaid)}${canFilterPaid ? ' data-ui-tip="Click to show only the staff paid on this day. Click again to show everyone."' : ''}>
             <small>Salaries Paid</small>
             <b>${fmtUSD(dm.salariesPaid, 0)} <span class="dops-stat-muted">· ${fmtNum(dm.salCount)} ${dm.salCount === 1 ? 'voucher' : 'vouchers'}</span></b>
           </div>
@@ -4388,9 +4476,9 @@
             <b>${fmtNum(dm.presentAttCount)} Worked <span class="dops-stat-muted">· ${fmtNum(dm.absentCount)} Absent</span></b>
           </div>
         `}
-        <div class="dops-stat-box" data-dops-open-drawer="team">
+        <div class="dops-stat-box${teamFilter === 'absent' ? ' is-on' : (canFilterAbsent ? ' tone-crit' : '')}" ${boxAttr('absent', canFilterAbsent)}${canFilterAbsent ? ' data-ui-tip="Click to show only the staff absent on this day. Click again to show everyone."' : ''}>
           <small>On Duty Today</small>
-          <b>${fmtNum(dm.activeStaffCount)} Active <span class="dops-stat-muted">${perms.canPayroll ? `· ${fmtNum(dm.presentAttCount)} Shifts${dm.absentCount > 0 ? ` · ${fmtNum(dm.absentCount)} Absent` : ''}` : `· ${fmtNum(dm.companyFleetTrips)} Own Trips`}</span></b>
+          <b>${canFilterAbsent ? `${fmtNum(dm.absentCount)} Absent <span class="dops-stat-muted">· ${fmtNum(dm.activeStaffCount)} Active</span>` : `${fmtNum(dm.activeStaffCount)} Active <span class="dops-stat-muted">${perms.canPayroll ? `· ${fmtNum(dm.presentAttCount)} Shifts` : `· ${fmtNum(dm.companyFleetTrips)} Own Trips`}</span>`}</b>
         </div>
         <div class="dops-stat-box${qFilter === 'overtime' ? ' tone-brass' : (dm.attOtHours > 0 || dm.otTotalLoads > 0 ? ' tone-brass' : '')}" data-dops-qfilter="overtime" data-ui-tip="Click to filter Daily Operations to Overtime dispatches and shifts">
           <small>Overtime (${fmtNum(dm.attOtStaffCount)} staff)</small>
@@ -4531,7 +4619,11 @@
       });
     });
 
-    const staffGroups = Array.from(staffGroupMap.values()).sort((a, b) =>
+    const staffGroups = Array.from(staffGroupMap.values()).filter(g => {
+      if (teamFilter === 'paid') return g.sals.length > 0;
+      if (teamFilter === 'absent') return g.isAbs;
+      return true;
+    }).sort((a, b) =>
       (b.salUsd - a.salUsd) ||
       ((b.isAbs ? 1 : 0) - (a.isAbs ? 1 : 0)) ||
       (b.otHours - a.otHours) ||
@@ -4656,7 +4748,7 @@
               }).join('') || `<tr><td colspan="3" class="dops-empty">No matching attendance logs or salaries on ${esc(fmtShortDay(dm.targetDate))} (${fmtNum(dm.activeStaffCount)} active dispatch drivers).</td></tr>`}
             </tbody>
             <tfoot>
-              ${perms.canPayroll && salRows.length > 0 ? `
+              ${perms.canPayroll && shownSalStaffCount > 0 ? `
                 <tr>
                   <td>${fmtNum(shownSalStaffCount)} Paid${shownAttOnlyCount > 0 ? ` · ${fmtNum(shownAttOnlyCount)} ${shownAttOnlyCount === 1 ? 'Shift' : 'Shifts'}` : ''}</td>
                   <td>${commonMonth ? `${esc(commonMonth)} · ` : ''}Cash ${fmtUSD(shownSalCashUsd, 0)}${Math.abs(shownSalOtherUsd) >= 0.5 ? ` · Other ${fmtUSD(shownSalOtherUsd, 0)}` : ''}</td>
@@ -4785,10 +4877,13 @@
     const commLens = STATE.dailyOpsCommLens || 'pulse';
     const dealsLensRaw = STATE.dailyOpsDealsLens || 'highlights';
     const dealsLens = (dealsLensRaw === 'vat_jv' && !perms.canTax && !perms.canJv) ? 'highlights' : dealsLensRaw;
-    const expLens = STATE.dailyOpsExpLens || 'bills';
+    // Profit & Expenses opens on the cost breakdown; the older category lens is the same table.
+    const expLensRaw = STATE.dailyOpsExpLens || 'costs';
+    const expLens = expLensRaw === 'bills' ? 'bills' : ((expLensRaw === 'stock' || expLensRaw === 'items') ? 'stock' : 'costs');
     const treasuryLens = STATE.dailyOpsTreasuryLens || 'bridge';
     const fuelLens = STATE.dailyOpsFuelLens || 'units';
-    const plantLens = STATE.dailyOpsPlantLens || 'trend';
+    // The sixth panel opens on the day's payroll and attendance; the 7-day chart is one tab away.
+    const plantLens = STATE.dailyOpsPlantLens || 'overview';
 
     const cntStream = k => filterDrawerRows(dm, k, '', perms).length;
     const salesCnt = cntStream('sales');
@@ -4854,9 +4949,9 @@
           </div>
           <div class="dops-card-actions">
             ${perms.canExp ? `<div class="dops-seg" role="tablist" aria-label="Expenses Lens">
-              <button type="button" class="dops-seg-btn${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills</button>
-              <button type="button" class="dops-seg-btn${expLens === 'cats' || expLens === 'categories' ? ' active' : ''}" data-dops-lens="exp:cats">Categories</button>
-              <button type="button" class="dops-seg-btn${zc(dm.dayExpItems.length)}${expLens === 'stock' || expLens === 'items' ? ' active' : ''}" data-dops-lens="exp:stock">Items</button>
+              <button type="button" class="dops-seg-btn${expLens === 'costs' ? ' active' : ''}" data-dops-lens="exp:costs">Costs</button>
+              <button type="button" class="dops-seg-btn${zc(dm.expenseBillRows.length)}${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayExpItems.length)}${expLens === 'stock' ? ' active' : ''}" data-dops-lens="exp:stock">Items</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="expenses" data-ui-tip="Inspect expense bills & stock purchases">${fmtNum(expCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="expense" data-ui-tip="New Expense / Stock Bill" aria-label="New Expense Bill">${ic('plus')}</button>` : ''}
@@ -4906,7 +5001,7 @@
         ${renderPanel5FleetFuel(ctx, dm, fuelLens, isSingleCo, perms)}
       </div>
 
-      <!-- PANEL 6: 7-DAY SALES & PROFIT TREND, TEAM & AUDIT -->
+      <!-- PANEL 6: PAYROLL & ATTENDANCE (DEFAULT), 7-DAY SALES & PROFIT TREND & AUDIT -->
       <div class="dops-card" id="dopsPlantCard">
         ${(() => {
           const isTeamLens = plantLens === 'overview' || plantLens === 'team';
@@ -4927,8 +5022,8 @@
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Trend & Team Lens">
-              <button type="button" class="dops-seg-btn${plantLens === 'trend' ? ' active' : ''}" data-dops-lens="plant:trend">Trend</button>
               <button type="button" class="dops-seg-btn${isTeamLens ? ' active' : ''}" data-dops-lens="plant:overview">Team</button>
+              <button type="button" class="dops-seg-btn${plantLens === 'trend' ? ' active' : ''}" data-dops-lens="plant:trend">Trend</button>
               <button type="button" class="dops-seg-btn${zc(dm.dayRegAdds.length)}${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${isAuditLens ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="team" data-ui-tip="Inspect attendance, salaries & master records">${fmtNum(p6Count)}</button>
@@ -4969,6 +5064,8 @@
     // Share of the day's sales (before VAT) that went to quarry material and haulage
     const rawSharePct = dm.salesSum.grossExVat > 0 ? Math.round((dm.rawSum.totalCost / dm.salesSum.grossExVat) * 100) : null;
     const kMoney = v => (Math.abs(Number(v) || 0) >= 10000 ? fmtUSDk(v) : fmtUSD(v, 0));
+    // The cash card is the one place the day's In and Out are shown, so it gives them to the dollar while they fit.
+    const cashKpiMoney = v => (Math.abs(Number(v) || 0) >= 100000 ? fmtUSDk(v) : fmtUSD(v, 0));
 
     // "Needs Attention" strip: the few facts that explain the day, ranked by severity. Deterministic, no AI.
     const attChip = (tone, icon, label, value, attr, tip) =>
@@ -5001,7 +5098,8 @@
       ? `<span class="dops-kpi-delta warn">${dm.pendingExps.length} Pending</span>`
       : `<span class="dops-kpi-delta ${dm.expCount > 0 ? 'neutral' : 'good'}">${fmtNum(dm.expCount)} ${dm.expCount === 1 ? 'bill' : 'bills'}</span>`;
 
-    // KPI 4: Operating Profit %
+    // KPI 4: Operating Profit %, with the "where the day's sales went" bar along the card's lower edge
+    const pnlBarHtml = perms.canFullPnl ? renderDayPnlBarHtml(ctx, dm) : '';
     const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
     const profDeltaCls = dm.operatingProfit < 0 ? 'crit' : 'good';
 
@@ -5154,7 +5252,7 @@
         <div class="dops-bar" id="dopsHeaderBar">
           <div class="dops-bar-left">
             <div class="dops-title-group">
-              <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
+              <h1 class="dops-page-title cockpit-title sr-only">Daily Operations</h1>
               <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(fmtHumanDay(dm.targetDate))}</span>
               <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
                 <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${dm.prevDate ? `data-dops-pick-date="${esc(dm.prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
@@ -5284,7 +5382,8 @@
             </div>
           </div>
 
-          <div class="dops-kpi accent-profit${perms.canFullPnl && dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="exp:bills" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-profit${perms.canFullPnl && dm.operatingProfit < 0 ? ' is-neg' : ''}${pnlBarHtml ? ' has-pnl-bar' : ''}" data-dops-lens="exp:costs" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
+            ${pnlBarHtml}
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
               ${perms.canFullPnl
@@ -5312,7 +5411,7 @@
               <span class="dops-kpi-unit">${perms.canBooks ? (dm.tillUsd === null ? 'Till Untracked' : `Till <b${Math.round(dm.tillUsd) < 0 ? ' class="crit"' : ''}>${fmtUSD(dm.tillUsd, 0)}</b>`) : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${perms.canBooks ? `In <b>${fmtUSDk(dm.cashInflow)}</b> · Out <b>${fmtUSDk(dm.cashOutflow)}</b>` : 'Books Restricted'}
+              ${perms.canBooks ? `In <b>${cashKpiMoney(dm.cashInflow)}</b> · Out <b>${cashKpiMoney(dm.cashOutflow)}</b>` : 'Books Restricted'}
             </div>
           </div>
 
@@ -5495,6 +5594,16 @@
         return;
       }
 
+      // 2b. Payroll & Attendance table filter (paid staff, absent staff); a second click shows everyone again
+      const tfEl = t.closest('[data-dops-team-filter]');
+      if (tfEl && stage.contains(tfEl)) {
+        ev.preventDefault();
+        const val = tfEl.getAttribute('data-dops-team-filter') || 'all';
+        STATE.dailyOpsTeamFilter = (STATE.dailyOpsTeamFilter === val) ? 'all' : val;
+        refreshBentoInPlace();
+        return;
+      }
+
       // 3. Date navigation ([data-dops-pick-date])
       const pickEl = t.closest('[data-dops-pick-date]');
       if (pickEl && stage.contains(pickEl)) {
@@ -5587,6 +5696,13 @@
           STATE.dailyOpsExpanded[k] = !STATE.dailyOpsExpanded[k];
           refreshBentoInPlace();
         }
+        return;
+      }
+      // Staff filter boxes and the cost rows that jump (payroll, material, commissions) act as buttons.
+      const actEl = t.closest('[data-dops-team-filter], tr.dops-cost-jump');
+      if (actEl && stage.contains(actEl)) {
+        ev.preventDefault();
+        actEl.click();
       }
     });
 

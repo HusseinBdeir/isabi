@@ -4409,7 +4409,7 @@
 
     const tableHtml = `
       <div class="table-wrap">
-        <table class="ledger-table">
+        <table class="ledger-table" data-pbi-table-key="${esc(tableKey)}" data-pbi-total="${totalRows}" data-pbi-cur-page="${curPage}" data-pbi-page-size="${pageSize}" data-pbi-start="${startIdx}">
           <thead>
             <tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr>
           </thead>
@@ -4909,13 +4909,39 @@
             const settled = round2(st.ar_settled);
             const bal = round2(crTtc - settled);
             const balDelta = round2(bal - Number(c.ar_balance || 0));
-            const arCur = STATE._officialScopeActive
-              ? Math.max(0, bal)
-              : (Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0));
-            const offZeroBuckets = STATE._officialScopeActive
-              ? { ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0, ar_overdue: 0 }
-              : {};
-            return Object.assign({}, c, offZeroBuckets, {
+            let agingPatch = null;
+            if (STATE._officialScopeActive) {
+              agingPatch = { ar_current: Math.max(0, bal), ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0, ar_overdue: 0 };
+            } else if (bal <= 0.005) {
+              agingPatch = { ar_current: 0, ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0, ar_overdue: 0 };
+            } else if (Math.abs(balDelta) > 0.005) {
+              let bCur = Number(c.ar_current || 0);
+              let b1 = Number(c.ar_1_10 || 0);
+              let b11 = Number(c.ar_11_30 || 0);
+              let b31 = Number(c.ar_31_60 != null ? c.ar_31_60 : 0);
+              if (b1 === 0 && b11 === 0 && b31 === 0 && Number(c.ar_1_60 || 0) > 0) b31 = Number(c.ar_1_60 || 0);
+              let b60 = Number(c.ar_60_plus || 0);
+              if (balDelta < 0) {
+                let relief = round2(-balDelta);
+                const d60 = Math.min(b60, relief); b60 = round2(b60 - d60); relief = round2(relief - d60);
+                const d31 = Math.min(b31, relief); b31 = round2(b31 - d31); relief = round2(relief - d31);
+                const d11 = Math.min(b11, relief); b11 = round2(b11 - d11); relief = round2(relief - d11);
+                const d1 = Math.min(b1, relief); b1 = round2(b1 - d1); relief = round2(relief - d1);
+                bCur = round2(Math.max(0, bCur - relief));
+              } else {
+                bCur = round2(bCur + balDelta);
+              }
+              agingPatch = {
+                ar_current: bCur,
+                ar_1_10: b1,
+                ar_11_30: b11,
+                ar_31_60: b31,
+                ar_1_60: round2(b1 + b11 + b31),
+                ar_60_plus: b60,
+                ar_overdue: round2(b31 + b60)
+              };
+            }
+            return Object.assign({}, c, agingPatch || {}, {
               loads: st.loads,
               sales_ttc: round2(st.sales_ttc),
               net_sales: round2(st.net_sales),
@@ -4928,7 +4954,6 @@
               receipts_cash: round2(st.receipts),
               receipts: settled,
               opening_ar: 0,
-              ar_current: arCur,
               ar_balance: bal,
               last_sale: st.last_sale || c.last_sale
             });
@@ -10741,6 +10766,9 @@
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
     const shown = rows.slice(0, shownCount('tbl_' + meta.key));
+    if (typeof ctx.recordSliceMeta === 'function') {
+      ctx.recordSliceMeta('tbl_' + meta.key, rows.length, shown.length);
+    }
 
     const groups = Array.from(new Set(tablePool.map(t => t.group)));
     const effRelKeys = meta.key === 'price_rules'
@@ -11367,6 +11395,10 @@
     const siteDefSort = getHubTableDefaultSort(siteMeta, activeSiteView.id);
     const siteRows = sortRows(siteViewFiltered, 'ureg_sites', siteDefSort.key, siteDefSort.dir);
     const siteShown = siteRows.slice(0, shownCount('ureg_sites'));
+    if (typeof ctx.recordSliceMeta === 'function') {
+      ctx.recordSliceMeta('ureg_regions', regRows.length, regShown.length);
+      ctx.recordSliceMeta('ureg_sites', siteRows.length, siteShown.length);
+    }
 
     // 3. Summary Analytics Charts
     const regChartRows = regRows.map(r => {
@@ -11723,6 +11755,9 @@
     const connRows = sortRows(searchFiltered, 'conn_' + connKey, defSort.key, defSort.dir);
     const connLimit = (STATE.shown && STATE.shown['conn_' + connKey]) || 10;
     const connShown = connRows.slice(0, connLimit);
+    if (typeof ctx.recordSliceMeta === 'function') {
+      ctx.recordSliceMeta('conn_' + connKey, connRows.length, connShown.length);
+    }
 
     const effConnLabel = isSitePr ? 'Site Price Agreements' : (isRawPr ? 'Material & Transport Agreements' : connMeta.label);
     const connIco = TABLE_ICON_MAP[connKey] || connMeta.navView || 'tables';
@@ -11949,6 +11984,9 @@
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'ureg_' + meta.key, defSortSpec.key, defSortSpec.dir);
     const shown = rows.slice(0, shownCount('ureg_' + meta.key));
+    if (typeof ctx.recordSliceMeta === 'function') {
+      ctx.recordSliceMeta('ureg_' + meta.key, rows.length, shown.length);
+    }
     const groupTabsMeta = groupKeys.length > 1
       ? groupKeys.map(gk => univPool.find(t => t.key === gk)).filter(Boolean)
       : [];
