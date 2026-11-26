@@ -344,6 +344,110 @@ def main() -> int:
               and not RL._is_pending(sb, held["lockId"]) and not RL._is_pending(sa, l_again["lockId"]),
               "both give the lock back and keep no token or pending file for a lock they held")
 
+        check(RL.CF_DEFAULT_POLL_S == 4 and RL.DEFAULT_POLL_S == 12 and RB.CF_POLL_S == 5 and RB.POLL_S == 20,
+              "CF poll intervals (4s lock / 5s batch) paired with preserved offline Git constants (12s / 20s)")
+
+        # 4b2. Behavioral polling interval checks: default CF (4s lock / 5s batch), explicit --poll override (12s), and git (12s / 20s)
+        import time as _time_mod  # noqa: PLC0415
+        l_hold_p = quiet(RL.acquire, sa, holder="poll-holder", version="v19.6.105")
+        orig_rl_sleep, orig_rl_mono = RL._sleep, RL._mono
+        orig_rb_sleep, orig_rb_mono = RB._sleep, RB._mono
+        orig_t_sleep, orig_t_mono = _time_mod.sleep, _time_mod.monotonic
+        try:
+            clk = [0.0]
+            sleeps_rl: list[float] = []
+            sleeps_t: list[float] = []
+            sleeps_rb: list[float] = []
+
+            def fake_mono() -> float:
+                return clk[0]
+
+            def fake_sleep_rl(sec: float) -> None:
+                sleeps_rl.append(float(sec))
+                clk[0] += float(sec) + 0.1
+
+            def fake_sleep_t(sec: float) -> None:
+                sleeps_t.append(float(sec))
+                clk[0] += float(sec) + 0.1
+
+            def fake_sleep_rb(sec: float) -> None:
+                sleeps_rb.append(float(sec))
+                clk[0] += float(sec) + 0.1
+
+            RL._mono = RB._mono = _time_mod.monotonic = fake_mono
+            RL._sleep = fake_sleep_rl
+            _time_mod.sleep = fake_sleep_t
+            RB._sleep = fake_sleep_rb
+
+            clk[0] = 0.0
+            sleeps_rl.clear()
+            raises_lock(RL.acquire, sb, holder="cf-waiter", wait_s=10)
+            check(bool(sleeps_rl) and sleeps_rl[0] == 4.0, f"CF RL.acquire default sleeps 4s (got {sleeps_rl})")
+
+            clk[0] = 0.0
+            sleeps_rl.clear()
+            raises_lock(RL.acquire, sb, holder="cf-override", wait_s=20, poll_s=12)
+            check(bool(sleeps_rl) and sleeps_rl[0] == 12.0, f"CF RL.acquire honors explicit poll_s=12 override (got {sleeps_rl})")
+
+            clk[0] = 0.0
+            sleeps_t.clear()
+            quiet(RL.ci_acquire, sb, main_sha, wait_s=10)
+            check(bool(sleeps_t) and sleeps_t[0] == 4, f"CF RL.ci_acquire default sleeps 4s (got {sleeps_t})")
+
+            # Wait in batch on CF with default poll_s=None while A holds the lock
+            real_read_state = RB.read_state
+            RB.read_state = lambda cwd=RL.ISABI_ROOT: (coord.lock_ver or "v1", l_hold_p, [{"id": "20261126T000000Z-poll0001", "state": "waiting", "holder": "B", "seenAt": RL._iso(RL._now())}])
+            try:
+                clk[0] = 0.0
+                sleeps_rb.clear()
+                quiet(RB.wait, sb, "20261126T000000Z-poll0001", wait_s=10)
+                check(bool(sleeps_rb) and sleeps_rb[0] == 5, f"CF RB.wait default sleeps 5s (got {sleeps_rb})")
+            finally:
+                RB.read_state = real_read_state
+
+            # Explicit git backend retains 12s / 20s defaults
+            os.environ["ISABI_RELEASE_BACKEND"] = "git"
+            # Put a fake holder on fake git origin just for read_remote_lock / _wait git sleep check
+            orig_rl_read = RL.read_remote_lock
+            RL.read_remote_lock = lambda cwd=RL.ISABI_ROOT: ("sha-git", dict(l_hold_p))
+            try:
+                clk[0] = 0.0
+                sleeps_rl.clear()
+                raises_lock(RL.acquire, sb, holder="git-waiter", wait_s=20)
+                check(bool(sleeps_rl) and sleeps_rl[0] == 12.0, f"Git RL.acquire default retains 12s (got {sleeps_rl})")
+                RB.read_state = lambda cwd=RL.ISABI_ROOT: ("sha-git", l_hold_p, [{"id": "20261126T000000Z-poll0002", "state": "waiting", "holder": "B", "seenAt": RL._iso(RL._now())}])
+                clk[0] = 0.0
+                sleeps_rb.clear()
+                quiet(RB.wait, sb, "20261126T000000Z-poll0002", wait_s=30)
+                check(bool(sleeps_rb) and sleeps_rb[0] == 20, f"Git RB.wait default retains 20s (got {sleeps_rb})")
+            finally:
+                RL.read_remote_lock = orig_rl_read
+                RB.read_state = real_read_state
+                os.environ["ISABI_RELEASE_BACKEND"] = "cloudflare"
+        finally:
+            RL._sleep, RL._mono = orig_rl_sleep, orig_rl_mono
+            RB._sleep, RB._mono = orig_rb_sleep, orig_rb_mono
+            _time_mod.sleep, _time_mod.monotonic = orig_t_sleep, orig_t_mono
+            quiet(RL.release, sa)
+
+        # 4c. deploy_cloudflare formats active DO lock as IsabiReleaseRoom (<holder>)
+        import deploy_cloudflare as DC  # noqa: PLC0415
+        l_vc = quiet(RL.acquire, sa, holder="vc-peer", version="v19.6.105")
+        try:
+            vc_info = quiet(
+                DC.collect_unshipped_version_claims,
+                sb,
+                app_repo_dir=B / "isabi-app",
+                fetch=True,
+                include_lock=True,
+            )
+            lock_claims = [c for c in vc_info["peer_claims"] if c.get("source") == "release_lock"]
+            check(bool(lock_claims) and lock_claims[0]["ref"] == "IsabiReleaseRoom (vc-peer)",
+                  "deploy_cloudflare reports IsabiReleaseRoom (<holder>) for active DO lock")
+        finally:
+            if l_vc:
+                quiet(RL.release, sa)
+
         # 5. Batch queue lifecycle on DO (join, transient 503 wait-out, take, sync, deploy, done, leave)
         git(A / "isabi-app", "checkout", "-q", "-B", "wt/feat-a", "origin/main")
         put(A / "isabi-app" / "js" / "feat_a.js", "export const A = 1;\n")
@@ -379,9 +483,21 @@ def main() -> int:
 
         st_b, _ = quiet(RB.wait, sb, e2["id"], wait_s=1)
         check(st_b == "SHIPPED", "waiting session B sees SHIPPED on DO")
+        check("GET /release/state" in coord.calls, "poll_once uses atomic GET /release/state endpoint")
         quiet(RB.leave, sa, e1["id"])
         check(len(RB.read_line(sa)) == 0 and RL.read_remote_lock(sa) == ("", {}),
               "queue and lock clean after done + leave")
+
+        # 5b. Corrupt DO lock state (version set with null/invalid payload) fails closed across both readers
+        saved_ver, saved_doc = coord.lock_ver, coord.lock_doc
+        try:
+            coord.lock_ver, coord.lock_doc = "corrupt-ver", None
+            check("cannot be read" in raises_lock(RL.read_remote_lock, sa),
+                  "RL.read_remote_lock fails closed on corrupt DO lock state")
+            check("cannot be read" in raises_lock(RB.read_state, sa),
+                  "RB.read_state fails closed on corrupt DO lock state")
+        finally:
+            coord.lock_ver, coord.lock_doc = saved_ver, saved_doc
 
         # 6. Zero refs/locks/* or refs/release-queue/* created on GitHub bare repo
         refs_out = git(isabi_git, "for-each-ref", "refs/locks", "refs/release-queue")

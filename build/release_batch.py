@@ -123,6 +123,7 @@ HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock
 DEFAULT_WAIT_S = 540    # under the 10 minute limit of a foreground command; run again to keep waiting
 TAKE_BUDGET_S = 180     # ship does not start forming a batch with less than this left after a long wait
 POLL_S = 20
+CF_POLL_S = 5
 MAX_BATCH = 3           # a leader takes at most this many changes per batch (owner 2026-11-25); 0 = no limit
 MAX_BATCH_ENV = "ISABI_BATCH_MAX"   # overrides MAX_BATCH for one command (take/ship --max N does the same)
 _IDENT = {"GIT_AUTHOR_NAME": "ISABI release batch", "GIT_AUTHOR_EMAIL": "release-batch@isabi.invalid",
@@ -331,6 +332,44 @@ def _push_ref(ref: str, new_sha: str, expected_old: str, cwd: Path) -> bool:
     return RL._git(args, cwd, check=False, timeout=90).returncode == 0
 
 
+def _parse_cf_entries(raw_entries) -> list[dict]:
+    entries: list[dict] = []
+    for item in raw_entries or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("id") or "")
+        ver = str(item.get("version") or "")
+        e = item.get("entry")
+        if not name:
+            continue
+        if not isinstance(e, dict) or e.get("id") != name or e.get("state") not in STATES:
+            e = {"id": name, "state": "unreadable", "holder": "?", "summary": "(entry cannot be read)"}
+        e["_ref"], e["_sha"] = f"cf:{name}", ver
+        entries.append(e)
+    entries.sort(key=lambda e: e["id"])
+    return entries
+
+
+def read_state(cwd: Path = ISABI_ROOT) -> tuple[str, dict, list[dict]]:
+    """Atomic snapshot of (lock_ver_or_sha, lock_info, entries)."""
+    pauses = list(NET_RETRY_S) if _inner_retries[0] else []
+    if RL._release_backend(cwd) == "cloudflare":
+        while True:
+            try:
+                res = RL._cf_request("GET", "/state")
+                break
+            except RL.LockError as exc:
+                err = str(exc)
+                if not pauses or not _is_net_error(err):
+                    raise BatchError(f"cannot read the release state from Cloudflare ({err[:300]})") from None
+                _sleep(pauses.pop(0))
+        lock_ver, lock = RL._parse_cf_lock_payload(res, ver_key="lockVersion")
+        return lock_ver, lock, _parse_cf_entries(res.get("entries"))
+    line = read_line(cwd)
+    lock_sha, lock = RL.read_remote_lock(cwd)
+    return lock_sha, lock, line
+
+
 def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
     """Every entry in the line, oldest first. Each carries `_ref` and `_sha` (the version/sha to compare-and-swap on).
     An entry that cannot be read is listed with state "unreadable" and never shipped."""
@@ -345,21 +384,7 @@ def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
                 if not pauses or not _is_net_error(err):
                     raise BatchError(f"cannot read the release line from Cloudflare ({err[:300]})") from None
                 _sleep(pauses.pop(0))
-        entries: list[dict] = []
-        for item in res.get("entries") or []:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("id") or "")
-            ver = str(item.get("version") or "")
-            e = item.get("entry")
-            if not name:
-                continue
-            if not isinstance(e, dict) or e.get("id") != name or e.get("state") not in STATES:
-                e = {"id": name, "state": "unreadable", "holder": "?", "summary": "(entry cannot be read)"}
-            e["_ref"], e["_sha"] = f"cf:{name}", ver
-            entries.append(e)
-        entries.sort(key=lambda e: e["id"])
-        return entries
+        return _parse_cf_entries(res.get("entries"))
 
     while True:
         try:
@@ -569,9 +594,9 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         parts[kind] = {"branch": branch.removeprefix("origin/").removeprefix("refs/heads/"), "sha": sha}
     if not parts:
         raise BatchError("everything named is already on origin/main: nothing to release.")
-    lock_sha, lock = RL.read_remote_lock(cwd)
+    lock_sha, lock, line = read_state(cwd)
     joined_here = _local_json(cwd, JOINED_FILE)
-    for old in read_line(cwd):
+    for old in line:
         same = [k for k in parts if (old.get(k) or {}).get("branch") == parts[k]["branch"]]
         if not same:
             continue
@@ -646,7 +671,7 @@ def _parts_on_main(cwd: Path, entry: dict) -> bool:
 
 
 def leave(cwd: Path, entry_id: str, *, force: bool = False) -> None:
-    line = read_line(cwd)
+    lock_sha, lock, line = read_state(cwd)
     e = _find(line, entry_id)
     if not e:
         raise BatchError(f"{entry_id} is not in the line (run status)")
@@ -658,7 +683,6 @@ def leave(cwd: Path, entry_id: str, *, force: bool = False) -> None:
         raise BatchError(f"{e['id']} ({e.get('summary')}) {what} and this worktree did not join it. Its session "
                          f"({e.get('holder', '?')}) clears it with leave, or replaces it by joining again. "
                          "--force only when the owner says that change is abandoned.")
-    lock_sha, lock = RL.read_remote_lock(cwd)
     if lock_sha and e.get("state") == "waiting" and (e.get("batch") or {}).get("lockId") == lock.get("lockId"):
         raise BatchError(f"{e['id']} is in the batch being released now by {(e.get('batch') or {}).get('holder', '?')}: "
                          "ask that session to drop it (release_batch.py drop).")
@@ -731,9 +755,8 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     IN_BATCH  it is in the batch being released now
     WAITING   a release is running, or an entry ahead of it leads
     GONE      not in the line and not on main (withdrawn, or joined from another worktree)"""
-    line = read_line(cwd)
+    lock_sha, lock, line = read_state(cwd)
     e = _find(line, entry_id)
-    lock_sha, lock = RL.read_remote_lock(cwd)
     free = not lock_sha or RL.is_expired(lock, RL.TAKEOVER_GRACE_MIN)
     own = _own_batch(cwd, lock_sha, lock)
     if own:
@@ -808,7 +831,13 @@ def _live_verdict(entry_id: str, ver: str, by: str) -> tuple[str, str]:
                        "if it stays like this, run status (the deploy failed or was rolled back).")
 
 
-def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S, known: dict | None = None,
+def _resolve_poll_s(cwd: Path, poll_s: int | None) -> int:
+    if poll_s is not None:
+        return int(poll_s)
+    return CF_POLL_S if RL._release_backend(cwd) == "cloudflare" else POLL_S
+
+
+def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int | None = None, known: dict | None = None,
          quiet: bool = False) -> tuple[str, str]:
     """Poll until the entry is SHIPPED (live), LEFT_OUT, GONE, or it is its TURN; WAITING when wait_s runs out.
     While waiting, the entry is refreshed so leaders know its session is still there. Network errors are waited out
@@ -820,7 +849,8 @@ def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int 
         _inner_retries[0] = prev
 
 
-def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int, known: dict | None, quiet: bool) -> tuple[str, str]:
+def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int | None, known: dict | None, quiet: bool) -> tuple[str, str]:
+    eff_poll = _resolve_poll_s(cwd, poll_s)
     deadline = _mono() + max(0, wait_s)
     free_since: float | None = None
     touched: float | None = None
@@ -847,7 +877,7 @@ def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int, known: dict | N
                 shown = msg
             if _mono() >= deadline:
                 return "WAITING", msg
-            _sleep(max(0, poll_s))
+            _sleep(max(0, eff_poll))
             continue
         free_since = (free_since if free_since is not None else _mono()) if free else None
         if state == "SHIPPED":  # collected by its own session: the entry has done its job
@@ -864,7 +894,7 @@ def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int, known: dict | N
             shown = msg
         if _mono() >= deadline:
             return "WAITING", msg
-        _sleep(max(0, poll_s))
+        _sleep(max(0, eff_poll))
 
 
 # ------------------------------------------------------------------------------------------------- building a batch
@@ -1537,7 +1567,7 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
 
 
 def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str = "", site_branch: str = "",
-         gates: tuple[str, ...] | list[str] = (), version: str = "", wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S,
+         gates: tuple[str, ...] | list[str] = (), version: str = "", wait_s: int = DEFAULT_WAIT_S, poll_s: int | None = None,
          quiet: bool = False, force: bool = False, max_changes: int | None = None) -> tuple[str, str, dict | None]:
     """Join the line, then lead the batch when nothing is releasing, or wait for the batch this change goes out in.
     Returns (state, message, the batch when LEADER). States: LEADER (this worktree holds the lock: run the release
@@ -1576,7 +1606,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
                 print(str(exc).splitlines()[0], flush=True)
             if _mono() >= deadline:
                 return "WAITING", _offline_hint(str(exc).splitlines()[0], str(exc), entry["id"]), None
-            time.sleep(max(0, poll_s))
+            _sleep(max(0, _resolve_poll_s(cwd, poll_s)))
             continue
         if batch["entries"]:
             mine = any(e["id"] == entry["id"] for e in batch["entries"])
@@ -1613,8 +1643,7 @@ def _already_live(cwd: Path, entry: dict, deployed: list) -> str | None:
 
 
 def status(cwd: Path = ISABI_ROOT) -> dict:
-    lock_sha, lock = RL.read_remote_lock(cwd)
-    line = read_line(cwd)
+    lock_sha, lock, line = read_state(cwd)
     deployed = (lock.get("deployed") or []) if lock_sha else []
     already = {}
     for e in line:

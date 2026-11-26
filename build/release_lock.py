@@ -1,4 +1,4 @@
-"""One release at a time: a lock in the isabi repo on GitHub that says who is deploying (owner 2026-11-13).
+"""One release at a time: an exclusive lock (IsabiReleaseRoom Durable Object on Cloudflare; refs/locks/release on bare git remotes) that says who is deploying.
 
 Why
 ---
@@ -8,11 +8,11 @@ main, session B (which fetched main before A pushed) deploys a site without A's 
 
 How it works
 ------------
-The lock is the ref `refs/locks/release` on `origin` (HusseinBdeir/isabi). Its commit holds one file, LOCK.json
-(holder, PC, worktree, version, when it expires, which commits were deployed under it). Taking the lock is a push that
-must create the ref; GitHub refuses it when the ref exists (the update carries the old value, so two sessions racing
-cannot both win). Renewing and releasing are pushes with --force-with-lease on the value this session saw, so a
-session can only change a lock it holds. Nothing in the working tree or the index is touched.
+The primary lock lives in Cloudflare (`IsabiReleaseRoom` SQLite Durable Object on `theo-edge-relay`), with local bare
+git repos continuing to use `refs/locks/release` for offline gate suites. Every write is an atomic compare-and-swap
+on the lock state (holder, PC, worktree, version, when it expires, which commits were deployed under it). Taking the
+lock checks no unexpired holder owns it; renewing and releasing send the last-seen version so a session can only
+change a lock it holds. Nothing in the working tree or the index is touched.
 
 The release order it enforces (deploy_cloudflare.py and release_data_only.py call `require_release_lock` at the
 start and `claim_deploy_or_exit` right before each live upload):
@@ -87,6 +87,7 @@ REMOTE = os.environ.get("ISABI_RELEASE_LOCK_REMOTE", "origin")
 TOKEN_FILE = "isabi-release-lock.json"  # in this worktree's own git dir: one holder per worktree
 DEFAULT_TTL_MIN = 60
 DEFAULT_POLL_S = 12     # slightly faster than release_batch.py POLL_S (20s) so short top-ups can slip in between batches
+CF_DEFAULT_POLL_S = 4   # fast polling (~4s) when backed by Cloudflare IsabiReleaseRoom DO
 TAKEOVER_GRACE_MIN = 10  # an expired lock is taken over only this long after its expiry (clock skew between PCs)
 _mono = time.monotonic   # swapped in tests to exercise polling without real sleeps
 _sleep = time.sleep
@@ -302,20 +303,24 @@ def _current_branch(cwd: Path) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def _parse_cf_lock_payload(res: dict, *, ver_key: str = "version") -> tuple[str, dict]:
+    info = res.get("lock")
+    ver = str(res.get(ver_key) or res.get("version") or "")
+    if info is None and not ver:
+        return "", {}
+    if not isinstance(info, dict) or not info.get("lockId") or not info.get("expiresAt") or not ver:
+        raise LockError(
+            "the release lock on Cloudflare Durable Object cannot be read (malformed LOCK payload); "
+            "refusing to treat it as free."
+        )
+    return ver, info
+
+
 def read_remote_lock(cwd: Path = ISABI_ROOT) -> tuple[str, dict]:
     """(version_or_sha, LOCK.json) of the lock, or ("", {}) when nobody holds it."""
     if _release_backend(cwd) == "cloudflare":
         res = _cf_request("GET", "/lock")
-        info = res.get("lock")
-        ver = str(res.get("version") or "")
-        if info is None:
-            return "", {}
-        if not isinstance(info, dict) or not info.get("lockId") or not info.get("expiresAt") or not ver:
-            raise LockError(
-                "the release lock on Cloudflare Durable Object cannot be read (malformed LOCK payload); "
-                "refusing to treat it as free."
-            )
-        return ver, info
+        return _parse_cf_lock_payload(res)
     r = _git(["fetch", "--no-tags", "--quiet", REMOTE, f"+{LOCK_REF}:{SEEN_REF}"], cwd, check=False, timeout=90)
     if r.returncode != 0:
         err = (r.stderr or r.stdout or "").lower()
@@ -501,13 +506,20 @@ def _same_lock(now_sha: str, seen_sha: str) -> bool:
     return (now_sha or "") == (seen_sha or "")
 
 
-def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, holder: str = "") -> tuple[bool, bool, str]:
+def _resolve_poll_s(cwd: Path, poll_s: float | None, *, fallback: int = DEFAULT_POLL_S) -> float:
+    if poll_s is not None:
+        return max(1.0, float(poll_s))
+    return float(CF_DEFAULT_POLL_S if _release_backend(cwd) == "cloudflare" else fallback)
+
+
+def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int | None = None, holder: str = "") -> tuple[bool, bool, str]:
     """For the push-to-main workflow: take the lock like any session, waiting up to wait_s for a session to finish
     (a session releases right after pushing main, so this is usually a minute or two), then record `sha` as the
     deploy. Returns (deploy?, fail the run?, message). The workflow then renews the lock just before going live and
     releases it at the end, so a session and the workflow can never deploy at the same time."""
     import time  # noqa: PLC0415
 
+    eff_poll = _resolve_poll_s(cwd, poll_s)
     deadline = time.monotonic() + max(0, wait_s)
     last_msg = ""
     while True:
@@ -517,7 +529,7 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
             if _is_transient_lock_net_error(str(exc)) and time.monotonic() < deadline:
                 last_msg = str(exc).splitlines()[0]
                 print(f"waiting for transient release lock error: {last_msg}", flush=True)
-                time.sleep(poll_s)
+                time.sleep(eff_poll)
                 continue
             raise  # a lock that cannot be read is never free: the run fails (main() turns this into fail=True)
         # mine: an earlier attempt of this run wrote the lock and lost the answer (acquire below then renews it).
@@ -530,13 +542,13 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                                      "onto main (or take the lock over by hand), then re-run this workflow.")
             try:
                 acquire(cwd, holder=holder or f"GitHub Actions {sha[:7]}", purpose="emergency deploy from the runner",
-                        version=_worktree_shell_version(cwd), ttl_min=30, takeover=True, quiet=True)
+                        version=_worktree_shell_version(cwd), ttl_min=30, takeover=True, quiet=True, poll_s=eff_poll)
                 got = True
             except LockError as exc:
                 got, last_msg = False, str(exc)
                 if _is_transient_lock_net_error(last_msg) and time.monotonic() < deadline:
                     print(f"waiting for transient release lock acquire error: {last_msg.splitlines()[0]}", flush=True)
-                    time.sleep(poll_s)
+                    time.sleep(eff_poll)
                     continue
                 # A lost race leaves the lock changed. Unchanged (or still free) means this run cannot write the
                 # lock at all (token, permissions, network): fail loudly instead of never deploying again.
@@ -545,11 +557,12 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                 except LockError as exc2:
                     if _is_transient_lock_net_error(str(exc2)) and time.monotonic() < deadline:
                         print(f"waiting for transient release lock check error: {str(exc2).splitlines()[0]}", flush=True)
-                        time.sleep(poll_s)
+                        time.sleep(eff_poll)
                         continue
                     return False, True, f"cannot take the release lock ({exc}; post-check: {exc2})"
                 if _same_lock(cur_lsha, lsha):
-                    return False, True, f"cannot take the release lock (the push of {LOCK_REF} failed): {exc}"
+                    target_name = "Cloudflare" if _release_backend(cwd) == "cloudflare" else LOCK_REF
+                    return False, True, f"cannot take the release lock (the write to {target_name} failed): {exc}"
             if got:
                 try:
                     claim_deploy(cwd, sha, "emergency deploy from the runner")
@@ -571,7 +584,7 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                                   "running. Its holder deploys a commit that contains main (the deploy scripts refuse "
                                   "one behind main), or re-run this workflow once it is released.")
         print(f"waiting for the release lock: {last_msg}", flush=True)
-        time.sleep(poll_s)
+        time.sleep(eff_poll)
 
 
 def describe(info: dict) -> str:
@@ -592,8 +605,8 @@ def default_holder(cwd: Path) -> str:
 
 def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purpose: str = "release",
             ttl_min: int = DEFAULT_TTL_MIN, takeover: bool = False, quiet: bool = False,
-            wait_s: float = 0, poll_s: float = DEFAULT_POLL_S) -> dict:
-    eff_poll = max(1.0, float(poll_s))
+            wait_s: float = 0, poll_s: float | None = None) -> dict:
+    eff_poll = _resolve_poll_s(cwd, poll_s)
     shown_wait = ""
     last_log: float | None = None
     app_repo = _prune_app_repo(cwd)
@@ -758,7 +771,7 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
 
 
 def require_release_lock(cwd: Path = ISABI_ROOT, *, purpose: str, bypass: bool = False,
-                         holder: str = "", wait_s: float = 0, poll_s: float = DEFAULT_POLL_S) -> dict | None:
+                         holder: str = "", wait_s: float = 0, poll_s: float | None = None) -> dict | None:
     """For deploy scripts: hold the lock (taking it when free, renewing it when held here) or stop."""
     if bypass or os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no"):
         print("WARN: release lock bypassed (--no-release-lock / ISABI_RELEASE_LOCK=off): another session's live work can be rolled back.")
@@ -1439,7 +1452,7 @@ def cmd_prune(cwd: Path, *, days: int, dry: bool, as_json: bool, include_abandon
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="One release at a time: the ISABI release lock (refs/locks/release on origin).",
+    ap = argparse.ArgumentParser(description="One release at a time: the ISABI release lock (IsabiReleaseRoom on Cloudflare; refs/locks/release fallback).",
                                  allow_abbrev=False)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("status", help="who holds the lock; live vs both mains")
@@ -1451,7 +1464,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--ttl", type=int, default=DEFAULT_TTL_MIN, help="minutes before it expires (default 60)")
     a.add_argument("--takeover", action="store_true", help="take an expired lock even if it deployed commits not on main")
     a.add_argument("--wait", type=int, default=0, help="seconds to poll until the lock frees (0 = fail immediately; max 3600)")
-    a.add_argument("--poll", type=int, default=DEFAULT_POLL_S, help=f"seconds between lock polls when --wait > 0 (default {DEFAULT_POLL_S})")
+    a.add_argument("--poll", type=int, default=None, help=f"seconds between lock polls when --wait > 0 (default {CF_DEFAULT_POLL_S}s Cloudflare, {DEFAULT_POLL_S}s Git)")
     r = sub.add_parser("renew", help="push the expiry out")
     r.add_argument("--ttl", type=int, default=DEFAULT_TTL_MIN)
     rl = sub.add_parser("release", help="give the lock back after pushing main")
@@ -1485,7 +1498,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "acquire":
         if args.wait < 0 or args.wait > 3600:  # noqa: PLR2004
             ap.error("--wait must be 0 to 3600 seconds")
-        if args.poll < 1 or args.poll > 300:  # noqa: PLR2004
+        if args.poll is not None and (args.poll < 1 or args.poll > 300):  # noqa: PLR2004
             ap.error("--poll must be 1 to 300 seconds")
     if args.cmd == "prune" and args.days < 1:
         ap.error("--days must be at least 1")

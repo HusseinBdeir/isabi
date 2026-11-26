@@ -82,6 +82,7 @@ def build_env() -> dict:
     extra_dirs = (
         r"C:\Users\hbdei\.local\node",
         r"C:\Users\hbdei\.local\python312",
+        r"C:\Users\hbdei\MinGit\mingw64\bin",
         r"C:\Users\hbdei\MinGit\cmd",
     )
     existing = [d for d in extra_dirs if os.path.isdir(d)]
@@ -1828,7 +1829,7 @@ def _check_checkout_not_behind_origin_impl(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=5,
+                timeout=20,
                 check=False,
             )
             return (r_ref.stdout or "").strip() or ref
@@ -2127,7 +2128,11 @@ def collect_unshipped_version_claims(
                 claims.append({
                     "source": "release_lock",
                     "repo": "isabi",
-                    "ref": f"refs/locks/release ({lock_info.get('holder') or 'peer'})",
+                    "ref": (
+                        f"IsabiReleaseRoom ({lock_info.get('holder') or 'peer'})"
+                        if release_lock._release_backend(repo_dir) == "cloudflare"
+                        else f"refs/locks/release ({lock_info.get('holder') or 'peer'})"
+                    ),
                     "sha": lock_sha[:10],
                     "version_tuple": lock_ver,
                     "version": format_shell_version(lock_ver),
@@ -2401,11 +2406,17 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         ),
         "Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""),
     ]
+    backend_override = os.environ.get("ISABI_RELEASE_BACKEND", "").strip().lower()
+    lock_target = (
+        "refs/locks/release on origin"
+        if backend_override == "git"
+        else "IsabiReleaseRoom on Cloudflare"
+    )
     steps.insert(
         2,
         "Release lock -> BYPASS (--no-release-lock)"
         if args.no_release_lock
-        else "Hold the release lock (refs/locks/release on origin; taken when free, refused while another session holds it)",
+        else f"Hold the release lock ({lock_target}; taken when free, refused while another session holds it)",
     )
     if mode == "full-deploy":
         steps.append("Ensure D1 (`isabi-ledger`), R2 (`isabi-vault`), wrangler.toml bindings, and Pages project (`isabi-systems`)")
