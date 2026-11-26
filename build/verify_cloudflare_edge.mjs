@@ -3750,7 +3750,11 @@ finally:
       email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN'
     }, { 'CF-Connecting-IP': '198.51.100.205' });
 
-    // Cold-reload HttpOnly cookie resume on `/app/` (zero localStorage JWT, zero sessionStorage sw_resume)
+    // Cold-open on `/app/` stays locked on #authGate even with isabi_edge_sess; one-shot SW-resume HttpOnly cookie resumes seamlessly
+    // Note: if verify_cloudflare_edge runs in a batch `gates` step BEFORE sync_app.py copies the new isabi-app bundle into app/,
+    // app/js/app.js does not yet contain `hydrateBootResumedSeat`, so only enforce e34ColdLocked once synced.
+    const e34AppJsResp = await httpReq('GET', '/app/js/app.js');
+    const e34ColdGateActive = Boolean(e34AppJsResp && e34AppJsResp.status === 200 && String(e34AppJsResp.text || '').includes('hydrateBootResumedSeat'));
     const remoteScript35 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
       source: `
         window.__ISABI_SIMULATE_REMOTE_HOST = true;
@@ -3758,7 +3762,9 @@ finally:
         window.ISABI_HAS_EDGE_API = true;
         try {
           localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
-          sessionStorage.removeItem('isabi_mfg_sw_resume');
+          if (!window.name.includes('e34_sw_once')) {
+            sessionStorage.removeItem('isabi_mfg_sw_resume');
+          }
         } catch (_) {}
       `
     });
@@ -3771,6 +3777,18 @@ finally:
       httpOnly: true
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/` });
+    await sleep(1400);
+    const e34ColdLocked = await evalJs(`({
+      authed: Boolean(window.MFG_FACE_TEST && window.MFG_FACE_TEST.state().authed),
+      gateHidden: Boolean(document.getElementById('authGate')?.hidden),
+      recordsReady: Boolean(window.MFG_SEED && window.MFG_SEED._recordsReady)
+    })`).catch(() => ({ authed: true, gateHidden: true, recordsReady: true }));
+    await evalJs(`(() => {
+      window.name = 'e34_sw_once';
+      sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: 'husseinbdeir@bhfirms.com', ts: Date.now() }));
+      return true;
+    })()`);
+    await sendCdp('Page.reload', { ignoreCache: true });
     let e34ReloadResume = { authed: false, gateHidden: false, recordsReady: false, lsTok: '' };
     for (let w = 0; w < 50; w++) {
       e34ReloadResume = await evalJs(`({
@@ -3782,6 +3800,7 @@ finally:
       if (e34ReloadResume.authed && e34ReloadResume.gateHidden && e34ReloadResume.recordsReady) break;
       await sleep(200);
     }
+    await evalJs(`window.name = ''`).catch(() => {});
     if (remoteScript35 && remoteScript35.identifier) {
       await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript35.identifier }).catch(() => {});
     }
@@ -3822,11 +3841,12 @@ finally:
       e34ReloadResume.authed &&
       e34ReloadResume.gateHidden &&
       e34ReloadResume.recordsReady &&
-      e34ReloadResume.lsTok === ''
+      e34ReloadResume.lsTok === '' &&
+      (!e34ColdGateActive || (!e34ColdLocked.authed && !e34ColdLocked.gateHidden && !e34ColdLocked.recordsReady))
     ) {
       pass(
         'edge-35-redteam-pbkdf2-seam-cas-race-dos-and-cookie-resume',
-        'Python Base64URL + legacy-hex PBKDF2 login=200 + Promise.all CAS race=0 loser leak + 4-IP spray=0 legit DoS + callerLockKey D1 429 + cold reload HttpOnly cookie resume OK'
+        'Python Base64URL + legacy-hex PBKDF2 login=200 + Promise.all CAS race=0 loser leak + 4-IP spray=0 legit DoS + callerLockKey D1 429 + cold /app/ fail-closed + SW-resume HttpOnly cookie OK'
       );
     } else {
       fail('edge-35-redteam-pbkdf2-seam-cas-race-dos-and-cookie-resume', JSON.stringify({
@@ -3834,6 +3854,8 @@ finally:
         casRace: { aStatus: raceResA.status, bStatus: raceResB.status, aWon, bWon, aConflict, bConflict, hasRowA, hasRowB },
         legitAfterSpray: legitOwnerAfterSpray.status,
         ovLock: [ovFifthStatus, ovSixthValidBlocked.status],
+        coldGateActive: e34ColdGateActive,
+        coldLocked: e34ColdLocked,
         reloadResume: e34ReloadResume
       }));
     }
@@ -3954,7 +3976,10 @@ finally:
           localStorage.removeItem('isabi_mfg_users_v2');
           localStorage.removeItem('isabi_mfg_current_user_v2');
           localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
-          sessionStorage.removeItem('isabi_mfg_sw_resume');
+          if (window.name !== 'e36_sw_once') {
+            window.name = 'e36_sw_once';
+            sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: 'edge36clerk@bhfirms.com', ts: Date.now() }));
+          }
         } catch (_) {}
       `
     });
@@ -4038,6 +4063,7 @@ finally:
         notesAfterWtc: nAfterWtcSwitch?.value || ''
       };
     })()`);
+    await evalJs(`window.name = ''`).catch(() => {});
     if (remoteScript36 && remoteScript36.identifier) {
       await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript36.identifier }).catch(() => {});
     }
@@ -4239,9 +4265,11 @@ finally:
       e38WwwApi.status === 200 &&
       e38WwwAppApi.status === 200 &&
       e38PagesReset.status === 200 &&
-      e38PagesReset.text.includes('https://isabisystems.com/?reset=') &&
+      e38PagesReset.text.includes("location.replace('https://isabisystems.com/?'") &&
+      e38PagesReset.text.includes("'reset='") &&
       e38WwwAppReset.status === 200 &&
-      e38WwwAppReset.text.includes('https://isabisystems.com/app/?reset=') &&
+      e38WwwAppReset.text.includes("location.replace('https://isabisystems.com/app/?'") &&
+      e38WwwAppReset.text.includes("'reset='") &&
       e38Ipv6Local.status === 301 &&
       !String(e38Ipv6Local.headers['location'] || '').startsWith('https://isabisystems.com') &&
       e38PagesTrailingDot.status === 301 &&
@@ -4748,7 +4776,10 @@ finally:
         window.ISABI_HAS_EDGE_API = true;
         try {
           localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
-          sessionStorage.removeItem('isabi_mfg_sw_resume');
+          if (window.name !== 'e41_sw_once') {
+            window.name = 'e41_sw_once';
+            sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: 'e41seat@bhfirms.com', ts: Date.now() }));
+          }
         } catch (_) {}
         const __e41OrigFetch = window.fetch.bind(window);
         window.__e41MidRecordsHit = false;
@@ -4824,6 +4855,7 @@ finally:
         }
       }
     } finally {
+      await evalJs(`window.name = ''`).catch(() => {});
       if (remoteScript41 && remoteScript41.identifier) {
         await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript41.identifier }).catch(() => {});
       }
