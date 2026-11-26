@@ -215,9 +215,13 @@
 
   var SETTLE_STATE = {
     open: false,
+    accountKey: '',
     truck: '',
-    ym: '',
-    basisMode: 'recorded'
+    unitFilter: 'ALL',
+    ym: 'ALL',
+    basisMode: 'recorded',
+    shareLang: '',
+    _lastUserKey: ''
   };
 
   function nextDayAfterIso(isoStr) {
@@ -2246,6 +2250,18 @@
       ? ''
       : `<div><div class="fpnl-mini-k">Plant Split</div><div class="fpnl-mini-v">${fmtInt(m.wtcTrips)} WTC · ${fmtInt(m.bbcTrips)} BBC</div></div>`;
 
+    var settleLbl = 'Settlement Sheet';
+    var settleTip = 'Open printable monthly hauler settlement sheet (defaults to Booked Revenue)';
+    var ownerSubHtml = esc(m.owner);
+    if (m.isPartnerOrHauler && perm.canSettle) {
+      var dsRef = getActiveDataset();
+      var pAccs = buildPartnerAccounts(dsRef);
+      var pAcc = pAccs.truckToAccount[m.code];
+      if (pAcc && pAcc.isMultiTruck) {
+        ownerSubHtml = `${esc(m.owner)} <span class="fpnl-sub-count">(<span data-no-i18n="1">${fmtInt(pAcc.trucks.length)}</span> <span>trucks</span>)</span>`;
+        settleTip = 'Open full owner account settlement sheet across all trucks (defaults to Booked Revenue)';
+      }
+    }
     return `
       <article class="fpnl-card${isFocused ? ' is-focused' : ''}" style="border-top-color:${esc(m.colorVar)}">
         <div class="fpnl-card-head">
@@ -2304,8 +2320,8 @@
           ${unitPlantCol}
         </div>
         ${(m.isPartnerOrHauler && perm.canSettle) ? `<div class="fpnl-card-settle-row">
-          <span class="fpnl-sub-note">${esc(m.owner)}</span>
-          <button type="button" class="btn btn-ghost-bar fpnl-settle-btn" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="Open printable monthly hauler settlement sheet (defaults to Booked Revenue)"><span>Settlement Sheet</span></button>
+          <span class="fpnl-sub-note">${ownerSubHtml}</span>
+          <button type="button" class="btn btn-ghost-bar fpnl-settle-btn" data-fpnl-settle-truck="${esc(m.code)}" data-ui-tip="${esc(settleTip)}"><span>${settleLbl}</span></button>
         </div>` : ''}
       </article>`;
   }
@@ -3321,27 +3337,30 @@
       });
     } else if (kind === 'settlement') {
       if (!p.canSettle) return;
-      var sData = buildPartnerSettlementData(SETTLE_STATE.truck, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
+      var sTarget = SETTLE_STATE.accountKey || SETTLE_STATE.truck;
+      var sData = buildPartnerSettlementData(sTarget, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
       if (!sData) return;
-      filename = `Partner_Settlement_${sData.truck.code}_${sData.ym === 'ALL' ? 'Scope' : sData.ym}.csv`;
-      lines.push(['Section', 'Date_or_Stream', 'Company', 'Counterparty_or_Vendor', 'Reference_or_Site', 'Detail', 'Qty_or_Hours', 'Amount_USD'].join(','));
+      var fnBase = sData.supplierName ? sData.supplierName.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') : sData.truck.code;
+      var fnUnit = (sData.isMultiTruck && sData.unitFilter && sData.unitFilter !== 'ALL') ? `_${sData.unitFilter}` : '';
+      filename = `Partner_Settlement_${fnBase || sData.truck.code}${fnUnit}_${sData.ym === 'ALL' ? 'Scope' : sData.ym}.csv`;
+      lines.push(['Section', 'Date_or_Stream', 'Company', 'Truck', 'Counterparty_or_Vendor', 'Reference_or_Site', 'Detail', 'Qty_or_Hours', 'Amount_USD'].join(','));
       sData.haulRows.forEach(function (h) {
-        lines.push(['Haulage Credit', h.stream, h.company, h.counterparty, h.site, `${h.material} (${h.trips} trips)`, h.qtyM3.toFixed(2), h.creditUsd.toFixed(2)].map(csvCell).join(','));
+        lines.push(['Haulage Credit', h.stream, h.company, h.truck || sData.truck.displayCode, h.counterparty, h.site, `${h.material} (${h.trips} trips)`, h.qtyM3.toFixed(2), h.creditUsd.toFixed(2)].map(csvCell).join(','));
       });
       sData.dieselRows.forEach(function (d) {
-        lines.push(['Metered Diesel Out', fmtDateDisplay(d.date), d.company, 'Plant Diesel Tank', d.ticketNo, d.unitRate > 0 ? `@ ${d.unitRate.toFixed(3)}/L` : '-', d.liters.toFixed(1), (-d.totalUsd).toFixed(2)].map(csvCell).join(','));
+        lines.push(['Metered Diesel Out', fmtDateDisplay(d.date), d.company, d.truck || sData.truck.displayCode, 'Plant Diesel Tank', d.ticketNo, d.unitRate > 0 ? `@ ${d.unitRate.toFixed(3)}/L` : '-', d.liters.toFixed(1), (-d.totalUsd).toFixed(2)].map(csvCell).join(','));
       });
       sData.workshopRows.forEach(function (w) {
-        lines.push(['Workshop & Permits', fmtDateDisplay(w.date), w.company, w.supplier, w.bill_number === '—' ? '-' : w.bill_number, `${w.bucket}: ${w.subcategory}`, '', (-w.total_usd).toFixed(2)].map(csvCell).join(','));
+        lines.push(['Workshop & Permits', fmtDateDisplay(w.date), w.company, w.truck || sData.truck.displayCode, w.supplier, w.bill_number === '—' ? '-' : w.bill_number, `${w.bucket}: ${w.subcategory}`, '', (-w.total_usd).toFixed(2)].map(csvCell).join(','));
       });
       sData.driverRows.forEach(function (dv) {
-        lines.push(['Driver Pay & OT', fmtDateDisplay(dv.date), dv.company, dv.supplier, dv.bill_number === '—' ? '-' : dv.bill_number, dv.subcategory, dv.hours ? dv.hours.toFixed(1) : '', (-dv.total_usd).toFixed(2)].map(csvCell).join(','));
+        lines.push(['Driver Pay & OT', fmtDateDisplay(dv.date), dv.company, dv.truck || sData.truck.displayCode, dv.supplier, dv.bill_number === '—' ? '-' : dv.bill_number, dv.subcategory, dv.hours ? dv.hours.toFixed(1) : '', (-dv.total_usd).toFixed(2)].map(csvCell).join(','));
       });
       (sData.settlementRows || []).forEach(function (sp) {
-        lines.push(['Transportation Settlement Paid', fmtDateDisplay(sp.date), sp.company, sp.supplier, sp.reference === '-' ? '-' : sp.reference, sp.detail || sp.method, '', (-sp.paidUsd).toFixed(2)].map(csvCell).join(','));
+        lines.push(['Transportation Settlement Paid', fmtDateDisplay(sp.date), sp.company, sp.truckLabel || sData.accountLabel, sp.supplier, sp.reference === '-' ? '-' : sp.reference, sp.detail || sp.method, '', (-sp.paidUsd).toFixed(2)].map(csvCell).join(','));
       });
-      lines.push(['NET OPERATING PAYABLE', sData.periodLabel, sData.scope.companyLabel, sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Revenue' : 'Includes Internal Unbundled Credit', '', sData.netPayable.toFixed(2)].map(csvCell).join(','));
-      lines.push(['UNPAID BALANCE REMAINING', sData.periodLabel, sData.scope.companyLabel, sData.supplierName || sData.truck.owner, sData.truck.code, sData.basisMode === 'recorded' ? 'Booked Contract Remainder' : 'Management Valuation Remainder', '', sData.remainingPayable.toFixed(2)].map(csvCell).join(','));
+      lines.push(['NET OPERATING PAYABLE', sData.periodLabel, sData.scope.companyLabel, sData.unitFilter === 'ALL' ? `All (${sData.accountTrucks.length})` : sData.unitFilter, sData.ownerLabel, sData.accountKey, sData.basisMode === 'recorded' ? 'Booked Revenue' : 'Includes Internal Unbundled Credit', '', sData.netPayable.toFixed(2)].map(csvCell).join(','));
+      lines.push(['UNPAID BALANCE REMAINING', sData.periodLabel, sData.scope.companyLabel, sData.unitFilter === 'ALL' ? `All (${sData.accountTrucks.length})` : sData.unitFilter, sData.supplierName || sData.ownerLabel, sData.accountKey, sData.basisMode === 'recorded' ? 'Booked Contract Remainder' : 'Management Valuation Remainder', '', sData.remainingPayable.toFixed(2)].map(csvCell).join(','));
     } else if (kind === 'zero') {
       filename = 'Fleet_Unpriced_Loads.csv';
       var canSeeZeroRev = Boolean(p.canBooks || p.canProfit);
@@ -3452,29 +3471,137 @@
     return String(s == null ? '' : s).replace(/—/g, '-').replace(/→/g, 'to').replace(/THEO/gi, 'ISABI');
   }
 
-  function buildPartnerSettlementData(truckCode, ymKey, basisMode) {
+  function buildPartnerAccounts(ds) {
+    var partnerList = ((ds && ds.allTruckList) || []).filter(function (x) { return Boolean(x && x.isPartnerOrHauler); });
+    var supRows = scopedTableRows('suppliers', true);
+    var canonicalSupByNorm = {};
+    for (var i = 0; i < supRows.length; i++) {
+      var sr = supRows[i];
+      if (!sr || sr.voided || !sr.name) continue;
+      var sk = normPartyKey(sr.name);
+      if (sk && !canonicalSupByNorm[sk]) canonicalSupByNorm[sk] = String(sr.name).trim();
+    }
+    var byKey = {};
+    var truckToAccount = {};
+    var list = [];
+    for (var ti = 0; ti < partnerList.length; ti++) {
+      var t = partnerList[ti];
+      var rawSup = String(t.supplierName || (!isGenericOwnerPlaceholder(t.owner) ? t.owner : '') || '').trim();
+      var supNorm = rawSup ? normPartyKey(rawSup) : '';
+      var accKey = supNorm ? `owner:${supNorm}` : `unit:${t.code}`;
+      if (!byKey[accKey]) {
+        var resolvedSup = supNorm ? (canonicalSupByNorm[supNorm] || rawSup) : '';
+        byKey[accKey] = {
+          accountKey: accKey,
+          supNorm: supNorm,
+          supplierName: resolvedSup,
+          ownerLabel: resolvedSup || (!isGenericOwnerPlaceholder(t.owner) ? String(t.owner).trim() : 'Partner Truck'),
+          trucks: [],
+          codeSet: {},
+          totalTrips: 0,
+          totalQtyM3: 0,
+          isMultiTruck: false
+        };
+        list.push(byKey[accKey]);
+      }
+      var acc = byKey[accKey];
+      acc.trucks.push(t);
+      acc.codeSet[t.code] = true;
+      acc.totalTrips += Number(t.totalTrips || 0);
+      acc.totalQtyM3 += Number(t.totalQtyM3 || 0);
+    }
+    list.forEach(function (acc) {
+      acc.trucks.sort(function (a, b) {
+        return (Number(b.totalTrips || 0) - Number(a.totalTrips || 0))
+          || (Number(b.totalQtyM3 || 0) - Number(a.totalQtyM3 || 0))
+          || String(a.code || '').localeCompare(String(b.code || ''));
+      });
+      acc.isMultiTruck = acc.trucks.length > 1;
+      acc.trucks.forEach(function (t) { truckToAccount[t.code] = acc; });
+    });
+    list.sort(function (a, b) {
+      return (b.totalTrips - a.totalTrips)
+        || (b.totalQtyM3 - a.totalQtyM3)
+        || String(a.accountKey).localeCompare(String(b.accountKey));
+    });
+    return { list: list, byKey: byKey, truckToAccount: truckToAccount };
+  }
+
+  function resolvePartnerAccount(ds, targetKey) {
+    var accounts = buildPartnerAccounts(ds);
+    var raw = String(targetKey || '').trim();
+    if (!raw) return { acc: null, accounts: accounts, explicitCode: '' };
+    if (raw.indexOf('owner:') === 0) {
+      var direct = accounts.byKey[raw] || accounts.byKey[`owner:${normPartyKey(raw.slice(6))}`] || null;
+      return { acc: direct, accounts: accounts, explicitCode: '' };
+    }
+    if (raw.indexOf('unit:') === 0) {
+      var uCode = normTruckCode(raw.slice(5));
+      var uAcc = accounts.byKey[raw] || (uCode ? accounts.truckToAccount[uCode] : null) || null;
+      return { acc: uAcc, accounts: accounts, explicitCode: uCode };
+    }
+    var code = normTruckCode(raw);
+    var tAcc = code ? (accounts.truckToAccount[code] || null) : null;
+    if (!tAcc && raw) {
+      var bySup = accounts.byKey[`owner:${normPartyKey(raw)}`];
+      if (bySup) return { acc: bySup, accounts: accounts, explicitCode: '' };
+    }
+    return { acc: tAcc, accounts: accounts, explicitCode: code };
+  }
+
+  function buildPartnerSettlementData(targetKey, ymKey, basisMode, opts) {
     var perm = getSeatPermissions();
     if (!perm.canSettle) return null;
     var ds = getActiveDataset();
-    var code = normTruckCode(truckCode);
-    var tObj = code ? ds.trucks[code] : null;
-    if (!tObj || !tObj.isPartnerOrHauler) return null;
+    var resolved = resolvePartnerAccount(ds, targetKey);
+    var acc = resolved.acc;
+    if (!acc || !acc.trucks.length) return null;
+    var unitFilter = 'ALL';
+    if (!(opts && opts.forceFullOwner)) {
+      var reqUnit = (opts && opts.unitFilter)
+        ? String(opts.unitFilter)
+        : (SETTLE_STATE.accountKey === acc.accountKey ? String(SETTLE_STATE.unitFilter || 'ALL') : 'ALL');
+      if (reqUnit && reqUnit !== 'ALL') {
+        var normU = normTruckCode(reqUnit);
+        if (normU && acc.codeSet[normU]) unitFilter = normU;
+      }
+    }
+    var activeTrucks = unitFilter === 'ALL'
+      ? acc.trucks.slice()
+      : acc.trucks.filter(function (x) { return x.code === unitFilter; });
+    if (!activeTrucks.length) activeTrucks = acc.trucks.slice();
+    var activeCodeSet = {};
+    activeTrucks.forEach(function (x) { activeCodeSet[x.code] = true; });
+    var ownerCodeSet = acc.codeSet;
+    var tObj = (unitFilter !== 'ALL' && ds.trucks[unitFilter])
+      ? ds.trucks[unitFilter]
+      : ((resolved.explicitCode && ds.trucks[resolved.explicitCode] && activeCodeSet[resolved.explicitCode]) ? ds.trucks[resolved.explicitCode] : activeTrucks[0]);
+    var code = tObj.code;
+    var showTruckCol = Boolean(acc.isMultiTruck);
+
     var mode = (basisMode === 'strict' || basisMode === 'full') ? basisMode : 'recorded';
     var ym = ymKey || 'ALL';
     var ent = window.MFG_ENTERPRISE;
     var st = (ent && ent.state) || window.STATE || {};
 
-    var availableMonths = Object.keys(tObj.monthsMap || {}).filter(function (k) {
-      var m = tObj.monthsMap[k];
-      return k && k !== 'Unspecified' && m && (m.trips > 0 || m.dieselCost > 0 || m.maintCost > 0 || m.otPay > 0 || m.basePay > 0);
-    }).sort().reverse();
+    var availMap = {};
+    acc.trucks.forEach(function (ut) {
+      Object.keys(ut.monthsMap || {}).forEach(function (k) {
+        var m = ut.monthsMap[k];
+        if (k && k !== 'Unspecified' && m && (m.trips > 0 || m.dieselCost > 0 || m.maintCost > 0 || m.otPay > 0 || m.basePay > 0)) {
+          availMap[k] = true;
+        }
+      });
+    });
+    var availableMonths = Object.keys(availMap).sort().reverse();
 
     var haulMap = {};
     var sales = scopedTableRows('sales_tickets', false);
     for (var si = 0; si < sales.length; si++) {
       var s = sales[si];
       if (!s || s.voided) continue;
-      if (normTruckCode(s.truck || s.truck_code || s.equipment || s.transporter) !== code) continue;
+      var sTrk = normTruckCode(s.truck || s.truck_code || s.equipment || s.transporter);
+      if (!sTrk || !activeCodeSet[sTrk]) continue;
       var sSign = (ent && typeof ent.ticketSign === 'function') ? ent.ticketSign(s) : 1;
       if (sSign === 0) continue;
       var dtStr = recDate(s, st);
@@ -3486,11 +3613,12 @@
         addOn = mode === 'full' ? Math.max(qty * 5.0, 75.0) : (qty > 0 ? qty * 4.0 : 75.0);
       }
       var comp = String(s.company || 'WTC');
+      var trkDisp = (ds.trucks[sTrk] && ds.trucks[sTrk].displayCode) || sTrk;
       var cp = String(s.customer || 'Customer');
       var site = String(s.site || s.work_site || 'Site');
       var mat = String(s.product || 'Concrete');
-      var hk = [comp, 'Sales Delivery', cp, site, mat].join('||');
-      if (!haulMap[hk]) haulMap[hk] = { company: comp, stream: 'Sales Delivery', counterparty: cp, site: site, material: mat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
+      var hk = showTruckCol ? [comp, 'Sales Delivery', trkDisp, cp, site, mat].join('||') : [comp, 'Sales Delivery', cp, site, mat].join('||');
+      if (!haulMap[hk]) haulMap[hk] = { company: comp, stream: 'Sales Delivery', truck: trkDisp, counterparty: cp, site: site, material: mat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
       haulMap[hk].trips += 1;
       haulMap[hk].qtyM3 += qty;
       haulMap[hk].bookedUsd += deliv;
@@ -3503,7 +3631,8 @@
     for (var ri = 0; ri < raw.length; ri++) {
       var r = raw[ri];
       if (!r || r.voided) continue;
-      if (normTruckCode(r.truck || r.truck_code || r.equipment || r.transporter) !== code) continue;
+      var rTrk = normTruckCode(r.truck || r.truck_code || r.equipment || r.transporter);
+      if (!rTrk || !activeCodeSet[rTrk]) continue;
       var rSign = (ent && typeof ent.rawSign === 'function') ? ent.rawSign(r) : 1;
       if (rSign === 0) continue;
       var rDt = recDate(r, st);
@@ -3511,6 +3640,7 @@
       var rQty = Number(r.qty != null ? r.qty : (r.qty_m3 || 0)) * rSign;
       var rDeliv = Number(r.trans_cost != null ? r.trans_cost : (r.transport_usd != null ? r.transport_usd : (r.total_delivery_usd || 0))) * rSign;
       var rComp = String(r.company || 'WTC');
+      var rTrkDisp = (ds.trucks[rTrk] && ds.trucks[rTrk].displayCode) || rTrk;
       var rParty = String(r.site_owner || r.supplier || 'Material Source');
       var rSite = String(r.site || r.work_site || 'Plant');
       var rMat = String(r.product || r.material || 'Aggregate');
@@ -3519,8 +3649,8 @@
         var isIntQ = /al\s*jawad|wtc/i.test(`${rSite} ${rParty}`);
         rAddOn = mode === 'full' ? 60.0 : (isIntQ ? 0 : 60.0);
       }
-      var rhk = [rComp, 'Raw Material Inbound', rParty, rSite, rMat].join('||');
-      if (!haulMap[rhk]) haulMap[rhk] = { company: rComp, stream: 'Raw Material Inbound', counterparty: rParty, site: rSite, material: rMat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
+      var rhk = showTruckCol ? [rComp, 'Raw Material Inbound', rTrkDisp, rParty, rSite, rMat].join('||') : [rComp, 'Raw Material Inbound', rParty, rSite, rMat].join('||');
+      if (!haulMap[rhk]) haulMap[rhk] = { company: rComp, stream: 'Raw Material Inbound', truck: rTrkDisp, counterparty: rParty, site: rSite, material: rMat, trips: 0, qtyM3: 0, bookedUsd: 0, addonUsd: 0, creditUsd: 0 };
       haulMap[rhk].trips += 1;
       haulMap[rhk].qtyM3 += rQty;
       haulMap[rhk].bookedUsd += rDeliv;
@@ -3532,13 +3662,13 @@
       .sort(function (a, b) { return (b.creditUsd - a.creditUsd) || (b.trips - a.trips); });
 
     var dieselList = (ds.dieselRows || []).filter(function (d) {
-      return d.truck === code && (ym === 'ALL' || String(d.date || '').slice(0, 7) === ym);
+      return Boolean(activeCodeSet[d.truck]) && (ym === 'ALL' || String(d.date || '').slice(0, 7) === ym);
     });
     var workshopList = (ds.costRows || []).filter(function (c) {
-      return c.truck === code && c.bucket !== 'Diesel Fuel' && !c.isOtRow && (ym === 'ALL' || String(c.date || '').slice(0, 7) === ym);
+      return Boolean(activeCodeSet[c.truck]) && c.bucket !== 'Diesel Fuel' && !c.isOtRow && (ym === 'ALL' || String(c.date || '').slice(0, 7) === ym);
     });
     var driverList = mapDriverOtLedgerRows(ds, true, false).filter(function (dv) {
-      return dv.truck === code && (ym === 'ALL' || String(dv.date || '').slice(0, 7) === ym);
+      return Boolean(activeCodeSet[dv.truck]) && (ym === 'ALL' || String(dv.date || '').slice(0, 7) === ym);
     }).sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
 
     var roundCents = function (n) { return Math.round(((Number(n || 0)) + Number.EPSILON) * 100) / 100; };
@@ -3582,9 +3712,9 @@
     var netPayable = roundCents(grossCredits - dieselTotal - workshopTotal - driverTotal);
     var bookedOperatingNet = roundCents(roundCents(bookedTotal) - dieselTotal - workshopTotal - driverTotal);
     var scope = getTopbarScopeSummary();
-    var partnerList = (ds.allTruckList || []).filter(function (x) { return x.isPartnerOrHauler; });
-    var supplierName = String(tObj.supplierName || (!isGenericOwnerPlaceholder(tObj.owner) ? tObj.owner : '') || '').trim();
-    var supNorm = normPartyKey(supplierName);
+    var partnerList = resolved.accounts.list;
+    var supplierName = acc.supplierName || '';
+    var supNorm = acc.supNorm || '';
 
     var bookedByCo = {};
     [bookedCreditsByCo, dieselByCo, workshopByCo, driverByCo].forEach(function (mp) {
@@ -3592,6 +3722,17 @@
         if (!Object.prototype.hasOwnProperty.call(bookedByCo, co)) {
           bookedByCo[co] = roundCents((bookedCreditsByCo[co] || 0) - (dieselByCo[co] || 0) - (workshopByCo[co] || 0) - (driverByCo[co] || 0));
         }
+      });
+    });
+
+    var ownerHasActivityByCo = {};
+    acc.trucks.forEach(function (ut) {
+      Object.keys(ut.monthsMap || {}).forEach(function (mk) {
+        var mm = ut.monthsMap[mk];
+        if (!mm || !mm.tripsByCo) return;
+        Object.keys(mm.tripsByCo).forEach(function (coKey) {
+          if (Number(mm.tripsByCo[coKey] || 0) > 0) ownerHasActivityByCo[coKey] = true;
+        });
       });
     });
 
@@ -3614,9 +3755,14 @@
       var spRef = String(sp.reference || '').trim();
       var bracketMatch = spNotes.match(/\[Truck:\s*([^\]]+)\]/i);
       var psMatch = spNotes.match(/Partner settlement\s*[-\u00b7]\s*(.+?)\s*[-\u00b7]\s*(\d{4}-\d{2}|ALL)(?=\s|$|\[)/i);
-      var tagTruck = normTruckCode((bracketMatch && bracketMatch[1]) || (psMatch && psMatch[1]) || '');
+      var tagTruckRaw = (bracketMatch && bracketMatch[1]) ? normTruckCode(bracketMatch[1]) : '';
+      var psFirstToken = (psMatch && psMatch[1]) ? normTruckCode(psMatch[1]) : '';
+      var tagTruck = tagTruckRaw || (psFirstToken && ownerCodeSet[psFirstToken] ? psFirstToken : '');
       var tagYm = (psMatch && psMatch[2]) ? String(psMatch[2]).trim() : '';
-      if (tagTruck && tagTruck !== code) continue;
+      if (tagTruck) {
+        if (!ownerCodeSet[tagTruck]) continue;
+        if (unitFilter !== 'ALL' && tagTruck !== unitFilter) continue;
+      }
 
       var spSupNorm = normPartyKey(sp.supplier || '');
       if (tagTruck) {
@@ -3636,7 +3782,7 @@
           spLeg = (ent && typeof ent.inferSettlementPayableLeg === 'function')
             ? String(ent.inferSettlementPayableLeg(sp.supplier, spMth, spCoKey) || '').trim().toLowerCase()
             : '';
-        } else if ((legInfo && legInfo.hasT) || ((bookedCreditsByCo[spCoKey] || 0) > 0.005)) {
+        } else if ((legInfo && legInfo.hasT) || ownerHasActivityByCo[spCoKey] || ((bookedCreditsByCo[spCoKey] || 0) > 0.005)) {
           spLeg = 'transportation';
         }
         if (spLeg !== 'transportation' && spLeg !== 'transport') continue;
@@ -3666,30 +3812,63 @@
       var spCo = String(sp.company || 'WTC');
       var weight = 1;
       var isAllocated = false;
-      if (!tagTruck && supNorm && spYm && /^\d{4}-\d{2}$/.test(spYm)) {
-        var sibs = partnerList.filter(function (x) {
-          if (normPartyKey(x.supplierName || (!isGenericOwnerPlaceholder(x.owner) ? x.owner : '')) !== supNorm) return false;
-          var xm = x.monthsMap && x.monthsMap[spYm];
-          return Boolean(xm && xm.tripsByCo && Number(xm.tripsByCo[spCo] || 0) > 0);
-        });
-        if (sibs.length > 1) {
-          var myInSib = sibs.some(function (x) { return x.code === code; });
-          if (!myInSib) continue;
-          var totPosRev = 0;
-          var myRev = 0;
-          var totSibTrips = 0;
-          var myTrips = 0;
-          sibs.forEach(function (x) {
-            var xm = x.monthsMap[spYm];
-            var rv = Math.max(0, Number((xm.revByCo && xm.revByCo[spCo]) || 0));
-            var tr = Number((xm.tripsByCo && xm.tripsByCo[spCo]) || 0);
-            totPosRev += rv;
-            totSibTrips += tr;
-            if (x.code === code) { myRev = rv; myTrips = tr; }
+      if (unitFilter !== 'ALL' && acc.isMultiTruck && !tagTruck && supNorm) {
+        var sibs = (spYm && /^\d{4}-\d{2}$/.test(spYm))
+          ? acc.trucks.filter(function (x) {
+              var xm = x.monthsMap && x.monthsMap[spYm];
+              return Boolean(xm && xm.tripsByCo && Number(xm.tripsByCo[spCo] || 0) > 0);
+            })
+          : [];
+        if (sibs.length > 0) {
+          if (!sibs.some(function (x) { return x.code === code; })) continue;
+          if (sibs.length > 1) {
+            var totPosRev = 0;
+            var myRev = 0;
+            var totSibTrips = 0;
+            var myTrips = 0;
+            sibs.forEach(function (x) {
+              var xm = x.monthsMap[spYm];
+              var rv = Math.max(0, Number((xm.revByCo && xm.revByCo[spCo]) || 0));
+              var tr = Number((xm.tripsByCo && xm.tripsByCo[spCo]) || 0);
+              totPosRev += rv;
+              totSibTrips += tr;
+              if (x.code === code) { myRev = rv; myTrips = tr; }
+            });
+            weight = totPosRev > 0.005 ? (myRev / totPosRev) : (totSibTrips > 0 ? (myTrips / totSibTrips) : (1 / sibs.length));
+            if (weight <= 0.0001) continue;
+            isAllocated = weight < 0.9999;
+          }
+        } else {
+          var coSibs = acc.trucks.filter(function (x) {
+            return Object.keys(x.monthsMap || {}).some(function (mk) {
+              var xm = x.monthsMap[mk];
+              return Boolean(xm && xm.tripsByCo && Number(xm.tripsByCo[spCo] || 0) > 0);
+            });
           });
-          weight = totPosRev > 0.005 ? (myRev / totPosRev) : (totSibTrips > 0 ? (myTrips / totSibTrips) : (1 / sibs.length));
-          if (weight <= 0.0001) continue;
-          isAllocated = weight < 0.9999;
+          if (!coSibs.length) coSibs = acc.trucks.slice();
+          if (!coSibs.some(function (x) { return x.code === code; })) continue;
+          if (coSibs.length > 1) {
+            var totCoRev = 0;
+            var myCoRev = 0;
+            var totCoTrips = 0;
+            var myCoTrips = 0;
+            coSibs.forEach(function (x) {
+              var xRev = 0;
+              var xTrips = 0;
+              Object.keys(x.monthsMap || {}).forEach(function (mk) {
+                var xm = x.monthsMap[mk];
+                if (!xm) return;
+                xRev += Math.max(0, Number((xm.revByCo && xm.revByCo[spCo]) || 0));
+                xTrips += Number((xm.tripsByCo && xm.tripsByCo[spCo]) || 0);
+              });
+              totCoRev += xRev;
+              totCoTrips += xTrips;
+              if (x.code === code) { myCoRev = xRev; myCoTrips = xTrips; }
+            });
+            weight = totCoRev > 0.005 ? (myCoRev / totCoRev) : (totCoTrips > 0 ? (myCoTrips / totCoTrips) : (1 / coSibs.length));
+            if (weight <= 0.0001) continue;
+            isAllocated = weight < 0.9999;
+          }
         }
       }
 
@@ -3702,7 +3881,8 @@
         id: sp.id || '',
         date: spDt,
         company: spCo,
-        supplier: String(sp.supplier || supplierName || tObj.owner || '-'),
+        truckLabel: tagTruck || (unitFilter === 'ALL' && acc.isMultiTruck ? `All (${acc.trucks.length})` : tObj.displayCode),
+        supplier: String(sp.supplier || supplierName || acc.ownerLabel || '-'),
         method: spMth,
         reference: spRef || '-',
         detail: isAllocated ? `Allocated (${Math.round(weight * 100)}%)` : (displayNote || 'Transportation settlement'),
@@ -3726,37 +3906,72 @@
       if (!Object.prototype.hasOwnProperty.call(remByCo, co)) remByCo[co] = roundCents(-(paidByCo[co] || 0));
     });
     var payPlan = null;
-    if (scope.companyKey !== 'manufacturing-group') {
-      var singleTargetCo = scope.companyLabel;
-      if (allowedCos.indexOf(singleTargetCo) >= 0 && bookedRemainingPayable > 0.004) {
-        payPlan = { company: singleTargetCo, amount: bookedRemainingPayable, multiCompanySplit: false };
+    if (!(acc.isMultiTruck && unitFilter !== 'ALL')) {
+      if (scope.companyKey !== 'manufacturing-group') {
+        var singleTargetCo = scope.companyLabel;
+        if (allowedCos.indexOf(singleTargetCo) >= 0 && bookedRemainingPayable > 0.004) {
+          payPlan = { company: singleTargetCo, amount: bookedRemainingPayable, multiCompanySplit: false };
+        }
+      } else {
+        var posCos = bookedRemainingPayable > 0.004
+          ? Object.keys(remByCo)
+              .filter(function (co) { return allowedCos.indexOf(co) >= 0 && remByCo[co] > 0.004; })
+              .sort(function (a, b) { return remByCo[b] - remByCo[a]; })
+          : [];
+        if (posCos.length === 1) {
+          payPlan = { company: posCos[0], amount: roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable)), multiCompanySplit: false };
+        } else if (posCos.length > 1) {
+          var topAmt = roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable));
+          payPlan = {
+            company: posCos[0],
+            amount: topAmt,
+            multiCompanySplit: bookedRemainingPayable > (remByCo[posCos[0]] + 0.004)
+          };
+        }
       }
-    } else {
-      var posCos = bookedRemainingPayable > 0.004
-        ? Object.keys(remByCo)
-            .filter(function (co) { return allowedCos.indexOf(co) >= 0 && remByCo[co] > 0.004; })
-            .sort(function (a, b) { return remByCo[b] - remByCo[a]; })
-        : [];
-      if (posCos.length === 1) {
-        payPlan = { company: posCos[0], amount: roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable)), multiCompanySplit: false };
-      } else if (posCos.length > 1) {
-        var topAmt = roundCents(Math.min(remByCo[posCos[0]], bookedRemainingPayable));
-        payPlan = {
-          company: posCos[0],
-          amount: topAmt,
-          multiCompanySplit: bookedRemainingPayable > (remByCo[posCos[0]] + 0.004)
+    }
+
+    var fullAccount = null;
+    if ((ym !== 'ALL' || unitFilter !== 'ALL') && !(opts && opts._skipFullCompanion)) {
+      var fullSnap = buildPartnerSettlementData(acc.accountKey, 'ALL', 'recorded', { forceFullOwner: true, _skipFullCompanion: true });
+      if (fullSnap) {
+        fullAccount = {
+          grossCredits: fullSnap.grossCredits,
+          dieselTotal: fullSnap.dieselTotal,
+          dieselLiters: fullSnap.dieselLiters,
+          workshopTotal: fullSnap.workshopTotal,
+          driverTotal: fullSnap.driverTotal,
+          netPayable: fullSnap.netPayable,
+          settlementsTotal: fullSnap.settlementsTotal,
+          remainingPayable: fullSnap.remainingPayable,
+          bookedRemainingPayable: fullSnap.bookedRemainingPayable,
+          remByCo: fullSnap.remByCo,
+          periodLabel: fullSnap.periodLabel
         };
       }
     }
 
+    var driverDisplay = unitFilter === 'ALL' && acc.isMultiTruck
+      ? `${acc.trucks.length} Fleet Drivers`
+      : (tObj.driverShort || 'Assigned Driver');
+
     return {
+      accountKey: acc.accountKey,
+      ownerLabel: acc.ownerLabel,
+      accountLabel: acc.isMultiTruck ? `${acc.ownerLabel} (${acc.trucks.length} trucks)` : `${tObj.displayCode} (${tObj.plate})`,
+      accountTrucks: acc.trucks.slice(),
+      activeTrucks: activeTrucks,
+      isMultiTruck: acc.isMultiTruck,
+      unitFilter: unitFilter,
+      showTruckCol: showTruckCol,
+      driverDisplay: driverDisplay,
       truck: tObj,
       supplierName: supplierName,
       ym: ym,
       basisMode: mode,
       periodLabel: ym === 'ALL' ? cleanNoEmDash(scope.periodLabel) : ym,
       availableMonths: availableMonths,
-      partnerTrucks: partnerList,
+      partnerAccounts: partnerList,
       scope: scope,
       haulRows: haulRows,
       dieselRows: dieselList,
@@ -3778,8 +3993,249 @@
       settlementsTotal: settlementsTotal,
       remainingPayable: remainingPayable,
       bookedRemainingPayable: bookedRemainingPayable,
-      payPlan: payPlan
+      remByCo: remByCo,
+      payPlan: payPlan,
+      fullAccount: fullAccount
     };
+  }
+
+  function getSettleShareLang() {
+    var ent = window.MFG_ENTERPRISE;
+    var st = (ent && ent.state) || window.STATE || {};
+    var isDemo = (ent && typeof ent.isDemoScopeActive === 'function' && ent.isDemoScopeActive()) || st.company === 'democompany';
+    var actU = (ent && typeof ent.activeUser === 'function') ? ent.activeUser() : null;
+    var uId = String((actU && (actU.id || actU.email)) || st.activeUserId || st.userId || '');
+    var uIdx = st.activeUserIdx != null ? String(st.activeUserIdx) : '';
+    var uAuth = st.authed === false ? '0' : '1';
+    var uKey = `${uIdx}|${uId}|${uAuth}|${isDemo ? '1' : '0'}`;
+    if (SETTLE_STATE._lastUserKey !== uKey) {
+      SETTLE_STATE._lastUserKey = uKey;
+      SETTLE_STATE.shareLang = '';
+    }
+    var sl = String(SETTLE_STATE.shareLang || '').toLowerCase();
+    if (sl === 'en' || sl === 'ar' || sl === 'fr') return sl;
+    var shared = String(st.shareOutwardLang || '').toLowerCase();
+    if (shared === 'en' || shared === 'ar' || shared === 'fr') return shared;
+    var i18n = window.MFG_I18N;
+    var ui = (i18n && typeof i18n.getLang === 'function') ? String(i18n.getLang() || 'en').toLowerCase() : 'en';
+    return (ui === 'ar' || ui === 'fr') ? ui : 'en';
+  }
+
+  function resolveSupplierWaPhoneDigits(supplierName) {
+    if (!supplierName) return '';
+    var ent = window.MFG_ENTERPRISE;
+    var st = (ent && ent.state) || window.STATE || {};
+    if ((ent && typeof ent.isDemoScopeActive === 'function' && ent.isDemoScopeActive()) || st.company === 'democompany') return '';
+    var sk = normPartyKey(supplierName);
+    if (!sk) return '';
+    var rows = scopedTableRows('suppliers', true);
+    var candidates = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r || r.voided || !r.name) continue;
+      if (normPartyKey(r.name) !== sk) continue;
+      candidates.push(r.whatsapp, r.mobile, r.phone);
+    }
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var raw = candidates[ci];
+      var digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+      if (!digits) continue;
+      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+        digits = `961${digits.replace(/^0/, '')}`;
+      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+        digits = `961${digits}`;
+      }
+      if (digits.length >= 10 && digits.length <= 15) return digits;
+    }
+    return '';
+  }
+
+  function translateOutwardPeriodAndEntity(label, lang) {
+    var clean = cleanNoEmDash(label || '');
+    if (lang === 'ar') {
+      if (clean === 'All Entities') return 'جميع الشركات';
+      if (clean === 'All-Time') return 'جميع الفترات';
+      if (clean === 'Rep Date') return 'تاريخ التقرير';
+      if (clean === 'Tx Date') return 'تاريخ المعاملة';
+      return clean;
+    }
+    if (lang === 'fr') {
+      if (clean === 'All Entities') return 'Toutes les sociétés';
+      if (clean === 'All-Time') return 'Toutes périodes';
+      if (clean === 'Rep Date') return 'Date comptable';
+      if (clean === 'Tx Date') return 'Date de transaction';
+      return clean;
+    }
+    return clean;
+  }
+
+  function buildPartnerWhatsAppSummary(targetKey, langOverride, opts) {
+    var perm = getSeatPermissions();
+    if (!perm.canSettle) {
+      return { ok: false, reason: 'forbidden_seat', lang: 'en', text: '', waHref: '' };
+    }
+    if (SETTLE_STATE.open && SETTLE_STATE.basisMode !== 'recorded' && !(opts && opts.ignoreModalBasis)) {
+      var chkAcc = targetKey ? (resolvePartnerAccount(getActiveDataset(), targetKey).acc || null) : null;
+      var chkSame = !targetKey || (chkAcc && chkAcc.accountKey === SETTLE_STATE.accountKey);
+      if (chkSame) {
+        return { ok: false, reason: 'shadow_basis_blocked', lang: getSettleShareLang(), text: '', waHref: '' };
+      }
+    }
+    var resolveKey = targetKey || SETTLE_STATE.accountKey || SETTLE_STATE.truck;
+    var fullData = buildPartnerSettlementData(resolveKey, 'ALL', 'recorded', { forceFullOwner: true, _skipFullCompanion: true });
+    if (!fullData) {
+      return { ok: false, reason: 'not_partner', lang: getSettleShareLang(), text: '', waHref: '' };
+    }
+
+    var lang = String(langOverride || getSettleShareLang() || 'en').toLowerCase();
+    if (lang !== 'en' && lang !== 'ar' && lang !== 'fr') lang = 'en';
+
+    var ownerDisp = cleanNoEmDash(fullData.supplierName || fullData.ownerLabel);
+    var fleetSummary = fullData.isMultiTruck
+      ? fullData.accountTrucks.map(function (t) { return cleanNoEmDash(t.displayCode); }).join(', ')
+      : `${cleanNoEmDash(fullData.truck.displayCode)} (${cleanNoEmDash(fullData.truck.plate)})`;
+    var entLbl = translateOutwardPeriodAndEntity(fullData.scope.companyLabel, lang);
+    var perLbl = translateOutwardPeriodAndEntity(fullData.scope.periodLabel, lang);
+
+    var rem = Number(fullData.bookedRemainingPayable || 0);
+    var opNet = Number(fullData.bookedOperatingNet || 0);
+    var remSplitParts = Object.keys(fullData.remByCo || {})
+      .filter(function (co) { return Math.abs(Number(fullData.remByCo[co] || 0)) > 0.004; })
+      .sort(function (a, b) { return Math.abs(fullData.remByCo[b]) - Math.abs(fullData.remByCo[a]); })
+      .map(function (co) { return `${cleanNoEmDash(co)}: ${fmtSignedMoney(fullData.remByCo[co], 2)}`; });
+
+    var viewSliceNote = '';
+    if (SETTLE_STATE.open && SETTLE_STATE.accountKey === fullData.accountKey && (SETTLE_STATE.ym !== 'ALL' || SETTLE_STATE.unitFilter !== 'ALL')) {
+      var curSlice = buildPartnerSettlementData(fullData.accountKey, SETTLE_STATE.ym, 'recorded', { _skipFullCompanion: true });
+      if (curSlice) {
+        var sliceTag = [
+          SETTLE_STATE.unitFilter !== 'ALL' ? SETTLE_STATE.unitFilter : '',
+          SETTLE_STATE.ym !== 'ALL' ? SETTLE_STATE.ym : ''
+        ].filter(Boolean).join(' / ');
+        if (sliceTag) {
+          if (lang === 'ar') {
+            viewSliceNote = `ملاحظة (${sliceTag}): الرصيد الظاهر أعلاه هو كامل الحساب؛ صافي هذا التحديد ${fmtSignedMoney(curSlice.bookedRemainingPayable, 2)}.`;
+          } else if (lang === 'fr') {
+            viewSliceNote = `Note (${sliceTag}) : le solde ci-dessus couvre tout le compte; net sur cette sélection ${fmtSignedMoney(curSlice.bookedRemainingPayable, 2)}.`;
+          } else {
+            viewSliceNote = `Note (${sliceTag}): balance above covers the full account; selected slice net ${fmtSignedMoney(curSlice.bookedRemainingPayable, 2)}.`;
+          }
+        }
+      }
+    }
+
+    var lines;
+    if (lang === 'ar') {
+      var arStatus = Math.abs(rem) <= 0.004
+        ? 'مسدد بالكامل ($0.00)'
+        : (rem > 0 ? 'مستحق للناقل' : 'رصيد مستحق على الناقل');
+      lines = [
+        `*كشف حساب شريك النقل - ${ownerDisp}*`,
+        fullData.isMultiTruck ? `الآليات (${fullData.accountTrucks.length}): ${fleetSummary}` : `الآلية: ${fleetSummary}`,
+        `النطاق: ${entLbl} | ${perLbl}`,
+        `+ مستحقات النقل (${fmtInt(fullData.totalTrips)} نقلة | ${fmtNum(fullData.totalQty, 1)} م3): ${fmtMoney(fullData.grossCredits, 2)}`,
+        `- مازوت مسحوب (${fmtNum(fullData.dieselLiters, 0)} لتر): -${fmtMoney(fullData.dieselTotal, 2)}`,
+        `- صيانة وقطع غيار: -${fmtMoney(fullData.workshopTotal, 2)}`,
+        `- رواتب وسلف السائقين: -${fmtMoney(fullData.driverTotal, 2)}`,
+        `= الصافي التشغيلي: ${fmtSignedMoney(opNet, 2)}`,
+        `- الدفعات المسددة: -${fmtMoney(fullData.settlementsTotal, 2)}`,
+        `*الرصيد الصافي المتبقي: ${fmtSignedMoney(rem, 2)}* (${arStatus})`
+      ];
+      if (fullData.scope.companyKey === 'manufacturing-group' && remSplitParts.length > 1) {
+        lines.push(`حسب الشركة: ${remSplitParts.join(' | ')}`);
+      }
+      if (viewSliceNote) lines.push(viewSliceNote);
+      lines.push('يرجى التأكيد إذا كان هذا الرصيد مطابقاً لسجلاتكم.');
+    } else if (lang === 'fr') {
+      var frStatus = Math.abs(rem) <= 0.004
+        ? 'Soldé ($0.00)'
+        : (rem > 0 ? 'À payer au transporteur' : 'Solde dû par le transporteur');
+      lines = [
+        `*Relevé de compte transporteur - ${ownerDisp}*`,
+        fullData.isMultiTruck ? `Flotte (${fullData.accountTrucks.length} camions) : ${fleetSummary}` : `Camion : ${fleetSummary}`,
+        `Périmètre : ${entLbl} | ${perLbl}`,
+        `+ Crédits de transport (${fmtInt(fullData.totalTrips)} trajets | ${fmtNum(fullData.totalQty, 1)} m3) : ${fmtMoney(fullData.grossCredits, 2)}`,
+        `- Gasoil distribué (${fmtNum(fullData.dieselLiters, 0)} L) : -${fmtMoney(fullData.dieselTotal, 2)}`,
+        `- Atelier et pièces : -${fmtMoney(fullData.workshopTotal, 2)}`,
+        `- Salaires et avances chauffeurs : -${fmtMoney(fullData.driverTotal, 2)}`,
+        `= Net d'exploitation : ${fmtSignedMoney(opNet, 2)}`,
+        `- Règlements versés : -${fmtMoney(fullData.settlementsTotal, 2)}`,
+        `*Solde net restant : ${fmtSignedMoney(rem, 2)}* (${frStatus})`
+      ];
+      if (fullData.scope.companyKey === 'manufacturing-group' && remSplitParts.length > 1) {
+        lines.push(`Par société : ${remSplitParts.join(' | ')}`);
+      }
+      if (viewSliceNote) lines.push(viewSliceNote);
+      lines.push('Merci de confirmer si ce solde correspond à vos relevés.');
+    } else {
+      var enStatus = Math.abs(rem) <= 0.004
+        ? 'Settled ($0.00)'
+        : (rem > 0 ? 'Payable to Hauler' : 'Balance Due from Hauler');
+      lines = [
+        `*Statement of Account - ${ownerDisp}*`,
+        fullData.isMultiTruck ? `Fleet (${fullData.accountTrucks.length} trucks): ${fleetSummary}` : `Truck: ${fleetSummary}`,
+        `Scope: ${entLbl} | ${perLbl}`,
+        `+ Haulage Credits (${fmtInt(fullData.totalTrips)} trips | ${fmtNum(fullData.totalQty, 1)} m3): ${fmtMoney(fullData.grossCredits, 2)}`,
+        `- Metered Diesel (${fmtNum(fullData.dieselLiters, 0)} L): -${fmtMoney(fullData.dieselTotal, 2)}`,
+        `- Workshop & Parts: -${fmtMoney(fullData.workshopTotal, 2)}`,
+        `- Driver Pay & Advances: -${fmtMoney(fullData.driverTotal, 2)}`,
+        `= Operating Net: ${fmtSignedMoney(opNet, 2)}`,
+        `- Settlements Paid: -${fmtMoney(fullData.settlementsTotal, 2)}`,
+        `*Net Balance Remaining: ${fmtSignedMoney(rem, 2)}* (${enStatus})`
+      ];
+      if (fullData.scope.companyKey === 'manufacturing-group' && remSplitParts.length > 1) {
+        lines.push(`By Company: ${remSplitParts.join(' | ')}`);
+      }
+      if (viewSliceNote) lines.push(viewSliceNote);
+      lines.push('Please confirm if this balance matches your records.');
+    }
+
+    var text = cleanNoEmDash(lines.join('\n'));
+    var digits = resolveSupplierWaPhoneDigits(fullData.supplierName);
+    var waPrefix = digits ? `https://wa.me/${digits}?text=` : 'https://wa.me/?text=';
+    var waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    return {
+      ok: true,
+      lang: lang,
+      accountKey: fullData.accountKey,
+      ownerLabel: ownerDisp,
+      fullBalanceUsd: rem,
+      phoneDigits: digits,
+      text: text,
+      waHref: waHref
+    };
+  }
+
+  function copyPartnerWhatsAppSummary(targetKey, langOverride) {
+    var ent = window.MFG_ENTERPRISE;
+    var res = buildPartnerWhatsAppSummary(targetKey, langOverride);
+    if (!res.ok) {
+      if (ent && typeof ent.toast === 'function') {
+        ent.toast(res.reason === 'shadow_basis_blocked' ? 'Switch back to Booked Revenue to share contract balance' : 'Settlement sheet requires full finance and payroll access', 'warn');
+      }
+      return res;
+    }
+    var fallbackCopy = function (txt) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.setAttribute('readonly', 'readonly');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      } catch (_) {}
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(res.text).catch(function () { fallbackCopy(res.text); });
+    } else {
+      fallbackCopy(res.text);
+    }
+    if (ent && typeof ent.toast === 'function') ent.toast('Full balance card copied', 'ok');
+    return res;
   }
 
   function closePartnerSettlementModal() {
@@ -3805,7 +4261,8 @@
       if (existing) existing.remove();
       return;
     }
-    var data = buildPartnerSettlementData(SETTLE_STATE.truck, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
+    var targetKey = SETTLE_STATE.accountKey || SETTLE_STATE.truck;
+    var data = buildPartnerSettlementData(targetKey, SETTLE_STATE.ym, SETTLE_STATE.basisMode);
     if (!data) {
       closePartnerSettlementModal();
       return;
@@ -3835,23 +4292,28 @@
       return s;
     };
 
-    var monthOpts = `<option value="ALL" data-no-i18n="1"${data.ym === 'ALL' ? ' selected' : ''}>${esc(trOptWord('Active Scope'))} (${esc(trOptWord(cleanNoEmDash(data.scope.periodLabel)))})</option>` +
+    var monthOpts = `<option value="ALL" data-no-i18n="1"${data.ym === 'ALL' ? ' selected' : ''}>${esc(trOptWord('Full Account'))} (${esc(trOptWord(cleanNoEmDash(data.scope.periodLabel)))})</option>` +
       data.availableMonths.map(function (mk) {
         return `<option value="${esc(mk)}" data-no-i18n="1"${data.ym === mk ? ' selected' : ''}>${esc(mk)}</option>`;
       }).join('');
 
-    var truckOpts = data.partnerTrucks.map(function (t) {
-      return `<option value="${esc(t.code)}" data-no-i18n="1"${t.code === data.truck.code ? ' selected' : ''}>${esc(t.displayCode)} - ${esc(t.plate)} (${esc(trOptWord(t.owner))})</option>`;
+    var truckOpts = data.partnerAccounts.map(function (acc) {
+      var lbl = acc.isMultiTruck
+        ? `${acc.ownerLabel} (${acc.trucks.length} ${trOptWord('trucks')})`
+        : `${acc.trucks[0].displayCode} - ${acc.trucks[0].plate} (${trOptWord(acc.ownerLabel)})`;
+      return `<option value="${esc(acc.accountKey)}" data-no-i18n="1"${acc.accountKey === data.accountKey ? ' selected' : ''}>${esc(cleanNoEmDash(lbl))}</option>`;
     }).join('');
 
     var warnBanner = data.basisMode !== 'recorded'
       ? '<div class="fpnl-settle-warn-banner"><span>INTERNAL MANAGEMENT VALUATION - INCLUDES UNBUNDLED SHADOW CREDITS (NOT CONTRACT AP PAYABLE)</span></div>'
       : '';
 
+    var showTrk = Boolean(data.showTruckCol);
     var haulRowsHtml = data.haulRows.map(function (h) {
       return `<tr>
         <td>${esc(cleanNoEmDash(h.stream))}</td>
         <td>${esc(cleanNoEmDash(h.company))}</td>
+        ${showTrk ? `<td class="mono" data-no-i18n="1">${esc(cleanNoEmDash(h.truck || '-'))}</td>` : ''}
         <td>${esc(cleanNoEmDash(h.counterparty))}</td>
         <td>${esc(cleanNoEmDash(h.site))}</td>
         <td>${esc(cleanNoEmDash(h.material))}</td>
@@ -3859,41 +4321,44 @@
         <td class="r">${fmtNum(h.qtyM3, 1)}</td>
         <td class="r"><strong>${esc(fmtMoney(h.creditUsd, 2))}</strong></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8" class="fpnl-empty">No haulage trips recorded in this period.</td></tr>';
+    }).join('') || `<tr><td colspan="${showTrk ? 9 : 8}" class="fpnl-empty">No haulage trips recorded in this period.</td></tr>`;
 
     var dieselRowsHtml = data.dieselRows.map(function (d) {
       return `<tr>
         <td class="mono">${esc(fmtDateDisplay(d.date))}</td>
         <td>${esc(cleanNoEmDash(d.company))}</td>
+        ${showTrk ? `<td class="mono" data-no-i18n="1">${esc(cleanNoEmDash(d.truck || '-'))}</td>` : ''}
         <td class="mono">${esc(cleanNoEmDash(d.ticketNo))}</td>
         <td class="r">${fmtNum(d.liters, 1)}</td>
         <td class="r">${d.unitRate > 0 ? esc(fmtMoney(d.unitRate, 3)) : '-'}</td>
         <td class="r fpnl-neg">-${esc(fmtMoney(d.totalUsd, 2))}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No metered diesel draws recorded in this period.</td></tr>';
+    }).join('') || `<tr><td colspan="${showTrk ? 7 : 6}" class="fpnl-empty">No metered diesel draws recorded in this period.</td></tr>`;
 
     var workRowsHtml = data.workshopRows.map(function (w) {
       return `<tr>
         <td class="mono">${esc(fmtDateDisplay(w.date))}</td>
         <td>${esc(cleanNoEmDash(w.company))}</td>
+        ${showTrk ? `<td class="mono" data-no-i18n="1">${esc(cleanNoEmDash(w.truck || '-'))}</td>` : ''}
         <td>${esc(cleanNoEmDash(w.bucket))}</td>
         <td>${esc(cleanNoEmDash(w.supplier))}</td>
         <td class="mono">${esc(cleanNoEmDash(w.bill_number))}</td>
         <td>${esc(cleanNoEmDash(w.subcategory))}</td>
         <td class="r fpnl-neg">-${esc(fmtMoney(w.total_usd, 2))}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" class="fpnl-empty">No workshop parts, repairs or permit charges recorded in this period.</td></tr>';
+    }).join('') || `<tr><td colspan="${showTrk ? 8 : 7}" class="fpnl-empty">No workshop parts, repairs or permit charges recorded in this period.</td></tr>`;
 
     var drvRowsHtml = data.driverRows.map(function (dv) {
       return `<tr>
         <td class="mono">${esc(fmtDateDisplay(dv.date))}</td>
         <td>${esc(cleanNoEmDash(dv.company))}</td>
+        ${showTrk ? `<td class="mono" data-no-i18n="1">${esc(cleanNoEmDash(dv.truck || '-'))}</td>` : ''}
         <td>${esc(cleanNoEmDash(dv.supplier))}</td>
         <td>${esc(cleanNoEmDash(dv.subcategory))}</td>
         <td class="r">${dv.hours ? `${fmtNum(dv.hours, 1)} h` : '-'}</td>
         <td class="r fpnl-neg">-${esc(fmtMoney(dv.total_usd, 2))}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No driver base pay, overtime or advances recorded in this period.</td></tr>';
+    }).join('') || `<tr><td colspan="${showTrk ? 7 : 6}" class="fpnl-empty">No driver base pay, overtime or advances recorded in this period.</td></tr>`;
 
     var settleRowsHtml = (data.settlementRows || []).map(function (sp) {
       var detailHtml = sp.isAllocated
@@ -3902,19 +4367,24 @@
       return `<tr>
         <td class="mono">${esc(fmtDateDisplay(sp.date))}</td>
         <td>${esc(cleanNoEmDash(sp.company))}</td>
+        ${showTrk ? `<td class="mono" data-no-i18n="1">${esc(cleanNoEmDash(sp.truckLabel || '-'))}</td>` : ''}
         <td>${esc(cleanNoEmDash(sp.method))}</td>
         <td class="mono">${esc(cleanNoEmDash(sp.reference))}</td>
         <td>${detailHtml}</td>
         <td class="r fpnl-neg">-${esc(fmtMoney(sp.paidUsd, 2))}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="fpnl-empty">No transportation settlements recorded in this period.</td></tr>';
+    }).join('') || `<tr><td colspan="${showTrk ? 7 : 6}" class="fpnl-empty">No transportation settlements recorded in this period.</td></tr>`;
 
     var payBtnHtml = '';
     if (perm.canEnterSettlement) {
-      var canRecordNow = Boolean(data.basisMode === 'recorded' && data.supplierName && data.payPlan && data.payPlan.amount > 0.004);
+      var isSubsetLock = Boolean(data.isMultiTruck && data.unitFilter !== 'ALL');
+      var canRecordNow = Boolean(!isSubsetLock && data.basisMode === 'recorded' && data.supplierName && data.payPlan && data.payPlan.amount > 0.004);
       var payBtnLblHtml = '';
       var payBtnTip = '';
-      if (data.basisMode !== 'recorded') {
+      if (isSubsetLock) {
+        payBtnLblHtml = '<span>Switch to All Trucks to Settle</span>';
+        payBtnTip = 'Switch to All Trucks to settle the supplier account as a whole';
+      } else if (data.basisMode !== 'recorded') {
         payBtnLblHtml = '<span>Record Settlement (Booked Only)</span>';
         payBtnTip = 'Switch back to Booked Revenue to post a contract settlement payment';
       } else if (!data.supplierName) {
@@ -3935,6 +4405,61 @@
       payBtnHtml = `<button type="button" class="btn btn-primary fpnl-settle-pay-btn" id="fpnlSettlePayBtn"${canRecordNow ? '' : ' disabled'} data-ui-tip="${esc(payBtnTip)}">${payBtnLblHtml}</button>`;
     }
 
+    var activeShareLang = getSettleShareLang();
+    var waSummary = data.basisMode === 'recorded'
+      ? buildPartnerWhatsAppSummary(data.accountKey, activeShareLang)
+      : { ok: false, lang: activeShareLang, text: '', waHref: '' };
+    var waLangBtns = [
+      { code: 'en', label: 'EN', dir: 'ltr' },
+      { code: 'ar', label: 'عربي', dir: 'rtl' },
+      { code: 'fr', label: 'FR', dir: 'ltr' }
+    ].map(function (o) {
+      var act = activeShareLang === o.code;
+      return `<button type="button" class="share-lang-opt${act ? ' is-active' : ''}" data-fpnl-wa-lang="${o.code}" dir="${o.dir}" aria-pressed="${act ? 'true' : 'false'}" data-no-i18n="1">${o.label}</button>`;
+    }).join('');
+    var waTip = data.basisMode === 'recorded'
+      ? 'Send full owner account balance on WhatsApp'
+      : 'Switch back to Booked Revenue to share contract balance';
+    var copyTip = data.basisMode === 'recorded'
+      ? 'Copy full owner balance card for WhatsApp'
+      : 'Switch back to Booked Revenue to share contract balance';
+    var waActionEl = (data.basisMode === 'recorded' && waSummary.ok)
+      ? `<a id="fpnlSettleWaLink" class="btn fpnl-wa-btn" href="${esc(waSummary.waHref)}" target="_blank" rel="noopener noreferrer external" data-ui-tip="${esc(waTip)}"><span>WhatsApp</span></a>`
+      : `<button type="button" id="fpnlSettleWaLink" class="btn fpnl-wa-btn" disabled data-ui-tip="${esc(waTip)}"><span>WhatsApp</span></button>`;
+    var waGroupHtml = `<div class="fpnl-wa-group">
+      <span class="share-lang-toggle" id="fpnlSettleWaLang" role="group" aria-label="Outward share language" data-ui-tip="Outward share language" data-no-i18n="1">${waLangBtns}</span>
+      ${waActionEl}
+      <button type="button" class="btn" id="fpnlSettleCopyBtn"${data.basisMode === 'recorded' ? '' : ' disabled'} data-ui-tip="${esc(copyTip)}"><span>Copy Balance</span></button>
+    </div>`;
+
+    var unitBarHtml = '';
+    if (data.isMultiTruck) {
+      var unitPills = `<button type="button" class="fpnl-unit-pill${data.unitFilter === 'ALL' ? ' active' : ''}" data-fpnl-settle-unit="ALL"><span>All Trucks</span> <span data-no-i18n="1">(${fmtInt(data.accountTrucks.length)})</span></button>` +
+        data.accountTrucks.map(function (ut) {
+          var isAct = data.unitFilter === ut.code;
+          return `<button type="button" class="fpnl-unit-pill${isAct ? ' active' : ''}" data-fpnl-settle-unit="${esc(ut.code)}" data-ui-tip="${esc(`${ut.displayCode} (${ut.plate}) - ${fmtInt(ut.totalTrips)} trips`)}"><span data-no-i18n="1">${esc(ut.displayCode)}</span></button>`;
+        }).join('');
+      unitBarHtml = `<div class="fpnl-settle-unit-bar" id="fpnlSettleUnitBar" role="group" aria-label="Owner fleet filter">${unitPills}</div>`;
+    }
+
+    var sheetHeadingHtml = data.isMultiTruck
+      ? `<span${isGenericOwnerPlaceholder(data.ownerLabel) ? '' : ' data-no-i18n="1"'}>${esc(cleanNoEmDash(data.ownerLabel))}</span> - <span data-no-i18n="1">${fmtInt(data.accountTrucks.length)}</span> <span>trucks</span> <span class="fpnl-settle-fleet-list" data-no-i18n="1">(${esc(data.accountTrucks.map(function (ut) { return ut.displayCode; }).join(', '))})</span>`
+      : `<span data-no-i18n="1">${esc(data.truck.displayCode)} (${esc(data.truck.plate)})</span> - <span${isGenericOwnerPlaceholder(data.ownerLabel) ? '' : ' data-no-i18n="1"'}>${esc(cleanNoEmDash(data.ownerLabel))}</span>`;
+
+    var coSplitParts = Object.keys(data.remByCo || {})
+      .filter(function (co) { return Math.abs(Number(data.remByCo[co] || 0)) > 0.004; })
+      .sort(function (a, b) { return Math.abs(data.remByCo[b]) - Math.abs(data.remByCo[a]); })
+      .map(function (co) { return `${esc(cleanNoEmDash(co))}: ${esc(fmtSignedMoney(data.remByCo[co], 2))}`; });
+    var coSplitHtml = (data.scope.companyKey === 'manufacturing-group' && coSplitParts.length > 1)
+      ? `<div class="fpnl-settle-co-split"><span>By Company</span>: <b data-no-i18n="1">${coSplitParts.join(' | ')}</b></div>`
+      : '';
+    var fullAcctNoteHtml = data.fullAccount
+      ? `<div class="fpnl-settle-full-note" id="fpnlSettleFullAcctNote">
+          <span>Full Owner Balance</span>: <strong class="${data.fullAccount.bookedRemainingPayable >= 0 ? 'fpnl-pos' : 'fpnl-neg'}" data-no-i18n="1">${esc(fmtSignedMoney(data.fullAccount.bookedRemainingPayable, 2))}</strong>
+          <button type="button" class="fpnl-link-btn" data-fpnl-settle-full="1">View Full Balance</button>
+        </div>`
+      : '';
+
     var remBal = Number(data.remainingPayable || 0);
     var remStatusCls = Math.abs(remBal) <= 0.004 ? 'is-settled' : (remBal > 0 ? 'is-unpaid' : 'is-over');
     var remStatusTxt = Math.abs(remBal) <= 0.004
@@ -3944,7 +4469,7 @@
     existing.innerHTML = `<div id="fpnlSettlementModal" class="fpnl-settle-modal" role="dialog" aria-modal="true" aria-label="Partner Truck Monthly Settlement Sheet">
       <div class="fpnl-settle-toolbar">
         <div class="fpnl-settle-controls">
-          <select id="fpnlSettleTruck" class="fpnl-select" aria-label="Partner or Hauler Truck">${truckOpts}</select>
+          <select id="fpnlSettleTruck" class="fpnl-select" aria-label="Partner or Hauler Account">${truckOpts}</select>
           <select id="fpnlSettleMonth" class="fpnl-select" aria-label="Settlement Month">${monthOpts}</select>
           <div class="seg fpnl-mode-bar" role="group" aria-label="Settlement Valuation Basis">
             <button type="button" class="seg-btn fpnl-mode-btn${data.basisMode === 'recorded' ? ' active' : ''}" data-fpnl-settle-basis="recorded">Booked Revenue</button>
@@ -3953,6 +4478,7 @@
         </div>
         <div class="fpnl-settle-controls">
           ${payBtnHtml}
+          ${waGroupHtml}
           <button type="button" class="btn" id="fpnlSettleCsvBtn">CSV</button>
           <button type="button" class="btn btn-primary" id="fpnlSettlePrintBtn">Print / PDF</button>
           <button type="button" class="fpnl-icon-close" data-fpnl-settle-close="1" aria-label="Close">×</button>
@@ -3963,14 +4489,15 @@
         <div class="fpnl-settle-head">
           <div>
             <div class="fpnl-settle-eyebrow"><span>PARTNER &amp; HAULER MONTHLY SETTLEMENT STATEMENT</span></div>
-            <h3 class="fpnl-settle-title"><span data-no-i18n="1">${esc(data.truck.displayCode)} (${esc(data.truck.plate)})</span> - <span${isGenericOwnerPlaceholder(data.truck.owner) ? '' : ' data-no-i18n="1"'}>${esc(cleanNoEmDash(data.truck.owner))}</span></h3>
+            <h3 class="fpnl-settle-title">${sheetHeadingHtml}</h3>
             <div class="fpnl-settle-meta">
               <span><span>Entity</span>: <b>${esc(cleanNoEmDash(data.scope.companyLabel))}</b></span>
               <span><span>Period</span>: <b data-no-i18n="1">${esc(data.periodLabel)}</b></span>
               <span><span>Basis</span>: <b>${esc(cleanNoEmDash(data.scope.basisLabel))}</b></span>
-              <span><span>Driver</span>: <b${(data.truck.driverShort && data.truck.driverShort !== 'Assigned Driver') ? ' data-no-i18n="1"' : ''}>${esc(cleanNoEmDash(data.truck.driverShort || 'Assigned Driver'))}</b></span>
+              <span><span>Driver</span>: ${data.unitFilter === 'ALL' && data.isMultiTruck ? `<b><span data-no-i18n="1">${fmtInt(data.accountTrucks.length)}</span> <span>Fleet Drivers</span></b>` : `<b${(data.driverDisplay && data.driverDisplay !== 'Assigned Driver') ? ' data-no-i18n="1"' : ''}>${esc(cleanNoEmDash(data.driverDisplay || 'Assigned Driver'))}</b>`}</span>
               <span><span>Valuation</span>: <b>${esc(basisLbl)}</b></span>
             </div>
+            ${unitBarHtml}
           </div>
         </div>
 
@@ -4011,9 +4538,9 @@
           </div>
           <div class="table-wrap fpnl-table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Stream</th><th>Co.</th><th>Counterparty</th><th>Site</th><th>Material</th><th class="r">Trips</th><th class="r">Vol (m³)</th><th class="r">Credit ($)</th></tr></thead>
+              <thead><tr><th>Stream</th><th>Co.</th>${showTrk ? '<th>Truck</th>' : ''}<th>Counterparty</th><th>Site</th><th>Material</th><th class="r">Trips</th><th class="r">Vol (m³)</th><th class="r">Credit ($)</th></tr></thead>
               <tbody>${haulRowsHtml}</tbody>
-              <tfoot><tr><td colspan="5"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtInt(data.totalTrips)}</b></td><td class="r"><b>${fmtNum(data.totalQty, 1)}</b></td><td class="r"><b>${esc(fmtMoney(data.grossCredits, 2))}</b></td></tr></tfoot>
+              <tfoot><tr><td colspan="${showTrk ? 6 : 5}"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtInt(data.totalTrips)}</b></td><td class="r"><b>${fmtNum(data.totalQty, 1)}</b></td><td class="r"><b>${esc(fmtMoney(data.grossCredits, 2))}</b></td></tr></tfoot>
             </table>
           </div>
         </div>
@@ -4025,9 +4552,9 @@
           </div>
           <div class="table-wrap fpnl-table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Date</th><th>Co.</th><th>Ref #</th><th class="r">Litres</th><th class="r">Rate ($/L)</th><th class="r">Deduction ($)</th></tr></thead>
+              <thead><tr><th>Date</th><th>Co.</th>${showTrk ? '<th>Truck</th>' : ''}<th>Ref #</th><th class="r">Litres</th><th class="r">Rate ($/L)</th><th class="r">Deduction ($)</th></tr></thead>
               <tbody>${dieselRowsHtml}</tbody>
-              <tfoot><tr><td colspan="3"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.dieselLiters, 1)}</b></td><td></td><td class="r"><b>-${esc(fmtMoney(data.dieselTotal, 2))}</b></td></tr></tfoot>
+              <tfoot><tr><td colspan="${showTrk ? 4 : 3}"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.dieselLiters, 1)}</b></td><td></td><td class="r"><b>-${esc(fmtMoney(data.dieselTotal, 2))}</b></td></tr></tfoot>
             </table>
           </div>
         </div>
@@ -4039,9 +4566,9 @@
           </div>
           <div class="table-wrap fpnl-table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Date</th><th>Co.</th><th>Bucket</th><th>Vendor</th><th>Ref #</th><th>Detail</th><th class="r">Deduction ($)</th></tr></thead>
+              <thead><tr><th>Date</th><th>Co.</th>${showTrk ? '<th>Truck</th>' : ''}<th>Bucket</th><th>Vendor</th><th>Ref #</th><th>Detail</th><th class="r">Deduction ($)</th></tr></thead>
               <tbody>${workRowsHtml}</tbody>
-              <tfoot><tr><td colspan="6"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.workshopTotal, 2))}</b></td></tr></tfoot>
+              <tfoot><tr><td colspan="${showTrk ? 7 : 6}"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.workshopTotal, 2))}</b></td></tr></tfoot>
             </table>
           </div>
         </div>
@@ -4053,9 +4580,9 @@
           </div>
           <div class="table-wrap fpnl-table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Date</th><th>Co.</th><th>Driver</th><th>Detail</th><th class="r">Hours</th><th class="r">Deduction ($)</th></tr></thead>
+              <thead><tr><th>Date</th><th>Co.</th>${showTrk ? '<th>Truck</th>' : ''}<th>Driver</th><th>Detail</th><th class="r">Hours</th><th class="r">Deduction ($)</th></tr></thead>
               <tbody>${drvRowsHtml}</tbody>
-              <tfoot><tr><td colspan="4"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.driverHours, 1)}</b></td><td class="r"><b>-${esc(fmtMoney(data.driverTotal, 2))}</b></td></tr></tfoot>
+              <tfoot><tr><td colspan="${showTrk ? 5 : 4}"><b><span>TOTAL</span></b></td><td class="r"><b>${fmtNum(data.driverHours, 1)}</b></td><td class="r"><b>-${esc(fmtMoney(data.driverTotal, 2))}</b></td></tr></tfoot>
             </table>
           </div>
         </div>
@@ -4067,20 +4594,24 @@
           </div>
           <div class="table-wrap fpnl-table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Date</th><th>Co.</th><th>Method</th><th>Ref #</th><th>Detail</th><th class="r">Paid ($)</th></tr></thead>
+              <thead><tr><th>Date</th><th>Co.</th>${showTrk ? '<th>Truck</th>' : ''}<th>Method</th><th>Ref #</th><th>Detail</th><th class="r">Paid ($)</th></tr></thead>
               <tbody>${settleRowsHtml}</tbody>
-              <tfoot><tr><td colspan="5"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.settlementsTotal, 2))}</b></td></tr></tfoot>
+              <tfoot><tr><td colspan="${showTrk ? 6 : 5}"><b><span>TOTAL</span></b></td><td class="r"><b>-${esc(fmtMoney(data.settlementsTotal, 2))}</b></td></tr></tfoot>
             </table>
           </div>
         </div>
 
         <div class="fpnl-settle-balance-bar" id="fpnlSettleBalanceBar">
-          <div class="fpnl-settle-balance-eq">
-            <span><span>Operating Net</span>: <b>${esc(fmtSignedMoney(data.netPayable, 2))}</b></span>
-            <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
-            <span><span>Less Settlements Paid</span>: <b class="fpnl-neg">-${esc(fmtMoney(data.settlementsTotal, 2))}</b></span>
-            <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
-            <span><span>Unpaid Balance Remaining</span>: <strong class="${remBal >= 0 ? 'fpnl-pos' : 'fpnl-neg'}">${esc(fmtSignedMoney(remBal, 2))}</strong></span>
+          <div class="fpnl-settle-balance-left">
+            <div class="fpnl-settle-balance-eq">
+              <span><span>Operating Net</span>: <b>${esc(fmtSignedMoney(data.netPayable, 2))}</b></span>
+              <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
+              <span><span>Less Settlements Paid</span>: <b class="fpnl-neg">-${esc(fmtMoney(data.settlementsTotal, 2))}</b></span>
+              <span class="fpnl-settle-balance-sep" data-no-i18n="1">|</span>
+              <span><span>Unpaid Balance Remaining</span>: <strong class="${remBal >= 0 ? 'fpnl-pos' : 'fpnl-neg'}">${esc(fmtSignedMoney(remBal, 2))}</strong></span>
+            </div>
+            ${coSplitHtml}
+            ${fullAcctNoteHtml}
           </div>
           <span class="fpnl-settle-balance-tag ${remStatusCls}">${esc(remStatusTxt)}</span>
         </div>
@@ -4096,30 +4627,37 @@
     enhanceContainerDom(existing);
   }
 
-  function openPartnerSettlementModal(truckCode, ymOverride) {
+  function openPartnerSettlementModal(targetOrCode, ymOverride, opts) {
     var perm = getSeatPermissions();
     var ent = window.MFG_ENTERPRISE;
     if (!perm.canSettle) {
       if (ent && typeof ent.toast === 'function') ent.toast('Settlement sheet requires full finance and payroll access', 'err');
       return false;
     }
+    var rawArg = String(targetOrCode || '').trim();
     var ds = getActiveDataset();
-    var code = normTruckCode(truckCode);
-    var tObj = code ? ds.trucks[code] : null;
-    if (!tObj || !tObj.isPartnerOrHauler) {
+    if (rawArg && rawArg.indexOf('owner:') !== 0 && rawArg.indexOf('unit:') !== 0) {
+      var chkCode = normTruckCode(rawArg);
+      var chkTruck = chkCode ? ds.trucks[chkCode] : null;
+      if (chkTruck && !chkTruck.isPartnerOrHauler) {
+        if (ent && typeof ent.toast === 'function') ent.toast('Settlement sheet applies to partner and hauler units', 'warn');
+        return false;
+      }
+    }
+    var resolved = resolvePartnerAccount(ds, rawArg);
+    var acc = resolved.acc;
+    if (!acc || !acc.trucks.length) {
       if (ent && typeof ent.toast === 'function') ent.toast('Settlement sheet applies to partner and hauler units', 'warn');
       return false;
     }
     // Guardrail #3: Always hard-reset valuation basis to Booked Revenue on open.
     SETTLE_STATE.basisMode = 'recorded';
-    SETTLE_STATE.truck = code;
+    SETTLE_STATE.accountKey = acc.accountKey;
+    SETTLE_STATE.truck = (resolved.explicitCode && acc.codeSet[resolved.explicitCode]) ? resolved.explicitCode : acc.trucks[0].code;
+    SETTLE_STATE.unitFilter = (opts && opts.unitCode && acc.codeSet[normTruckCode(opts.unitCode)]) ? normTruckCode(opts.unitCode) : 'ALL';
     var scope = getTopbarScopeSummary();
     var activeMonth = (scope.period && /^month:(\d{4}-\d{2})$/.test(scope.period)) ? scope.period.slice(6) : '';
-    var months = Object.keys(tObj.monthsMap || {}).filter(function (k) {
-      var m = tObj.monthsMap[k];
-      return k && k !== 'Unspecified' && m && (m.trips > 0 || m.dieselCost > 0 || m.maintCost > 0 || m.otPay > 0 || m.basePay > 0);
-    }).sort().reverse();
-    SETTLE_STATE.ym = ymOverride || activeMonth || months[0] || 'ALL';
+    SETTLE_STATE.ym = (ymOverride != null && ymOverride !== '') ? ymOverride : (activeMonth || 'ALL');
     SETTLE_STATE.open = true;
     renderPartnerSettlementModal();
     return true;
@@ -4132,15 +4670,19 @@
       if (ent && typeof ent.toast === 'function') ent.toast('Recording supplier settlements requires Finance Entry rights', 'err');
       return { ok: false, reason: 'forbidden_seat' };
     }
-    var tCode = truckOverride ? normTruckCode(truckOverride) : SETTLE_STATE.truck;
+    var tKey = truckOverride ? String(truckOverride) : (SETTLE_STATE.accountKey || SETTLE_STATE.truck);
     var ymVal = ymOverride != null ? ymOverride : SETTLE_STATE.ym;
     if (!SETTLE_STATE.open && !truckOverride) {
       return { ok: false, reason: 'not_open' };
     }
     var basis = SETTLE_STATE.open && !truckOverride ? SETTLE_STATE.basisMode : 'recorded';
-    var data = buildPartnerSettlementData(tCode, ymVal, basis);
+    var data = buildPartnerSettlementData(tKey, ymVal, basis, truckOverride ? { forceFullOwner: true } : undefined);
     if (!data) {
       return { ok: false, reason: 'not_partner' };
+    }
+    if (data.isMultiTruck && data.unitFilter !== 'ALL') {
+      if (ent && typeof ent.toast === 'function') ent.toast('Switch to All Trucks to settle the supplier account as a whole', 'warn');
+      return { ok: false, reason: 'single_unit_subset' };
     }
     if (data.basisMode !== 'recorded') {
       if (ent && typeof ent.toast === 'function') ent.toast('Switch back to Booked Revenue to post a contract settlement payment', 'warn');
@@ -4166,7 +4708,7 @@
       var moEnd = `${data.ym}-${String(endDay).padStart(2, '0')}`;
       repDateIso = moEnd > todayIso ? todayIso : moEnd;
     }
-    var noteStr = `Partner settlement - ${data.truck.displayCode} - ${data.ym === 'ALL' ? 'ALL' : data.ym} [Truck: ${data.truck.code}]`;
+    var noteStr = `Partner settlement - ${cleanNoEmDash(data.supplierName)} - ${data.ym === 'ALL' ? cleanNoEmDash(data.scope.periodLabel) : data.ym}`;
     var targetCo = data.payPlan.company;
     var payAmt = Math.round(((Number(data.payPlan.amount || 0)) + Number.EPSILON) * 100) / 100;
     closePartnerSettlementModal();
@@ -4224,6 +4766,31 @@
       if (sBasisBtn && SETTLE_STATE.open) {
         SETTLE_STATE.basisMode = sBasisBtn.getAttribute('data-fpnl-settle-basis') === 'strict' ? 'strict' : 'recorded';
         renderPartnerSettlementModal();
+        return;
+      }
+      var sUnitBtn = t.closest('[data-fpnl-settle-unit]');
+      if (sUnitBtn && SETTLE_STATE.open) {
+        SETTLE_STATE.unitFilter = sUnitBtn.getAttribute('data-fpnl-settle-unit') || 'ALL';
+        renderPartnerSettlementModal();
+        return;
+      }
+      if (t.closest('[data-fpnl-settle-full]') && SETTLE_STATE.open) {
+        SETTLE_STATE.unitFilter = 'ALL';
+        SETTLE_STATE.ym = 'ALL';
+        renderPartnerSettlementModal();
+        return;
+      }
+      var waLangBtn = t.closest('[data-fpnl-wa-lang]');
+      if (waLangBtn && SETTLE_STATE.open) {
+        var nextLang = String(waLangBtn.getAttribute('data-fpnl-wa-lang') || '').toLowerCase();
+        if (nextLang === 'en' || nextLang === 'ar' || nextLang === 'fr') {
+          SETTLE_STATE.shareLang = nextLang;
+          renderPartnerSettlementModal();
+        }
+        return;
+      }
+      if (t.closest('#fpnlSettleCopyBtn') && SETTLE_STATE.open) {
+        copyPartnerWhatsAppSummary();
         return;
       }
       if (t.closest('#fpnlSettlePayBtn') && SETTLE_STATE.open) {
@@ -4578,6 +5145,8 @@
     openPartnerSettlementModal: openPartnerSettlementModal,
     closePartnerSettlementModal: closePartnerSettlementModal,
     triggerRecordPartnerSettlement: triggerRecordPartnerSettlement,
+    buildPartnerWhatsAppSummary: buildPartnerWhatsAppSummary,
+    copyPartnerWhatsAppSummary: copyPartnerWhatsAppSummary,
     getSettlementState: function () { return Object.assign({}, SETTLE_STATE); }
   };
 

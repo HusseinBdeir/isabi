@@ -1149,6 +1149,92 @@
   color: var(--warn);
 }
 
+.fpnl-settle-balance-left {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fpnl-settle-co-split,
+.fpnl-settle-full-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.fpnl-settle-unit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fpnl-unit-pill {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.fpnl-unit-pill:hover {
+  border-color: var(--brass-border);
+  color: var(--ink);
+}
+
+.fpnl-unit-pill.active {
+  background: var(--brass-tint);
+  border-color: var(--brass-border);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.fpnl-settle-fleet-list {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.fpnl-sub-count {
+  color: var(--muted);
+}
+
+.fpnl-wa-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fpnl-wa-btn {
+  border-color: var(--brass-border);
+  background: var(--brass-tint);
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.fpnl-wa-btn:hover:not(:disabled) {
+  border-color: var(--brass);
+  background: var(--surface);
+}
+
+.fpnl-wa-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .fpnl-settle-pay-btn {
   white-space: nowrap;
   font-weight: 700;
