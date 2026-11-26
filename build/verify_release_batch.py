@@ -1207,6 +1207,120 @@ def main() -> int:  # noqa: PLR0915
         quiet(RB.abort, IA)
         for sess, ent in ((IA, eBad), (IB, eGood)):
             quiet(RB.leave, sess, ent["id"])
+
+        # 18. MIN_SYNC_SHELL_VER lockstep parity & patch - 10 auto-advance when lag > 15
+        ms_tmp = tmp / "minshell"
+        ms_tmp.mkdir()
+        for name in ("isabi.git", "isabi-app.git"):
+            git(ms_tmp, "init", "-q", "--bare", "-b", "main", str(ms_tmp / name))
+        ms_seed = session(ms_tmp, "seed")
+        ms_seed_app = ms_seed.parent / "isabi-app"
+        for rel, body in (("sw.js", RB.restamp(SW.encode("ascii"), "19.6.114").decode("ascii")),
+                          ("index.html", RB.restamp(INDEX.encode("ascii"), "19.6.114").decode("ascii")),
+                          ("manifest.json", RB.restamp(MANIFEST.encode("ascii"), "19.6.114").decode("ascii")),
+                          ("js/app.js", APP_JS),
+                          ("server.py", 'MIN_SYNC_SHELL_VER = "19.6.100"\n')):
+            put(ms_seed_app / rel, body)
+        for rel, body in (("app/sw.js", RB.restamp(SW.encode("ascii"), "19.6.114").decode("ascii")),
+                          ("functions/_lib/deployed_shell.js", "export const DEPLOYED_SHELL_VER = '19.6.114';\n"),
+                          ("functions/_lib/d1_store.js", "export const MIN_SYNC_SHELL_VER = '19.6.100';\n"),
+                          ("functions/api.js", API_JS)):
+            put(ms_seed / rel, body)
+        for repo in (ms_seed_app, ms_seed):
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", "seed minshell")
+            git(repo, "push", "-q", "origin", "HEAD:main")
+        MA, MB = session(ms_tmp, "MA"), session(ms_tmp, "MB")
+        mappA, mappB = MA.parent / "isabi-app", MB.parent / "isabi-app"
+        os.environ[LIVE] = "19.6.114"
+
+        # 18a. lag == 15 (19.6.115 vs 19.6.100): untouched
+        feature(mappA, "wt/ms15", {"js/ms15.js": "ms15\n"})
+        tick()
+        e15 = quiet(RB.join, MA, holder="sess MA", summary="ms15", app_branch="wt/ms15")
+        tick()
+        b15 = quiet(RB.take, MA, holder="sess MA")
+        check(b15["shell"] == "19.6.115"
+              and RB._read_min_sync_shell_pair(MA, mappA) == ("19.6.100", "19.6.100")
+              and not any("MIN_SYNC_SHELL_VER" in n for n in b15["notes"])
+              and not RB._dirty(MA) and not RB._dirty(mappA),
+              "lag == 15 leaves MIN_SYNC_SHELL_VER untouched at 19.6.100 with clean trees")
+        release_as_leader(MA)
+        tick()
+        quiet(RB.done, MA)
+        quiet(RB.wait, MA, e15["id"], wait_s=0, poll_s=0, known=e15)
+
+        # 18b. lag == 16 (19.6.116 vs 19.6.100): advances both files to patch - 10 (19.6.106), LF-only, preserved across drop
+        feature(mappA, "wt/ms16a", {"js/ms16a.js": "ms16a\n"})
+        feature(mappB, "wt/ms16b", {"js/ms16b.js": "ms16b\n"})
+        tick()
+        e16a = quiet(RB.join, MA, holder="sess MA", summary="ms16a", app_branch="wt/ms16a")
+        tick()
+        e16b = quiet(RB.join, MB, holder="sess MB", summary="ms16b", app_branch="wt/ms16b")
+        tick()
+        b16 = quiet(RB.take, MA, holder="sess MA")
+        d1_bytes = (MA / RB.D1_STORE_FILE).read_bytes()
+        srv_bytes = (mappA / RB.APP_SERVER_FILE).read_bytes()
+        check(b16["shell"] == "19.6.116"
+              and RB._read_min_sync_shell_pair(MA, mappA) == ("19.6.106", "19.6.106")
+              and b"\r\n" not in d1_bytes and b"\r\n" not in srv_bytes
+              and not RB._dirty(MA) and not RB._dirty(mappA)
+              and any("advanced MIN_SYNC_SHELL_VER 19.6.100 -> 19.6.106" in n for n in b16["notes"]),
+              "lag == 16 advances MIN_SYNC_SHELL_VER to patch - 10 (19.6.106) in both repos with LF and clean commits")
+        b16_drop = quiet(RB.drop, MA, e16b["id"], reason="ms16b failed", reset=True)
+        check([e["id"] for e in b16_drop["entries"]] == [e16a["id"]]
+              and RB._read_min_sync_shell_pair(MA, mappA) == ("19.6.106", "19.6.106")
+              and not RB._dirty(MA) and not RB._dirty(mappA),
+              "drop --reset keeps MIN_SYNC_SHELL_VER lockstep advance at 19.6.106 on the rebuilt batch")
+        quiet(RB.abort, MA)
+        for sess, ent in ((MA, e16a), (MB, e16b)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 18c. broken peer branch mutating server.py out of parity is left out cleanly; healthy peer still ships
+        feature(mappA, "wt/ms_bad", {"server.py": 'MIN_SYNC_SHELL_VER = "19.6.112"\n'})
+        feature(mappB, "wt/ms_good", {"js/ms_good.js": "ms_good\n"})
+        tick()
+        eBadMs = quiet(RB.join, MA, holder="sess MA", summary="bad minshell", app_branch="wt/ms_bad")
+        tick()
+        eGoodMs = quiet(RB.join, MB, holder="sess MB", summary="good change", app_branch="wt/ms_good")
+        tick()
+        b18c = quiet(RB.take, MA, holder="sess MA")
+        check([e["id"] for e in b18c["entries"]] == [eGoodMs["id"]]
+              and [x["id"] for x in b18c["left_out"]] == [eBadMs["id"]]
+              and "MIN_SYNC_SHELL_VER parity mismatch" in b18c["left_out"][0]["why"]
+              and RB._read_min_sync_shell_pair(MA, mappA) == ("19.6.106", "19.6.106"),
+              "peer branch breaking MIN_SYNC_SHELL_VER parity is left out while healthy peer merges and advances floor")
+        quiet(RB.abort, MA)
+        for sess, ent in ((MA, eBadMs), (MB, eGoodMs)):
+            quiet(RB.leave, sess, ent["id"])
+        os.environ[LIVE] = "19.6.103"
+
+        # 19. --gate validation at join/ship time (no queue/lock side effects on bad gates)
+        feature(appA, "wt/gchk", {"js/gchk.js": "gchk\n"})
+        line_before = line_ids(A)
+        bad_gates = [
+            ("node build/verify_a.mjs", "does not say where it runs"),
+            ("foo: node build/verify_a.mjs", "does not say where it runs"),
+            ("isabi-app:   ", "has no command"),
+            ("isabi-app: node build/../verify_a.mjs", "must run a check script under build/"),
+            ("isabi: python build/deploy_cloudflare.py --pages-only", "must run a check script under build/"),
+        ]
+        check(all(sub in raises(RB.join, A, holder="session A", summary="bad gate", app_branch="wt/gchk", gates=[g])[1]
+                  for g, sub in bad_gates)
+              and "does not say where it runs" in raises(RB.ship, A, holder="session A", summary="bad gate",
+                                                       app_branch="wt/gchk", gates=["node build/verify_a.mjs"],
+                                                       wait_s=0, poll_s=0, quiet=True)[1]
+              and line_ids(A) == line_before and RL.read_remote_lock(A) == ("", {}),
+              "join and ship reject malformed or dangerous --gate arguments before touching queue or lock")
+        tick()
+        eG1 = quiet(RB.join, A, holder="session A", summary="gate fix", app_branch="wt/gchk",
+                    gates=["isabi-app: node build/verify_a.mjs"])
+        tick()
+        eG2 = quiet(RB.join, A, holder="session A", summary="gate fix", app_branch="wt/gchk",
+                    gates=["isabi-app: node build/verify_b.mjs"])
+        check(eG2["id"] == eG1["id"] and entry(A, eG1["id"]).get("gates") == ["isabi-app: node build/verify_b.mjs"],
+              "re-joining an unchanged branch with a corrected --gate updates gates in place while keeping its slot")
+        quiet(RB.leave, A, eG1["id"])
     finally:
         for k, v in saved.items():
             if v is None:

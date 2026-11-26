@@ -125,6 +125,14 @@ BATCH_FILE = "isabi-release-batch.json"    # in this worktree's git dir: the bat
 JOINED_FILE = "isabi-release-joined.json"  # in this worktree's git dir: entries joined from here
 TEMP_INDEX = "isabi-release-batch.index"
 APP_STAMP_FILES = ("sw.js", "index.html", "manifest.json")
+D1_STORE_FILE = "functions/_lib/d1_store.js"
+APP_SERVER_FILE = "server.py"
+MAX_MIN_SHELL_LAG = 15
+MIN_SHELL_TARGET_LAG = 10
+DRIVE_FAIL_TTL_MIN = 10
+PRE_DEPLOY_STEPS = ("gates", "main", "sync", "commit")
+_RE_D1_MIN_SHELL = re.compile(r"(export\s+const\s+MIN_SYNC_SHELL_VER\s*=\s*['\"])([^'\"]+)(['\"])")
+_RE_SRV_MIN_SHELL = re.compile(r"(^MIN_SYNC_SHELL_VER\s*=\s*['\"])([^'\"]+)(['\"])", re.M)
 I18N_DICT_FILE = "build/i18n_dict.json"
 I18N_ENGINE_FILE = "build/i18n_engine.js"
 I18N_COMPILER_FILE = "build/build_i18n.py"
@@ -603,6 +611,35 @@ def _remote_branch(repo: Path, branch: str, label: str) -> str:
     return sha
 
 
+def _validate_join_gates(gates: tuple[str, ...] | list[str]) -> list[str]:
+    """Validate --gate flags before touching the queue or lock so malformed prefixes never poison a batch."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in gates or ():
+        g = " ".join(str(raw).split())
+        if not g:
+            continue
+        where, sep, cmd = g.partition(":")
+        where_l = where.strip().lower()
+        if not sep or where_l not in ("isabi-app", "mfg-web", "isabi"):
+            raise BatchError(f'gate {g!r} does not say where it runs ("isabi-app: ..." or "isabi: ...")')
+        try:
+            argv = shlex.split(cmd.strip().replace("\\", "/"))
+        except ValueError:
+            raise BatchError(f"gate {g!r} cannot be read as a command") from None
+        if not argv:
+            raise BatchError(f"gate {g!r} has no command after {where.strip()}:")
+        if argv[0] in ("node", "python", "python3", "py"):
+            if len(argv) < 2 or ".." in argv[1] or not _GATE_SCRIPT_RE.match(argv[1]):
+                raise BatchError(
+                    f"gate {g!r} must run a check script under build/ (verify_*, audit_* or check_*)"
+                )
+        if g not in seen:
+            seen.add(g)
+            cleaned.append(g)
+    return cleaned
+
+
 def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str = "", site_branch: str = "",
          gates: tuple[str, ...] | list[str] = (), quiet: bool = False, force: bool = False) -> dict:
     """Put a finished, pushed change in the line. Joining again with the same commits keeps its place."""
@@ -611,6 +648,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         raise BatchError("--holder and --summary are both needed (who is shipping, and one line on what ships)")
     if not app_branch and not site_branch:
         raise BatchError("name what ships: --app-branch (isabi-app) and/or --site-branch (isabi)")
+    cleaned_gates = _validate_join_gates(gates)
     parts: dict[str, dict] = {}
     for kind, branch, repo in (("app", app_branch, app_root(cwd) if app_branch else None), ("site", site_branch, cwd)):
         if not branch:
@@ -641,10 +679,19 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         in_live_batch = bool(lock_sha) and (old.get("batch") or {}).get("lockId") == lock.get("lockId")
         unchanged = all((old.get(k) or {}).get("sha") == (parts.get(k) or {}).get("sha") for k in ("app", "site"))
         if old.get("state") == "waiting" and unchanged:
-            old = _set_fields(cwd, old["id"], {"seenAt": RL._iso(RL._now())}, only_if=lambda e: e.get("state") == "waiting") or old
+            changes = {"seenAt": RL._iso(RL._now())}
+            gates_skipped_live = False
+            if cleaned_gates and (old.get("gates") or []) != cleaned_gates:
+                if in_live_batch:
+                    gates_skipped_live = True
+                else:
+                    changes["gates"] = cleaned_gates
+            old = _set_fields(cwd, old["id"], changes, only_if=lambda e: e.get("state") == "waiting") or old
             _remember(cwd, old)
             if not quiet:
                 print(f"Already in line: {old['id']} (place kept).")
+                if gates_skipped_live:
+                    print(f"NOTE: {old['id']} is already in a live batch, so --gates were not updated.")
             return old
         if old.get("state") == "waiting" and in_live_batch:
             raise BatchError(f"{old['id']} ({parts[same[0]]['branch']}) is in the batch being released now by "
@@ -657,7 +704,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         "holder": holder,
         "pc": socket.gethostname(),
         "summary": summary,
-        "gates": [g.strip() for g in gates if g and g.strip()],
+        "gates": cleaned_gates,
         "queuedAt": RL._iso(now),
         "seenAt": RL._iso(now),
         "state": "waiting",
@@ -1164,8 +1211,84 @@ def _normalised_site_commit(cwd: Path, sha: str) -> tuple[str, bool]:
     return commit, own_app
 
 
+def _read_min_sync_shell_pair(cwd: Path, app: Path, site_rev: str = "HEAD",
+                                app_rev: str = "HEAD") -> tuple[str, str] | None:
+    """Return (d1_store_ver, server_ver), or None when neither repo carries the MIN_SYNC_SHELL_VER files."""
+    d1_b = _blob(cwd, f"{site_rev}:{D1_STORE_FILE}")
+    srv_b = _blob(app, f"{app_rev}:{APP_SERVER_FILE}")
+    if d1_b is None and srv_b is None:
+        return None
+    m_d1 = _RE_D1_MIN_SHELL.search(d1_b.decode("utf-8", errors="replace")) if d1_b is not None else None
+    m_srv = _RE_SRV_MIN_SHELL.search(srv_b.decode("utf-8", errors="replace")) if srv_b is not None else None
+    return (m_d1.group(2).strip() if m_d1 else "", m_srv.group(2).strip() if m_srv else "")
+
+
+def _validate_min_sync_shell_pair(d1_ver: str, srv_ver: str, sw_ver: str) -> tuple[bool, str, int]:
+    """Validate d1_store.js == server.py MIN_SYNC_SHELL_VER and return (ok, error_msg, lag)."""
+    if not sw_ver or not _RE_VERSION.match(sw_ver):
+        return False, f"invalid sw.js shell version {sw_ver!r} for MIN_SYNC_SHELL_VER check", 0
+    if not d1_ver or not _RE_VERSION.match(d1_ver):
+        return False, f"missing or invalid MIN_SYNC_SHELL_VER={d1_ver!r} in {D1_STORE_FILE}", 0
+    if not srv_ver or not _RE_VERSION.match(srv_ver):
+        return False, f"missing or invalid MIN_SYNC_SHELL_VER={srv_ver!r} in {APP_SERVER_FILE}", 0
+    if d1_ver != srv_ver:
+        return False, f"MIN_SYNC_SHELL_VER parity mismatch: d1_store.js={d1_ver} vs server.py={srv_ver}", 0
+    sw_parts, fl_parts = _vt(sw_ver), _vt(d1_ver)
+    if fl_parts[:-1] != sw_parts[:-1]:
+        return False, f"MIN_SYNC_SHELL_VER={d1_ver} major/minor branch differs from sw.js={sw_ver}", 0
+    if fl_parts[-1] > sw_parts[-1]:
+        return False, f"MIN_SYNC_SHELL_VER={d1_ver} exceeds sw.js={sw_ver}", 0
+    return True, "", sw_parts[-1] - fl_parts[-1]
+
+
+def _ensure_min_sync_shell_window(cwd: Path, app: Path, eff_ver: str, notes: list[str]) -> str:
+    """Keep MIN_SYNC_SHELL_VER in lockstep across d1_store.js and server.py; advance to patch - 10 if lag > 15."""
+    pair = _read_min_sync_shell_pair(cwd, app)
+    if pair is None:
+        return ""
+    d1_ver, srv_ver = pair
+    ok, why, lag = _validate_min_sync_shell_pair(d1_ver, srv_ver, eff_ver)
+    if not ok:
+        raise BatchError(why)
+    if lag <= MAX_MIN_SHELL_LAG:
+        return d1_ver
+    sw_parts = _vt(eff_ver)
+    new_patch = max(0, sw_parts[-1] - MIN_SHELL_TARGET_LAG)
+    if new_patch <= _vt(d1_ver)[-1]:
+        raise BatchError(f"cannot advance MIN_SYNC_SHELL_VER from {d1_ver} toward v{eff_ver} (target patch {new_patch})")
+    new_ver = f"{sw_parts[0]}.{sw_parts[1]}.{new_patch}"
+
+    d1_raw = (_blob(cwd, f"HEAD:{D1_STORE_FILE}") or b"").decode("utf-8").replace("\r\n", "\n")
+    srv_raw = (_blob(app, f"HEAD:{APP_SERVER_FILE}") or b"").decode("utf-8").replace("\r\n", "\n")
+    d1_new, n_d1 = _RE_D1_MIN_SHELL.subn(lambda m: f"{m.group(1)}{new_ver}{m.group(3)}", d1_raw, count=1)
+    srv_new, n_srv = _RE_SRV_MIN_SHELL.subn(lambda m: f"{m.group(1)}{new_ver}{m.group(3)}", srv_raw, count=1)
+    if n_d1 != 1 or n_srv != 1:
+        raise BatchError(f"could not update MIN_SYNC_SHELL_VER in {D1_STORE_FILE}/{APP_SERVER_FILE}")
+
+    (app / APP_SERVER_FILE).write_bytes(srv_new.encode("utf-8"))
+    _run(["-c", "core.autocrlf=false", "add", "--", APP_SERVER_FILE], app)
+    _run(["commit", "-q", "-m", f"Advance MIN_SYNC_SHELL_VER to {new_ver} (parity with isabi d1_store.js)"],
+         app, env_extra=_ident_env(app))
+
+    (cwd / D1_STORE_FILE).write_bytes(d1_new.encode("utf-8"))
+    _run(["-c", "core.autocrlf=false", "add", "--", D1_STORE_FILE], cwd)
+    _run(["commit", "-q", "-m",
+          f"Advance MIN_SYNC_SHELL_VER to {new_ver} (rolling window: sw.js {eff_ver}, max lag {MAX_MIN_SHELL_LAG})"],
+         cwd, env_extra=_ident_env(cwd))
+
+    chk = _read_min_sync_shell_pair(cwd, app)
+    if chk != (new_ver, new_ver):
+        raise BatchError(f"MIN_SYNC_SHELL_VER advance verification failed: got {chk!r}, expected {(new_ver, new_ver)!r}")
+    notes.append(
+        f"advanced MIN_SYNC_SHELL_VER {d1_ver} -> {new_ver} in {D1_STORE_FILE} and {APP_SERVER_FILE} "
+        f"(lag was {lag} behind v{eff_ver}, max {MAX_MIN_SHELL_LAG})"
+    )
+    return new_ver
+
+
 def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str],
-                 fetched_branches: set[tuple[str, str]] | None = None) -> tuple[bool, str, list[str], bool]:
+                 fetched_branches: set[tuple[str, str]] | None = None,
+                 target_ver: str = "") -> tuple[bool, str, list[str], bool]:
     """Merge one entry's branches into the batch branches. All or nothing across the two repos. Returns (merged
     cleanly?, why not, which parts brought new commits: "app" / "site", is every part already on origin/main?).
     A part that is in the batch already but NOT on main came in with a change ahead of it that was built on top of
@@ -1255,6 +1378,13 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
                     return False, (f"does not merge cleanly with main plus the changes ahead of it in the batch "
                                    f"({label}: {I18N_AUDIT_FILE} failed: {aerr})"), [], False
         brought.append(kind)
+    if brought:
+        pair = _read_min_sync_shell_pair(cwd, app)
+        if pair is not None:
+            ok_ms, why_ms, _ = _validate_min_sync_shell_pair(pair[0], pair[1], target_ver or base_ver)
+            if not ok_ms:
+                undo()
+                return False, f"does not merge cleanly with main plus the changes ahead of it in the batch ({why_ms})", [], False
     return True, "", brought, all_on_main
 
 
@@ -1359,7 +1489,10 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
         for cur in live:
             if cur["id"] in out or cur["id"] in shipped:
                 continue
-            ok, why, brought, all_on_main = _merge_entry(cwd, app, cur, base_ver, pass_notes, fetched_branches=fetched_branches)
+            ok, why, brought, all_on_main = _merge_entry(
+                cwd, app, cur, base_ver, pass_notes, fetched_branches=fetched_branches,
+                target_ver=ver if (bump or (cur.get("app") or {}).get("sha")) else base_ver,
+            )
             if ok and all_on_main:
                 # A leader pushed it to main and never ran done. With evidence that it is live it is marked shipped
                 # and not released again; without, it stays in this batch, so this release takes it live.
@@ -1410,6 +1543,8 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
     if bump:
         _bump(app, ver, len(merged))
         shell = ver
+    if merged:
+        _ensure_min_sync_shell_window(cwd, app, shell or base_ver, notes)
     return {
         "lockId": lock["lockId"], "holder": holder, "branch": branch, "version": ver, "shell": shell,
         "base": {"app": _out(["rev-parse", f"{RL.REMOTE}/main"], app), "site": _out(["rev-parse", f"{RL.REMOTE}/main"], cwd)},
@@ -1485,27 +1620,11 @@ def _cap_text(waiting: int = 0) -> str:
     return f"the first {cap}" if cap else "everything waiting"
 
 
-def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[list[dict], list[dict], list[str]]:
-    """Owner rule 2026-11-25: release one or a few changes at a time. From the changes a leader could ship (`waiting`,
-    in line order) pick this batch: the first `cap`. Returns (this batch, the changes that wait for the next one,
-    notes), both lists in line order.
-      - The leader's own change (joined from this worktree) is always in its batch: when it stands further back, it
-        takes the last place, so a session never leads a batch that leaves its own change waiting.
-      - A waiting change that shares unreleased commits with a picked one rides in the same batch, above the limit
-        (a picked change built on top of it, or on an earlier push of it that it has since fixed, or both built on
-        the same unreleased work): those commits ship with the picked change anyway, and a change must never go live
-        in part, without its later fix, its gates or its entry being marked. Repeated until nothing more rides."""
-    if cap <= 0 or len(waiting) <= cap:
-        return list(waiting), [], []
-    own = set(_local_json(cwd, JOINED_FILE))
-    picked = {e["id"] for e in waiting[:cap]}
-    if not picked & own:
-        mine = next((e["id"] for e in waiting[cap:] if e["id"] in own), "")
-        if mine:
-            picked = {e["id"] for e in waiting[:cap - 1]} | {mine}
+def _expand_unreleased_riders(cwd: Path, app: Path, all_pool: list[dict], riders_from: list[dict],
+                              picked: set[str], cap: int) -> list[str]:
     repos = {"app": app, "site": cwd}
-    for kind, repo in repos.items():  # every waiting branch, so each change's commits are known here
-        _fetch_branches(repo, [(e.get(kind) or {}).get("branch", "") for e in waiting if (e.get(kind) or {}).get("sha")])
+    for kind, repo in repos.items():  # every candidate branch, so each change's commits are known here
+        _fetch_branches(repo, [(e.get(kind) or {}).get("branch", "") for e in all_pool if (e.get(kind) or {}).get("sha")])
     seen: dict[tuple[str, str], frozenset[str]] = {}
 
     def unreleased(kind: str, sha: str) -> frozenset[str]:
@@ -1527,16 +1646,56 @@ def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[li
     grew = True
     while grew:
         grew = False
-        for e in waiting:
+        for e in riders_from:
             if e["id"] in picked:
                 continue
-            with_ = next((p for p in waiting if p["id"] in picked and shares(e, p)), None)
+            with_ = next((p for p in all_pool if p["id"] in picked and shares(e, p)), None)
             if with_ is not None:
                 picked.add(e["id"])
                 grew = True
                 notes.append(f"{e['id']} ({e.get('summary')}) rides in this batch above the limit of {cap}: it shares "
                              f"unreleased commits with {with_['id']} ({with_.get('summary')}), so the two ship together")
+    return notes
+
+
+def _pick_batch(cwd: Path, app: Path, waiting: list[dict], cap: int) -> tuple[list[dict], list[dict], list[str]]:
+    """Owner rule 2026-11-25: release one or a few changes at a time. From the changes a leader could ship (`waiting`,
+    in line order) pick this batch: the first `cap`. Returns (this batch, the changes that wait for the next one,
+    notes), both lists in line order.
+      - The leader's own change (joined from this worktree) is always in its batch: when it stands further back, it
+        takes the last place, so a session never leads a batch that leaves its own change waiting.
+      - A waiting change that shares unreleased commits with a picked one rides in the same batch, above the limit
+        (a picked change built on top of it, or on an earlier push of it that it has since fixed, or both built on
+        the same unreleased work): those commits ship with the picked change anyway, and a change must never go live
+        in part, without its later fix, its gates or its entry being marked. Repeated until nothing more rides."""
+    if cap <= 0 or len(waiting) <= cap:
+        return list(waiting), [], []
+    own = set(_local_json(cwd, JOINED_FILE))
+    picked = {e["id"] for e in waiting[:cap]}
+    if not picked & own:
+        mine = next((e["id"] for e in waiting[cap:] if e["id"] in own), "")
+        if mine:
+            picked = {e["id"] for e in waiting[:cap - 1]} | {mine}
+    notes = _expand_unreleased_riders(cwd, app, waiting, waiting, picked, cap)
     return ([e for e in waiting if e["id"] in picked], [e for e in waiting if e["id"] not in picked], notes)
+
+
+def _refill_after_drop(cwd: Path, app: Path, line: list[dict], kept_cands: list[dict],
+                       cap: int) -> tuple[list[dict], list[dict], list[str]]:
+    """Refill a batch up to `cap` from fresh waiting entries after `drop` removes a failing change."""
+    kept_ids = {e["id"] for e in kept_cands}
+    fresh_rest = [e for e in _waiting(line) if e["id"] not in kept_ids]
+    if not fresh_rest:
+        return list(kept_cands), [], []
+    picked_fresh = list(fresh_rest) if cap <= 0 else fresh_rest[:max(0, cap - len(kept_cands))]
+    pool = sorted([*kept_cands, *fresh_rest], key=lambda e: e["id"])
+    picked = kept_ids | {e["id"] for e in picked_fresh}
+    notes = _expand_unreleased_riders(cwd, app, pool, fresh_rest, picked, cap)
+    added = [e for e in fresh_rest if e["id"] in picked]
+    if added:
+        notes.append(f"refilled {len(added)} waiting change(s) into batch after drop: "
+                     + ", ".join(e["id"] for e in added))
+    return ([e for e in pool if e["id"] in picked], [e for e in fresh_rest if e["id"] not in picked], notes)
 
 
 def _fetch_branches(repo: Path, branches: list[str]) -> None:
@@ -1703,8 +1862,12 @@ def drop(cwd: Path, entry_id: str, *, reason: str, reset: bool = False, quiet: b
                        only_if=lambda x: x.get("state") == "waiting") is None:
             raise BatchError(f"could not mark {hit['id']} as left out (it kept changing on the remote). Nothing was rebuilt: "
                              "run status, then drop again.")
-    keep = [e["id"] for e in batch["entries"] if e["id"] != hit["id"]]
-    cands = [e for e in read_line(cwd) if e["id"] in keep and e.get("state") == "waiting"]
+    keep = {e["id"] for e in batch["entries"] if e["id"] != hit["id"]}
+    line = read_line(cwd)
+    kept_cands = [e for e in line if e["id"] in keep and e.get("state") == "waiting"]
+    raw_cap = batch.get("cap")
+    cap = batch_cap(None, len(_waiting(line))) if raw_cap is None else int(raw_cap)
+    cands, later, pick_notes = _refill_after_drop(cwd, app, line, kept_cands, cap)
     for repo in (cwd, app):
         _run(["merge", "--abort"], repo, check=False)
         _run(["reset", "--hard", "-q"], repo)
@@ -1717,6 +1880,9 @@ def drop(cwd: Path, entry_id: str, *, reason: str, reset: bool = False, quiet: b
         # (the remaining changes go back to waiting; the dropped one stays left out).
         _give_up(cwd, batch["lockId"])
         raise
+    new["notes"] += pick_notes
+    new["later"] = [{"id": e["id"], "holder": e.get("holder"), "summary": e.get("summary")} for e in later]
+    new["cap"] = cap
     new["left_out"] = [*batch.get("left_out", []), {"id": hit["id"], "holder": hit.get("holder"), "summary": hit.get("summary"),
                                                       "why": f"gates failed in the batch: {reason}"}, *new["left_out"]]
     if not new["entries"]:
@@ -1822,6 +1988,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     steps), SHIPPED (live), LEFT_OUT, GONE, WAITING (run again), TURN (too little time left to form the batch here:
     run take), HALF_FORMED (a take here was cut off: run abort)."""
     batch_cap(max_changes)  # a bad limit stops here, before the change joins the line
+    gates = _validate_join_gates(gates)
     app = app_root(cwd)
     # First of all: is the release already this worktree's own? (Its tree is then on the batch branch, maybe with
     # sync_app.py output in it, and must not be asked to be clean.)
@@ -2320,6 +2487,25 @@ def _spawn_lead(cwd: Path, *, holder: str, max_changes: int | None, retries: int
     return res
 
 
+def _cap_lock_ttl_on_predeploy_fail(cwd: Path, *, step: str, ttl_min: int = DRIVE_FAIL_TTL_MIN) -> int | None:
+    """When unattended `drive` stops on a pre-deploy failure (no deploy recorded), shorten a long lock to `ttl_min`."""
+    if step not in (*PRE_DEPLOY_STEPS, "half_formed"):
+        return None
+    try:
+        lock_sha, lock = RL.read_remote_lock(cwd)
+    except RL.LockError:
+        return None
+    if not lock_sha or not RL.held_by_me(lock, cwd) or RL.is_expired(lock, 0) or RL.last_deploy(lock):
+        return None
+    if RL.minutes_left(lock) <= ttl_min:
+        return None
+    try:
+        RL.renew(cwd, ttl_min=ttl_min, quiet=True, _seen=(lock_sha, lock))
+        return ttl_min
+    except RL.LockError:
+        return None
+
+
 def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None, batches: int = 0,
           wait_s: int = DRIVE_WAIT_S, idle_s: int = 0, poll_s: int = POLL_S, stopped_sessions: bool = False,
           retries: int = 1, quiet: bool = False) -> tuple[str, str]:
@@ -2358,7 +2544,9 @@ def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None
             lock_sha, lock = RL.read_remote_lock(cwd)
             own = _own_batch(cwd, lock_sha, lock)
             if own and own[0] != "LEADER":
-                return "FAILED", own[1] + " " + tally() + "."
+                capped = _cap_lock_ttl_on_predeploy_fail(cwd, step="half_formed") if own[0] == "HALF_FORMED" else None
+                note = f" (lock TTL capped to {capped} min)" if capped is not None else ""
+                return "FAILED", own[1] + note + " " + tally() + "."
             if not own:
                 if stopped_sessions:
                     for e in _adopt_stopped(cwd, holder):
@@ -2414,7 +2602,12 @@ def drive(cwd: Path = ISABI_ROOT, *, holder: str, max_changes: int | None = None
             say(f"[drive] {res.get('message')}")
             _sleep(max(0, poll_s))
         else:
-            return "FAILED", f"{res.get('message') or 'lead failed'} {tally()}."
+            capped = _cap_lock_ttl_on_predeploy_fail(cwd, step=str(res.get("step") or ""))
+            msg = str(res.get("message") or "lead failed")
+            if capped is not None:
+                new_msg, n_sub = re.subn(r"\(\d+ min left\)", f"({capped} min left; capped by drive)", msg, count=1)
+                msg = new_msg if n_sub else f"{msg} (lock TTL capped to {capped} min)"
+            return "FAILED", f"{msg} {tally()}."
 
 
 # ------------------------------------------------------------------------------------------------------ status, CLI

@@ -16,6 +16,8 @@ import json
 import os
 import pathlib
 import shutil
+import socket
+import subprocess
 import sys
 import tempfile
 
@@ -100,9 +102,13 @@ def main() -> int:  # noqa: PLR0915
             for k in list(fail):
                 if k in key and fail[k] > 0:
                     fail[k] -= 1
+                    if key == "sync" and extra.get("tick_sync_s"):
+                        tick(int(extra["tick_sync_s"]))
                     return 1
             app = cwd.parent / "isabi-app"
             if key == "sync":
+                if extra.get("tick_sync_s"):
+                    tick(int(extra["tick_sync_s"]))
                 ver = RB.shell_ver_of((app / "sw.js").read_bytes())
                 body = text(app / "sw.js")
                 (cwd / "app").mkdir(exist_ok=True)
@@ -384,11 +390,62 @@ def main() -> int:  # noqa: PLR0915
         fail["sync"] = 1
         tick()
         (state, msg), out = said(RB.drive, D, holder="driver", poll_s=0)
-        check(state == "FAILED" and "stopped at step sync" in msg and RL.held_by_me(RL.read_remote_lock(S[0])[1], D),
-              "drive stops at a failing step like lead: FAILED, with the lock held for the leader to decide")
+        fail_lock = RL.read_remote_lock(S[0])[1]
+        check(state == "FAILED" and "stopped at step sync" in msg and RL.held_by_me(fail_lock, D)
+              and 0 < RL.minutes_left(fail_lock) <= RB.DRIVE_FAIL_TTL_MIN + 0.1
+              and f"{RB.DRIVE_FAIL_TTL_MIN} min left; capped by drive" in msg,
+              "drive stops at a failing step with the lock held and caps a long pre-deploy lock to 10 min")
         (state, msg), out = said(RB.drive, D, holder="driver", poll_s=0)
         check(state == "EMPTY" and "1 batch shipped" in msg and not V.line_ids(S[0], "waiting"),
               "drive again carries on with the batch it leads, then finds the line empty")
+
+        # 9b. shorter lock (4 min left when sync fails) is never extended; deploy-step failure keeps full TTL
+        short_e = join(1, "short_ttl")
+        tick()
+        quiet(RB.take, D, holder="driver")
+        fail["sync"] = 1
+        extra["tick_sync_s"] = 56 * 60
+        (state, msg), _ = said(RB.drive, D, holder="driver", poll_s=0)
+        extra.pop("tick_sync_s", None)
+        short_lock = RL.read_remote_lock(S[0])[1]
+        check(state == "FAILED" and RL.held_by_me(short_lock, D) and 0 < RL.minutes_left(short_lock) <= 4.1,
+              "drive pre-deploy failure never extends a lock that already has <= 10 min left")
+        quiet(RL.renew, D, ttl_min=60)
+        fail.clear()
+        fail["deploy"] = 1
+        (state, msg), _ = said(RB.drive, D, holder="driver", poll_s=0)
+        dep_lock = RL.read_remote_lock(S[0])[1]
+        check(state == "FAILED" and "stopped at step deploy" in msg and RL.minutes_left(dep_lock) > 50,
+              "drive failure on deploy keeps the full lock TTL untouched")
+        fail.clear()
+        (state, msg), _ = said(RB.drive, D, holder="driver", poll_s=0)
+        check(state == "EMPTY" and V.entry(S[0], short_e["id"]).get("state") == "shipped",
+              "resuming drive after deploy failure finishes the batch")
+
+        # 9c. HALF_FORMED stub in drive caps a 60m lock to 10m; active WAITING forming process keeps full TTL
+        half_lk = quiet(RL.acquire, D, holder="driver", purpose="forming", ttl_min=60)
+        stub = {"lockId": half_lk["lockId"], "holder": "driver", "branch": RB._batch_branch(half_lk),
+                "version": "", "shell": "", "entries": [], "left_out": [], "notes": [],
+                "forming": True, "pid": os.getpid(), "host": socket.gethostname()}
+        RB._write_local_json(D, RB.BATCH_FILE, stub)
+        (state, msg), _ = said(RB.drive, D, holder="driver", poll_s=0)
+        hf_lock = RL.read_remote_lock(S[0])[1]
+        check(state == "FAILED" and f"lock TTL capped to {RB.DRIVE_FAIL_TTL_MIN} min" in msg
+              and 0 < RL.minutes_left(hf_lock) <= RB.DRIVE_FAIL_TTL_MIN + 0.1,
+              "drive HALF_FORMED stub caps an active 60m lock to 10 min")
+        quiet(RL.renew, D, ttl_min=60)
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            RB._write_local_json(D, RB.BATCH_FILE, dict(stub, pid=sleeper.pid))
+            (state_w, msg_w), _ = said(RB.drive, D, holder="driver", poll_s=0)
+            wait_lock = RL.read_remote_lock(S[0])[1]
+            check(state_w == "FAILED" and "capped" not in msg_w and RL.minutes_left(wait_lock) > 50,
+                  "drive WAITING forming stub leaves active 60m lock TTL untouched")
+        finally:
+            sleeper.terminate()
+            sleeper.wait(timeout=10)
+        quiet(RB.abort, D)
+
         (state, msg), out = said(RB.drive, D, holder="driver", idle_s=50, poll_s=0)
         check(state == "EMPTY" and "watching it" in out, "drive --idle keeps watching an empty line for that long, then ends")
 

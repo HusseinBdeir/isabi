@@ -160,6 +160,61 @@ def main() -> int:  # noqa: PLR0915
         quiet(RB.abort, S[1])
         check(RL.read_remote_lock(S[0]) == ("", {}) and V.line_ids(S[0], "waiting") == [e["id"] for e in q],
               "abort gives every change back to the line")
+        for idx, ent in enumerate(q):
+            quiet(RB.leave, S[[0, 1, 3][idx]], ent["id"])
+
+        # 4b. drop --reset refills back up to batch cap from waiting entries (and respects --max 1 + riders)
+        r = [join(1 + (i - 1) % 5, f"rf{i}") for i in range(1, 6)]
+        tick()
+        br1 = quiet(RB.take, S[0], holder="session 1")
+        check(ids(br1) == [r[0]["id"], r[1]["id"], r[2]["id"]] and ids(br1, "later") == [r[3]["id"], r[4]["id"]],
+              "drop-refill setup picks first 3 of 5")
+        tick()
+        br2 = quiet(RB.drop, S[0], r[1]["id"], reason="verify_rf2 failed", reset=True)
+        lock_rf = RL.read_remote_lock(S[0])[1]
+        check(ids(br2) == [r[0]["id"], r[2]["id"], r[3]["id"]]
+              and ids(br2, "later") == [r[4]["id"]]
+              and br2.get("cap") == 3
+              and lock_rf.get("batch") == [r[0]["id"], r[2]["id"], r[3]["id"]]
+              and (apps[0] / "js" / "rf4.js").exists() and not (apps[0] / "js" / "rf2.js").exists()
+              and not (apps[0] / "js" / "rf5.js").exists()
+              and any("refilled 1 waiting change" in n for n in br2.get("notes") or []),
+              "drop --reset refills the vacated slot from later waiting entries up to cap")
+        quiet(RB.abort, S[0])
+        for i, ent in enumerate(r):
+            quiet(RB.leave, S[i % 5], ent["id"])
+
+        u = [join(i, f"u{i}") for i in range(1, 4)]
+        tick()
+        bu1 = quiet(RB.take, S[0], holder="session 1", max_changes=1)
+        tick()
+        bu2 = quiet(RB.drop, S[0], u[0]["id"], reason="verify_u1 failed", reset=True)
+        check(ids(bu1) == [u[0]["id"]] and ids(bu2) == [u[1]["id"]] and ids(bu2, "later") == [u[2]["id"]] and bu2.get("cap") == 1,
+              "drop --reset respects --max 1 when refilling")
+        quiet(RB.abort, S[0])
+        for i, ent in enumerate(u):
+            quiet(RB.leave, S[i], ent["id"])
+
+        # stacked rider pulled when drop refills its dependent
+        t1 = join(1, "tr1")
+        t2 = join(2, "tr2")
+        t3 = join(3, "tr3")
+        V.feature(apps[4], "wt/tr_base", {"js/tr_base.js": "tr_base\n"})
+        t4_top = join(4, "tr4_top", on="wt/tr_base")
+        tick()
+        t5_base = quiet(RB.join, S[4], holder="session 5", summary="tr_base change", app_branch="wt/tr_base")
+        tick()
+        bt1 = quiet(RB.take, S[0], holder="session 1")
+        tick()
+        bt2 = quiet(RB.drop, S[0], t2["id"], reason="verify_tr2 failed", reset=True)
+        check(ids(bt1) == [t1["id"], t2["id"], t3["id"]]
+              and ids(bt2) == [t1["id"], t3["id"], t4_top["id"], t5_base["id"]]
+              and not bt2.get("later")
+              and any(t5_base["id"] in n and "rides in this batch" in n for n in bt2.get("notes") or []),
+              "drop --reset refill pulls stacked unreleased-commit riders along above cap")
+        quiet(RB.abort, S[0])
+        for sess, ent in ((S[0], t1), (S[1], t2), (S[2], t3), (S[3], t4_top), (S[4], t5_base)):
+            quiet(RB.leave, sess, ent["id"])
 
         # 5. wiring
         check(V.exits(RB.main, ["take", "--holder", "x", "--max", "few"]) == 2, "the CLI rejects a limit that is not a number (exit 2)")
