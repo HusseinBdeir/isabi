@@ -16034,7 +16034,22 @@
       "Record already voided or missing": "السجل ملغى مسبقاً أو غير موجود",
       "Unsupported table row": "صف جدول غير مدعوم",
       "Cannot void records outside your assigned companies": "لا يمكن إلغاء سجلات خارج الشركات المخصّصة لك",
-      "Cannot void records outside your assigned industries": "لا يمكن إلغاء سجلات خارج القطاعات المخصّصة لك"
+      "Cannot void records outside your assigned industries": "لا يمكن إلغاء سجلات خارج القطاعات المخصّصة لك",
+      "Full Account": "الحساب الكامل",
+      "Full Owner Balance": "رصيد المالك الكامل",
+      "View Full Balance": "عرض الرصيد الكامل",
+      "Copy Balance": "نسخ الرصيد",
+      "Full balance card copied": "تم نسخ بطاقة الرصيد الكامل",
+      "By Company": "حسب الشركة",
+      "Switch to All Trucks to Settle": "بدّل إلى جميع الشاحنات للتسديد",
+      "Switch to All Trucks to settle the supplier account as a whole": "بدّل إلى جميع الشاحنات لتسديد حساب المورّد بالكامل",
+      "Switch back to Booked Revenue to share contract balance": "عُد إلى الإيراد المسجّل لمشاركة رصيد العقد",
+      "Send full owner account balance on WhatsApp": "إرسال رصيد حساب المالك الكامل عبر واتساب",
+      "Copy full owner balance card for WhatsApp": "نسخ بطاقة رصيد المالك الكامل لواتساب",
+      "Open full owner account settlement sheet across all trucks (defaults to Booked Revenue)": "فتح كشف تسوية حساب المالك الكامل لجميع الشاحنات (يفتتح على الإيراد المسجّل)",
+      "Partner or Hauler Account": "حساب الشريك أو الناقل",
+      "Owner fleet filter": "تصفية أسطول المالك",
+      "Fleet Drivers": "سائقي الأسطول"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31733,7 +31748,7 @@
       "Full Commercial Value (Management)": "Valeur Commerciale Complète (Gestion)",
       "Gross Haulage Credits": "Total Crédits de Transport",
       "Group recharges and non-sale tickets are excluded from Customer AR haulage backfill": "Les refacturations groupe et bons hors vente sont exclus du rattrapage transport client",
-      "Haulage Credits by Corridor": "Crédits de Transport par Corridor",
+      "Haulage Credits by Corridor": "Crédits de transport par corridor",
       "Hauled by company fleet unit with no third-party hauler AP fee": "Transporté par un camion de la flotte société sans frais de sous-traitance",
       "Hauler / Partner Confirmation": "Confirmation Partenaire / Transporteur",
       "INTERNAL MANAGEMENT VALUATION - INCLUDES UNBUNDLED SHADOW CREDITS (NOT CONTRACT AP PAYABLE)": "ÉVALUATION INTERNE DE GESTION - INCLUT DES CRÉDITS NON FACTURÉS (NON PAYABLE AU CONTRAT)",
@@ -32050,7 +32065,22 @@
       "Record already voided or missing": "Enregistrement déjà annulé ou introuvable",
       "Unsupported table row": "Ligne de tableau non prise en charge",
       "Cannot void records outside your assigned companies": "Impossible d'annuler des enregistrements hors de vos sociétés assignées",
-      "Cannot void records outside your assigned industries": "Impossible d'annuler des enregistrements hors de vos secteurs assignés"
+      "Cannot void records outside your assigned industries": "Impossible d'annuler des enregistrements hors de vos secteurs assignés",
+      "Full Account": "Compte complet",
+      "Full Owner Balance": "Solde complet du propriétaire",
+      "View Full Balance": "Voir le solde complet",
+      "Copy Balance": "Copier le solde",
+      "Full balance card copied": "Fiche de solde complet copiée",
+      "By Company": "Par société",
+      "Switch to All Trucks to Settle": "Passer à Tous les Camions pour régler",
+      "Switch to All Trucks to settle the supplier account as a whole": "Passer à Tous les Camions pour régler le compte fournisseur dans son ensemble",
+      "Switch back to Booked Revenue to share contract balance": "Revenir au Revenu Comptabilisé pour partager le solde contractuel",
+      "Send full owner account balance on WhatsApp": "Envoyer le solde complet du compte propriétaire sur WhatsApp",
+      "Copy full owner balance card for WhatsApp": "Copier la fiche de solde complet du propriétaire pour WhatsApp",
+      "Open full owner account settlement sheet across all trucks (defaults to Booked Revenue)": "Ouvrir le relevé de règlement complet du propriétaire pour tous les camions (par défaut Revenu Comptabilisé)",
+      "Partner or Hauler Account": "Compte partenaire ou transporteur",
+      "Owner fleet filter": "Filtre de flotte du propriétaire",
+      "Fleet Drivers": "Chauffeurs de la flotte"
     }
   };
 
