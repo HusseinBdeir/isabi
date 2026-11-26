@@ -2631,7 +2631,7 @@
       "Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.": "الضمانة المحاسبية الأساسية: يتحقق من تساوي إجمالي المدين مع إجمالي الدائن عبر الأصناف 1 إلى 7 في التصميم المحاسبي اللبناني لتطابق الميزانية والأرباح والخسائر حتى السنت.",
       "Corporate Legal, Audit & Shared Overhead": "المصاريف القانونية والتدقيق والخدمات المشتركة",
       "Corporate Tower Floor Plate Lease (11% VAT)": "عقد إيجار طابق مكاتب إدارية (ضريبة 11%)",
-      "Corridor": "المسار",
+      "Corridor": "الممر البيني",
       "Cost": "التكلفة",
       "Cost / Rate": "التكلفة / السعر",
       "Cost / Ton": "التكلفة / طن",
@@ -15950,7 +15950,91 @@
       "Cleared & Costed": "مُخلّص ومُكلّف",
       "Best Landed:": "أفضل واصل:",
       "mat": "مواد",
-      "haul": "نقل"
+      "haul": "نقل",
+      "Net Settlement Sheet": "كشف التسوية الصافية",
+      "Open Monthly Intercompany Net Settlement Sheet": "فتح كشف التسوية الصافية الشهرية بين الشركات",
+      "Open Monthly Net Settlement Sheet": "فتح كشف التسوية الصافية الشهرية",
+      "Monthly Intercompany Net Settlement Sheet": "كشف التسوية الصافية الشهرية بين الشركات",
+      "MONTHLY INTERCOMPANY NET SETTLEMENT SHEET": "كشف التسوية الصافية الشهرية بين الشركات",
+      "First Group Entity": "الشركة الأولى في المجموعة",
+      "Second Group Entity": "الشركة الثانية في المجموعة",
+      "Swap Entities": "تبديل الشركتين",
+      "Settlement Pairing Basis": "أساس مطابقة التسوية",
+      "Booked: Both Sides": "مسجّل: من الطرفين",
+      "Provisional (+ Open Legs)": "مبدئي (+ القيود المفتوحة)",
+      "Provisional Preview": "معاينة مبدئية",
+      "PROVISIONAL PREVIEW ONLY - INCLUDES UNMIRRORED ONE-SIDED LEGS (NOT SETTLED CONTRACT BALANCE)": "معاينة مبدئية فقط - تشمل قيوداً أحادية غير مطابقة (ليست رصيد تسوية تعاقدي)",
+      "Open One-Sided Mirror Legs Excluded from Settled Contract Totals": "قيود مقابلة أحادية مفتوحة مستبعدة من إجماليات التسوية التعاقدية",
+      "Open One-Sided Mirror Legs Pending Counter-Entry": "قيود مقابلة أحادية مفتوحة بانتظار القيد المقابل",
+      "All intercompany movements in this period are booked by both sides (0 open mirror legs)": "جميع الحركات البينية في هذه الفترة مسجّلة من الطرفين (0 قيود مفتوحة)",
+      "Payer Only": "الدافع فقط",
+      "Payee Only": "المستلم فقط",
+      "Pending With": "بانتظار قيد",
+      "Open Audit Queue": "فتح قائمة التدقيق",
+      "Date Basis": "أساس التاريخ",
+      "Pairing Basis": "أساس المطابقة",
+      "Booked Movements": "حركات مسجّلة من الطرفين",
+      "Open Mirror Legs": "قيود مقابلة مفتوحة",
+      "Net Settlement (Given - Paid Back)": "صافي التسوية (المدفوع - المسترد)",
+      "Closing Settlement Transfer": "حوالة التسوية الختامية",
+      "Post-Settlement Balance": "الرصيد بعد التسوية",
+      "Reconciled to Zero": "مطابق إلى الصفر",
+      "Net Settlement Tie-Out": "مطابقة التسوية الصافية",
+      "Reconciliation Step": "خطوة المطابقة",
+      "Direction / Basis": "الاتجاه / الأساس",
+      "USD ($)": "دولار ($)",
+      "Given (Advances & Transfers)": "المعطى (سلف وتحويلات)",
+      "Less: Paid Back (Repayments & Returns)": "ناقص: المسترد (دفعات ومرتجعات)",
+      "Net Settlement Before Closing": "صافي التسوية قبل الإقفال",
+      "Required Closing Settlement Transfer": "تحويل التسوية الختامي المطلوب",
+      "Reconciling Settlement Entry": "قيد التسوية المقفل للحساب",
+      "Post-Settlement Closing Balance": "رصيد الإقفال بعد التسوية",
+      "Reconciled Tie-Out": "مطابقة مقفلة",
+      "Within-$1.00 rounding variance across matched pairs (Payee minus Payer):": "فارق تقريب ضمن 1.00 دولار عبر القيود المطابقة (المستلم ناقص الدافع):",
+      "Two-Sided Reconciled Movements": "الحركات المطابقة من الطرفين",
+      "No two-sided booked movements in this period.": "لا توجد حركات مسجّلة من الطرفين في هذه الفترة.",
+      "Booked By": "مسجّل من قِبل",
+      "Match Rule": "قاعدة المطابقة",
+      "Given ($)": "المعطى ($)",
+      "Paid Back ($)": "المسترد ($)",
+      "Given (LL)": "المعطى (ل.ل)",
+      "Paid Back (LL)": "المسترد (ل.ل)",
+      "Running Net ($)": "الصافي التراكمي ($)",
+      "Running Net (LL)": "الصافي التراكمي (ل.ل)",
+      "TOTAL SETTLED MOVEMENTS": "إجمالي الحركات المسوّاة",
+      "Open One-Sided Mirror Legs (Excluded from Contract Totals)": "قيود مقابلة أحادية مفتوحة (مستبعدة من الإجمالي التعاقدي)",
+      "Entry To Book": "القيد المطلوب تسجيله",
+      "Unmatched ($)": "غير مطابق ($)",
+      "Unmatched (LL)": "غير مطابق (ل.ل)",
+      "Book Mirror": "قيد مقابل",
+      "TOTAL EXCLUDED OPEN LEGS": "إجمالي القيود المفتوحة المستبعدة",
+      "Counterparty Confirmation": "تأكيد الطرف المقابل",
+      "Holding Treasury Sign-Off & Date": "اعتماد خزينة القابضة والتاريخ",
+      "pays": "يدفع إلى",
+      "Same day": "نفس اليوم",
+      "Within 3 days": "خلال 3 أيام",
+      "Within $1.00": "ضمن 1.00 دولار",
+      "Back to KPI Breakdown:": "العودة إلى تفاصيل المؤشر:",
+      "Open matching records across active and prior periods": "فتح السجلات المطابقة عبر الفترتين الحالية والسابقة",
+      "Restore your previous date period and return to KPI Breakdown": "استعادة الفترة الزمنية السابقة والعودة إلى تفاصيل المؤشر",
+      "Bulk Void Selected Records": "إلغاء السجلات المحددة دفعة واحدة",
+      "Void selected records (click once to arm, click again to confirm)": "إلغاء السجلات المحددة (انقر مرة للتفعيل ثم ثانية للتأكيد)",
+      "Select first 10 visible rows": "تحديد أول 10 صفوف ظاهرة",
+      "Copy live sum summary to clipboard": "نسخ ملخص المجموع المباشر إلى الحافظة",
+      "Clear row selection (Esc)": "مسح تحديد الصفوف (Esc)",
+      "Shift+Click or ✓ to toggle rows": "Shift+نقر أو ✓ لتحديد الصفوف",
+      "Rate schedules require individual re-price review": "تتطلب جداول الأسعار مراجعة إعادة التسعير كلٌ على حدة",
+      "Closed accounting period": "فترة محاسبية مقفلة",
+      "Combined total": "الإجمالي المجمّع",
+      "skipped": "متخطّى",
+      "Row is locked or outside your scope": "الصف مقفل أو خارج نطاق صلاحياتك",
+      "Summary / analytics rows cannot be voided": "لا يمكن إلغاء صفوف الملخصات أو التحليلات",
+      "No selected records can be bulk-voided": "لا توجد سجلات محددة قابلة للإلغاء الجماعي",
+      "No selected records could be voided": "تعذر إلغاء أي من السجلات المحددة",
+      "Record already voided or missing": "السجل ملغى مسبقاً أو غير موجود",
+      "Unsupported table row": "صف جدول غير مدعوم",
+      "Cannot void records outside your assigned companies": "لا يمكن إلغاء سجلات خارج الشركات المخصّصة لك",
+      "Cannot void records outside your assigned industries": "لا يمكن إلغاء سجلات خارج القطاعات المخصّصة لك"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31882,7 +31966,91 @@
       "Cleared & Costed": "Dédouané et valorisé",
       "Best Landed:": "Meilleur rendu :",
       "mat": "mat.",
-      "haul": "trsp."
+      "haul": "trsp.",
+      "Net Settlement Sheet": "Feuille de règlement net",
+      "Open Monthly Intercompany Net Settlement Sheet": "Ouvrir la feuille mensuelle de règlement net inter-sociétés",
+      "Open Monthly Net Settlement Sheet": "Ouvrir la feuille mensuelle de règlement net",
+      "Monthly Intercompany Net Settlement Sheet": "Feuille mensuelle de règlement net inter-sociétés",
+      "MONTHLY INTERCOMPANY NET SETTLEMENT SHEET": "FEUILLE MENSUELLE DE RÈGLEMENT NET INTER-SOCIÉTÉS",
+      "First Group Entity": "Première entité du groupe",
+      "Second Group Entity": "Deuxième entité du groupe",
+      "Swap Entities": "Inverser les entités",
+      "Settlement Pairing Basis": "Base de rapprochement du règlement",
+      "Booked: Both Sides": "Comptabilisé : deux côtés",
+      "Provisional (+ Open Legs)": "Provisoire (+ écritures ouvertes)",
+      "Provisional Preview": "Aperçu provisoire",
+      "PROVISIONAL PREVIEW ONLY - INCLUDES UNMIRRORED ONE-SIDED LEGS (NOT SETTLED CONTRACT BALANCE)": "APERÇU PROVISOIRE UNIQUEMENT - INCLUT DES ÉCRITURES UNILATÉRALES NON CONTREPASSÉES (HORS SOLDE CONTRACTUEL)",
+      "Open One-Sided Mirror Legs Excluded from Settled Contract Totals": "Écritures miroirs unilatérales ouvertes exclues des totaux contractuels réglés",
+      "Open One-Sided Mirror Legs Pending Counter-Entry": "Écritures miroirs unilatérales ouvertes en attente de contrepartie",
+      "All intercompany movements in this period are booked by both sides (0 open mirror legs)": "Tous les mouvements inter-sociétés de cette période sont comptabilisés des deux côtés (0 écriture ouverte)",
+      "Payer Only": "Payeur uniquement",
+      "Payee Only": "Bénéficiaire uniquement",
+      "Pending With": "En attente chez",
+      "Open Audit Queue": "Ouvrir la file d'audit",
+      "Date Basis": "Base de date",
+      "Pairing Basis": "Base de rapprochement",
+      "Booked Movements": "Mouvements des deux côtés",
+      "Open Mirror Legs": "Écritures miroirs ouvertes",
+      "Net Settlement (Given - Paid Back)": "Règlement net (Avancé - Remboursé)",
+      "Closing Settlement Transfer": "Virement de règlement de clôture",
+      "Post-Settlement Balance": "Solde après règlement",
+      "Reconciled to Zero": "Soldé à zéro",
+      "Net Settlement Tie-Out": "Rapprochement du règlement net",
+      "Reconciliation Step": "Étape de rapprochement",
+      "Direction / Basis": "Sens / Base",
+      "USD ($)": "USD ($)",
+      "Given (Advances & Transfers)": "Avancé (Avances et transferts)",
+      "Less: Paid Back (Repayments & Returns)": "Moins : Remboursé (Remboursements et retours)",
+      "Net Settlement Before Closing": "Règlement net avant clôture",
+      "Required Closing Settlement Transfer": "Transfert de règlement de clôture requis",
+      "Reconciling Settlement Entry": "Écriture d'ajustement de clôture",
+      "Post-Settlement Closing Balance": "Solde de clôture après règlement",
+      "Reconciled Tie-Out": "Rapprochement soldé",
+      "Within-$1.00 rounding variance across matched pairs (Payee minus Payer):": "Écart d'arrondi de moins de 1,00 $ sur les paires rapprochées (Bénéficiaire moins Payeur) :",
+      "Two-Sided Reconciled Movements": "Mouvements rapprochés des deux côtés",
+      "No two-sided booked movements in this period.": "Aucun mouvement comptabilisé des deux côtés sur cette période.",
+      "Booked By": "Comptabilisé par",
+      "Match Rule": "Règle de rapprochement",
+      "Given ($)": "Avancé ($)",
+      "Paid Back ($)": "Remboursé ($)",
+      "Given (LL)": "Avancé (LL)",
+      "Paid Back (LL)": "Remboursé (LL)",
+      "Running Net ($)": "Solde cumulé ($)",
+      "Running Net (LL)": "Solde cumulé (LL)",
+      "TOTAL SETTLED MOVEMENTS": "TOTAL DES MOUVEMENTS RÉGLÉS",
+      "Open One-Sided Mirror Legs (Excluded from Contract Totals)": "Écritures miroirs unilatérales ouvertes (exclues des totaux contractuels)",
+      "Entry To Book": "Écriture à passer",
+      "Unmatched ($)": "Non rapproché ($)",
+      "Unmatched (LL)": "Non rapproché (LL)",
+      "Book Mirror": "Passer contrepartie",
+      "TOTAL EXCLUDED OPEN LEGS": "TOTAL DES ÉCRITURES OUVERTES EXCLUES",
+      "Counterparty Confirmation": "Confirmation de la contrepartie",
+      "Holding Treasury Sign-Off & Date": "Visa trésorerie Holding & date",
+      "pays": "paie à",
+      "Same day": "Même jour",
+      "Within 3 days": "Sous 3 jours",
+      "Within $1.00": "À moins de 1,00 $",
+      "Back to KPI Breakdown:": "Retour au détail KPI :",
+      "Open matching records across active and prior periods": "Ouvrir les écritures correspondantes sur la période active et la précédente",
+      "Restore your previous date period and return to KPI Breakdown": "Rétablir votre période précédente et revenir au détail KPI",
+      "Bulk Void Selected Records": "Annulation groupée des éléments sélectionnés",
+      "Void selected records (click once to arm, click again to confirm)": "Annuler les enregistrements sélectionnés (1er clic pour armer, 2e pour confirmer)",
+      "Select first 10 visible rows": "Sélectionner les 10 premières lignes visibles",
+      "Copy live sum summary to clipboard": "Copier le résumé du total en direct",
+      "Clear row selection (Esc)": "Effacer la sélection (Échap)",
+      "Shift+Click or ✓ to toggle rows": "Maj+Clic ou ✓ pour basculer",
+      "Rate schedules require individual re-price review": "Les barèmes tarifaires exigent un contrôle de réévaluation individuel",
+      "Closed accounting period": "Période comptable clôturée",
+      "Combined total": "Total combiné",
+      "skipped": "ignoré(s)",
+      "Row is locked or outside your scope": "Ligne verrouillée ou hors de votre périmètre",
+      "Summary / analytics rows cannot be voided": "Les lignes de synthèse ou d'analyse ne peuvent pas être annulées",
+      "No selected records can be bulk-voided": "Aucun enregistrement sélectionné ne peut être annulé en lot",
+      "No selected records could be voided": "Aucun enregistrement sélectionné n'a pu être annulé",
+      "Record already voided or missing": "Enregistrement déjà annulé ou introuvable",
+      "Unsupported table row": "Ligne de tableau non prise en charge",
+      "Cannot void records outside your assigned companies": "Impossible d'annuler des enregistrements hors de vos sociétés assignées",
+      "Cannot void records outside your assigned industries": "Impossible d'annuler des enregistrements hors de vos secteurs assignés"
     }
   };
 
@@ -33527,6 +33695,13 @@
 
     m = trimmed.match(/^([\d,]+)\s+single-sided intercompany legs?\s*\(([^)]+)\)\s*awaiting mirror counter-entry across sister companies(?:\s+after 3-tier pairing)?\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} قيود بينية من طرف واحد (${m[2]}) بانتظار القيد المقابل لدى الشركات الشقيقة.` : `${m[1]} écritures inter-sociétés unilatérales (${m[2]}) en attente de contrepartie.`;
+
+    m = trimmed.match(/^(Split|Group)\s*\((\d+)\s+to\s+(\d+)\)$/i);
+    if (m) {
+      const isSplit = /^split$/i.test(m[1]);
+      if (lang === 'ar') return isSplit ? `مجزّأ (${m[2]} إلى ${m[3]})` : `مجموعة (${m[2]} إلى ${m[3]})`;
+      return isSplit ? `Fractionné (${m[2]} à ${m[3]})` : `Groupe (${m[2]} à ${m[3]})`;
+    }
 
     m = trimmed.match(/^(\d+)\s+Holding expense vouchers?\s+totaling\s+(\$[\d.,]+)\s+(?:tracked for corporate overhead and shared group services|against\s+(\$[\d.,]+)\s+ceiling)\.?$/i);
     if (m) {
@@ -38475,6 +38650,65 @@
       };
       const pair = lblMap[m[1].toLowerCase()];
       if (pair) return { out: `${pair[lang === 'ar' ? 0 : 1]} (${m[2]})`, ok: true };
+    }
+
+    m = trimmed.match(/^(\d[\d,]*)\s+Rows?\s+Selected$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'سطر واحد محدد' : `${m[1]} أسطر محددة`)
+          : (n === 1 ? '1 ligne sélectionnée' : `${m[1]} lignes sélectionnées`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Void Selected\s*\((\d[\d,]*)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `إلغاء المحدد (${m[1]})` : `Annuler la sélection (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Confirm Void\s*\((\d[\d,]*)\)\?$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `تأكيد الإلغاء (${m[1]})؟` : `Confirmer l'annulation (${m[1]}) ?`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d[\d,]*)\s+Records?$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'سجل واحد' : `${m[1]} سجلات`)
+          : (n === 1 ? '1 enregistrement' : `${m[1]} enregistrements`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Record voided\s*·\s*(.+)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `تم إلغاء السجل · ${m[1]}` : `Enregistrement annulé · ${m[1]}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Voided\s+(\d[\d,]*)\s+selected\s+records?(?:\s*·\s*(\d[\d,]*)\s+skipped)?$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      const skAr = m[2] ? ` · ${m[2]} متخطّى` : '';
+      const skFr = m[2] ? ` · ${m[2]} ignoré(s)` : '';
+      return {
+        out: lang === 'ar'
+          ? `تم إلغاء ${m[1]} ${n === 1 ? 'سجل محدد' : 'سجلات محددة'}${skAr}`
+          : `${m[1]} ${n === 1 ? 'enregistrement sélectionné annulé' : 'enregistrements sélectionnés annulés'}${skFr}`,
+        ok: true
+      };
     }
 
     m = trimmed.match(/^Post\s+([\d,]+)\s+Vouchers?$/i);

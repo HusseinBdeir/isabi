@@ -708,6 +708,7 @@
     geoAuditFilter: 'all',
     userGeoAuditFilter: 'all',
     hubInspectorReturn: null,
+    ovkMoversReturn: null,
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
     dailyOpsCommLens: 'pulse',
@@ -7842,6 +7843,7 @@
 
   function setDateFilter(opts = {}) {
     const sigBefore = `${STATE.period}|${STATE.dateGrain}|${STATE.dateFrom}|${STATE.dateTo}`;
+    if (!(opts && opts._keepOvkReturn)) STATE.ovkMoversReturn = null;
     if (opts.reset) {
       STATE.dateGrain = 'all';
       STATE.period = 'all';
@@ -7931,6 +7933,10 @@
     STATE.shown = {};
     STATE.pbiTablePage = {};
     saveFilterState();
+    if (opts && opts.skipRender) {
+      syncTopbarDateControls();
+      return;
+    }
     renderApp();
     if (_dateFacState.open) renderDateFacilitatorPopover();
     if (typeof scheduleIdleHubPrewarm === 'function') scheduleIdleHubPrewarm('period');
@@ -8065,7 +8071,7 @@
 
   // ---- multi-column filtering, relational cell resolution & sorting ----------
   const _tablePoolCache = {};
-  const MULTI_TOKEN_COLS = new Set(['companies_list', 'assigned_trucks', 'trucks_list', 'drivers_list', 'category1', 'category', 'sites_list']);
+  const MULTI_TOKEN_COLS = new Set(['companies_list', 'assigned_trucks', 'trucks_list', 'drivers_list', 'category1', 'category', 'sites_list', 'raw_parties']);
   const VIEW_TABLE_KEY_MAP = {
     sales: 'sales_tickets',
     raw: 'raw_purchases',
@@ -8146,6 +8152,7 @@
     capacity: 'Capacity (m³)',
     supplier: 'Supplier',
     Supplier: 'Supplier',
+    raw_parties: 'Supplier',
     supplier_role: 'Role',
     trucks_list: 'Owned Trucks',
     drivers_list: 'Linked Drivers',
@@ -8245,6 +8252,7 @@
     job_type: 'Job Type',
     fromCo: 'From Company',
     toCo: 'To Company',
+    corridor: 'Corridor',
     counterparty: 'Counterparty',
     direction: 'Direction',
     open_ar_usd: 'Open AR ($)',
@@ -9338,6 +9346,7 @@
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
     if (isMaskedFieldAccessBlocked(viewToTableKey(view), colKey)) return '';
+    if (colKey === 'raw_parties') return [r.site_owner, r.truck_owner].filter(Boolean).join(', ');
     if (colKey === 'ext_ref' || colKey === 'ext_flow' || colKey === 'ext_received_usd' || colKey === 'ext_gave_usd' || colKey === 'ext_owes_usd' || colKey === 'ext_owes_lbp' || colKey === 'ext_notes') {
       const ex = parseExtendedRow(r);
       if (colKey === 'ext_ref') return ex.docRef || '';
@@ -9407,6 +9416,7 @@
 
   function resolveColTokens(r, colKey, view) {
     if (!r || !colKey) return [];
+    if (colKey === 'raw_parties') return [r.site_owner, r.truck_owner].map(x => String(x || '').trim()).filter(Boolean);
     if (colKey === 'trucks_list' || colKey === 'drivers_list') {
       const rel = hubRelForCell();
       const se = rel && rel.suppByName ? rel.suppByName[norm(r.name)] : null;
@@ -10621,20 +10631,41 @@
     btn.setAttribute('aria-label', enStr);
   }
 
-  function armOrRunInlineVoidBtn(btn, onConfirm) {
-    if (!btn) return;
-    const voidTd = btn.parentElement && btn.parentElement.tagName === 'TD' ? btn.parentElement : null;
-    if (btn.dataset.armed === '1') {
+  function disarmInlineVoidBtn(btn) {
+    if (!btn) return false;
+    const wasArmed = btn.dataset.armed === '1' || btn.classList.contains('armed');
+    if (btn._voidArmTimer) {
       clearTimeout(btn._voidArmTimer);
       btn._voidArmTimer = null;
-      btn.dataset.armed = '';
-      btn.classList.remove('armed');
-      if (voidTd) voidTd.classList.remove('td-void-armed');
+    }
+    btn.dataset.armed = '';
+    btn.classList.remove('armed');
+    const voidTd = btn.parentElement && btn.parentElement.tagName === 'TD' ? btn.parentElement : null;
+    if (voidTd) voidTd.classList.remove('td-void-armed');
+    if (wasArmed) {
       btn.innerHTML = ic('trash');
       const baseEn = btn.dataset.baseAria || 'Void or delete record';
       delete btn.dataset.baseAria;
       _setVoidBtnEnAria(btn, baseEn);
       _translateVoidEl(btn);
+    }
+    return wasArmed;
+  }
+
+  function disarmAllInlineVoidBtns(root) {
+    const scope = root || document;
+    let disarmed = false;
+    scope.querySelectorAll('.void-btn.armed').forEach(btn => {
+      if (disarmInlineVoidBtn(btn)) disarmed = true;
+    });
+    return disarmed;
+  }
+
+  function armOrRunInlineVoidBtn(btn, onConfirm) {
+    if (!btn) return;
+    const voidTd = btn.parentElement && btn.parentElement.tagName === 'TD' ? btn.parentElement : null;
+    if (btn.dataset.armed === '1') {
+      disarmInlineVoidBtn(btn);
       onConfirm();
       return;
     }
@@ -10648,16 +10679,8 @@
     _translateVoidEl(btn);
     btn._voidArmTimer = setTimeout(() => {
       btn._voidArmTimer = null;
-      if (btn.isConnected) {
-        btn.dataset.armed = '';
-        btn.classList.remove('armed');
-        btn.innerHTML = ic('trash');
-        const baseEn = btn.dataset.baseAria || 'Void or delete record';
-        delete btn.dataset.baseAria;
-        _setVoidBtnEnAria(btn, baseEn);
-        _translateVoidEl(btn);
-      }
-      if (voidTd && voidTd.isConnected) voidTd.classList.remove('td-void-armed');
+      if (btn.isConnected) disarmInlineVoidBtn(btn);
+      else if (voidTd && voidTd.isConnected) voidTd.classList.remove('td-void-armed');
     }, 4000);
   }
 
@@ -12106,7 +12129,7 @@
       const tag = cur.tagName;
       if (tag === 'STYLE' || tag === 'SCRIPT' || cur.hidden) return;
       if (cur.style && cur.style.display === 'none') return;
-      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill'))) return;
+      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill') || cur.classList.contains('void-btn') || cur.classList.contains('row-sel-dot'))) return;
       if (tag === 'BR') { out += ' '; return; }
       const isBlock = tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'SMALL' || tag === 'TR' || tag === 'SECTION' || tag === 'BLOCKQUOTE' || /^H[1-6]$/.test(tag);
       if (isBlock) out += ' ';
@@ -12131,9 +12154,9 @@
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
         .map(td => {
           let txt = td.innerText;
-          if (td.querySelector('.ind-agr-pill, .cf-cand-pill')) {
+          if (td.querySelector('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot')) {
             const clone = td.cloneNode(true);
-            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill').forEach(n => n.remove());
+            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot').forEach(n => n.remove());
             txt = clone.textContent;
           }
           return _csvQuoteCell(txt);
@@ -26006,17 +26029,34 @@
   function computeOverviewKpiMovers(activeInd, activeSlot, curWin, prevWin, lens) {
     if (!curWin || !prevWin) return null;
     const cleanName = s => String(s || '').replace(/[—–→←↔]/g, '-').replace(/\s+/g, ' ').trim();
-    const addToMap = (map, rawKey, val) => {
+    const srcSigOf = sp => sp ? `${sp.jumpView || ''}|${sp.cfView || ''}|${sp.colKey || ''}|${sp.extraCfView || ''}|${sp.extraColKey || ''}|${sp.panelId || ''}|${sp.searchVal ? '1' : '0'}` : '';
+    const addToMap = (map, rawKey, val, srcSpec, mapKeyOverride) => {
       const raw = String(rawKey == null ? '' : rawKey).trim();
       const disp = cleanName(raw);
       if (!disp || /^[—–-]+$/.test(disp)) return;
-      const kNorm = norm(disp);
+      const kNorm = mapKeyOverride ? norm(mapKeyOverride) : norm(disp);
       if (!kNorm) return;
-      const prev = map.get(kNorm);
-      if (prev) {
-        prev.val = round2(prev.val + (Number(val) || 0));
+      const numVal = round2(Number(val) || 0);
+      let entry = map.get(kNorm);
+      if (!entry) {
+        entry = { rawName: raw, name: disp, val: numVal, bySrc: new Map() };
+        map.set(kNorm, entry);
       } else {
-        map.set(kNorm, { rawName: raw, name: disp, val: round2(Number(val) || 0) });
+        entry.val = round2(entry.val + numVal);
+        if (Math.abs(numVal) > 0 && raw) {
+          entry.rawName = raw;
+          entry.name = disp;
+        }
+      }
+      if (srcSpec && srcSpec.jumpView) {
+        const sSig = srcSigOf(srcSpec);
+        const sPrev = entry.bySrc.get(sSig);
+        if (sPrev) {
+          sPrev.val = round2(sPrev.val + numVal);
+          sPrev.absVal = round2(sPrev.absVal + Math.abs(numVal));
+        } else {
+          entry.bySrc.set(sSig, { spec: srcSpec, val: numVal, absVal: Math.abs(numVal) });
+        }
       }
     };
     const buildMovers = (curMap, prevMap, meta) => {
@@ -26029,14 +26069,55 @@
         const prevUsd = p ? p.val : 0;
         const deltaUsd = round2(curUsd - prevUsd);
         if (Math.abs(deltaUsd) < 0.50) return;
+        const rawName = (c && c.rawName) || (p && p.rawName) || '';
+        const dispName = (c && c.name) || (p && p.name) || '';
+        let winSpec = null;
+        const allSrcSigs = new Set([
+          ...((c && c.bySrc) ? c.bySrc.keys() : []),
+          ...((p && p.bySrc) ? p.bySrc.keys() : [])
+        ]);
+        if (allSrcSigs.size) {
+          let bestDiff = -1;
+          let bestAbs = -1;
+          allSrcSigs.forEach(sSig => {
+            const ce = c && c.bySrc ? c.bySrc.get(sSig) : null;
+            const pe = p && p.bySrc ? p.bySrc.get(sSig) : null;
+            const sDiff = Math.abs((ce ? ce.val : 0) - (pe ? pe.val : 0));
+            const sAbs = (ce ? ce.absVal : 0) + (pe ? pe.absVal : 0);
+            if (sDiff > bestDiff + 0.005 || (Math.abs(sDiff - bestDiff) <= 0.005 && sAbs > bestAbs)) {
+              bestDiff = sDiff;
+              bestAbs = sAbs;
+              winSpec = (ce && ce.spec) || (pe && pe.spec) || null;
+            }
+          });
+        }
+        const jumpView = (winSpec && winSpec.jumpView) || meta.jumpView || '';
+        const cfView = (winSpec && winSpec.cfView) || jumpView;
+        const colKey = (winSpec && winSpec.colKey) || meta.colKey || '';
+        const extraCfView = (winSpec && winSpec.extraCfView) || meta.extraCfView || '';
+        const extraColKey = (winSpec && winSpec.extraColKey) || meta.extraColKey || '';
+        const panelId = (winSpec && winSpec.panelId) || meta.panelId || '';
+        const filterVal = (winSpec && winSpec.filterVal != null && winSpec.filterVal !== '')
+          ? String(winSpec.filterVal)
+          : (colKey ? rawName : '');
+        const searchVal = (winSpec && winSpec.searchVal != null && winSpec.searchVal !== '')
+          ? String(winSpec.searchVal)
+          : (colKey ? '' : rawName);
         rows.push({
-          rawName: (c && c.rawName) || (p && p.rawName) || '',
-          name: (c && c.name) || (p && p.name) || '',
+          rawName,
+          name: dispName,
           prevUsd,
           curUsd,
           deltaUsd,
           partyTable: meta.partyTable || '',
-          jumpView: meta.jumpView || ''
+          jumpView,
+          cfView,
+          colKey,
+          extraCfView,
+          extraColKey,
+          filterVal,
+          searchVal,
+          panelId
         });
       });
       rows.sort((a, b) => {
@@ -26060,29 +26141,49 @@
         const collect = win => {
           const m = new Map();
           getScopedModelCustomers(mdl, { range: win }).forEach(c => {
-            addToMap(m, c.Customer || c.name, Number(c.sales_ttc || 0));
+            const cname = c.Customer || c.name;
+            addToMap(m, cname, Number(c.sales_ttc || 0), { jumpView: 'sales', cfView: 'sales', colKey: 'customer', filterVal: cname });
           });
           return m;
         };
-        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'sales' });
+        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'sales', colKey: 'customer' });
       }
       if (activeSlot === 'overview_profit') {
         const collect = win => {
           const m = new Map();
           getScopedModelSuppliers(mdl, { range: win }).forEach(s => {
-            const spend = round2(Number(s.raw_cost != null ? s.raw_cost : (s.purchases || 0)) + Number(s.expenses || 0));
-            addToMap(m, s.Supplier || s.name, spend);
+            const sname = s.Supplier || s.name;
+            const rawSpend = Number(s.raw_cost != null ? s.raw_cost : (s.purchases || 0));
+            const expSpend = Number(s.expenses || 0);
+            if (Math.abs(expSpend) > 0.005) {
+              addToMap(m, sname, expSpend, { jumpView: 'expenses', cfView: 'expenses', colKey: 'supplier', filterVal: sname });
+            }
+            if (Math.abs(rawSpend) > 0.005 || Math.abs(expSpend) <= 0.005) {
+              addToMap(m, sname, rawSpend, { jumpView: 'raw', cfView: 'raw', colKey: 'raw_parties', filterVal: sname });
+            }
           });
           return m;
         };
-        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'expenses' });
+        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'expenses', colKey: 'supplier' });
       }
       if (activeSlot === 'overview_cash') {
+        const spanMoves = typeof buildCashTillMoves === 'function'
+          ? buildCashTillMoves({ range: { from: prevWin.from, to: curWin.to } })
+          : [];
+        const cfPartySet = new Set();
+        for (let i = 0; i < spanMoves.length; i++) {
+          const mv = spanMoves[i];
+          if (mv && mv.party && mv.party !== '-' && mv.party !== '—') cfPartySet.add(norm(mv.party));
+        }
         const collect = win => {
           const m = new Map();
           getScopedModelCustomers(mdl, { range: win }).forEach(c => {
+            const cname = c.Customer || c.name;
             const paid = round2(Number(c.receipts || 0) + Number(c.cash_sales_ttc != null ? c.cash_sales_ttc : (c.cash_sales || 0)));
-            addToMap(m, c.Customer || c.name, paid);
+            const inCf = cfPartySet.has(norm(cname));
+            addToMap(m, cname, paid, inCf
+              ? { jumpView: 'cashflow', cfView: 'cf_moves', panelId: 'tillRecentPanel', colKey: 'party', filterVal: cname }
+              : { jumpView: 'customers', cfView: 'custs', panelId: 'custPanel', colKey: 'Customer', filterVal: cname, extraCfView: 'receipts', extraColKey: 'customer' });
           });
           return m;
         };
@@ -26091,22 +26192,24 @@
       const collectAr = win => {
         const m = new Map();
         getScopedModelCustomers(mdl, { range: win }).forEach(c => {
+          const cname = c.Customer || c.name;
           const arDelta = round2(Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.credit_sales || 0)) - Number(c.receipts || 0));
-          addToMap(m, c.Customer || c.name, arDelta);
+          addToMap(m, cname, arDelta, { jumpView: 'customers', cfView: 'custs', panelId: 'custPanel', colKey: 'Customer', filterVal: cname, extraCfView: 'receipts', extraColKey: 'customer' });
         });
         return m;
       };
-      const arPack = buildMovers(collectAr(curWin), collectAr(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'customers' });
+      const arPack = buildMovers(collectAr(curWin), collectAr(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'customers', panelId: 'custPanel' });
       if (arPack.rows.length || !lens.books) return arPack;
       const collectAp = win => {
         const m = new Map();
         getScopedModelSuppliers(mdl, { range: win }).forEach(s => {
+          const sname = s.Supplier || s.name;
           const apDelta = round2(Number(s.ap_on_credit || 0) - Number(s.ap_settled || 0));
-          addToMap(m, s.Supplier || s.name, apDelta);
+          addToMap(m, sname, apDelta, { jumpView: 'suppliers', cfView: 'sups', panelId: 'supPanel', colKey: 'Supplier', filterVal: sname, extraCfView: 'settle', extraColKey: 'supplier' });
         });
         return m;
       };
-      return buildMovers(collectAp(curWin), collectAp(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'suppliers' });
+      return buildMovers(collectAp(curWin), collectAp(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'suppliers', panelId: 'supPanel' });
     }
 
     if (activeInd === 'Holding & Treasury') {
@@ -26120,31 +26223,57 @@
         const m = new Map();
         const bi = (rollup && rollup.byIndustry) || {};
         [bi.mfg, bi.hsp, bi.re, bi.trd, bi.ins, bi.hld].forEach(sec => {
-          if (sec && sec.industry) addToMap(m, sec.industry, Number(sec[field] || 0));
+          if (sec && sec.industry) {
+            addToMap(m, sec.industry, Number(sec[field] || 0), {
+              jumpView: 'hld_entities',
+              cfView: 'hldEntitiesScorecardPanel',
+              panelId: 'hldEntitiesScorecardPanel',
+              colKey: 'industry',
+              filterVal: sec.industry
+            });
+          }
         });
         return m;
       };
-      const toCorridorMap = (ic, field) => {
+      const toCorridorMap = (ic, field, jumpView, cfView, panelId) => {
         const m = new Map();
         ((ic && ic.byBilateral) || []).forEach(c => {
-          if (c) addToMap(m, `${cleanName(c.lenderCo)} / ${cleanName(c.borrowerCo)}`, Number(c[field] || 0));
+          if (c) {
+            const disp = `${cleanName(c.lenderCo)} / ${cleanName(c.borrowerCo)}`;
+            const canon = c.corridor || `${[c.lenderCo, c.borrowerCo].sort().join(' / ')}`;
+            addToMap(m, disp, Number(c[field] || 0), {
+              jumpView,
+              cfView,
+              panelId,
+              colKey: 'corridor',
+              filterVal: canon
+            }, canon);
+          }
         });
         return m;
       };
       if (activeSlot === 'overview_revenue') {
-        return buildMovers(toSectorMap(cData.rollup, 'sales_ttc'), toSectorMap(pData.rollup, 'sales_ttc'), { colLabel: 'Sector', jumpView: 'hld_consolidation' });
+        return buildMovers(toSectorMap(cData.rollup, 'sales_ttc'), toSectorMap(pData.rollup, 'sales_ttc'), { colLabel: 'Sector', jumpView: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' });
       }
       if (activeSlot === 'overview_profit') {
-        return buildMovers(toSectorMap(cData.rollup, 'operating_profit'), toSectorMap(pData.rollup, 'operating_profit'), { colLabel: 'Sector', jumpView: 'hld_consolidation' });
+        return buildMovers(toSectorMap(cData.rollup, 'operating_profit'), toSectorMap(pData.rollup, 'operating_profit'), { colLabel: 'Sector', jumpView: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' });
       }
       if (activeSlot === 'overview_cash') {
-        const corr = buildMovers(toCorridorMap(cData.ic, 'givenUsd'), toCorridorMap(pData.ic, 'givenUsd'), { colLabel: 'Corridor', jumpView: 'hld_interactions' });
+        const corr = buildMovers(
+          toCorridorMap(cData.ic, 'givenUsd', 'hld_interactions', 'hld_interactions', 'hldInteractionsPanel'),
+          toCorridorMap(pData.ic, 'givenUsd', 'hld_interactions', 'hld_interactions', 'hldInteractionsPanel'),
+          { colLabel: 'Corridor', jumpView: 'hld_interactions', panelId: 'hldInteractionsPanel' }
+        );
         if (corr.rows.length) return corr;
-        return buildMovers(toSectorMap(cData.rollup, 'cash_till'), toSectorMap(pData.rollup, 'cash_till'), { colLabel: 'Sector', jumpView: 'cashflow' });
+        return buildMovers(toSectorMap(cData.rollup, 'cash_till'), toSectorMap(pData.rollup, 'cash_till'), { colLabel: 'Sector', jumpView: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' });
       }
-      const icWc = buildMovers(toCorridorMap(cData.ic, 'netUnpaidUsd'), toCorridorMap(pData.ic, 'netUnpaidUsd'), { colLabel: 'Corridor', jumpView: 'hld_due_matrix' });
+      const icWc = buildMovers(
+        toCorridorMap(cData.ic, 'netUnpaidUsd', 'hld_due_matrix', 'hld_consolidation', 'hldDueMatrixPanel'),
+        toCorridorMap(pData.ic, 'netUnpaidUsd', 'hld_due_matrix', 'hld_consolidation', 'hldDueMatrixPanel'),
+        { colLabel: 'Corridor', jumpView: 'hld_due_matrix', cfView: 'hld_consolidation', panelId: 'hldDueMatrixPanel' }
+      );
       if (icWc.rows.length) return icWc;
-      return buildMovers(toSectorMap(cData.rollup, 'ar_balance'), toSectorMap(pData.rollup, 'ar_balance'), { colLabel: 'Sector', jumpView: 'hld_due_matrix' });
+      return buildMovers(toSectorMap(cData.rollup, 'ar_balance'), toSectorMap(pData.rollup, 'ar_balance'), { colLabel: 'Sector', jumpView: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' });
     }
 
     if (activeInd === 'Hospitality & Resorts') {
@@ -26152,24 +26281,46 @@
         const hsp = computeHospitalityOperations({ range: win, ignoreSearch: true });
         const m = new Map();
         if (activeSlot === 'overview_revenue') {
-          (hsp.venueRows || []).forEach(r => addToMap(m, r.outlet || r.category || r.company, Number(r.ttc_usd || 0)));
-          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.contract_usd || 0)));
+          (hsp.venueRows || []).forEach(r => {
+            const colKey = r.outlet ? 'outlet' : (r.category ? 'category' : 'company');
+            const val = r[colKey];
+            addToMap(m, val, Number(r.ttc_usd || 0), { jumpView: 'hsp_revenue', cfView: 'hsp_revenue', panelId: 'hspRevenuePanel', colKey, filterVal: val });
+          });
+          (hsp.membershipRows || []).forEach(r => {
+            addToMap(m, r.member, Number(r.contract_usd || 0), { jumpView: 'hsp_memberships', cfView: 'hsp_memberships', panelId: 'hspMembershipsPanel', colKey: 'member', filterVal: r.member });
+          });
         } else if (activeSlot === 'overview_profit') {
-          (hsp.venueRows || []).forEach(r => addToMap(m, r.outlet || r.category || r.company, Number(lens.tax ? (r.ht_usd != null ? r.ht_usd : r.ttc_usd) : (r.ttc_usd || 0))));
-          (hsp.stockRows || []).forEach(r => addToMap(m, r.category || r.item || r.company, -Number(r.recipe_usage_usd || 0)));
+          (hsp.venueRows || []).forEach(r => {
+            const colKey = r.outlet ? 'outlet' : (r.category ? 'category' : 'company');
+            const val = r[colKey];
+            addToMap(m, val, Number(lens.tax ? (r.ht_usd != null ? r.ht_usd : r.ttc_usd) : (r.ttc_usd || 0)), { jumpView: 'hsp_revenue', cfView: 'hsp_revenue', panelId: 'hspRevenuePanel', colKey, filterVal: val });
+          });
+          (hsp.stockRows || []).forEach(r => {
+            const colKey = r.category ? 'category' : (r.item ? 'item' : 'company');
+            const val = r[colKey];
+            addToMap(m, val, -Number(r.recipe_usage_usd || 0), { jumpView: 'hsp_stock', cfView: 'hsp_stock', panelId: 'hspStockPanel', colKey, filterVal: val });
+          });
         } else if (activeSlot === 'overview_cash') {
-          (hsp.posRows || []).forEach(r => addToMap(m, r.terminal || r.company, Number(r.pos_billed_ttc || 0)));
-          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.paid_usd || 0)));
+          (hsp.posRows || []).forEach(r => {
+            const colKey = r.terminal ? 'terminal' : 'company';
+            const val = r[colKey];
+            addToMap(m, val, Number(r.pos_billed_ttc || 0), { jumpView: 'hsp_pos', cfView: 'hsp_pos', panelId: 'hspPosPanel', colKey, filterVal: val });
+          });
+          (hsp.membershipRows || []).forEach(r => {
+            addToMap(m, r.member, Number(r.paid_usd || 0), { jumpView: 'hsp_memberships', cfView: 'hsp_memberships', panelId: 'hspMembershipsPanel', colKey: 'member', filterVal: r.member });
+          });
         } else {
-          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.balance_usd || 0)));
+          (hsp.membershipRows || []).forEach(r => {
+            addToMap(m, r.member, Number(r.balance_usd || 0), { jumpView: 'hsp_memberships', cfView: 'hsp_memberships', panelId: 'hspMembershipsPanel', colKey: 'member', filterVal: r.member });
+          });
         }
         return m;
       };
       const metaBySlot = {
-        overview_revenue: { colLabel: 'Venue / Member', jumpView: 'hsp_revenue' },
-        overview_profit: { colLabel: 'Outlet / Cost', jumpView: 'hsp_stock' },
-        overview_cash: { colLabel: 'Outlet / Member', jumpView: 'hsp_revenue' },
-        overview_wc: { colLabel: 'Member', jumpView: 'hsp_memberships' }
+        overview_revenue: { colLabel: 'Venue / Member', jumpView: 'hsp_revenue', panelId: 'hspRevenuePanel' },
+        overview_profit: { colLabel: 'Outlet / Cost', jumpView: 'hsp_stock', panelId: 'hspStockPanel' },
+        overview_cash: { colLabel: 'Outlet / Member', jumpView: 'hsp_pos', panelId: 'hspPosPanel' },
+        overview_wc: { colLabel: 'Member', jumpView: 'hsp_memberships', panelId: 'hspMembershipsPanel' }
       };
       return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
     }
@@ -26184,16 +26335,15 @@
       const collect = win => {
         const trd = computeTradingOperations({ range: win, ignoreSearch: true });
         const m = new Map();
-        if (activeSlot === 'overview_revenue') {
-          (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => addToMap(m, r.customer, Number(r.ttc_usd || 0)));
-        } else {
-          (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => addToMap(m, r.customer, Number(r.margin_usd || 0)));
-        }
+        const fld = activeSlot === 'overview_revenue' ? 'ttc_usd' : 'margin_usd';
+        (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => {
+          addToMap(m, r.customer, Number(r[fld] || 0), { jumpView: 'trd_sales', cfView: 'trd_sales', panelId: 'trdSalesPanel', colKey: 'customer', filterVal: r.customer });
+        });
         return m;
       };
       const metaBySlot = {
-        overview_revenue: { colLabel: 'Buyer', jumpView: 'trd_sales' },
-        overview_profit: { colLabel: 'Buyer', jumpView: 'trd_sales' }
+        overview_revenue: { colLabel: 'Buyer', jumpView: 'trd_sales', panelId: 'trdSalesPanel' },
+        overview_profit: { colLabel: 'Buyer', jumpView: 'trd_sales', panelId: 'trdSalesPanel' }
       };
       return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
     }
@@ -26204,60 +26354,83 @@
         const m = new Map();
         if (activeSlot === 'overview_revenue') {
           if ((re.invoices || []).length) {
-            re.invoices.forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0)));
+            re.invoices.forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0), { jumpView: 're_invoicing', cfView: 're_invoicing', panelId: 'reInvoicingPanel', colKey: 'tenant', filterVal: r.tenant }));
           } else {
-            (re.leases || []).forEach(r => addToMap(m, r.tenant, Number(r.annual_ttc_usd || 0)));
+            (re.leases || []).forEach(r => addToMap(m, r.tenant, Number(r.annual_ttc_usd || 0), { jumpView: 're_leases', cfView: 're_leases', panelId: 'reLeasesPanel', colKey: 'tenant', filterVal: r.tenant }));
           }
         } else if (activeSlot === 'overview_profit') {
-          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0)));
-          (re.workorders || []).forEach(w => addToMap(m, w.property || w.category, -Number(w.actual_usd || w.budget_usd || 0)));
+          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0), { jumpView: 're_invoicing', cfView: 're_invoicing', panelId: 'reInvoicingPanel', colKey: 'tenant', filterVal: r.tenant }));
+          (re.workorders || []).forEach(w => {
+            const colKey = w.property ? 'property' : 'category';
+            const val = w[colKey];
+            addToMap(m, val, -Number(w.actual_usd || w.budget_usd || 0), { jumpView: 're_workorders', cfView: 're_workorders', colKey, filterVal: val });
+          });
         } else if (activeSlot === 'overview_cash') {
           (re.receipts || []).forEach(r => {
             const amt = r.gross_usd != null ? r.gross_usd : (r.allocated_inv_usd != null ? r.allocated_inv_usd : (r.amount_usd || 0));
-            addToMap(m, r.tenant, Number(amt || 0));
+            addToMap(m, r.tenant, Number(amt || 0), { jumpView: 're_receipts', cfView: 're_receipts', colKey: 'tenant', filterVal: r.tenant });
           });
-          (re.sales || []).forEach(sl => addToMap(m, sl.buyer, Number(sl.paid_usd || 0)));
+          (re.sales || []).forEach(sl => addToMap(m, sl.buyer, Number(sl.paid_usd || 0), { jumpView: 're_sales', cfView: 're_sales', panelId: 'reSalesPanel', colKey: 'buyer', filterVal: sl.buyer }));
         } else {
-          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.open_ar_usd || 0)));
+          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.open_ar_usd || 0), { jumpView: 're_invoicing', cfView: 're_invoicing', panelId: 'reInvoicingPanel', colKey: 'tenant', filterVal: r.tenant }));
         }
         return m;
       };
       const metaBySlot = {
-        overview_revenue: { colLabel: 'Tenant', jumpView: 're_leases' },
+        overview_revenue: { colLabel: 'Tenant', jumpView: 're_invoicing', panelId: 'reInvoicingPanel' },
         overview_profit: { colLabel: 'Property / Tenant', jumpView: 're_workorders' },
-        overview_cash: { colLabel: 'Buyer / Tenant', jumpView: 're_sales' },
-        overview_wc: { colLabel: 'Tenant', jumpView: 're_invoicing' }
+        overview_cash: { colLabel: 'Buyer / Tenant', jumpView: 're_receipts' },
+        overview_wc: { colLabel: 'Tenant', jumpView: 're_invoicing', panelId: 'reInvoicingPanel' }
       };
       return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
     }
 
     // Insurance & Brokerage
-    const collectIns = win => {
+    const collectIns = (win, otherInsData) => {
       const ins = computeInsuranceOperations({ range: win, ignoreSearch: true });
       const m = new Map();
       if (activeSlot === 'overview_revenue') {
-        (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0)));
+        (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0), { jumpView: 'ins_policies', cfView: 'ins_policies', panelId: 'insPoliciesPanel', colKey: 'client', filterVal: p.client }));
       } else if (activeSlot === 'overview_profit') {
-        (ins.policies || []).forEach(p => addToMap(m, p.carrier, Number(p.net_comm_usd || 0)));
+        const stmtCarriers = new Set();
+        ((ins.statements || []).concat((otherInsData && otherInsData.statements) || [])).forEach(st => {
+          if (st && st.carrier) stmtCarriers.add(norm(st.carrier));
+        });
+        (ins.policies || []).forEach(p => {
+          const hasStmt = stmtCarriers.has(norm(p.carrier));
+          addToMap(m, p.carrier, Number(p.net_comm_usd || 0), hasStmt
+            ? { jumpView: 'ins_statements', cfView: 'ins_statements', panelId: 'insStatementsPanel', colKey: 'carrier', filterVal: p.carrier }
+            : { jumpView: 'ins_policies', cfView: 'ins_policies', panelId: 'insPoliciesPanel', colKey: 'carrier', filterVal: p.carrier });
+        });
       } else if (activeSlot === 'overview_cash') {
-        const src = (ins.remittances || []).some(r => r && r.date) ? ins.remittances : (ins.policies || []);
-        src.forEach(r => addToMap(m, r.carrier, Number(r.net_payable_4017_usd || 0)));
+        const datedRem = (ins.remittances || []).some(r => r && r.date);
+        const remCarriers = new Set((ins.remittances || []).map(r => r && norm(r.carrier)).filter(Boolean));
+        const src = datedRem ? ins.remittances : (ins.policies || []);
+        src.forEach(r => {
+          const useRem = datedRem || remCarriers.has(norm(r.carrier));
+          addToMap(m, r.carrier, Number(r.net_payable_4017_usd || 0), useRem
+            ? { jumpView: 'ins_remittances', cfView: 'ins_remittances', panelId: 'insRemittancesPanel', colKey: 'carrier', filterVal: r.carrier }
+            : { jumpView: 'ins_policies', cfView: 'ins_policies', panelId: 'insPoliciesPanel', colKey: 'carrier', filterVal: r.carrier });
+        });
       } else {
         if ((ins.billing || []).length) {
-          ins.billing.forEach(b => addToMap(m, b.client, Number(b.open_ar_4112_usd || 0)));
+          ins.billing.forEach(b => addToMap(m, b.client, Number(b.open_ar_4112_usd || 0), { jumpView: 'ins_billing', cfView: 'ins_billing', panelId: 'insBillingPanel', colKey: 'client', filterVal: b.client }));
         } else {
-          (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0)));
+          (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0), { jumpView: 'ins_policies', cfView: 'ins_policies', panelId: 'insPoliciesPanel', colKey: 'client', filterVal: p.client }));
         }
       }
       return m;
     };
+    const insOther = (activeSlot === 'overview_profit' && typeof computeInsuranceOperations === 'function')
+      ? computeInsuranceOperations({ range: { from: prevWin.from, to: curWin.to }, ignoreSearch: true })
+      : null;
     const insMetaBySlot = {
-      overview_revenue: { colLabel: 'Client', jumpView: 'ins_policies' },
-      overview_profit: { colLabel: 'Carrier', jumpView: 'ins_statements' },
-      overview_cash: { colLabel: 'Carrier', jumpView: 'ins_remittances' },
-      overview_wc: { colLabel: 'Client', jumpView: 'ins_billing' }
+      overview_revenue: { colLabel: 'Client', jumpView: 'ins_policies', panelId: 'insPoliciesPanel' },
+      overview_profit: { colLabel: 'Carrier', jumpView: 'ins_statements', panelId: 'insStatementsPanel' },
+      overview_cash: { colLabel: 'Carrier', jumpView: 'ins_remittances', panelId: 'insRemittancesPanel' },
+      overview_wc: { colLabel: 'Client', jumpView: 'ins_billing', panelId: 'insBillingPanel' }
     };
-    return buildMovers(collectIns(curWin), collectIns(prevWin), insMetaBySlot[activeSlot] || insMetaBySlot.overview_revenue);
+    return buildMovers(collectIns(curWin, insOther), collectIns(prevWin, insOther), insMetaBySlot[activeSlot] || insMetaBySlot.overview_revenue);
   }
 
   function sanitizeOvkBriefLine(s) {
@@ -28263,15 +28436,13 @@
               <tbody>
                 ${mRows.length ? mRows.map(mr => {
                   const df = ovkDeltaFormat(mr.deltaUsd);
-                  const canRowJump = !STATE.kioskLocked && !mr.partyTable && Boolean(mr.jumpView && canViewView(mr.jumpView, ovUser));
-                  const nameCell = mr.partyTable
-                    ? (STATE.kioskLocked ? `<strong>${esc(mr.name)}</strong>` : relLink(mr.partyTable, mr.rawName, mr.name, true))
-                    : `<strong>${esc(mr.name)}</strong>`;
+                  const canRowJump = !STATE.kioskLocked && Boolean(mr.jumpView && prevWin && prevWin.from && curRange && curRange.to && canViewView(mr.jumpView, ovUser));
+                  const nameCell = `<strong>${esc(mr.name)}</strong>`;
                   const deltaPill = df.isFlat
-                    ? `<span class="ovk-delta-pill">$0</span>`
-                    : `<span class="ovk-delta-pill ${df.isPos ? 'is-pos' : 'is-neg'}">${esc(df.text)}</span>`;
+                    ? `<span class="ovk-delta-pill" data-ovk-delta-pill="1">$0</span>`
+                    : `<span class="ovk-delta-pill ${df.isPos ? 'is-pos' : 'is-neg'}" data-ovk-delta-pill="1">${esc(df.text)}</span>`;
                   return `
-                    <tr class="${canRowJump ? 'clickable-row' : ''}"${canRowJump ? ` data-nav-jump="${esc(mr.jumpView)}" role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
+                    <tr class="${canRowJump ? 'clickable-row ovk-mover-row' : ''}"${canRowJump ? ` data-ovk-mover-drill="${esc(mr.jumpView)}" data-ovk-cf-view="${esc(mr.cfView || mr.jumpView)}" data-ovk-col="${esc(mr.colKey || '')}" data-ovk-extra-cf-view="${esc(mr.extraCfView || '')}" data-ovk-extra-col="${esc(mr.extraColKey || '')}" data-ovk-val="${esc(mr.filterVal || '')}" data-ovk-search="${esc(mr.searchVal || '')}" data-ovk-panel="${esc(mr.panelId || '')}" data-ovk-name="${esc(mr.name || '')}" data-ovk-from="${esc(prevWin.from)}" data-ovk-to="${esc(curRange.to)}" data-ovk-slot="${esc(activeSlot)}" data-ui-tip="Open matching records across active and prior periods" role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
                       <td data-no-i18n="1">${nameCell}</td>
                       <td class="num" data-no-i18n="1">${fmtUSD(mr.prevUsd, 0)}</td>
                       <td class="num" data-no-i18n="1">${fmtUSD(mr.curUsd, 0)}</td>
@@ -48986,7 +49157,7 @@
     return out.replace(/\s+/g, ' ').trim();
   }
 
-  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select';
+  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select, .row-sel-dot, [data-row-sel]';
 
   function cleanDomainCellText(tdEl) {
     return walkBlockSeparatedCellText(tdEl, CLEAN_DOMAIN_CELL_REJECT_SELECTOR, false);
@@ -49286,9 +49457,10 @@
     return true;
   }
 
-  function voidDomainRecordAttachments(crKey, primaryId) {
+  function voidDomainRecordAttachments(crKey, primaryId, opts = {}) {
     const pid = String(primaryId || '').trim();
     if (!pid) return;
+    const o = opts || {};
     const whoUser = (typeof activeUser === 'function' && activeUser()) || {};
     const whoName = whoUser.name || whoUser.email || 'Admin';
     let changed = false;
@@ -49312,14 +49484,22 @@
       const docVoidPayload = !canModifyData()
         ? _buildSparseVoidApiRecord('documents', d, d.id, true, { who: whoName, when: d.voided_at })
         : d;
-      if (docVoidPayload) postRecordToLocalApi('documents', docVoidPayload);
+      if (docVoidPayload) {
+        if (o.skipServerPost) {
+          if (Array.isArray(o.apiPairs)) o.apiPairs.push(['documents', JSON.parse(JSON.stringify(docVoidPayload))]);
+        } else {
+          postRecordToLocalApi('documents', docVoidPayload);
+        }
+      }
       changed = true;
     });
     if (changed) {
       _attCacheRev++;
-      applyCustomRecordsToSeed();
-      saveLocalAuthAndRecords();
-      syncWithCloud(true);
+      if (!o.deferSync) {
+        applyCustomRecordsToSeed();
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+      }
     }
   }
 
@@ -60338,6 +60518,45 @@
     return hit ? hit.name : null;
   }
 
+  function extractIcLegPockets(r, usdEquiv) {
+    const lbpMag = Math.round(Math.abs(Number((r && (r.lbp_amount != null ? r.lbp_amount : r.lbp)) || 0)));
+    const curUp = String((r && (r.currency || r.cur)) || '').trim().toUpperCase();
+    const isLbp = lbpMag > 1 || curUp === 'LBP';
+    if (isLbp) {
+      const effLbp = lbpMag > 1 ? lbpMag : Math.round(Math.abs(Number(usdEquiv || 0)) * 89500);
+      const hasUsdAttr = Boolean(r && r.usd_amount !== undefined && r.usd_amount !== null && r.usd_amount !== '' && Number(r.usd_amount) > 0);
+      const explicitUsd = hasUsdAttr ? Math.abs(Number(r.usd_amount)) : 0;
+      const isSplitUsdAndLbp = curUp !== 'LBP' && explicitUsd > 0
+        && Math.abs(explicitUsd - (effLbp / 89500)) > 0.50
+        && Math.abs(explicitUsd - (effLbp / 90000)) > 0.50;
+      return {
+        pocketUsd: isSplitUsdAndLbp ? round2(explicitUsd) : 0,
+        pocketLbp: effLbp
+      };
+    }
+    return {
+      pocketUsd: round2(Math.abs(Number(usdEquiv || 0))),
+      pocketLbp: 0
+    };
+  }
+
+  function extractIcDocRef(r) {
+    if (!r) return '-';
+    const nm = String(r.name || '').trim();
+    const hashMatch = nm.match(/#\d+[A-Za-z0-9-]*/);
+    if (hashMatch) return hashMatch[0];
+    const isInternalId = s => /^((?:em|ex|ic|dom|hsp-ext|trd-ext|re-ext|ins-ext)[_-]?[0-9a-f-]+|em\d+)$/i.test(String(s || '').trim());
+    const ref = String(r.reference || '').trim();
+    if (ref && !/^(none|null|extended\.?)$/i.test(ref) && !isInternalId(ref)) {
+      return ref.replace(/[\u2014\u2013]/g, '-').replace(/[\u2192\u2190\u2194]/g, 'to');
+    }
+    const idStr = String(r.id || '').trim();
+    if (idStr && !isInternalId(idStr)) {
+      return idStr.replace(/[\u2014\u2013]/g, '-').slice(0, 18);
+    }
+    return '-';
+  }
+
   let _icInteractionsCache = null;
   let _icInteractionsSig = '';
   function computeIntercompanyInteractions(opts = {}) {
@@ -60349,7 +60568,8 @@
     const ignoreSearch = Boolean(opts.ignoreSearch);
     const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
     const ignorePeriod = Boolean(opts.ignorePeriod);
-    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${expRange ? (expRange.from + '..' + expRange.to) : (ignorePeriod ? 'all' : STATE.period)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateFrom)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateTo)}|${(ignorePeriod || expRange) ? 'tx_date' : STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${allowedCompanyNames().join(',')}`;
+    const effBasis = opts.basis || (((ignorePeriod || expRange) && !opts.preserveBasis) ? 'tx_date' : STATE.basis);
+    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${expRange ? (expRange.from + '..' + expRange.to) : (ignorePeriod ? 'all' : STATE.period)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateFrom)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateTo)}|${effBasis}|${ignorePeriod ? 1 : 0}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${allowedCompanyNames().join(',')}`;
     if (_icInteractionsCache && _icInteractionsSig === sig) return _icInteractionsCache;
 
     const baseScoped = filterRecords(extList, {
@@ -60358,7 +60578,7 @@
       excludeMultiIndustrySeed: true,
       ignoreSearch,
       ignorePeriod: ignorePeriod || Boolean(expRange),
-      basis: (ignorePeriod || expRange) ? 'tx_date' : STATE.basis
+      basis: effBasis
     });
     const scoped = expRange
       ? baseScoped.filter(r => {
@@ -60385,11 +60605,12 @@
         : Number(r.usd_amount != null ? r.usd_amount : (isOut ? (r.out_usd || r.amount) : (r.in_usd || r.amount)) || 0);
       const usd = round2(Math.abs(usdRaw));
       if (usd <= 0) return;
-      const d = String(recordDateFor(r, (ignorePeriod || expRange) ? 'tx_date' : STATE.basis) || r.date || '').slice(0, 10);
+      const d = String(recordDateFor(r, effBasis) || r.date || '').slice(0, 10);
       const ms = d ? Date.parse(d + 'T00:00:00Z') : 0;
       const fromCo = isOut ? r.company : targetCo;
       const toCo = isOut ? targetCo : r.company;
       const cur = Math.abs(lbpRaw) > 1 ? 'LBP' : String(r.currency || 'USD').toUpperCase();
+      const pockets = extractIcLegPockets(r, usd);
       legs.push({
         id: String(r.id || ''),
         row: r,
@@ -60403,6 +60624,9 @@
         date: d,
         ms,
         usd,
+        pocketUsd: pockets.pocketUsd,
+        pocketLbp: pockets.pocketLbp,
+        docRef: extractIcDocRef(r),
         cur,
         method: m || 'Cash',
         notes: cleanNotesText(r.notes) || '',
@@ -60423,11 +60647,17 @@
       }
       const fromCo = cr.fromCo || 'Bdeir Holding';
       const toCo = cr.toCo || 'WTC';
-      const usd = round2(Math.abs(Number(cr.usd || 0)));
+      const curUp = String(cr.cur || cr.currency || 'USD').toUpperCase();
+      const crLbpRaw = Math.round(Math.abs(Number(cr.lbp_amount || cr.lbp || 0)));
+      const usd = round2(Math.abs(Number(cr.usd || (crLbpRaw > 1 ? crLbpRaw / 89500 : 0) || 0)));
       if (usd <= 0 || fromCo === toCo) return;
       const d = String(cr.date || '2026-10-30').slice(0, 10);
       if (hasActiveIcRange && /^\d{4}-\d{2}-\d{2}$/.test(d) && (d < activeIcRange.from || d > activeIcRange.to)) return;
       const ms = d ? Date.parse(d + 'T00:00:00Z') : 0;
+      const crPockets = (curUp === 'LBP' || crLbpRaw > 1)
+        ? { pocketUsd: 0, pocketLbp: crLbpRaw > 1 ? crLbpRaw : Math.round(usd * 89500) }
+        : { pocketUsd: usd, pocketLbp: 0 };
+      const crDocRef = extractIcDocRef(cr);
       legs.push({
         id: String(cr.id || 'IC-CUST'),
         row: cr,
@@ -60441,7 +60671,10 @@
         date: d,
         ms,
         usd,
-        cur: cr.cur || 'USD',
+        pocketUsd: crPockets.pocketUsd,
+        pocketLbp: crPockets.pocketLbp,
+        docRef: crDocRef,
+        cur: curUp,
         method: cr.method || 'Bank Transfer',
         notes: cr.notes || '',
         matched: false
@@ -60460,7 +60693,10 @@
           date: d,
           ms,
           usd,
-          cur: cr.cur || 'USD',
+          pocketUsd: crPockets.pocketUsd,
+          pocketLbp: crPockets.pocketLbp,
+          docRef: crDocRef,
+          cur: curUp,
           method: cr.method || 'Bank Transfer',
           notes: `${cr.notes || 'Intercompany transfer'} (Mirror)`,
           matched: false
@@ -60485,6 +60721,27 @@
 
     let seq = 1;
     const nextIcCode = () => `IC-${String(seq++).padStart(4, '0')}`;
+    const sumLegPockets = list => {
+      let usdCents = 0;
+      let lbpSum = 0;
+      list.forEach(l => {
+        usdCents += Math.round(Number(l.pocketUsd || 0) * 100);
+        lbpSum += Math.round(Number(l.pocketLbp || 0));
+      });
+      return { usd: round2(usdCents / 100), lbp: Math.round(lbpSum) };
+    };
+    const joinDocRefs = list => {
+      const refs = [];
+      const seenRef = new Set();
+      list.forEach(l => {
+        const rf = String((l && l.docRef) || '').trim();
+        if (rf && rf !== '-' && !seenRef.has(rf)) {
+          seenRef.add(rf);
+          refs.push(rf);
+        }
+      });
+      return refs.length ? refs.slice(0, 3).join(' + ') : '-';
+    };
 
     byDir.forEach(({ outLegs, inLegs }) => {
       // Rule 1: 1-to-1 exact match within ±3 days (|diff| <= $0.02)
@@ -60509,6 +60766,7 @@
           o.matched = true;
           best.matched = true;
           const v = round2(o.usd - best.usd);
+          const hasPayerPocket = o.pocketUsd > 0 || o.pocketLbp > 0;
           interactions.push({
             code: nextIcCode(),
             date: o.date <= best.date ? o.date : best.date,
@@ -60523,7 +60781,19 @@
             inUsd: best.usd,
             usd: Math.max(o.usd, best.usd),
             varianceUsd: v,
+            amountDiffUsd: round2(best.usd - o.usd),
+            payerUsd: o.pocketUsd,
+            payeeUsd: best.pocketUsd,
+            payerLbp: o.pocketLbp,
+            payeeLbp: best.pocketLbp,
+            settleUsd: hasPayerPocket ? o.pocketUsd : best.pocketUsd,
+            settleLbp: hasPayerPocket ? o.pocketLbp : best.pocketLbp,
+            outDocRef: o.docRef,
+            inDocRef: best.docRef,
             matchType: '1-to-1',
+            matchRuleLabel: bestDayGap === 0 ? 'Same day' : 'Within 3 days',
+            bookedBy: 'Both sides',
+            entryToBook: '',
             status: 'Reconciled',
             pendingActionCo: '',
             primaryRow: o.row,
@@ -60535,7 +60805,7 @@
         }
       });
 
-      // Rule 2: Split (1 to n, n=2..6) within ±3 days (|sum - target| <= $0.05)
+      // Rule 2a: Split (1 to n, n=2..6) within ±3 days (|sum - target| <= $0.05)
       const trySplitMatch = (singlePool, multiPool, singleIsOut) => {
         singlePool.forEach(anchor => {
           if (anchor.matched) return;
@@ -60572,6 +60842,11 @@
             grpSum = round2(grpSum);
             const outVal = singleIsOut ? anchor.usd : grpSum;
             const inVal = singleIsOut ? grpSum : anchor.usd;
+            const grpPockets = sumLegPockets(matchedGroup);
+            const outPockets = singleIsOut ? { usd: anchor.pocketUsd, lbp: anchor.pocketLbp } : grpPockets;
+            const inPockets = singleIsOut ? grpPockets : { usd: anchor.pocketUsd, lbp: anchor.pocketLbp };
+            const hasPayerPocket = outPockets.usd > 0 || outPockets.lbp > 0;
+            const mtLabel = `Split (1 to ${matchedGroup.length})`;
             interactions.push({
               code: nextIcCode(),
               date: anchor.date,
@@ -60586,7 +60861,19 @@
               inUsd: inVal,
               usd: Math.max(outVal, inVal),
               varianceUsd: round2(outVal - inVal),
-              matchType: `Split (1 to ${matchedGroup.length})`,
+              amountDiffUsd: round2(inVal - outVal),
+              payerUsd: outPockets.usd,
+              payeeUsd: inPockets.usd,
+              payerLbp: outPockets.lbp,
+              payeeLbp: inPockets.lbp,
+              settleUsd: hasPayerPocket ? outPockets.usd : inPockets.usd,
+              settleLbp: hasPayerPocket ? outPockets.lbp : inPockets.lbp,
+              outDocRef: singleIsOut ? anchor.docRef : joinDocRefs(matchedGroup),
+              inDocRef: singleIsOut ? joinDocRefs(matchedGroup) : anchor.docRef,
+              matchType: mtLabel,
+              matchRuleLabel: mtLabel,
+              bookedBy: 'Both sides',
+              entryToBook: '',
               status: 'Reconciled',
               pendingActionCo: '',
               primaryRow: anchor.row,
@@ -60600,6 +60887,112 @@
       };
       trySplitMatch(outLegs, inLegs, true);
       trySplitMatch(inLegs, outLegs, false);
+
+      // Rule 2b: Group (n to m, n>=2 & m>=2) within ±3 days with exact cents match (<= $0.02)
+      outLegs.forEach(anchor => {
+        if (anchor.matched || !anchor.ms) return;
+        const oCands = outLegs.filter(o => !o.matched && o !== anchor && o.ms && Math.abs(o.ms - anchor.ms) <= THREE_DAYS_MS).slice(0, 7);
+        const iCands = inLegs.filter(inn => !inn.matched && inn.ms && Math.abs(inn.ms - anchor.ms) <= THREE_DAYS_MS).slice(0, 8);
+        if (!oCands.length || iCands.length < 2) return;
+        const outSubs = [];
+        const buildOutSubs = (idx, chosen, cents) => {
+          if (chosen.length >= 2) outSubs.push({ legs: chosen.slice(), cents });
+          if (chosen.length >= 4 || idx >= oCands.length || outSubs.length >= 96) return;
+          for (let i = idx; i < oCands.length; i++) {
+            chosen.push(oCands[i]);
+            buildOutSubs(i + 1, chosen, cents + Math.round(oCands[i].usd * 100));
+            chosen.pop();
+          }
+        };
+        buildOutSubs(0, [anchor], Math.round(anchor.usd * 100));
+        if (!outSubs.length) return;
+        const inSubs = [];
+        const buildInSubs = (idx, chosen, cents) => {
+          if (chosen.length >= 2) inSubs.push({ legs: chosen.slice(), cents });
+          if (chosen.length >= 4 || idx >= iCands.length || inSubs.length >= 160) return;
+          for (let i = idx; i < iCands.length; i++) {
+            chosen.push(iCands[i]);
+            buildInSubs(i + 1, chosen, cents + Math.round(iCands[i].usd * 100));
+            chosen.pop();
+          }
+        };
+        buildInSubs(0, [], 0);
+        if (!inSubs.length) return;
+        let bestOut = null, bestIn = null, bestScore = 9999;
+        for (let oi = 0; oi < outSubs.length; oi++) {
+          const os = outSubs[oi];
+          for (let ii = 0; ii < inSubs.length; ii++) {
+            const is = inSubs[ii];
+            const cDiff = Math.abs(os.cents - is.cents);
+            if (cDiff <= 2) {
+              const score = (os.legs.length + is.legs.length) * 10 + cDiff;
+              if (score < bestScore) {
+                bestScore = score;
+                bestOut = os.legs;
+                bestIn = is.legs;
+              }
+            }
+          }
+        }
+        if (bestOut && bestIn) {
+          let maxGap = 0;
+          let earliestOut = bestOut[0].date;
+          let latestIn = bestIn[0].date;
+          bestOut.forEach(o => {
+            o.matched = true;
+            if (o.date && o.date < earliestOut) earliestOut = o.date;
+          });
+          bestIn.forEach(inn => {
+            inn.matched = true;
+            if (inn.date && inn.date > latestIn) latestIn = inn.date;
+            bestOut.forEach(o => {
+              const g = Math.round(Math.abs(o.ms - inn.ms) / 86400000);
+              if (g > maxGap) maxGap = g;
+            });
+          });
+          const outVal = round2(bestOut.reduce((s, l) => s + l.usd, 0));
+          const inVal = round2(bestIn.reduce((s, l) => s + l.usd, 0));
+          const outPockets = sumLegPockets(bestOut);
+          const inPockets = sumLegPockets(bestIn);
+          const hasPayerPocket = outPockets.usd > 0 || outPockets.lbp > 0;
+          const mtLabel = `Group (${bestOut.length} to ${bestIn.length})`;
+          interactions.push({
+            code: nextIcCode(),
+            date: earliestOut,
+            mirrorDate: latestIn,
+            dayGap: maxGap,
+            fromCo: anchor.fromCo,
+            toCo: anchor.toCo,
+            pairKey: anchor.pairKey,
+            bilateralKey: anchor.bilateralKey,
+            cur: anchor.cur,
+            outUsd: outVal,
+            inUsd: inVal,
+            usd: Math.max(outVal, inVal),
+            varianceUsd: round2(outVal - inVal),
+            amountDiffUsd: round2(inVal - outVal),
+            payerUsd: outPockets.usd,
+            payeeUsd: inPockets.usd,
+            payerLbp: outPockets.lbp,
+            payeeLbp: inPockets.lbp,
+            settleUsd: hasPayerPocket ? outPockets.usd : inPockets.usd,
+            settleLbp: hasPayerPocket ? outPockets.lbp : inPockets.lbp,
+            outDocRef: joinDocRefs(bestOut),
+            inDocRef: joinDocRefs(bestIn),
+            matchType: mtLabel,
+            matchRuleLabel: mtLabel,
+            bookedBy: 'Both sides',
+            entryToBook: '',
+            status: 'Reconciled',
+            pendingActionCo: '',
+            primaryRow: bestOut[0].row,
+            mirrorRow: bestIn[0].row,
+            legCount: bestOut.length + bestIn.length,
+            method: anchor.method,
+            notes: `${anchor.notes || (anchor.fromCo + ' to ' + anchor.toCo)} (${bestOut.length} vs ${bestIn.length} group)`
+          });
+        }
+      });
 
       // Rule 3: Within $1.00 tolerance within ±3 days
       outLegs.forEach(o => {
@@ -60619,6 +61012,7 @@
           o.matched = true;
           best.matched = true;
           const dayGap = (o.ms && best.ms) ? Math.round(Math.abs(o.ms - best.ms) / 86400000) : 0;
+          const hasPayerPocket = o.pocketUsd > 0 || o.pocketLbp > 0;
           interactions.push({
             code: nextIcCode(),
             date: o.date <= best.date ? o.date : best.date,
@@ -60633,7 +61027,19 @@
             inUsd: best.usd,
             usd: Math.max(o.usd, best.usd),
             varianceUsd: round2(o.usd - best.usd),
+            amountDiffUsd: round2(best.usd - o.usd),
+            payerUsd: o.pocketUsd,
+            payeeUsd: best.pocketUsd,
+            payerLbp: o.pocketLbp,
+            payeeLbp: best.pocketLbp,
+            settleUsd: hasPayerPocket ? o.pocketUsd : best.pocketUsd,
+            settleLbp: hasPayerPocket ? o.pocketLbp : best.pocketLbp,
+            outDocRef: o.docRef,
+            inDocRef: best.docRef,
             matchType: 'Within $1.00',
+            matchRuleLabel: 'Within $1.00',
+            bookedBy: 'Both sides',
+            entryToBook: '',
             status: 'Reconciled',
             pendingActionCo: '',
             primaryRow: o.row,
@@ -60661,7 +61067,19 @@
           inUsd: 0,
           usd: o.usd,
           varianceUsd: o.usd,
+          amountDiffUsd: null,
+          payerUsd: o.pocketUsd,
+          payeeUsd: 0,
+          payerLbp: o.pocketLbp,
+          payeeLbp: 0,
+          settleUsd: o.pocketUsd,
+          settleLbp: o.pocketLbp,
+          outDocRef: o.docRef,
+          inDocRef: '',
           matchType: 'Single (Unmatched)',
+          matchRuleLabel: 'Unmatched',
+          bookedBy: 'Payer only',
+          entryToBook: 'External Revenue',
           status: 'Open',
           pendingActionCo: o.mirrorCo,
           missingSide: 'In',
@@ -60687,7 +61105,19 @@
           inUsd: inn.usd,
           usd: inn.usd,
           varianceUsd: -inn.usd,
+          amountDiffUsd: null,
+          payerUsd: 0,
+          payeeUsd: inn.pocketUsd,
+          payerLbp: 0,
+          payeeLbp: inn.pocketLbp,
+          settleUsd: inn.pocketUsd,
+          settleLbp: inn.pocketLbp,
+          outDocRef: '',
+          inDocRef: inn.docRef,
           matchType: 'Single (Unmatched)',
+          matchRuleLabel: 'Unmatched',
+          bookedBy: 'Payee only',
+          entryToBook: 'External Expense',
           status: 'Open',
           pendingActionCo: inn.mirrorCo,
           missingSide: 'Out',
@@ -60811,10 +61241,12 @@
         ? 'badge-good'
         : (repayPct >= 15 ? 'badge-warn' : 'badge-crit');
       const corridorLabel = `${lenderCo} ↔ ${borrowerCo}`;
+      const corridor = `${b.coA} / ${b.coB}`;
       const enriched = Object.assign(b, {
         lenderCo,
         borrowerCo,
         corridorLabel,
+        corridor,
         givenUsd,
         paidBackUsd,
         givenCount,
@@ -60836,6 +61268,7 @@
       const isGiven = !bCor || x.fromCo === bCor.lenderCo;
       x.lenderCo = bCor ? bCor.lenderCo : x.fromCo;
       x.borrowerCo = bCor ? bCor.borrowerCo : x.toCo;
+      x.corridor = (bCor && bCor.corridor) || [x.fromCo, x.toCo].sort().join(' / ');
       x.corridorLabel = bCor ? bCor.corridorLabel : x.bilateralKey;
       x.corridorRepayPct = bCor ? bCor.repayPct : 0;
       x.corridorStatus = bCor ? bCor.repayStatus : 'Not Paying Back';
@@ -61344,9 +61777,9 @@
 
       ${submode === 'entities' ? (() => {
         const ents = regPanelRows('hldEntitiesScorecardPanel', entities, '', e => ({ name: e.name, industry: e.industry, sector: e.sector, loads: Number(e.k.loads || 0), sales_ttc: Number(e.k.sales_ttc || 0), gross_margin: Number(e.k.gross_margin || 0), expenses: round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0)), operating_profit: Number(e.k.operating_profit || 0), ar_balance: Number(e.k.ar_balance || 0), ap_balance: Number(e.k.ap_balance || 0) }));
-        // Filtered from the chart: the TOTAL adds up the entities listed, not the whole group.
+        // Filtered from the chart or active column filter: the TOTAL adds up the entities listed, not the whole group.
         const entSum = f => round2(ents.reduce((a, e) => a + Number(f(e) || 0), 0));
-        const entFoot = getRegDrill('hldEntitiesScorecardPanel')
+        const entFoot = (getRegDrill('hldEntitiesScorecardPanel') || hasDirectColFilter('hldEntitiesScorecardPanel'))
           ? { loads: entSum(e => e.k.loads), sales: entSum(e => e.k.sales_ttc), gm: entSum(e => e.k.gross_margin), opex: entSum(e => round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0))), op: entSum(e => e.k.operating_profit), ar: entSum(e => e.k.ar_balance), ap: entSum(e => e.k.ap_balance) }
           : { loads: totals.loads, sales: grossEntitySalesTtc, gm: grossEntityMargin, opex: round2(totals.expenses + totals.salaries), op: grossEntityOpProfit, ar: totals.ar_balance, ap: totals.ap_balance };
         return `
@@ -61591,6 +62024,7 @@
     `;
 
     if (submode === 'due_matrix') {
+      const canNetSettleDue = canOpenHoldingNetSettlement(u);
       const bf = (!canHldBooks && ['open_due', 'settling', 'unpaid_corridors'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
       if (STATE.chipFilter !== bf && bf === 'all') STATE.chipFilter = 'all';
       const bChip = (key, label) => `<button type="button" class="filter-chip ${bf === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
@@ -61620,6 +62054,7 @@
           <div class="panel-head">
             <div class="panel-title"><span>${ic('hld_due_matrix')} SISTER COMPANY REPAYMENT &amp; DUE FROM / DUE TO MATRIX (${bList.length} PAIRS)</span></div>
             <div style="display:flex;gap:6px;align-items:center">
+              ${canNetSettleDue ? `<button type="button" class="btn cf-liquidity-brief-btn hld-net-settle-open-btn" id="hldNetSettleBtn" data-hld-net-settle-open="1" data-ui-tip="Open Monthly Intercompany Net Settlement Sheet">${ic('statements')} <span>Net Settlement Sheet</span></button>` : ''}
               ${canHldBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>` : ''}
               ${(canHldBooks && hldIntLens.expenses) ? `<button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>` : ''}
               ${canHldBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>` : ''}
@@ -61660,7 +62095,7 @@
                     <td class="r mono ${canHldBooks ? 'good' : ''}">${canHldBooks ? `<strong>${fmtUSD(c.paidBackUsd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canHldBooks ? `<span class="badge ${c.repayBadgeCls}">${c.repayPct.toFixed(1)}% Repaid</span>` : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canHldBooks ? (c.repayPct >= 80 ? 'good' : 'warn') : ''}">${canHldBooks ? `<strong>${fmtUSD(c.netUnpaidUsd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
-                    <td><span class="badge ${c.repayBadgeCls}">${esc(c.repayStatus)}</span> ${canHldBooks ? `<small class="mu">${esc(c.borrowerCo)} owes ${esc(c.lenderCo)} <b>${fmtUSD(c.netUnpaidUsd, 0)}</b></small>` : ''}</td>
+                    <td><span class="badge ${c.repayBadgeCls}">${esc(c.repayStatus)}</span> ${canHldBooks ? `<small class="mu">${esc(c.borrowerCo)} owes ${esc(c.lenderCo)} <b>${fmtUSD(c.netUnpaidUsd, 0)}</b></small>` : ''} ${canNetSettleDue ? `<button type="button" class="btn btn-ghost-bar hld-due-row-settle-btn" data-hld-settle-pair="${esc(c.lenderCo)}||${esc(c.borrowerCo)}" data-ui-tip="Open Monthly Net Settlement Sheet"><span>Settle</span></button>` : ''}</td>
                     <td class="r mono">${fmtNum(c.matchedCount)} / ${fmtNum(c.totalCount)}</td>
                   </tr>
                 `).join('') : emptyRow(9, 'No intercompany pairs in selected period')}
@@ -61794,6 +62229,7 @@
     const sumGiven = round2(filteredRows.reduce((s, x) => s + (x.givenUsd || 0), 0));
     const sumPaidBack = round2(filteredRows.reduce((s, x) => s + (x.paidBackUsd || 0), 0));
     const sumNetUnpaid = round2(sumGiven - sumPaidBack);
+    const canNetSettleMain = canOpenHoldingNetSettlement(u);
 
     return `
       ${kpiHeader}
@@ -61814,6 +62250,7 @@
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search company, IC ref, notes...')}
+            ${canNetSettleMain ? `<button type="button" class="btn cf-liquidity-brief-btn hld-net-settle-open-btn" id="hldNetSettleBtn" data-hld-net-settle-open="1" data-ui-tip="Open Monthly Intercompany Net Settlement Sheet">${ic('statements')} <span>Net Settlement Sheet</span></button>` : ''}
             ${canHldBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>` : ''}
             ${(canHldBooks && hldIntLens.expenses) ? `<button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>` : ''}
             ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Repayment_Ledger')}
@@ -61886,6 +62323,891 @@
           : { mode: 'group', groupKey: 'fromCo', fmt: 'count', color: 'green', title: 'Intercompany Transfers by Originating Entity', sub: 'Transfer counts initiated by each group entity' }
       })}
     `;
+  }
+
+  // ==========================================================================
+  // HOLDING MONTHLY INTERCOMPANY NET SETTLEMENT SHEET (BOOKED-DEFAULT, USD/LBP)
+  // ==========================================================================
+  const HLD_NET_SETTLE_STATE = {
+    open: false,
+    entityA: '',
+    entityB: '',
+    ym: 'ALL',
+    basisMode: 'booked'
+  };
+
+  function cleanHldSettleCopy(str) {
+    return String(str == null ? '' : str)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2192\u2190\u2194\u21D2\u21D4]/g, ' to ')
+      .replace(/\bTHEO\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function trHldSettleWord(str) {
+    const s = String(str == null ? '' : str);
+    const i18n = typeof window !== 'undefined' ? window.MFG_I18N : null;
+    if (!i18n || typeof i18n.getLang !== 'function' || i18n.getLang() === 'en') return s;
+    if (typeof i18n.t === 'function') {
+      try {
+        const direct = i18n.t(s, i18n.getLang());
+        if (direct && direct !== s) return direct;
+      } catch (_) {}
+    }
+    if (typeof i18n.translateDom === 'function' && typeof document !== 'undefined') {
+      try {
+        const span = document.createElement('span');
+        span.textContent = s;
+        i18n.translateDom(span);
+        return span.textContent || s;
+      } catch (_) {}
+    }
+    return s;
+  }
+
+  function getAllowedHoldingSettlementEntities(u, interactionsList) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!usr || STATE.kioskLocked || String(usr.status || '') === 'Suspended' || usr.locked) return [];
+    const ownerOrDemo = Boolean(isOwner(usr) || isDemoScopeActive());
+    const allowedSet = ownerOrDemo
+      ? null
+      : new Set((allowedCompanyNames(usr) || []).map(n => norm(n)).filter(Boolean));
+    const cat = getCompanyCatalog();
+    const permitted = cat.filter(c => c && c.name && (!allowedSet || allowedSet.has(norm(c.name))));
+    const legCounts = new Map();
+    const list = Array.isArray(interactionsList) ? interactionsList : [];
+    list.forEach(x => {
+      if (!x) return;
+      const fc = String(x.fromCo || '').trim();
+      const tc = String(x.toCo || '').trim();
+      if (fc) legCounts.set(fc, (legCounts.get(fc) || 0) + 1);
+      if (tc) legCounts.set(tc, (legCounts.get(tc) || 0) + 1);
+    });
+    return permitted.slice().sort((a, b) => {
+      const ca = legCounts.get(a.name) || 0;
+      const cb = legCounts.get(b.name) || 0;
+      if (cb !== ca) return cb - ca;
+      return cat.indexOf(a) - cat.indexOf(b);
+    }).map(c => c.name);
+  }
+
+  function canOpenHoldingNetSettlement(u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!usr || STATE.kioskLocked || String(usr.status || '') === 'Suspended' || usr.locked) return false;
+    const lens = seatLens(usr);
+    if (!lens || !lens.books) return false;
+    if (!canViewView('hld_interactions', usr) && !canViewView('hld_due_matrix', usr)) return false;
+    const ownerOrDemo = Boolean(isOwner(usr) || isDemoScopeActive());
+    const hasHoldingAccess = ownerOrDemo || (allowedCompanyNames(usr) || []).some(n => norm(n) === 'bdeir holding');
+    if (!hasHoldingAccess) return false;
+    return getAllowedHoldingSettlementEntities(usr).length >= 2;
+  }
+
+  function getHldNetSettleScopeMeta() {
+    const r = periodRange(STATE.period);
+    const basisLabel = STATE.basis === 'rep_date' ? 'Reporting Date' : 'Transaction Date';
+    if (!r) return { label: 'All-Time', basisLabel };
+    return { label: cleanHldSettleCopy(r.label || `${r.from} to ${r.to}`), basisLabel };
+  }
+
+  function buildHoldingNetSettlementData(opts = {}) {
+    const usr = opts.user === undefined ? activeUser() : opts.user;
+    if (!canOpenHoldingNetSettlement(usr)) return null;
+
+    // Pair over full history preserving active date basis so cross-month +-3d mirrors match before month slicing.
+    const fullIc = computeIntercompanyInteractions({ ignoreSearch: true, ignorePeriod: true, preserveBasis: true });
+    const scopeIc = computeIntercompanyInteractions({ ignoreSearch: true });
+    const allowedEntities = getAllowedHoldingSettlementEntities(usr, fullIc.interactions);
+    if (allowedEntities.length < 2) return null;
+
+    const allowedNormMap = new Map();
+    allowedEntities.forEach(name => allowedNormMap.set(norm(name), name));
+    const resolveAllowedName = raw => {
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      if (allowedNormMap.has(norm(s))) return allowedNormMap.get(norm(s));
+      const canon = resolveSisterEntityName(s);
+      if (canon && allowedNormMap.has(norm(canon))) return allowedNormMap.get(norm(canon));
+      return '';
+    };
+
+    const fullAllowedRows = (fullIc.interactions || []).filter(x => x && allowedNormMap.has(norm(x.fromCo)) && allowedNormMap.has(norm(x.toCo)));
+    const scopeAllowedRows = (scopeIc.interactions || []).filter(x => x && allowedNormMap.has(norm(x.fromCo)) && allowedNormMap.has(norm(x.toCo)));
+
+    let entityA = resolveAllowedName(opts.entityA);
+    let entityB = resolveAllowedName(opts.entityB);
+    if (!entityA || !entityB || entityA === entityB) {
+      const defPair = (scopeIc.byBilateral || []).find(p => p && allowedNormMap.has(norm(p.lenderCo)) && allowedNormMap.has(norm(p.borrowerCo)))
+        || (fullIc.byBilateral || []).find(p => p && allowedNormMap.has(norm(p.lenderCo)) && allowedNormMap.has(norm(p.borrowerCo)));
+      if (!entityA) entityA = (defPair && allowedNormMap.get(norm(defPair.lenderCo))) || allowedEntities[0];
+      if (!entityB || entityB === entityA) {
+        const candB = defPair
+          ? (allowedNormMap.get(norm(defPair.borrowerCo)) === entityA ? allowedNormMap.get(norm(defPair.lenderCo)) : allowedNormMap.get(norm(defPair.borrowerCo)))
+          : '';
+        entityB = (candB && candB !== entityA)
+          ? candB
+          : (allowedEntities.find(n => n !== entityA) || allowedEntities[1]);
+      }
+    }
+    if (!entityA || !entityB || entityA === entityB) return null;
+
+    const matchesPair = x => Boolean(x && ((x.fromCo === entityA && x.toCo === entityB) || (x.fromCo === entityB && x.toCo === entityA)));
+    const fullPairRows = fullAllowedRows.filter(matchesPair);
+    const scopePairRows = scopeAllowedRows.filter(matchesPair);
+
+    const monthSet = new Set();
+    fullPairRows.forEach(x => {
+      const ymStr = String(x.date || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ymStr)) monthSet.add(ymStr);
+    });
+    if (!monthSet.size) {
+      fullAllowedRows.forEach(x => {
+        const ymStr = String(x.date || '').slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(ymStr)) monthSet.add(ymStr);
+      });
+    }
+    const availableMonths = Array.from(monthSet).sort().reverse();
+
+    const reqYm = String(opts.ym || 'ALL').trim();
+    const ym = (/^\d{4}-\d{2}$/.test(reqYm)) ? reqYm : 'ALL';
+    const mode = opts.basisMode === 'provisional' ? 'provisional' : 'booked';
+    const scopeMeta = getHldNetSettleScopeMeta();
+    const periodLabel = ym === 'ALL' ? scopeMeta.label : ym;
+
+    const selectedPairRows = (ym === 'ALL'
+      ? scopePairRows
+      : fullPairRows.filter(x => String(x.date || '').slice(0, 7) === ym)
+    ).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.code || '').localeCompare(b.code || ''));
+
+    const bookedRowsRaw = [];
+    const openMirrorRowsRaw = [];
+    selectedPairRows.forEach(x => {
+      const bk = String(x.bookedBy || (x.status === 'Reconciled' ? 'Both sides' : (x.missingSide === 'Out' ? 'Payee only' : 'Payer only')));
+      if (bk === 'Both sides') bookedRowsRaw.push(x);
+      else openMirrorRowsRaw.push(x);
+    });
+
+    const activeSourceRows = (mode === 'provisional'
+      ? bookedRowsRaw.concat(openMirrorRowsRaw)
+      : bookedRowsRaw
+    ).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.code || '').localeCompare(b.code || ''));
+
+    let givenCents = 0;
+    let paidBackCents = 0;
+    let givenLbp = 0;
+    let paidBackLbp = 0;
+    let givenCount = 0;
+    let paidBackCount = 0;
+    let runCents = 0;
+    let runLbp = 0;
+    let amountDiffCents = 0;
+
+    const toDisplayRow = (x, trackRunning) => {
+      const isGiven = x.fromCo === entityA;
+      const rowCents = Math.round(Number(x.settleUsd != null ? x.settleUsd : (x.usd || 0)) * 100);
+      const rowLbp = Math.round(Number(x.settleLbp || 0));
+      const gCents = isGiven ? rowCents : 0;
+      const pCents = isGiven ? 0 : rowCents;
+      const gLbp = isGiven ? rowLbp : 0;
+      const pLbp = isGiven ? 0 : rowLbp;
+      if (trackRunning) {
+        if (isGiven) givenCount += 1;
+        else paidBackCount += 1;
+        givenCents += gCents;
+        paidBackCents += pCents;
+        givenLbp += gLbp;
+        paidBackLbp += pLbp;
+        runCents += gCents - pCents;
+        runLbp += gLbp - pLbp;
+      }
+      const bk = String(x.bookedBy || (x.status === 'Reconciled' ? 'Both sides' : (x.missingSide === 'Out' ? 'Payee only' : 'Payer only')));
+      const bkTitle = bk === 'Both sides' ? 'Both Sides' : (bk === 'Payer only' ? 'Payer Only' : 'Payee Only');
+      const docRef = x.outDocRef && x.inDocRef && x.outDocRef !== '-' && x.inDocRef !== '-' && x.outDocRef !== x.inDocRef
+        ? `${x.outDocRef} / ${x.inDocRef}`
+        : ((x.outDocRef && x.outDocRef !== '-') ? x.outDocRef : ((x.inDocRef && x.inDocRef !== '-') ? x.inDocRef : '-'));
+      const primaryId = (x.primaryRow && x.primaryRow.id) ? String(x.primaryRow.id) : '';
+      const mirrorCoName = String(x.pendingActionCo || (x.missingSide === 'In' ? x.toCo : x.fromCo) || '');
+      const counterPartyName = x.missingSide === 'In' ? x.fromCo : x.toCo;
+      return {
+        code: String(x.code || ''),
+        primaryId,
+        date: String(x.date || '').slice(0, 10),
+        dayGap: x.dayGap,
+        fromCo: x.fromCo,
+        toCo: x.toCo,
+        flowRole: isGiven ? 'Given' : 'Paid Back',
+        isGiven,
+        bookedBy: bk,
+        bookedByTitle: bkTitle,
+        matchRule: String(x.matchRuleLabel || x.matchType || 'Same day'),
+        docRef: cleanHldSettleCopy(docRef),
+        givenUsd: gCents / 100,
+        paidBackUsd: pCents / 100,
+        givenLbp: gLbp,
+        paidBackLbp: pLbp,
+        amountUsd: rowCents / 100,
+        usdEquiv: round2(Number(x.usd || 0)),
+        amountLbp: rowLbp,
+        runningUsd: trackRunning ? (runCents / 100) : 0,
+        runningLbp: trackRunning ? runLbp : 0,
+        amountDiffUsd: x.amountDiffUsd != null ? Number(x.amountDiffUsd) : 0,
+        pendingActionCo: mirrorCoName,
+        mirrorCoKey: COMPANY_KEY_BY_NAME[mirrorCoName] || slugCompanyKey(mirrorCoName),
+        missingSide: String(x.missingSide || ''),
+        counterPartyName,
+        entryToBook: String(x.entryToBook || (x.missingSide === 'In' ? 'External Revenue' : (x.missingSide === 'Out' ? 'External Expense' : ''))),
+        notes: cleanHldSettleCopy(x.notes || '-') || '-'
+      };
+    };
+
+    const settledRows = activeSourceRows.map(x => toDisplayRow(x, true));
+    const bookedRows = bookedRowsRaw.map(x => toDisplayRow(x, false));
+    bookedRows.forEach(r => {
+      amountDiffCents += Math.round(Number(r.amountDiffUsd || 0) * 100);
+    });
+    const openMirrorRows = openMirrorRowsRaw.map(x => toDisplayRow(x, false));
+
+    let payerOnlyCount = 0;
+    let payeeOnlyCount = 0;
+    let payerOnlyCents = 0;
+    let payeeOnlyCents = 0;
+    let payerOnlyLbp = 0;
+    let payeeOnlyLbp = 0;
+    const pendingSet = new Set();
+    openMirrorRows.forEach(r => {
+      const c = Math.round(Number(r.amountUsd || 0) * 100);
+      const l = Math.round(Number(r.amountLbp || 0));
+      if (r.bookedBy === 'Payer only') {
+        payerOnlyCount += 1;
+        payerOnlyCents += c;
+        payerOnlyLbp += l;
+      } else {
+        payeeOnlyCount += 1;
+        payeeOnlyCents += c;
+        payeeOnlyLbp += l;
+      }
+      if (r.pendingActionCo) pendingSet.add(r.pendingActionCo);
+    });
+
+    const netCents = givenCents - paidBackCents;
+    const netLbp = givenLbp - paidBackLbp;
+    const closingTransferCents = -netCents;
+    const closingTransferLbp = -netLbp;
+    const postSettlementCents = givenCents - paidBackCents + closingTransferCents;
+    const postSettlementLbp = givenLbp - paidBackLbp + closingTransferLbp;
+
+    const usdDirection = netCents > 0
+      ? { payer: entityB, payee: entityA, absUsd: netCents / 100, settled: false }
+      : (netCents < 0
+        ? { payer: entityA, payee: entityB, absUsd: Math.abs(netCents) / 100, settled: false }
+        : { payer: '', payee: '', absUsd: 0, settled: true });
+    const lbpDirection = netLbp > 1
+      ? { payer: entityB, payee: entityA, absLbp: netLbp, settled: false }
+      : (netLbp < -1
+        ? { payer: entityA, payee: entityB, absLbp: Math.abs(netLbp), settled: false }
+        : { payer: '', payee: '', absLbp: 0, settled: true });
+
+    return {
+      entityA,
+      entityB,
+      allowedEntities,
+      ym,
+      basisMode: mode,
+      isProvisional: mode === 'provisional',
+      periodLabel,
+      scopeLabel: scopeMeta.label,
+      dateBasisLabel: scopeMeta.basisLabel,
+      availableMonths,
+      settledRows,
+      bookedRows,
+      openMirrorRows,
+      bookedCount: bookedRows.length,
+      openCount: openMirrorRows.length,
+      payerOnlyCount,
+      payeeOnlyCount,
+      payerOnlyUsd: payerOnlyCents / 100,
+      payerOnlyLbp,
+      payeeOnlyUsd: payeeOnlyCents / 100,
+      payeeOnlyLbp,
+      openUsd: (payerOnlyCents + payeeOnlyCents) / 100,
+      openLbp: payerOnlyLbp + payeeOnlyLbp,
+      pendingWithList: Array.from(pendingSet),
+      givenCount,
+      paidBackCount,
+      givenUsd: givenCents / 100,
+      paidBackUsd: paidBackCents / 100,
+      givenLbp,
+      paidBackLbp,
+      netUsd: netCents / 100,
+      netLbp,
+      closingTransferUsd: closingTransferCents / 100,
+      closingTransferLbp,
+      postSettlementUsd: postSettlementCents / 100,
+      postSettlementLbp,
+      usdDirection,
+      lbpDirection,
+      amountDiffTotalUsd: amountDiffCents / 100
+    };
+  }
+
+  function closeHoldingNetSettlementModal() {
+    HLD_NET_SETTLE_STATE.open = false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('hld-printing-net-settlement');
+    }
+    const bd = $('hldNetSettlementBackdrop');
+    if (bd) bd.remove();
+  }
+
+  function printHoldingNetSettlementSheet() {
+    if (!HLD_NET_SETTLE_STATE.open || !canOpenHoldingNetSettlement()) return false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('hld-printing-net-settlement');
+      const cleanup = () => { document.body.classList.remove('hld-printing-net-settlement'); };
+      window.addEventListener('afterprint', cleanup, { once: true });
+      setTimeout(cleanup, 2000);
+    }
+    if (typeof window !== 'undefined' && typeof window.print === 'function') window.print();
+    return true;
+  }
+
+  function hldSettleCsvCell(v) {
+    let s = cleanHldSettleCopy(String(v == null ? '' : v).replace(/\r?\n/g, ' '));
+    if (typeof v !== 'number' && !/^-?\d+(?:\.\d+)?$/.test(s.trim()) && /^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+
+  function exportHoldingNetSettlementCsv(opts = {}) {
+    if (!canOpenHoldingNetSettlement()) return null;
+    const data = buildHoldingNetSettlementData({
+      entityA: opts.entityA || HLD_NET_SETTLE_STATE.entityA,
+      entityB: opts.entityB || HLD_NET_SETTLE_STATE.entityB,
+      ym: opts.ym || HLD_NET_SETTLE_STATE.ym,
+      basisMode: opts.basisMode || HLD_NET_SETTLE_STATE.basisMode
+    });
+    if (!data) return null;
+    const safeSlug = s => String(s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    const filename = `Holding_Net_Settlement_${safeSlug(data.entityA)}_${safeSlug(data.entityB)}_${safeSlug(data.ym === 'ALL' ? 'Scope' : data.ym)}.csv`;
+    const lines = [];
+    lines.push(['Record_Group', 'IC_Ref', 'Date', 'From_Entity', 'To_Entity', 'Flow_Role', 'Booked_By', 'Match_Rule', 'Ref', 'Given_USD', 'Paid_Back_USD', 'Given_LBP', 'Paid_Back_LBP', 'Running_Net_USD', 'Running_Net_LBP', 'Pending_With', 'Entry_To_Book', 'Notes'].map(hldSettleCsvCell).join(','));
+    lines.push(['META', data.basisMode === 'booked' ? 'Booked: Both Sides' : 'Provisional (+ Open Legs)', data.periodLabel, data.entityA, data.entityB, data.dateBasisLabel, 'Both Sides', '', '', data.givenUsd.toFixed(2), data.paidBackUsd.toFixed(2), String(data.givenLbp), String(data.paidBackLbp), data.netUsd.toFixed(2), String(data.netLbp), '', '', `${data.bookedCount} booked / ${data.openCount} open mirror legs`].map(hldSettleCsvCell).join(','));
+    data.settledRows.forEach(r => {
+      lines.push([
+        r.bookedBy === 'Both sides' ? 'BOOKED_MOVEMENT' : 'PROVISIONAL_OPEN_LEG',
+        r.code,
+        fmtDateDMY(r.date),
+        r.fromCo,
+        r.toCo,
+        r.flowRole,
+        r.bookedByTitle,
+        r.matchRule,
+        r.docRef,
+        r.givenUsd.toFixed(2),
+        r.paidBackUsd.toFixed(2),
+        String(r.givenLbp),
+        String(r.paidBackLbp),
+        r.runningUsd.toFixed(2),
+        String(r.runningLbp),
+        r.pendingActionCo || '',
+        r.entryToBook || '',
+        r.notes
+      ].map(hldSettleCsvCell).join(','));
+    });
+    const closePayer = (!data.usdDirection.settled ? data.usdDirection.payer : data.lbpDirection.payer) || data.entityB;
+    const closePayee = (!data.usdDirection.settled ? data.usdDirection.payee : data.lbpDirection.payee) || data.entityA;
+    lines.push(['RECONCILIATION_TIE_OUT', 'NET_BEFORE_CLOSING', data.periodLabel, data.entityA, data.entityB, 'Given - Paid Back', data.basisMode === 'booked' ? 'Booked: Both Sides' : 'Provisional (+ Open Legs)', '', '', data.givenUsd.toFixed(2), data.paidBackUsd.toFixed(2), String(data.givenLbp), String(data.paidBackLbp), data.netUsd.toFixed(2), String(data.netLbp), '', '', 'Net before closing transfer'].map(hldSettleCsvCell).join(','));
+    lines.push(['RECONCILIATION_TIE_OUT', 'CLOSING_SETTLEMENT_TRANSFER', data.periodLabel, closePayer, closePayee, 'Closing Settlement', data.basisMode === 'booked' ? 'Booked: Both Sides' : 'Provisional (+ Open Legs)', '', '', '', '', '', '', data.closingTransferUsd.toFixed(2), String(data.closingTransferLbp), '', '', 'Required closing settlement transfer'].map(hldSettleCsvCell).join(','));
+    lines.push(['RECONCILIATION_TIE_OUT', 'POST_SETTLEMENT_BALANCE', data.periodLabel, data.entityA, data.entityB, 'Reconciled Tie-Out', data.basisMode === 'booked' ? 'Booked: Both Sides' : 'Provisional (+ Open Legs)', '', '', '', '', '', '', data.postSettlementUsd.toFixed(2), String(data.postSettlementLbp), '', '', 'Reconciled to zero'].map(hldSettleCsvCell).join(','));
+    data.openMirrorRows.forEach(r => {
+      lines.push([
+        'EXCLUDED_OPEN_MIRROR_LEG',
+        r.code,
+        fmtDateDMY(r.date),
+        r.fromCo,
+        r.toCo,
+        r.flowRole,
+        r.bookedByTitle,
+        r.matchRule,
+        r.docRef,
+        r.isGiven ? r.amountUsd.toFixed(2) : '0.00',
+        r.isGiven ? '0.00' : r.amountUsd.toFixed(2),
+        r.isGiven ? String(r.amountLbp) : '0',
+        r.isGiven ? '0' : String(r.amountLbp),
+        '',
+        '',
+        r.pendingActionCo,
+        r.entryToBook,
+        r.notes
+      ].map(hldSettleCsvCell).join(','));
+    });
+    const csv = '\uFEFF' + lines.join('\r\n');
+    if (opts.returnContent) return { filename, csv };
+    try {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} a.remove(); }, 250);
+    } catch (_) {}
+    return { filename, csv };
+  }
+
+  function renderHoldingNetSettlementModal() {
+    let existing = $('hldNetSettlementBackdrop');
+    if (!HLD_NET_SETTLE_STATE.open || !canOpenHoldingNetSettlement()) {
+      if (existing) existing.remove();
+      return;
+    }
+    const data = buildHoldingNetSettlementData({
+      entityA: HLD_NET_SETTLE_STATE.entityA,
+      entityB: HLD_NET_SETTLE_STATE.entityB,
+      ym: HLD_NET_SETTLE_STATE.ym,
+      basisMode: HLD_NET_SETTLE_STATE.basisMode
+    });
+    if (!data) {
+      closeHoldingNetSettlementModal();
+      return;
+    }
+    HLD_NET_SETTLE_STATE.entityA = data.entityA;
+    HLD_NET_SETTLE_STATE.entityB = data.entityB;
+    HLD_NET_SETTLE_STATE.ym = data.ym;
+    HLD_NET_SETTLE_STATE.basisMode = data.basisMode;
+
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'hldNetSettlementBackdrop';
+      existing.className = 'hld-net-settle-backdrop';
+      document.body.appendChild(existing);
+    }
+
+    const u = activeUser();
+    const canBookMirror = Boolean(canEnterForm('external', u) || canEnterForm('treasury', u));
+    const curLang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const optHtml = (list, sel) => list.map(n => `<option value="${esc(n)}" data-no-i18n="1"${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
+    const monthOpts = `<option value="ALL" data-no-i18n="1"${data.ym === 'ALL' ? ' selected' : ''}>${esc(trHldSettleWord('Active Scope'))} (${esc(trHldSettleWord(data.scopeLabel))})</option>` +
+      data.availableMonths.map(mk => `<option value="${esc(mk)}" data-no-i18n="1"${data.ym === mk ? ' selected' : ''}>${esc(mk)}</option>`).join('');
+
+    const dirSummaryHtml = (dir, isLbp) => {
+      if (!dir || dir.settled) return `<span>Settled</span>`;
+      const amtTxt = isLbp ? fmtLBP(dir.absLbp) : fmtUSD(dir.absUsd, 2);
+      return `<span data-no-i18n="1">${esc(dir.payer)}</span> <span>pays</span> <span data-no-i18n="1">${esc(dir.payee)}</span> <b class="mono" data-no-i18n="1">${esc(amtTxt)}</b>`;
+    };
+
+    const provisionalBannerHtml = data.isProvisional
+      ? `<div class="hld-settle-provisional-banner" id="hldNetSettleProvisionalBanner" role="status"><span>PROVISIONAL PREVIEW ONLY - INCLUDES UNMIRRORED ONE-SIDED LEGS (NOT SETTLED CONTRACT BALANCE)</span></div>`
+      : '';
+
+    const openWarnHtml = data.openCount > 0
+      ? `<div class="hld-settle-warn-strip" id="hldNetSettleOpenWarnStrip" role="status">
+          <div class="hld-settle-warn-main">
+            <div class="hld-settle-warn-head">
+              <span class="hld-settle-warn-ico">${ic('warn')}</span>
+              <strong>${data.isProvisional
+                ? '<span>Open One-Sided Mirror Legs Pending Counter-Entry</span>'
+                : '<span>Open One-Sided Mirror Legs Excluded from Settled Contract Totals</span>'}</strong>
+            </div>
+            <div class="hld-settle-warn-metrics">
+              <span><span>Payer Only</span>: <b class="mono" data-no-i18n="1">${fmtNum(data.payerOnlyCount)}</b> (<b class="mono" data-no-i18n="1">${esc(fmtUSD(data.payerOnlyUsd, 2))}</b>${Math.abs(data.payerOnlyLbp) > 1 ? ` / <b class="mono" data-no-i18n="1">${esc(fmtLBP(data.payerOnlyLbp))}</b>` : ''})</span>
+              <span><span>Payee Only</span>: <b class="mono" data-no-i18n="1">${fmtNum(data.payeeOnlyCount)}</b> (<b class="mono" data-no-i18n="1">${esc(fmtUSD(data.payeeOnlyUsd, 2))}</b>${Math.abs(data.payeeOnlyLbp) > 1 ? ` / <b class="mono" data-no-i18n="1">${esc(fmtLBP(data.payeeOnlyLbp))}</b>` : ''})</span>
+              ${data.pendingWithList.length ? `<span><span>Pending With</span>: <b data-no-i18n="1">${esc(data.pendingWithList.join(', '))}</b></span>` : ''}
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost-bar no-print" id="hldSettleOpenQueueBtn" data-hld-settle-jump-open="1"><span>Open Audit Queue</span></button>
+        </div>`
+      : `<div class="hld-settle-ok-strip" id="hldNetSettleAllMirroredStrip" role="status">
+          <span class="hld-settle-ok-ico">${ic('check_circle')}</span>
+          <span>All intercompany movements in this period are booked by both sides (0 open mirror legs)</span>
+        </div>`;
+
+    const settledBodyHtml = data.settledRows.length
+      ? data.settledRows.map(r => {
+          const bkBadge = r.bookedBy === 'Both sides'
+            ? `<span class="badge badge-info">Both Sides</span>`
+            : (r.bookedBy === 'Payer only' ? `<span class="badge badge-warn">Payer Only</span>` : `<span class="badge badge-crit">Payee Only</span>`);
+          return `<tr>
+            <td class="mono" data-no-i18n="1"><b>${esc(r.code)}</b></td>
+            <td class="mono" data-no-i18n="1">${esc(fmtDateDMY(r.date))}</td>
+            <td data-no-i18n="1">${esc(r.fromCo)}</td>
+            <td data-no-i18n="1">${esc(r.toCo)}</td>
+            <td><span class="badge ${r.isGiven ? 'badge-warn' : 'badge-good'}">${esc(r.flowRole)}</span></td>
+            <td>${bkBadge}</td>
+            <td><span>${esc(r.matchRule)}</span></td>
+            <td class="mono" data-no-i18n="1">${esc(r.docRef)}</td>
+            <td class="r mono" data-no-i18n="1">${r.givenUsd > 0 ? esc(fmtUSD(r.givenUsd, 2)) : '-'}</td>
+            <td class="r mono ${r.paidBackUsd > 0 ? 'good' : ''}" data-no-i18n="1">${r.paidBackUsd > 0 ? `<b>${esc(fmtUSD(r.paidBackUsd, 2))}</b>` : '-'}</td>
+            <td class="r mono" data-no-i18n="1">${r.givenLbp > 1 ? esc(fmtLBP(r.givenLbp)) : '-'}</td>
+            <td class="r mono ${r.paidBackLbp > 1 ? 'good' : ''}" data-no-i18n="1">${r.paidBackLbp > 1 ? `<b>${esc(fmtLBP(r.paidBackLbp))}</b>` : '-'}</td>
+            <td class="r mono" data-no-i18n="1"><b>${esc(fmtSignedUSD(r.runningUsd, 2))}</b></td>
+            <td class="r mono" data-no-i18n="1"><b>${Math.abs(r.runningLbp) > 1 ? esc(fmtSignedLBP(r.runningLbp)) : '0 LL'}</b></td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="14" class="hld-settle-empty">No two-sided booked movements in this period.</td></tr>`;
+
+    const openBodyHtml = data.openMirrorRows.map(r => {
+      const bkBadge = r.bookedBy === 'Payer only'
+        ? `<span class="badge badge-warn">Payer Only</span>`
+        : `<span class="badge badge-crit">Payee Only</span>`;
+      const actionBtn = (canBookMirror && r.primaryId)
+        ? `<button type="button" class="btn btn-primary no-print" style="padding:3px 9px;font-size:11px"
+            data-hld-settle-mirror="${esc(r.primaryId)}"
+            data-mirror-co="${esc(r.mirrorCoKey)}"
+            data-mirror-type="${esc(r.missingSide)}"
+            data-mirror-party="${esc(r.counterPartyName)}"
+            data-mirror-usd="${esc(String(r.amountUsd > 0 ? r.amountUsd : r.usdEquiv))}"
+            data-mirror-lbp="${esc(String(r.amountLbp || 0))}"
+            data-mirror-date="${esc(r.date)}">+ <span>Book Mirror</span> <span data-no-i18n="1">${esc(r.missingSide)}</span></button>`
+        : '<span class="muted">-</span>';
+      return `<tr>
+        <td class="mono" data-no-i18n="1"><b>${esc(r.code)}</b></td>
+        <td class="mono" data-no-i18n="1">${esc(fmtDateDMY(r.date))}</td>
+        <td data-no-i18n="1">${esc(r.fromCo)}</td>
+        <td data-no-i18n="1">${esc(r.toCo)}</td>
+        <td>${bkBadge}</td>
+        <td><span class="badge badge-warn" data-no-i18n="1">${esc(r.pendingActionCo)}</span></td>
+        <td><span>${esc(r.entryToBook)}</span></td>
+        <td class="r mono" data-no-i18n="1"><b>${r.amountUsd > 0 ? esc(fmtUSD(r.amountUsd, 2)) : '-'}</b></td>
+        <td class="r mono" data-no-i18n="1"><b>${r.amountLbp > 1 ? esc(fmtLBP(r.amountLbp)) : '-'}</b></td>
+        <td class="hld-settle-note-cell" data-no-i18n="1">${esc(r.notes)}</td>
+        <td class="r no-print">${actionBtn}</td>
+      </tr>`;
+    }).join('');
+
+    existing.innerHTML = `
+      <div id="hldNetSettlementModal" class="hld-net-settle-modal" role="dialog" aria-modal="true" aria-labelledby="hldNetSettleTitle" dir="${curLang === 'ar' ? 'rtl' : 'ltr'}">
+        <div class="hld-settle-toolbar no-print">
+          <div class="hld-settle-controls">
+            <select id="hldSettleEntityA" class="hld-settle-select" aria-label="First Group Entity">${optHtml(data.allowedEntities, data.entityA)}</select>
+            <button type="button" class="btn btn-ghost-bar hld-settle-swap-btn" id="hldSettleSwapBtn" data-hld-settle-swap="1" aria-label="Swap Entities" data-ui-tip="Swap Entities">${ic('swap')}</button>
+            <select id="hldSettleEntityB" class="hld-settle-select" aria-label="Second Group Entity">${optHtml(data.allowedEntities, data.entityB)}</select>
+            <select id="hldSettleMonth" class="hld-settle-select" aria-label="Settlement Month">${monthOpts}</select>
+            <div class="seg hld-settle-mode-bar" role="group" aria-label="Settlement Pairing Basis">
+              <button type="button" class="seg-btn hld-settle-mode-btn${data.basisMode === 'booked' ? ' active' : ''}" data-hld-settle-basis="booked">Booked: Both Sides</button>
+              <button type="button" class="seg-btn hld-settle-mode-btn${data.basisMode === 'provisional' ? ' active' : ''}" data-hld-settle-basis="provisional">Provisional (+ Open Legs)</button>
+            </div>
+          </div>
+          <div class="hld-settle-controls">
+            <button type="button" class="btn" id="hldSettleCsvBtn">${ic('download')} <span>CSV</span></button>
+            <button type="button" class="btn btn-primary" id="hldSettlePrintBtn">${ic('printer')} <span>Print / PDF</span></button>
+            <button type="button" class="modal-close-btn" id="hldSettleCloseBtn" data-hld-settle-close="1" aria-label="Close">${ic('close_x')}</button>
+          </div>
+        </div>
+
+        <div class="hld-settle-sheet">
+          <div class="hld-settle-head">
+            <div>
+              <div class="hld-settle-eyebrow"><span>MONTHLY INTERCOMPANY NET SETTLEMENT SHEET</span></div>
+              <h3 id="hldNetSettleTitle" class="hld-settle-title"><span data-no-i18n="1">${esc(data.entityA)}</span> / <span data-no-i18n="1">${esc(data.entityB)}</span></h3>
+              <div class="hld-settle-meta">
+                <span><span>Period</span>: <b data-no-i18n="1">${esc(trHldSettleWord(data.periodLabel))}</b></span>
+                <span><span>Date Basis</span>: <b>${esc(data.dateBasisLabel)}</b></span>
+                <span><span>Pairing Basis</span>: <b>${data.isProvisional ? 'Provisional (+ Open Legs)' : 'Booked: Both Sides'}</b></span>
+                <span><span>Booked Movements</span>: <b class="mono" data-no-i18n="1">${fmtNum(data.bookedCount)}</b></span>
+                <span><span>Open Mirror Legs</span>: <b class="mono" data-no-i18n="1">${fmtNum(data.openCount)}</b></span>
+              </div>
+            </div>
+          </div>
+
+          ${provisionalBannerHtml}
+          ${openWarnHtml}
+
+          <div class="hld-settle-kpi-grid">
+            <div class="hld-settle-kpi">
+              <div class="hld-settle-kpi-lbl"><span>Given</span> (+)</div>
+              <div class="hld-settle-kpi-val" data-no-i18n="1">${esc(fmtUSD(data.givenUsd, 2))}</div>
+              <div class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtLBP(data.givenLbp))}</span> (<span data-no-i18n="1">${fmtNum(data.givenCount)}</span>)</div>
+            </div>
+            <div class="hld-settle-kpi">
+              <div class="hld-settle-kpi-lbl"><span>Paid Back</span> (-)</div>
+              <div class="hld-settle-kpi-val good" data-no-i18n="1">${esc(fmtUSD(data.paidBackUsd, 2))}</div>
+              <div class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtLBP(data.paidBackLbp))}</span> (<span data-no-i18n="1">${fmtNum(data.paidBackCount)}</span>)</div>
+            </div>
+            <div class="hld-settle-kpi">
+              <div class="hld-settle-kpi-lbl"><span>Net Settlement (Given - Paid Back)</span></div>
+              <div class="hld-settle-kpi-val" data-no-i18n="1">${esc(fmtSignedUSD(data.netUsd, 2))}</div>
+              <div class="hld-settle-sub-note">${dirSummaryHtml(data.usdDirection, false)}</div>
+            </div>
+            <div class="hld-settle-kpi">
+              <div class="hld-settle-kpi-lbl"><span>Closing Settlement Transfer</span></div>
+              <div class="hld-settle-kpi-val" data-no-i18n="1">${esc(fmtSignedUSD(data.closingTransferUsd, 2))}</div>
+              <div class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtSignedLBP(data.closingTransferLbp))}</span></div>
+            </div>
+            <div class="hld-settle-kpi is-net">
+              <div class="hld-settle-kpi-lbl"><span>Post-Settlement Balance</span></div>
+              <div class="hld-settle-kpi-val good" data-no-i18n="1">${esc(fmtUSD(data.postSettlementUsd, 2))}</div>
+              <div class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtLBP(data.postSettlementLbp))}</span> - <span>Reconciled to Zero</span></div>
+            </div>
+          </div>
+
+          <div class="hld-settle-sec">
+            <div class="hld-settle-sec-hdr">
+              <h4><span data-no-i18n="1">A.</span> <span>Net Settlement Tie-Out</span></h4>
+              <span class="hld-settle-sub-note">${data.isProvisional ? '<span>Provisional Preview</span>' : '<span>Booked: Both Sides</span>'}</span>
+            </div>
+            <div class="table-wrap hld-settle-table-wrap">
+              <table class="ledger-table" id="hldNetSettleTieTable">
+                <thead>
+                  <tr>
+                    <th>Reconciliation Step</th>
+                    <th>Direction / Basis</th>
+                    <th class="r">USD ($)</th>
+                    <th class="r">LBP (LL)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span>Given (Advances &amp; Transfers)</span></td>
+                    <td><span data-no-i18n="1">${esc(data.entityA)}</span> <span>to</span> <span data-no-i18n="1">${esc(data.entityB)}</span></td>
+                    <td class="r mono" data-no-i18n="1">${esc(fmtUSD(data.givenUsd, 2))}</td>
+                    <td class="r mono" data-no-i18n="1">${esc(fmtLBP(data.givenLbp))}</td>
+                  </tr>
+                  <tr>
+                    <td><span>Less: Paid Back (Repayments &amp; Returns)</span></td>
+                    <td><span data-no-i18n="1">${esc(data.entityB)}</span> <span>to</span> <span data-no-i18n="1">${esc(data.entityA)}</span></td>
+                    <td class="r mono good" data-no-i18n="1">${data.paidBackUsd > 0 ? `-${esc(fmtUSD(data.paidBackUsd, 2))}` : '$0.00'}</td>
+                    <td class="r mono good" data-no-i18n="1">${data.paidBackLbp > 1 ? `-${esc(fmtLBP(data.paidBackLbp))}` : '0 LL'}</td>
+                  </tr>
+                  <tr>
+                    <td><strong><span>Net Settlement Before Closing</span></strong></td>
+                    <td>${dirSummaryHtml(data.usdDirection, false)} · ${dirSummaryHtml(data.lbpDirection, true)}</td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtSignedUSD(data.netUsd, 2))}</strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtSignedLBP(data.netLbp))}</strong></td>
+                  </tr>
+                  <tr>
+                    <td><span>Required Closing Settlement Transfer</span></td>
+                    <td><span>Reconciling Settlement Entry</span></td>
+                    <td class="r mono" data-no-i18n="1">${esc(fmtSignedUSD(data.closingTransferUsd, 2))}</td>
+                    <td class="r mono" data-no-i18n="1">${esc(fmtSignedLBP(data.closingTransferLbp))}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="totals-row">
+                    <td><strong><span>Post-Settlement Closing Balance</span></strong></td>
+                    <td><strong><span>Reconciled Tie-Out</span></strong></td>
+                    <td class="r mono good" data-no-i18n="1"><strong>${esc(fmtUSD(data.postSettlementUsd, 2))}</strong></td>
+                    <td class="r mono good" data-no-i18n="1"><strong>${esc(fmtLBP(data.postSettlementLbp))}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            ${Math.abs(data.amountDiffTotalUsd) >= 0.01 ? `<div class="hld-settle-diff-note"><span>Within-$1.00 rounding variance across matched pairs (Payee minus Payer):</span> <b class="mono" data-no-i18n="1">${esc(fmtSignedUSD(data.amountDiffTotalUsd, 2))}</b></div>` : ''}
+          </div>
+
+          <div class="hld-settle-sec">
+            <div class="hld-settle-sec-hdr">
+              <h4><span data-no-i18n="1">B.</span> <span>Two-Sided Reconciled Movements</span> <span data-no-i18n="1">(${fmtNum(data.settledRows.length)})</span></h4>
+              <span class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtSignedUSD(data.netUsd, 2))}</span> / <span data-no-i18n="1">${esc(fmtSignedLBP(data.netLbp))}</span></span>
+            </div>
+            <div class="table-wrap hld-settle-table-wrap">
+              <table class="ledger-table" id="hldNetSettleBookedTable">
+                <thead>
+                  <tr>
+                    <th>IC Ref</th>
+                    <th>Date</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Flow</th>
+                    <th>Booked By</th>
+                    <th>Match Rule</th>
+                    <th>Ref</th>
+                    <th class="r">Given ($)</th>
+                    <th class="r">Paid Back ($)</th>
+                    <th class="r">Given (LL)</th>
+                    <th class="r">Paid Back (LL)</th>
+                    <th class="r">Running Net ($)</th>
+                    <th class="r">Running Net (LL)</th>
+                  </tr>
+                </thead>
+                <tbody>${settledBodyHtml}</tbody>
+                <tfoot>
+                  <tr class="totals-row">
+                    <td colspan="8"><strong><span>TOTAL SETTLED MOVEMENTS</span> <span data-no-i18n="1">(${fmtNum(data.settledRows.length)})</span></strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtUSD(data.givenUsd, 2))}</strong></td>
+                    <td class="r mono good" data-no-i18n="1"><strong>${esc(fmtUSD(data.paidBackUsd, 2))}</strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtLBP(data.givenLbp))}</strong></td>
+                    <td class="r mono good" data-no-i18n="1"><strong>${esc(fmtLBP(data.paidBackLbp))}</strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtSignedUSD(data.netUsd, 2))}</strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtSignedLBP(data.netLbp))}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          ${data.openCount > 0 ? `
+          <div class="hld-settle-sec">
+            <div class="hld-settle-sec-hdr">
+              <h4><span data-no-i18n="1">C.</span> <span>Open One-Sided Mirror Legs (Excluded from Contract Totals)</span> <span data-no-i18n="1">(${fmtNum(data.openCount)})</span></h4>
+              <span class="hld-settle-sub-note"><span data-no-i18n="1">${esc(fmtUSD(data.openUsd, 2))}</span>${Math.abs(data.openLbp) > 1 ? ` / <span data-no-i18n="1">${esc(fmtLBP(data.openLbp))}</span>` : ''}</span>
+            </div>
+            <div class="table-wrap hld-settle-table-wrap">
+              <table class="ledger-table" id="hldNetSettleOpenTable">
+                <thead>
+                  <tr>
+                    <th>IC Ref</th>
+                    <th>Date</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Booked By</th>
+                    <th>Pending With</th>
+                    <th>Entry To Book</th>
+                    <th class="r">Unmatched ($)</th>
+                    <th class="r">Unmatched (LL)</th>
+                    <th>Notes</th>
+                    <th class="r no-print">Action</th>
+                  </tr>
+                </thead>
+                <tbody>${openBodyHtml}</tbody>
+                <tfoot>
+                  <tr class="totals-row">
+                    <td colspan="7"><strong><span>TOTAL EXCLUDED OPEN LEGS</span> <span data-no-i18n="1">(${fmtNum(data.openCount)})</span></strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtUSD(data.openUsd, 2))}</strong></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${esc(fmtLBP(data.openLbp))}</strong></td>
+                    <td colspan="2"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>` : ''}
+
+          <div class="hld-settle-signs">
+            <div><div class="hld-settle-sign-line"><span>Prepared By</span> (<span data-no-i18n="1">${esc(data.entityA)}</span>)</div></div>
+            <div><div class="hld-settle-sign-line"><span>Counterparty Confirmation</span> (<span data-no-i18n="1">${esc(data.entityB)}</span>)</div></div>
+            <div><div class="hld-settle-sign-line"><span>Holding Treasury Sign-Off &amp; Date</span></div></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const selA = $('hldSettleEntityA');
+    const selB = $('hldSettleEntityB');
+    const selM = $('hldSettleMonth');
+    if (selA) {
+      selA.value = data.entityA;
+      selA.addEventListener('change', () => {
+        const nextA = selA.value;
+        const prevA = HLD_NET_SETTLE_STATE.entityA;
+        HLD_NET_SETTLE_STATE.entityA = nextA;
+        if (nextA === HLD_NET_SETTLE_STATE.entityB && prevA && prevA !== nextA) {
+          HLD_NET_SETTLE_STATE.entityB = prevA;
+        }
+        renderHoldingNetSettlementModal();
+      });
+    }
+    if (selB) {
+      selB.value = data.entityB;
+      selB.addEventListener('change', () => {
+        const nextB = selB.value;
+        const prevB = HLD_NET_SETTLE_STATE.entityB;
+        HLD_NET_SETTLE_STATE.entityB = nextB;
+        if (nextB === HLD_NET_SETTLE_STATE.entityA && prevB && prevB !== nextB) {
+          HLD_NET_SETTLE_STATE.entityA = prevB;
+        }
+        renderHoldingNetSettlementModal();
+      });
+    }
+    if (selM) {
+      selM.value = data.ym;
+      selM.addEventListener('change', () => {
+        HLD_NET_SETTLE_STATE.ym = selM.value || 'ALL';
+        renderHoldingNetSettlementModal();
+      });
+    }
+
+    if (!existing.__hldSettleWired) {
+      existing.__hldSettleWired = true;
+      existing.addEventListener('click', e => {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        if (t === existing || t.closest('[data-hld-settle-close]')) {
+          closeHoldingNetSettlementModal();
+          return;
+        }
+        if (t.closest('[data-hld-settle-swap]')) {
+          const tmp = HLD_NET_SETTLE_STATE.entityA;
+          HLD_NET_SETTLE_STATE.entityA = HLD_NET_SETTLE_STATE.entityB;
+          HLD_NET_SETTLE_STATE.entityB = tmp;
+          renderHoldingNetSettlementModal();
+          return;
+        }
+        const bBtn = t.closest('[data-hld-settle-basis]');
+        if (bBtn) {
+          HLD_NET_SETTLE_STATE.basisMode = bBtn.getAttribute('data-hld-settle-basis') === 'provisional' ? 'provisional' : 'booked';
+          renderHoldingNetSettlementModal();
+          return;
+        }
+        if (t.closest('#hldSettleCsvBtn')) {
+          exportHoldingNetSettlementCsv();
+          return;
+        }
+        if (t.closest('#hldSettlePrintBtn')) {
+          printHoldingNetSettlementSheet();
+          return;
+        }
+        if (t.closest('[data-hld-settle-jump-open]')) {
+          closeHoldingNetSettlementModal();
+          setView('hld_open_recon');
+          return;
+        }
+        const mirBtn = t.closest('[data-hld-settle-mirror]');
+        if (mirBtn) {
+          const mirrorCo = mirBtn.getAttribute('data-mirror-co') || 'wtc';
+          const mirrorType = mirBtn.getAttribute('data-mirror-type') || 'In';
+          const mirrorParty = mirBtn.getAttribute('data-mirror-party') || '';
+          const mirrorUsd = mirBtn.getAttribute('data-mirror-usd') || '';
+          const mirrorLbp = Number(mirBtn.getAttribute('data-mirror-lbp') || 0);
+          const mirrorDate = mirBtn.getAttribute('data-mirror-date') || '';
+          closeHoldingNetSettlementModal();
+          openEntryModal('external', {
+            co: COMPANY_BU_MATCH[mirrorCo] || mirrorCo,
+            party: mirrorParty,
+            usd: mirrorUsd,
+            notes: `Intercompany mirror (${mirrorType}) for ${mirrorParty} (${mirrorDate})`
+          });
+          setTimeout(() => {
+            const tpEl = $('f_type');
+            if (tpEl) { tpEl.value = mirrorType; tpEl.dispatchEvent(new Event('change', { bubbles: true })); }
+            const dtEl = $('f_date');
+            if (dtEl && mirrorDate) { dtEl.value = mirrorDate; dtEl.dispatchEvent(new Event('change', { bubbles: true })); }
+            const lbpEl = $('f_lbp');
+            if (lbpEl && mirrorLbp > 1) { lbpEl.value = String(mirrorLbp); lbpEl.dispatchEvent(new Event('input', { bubbles: true })); }
+          }, 30);
+        }
+      });
+    }
+
+    if (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(existing); } catch (_) {}
+    }
+  }
+
+  function openHoldingNetSettlementModal(opts = {}) {
+    const u = activeUser();
+    if (!canOpenHoldingNetSettlement(u)) {
+      toast('Intercompany settlement sheet requires full finance books access', 'err');
+      return false;
+    }
+    // Guardrail: always reset to Booked By: Both sides on open.
+    HLD_NET_SETTLE_STATE.basisMode = 'booked';
+    HLD_NET_SETTLE_STATE.entityA = opts.entityA || (STATE.chipFilter === 'wtc_bbc' ? 'BBConstruction' : '');
+    HLD_NET_SETTLE_STATE.entityB = opts.entityB || (STATE.chipFilter === 'wtc_bbc' ? 'WTC' : '');
+    const activeMonth = /^month:(\d{4}-\d{2})$/.test(String(STATE.period || '')) ? String(STATE.period).slice(6, 13) : '';
+    HLD_NET_SETTLE_STATE.ym = opts.ym || activeMonth || 'ALL';
+    HLD_NET_SETTLE_STATE.open = true;
+    renderHoldingNetSettlementModal();
+    return Boolean($('hldNetSettlementBackdrop'));
+  }
+
+  if (typeof window !== 'undefined' && !window.__hldNetSettleLangWired) {
+    window.__hldNetSettleLangWired = true;
+    window.addEventListener('mfg:lang-changed', () => {
+      if (HLD_NET_SETTLE_STATE.open) renderHoldingNetSettlementModal();
+    });
   }
 
   function resolveLegacyIndustryId(rawId) {
@@ -61968,6 +63290,7 @@
         const sc = splitClosed.get(String(r.id || '').trim().toUpperCase());
         if (sc) Object.assign(list[i], sc);
       });
+      list = _filterVoidedDomainRows(wfBucket, list, { applyPatch: false });
     }
     return list;
   }
@@ -66391,10 +67714,9 @@
       });
     });
 
-    const mergedVenueRows = mergeCustomOverSeededRows(baseVenueRows, getIndustryCustomRows('hsp_revenue'));
+    const mergedVenueRows = _filterVoidedDomainRows('hsp_revenue', mergeCustomOverSeededRows(baseVenueRows, getIndustryCustomRows('hsp_revenue')));
     baseVenueRows.length = 0; baseVenueRows.push(...mergedVenueRows);
     const venueRows = baseVenueRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
-    venueRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_revenue', r.id); if (p) venueRows[i] = Object.assign({}, r, p); });
 
     const posRows = pickHsp('posRows', [
       { id: 'POS-CL-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una Main POS Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'Thermal POS shift close verified 100% against physical drawer' },
@@ -66405,10 +67727,9 @@
       { id: 'POS-CL-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'Close Variance', notes: 'Till Close Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
       { id: 'POS-CL-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
     ]);
-    const mergedPosRows = mergeCustomOverSeededRows(posRows, getIndustryCustomRows('hsp_pos'));
+    const mergedPosRows = _filterVoidedDomainRows('hsp_pos', mergeCustomOverSeededRows(posRows, getIndustryCustomRows('hsp_pos')));
     const scopedPosRows = mergedPosRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     posRows.length = 0; posRows.push(...scopedPosRows);
-    posRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_pos', r.id); if (p) posRows[i] = Object.assign({}, r, p); });
 
     const vatRows = pickHsp('vatRows', [
       { id: 'HSP-VAT-101', date: '2026-09-28', company: 'Blanca', doc_ref: 'VAT-BL-2026-091', category: 'Chalet & F&B Sales', tax_rule: '11% Standard VAT', ht_usd: 29450, vat_usd: 3239.5, ttc_usd: 32689.5, direction: 'Output VAT', notes: 'Official 11% fiscal declaration on resort rooms & dining' },
@@ -66429,10 +67750,9 @@
       { id: 'MEM-2026-006', company: 'La Una', member: 'Gourmet Circle VIP (12 Cards)', unit: 'Private Cellar Locker #L-03', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 18000, paid_usd: 18000, balance_usd: 0, due_date: '2026-02-01', status: 'Paid in Full', notes: 'Corporate dining & private cellar membership' },
       { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
     ]);
-    const mergedMemRows = mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships'));
+    const mergedMemRows = _filterVoidedDomainRows('hsp_memberships', mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships')));
     const scopedMemRows = mergedMemRows.filter(r => activeNames.has(r.company) && hspPm.matchSpan(r.start_date, r.end_date));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
-    membershipRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_memberships', r.id); if (p) membershipRows[i] = Object.assign({}, r, p); });
 
     const baseTariffRows = pickHsp('tariffRows', [
       { id: 'TRF-BL-2026-S1', company: 'Blanca', tier: 'VIP Beach Cabana', season: 'Summer 2026', start_date: '2026-05-01', end_date: 'Open', season_contract_usd: 28000, daily_chalet_ttc_usd: 420, baseline_contract_usd: 22000, baseline_daily_usd: 320, backfill_status: 'Chrono Active · 2 Contracts Synced', status: 'Active (Open)' },
@@ -66473,7 +67793,7 @@
       { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
       { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: 'VIP suite minibars & ballroom catering stock balanced' }
     ]);
-    const mergedStkRows = mergeCustomOverSeededRows(stockRows, getIndustryCustomRows('hsp_stock'));
+    const mergedStkRows = _filterVoidedDomainRows('hsp_stock', mergeCustomOverSeededRows(stockRows, getIndustryCustomRows('hsp_stock')));
     const scopedStkRows = mergedStkRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     stockRows.length = 0; stockRows.push(...scopedStkRows);
 
@@ -66494,7 +67814,7 @@
       { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
     ]);
-    const mergedNrgRows = mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy'));
+    const mergedNrgRows = _filterVoidedDomainRows('hsp_energy', mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy')));
     const scopedNrgRows = mergedNrgRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     energyRows.length = 0; energyRows.push(...scopedNrgRows);
 
@@ -68126,7 +69446,7 @@
     });
 
     // 4. Import Files, Purchase Orders & Backorders
-    const rawLandedRows = mergeCustomOverSeededRows(pickTrd('landedRows', [
+    const rawLandedRows = _filterVoidedDomainRows('trd_landed', mergeCustomOverSeededRows(pickTrd('landedRows', [
       { id: 'LC-SH-2026-014', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', freight_usd: 16800, customs_usd: 11200, clearance_usd: 4400, insurance_usd: 2400, total_landed_add: 34800, allocated_usd: 34800, unallocated_usd: 0, basis: 'By CIF Value & Chassis Weight', status: '100% Allocated to Units' },
       { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: '$2,650 Unallocated' },
       { id: 'LC-SH-2026-016', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', freight_usd: 11200, customs_usd: 7400, clearance_usd: 2600, insurance_usd: 1200, total_landed_add: 22400, allocated_usd: 22400, unallocated_usd: 0, basis: 'By Chassis CIF Value', status: '100% Allocated to Units' },
@@ -68135,7 +69455,7 @@
     ]), getIndustryCustomRows('trd_landed')).map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_landed', rawR.id);
       return wp ? Object.assign({}, rawR, wp) : rawR;
-    });
+    }), { applyPatch: false });
 
     const landedByImpMap = new Map();
     rawLandedRows.forEach(lc => {
@@ -68143,14 +69463,14 @@
       if (k) landedByImpMap.set(k, lc);
     });
 
-    const rawImportRows = mergeCustomOverSeededRows(pickTrd('importRows', [
+    const rawImportRows = _filterVoidedDomainRows(['trd_imports', 'trd_purchases'], mergeCustomOverSeededRows(pickTrd('importRows', [
       { id: 'IMP-SH-2026-014', date: '2026-10-12', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Xi\'an / Qingdao Port', container_bl: 'COSU6891204410 · 6 Ro-Ro Units', ordered_qty: 6, received_qty: 6, backorder_qty: 0, fob_usd: 384000, landed_add_usd: 34800, total_landed_usd: 418800, status: 'Cleared & Costed' },
       { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc' },
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
       { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
     ]), getIndustryCustomRows('trd_purchases')).map(rawR => {
-      const wp = getIndustryWorkflowPatch('trd_purchases', rawR.id);
+      const wp = getIndustryWorkflowPatch('trd_purchases', rawR.id) || getIndustryWorkflowPatch('trd_imports', rawR.id);
       const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const fob_usd = Number(r.fob_usd || 0);
       const landed_add_usd = Number(r.landed_add_usd != null ? r.landed_add_usd : (r.duty_freight_usd || 0));
@@ -68174,7 +69494,7 @@
         is_missing_landed: Boolean(freight_badge && freight_badge.isMissingLanded),
         status: String(r.status || 'Cleared & Costed')
       };
-    });
+    }), { applyPatch: false });
 
     // 5. Landed Cost Allocations (computed above for freight_badge allocation lookup)
 
@@ -68190,7 +69510,7 @@
     });
 
     // 6. Goods Receipt Notes & Lines (GRNs across 5 warehouses)
-    const rawGrnRows = pickTrd('grnRows', [
+    const rawGrnRows = _filterVoidedDomainRows('trd_grn', pickTrd('grnRows', [
       { id: 'GRN-SH-2026-041', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', warehouse: 'Bonded Yard', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '6x Shacman X3000/F3000 Heavy Chassis Units', lines_cnt: 6, qty_received: 6, fob_usd: 384000, landed_cost_usd: 418800, inspection: 'Passed Chassis & VIN Check' },
       { id: 'GRN-SH-2026-042', import_file: 'IMP-SH-2026-015', date: '2026-10-27', company: 'Shacman', warehouse: 'Bchamoun Yard', supplier: 'Weichai Power & Fast Gear OEM Export', items_desc: 'Weichai Engine Assemblies, Injectors & Fast Gearboxes', lines_cnt: 18, qty_received: 112, fob_usd: 64200, landed_cost_usd: 69000, inspection: '28 Backordered · 112 Shelved' },
       { id: 'GRN-SH-2026-043', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', warehouse: 'Main Showroom', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '2x Shacman F3000 8x4 Heavy Tipper Units', lines_cnt: 2, qty_received: 2, fob_usd: 134000, landed_cost_usd: 145200, inspection: 'In Pre-Delivery Inspection (PDI)' },
@@ -68199,10 +69519,10 @@
     ]).map(r => {
       const b = impBadgeLookup.get(String((r && r.import_file) || '').trim().toUpperCase()) || null;
       return b ? { ...r, freight_badge: b } : r;
-    });
+    }));
 
     // 7. Showroom & Serial Units (44 Heavy Trucks & Commercial Units by Chassis/Engine/VIN)
-    const rawSerialUnits = mergeCustomOverSeededRows(pickTrd('serialUnits', [
+    const rawSerialUnits = _filterVoidedDomainRows('trd_trucks', mergeCustomOverSeededRows(pickTrd('serialUnits', [
       { id: 'SU-SH-001', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019281', engine_no: 'WP12.430E201-882104', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-002', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019282', engine_no: 'WP12.430E201-882109', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-003', company: 'Shacman', model: 'Shacman F3000 8x4 Heavy Tipper 380HP', family: 'F3000 Series', chassis_vin: 'LZGJLDR44PX019288', engine_no: 'WP10.380E32-774190', year: 2026, warehouse: 'Bchamoun Yard', fob_usd: 69200, landed_add_usd: 6200, landed_cost_usd: 75400, list_price_usd: 102120, status: 'Sold & Delivered', buyer: 'Levant Quarry & Transit SAL' },
@@ -68227,10 +69547,10 @@
       const incoterm = detectTradingIncoterm(r);
       const freight_badge = resolveTradingFreightBadge({ ...r, incoterm, fob_usd, landed_add_usd, total_landed_usd: landed_cost_usd });
       return { ...r, fob_usd, landed_add_usd, landed_cost_usd, list_price_usd, warehouse, family, engine_no, margin_usd, margin_pct, incoterm, freight_badge };
-    });
+    }), { applyPatch: false });
 
     // 8. Workshop, PDI & Warranty Claims
-    const rawWarrantyRows = mergeCustomOverSeededRows(pickTrd('warrantyRows', [
+    const rawWarrantyRows = _filterVoidedDomainRows('trd_warranty', mergeCustomOverSeededRows(pickTrd('warrantyRows', [
       { id: 'PDI-SH-2026-081', date: '2026-10-30', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019312', model: 'Shacman L3000 4x2 Water Tanker', job_type: 'Pre-Delivery Inspection (PDI)', bay: 'Workshop Bay 2', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 420, labor_usd: 180, claim_recovery_usd: 600, status: 'Open PDI' },
       { id: 'WAR-SH-2026-082', date: '2026-10-28', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019281', model: 'Shacman X3000 6x4 Tractor Head', job_type: 'OEM Warranty Claim (Weichai ECU Sensor)', bay: 'Workshop Bay 1', technician: 'Ali H. (Diagnostics)', parts_cost_usd: 680, labor_usd: 150, claim_recovery_usd: 830, status: 'Open Claim' },
       { id: 'SVC-SH-2026-079', date: '2026-10-23', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019274', model: 'Shacman M3000 6x4 Mixer 10m³', job_type: '1,000-Hour First Service & PTO Calibration', bay: 'Bchamoun Service Pit', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 940, labor_usd: 260, claim_recovery_usd: 1200, status: 'Completed' },
@@ -68239,10 +69559,10 @@
     ]), getIndustryCustomRows('trd_warranty')).map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_warranty', rawR.id);
       return wp ? Object.assign({}, rawR, wp) : rawR;
-    });
+    }), { applyPatch: false });
 
     // 9. Spare Parts & Multi-Warehouse Stock Valuation (593 code-keyed items across 5 Warehouses + Rule T4 Reorder Alerts)
-    const rawStockRows = mergeCustomOverSeededRows(pickTrd('stockRows', [
+    const rawStockRows = _filterVoidedDomainRows(['trd_stock', 'trd_parts'], mergeCustomOverSeededRows(pickTrd('stockRows', [
       { id: 'PRT-WH-612600081335', code: '612600081335', name: 'Weichai WP12 High-Pressure Common Rail Injector', company: 'Shacman', warehouse: 'Bchamoun Yard', category: 'Engine & Fuel System', on_hand: 28, reorder_min: 15, wac_usd: 285, retail_usd: 395 },
       { id: 'PRT-WH-12JS200T-1701', code: '12JS200T-1701', name: 'Fast 12-Speed Synchronizer & Main Shaft Kit', company: 'Shacman', warehouse: 'Main Showroom', category: 'Transmission & Gearbox', on_hand: 6, reorder_min: 8, wac_usd: 1120, retail_usd: 1490 },
       { id: 'PRT-WH-DZ9525951003', code: 'DZ9525951003', name: 'Shacman X3000 Intercooler & Radiator Assembly', company: 'Shacman', warehouse: 'Bonded Yard', category: 'Cooling & Chassis', on_hand: 14, reorder_min: 6, wac_usd: 640, retail_usd: 880 },
@@ -68251,7 +69571,7 @@
       { id: 'PRT-KA-TYR-1200R24', code: 'TYR-1200R24', name: '12.00R24 20PR Mining & Quarry Lug Tyre', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Heavy Tyres', on_hand: 18, reorder_min: 24, wac_usd: 325, retail_usd: 430 },
       { id: 'PRT-KA-FLT-LF9009', code: 'FLT-LF9009', name: 'Fleetguard LF9009 / FS19732 Heavy Filter Service Pack', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Filters & Consumables', on_hand: 210, reorder_min: 80, wac_usd: 48, retail_usd: 68 },
       { id: 'PRT-KA-LUB-15W40-208L', code: 'LUB-15W40-208L', name: 'CI-4 15W-40 Heavy Diesel Engine Oil Drum (208L)', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Lubricants & Fluids', on_hand: 32, reorder_min: 12, wac_usd: 440, retail_usd: 620 }
-    ]), getIndustryCustomRows('trd_stock')).map(r => {
+    ]), getIndustryCustomRows('trd_stock'))).map(r => {
       const on_hand = Number(r.on_hand ?? r.qty_on_hand ?? 0);
       const reorder_min = Number(r.reorder_min ?? r.min_qty ?? 0);
       const wac_usd = Number(r.wac_usd ?? r.unit_cost_usd ?? 0);
@@ -68262,13 +69582,13 @@
     });
 
     // 10. Stock Movements & Inter-Company Transfers
-    const rawMovementRows = pickTrd('movementRows', [
+    const rawMovementRows = _filterVoidedDomainRows('trd_movements', pickTrd('movementRows', [
       { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
       { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
       { id: 'MOV-SH-2026-104', date: '2026-10-30', company: 'Shacman', type: 'Warehouse Transfer', from_wh: 'Bonded Yard', to_wh: 'Main Showroom', item_code: 'LZGJLDR44PX019301', item_name: 'Shacman F3000 6x4 Dump Truck 340HP', qty: 1, unit_cost_usd: 69200, total_usd: 69200, status: 'Posted' },
       { id: 'MOV-SH-2026-103', date: '2026-10-28', company: 'Shacman', type: 'Workshop Issue', from_wh: 'Bchamoun Yard', to_wh: 'Workshop Bay 1', item_code: '12JS200T-1701', item_name: 'Fast 12-Speed Synchronizer Assembly', qty: 2, unit_cost_usd: 1120, total_usd: 2240, status: 'Issued to Job' },
       { id: 'MOV-KA-2026-089', date: '2026-10-30', company: 'Korri Auto', type: 'Customer Dispatch', from_wh: 'Al Ghazieh', to_wh: 'Customer Delivery', item_code: 'FLT-LF9009', item_name: 'Fleetguard LF9009 Heavy Filter Service Pack', qty: 40, unit_cost_usd: 48, total_usd: 1920, status: 'Dispatched' }
-    ]);
+    ]));
 
     // 11. Parallel Stock & P&L Reconciliation (1,077 Stock Position rows & 268 Monthly P&L rows)
     const rawReconRows = pickTrd('reconRows', [
@@ -69895,21 +71215,23 @@
         date: String(r.date || '').slice(0, 10)
       });
     });
+    const mProperties = _filterVoidedDomainRows('re_properties', mergeCustomOverSeededRows(properties, getIndustryCustomRows('re_properties')));
+    properties.length = 0; properties.push(...mProperties);
     const mLeases = applyChronoWindowOverlays(leases, getIndustryCustomRows('re_leases'), 're_leases');
     leases.length = 0; leases.push(...mLeases);
     const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'));
     invoices.length = 0; invoices.push(...mInvoices);
     const mReceipts = mergeCustomOverSeededRows(receipts, getIndustryCustomRows('re_receipts'));
     receipts.length = 0; receipts.push(...mReceipts);
-    const mSales = mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales'));
+    const mSales = _filterVoidedDomainRows('re_sales', mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales')));
     sales.length = 0; sales.push(...mSales);
-    const mInstalments = mergeCustomOverSeededRows(instalments, getIndustryCustomRows('re_instalments'));
+    const mInstalments = _filterVoidedDomainRows('re_instalments', mergeCustomOverSeededRows(instalments, getIndustryCustomRows('re_instalments')));
     instalments.length = 0; instalments.push(...mInstalments);
-    const mUnits = mergeCustomOverSeededRows(units, getIndustryCustomRows('re_units'));
+    const mUnits = _filterVoidedDomainRows('re_units', mergeCustomOverSeededRows(units, getIndustryCustomRows('re_units')));
     units.length = 0; units.push(...mUnits);
-    const mWorkorders = mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'));
+    const mWorkorders = _filterVoidedDomainRows(['re_workorders', 're_maintenance'], mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders')));
     workorders.length = 0; workorders.push(...mWorkorders);
-    const mRecharges = mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges'));
+    const mRecharges = _filterVoidedDomainRows('re_recharges', mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges')));
     recharges.length = 0; recharges.push(...mRecharges);
     const voidedReInv = _rawVoidedDomainIds('re_invoicing');
     const voidedReRct = _rawVoidedDomainIds('re_receipts');
@@ -71669,9 +72991,11 @@
           rem = round2(rem - take);
         });
       });
-    const mClaims = mergeCustomOverSeededRows(claims, getIndustryCustomRows('ins_claims'));
+    const mItems = _filterVoidedDomainRows('ins_items', mergeCustomOverSeededRows(items, getIndustryCustomRows('ins_items')));
+    items.length = 0; items.push(...mItems);
+    const mClaims = _filterVoidedDomainRows('ins_claims', mergeCustomOverSeededRows(claims, getIndustryCustomRows('ins_claims')));
     claims.length = 0; claims.push(...mClaims);
-    const mRemit = mergeCustomOverSeededRows(remittances, getIndustryCustomRows('ins_remittances'));
+    const mRemit = _filterVoidedDomainRows('ins_remittances', mergeCustomOverSeededRows(remittances, getIndustryCustomRows('ins_remittances')));
     remittances.length = 0; remittances.push(...mRemit);
     const customInsAgr = getIndustryCustomRows('ins_agreements');
     const rawInsAgr = (typeof getIndustryCustomRowsStore === 'function' ? (getIndustryCustomRowsStore().ins_agreements || []) : []);
@@ -71714,35 +73038,37 @@
         }
       });
     });
-    policies.forEach((r, i) => {
-      const p = getIndustryWorkflowPatch('ins_policies', r.id);
-      const cur = p ? Object.assign({}, r, p) : r;
-      const expIso = String(cur.expiry || cur.end_date || '').slice(0, 10);
-      const dExp = cur.days_to_expiry != null
-        ? Number(cur.days_to_expiry)
-        : (cur.days_left != null ? Number(cur.days_left) : (expIso ? daysBetween(SEED_DATE, expIso) : 0));
-      policies[i] = Object.assign({}, cur, {
-        policy_no: cur.policy_no || cur.id,
-        expiry: expIso || cur.expiry || '',
-        end_date: expIso || cur.end_date || '',
+    const activeInsAgr = _filterVoidedDomainRows('ins_agreements', agreements);
+    agreements.length = 0; agreements.push(...activeInsAgr);
+    const activeInsPols = _filterVoidedDomainRows('ins_policies', policies.map(r => {
+      const expIso = String(r.expiry || r.end_date || '').slice(0, 10);
+      const dExp = r.days_to_expiry != null
+        ? Number(r.days_to_expiry)
+        : (r.days_left != null ? Number(r.days_left) : (expIso ? daysBetween(SEED_DATE, expIso) : 0));
+      return Object.assign({}, r, {
+        policy_no: r.policy_no || r.id,
+        expiry: expIso || r.expiry || '',
+        end_date: expIso || r.end_date || '',
         days_to_expiry: dExp,
         days_left: dExp
       });
-    });
-    renewals.forEach((r, i) => {
+    }));
+    policies.length = 0; policies.push(...activeInsPols);
+    const activeInsRenewals = _filterVoidedDomainRows('ins_renewals', renewals.map(r => {
       const p = getIndustryWorkflowPatch('ins_renewals', r.id || r.policy_no);
       const cur = p ? Object.assign({}, r, p) : r;
       const expIso = String(cur.expiry_date || cur.expiry || '').slice(0, 10);
       const dLeft = cur.days_left != null
         ? Number(cur.days_left)
         : (cur.days_to_expiry != null ? Number(cur.days_to_expiry) : (expIso ? daysBetween(SEED_DATE, expIso) : 0));
-      renewals[i] = Object.assign({}, cur, {
+      return Object.assign({}, cur, {
         expiry_date: expIso || cur.expiry_date || '',
         days_left: dLeft,
         days_to_expiry: dLeft,
         status: String(cur.status || (dLeft < 0 ? 'Expired (not renewed)' : 'Due for renewal')).replace(/\s*[—–]\s*/g, ' - ')
       });
-    });
+    }), { applyPatch: false });
+    renewals.length = 0; renewals.push(...activeInsRenewals);
     statements.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_statements', r.id); if (p) statements[i] = Object.assign({}, r, p); });
 
     const rlsPols = rlsInsAllowed ? policies : [];
@@ -74942,6 +76268,8 @@
           const prin = Number(l.principal || l.amount || l.usd_amount || (demoBar ? 45000 : 0));
           const rep = Number(l.repaid != null ? l.repaid : (l.paid != null ? l.paid : (demoBar ? Math.round(prin * 0.35) : 0)));
           return {
+            _rkey: (l && l.id) ? 'loans' : undefined,
+            _rid: (l && l.id) ? String(l.id) : undefined,
             id: l.id || `LN-HLD-0${idx + 1}`,
             date: String(l.date || '2026-06-15').slice(0, 10),
             start_date: String(l.date || '2026-06-15').slice(0, 10),
@@ -74975,7 +76303,12 @@
           secondBars: loanRows.slice(0, 8).map(r => ({ label: `${r.company} · ${r.type}`, val: demoBar ? Math.max(500, Number(r.principal_usd || 0)) : Number(r.principal_usd || 0), sub: `Repaid ${fmtUSD(r.repaid_usd, 0)} · ${r.status}` })),
           tableTitle: 'Central Borrowing Facilities, Chronological Interest Schedules & Maturity Register',
           headers: ['Facility ID', 'Start Date', 'End Date', 'Entity', 'Lender / Counterparty', 'APR %', 'Principal ($)', 'Balance ($)'],
-          rows: loanRows.map(r => [r.id, r.start_date || r.date, r.end_date || 'Open', r.company, r.lender, `${Number(r.rate_apr_pct != null ? r.rate_apr_pct : 7.2).toFixed(2)}%`, fmtUSD(r.principal_usd, 0), fmtUSD(r.balance_usd, 0)]),
+          rows: loanRows.map(r => {
+            const rowArr = [r.id, r.start_date || r.date, r.end_date || 'Open', r.company, r.lender, `${Number(r.rate_apr_pct != null ? r.rate_apr_pct : 7.2).toFixed(2)}%`, fmtUSD(r.principal_usd, 0), fmtUSD(r.balance_usd, 0)];
+            if (r._rkey && r._rid) { rowArr._rkey = r._rkey; rowArr._rid = r._rid; }
+            rowArr._co = String(r.company || '');
+            return rowArr;
+          }),
           totals: ['Total Central Facilities', 'Chronological', 'Active Schedule', 'Bdeir Holding Group', `${loanRows.length} Facilities`, 'Weighted APR', fmtUSD(totPrin, 0), fmtUSD(totBal, 0)]
         };
       }
@@ -75300,7 +76633,12 @@
           secondBars: mov.map(m => ({ label: `${m.id} · ${m.type}`, val: m.total_usd, sub: `${m.from_wh} to ${m.to_wh}` })),
           tableTitle: '5-Warehouse OEM Spare Parts, Tyres & Lubricants WAC Register',
           headers: ['Part SKU', 'Company', 'Warehouse', 'Part Description', 'On-Hand', 'Min Reorder', 'WAC ($)', 'Stock Value ($)'],
-          rows: stk.map(w => [w.code, w.company, w.warehouse, w.name, fmtNum(w.on_hand), fmtNum(w.reorder_min), fmtUSD(w.wac_usd, 2), fmtUSD(w.stock_val_usd, 0)]),
+          rows: stk.map(w => {
+            const rowArr = [w.code, w.company, w.warehouse, w.name, fmtNum(w.on_hand), fmtNum(w.reorder_min), fmtUSD(w.wac_usd, 2), fmtUSD(w.stock_val_usd, 0)];
+            rowArr._rid = String(w.id || w.code || '');
+            rowArr._co = String(w.company || '');
+            return rowArr;
+          }),
           totals: ['Total 5-Warehouse Stock', 'Korri + Shacman', '5 Warehouses', `${stk.length} Core SKUs`, fmtNum(s.totalStockQty), `${s.reorderAlertCount} Low SKUs`, 'Weighted Avg', fmtUSD(s.totalStockValUsd, 0)]
         };
       }
@@ -75344,7 +76682,12 @@
         secondBars: (trd.targetRows || []).map(t => ({ label: `${t.company} · ${t.month}`, val: t.actual_ttc, sub: `Target ${fmtUSD(t.target_ttc, 0)} (${t.attainment_pct.toFixed(1)}%)` })),
         tableTitle: 'Commercial Vehicles & Heavy Spare Parts Invoicing Register',
         headers: ['Invoice #', 'Date', 'Company', 'Customer', 'Item / Truck VIN', 'Qty', 'Total ($)', 'Gross Margin ($)'],
-        rows: validSales.slice(0, 18).map(r => [`${r.id} (${r.book})`, r.date, r.company, r.customer, r.item, fmtNum(r.qty), fmtUSD(r.ttc_usd, 0), fmtUSD(r.margin_usd, 0)]),
+        rows: validSales.slice(0, 18).map(r => {
+          const rowArr = [`${r.id} (${r.book})`, r.date, r.company, r.customer, r.item, fmtNum(r.qty), fmtUSD(r.ttc_usd, 0), fmtUSD(r.margin_usd, 0)];
+          rowArr._rid = String(r.id || '');
+          rowArr._co = String(r.company || '');
+          return rowArr;
+        }),
         totals: [`${validSales.length} Invoices`, 'Active Period', 'Korri Auto + Shacman', 'All Trading Clients', 'Trucks + Spare Parts', fmtNum(validSales.reduce((a, r) => a + Number(r.qty || 0), 0)), fmtUSD(s.totalSalesTtc, 0), fmtUSD(s.totalSalesMargin, 0)]
       };
     }
@@ -78016,6 +79359,7 @@
     const effSortCol = (sortSpec.col >= 0 && !restrictedColMask[sortSpec.col]) ? sortSpec.col : -1;
     const sortedRows = sortIndMatrixRows(filteredRows, effSortCol, sortSpec.dir);
     const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
+    const explorerDomainTblKey = IND_TABLES_EXPLORER_TBL_MAP[activeTab.key] || activeTab.key;
     const canCreateIndRec = canEnterDomainForm(activeTab.newView || activeTab.view, u)
       && (typeof canViewView !== 'function' || canViewView(activeTab.newView || activeTab.view, u));
 
@@ -78080,7 +79424,7 @@
             </thead>
             <tbody>
               ${sortedRows.length ? sortedRows.map((r, rIdx) => `
-                <tr class="rrow" ${r._rkey && r._rid ? `data-rkey="${esc(r._rkey)}" data-rid="${esc(r._rid)}" data-ind-row-id="${esc(r._rid)}"` : `data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r._rid || r[0])}" data-ind-inspect-surface="tables"`}>${r.map((c, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}">${restrictedColMask[idx] ? '<span class="muted">Restricted</span>' : (idx === 0 ? `<b data-no-i18n="1">${esc(c)}</b>` : esc(c))}</td>`).join('')}</tr>
+                <tr class="rrow" ${r._rkey && r._rid ? `data-rkey="${esc(r._rkey)}" data-rid="${esc(r._rid)}" data-ind-row-id="${esc(r._rid)}"` : `data-ind-inspect-row="${rIdx}" data-ind-row-tbl="${esc(explorerDomainTblKey)}" data-ind-row-id="${esc(r._rid || r[0])}"${r._co ? ` data-ind-row-co="${esc(r._co)}"` : ''} data-ind-inspect-surface="tables"`}>${r.map((c, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}">${restrictedColMask[idx] ? '<span class="muted">Restricted</span>' : (idx === 0 ? `<b data-no-i18n="1">${esc(c)}</b>` : esc(c))}</td>`).join('')}</tr>
               `).join('') : emptyRow(headers.length, 'No records match the active filter')}
             </tbody>
             <tfoot>
@@ -80584,16 +81928,28 @@
   function setDomainCellTextPreservingBadge(tdEl, newVal) {
     if (!tdEl) return;
     const v = String(newVal ?? '');
-    const attBadge = tdEl.querySelector ? tdEl.querySelector('.att-inline-badge') : null;
+    const trailingNodes = tdEl.querySelectorAll
+      ? Array.from(tdEl.querySelectorAll('.att-inline-badge, .ind-agr-pill, button.void-btn, u.row-sel-dot'))
+      : [];
     const strong = tdEl.querySelector ? tdEl.querySelector('strong, b, .badge:not(.att-inline-badge)') : null;
-    if (attBadge) {
-      if (strong && tdEl.children.length <= 2) {
+    if (trailingNodes.length) {
+      if (strong && tdEl.children.length <= trailingNodes.length + 1) {
         strong.textContent = v;
       } else {
-        const badgeClone = attBadge.cloneNode(true);
-        tdEl.textContent = v;
-        tdEl.appendChild(document.createTextNode(' '));
-        tdEl.appendChild(badgeClone);
+        const clones = trailingNodes.map(n => n.cloneNode(true));
+        if (strong) {
+          strong.textContent = v;
+          tdEl.textContent = '';
+          tdEl.appendChild(strong);
+        } else {
+          tdEl.textContent = v;
+        }
+        clones.forEach(cl => {
+          if (!cl.classList || (!cl.classList.contains('void-btn') && !cl.classList.contains('row-sel-dot'))) {
+            tdEl.appendChild(document.createTextNode(' '));
+          }
+          tdEl.appendChild(cl);
+        });
       }
       return;
     }
@@ -81098,7 +82454,7 @@
     let hit = false;
     Object.keys(store).forEach(bucket => {
       if (!Array.isArray(store[bucket])) return;
-      const matches = store[bucket].filter(r => r && String(r.id || r.code || '').trim() === pid);
+      const matches = store[bucket].filter(r => r && (String(r.id || '').trim() === pid || String(r.code || '').trim() === pid));
       if (!matches.length) return;
       if (touchedBucketsSnap) touchedBucketsSnap[bucket] = JSON.parse(JSON.stringify(store[bucket]));
       matches.forEach(r => {
@@ -81117,7 +82473,12 @@
         r.rev = Number(r.rev || 1) + 1;
         r.updated_at = nowIso;
         r.updatedAt = nowIso;
-        voidedForceIds.push(`${bucket}::${pid}`);
+        const canonRid = String(r.id || r.code || pid).trim();
+        const frKey = `${bucket}::${canonRid}`;
+        voidedForceIds.push(frKey);
+        if (opts && Array.isArray(opts.forceRowIdsOut) && !opts.forceRowIdsOut.includes(frKey)) {
+          opts.forceRowIdsOut.push(frKey);
+        }
         hit = true;
       });
     });
@@ -108546,7 +109907,7 @@
         const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
         const parts = k.split('::');
         if (parts.length >= 3 && (snapTbl === bucket || parts[1] === bucket)) {
-          rowId = String(parts.slice(2).join('::') || '').trim();
+          rowId = String(ev.primaryId || parts.slice(2).join('::') || '').trim();
         }
       }
       if (!rowId) return;
@@ -108555,6 +109916,48 @@
       if (upId) voided.add(upId.toUpperCase());
     });
     return voided;
+  }
+
+  function _filterVoidedDomainRows(bucket, rows, opts = {}) {
+    if (!Array.isArray(rows) || !rows.length) return [];
+    const buckets = (Array.isArray(bucket) ? bucket : [bucket]).map(b => String(b || '').trim()).filter(Boolean);
+    const voided = new Set();
+    buckets.forEach(bk => {
+      if (typeof _rawVoidedDomainIds === 'function') {
+        _rawVoidedDomainIds(bk).forEach(id => voided.add(id));
+      }
+    });
+    const legFn = typeof resolveLegacyIndustryId === 'function' ? resolveLegacyIndustryId : (x => x);
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      const candIds = [];
+      const pushCand = val => {
+        const s = String(val || '').trim();
+        if (s && !candIds.includes(s)) candIds.push(s);
+      };
+      pushCand(r.id);
+      pushCand(r.code);
+      const isVoidedHit = candIds.some(cid => {
+        const cidUp = cid.toUpperCase();
+        const legUp = String(legFn(cid) || '').trim().toUpperCase();
+        return voided.has(cidUp) || (legUp && voided.has(legUp));
+      });
+      if (isVoidedHit) continue;
+      let cur = r;
+      if (opts.applyPatch !== false && candIds.length && typeof getIndustryWorkflowPatch === 'function') {
+        for (let bi = 0; bi < buckets.length; bi++) {
+          for (let ci = 0; ci < candIds.length; ci++) {
+            const p = getIndustryWorkflowPatch(buckets[bi], candIds[ci]);
+            if (p) cur = Object.assign({}, cur, p);
+          }
+        }
+      }
+      if (cur.voided || cur.voided_at || cur._scheduleVoided) continue;
+      out.push(cur);
+    }
+    return out;
   }
 
   function _hldOverriddenSisterIds() {
@@ -132871,7 +134274,7 @@
     if (!hasServerApi() || isDemoScopeActive()) {
       saveLocalAuthAndRecords();
       syncWithCloud(true);
-      return;
+      return true;
     }
 
     const opKey = `${crKey}::${canonTargetId}`;
@@ -132932,6 +134335,7 @@
       if (_voidRestoreInflight.get(opKey) === runP) _voidRestoreInflight.delete(opKey);
     });
     _voidRestoreInflight.set(opKey, runP);
+    return runP;
   }
 
   function voidRecord(crKey, id, opts) {
@@ -133054,11 +134458,12 @@
       });
       return false;
     }
+    const batchCollector = (opts && opts.batchCollector && typeof opts.batchCollector === 'object') ? opts.batchCollector : null;
     const voidedTargetPre = r || seedRow;
     const isEffVoidTbl = voidedTargetPre ? isEffectiveSeriesTable(crKey, voidedTargetPre) : false;
     const snapTables = [];
-    if (isEffVoidTbl || crKey === 'products') snapTables.push(crKey);
-    const rbSnap = _captureLedgerAndGeoRollbackSnap(snapTables, false);
+    if (!batchCollector && (isEffVoidTbl || crKey === 'products')) snapTables.push(crKey);
+    const rbSnap = (batchCollector && batchCollector.rbSnap) ? batchCollector.rbSnap : _captureLedgerAndGeoRollbackSnap(snapTables, false);
     const canonTargetId = String((seedRow && seedRow.id) || (r && r.id) || q);
     rbSnap.snapSeedRow(crKey, canonTargetId);
     if (gtVoidPeer && gtVoidPeer.row && gtVoidPeer.row.id) rbSnap.snapSeedRow(gtVoidPeer.crKey, gtVoidPeer.row.id);
@@ -133066,6 +134471,12 @@
     const hadArchBefore = Boolean(archMapBefore && archMapBefore.has(canonTargetId));
     const prevArchVal = hadArchBefore ? JSON.parse(JSON.stringify(archMapBefore.get(canonTargetId))) : null;
     const prevAttCacheRev = _attCacheRev;
+    if (batchCollector && batchCollector.archPrior) {
+      const aKey = `${crKey}::${canonTargetId}`;
+      if (!batchCollector.archPrior.has(aKey)) {
+        batchCollector.archPrior.set(aKey, { crKey, canonTargetId, hadArchBefore, prevArchVal });
+      }
+    }
 
     const au = activeUser() || {};
     const who = au.full_name || au.name || au.email || 'Supervisor';
@@ -133301,7 +134712,7 @@
     if (canModifyData() && voidedTarget && isEffVoidTbl) {
       reopenedVoidPeers = reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
     }
-    applyCustomRecordsToSeed();
+    if (!batchCollector) applyCustomRecordsToSeed();
     // Undo of a price agreement: what it re-priced back and which typed prices it left, shown once the void is done
     // and kept on the voided agreement
     const mfgUndoImpact = crKey === 'price_rules' ? newSiblingRepriceImpact() : null;
@@ -133314,23 +134725,12 @@
         if (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock)) appendImpactLog(voidedTarget, voidedTarget._undo_impact, 'undo', true);
         [r, seedRow, cUndo].forEach(x => { if (x && x !== voidedTarget) { x._undo_impact = voidedTarget._undo_impact; if (voidedTarget._impact_log) x._impact_log = voidedTarget._impact_log; } });
       }
-      applyCustomRecordsToSeed();
+      if (!batchCollector) applyCustomRecordsToSeed();
     }
-    if (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases') {
+    if (!batchCollector && (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases')) {
       normalizeDistinctSiteCategories(SEED);
     }
     stampBatchModifiedAt(extraVoidPosts, crKey, r);
-    renderApp();
-    if (opts && typeof opts.onComplete === 'function') {
-      try { opts.onComplete(); } catch (_) {}
-    }
-    const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
-    const targetId = (r && r.id) || q;
-    toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
-    if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock))) {
-      promptRateChangeImpact({ mode: 'undo-result', impact: mfgUndoImpact });
-    }
-
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig());
     const metaVoid = { who, when };
     const mainPayload = r
@@ -133346,6 +134746,25 @@
         : JSON.parse(JSON.stringify(er));
       return payloadRow ? [ek, payloadRow] : null;
     }).filter(Boolean);
+
+    if (batchCollector) {
+      if (mainPayload) batchCollector.apiPairs.push([crKey, mainPayload]);
+      extraPayloads.forEach(pair => batchCollector.apiPairs.push(pair));
+      batchCollector.undoItems.push({ crKey, targetId: (r && r.id) || canonTargetId });
+      if (batchCollector.normKeys) batchCollector.normKeys.add(crKey);
+      return true;
+    }
+
+    renderApp();
+    if (opts && typeof opts.onComplete === 'function') {
+      try { opts.onComplete(); } catch (_) {}
+    }
+    const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
+    const targetId = (r && r.id) || q;
+    toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
+    if (mfgUndoImpact && (mfgUndoImpact.rows.length || mfgUndoImpact.kept.some(x => x && x.lock))) {
+      promptRateChangeImpact({ mode: 'undo-result', impact: mfgUndoImpact });
+    }
 
     if (!hasServerApi() || isDemoScopeActive()) {
       saveLocalAuthAndRecords();
@@ -133581,14 +135000,24 @@
       });
     }
 
-    const bucketList = bucket ? [bucket] : Object.keys(storeCustom);
-    bucketList.forEach(bk => {
+    const bucketAliases = bucket === 'trd_imports'
+      ? ['trd_imports', 'trd_purchases']
+      : (bucket === 'trd_purchases'
+        ? ['trd_purchases', 'trd_imports']
+        : (bucket === 'trd_stock' || bucket === 'trd_parts'
+          ? ['trd_stock', 'trd_parts']
+          : (bucket === 're_workorders' || bucket === 're_maintenance'
+            ? ['re_workorders', 're_maintenance']
+            : (bucket ? [bucket] : Object.keys(storeCustom)))));
+    const bucketList = bucket ? bucketAliases : Object.keys(storeCustom);
+    const restoreFromBucket = bk => {
       const arr = storeCustom[bk];
       if (!Array.isArray(arr)) return;
       arr.forEach(r => {
         if (!r || !r.voided) return;
-        const rid = String(r.id || r.code || '').trim();
-        if (!rid || (primaryId && rid !== primaryId)) return;
+        const candIds = [r.id, r.code].map(v => String(v || '').trim()).filter(Boolean);
+        if (!candIds.length || (primaryId && !candIds.includes(primaryId))) return;
+        const rid = candIds[0];
         stripMeta(r);
         forceRowIds.push(`${bk}::${rid}`);
         if (isSiblingChronoFormKey(bk)) {
@@ -133596,7 +135025,13 @@
           restoredSchedRow = r;
         }
       });
-    });
+    };
+    bucketList.forEach(restoreFromBucket);
+    if (bucket && !forceRowIds.length && primaryId) {
+      Object.keys(storeCustom).forEach(bk => {
+        if (!bucketList.includes(bk)) restoreFromBucket(bk);
+      });
+    }
 
     if (!forceRowIds.length && !forceEditKeys.length) {
       toast('Voided record was not found in local domain stores', 'err');
@@ -133724,6 +135159,603 @@
     saveLocalAuthAndRecords();
     syncWithCloud(true);
     tellRestoreImpact();
+    return true;
+  }
+
+  const CHRONO_DOMAIN_KEYS_SET = new Set(['ins_agreements', 're_leases', 'trd_targets', 'hsp_tariffs', 'hld_partners', 'hld_loans']);
+  const NON_VOIDABLE_IND_TBL_SET = new Set(['trd_receivables', 'ins_statements', 'hld_interactions', 'hld_open_ic_tbl', 'hld_entities_tbl', 'hld_pairs_tbl', 'ind_domain']);
+  const IND_TABLES_EXPLORER_TBL_MAP = {
+    hld_entities_tbl: 'hld_entities_tbl',
+    hld_open_ic_tbl: 'hld_interactions',
+    hld_pairs_tbl: 'hld_pairs_tbl',
+    hld_partners_tbl: 'hld_partners',
+    hld_extended_tbl: 'external_movements',
+    hld_loans_tbl: 'hld_loans',
+    hsp_rev_tbl: 'hsp_revenue',
+    hsp_memb_tbl: 'hsp_memberships',
+    hsp_tariffs_tbl: 'hsp_tariffs',
+    hsp_stock_tbl: 'hsp_stock',
+    hsp_gen_tbl: 'hsp_energy',
+    trd_inv_tbl: 'trd_sales',
+    trd_tgt_tbl: 'trd_targets',
+    trd_imp_tbl: 'trd_imports',
+    trd_vin_tbl: 'trd_trucks',
+    trd_wh_tbl: 'trd_stock',
+    re_leases_tbl: 're_leases',
+    re_prop_tbl: 're_properties',
+    re_sales_tbl: 're_sales',
+    re_wo_tbl: 're_workorders',
+    ins_pol_tbl: 'ins_policies',
+    ins_ren_tbl: 'ins_renewals',
+    ins_stm_tbl: 'ins_statements',
+    ins_clm_tbl: 'ins_claims'
+  };
+
+  function resolveExplorerDomainTblKey(tr) {
+    if (!tr || typeof tr.closest !== 'function') return '';
+    const exp = tr.closest('#industryDomainTablesExplorer');
+    if (!exp) return '';
+    const tabKey = String(exp.getAttribute('data-ind-tbl-active') || '').trim();
+    return tabKey ? (IND_TABLES_EXPLORER_TBL_MAP[tabKey] || tabKey) : '';
+  }
+
+  function isVoidableIndDomainRowTr(tr, opts = {}) {
+    if (!tr || !tr.isConnected || tr.tagName !== 'TR') return false;
+    if (!canVoid() || STATE.kioskLocked) return false;
+    if (tr.hasAttribute('data-rid') || tr.hasAttribute('data-rkey')) return false;
+    if (tr.hasAttribute('data-dops-expand') || tr.hasAttribute('data-no-ind-inspect') || tr.hasAttribute('data-ar-row') || tr.hasAttribute('data-staff-row')) return false;
+    if (tr.classList.contains('total-row') || tr.classList.contains('totals-row')) return false;
+    if (tr.closest('#industryPbiStudio, #industrySentinelsDetailPanel, #kioskRecentTable, .modal-card')) return false;
+    const surf = tr.getAttribute('data-ind-inspect-surface') || '';
+    if (surf === 'pbi' || surf === 'kiosk_recent') return false;
+    const pid = String(tr.getAttribute('data-ind-row-id') || '').trim();
+    if (!pid || /^no schedule in this period$/i.test(pid)) return false;
+    const hasTblAttr = tr.hasAttribute('data-ind-row-tbl');
+    const inTablesExplorer = surf === 'tables' && Boolean(tr.closest('#industryDomainTablesExplorer'));
+    if (opts.requireTblAttr && !hasTblAttr) return false;
+    if (!hasTblAttr && !inTablesExplorer) return false;
+    const tblKey = String(tr.getAttribute('data-ind-row-tbl') || resolveExplorerDomainTblKey(tr) || inferDomainTblKey(getActiveIndustry(STATE.company), STATE.view, pid) || '').trim();
+    if (!tblKey || NON_VOIDABLE_IND_TBL_SET.has(tblKey)) return false;
+    if (isTillOwnedRowId(pid) || (tblKey === 'hsp_pos' && /^POS-/i.test(pid))) return false;
+    if (opts.requireChronoAuth !== false && (CHRONO_DOMAIN_KEYS_SET.has(tblKey) || isSiblingChronoFormKey(tblKey)) && !canManageSiblingChronoSchedule(tblKey)) {
+      return false;
+    }
+    if (!isOwner()) {
+      const ind = getActiveIndustry(STATE.company) || 'Holding & Treasury';
+      if (ind && !canAccessGeoIndustry(ind)) return false;
+      const rowCo = String(tr.getAttribute('data-ind-row-co') || '').trim();
+      const normCo = rowCo.toLowerCase().replace(/\s+/g, ' ');
+      const isShared = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
+      if (!isShared && !canAccessGeoCompany(rowCo)) return false;
+    }
+    return true;
+  }
+
+  function resolveIndDomainVoidContext(trEl, inspectOpts) {
+    const o = inspectOpts || buildIndRowInspectOpts(trEl);
+    if (!o) return null;
+    const ind = o.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
+    const headers = Array.isArray(o.headers) && o.headers.length ? o.headers : ['Field', 'Value'];
+    const rawCells = Array.isArray(o.cells) && o.cells.length ? o.cells : ['Record', COMPANY_LABELS[STATE.company] || ind];
+    const tableTitle = o.tableTitle || `${ind} Operational Register`;
+    const primaryId = String((trEl && trEl.getAttribute('data-ind-row-id')) || rawCells[0] || '').trim();
+    if (!primaryId) return null;
+    const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
+    const editStore = getIndustryRowEditStore();
+    const tillOwned = isTillOwnedRowId(primaryId);
+    const savedEntry = tillOwned ? null : editStore[editKey];
+    const cells = savedEntry
+      ? projectSavedDomainCellsToHeaders(savedEntry, headers, rawCells)
+      : rawCells.slice();
+    if (cells.length) cells[0] = primaryId;
+    const domUser = activeUser();
+    const domFlags = lensFlagsFromSeat(domUser);
+    const domainTblKey = String(o.domainTblKey || (trEl && trEl.getAttribute('data-ind-row-tbl')) || resolveExplorerDomainTblKey(trEl) || inferDomainTblKey(ind, STATE.view, primaryId) || '').trim();
+    if (!domainTblKey || NON_VOIDABLE_IND_TBL_SET.has(domainTblKey)) return null;
+    const initialRowCompany = String(
+      o.rowCompany
+      || (trEl && trEl.getAttribute('data-ind-row-co'))
+      || (savedEntry && savedEntry.company)
+      || COMPANY_BU_MATCH[STATE.company]
+      || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '')
+      || ''
+    ).trim();
+    const restrictedIdxSet = new Set();
+    headers.forEach((h, hi) => {
+      const rawMasked = /^(?:Restricted|مقيد|Restreint)$/i.test(String(rawCells[hi] || '').trim());
+      const claimsSettledMasked = Boolean(domainTblKey === 'ins_claims' && !domFlags.canViewExpenses && /\bsettled\b/i.test(String(h || '')));
+      if (hi > 0 && (rawMasked || claimsSettledMasked || isIndustryPbiItemRestricted(h, domFlags) || isRecordShareFieldBlocked(domainTblKey, h, initialRowCompany, domUser, cells[hi], null, { rbacOnly: true }))) {
+        restrictedIdxSet.add(hi);
+        cells[hi] = 'Restricted';
+      }
+    });
+    const resolvedDomainChrono = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, initialRowCompany, editKey);
+    const pickColCompany = () => {
+      for (let hi = 0; hi < headers.length; hi++) {
+        if (/^(company|bu|entity|subsidiary|brand|branch|resort|venue)/i.test(String(headers[hi] || '').trim())) {
+          const v = String(cells[hi] || '').trim();
+          if (v && !/^[\d$.,%\-]+$/.test(v)) return v;
+        }
+      }
+      return '';
+    };
+    const inferVerticalCompany = () => {
+      const joined = `${primaryId} ${tableTitle} ${cells.join(' ')}`;
+      if (ind === 'Real Estate & Property') return /4235/i.test(joined) ? '4235 Company S.A.L' : 'Properties';
+      if (ind === 'Holding & Treasury') return 'Bdeir Holding';
+      if (ind === 'Insurance & Brokerage') return 'Insurance Company';
+      if (/^BLC-|\bblanca\b/i.test(joined)) return 'Blanca';
+      if (/^UNA-|\bla\s*una\b/i.test(joined)) return 'La Una';
+      if (/^PLM-|\bpalms\b/i.test(joined)) return 'Palms';
+      if (/^VOL-|\bvoile\b/i.test(joined)) return 'Voile';
+      if (/^PLT-|\bplatinum\b/i.test(joined)) return 'Platinum';
+      if (/^SHC-|\bshacman\b/i.test(joined)) return 'Shacman';
+      if (/^KOR-|\bkorri\b/i.test(joined)) return 'Korri Auto';
+      if (ind === 'Hospitality & Resorts') return 'Blanca';
+      if (ind === 'Automotive & Heavy Trading') return 'Korri Auto';
+      return '';
+    };
+    const pfCo = resolvedDomainChrono && resolvedDomainChrono.prefill
+      ? (resolvedDomainChrono.prefill.company || resolvedDomainChrono.prefill.entity || resolvedDomainChrono.prefill.venue || '')
+      : '';
+    const rowCompany = String(initialRowCompany || pfCo || pickColCompany() || inferVerticalCompany() || '').trim();
+    const dtHdrIdx = headers.findIndex((h, i) => /date|start|effective|close|due|loss|issue|check.?in|arrival/i.test(String(h || '')) && _normalizeVoidDateIso(cells[i]));
+    const firstValidDateCell = dtHdrIdx >= 0
+      ? _normalizeVoidDateIso(cells[dtHdrIdx])
+      : (cells.map(c => _normalizeVoidDateIso(c)).find(Boolean) || '');
+    const prefillDateIso = _normalizeVoidDateIso(
+      resolvedDomainChrono && resolvedDomainChrono.prefill && (
+        resolvedDomainChrono.prefill.date || resolvedDomainChrono.prefill.start_date
+        || resolvedDomainChrono.prefill.effective_from || resolvedDomainChrono.prefill.due_date
+        || resolvedDomainChrono.prefill.loss_date || ''
+      )
+    );
+    const dateCell = firstValidDateCell || prefillDateIso || todayISO();
+    const isNonMoneyHdr = h => /\b(date|due\s*date|start|end|status|stage|type|id|code|ref|reference|notes?|remark|qty|quantity|km|m3|%|rate|share|margin|ratio|occ|days?|months?|periods?|count|weight|ton)\b|#/i.test(String(h || ''));
+    const isMoneyHdr = h => !isNonMoneyHdr(h) && /total|amount|usd|lbp|value|balance|net|gross|premium|rent|cost|revenue|billed|cash|paid|principal|fee|price|due|claim|approved|contract|scheduled/i.test(String(h || ''));
+    const currHdrIdx = headers.findIndex((h, i) => !restrictedIdxSet.has(i) && i !== dtHdrIdx && isMoneyHdr(h) && /(\$|usd|lbp)/i.test(String(h || '')) && String(cells[i] || '').trim());
+    const genHdrIdx = currHdrIdx >= 0 ? currHdrIdx : headers.findIndex((h, i) => !restrictedIdxSet.has(i) && i !== dtHdrIdx && isMoneyHdr(h) && !_normalizeVoidDateIso(cells[i]) && String(cells[i] || '').trim());
+    const amtHdrIdx = genHdrIdx;
+    let fallbackDollarCell = '';
+    for (let ci = cells.length - 1; ci >= 0; ci--) {
+      if (!restrictedIdxSet.has(ci) && /^\s*[-+]?\$/.test(String(cells[ci] || ''))) {
+        fallbackDollarCell = String(cells[ci] || '').trim();
+        break;
+      }
+    }
+    const amountCell = (amtHdrIdx >= 0 ? String(cells[amtHdrIdx] || '').trim() : fallbackDollarCell) || (restrictedIdxSet.size > 0 ? 'Restricted' : '$0.00');
+    const parseDomainCellNum = v => {
+      const m = String(v || '').replace(/,/g, '').match(/[-+]?\d+(?:\.\d+)?/);
+      return m ? (Number(m[0]) || 0) : 0;
+    };
+    const isAmtCellLbp = (amtHdrIdx >= 0 && /lbp|l\.l/i.test(String(headers[amtHdrIdx] || ''))) || /lbp|l\.l/i.test(amountCell);
+    const rawDomCellNum = Math.abs(parseDomainCellNum(amountCell));
+    const domFx = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
+    const numericAmtCell = isAmtCellLbp ? (rawDomCellNum / (domFx > 0 ? domFx : 89500)) : rawDomCellNum;
+    const numericAmt = numericAmtCell > 0 ? numericAmtCell : _extractVoidRowUsd(resolvedDomainChrono && resolvedDomainChrono.prefill);
+    const isChronoDomainRow = Boolean(resolvedDomainChrono && CHRONO_DOMAIN_KEYS_SET.has(resolvedDomainChrono.formKey) && resolvedDomainChrono.prefill && resolvedDomainChrono.prefill.start_date);
+    const domainGeoSpec = resolveDomainLocationModifySpec({
+      ind,
+      domainTblKey,
+      viewKey: STATE.view,
+      tableTitle,
+      headers,
+      cells,
+      trEl,
+      primaryId,
+      rowCompany,
+      savedEntry,
+      resolvedDomainChrono,
+      editStore
+    });
+    return {
+      trEl,
+      ind,
+      headers,
+      cells,
+      tableTitle,
+      primaryId,
+      editKey,
+      domainTblKey,
+      rowCompany,
+      tillOwned,
+      savedEntry,
+      resolvedDomainChrono,
+      isChronoDomainRow,
+      domainGeoSpec,
+      firstValidDateCell,
+      dateCell,
+      amtHdrIdx,
+      fallbackDollarCell,
+      numericAmt
+    };
+  }
+
+  function applyIndDomainVoidMutation(ctx, reasonStr, collector = {}) {
+    const store = getIndustryRowEditStore();
+    const {
+      ind, headers, cells, tableTitle, primaryId, editKey, domainTblKey, rowCompany,
+      firstValidDateCell, dateCell, amtHdrIdx, fallbackDollarCell, domainGeoSpec
+    } = ctx;
+    const prevEntry = store[editKey] || {};
+    const nowIso = new Date().toISOString();
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const voidWho = String(au.full_name || au.name || au.email || 'Supervisor').trim();
+    const voidWhoEmail = String(au.email || '').trim().toLowerCase();
+    const voidReason = String(reasonStr || '').trim().slice(0, 500);
+    const snapDateCell = firstValidDateCell || dateCell || '';
+    const cpIdx = headers.findIndex((h, i) => i > 0 && /customer|client|supplier|vendor|counterparty|party|partner|tenant|carrier|insurer|property|staff|employee|driver|entity|resort|outlet|item|product|unit|name|title/i.test(String(h || '')) && String(cells[i] || '').trim());
+    const snapCounterparty = String((cpIdx >= 0 ? cells[cpIdx] : (cells[1] || cells[2] || '')) || '').trim();
+    const snapAmount = String((amtHdrIdx >= 0 ? cells[amtHdrIdx] : (fallbackDollarCell || '')) || '').trim();
+    const hasPrevEntry = Boolean(prevEntry && typeof prevEntry === 'object' && Object.keys(prevEntry).length > 0);
+    const voidSnap = {
+      tableTitle: tableTitle || '',
+      domainTblKey: domainTblKey || (prevEntry && prevEntry.domainTblKey) || '',
+      date: snapDateCell || undefined,
+      counterparty: snapCounterparty || undefined,
+      amount: snapAmount || undefined,
+      headers: Array.isArray(headers) ? headers.slice(0, 12) : undefined,
+      cells: Array.isArray(cells) ? cells.slice(0, 12) : undefined
+    };
+    store[editKey] = hasPrevEntry
+      ? Object.assign({}, prevEntry, {
+          voided: true,
+          voided_by: voidWho,
+          voided_by_email: voidWhoEmail || undefined,
+          voided_at: nowIso,
+          void_reason: voidReason || prevEntry.void_reason || undefined,
+          void_snapshot: voidSnap,
+          rev: Number(prevEntry.rev || 0) + 1,
+          updated_at: nowIso,
+          updatedAt: nowIso,
+          _revBumped: true
+        })
+      : {
+          ind,
+          primaryId,
+          company: rowCompany || '',
+          voided: true,
+          voided_by: voidWho,
+          voided_by_email: voidWhoEmail || undefined,
+          voided_at: nowIso,
+          void_reason: voidReason || undefined,
+          void_snapshot: voidSnap,
+          rev: 1,
+          updated_at: nowIso,
+          updatedAt: nowIso,
+          _revBumped: true
+        };
+    if (!collector.skipStoreSave) saveIndustryRowEditStore(store, { skipServerPost: true });
+    const voidMeta = {
+      who: voidWho,
+      whoEmail: voidWhoEmail,
+      reason: voidReason,
+      date: snapDateCell,
+      counterparty: snapCounterparty,
+      amount: snapAmount,
+      domainTblKey: domainTblKey || '',
+      tableTitle
+    };
+    const wasCustom = voidIndustryCustomRowById(primaryId, Object.assign({
+      skipCloudSync: true,
+      skipRollback: true,
+      skipServerPost: true,
+      forceRowIdsOut: collector.forceRowIds
+    }, voidMeta));
+    if (domainGeoSpec && SEED && SEED.records && Array.isArray(SEED.records.sites)) {
+      const targetInd = domainGeoSpec.ind;
+      const reSlug = String(primaryId || domainGeoSpec.siteName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const reExpectedId = norm(`site-re-${reSlug}`);
+      const reRawId = norm(`site-re-${primaryId}`);
+      const rePidNorm = norm(primaryId);
+      const reSn = norm(domainGeoSpec.siteName || '');
+      const matchesMirroredSite = (s) => {
+        if (!s || s.voided || s._industry !== targetInd) return false;
+        if (domainGeoSpec.isReProperty) {
+          const sid = norm(s.id);
+          if (sid && (sid === reExpectedId || sid === reRawId || sid === rePidNorm)) return true;
+          if (s._rePropertyId && norm(s._rePropertyId) === rePidNorm) return true;
+          if (String(s.id || '').toLowerCase().startsWith('site-re-') && reSn && norm(s.name) === reSn) return true;
+          return false;
+        }
+        if (s._createdByDomainId && norm(s._createdByDomainId) === rePidNorm) return true;
+        if (String(s.id || '').toLowerCase().startsWith('site-dom-') && s._domainPrimaryId && norm(s._domainPrimaryId) === rePidNorm) return true;
+        return false;
+      };
+      const voidTs = new Date().toISOString();
+      const byUser = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'app';
+      if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+      const voidedMap = new Map();
+      const markVoidSite = (s) => {
+        s.voided = true;
+        s.modified_at = voidTs;
+        s.modified_by = byUser;
+        if (s.id != null) voidedMap.set(String(s.id), s);
+      };
+      STATE.customRecords.sites.forEach(s => { if (matchesMirroredSite(s)) markVoidSite(s); });
+      SEED.records.sites.forEach(s => {
+        if (!matchesMirroredSite(s)) return;
+        markVoidSite(s);
+        const ci = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(s.id));
+        if (ci >= 0) Object.assign(STATE.customRecords.sites[ci], s);
+        else STATE.customRecords.sites.unshift(Object.assign({}, s));
+      });
+      if (voidedMap.size > 0) {
+        if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function' && canWriteGeoConfig() && canAccessGeoIndustry(targetInd)) {
+          voidedMap.forEach(vs => {
+            if (canAccessGeoCompany(vs.company || rowCompany)) {
+              window.MFG_GEO.clearLocationPin({ name: vs.name, siteCategory: resolveSiteCategory(vs), industry: targetInd, excludeId: vs.id }, SEED, {
+                skipDomainEditSync: true,
+                skipGeoRollback: true,
+                skipCloudPush: true,
+                deferStoredConfigPush: true,
+                deferredGeoPushes: collector.deferredGeoPushes || [],
+                geoSavePromises: collector.geoPromises || []
+              });
+            }
+          });
+        }
+        if (!collector.skipSeedSync) {
+          applyCustomRecordsToSeed();
+          saveLocalAuthAndRecords();
+          if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+            window.MFG_GEO.hydrateSeedGeo(SEED, true);
+          }
+        }
+        voidedMap.forEach(s => {
+          const apiVoidSite = Object.assign({}, s);
+          delete apiVoidSite.geo_zone;
+          delete apiVoidSite._seed_orig;
+          delete apiVoidSite._geoOrig;
+          delete apiVoidSite._geoOrigInit;
+          delete apiVoidSite.zone_shape;
+          if (Array.isArray(collector.sitePosts)) collector.sitePosts.push(['sites', apiVoidSite]);
+        });
+      }
+    }
+    if (Array.isArray(collector.forceEditKeys) && !collector.forceEditKeys.includes(editKey)) {
+      collector.forceEditKeys.push(editKey);
+    }
+    if (Array.isArray(collector.undoItems)) {
+      collector.undoItems.push({ primaryId, editKey, bucket: domainTblKey, company: rowCompany, ind });
+    }
+    return { wasCustom, voidMeta };
+  }
+
+  let _indInlineVoidInflight = false;
+  function voidIndustryDomainRowFromTr(trEl, opts = {}) {
+    if (!trEl || !trEl.isConnected) return false;
+    if (!canVoid()) { toast('Supervisor permission required to void records', 'err'); return false; }
+    const ctx = resolveIndDomainVoidContext(trEl, opts.inspectOpts);
+    if (!ctx) { toast('Record not found', 'err'); return false; }
+    if (ctx.tillOwned || (ctx.domainTblKey === 'hsp_pos' && /^POS-/i.test(ctx.primaryId))) {
+      toast('POS till closes are controlled automatically by the Gate Till', 'err');
+      return false;
+    }
+    if (!isOwner()) {
+      const normCo = ctx.rowCompany.toLowerCase().replace(/\s+/g, ' ').trim();
+      const isShared = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
+      if (!isShared && !canAccessGeoCompany(ctx.rowCompany)) {
+        toast('Cannot void records outside your assigned companies', 'err');
+        return false;
+      }
+      if (ctx.ind && !canAccessGeoIndustry(ctx.ind)) {
+        toast('Cannot void records outside your assigned industries', 'err');
+        return false;
+      }
+    }
+    if (ctx.isChronoDomainRow && !canManageSiblingChronoSchedule(ctx.resolvedDomainChrono.formKey)) {
+      toast('Supervisor + Entry or Owner permission required to void chronological rate schedules', 'err');
+      return false;
+    }
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+      const origDtCell = ctx.firstValidDateCell || ctx.dateCell || '';
+      const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(ctx.rowCompany || STATE.company, origDtCell, origDtCell, { industry: ctx.ind });
+      if (pGuard && pGuard.blocked) {
+        toast(pGuard.message, 'err');
+        return false;
+      }
+    }
+    const domVoidSpec = {
+      actionCode: 'void_domain_row',
+      actionLabel: 'Void or Delete Posted Ledger Record',
+      targetRef: `${ctx.ind}:${ctx.primaryId}`,
+      company: ctx.rowCompany || STATE.company || 'WTC',
+      industry: ctx.ind
+    };
+    if (!(opts && opts.bypassStepUp) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+      if (!(typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domVoidSpec))) {
+        if (_indInlineVoidInflight) return false;
+        _indInlineVoidInflight = true;
+        window.MFG_STEP_UP.requireStepUpAuth(domVoidSpec).then(ok => {
+          _indInlineVoidInflight = false;
+          if (ok) voidIndustryDomainRowFromTr(trEl, Object.assign({}, opts || {}, { bypassStepUp: true }));
+        }).catch(() => { _indInlineVoidInflight = false; });
+        return false;
+      }
+    }
+    const preReason = String((opts && opts.reason) || '').trim().slice(0, 500);
+    const snapDate = ctx.firstValidDateCell || ctx.dateCell || '';
+    const reasonEval = evaluateVoidReasonRequirement({
+      table: ctx.domainTblKey || ctx.tableTitle || ctx.ind,
+      row: Object.assign({}, ctx.resolvedDomainChrono && ctx.resolvedDomainChrono.prefill ? ctx.resolvedDomainChrono.prefill : {}, {
+        date: snapDate,
+        company: ctx.rowCompany || STATE.company || ctx.ind,
+        ...(ctx.numericAmt > 0 ? { amount_usd: ctx.numericAmt } : {}),
+        tableTitle: ctx.tableTitle
+      }),
+      date: snapDate,
+      amountUsd: ctx.numericAmt > 0 ? ctx.numericAmt : undefined
+    });
+    if (reasonEval.required && preReason.length < 3) {
+      openVoidReasonPromptModal({
+        title: 'Void Reason Required',
+        recordLabel: ctx.primaryId,
+        subtitle: `${ctx.tableTitle}${ctx.rowCompany ? ' · ' + ctx.rowCompany : ''}`,
+        reqEval: reasonEval,
+        initialReason: preReason,
+        onConfirm: (typedReason) => {
+          voidIndustryDomainRowFromTr(trEl, Object.assign({}, opts || {}, { bypassStepUp: true, reason: typedReason }));
+        }
+      });
+      return false;
+    }
+
+    let voidRateImpactOkSig = '';
+    const execInlineDomainVoid = async () => {
+      const prevVoidEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
+      const prevVoidCustomSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
+      const prevDocsCustomSnap = Array.isArray(STATE.customRecords.documents) ? JSON.parse(JSON.stringify(STATE.customRecords.documents)) : [];
+      const prevSeedDocsSnap = (SEED.records && Array.isArray(SEED.records.documents)) ? JSON.parse(JSON.stringify(SEED.records.documents)) : null;
+      const prevAttCacheRev = _attCacheRev;
+      const domVoidGeoRollbackSnap = ((hasServerApi() && !isDemoScopeActive()) || (ctx.isChronoDomainRow && ctx.domainGeoSpec))
+        ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(ctx.domainGeoSpec))
+        : null;
+      const domVoidGeoPromises = [];
+      const domVoidDeferredGeoPushes = [];
+      const domVoidSitePosts = [];
+      const docVoidApiPairs = [];
+      const restoreLocalVoid = (errTxt) => {
+        STATE.industryRowEdits = prevVoidEditsSnap;
+        saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
+        STATE.industryCustomRows = prevVoidCustomSnap;
+        saveIndustryCustomRowsStore({ skipServerPost: true });
+        STATE.customRecords.documents = prevDocsCustomSnap;
+        if (prevSeedDocsSnap && SEED.records) SEED.records.documents = prevSeedDocsSnap;
+        _attCacheRev = prevAttCacheRev;
+        invalidateIndustryDomainCaches();
+        if (domVoidGeoRollbackSnap) domVoidGeoRollbackSnap.restore(errTxt);
+        else {
+          renderApp();
+          if (errTxt) toast(errTxt, 'err');
+        }
+      };
+
+      let voidImpact = null;
+      let voidFk = '';
+      let voidOrigSched = null;
+      let voidSchedForSweep = null;
+      let voidSweep = null;
+      let voidBaseline = null;
+      let voidSkipKeys = [];
+      if (ctx.isChronoDomainRow) {
+        voidFk = ctx.resolvedDomainChrono.formKey;
+        voidOrigSched = Object.assign({}, ctx.resolvedDomainChrono.prefill);
+        delete voidOrigSched._editMode;
+        delete voidOrigSched._editKey;
+        const voidedUp = String(ctx.primaryId || '').trim().toUpperCase();
+        const voidedOwn = (getIndustryCustomRowsStore()[voidFk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
+        const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || voidOrigSched._continues_id);
+        const laterSweepEnd = (a, b) => {
+          const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
+          const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
+          const m = eb && eb > ea ? eb : ea;
+          return m === '9999-12-31' ? 'Open' : m;
+        };
+        voidSweep = splitOwn
+          ? { start_date: String((voidedOwn && voidedOwn.start_date) || voidOrigSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || voidOrigSched._auto_closed_by_id)
+            ? ((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date || 'Open')
+            : laterSweepEnd((voidedOwn && voidedOwn.end_date) || voidOrigSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || voidOrigSched._split_sweep_end) }
+          : { start_date: '1900-01-01', end_date: '9999-12-31' };
+        voidSchedForSweep = splitOwn ? Object.assign({}, voidOrigSched, voidSweep) : voidOrigSched;
+        voidBaseline = planSiblingReprice(voidFk, voidSchedForSweep, voidSweep);
+        const ownImp = (voidedOwn && voidedOwn._impact) || voidOrigSched._impact || null;
+        voidSkipKeys = (ownImp && Array.isArray(ownImp.typed_keys)) ? ownImp.typed_keys.slice() : [];
+      }
+
+      const prevDeferDomVoid = _deferIndustryDomainServerPost;
+      _deferIndustryDomainServerPost = true;
+      let mutRes = { wasCustom: false, voidMeta: {} };
+      try {
+        mutRes = applyIndDomainVoidMutation(ctx, preReason, {
+          geoPromises: domVoidGeoPromises,
+          deferredGeoPushes: domVoidDeferredGeoPushes,
+          sitePosts: domVoidSitePosts
+        });
+        if (ctx.isChronoDomainRow) {
+          const fk = voidFk;
+          voidSiblingChronoSchedule(fk, ctx.primaryId, voidOrigSched, mutRes.voidMeta);
+          voidImpact = applySiblingReprice(fk, voidSchedForSweep, voidSweep, voidBaseline, voidSkipKeys);
+          if (voidImpact.rows.length || voidImpact.kept.length || voidImpact.typedAtNew.length) {
+            const tombUp = String(ctx.primaryId || '').trim().toUpperCase();
+            const tomb = (getIndustryCustomRowsStore()[fk] || []).find(r => r && r.voided && String(r.id || r.code || '').trim().toUpperCase() === tombUp);
+            if (tomb) {
+              tomb._undo_impact = packSiblingRepriceImpact(voidImpact);
+              appendImpactLog(tomb, tomb._undo_impact, 'undo', false);
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+            }
+          }
+          const stNow = getIndustryRowEditStore();
+          if (stNow[ctx.editKey]) {
+            delete stNow[ctx.editKey];
+            saveIndustryRowEditStore(stNow, { skipServerPost: true });
+          }
+        }
+        voidDomainRecordAttachments(ctx.domainTblKey, ctx.primaryId, { skipServerPost: true, deferSync: true, apiPairs: docVoidApiPairs });
+        if (docVoidApiPairs.length) applyCustomRecordsToSeed();
+      } finally {
+        _deferIndustryDomainServerPost = prevDeferDomVoid;
+      }
+
+      if (voidImpact && !domVoidGeoPromises.length) {
+        const vSum = summarizeSiblingRepriceImpact(voidImpact);
+        const vSig = `${voidFk}|${ctx.primaryId}|${vSum.sig}`;
+        if ((vSum.n > 0 || vSum.lockedN > 0) && voidRateImpactOkSig !== vSig) {
+          restoreLocalVoid('');
+          const okUndo = await promptRateChangeImpact({ mode: 'undo', impact: voidImpact });
+          if (!okUndo) return;
+          voidRateImpactOkSig = vSig;
+          return execInlineDomainVoid();
+        }
+      }
+      voidRateImpactOkSig = '';
+
+      if (hasServerApi() && !isDemoScopeActive()) {
+        const domVoidStoreRes = await postIndustryDomainStoreToLocalApi({ forceEditKeys: [ctx.editKey] });
+        if (domVoidStoreRes && !domVoidStoreRes.networkErr && !domVoidStoreRes.networkError && (domVoidStoreRes.ok === false || Number(domVoidStoreRes.status) >= 400)) {
+          restoreLocalVoid(await extractServerRejectMsg(domVoidStoreRes, 'Permission denied: void rejected by server'));
+          return;
+        }
+        const combinedPairs = domVoidSitePosts.concat(docVoidApiPairs);
+        const domVoidRecRes = combinedPairs.length
+          ? await postRecordPairsChunked(combinedPairs, 8, { deferRender: true })
+          : { ok: true, postedResults: [] };
+        if (isServerRejectRes(domVoidRecRes)) {
+          await rollbackRecordListOnServer(domVoidRecRes.postedResults);
+          await rollbackIndustryDomainOnServer(domVoidStoreRes);
+          restoreLocalVoid(await extractServerRejectMsg(domVoidRecRes, 'Permission denied: void rejected by server'));
+          return;
+        }
+        const domVoidGeoRes = (domVoidDeferredGeoPushes.length || domVoidGeoPromises.length)
+          ? await Promise.all([...domVoidDeferredGeoPushes.map(fn => fn()), ...domVoidGeoPromises])
+          : [];
+        const domVoidFail = domVoidGeoRes.find(r => isServerRejectRes(r) || (r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400)));
+        if (domVoidFail) {
+          await rollbackRecordListOnServer(domVoidRecRes.postedResults);
+          await rollbackIndustryDomainOnServer(domVoidStoreRes);
+          restoreLocalVoid(await extractServerRejectMsg(domVoidFail, 'Permission denied: void rejected by server'));
+          return;
+        }
+      }
+
+      invalidateIndustryDomainCaches();
+      saveLocalAuthAndRecords();
+      renderApp();
+      syncWithCloud(true);
+      toast(`Record voided · ${ctx.primaryId}`, 'ok', {
+        onUndo: () => restoreVoidedIndustryDomainRow({
+          primaryId: ctx.primaryId,
+          editKey: ctx.editKey,
+          bucket: ctx.domainTblKey,
+          company: ctx.rowCompany,
+          ind: ctx.ind
+        })
+      });
+    };
+
+    if (_indInlineVoidInflight) return false;
+    _indInlineVoidInflight = true;
+    execInlineDomainVoid().finally(() => { _indInlineVoidInflight = false; });
     return true;
   }
 
@@ -143608,6 +145640,44 @@
     return true;
   }
 
+  function restoreFromOvkMoversReturn(opts = {}) {
+    const snap = STATE.ovkMoversReturn;
+    if (!snap || !STATE.authed || STATE.kioskLocked) return false;
+    if (snap.company && String(STATE.company || '') !== snap.company) {
+      STATE.ovkMoversReturn = null;
+      return false;
+    }
+    if (snap.demoCompanyIndustry && isDemoScopeActive() && String(STATE.demoCompanyIndustry || '') !== snap.demoCompanyIndustry) {
+      STATE.ovkMoversReturn = null;
+      return false;
+    }
+    STATE.ovkMoversReturn = null;
+    document.querySelectorAll('#ovkMoversReturnGroup, [data-ovk-return-bar="1"]').forEach(el => el.remove());
+    const clearViews = Array.isArray(snap.clearCfViews) && snap.clearCfViews.length
+      ? snap.clearCfViews
+      : (snap.cfView ? [snap.cfView] : []);
+    clearViews.forEach(vk => {
+      if (vk && STATE.colFilters && STATE.colFilters[vk]) {
+        delete STATE.colFilters[vk];
+      }
+    });
+    if (snap.period === 'custom' && snap.dateFrom && snap.dateTo) {
+      setDateFilter({ from: snap.dateFrom, to: snap.dateTo, _keepOvkReturn: true, skipRender: true });
+    } else if (snap.period && snap.period !== 'all') {
+      setDateFilter({ period: snap.period, _keepOvkReturn: true, skipRender: true });
+    } else {
+      setDateFilter({ reset: true, _keepOvkReturn: true, skipRender: true });
+    }
+    if (snap.dateGrain) {
+      STATE.dateGrain = snap.dateGrain;
+      saveFilterState();
+      syncTopbarDateControls();
+    }
+    const destOrigin = (snap.originView && VIEW_TITLES[snap.originView]) ? snap.originView : 'overview_revenue';
+    setView(destOrigin, { reset: true, chipFilter: 'all', noPush: Boolean(opts && opts.fromHistory) });
+    return true;
+  }
+
   function getViewFilterPool(view, coKeyOverride) {
     const v = String(view || '').trim();
     if (!v) return [];
@@ -143765,6 +145835,7 @@
     } else {
       STATE.hubInspectorReturn = null;
     }
+    STATE.ovkMoversReturn = null;
     setView(destView, {
       reset: true,
       chipFilter: o.chipFilter || 'all',
@@ -151024,6 +153095,7 @@
       || ($('punchDriftModal') && !$('punchDriftModal').hidden)
       || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)
       || ($('stepUpAuthModal') && !$('stepUpAuthModal').hidden)
+      || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden)
       || ($('rateImpactModal') && !$('rateImpactModal').hidden)
       || ($('fatherBackfillModal') && !$('fatherBackfillModal').hidden)
       || ($('docCameraModal') && !$('docCameraModal').hidden)
@@ -151047,6 +153119,7 @@
       || ($('punchDriftModal') && !$('punchDriftModal').hidden)
       || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)
       || ($('stepUpAuthModal') && !$('stepUpAuthModal').hidden)
+      || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden)
       || ($('rateImpactModal') && !$('rateImpactModal').hidden)
       || ($('fatherBackfillModal') && !$('fatherBackfillModal').hidden)
       || ($('docCameraModal') && !$('docCameraModal').hidden)
@@ -151063,10 +153136,10 @@
   function hasUnsavedUiWork() {
     if (STATE.saving || isEntryModalDirty() || (STATE.view === 'users' && STATE.userFormDirty)) return true;
     if (isAnyCameraOrAuthFlowActive()) return true;
-    if (($('stepUpAuthModal') && !$('stepUpAuthModal').hidden) || ($('docCameraModal') && !$('docCameraModal').hidden)) {
+    if (($('stepUpAuthModal') && !$('stepUpAuthModal').hidden) || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden) || ($('docCameraModal') && !$('docCameraModal').hidden)) {
       return true;
     }
-    if (_auxModalDirty && document.querySelector('#indDomainEntryModal:not([hidden]), #inspModifyDrawer:not([hidden]), #recordInspector:not([hidden]) #indDomainModifyForm, #staffFaceEnrolModal:not([hidden]), #staffScheduleModal:not([hidden]), #shiftTypeModal:not([hidden]), #policyGroupModal:not([hidden]), #fatherBackfillModal:not([hidden]), #backfillModal:not([hidden]), #rateImpactModal:not([hidden]), #stepUpAuthModal:not([hidden]), #policySimDiffDrawer:not([hidden]), #punchDriftModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #docPreviewModal:not([hidden]), #docCameraModal:not([hidden])')) {
+    if (_auxModalDirty && document.querySelector('#indDomainEntryModal:not([hidden]), #inspModifyDrawer:not([hidden]), #recordInspector:not([hidden]) #indDomainModifyForm, #staffFaceEnrolModal:not([hidden]), #staffScheduleModal:not([hidden]), #shiftTypeModal:not([hidden]), #policyGroupModal:not([hidden]), #fatherBackfillModal:not([hidden]), #backfillModal:not([hidden]), #rateImpactModal:not([hidden]), #stepUpAuthModal:not([hidden]), #voidReasonPromptModal:not([hidden]), #policySimDiffDrawer:not([hidden]), #punchDriftModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #docPreviewModal:not([hidden]), #docCameraModal:not([hidden])')) {
       return true;
     }
     return false;
@@ -152178,6 +154251,52 @@
     const bar = document.createElement('div');
     bar.className = 'col-filter-bar has-active is-insp-return-only';
     bar.setAttribute('data-insp-return-bar', '1');
+    bar.innerHTML = `<div class="cf-active-strip">${groupHtml}</div>`;
+    if (wrap && wrap.parentNode) {
+      wrap.parentNode.insertBefore(bar, wrap);
+    } else if (targetPanel) {
+      targetPanel.insertBefore(bar, targetPanel.firstChild);
+    } else {
+      container.insertBefore(bar, container.firstChild);
+    }
+  }
+  function mountOvkMoversReturnBar(container) {
+    const snap = STATE.ovkMoversReturn;
+    if (!container || !snap || !STATE.authed || STATE.kioskLocked) return;
+    if (snap.destView !== STATE.view || String(STATE.company || '') !== String(snap.company || '')) return;
+    if (snap.demoCompanyIndustry && isDemoScopeActive() && String(STATE.demoCompanyIndustry || '') !== String(snap.demoCompanyIndustry || '')) return;
+    const cfView = snap.cfView || STATE.view;
+    const targetPanel = (snap.panelId && container.querySelector('#' + CSS.escape(snap.panelId)))
+      || (findRegisterPanelAndTable(container, cfView) || {}).panel
+      || container.querySelector('.panel-card, .panel');
+    const existingBar = (targetPanel && targetPanel.querySelector('.col-filter-bar.has-active'))
+      || container.querySelector(`.col-filter-bar.has-active[data-cf-bar="${CSS.escape(cfView)}"]`);
+    const arrowSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>';
+    const groupHtml = `
+      <span class="cf-insp-return-group" id="ovkMoversReturnGroup">
+        <button type="button" class="cf-insp-return-pill" id="ovkMoversReturnBtn" data-ovk-movers-return="1" data-ui-tip="Restore your previous date period and return to KPI Breakdown">
+          ${arrowSvg}<span>Back to KPI Breakdown:</span> <b data-no-i18n="1">${esc(snap.moverName || '')}</b>
+        </button>
+        <button type="button" class="cf-insp-return-dismiss" id="ovkMoversReturnDismissBtn" data-ovk-movers-return-dismiss="1" aria-label="Dismiss return link" data-ui-tip="Dismiss">✕</button>
+      </span>
+    `;
+    const prevGroup = $('ovkMoversReturnGroup');
+    if (prevGroup) prevGroup.remove();
+    container.querySelectorAll('[data-ovk-return-bar="1"]').forEach(el => el.remove());
+    if (existingBar) {
+      const strip = existingBar.querySelector('.cf-active-strip');
+      if (strip) {
+        strip.insertAdjacentHTML('afterbegin', groupHtml);
+        return;
+      }
+    }
+    const found = findRegisterPanelAndTable(container, cfView);
+    const wrap = (targetPanel && (targetPanel.querySelector('.table-wrap') || targetPanel.querySelector('table')))
+      || (found && (found.table.closest('.table-wrap') || found.table))
+      || container.querySelector('.table-wrap');
+    const bar = document.createElement('div');
+    bar.className = 'col-filter-bar has-active is-insp-return-only';
+    bar.setAttribute('data-ovk-return-bar', '1');
     bar.innerHTML = `<div class="cf-active-strip">${groupHtml}</div>`;
     if (wrap && wrap.parentNode) {
       wrap.parentNode.insertBefore(bar, wrap);
@@ -153381,7 +155500,7 @@
   let _swUpdateModalObserver = null;
   let _swUpdateBodyObserver = null;
   let _swObservedOverlayEls = typeof WeakSet === 'function' ? new WeakSet() : null;
-  const SW_OVERLAY_ATTR_SEL = '.modal-backdrop, .sua-backdrop, .cmdp-backdrop, #stepUpAuthModal, #cmdPaletteModal, #docCameraModal, #docPreviewModal, #aiBatchIntakeModal, #backfillModal, #fatherBackfillModal, #rateImpactModal, #policySimDiffDrawer, #punchDriftModal, #recordInspector, #inspModifyDrawer';
+  const SW_OVERLAY_ATTR_SEL = '.modal-backdrop, .sua-backdrop, .cmdp-backdrop, #stepUpAuthModal, #voidReasonPromptModal, #cmdPaletteModal, #docCameraModal, #docPreviewModal, #aiBatchIntakeModal, #backfillModal, #fatherBackfillModal, #rateImpactModal, #policySimDiffDrawer, #punchDriftModal, #recordInspector, #inspModifyDrawer';
   function _syncSwUpdateModalObserver(active) {
     if (!active) {
       if (_swUpdateModalObserver) {
@@ -159626,6 +161745,7 @@
     if (STATE.catchUpBatchRepDate) clearCatchUpBatchRepDate();
     STATE.company = DEMO_COMPANY_KEY;
     STATE.demoCompanyIndustry = indId;
+    STATE.ovkMoversReturn = null;
     if (!prevDemo) syncDemoScopeDataState();
     STATE.cfTillScrubDate = '';
     STATE.cfTillScrubKey = '';
@@ -159696,7 +161816,9 @@
     }
     if (prevCompany !== coKey) {
       if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
+      if (typeof closeHoldingNetSettlementModal === 'function') closeHoldingNetSettlementModal();
       STATE.hubInspectorReturn = null;
+      STATE.ovkMoversReturn = null;
       if (STATE.catchUpBatchRepDate && STATE.catchUpBatchScope && String(coKey || '') !== STATE.catchUpBatchScope) {
         clearCatchUpBatchRepDate();
       }
@@ -160493,6 +162615,9 @@
       : `All Assigned (${mfgAllowed.length})`;
 
     syncSidebarHubVisibilityDom(user);
+    if (HLD_NET_SETTLE_STATE && HLD_NET_SETTLE_STATE.open && !canOpenHoldingNetSettlement(user)) {
+      closeHoldingNetSettlementModal();
+    }
     if (!STATE.kioskLocked && !canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
 
     if (STATE.pbiPage && !canAccessPbiPage(STATE.pbiPage, user)) {
@@ -160900,6 +163025,7 @@
   }
 
   function purgeOverlaysOnSessionOrKioskLock() {
+    if (typeof closeHoldingNetSettlementModal === 'function') closeHoldingNetSettlementModal();
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     if (typeof closeBatchPaydayModal === 'function') closeBatchPaydayModal({ force: true });
     if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
@@ -161167,6 +163293,7 @@
 
   function signOut() {
     STATE.hubInspectorReturn = null;
+    STATE.ovkMoversReturn = null;
     purgeOverlaysOnSessionOrKioskLock();
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
@@ -161782,6 +163909,7 @@
       window.MFG_ASK.clearSessionState();
     }
     STATE.hubInspectorReturn = null;
+    STATE.ovkMoversReturn = null;
     finalAuthedUser.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
     if (!isDemoSandboxSession()) {
@@ -162003,7 +164131,7 @@
         const inspEl = $('recordInspector');
         if (!inspEl || inspEl.hidden) return;
         if (Array.isArray(STATE.inspectorHistory) && STATE.inspectorHistory.length > 1) return;
-        if (document.querySelector('#rateImpactModal:not([hidden]), #quoteDraftModal:not([hidden]), #docCameraModal:not([hidden]), #docPreviewModal:not([hidden]), #thermalPrintModal:not([hidden]), #thermalPreviewModal:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden]), #cmdPaletteModal:not([hidden]), #stepUpAuthModal:not([hidden]), #backfillModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #authGate:not([hidden]), .pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden])')) return;
+        if (document.querySelector('#rateImpactModal:not([hidden]), #quoteDraftModal:not([hidden]), #docCameraModal:not([hidden]), #docPreviewModal:not([hidden]), #thermalPrintModal:not([hidden]), #thermalPreviewModal:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden]), #cmdPaletteModal:not([hidden]), #stepUpAuthModal:not([hidden]), #voidReasonPromptModal:not([hidden]), #backfillModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #authGate:not([hidden]), .pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden])')) return;
         const tTag = ev.target && ev.target.tagName ? ev.target.tagName : '';
         if (/^SELECT$/i.test(tTag)) return;
         ev.preventDefault();
@@ -162015,7 +164143,7 @@
       if (_mobRowPeekState && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
         const peekBd = $('mobRowPeekBackdrop');
         if (!peekBd || peekBd.hidden) return;
-        if (document.querySelector('#recordInspector:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden])')) return;
+        if (document.querySelector('#recordInspector:not([hidden]), #entryModal:not([hidden]), #indDomainEntryModal:not([hidden]), #voidReasonPromptModal:not([hidden]), #stepUpAuthModal:not([hidden])')) return;
         if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
         const tTag = ev.target && ev.target.tagName ? ev.target.tagName : '';
         if (/^(INPUT|TEXTAREA|SELECT)$/i.test(tTag)) return;
@@ -164401,6 +166529,7 @@
     }
     if (locked) {
       STATE.hubInspectorReturn = null;
+      STATE.ovkMoversReturn = null;
       clearKioskAdminTimers();
       KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
@@ -195701,6 +197830,7 @@
       // On its own, so a fault in any chart above can never leave a drill filtering rows with no strip.
       try { mountRegisterDrillStrips(container); } catch (err) { console.warn('register drill strip', err); }
       try { mountInspectorReturnBar(container); } catch (err) { console.warn('inspector return bar', err); }
+      try { mountOvkMoversReturnBar(container); } catch (err) { console.warn('ovk movers return bar', err); }
       try { mountHubChartDrills(container); } catch (err) { console.warn('hub chart drill', err); }
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
@@ -195810,6 +197940,382 @@
     }
   }
 
+  function disarmBulkVoidSelectionBtn(btn) {
+    if (!btn) return false;
+    const wasArmed = btn.dataset.armed === '1' || btn.classList.contains('armed');
+    if (btn._bulkVoidArmTimer) {
+      clearTimeout(btn._bulkVoidArmTimer);
+      btn._bulkVoidArmTimer = null;
+    }
+    btn.dataset.armed = '';
+    btn.classList.remove('armed');
+    if (wasArmed) {
+      const cnt = Number(btn.dataset.voidCount || 0) || 0;
+      btn.innerHTML = `${ic('trash')} <span>Void Selected (${cnt})</span>`;
+      _setVoidBtnEnAria(btn, `Void Selected (${cnt})`);
+      _translateVoidEl(btn);
+    }
+    return wasArmed;
+  }
+
+  function resolveBulkVoidCandidate(tr) {
+    if (!tr || !tr.isConnected || tr.tagName !== 'TR') return { ok: false, reason: 'Row not found' };
+    if (tr.hasAttribute('data-rkey') && tr.hasAttribute('data-rid')) {
+      const crKey = String(tr.getAttribute('data-rkey') || '').trim();
+      const rid = String(tr.getAttribute('data-rid') || '').trim();
+      if (!crKey || !rid) return { ok: false, reason: 'Unsupported table row' };
+      const list = Array.isArray(STATE.customRecords[crKey]) ? STATE.customRecords[crKey] : [];
+      const q = rid;
+      const nq = norm(q);
+      const matchRow = x => x && (String(x.id) === q || (nq && (norm(x.name) === nq || norm(x.ticket_no) === nq || norm(x.invoice_no) === nq || norm(x.staff) === nq || norm(x.driver) === nq || norm(x.equipment) === nq)));
+      const r = list.find(matchRow);
+      const seedList = (SEED.records && SEED.records[crKey]) || [];
+      const seedRow = seedList.find(matchRow);
+      const targetRow = r || seedRow;
+      if (!targetRow || targetRow.voided) return { ok: false, reason: 'Record already voided or missing' };
+      const canonId = String((seedRow && seedRow.id) || (r && r.id) || q);
+      const dedupKey = `mfg::${crKey}::${canonId}`;
+      const scopeErr = _checkVoidRestoreScopeAllowed(crKey, targetRow);
+      if (scopeErr) return { ok: false, dedupKey, reason: scopeErr };
+      if (crKey === 'sites' && _areaSiteHasSplit(seedRow || r) && _areaSiteIsMfgRow(seedRow || r)) {
+        return { ok: false, dedupKey, reason: 'Move its customers back to the area site before voiding this site.' };
+      }
+      if (crKey === 'sites' && _areaSiteIsMfgRow(seedRow || r)) {
+        const areaN = norm((seedRow || r).name);
+        const holdsOwnSites = Boolean(areaN) && seedList.some(s => s && !s.voided && _areaSiteHasSplit(s) && _areaSiteIsMfgRow(s) && norm(s.split_from) === areaN);
+        if (holdsOwnSites) return { ok: false, dedupKey, reason: 'Customers were moved out of this area to their own sites.' };
+      }
+      if (!UNIVERSAL_MAIN_SPEC[crKey] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+        const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
+          targetRow.company || STATE.company,
+          targetRow.date || targetRow.start_date || '',
+          targetRow.rep_date || targetRow.set_date || '',
+          { industry: 'Manufacturing' }
+        );
+        if (pGuard && pGuard.blocked) return { ok: false, dedupKey, reason: pGuard.message || 'Closed accounting period' };
+      }
+      const gtVoidPeer = findGroupTransferCounterpart(crKey, targetRow, false);
+      const gtVoidBlock = groupTransferCounterpartBlock(gtVoidPeer);
+      if (gtVoidBlock) return { ok: false, dedupKey, reason: gtVoidBlock };
+      if (isEffectiveSeriesTable(crKey, targetRow) || crKey === 'products') {
+        return { ok: false, dedupKey, reason: 'Rate schedules require individual re-price review' };
+      }
+      return {
+        ok: true,
+        kind: 'mfg',
+        dedupKey,
+        crKey,
+        id: q,
+        company: targetRow.company || STATE.company || 'WTC',
+        usd: _extractVoidRowUsd(targetRow),
+        trEl: tr
+      };
+    }
+    if (tr.hasAttribute('data-ind-row-id')) {
+      const surf = tr.getAttribute('data-ind-inspect-surface') || '';
+      if (surf === 'pbi' || surf === 'kiosk_recent' || tr.closest('#industryPbiStudio, #industrySentinelsDetailPanel, #kioskRecentTable, .modal-card')) {
+        return { ok: false, reason: 'Summary / analytics rows cannot be voided' };
+      }
+      if (!isVoidableIndDomainRowTr(tr, { requireChronoAuth: false })) {
+        return { ok: false, reason: 'Row is locked or outside your scope' };
+      }
+      const ctx = resolveIndDomainVoidContext(tr);
+      if (!ctx) return { ok: false, reason: 'Record not found' };
+      const dedupKey = `ind::${ctx.editKey}`;
+      if (ctx.tillOwned || (ctx.domainTblKey === 'hsp_pos' && /^POS-/i.test(ctx.primaryId))) {
+        return { ok: false, dedupKey, reason: 'POS till closes are controlled automatically by the Gate Till' };
+      }
+      if (ctx.isChronoDomainRow || CHRONO_DOMAIN_KEYS_SET.has(ctx.domainTblKey) || isSiblingChronoFormKey(ctx.domainTblKey)) {
+        return { ok: false, dedupKey, reason: 'Rate schedules require individual re-price review' };
+      }
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+        const dt = ctx.firstValidDateCell || ctx.dateCell || '';
+        const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(ctx.rowCompany || STATE.company, dt, dt, { industry: ctx.ind });
+        if (pGuard && pGuard.blocked) return { ok: false, dedupKey, reason: pGuard.message || 'Closed accounting period' };
+      }
+      return {
+        ok: true,
+        kind: 'ind',
+        dedupKey,
+        ctx,
+        company: ctx.rowCompany || STATE.company || ctx.ind,
+        usd: Number(ctx.numericAmt || 0),
+        trEl: tr
+      };
+    }
+    return { ok: false, reason: 'Unsupported table row' };
+  }
+
+  function classifyBulkVoidCandidates(selRows) {
+    const runnable = [];
+    const skipped = [];
+    const seenKeys = new Set();
+    (Array.isArray(selRows) ? selRows : []).forEach(tr => {
+      const res = resolveBulkVoidCandidate(tr);
+      if (res.dedupKey) {
+        if (seenKeys.has(res.dedupKey)) return;
+        seenKeys.add(res.dedupKey);
+      }
+      if (res.ok) runnable.push(res);
+      else skipped.push(res);
+    });
+    return { runnable, skipped };
+  }
+
+  let _bulkVoidRunning = false;
+  function runBulkVoidSelectedRows(selRows, container) {
+    if (_bulkVoidRunning) return;
+    if (!canVoid() || STATE.kioskLocked) {
+      toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err');
+      return;
+    }
+    const { runnable, skipped } = classifyBulkVoidCandidates(selRows);
+    if (!runnable.length) {
+      const why = (skipped[0] && skipped[0].reason) || 'No selected records can be bulk-voided';
+      toast(why, 'err');
+      return;
+    }
+    const totalUsd = round2(runnable.reduce((s, item) => s + Math.abs(Number(item.usd || 0)), 0));
+    const _t = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+    const skipNote = skipped.length
+      ? ` · ${skipped.length} ${_t('skipped')} (${_t(skipped[0].reason)})`
+      : '';
+    const subStr = `${_t('Combined total')}: ${fmtUSD(totalUsd, 2)}${skipNote}`;
+    openVoidReasonPromptModal({
+      title: 'Bulk Void Selected Records',
+      recordLabel: `${runnable.length} ${runnable.length === 1 ? 'Record' : 'Records'}`,
+      subtitle: subStr,
+      reqEval: { required: true, byAll: true },
+      onConfirm: async (sharedReason) => {
+        if (_bulkVoidRunning) return;
+        _bulkVoidRunning = true;
+        try {
+          const primaryCo = (runnable[0] && runnable[0].company) || STATE.company || 'WTC';
+          const bulkSpec = {
+            actionCode: 'void_record',
+            actionLabel: `Bulk Void Selected Records (${runnable.length})`,
+            targetRef: `bulk:${runnable.length}`,
+            company: primaryCo,
+            industry: getActiveIndustry(primaryCo),
+            deferCloudSync: Boolean(hasServerApi() && !isDemoScopeActive())
+          };
+          if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+            if (!(typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(bulkSpec))) {
+              const okStep = await window.MFG_STEP_UP.requireStepUpAuth(bulkSpec);
+              if (!okStep) return;
+            }
+          }
+          if (!canVoid() || STATE.kioskLocked) {
+            toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err');
+            return;
+          }
+
+          const mfgItems = runnable.filter(x => x.kind === 'mfg');
+          const indItems = runnable.filter(x => x.kind === 'ind');
+
+          const rbSnap = mfgItems.length ? _captureLedgerAndGeoRollbackSnap([], false) : null;
+          const archPrior = new Map();
+          const batchCollector = {
+            rbSnap,
+            archPrior,
+            apiPairs: [],
+            undoItems: [],
+            normKeys: new Set()
+          };
+          const prevAttCacheRev = _attCacheRev;
+
+          const hasIndItems = indItems.length > 0;
+          const prevVoidEditsSnap = hasIndItems ? JSON.parse(JSON.stringify(getIndustryRowEditStore())) : null;
+          const prevVoidCustomSnap = hasIndItems ? JSON.parse(JSON.stringify(getIndustryCustomRowsStore())) : null;
+          const prevDocsCustomSnap = hasIndItems && Array.isArray(STATE.customRecords.documents) ? JSON.parse(JSON.stringify(STATE.customRecords.documents)) : null;
+          const prevSeedDocsSnap = hasIndItems && SEED.records && Array.isArray(SEED.records.documents) ? JSON.parse(JSON.stringify(SEED.records.documents)) : null;
+          const anyDomGeo = indItems.some(x => x.ctx && x.ctx.domainGeoSpec);
+          const domGeoSnap = (hasIndItems && ((hasServerApi() && !isDemoScopeActive()) || anyDomGeo))
+            ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], anyDomGeo)
+            : null;
+          const domCollector = {
+            skipStoreSave: true,
+            skipSeedSync: true,
+            geoPromises: [],
+            deferredGeoPushes: [],
+            sitePosts: [],
+            forceRowIds: [],
+            forceEditKeys: [],
+            undoItems: []
+          };
+
+          const restoreWholeBatch = (errTxt) => {
+            if (rbSnap) {
+              archPrior.forEach(({ crKey, canonTargetId, hadArchBefore, prevArchVal }) => {
+                if (hadArchBefore) {
+                  if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
+                  SEED_VOIDED_ARCHIVE[crKey].set(canonTargetId, prevArchVal);
+                } else if (SEED_VOIDED_ARCHIVE[crKey]) {
+                  SEED_VOIDED_ARCHIVE[crKey].delete(canonTargetId);
+                }
+              });
+              rbSnap.restore('');
+            }
+            if (hasIndItems) {
+              STATE.industryRowEdits = prevVoidEditsSnap;
+              saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
+              STATE.industryCustomRows = prevVoidCustomSnap;
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              if (prevDocsCustomSnap) STATE.customRecords.documents = prevDocsCustomSnap;
+              if (prevSeedDocsSnap && SEED.records) SEED.records.documents = prevSeedDocsSnap;
+              invalidateIndustryDomainCaches();
+              if (domGeoSnap) domGeoSnap.restore('');
+            }
+            _attCacheRev = prevAttCacheRev;
+            applyCustomRecordsToSeed();
+            saveLocalAuthAndRecords();
+            renderApp();
+            if (errTxt) toast(errTxt, 'err');
+          };
+
+          mfgItems.forEach(item => {
+            voidRecord(item.crKey, item.id, {
+              bypassStepUp: true,
+              reason: sharedReason,
+              batchCollector
+            });
+          });
+          if (mfgItems.length) {
+            applyCustomRecordsToSeed();
+            if (['jv_partnerships', 'jv_distributions', 'sites', 'price_rules', 'sales_tickets', 'raw_purchases'].some(k => batchCollector.normKeys.has(k))) {
+              normalizeDistinctSiteCategories(SEED);
+            }
+          }
+
+          if (hasIndItems) {
+            const prevDeferDomVoid = _deferIndustryDomainServerPost;
+            _deferIndustryDomainServerPost = true;
+            try {
+              indItems.forEach(item => {
+                applyIndDomainVoidMutation(item.ctx, sharedReason, domCollector);
+                voidDomainRecordAttachments(item.ctx.domainTblKey, item.ctx.primaryId, {
+                  skipServerPost: true,
+                  deferSync: true,
+                  apiPairs: batchCollector.apiPairs
+                });
+              });
+              saveIndustryRowEditStore(getIndustryRowEditStore(), { skipServerPost: true });
+              saveIndustryCustomRowsStore({ skipServerPost: true });
+              if (domCollector.sitePosts.length || batchCollector.apiPairs.length) applyCustomRecordsToSeed();
+              if (anyDomGeo && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+                window.MFG_GEO.hydrateSeedGeo(SEED, true);
+              }
+              invalidateIndustryDomainCaches();
+            } finally {
+              _deferIndustryDomainServerPost = prevDeferDomVoid;
+            }
+          }
+
+          const voidedCount = batchCollector.undoItems.length + domCollector.undoItems.length;
+          if (!voidedCount) {
+            restoreWholeBatch('No selected records could be voided');
+            return;
+          }
+
+          if (container) {
+            container.querySelectorAll('tr.rrow.is-row-selected').forEach(r => r.classList.remove('is-row-selected'));
+          }
+          renderApp();
+
+          if (hasServerApi() && !isDemoScopeActive()) {
+            const allPairs = batchCollector.apiPairs.concat(domCollector.sitePosts);
+            let recRes = { ok: true, postedResults: [] };
+            if (allPairs.length) {
+              recRes = await postRecordPairsChunked(allPairs, 8, { deferRender: true });
+              if (isServerRejectRes(recRes)) {
+                if (recRes.postedResults && recRes.postedResults.length) {
+                  await rollbackRecordListOnServer(recRes.postedResults);
+                }
+                restoreWholeBatch(await extractServerRejectMsg(recRes, 'Permission denied: bulk void rejected by server.'));
+                return;
+              }
+            }
+            let domStoreRes = { ok: true };
+            if (domCollector.forceEditKeys.length || domCollector.forceRowIds.length) {
+              domStoreRes = await postIndustryDomainStoreToLocalApi({
+                forceRowIds: domCollector.forceRowIds,
+                forceEditKeys: domCollector.forceEditKeys
+              });
+              if (domStoreRes && !domStoreRes.networkErr && !domStoreRes.networkError && (domStoreRes.ok === false || Number(domStoreRes.status) >= 400)) {
+                if (recRes.postedResults && recRes.postedResults.length) {
+                  await rollbackRecordListOnServer(recRes.postedResults);
+                }
+                restoreWholeBatch(await extractServerRejectMsg(domStoreRes, 'Permission denied: bulk void rejected by server.'));
+                return;
+              }
+            }
+            if (domCollector.deferredGeoPushes.length || domCollector.geoPromises.length) {
+              const geoRes = await Promise.all([...domCollector.deferredGeoPushes.map(fn => fn()), ...domCollector.geoPromises]);
+              const geoFail = geoRes.find(r => isServerRejectRes(r) || (r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400)));
+              if (geoFail) {
+                if (recRes.postedResults && recRes.postedResults.length) {
+                  await rollbackRecordListOnServer(recRes.postedResults);
+                }
+                if (domStoreRes && domStoreRes.rollbackToken) {
+                  await rollbackIndustryDomainOnServer(domStoreRes);
+                }
+                restoreWholeBatch(await extractServerRejectMsg(geoFail, 'Permission denied: bulk void rejected by server.'));
+                return;
+              }
+            }
+          }
+
+          saveLocalAuthAndRecords();
+          syncWithCloud(true);
+          const mfgUndos = batchCollector.undoItems.slice();
+          const indUndos = domCollector.undoItems.slice();
+          toast(
+            `Voided ${voidedCount} selected ${voidedCount === 1 ? 'record' : 'records'}` + (skipped.length ? ` · ${skipped.length} skipped` : ''),
+            'ok',
+            {
+              onUndo: async () => {
+                for (let i = 0; i < mfgUndos.length; i++) {
+                  try { await restoreVoidedRecord(mfgUndos[i].crKey, mfgUndos[i].targetId); } catch (_) {}
+                }
+                for (let i = 0; i < indUndos.length; i++) {
+                  try { await restoreVoidedIndustryDomainRow(indUndos[i]); } catch (_) {}
+                }
+              }
+            }
+          );
+        } finally {
+          _bulkVoidRunning = false;
+        }
+      }
+    });
+  }
+
+  function armOrRunBulkVoidBtn(btn, selRows, container) {
+    if (!btn) return;
+    if (btn.dataset.armed === '1') {
+      const scopeEl = (container && container.isConnected) ? container : ($('workspace') || document);
+      const liveRows = Array.from(scopeEl.querySelectorAll('tr.rrow.is-row-selected'));
+      disarmBulkVoidSelectionBtn(btn);
+      if (!liveRows.length) {
+        updateLiveSelectionBar($('workspace'));
+        return;
+      }
+      runBulkVoidSelectedRows(liveRows, scopeEl);
+      return;
+    }
+    const cnt = Number(btn.dataset.voidCount || 0) || 0;
+    clearTimeout(btn._bulkVoidArmTimer);
+    btn.dataset.armed = '1';
+    btn.classList.add('armed');
+    btn.innerHTML = `${ic('trash')} <span>Confirm Void (${cnt})?</span>`;
+    _setVoidBtnEnAria(btn, `Confirm Void (${cnt})?`);
+    _translateVoidEl(btn);
+    btn._bulkVoidArmTimer = setTimeout(() => {
+      btn._bulkVoidArmTimer = null;
+      if (btn.isConnected) disarmBulkVoidSelectionBtn(btn);
+    }, 4000);
+  }
+
   function updateLiveSelectionBar(container) {
     let bar = $('liveSelectionBar');
     if (!bar) {
@@ -195819,36 +198325,61 @@
       bar.hidden = true;
       document.body.appendChild(bar);
     }
-    const selRows = container ? Array.from(container.querySelectorAll('tr.rrow.is-row-selected')) : [];
+    const prevArm = $('lsbBulkVoidBtn');
+    if (prevArm && prevArm._bulkVoidArmTimer) {
+      clearTimeout(prevArm._bulkVoidArmTimer);
+      prevArm._bulkVoidArmTimer = null;
+    }
+    const selRows = (STATE.authed && !STATE.kioskLocked && container)
+      ? Array.from(container.querySelectorAll('tr.rrow.is-row-selected'))
+      : [];
     if (!selRows.length) {
+      bar.innerHTML = '';
       bar.hidden = true;
       return;
     }
+    const fxRate = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
     let sumQty = 0, qtyUnit = '', sumBase = 0, sumVat = 0, sumTot = 0;
     selRows.forEach(tr => {
       const tbl = tr.closest('table');
-      const ths = tbl ? Array.from(tbl.querySelectorAll('thead tr th')).map(th => (th.textContent || '').trim().toUpperCase()) : [];
-      const tds = Array.from(tr.children);
-      let rowUsdVals = [];
+      const ths = tbl
+        ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
+          .filter(th => !th.classList.contains('tbl-col-hidden') && th.style.display !== 'none')
+          .map(th => getCanonicalEnDomText(th).toUpperCase())
+        : [];
+      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && td.style.display !== 'none');
+      const rowUsdVals = [];
+      const rowLbpVals = [];
+      const parseMoneyCell = s => {
+        const t = String(s || '').replace(/\u2212/g, '-').trim();
+        const neg = /^\(.*\)$/.test(t) || ((/-\s*\$|\$\s*-|^[-+]/.test(t)) && t.includes('-'));
+        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
+        return neg ? -Math.abs(n) : n;
+      };
       tds.forEach((td, i) => {
         const h = ths[i] || '';
-        const txt = (td.textContent || '').trim();
-        if (/QTY|LITERS|TONS|VOLUME/i.test(h)) {
-          const qm = txt.match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
+        const txt = (typeof cleanDomainCellText === 'function' ? cleanDomainCellText(td) : (td.textContent || '')).trim();
+        if (!txt || isRestrictedSharePlaceholder(txt, 'en') || /^(?:Restricted|مقيد|Restreint)$/i.test(txt)) return;
+        if (/\b(QTY|QUANTITY|LITERS|TONS|VOLUME|UNITS|NIGHTS|GUESTS|HOURS|SQM)\b/i.test(h)) {
+          const qm = txt.replace(/\u2212/g, '-').match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
           if (qm) {
             sumQty += parseFloat(qm[1].replace(/,/g, '')) || 0;
             if (!qtyUnit && qm[2]) qtyUnit = qm[2];
           }
         }
-        if (/\$/.test(txt)) {
-          const v = parseFloat(txt.replace(/[^0-9.-]/g, '')) || 0;
+        if (/\$/.test(txt) || (/\bUSD\b/i.test(h) && /\d/.test(txt))) {
+          const v = parseMoneyCell(txt);
           rowUsdVals.push({ h, v });
-          if (/EX-VAT|BASE|GROSS PAY/i.test(h)) sumBase += v;
+          if (/EX-VAT|BASE|GROSS PAY|NET RENT|GWP|SUBTOTAL|PRINCIPAL/i.test(h)) sumBase += v;
           else if (/\bVAT\b/i.test(h) && !/INCL/i.test(h)) sumVat += v;
+        } else if (/\bLBP\b|\bL\.L\b/i.test(txt) || (/\bLBP\b|\bLL\b/i.test(h) && /\d/.test(txt))) {
+          const lv = parseMoneyCell(txt);
+          if (lv !== 0) rowLbpVals.push({ h, v: lv / (fxRate > 0 ? fxRate : 89500) });
         }
       });
-      if (rowUsdVals.length) {
-        const totCol = rowUsdVals.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|BALANCE/i.test(x.h)) || rowUsdVals[rowUsdVals.length - 1];
+      const moneyPool = rowUsdVals.length ? rowUsdVals : rowLbpVals;
+      if (moneyPool.length) {
+        const totCol = moneyPool.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|GROSS BILLED|BILLED|COLLECTED|SETTLED|REVENUE|RENT|PREMIUM|PAYABLE|RECEIVABLE|BALANCE|VALUE|COST|PRICE/i.test(x.h)) || moneyPool[moneyPool.length - 1];
         sumTot += totCol.v;
       }
     });
@@ -195858,6 +198389,13 @@
       (sumBase > 0 ? ` · Ex-VAT: ${fmtUSD(sumBase, 2)}` : '') +
       (sumVat > 0 ? ` · VAT: ${fmtUSD(sumVat, 2)}` : '') +
       ` · Total: ${fmtUSD(sumTot, 2)} · Avg: ${fmtUSD(avgRow, 2)}/row`;
+    const allowBulkVoid = canVoid() && !STATE.kioskLocked;
+    const bulkVoidEligibleCount = allowBulkVoid
+      ? selRows.filter(tr => {
+          if (tr.hasAttribute('data-rkey') && tr.hasAttribute('data-rid')) return true;
+          return isVoidableIndDomainRowTr(tr, { requireChronoAuth: false });
+        }).length
+      : 0;
     bar.innerHTML = `
       <div class="lsb-head">
         <span class="lsb-badge">${selRows.length} ${selRows.length === 1 ? 'Row' : 'Rows'} Selected</span>
@@ -195871,18 +198409,25 @@
         <div class="lsb-cell"><small>Avg / Row</small><b>${fmtUSD(avgRow, 2)}</b></div>
       </div>
       <div class="lsb-actions">
-        <button type="button" class="lsb-btn" id="lsbSelectTop10Btn" title="Select first 10 visible rows">Top 10</button>
-        <button type="button" class="lsb-btn" id="lsbCopySumBtn" title="Copy live sum summary to clipboard">Copy Sum</button>
-        <button type="button" class="lsb-btn lsb-clear" id="lsbClearSelBtn" title="Clear row selection (Esc)">Clear ✕</button>
+        <button type="button" class="lsb-btn" id="lsbSelectTop10Btn" data-ui-tip="Select first 10 visible rows">Top 10</button>
+        <button type="button" class="lsb-btn" id="lsbCopySumBtn" data-ui-tip="Copy live sum summary to clipboard">Copy Sum</button>
+        ${bulkVoidEligibleCount > 0 ? `<button type="button" class="lsb-btn btn-danger-outline lsb-void-btn" id="lsbBulkVoidBtn" data-void-count="${bulkVoidEligibleCount}" data-ui-tip="Void selected records (click once to arm, click again to confirm)" aria-label="Void Selected (${bulkVoidEligibleCount})">${ic('trash')} <span>Void Selected (${bulkVoidEligibleCount})</span></button>` : ''}
+        <button type="button" class="lsb-btn lsb-clear" id="lsbClearSelBtn" data-ui-tip="Clear row selection (Esc)">Clear ✕</button>
       </div>
     `;
     bar.hidden = false;
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      _translateVoidEl(bar);
+    }
     const top10Btn = $('lsbSelectTop10Btn');
     if (top10Btn) top10Btn.onclick = e => {
       e.stopPropagation();
-      const firstTbl = selRows[0] ? selRows[0].closest('table') : container.querySelector('table.ledger-table');
+      const firstTbl = selRows[0] ? selRows[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
       if (firstTbl) {
-        Array.from(firstTbl.querySelectorAll('tbody tr.rrow')).slice(0, 10).forEach(r => r.classList.add('is-row-selected'));
+        Array.from(firstTbl.querySelectorAll('tbody tr.rrow[data-rid], tbody tr.rrow[data-ind-row-id]:not([data-ind-inspect-surface="kiosk_recent"])'))
+          .filter(r => r.style.display !== 'none' && !r.hidden && !r.classList.contains('total-row') && !r.classList.contains('totals-row') && !r.hasAttribute('data-dops-expand'))
+          .slice(0, 10)
+          .forEach(r => r.classList.add('is-row-selected'));
         updateLiveSelectionBar(container);
       }
     };
@@ -195891,6 +198436,11 @@
       e.stopPropagation();
       try { navigator.clipboard.writeText(summaryCopyText); } catch (_) {}
       toast('Copied live selection sum: ' + summaryCopyText);
+    };
+    const bulkVoidBtn = $('lsbBulkVoidBtn');
+    if (bulkVoidBtn) bulkVoidBtn.onclick = e => {
+      e.stopPropagation();
+      armOrRunBulkVoidBtn(bulkVoidBtn, selRows, container);
     };
     const clrBtn = $('lsbClearSelBtn');
     if (clrBtn) clrBtn.onclick = e => {
@@ -196121,31 +198671,54 @@
       }
     });
 
-    // 2. Multi-row selection dots (.row-sel-dot) for Live Calculator Bar
-    const rrows = container.querySelectorAll('tr.rrow[data-rid]');
-    if (rrows.length) {
-      let protoDot = enhanceVisualWorkspace._protoDot;
-      if (!protoDot) {
-        protoDot = document.createElement('u');
-        protoDot.className = 'row-sel-dot';
-        protoDot.setAttribute('data-row-sel', '1');
-        // No text node: the check is drawn only by CSS (u.row-sel-dot::after) and only on a selected row. A text
-        // check here doubled it on hover and leaked a stray check into CSV exports (tableToCsv reads innerText).
-        enhanceVisualWorkspace._protoDot = protoDot;
+    // 2. Sibling [data-ind-row-tbl] inline row-hover .void-btn pills + 6-industry multi-row selection dots (.row-sel-dot)
+    if (!STATE.kioskLocked) {
+      if (canVoid()) {
+        const indVoidRows = container.querySelectorAll('tr.rrow[data-ind-row-tbl][data-ind-row-id]:not([data-rid])');
+        for (let i = 0; i < indVoidRows.length; i++) {
+          const tr = indVoidRows[i];
+          if (!isVoidableIndDomainRowTr(tr, { requireTblAttr: true })) continue;
+          const firstVisTd = Array.from(tr.children).find(c => c.tagName === 'TD' && !c.classList.contains('tbl-col-hidden') && c.style.display !== 'none') || tr.firstElementChild;
+          if (!firstVisTd || firstVisTd.tagName !== 'TD') continue;
+          if (firstVisTd.querySelector('.void-btn')) continue;
+          const vBtn = document.createElement('button');
+          vBtn.type = 'button';
+          vBtn.className = 'void-btn row-void-hover';
+          vBtn.setAttribute('data-ind-void-row', '1');
+          vBtn.setAttribute('data-ui-tip', 'Void / Delete this record (click once to arm, click again to confirm)');
+          vBtn.setAttribute('aria-label', 'Void or delete record');
+          if (firstVisTd !== tr.firstElementChild) vBtn.setAttribute('data-from-col0', '1');
+          vBtn.innerHTML = ic('trash');
+          firstVisTd.appendChild(vBtn);
+          if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') _translateVoidEl(vBtn);
+        }
       }
-      for (let i = 0; i < rrows.length; i++) {
-        const tr = rrows[i];
-        if (tr._hasSelDot) continue;
-        const firstTd = tr.firstElementChild;
-        if (firstTd && firstTd.tagName === 'TD') {
-          tr._hasSelDot = true;
-          firstTd.classList.add('td-has-sel-dot');
-          firstTd.classList.toggle('td-has-void-hover', Boolean(firstTd.querySelector('.void-btn.row-void-hover')));
-          firstTd.classList.toggle('td-has-rep-shift', Boolean(firstTd.querySelector('.rep-shift-ico')));
-          if (firstTd.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')) {
-            firstTd.classList.add('td-has-inline-act');
+      const rrows = container.querySelectorAll('tr.rrow[data-rid], tr.rrow[data-ind-row-id]:not([data-ind-inspect-surface="kiosk_recent"])');
+      if (rrows.length) {
+        let protoDot = enhanceVisualWorkspace._protoDot;
+        if (!protoDot) {
+          protoDot = document.createElement('u');
+          protoDot.className = 'row-sel-dot';
+          protoDot.setAttribute('data-row-sel', '1');
+          // No text node: the check is drawn only by CSS (u.row-sel-dot::after) and only on a selected row. A text
+          // check here doubled it on hover and leaked a stray check into CSV exports (tableToCsv reads innerText).
+          enhanceVisualWorkspace._protoDot = protoDot;
+        }
+        for (let i = 0; i < rrows.length; i++) {
+          const tr = rrows[i];
+          if (tr._hasSelDot || tr.hasAttribute('data-dops-expand') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) continue;
+          if (tr.closest('#kioskRecentTable')) continue;
+          const firstTd = Array.from(tr.children).find(c => c.tagName === 'TD' && !c.classList.contains('tbl-col-hidden') && c.style.display !== 'none') || tr.firstElementChild;
+          if (firstTd && firstTd.tagName === 'TD') {
+            tr._hasSelDot = true;
+            firstTd.classList.add('td-has-sel-dot');
+            firstTd.classList.toggle('td-has-void-hover', Boolean(firstTd.querySelector('.void-btn.row-void-hover')));
+            firstTd.classList.toggle('td-has-rep-shift', Boolean(firstTd.querySelector('.rep-shift-ico')));
+            if (firstTd.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')) {
+              firstTd.classList.add('td-has-inline-act');
+            }
+            firstTd.appendChild(protoDot.cloneNode(true));
           }
-          firstTd.appendChild(protoDot.cloneNode(true));
         }
       }
     }
@@ -196268,6 +198841,113 @@
       }
     };
 
+    const activateOvkMoverDrill = el => {
+      if (!STATE.authed || STATE.kioskLocked) return;
+      const targetView = el.getAttribute('data-ovk-mover-drill') || '';
+      const fromDate = el.getAttribute('data-ovk-from') || '';
+      const toDate = el.getAttribute('data-ovk-to') || '';
+      if (!targetView || !fromDate || !toDate || !canViewView(targetView, activeUser())) {
+        if (targetView && !canViewView(targetView, activeUser())) {
+          toast('Your seat has no access to that module', 'err');
+        }
+        return;
+      }
+      const cfView = el.getAttribute('data-ovk-cf-view') || targetView;
+      const colKey = el.getAttribute('data-ovk-col') || '';
+      const extraCfView = el.getAttribute('data-ovk-extra-cf-view') || '';
+      const extraColKey = el.getAttribute('data-ovk-extra-col') || '';
+      const filterVal = el.getAttribute('data-ovk-val') || '';
+      const searchVal = el.getAttribute('data-ovk-search') || '';
+      const panelId = el.getAttribute('data-ovk-panel') || '';
+      const moverName = el.getAttribute('data-ovk-name') || '';
+      const slot = el.getAttribute('data-ovk-slot') || (typeof isOverviewKpiView === 'function' && isOverviewKpiView(STATE.view) ? STATE.view : 'overview_revenue');
+      const curCoStr = String(STATE.company || '');
+      const curDemoInd = isDemoScopeActive() ? String(STATE.demoCompanyIndustry || '') : '';
+      const existingRet = STATE.ovkMoversReturn;
+      const keepOrigPeriod = Boolean(
+        existingRet
+        && existingRet.company === curCoStr
+        && (!curDemoInd || existingRet.demoCompanyIndustry === curDemoInd)
+      );
+      const clearCfViews = Array.from(new Set([cfView, extraCfView].filter(Boolean)));
+      const baseSnap = {
+        originView: slot,
+        moverName,
+        period: keepOrigPeriod ? existingRet.period : STATE.period,
+        dateGrain: keepOrigPeriod ? existingRet.dateGrain : STATE.dateGrain,
+        dateFrom: keepOrigPeriod ? existingRet.dateFrom : STATE.dateFrom,
+        dateTo: keepOrigPeriod ? existingRet.dateTo : STATE.dateTo,
+        company: curCoStr,
+        demoCompanyIndustry: curDemoInd,
+        basis: STATE.basis,
+        prevFrom: fromDate,
+        curTo: toDate,
+        destView: targetView,
+        cfView,
+        clearCfViews,
+        colKey,
+        searchUsed: Boolean(searchVal),
+        panelId
+      };
+      const OVK_CLEAR_MAP = {
+        sales: ['sales'],
+        expenses: ['expenses', 'exp_sup', 'exp_cat'],
+        raw: ['raw'],
+        cashflow: ['cashflow', 'cf_moves', 'tillRecentPanel'],
+        customers: ['customers', 'custs', 'receipts', 'custPanel'],
+        suppliers: ['suppliers', 'sups', 'settle', 'supPanel'],
+        hld_entities: ['hld_entities', 'hldEntitiesScorecardPanel'],
+        hld_interactions: ['hld_interactions', 'hldInteractionsPanel'],
+        hld_due_matrix: ['hld_due_matrix', 'hld_consolidation', 'hldDueMatrixPanel'],
+        hsp_revenue: ['hsp_revenue', 'hspRevenuePanel'],
+        hsp_stock: ['hsp_stock', 'hspStockPanel'],
+        hsp_pos: ['hsp_pos', 'hspPosPanel'],
+        hsp_memberships: ['hsp_memberships', 'hspMembershipsPanel'],
+        trd_sales: ['trd_sales', 'trdSalesPanel'],
+        re_leases: ['re_leases', 'reLeasesPanel'],
+        re_invoicing: ['re_invoicing', 'reInvoicingPanel'],
+        re_receipts: ['re_receipts'],
+        re_sales: ['re_sales', 'reSalesPanel'],
+        re_workorders: ['re_workorders'],
+        ins_policies: ['ins_policies', 'insPoliciesPanel'],
+        ins_statements: ['ins_statements', 'insStatementsPanel'],
+        ins_remittances: ['ins_remittances', 'insRemittancesPanel'],
+        ins_billing: ['ins_billing', 'insBillingPanel']
+      };
+      const clearList = Array.from(new Set((OVK_CLEAR_MAP[targetView] || [targetView]).concat(clearCfViews, [panelId].filter(Boolean))));
+      clearList.forEach(vk => {
+        if (STATE.colFilters) delete STATE.colFilters[vk];
+        if (STATE.regDrill) delete STATE.regDrill[vk];
+        if (STATE.indDrawerFilters) delete STATE.indDrawerFilters[vk];
+        if (STATE.indAssetSelection) delete STATE.indAssetSelection[vk];
+      });
+      if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
+      setDateFilter({ from: fromDate, to: toDate, _keepOvkReturn: true, skipRender: true });
+      if (colKey && filterVal) {
+        if (!STATE.colFilters) STATE.colFilters = {};
+        if (!STATE.colFilters[cfView]) STATE.colFilters[cfView] = {};
+        STATE.colFilters[cfView][colKey] = '=' + filterVal;
+      }
+      if (extraCfView && extraColKey && filterVal) {
+        if (!STATE.colFilters) STATE.colFilters = {};
+        if (!STATE.colFilters[extraCfView]) STATE.colFilters[extraCfView] = {};
+        STATE.colFilters[extraCfView][extraColKey] = '=' + filterVal;
+      }
+      STATE.hubInspectorReturn = null;
+      STATE.ovkMoversReturn = baseSnap;
+      setView(targetView, {
+        reset: true,
+        chipFilter: 'all',
+        initialSearch: searchVal,
+        _keepOvkReturn: true
+      });
+      if (panelId && STATE.view === targetView) {
+        if (typeof releaseWorkspaceLaterBlocks === 'function') releaseWorkspaceLaterBlocks();
+        const panelEl = $(panelId);
+        if (panelEl && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(panelEl, 10);
+      }
+    };
+
     const activateModSec = btn => {
       const hubKey = btn.getAttribute('data-mod-hub-key') || STATE.view;
       const rawSecId = btn.getAttribute('data-mod-sec');
@@ -196321,6 +199001,12 @@
       if (jumpCoEl && container.contains(jumpCoEl)) {
         e.preventDefault();
         activateJumpCo(jumpCoEl);
+        return;
+      }
+      const ovkMoverKeyEl = t.closest('[data-ovk-mover-drill][role="button"]');
+      if (ovkMoverKeyEl && container.contains(ovkMoverKeyEl)) {
+        e.preventDefault();
+        activateOvkMoverDrill(ovkMoverKeyEl);
         return;
       }
       const navJumpEl = t.closest('[data-nav-jump][role="button"]');
@@ -196413,6 +199099,18 @@
         return;
       }
 
+      const indVoidBtn = t.closest('[data-ind-void-row]');
+      if (indVoidBtn && container.contains(indVoidBtn)) {
+        e.stopPropagation();
+        const trEl = indVoidBtn.closest('tr.rrow[data-ind-row-id]');
+        if (trEl) {
+          armOrRunInlineVoidBtn(indVoidBtn, () => {
+            voidIndustryDomainRowFromTr(trEl);
+          });
+        }
+        return;
+      }
+
       const thFilterBtn = t.closest('[data-th-filter-key]');
       if (thFilterBtn && container.contains(thFilterBtn)) {
         e.stopPropagation();
@@ -196429,6 +199127,18 @@
         const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
         STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
         renderApp();
+        return;
+      }
+
+      const hldSettleBtn = t.closest('[data-hld-net-settle-open], [data-hld-settle-pair]');
+      if (hldSettleBtn && container.contains(hldSettleBtn)) {
+        e.stopPropagation();
+        const pairAttr = hldSettleBtn.getAttribute('data-hld-settle-pair') || '';
+        const pairParts = pairAttr ? pairAttr.split('||') : [];
+        openHoldingNetSettlementModal({
+          entityA: pairParts[0] || '',
+          entityB: pairParts[1] || ''
+        });
         return;
       }
 
@@ -196562,6 +199272,28 @@
         e.stopPropagation();
         STATE.hubInspectorReturn = null;
         renderApp();
+        return;
+      }
+
+      const ovkRetBtn = t.closest('[data-ovk-movers-return]');
+      if (ovkRetBtn && container.contains(ovkRetBtn)) {
+        e.stopPropagation();
+        restoreFromOvkMoversReturn();
+        return;
+      }
+
+      const ovkRetDismissBtn = t.closest('[data-ovk-movers-return-dismiss]');
+      if (ovkRetDismissBtn && container.contains(ovkRetDismissBtn)) {
+        e.stopPropagation();
+        STATE.ovkMoversReturn = null;
+        renderApp();
+        return;
+      }
+
+      const ovkMoverRow = t.closest('[data-ovk-mover-drill]');
+      if (ovkMoverRow && container.contains(ovkMoverRow)) {
+        e.stopPropagation();
+        activateOvkMoverDrill(ovkMoverRow);
         return;
       }
 
@@ -197339,6 +200071,15 @@
 
       const indRow = t.closest('tr[data-ind-inspect-row]') || (getActiveIndustry(STATE.company) !== 'Manufacturing' ? t.closest('tbody tr') : null);
       if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-dops-expand') && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
+        const indSelDot = t.closest('[data-row-sel]');
+        if (indRow.matches('tr.rrow[data-ind-row-id]') && (indSelDot || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey)) {
+          if (!indSelDot && t.closest('[data-rel-key], [data-ind-agr-pill], button, a, input, select, label')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          indRow.classList.toggle('is-row-selected');
+          updateLiveSelectionBar(container);
+          return;
+        }
         const agrPillHit = t.closest('[data-ind-agr-pill]');
         if (!agrPillHit && t.closest('[data-rel-key], button, a, input, select, label')) return;
         const explorerWrap = indRow.closest('#industryDomainTablesExplorer');
@@ -200459,6 +203200,9 @@
     if (!(opts && opts._keepInspReturn)) {
       STATE.hubInspectorReturn = null;
     }
+    if (!(opts && opts._keepOvkReturn)) {
+      STATE.ovkMoversReturn = null;
+    }
     STATE.view = view;
     if (UNIV_VIEW_TO_TABLE_KEY[view]) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[view];
@@ -202845,6 +205589,8 @@
         if (stmModal && !stmModal.hidden) { closeShiftTypeModal(); return; }
         const pdrModal = $('punchDriftModal');
         if (pdrModal && !pdrModal.hidden) { closePunchDriftModal(); return; }
+        const hldNetSettleOpen = $('hldNetSettlementBackdrop');
+        if (hldNetSettleOpen) { closeHoldingNetSettlementModal(); return; }
         const ssmModal = $('staffScheduleModal');
         if (ssmModal && !ssmModal.hidden) { closeStaffScheduleModal(); return; }
         const sfeModal = $('staffFaceEnrolModal');
@@ -202938,17 +205684,35 @@
           return;
         }
         if (sidebar && sidebar.classList.contains('open')) { closeRail(); return; }
-        if (STATE.showAddUserForm) { STATE.showAddUserForm = false; renderApp(); }
+        if (STATE.showAddUserForm) { STATE.showAddUserForm = false; renderApp(); return; }
+        const bulkVoidBtnEl = $('lsbBulkVoidBtn');
+        if (bulkVoidBtnEl && bulkVoidBtnEl.dataset.armed === '1' && disarmBulkVoidSelectionBtn(bulkVoidBtnEl)) {
+          e.preventDefault();
+          return;
+        }
+        const wsScopeEl = $('workspace');
+        if (wsScopeEl && disarmAllInlineVoidBtns(wsScopeEl)) {
+          e.preventDefault();
+          return;
+        }
+        const selBarEl = $('liveSelectionBar');
+        if (selBarEl && !selBarEl.hidden && wsScopeEl) {
+          wsScopeEl.querySelectorAll('tr.rrow.is-row-selected').forEach(r => r.classList.remove('is-row-selected'));
+          updateLiveSelectionBar(wsScopeEl);
+          e.preventDefault();
+          return;
+        }
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        const stepUpOpen = Boolean($('stepUpAuthModal') && !$('stepUpAuthModal').hidden);
+        const stepUpOrVoidOpen = Boolean(($('stepUpAuthModal') && !$('stepUpAuthModal').hidden) || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden));
         if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.toggle === 'function') {
-          if (STATE.authed && !STATE.kioskLocked && !stepUpOpen) {
+          if (STATE.authed && !STATE.kioskLocked && !stepUpOrVoidOpen) {
             e.preventDefault();
             window.MFG_CMD_PALETTE.toggle();
           }
           return;
         }
+        if (stepUpOrVoidOpen) return;
         const s = $('tableSearchInput') || $('pbiSlicerSearch');
         if (s) { e.preventDefault(); s.focus(); s.select(); }
       }
@@ -202958,6 +205722,7 @@
         const modalOpen = ($('entryModal') && !$('entryModal').hidden)
           || ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden)
           || ($('stepUpAuthModal') && !$('stepUpAuthModal').hidden)
+          || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden)
           || ($('recordInspector') && !$('recordInspector').hidden)
           || (window.MFG_CMD_PALETTE && window.MFG_CMD_PALETTE.isOpen && window.MFG_CMD_PALETTE.isOpen());
         if (!isEditable && !modalOpen && STATE.authed && !STATE.kioskLocked) {
@@ -203009,6 +205774,9 @@
           selectCompanyScope(histCo, true, { fromHistory: true });
           scopeRestored = true;
         }
+      }
+      if (!scopeRestored && STATE.ovkMoversReturn && STATE.ovkMoversReturn.originView === v) {
+        if (restoreFromOvkMoversReturn({ fromHistory: true })) return;
       }
       if (VIEW_TITLES[v] && (!scopeRestored || v !== STATE.view)) setView(v, { noPush: true });
     });
@@ -203819,6 +206587,7 @@
       schedule: () => scheduleSwIdleReload(),
       syncPill: v => syncSwUpdateReadyPill(v),
       hasUnsavedUiWork: () => hasUnsavedUiWork(),
+      isAnyOverlayModalOpen: () => isAnyOverlayModalOpen(),
       flush426: em => flushPending426Writes(em),
       performReload: opts => performSeamlessSwReload(opts),
       backdateActivity: ms => { _lastUserActivityAt -= Math.max(0, Number(ms) || 0); },
@@ -205122,6 +207891,11 @@
     partnerPeriodsInRange: holdingPartnerPeriodsInRange,
     schedulesInRange: holdingSchedulesInRange,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
+    canOpenNetSettlement: typeof canOpenHoldingNetSettlement === 'function' ? canOpenHoldingNetSettlement : null,
+    buildNetSettlementData: typeof buildHoldingNetSettlementData === 'function' ? buildHoldingNetSettlementData : null,
+    openNetSettlement: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
+    closeNetSettlement: typeof closeHoldingNetSettlementModal === 'function' ? closeHoldingNetSettlementModal : null,
+    exportNetSettlementCsv: typeof exportHoldingNetSettlementCsv === 'function' ? exportHoldingNetSettlementCsv : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     getIndustryGroups: typeof getIndustryGroups === 'function' ? getIndustryGroups : null,
     getCompanyCatalog: typeof getCompanyCatalog === 'function' ? getCompanyCatalog : null,
@@ -205525,6 +208299,8 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
+    openHoldingNetSettlementModal: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
+    closeHoldingNetSettlementModal: typeof closeHoldingNetSettlementModal === 'function' ? closeHoldingNetSettlementModal : null,
     computeHospitalityOperations: typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations : null,
     computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
     computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
