@@ -110,6 +110,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_sync_delta_edge.mjs", "node"),         # 64MB unstick /sync gate, shift-backfill prune parity & deltaSyncV1 + RLS
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
     ("isabi-app", "build/verify_statement_books.mjs", "node"),       # statements 02-05 and 19: only what was recorded, cash at the counted till, sample figures in the demo only
+    ("isabi-app", "build/verify_multi_slip_stepper.mjs", "node"),     # Multi-slip 1-of-N stepper queue + 6-vertical cross-module auto-routing
     ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node"), # Back to 360° Inspector return pill + 6-industry compound Ask ISABI hub filter jumps
     # The leader's PC deploys (owner 2026-11-26); these stood before a deploy only on the GitHub runner (2 s together).
     ("isabi", "build/verify_deploy_preflight.py", "python"),         # Edge entry files parse; 0001_schema.sql can run on every deploy
