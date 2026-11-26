@@ -1452,8 +1452,9 @@
     const staffHint = extractLabeledValue(lines, /^(?:employee|staff|worker|salarié|\u0627\u0644\u0645\u0648\u0638\u0641)\s*:\s*(.+)$/i);
     const notesHint = extractLabeledValue(lines, /^(?:notes?|remarks?|memo|description|\u0645\u0644\u0627\u062d\u0638\u0627\u062a)\s*:\s*(.+)$/i);
 
-    // Totals, Subtotal, VAT & LBP detection
+    // Totals, Subtotal, Discount, VAT & LBP detection
     let subtotalUsd = 0;
+    let discountUsd = 0;
     let vatUsd = 0;
     let totalUsd = 0;
     let lbpAmount = 0;
@@ -1468,6 +1469,9 @@
       }
       if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht)/i.test(line)) {
         subtotalUsd = parseMoneyValue(line);
+      } else if (/^(?:(?:less\s+)?(?:discount|rebate|remise)|خصم|حسم)\b/i.test(line)) {
+        const dv = parseMoneyValue(line);
+        if (dv > 0) discountUsd = dv;
       } else if (/^(?:vat|tva|tax\s*\(?\s*11%|\u0636\u0631\u064a\u0628\u0629)/i.test(line)) {
         vatUsd = parseMoneyValue(line);
       } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a)/i.test(line)) {
@@ -1519,7 +1523,7 @@
       subtotalUsd = round2(lineItems.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
     }
     if (!totalUsd && (subtotalUsd > 0 || vatUsd > 0)) {
-      totalUsd = round2(subtotalUsd + vatUsd);
+      totalUsd = round2(Math.max(0, subtotalUsd + vatUsd - discountUsd));
     }
     if (!totalUsd) {
       const anyUsd = cleanText.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/g) || [];
@@ -1644,6 +1648,7 @@
       staff: staffHint,
       paymentMethod,
       subtotalExVat: subtotalUsd,
+      discountAmount: discountUsd,
       vatAmount: vatUsd,
       totalAmount: totalUsd,
       lbpAmount,
@@ -1689,12 +1694,14 @@
 
     // Final-page totals override Page 1 "Carried Forward / Page 1 Subtotal"
     let finalSubtotal = 0;
+    let finalDiscount = 0;
     let finalVat = 0;
     let finalTotal = 0;
     let finalLbp = 0;
     for (let idx = perPage.length - 1; idx >= 0; idx--) {
       const p = perPage[idx];
       if (!finalTotal && p.totalAmount > 0) finalTotal = p.totalAmount;
+      if (!finalDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
       if (!finalVat && p.vatAmount > 0) finalVat = p.vatAmount;
       if (!finalSubtotal && p.subtotalExVat > 0) finalSubtotal = p.subtotalExVat;
       if (!finalLbp && p.lbpAmount > 0) finalLbp = p.lbpAmount;
@@ -1703,8 +1710,9 @@
     if (mergedLines.length > 1 && linesSum > finalSubtotal) {
       finalSubtotal = linesSum;
     }
-    if ((finalSubtotal > 0 || finalVat > 0) && finalTotal < finalSubtotal) {
-      finalTotal = round2(finalSubtotal + finalVat);
+    const expectedNetFromParts = round2(Math.max(0, finalSubtotal + finalVat - finalDiscount));
+    if ((finalSubtotal > 0 || finalVat > 0) && (finalTotal <= 0 || finalTotal < expectedNetFromParts - 0.05)) {
+      finalTotal = expectedNetFromParts;
     }
 
     // Prefer first valid 17-char VIN audit across any page
@@ -1738,6 +1746,7 @@
       staff: firstNonEmpty(p => p.staff),
       paymentMethod: firstNonEmpty(p => p.paymentMethod),
       subtotalExVat: finalSubtotal || full.subtotalExVat,
+      discountAmount: finalDiscount || full.discountAmount || 0,
       vatAmount: finalVat || full.vatAmount,
       totalAmount: finalTotal || full.totalAmount,
       lbpAmount: finalLbp || full.lbpAmount,
@@ -1827,7 +1836,7 @@
       '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|companyequipment|equipment|document",',
       '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",',
       '"category":"","subcategory":"","product":"","site":"","equipment":"","plateNo":"","model":"","vin":"","driver":"","staff":"",',
-      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
+      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
       '"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",',
       '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}',
       'ISO 3779 VIN rule: 17-character chassis VINs NEVER contain I, O, or Q; carefully disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
@@ -1926,6 +1935,7 @@
       staff: pickStr(det.staff, ai.staff),
       paymentMethod: pickStr(det.paymentMethod, ai.paymentMethod),
       subtotalExVat: pickNum(det.subtotalExVat, ai.subtotalExVat),
+      discountAmount: pickNum(det.discountAmount, ai.discountAmount || ai.discount),
       vatAmount: pickNum(det.vatAmount, ai.vatAmount),
       totalAmount: pickNum(det.totalAmount, ai.totalAmount),
       lbpAmount: pickNum(det.lbpAmount, ai.lbpAmount),
@@ -2123,26 +2133,34 @@
     });
   }
 
+  function isBlockedFormForInd(f, ind) {
+    if (!f || !ind || ind === 'Manufacturing') return false;
+    if (D && (typeof D.isMfgOnlyModalForm === 'function' ? D.isMfgOnlyModalForm(f) : Boolean(D.MFG_ONLY_MODAL_FORMS && D.MFG_ONLY_MODAL_FORMS.has(f)))) return true;
+    if (D && typeof D.isFleetUniversalIndustry === 'function' && !D.isFleetUniversalIndustry(ind) && (f === 'equipment' || f === 'driver')) return true;
+    return false;
+  }
+
+  function notifyScanApplyOutcome(bundle, totalPages = 1) {
+    if (!bundle || bundle.blockedByRbac) return false;
+    if (D && D.toast) {
+      const domSpec = (bundle.routedDomainModal && typeof D.resolveDomainFormSpec === 'function')
+        ? D.resolveDomainFormSpec(bundle.appliedForm)
+        : null;
+      const fTitle = (domSpec && domSpec.spec && domSpec.spec.label)
+        || (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[bundle.appliedForm])
+        || bundle.appliedForm;
+      const n = Array.isArray(bundle.filledFields) ? bundle.filledFields.length : 0;
+      const pagePrefix = totalPages > 1 ? `${totalPages}-page scan synthesized: ` : 'Smart Scan ';
+      D.toast(`${pagePrefix}filled ${n} field${n === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
+    }
+    return true;
+  }
+
   async function applyScanToModal(scanBundle, overrideFormType) {
     if (!D || !scanBundle) return;
     const { parsed, matched, attObj } = scanBundle;
     const requestedForm = overrideFormType || parsed.formType || 'expense';
     const canEnter = D.canEnterForm || (() => true);
-
-    let targetForm = requestedForm;
-    if (!canEnter(targetForm)) {
-      const fallbackOrder = (parsed.altForms || []).concat(['expense', 'sales', 'document']);
-      const permitted = fallbackOrder.find(f => canEnter(f));
-      if (permitted) {
-        targetForm = permitted;
-        matched.warnings = (matched.warnings || []).concat([{
-          kind: 'role_fallback',
-          text: `Your seat does not have entry permission for "${requestedForm}"; routed to "${targetForm}" instead.`
-        }]);
-      } else {
-        targetForm = D.STATE.modalForm || 'sales';
-      }
-    }
 
     // Switch industry/company scope if the document explicitly identifies a permitted company in another industry
     const targetCo = matched.targetCompany;
@@ -2157,35 +2175,151 @@
       }
     }
 
-    // Never route non-Manufacturing scans into MFG-only tabs or non-fleet Universal tabs unless explicitly permitted
-    let resolvedIndQuickTpl = overrideFormType ? '' : (parsed.indQuickTpl || '');
+    let targetForm = requestedForm;
+    if (!canEnter(targetForm) || isBlockedFormForInd(targetForm, resolvedNextInd)) {
+      const fallbackOrder = (parsed.altForms || []).concat(['expense', 'document', 'external', 'sales']);
+      const permitted = fallbackOrder.find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f));
+      if (permitted) {
+        targetForm = permitted;
+        if (!canEnter(requestedForm)) {
+          matched.warnings = (matched.warnings || []).concat([{
+            kind: 'role_fallback',
+            text: `Your seat does not have entry permission for "${requestedForm}"; routed to "${targetForm}" instead.`
+          }]);
+        }
+      } else {
+        targetForm = (D.STATE && D.STATE.modalForm && !isBlockedFormForInd(D.STATE.modalForm, resolvedNextInd)) ? D.STATE.modalForm : 'expense';
+      }
+    }
+
+    // Never route non-Manufacturing scans into quarry/manufacturing-only modal forms; route domain sales/VAT/receipts to #indDomainEntryModal
     if (resolvedNextInd && resolvedNextInd !== 'Manufacturing') {
-      const mfgOnlySet = D && D.MFG_ONLY_MODAL_FORMS;
-      const isFleetInd = (D && typeof D.isFleetUniversalIndustry === 'function')
-        ? D.isFleetUniversalIndustry(resolvedNextInd)
-        : true;
-      const isNonMfgRestricted = fid => Boolean(fid && (
-        (mfgOnlySet ? mfgOnlySet.has(fid) : ['sales', 'receipt', 'vatinvoice', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'creditterm', 'grouptransfer', 'raw', 'jv', 'fuel', 'repair', 'defect', 'oillog', 'warehousestock', 'partlog', 'triprate', 'malfunction', 'companyequipment', 'logistics'].includes(fid))
-        || (!isFleetInd && (fid === 'equipment' || fid === 'driver'))
-      ));
-      const pickSharedFallback = prefList => prefList.find(f => canEnter(f) && !isNonMfgRestricted(f)) || '';
-      if (targetForm === 'sales') {
-        if (!overrideFormType && parsed.supplier && !parsed.customer && canEnter('expense')) {
-          targetForm = 'expense';
+      const domainSourceForm = !overrideFormType ? requestedForm : '';
+      if (domainSourceForm === 'sales' && parsed.supplier && !parsed.customer && !parsed.indQuickTpl && canEnter('expense')) {
+        targetForm = 'expense';
+      } else if (['sales', 'vatinvoice', 'receipt'].includes(domainSourceForm)) {
+        const domToday = D.todayISO ? D.todayISO() : new Date().toISOString().slice(0, 10);
+        const domFx = (D.getLbpFxRate ? Number(D.getLbpFxRate(parsed.date || domToday)) : 89500) || 89500;
+        const domConvUsd = (parsed.totalAmount <= 0 && parsed.lbpAmount > 0) ? round2(parsed.lbpAmount / domFx) : 0;
+        const amt = parsed.totalAmount || domConvUsd || parsed.subtotalExVat || 0;
+        const netAmt = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : amt;
+        const prodDesc = matched.product || parsed.product || (Array.isArray(parsed.lines) && parsed.lines[0] && (parsed.lines[0].desc || parsed.lines[0].item_name)) || '';
+        const coName = targetCo || parsed.company || (D.defaultEntryCompany ? D.defaultEntryCompany() : '') || '';
+        const domFields = {};
+        if (parsed.date && parsed.date >= '2024-01-01' && parsed.date <= '2030-12-31') domFields.ide_date = parsed.date;
+        if (parsed.reference) domFields.ide_ref = parsed.reference;
+        if (parsed.notes) domFields.ide_notes = sanitizeOutwardText(parsed.notes);
+        let domKey = '';
+        if (resolvedNextInd === 'Automotive & Heavy Trading') {
+          domKey = domainSourceForm === 'receipt' ? 'trd_receipts' : 'trd_sales';
+          if (domKey === 'trd_receipts') {
+            Object.assign(domFields, { ide_customer: matched.customer || parsed.customer || '', ide_amount: amt });
+          } else {
+            Object.assign(domFields, {
+              ide_customer: matched.customer || parsed.customer || '',
+              ide_item: prodDesc,
+              ide_chassis: parsed.vin || '',
+              ide_qty: parsed.qty || 1,
+              ide_net: netAmt
+            });
+          }
+        } else if (resolvedNextInd === 'Real Estate & Property') {
+          domKey = domainSourceForm === 'receipt' ? 're_receipts' : 're_invoicing';
+          if (domKey === 're_receipts') {
+            Object.assign(domFields, {
+              ide_property: matched.site || parsed.site || '',
+              ide_tenant: matched.customer || parsed.customer || '',
+              ide_gross: amt
+            });
+          } else {
+            Object.assign(domFields, {
+              ide_property: matched.site || parsed.site || '',
+              ide_tenant: matched.customer || parsed.customer || '',
+              ide_net: netAmt
+            });
+          }
+        } else if (resolvedNextInd === 'Insurance & Brokerage') {
+          domKey = domainSourceForm === 'receipt' ? 'ins_billing' : 'ins_policies';
+          if (domKey === 'ins_billing') {
+            Object.assign(domFields, {
+              ide_client: matched.customer || parsed.customer || '',
+              ide_carrier: matched.supplier || parsed.supplier || '',
+              ide_collected: amt
+            });
+          } else {
+            Object.assign(domFields, {
+              ide_client: matched.customer || parsed.customer || '',
+              ide_carrier: matched.supplier || parsed.supplier || '',
+              ide_product: prodDesc,
+              ide_gwp: amt
+            });
+          }
+        } else if (resolvedNextInd === 'Hospitality & Resorts') {
+          domKey = domainSourceForm === 'receipt' ? 'hsp_memberships' : 'hsp_revenue';
+          if (domKey === 'hsp_memberships') {
+            Object.assign(domFields, { ide_member: matched.customer || parsed.customer || '', ide_contract: amt });
+          } else {
+            Object.assign(domFields, { ide_tot: amt });
+          }
         } else {
-          resolvedIndQuickTpl = resolvedIndQuickTpl || 'ss_ind_sales';
+          domKey = 'hld_interactions';
+          Object.assign(domFields, { ide_usd: amt });
         }
-      } else if (isNonMfgRestricted(targetForm)) {
-        if (targetForm === 'receipt') {
-          targetForm = pickSharedFallback(['external', 'settlement', 'expense', 'document']) || targetForm;
-        } else if (targetForm === 'companyequipment') {
-          targetForm = pickSharedFallback(['equipment', 'expense', 'document', 'external']) || targetForm;
-        } else {
-          targetForm = pickSharedFallback(['expense', 'document', 'external', 'settlement']) || targetForm;
+        const canDom = !D.canEnterDomainForm || D.canEnterDomainForm(domKey);
+        if (canDom) {
+          SCAN_STATE.suppressResetOnModalSwitch = true;
+          try {
+            if (typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+          } finally {
+            SCAN_STATE.suppressResetOnModalSwitch = false;
+          }
+          const domRes = applyDomainExtractionToModal({
+            ind: resolvedNextInd,
+            formKey: domKey,
+            company: coName,
+            label: prodDesc || parsed.reference || (attObj && attObj.file_name) || 'Scanned Document',
+            fileName: (attObj && attObj.file_name) || 'SmartScan_Domain.svg',
+            rawFiles: Array.isArray(scanBundle._rawFiles) ? scanBundle._rawFiles : [],
+            captureMethod: (attObj && attObj.capture_method) || 'AI Smart Scan',
+            vinAudit: parsed.vinAudit || null,
+            pageCount: Math.max(1, Number(parsed.pageCount || (scanBundle.attObjs && scanBundle.attObjs.length) || 1)),
+            fields: domFields
+          });
+          if (!domRes || !domRes.ok) {
+            scanBundle.blockedByRbac = true;
+            SCAN_STATE.lastScan = null;
+            return;
+          }
+          scanBundle.routedDomainModal = true;
+          scanBundle.appliedForm = (domRes && domRes.formKey) || domKey;
+          scanBundle.filledFields = Object.keys(domFields).filter(k => domFields[k] !== '' && domFields[k] != null);
+          scanBundle.warnFields = [];
+          SCAN_STATE.lastScan = scanBundle;
+          return;
         }
-        if (isNonMfgRestricted(targetForm)) {
-          resolvedIndQuickTpl = resolvedIndQuickTpl || 'ss_ind_scan';
+        const safeSharedFallback = ['expense', 'document', 'external'].find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f));
+        if (!safeSharedFallback) {
+          scanBundle.blockedByRbac = true;
+          SCAN_STATE.lastScan = null;
+          if (D.toast) D.toast('Your seat cannot create new domain records', 'err');
+          return;
         }
+        matched.warnings = (matched.warnings || []).concat([{
+          kind: 'role_fallback',
+          text: `Your seat does not have entry permission for "${domKey}"; routed to "${safeSharedFallback}" instead.`
+        }]);
+        targetForm = safeSharedFallback;
+      } else if (isBlockedFormForInd(targetForm, resolvedNextInd)) {
+        targetForm = ['expense', 'document', 'external'].find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f)) || 'expense';
+      }
+    }
+
+    if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') {
+      SCAN_STATE.suppressDomResetOnSwitch = true;
+      try {
+        D.closeIndustryDomainEntryModal(true);
+      } finally {
+        SCAN_STATE.suppressDomResetOnSwitch = false;
       }
     }
 
@@ -2193,8 +2327,7 @@
     SCAN_STATE.suppressResetOnModalSwitch = true;
     try {
       D.openEntryModal(targetForm, null, {
-        forceSwitch: true,
-        indQuickTpl: resolvedIndQuickTpl
+        forceSwitch: true
       });
     } finally {
       SCAN_STATE.suppressResetOnModalSwitch = false;
@@ -2321,12 +2454,16 @@
           FORM_UI.expItem0Manual = true;
         } else {
           let baseAmt = 0;
+          const scanDisc = (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0) ? round2(Number(parsed.discountAmount)) : 0;
           if (!parsed.pricePending) {
             const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
+            const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0);
+            const grossTotalForLine = scanDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + scanDisc)) : fullTotal;
             if (supIsIva) {
-              baseAmt = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : round2(fullTotal / 1.11);
+              const subFitsDiscNet = parsed.subtotalExVat > 0 && !subIsInclGross && (!(scanDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - scanDisc - fullTotal) <= 0.05);
+              baseAmt = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
             } else {
-              baseAmt = fullTotal;
+              baseAmt = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && scanDisc > 0) ? parsed.subtotalExVat : grossTotalForLine;
             }
           }
           const effQty = parsed.qty > 0 ? parsed.qty : 1;
@@ -2342,6 +2479,9 @@
           FORM_UI.expItem0Manual = true;
         }
         if (D.renderExpenseItemsBuilderRows) D.renderExpenseItemsBuilderRows();
+        if (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0 && $('f_discount')) {
+          setInputValueAndFire('f_discount', round2(Number(parsed.discountAmount)), filledSet, warnSet, false);
+        }
         filledSet.add('f_exi_name_0');
         filledSet.add('f_exi_cost_0');
         if (convertedLbpUsd > 0) warnSet.add('f_exi_cost_0');
@@ -2790,9 +2930,10 @@
     const rawStr = String(rawVal || '').trim();
     if (!rawStr || !D) return null;
     const kindLbl = precheckKindLabel(kind);
-    const aliasCanon = (typeof D.resolveConfirmedPartyAlias === 'function')
-      ? D.resolveConfirmedPartyAlias(kind, rawStr, co, ind)
-      : '';
+    const aliasResolved = (typeof D.canonicalizePartyByHygiene === 'function')
+      ? D.canonicalizePartyByHygiene(kind, rawStr, co, ind)
+      : ((typeof D.resolveConfirmedPartyAlias === 'function') ? D.resolveConfirmedPartyAlias(kind, rawStr, co, ind) : '');
+    const aliasCanon = (aliasResolved && norm(aliasResolved) !== norm(rawStr)) ? aliasResolved : '';
     if (aliasCanon && norm(aliasCanon) !== norm(rawStr)) {
       const prefixKey = `Known alias of existing ${kindLbl}:`;
       return {
@@ -3267,8 +3408,17 @@
     if (!D || SCAN_STATE.busy) return null;
     const rawItems = expandInputToScanBatch(inputFileOrAtt);
     if (!rawItems.length) return null;
+    const modalCheckPre = $('entryModal');
+    if ((!modalCheckPre || modalCheckPre.hidden) && D.canEnterForm && !['expense', 'document', 'external', 'sales', 'receipt', 'vatinvoice', 'salary'].some(f => D.canEnterForm(f))) {
+      if (D.toast) {
+        const curIndCheck = D.getActiveIndustry ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+        D.toast(curIndCheck !== 'Manufacturing' ? 'Your seat cannot create new domain records' : 'Your seat has no entry rights for this form', 'err');
+      }
+      return null;
+    }
     const carriedPrecheck = collectCarriedPrecheckFlags(rawItems);
 
+    const scanGen = (SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1);
     SCAN_STATE.busy = true;
     SCAN_STATE.pendingPrecheckBundle = null;
     SCAN_STATE.sampleMenuOpen = false;
@@ -3282,8 +3432,12 @@
     if (!modal || modal.hidden) {
       SCAN_STATE.suppressResetOnModalSwitch = true;
       try {
-        const initSpec = resolveSafeEntryScanInitForm();
-        D.openEntryModal(initSpec.form, null, initSpec.opts || undefined);
+        const curIndInit = D.getActiveIndustry ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+        let initForm = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
+        if (isBlockedFormForInd(initForm, curIndInit) || (D.canEnterForm && !D.canEnterForm(initForm))) {
+          initForm = ['expense', 'document', 'external', 'sales'].find(f => !isBlockedFormForInd(f, curIndInit) && (!D.canEnterForm || D.canEnterForm(f))) || 'expense';
+        }
+        D.openEntryModal(initForm);
       } finally {
         SCAN_STATE.suppressResetOnModalSwitch = false;
       }
@@ -3298,7 +3452,6 @@
       syncEntryMobAiQuickBarUi(liveScanModal);
     }
 
-    const scanGen = (SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1);
     const isEntryScanCurrent = () => SCAN_STATE.entryScanGen === scanGen && Boolean($('entryModal') && !$('entryModal').hidden);
 
     const updateStatus = msg => {
@@ -3395,6 +3548,7 @@
       const scanBundle = {
         attObj,
         attObjs,
+        _rawFiles: rawItems.filter(it => typeof Blob !== 'undefined' && it instanceof Blob),
         stitchedDataUrl: stitchedVisionAtt ? stitchedVisionAtt.data_url : '',
         activePageIdx: stitchedVisionAtt ? 'all' : 0,
         extractedText: String(combinedText || '').trim(),
@@ -3429,13 +3583,10 @@
       }
       SCAN_STATE.pendingPrecheckBundle = null;
       await applyScanToModal(scanBundle);
-      if (!isEntryScanCurrent()) return null;
+      if (scanBundle.blockedByRbac) return null;
+      if (!scanBundle.routedDomainModal && !isEntryScanCurrent()) return null;
 
-      if (D.toast) {
-        const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[scanBundle.appliedForm]) || scanBundle.appliedForm;
-        const pagePrefix = totalPages > 1 ? `${totalPages}-page scan synthesized: ` : 'Smart Scan ';
-        D.toast(`${pagePrefix}filled ${scanBundle.filledFields.length} field${scanBundle.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
-      }
+      notifyScanApplyOutcome(scanBundle, totalPages);
       return scanBundle;
     } catch (err) {
       if (SCAN_STATE.entryScanGen === scanGen) {
@@ -3446,6 +3597,11 @@
         if (D.toast) D.toast('Could not scan file: ' + sanitizeOutwardText((err && err.message) || 'Unknown error'), 'err');
       }
       return null;
+    } finally {
+      if (SCAN_STATE.entryScanGen === scanGen) {
+        SCAN_STATE.busy = false;
+        SCAN_STATE.progressMsg = '';
+      }
     }
   }
 
@@ -3714,14 +3870,9 @@
       const pageCnt = Math.max(1, Number((scan.parsed && scan.parsed.pageCount) || (scan.attObjs && scan.attObjs.length) || 1));
       const vinAudit = scan.parsed && scan.parsed.vinAudit && scan.parsed.vinAudit.isVin17 ? scan.parsed.vinAudit : null;
       const canEnter = D && D.canEnterForm ? D.canEnterForm : (() => true);
-      const curIndAlt = (D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-      const isMfgAlt = !curIndAlt || curIndAlt === 'Manufacturing';
-      const isFleetAlt = (D && typeof D.isFleetUniversalIndustry === 'function') ? D.isFleetUniversalIndustry(curIndAlt) : true;
-      const mfgOnlyAlt = D && D.MFG_ONLY_MODAL_FORMS;
+      const curIndNow = (D && D.getActiveIndustry && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
       const alts = Array.from(new Set([scan.parsed.formType].concat(scan.parsed.altForms || [])))
-        .filter(f => f && f !== scan.appliedForm && canEnter(f)
-          && (isMfgAlt || !(mfgOnlyAlt && mfgOnlyAlt.has(f)))
-          && (isFleetAlt || (f !== 'equipment' && f !== 'driver')))
+        .filter(f => f && f !== scan.appliedForm && !isBlockedFormForInd(f, curIndNow) && canEnter(f))
         .slice(0, 4);
 
       const warningsList = ((scan.matched && scan.matched.warnings) || []);
@@ -3912,10 +4063,8 @@
         if (b) {
           restoreRawParsedForUnoverriddenWarnings(b, b.precheck && b.precheck.partyWarnings, null);
           await applyScanToModal(b);
-          if (D.toast) {
-            const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[b.appliedForm]) || b.appliedForm;
-            D.toast(`Smart Scan filled ${b.filledFields.length} field${b.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
-          }
+          if (b.blockedByRbac) return;
+          notifyScanApplyOutcome(b, Number((b.parsed && b.parsed.pageCount) || 1));
         }
       });
     }
@@ -3944,10 +4093,8 @@
         } else {
           SCAN_STATE.pendingPrecheckBundle = null;
           await applyScanToModal(b);
-          if (D.toast) {
-            const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[b.appliedForm]) || b.appliedForm;
-            D.toast(`Smart Scan filled ${b.filledFields.length} field${b.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
-          }
+          if (b.blockedByRbac) return;
+          notifyScanApplyOutcome(b, Number((b.parsed && b.parsed.pageCount) || 1));
         }
       });
     });
@@ -3966,7 +4113,7 @@
       D.STATE.editingPendingSalaryId
     );
     const form = D.STATE.modalForm || 'sales';
-    const isUniv = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
+    const isUniv = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
 
     // Header button in #entryModal .modal-header-actions
     const hdrActs = modal.querySelector('.modal-header-actions');
@@ -3994,12 +4141,16 @@
       if (oldQuick) oldQuick.remove();
       modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
       modal._mobScanAutoExpanded = false;
+      if (window.MFG_AI_EDGE) {
+        if (typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') window.MFG_AI_EDGE.stopVoiceCapture();
+        if (typeof window.MFG_AI_EDGE.clearVoicePrompt === 'function') window.MFG_AI_EDGE.clearVoicePrompt(false);
+      }
       unwrapSplitPreviewDom();
       return;
     }
 
     if (!SCAN_STATE.suppressResetOnModalSwitch && !SCAN_STATE.lastScan && !SCAN_STATE.busy && !SCAN_STATE.sampleMenuOpen) {
-      modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      modal.classList.remove('mob-ai-scan-open');
       modal._mobScanAutoExpanded = false;
     }
 
@@ -4009,6 +4160,7 @@
       quickBar.id = 'entryMobAiQuickBar';
       quickBar.className = 'mob-ai-quick-bar no-print';
       quickBar.innerHTML = `
+        <span class="mob-ai-qhint">${ic('sparkles')} <span>AI Auto-Fill · Drop or paste a slip or PDF anywhere</span></span>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
@@ -4039,6 +4191,7 @@
     } else if (quickBar.parentElement !== body || body.firstElementChild !== quickBar) {
       body.insertBefore(quickBar, body.firstChild);
     }
+    syncEntryMobAiQuickBarUi(modal);
 
     let bar = $('entrySmartScanBar');
     if (!bar) {
@@ -4055,27 +4208,27 @@
       try { window.MFG_I18N.translateDom(quickBar); } catch (_) {}
     }
 
-    // Drag & Drop + Paste on #entryModal (wired once)
+    // Drag & Drop on #entryModal (wired once; no-op in edit/universal modes where #entrySmartScanBar is absent)
     if (modal.dataset.ssDropWired !== '1') {
       modal.dataset.ssDropWired = '1';
       modal.addEventListener('dragover', e => {
-        if (modal.hidden) return;
+        const b = $('entrySmartScanBar');
+        if (modal.hidden || !b) return;
         if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
           e.preventDefault();
-          const b = $('entrySmartScanBar');
-          if (b) b.classList.add('is-dragover');
+          b.classList.add('is-dragover');
         }
       });
       modal.addEventListener('dragleave', e => {
-        if (e.target === modal || e.target === $('entrySmartScanBar')) {
-          const b = $('entrySmartScanBar');
-          if (b) b.classList.remove('is-dragover');
+        const b = $('entrySmartScanBar');
+        if (b && (e.target === modal || e.target === b)) {
+          b.classList.remove('is-dragover');
         }
       });
       modal.addEventListener('drop', async e => {
-        if (modal.hidden) return;
         const b = $('entrySmartScanBar');
         if (b) b.classList.remove('is-dragover');
+        if (modal.hidden || !b) return;
         if (e.target && e.target.closest && e.target.closest('#entryAttachmentsBox')) return;
         const files = e.dataTransfer && e.dataTransfer.files;
         if (files && files.length) {
@@ -4084,29 +4237,15 @@
           await scanFileOrAttachment(Array.from(files), 'Drag & Drop Smart Scan');
         }
       });
-      document.addEventListener('paste', async e => {
-        if (modal.hidden) return;
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
-        for (const it of Array.from(items)) {
-          if (it.kind === 'file') {
-            const f = it.getAsFile();
-            if (f) {
-              e.preventDefault();
-              await scanFileOrAttachment(f, 'Clipboard Paste Smart Scan');
-              break;
-            }
-          }
-        }
-      });
     }
 
     // Keep scrollTop at 0px on open
     body.scrollTop = 0;
   }
 
-  function resetModalState() {
+  function resetModalState(opts) {
     if (SCAN_STATE.suppressResetOnModalSwitch) return;
+    const preserveVoice = Boolean(opts && opts.preserveVoice);
     SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1;
     SCAN_STATE.busy = false;
     SCAN_STATE.progressMsg = '';
@@ -4119,7 +4258,8 @@
     const modalEl = $('entryModal');
     if (modalEl) {
       modalEl._mobScanAutoExpanded = false;
-      modalEl.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+      modalEl.classList.remove('mob-ai-scan-open');
+      if (!preserveVoice) modalEl.classList.remove('mob-ai-voice-open');
       syncEntryMobAiQuickBarUi(modalEl);
     }
     unwrapSplitPreviewDom();
@@ -4141,22 +4281,6 @@
   }
 
   // ==================== TOPBAR & DOCUMENT VAULT BUTTONS ====================
-  function resolveSafeEntryScanInitForm() {
-    const rawInit = (D && D.contextFormForView && D.contextFormForView(D.STATE && D.STATE.view)) || 'expense';
-    const curInd = (D && typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
-    const isMfgScope = !curInd || curInd === 'Manufacturing';
-    const mfgOnly = D && D.MFG_ONLY_MODAL_FORMS;
-    const allowed = f => Boolean(f && (!D.canEnterForm || D.canEnterForm(f)) && (isMfgScope || !(mfgOnly && mfgOnly.has(f))));
-    if (allowed(rawInit)) return { form: rawInit, opts: null };
-    const sharedPool = isMfgScope
-      ? ['sales', 'expense', 'external', 'extended', 'settlement', 'document', 'salary', 'customer']
-      : ['expense', 'external', 'extended', 'settlement', 'document', 'salary', 'customer'];
-    const hit = sharedPool.find(allowed);
-    if (hit) return { form: hit, opts: null };
-    const safeRaw = (!D.canEnterForm || D.canEnterForm(rawInit)) ? rawInit : 'sales';
-    return { form: safeRaw, opts: isMfgScope ? null : { indQuickTpl: 'ss_ind_scan' } };
-  }
-
   function openSmartScanEntryDesk(triggerPicker = false) {
     if (!D) return;
     const modal = $('entryModal');
@@ -4169,8 +4293,12 @@
       }
     }
     if (!modal || modal.hidden) {
-      const initSpec = resolveSafeEntryScanInitForm();
-      D.openEntryModal(initSpec.form, null, initSpec.opts || undefined);
+      const curIndDesk = D.getActiveIndustry ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+      const form = (D.contextFormForView && D.contextFormForView(D.STATE.view)) || 'expense';
+      const safeForm = (!isBlockedFormForInd(form, curIndDesk) && (!D.canEnterForm || D.canEnterForm(form)))
+        ? form
+        : (['expense', 'document', 'external', 'sales'].find(f => !isBlockedFormForInd(f, curIndDesk) && (!D.canEnterForm || D.canEnterForm(f))) || 'expense');
+      D.openEntryModal(safeForm);
     }
     if (triggerPicker) {
       const { fInp } = ensureGlobalFileInputs();
@@ -4639,10 +4767,15 @@
     if (!modal || modal.hidden || (sampleOrExt.formKey && curSpecKey !== sampleOrExt.formKey)) {
       if (typeof D.openIndustryDomainEntryModal === 'function') {
         SCAN_STATE.suppressDomResetOnSwitch = true;
+        let openedOk = true;
         try {
-          D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
+          openedOk = D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
         } finally {
           SCAN_STATE.suppressDomResetOnSwitch = false;
+        }
+        const liveCheck = $('indDomainEntryModal');
+        if (openedOk === false || !liveCheck || liveCheck.hidden || (sampleOrExt.formKey && (!liveCheck._currentDomainSpec || liveCheck._currentDomainSpec.key !== sampleOrExt.formKey))) {
+          return { ok: false, blocked: true };
         }
       }
     }
@@ -6526,6 +6659,36 @@
     ensureGlobalFileInputs();
     mountTopbarButtons();
     syncWorkspaceButtons();
+    if (typeof document !== 'undefined' && !window.__mfgGlobalScanPasteWired) {
+      window.__mfgGlobalScanPasteWired = true;
+      document.addEventListener('paste', async e => {
+        const indM = $('indDomainEntryModal');
+        const mfgM = $('entryModal');
+        const indReady = Boolean(indM && !indM.hidden && $('indEntrySmartScanBar'));
+        const mfgReady = Boolean(mfgM && !mfgM.hidden && $('entrySmartScanBar'));
+        if (!indReady && !mfgReady) return;
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const it of Array.from(items)) {
+          if (it.kind === 'file') {
+            const f = it.getAsFile();
+            if (f) {
+              e.preventDefault();
+              if (indReady) {
+                indM.classList.add('mob-ai-scan-open');
+                indM.classList.remove('mob-ai-voice-open');
+                if (typeof indM._syncIndMobAiUi === 'function') indM._syncIndMobAiUi();
+                await scanIntoDomainModal([f], { captureMethod: 'Clipboard Paste Smart Scan' });
+                if (typeof indM._syncIndMobAiUi === 'function') indM._syncIndMobAiUi();
+              } else {
+                await scanFileOrAttachment(f, 'Clipboard Paste Smart Scan');
+              }
+              break;
+            }
+          }
+        }
+      });
+    }
     document.addEventListener('click', e => {
       if (SCAN_STATE.sampleMenuOpen && (!e.target || !e.target.closest || !e.target.closest('.ss-sample-wrap'))) {
         SCAN_STATE.sampleMenuOpen = false;

@@ -3660,8 +3660,15 @@
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 5 19 12 7 19 7 5"/></svg>',
     copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
     download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-    eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+    eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    trash: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6h17M8.5 6V4a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 4v2M18.5 6v13a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V6M10 10.5v6M14 10.5v6"/></svg>'
   };
+
+  function _aiTrashSvg() {
+    return (window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function')
+      ? window.MFG_ICONS.svg('trash')
+      : AI_SVGS.trash;
+  }
 
   function formatBytes(bytes) {
     const b = Number(bytes || 0);
@@ -4837,7 +4844,7 @@
             <span class="ai-att-name">${esc(a.name)}</span>
             <span class="ai-att-sub">${esc(a.summaryLine || a.sizeLabel)}</span>
           </div>
-          <button type="button" class="ai-att-rm" data-ai-remove-att="${esc(a.id)}" aria-label="Remove ${esc(a.name)}">✕</button>
+          <button type="button" class="ai-att-rm" data-ai-remove-att="${esc(a.id)}" data-ui-tip="Remove attachment" aria-label="Remove attachment">${_aiTrashSvg()}</button>
         </div>
       `;
     }).join('');
@@ -8665,7 +8672,7 @@
             <strong class="stmt-pcn-title">${esc(boxTitle)}</strong>
             <span class="stmt-pcn-meta">${esc(sum.companyLabel)} · ${esc(sum.windowLabel)}</span>
           </div>
-          <button type="button" class="stmt-pcn-unpin no-print" data-stmt-unpin-cover="1" aria-label="${esc(unpinLbl)}">&times; ${esc(unpinLbl)}</button>
+          <button type="button" class="stmt-pcn-unpin no-print" data-stmt-unpin-cover="1" data-ui-tip="${esc(unpinLbl)}" aria-label="${esc(unpinLbl)}">${_aiTrashSvg()}<span>${esc(unpinLbl)}</span></button>
         </div>
         <div class="stmt-pcn-kpis">
           ${(sum.kpis || []).map(k => {
@@ -11588,6 +11595,10 @@
         if (destView && _ctx && typeof _ctx.setView === 'function' && (typeof _ctx.canViewView !== 'function' || _ctx.canViewView(destView))) {
           if (sum.ruleId === 'S2' && destView === 'expenses') {
             _ctx.setView(destView, { chipFilter: 'pending_price' });
+            return;
+          }
+          if (sum.ruleId === 'S20' && destView === 'suppliers') {
+            _ctx.setView(destView, { chipFilter: 'overpaid_ap' });
             return;
           }
           _ctx.setView(destView);
@@ -15724,9 +15735,9 @@
     const savedHtml = saved.map(sc => {
       const isAct = _chatState.whatIfActivePreset === `saved:${sc.id}`;
       return `
-        <span class="wi-saved-pill ${isAct ? 'active' : ''}" data-no-i18n="1">
-          <button type="button" class="wi-saved-load-btn" data-wi-saved-id="${esc(sc.id)}">${esc(sc.name)}</button>
-          <button type="button" class="wi-saved-del-btn" data-wi-del-saved="${esc(sc.id)}" aria-label="Delete saved scenario">&times;</button>
+        <span class="wi-saved-pill ${isAct ? 'active' : ''}">
+          <button type="button" class="wi-saved-load-btn" data-no-i18n="1" data-wi-saved-id="${esc(sc.id)}">${esc(sc.name)}</button>
+          <button type="button" class="wi-saved-del-btn" data-wi-del-saved="${esc(sc.id)}" data-ui-tip="Delete saved scenario" aria-label="Delete saved scenario">${_aiTrashSvg()}</button>
         </span>
       `;
     }).join('');
@@ -15907,6 +15918,9 @@
       const chipsMount = modal.querySelector('#wiPresetChipsMount');
       if (chipsMount) {
         chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(updatedSum);
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+          window.MFG_I18N.translateDom(chipsMount);
+        }
       }
       updateWhatIfLiveTelemetryDom(updatedSum);
     };
@@ -15959,6 +15973,9 @@
           }
           const curSum = buildWhatIfSummary();
           chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(curSum);
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+            window.MFG_I18N.translateDom(chipsMount);
+          }
         }
       });
     }
@@ -15974,7 +15991,12 @@
         saveInp.value = '';
         _chatState.whatIfActivePreset = `saved:${entry.id}`;
         const curSum = buildWhatIfSummary();
-        if (chipsMount) chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(curSum);
+        if (chipsMount) {
+          chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(curSum);
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+            window.MFG_I18N.translateDom(chipsMount);
+          }
+        }
       }
     };
     if (saveBtn) {
@@ -16852,11 +16874,11 @@
       return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-cf-preset="${esc(p.id)}">${esc(lbl)}</button>`;
     }).join('');
     const savedHtml = saved.map(pr => `
-      <span class="wi-saved-pill" data-no-i18n="1">
-        <button type="button" class="wi-saved-load-btn" data-cf-saved-cp="${esc(pr.counterparty)}">
+      <span class="wi-saved-pill">
+        <button type="button" class="wi-saved-load-btn" data-no-i18n="1" data-cf-saved-cp="${esc(pr.counterparty)}">
           ${esc(pr.counterparty)}: ${esc(fmtUsd(pr.promisedAmountUsd))} (${esc(pr.promisedDate)})${pr.creditHold ? ' [Hold]' : ''}
         </button>
-        <button type="button" class="wi-saved-del-btn" data-cf-del-promise="${esc(pr.id)}" aria-label="Delete saved payment promise">&times;</button>
+        <button type="button" class="wi-saved-del-btn" data-cf-del-promise="${esc(pr.id)}" data-ui-tip="Delete saved payment promise" aria-label="Delete saved payment promise">${_aiTrashSvg()}</button>
       </span>
     `).join('');
     return presetHtml + savedHtml;
@@ -17215,12 +17237,18 @@
       });
     }
 
+    const _trCfList = el => {
+      if (el && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(el);
+      }
+    };
+
     const applyNewLevers = (nextLv, presetId = 'custom') => {
       _chatState.collectionActivePreset = presetId;
       setCollectionLeversForEntity(sum.companyKey, nextLv);
       const nextSum = buildCollectionForecastSummary();
       const pList = modal.querySelector('#cfPresetsList');
-      if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+      if (pList) { pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum); _trCfList(pList); }
       wireCollectionPresetButtons(modal, sum.companyKey);
       updateCollectionLiveTelemetryDom(nextSum);
     };
@@ -17254,7 +17282,7 @@
           deleteCollectionPromise(pid);
           const nextSum = buildCollectionForecastSummary();
           const pList = mEl.querySelector('#cfPresetsList');
-          if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+          if (pList) { pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum); _trCfList(pList); }
           wireCollectionPresetButtons(mEl, coKey);
           updateCollectionLiveTelemetryDom(nextSum);
         });
@@ -17292,7 +17320,7 @@
         _chatState.collectionSelectedCp = cpName;
         const nextSum = buildCollectionForecastSummary();
         const pList = modal.querySelector('#cfPresetsList');
-        if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+        if (pList) { pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum); _trCfList(pList); }
         wireCollectionPresetButtons(modal, sum.companyKey);
         updateCollectionLiveTelemetryDom(nextSum);
       });
@@ -17889,11 +17917,11 @@
       return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-po-preset="${esc(p.id)}">${esc(lbl)}</button>`;
     }).join('');
     const savedHtml = saved.map(pr => `
-      <span class="wi-saved-pill" data-no-i18n="1">
-        <button type="button" class="wi-saved-load-btn" data-po-saved-cp="${esc(pr.counterparty)}">
+      <span class="wi-saved-pill">
+        <button type="button" class="wi-saved-load-btn" data-no-i18n="1" data-po-saved-cp="${esc(pr.counterparty)}">
           ${esc(pr.counterparty)}: ${esc(fmtUsd(pr.approvedAmountUsd))} (${esc(pr.scheduledDate)})${pr.held ? ' [Hold]' : ''}
         </button>
-        <button type="button" class="wi-saved-del-btn" data-po-del-hold="${esc(pr.id)}" aria-label="Delete saved payment hold">&times;</button>
+        <button type="button" class="wi-saved-del-btn" data-po-del-hold="${esc(pr.id)}" data-ui-tip="Delete saved payment hold" aria-label="Delete saved payment hold">${_aiTrashSvg()}</button>
       </span>
     `).join('');
     return presetHtml + savedHtml;
@@ -19290,11 +19318,11 @@
     }).join('');
     const canMutateSweeps = !sum.restricted && !sum.rlsClamped && !sum.booksRedacted;
     const savedHtml = saved.map(sw => `
-      <span class="wi-saved-pill" data-no-i18n="1">
-        <button type="button" class="wi-saved-load-btn" data-tf-saved-sw="${esc(sw.corridorId)}">
+      <span class="wi-saved-pill">
+        <button type="button" class="wi-saved-load-btn" data-no-i18n="1" data-tf-saved-sw="${esc(sw.corridorId)}">
           ${esc(sw.corridorName)}: $${Math.round(Number(sw.sweepUsd || 0)).toLocaleString('en-US')} (W${esc(String(sw.targetWeek || 1))})${sw.action === 'hold' ? ' [Paused]' : ''}
         </button>
-        ${canMutateSweeps ? `<button type="button" class="wi-saved-del-btn" data-tf-del-sweep="${esc(sw.id)}" aria-label="Delete saved treasury sweep">&times;</button>` : ''}
+        ${canMutateSweeps ? `<button type="button" class="wi-saved-del-btn" data-tf-del-sweep="${esc(sw.id)}" data-ui-tip="Delete saved treasury sweep" aria-label="Delete saved treasury sweep">${_aiTrashSvg()}</button>` : ''}
       </span>
     `).join('');
     return presetHtml + savedHtml;
@@ -20915,11 +20943,11 @@
     }).join('');
     const canMutateReorders = !sum.restricted && !sum.rlsClamped && !sum.booksRedacted;
     const savedHtml = saved.map(ov => `
-      <span class="wi-saved-pill" data-no-i18n="1">
-        <button type="button" class="wi-saved-load-btn" data-io-saved-sku="${esc(ov.skuCode)}">
+      <span class="wi-saved-pill">
+        <button type="button" class="wi-saved-load-btn" data-no-i18n="1" data-io-saved-sku="${esc(ov.skuCode)}">
           ${esc(ov.itemName)}: ${ov.action === 'freeze_excess' ? 'Freeze Excess' : `Order ${ov.overrideOrderQty != null ? ov.overrideOrderQty : 'EOQ'}`}${ov.customParQty != null ? ` (Par ${ov.customParQty})` : ''}
         </button>
-        ${canMutateReorders ? `<button type="button" class="wi-saved-del-btn" data-io-del-reorder="${esc(ov.id)}" aria-label="Delete saved reorder override">&times;</button>` : ''}
+        ${canMutateReorders ? `<button type="button" class="wi-saved-del-btn" data-io-del-reorder="${esc(ov.id)}" data-ui-tip="Delete saved reorder override" aria-label="Delete saved reorder override">${_aiTrashSvg()}</button>` : ''}
       </span>
     `).join('');
     return presetHtml + savedHtml;
