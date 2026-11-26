@@ -40606,6 +40606,56 @@ video::-webkit-media-controls-start-playback-button {
   flex: 0 0 auto;
 }
 
+/* 1-click Set Site Price trigger & multi-grade switcher strip on pricerule_raw modal */
+.btn-set-site-price {
+  cursor: pointer;
+  border: 1px solid rgba(180, 118, 22, 0.35);
+  font-family: inherit;
+  transition: transform 0.12s ease, border-color 0.13s ease, background 0.13s ease;
+}
+.btn-set-site-price:hover {
+  border-color: var(--brass, #C0892F);
+  filter: brightness(0.97);
+}
+button.badge.btn-set-site-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pr-unpriced-grades-bar {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(180, 118, 22, 0.35);
+  border-inline-start: 4px solid var(--warn, #C96A22);
+  background: rgba(200, 157, 84, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.pr-unpriced-grades-bar[hidden] {
+  display: none !important;
+}
+.pr-unpriced-grades-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pr-unpriced-grades-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+:root[data-theme="dark"] .pr-unpriced-grades-bar {
+  background: rgba(217, 165, 74, 0.12);
+  border-color: rgba(217, 165, 74, 0.38);
+}
+
 .pr-floor-strip.is-below {
   border-inline-start-color: var(--crit);
   background: color-mix(in srgb, var(--crit) 5%, var(--surface));
@@ -48630,6 +48680,108 @@ html[data-theme="dark"] .ovk-movers-popover {
   border-color: rgba(217, 165, 74, 0.42);
 }
 
+/* Inline Statement 16 Leg Launch & Confirmation Controls */
+.td-raw-leg-party {
+  white-space: nowrap;
+}
+.raw-leg-stmt-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-inline-start: 6px;
+  vertical-align: middle;
+}
+.raw-leg-act-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid var(--line, #CBD5E1);
+  background: var(--surface, #FFFFFF);
+  color: var(--ink-2, #334155);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.raw-leg-act-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.raw-leg-act-btn:hover,
+.raw-leg-act-btn:focus-visible {
+  background: var(--brass-tint, rgba(217, 165, 74, 0.16));
+  border-color: var(--brass, #C69034);
+  color: var(--brass-strong, #92400E);
+}
+.raw-leg-act-btn.raw-leg-act-wa:hover,
+.raw-leg-act-btn.raw-leg-act-wa:focus-visible {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: #16A34A;
+  color: #15803D;
+}
+@media (pointer: coarse) {
+  .raw-leg-act-btn {
+    width: 30px;
+    height: 30px;
+  }
+}
+.rdl-stmt16-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.rdl-stmt16-leg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(198, 144, 52, 0.12);
+  color: var(--brass-strong, #92400E);
+  border: 1px solid rgba(198, 144, 52, 0.35);
+}
+.rdl-stmt16-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rdl-stmt16-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(180deg, #C69034 0%, #B37E24 100%) !important;
+  color: #FFFFFF !important;
+  border-color: #A67320 !important;
+  font-weight: 700 !important;
+}
+.rdl-stmt16-share-btn svg {
+  width: 13px;
+  height: 13px;
+}
+:root[data-theme="dark"] .raw-leg-act-btn {
+  background: var(--surface-2, #1E293B);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #E2E8F0;
+}
+:root[data-theme="dark"] .rdl-stmt16-leg-badge {
+  color: #FCD34D;
+  background: rgba(217, 165, 74, 0.16);
+}
+@media print {
+  .raw-leg-stmt-actions,
+  .rdl-stmt16-actions {
+    display: none !important;
+  }
+}
 /* Raw Pricing Cheapest Landed by Grade Matrix (Light-Mode Pure, RTL-safe) */
 .raw-grade-groups-wrap {
   padding: 6px 14px 14px;

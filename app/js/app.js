@@ -708,6 +708,7 @@
     geoAuditFilter: 'all',
     userGeoAuditFilter: 'all',
     hubInspectorReturn: null,
+    stmt16ReturnCtx: null,
     ovkMoversReturn: null,
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
@@ -1937,6 +1938,7 @@
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
     if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _stmt16VouchersCache !== 'undefined' && _stmt16VouchersCache) _stmt16VouchersCache.clear();
     if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     _cashMovesCacheKey = '';
     if (typeof _localKpiRawCache !== 'undefined' && _localKpiRawCache) _localKpiRawCache.clear();
@@ -6047,6 +6049,7 @@
   }
 
   const cleanSiteLabel = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  function normSiteMatch(s) { return norm(cleanSiteLabel(s)); }
 
   function getSupplierPayableLegsInfo(supplierName, companyName) {
     const sn = normSupPayable(supplierName);
@@ -6087,6 +6090,23 @@
   function inferSettlementPayableLeg(supplierName, methodVal, companyName) {
     const mth = String(methodVal || 'Payment').trim();
     if (mth === 'VAT' || mth === 'VATConfig' || mth === 'IVA') return 'expense';
+    const effCo = companyName || STATE.company;
+    const isTrdCo = effCo === 'Shacman' || effCo === 'Korri Auto'
+      || effCo === 'industry:Automotive & Heavy Trading'
+      || (typeof getActiveIndustry === 'function' && getActiveIndustry(effCo) === 'Automotive & Heavy Trading');
+    if (isTrdCo && typeof computeTradingOperations === 'function') {
+      const trd = computeTradingOperations({ company: effCo, ignoreSearch: true, ignorePeriod: true });
+      const supNorm = normSupPayable(supplierName);
+      if (supNorm && trd) {
+        const oemMatch = (trd.oemPayableRows || []).find(r => normSupPayable(r.supplier) === supNorm);
+        const frtMatch = (trd.freightPayableRows || []).find(r => normSupPayable(r.payee) === supNorm);
+        if (frtMatch && !oemMatch) return 'transportation';
+        if (oemMatch && !frtMatch) return 'quarry';
+        if (frtMatch && oemMatch) return frtMatch.remaining_usd > oemMatch.remaining_usd ? 'transportation' : 'quarry';
+      }
+      if (/freight|customs|clearing|insurance|broker|forward/i.test(String(supplierName || ''))) return 'transportation';
+      return 'quarry';
+    }
     const info = getSupplierPayableLegsInfo(supplierName, companyName);
     const row = info.row;
     if (!row) return 'expense';
@@ -6515,6 +6535,456 @@
     return out;
   }
   window.__mfgComputeThreeLegPayables = computeThreeLegPayablesBreakdown;
+
+  function normStmt16Leg(rawLeg) {
+    const s = String(rawLeg || '').trim().toLowerCase();
+    if (!s || s === 'all') return 'ALL';
+    if (s === 'material' || s === 'quarry' || s === 'oem' || s === 'direct') return 'material';
+    if (s === 'transport' || s === 'transportation' || s === 'haulage' || s === 'freight') return 'transport';
+    if (s === 'expenses' || s === 'expense' || s === 'overhead') return 'expenses';
+    return 'ALL';
+  }
+
+  const _stmt16VouchersCache = new Map();
+
+  function computeSupplierStatement16Vouchers(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const effUser = opts.user || activeUser();
+    const recs = SEED.records || {};
+    const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
+    const allowed = allowedCompanyNames(effUser);
+    const offScope = isOfficialScopeActive(effUser);
+    const basis = opts.basis || STATE.basis || 'tx';
+    const partyResolver = (opts && typeof opts.partyResolver === 'function') ? opts.partyResolver : null;
+    const partySig = String((opts && opts.partySig) || '');
+    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|ps:${partySig}|pr:${partyResolver ? 1 : 0}|${String((effUser && (effUser.id || effUser.email)) || '')}|${String((effUser && effUser.role) || '')}|${String((effUser && effUser.book_scope) || '')}`;
+    const effSup = (rawName, rowCo, dIso) => {
+      if (!partyResolver) return rawName;
+      const resolved = partyResolver(rawName, rowCo, dIso);
+      return (resolved && String(resolved).trim()) ? String(resolved).trim() : rawName;
+    };
+    const buTarget = COMPANY_BU_MATCH[targetCo] || null;
+    let cachedBundle = (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF) ? _stmt16VouchersCache.get(cacheKey) : null;
+    if (!cachedBundle) {
+
+    const indTargetSet = targetCo.startsWith('industry:')
+      ? new Set(getCompanyCatalog().filter(x => (x.industry || 'Manufacturing') === targetCo.slice(9)).map(x => x.name))
+      : null;
+    const isCoInScope = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (targetCo === 'wtc') return c === 'WTC';
+      if (targetCo === 'bbconstruction') return c === 'BBConstruction';
+      if (targetCo === 'lionstransport') return c === 'Lions Transport';
+      if (targetCo === 'manufacturing-group' || targetCo === 'ALL') return c === 'WTC' || c === 'BBConstruction' || c === 'Lions Transport';
+      if (indTargetSet) return indTargetSet.has(c);
+      if (buTarget) return c === buTarget;
+      return norm(c) === norm(targetCo);
+    };
+
+    const supMeta = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || !s.name) return;
+      supMeta.set(normSupPayable(s.name), s);
+    });
+    const isIva = (sn, co) => {
+      const sm = supMeta.get(sn);
+      if (!sm) return false;
+      if (co === 'WTC') return Boolean(sm.vat_wtc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      if (co === 'BBConstruction') return Boolean(sm.vat_bbc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      return Boolean(sm.vat_registered || sm.iva);
+    };
+    const vRate = (co, dIso) => {
+      const mk = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
+      const wins = (SEED.models && SEED.models[mk] && SEED.models[mk].vat_adj) || [];
+      for (let i = 0; i < wins.length; i++) {
+        if (wins[i].s <= dIso && dIso <= wins[i].e) return Number(wins[i].rate || 89500);
+      }
+      return 89500;
+    };
+
+    const legState = new Map();
+    const ensureSup = (rawName) => {
+      const sn = normSupPayable(rawName);
+      if (!sn || sn === 'excluded' || sn === 'none' || sn === 'unspecified') return null;
+      let entry = legState.get(sn);
+      if (!entry) {
+        const sm = supMeta.get(sn);
+        entry = {
+          key: sn,
+          supplier: (sm && sm.name) || String(rawName || '').trim(),
+          freq: 0,
+          quarry_cr: 0,
+          trans_cr: 0,
+          exp_cr_usd: 0,
+          vouchers: []
+        };
+        legState.set(sn, entry);
+      }
+      return entry;
+    };
+
+    let seq = 0;
+    const fmtQ = v => {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+    };
+
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoInScope(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      const mth = String(rp.method || 'Credit').trim();
+      if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') continue;
+      const sgn = rawSign(rp);
+      if (!sgn) continue;
+      const rpDate = String((basis === 'rep' ? (rp.rep_date || rp.date) : rp.date) || '').slice(0, 10);
+      if (!rpDate) continue;
+      const refNo = String(rp.ticket_no || rp.name || rp.id || 'RM');
+      const matName = String(rp.material || rp.product || 'Raw Material').trim();
+
+      const so = normSupPayable(rp.site_owner);
+      if (so && so !== 'excluded' && so !== 'none' && !(rp.company === 'WTC' && so === 'wtc')) {
+        const eSo = ensureSup(effSup(rp.site_owner, rp.company, rpDate));
+        if (eSo) {
+          const matCr = sgn * Number(rp.cost || 0);
+          eSo.quarry_cr += matCr;
+          eSo.freq += 1;
+          if (Math.abs(matCr) > 0.0001) {
+            const qtyVal = sgn * ticketProductQty(rp);
+            eSo.vouchers.push({
+              date: rpDate,
+              ref: refNo,
+              co: rp.company || '',
+              leg: 'material',
+              type: sgn < 0 ? 'Material Return' : 'Raw Material',
+              desc: `${matName} (${fmtQ(qtyVal)} ${rp.uom || 't'})`,
+              cr: matCr,
+              dr: 0,
+              _seq: ++seq
+            });
+          }
+        }
+      }
+
+      const rawTo = rp.truck_owner || ((rp.company === 'WTC' && Number(rp.trans_cost || 0) !== 0) ? 'WTC' : '');
+      const to = normSupPayable(rawTo);
+      if (to && to !== 'excluded' && to !== 'none' && (rp.transport_by !== 'Company fleet' || Number(rp.trans_cost || 0) !== 0) && !(rp.company === 'BBConstruction' && to === 'bbconstruction')) {
+        const eTo = ensureSup(effSup(rawTo, rp.company, rpDate));
+        if (eTo) {
+          const trCr = sgn * Number(rp.trans_cost || 0);
+          eTo.trans_cr += trCr;
+          if (Number(rp.trans_cost || 0) !== 0) eTo.freq += 1;
+          if (Math.abs(trCr) > 0.0001) {
+            eTo.vouchers.push({
+              date: rpDate,
+              ref: refNo,
+              co: rp.company || '',
+              leg: 'transport',
+              type: sgn < 0 ? 'Supplier Trans Return' : 'Supplier Transport',
+              desc: `Inbound Transport - ${matName}${rp.truck ? ' (' + rp.truck + ')' : ''}`,
+              cr: trCr,
+              dr: 0,
+              _seq: ++seq
+            });
+          }
+        }
+      }
+    }
+
+    const sales = recs.sales_tickets || [];
+    for (let i = 0; i < sales.length; i++) {
+      const st = sales[i];
+      if (!st || st.voided || st.is_internal_sale || !isCoInScope(st.company)) continue;
+      if (offScope && !isOfficialRecord(st, 'sales_tickets')) continue;
+      const mth = String(st.method || 'Credit').trim();
+      if ((mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') || st.transport_by !== 'Third-party truck') continue;
+      const sgnSt = ticketSign(st);
+      const tpVal = Number(st.trans_price || 0);
+      if (!sgnSt || tpVal === 0) continue;
+      const stDate = String((basis === 'rep' ? (st.rep_date || st.date) : st.date) || '').slice(0, 10);
+      if (!stDate) continue;
+      const to = normSupPayable(st.truck_owner);
+      if (to && to !== 'wtc' && to !== 'sibline' && to !== 'bbconstruction' && to !== 'excluded' && to !== 'none') {
+        const eTo = ensureSup(effSup(st.truck_owner, st.company, stDate));
+        if (eTo) {
+          const custCr = sgnSt * tpVal;
+          eTo.trans_cr += custCr;
+          eTo.freq += 1;
+          eTo.vouchers.push({
+            date: stDate,
+            ref: String(st.ticket_no || st.name || st.id || 'ST'),
+            co: st.company || '',
+            leg: 'transport',
+            type: sgnSt < 0 ? 'Customer Trans Return' : 'Customer Transport',
+            desc: `Customer Haulage - ${st.customer || 'Delivery'}${st.site ? ' - ' + st.site : ''}`,
+            cr: custCr,
+            dr: 0,
+            _seq: ++seq
+          });
+        }
+      }
+    }
+
+    const exps = recs.expenses || [];
+    const maxExpDateByCo = {};
+    const maxWbExpDateByCo = {};
+    for (let i = 0; i < exps.length; i++) {
+      const x = exps[i];
+      if (!x || x.voided || !isCoInScope(x.company)) continue;
+      if (x.date) {
+        const d10 = String(x.date).slice(0, 10);
+        if (!maxExpDateByCo[x.company] || d10 > maxExpDateByCo[x.company]) maxExpDateByCo[x.company] = d10;
+        if (!isAppRecord(x) && (!maxWbExpDateByCo[x.company] || d10 > maxWbExpDateByCo[x.company])) maxWbExpDateByCo[x.company] = d10;
+      }
+      if (offScope && !isOfficialRecord(x, 'expenses')) continue;
+      const xDate = String((basis === 'rep' ? (x.rep_date || x.date) : x.date) || '').slice(0, 10);
+      if (!xDate) continue;
+      const eEx = ensureSup(effSup(x.supplier, x.company, xDate));
+      if (!eEx) continue;
+      const rawSn = normSupPayable(x.supplier);
+      const mth = String(x.method || 'Cash').trim();
+      const iva = isIva(rawSn, x.company) || isIva(eEx.key, x.company);
+      if (x.wb_lbp_credit != null && mth === 'Credit') continue;
+      const hasExplicitVatMeta = x.pre_vat_amount != null || x.vat_amount != null;
+      const ttcV = Number(x.wb_total_ttc != null ? x.wb_total_ttc : (x.amount || 0));
+      const exV = hasExplicitVatMeta
+        ? Number(x.pre_vat_amount != null ? x.pre_vat_amount : (x.amount || 0))
+        : (iva ? (ttcV / 1.11) : ttcV);
+      let expCr = 0;
+      if (mth === 'Credit') {
+        let vatCr = 0;
+        if (hasExplicitVatMeta) {
+          if (!x.has_vat_leg) {
+            const v = round2(Number(x.vat_amount || 0));
+            if (v > 0) vatCr = v;
+          }
+        } else if (iva) {
+          vatCr = exV * 0.11;
+        }
+        eEx.exp_cr_usd += exV;
+        expCr = exV + vatCr;
+      } else if (mth === 'VAT' || mth === 'IVA') {
+        const v = Number(x.amount != null ? x.amount : (x.vat_amount || 0));
+        if (v !== 0) expCr = v;
+      } else if (mth === 'CR Return' || mth === 'Credit Return') {
+        const retExV = hasExplicitVatMeta ? Number(x.pre_vat_amount != null ? x.pre_vat_amount : ttcV) : exV;
+        if (x.company !== 'WTC') expCr = -retExV;
+      } else {
+        continue;
+      }
+      if (Math.abs(expCr) > 0.0001) {
+        eEx.freq += 1;
+        eEx.vouchers.push({
+          date: xDate,
+          ref: String((x.invoice && x.invoice !== '-' ? x.invoice : '') || x.name || x.id || 'EXP'),
+          co: x.company || '',
+          leg: 'expenses',
+          type: mth === 'CR Return' || mth === 'Credit Return' ? 'Expense Return' : (x.category || 'Credit Expense'),
+          desc: String(`${x.subcategory || x.category || 'Vendor Invoice'}${x.equipment ? ' · ' + x.equipment : ''}`).trim(),
+          cr: expCr,
+          dr: 0,
+          _seq: ++seq
+        });
+      }
+    }
+
+    const recExps = recs.recurring_expenses || [];
+    for (let i = 0; i < recExps.length; i++) {
+      const rx = recExps[i];
+      if (!rx || rx.voided || offScope || !isCoInScope(rx.company)) continue;
+      const rawRxKey = normSupPayable(rx.supplier);
+      if (!rawRxKey || rawRxKey === 'excluded' || rawRxKey === 'none' || rawRxKey === 'unspecified') continue;
+      const sIso = String(rx.start_date || '').slice(0, 10);
+      const rawEnd = String(rx.end_date || '').slice(0, 10);
+      const isAppRec = isAppRecord(rx);
+      const seedCut = String((SEED && SEED.generated_at) || '').slice(0, 10);
+      const openCap = isAppRec
+        ? ((!maxExpDateByCo[rx.company] || todayISO() > maxExpDateByCo[rx.company]) ? todayISO() : maxExpDateByCo[rx.company])
+        : (seedCut || maxWbExpDateByCo[rx.company] || maxExpDateByCo[rx.company] || '2026-11-04');
+      const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : openCap;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sIso) || !/^\d{4}-\d{2}-\d{2}$/.test(eIso) || sIso > eIso) continue;
+      const cur = String(rx.currency || 'USD').trim().toUpperCase();
+      if (cur !== 'USD') continue;
+      const [sy, sm0, sd0] = sIso.split('-').map(Number);
+      const [ey, em0] = eIso.split('-').map(Number);
+      const nMonths = (ey - sy) * 12 + (em0 - sm0) + 1;
+      const totV = Number(rx.wb_total != null ? rx.wb_total : (rx.amount || 0));
+      for (let mIdx = 0; mIdx < nMonths; mIdx++) {
+        const y = sy + Math.floor((sm0 - 1 + mIdx) / 12);
+        const mo = ((sm0 - 1 + mIdx) % 12) + 1;
+        const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        const day = Math.min(sd0, dim);
+        const dIso = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        if (rx.company === 'BBConstruction' && !isAppRec && dIso > '2024-04-05') continue;
+        const eRx = ensureSup(effSup(rx.supplier, rx.company, dIso));
+        if (!eRx) continue;
+        const iva = isIva(rawRxKey, rx.company) || isIva(eRx.key, rx.company);
+        const exV = iva ? (totV / 1.11) : totV;
+        const recCr = exV + (iva ? exV * 0.11 : 0);
+        eRx.exp_cr_usd += exV;
+        if (Math.abs(recCr) > 0.0001) {
+          eRx.freq += 1;
+          eRx.vouchers.push({
+            date: dIso,
+            ref: String(rx.name || rx.id || 'REC'),
+            co: rx.company || '',
+            leg: 'expenses',
+            type: rx.category || 'Recurring Expense',
+            desc: String(`${rx.subcategory || rx.category || 'Recurring Charge'} (${dIso.slice(0, 7)})`).trim(),
+            cr: recCr,
+            dr: 0,
+            _seq: ++seq
+          });
+        }
+      }
+    }
+
+    const spays = recs.settlements || [];
+    for (let i = 0; i < spays.length; i++) {
+      const sp = spays[i];
+      if (!sp || sp.voided || !isCoInScope(sp.company)) continue;
+      if (offScope && !isOfficialRecord(sp, 'settlements')) continue;
+      const spDate = String((basis === 'rep' ? (sp.rep_date || sp.date) : sp.date) || '').slice(0, 10);
+      if (!spDate) continue;
+      const eSp = ensureSup(effSup(sp.supplier, sp.company, spDate));
+      if (!eSp) continue;
+      if (sp.wb_lbp_paid != null) continue;
+      const mth = String(sp.method || 'Payment').trim();
+      let rawLeg = sp.payable_leg || '';
+      if (!rawLeg) {
+        if (mth === 'VAT' || mth === 'VATConfig' || mth === 'IVA') rawLeg = 'expense';
+        else if (Math.abs(eSp.quarry_cr) > 0.005 && Math.abs(eSp.trans_cr) <= 0.005 && Math.abs(eSp.exp_cr_usd) <= 0.005) rawLeg = 'quarry';
+        else if (Math.abs(eSp.trans_cr) > 0.005 && Math.abs(eSp.quarry_cr) <= 0.005 && Math.abs(eSp.exp_cr_usd) <= 0.005) rawLeg = 'transportation';
+        else rawLeg = 'expense';
+      }
+      const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return';
+      let vLeg = '';
+      if (rawLeg === 'quarry') {
+        if (isStdPayMth) vLeg = 'material';
+      } else if (rawLeg === 'transportation') {
+        if (isStdPayMth) vLeg = 'transport';
+      } else {
+        if (isStdPayMth || mth === 'VAT' || mth === 'VATConfig') vLeg = 'expenses';
+      }
+      if (!vLeg || Math.abs(totV) <= 0.0001) continue;
+      eSp.freq += 1;
+      const legLbl = vLeg === 'material' ? 'Material' : (vLeg === 'transport' ? 'Transport' : 'Expenses');
+      eSp.vouchers.push({
+        date: spDate,
+        ref: String(sp.name || sp.id || 'SETL'),
+        co: sp.company || '',
+        leg: vLeg,
+        type: 'Settlement',
+        desc: String(sp.notes || `Supplier Settlement (${mth} · ${legLbl})`).trim(),
+        cr: 0,
+        dr: totV,
+        _seq: ++seq
+      });
+    }
+
+    const rankedEntries = Array.from(legState.values()).sort((a, b) => {
+      if (b.freq !== a.freq) return b.freq - a.freq;
+      return a.supplier.localeCompare(b.supplier);
+    });
+    const suppliersRanked = rankedEntries.map(e => e.supplier);
+      cachedBundle = { legState, rankedEntries, suppliersRanked };
+      if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF) {
+        if (_stmt16VouchersCache.size >= 32) {
+          const oldestK = _stmt16VouchersCache.keys().next().value;
+          if (oldestK !== undefined) _stmt16VouchersCache.delete(oldestK);
+        }
+        _stmt16VouchersCache.set(cacheKey, cachedBundle);
+      }
+    }
+    const { legState, rankedEntries, suppliersRanked } = cachedBundle;
+    const reqSup = String(opts.supplier || '').trim();
+    const reqNorm = reqSup && reqSup !== 'ALL' ? (normSupPayable(effSup(reqSup, buTarget || 'WTC', '')) || normSupPayable(reqSup)) : '';
+    const picked = reqNorm ? (legState.get(reqNorm) || null) : (rankedEntries[0] || null);
+    const legFilter = normStmt16Leg(opts.leg);
+    const allVouchers = picked ? picked.vouchers.slice() : [];
+    const vouchers = (legFilter === 'ALL' ? allVouchers : allVouchers.filter(v => v.leg === legFilter))
+      .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : (a._seq - b._seq)));
+    const activeLegs = [];
+    if (allVouchers.some(v => v.leg === 'material')) activeLegs.push('material');
+    if (allVouchers.some(v => v.leg === 'transport')) activeLegs.push('transport');
+    if (allVouchers.some(v => v.leg === 'expenses')) activeLegs.push('expenses');
+
+    return {
+      supplier: picked ? picked.supplier : (reqSup || ''),
+      key: picked ? picked.key : reqNorm,
+      leg: legFilter,
+      activeLegs,
+      suppliersRanked,
+      vouchers
+    };
+  }
+  window.__mfgComputeSupplierStatement16Vouchers = computeSupplierStatement16Vouchers;
+
+  function resolveSupplierPhoneDigits(supplierName) {
+    const sk = normSupPayable(supplierName);
+    const skPlain = norm(supplierName);
+    const sups = ((SEED && SEED.records && SEED.records.suppliers) || []).concat(
+      (typeof STATE !== 'undefined' && STATE && STATE.customRecords && Array.isArray(STATE.customRecords.suppliers)) ? STATE.customRecords.suppliers : []
+    );
+    const candidates = [];
+    for (let i = 0; i < sups.length; i++) {
+      const s = sups[i];
+      if (!s || s.voided || !s.name) continue;
+      if (normSupPayable(s.name) === sk || norm(s.name) === skPlain) {
+        candidates.push(s.phone, s.mobile, s.whatsapp, s.contact_phone);
+      }
+    }
+    for (const raw of candidates) {
+      let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+      if (!digits) continue;
+      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+        digits = '961' + digits.replace(/^0/, '');
+      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+        digits = '961' + digits;
+      }
+      if (digits.length >= 8 && digits.length <= 15) return digits;
+    }
+    return '';
+  }
+  window.__mfgResolveSupplierPhoneDigits = resolveSupplierPhoneDigits;
+
+  function openSupplierStatementLeg(opts = {}) {
+    if (!canAccessRdlReport('16')) {
+      toast('Restricted by seat permissions', 'err');
+      return false;
+    }
+    const sup = String(opts.supplier || '').trim();
+    const leg = normStmt16Leg(opts.leg || 'ALL');
+    const prevView = STATE.view || 'overview';
+    if (prevView !== 'statements') {
+      const ws = $('workspace');
+      STATE.stmt16ReturnCtx = {
+        view: prevView,
+        company: STATE.company,
+        panelId: String(opts.panelId || ''),
+        label: String(opts.returnLabel || VIEW_TITLES[prevView] || prevView),
+        scrollTop: ws ? ws.scrollTop : 0
+      };
+    }
+    STATE.activeStatement = '16';
+    if (window.MFG_RDL && typeof window.MFG_RDL.ensureState === 'function') {
+      window.MFG_RDL.ensureState(STATE, SEED);
+    } else if (!STATE.rdl) {
+      STATE.rdl = { cat: 'All', search: '', paramsOpen: true, _dateTouched: false, params: {} };
+    }
+    STATE.rdl._dateTouched = false;
+    if (!STATE.rdl.params) STATE.rdl.params = {};
+    if (sup) STATE.rdl.params.supplier = sup;
+    STATE.rdl.params.leg = leg;
+    setView('statements', { _keepStmt16Return: true });
+    if (opts.openShare && window.MFG_RDL && typeof window.MFG_RDL.openStmt16ShareModal === 'function') {
+      window.MFG_RDL.openStmt16ShareModal();
+    }
+    return true;
+  }
 
   function getScopedModelSuppliers(mOverride, opts = {}) {
     const m = mOverride || getModel();
@@ -8318,6 +8788,28 @@
       { key: 'trans_pd', label: 'Paid ($)', kind: 'numeric' },
       { key: 'trans_rem', label: 'Remaining ($)', kind: 'numeric' }
     ],
+    trd_oem_payables: [
+      { key: 'supplier', label: 'OEM Supplier' },
+      { key: 'company', label: 'Entity' },
+      { key: 'incoterm_summary', label: 'Terms' },
+      { key: 'files_cnt', label: 'Active Files', kind: 'numeric' },
+      { key: 'billed_fob_usd', label: 'Contract FOB ($)', kind: 'numeric' },
+      { key: 'backorder_fob_usd', label: 'Backorder ($)', kind: 'numeric' },
+      { key: 'settled_usd', label: 'Settled ($)', kind: 'numeric' },
+      { key: 'remaining_usd', label: 'Remaining ($)', kind: 'numeric' }
+    ],
+    trd_freight_payables: [
+      { key: 'payee', label: 'Freight / Customs Payee' },
+      { key: 'company', label: 'Entity' },
+      { key: 'files_cnt', label: 'Files', kind: 'numeric' },
+      { key: 'freight_usd', label: 'Sea / Inland Freight ($)', kind: 'numeric' },
+      { key: 'customs_usd', label: 'Customs Duty ($)', kind: 'numeric' },
+      { key: 'clearance_usd', label: 'Clearing ($)', kind: 'numeric' },
+      { key: 'insurance_usd', label: 'Insurance ($)', kind: 'numeric' },
+      { key: 'total_uplift_usd', label: 'Total Uplift ($)', kind: 'numeric' },
+      { key: 'settled_usd', label: 'Settled ($)', kind: 'numeric' },
+      { key: 'remaining_usd', label: 'Remaining ($)', kind: 'numeric' }
+    ],
     rawsup: [
       { key: 'supplier', label: 'Supplier / Hauler' },
       { key: 'role', label: 'Role' },
@@ -8679,6 +9171,7 @@
     if (t === 'conversions') return /^(?:usd_amount|lbp_amount|exchange_rate|fx_rate|usd_delta|lbp_delta|amount)$/i.test(c);
     if (t === 'external_movements') return /^(?:usd_amount|lbp_amount|amount|usd_delta|lbp_delta|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp)$/i.test(c);
     if (t === 'gl_accounts') return /^(?:debit|credit|balance|soa_legs)$/i.test(c);
+    if (t === 'trd_oem_payables' || t === 'trd_freight_payables') return /^(?:settled_usd|remaining_usd)$/i.test(c);
     if (t === 're_invoicing') return /^(?:open_ar_usd|collected_usd)$/i.test(c);
     if (t === 're_receipts') return /^(?:gross_usd|allocated_inv_usd|unallocated_adv_usd|deposit_gl4196_usd)$/i.test(c);
     if (t === 're_sales') return /^(?:balance_usd|paid_usd|broker_comm_usd)$/i.test(c);
@@ -8723,6 +9216,8 @@
     if (!t || !c) return false;
     if (t === 'raw_site_owners') return /^(?:quarry_cr|quarry_pd|quarry_rem)$/i.test(c);
     if (t === 'raw_trans_pay') return /^(?:trans_sup_cr|trans_cust_cr|trans_cr|trans_pd|trans_rem)$/i.test(c);
+    if (t === 'trd_oem_payables') return /^(?:billed_fob_usd|backorder_fob_usd)$/i.test(c);
+    if (t === 'trd_freight_payables') return /^(?:freight_usd|customs_usd|clearance_usd|insurance_usd|total_uplift_usd)$/i.test(c);
     if (t === 'sites') return /^(?:mat_credit|quarry_haul|sales_haul|total_credit|paid|remaining)$/i.test(c);
     return false;
   }
@@ -18291,7 +18786,7 @@
   }
 
   function siteInfo(name, side) {
-    const n = norm(name);
+    const n = normSiteMatch(name);
     if (!n) return null;
     const sitesArr = (SEED && SEED.records && SEED.records.sites) || [];
     const sRev = (SEED && SEED._tableRev && SEED._tableRev.sites) || 0;
@@ -18303,7 +18798,7 @@
       fIdx._siteByNorm = new Map();
       (SEED.records.sites || []).forEach(s => {
         if (!s || !s.name || s.voided) return;
-        const k = norm(s.name);
+        const k = normSiteMatch(s.name);
         if (k && !fIdx._siteByNorm.has(k)) fIdx._siteByNorm.set(k, s);
       });
     }
@@ -18359,13 +18854,13 @@
   }
 
   function resolveSuppliersForSite(siteName, company, dateStr, product) {
-    const sk = norm(siteName);
+    const sk = normSiteMatch(siteName);
     if (!sk) return { activeSupplier: '', suppliers: [], hasActiveRule: false, multipleActive: false };
     const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
     const coKey = norm(company);
     const prodKey = norm(product);
     const rules = _mergedActivePriceRules().filter(r =>
-      norm(r.site) === sk &&
+      normSiteMatch(r.site) === sk &&
       r.supplier &&
       /^Purchase Price \(Site\)$/i.test(String(r.rule_type || '').trim()) &&
       (!coKey || !r.company || norm(r.company) === coKey)
@@ -18424,7 +18919,7 @@
 
     const rawCounts = new Map();
     ((SEED && SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
-      if (!r || r.voided || norm(r.site) !== sk || !r.site_owner) return;
+      if (!r || r.voided || normSiteMatch(r.site) !== sk || !r.site_owner) return;
       const so = String(r.site_owner).trim();
       const k = norm(so);
       if (!k) return;
@@ -20304,7 +20799,7 @@
   // the most specific active rule wins, ties → the latest start date. Quarry side keys on supplier / site.
   // q.types = the bhf_ruletype labels that may answer (e.g. ['Sales (Delivery)']); rules exported without a type (v3.0 seed) still match
   function findRule(q) {
-    const c = norm(q.customer), s = norm(q.site), p = norm(q.product), sup = norm(q.supplier);
+    const c = norm(q.customer), s = normSiteMatch(q.site), p = norm(q.product), sup = norm(q.supplier);
     const date = q.date || todayISO();
     const types = q.types || null;
     let best = null, bestScore = -1;
@@ -20313,7 +20808,7 @@
       if (q.company && r.company && r.company !== q.company) return;
       if (types && r.rule_type && !types.includes(r.rule_type)) return;
       if (c) { if (!r.customer || norm(r.customer) !== c) return; }
-      else if (sup || s) { if (r.customer) return; if (!((sup && norm(r.supplier) === sup) || (s && r.site && norm(r.site) === s))) return; }
+      else if (sup || s) { if (r.customer) return; if (!((sup && norm(r.supplier) === sup) || (s && r.site && normSiteMatch(r.site) === s))) return; }
       else if (!q.listPrice) return;
       if (/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '')) && r.supplier) {
         if (!sup || normOwnerName(r.supplier) !== normOwnerName(q.supplier)) return;
@@ -20321,7 +20816,7 @@
       if (q.listPrice && (r.customer || r.supplier)) return;
       if (r.product && norm(r.product) !== p) return;
       if (!r.product && (q.requireProduct || q.listPrice)) return;
-      if (r.site && (!s || norm(r.site) !== s)) return;
+      if (r.site && (!s || normSiteMatch(r.site) !== s)) return;
       if (r.start_date && String(r.start_date) > date) return;
       if (r.end_date && String(r.end_date) < date) return;
       const score = (r.product ? 2 : 0) + (r.site ? 1 : 0) + (sup && norm(r.supplier) === sup ? 0.5 : 0) + (types && r.rule_type ? 0.25 : 0);
@@ -20562,7 +21057,7 @@
           || (isPurchSite && String(a.start_date || '').slice(0, 10) !== String(b.start_date || '').slice(0, 10));
         return norm(a.customer || '') === norm(b.customer || '')
           && sameSup
-          && norm(a.site || '') === norm(b.site || '')
+          && normSiteMatch(a.site || '') === normSiteMatch(b.site || '')
           && norm(a.product || '') === norm(b.product || '')
           && norm(a.truck || '') === norm(b.truck || '')
           && Number(a.min_qty || 0) === Number(b.min_qty || 0);
@@ -20582,7 +21077,7 @@
           && norm(a.item || a.subcategory || a.category || '') === norm(b.item || b.subcategory || b.category || '');
       case 'overtime_rates':
         return norm(a.region || '') === norm(b.region || '')
-          && norm(a.site || '') === norm(b.site || '');
+          && normSiteMatch(a.site || '') === normSiteMatch(b.site || '');
       case 'credit_terms':
         return norm(a.customer || '') === norm(b.customer || '');
       case 'fx_rates':
@@ -22253,7 +22748,7 @@
         || norm(ruleRow.rate_per || '') !== norm(origRow.rate_per || '')
         || norm(ruleRow.customer || '') !== norm(origRow.customer || '')
         || norm(ruleRow.supplier || '') !== norm(origRow.supplier || '')
-        || norm(ruleRow.site || '') !== norm(origRow.site || '')
+        || normSiteMatch(ruleRow.site || '') !== normSiteMatch(origRow.site || '')
         || norm(ruleRow.product || '') !== norm(origRow.product || '')
         || norm(ruleRow.truck || '') !== norm(origRow.truck || '');
       if (!rateOrScopeChanged && oldS === newS && oldE === newE && !touchedPeers.length) {
@@ -22298,9 +22793,10 @@
     };
     const matchField = (tVal, field) => {
       if (!candidates.length) return true;
-      const tv = norm(tVal || '');
+      const fn = field === 'site' ? normSiteMatch : norm;
+      const tv = fn(tVal || '');
       return candidates.some(c => {
-        const cv = norm(c[field] || '');
+        const cv = fn(c[field] || '');
         return !cv || cv === tv;
       });
     };
@@ -31351,6 +31847,7 @@
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
     if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _stmt16VouchersCache !== 'undefined' && _stmt16VouchersCache) _stmt16VouchersCache.clear();
     if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     _ticketAuditCache = null;
     _meterGuardCacheKey = '';
@@ -31465,6 +31962,7 @@
     STATE._partyHygieneRev = (STATE._partyHygieneRev || 0) + 1;
     _stmtLockCache = null;
     if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _stmt16VouchersCache !== 'undefined' && _stmt16VouchersCache) _stmt16VouchersCache.clear();
     if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     try {
       const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
@@ -34482,18 +34980,34 @@
         const opSnData = (isAlertRuleEnabled('S20') && seatLens().expenses) ? getOverpaidPayablesSentinelData() : null;
         const hasOpSup = Boolean(opSnData && !opSnData.restricted && opSnData.rows && opSnData.rows.length > 0);
         const hasOpSites = Boolean(opSnData && !opSnData.restricted && !isNonMfgSn && opSnData.siteRows && opSnData.siteRows.length > 0);
+        const canEditSettleBl = !STATE.kioskLocked && canModifyRecord() && (canModifyData() || canEnterForm('settlement'));
+        const canSetSitePriceSn = !STATE.kioskLocked && canEnterForm('pricerule_raw');
         const opSupTableHtml = hasOpSup ? miniTable('SUPPLIERS PAID ABOVE ACCRUED CREDIT', opSnData.rows, [
           { label: 'Supplier', key: 'supplier', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
           { label: 'Co.', key: 'company' },
           { label: 'Leg', key: 'leg_label' },
-          { label: 'Flag', key: 'flag_type', fmt: (v, r) => `<span class="badge ${r && r.flag_type === 'Zero Credit Settled' ? 'badge-err' : 'badge-warn'}">${esc(v || 'Overpaid Leg AP')}</span>` },
+          { label: 'Flag', key: 'flag_type', fmt: (v, r) => {
+            const isCritFlag = r && (r.flag_type === 'Zero Credit Settled' || r.flag_type === 'Unlinked BL/LC (>30d)');
+            const isInfoFlag = r && r.flag_type === 'Linked BL/LC Advance';
+            const cls = isCritFlag ? 'badge-err' : (isInfoFlag ? 'badge-info' : 'badge-warn');
+            const actBtn = (r && r.sample_unlinked_settle_id && canEditSettleBl)
+              ? ` <button type="button" class="btn-sn-act" data-link-settle-bl="${esc(r.sample_unlinked_settle_id)}" data-ui-tip="Open settlement to add BL, LC, or Import File reference">Add BL/LC Ref</button>`
+              : '';
+            return `<span class="badge ${cls}">${esc(v || 'Overpaid Leg AP')}</span>${actBtn}`;
+          } },
           { label: 'Accrued ($)', key: 'accrued_usd', r: true, fmt: usd2 },
           { label: 'Paid ($)', key: 'paid_usd', r: true, fmt: usd2 },
           { label: 'Overpaid ($)', key: 'overpaid_usd', r: true, fmt: usd2 }
         ], 'snOverpaidAp') : '';
         const opSiteTableHtml = hasOpSites ? miniTable('SITES WITH OVERPAYMENTS OR UNPRICED LOADS', opSnData.siteRows, [
           { label: 'Site', key: 'site', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
-          { label: 'Flag', key: 'flag_type', fmt: (v, r) => `<span class="badge ${r && r.flag_type === 'Settlement · No Tickets' ? 'badge-err' : 'badge-warn'}">${esc(v || 'Overpaid Site')}</span>` },
+          { label: 'Flag', key: 'flag_type', fmt: (v, r) => {
+            const cls = r && r.flag_type === 'Settlement · No Tickets' ? 'badge-err' : 'badge-warn';
+            const setBtn = (r && r.unpriced_loads > 0 && r.site && !String(r.site).startsWith('(') && canSetSitePriceSn)
+              ? ` <button type="button" class="btn-sn-act btn-set-site-price" data-set-site-price="${esc(r.site)}" data-ui-tip="Set Material &amp; Transport Rate prefilled from earliest $0 delivery">Set Site Price</button>`
+              : '';
+            return `<span class="badge ${cls}">${esc(v || 'Overpaid Site')}</span>${setBtn}`;
+          } },
           { label: 'Qty (m³)', key: 'mat_qty', r: true, fmt: v => `${fmtNum(v || 0, 0)} m³` },
           { label: 'Total Credit', key: 'total_credit', r: true, fmt: usd2 },
           { label: 'Paid ($)', key: 'paid', r: true, fmt: usd2 },
@@ -35881,6 +36395,10 @@
     if (opRawAlert && opRawAlert.unpricedLoadsCount > 0) {
       rawOpParts.push(`${fmtNum(opRawAlert.unpricedLoadsCount)} external $0 raw loads`);
     }
+    const topUnpSite = (!STATE.kioskLocked && canEnterForm('pricerule_raw'))
+      ? (siteAllList.filter(x => x && x.unpriced_raw_loads > 0 && x.site && !String(x.site).startsWith('('))
+          .sort((a, b) => (Number(b.unpriced_raw_loads || 0) - Number(a.unpriced_raw_loads || 0)) || (Number(b.mat_qty || 0) - Number(a.mat_qty || 0)))[0] || null)
+      : null;
     const rawOverpaidBarHtml = showRawOpBar ? `
       <div class="overpaid-ap-alert-bar" id="rawOverpaidAlertBar">
         <div class="overpaid-ap-alert-main">
@@ -35891,6 +36409,7 @@
           </div>
         </div>
         <div class="overpaid-ap-alert-actions">
+          ${topUnpSite ? `<button type="button" class="btn btn-ghost-bar btn-set-site-price" data-set-site-price="${esc(topUnpSite.site)}" data-ui-tip="Set Material &amp; Transport Rate prefilled from earliest $0 delivery">${ic('pricing')} <span>Set Site Price</span></button>` : ''}
           ${rawAdvPayeeCnt > 0 ? `<button type="button" class="btn btn-ghost-bar" data-raw-filter-advance="1" data-so-adv="${soAdvCnt > 0 ? '1' : '0'}" data-tr-adv="${trAdvCnt > 0 ? '1' : '0'}">Filter Overpaid Payees (${fmtNum(rawAdvPayeeCnt)})</button>` : ''}
           ${overpaidSiteCnt > 0 ? `<button type="button" class="btn btn-ghost-bar" data-raw-filter-overpaid="1">Filter Unpriced Sites (${fmtNum(overpaidSiteCnt)})</button>` : ''}
           ${canViewView('suppliers') ? `<button type="button" class="btn btn-ghost-bar" data-ap-jump-overpaid="1">Inspect Overpaid Suppliers</button>` : ''}
@@ -36108,7 +36627,7 @@
             <div class="chip-bar">${ownerChip('all', `All Site Owners (${siteOwnerAll.length})`)}${canRawExp ? `${ownerChip('owed', `Owed by Us (${soOwedCnt})`)}${ownerChip('advance', `Advance / Credit (${soAdvCnt})`)}` : ''}${soBundledCnt > 0 || activeOwnerChip === 'bundled' ? ownerChip('bundled', `Delivery Included (${soBundledCnt})`) : ''}</div>
             <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${(canRawExp && canViewView('suppliers')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>' : ''}
-              ${(canRawExp && canEnterForm('settlement')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement">+ Supplier Settlement</button>' : ''}
+              ${(canRawExp && canEnterForm('settlement')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement" data-prefill-leg="quarry">+ Supplier Settlement</button>' : ''}
               ${exportBtn('rawSiteOwnersPanel', 'Site_Owners_Remaining_Payments')}
             </span>
           </div>
@@ -36133,9 +36652,14 @@
                     ? rawSitesArr.map(sn => relLink('sites', sn, sn, true)).join(', ')
                     : `${rawSitesArr.slice(0, 2).map(sn => relLink('sites', sn, sn, true)).join(', ')} <span class="badge badge-neutral" data-ui-tip="${esc(rawSitesStr)}">+${rawSitesArr.length - 2}</span>`);
                 const basisCls = r.supply_basis === 'Delivery Included' ? 'badge-brass' : (r.supply_basis === 'Mixed' ? 'badge-info' : 'badge-neutral');
+                const stmtActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
+                  <span class="raw-leg-stmt-actions no-print">
+                    <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="material" data-stmt-panel="rawSiteOwnersPanel" data-ui-tip="Open Statement 16 (Material Leg)" aria-label="Open Statement 16 (Material Leg)">${ic('statements')}</button>
+                    <button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="material" data-stmt-share="1" data-stmt-panel="rawSiteOwnersPanel" data-ui-tip="Share Leg Confirmation (WhatsApp / PDF)" aria-label="Share Leg Confirmation (WhatsApp / PDF)">${ic('send_msg')}</button>
+                  </span>` : '';
                 return `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
-                  <td><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong></td>
+                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtActsHtml}</td>
                   <td>${sitesCellHtml}</td>
                   <td><span class="badge ${basisCls}">${esc(r.supply_basis)}</span></td>
                   <td class="r">${fmtNum(r.quarry_loads)}</td>
@@ -36172,7 +36696,7 @@
             <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-scroll-panel="rawSalesHaulPanel">3P Customer Tickets</button>
               ${(canRawExp && canViewView('suppliers')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>' : ''}
-              ${(canRawExp && canEnterForm('settlement')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement">+ Supplier Settlement</button>' : ''}
+              ${(canRawExp && canEnterForm('settlement')) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement" data-prefill-leg="transportation">+ Supplier Settlement</button>' : ''}
               ${exportBtn('rawTransPayPanel', 'Transportation_Remaining_Payments')}
             </span>
           </div>
@@ -36190,9 +36714,14 @@
             <tbody>
               ${shownTransPay.map(r => {
                 const scopeCls = r.trans_scope === 'Supplier + Customer' ? 'badge-brass' : (r.trans_scope === 'Customer Trans' ? 'badge-info' : 'badge-neutral');
+                const stmtTrActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
+                  <span class="raw-leg-stmt-actions no-print">
+                    <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="transport" data-stmt-panel="rawTransPayPanel" data-ui-tip="Open Statement 16 (Transport Leg)" aria-label="Open Statement 16 (Transport Leg)">${ic('statements')}</button>
+                    <button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="transport" data-stmt-share="1" data-stmt-panel="rawTransPayPanel" data-ui-tip="Share Leg Confirmation (WhatsApp / PDF)" aria-label="Share Leg Confirmation (WhatsApp / PDF)">${ic('send_msg')}</button>
+                  </span>` : '';
                 return `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
-                  <td><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong></td>
+                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtTrActsHtml}</td>
                   <td><span class="badge ${scopeCls}">${esc(r.trans_scope)}</span></td>
                   <td class="r">${r.trans_sup_loads ? fmtNum(r.trans_sup_loads) : '—'}</td>
                   <td class="r">${r.trans_cust_loads ? fmtNum(r.trans_cust_loads) : '—'}</td>
@@ -36247,7 +36776,7 @@
                 ${shownSites.map(s => `
                   <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site, s.site_kind === '3P Customer Trans' ? 'sales' : 'raw') || {}).id || s.site)}">
                     <td>${s.site.startsWith('(') ? esc(s.site) : relLink('sites', s.site, s.site, true)}</td>
-                    <td><span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span>${s.unpriced_raw_loads > 0 ? ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(s.unpriced_raw_loads)})</span>` : (s.is_own_material ? ` <span class="badge badge-neutral" data-ui-tip="Company-owned quarry material ($0.00 external supplier credit expected)">Own Material</span>` : '')}</td>
+                    <td><span class="badge ${(s.site_kind === 'JV 50/50' || s.is_bundled_only || s.is_mixed_bundled) ? 'badge-brass' : (s.site_kind === '3P Customer Trans' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span>${s.unpriced_raw_loads > 0 ? (!STATE.kioskLocked && canEnterForm('pricerule_raw') && !s.site.startsWith('(') ? ` <button type="button" class="badge badge-warn btn-set-site-price" data-set-site-price="${esc(s.site)}" data-ui-tip="Set Material &amp; Transport Rate prefilled from earliest $0 delivery">Unpriced (${fmtNum(s.unpriced_raw_loads)})</button>` : ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(s.unpriced_raw_loads)})</span>`) : (s.is_own_material ? ` <span class="badge badge-neutral" data-ui-tip="Company-owned quarry material ($0.00 external supplier credit expected)">Own Material</span>` : '')}</td>
                     <td class="r">${Math.abs(s.mat_qty) >= 0.05 ? `${fmtNum(s.mat_qty, 0)} m³` : '—'}</td>
                     <td class="r">${canRawExp ? (s.mat_credit !== 0 ? fmtUSD(s.mat_credit, 2) : '—') : '<span class="mu">Restricted</span>'}</td>
                     <td class="r">${canRawExp ? (s.quarry_haul !== 0 ? fmtUSD(s.quarry_haul, 2) : (s.is_bundled_only ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivery is included in Material Credit ($0.00 separate transport charge)">Included</span>' : '—')) : '<span class="mu">Restricted</span>'}</td>
@@ -46335,6 +46864,9 @@
         if (opApData.matOverpaidUsd > 0) apBarParts.push(`Material ${fmtUSD(opApData.matOverpaidUsd, 0)}`);
         if (opApData.transOverpaidUsd > 0) apBarParts.push(`Transport ${fmtUSD(opApData.transOverpaidUsd, 0)}`);
         if (opApData.expOverpaidUsd > 0) apBarParts.push(`Expenses ${fmtUSD(opApData.expOverpaidUsd, 0)}`);
+        if (opApData.trdUnlinkedBlCount > 0) apBarParts.push(`${fmtNum(opApData.trdUnlinkedBlCount)} unlinked BL/LC advances >${fmtNum(opApData.trdUnlinkedDays || 30, 0)}d (${fmtUSD(opApData.trdUnlinkedBlUsd, 2)})`);
+        const topUnlinkedSettleId = (opApData.trdUnlinkedVouchers && opApData.trdUnlinkedVouchers[0] && opApData.trdUnlinkedVouchers[0].id) || '';
+        const canAddBlRefAp = Boolean(topUnlinkedSettleId && !STATE.kioskLocked && canModifyRecord() && (canModifyData() || canEnterForm('settlement')));
         return `
       <div class="overpaid-ap-alert-bar" id="apOverpaidAlertBar">
         <div class="overpaid-ap-alert-main">
@@ -46345,6 +46877,7 @@
           </div>
         </div>
         <div class="overpaid-ap-alert-actions">
+          ${canAddBlRefAp ? `<button type="button" class="btn btn-ghost-bar" data-link-settle-bl="${esc(topUnlinkedSettleId)}" data-ui-tip="Open settlement to add BL, LC, or Import File reference">Add BL/LC Ref</button>` : ''}
           <button type="button" class="btn btn-ghost-bar" data-chip="overpaid_ap">Filter Overpaid (${fmtNum(overpaidSupCnt)})</button>
           ${canViewView('sentinels') ? `<button type="button" class="btn btn-primary" data-open-sn-overpaid="1">Open Sentinel Audit</button>` : ''}
         </div>
@@ -46965,6 +47498,9 @@
         const leadExp = opExp.rows[0] || null;
         const expBarParts = [`${fmtNum(opExp.supOverpaidCount)} suppliers paid ${fmtUSD(opExp.supOverpaidUsd, 2)} above accrued credit`];
         if (leadExp) expBarParts.push(`Top: ${leadExp.supplier} (${fmtUSD(leadExp.overpaid_usd, 0)})`);
+        if (opExp.trdUnlinkedBlCount > 0) expBarParts.push(`${fmtNum(opExp.trdUnlinkedBlCount)} unlinked BL/LC advances >${fmtNum(opExp.trdUnlinkedDays || 30, 0)}d (${fmtUSD(opExp.trdUnlinkedBlUsd, 2)})`);
+        const topUnlinkedExpId = (opExp.trdUnlinkedVouchers && opExp.trdUnlinkedVouchers[0] && opExp.trdUnlinkedVouchers[0].id) || '';
+        const canAddBlRefExp = Boolean(topUnlinkedExpId && !STATE.kioskLocked && canModifyRecord() && (canModifyData() || canEnterForm('settlement')));
         return `
       <div class="overpaid-ap-alert-bar" id="expOverpaidAlertBar">
         <div class="overpaid-ap-alert-main">
@@ -46975,6 +47511,7 @@
           </div>
         </div>
         <div class="overpaid-ap-alert-actions">
+          ${canAddBlRefExp ? `<button type="button" class="btn btn-ghost-bar" data-link-settle-bl="${esc(topUnlinkedExpId)}" data-ui-tip="Open settlement to add BL, LC, or Import File reference">Add BL/LC Ref</button>` : ''}
           ${canViewView('sentinels') ? `<button type="button" class="btn btn-primary" data-open-sn-overpaid="1">Open Sentinel Audit</button>` : ''}
         </div>
       </div>`;
@@ -69659,6 +70196,283 @@
     const reorderAlertCount = scopedAllStock.filter(r => r.is_low).length;
     const icTransferUsd = round2(movementRows.filter(r => r.type.includes('Inter-Company')).reduce((a, r) => a + r.total_usd, 0));
 
+    // 12. OEM Vehicle & Parts Suppliers AP (FOB / Contract Leg) vs. 3rd-Party Freight, Customs & Clearing AP (Deduplicated by Import File)
+    const impByIdUpper = new Map();
+    const allOemKeys = new Set();
+    const allFrtKeys = new Set();
+    rawImportRows.forEach(r => {
+      if (!r || !scopeSet.has(r.company)) return;
+      const coNm = String(r.company || '').trim();
+      const idUp = String(r.id || '').trim().toUpperCase();
+      if (idUp) impByIdUpper.set(idUp, r);
+      if (!/cancelled/i.test(String(r.status || ''))) {
+        const sup = String(r.supplier || 'OEM Supplier').trim();
+        allOemKeys.add(`${normSupPayable(sup)}||${coNm}`);
+        const fv = String(r.freight_vendor || '').trim();
+        if (fv) allFrtKeys.add(`${normSupPayable(fv)}||${coNm}`);
+      }
+    });
+    rawLandedRows.forEach(lc => {
+      if (!lc) return;
+      const idUp = String(lc.import_file || '').trim().toUpperCase();
+      const linkedImp = idUp ? impByIdUpper.get(idUp) : null;
+      const coNm = String(lc.company || (linkedImp && linkedImp.company) || '').trim();
+      if (!coNm || !scopeSet.has(coNm)) return;
+      const fv = String(lc.freight_vendor || (linkedImp && linkedImp.freight_vendor) || '').trim();
+      if (fv) allFrtKeys.add(`${normSupPayable(fv)}||${coNm}`);
+    });
+
+    const oemMap = new Map();
+    scopedAllImports.forEach(r => {
+      if (!r) return;
+      const statusStr = String(r.status || '').trim();
+      if (/cancelled/i.test(statusStr)) return;
+      const sup = String(r.supplier || 'OEM Supplier').trim();
+      const coNm = String(r.company || '').trim();
+      const k = `${normSupPayable(sup)}||${coNm}`;
+      let g = oemMap.get(k);
+      if (!g) {
+        g = {
+          key: k,
+          supplier: sup,
+          company: coNm,
+          files_cnt: 0,
+          active_files: 0,
+          backorder_files: 0,
+          billed_fob_usd: 0,
+          backorder_fob_usd: 0,
+          settled_usd: 0,
+          remaining_usd: 0,
+          _incoterms: new Set()
+        };
+        oemMap.set(k, g);
+      }
+      g.files_cnt += 1;
+      const isBo = /^open\s*backorder$/i.test(statusStr) || (Number(r.received_qty || 0) === 0 && Number(r.backorder_qty || 0) > 0 && /backorder/i.test(statusStr));
+      if (isBo) {
+        g.backorder_files += 1;
+        g.backorder_fob_usd = round2(g.backorder_fob_usd + Number(r.fob_usd || 0));
+      } else {
+        g.active_files += 1;
+        g.billed_fob_usd = round2(g.billed_fob_usd + Number(r.fob_usd || 0));
+      }
+      if (r.incoterm) g._incoterms.add(String(r.incoterm));
+    });
+
+    const coveredFrtImpIds = new Set();
+    const frtUpliftDocs = [];
+    scopedAllLanded.forEach(lc => {
+      if (!lc) return;
+      const idUp = String(lc.import_file || '').trim().toUpperCase();
+      const linkedImp = idUp ? impByIdUpper.get(idUp) : null;
+      if (linkedImp && /cancelled/i.test(String(linkedImp.status || ''))) {
+        if (idUp) coveredFrtImpIds.add(idUp);
+        return;
+      }
+      const effInco = (linkedImp && detectTradingIncoterm(linkedImp)) || detectTradingIncoterm(lc);
+      if (effInco === 'DDP') {
+        if (idUp) coveredFrtImpIds.add(idUp);
+        return;
+      }
+      if (idUp) coveredFrtImpIds.add(idUp);
+      const fr = round2(Number(lc.freight_usd || 0));
+      const cu = round2(Number(lc.customs_usd || 0));
+      const cl = round2(Number(lc.clearance_usd || 0));
+      const ins = round2(Number(lc.insurance_usd || 0));
+      const totU = round2(Number(lc.total_landed_add != null ? lc.total_landed_add : (fr + cu + cl + ins)));
+      if (Math.abs(totU) < 0.005) return;
+      frtUpliftDocs.push({
+        company: String(lc.company || (linkedImp && linkedImp.company) || '').trim(),
+        import_file: lc.import_file || lc.id,
+        date: lc.date || (linkedImp && linkedImp.date) || '',
+        freight_vendor: String(lc.freight_vendor || (linkedImp && linkedImp.freight_vendor) || '').trim(),
+        freight_usd: fr,
+        customs_usd: cu,
+        clearance_usd: cl,
+        insurance_usd: ins,
+        total_uplift_usd: totU
+      });
+    });
+    scopedAllImports.forEach(r => {
+      if (!r || /cancelled/i.test(String(r.status || ''))) return;
+      const idUp = String(r.id || '').trim().toUpperCase();
+      if (idUp && coveredFrtImpIds.has(idUp)) return;
+      if (detectTradingIncoterm(r) === 'DDP') return;
+      const totU = round2(Number(r.landed_add_usd || 0));
+      if (Math.abs(totU) < 0.005) return;
+      const fr = round2(Number(r.freight_usd || 0));
+      const cu = round2(Number(r.customs_usd || 0));
+      const cl = round2(Number(r.clearance_usd || 0));
+      const ins = round2(Math.max(0, totU - fr - cu - cl));
+      frtUpliftDocs.push({
+        company: String(r.company || '').trim(),
+        import_file: r.id,
+        date: r.date || '',
+        freight_vendor: String(r.freight_vendor || '').trim(),
+        freight_usd: fr,
+        customs_usd: cu,
+        clearance_usd: cl,
+        insurance_usd: ins,
+        total_uplift_usd: totU
+      });
+    });
+
+    const frtMap = new Map();
+    const addFrtPayee = (payee, coNm, docId, fUsd, cUsd, clrUsd, insUsd, totUsd) => {
+      if (Math.abs(totUsd) < 0.005) return;
+      const k = `${normSupPayable(payee)}||${coNm}`;
+      let g = frtMap.get(k);
+      if (!g) {
+        g = {
+          key: k,
+          payee,
+          company: coNm,
+          files: new Set(),
+          freight_usd: 0,
+          customs_usd: 0,
+          clearance_usd: 0,
+          insurance_usd: 0,
+          total_uplift_usd: 0
+        };
+        frtMap.set(k, g);
+      }
+      if (docId) g.files.add(docId);
+      g.freight_usd = round2(g.freight_usd + fUsd);
+      g.customs_usd = round2(g.customs_usd + cUsd);
+      g.clearance_usd = round2(g.clearance_usd + clrUsd);
+      g.insurance_usd = round2(g.insurance_usd + insUsd);
+      g.total_uplift_usd = round2(g.total_uplift_usd + totUsd);
+    };
+    frtUpliftDocs.forEach(d => {
+      if (d.freight_vendor) {
+        addFrtPayee(d.freight_vendor, d.company, d.import_file, d.freight_usd, d.customs_usd, d.clearance_usd, d.insurance_usd, d.total_uplift_usd);
+      } else {
+        if (Math.abs(d.freight_usd) >= 0.005) addFrtPayee('Ocean & Inland Freight', d.company, d.import_file, d.freight_usd, 0, 0, 0, d.freight_usd);
+        if (Math.abs(d.customs_usd) >= 0.005) addFrtPayee('Customs Duty & Excise', d.company, d.import_file, 0, d.customs_usd, 0, 0, d.customs_usd);
+        if (Math.abs(d.clearance_usd) >= 0.005) addFrtPayee('Port Handling & Clearing', d.company, d.import_file, 0, 0, d.clearance_usd, 0, d.clearance_usd);
+        if (Math.abs(d.insurance_usd) >= 0.005) addFrtPayee('Marine Cargo Insurance', d.company, d.import_file, 0, 0, 0, d.insurance_usd, d.insurance_usd);
+      }
+    });
+
+    const trdExpCreditKeys = new Set();
+    ((SEED.records && SEED.records.expenses) || []).forEach(ex => {
+      if (!ex || ex.voided) return;
+      const sc = String(ex.company || '').trim();
+      if (!scopeSet.has(sc)) return;
+      if (isOfficialScopeActive() && !isOfficialRecord(ex, 'expenses')) return;
+      const em = String(ex.method || '').trim();
+      if (/^(?:credit|cr return|iva|vat|vat dis)$/i.test(em) && ex.supplier) {
+        trdExpCreditKeys.add(`${normSupPayable(ex.supplier)}||${sc}`);
+      }
+    });
+    const trdSettles = ((SEED.records && SEED.records.settlements) || []).filter(sp => {
+      if (!sp || sp.voided) return false;
+      const sc = String(sp.company || '').trim();
+      if (!scopeSet.has(sc)) return false;
+      if (isOfficialScopeActive() && !isOfficialRecord(sp, 'settlements')) return false;
+      if (!trdPm.matchDate(sp.date)) return false;
+      const mth = String(sp.method || 'Payment').trim();
+      return !/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|iva|vat|vatconfig|commission|rent|rentconfig|vatrent)$/i.test(mth);
+    });
+    const oemPaidByKey = new Map();
+    const frtPaidByKey = new Map();
+    trdSettles.forEach(sp => {
+      const amt = round2(Number(sp.usd_amount != null ? sp.usd_amount : (sp.amount || 0)) + Number(sp.discount || 0));
+      if (Math.abs(amt) < 0.005) return;
+      const coKey = String(sp.company || '').trim();
+      const supNm = String(sp.supplier || '').trim();
+      const supNorm = normSupPayable(supNm);
+      const leg = String(sp.payable_leg || '').toLowerCase();
+      const mk = `${supNorm}||${coKey}`;
+      const isFrtPayee = frtMap.has(mk) || allFrtKeys.has(mk);
+      const isOemPayee = oemMap.has(mk) || allOemKeys.has(mk);
+      let bucket = '';
+      if (leg === 'transportation' || leg === 'haulage' || leg === 'transport' || leg === 'freight') bucket = 'frt';
+      else if (leg === 'quarry' || leg === 'material' || leg === 'oem') bucket = 'oem';
+      else if (trdExpCreditKeys.has(mk) && (leg === 'expense' || leg === 'expenses')) bucket = 'skip';
+      else if (isFrtPayee && !isOemPayee) bucket = 'frt';
+      else if (isOemPayee && !isFrtPayee) bucket = 'oem';
+      else if (/freight|customs|clearing|insurance|broker|forward/i.test(supNm)) bucket = 'frt';
+      else if (leg === 'expense' || leg === 'expenses') bucket = 'skip';
+      else bucket = 'oem';
+      if (bucket === 'skip') return;
+      const targetMap = bucket === 'frt' ? frtPaidByKey : oemPaidByKey;
+      targetMap.set(mk, round2((targetMap.get(mk) || 0) + amt));
+      if (bucket === 'frt' && !frtMap.has(mk)) {
+        frtMap.set(mk, {
+          key: mk,
+          payee: supNm || 'Freight / Customs Payee',
+          company: coKey,
+          files: new Set(),
+          freight_usd: 0,
+          customs_usd: 0,
+          clearance_usd: 0,
+          insurance_usd: 0,
+          total_uplift_usd: 0
+        });
+      } else if (bucket === 'oem' && !oemMap.has(mk)) {
+        oemMap.set(mk, {
+          key: mk,
+          supplier: supNm || 'OEM Supplier',
+          company: coKey,
+          files_cnt: 0,
+          active_files: 0,
+          backorder_files: 0,
+          billed_fob_usd: 0,
+          backorder_fob_usd: 0,
+          settled_usd: 0,
+          remaining_usd: 0,
+          _incoterms: new Set()
+        });
+      }
+    });
+
+    const oemPayableRows = Array.from(oemMap.values()).map(g => {
+      const settled = round2(oemPaidByKey.get(g.key) || 0);
+      const rem = round2(g.billed_fob_usd - settled);
+      const incList = Array.from(g._incoterms);
+      return {
+        key: g.key,
+        supplier: g.supplier,
+        company: g.company,
+        incoterm_summary: incList.length ? incList.join(' / ') : 'FOB',
+        files_cnt: g.active_files,
+        backorder_files: g.backorder_files,
+        billed_fob_usd: g.billed_fob_usd,
+        backorder_fob_usd: g.backorder_fob_usd,
+        settled_usd: settled,
+        remaining_usd: rem
+      };
+    }).sort((a, b) => {
+      if (b.files_cnt !== a.files_cnt) return b.files_cnt - a.files_cnt;
+      return Math.abs(b.remaining_usd) - Math.abs(a.remaining_usd);
+    });
+    const freightPayableRows = Array.from(frtMap.values()).map(g => {
+      const settled = round2(frtPaidByKey.get(g.key) || 0);
+      return {
+        key: g.key,
+        payee: g.payee,
+        company: g.company,
+        files_cnt: g.files.size,
+        freight_usd: g.freight_usd,
+        customs_usd: g.customs_usd,
+        clearance_usd: g.clearance_usd,
+        insurance_usd: g.insurance_usd,
+        total_uplift_usd: g.total_uplift_usd,
+        settled_usd: settled,
+        remaining_usd: round2(g.total_uplift_usd - settled)
+      };
+    }).sort((a, b) => {
+      if (b.files_cnt !== a.files_cnt) return b.files_cnt - a.files_cnt;
+      return b.total_uplift_usd - a.total_uplift_usd;
+    });
+
+    const trdOemFobPayableUsd = round2(oemPayableRows.reduce((a, r) => a + r.billed_fob_usd, 0));
+    const trdOemBackorderUsd = round2(oemPayableRows.reduce((a, r) => a + r.backorder_fob_usd, 0));
+    const trdOemRemainingUsd = round2(oemPayableRows.reduce((a, r) => a + r.remaining_usd, 0));
+    const trdFreightUpliftUsd = round2(freightPayableRows.reduce((a, r) => a + r.total_uplift_usd, 0));
+    const trdFreightRemainingUsd = round2(freightPayableRows.reduce((a, r) => a + r.remaining_usd, 0));
+
     return {
       scopedCompanies,
       salesRows,
@@ -69672,6 +70486,9 @@
       stockRows,
       movementRows,
       reconRows,
+      oemPayableRows,
+      freightPayableRows,
+      frtUpliftDocs,
       unallocatedLandedCount,
       missingLandedCount,
       openWarrantyCount,
@@ -69695,6 +70512,11 @@
         missingLandedCount,
         missingLandedFobUsd,
         totalBackorderQty,
+        trdOemFobPayableUsd,
+        trdOemBackorderUsd,
+        trdOemRemainingUsd,
+        trdFreightUpliftUsd,
+        trdFreightRemainingUsd,
         showroomUnitsCount,
         soldUnitsCount,
         totalUnitsLandedUsd,
@@ -70068,6 +70890,7 @@
     const u = activeUser();
     const trdPurLens = seatLens(u);
     const canTrdPurExp = Boolean(trdPurLens.expenses);
+    const canTrdPurBooks = Boolean(canTrdPurExp && trdPurLens.books);
     const trd = computeTradingOperations();
     const s = trd.summary;
     const hideCo = trd.scopedCompanies.length === 1;
@@ -70410,6 +71233,157 @@
           </table>
         </div>
       </div>
+
+      ${(() => {
+        const qTrd = norm(STATE.search);
+        const matchPayQ = (...vals) => !qTrd || vals.some(v => norm(v).includes(qTrd));
+        let oemList = (trd.oemPayableRows || []).filter(r => {
+          if (f === 'shacman' && r.company !== 'Shacman') return false;
+          if (f === 'korri' && r.company !== 'Korri Auto') return false;
+          return matchPayQ(r.supplier, r.company, r.incoterm_summary);
+        });
+        oemList = regPanelRows('trdOemPayablesPanel', oemList, 'trd_oem_payables');
+        oemList = sortRows(oemList, 'trd_oem_payables', 'files_cnt', 'desc');
+        const shownOem = oemList.slice(0, shownCount('trd_oem_payables'));
+        const sumOemFiles = oemList.reduce((a, r) => a + r.files_cnt, 0);
+        const sumOemFob = round2(oemList.reduce((a, r) => a + r.billed_fob_usd, 0));
+        const sumOemBo = round2(oemList.reduce((a, r) => a + r.backorder_fob_usd, 0));
+        const sumOemSet = round2(oemList.reduce((a, r) => a + r.settled_usd, 0));
+        const sumOemRem = round2(oemList.reduce((a, r) => a + r.remaining_usd, 0));
+
+        let frtList = (trd.freightPayableRows || []).filter(r => {
+          if (f === 'shacman' && r.company !== 'Shacman') return false;
+          if (f === 'korri' && r.company !== 'Korri Auto') return false;
+          return matchPayQ(r.payee, r.company);
+        });
+        frtList = regPanelRows('trdFreightPayablesPanel', frtList, 'trd_freight_payables');
+        frtList = sortRows(frtList, 'trd_freight_payables', 'files_cnt', 'desc');
+        const shownFrt = frtList.slice(0, shownCount('trd_freight_payables'));
+        const sumFrtFiles = frtList.reduce((a, r) => a + r.files_cnt, 0);
+        const sumFrtSea = round2(frtList.reduce((a, r) => a + r.freight_usd, 0));
+        const sumFrtCus = round2(frtList.reduce((a, r) => a + r.customs_usd, 0));
+        const sumFrtClr = round2(frtList.reduce((a, r) => a + r.clearance_usd, 0));
+        const sumFrtIns = round2(frtList.reduce((a, r) => a + r.insurance_usd, 0));
+        const sumFrtTot = round2(frtList.reduce((a, r) => a + r.total_uplift_usd, 0));
+        const sumFrtSet = round2(frtList.reduce((a, r) => a + r.settled_usd, 0));
+        const sumFrtRem = round2(frtList.reduce((a, r) => a + r.remaining_usd, 0));
+        const allowStmt16 = canTrdPurExp && canAccessRdlReport('16');
+        const trdActionBtns = (party, legKey, pId) => allowStmt16 ? `
+          <span class="raw-leg-stmt-actions no-print">
+            <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(party)}" data-stmt-leg="${esc(legKey)}" data-stmt-panel="${esc(pId)}" data-ui-tip="Open Statement 16 (${legKey === 'material' ? 'Direct Supply Leg' : 'Freight &amp; Customs Leg'})" aria-label="Open Statement 16 (${legKey === 'material' ? 'Direct Supply Leg' : 'Freight &amp; Customs Leg'})">${ic('statements')}</button>
+            <button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-sup-stmt="${esc(party)}" data-stmt-leg="${esc(legKey)}" data-stmt-share="1" data-stmt-panel="${esc(pId)}" data-ui-tip="Share Leg Confirmation (WhatsApp / PDF)" aria-label="Share Leg Confirmation (WhatsApp / PDF)">${ic('send_msg')}</button>
+          </span>` : '';
+
+        return `
+          <div class="panel-card" id="trdOemPayablesPanel" style="margin-top:14px">
+            <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+              <div>
+                <div class="panel-title"><span>${ic('suppliers')} OEM VEHICLE &amp; PARTS SUPPLIER PAYABLES · CONTRACT FOB LEG (${fmtNum(oemList.length)})</span></div>
+                <span class="ph-sub">${canTrdPurExp ? 'Factory &amp; spare-parts contract payables separated from third-party ocean freight, customs duty &amp; port clearance (excludes Cancelled; separates Open Backorders)' : 'Restricted by seat permissions'}</span>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${canTrdPurBooks && canEnterForm('settlement', u) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement" data-prefill-leg="quarry">+ OEM Settlement</button>' : ''}
+                ${exportBtn('trdOemPayablesPanel', 'Trading_OEM_Supplier_Payables')}
+              </div>
+            </div>
+            ${renderColFilterBar('trd_oem_payables')}
+            <div class="table-wrap">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    ${th('trd_oem_payables', 'OEM Supplier', 'supplier')}${hideCo ? '' : th('trd_oem_payables', 'Entity', 'company')}${th('trd_oem_payables', 'Terms', 'incoterm_summary')}
+                    ${th('trd_oem_payables', 'Active Files', 'files_cnt', 'r')}${th('trd_oem_payables', 'Contract FOB ($)', 'billed_fob_usd', 'r')}
+                    ${th('trd_oem_payables', 'Backorder ($)', 'backorder_fob_usd', 'r')}${th('trd_oem_payables', 'Settled ($)', 'settled_usd', 'r')}
+                    ${th('trd_oem_payables', 'Remaining ($)', 'remaining_usd', 'r')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shownOem.length ? shownOem.map(r => `
+                    <tr>
+                      <td class="td-raw-leg-party"><strong>${esc(r.supplier)}</strong>${trdActionBtns(r.supplier, 'material', 'trdOemPayablesPanel')}</td>
+                      ${hideCo ? '' : `<td>${coBadge(r.company)}</td>`}
+                      <td><span class="badge badge-neutral">${esc(r.incoterm_summary)}</span></td>
+                      <td class="r mono">${fmtNum(r.files_cnt)}</td>
+                      <td class="r mono">${canTrdPurExp ? fmtUSD(r.billed_fob_usd, 2) : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurExp ? (Math.abs(r.backorder_fob_usd) >= 0.005 ? fmtUSD(r.backorder_fob_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurBooks ? (Math.abs(r.settled_usd) >= 0.005 ? fmtUSD(r.settled_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono ${canTrdPurBooks ? (r.remaining_usd > 0.005 ? 'warn' : 'good') : ''}">${canTrdPurBooks ? `<strong>${fmtUSD(r.remaining_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    </tr>
+                  `).join('') : emptyRow(hideCo ? 7 : 8, 'No OEM supplier payables match current filter')}
+                  ${showMoreRow('trd_oem_payables', oemList.length, hideCo ? 7 : 8)}
+                </tbody>
+                <tfoot>
+                  <tr class="totals-row">
+                    <td colspan="${hideCo ? 2 : 3}"><strong>TOTAL OEM SUPPLIERS (${fmtNum(oemList.length)} SUPPLIERS)</strong></td>
+                    <td class="r mono"><strong>${fmtNum(sumOemFiles)}</strong></td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumOemFob, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumOemBo, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurBooks ? `<strong>${fmtUSD(sumOemSet, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurBooks ? `<strong>${fmtUSD(sumOemRem, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel-card" id="trdFreightPayablesPanel" style="margin-top:14px">
+            <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+              <div>
+                <div class="panel-title"><span>${ic('trd_landed')} THIRD-PARTY FREIGHT, CUSTOMS &amp; CLEARING PAYABLES · LANDED UPLIFT LEG (${fmtNum(frtList.length)})</span></div>
+                <span class="ph-sub">${canTrdPurExp ? 'Deduplicated by import file across ocean/inland freight, customs duty, port clearing &amp; marine insurance (DDP supplier-included files excluded)' : 'Restricted by seat permissions'}</span>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${canTrdPurBooks && canEnterForm('settlement', u) ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-open-modal="settlement" data-prefill-leg="transportation">+ Freight / Clearing Settlement</button>' : ''}
+                ${exportBtn('trdFreightPayablesPanel', 'Trading_Freight_Customs_Payables')}
+              </div>
+            </div>
+            ${renderColFilterBar('trd_freight_payables')}
+            <div class="table-wrap">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    ${th('trd_freight_payables', 'Freight / Customs Payee', 'payee')}${hideCo ? '' : th('trd_freight_payables', 'Entity', 'company')}${th('trd_freight_payables', 'Files', 'files_cnt', 'r')}
+                    ${th('trd_freight_payables', 'Sea / Inland Freight ($)', 'freight_usd', 'r')}${th('trd_freight_payables', 'Customs Duty ($)', 'customs_usd', 'r')}
+                    ${th('trd_freight_payables', 'Clearing ($)', 'clearance_usd', 'r')}${th('trd_freight_payables', 'Insurance ($)', 'insurance_usd', 'r')}
+                    ${th('trd_freight_payables', 'Total Uplift ($)', 'total_uplift_usd', 'r')}${th('trd_freight_payables', 'Settled ($)', 'settled_usd', 'r')}
+                    ${th('trd_freight_payables', 'Remaining ($)', 'remaining_usd', 'r')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shownFrt.length ? shownFrt.map(r => `
+                    <tr>
+                      <td class="td-raw-leg-party"><strong>${esc(r.payee)}</strong>${trdActionBtns(r.payee, 'transport', 'trdFreightPayablesPanel')}</td>
+                      ${hideCo ? '' : `<td>${coBadge(r.company)}</td>`}
+                      <td class="r mono">${fmtNum(r.files_cnt)}</td>
+                      <td class="r mono">${canTrdPurExp ? (Math.abs(r.freight_usd) >= 0.005 ? fmtUSD(r.freight_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurExp ? (Math.abs(r.customs_usd) >= 0.005 ? fmtUSD(r.customs_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurExp ? (Math.abs(r.clearance_usd) >= 0.005 ? fmtUSD(r.clearance_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurExp ? (Math.abs(r.insurance_usd) >= 0.005 ? fmtUSD(r.insurance_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(r.total_uplift_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono">${canTrdPurBooks ? (Math.abs(r.settled_usd) >= 0.005 ? fmtUSD(r.settled_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
+                      <td class="r mono ${canTrdPurBooks ? (r.remaining_usd > 0.005 ? 'warn' : 'good') : ''}">${canTrdPurBooks ? `<strong>${fmtUSD(r.remaining_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    </tr>
+                  `).join('') : emptyRow(hideCo ? 9 : 10, 'No third-party freight or customs payables match current filter')}
+                  ${showMoreRow('trd_freight_payables', frtList.length, hideCo ? 9 : 10)}
+                </tbody>
+                <tfoot>
+                  <tr class="totals-row">
+                    <td colspan="${hideCo ? 1 : 2}"><strong>TOTAL FREIGHT &amp; CUSTOMS (${fmtNum(frtList.length)} STREAMS)</strong></td>
+                    <td class="r mono"><strong>${fmtNum(sumFrtFiles)}</strong></td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumFrtSea, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumFrtCus, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumFrtClr, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumFrtIns, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurExp ? `<strong>${fmtUSD(sumFrtTot, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurBooks ? `<strong>${fmtUSD(sumFrtSet, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canTrdPurBooks ? `<strong>${fmtUSD(sumFrtRem, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        `;
+      })()}
       ${renderSiblingHubChartsRow({
         id: 'trdPurchChartsRow',
         panelId: 'trdPurchasesPanel',
@@ -85262,7 +86236,7 @@
     cancelNearCopyLiveCheck();
     cancelDomainNearCopyLiveCheck();
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetDomainScanState === 'function') {
-      window.MFG_SMART_SCAN.resetDomainScanState();
+      window.MFG_SMART_SCAN.resetDomainScanState({ fromClose: true });
     }
     FORM_UI.domainNearCopyPeekItems = [];
     FORM_UI.domainFifoSplitPreview = null;
@@ -85820,6 +86794,7 @@
         ${fldWrap('Freight Basis (Incoterm) *', `<select id="ide_incoterm" data-plain-options="1" style="${inpStyle}">${incoOpts.map(o => `<option value="${o.v}" ${defInco === o.v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>`, `<span id="ideIncotermHint">${esc(defIncoHint)}</span>`)}
         ${fldWrap('Supplier Contract Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defAdd)}">`)}
+        ${fldWrap('Clearing / Freight Agent', `<input type="text" id="ide_freight_vendor" style="${inpStyle}" value="${esc(prefill.freight_vendor || '')}" placeholder="Optional 3rd-party forwarder or broker">`, 'Separates freight/customs AP from OEM factory AP')}
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
     } else if (spec.key === 'trd_trucks') {
@@ -86029,6 +87004,10 @@
     modal._currentDomainSpec = spec;
     modal._currentDomainInd = ind;
     modal._getPendingDomainFiles = () => pendingDomainFiles;
+    modal._clearScanPendingDomainFiles = () => {
+      pendingDomainFiles = pendingDomainFiles.filter(f => !(f && f._fromSmartScan));
+      if (typeof modal._renderPendingDomainAtts === 'function') modal._renderPendingDomainAtts();
+    };
     modal._addPendingDomainFile = (fileObj) => {
       if (fileObj) {
         pendingDomainFiles.push(fileObj);
@@ -86058,7 +87037,7 @@
     const indScanBarHtml = isEditMode ? '' : `
       <div class="mob-ai-quick-bar no-print" id="indMobAiQuickBar">
         <span class="mob-ai-qhint">${ic('sparkles')} <span>AI Auto-Fill · Drop or paste a slip or PDF anywhere</span></span>
-        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span><span class="ss-qbar-step-pill" id="indMobAiStepPill" hidden></span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
       </div>
@@ -87745,6 +88724,7 @@
         const add = numVal('ide_landed_add');
         const savedSup = strVal('ide_supplier') || 'OEM Export Supplier';
         const savedOrig = strVal('ide_origin') || 'Qingdao Port';
+        const savedFrtVendor = strVal('ide_freight_vendor');
         const savedInco = detectTradingIncoterm({ incoterm: strVal('ide_incoterm') });
         const impStatus = rec <= 0
           ? 'Ordered'
@@ -87761,6 +88741,7 @@
             origin: savedOrig,
             container_bl: strVal('ide_bl') || 'BL-2026',
             incoterm: savedInco,
+            freight_vendor: savedFrtVendor,
             ordered_qty: ord,
             received_qty: rec,
             backorder_qty: Math.max(0, ord - rec),
@@ -87777,6 +88758,7 @@
             supplier: savedSup,
             origin: savedOrig,
             container_bl: strVal('ide_bl') || 'BL-2026',
+            freight_vendor: savedFrtVendor,
             ordered_qty: ord,
             received_qty: rec,
             backorder_qty: Math.max(0, ord - rec),
@@ -88268,34 +89250,56 @@
       const afterIndTarget = pendingAfterSave;
       _indPostAfterSaveTarget = null;
       formEl._rateImpactAfterIndTarget = null;
-      hideIndUnsavedPrompt();
-      closeIndustryDomainEntryModal(true);
-      renderApp();
-      syncWithCloud(true);
-      toast((isEditMode && !keptSplit) ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
-      if (keptSplit) toast(chronoKeptPeriodToastText(keptSplit), 'ok');
+      const _hasQueueOnDomSave = Boolean(
+        !isEditMode
+        && window.MFG_SMART_SCAN
+        && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function'
+        && window.MFG_SMART_SCAN.hasActiveSlipQueue()
+      );
+      let _domQueueToken = _hasQueueOnDomSave ? window.MFG_SMART_SCAN.beginQueuePostTransition() : null;
+      try {
+        hideIndUnsavedPrompt();
+        closeIndustryDomainEntryModal(true);
+        renderApp();
+        syncWithCloud(true);
+        toast((isEditMode && !keptSplit) ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
+        if (keptSplit) toast(chronoKeptPeriodToastText(keptSplit), 'ok');
 
-      if (afterIndTarget && afterIndTarget.type && afterIndTarget.type !== 'close') {
-        if (afterIndTarget.type === 'dom_form' && afterIndTarget.formKey) {
-          openIndustryDomainEntryModal(afterIndTarget.formKey);
-        } else if (afterIndTarget.type === 'shared_group') {
-          openEntryModal(afterIndTarget.targetForm || 'expense', null, { groupId: afterIndTarget.groupId, label: afterIndTarget.label || '' });
-        } else if (afterIndTarget.type === 'shared_univ') {
-          openEntryModal(afterIndTarget.targetForm || 'customer', null, { groupId: 'univ_' + afterIndTarget.bucket, label: afterIndTarget.label || '' });
+        if (!_domQueueToken && afterIndTarget && afterIndTarget.type && afterIndTarget.type !== 'close') {
+          if (afterIndTarget.type === 'dom_form' && afterIndTarget.formKey) {
+            openIndustryDomainEntryModal(afterIndTarget.formKey);
+          } else if (afterIndTarget.type === 'shared_group') {
+            openEntryModal(afterIndTarget.targetForm || 'expense', null, { groupId: afterIndTarget.groupId, label: afterIndTarget.label || '' });
+          } else if (afterIndTarget.type === 'shared_univ') {
+            openEntryModal(afterIndTarget.targetForm || 'customer', null, { groupId: 'univ_' + afterIndTarget.bucket, label: afterIndTarget.label || '' });
+          }
         }
-      }
 
-      if (filesToAttach.length > 0) {
-        const domCrKey = inferDomainTblKey(ind, spec.key, recId);
-        await attachFilesToDomainRecord({
-          crKey: domCrKey,
-          primaryId: recId,
-          company: co,
-          ind,
-          date: dtGuess,
-          counterparty: partyGuess,
-          amount: amtGuess
-        }, filesToAttach, filesToAttach[0]._captureMethod || 'File Upload');
+        if (filesToAttach.length > 0) {
+          const domCrKey = inferDomainTblKey(ind, spec.key, recId);
+          await attachFilesToDomainRecord({
+            crKey: domCrKey,
+            primaryId: recId,
+            company: co,
+            ind,
+            date: dtGuess,
+            counterparty: partyGuess,
+            amount: amtGuess
+          }, filesToAttach, filesToAttach[0]._captureMethod || 'File Upload');
+        }
+
+        if (_domQueueToken && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.completeQueuePostTransition === 'function') {
+          const doneDomTok = _domQueueToken;
+          _domQueueToken = null;
+          await window.MFG_SMART_SCAN.completeQueuePostTransition(doneDomTok);
+        }
+      } finally {
+        if (_domQueueToken && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.revertQueuePostTransition === 'function') {
+          await window.MFG_SMART_SCAN.revertQueuePostTransition(_domQueueToken, {
+            reopen: Boolean($('indDomainEntryModal') && $('indDomainEntryModal').hidden)
+          });
+          _domQueueToken = null;
+        }
       }
     };
 
@@ -88367,6 +89371,9 @@
       if (vBtn) {
         vBtn.classList.toggle('is-open', voiceOn);
         vBtn.setAttribute('aria-expanded', voiceOn ? 'true' : 'false');
+      }
+      if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.syncIndMobAiStepPill === 'function') {
+        window.MFG_SMART_SCAN.syncIndMobAiStepPill();
       }
     };
     modal._syncIndMobAiUi = syncIndMobAiUi;
@@ -88447,6 +89454,9 @@
     modal._domDirty = false;
     modal.hidden = false;
     _auxModalDirty = false;
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.mountOnDomainModal === 'function') {
+      window.MFG_SMART_SCAN.mountOnDomainModal();
+    }
     if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
@@ -107817,6 +108827,7 @@
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastSettleSupplier: '', lastDupSig: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
+    unpricedSiteCtx: null,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
 
@@ -115475,7 +116486,8 @@
     const subLegFilter = !supplier ? 'all' : (payableLeg === 'quarry' ? 'material' : (payableLeg === 'transportation' ? 'haulage' : 'expense'));
     if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, subLegFilter);
     if (supplier && isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0) {
-      setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${supZeroRawCnt > 0 ? ` (${fmtNum(supZeroRawCnt)} raw loads at $0.00)` : ''}`, 'warn');
+      const trdSettleHint = getActiveIndustry(settleCo) === 'Automotive & Heavy Trading' ? ' · Add BL #, LC #, or Import File # for advances' : '';
+      setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${supZeroRawCnt > 0 ? ` (${fmtNum(supZeroRawCnt)} raw loads at $0.00)` : ''}${trdSettleHint}`, 'warn');
     } else if (before != null && totRelief > before + 0.005) {
       setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
     } else {
@@ -117088,6 +118100,66 @@
     };
   }
 
+  function daysBetweenIso(fromIso, toIso) {
+    const a = String(fromIso || '').slice(0, 10);
+    const b = String(toIso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return 0;
+    const msA = Date.parse(a + 'T00:00:00Z');
+    const msB = Date.parse(b + 'T00:00:00Z');
+    if (!Number.isFinite(msA) || !Number.isFinite(msB)) return 0;
+    return Math.max(0, Math.floor((msB - msA) / 86400000));
+  }
+
+  function buildTradingShipmentRefIndex(targetCo) {
+    const tokens = new Set();
+    const addTok = v => {
+      const s = String(v == null ? '' : v).trim().toLowerCase();
+      if (s.length >= 4 && !/^(none|null|n\/a|tbd|tbc|pending)$/i.test(s)) tokens.add(s);
+    };
+    if (typeof computeTradingOperations === 'function') {
+      const trd = computeTradingOperations({ company: targetCo, ignorePeriod: true, ignoreSearch: true });
+      if (trd) {
+        (trd.importRows || []).forEach(r => { if (r) { addTok(r.id); addTok(r.container_bl); addTok(r.bl_no); } });
+        (trd.landedRows || []).forEach(r => { if (r) { addTok(r.import_file); addTok(r.bl_no); } });
+        (trd.grnRows || []).forEach(r => { if (r) addTok(r.import_file); });
+      }
+    }
+    return Array.from(tokens).sort((a, b) => b.length - a.length);
+  }
+
+  function hasTradingShipmentLink(sp, refTokens) {
+    if (!sp) return { linked: false, token: '' };
+    const explicitField = String(sp.bl_no || sp.lc_no || sp.import_file || '').trim();
+    const combined = [sp.reference, sp.import_file, sp.bl_no, sp.lc_no, sp.notes].filter(Boolean).join(' · ');
+    if (explicitField && explicitField.length >= 3) return { linked: true, token: explicitField };
+    if (!combined) return { linked: false, token: '' };
+    const patMatch = combined.match(/\b(?:B\/L|BL|BOL|AWB|L\/C|LC|IMP|SHIP(?:MENT)?|CONT(?:AINER)?|BOE|BAYAN)\s*(?:NO\.?|#|[:\-])\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i)
+      || combined.match(/\b((?:IMP|BL|LC)-[A-Z0-9][A-Z0-9\-]{2,})\b/i)
+      || combined.match(/\b([A-Z]{4}\d{7})\b/)
+      || combined.match(/(?:بوليصة|اعتماد|بيان جمركي|حاوية|ملف استيراد)\s*[:#\-]?\s*([^\s·,|]{2,})/);
+    if (patMatch) {
+      const patTok = String(patMatch[1] || patMatch[0] || '').trim();
+      if (patTok && !/^(none|null|n\/a|na|tbd|tbc|pending|nil|unknown)$/i.test(patTok)) {
+        return { linked: true, token: patTok };
+      }
+    }
+    if (Array.isArray(refTokens) && refTokens.length) {
+      const low = combined.toLowerCase();
+      for (let i = 0; i < refTokens.length; i++) {
+        const tk = refTokens[i];
+        const idx = low.indexOf(tk);
+        if (idx >= 0) {
+          const prevCh = idx > 0 ? low[idx - 1] : ' ';
+          const nextCh = idx + tk.length < low.length ? low[idx + tk.length] : ' ';
+          if (!/[a-z0-9]/.test(prevCh) && !/[a-z0-9]/.test(nextCh)) {
+            return { linked: true, token: combined.slice(idx, idx + tk.length) };
+          }
+        }
+      }
+    }
+    return { linked: false, token: '' };
+  }
+
   // Overpaid & Unbacked Payables Sentinel (S20, Rule #32): deterministic across all 6 industries (Hard Rule 15)
   function getOverpaidPayablesSentinelData(opts = {}) {
     if (!SEED || !SEED._recordsReady) return null;
@@ -117096,6 +118168,7 @@
     const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
     const activeInd = (typeof getActiveIndustry === 'function' ? getActiveIndustry(targetCo) : 'Manufacturing') || 'Manufacturing';
     const isMfg = activeInd === 'Manufacturing';
+    const isTrd = activeInd === 'Automotive & Heavy Trading';
     if (!lens.expenses || (!lens.books && !lens.sentinels && typeof canViewView === 'function' && !canViewView('suppliers', u))) {
       return {
         restricted: true, isMfg, industry: activeInd, company: targetCo,
@@ -117103,6 +118176,7 @@
         supOverpaidCount: 0, siteOverpaidCount: 0, unpricedSiteCount: 0,
         unpricedLoadsCount: 0, supOverpaidUsd: 0, siteOverpaidUsd: 0,
         totalOverpaidUsd: 0, matOverpaidUsd: 0, transOverpaidUsd: 0, expOverpaidUsd: 0,
+        trdUnlinkedBlCount: 0, trdUnlinkedBlUsd: 0, trdUnlinkedDays: 30, trdUnlinkedVouchers: [],
         bySupNorm: new Map(), bySiteNorm: new Map(), unpricedBySupNorm: new Map(), unpricedBySiteNorm: new Map()
       };
     }
@@ -117112,13 +118186,15 @@
     const offScope = isOfficialScopeActive(u);
     const minUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
     const critUsd = Math.max(minUsd, Number(getAlertParam('S20', 'crit_overpaid_usd', 5000)) || 5000);
+    const unlinkedWindowDays = Math.max(1, Number(getAlertParam('S20', 'unlinked_bl_days', 30)) || 30);
+    const refTodayIso = todayISO();
     const key = [
-      SEED._customRev || 0, STATE._customRev || 0, _GLOBAL_RATES_REV,
+      SEED._customRev || 0, STATE._customRev || 0, STATE._indRev || 0, _GLOBAL_RATES_REV,
       (recs.raw_purchases || []).length, (recs.sales_tickets || []).length,
       (recs.expenses || []).length, (recs.recurring_expenses || []).length,
       (recs.settlements || []).length, (recs.suppliers || []).length, (recs.sites || []).length,
       targetCo, allowed.join(','), offScope ? 1 : 0, _ALERT_RULES_REV,
-      minUsd, critUsd, (u && (u.id || u.email)) || '', String((u && u.role) || ''),
+      minUsd, critUsd, unlinkedWindowDays, isTrd ? refTodayIso : '', (u && (u.id || u.email)) || '', String((u && u.role) || ''),
       String((u && u.book_scope) || ''), `${lens.expenses ? 1 : 0}:${lens.books ? 1 : 0}:${lens.sentinels ? 1 : 0}`,
       activeInd
     ].join('|');
@@ -117126,6 +118202,8 @@
     _opSentinelScans += 1;
 
     const brk = computeThreeLegPayablesBreakdown({ company: targetCo, ignorePeriod: true, user: u });
+    const trdRefTokens = isTrd ? buildTradingShipmentRefIndex(targetCo) : [];
+    const bySupSettles = isTrd ? new Map() : null;
     const indTargetSet = targetCo.startsWith('industry:')
       ? new Set(getCompanyCatalog().filter(x => (x.industry || 'Manufacturing') === targetCo.slice(9)).map(x => x.name))
       : null;
@@ -117276,6 +118354,16 @@
       if (!sp || sp.voided || sp.wb_lbp_paid != null || !isCoInScope(sp.company)) return;
       if (offScope && !isOfficialRecord(sp, 'settlements')) return;
       noteSupTx(sp.supplier, sp.company, sp.rep_date || sp.date);
+      if (isTrd && bySupSettles) {
+        const mthTrd = String(sp.method || 'Payment').trim();
+        if (mthTrd !== 'JV Adjusted' && mthTrd !== 'Remove' && mthTrd !== 'Adjusted' && mthTrd !== 'Free' && mthTrd !== 'VAT' && mthTrd !== 'VATConfig' && mthTrd !== 'VAT Dis' && mthTrd !== 'Cash VAT Dis' && mthTrd !== 'IVA' && mthTrd !== 'Commission') {
+          const snTrd = normSupPayable(sp.supplier);
+          if (snTrd) {
+            if (!bySupSettles.has(snTrd)) bySupSettles.set(snTrd, []);
+            bySupSettles.get(snTrd).push(sp);
+          }
+        }
+      }
       if (!isMfg) return;
       const mth = String(sp.method || '').trim();
       if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission') return;
@@ -117299,7 +118387,9 @@
 
     const rows = [];
     const bySupNorm = new Map();
+    const trdUnlinkedVouchers = [];
     let matOverpaidUsd = 0, transOverpaidUsd = 0, expOverpaidUsd = 0;
+    let trdUnlinkedBlCount = 0, trdUnlinkedBlUsd = 0;
     const defaultCoLbl = COMPANY_BU_MATCH[targetCo] || (indTargetSet ? activeInd : (targetCo === 'manufacturing-group' ? 'WTC / BBC' : targetCo));
     (brk && brk.rows ? brk.rows : []).forEach(r => {
       const qOver = (isMfg && r.quarry_rem < -0.005) ? round2(-r.quarry_rem) : 0;
@@ -117323,7 +118413,51 @@
       expOverpaidUsd = round2(expOverpaidUsd + eOver);
       const uInfo = unpricedBySupNorm.get(r.key);
       const unpLoads = uInfo ? uInfo.loads : 0;
-      const flagType = unpLoads > 0 ? 'Paid on $0 Loads' : (accruedUsd <= 0.005 ? 'Zero Credit Settled' : 'Overpaid Leg AP');
+      let flagType = unpLoads > 0 ? 'Paid on $0 Loads' : (accruedUsd <= 0.005 ? 'Zero Credit Settled' : 'Overpaid Leg AP');
+      let unlinkedBlUsd = 0, unlinkedBlCount = 0, maxUnlinkedDays = 0, firstLinkedToken = '', sampleUnlinkedSettleId = '';
+      if (isTrd && bySupSettles) {
+        const supList = (bySupSettles.get(r.key) || []).slice().sort((a, b) =>
+          String(b.rep_date || b.date || '').localeCompare(String(a.rep_date || a.date || ''))
+          || String(b.id || '').localeCompare(String(a.id || ''))
+        );
+        let remExcess = overpaidUsd;
+        for (let si = 0; si < supList.length && remExcess > 0.005; si++) {
+          const sp = supList[si];
+          const spAmt = round2(Number(sp.amount || 0) + Number(sp.discount || 0));
+          if (spAmt <= 0.005) continue;
+          const sliceUsd = round2(Math.min(remExcess, spAmt));
+          remExcess = round2(remExcess - sliceUsd);
+          const spDate = String(sp.rep_date || sp.date || '').slice(0, 10);
+          const ageDays = daysBetweenIso(spDate, refTodayIso);
+          const linkInfo = hasTradingShipmentLink(sp, trdRefTokens);
+          if (!linkInfo.linked && ageDays > unlinkedWindowDays) {
+            unlinkedBlUsd = round2(unlinkedBlUsd + sliceUsd);
+            unlinkedBlCount += 1;
+            if (ageDays > maxUnlinkedDays) maxUnlinkedDays = ageDays;
+            if (!sampleUnlinkedSettleId && sp.id) sampleUnlinkedSettleId = String(sp.id);
+            trdUnlinkedVouchers.push({
+              id: sp.id || '',
+              name: sp.name || sp.id || '',
+              company: sp.company || defaultCoLbl,
+              supplier: r.supplier,
+              date: spDate,
+              age_days: ageDays,
+              unlinked_usd: sliceUsd,
+              amount_usd: spAmt,
+              notes: sp.notes || ''
+            });
+          } else if (linkInfo.linked && !firstLinkedToken) {
+            firstLinkedToken = linkInfo.token;
+          }
+        }
+        if (unlinkedBlUsd > 0.005) {
+          flagType = `Unlinked BL/LC (>${unlinkedWindowDays}d)`;
+          trdUnlinkedBlCount += unlinkedBlCount;
+          trdUnlinkedBlUsd = round2(trdUnlinkedBlUsd + unlinkedBlUsd);
+        } else if (firstLinkedToken && accruedUsd <= 0.005) {
+          flagType = 'Linked BL/LC Advance';
+        }
+      }
       const supObj = supMetaMap.get(r.key) || null;
       const co = (supObj && supObj.company) || coBySup.get(r.key) || defaultCoLbl;
       const row = {
@@ -117342,12 +118476,18 @@
         t_over: tOver,
         e_over: eOver,
         unpriced_loads: unpLoads,
+        unlinked_bl_usd: unlinkedBlUsd,
+        unlinked_bl_count: unlinkedBlCount,
+        unlinked_bl_days: maxUnlinkedDays,
+        linked_bl_ref: firstLinkedToken,
+        sample_unlinked_settle_id: sampleUnlinkedSettleId,
         last_tx: lastTxBySup.get(r.key) || SEED_DATE
       };
       rows.push(row);
       bySupNorm.set(r.key, row);
     });
     rows.sort((a, b) => (b.overpaid_usd - a.overpaid_usd) || (b.unpriced_loads - a.unpriced_loads) || a.supplier.localeCompare(b.supplier));
+    trdUnlinkedVouchers.sort((a, b) => (b.unlinked_usd - a.unlinked_usd) || (b.age_days - a.age_days));
 
     const siteRows = [];
     const bySiteNorm = new Map();
@@ -117401,6 +118541,10 @@
       matOverpaidUsd,
       transOverpaidUsd,
       expOverpaidUsd,
+      trdUnlinkedBlCount,
+      trdUnlinkedBlUsd,
+      trdUnlinkedDays: unlinkedWindowDays,
+      trdUnlinkedVouchers,
       bySupNorm,
       bySiteNorm,
       unpricedBySupNorm,
@@ -117419,8 +118563,13 @@
   function buildOverpaidSentinelItem(opSnOff, opSn, scope, activeInd) {
     if (opSn && opSn.restricted) return null;
     const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const isTrd = activeInd === 'Automotive & Heavy Trading';
     const hasAlert = Boolean(!opSnOff && opSn && (opSn.supOverpaidCount > 0 || (isMfg && opSn.siteOverpaidCount > 0)));
-    const isCrit = Boolean(!opSnOff && opSn && (opSn.supOverpaidUsd >= opSn.critUsd || (isMfg && opSn.siteOverpaidUsd >= opSn.critUsd)));
+    const isCrit = Boolean(!opSnOff && opSn && (
+      opSn.supOverpaidUsd >= opSn.critUsd
+      || (isMfg && opSn.siteOverpaidUsd >= opSn.critUsd)
+      || (isTrd && opSn.trdUnlinkedBlCount > 0)
+    ));
     const leadSup = (opSn && opSn.rows[0]) || null;
     const leadSite = (opSn && isMfg && opSn.siteRows[0]) || null;
     const minStr = fmtUSD((opSn && opSn.minUsd) || getAlertParam('S20', 'min_overpaid_usd', 100), 0);
@@ -117436,8 +118585,11 @@
           : (leadSite ? ` Top site: ${leadSite.site} (${fmtUSD(leadSite.overpaid_usd, 0)} overpaid).` : '');
         detail = `${fmtNum(opSn.supOverpaidCount)} supplier${opSn.supOverpaidCount === 1 ? '' : 's'} paid ${fmtUSD(opSn.supOverpaidUsd, 2)} above accrued credit (threshold >= ${minStr})${sitePart}${unpPart}.${topPart}`;
       } else {
+        const blPart = (isTrd && opSn.trdUnlinkedBlCount > 0)
+          ? ` · ${fmtNum(opSn.trdUnlinkedBlCount)} unlinked BL/LC advance${opSn.trdUnlinkedBlCount === 1 ? '' : 's'} >${fmtNum(opSn.trdUnlinkedDays || 30, 0)}d (${fmtUSD(opSn.trdUnlinkedBlUsd, 0)})`
+          : '';
         const topPart = leadSup ? ` Top counterparty: ${leadSup.supplier} (${fmtUSD(leadSup.overpaid_usd, 0)} overpaid).` : '';
-        detail = `${fmtNum(opSn.supOverpaidCount)} supplier${opSn.supOverpaidCount === 1 ? '' : 's'} paid ${fmtUSD(opSn.supOverpaidUsd, 2)} above accrued ${activeInd} credit (threshold >= ${minStr}).${topPart}`;
+        detail = `${fmtNum(opSn.supOverpaidCount)} supplier${opSn.supOverpaidCount === 1 ? '' : 's'} paid ${fmtUSD(opSn.supOverpaidUsd, 2)} above accrued ${activeInd} credit (threshold >= ${minStr})${blPart}.${topPart}`;
       }
     } else {
       detail = `All cumulative supplier${isMfg ? ' and site' : ''} settlement totals sit within accrued payable credit (tolerance < ${minStr}).`;
@@ -133435,6 +134587,22 @@
       }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
+      const _hasQueueOnEntrySave = Boolean(
+        !isEditingExisting
+        && !isUpdatingPending
+        && !keepOpenNextDay
+        && window.MFG_SMART_SCAN
+        && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function'
+        && window.MFG_SMART_SCAN.hasActiveSlipQueue()
+      );
+      let entryQToken = null;
+      const revertEntryQToken = async (reopen = false) => {
+        if (entryQToken && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.revertQueuePostTransition === 'function') {
+          const rTok = entryQToken;
+          entryQToken = null;
+          await window.MFG_SMART_SCAN.revertQueuePostTransition(rTok, { reopen: Boolean(reopen) });
+        }
+      };
       if (keepOpenNextDay) {
         if (sBtn) { sBtn.disabled = false; sBtn.textContent = 'Post'; }
         if (nBtn) { nBtn.disabled = false; }
@@ -133458,7 +134626,7 @@
         recalcForm();
         FORM_UI.userInteracted = false;
         FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
-      } else if (afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
+      } else if (!_hasQueueOnEntrySave && afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
           const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
           if (nextPf) {
@@ -133501,6 +134669,9 @@
           closeEntryModal(true);
         }
       } else {
+        if (!isEditingExisting && !isUpdatingPending && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function' && window.MFG_SMART_SCAN.hasActiveSlipQueue()) {
+          entryQToken = window.MFG_SMART_SCAN.beginQueuePostTransition();
+        }
         closeEntryModal(true);
       }
       const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
@@ -133560,12 +134731,14 @@
         const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
         if (mainPostRes && mainPostRes.blockedSameName) {
           rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
+          await revertEntryQToken(true);
           return;
         }
         if (isServerRejectRes(mainPostRes)) {
           const rejectMsg = await extractServerRejectMsg(mainPostRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          await revertEntryQToken(true);
           return;
         }
         let extraPostRes = { ok: true, postedPairs: [], postedResults: [] };
@@ -133578,6 +134751,7 @@
         if (extraPostRes && extraPostRes.blockedSameName) {
           await compensateMainRecordSave(extraPostRes);
           rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
+          await revertEntryQToken(true);
           return;
         }
         if (isServerRejectRes(extraPostRes)) {
@@ -133585,6 +134759,7 @@
           const rejectMsg = await extractServerRejectMsg(extraPostRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          await revertEntryQToken(true);
           return;
         }
         const geoPostResults = (modalDeferredGeoPushes.length || modalGeoSavePromises.length)
@@ -133596,6 +134771,7 @@
           const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          await revertEntryQToken(true);
           return;
         }
       } else if (modalDeferredGeoPushes.length || modalGeoSavePromises.length) {
@@ -133608,11 +134784,18 @@
           const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          await revertEntryQToken(true);
           return;
         }
       }
       syncWithCloud(true);
+      if (entryQToken && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.completeQueuePostTransition === 'function') {
+        const doneTok = entryQToken;
+        entryQToken = null;
+        await window.MFG_SMART_SCAN.completeQueuePostTransition(doneTok);
+      }
     } finally {
+      if (typeof revertEntryQToken === 'function') await revertEntryQToken(true);
       STATE.saving = false;
     }
   }
@@ -136321,6 +137504,220 @@
     'logistics', 'freelance'
   ]);
 
+  function resolveUnpricedSitePrefill(siteRaw, opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    if (!canEnterForm('pricerule_raw')) return null;
+    const targetSk = normSiteMatch(siteRaw);
+    if (!targetSk || String(siteRaw || '').trim().startsWith('(')) return null;
+
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const isCoAllowed = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (buTarget && c !== buTarget) return false;
+      return true;
+    };
+
+    const recs = SEED.records || {};
+    let canonSite = cleanSiteLabel(siteRaw);
+    (recs.sites || []).some(st => {
+      if (st && !st.voided && st.name && normSiteMatch(st.name) === targetSk) {
+        canonSite = cleanSiteLabel(st.name);
+        return true;
+      }
+      return false;
+    });
+    const supCanonByNorm = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supCanonByNorm.has(sn)) supCanonByNorm.set(sn, String(s.name).trim());
+    });
+
+    const groups = new Map();
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoAllowed(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      if (Number(rp.cost || 0) !== 0) continue;
+      if (normSiteMatch(rp.site) !== targetSk) continue;
+      const soNorm = normSupPayable(rp.site_owner);
+      const coNorm = normSupPayable(rp.company);
+      if (!soNorm || soNorm === 'excluded' || soNorm === 'none' || soNorm === coNorm) continue;
+
+      const co = String(rp.company || 'WTC');
+      const supName = supCanonByNorm.get(soNorm) || String(rp.site_owner || '').trim();
+      const prodName = String(rp.product || '').trim();
+      const prodObj = prodName ? productInfo(prodName) : null;
+      const uom = String(rp.uom || (prodObj && prodObj.uom) || 'm³').trim();
+      const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+      const q = ticketProductQty(rp);
+      const gKey = `${norm(co)}|${soNorm}|${norm(prodName)}|${norm(uom)}`;
+      let g = groups.get(gKey);
+      if (!g) {
+        g = {
+          gradeKey: gKey,
+          company: co,
+          supplier: supName,
+          product: prodName,
+          uom,
+          loads: 0,
+          qty: 0,
+          earliestDate: dt || todayISO()
+        };
+        groups.set(gKey, g);
+      }
+      g.loads += 1;
+      g.qty = round2(g.qty + q);
+      if (dt && (!g.earliestDate || dt < g.earliestDate)) g.earliestDate = dt;
+    }
+
+    const grades = Array.from(groups.values()).sort((a, b) =>
+      (b.loads - a.loads) || (b.qty - a.qty) || String(a.earliestDate || '').localeCompare(String(b.earliestDate || ''))
+    );
+    grades.forEach(g => {
+      let effStart = g.earliestDate || todayISO();
+      let clampedFrom = '';
+      if (typeof getChronologicalSeriesBounds === 'function') {
+        const bounds = getChronologicalSeriesBounds('price_rules', {
+          company: g.company,
+          rule_type: 'Purchase Price (Site)',
+          site: canonSite,
+          supplier: g.supplier,
+          product: g.product
+        }, null);
+        if (bounds && bounds.minStart && bounds.minStart > effStart) {
+          clampedFrom = effStart;
+          effStart = bounds.minStart;
+        }
+      }
+      g.earliestRawDate = g.earliestDate || '';
+      g.startdate = effStart;
+      g.clampedFrom = clampedFrom;
+    });
+
+    if (!grades.length) {
+      const sInf = siteInfo(canonSite, 'raw') || {};
+      return {
+        site: canonSite,
+        company: defaultEntryCompany(),
+        co: defaultEntryCompany(),
+        supplier: String(sInf.supplier || '').trim(),
+        product: '',
+        prod: '',
+        uom: 'm³',
+        startdate: todayISO(),
+        earliestRawDate: '',
+        loads: 0,
+        qty: 0,
+        grades: []
+      };
+    }
+
+    const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey)) || grades[0];
+    return {
+      site: canonSite,
+      company: chosen.company,
+      co: chosen.company,
+      supplier: chosen.supplier,
+      product: chosen.product,
+      prod: chosen.product,
+      uom: chosen.uom,
+      startdate: chosen.startdate,
+      earliestRawDate: chosen.earliestRawDate,
+      clampedFrom: chosen.clampedFrom,
+      loads: chosen.loads,
+      qty: chosen.qty,
+      grades
+    };
+  }
+
+  function openSetUnpricedSitePriceModal(siteName, opts = {}) {
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return false;
+    if (opts && opts.transportOnly) {
+      if (!canEnterForm('pricerule_haul')) {
+        toast('Purchase agreement permission required to set site prices', 'err');
+        return false;
+      }
+      const cleanSt = cleanSiteLabel(siteName);
+      if (!cleanSt || String(cleanSt).startsWith('(')) return false;
+      const haulerSiteInfo = siteInfo(cleanSt, 'raw') || {};
+      const canonSt = haulerSiteInfo.name ? cleanSiteLabel(haulerSiteInfo.name) : cleanSt;
+      const co = (opts.company && allowedCompanyNames().includes(opts.company)) ? opts.company : defaultEntryCompany();
+      const supVal = String(opts.supplier || '').trim();
+      const prodVal = String(opts.product || '').trim();
+      let rawEarliest = String(opts.earliestDate || '').slice(0, 10);
+      let haulUom = String(opts.uom || '').trim();
+      const canonSk = normSiteMatch(canonSt);
+      const allRaws = (SEED && SEED.records && Array.isArray(SEED.records.raw_purchases)) ? SEED.records.raw_purchases : [];
+      for (let i = 0; i < allRaws.length; i++) {
+        const rp = allRaws[i];
+        if (!rp || rp.voided || normSiteMatch(rp.site) !== canonSk) continue;
+        if (co && rp.company && norm(rp.company) !== norm(co)) continue;
+        if (!rp.truck_owner || (supVal && norm(rp.truck_owner) !== norm(supVal))) continue;
+        if (/^company/i.test(String(rp.transport_by || '')) || /^supplier-delivered$/i.test(String(rp.transport_by || '')) || rp.includes_transport) continue;
+        if (String(rp.method || 'Credit').trim() !== 'Credit' || Number(rp.trans_cost || 0) !== 0) continue;
+        const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+        if (dt && (!rawEarliest || dt < rawEarliest)) rawEarliest = dt;
+        if (!haulUom && rp.uom) haulUom = String(rp.uom).trim();
+      }
+      if (!haulUom && prodVal) {
+        const pInf = productInfo(prodVal);
+        if (pInf && pInf.uom) haulUom = pInf.uom;
+      }
+      if (!haulUom) haulUom = 'm³';
+      let effStart = rawEarliest || todayISO();
+      let clampedFrom = '';
+      if (typeof getChronologicalSeriesBounds === 'function') {
+        const bounds = getChronologicalSeriesBounds('price_rules', {
+          company: co,
+          rule_type: 'Transport Price (Site)',
+          site: canonSt,
+          supplier: supVal,
+          product: prodVal
+        }, null);
+        if (bounds && bounds.minStart && bounds.minStart > effStart) {
+          clampedFrom = effStart;
+          effStart = bounds.minStart;
+        }
+      }
+      openEntryModal('pricerule_haul', {
+        _unpricedHaulPrefill: true,
+        ruleType: 'Transport Price (Site)',
+        company: co,
+        co,
+        site: canonSt,
+        supplier: supVal,
+        prod: prodVal,
+        product: prodVal,
+        uom: haulUom,
+        date: effStart,
+        startdate: effStart,
+        earliestRawDate: rawEarliest || effStart,
+        clampedFrom
+      }, opts && opts.forceSwitch ? { forceSwitch: true } : undefined);
+      return true;
+    }
+    if (!canEnterForm('pricerule_raw')) {
+      toast('Purchase agreement permission required to set site prices', 'err');
+      return false;
+    }
+    const resolved = resolveUnpricedSitePrefill(siteName, opts);
+    if (!resolved) return false;
+    openEntryModal('pricerule_raw', Object.assign({
+      _unpricedSitePrefill: true,
+      ruleType: 'Purchase Price (Site)'
+    }, resolved), opts && opts.forceSwitch ? { forceSwitch: true } : undefined);
+    return true;
+  }
+
   function openEntryModal(formType, prefill = null, opts = null) {
     wireModulePopoverHandlersOnce();
     closeAllModalModulePopovers();
@@ -137153,13 +138550,95 @@
         if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
         if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
       }
+      // 1-click "Set Site Price" prefill from Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites, Statement Recon)
+      const unpBar = $('prUnpricedGradesBar');
+      if (prefill._unpricedSitePrefill && form === 'pricerule') {
+        FORM_UI.unpricedSiteCtx = prefill;
+        const grades = Array.isArray(prefill.grades) ? prefill.grades : [];
+        let activeGradeIdx = Math.max(0, grades.findIndex(g => norm(g.product) === norm(prefill.product) && norm(g.supplier) === norm(prefill.supplier)));
+        const applyUnpricedGradeToModal = g => {
+          if (!g) return;
+          if ($('f_company') && g.company && allowedCompanyNames().includes(g.company)) $('f_company').value = g.company;
+          if ($('f_ruletype')) $('f_ruletype').value = 'Purchase Price (Site)';
+          if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
+          if ($('f_supplier')) { $('f_supplier').value = g.supplier || ''; FORM_UI.lastSupplier = ''; }
+          if ($('f_product')) { $('f_product').value = g.product || ''; FORM_UI.lastProduct = ''; }
+          if ($('f_uom') && g.uom) { $('f_uom').value = g.uom; FORM_UI.uomManual = true; }
+          if ($('f_unitprice')) { $('f_unitprice').value = ''; FORM_UI.priceManual = false; }
+          if ($('f_transunitprice')) { $('f_transunitprice').value = ''; }
+          if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(g.startdate || ''))) $('f_date').value = g.startdate;
+          if ($('f_enddate')) $('f_enddate').value = '';
+          recalcForm();
+          if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) && $('f_unitprice') && typeof $('f_unitprice').focus === 'function') {
+            try { $('f_unitprice').focus({ preventScroll: true }); } catch (_) { $('f_unitprice').focus(); }
+          }
+        };
+        const renderUnpricedGradesBar = () => {
+          if (!unpBar) return;
+          const activeG = grades[activeGradeIdx] || prefill;
+          unpBar.hidden = false;
+          const pillsHtml = grades.map((g, idx) =>
+            `<button type="button" class="att-preset-pill${idx === activeGradeIdx ? ' active' : ''}" data-unpriced-grade-idx="${idx}"><span data-no-i18n="1">${esc(g.product || 'Grade')} (${fmtNum(g.loads, 0)})</span></button>`
+          ).join('');
+          const dateNote = activeG.earliestRawDate
+            ? `<span>Earliest $0 ticket:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(activeG.earliestRawDate))}</strong>${activeG.clampedFrom ? ` · <span>Adjusted after prior agreement:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(activeG.startdate))}</strong>` : ''}`
+            : `<span>Prefilled site:</span> <strong data-no-i18n="1">${esc(prefill.site || '')}</strong>`;
+          unpBar.innerHTML = `
+            <div class="pr-unpriced-grades-head">
+              <div><strong>Unpriced Loads Prefill</strong> · <span data-no-i18n="1">${esc(prefill.site || '')}</span> · ${dateNote}</div>
+              ${grades.length ? `<span class="badge badge-warn"><span data-no-i18n="1">${fmtNum(activeG.loads, 0)}</span> <span>loads</span> · <span data-no-i18n="1">${fmtNum(activeG.qty, 0)} ${esc(activeG.uom || 'm³')}</span></span>` : ''}
+            </div>
+            ${grades.length > 1 ? `<div class="pr-unpriced-grades-pills"><span>Switch grade:</span>${pillsHtml}</div>` : ''}
+          `;
+          unpBar.querySelectorAll('[data-unpriced-grade-idx]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const nextIdx = Number(btn.getAttribute('data-unpriced-grade-idx'));
+              if (!Number.isFinite(nextIdx) || !grades[nextIdx]) return;
+              activeGradeIdx = nextIdx;
+              applyUnpricedGradeToModal(grades[nextIdx]);
+              renderUnpricedGradesBar();
+            });
+          });
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            try { window.MFG_I18N.translateDom(unpBar); } catch (_) {}
+          }
+        };
+        if (grades[activeGradeIdx]) applyUnpricedGradeToModal(grades[activeGradeIdx]);
+        else if ($('f_ruletype')) $('f_ruletype').value = 'Purchase Price (Site)';
+        renderUnpricedGradesBar();
+      } else if (prefill._unpricedHaulPrefill && form === 'pricerule') {
+        FORM_UI.unpricedSiteCtx = prefill;
+        if ($('f_ruletype')) $('f_ruletype').value = 'Transport Price (Site)';
+        if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
+        if ($('f_supplier')) { $('f_supplier').value = prefill.supplier || ''; FORM_UI.lastSupplier = ''; }
+        if ($('f_product')) { $('f_product').value = prefill.product || ''; FORM_UI.lastProduct = ''; }
+        if ($('f_uom') && prefill.uom) { $('f_uom').value = prefill.uom; FORM_UI.uomManual = true; }
+        if ($('f_rateper') && prefill.uom) $('f_rateper').value = prefill.uom;
+        if ($('f_transunitprice')) $('f_transunitprice').value = '';
+        if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || ''))) $('f_date').value = prefill.startdate;
+        if ($('f_enddate')) $('f_enddate').value = '';
+        if (unpBar) {
+          unpBar.hidden = false;
+          const dateNote = prefill.earliestRawDate
+            ? `<span>Earliest $0 ticket:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(prefill.earliestRawDate))}</strong>${prefill.clampedFrom ? ` · <span>Adjusted after prior agreement:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(prefill.startdate))}</strong>` : ''}`
+            : `<span>Prefilled site:</span> <strong data-no-i18n="1">${esc(prefill.site || '')}</strong>`;
+          unpBar.innerHTML = `<div class="pr-unpriced-grades-head"><div><strong>Unpriced Loads Prefill</strong> · <span data-no-i18n="1">${esc(prefill.site || '')}</span> · ${dateNote}</div></div>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            try { window.MFG_I18N.translateDom(unpBar); } catch (_) {}
+          }
+        }
+      } else {
+        FORM_UI.unpricedSiteCtx = null;
+        if (unpBar) { unpBar.hidden = true; unpBar.innerHTML = ''; }
+      }
       // Partner Truck Monthly Settlement prefill from #fleet_equip (#fpnlSettlePayBtn): leg, amount, method & rep_date.
       if (form === 'settlement') {
         if (prefill.method && $('f_method')) {
           setModalControlVal('f_method', String(prefill.method));
         }
-        if ((prefill.payable_leg || prefill.payableLeg) && $('f_payable_leg')) {
-          setModalControlVal('f_payable_leg', String(prefill.payable_leg || prefill.payableLeg));
+        const pfSettleLeg = prefill.payable_leg || prefill.payableLeg || prefill.leg;
+        if (pfSettleLeg && $('f_payable_leg')) {
+          setModalControlVal('f_payable_leg', String(pfSettleLeg));
           FORM_UI.settleLegManual = true;
           FORM_UI.lastSettleSupplier = val('f_supplier') || '';
         } else {
@@ -137189,10 +138668,12 @@
         }
       }
       recalcForm();
-      if (prefill._corridorRate && form === 'pricerule' && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
-        const focusEl = ($('f_transunitprice') && $('wrap_pr_transprice') && !$('wrap_pr_transprice').hidden)
-          ? $('f_transunitprice')
-          : $('f_unitprice');
+      if ((prefill._corridorRate || prefill._unpricedSitePrefill || prefill._unpricedHaulPrefill) && form === 'pricerule' && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+        const focusEl = prefill._unpricedSitePrefill
+          ? $('f_unitprice')
+          : (($('f_transunitprice') && $('wrap_pr_transprice') && !$('wrap_pr_transprice').hidden)
+            ? $('f_transunitprice')
+            : $('f_unitprice'));
         if (focusEl && typeof focusEl.focus === 'function') {
           try { focusEl.focus({ preventScroll: true }); } catch (_) { focusEl.focus(); }
         }
@@ -161799,6 +163280,13 @@
   let _coPickOpenSession = false;
   function selectCompanyScope(coKey, closePopover = true, opts = null) {
     if (!coKey) return;
+    const uScopeNow = activeUser();
+    if (STATE.authed && uScopeNow && !isOwner(uScopeNow) && !isDemoSandboxSession()) {
+      const allowedKeys = getAllowedCompanyKeys(uScopeNow);
+      if (Array.isArray(allowedKeys) && allowedKeys.length && !allowedKeys.includes(coKey)) {
+        return false;
+      }
+    }
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
@@ -163309,6 +164797,9 @@
     closeTabletKeysModal();
     resetQuoteDrafts();
     clearCatchUpBatchRepDate();
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.clearSlipQueue === 'function') {
+      window.MFG_SMART_SCAN.clearSlipQueue();
+    }
     // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
@@ -198714,7 +200205,7 @@
             firstTd.classList.add('td-has-sel-dot');
             firstTd.classList.toggle('td-has-void-hover', Boolean(firstTd.querySelector('.void-btn.row-void-hover')));
             firstTd.classList.toggle('td-has-rep-shift', Boolean(firstTd.querySelector('.rep-shift-ico')));
-            if (firstTd.querySelector('.badge-app, .att-inline-badge, .void-btn:not(.row-void-hover)')) {
+            if (firstTd.querySelector('.badge-app, .att-inline-badge, .raw-leg-stmt-actions, .void-btn:not(.row-void-hover)')) {
               firstTd.classList.add('td-has-inline-act');
             }
             firstTd.appendChild(protoDot.cloneNode(true));
@@ -199026,6 +200517,25 @@
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
 
+      // 1-click "Set Site Price" on Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites)
+      const setSitePriceBtn = t.closest('[data-set-site-price]');
+      if (setSitePriceBtn && container.contains(setSitePriceBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openSetUnpricedSitePriceModal(setSitePriceBtn.getAttribute('data-set-site-price') || '');
+        return;
+      }
+
+      // 1-click "Add BL/LC Ref" on Trading >30d unlinked advances (#snOverpaidAp, #apOverpaidAlertBar, #expOverpaidAlertBar)
+      const linkSettleBlBtn = t.closest('[data-link-settle-bl]');
+      if (linkSettleBlBtn && container.contains(linkSettleBlBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const settleId = linkSettleBlBtn.getAttribute('data-link-settle-bl') || '';
+        if (!STATE.kioskLocked && canModifyRecord() && settleId) openEntryModalForRecord('settlements', settleId);
+        return;
+      }
+
       // Payroll back-pay strip: open a salary voucher for that staff member with the back pay already on it
       const payBpBtn = t.closest('[data-pay-backpay-staff]');
       if (payBpBtn && container.contains(payBpBtn)) {
@@ -199172,7 +200682,7 @@
         if (entryMenu) entryMenu.open = false;
         const pf = {};
         let hasPf = false;
-        ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'extkind', 'loanside', 'loan', 'usd', 'region', 'maplink'].forEach(k => {
+        ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'extkind', 'loanside', 'loan', 'usd', 'region', 'maplink', 'leg'].forEach(k => {
           const attr = 'data-prefill-' + k;
           if (openModalBtn.hasAttribute(attr)) {
             pf[k] = openModalBtn.getAttribute(attr) || '';
@@ -199984,6 +201494,32 @@
       const modSecBtn = t.closest('[data-mod-sec]');
       if (modSecBtn && container.contains(modSecBtn)) {
         activateModSec(modSecBtn);
+        return;
+      }
+
+      const openSupStmtBtn = t.closest('[data-open-sup-stmt]');
+      if (openSupStmtBtn && container.contains(openSupStmtBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const supName = openSupStmtBtn.getAttribute('data-open-sup-stmt') || '';
+        const legKey = openSupStmtBtn.getAttribute('data-stmt-leg') || 'ALL';
+        const openShare = openSupStmtBtn.getAttribute('data-stmt-share') === '1';
+        const panelEl = openSupStmtBtn.closest('.panel-card, .panel');
+        const panelId = openSupStmtBtn.getAttribute('data-stmt-panel') || (panelEl && panelEl.id) || '';
+        const lbl = panelId === 'rawSiteOwnersPanel'
+          ? 'Site Owners (Material)'
+          : (panelId === 'rawTransPayPanel'
+            ? 'Transportation (Sup + Cust)'
+            : (panelId === 'trdOemPayablesPanel'
+              ? 'OEM Suppliers AP'
+              : (panelId === 'trdFreightPayablesPanel' ? 'Freight & Customs AP' : '')));
+        openSupplierStatementLeg({
+          supplier: supName,
+          leg: legKey,
+          openShare,
+          panelId,
+          returnLabel: lbl
+        });
         return;
       }
 
@@ -203200,6 +204736,9 @@
     if (!(opts && opts._keepInspReturn)) {
       STATE.hubInspectorReturn = null;
     }
+    if (!(opts && opts._keepStmt16Return) && view !== 'statements') {
+      STATE.stmt16ReturnCtx = null;
+    }
     if (!(opts && opts._keepOvkReturn)) {
       STATE.ovkMoversReturn = null;
     }
@@ -205185,6 +206724,8 @@
         contextFormForView,
         canEnterForm,
         canEnterDomainForm,
+        canManageSiblingChronoSchedule,
+        INDUSTRY_DOMAIN_FORMS_BY_IND,
         openEntryModal,
         closeEntryModal,
         openIndustryDomainEntryModal,
@@ -205283,6 +206824,12 @@
         addIndustryCustomRow,
         getKPI,
         buildSentinelItems,
+        getOverpaidPayablesSentinelData,
+        openSetUnpricedSitePriceModal,
+        cleanSiteLabel,
+        findRule,
+        ticketTons,
+        saveModalEntry,
         showRecordInspector,
         resolveCanonicalEquipmentName,
         applyCustomRecordsToSeed,
@@ -206892,6 +208439,7 @@
     _customAlertEvalCache = null;
     _sentinelRawItemsCache = null;
     if (typeof _threeLegApCache !== 'undefined' && _threeLegApCache) _threeLegApCache.clear();
+    if (typeof _stmt16VouchersCache !== 'undefined' && _stmt16VouchersCache) _stmt16VouchersCache.clear();
     if (typeof _opSentinelCache !== 'undefined' && _opSentinelCache) _opSentinelCache.clear();
     if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
@@ -208297,6 +209845,8 @@
     isAppRecord: typeof isAppRecord === 'function' ? isAppRecord : null,
     ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
+    computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
+    openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     openHoldingNetSettlementModal: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
@@ -208333,6 +209883,8 @@
     resetCompanySentinelReviews: typeof resetCompanySentinelReviews === 'function' ? resetCompanySentinelReviews : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
+    resolveUnpricedSitePrefill: typeof resolveUnpricedSitePrefill === 'function' ? resolveUnpricedSitePrefill : null,
+    openSetUnpricedSitePriceModal: typeof openSetUnpricedSitePriceModal === 'function' ? openSetUnpricedSitePriceModal : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
@@ -208392,6 +209944,8 @@
     resolveTradingFreightBadge: typeof resolveTradingFreightBadge === 'function' ? resolveTradingFreightBadge : null,
     computeLocalKPI: typeof computeLocalKPI === 'function' ? computeLocalKPI : null,
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
+    computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
+    openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
     todayISO: typeof todayISO === 'function' ? todayISO : null,
     retroactiveBackfillTradingTariff: typeof retroactiveBackfillTradingTariff === 'function' ? retroactiveBackfillTradingTariff : null,
     lookupActiveHoldingPartnerSplit: typeof lookupActiveHoldingPartnerSplit === 'function' ? lookupActiveHoldingPartnerSplit : null,

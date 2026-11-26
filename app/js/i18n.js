@@ -2523,7 +2523,7 @@
       "Confirm Switch Off": "تأكيد الإيقاف",
       "Confirm Your Identity": "تأكيد الهوية",
       "Confirm intentional second entry on the same date": "تأكيد إدخال قيد ثانٍ مقصود في نفس التاريخ",
-      "Confirmation Language": "لغة كتاب المصادقة",
+      "Confirmation Language": "لغة رسالة المصادقة",
       "Confirmation letter copied to clipboard": "تم نسخ كتاب المصادقة إلى الحافظة",
       "Confirmed": "مؤكد",
       "Confirmed Statement Guard": "حماية الكشوفات المؤكدة",
@@ -2631,7 +2631,7 @@
       "Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.": "الضمانة المحاسبية الأساسية: يتحقق من تساوي إجمالي المدين مع إجمالي الدائن عبر الأصناف 1 إلى 7 في التصميم المحاسبي اللبناني لتطابق الميزانية والأرباح والخسائر حتى السنت.",
       "Corporate Legal, Audit & Shared Overhead": "المصاريف القانونية والتدقيق والخدمات المشتركة",
       "Corporate Tower Floor Plate Lease (11% VAT)": "عقد إيجار طابق مكاتب إدارية (ضريبة 11%)",
-      "Corridor": "الممر البيني",
+      "Corridor": "المسار",
       "Cost": "التكلفة",
       "Cost / Rate": "التكلفة / السعر",
       "Cost / Ton": "التكلفة / طن",
@@ -5851,7 +5851,7 @@
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود",
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود أدناه",
       "Left to Factories & Quarries": "غادروا إلى المصانع والمقالع",
-      "Leg": "الفرع",
+      "Leg": "الطرف",
       "Leg 1": "الطرف 1",
       "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "الشق 1 (مواد لصاحب الموقع) + الشق 2 (نقل لصاحب الشاحنة) + الشق 3 (مصاريف آجلة) = إجمالي الآجل · إجمالي الآجل − المسدد = رصيد الذمم الدائنة الختامي",
       "Leg 1 Material": "الشق 1: المواد",
@@ -6246,7 +6246,7 @@
       "Material Cost includes Transportation": "تكلفة المواد تشمل النقل",
       "Material Credit includes supplier-provided transportation; internal split unknown": "ذمم المواد تشمل النقل المؤمّن من المورّد؛ التوزيع الداخلي غير مفصول",
       "Material Grade": "صنف المواد",
-      "Material Leg": "شق المواد",
+      "Material Leg": "طرف المواد والكسارات",
       "Material Price ($)": "سعر المادة ($)",
       "Material Pricing Unit": "وحدة تسعير المادة",
       "Material Rate": "تعرفة المادة",
@@ -7650,7 +7650,7 @@
       "Pay Basis": "أساس الاحتساب",
       "Pay Impact ($)": "الأثر المالي ($)",
       "Pay Salary": "دفع راتب",
-      "Payable Leg": "شق الذمة الدائنة",
+      "Payable Leg": "طرف الذمة",
       "Payables & Cash-Outflow Optimizer Studio": "استوديو محسّن المدفوعات والتدفقات النقدية الخارجة",
       "Payables & Spend": "الذمم الدائنة والإنفاق",
       "Payables Alert Active": "تنبيه المدفوعات مفعّل",
@@ -15242,7 +15242,7 @@
       "Open Invoiced Sales": "المبيعات المفوترة المفتوحة",
       "Sales & Deposits": "المبيعات والودائع",
       "Cash in vs cash out by month": "التدفقات النقدية الداخلة مقابل الخارجة حسب الشهر",
-      "Monthly Performance & Profit Trajectory": "مسار الأداء الشهري والربحية",
+      "Monthly Performance & Profit Trajectory": "مسار الأداء والأرباح الشهري",
       "Trial balance requires review ($0.00 target)": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00)",
       "Trial balance requires review ($0.00 target).": "ميزان المراجعة يتطلب مراجعة (الهدف $0.00).",
       "POS Till #1": "صندوق نقطة البيع #1",
@@ -15935,6 +15935,7 @@
       "Ex-Quarry Base Only": "سعر المقالع فقط (دون نقل)",
       "No active quarry purchase agreements match the current filter.": "لا توجد اتفاقيات شراء مقالع نشطة مطابقة للتصفية الحالية.",
       "Split Multi-Dept (Last Split)": "توزيع على الأقسام (آخر تقسيم)",
+      "Split Multi-Category": "توزيع على الفئات",
       "Split Multi-Category (Last Split)": "توزيع على الفئات (آخر تقسيم)",
       "Apply 11% VAT to taxable categories (Diesel/Fuel & Exempt fees stay $0.00 Never VAT)": "تطبيق ضريبة 11% على الفئات الخاضعة (المازوت/الوقود والرسوم المعفاة تبقى $0.00 معفى دائماً)",
       "Saved Split": "تقسيم محفوظ",
@@ -16049,7 +16050,100 @@
       "Open full owner account settlement sheet across all trucks (defaults to Booked Revenue)": "فتح كشف تسوية حساب المالك الكامل لجميع الشاحنات (يفتتح على الإيراد المسجّل)",
       "Partner or Hauler Account": "حساب الشريك أو الناقل",
       "Owner fleet filter": "تصفية أسطول المالك",
-      "Fleet Drivers": "سائقي الأسطول"
+      "Fleet Drivers": "سائقي الأسطول",
+      "Clear Batch": "مسح الدفعة",
+      "Merge as 1 Document": "دمج كمستند واحد",
+      "Multi-Slip Batch Queue": "قائمة انتظار الإيصالات المتعددة",
+      "Pre-reading": "قراءة مسبقة",
+      "Queued slips": "الإيصالات في قائمة الانتظار",
+      "Skip Slip": "تخطي الإيصال",
+      "Slip": "إيصال",
+      "Split into Slips": "تقسيم إلى إيصالات",
+      "posted": "مرحّل",
+      "Set Site Price": "تحديد سعر الموقع",
+      "Add BL/LC Ref": "إضافة مرجع بوليصة/اعتماد",
+      "Open settlement to add BL, LC, or Import File reference": "افتح التسوية لإضافة بوليصة الشحن أو الاعتماد المستندي أو ملف الاستيراد",
+      "Set Material & Transport Rate prefilled from earliest $0 delivery": "تحديد سعر المواد والنقل مملوءاً مسبقاً من أقدم نقلة بقيمة $0",
+      "Purchase agreement permission required to set site prices": "مطلوب صلاحية اتفاقيات الشراء لتحديد أسعار المواقع",
+      "Unpriced Loads Prefill": "تعبئة مسبقة للنقلات غير المسعّرة",
+      "Earliest $0 ticket:": "أقدم إيصال بقيمة $0:",
+      "Adjusted after prior agreement:": "معدّل بعد الاتفاق السابق:",
+      "Prefilled site:": "الموقع المعبّأ:",
+      "Switch grade:": "تبديل الصنف:",
+      "Linked BL/LC Advance": "سلفة بوليصة/اعتماد مربوطة",
+      "Unlinked BL/LC (>30d)": "بوليصة/اعتماد غير مربوطة (>30 يوم)",
+      "Scan WhatsApp PDF / Photo": "مسح PDF / صورة واتساب",
+      "Scanning supplier statement...": "جارٍ مسح كشف المورّد...",
+      "Loaded text/CSV statement": "تم تحميل كشف نصي/CSV",
+      "AI extracted statement": "كشف مستخرج بالذكاء الاصطناعي",
+      "Smart scan unavailable offline: paste statement lines below": "المسح الذكي غير متاح دون اتصال: الصق سطور الكشف أدناه",
+      "Could not read file: paste lines manually": "تعذّرت قراءة الملف: الصق السطور يدوياً",
+      "File too large (max 4.5 MB)": "حجم الملف كبير جداً (الحد الأقصى 4.5 ميجابايت)",
+      "S20 Gatekeeper Hold": "إيقاف حاجز S20",
+      "held before payment": "موقوف قبل الدفع",
+      "Unpriced ($0 Loads)": "غير مسعّر (نقلات $0)",
+      "Allow S20 Override": "السماح بتجاوز S20",
+      "Override reason (3+ chars)": "سبب التجاوز (3+ أحرف)",
+      "Enter an S20 override reason (3+ chars) before posting held lines": "أدخل سبب تجاوز S20 (3+ أحرف) قبل ترحيل السطور الموقوفة",
+      "Select at least one statement line to post": "اختر سطراً واحداً على الأقل من الكشف للترحيل",
+      "Exceeds Logged Weighbridge": "يتجاوز موازين القبان المسجلة",
+      "Exceeds Quoted Vol · S20": "يتجاوز الحجم المتفق عليه · S20",
+      "Read-only or restricted role cannot post supplier settlements": "الدور المقيد أو للقراءة فقط لا يمكنه ترحيل تسويات الموردين",
+      "Blocked by S20 Gatekeeper Hold: set missing site prices or enable Supervisor override": "موقوف بواسطة حاجز S20: حدد أسعار المواقع الناقصة أو فعّل تجاوز المشرف",
+      "Blocked by S20 Gatekeeper Hold: uncheck held lines or approve override": "موقوف بواسطة حاجز S20: ألغِ تحديد السطور الموقوفة أو اعتمد التجاوز",
+      "Server rejected statement settlement": "رفض الخادم ترحيل تسوية الكشف",
+      "Active Files": "الملفات النشطة",
+      "Clearing ($)": "التخليص ($)",
+      "Contract FOB ($)": "قيمة العقد FOB ($)",
+      "Customs Duty ($)": "الرسوم الجمركية ($)",
+      "Files": "الملفات",
+      "Freight / Customs Payee": "الجهة المستحقة (الشحن / الجمارك)",
+      "OEM Supplier": "المورد الرئيسي (OEM)",
+      "Sea / Inland Freight ($)": "الشحن البحري والبري ($)",
+      "+ Freight / Clearing Settlement": "+ تسوية شحن / تخليص",
+      "+ OEM Settlement": "+ تسوية مورد رئيسي",
+      "Open Statement 16 (Material Leg)": "فتح كشف حساب 16 (طرف المواد)",
+      "Open Statement 16 (Transport Leg)": "فتح كشف حساب 16 (طرف النقل)",
+      "Open Statement 16 (Direct Supply Leg)": "فتح كشف حساب 16 (طرف التوريد المباشر)",
+      "Open Statement 16 (Freight & Customs Leg)": "فتح كشف حساب 16 (طرف الشحن والجمارك)",
+      "Share Leg Confirmation (WhatsApp / PDF)": "مشاركة مصادقة الطرف (واتساب / PDF)",
+      "Optional 3rd-party forwarder or broker": "وكيل شحن أو مخلص جمركي اختياري",
+      "Payable leg filter": "تصفية طرف الذمم الدائنة",
+      "Supplier confirmation message": "رسالة مصادقة المورد",
+      "Transport Leg (Supplier + Customer)": "طرف النقل (موردين وزبائن)",
+      "Expenses Leg": "طرف المصاريف والخدمات",
+      "All Payable Legs": "كافة الأطراف (شامل)",
+      "Direct Supply (OEM FOB)": "التوريد المباشر (FOB)",
+      "Freight, Customs & Clearing": "الشحن والجمارك والتخليص",
+      "Share Confirmation (WhatsApp / PDF)": "مشاركة المصادقة (واتساب / PDF)",
+      "Earlier Summary": "ملخص الفترة السابقة",
+      "Backorder ($)": "طلبات مؤجلة ($)",
+      "Total Uplift ($)": "إجمالي الإضافات ($)",
+      "Clearing / Freight Agent": "وكيل التخليص / الشحن",
+      "Separates freight/customs AP from OEM factory AP": "يفصل ذمم الشحن والجمارك عن ذمم المصنع الرئيسي",
+      "No OEM supplier payables match current filter": "لا توجد ذمم موردين رئيسيين مطابقة للفلتر",
+      "No third-party freight or customs payables match current filter": "لا توجد ذمم شحن أو جمارك مطابقة للفلتر",
+      "Factory & spare-parts contract payables separated from third-party ocean freight, customs duty & port clearance (excludes Cancelled; separates Open Backorders)": "ذمم عقود المصانع وقطع الغيار مفصولة عن الشحن البحري والجمارك والتخليص (تستبعد الملغاة وتفصل الطلبات المؤجلة)",
+      "Deduplicated by import file across ocean/inland freight, customs duty, port clearing & marine insurance (DDP supplier-included files excluded)": "مُزالة التكرار حسب ملف الاستيراد عبر الشحن والرسوم الجمركية والتخليص والتأمين (تُستبعد عقود DDP الشاملة)",
+      "Site Owners (Material)": "أصحاب المقالع (المواد)",
+      "Transportation (Sup + Cust)": "النقل (موردين وزبائن)",
+      "OEM Suppliers AP": "ذمم الموردين الرئيسيين",
+      "Freight & Customs AP": "ذمم الشحن والجمارك",
+      "Ocean & Inland Freight": "الشحن البحري والبري",
+      "Customs Duty & Excise": "الرسوم الجمركية",
+      "Port Handling & Clearing": "أجور المرفأ والتخليص",
+      "Marine Cargo Insurance": "التأمين البحري للبضائع",
+      "Counterparty payable ledger by leg (All, Material, Transport, Expenses) with confirmation share": "دفتر أستاذ المورد حسب الطرف (الكل، المواد، النقل، المصاريف) مع مشاركة المصادقة",
+      "Single-leg view:": "عرض طرف واحد:",
+      "Switch Leg to All to mark or remove the account-wide sent mark.": "بدّل الطرف إلى الكل لوضع علامة الإرسال الشاملة للحساب أو إزالتها.",
+      "Back to": "العودة إلى",
+      "Leg Filter:": "فلتر الطرف:",
+      "Supplier Balance Confirmation": "مصادقة رصيد المورد",
+      "Period Accrued": "المستحق في الفترة",
+      "Closing Balance": "الرصيد الختامي",
+      "Recipient WhatsApp:": "واتساب المستلم:",
+      "Scoped strictly to": "محصور حصرياً بـ",
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "لا يوجد رقم واتساب محفوظ في الملف (يفتح واتساب لاختيار جهة الاتصال)"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -17203,7 +17297,7 @@
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "Alerte la direction dès que les écarts compteurs, bons non imputés ou écarts de cuve atteignent 5 % ou plus du gasoil consommé sur la période.",
       "Rami Haddad (WTC Scale)": "Rami Haddad (Bascule WTC)",
       "Align 17-character VIN or chassis plate inside narrow strip": "Alignez la plaque VIN à 17 caractères dans la bande étroite",
-      "All": "Tout",
+      "All": "Tous",
       "All 108 Routes Explorer": "Explorateur des 108 Itinéraires",
       "All 11 Audit Sentinels Passing": "Les 11 Sentinelles d'Audit sont Conformes",
       "All 22 Stmts": "Les 22 États",
@@ -18554,7 +18648,7 @@
       "Confirm Switch Off": "Confirmer la désactivation",
       "Confirm Your Identity": "Confirmez votre identite",
       "Confirm intentional second entry on the same date": "Confirmer une seconde saisie volontaire à la même date",
-      "Confirmation Language": "Langue de la confirmation",
+      "Confirmation Language": "Langue de confirmation",
       "Confirmation letter copied to clipboard": "Lettre de confirmation copiee dans le presse-papiers",
       "Confirmed": "Confirmé",
       "Confirmed Statement Guard": "Protection des relevés confirmés",
@@ -20270,7 +20364,7 @@
       "Expense bills require Expenses hub permission.": "Les factures de charges requièrent le droit Charges.",
       "Expense destination": "Destination de la charge",
       "Expense reversals or refunds": "Extournes ou remboursements de charges",
-      "Expenses": "Charges & Dépenses",
+      "Expenses": "Charges",
       "Expenses & AP": "Charges & Fournisseurs",
       "Expenses & Bills": "Charges & Factures",
       "Expenses & Overhead": "Charges & Frais Généraux",
@@ -21882,7 +21976,7 @@
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
       "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
       "Left to Factories & Quarries": "Sortis vers Usines & Carrières",
-      "Leg": "Branche",
+      "Leg": "Volet",
       "Leg 1": "Volet 1",
       "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "Volet 1 (Matière) + Volet 2 (Transport) + Volet 3 (Charges à crédit) − Réglé = Solde Fournisseurs",
       "Leg 1 Material": "Volet 1 : Matières",
@@ -22261,7 +22355,7 @@
       "Matches every monthly salary payment against active staff employment start/end windows. Flags AI Sentinels when unmatched salary payments exceed": "Rapproche chaque salaire payé des périodes de contrat actives et alerte dès que l'écart dépasse",
       "Matching Results": "Résultats correspondants",
       "Matching rows in active scope": "Lignes correspondantes dans le périmètre",
-      "Material": "Matières",
+      "Material": "Matériaux",
       "Material & Haulage Accrued": "Matières & Transport Courus",
       "Material & Site Suppliers": "Fournisseurs Matières & Sites",
       "Material ($)": "Matières ($)",
@@ -22277,7 +22371,7 @@
       "Material Cost includes Transportation": "Le Coût Matière inclut le Transport",
       "Material Credit includes supplier-provided transportation; internal split unknown": "Le crédit matière inclut le transport fournisseur",
       "Material Grade": "Qualité Matériau",
-      "Material Leg": "Volet Matière",
+      "Material Leg": "Volet Matériaux",
       "Material Price ($)": "Prix Matière ($)",
       "Material Pricing Unit": "Unité de Prix Matière",
       "Material Rate": "Tarif matière",
@@ -23681,7 +23775,7 @@
       "Pay Basis": "Base de Rémunération",
       "Pay Impact ($)": "Impact Paie ($)",
       "Pay Salary": "Payer salaire",
-      "Payable Leg": "Volet Dette (AP)",
+      "Payable Leg": "Volet fournisseur",
       "Payables & Cash-Outflow Optimizer Studio": "Studio d'optimisation des dettes et décaissements",
       "Payables & Spend": "Fournisseurs & Dépenses",
       "Payables Alert Active": "Alerte dettes active",
@@ -23779,7 +23873,7 @@
       "Weekly Void Digest": "Synthèse hebdomadaire des annulations",
       "Weekly Digest (Last 7 Days)": "Synthèse hebdomadaire (7 derniers jours)",
       "Current Filter View": "Vue filtrée actuelle",
-      "Print / Save PDF": "Imprimer / Enregistrer PDF",
+      "Print / Save PDF": "Imprimer / PDF",
       "Digest window": "Période de synthèse",
       "ISABI Command Center · Void Audit Digest": "Centre de commande ISABI · Synthèse d'audit des annulations",
       "Total Voids": "Total des annulations",
@@ -31273,7 +31367,7 @@
       "Open Invoiced Sales": "Ventes facturées ouvertes",
       "Sales & Deposits": "Ventes et dépôts",
       "Cash in vs cash out by month": "Encaissements vs décaissements par mois",
-      "Monthly Performance & Profit Trajectory": "Trajectoire Mensuelle des Revenus & Résultats",
+      "Monthly Performance & Profit Trajectory": "Trajectoire mensuelle de performance et de profit",
       "Trial balance requires review ($0.00 target)": "La balance générale nécessite une révision (objectif $0.00)",
       "Trial balance requires review ($0.00 target).": "La balance générale nécessite une révision (objectif $0.00).",
       "POS Till #1": "Caisse PDV n°1",
@@ -31966,6 +32060,7 @@
       "Ex-Quarry Base Only": "Prix carrière seul",
       "No active quarry purchase agreements match the current filter.": "Aucun accord d'achat carrière actif ne correspond au filtre actuel.",
       "Split Multi-Dept (Last Split)": "Ventiler par département (Dernier modèle)",
+      "Split Multi-Category": "Ventiler par catégorie",
       "Split Multi-Category (Last Split)": "Ventiler par catégorie (Dernier modèle)",
       "Apply 11% VAT to taxable categories (Diesel/Fuel & Exempt fees stay $0.00 Never VAT)": "Appliquer la TVA 11 % aux catégories taxables (Gasoil et frais exonérés à $0.00)",
       "Saved Split": "Répartition enregistrée",
@@ -32080,7 +32175,100 @@
       "Open full owner account settlement sheet across all trucks (defaults to Booked Revenue)": "Ouvrir le relevé de règlement complet du propriétaire pour tous les camions (par défaut Revenu Comptabilisé)",
       "Partner or Hauler Account": "Compte partenaire ou transporteur",
       "Owner fleet filter": "Filtre de flotte du propriétaire",
-      "Fleet Drivers": "Chauffeurs de la flotte"
+      "Fleet Drivers": "Chauffeurs de la flotte",
+      "Clear Batch": "Effacer le lot",
+      "Merge as 1 Document": "Fusionner en 1 document",
+      "Multi-Slip Batch Queue": "File multi-justificatifs",
+      "Pre-reading": "Prélecture",
+      "Queued slips": "Justificatifs en file",
+      "Skip Slip": "Ignorer la pièce",
+      "Slip": "Pièce",
+      "Split into Slips": "Diviser en pièces",
+      "posted": "comptabilisé",
+      "Set Site Price": "Définir tarif site",
+      "Add BL/LC Ref": "Ajouter réf. BL/LC",
+      "Open settlement to add BL, LC, or Import File reference": "Ouvrir le règlement pour ajouter réf. BL, LC ou dossier d'import",
+      "Set Material & Transport Rate prefilled from earliest $0 delivery": "Définir le tarif matière et transport prérempli depuis la plus ancienne livraison à 0 $",
+      "Purchase agreement permission required to set site prices": "Autorisation d'accords d'achat requise pour définir les tarifs site",
+      "Unpriced Loads Prefill": "Préremplissage chargements sans tarif",
+      "Earliest $0 ticket:": "Plus ancien bon à 0 $ :",
+      "Adjusted after prior agreement:": "Ajusté après accord précédent :",
+      "Prefilled site:": "Site prérempli :",
+      "Switch grade:": "Changer nuance :",
+      "Linked BL/LC Advance": "Avance BL/LC liée",
+      "Unlinked BL/LC (>30d)": "BL/LC non lié (>30 j)",
+      "Scan WhatsApp PDF / Photo": "Scanner PDF / photo WhatsApp",
+      "Scanning supplier statement...": "Analyse du relevé fournisseur...",
+      "Loaded text/CSV statement": "Relevé texte/CSV chargé",
+      "AI extracted statement": "Relevé extrait par IA",
+      "Smart scan unavailable offline: paste statement lines below": "Analyse intelligente indisponible hors ligne : collez les lignes ci-dessous",
+      "Could not read file: paste lines manually": "Impossible de lire le fichier : collez les lignes manuellement",
+      "File too large (max 4.5 MB)": "Fichier trop volumineux (max. 4,5 Mo)",
+      "S20 Gatekeeper Hold": "Blocage Sentinelle S20",
+      "held before payment": "bloqué(s) avant paiement",
+      "Unpriced ($0 Loads)": "Sans tarif (voyages à 0 $)",
+      "Allow S20 Override": "Autoriser dérogation S20",
+      "Override reason (3+ chars)": "Motif dérogation (3+ car.)",
+      "Enter an S20 override reason (3+ chars) before posting held lines": "Saisissez un motif de dérogation S20 (3+ car.) avant de valider",
+      "Select at least one statement line to post": "Sélectionnez au moins une ligne du relevé à valider",
+      "Exceeds Logged Weighbridge": "Dépasse le pont-bascule enregistré",
+      "Exceeds Quoted Vol · S20": "Dépasse le volume convenu · S20",
+      "Read-only or restricted role cannot post supplier settlements": "Un rôle restreint ou en lecture seule ne peut pas valider de règlements",
+      "Blocked by S20 Gatekeeper Hold: set missing site prices or enable Supervisor override": "Bloqué par Sentinelle S20 : définissez les tarifs manquants ou activez la dérogation",
+      "Blocked by S20 Gatekeeper Hold: uncheck held lines or approve override": "Bloqué par Sentinelle S20 : décochez les lignes bloquées ou approuvez la dérogation",
+      "Server rejected statement settlement": "Le serveur a refusé le règlement du relevé",
+      "Active Files": "Dossiers actifs",
+      "Clearing ($)": "Dédouanement ($)",
+      "Contract FOB ($)": "Contrat FOB ($)",
+      "Customs Duty ($)": "Droits de douane ($)",
+      "Files": "Dossiers",
+      "Freight / Customs Payee": "Bénéficiaire Fret / Douane",
+      "OEM Supplier": "Fournisseur OEM",
+      "Sea / Inland Freight ($)": "Fret maritime / terrestre ($)",
+      "+ Freight / Clearing Settlement": "+ Règlement fret / douane",
+      "+ OEM Settlement": "+ Règlement fournisseur OEM",
+      "Open Statement 16 (Material Leg)": "Ouvrir le relevé 16 (Volet Matériaux)",
+      "Open Statement 16 (Transport Leg)": "Ouvrir le relevé 16 (Volet Transport)",
+      "Open Statement 16 (Direct Supply Leg)": "Ouvrir le relevé 16 (Approvisionnement)",
+      "Open Statement 16 (Freight & Customs Leg)": "Ouvrir le relevé 16 (Fret & Douane)",
+      "Share Leg Confirmation (WhatsApp / PDF)": "Partager la confirmation du volet (WhatsApp / PDF)",
+      "Optional 3rd-party forwarder or broker": "Transitaire ou commissionnaire optionnel",
+      "Payable leg filter": "Filtre volet fournisseurs",
+      "Supplier confirmation message": "Message de confirmation fournisseur",
+      "Transport Leg (Supplier + Customer)": "Volet Transport",
+      "Expenses Leg": "Volet Charges",
+      "All Payable Legs": "Tous les volets",
+      "Direct Supply (OEM FOB)": "Approvisionnement direct (FOB)",
+      "Freight, Customs & Clearing": "Fret, douane et dédouanement",
+      "Share Confirmation (WhatsApp / PDF)": "Partager confirmation (WhatsApp / PDF)",
+      "Earlier Summary": "Résumé antérieur",
+      "Backorder ($)": "Reliquat ($)",
+      "Total Uplift ($)": "Total frais approche ($)",
+      "Clearing / Freight Agent": "Agent de dédouanement / fret",
+      "Separates freight/customs AP from OEM factory AP": "Sépare la dette fret/douane de la dette usine OEM",
+      "No OEM supplier payables match current filter": "Aucune dette fournisseur OEM correspondante",
+      "No third-party freight or customs payables match current filter": "Aucune dette fret ou douane correspondante",
+      "Factory & spare-parts contract payables separated from third-party ocean freight, customs duty & port clearance (excludes Cancelled; separates Open Backorders)": "Dettes contrats usines et pièces séparées du fret maritime, douane et dédouanement (hors annulés et reliquats isolés)",
+      "Deduplicated by import file across ocean/inland freight, customs duty, port clearing & marine insurance (DDP supplier-included files excluded)": "Dédupliqué par dossier import sur fret, douane, dédouanement et assurance (hors contrats DDP)",
+      "Site Owners (Material)": "Carrières (Matériaux)",
+      "Transportation (Sup + Cust)": "Transport (Fourn. + Clients)",
+      "OEM Suppliers AP": "Dettes Fournisseurs OEM",
+      "Freight & Customs AP": "Dettes Fret & Douane",
+      "Ocean & Inland Freight": "Fret maritime et terrestre",
+      "Customs Duty & Excise": "Droits de douane et taxes",
+      "Port Handling & Clearing": "Frais portuaires et dédouanement",
+      "Marine Cargo Insurance": "Assurance transport maritime",
+      "Counterparty payable ledger by leg (All, Material, Transport, Expenses) with confirmation share": "Grand livre fournisseur par volet (Tous, Matériaux, Transport, Charges) avec partage confirmation",
+      "Single-leg view:": "Vue d'un seul volet :",
+      "Switch Leg to All to mark or remove the account-wide sent mark.": "Passez le volet sur Tous pour apposer ou retirer la mention d'envoi du compte.",
+      "Back to": "Retour à",
+      "Leg Filter:": "Filtre volet :",
+      "Supplier Balance Confirmation": "Confirmation de solde fournisseur",
+      "Period Accrued": "Facturé sur la période",
+      "Closing Balance": "Solde de clôture",
+      "Recipient WhatsApp:": "WhatsApp du destinataire :",
+      "Scoped strictly to": "Limité strictement à",
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "Aucun numéro WhatsApp enregistré (WhatsApp ouvrira le sélecteur)"
     }
   };
 
@@ -33858,6 +34046,64 @@
     m = trimmed.match(/^(\d+)\s+import files awaiting final clearance split$/i);
     if (m) return lang === 'ar' ? `${m[1]} ملفات استيراد بانتظار توزيع التخليص النهائي` : `${m[1]} dossiers import en attente de ventilation finale`;
 
+    m = trimmed.match(/^OEM VEHICLE & PARTS SUPPLIER PAYABLES\s*·\s*CONTRACT FOB LEG\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `ذمم موردي المركبات وقطع الغيار الأصلية · طرف عقد التوريد (${m[1]})` : `DETTES FOURNISSEURS OEM & PIÈCES · VOLET CONTRAT FOB (${m[1]})`;
+
+    m = trimmed.match(/^THIRD-PARTY FREIGHT, CUSTOMS & CLEARING PAYABLES\s*·\s*LANDED UPLIFT LEG\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `ذمم الشحن البحري والجمارك والتخليص · طرف المصاريف الإضافية (${m[1]})` : `DETTES FRET, DOUANE & DÉDOUANEMENT TIERS · VOLET APPROCHE (${m[1]})`;
+
+    m = trimmed.match(/^TOTAL OEM SUPPLIERS\s*\(([\d,]+)\s+SUPPLIERS?\)$/i);
+    if (m) return lang === 'ar' ? `إجمالي الموردين الرئيسيين (${m[1]} مورد)` : `TOTAL FOURNISSEURS OEM (${m[1]})`;
+
+    m = trimmed.match(/^TOTAL FREIGHT & CUSTOMS\s*\(([\d,]+)\s+STREAMS?\)$/i);
+    if (m) return lang === 'ar' ? `إجمالي الشحن والجمارك (${m[1]} بنود)` : `TOTAL FRET & DOUANE (${m[1]} flux)`;
+
+    m = trimmed.match(/^Leg Filter:\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تصفية الطرف: ${inner}` : `Filtre volet : ${inner}`;
+    }
+
+    m = trimmed.match(/^Back to\s+(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `عودة إلى ${inner}` : `Retour à ${inner}`;
+    }
+
+    m = trimmed.match(/^Earlier Period Vouchers\s*\(([\d,]+)\s+entries\)$/i);
+    if (m) return lang === 'ar' ? `سندات الفترة السابقة (${m[1]} قيد)` : `Écritures antérieures de la période (${m[1]})`;
+
+    m = trimmed.match(/^Viewing\s+(.+?)\s+leg only\.\s*Switch Leg to All to mark or remove the account-wide sent mark\.$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `عرض طرف ${inner} فقط. حوّل خيار الطرف إلى الكل لتحديث ختم الإرسال الشامل للحساب.`
+        : `Affichage du volet ${inner} uniquement. Passez sur Tous pour marquer ou retirer le verrou global du compte.`;
+    }
+
+    m = trimmed.match(/^Supplier Balance Confirmation\s*·\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `مصادقة رصيد المورد · ${inner}` : `Confirmation de solde fournisseur · ${inner}`;
+    }
+
+    m = trimmed.match(/^(?:Recipient WhatsApp:\s*(\+\d+)|No saved WhatsApp number on file \(WhatsApp opens contact picker\))\s*·\s*Scoped strictly to\s*(.+)$/i);
+    if (m) {
+      const legTr = translateCore(m[2].trim(), lang, depth + 1);
+      if (m[1]) {
+        return lang === 'ar' ? `واتساب المستلم: ${m[1]} · مقتصر حصراً على ${legTr}` : `WhatsApp destinataire : ${m[1]} · Limité strictement à ${legTr}`;
+      }
+      return lang === 'ar'
+        ? `لا يوجد رقم واتساب محفوظ (يفتح واتساب لاختيار جهة الاتصال) · مقتصر حصراً على ${legTr}`
+        : `Aucun numéro WhatsApp enregistré (sélecteur WhatsApp) · Limité strictement à ${legTr}`;
+    }
+
+    m = trimmed.match(/^Open Statement 16\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `فتح كشف حساب 16 (${inner})` : `Ouvrir le relevé 16 (${inner})`;
+    }
+
     m = trimmed.match(/^([\d.,]+%)\s+blended carrier commission\s*\+\s*(\$[\d.,]+)\s+policy fees$/i);
     if (m) return lang === 'ar' ? `${m[1]} متوسط عمولة التأمين + ${m[2]} رسوم بوالص` : `${m[1]} commission moyenne + ${m[2]} frais de police`;
 
@@ -34354,13 +34600,23 @@
         : `${m[1]} fournisseur(s) payés ${m[2]} au-dessus du crédit dû (seuil >= ${m[3]})${siteP}${unpP}.${topP}`;
     }
 
-    m = trimmed.match(/^([\d,]+)\s+suppliers?\s+paid\s+(\$[\d,.-]+)\s+above accrued\s+(.+?)\s+credit\s+\(threshold\s*>=\s*(\$[\d,.-]+)\)\.(?:\s+Top counterparty:\s+(.+?)\s+\((\$[\d,.-]+)\s+overpaid\)\.)?$/i);
+    m = trimmed.match(/^([\d,]+)\s+suppliers?\s+paid\s+(\$[\d,.-]+)\s+above accrued\s+(.+?)\s+credit\s+\(threshold\s*>=\s*(\$[\d,.-]+)\)(?:\s*·\s*([\d,]+)\s+unlinked BL\/LC advances?\s*>(\d+)d\s*\((\$[\d,.-]+)\))?\.(?:\s+Top counterparty:\s+(.+?)\s+\((\$[\d,.-]+)\s+overpaid\)\.)?$/i);
     if (m) {
       const indL = translateString(m[3], lang);
-      const topP = m[5] ? (lang === 'ar' ? ` أبرز طرف: ${m[5]} (${m[6]} فائض).` : ` Contrepartie principale : ${m[5]} (${m[6]} trop-payé).`) : '';
+      const blP = m[5]
+        ? (lang === 'ar'
+          ? ` · ${m[5]} سلفة بوليصة/اعتماد غير مربوطة (>${m[6]} يوم: ${m[7]})`
+          : ` · ${m[5]} avance(s) BL/LC non liée(s) (>${m[6]} j : ${m[7]})`)
+        : '';
+      const topP = m[8] ? (lang === 'ar' ? ` أبرز طرف: ${m[8]} (${m[9]} فائض).` : ` Contrepartie principale : ${m[8]} (${m[9]} trop-payé).`) : '';
       return lang === 'ar'
-        ? `${m[1]} موردين مدفوعين ${m[2]} فوق الرصيد الدائن لقطاع ${indL} (العتبة >= ${m[4]}).${topP}`
-        : `${m[1]} fournisseur(s) payés ${m[2]} au-dessus du crédit ${indL} (seuil >= ${m[4]}).${topP}`;
+        ? `${m[1]} موردين مدفوعين ${m[2]} فوق الرصيد الدائن لقطاع ${indL} (العتبة >= ${m[4]})${blP}.${topP}`
+        : `${m[1]} fournisseur(s) payés ${m[2]} au-dessus du crédit ${indL} (seuil >= ${m[4]})${blP}.${topP}`;
+    }
+
+    m = trimmed.match(/^Unlinked BL\/LC\s*\(>(\d+)d\)$/i);
+    if (m) {
+      return lang === 'ar' ? `بوليصة/اعتماد غير مربوطة (>${m[1]} يوم)` : `BL/LC non lié (>${m[1]} j)`;
     }
 
     m = trimmed.match(/^All cumulative supplier( and site)? settlement totals sit within accrued payable credit \(tolerance < (\$[\d,.-]+)\)\.?$/i);
@@ -34395,12 +34651,13 @@
         : `Le volume de synchronisation cloud a atteint ${m[1]} Mo sur ${m[2]} segments (${m[3]} % du plafond de 64 Mo, alerte à 12,0 Mo).${secPart}`;
     }
 
-    m = trimmed.match(/^Exceeds open leg credit by (\$[\d.,-]+)\s*·\s*Explain in Notes \(3\+ chars\)(?:\s*\(([\d,]+) raw loads at \$0\.00\))?$/i);
+    m = trimmed.match(/^Exceeds open leg credit by (\$[\d.,-]+)\s*·\s*Explain in Notes \(3\+ chars\)(?:\s*\(([\d,]+) raw loads at \$0\.00\))?(\s*·\s*Add BL #, LC #, or Import File # for advances)?$/i);
     if (m) {
       const rl = m[2] ? (lang === 'ar' ? ` (${m[2]} نقلات مواد بسعر $0.00)` : ` (${m[2]} chargements bruts à 0,00 $)`) : '';
+      const trdAdd = m[3] ? (lang === 'ar' ? ' · أضف رقم بوليصة الشحن أو الاعتماد أو ملف الاستيراد للسلف' : ' · Ajoutez un N° BL, LC ou dossier import pour les avances') : '';
       return lang === 'ar'
-        ? `يتجاوز الرصيد المفتوح لهذا الفرع بمقدار ${m[1]} · اشرح السبب في الملاحظات (3+ أحرف)${rl}`
-        : `Dépasse le crédit ouvert de cette branche de ${m[1]} · Expliquez en Notes (3+ car.)${rl}`;
+        ? `يتجاوز الرصيد المفتوح لهذا الفرع بمقدار ${m[1]} · اشرح السبب في الملاحظات (3+ أحرف)${rl}${trdAdd}`
+        : `Dépasse le crédit ouvert de cette branche de ${m[1]} · Expliquez en Notes (3+ car.)${rl}${trdAdd}`;
     }
 
     m = trimmed.match(/^Settlement exceeds open (Material|Transport|Expense) credit by (\$[\d.,-]+)\. Enter a reason in Notes \(3\+ chars\) before posting\.$/i);
@@ -34412,10 +34669,12 @@
     }
 
     // Overpaid alert strip summary sentences (raw, suppliers, sibling expenses)
-    if (/(?:(?:flagged|unpriced) sites in scope|sites overpaid \(\$[\d,.-]+\)|external \$0 raw loads|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+)/i.test(trimmed)) {
+    if (/(?:(?:flagged|unpriced) sites in scope|sites overpaid \(\$[\d,.-]+\)|external \$0 raw loads|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+|unlinked BL\/LC advances)/i.test(trimmed)) {
       const segs = trimmed.split(/\s*·\s*/).map(seg => {
         let mm = seg.match(/^([\d,]+)\s+suppliers paid (\$[\d,.-]+) above accrued credit$/i);
         if (mm) return lang === 'ar' ? `${mm[1]} موردين مدفوعين ${mm[2]} فوق الرصيد الدائن` : `${mm[1]} fournisseurs payés ${mm[2]} au-delà du crédit`;
+        mm = seg.match(/^([\d,]+)\s+unlinked BL\/LC advances?\s*>(\d+)d\s*\((\$[\d,.-]+)\)$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} سلف بوليصة/اعتماد غير مربوطة (>${mm[2]} يوم: ${mm[3]})` : `${mm[1]} avance(s) BL/LC non liée(s) (>${mm[2]} j : ${mm[3]})`;
         mm = seg.match(/^([\d,]+)\s+sites overpaid \((\$[\d,.-]+)\)$/i);
         if (mm) return lang === 'ar' ? `${mm[1]} مواقع مدفوعة بالزيادة (${mm[2]})` : `${mm[1]} sites trop payés (${mm[2]})`;
         mm = seg.match(/^([\d,]+)\s+flagged sites in scope$/i);

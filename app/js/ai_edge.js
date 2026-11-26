@@ -41,7 +41,16 @@
     mfgReconOpen: false,
     mfgReconText: '',
     mfgReconRows: null,
+    mfgReconCustomRev: -1,
     mfgReconPostedCount: 0,
+    mfgPostBusy: false,
+    mfgScanGen: 0,
+    mfgScanBusy: false,
+    mfgScanFromAi: false,
+    mfgScanStatus: '',
+    mfgScanStatusDetail: '',
+    mfgGateOverride: false,
+    mfgGateOverrideReason: '',
     hspReconOpen: false,
     hspReconText: '',
     hspReconRows: null,
@@ -2488,7 +2497,11 @@
     const demo = demoOnly('1', '0');
     const per = (D && D.STATE) ? `${D.STATE.periodMode || ''}:${D.STATE.periodValue || ''}` : '';
     const v = (D && D.STATE && D.STATE.view) ? String(D.STATE.view) : '';
-    return `${co}|${demoInd}|${demo}|${per}|${v}`;
+    const au = (D && typeof D.activeUser === 'function') ? D.activeUser() : null;
+    const uid = au ? `${au.id || au.email || ''}:${au.role || ''}` : '';
+    const lk = (D && D.STATE && D.STATE.kioskLocked) ? '1' : '0';
+    const cRev = (D && D.SEED && D.SEED._customRev) || 0;
+    return `${co}|${demoInd}|${demo}|${per}|${v}|${uid}|${lk}|${cRev}`;
   }
 
   function ensureFreshPanel(panelId) {
@@ -3139,24 +3152,215 @@
     'Holcim Liban | #INV-9041 | Bulk Cement | 31.2 Ton | Rate: $95.00 | Billed: $3,290.00 | 2026-10-30'
   ].join('\n');
 
-  function reconcileManufacturingSupplierStatement(rawText) {
+  function normAiSiteTxt(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function cleanAiSiteLabel(s) {
+    if (D && typeof D.cleanSiteLabel === 'function') return D.cleanSiteLabel(s);
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
+
+  function parseMfgStatementLinesFromAiResult(res) {
+    if (!res) return '';
+    if (typeof res === 'string') return res.trim();
+    if (typeof res.rawText === 'string' && res.rawText.trim()) return res.rawText.trim();
+    if (typeof res.text === 'string' && res.text.trim()) return res.text.trim();
+    const arr = Array.isArray(res) ? res : (res.lines || res.rows || res.items || []);
+    if (!Array.isArray(arr) || !arr.length) return '';
+    return arr.map((it, idx) => {
+      if (typeof it === 'string') return it.trim();
+      if (!it || typeof it !== 'object') return '';
+      const sup = sanitizeOutward(it.supplier || it.vendor || it.party || `Supplier ${idx + 1}`);
+      const ref = sanitizeOutward(it.ticketRef || it.ticket || it.ticket_no || it.ref || `#WS-${100 + idx}`);
+      const mat = sanitizeOutward(it.itemDesc || it.material || it.product || it.description || 'Raw Aggregate');
+      const siteTag = it.site ? ` | Site: ${cleanAiSiteLabel(it.site)}` : '';
+      const loadsTag = Number(it.loads || 0) > 0 ? ` | ${Math.round(Number(it.loads))} loads` : '';
+      const qty = Number(it.qty ?? it.tonnage ?? it.tons ?? it.volume ?? it.m3 ?? 0) || 0;
+      const rateVal = Number(it.rate ?? it.unit_price ?? it.price ?? 0);
+      const billedVal = Number(it.billed ?? it.amount ?? it.total ?? it.claimed ?? 0);
+      const dt = String(it.date || '').slice(0, 10) || (D && typeof D.todayISO === 'function' ? D.todayISO() : '2026-11-08');
+      const ratePart = rateVal > 0 ? `Rate: $${rateVal.toFixed(2)}` : '';
+      const billedPart = billedVal > 0 ? `Billed: $${billedVal.toFixed(2)}` : '';
+      return [sup, ref, `${mat}${siteTag}${loadsTag}`, `${qty} Ton`, ratePart, billedPart, dt].filter(Boolean).join(' | ');
+    }).filter(Boolean).join('\n');
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.onerror = () => reject(new Error('file_read_failed'));
+      fr.readAsDataURL(file);
+    });
+  }
+
+  async function scanStatementFileIntoRecon(file) {
+    if (!file) return null;
+    if (Number(file.size || 0) > 4.5 * 1024 * 1024) {
+      if (D && typeof D.toast === 'function') D.toast(tr('File too large (max 4.5 MB)'), 'warn');
+      return null;
+    }
+    const gen = ++EDGE_STATE.mfgScanGen;
+    EDGE_STATE.mfgScanBusy = true;
+    EDGE_STATE.mfgScanStatus = 'Scanning supplier statement...';
+    EDGE_STATE.mfgScanStatusDetail = '';
+    const oldPanel = $('mfgAiStatementReconPanel');
+    if (oldPanel) { oldPanel.remove(); mountMfgStatementReconPanel(); }
+
+    const fName = String(file.name || '');
+    const fType = String(file.type || '').toLowerCase();
+    try {
+      if (/^text\/|\.csv$|\.txt$/i.test(fType + ' ' + fName)) {
+        const rawTxt = await file.text();
+        if (gen !== EDGE_STATE.mfgScanGen) return null;
+        EDGE_STATE.mfgScanBusy = false;
+        EDGE_STATE.mfgScanFromAi = false;
+        EDGE_STATE.mfgScanStatus = 'Loaded text/CSV statement';
+        EDGE_STATE.mfgScanStatusDetail = fName;
+        EDGE_STATE.mfgReconOpen = true;
+        const rows = reconcileManufacturingSupplierStatement(rawTxt);
+        const curP = $('mfgAiStatementReconPanel');
+        if (curP) { curP.remove(); mountMfgStatementReconPanel(); }
+        return rows;
+      }
+
+      const dataUrl = await readFileAsDataUrl(file);
+      if (gen !== EDGE_STATE.mfgScanGen) return null;
+      const mimeType = fType || (/\.pdf$/i.test(fName) ? 'application/pdf' : 'image/jpeg');
+      const supPool = ((D && D.SEED && D.SEED.records && D.SEED.records.suppliers) || [])
+        .concat((D && D.STATE && D.STATE.customRecords && D.STATE.customRecords.suppliers) || [])
+        .filter(s => s && !s.voided && s.name)
+        .map(s => s.name)
+        .slice(0, 250);
+
+      let aiRes = null;
+      if (typeof window.__mfgTestStatementAiHook === 'function') {
+        aiRes = await window.__mfgTestStatementAiHook({ fileName: fName, mimeType, dataUrl, allowedNames: supPool });
+      } else {
+        const prompt = [
+          'Extract supplier weighbridge / quarry / haulage statement line items as JSON.',
+          'Return {"rows":[{"supplier":string,"ticketRef":string,"itemDesc":string,"site":string,"loads":number,"qty":number,"rate":number,"billed":number,"date":"YYYY-MM-DD"}]}.',
+          'Prefer exact supplier names from allowedNames when clearly matching Arabic or English script.'
+        ].join(' ');
+        aiRes = await callAiEdgeJson('statement_recon', prompt, dataUrl, mimeType, {
+          tier: 'vision',
+          timeoutMs: 14000,
+          allowedNames: supPool
+        });
+      }
+      if (gen !== EDGE_STATE.mfgScanGen) return null;
+      const extractedTxt = parseMfgStatementLinesFromAiResult(aiRes);
+      EDGE_STATE.mfgScanBusy = false;
+      EDGE_STATE.mfgReconOpen = true;
+      if (!extractedTxt) {
+        EDGE_STATE.mfgScanFromAi = false;
+        EDGE_STATE.mfgScanStatus = 'Smart scan unavailable offline: paste statement lines below';
+        EDGE_STATE.mfgScanStatusDetail = '';
+        const pMiss = $('mfgAiStatementReconPanel');
+        if (pMiss) { pMiss.remove(); mountMfgStatementReconPanel(); }
+        return null;
+      }
+      EDGE_STATE.mfgScanFromAi = true;
+      EDGE_STATE.mfgScanStatus = 'AI extracted statement';
+      EDGE_STATE.mfgScanStatusDetail = fName;
+      const rows = reconcileManufacturingSupplierStatement(extractedTxt);
+      const pDone = $('mfgAiStatementReconPanel');
+      if (pDone) { pDone.remove(); mountMfgStatementReconPanel(); }
+      return rows;
+    } catch (_) {
+      if (gen !== EDGE_STATE.mfgScanGen) return null;
+      EDGE_STATE.mfgScanBusy = false;
+      EDGE_STATE.mfgScanStatus = 'Could not read file: paste lines manually';
+      EDGE_STATE.mfgScanStatusDetail = '';
+      const pErr = $('mfgAiStatementReconPanel');
+      if (pErr) { pErr.remove(); mountMfgStatementReconPanel(); }
+      return null;
+    }
+  }
+
+  function reconcileManufacturingSupplierStatement(rawText, opts) {
+    const preserveSelection = Boolean(opts && opts.preserveSelection);
+    const prevSelMap = new Map();
+    if (preserveSelection && Array.isArray(EDGE_STATE.mfgReconRows)) {
+      EDGE_STATE.mfgReconRows.forEach(pr => {
+        if (!pr) return;
+        prevSelMap.set(`${pr.idx}|${pr.ticketRef}|${pr.matchedSupplier}`, {
+          selected: Boolean(pr.selected),
+          gateBlocked: Boolean(pr.gateBlocked)
+        });
+      });
+    }
     const txt = String(rawText || EDGE_STATE.mfgReconText || demoOnly(SAMPLE_MFG_SUPPLIER_STATEMENT, '')).trim();
     EDGE_STATE.mfgReconText = txt;
-    const supPool = ((D && D.SEED && D.SEED.records && D.SEED.records.suppliers) || [])
-      .concat((D && D.STATE && D.STATE.customRecords && D.STATE.customRecords.suppliers) || [])
-      .filter(s => s && !s.voided && s.name);
-    const rawRules = ((D && D.SEED && D.SEED.records && D.SEED.records.price_rules) || []).filter(r => r && !r.voided);
+    if (!preserveSelection) {
+      EDGE_STATE.mfgGateOverride = false;
+      EDGE_STATE.mfgGateOverrideReason = '';
+    }
+    const isDemoShowcaseSample = Boolean((demoOnly('1', '') === '1' || (D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive())) && txt === SAMPLE_MFG_SUPPLIER_STATEMENT);
+    const allowedCos = (D && typeof D.allowedCompanyNames === 'function') ? D.allowedCompanyNames() : [];
+    const activeCoRaw = (D && D.STATE && D.STATE.company) ? String(D.STATE.company) : '';
+    const scopeCo = (activeCoRaw && activeCoRaw !== 'manufacturing-group' && !/^industry:/i.test(activeCoRaw)) ? activeCoRaw : '';
+    const allowedScopeNorms = (scopeCo ? [scopeCo] : allowedCos).map(normAiSiteTxt).filter(Boolean);
+    const supPoolRaw = ((D && D.SEED && D.SEED.records && D.SEED.records.suppliers) || [])
+      .concat((D && D.STATE && D.STATE.customRecords && D.STATE.customRecords.suppliers) || []);
+    const supPool = supPoolRaw.filter(s => {
+      if (!s || s.voided || !s.name) return false;
+      if (allowedScopeNorms.length && s.company && !allowedScopeNorms.includes(normAiSiteTxt(s.company))) return false;
+      return true;
+    });
+    const allRules = (D && D.SEED && D.SEED.records && Array.isArray(D.SEED.records.price_rules)) ? D.SEED.records.price_rules : [];
+    const allRaws = (D && D.SEED && D.SEED.records && Array.isArray(D.SEED.records.raw_purchases)) ? D.SEED.records.raw_purchases : [];
+    const rawRules = (D && typeof D.filterRecords === 'function')
+      ? D.filterRecords(allRules, { ignoreSearch: true, ignorePeriod: true })
+      : allRules.filter(r => r && !r.voided);
+    const rawPurchases = (D && typeof D.filterRecords === 'function')
+      ? D.filterRecords(allRaws, { ignoreSearch: true, ignorePeriod: true })
+      : allRaws.filter(r => r && !r.voided);
+    const apBridge = (D && typeof D.computeThreeLegPayablesBreakdown === 'function')
+      ? D.computeThreeLegPayablesBreakdown({ ignorePeriod: true })
+      : null;
+    const s20Snap = (D && typeof D.getOverpaidPayablesSentinelData === 'function')
+      ? D.getOverpaidPayablesSentinelData()
+      : null;
+    const minS20Usd = Math.max(0.01, Number((s20Snap && s20Snap.minUsd) || 100));
 
+    const apBySupNorm = new Map();
+    if (apBridge && Array.isArray(apBridge.rows)) {
+      apBridge.rows.forEach(ar => {
+        if (!ar || !ar.supplier) return;
+        apBySupNorm.set(normAiSiteTxt(ar.supplier), ar);
+      });
+    }
+
+    const getRuleRate = pr => Number((pr && (pr.unit_price ?? pr.price ?? pr.rate ?? pr.material_price ?? pr.trans_unit_price ?? pr.trans_price ?? pr.transport_price)) || 0);
+    const getRawQty = rp => Number((rp && (rp.qty ?? rp.tons ?? rp.m3_qty ?? rp.m3)) || 0);
+    const rawQtyInTons = rp => {
+      if (!rp) return 0;
+      if (D && typeof D.ticketTons === 'function') {
+        const t = Number(D.ticketTons(rp) || 0);
+        if (t > 0) return t;
+      }
+      return Number(rp.tons ?? rp.qty ?? rp.m3_qty ?? rp.m3 ?? 0) || 0;
+    };
+    const batchClaimBySup = new Map();
+
+    const todayFallback = (D && typeof D.todayISO === 'function') ? D.todayISO() : new Date().toISOString().slice(0, 10);
     const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const out = lines.map((line, idx) => {
       const parts = line.split('|').map(p => p.trim());
       const supRaw = parts[0] || `Supplier ${idx + 1}`;
       const ticketRef = parts[1] || `#ST-${100 + idx}`;
-      const itemDesc = parts[2] || 'Raw Aggregate';
+      const siteTagMatch = line.match(/(?:^|\|\s*)site\s*:\s*([^|]+)/i);
+      const loadsTagMatch = line.match(/([\d,]+)\s+loads?\b/i);
+      const siteHint = siteTagMatch ? cleanAiSiteLabel(siteTagMatch[1]) : '';
+      const itemDescRaw = (parts[2] || 'Raw Aggregate').replace(/^site\s*:\s*/i, '').trim();
+      const itemDesc = itemDescRaw || (siteHint || 'Raw Aggregate');
       const qtyMatch = line.match(/([\d,.]+)\s*(?:ton|t\b|m3|m³|طن)/i);
       const rateMatch = line.match(/rate\s*:\s*\$?([\d,.]+)/i);
       const billedMatch = line.match(/billed\s*:\s*\$?([\d,.]+)/i);
       const dateMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
+      const rowDate = dateMatch ? dateMatch[1] : todayFallback;
       const nums = (line.match(/\d[\d,]*(?:\.\d+)?/g) || []).map(s => Number(s.replace(/,/g, '')));
 
       const qty = qtyMatch ? Number(qtyMatch[1].replace(/,/g, '')) : (nums[0] || 36);
@@ -3165,11 +3369,110 @@
 
       const ranked = rankCandidatesByScoreAndFreq(supPool, supRaw, 'supplier', 0.48);
       const matchedSup = ranked.length ? ranked[0].label : (/chekka|شكا/i.test(supRaw) ? 'Chekka Quarry' : (/afif|عفيف/i.test(supRaw) ? 'Afif Transport' : sanitizeOutward(supRaw)));
+      const supNorm = normAiSiteTxt(matchedSup);
+      const supRec = supPool.find(s => normAiSiteTxt(s.name) === supNorm) || null;
       const confPct = ranked.length ? Math.min(99, Math.round(70 + ranked[0].score * 29)) : 86;
 
-      const hitRule = rawRules.find(pr => pr.supplier && pr.supplier.toLowerCase() === matchedSup.toLowerCase() && Number(pr.material_price || pr.transport_price || pr.price || 0) > 0);
-      if (!rateMatch && hitRule) {
-        contractRate = Number(hitRule.material_price || hitRule.transport_price || hitRule.price || contractRate);
+      // Cross-check logged raw_purchases weighbridge loads & unpriced $0 tickets deterministically
+      const cleanRefNorm = normAiSiteTxt(ticketRef.replace(/^#/, ''));
+      const matchedRawRows = rawPurchases.filter(rp => {
+        if (!rp || rp.voided) return false;
+        const rpTicket = normAiSiteTxt(String(rp.ticket_no || rp.id || rp.ref || '').replace(/^#/, ''));
+        const sameSo = normAiSiteTxt(rp.site_owner) === supNorm;
+        const sameTo = normAiSiteTxt(rp.truck_owner) === supNorm;
+        const ticketExact = cleanRefNorm && rpTicket && rpTicket === cleanRefNorm;
+        const ticketSub = cleanRefNorm.length >= 4 && rpTicket && rpTicket.includes(cleanRefNorm) && (sameSo || sameTo);
+        if (ticketSub) return true;
+        if (ticketExact && (sameSo || sameTo || !supNorm)) return true;
+        if (!sameSo && !sameTo) return false;
+        if (siteHint) return normAiSiteTxt(rp.site) === normAiSiteTxt(siteHint);
+        const rpProdNorm = normAiSiteTxt(rp.product);
+        const rpSiteNorm = normAiSiteTxt(rp.site);
+        const descNorm = normAiSiteTxt(itemDesc);
+        return Boolean(descNorm && ((rpProdNorm && descNorm.includes(rpProdNorm)) || (rpSiteNorm && descNorm.includes(rpSiteNorm))));
+      });
+
+      const isMatZero = rp => {
+        if (String(rp.method || 'Credit').trim() !== 'Credit') return false;
+        if (rawQtyInTons(rp) <= 0) return false;
+        const soN = normAiSiteTxt(rp.site_owner);
+        const coN = normAiSiteTxt(rp.company);
+        return Boolean(soN && soN === supNorm && soN !== coN && Number(rp.cost || 0) === 0);
+      };
+      const isHaulZero = rp => {
+        if (String(rp.method || 'Credit').trim() !== 'Credit') return false;
+        if (rawQtyInTons(rp) <= 0) return false;
+        const toN = normAiSiteTxt(rp.truck_owner);
+        const coN = normAiSiteTxt(rp.company);
+        return Boolean(toN && toN === supNorm && toN !== coN && !/^company/i.test(String(rp.transport_by || '')) && !/^supplier-delivered$/i.test(String(rp.transport_by || '')) && !rp.includes_transport && Number(rp.trans_cost || 0) === 0);
+      };
+      const matZeroRows = matchedRawRows.filter(isMatZero);
+      const haulZeroRows = matchedRawRows.filter(isHaulZero);
+      const zeroLoadRows = matZeroRows.length ? matZeroRows : haulZeroRows;
+      const zeroLegMode = matZeroRows.length ? 'material' : (haulZeroRows.length ? 'transport' : '');
+      const matchedZeroLoads = zeroLoadRows.length;
+      const loggedQty = round2(matchedRawRows.reduce((s, rp) => s + rawQtyInTons(rp), 0));
+      let matchedSite = siteHint;
+      if (!matchedSite && zeroLoadRows.length) matchedSite = cleanAiSiteLabel(zeroLoadRows[0].site || '');
+      if (!matchedSite && matchedRawRows.length) matchedSite = cleanAiSiteLabel(matchedRawRows[0].site || '');
+      const matchedProduct = (zeroLoadRows[0] && zeroLoadRows[0].product) || (matchedRawRows[0] && matchedRawRows[0].product) || '';
+      const matchedUom = (zeroLoadRows[0] && zeroLoadRows[0].uom) || (matchedRawRows[0] && matchedRawRows[0].uom) || '';
+      const earliestZeroDate = zeroLoadRows.reduce((minD, rp) => {
+        const d10 = String((rp && (rp.rep_date || rp.date)) || '').slice(0, 10);
+        return (d10 && (!minD || d10 < minD)) ? d10 : minD;
+      }, '');
+
+      const apRow = apBySupNorm.get(supNorm) || null;
+      const matchedCompany = sanitizeOutward(
+        (zeroLoadRows[0] && zeroLoadRows[0].company)
+        || (matchedRawRows[0] && matchedRawRows[0].company)
+        || (supRec && supRec.company)
+        || (apRow && apRow.company)
+        || ''
+      );
+
+      const hasTruckMatch = matchedRawRows.some(rp => normAiSiteTxt(rp.truck_owner) === supNorm && normAiSiteTxt(rp.site_owner) !== supNorm);
+      const hasQuarryMatch = matchedRawRows.some(rp => normAiSiteTxt(rp.site_owner) === supNorm);
+      const inferredLeg = (zeroLegMode === 'transport' || hasTruckMatch || (!hasQuarryMatch && /haul|trans|نقل|نقليات/i.test(matchedSup + ' ' + itemDesc)))
+        ? 'transportation'
+        : ((zeroLegMode === 'material' || hasQuarryMatch || /quarry|مقالع|كسارة|sakher|aggregate|sand|gravel/i.test(matchedSup + ' ' + itemDesc))
+          ? 'quarry'
+          : 'expense');
+
+      const matchedSiteNorm = normAiSiteTxt(matchedSite);
+      const wantRuleTypes = inferredLeg === 'transportation'
+        ? ['Transport Price (Site)']
+        : ['Purchase Price (Site)', 'Purchase Price (Supplier)'];
+      let hitRule = (D && typeof D.findRule === 'function')
+        ? D.findRule({
+            company: matchedCompany,
+            supplier: matchedSup,
+            site: matchedSite,
+            product: matchedProduct || itemDesc,
+            date: rowDate,
+            types: wantRuleTypes
+          })
+        : null;
+      if (!hitRule) {
+        hitRule = rawRules.find(pr => {
+          if (!pr || pr.voided || getRuleRate(pr) <= 0) return false;
+          if (pr.rule_type && !wantRuleTypes.includes(pr.rule_type)) return false;
+          if (pr.start_date && String(pr.start_date).slice(0, 10) > rowDate) return false;
+          if (pr.end_date && String(pr.end_date).slice(0, 10) < rowDate) return false;
+          if (matchedCompany && pr.company && normAiSiteTxt(pr.company) !== normAiSiteTxt(matchedCompany)) return false;
+          if (matchedProduct && pr.product && normAiSiteTxt(pr.product) !== normAiSiteTxt(matchedProduct)) return false;
+          const prSo = normAiSiteTxt(pr.site_owner || pr.supplier);
+          const prSup = normAiSiteTxt(pr.supplier);
+          const prSite = normAiSiteTxt(pr.site);
+          const supHit = supNorm && (prSo === supNorm || prSup === supNorm);
+          if (matchedSiteNorm && prSite === matchedSiteNorm) return supHit || !prSo;
+          return supHit;
+        }) || null;
+      }
+      const hitRuleRate = hitRule ? getRuleRate(hitRule) : 0;
+      const hitRuleUnit = hitRule ? String((inferredLeg === 'transportation' ? (hitRule.rate_per || hitRule.unit) : hitRule.unit) || 'm³') : 'Ton';
+      if (!rateMatch && hitRuleRate > 0) {
+        contractRate = hitRuleRate;
       }
 
       const isIva = /holcim|ciment|sibline|official/i.test(matchedSup + ' ' + itemDesc);
@@ -3178,8 +3481,45 @@
       const expectedUsd = round2(expectedNet + vatUsd);
       const varianceUsd = round2(billedUsd - expectedUsd);
       const refTruckLoad = /cement/i.test(itemDesc) ? 30.0 : (/sakher/i.test(itemDesc) ? 42.0 : 36.0);
-      const tonDriftPct = refTruckLoad > 0 ? round2(((qty - refTruckLoad) / refTruckLoad) * 100) : 0;
+      const tonDriftPct = (!matchedRawRows.length && refTruckLoad > 0)
+        ? round2(((qty - refTruckLoad) / refTruckLoad) * 100)
+        : (loggedQty > 0 ? round2(((qty - loggedQty) / loggedQty) * 100) : 0);
       const hasScaleDrift = Math.abs(tonDriftPct) > 3.0;
+
+      // Deterministic S20 Weighbridge & Cumulative Cash Cap Gatekeeper
+      const cumCashPaid = apRow ? round2(Number(apRow.quarry_pd || 0) + Number(apRow.trans_pd || 0) + Number(apRow.exp_pd_usd || 0) + Number(apRow.exp_vat_pd_usd || 0)) : 0;
+      const cumCreditedUsd = apRow ? round2(Number(apRow.quarry_cr || 0) + Number(apRow.trans_cr || 0) + (Number(apRow.exp_cr_usd || 0) - Number(apRow.exp_ret_wtc_usd || 0) - Number(apRow.exp_ret_other_usd || 0)) + Number(apRow.exp_vat_cr_usd || 0)) : 0;
+      const documentedZeroVal = hitRuleRate > 0
+        ? round2(zeroLoadRows.reduce((sumZ, rp) => {
+          const uQty = /^ton/i.test(hitRuleUnit) ? rawQtyInTons(rp) : (/^truck/i.test(hitRuleUnit) ? 1 : getRawQty(rp));
+          return sumZ + (uQty * hitRuleRate);
+        }, 0))
+        : 0;
+      const effectiveDocCap = matchedRawRows.length > 0
+        ? round2(cumCreditedUsd + documentedZeroVal)
+        : cumCreditedUsd;
+      const runningSupClaim = round2((batchClaimBySup.get(supNorm) || 0) + billedUsd);
+      batchClaimBySup.set(supNorm, runningSupClaim);
+      const projectedExcessUsd = round2((cumCashPaid + runningSupClaim) - effectiveDocCap);
+
+      const exceedsLoggedQty = matchedRawRows.length > 0 && loggedQty > 0 && qty > round2(loggedQty * 1.03);
+      const exceedsS20QuotedCap = !isDemoShowcaseSample
+        && ((billedUsd > 0 && projectedExcessUsd >= minS20Usd) || (matchedZeroLoads > 0 && hitRuleRate <= 0 && billedUsd > 0));
+
+      let gateReason = '';
+      if (exceedsLoggedQty) gateReason = 'Exceeds Logged Weighbridge';
+      else if (exceedsS20QuotedCap) gateReason = 'Exceeds Quoted Vol · S20';
+      const gateBlocked = Boolean(gateReason);
+
+      const status = gateBlocked
+        ? gateReason
+        : (Math.abs(varianceUsd) < 0.5 && !hasScaleDrift ? 'Matched' : (hasScaleDrift ? 'Scale Drift (>3%)' : 'Rate Variance'));
+
+      const prevSelKey = `${idx + 1}|${sanitizeOutward(ticketRef)}|${sanitizeOutward(matchedSup)}`;
+      const prevSelEntry = preserveSelection ? prevSelMap.get(prevSelKey) : null;
+      const rowSelected = prevSelEntry
+        ? ((prevSelEntry.gateBlocked && !gateBlocked) ? true : Boolean(prevSelEntry.selected))
+        : !gateBlocked;
 
       return {
         idx: idx + 1,
@@ -3187,8 +3527,21 @@
         matchedSupplier: sanitizeOutward(matchedSup),
         ticketRef: sanitizeOutward(ticketRef),
         itemDesc: sanitizeOutward(itemDesc),
-        date: dateMatch ? dateMatch[1] : '2026-10-30',
+        date: rowDate,
         qty: round2(qty),
+        loggedQty,
+        loadsDeclared: loadsTagMatch ? Number(String(loadsTagMatch[1]).replace(/,/g, '')) : matchedRawRows.length,
+        matchedZeroLoads,
+        matchedSite: sanitizeOutward(matchedSite),
+        matchedCompany,
+        matchedProduct: sanitizeOutward(matchedProduct),
+        matchedUom: sanitizeOutward(matchedUom),
+        zeroLegMode,
+        earliestZeroDate,
+        hitRuleRate: round2(hitRuleRate),
+        cumCashPaid,
+        effectiveDocCap,
+        projectedExcessUsd,
         contractRate: round2(contractRate),
         vatUsd,
         expectedUsd,
@@ -3196,54 +3549,169 @@
         varianceUsd,
         tonDriftPct,
         hasScaleDrift,
+        exceedsLoggedQty,
+        exceedsS20QuotedCap,
+        gateBlocked,
+        gateReason,
+        inferredLeg,
+        selected: rowSelected,
         confidencePct: confPct,
-        status: Math.abs(varianceUsd) < 0.5 && !hasScaleDrift ? 'Matched' : (hasScaleDrift ? 'Scale Drift (>3%)' : 'Rate Variance')
+        status
       };
     });
 
     EDGE_STATE.mfgReconRows = out;
+    EDGE_STATE.mfgReconCustomRev = (D && D.SEED && D.SEED._customRev) || 0;
     return out;
   }
 
-  function postManufacturingStatementBatch() {
-    const rows = EDGE_STATE.mfgReconRows || reconcileManufacturingSupplierStatement(EDGE_STATE.mfgReconText);
-    if (!rows.length || !D || !D.STATE) return 0;
-    if (!D.STATE.customRecords) D.STATE.customRecords = {};
-    if (!Array.isArray(D.STATE.customRecords.settlements)) D.STATE.customRecords.settlements = [];
-    const td = typeof D.todayISO === 'function' ? D.todayISO() : '2026-11-08';
-    const coName = (typeof D.defaultEntryCompany === 'function' && D.defaultEntryCompany()) || 'WTC';
-    let posted = 0;
+  function mfgReconStableHash(str) {
+    let h = 2166136261;
+    const s = String(str || '');
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
+  }
 
-    rows.forEach((r, i) => {
-      const id = `SET-AI-${String(r.ticketRef).replace(/[^A-Za-z0-9]/g, '') || (i + 1)}`;
-      const exists = D.STATE.customRecords.settlements.some(x => x && x.id === id && !x.voided);
-      const rowObj = {
-        id,
-        date: r.date || td,
-        rep_date: r.date || td,
-        company: coName,
-        supplier: r.matchedSupplier,
-        method: 'Bank Transfer',
-        amount: r.expectedUsd,
-        currency: 'USD',
-        reference: r.ticketRef,
-        notes: sanitizeOutward(`Statement 3-way match (${r.qty} Ton @ ${fmtUSD(r.contractRate, 2)})`)
-      };
-      if (!exists) {
-        D.STATE.customRecords.settlements.unshift(rowObj);
-      } else {
-        const idx = D.STATE.customRecords.settlements.findIndex(x => x && x.id === id);
-        if (idx >= 0) D.STATE.customRecords.settlements[idx] = rowObj;
+  async function postManufacturingStatementBatch() {
+    if (!D || !D.STATE || EDGE_STATE.mfgPostBusy) return 0;
+    const hideExpenses = (typeof D.seatLens === 'function') ? !Boolean(D.seatLens().expenses) : false;
+    const canWrite = !D.STATE.kioskLocked && (typeof D.canModifyData === 'function' ? D.canModifyData() : true) && !hideExpenses;
+    if (!canWrite) {
+      if (typeof D.toast === 'function') D.toast(tr('Read-only or restricted role cannot post supplier settlements'), 'warn');
+      return 0;
+    }
+    const curRev = (D.SEED && D.SEED._customRev) || 0;
+    const rows = (!EDGE_STATE.mfgReconRows || EDGE_STATE.mfgReconCustomRev !== curRev)
+      ? reconcileManufacturingSupplierStatement(EDGE_STATE.mfgReconText, { preserveSelection: Boolean(EDGE_STATE.mfgReconRows) })
+      : EDGE_STATE.mfgReconRows;
+    if (!rows.length) return 0;
+    const chosen = rows.filter(r => r && r.selected);
+    if (!chosen.length) {
+      const blockedAny = rows.some(r => r && r.gateBlocked);
+      if (typeof D.toast === 'function') {
+        D.toast(tr(blockedAny
+          ? 'Blocked by S20 Gatekeeper Hold: set missing site prices or enable Supervisor override'
+          : 'Select at least one statement line to post'), 'warn');
       }
-      posted += 1;
-    });
+      return 0;
+    }
+    const blockedChosen = chosen.filter(r => r.gateBlocked);
+    if (blockedChosen.length && !EDGE_STATE.mfgGateOverride) {
+      if (typeof D.toast === 'function') D.toast(tr('Blocked by S20 Gatekeeper Hold: uncheck held lines or approve override'), 'warn');
+      return 0;
+    }
+    const cleanOverrideReason = sanitizeOutward(EDGE_STATE.mfgGateOverrideReason || '');
+    if (blockedChosen.length && cleanOverrideReason.length < 3) {
+      if (typeof D.toast === 'function') D.toast(tr('Enter an S20 override reason (3+ chars) before posting held lines'), 'warn');
+      return 0;
+    }
 
-    EDGE_STATE.mfgReconPostedCount = posted;
-    if (typeof D.applyCustomRecordsToSeed === 'function') D.applyCustomRecordsToSeed();
-    if (!isHeadlessEnv() && typeof D.saveLocalAuthAndRecords === 'function') D.saveLocalAuthAndRecords();
-    if (typeof D.renderApp === 'function') D.renderApp();
-    if (typeof D.toast === 'function') D.toast(`${posted} ${tr('matched supplier settlements posted')}`, 'ok');
-    return posted;
+    EDGE_STATE.mfgPostBusy = true;
+    try {
+      if (!D.STATE.customRecords) D.STATE.customRecords = {};
+      if (!Array.isArray(D.STATE.customRecords.settlements)) D.STATE.customRecords.settlements = [];
+      const td = typeof D.todayISO === 'function' ? D.todayISO() : '2026-11-08';
+      const coFallback = (typeof D.defaultEntryCompany === 'function' && D.defaultEntryCompany()) || 'WTC';
+      const allowedCos = (typeof D.allowedCompanyNames === 'function') ? D.allowedCompanyNames() : [];
+      const au = (typeof D.activeUser === 'function') ? D.activeUser() : null;
+      const nowIso = new Date().toISOString();
+      const seenBatchIds = new Set();
+      const staged = [];
+
+      chosen.forEach((r, i) => {
+        const rowDate = r.date || td;
+        const rowCo = (r.matchedCompany && r.matchedCompany !== 'manufacturing-group') ? r.matchedCompany : coFallback;
+        if (allowedCos.length && !allowedCos.includes(rowCo)) {
+          if (typeof D.toast === 'function') D.toast(tr('Read-only or restricted role cannot post supplier settlements'), 'warn');
+          return;
+        }
+        const lockChk = checkPeriodCloseGuard(rowCo, rowDate, rowDate, { industry: 'Manufacturing' });
+        if (lockChk && lockChk.blocked) {
+          if (typeof D.toast === 'function') D.toast(lockChk.message, 'warn');
+          return;
+        }
+        const slug = String(r.ticketRef || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 12);
+        const legVal = r.inferredLeg || 'expense';
+        const rawHash = mfgReconStableHash(`${rowCo}|${r.matchedSupplier}|${legVal}|${r.ticketRef}|${rowDate}|${r.qty}|${r.expectedUsd}`);
+        const baseId = slug.length >= 2 ? `SET-AI-${slug}-${rawHash}` : `SET-AI-${rawHash}`;
+        const seedSettles = (D.SEED && D.SEED.records && Array.isArray(D.SEED.records.settlements)) ? D.SEED.records.settlements : [];
+        const customSettles = D.STATE.customRecords.settlements;
+        const collidesUnsafe = candId => {
+          if (seenBatchIds.has(candId)) return true;
+          const allMatches = customSettles.filter(x => x && x.id === candId).concat(seedSettles.filter(x => x && x.id === candId));
+          return allMatches.some(x => Boolean(x.voided) || normAiSiteTxt(x.supplier) !== normAiSiteTxt(r.matchedSupplier) || normAiSiteTxt(x.company) !== normAiSiteTxt(rowCo));
+        };
+        let id = baseId;
+        let suffixN = 1;
+        while (collidesUnsafe(id)) {
+          suffixN += 1;
+          id = `${baseId}-${suffixN}`;
+        }
+        seenBatchIds.add(id);
+
+        const overrideNote = r.gateBlocked ? ` [S20 Gate Override: ${r.gateReason} - ${cleanOverrideReason}]` : '';
+        const rowObj = {
+          id,
+          name: sanitizeOutward(`SETTLE ${rowDate} ${r.matchedSupplier}`),
+          date: rowDate,
+          rep_date: rowDate,
+          company: rowCo,
+          supplier: r.matchedSupplier,
+          payable_leg: legVal,
+          method: 'Bank Transfer',
+          amount: r.expectedUsd,
+          discount: 0,
+          currency: 'USD',
+          reference: r.ticketRef,
+          notes: sanitizeOutward(`Statement 3-way match (${r.qty} Ton @ ${fmtUSD(r.contractRate, 2)})${overrideNote}`),
+          source: 'app',
+          entered_by: (au && (au.full_name || au.name)) || 'System',
+          entered_by_email: (au && au.email) || '',
+          entered_at: nowIso,
+          modified_at: nowIso,
+          voided: false
+        };
+        const existingIdx = customSettles.findIndex(x => x && x.id === id && !x.voided);
+        const prevSnap = existingIdx >= 0 ? Object.assign({}, customSettles[existingIdx]) : null;
+        if (existingIdx < 0) {
+          customSettles.unshift(rowObj);
+        } else {
+          customSettles[existingIdx] = Object.assign({}, customSettles[existingIdx], rowObj);
+        }
+        staged.push({ rowObj, prevSnap, hadExisting: existingIdx >= 0 });
+      });
+
+      let posted = 0;
+      for (let i = 0; i < staged.length; i++) {
+        const { rowObj, prevSnap, hadExisting } = staged[i];
+        if (typeof D.postRecordToLocalApi === 'function') {
+          const apiRes = await D.postRecordToLocalApi('settlements', rowObj, { deferRender: true });
+          if (apiRes && apiRes.ok === false && !apiRes.shellOutdated && !apiRes.networkError) {
+            const curIdx = D.STATE.customRecords.settlements.findIndex(x => x && x.id === rowObj.id);
+            if (hadExisting && prevSnap && curIdx >= 0) D.STATE.customRecords.settlements[curIdx] = prevSnap;
+            else if (!hadExisting && curIdx >= 0) D.STATE.customRecords.settlements.splice(curIdx, 1);
+            if (typeof D.toast === 'function') D.toast(apiRes.error || tr('Server rejected statement settlement'), 'err');
+            continue;
+          }
+        }
+        posted += 1;
+      }
+
+      if (posted > 0) {
+        EDGE_STATE.mfgReconPostedCount = posted;
+        if (typeof D.applyCustomRecordsToSeed === 'function') D.applyCustomRecordsToSeed();
+        if (!isHeadlessEnv() && typeof D.saveLocalAuthAndRecords === 'function') D.saveLocalAuthAndRecords();
+        if (typeof D.syncWithCloud === 'function') D.syncWithCloud(true);
+        if (typeof D.renderApp === 'function') D.renderApp();
+        if (typeof D.toast === 'function') D.toast(`${posted} ${tr('matched supplier settlements posted')}`, 'ok');
+      }
+      return posted;
+    } finally {
+      EDGE_STATE.mfgPostBusy = false;
+    }
   }
 
   function mountMfgStatementReconPanel() {
@@ -3254,13 +3722,21 @@
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
-    const rows = EDGE_STATE.mfgReconRows || reconcileManufacturingSupplierStatement(EDGE_STATE.mfgReconText);
+    const hideExpenses = (typeof D.seatLens === 'function') ? !Boolean(D.seatLens().expenses) : false;
+    const canWrite = !D.STATE.kioskLocked && (typeof D.canModifyData === 'function' ? D.canModifyData() : true) && !hideExpenses;
+    const curRev = (D.SEED && D.SEED._customRev) || 0;
+    const rows = (!EDGE_STATE.mfgReconRows || EDGE_STATE.mfgReconCustomRev !== curRev)
+      ? reconcileManufacturingSupplierStatement(EDGE_STATE.mfgReconText, { preserveSelection: Boolean(EDGE_STATE.mfgReconRows) })
+      : EDGE_STATE.mfgReconRows;
     const apBridge = typeof D.computeThreeLegPayablesBreakdown === 'function' ? D.computeThreeLegPayablesBreakdown() : null;
     const sumQty = round2(rows.reduce((a, r) => a + r.qty, 0));
     const sumExp = round2(rows.reduce((a, r) => a + r.expectedUsd, 0));
     const sumBilled = round2(rows.reduce((a, r) => a + r.billedUsd, 0));
     const sumVar = round2(rows.reduce((a, r) => a + r.varianceUsd, 0));
     const openApUsd = apBridge && apBridge.totals ? round2(Number(apBridge.totals.closingBalance || apBridge.totals.netPayable || 0)) : sumExp;
+    const gatedRows = rows.filter(r => r && r.gateBlocked);
+    const unpricedRowCount = rows.filter(r => r && r.matchedZeroLoads > 0).length;
+    const maskAmt = v => (hideExpenses ? `<span class="muted">Restricted</span>` : v);
 
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
@@ -3269,61 +3745,93 @@
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
-          <span class="aie-pill">${ic('sparkles')} ${esc(tr('AI Supplier Weighbridge & Statement Reconciler'))}</span>
-          <strong>${esc(tr('Cross-Script Material, Transport & Bank 3-Way Match'))} (${rows.length})</strong>
+          <span class="aie-pill">${ic('sparkles')} AI Supplier Weighbridge &amp; Statement Reconciler</span>
+          <strong><span>Cross-Script Material, Transport &amp; Bank 3-Way Match</span> (<span data-no-i18n="1">${rows.length}</span>)</strong>
+          ${gatedRows.length ? `<span class="aie-pill is-err"><span>S20 Gatekeeper Hold</span> (<span data-no-i18n="1">${gatedRows.length}</span>)</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button type="button" class="aie-btn is-brass" id="mfgAiToggleReconBtn">${esc(tr(EDGE_STATE.mfgReconOpen ? 'Hide Statement Studio' : 'Open Statement Studio'))}</button>
+          <button type="button" class="aie-btn is-brass" id="mfgAiToggleReconBtn">${EDGE_STATE.mfgReconOpen ? 'Hide Statement Studio' : 'Open Statement Studio'}</button>
         </div>
       </div>
       <div class="aie-recon-kpis">
-        <div class="aie-recon-kpi"><small>${esc(tr('Statement Weighed Qty'))}</small><strong data-no-i18n="1">${fmtNum(sumQty, 1)} Ton</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('Contract Expected ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumExp, 2)}</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('Supplier Billed ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumBilled, 2)}</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('3-Leg Open Payables Tie'))}</small><strong data-no-i18n="1">${fmtUSD(openApUsd, 0)}</strong></div>
+        <div class="aie-recon-kpi"><small>Statement Weighed Qty</small><strong data-no-i18n="1">${fmtNum(sumQty, 1)} Ton</strong></div>
+        <div class="aie-recon-kpi"><small>Contract Expected ($)</small><strong data-no-i18n="1">${hideExpenses ? 'Restricted' : fmtUSD(sumExp, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>Supplier Billed ($)</small><strong data-no-i18n="1">${hideExpenses ? 'Restricted' : fmtUSD(sumBilled, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>3-Leg Open Payables Tie</small><strong data-no-i18n="1">${hideExpenses ? 'Restricted' : fmtUSD(openApUsd, 0)}</strong></div>
       </div>
       ${EDGE_STATE.mfgReconOpen ? `
-        <textarea class="aie-batch-textarea" id="mfgAiReconInput" style="margin-top:8px" placeholder="${esc(SAMPLE_MFG_SUPPLIER_STATEMENT)}" aria-label="${esc(tr('Supplier Weighbridge Statement Lines'))}" data-no-i18n="1">${esc(EDGE_STATE.mfgReconText || demoOnly(SAMPLE_MFG_SUPPLIER_STATEMENT, ''))}</textarea>
+        ${(!hideExpenses && (EDGE_STATE.mfgScanBusy || EDGE_STATE.mfgScanStatus)) ? `
+          <div class="aie-recon-gate-bar" id="mfgAiScanStatusBar" style="margin-top:8px">
+            <span><span>${esc(EDGE_STATE.mfgScanStatus || 'Scanning supplier statement...')}</span>${EDGE_STATE.mfgScanStatusDetail ? `: <strong data-no-i18n="1">${esc(EDGE_STATE.mfgScanStatusDetail)}</strong>` : ''}</span>
+          </div>
+        ` : ''}
+        ${(!hideExpenses && (gatedRows.length || unpricedRowCount)) ? `
+          <div class="aie-recon-gate-bar" id="mfgAiGateBar" style="margin-top:8px">
+            <span>
+              <strong>S20 Gatekeeper Hold</strong>:
+              ${gatedRows.length ? `<span data-no-i18n="1">${gatedRows.length}</span> <span>held before payment</span>` : ''}
+              ${(gatedRows.length && unpricedRowCount) ? ' · ' : ''}
+              ${unpricedRowCount ? `<span data-no-i18n="1">${unpricedRowCount}</span> <span>Unpriced ($0 Loads)</span>` : ''}
+            </span>
+            ${(gatedRows.length && canWrite) ? `
+              <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="mfgAiGateOverrideChk"${EDGE_STATE.mfgGateOverride ? ' checked' : ''}>
+                  <span>Allow S20 Override</span>
+                </label>
+                <input type="text" class="aie-input" id="mfgAiGateOverrideReason" style="min-width:190px;padding:3px 8px;font-size:12px" placeholder="Override reason (3+ chars)" value="${esc(EDGE_STATE.mfgGateOverrideReason || '')}"${EDGE_STATE.mfgGateOverride ? '' : ' hidden'}>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+        <textarea class="aie-batch-textarea" id="mfgAiReconInput" style="margin-top:8px" placeholder="${esc(hideExpenses ? 'Restricted' : SAMPLE_MFG_SUPPLIER_STATEMENT)}" aria-label="Supplier Weighbridge Statement Lines" data-no-i18n="1"${hideExpenses ? ' disabled' : ''}>${hideExpenses ? '' : esc(EDGE_STATE.mfgReconText || demoOnly(SAMPLE_MFG_SUPPLIER_STATEMENT, ''))}</textarea>
+        <input type="file" id="mfgAiScanStmtInput" accept=".pdf,image/*,.csv,.txt" hidden>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="aie-btn" id="mfgAiLoadSampleBtn">${esc(tr('Load Example'))}</button>
-          <button type="button" class="aie-btn" id="mfgAiRunReconBtn">${ic('bolt')} ${esc(tr('Run 3-Way Match'))}</button>
-          <button type="button" class="aie-btn is-brass" id="mfgAiPostReconBtn">${ic('check_circle')} ${esc(tr('+ Post Matched Settlements'))}</button>
+          ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiScanStmtBtn"${EDGE_STATE.mfgScanBusy ? ' disabled' : ''}>${ic('sparkles')} <span>Scan WhatsApp PDF / Photo</span></button>` : ''}
+          ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiLoadSampleBtn">Load Example</button>` : ''}
+          ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiRunReconBtn">${ic('bolt')} <span>Run 3-Way Match</span></button>` : ''}
+          ${canWrite ? `<button type="button" class="aie-btn is-brass" id="mfgAiPostReconBtn">${ic('check_circle')} <span>+ Post Matched Settlements</span></button>` : ''}
         </div>
         <div class="table-wrap" style="margin-top:8px">
           <table class="ledger-table">
             <thead>
               <tr>
-                <th>${esc(tr('Ticket / Ref'))}</th>
-                <th>${esc(tr('Matched Supplier'))}</th>
-                <th>${esc(tr('Material / Leg'))}</th>
-                <th class="r">${esc(tr('Qty (Ton)'))}</th>
-                <th class="r">${esc(tr('Expected ($)'))}</th>
-                <th class="r">${esc(tr('Billed ($)'))}</th>
-                <th class="r">${esc(tr('Variance ($)'))}</th>
-                <th>${esc(tr('3-Way Audit'))}</th>
+                <th style="width:28px"></th>
+                <th>Ticket / Ref</th>
+                <th>Matched Supplier</th>
+                <th>Material / Leg</th>
+                <th class="r">Qty (Ton)</th>
+                <th class="r">Expected ($)</th>
+                <th class="r">Billed ($)</th>
+                <th class="r">Variance ($)</th>
+                <th>3-Way Audit</th>
               </tr>
             </thead>
             <tbody>
-              ${rows.map(r => `
+              ${rows.map((r, rIdx) => `
                 <tr>
-                  <td class="mono" data-no-i18n="1"><strong>${esc(r.ticketRef)}</strong></td>
-                  <td data-no-i18n="1">${esc(r.matchedSupplier)}</td>
-                  <td data-no-i18n="1">${esc(r.itemDesc)}</td>
+                  <td><input type="checkbox" data-mfg-recon-sel="${rIdx}"${r.selected ? ' checked' : ''}${canWrite ? '' : ' disabled'}></td>
+                  <td class="mono" data-no-i18n="1"><strong>${hideExpenses ? '***' : esc(r.ticketRef)}</strong></td>
+                  <td data-no-i18n="1">${hideExpenses ? esc(tr('Restricted')) : esc(r.matchedSupplier)}</td>
+                  <td>
+                    <span data-no-i18n="1">${hideExpenses ? esc(tr('Restricted')) : esc(r.itemDesc)}</span>
+                    ${(!hideExpenses && r.matchedZeroLoads > 0) ? `<div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="aie-pill is-warn"><span>Unpriced ($0 Loads)</span> (<span data-no-i18n="1">${r.matchedZeroLoads}</span>)</span>${(!D.STATE.kioskLocked && !hideExpenses && (typeof D.canEnterForm === 'function' ? D.canEnterForm(r.zeroLegMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw') : canWrite) && r.matchedSite) ? `<button type="button" class="btn-set-site-price" data-aie-set-site-price="${esc(r.matchedSite)}" data-aie-set-site-leg="${esc(r.zeroLegMode || 'material')}" data-aie-set-site-sup="${esc(r.matchedSupplier)}" data-aie-set-site-prod="${esc(r.matchedProduct || '')}" data-aie-set-site-uom="${esc(r.matchedUom || '')}" data-aie-set-site-date="${esc(r.earliestZeroDate || r.date || '')}" data-aie-set-site-co="${esc(r.matchedCompany || '')}">Set Site Price</button>` : ''}</div>` : ''}
+                  </td>
                   <td class="r mono" data-no-i18n="1">${fmtNum(r.qty, 1)}</td>
-                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.expectedUsd, 2)}</td>
-                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.billedUsd, 2)}</td>
-                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.varianceUsd, 2)}</strong></td>
-                  <td><span class="aie-pill ${r.status === 'Matched' ? 'is-good' : 'is-warn'}">${esc(tr(r.status))} · <span data-no-i18n="1">${r.confidencePct}%</span></span></td>
+                  <td class="r mono" data-no-i18n="1">${maskAmt(fmtUSD(r.expectedUsd, 2))}</td>
+                  <td class="r mono" data-no-i18n="1">${maskAmt(fmtUSD(r.billedUsd, 2))}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${maskAmt(fmtUSD(r.varianceUsd, 2))}</strong></td>
+                  <td><span class="aie-pill ${r.gateBlocked ? 'is-err' : (r.status === 'Matched' ? 'is-good' : 'is-warn')}"><span>${esc(r.status)}</span> · <span data-no-i18n="1">${r.confidencePct}%</span></span></td>
                 </tr>
               `).join('')}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="3"><strong>${esc(tr('DETERMINISTIC STATEMENT TOTAL'))}</strong></td>
+                <td colspan="4"><strong>DETERMINISTIC STATEMENT TOTAL</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumQty, 1)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(sumExp, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(sumBilled, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(sumVar, 2)}</strong></td>
+                <td class="r mono"><strong>${maskAmt(fmtUSD(sumExp, 2))}</strong></td>
+                <td class="r mono"><strong>${maskAmt(fmtUSD(sumBilled, 2))}</strong></td>
+                <td class="r mono"><strong>${maskAmt(fmtUSD(sumVar, 2))}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -3333,6 +3841,9 @@
     `;
 
     anchor.insertAdjacentElement('beforebegin', panel);
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(panel); } catch (_) {}
+    }
     const tog = panel.querySelector('#mfgAiToggleReconBtn');
     if (tog) {
       tog.onclick = () => {
@@ -3341,6 +3852,57 @@
         mountMfgStatementReconPanel();
       };
     }
+    const scanBtn = panel.querySelector('#mfgAiScanStmtBtn');
+    const scanInput = panel.querySelector('#mfgAiScanStmtInput');
+    if (scanBtn && scanInput) {
+      scanBtn.onclick = () => { scanInput.value = ''; scanInput.click(); };
+      scanInput.onchange = () => {
+        const f = scanInput.files && scanInput.files[0];
+        if (f) scanStatementFileIntoRecon(f);
+      };
+    }
+    const ovChk = panel.querySelector('#mfgAiGateOverrideChk');
+    const ovReasonEl = panel.querySelector('#mfgAiGateOverrideReason');
+    if (ovChk) {
+      ovChk.onchange = () => {
+        EDGE_STATE.mfgGateOverride = Boolean(ovChk.checked);
+        if (ovReasonEl) {
+          ovReasonEl.hidden = !EDGE_STATE.mfgGateOverride;
+          if (EDGE_STATE.mfgGateOverride && typeof ovReasonEl.focus === 'function') ovReasonEl.focus();
+        }
+      };
+    }
+    if (ovReasonEl) {
+      ovReasonEl.oninput = () => { EDGE_STATE.mfgGateOverrideReason = ovReasonEl.value; };
+      ovReasonEl.onchange = () => { EDGE_STATE.mfgGateOverrideReason = ovReasonEl.value; };
+    }
+    panel.querySelectorAll('[data-mfg-recon-sel]').forEach(chk => {
+      chk.onchange = () => {
+        const idx = Number(chk.getAttribute('data-mfg-recon-sel'));
+        if (rows[idx]) rows[idx].selected = Boolean(chk.checked);
+      };
+    });
+    panel.querySelectorAll('[data-aie-set-site-price]').forEach(btn => {
+      btn.onclick = () => {
+        const siteVal = btn.getAttribute('data-aie-set-site-price') || '';
+        const legVal = btn.getAttribute('data-aie-set-site-leg') || 'material';
+        const supVal = btn.getAttribute('data-aie-set-site-sup') || '';
+        const prodVal = btn.getAttribute('data-aie-set-site-prod') || '';
+        const uomVal = btn.getAttribute('data-aie-set-site-uom') || '';
+        const dtVal = btn.getAttribute('data-aie-set-site-date') || '';
+        const coVal = btn.getAttribute('data-aie-set-site-co') || '';
+        if (siteVal && D && typeof D.openSetUnpricedSitePriceModal === 'function') {
+          D.openSetUnpricedSitePriceModal(siteVal, legVal === 'transport' ? {
+            transportOnly: true,
+            supplier: supVal,
+            product: prodVal,
+            uom: uomVal,
+            earliestDate: dtVal,
+            company: coVal
+          } : undefined);
+        }
+      };
+    });
     const loadBtn = panel.querySelector('#mfgAiLoadSampleBtn');
     const runBtn = panel.querySelector('#mfgAiRunReconBtn');
     const ta = panel.querySelector('#mfgAiReconInput');
@@ -3361,7 +3923,9 @@
     const postBtn = panel.querySelector('#mfgAiPostReconBtn');
     if (postBtn) {
       postBtn.onclick = () => {
-        if (ta) reconcileManufacturingSupplierStatement(ta.value);
+        if (ta && ta.value.trim() !== String(EDGE_STATE.mfgReconText || '').trim()) {
+          reconcileManufacturingSupplierStatement(ta.value);
+        }
         postManufacturingStatementBatch();
       };
     }
@@ -6857,10 +7421,11 @@
   function getHygieneScopeKey() {
     const isDemo = (D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive()) || demoOnly(true, false);
     const au = (D && typeof D.activeUser === 'function') ? D.activeUser() : null;
-    const uid = au ? String(au.id || '') : '';
+    const uid = au ? `${au.id || au.email || ''}:${au.role || ''}` : '';
+    const lk = (D && D.STATE && D.STATE.kioskLocked) ? '1' : '0';
     const coScope = (D && D.STATE) ? String(D.STATE.company || D.STATE.companyScope || '') : '';
     const ind = (D && typeof D.getActiveIndustry === 'function') ? String(D.getActiveIndustry(coScope) || '') : '';
-    return `${isDemo ? '1' : '0'}|${uid}|${coScope}|${ind}`;
+    return `${isDemo ? '1' : '0'}|${uid}|${lk}|${coScope}|${ind}`;
   }
 
   function syncAllSurfacesNow() {
@@ -6875,6 +7440,16 @@
       EDGE_STATE.hygieneSwappedPairs = {};
       EDGE_STATE.hygieneLastStatus = '';
       EDGE_STATE.hygieneLastStatusSpec = null;
+      EDGE_STATE.mfgReconRows = null;
+      EDGE_STATE.mfgReconText = '';
+      EDGE_STATE.mfgReconCustomRev = -1;
+      EDGE_STATE.mfgScanGen = (EDGE_STATE.mfgScanGen || 0) + 1;
+      EDGE_STATE.mfgScanBusy = false;
+      EDGE_STATE.mfgScanFromAi = false;
+      EDGE_STATE.mfgScanStatus = '';
+      EDGE_STATE.mfgScanStatusDetail = '';
+      EDGE_STATE.mfgGateOverride = false;
+      EDGE_STATE.mfgGateOverrideReason = '';
     } else if (_lastHygieneView !== null && _lastHygieneView !== curHygieneView) {
       EDGE_STATE.hygieneReqGen = (EDGE_STATE.hygieneReqGen || 0) + 1;
       EDGE_STATE.hygieneBusy = false;
@@ -10429,6 +11004,7 @@
     postInsuranceBordereauBatch,
     reconcileManufacturingSupplierStatement,
     postManufacturingStatementBatch,
+    scanStatementFileIntoRecon,
     reconcileHospitalitySettlementBatch,
     postHospitalitySettlementBatch,
     reconcileRealEstateCamAndWires,

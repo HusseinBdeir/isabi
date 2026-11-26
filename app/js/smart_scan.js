@@ -15,8 +15,11 @@
 
   let D = null;
 
+  const MAX_SLIP_QUEUE = 20;
+
   const SCAN_STATE = {
     busy: false,
+    domBusy: false,
     entryScanGen: 0,
     domScanGen: 0,
     progressMsg: '',
@@ -28,7 +31,11 @@
     sampleMenuOpen: false,
     suppressResetOnModalSwitch: false,
     suppressDomResetOnSwitch: false,
-    blobPreviewUrl: ''
+    blobPreviewUrl: '',
+    slipQueue: null,
+    advancingQueueOnPost: false,
+    lastMultiUnits: null,
+    slipQueueCounter: 0
   };
 
   function $(id) { return document.getElementById(id); }
@@ -398,7 +405,7 @@
 
   function parsePdfContentStreamText(streamStr) {
     const chunks = [];
-    const btBlocks = streamStr.match(/BT[\s\S]*?ET/g) || [streamStr];
+    const btBlocks = streamStr.match(/\bBT\b[\s\S]*?\bET\b/g) || [streamStr];
     for (const blk of btBlocks) {
       const lineParts = [];
       const tokenRx = /\((?:\\.|[^\\)])*\)\s*Tj|\[(?:\\.|[^\]]|\[)*?\]\s*TJ|<([0-9A-Fa-f\s]+)>\s*Tj|\bT\*|\bTd\b|\bTD\b/g;
@@ -465,12 +472,12 @@
       } else if (!/\/DCTDecode|\/JPXDecode|\/JBIG2Decode/i.test(dict)) {
         decodedStr = arrayBufferToLatin1(subBytes);
       }
-      if (decodedStr && /BT[\s\S]*ET/.test(decodedStr)) {
+      if (decodedStr && /\bBT\b[\s\S]*\bET\b/.test(decodedStr)) {
         const txt = parsePdfContentStreamText(decodedStr);
         if (txt) pageTexts.push(txt);
       }
     }
-    if (!pageTexts.length && /BT[\s\S]*ET/.test(rawStr)) {
+    if (!pageTexts.length && /\bBT\b[\s\S]*\bET\b/.test(rawStr)) {
       const direct = parsePdfContentStreamText(rawStr);
       if (direct) pageTexts.push(direct);
     }
@@ -1437,7 +1444,8 @@
 
     const date = parseDocumentDateISO(cleanText);
     const refRaw = extractLabeledValue(lines, /^(?:(?:ref(?:erence)?|invoice|bill|ticket|receipt|voucher|policy|slip|facture)\s*(?:(?:no|n°|#)\s*[:#-]?\s*|:\s*)|(?:\u0631\u0642\u0645\s*\u0627\u0644\u0641\u0627\u062a\u0648\u0631\u0629|\u0627\u064a\u0635\u0627\u0644\s*\u0631\u0642\u0645)\s*[:#-]?\s*)([A-Za-z0-9/_-]{2,32})/i)
-      || ((cleanText.match(/\b(?:INV|TKT|WB|WIRE|LSE|POL|RCPT|VCH)-[A-Z0-9-]{2,20}\b/i) || [])[0] || '');
+      || ((cleanText.match(/\b(?:INV|TKT|WB|WIRE|LSE|POL|RCPT|VCH)-[A-Z0-9-]{2,20}\b/i) || [])[0] || '')
+      || ((cleanText.match(/\b(?:ticket|slip|invoice|voucher|receipt)\s*(?:#|no\.?\s*[:#-]\s*)([A-Za-z0-9/_-]{2,28})/i) || [])[1] || '');
 
     const companyHint = extractLabeledValue(lines, /^(?:company|entity|business\s*unit|subsidiary|seller|landlord|broker|\u0627\u0644\u0634\u0631\u0643\u0629)\s*:\s*(.+)$/i);
     const supplierHint = extractLabeledValue(lines, /^(?:supplier|vendor|from\s*vendor|site\s*owner|carrier|underwriting\s*carrier|fournisseur|\u0627\u0644\u0645\u0648\u0631\u062f)\s*:\s*(.+)$/i);
@@ -2161,26 +2169,181 @@
     return true;
   }
 
-  async function applyScanToModal(scanBundle, overrideFormType) {
+  function isSeatOwner() {
+    if (!D || typeof D.isOwner !== 'function') return true;
+    const u = typeof D.activeUser === 'function' ? D.activeUser() : null;
+    return Boolean(D.isOwner(u));
+  }
+
+  function isCompanyAllowedForSeat(coName) {
+    if (!coName || isSeatOwner()) return true;
+    if (!D || typeof D.allowedCompanyNames !== 'function') return true;
+    const allowed = D.allowedCompanyNames();
+    if (!Array.isArray(allowed) || !allowed.length) return false;
+    return allowed.some(a => String(a || '').toLowerCase() === String(coName || '').toLowerCase());
+  }
+
+  function seatHasCompanyInIndustry(indName) {
+    if (!indName || isSeatOwner()) return true;
+    if (!D || typeof D.allowedCompanyNames !== 'function' || !D.COMPANY_KEY_BY_NAME || !D.getActiveIndustry) return true;
+    const allowed = D.allowedCompanyNames();
+    if (!Array.isArray(allowed) || !allowed.length) return false;
+    return allowed.some(a => {
+      const ck = D.COMPANY_KEY_BY_NAME[a];
+      return ck && D.getActiveIndustry(ck) === indName;
+    });
+  }
+
+  function resolvePrecheckEntryTarget(scanBundle) {
+    if (!D || !scanBundle || !scanBundle.parsed) {
+      return { ok: false, blocked: true, reason: 'Your seat has no entry rights for this form' };
+    }
+    const { parsed, matched } = scanBundle;
+    const canEnter = D.canEnterForm || (() => true);
+    const requestedForm = parsed.formType || 'expense';
+    const targetCo = matched && matched.targetCompany;
+    let resolvedNextInd = D.getActiveIndustry ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+    let coSwitchKey = '';
+    if (targetCo && D.COMPANY_KEY_BY_NAME && isCompanyAllowedForSeat(targetCo)) {
+      const coKey = D.COMPANY_KEY_BY_NAME[targetCo];
+      const curInd = resolvedNextInd;
+      const nextInd = D.getActiveIndustry && coKey ? D.getActiveIndustry(coKey) : curInd;
+      resolvedNextInd = nextInd || curInd;
+      if (coKey && curInd !== nextInd) coSwitchKey = coKey;
+    }
+    let targetForm = requestedForm;
+    if (!canEnter(targetForm) || isBlockedFormForInd(targetForm, resolvedNextInd)) {
+      const fallbackOrder = (parsed.altForms || []).concat(['expense', 'document', 'external', 'sales']);
+      const permitted = fallbackOrder.find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f));
+      if (!permitted) {
+        return {
+          ok: false,
+          blocked: true,
+          resolvedNextInd,
+          reason: resolvedNextInd && resolvedNextInd !== 'Manufacturing'
+            ? 'Your seat cannot create new domain records'
+            : 'Your seat has no entry rights for this form'
+        };
+      }
+      targetForm = permitted;
+    }
+    return { ok: true, blocked: false, targetForm, coSwitchKey, resolvedNextInd };
+  }
+
+  async function applyScanToModal(scanBundle, overrideFormType, applyOpts = {}) {
     if (!D || !scanBundle) return;
     const { parsed, matched, attObj } = scanBundle;
     const requestedForm = overrideFormType || parsed.formType || 'expense';
     const canEnter = D.canEnterForm || (() => true);
 
-    // Switch industry/company scope if the document explicitly identifies a permitted company in another industry
-    const targetCo = matched.targetCompany;
+    const rawTargetCo = matched.targetCompany;
+    const targetCo = (rawTargetCo && isCompanyAllowedForSeat(rawTargetCo))
+      ? rawTargetCo
+      : ((rawTargetCo && !isSeatOwner() && D.defaultEntryCompany) ? D.defaultEntryCompany() : rawTargetCo);
     let resolvedNextInd = D.getActiveIndustry ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-    if (targetCo && D.COMPANY_KEY_BY_NAME && D.selectCompanyScope) {
-      const coKey = D.COMPANY_KEY_BY_NAME[targetCo];
+    let coSwitchKey = '';
+    if (rawTargetCo && D.COMPANY_KEY_BY_NAME && isCompanyAllowedForSeat(rawTargetCo)) {
+      const coKey = D.COMPANY_KEY_BY_NAME[rawTargetCo];
       const curInd = resolvedNextInd;
       const nextInd = D.getActiveIndustry && coKey ? D.getActiveIndustry(coKey) : curInd;
       resolvedNextInd = nextInd || curInd;
-      if (coKey && curInd !== nextInd) {
-        try { D.selectCompanyScope(coKey); } catch (_) {}
+      if (coKey && curInd !== nextInd) coSwitchKey = coKey;
+    }
+
+    // 0. Domain Register bridge (RBAC checked BEFORE mutating STATE.company)
+    const rawDetText = String(scanBundle.extractedText || '').trim();
+    const rawDetPages = rawDetText ? [{ pageNum: 1, fileName: (attObj && attObj.file_name) || '', text: rawDetText }] : [];
+    const domCandidate = (!overrideFormType && rawDetPages.length)
+      ? deterministicParseDomainBundle(rawDetPages, rawDetText, null, (attObj && attObj.file_name) || '')
+      : null;
+    const isExplicitSharedSpine = Boolean(
+      parsed.formType === 'external'
+      || ((parsed.formType === 'salary' || parsed.formType === 'conversion' || parsed.formType === 'settlement') && !(domCandidate && domCandidate.formKey && hasStrongDomainRegisterSignals(rawDetText, domCandidate.formKey)))
+      || (parsed.formType === 'expense' && !(domCandidate && domCandidate.formKey && hasStrongDomainRegisterSignals(rawDetText, domCandidate.formKey)))
+      || (parsed.formType === 'equipment' && !(domCandidate && ['trd_sales', 'trd_trucks', 'trd_purchases'].includes(domCandidate.formKey) && /showroom|fob|list\s*price|stock\s*intake|bill\s*of\s*lading|sold\s*to|customer:/i.test(rawDetText)))
+    );
+    if (!overrideFormType && domCandidate && domCandidate.formKey && !isExplicitSharedSpine) {
+      const domSpecObj = (D.resolveDomainFormSpec && D.resolveDomainFormSpec(domCandidate.formKey)) || null;
+      const domInd = (domSpecObj && domSpecObj.ind) || resolvedNextInd;
+      const domScopeBlocked = !seatHasCompanyInIndustry(domInd);
+      const domCo = resolveRlsSafeDomainCompany(domCandidate.company || rawTargetCo || parsed.company, domInd);
+      const chronoBlocked = Boolean(D.canManageSiblingChronoSchedule && !D.canManageSiblingChronoSchedule(domCandidate.formKey));
+      const domFormBlocked = Boolean(D.canEnterDomainForm && !D.canEnterDomainForm(domCandidate.formKey));
+      if (domFormBlocked || chronoBlocked || domScopeBlocked) {
+        scanBundle.blockedByRbac = true;
+        SCAN_STATE.lastScan = null;
+        if (D.toast) {
+          D.toast(domFormBlocked
+            ? 'Your seat cannot create new domain records'
+            : (chronoBlocked
+              ? 'Supervisor permission required to manage chronological rate schedules'
+              : 'Your seat has no assigned companies in this industry'), 'err');
+        }
+        return;
       }
+      if (coSwitchKey && D.selectCompanyScope) {
+        try { D.selectCompanyScope(coSwitchKey); } catch (_) {}
+      }
+      SCAN_STATE.suppressResetOnModalSwitch = true;
+      try {
+        if (typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+      } finally {
+        SCAN_STATE.suppressResetOnModalSwitch = false;
+      }
+      const domFields = Object.assign({}, domCandidate.fields || {});
+      const domTot = parsed.totalAmount || parsed.subtotalExVat || 0;
+      const domNet = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : domTot;
+      const domProd = matched.product || parsed.product || (Array.isArray(parsed.lines) && parsed.lines[0] && (parsed.lines[0].desc || parsed.lines[0].item_name)) || '';
+      if (!domFields.ide_date && parsed.date && parsed.date >= '2024-01-01' && parsed.date <= '2030-12-31') domFields.ide_date = parsed.date;
+      if (!domFields.ide_ref && parsed.reference) domFields.ide_ref = parsed.reference;
+      if (!domFields.ide_notes && parsed.notes) domFields.ide_notes = sanitizeOutwardText(parsed.notes);
+      if (domCandidate.formKey === 'ins_policies') {
+        if (!domFields.ide_client) domFields.ide_client = matched.customer || parsed.customer || '';
+        if (!domFields.ide_carrier) domFields.ide_carrier = matched.supplier || parsed.supplier || '';
+        if (!domFields.ide_product) domFields.ide_product = domProd;
+        if (!domFields.ide_gwp && domTot > 0) domFields.ide_gwp = String(domTot);
+      } else if (domCandidate.formKey === 'ins_billing') {
+        if (!domFields.ide_client) domFields.ide_client = matched.customer || parsed.customer || '';
+        if (!domFields.ide_carrier) domFields.ide_carrier = matched.supplier || parsed.supplier || '';
+        if (!domFields.ide_collected && domTot > 0) domFields.ide_collected = String(domTot);
+      } else if (domCandidate.formKey === 're_invoicing' || domCandidate.formKey === 're_leases') {
+        if (!domFields.ide_property) domFields.ide_property = matched.site || parsed.site || '';
+        if (!domFields.ide_tenant) domFields.ide_tenant = matched.customer || parsed.customer || '';
+        if (!domFields.ide_net && domNet > 0) domFields.ide_net = String(domNet);
+      } else if (domCandidate.formKey === 'trd_sales') {
+        if (!domFields.ide_customer) domFields.ide_customer = matched.customer || parsed.customer || '';
+        if (!domFields.ide_item) domFields.ide_item = domProd;
+        if (!domFields.ide_chassis && parsed.vin) domFields.ide_chassis = parsed.vin;
+        if (!domFields.ide_net && domNet > 0) domFields.ide_net = String(domNet);
+      }
+      const domRes = applyDomainExtractionToModal({
+        ind: domInd,
+        formKey: domCandidate.formKey,
+        company: domCo,
+        label: (domFields.ide_product || domFields.ide_property || domFields.ide_item || parsed.reference || (attObj && attObj.file_name) || 'Scanned Document'),
+        fileName: (attObj && attObj.file_name) || 'SmartScan_Domain.svg',
+        rawFiles: Array.isArray(scanBundle._rawFiles) ? scanBundle._rawFiles : [],
+        attObjs: Array.isArray(scanBundle.attObjs) ? scanBundle.attObjs : (attObj ? [attObj] : []),
+        captureMethod: (attObj && attObj.capture_method) || 'AI Smart Scan',
+        vinAudit: domCandidate.vinAudit || parsed.vinAudit || null,
+        pageCount: Math.max(1, Number(parsed.pageCount || (scanBundle.attObjs && scanBundle.attObjs.length) || 1)),
+        fields: domFields
+      });
+      if (!domRes || !domRes.ok) {
+        scanBundle.blockedByRbac = true;
+        SCAN_STATE.lastScan = null;
+        return;
+      }
+      scanBundle.routedDomainModal = true;
+      scanBundle.appliedForm = (domRes && domRes.formKey) || domCandidate.formKey;
+      scanBundle.filledFields = Object.keys(domFields).filter(k => domFields[k] !== '' && domFields[k] != null);
+      scanBundle.warnFields = [];
+      SCAN_STATE.lastScan = scanBundle;
+      return;
     }
 
     let targetForm = requestedForm;
+    let sharedRbacDenied = false;
     if (!canEnter(targetForm) || isBlockedFormForInd(targetForm, resolvedNextInd)) {
       const fallbackOrder = (parsed.altForms || []).concat(['expense', 'document', 'external', 'sales']);
       const permitted = fallbackOrder.find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f));
@@ -2193,7 +2356,7 @@
           }]);
         }
       } else {
-        targetForm = (D.STATE && D.STATE.modalForm && !isBlockedFormForInd(D.STATE.modalForm, resolvedNextInd)) ? D.STATE.modalForm : 'expense';
+        sharedRbacDenied = true;
       }
     }
 
@@ -2270,8 +2433,13 @@
           domKey = 'hld_interactions';
           Object.assign(domFields, { ide_usd: amt });
         }
-        const canDom = !D.canEnterDomainForm || D.canEnterDomainForm(domKey);
+        const canDom = seatHasCompanyInIndustry(resolvedNextInd)
+          && (!D.canEnterDomainForm || D.canEnterDomainForm(domKey))
+          && (!D.canManageSiblingChronoSchedule || D.canManageSiblingChronoSchedule(domKey));
         if (canDom) {
+          if (coSwitchKey && D.selectCompanyScope) {
+            try { D.selectCompanyScope(coSwitchKey); } catch (_) {}
+          }
           SCAN_STATE.suppressResetOnModalSwitch = true;
           try {
             if (typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
@@ -2285,6 +2453,7 @@
             label: prodDesc || parsed.reference || (attObj && attObj.file_name) || 'Scanned Document',
             fileName: (attObj && attObj.file_name) || 'SmartScan_Domain.svg',
             rawFiles: Array.isArray(scanBundle._rawFiles) ? scanBundle._rawFiles : [],
+            attObjs: Array.isArray(scanBundle.attObjs) ? scanBundle.attObjs : (attObj ? [attObj] : []),
             captureMethod: (attObj && attObj.capture_method) || 'AI Smart Scan',
             vinAudit: parsed.vinAudit || null,
             pageCount: Math.max(1, Number(parsed.pageCount || (scanBundle.attObjs && scanBundle.attObjs.length) || 1)),
@@ -2314,9 +2483,31 @@
           text: `Your seat does not have entry permission for "${domKey}"; routed to "${safeSharedFallback}" instead.`
         }]);
         targetForm = safeSharedFallback;
+        sharedRbacDenied = false;
       } else if (isBlockedFormForInd(targetForm, resolvedNextInd)) {
-        targetForm = ['expense', 'document', 'external'].find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f)) || 'expense';
+        const altShared = ['expense', 'document', 'external'].find(f => !isBlockedFormForInd(f, resolvedNextInd) && canEnter(f));
+        if (altShared) {
+          targetForm = altShared;
+          sharedRbacDenied = false;
+        } else {
+          sharedRbacDenied = true;
+        }
       }
+    }
+
+    if (sharedRbacDenied) {
+      scanBundle.blockedByRbac = true;
+      SCAN_STATE.lastScan = null;
+      if (D.toast) {
+        D.toast(resolvedNextInd && resolvedNextInd !== 'Manufacturing'
+          ? 'Your seat cannot create new domain records'
+          : 'Your seat has no entry rights for this form', 'err');
+      }
+      return;
+    }
+
+    if (coSwitchKey && D.selectCompanyScope) {
+      try { D.selectCompanyScope(coSwitchKey); } catch (_) {}
     }
 
     if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') {
@@ -2707,13 +2898,15 @@
       setInputValueAndFire('f_notes', combinedNotes, filledSet, warnSet, false);
     }
 
-    // 6. Attach all scanned pages (1..N) into FORM_UI.attachments without duplication
+    // 6. Attach all scanned pages (1..N) into FORM_UI.attachments without duplication or cross-slip bleed
     const bundleAtts = Array.isArray(scanBundle.attObjs) && scanBundle.attObjs.length
       ? scanBundle.attObjs
       : (attObj ? [attObj] : []);
-    if (FORM_UI && bundleAtts.length) {
-      if (!Array.isArray(FORM_UI.attachments)) FORM_UI.attachments = [];
-      let addedAny = false;
+    const hasQueueManualList = Boolean(applyOpts && Array.isArray(applyOpts.queueManualAttachments));
+    if (FORM_UI && (bundleAtts.length || hasQueueManualList)) {
+      FORM_UI.attachments = hasQueueManualList
+        ? applyOpts.queueManualAttachments.filter(a => a && !a._fromSmartScan).map(a => Object.assign({}, a))
+        : (Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.filter(a => !(a && a._fromSmartScan)) : []);
       bundleAtts.forEach(aItem => {
         if (!aItem) return;
         const dup = FORM_UI.attachments.some(a =>
@@ -2723,11 +2916,10 @@
           String(a.data_url || '').slice(0, 120) === String(aItem.data_url || '').slice(0, 120)
         );
         if (!dup) {
-          FORM_UI.attachments.push(Object.assign({}, aItem));
-          addedAny = true;
+          FORM_UI.attachments.push(Object.assign({}, aItem, { _fromSmartScan: true }));
         }
       });
-      if (addedAny && D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
+      if (D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
     }
 
     // 7. Recalculate totals, price rules, VAT, locks & mark modal dirty so Unsaved Guard protects user work
@@ -2754,6 +2946,12 @@
     let attObj = null;
     if (typeof Blob !== 'undefined' && item instanceof Blob) {
       fileObj = item;
+      if (item._ssCachedAtt && item._ssCachedAtt.data_url) {
+        attObj = Object.assign({}, item._ssCachedAtt, {
+          capture_method: captureMethod || item._ssCachedAtt.capture_method || 'AI Smart Scan'
+        });
+        return { fileObj, attObj };
+      }
       if (D && D.readAndCompressAttachmentFile) {
         attObj = await D.readAndCompressAttachmentFile(fileObj, captureMethod);
       }
@@ -2773,6 +2971,9 @@
           uploaded_at: new Date().toISOString(),
           data_url: dataUrl
         };
+      }
+      if (attObj && attObj.data_url) {
+        try { item._ssCachedAtt = attObj; } catch (_) {}
       }
     } else if (item && typeof item === 'object') {
       const resolvedDataUrl = (D && D.resolveDocDataUrl && D.resolveDocDataUrl(item)) || item.data_url || '';
@@ -3297,6 +3498,8 @@
         pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
       }
       const totalPages = Math.max(1, pageEntries.length);
+      const meaningfulPrecheckLen = pageEntries.reduce((s, pe) => s + String((pe && pe.text) || '').trim().length, 0);
+      if (meaningfulPrecheckLen < 10) return empty;
       const combinedText = totalPages > 1
         ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
         : String((pageEntries[0] && pageEntries[0].text) || '');
@@ -3360,6 +3563,7 @@
       <div class="ss-precheck-actions">
         ${pwButtonsHtml}
         <button type="button" class="btn btn-outline-bar btn-sm" id="indPrecheckApplyBtn">Fill Form Anyway</button>
+        ${hasActiveSlipQueue() ? `<button type="button" class="btn btn-ghost-bar btn-sm" id="indPrecheckSkipBtn">Skip Slip</button>` : ''}
         <button type="button" class="btn btn-ghost-bar btn-sm" id="indPrecheckDiscardBtn">Discard Scan</button>
       </div>
     `;
@@ -3371,6 +3575,14 @@
         if (!pw || !extraction.fields) return;
         extraction.fields[pw.targetKey] = pw.suggested;
         const nextPre = evaluateDomainScanPrecheck(extraction);
+        if (hasActiveSlipQueue()) {
+          const curIt = getActiveQueueItem();
+          if (curIt) {
+            curIt.precheck = nextPre;
+            curIt.precheckOverrides = curIt.precheckOverrides || {};
+            curIt.precheckOverrides[pw.targetKey] = pw.suggested;
+          }
+        }
         if (nextPre.hasWarning) {
           renderIndPrecheckBanner(extraction, nextPre);
         } else {
@@ -3380,12 +3592,28 @@
         }
       });
     });
-    const appBtn = banner.querySelector('#indPrecheckApplyBtn');
+    const appBtn = bar ? banner.querySelector('#indPrecheckApplyBtn') : null;
     if (appBtn) {
       appBtn.addEventListener('click', () => {
         banner.remove();
         SCAN_STATE.pendingDomainPrecheck = null;
+        if (hasActiveSlipQueue()) {
+          const curIt = getActiveQueueItem();
+          if (curIt && precheck && precheck.warnSig) {
+            curIt.precheckAck = true;
+            curIt.precheckAckSig = precheck.warnSig;
+          }
+        }
         applyDomainExtractionToModal(extraction);
+      });
+    }
+    const skipPreBtn = banner.querySelector('#indPrecheckSkipBtn');
+    if (skipPreBtn) {
+      skipPreBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        banner.remove();
+        SCAN_STATE.pendingDomainPrecheck = null;
+        await skipCurrentQueueSlip();
       });
     }
     const disBtn = banner.querySelector('#indPrecheckDiscardBtn');
@@ -3408,11 +3636,967 @@
     return banner;
   }
 
+  // ==================== 6-VERTICAL CLASSIFIER & MULTI-SLIP (1 OF N) STEPPER QUEUE ====================
+  function hasActiveSlipQueue() {
+    return Boolean(
+      SCAN_STATE.slipQueue
+      && SCAN_STATE.slipQueue.mode === 'queue'
+      && Array.isArray(SCAN_STATE.slipQueue.items)
+      && SCAN_STATE.slipQueue.items.length > 0
+    );
+  }
+
+  function getActiveQueueItem() {
+    if (!hasActiveSlipQueue()) return null;
+    const q = SCAN_STATE.slipQueue;
+    return q.items[q.currentIndex] || q.items[0] || null;
+  }
+
+  function hasStrongDomainRegisterSignals(rawText, domFormKey) {
+    const txt = normalizeDigits(String(rawText || '')).replace(/\r/g, '');
+    if (!txt.trim() || !domFormKey) return false;
+    if (/\b(?:WTC|BBConstruction|Lions\s*Transport)\b/i.test(txt)) return false;
+    if (/^\s*Entry\s*Type\s*:\s*External\s*Treasury/im.test(txt) && !/From\s*(?:Sister\s*)?Entity\s*:/i.test(txt)) return false;
+    if (/^\s*Vendor\s*:/im.test(txt) && /SUPPLIER\s+DELIVERY\s*&\s*TAX\s*BILL/i.test(txt)) return false;
+    const mapRx = {
+      ins_policies: /(?:policy\s*(?:no|#|schedule)|policyholder|insured|gross\s*(?:written\s*)?premium|\bgwp\b|sum\s*insured|endorsement)/i,
+      ins_billing: /(?:instalment|collection\s*receipt|billing\s*allocation|unallocated|open\s*ar|prm-\d+|col-\d+)/i,
+      ins_claims: /(?:loss\s*adjuster|claim\s*(?:no|#)|cause\s*of\s*loss|peril|claimed\s*amount|deductible|adjuster\s*approved|clm-)/i,
+      ins_agreements: /(?:carrier\s*agreement|brokerage\s*agreement|commission\s*agreement|new\s*business\s*%|volume\s*bonus|agr-)/i,
+      ins_remittances: /(?:carrier\s*remittance|bordereau\s*remittance|settled\s*to\s*carrier|balance\s*due\s*to\s*carrier|rem-)/i,
+      re_leases: /(?:lease\s*agreement|commercial\s*lease|lse-|security\s*deposit|escalation\s*clause|lessee)/i,
+      re_invoicing: /(?:commercial\s*lease\s*rent\s*tax\s*invoice|rent\s*tax\s*invoice|\brent\s*invoice\b|tax\s*sequence|billing\s*period|inv-4235|inv-prop)/i,
+      re_receipts: /(?:rent\s*receipt|tenant\s*receipt|receipt\s*allocation|rct-4235|rct-prop)/i,
+      re_sales: /(?:unit\s*sale|contract\s*value|buyer\s*:|purchaser\s*:)/i,
+      re_workorders: /(?:work\s*order|contractor\s*:|maintenance\s*budget|actual\s*cost|rechargeable|wo-\d+)/i,
+      trd_purchases: /(?:bill\s*of\s*lading|ocean\s*b\/?l|import\s*file|customs\s*duty|port\s*clearance|incoterm|foreign\s*oem|imp-trd|imp-sh)/i,
+      trd_receipts: /(?:trade\s*receipt|allocated\s*to\s*open\s*invoices|rct-trd)/i,
+      trd_trucks: /(?:truck\s*stock\s*intake|unit\s*intake|vehicle\s*inventory|warehouse\s*bay|showroom\s*list\s*price|engine\s*serial)/i,
+      trd_stock: /(?:spare\s*parts\s*inventory|parts\s*sku|part\s*code|reorder\s*point|wac\s*unit\s*cost|on-hand\s*qty)/i,
+      trd_targets: /(?:monthly\s*sales\s*target|target\s*ttc|fob\s*\/\s*unit|landed\s*%)/i,
+      trd_sales: /(?:commercial\s*vehicle\s*invoice|spare\s*parts\s*tax\s*invoice|inv-trd|showroom|sold\s*to)/i,
+      hsp_tariffs: /(?:seasonal\s*tariff|rack\s*rate|seasonal\s*rate|nightly\s*rate)/i,
+      hsp_pos: /(?:pos\s*z-?close|pos\s*shift|cashier\s*:|bills\s*count|card\s*settlement|register\s*variance|pos-cl)/i,
+      hsp_memberships: /(?:seasonal\s*membership|member\s*name|cabana|chalet\s*number|mem-2026)/i,
+      hsp_stock: /(?:f&b\s*stock|beverage\s*inventory|bar\s*store|opening\s*qty|closing\s*qty)/i,
+      hsp_energy: /(?:generator\s*&\s*solar|diesel\s*tank|operating\s*hours|solar\s*yield|rated\s*capacity)/i,
+      hsp_revenue: /(?:daily\s*venue\s*revenue|venue\s*\/\s*outlet|guest\s*covers|rev-hsp)/i,
+      hld_interactions: /(?:from\s*(?:sister\s*)?entity|to\s*(?:sister\s*)?entity|intercompany|sister\s*wire|ic-hld|ic-2026)/i,
+      hld_loans: /(?:lender\s*:|borrowing\s*facility|loan\s*facility|interest\s*rate|apr\s*:|ln-hld)/i,
+      hld_partners: /(?:partner\s*draw|equity\s*share|capital\s*call|distribution\s*pool|dividend\s*entitlement)/i,
+      hld_extended: /(?:extended\s*register|direction\s*:\s*(?:receivable|payable))/i
+    };
+    const rx = mapRx[domFormKey];
+    return rx ? rx.test(txt) : false;
+  }
+
+  function buildPdfPageSlipFile(baseName, pageNum, totalPages, pageText, captureMethod) {
+    const stem = String(baseName || 'Batch').replace(/\.pdf$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '_');
+    const safeLines = String(pageText || '').split('\n').slice(0, 14).map((ln, idx) =>
+      `<text x="24" y="${90 + idx * 20}" font-family="monospace" font-size="13" fill="#281D15">${esc(sanitizeOutwardText(ln.slice(0, 82)))}</text>`
+    ).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="680" height="400"><rect width="100%" height="100%" fill="#FAF9F6"/><rect x="12" y="12" width="656" height="44" rx="6" fill="#EFECE6"/><text x="24" y="40" font-family="system-ui, sans-serif" font-size="15" font-weight="bold" fill="#281D15">${esc(sanitizeOutwardText(`${stem} · Slip ${pageNum} of ${totalPages}`))}</text>${safeLines}</svg>`;
+    const fileName = `${stem}_Slip_${pageNum}.svg`;
+    let fileObj = null;
+    if (typeof File !== 'undefined' && typeof Blob !== 'undefined') {
+      fileObj = new File([new Blob([svg], { type: 'image/svg+xml' })], fileName, { type: 'image/svg+xml' });
+      fileObj._extractedText = String(pageText || '');
+      fileObj._fromSmartScan = true;
+      fileObj._captureMethod = captureMethod;
+    }
+    const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    const attObj = {
+      id: 'att-ss-slip-' + Date.now() + '-' + pageNum,
+      file_name: fileName,
+      mime_type: 'image/svg+xml',
+      file_size: svg.length,
+      capture_method: captureMethod,
+      data_url: dataUrl,
+      _fromSmartScan: true
+    };
+    return { fileObj, attObj };
+  }
+
+  async function extractSlipUnitsFromInput(rawItems, captureMethod, isCurrentFn) {
+    const units = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      if (isCurrentFn && !isCurrentFn()) return { units: [], aborted: true, truncatedCount: 0 };
+      const pair = await normalizeSingleScanItem(rawItems[i], captureMethod, i);
+      if (isCurrentFn && !isCurrentFn()) return { units: [], aborted: true, truncatedCount: 0 };
+      if (!pair.attObj) continue;
+      const fName = pair.attObj.file_name || `Slip_${i + 1}`;
+      if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+        units.push({
+          rawInput: rawItems[i],
+          fileObj: pair.fileObj,
+          attObj: pair.attObj,
+          origPair: pair,
+          fileName: fName,
+          origFileName: fName,
+          isPdfPage: false,
+          pageNum: 1,
+          text: pair.fileObj._extractedText
+        });
+        continue;
+      }
+      const isPdfPair = /\.pdf$/i.test(fName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+      if (isPdfPair && pair.fileObj) {
+        const ab = await pair.fileObj.arrayBuffer();
+        if (isCurrentFn && !isCurrentFn()) return { units: [], aborted: true, truncatedCount: 0 };
+        const pdfPages = await extractPdfPagesTextClient(ab);
+        if (isCurrentFn && !isCurrentFn()) return { units: [], aborted: true, truncatedCount: 0 };
+        if (pdfPages.length > 1) {
+          pdfPages.forEach((pt, pIdx) => {
+            const built = buildPdfPageSlipFile(fName, pIdx + 1, pdfPages.length, pt, captureMethod);
+            units.push({
+              rawInput: built.fileObj || rawItems[i],
+              fileObj: built.fileObj || pair.fileObj,
+              attObj: built.attObj,
+              origPair: pair,
+              fileName: built.attObj.file_name,
+              origFileName: fName,
+              isPdfPage: true,
+              pageNum: pIdx + 1,
+              totalPdfPages: pdfPages.length,
+              text: String(pt || '')
+            });
+          });
+          continue;
+        }
+      }
+      const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(fName) ||
+        /svg|pdf|text|json|xml|word|sheet/i.test(pair.attObj.mime_type || '');
+      const pageTxt = (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)
+        ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
+        : '';
+      if (isCurrentFn && !isCurrentFn()) return { units: [], aborted: true, truncatedCount: 0 };
+      units.push({
+        rawInput: rawItems[i],
+        fileObj: pair.fileObj,
+        attObj: pair.attObj,
+        origPair: pair,
+        fileName: fName,
+        origFileName: fName,
+        isPdfPage: false,
+        pageNum: 1,
+        text: String(pageTxt || '')
+      });
+    }
+    let truncatedCount = 0;
+    if (units.length > MAX_SLIP_QUEUE) {
+      truncatedCount = units.length - MAX_SLIP_QUEUE;
+      units.length = MAX_SLIP_QUEUE;
+    }
+    return { units, aborted: false, truncatedCount };
+  }
+
+  function shouldDefaultToSlipQueue(units) {
+    if (!Array.isArray(units) || units.length < 2) return false;
+    const readableUnits = units.filter(u => String((u && u.text) || '').trim().length >= 10);
+    if (readableUnits.length < 2) return false;
+    const hasContinuationFilename = units.some(u => {
+      const nm = String((u && (u.origFileName || u.fileName)) || '');
+      return /(?:^|[_.\s-])(?:p|pg|page)[_-]?\d{1,2}(?:[_.\s-]|\.[a-z0-9]+$|$)/i.test(nm)
+        || /\b(?:front|back|recto|verso|face|dos)\b/i.test(nm);
+    });
+    if (hasContinuationFilename) return false;
+    const joinedText = units.map(u => String((u && u.text) || '')).join('\n');
+    if (/(?:PAGE\s+\d+\s+OF\s+\d+|CONTINUED\s+ON\s+PAGE|CARRIED\s+FORWARD|BROUGHT\s+FORWARD)/i.test(joinedText)) {
+      return false;
+    }
+    if (units.length === 2 && /\b(?:IDENTITY\s*CARD|NATIONAL\s*ID|RESIDENCY|WORK\s*PERMIT|NSSF\s*CARD|CARTE\s*D'IDENTIT)/i.test(joinedText)) {
+      return false;
+    }
+    const hasBlUnit = units.some(u => /(?:BILL\s*OF\s*LADING|OCEAN\s*B\/?L)/i.test(u.text || ''));
+    const hasCustomsUnit = units.some(u => /(?:CUSTOMS\s*DUTY|PORT\s*(?:&|AND)?\s*CLEARANCE)/i.test(u.text || ''));
+    if (hasBlUnit && hasCustomsUnit && units.length <= 3) {
+      return false;
+    }
+    return true;
+  }
+
+  function inferSlipRoutingTarget(detParsed, detDom, combinedText) {
+    const txt = String(combinedText || '');
+    const explicitShared = Boolean(
+      detParsed
+      && (
+        detParsed.formType === 'external'
+        || ((detParsed.formType === 'salary' || detParsed.formType === 'conversion' || detParsed.formType === 'settlement') && !(detDom && detDom.formKey && hasStrongDomainRegisterSignals(txt, detDom.formKey)))
+        || (detParsed.formType === 'expense' && !(detDom && detDom.formKey && hasStrongDomainRegisterSignals(txt, detDom.formKey)))
+        || (detParsed.formType === 'equipment' && !(detDom && ['trd_sales', 'trd_trucks', 'trd_purchases'].includes(detDom.formKey) && /showroom|fob|list\s*price|stock\s*intake|bill\s*of\s*lading|sold\s*to|customer:/i.test(txt)))
+      )
+    );
+    if (detDom && detDom.formKey && !explicitShared && hasStrongDomainRegisterSignals(txt, detDom.formKey)) {
+      const domSpec = (D && typeof D.resolveDomainFormSpec === 'function') ? D.resolveDomainFormSpec(detDom.formKey) : null;
+      return {
+        kind: 'domain',
+        formKey: detDom.formKey,
+        ind: (domSpec && domSpec.ind) || ''
+      };
+    }
+    const mfgCoRx = /\b(?:WTC|BBConstruction|Lions\s*Transport)\b/i;
+    if (detParsed && detParsed.formType && !explicitShared && !mfgCoRx.test(txt)) {
+      if (detDom && detDom.formKey) {
+        const domSpec = (D && typeof D.resolveDomainFormSpec === 'function') ? D.resolveDomainFormSpec(detDom.formKey) : null;
+        return { kind: 'domain', formKey: detDom.formKey, ind: (domSpec && domSpec.ind) || '' };
+      }
+    }
+    return {
+      kind: 'shared',
+      formKey: (detParsed && detParsed.formType) || 'expense'
+    };
+  }
+
+  function syncMobAiStepPills() {
+    const hasQ = hasActiveSlipQueue();
+    const q = SCAN_STATE.slipQueue;
+    const txt = hasQ ? `${q.currentIndex + 1} / ${q.total}` : '';
+    ['entryMobAiStepPill', 'indMobAiStepPill'].forEach(pid => {
+      const el = $(pid);
+      if (!el) return;
+      if (hasQ) {
+        el.textContent = txt;
+        el.hidden = false;
+      } else {
+        el.textContent = '';
+        el.hidden = true;
+      }
+    });
+  }
+
+  function resolveQueueItemDisplayLabel(it) {
+    if (!it) return 'Slip';
+    if (it.kind === 'domain' && it.targetForm && D && typeof D.resolveDomainFormSpec === 'function') {
+      const sp = D.resolveDomainFormSpec(it.targetForm);
+      if (sp && sp.spec && sp.spec.label) return sanitizeOutwardText(sp.spec.label);
+    }
+    if (it.targetForm) return buildFormDisplayLabel(it.targetForm);
+    return sanitizeOutwardText(it.fileName || 'Slip');
+  }
+
+  function renderSlipQueueBarHtml() {
+    if (!hasActiveSlipQueue()) return '';
+    const q = SCAN_STATE.slipQueue;
+    const cur = q.items[q.currentIndex] || q.items[0];
+    const postedCnt = q.items.filter(it => it.status === 'posted').length;
+    const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
+    const pillsHtml = q.items.map((it, idx) => {
+      const isActive = idx === q.currentIndex;
+      const cls = [
+        'ss-queue-pill',
+        isActive ? 'is-active' : '',
+        it.status === 'posted' ? 'is-posted' : (it.status === 'skipped' ? 'is-skipped' : (it.status === 'ready' ? 'is-ready' : (it.status === 'extracting' ? 'is-extracting' : 'is-pending')))
+      ].filter(Boolean).join(' ');
+      const stateIcon = it.status === 'posted' ? '✓' : (it.status === 'skipped' ? '-' : (it.status === 'extracting' ? '...' : ''));
+      const ariaLbl = `Slip ${idx + 1} of ${q.total} (${it.status})`;
+      return `<button type="button" class="${cls}" data-ss-queue-idx="${idx}" aria-label="${esc(ariaLbl)}" aria-current="${isActive ? 'step' : 'false'}"><span data-no-i18n="1">${idx + 1}${stateIcon ? ' ' + stateIcon : ''}</span></button>`;
+    }).join('');
+    const curFormLbl = resolveQueueItemDisplayLabel(cur);
+    const curCo = cur && cur.targetCompany ? cur.targetCompany : '';
+    const bgCnt = q.items.filter((it, idx) => idx !== q.currentIndex && (it.status === 'pending' || it.status === 'extracting')).length;
+    const mergeDisabled = postedCnt > 0;
+    return `
+      <div class="ss-queue-bar" id="ssSlipQueueBar" role="region" aria-label="Multi-Slip Batch Queue">
+        <div class="ss-queue-hdr">
+          <div class="ss-queue-title">
+            <span class="ss-stat-pill is-form">${ic('layers')} <span>Slip</span> <b data-no-i18n="1">${q.currentIndex + 1}</b> <span>of</span> <b data-no-i18n="1">${q.total}</b></span>
+            <span class="ss-queue-target" data-no-i18n="1">${esc([cur.fileName, curFormLbl, curCo].filter(Boolean).join(' · '))}</span>
+            ${postedCnt > 0 ? `<span class="ss-stat-pill is-ok"><b data-no-i18n="1">${postedCnt}</b> <span>posted</span></span>` : ''}
+            ${skippedCnt > 0 ? `<span class="ss-stat-pill is-warn"><b data-no-i18n="1">${skippedCnt}</b> <span>skipped</span></span>` : ''}
+            ${bgCnt > 0 ? `<span class="ss-queue-bg-note"><span>Pre-reading</span> <b data-no-i18n="1">${bgCnt}</b></span>` : ''}
+          </div>
+          <div class="ss-queue-actions">
+            <button type="button" class="ss-alt-form-chip" data-ss-q-act="prev" ${q.currentIndex <= 0 ? 'disabled' : ''}><span>Prev</span></button>
+            <button type="button" class="ss-alt-form-chip" data-ss-q-act="next" ${q.currentIndex >= q.total - 1 ? 'disabled' : ''}><span>Next</span></button>
+            <button type="button" class="ss-alt-form-chip" data-ss-q-act="skip"><span>Skip Slip</span></button>
+            ${!mergeDisabled ? `<button type="button" class="ss-alt-form-chip" id="ssMergeQueueToBundleBtn" data-ss-q-act="merge">${ic('layers')} <span>Merge as 1 Document</span></button>` : ''}
+            <button type="button" class="ss-alt-form-chip" data-ss-q-act="dismiss"><span>Clear Batch</span></button>
+          </div>
+        </div>
+        <div class="ss-queue-pills" role="tablist" aria-label="Queued slips">
+          ${pillsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function wireSlipQueueEvents(rootEl) {
+    if (!rootEl) return;
+    rootEl.querySelectorAll('[data-ss-queue-idx]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const idx = Number(btn.getAttribute('data-ss-queue-idx'));
+        if (!Number.isNaN(idx)) await activateQueueSlip(idx);
+      });
+    });
+    rootEl.querySelectorAll('[data-ss-q-act]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const act = btn.getAttribute('data-ss-q-act');
+        if (act === 'prev' && hasActiveSlipQueue()) {
+          const nextIdx = Math.max(0, SCAN_STATE.slipQueue.currentIndex - 1);
+          await activateQueueSlip(nextIdx);
+        } else if (act === 'next' && hasActiveSlipQueue()) {
+          const nextIdx = Math.min(SCAN_STATE.slipQueue.total - 1, SCAN_STATE.slipQueue.currentIndex + 1);
+          await activateQueueSlip(nextIdx);
+        } else if (act === 'skip') {
+          await skipCurrentQueueSlip();
+        } else if (act === 'merge') {
+          await mergeQueueToBundle();
+        } else if (act === 'dismiss') {
+          clearSlipQueue({ refreshUi: true });
+        }
+      });
+    });
+    const splitBtn = rootEl.querySelector('#ssSplitToSlipQueueBtn, #indSsSplitToSlipQueueBtn');
+    if (splitBtn) {
+      splitBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        await splitLastBundleToQueue();
+      });
+    }
+  }
+
+  function mountOnDomainModal() {
+    const modal = $('indDomainEntryModal');
+    const bar = $('indEntrySmartScanBar');
+    if (!modal || modal.hidden || !bar) {
+      syncMobAiStepPills();
+      return;
+    }
+    const existingQ = bar.querySelector('.ss-queue-bar');
+    if (existingQ) existingQ.remove();
+    const existingSplit = bar.querySelector('#indSsSplitToSlipQueueBtn');
+    if (existingSplit) existingSplit.remove();
+
+    if (hasActiveSlipQueue()) {
+      modal.classList.add('mob-ai-scan-open');
+      modal.classList.remove('mob-ai-voice-open');
+      const wrap = document.createElement('div');
+      wrap.innerHTML = renderSlipQueueBarHtml().replace('id="ssSlipQueueBar"', 'id="indSsSlipQueueBar"').replace('id="ssMergeQueueToBundleBtn"', 'id="indSsMergeQueueToBundleBtn"');
+      const qEl = wrap.firstElementChild;
+      if (qEl) {
+        qEl.style.flexBasis = '100%';
+        qEl.style.width = '100%';
+        bar.appendChild(qEl);
+        wireSlipQueueEvents(qEl);
+        if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+          window.MFG_I18N.translateDom(qEl);
+        }
+      }
+    } else if (SCAN_STATE.lastMultiUnits && Array.isArray(SCAN_STATE.lastMultiUnits.units) && SCAN_STATE.lastMultiUnits.units.length >= 2 && shouldSplitActionBeOffered(SCAN_STATE.lastMultiUnits.units)) {
+      const sBtn = document.createElement('button');
+      sBtn.type = 'button';
+      sBtn.className = 'ss-alt-form-chip';
+      sBtn.id = 'indSsSplitToSlipQueueBtn';
+      sBtn.innerHTML = `${ic('layers')} <span>Split into Slips</span> <b data-no-i18n="1">(${SCAN_STATE.lastMultiUnits.units.length})</b>`;
+      bar.appendChild(sBtn);
+      wireSlipQueueEvents(bar);
+      if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+        window.MFG_I18N.translateDom(sBtn);
+      }
+    }
+    syncMobAiStepPills();
+  }
+
+  function shouldSplitActionBeOffered(units) {
+    if (!Array.isArray(units) || units.length < 2) return false;
+    const readable = units.filter(u => String((u && u.text) || '').trim().length >= 10);
+    return readable.length >= 2;
+  }
+
+  function refreshQueueBarsOnly() {
+    if (!hasActiveSlipQueue()) {
+      syncMobAiStepPills();
+      return;
+    }
+    const entryModal = $('entryModal');
+    if (entryModal && !entryModal.hidden) {
+      const existing = $('ssSlipQueueBar');
+      if (existing) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderSlipQueueBarHtml();
+        const nextEl = tmp.firstElementChild;
+        if (nextEl) {
+          existing.replaceWith(nextEl);
+          wireSlipQueueEvents(nextEl);
+          if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+            window.MFG_I18N.translateDom(nextEl);
+          }
+        }
+      } else {
+        renderSmartScanBarDom();
+      }
+    }
+    const domModal = $('indDomainEntryModal');
+    if (domModal && !domModal.hidden) {
+      mountOnDomainModal();
+    }
+    syncMobAiStepPills();
+  }
+
+  function captureActiveSlipDraftValues(item) {
+    if (!item || item.status === 'posted') return;
+    const domModal = $('indDomainEntryModal');
+    const entryModal = $('entryModal');
+    const container = (domModal && !domModal.hidden)
+      ? $('indEntryModalBody')
+      : ((entryModal && !entryModal.hidden) ? $('modalBody') : null);
+    if (!container) return;
+    const drafts = {};
+    container.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+      if (!el.id || el.type === 'file' || el.type === 'hidden') return;
+      if (!/^(?:f_|ide_)/.test(el.id)) return;
+      drafts[el.id] = el.type === 'checkbox' ? Boolean(el.checked) : el.value;
+    });
+    if (Object.keys(drafts).length) item.draftValues = drafts;
+    if (domModal && !domModal.hidden && typeof domModal._getPendingDomainFiles === 'function') {
+      item.manualDomainFiles = (domModal._getPendingDomainFiles() || []).filter(f => f && !f._fromSmartScan);
+    } else if (entryModal && !entryModal.hidden && typeof D.getFormUi === 'function') {
+      const fui = D.getFormUi();
+      if (fui) {
+        item.manualEntryAttachments = Array.isArray(fui.attachments)
+          ? fui.attachments.filter(a => a && !a._fromSmartScan).map(a => Object.assign({}, a))
+          : [];
+      }
+    }
+  }
+
+  function restoreSlipDraftValues(item) {
+    if (!item || !item.draftValues) return;
+    Object.entries(item.draftValues).forEach(([id, val]) => {
+      const el = $(id);
+      if (!el || el.disabled || el.readOnly) return;
+      if (el.type === 'checkbox') el.checked = Boolean(val);
+      else el.value = String(val == null ? '' : val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  async function extractQueueItem(item, queueId) {
+    if (!item || !item.unit) return item;
+    if (item.status === 'ready' && (item.scanBundle || item.domExt)) return item;
+    item.status = 'extracting';
+    const unit = item.unit;
+    const captureMethod = item.captureMethod || 'AI Smart Scan';
+    const pageEntries = [{ pageNum: 1, fileName: unit.fileName, text: unit.text || '' }];
+    const combinedText = String(unit.text || '');
+
+    try {
+      const detParsed = synthesizeMultiPageDeterministic(pageEntries, combinedText, unit.fileName);
+      const prelimScope = collectRegistryCandidates(detParsed.company);
+      const detDom = deterministicParseDomainBundle(pageEntries, combinedText, null, unit.fileName);
+
+      const isBuiltInSample = captureMethod === 'Sample Smart Scan' && !window.__MFG_TEST_LIVE_AI;
+      let aiResult = null;
+      if (!isBuiltInSample && (!isHeadlessEnv() || window.__MFG_TEST_LIVE_AI)) {
+        aiResult = await tryLocalServerVisionScan({
+          fileName: unit.fileName,
+          mimeType: (unit.attObj && unit.attObj.mime_type) || '',
+          dataUrl: (unit.attObj && unit.attObj.data_url) || '',
+          extractedText: combinedText.slice(0, 8000),
+          pageCount: 1,
+          companies: prelimScope.companies.slice(0, 16)
+        });
+        if (!SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== queueId) return item;
+        if (!aiResult) {
+          aiResult = await tryCloudAiStructuredParse(combinedText, prelimScope, unit.attObj, 1);
+          if (!SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== queueId) return item;
+        }
+      }
+
+      const mergedParsed = mergeParsedResults(detParsed, aiResult && aiResult.parsed);
+      mergedParsed.pageCount = 1;
+      mergedParsed.multiPageSynthesized = false;
+      const matched = groundExtractedEntities(mergedParsed, combinedText);
+      const routing = inferSlipRoutingTarget(mergedParsed, detDom, combinedText);
+
+      const carried = collectCarriedPrecheckFlags([unit.rawInput]);
+      Object.assign(carried.overrides || {}, item.precheckOverrides || {});
+
+      if (routing.kind === 'domain' && detDom && detDom.formKey) {
+        const safeCo = resolveRlsSafeDomainCompany(detDom.company || matched.targetCompany || mergedParsed.company, routing.ind);
+        const domExt = {
+          ind: routing.ind,
+          formKey: detDom.formKey,
+          company: safeCo,
+          label: unit.fileName,
+          fileName: unit.fileName,
+          rawFiles: unit.fileObj ? [unit.fileObj] : [],
+          attObjs: unit.attObj ? [Object.assign({}, unit.attObj, { _fromSmartScan: true })] : [],
+          captureMethod,
+          vinAudit: detDom.vinAudit || null,
+          pageCount: 1,
+          fields: Object.assign({}, detDom.fields || {})
+        };
+        if (item.precheckOverrides) {
+          Object.entries(item.precheckOverrides).forEach(([k, v]) => {
+            if (v && k in domExt.fields) domExt.fields[k] = v;
+          });
+        }
+        const pre = captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK)
+          ? evaluateDomainScanPrecheck(domExt)
+          : { hasWarning: false, warnSig: '' };
+        item.kind = 'domain';
+        item.targetForm = domExt.formKey;
+        item.targetInd = routing.ind;
+        item.targetCompany = safeCo;
+        item.domExt = domExt;
+        item.scanBundle = null;
+        item.precheck = pre;
+        item.status = 'ready';
+      } else {
+        const scanBundle = {
+          attObj: unit.attObj ? Object.assign({}, unit.attObj, { _fromSmartScan: true }) : null,
+          attObjs: unit.attObj ? [Object.assign({}, unit.attObj, { _fromSmartScan: true })] : [],
+          _rawFiles: unit.fileObj ? [unit.fileObj] : [],
+          _singleQueueUnit: true,
+          stitchedDataUrl: '',
+          activePageIdx: 0,
+          extractedText: combinedText.trim(),
+          parsed: mergedParsed,
+          matched,
+          engineLabel: (aiResult && aiResult.engine) || 'ISABI Smart Parser + Frequency Grounding',
+          appliedForm: mergedParsed.formType,
+          filledFields: [],
+          warnFields: []
+        };
+        Object.entries(carried.overrides || {}).forEach(([okKey, okVal]) => {
+          applyPrecheckOverrideToBundle(scanBundle, okKey, okVal);
+        });
+        const pre = captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK)
+          ? evaluateScanPrecheck(scanBundle)
+          : { hasWarning: false, warnSig: '' };
+        item.kind = 'shared';
+        item.targetForm = mergedParsed.formType || 'expense';
+        item.targetCompany = matched.targetCompany || mergedParsed.company || '';
+        item.scanBundle = scanBundle;
+        item.domExt = null;
+        item.precheck = pre;
+        item.status = 'ready';
+      }
+    } catch (err) {
+      item.status = 'error';
+      item.errorMsg = sanitizeOutwardText((err && err.message) || 'Extraction failed');
+    }
+    return item;
+  }
+
+  async function runBackgroundQueuePreExtraction(queue) {
+    if (!queue || queue.bgRunning) return;
+    queue.bgRunning = true;
+    const qId = queue.id;
+    try {
+      for (let i = 1; i < queue.items.length; i++) {
+        if (!SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== qId || SCAN_STATE.slipQueue.mode !== 'queue') break;
+        const it = queue.items[i];
+        if (!it || it.status === 'posted' || it.status === 'skipped' || it.status === 'ready') continue;
+        await extractQueueItem(it, qId);
+        if (!SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== qId || SCAN_STATE.slipQueue.mode !== 'queue') break;
+        refreshQueueBarsOnly();
+        await new Promise(r => setTimeout(r, 15));
+      }
+    } finally {
+      queue.bgRunning = false;
+    }
+  }
+
+  async function activateQueueSlip(idx, opts = {}) {
+    if (!hasActiveSlipQueue()) return null;
+    const q = SCAN_STATE.slipQueue;
+    const targetIdx = Math.max(0, Math.min(q.total - 1, Number(idx || 0)));
+    const prevIdx = q.currentIndex;
+    if (!opts.fromPostAdvance && prevIdx !== targetIdx && q.items[prevIdx]) {
+      captureActiveSlipDraftValues(q.items[prevIdx]);
+    }
+    const item = q.items[targetIdx];
+    if (!item) return null;
+
+    if (item.status === 'pending' || item.status === 'extracting' || (!item.scanBundle && !item.domExt && item.status !== 'error')) {
+      await extractQueueItem(item, q.id);
+    }
+    if (!SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== q.id) return null;
+
+    const handleBlockedOrError = errMsg => {
+      if (errMsg && D && D.toast) D.toast(errMsg, 'err');
+      if (opts.fromPostAdvance) {
+        item.status = 'skipped';
+        const fbIdx = findNextUnpostedQueueIdx(q, targetIdx);
+        if (fbIdx !== -1 && fbIdx !== targetIdx) {
+          return activateQueueSlip(fbIdx, { fromPostAdvance: true });
+        }
+        SCAN_STATE.slipQueue = null;
+        SCAN_STATE.lastMultiUnits = null;
+        syncMobAiStepPills();
+        return null;
+      }
+      q.currentIndex = prevIdx;
+      refreshQueueBarsOnly();
+      return null;
+    };
+
+    if (item.status === 'error' || (!item.domExt && !item.scanBundle)) {
+      return handleBlockedOrError(item.errorMsg || 'Could not extract this slip.');
+    }
+
+    const pre = item.precheck;
+    const ackOk = Boolean(item.precheckAck && (!pre || !pre.warnSig || item.precheckAckSig === pre.warnSig));
+
+    if (item.kind === 'domain' && item.domExt) {
+      const domTargetInd = item.targetInd || item.domExt.ind;
+      const domScopeOk = seatHasCompanyInIndustry(domTargetInd);
+      const canDom = domScopeOk
+        && (!D.canEnterDomainForm || D.canEnterDomainForm(item.domExt.formKey))
+        && (!D.canManageSiblingChronoSchedule || D.canManageSiblingChronoSchedule(item.domExt.formKey));
+      if (!canDom) {
+        return handleBlockedOrError(
+          !domScopeOk
+            ? 'Your seat has no assigned companies in this industry'
+            : (D.canManageSiblingChronoSchedule && !D.canManageSiblingChronoSchedule(item.domExt.formKey)
+              ? 'Supervisor permission required to manage chronological rate schedules'
+              : 'Your seat has no entry rights for this form')
+        );
+      }
+      const prevWasEntry = Boolean($('entryModal') && !$('entryModal').hidden);
+      SCAN_STATE.suppressResetOnModalSwitch = true;
+      SCAN_STATE.suppressDomResetOnSwitch = true;
+      let domOpened = false;
+      try {
+        if (prevWasEntry && typeof D.closeEntryModal === 'function') {
+          D.closeEntryModal(true);
+        }
+        if (typeof D.openIndustryDomainEntryModal === 'function') {
+          domOpened = D.openIndustryDomainEntryModal(item.domExt.formKey, {
+            company: item.domExt.company,
+            _pendingFiles: Array.isArray(item.manualDomainFiles) ? item.manualDomainFiles.slice() : []
+          }) !== false;
+        }
+      } finally {
+        SCAN_STATE.suppressResetOnModalSwitch = false;
+        SCAN_STATE.suppressDomResetOnSwitch = false;
+      }
+      const domM = $('indDomainEntryModal');
+      if (!domOpened || !domM || domM.hidden) {
+        if (prevWasEntry && typeof D.openEntryModal === 'function') {
+          SCAN_STATE.suppressResetOnModalSwitch = true;
+          try { D.openEntryModal((D.STATE && D.STATE.modalForm) || 'expense', null, { forceSwitch: true }); } finally { SCAN_STATE.suppressResetOnModalSwitch = false; }
+        }
+        return handleBlockedOrError('');
+      }
+      q.currentIndex = targetIdx;
+      domM.classList.add('mob-ai-scan-open');
+      domM.classList.remove('mob-ai-voice-open');
+      if (pre && pre.hasWarning && !ackOk) {
+        renderIndPrecheckBanner(item.domExt, pre);
+        mountOnDomainModal();
+        return { heldPrecheck: true, item };
+      }
+      const oldBanner = $('indEntryPrecheckBanner');
+      if (oldBanner) oldBanner.remove();
+      const res = applyDomainExtractionToModal(item.domExt);
+      if (item.draftValues && !opts.fromPostAdvance) restoreSlipDraftValues(item);
+      mountOnDomainModal();
+      return res;
+    }
+
+    // Shared Spine / Manufacturing modal (#entryModal)
+    const sb = item.scanBundle;
+    if (!sb) return handleBlockedOrError('Could not extract this slip.');
+    if (pre && pre.hasWarning && !ackOk) {
+      const preTarget = resolvePrecheckEntryTarget(sb);
+      if (!preTarget.ok) {
+        return handleBlockedOrError(preTarget.reason);
+      }
+      SCAN_STATE.suppressResetOnModalSwitch = true;
+      SCAN_STATE.suppressDomResetOnSwitch = true;
+      try {
+        if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') {
+          D.closeIndustryDomainEntryModal(true);
+        }
+        if (preTarget.coSwitchKey && D.selectCompanyScope) {
+          try { D.selectCompanyScope(preTarget.coSwitchKey); } catch (_) {}
+        }
+        if (typeof D.openEntryModal === 'function') {
+          D.openEntryModal(preTarget.targetForm || 'expense', null, { forceSwitch: true });
+        }
+      } finally {
+        SCAN_STATE.suppressResetOnModalSwitch = false;
+        SCAN_STATE.suppressDomResetOnSwitch = false;
+      }
+      const entryM = $('entryModal');
+      if (!entryM || entryM.hidden) {
+        return handleBlockedOrError(preTarget.reason);
+      }
+      q.currentIndex = targetIdx;
+      entryM.classList.add('mob-ai-scan-open');
+      entryM.classList.remove('mob-ai-voice-open');
+      const fuiHold = D.getFormUi ? D.getFormUi() : null;
+      if (fuiHold) {
+        fuiHold.attachments = Array.isArray(item.manualEntryAttachments)
+          ? item.manualEntryAttachments.filter(a => a && !a._fromSmartScan).map(a => Object.assign({}, a))
+          : [];
+        if (D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
+      }
+      sb.precheck = pre;
+      SCAN_STATE.pendingPrecheckBundle = sb;
+      SCAN_STATE.lastScan = sb;
+      renderSmartScanBarDom();
+      return { heldPrecheck: true, item };
+    }
+    q.currentIndex = targetIdx;
+    SCAN_STATE.pendingPrecheckBundle = null;
+    await applyScanToModal(sb, null, {
+      queueManualAttachments: Array.isArray(item.manualEntryAttachments) ? item.manualEntryAttachments : []
+    });
+    if (sb.blockedByRbac) {
+      return handleBlockedOrError('');
+    }
+    if (!sb.routedDomainModal) {
+      SCAN_STATE.suppressResetOnModalSwitch = true;
+      SCAN_STATE.suppressDomResetOnSwitch = true;
+      try {
+        if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') {
+          D.closeIndustryDomainEntryModal(true);
+        }
+      } finally {
+        SCAN_STATE.suppressResetOnModalSwitch = false;
+        SCAN_STATE.suppressDomResetOnSwitch = false;
+      }
+    }
+    if (item.draftValues && !opts.fromPostAdvance) restoreSlipDraftValues(item);
+    renderSmartScanBarDom();
+    return sb;
+  }
+
+  async function startSlipQueue(units, captureMethod = 'AI Smart Scan', sourceOrigin = 'entry', truncatedCount = 0) {
+    if (!D || !Array.isArray(units) || !units.length) return null;
+    if (sourceOrigin === 'entry' && D.canEnterForm && !['expense', 'document', 'external', 'sales', 'receipt', 'vatinvoice', 'salary'].some(f => D.canEnterForm(f))) {
+      if (D.toast) D.toast('Your seat has no entry rights for this form', 'err');
+      return null;
+    }
+    const allDomKeys = D.INDUSTRY_DOMAIN_FORMS_BY_IND
+      ? Object.values(D.INDUSTRY_DOMAIN_FORMS_BY_IND).flatMap(arr => (Array.isArray(arr) ? arr : []).map(sp => sp && sp.key).filter(Boolean))
+      : ['ins_policies', 're_leases', 'trd_sales', 'hsp_revenue', 'hld_interactions'];
+    if (sourceOrigin === 'domain' && D.canEnterDomainForm && !allDomKeys.some(k => D.canEnterDomainForm(k))) {
+      if (!D.canEnterForm || !D.canEnterForm('expense')) {
+        if (D.toast) D.toast('Your seat cannot create new domain records', 'err');
+        return null;
+      }
+    }
+    const qId = 'sq-' + (++SCAN_STATE.slipQueueCounter);
+    const items = units.map((u, idx) => ({
+      idx,
+      title: u.fileName,
+      fileName: u.fileName,
+      unit: u,
+      captureMethod,
+      status: 'pending',
+      kind: sourceOrigin === 'domain' ? 'domain' : 'shared',
+      targetForm: '',
+      targetInd: '',
+      targetCompany: '',
+      scanBundle: null,
+      domExt: null,
+      precheck: null,
+      precheckAck: false,
+      precheckAckSig: '',
+      precheckOverrides: {},
+      draftValues: null,
+      errorMsg: ''
+    }));
+    const queue = {
+      id: qId,
+      mode: 'queue',
+      sourceOrigin,
+      captureMethod,
+      total: items.length,
+      currentIndex: 0,
+      bgRunning: false,
+      sourceItems: units.map(u => u.rawInput).filter(Boolean),
+      lastUnitsSnapshot: units,
+      items
+    };
+    SCAN_STATE.slipQueue = queue;
+    SCAN_STATE.lastMultiUnits = { units, captureMethod, sourceOrigin };
+    SCAN_STATE.pendingPrecheckBundle = null;
+    SCAN_STATE.pendingDomainPrecheck = null;
+    SCAN_STATE.progressMsg = '';
+    if (truncatedCount > 0 && D.toast) {
+      D.toast(`Queued first ${MAX_SLIP_QUEUE} slips (${truncatedCount} extra excluded from this batch).`, 'warn');
+    }
+    await activateQueueSlip(0, { fromPostAdvance: true });
+    if (SCAN_STATE.slipQueue && SCAN_STATE.slipQueue.id === qId) {
+      refreshQueueBarsOnly();
+      void runBackgroundQueuePreExtraction(queue);
+    }
+    return queue;
+  }
+
+  function beginQueuePostTransition() {
+    if (!hasActiveSlipQueue()) return null;
+    const q = SCAN_STATE.slipQueue;
+    const idx = q.currentIndex;
+    if (q.items[idx]) {
+      captureActiveSlipDraftValues(q.items[idx]);
+      q.items[idx].status = 'posted';
+    }
+    SCAN_STATE.advancingQueueOnPost = true;
+    return { queueId: q.id, postedIdx: idx };
+  }
+
+  function revertQueuePostTransition(token, opts) {
+    SCAN_STATE.advancingQueueOnPost = false;
+    if (!token || !SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== token.queueId) return Promise.resolve(null);
+    const q = SCAN_STATE.slipQueue;
+    if (q.items[token.postedIdx]) q.items[token.postedIdx].status = 'ready';
+    q.currentIndex = token.postedIdx;
+    if (opts && opts.reopen) {
+      return activateQueueSlip(token.postedIdx, { fromPostAdvance: false });
+    }
+    setTimeout(() => refreshQueueBarsOnly(), 0);
+    return Promise.resolve(null);
+  }
+
+  function findNextUnpostedQueueIdx(q, fromIdx) {
+    if (!q || !Array.isArray(q.items)) return -1;
+    for (let i = fromIdx + 1; i < q.items.length; i++) {
+      const st = q.items[i] && q.items[i].status;
+      if (st !== 'posted' && st !== 'skipped') return i;
+    }
+    for (let i = 0; i < fromIdx; i++) {
+      const st = q.items[i] && q.items[i].status;
+      if (st !== 'posted' && st !== 'skipped') return i;
+    }
+    return -1;
+  }
+
+  async function completeQueuePostTransition(token) {
+    SCAN_STATE.advancingQueueOnPost = false;
+    if (!token || !SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== token.queueId) return false;
+    const q = SCAN_STATE.slipQueue;
+    const nextIdx = findNextUnpostedQueueIdx(q, token.postedIdx);
+    if (nextIdx === -1) {
+      const postedCnt = q.items.filter(it => it.status === 'posted').length;
+      const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
+      SCAN_STATE.slipQueue = null;
+      SCAN_STATE.lastMultiUnits = null;
+      syncMobAiStepPills();
+      if (D && D.toast) {
+        D.toast(skippedCnt > 0
+          ? `Batch queue complete: ${postedCnt} posted, ${skippedCnt} skipped.`
+          : `Batch queue complete: all ${postedCnt} slips posted.`, 'ok');
+      }
+      return true;
+    }
+    await activateQueueSlip(nextIdx, { fromPostAdvance: true });
+    return true;
+  }
+
+  async function skipCurrentQueueSlip() {
+    if (!hasActiveSlipQueue()) return false;
+    const q = SCAN_STATE.slipQueue;
+    const idx = q.currentIndex;
+    if (q.items[idx]) q.items[idx].status = 'skipped';
+    const nextIdx = findNextUnpostedQueueIdx(q, idx);
+    if (nextIdx === -1) {
+      const postedCnt = q.items.filter(it => it.status === 'posted').length;
+      const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
+      SCAN_STATE.slipQueue = null;
+      SCAN_STATE.lastMultiUnits = null;
+      if ($('entryModal') && !$('entryModal').hidden && typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+      if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') D.closeIndustryDomainEntryModal(true);
+      syncMobAiStepPills();
+      if (D && D.toast) D.toast(`Batch queue closed: ${postedCnt} posted, ${skippedCnt} skipped.`, 'ok');
+      return true;
+    }
+    await activateQueueSlip(nextIdx, { fromPostAdvance: true });
+    return true;
+  }
+
+  async function mergeQueueToBundle() {
+    if (!hasActiveSlipQueue()) return null;
+    const q = SCAN_STATE.slipQueue;
+    const postedCnt = q.items.filter(it => it.status === 'posted').length;
+    if (postedCnt > 0) {
+      if (D && D.toast) D.toast('Cannot merge after posting one or more slips in this batch.', 'warn');
+      return null;
+    }
+    const rawInputs = q.sourceItems ? q.sourceItems.slice() : [];
+    const cap = q.captureMethod || 'AI Smart Scan';
+    const origin = q.sourceOrigin === 'domain' && $('indDomainEntryModal') && !$('indDomainEntryModal').hidden ? 'domain' : 'entry';
+    const savedUnits = q.lastUnitsSnapshot;
+    SCAN_STATE.slipQueue = null;
+    SCAN_STATE.lastMultiUnits = { units: savedUnits, captureMethod: cap, sourceOrigin: origin };
+    syncMobAiStepPills();
+    if (origin === 'domain') {
+      return scanIntoDomainModal(rawInputs, { captureMethod: cap, batchMode: 'bundle' });
+    }
+    return scanFileOrAttachment(rawInputs, cap, { batchMode: 'bundle' });
+  }
+
+  async function splitLastBundleToQueue() {
+    if (!D || SCAN_STATE.busy || SCAN_STATE.domBusy) return null;
+    const snap = SCAN_STATE.lastMultiUnits;
+    if (!snap || !Array.isArray(snap.units) || snap.units.length < 2) return null;
+    const origin = ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden) ? 'domain' : (snap.sourceOrigin || 'entry');
+    SCAN_STATE.busy = true;
+    try {
+      return await startSlipQueue(snap.units, snap.captureMethod || 'AI Smart Scan', origin);
+    } finally {
+      SCAN_STATE.busy = false;
+      SCAN_STATE.domBusy = false;
+      if (hasActiveSlipQueue()) refreshQueueBarsOnly();
+    }
+  }
+
+  function clearSlipQueue(opts = {}) {
+    SCAN_STATE.slipQueue = null;
+    SCAN_STATE.advancingQueueOnPost = false;
+    SCAN_STATE.lastMultiUnits = null;
+    syncMobAiStepPills();
+    if (opts && opts.refreshUi) {
+      renderSmartScanBarDom();
+      mountOnDomainModal();
+    }
+  }
+
   // ==================== MAIN SCAN ORCHESTRATOR (SINGLE & MULTI-PAGE 1..N) ====================
-  async function scanFileOrAttachment(inputFileOrAtt, captureMethod = 'AI Smart Scan') {
-    if (!D || SCAN_STATE.busy) return null;
+  async function scanFileOrAttachment(inputFileOrAtt, captureMethod = 'AI Smart Scan', scanOpts = {}) {
+    if (!D || SCAN_STATE.busy || SCAN_STATE.domBusy) return null;
     const rawItems = expandInputToScanBatch(inputFileOrAtt);
     if (!rawItems.length) return null;
+    const wasEntryOpenStart = Boolean($('entryModal') && !$('entryModal').hidden);
+    const preScanGen = (SCAN_STATE.entryScanGen = (SCAN_STATE.entryScanGen || 0) + 1);
+    const isPreScanCurrent = () => {
+      if (SCAN_STATE.entryScanGen !== preScanGen) return false;
+      if (wasEntryOpenStart && (!$('entryModal') || $('entryModal').hidden)) return false;
+      return true;
+    };
+    let preExtractedUnits = null;
+    if (scanOpts && scanOpts.batchMode !== 'bundle' && !scanOpts._singleQueueUnit) {
+      SCAN_STATE.busy = true;
+      try {
+        const unitRes = await extractSlipUnitsFromInput(rawItems, captureMethod, isPreScanCurrent);
+        if (unitRes.aborted || !isPreScanCurrent()) return null;
+        preExtractedUnits = unitRes.units;
+        if (unitRes.units.length >= 2) {
+          SCAN_STATE.lastMultiUnits = { units: unitRes.units, captureMethod, sourceOrigin: 'entry' };
+          if (shouldDefaultToSlipQueue(unitRes.units)) {
+            return await startSlipQueue(unitRes.units, captureMethod, 'entry', unitRes.truncatedCount);
+          }
+        } else {
+          SCAN_STATE.lastMultiUnits = null;
+        }
+        SCAN_STATE.slipQueue = null;
+        syncMobAiStepPills();
+      } finally {
+        if (SCAN_STATE.entryScanGen === preScanGen) {
+          SCAN_STATE.busy = false;
+          if (hasActiveSlipQueue()) refreshQueueBarsOnly();
+        }
+      }
+    }
     const modalCheckPre = $('entryModal');
     if ((!modalCheckPre || modalCheckPre.hidden) && D.canEnterForm && !['expense', 'document', 'external', 'sales', 'receipt', 'vatinvoice', 'salary'].some(f => D.canEnterForm(f))) {
       if (D.toast) {
@@ -3476,37 +4660,50 @@
 
       const normPairs = [];
       const pageEntries = [];
-      for (let i = 0; i < rawItems.length; i++) {
-        if (!isEntryScanCurrent()) return null;
-        if (rawItems.length > 1) {
-          updateStatus(`Extracting page ${i + 1} of ${rawItems.length}...`);
-        }
-        const pair = await normalizeSingleScanItem(rawItems[i], captureMethod, i);
-        if (!isEntryScanCurrent()) return null;
-        if (!pair.attObj) continue;
-        normPairs.push(pair);
+      if (Array.isArray(preExtractedUnits) && preExtractedUnits.length) {
+        const seenPairs = new Set();
+        preExtractedUnits.forEach((u, idx) => {
+          const p = u.origPair || { fileObj: u.fileObj, attObj: u.attObj };
+          if (p && p.attObj && !seenPairs.has(p)) {
+            seenPairs.add(p);
+            normPairs.push(p);
+          }
+          const lblName = u.isPdfPage ? `${u.origFileName || u.fileName} (p.${u.pageNum})` : (u.fileName || `Page_${idx + 1}`);
+          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: lblName, text: String(u.text || '') });
+        });
+      } else {
+        for (let i = 0; i < rawItems.length; i++) {
+          if (!isEntryScanCurrent()) return null;
+          if (rawItems.length > 1) {
+            updateStatus(`Extracting page ${i + 1} of ${rawItems.length}...`);
+          }
+          const pair = await normalizeSingleScanItem(rawItems[i], captureMethod, i);
+          if (!isEntryScanCurrent()) return null;
+          if (!pair.attObj) continue;
+          normPairs.push(pair);
 
-        const fName = pair.attObj.file_name || `Page_${i + 1}`;
-        if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
-          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pair.fileObj._extractedText });
-          continue;
-        }
-        const isPdfPair = /\.pdf$/i.test(fName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
-        if (isPdfPair && pair.fileObj) {
-          const ab = await pair.fileObj.arrayBuffer();
-          if (!isEntryScanCurrent()) return null;
-          const pdfPages = await extractPdfPagesTextClient(ab);
-          if (!isEntryScanCurrent()) return null;
-          if (pdfPages.length > 1) {
-            pdfPages.forEach((pt, pIdx) => {
-              pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${fName} (p.${pIdx + 1})`, text: pt });
-            });
+          const fName = pair.attObj.file_name || `Page_${i + 1}`;
+          if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+            pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pair.fileObj._extractedText });
             continue;
           }
+          const isPdfPair = /\.pdf$/i.test(fName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+          if (isPdfPair && pair.fileObj) {
+            const ab = await pair.fileObj.arrayBuffer();
+            if (!isEntryScanCurrent()) return null;
+            const pdfPages = await extractPdfPagesTextClient(ab);
+            if (!isEntryScanCurrent()) return null;
+            if (pdfPages.length > 1) {
+              pdfPages.forEach((pt, pIdx) => {
+                pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${fName} (p.${pIdx + 1})`, text: pt });
+              });
+              continue;
+            }
+          }
+          const pageTxt = await extractAnyDocumentText(pair.fileObj, pair.attObj, rawItems.length === 1 ? updateStatus : () => {});
+          if (!isEntryScanCurrent()) return null;
+          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pageTxt });
         }
-        const pageTxt = await extractAnyDocumentText(pair.fileObj, pair.attObj, rawItems.length === 1 ? updateStatus : () => {});
-        if (!isEntryScanCurrent()) return null;
-        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pageTxt });
       }
 
       const attObjs = normPairs.map(p => p.attObj);
@@ -3576,6 +4773,32 @@
       SCAN_STATE.progressMsg = '';
       const ackMatches = Boolean(carriedPrecheck.ack && carriedPrecheck.ackSig && precheck.warnSig && carriedPrecheck.ackSig === precheck.warnSig);
       if (precheck.hasWarning && !ackMatches) {
+        const preTarget = resolvePrecheckEntryTarget(scanBundle);
+        if (!preTarget.ok) {
+          SCAN_STATE.pendingPrecheckBundle = null;
+          SCAN_STATE.lastScan = null;
+          if (D.toast) D.toast(preTarget.reason, 'err');
+          return null;
+        }
+        if (preTarget.coSwitchKey || (D.STATE && D.STATE.modalForm !== preTarget.targetForm)) {
+          SCAN_STATE.suppressResetOnModalSwitch = true;
+          try {
+            if (preTarget.coSwitchKey && D.selectCompanyScope) {
+              try { D.selectCompanyScope(preTarget.coSwitchKey); } catch (_) {}
+            }
+            if (typeof D.openEntryModal === 'function') {
+              D.openEntryModal(preTarget.targetForm || 'expense', null, { forceSwitch: true });
+            }
+          } finally {
+            SCAN_STATE.suppressResetOnModalSwitch = false;
+          }
+          if (!$('entryModal') || $('entryModal').hidden) {
+            SCAN_STATE.pendingPrecheckBundle = null;
+            SCAN_STATE.lastScan = null;
+            if (D.toast) D.toast(preTarget.reason, 'err');
+            return null;
+          }
+        }
         scanBundle.precheck = precheck;
         SCAN_STATE.pendingPrecheckBundle = scanBundle;
         SCAN_STATE.lastScan = scanBundle;
@@ -3839,6 +5062,15 @@
       </div>
     ` : '';
 
+    const queueBarHtml = renderSlipQueueBarHtml();
+    const canSplitBundle = Boolean(
+      !hasActiveSlipQueue()
+      && SCAN_STATE.lastMultiUnits
+      && Array.isArray(SCAN_STATE.lastMultiUnits.units)
+      && SCAN_STATE.lastMultiUnits.units.length >= 2
+      && shouldSplitActionBeOffered(SCAN_STATE.lastMultiUnits.units)
+    );
+
     let reviewHtml = '';
     if (SCAN_STATE.busy) {
       reviewHtml = `
@@ -3853,6 +5085,7 @@
         <button type="button" class="btn btn-primary btn-sm" data-ss-precheck-use="${idx}"><span>Use</span> <b data-no-i18n="1">${esc(pw.suggested)}</b></button>
       `).join('');
       reviewHtml = `
+        ${queueBarHtml}
         <div class="ss-precheck-banner" id="ssPrecheckBanner">
           <div class="ss-precheck-head">
             <span>${ic('warn')} Pre-Check Hold: Review Before Filling Form</span>
@@ -3864,6 +5097,7 @@
           <div class="ss-precheck-actions">
             ${pwBtns}
             <button type="button" class="btn btn-outline-bar btn-sm" id="ssPrecheckApplyBtn">Fill Form Anyway</button>
+            ${hasActiveSlipQueue() ? `<button type="button" class="btn btn-ghost-bar btn-sm" id="ssPrecheckSkipBtn">Skip Slip</button>` : ''}
             <button type="button" class="btn btn-ghost-bar btn-sm" id="ssPrecheckDiscardBtn">Discard Scan</button>
           </div>
         </div>
@@ -3912,6 +5146,7 @@
         ? (ssLinesCount >= 2 ? `Split Multi-Dept (${ssLinesCount} Lines)` : 'Split Multi-Dept (Last Split)')
         : (ssLinesCount >= 2 ? `Split Multi-Category (${ssLinesCount} Lines)` : 'Split Multi-Category (Last Split)');
       reviewHtml = `
+        ${queueBarHtml}
         <div class="ss-review-strip" id="ssReviewStrip">
           <div class="ss-review-top">
             <div class="ss-review-pills">
@@ -3923,6 +5158,7 @@
               ${warnCnt > 0 ? `<span class="ss-stat-pill is-warn">${ic('warn')} ${warnCnt} Item${warnCnt === 1 ? '' : 's'} to Verify</span>` : ''}
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${canSplitBundle ? `<button type="button" class="ss-alt-form-chip" id="ssSplitToSlipQueueBtn">${ic('layers')} <span>Split into Slips</span> <b data-no-i18n="1">(${SCAN_STATE.lastMultiUnits.units.length})</b></button>` : ''}
               ${canSplitMultiDept ? `<button type="button" class="ss-alt-form-chip" id="ssSplitMultiDeptBtn">${ic('layers')} ${esc(splitBtnLabel)}</button>` : ''}
               <button type="button" class="ss-alt-form-chip" id="ssToggleSplitBtn">${ic('eye')} ${SCAN_STATE.splitOpen ? 'Hide Document Preview' : 'Side-by-Side Preview'}</button>
               <button type="button" class="ss-alt-form-chip" id="ssClearScanBtn">${ic('trash')} Clear Scan</button>
@@ -3946,6 +5182,8 @@
           ` : ''}
         </div>
       `;
+    } else if (queueBarHtml) {
+      reviewHtml = queueBarHtml;
     }
 
     return `
@@ -3975,15 +5213,16 @@
   function renderSmartScanBarDom() {
     const bar = $('entrySmartScanBar');
     if (!bar) return;
-    bar.classList.toggle('has-result', Boolean(SCAN_STATE.lastScan && !SCAN_STATE.busy));
+    bar.classList.toggle('has-result', Boolean((SCAN_STATE.lastScan || hasActiveSlipQueue()) && !SCAN_STATE.busy));
     bar.innerHTML = renderSmartScanBarHtml();
     wireSmartScanBarEvents(bar);
+    wireSlipQueueEvents(bar);
     if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
       window.MFG_I18N.translateDom(bar);
     }
     const modal = $('entryModal');
     if (modal) {
-      const scanActive = Boolean(SCAN_STATE.busy || SCAN_STATE.lastScan || SCAN_STATE.pendingPrecheckBundle || SCAN_STATE.sampleMenuOpen);
+      const scanActive = Boolean(SCAN_STATE.busy || SCAN_STATE.lastScan || SCAN_STATE.pendingPrecheckBundle || SCAN_STATE.sampleMenuOpen || hasActiveSlipQueue());
       const prevAuto = Boolean(modal._mobScanAutoExpanded);
       modal._mobScanAutoExpanded = scanActive;
       if (scanActive && !prevAuto) {
@@ -3994,6 +5233,7 @@
       }
       syncEntryMobAiQuickBarUi(modal);
     }
+    syncMobAiStepPills();
   }
 
   function syncEntryMobAiQuickBarUi(modal) {
@@ -4011,6 +5251,7 @@
       vBtn.classList.toggle('is-open', voiceOpen);
       vBtn.setAttribute('aria-expanded', voiceOpen ? 'true' : 'false');
     }
+    syncMobAiStepPills();
   }
 
   function wireSmartScanBarEvents(bar) {
@@ -4137,11 +5378,29 @@
         const b = SCAN_STATE.pendingPrecheckBundle;
         SCAN_STATE.pendingPrecheckBundle = null;
         if (b) {
+          if (hasActiveSlipQueue()) {
+            const curIt = getActiveQueueItem();
+            if (curIt && b.precheck && b.precheck.warnSig) {
+              curIt.precheckAck = true;
+              curIt.precheckAckSig = b.precheck.warnSig;
+            }
+          }
           restoreRawParsedForUnoverriddenWarnings(b, b.precheck && b.precheck.partyWarnings, null);
-          await applyScanToModal(b);
+          const qOptsPre = hasActiveSlipQueue()
+            ? { queueManualAttachments: (getActiveQueueItem() && Array.isArray(getActiveQueueItem().manualEntryAttachments)) ? getActiveQueueItem().manualEntryAttachments : [] }
+            : {};
+          await applyScanToModal(b, null, qOptsPre);
           if (b.blockedByRbac) return;
           notifyScanApplyOutcome(b, Number((b.parsed && b.parsed.pageCount) || 1));
         }
+      });
+    }
+    const preSkipBtn = bar.querySelector('#ssPrecheckSkipBtn');
+    if (preSkipBtn) {
+      preSkipBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        SCAN_STATE.pendingPrecheckBundle = null;
+        await skipCurrentQueueSlip();
       });
     }
     const preDisBtn = bar.querySelector('#ssPrecheckDiscardBtn');
@@ -4163,12 +5422,23 @@
         if (!b || !pw) return;
         applyPrecheckOverrideToBundle(b, pw.targetKey, pw.suggested);
         const nextPre = evaluateScanPrecheck(b);
+        if (hasActiveSlipQueue()) {
+          const curIt = getActiveQueueItem();
+          if (curIt) {
+            curIt.precheck = nextPre;
+            curIt.precheckOverrides = curIt.precheckOverrides || {};
+            curIt.precheckOverrides[pw.targetKey] = pw.suggested;
+          }
+        }
         if (nextPre.hasWarning) {
           b.precheck = nextPre;
           renderSmartScanBarDom();
         } else {
           SCAN_STATE.pendingPrecheckBundle = null;
-          await applyScanToModal(b);
+          const qOptsPreUse = hasActiveSlipQueue()
+            ? { queueManualAttachments: (getActiveQueueItem() && Array.isArray(getActiveQueueItem().manualEntryAttachments)) ? getActiveQueueItem().manualEntryAttachments : [] }
+            : {};
+          await applyScanToModal(b, null, qOptsPreUse);
           if (b.blockedByRbac) return;
           notifyScanApplyOutcome(b, Number((b.parsed && b.parsed.pageCount) || 1));
         }
@@ -4237,7 +5507,7 @@
       quickBar.className = 'mob-ai-quick-bar no-print';
       quickBar.innerHTML = `
         <span class="mob-ai-qhint">${ic('sparkles')} <span>AI Auto-Fill · Drop or paste a slip or PDF anywhere</span></span>
-        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span><span class="ss-qbar-step-pill" id="entryMobAiStepPill" hidden></span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
         <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
       `;
@@ -4331,6 +5601,11 @@
     SCAN_STATE.splitOpen = false;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
+    if (!SCAN_STATE.advancingQueueOnPost) {
+      SCAN_STATE.slipQueue = null;
+      SCAN_STATE.lastMultiUnits = null;
+      syncMobAiStepPills();
+    }
     const modalEl = $('entryModal');
     if (modalEl) {
       modalEl._mobScanAutoExpanded = false;
@@ -4348,12 +5623,18 @@
     }
   }
 
-  function resetDomainScanState() {
+  function resetDomainScanState(opts) {
     if (SCAN_STATE.suppressDomResetOnSwitch) return;
     SCAN_STATE.domScanGen = (SCAN_STATE.domScanGen || 0) + 1;
+    SCAN_STATE.domBusy = false;
     SCAN_STATE.pendingDomainPrecheck = null;
     const oldBanner = $('indEntryPrecheckBanner');
     if (oldBanner) oldBanner.remove();
+    if (opts && opts.fromClose && !SCAN_STATE.advancingQueueOnPost) {
+      SCAN_STATE.slipQueue = null;
+      SCAN_STATE.lastMultiUnits = null;
+      syncMobAiStepPills();
+    }
   }
 
   // ==================== TOPBAR & DOCUMENT VAULT BUTTONS ====================
@@ -4572,15 +5853,38 @@
     if (!D || typeof D.allowedCompanyNames !== 'function') return requestedCo || 'Bdeir Holding';
     const allowed = D.allowedCompanyNames() || [];
     if (!allowed.length) return requestedCo || 'Bdeir Holding';
-    const hit = allowed.find(a => String(a || '').toLowerCase() === String(requestedCo || '').toLowerCase());
-    if (hit) return hit;
-    return allowed[0] || requestedCo || 'Bdeir Holding';
+    const reqHit = requestedCo
+      ? allowed.find(a => String(a || '').toLowerCase() === String(requestedCo || '').toLowerCase())
+      : '';
+    if (reqHit) {
+      if (!ind || !D.getActiveIndustry || !D.COMPANY_KEY_BY_NAME) return reqHit;
+      const reqKey = D.COMPANY_KEY_BY_NAME[reqHit];
+      const reqInd = reqKey ? D.getActiveIndustry(reqKey) : '';
+      if (!reqInd || reqInd === ind) return reqHit;
+    }
+    if (ind && D.getActiveIndustry && D.COMPANY_KEY_BY_NAME) {
+      const indHit = allowed.find(a => {
+        const ak = D.COMPANY_KEY_BY_NAME[a];
+        return ak && D.getActiveIndustry(ak) === ind;
+      });
+      if (indHit) return indHit;
+    }
+    return reqHit || allowed[0] || requestedCo || 'Bdeir Holding';
   }
 
-  // Deterministic Cross-Page Domain Bundle Parser across all 5 Domain-Modal Industries (1..N Pages)
+  // Deterministic Cross-Page Domain Bundle Parser across all 5 Domain-Modal Industries & 26 Forms (1..N Pages)
   function deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName) {
     const cleanAll = normalizeDigits(String(combinedText || '')).replace(/\r/g, '');
     if (cleanAll.trim().length < 10 && !extractVin17CandidateFromText(primaryFileName || '')) return null;
+
+    // Never classify explicit Manufacturing quarry/concrete/weighbridge/crusher operational slips as domain-modal forms
+    if (/\b(?:WTC|BBConstruction|Lions\s*Transport)\b/i.test(cleanAll) && !/from\s*(?:sister\s*)?entity\s*:/i.test(cleanAll)) {
+      return null;
+    }
+    if (/\b(?:Ready\s*Mix\s*Concrete|Weighbridge\s*Ticket|Crusher\s*Run|Quarrying|Mixer\s*Truck|M3\b)/i.test(cleanAll)
+      && !/(?:policy\s*(?:no|#)|lease\s*agreement|commercial\s*lease|ocean\s*b\/?l|bill\s*of\s*lading|pos\s*z-?close)/i.test(cleanAll)) {
+      return null;
+    }
 
     const perPageLines = (pageEntries || []).map(pe =>
       normalizeDigits(String((pe && pe.text) || '')).replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean)
@@ -4619,27 +5923,33 @@
       return raw ? parseDocumentDateISO(raw) : '';
     };
 
-    const companyRaw = findFirstLabel(/^(?:company|entity|landlord|lessor|broker|seller|resort(?:\s*property)?|trading\s*entity|subsidiary)\s*:\s*(.+)$/i)
+    const companyRaw = findFirstLabel(/^(?:company|entity|subsidiary)\s*:\s*(.+)$/i)
+      || findFirstLabel(/^(?:landlord|lessor|broker|seller|resort(?:\s*property)?|trading\s*entity)\s*:\s*(.+)$/i)
       || (/4235\s*company/i.test(cleanAll) ? '4235 Company S.A.L'
-        : (/\bproperties\b/i.test(cleanAll) && /lease|rent|tenant/i.test(cleanAll) ? 'Properties'
-          : (/insurance\s*company/i.test(cleanAll) ? 'Insurance Company'
-            : (/\bshacman\b/i.test(cleanAll) ? 'Shacman'
-              : (/\bkorri\s*auto\b/i.test(cleanAll) ? 'Korri Auto'
+        : (/\bproperties\b/i.test(cleanAll) && /lease|rent|tenant|work\s*order/i.test(cleanAll) ? 'Properties'
+          : (/insurance\s*company|\b(?:pol|clm|rem|agr)-\d/i.test(cleanAll) ? 'Insurance Company'
+            : (/\bshacman\b|\bimp-sh\b|\bsu-sh\b/i.test(cleanAll) ? 'Shacman'
+              : (/\bkorri\s*auto\b|\bsu-ka\b/i.test(cleanAll) ? 'Korri Auto'
                 : (/\bblanca\b/i.test(cleanAll) ? 'Blanca'
-                  : (/\bla\s*una\b/i.test(cleanAll) ? 'La Una' : '')))))));
+                  : (/\bla\s*una\b/i.test(cleanAll) ? 'La Una'
+                    : (/\bpalms\b/i.test(cleanAll) && /resort|chalet|cabana|pos|membership|venue/i.test(cleanAll) ? 'Palms'
+                      : (/\bvoile\b/i.test(cleanAll) && /resort|chalet|cabana|pos|membership|venue/i.test(cleanAll) ? 'Voile'
+                        : (/\bplatinum\b/i.test(cleanAll) && /resort|chalet|cabana|pos|membership|venue/i.test(cleanAll) ? 'Platinum'
+                          : (/bdeir\s*holding|holding\s*&\s*treasury|\b(?:ic-hld|ln-hld)\b/i.test(cleanAll) ? 'Bdeir Holding' : '')))))))))));
 
     const fields = {};
-    const docId = findFirstLabel(/^(?:(?:lease|policy|endorsement|claim|remittance|agreement|invoice|import\s*file|unit\s*stock|voucher|transfer|contract|slip|work\s*order)\s*(?:no|#|id)?|ref(?:erence)?)\s*[:#-]?\s*([A-Za-z0-9/_-]{3,36})/i)
-      || ((cleanAll.match(/\b(?:POL|END|ALZ|MGF|BNK|AXA|CLM|REM|AGR|LSE|INV-4235|INV-PROP|INV-TRD|IMP-TRD|IMP-SH|SU-SH|SU-KA|REV-HSP|POS-CL|MEM-2026|IC-HLD|IC-2026|LN-HLD)-[A-Z0-9-]{2,24}\b/i) || [])[0] || '');
+    const docId = findFirstLabel(/^(?:(?:lease|policy|endorsement|claim|remittance|agreement|invoice|import\s*file|unit\s*stock|voucher|transfer|contract|slip|work\s*order|facility|instalment)\s*(?:no|#|id)?|ref(?:erence)?)\s*[:#-]?\s*([A-Za-z0-9/_-]{3,36})/i)
+      || ((cleanAll.match(/\b(?:POL|END|ALZ|MGF|BNK|AXA|CLM|REM|AGR|LSE|WO|INV-4235|INV-PROP|INV-TRD|RCT-4235|RCT-PROP|RCT-TRD|IMP-TRD|IMP-SH|SU-SH|SU-KA|STK-TRD|REV-HSP|POS-CL|MEM-2026|IC-HLD|IC-2026|LN-HLD)-[A-Z0-9-]{2,24}\b/i) || [])[0] || '');
     if (docId) fields.ide_id = docId;
+    if (/^(?:RCT|INV|COL|PRM|TRN|REF|4235)/i.test(docId || '')) fields.ide_ref = docId;
 
-    const issueDate = findIsoDateByLabel(/^(?:(?:invoice|issue|policy|effective|loss|arrival|operating|close|transfer|agreement|order)\s*date|date)\s*:\s*(.+)$/i) || parseDocumentDateISO(cleanAll);
+    const issueDate = findIsoDateByLabel(/^(?:(?:invoice|issue|policy|effective|loss|arrival|operating|close|transfer|agreement|order|receipt|settlement)\s*date|date)\s*:\s*(.+)$/i) || parseDocumentDateISO(cleanAll);
     if (issueDate) fields.ide_date = issueDate;
 
     const startDate = findIsoDateByLabel(/^(?:(?:lease\s*)?start\s*date|commencement(?:\s*date)?|effective\s*from(?:\s*date)?|valid\s*from)\s*:\s*(.+)$/i);
     if (startDate) fields.ide_start_date = startDate;
 
-    const endDate = findIsoDateByLabel(/^(?:(?:lease\s*)?end\s*date|termination(?:\s*date)?|expiry(?:\s*date)?|expiration(?:\s*date)?|valid\s*(?:to|until))\s*:\s*(.+)$/i);
+    const endDate = findIsoDateByLabel(/^(?:(?:lease\s*)?end\s*date|termination(?:\s*date)?|expiry(?:\s*date)?|expiration(?:\s*date)?|valid\s*(?:to|until)|maturity(?:\s*date)?)\s*:\s*(.+)$/i);
     if (endDate) {
       fields.ide_end_date = endDate;
       fields.ide_expiry = endDate;
@@ -4656,13 +5966,17 @@
 
     const specKey = String((curSpec && curSpec.key) || '');
 
-    // 1. Real Estate & Property (re_leases, re_invoicing, re_sales, re_workorders, re_units)
+    // 1. Real Estate & Property (re_leases, re_invoicing, re_receipts, re_sales, re_workorders)
     const propVal = findFirstLabel(/^(?:property|building|tower|center|plaza)\s*:\s*(.+)$/i);
     if (propVal) fields.ide_property = propVal;
     const unitVal = findFirstLabel(/^(?:unit|suite|leased\s*unit|floor(?:\s*\/?\s*suite)?|cabana|chalet)\s*:\s*(.+)$/i);
     if (unitVal) fields.ide_unit = unitVal;
-    const tenantVal = findFirstLabel(/^(?:tenant|lessee|occupant|rented\s*to)\s*:\s*(.+)$/i);
+    const tenantVal = findFirstLabel(/^(?:tenant(?:\s*\/\s*customer)?|lessee|occupant|rented\s*to)\s*:\s*(.+)$/i);
     if (tenantVal) fields.ide_tenant = tenantVal;
+    const taxSeqVal = findFirstLabel(/^(?:tax\s*seq(?:uence)?|fiscal\s*seq(?:uence)?|vat\s*seq(?:uence)?)\s*[:#-]?\s*(.+)$/i);
+    if (taxSeqVal) fields.ide_tax_seq = taxSeqVal;
+    const periodVal = findFirstLabel(/^(?:billing\s*period|rent\s*period|period)\s*:\s*(.+)$/i);
+    if (periodVal) fields.ide_period = periodVal;
     const freqVal = findFirstLabel(/^(?:billing\s*frequency|payment\s*frequency|rent\s*frequency|frequency)\s*:\s*(.+)$/i);
     if (freqVal) {
       if (/month/i.test(freqVal)) fields.ide_freq = 'Monthly';
@@ -4671,6 +5985,8 @@
     }
     const netRent = findLastMoneyLabel(/^(?:period\s*net\s*rent|net\s*rent(?:\s*ex-?vat)?|base\s*rent|net\s*sale\s*amount|net\s*amount(?:\s*ex-?vat)?|subtotal(?:\s*ex-?vat)?)\s*[:$-]*\s*(.+)$/i);
     if (netRent !== null && netRent > 0) fields.ide_net = String(netRent);
+    const vatVal = findLastMoneyLabel(/^(?:vat\s*(?:11%|amount)?|tva)\s*[:$-]*\s*(.+)$/i);
+    if (vatVal !== null && vatVal >= 0) fields.ide_vat = String(vatVal);
     const depVal = findLastMoneyLabel(/^(?:security\s*deposit|deposit(?:\s*held)?)\s*[:$-]*\s*(.+)$/i);
     if (depVal !== null) fields.ide_deposit = String(depVal);
     const escVal = findFirstLabel(/^(?:escalation(?:\s*clause)?|rent\s*escalation|indexation)\s*:\s*(.+)$/i);
@@ -4681,9 +5997,28 @@
     if (contractVal !== null && contractVal > 0) fields.ide_contract = String(contractVal);
     const paidVal = findLastMoneyLabel(/^(?:amount\s*(?:collected|paid)|paid\s*to\s*date)\s*[:$-]*\s*(.+)$/i);
     if (paidVal !== null) fields.ide_paid = String(paidVal);
+    const contractorVal = findFirstLabel(/^(?:contractor|maintenance\s*vendor)\s*:\s*(.+)$/i);
+    if (contractorVal) fields.ide_contractor = contractorVal;
+    const budgetVal = findLastMoneyLabel(/^(?:estimated\s*budget|maintenance\s*budget|budget)\s*[:$-]*\s*(.+)$/i);
+    if (budgetVal !== null && budgetVal >= 0) fields.ide_budget = String(budgetVal);
+    const actualVal = findLastMoneyLabel(/^(?:actual\s*cost|final\s*cost)\s*[:$-]*\s*(.+)$/i);
+    if (actualVal !== null && actualVal >= 0) fields.ide_actual = String(actualVal);
+    const rechVal = findFirstLabel(/^(?:rechargeable(?:\s*to\s*tenant)?)\s*:\s*(.+)$/i);
+    if (rechVal) fields.ide_rechargeable = /yes|true|1/i.test(rechVal) ? 'YES' : 'NO';
+    const grossRecVal = findLastMoneyLabel(/^(?:gross\s*(?:receipt|collected|amount)|total\s*(?:collected|received))\s*[:$-]*\s*(.+)$/i);
+    if (grossRecVal !== null && grossRecVal > 0) {
+      fields.ide_gross = String(grossRecVal);
+      fields.ide_collected = String(grossRecVal);
+    }
+    const allocRecVal = findLastMoneyLabel(/^(?:allocated\s*(?:amount|to\s*invoices?)|rent\s*allocated)\s*[:$-]*\s*(.+)$/i);
+    if (allocRecVal !== null && allocRecVal >= 0) {
+      fields.ide_allocated = String(allocRecVal);
+      fields.ide_ins_allocated = String(allocRecVal);
+      fields.ide_trd_allocated = String(allocRecVal);
+    }
 
-    // 2. Insurance & Brokerage (ins_policies, ins_claims, ins_remittances, ins_agreements)
-    const clientVal = findFirstLabel(/^(?:policyholder|insured|assured|client(?:\s*name)?)\s*:\s*(.+)$/i);
+    // 2. Insurance & Brokerage (ins_policies, ins_billing, ins_claims, ins_agreements, ins_remittances)
+    const clientVal = findFirstLabel(/^(?:policyholder|insured(?:\s*\/\s*customer)?|assured|client(?:\s*name)?)\s*:\s*(.+)$/i);
     if (clientVal) fields.ide_client = clientVal;
     const carrierVal = findFirstLabel(/^(?:carrier|insurer|underwriter|underwriting\s*carrier)\s*:\s*(.+)$/i);
     if (carrierVal) {
@@ -4707,7 +6042,7 @@
       else if (/life|lif\b/i.test(lineVal)) fields.ide_line = 'LIFE · Life';
       else fields.ide_line = lineVal;
     }
-    const prodVal = findFirstLabel(/^(?:product|cover(?:age)?|plan)\s*:\s*(.+)$/i);
+    const prodVal = findFirstLabel(/^(?:(?:policy\s*line\s*\/\s*)?product|cover(?:age)?|plan)\s*:\s*(.+)$/i);
     if (prodVal) fields.ide_product = prodVal;
     const producerVal = findFirstLabel(/^(?:producer|account\s*exec(?:utive)?|broker\s*rep)\s*:\s*(.+)$/i);
     if (producerVal) fields.ide_producer = producerVal;
@@ -4719,14 +6054,30 @@
     }
     const sumIns = findLastMoneyLabel(/^(?:sum\s*insured|insured\s*value|limit\s*of\s*liability)\s*[:$-]*\s*(.+)$/i);
     if (sumIns !== null && sumIns > 0) fields.ide_sum_insured = String(sumIns);
-    const gwpVal = findLastMoneyLabel(/^(?:gross\s*(?:written\s*)?premium|gwp|total\s*gross\s*premium)\s*[:$-]*\s*(.+)$/i);
+    const gwpVal = findLastMoneyLabel(/^(?:gross\s*(?:written\s*)?premium|gwp|total\s*gross\s*premium|bordereau\s*gwp)\s*[:$-]*\s*(.+)$/i);
     if (gwpVal !== null && gwpVal > 0) fields.ide_gwp = String(gwpVal);
     const rateMatch = cleanAll.match(/(?:commission\s*rate|brokerage\s*rate|agreed\s*rate)\s*[:#-]?\s*(\d+(?:\.\d+)?)\s*%/i);
     if (rateMatch) fields.ide_rate = String(Number(rateMatch[1]));
+    const newPctM = cleanAll.match(/(?:new\s*business\s*%)\s*[:#-]?\s*(\d+(?:\.\d+)?)/i);
+    if (newPctM) fields.ide_new_pct = String(Number(newPctM[1]));
+    const renPctM = cleanAll.match(/(?:renewal\s*%)\s*[:#-]?\s*(\d+(?:\.\d+)?)/i);
+    if (renPctM) fields.ide_ren_pct = String(Number(renPctM[1]));
+    const bonPctM = cleanAll.match(/(?:volume\s*bonus\s*%|bonus\s*%)\s*[:#-]?\s*(\d+(?:\.\d+)?)/i);
+    if (bonPctM) fields.ide_bonus_pct = String(Number(bonPctM[1]));
     const discVal = findLastMoneyLabel(/^(?:client\s*(?:discount|rebate)|discount)\s*[:$-]*\s*(.+)$/i);
     if (discVal !== null) fields.ide_discount = String(discVal);
     const feeVal = findLastMoneyLabel(/^(?:policy\s*fee|admin(?:istration)?\s*fee|issuance\s*fee)\s*[:$-]*\s*(.+)$/i);
     if (feeVal !== null) fields.ide_fee = String(feeVal);
+    const instVal = findFirstLabel(/^(?:instalment(?:\s*no)?|billing\s*phase)\s*:\s*(.+)$/i);
+    if (instVal) fields.ide_instalment = instVal;
+    const billedVal = findLastMoneyLabel(/^(?:billed\s*(?:amount|premium)|amount\s*billed)\s*[:$-]*\s*(.+)$/i);
+    if (billedVal !== null && billedVal > 0) fields.ide_billed = String(billedVal);
+    const remSettledVal = findLastMoneyLabel(/^(?:settled\s*(?:to\s*carrier|amount)|remitted\s*amount)\s*[:$-]*\s*(.+)$/i);
+    if (remSettledVal !== null && remSettledVal >= 0) fields.ide_settled = String(remSettledVal);
+    const commVal = findLastMoneyLabel(/^(?:brokerage\s*commission|net\s*commission|commission\s*deducted)\s*[:$-]*\s*(.+)$/i);
+    if (commVal !== null && commVal >= 0) fields.ide_comm = String(commVal);
+    const payableVal = findLastMoneyLabel(/^(?:net\s*payable(?:\s*to\s*carrier)?|carrier\s*payable)\s*[:$-]*\s*(.+)$/i);
+    if (payableVal !== null && payableVal >= 0) fields.ide_payable = String(payableVal);
 
     // Claims fields
     const polRef = findFirstLabel(/^(?:policy\s*(?:no|#|number))\s*[:#-]?\s*([A-Za-z0-9_-]{4,32})/i);
@@ -4742,13 +6093,14 @@
     const apprVal = findLastMoneyLabel(/^(?:adjuster\s*approved|approved\s*(?:settlement|amount)|net\s*approved)\s*[:$-]*\s*(.+)$/i);
     if (apprVal !== null) fields.ide_approved = String(apprVal);
 
-    // 3. Automotive & Heavy Trading (trd_trucks, trd_sales, trd_purchases)
+    // 3. Automotive & Heavy Trading (trd_targets, trd_sales, trd_receipts, trd_purchases, trd_trucks, trd_stock)
     const custVal = findFirstLabel(/^(?:customer|sold\s*to|bill\s*to)\s*:\s*(.+)$/i);
     if (custVal) fields.ide_customer = custVal;
     const modelVal = findFirstLabel(/^(?:vehicle\s*model|model|item\s*description|truck\s*model)\s*:\s*(.+)$/i);
     if (modelVal) {
       fields.ide_model = modelVal;
       fields.ide_item = modelVal;
+      fields.ide_name = modelVal;
     }
     const famVal = findFirstLabel(/^(?:series|family)\s*:\s*(.+)$/i);
     if (famVal) fields.ide_family = famVal;
@@ -4758,6 +6110,8 @@
     if (supVal) fields.ide_supplier = supVal;
     const origVal = findFirstLabel(/^(?:port\s*of\s*origin|origin\s*port|port\s*of\s*loading)\s*:\s*(.+)$/i);
     if (origVal) fields.ide_origin = origVal;
+    const whVal = findFirstLabel(/^(?:warehouse(?:\s*bay)?|yard|depot)\s*:\s*(.+)$/i);
+    if (whVal) fields.ide_wh = whVal;
     const blVal = findFirstLabel(/^(?:bill\s*of\s*lading|ocean\s*b\/?l|container\s*\/?\s*b\/?l|b\/?l\s*(?:no|#))\s*[:#-]?\s*(.+)$/i);
     if (blVal) fields.ide_bl = blVal;
     const ordQtyM = cleanAll.match(/(?:ordered\s*qty|quantity\s*ordered)\s*[:#-]?\s*(\d+)/i);
@@ -4772,7 +6126,6 @@
     }
     const fobVal = findLastMoneyLabel(/^(?:(?:supplier\s*)?(?:fob|cif|cfr|ddp|exw|fca|contract)\s*(?:cost|value|amount|price)|commercial\s*invoice\s*(?:fob|cif|cfr|total))\s*[:$-]*\s*(.+)$/i);
     if (fobVal !== null && fobVal > 0) fields.ide_fob = String(fobVal);
-    // Sum freight + customs + clearance if itemized across Page 2, or read explicit landed add
     const explicitAdd = findLastMoneyLabel(/^(?:allocated\s*landed\s*add|freight,?\s*customs\s*(?:&|and)\s*clearance|total\s*landed\s*add-?ons?)\s*[:$-]*\s*(.+)$/i);
     if (fields.ide_incoterm === 'DDP') {
       fields.ide_landed_add = '0';
@@ -4793,15 +6146,29 @@
         fields.ide_landed_add = '0';
       }
     }
-    const listVal = findLastMoneyLabel(/^(?:showroom\s*list\s*price|list\s*price)\s*[:$-]*\s*(.+)$/i);
-    if (listVal !== null && listVal > 0) fields.ide_list = String(listVal);
-    const costVal = findLastMoneyLabel(/^(?:capitalized\s*landed\s*cost|unit\s*landed\s*cost|cost\s*of\s*sale)\s*[:$-]*\s*(.+)$/i);
-    if (costVal !== null && costVal > 0) fields.ide_cost = String(costVal);
+    const listVal = findLastMoneyLabel(/^(?:showroom\s*list\s*price|list\s*price|retail\s*price)\s*[:$-]*\s*(.+)$/i);
+    if (listVal !== null && listVal > 0) {
+      fields.ide_list = String(listVal);
+      fields.ide_retail = String(listVal);
+    }
+    const costVal = findLastMoneyLabel(/^(?:capitalized\s*landed\s*cost|unit\s*landed\s*cost|cost\s*of\s*sale|wac\s*unit\s*cost)\s*[:$-]*\s*(.+)$/i);
+    if (costVal !== null && costVal > 0) {
+      fields.ide_cost = String(costVal);
+      fields.ide_wac = String(costVal);
+    }
+    const skuCodeVal = findFirstLabel(/^(?:part\s*code|sku(?:\s*code)?|item\s*code)\s*[:#-]?\s*([A-Za-z0-9._-]{3,32})/i);
+    if (skuCodeVal) fields.ide_code = skuCodeVal;
+    const onHandM = cleanAll.match(/(?:on-?hand\s*qty|stock\s*on\s*hand)\s*[:#-]?\s*(\d+)/i);
+    if (onHandM) fields.ide_on_hand = onHandM[1];
+    const reorderM = cleanAll.match(/(?:reorder\s*point|min\s*stock)\s*[:#-]?\s*(\d+)/i);
+    if (reorderM) fields.ide_reorder = reorderM[1];
+    const trdAmtVal = findLastMoneyLabel(/^(?:receipt\s*amount|payment\s*amount|amount\s*received)\s*[:$-]*\s*(.+)$/i);
+    if (trdAmtVal !== null && trdAmtVal > 0) fields.ide_amount = String(trdAmtVal);
 
-    // 4. Hospitality & Resorts (hsp_revenue, hsp_pos, hsp_memberships)
+    // 4. Hospitality & Resorts (hsp_tariffs, hsp_revenue, hsp_pos, hsp_memberships, hsp_stock, hsp_energy)
     const outletVal = findFirstLabel(/^(?:venue|outlet|venue\s*\/\s*outlet)\s*:\s*(.+)$/i);
     if (outletVal) fields.ide_outlet = outletVal;
-    const revCat = findFirstLabel(/^(?:revenue\s*stream|stream)\s*:\s*(.+)$/i);
+    const revCat = findFirstLabel(/^(?:revenue\s*stream|stream|category)\s*:\s*(.+)$/i);
     if (revCat) {
       if (/diesel/i.test(revCat)) fields.ide_category = 'Generator Diesel Recharge';
       else if (/tip|gratuit/i.test(revCat)) fields.ide_category = 'Staff Tips & Gratuities';
@@ -4809,6 +6176,7 @@
       else if (/f&b|restaurant/i.test(revCat)) fields.ide_category = 'Restaurant F&B';
       else if (/beach/i.test(revCat)) fields.ide_category = 'Beach Entrance';
       else if (/chalet|cabana/i.test(revCat)) fields.ide_category = 'Chalet Rental';
+      else fields.ide_category = revCat;
     }
     const coversM = cleanAll.match(/(?:guest\s*covers|covers)\s*[:#-]?\s*(\d+)/i);
     if (coversM) fields.ide_covers = coversM[1];
@@ -4816,33 +6184,101 @@
     if (roomsM) fields.ide_rooms = roomsM[1];
     const totRev = findLastMoneyLabel(/^(?:total\s*billed(?:\s*revenue)?|closing\s*total(?:\s*ttc)?|grand\s*total(?:\s*ttc)?)\s*[:$-]*\s*(.+)$/i);
     if (totRev !== null && totRev > 0) fields.ide_tot = String(totRev);
+    const termVal = findFirstLabel(/^(?:pos\s*terminal|terminal)\s*:\s*(.+)$/i);
+    if (termVal) fields.ide_terminal = termVal;
+    const shiftVal = findFirstLabel(/^(?:pos\s*shift|shift)\s*:\s*(.+)$/i);
+    if (shiftVal) fields.ide_shift = shiftVal;
+    const cashierVal = findFirstLabel(/^(?:cashier|operator)\s*:\s*(.+)$/i);
+    if (cashierVal) fields.ide_cashier = cashierVal;
+    const billsM = cleanAll.match(/(?:bills\s*count|checks\s*count)\s*[:#-]?\s*(\d+)/i);
+    if (billsM) fields.ide_bills = billsM[1];
+    const cashPosVal = findLastMoneyLabel(/^(?:cash\s*collected|cash\s*sales)\s*[:$-]*\s*(.+)$/i);
+    if (cashPosVal !== null && cashPosVal >= 0) fields.ide_cash = String(cashPosVal);
+    const cardPosVal = findLastMoneyLabel(/^(?:card\s*(?:settlement|collected|sales))\s*[:$-]*\s*(.+)$/i);
+    if (cardPosVal !== null && cardPosVal >= 0) fields.ide_card = String(cardPosVal);
+    const memberVal = findFirstLabel(/^(?:member\s*(?:name)?|seasonal\s*member)\s*:\s*(.+)$/i);
+    if (memberVal) fields.ide_member = memberVal;
+    const seasonVal = findFirstLabel(/^(?:season|term)\s*:\s*(.+)$/i);
+    if (seasonVal) fields.ide_season = seasonVal;
+    const tierVal = findFirstLabel(/^(?:cabana\s*tier|rack\s*rate\s*tier|tariff\s*tier)\s*:\s*(.+)$/i);
+    if (tierVal) fields.ide_tier = tierVal;
+    const storeVal = findFirstLabel(/^(?:bar\s*store|store|pantry)\s*:\s*(.+)$/i);
+    if (storeVal) fields.ide_store = storeVal;
+    const assetVal = findFirstLabel(/^(?:generator(?:\s*asset)?|power\s*asset)\s*:\s*(.+)$/i);
+    if (assetVal) fields.ide_asset = assetVal;
+    const hoursM = cleanAll.match(/(?:operating\s*hours|run\s*hours)\s*[:#-]?\s*(\d+(?:\.\d+)?)/i);
+    if (hoursM) fields.ide_hours = hoursM[1];
+    const dieselAddM = cleanAll.match(/(?:diesel\s*added|fuel\s*added)\s*[:#-]?\s*(\d+(?:\.\d+)?)/i);
+    if (dieselAddM) fields.ide_diesel = dieselAddM[1];
 
-    // 5. Holding & Treasury (hld_interactions, hld_loans)
+    // 5. Holding & Treasury (hld_partners, hld_loans, hld_extended, hld_interactions)
     const fromCo = findFirstLabel(/^(?:from\s*(?:sister\s*)?entity|sender(?:\s*entity)?|remitter)\s*:\s*(.+)$/i);
     if (fromCo) fields.ide_from = fromCo;
     const toCo = findFirstLabel(/^(?:to\s*(?:sister\s*)?entity|receiver(?:\s*entity)?|beneficiary\s*sister)\s*:\s*(.+)$/i);
     if (toCo) fields.ide_to = toCo;
-    const wireUsd = findLastMoneyLabel(/^(?:transfer\s*amount|wire\s*amount|advance\s*amount)\s*[:$-]*\s*(.+)$/i);
+    const wireUsd = findLastMoneyLabel(/^(?:transfer\s*amount|wire\s*amount|advance\s*amount|facility\s*principal|principal\s*drawn|repayment\s*amount)\s*[:$-]*\s*(.+)$/i);
     if (wireUsd !== null && wireUsd > 0) fields.ide_usd = String(wireUsd);
+    const lenderVal = findFirstLabel(/^(?:lender|bank\s*lender|credit\s*provider)\s*:\s*(.+)$/i);
+    if (lenderVal) fields.ide_lender = lenderVal;
+    const aprM = cleanAll.match(/(?:apr|interest\s*rate)\s*[:#-]?\s*(\d+(?:\.\d+)?)\s*%?/i);
+    if (aprM) fields.ide_apr = String(Number(aprM[1]));
+    const prinVal = findLastMoneyLabel(/^(?:principal(?:\s*amount)?|facility\s*limit)\s*[:$-]*\s*(.+)$/i);
+    if (prinVal !== null && prinVal > 0) fields.ide_prin = String(prinVal);
+    const repVal = findLastMoneyLabel(/^(?:principal\s*repaid|repayment)\s*[:$-]*\s*(.+)$/i);
+    if (repVal !== null && repVal >= 0) fields.ide_rep = String(repVal);
+    const partnerVal = findFirstLabel(/^(?:partner(?:\s*name)?|shareholder)\s*:\s*(.+)$/i);
+    if (partnerVal) fields.ide_partner = partnerVal;
+    const eqPctM = cleanAll.match(/(?:equity\s*share|share\s*%)\s*[:#-]?\s*(\d+(?:\.\d+)?)\s*%?/i);
+    if (eqPctM) fields.ide_pct = String(Number(eqPctM[1]));
+    const drawnVal = findLastMoneyLabel(/^(?:amount\s*drawn|partner\s*draw)\s*[:$-]*\s*(.+)$/i);
+    if (drawnVal !== null && drawnVal >= 0) fields.ide_drawn = String(drawnVal);
+    const payMethVal = findFirstLabel(/^(?:payment\s*method|settlement\s*channel|method)\s*:\s*(.+)$/i);
+    if (payMethVal) {
+      if (/bank|wire|transfer/i.test(payMethVal)) fields.ide_method = 'Bank Transfer';
+      else if (/check|cheque/i.test(payMethVal)) fields.ide_method = 'Check';
+      else if (/card/i.test(payMethVal)) fields.ide_method = 'Card';
+      else if (/cash/i.test(payMethVal)) fields.ide_method = 'Cash';
+    }
     const notesVal = Array.from(new Set((pageEntries || []).map(pe => {
       const ls = String((pe && pe.text) || '').split('\n').map(x => x.trim()).filter(Boolean);
       return extractLabeledValue(ls, /^(?:notes?|purpose|remarks?|treasury\s*purpose)\s*:\s*(.+)$/i);
     }).filter(Boolean))).join(' · ');
     if (notesVal) fields.ide_notes = notesVal;
 
-    // Infer formKey if modal wasn't already locked to a specific specKey
-    let inferredFormKey = specKey;
-    if (!inferredFormKey) {
-      if (fields.ide_tenant || /commercial\s*lease|lease\s*agreement/i.test(cleanAll)) inferredFormKey = 're_leases';
-      else if (fields.ide_claimed || /loss\s*adjuster|claim/i.test(cleanAll)) inferredFormKey = 'ins_claims';
-      else if (fields.ide_gwp || /policy\s*schedule|gross\s*written\s*premium/i.test(cleanAll)) inferredFormKey = 'ins_policies';
-      else if (fields.ide_bl || /bill\s*of\s*lading|import\s*file/i.test(cleanAll)) inferredFormKey = 'trd_purchases';
-      else if (vinAudit && vinAudit.isVin17 && !fields.ide_customer) inferredFormKey = 'trd_trucks';
-      else if (vinAudit && vinAudit.isVin17) inferredFormKey = 'trd_sales';
-      else if (fields.ide_from && fields.ide_to) inferredFormKey = 'hld_interactions';
-      else if (fields.ide_outlet) inferredFormKey = 'hsp_revenue';
-    }
+    // Infer formKey content-first across all 26 domain forms (do NOT lock to curSpec.key!)
+    let inferredFormKey = '';
+    if (fields.ide_from && fields.ide_to) inferredFormKey = 'hld_interactions';
+    else if (fields.ide_lender || fields.ide_prin || /\b(?:loan\s*facility|borrowing\s*facility|ln-hld)\b/i.test(cleanAll)) inferredFormKey = 'hld_loans';
+    else if (fields.ide_partner || fields.ide_pct || /\b(?:partner\s*draw|capital\s*call|distribution\s*pool)\b/i.test(cleanAll)) inferredFormKey = 'hld_partners';
+    else if (fields.ide_party || /\bextended\s*register\b/i.test(cleanAll)) inferredFormKey = 'hld_extended';
+    else if (fields.ide_claimed || fields.ide_adjuster || fields.ide_peril || /\b(?:loss\s*adjuster|clm-)\b/i.test(cleanAll)) inferredFormKey = 'ins_claims';
+    else if (fields.ide_settled || (fields.ide_payable && !fields.ide_client) || /\b(?:carrier\s*remittance|bordereau\s*remittance|rem-)\b/i.test(cleanAll)) inferredFormKey = 'ins_remittances';
+    else if (fields.ide_instalment || (fields.ide_billed && fields.ide_client) || /\b(?:collection\s*receipt|billing\s*allocation|prm-\d+|col-\d+)\b/i.test(cleanAll)) inferredFormKey = 'ins_billing';
+    else if (fields.ide_new_pct || fields.ide_ren_pct || fields.ide_bonus_pct || /\b(?:carrier\s*agreement|brokerage\s*agreement|commission\s*agreement|agr-)\b/i.test(cleanAll)) inferredFormKey = 'ins_agreements';
+    else if (fields.ide_gwp || fields.ide_sum_insured || (fields.ide_client && fields.ide_carrier) || /\b(?:policy\s*schedule|gross\s*written\s*premium|pol-)\b/i.test(cleanAll)) inferredFormKey = 'ins_policies';
+    else if (fields.ide_contractor || fields.ide_budget || fields.ide_actual || /\b(?:work\s*order|wo-\d+)\b/i.test(cleanAll)) inferredFormKey = 're_workorders';
+    else if (fields.ide_buyer || (fields.ide_contract && fields.ide_property && !fields.ide_tenant && !fields.ide_member)) inferredFormKey = 're_sales';
+    else if ((fields.ide_allocated || /\b(?:rent\s*receipt|tenant\s*receipt|rct-4235|rct-prop)\b/i.test(cleanAll)) && (fields.ide_tenant || fields.ide_property)) inferredFormKey = 're_receipts';
+    else if (fields.ide_tax_seq || fields.ide_period || (/\b(?:rent\s*tax\s*invoice|rent\s*invoice|commercial\s*lease\s*rent\s*tax\s*invoice|inv-4235|inv-prop)\b/i.test(cleanAll) && !fields.ide_start_date && !fields.ide_end_date && !fields.ide_deposit && !fields.ide_escalation && !/\blease\s*agreement\b/i.test(cleanAll))) inferredFormKey = 're_invoicing';
+    else if (fields.ide_tenant || fields.ide_deposit || fields.ide_escalation || /\b(?:commercial\s*lease|lease\s*agreement|lse-)\b/i.test(cleanAll)) inferredFormKey = 're_leases';
+    else if (fields.ide_bl || ((fields.ide_incoterm || fields.ide_fob || fields.ide_landed_add != null) && !fields.ide_list && !fields.ide_wh && !fields.ide_engine) || /\b(?:bill\s*of\s*lading|ocean\s*b\/?l|import\s*file|imp-trd|imp-sh|customs\s*duty|ocean\s*freight)\b/i.test(cleanAll)) inferredFormKey = 'trd_purchases';
+    else if ((fields.ide_amount || /\b(?:trade\s*receipt|rct-trd)\b/i.test(cleanAll)) && fields.ide_customer && !fields.ide_item && !fields.ide_chassis) inferredFormKey = 'trd_receipts';
+    else if (fields.ide_code || fields.ide_on_hand || fields.ide_reorder || /\b(?:spare\s*parts\s*inventory|parts\s*sku|wac\s*unit\s*cost)\b/i.test(cleanAll)) inferredFormKey = 'trd_stock';
+    else if (fields.ide_list || fields.ide_wh || fields.ide_engine || /\b(?:truck\s*stock\s*intake|unit\s*intake|stk-trd)\b/i.test(cleanAll) || (vinAudit && vinAudit.isVin17 && !fields.ide_customer && /showroom|fob|list\s*price|engine/i.test(cleanAll))) inferredFormKey = 'trd_trucks';
+    else if (/\b(?:monthly\s*sales\s*target|target\s*ttc)\b/i.test(cleanAll)) inferredFormKey = 'trd_targets';
+    else if ((vinAudit && vinAudit.isVin17 && fields.ide_customer) || (fields.ide_customer && /\b(?:shacman|korri\s*auto|inv-trd)\b/i.test(cleanAll))) inferredFormKey = 'trd_sales';
+    else if (fields.ide_terminal || fields.ide_shift || fields.ide_cashier || /\b(?:pos\s*z-?close|pos\s*shift|pos-cl)\b/i.test(cleanAll)) inferredFormKey = 'hsp_pos';
+    else if (fields.ide_member || /\b(?:seasonal\s*membership|mem-2026)\b/i.test(cleanAll)) inferredFormKey = 'hsp_memberships';
+    else if (fields.ide_tier || /\b(?:seasonal\s*tariff|rack\s*rate|nightly\s*rate)\b/i.test(cleanAll)) inferredFormKey = 'hsp_tariffs';
+    else if (fields.ide_store || /\b(?:f&b\s*stock|beverage\s*inventory|bar\s*store)\b/i.test(cleanAll)) inferredFormKey = 'hsp_stock';
+    else if (fields.ide_asset || fields.ide_hours || fields.ide_diesel || /\b(?:generator\s*&\s*solar|solar\s*yield)\b/i.test(cleanAll)) inferredFormKey = 'hsp_energy';
+    else if (fields.ide_outlet || fields.ide_covers || fields.ide_rooms || /\b(?:daily\s*venue\s*revenue|rev-hsp)\b/i.test(cleanAll)) inferredFormKey = 'hsp_revenue';
 
+    if (!inferredFormKey) inferredFormKey = specKey;
+    if (inferredFormKey === 'ins_policies' && !fields.ide_gwp) {
+      const totPolFallback = findLastMoneyLabel(/^(?:total(?:\s*amount)?|subtotal)\s*[:$-]*\s*(.+)$/i);
+      if (totPolFallback !== null && totPolFallback > 0) fields.ide_gwp = String(totPolFallback);
+    }
     if (!Object.keys(fields).length) return null;
     return {
       company: companyRaw,
@@ -4855,23 +6291,42 @@
 
   function applyDomainExtractionToModal(sampleOrExt) {
     if (!D || !sampleOrExt) return { ok: false };
-    const safeCo = resolveRlsSafeDomainCompany(sampleOrExt.company, sampleOrExt.ind);
+    const targetFk = String(sampleOrExt.formKey || '');
+    const specResolved = (targetFk && typeof D.resolveDomainFormSpec === 'function')
+      ? D.resolveDomainFormSpec(targetFk)
+      : null;
+    const resolvedInd = (specResolved && specResolved.ind) || sampleOrExt.ind || '';
+    if (targetFk && D.canEnterDomainForm && !D.canEnterDomainForm(targetFk)) {
+      if (D.toast) D.toast('Your seat has no entry rights for this form', 'err');
+      return { ok: false, blocked: true };
+    }
+    if (targetFk && D.canManageSiblingChronoSchedule && !D.canManageSiblingChronoSchedule(targetFk)) {
+      if (D.toast) D.toast('Supervisor permission required to manage chronological rate schedules', 'err');
+      return { ok: false, blocked: true };
+    }
+    const safeCo = resolveRlsSafeDomainCompany(sampleOrExt.company, resolvedInd);
     const modal = $('indDomainEntryModal');
     const curSpecKey = modal && modal._currentDomainSpec ? modal._currentDomainSpec.key : '';
-    if (!modal || modal.hidden || (sampleOrExt.formKey && curSpecKey !== sampleOrExt.formKey)) {
+    if (!modal || modal.hidden || (targetFk && curSpecKey !== targetFk)) {
       if (typeof D.openIndustryDomainEntryModal === 'function') {
         SCAN_STATE.suppressDomResetOnSwitch = true;
         let openedOk = true;
         try {
-          openedOk = D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
+          openedOk = D.openIndustryDomainEntryModal(targetFk || curSpecKey, { company: safeCo });
         } finally {
           SCAN_STATE.suppressDomResetOnSwitch = false;
         }
         const liveCheck = $('indDomainEntryModal');
-        if (openedOk === false || !liveCheck || liveCheck.hidden || (sampleOrExt.formKey && (!liveCheck._currentDomainSpec || liveCheck._currentDomainSpec.key !== sampleOrExt.formKey))) {
+        if (openedOk === false || !liveCheck || liveCheck.hidden || (targetFk && (!liveCheck._currentDomainSpec || liveCheck._currentDomainSpec.key !== targetFk))) {
           return { ok: false, blocked: true };
         }
       }
+    }
+    const domBody = $('indEntryModalBody');
+    if (domBody) {
+      domBody.querySelectorAll('.ss-ai-badge').forEach(b => b.remove());
+      domBody.querySelectorAll('.ss-field-filled, .ss-field-check').forEach(w => w.classList.remove('ss-field-filled', 'ss-field-check'));
+      domBody.scrollTop = 0;
     }
     const coSel = $('ide_company');
     if (coSel && sampleOrExt.company) {
@@ -4893,9 +6348,9 @@
       }
     });
 
-    // Apply company, incoterm, supplier, qty, carrier & line BEFORE contract cost / rate / landed_add so live tariff listeners never overwrite explicit scanned figures!
+    // Apply company, incoterm, supplier, property, tenant, category, qty, carrier & line BEFORE contract cost / rate / landed_add so live tariff listeners never overwrite explicit scanned figures!
     const orderedEntries = Object.entries(fields).sort(([a], [b]) => {
-      const prio = k => (/^(?:ide_carrier|ide_line|ide_date|ide_type|ide_supplier|ide_ord_qty|ide_incoterm)$/.test(k)) ? 0 : 1;
+      const prio = k => (/^(?:ide_carrier|ide_line|ide_date|ide_type|ide_supplier|ide_property|ide_tenant|ide_category|ide_qty|ide_ord_qty|ide_incoterm)$/.test(k)) ? 0 : 1;
       return prio(a) - prio(b);
     });
 
@@ -4992,28 +6447,65 @@
       }
     }
     if (liveModal && typeof liveModal._addPendingDomainFile === 'function') {
+      if (typeof liveModal._clearScanPendingDomainFiles === 'function') {
+        liveModal._clearScanPendingDomainFiles();
+      }
       const existingPending = typeof liveModal._getPendingDomainFiles === 'function' ? (liveModal._getPendingDomainFiles() || []) : [];
       const rawFiles = Array.isArray(sampleOrExt.rawFiles) && sampleOrExt.rawFiles.length
         ? sampleOrExt.rawFiles
         : (sampleOrExt.rawFile ? [sampleOrExt.rawFile] : []);
+      const rawAttFallback = !rawFiles.length && Array.isArray(sampleOrExt.attObjs) ? sampleOrExt.attObjs : [];
 
       if (rawFiles.length) {
         rawFiles.forEach(rf => {
           if (typeof Blob !== 'undefined' && rf instanceof Blob) {
             if (!existingPending.includes(rf)) {
               rf._captureMethod = sampleOrExt.captureMethod || 'AI Smart Scan';
+              rf._fromSmartScan = true;
               liveModal._addPendingDomainFile(rf);
             }
           }
+        });
+      } else if (rawAttFallback.some(a => a && a.data_url)) {
+        rawAttFallback.forEach(aObj => {
+          if (!aObj || !aObj.data_url) return;
+          try {
+            const mB64 = String(aObj.data_url).match(/^data:([^;,]+)(?:;[^,]*)*?;base64,(.+)$/i);
+            let fBytes = null;
+            let fMime = aObj.mime_type || 'application/octet-stream';
+            if (mB64) {
+              const bin = atob(mB64[2]);
+              fBytes = new Uint8Array(bin.length);
+              for (let bi = 0; bi < bin.length; bi++) fBytes[bi] = bin.charCodeAt(bi);
+              if (!aObj.mime_type && mB64[1]) fMime = mB64[1];
+            } else {
+              const mTxt = String(aObj.data_url).match(/^data:([^;,]+)(?:;[^,]*)?,(.*)$/i);
+              if (mTxt) {
+                const decoded = decodeURIComponent(mTxt[2] || '');
+                fBytes = typeof TextEncoder !== 'undefined'
+                  ? new TextEncoder().encode(decoded)
+                  : Uint8Array.from(decoded, ch => ch.charCodeAt(0) & 0xff);
+                if (!aObj.mime_type && mTxt[1]) fMime = mTxt[1];
+              }
+            }
+            if (fBytes) {
+              const fFromAtt = new File([fBytes], aObj.file_name || 'SmartScan_Domain_File', { type: fMime });
+              fFromAtt._captureMethod = aObj.capture_method || sampleOrExt.captureMethod || 'AI Smart Scan';
+              fFromAtt._fromSmartScan = true;
+              liveModal._addPendingDomainFile(fFromAtt);
+            }
+          } catch (_) {}
         });
       } else if (!sampleOrExt.skipSyntheticFile) {
         const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#FAF8F4"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#181512">${esc(sanitizeOutwardText(sampleOrExt.label || 'AI Smart Scan Document'))}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#4A443C">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
         const blob = new Blob([svgStr], { type: 'image/svg+xml' });
         const fakeFile = new File([blob], sampleOrExt.fileName || 'SmartScan_Domain_Voucher.svg', { type: 'image/svg+xml' });
         fakeFile._captureMethod = 'AI Smart Scan';
+        fakeFile._fromSmartScan = true;
         liveModal._addPendingDomainFile(fakeFile);
       }
     }
+    mountOnDomainModal();
     return {
       ok: true,
       company: safeCo,
@@ -5031,77 +6523,194 @@
   }
 
   async function scanIntoDomainModal(filesOrAtt, opts = {}) {
+    if (!D || SCAN_STATE.domBusy || SCAN_STATE.busy) return null;
     const batch = expandInputToScanBatch(filesOrAtt);
-    const carriedPrecheck = collectCarriedPrecheckFlags(batch);
-    const firstItem = batch[0] || null;
-    const fName = String((firstItem && (firstItem.name || firstItem.file_name)) || '').toLowerCase();
-    let sample = DOMAIN_SAMPLE_SCANS[0];
-    if (/lease|4235|rent|prop/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[1];
-    else if (/vin|shacman|korri|truck|bl/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[2];
-    else if (/blanca|launa|palms|voile|platinum|resort|cabana|pos/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[3];
-    else if (/holding|wire|ic|intercompany/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[4];
-    else if (D && typeof D.getActiveIndustry === 'function') {
-      const curInd = D.getActiveIndustry(D.STATE && D.STATE.company);
-      sample = DOMAIN_SAMPLE_SCANS.find(s => s.ind === curInd) || DOMAIN_SAMPLE_SCANS[0];
-    }
-
+    if (!batch.length) return null;
     const liveModal = $('indDomainEntryModal');
-    const curSpec = liveModal && !liveModal.hidden && liveModal._currentDomainSpec ? liveModal._currentDomainSpec : null;
-    const domGen = (SCAN_STATE.domScanGen = (SCAN_STATE.domScanGen || 0) + 1);
     const wasOpenAtStart = Boolean(liveModal && !liveModal.hidden);
-    const startSpecKey = curSpec ? curSpec.key : '';
+    const domGen = (SCAN_STATE.domScanGen = (SCAN_STATE.domScanGen || 0) + 1);
     const isDomScanCurrent = () => {
       if (SCAN_STATE.domScanGen !== domGen) return false;
       const m = $('indDomainEntryModal');
       if (wasOpenAtStart && (!m || m.hidden)) return false;
-      if (startSpecKey && m && m._currentDomainSpec && m._currentDomainSpec.key !== startSpecKey) return false;
       return true;
     };
-    const rawFiles = batch.filter(it => typeof Blob !== 'undefined' && it instanceof Blob);
+    SCAN_STATE.domBusy = true;
+    try {
+      let preExtractedUnits = null;
+      if (opts && opts.batchMode !== 'bundle' && !opts._singleQueueUnit) {
+        const unitRes = await extractSlipUnitsFromInput(batch, opts.captureMethod || 'AI Smart Scan', isDomScanCurrent);
+        if (unitRes.aborted || !isDomScanCurrent()) return null;
+        preExtractedUnits = unitRes.units;
+        if (unitRes.units.length >= 2) {
+          SCAN_STATE.lastMultiUnits = { units: unitRes.units, captureMethod: opts.captureMethod || 'AI Smart Scan', sourceOrigin: 'domain' };
+          if (shouldDefaultToSlipQueue(unitRes.units)) {
+            return await startSlipQueue(unitRes.units, opts.captureMethod || 'AI Smart Scan', 'domain', unitRes.truncatedCount);
+          }
+        } else {
+          SCAN_STATE.lastMultiUnits = null;
+        }
+        SCAN_STATE.slipQueue = null;
+        syncMobAiStepPills();
+      }
+      const carriedPrecheck = collectCarriedPrecheckFlags(batch);
+      const firstItem = batch[0] || null;
+      const fName = String((firstItem && (firstItem.name || firstItem.file_name)) || '').toLowerCase();
+      const curSpec = liveModal && !liveModal.hidden && liveModal._currentDomainSpec ? liveModal._currentDomainSpec : null;
+      let sample = DOMAIN_SAMPLE_SCANS[0];
+      if (/lease|4235|rent|prop/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[1];
+      else if (/vin|shacman|korri|truck|bl/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[2];
+      else if (/blanca|launa|palms|voile|platinum|resort|cabana|pos/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[3];
+      else if (/holding|wire|ic|intercompany/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[4];
+      else if (curSpec && curSpec.key) {
+        sample = DOMAIN_SAMPLE_SCANS.find(s => s.formKey === curSpec.key)
+          || DOMAIN_SAMPLE_SCANS.find(s => s.ind === curSpec.ind)
+          || DOMAIN_SAMPLE_SCANS[0];
+      } else if (D && typeof D.getActiveIndustry === 'function') {
+        const curInd = D.getActiveIndustry(D.STATE && D.STATE.company);
+        sample = DOMAIN_SAMPLE_SCANS.find(s => s.ind === curInd) || DOMAIN_SAMPLE_SCANS[0];
+      }
+
+      const rawFiles = batch.filter(it => typeof Blob !== 'undefined' && it instanceof Blob);
 
     // Extract text & normalized attachments across all 1..N pages (works online, offline & headlessly)
     const normPairs = [];
     const pageEntries = [];
-    for (let i = 0; i < batch.length; i++) {
-      if (!isDomScanCurrent()) return null;
-      const pair = await normalizeSingleScanItem(batch[i], opts.captureMethod || 'AI Smart Scan', i);
-      if (!isDomScanCurrent()) return null;
-      if (!pair.attObj) continue;
-      normPairs.push(pair);
-      const pName = pair.attObj.file_name || `Page_${i + 1}`;
-      if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
-        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: pair.fileObj._extractedText });
-        continue;
-      }
-      const isPdfPair = /\.pdf$/i.test(pName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
-      if (isPdfPair && pair.fileObj) {
-        const ab = await pair.fileObj.arrayBuffer();
+    if (Array.isArray(preExtractedUnits) && preExtractedUnits.length) {
+      const seenDomPairs = new Set();
+      preExtractedUnits.forEach((u, idx) => {
+        const p = u.origPair || { fileObj: u.fileObj, attObj: u.attObj };
+        if (p && p.attObj && !seenDomPairs.has(p)) {
+          seenDomPairs.add(p);
+          normPairs.push(p);
+        }
+        const lblName = u.isPdfPage ? `${u.origFileName || u.fileName} (p.${u.pageNum})` : (u.fileName || `Page_${idx + 1}`);
+        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: lblName, text: String(u.text || '') });
+      });
+    } else {
+      for (let i = 0; i < batch.length; i++) {
         if (!isDomScanCurrent()) return null;
-        const pdfPages = await extractPdfPagesTextClient(ab);
+        const pair = await normalizeSingleScanItem(batch[i], opts.captureMethod || 'AI Smart Scan', i);
         if (!isDomScanCurrent()) return null;
-        if (pdfPages.length > 1) {
-          pdfPages.forEach((pt, pIdx) => pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${pName} (p.${pIdx + 1})`, text: pt }));
+        if (!pair.attObj) continue;
+        normPairs.push(pair);
+        const pName = pair.attObj.file_name || `Page_${i + 1}`;
+        if (pair.fileObj && typeof pair.fileObj._extractedText === 'string') {
+          pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: pair.fileObj._extractedText });
           continue;
         }
+        const isPdfPair = /\.pdf$/i.test(pName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+        if (isPdfPair && pair.fileObj) {
+          const ab = await pair.fileObj.arrayBuffer();
+          if (!isDomScanCurrent()) return null;
+          const pdfPages = await extractPdfPagesTextClient(ab);
+          if (!isDomScanCurrent()) return null;
+          if (pdfPages.length > 1) {
+            pdfPages.forEach((pt, pIdx) => pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${pName} (p.${pIdx + 1})`, text: pt }));
+            continue;
+          }
+        }
+        // Skip heavy raster OCR in headless mode unless text-bearing (SVG / PDF / TXT / DOCX / XLSX)
+        const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(pName) ||
+          /svg|pdf|text|json|xml|word|sheet/i.test(pair.attObj.mime_type || '');
+        const txt = (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)
+          ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
+          : '';
+        if (!isDomScanCurrent()) return null;
+        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
       }
-      // Skip heavy raster OCR in headless mode unless text-bearing (SVG / PDF / TXT / DOCX / XLSX)
-      const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(pName) ||
-        /svg|pdf|text|json|xml|word|sheet/i.test(pair.attObj.mime_type || '');
-      const txt = (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)
-        ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
-        : '';
-      if (!isDomScanCurrent()) return null;
-      pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
     }
 
     const totalPages = Math.max(1, pageEntries.length);
-    const combinedText = totalPages > 1
-      ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
-      : String((pageEntries[0] && pageEntries[0].text) || '');
+    const meaningfulTextLen = pageEntries.reduce((s, pe) => s + String((pe && pe.text) || '').trim().length, 0);
+    const combinedText = meaningfulTextLen > 0
+      ? (totalPages > 1
+        ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
+        : String((pageEntries[0] && pageEntries[0].text) || ''))
+      : '';
 
     const primaryFileName = (normPairs[0] && normPairs[0].attObj && normPairs[0].attObj.file_name) || fName || sample.fileName;
-    const detBundle = deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName);
+    // Pass null curSpec so content determines the right domain form across all 26 forms (no curSpec lock)
+    const detBundle = meaningfulTextLen >= 10
+      ? deterministicParseDomainBundle(pageEntries, combinedText, null, primaryFileName)
+      : null;
+    const detShared = meaningfulTextLen >= 10
+      ? synthesizeMultiPageDeterministic(pageEntries, combinedText, primaryFileName)
+      : null;
+    const hasStrongDomMatch = Boolean(detBundle && detBundle.formKey && hasStrongDomainRegisterSignals(combinedText, detBundle.formKey));
+    const hasExplicitSharedCue = Boolean(
+      !hasStrongDomMatch && detShared && (
+        ['salary', 'conversion', 'settlement', 'external', 'raw', 'production', 'fuel', 'transport', 'equipment'].includes(detShared.formType)
+        || (detShared.formType === 'expense'
+          && !/\b(?:z-?close|pos\s*shift|venue\s*closing|cabana|lease\s*agreement|policy\s*schedule|bordereau|bill\s*of\s*lading|ocean\s*b\/?l)\b/i.test(combinedText)
+          && Boolean(
+            detShared.supplier
+            || (Array.isArray(detShared.lines) && detShared.lines.length > 0)
+            || /\b(?:supplier|vendor|merchant|utility|electricity|edl|diesel|lubricant|spare\s*parts|payroll|salary\s*advance|tax\s*bill|supplier\s*invoice)\b/i.test(combinedText)
+          ))
+      )
+    );
+    if (detShared && meaningfulTextLen >= 10 && !hasStrongDomMatch && (!curSpec || hasExplicitSharedCue)) {
+      const routing = inferSlipRoutingTarget(detShared, detBundle, combinedText);
+      if (routing.kind === 'shared') {
+        const matchedShared = groundExtractedEntities(detShared, combinedText);
+        const attObjs = normPairs.map(p => p.attObj);
+        const sharedBundle = {
+          attObj: attObjs[0] || null,
+          attObjs,
+          _rawFiles: rawFiles,
+          stitchedDataUrl: '',
+          activePageIdx: attObjs.length > 1 ? 'all' : 0,
+          extractedText: String(combinedText || '').trim(),
+          parsed: detShared,
+          matched: matchedShared,
+          engineLabel: totalPages > 1 ? `ISABI ${totalPages}-Page Bundle Synthesizer` : 'ISABI Smart Parser + Frequency Grounding',
+          appliedForm: detShared.formType,
+          filledFields: [],
+          warnFields: []
+        };
+        Object.entries(carriedPrecheck.overrides || {}).forEach(([okKey, okVal]) => {
+          applyPrecheckOverrideToBundle(sharedBundle, okKey, okVal);
+        });
+        const runPrecheckGate = opts.captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK);
+        const precheck = runPrecheckGate ? evaluateScanPrecheck(sharedBundle) : { hasWarning: false, partyWarnings: [], summaryLines: [], warnSig: '' };
+        if (!isDomScanCurrent()) return null;
+        if (precheck.hasWarning && !(carriedPrecheck.ack && carriedPrecheck.ackSig === precheck.warnSig)) {
+          const preTarget = resolvePrecheckEntryTarget(sharedBundle);
+          if (!preTarget.ok) {
+            if (D.toast) D.toast(preTarget.reason, 'err');
+            return { ok: false, blocked: true };
+          }
+          SCAN_STATE.suppressDomResetOnSwitch = true;
+          try {
+            if (typeof D.closeIndustryDomainEntryModal === 'function') D.closeIndustryDomainEntryModal(true);
+            SCAN_STATE.suppressResetOnModalSwitch = true;
+            if (preTarget.coSwitchKey && D.selectCompanyScope) {
+              try { D.selectCompanyScope(preTarget.coSwitchKey); } catch (_) {}
+            }
+            if (typeof D.openEntryModal === 'function') D.openEntryModal(preTarget.targetForm || 'expense', null, { forceSwitch: true });
+          } finally {
+            SCAN_STATE.suppressDomResetOnSwitch = false;
+            SCAN_STATE.suppressResetOnModalSwitch = false;
+          }
+          if (!$('entryModal') || $('entryModal').hidden) {
+            if (D.toast) D.toast(preTarget.reason, 'err');
+            return { ok: false, blocked: true };
+          }
+          sharedBundle.precheck = precheck;
+          SCAN_STATE.pendingPrecheckBundle = sharedBundle;
+          SCAN_STATE.lastScan = sharedBundle;
+          renderSmartScanBarDom();
+          return { ok: true, heldPrecheck: true, precheck, formKey: preTarget.targetForm };
+        }
+        await applyScanToModal(sharedBundle);
+        if (sharedBundle.blockedByRbac) return { ok: false, blocked: true };
+        notifyScanApplyOutcome(sharedBundle, totalPages);
+        return { ok: true, formKey: sharedBundle.appliedForm, company: matchedShared.targetCompany };
+      }
+    }
     let finalExt = null;
+    const domAttObjs = normPairs.map(p => p && p.attObj).filter(Boolean);
 
     const canRunLiveVision = (!isHeadlessEnv() || window.__MFG_TEST_LIVE_AI) &&
       (typeof navigator === 'undefined' || navigator.onLine !== false) &&
@@ -5189,13 +6798,16 @@
           }
         }
         if (aiDom && aiDom.fields && typeof aiDom.fields === 'object' && Object.keys(aiDom.fields).length > 0) {
+          const resolvedFk = (detBundle && detBundle.formKey) || (aiDom && aiDom.formKey) || (curSpec && curSpec.key) || sample.formKey;
+          const resolvedSp = (D && typeof D.resolveDomainFormSpec === 'function') ? D.resolveDomainFormSpec(resolvedFk) : null;
           finalExt = {
-            ind: (curSpec && curSpec.ind) || sample.ind,
-            formKey: (curSpec && curSpec.key) || (detBundle && detBundle.formKey) || sample.formKey,
+            ind: (resolvedSp && resolvedSp.ind) || (curSpec && curSpec.ind) || sample.ind,
+            formKey: resolvedFk,
             company: aiDom.company || (detBundle && detBundle.company) || (($('ide_company') && $('ide_company').value) || sample.company),
             label: aiDom.label || (totalPages > 1 ? `${totalPages}-Page Bundle (${primaryFileName})` : primaryFileName),
             fileName: primaryFileName,
             rawFiles,
+            attObjs: domAttObjs,
             pageCount: totalPages,
             vinAudit: detBundle && detBundle.vinAudit,
             captureMethod: opts.captureMethod || 'AI Smart Scan',
@@ -5206,13 +6818,16 @@
     }
 
     if (!finalExt && detBundle && Object.keys(detBundle.fields).length > 0) {
+      const resolvedFk = detBundle.formKey || (curSpec && curSpec.key) || sample.formKey;
+      const resolvedSp = (D && typeof D.resolveDomainFormSpec === 'function') ? D.resolveDomainFormSpec(resolvedFk) : null;
       finalExt = {
-        ind: (curSpec && curSpec.ind) || sample.ind,
-        formKey: (curSpec && curSpec.key) || detBundle.formKey || sample.formKey,
+        ind: (resolvedSp && resolvedSp.ind) || (curSpec && curSpec.ind) || sample.ind,
+        formKey: resolvedFk,
         company: detBundle.company || (($('ide_company') && $('ide_company').value) || sample.company),
         label: totalPages > 1 ? `${totalPages}-Page Synthesized Pack (${primaryFileName})` : primaryFileName,
         fileName: primaryFileName,
         rawFiles,
+        attObjs: domAttObjs,
         pageCount: totalPages,
         vinAudit: detBundle.vinAudit,
         captureMethod: opts.captureMethod || 'AI Smart Scan',
@@ -5220,11 +6835,17 @@
       };
     }
 
+    let usedSyntheticSampleFallback = false;
     if (!finalExt) {
+      usedSyntheticSampleFallback = true;
+      const fallbackFk = (curSpec && curSpec.key) || sample.formKey;
+      const fallbackSp = (D && typeof D.resolveDomainFormSpec === 'function') ? D.resolveDomainFormSpec(fallbackFk) : null;
       finalExt = Object.assign({}, sample, {
-        formKey: (curSpec && curSpec.key) || sample.formKey,
+        ind: (fallbackSp && fallbackSp.ind) || (curSpec && curSpec.ind) || sample.ind,
+        formKey: fallbackFk,
         fileName: primaryFileName,
         rawFiles,
+        attObjs: domAttObjs,
         pageCount: totalPages,
         captureMethod: opts.captureMethod || 'AI Smart Scan',
         fields: Object.assign({}, sample.fields || {})
@@ -5245,16 +6866,22 @@
     }
 
     if (!isDomScanCurrent()) return null;
-    const runDomPre = opts.captureMethod !== 'Sample Smart Scan' || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK);
+    const runDomPre = (!usedSyntheticSampleFallback && opts.captureMethod !== 'Sample Smart Scan') || Boolean(window.__MFG_FORCE_SAMPLE_PRECHECK);
     const domPrecheck = runDomPre ? evaluateDomainScanPrecheck(finalExt) : { hasWarning: false, warnSig: '' };
     const domAckMatches = Boolean(carriedPrecheck.ack && carriedPrecheck.ackSig && domPrecheck.warnSig && carriedPrecheck.ackSig === domPrecheck.warnSig);
     if (domPrecheck.hasWarning && !domAckMatches) {
       renderIndPrecheckBanner(finalExt, domPrecheck);
       return { ok: true, heldPrecheck: true, precheck: domPrecheck, formKey: finalExt.formKey };
     }
-    const oldBanner = $('indEntryPrecheckBanner');
-    if (oldBanner) oldBanner.remove();
-    return applyDomainExtractionToModal(finalExt);
+      const oldBanner = $('indEntryPrecheckBanner');
+      if (oldBanner) oldBanner.remove();
+      return applyDomainExtractionToModal(finalExt);
+    } finally {
+      if (SCAN_STATE.domScanGen === domGen) {
+        SCAN_STATE.domBusy = false;
+        if (hasActiveSlipQueue()) refreshQueueBarsOnly();
+      }
+    }
   }
 
   // ==================== BILINGUAL IDENTITY SCAN & FATHER'S NAME BACKFILL ====================
@@ -6795,8 +8422,10 @@
   window.MFG_SMART_SCAN = {
     init,
     mountOnEntryModal,
+    mountOnDomainModal,
     mountOnDocumentPreviewModal,
     syncWorkspaceButtons,
+    syncIndMobAiStepPill: syncMobAiStepPills,
     resetModalState,
     resetDomainScanState,
     openSmartScanEntryDesk,
@@ -6808,6 +8437,15 @@
     runSampleScanById,
     runDomainSampleScan,
     scanIntoDomainModal,
+    hasActiveSlipQueue,
+    getActiveQueueItem,
+    beginQueuePostTransition,
+    revertQueuePostTransition,
+    completeQueuePostTransition,
+    skipCurrentQueueSlip,
+    clearSlipQueue,
+    splitLastBundleToQueue,
+    mergeQueueToBundle,
     validateAndDisambiguateVin17,
     computeIso3779CheckDigit,
     scanIdentityCard,

@@ -27,7 +27,7 @@
     { id: '13', code: '13', slug: 'aged_ar',       cat: 'Counterparties', name: 'Aged Receivables',      title: 'Aged Receivables',      ar: 'أعمار الذمم المدينة',  landscape: true,  params: ['asof', 'customer'] },
     { id: '14', code: '14', slug: 'cust_stmt',     cat: 'Counterparties', name: 'Customer Statement',    title: 'Customer Statement',    ar: 'كشف حساب زبون',       landscape: false, params: ['customer', 'from', 'to'] },
     { id: '15', code: '15', slug: 'sup_bal',       cat: 'Counterparties', name: 'Supplier Balances',     title: 'Supplier Balances',     ar: 'أرصدة الموردين',       landscape: false, params: ['asof', 'supplier'] },
-    { id: '16', code: '16', slug: 'sup_stmt',      cat: 'Counterparties', name: 'Supplier Statement',    title: 'Supplier Statement',    ar: 'كشف حساب مورد',       landscape: false, params: ['supplier', 'from', 'to'] },
+    { id: '16', code: '16', slug: 'sup_stmt',      cat: 'Counterparties', name: 'Supplier Statement',    title: 'Supplier Statement',    ar: 'كشف حساب مورد',       landscape: false, params: ['supplier', 'leg', 'from', 'to'] },
     { id: '17', code: '17', slug: 'driver_stmt',   cat: 'Counterparties', name: 'Driver Statement',      title: 'Driver Statement',      ar: 'كشف السائقين',         landscape: true,  params: ['from', 'to', 'driver'] },
     { id: '18', code: '18', slug: 'vat_return',    cat: 'Tax & Recon',    name: 'VAT Return',            title: 'VAT Return',            ar: 'ملخص ضريبة القيمة المضافة', landscape: false, params: ['from', 'to'] },
     { id: '19', code: '19', slug: 'pl_recon',      cat: 'Tax & Recon',    name: 'P&L Reconciliation',    title: 'P&L Reconciliation',    ar: 'مطابقة الأرباح والخسائر', landscape: true,  params: ['year', 'month'] },
@@ -292,6 +292,7 @@
           product: 'ALL',
           site: 'ALL',
           supplier: 'ALL',
+          leg: 'ALL',
           category: 'ALL',
           staff: 'ALL',
           equipType: 'ALL',
@@ -1045,7 +1046,7 @@
         co: rm.co || co,
         voucher: String(rm.voucher || rm.id || ''),
         name: String(rm.voucher || rm.id || ''),
-        leg: 'material',
+        leg: rm.leg || 'material',
         material: rm.material || 'Direct Supply',
         supplier: rm.supplier || 'Vendor',
         driver: rm.driver || '',
@@ -1148,14 +1149,55 @@
           pay_method: 'Bank Transfer / Fresh USD', paid_usd: r.settled_usd
         });
       });
-      (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+      const coveredTrdImp = new Set();
+      const emitTrdImpFob = (r) => {
+        const statusStr = String((r && r.status) || '').trim();
+        const isBo = /^open\s*backorder$/i.test(statusStr)
+          || (Number((r && r.received_qty) || 0) === 0 && Number((r && r.backorder_qty) || 0) > 0 && /backorder/i.test(statusStr));
+        if (!r || /cancelled/i.test(statusStr) || isBo) return;
+        const fob = r2(r.fob_usd || 0);
+        if (fob <= 0) return;
         pushRm({
-          id: r.id, voucher: r.id, date: r.date, co: r.company,
-          supplier: r.supplier, material: `${r.origin || 'Import'} · ${r.container_bl || r.id}`,
+          id: r.id, voucher: r.id, date: r.date, co: r.company, leg: 'material',
+          supplier: r.supplier, material: `OEM Contract FOB · ${r.origin || 'Import'} · ${r.container_bl || r.id}`,
           qty: Math.max(1, Number(r.ordered_qty || 1)), unit: 'units',
-          total_usd: r.total_landed_usd, paid_usd: r.fob_usd
+          total_usd: fob, paid_usd: 0
         });
-      });
+      };
+      (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(emitTrdImpFob);
+      if (Array.isArray(trd.frtUpliftDocs) && trd.frtUpliftDocs.length) {
+        trd.frtUpliftDocs.filter(d => coMatch(d.company, co, allowedCos)).forEach((d, dIdx) => {
+          if (d.import_file) coveredTrdImp.add(String(d.import_file).trim().toUpperCase());
+          const pushHaul = (payee, lbl, amt) => {
+            const v = r2(amt);
+            if (Math.abs(v) < 0.005) return;
+            pushRm({
+              id: `${d.import_file || 'LC'}-h${dIdx}-${payee.slice(0, 6)}`, voucher: d.import_file || 'LC',
+              date: d.date || '2026-10-15', co: d.company, leg: 'haulage',
+              supplier: payee, material: `${lbl} · ${d.import_file || 'Import File'}`,
+              qty: 1, unit: 'file', total_usd: v, paid_usd: 0
+            });
+          };
+          if (d.freight_vendor) {
+            pushHaul(d.freight_vendor, 'Freight, Customs & Clearing', d.total_uplift_usd);
+          } else {
+            pushHaul('Ocean & Inland Freight', 'Ocean & Inland Freight', d.freight_usd);
+            pushHaul('Customs Duty & Excise', 'Customs Duty & Excise', d.customs_usd);
+            pushHaul('Port Handling & Clearing', 'Port Handling & Clearing', d.clearance_usd);
+            pushHaul('Marine Cargo Insurance', 'Marine Cargo Insurance', d.insurance_usd);
+          }
+        });
+      } else {
+        (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos) && !/cancelled/i.test(String(r.status || '')) && r.incoterm !== 'DDP').forEach(r => {
+          const addUsd = r2(r.landed_add_usd || 0);
+          if (addUsd <= 0) return;
+          pushRm({
+            id: `${r.id}-haul`, voucher: r.id, date: r.date, co: r.company, leg: 'haulage',
+            supplier: r.freight_vendor || 'Customs & Freight Clearing', material: `Freight, Customs & Clearing · ${r.container_bl || r.id}`,
+            qty: 1, unit: 'file', total_usd: addUsd, paid_usd: 0
+          });
+        });
+      }
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
       const re = E.computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
       (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -1280,11 +1322,15 @@
       });
     });
     (rawSettlements || []).forEach(s => {
-      const amt = r2(s.usd_amount || s.amount || 0);
+      if (!s || s.voided) return;
+      const mth = String(s.method || 'Payment').trim();
+      if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|iva|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
+      const amt = r2(Number(s.usd_amount != null ? s.usd_amount : (s.amount || 0)) + Number(s.discount || 0));
       if (Math.abs(amt) > 0.005) {
         settlementLedgerAll.push({
           id: s.id, date: s.date, rep_date: s.rep_date || s.date, co: s.company || co,
           voucher: s.name || s.id, name: s.name || '', leg: 'settlement',
+          payable_leg: String(s.payable_leg || '').trim().toLowerCase(),
           pay_method: s.method || 'Bank', material: s.notes || 'Supplier Settlement',
           supplier: s.supplier || 'Vendor', driver: '', plate: '', qty: 0, unit: 'USD',
           unit_price: 0, total_usd: 0, paid_usd: amt, is_settlement_row: true
@@ -1545,7 +1591,7 @@
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
     const allowedSig = hasEmptyAllowedCos ? 'NONE' : (allowedCos ? allowedCos.join(',') : 'ALL');
     const offScope = Boolean(STATE._officialScopeActive);
-    const indRev = (SEED && (SEED._indCustomRev || SEED._industryRev)) || 0;
+    const indRev = `${(STATE && STATE._indCustomRev) || 0}:${(SEED && (SEED._indCustomRev || SEED._industryRev)) || 0}`;
     const editRev = STATE && STATE.industryRowEdits ? Object.keys(STATE.industryRowEdits).length : 0;
     const demoSig = (STATE && STATE.company === 'democompany') ? `${STATE.demoCompanyIndustry || ''}|1` : (Boolean(STATE && STATE.demoVisitor) ? '1' : '0');
     // The reading seat's diesel-price rights decide how its ledger books diesel (stock at purchase cost, or the
@@ -1838,6 +1884,7 @@
           voucher: s.name || s.id,
           name: s.name || '',
           leg: 'settlement',
+          payable_leg: String(s.payable_leg || '').trim().toLowerCase(),
           pay_method: m || 'Cash',
           material: s.notes || `Supplier Settlement (${s.method || 'Payment'})`,
           supplier: s.supplier || '(Unassigned Supplier)',
@@ -2099,7 +2146,29 @@
       const customers = uniq([...salesAll.map(r => r.customer), ...receiptLedgerAll.map(r => r.customer)], fIdx && fIdx.customer);
       const products = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.product), fIdx && fIdx.productSales);
       const sites = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.site), fIdx && fIdx.site);
-      const suppliers = uniq([...apRmLegsAll.map(r => r.supplier), ...expAll.map(r => r.supplier), ...settlementLedgerAll.map(r => r.supplier)], fIdx && fIdx.supplier);
+      let suppliers = uniq([...apRmLegsAll.map(r => r.supplier), ...expAll.map(r => r.supplier), ...settlementLedgerAll.map(r => r.supplier)], fIdx && fIdx.supplier);
+      if (ind === 'Manufacturing' && typeof window !== 'undefined' && typeof window.__mfgComputeSupplierStatement16Vouchers === 'function') {
+        const coKey16Init = co === 'WTC' ? 'wtc' : (co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+        const s16Init = window.__mfgComputeSupplierStatement16Vouchers({
+          company: coKey16Init,
+          basis,
+          leg: 'ALL',
+          partySig: `${co}|${phSig}|${wmSig}`,
+          partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, co, d, rCo)
+        });
+        const ranked16 = (s16Init && Array.isArray(s16Init.suppliersRanked)) ? s16Init.suppliersRanked : [];
+        if (ranked16.length) {
+          const seenS = new Set();
+          const mergedS = [];
+          ranked16.concat(suppliers).forEach(sNm => {
+            const k = String(sNm || '').trim().toLowerCase();
+            if (!k || seenS.has(k)) return;
+            seenS.add(k);
+            mergedS.push(String(sNm).trim());
+          });
+          suppliers = mergedS;
+        }
+      }
       const categories = uniq(expAll.map(r => r.category), fIdx && fIdx.category);
       const staff = uniq(payAll.map(r => r.staff), fIdx && fIdx.staff);
       const equipTypes = uniq(fuelAll.map(r => r.equip_type));
@@ -3033,12 +3102,37 @@
     return null;
   }
 
+  function _normStmt16Leg(rawLeg) {
+    const s = String(rawLeg || '').trim().toLowerCase();
+    if (!s || s === 'all') return 'ALL';
+    if (s === 'material' || s === 'quarry' || s === 'oem' || s === 'direct') return 'material';
+    if (s === 'transport' || s === 'transportation' || s === 'haulage' || s === 'freight') return 'transport';
+    if (s === 'expenses' || s === 'expense' || s === 'overhead') return 'expenses';
+    return 'ALL';
+  }
+
   function renderParamBarHtml(meta, ctx) {
     const p = ctx.rdl.params;
     const controls = [];
 
     meta.params.forEach(k => {
-      if (k === 'asof') {
+      if (k === 'leg') {
+        const curLeg = _normStmt16Leg(p.leg);
+        const legOpts = [
+          ['ALL', 'All'],
+          ['material', 'Material'],
+          ['transport', 'Transport'],
+          ['expenses', 'Expenses']
+        ];
+        controls.push(`
+          <div class="rdl-p-item rdl-p-seg" data-rdl-leg-group="1">
+            <div class="rdl-p-hdr"><span class="rdl-p-lbl">Leg</span></div>
+            <div class="rdl-seg" role="group" aria-label="Payable leg filter">
+              ${legOpts.map(([lv, ll]) => `<button type="button" class="rdl-seg-btn ${curLeg === lv ? 'active' : ''}" data-rdl-leg="${lv}" aria-pressed="${curLeg === lv ? 'true' : 'false'}">${ll}</button>`).join('')}
+            </div>
+          </div>
+        `);
+      } else if (k === 'asof') {
         controls.push(`
           <label class="rdl-p-item rdl-p-date">
             <div class="rdl-p-hdr"><span class="rdl-p-lbl">As at Date</span></div>
@@ -4895,9 +4989,10 @@
       confirmedThrough: through
     };
   }
-  function sentStatementBarHtml(partyType, partyName, ctx, closingBal) {
+  function sentStatementBarHtml(partyType, partyName, ctx, closingBal, opts) {
     const L = (typeof window !== 'undefined') ? window.MFG_STMT_LOCK : null;
     if (!L || !partyName || partyName === 'ALL') return '';
+    const readOnlyLegLabel = opts && opts.readOnlyLegLabel ? String(opts.readOnlyLegLabel) : '';
     const spec = sentStatementSpec(partyType, partyName, ctx);
     const to = spec.confirmedThrough;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) return '';
@@ -4953,8 +5048,11 @@
     } else if (metaR && metaR.heldFromCanonical) {
       heldNoteHtml = `<div class="rdl-sent-sub" data-stmt-held-aliases="1" style="color:#92400E;"><span>Held separate from</span> <b data-no-i18n="1">${esc(metaR.heldFromCanonical.canonical)}</b> <span>while marked as sent</span></div>`;
     }
-    const markBtn = canMark
+    const markBtn = (!readOnlyLegLabel && canMark)
       ? `<button type="button" class="rdl-sent-btn" data-stmt-sent="mark" data-stmt-sent-spec="${payload}">${ic('lock')}<span>${mark && !mark.group ? 'Move the Sent Mark To' : 'Mark as Sent Through'}</span> <b data-no-i18n="1">${esc(to)}</b></button>`
+      : '';
+    const legGuardSub = readOnlyLegLabel
+      ? `<div class="rdl-sent-sub" data-stmt-sent-leg-guard="1"><span>Single-leg view:</span> <span>${esc(readOnlyLegLabel)}</span> <span data-no-i18n="1">·</span> <span>Switch Leg to All to mark or remove the account-wide sent mark.</span></div>`
       : '';
     if (mark) {
       const later = to > mark.through;
@@ -4964,11 +5062,11 @@
           <div class="rdl-sent-text">
             <div><span>${isCust ? 'Sent to the customer through' : 'Sent to the supplier through'}</span> <b data-no-i18n="1">${esc(mark.through)}</b>${mark.by ? ` <span class="rdl-sent-by" data-no-i18n="1">· ${esc(mark.by)}</span>` : ''}</div>
             <div class="rdl-sent-sub"><span>A rate change or its undo leaves the records up to that day as they are, and lists the difference for the next statement.</span></div>
-            ${mergedNoteHtml}${heldNoteHtml}
+            ${legGuardSub}${mergedNoteHtml}${heldNoteHtml}
           </div>
           <div class="rdl-sent-actions">
             ${later ? markBtn : ''}
-            ${mark.group ? '<span class="rdl-sent-sub"><span>Marked on the group statement</span></span>' : (canClear ? `<button type="button" class="rdl-sent-btn is-ghost" data-stmt-sent="clear" data-stmt-sent-spec="${payload}"><span>Remove Sent Mark</span></button>` : '')}
+            ${mark.group ? '<span class="rdl-sent-sub"><span>Marked on the group statement</span></span>' : ((!readOnlyLegLabel && canClear) ? `<button type="button" class="rdl-sent-btn is-ghost" data-stmt-sent="clear" data-stmt-sent-spec="${payload}"><span>Remove Sent Mark</span></button>` : '')}
           </div>
         </div>`;
     }
@@ -4978,7 +5076,7 @@
         <div class="rdl-sent-text">
           <div><span>Not marked as sent</span></div>
           <div class="rdl-sent-sub"><span>${isCust ? 'Once sent, mark it: a rate change or its undo then leaves this customer\'s records up to the end date as they are.' : 'Once sent, mark it: a rate change or its undo then leaves this supplier\'s records up to the end date as they are.'}</span></div>
-          ${mergedNoteHtml}${heldNoteHtml}
+          ${legGuardSub}${mergedNoteHtml}${heldNoteHtml}
         </div>
         <div class="rdl-sent-actions">${markBtn}</div>
       </div>`;
@@ -5202,54 +5300,459 @@
     `;
   }
 
+  const STMT16_SHARE_LANG_KEY = 'isabi_stmt16_share_lang_v1';
+  const STMT16_SHARE_LANGS = ['en_ar', 'en', 'ar', 'fr'];
+  let _stmt16ShareState = null;
+
+  function _stmt16LegDisplay(leg, ind) {
+    const l = _normStmt16Leg(leg);
+    const isTrd = ind === 'Automotive & Heavy Trading';
+    if (l === 'material') return { en: isTrd ? 'Direct Supply (OEM FOB)' : 'Material Leg', ar: isTrd ? 'ذمم الموردين المباشرين (FOB)' : 'طرف المواد والكسارات', fr: isTrd ? 'Approvisionnement direct (FOB)' : 'Volet Matériaux' };
+    if (l === 'transport') return { en: isTrd ? 'Freight, Customs & Clearing' : 'Transport Leg (Supplier + Customer)', ar: isTrd ? 'الشحن والجمارك والتخليص' : 'طرف النقل (موردين وزبائن)', fr: isTrd ? 'Fret, douane et dédouanement' : 'Volet Transport' };
+    if (l === 'expenses') return { en: 'Expenses Leg', ar: 'طرف المصاريف والخدمات', fr: 'Volet Charges' };
+    return { en: 'All Payable Legs', ar: 'كافة الأطراف (شامل)', fr: 'Tous les volets' };
+  }
+
+  function _cleanOutwardCopy(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF]/g, '')
+      .replace(/\bTHEO\b/gi, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+  }
+
+  function buildStmt16Model(ctx) {
+    const lAp16 = _rdlSeatLens(ctx);
+    const p = ctx.rdl.params || {};
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+    const leg = _normStmt16Leg(p.leg);
+    const legLbl = _stmt16LegDisplay(leg, ctx.ind);
+    const rawFilterSup = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+    const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
+    const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    let tx = [];
+
+    if (isMfg && typeof window !== 'undefined' && typeof window.__mfgComputeSupplierStatement16Vouchers === 'function') {
+      const coKey16 = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+      const lock16 = _rdlStmtLock();
+      const sig16 = `${ctx.co}|${(lock16 && typeof lock16.partyHygieneSig === 'function') ? lock16.partyHygieneSig('Manufacturing') : '0'}|${(lock16 && typeof lock16.watermarkSig === 'function') ? lock16.watermarkSig('Manufacturing') : '0'}`;
+      const res16 = window.__mfgComputeSupplierStatement16Vouchers({
+        company: coKey16,
+        basis: ctx.basis,
+        supplier: supName,
+        leg,
+        partySig: sig16,
+        partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
+      });
+      tx = ((res16 && res16.vouchers) || []).filter(v => {
+        if (!lAp16.books && v.type === 'Settlement') return false;
+        return true;
+      }).map(v => ({
+        date: v.date,
+        ref: v.ref || 'RM',
+        leg: v.leg,
+        type: leg === 'ALL' ? `${v.type} [${v.leg === 'material' ? 'Material' : (v.leg === 'transport' ? 'Transport' : 'Expenses')}]` : v.type,
+        desc: v.desc,
+        cr: Number(v.cr || 0),
+        dr: lAp16.books ? Number(v.dr || 0) : 0
+      }));
+    } else {
+      const targetKey = normLow(supName);
+      const supRmRows = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => normLow(r.supplier) === targetKey);
+      const supExpRows = ctx.expAll.filter(r => normLow(r.supplier) === targetKey && r.is_ap_credit);
+      const hasMatCr = supRmRows.some(r => !r.is_settlement_row && (r.leg || 'material') !== 'haulage' && Math.abs(Number(r.total_usd || 0)) > 0.005);
+      const hasTrCr = supRmRows.some(r => !r.is_settlement_row && (r.leg === 'haulage' || r.leg === 'transport') && Math.abs(Number(r.total_usd || 0)) > 0.005);
+      const hasExCr = supExpRows.some(r => Math.abs(Number(r.ap_credit_usd || 0)) > 0.005);
+
+      supRmRows.forEach(r => {
+        if (r.is_settlement_row && !lAp16.books) return;
+        let rowLeg = 'material';
+        if (r.is_settlement_row) {
+          const pl = String(r.payable_leg || '').toLowerCase();
+          const isTrdInd = ctx.ind === 'Automotive & Heavy Trading';
+          if (pl === 'quarry' || pl === 'material' || pl === 'oem') rowLeg = 'material';
+          else if (pl === 'transportation' || pl === 'haulage' || pl === 'transport' || pl === 'freight') rowLeg = 'transport';
+          else if (hasExCr && (pl === 'expense' || pl === 'expenses')) rowLeg = 'expenses';
+          else if (hasTrCr && !hasMatCr && !hasExCr) rowLeg = 'transport';
+          else if (hasMatCr && !hasTrCr && !hasExCr) rowLeg = 'material';
+          else if (isTrdInd && !hasExCr && /freight|customs|clearing|insurance|broker|forward/i.test(supName)) rowLeg = 'transport';
+          else if (pl === 'expense' || pl === 'expenses') rowLeg = 'expenses';
+          else rowLeg = (isTrdInd && !hasExCr) ? 'material' : 'expenses';
+        } else {
+          rowLeg = (r.leg === 'haulage' || r.leg === 'transport') ? 'transport' : 'material';
+        }
+        if (leg !== 'ALL' && rowLeg !== leg) return;
+        const srcBase = r.is_settlement_row ? 'Settlement' : (rowLeg === 'transport' ? (isMfg ? 'Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
+        const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (rowLeg === 'transport' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
+        tx.push({
+          date: rowDate(r, ctx.basis),
+          ref: r.voucher || r.name || 'RM',
+          leg: rowLeg,
+          type: leg === 'ALL' ? `${srcBase} [${rowLeg === 'material' ? 'Material' : (rowLeg === 'transport' ? 'Transport' : 'Expenses')}]` : srcBase,
+          desc: descLbl,
+          cr: Number(r.total_usd || 0),
+          dr: lAp16.books ? Number(r.paid_usd || 0) : 0
+        });
+      });
+      if (leg === 'ALL' || leg === 'expenses') {
+        supExpRows.forEach(r => {
+          tx.push({
+            date: rowDate(r, ctx.basis),
+            ref: r.voucher_no || r.invoice_no || 'EXP',
+            leg: 'expenses',
+            type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
+            desc: r.description || r.category || 'Vendor Invoice',
+            cr: Number(r.ap_credit_usd || 0),
+            dr: 0
+          });
+        });
+      }
+      tx.sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    const fromD = String(p.from || '2024-01-01').slice(0, 10);
+    const toD = String(p.to || '2026-12-31').slice(0, 10);
+    let openCr = 0, openDr = 0;
+    const periodRows = [];
+    tx.forEach(t => {
+      if (t.date < fromD) { openCr += t.cr; openDr += t.dr; }
+      else if (t.date <= toD) periodRows.push(t);
+    });
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const openBal = lAp16.books ? round2Local(openCr - openDr) : 0;
+    const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
+    const totDr = lAp16.books ? periodRows.reduce((s, t) => s + t.dr, 0) : 0;
+    const closingBal = lAp16.books ? round2Local(openBal + totCr - totDr) : 0;
+
+    return {
+      lAp16,
+      isMfg,
+      dt,
+      co: ctx.co,
+      from: fromD,
+      to: toD,
+      supName,
+      leg,
+      legLbl,
+      tx,
+      periodRows,
+      openCr,
+      openDr,
+      openBal,
+      totCr,
+      totDr,
+      closingBal
+    };
+  }
+
+  function _fmtStmt16MovementAmt(t, canBooks) {
+    if (Math.abs(Number(t.cr || 0)) >= 0.005) {
+      return Number(t.cr) > 0 ? `+${fmtUsd(t.cr, 2)}` : fmtUsd(t.cr, 2);
+    }
+    if (canBooks && Math.abs(Number(t.dr || 0)) >= 0.005) {
+      return Number(t.dr) > 0 ? `-${fmtUsd(t.dr, 2)}` : `+${fmtUsd(Math.abs(t.dr), 2)}`;
+    }
+    return '';
+  }
+
+  function buildStmt16ConfirmationBlock(m, lang) {
+    const coInfo = CO_LEGAL[m.co] || CO_LEGAL.WTC;
+    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
+    const latest = m.periodRows.slice(-5);
+    const balWordEn = m.closingBal < -0.005 ? 'Advance / Credit in Favor' : 'Net Balance Due';
+    const balWordAr = m.closingBal < -0.005 ? 'رصيد مدفوع مقدماً' : 'صافي الرصيد المستحق';
+    const balWordFr = m.closingBal < -0.005 ? 'Avance en votre faveur' : 'Solde net à payer';
+
+    if (lang === 'ar') {
+      const lines = [
+        `${coInfo.ar || coInfo.short} - مصادقة كشف حساب مورد`,
+        `السادة: ${m.supName}`,
+        `النطاق: ${m.legLbl.ar}`,
+        `الفترة: ${m.from} إلى ${m.to}`,
+        `الحركات خلال الفترة: ${fmtNum(m.periodRows.length, 0)} سند`,
+        canBooks ? `الرصيد الافتتاحي المدور: ${fmtUsdSigned(m.openBal, 2)}` : '',
+        `إجمالي الاستحقاق / التوريدات في الفترة: ${fmtUsd(m.totCr, 2)}`,
+        canBooks ? `إجمالي الدفعات والتسويات: ${fmtUsd(m.totDr, 2)}` : '',
+        canBooks ? `${balWordAr}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
+      ].filter(Boolean);
+      if (latest.length) {
+        lines.push('', 'آخر الحركات:');
+        latest.forEach(t => {
+          const amtTxt = _fmtStmt16MovementAmt(t, canBooks);
+          lines.push(`- ${t.date} | ${t.ref} | ${_cleanOutwardCopy(t.desc)}${amtTxt ? ' | ' + amtTxt : ''}`);
+        });
+      }
+      lines.push('', 'يرجى مراجعة الأرقام وتأكيد المطابقة، مع الشكر.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    if (lang === 'fr') {
+      const lines = [
+        `${coInfo.legal || coInfo.short} - Confirmation de solde fournisseur`,
+        `Fournisseur / Partenaire : ${m.supName}`,
+        `Volet : ${m.legLbl.fr}`,
+        `Période : ${m.from} au ${m.to}`,
+        `Écritures sur la période : ${fmtNum(m.periodRows.length, 0)}`,
+        canBooks ? `Solde d'ouverture : ${fmtUsdSigned(m.openBal, 2)}` : '',
+        `Total facturé / crédité : ${fmtUsd(m.totCr, 2)}`,
+        canBooks ? `Total réglé : ${fmtUsd(m.totDr, 2)}` : '',
+        canBooks ? `${balWordFr} : ${fmtUsdSigned(m.closingBal, 2)}` : ''
+      ].filter(Boolean);
+      if (latest.length) {
+        lines.push('', 'Derniers mouvements :');
+        latest.forEach(t => {
+          const amtTxt = _fmtStmt16MovementAmt(t, canBooks);
+          lines.push(`- ${t.date} | ${t.ref} | ${_cleanOutwardCopy(t.desc)}${amtTxt ? ' | ' + amtTxt : ''}`);
+        });
+      }
+      lines.push('', 'Merci de bien vouloir vérifier et nous confirmer votre accord sur ce relevé.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    const lines = [
+      `${coInfo.legal || coInfo.short} - Supplier Balance Confirmation`,
+      `Counterparty: ${m.supName}`,
+      `Leg Scope: ${m.legLbl.en}`,
+      `Statement Period: ${m.from} to ${m.to}`,
+      `Period Vouchers: ${fmtNum(m.periodRows.length, 0)}`,
+      canBooks ? `Opening Balance: ${fmtUsdSigned(m.openBal, 2)}` : '',
+      `Period Accrued / Invoiced: ${fmtUsd(m.totCr, 2)}`,
+      canBooks ? `Period Settlements Applied: ${fmtUsd(m.totDr, 2)}` : '',
+      canBooks ? `${balWordEn}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
+    ].filter(Boolean);
+    if (latest.length) {
+      lines.push('', 'Latest Movements:');
+      latest.forEach(t => {
+        const amtTxt = _fmtStmt16MovementAmt(t, canBooks);
+        lines.push(`- ${t.date} | ${t.ref} | ${_cleanOutwardCopy(t.desc)}${amtTxt ? ' | ' + amtTxt : ''}`);
+      });
+    }
+    lines.push('', 'Please review and confirm agreement at your convenience.');
+    return _cleanOutwardCopy(lines.join('\n'));
+  }
+
+  function buildStmt16ConfirmationText(m, langMode = 'en_ar') {
+    if (!m) return '';
+    const mode = STMT16_SHARE_LANGS.includes(langMode) ? langMode : 'en_ar';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') {
+      return buildStmt16ConfirmationBlock(m, mode);
+    }
+    return _cleanOutwardCopy(`${buildStmt16ConfirmationBlock(m, 'en')}\n\n---\n\n${buildStmt16ConfirmationBlock(m, 'ar')}`);
+  }
+
+  function closeStmt16ShareModal() {
+    const modal = document.getElementById('stmt16ShareModal');
+    if (modal) {
+      modal.hidden = true;
+      modal.innerHTML = '';
+    }
+    if (_stmt16ShareState && _stmt16ShareState.keyHandler) {
+      document.removeEventListener('keydown', _stmt16ShareState.keyHandler, true);
+    }
+    const rf = _stmt16ShareState && _stmt16ShareState.returnFocus;
+    _stmt16ShareState = null;
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderStmt16ShareModalBody() {
+    const modal = document.getElementById('stmt16ShareModal');
+    if (!modal || !_stmt16ShareState) return;
+    const m = _stmt16ShareState.model;
+    const lang = _stmt16ShareState.lang || 'en_ar';
+    const text = buildStmt16ConfirmationText(m, lang);
+    const phoneDigits = (typeof window !== 'undefined' && typeof window.__mfgResolveSupplierPhoneDigits === 'function')
+      ? window.__mfgResolveSupplierPhoneDigits(m.supName)
+      : '';
+    const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
+    const balCls = !canBooks ? '' : (m.closingBal > 0.005 ? 'is-brass' : (m.closingBal < -0.005 ? 'is-good' : ''));
+    const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-stmt16-share-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
+
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card" role="dialog" aria-modal="true" aria-labelledby="stmt16ShareTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow"><span>Supplier Balance Confirmation</span> <span data-no-i18n="1">·</span> <span>${esc(m.legLbl.en)}</span></span>
+            <h2 id="stmt16ShareTitle" data-no-i18n="1">${esc(m.supName)}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="stmt16ShareCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="hld-share-kpis">
+            <div class="hld-share-kpi"><span>Leg Scope</span><b>${esc(m.legLbl.en)}</b></div>
+            ${canBooks ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>` : ''}
+            <div class="hld-share-kpi"><span>Period Accrued</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
+            ${canBooks ? `<div class="hld-share-kpi"><span>Settlements Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>` : ''}
+            ${canBooks ? `<div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>` : ''}
+          </div>
+          <div class="hld-share-langbar">
+            <span class="hld-share-lbl">Confirmation Language</span>
+            <div class="hld-share-seg" role="group" aria-label="Confirmation Language">
+              ${langBtn('en_ar', 'EN + عربي')}
+              ${langBtn('en', 'EN')}
+              ${langBtn('ar', 'عربي')}
+              ${langBtn('fr', 'FR')}
+            </div>
+          </div>
+          <textarea id="stmt16ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Supplier confirmation message">${esc(text)}</textarea>
+          <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>` : `<span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>`}</p>
+          <div class="hld-share-actions">
+            <button type="button" class="btn btn-ghost-bar" id="stmt16SharePrintBtn">${ic('printer')} <span>Print / Save PDF</span></button>
+            <button type="button" class="btn btn-ghost-bar" id="stmt16ShareCopyBtn">${ic('copy')} <span>Copy Message</span></button>
+            <a class="btn btn-primary" id="stmt16ShareWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>Open WhatsApp</span></a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const ta = document.getElementById('stmt16ShareText');
+    const wa = document.getElementById('stmt16ShareWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        const cleanVal = _cleanOutwardCopy(ta.value);
+        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanVal)}`);
+      });
+    }
+    const closeBtn = document.getElementById('stmt16ShareCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeStmt16ShareModal);
+    modal.querySelectorAll('[data-stmt16-share-lang]').forEach(btn => btn.addEventListener('click', () => {
+      const nextL = btn.getAttribute('data-stmt16-share-lang');
+      if (!STMT16_SHARE_LANGS.includes(nextL) || !_stmt16ShareState) return;
+      _stmt16ShareState.lang = nextL;
+      try { localStorage.setItem(STMT16_SHARE_LANG_KEY, nextL); } catch (_) {}
+      renderStmt16ShareModalBody();
+    }));
+    const copyBtn = document.getElementById('stmt16ShareCopyBtn');
+    if (copyBtn && ta) {
+      copyBtn.addEventListener('click', () => {
+        const trCopyBtn = () => {
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            window.MFG_I18N.translateDom(copyBtn);
+          }
+        };
+        const done = () => {
+          copyBtn.innerHTML = '<span>Copied</span>';
+          trCopyBtn();
+          setTimeout(() => {
+            if (copyBtn.isConnected) {
+              copyBtn.innerHTML = `${ic('copy')} <span>Copy Message</span>`;
+              trCopyBtn();
+            }
+          }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ta.value).then(done).catch(() => { ta.select(); });
+        } else {
+          ta.select();
+        }
+      });
+    }
+    const printBtn = document.getElementById('stmt16SharePrintBtn');
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        closeStmt16ShareModal();
+        setTimeout(() => { try { window.print(); } catch (_) {} }, 60);
+      });
+    }
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(modal);
+    }
+  }
+
+  function openStmt16ShareModal(ctxOverride) {
+    if (typeof document === 'undefined' || !document.body) return false;
+    if (_stmt16ShareState) closeStmt16ShareModal();
+    const ent = window.MFG_ENTERPRISE;
+    const seedObj = window.MFG_SEED || (typeof SEED !== 'undefined' ? SEED : {});
+    const stObj = (ent && ent.STATE) || window.STATE || {};
+    const ctx = ctxOverride || buildRdlContext(seedObj, stObj);
+    const m = buildStmt16Model(ctx);
+    if (!m.lAp16.books && !m.lAp16.expenses) return false;
+    let modal = document.getElementById('stmt16ShareModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'stmt16ShareModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      modal.addEventListener('click', ev => { if (ev.target === modal) closeStmt16ShareModal(); });
+      document.body.appendChild(modal);
+    }
+    let savedLang = 'en_ar';
+    try {
+      const ls = localStorage.getItem(STMT16_SHARE_LANG_KEY);
+      if (STMT16_SHARE_LANGS.includes(ls)) savedLang = ls;
+    } catch (_) {}
+    const keyHandler = ev => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        closeStmt16ShareModal();
+      }
+    };
+    document.addEventListener('keydown', keyHandler, true);
+    _stmt16ShareState = {
+      model: m,
+      lang: savedLang,
+      returnFocus: document.activeElement,
+      keyHandler
+    };
+    modal.hidden = false;
+    renderStmt16ShareModalBody();
+    return true;
+  }
+
   function render16SupplierStatement(meta, ctx) {
     const lAp16 = _rdlSeatLens(ctx);
     if (!lAp16.books && !lAp16.expenses) {
       return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Statement', 'Restricted by seat permissions');
     }
-    const p = ctx.rdl.params;
-    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
-    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const rawFilterSup = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
-    const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
-    const tx = [];
-    (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
-      if (!lAp16.books && r.is_settlement_row) return;
-      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? (isMfg ? 'Raw Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
-      const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
-      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: srcLbl, desc: descLbl, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
-    });
-    ctx.expAll.filter(r => r.supplier === supName && r.is_ap_credit).forEach(r => {
-      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher_no || r.invoice_no || 'EXP', type: r.category || 'Credit Expense', desc: r.description || r.category || 'Vendor Invoice', cr: Number(r.ap_credit_usd || 0), dr: 0 });
-    });
-    tx.sort((a, b) => a.date.localeCompare(b.date));
-
-    let openCr = 0, openDr = 0;
-    const periodRows = [];
-    tx.forEach(t => {
-      if (t.date < p.from) { openCr += t.cr; openDr += t.dr; }
-      else if (t.date <= p.to) periodRows.push(t);
-    });
-
-    let runBal = openCr - openDr;
-    const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
-    const totDr = periodRows.reduce((s, t) => s + t.dr, 0);
-    const closingBal = runBal + totCr - totDr;
+    const m = buildStmt16Model(ctx);
+    const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, closingBal, from, to, dt } = m;
     const dash = '-';
+    const stObj = ctx.state || {};
+    const retCtx = stObj.stmt16ReturnCtx && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
+      ? stObj.stmt16ReturnCtx
+      : null;
+    const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
+    const shareBtnHtml = `<button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt16ShareConfirmBtn">${ic('send_msg')} <span>Share Confirmation (WhatsApp / PDF)</span></button>`;
+
+    const maxShown = 140;
+    const hasEarlier = periodRows.length > maxShown;
+    const earlyRows = hasEarlier ? periodRows.slice(0, -maxShown) : [];
+    const shownRows = hasEarlier ? periodRows.slice(-maxShown) : periodRows;
+    const earlyCr = earlyRows.reduce((s, t) => s + t.cr, 0);
+    const earlyDr = lAp16.books ? earlyRows.reduce((s, t) => s + t.dr, 0) : 0;
+    let runBal = lAp16.books ? (openBal + earlyCr - earlyDr) : 0;
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Supplier Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Supplier Statement of Account (SOA) · ${legLbl.en} · Period ${from} to ${to}`)}
+      <div class="rdl-stmt16-actions no-print">
+        <div class="rdl-stmt16-btn-group">
+          ${retBtnHtml}
+          <span class="rdl-stmt16-leg-badge" data-stmt16-leg-badge="${esc(leg)}"><span>Leg Filter:</span> <span>${esc(legLbl.en)}</span></span>
+        </div>
+        <div class="rdl-stmt16-btn-group">
+          ${shareBtnHtml}
+        </div>
+      </div>
       <div class="rdl-doc-top">
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
-          ['Statement Period', `${p.from} .. ${p.to}`],
+          ['Statement Period', `${from} .. ${to}`],
+          ['Payable Leg', legLbl.en],
           ['Account Code', '401 · Suppliers AP'],
           ['Transactions', `${periodRows.length} vouchers in period`],
           ['Net Payable Balance', lAp16.books ? fmtUsdSigned(closingBal, 2) : 'Restricted']
         ])}
       </div>
-      ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, dt.supSubtitle, 'Account Currency: Fresh USD', '')}
-      ${sentStatementBarHtml('supplier', supName, ctx, closingBal)}
+      ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, `${legLbl.en} · ${dt.supSubtitle}`, 'Account Currency: Fresh USD', '')}
+      ${sentStatementBarHtml('supplier', supName, ctx, closingBal, leg !== 'ALL' ? { readOnlyLegLabel: legLbl.en } : null)}
 
       <table class="rdl-table">
         <thead>
@@ -5265,20 +5768,31 @@
         </thead>
         <tbody>
           <tr class="rdl-subtotal-row">
-            <td class="mono">${esc(p.from)}</td>
+            <td class="mono">${esc(from)}</td>
             <td colspan="3">Opening Balance Brought Forward (رصيد مدور)</td>
             <td class="num">${lAp16.books ? fmtUsd(openDr, 2) : 'Restricted'}</td>
             <td class="num">${lAp16.books ? fmtUsd(openCr, 2) : 'Restricted'}</td>
-            <td class="num bold">${lAp16.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
+            <td class="num bold">${lAp16.books ? fmtUsdSigned(openBal, 2) : 'Restricted'}</td>
           </tr>
-          ${periodRows.slice(-140).map(t => {
-            runBal += (t.cr - t.dr);
+          ${hasEarlier ? `
+            <tr class="rdl-subtotal-row rdl-early-summary-row">
+              <td class="mono" data-no-i18n="1">${esc(earlyRows[0].date)} .. ${esc(earlyRows[earlyRows.length - 1].date)}</td>
+              <td class="mono">${dash}</td>
+              <td>Earlier Summary</td>
+              <td>Earlier Period Vouchers (${fmtNum(earlyRows.length)} entries)</td>
+              <td class="num">${lAp16.books ? fmtUsd(earlyDr, 2) : 'Restricted'}</td>
+              <td class="num">${fmtUsd(earlyCr, 2)}</td>
+              <td class="num bold">${lAp16.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
+            </tr>
+          ` : ''}
+          ${shownRows.map(t => {
+            runBal += (t.cr - (lAp16.books ? t.dr : 0));
             return `
               <tr>
                 <td class="mono">${esc(t.date)}</td>
-                <td class="mono">${esc(t.ref)}</td>
-                <td>${esc(t.type)}</td>
-                <td>${esc(t.desc)}</td>
+                <td class="mono" data-no-i18n="1">${esc(t.ref)}</td>
+                <td data-no-i18n="1">${esc(t.type)}</td>
+                <td data-no-i18n="1">${esc(t.desc)}</td>
                 <td class="num">${lAp16.books ? (t.dr !== 0 ? fmtUsdSigned(t.dr, 2) : dash) : 'Restricted'}</td>
                 <td class="num">${fmtUsdSigned(t.cr, 2)}</td>
                 <td class="num bold">${lAp16.books ? fmtUsdSigned(runBal, 2) : 'Restricted'}</td>
@@ -5288,7 +5802,7 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="4">CLOSING SUPPLIER BALANCE · ${esc(supName)}</td>
+            <td colspan="4">CLOSING SUPPLIER BALANCE · ${esc(supName)} (${esc(legLbl.en)})</td>
             <td class="num">${lAp16.books ? fmtUsd(openDr + totDr, 2) : 'Restricted'}</td>
             <td class="num">${lAp16.books ? fmtUsd(openCr + totCr, 2) : fmtUsd(totCr, 2)}</td>
             <td class="num">${lAp16.books ? fmtUsdSigned(closingBal, 2) : 'Restricted'}</td>
@@ -7339,6 +7853,7 @@
             customer: opts.customer || 'ALL',
             product: opts.product || 'ALL',
             supplier: opts.supplier || 'ALL',
+            leg: opts.leg || 'ALL',
             material: opts.material || 'ALL',
             employee: opts.employee || 'ALL',
             equipType: opts.equipType || 'ALL',
@@ -8163,35 +8678,22 @@
         mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', canViewBooks ? fmtUsdSigned(netAp) : 'Restricted', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Account 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'حساب 401', (canViewBooks && topSup) ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
       ];
     } else if (stmtId === '16') {
-      const rawFilterSup = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
-    const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
-      let openCr = 0, openDr = 0, totCr = 0, totDr = 0, pCount = 0;
-      (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
-        if (!canViewBooks && r.is_settlement_row) return;
-        const d = rowDate(r, ctx.basis);
-        if (d < p.from) { openCr += Number(r.total_usd || 0); openDr += Number(r.paid_usd || 0); }
-        else if (d <= p.to) { totCr += Number(r.total_usd || 0); totDr += Number(r.paid_usd || 0); pCount += 1; }
-      });
-      ctx.expAll.filter(r => r.supplier === supName && r.is_ap_credit).forEach(r => {
-        const d = rowDate(r, ctx.basis);
-        if (d < p.from) openCr += Number(r.ap_credit_usd || 0);
-        else if (d <= p.to) { totCr += Number(r.ap_credit_usd || 0); pCount += 1; }
-      });
-      const openBal = openCr - openDr;
-      const closeBal = openBal + totCr - totDr;
+      const m16 = buildStmt16Model(ctx);
       facts = {
-        supplier: _stmtCleanParty(supName),
-        periodVouchers: pCount,
-        openingPayableUsd: canViewBooks ? Math.round(openBal) : undefined,
-        periodInvoicedUsd: Math.round(totCr),
-        periodPaidUsd: canViewBooks ? Math.round(totDr) : undefined,
-        closingPayableUsd: canViewBooks ? Math.round(closeBal) : undefined
+        supplier: _stmtCleanParty(m16.supName),
+        leg: m16.leg,
+        legLabel: m16.legLbl.en,
+        periodVouchers: m16.periodRows.length,
+        openingPayableUsd: canViewBooks ? Math.round(m16.openBal) : undefined,
+        periodInvoicedUsd: Math.round(m16.totCr),
+        periodPaidUsd: canViewBooks ? Math.round(m16.totDr) : undefined,
+        closingPayableUsd: canViewBooks ? Math.round(m16.closingBal) : undefined
       };
       kpis = [
-        mkKpi('open', 'Opening Payable', 'رصيد مدور للمورد', 'Solde d’ouverture', canViewBooks ? fmtUsdSigned(openBal, 2) : 'Restricted', _stmtCleanParty(supName), _stmtCleanParty(supName), _stmtCleanParty(supName)),
-        mkKpi('cr', 'Period Invoiced', 'استحقاق الفترة', 'Facturé période', fmtUsd(totCr, 2), `${fmtNum(pCount, 0)} vouchers`, `${fmtNum(pCount, 0)} سند`, `${fmtNum(pCount, 0)} pièces`),
-        mkKpi('dr', 'Period Settled', 'المسدد خلال الفترة', 'Réglé période', canViewBooks ? fmtUsd(totDr, 2) : 'Restricted', 'Payments & settlements', 'دفعات وتسويات', 'Règlements versés', 'pos'),
-        mkKpi('close', 'Closing Payable', 'الرصيد المستحق', 'Solde fournisseur final', canViewBooks ? fmtUsdSigned(closeBal, 2) : 'Restricted', 'Account 401 SOA', 'كشف حساب 401', 'Relevé compte 401')
+        mkKpi('open', 'Opening Payable', 'رصيد مدور للمورد', 'Solde d’ouverture', canViewBooks ? fmtUsdSigned(m16.openBal, 2) : 'Restricted', _stmtCleanParty(m16.supName), _stmtCleanParty(m16.supName), _stmtCleanParty(m16.supName)),
+        mkKpi('cr', 'Period Invoiced', 'استحقاق الفترة', 'Facturé période', fmtUsd(m16.totCr, 2), `${fmtNum(m16.periodRows.length, 0)} vouchers`, `${fmtNum(m16.periodRows.length, 0)} سند`, `${fmtNum(m16.periodRows.length, 0)} pièces`),
+        mkKpi('dr', 'Period Settled', 'المسدد خلال الفترة', 'Réglé période', canViewBooks ? fmtUsd(m16.totDr, 2) : 'Restricted', m16.legLbl.en, m16.legLbl.ar, m16.legLbl.fr, 'pos'),
+        mkKpi('close', 'Closing Payable', 'الرصيد المستحق', 'Solde fournisseur final', canViewBooks ? fmtUsdSigned(m16.closingBal, 2) : 'Restricted', `${m16.legLbl.en} SOA`, m16.legLbl.ar, m16.legLbl.fr)
       ];
     } else if (stmtId === '17') {
       const drvFilter = p.driver;
@@ -9025,6 +9527,30 @@
     if (!root.dataset.stmtSentDelegated) {
       root.dataset.stmtSentDelegated = '1';
       root.addEventListener('click', ev => {
+        const shareBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16ShareConfirmBtn') : null;
+        if (shareBtn && root.contains(shareBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openStmt16ShareModal();
+          return;
+        }
+        const retBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-return]') : null;
+        if (retBtn && root.contains(retBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const ent = window.MFG_ENTERPRISE;
+          const stObj = (ent && ent.STATE) || window.STATE;
+          const ret = stObj && stObj.stmt16ReturnCtx;
+          if (ret && ret.view && ent && typeof ent.setView === 'function') {
+            stObj.stmt16ReturnCtx = null;
+            ent.setView(ret.view);
+            setTimeout(() => {
+              const pnl = ret.panelId ? document.getElementById(ret.panelId) : null;
+              if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 60);
+          }
+          return;
+        }
         const btn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt-sent]') : null;
         if (!btn || !root.contains(btn)) return;
         ev.preventDefault();
@@ -9395,6 +9921,12 @@
       root.querySelectorAll('[data-rdl-period]').forEach(btn => {
         btn.addEventListener('click', () => {
           liveCtx.rdl.params.period = btn.dataset.rdlPeriod || 'Month';
+          refreshSheetAndParams();
+        });
+      });
+      root.querySelectorAll('[data-rdl-leg]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          liveCtx.rdl.params.leg = _normStmt16Leg(btn.dataset.rdlLeg);
           refreshSheetAndParams();
         });
       });
@@ -9924,6 +10456,10 @@
     renderRdlSheet,
     renderSheet: renderRdlSheet,
     buildRdlContext,
+    ensureState: ensureRdlState,
+    openStmt16ShareModal,
+    buildStmt16Model,
+    buildStmt16ConfirmationText,
     getParamComboConfig,
     buildJournalEntries,
     // Gate hook (pure, no state): the diesel tank costing of the statements ledger.
