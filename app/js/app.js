@@ -7500,6 +7500,7 @@
     }
     if (opts.deferRender && !opts.reset && _dateFacState.open) {
       if (sigAfter !== sigBefore) {
+        if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
         if (STATE.rdl) STATE.rdl._dateTouched = false;
         STATE.shown = {};
         STATE.pbiTablePage = {};
@@ -7510,6 +7511,7 @@
       renderDateFacilitatorPopover();
       return;
     }
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     cancelDeferredDateFilterRender();
     if (STATE.rdl) STATE.rdl._dateTouched = false;
     STATE.shown = {};
@@ -25104,10 +25106,829 @@
     });
   }
 
+  const _ovkPriorCacheMap = new Map();
+  const _ovkAiBriefCache = new Map();
+  const _ovkMoversBriefState = {
+    open: false,
+    anchor: null,
+    pack: null,
+    langWired: false,
+    globalWired: false,
+    reqSeq: 0
+  };
+
+  function ensureOvkLangListener() {
+    if (_ovkMoversBriefState.langWired || typeof window === 'undefined') return;
+    _ovkMoversBriefState.langWired = true;
+    window.addEventListener('mfg:lang-changed', () => {
+      const ovkPage = $('overviewKpiPage');
+      if (ovkPage && isOverviewKpiView(STATE.view)) {
+        const curLangRaw = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en') || 'en';
+        const curLang = (curLangRaw === 'ar' || curLangRaw === 'fr') ? curLangRaw : 'en';
+        const tLoc = s => (curLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s, curLang) : s;
+        const cRange = periodRange(STATE.period);
+        const pWin = cRange ? resolveOverviewKpiPriorWindow(cRange, STATE.period) : null;
+        const mvSub = ovkPage.querySelector('[data-ovk-movers-sub]');
+        if (mvSub && cRange && pWin) {
+          const vsW = curLang === 'ar' ? 'مقابل' : (curLang === 'fr' ? 'contre' : 'vs.');
+          mvSub.textContent = `${formatOvkWindowLabel(cRange, curLang)} ${vsW} ${formatOvkWindowLabel(pWin, curLang)}`;
+        }
+        const prCo = ovkPage.querySelector('[data-ovk-print-co]');
+        if (prCo) {
+          const ind = getActiveIndustry(STATE.company) || 'Manufacturing';
+          prCo.textContent = tLoc(cleanCeoText(COMPANY_LABELS[STATE.company] || ind));
+        }
+        const prPer = ovkPage.querySelector('[data-ovk-print-period]');
+        if (prPer) prPer.textContent = formatOvkWindowLabel(cRange, curLang);
+      }
+      if (_ovkMoversBriefState.open) {
+        openOvkMoversPopover(_ovkMoversBriefState.anchor, { keepOpen: true });
+      }
+    });
+  }
+
+  function resolveOverviewKpiPriorWindow(curRange, pRaw) {
+    if (!curRange || !curRange.from || !curRange.to) return null;
+    if (curRange.from <= MIN_DATE && curRange.to >= MAX_DATE) return null;
+    const fp = formatDateSegParts(curRange.from, MIN_DATE);
+    const tp = formatDateSegParts(curRange.to, MAX_DATE);
+    const pStr = String(pRaw || '');
+    let prev = null;
+    if (pStr.startsWith('year:') || (fp.mm === '01' && fp.dd === '01' && tp.mm === '12' && tp.dd === '31' && fp.yrNum === tp.yrNum)) {
+      const prevYr = fp.yrNum - 1;
+      prev = {
+        periodSpec: `year:${prevYr}`,
+        from: `${prevYr}-01-01`,
+        to: `${prevYr}-12-31`,
+        label: `FY ${prevYr}`,
+        grain: 'year'
+      };
+    } else {
+      prev = resolveCeoPriorPeriodWindow(curRange, pRaw);
+    }
+    if (!prev || !prev.from || !prev.to) return null;
+    if (prev.from === curRange.from && prev.to === curRange.to) return null;
+    return prev;
+  }
+
+  function withTemporaryOverviewWindow(winSpec, fn) {
+    const savedP = STATE.period;
+    const savedF = STATE.dateFrom;
+    const savedT = STATE.dateTo;
+    try {
+      const pSpec = (winSpec && winSpec.periodSpec) || 'custom';
+      STATE.period = pSpec;
+      if (pSpec === 'custom') {
+        STATE.dateFrom = (winSpec && winSpec.from) || '';
+        STATE.dateTo = (winSpec && winSpec.to) || '';
+      } else {
+        STATE.dateFrom = '';
+        STATE.dateTo = '';
+      }
+      return fn();
+    } finally {
+      STATE.period = savedP;
+      STATE.dateFrom = savedF;
+      STATE.dateTo = savedT;
+    }
+  }
+
+  function resolveOverviewMomentumPair(activeInd, coKey) {
+    const todayYm = String(todayISO() || '').slice(0, 7);
+    const makeMonthWin = ym => {
+      const [yy, mm] = String(ym || '2026-10').split('-').map(Number);
+      const y = yy || 2026;
+      const m1 = Math.max(1, Math.min(12, mm || 10));
+      const p2 = String(m1).padStart(2, '0');
+      const ld = String(lastDayOfMonth(y, m1)).padStart(2, '0');
+      return {
+        periodSpec: `month:${y}-${p2}`,
+        from: `${y}-${p2}-01`,
+        to: `${y}-${p2}-${ld}`,
+        label: `${MONTH_LONG[m1 - 1] || 'Month'} ${y}`,
+        grain: 'month'
+      };
+    };
+    let yms = [];
+    if (!activeInd || activeInd === 'Manufacturing') {
+      const effCo = (!modelHasLedger(coKey) && coKey === 'lionstransport') ? 'manufacturing-group' : coKey;
+      const mdl = SEED.models[resolveEffectiveModelKey(effCo)] || SEED.models['manufacturing-group'] || {};
+      const ymStr = r => {
+        const rawYm = String((r && (r.YearMonthNo || r['Year Month'])) || '');
+        const mHit = rawYm.match(/(20\d{2})[-/]?(\d{2})/);
+        return mHit ? `${mHit[1]}-${mHit[2]}` : '';
+      };
+      yms = getScopedMonthly(mdl.monthly || [], 24)
+        .filter(r => {
+          const v = Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0)) + Number(r.raw_cost || 0) + Number(r.expenses || 0);
+          return v > 0 && ymStr(r);
+        })
+        .map(ymStr);
+    } else {
+      const ymSet = new Set();
+      const addYm = d => {
+        const s = String(d || '').trim().slice(0, 7);
+        if (/^20\d{2}-\d{2}$/.test(s)) ymSet.add(s);
+      };
+      const indLive = (SEED && SEED.industryLive) || {};
+      const scanArr = (arr, keys) => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(r => {
+          if (!r) return;
+          for (let i = 0; i < keys.length; i++) {
+            if (r[keys[i]]) { addYm(r[keys[i]]); break; }
+          }
+        });
+      };
+      if (activeInd === 'Hospitality & Resorts') {
+        const h = indLive.hospitality || {};
+        scanArr(h.venueRows, ['date']);
+        scanArr(h.posRows, ['date']);
+      } else if (activeInd === 'Automotive & Heavy Trading') {
+        const t = indLive.trading || {};
+        scanArr(t.salesRows, ['date']);
+        scanArr(t.importRows, ['date']);
+      } else if (activeInd === 'Real Estate & Property') {
+        const re = indLive.realestate || {};
+        scanArr(re.invoices, ['date']);
+        scanArr(re.receipts, ['date']);
+        scanArr(re.workorders, ['date']);
+      } else if (activeInd === 'Insurance & Brokerage') {
+        const ins = indLive.insurance || {};
+        scanArr(ins.policies, ['date']);
+        scanArr(ins.billing, ['date']);
+      } else {
+        scanArr((SEED.records && SEED.records.external_movements) || [], ['date']);
+      }
+      scanArr((SEED.records && SEED.records.expenses) || [], ['date', 'rep_date']);
+      yms = Array.from(ymSet).sort();
+    }
+    const doneYms = todayYm ? yms.filter(ym => ym < todayYm) : yms;
+    const pool = doneYms.length >= 2 ? doneYms : yms;
+    const curYm = pool.length >= 2 ? pool[pool.length - 1] : (pool[0] || '2026-10');
+    const curWin = makeMonthWin(curYm);
+    const prevWin = pool.length >= 2 ? makeMonthWin(pool[pool.length - 2]) : resolveOverviewKpiPriorWindow(curWin, curWin.periodSpec);
+    return { curWin, prevWin, isMomentumFallback: true };
+  }
+
+  function ovkDeltaFormat(deltaSigned) {
+    const n = round2(Number(deltaSigned) || 0);
+    if (Math.abs(n) < 0.50) return { isFlat: true, isPos: false, isNeg: false, text: '$0' };
+    return {
+      isFlat: false,
+      isPos: n > 0,
+      isNeg: n < 0,
+      text: Math.abs(n) < 100 ? fmtSignedUSD(n, 2) : fmtSignedUSD(n, 0)
+    };
+  }
+
+  function computeOverviewKpiMovers(activeInd, activeSlot, curWin, prevWin, lens) {
+    if (!curWin || !prevWin) return null;
+    const cleanName = s => String(s || '').replace(/[—–→←↔]/g, '-').replace(/\s+/g, ' ').trim();
+    const addToMap = (map, rawKey, val) => {
+      const raw = String(rawKey == null ? '' : rawKey).trim();
+      const disp = cleanName(raw);
+      if (!disp || /^[—–-]+$/.test(disp)) return;
+      const kNorm = norm(disp);
+      if (!kNorm) return;
+      const prev = map.get(kNorm);
+      if (prev) {
+        prev.val = round2(prev.val + (Number(val) || 0));
+      } else {
+        map.set(kNorm, { rawName: raw, name: disp, val: round2(Number(val) || 0) });
+      }
+    };
+    const buildMovers = (curMap, prevMap, meta) => {
+      const keys = new Set([...curMap.keys(), ...prevMap.keys()]);
+      const rows = [];
+      keys.forEach(kNorm => {
+        const c = curMap.get(kNorm);
+        const p = prevMap.get(kNorm);
+        const curUsd = c ? c.val : 0;
+        const prevUsd = p ? p.val : 0;
+        const deltaUsd = round2(curUsd - prevUsd);
+        if (Math.abs(deltaUsd) < 0.50) return;
+        rows.push({
+          rawName: (c && c.rawName) || (p && p.rawName) || '',
+          name: (c && c.name) || (p && p.name) || '',
+          prevUsd,
+          curUsd,
+          deltaUsd,
+          partyTable: meta.partyTable || '',
+          jumpView: meta.jumpView || ''
+        });
+      });
+      rows.sort((a, b) => {
+        const diff = Math.abs(b.deltaUsd) - Math.abs(a.deltaUsd);
+        if (Math.abs(diff) > 0.005) return diff;
+        const curDiff = Math.abs(b.curUsd) - Math.abs(a.curUsd);
+        if (Math.abs(curDiff) > 0.005) return curDiff;
+        return a.name.localeCompare(b.name);
+      });
+      return {
+        colLabel: meta.colLabel || 'Driver',
+        partyTable: meta.partyTable || '',
+        jumpView: meta.jumpView || '',
+        rows: rows.slice(0, 5)
+      };
+    };
+
+    if (!activeInd || activeInd === 'Manufacturing') {
+      const mdl = getModel();
+      if (activeSlot === 'overview_revenue') {
+        const collect = win => {
+          const m = new Map();
+          getScopedModelCustomers(mdl, { range: win }).forEach(c => {
+            addToMap(m, c.Customer || c.name, Number(c.sales_ttc || 0));
+          });
+          return m;
+        };
+        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'sales' });
+      }
+      if (activeSlot === 'overview_profit') {
+        const collect = win => {
+          const m = new Map();
+          getScopedModelSuppliers(mdl, { range: win }).forEach(s => {
+            const spend = round2(Number(s.raw_cost != null ? s.raw_cost : (s.purchases || 0)) + Number(s.expenses || 0));
+            addToMap(m, s.Supplier || s.name, spend);
+          });
+          return m;
+        };
+        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'expenses' });
+      }
+      if (activeSlot === 'overview_cash') {
+        const collect = win => {
+          const m = new Map();
+          getScopedModelCustomers(mdl, { range: win }).forEach(c => {
+            const paid = round2(Number(c.receipts || 0) + Number(c.cash_sales_ttc != null ? c.cash_sales_ttc : (c.cash_sales || 0)));
+            addToMap(m, c.Customer || c.name, paid);
+          });
+          return m;
+        };
+        return buildMovers(collect(curWin), collect(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'cashflow' });
+      }
+      const collectAr = win => {
+        const m = new Map();
+        getScopedModelCustomers(mdl, { range: win }).forEach(c => {
+          const arDelta = round2(Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.credit_sales || 0)) - Number(c.receipts || 0));
+          addToMap(m, c.Customer || c.name, arDelta);
+        });
+        return m;
+      };
+      const arPack = buildMovers(collectAr(curWin), collectAr(prevWin), { colLabel: 'Client', partyTable: 'customers', jumpView: 'customers' });
+      if (arPack.rows.length || !lens.books) return arPack;
+      const collectAp = win => {
+        const m = new Map();
+        getScopedModelSuppliers(mdl, { range: win }).forEach(s => {
+          const apDelta = round2(Number(s.ap_on_credit || 0) - Number(s.ap_settled || 0));
+          addToMap(m, s.Supplier || s.name, apDelta);
+        });
+        return m;
+      };
+      return buildMovers(collectAp(curWin), collectAp(prevWin), { colLabel: 'Supplier', partyTable: 'suppliers', jumpView: 'suppliers' });
+    }
+
+    if (activeInd === 'Holding & Treasury') {
+      const collect = win => withTemporaryOverviewWindow(win, () => ({
+        rollup: computeEnterpriseRollup(),
+        ic: computeIntercompanyInteractions({ ignoreSearch: true })
+      }));
+      const cData = collect(curWin);
+      const pData = collect(prevWin);
+      const toSectorMap = (rollup, field) => {
+        const m = new Map();
+        const bi = (rollup && rollup.byIndustry) || {};
+        [bi.mfg, bi.hsp, bi.re, bi.trd, bi.ins, bi.hld].forEach(sec => {
+          if (sec && sec.industry) addToMap(m, sec.industry, Number(sec[field] || 0));
+        });
+        return m;
+      };
+      const toCorridorMap = (ic, field) => {
+        const m = new Map();
+        ((ic && ic.byBilateral) || []).forEach(c => {
+          if (c) addToMap(m, `${cleanName(c.lenderCo)} / ${cleanName(c.borrowerCo)}`, Number(c[field] || 0));
+        });
+        return m;
+      };
+      if (activeSlot === 'overview_revenue') {
+        return buildMovers(toSectorMap(cData.rollup, 'sales_ttc'), toSectorMap(pData.rollup, 'sales_ttc'), { colLabel: 'Sector', jumpView: 'hld_consolidation' });
+      }
+      if (activeSlot === 'overview_profit') {
+        return buildMovers(toSectorMap(cData.rollup, 'operating_profit'), toSectorMap(pData.rollup, 'operating_profit'), { colLabel: 'Sector', jumpView: 'hld_consolidation' });
+      }
+      if (activeSlot === 'overview_cash') {
+        const corr = buildMovers(toCorridorMap(cData.ic, 'givenUsd'), toCorridorMap(pData.ic, 'givenUsd'), { colLabel: 'Corridor', jumpView: 'hld_interactions' });
+        if (corr.rows.length) return corr;
+        return buildMovers(toSectorMap(cData.rollup, 'cash_till'), toSectorMap(pData.rollup, 'cash_till'), { colLabel: 'Sector', jumpView: 'cashflow' });
+      }
+      const icWc = buildMovers(toCorridorMap(cData.ic, 'netUnpaidUsd'), toCorridorMap(pData.ic, 'netUnpaidUsd'), { colLabel: 'Corridor', jumpView: 'hld_due_matrix' });
+      if (icWc.rows.length) return icWc;
+      return buildMovers(toSectorMap(cData.rollup, 'ar_balance'), toSectorMap(pData.rollup, 'ar_balance'), { colLabel: 'Sector', jumpView: 'hld_due_matrix' });
+    }
+
+    if (activeInd === 'Hospitality & Resorts') {
+      const collect = win => {
+        const hsp = computeHospitalityOperations({ range: win, ignoreSearch: true });
+        const m = new Map();
+        if (activeSlot === 'overview_revenue') {
+          (hsp.venueRows || []).forEach(r => addToMap(m, r.outlet || r.category || r.company, Number(r.ttc_usd || 0)));
+          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.contract_usd || 0)));
+        } else if (activeSlot === 'overview_profit') {
+          (hsp.venueRows || []).forEach(r => addToMap(m, r.outlet || r.category || r.company, Number(lens.tax ? (r.ht_usd != null ? r.ht_usd : r.ttc_usd) : (r.ttc_usd || 0))));
+          (hsp.stockRows || []).forEach(r => addToMap(m, r.category || r.item || r.company, -Number(r.recipe_usage_usd || 0)));
+        } else if (activeSlot === 'overview_cash') {
+          (hsp.posRows || []).forEach(r => addToMap(m, r.terminal || r.company, Number(r.pos_billed_ttc || 0)));
+          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.paid_usd || 0)));
+        } else {
+          (hsp.membershipRows || []).forEach(r => addToMap(m, r.member, Number(r.balance_usd || 0)));
+        }
+        return m;
+      };
+      const metaBySlot = {
+        overview_revenue: { colLabel: 'Venue / Member', jumpView: 'hsp_revenue' },
+        overview_profit: { colLabel: 'Outlet / Cost', jumpView: 'hsp_stock' },
+        overview_cash: { colLabel: 'Outlet / Member', jumpView: 'hsp_revenue' },
+        overview_wc: { colLabel: 'Member', jumpView: 'hsp_memberships' }
+      };
+      return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
+    }
+
+    if (activeInd === 'Automotive & Heavy Trading') {
+      if (activeSlot === 'overview_cash') {
+        return { colLabel: 'Chassis / Parts', jumpView: 'trd_stock', isPointInTime: true, rows: [] };
+      }
+      if (activeSlot === 'overview_wc') {
+        return { colLabel: 'Buyer', jumpView: 'trd_receivables', isPointInTime: true, rows: [] };
+      }
+      const collect = win => {
+        const trd = computeTradingOperations({ range: win, ignoreSearch: true });
+        const m = new Map();
+        if (activeSlot === 'overview_revenue') {
+          (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => addToMap(m, r.customer, Number(r.ttc_usd || 0)));
+        } else {
+          (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => addToMap(m, r.customer, Number(r.margin_usd || 0)));
+        }
+        return m;
+      };
+      const metaBySlot = {
+        overview_revenue: { colLabel: 'Buyer', jumpView: 'trd_sales' },
+        overview_profit: { colLabel: 'Buyer', jumpView: 'trd_sales' }
+      };
+      return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
+    }
+
+    if (activeInd === 'Real Estate & Property') {
+      const collect = win => {
+        const re = computeRealEstateOperations({ range: win, ignoreSearch: true });
+        const m = new Map();
+        if (activeSlot === 'overview_revenue') {
+          if ((re.invoices || []).length) {
+            re.invoices.forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0)));
+          } else {
+            (re.leases || []).forEach(r => addToMap(m, r.tenant, Number(r.annual_ttc_usd || 0)));
+          }
+        } else if (activeSlot === 'overview_profit') {
+          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.amount_ttc_usd || 0)));
+          (re.workorders || []).forEach(w => addToMap(m, w.property || w.category, -Number(w.actual_usd || w.budget_usd || 0)));
+        } else if (activeSlot === 'overview_cash') {
+          (re.receipts || []).forEach(r => {
+            const amt = r.gross_usd != null ? r.gross_usd : (r.allocated_inv_usd != null ? r.allocated_inv_usd : (r.amount_usd || 0));
+            addToMap(m, r.tenant, Number(amt || 0));
+          });
+          (re.sales || []).forEach(sl => addToMap(m, sl.buyer, Number(sl.paid_usd || 0)));
+        } else {
+          (re.invoices || []).forEach(r => addToMap(m, r.tenant, Number(r.open_ar_usd || 0)));
+        }
+        return m;
+      };
+      const metaBySlot = {
+        overview_revenue: { colLabel: 'Tenant', jumpView: 're_leases' },
+        overview_profit: { colLabel: 'Property / Tenant', jumpView: 're_workorders' },
+        overview_cash: { colLabel: 'Buyer / Tenant', jumpView: 're_sales' },
+        overview_wc: { colLabel: 'Tenant', jumpView: 're_invoicing' }
+      };
+      return buildMovers(collect(curWin), collect(prevWin), metaBySlot[activeSlot] || metaBySlot.overview_revenue);
+    }
+
+    // Insurance & Brokerage
+    const collectIns = win => {
+      const ins = computeInsuranceOperations({ range: win, ignoreSearch: true });
+      const m = new Map();
+      if (activeSlot === 'overview_revenue') {
+        (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0)));
+      } else if (activeSlot === 'overview_profit') {
+        (ins.policies || []).forEach(p => addToMap(m, p.carrier, Number(p.net_comm_usd || 0)));
+      } else if (activeSlot === 'overview_cash') {
+        const src = (ins.remittances || []).some(r => r && r.date) ? ins.remittances : (ins.policies || []);
+        src.forEach(r => addToMap(m, r.carrier, Number(r.net_payable_4017_usd || 0)));
+      } else {
+        if ((ins.billing || []).length) {
+          ins.billing.forEach(b => addToMap(m, b.client, Number(b.open_ar_4112_usd || 0)));
+        } else {
+          (ins.policies || []).forEach(p => addToMap(m, p.client, Number(p.gross_prem_usd || 0)));
+        }
+      }
+      return m;
+    };
+    const insMetaBySlot = {
+      overview_revenue: { colLabel: 'Client', jumpView: 'ins_policies' },
+      overview_profit: { colLabel: 'Carrier', jumpView: 'ins_statements' },
+      overview_cash: { colLabel: 'Carrier', jumpView: 'ins_remittances' },
+      overview_wc: { colLabel: 'Client', jumpView: 'ins_billing' }
+    };
+    return buildMovers(collectIns(curWin), collectIns(prevWin), insMetaBySlot[activeSlot] || insMetaBySlot.overview_revenue);
+  }
+
+  function sanitizeOvkBriefLine(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u2014\u2013]/g, ' - ')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\bTTC\b/gi, '')
+      .replace(/\bRDL\b/gi, 'statement')
+      .replace(/\bFIFO\b/gi, 'aged')
+      .replace(/\bZ-Read\b/gi, 'Daily Closing')
+      .replace(/\b(4427|4111|4017|7063|7064|7065|4112)\b/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function formatOvkWindowLabel(winSpec, lang) {
+    const normLang = (lang === 'ar' || lang === 'fr') ? lang : 'en';
+    const tFn = s => (normLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s, normLang) : s;
+    if (!winSpec || !winSpec.from || !winSpec.to) return tFn('All Periods');
+    const fp = formatDateSegParts(winSpec.from, MIN_DATE);
+    const tp = formatDateSegParts(winSpec.to, MAX_DATE);
+    const lastDom = String(lastDayOfMonth(fp.yrNum, Number(fp.mm))).padStart(2, '0');
+    const isFullMonth = winSpec.grain === 'month' || (fp.mm === tp.mm && fp.yr === tp.yr && fp.dd === '01' && tp.dd === lastDom);
+    const isFullYear = winSpec.grain === 'year' || (fp.mm === '01' && fp.dd === '01' && tp.mm === '12' && tp.dd === '31' && fp.yrNum === tp.yrNum);
+    if (normLang === 'en') {
+      if (isFullMonth) return `${MONTH_LONG[Number(fp.mm) - 1] || 'Month'} ${fp.yrNum}`;
+      if (isFullYear) return `FY ${fp.yrNum}`;
+      return cleanCeoText(winSpec.label || `${winSpec.from} to ${winSpec.to}`);
+    }
+    const locale = normLang === 'ar' ? 'ar-u-nu-latn' : 'fr';
+    try {
+      if (isFullMonth) {
+        const dt = new Date(Date.UTC(fp.yrNum, Number(fp.mm) - 1, 1));
+        const s = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(dt);
+        return normLang === 'fr' ? (s.charAt(0).toUpperCase() + s.slice(1)) : s;
+      }
+      if (isFullYear) {
+        return normLang === 'ar' ? `السنة المالية ${fp.yrNum}` : `Exercice ${fp.yrNum}`;
+      }
+      const d1 = new Date(`${winSpec.from}T00:00:00Z`);
+      const d2 = new Date(`${winSpec.to}T00:00:00Z`);
+      if (!Number.isNaN(d1.getTime()) && !Number.isNaN(d2.getTime())) {
+        const fmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+        if (winSpec.from === winSpec.to) return fmt.format(d1);
+        return `${fmt.format(d1)} - ${fmt.format(d2)}`;
+      }
+    } catch (_) {}
+    return cleanCeoText(winSpec.label || `${winSpec.from} to ${winSpec.to}`);
+  }
+
+  function buildOverviewMoversBriefPack(activeInd, activeSlot, ovUser, lens) {
+    if ((!activeInd || activeInd === 'Manufacturing') && !modelHasLedger()) return null;
+    if (!lens || (!lens.books && activeInd === 'Holding & Treasury')) return null;
+    const rawCurRange = periodRange(STATE.period);
+    let curWin = rawCurRange;
+    let prevWin = rawCurRange ? resolveOverviewKpiPriorWindow(rawCurRange, STATE.period) : null;
+    let isMomentumFallback = false;
+    if (!curWin || !prevWin) {
+      const pair = resolveOverviewMomentumPair(activeInd, STATE.company);
+      curWin = pair.curWin;
+      prevWin = pair.prevWin;
+      isMomentumFallback = true;
+    }
+    const evalSlot = win => withTemporaryOverviewWindow(win, () => {
+      const kk = (!activeInd || activeInd === 'Manufacturing') ? getKPI() : {};
+      const rlp = (activeInd && activeInd !== 'Manufacturing') ? computeEnterpriseRollup() : null;
+      return buildOverviewKpiSlotsForIndustry(activeInd, activeSlot, kk, lens, rlp);
+    });
+    const curPack = evalSlot(curWin);
+    const curSlotObj = curPack && curPack.slots ? (curPack.slots.find(s => s.key === activeSlot) || curPack.slots[0]) : null;
+    if (!curSlotObj || curSlotObj.restricted) return null;
+    const prevPack = prevWin ? evalSlot(prevWin) : null;
+    const curWf = (curPack.activeMeta && curPack.activeMeta.waterfallRows) || [];
+    const prevWf = (prevPack && prevPack.activeMeta && prevPack.activeMeta.waterfallRows) || [];
+    const curFinRow = curWf.find(r => r && r.isFinal) || curWf[curWf.length - 1] || null;
+    const prevFinRow = prevWf.find(r => r && r.isFinal) || prevWf[prevWf.length - 1] || null;
+    const curTotal = curFinRow ? round2(Number(curFinRow.signedAmount != null ? curFinRow.signedAmount : curFinRow.absAmount) || 0) : 0;
+    const prevTotal = prevFinRow ? round2(Number(prevFinRow.signedAmount != null ? prevFinRow.signedAmount : prevFinRow.absAmount) || 0) : 0;
+    const headlineDelta = round2(curTotal - prevTotal);
+    const headlinePct = Math.abs(prevTotal) > 1 ? ((headlineDelta / Math.abs(prevTotal)) * 100) : null;
+
+    const prevMap = new Map();
+    prevWf.forEach(pr => {
+      if (!pr || !pr.label) return;
+      const pv = round2(Number(pr.signedAmount != null ? pr.signedAmount : (pr.op === '-' ? -Math.abs(pr.absAmount || 0) : pr.absAmount)) || 0);
+      prevMap.set(pr.label, pv);
+    });
+    const wfDeltas = curWf
+      .filter(r => r && !r.isFinal && !r.isLivePointInTime && r.label !== 'Live USD Cash Till')
+      .map(r => {
+        const cv = round2(Number(r.signedAmount != null ? r.signedAmount : (r.op === '-' ? -Math.abs(r.absAmount || 0) : r.absAmount)) || 0);
+        const pv = prevMap.get(r.label) || 0;
+        return { label: r.label, curUsd: cv, prevUsd: pv, deltaUsd: round2(cv - pv) };
+      })
+      .sort((a, b) => Math.abs(b.deltaUsd) - Math.abs(a.deltaUsd));
+
+    const moversPack = prevWin ? computeOverviewKpiMovers(activeInd, activeSlot, curWin, prevWin, lens) : null;
+    const movers = (moversPack && moversPack.rows) || [];
+    const isSnapshotOnly = Boolean((moversPack && moversPack.isPointInTime) || (!wfDeltas.length && curWf.some(r => r && !r.isFinal && r.isLivePointInTime)));
+    const lang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en') || 'en';
+    const normLang = (lang === 'ar' || lang === 'fr') ? lang : 'en';
+    const tBrief = s => (normLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s, normLang) : s;
+    const curLbl = formatOvkWindowLabel(curWin, normLang);
+    const prevLbl = formatOvkWindowLabel(prevWin, normLang);
+    const kpiTitleRaw = curSlotObj ? curSlotObj.title : resolveOverviewKpiSlotTitle(activeSlot, activeInd);
+    const kpiTitle = tBrief(kpiTitleRaw);
+    const fmtDelta = v => ovkDeltaFormat(v).text;
+    const topStep = wfDeltas.find(d => Math.abs(d.deltaUsd) >= 0.50) || wfDeltas[0] || null;
+    const topStepLbl = topStep ? tBrief(topStep.label) : '';
+    const topMovers = movers.slice(0, 3);
+    const moversListStr = topMovers.map(m => `${m.name} (${fmtDelta(m.deltaUsd)})`).join(', ');
+    const pctTxt = headlinePct !== null ? ` (${headlinePct > 0 ? '+' : ''}${headlinePct.toFixed(1)}%)` : '';
+
+    let bullets;
+    if (normLang === 'ar') {
+      const b1 = `${kpiTitle}: ${fmtUSD(curTotal, 0)} في ${curLbl} مقابل ${fmtUSD(prevTotal, 0)} في ${prevLbl} (${fmtDelta(headlineDelta)}${pctTxt}).`;
+      const b2 = isSnapshotOnly
+        ? `تمثل جميع البنود أرصدة لحظية في الميزانية العمومية دون تغيّر دوري.`
+        : (topStep
+          ? `أكبر تغيّر في بنود التدرج: ${topStepLbl} بمقدار ${fmtDelta(topStep.deltaUsd)} (${fmtUSD(topStep.curUsd, 0)} مقابل ${fmtUSD(topStep.prevUsd, 0)}).`
+          : `لا توجد تغيّرات جوهرية بين بنود التدرج في هذه النافذة.`);
+      const b3 = isSnapshotOnly
+        ? `الأرصدة المفتوحة للأطراف تمثل موقفاً لحظياً بدون فروقات دورية.`
+        : (topMovers.length
+          ? `أبرز الأطراف المحرّكة: ${moversListStr}.`
+          : `لم تُسجّل فروقات ذات أثر بين الأطراف مقارنة بالفترة السابقة.`);
+      bullets = [b1, b2, b3];
+    } else if (normLang === 'fr') {
+      const b1 = `${kpiTitle}: ${fmtUSD(curTotal, 0)} sur ${curLbl} contre ${fmtUSD(prevTotal, 0)} sur ${prevLbl} (${fmtDelta(headlineDelta)}${pctTxt}).`;
+      const b2 = isSnapshotOnly
+        ? `Tous les postes représentent des positions bilancielles instantanées sans variation périodique.`
+        : (topStep
+          ? `Principal écart de la cascade: ${topStepLbl} (${fmtDelta(topStep.deltaUsd)}, ${fmtUSD(topStep.curUsd, 0)} contre ${fmtUSD(topStep.prevUsd, 0)}).`
+          : `Aucun écart notable sur les composantes de la cascade sur cette période.`);
+      const b3 = isSnapshotOnly
+        ? `Les soldes ouverts représentent une position instantanée sans écart périodique.`
+        : (topMovers.length
+          ? `Principaux moteurs: ${moversListStr}.`
+          : `Aucune variation marquante par contrepartie par rapport à la période précédente.`);
+      bullets = [b1, b2, b3];
+    } else {
+      const b1 = `${kpiTitle}: ${fmtUSD(curTotal, 0)} in ${curLbl} vs ${fmtUSD(prevTotal, 0)} in ${prevLbl} (${fmtDelta(headlineDelta)}${pctTxt}).`;
+      const b2 = isSnapshotOnly
+        ? `All components represent point-in-time balance sheet positions (no period flow delta).`
+        : (topStep
+          ? `Largest waterfall driver: ${topStepLbl} moved ${fmtDelta(topStep.deltaUsd)} (${fmtUSD(topStep.curUsd, 0)} vs ${fmtUSD(topStep.prevUsd, 0)}).`
+          : `Waterfall components held flat with no material variance in this window.`);
+      const b3 = isSnapshotOnly
+        ? `Counterparty balances reflect live open positions rather than period variance.`
+        : (topMovers.length
+          ? `Top movers: ${moversListStr}.`
+          : `No period-over-period counterparty shifts exceeded $0.50 in this window.`);
+      bullets = [b1, b2, b3];
+    }
+
+    const coLabel = tBrief(cleanCeoText(COMPANY_LABELS[STATE.company] || activeInd));
+    const basisTxt = STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date';
+    const basisDisp = tBrief(basisTxt);
+    const scopeKey = [
+      activeInd, STATE.company, activeSlot, STATE.basis, isOfficialScopeActive() ? 1 : 0,
+      curWin ? curWin.from : '', curWin ? curWin.to : '',
+      prevWin ? prevWin.from : '', prevWin ? prevWin.to : '',
+      SEED._customRev || 0, STATE._indCustomRev || 0, SEED._industryRev || 0,
+      allowedCompanyNames(ovUser).slice().sort().join(','),
+      activeSeatFullFinKey(), lens.profit ? 1 : 0, lens.books ? 1 : 0, lens.tax ? 1 : 0, lens.payrollDollars ? 1 : 0, lens.expenses ? 1 : 0
+    ].join('|');
+
+    return {
+      scopeKey,
+      lang: normLang,
+      kpiTitle: kpiTitleRaw,
+      coLabel,
+      curLbl,
+      prevLbl,
+      basisTxt,
+      basisDisp,
+      isMomentumFallback,
+      curTotal,
+      prevTotal,
+      headlineDelta,
+      wfDeltas: wfDeltas.slice(0, 6),
+      movers: movers.slice(0, 5),
+      bullets: bullets.map(sanitizeOvkBriefLine)
+    };
+  }
+
+  function positionOvkMoversPopover() {
+    const pop = $('ovkMoversBriefPopover');
+    if (!pop) return;
+    const anchor = _ovkMoversBriefState.anchor || $('ovkExplainMoversBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 96px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = '';
+    pop.style.overflowY = '';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(432, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 220, vh - 24);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12) {
+      top = Math.max(12, rect.top - popH - 8);
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function closeOvkMoversPopover(opts = {}) {
+    _ovkMoversBriefState.open = false;
+    _ovkMoversBriefState.reqSeq++;
+    const btn = $('ovkExplainMoversBtn');
+    if (btn) {
+      btn.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    const pop = $('ovkMoversBriefPopover');
+    if (pop && pop.parentNode) pop.parentNode.removeChild(pop);
+    if (opts.restoreFocus && btn && typeof btn.focus === 'function' && btn.isConnected) {
+      try { btn.focus({ preventScroll: true }); } catch (_) {}
+    }
+    _ovkMoversBriefState.anchor = null;
+    _ovkMoversBriefState.pack = null;
+  }
+
+  function renderOvkMoversPopoverContent(pop, pack, aiBullets) {
+    const useAi = Array.isArray(aiBullets) && aiBullets.length >= 2;
+    const bullets = useAi ? aiBullets : pack.bullets;
+    const titleTxt = pack.lang === 'ar' ? 'تفسير المحرّكات' : (pack.lang === 'fr' ? 'Analyse des moteurs' : 'Explain Movers');
+    const badgeTxt = useAi
+      ? (pack.lang === 'ar' ? 'ملخص ISABI الذكي' : (pack.lang === 'fr' ? 'Synthèse ISABI IA' : 'ISABI AI Brief'))
+      : (pack.lang === 'ar' ? 'سجل رقمي حتمي' : (pack.lang === 'fr' ? 'Grand livre déterministe' : 'Deterministic Ledger'));
+    const vsWord = pack.lang === 'ar' ? 'مقابل' : (pack.lang === 'fr' ? 'contre' : 'vs.');
+    const closeLbl = pack.lang === 'ar' ? 'إغلاق' : (pack.lang === 'fr' ? 'Fermer' : 'Close');
+    const subTxt = `${pack.coLabel} · ${pack.curLbl} ${vsWord} ${pack.prevLbl} · ${pack.basisDisp || pack.basisTxt}`;
+    pop.setAttribute('aria-label', titleTxt);
+    pop.dir = pack.lang === 'ar' ? 'rtl' : 'ltr';
+    pop.innerHTML = `
+      <div class="ovk-mv-hdr">
+        <div class="ovk-mv-title-wrap">
+          <div class="ovk-mv-title-row">
+            <span class="ovk-mv-ico">${ic('sparkles')}</span>
+            <strong class="ovk-mv-title" data-no-i18n="1">${esc(titleTxt)}</strong>
+            <span class="ovk-mv-badge${useAi ? ' is-ai' : ''}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="ovk-mv-sub" data-no-i18n="1">${esc(cleanCeoText(subTxt))}</div>
+        </div>
+        <button type="button" class="ovk-mv-close" data-ovk-mv-close="1" aria-label="${esc(closeLbl)}">&times;</button>
+      </div>
+      <ul class="ovk-mv-bullets" data-no-i18n="1">
+        ${bullets.map(b => `<li>${esc(sanitizeOvkBriefLine(b))}</li>`).join('')}
+      </ul>
+    `;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && pack.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+    const closeBtn = pop.querySelector('[data-ovk-mv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        closeOvkMoversPopover({ restoreFocus: true });
+      });
+    }
+  }
+
+  function openOvkMoversPopover(anchorEl, opts = {}) {
+    if (!isOverviewKpiView(STATE.view) || STATE.kioskLocked) return;
+    const btn = anchorEl || $('ovkExplainMoversBtn');
+    if (_ovkMoversBriefState.open && !opts.keepOpen) {
+      closeOvkMoversPopover({ restoreFocus: true });
+      return;
+    }
+    const activeInd = getActiveIndustry(STATE.company) || 'Manufacturing';
+    const ovUser = activeUser();
+    const lens = seatLens(ovUser);
+    const pack = buildOverviewMoversBriefPack(activeInd, STATE.view, ovUser, lens);
+    if (!pack) {
+      closeOvkMoversPopover({ restoreFocus: false });
+      return;
+    }
+    if (!_ovkMoversBriefState.globalWired) {
+      _ovkMoversBriefState.globalWired = true;
+      document.addEventListener('click', ev => {
+        if (!_ovkMoversBriefState.open) return;
+        const popEl = $('ovkMoversBriefPopover');
+        const t = ev.target;
+        if (popEl && (popEl.contains(t) || (t && t.closest && t.closest('[data-ovk-explain-movers]')))) return;
+        closeOvkMoversPopover({ restoreFocus: false });
+      });
+      document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && _ovkMoversBriefState.open) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          closeOvkMoversPopover({ restoreFocus: true });
+        }
+      });
+      window.addEventListener('resize', () => {
+        if (_ovkMoversBriefState.open) positionOvkMoversPopover();
+      });
+    }
+    let pop = $('ovkMoversBriefPopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'ovkMoversBriefPopover';
+      pop.className = 'ovk-movers-popover';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Explain Movers');
+      document.body.appendChild(pop);
+    }
+    _ovkMoversBriefState.open = true;
+    _ovkMoversBriefState.anchor = btn;
+    _ovkMoversBriefState.pack = pack;
+    if (btn) {
+      btn.classList.add('is-open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+    const cacheKey = `${pack.scopeKey}|${pack.lang}`;
+    const cachedAi = _ovkAiBriefCache.get(cacheKey);
+    renderOvkMoversPopoverContent(pop, pack, cachedAi);
+    positionOvkMoversPopover();
+    if (cachedAi || !hasServerApi()) return;
+
+    const mySeq = ++_ovkMoversBriefState.reqSeq;
+    const langName = pack.lang === 'ar' ? 'Arabic' : (pack.lang === 'fr' ? 'French' : 'English');
+    const promptLines = [
+      `Write 3 short executive variance bullets in ${langName} explaining what drove "${pack.kpiTitle}" for "${pack.coLabel}" comparing ${pack.curLbl} vs ${pack.prevLbl} (${pack.basisTxt}).`,
+      `Return strict JSON: {"bullets":["...","...","..."]}.`,
+      `Rules: cite ONLY the exact numbers and counterparty names below; zero em-dashes, zero arrows, never mention THEO, TTC, RDL, FIFO, Z-Read, or account codes.`,
+      `Headline: ${fmtUSD(pack.curTotal, 0)} vs ${fmtUSD(pack.prevTotal, 0)} (delta ${ovkDeltaFormat(pack.headlineDelta).text}).`,
+      `Waterfall deltas: ${pack.wfDeltas.map(d => `${d.label}: ${ovkDeltaFormat(d.deltaUsd).text}`).join(' | ') || 'none'}.`,
+      `Top movers: ${pack.movers.map(m => `${m.name}: ${ovkDeltaFormat(m.deltaUsd).text} (${fmtUSD(m.prevUsd, 0)} to ${fmtUSD(m.curUsd, 0)})`).join(' | ') || 'none'}.`
+    ].join('\n');
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
+    edgeApiFetch('./api/ai-edge', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ task: 'overview_kpi_movers', tier: 'fast', prompt: promptLines }),
+      ...(ctrl ? { signal: ctrl.signal } : {})
+    })
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(res => {
+        if (timer) clearTimeout(timer);
+        if (!_ovkMoversBriefState.open || _ovkMoversBriefState.reqSeq !== mySeq) return;
+        const rawBullets = res && res.mode === 'gemini_ai_edge' && res.result && Array.isArray(res.result.bullets)
+          ? res.result.bullets.map(sanitizeOvkBriefLine).filter(Boolean).slice(0, 4)
+          : null;
+        if (!rawBullets || rawBullets.length < 2) return;
+        if (_ovkAiBriefCache.size > 80) _ovkAiBriefCache.clear();
+        _ovkAiBriefCache.set(cacheKey, rawBullets);
+        const curPop = $('ovkMoversBriefPopover');
+        if (curPop && _ovkMoversBriefState.pack && `${_ovkMoversBriefState.pack.scopeKey}|${_ovkMoversBriefState.pack.lang}` === cacheKey) {
+          renderOvkMoversPopoverContent(curPop, _ovkMoversBriefState.pack, rawBullets);
+          positionOvkMoversPopover();
+        }
+      })
+      .catch(() => {
+        if (timer) clearTimeout(timer);
+      });
+  }
+
   function renderOverviewKpiWaterfallTable(rows, baseDen, title, subtitle, opts = {}) {
     const den = Math.max(1, Math.abs(Number(baseDen || 0)) || 1);
     const u = opts.user !== undefined ? opts.user : activeUser();
     const subMetricsHtml = opts.subMetricsHtml || '';
+    const prevRows = Array.isArray(opts.prevRows) ? opts.prevRows : null;
+    const hasPriorCol = Boolean(prevRows);
+    const prevByLabel = new Map();
+    if (prevRows) {
+      prevRows.forEach(pr => {
+        if (!pr || !pr.label) return;
+        const pv = round2(Number(pr.signedAmount != null ? pr.signedAmount : (pr.op === '-' ? -Math.abs(pr.absAmount || 0) : pr.absAmount)) || 0);
+        prevByLabel.set(pr.label, pv);
+      });
+    }
     return `
       <div class="ovk-panel panel-card">
         <div class="ovk-panel-head">
@@ -25118,11 +25939,12 @@
         </div>
         ${subMetricsHtml}
         <div class="table-wrap">
-          <table class="data-table ovk-wf-table" data-no-col-mgr="1" data-no-mob-pin="1">
+          <table class="data-table ovk-wf-table${hasPriorCol ? ' has-prior-col' : ''}" data-no-col-mgr="1" data-no-mob-pin="1">
             <thead>
               <tr>
                 <th>Component</th>
                 <th class="num ovk-wf-share">Share</th>
+                ${hasPriorCol ? '<th class="num ovk-wf-delta">vs. Prior</th>' : ''}
                 <th class="num ovk-wf-amt">Amount</th>
               </tr>
             </thead>
@@ -25140,6 +25962,17 @@
                 const opBadgeCls = r.op === '=' ? 'is-eq' : (r.op === '-' ? 'is-sub' : 'is-add');
                 const rowCls = isFinal ? 'ovk-wf-final' : (isSub ? 'ovk-wf-sub' : '');
                 const canJump = Boolean(r.jump && canViewView(r.jump, u));
+                let deltaCellHtml = '';
+                if (hasPriorCol) {
+                  if (r.isLivePointInTime || r.label === 'Live USD Cash Till') {
+                    deltaCellHtml = `<td class="num ovk-wf-delta"><span class="ovk-delta-live">Live</span></td>`;
+                  } else {
+                    const curSigned = round2(Number(r.signedAmount != null ? r.signedAmount : (r.op === '-' ? -Math.abs(r.absAmount || 0) : r.absAmount)) || 0);
+                    const deltaSigned = round2(curSigned - (prevByLabel.get(r.label) || 0));
+                    const df = ovkDeltaFormat(deltaSigned);
+                    deltaCellHtml = `<td class="num ovk-wf-delta" data-no-i18n="1">${df.isFlat ? '<span class="ovk-delta-flat">$0</span>' : `<span class="ovk-delta-val ${df.isPos ? 'is-pos' : 'is-neg'}">${esc(df.text)}</span>`}</td>`;
+                  }
+                }
                 return `
                   <tr class="${rowCls}${canJump ? ' clickable-row' : ''}"${canJump ? ` data-nav-jump="${esc(r.jump)}"${r.jumpChip ? ` data-nav-chip="${esc(r.jumpChip)}"` : ''}${r.jumpScroll ? ` data-nav-scroll="${esc(r.jumpScroll)}"` : ''} role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
                     <td>
@@ -25154,6 +25987,7 @@
                       </div>
                     </td>
                     <td class="num ovk-wf-share" data-no-i18n="1">${pct ? `<div class="ovk-wf-share-wrap"><span>${esc(pct)}</span><span class="ovk-wf-bar-track" aria-hidden="true"><span class="ovk-wf-bar-fill ${esc(barTone)}" style="width:${barPct.toFixed(1)}%"></span></span></div>` : ''}</td>
+                    ${deltaCellHtml}
                     <td class="num ovk-wf-amt" data-no-i18n="1"><strong>${esc(r.amountText || dispVal)}</strong></td>
                   </tr>
                 `;
@@ -25171,6 +26005,7 @@
       const raw = String(rawVal == null ? '' : rawVal).trim();
       const clean = cleanTxt(raw);
       if (!clean || /^[—–-]+$/.test(clean)) return '<strong>-</strong>';
+      if (STATE.kioskLocked) return `<strong>${esc(clean)}</strong>`;
       return relLink(tblKey, raw, clean, true);
     };
     const indEntities = activeInd === 'Holding & Treasury'
@@ -25417,7 +26252,7 @@
             { op: '=', label: 'Net Period USD Flow', source: 'Inflows minus outflows across the active filter', signedAmount: netUsdPeriod, isSubtotal: true }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Opening Carryover & Out-of-Window Till', 'Live USD cash accumulated outside the active period filter', tillUsd, netUsdPeriod, 'cashflow', 'Till Register');
-          wfRows.push({ op: '=', label: 'Live USD Cash Till', source: 'Exact physical USD till balance carried on books', signedAmount: tillUsd, amountText: fmtUSD(tillUsd, 2), isFinal: true, jump: 'cashflow', jumpLabel: 'Cash & Till' });
+          wfRows.push({ op: '=', label: 'Live USD Cash Till', source: 'Exact physical USD till balance carried on books', signedAmount: tillUsd, amountText: fmtUSD(tillUsd, 2), isFinal: true, isLivePointInTime: true, jump: 'cashflow', jumpLabel: 'Cash & Till' });
 
           const topCustCash = scopedCusts.slice().sort((a, b) => Number(b.receipts || b.sales_ttc || 0) - Number(a.receipts || a.sales_ttc || 0)).slice(0, 6);
           return {
@@ -25463,6 +26298,7 @@
           wfRows.push({ op: '=', label: 'Open AR', source: 'Net receivable position owed by active customers', signedAmount: arBal, amountText: fmtUSD(arBal, 2), isFinal: true, jump: 'customers', jumpLabel: 'All Clients' });
 
           let extraTableHtml = '';
+          let extraWaterfallSpec = null;
           if (lens.books) {
             const apOnCr = Number(k.ap_on_credit || 0);
             const apSettled = Number(k.ap_settled || 0);
@@ -25473,7 +26309,13 @@
             ];
             pushOverviewWaterfallResidual(apRows, 'Credit Returns & Ledger Adjustments', 'Credit notes, FX conversions and opening carryover', apBal, round2(apOnCr - Math.abs(apSettled)), 'suppliers', 'AP Ledger');
             apRows.push({ op: '=', label: 'Net Open AP Balance', source: 'Open supplier payable exposure (negative denotes amount owed)', signedAmount: apBal, amountText: fmtUSD(apBal, 2), isFinal: true, jump: 'suppliers', jumpLabel: 'All Suppliers' });
-            extraTableHtml = renderOverviewKpiWaterfallTable(apRows, Math.max(1, Math.abs(apBal), apOnCr), '3-Leg Supplier Payables Reconciliation', 'How credit purchases less vendor settlements establish Open AP', { user: activeUser() });
+            extraWaterfallSpec = {
+              rows: apRows,
+              baseDen: Math.max(1, Math.abs(apBal), apOnCr),
+              title: '3-Leg Supplier Payables Reconciliation',
+              subtitle: 'How credit purchases less vendor settlements establish Open AP'
+            };
+            extraTableHtml = renderOverviewKpiWaterfallTable(apRows, extraWaterfallSpec.baseDen, extraWaterfallSpec.title, extraWaterfallSpec.subtitle, { user: activeUser() });
           }
 
           const topArCusts = scopedCusts.slice().sort((a, b) => Number(b.ar_balance || 0) - Number(a.ar_balance || 0)).slice(0, 6);
@@ -25524,6 +26366,7 @@
             waterfallTitle: 'Customer Receivables Aging Bridge',
             waterfallMeta: Math.max(1, arBal),
             waterfallRows: wfRows,
+            extraWaterfallSpec,
             extraWaterfallHtml: extraTableHtml,
             subMetrics: [
               { label: 'DSO Velocity', value: `${Math.round(Number(k.dso_days || 0))} days`, sub: 'Weighted collection days', jump: 'customers' },
@@ -25959,11 +26802,11 @@
         },
         overview_cash: () => {
           const wfRows = [
-            { op: '+', label: 'Showroom Chassis Landed Value', sourcePrefix: fmtNum(s.showroomUnitsCount), source: 'VINs held at cleared landed cost', signedAmount: s.totalUnitsLandedUsd, jump: 'trd_stock', jumpLabel: 'Showroom VINs' },
-            { op: '+', label: 'Spare Parts Inventory Valuation', sourcePrefix: fmtNum(s.reorderAlertCount), source: 'Weighted average parts valuation and reorder alerts', signedAmount: s.totalStockValUsd, jump: 'trd_stock', jumpLabel: 'Parts Stock' }
+            { op: '+', label: 'Showroom Chassis Landed Value', sourcePrefix: fmtNum(s.showroomUnitsCount), source: 'VINs held at cleared landed cost', signedAmount: s.totalUnitsLandedUsd, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Showroom VINs' },
+            { op: '+', label: 'Spare Parts Inventory Valuation', sourcePrefix: fmtNum(s.reorderAlertCount), source: 'Weighted average parts valuation and reorder alerts', signedAmount: s.totalStockValUsd, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Parts Stock' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Inventory Valuation Adj.', 'Precision alignment', stockTot, round2(s.totalUnitsLandedUsd + s.totalStockValUsd));
-          wfRows.push({ op: '=', label: 'Showroom & Stock', sourcePrefix: fmtUSDk(s.totalUnitsListUsd), source: 'Capitalized stock cost vs retail list value', signedAmount: stockTot, amountText: fmtUSD(stockTot, 2), isFinal: true, jump: 'trd_stock', jumpLabel: 'Open Stock' });
+          wfRows.push({ op: '=', label: 'Showroom & Stock', sourcePrefix: fmtUSDk(s.totalUnitsListUsd), source: 'Capitalized stock cost vs retail list value', signedAmount: stockTot, amountText: fmtUSD(stockTot, 2), isFinal: true, isLivePointInTime: true, jump: 'trd_stock', jumpLabel: 'Open Stock' });
           const availUnits = (trd.serialUnits || []).filter(u => u.status !== 'Sold & Delivered');
           const shownUnits = (availUnits.length ? availUnits : (trd.serialUnits || [])).slice(0, 6);
           return {
@@ -25995,11 +26838,11 @@
         overview_wc: () => {
           const unpromised = Math.max(0, round2(s.grossArUsd - s.activePromisesUsd));
           const wfRows = [
-            { op: '+', label: 'Active Payment Promises', source: 'Scheduled buyer post-dated installments and promissory notes', signedAmount: s.activePromisesUsd, jump: 'trd_receivables', jumpLabel: 'Promises' },
-            { op: '+', label: 'Open Unscheduled Balances', source: 'Delivered balances outside formal payment schedules', signedAmount: unpromised, jump: 'trd_receivables', jumpLabel: 'Open AR' }
+            { op: '+', label: 'Active Payment Promises', source: 'Scheduled buyer post-dated installments and promissory notes', signedAmount: s.activePromisesUsd, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Promises' },
+            { op: '+', label: 'Open Unscheduled Balances', source: 'Delivered balances outside formal payment schedules', signedAmount: unpromised, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Open AR' }
           ];
           pushOverviewWaterfallResidual(wfRows, 'Advance & Rounding Adjustment', 'Precision alignment', s.grossArUsd, round2(s.activePromisesUsd + unpromised));
-          wfRows.push({ op: '=', label: 'Receivables & AR', sourcePrefix: `${s.weightedDsoDays.toFixed(0)}d`, source: 'Weighted DSO across active buyer accounts', signedAmount: s.grossArUsd, amountText: fmtUSD(s.grossArUsd, 2), isFinal: true, jump: 'trd_receivables', jumpLabel: 'Receivables' });
+          wfRows.push({ op: '=', label: 'Receivables & AR', sourcePrefix: `${s.weightedDsoDays.toFixed(0)}d`, source: 'Weighted DSO across active buyer accounts', signedAmount: s.grossArUsd, amountText: fmtUSD(s.grossArUsd, 2), isFinal: true, isLivePointInTime: true, jump: 'trd_receivables', jumpLabel: 'Receivables' });
           return {
             summaryDesc: 'Tracks gross commercial receivables from truck and fleet buyers split between scheduled promissory notes and open balances.',
             formulaText: 'Gross AR = Scheduled Buyer Promises + Open Unscheduled Balances',
@@ -26318,10 +27161,17 @@
             { op: '+', label: 'Open Client Premium Instalments', sourcePrefix: fmtNum(ins.billing.length), source: 'Pending client billing instalments', signedAmount: s.openClientAr4112Usd, jump: 'ins_billing', jumpLabel: 'Billing' }
           ];
           wfRows.push({ op: '=', label: 'Open Client AR', source: 'Gross unpaid client insurance premium balances', signedAmount: s.openClientAr4112Usd, amountText: fmtUSD(s.openClientAr4112Usd, 2), isFinal: true, jump: 'ins_billing', jumpLabel: 'Billing Plan' });
-          const carrierTable = renderOverviewKpiWaterfallTable([
+          const carrierRows = [
             { op: '+', label: 'Payable to Insurance Carriers', source: 'Net premiums owed to carriers across open statements', signedAmount: s.payableToCarriers4017Usd, jump: 'ins_remittances', jumpLabel: 'Remittances' },
             { op: '=', label: 'Total Carrier Payables', sourcePrefix: fmtNum(s.stmtDiscrepancyCount), source: 'Statement variance alerts tracked', signedAmount: s.payableToCarriers4017Usd, amountText: fmtUSD(s.payableToCarriers4017Usd, 2), isFinal: true, jump: 'ins_statements', jumpLabel: 'Statements' }
-          ], Math.max(1, s.payableToCarriers4017Usd), 'Partner Carrier Payables Summary', 'Payable balances reconciled with carrier statements', { user: activeUser() });
+          ];
+          const carrierSpec = {
+            rows: carrierRows,
+            baseDen: Math.max(1, s.payableToCarriers4017Usd),
+            title: 'Partner Carrier Payables Summary',
+            subtitle: 'Payable balances reconciled with carrier statements'
+          };
+          const carrierTable = renderOverviewKpiWaterfallTable(carrierSpec.rows, carrierSpec.baseDen, carrierSpec.title, carrierSpec.subtitle, { user: activeUser() });
           return {
             summaryDesc: 'Monitors open premium instalments owed by insured clients alongside fiduciary remittances payable to insurance carriers.',
             formulaText: 'Open Client AR = Pending Client Instalments (Paired with Carrier Remittances Due)',
@@ -26329,6 +27179,7 @@
             waterfallTitle: 'Client Receivables Breakdown',
             waterfallMeta: Math.max(1, s.openClientAr4112Usd),
             waterfallRows: wfRows,
+            extraWaterfallSpec: carrierSpec,
             extraWaterfallHtml: carrierTable,
             subMetrics: [
               { label: 'Payable to Carriers', value: fmtUSD(s.payableToCarriers4017Usd, 0), sub: 'Across carrier bordereaux', jump: 'ins_remittances' },
@@ -26366,6 +27217,7 @@
   }
 
   function renderOverviewKpiBreakdown(kpiView) {
+    ensureOvkLangListener();
     const activeSlot = isOverviewKpiView(kpiView) ? kpiView : 'overview_revenue';
     const activeInd = getActiveIndustry(STATE.company) || 'Manufacturing';
     const ovUser = activeUser();
@@ -26426,6 +27278,45 @@
     const { slots, activeMeta, scopedEntities } = buildOverviewKpiSlotsForIndustry(activeInd, activeSlot, k, lens, rollup);
     const activeSlotObj = slots.find(s => s.key === activeSlot) || slots[0];
     const permittedJumps = ((activeMeta && activeMeta.quickJumps) || []).filter(j => canViewView(j.view, ovUser));
+    const ovkLangRaw = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en') || 'en';
+    const ovkLang = (ovkLangRaw === 'ar' || ovkLangRaw === 'fr') ? ovkLangRaw : 'en';
+    const curRange = periodRange(STATE.period);
+    const prevWin = curRange ? resolveOverviewKpiPriorWindow(curRange, STATE.period) : null;
+    const printPeriodTxt = formatOvkWindowLabel(curRange, ovkLang);
+    const printBasisTxt = STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date';
+    const showExplainMovers = !activeSlotObj.restricted && !STATE.kioskLocked;
+
+    let prevWfRows = null;
+    let prevExtraRows = null;
+    let moversPack = null;
+    if (prevWin && !activeSlotObj.restricted) {
+      const priorCacheKey = [
+        activeInd, STATE.company, activeSlot, STATE.basis, isOfficialScopeActive() ? 1 : 0,
+        curRange.from, curRange.to, prevWin.from, prevWin.to,
+        SEED._customRev || 0, STATE._indCustomRev || 0, SEED._industryRev || 0,
+        allowedCompanyNames(ovUser).slice().sort().join(','),
+        activeSeatFullFinKey(), lens.profit ? 1 : 0, lens.books ? 1 : 0, lens.tax ? 1 : 0, lens.payrollDollars ? 1 : 0, lens.expenses ? 1 : 0
+      ].join('|');
+      let cachedPrior = _ovkPriorCacheMap.get(priorCacheKey);
+      if (!cachedPrior) {
+        const prevPack = withTemporaryOverviewWindow(prevWin, () => {
+          const pk = (!activeInd || activeInd === 'Manufacturing') ? getKPI() : {};
+          const pr = (activeInd && activeInd !== 'Manufacturing') ? computeEnterpriseRollup() : null;
+          return buildOverviewKpiSlotsForIndustry(activeInd, activeSlot, pk, lens, pr);
+        });
+        const prevMeta = (prevPack && prevPack.activeMeta) || null;
+        cachedPrior = {
+          prevWfRows: (prevMeta && prevMeta.waterfallRows) || null,
+          prevExtraRows: (prevMeta && prevMeta.extraWaterfallSpec && prevMeta.extraWaterfallSpec.rows) || null,
+          moversPack: computeOverviewKpiMovers(activeInd, activeSlot, curRange, prevWin, lens)
+        };
+        if (_ovkPriorCacheMap.size > 120) _ovkPriorCacheMap.clear();
+        _ovkPriorCacheMap.set(priorCacheKey, cachedPrior);
+      }
+      prevWfRows = cachedPrior.prevWfRows;
+      prevExtraRows = cachedPrior.prevExtraRows;
+      moversPack = cachedPrior.moversPack;
+    }
 
     const tabsHtml = `
       <div class="ovk-tabs" id="overviewKpiTabs" role="tablist" aria-label="Headline KPI switcher">
@@ -26453,6 +27344,13 @@
 
     const headerBarHtml = `
       <div class="ovk-header panel-card">
+        <div class="ovk-print-meta">
+          <span data-no-i18n="1" data-ovk-print-co="1">${esc((ovkLang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(cleanCeoText(COMPANY_LABELS[STATE.company] || activeInd), ovkLang) : cleanCeoText(COMPANY_LABELS[STATE.company] || activeInd))}</span>
+          <span>·</span>
+          <span data-no-i18n="1" data-ovk-print-period="1">${esc(printPeriodTxt)}</span>
+          <span>·</span>
+          <span>${esc(printBasisTxt)}</span>
+        </div>
         <div class="ovk-header-bar">
           <div class="ovk-header-lead">
             <button type="button" class="btn btn-ghost-bar ovk-back-btn" id="overviewKpiBackBtn" data-nav-jump="overview">
@@ -26478,8 +27376,9 @@
               <span class="ovk-formula-tag">Formula</span>
               <span>${esc(activeMeta.formulaText)}</span>
             </div>
-            ${permittedJumps.length ? `
+            ${(permittedJumps.length || showExplainMovers) ? `
               <div class="ovk-jumps">
+                ${showExplainMovers ? `<button type="button" class="btn btn-ghost-bar ovk-jump-btn ovk-explain-movers-btn" id="ovkExplainMoversBtn" data-ovk-explain-movers="1" aria-expanded="false" data-ui-tip="Explain top period-over-period waterfall and counterparty shifts">${ic('sparkles')}<span>Explain Movers</span></button>` : ''}
                 ${permittedJumps.map(j => `<button type="button" class="btn btn-ghost-bar ovk-jump-btn" data-nav-jump="${esc(j.view)}">${esc(j.label)}</button>`).join('')}
               </div>
             ` : ''}
@@ -26607,7 +27506,70 @@
       </div>
     ` : '';
 
-    const hasSidePanels = Boolean(entityRowsHtml || driversHtml);
+    let moversHtml = '';
+    if (prevWin && moversPack) {
+      const curWinLbl = formatOvkWindowLabel(curRange, ovkLang);
+      const prevWinLbl = formatOvkWindowLabel(prevWin, ovkLang);
+      const vsWord = ovkLang === 'ar' ? 'مقابل' : (ovkLang === 'fr' ? 'contre' : 'vs.');
+      const emptyMoverMsg = moversPack.isPointInTime
+        ? 'Point-in-time balance sheet snapshot (no period delta)'
+        : 'No period-over-period shifts in the selected window';
+      const mRows = moversPack.rows || [];
+      moversHtml = `
+        <div class="ovk-panel panel-card" id="overviewKpiMoversPanel">
+          <div class="ovk-panel-head">
+            <div>
+              <h3>Biggest Movers</h3>
+              <p data-no-i18n="1" data-ovk-movers-sub="1">${esc(curWinLbl)} ${esc(vsWord)} ${esc(prevWinLbl)}</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" data-no-col-mgr="1" data-no-mob-pin="1">
+              <thead>
+                <tr>
+                  <th>${esc(moversPack.colLabel || 'Driver')}</th>
+                  <th class="num">Prior</th>
+                  <th class="num">Active</th>
+                  <th class="num">Δ $</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${mRows.length ? mRows.map(mr => {
+                  const df = ovkDeltaFormat(mr.deltaUsd);
+                  const canRowJump = !STATE.kioskLocked && !mr.partyTable && Boolean(mr.jumpView && canViewView(mr.jumpView, ovUser));
+                  const nameCell = mr.partyTable
+                    ? (STATE.kioskLocked ? `<strong>${esc(mr.name)}</strong>` : relLink(mr.partyTable, mr.rawName, mr.name, true))
+                    : `<strong>${esc(mr.name)}</strong>`;
+                  const deltaPill = df.isFlat
+                    ? `<span class="ovk-delta-pill">$0</span>`
+                    : `<span class="ovk-delta-pill ${df.isPos ? 'is-pos' : 'is-neg'}">${esc(df.text)}</span>`;
+                  return `
+                    <tr class="${canRowJump ? 'clickable-row' : ''}"${canRowJump ? ` data-nav-jump="${esc(mr.jumpView)}" role="button" tabindex="0"` : ''} data-no-ind-inspect="1">
+                      <td data-no-i18n="1">${nameCell}</td>
+                      <td class="num" data-no-i18n="1">${fmtUSD(mr.prevUsd, 0)}</td>
+                      <td class="num" data-no-i18n="1">${fmtUSD(mr.curUsd, 0)}</td>
+                      <td class="num" data-no-i18n="1">${deltaPill}</td>
+                    </tr>
+                  `;
+                }).join('') : emptyRow(4, emptyMoverMsg)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const extraHtml = activeMeta.extraWaterfallSpec
+      ? renderOverviewKpiWaterfallTable(
+          activeMeta.extraWaterfallSpec.rows,
+          activeMeta.extraWaterfallSpec.baseDen,
+          activeMeta.extraWaterfallSpec.title,
+          activeMeta.extraWaterfallSpec.subtitle,
+          { user: ovUser, prevRows: prevExtraRows }
+        )
+      : (activeMeta.extraWaterfallHtml || '');
+
+    const hasSidePanels = Boolean(entityRowsHtml || moversHtml || driversHtml);
 
     return `
       <section class="overview-kpi-page" id="overviewKpiPage">
@@ -26615,12 +27577,13 @@
         ${headerBarHtml}
         <div class="ovk-grid${hasSidePanels ? '' : ' is-single-col'}">
           <div class="ovk-col-main" id="overviewKpiWaterfallPanel">
-            ${renderOverviewKpiWaterfallTable(activeMeta.waterfallRows, activeMeta.waterfallMeta, activeMeta.waterfallTitle, 'Every line reconciles directly to the headline KPI card above', { subMetricsHtml, user: ovUser })}
-            ${activeMeta.extraWaterfallHtml || ''}
+            ${renderOverviewKpiWaterfallTable(activeMeta.waterfallRows, activeMeta.waterfallMeta, activeMeta.waterfallTitle, 'Every line reconciles directly to the headline KPI card above', { subMetricsHtml, user: ovUser, prevRows: prevWfRows })}
+            ${extraHtml}
           </div>
           ${hasSidePanels ? `
             <div class="ovk-col-side" id="overviewKpiDriversPanel">
               ${entityRowsHtml}
+              ${moversHtml}
               ${driversHtml}
             </div>
           ` : ''}
@@ -155799,7 +156762,7 @@
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
-    if (STATE.company && STATE.company !== DEMO_COMPANY_KEY && coKey === DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
     const nextInd = getActiveIndustry(coKey);
@@ -155906,6 +156869,7 @@
     const scopeChanged = prevCompany !== coKey || STATE.view !== prevView;
     if (scopeChanged && $('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
     if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     if (scopeChanged && typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (!(opts && opts.skipRender)) renderApp();
@@ -157030,6 +157994,7 @@
     _authSessionEpoch++;
     if (typeof window !== 'undefined') window.__LAST_RECORD_SUMMARY_TEXT = '';
     if (typeof closePocketBrief === 'function') closePocketBrief({ purgeDom: true, restoreFocus: false });
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -157476,6 +158441,9 @@
         applyUserRlsAndPermissions();
       }
     }
+    if (typeof _ovkPriorCacheMap !== 'undefined') _ovkPriorCacheMap.clear();
+    if (typeof _ovkAiBriefCache !== 'undefined') _ovkAiBriefCache.clear();
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     clearTimeout(toastTimer);
     clearTimeout(toastFadeTimer);
     const tEl = $('toast');
@@ -158593,6 +159561,7 @@
     if (!canUsePocketBrief(activeUser())) return false;
     if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
     if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (typeof closeMobileTopSheets === 'function') closeMobileTopSheets();
@@ -192463,6 +193432,14 @@
         return;
       }
 
+      const ovkExplainBtn = t.closest('[data-ovk-explain-movers]');
+      if (ovkExplainBtn && container.contains(ovkExplainBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openOvkMoversPopover(ovkExplainBtn);
+        return;
+      }
+
       const voidBtn = t.closest('[data-void]');
       if (voidBtn && container.contains(voidBtn)) {
         e.stopPropagation();
@@ -196522,6 +197499,7 @@
     cancelIdleHubPrewarm();
     if ($('recordInspector') && !$('recordInspector').hidden) closeRecordInspector({ restoreFocus: false });
     if (typeof closeRepShiftPopover === 'function') closeRepShiftPopover();
+    if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ restoreFocus: false });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
@@ -197962,6 +198940,7 @@
     const dateRstEl = $('dateRangeResetBtn');
     if (dateRstEl) dateRstEl.addEventListener('click', () => setDateFilter({ reset: true }));
     document.querySelectorAll('#basisSwitch .basis-btn').forEach(btn => btn.addEventListener('click', () => {
+      if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
       const nextBasis = btn.getAttribute('data-basis') || 'tx';
       if (isTxOnlyBasisView(STATE.view) && nextBasis === 'rep') {
         STATE.basis = 'tx';
@@ -200205,6 +201184,8 @@
     _icInteractionsCache = null;
     _icInteractionsSig = '';
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
+    if (typeof _ovkPriorCacheMap !== 'undefined' && _ovkPriorCacheMap) _ovkPriorCacheMap.clear();
+    if (typeof _ovkAiBriefCache !== 'undefined' && _ovkAiBriefCache) _ovkAiBriefCache.clear();
     if (typeof FORM_UI !== 'undefined' && FORM_UI) FORM_UI.catCache = null;
     SEED._customRev = (SEED._customRev || 0) + 1;
   }
