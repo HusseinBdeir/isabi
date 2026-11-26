@@ -99,9 +99,11 @@ function createMockDb() {
     },
     async first() {
       const q = String(sql || '').trim();
-      if (/^SELECT\s+id\s+FROM\s+auth_sessions\s+WHERE\s+id\s*=\s*\?1/i.test(q)) {
+      // verifyActiveEdgeSession reads the session row by id (since the seat-preview rule also its method
+      // and start time; the sessions of this gate are ordinary sign-ins, so those two stay empty).
+      if (/^SELECT\s+id\b[\w\s,]*\s+FROM\s+auth_sessions\s+WHERE\s+id\s*=\s*\?1/i.test(q)) {
         const row = authSessions.get(String(boundArgs[0] || ''));
-        return row ? { id: row.id } : null;
+        return row ? { id: row.id, method: row.method || '', logged_in_at: row.logged_in_at || '' } : null;
       }
       if (/FROM\s+users\s+WHERE\s+id\s*=\s*\?1\s+OR\s+lower\(email\)\s*=\s*\?2/i.test(q)) {
         const sub = String(boundArgs[0] || '');

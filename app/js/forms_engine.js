@@ -157,7 +157,7 @@
   const FORM_CR_KEY = {};
   FORM_GROUPS.forEach(g => {
     g.forms.forEach(f => {
-      FORM_MAP[f.id] = { ...f, groupId: g.id, groupLabel: g.label };
+      FORM_MAP[f.id] = { ...f, univBucket: f.univBucket || '', groupId: g.id, groupLabel: g.label };
       FORM_TITLES[f.id] = f.title;
       FORM_CR_KEY[f.id] = f.crKey;
     });
@@ -748,72 +748,113 @@
   // ==================== MODAL GROUP & TAB BAR RENDERER ====================
   function renderModalTabsHtml(activeForm, canEnterFn, groupOverride, opts) {
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
-    const effectiveGroupId = groupOverride === 'comm' ? 'sales' : (groupOverride === 'extended' ? 'treasury' : groupOverride);
+    const isUnivScopeOverride = ['universal', 'univ_parties', 'univ_staff', 'univ_catalog'].includes(groupOverride);
+    const effectiveGroupId = groupOverride === 'comm'
+      ? 'sales'
+      : (groupOverride === 'extended'
+        ? 'treasury'
+        : (isUnivScopeOverride ? 'universal' : groupOverride));
     const activeGroup = (effectiveGroupId && FORM_GROUPS.find(g => g.id === effectiveGroupId)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
     const domainGroups = (opts && Array.isArray(opts.domainGroups)) ? opts.domainGroups : [];
     const isFleetIndustry = !(opts && opts.isFleetIndustry === false);
+    const univGroupObj = FORM_GROUPS.find(g => g.id === 'universal');
+    const univVis = univGroupObj ? univGroupObj.forms.filter(f => !canEnterFn || canEnterFn(f.id)) : [];
+    const univBuckets = [
+      { id: 'parties', label: 'Counterparties & Sites', icon: 'univ_parties' },
+      { id: 'staff', label: isFleetIndustry ? 'Staff & Fleet' : 'Staff & Roles', icon: isFleetIndustry ? 'univ_fleet' : 'univ_staff' },
+      { id: 'catalog', label: 'Catalog, Categories & Tax', icon: 'univ_catalog' }
+    ];
+    let univBucketScope = (activeGroup.universalGroup && typeof groupOverride === 'string' && groupOverride.startsWith('univ_'))
+      ? groupOverride.slice(5)
+      : '';
+    if (univBucketScope && !univVis.some(f => f.univBucket === univBucketScope)) {
+      univBucketScope = '';
+    }
+    const activeBucketMeta = univBucketScope ? univBuckets.find(b => b.id === univBucketScope) : null;
+    const activeModuleLabel = activeBucketMeta ? activeBucketMeta.label : activeGroup.label;
+    const activeModuleIcon = activeBucketMeta ? activeBucketMeta.icon : activeGroup.icon;
+
     const domGroupHtml = domainGroups.map(dg =>
       `<button type="button" class="pa-group-btn pa-dom-group-btn" data-dom-group="${esc(dg.id)}">${dg.icon ? ic(dg.icon) : ''}<span>${esc(dg.label)}</span></button>`
     ).join('');
     const sharedGroupHtml = FORM_GROUPS.map(g => {
       const visibleForms = g.forms.filter(f => !canEnterFn || canEnterFn(f.id));
       if (!visibleForms.length) return '';
-      return `<button type="button" class="pa-group-btn${g.universalGroup ? ' is-universal-group' : ''} ${g.id === activeGroup.id ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
+      const isAct = g.id === activeGroup.id && !univBucketScope;
+      return `<button type="button" class="pa-group-btn${g.universalGroup ? ' is-universal-group' : ''} ${isAct ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
     }).join('');
-    return `
-      <div class="pa-modal-groups">
-        ${domGroupHtml}${sharedGroupHtml}
-      </div>
-      <div class="pa-modal-subtabs${activeGroup.universalGroup ? ' is-universal-subtabs' : ''}">
-        ${(() => {
-          const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
-          if (activeGroup.universalGroup) {
-            const buckets = [
-              { id: 'parties', label: 'Counterparties & Sites' },
-              { id: 'staff', label: isFleetIndustry ? 'Staff & Fleet' : 'Staff & Roles' },
-              { id: 'catalog', label: 'Catalog, Categories & Tax' }
-            ];
-            const renderTab = f => `<button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}"><span>${esc(f.label)}</span></button>`;
-            const bucketed = buckets.map(b => {
-              const items = vis.filter(f => f.univBucket === b.id);
-              if (!items.length) return '';
-              return `<div class="pa-univ-bucket" data-univ-bucket="${esc(b.id)}"><span class="pa-univ-bucket-lbl">${esc(b.label)}</span><div class="pa-univ-bucket-tabs">${items.map(renderTab).join('')}</div></div>`;
-            }).join('');
-            const leftovers = vis.filter(f => !buckets.some(b => b.id === f.univBucket)).map(renderTab).join('');
-            return bucketed + leftovers;
-          }
-          const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
-          const isHoldingScope = groupOverride === 'extended' || (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() === 'Holding & Treasury');
-          const rawPrTab = showRawPr ? `
+    const univSubHubBtnsHtml = univVis.length
+      ? univBuckets.map(b => {
+          if (!univVis.some(f => f.univBucket === b.id)) return '';
+          const isAct = Boolean(activeGroup.universalGroup && univBucketScope === b.id);
+          return `<button type="button" class="pa-group-btn pa-univ-hub-btn ${isAct ? 'active' : ''}" data-pa-univ-hub="${esc(b.id)}">${ic(b.icon)}<span>${esc(b.label)}</span></button>`;
+        }).join('')
+      : '';
+
+    const subtabsHtml = (() => {
+      const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
+      if (activeGroup.universalGroup && univBucketScope) {
+        return vis.filter(f => f.univBucket === univBucketScope).map(f => `
+          <button type="button" class="modal-tab ${f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
+            <span>${esc(f.label)}</span>
+          </button>`).join('');
+      }
+      if (activeGroup.universalGroup) {
+        const renderTab = f => `<button type="button" class="modal-tab ${!groupOverride || groupOverride === 'universal' ? (f.id === activeForm ? 'active' : '') : ''}" data-form="${esc(f.id)}"><span>${esc(f.label)}</span></button>`;
+        const bucketed = univBuckets.map(b => {
+          const items = vis.filter(f => f.univBucket === b.id);
+          if (!items.length) return '';
+          return `<div class="pa-univ-bucket" data-univ-bucket="${esc(b.id)}"><span class="pa-univ-bucket-lbl">${esc(b.label)}</span><div class="pa-univ-bucket-tabs">${items.map(renderTab).join('')}</div></div>`;
+        }).join('');
+        const leftovers = vis.filter(f => !univBuckets.some(b => b.id === f.univBucket)).map(renderTab).join('');
+        return bucketed + leftovers;
+      }
+      const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
+      const isHoldingScope = groupOverride === 'extended' || (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() === 'Holding & Treasury');
+      const rawPrTab = showRawPr ? `
           <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" data-ui-tip="Add or update a Material &amp; Transport rate agreement">
             <span>Material &amp; Transport Rate</span>
           </button>` : '';
-          const rawAnchorObj = showRawPr ? (['raw', 'jv'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
-          let html = vis.map(f => {
-            const baseTab = `
+      const rawAnchorObj = showRawPr ? (['raw', 'jv'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
+      let html = vis.map(f => {
+        const baseTab = `
           <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
             <span>${esc(f.label)}</span>${f.universal && !activeGroup.universalGroup ? '<span class="tbl-univ-tag">All Entities</span>' : ''}
           </button>`;
-            if (activeGroup.id === 'sales' && f.id === 'pricerule') {
-              return baseTab + `
+        if (activeGroup.id === 'sales' && f.id === 'pricerule') {
+          return baseTab + `
           <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" data-ui-tip="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
             <span>Commission Rule</span>
           </button>`;
-            }
-            if (activeGroup.id === 'treasury' && f.id === 'external' && isHoldingScope && (!canEnterFn || canEnterFn('external'))) {
-              return baseTab + `
+        }
+        if (activeGroup.id === 'treasury' && f.id === 'external' && isHoldingScope && (!canEnterFn || canEnterFn('external'))) {
+          return baseTab + `
           <button type="button" class="modal-tab ${groupOverride === 'extended' && activeForm === 'external' ? 'active' : ''}" data-form="extended" data-ui-tip="Record a Holding Extended Stakeholder Ledger cash inflow, outflow, or opening balance">
             <span>Extended Entry</span>
           </button>`;
-            }
-            if (rawAnchorObj && f.id === rawAnchorObj.id) {
-              return baseTab + rawPrTab;
-            }
-            return baseTab;
-          }).join('');
-          if (showRawPr && !rawAnchorObj) html = rawPrTab + html;
-          return html;
-        })()}
+        }
+        if (rawAnchorObj && f.id === rawAnchorObj.id) {
+          return baseTab + rawPrTab;
+        }
+        return baseTab;
+      }).join('');
+      if (showRawPr && !rawAnchorObj) html = rawPrTab + html;
+      return html;
+    })();
+
+    return `
+      <div class="pa-modal-hub-row">
+        <div class="pa-module-switch-wrap" id="entryModuleSwitchWrap">
+          <button type="button" class="pa-module-switch-btn${activeGroup.universalGroup ? ' is-universal-module' : ''}" id="entryModuleSwitchBtn" aria-haspopup="true" aria-expanded="false">
+            ${activeModuleIcon ? ic(activeModuleIcon) : ''}<span class="pa-mod-kicker">Module:</span><span class="pa-mod-name">${esc(activeModuleLabel)}</span><span class="pa-mod-caret" aria-hidden="true">${ic('chevron_down')}</span>
+          </button>
+          <div class="pa-modal-groups pa-module-popover" id="entryModulePopover" hidden>
+            ${domGroupHtml}${sharedGroupHtml}${univSubHubBtnsHtml}
+          </div>
+        </div>
+        <div class="pa-modal-subtabs${(activeGroup.universalGroup && !univBucketScope) ? ' is-universal-subtabs' : ''}" role="tablist">
+          ${subtabsHtml}
+        </div>
       </div>
     `;
   }
@@ -851,6 +892,8 @@
 
   function renderExtendedFormBody(fType, ctx, helpers) {
     const rec = getRecords(ctx);
+    const isFleetInd = !(helpers && helpers.isFleetIndustry === false);
+    const isMfgInd = !(helpers && helpers.isMfgIndustry === false);
     const comps = helpers.allowedCompanyNames();
     const company = (ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'extended' && comps.includes('Bdeir Holding')) ? 'Bdeir Holding' : helpers.defaultEntryCompany();
     const today = todayISO();
@@ -867,7 +910,7 @@
     const collapsibleRepDateField = () => fld('Reporting Date *', inp('f_repdate', 'date', today, dateAttrs), {
       id: 'wrap_f_repdate',
       hidden: true,
-      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><span class="hint" id="hint_repdate"></span></div>`
+      afterHtml: `<div class="repdate-bar"><div class="repdate-actions"><button type="button" class="repdate-reset-btn" id="resetRepDateBtn">× Same as Transaction Date</button><button type="button" class="repdate-pin-btn" id="pinBatchRepDateBtn" aria-pressed="false" data-ui-tip="Keep this Reporting Date pinned across consecutive new entries until cleared">${ic('calendar')} Pin for Batch</button></div><span class="hint" id="hint_repdate"></span></div>`
     });
     const fIdx = (helpers && typeof helpers.getFreqIndex === 'function')
       ? helpers.getFreqIndex()
@@ -1177,31 +1220,32 @@
     }
 
     if (fType === 'supplier') {
+      const defSupCat = isFleetInd ? 'Hauler / Truck Owner' : 'Supplies & Services';
       return `
         <div class="form-grid-3">
           ${secHdr('1. Supplier Identity (Universal Registry · All BUs)')}
-          ${fld('Supplier Name *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier, hauler, or vendor name..."') + dl('dl_suppliers', supNames))}
+          ${fld('Supplier Name *', inp('f_supplier', 'text', '', `list="dl_suppliers" placeholder="${isMfgInd ? 'Select or type supplier, hauler, or vendor name...' : 'Select or type supplier...'}"`) + dl('dl_suppliers', supNames))}
           <div class="form-field" id="wrap_f_category">
             <label for="supCategoryTrigger"><span class="pa-fld-lbl">Category *</span></label>
             <div class="pa-suggest-wrap pa-multiselect-wrap" id="supCategoryMultiWrap">
-              <input type="hidden" id="f_category" value="Hauler / Truck Owner">
+              <input type="hidden" id="f_category" value="${esc(defSupCat)}">
               <button type="button" class="pa-multiselect-trigger" id="supCategoryTrigger" aria-haspopup="listbox" aria-expanded="false">
                 <div class="pa-ms-chips" id="supCategoryChips">
-                  <span class="pa-ms-chip is-hauler-chip" data-ms-val="Hauler / Truck Owner">Hauler / Truck Owner</span>
+                  <span class="pa-ms-chip${isFleetInd ? ' is-hauler-chip' : ''}" data-ms-val="${esc(defSupCat)}">${esc(defSupCat)}</span>
                 </div>
                 <span class="pa-ms-count" id="supCategoryCount" hidden>1</span>
                 <span class="pa-suggest-caret" aria-hidden="true">▾</span>
               </button>
               <div class="pa-suggest-menu pa-multiselect-menu" id="supCategoryMenu" role="listbox" aria-multiselectable="true" hidden></div>
             </div>
-            <span class="hint" id="hint_sup_category">Hauler / Truck Owner opens Fleet &amp; Drivers below</span>
+            <span class="hint" id="hint_sup_category">${isFleetInd ? 'Hauler / Truck Owner opens Fleet &amp; Drivers below' : ''}</span>
           </div>
           ${fld('Phone', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
           ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           ${fld('Default Payment Method', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
           ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Tax / MOF registration #"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iva"><label for="f_iva">IVA / VAT Registered (11% Input VAT)</label></div>
-          <div class="form-field span-3" id="wrap_sup_drivers">
+          <div class="form-field span-3" id="wrap_sup_drivers"${isFleetInd ? '' : ' hidden'}>
             ${secHdr('2. Hauler Fleet & Drivers (Auto-Enabled when Hauler / Truck Owner is Selected)')}
             <div class="pa-owner-drivers-panel">
               <div class="pa-owner-drivers-add">
@@ -1233,8 +1277,9 @@
     }
 
     if (fType === 'item') {
+      const mfgWhSeeds = isMfgInd ? ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'] : [];
       const whLocations = uniqSorted(
-        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+        mfgWhSeeds
           .concat((rec.warehouse_movements || []).map(r => r && r.location))
           .concat((rec.expense_items || []).map(r => r && r.warehouse_location))
           .concat((rec.items || []).map(r => r && (r.default_location || r.warehouse_location))),
@@ -1267,17 +1312,14 @@
           .concat((rec.items || []).map(r => r && r.subcategory)),
         fIdx && fIdx.subcategory
       );
+      const itemCatOpts = isMfgInd
+        ? [['Spare Parts', 'Spare Parts'], ['Oils & Lubricants', 'Oils & Lubricants'], ['Tools & Garage', 'Tools & Garage'], ['Plant Consumables', 'Plant Consumables'], ['Fuel', 'Fuel']]
+        : [['Spare Parts', 'Spare Parts'], ['Oils & Lubricants', 'Oils & Lubricants'], ['Tools & Garage', 'Tools & Garage'], ['Fuel', 'Fuel']];
       return `
         <div class="form-grid-3">
           ${secHdr('1. Catalog Item Identity & Locked Unit (Universal Catalog · All BUs)')}
           ${fld('Item Name *', inp('f_item_name', 'text', '', 'placeholder="e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt..."'), { id: 'wrap_f_item_name', hintId: 'hint_item_name', hint: 'Canonical item name shared across Expenses, Warehouse & Equipment Repairs.' })}
-          ${fld('Item Category *', sel('f_item_cat', [
-            ['Spare Parts', 'Spare Parts'],
-            ['Oils & Lubricants', 'Oils & Lubricants'],
-            ['Tools & Garage', 'Tools & Garage'],
-            ['Plant Consumables', 'Plant Consumables'],
-            ['Fuel', 'Fuel']
-          ], 'Spare Parts'), { id: 'wrap_f_item_cat' })}
+          ${fld('Item Category *', sel('f_item_cat', itemCatOpts, 'Spare Parts'), { id: 'wrap_f_item_cat' })}
           ${fld('Subcategory *', inp('f_item_subcat', 'text', '', 'list="dl_item_subcats" placeholder="Select or type subcategory..."') + dl('dl_item_subcats', itemSubcats), { id: 'wrap_f_item_subcat', hint: 'Links item to its Expense Subcategory across Equipment & Warehouse.' })}
           ${fld('Frozen Unit (UoM) *', sel('f_uom', [
             ['Piece', 'Piece (pcs)'],
@@ -1288,7 +1330,7 @@
             ['m', 'Meter (m)']
           ], 'Piece'), { id: 'wrap_f_uom', hintId: 'hint_item_uom', hint: 'Locks Unit permanently whenever this item is selected on Expense, Warehouse, or Repair entries.' })}
           ${fld('Reference Unit Price ($)', inp('f_default_cost', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_f_default_cost' })}
-          ${fld('Default Warehouse Store', inp('f_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
+          ${fld('Default Warehouse Store', inp('f_wh_loc', 'text', isMfgInd ? 'WTC Main Warehouse' : '', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
           ${fld('Min Reorder Alert Qty', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock' })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM part code, storage shelf, or supplier note..."'), { span: 2 })}
         </div>
@@ -1302,17 +1344,20 @@
     }
 
     if (fType === 'product') {
+      const prodTypesOpts = isMfgInd
+        ? [['Material', 'Material (Aggregate / Concrete / Block)'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil'], ['Service', 'Service / Transport'], ['Part', 'Spare Part']]
+        : [['Service', 'Service'], ['Material', 'Material'], ['Part', 'Spare Part'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil']];
       return `
         <div class="form-grid-3">
-          ${fld('Product Name *', inp('f_product', 'text', '', 'placeholder="e.g. Sand 0-4mm, Gravel 10-20mm"'))}
-          ${fld('Default Unit (UoM) *', sel('f_uom', uoms, 'm³'))}
-          ${fld('Product Type *', sel('f_prodtype', [['Material', 'Material (Aggregate / Concrete / Block)'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil'], ['Service', 'Service / Transport'], ['Part', 'Spare Part']], 'Material'))}
-          ${fld('Ton Conversion Factor (1 m³ = X Tons) *', inp('f_tonfactor', 'number', '1.50', 'step="0.01" min="0.1"'))}
+          ${fld('Product Name *', inp('f_product', 'text', '', `placeholder="${isMfgInd ? 'e.g. Sand 0-4mm, Gravel 10-20mm' : 'Select or type product...'}"`))}
+          ${fld('Default Unit (UoM) *', sel('f_uom', uoms, isMfgInd ? 'm³' : 'Piece'))}
+          ${fld('Product Type *', sel('f_prodtype', prodTypesOpts, isMfgInd ? 'Material' : 'Service'))}
+          ${fld('Ton Conversion Factor (1 m³ = X Tons) *', inp('f_tonfactor', 'number', isMfgInd ? '1.50' : '1', 'step="0.01" min="0.1"'), { id: 'wrap_f_tonfactor', hidden: !isMfgInd })}
           ${fld('Standard List Price ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0"'))}
-          ${fld('On an Unregistered Ticket', sel('f_unreg_class', [['', 'Automatic (By Product Type)'], ['recharge', 'Cost Passed On (Not a Sale)'], ['sale', 'Sale'], ['other_income', 'Other Income (Scrap)']], ''), { id: 'wrap_f_unreg_class' })}
-          <div class="form-field check-field"><input type="checkbox" id="f_ticketprod" checked><label for="f_ticketprod">Show on Sales / Raw Material tickets</label></div>
-          <div class="form-field check-field"><input type="checkbox" id="f_fuelitem"><label for="f_fuelitem">Show on Fuel & Lubricant Intake</label></div>
-          <div class="form-field check-field"><input type="checkbox" id="f_inputprod"><label for="f_inputprod">Raw Input Material</label></div>
+          ${fld('On an Unregistered Ticket', sel('f_unreg_class', [['', 'Automatic (By Product Type)'], ['recharge', 'Cost Passed On (Not a Sale)'], ['sale', 'Sale'], ['other_income', 'Other Income (Scrap)']], ''), { id: 'wrap_f_unreg_class', hidden: !isMfgInd })}
+          <div class="form-field check-field"${isMfgInd ? '' : ' hidden'}><input type="checkbox" id="f_ticketprod"${isMfgInd ? ' checked' : ''}><label for="f_ticketprod">Show on Sales / Raw Material tickets</label></div>
+          <div class="form-field check-field"${isMfgInd ? '' : ' hidden'}><input type="checkbox" id="f_fuelitem"><label for="f_fuelitem">Show on Fuel & Lubricant Intake</label></div>
+          <div class="form-field check-field"${isMfgInd ? '' : ' hidden'}><input type="checkbox" id="f_inputprod"><label for="f_inputprod">Raw Input Material</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
       `;
@@ -1335,14 +1380,14 @@
             ['category', 'Main Expense Category (Parent)'],
             ['subcategory', 'Expense Subcategory (Under Parent Category)']
           ], defLvl), { id: 'wrap_expcat_level' })}
-          ${fld('Expense Category Name *', inp('f_category', 'text', '', 'placeholder="e.g. Plant Maintenance, Crusher Consumables..."'), { id: 'wrap_expcat_name', hidden: defaultSubcat })}
+          ${fld('Expense Category Name *', inp('f_category', 'text', '', `placeholder="${isMfgInd ? 'e.g. Plant Maintenance, Crusher Consumables...' : 'Select or type category...'}"`), { id: 'wrap_expcat_name', hidden: defaultSubcat })}
           ${fld('Accounting Cost Class *', sel('f_cost_class', [
             ['Operating Expense', 'Operating Expense'],
             ['Production Cost', 'Production Cost'],
             ['Capital Expenditure', 'Capital Expenditure']
           ], 'Operating Expense'), { id: 'wrap_expcat_class', hidden: defaultSubcat })}
           ${fld('Parent Expense Category *', inp('f_parent_cat', 'text', '', 'list="dl_exp_cats" placeholder="Select parent expense category..."') + dl('dl_exp_cats', expCatNames), { id: 'wrap_expcat_parent', hidden: !defaultSubcat })}
-          ${fld('Expense Subcategory Name *', inp('f_subcategory', 'text', '', 'placeholder="e.g. Hydraulic Hoses, Jaw Plates, Generator Filters..."'), { id: 'wrap_expcat_sub', hidden: !defaultSubcat })}
+          ${fld('Expense Subcategory Name *', inp('f_subcategory', 'text', '', `placeholder="${isMfgInd ? 'e.g. Hydraulic Hoses, Jaw Plates, Generator Filters...' : 'Select or type subcategory...'}"`), { id: 'wrap_expcat_sub', hidden: !defaultSubcat })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional accounting classification or usage guidance..."'), { span: true })}
         </div>
       `;
@@ -2111,7 +2156,7 @@
           ${fld('Effective Start Date *', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
           ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}
           ${frozenRoleCatField('')}
-          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames), { id: 'wrap_staff_truck' })}
+          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames), { id: 'wrap_staff_truck', hidden: !isFleetInd })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span2: true })}
         </div>
         <div class="staff-same-name-box" id="staffSameNameBox" hidden></div>
@@ -2151,13 +2196,13 @@
           ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_sa_role', hintId: 'hint_sa_role', hint: '' })}
           ${frozenRoleCatField('')}
           <div id="staffAssignContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_sa_equip' })}
+          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_sa_equip', hidden: !isFleetInd })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Reason for role or machine transfer, shift change, or site note..."'), { id: 'wrap_sa_notes', span2: true })}
         </div>
         <div class="live-calc" id="staffAssignLiveCalc">
           <div><small>Prior Assignment</small><b id="calc_sa_prior">Select Staff</b></div>
           <div><small>Role Category</small><b id="calc_sa_cat">-</b></div>
-          <div><small>Assigned Equipment</small><b id="calc_sa_equip">Unassigned</b></div>
+          ${isFleetInd ? '<div><small>Assigned Equipment</small><b id="calc_sa_equip">Unassigned</b></div>' : ''}
           <div><small>Effective Window</small><b id="calc_sa_win">Open</b></div>
         </div>
       `;
@@ -2325,6 +2370,7 @@
             ${fld('Reporting Date (Set Date) *', inp('f_repdate', 'date', today, dateAttrs), {
               id: 'wrap_f_repdate',
               labelRightHtml: attStepBtns,
+              afterHtml: `<div class="repdate-bar"><div class="repdate-actions"><button type="button" class="repdate-pin-btn" id="pinBatchRepDateBtn" aria-pressed="false" data-ui-tip="Keep this Reporting Date pinned across consecutive new entries until cleared">${ic('calendar')} Pin for Batch</button></div></div>`,
               hintId: 'hint_att_date',
               hint: ''
             })}
@@ -2801,7 +2847,7 @@
           <div id="recurContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Recurring Item *', inp('f_item_purpose', 'text', '', 'list="dl_recur_purposes" placeholder="e.g. Rent, Internet, Security, Tips, Telephone..."') + dl('dl_recur_purposes', purposeHints), { id: 'wrap_f_item_purpose' })}
           ${fld('Billing Cycle *', sel('f_frequency', [['Monthly', 'Monthly'], ['Quarterly', 'Quarterly'], ['Annual', 'Annual'], ['Weekly', 'Weekly']], 'Monthly'), { id: 'wrap_f_frequency' })}
-          ${fld('Equipment (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="None (Plant / General Overhead)"') + dl('dl_equip', equipNames), { id: 'wrap_f_truck' })}
+          ${fld('Equipment (Optional)', inp('f_truck', 'text', '', `list="dl_equip" placeholder="${isFleetInd ? 'None (Plant / General Overhead)' : 'Optional'}"`) + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hidden: !isFleetInd })}
           ${fld('USD Amount ($ / cycle)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_recur_usd' })}
           ${fld('LBP Amount (L.L. / cycle)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'), { id: 'wrap_recur_lbp' })}
           ${fld(`Cycle Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP / ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}

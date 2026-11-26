@@ -411,6 +411,8 @@ def main() -> int:
                 (["--dry-run"], "dry-run-full", "Verify local HEAD is not behind origin/main"),
                 (["--dry", "--skip-seed"], "dry-skip-seed", "Verify local HEAD is not behind origin/main"),
                 (["--dry", "--pages-only"], "dry-pages-only", "Verify local HEAD is not behind origin/main"),
+                # A code release from a PC applies the idempotent schema, as the push-to-main workflow did (2026-11-26).
+                (["--dry", "--pages-only"], "dry-pages-only-schema", "D1 schema -> APPLY idempotent migrations/0001_schema.sql"),
                 (["--dry", "--allow-behind-origin"], "dry-allow-behind", "BYPASS (--allow-behind-origin)"),
                 (["--dry", "--pages-only", "--allow-behind-origin"], "dry-pages-allow-behind", "BYPASS (--allow-behind-origin)"),
                 (["--dry", "--allow-dirty"], "dry-allow-dirty", "BYPASS (--allow-dirty)"),

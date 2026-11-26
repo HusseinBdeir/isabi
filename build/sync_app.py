@@ -76,6 +76,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_seat_ai_mask_edge.mjs", "node"),         # zero canViewHub('books'), 12-seat JS/Python parity, Edge & server.py AI mask
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
     ("isabi-app", "build/verify_face_or_pin_local.py", "python"),    # server.py sign-in: Face ID or PIN, never both
+    ("isabi-app", "build/verify_seat_preview_resume.mjs", "node"),   # a seat preview (Impersonate) is never resumed on reopening; Face ID decides the seat
     ("isabi-app", "build/verify_records_rbac_parity.py", "python"),  # Local server.py vs Edge d1_store.js /api/records RBAC & DDL parity
     ("isabi-app", "build/verify_face_pad_unit.mjs", "node"),        # passive Face ID liveness + PAD + source bypass guards
     ("isabi", "build/verify_passkeys_edge.mjs", "node"),            # WebAuthn FIDO2 Passkeys Edge + server.py parity, replay/clone/RLS guards
@@ -103,14 +104,37 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
     ("isabi-app", "build/verify_public_names.py", "python"),         # no real person's name in public /app/ or isabi files
     ("isabi-app", "build/verify_browser_slot.mjs", "node"),          # per-PC single-slot mutex for heavy headless browser suites
+    ("isabi-app", "build/verify_mobile_popovers.mjs", "node"),       # mobile/tablet/desktop popover bounds, .geo-place-menu & iOS visualViewport fit
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
     ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
+    ("isabi", "build/verify_sync_delta_edge.mjs", "node"),         # 64MB unstick /sync gate, shift-backfill prune parity & deltaSyncV1 + RLS
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
     ("isabi-app", "build/verify_statement_books.mjs", "node"),       # statements 02-05 and 19: only what was recorded, cash at the counted till, sample figures in the demo only
+    ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node"), # Back to 360° Inspector return pill + 6-industry compound Ask ISABI hub filter jumps
+    # The leader's PC deploys (owner 2026-11-26); these stood before a deploy only on the GitHub runner (2 s together).
+    ("isabi", "build/verify_deploy_preflight.py", "python"),         # Edge entry files parse; 0001_schema.sql can run on every deploy
+    ("isabi", "build/verify_kiosk_cloud.mjs", "node"),               # tablet kiosk routes: station keys, pos_sales, <site>__att
+    ("isabi", "build/verify_build_ticket.mjs", "node"),              # build-ticket sign-in through the real Edge router
+    ("isabi", "build/verify_build_ticket_guard.py", "python"),       # build scripts never issue a ticket in a gate or a dry run
 ]
 
 
 GATE_TIMEOUT_S = 600   # a gate that hangs (e.g. OneDrive fetching a cloud-only workbook) stops the sync, not the PC
+# A browser gate first queues for this PC's one browser slot (isabi-app build/_browser_slot.mjs), and the limit counts
+# that wait: on 2026-11-26 the leader of v19.6.444 lost its sync because verify_shell_gate_and_reload.mjs stood 576 s
+# behind another session's speed suite. ISABI_GATE_TIMEOUT_S raises the limit for one run (never below 600 s, at most
+# an hour); `release_batch.py lead` sets it, because a release leader never interrupts a suite that is running.
+GATE_TIMEOUT_ENV = "ISABI_GATE_TIMEOUT_S"
+GATE_TIMEOUT_MAX_S = 3600
+
+
+def gate_timeout_s() -> int:
+    """Seconds one release gate may take: 600, or ISABI_GATE_TIMEOUT_S when that is a larger whole number (capped)."""
+    raw = (os.environ.get(GATE_TIMEOUT_ENV) or "").strip()
+    if not raw.isdigit():
+        return GATE_TIMEOUT_S
+    return max(GATE_TIMEOUT_S, min(int(raw), GATE_TIMEOUT_MAX_S))
+
 
 # The screen speed gate (owner 2026-11-20, after v19.6.384 shipped Sales and Fleet at twice the 150 ms budget and stayed
 # live two days): runs after RELEASE_GATES on every sync. --skip-release-gates does not skip it (leaders pass that flag
@@ -184,6 +208,9 @@ def _run_gate(repo: str, rel: str, interp: str, timeout_s: int, skip_hint: str, 
                              cwd=roots[repo], env=env, timeout=timeout_s, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         print(f"ERROR: release gate {repo}/{rel} did not finish within {timeout_s} s; sync stopped.", file=sys.stderr)
+        if interp != "python":
+            print(f"  A browser gate first waits for this PC's one browser slot, and that wait counts. Run sync_app.py again,\n"
+                  f"  or allow longer for this run: set {GATE_TIMEOUT_ENV}=1800 (release_batch.py lead does).", file=sys.stderr)
         raise SystemExit(1)
     tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
     if chk.returncode != 0:
@@ -205,7 +232,7 @@ def run_release_gates(*, skip_release_gates: bool = False, sync_in_progress: boo
         return
     gate_extra = {"ISABI_SYNC_IN_PROGRESS": "1"} if sync_in_progress else None
     for repo, rel, interp in RELEASE_GATES:
-        _run_gate(repo, rel, interp, GATE_TIMEOUT_S, "--skip-release-gates", extra_env=gate_extra)
+        _run_gate(repo, rel, interp, gate_timeout_s(), "--skip-release-gates", extra_env=gate_extra)
 
 
 def run_speed_gate(*, skip_reason: str = "") -> None:
@@ -580,8 +607,8 @@ def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool 
                     raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
 
     if not skip_release_gates and os.environ.get("ISABI_SKIP_RELEASE_GATES") != "1":
-        _run_gate("isabi", "build/verify_deployed_shell.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
-        _run_gate("isabi", "build/verify_min_shell_parity.py", "python", GATE_TIMEOUT_S, "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
+        _run_gate("isabi", "build/verify_deployed_shell.py", "python", gate_timeout_s(), "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
+        _run_gate("isabi", "build/verify_min_shell_parity.py", "python", gate_timeout_s(), "--skip-release-gates", extra_env={"ISABI_SYNC_IN_PROGRESS": "0"})
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

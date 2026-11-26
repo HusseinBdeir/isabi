@@ -124,6 +124,11 @@ for ek, pj in [
   ('Manufacturing::Sites::E48-TOPUP', {'ind':'Manufacturing','tableTitle':'Sites','primaryId':'E48-TOPUP','company':'BBConstruction','voided':True,'voided_by':'system-topup-20261117','voided_at':'2026-11-17T19:48:00Z','rev':1})
 ]:
   c.execute("INSERT OR REPLACE INTO industry_row_edits (edit_key, rev, voided, updated_at, payload_json) VALUES (?,?,?,?,?)", (ek, 1, 1, '2026-11-17T19:48:00Z', json.dumps(pj)))
+# edge-26c: two seat-preview session rows, one started 13 hours ago (as a preview left from before the 12-hour rule) and one just now
+import datetime as _dt
+_now = _dt.datetime.now(_dt.timezone.utc)
+for sid, started in [('sess-e26c-old-preview', _now - _dt.timedelta(hours=13)), ('sess-e26c-fresh-preview', _now)]:
+  c.execute("INSERT OR REPLACE INTO auth_sessions (id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence) VALUES (?,?,?,?,?,?,?,?,?,?)", (sid, 'u1', 'husseinbdeir@bhfirms.com', 'Edge 26c', 'Full Access (Owner)', 'All', 'Gate', started.strftime('%Y-%m-%d %H:%M:%S'), 'Owner Impersonation', 100))
 c.commit()
 c.close()`,
   path.join(tmpPersist, 'v3', 'd1')
@@ -271,9 +276,10 @@ async function evalJs(expression) {
 
 async function main() {
   try {
-    // Wait for Wrangler Pages Dev server
+    // Wait for Wrangler Pages Dev server (up to 90 s: on a PC busy with other suites the local server
+    // compiled in seconds but took longer than the old 24 s to start listening)
     let ready = false;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 300; i++) {
       try {
         const r = await httpReq('GET', '/api/health');
         if (r.status === 200 && r.json && r.json.ok) {
@@ -1936,6 +1942,66 @@ finally:
       email: ENTRY_TEST_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
+    // 26b. A seat preview (Owner Impersonation) is reported by /auth/me and lasts 12 hours, not two weeks;
+    //      an ordinary sign-in is neither (the app never resumes a preview on a fresh open).
+    const impersTok26 = String(impersBeforeLogout.json?.token || '');
+    const impersMe26 = await httpReq('GET', '/app/api/auth/me?pv=1', null, { 'X-ISABI-Session': impersTok26 });
+    const ownerMe26 = await httpReq('GET', '/app/api/auth/me?pv=1', null, { 'X-ISABI-Session': tempOwnerTok26 });
+    // An app version from before the rule asks without ?pv=1: a preview is no session to resume for it,
+    // an ordinary sign-in still is.
+    const impersMeOldApp26 = await httpReq('GET', '/app/api/auth/me', null, { 'X-ISABI-Session': impersTok26 });
+    const ownerMeOldApp26 = await httpReq('GET', '/app/api/auth/me', null, { 'X-ISABI-Session': tempOwnerTok26 });
+    // 26c. The 12 hours are counted from the session's start, whatever the token says: a preview started
+    //      13 hours ago is no session at all (a token issued before the rule ran for 14 days), a fresh one is.
+    const previewTok26c = sid => mintTestJwt({ sid, sub: 'u1', email: 'husseinbdeir@bhfirms.com', role: 'Full Access (Owner)', companies: 'All' });
+    const oldPreviewMe26 = await httpReq('GET', '/app/api/auth/me?pv=1', null, { 'X-ISABI-Session': previewTok26c('sess-e26c-old-preview') });
+    const oldPreviewRecs26 = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=1', null, { 'X-ISABI-Session': previewTok26c('sess-e26c-old-preview') });
+    const freshPreviewMe26 = await httpReq('GET', '/app/api/auth/me?pv=1', null, { 'X-ISABI-Session': previewTok26c('sess-e26c-fresh-preview') });
+    const freshPreviewRecs26 = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=1', null, { 'X-ISABI-Session': previewTok26c('sess-e26c-fresh-preview') });
+    const cookieOf26 = res => [].concat(res.headers['set-cookie'] || []).join('; ');
+    const jwtLife26 = tok => {
+      try {
+        const p = JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8'));
+        return Number(p.exp) - Number(p.iat);
+      } catch (_) { return -1; }
+    };
+    const preview26 = {
+      impersMe: [impersMe26.status, impersMe26.json?.authenticated, impersMe26.json?.impersonated, String(impersMe26.json?.user?.email || '').toLowerCase()],
+      ownerMe: [ownerMe26.status, ownerMe26.json?.authenticated, ownerMe26.json?.impersonated],
+      impersLife: jwtLife26(impersTok26),
+      ownerLife: jwtLife26(tempOwnerTok26),
+      impersCookie12h: /isabi_edge_sess=[^;]+;.*Max-Age=43200\b/.test(cookieOf26(impersBeforeLogout)),
+      ownerCookie14d: /isabi_edge_sess=[^;]+;.*Max-Age=1209600\b/.test(cookieOf26(tempOwnerLogin26)),
+      oldApp: [impersMeOldApp26.json?.authenticated, impersMeOldApp26.json?.user == null, ownerMeOldApp26.json?.authenticated],
+      oldPreview: [oldPreviewMe26.json?.authenticated, oldPreviewRecs26.status],
+      freshPreview: [freshPreviewMe26.json?.authenticated, freshPreviewMe26.json?.impersonated, freshPreviewRecs26.status]
+    };
+    if (
+      preview26.oldApp[0] === false && preview26.oldApp[1] === true && preview26.oldApp[2] === true &&
+      preview26.oldPreview[0] === false && preview26.oldPreview[1] === 401 &&
+      preview26.freshPreview[0] === true && preview26.freshPreview[1] === true && preview26.freshPreview[2] === 200
+    ) {
+      pass(
+        'edge-26c-seat-preview-12h-from-start-and-hidden-from-older-apps',
+        'a preview started 13 h ago is no session (401) though its token is valid; a fresh one is; /auth/me without ?pv=1 shows a preview as no session and an ordinary sign-in as before'
+      );
+    } else {
+      fail('edge-26c-seat-preview-12h-from-start-and-hidden-from-older-apps', JSON.stringify(preview26));
+    }
+    if (
+      preview26.impersMe[0] === 200 && preview26.impersMe[1] === true && preview26.impersMe[2] === true &&
+      preview26.impersMe[3] === String(ENTRY_TEST_EMAIL).toLowerCase() &&
+      preview26.ownerMe[0] === 200 && preview26.ownerMe[1] === true && preview26.ownerMe[2] === false &&
+      preview26.impersLife === 43200 && preview26.ownerLife === 1209600 &&
+      preview26.impersCookie12h && preview26.ownerCookie14d
+    ) {
+      pass(
+        'edge-26b-seat-preview-session-flagged-and-short-lived',
+        '/auth/me impersonated=true for a seat preview and false for an ordinary sign-in; preview token and cookie 12 h, ordinary 14 d'
+      );
+    } else {
+      fail('edge-26b-seat-preview-session-flagged-and-short-lived', JSON.stringify(preview26));
+    }
     await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
     const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
       email: ENTRY_TEST_EMAIL,

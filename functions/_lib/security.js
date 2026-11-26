@@ -570,14 +570,33 @@ export async function checkD1RateLimit(env, bucketKey, maxReqs = 15, windowSec =
   }
 }
 
+// A seat preview (an Owner pressing Impersonate) is a look at another seat, not that person's own sign-in.
+// Its session row is marked by this sign-in method and is honoured for 12 hours from its start, whatever
+// the lifetime of the token that carries it (tokens issued before this rule ran for 14 days).
+export const SEAT_PREVIEW_METHOD = 'Owner Impersonation';
+export const SEAT_PREVIEW_TTL_SEC = 60 * 60 * 12;
+
+export function isSeatPreviewSessionRow(sessRow) {
+  return Boolean(sessRow && String(sessRow.method || '').trim() === SEAT_PREVIEW_METHOD);
+}
+
+export function isExpiredSeatPreviewRow(sessRow, nowMs = Date.now()) {
+  if (!isSeatPreviewSessionRow(sessRow)) return false;
+  // `logged_in_at` is UTC, `YYYY-MM-DD HH:MM:SS`. A preview with no readable start is over (fail closed).
+  const startedMs = Date.parse(String(sessRow.logged_in_at || '').trim().replace(' ', 'T') + 'Z');
+  if (!Number.isFinite(startedMs)) return true;
+  return (nowMs - startedMs) > SEAT_PREVIEW_TTL_SEC * 1000;
+}
+
 export async function verifyActiveEdgeSession(session, env) {
   if (!session || !env || !env.DB) return null;
   try {
     const sid = String(session.sid || '').trim();
     if (!sid) return null;
-    const sessRow = await env.DB.prepare('SELECT id FROM auth_sessions WHERE id = ?1 LIMIT 1')
+    const sessRow = await env.DB.prepare('SELECT id, method, logged_in_at FROM auth_sessions WHERE id = ?1 LIMIT 1')
       .bind(sid).first();
     if (!sessRow) return null;
+    if (isExpiredSeatPreviewRow(sessRow)) return null;
 
     const email = String(session.email || '').trim().toLowerCase();
     const sub = String(session.sub || '').trim();

@@ -1,6 +1,10 @@
-# Push to main = deploy to Cloudflare Pages (site, Command Center and the Edge functions).
+# A push to main runs the offline checks here and deploys NOTHING (owner 2026-11-26: "it should deploy without a
+# github action"). The release leader's PC deploys under the Cloudflare release lock:
+#   python build/deploy_cloudflare.py --pages-only      (then push isabi-app and isabi main, release_batch.py done)
+# so a GitHub outage or a red run here never stops a release; GitHub is the code backup.
 #
-# No PC needs a Cloudflare sign-in for a code deploy once two repository secrets exist
+# Emergency only (no PC can deploy): run this workflow by hand on main with "deploy" ticked. It then takes the same
+# release lock and deploys main as it used to on every push. That needs two repository secrets
 # (GitHub, repository Settings, Secrets and variables, Actions):
 #   CLOUDFLARE_API_TOKEN   an API token with Account permissions:
 #                            - Cloudflare Pages: Edit
@@ -13,31 +17,37 @@
 #                            - Dynamic Redirect: Edit
 #                            - Cache Purge: Purge
 #   CLOUDFLARE_ACCOUNT_ID  the account id shown on the Cloudflare dashboard overview
-# Until both exist this workflow runs the checks and stops with a notice; nothing fails.
+# Until both exist a dispatch with "deploy" ticked runs the checks and stops with a notice; nothing fails.
 #
-# What it does: verifies or uploads private R2 ledger seeds (`isabi-vault/seeds/seed_*.json`),
+# What the emergency deploy does: verifies or uploads private R2 ledger seeds (`isabi-vault/seeds/seed_*.json`),
 # applies idempotent D1 schema migrations (`migrations/0001_schema.sql`), and deploys Pages.
 # Full ledger data top-ups stay with build/deploy_cloudflare.py.
-name: Deploy to Cloudflare Pages
+name: Checks on main (deploys only on a manual emergency dispatch)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Emergency only: deploy main from this runner (normally the release leader's PC deploys)"
+        type: boolean
+        default: false
 
 permissions:
-  # write: the run takes the release lock (the ref refs/locks/release; build/release_lock.py). Nothing else is pushed.
-  # The token is not kept in .git/config (persist-credentials: false); only the three release-lock steps get it.
-  contents: write
+  # read: release lock lives in Cloudflare Durable Object (IsabiReleaseRoom); CI never pushes refs to GitHub.
+  contents: read
 
+# Only an emergency deploy queues in the shared group. A checks-only run gets a group of its own: GitHub keeps one
+# waiting run per group and cancels the older one, so a push must never be able to push a waiting deploy out.
 concurrency:
-  group: cloudflare-pages-production
+  group: ${{ (github.event_name == 'workflow_dispatch' && inputs.deploy) && 'cloudflare-pages-production' || format('checks-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # up to 10 of them waiting for a session's release lock
+    timeout-minutes: 40  # up to 10 of them waiting for a session's release lock; the two batch gates have 10 each
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -69,10 +79,13 @@ jobs:
           node --check build/_release_log.mjs
           node --no-warnings build/verify_release_log_sync.mjs
           python3 build/verify_deploy_cli.py
+          # The checks a PC deploy relies on: Edge entry files parse, the schema file can run on every deploy.
+          python3 build/verify_deploy_preflight.py
           # A deploy never replaces the live signing secret unless asked (--rotate-secrets).
           python3 build/verify_jwt_secret_keep.py
           python3 build/verify_version_claims.py
           python3 build/verify_release_lock.py
+          python3 build/verify_release_cloudflare.py
           python3 build/verify_r2_seed_parity.py
           node --check build/verify_cloudflare_edge.mjs
           # Build-ticket sign-in of the build scripts: the Edge check through the real router, and the script guard.
@@ -92,30 +105,40 @@ jobs:
         timeout-minutes: 10
         run: python3 build/verify_release_batch.py
 
+      # One or a few changes per batch (owner 2026-11-25): the size limit, the leader's own change, stacked changes.
+      - name: Batch size limit gate (build/release_batch.py, offline)
+        timeout-minutes: 10
+        run: python3 build/verify_release_batch_cap.py
+
+      # The limit follows the line (3, or 6 while more than 6 wait), `lead` (one batch, one command) and `drive`
+      # (batch after batch until the line is empty) (owner 2026-11-26).
+      - name: Release leader and driver gate (build/release_batch.py lead / drive, offline)
+        timeout-minutes: 10
+        run: python3 build/verify_release_lead.py
+
       - name: Shell version in this commit
         id: ver
         run: echo "sw=$(head -n 1 app/sw.js)" >> "$GITHUB_OUTPUT"
 
       - name: Not deployed, the Cloudflare secrets are not set on this repository
-        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
-        run: echo "::notice::Checks passed. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets to deploy on push."
+        if: (env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '') && github.event_name == 'workflow_dispatch' && inputs.deploy
+        run: echo "::notice::Checks passed. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets for an emergency deploy from this runner."
+
+      - name: Not deployed, an emergency deploy runs from main only
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref != 'refs/heads/main'
+        run: echo "::warning::deploy was ticked on a branch other than main. Nothing was deployed. Run the workflow on main."
 
       # One release at a time (build/release_lock.py): this run is a lock holder like any session. It waits up to
       # 10 minutes for a session's release to finish, then takes the lock and records this commit; when the lock stays
       # held, nothing below goes live (a warning: that session deploys a commit containing main). An expired lock whose
       # live deploy is not part of this commit fails the run (deploying would roll that work back).
-      # Production deploys come from main only (a dispatch on another branch runs the checks and stops here).
+      # Production deploys come from main only (a dispatch on another branch runs the checks and stops here), and only
+      # from a manual dispatch with "deploy" ticked: a push never takes the lock, so every step below is skipped on it.
       - name: Release lock
         id: lock
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && github.ref == 'refs/heads/main'
-        env:
-          GH_LOCK_TOKEN: ${{ github.token }}
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.deploy
         shell: bash
-        run: |
-          set -euo pipefail
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
-          python3 build/release_lock.py ci-acquire --sha "$GITHUB_SHA" --wait 600 --holder "GitHub Actions run ${{ github.run_id }}"
+        run: python3 build/release_lock.py ci-acquire --sha "$GITHUB_SHA" --wait 600 --holder "GitHub Actions run ${{ github.run_id }}"
 
       - name: Stage allowlisted Pages bundle
         shell: bash
@@ -167,14 +190,8 @@ jobs:
 
       - name: Release lock still held
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
-        env:
-          GH_LOCK_TOKEN: ${{ github.token }}
         shell: bash
-        run: |
-          set -euo pipefail
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
-          python3 build/release_lock.py renew --ttl 30
+        run: python3 build/release_lock.py renew --ttl 30
 
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
@@ -182,13 +199,9 @@ jobs:
 
       - name: Give the release lock back
         if: always() && steps.lock.outputs.deploy == 'true'
-        env:
-          GH_LOCK_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -uo pipefail
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
           for i in 1 2 3; do python3 build/release_lock.py release && exit 0; sleep 15; done
           echo "::error::Could not give the release lock back; it expires 40 minutes after this run's last renew."
           exit 1

@@ -57,14 +57,14 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.40">
-  <link rel="icon" href="icon.svg?v=6.40" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.40" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.40" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.40">
-  <link rel="icon" href="favicon-dark.ico?v=6.40" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.40" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.40">
+  <link rel="manifest" href="manifest.json?v=6.41">
+  <link rel="icon" href="icon.svg?v=6.41" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.41" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.41" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.41">
+  <link rel="icon" href="favicon-dark.ico?v=6.41" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.41" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.41">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
@@ -125,7 +125,7 @@ ORG_JSONLD = _json.dumps({
     "identifier": "isabisystems",
     "url": "https://isabisystems.com/",
     "mainEntityOfPage": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.40",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.41",
     "image": "https://isabisystems.com/og-image.png",
     "sameAs": [
         "https://github.com/HusseinBdeir",
@@ -140,7 +140,7 @@ ORG_JSONLD = _json.dumps({
         "name": "ISABI Systems",
         "alternateName": ["ISABI", "isabisystems"],
         "url": "https://isabisystems.com/",
-        "logo": "https://isabisystems.com/icon-512.png?v=6.40",
+        "logo": "https://isabisystems.com/icon-512.png?v=6.41",
         "slogan": "The ERP Your Group Actually Runs On"
     },
     "email": "hbdeir@isabisystems.com",
@@ -226,12 +226,15 @@ SOFTWARE_JSONLD = _json.dumps({
     ],
     "video": {
         "@type": "VideoObject",
+        "@id": "https://isabisystems.com/#tour-video",
         "name": "ISABI Systems 90-Second Product Tour",
         "description": "Walkthrough of the ISABI Command Center across six industries, double-entry books, printable bilingual statements, executive dashboards, Watchdogs, Ask ISABI AI with citations, and offline POS and gate kiosks.",
         "thumbnailUrl": "https://isabisystems.com/isabi-tour-poster.jpg",
         "contentUrl": "https://isabisystems.com/isabi-tour.mp4",
-        "uploadDate": "2026-11-24",
-        "duration": "PT1M31S"
+        "uploadDate": "2026-11-24T02:46:51+02:00",
+        "duration": "PT1M31S",
+        "inLanguage": "en",
+        "publisher": {"@id": "https://isabisystems.com/#org"}
     }
 }, ensure_ascii=False)
 HEAD = (HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD)
