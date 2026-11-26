@@ -26,6 +26,9 @@
     batchPreset: 'auto',
     batchRawText: '',
     batchRows: [],
+    batchApplyVat11: false,
+    batchSourceMeta: null,
+    batchParseGen: 0,
     batchEngineLabel: 'Hybrid AI + Deterministic Math',
     hldMatcherOpen: false,
     hldMatches: null,
@@ -1299,6 +1302,50 @@
   }
 
   // ==================== PHASE 3: MULTI-ROW BATCH INTAKE STUDIO ====================
+  const HOSP_DEPT_BUCKETS = [
+    { key: 'Kitchen & Venue Supplies', category: 'Kitchen & Venue Supplies', subcategory: 'Kitchen & Food', zeroVat: false },
+    { key: 'Bar & Beverage Stock', category: 'Bar & Beverage Stock', subcategory: 'Beverage Stock', zeroVat: false },
+    { key: 'Housekeeping & Amenities', category: 'Housekeeping & Amenities', subcategory: 'Linens & Amenities', zeroVat: false },
+    { key: 'Maintenance & Parts', category: 'Repairs and Maintenance', subcategory: 'Parts & Equipment', zeroVat: false },
+    { key: 'Fuel & Energy', category: 'Fuel', subcategory: 'Diesel', zeroVat: true },
+    { key: 'Staff & Operations', category: 'Staff & Social Security', subcategory: 'Tips & Casual Crew', zeroVat: true }
+  ];
+
+  function classifyHospitalityDeptLine(desc) {
+    const s = String(desc || '').trim();
+    if (!s) return 'Maintenance & Parts';
+    if (/(?:\b(?:diesel|mazout|fuel|generator\s*fuel|benzine?|solar|kWh|gasoline)\b|مازوت)/i.test(s)) {
+      return 'Fuel & Energy';
+    }
+    if (/(?:\b(?:tips?|gratuity|gratuities|service\s*charge|casual\s*crew|valet|lifeguard|waiter|staff|worker)\b|إكرامية)/i.test(s)) {
+      return 'Staff & Operations';
+    }
+    if (/(?:\b(?:bar|beverage|drinks?|wine|spirits|liquor|beer|whisky|vodka|gin|soda|soft\s*drink|juice|water|sparkling|espresso|coffee|syrup)\b)/i.test(s)) {
+      return 'Bar & Beverage Stock';
+    }
+    if (/(?:\b(?:linen|towels?|bathrobe|bedding|sheet|amenity|amenities|soap|shampoo|housekeeping|detergent|chlorine|pool\s*chem|toilet|tissue|sanitiz|laundry)\b)/i.test(s)) {
+      return 'Housekeeping & Amenities';
+    }
+    if (/(?:\b(?:kitchen|sea\s*bass|calamari|shrimp|fish|salmon|meat|chicken|beef|produce|veg|vegetable|fruit|cheese|dairy|olive|flour|sugar|bread|pastry|banquet|catering|food)\b)/i.test(s)) {
+      return 'Kitchen & Venue Supplies';
+    }
+    return 'Maintenance & Parts';
+  }
+
+  function isHspZeroVatDeptRow(r, indName) {
+    if (indName !== 'Hospitality & Resorts' || !r) return false;
+    if (r.dept === 'Fuel & Energy' || r.dept === 'Staff & Operations') return true;
+    return /(?:\b(?:diesel|mazout|tips?|gratuity|gratuities)\b|مازوت)/i.test(String(r.description || ''));
+  }
+
+  function computeBatchRowTotals(r, indName, applyVat11) {
+    const netUsd = round2(Number((r && r.lineTotal) || 0));
+    const exempt = isHspZeroVatDeptRow(r, indName);
+    const vatUsd = (!exempt && applyVat11 && indName === 'Hospitality & Resorts') ? round2(netUsd * 0.11) : 0;
+    const totalUsd = round2(netUsd + vatUsd);
+    return { netUsd, vatUsd, totalUsd, exempt };
+  }
+
   const BATCH_SAMPLES = {
     'Manufacturing': {
       title: 'Multi-Part Fleet & Warehouse Supplier Invoice',
@@ -1310,12 +1357,13 @@
       ].join('\n')
     },
     'Hospitality & Resorts': {
-      title: 'Resort Kitchen, Bar & Generator Multi-Line Intake',
-      targetLabel: 'Hospitality Expenses (0% VAT on Diesel)',
+      title: 'Resort Multi-Department Supplier Invoice Split',
+      targetLabel: 'Multi-Dept Expenses (0% Never VAT on Diesel & Tips)',
       text: [
         '2026-11-06 | Fresh Sea Bass & Calamari Kitchen Delivery | Qty: 18 | Unit: $19.50 | Supplier: Beirut Marine',
-        '2026-11-06 | Resort Generator Excised Diesel Refill | Qty: 600 | Unit: $0.92 | Supplier: Coral Fuel',
-        '2026-11-06 | Sparkling Beverage Cases | Qty: 12 | Unit: $22.00 | Supplier: Boissons Liban'
+        '2026-11-06 | Sparkling Beverage Cases & Bar Mixers | Qty: 12 | Unit: $22.00 | Supplier: Boissons Liban',
+        '2026-11-06 | Cabana Poolside Towels & Amenities Pack | Qty: 20 | Unit: $14.00 | Supplier: Levant Linens',
+        '2026-11-06 | Resort Generator Excised Diesel Refill | Qty: 600 | Unit: $0.92 | Supplier: Coral Fuel'
       ].join('\n')
     },
     'Automotive & Heavy Trading': {
@@ -1388,7 +1436,8 @@
       const matchedParty = rankedSup.length ? rankedSup[0].label : sanitizeOutward(rawParty);
 
       const descSeg = segs.find(s => !/^(202\d-\d{2}-\d{2}|qty|unit|supplier|party)/i.test(s)) || segs[0] || `Line ${i + 1}`;
-      const isHspZeroVat = indName === 'Hospitality & Resorts' && /diesel|tip|gratuities|مازوت/i.test(descSeg);
+      const dept = indName === 'Hospitality & Resorts' ? classifyHospitalityDeptLine(descSeg) : '';
+      const isHspZeroVat = isHspZeroVatDeptRow({ dept, description: descSeg }, indName);
       const lineTotal = round2(qty * unitCost);
 
       return {
@@ -1397,10 +1446,11 @@
         date: rowDate,
         description: sanitizeOutward(descSeg),
         counterparty: matchedParty,
+        dept,
         qty: round2(qty),
         unitPrice: round2(unitCost),
         lineTotal,
-        taxNote: isHspZeroVat ? '0% VAT (Diesel/Tips)' : 'Standard'
+        taxNote: isHspZeroVat ? '0% Never VAT' : 'Standard'
       };
     });
   }
@@ -1437,33 +1487,88 @@
     return candidate;
   }
 
-  function openBatchIntakeModal(initialText) {
-    if (D && !canUseBatchIntake()) {
-      if (typeof D.toast === 'function') D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
+  function openBatchIntakeModal(initialText, metaOpts) {
+    if (!D || (D.STATE && D.STATE.kioskLocked) || !canUseBatchIntake() || (D.canEnterForm && !D.canEnterForm('expense'))) {
+      if (D && typeof D.toast === 'function') D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
       return;
     }
+    const opts = (metaOpts && typeof metaOpts === 'object') ? metaOpts : {};
     EDGE_STATE.batchOpen = true;
-    const activeInd = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
-      ? D.getActiveIndustry(D.STATE.company)
+    const authCo = resolveAuthorizedBatchCompany();
+    const coKey = (D.COMPANY_KEY_BY_NAME && authCo && D.COMPANY_KEY_BY_NAME[authCo]) || (D.STATE && D.STATE.company);
+    const activeInd = (D && typeof D.getActiveIndustry === 'function')
+      ? D.getActiveIndustry(coKey)
       : 'Manufacturing';
     const preset = BATCH_SAMPLES[activeInd] || BATCH_SAMPLES['Manufacturing'];
-    if (typeof initialText === 'string' && initialText.trim()) {
+    EDGE_STATE.batchApplyVat11 = Boolean(opts.applyVat11);
+    EDGE_STATE.batchSourceMeta = (opts.ref || opts.invoiceTotal || opts.supplier || opts.attObj)
+      ? {
+          ref: sanitizeOutward(opts.ref || ''),
+          invoiceTotal: Number(opts.invoiceTotal || 0),
+          supplier: sanitizeOutward(opts.supplier || ''),
+          date: opts.date || '',
+          attObj: opts.attObj || null
+        }
+      : null;
+
+    if (Array.isArray(opts.preparsedRows) && opts.preparsedRows.length) {
+      const supPool = (D.SEED && D.SEED.records && D.SEED.records.suppliers)
+        ? D.SEED.records.suppliers.filter(s => s && !s.voided).map(s => s.name).filter(Boolean)
+        : [];
+      EDGE_STATE.batchRows = opts.preparsedRows.map((pr, idx) => {
+        const dt = pr.date || opts.date || ((D && typeof D.todayISO === 'function') ? D.todayISO() : '2026-11-06');
+        const desc = sanitizeOutward(pr.description || `Item ${idx + 1}`);
+        const rawParty = pr.counterparty || opts.supplier || 'General Vendor';
+        const rankedSup = rankCandidatesByScoreAndFreq(supPool.slice(0, 300), rawParty, 'supplier', 0.72);
+        const party = rankedSup.length ? rankedSup[0].label : sanitizeOutward(rawParty);
+        const q = round2(Number(pr.qty || 1) || 1);
+        const u = round2(Number(pr.unitPrice || 0) || 0);
+        const dept = activeInd === 'Hospitality & Resorts' ? (pr.dept || classifyHospitalityDeptLine(desc)) : '';
+        const exempt = isHspZeroVatDeptRow({ dept, description: desc }, activeInd);
+        return {
+          selected: true,
+          rowNo: idx + 1,
+          date: dt,
+          description: desc,
+          counterparty: party,
+          dept,
+          qty: q,
+          unitPrice: u,
+          lineTotal: round2(q * u),
+          taxNote: exempt ? '0% Never VAT' : 'Standard'
+        };
+      });
+      EDGE_STATE.batchRawText = EDGE_STATE.batchRows.map(r => `${r.date} | ${r.description} | Qty: ${r.qty} | Unit: $${r.unitPrice.toFixed(2)} | Supplier: ${r.counterparty}`).join('\n');
+    } else if (typeof initialText === 'string' && initialText.trim()) {
       EDGE_STATE.batchRawText = initialText.trim();
-    } else if (!EDGE_STATE.batchRawText) {
-      EDGE_STATE.batchRawText = demoOnly(preset.text, '');
+      EDGE_STATE.batchRows = parseBatchTextToRows(EDGE_STATE.batchRawText, activeInd);
+    } else {
+      if (!EDGE_STATE.batchRawText) EDGE_STATE.batchRawText = demoOnly(preset.text, '');
+      EDGE_STATE.batchRows = parseBatchTextToRows(EDGE_STATE.batchRawText, activeInd);
     }
-    EDGE_STATE.batchRows = parseBatchTextToRows(EDGE_STATE.batchRawText, activeInd);
     renderBatchIntakeModalDom();
   }
 
-  function closeBatchIntakeModal() {
+  function resetBatchIntakeState() {
+    EDGE_STATE.batchParseGen = (EDGE_STATE.batchParseGen || 0) + 1;
     EDGE_STATE.batchOpen = false;
+    EDGE_STATE.batchRawText = '';
+    EDGE_STATE.batchRows = [];
+    EDGE_STATE.batchApplyVat11 = false;
+    EDGE_STATE.batchSourceMeta = null;
     const m = $('aiBatchIntakeModal');
-    if (m) m.hidden = true;
+    if (m) {
+      m.hidden = true;
+      m.innerHTML = '';
+    }
+  }
+
+  function closeBatchIntakeModal() {
+    resetBatchIntakeState();
   }
 
   function commitSelectedBatchRows() {
-    if (!D || !canUseBatchIntake()) {
+    if (!D || (D.STATE && D.STATE.kioskLocked) || !canUseBatchIntake() || (D.canEnterForm && !D.canEnterForm('expense'))) {
       if (D && typeof D.toast === 'function') {
         D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
       }
@@ -1496,35 +1601,80 @@
 
     const batchEntropy = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     const postedRecs = [];
+    const meta = EDGE_STATE.batchSourceMeta || null;
+    const sourceRef = (meta && meta.ref) || '';
+    const applyVat11 = Boolean(EDGE_STATE.batchApplyVat11 && activeInd === 'Hospitality & Resorts');
 
     if (D.STATE && D.STATE.customRecords) {
       if (!Array.isArray(D.STATE.customRecords.expenses)) D.STATE.customRecords.expenses = [];
       selected.forEach((r, idx) => {
         const recId = `ai_batch_${batchEntropy}_${idx}`;
+        const bucket = (activeInd === 'Hospitality & Resorts')
+          ? (HOSP_DEPT_BUCKETS.find(b => b.key === r.dept) || HOSP_DEPT_BUCKETS.find(b => b.key === classifyHospitalityDeptLine(r.description)) || HOSP_DEPT_BUCKETS[3])
+          : null;
+        const calc = computeBatchRowTotals(r, activeInd, applyVat11);
+        const deptName = bucket ? bucket.key : '';
+        const hasVatLeg = calc.vatUsd > 0;
+        const supName = r.counterparty || (meta && meta.supplier) || 'General Vendor';
+        const nowIso = new Date().toISOString();
+        const expName = `EXP-${r.date.replace(/-/g, '')}-BATCH-${batchEntropy.slice(-4).toUpperCase()}-${idx + 1}`;
         const expRec = {
           id: recId,
-          name: `EXP-${r.date.replace(/-/g, '')}-BATCH-${batchEntropy.slice(-4).toUpperCase()}-${idx + 1}`,
+          name: expName,
           date: r.date,
           rep_date: r.date,
           company: co,
           industry: activeInd,
-          category: activeInd === 'Automotive & Heavy Trading' ? 'Shipping & Customs' : (activeInd === 'Hospitality & Resorts' ? 'Kitchen & Venue Supplies' : 'Maintenance & Parts'),
-          subcategory: 'Batch Intake',
-          supplier: r.counterparty,
+          category: bucket ? bucket.category : (activeInd === 'Automotive & Heavy Trading' ? 'Shipping & Customs' : 'Maintenance & Parts'),
+          subcategory: bucket ? bucket.subcategory : 'Batch Intake',
+          ...(deptName ? { department: deptName } : {}),
+          ...(sourceRef ? { split_parent_ref: sourceRef } : {}),
+          supplier: supName,
           item_name: r.description,
-          item_summary: `${r.description} (${r.qty} × ${fmtUSD(r.unitPrice, 2)})`,
+          item_summary: `${r.description} (${r.qty} × ${fmtUSD(r.unitPrice, 2)}${hasVatLeg ? ' + VAT' : ''})`,
           qty: r.qty,
           unit_price: r.unitPrice,
-          amount: r.lineTotal,
-          total_ttc: r.lineTotal,
-          vat_amount: 0,
+          pre_vat_amount: calc.netUsd,
+          vat_amount: calc.vatUsd,
+          total_ttc: calc.totalUsd,
+          amount: calc.netUsd,
+          ...(hasVatLeg ? { has_vat_leg: true } : {}),
           method: 'Credit',
-          notes: sanitizeOutward(`AI Batch Intake: ${r.description}`),
+          notes: sanitizeOutward(`AI Batch Intake${deptName ? ' [' + deptName + ']' : ''}${sourceRef ? ' · Ref ' + sourceRef : ''}: ${r.description}`),
           source: 'app',
-          modified_at: new Date().toISOString()
+          modified_at: nowIso
         };
         D.STATE.customRecords.expenses.unshift(expRec);
         postedRecs.push(expRec);
+        if (hasVatLeg) {
+          const vatRec = {
+            id: `${recId}_vat`,
+            parent_expense_id: recId,
+            name: `${expName}-VAT`,
+            date: r.date,
+            rep_date: r.date,
+            company: co,
+            industry: activeInd,
+            category: 'Input VAT 11%',
+            subcategory: bucket ? bucket.subcategory : 'Batch Intake',
+            ...(deptName ? { department: deptName } : {}),
+            ...(sourceRef ? { vat_of_split_ref: sourceRef } : {}),
+            supplier: supName,
+            item_name: `11% VAT · ${r.description}`,
+            qty: 1,
+            unit_price: calc.vatUsd,
+            pre_vat_amount: 0,
+            vat_amount: calc.vatUsd,
+            total_ttc: calc.vatUsd,
+            amount: calc.vatUsd,
+            method: 'VAT',
+            notes: sanitizeOutward(`11% Input VAT for ${expName}${sourceRef ? ' · Ref ' + sourceRef : ''}`),
+            source: 'app',
+            modified_at: nowIso
+          };
+          D.STATE.customRecords.expenses.unshift(vatRec);
+          postedRecs.push(vatRec);
+        }
       });
       if (typeof D.applyCustomRecordsToSeed === 'function') D.applyCustomRecordsToSeed();
       if (typeof D.saveLocalAuthAndRecords === 'function') D.saveLocalAuthAndRecords();
@@ -1532,10 +1682,14 @@
         postedRecs.forEach(rec => { D.postRecordToLocalApi('expenses', rec); });
       }
       if (typeof D.syncWithCloud === 'function') D.syncWithCloud(true);
+      try {
+        const em = $('entryModal');
+        if (em && !em.hidden && typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+      } catch (_) {}
       if (typeof D.renderApp === 'function') D.renderApp();
     }
 
-    closeBatchIntakeModal();
+    resetBatchIntakeState();
     if (typeof D.toast === 'function') {
       D.toast(`${selected.length} ${tr('rows staged & posted to deterministic ledger')}`, 'ok');
     }
@@ -1556,70 +1710,109 @@
     }
     modal.hidden = false;
 
-    const activeInd = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
-      ? D.getActiveIndustry(D.STATE.company)
+    const authCo = resolveAuthorizedBatchCompany();
+    const coKey = (D && D.COMPANY_KEY_BY_NAME && authCo && D.COMPANY_KEY_BY_NAME[authCo]) || (D && D.STATE && D.STATE.company);
+    const activeInd = (D && typeof D.getActiveIndustry === 'function')
+      ? D.getActiveIndustry(coKey)
       : 'Manufacturing';
+    const isHospitality = activeInd === 'Hospitality & Resorts';
     const preset = BATCH_SAMPLES[activeInd] || BATCH_SAMPLES['Manufacturing'];
     const rows = EDGE_STATE.batchRows || [];
     const selRows = rows.filter(r => r.selected);
-    // 100% Deterministic sticky tfoot math
+    const applyVat11 = Boolean(isHospitality && EDGE_STATE.batchApplyVat11);
+    const meta = EDGE_STATE.batchSourceMeta || null;
+
+    // 100% Deterministic sticky tfoot math (0% Never VAT enforced on Fuel & Energy and Staff & Operations)
     const sumQty = round2(selRows.reduce((a, r) => a + Number(r.qty || 0), 0));
-    const sumTotal = round2(selRows.reduce((a, r) => a + Number(r.lineTotal || 0), 0));
+    let sumNet = 0;
+    let sumVat = 0;
+    let sumPayable = 0;
+    selRows.forEach(r => {
+      const c = computeBatchRowTotals(r, activeInd, applyVat11);
+      sumNet = round2(sumNet + c.netUsd);
+      sumVat = round2(sumVat + c.vatUsd);
+      sumPayable = round2(sumPayable + c.totalUsd);
+    });
+    const invTot = (meta && meta.invoiceTotal > 0) ? round2(meta.invoiceTotal) : 0;
+    const invDiff = invTot > 0 ? round2(sumPayable - invTot) : 0;
 
     modal.innerHTML = `
       <div class="aie-modal-card" role="dialog" aria-modal="true" aria-labelledby="aieBatchModalTitle">
         <div class="aie-modal-hdr">
           <div class="aie-title-wrap">
-            <span class="aie-pill">${ic('layers')} ${esc(tr('AI Multi-Row Batch Intake'))}</span>
-            <strong id="aieBatchModalTitle">${esc(tr(preset.title))}</strong>
-            <span class="aie-pill is-good">${esc(tr(preset.targetLabel))}</span>
+            <span class="aie-pill">${ic('layers')} <span>AI Multi-Row Batch Intake</span></span>
+            <strong id="aieBatchModalTitle">${esc(preset.title)}</strong>
+            <span class="aie-pill is-good">${esc(preset.targetLabel)}</span>
           </div>
-          <button type="button" class="aie-btn" id="aieBatchCloseBtn" aria-label="${esc(tr('Close'))}">✕</button>
+          <button type="button" class="aie-btn" id="aieBatchCloseBtn" aria-label="Close">✕</button>
         </div>
         <div class="aie-modal-body">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-            <span style="font-size:12px;font-weight:600">${esc(tr('Paste invoice lines, BOQ items, shipment pack costs, or carrier bordereau rows:'))}</span>
+            <span style="font-size:12px;font-weight:600">Paste invoice lines, BOQ items, shipment pack costs, or carrier bordereau rows:</span>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="aie-btn" id="aieBatchLoadSampleBtn">${esc(tr('Load Industry Sample'))}</button>
-              <button type="button" class="aie-btn is-brass" id="aieBatchParseBtn">${ic('sparkles')} ${esc(tr('Extract Rows'))}</button>
+              <button type="button" class="aie-btn" id="aieBatchLoadSampleBtn">Load Industry Sample</button>
+              <button type="button" class="aie-btn is-brass" id="aieBatchParseBtn">${ic('sparkles')} <span>Extract Rows</span></button>
             </div>
           </div>
-          <textarea class="aie-batch-textarea" id="aieBatchTextarea" placeholder="${esc(preset.text)}" aria-label="${esc(tr('Multi-row source lines'))}">${esc(EDGE_STATE.batchRawText)}</textarea>
+          <textarea class="aie-batch-textarea" id="aieBatchTextarea" placeholder="${esc(preset.text)}" aria-label="Multi-row source lines">${esc(EDGE_STATE.batchRawText)}</textarea>
+          ${isHospitality ? `
+            <div class="aie-batch-vat-bar">
+              <label class="aie-batch-vat-label" for="aieBatchApplyVatChk">
+                <input type="checkbox" id="aieBatchApplyVatChk" ${applyVat11 ? 'checked' : ''}>
+                <span>Apply 11% VAT to taxable departments (Fuel/Diesel &amp; Staff Tips stay $0.00 Never VAT)</span>
+              </label>
+              <div class="aie-batch-recon" id="aieBatchReconSummary">
+                <span><span>Net</span> <span data-no-i18n="1">${fmtUSD(sumNet, 2)}</span> + <span>VAT</span> <span data-no-i18n="1">${fmtUSD(sumVat, 2)}</span> = <b data-no-i18n="1">${fmtUSD(sumPayable, 2)}</b></span>
+                ${invTot > 0 ? `<span class="aie-pill ${Math.abs(invDiff) <= 0.05 ? 'is-good' : 'is-warn'}"><span style="display:inline">${Math.abs(invDiff) <= 0.05 ? `<span>Matches Bill</span> <span data-no-i18n="1">${fmtUSD(invTot, 2)}</span>` : `<span>Bill</span> <span data-no-i18n="1">${fmtUSD(invTot, 2)} (${invDiff > 0 ? '+' : ''}${fmtUSD(invDiff, 2)})</span>`}</span></span>` : ''}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="table-wrap" style="margin-top:12px;max-height:320px">
             <table class="ledger-table" id="aieBatchStagingTable">
               <thead>
                 <tr>
-                  <th>${esc(tr('Include'))}</th>
-                  <th>${esc(tr('Date'))}</th>
-                  <th>${esc(tr('Description / SKU'))}</th>
-                  <th>${esc(tr('Matched Counterparty'))}</th>
-                  <th class="r">${esc(tr('Qty'))}</th>
-                  <th class="r">${esc(tr('Unit Price ($)'))}</th>
-                  <th class="r">${esc(tr('Line Total ($)'))}</th>
-                  <th>${esc(tr('Tax / Rule'))}</th>
+                  <th>Include</th>
+                  <th>Date</th>
+                  <th>Description / SKU</th>
+                  ${isHospitality ? `<th>Department</th>` : ''}
+                  <th>Matched Counterparty</th>
+                  <th class="r">Qty</th>
+                  <th class="r">Unit Price ($)</th>
+                  <th class="r">${isHospitality ? 'Total ($)' : 'Line Total ($)'}</th>
+                  <th>Tax / Rule</th>
                 </tr>
               </thead>
               <tbody>
-                ${rows.length ? rows.map((r, idx) => `
+                ${rows.length ? rows.map((r, idx) => {
+                  const rc = computeBatchRowTotals(r, activeInd, applyVat11);
+                  const rowDept = r.dept || (isHospitality ? classifyHospitalityDeptLine(r.description) : '');
+                  const pillHtml = rc.exempt
+                    ? `<span class="aie-exempt-pill">0% Never VAT</span>`
+                    : (rc.vatUsd > 0
+                        ? `<span class="aie-pill is-warn">+11% <span>VAT</span> <span data-no-i18n="1">(${fmtUSD(rc.vatUsd, 2)})</span></span>`
+                        : `<span class="aie-pill">${esc(r.taxNote || 'Standard')}</span>`);
+                  return `
                   <tr>
-                    <td><input type="checkbox" data-aie-batch-chk="${idx}" ${r.selected ? 'checked' : ''} aria-label="${esc(tr('Select row'))}"></td>
+                    <td><input type="checkbox" data-aie-batch-chk="${idx}" ${r.selected ? 'checked' : ''} aria-label="Select row"></td>
                     <td class="mono" data-no-i18n="1">${esc(r.date)}</td>
                     <td data-no-i18n="1"><strong>${esc(r.description)}</strong></td>
+                    ${isHospitality ? `<td><select class="aie-dept-select" data-aie-batch-dept="${idx}" aria-label="Department">${HOSP_DEPT_BUCKETS.map(b => `<option value="${esc(b.key)}" ${rowDept === b.key ? 'selected' : ''}>${esc(b.key)}</option>`).join('')}</select></td>` : ''}
                     <td data-no-i18n="1">${esc(r.counterparty)}</td>
                     <td class="r mono" data-no-i18n="1">${fmtNum(r.qty, 2)}</td>
                     <td class="r mono" data-no-i18n="1">${fmtUSD(r.unitPrice, 2)}</td>
-                    <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.lineTotal, 2)}</strong></td>
-                    <td><span class="aie-pill ${r.taxNote.includes('0%') ? 'is-good' : ''}">${esc(tr(r.taxNote))}</span></td>
+                    <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(rc.totalUsd, 2)}</strong></td>
+                    <td>${pillHtml}</td>
                   </tr>
-                `).join('') : `<tr><td colspan="8" style="text-align:center;padding:16px">${esc(tr('Paste lines above and click Extract Rows'))}</td></tr>`}
+                `;
+                }).join('') : `<tr><td colspan="${isHospitality ? 9 : 8}" style="text-align:center;padding:16px">Paste lines above and click Extract Rows</td></tr>`}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="4"><strong>${esc(tr('DETERMINISTIC STAGED TOTAL'))} (${selRows.length})</strong></td>
-                  <td class="r mono"><strong>${fmtNum(sumQty, 2)}</strong></td>
-                  <td></td>
-                  <td class="r mono"><strong>${fmtUSD(sumTotal, 2)}</strong></td>
+                  <td colspan="${isHospitality ? 5 : 4}"><strong>DETERMINISTIC STAGED TOTAL</strong> <span data-no-i18n="1">(${selRows.length})</span></td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtNum(sumQty, 2)}</strong></td>
+                  <td class="r mono">${isHospitality && sumVat > 0 ? `<small><span>VAT</span> <span data-no-i18n="1">${fmtUSD(sumVat, 2)}</span></small>` : ''}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(sumPayable, 2)}</strong></td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -1627,10 +1820,10 @@
           </div>
         </div>
         <div class="aie-modal-foot">
-          <span style="font-size:11.8px">${esc(tr('Counterparties ranked via usage frequency; totals verified deterministically before ledger post.'))}</span>
+          <span style="font-size:11.8px">Counterparties ranked via usage frequency; totals verified deterministically before ledger post.</span>
           <div style="display:flex;gap:8px;align-items:center">
-            <button type="button" class="aie-btn" id="aieBatchCancelBtn">${esc(tr('Cancel'))}</button>
-            <button type="button" class="aie-btn is-brass" id="aieBatchCommitBtn" ${selRows.length ? '' : 'disabled'}>${ic('check')} ${esc(tr('Post Selected Rows'))} (${selRows.length})</button>
+            <button type="button" class="aie-btn" id="aieBatchCancelBtn">Cancel</button>
+            <button type="button" class="aie-btn is-brass" id="aieBatchCommitBtn" ${selRows.length ? '' : 'disabled'}>${ic('check')} <span>Post Selected Rows</span> <span data-no-i18n="1">(${selRows.length})</span></button>
           </div>
         </div>
       </div>
@@ -1642,13 +1835,22 @@
     const parseBtn = modal.querySelector('#aieBatchParseBtn');
     const commitBtn = modal.querySelector('#aieBatchCommitBtn');
     const ta = modal.querySelector('#aieBatchTextarea');
+    const vatChk = modal.querySelector('#aieBatchApplyVatChk');
 
     if (closeBtn) closeBtn.onclick = closeBatchIntakeModal;
     if (cancelBtn) cancelBtn.onclick = closeBatchIntakeModal;
     modal.onclick = ev => { if (ev.target === modal) closeBatchIntakeModal(); };
+    if (vatChk) {
+      vatChk.addEventListener('change', () => {
+        EDGE_STATE.batchApplyVat11 = Boolean(vatChk.checked);
+        renderBatchIntakeModalDom();
+      });
+    }
 
     if (sampleBtn) {
       sampleBtn.onclick = () => {
+        EDGE_STATE.batchParseGen = (EDGE_STATE.batchParseGen || 0) + 1;
+        EDGE_STATE.batchSourceMeta = null;
         EDGE_STATE.batchRawText = preset.text;
         EDGE_STATE.batchRows = parseBatchTextToRows(EDGE_STATE.batchRawText, activeInd);
         renderBatchIntakeModalDom();
@@ -1656,26 +1858,34 @@
     }
     if (parseBtn && ta) {
       parseBtn.onclick = async () => {
+        const myGen = (EDGE_STATE.batchParseGen || 0) + 1;
+        EDGE_STATE.batchParseGen = myGen;
+        EDGE_STATE.batchSourceMeta = null;
         EDGE_STATE.batchRawText = ta.value;
         EDGE_STATE.batchRows = parseBatchTextToRows(ta.value, activeInd);
         const cloud = await callAiEdgeJson(
           'batch_intake',
           `Parse lines into strict JSON {"rows":[{"date":"YYYY-MM-DD","description":"","counterparty":"","qty":1,"unitPrice":0}]}:\n${ta.value}`
         );
+        if (myGen !== EDGE_STATE.batchParseGen || !EDGE_STATE.batchOpen) return;
         if (cloud && Array.isArray(cloud.rows) && cloud.rows.length) {
           EDGE_STATE.batchRows = cloud.rows.map((cr, idx) => {
             const q = Number(cr.qty || 1);
             const u = Number(cr.unitPrice || 0);
+            const desc = sanitizeOutward(cr.description || `Item ${idx + 1}`);
+            const dept = activeInd === 'Hospitality & Resorts' ? classifyHospitalityDeptLine(desc) : '';
+            const exempt = isHspZeroVatDeptRow({ dept, description: desc }, activeInd);
             return {
               selected: true,
               rowNo: idx + 1,
               date: cr.date || '2026-11-06',
-              description: sanitizeOutward(cr.description || `Item ${idx + 1}`),
+              description: desc,
               counterparty: sanitizeOutward(cr.counterparty || 'Vendor'),
+              dept,
               qty: round2(q),
               unitPrice: round2(u),
               lineTotal: round2(q * u),
-              taxNote: 'Standard'
+              taxNote: exempt ? '0% Never VAT' : 'Standard'
             };
           });
         }
@@ -1691,7 +1901,20 @@
         }
       });
     });
+    modal.querySelectorAll('[data-aie-batch-dept]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const idx = Number(sel.getAttribute('data-aie-batch-dept'));
+        if (EDGE_STATE.batchRows[idx]) {
+          EDGE_STATE.batchRows[idx].dept = sel.value;
+          EDGE_STATE.batchRows[idx].taxNote = isHspZeroVatDeptRow(EDGE_STATE.batchRows[idx], activeInd) ? '0% Never VAT' : 'Standard';
+          renderBatchIntakeModalDom();
+        }
+      });
+    });
     if (commitBtn) commitBtn.onclick = commitSelectedBatchRows;
+    if (curLang() !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
   }
 
   // ==================== PHASE 4: BEHAVIORAL & PATTERN AI SENTINELS ====================
@@ -6458,6 +6681,7 @@
   }
 
   function resetTransientDemoInputs() {
+    resetBatchIntakeState();
     EDGE_STATE.insReconText = '';
     EDGE_STATE.insReconRows = null;
     EDGE_STATE.mfgReconText = '';

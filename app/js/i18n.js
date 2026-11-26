@@ -2441,7 +2441,7 @@
       "Commissary & Recipe BOM Controller": "مراقب المطبخ المركزي وتكاليف الوصفات",
       "Commissary / Store": "المستودع المركزي / المخزن",
       "Commissary Stock, Consumption Ratio & Recipe BOM Margin": "مخزون المطبخ ونسبة الاستهلاك وهامش الوصفات",
-      "Commission": "عمولة",
+      "Commission": "العمولة",
       "Commission Agreement": "اتفاقية عمولة",
       "Commission Due": "العمولات المستحقة",
       "Commission Earned ($)": "العمولة المكتسبة ($)",
@@ -3054,7 +3054,7 @@
       "Delete saved scenario": "حذف السيناريو المحفوظ",
       "Delete saved treasury sweep": "حذف التحويل النقدي المحفوظ",
       "Deliv": "توصيل",
-      "Delivered": "مسلّم",
+      "Delivered": "مُسلّم",
       "Delivered (Sale Completed)": "تم التسليم (بيع مكتمل)",
       "Delivered Concrete Tickets Priced All-In (>=$55/m³) with $0.00 Separate Haul Fee": "إيصالات الباطون الواصل المسعّرة شاملاً (>=$55/م³) مع أجرة نقل منفصلة $0.00",
       "Delivered Volume (m³)": "الحجم المسلّم (م³)",
@@ -7789,7 +7789,7 @@
       "No matching rows for": "لا توجد صفوف مطابقة لـ",
       "Active Rate Rules": "اتفاقيات الأسعار السارية",
       "Transport Loads": "نقلات النقل",
-      "Supplier & Hauler 360° Master": "البطاقة الشاملة للمورد والناقل 360°",
+      "Supplier & Hauler 360° Master": "ملف المورد والناقل الشامل 360°",
       "Net 3-Leg AP Balance": "صافي رصيد الذمم الدائنة (3 فروع)",
       "3-Leg AP": "ذمم 3 فروع",
       "3-LEG AP": "ذمم 3 فروع",
@@ -7823,7 +7823,7 @@
       "Lifetime Sales & Loads": "إجمالي المبيعات والنقلات",
       "Scoped Sales & Loads": "مبيعات ونقلات الفترة",
       "Fleet & Agreements": "الأسطول والاتفاقيات",
-      "Customer 360° Master": "البطاقة الشاملة للعميل 360°",
+      "Customer 360° Master": "ملف العميل الشامل 360°",
       "+ New Raw Ticket": "+ تذكرة مواد خام جديدة",
       "360° Customer Account": "حساب العميل 360°",
       "360° Supplier Account": "حساب المورد 360°",
@@ -9303,7 +9303,7 @@
       "Search supplier, part, bill #, note...": "ابحث عن مورّد أو قطعة أو رقم فاتورة أو ملاحظة...",
       "Search tables, forms, reports, clients, plates, or ticket #...": "ابحث في الجداول أو النماذج أو التقارير أو الزبائن أو اللوحات أو رقم الإيصال...",
       "Search truck, plate, owner (freq-ranked)...": "ابحث عن شاحنة أو لوحة أو مالك (مرتب حسب التكرار)...",
-      "Season": "الموسم",
+      "Season": "موسم",
       "Season Label *": "اسم الموسم *",
       "Season Window": "موسم الاشتراك",
       "Seasonal & Freelance Payroll, Suppliers & Resort GL": "رواتب الموسميين والمياومين والموردين وأستاذ المنتجع",
@@ -9505,7 +9505,7 @@
       "Shacman Service Workshop": "ورشة الصيانة والخدمة - Shacman",
       "Shacman VIN Fleet": "أسطول شاحنات Shacman (VIN)",
       "Shacman X3000 17-Char VIN Dossier": "ملف شاحنة Shacman X3000 برقم شاسيه 17 خانة",
-      "Share": "الحصة %",
+      "Share": "الحصة",
       "Share %": "نسبة الحصة %",
       "Share Value ($)": "قيمة الحصة ($)",
       "Share balance card on WhatsApp": "مشاركة بطاقة الرصيد عبر واتساب",
@@ -10917,7 +10917,7 @@
       "Utility deposit refunds or adjustments": "استرداد أو تسوية تأمينات المرافق",
       "Utilization, Running Cost & Cost per Ton": "التشغيل وتكلفة الصيانة والتكلفة لكل طن",
       "VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT": "الوحدات الشاغرة أو قيد التجهيز وتدقيق حصص الملكية /2400",
-      "VAT": "الضريبة (VAT)",
+      "VAT": "الضريبة",
       "VAT & Credit": "الضريبة والائتمان",
       "VAT & OpEx": "الضريبة والمصاريف",
       "VAT & Rent Cutoff Scope": "نطاق قفل الضريبة والإيجارات",
@@ -15359,14 +15359,14 @@
       "Share or copy active rates": "مشاركة الأسعار النشطة أو نسخها",
       "Active rates copied to clipboard": "تم نسخ الأسعار النشطة إلى الحافظة",
       "Could not copy active rates": "تعذّر نسخ الأسعار النشطة",
-      "Active Rate Agreements": "اتفاقيات الأسعار والشروط النشطة",
+      "Active Rate Agreements": "اتفاقيات الأسعار الفعالة",
       "Since": "منذ",
       "Until": "حتى",
-      "All Grades": "كافة الأصناف",
+      "All Grades": "جميع الأصناف",
       "Unsaved edits on this record. Save changes first, or press again to discard and move.": "توجد تعديلات غير محفوظة على هذا السجل. احفظها أولاً أو اضغط مجدداً للتجاهل والانتقال.",
-      "Renewal": "التجديد",
+      "Renewal": "تجديد",
       "Facility": "التسهيل",
-      "APR": "الفائدة السنوية",
+      "APR": "معدل سنوي",
       "Only a supervisor can remove an included alias from a sent mark.": "فقط المشرف يمكنه إزالة اسم بديل مشمول من علامة الإرسال.",
       "Combined aliases:": "الأسماء البديلة المدمجة:",
       "Held separate while marked as sent:": "مُبقى منفصلاً أثناء التعليم كمُرسَل:",
@@ -15537,7 +15537,148 @@
       "Open Balance ($)": "الرصيد المفتوح ($)",
       "VAT ($)": "ض.ق.م ($)",
       "Annual Rent ($)": "الإيجار السنوي ($)",
-      "Partners": "الشركاء"
+      "Partners": "الشركاء",
+      "Batch Payday": "صرف رواتب جماعي",
+      "Payroll Disbursement Grid": "جدول صرف الرواتب",
+      "Payment Date": "تاريخ الدفع",
+      "Default Method": "الطريقة الافتراضية",
+      "Apply All": "تطبيق على الكل",
+      "Batch Note": "ملاحظة الدفعة",
+      "Optional run note (e.g. Saturday payday)...": "ملاحظة اختيارية للدفعة (مثلاً رواتب السبت)...",
+      "Filter staff by name or role...": "ابحث عن الموظف بالاسم أو الدور...",
+      "Check All Due": "تحديد كل المستحق",
+      "Fill 50% Due": "تعبئة 50% من المستحق",
+      "Clear All": "مسح الكل",
+      "Pay USD ($)": "دفع بالدولار ($)",
+      "Pay LBP (L.L.)": "دفع بالليرة (ل.ل.)",
+      "After Pay": "بعد الدفع",
+      "Note...": "ملاحظة...",
+      "No staff members match the active filter.": "لا يوجد موظفون يطابقون التصفية الحالية.",
+      "Confirm posting these duplicate / near-copy vouchers intentionally": "تأكيد ترحيل هذه السندات المكررة أو المتقاربة عن قصد",
+      "Post Vouchers": "ترحيل السندات",
+      "Posting...": "جارٍ الترحيل...",
+      "Same-day dup": "مكرر نفس اليوم",
+      "Near copy": "نسخة متقاربة",
+      "Enter a valid positive amount": "أدخل مبلغاً موجباً صحيحاً",
+      "This date falls inside a closed period.": "هذا التاريخ يقع ضمن فترة مقفلة.",
+      "Your seat does not have permission to post salary runs.": "حسابك لا يملك صلاحية ترحيل دفعات الرواتب.",
+      "No writable company in your seat scope.": "لا توجد شركة متاحة للتعديل ضمن صلاحية حسابك.",
+      "Select at least one staff member with an amount > 0.": "اختر موظفاً واحداً على الأقل بمبلغ أكبر من صفر.",
+      "Duplicate or near-copy salary detected. Review the warning below and tick confirmation to post.": "تم رصد راتب مكرر أو متطابق تقريباً. راجع التنبيه أدناه وحدد التأكيد للترحيل.",
+      "App update required before cloud sync — batch queued locally for automatic replay after refresh.": "يلزم تحديث التطبيق قبل المزامنة السحابية — حُفظت الدفعة محلياً ليتم إرسالها تلقائياً بعد التحديث.",
+      "Batch Payday was rejected by the server.": "رفض الخادم دفعة الرواتب الجماعية.",
+      "Already Paid": "المدفوع مسبقاً",
+      "Net Earned": "صافي المستحق",
+      "Note": "ملاحظة",
+      "Contract salary pending": "راتب العقد قيد التحديد",
+      "No active contract": "لا يوجد عقد سارٍ",
+      "Simulated mid-batch rejection": "رفض محاكى في منتصف الدفعة",
+      "Implied Landed ($/m³)": "التكلفة الواصلة المقدّرة ($/م³)",
+      "Incl.": "شامل",
+      "+ Haul": "+ نقل",
+      "Outward share language": "لغة المشاركة الخارجية",
+      "CIF · Shipping Included": "CIF · الشحن مشمول",
+      "CFR · Shipping Included": "CFR · الشحن مشمول",
+      "DDP · Duty & Freight Included": "DDP · الرسوم والشحن مشمولان",
+      "FOB · Separate Freight": "FOB · شحن منفصل",
+      "FOB · Pending Landed Split": "FOB · بانتظار توزيع التكاليف",
+      "EXW · Buyer Freight": "EXW · شحن على المشتري",
+      "FCA · Buyer Freight": "FCA · شحن على المشتري",
+      "FOB / Contract ($)": "قيمة العقد / FOB ($)",
+      "Freight Basis (Incoterm) *": "أساس الشحن (Incoterm) *",
+      "Supplier Contract Cost ($) *": "تكلفة عقد المورد ($) *",
+      "FOB (Separate Ocean Freight)": "FOB (شحن بحري منفصل)",
+      "CIF (Cost, Insurance & Freight)": "CIF (التكلفة والتأمين والشحن)",
+      "CFR (Cost & Freight Included)": "CFR (التكلفة والشحن مشمولان)",
+      "EXW (Ex Works / Buyer Uplift)": "EXW (تسليم المصنع / الشحن على المشتري)",
+      "DDP (Delivered Duty Paid)": "DDP (مسلّم خالص الرسوم)",
+      "Supplier price excludes ocean shipping; allocate Freight, Customs & Clearance in Landed Add.": "سعر المورد لا يشمل الشحن البحري؛ وزّع الشحن والجمارك والتخليص في الإضافات.",
+      "Ocean shipping included in contract price; Landed Add tracks Customs, Clearance & Port Fees only.": "الشحن البحري مشمول في سعر العقد؛ الإضافات تغطي الجمارك والتخليص ورسوم المرفأ فقط.",
+      "Duty & freight included by supplier; Landed Add typically $0.00.": "الرسوم والشحن مشمولان من المورد؛ الإضافات عادة $0.00.",
+      "Buyer uplift at factory/port: allocate full freight, insurance & customs in Landed Add.": "الاستلام من المصنع أو المرفأ: أضف كامل الشحن والتأمين والجمارك في الإضافات.",
+      "Allocated ocean freight (when FOB), customs duty, port clearance & marine insurance added to capitalized cost": "الشحن البحري الموزّع (عند FOB) والرسوم الجمركية والتخليص والتأمين المضافة للتكلفة",
+      "Capitalized ocean freight, customs duty & port clearance allocated to this serial chassis": "الشحن البحري والجمارك والتخليص المرسملة والمخصصة لهذا الهيكل",
+      "Ex-factory / Free On Board supplier unit contract cost": "تكلفة عقد المورد للوحدة من المصنع أو على ظهر السفينة (FOB)",
+      "Full capitalized import cost (Contract Value + Landed Add)": "التكلفة الاستيرادية المرسملة الكاملة (قيمة العقد + الإضافات)",
+      "Full capitalized inventory cost (supplier contract + allocated freight, customs duty & port clearance)": "تكلفة المخزون المرسملة الكاملة (عقد المورد + الشحن والجمارك والتخليص)",
+      "Full showroom inventory cost basis (FOB + Landed Add)": "أساس تكلفة مخزون الصالة الكامل (FOB + الإضافات)",
+      "Ocean freight or air/land shipping billed outside FOB supplier contract": "الشحن البحري أو البري المفوتر خارج عقد المورد (FOB)",
+      "Supplier contract value per Free On Board or stated Incoterm before port & customs additions": "قيمة عقد المورد وفق FOB أو شرط التسليم قبل إضافات المرفأ والجمارك",
+      "Supplier contract value per stated Incoterm (FOB excludes ocean freight; CIF/CFR include shipping; DDP includes duty & freight)": "قيمة عقد المورد وفق شرط التسليم (FOB يستثني الشحن؛ CIF/CFR يشملان الشحن؛ DDP يشمل الرسوم والشحن)",
+      "Total capitalized freight, customs duty, port clearance and insurance allocated to import units": "إجمالي الشحن والجمارك والتخليص والتأمين المرسمل والموزّع على وحدات الاستيراد",
+      "CIF contract: supplier price includes ocean shipping & marine insurance; local customs and port clearance are tracked separately in Landed Cost.": "عقد CIF: سعر المورد يشمل الشحن البحري والتأمين؛ الرسوم الجمركية والتخليص تُتابع بشكل منفصل.",
+      "CFR contract: supplier price includes ocean freight to port; marine insurance and customs clearance are tracked separately.": "عقد CFR: سعر المورد يشمل الشحن إلى المرفأ؛ التأمين والجمارك يُتابعان بشكل منفصل.",
+      "DDP contract: duty, freight and clearance are included by supplier with zero separate freight uplift.": "عقد DDP: الرسوم والشحن والتخليص مشمولة من المورد دون إضافات شحن منفصلة.",
+      "EXW contract: factory uplift, ocean shipping, insurance and customs clearance are paid separately by buyer.": "عقد EXW: التحميل من المصنع والشحن والتأمين والجمارك يتحملها المشتري بشكل منفصل.",
+      "FCA contract: factory uplift, ocean shipping, insurance and customs clearance are paid separately by buyer.": "عقد FCA: التحميل والشحن والتأمين والجمارك يتحملها المشتري بشكل منفصل.",
+      "FOB contract: ocean freight, customs & clearance are still awaiting full Landed Cost allocation.": "عقد FOB: الشحن والجمارك والتخليص لا تزال بانتظار التوزيع الكامل للتكاليف.",
+      "FOB contract: supplier price covers unit cost only; ocean freight, customs & clearance are allocated in Landed Cost.": "عقد FOB: سعر المورد يغطي الوحدة فقط؛ الشحن والجمارك والتخليص تُوزّع في التكاليف الإضافية.",
+      "0% Never VAT": "0% معفى دائماً من الضريبة",
+      "Apply 11% VAT to taxable departments (Fuel/Diesel & Staff Tips stay $0.00 Never VAT)": "تطبيق 11% ضريبة على الأقسام الخاضعة (المازوت وإكراميات الموظفين تبقى $0.00 معفاة دائماً)",
+      "Bill": "الفاتورة",
+      "Department": "القسم",
+      "Matches Bill": "يطابق الفاتورة",
+      "Kitchen & Venue Supplies": "مستلزمات المطبخ والمرافق",
+      "Bar & Beverage Stock": "مخزون البار والمشروبات",
+      "Housekeeping & Amenities": "التدبير المنزلي والضيافة",
+      "Maintenance & Parts": "الصيانة وقطع الغيار",
+      "Fuel & Energy": "الوقود والطاقة",
+      "Staff & Operations": "الموظفون والتشغيل",
+      "Resort Multi-Department Supplier Invoice Split": "توزيع فاتورة المورد متعددة الأقسام للمنتجع",
+      "Multi-Dept Expenses (0% Never VAT on Diesel & Tips)": "مصاريف متعددة الأقسام (0% على المازوت والإكراميات)",
+      "Group Intercompany Accounting Scope": "نطاق محاسبة الشركات الشقيقة للمجموعة",
+      "Group Intercompany Scope · 14 Operating Entities": "نطاق الشركات الشقيقة للمجموعة · 14 شركة تشغيلية",
+      "100% Eliminated on Consolidation": "تُلغى 100% عند التوحيد",
+      "Tracks 2-sided internal transfers inside the 14 Bdeir Group companies (100% eliminated on Consolidation). Amounts restricted by seat permissions.": "يتابع التحويلات الداخلية ذات الطرفين ضمن شركات مجموعة بدير الـ 14 (تُلغى 100% عند التوحيد). المبالغ مقيدة حسب الصلاحية.",
+      "Extended Partners Balance Sheet Scope": "نطاق ميزانية الشركاء الخارجيين",
+      "Extended Partners Scope · External Related-Party Current Accounts": "نطاق الشركاء الخارجيين · الحسابات الجارية للأطراف الخارجية",
+      "Non-Eliminating Balance Sheet": "ميزانية غير قابلة للإلغاء التوحيدي",
+      "Group Intercompany Ledger": "دفتر الشركات الشقيقة",
+      "Tracks external counterparties outside the 14 operating entities on Balance Sheet current accounts (never eliminated in Group P&L). Amounts restricted by seat permissions.": "يتابع الأطراف الخارجية خارج الشركات التشغيلية الـ 14 في الحسابات الجارية بالميزانية (لا تُلغى أبداً في الأرباح والخسائر الموحدة). المبالغ مقيدة حسب الصلاحية.",
+      "2-sided intra-group transfers between the 14 Bdeir Group entities (100% eliminated here; Extended Partners stay on external current accounts)": "تحويلات داخلية ذات طرفين بين شركات مجموعة بدير الـ 14 (تُلغى 100% هنا؛ بينما يبقى الشركاء الخارجيون في الحسابات الجارية الخارجية)",
+      "Sales Order & Ticket Detail": "تفاصيل أمر البيع والتذكرة",
+      "Add or update a Raw Material Site Cost or Site Transport Rate agreement": "إضافة أو تحديث اتفاقية سعر مواد موقع أو تعرفة نقل موقع",
+      "FCA (Free Carrier / Buyer Freight)": "FCA (التسليم للناقل / الشحن على المشتري)",
+      "Semi-Annual": "نصف سنوي",
+      "Summer": "صيف",
+      "Winter": "شتاء",
+      "Spring / Autumn": "ربيع / خريف",
+      "SITE OWNERS · MATERIAL CREDIT, PAYMENTS & REMAINING BALANCES": "أصحاب المواقع · ذمم المواد، المدفوعات والأرصدة المتبقية",
+      "SITE OWNERS": "أصحاب المواقع",
+      "MATERIAL CREDIT, PAYMENTS & REMAINING BALANCES": "ذمم المواد، المدفوعات والأرصدة المتبقية",
+      "Source-site material credit accrued vs. supplier settlements allocated to the material leg": "ذمة المواد المتراكمة من مواقع المصدر مقابل تسويات المورّدين المخصّصة لبند المواد",
+      "TRANSPORTATION · SUPPLIER & CUSTOMER TRANSPORT, PAYMENTS & REMAINING BALANCES": "النقل · نقل المورّدين والعملاء، المدفوعات والأرصدة المتبقية",
+      "TRANSPORTATION": "النقل",
+      "SUPPLIER & CUSTOMER TRANSPORT, PAYMENTS & REMAINING BALANCES": "نقل المورّدين والعملاء، المدفوعات والأرصدة المتبقية",
+      "Combined inbound supplier-site transport and outbound 3rd-party customer delivery transport vs. transportation settlements": "مجموع نقل المورّدين الوارد ونقل التوصيل الخارجي للعملاء الصادر مقابل تسويات النقل",
+      "SITE MATERIAL & TRANSPORT COST BREAKDOWN": "تفصيل تكلفة المواد والنقل حسب الموقع",
+      "All Site Owners": "كل أصحاب المواقع",
+      "All Transporters": "كل الناقلين",
+      "All Active Sites": "كل المواقع النشطة",
+      "Owed by Us": "مستحق علينا",
+      "Advance / Credit": "دفعة مقدمة / دائن",
+      "Both Legs": "البندان معاً",
+      "3P Customer Tickets": "إيصالات نقل العملاء",
+      "+ Supplier Settlement": "+ تسوية مورّد",
+      "Site Owners": "أصحاب المواقع",
+      "Transporter / Hauler": "الناقل / المتعهّد",
+      "Leg Scope": "نطاق النقل",
+      "Supplier Loads": "نقلات المورّد",
+      "Customer Loads": "نقلات العميل",
+      "Mat. Credit ($)": "ذمة المواد ($)",
+      "Total Credit ($)": "إجمالي الدائن ($)",
+      "Remaining ($)": "المتبقي ($)",
+      "Mixed": "مختلط",
+      "Supplier + Customer": "مورّد + عميل",
+      "Expenses Restricted": "المصاريف مقيّدة",
+      "Counterparty payable balances require Expenses access": "يتطلب عرض أرصدة الذمم المستحقة للموردين صلاحية المصاريف",
+      "Net payable owed to counterparty": "صافي الرصيد المستحق للطرف المقابل",
+      "Net advance / overpayment credit with counterparty": "صافي السلفة أو الرصيد المدفوع زيادةً لدى الطرف المقابل",
+      "No site owner payable balances in this scope": "لا توجد أرصدة مستحقة لأصحاب المواقع في هذا النطاق",
+      "No transportation payable balances in this scope": "لا توجد أرصدة مستحقة للناقلين في هذا النطاق",
+      "Unpriced Loads": "نقلات غير مسعّرة",
+      "Filter Overpaid Payees": "تصفية المستفيدين المدفوعين بالزيادة",
+      "Filter Unpriced Sites": "تصفية المواقع غير المسعّرة"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -16549,7 +16690,7 @@
       "Active Period Impact:": "Impact sur la Période Active :",
       "Active Policies": "Polices Actives",
       "Active Policies & Endorsements": "Polices et avenants actifs",
-      "Active Price Agreements": "Accords Tarifaires Actifs",
+      "Active Price Agreements": "Accords de prix actifs",
       "Active Price List Window": "Période Tarifaire Active",
       "Active Promise": "Promesse Active",
       "Active Rate ($)": "Tarif Actif ($)",
@@ -23072,7 +23213,7 @@
       "Partial Repayment": "Remboursement Partiel",
       "Partially Warehouse + Outside": "Mixte (Magasin + Externe)",
       "Parties": "Tiers",
-      "Partner": "Associé",
+      "Partner": "Partenaire",
       "Partner & treasury injections": "Apports associés et trésorerie",
       "Partner / Shareholder": "Associé / Actionnaire",
       "Partner / Shareholder Loan": "Prêt Associé / Actionnaire",
@@ -23308,7 +23449,7 @@
       "No matching rows for": "Aucune ligne correspondante pour",
       "Active Rate Rules": "Accords tarifs actifs",
       "Transport Loads": "Voyages Transport",
-      "Supplier & Hauler 360° Master": "Fiche Maître Fournisseur & Transporteur 360°",
+      "Supplier & Hauler 360° Master": "Fiche 360° Fournisseur & Transporteur",
       "Net 3-Leg AP Balance": "Solde Net Dettes Fourn. (3 Volets)",
       "3-Leg AP": "Dettes 3 Volets",
       "3-LEG AP": "DETTES 3 VOLETS",
@@ -23342,7 +23483,7 @@
       "Lifetime Sales & Loads": "Ventes & Voyages Cumulés",
       "Scoped Sales & Loads": "Ventes & Voyages Période",
       "Fleet & Agreements": "Flotte & Accords",
-      "Customer 360° Master": "Fiche Maître Client 360°",
+      "Customer 360° Master": "Fiche 360° Client",
       "+ New Raw Ticket": "+ Nouveau bon matière première",
       "360° Customer Account": "Compte client 360°",
       "360° Supplier Account": "Compte fournisseur 360°",
@@ -25024,7 +25165,7 @@
       "Shacman Service Workshop": "Atelier de service Shacman",
       "Shacman VIN Fleet": "Parc Shacman VIN & Marges",
       "Shacman X3000 17-Char VIN Dossier": "Dossier Châssis VIN 17 Car. Shacman X3000",
-      "Share": "Part %",
+      "Share": "Part",
       "Share %": "Quote-Part %",
       "Share Value ($)": "Valeur Quote-Part ($)",
       "Share balance card on WhatsApp": "Partager la fiche de solde sur WhatsApp",
@@ -30878,14 +31019,14 @@
       "Share or copy active rates": "Partager ou copier les tarifs actifs",
       "Active rates copied to clipboard": "Tarifs actifs copiés dans le presse-papiers",
       "Could not copy active rates": "Impossible de copier les tarifs actifs",
-      "Active Rate Agreements": "Accords tarifaires actifs",
+      "Active Rate Agreements": "Grilles tarifaires actives",
       "Since": "Depuis",
       "Until": "Jusqu'au",
       "All Grades": "Toutes catégories",
       "Unsaved edits on this record. Save changes first, or press again to discard and move.": "Modifications non enregistrées sur cette fiche. Enregistrez d'abord ou appuyez de nouveau pour ignorer et passer.",
       "Renewal": "Renouvellement",
       "Facility": "Ligne de crédit",
-      "APR": "Taux annuel",
+      "APR": "TAEG",
       "Only a supervisor can remove an included alias from a sent mark.": "Seul un superviseur peut retirer un alias inclus d'une marque d'envoi.",
       "Combined aliases:": "Alias combinés :",
       "Held separate while marked as sent:": "Maintenu séparé tant qu'il est marqué envoyé :",
@@ -31056,7 +31197,148 @@
       "Open Balance ($)": "Solde ouvert ($)",
       "VAT ($)": "TVA ($)",
       "Annual Rent ($)": "Loyer annuel ($)",
-      "Partners": "Associés"
+      "Partners": "Associés",
+      "Batch Payday": "Paie groupée",
+      "Payroll Disbursement Grid": "Grille de versement de paie",
+      "Payment Date": "Date de paiement",
+      "Default Method": "Mode par défaut",
+      "Apply All": "Appliquer à tous",
+      "Batch Note": "Note de lot",
+      "Optional run note (e.g. Saturday payday)...": "Note de lot facultative (ex. paie du samedi)...",
+      "Filter staff by name or role...": "Filtrer par nom ou rôle...",
+      "Check All Due": "Tout cocher (dû)",
+      "Fill 50% Due": "Remplir 50 % du dû",
+      "Clear All": "Tout effacer",
+      "Pay USD ($)": "Montant USD ($)",
+      "Pay LBP (L.L.)": "Montant LBP (L.L.)",
+      "After Pay": "Après paiement",
+      "Note...": "Note...",
+      "No staff members match the active filter.": "Aucun collaborateur ne correspond au filtre actif.",
+      "Confirm posting these duplicate / near-copy vouchers intentionally": "Confirmer la validation intentionnelle de ces bons en doublon / quasi-copie",
+      "Post Vouchers": "Valider les bons",
+      "Posting...": "Validation...",
+      "Same-day dup": "Doublon du jour",
+      "Near copy": "Quasi-copie",
+      "Enter a valid positive amount": "Saisissez un montant positif valide",
+      "This date falls inside a closed period.": "Cette date se situe dans une période clôturée.",
+      "Your seat does not have permission to post salary runs.": "Votre poste n’est pas autorisé à valider des lots de paie.",
+      "No writable company in your seat scope.": "Aucune société modifiable dans le périmètre de votre poste.",
+      "Select at least one staff member with an amount > 0.": "Sélectionnez au moins un collaborateur avec un montant > 0.",
+      "Duplicate or near-copy salary detected. Review the warning below and tick confirmation to post.": "Salaire en doublon ou quasi-copie détecté. Vérifiez l’alerte ci-dessous et cochez la confirmation.",
+      "App update required before cloud sync — batch queued locally for automatic replay after refresh.": "Mise à jour requise avant la synchronisation — lot mis en file localement pour envoi automatique après actualisation.",
+      "Batch Payday was rejected by the server.": "Le lot de paie a été rejeté par le serveur.",
+      "Already Paid": "Déjà payé",
+      "Net Earned": "Net acquis",
+      "Note": "Note",
+      "Contract salary pending": "Salaire du contrat en attente",
+      "No active contract": "Aucun contrat actif",
+      "Simulated mid-batch rejection": "Rejet simulé en milieu de lot",
+      "Implied Landed ($/m³)": "Coût rendu implicite ($/m³)",
+      "Incl.": "Incl.",
+      "+ Haul": "+ Transport",
+      "Outward share language": "Langue de partage externe",
+      "CIF · Shipping Included": "CIF · Fret inclus",
+      "CFR · Shipping Included": "CFR · Fret inclus",
+      "DDP · Duty & Freight Included": "DDP · Droits et fret inclus",
+      "FOB · Separate Freight": "FOB · Fret séparé",
+      "FOB · Pending Landed Split": "FOB · Répartition en attente",
+      "EXW · Buyer Freight": "EXW · Fret acheteur",
+      "FCA · Buyer Freight": "FCA · Fret acheteur",
+      "FOB / Contract ($)": "FOB / Contrat ($)",
+      "Freight Basis (Incoterm) *": "Base de fret (Incoterm) *",
+      "Supplier Contract Cost ($) *": "Coût contrat fournisseur ($) *",
+      "FOB (Separate Ocean Freight)": "FOB (Fret maritime séparé)",
+      "CIF (Cost, Insurance & Freight)": "CIF (Coût, Assurance et Fret)",
+      "CFR (Cost & Freight Included)": "CFR (Coût et Fret inclus)",
+      "EXW (Ex Works / Buyer Uplift)": "EXW (Départ usine / Enlèvement acheteur)",
+      "DDP (Delivered Duty Paid)": "DDP (Rendu droits acquittés)",
+      "Supplier price excludes ocean shipping; allocate Freight, Customs & Clearance in Landed Add.": "Le prix fournisseur exclut le fret maritime ; ventilez fret, douane et dédouanement dans les frais d'approche.",
+      "Ocean shipping included in contract price; Landed Add tracks Customs, Clearance & Port Fees only.": "Le fret maritime est inclus dans le contrat ; les frais d'approche couvrent uniquement douane, dédouanement et port.",
+      "Duty & freight included by supplier; Landed Add typically $0.00.": "Droits et fret inclus par le fournisseur ; frais d'approche généralement à $0.00.",
+      "Buyer uplift at factory/port: allocate full freight, insurance & customs in Landed Add.": "Enlèvement usine/port : imputez tout le fret, l'assurance et la douane dans les frais d'approche.",
+      "Allocated ocean freight (when FOB), customs duty, port clearance & marine insurance added to capitalized cost": "Fret maritime alloué (si FOB), droits de douane, dédouanement et assurance ajoutés au coût",
+      "Capitalized ocean freight, customs duty & port clearance allocated to this serial chassis": "Fret maritime, droits de douane et dédouanement capitalisés alloués à ce châssis",
+      "Ex-factory / Free On Board supplier unit contract cost": "Coût unitaire contrat fournisseur départ usine / FOB",
+      "Full capitalized import cost (Contract Value + Landed Add)": "Coût d'importation capitalisé total (Contrat + Frais d'approche)",
+      "Full capitalized inventory cost (supplier contract + allocated freight, customs duty & port clearance)": "Coût de stock capitalisé complet (contrat fournisseur + fret, douane et dédouanement)",
+      "Full showroom inventory cost basis (FOB + Landed Add)": "Base de coût stock showroom complète (FOB + Frais d'approche)",
+      "Ocean freight or air/land shipping billed outside FOB supplier contract": "Fret maritime, aérien ou routier facturé hors contrat fournisseur FOB",
+      "Supplier contract value per Free On Board or stated Incoterm before port & customs additions": "Valeur contrat fournisseur selon FOB ou Incoterm indiqué avant frais portuaires et douanes",
+      "Supplier contract value per stated Incoterm (FOB excludes ocean freight; CIF/CFR include shipping; DDP includes duty & freight)": "Valeur contrat selon l'Incoterm (FOB hors fret ; CIF/CFR fret inclus ; DDP droits et fret inclus)",
+      "Total capitalized freight, customs duty, port clearance and insurance allocated to import units": "Total fret, douane, dédouanement et assurance capitalisés alloués aux unités importées",
+      "CIF contract: supplier price includes ocean shipping & marine insurance; local customs and port clearance are tracked separately in Landed Cost.": "Contrat CIF : le prix inclut le fret maritime et l'assurance ; la douane et le dédouanement sont suivis séparément.",
+      "CFR contract: supplier price includes ocean freight to port; marine insurance and customs clearance are tracked separately.": "Contrat CFR : le prix inclut le fret jusqu'au port ; l'assurance et la douane sont suivies séparément.",
+      "DDP contract: duty, freight and clearance are included by supplier with zero separate freight uplift.": "Contrat DDP : droits, fret et dédouanement inclus par le fournisseur sans surcharge de fret.",
+      "EXW contract: factory uplift, ocean shipping, insurance and customs clearance are paid separately by buyer.": "Contrat EXW : enlèvement usine, fret maritime, assurance et douane payés séparément par l'acheteur.",
+      "FCA contract: factory uplift, ocean shipping, insurance and customs clearance are paid separately by buyer.": "Contrat FCA : prise en charge, fret maritime, assurance et douane payés séparément par l'acheteur.",
+      "FOB contract: ocean freight, customs & clearance are still awaiting full Landed Cost allocation.": "Contrat FOB : le fret, les droits et le dédouanement attendent encore l'allocation complète.",
+      "FOB contract: supplier price covers unit cost only; ocean freight, customs & clearance are allocated in Landed Cost.": "Contrat FOB : le prix couvre l'unité seule ; fret, douane et dédouanement sont alloués en frais d'approche.",
+      "0% Never VAT": "0 % Exonéré de TVA",
+      "Apply 11% VAT to taxable departments (Fuel/Diesel & Staff Tips stay $0.00 Never VAT)": "Appliquer 11 % de TVA aux départements taxables (Carburant/Gasoil et Pourboires restent à $0.00)",
+      "Bill": "Facture",
+      "Department": "Département",
+      "Matches Bill": "Conforme à la facture",
+      "Kitchen & Venue Supplies": "Fournitures cuisine & salles",
+      "Bar & Beverage Stock": "Stock bar & boissons",
+      "Housekeeping & Amenities": "Entretien ménager & linge",
+      "Maintenance & Parts": "Maintenance & pièces",
+      "Fuel & Energy": "Carburant & énergie",
+      "Staff & Operations": "Personnel & opérations",
+      "Resort Multi-Department Supplier Invoice Split": "Ventilation multi-départements de facture fournisseur hôtelier",
+      "Multi-Dept Expenses (0% Never VAT on Diesel & Tips)": "Charges multi-départements (0 % TVA sur gasoil & pourboires)",
+      "Group Intercompany Accounting Scope": "Périmètre comptable inter-sociétés du Groupe",
+      "Group Intercompany Scope · 14 Operating Entities": "Périmètre Inter-Sociétés du Groupe · 14 Entités",
+      "100% Eliminated on Consolidation": "Éliminé à 100 % en consolidation",
+      "Tracks 2-sided internal transfers inside the 14 Bdeir Group companies (100% eliminated on Consolidation). Amounts restricted by seat permissions.": "Suit les transferts internes bilatéraux au sein des 14 entités du Groupe Bdeir (éliminés à 100 % en consolidation). Montants restreints.",
+      "Extended Partners Balance Sheet Scope": "Périmètre bilan des partenaires externes",
+      "Extended Partners Scope · External Related-Party Current Accounts": "Périmètre Partenaires Externes · Comptes courants hors groupe",
+      "Non-Eliminating Balance Sheet": "Bilan non éliminé",
+      "Group Intercompany Ledger": "Journal inter-sociétés du Groupe",
+      "Tracks external counterparties outside the 14 operating entities on Balance Sheet current accounts (never eliminated in Group P&L). Amounts restricted by seat permissions.": "Suit les contreparties externes hors des 14 entités en comptes courants de bilan (jamais éliminés en résultat consolidé). Montants restreints.",
+      "2-sided intra-group transfers between the 14 Bdeir Group entities (100% eliminated here; Extended Partners stay on external current accounts)": "Transferts intra-groupe bilatéraux entre les 14 entités du Groupe Bdeir (éliminés à 100 % ici ; les partenaires externes restent en comptes courants externes)",
+      "Sales Order & Ticket Detail": "Détail commande & bon de vente",
+      "Add or update a Raw Material Site Cost or Site Transport Rate agreement": "Ajouter ou modifier un accord Prix Matière Site ou Tarif Transport Site",
+      "FCA (Free Carrier / Buyer Freight)": "FCA (Franco Transporteur / Fret acheteur)",
+      "Semi-Annual": "Semestriel",
+      "Summer": "Été",
+      "Winter": "Hiver",
+      "Spring / Autumn": "Printemps / Automne",
+      "SITE OWNERS · MATERIAL CREDIT, PAYMENTS & REMAINING BALANCES": "PROPRIÉTAIRES DE SITES · CRÉDITS MATIÈRES, PAIEMENTS & SOLDES RESTANTS",
+      "SITE OWNERS": "PROPRIÉTAIRES DE SITES",
+      "MATERIAL CREDIT, PAYMENTS & REMAINING BALANCES": "CRÉDITS MATIÈRES, PAIEMENTS & SOLDES RESTANTS",
+      "Source-site material credit accrued vs. supplier settlements allocated to the material leg": "Crédit matières cumulé des sites sources vs règlements fournisseurs affectés au poste matières",
+      "TRANSPORTATION · SUPPLIER & CUSTOMER TRANSPORT, PAYMENTS & REMAINING BALANCES": "TRANSPORT · TRANSPORT FOURNISSEURS & CLIENTS, PAIEMENTS & SOLDES RESTANTS",
+      "TRANSPORTATION": "TRANSPORT",
+      "SUPPLIER & CUSTOMER TRANSPORT, PAYMENTS & REMAINING BALANCES": "TRANSPORT FOURNISSEURS & CLIENTS, PAIEMENTS & SOLDES RESTANTS",
+      "Combined inbound supplier-site transport and outbound 3rd-party customer delivery transport vs. transportation settlements": "Cumul transport matières entrantes et livraisons clients par tiers vs règlements de transport",
+      "SITE MATERIAL & TRANSPORT COST BREAKDOWN": "RÉPARTITION DES COÛTS MATIÈRES & TRANSPORT PAR SITE",
+      "All Site Owners": "Tous les Propriétaires",
+      "All Transporters": "Tous les Transporteurs",
+      "All Active Sites": "Tous les Sites Actifs",
+      "Owed by Us": "Dû par Nous",
+      "Advance / Credit": "Avance / Crédit",
+      "Both Legs": "Les Deux Volets",
+      "3P Customer Tickets": "Bons Transport Clients",
+      "+ Supplier Settlement": "+ Règlement Fournisseur",
+      "Site Owners": "Propriétaires de sites",
+      "Transporter / Hauler": "Transporteur",
+      "Leg Scope": "Périmètre Transport",
+      "Supplier Loads": "Voyages Fournisseur",
+      "Customer Loads": "Voyages Client",
+      "Mat. Credit ($)": "Crédit Mat. ($)",
+      "Total Credit ($)": "Crédit Total ($)",
+      "Remaining ($)": "Reste Dû ($)",
+      "Mixed": "Mixte",
+      "Supplier + Customer": "Fournisseur + Client",
+      "Expenses Restricted": "Charges restreintes",
+      "Counterparty payable balances require Expenses access": "L’accès aux soldes fournisseurs dus requiert l’autorisation Charges",
+      "Net payable owed to counterparty": "Solde net dû à la contrepartie",
+      "Net advance / overpayment credit with counterparty": "Solde net d’avance ou trop-perçu auprès de la contrepartie",
+      "No site owner payable balances in this scope": "Aucun solde fournisseur site dans ce périmètre",
+      "No transportation payable balances in this scope": "Aucun solde transporteur dans ce périmètre",
+      "Unpriced Loads": "Chargements sans tarif",
+      "Filter Overpaid Payees": "Filtrer bénéficiaires trop payés",
+      "Filter Unpriced Sites": "Filtrer sites sans tarif"
     }
   };
 
@@ -31423,6 +31705,10 @@
     "materialsites": ["مواقع مصادر المواد", "sites sources"],
     "materialloads": ["نقلات مواد", "chargements matières"],
     "transportloads": ["نقلات نقل", "voyages transport"],
+    "siteowner": ["صاحب موقع", "propriétaire de site"],
+    "siteowners": ["أصحاب مواقع", "propriétaires de sites"],
+    "transporter": ["ناقل", "transporteur"],
+    "transporters": ["ناقلين", "transporteurs"],
   };
 
   const SEARCH_TERMS = {
@@ -31535,7 +31821,7 @@
     "shift basis": ["نظام الوردية", "base horaire"],
     "side": ["الطرف", "sens"],
     "site": ["الموقع", "chantier"],
-    "site owner": ["مالك الموقع", "propriétaire du site"],
+    "site owner": ["صاحب موقع", "propriétaire de site"],
     "sites": ["المواقع", "les sites"],
     "source module": ["الوحدة المصدر", "module source"],
     "source site": ["موقع المصدر", "site source"],
@@ -31568,6 +31854,9 @@
     "counterparty name": ["اسم الطرف المقابل", "nom de la contrepartie"],
     "employee name": ["اسم الموظف", "nom du collaborateur"],
     "reports": ["التقارير", "les rapports"],
+    "site owners": ["أصحاب المواقع", "propriétaires de sites"],
+    "transporter": ["ناقل", "transporteur"],
+    "transporters": ["الناقلين", "transporteurs"],
   };
 
   function getInitialLang() {
@@ -32344,13 +32633,14 @@
         : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
     }
 
-    m = trimmed.match(/^(Cash|Other|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Delivery Rev|Total Haulage Rev|Total Transport|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
+    m = trimmed.match(/^(Cash|Other|Total|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Delivery Rev|Total Haulage Rev|Total Transport|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
     if (m) {
       const kRaw = m[1].trim();
       const val = m[2];
       const lblDict = {
         'cash': ['نقدي', 'Espèces'],
         'other': ['أخرى', 'Autre'],
+        'total': ['الإجمالي', 'Total'],
         'credit': ['ذمم', 'Crédit'],
         'gross': ['المجمل', 'Brut'],
         'raw': ['المواد الأولية', 'Matières'],
@@ -33330,7 +33620,7 @@
     }
 
     // Overpaid alert strip summary sentences (raw, suppliers, sibling expenses)
-    if (/(?:flagged sites in scope|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+)/i.test(trimmed)) {
+    if (/(?:(?:flagged|unpriced) sites in scope|sites overpaid \(\$[\d,.-]+\)|external \$0 raw loads|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+)/i.test(trimmed)) {
       const segs = trimmed.split(/\s*·\s*/).map(seg => {
         let mm = seg.match(/^([\d,]+)\s+suppliers paid (\$[\d,.-]+) above accrued credit$/i);
         if (mm) return lang === 'ar' ? `${mm[1]} موردين مدفوعين ${mm[2]} فوق الرصيد الدائن` : `${mm[1]} fournisseurs payés ${mm[2]} au-delà du crédit`;
@@ -33338,6 +33628,8 @@
         if (mm) return lang === 'ar' ? `${mm[1]} مواقع مدفوعة بالزيادة (${mm[2]})` : `${mm[1]} sites trop payés (${mm[2]})`;
         mm = seg.match(/^([\d,]+)\s+flagged sites in scope$/i);
         if (mm) return lang === 'ar' ? `${mm[1]} مواقع منبّهة ضمن النطاق` : `${mm[1]} sites signalés`;
+        mm = seg.match(/^([\d,]+)\s+unpriced sites in scope$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]} مواقع غير مسعّرة ضمن النطاق` : `${mm[1]} sites sans tarif dans la période`;
         mm = seg.match(/^([\d,]+)\s+external \$0 raw loads$/i);
         if (mm) return lang === 'ar' ? `${mm[1]} نقلات خارجية بسعر $0` : `${mm[1]} voyages externes à 0 $`;
         mm = seg.match(/^([\d,]+)\s+accounts overpaid totaling (\$[\d,.-]+)$/i);
@@ -37583,6 +37875,95 @@
     m = trimmed.match(/^Advance\s+([+-]?[+-]?\$[\d.,-]+)$/i);
     if (m) return { out: lang === 'ar' ? `سلفة ${m[1]}` : `Avance ${m[1]}`, ok: true };
 
+    m = trimmed.match(/^Advance\s+\((\d{4}-\d{2})\)$/i);
+    if (m) return { out: lang === 'ar' ? `سلفة (${m[1]})` : `Avance (${m[1]})`, ok: true };
+
+    m = trimmed.match(/^(Active|Due|Selected|Show Inactive)\s*\(([\d,]+)\)$/i);
+    if (m) {
+      const lblMap = {
+        active: ['النشطون', 'Actifs'],
+        due: ['المستحق', 'Dus'],
+        selected: ['المحدّد', 'Sélectionnés'],
+        'show inactive': ['إظهار غير النشطين', 'Afficher inactifs']
+      };
+      const pair = lblMap[m[1].toLowerCase()];
+      if (pair) return { out: `${pair[lang === 'ar' ? 0 : 1]} (${m[2]})`, ok: true };
+    }
+
+    m = trimmed.match(/^Post\s+([\d,]+)\s+Vouchers?$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar' ? `ترحيل ${m[1]} ${n === 1 ? 'سند' : 'سندات'}` : `Valider ${m[1]} ${n === 1 ? 'bon' : 'bons'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Selected:\s*([\d,]+)\s*·\s*Cash\s*(\$[\d.,-]+)\s*·\s*Other\s*(\$[\d.,-]+)\s*·\s*Total\s*(\$[\d.,-]+)(?:\s*·\s*([\d,]+)\s+advances?)?$/i);
+    if (m) {
+      const adv = m[5]
+        ? (lang === 'ar' ? ` · ${m[5]} ${Number(String(m[5]).replace(/,/g, '')) === 1 ? 'سلفة' : 'سلف'}` : ` · ${m[5]} ${Number(String(m[5]).replace(/,/g, '')) === 1 ? 'avance' : 'avances'}`)
+        : '';
+      return {
+        out: lang === 'ar'
+          ? `المحدّد: ${m[1]} · نقدي ${m[2]} · أخرى ${m[3]} · الإجمالي ${m[4]}${adv}`
+          : `Sélectionnés : ${m[1]} · Espèces ${m[2]} · Autre ${m[3]} · Total ${m[4]}${adv}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Possible duplicate or near-copy entries for:\s*(.+?)\.?$/i);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `قيود مكررة أو متطابقة تقريباً محتملة لـ: ${m[1]}.`
+          : `Doublons ou quasi-copies possibles détectés pour : ${m[1]}.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d{4}-\d{2})\s*·\s*Paid\s*(\$[\d.,-]+)\s*·\s*(No active contract|Contract salary pending)$/i);
+    if (m) {
+      const tailAr = /pending/i.test(m[3]) ? 'راتب العقد قيد التحديد' : 'لا يوجد عقد سارٍ';
+      const tailFr = /pending/i.test(m[3]) ? 'Salaire du contrat en attente' : 'Aucun contrat actif';
+      return {
+        out: lang === 'ar' ? `${m[1]} · مدفوع ${m[2]} · ${tailAr}` : `${m[1]} · Payé ${m[2]} · ${tailFr}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d{4}-\d{2})\s+Net Earned:\s*([+-]?\$[\d.,-]+)\s*·\s*Paid:\s*([+-]?\$[\d.,-]+)\s*·\s*Remaining:\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `${m[1]} صافي المستحق: ${m[2]} · المدفوع: ${m[3]} · المتبقي: ${m[4]}`
+          : `${m[1]} Net acquis : ${m[2]} · Payé : ${m[3]} · Reste : ${m[4]}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch Payday posted\s*·\s*([\d,]+)\s+vouchers?\s*·\s*(\$[\d.,-]+)$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `تم ترحيل دفعة الرواتب الجماعية · ${m[1]} ${n === 1 ? 'سند' : 'سندات'} · ${m[2]}`
+          : `Paie groupée validée · ${m[1]} ${n === 1 ? 'bon' : 'bons'} · ${m[2]}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch Payday saved locally \(offline\)\s*·\s*([\d,]+)\s+vouchers?\s*·\s*(\$[\d.,-]+)$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `حُفظت دفعة الرواتب محلياً (دون اتصال) · ${m[1]} ${n === 1 ? 'سند' : 'سندات'} · ${m[2]}`
+          : `Paie groupée enregistrée hors ligne · ${m[1]} ${n === 1 ? 'bon' : 'bons'} · ${m[2]}`,
+        ok: true
+      };
+    }
+
     m = trimmed.match(/^(.+?)\s+Cutover Audit$/i);
     if (m) return { out: lang === 'ar' ? `تدقيق فترة الانتقال (${translateMonthTokens(m[1], lang)})` : `Audit de Bascule (${translateMonthTokens(m[1], lang)})`, ok: true };
 
@@ -37689,6 +38070,85 @@
         out: lang === 'ar' ? `${cnt} حساب تجاري نشط` : `${cnt} comptes négoce actifs`,
         ok: true
       };
+    }
+
+    m = trimmed.match(/^Split Multi-Dept \((\d+) Lines?\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `توزيع على الأقسام (${m[1]} سطور)` : `Ventiler par département (${m[1]} lignes)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^\+11% VAT \((.+)\)$/);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `+11% ضريبة (${m[1]})` : `+11% TVA (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Extended Partners \(([\d,]+)\)$/);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `الشركاء الخارجيون (${m[1]})` : `Partenaires externes (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Tracks 2-sided transfers inside the 14 Bdeir Group companies: ([\d,]+) paired entries \(([^)]+)\) eliminate 100% to \$0\.00 on Consolidated P&L; ([\d,]+) single-sided leg\(s\) \(([^)]+) net unpaid\) stay on Due From \/ Due To until mirrored\.$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `يتابع التحويلات ذات الطرفين ضمن شركات مجموعة بدير الـ 14: ${m[1]} قيود متطابقة (${m[2]}) تُلغى 100% لتصبح $0.00 في الأرباح والخسائر الموحدة؛ و${m[3]} قيداً أحادي الطرف (${m[4]} رصيد مفتوح) يبقى في ذمم الشركات الشقيقة حتى المطابقة.`
+          : `Suit les transferts bilatéraux au sein des 14 entités du Groupe Bdeir : ${m[1]} écritures appariées (${m[2]}) s'éliminent à 100 % ($0.00) au compte consolidé ; ${m[3]} écriture(s) unilatérale(s) (${m[4]} net ouvert) restent en comptes inter-sociétés jusqu'à rapprochement.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Tracks ([\d,]+) external counterparties \(([\d,]+) ledger entries · Net Position ([^)]+)\) outside the 14 operating entities\. Balances stay open on Holding & Entity Balance Sheets and do not eliminate in Group P&L\.$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `يتابع ${m[1]} طرفاً خارجياً (${m[2]} قيد دفتر · صافي المركز ${m[3]}) خارج الشركات التشغيلية الـ 14. تبقى الأرصدة مفتوحة في ميزانيات القابضة والشركات ولا تُلغى في الأرباح والخسائر الموحدة.`
+          : `Suit ${m[1]} contreparties externes (${m[2]} écritures · position nette ${m[3]}) hors des 14 entités opérationnelles. Les soldes restent ouverts au bilan et ne s'éliminent pas en résultat consolidé.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(?:Delivery Included \((.+)\)|Mat (.+?) \+ (?:Route Trans|Site Transport) (.+)|Material Only \((.+?)\); no active Transport Price \(Site\) rule for (.+?) \(Own Fleet \/ Separate Haul\))$/);
+    if (m) {
+      if (trimmed.startsWith('Delivery Included')) {
+        return { out: lang === 'ar' ? `التوصيل مشمول (${m[1]})` : `Livraison incluse (${m[1]})`, ok: true };
+      }
+      if (trimmed.startsWith('Mat ')) {
+        return {
+          out: lang === 'ar' ? `مواد ${m[2]} + نقل ${m[3]}` : `Matière ${m[2]} + transport ${m[3]}`,
+          ok: true
+        };
+      }
+      return {
+        out: lang === 'ar'
+          ? `مواد فقط (${m[4]})؛ لا توجد تسعيرة نقل فعالة للموقع ${m[5]} (أسطولنا / نقل منفصل)`
+          : `Matière seule (${m[4]}) ; aucun tarif transport actif pour ${m[5]} (flotte interne / transport séparé)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^((?:CIF|CFR|DDP|EXW|FCA|FOB) contract: [^(]+?)(?: \(([^)]+)\))?$/);
+    if (m) {
+      const tipCore = evalCore(m[1].trim(), lang, depth + 1);
+      if (tipCore.ok) {
+        return { out: m[2] ? `${tipCore.out} (${m[2]})` : tipCore.out, ok: true };
+      }
+    }
+
+    m = trimmed.match(/^(Net .+? \+ VAT .+? = .+)$/);
+    if (m && /^Net\s+\$/i.test(trimmed)) {
+      const rep = lang === 'ar'
+        ? trimmed.replace(/^Net\b/, 'الصافي').replace(/\bVAT\b/, 'الضريبة')
+        : trimmed.replace(/^Net\b/, 'Net').replace(/\bVAT\b/, 'TVA');
+      return { out: rep, ok: true };
     }
 
     const cntHit = translateCountNoun(trimmed, lang);

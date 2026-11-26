@@ -1451,6 +1451,9 @@
     const driverHint = extractLabeledValue(lines, /^(?:driver|chauffeur|\u0627\u0644\u0633\u0627\u0626\u0642)\s*:\s*(.+)$/i);
     const staffHint = extractLabeledValue(lines, /^(?:employee|staff|worker|salarié|\u0627\u0644\u0645\u0648\u0638\u0641)\s*:\s*(.+)$/i);
     const notesHint = extractLabeledValue(lines, /^(?:notes?|remarks?|memo|description|\u0645\u0644\u0627\u062d\u0638\u0627\u062a)\s*:\s*(.+)$/i);
+    const incoRawLine = extractLabeledValue(lines, /^(?:incoterm|incoterms|freight\s*terms|delivery\s*terms|terms\s*of\s*delivery|shipping\s*terms)\s*[:#-]?\s*(.+)$/i);
+    const incoMatch = ((incoRawLine || '') + ' ' + cleanText).match(/\b(DDP|CIF|CFR|C\s*&\s*F|EXW|FCA|FOB)\b/i);
+    const incotermHint = incoMatch ? incoMatch[1].toUpperCase().replace(/\s+/g, '').replace('C&F', 'CFR') : '';
 
     // Totals, Subtotal, Discount, VAT & LBP detection
     let subtotalUsd = 0;
@@ -1658,6 +1661,7 @@
       uom,
       unitPrice: firstItem ? Number(firstItem.unitCost || 0) : 0,
       lineItems,
+      incoterm: incotermHint,
       notes: notesHint,
       direction: /\b(cash\s*out|outgoing\s*wire|withdrawal|paid\s*out)\b/i.test(cleanText) ? 'Out' : 'In'
     };
@@ -1745,6 +1749,7 @@
       driver: firstNonEmpty(p => p.driver),
       staff: firstNonEmpty(p => p.staff),
       paymentMethod: firstNonEmpty(p => p.paymentMethod),
+      incoterm: firstNonEmpty(p => p.incoterm),
       subtotalExVat: finalSubtotal || full.subtotalExVat,
       discountAmount: finalDiscount || full.discountAmount || 0,
       vatAmount: finalVat || full.vatAmount,
@@ -3876,6 +3881,21 @@
         .slice(0, 4);
 
       const warningsList = ((scan.matched && scan.matched.warnings) || []);
+      const resolvedSsInd = (() => {
+        const curCo = $('f_company') ? $('f_company').value : ((scan.matched && scan.matched.targetCompany) || (D && D.STATE && D.STATE.company));
+        const coKey = (D && D.COMPANY_KEY_BY_NAME && D.COMPANY_KEY_BY_NAME[curCo]) || curCo;
+        return (D && typeof D.getActiveIndustry === 'function') ? D.getActiveIndustry(coKey) : '';
+      })();
+      const ssLinesCount = Array.isArray(scan.parsed && scan.parsed.lineItems) ? scan.parsed.lineItems.length : 0;
+      const canSplitMultiDept = Boolean(
+        resolvedSsInd === 'Hospitality & Resorts'
+        && ssLinesCount >= 2
+        && !(D && D.STATE && D.STATE.kioskLocked)
+        && canEnter('expense')
+        && typeof window !== 'undefined'
+        && window.MFG_AI_EDGE
+        && typeof window.MFG_AI_EDGE.openBatchIntakeModal === 'function'
+      );
       reviewHtml = `
         <div class="ss-review-strip" id="ssReviewStrip">
           <div class="ss-review-top">
@@ -3888,6 +3908,7 @@
               ${warnCnt > 0 ? `<span class="ss-stat-pill is-warn">${ic('warn')} ${warnCnt} Item${warnCnt === 1 ? '' : 's'} to Verify</span>` : ''}
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${canSplitMultiDept ? `<button type="button" class="ss-alt-form-chip" id="ssSplitMultiDeptBtn">${ic('layers')} Split Multi-Dept (${ssLinesCount} Lines)</button>` : ''}
               <button type="button" class="ss-alt-form-chip" id="ssToggleSplitBtn">${ic('eye')} ${SCAN_STATE.splitOpen ? 'Hide Document Preview' : 'Side-by-Side Preview'}</button>
               <button type="button" class="ss-alt-form-chip" id="ssClearScanBtn">${ic('trash')} Clear Scan</button>
             </div>
@@ -4013,6 +4034,40 @@
         await runSampleScanById(sid);
       });
     });
+
+    const splitDeptBtn = bar.querySelector('#ssSplitMultiDeptBtn');
+    if (splitDeptBtn) {
+      splitDeptBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const sc = SCAN_STATE.lastScan;
+        if (!sc || !sc.parsed || !window.MFG_AI_EDGE || typeof window.MFG_AI_EDGE.openBatchIntakeModal !== 'function') return;
+        const items = Array.isArray(sc.parsed.lineItems) ? sc.parsed.lineItems : [];
+        const supName = (sc.matched && sc.matched.supplier) || sc.parsed.supplier || 'General Vendor';
+        const rowDt = sc.parsed.date || ((D && typeof D.todayISO === 'function') ? D.todayISO() : '2026-11-06');
+        const sumLines = items.reduce((s, it) => s + Number(it.lineTotal || (Number(it.qty || 1) * Number(it.unitCost || 0))), 0);
+        const hasTaxedExtra = Boolean(sc.parsed.vatAmount > 0 && sc.parsed.totalAmount > 0 && (sc.parsed.subtotalExVat > 0 ? Math.abs(sumLines - sc.parsed.subtotalExVat) <= 1 : (sc.parsed.totalAmount - sumLines) > 0.5));
+        const preparsedRows = items.map(it => {
+          const q = Number(it.qty || 1) || 1;
+          const up = Number(it.unitCost || 0) || (q > 0 ? Number(it.lineTotal || 0) / q : 0);
+          return {
+            date: rowDt,
+            description: it.description || 'Invoice Item',
+            counterparty: supName,
+            qty: q,
+            unitPrice: up
+          };
+        });
+        window.MFG_AI_EDGE.openBatchIntakeModal('', {
+          preparsedRows,
+          applyVat11: hasTaxedExtra,
+          invoiceTotal: Number(sc.parsed.totalAmount || 0),
+          supplier: supName,
+          date: rowDt,
+          ref: sc.parsed.reference || '',
+          attObj: sc.attObj || null
+        });
+      });
+    }
 
     const splitBtn = bar.querySelector('#ssToggleSplitBtn');
     if (splitBtn) {
@@ -4688,16 +4743,34 @@
     if (ordQtyM) fields.ide_ord_qty = ordQtyM[1];
     const recQtyM = cleanAll.match(/(?:received\s*qty|quantity\s*received|units\s*received)\s*[:#-]?\s*(\d+)/i);
     if (recQtyM) fields.ide_rec_qty = recQtyM[1];
-    const fobVal = findLastMoneyLabel(/^(?:(?:supplier\s*)?fob\s*(?:cost|value|amount)|commercial\s*invoice\s*fob)\s*[:$-]*\s*(.+)$/i);
+    const incoDomM = findFirstLabel(/^(?:incoterm|incoterms|freight\s*terms|delivery\s*terms|shipping\s*terms)\s*[:#-]?\s*(.+)$/i)
+      || cleanAll;
+    const incoTokM = String(incoDomM || '').match(/\b(DDP|CIF|CFR|C\s*&\s*F|EXW|FCA|FOB)\b/i);
+    if (incoTokM) {
+      fields.ide_incoterm = incoTokM[1].toUpperCase().replace(/\s+/g, '').replace('C&F', 'CFR');
+    }
+    const fobVal = findLastMoneyLabel(/^(?:(?:supplier\s*)?(?:fob|cif|cfr|ddp|exw|fca|contract)\s*(?:cost|value|amount|price)|commercial\s*invoice\s*(?:fob|cif|cfr|total))\s*[:$-]*\s*(.+)$/i);
     if (fobVal !== null && fobVal > 0) fields.ide_fob = String(fobVal);
     // Sum freight + customs + clearance if itemized across Page 2, or read explicit landed add
     const explicitAdd = findLastMoneyLabel(/^(?:allocated\s*landed\s*add|freight,?\s*customs\s*(?:&|and)\s*clearance|total\s*landed\s*add-?ons?)\s*[:$-]*\s*(.+)$/i);
-    if (explicitAdd !== null) {
+    if (fields.ide_incoterm === 'DDP') {
+      fields.ide_landed_add = '0';
+    } else if (explicitAdd !== null) {
       fields.ide_landed_add = String(explicitAdd);
     } else {
-      const freightV = findLastMoneyLabel(/^(?:ocean\s*freight|freight\s*charges?)\s*[:$-]*\s*(.+)$/i) || 0;
-      const customsV = findLastMoneyLabel(/^(?:customs\s*duty|port\s*(?:&|and)?\s*clearance)\s*[:$-]*\s*(.+)$/i) || 0;
-      if (freightV + customsV > 0) fields.ide_landed_add = String(round2(freightV + customsV));
+      const freightV = (fields.ide_incoterm === 'CIF' || fields.ide_incoterm === 'CFR')
+        ? 0
+        : (findLastMoneyLabel(/^(?:ocean\s*freight|freight\s*charges?)\s*[:$-]*\s*(.+)$/i) || 0);
+      const customsDutyV = findLastMoneyLabel(/^(?:customs\s*duty|import\s*duty|duties)\s*[:$-]*\s*(.+)$/i) || 0;
+      const portClearV = findLastMoneyLabel(/^(?:port\s*(?:&|and)?\s*clearance|clearance(?:\s*(?:fee|fees|charges?))?|port\s*(?:fees?|charges?))\s*[:$-]*\s*(.+)$/i) || 0;
+      const combinedCustomsV = (customsDutyV > 0 || portClearV > 0)
+        ? round2(customsDutyV + portClearV)
+        : (findLastMoneyLabel(/^(?:customs\s*(?:&|and)\s*clearance)\s*[:$-]*\s*(.+)$/i) || 0);
+      if (freightV + combinedCustomsV > 0) {
+        fields.ide_landed_add = String(round2(freightV + combinedCustomsV));
+      } else if (fields.ide_incoterm === 'CIF' || fields.ide_incoterm === 'CFR') {
+        fields.ide_landed_add = '0';
+      }
     }
     const listVal = findLastMoneyLabel(/^(?:showroom\s*list\s*price|list\s*price)\s*[:$-]*\s*(.+)$/i);
     if (listVal !== null && listVal > 0) fields.ide_list = String(listVal);
@@ -4799,9 +4872,9 @@
       }
     });
 
-    // Apply carrier & line BEFORE rate/discount so syncPolicyAgreementRate doesn't overwrite explicit scanned commission rate!
+    // Apply company, incoterm, supplier, qty, carrier & line BEFORE contract cost / rate / landed_add so live tariff listeners never overwrite explicit scanned figures!
     const orderedEntries = Object.entries(fields).sort(([a], [b]) => {
-      const prio = k => (k === 'ide_carrier' || k === 'ide_line' || k === 'ide_date' || k === 'ide_type') ? 0 : 1;
+      const prio = k => (/^(?:ide_carrier|ide_line|ide_date|ide_type|ide_supplier|ide_ord_qty|ide_incoterm)$/.test(k)) ? 0 : 1;
       return prio(a) - prio(b);
     });
 
@@ -4841,6 +4914,7 @@
       el.value = valToSet;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      if (el.dataset) delete el.dataset.userEdited;
       appliedCount++;
       const lbl = el.closest('label');
       if (lbl) {

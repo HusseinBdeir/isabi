@@ -2353,6 +2353,60 @@ body.is-daily-ops-view .period-basis-row {
   border-color: rgba(246, 173, 85, 0.38);
 }
 
+.dops-sal-pos-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  max-height: 22px;
+  padding: 0 6px;
+  margin-inline-end: 5px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dops-sal-pos-pill.is-ok {
+  background: var(--good-bg);
+  border-color: rgba(31, 122, 76, 0.25);
+  color: var(--good);
+}
+
+.dops-sal-pos-pill.is-info {
+  background: rgba(74, 144, 217, 0.13);
+  border-color: rgba(74, 144, 217, 0.28);
+  color: var(--chart-navy, #2356A8);
+}
+
+.dops-sal-pos-pill.is-adv {
+  background: rgba(192, 137, 47, 0.16);
+  border-color: rgba(192, 137, 47, 0.36);
+  color: var(--brass-strong, var(--brass));
+}
+
+.dops-sal-pos-pill.is-warn {
+  background: var(--warn-bg);
+  border-color: rgba(201, 106, 34, 0.35);
+  color: var(--warn);
+}
+
+:root[data-theme="dark"] .dops-sal-pos-pill.is-info {
+  color: #7BB6F4;
+  border-color: rgba(123, 182, 244, 0.32);
+}
+
+:root[data-theme="dark"] .dops-sal-pos-pill.is-adv {
+  color: var(--brass);
+}
+
+:root[data-theme="dark"] .dops-sal-pos-pill.is-warn {
+  color: #F6AD55;
+  border-color: rgba(246, 173, 85, 0.38);
+}
+
 .dops-trunc {
   max-width: 150px;
   white-space: nowrap;

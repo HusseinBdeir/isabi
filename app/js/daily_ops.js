@@ -4397,6 +4397,64 @@
     `;
   }
 
+  function buildStaffMonthPositionPillHtml(opts = {}) {
+    const {
+      staffName,
+      company,
+      months = [],
+      targetDate = '',
+      targetMonth = '',
+      salCount = 0,
+      canPayroll = false,
+      computeStaffMonthPayrollPosition,
+      salaryVoucherUsd895,
+      fmtUSD,
+      round2,
+      esc
+    } = opts;
+    if (!canPayroll || !salCount || !staffName || typeof computeStaffMonthPayrollPosition !== 'function') return '';
+    const mList = Array.isArray(months) ? months.filter(Boolean) : [];
+    const ym = mList.length === 1 ? mList[0] : (mList.includes(targetMonth) ? targetMonth : (mList[0] || targetMonth));
+    if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return '';
+    const pos = computeStaffMonthPayrollPosition(staffName, company, ym, targetDate, null, true);
+    const vouchers = Array.isArray(pos && pos.vouchers) ? pos.vouchers : [];
+    let paidAsOf = Number((pos && pos.paidSoFar) || 0);
+    if (vouchers.length && targetDate) {
+      paidAsOf = round2(vouchers.reduce((sum, v) => {
+        const vd = String((v && (v.date || v.rep_date)) || '').slice(0, 10);
+        if (vd && vd > targetDate) return sum;
+        const eq = typeof salaryVoucherUsd895 === 'function'
+          ? salaryVoucherUsd895(v)
+          : Number((v && (v.amount != null ? v.amount : v.usd_amount)) || 0);
+        return sum + Number(eq || 0);
+      }, 0));
+    }
+    if (!pos || !pos.hasContract) {
+      const tip = `${ym} · Paid ${fmtUSD(paidAsOf, 2)} · No active contract`;
+      return `<span class="dops-sal-pos-pill is-warn" data-ui-tip="${esc(tip)}">No Contract</span>`;
+    }
+    if (pos.salaryPending) {
+      const tip = `${ym} · Paid ${fmtUSD(paidAsOf, 2)} · Contract salary pending`;
+      return `<span class="dops-sal-pos-pill is-warn" data-ui-tip="${esc(tip)}">Salary Pending</span>`;
+    }
+    if (targetMonth && ym > targetMonth) {
+      const tip = `Paid in advance for ${ym} · Contract Net: ${fmtUSD(pos.monthNetEarned, 2)}`;
+      return `<span class="dops-sal-pos-pill is-adv" data-ui-tip="${esc(tip)}">Advance (${esc(ym)})</span>`;
+    }
+    if (paidAsOf > pos.monthNetEarned + 1) {
+      const over = round2(paidAsOf - pos.monthNetEarned);
+      const tip = `${ym} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Cumulative paid: ${fmtUSD(paidAsOf, 2)} (+${fmtUSD(over, 2)} above month net)`;
+      return `<span class="dops-sal-pos-pill is-adv" data-ui-tip="${esc(tip)}">Advance +${fmtUSD(over, 0)}</span>`;
+    }
+    if (pos.monthNetEarned > 0 && Math.abs(pos.monthNetEarned - paidAsOf) <= 25) {
+      const tip = `${ym} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid in full (${fmtUSD(paidAsOf, 2)})`;
+      return `<span class="dops-sal-pos-pill is-ok" data-ui-tip="${esc(tip)}">Settled</span>`;
+    }
+    const rem = Math.max(0, round2(pos.monthNetEarned - paidAsOf));
+    const tip = `${ym} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid: ${fmtUSD(paidAsOf, 2)} · Remaining: ${fmtUSD(rem, 2)}`;
+    return `<span class="dops-sal-pos-pill is-info" data-ui-tip="${esc(tip)}">Paid ${fmtUSD(paidAsOf, 0)} of ${fmtUSD(pos.monthNetEarned, 0)}</span>`;
+  }
+
   function renderPanel6Workforce(ctx, dm, lens, isSingleCo) {
     const { esc, ic, fmtUSD, fmtNum, norm, coBadge, relLink } = ctx;
     const perms = resolveDopsPerms(ctx);
@@ -4718,6 +4776,20 @@
                   detParts.push(`${fmtNum(g.emps[0].working_days || 30)}d/mo`);
                 }
                 const detailHtml = detParts.join(' · ') || '-';
+                const salPosPillHtml = buildStaffMonthPositionPillHtml({
+                  staffName: g.name,
+                  company: g.company,
+                  months: g.months,
+                  targetDate: dm.targetDate,
+                  targetMonth,
+                  salCount: g.sals.length,
+                  canPayroll: perms.canPayroll,
+                  computeStaffMonthPayrollPosition: ctx.computeStaffMonthPayrollPosition,
+                  salaryVoucherUsd895: ctx.salaryVoucherUsd895,
+                  fmtUSD,
+                  round2: ctx.round2,
+                  esc
+                });
 
                 let valHtml = '';
                 if (g.salUsd !== 0) valHtml = `<strong>${fmtUSD(g.salUsd, 0)}</strong>`;
@@ -4734,7 +4806,7 @@
                 return `
                   <tr ${rowAttrs}>
                     <td class="dops-trunc"><div class="dops-grp-head">${isMulti ? `<span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>` : ''}${!isSingleCo ? `${coBadge(g.company)}` : ''}${statusBadge}${relLink('staff_members', g.name, g.name, true)}${repBadge}${otChip}</div></td>
-                    <td class="dops-trunc"><span style="color:var(--muted)">${detailHtml}</span></td>
+                    <td class="dops-trunc">${salPosPillHtml}<span style="color:var(--muted)">${detailHtml}</span></td>
                     <td class="r">${valHtml}</td>
                   </tr>
                   ${isExp ? g.records.map(rec => `
@@ -5817,6 +5889,7 @@
     normAvgLabel,
     opDates: ctx => getDailyTxIndex(ctx).sortedOpDates.slice(),
     buildDayModel,
+    buildStaffMonthPositionPillHtml,
     getLastDayModel: () => _lastDayModel,
     buildBriefing: lang => (window.MFG_ASK && typeof window.MFG_ASK.buildDailyBriefing === 'function' ? window.MFG_ASK.buildDailyBriefing(lang) : null),
     render,
