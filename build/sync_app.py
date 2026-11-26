@@ -104,6 +104,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_speed_verdict.mjs", "node"),         # the speed gate's fail / warn rules and its "nothing on screen changed" skip
     ("isabi-app", "build/verify_public_names.py", "python"),         # no real person's name in public /app/ or isabi files
     ("isabi-app", "build/verify_browser_slot.mjs", "node"),          # per-PC single-slot mutex for heavy headless browser suites
+    ("isabi-app", "build/verify_mobile_popovers.mjs", "node"),       # mobile/tablet/desktop popover bounds, .geo-place-menu & iOS visualViewport fit
     ("isabi", "build/verify_period_close_routes.py", "python"),      # PERIOD_CLOSE_STUDIO_VIEWS & HOLDING_CLOSE_GATE_VIEWS match verify_live_parity.mjs
     ("isabi", "build/verify_r2_seed_parity.py", "python"),           # seed_manifest.js, demo seeds, and R2 seed hash parity guard
     ("isabi", "build/verify_sync_delta_edge.mjs", "node"),         # 64MB unstick /sync gate, shift-backfill prune parity & deltaSyncV1 + RLS
