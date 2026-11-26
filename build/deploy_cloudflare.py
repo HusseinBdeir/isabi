@@ -17,6 +17,8 @@ Usage:
   A deploy holds the release lock (build/release_lock.py: one release at a time across sessions and PCs). It takes
   the lock when free and records the deployed commit; after `git push origin main` run
   `python build/release_lock.py release`.
+  A code release goes live from the leader's PC with `--pages-only` (owner 2026-11-26): GitHub Actions no longer
+  deploys on a push to main, so pushing first and waiting for a run deploys nothing.
   python build/deploy_cloudflare.py --configure-domain [--ping-indexnow] [--dry]
   python build/deploy_cloudflare.py --ping-indexnow [--dry]
   python build/deploy_cloudflare.py --check-seat-pins [--login] [--dry]
@@ -830,6 +832,29 @@ def verify_r2_seed_parity_for_pages_only(env: dict, repo_dir: pathlib.Path | Non
     return manifest
 
 
+def apply_d1_schema_for_pages_only(env: dict) -> None:
+    """A code deploy from a PC applies the idempotent D1 schema first, every time, exactly as the push-to-main
+    workflow did on each run (owner 2026-11-26: the leader's PC deploys, not GitHub Actions). Every time, and not
+    "when it changed": what the remote database holds cannot be told from this checkout (exports/ is per checkout,
+    and a batch already pushed to main shows no difference), and Edge functions must never go live ahead of a table
+    or an index they read. The file only creates what is missing (CREATE ... IF NOT EXISTS, kept so by
+    verify_deploy_preflight.py); a new column on an existing table is added by functions/_lib/d1_store.js, never
+    here. A failure stops the deploy before anything is live."""
+    if not SCHEMA_SQL.is_file():
+        print(f"ERROR: {SCHEMA_SQL} is missing; refusing to deploy Edge functions without the D1 schema they expect.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    print("Applying idempotent D1 schema (migrations/0001_schema.sql) to remote D1 `isabi-ledger`...")
+    try:
+        # retry=True: the file is idempotent by design (it ran on every push-to-main deploy), so a second run is safe.
+        run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={SCHEMA_SQL}", "-y"], env, check=True, retry=True)
+    except subprocess.CalledProcessError as exc:
+        reason = wrangler_failure_reason(exc)
+        print(f"ERROR: could not apply the D1 schema ({reason}); nothing was deployed. Cloudflare unavailable: run the "
+              "same command again. A sign-in or permission error: fix that first (wrangler whoami).", file=sys.stderr)
+        raise SystemExit(2) from None
+
+
 def _resolve_app_js_dir(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
     root = repo_dir or ISABI_ROOT
     env_src = (os.environ.get("ISABI_APP_SRC") or "").strip()
@@ -1550,7 +1575,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     modes.add_argument(
         "--pages-only",
         action="store_true",
-        help="Deploy Pages + Edge Functions bundle, domain/DNS, cache purge, parity gate, and IndexNow (skips D1/R2/secrets).",
+        help="The code release a batch leader runs from its PC: R2 seed parity check, idempotent D1 schema, Pages + Edge Functions bundle, domain/DNS, cache purge, parity gate, and IndexNow (no D1 data seed, R2 upload or secrets).",
     )
 
     opts = parser.add_argument_group("deploy, D1, R2, secret & gate modifiers")
@@ -2418,6 +2443,7 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         steps.append("Migrate any legacy remote D1 users/edge_kv_store PINs to PBKDF2-SHA256")
     if mode == "pages-only":
         steps.append("Verify app/js/seed_manifest.js & R2 isabi-vault/seeds/seed_*.json hash parity when hashes differ from origin/main")
+        steps.append("D1 schema -> APPLY idempotent migrations/0001_schema.sql (every code deploy, as the push-to-main workflow did)")
     steps.append("Stage allowlisted public bundle (`stage_pages_bundle.py`) and deploy Cloudflare Pages + Edge Functions")
     steps.append("Check remote active seat PINs are PBKDF2-SHA256 hashed")
     steps.append("Configure custom domains, DNS CNAMEs, edge 301 redirect, Email Routing & clean old preview deployments + purge cache")
@@ -2533,6 +2559,7 @@ def main(argv: list[str] | None = None):
     if args.pages_only:
         try:
             verify_r2_seed_parity_for_pages_only(env, ISABI_ROOT)
+            apply_d1_schema_for_pages_only(env)
         except BaseException:
             _release_new_lock_on_early_abort()
             raise

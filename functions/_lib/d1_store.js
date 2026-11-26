@@ -32,7 +32,9 @@ import {
   signEdgeSession,
   verifyActiveEdgeSession,
   verifyDriverGateToken,
-  verifySeatPin
+  verifySeatPin,
+  isSeatPreviewSessionRow,
+  SEAT_PREVIEW_TTL_SEC
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
@@ -301,7 +303,7 @@ function createPurgeOverrideAccumulator() {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
-export const MIN_SYNC_SHELL_VER = '19.6.432';
+export const MIN_SYNC_SHELL_VER = '19.6.440';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
@@ -570,6 +572,31 @@ async function getTableColumns(db, table) {
       res = await db.prepare(`PRAGMA table_info(${table})`).all();
       cols = new Set((res.results || []).map(r => String(r.name)));
     } catch (_) {}
+  }
+  const realColsByTable = {
+    expenses: ['gross_amount', 'discount'],
+    expense_items: ['net_unit_cost', 'gross_line_total', 'line_discount']
+  };
+  if (realColsByTable[table] && cols.size > 0) {
+    let addedRealCol = false;
+    for (const rcol of realColsByTable[table]) {
+      if (!cols.has(rcol)) {
+        try {
+          await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${rcol} REAL DEFAULT 0`).run();
+          addedRealCol = true;
+        } catch (_) {}
+      }
+    }
+    if (addedRealCol) {
+      if (table === 'expenses') {
+        try { await db.prepare('UPDATE expenses SET gross_amount = amount WHERE (gross_amount IS NULL OR gross_amount = 0) AND (discount IS NULL OR discount = 0) AND amount > 0').run(); } catch (_) {}
+      } else if (table === 'expense_items') {
+        try { await db.prepare('UPDATE expense_items SET net_unit_cost = unit_cost WHERE (net_unit_cost IS NULL OR net_unit_cost = 0) AND (line_discount IS NULL OR line_discount = 0) AND unit_cost > 0').run(); } catch (_) {}
+        try { await db.prepare('UPDATE expense_items SET gross_line_total = line_total WHERE (gross_line_total IS NULL OR gross_line_total = 0) AND (line_discount IS NULL OR line_discount = 0) AND line_total > 0').run(); } catch (_) {}
+      }
+      res = await db.prepare(`PRAGMA table_info(${table})`).all();
+      cols = new Set((res.results || []).map(r => String(r.name)));
+    }
   }
   if (perDb && cols.size > 0) perDb.set(table, cols);
   return cols;
@@ -1246,6 +1273,11 @@ async function upgradePlaintextSeatPinIfNeeded(db, row, rawPin) {
   } catch (_) {}
 }
 
+// A seat preview (an Owner pressing Impersonate) is a look at another seat, not that person's own sign-in:
+// its session is marked by `auth_sessions.method`, lasts 12 hours instead of two weeks (security.js), and
+// `/auth/me` reports it so a freshly opened app asks who is at the device instead of carrying the preview on.
+const SESSION_TTL_SEC = 60 * 60 * 24 * 14;
+
 export async function handleAuthLogin(request, env, body, verifiedCallerSession) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable' }, 503);
   if (isDemoHeader(request)) {
@@ -1538,6 +1570,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const sessId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const sessTtlSec = allowOwnerImpersonation ? SEAT_PREVIEW_TTL_SEC : SESSION_TTL_SEC;
 
   let token = '';
   try {
@@ -1559,7 +1592,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
           ? safeJsonParse(row.custom_perms, row.custom_perms)
           : row.custom_perms
       })
-    }, env);
+    }, env, sessTtlSec);
   } catch (_) {
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
   }
@@ -1599,7 +1632,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   return jsonResponse(
     loginPayload,
     200,
-    { 'Set-Cookie': buildSessionCookie(token, 60 * 60 * 24 * 14, isHttps) }
+    { 'Set-Cookie': buildSessionCookie(token, sessTtlSec, isHttps) }
   );
 }
 
@@ -3538,7 +3571,10 @@ const PRE_VOID_NON_BUSINESS_KEYS = new Set([
   'id', 'entered_by', 'enteredBy', 'entered_by_email', 'enteredByEmail', 'entered_at', 'enteredAt',
   'created_at', 'createdAt', '_createdAt', 'client_updated_at', 'source', 'same_person_confirmed',
   'attachments', 'adj_windows', 'driver_rows', 'admin_overrides', 'removedDocIds', 'backfill_status',
-  'settled_amount', 'has_paired_return', 'data_url', 'headers', 'cells'
+  'settled_amount', 'has_paired_return', 'data_url', 'headers', 'cells',
+  'shift_str', 'shift_basis_lbl', 'display_type', 'eff_date', 'tx_date', 'weekday',
+  'ot_pay_usd', 'late_ded_usd', 'abs_ded_usd', 'earned_usd', 'lost_usd', 'payroll_impact_usd',
+  'late_cutoff', 'early_out_cutoff', 'penalty_summary'
 ]);
 
 function preVoidValEqual(a, b) {
@@ -7851,6 +7887,40 @@ function mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session) {
       updated_by: String(iv.updated_by || '').slice(0, 120)
     };
   }
+  const dhNorm = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  for (const [rk, rv] of Object.entries(safeRules)) {
+    if (!rv || typeof rv !== 'object') continue;
+    const st = String(rv.status || '').toLowerCase();
+    if (st !== 'confirmed' && st !== 'dismissed') continue;
+    const rInd = String(rv.industry || 'Manufacturing').trim();
+    const rKind = String(rv.kind || '').trim().toLowerCase();
+    const aliasNorm = dhNorm(rv.alias);
+    const canonNorm = dhNorm(rv.canonical);
+    if (!rInd || !rKind || !aliasNorm || !canonNorm || aliasNorm === canonNorm) continue;
+    const revRk = `${rInd}::${rKind}::${canonNorm}`;
+    const rev = revRk !== rk ? safeRules[revRk] : null;
+    if (!rev || typeof rev !== 'object') continue;
+    const revSt = String(rev.status || '').toLowerCase();
+    if (revSt !== 'confirmed' && revSt !== 'dismissed') continue;
+    if (dhNorm(rev.canonical) !== aliasNorm) continue;
+    if (!isOwner && (!canAccessGeoIndustrySession(session, rInd) || !canAccessGeoIndustrySession(session, String(rev.industry || rInd)))) continue;
+    const cmp = compareIsoTsMs(rv.updated_at, rev.updated_at);
+    const loseKey = (cmp < 0 || (cmp === 0 && rk < revRk)) ? rk : revRk;
+    const winKey = loseKey === rk ? revRk : rk;
+    const winRule = safeRules[winKey];
+    const loser = safeRules[loseKey];
+    if (loser && loser.status !== 'undone') {
+      const demoted = {
+        ...loser,
+        status: 'undone',
+        reason: 'Superseded by newer reversed alias direction'
+      };
+      if (winRule && compareIsoTsMs(winRule.updated_at, loser.updated_at) > 0) {
+        demoted.updated_at = winRule.updated_at;
+      }
+      safeRules[loseKey] = demoted;
+    }
+  }
   incomingDoc.partyHygiene = { rules: safeRules };
 }
 
@@ -8605,9 +8675,249 @@ export function reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, 
     incomingDoc.customRecords[k] = outList;
   }
   if (syncMeta && typeof syncMeta === 'object' && Object.keys(retiredDropped).length) {
-    syncMeta.retiredDropped = retiredDropped;
+    const prevDropped = (syncMeta.retiredDropped && typeof syncMeta.retiredDropped === 'object') ? syncMeta.retiredDropped : {};
+    for (const [tk, ids] of Object.entries(retiredDropped)) {
+      const existing = Array.isArray(prevDropped[tk]) ? prevDropped[tk] : [];
+      prevDropped[tk] = Array.from(new Set([...existing, ...ids]));
+    }
+    syncMeta.retiredDropped = prevDropped;
   }
   return incomingDoc;
+}
+
+const SEED_AT_BLOATED_ID_RE = /^at_[0-9a-f]{12}$/i;
+const SHIFT_BACKFILL_TS_RE = /^2026-11-24T13:2\d:/;
+
+export function isShiftBackfillBloatedSeedAttRow(r) {
+  if (!r || typeof r !== 'object') return false;
+  const rid = String(r.id || '').trim();
+  if (!SEED_AT_BLOATED_ID_RE.test(rid)) return false;
+  if (r.voided) return false;
+  if (String(r.source || '').trim().toLowerCase() === 'app' || r._is_app_record || r.origin) return false;
+  if (String(r.modified_by || '').trim() || r.manual_override || r.restored_at || r._reopenedExplicitly) return false;
+  const eds = r._pre_void_edits;
+  if (Array.isArray(eds) && eds.length > 0) {
+    return eds.every(e => e && typeof e === 'object' && SHIFT_BACKFILL_TS_RE.test(String(e.at || '')));
+  }
+  return !String(r.entered_by || '').trim() && !String(r.modified_at || '').trim();
+}
+
+export function pruneBloatedShiftBackfillAttRows(incomingDoc, prevDoc, syncMeta = null) {
+  const droppedAttIds = [];
+  if (incomingDoc && incomingDoc.customRecords && Array.isArray(incomingDoc.customRecords.attendance)) {
+    const kept = [];
+    for (const r of incomingDoc.customRecords.attendance) {
+      if (isShiftBackfillBloatedSeedAttRow(r)) {
+        const rid = String(r.id || '').trim();
+        if (rid) droppedAttIds.push(rid);
+        continue;
+      }
+      kept.push(r);
+    }
+    if (droppedAttIds.length) incomingDoc.customRecords.attendance = kept;
+  }
+  if (prevDoc && prevDoc.customRecords && Array.isArray(prevDoc.customRecords.attendance)) {
+    if (prevDoc.customRecords.attendance.some(isShiftBackfillBloatedSeedAttRow)) {
+      prevDoc.customRecords = Object.assign({}, prevDoc.customRecords, {
+        attendance: prevDoc.customRecords.attendance.filter(r => !isShiftBackfillBloatedSeedAttRow(r))
+      });
+    }
+  }
+  if (syncMeta && typeof syncMeta === 'object' && droppedAttIds.length) {
+    const prevDropped = (syncMeta.retiredDropped && typeof syncMeta.retiredDropped === 'object') ? syncMeta.retiredDropped : {};
+    const existing = Array.isArray(prevDropped.attendance) ? prevDropped.attendance : [];
+    prevDropped.attendance = Array.from(new Set([...existing, ...droppedAttIds]));
+    syncMeta.retiredDropped = prevDropped;
+  }
+  return droppedAttIds.length;
+}
+
+const DELTA_WIRE_KEYS = [
+  '_deltaPatch', '_deletedCrIds', '_deletedIndRowIds', '_deletedIndEditKeys',
+  '_deletedPunchIds', '_deletedBioKeys', '_deletedSrKeys', '_deletedPhKeys'
+];
+
+function stripDeltaWireFields(doc) {
+  if (!doc || typeof doc !== 'object') return;
+  for (const dk of DELTA_WIRE_KEYS) delete doc[dk];
+}
+
+function expandDeltaMfgPatch(incomingDoc, prevDoc) {
+  if (!incomingDoc || typeof incomingDoc !== 'object') return;
+  const delCr = (incomingDoc._deletedCrIds && typeof incomingDoc._deletedCrIds === 'object' && !Array.isArray(incomingDoc._deletedCrIds)) ? incomingDoc._deletedCrIds : {};
+  const delIndRow = (incomingDoc._deletedIndRowIds && typeof incomingDoc._deletedIndRowIds === 'object' && !Array.isArray(incomingDoc._deletedIndRowIds)) ? incomingDoc._deletedIndRowIds : {};
+  const delIndEdit = Array.isArray(incomingDoc._deletedIndEditKeys) ? new Set(incomingDoc._deletedIndEditKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  const delPunch = Array.isArray(incomingDoc._deletedPunchIds) ? new Set(incomingDoc._deletedPunchIds.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  const delBio = Array.isArray(incomingDoc._deletedBioKeys) ? new Set(incomingDoc._deletedBioKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  const delSr = Array.isArray(incomingDoc._deletedSrKeys) ? new Set(incomingDoc._deletedSrKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  const delPh = Array.isArray(incomingDoc._deletedPhKeys) ? new Set(incomingDoc._deletedPhKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  stripDeltaWireFields(incomingDoc);
+
+  const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
+  for (const tk of ['users', 'sessions', 'stepUpAudits', '_purgedOverrideIds', 'workSchedules', 'alertRules', 'roleTabPolicies', 'faceSettings', 'lbpFxRate', 'lbpFxUpdatedAt']) {
+    if (!Object.prototype.hasOwnProperty.call(incomingDoc, tk) && Object.prototype.hasOwnProperty.call(prev, tk)) {
+      incomingDoc[tk] = prev[tk];
+    }
+  }
+
+  const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
+  const incCr = (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') ? incomingDoc.customRecords : {};
+  const mergedCr = {};
+  for (const k of new Set([...Object.keys(prevCr), ...Object.keys(incCr), ...Object.keys(delCr)])) {
+    const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
+    const iList = Array.isArray(incCr[k]) ? incCr[k] : [];
+    const dSet = Array.isArray(delCr[k]) ? new Set(delCr[k].map(x => String(x || '').trim()).filter(Boolean)) : null;
+    if (!iList.length && (!dSet || !dSet.size)) {
+      mergedCr[k] = pList;
+      continue;
+    }
+    const incById = new Map();
+    const newRows = [];
+    for (const ir of iList) {
+      if (!ir || typeof ir !== 'object' || ir.id == null) continue;
+      const rid = String(ir.id).trim();
+      if (!rid) continue;
+      incById.set(rid, ir);
+    }
+    const pIdSet = new Set(pList.map(pr => (pr && pr.id != null) ? String(pr.id).trim() : '').filter(Boolean));
+    const outList = [];
+    const seen = new Set();
+    for (const ir of iList) {
+      if (!ir || typeof ir !== 'object' || ir.id == null) continue;
+      const rid = String(ir.id).trim();
+      if (!rid || seen.has(rid)) continue;
+      if (!pIdSet.has(rid)) {
+        newRows.push(ir);
+        seen.add(rid);
+      }
+    }
+    for (const pr of pList) {
+      if (!pr || typeof pr !== 'object' || pr.id == null) continue;
+      const rid = String(pr.id).trim();
+      if (!rid || (dSet && dSet.has(rid) && !incById.has(rid))) continue;
+      if (incById.has(rid)) {
+        if (!seen.has(rid)) {
+          outList.push(incById.get(rid));
+          seen.add(rid);
+        }
+      } else if (!seen.has(rid)) {
+        outList.push(pr);
+        seen.add(rid);
+      }
+    }
+    mergedCr[k] = newRows.length ? [...newRows, ...outList] : outList;
+  }
+  incomingDoc.customRecords = mergedCr;
+
+  const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
+  const incIcr = (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') ? incomingDoc.industryCustomRows : {};
+  const mergedIcr = {};
+  for (const bk of new Set([...Object.keys(prevIcr), ...Object.keys(incIcr), ...Object.keys(delIndRow)])) {
+    const pList = Array.isArray(prevIcr[bk]) ? prevIcr[bk] : [];
+    const iList = Array.isArray(incIcr[bk]) ? incIcr[bk] : [];
+    const dSet = Array.isArray(delIndRow[bk]) ? new Set(delIndRow[bk].map(x => String(x || '').trim()).filter(Boolean)) : null;
+    if (!iList.length && (!dSet || !dSet.size)) {
+      if (pList.length) mergedIcr[bk] = pList;
+      continue;
+    }
+    const incById = new Map();
+    for (const ir of iList) {
+      if (!ir || typeof ir !== 'object') continue;
+      const rid = String(ir.id || ir.code || '').trim();
+      if (rid) incById.set(rid, ir);
+    }
+    const pIdSet = new Set(pList.map(pr => pr && String(pr.id || pr.code || '').trim()).filter(Boolean));
+    const outB = [];
+    const seenB = new Set();
+    for (const ir of iList) {
+      if (!ir || typeof ir !== 'object') continue;
+      const rid = String(ir.id || ir.code || '').trim();
+      if (rid && !pIdSet.has(rid) && !seenB.has(rid)) {
+        outB.push(ir);
+        seenB.add(rid);
+      }
+    }
+    for (const pr of pList) {
+      if (!pr || typeof pr !== 'object') continue;
+      const rid = String(pr.id || pr.code || '').trim();
+      if (!rid || (dSet && dSet.has(rid) && !incById.has(rid))) continue;
+      if (incById.has(rid)) {
+        if (!seenB.has(rid)) { outB.push(incById.get(rid)); seenB.add(rid); }
+      } else if (!seenB.has(rid)) {
+        outB.push(pr);
+        seenB.add(rid);
+      }
+    }
+    mergedIcr[bk] = outB;
+  }
+  incomingDoc.industryCustomRows = mergedIcr;
+
+  if (Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') || (delIndEdit && delIndEdit.size)) {
+    const mergedIre = Object.assign({}, (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {});
+    if (delIndEdit) delIndEdit.forEach(ek => delete mergedIre[ek]);
+    if (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') {
+      Object.assign(mergedIre, incomingDoc.industryRowEdits);
+    }
+    incomingDoc.industryRowEdits = mergedIre;
+  } else if (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
+    incomingDoc.industryRowEdits = prev.industryRowEdits;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(incomingDoc, 'kioskPunches') || (delPunch && delPunch.size)) {
+    const pList = Array.isArray(prev.kioskPunches) ? prev.kioskPunches : [];
+    const iList = Array.isArray(incomingDoc.kioskPunches) ? incomingDoc.kioskPunches : [];
+    const byId = new Map();
+    for (const p of pList) {
+      if (p && p.id != null) {
+        const pid = String(p.id).trim();
+        if (pid && !(delPunch && delPunch.has(pid))) byId.set(pid, p);
+      }
+    }
+    for (const p of iList) {
+      if (p && p.id != null) {
+        const pid = String(p.id).trim();
+        if (pid) byId.set(pid, p);
+      }
+    }
+    incomingDoc.kioskPunches = Array.from(byId.values())
+      .sort((a, b) => String((b && (b.punched_at || b.timestamp)) || '').localeCompare(String((a && (a.punched_at || a.timestamp)) || '')))
+      .slice(0, 300);
+  } else if (Array.isArray(prev.kioskPunches)) {
+    incomingDoc.kioskPunches = prev.kioskPunches;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(incomingDoc, 'staffBiometrics') || (delBio && delBio.size)) {
+    const mergedSb = Object.assign({}, (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {});
+    if (delBio) delBio.forEach(k => delete mergedSb[k]);
+    if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
+      Object.assign(mergedSb, incomingDoc.staffBiometrics);
+    }
+    incomingDoc.staffBiometrics = mergedSb;
+  } else if (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') {
+    incomingDoc.staffBiometrics = prev.staffBiometrics;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(incomingDoc, 'sentinelReviews') || (delSr && delSr.size)) {
+    const mergedSr = Object.assign({}, (prev.sentinelReviews && typeof prev.sentinelReviews === 'object') ? prev.sentinelReviews : {});
+    if (delSr) delSr.forEach(k => delete mergedSr[k]);
+    if (incomingDoc.sentinelReviews && typeof incomingDoc.sentinelReviews === 'object') {
+      Object.assign(mergedSr, incomingDoc.sentinelReviews);
+    }
+    incomingDoc.sentinelReviews = mergedSr;
+  } else if (prev.sentinelReviews && typeof prev.sentinelReviews === 'object') {
+    incomingDoc.sentinelReviews = prev.sentinelReviews;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(incomingDoc, 'partyHygiene') || (delPh && delPh.size)) {
+    const pRules = (prev.partyHygiene && prev.partyHygiene.rules && typeof prev.partyHygiene.rules === 'object') ? prev.partyHygiene.rules : {};
+    const iRules = (incomingDoc.partyHygiene && incomingDoc.partyHygiene.rules && typeof incomingDoc.partyHygiene.rules === 'object') ? incomingDoc.partyHygiene.rules : {};
+    const mergedRules = Object.assign({}, pRules);
+    if (delPh) delPh.forEach(k => delete mergedRules[k]);
+    Object.assign(mergedRules, iRules);
+    incomingDoc.partyHygiene = { rules: mergedRules };
+  } else if (prev.partyHygiene && typeof prev.partyHygiene === 'object') {
+    incomingDoc.partyHygiene = prev.partyHygiene;
+  }
 }
 
 function scopeStoreDocForSession(docObj, session) {
@@ -8804,8 +9114,26 @@ export function isKioskOwnedDoc(docKey) {
   return k === 'kiosk_station_keys' || k === 'kiosk_station_auth' || k === 'pos_revenue_posting' || k.startsWith('kiosk_key_seen:');
 }
 
-export async function handleAuthMe(env, session) {
+export async function handleAuthMe(env, session, url = null) {
   if (!session || !env || !env.DB) {
+    return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+  }
+  // A session opened by an Owner's seat preview is reported as such, and only to an app that asks with
+  // `?pv=1` (it knows never to resume one on a fresh start). An app version from before that rule asks
+  // without it and is told there is no session to resume, so it shows its sign-in screen.
+  let impersonated = false;
+  try {
+    const sid = String(session.sid || '').trim();
+    if (sid) {
+      const sRow = await env.DB.prepare('SELECT method FROM auth_sessions WHERE id = ?1 LIMIT 1').bind(sid).first();
+      impersonated = isSeatPreviewSessionRow(sRow);
+    }
+  } catch (_) {
+    // The kind of session could not be read: say there is none to resume, never take a preview for an
+    // ordinary sign-in.
+    return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+  }
+  if (impersonated && !(url && url.searchParams && url.searchParams.get('pv') === '1')) {
     return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
   }
   let userOut = null;
@@ -8821,7 +9149,7 @@ export async function handleAuthMe(env, session) {
     userOut = hydrateUserRow(row, true, false);
     if (userOut) await attachUserPasskeysMeta(env.DB, [userOut], session);
   } catch (_) {}
-  return jsonResponse({ ok: true, edge: true, authenticated: true, session, user: userOut });
+  return jsonResponse({ ok: true, edge: true, authenticated: true, impersonated, session, user: userOut });
 }
 
 function pickSyncBase(dbr, pr) {
@@ -9901,12 +10229,20 @@ export async function handleSync(request, env, session, body, _ctx) {
       return jsonResponse({
         ok: true,
         edge: true,
+        deltaSyncV1: true,
         notModified: true,
         etag,
         updatedAt: String((docObj && docObj.updatedAt) || (row && row.updated_at) || '')
       });
     }
-    const getResp = { ok: true, edge: true, etag, docs: { [targetKey]: docObj } };
+    const getResp = {
+      ok: true,
+      edge: true,
+      deltaSyncV1: true,
+      etag,
+      updatedAt: String((row && row.updated_at) || (docObj && docObj.updatedAt) || ''),
+      docs: { [targetKey]: docObj }
+    };
     if (storeUnreadable) getResp.storeUnreadable = true;
     return jsonResponse(getResp);
   }
@@ -9947,6 +10283,21 @@ export async function handleSync(request, env, session, body, _ctx) {
       }
     }
     const expectedTs = String(body.ifMatchUpdatedAt || '');
+    const isDeltaPatch = Boolean(incomingDoc && incomingDoc._deltaPatch);
+    if (isDeltaPatch && pKey !== 'mfg_web_store') {
+      return jsonResponse({
+        ok: false,
+        code: 'delta_unsupported_doc',
+        error: 'Delta sync patch is only supported for mfg_web_store.'
+      }, 400);
+    }
+    if (isDeltaPatch && !expectedTs) {
+      return jsonResponse({
+        ok: false,
+        code: 'delta_requires_if_match',
+        error: 'Delta sync patch requires ifMatchUpdatedAt.'
+      }, 400);
+    }
     // Old seed ids as the browser sent them, before the RLS merge adds stored rows (counted once the write lands).
     const legacyCandidates = pKey === 'mfg_web_store' ? collectLegacyCandidates(incomingDoc) : null;
     // Manufacturing positional ids: reads the browser's report and removes it from the document before any
@@ -9965,7 +10316,7 @@ export async function handleSync(request, env, session, body, _ctx) {
         capMinShellVerForRead(rawFresh);
       }
       const freshDoc = pKey === 'mfg_web_store' ? scopeStoreDocForSession(rawFresh, session) : rawFresh;
-      const conflictResp = { ok: true, conflict: true, updatedAt: currentTs, docs: { [pKey]: freshDoc } };
+      const conflictResp = { ok: true, conflict: true, deltaSyncV1: true, updatedAt: currentTs, docs: { [pKey]: freshDoc } };
       if (currentParsed.unreadable) conflictResp.storeUnreadable = true;
       return jsonResponse(conflictResp);
     }
@@ -9980,18 +10331,34 @@ export async function handleSync(request, env, session, body, _ctx) {
       return jsonResponse({ ok: false, storeUnreadable: true, error: 'The shared store is being repaired; your changes stay on this device and sync once it is.' }, 503);
     }
 
+    if (isDeltaPatch && (!currentRow || currentParsed.unreadable)) {
+      const rawFresh = currentParsed.obj;
+      await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawFresh);
+      capMinShellVerForRead(rawFresh);
+      const freshDoc = scopeStoreDocForSession(rawFresh, session);
+      const conflictResp = { ok: true, conflict: true, deltaSyncV1: true, updatedAt: currentTs, docs: { [pKey]: freshDoc } };
+      if (currentParsed.unreadable) conflictResp.storeUnreadable = true;
+      return jsonResponse(conflictResp);
+    }
+
     let prevDoc = currentRow ? (currentParsed.unreadable ? null : currentParsed.obj) : null;
     if (pKey === 'mfg_web_store') {
       prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
     }
     let crSyncMeta = null;
     if (pKey === 'mfg_web_store') {
+      if (isDeltaPatch) {
+        expandDeltaMfgPatch(incomingDoc, prevDoc);
+      } else {
+        stripDeltaWireFields(incomingDoc);
+      }
+      crSyncMeta = {};
+      pruneBloatedShiftBackfillAttRows(incomingDoc, prevDoc, crSyncMeta);
       if (isOwnerOrFullGroupSession(session)) {
         mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session);
       } else {
         await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
       }
-      crSyncMeta = {};
       reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, session, rawTruncMap, crSyncMeta);
     }
     const syncAuditBlocked = [];
@@ -10048,6 +10415,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       const latestResp = {
         ok: true,
         conflict: true,
+        deltaSyncV1: true,
         updatedAt: latestRow ? String(latestRow.updated_at || '') : '',
         docs: { [pKey]: latestScoped }
       };
@@ -10096,7 +10464,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       if (legacyHitsTask) await legacyHitsTask;
     }
 
-    const patchOut = { ok: true, edge: true, updatedAt: newTs };
+    const patchOut = { ok: true, edge: true, deltaSyncV1: true, updatedAt: newTs };
     if (body.awaitMirror === true && mirrorStats) patchOut.mirrorStats = mirrorStats;
     if (crSyncMeta && crSyncMeta.retiredDropped) patchOut.retiredDropped = crSyncMeta.retiredDropped;
     return jsonResponse(patchOut);

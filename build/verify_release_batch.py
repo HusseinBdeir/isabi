@@ -26,6 +26,10 @@ sys.path.insert(0, str(BUILD))
 import release_batch as RB  # noqa: E402
 import release_lock as RL  # noqa: E402
 
+# Offline means offline: an inherited backend choice must never point this gate at the live Cloudflare coordinator.
+for _k in ("ISABI_RELEASE_BACKEND", "ISABI_RELEASE_API_URL", "ISABI_BATCH_MAX"):
+    os.environ.pop(_k, None)
+
 RESULTS: list[tuple[bool, str]] = []
 NOW = "ISABI_RELEASE_LOCK_NOW"
 LIVE = "ISABI_RELEASE_LIVE_SHELL"
@@ -941,6 +945,268 @@ def main() -> int:  # noqa: PLR0915
         quiet(RL.release, A)
         wf = (BUILD.parent / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
         check("python3 build/verify_release_batch.py" in wf, "the push-to-main workflow runs this gate")
+
+        # 17. build/i18n_dict.json 3-way union-merge, js/i18n.js regeneration and fail-closed guards
+        itmp = tmp / "i18n_suite"
+        itmp.mkdir()
+        for name in ("isabi.git", "isabi-app.git"):
+            git(itmp, "init", "-q", "--bare", "-b", "main", str(itmp / name))
+        iseed = session(itmp, "seed")
+        iseed_app = iseed.parent / "isabi-app"
+        i_compiler = (
+            "import json, pathlib\n"
+            "root = pathlib.Path(__file__).resolve().parent.parent\n"
+            "d = json.loads((root / 'build' / 'i18n_dict.json').read_text(encoding='utf-8'))\n"
+            "eng = (root / 'build' / 'i18n_engine.js').read_text(encoding='utf-8')\n"
+            "out = '/* compiled */\\nconst DICT = ' + json.dumps(d, ensure_ascii=False, sort_keys=True) + ';\\n' + eng\n"
+            "(root / 'js' / 'i18n.js').write_text(out, encoding='utf-8', newline='\\n')\n"
+        )
+        i_auditor = (
+            "import json, pathlib, re, sys\n"
+            "root = pathlib.Path(__file__).resolve().parent.parent\n"
+            "d = json.loads((root / 'build' / 'i18n_dict.json').read_text(encoding='utf-8'))\n"
+            "txt = (root / 'js' / 'app.js').read_text(encoding='utf-8')\n"
+            "missing = [m for m in re.findall(r'<button>([^<]+)</button>', txt) if m not in d['ar'] or m not in d['fr']]\n"
+            "if missing:\n"
+            "    print('missing i18n:', missing, file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+        )
+        base_dict = {
+            "ar": {"Base Key": "مفتاح أساسي"},
+            "fr": {"Base Key": "Clé de base"},
+            "noun_plurals": {"item": ["عناصر", "articles"]},
+            "search_terms": {"base": ["أساسي", "base"]},
+        }
+        import json as _json
+        for rel, body in (
+            ("sw.js", SW),
+            ("index.html", INDEX),
+            ("manifest.json", MANIFEST),
+            ("js/app.js", APP_JS),
+            ("js/other.js", "other\n"),
+            ("build/build_i18n.py", i_compiler),
+            ("build/audit_i18n.py", i_auditor),
+            ("build/i18n_engine.js", "const ENGINE = 1;\n"),
+            ("build/i18n_dict.json", _json.dumps(base_dict, ensure_ascii=False, indent=2) + "\n"),
+        ):
+            put(iseed_app / rel, body)
+        subprocess.run([sys.executable, str(iseed_app / "build" / "build_i18n.py")], cwd=str(iseed_app), check=True, stdin=subprocess.DEVNULL)
+        for rel, body in (("app/sw.js", SW), ("functions/_lib/deployed_shell.js", "export const DEPLOYED_SHELL_VER = '19.6.100';\n"),
+                          ("functions/api.js", API_JS)):
+            put(iseed / rel, body)
+        for repo in (iseed_app, iseed):
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", "seed")
+            git(repo, "push", "-q", "origin", "HEAD:main")
+        IA, IB, IC = (session(itmp, n) for n in ("IA", "IB", "IC"))
+        iappA, iappB, iappC = (s.parent / "isabi-app" for s in (IA, IB, IC))
+        os.environ[LIVE] = "19.6.100"
+
+        def i18n_branch(repo: pathlib.Path, branch: str, extra_ar: dict, extra_fr: dict, *,
+                        extra_pl: dict | None = None, extra_st: dict | None = None,
+                        files: dict[str, str] | None = None, compile_out: bool = True) -> str:
+            git(repo, "fetch", "-q", "origin")
+            git(repo, "checkout", "-q", "-B", branch, "origin/main")
+            d = _json.loads((repo / "build" / "i18n_dict.json").read_text(encoding="utf-8"))
+            d["ar"].update(extra_ar)
+            d["fr"].update(extra_fr)
+            if extra_pl:
+                d["noun_plurals"].update(extra_pl)
+            if extra_st:
+                d["search_terms"].update(extra_st)
+            put(repo / "build" / "i18n_dict.json", _json.dumps(d, ensure_ascii=False, indent=2) + "\n")
+            for rel, body in (files or {}).items():
+                put(repo / rel, body)
+            if compile_out:
+                subprocess.run([sys.executable, str(repo / "build" / "build_i18n.py")], cwd=str(repo), check=True, stdin=subprocess.DEVNULL)
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", branch)
+            git(repo, "push", "-q", "-f", "origin", branch)
+            return git(repo, "rev-parse", "HEAD")
+
+        # 17a. Three concurrent tail-append branches off the same origin/main all merge cleanly
+        sha_i1 = i18n_branch(
+            iappA, "wt/i1", {"Alpha Label": "ألفا"}, {"Alpha Label": "Alpha"},
+            extra_pl={"alpha": ["ألفات", "alphas"]}, extra_st={"alpha": ["ألفا", "alpha"]},
+            files={"js/app.js": APP_JS.replace("line1\n", "<button>Alpha Label</button>\n")},
+        )
+        sha_i2 = i18n_branch(
+            iappB, "wt/i2", {"Beta Label": "بيتا"}, {"Beta Label": "Bêta"},
+            extra_pl={"beta": ["بيتات", "bêtas"]}, extra_st={"beta": ["بيتا", "bêta"]},
+            files={"js/app.js": APP_JS.replace("line6\n", "<button>Beta Label</button>\n")},
+        )
+        sha_i3 = i18n_branch(
+            iappC, "wt/i3", {"Gamma Label": "غاما"}, {"Gamma Label": "Gamma"},
+            extra_pl={"gamma": ["غامات", "gammas"]}, extra_st={"gamma": ["غاما", "gamma"]},
+            files={"js/app.js": APP_JS.replace("line11\n", "<button>Gamma Label</button>\n")},
+        )
+        tick()
+        eI1 = quiet(RB.join, IA, holder="sess I1", summary="I1 alpha", app_branch="wt/i1")
+        tick()
+        eI2 = quiet(RB.join, IB, holder="sess I2", summary="I2 beta", app_branch="wt/i2")
+        tick()
+        eI3 = quiet(RB.join, IC, holder="sess I3", summary="I3 gamma", app_branch="wt/i3")
+        tick()
+        bI = quiet(RB.take, IA, holder="sess I1")
+        merged_d = _json.loads(text(iappA / "build" / "i18n_dict.json"))
+        raw_i18n_bytes = (iappA / "js" / "i18n.js").read_bytes()
+        compiled_i18n_txt = raw_i18n_bytes.decode("utf-8")
+        check(
+            [e["id"] for e in bI["entries"]] == [eI1["id"], eI2["id"], eI3["id"]]
+            and not bI["left_out"]
+            and b"\r\n" not in raw_i18n_bytes
+            and all(k in merged_d["ar"] and k in merged_d["fr"] for k in ("Base Key", "Alpha Label", "Beta Label", "Gamma Label"))
+            and all(k in merged_d["noun_plurals"] and k in merged_d["search_terms"] for k in ("alpha", "beta", "gamma"))
+            and all(k in compiled_i18n_txt for k in ("Alpha Label", "Beta Label", "Gamma Label"))
+            and sum("auto-merged build/i18n_dict.json" in n for n in bI["notes"]) == 2
+            and all(is_ancestor(iappA, s) for s in (sha_i1, sha_i2, sha_i3)),
+            "3 concurrent i18n tail-append branches union-merge into one batch with LF js/i18n.js and true git ancestry",
+        )
+
+        # 17b. Dropping the middle i18n branch rebuilds cleanly without its keys or code
+        tick()
+        bI_drop = quiet(RB.drop, IA, eI2["id"], reason="verify_i2 failed", reset=True)
+        drop_d = _json.loads(text(iappA / "build" / "i18n_dict.json"))
+        drop_js = text(iappA / "js" / "i18n.js")
+        drop_app = text(iappA / "js" / "app.js")
+        check(
+            [e["id"] for e in bI_drop["entries"]] == [eI1["id"], eI3["id"]]
+            and "Beta Label" not in drop_d["ar"] and "Beta Label" not in drop_js and "Beta Label" not in drop_app
+            and all(k in drop_d["ar"] and k in drop_js for k in ("Alpha Label", "Gamma Label"))
+            and is_ancestor(iappA, sha_i1) and is_ancestor(iappA, sha_i3) and not is_ancestor(iappA, sha_i2),
+            "dropping middle i18n branch removes its dict keys, compiled js/i18n.js entry and app code cleanly",
+        )
+        quiet(RB.abort, IA)
+        for sess, ent in ((IA, eI1), (IB, eI2), (IC, eI3)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 17c. Identical key additions from two branches merge cleanly
+        i18n_branch(iappA, "wt/same1", {"Shared Phrase": "عبارة"}, {"Shared Phrase": "Phrase"}, files={"js/other.js": "other S1\n"})
+        i18n_branch(iappB, "wt/same2", {"Shared Phrase": "عبارة"}, {"Shared Phrase": "Phrase"}, files={"js/app.js": APP_JS.replace("line2\n", "<button>Shared Phrase</button>\n")})
+        tick()
+        eS_1 = quiet(RB.join, IA, holder="sess S1", summary="Same 1", app_branch="wt/same1")
+        tick()
+        eS_2 = quiet(RB.join, IB, holder="sess S2", summary="Same 2", app_branch="wt/same2")
+        tick()
+        bSame = quiet(RB.take, IA, holder="sess S1")
+        check(
+            [e["id"] for e in bSame["entries"]] == [eS_1["id"], eS_2["id"]] and not bSame["left_out"]
+            and _json.loads(text(iappA / "build" / "i18n_dict.json"))["ar"].get("Shared Phrase") == "عبارة",
+            "two branches adding the same key with identical AR/FR values merge cleanly",
+        )
+        quiet(RB.abort, IA)
+        for sess, ent in ((IA, eS_1), (IB, eS_2)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 17d. Conflicting translation for the same key fails closed (second branch is LEFT_OUT)
+        i18n_branch(iappA, "wt/conf1", {"Clash Key": "خيار ١"}, {"Clash Key": "Choix 1"})
+        i18n_branch(iappB, "wt/conf2", {"Clash Key": "خيار ٢"}, {"Clash Key": "Choix 1"})
+        tick()
+        eC1 = quiet(RB.join, IA, holder="sess C1", summary="Conf 1", app_branch="wt/conf1")
+        tick()
+        eC2 = quiet(RB.join, IB, holder="sess C2", summary="Conf 2", app_branch="wt/conf2")
+        tick()
+        bConf = quiet(RB.take, IA, holder="sess C1")
+        check(
+            [e["id"] for e in bConf["entries"]] == [eC1["id"]]
+            and [x["id"] for x in bConf["left_out"]] == [eC2["id"]]
+            and "conflicting translation key(s)" in bConf["left_out"][0]["why"]
+            and _json.loads(text(iappA / "build" / "i18n_dict.json"))["ar"].get("Clash Key") == "خيار ١",
+            "conflicting translation value for same key leaves second branch out, naming conflict",
+        )
+        quiet(RB.abort, IA)
+        for sess, ent in ((IA, eC1), (IB, eC2)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 17e. Uncompiled hand-edit in js/i18n.js fails closed even when first in line
+        git(iappA, "fetch", "-q", "origin")
+        git(iappA, "checkout", "-q", "-B", "wt/hand", "origin/main")
+        put(iappA / "js" / "i18n.js", text(iappA / "js" / "i18n.js") + "// hand edit\n")
+        git(iappA, "add", "-A")
+        git(iappA, "commit", "-q", "-m", "wt/hand")
+        git(iappA, "push", "-q", "-f", "origin", "wt/hand")
+        tick()
+        eHand = quiet(RB.join, IA, holder="sess Hand", summary="Hand edit", app_branch="wt/hand")
+        tick()
+        bHand = quiet(RB.take, IA, holder="sess Hand")
+        check(
+            bHand["entries"] == [] and [x["id"] for x in bHand["left_out"]] == [eHand["id"]]
+            and "uncompiled edits" in bHand["left_out"][0]["why"],
+            "uncompiled hand-edit in js/i18n.js is rejected even when first in line",
+        )
+        quiet(RB.leave, IA, eHand["id"])
+
+        # 17f. audit_i18n.py failure after merge fails closed and leaves batch clean
+        i18n_branch(iappA, "wt/aud1", {"Good Btn": "زر"}, {"Good Btn": "Bouton"}, files={"js/other.js": "other A\n"})
+        i18n_branch(
+            iappB, "wt/unaud", {"Extra Key": "إضافي"}, {"Extra Key": "Extra"},
+            files={"js/app.js": APP_JS.replace("line3\n", "<button>Untranslated Foo</button>\n")},
+        )
+        tick()
+        eA1 = quiet(RB.join, IA, holder="sess A1", summary="Good i18n", app_branch="wt/aud1")
+        tick()
+        eUn = quiet(RB.join, IB, holder="sess Unaud", summary="Missing i18n", app_branch="wt/unaud")
+        tick()
+        bAud = quiet(RB.take, IA, holder="sess A1")
+        check(
+            [e["id"] for e in bAud["entries"]] == [eA1["id"]]
+            and [x["id"] for x in bAud["left_out"]] == [eUn["id"]]
+            and "build/audit_i18n.py failed" in bAud["left_out"][0]["why"]
+            and "Extra Key" not in _json.loads(text(iappA / "build" / "i18n_dict.json"))["ar"]
+            and "Untranslated Foo" not in text(iappA / "js" / "app.js"),
+            "audit_i18n.py failure after merge leaves failing branch out and rolls back batch",
+        )
+        quiet(RB.abort, IA)
+        for sess, ent in ((IA, eA1), (IB, eUn)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 17g. Uncompiled build/i18n_dict.json edit (compile_out=False) fails closed even when first in line
+        i18n_branch(iappA, "wt/uncomp_dict", {"Uncomp Key": "غير مترجم"}, {"Uncomp Key": "Non compilé"}, compile_out=False)
+        tick()
+        eUc = quiet(RB.join, IA, holder="sess Uncomp", summary="Uncompiled dict edit", app_branch="wt/uncomp_dict")
+        tick()
+        bUc = quiet(RB.take, IA, holder="sess Uncomp")
+        check(
+            bUc["entries"] == [] and [x["id"] for x in bUc["left_out"]] == [eUc["id"]]
+            and "uncompiled edits" in bUc["left_out"][0]["why"]
+            and "Uncomp Key" not in _json.loads(text(iappA / "build" / "i18n_dict.json"))["ar"],
+            "uncompiled build/i18n_dict.json edit is rejected even when first in line",
+        )
+        quiet(RB.leave, IA, eUc["id"])
+
+        # 17h. AR/FR key parity mismatch fails closed even when compiled into js/i18n.js
+        i18n_branch(iappA, "wt/ar_only", {"Arabic Only Key": "فقط عربي"}, {})
+        tick()
+        eAr = quiet(RB.join, IA, holder="sess ArOnly", summary="AR only key", app_branch="wt/ar_only")
+        tick()
+        bAr = quiet(RB.take, IA, holder="sess ArOnly")
+        check(
+            bAr["entries"] == [] and [x["id"] for x in bAr["left_out"]] == [eAr["id"]]
+            and "AR/FR key mismatch" in bAr["left_out"][0]["why"],
+            "AR/FR key parity mismatch is rejected even when first in line",
+        )
+        quiet(RB.leave, IA, eAr["id"])
+
+        # 17i. Single non-dict branch introducing untranslated UI fails audit_i18n.py on its own merge (not blaming next branch)
+        i18n_branch(iappA, "wt/bad_ui", {}, {}, files={"js/app.js": APP_JS.replace("line4\n", "<button>Solo Untranslated</button>\n")}, compile_out=False)
+        i18n_branch(iappB, "wt/good_i18n", {"Clean Key": "مفتاح سليم"}, {"Clean Key": "Clé propre"}, files={"js/app.js": APP_JS.replace("line5\n", "<button>Clean Key</button>\n")})
+        tick()
+        eBad = quiet(RB.join, IA, holder="sess BadUI", summary="Untranslated UI only", app_branch="wt/bad_ui")
+        tick()
+        eGood = quiet(RB.join, IB, holder="sess GoodI18N", summary="Valid i18n change", app_branch="wt/good_i18n")
+        tick()
+        bIso = quiet(RB.take, IA, holder="sess BadUI")
+        check(
+            [e["id"] for e in bIso["entries"]] == [eGood["id"]]
+            and [x["id"] for x in bIso["left_out"]] == [eBad["id"]]
+            and "build/audit_i18n.py failed" in bIso["left_out"][0]["why"]
+            and "Solo Untranslated" not in text(iappA / "js" / "app.js")
+            and "Clean Key" in text(iappA / "js" / "app.js"),
+            "single non-dict branch with missing i18n is rejected itself instead of breaking the next innocent branch",
+        )
+        quiet(RB.abort, IA)
+        for sess, ent in ((IA, eBad), (IB, eGood)):
+            quiet(RB.leave, sess, ent["id"])
     finally:
         for k, v in saved.items():
             if v is None:

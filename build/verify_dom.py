@@ -1,3 +1,4 @@
+import datetime
 import html
 import json
 import os
@@ -10,6 +11,26 @@ import tempfile
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 URL = 'file:///' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html').replace('\\', '/')
 ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(), 'isabi_verify_shots')
+
+
+def validate_video_upload_date(val, now_utc=None):
+    """Validate VideoObject.uploadDate as an ISO 8601 DateTime with explicit timezone and non-future timestamp."""
+    if not isinstance(val, str):
+        raise AssertionError(f"VideoObject uploadDate must be a string, got {type(val).__name__}: {val!r}")
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})', val):
+        raise AssertionError(f"VideoObject uploadDate must be ISO 8601 DateTime with timezone (YYYY-MM-DDThh:mm:ss+hh:mm or Z): {val!r}")
+    try:
+        parsed = datetime.datetime.fromisoformat(val[:-1] + '+00:00' if val.endswith('Z') else val)
+    except ValueError as exc:
+        raise AssertionError(f"Invalid calendar/time value in VideoObject uploadDate {val!r}: {exc}") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None or abs(parsed.utcoffset()) > datetime.timedelta(hours=14):
+        raise AssertionError(f"Invalid timezone offset in VideoObject uploadDate: {val!r}")
+    ref_now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    parsed_utc = parsed.astimezone(datetime.timezone.utc)
+    min_utc = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    if not (min_utc <= parsed_utc <= ref_now):
+        raise AssertionError(f"VideoObject uploadDate out of valid past range ({min_utc.isoformat()} .. {ref_now.isoformat()}): {val!r}")
+    return parsed_utc
 
 
 def run_dom_and_screenshots():
@@ -100,6 +121,22 @@ def run_dom_and_screenshots():
         assert sw_doc['offers'][1]['priceSpecification'][0]['minPrice'] == 5600 and sw_doc['offers'][1]['priceSpecification'][1]['minPrice'] == 80 and sw_doc['offers'][1]['priceSpecification'][1]['maxPrice'] == 100 and sw_doc['offers'][1]['priceSpecification'][1]['billingDuration'] == 'P1M'
         v_obj = sw_doc.get('video', {})
         assert v_obj.get('@type') == 'VideoObject' and v_obj.get('contentUrl') == 'https://isabisystems.com/isabi-tour.mp4' and v_obj.get('thumbnailUrl') == 'https://isabisystems.com/isabi-tour-poster.jpg' and v_obj.get('duration') == 'PT1M31S', f"Invalid VideoObject JSON-LD: {v_obj}"
+        _now_utc_ref = datetime.datetime.now(datetime.timezone.utc)
+        for _bad_dt in (
+            '2026-11-24',
+            '2026-11-24T02:46:51',
+            '2026-02-29T02:46:51+02:00',
+            '2026-11-31T02:46:51+02:00',
+            (_now_utc_ref + datetime.timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%S+00:00'),
+        ):
+            try:
+                validate_video_upload_date(_bad_dt, now_utc=_now_utc_ref)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"validate_video_upload_date unexpectedly accepted invalid value: {_bad_dt!r}")
+        validate_video_upload_date('2026-11-24T00:46:51Z', now_utc=_now_utc_ref)
+        validate_video_upload_date(v_obj.get('uploadDate'), now_utc=_now_utc_ref)
         bot_res = subprocess.run(
             [EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--virtual-time-budget=3000', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60

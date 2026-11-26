@@ -363,8 +363,19 @@ def _run_suite() -> int:
         r2_put_calls: list[str] = []
         deploy_pages_calls = 0
         upload_secrets_calls = 0
+        # The leader's PC deploys (owner 2026-11-26): --pages-only applies the idempotent D1 schema before going live.
+        schema_events: list[str] = []   # "schema" per remote schema run, "deploy" per Pages deploy, in the order they ran
+        schema_fail = False
 
         def fake_run_wrangler(args, _env, input_text=None, check=True, retry=None):
+            if args[:2] == ["d1", "execute"] and "--remote" in args and any(
+                    str(a).startswith("--file=") and str(a).endswith("0001_schema.sql") for a in args):
+                schema_events.append("schema")
+                if schema_fail:
+                    if check:
+                        raise subprocess.CalledProcessError(1, ["wrangler", *args], output="", stderr="D1_ERROR: no such table")
+                    return subprocess.CompletedProcess(["wrangler", *args], 1, stdout="", stderr="D1_ERROR: no such table")
+                return subprocess.CompletedProcess(["wrangler", *args], 0, stdout="ok", stderr="")
             if args[:3] == ["r2", "object", "get"]:
                 key = args[3].split("seed_")[-1].split(".json")[0]
                 r2_get_calls.append(key)
@@ -388,6 +399,7 @@ def _run_suite() -> int:
         def fake_deploy_pages(_env):
             nonlocal deploy_pages_calls
             deploy_pages_calls += 1
+            schema_events.append("deploy")
 
         def fake_upload_secrets(_env, rotate_secrets=False):
             nonlocal upload_secrets_calls
@@ -542,13 +554,62 @@ def _run_suite() -> int:
             )
             rl.release(site, force=True, quiet=True)
 
+            # Every abort above happened before the schema was touched: stale seeds never reach the database step.
+            check(schema_events == [], "pages-only-stale-r2-aborts-before-the-d1-schema", f"events={schema_events}")
+
+            # Case 2d-ii: the schema cannot be applied -> exit 2 before deploy_pages, nothing recorded as deployed, and a
+            # lock this run took is given back (the Edge functions never go live ahead of the schema they read).
+            r2_remote["core"] = core_v2
+            schema_fail = True
+            schema_events.clear()
+            deploy_pages_calls = 0
+            err_sch = io.StringIO()
+            rc_sch = None
+            with contextlib.redirect_stderr(err_sch), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    dc.main(["--pages-only", "--skip-live-parity", "--skip-indexnow", "--allow-claimed-version"])
+                except SystemExit as ex:
+                    rc_sch = ex.code
+            check(
+                rc_sch == 2 and deploy_pages_calls == 0 and schema_events == ["schema"]
+                and "could not apply the D1 schema" in err_sch.getvalue() and rl.read_remote_lock(site) == ("", {}),
+                "pages-only-schema-failure-aborts-before-deploy-and-releases-new-lock",
+                f"rc={rc_sch}, deps={deploy_pages_calls}, events={schema_events}, lock={rl.read_remote_lock(site)}",
+            )
+            # Case 2d-iii: the same failure for a batch leader, who holds the lock before the deploy starts: its lock stays.
+            rl.acquire(site, holder="batch-leader-test", version="v19.6.999", quiet=True)
+            schema_events.clear()
+            deploy_pages_calls = 0
+            rc_sch_held = None
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    dc.main(["--pages-only", "--skip-live-parity", "--skip-indexnow", "--allow-claimed-version"])
+                except SystemExit as ex:
+                    rc_sch_held = ex.code
+            lock_sha_sch, lock_info_sch = rl.read_remote_lock(site)
+            check(
+                rc_sch_held == 2 and deploy_pages_calls == 0 and schema_events == ["schema"] and bool(lock_sha_sch)
+                and lock_info_sch.get("holder") == "batch-leader-test" and not (lock_info_sch.get("deployed") or []),
+                "pages-only-schema-failure-keeps-a-leaders-lock-and-records-no-deploy",
+                f"rc={rc_sch_held}, deps={deploy_pages_calls}, events={schema_events}, lock={lock_info_sch}",
+            )
+            rl.release(site, force=True, quiet=True)
+            schema_fail = False
+            r2_remote["core"] = core_v1
+
             # Case 2e: once R2 has matching core_v2 bytes, --pages-only checks ONLY core and succeeds!
             r2_remote["core"] = core_v2
             r2_get_calls.clear()
+            schema_events.clear()
             deploy_pages_calls = 0
             with contextlib.redirect_stdout(io.StringIO()):
                 dc.main(["--pages-only", "--skip-live-parity", "--skip-indexnow", "--allow-claimed-version"])
             check(deploy_pages_calls == 1 and r2_get_calls == ["core"], "pages-only-matching-r2-passes")
+            check(schema_events == ["schema", "deploy"], "pages-only-applies-the-d1-schema-once-right-before-the-pages-deploy",
+                  f"events={schema_events}")
+            dep_2e = (rl.read_remote_lock(site)[1].get("deployed") or [{}])[-1].get("sha")
+            check(dep_2e == _git(site, "rev-parse", "HEAD", env=env).strip(),
+                  "pages-only-records-the-deployed-commit-in-the-lock (what release_batch.py done checks)", f"deployed={dep_2e}")
             _git(site, "push", "-q", "origin", "HEAD:main", env=env)
             rl.release(site, quiet=True)
 

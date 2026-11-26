@@ -37,7 +37,14 @@ function buildResetHtml(isApp, isLegacyHost) {
           for (const k of keys) await caches.delete(k);
         }
       } catch (e) {}
-      location.replace('${redirectTarget}?reset=' + Date.now());
+      location.replace('${redirectTarget}?' + ((function() {
+        try {
+          const k = new URLSearchParams(location.search).get('kiosk');
+          return (${isApp ? 'true' : 'false'} && /^(attendance|sales|raw|fuel|plant)$/i.test(k || ''))
+            ? 'kiosk=' + encodeURIComponent(String(k).toLowerCase()) + '&'
+            : '';
+        } catch (_) { return ''; }
+      })()) + 'reset=' + Date.now());
     })();
   </script>
 </body>
@@ -46,6 +53,8 @@ function buildResetHtml(isApp, isLegacyHost) {
 }
 
 const SHOWCASE_404_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const SHOWCASE_SHELL_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const APP_SHELL_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com; media-src 'self' data: blob: mediastream:; connect-src 'self' data: blob: https://nominatim.openstreetmap.org https://router.project-osrm.org https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
 function buildLegacyHostSwMigrationScript() {
   return `// Legacy host Service Worker clean migration to https://isabisystems.com
@@ -205,6 +214,44 @@ export async function onRequest(context) {
       return new Response(null, {
         status: code,
         headers: redirHdrs
+      });
+    }
+  }
+
+  // Serve canonical shell HTML directly at /index.html and /app/index.html with HTTP 200 (0 redirects)
+  // so legacy Service Workers (pre-v19.6.218) fetching ./index.html?v=... upgrade cleanly without ERR_FAILED.
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    (pLower === '/index.html' || pLower === '/app/index.html')
+  ) {
+    const isAppIdx = pLower.startsWith('/app/');
+    const canonicalPath = isAppIdx ? '/app/' : '/';
+    const fetchAsset = req => (context.env && context.env.ASSETS ? context.env.ASSETS.fetch(req) : context.next(req));
+    const assetRes = await fetchAsset(new Request(new URL(canonicalPath, url.origin), { method: 'GET' }));
+    if (assetRes && assetRes.status === 200) {
+      const hdrs = new Headers(assetRes.headers);
+      hdrs.delete('Location');
+      hdrs.set('Content-Type', 'text/html; charset=utf-8');
+      hdrs.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      hdrs.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+      hdrs.set('X-Content-Type-Options', 'nosniff');
+      hdrs.set('X-Frame-Options', 'DENY');
+      hdrs.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+      hdrs.set('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=(self), bluetooth=(self), usb=(), payment=()');
+      hdrs.set('X-ISABI-Edge', '1');
+      if (!hdrs.has('Content-Security-Policy')) {
+        hdrs.set('Content-Security-Policy', isAppIdx ? APP_SHELL_CSP : SHOWCASE_SHELL_CSP);
+      }
+      if (rawHost.endsWith('.pages.dev')) {
+        hdrs.set('X-Robots-Tag', 'noindex, nofollow');
+      }
+      if (request.method === 'HEAD') {
+        if (assetRes.body) assetRes.body.cancel().catch(() => {});
+        return new Response(null, { status: 200, headers: hdrs });
+      }
+      return new Response(assetRes.body, {
+        status: 200,
+        headers: hdrs
       });
     }
   }
