@@ -1452,8 +1452,9 @@
     const staffHint = extractLabeledValue(lines, /^(?:employee|staff|worker|salarié|\u0627\u0644\u0645\u0648\u0638\u0641)\s*:\s*(.+)$/i);
     const notesHint = extractLabeledValue(lines, /^(?:notes?|remarks?|memo|description|\u0645\u0644\u0627\u062d\u0638\u0627\u062a)\s*:\s*(.+)$/i);
 
-    // Totals, Subtotal, VAT & LBP detection
+    // Totals, Subtotal, Discount, VAT & LBP detection
     let subtotalUsd = 0;
+    let discountUsd = 0;
     let vatUsd = 0;
     let totalUsd = 0;
     let lbpAmount = 0;
@@ -1468,6 +1469,9 @@
       }
       if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht)/i.test(line)) {
         subtotalUsd = parseMoneyValue(line);
+      } else if (/^(?:(?:less\s+)?(?:discount|rebate|remise)|خصم|حسم)\b/i.test(line)) {
+        const dv = parseMoneyValue(line);
+        if (dv > 0) discountUsd = dv;
       } else if (/^(?:vat|tva|tax\s*\(?\s*11%|\u0636\u0631\u064a\u0628\u0629)/i.test(line)) {
         vatUsd = parseMoneyValue(line);
       } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a)/i.test(line)) {
@@ -1519,7 +1523,7 @@
       subtotalUsd = round2(lineItems.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
     }
     if (!totalUsd && (subtotalUsd > 0 || vatUsd > 0)) {
-      totalUsd = round2(subtotalUsd + vatUsd);
+      totalUsd = round2(Math.max(0, subtotalUsd + vatUsd - discountUsd));
     }
     if (!totalUsd) {
       const anyUsd = cleanText.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/g) || [];
@@ -1644,6 +1648,7 @@
       staff: staffHint,
       paymentMethod,
       subtotalExVat: subtotalUsd,
+      discountAmount: discountUsd,
       vatAmount: vatUsd,
       totalAmount: totalUsd,
       lbpAmount,
@@ -1689,12 +1694,14 @@
 
     // Final-page totals override Page 1 "Carried Forward / Page 1 Subtotal"
     let finalSubtotal = 0;
+    let finalDiscount = 0;
     let finalVat = 0;
     let finalTotal = 0;
     let finalLbp = 0;
     for (let idx = perPage.length - 1; idx >= 0; idx--) {
       const p = perPage[idx];
       if (!finalTotal && p.totalAmount > 0) finalTotal = p.totalAmount;
+      if (!finalDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
       if (!finalVat && p.vatAmount > 0) finalVat = p.vatAmount;
       if (!finalSubtotal && p.subtotalExVat > 0) finalSubtotal = p.subtotalExVat;
       if (!finalLbp && p.lbpAmount > 0) finalLbp = p.lbpAmount;
@@ -1703,8 +1710,9 @@
     if (mergedLines.length > 1 && linesSum > finalSubtotal) {
       finalSubtotal = linesSum;
     }
-    if ((finalSubtotal > 0 || finalVat > 0) && finalTotal < finalSubtotal) {
-      finalTotal = round2(finalSubtotal + finalVat);
+    const expectedNetFromParts = round2(Math.max(0, finalSubtotal + finalVat - finalDiscount));
+    if ((finalSubtotal > 0 || finalVat > 0) && (finalTotal <= 0 || finalTotal < expectedNetFromParts - 0.05)) {
+      finalTotal = expectedNetFromParts;
     }
 
     // Prefer first valid 17-char VIN audit across any page
@@ -1738,6 +1746,7 @@
       staff: firstNonEmpty(p => p.staff),
       paymentMethod: firstNonEmpty(p => p.paymentMethod),
       subtotalExVat: finalSubtotal || full.subtotalExVat,
+      discountAmount: finalDiscount || full.discountAmount || 0,
       vatAmount: finalVat || full.vatAmount,
       totalAmount: finalTotal || full.totalAmount,
       lbpAmount: finalLbp || full.lbpAmount,
@@ -1827,7 +1836,7 @@
       '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|companyequipment|equipment|document",',
       '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",',
       '"category":"","subcategory":"","product":"","site":"","equipment":"","plateNo":"","model":"","vin":"","driver":"","staff":"",',
-      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
+      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
       '"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",',
       '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}',
       'ISO 3779 VIN rule: 17-character chassis VINs NEVER contain I, O, or Q; carefully disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
@@ -1926,6 +1935,7 @@
       staff: pickStr(det.staff, ai.staff),
       paymentMethod: pickStr(det.paymentMethod, ai.paymentMethod),
       subtotalExVat: pickNum(det.subtotalExVat, ai.subtotalExVat),
+      discountAmount: pickNum(det.discountAmount, ai.discountAmount || ai.discount),
       vatAmount: pickNum(det.vatAmount, ai.vatAmount),
       totalAmount: pickNum(det.totalAmount, ai.totalAmount),
       lbpAmount: pickNum(det.lbpAmount, ai.lbpAmount),
@@ -2321,12 +2331,16 @@
           FORM_UI.expItem0Manual = true;
         } else {
           let baseAmt = 0;
+          const scanDisc = (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0) ? round2(Number(parsed.discountAmount)) : 0;
           if (!parsed.pricePending) {
             const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
+            const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0);
+            const grossTotalForLine = scanDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + scanDisc)) : fullTotal;
             if (supIsIva) {
-              baseAmt = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : round2(fullTotal / 1.11);
+              const subFitsDiscNet = parsed.subtotalExVat > 0 && !subIsInclGross && (!(scanDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - scanDisc - fullTotal) <= 0.05);
+              baseAmt = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
             } else {
-              baseAmt = fullTotal;
+              baseAmt = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && scanDisc > 0) ? parsed.subtotalExVat : grossTotalForLine;
             }
           }
           const effQty = parsed.qty > 0 ? parsed.qty : 1;
@@ -2342,6 +2356,9 @@
           FORM_UI.expItem0Manual = true;
         }
         if (D.renderExpenseItemsBuilderRows) D.renderExpenseItemsBuilderRows();
+        if (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0 && $('f_discount')) {
+          setInputValueAndFire('f_discount', round2(Number(parsed.discountAmount)), filledSet, warnSet, false);
+        }
         filledSet.add('f_exi_name_0');
         filledSet.add('f_exi_cost_0');
         if (convertedLbpUsd > 0) warnSet.add('f_exi_cost_0');
@@ -2790,9 +2807,10 @@
     const rawStr = String(rawVal || '').trim();
     if (!rawStr || !D) return null;
     const kindLbl = precheckKindLabel(kind);
-    const aliasCanon = (typeof D.resolveConfirmedPartyAlias === 'function')
-      ? D.resolveConfirmedPartyAlias(kind, rawStr, co, ind)
-      : '';
+    const aliasResolved = (typeof D.canonicalizePartyByHygiene === 'function')
+      ? D.canonicalizePartyByHygiene(kind, rawStr, co, ind)
+      : ((typeof D.resolveConfirmedPartyAlias === 'function') ? D.resolveConfirmedPartyAlias(kind, rawStr, co, ind) : '');
+    const aliasCanon = (aliasResolved && norm(aliasResolved) !== norm(rawStr)) ? aliasResolved : '';
     if (aliasCanon && norm(aliasCanon) !== norm(rawStr)) {
       const prefixKey = `Known alias of existing ${kindLbl}:`;
       return {

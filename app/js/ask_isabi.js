@@ -288,13 +288,85 @@
     return false;
   }
 
+  function isHubNavigationPrompt(cleanQ) {
+    const low = String(cleanQ || '').toLowerCase().trim();
+    if (!low) return false;
+    return /\b(?:take\s+me\s+(?:straight\s+|right\s+)?to|bring\s+me\s+to|go\s+to|jump\s+to|switch\s+to|navigate\s+to|open(?:\s+it|\s+this|\s+me)?\s+in(?:\s+the)?\s+(?:hub|tab|register|page)|open\s+(?:the\s+)?(?:[\w\s&-]{0,24}\s+)?(?:hub|tab|register))\b/i.test(low)
+      || /^(?:to\s+the\s+hub|open\s+hub|go\s+to\s+hub)[\s!.,?]*$/i.test(low)
+      || /(خذني|انتقل|توجه|افتح).*(المركز|التبويب|السجل|الصفحة|المواد|المبيعات|المصاريف|الموردين|العملاء|الرواتب|الأسطول|المستودع|الإيجارات|العقود|البوالص|الشركاء)/.test(cleanQ)
+      || /\b(?:emm[èe]ne|am[èe]ne|ouvre|ouvrir|aller|va)\b.*\b(?:hub|onglet|registre|mat[ée]riaux|ventes|d[ée]penses|fournisseurs|clients|paie|baux|contrats|polices|associ[ée]s)\b/i.test(cleanQ);
+  }
+
   function isContinuationPrompt(cleanQ) {
     if (!cleanQ) return false;
+    if (isHubNavigationPrompt(cleanQ)) return true;
     if (/^(and\b|what\s+about\b|how\s+about\b|also\b|why\s+(?:was|were|is|did)\b|how\s+come\b|break\s+it\s+down\b)/i.test(cleanQ.trim())) return true;
     if (/\b(that\s+(?:month|period|day|year|entity|company)|same\s+(?:month|period|day|year)|in\s+that\s+(?:month|period))\b/i.test(cleanQ)) return true;
     if (/^(وماذا\s+عن|وشو\s+بالنسبة|شو\s+بالنسبة|ولماذا|وليش)/.test(cleanQ.trim())) return true;
     if (/^(et\s+pour|qu'en\s+est-il|et\s+en\b|pourquoi\s+était)/i.test(cleanQ.trim())) return true;
     return false;
+  }
+
+  const _MONTH_WORDS_SRC = Object.keys(MONTH_MAP)
+    .sort((a, b) => b.length - a.length)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const _DATE_TOKEN_SRC = `(?:202[4-9]-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])|(?:0?[1-9]|[12]\\d|3[01])[\\/-](?:0?[1-9]|1[0-2])[\\/-]202[4-9]|202[4-9]-(?:0[1-9]|1[0-2])|(?:${_MONTH_WORDS_SRC})\\s+(?:0?[1-9]|[12]\\d|3[01])(?:,?\\s*202[4-9])?|(?:0?[1-9]|[12]\\d|3[01])\\s+(?:${_MONTH_WORDS_SRC})(?:,?\\s*202[4-9])?|(?:${_MONTH_WORDS_SRC})(?:\\s+202[4-9])?|202[4-9]|today|today's|aujourd'hui|اليوم|yesterday|yesterday's|hier|أمس|امس|البارحة|امبارح)`;
+
+  function parseSingleDateToken(rawTok, fallbackYr, seedToday, realToday, coNames) {
+    const s = String(rawTok || '').trim();
+    if (!s) return null;
+    const defYr = /^\d{4}$/.test(String(fallbackYr || '')) ? String(fallbackYr) : String(seedToday || '2026-10-30').slice(0, 4);
+    if (/^(?:today|today's|aujourd'hui|اليوم)$/i.test(s)) {
+      const d = (countAnyTxOnDate(realToday, coNames) > 0) ? realToday : seedToday;
+      return { from: d, to: d, yr: d.slice(0, 4), exactDay: true };
+    }
+    if (/^(?:yesterday|yesterday's|hier|أمس|امس|البارحة|امبارح)$/i.test(s)) {
+      const yReal = shiftIso(realToday, -1);
+      const ySeed = shiftIso(seedToday, -1);
+      const d = (countAnyTxOnDate(yReal, coNames) > 0) ? yReal : ySeed;
+      return { from: d, to: d, yr: d.slice(0, 4), exactDay: true };
+    }
+    let m = s.match(/^(202[4-9])-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/);
+    if (m) {
+      const iso = `${m[1]}-${m[2]}-${m[3]}`;
+      return { from: iso, to: iso, yr: m[1], exactDay: true };
+    }
+    m = s.match(/^(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](202[4-9])$/);
+    if (m) {
+      const dy = String(Math.min(Number(lastDayOfMonth(m[3], m[2])), Number(m[1]))).padStart(2, '0');
+      const iso = `${m[3]}-${String(Number(m[2])).padStart(2, '0')}-${dy}`;
+      return { from: iso, to: iso, yr: m[3], exactDay: true };
+    }
+    m = s.match(/^(202[4-9])-(0[1-9]|1[0-2])$/);
+    if (m) {
+      return { from: `${m[1]}-${m[2]}-01`, to: `${m[1]}-${m[2]}-${lastDayOfMonth(m[1], m[2])}`, yr: m[1], exactDay: false };
+    }
+    const mdRe = new RegExp(`^(?:(${_MONTH_WORDS_SRC})\\s+(0?[1-9]|[12]\\d|3[01])(?:,?\\s*(202[4-9]))?|(0?[1-9]|[12]\\d|3[01])\\s+(${_MONTH_WORDS_SRC})(?:,?\\s*(202[4-9]))?)$`, 'i');
+    m = s.match(mdRe);
+    if (m) {
+      const mWord = String(m[1] || m[5] || '').toLowerCase();
+      const mNum = MONTH_MAP[mWord];
+      if (!mNum) return null;
+      const yr = m[3] || m[6] || defYr;
+      const maxD = Number(lastDayOfMonth(yr, mNum));
+      const dy = String(Math.min(maxD, Number(m[2] || m[4]))).padStart(2, '0');
+      const iso = `${yr}-${mNum}-${dy}`;
+      return { from: iso, to: iso, yr, exactDay: true, hasExplicitYr: Boolean(m[3] || m[6]) };
+    }
+    const moRe = new RegExp(`^(${_MONTH_WORDS_SRC})(?:\\s+(202[4-9]))?$`, 'i');
+    m = s.match(moRe);
+    if (m) {
+      const mNum = MONTH_MAP[String(m[1] || '').toLowerCase()];
+      if (!mNum) return null;
+      const yr = m[2] || defYr;
+      return { from: `${yr}-${mNum}-01`, to: `${yr}-${mNum}-${lastDayOfMonth(yr, mNum)}`, yr, exactDay: false, hasExplicitYr: Boolean(m[2]) };
+    }
+    m = s.match(/^(202[4-9])$/);
+    if (m) {
+      return { from: `${m[1]}-01-01`, to: `${m[1]}-12-31`, yr: m[1], exactDay: false, hasExplicitYr: true };
+    }
+    return null;
   }
 
   function resolveQueryScope(cleanQ, user) {
@@ -406,14 +478,76 @@
       periodSpec = 'all';
       customDateOverride = true;
     } else {
-      const ymdIso = cleanQ.match(/\b(202[4-9])-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
-      if (ymdIso) {
+      const seedYr = seedToday.slice(0, 4);
+      const twoSideRe = new RegExp(
+        `(?:\\b(?:from|between|du|entre)\\s+(${_DATE_TOKEN_SRC})\\s+(?:to|until|till|through|thru|and|au|et|-)\\s+(${_DATE_TOKEN_SRC})(?:$|\\s|\\b|[?,!.])|` +
+        `(?:من)\\s+(${_DATE_TOKEN_SRC})\\s+(?:إلى|الى|حتى|لغاية)\\s+(${_DATE_TOKEN_SRC})(?:$|\\s|\\b|[?,!.؟])|` +
+        `\\b(202[4-9]-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)\\s*(?:\\.\\.|to|until|through|-)\\s*(202[4-9]-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)\\b)`,
+        'i'
+      );
+      const twoMatch = cleanQ.match(twoSideRe);
+      if (twoMatch) {
+        const rawA = twoMatch[1] || twoMatch[3] || twoMatch[5] || '';
+        const rawB = twoMatch[2] || twoMatch[4] || twoMatch[6] || '';
+        const yrHintB = (rawB.match(/\b(202[4-9])\b/) || [])[1] || '';
+        const yrHintA = (rawA.match(/\b(202[4-9])\b/) || [])[1] || '';
+        const tokA = parseSingleDateToken(rawA, yrHintB || seedYr, seedToday, realToday, coNames);
+        const tokB = parseSingleDateToken(rawB, yrHintA || seedYr, seedToday, realToday, coNames);
+        if (tokA && tokB) {
+          const fromIso = tokA.from <= tokB.to ? tokA.from : tokB.from;
+          const toIso = tokA.from <= tokB.to ? tokB.to : tokA.to;
+          dateRange = { from: fromIso, to: toIso, label: fromIso === toIso ? fromIso : `${fromIso} to ${toIso}` };
+          periodSpec = 'custom';
+          customDateOverride = true;
+          forceTxBasis = Boolean(tokA.exactDay || tokB.exactDay);
+        }
+      }
+      if (!customDateOverride) {
+        const oneFromRe = new RegExp(`(?:^|\\b)(from|since|starting(?:\\s+from)?|after|depuis|[àa]\\s+partir\\s+du|منذ|ابتداءً?\\s+من|بعد)\\s+(${_DATE_TOKEN_SRC})(?:$|\\s|\\b|[?,!.؟])`, 'i');
+        const oneFromMatch = cleanQ.match(oneFromRe);
+        if (oneFromMatch) {
+          const opFrom = String(oneFromMatch[1] || '').toLowerCase();
+          const rawTok = oneFromMatch[2] || '';
+          if (!(/^(?:202[4-9])$/.test(rawTok.trim()) && /\b(?:ticket|invoice|voucher|#)\s*202[4-9]\b/i.test(cleanQ))) {
+            const tok = parseSingleDateToken(rawTok, seedYr, seedToday, realToday, coNames);
+            if (tok) {
+              const strictAfter = /^(?:after|بعد)$/i.test(opFrom);
+              const fromIso = strictAfter ? shiftIso(tok.to, 1) : tok.from;
+              dateRange = { from: fromIso, to: '', label: `From ${fromIso}` };
+              periodSpec = 'custom';
+              customDateOverride = true;
+              if (tok.exactDay) forceTxBasis = true;
+            }
+          }
+        }
+      }
+      if (!customDateOverride) {
+        const oneToRe = new RegExp(`(?:^|\\b)(until|till|up\\s+to|through|thru|before|prior\\s+to|jusqu['’ ]au|avant|حتى|قبل)\\s+(${_DATE_TOKEN_SRC})(?:$|\\s|\\b|[?,!.؟])`, 'i');
+        const oneToMatch = cleanQ.match(oneToRe);
+        if (oneToMatch) {
+          const opTo = String(oneToMatch[1] || '').toLowerCase();
+          const rawTok = oneToMatch[2] || '';
+          if (!(/^(?:202[4-9])$/.test(rawTok.trim()) && /\b(?:ticket|invoice|voucher|#)\s*202[4-9]\b/i.test(cleanQ))) {
+            const tok = parseSingleDateToken(rawTok, seedYr, seedToday, realToday, coNames);
+            if (tok) {
+              const strictBefore = /^(?:before|prior\s+to|avant|قبل)$/i.test(opTo);
+              const toIso = strictBefore ? shiftIso(tok.from, -1) : tok.to;
+              dateRange = { from: '', to: toIso, label: `Through ${toIso}` };
+              periodSpec = 'custom';
+              customDateOverride = true;
+              if (tok.exactDay) forceTxBasis = true;
+            }
+          }
+        }
+      }
+      const ymdIso = !customDateOverride ? cleanQ.match(/\b(202[4-9])-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/) : null;
+      if (!customDateOverride && ymdIso) {
         const dIso = `${ymdIso[1]}-${ymdIso[2]}-${ymdIso[3]}`;
         dateRange = { from: dIso, to: dIso, label: dIso };
         periodSpec = `day:${dIso}`;
         customDateOverride = true;
         forceTxBasis = true;
-      } else {
+      } else if (!customDateOverride) {
         const ymIso = cleanQ.match(/\b(202[4-9])-(0[1-9]|1[0-2])\b/);
         if (ymIso) {
           const y = ymIso[1], m = ymIso[2];
@@ -482,6 +616,7 @@
       mentionedCo,
       wantsAllEntities,
       inheritedTopic: prevTurn ? prevTurn.topic : '',
+      inheritedEntity: prevTurn && prevTurn.lastEntity ? prevTurn.lastEntity : null,
       coKey,
       coNames,
       scopeCoLabel,
@@ -547,7 +682,10 @@
     const b = opts.basis || scope.basis;
     return baseAll.filter(r => {
       const d = recDateOf(r, b);
-      return !d || (d >= from && d <= to);
+      if (!d) return true;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
     });
   }
 
@@ -570,8 +708,13 @@
     const prevP = st.period, prevF = st.dateFrom, prevT = st.dateTo, prevB = st.basis;
     try {
       st.period = scope.periodSpec;
-      st.dateFrom = '';
-      st.dateTo = '';
+      if (scope.periodSpec === 'custom' && scope.dateRange) {
+        st.dateFrom = scope.dateRange.from || ((_ctx && _ctx.MIN_DATE) || '2024-01-01');
+        st.dateTo = scope.dateRange.to || ((_ctx && _ctx.MAX_DATE) || '2030-12-31');
+      } else {
+        st.dateFrom = '';
+        st.dateTo = '';
+      }
       if (scope.basis) st.basis = scope.basis;
       return normalizeKpiAliases(_ctx.getKPI(coKey));
     } finally {
@@ -695,16 +838,32 @@
             : (sLens.expenses || sLens.books);
           const party = hit.customer || hit.supplier || hit.site || hit.category || hit.equipment || '-';
           const prod = hit.product || hit.subcategory || hit.item_summary || (hit.litres ? `${fmtInt(hit.litres, 1)} L Diesel` : '-');
+          const partyVal = hit.customer || hit.supplier || hit.site || hit.equipment || '';
+          const tktCol = p.key === 'sales_tickets' ? (hit.ticket_no ? 'ticket_no' : 'customer') : (p.key === 'raw_purchases' ? (hit.ticket_no ? 'ticket_no' : 'site_owner') : (p.key === 'expenses' ? 'supplier' : 'equipment'));
+          const tktVal = tktCol === 'ticket_no' ? (hit.ticket_no || tktMatch[1]) : partyVal;
+          const tktCfView = p.view === 'fleet' ? 'fuel' : p.view;
           return {
             q: cleanQ,
             lang: detectLang(cleanQ),
             instantLocal: true,
+            entityFilter: {
+              view: p.view,
+              cfView: tktCfView,
+              col: tktCol,
+              val: tktVal,
+              search: tktCol ? '' : (hit.ticket_no || partyVal),
+              periodSpec: scope.periodSpec,
+              dateRange: scope.dateRange,
+              crKey: p.key,
+              id: hit.id,
+              entityName: partyVal || `#${hit.ticket_no || tktMatch[1]}`
+            },
             title: `${p.label} #${cleanOut(hit.ticket_no || tktMatch[1])}`,
             answer: `Found <b>${esc(p.label)} #${esc(hit.ticket_no || tktMatch[1])}</b> under <b>${esc(hit.company || scope.scopeCoLabel)}</b> dated <b>${esc(hit.date || hit.rep_date || '-')}</b> for <b>${esc(party)}</b> (${esc(prod)})${(amt && canShowAmt) ? ` totaling <b>${fmtMoney(amt, 2)}</b>` : ''}.`,
             promptText: 'Would you like to open its 360° Record Inspector or jump to the register?',
             actions: [
               { type: 'inspect', crKey: p.key, id: hit.id, label: `Inspect #${hit.ticket_no || tktMatch[1]}` },
-              ...(canView(p.view, scope && scope.user) ? [{ type: 'view', view: p.view, label: `Open ${p.label}s` }] : [])
+              ...(canView(p.view, scope && scope.user) ? [{ type: 'view', view: p.view, cfView: tktCfView, col: tktCol, val: tktVal, periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: `Open ${p.label}s` }] : [])
             ],
             followUps: [
               canView('overview', scope && scope.user) ? `Show ${scope.scopeCoLabel} summary` : null,
@@ -738,17 +897,28 @@
         if (!canOpenDomView || !bucketAllowed) {
           return buildRestrictedReply(cleanQ, detectLang(cleanQ), domHit.title || domHit.industry || 'Domain Record', scope && scope.user);
         }
+        const domView = domHit.parentView || 'overview';
+        const domSearch = (domHit.party && !/^(all|n\/a|-)$/i.test(String(domHit.party))) ? String(domHit.party) : String(domHit.id);
         return {
           q: cleanQ,
           lang: detectLang(cleanQ),
           instantLocal: true,
+          entityFilter: {
+            view: domView,
+            search: domSearch,
+            periodSpec: scope.periodSpec,
+            dateRange: scope.dateRange,
+            crKey: 'ind_domain:' + domHit.bucket,
+            id: domHit.id,
+            entityName: domSearch
+          },
           title: `${cleanOut(domHit.title)} · ${cleanOut(domHit.id)}`,
           answer: `Found <b>${esc(domHit.title)} ${esc(domHit.id)}</b> under <b>${esc(domHit.company)}</b> (${esc(domHit.industry)}) dated <b>${esc(domHit.date)}</b> for <b>${esc(domHit.party)}</b> (${esc(domHit.summary)})${(domHit.amount && (!isProfitBkt || sLens.profit)) ? ` totaling <b>${fmtMoney(domHit.amount, 2)}</b>` : ''} · Status: <b>${esc(domHit.status)}</b>.`,
           promptText: 'Would you like to open its 360° Domain Record Inspector or jump to the register?',
           actions: [
             { type: 'inspect', crKey: 'ind_domain:' + domHit.bucket, id: domHit.id, label: `Inspect ${domHit.id}` },
-            ...(canView(domHit.parentView || 'overview', scope && scope.user)
-              ? [{ type: 'view', view: domHit.parentView || 'overview', label: `Open ${domHit.title} Register` }]
+            ...(canView(domView, scope && scope.user)
+              ? [{ type: 'view', view: domView, search: domSearch, periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: `Open ${domHit.title} Register` }]
               : [])
           ],
           followUps: [
@@ -759,6 +929,277 @@
         };
       }
     }
+
+    function trySiblingEntityLookup(qStr, qScope, curActiveInd) {
+      const qTrim = String(qStr || '').trim();
+      const qLow = qTrim.toLowerCase();
+      if (qTrim.length < 3 ||
+          /\b(top|biggest|largest|best|worst|highest|lowest|who\s+are|which\s+leases|expiring\s+within|30\/60\/90|executive\s+briefing|trial\s+balance|compare\s+entit|daily\s+operations)\b/i.test(qLow)) {
+        return null;
+      }
+      const explicitSibInd = /\b(bdeir\s+holding|intercompany|partner\s+split|shareholder)\b/i.test(qLow)
+        ? 'Holding & Treasury'
+        : (/\b(blanca|la\s+una|palms|voile|platinum|cabana|membership|resort)\b/i.test(qLow)
+            ? 'Hospitality & Resorts'
+            : (/\b(korri\s+auto|shacman|vin\b|chassis|heavy\s+truck)\b/i.test(qLow)
+                ? 'Automotive & Heavy Trading'
+                : (/\b(4235|rent\s+roll|rent\s+invoices?|tenant|lease|leases|properties)\b/i.test(qLow)
+                    ? 'Real Estate & Property'
+                    : (/\b(gwp\b|bordereau|policy|policies|renewal|claims?|underwriter|insured)\b/i.test(qLow)
+                        ? 'Insurance & Brokerage'
+                        : null))));
+      const sibInd = curActiveInd !== 'Manufacturing' ? curActiveInd : explicitSibInd;
+      if (!sibInd) return null;
+
+      const u = qScope && qScope.user;
+      const lensSib = getSeatLens(u);
+      const allowedList = Array.isArray(qScope && qScope.allowed) ? qScope.allowed : [];
+      const isRowCoAllowed = coVal => {
+        if (!coVal || lensSib.owner || !allowedList.length) return true;
+        return allowedList.some(a => norm(a) === norm(coVal));
+      };
+      const sibRange = (qScope && qScope.dateRange && (qScope.dateRange.from || qScope.dateRange.to))
+        ? {
+            from: qScope.dateRange.from || ((_ctx && _ctx.MIN_DATE) || '2024-01-01'),
+            to: qScope.dateRange.to || ((_ctx && _ctx.MAX_DATE) || '2030-12-31')
+          }
+        : null;
+      const allOpts = { company: qScope && qScope.coKey, ignoreSearch: true, ignorePeriod: true };
+      const scopedOpts = { company: qScope && qScope.coKey, ignoreSearch: true, ignorePeriod: !sibRange, ...(sibRange ? { range: sibRange } : {}) };
+      const hasWholeCand = cand => {
+        const sCand = String(cand || '').trim().toLowerCase();
+        if (sCand.length < 4) return false;
+        const escC = sCand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(?:^|[^a-z0-9\\u0600-\\u06FF])${escC}(?:$|[^a-z0-9\\u0600-\\u06FF])`, 'i').test(qLow);
+      };
+      const pickBestName = cands => {
+        let best = '';
+        for (let i = 0; i < cands.length; i++) {
+          const c = String(cands[i] || '').trim();
+          if (c.length < 4 || /^(all|n\/a|vacant|-|open|showroom|showroom\s+yard|bdeir\s+holding|properties|4235\s+company\s+s\.?a\.?l|korri\s+auto|shacman|blanca|la\s+una|palms|voile|platinum|insurance\s+company)$/i.test(c)) continue;
+          if (hasWholeCand(c) && c.length > best.length) best = c;
+        }
+        return best;
+      };
+      const langOut = detectLang(qTrim);
+      const scopeLbl = (qScope && qScope.fullScopeLabel) || sibInd;
+
+      if (sibInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
+        const dAll = window.MFG_REALESTATE.compute(allOpts) || {};
+        const allLeases = dAll.leases || [];
+        const allInvs = dAll.rentInvoices || [];
+        const matchTenant = pickBestName([
+          ...allLeases.filter(l => isRowCoAllowed(l.company)).map(l => l.tenant),
+          ...allInvs.filter(iv => isRowCoAllowed(iv.company)).map(iv => iv.tenant)
+        ]);
+        if (!matchTenant) return null;
+        if (!canView('re_leases', u) && !canView('re_invoicing', u)) {
+          return buildRestrictedReply(qTrim, langOut, 'Real Estate & Property', u);
+        }
+        const dScp = window.MFG_REALESTATE.compute(scopedOpts) || {};
+        const nT = norm(matchTenant);
+        const scLeases = (dScp.leases || []).filter(l => norm(l.tenant) === nT && isRowCoAllowed(l.company));
+        const scInvs = (dScp.rentInvoices || []).filter(iv => norm(iv.tenant) === nT && isRowCoAllowed(iv.company));
+        const billed = scInvs.reduce((s, iv) => s + Number(iv.totalTtc || 0), 0);
+        const bal = scInvs.reduce((s, iv) => s + Number(iv.balanceUsd || 0), 0);
+        const annualRent = scLeases.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+        const firstHit = scLeases[0] || allLeases.find(l => norm(l.tenant) === nT) || scInvs[0] || allInvs.find(iv => norm(iv.tenant) === nT) || {};
+        const destV = /\b(invoice|invoicing|arrears|billing|unpaid|balance)\b/i.test(qLow) && canView('re_invoicing', u) ? 're_invoicing' : (canView('re_leases', u) ? 're_leases' : 're_invoicing');
+        const inspectId = firstHit.code || firstHit.invNo || '';
+        return {
+          q: qTrim,
+          lang: langOut,
+          instantLocal: true,
+          topic: destV,
+          entityFilter: {
+            view: destV,
+            search: matchTenant,
+            periodSpec: qScope.periodSpec,
+            dateRange: qScope.dateRange,
+            crKey: destV,
+            id: inspectId,
+            entityName: matchTenant
+          },
+          title: `Tenant · ${cleanOut(matchTenant)}`,
+          answer: lensSib.books
+            ? `In <b>${esc(scopeLbl)}</b>, tenant <b>${esc(matchTenant)}</b> has <b>${fmtInt(scLeases.length)}</b> active leases (annual rent <b>${fmtMoney(annualRent, 0)}</b>) and <b>${fmtInt(scInvs.length)}</b> rent invoices totaling <b>${fmtMoney(billed, 2)}</b> with open balance <b>${fmtMoney(bal, 2)}</b>.`
+            : `In <b>${esc(scopeLbl)}</b>, tenant <b>${esc(matchTenant)}</b> has <b>${fmtInt(scLeases.length)}</b> active leases (annual rent <b>${fmtMoney(annualRent, 0)}</b>) and <b>${fmtInt(scInvs.length)}</b> rent invoices totaling <b>${fmtMoney(billed, 2)}</b> (receivable balances restricted).`,
+          promptText: 'Would you like to inspect this lease or open the filtered Real Estate hub?',
+          actions: [
+            ...(inspectId ? [{ type: 'inspect', crKey: destV, id: inspectId, label: `360° ${matchTenant}` }] : []),
+            ...(canView(destV, u) ? [{ type: 'view', view: destV, search: matchTenant, periodSpec: qScope.periodSpec, dateRange: qScope.dateRange, label: destV === 're_invoicing' ? 'Rent Invoices Hub' : 'Leases & Rent Roll' }] : [])
+          ],
+          followUps: ['Take me to the hub', 'Show 4235 Company S.A.L rent invoices and occupancy']
+        };
+      }
+
+      if (sibInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
+        const dAll = window.MFG_HOSPITALITY.compute(allOpts) || {};
+        const allMems = (dAll.memberRows || []).filter(m => isRowCoAllowed(m.company));
+        const matchMem = pickBestName(allMems.map(m => m.member));
+        if (!matchMem) return null;
+        if (!canView('hsp_memberships', u)) return buildRestrictedReply(qTrim, langOut, 'Hospitality & Resorts', u);
+        const dScp = window.MFG_HOSPITALITY.compute(scopedOpts) || {};
+        const nM = norm(matchMem);
+        const scMems = (dScp.memberRows || []).filter(m => norm(m.member) === nM && isRowCoAllowed(m.company));
+        const pkg = scMems.reduce((s, m) => s + Number(m.packageUsd || 0), 0);
+        const paid = scMems.reduce((s, m) => s + Number(m.paidUsd || 0), 0);
+        const bal = scMems.reduce((s, m) => s + Number(m.balanceUsd || 0), 0);
+        const firstHit = scMems[0] || allMems.find(m => norm(m.member) === nM) || {};
+        return {
+          q: qTrim,
+          lang: langOut,
+          instantLocal: true,
+          topic: 'hsp_memberships',
+          entityFilter: {
+            view: 'hsp_memberships',
+            search: matchMem,
+            periodSpec: qScope.periodSpec,
+            dateRange: qScope.dateRange,
+            crKey: 'hsp_memberships',
+            id: firstHit.code || '',
+            entityName: matchMem
+          },
+          title: `Resort Member · ${cleanOut(matchMem)}`,
+          answer: lensSib.books
+            ? `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchMem)}</b> has <b>${fmtInt(scMems.length)}</b> membership packages totaling <b>${fmtMoney(pkg, 2)}</b>, paid <b>${fmtMoney(paid, 2)}</b>, remaining balance <b>${fmtMoney(bal, 2)}</b>.`
+            : `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchMem)}</b> has <b>${fmtInt(scMems.length)}</b> membership packages totaling <b>${fmtMoney(pkg, 2)}</b> (balances restricted).`,
+          actions: [
+            ...(firstHit.code ? [{ type: 'inspect', crKey: 'hsp_memberships', id: firstHit.code, label: `360° ${matchMem}` }] : []),
+            { type: 'view', view: 'hsp_memberships', search: matchMem, periodSpec: qScope.periodSpec, dateRange: qScope.dateRange, label: 'Memberships Hub' }
+          ]
+        };
+      }
+
+      if (sibInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
+        const dAll = window.MFG_TRADING.compute(allOpts) || {};
+        const allSales = (dAll.salesRows || []).filter(r => isRowCoAllowed(r.company));
+        const allVins = (dAll.vehicleRows || []).filter(v => isRowCoAllowed(v.company));
+        const matchParty = pickBestName([
+          ...allSales.map(r => r.customer),
+          ...allVins.map(v => v.buyer),
+          ...allVins.map(v => v.vin)
+        ]);
+        if (!matchParty) return null;
+        const isVinHit = allVins.some(v => norm(v.vin) === norm(matchParty));
+        const destV = isVinHit ? 'trd_trucks' : 'trd_sales';
+        if (!canView(destV, u)) return buildRestrictedReply(qTrim, langOut, 'Automotive & Heavy Trading', u);
+        const dScp = window.MFG_TRADING.compute(scopedOpts) || {};
+        const nP = norm(matchParty);
+        const scSales = (dScp.salesRows || []).filter(r => isRowCoAllowed(r.company) && norm(r.customer) === nP);
+        const scVins = (dScp.vehicleRows || []).filter(v => isRowCoAllowed(v.company) && (norm(v.vin) === nP || norm(v.buyer) === nP));
+        const totTtc = scSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
+        const openAr = scSales.reduce((s, r) => s + Number(r.balanceUsd || 0), 0);
+        const firstHit = scVins[0] || scSales[0] || allVins.find(v => norm(v.vin) === nP || norm(v.buyer) === nP) || allSales.find(r => norm(r.customer) === nP) || {};
+        const inspectId = firstHit.vin || firstHit.invNo || '';
+        return {
+          q: qTrim,
+          lang: langOut,
+          instantLocal: true,
+          topic: destV,
+          entityFilter: {
+            view: destV,
+            search: matchParty,
+            periodSpec: qScope.periodSpec,
+            dateRange: qScope.dateRange,
+            crKey: destV,
+            id: inspectId,
+            entityName: matchParty
+          },
+          title: `Trading Account · ${cleanOut(matchParty)}`,
+          answer: lensSib.books
+            ? `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchParty)}</b> recorded <b>${fmtInt(scSales.length)}</b> sales invoices totaling <b>${fmtMoney(totTtc, 2)}</b> with open receivable <b>${fmtMoney(openAr, 2)}</b> (${fmtInt(scVins.length)} VIN units).`
+            : `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchParty)}</b> recorded <b>${fmtInt(scSales.length)}</b> sales invoices totaling <b>${fmtMoney(totTtc, 2)}</b> (${fmtInt(scVins.length)} VIN units; balances restricted).`,
+          actions: [
+            ...(inspectId ? [{ type: 'inspect', crKey: destV, id: inspectId, label: `360° ${matchParty}` }] : []),
+            { type: 'view', view: destV, search: matchParty, periodSpec: qScope.periodSpec, dateRange: qScope.dateRange, label: isVinHit ? 'VIN Registry Hub' : 'Trading Sales Hub' }
+          ]
+        };
+      }
+
+      if (sibInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+        const dAll = window.MFG_HOLDING.compute(allOpts) || {};
+        const matchPartner = pickBestName((dAll.partners || []).map(p => p.partner));
+        if (!matchPartner) return null;
+        if (!lensSib.books || !lensSib.partnerSplits || !canView('hld_partners', u)) {
+          return buildRestrictedReply(qTrim, langOut, 'Holding & Treasury', u);
+        }
+        const dScp = window.MFG_HOLDING.compute(scopedOpts) || {};
+        const scPrts = (dScp.partners || []).filter(p => norm(p.partner) === norm(matchPartner));
+        const openBal = scPrts.reduce((s, p) => s + Number(p.closingBalance || 0), 0);
+        const draws = scPrts.reduce((s, p) => s + Number(p.draws || 0), 0);
+        return {
+          q: qTrim,
+          lang: langOut,
+          instantLocal: true,
+          topic: 'hld_partners',
+          entityFilter: {
+            view: 'hld_partners',
+            search: matchPartner,
+            periodSpec: qScope.periodSpec,
+            dateRange: qScope.dateRange,
+            crKey: 'hld_partners',
+            id: (scPrts[0] && scPrts[0].scheduleId) || '',
+            entityName: matchPartner
+          },
+          title: `Holding Partner · ${cleanOut(matchPartner)}`,
+          answer: `In <b>${esc(scopeLbl)}</b>, partner <b>${esc(matchPartner)}</b> has <b>${fmtInt(scPrts.length)}</b> active capital slices with draws <b>${fmtMoney(draws, 2)}</b> and closing balance <b>${fmtMoney(openBal, 2)}</b>.`,
+          actions: [
+            { type: 'view', view: 'hld_partners', search: matchPartner, periodSpec: qScope.periodSpec, dateRange: qScope.dateRange, label: 'Partners & Splits Hub' }
+          ]
+        };
+      }
+
+      if (sibInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
+        const dAll = window.MFG_INSURANCE.compute(allOpts) || {};
+        const allPols = (dAll.policies || []).filter(p => isRowCoAllowed(p.company));
+        const allClms = (dAll.claims || []).filter(c => isRowCoAllowed(c.company));
+        const matchParty = pickBestName([
+          ...allPols.map(p => p.insured),
+          ...allPols.map(p => p.carrier),
+          ...allClms.map(c => c.insured || c.client)
+        ]);
+        if (!matchParty) return null;
+        const nP = norm(matchParty);
+        const isClaimQ = /\b(claim|claims|loss|fnol|reserve)\b/i.test(qLow);
+        const destV = isClaimQ ? 'ins_claims' : 'ins_policies';
+        if (!canView(destV, u)) return buildRestrictedReply(qTrim, langOut, 'Insurance & Brokerage', u);
+        const dScp = window.MFG_INSURANCE.compute(scopedOpts) || {};
+        const scPols = (dScp.policies || []).filter(p => isRowCoAllowed(p.company) && (norm(p.insured) === nP || norm(p.carrier) === nP));
+        const gwp = scPols.reduce((s, p) => s + Number(p.gwpUsd || 0), 0);
+        const comm = scPols.reduce((s, p) => s + Number(p.commUsd || 0), 0);
+        const firstPol = scPols[0] || allPols.find(p => norm(p.insured) === nP || norm(p.carrier) === nP) || {};
+        const inspectId = firstPol.id || firstPol.policyNo || '';
+        return {
+          q: qTrim,
+          lang: langOut,
+          instantLocal: true,
+          topic: destV,
+          entityFilter: {
+            view: destV,
+            search: matchParty,
+            periodSpec: qScope.periodSpec,
+            dateRange: qScope.dateRange,
+            crKey: destV,
+            id: inspectId,
+            entityName: matchParty
+          },
+          title: `Insurance Account · ${cleanOut(matchParty)}`,
+          answer: lensSib.profit
+            ? `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchParty)}</b> covers <b>${fmtInt(scPols.length)}</b> policies totaling <b>${fmtMoney(gwp, 2)}</b> GWP and <b>${fmtMoney(comm, 2)}</b> commission.`
+            : `In <b>${esc(scopeLbl)}</b>, <b>${esc(matchParty)}</b> covers <b>${fmtInt(scPols.length)}</b> policies totaling <b>${fmtMoney(gwp, 2)}</b> GWP (commissions restricted).`,
+          actions: [
+            ...(inspectId ? [{ type: 'inspect', crKey: destV, id: inspectId, label: `360° ${matchParty}` }] : []),
+            { type: 'view', view: destV, search: matchParty, periodSpec: qScope.periodSpec, dateRange: qScope.dateRange, label: isClaimQ ? 'Claims Hub' : 'Policies Hub' }
+          ]
+        };
+      }
+
+      return null;
+    }
+
+    const sibEntityHit = trySiblingEntityLookup(cleanQ, scope, activeLookupInd);
+    if (sibEntityHit) return sibEntityHit;
 
     // Never hijack non-Manufacturing industry scopes or cross-industry domain prompts with quarry counterparty/product lookups
     if (activeLookupInd !== 'Manufacturing' ||
@@ -914,17 +1355,38 @@
         lang: detectLang(cleanQ),
         instantLocal: true,
         topic: 'ap',
+        entityFilter: (() => {
+          const isTransQ = /\b(transport|haul|haulage|truck|lorr(?:y|ies)|نقل|شاحن|transporteur)\b/i.test(cleanQ);
+          const isExpQ = /\b(expense|expenses|bill|bills|voucher|vouchers|مصروف|مصاريف|فاتور|فواتير|dépense|dépenses)\b/i.test(cleanQ);
+          const isRawQ = /\b(raw|material|quarry|crush|sand|ramel|aggregate|load|loads|مواد|رمل|بحص|نقلة|نقلات|matériau|gravier|sable|voyage)\b/i.test(cleanQ);
+          if (isExpQ) return { view: 'expenses', cfView: 'expenses', col: 'supplier', val: bestSup.name, panelId: 'expPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, crKey: 'suppliers', id: bestSup.id, entityName: bestSup.name };
+          if (isTransQ && !isRawQ) return { view: 'raw', cfView: 'raw', col: 'truck_owner', val: bestSup.name, panelId: 'rawPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, crKey: 'suppliers', id: bestSup.id, entityName: bestSup.name };
+          if (isRawQ || isTransQ) return { view: 'raw', cfView: 'raw', col: isTransQ && !/\b(raw|material|quarry|site|ramel|sand|مواد|رمل)\b/i.test(cleanQ) ? 'truck_owner' : 'site_owner', val: bestSup.name, panelId: 'rawPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, crKey: 'suppliers', id: bestSup.id, entityName: bestSup.name };
+          return { view: 'suppliers', cfView: 'settle', col: 'supplier', val: bestSup.name, panelId: 'supPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, crKey: 'suppliers', id: bestSup.id, entityName: bestSup.name };
+        })(),
         title: `Supplier · ${cleanOut(bestSup.name)}`,
         answer: recLens.books
           ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> material/transport loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`
           : `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> material/transport loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>) and <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>) (settlements &amp; open AP balance are restricted for this seat).`,
         bullets: supBullets.length ? supBullets : undefined,
         promptText: 'Would you like to open this supplier\'s 360° ledger or jump to Suppliers & Payables?',
-        actions: [
-          { type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: `360° ${bestSup.name}` },
-          ...(bestCust && custStat && custStat.vol > 0 ? [{ type: 'inspect', crKey: 'customers', id: bestCust.id, label: '360° Customer Account' }] : []),
-          ...(canView('suppliers', scope.user) ? [{ type: 'view', view: 'suppliers', label: 'Suppliers & Payables' }] : [])
-        ],
+        actions: (() => {
+          const isTransSup = /\b(transport|haul|haulage|truck|نقل|شاحن)\b/i.test(cleanQ);
+          const isRawSup = /\b(raw|material|quarry|sand|ramel|load|loads|مواد|رمل|بحص|نقلة)\b/i.test(cleanQ);
+          const isExpSup = /\b(expense|expenses|bill|bills|مصروف|مصاريف|dépense)\b/i.test(cleanQ);
+          const acts = [{ type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: `360° ${bestSup.name}` }];
+          if (bestCust && custStat && custStat.vol > 0) acts.push({ type: 'inspect', crKey: 'customers', id: bestCust.id, label: '360° Customer Account' });
+          if ((isRawSup || isTransSup) && canView('raw', scope.user)) {
+            acts.push({ type: 'view', view: 'raw', cfView: 'raw', col: isTransSup && !isRawSup ? 'truck_owner' : 'site_owner', val: bestSup.name, panelId: 'rawPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Materials Hub' });
+          }
+          if (isExpSup && canView('expenses', scope.user)) {
+            acts.push({ type: 'view', view: 'expenses', cfView: 'expenses', col: 'supplier', val: bestSup.name, panelId: 'expPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Expenses Hub' });
+          }
+          if (canView('suppliers', scope.user)) {
+            acts.push({ type: 'view', view: 'suppliers', cfView: 'settle', col: 'supplier', val: bestSup.name, panelId: 'supPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Suppliers & Payables' });
+          }
+          return acts;
+        })(),
         followUps: [
           ...(recLens.books ? ['Show Accounts Payable breakdown'] : ['Show today\'s daily operations']),
           'Show top expense categories',
@@ -942,6 +1404,18 @@
         lang: detectLang(cleanQ),
         instantLocal: true,
         topic: 'ar',
+        entityFilter: {
+          view: 'sales',
+          cfView: 'sales',
+          col: 'customer',
+          val: bestCust.name,
+          panelId: 'salesPanel',
+          periodSpec: scope.periodSpec,
+          dateRange: scope.dateRange,
+          crKey: 'customers',
+          id: bestCust.id,
+          entityName: bestCust.name
+        },
         title: `Customer · ${cleanOut(bestCust.name)}`,
         answer: recLens.books
           ? `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestCust.name)}</b> has <b>${fmtInt(custStat.loadsCnt)}</b> sales tickets totaling <b>${fmtMoney(custStat.billed, 2)}</b>, collections of <b>${fmtMoney(custStat.collected, 2)}</b>, and an open receivable balance of <b>${fmtMoney(custStat.openAr, 2)}</b>${custStat.mHit && Number(custStat.mHit.ar_60_plus || 0) > 0 ? ` (<b>${fmtMoney(custStat.mHit.ar_60_plus, 0)}</b> past 60 days)` : ''}.`
@@ -953,7 +1427,8 @@
         actions: [
           { type: 'inspect', crKey: 'customers', id: bestCust.id, label: `360° ${bestCust.name}` },
           ...(recLens.expenses && bestSup && supStat && supStat.vol > 0 ? [{ type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: '360° Supplier Account' }] : []),
-          ...((canView('customers', scope.user) && recLens.books) ? [{ type: 'view', view: 'customers', label: 'Open Receivables' }] : []),
+          ...(canView('sales', scope.user) ? [{ type: 'view', view: 'sales', cfView: 'sales', col: 'customer', val: bestCust.name, panelId: 'salesPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Sales Register' }] : []),
+          ...((canView('customers', scope.user) && recLens.books) ? [{ type: 'view', view: 'customers', cfView: 'receipts', col: 'customer', val: bestCust.name, panelId: 'custPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Open Receivables' }] : []),
           ...((canView('statements', scope.user) && recLens.books) ? [{ type: 'view', view: 'statements', label: 'Printable SOA' }] : [])
         ],
         followUps: [
@@ -1004,13 +1479,25 @@
         lang: detectLang(cleanQ),
         instantLocal: true,
         topic: 'products',
+        entityFilter: {
+          view: 'sales',
+          cfView: 'sales',
+          col: 'product',
+          val: pName,
+          panelId: 'salesPanel',
+          periodSpec: scope.periodSpec,
+          dateRange: scope.dateRange,
+          crKey: 'products',
+          id: bestProd.id,
+          entityName: pName
+        },
         title: `Product & Grade · ${cleanOut(pName)}`,
         answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(pName)}</b> generated <b>${fmtMoney(salesUsd, 2)}</b> across <b>${fmtInt(loads)}</b> sales loads (<b>${fmtInt(qtySold, 0)} ${esc(uomLbl)}</b> · <b>${fmtInt(tonsSold, 0)} t</b>, realized avg <b>${fmtMoney(avgPrice, 2)}/${esc(uomLbl)}</b>${mProd && mProd.list_price ? `, catalog list <b>${fmtMoney(mProd.list_price, 2)}</b>` : ''}).`,
         promptText: 'Would you like to inspect this grade in 360° view or compare all top selling grades?',
         actions: [
           { type: 'inspect', crKey: 'products', id: bestProd.id, label: `360° ${pName}` },
-          ...(canView('reg_products', scope.user) ? [{ type: 'view', view: 'reg_products', label: 'Products & Grades' }] : []),
-          ...(canView('sales', scope.user) ? [{ type: 'view', view: 'sales', label: 'Sales Register' }] : [])
+          ...(canView('reg_products', scope.user) ? [{ type: 'view', view: 'reg_products', search: pName, periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Products & Grades' }] : []),
+          ...(canView('sales', scope.user) ? [{ type: 'view', view: 'sales', cfView: 'sales', col: 'product', val: pName, panelId: 'salesPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Sales Register' }] : [])
         ],
         followUps: [
           'Show top selling products & grades',
@@ -1044,12 +1531,25 @@
           lang: detectLang(cleanQ),
           instantLocal: true,
           topic: 'maintenance',
+          entityFilter: {
+            view: 'fleet_maint',
+            cfView: 'defects',
+            col: 'equipment',
+            val: eqName,
+            panelId: 'defectsPanel',
+            periodSpec: scope.periodSpec,
+            dateRange: scope.dateRange,
+            crKey: 'equipment',
+            id: bestEq.id,
+            entityName: eqName
+          },
           title: `Equipment Unit · ${cleanOut(eqName)}`,
           answer: `In <b>${esc(scope.fullScopeLabel)}</b>, unit <b>${esc(eqName)}</b> dispensed <b>${fmtInt(litres, 1)} L</b> across <b>${fmtInt(fRows.length)}</b> fuel logs, logged <b>${fmtInt(repRows.length)}</b> repair records, and currently has <b>${fmtInt(dRows.length)}</b> open defect warnings.`,
           promptText: 'Would you like to inspect this unit in 360° view or open Repairs, Warnings & Oil Logs?',
           actions: [
             { type: 'inspect', crKey: 'equipment', id: bestEq.id, label: `360° ${eqName}` },
-            ...(canView('fleet_maint', scope.user) ? [{ type: 'view', view: 'fleet_maint', label: 'Repairs & Warnings' }] : [])
+            ...(canView('fleet_maint', scope.user) ? [{ type: 'view', view: 'fleet_maint', cfView: 'defects', col: 'equipment', val: eqName, panelId: 'defectsPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Repairs & Warnings' }] : []),
+            ...(canView('fleet', scope.user) ? [{ type: 'view', view: 'fleet', cfView: 'fuel', col: 'equipment', val: eqName, panelId: 'fuelPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Fuel & Diesel Hub' }] : [])
           ],
           followUps: [
             'Show diesel tank & malfunction status',
@@ -1087,13 +1587,25 @@
           lang: detectLang(cleanQ),
           instantLocal: true,
           topic: 'payroll',
+          entityFilter: {
+            view: 'payroll',
+            cfView: 'pay_sal',
+            col: 'staff',
+            val: staffName,
+            panelId: 'paySalPanel',
+            periodSpec: scope.periodSpec,
+            dateRange: scope.dateRange,
+            crKey: 'employments',
+            id: bestEmp.id,
+            entityName: staffName
+          },
           title: `Staff Member · ${cleanOut(staffName)}`,
           answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(staffName)}</b> (${esc(cleanOut(bestEmp.company || scope.scopeCoLabel))} · ${esc(cleanOut(bestEmp.type || 'Staff'))}) has ${salPart} and <b>${fmtInt(attRows.length)}</b> logged attendance entries.`,
           promptText: 'Would you like to open this employee\'s 360° record or jump to Payroll & Workforce?',
           actions: [
             { type: 'inspect', crKey: 'employments', id: bestEmp.id, label: `360° ${staffName}` },
-            ...(canView('reg_staff', scope.user) ? [{ type: 'view', view: 'reg_staff', label: 'Staff Registry' }] : []),
-            ...(canView('payroll', scope.user) ? [{ type: 'view', view: 'payroll', label: 'Open Payroll' }] : [])
+            ...(canView('reg_staff', scope.user) ? [{ type: 'view', view: 'reg_staff', search: staffName, periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Staff Registry' }] : []),
+            ...(canView('payroll', scope.user) ? [{ type: 'view', view: 'payroll', cfView: 'pay_sal', col: 'staff', val: staffName, panelId: 'paySalPanel', periodSpec: scope.periodSpec, dateRange: scope.dateRange, label: 'Open Payroll' }] : [])
           ],
           followUps: [
             'Show payroll & overtime summary',
@@ -1225,7 +1737,258 @@
       };
     }
 
+  const AI_TOPIC_DEFAULT_VIEW = {
+    ar: 'customers',
+    ap: 'suppliers',
+    sales: 'sales',
+    raw: 'raw',
+    expenses: 'expenses',
+    maintenance: 'fleet_maint',
+    diesel: 'fleet',
+    payroll: 'payroll',
+    pricing: 'pricing',
+    products: 'reg_products',
+    warehouse: 'warehouse',
+    gl: 'ledger',
+    cash: 'treasury_loans'
+  };
+
+  function tryAskHubNavigation(cleanQ, scope, lang) {
+    const low = String(cleanQ || '').toLowerCase().trim();
+    if (!isHubNavigationPrompt(cleanQ)) return null;
+
+    const specHit = trySpecificRecordLookup(cleanQ, scope);
+    let baseEnt = (specHit && specHit.entityFilter)
+      ? Object.assign({}, specHit.entityFilter)
+      : (scope && scope.inheritedEntity ? Object.assign({}, scope.inheritedEntity) : null);
+    if (!baseEnt && typeof document !== 'undefined') {
+      const inspEl = document.getElementById('recordInspector');
+      const actCtx = (_ctx && _ctx.STATE && _ctx.STATE.activeInspectorCtx) || null;
+      if (inspEl && !inspEl.hidden && actCtx) {
+        const ctxRow = actCtx.row || {};
+        const entNm = String(actCtx.secondaryLbl || ctxRow.name || ctxRow.Customer || ctxRow.Supplier || ctxRow.customer || ctxRow.supplier || '').trim();
+        baseEnt = {
+          view: actCtx.domainTblKey || '',
+          crKey: actCtx.key || actCtx.domainTblKey || '',
+          id: actCtx.id || actCtx.primaryId || '',
+          entityName: entNm,
+          search: entNm
+        };
+      }
+    }
+
+    const activeNavInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(scope && scope.coKey)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+        ? window.MFG_ENTERPRISE.getActiveIndustry(scope && scope.coKey)
+        : 'Manufacturing');
+    const indDefViewMap = {
+      'Real Estate & Property': 're_leases',
+      'Automotive & Heavy Trading': 'trd_sales',
+      'Hospitality & Resorts': 'hsp_revenue',
+      'Holding & Treasury': 'hld_consolidation',
+      'Insurance & Brokerage': 'ins_policies'
+    };
+    let destView = (baseEnt && baseEnt.view) || AI_TOPIC_DEFAULT_VIEW[scope && scope.inheritedTopic] || indDefViewMap[activeNavInd] || 'sales';
+    let cfView = (baseEnt && baseEnt.cfView) || destView;
+    let col = (baseEnt && baseEnt.col) || '';
+    let val = (baseEnt && baseEnt.val) || (baseEnt && baseEnt.entityName) || '';
+    let panelId = (baseEnt && baseEnt.panelId) || '';
+    let search = (baseEnt && baseEnt.search) || '';
+
+    const entType = baseEnt ? String(baseEnt.crKey || '') : '';
+    const entName = baseEnt ? String(baseEnt.entityName || val || '') : '';
+    const isMfgEnt = ['customers', 'suppliers', 'products', 'equipment', 'company_equipment', 'employments', 'staff_members', 'items', 'raw_purchases', 'sales_tickets', 'expenses'].includes(entType);
+    const useSiblingRouting = activeNavInd !== 'Manufacturing'
+      || /\b(lease|leases|tenant|rent\s+roll|rent\s+invoice|4235|cabana|membership|resorts?|blanca|la\s+una|palms|voile|platinum|shacman|korri\s+auto|vin\b|chassis|warranty|intercompany|partner\s+split|bdeir\s+holding|facility|loan|bordereau|policy|policies|renewal|claim|fnol)\b/i.test(low)
+      || /(الإيجارات|العقود|البوالص|الشركاء)/.test(cleanQ)
+      || /\b(baux|contrats|polices|associ[ée]s)\b/i.test(low);
+
+    if (useSiblingRouting && (activeNavInd === 'Real Estate & Property' || /\b(lease|leases|tenant|rent\s+roll|rent\s+invoice|re_leases|re_invoicing|re_receipts|4235|property|unit|work\s+order)\b|الإيجارات|العقود/i.test(low))) {
+      col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
+      if (/\b(invoic|billing|arrears|rent\s+invoice)\b/i.test(low)) destView = 're_invoicing';
+      else if (/\b(receipt|payment|collection)\b/i.test(low)) destView = 're_receipts';
+      else if (/\b(property|properties|unit|units|building|occupancy)\b/i.test(low)) destView = 're_properties';
+      else if (/\b(work\s*order|repair|capex|fit[- ]out|maint)\b/i.test(low)) destView = 're_workorders';
+      else destView = 're_leases';
+      cfView = destView;
+    } else if (useSiblingRouting && (activeNavInd === 'Automotive & Heavy Trading' || /\b(shacman|korri\s+auto|vin\b|chassis|warranty|trd_)\b/i.test(low))) {
+      col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
+      if (/\b(vin\b|chassis|truck|yard)\b/i.test(low)) destView = 'trd_trucks';
+      else if (/\b(warranty|pdi|service)\b/i.test(low)) destView = 'trd_warranty';
+      else if (/\b(stock|part|spare|fifo|warehouse)\b/i.test(low)) destView = 'trd_stock';
+      else if (/\b(import|landed|grn|customs|purchase)\b/i.test(low)) destView = 'trd_purchases';
+      else if (/\b(receivable|ar\b|collection)\b/i.test(low)) destView = 'trd_receivables';
+      else if (/\b(target|tariff|price\s+list)\b/i.test(low)) destView = 'trd_targets';
+      else destView = 'trd_sales';
+      cfView = destView;
+    } else if (useSiblingRouting && (activeNavInd === 'Hospitality & Resorts' || /\b(cabana|membership|blanca|la\s+una|palms|voile|platinum|resort|hsp_)\b/i.test(low))) {
+      col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
+      if (/\b(cabana|member|membership|gym|pool|package)\b/i.test(low)) destView = 'hsp_memberships';
+      else if (/\b(pos|till|shift)\b/i.test(low)) destView = 'hsp_pos';
+      else if (/\b(stock|menu|cellar|commissary)\b/i.test(low)) destView = 'hsp_stock';
+      else if (/\b(energy|generator|maint|diesel)\b/i.test(low)) destView = 'hsp_energy';
+      else if (/\b(partner|split)\b/i.test(low)) destView = 'hsp_partners';
+      else destView = 'hsp_revenue';
+      cfView = destView;
+    } else if (useSiblingRouting && (activeNavInd === 'Holding & Treasury' || /\b(bdeir\s+holding|intercompany|partner\s+split|due[- ]from|due[- ]to|hld_)\b|الشركاء/i.test(low))) {
+      col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
+      if (/\b(partner|split|shareholder|distribution)\b|الشركاء|associ[ée]s/i.test(low)) destView = 'hld_partners';
+      else if (/\b(loan|facility|bank|treasury)\b/i.test(low)) destView = 'hld_loans';
+      else if (/\b(intercompany|due[- ]from|due[- ]to|ic\b)\b/i.test(low)) destView = 'hld_interactions';
+      else destView = 'hld_consolidation';
+      cfView = destView;
+    } else if (useSiblingRouting && (activeNavInd === 'Insurance & Brokerage' || /\b(policy|policies|renewal|claim|fnol|bordereau|remit|underwriter|ins_)\b|البوالص/i.test(low))) {
+      col = ''; val = ''; panelId = ''; search = (!isMfgEnt && entName) ? entName : '';
+      if (/\b(renewal|expir)\b/i.test(low)) destView = 'ins_renewals';
+      else if (/\b(claim|fnol|loss)\b/i.test(low)) destView = 'ins_claims';
+      else if (/\b(remittance|bordereau|carrier)\b/i.test(low)) destView = 'ins_remittances';
+      else if (/\b(statement|commission)\b/i.test(low)) destView = 'ins_statements';
+      else if (/\b(billing|premium|invoice)\b/i.test(low)) destView = 'ins_billing';
+      else if (/\b(agreement|tariff)\b/i.test(low)) destView = 'ins_agreements';
+      else destView = 'ins_policies';
+      cfView = destView;
+    } else if (/\b(transport|haul|haulage|truck|lorry|شاحن|نقل)\b/i.test(low) && !/\b(fleet|repair|defect|warning|maint)\b/i.test(low)) {
+      destView = 'raw'; cfView = 'raw'; panelId = 'rawPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'suppliers' || !entType)) { col = 'truck_owner'; val = entName; }
+    } else if (/\b(material|materials|raw|quarry|المواد|mat[ée]riaux)\b/i.test(low)) {
+      destView = 'raw'; cfView = 'raw'; panelId = 'rawPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'suppliers' || !entType)) { col = 'site_owner'; val = entName; }
+      else if (entName && entType === 'products') { col = 'product'; val = entName; }
+    } else if (/\b(expense|expenses|voucher|bill|مصروف|مصاريف|d[ée]pense)\b/i.test(low)) {
+      destView = 'expenses'; cfView = 'expenses'; panelId = 'expPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'suppliers' || !entType)) { col = 'supplier'; val = entName; }
+      else if (entName && entType === 'equipment') { col = 'equipment'; val = entName; }
+    } else if (/\b(supplier|suppliers|payable|settlement|المورد|فواتير|fournisseur)\b/i.test(low)) {
+      destView = 'suppliers'; cfView = 'settle'; panelId = 'supPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'suppliers' || !entType)) { col = 'supplier'; val = entName; }
+    } else if (/\b(sales|delivery|deliveries|المبيعات|ventes)\b/i.test(low)) {
+      destView = 'sales'; cfView = 'sales'; panelId = 'salesPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'customers' || !entType)) { col = 'customer'; val = entName; }
+      else if (entName && entType === 'products') { col = 'product'; val = entName; }
+    } else if (/\b(customer|customers|receivable|receipt|العملاء|clients)\b/i.test(low)) {
+      destView = 'customers'; cfView = 'receipts'; panelId = 'custPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'customers' || !entType)) { col = 'customer'; val = entName; }
+    } else if (/\b(repair|warning|defect|maint|صيانة|أعطال)\b/i.test(low)) {
+      destView = 'fleet_maint'; cfView = 'defects'; panelId = 'defectsPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'equipment' || entType === 'company_equipment' || !entType)) { col = 'equipment'; val = entName; }
+    } else if (/\b(fuel|diesel|fleet|مازوت|أسطول)\b/i.test(low)) {
+      destView = 'fleet'; cfView = 'fuel'; panelId = 'fuelPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'equipment' || entType === 'company_equipment' || !entType)) { col = 'equipment'; val = entName; }
+    } else if (/\b(attendance|shift|دوام|حضور|pr[ée]sence)\b/i.test(low)) {
+      destView = 'payroll_attendance'; cfView = 'pay_att'; panelId = 'payAttPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'employments' || entType === 'staff_members' || !entType)) { col = 'staff'; val = entName; }
+    } else if (/\b(payroll|salary|salaries|رواتب|paie)\b/i.test(low)) {
+      destView = 'payroll'; cfView = 'pay_sal'; panelId = 'paySalPanel';
+      col = ''; val = ''; search = '';
+      if (entName && (entType === 'employments' || entType === 'staff_members' || !entType)) { col = 'staff'; val = entName; }
+    } else if (/\b(warehouse|stock|inventory|مستودع)\b/i.test(low)) {
+      destView = 'warehouse'; cfView = 'whitems'; col = ''; val = ''; panelId = '';
+      search = (entName && (entType === 'items' || !entType)) ? entName : '';
+    } else if (/\b(pricing|price|rates|agreement|أسعار|tarif)\b/i.test(low)) {
+      destView = (entType === 'suppliers') ? 'raw_pricing' : 'pricing';
+      cfView = destView;
+      panelId = destView === 'raw_pricing' ? 'rawPricingPanel' : 'pricingPanel';
+      col = ''; val = ''; search = '';
+      if (entName) {
+        if (entType === 'customers' || !entType) { col = 'customer'; val = entName; }
+        else if (entType === 'products') { col = 'product'; val = entName; }
+        else if (entType === 'suppliers') { col = 'supplier'; val = entName; }
+      }
+    } else if (/\b(ledger|gl|soa|أستاذ)\b/i.test(low)) {
+      destView = 'ledger'; cfView = 'gl'; col = ''; val = ''; panelId = ''; search = entName || '';
+    }
+
+    if (!canView(destView, scope && scope.user)) {
+      return buildRestrictedReply(cleanQ, lang, destView, scope && scope.user);
+    }
+
+    const effPeriodSpec = (scope && scope.customDateOverride && scope.periodSpec)
+      ? scope.periodSpec
+      : (baseEnt && baseEnt.periodSpec ? baseEnt.periodSpec : '');
+    const effDateRange = (scope && scope.customDateOverride && scope.periodSpec === 'all')
+      ? null
+      : ((scope && scope.customDateOverride && scope.dateRange)
+        ? scope.dateRange
+        : ((scope && scope.dateRange) || (baseEnt && baseEnt.dateRange) || null));
+
+    let multiColFilters = null;
+    if (destView === 'suppliers' && val) {
+      multiColFilters = { settle: { supplier: val }, sups: { Supplier: val } };
+    } else if (destView === 'customers' && val) {
+      multiColFilters = { receipts: { customer: val }, custs: { Customer: val }, vatinv: { customer: val } };
+    }
+
+    const navOpts = {
+      view: destView,
+      cfView,
+      ...(multiColFilters ? { multiColFilters } : (col && val ? { col, val } : {})),
+      ...(search && !col ? { search } : {}),
+      ...(panelId ? { panelId } : {}),
+      ...(effPeriodSpec ? { periodSpec: effPeriodSpec } : {}),
+      ...(effDateRange ? { dateRange: effDateRange } : {})
+    };
+
+    if (_ctx && typeof _ctx.openHubWithFilter === 'function') {
+      if (typeof window !== 'undefined' && window.innerWidth <= 860 && typeof closeDrawer === 'function') {
+        closeDrawer();
+      }
+      _ctx.openHubWithFilter(navOpts);
+    }
+
+    const shownFilter = val || search;
+    const scopeBits = [];
+    if (shownFilter) scopeBits.push(`<b>${esc(shownFilter)}</b>`);
+    if (effDateRange && effDateRange.label) scopeBits.push(`<b>${esc(effDateRange.label)}</b>`);
+    else if (effDateRange && (effDateRange.from || effDateRange.to)) scopeBits.push(`<b>${esc(effDateRange.from || '')} to ${esc(effDateRange.to || '')}</b>`);
+    else if (scope && scope.periodLabel && scope.periodLabel !== 'All-Time') scopeBits.push(`<b>${esc(scope.periodLabel)}</b>`);
+    const filterDesc = scopeBits.length ? ` filtered by ${scopeBits.join(' · ')}` : '';
+    const viewLbl = (_ctx && _ctx.VIEW_TITLES && _ctx.VIEW_TITLES[destView]) || destView;
+
+    return {
+      q: cleanQ,
+      lang,
+      instantLocal: true,
+      topic: scope && scope.inheritedTopic ? scope.inheritedTopic : destView,
+      entityFilter: {
+        view: destView,
+        cfView,
+        col,
+        val,
+        search: col ? '' : search,
+        panelId,
+        periodSpec: effPeriodSpec,
+        dateRange: effDateRange,
+        crKey: entType,
+        id: baseEnt ? baseEnt.id : '',
+        entityName: entName
+      },
+      title: lang === 'ar' ? 'الانتقال إلى المركز التشغيلي' : (lang === 'fr' ? 'Navigation vers le module' : `Opened ${cleanOut(viewLbl)}`),
+      answer: lang === 'ar'
+        ? `تم فتح تبويب <b>${esc(viewLbl)}</b>${shownFilter ? ` مع تصفية الحساب <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` للفترة <b>${esc(effDateRange.label)}</b>` : ''}.`
+        : (lang === 'fr'
+          ? `Ouverture de l'onglet <b>${esc(viewLbl)}</b>${shownFilter ? ` filtré sur <b>${esc(shownFilter)}</b>` : ''}${(effDateRange && effDateRange.label) ? ` pour la période <b>${esc(effDateRange.label)}</b>` : ''}.`
+          : `Opened <b>${esc(viewLbl)}</b>${filterDesc}.`),
+      actions: [
+        { type: 'view', view: destView, cfView, col, val, search: col ? '' : search, panelId, periodSpec: effPeriodSpec, dateRange: effDateRange, label: lang === 'ar' ? 'إعادة الفتح في المركز' : (lang === 'fr' ? 'Rouvrir dans le hub' : `Open ${cleanOut(viewLbl)}`) },
+        ...(baseEnt && baseEnt.crKey && baseEnt.id ? [{ type: 'inspect', crKey: baseEnt.crKey, id: baseEnt.id, label: `360° ${entName || val}` }] : [])
+      ]
+    };
+  }
+
     // 2. Specific Ticket / Counterparty / Product / Equipment / Staff Lookup
+    const hubNavHit = tryAskHubNavigation(cleanQ, scope, lang);
+    if (hubNavHit) return hubNavHit;
+
     const specificHit = trySpecificRecordLookup(cleanQ, scope);
     if (specificHit) return specificHit;
 
@@ -1261,11 +2024,18 @@
         return buildRestrictedReply(cleanQ, lang, targetInd);
       }
       const filterIndActions = acts => (acts || []).filter(a => !a || a.type !== 'view' || canView(a.view, user));
+      const indRange = (scope && scope.dateRange && (scope.dateRange.from || scope.dateRange.to))
+        ? {
+            from: scope.dateRange.from || ((_ctx && _ctx.MIN_DATE) || '2024-01-01'),
+            to: scope.dateRange.to || ((_ctx && _ctx.MAX_DATE) || '2030-12-31')
+          }
+        : null;
+      const indComputeOpts = { company: scope.coKey, ignoreSearch: true, ignorePeriod: !indRange, ...(indRange ? { range: indRange } : {}) };
       if (targetInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
         if (!indLens.books) {
           return buildRestrictedReply(cleanQ, lang, 'Holding & Treasury');
         }
-        const h = window.MFG_HOLDING.compute({ company: scope.coKey, ignoreSearch: true });
+        const h = window.MFG_HOLDING.compute(indComputeOpts);
         const hk = h.kpis || {};
         const icRows = h.intercompany || [];
         const pRows = h.partners || [];
@@ -1377,7 +2147,7 @@
         };
       }
       if (targetInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
-        const d = window.MFG_HOSPITALITY.compute({ company: scope.coKey, ignoreSearch: true });
+        const d = window.MFG_HOSPITALITY.compute(indComputeOpts);
         const hk = d.kpis || {};
         const sRows = d.salesRows || [];
         const mRows = d.memberRows || [];
@@ -1485,7 +2255,7 @@
         };
       }
       if (targetInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
-        const d = window.MFG_TRADING.compute({ company: scope.coKey, ignoreSearch: true });
+        const d = window.MFG_TRADING.compute(indComputeOpts);
         const tk = d.kpis || {};
         const vRows = d.vehicleRows || [];
         const stRows = d.stockRows || [];
@@ -1586,7 +2356,7 @@
         };
       }
       if (targetInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
-        const d = window.MFG_REALESTATE.compute({ company: scope.coKey, ignoreSearch: true });
+        const d = window.MFG_REALESTATE.compute(indComputeOpts);
         const rk = d.kpis || {};
         const lRows = d.leases || [];
         const rRows = d.rentInvoices || [];
@@ -1679,7 +2449,7 @@
         };
       }
       if (targetInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
-        const d = window.MFG_INSURANCE.compute({ company: scope.coKey, ignoreSearch: true });
+        const d = window.MFG_INSURANCE.compute(indComputeOpts);
         const ik = d.kpis || {};
         const pRows = d.policies || [];
         const cRows = d.carrierMatrix || [];
@@ -9938,6 +10708,22 @@
         e.preventDefault();
         const destView = sum.targetView || 'sales';
         closeInspectorBriefPopover();
+        const actCtx = (_ctx && _ctx.STATE && _ctx.STATE.activeInspectorCtx) || {};
+        if (_ctx && typeof _ctx.openInspectorTargetInHub === 'function') {
+          _ctx.openInspectorTargetInHub({
+            targetKey: sum.recordKey || actCtx.key || actCtx.domainTblKey || '',
+            recordKey: sum.recordKey || actCtx.key || '',
+            recordId: sum.recordId || actCtx.id || actCtx.primaryId || '',
+            domainTblKey: actCtx.domainTblKey || '',
+            entityName: sum.entityName || actCtx.secondaryLbl || '',
+            row: actCtx.row || null,
+            headers: actCtx.headers || null,
+            cells: actCtx.cells || null,
+            targetView: destView,
+            source: 'brief'
+          });
+          return;
+        }
         if (_ctx && typeof _ctx.closeRecordInspector === 'function') {
           _ctx.closeRecordInspector();
         }
@@ -10802,6 +11588,10 @@
         if (destView && _ctx && typeof _ctx.setView === 'function' && (typeof _ctx.canViewView !== 'function' || _ctx.canViewView(destView))) {
           if (sum.ruleId === 'S2' && destView === 'expenses') {
             _ctx.setView(destView, { chipFilter: 'pending_price' });
+            return;
+          }
+          if (sum.ruleId === 'S20' && destView === 'suppliers') {
+            _ctx.setView(destView, { chipFilter: 'overpaid_ap' });
             return;
           }
           _ctx.setView(destView);
@@ -21222,11 +22012,18 @@
   function buildIndustryLiveContextLines(activeInd, scope) {
     const user = scope.user;
     const lens = getSeatLens(user);
+    const liveIndRange = (scope && scope.dateRange && (scope.dateRange.from || scope.dateRange.to))
+      ? {
+          from: scope.dateRange.from || ((_ctx && _ctx.MIN_DATE) || '2024-01-01'),
+          to: scope.dateRange.to || ((_ctx && _ctx.MAX_DATE) || '2030-12-31')
+        }
+      : null;
+    const liveIndOpts = { company: scope.coKey, ignoreSearch: true, ignorePeriod: !liveIndRange, ...(liveIndRange ? { range: liveIndRange } : {}) };
     if (activeInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
       if (!lens.books) {
         return ['Industry: Holding & Treasury (Restricted Treasury Scope: Cash Flow & General Ledger access required)'];
       }
-      const h = window.MFG_HOLDING.compute();
+      const h = window.MFG_HOLDING.compute(liveIndOpts);
       const hk = h.kpis || {};
       const icRows = h.intercompany || [];
       const pRows = lens.partnerSplits ? (h.partners || []) : [];
@@ -21247,7 +22044,7 @@
       ].filter(Boolean);
     }
     if (activeInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
-      const d = window.MFG_HOSPITALITY.compute();
+      const d = window.MFG_HOSPITALITY.compute(liveIndOpts);
       const hk = d.kpis || {};
       const sRows = d.salesRows || [];
       const byV = {};
@@ -21268,7 +22065,7 @@
       ].filter(Boolean);
     }
     if (activeInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
-      const d = window.MFG_TRADING.compute();
+      const d = window.MFG_TRADING.compute(liveIndOpts);
       const tk = d.kpis || {};
       const vRows = d.vehicleRows || [];
       return [
@@ -21286,7 +22083,7 @@
       ].filter(Boolean);
     }
     if (activeInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
-      const d = window.MFG_REALESTATE.compute();
+      const d = window.MFG_REALESTATE.compute(liveIndOpts);
       const rk = d.kpis || {};
       const lRows = d.leases || [];
       return [
@@ -21298,7 +22095,7 @@
       ].filter(Boolean);
     }
     if (activeInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
-      const d = window.MFG_INSURANCE.compute();
+      const d = window.MFG_INSURANCE.compute(liveIndOpts);
       const ik = d.kpis || {};
       const cRows = d.carrierMatrix || [];
       return [
@@ -21768,7 +22565,17 @@
           if (a.type === 'speak') {
             return `<button type="button" class="ai-act-btn ai-speak-btn" data-ai-speak="${esc(a.lang || 'en')}" data-turn-idx="${turnIdx}"><span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(a.label || speakIdleLabel(a.lang || 'en'))}</span></button>`;
           }
-          return `<button type="button" class="ai-act-btn${idx === 0 ? ' is-primary' : ''}" data-ai-goto-view="${esc(a.view)}">${esc(a.label)}</button>`;
+          const extraAttrs = [
+            a.cfView ? ` data-ai-cf-view="${esc(a.cfView)}"` : '',
+            a.col ? ` data-ai-filter-col="${esc(a.col)}"` : '',
+            a.val != null && a.val !== '' ? ` data-ai-filter-val="${esc(a.val)}"` : '',
+            a.search ? ` data-ai-search="${esc(a.search)}"` : '',
+            a.panelId ? ` data-ai-panel="${esc(a.panelId)}"` : '',
+            a.periodSpec ? ` data-ai-period="${esc(a.periodSpec)}"` : '',
+            (a.dateRange && a.dateRange.from) ? ` data-ai-from="${esc(a.dateRange.from)}"` : '',
+            (a.dateRange && a.dateRange.to) ? ` data-ai-to="${esc(a.dateRange.to)}"` : ''
+          ].join('');
+          return `<button type="button" class="ai-act-btn${idx === 0 ? ' is-primary' : ''}" data-ai-goto-view="${esc(a.view)}"${extraAttrs}>${esc(a.label)}</button>`;
         }).join('')}</div>`
       : '';
 
@@ -22037,13 +22844,15 @@
   function rememberTurnScope(scope, reply) {
     if (!scope || scope.rlsBlockedCompany || !reply) return;
     if (reply.conversational && !reply.topic) return;
+    const prevEnt = scope.inheritedEntity || null;
     _chatState.lastTurn = {
       mentionedCo: scope.mentionedCo || null,
       customDateOverride: Boolean(scope.customDateOverride),
       dateRange: scope.dateRange || null,
       periodSpec: scope.periodSpec || null,
       forceTxBasis: Boolean(scope.forceTxBasis),
-      topic: reply.topic || scope.inheritedTopic || ''
+      topic: reply.topic || scope.inheritedTopic || '',
+      lastEntity: reply.entityFilter || prevEnt || null
     };
   }
 
@@ -22105,7 +22914,18 @@
 
     const decorateReply = rep => {
       if (!rep) return rep;
+      const shouldCarryScope = Boolean(scope && (scope.customDateOverride || (scope.dateRange && (scope.dateRange.from || scope.dateRange.to))));
+      const patchedActions = (shouldCarryScope && Array.isArray(rep.actions))
+        ? rep.actions.map(a => {
+            if (!a || a.type !== 'view') return a;
+            const out = Object.assign({}, a);
+            if (!out.periodSpec && scope.periodSpec) out.periodSpec = scope.periodSpec;
+            if (!out.dateRange && scope.dateRange && scope.periodSpec !== 'all') out.dateRange = scope.dateRange;
+            return out;
+          })
+        : rep.actions;
       return Object.assign({}, rep, {
+        ...(patchedActions ? { actions: patchedActions } : {}),
         q: rep.userTranscript || rep.q || cleanQ,
         attachments: turnAtts.length ? turnAtts : undefined,
         fromVoice
@@ -22711,10 +23531,38 @@
           return;
         }
         const gotoBtn = e.target.closest('[data-ai-goto-view]');
-        if (gotoBtn && _ctx && typeof _ctx.setView === 'function') {
+        if (gotoBtn && _ctx) {
           const targetView = gotoBtn.getAttribute('data-ai-goto-view');
+          const cfView = gotoBtn.getAttribute('data-ai-cf-view') || '';
+          const col = gotoBtn.getAttribute('data-ai-filter-col') || '';
+          const val = gotoBtn.getAttribute('data-ai-filter-val') || '';
+          const search = gotoBtn.getAttribute('data-ai-search') || '';
+          const panelId = gotoBtn.getAttribute('data-ai-panel') || '';
+          const periodSpec = gotoBtn.getAttribute('data-ai-period') || '';
+          const fromD = gotoBtn.getAttribute('data-ai-from') || '';
+          const toD = gotoBtn.getAttribute('data-ai-to') || '';
           if (window.innerWidth <= 860) closeDrawer();
-          _ctx.setView(targetView);
+          if (typeof _ctx.openHubWithFilter === 'function' && (col || val || search || periodSpec || fromD || toD || cfView)) {
+            let multiColFilters = null;
+            if (targetView === 'suppliers' && val) {
+              multiColFilters = { settle: { supplier: val }, sups: { Supplier: val } };
+            } else if (targetView === 'customers' && val) {
+              multiColFilters = { receipts: { customer: val }, custs: { Customer: val }, vatinv: { customer: val } };
+            }
+            _ctx.openHubWithFilter({
+              view: targetView,
+              cfView: cfView || targetView,
+              ...(multiColFilters ? { multiColFilters } : (col && val ? { col, val } : {})),
+              ...(search && !col ? { search } : {}),
+              ...(panelId ? { panelId } : {}),
+              ...(periodSpec ? { periodSpec } : {}),
+              ...((fromD || toD) ? { dateRange: { from: fromD, to: toD } } : {})
+            });
+            return;
+          }
+          if (typeof _ctx.setView === 'function') {
+            _ctx.setView(targetView);
+          }
           return;
         }
         const formBtn = e.target.closest('[data-ai-open-form]');
