@@ -8806,6 +8806,28 @@
             ? 'Les détails de cet état sont restreints selon les droits du poste.'
             : 'Statement details are restricted by seat permissions.')];
     }
+    // A company whose costs and cash book are not in ISABI: the sheet prints no figure, so the summary gives none.
+    if (f.notKeptInIsabi) {
+      if (lang === 'ar') {
+        return [
+          `${titleLoc} لـ ${co} غير مسجل في ISABI بعد.`,
+          'مبيعات الشركة مسجلة، لكن مصاريفها ورواتبها ودفتر صندوقها لم تُحمَّل بعد.',
+          'لا تُعرض أي أرقام قبل تحميل هذه الدفاتر، فلا شيء يُقدَّر.'
+        ];
+      }
+      if (lang === 'fr') {
+        return [
+          `${titleLoc} de ${co} n’est pas encore tenu dans ISABI.`,
+          'Ses ventes sont saisies, mais ses charges, sa paie et son livre de caisse ne sont pas encore chargés.',
+          'Aucun chiffre n’est donné avant le chargement de ces livres : rien n’est estimé.'
+        ];
+      }
+      return [
+        `${titleLoc} for ${co} is not kept in ISABI yet.`,
+        'Its sales side is recorded, but its expenses, payroll and cash book are not loaded.',
+        'No figure is given until those books are loaded, so nothing is estimated.'
+      ];
+    }
     if (id === '05') {
       const tieOk = snap.tieCheck && snap.tieCheck.balanced;
       if (lang === 'ar') {
@@ -8943,19 +8965,25 @@
         rawBullets = [
           `تطابق مطابقة الأرباح والخسائر لـ ${co} (${win}) إيرادات السجلات الفرعية بقيمة ${fmtM(f.subLedgerRevenue701Usd)} مع الأستاذ العام (701 / 706).`,
           `تبلغ الكلفة المباشرة والمحروقات ${fmtM(f.subLedgerDirect601Usd)} والمصاريف والرواتب ${fmtM(f.subLedgerOpexAndPayrollUsd)} عبر ${f.vouchersReconciled} مستند.`,
-          `يستقر صافي النتيجة المطابقة عند ${fmtMSigned(f.reconciledNetResultUsd)} بفارق مطابقة صفر ($0.00) عبر كافة الجداول الخمسة.`
+          f.balanced
+            ? `يستقر صافي النتيجة المطابقة عند ${fmtMSigned(f.reconciledNetResultUsd)} بفارق مطابقة صفر ($0.00) عبر كافة الجداول.`
+            : `يستقر صافي النتيجة عند ${fmtMSigned(f.reconciledNetResultUsd)} مع فرق بقيمة ${fmtM(f.glReconciliationVarianceUsd)} بين السجلات الفرعية والأستاذ العام يحتاج إلى مراجعة.`
         ];
       } else if (lang === 'fr') {
         rawBullets = [
           `Le rapprochement résultat de ${co} (${win}) cadre ${fmtM(f.subLedgerRevenue701Usd)} de produits auxiliaires avec les comptes généraux 701 et 706.`,
           `Les coûts directs atteignent ${fmtM(f.subLedgerDirect601Usd)} et les charges et salaires ${fmtM(f.subLedgerOpexAndPayrollUsd)} sur ${f.vouchersReconciled} pièces.`,
-          `Le résultat net rapproché ressort à ${fmtMSigned(f.reconciledNetResultUsd)} avec un écart de $0.00 sur les 5 journaux auxiliaires.`
+          f.balanced
+            ? `Le résultat net rapproché ressort à ${fmtMSigned(f.reconciledNetResultUsd)} avec un écart de $0.00 sur tous les journaux auxiliaires.`
+            : `Le résultat net ressort à ${fmtMSigned(f.reconciledNetResultUsd)} avec un écart de ${fmtM(f.glReconciliationVarianceUsd)} entre les journaux auxiliaires et le grand livre, à examiner.`
         ];
       } else {
         rawBullets = [
           `P&L Reconciliation for ${co} (${win}) ties ${fmtM(f.subLedgerRevenue701Usd)} in sub-ledger revenue directly to GL Accounts 701 and 706.`,
           `Direct material and fuel streams total ${fmtM(f.subLedgerDirect601Usd)} alongside ${fmtM(f.subLedgerOpexAndPayrollUsd)} in OPEX and payroll across ${f.vouchersReconciled} vouchers.`,
-          `Reconciled net P&L stands at ${fmtMSigned(f.reconciledNetResultUsd)} with a verified $0.00 sub-ledger-to-GL variance across all 5 streams.`
+          f.balanced
+            ? `Reconciled net P&L stands at ${fmtMSigned(f.reconciledNetResultUsd)} with a verified $0.00 sub-ledger-to-GL variance across every stream.`
+            : `Net P&L stands at ${fmtMSigned(f.reconciledNetResultUsd)} with a ${fmtM(f.glReconciliationVarianceUsd)} difference between the sub-ledgers and the GL to review.`
         ];
       }
     } else {
@@ -9154,6 +9182,11 @@
       return _chatState.stmtVarianceInflight.get(cacheKey);
     }
 
+    // A company whose books are not kept in ISABI has no figure to explain: the fixed sentences stand, no AI text.
+    if (sum.facts && sum.facts.notKeptInIsabi) {
+      return { ok: true, source: 'deterministic', model: 'deterministic-local', lang: sum.lang, scopeKey: sum.scopeKey, note: 'not_kept', bullets: (sum.bullets || []).slice(0, 3) };
+    }
+
     const langName = sum.lang === 'ar'
       ? 'Arabic (Modern Standard Arabic with natural Lebanese accounting phrasing)'
       : (sum.lang === 'fr' ? 'French' : 'English');
@@ -9180,7 +9213,7 @@
       '2. Bullet 1 summarizes the headline statement totals and reporting scope.',
       '3. Bullet 2 explains the key sub-ledger breakdown, aging bucket, VAT box, or cost leg driver.',
       sum.canViewBooks
-        ? '4. Bullet 3 states reconciliation/tie posture (cite $0.00 variance when tieStatus.balanced is true) or priority counterparty action before sign-off.'
+        ? '4. Bullet 3 states reconciliation/tie posture (cite $0.00 variance only when tieStatus.balanced is true; when tieStatus is absent or not balanced, never state a tie, state the variance given or the priority action) or priority counterparty action before sign-off.'
         : '4. Bullet 3 states operational readiness and document control posture (never mention cash till, bank balances, or restricted payables).',
       '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, or internal system names.'
     ].join('\n');

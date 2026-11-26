@@ -522,28 +522,96 @@
     `;
   }
 
+  // Accounts of the printed statements for the Manufacturing companies. Names say what the companies do (aggregates,
+  // sand, haulage), never a sample business. An account with no posting is not printed for a real company.
   const COA_ACCOUNTS = [
     { code: '101', name: 'Capital & Partner Equity / رأس المال', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
-    { code: '165', name: 'Shareholder & Partner Current Accounts / جاري الشركاء', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
-    { code: '215', name: 'Batching Plant, Mixers & Pumps / الآلات والمعدات', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'D' },
+    { code: '165', name: 'Partner Current Accounts (Paid In Less Withdrawn) / جاري الشركاء', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
+    { code: '181', name: 'Current Accounts with Group Companies / حسابات جارية مع شركات المجموعة', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
+    { code: '215', name: 'Plant, Machinery & Equipment / الآلات والمعدات', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'D' },
     { code: '218', name: 'Transport Fleet & Heavy Vehicles / آليات النقل', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'D' },
     { code: '281', name: 'Accumulated Depreciation / الاستهلاكات المتراكمة', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'C' },
-    { code: '311', name: 'Raw Materials Inventory (Cement, Sand, Aggregate) / مخزون المواد الأولية', cls: '3 - Inventory', section: 'Current Assets', normal: 'D' },
+    { code: '311', name: 'Stock: Diesel Tank & Materials at Cost / مخزون المازوت والمواد', cls: '3 - Inventory', section: 'Current Assets', normal: 'D' },
     { code: '401', name: 'Suppliers — Accounts Payable / ذمم الموردين', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
     { code: '411', name: 'Customers — Accounts Receivable / ذمم الزبائن', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
     { code: '421', name: 'Personnel — Salaries & Advances / ذمم الموظفين والسلف', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+    { code: '428', name: 'Loans & Advances Given and Received / قروض وسلف', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
     { code: '442', name: 'State — VAT Collectible & Deductible / الضريبة على القيمة المضافة', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
-    { code: '467', name: 'Sundry Debtors, Creditors & Barter Clearing / مدينون ودائنون مختلفون ومقاصة', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
+    { code: '4619', name: 'Plant-Owner Commission Payable / عمولة مالك المعمل المستحقة', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+    { code: '467', name: 'Balances Carried In, Barter & Clearing / أرصدة مدورة ومقايضة ومقاصة', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
     { code: '512', name: 'Banks & Financial Institutions (Fresh USD) / البنوك', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
-    { code: '531', name: 'Cash on Hand & Plant Safe / الصندوق', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
-    { code: '601', name: 'Purchases of Raw Materials & Fuel / مشتريات المواد الأولية والمحروقات', cls: '6 - Expenses', section: 'Cost of Goods Sold', normal: 'D' },
+    { code: '531', name: 'Cash Till (USD and LBP) / الصندوق', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
+    { code: '601', name: 'Purchases of Materials, Haulage & Fuel / مشتريات المواد والنقل والمحروقات', cls: '6 - Expenses', section: 'Cost of Goods Sold', normal: 'D' },
     { code: '615', name: 'Plant & Fleet Maintenance & Spare Parts / الصيانة وقطع الغيار', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
-    { code: '622', name: 'Subcontracting, Hauling & General Services / خدمات خارجية ونقل', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
+    { code: '622', name: 'Outside Services & General Expenses / خدمات خارجية ومصاريف عامة', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
+    { code: '6222', name: 'Plant-Owner Commission on Sales / عمولة مالك المعمل', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
     { code: '641', name: 'Staff Salaries, Wages & Daily Labor / الرواتب والأجور', cls: '6 - Expenses', section: 'Payroll & Personnel', normal: 'D' },
-    { code: '701', name: 'Sales of Ready-Mix Concrete & Products / مبيعات الباطون والمنتجات', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-    { code: '706', name: 'Pump, Transport & Hauling Revenue / إيرادات الضخ والنقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-    { code: '758', name: 'Other Operating Income (Scrap & Sundry Sales) / إيرادات تشغيلية أخرى', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+    { code: '666', name: 'Foreign Exchange Losses / خسائر فروقات الصرف', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
+    { code: '701', name: 'Sales of Aggregates, Sand & Materials / مبيعات البحص والرمل والمواد', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '706', name: 'Transport & Hauling Revenue / إيرادات النقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '758', name: 'Other Operating Income (Scrap & Sundry Sales) / إيرادات تشغيلية أخرى', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '766', name: 'Foreign Exchange Gains / أرباح فروقات الصرف', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
   ];
+
+  // ── Statement books: what the printed statements 02 to 07 may show ───────────────────────────────────────
+  // Owner rule 2026-11-25: a real company's statements hold only what was recorded. No opening balance, capital,
+  // asset or cash figure is assumed. Illustrative figures stay inside Demo Company and the public demo sandbox.
+  const STMT_LBP_RATE = 89500; // the cash till's own LBP rate
+  const stmtHooks = () => ((typeof window !== 'undefined' && window.__mfgStmtHooks) || null);
+  function stmtIsDemo(ctx) {
+    const h = stmtHooks();
+    if (h && typeof h.demoScope === 'function') { try { return Boolean(h.demoScope()); } catch (_) { /* fall through */ } }
+    const st = (ctx && ctx.state) || {};
+    return Boolean(st.company === 'democompany' || st.demoVisitor);
+  }
+  // A company outside Manufacturing keeps full books in ISABI only once its cash book is loaded (the same rule as its
+  // Cash Flow screen, which says Not Tracked Yet). Until then its sales side is here and its costs and cash are not.
+  function stmtBooksKept(ctx) {
+    if (!ctx || !ctx.ind || ctx.ind === 'Manufacturing' || stmtIsDemo(ctx)) return true;
+    const h = stmtHooks();
+    try {
+      const t = (h && typeof h.tillAt === 'function') ? h.tillAt((ctx.state && ctx.state.company) || ctx.co, '') : null;
+      return Boolean(t && t.tracked);
+    } catch (_) { return false; }
+  }
+  // Partner, group-company and loan rows are confidential: only a seat the Cash Flow screen shows them to (Owner,
+  // Supervisor, full-finance) gets them on a statement. Any doubt reads as no.
+  function stmtFullFin() {
+    const h = stmtHooks();
+    try { return Boolean(h && typeof h.fullFin === 'function' && h.fullFin()); } catch (_) { return false; }
+  }
+  // Counted cash till of the scope on a day, in USD (LBP at the till's rate). null when no till is kept for the scope,
+  // in Official Books (a part of the records only), in Demo Company, and for a seat without the partner and loan rows
+  // (its ledger lacks them, so its cash could not be compared with the till).
+  function stmtTillUsd(ctx, iso) {
+    if (!ctx || (ctx.ind && ctx.ind !== 'Manufacturing') || ctx.officialScope || stmtIsDemo(ctx) || !stmtFullFin()) return null;
+    const h = stmtHooks();
+    if (!h || typeof h.tillAt !== 'function' || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return null;
+    const keys = ctx.co === 'ALL' ? ['wtc', 'bbconstruction', 'lionstransport'] : [String(ctx.co || '').toLowerCase().replace(/\s+/g, '')];
+    const allowed = Array.isArray(ctx.allowedCos) ? ctx.allowedCos.map(c => String(c).toLowerCase().replace(/\s+/g, '')) : null;
+    let tot = 0, any = false;
+    for (const k of keys) {
+      if (allowed && !allowed.includes(k)) { if (ctx.co === 'ALL') continue; return null; }
+      let t = null;
+      try { t = h.tillAt(k, iso); } catch (_) { t = null; }
+      if (!t || !t.tracked || t.usd == null) return null; // a company in scope without a counted till: no comparison
+      tot += Number(t.usd || 0) + Number(t.lbp || 0) / Number(t.rate || STMT_LBP_RATE);
+      any = true;
+    }
+    if (!any) return null;
+    const v = Math.round(tot * 100) / 100;
+    return Math.abs(v) < 0.05 ? 0 : v;
+  }
+  const STMT_RECORDED_ONLY_NOTE = 'Built only from entries recorded in ISABI. Capital, assets and balances from before the first entry are not included.';
+  const STMT_TILL_NOTE = 'Cash is shown at the counted till. Recorded cash entries that do not yet agree with the till are listed on their own line.';
+  const STMT_SEAT_NOTE = 'Partner, group-company and loan accounts are not shown for this seat, so cash here leaves them out.';
+  function stmtNotes(ctx, extra) {
+    const out = dieselBasisNote(ctx).slice();
+    if (!stmtIsDemo(ctx)) out.push(STMT_RECORDED_ONLY_NOTE);
+    if (!stmtIsDemo(ctx) && (!ctx.ind || ctx.ind === 'Manufacturing') && !stmtFullFin()) out.push(STMT_SEAT_NOTE);
+    (extra || []).forEach(n => { if (n) out.push(n); });
+    return out;
+  }
 
   // Revenue class of a Manufacturing sales ticket (rule lives in app.js: sale / recharge / other_income).
   const saleRevClass = r => {
@@ -688,27 +756,27 @@
 
   const DOMAIN_RDL_TERMS = {
     'Manufacturing': {
-      qtyUnit: 'm³', qtyDp: 1, qtyCol: 'Qty (m³)', volKpi: 'Concrete Volume', txSingular: 'load', txPlural: 'loads', txCol: 'Loads',
-      avgUnitLbl: 'Avg $/m³', rateCol: 'Unit Rate ($/m³)', sec1Title: '1. Production & Revenue by Concrete Grade / Product',
+      qtyUnit: 'm³', qtyDp: 1, qtyCol: 'Qty (m³)', volKpi: 'Volume Sold', txSingular: 'load', txPlural: 'loads', txCol: 'Loads',
+      avgUnitLbl: 'Avg $/m³', rateCol: 'Unit Rate ($/m³)', sec1Title: '1. Sales & Revenue by Product',
       sec1ProdCol: 'Product / Grade', sec1TotalLbl: 'Total Production Mix',
       sec2Title: '2. Daily Plant Dispatch, Collections & Outflows (Most Recent Operating Days)',
       sec2VolCol: 'Dispatched (m³)', sec2RmCol: 'RM Purchases ($)', sec2FuelCol: 'Diesel (L)',
-      cfCustIn: 'Customer Receipts & Concrete Collections (تحصيلات الزبائن)',
-      cfRmOut: 'Raw Material & Cement Payments (مدفوعات المواد الأولية)',
+      cfCustIn: 'Customer Receipts & Collections (تحصيلات الزبائن)',
+      cfRmOut: 'Material, Haulage & Supplier Payments (مدفوعات الموردين)',
       cfFuelOut: 'Diesel & Fleet Fuel Payments (مدفوعات المحروقات)',
       cfExpOut: 'Plant Maintenance & General OPEX Paid (مدفوعات المصاريف والصيانة)',
-      plSales: 'Concrete & Product Sales (Excl. VAT)',
-      plRm: 'Raw Materials Intake (Cement, Sand, Aggregate)',
+      plSales: 'Material & Product Sales (Excl. VAT)',
+      plRm: 'Raw Materials Intake & Haulage',
       plFuel: 'Fleet & Plant Diesel Consumption',
       plExp: 'Plant Maintenance & General Operating Expenses',
-      custSubTitle: 'Account 411 · Ready-Mix Concrete Customer',
-      custDefault: 'Sabeh Beton S.R.L', siteDefault: 'Baabda', supDefault: 'Holcim Liban S.A.L',
+      custSubTitle: 'Account 411 · Trade Customer',
+      custDefault: '', siteDefault: '', supDefault: '',
       supSubtitle: 'Raw Materials, Parts & Plant Supplies',
       doc21Label: 'Delivery Ticket', doc21NoLbl: 'Delivery Ticket No', doc21DateLbl: 'Dispatch Date',
-      doc21Ref1Lbl: 'Mixer / Truck', doc21Ref1Def: 'Plant Mixer', doc21Ref2Lbl: 'Driver', doc21Ref2Def: 'Assigned Driver',
-      doc21SitePfx: 'Project Site', doc21ProdCol: 'Concrete Grade / Product', doc21SiteCol: 'Pouring Site',
-      doc21TotalLbl: 'Total Certified Concrete Delivery', doc21SigLeft: 'Batching Plant Dispatcher / مسؤول المجبل', doc21SigRight: 'Site Engineer / المستلم في الورشة',
-      rcptDescDef: 'Concrete Supply'
+      doc21Ref1Lbl: 'Truck', doc21Ref1Def: 'Plant Truck', doc21Ref2Lbl: 'Driver', doc21Ref2Def: 'Assigned Driver',
+      doc21SitePfx: 'Project Site', doc21ProdCol: 'Product', doc21SiteCol: 'Delivery Site',
+      doc21TotalLbl: 'Total Certified Delivery', doc21SigLeft: 'Plant Dispatcher / مسؤول التحميل', doc21SigRight: 'Site Engineer / المستلم في الورشة',
+      rcptDescDef: 'Material Supply'
     },
     'Holding & Treasury': {
       qtyUnit: 'tx', qtyDp: 0, qtyCol: 'Transfers', volKpi: 'Treasury Transfers', txSingular: 'transfer', txPlural: 'transfers', txCol: 'Legs',
@@ -1489,7 +1557,7 @@
     const rdlLock = _rdlStmtLock();
     const phSig = (rdlLock && typeof rdlLock.partyHygieneSig === 'function') ? rdlLock.partyHygieneSig(ind) : '0';
     const wmSig = (rdlLock && typeof rdlLock.watermarkSig === 'function') ? rdlLock.watermarkSig(ind) : '0';
-    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|seat:${(STATE && STATE.activeUserIdx) != null ? STATE.activeUserIdx : ''}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|ph:${phSig}|wm:${wmSig}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|sm:${(recs.staff_members || []).length}:${(recs.employments || []).length}|dsl:${dslSig}`;
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|seat:${(STATE && STATE.activeUserIdx) != null ? STATE.activeUserIdx : ''}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|ph:${phSig}|wm:${wmSig}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|sm:${(recs.staff_members || []).length}:${(recs.employments || []).length}|dsl:${dslSig}|tr:${(recs.external_movements || []).length}:${(recs.loans || []).length}:${(recs.loan_settlements || []).length}:${(recs.conversions || []).length}:${(recs.price_rules || []).length}|dm:${stmtIsDemo({ state: STATE }) ? 1 : 0}|ff:${stmtFullFin() ? 1 : 0}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -1540,7 +1608,7 @@
           vat_inv: vatInv,
           customer: r.customer || 'Walk-in Customer',
           site: r.site || r.sale_type || 'Plant',
-          product: r.product || 'Aggregate / Concrete',
+          product: r.product || 'Material',
           truck: r.truck || '',
           driver: r.driver || r.truck_owner || '',
           qty: sign * Number(r.qty || 0),
@@ -1831,6 +1899,70 @@
           ops_usd: opsRate > 0 ? liters * opsRate : 0
         };
       });
+
+      // Money that moved outside sales and purchases (Manufacturing): partner and group-company accounts, loans,
+      // currency exchange, and the plant-owner commission. They were missing from the statements ledger, so its cash,
+      // partner accounts and loans could not be right.
+      let extAll = [], loanAll = [], loanSetAll = [], convAll = [], commPaidAll = [];
+      if (ind === 'Manufacturing') {
+        const fullFinSeat = stmtFullFin();
+        const treas = key => (fullFinSeat ? (recs[key] || []) : []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, key));
+        // An LBP row is valued as the till values it: its USD leg plus its LBP at the till's rate (never the LBP figure
+        // read as dollars). A USD row is its USD amount.
+        const usdOf = r => {
+          const lbp = Math.abs(Number(r.lbp_amount || 0));
+          if (lbp > 0.5) return Math.abs(Number(r.usd_amount || 0)) + lbp / STMT_LBP_RATE;
+          return Number(r.usd_amount != null && r.usd_amount !== '' ? r.usd_amount : (r.amount != null ? r.amount : (r.principal || 0)));
+        };
+        extAll = treas('external_movements').map(r => {
+          const flow = String(r.flow || r.method || '').trim();
+          const isCfg = /^config$/i.test(flow);
+          // A Config row keeps each currency's own sign (a balance carried in can be owed either way).
+          const cfgHasUsd = r.usd_amount != null && r.usd_amount !== '';
+          const cfgLbp = Number(r.lbp_amount || 0);
+          const cfgNet = (cfgHasUsd ? Number(r.usd_amount || 0) : (Math.abs(cfgLbp) > 0.5 ? 0 : Number(r.amount || 0))) + cfgLbp / STMT_LBP_RATE;
+          const raw = isCfg ? cfgNet : usdOf(r);
+          return {
+            id: r.id, date: r.date, rep_date: r.rep_date || r.date, co: r.company || co, name: r.name || '',
+            party: String(r.counterparty || '').trim() || '(Unnamed)', is_config: isCfg,
+            is_out: isCfg ? cfgNet < 0 : /out|expense/i.test(String(r.direction || flow)),
+            usd: Math.abs(raw)
+          };
+        }).filter(r => r.usd >= 0.005);
+        loanAll = treas('loans').map(r => ({
+          id: r.id, date: r.start_date || r.date, rep_date: r.rep_date || r.start_date || r.date, co: r.company || co, name: r.name || '',
+          party: String(r.counterparty || r.lender || '').trim() || '(Unnamed)',
+          borrows: /borrows/i.test(String(r.direction || '')), opening: Boolean(r.opening_balance), usd: Math.abs(usdOf(r))
+        })).filter(r => r.usd >= 0.005);
+        loanSetAll = treas('loan_settlements').map(r => ({
+          id: r.id, date: r.date, rep_date: r.rep_date || r.date, co: r.company || co, name: r.name || '',
+          party: String(r.counterparty || r.borrower || '').trim() || '(Unnamed)',
+          is_in: /inflow|drawdown/i.test(String(r.method || r.type || '')), usd: Math.abs(usdOf(r))
+        })).filter(r => r.usd >= 0.005);
+        convAll = treas('conversions').map(r => {
+          const u2l = /USD to LBP/i.test(String(r.type || ''));
+          const usd = Math.abs(Number(r.usd_amount || 0));
+          const lbpUsd = Math.abs(Number(r.lbp_amount || 0)) / STMT_LBP_RATE;
+          return { id: r.id, date: r.date, rep_date: r.rep_date || r.date, co: r.company || co, name: r.name || '', kind: u2l ? 'USD to LBP' : 'LBP to USD', out_usd: u2l ? usd : lbpUsd, in_usd: u2l ? lbpUsd : usd };
+        }).filter(r => r.out_usd >= 0.005 || r.in_usd >= 0.005);
+        // Commission paid to the plant owner is keyed on the receipts sheet (Rent, VATRent, RentConfig).
+        rawReceipts.forEach(rc => {
+          const m = String(rc.method || '').trim();
+          if (m !== 'Rent' && m !== 'VATRent' && m !== 'RentConfig') return;
+          const amt = Number(rc.usd_amount !== undefined ? rc.usd_amount : (rc.amount || 0)) + Number(rc.discount || 0);
+          if (Math.abs(amt) < 0.005) return;
+          commPaidAll.push({ id: rc.id, date: rc.date, rep_date: rc.rep_date || rc.date, co: rc.company || co, name: rc.name || `RCPT-${rc.id}`, party: 'Plant Owner', method: m, usd: amt });
+        });
+        const hk = stmtHooks();
+        if (hk && typeof hk.commissionOf === 'function') {
+          const rawById = new Map(rawSales.map(r => [r.id || r.ticket_no, r]));
+          salesAll.forEach(s => {
+            let c = 0;
+            try { c = Number(hk.commissionOf(rawById.get(s.id)) || 0); } catch (_) { c = 0; }
+            s.commission_usd = c > 0 ? c : 0;
+          });
+        }
+      }
 
       let rawReceiptsForDocs = rawReceipts;
       if (ind !== 'Manufacturing') {
@@ -2228,6 +2360,7 @@
         domainTerms: getDomainRdlTerms(ind),
         salesAll, expAll, payAll, attAll, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
+        extAll, loanAll, loanSetAll, convAll, commPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
         invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById,
         hrStaffCandidates, hrStaffById
@@ -2329,7 +2462,9 @@
     const entries = [];
     let jSeq = 1000;
 
-    // Opening balances (Lebanese CoA Classes 1-5, balanced Dr === Cr)
+    // Illustrative opening balances: Demo Company and the public demo sandbox only (see the block below).
+    const demoBooks = stmtIsDemo(ctx);
+    let curTx = '';
     const coScale = isMfg
       ? (ctx.co === 'ALL' ? 1.85 : (ctx.co === 'WTC' ? 1.0 : (ctx.co === 'BBConstruction' ? 0.55 : 0.30)))
       : (RDL_GROUP_COMPANIES[ctx.co] ? 1.40 : 0.75);
@@ -2340,6 +2475,7 @@
       entries.push({
         je_no: `JE-${++jSeq}`,
         date,
+        tx: curTx || date, // transaction date: the Cash Flow Statement is read on it whatever the basis
         ref: ref || 'OPEN',
         source,
         acct_code: a.code,
@@ -2354,7 +2490,10 @@
       });
     };
 
-    if (isMfg) {
+    // A real company gets no opening line here: these amounts are samples, not anybody's books.
+    if (!demoBooks) {
+      /* nothing assumed */
+    } else if (isMfg) {
       pushJe(openDate, 'OB-001', 'Opening', '215', 'Plant & Mixers', 'Opening Batching Plant & Concrete Pumps', 680000 * coScale, 0);
       pushJe(openDate, 'OB-001', 'Opening', '218', 'Heavy Fleet', 'Opening Transit Mixers & Silo Trucks', 420000 * coScale, 0);
       pushJe(openDate, 'OB-001', 'Opening', '281', 'Accum. Depr.', 'Opening Accumulated Depreciation', 0, 310000 * coScale);
@@ -2375,9 +2514,11 @@
       pushJe(openDate, 'OB-001', 'Opening', '165', 'Shareholder Current Account', 'Partner Financing Current Account', 0, 215000 * coScale);
     }
 
+    const txOf = (r, d) => { curTx = String((r && (r.date || r.start_date)) || d || '').slice(0, 10) || d; };
     ctx.salesAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
+      txOf(r, d);
       const tot = isMfg ? Number(r.total_usd || 0) : Math.round(Number(r.total_usd || 0) * 100) / 100;
       const vat = isMfg ? Number(r.vat_usd || 0) : Math.round(Number(r.vat_usd || 0) * 100) / 100;
       const net = isMfg ? (tot - vat) : Math.round((tot - vat) * 100) / 100;
@@ -2385,7 +2526,7 @@
       const ref = r.vat_inv ? `VAT-${r.vat_inv}` : String(r.invoice_no || r.ticket_no || 'SL');
       const cust = r.customer || 'Walk-in Customer';
       const desc = isMfg
-        ? `${r.product || 'Concrete'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim()
+        ? `${r.product || 'Material'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim()
         : `${r.product || dt.rcptDescDef} · ${fmtNum(r.qty, dt.qtyDp)} ${dt.qtyUnit}${r.site ? ' · ' + r.site : ''}`.trim();
       // A recharged cost credits the expense it recovers and scrap credits other income, so neither lands in sales.
       const revCls = isMfg ? (r.rev_class || 'sale') : 'sale';
@@ -2411,12 +2552,19 @@
         pushJe(d, `RC-${ref}`, 'Cash Refund', '411', cust, `Cash return refund ${ref}`, Math.abs(paid), 0);
         pushJe(d, `RC-${ref}`, 'Cash Refund', cashAcct, cust, `Cash return refund ${ref}`, 0, Math.abs(paid));
       }
+      // Plant-owner commission earned on this ticket (the same rule and rate as the Sales screens), owed until paid.
+      const comm = isMfg ? Math.round(Number(r.commission_usd || 0) * 100) / 100 : 0;
+      if (comm > 0) {
+        pushJe(d, ref, 'Commission', '6222', 'Plant Owner', `Plant-owner commission · ${r.product || ''}`.trim(), comm, 0);
+        pushJe(d, ref, 'Commission', '4619', 'Plant Owner', `Plant-owner commission · ${r.product || ''}`.trim(), 0, comm);
+      }
     });
 
     (ctx.receiptLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
       if (!d || Math.abs(paid) < 0.005) return;
+      txOf(r, d);
       const cust = r.customer || 'Customer';
       const ref = String(r.invoice_no || r.ticket_no || 'RCPT');
       // Config and VATConfig are carried balances, not cash (owner 2026-11-18): clearing 467, never Cash 531.
@@ -2436,6 +2584,7 @@
       const tot = Number(r.total_usd || 0);
       const paid = Number(r.paid_usd || 0);
       if (Math.abs(tot) < 0.005 && Math.abs(paid) < 0.005) return;
+      txOf(r, d);
       const sup = r.supplier || (isMfg ? 'Raw Material Supplier' : 'Direct Vendor');
       const ref = String(r.voucher || r.name || 'RM');
       const src = r.leg === 'haulage' ? (isMfg ? 'Raw Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply');
@@ -2460,6 +2609,7 @@
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
       if (!d || Math.abs(paid) < 0.005) return;
+      txOf(r, d);
       const sup = r.supplier || 'Supplier';
       const ref = String(r.voucher || r.name || 'SETL');
       const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : '531';
@@ -2490,6 +2640,7 @@
       if (!d) return;
       const tot = Number(r.total_usd || 0);
       if (tot <= 0) return;
+      txOf(r, d);
       const tank = r.station || dieselTankOf(r.co);
       const ref = String(r.voucher || r.name || 'FUEL');
       const desc = `Diesel ${fmtNum(r.liters, 0)} L · ${r.equip || r.driver || 'Fleet'}`;
@@ -2500,6 +2651,7 @@
         const amt = Number(r.diesel_cost_usd || 0);
         const d = rowDate(r, basis);
         if (!d || !amt) return;
+        txOf(r, d);
         const ref = String(r.invoice_no || r.ticket_no || 'SL');
         pushDieselOut(d, ref, 'Diesel Sold', dieselTankOf(r.co), `Cost of diesel sold ${fmtNum(Math.abs(r.qty), 0)} L · ${r.customer || ''}`.trim(), amt);
       });
@@ -2507,6 +2659,7 @@
         const amt = Number(r.cost_usd || 0);
         const d = rowDate(r, basis);
         if (!d || !amt) return;
+        txOf(r, d);
         pushDieselOut(d, r.ref, 'Tank Count', dieselTankOf(r.co), `${amt > 0 ? 'Diesel shortage' : 'Diesel surplus'} ${fmtNum(Math.abs(r.liters), 0)} L · ${r.kind}`, amt);
       });
     }
@@ -2519,12 +2672,16 @@
       const net = isMfg ? (tot - vat) : Math.round((tot - vat) * 100) / 100;
       const paid = isMfg ? Number(r.paid_usd || 0) : Math.round(Number(r.paid_usd || 0) * 100) / 100;
       if (Math.abs(tot) < 0.005) return;
+      txOf(r, d);
       const sup = r.supplier || r.category || 'General Vendor';
       const ref = String(r.voucher_no || r.invoice_no || r.name || 'EXP');
       const cat = String(r.category || '');
       // A bulk diesel purchase goes into the diesel tank stock (311) for a seat that may read the diesel price;
       // it is expensed when drawn (Fuel Log, Diesel Sold, Tank Count above).
+      // Capital Expenditures vouchers stay in 622, as the Executive Overview counts them in expenses, so the profit
+      // printed here is the profit shown there.
       const expAcct = r.diesel_stock ? '311' : (/maint|spare|repair|tire|oil/i.test(cat) ? '615' : (/raw|cement|sand|agg|fuel|diesel/i.test(cat) ? '601' : '622'));
+      const paySrc = r.is_diesel_buy ? 'Fuel Payment' : 'Expense Payment';
       const liabAcct = r.is_barter ? '467' : '401';
       const desc = isMfg ? `${cat} — ${r.description || sup}` : `${cat} · ${r.description || sup}`;
       // Diesel into stock is held on the tank's sub-account, the one the draws are credited to, so it nets per tank.
@@ -2543,23 +2700,121 @@
         pushDieselOut(d, ref, 'Tank Revaluation', dieselTankOf(r.co), `Diesel drawn beyond the tank, re-priced at ${ref}`, Number(r.diesel_reval_usd));
       }
       if (!r.is_barter && paid > 0) {
-        pushJe(d, `PV-${ref}`, 'Expense Payment', liabAcct, sup, `Settlement ${ref}`, paid, 0);
-        pushJe(d, `PV-${ref}`, 'Expense Payment', '531', sup, `Settlement ${ref}`, 0, paid);
+        pushJe(d, `PV-${ref}`, paySrc, liabAcct, sup, `Settlement ${ref}`, paid, 0);
+        pushJe(d, `PV-${ref}`, paySrc, '531', sup, `Settlement ${ref}`, 0, paid);
       } else if (!r.is_barter && paid < 0) {
         pushJe(d, `PV-${ref}`, 'Expense Refund', '531', sup, `Refund ${ref}`, Math.abs(paid), 0);
         pushJe(d, `PV-${ref}`, 'Expense Refund', liabAcct, sup, `Refund ${ref}`, 0, Math.abs(paid));
       }
     });
 
+    // ── Money outside sales and purchases (Manufacturing) ────────────────────────────────────────────────
+    const r2j = v => Math.round(v * 100) / 100;
+    const GROUP_CO_RE = /^(bdeir holding|wtc|bbconstruction|lions transport|blanca|la una|palms|voile|platinum|korri auto|shacman|properties|4235 company s\.a\.l|insurance company)$/i;
+    // Partner and group-company accounts: cash paid out to them or received from them. A Config row is a balance
+    // carried in, never cash (467), as on customer and supplier accounts.
+    (ctx.extAll || []).forEach(r => {
+      const d = rowDate(r, basis);
+      if (!d) return;
+      txOf(r, d);
+      const isGrp = GROUP_CO_RE.test(r.party);
+      const acct = isGrp ? '181' : '165';
+      const src = r.is_config ? 'Balance Carried In' : (isGrp ? 'Group Company Account' : 'Partner Account');
+      const other = r.is_config ? '467' : '531';
+      const ref = String(r.name || 'EXT');
+      const desc = r.is_out ? (isGrp ? 'Paid to group company' : 'Paid out to partner account') : (isGrp ? 'Received from group company' : 'Paid in by partner account');
+      if (r.is_out) {
+        pushJe(d, ref, src, acct, r.party, desc, r2j(r.usd), 0);
+        pushJe(d, ref, src, other, r.party, desc, 0, r2j(r.usd));
+      } else {
+        pushJe(d, ref, src, other, r.party, desc, r2j(r.usd), 0);
+        pushJe(d, ref, src, acct, r.party, desc, 0, r2j(r.usd));
+      }
+    });
+    // Loans and advances. A loan flagged as an opening balance was owed before the records began: carried in, no cash.
+    (ctx.loanAll || []).forEach(r => {
+      const d = rowDate(r, basis);
+      if (!d) return;
+      txOf(r, d);
+      const ref = String(r.name || 'LOAN');
+      const other = r.opening ? '467' : '531';
+      const src = r.opening ? 'Balance Carried In' : (r.borrows ? 'Loan Received' : 'Loan Given');
+      if (r.borrows) {
+        pushJe(d, ref, src, other, r.party, 'Loan received', r2j(r.usd), 0);
+        pushJe(d, ref, src, '428', r.party, 'Loan received', 0, r2j(r.usd));
+      } else {
+        pushJe(d, ref, src, '428', r.party, r.opening ? 'Loan balance carried in' : 'Loan or advance given', r2j(r.usd), 0);
+        pushJe(d, ref, src, other, r.party, r.opening ? 'Loan balance carried in' : 'Loan or advance given', 0, r2j(r.usd));
+      }
+    });
+    (ctx.loanSetAll || []).forEach(r => {
+      const d = rowDate(r, basis);
+      if (!d) return;
+      txOf(r, d);
+      const ref = String(r.name || 'BRW');
+      if (r.is_in) {
+        pushJe(d, ref, 'Loan Repayment', '531', r.party, 'Repayment received', r2j(r.usd), 0);
+        pushJe(d, ref, 'Loan Repayment', '428', r.party, 'Repayment received', 0, r2j(r.usd));
+      } else {
+        pushJe(d, ref, 'Loan Repayment', '428', r.party, 'Repayment paid', r2j(r.usd), 0);
+        pushJe(d, ref, 'Loan Repayment', '531', r.party, 'Repayment paid', 0, r2j(r.usd));
+      }
+    });
+    // Currency exchange between the USD and LBP drawers of the till: only the difference at the till's rate is a
+    // gain or a loss, the rest stays in cash.
+    (ctx.convAll || []).forEach(r => {
+      const d = rowDate(r, basis);
+      if (!d) return;
+      txOf(r, d);
+      const fx = r2j(r.in_usd - r.out_usd);
+      if (Math.abs(fx) < 0.005) return;
+      const ref = String(r.name || 'CONV');
+      if (fx > 0) {
+        pushJe(d, ref, 'Currency Exchange', '531', r.kind, 'Exchange difference, gain', fx, 0);
+        pushJe(d, ref, 'Currency Exchange', '766', r.kind, 'Exchange difference, gain', 0, fx);
+      } else {
+        pushJe(d, ref, 'Currency Exchange', '666', r.kind, 'Exchange difference, loss', -fx, 0);
+        pushJe(d, ref, 'Currency Exchange', '531', r.kind, 'Exchange difference, loss', 0, -fx);
+      }
+    });
+    // Commission paid to the plant owner (Rent in USD; VATRent is the VAT on it; RentConfig is a balance carried in).
+    (ctx.commPaidAll || []).forEach(r => {
+      const d = rowDate(r, basis);
+      if (!d) return;
+      txOf(r, d);
+      const ref = String(r.name || 'RENT');
+      const amt = r2j(Math.abs(r.usd));
+      const dr = r.method === 'VATRent' ? '442' : '4619';
+      const cr = r.method === 'RentConfig' ? '467' : '531';
+      const src = r.method === 'RentConfig' ? 'Balance Carried In' : 'Commission Paid';
+      const desc = r.method === 'VATRent' ? 'VAT on plant-owner commission' : 'Plant-owner commission paid';
+      if (r.usd > 0) {
+        pushJe(d, ref, src, dr, r.party, desc, amt, 0);
+        pushJe(d, ref, src, cr, r.party, desc, 0, amt);
+      } else {
+        pushJe(d, ref, src, cr, r.party, desc, amt, 0);
+        pushJe(d, ref, src, dr, r.party, desc, 0, amt);
+      }
+    });
+
     ctx.payAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
+      txOf(r, d);
       const netPay = Number(r.net_usd || r.total_usd || 0);
       const paid = Number(r.paid_usd || 0);
-      if (netPay <= 0 && paid <= 0) return;
       const emp = r.staff || 'Employee';
       const ref = String(r.voucher || r.name || `PAY-${d.slice(0, 7)}`);
       const desc = `${r.type || 'Payroll'} · ${r.role || 'Staff'}`;
+      if (netPay < -0.004) {
+        const back = -netPay;
+        pushJe(d, ref, 'Payroll', '421', emp, desc, back, 0);
+        pushJe(d, ref, 'Payroll', '641', emp, desc, 0, back);
+        pushJe(d, `PY-${ref}`, 'Salary Payout', '531', emp, `Returned ${ref}`, back, 0);
+        pushJe(d, `PY-${ref}`, 'Salary Payout', '421', emp, `Returned ${ref}`, 0, back);
+        return;
+      }
+      if (netPay <= 0 && paid <= 0) return;
       const amt = netPay > 0 ? netPay : paid;
       pushJe(d, ref, 'Payroll', '641', emp, desc, amt, 0);
       pushJe(d, ref, 'Payroll', '421', emp, desc, 0, amt);
@@ -2938,7 +3193,7 @@
     // Group by Product
     const byProd = new Map();
     sales.forEach(r => {
-      const k = r.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef);
+      const k = r.product || (isMfg ? 'Material' : dt.rcptDescDef);
       const g = byProd.get(k) || { product: k, loads: 0, m3: 0, rev: 0, paid: 0, bal: 0 };
       if (!r.is_return) g.loads += 1;
       g.m3 += Number(r.qty || 0);
@@ -2993,7 +3248,7 @@
     return `
       ${sheetHeaderHtml(meta, ctx.co, subHdr)}
       <div class="rdl-kpi-strip">
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${esc(dt.volKpi)}</div><div class="rdl-kpi-val">${fmtNum(totM3, dt.qtyDp)} ${esc(dt.qtyUnit)}</div><div class="rdl-kpi-sub">${sales.length} ${esc(isMfg ? 'batching loads' : dt.txPlural)}</div></div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${esc(dt.volKpi)}</div><div class="rdl-kpi-val">${fmtNum(totM3, dt.qtyDp)} ${esc(dt.qtyUnit)}</div><div class="rdl-kpi-sub">${sales.length} ${esc(isMfg ? 'loads' : dt.txPlural)}</div></div>
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Gross Billing</div><div class="rdl-kpi-val">${fmtUsd(totRev)}</div><div class="rdl-kpi-sub">Avg ${fmtUsd(totM3 > 0 ? totRev / totM3 : 0)} / ${esc(dt.qtyUnit)}</div></div>
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Cash Collected</div>${l01.books ? `<div class="rdl-kpi-val">${fmtUsd(totPaid)}</div><div class="rdl-kpi-sub">${totRev > 0 ? ((totPaid / totRev) * 100).toFixed(1) : '0.0'}% realization</div>` : '<div class="rdl-kpi-val">Restricted</div><div class="rdl-kpi-sub">Restricted by seat permissions</div>'}</div>
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${isMfg ? 'OPEX + RM Intake' : 'OPEX & Direct Costs'}</div><div class="rdl-kpi-val">${l01.expenses ? fmtUsd(totExp) : 'Restricted'}</div><div class="rdl-kpi-sub">${isMfg ? 'Diesel' : 'Utility / Fuel'} ${fmtNum(totLiters, 0)} L</div></div>
@@ -3071,85 +3326,294 @@
     `;
   }
 
+  // ── Statement models (02 to 05): one computation for the printed sheet and for its summary ────────────────
+  // A real company prints only the accounts that carry a posting; Demo Company keeps the full sample chart.
+  const STMT_CASH_CODES = ['512', '531'];
+  function stmtAccountTotals(ctx, jes) {
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+    const map = new Map();
+    coaList.forEach(a => map.set(a.code, { ...a, dr: 0, cr: 0 }));
+    jes.forEach(j => { const b = map.get(j.acct_code); if (b) { b.dr += j.debit; b.cr += j.credit; } });
+    return map;
+  }
+  const stmtTouched = b => Boolean(b && (Math.abs(b.dr) > 0.004 || Math.abs(b.cr) > 0.004));
+
+  function computeBalanceSheetModel(ctx, asof) {
+    const demo = stmtIsDemo(ctx);
+    const jes = buildJournalEntries(ctx, asof);
+    const balMap = stmtAccountTotals(ctx, jes);
+    const yearStart = `${String(asof || '').slice(0, 4)}-01-01`;
+    let revNet = 0, expNet = 0, revPrior = 0, expPrior = 0;
+    jes.forEach(j => {
+      const c0 = String(j.acct_code).charAt(0);
+      if (c0 !== '6' && c0 !== '7') return;
+      const prior = j.date < yearStart;
+      if (c0 === '7') { revNet += j.credit - j.debit; if (prior) revPrior += j.credit - j.debit; }
+      else { expNet += j.debit - j.credit; if (prior) expPrior += j.debit - j.credit; }
+    });
+    const retained = revNet - expNet;
+    const resultPrior = revPrior - expPrior;
+    const resultYear = retained - resultPrior;
+    // A group-company account, a loan account and the carried-in clearing account can end on either side. A real
+    // company shows each on the side its balance is on: owed to the company with the assets, owed by it with the
+    // liabilities. Partner accounts stay with equity (what partners paid in less what they withdrew).
+    const owedToUs = code => { const b = balMap.get(code); return !b || (b.dr - b.cr) >= 0; };
+    const swing = demo ? [] : ['181', '428', '467'];
+    const defs = [
+      { key: 'fixed', ttl: 'NON-CURRENT & FIXED ASSETS (Class 2)', side: 'ASSETS', codes: ['215', '218', '281'], sign: 'D' },
+      { key: 'current', ttl: 'INVENTORIES & RECEIVABLES (Classes 3 & 4)', side: 'ASSETS', codes: demo ? ['311', '411', '428', '467'] : ['311', '411'].concat(swing.filter(owedToUs)), sign: 'D' },
+      { key: 'cash', ttl: 'CASH, BANK & TREASURY (Class 5)', side: 'ASSETS', codes: STMT_CASH_CODES, sign: 'D' },
+      { key: 'liab', ttl: 'PAYABLES & TAX OBLIGATIONS (Class 4)', side: 'LIABILITIES', codes: ['401', '421', '442', '4619'].concat(swing.filter(c => !owedToUs(c))), sign: 'C' },
+      { key: 'equity', ttl: 'EQUITY & PARTNER ACCOUNTS (Class 1 + Period Result)', side: '', codes: demo ? ['101', '165', '181'] : ['101', '165'], sign: 'C' }
+    ];
+    const till = stmtTillUsd(ctx, asof);
+    // The till is counted on transaction dates. On Reporting Date basis the cash of these books is dated otherwise, so
+    // the part that only sits on another date is shown apart from the part that does not agree with the till at all.
+    let cashTx = 0;
+    if (till != null) {
+      buildJournalEntries(ctx, '9999-12-31').forEach(j => {
+        if (j.acct_code === '531' && String(j.tx || j.date).slice(0, 10) <= asof) cashTx += j.debit - j.credit;
+      });
+    }
+    const tot = {};
+    let totalAssets = 0, totalLiabEq = 0;
+    const sections = defs.map(def => {
+      let secTot = 0;
+      const rows = [];
+      def.codes.forEach(code => {
+        const b = balMap.get(code);
+        if (!b || !(stmtTouched(b) || (demo && !['181', '428', '4619'].includes(code)))) return;
+        const val = def.sign === 'D' ? (b.dr - b.cr) : (b.cr - b.dr);
+        secTot += val;
+        if (code === '531' && till != null) {
+          // Cash is the counted till; what the recorded entries say beyond it is its own line, never hidden in cash.
+          rows.push({ code, name: 'Cash Till, Counted (USD and LBP) / الصندوق', dr: null, cr: null, val: till });
+          const diff = Math.round((cashTx - till) * 100) / 100;
+          if (Math.abs(diff) >= 0.01) rows.push({ code: '539', name: 'Cash Entries Still to Be Matched to the Till / حركات نقدية قيد المطابقة مع الصندوق', dr: null, cr: null, val: diff, unmatched: true });
+          const timing = Math.round((val - till - diff) * 100) / 100;
+          if (Math.abs(timing) >= 0.01) rows.push({ code: '538', name: 'Cash Entries Reported on Another Date / حركات نقدية بتاريخ تقرير مختلف', dr: null, cr: null, val: timing });
+          return;
+        }
+        // No counted till to compare with (a seat without the partner and loan rows, Official Books): say what it is.
+        rows.push({ code: b.code, name: (code === '531' && !demo) ? 'Cash per Recorded Entries / النقد بحسب القيود المسجلة' : b.name, dr: b.dr, cr: b.cr, val });
+      });
+      if (def.key === 'equity') {
+        secTot += retained;
+        if (demo) {
+          rows.push({ code: '120', name: 'Current Period Net Result / نتيجة الدورة المالية', dr: expNet, cr: revNet, val: retained });
+        } else {
+          if (Math.abs(resultPrior) >= 0.005) rows.push({ code: '121', name: 'Result Brought Forward From Earlier Years / نتائج مدورة', dr: expPrior, cr: revPrior, val: resultPrior });
+          rows.push({ code: '120', name: `Net Result for ${String(asof || '').slice(0, 4)} to Date / نتيجة الدورة المالية`, dr: expNet - expPrior, cr: revNet - revPrior, val: resultYear });
+        }
+      }
+      tot[def.key] = secTot;
+      if (def.sign === 'D') totalAssets += secTot; else totalLiabEq += secTot;
+      return { key: def.key, title: def.side ? `${def.side} {sep} ${def.ttl}` : def.ttl, sign: def.sign, rows, total: secTot };
+    });
+    const bookCash = tot.cash || 0;
+    const varianceUsd = Math.round(Math.abs(totalAssets - totalLiabEq) * 100) / 100;
+    return {
+      asof, sections, totalAssets, totalLiabEq, varianceUsd, balanced: varianceUsd < 0.02,
+      fixedAssets: tot.fixed || 0, currAssets: tot.current || 0, cashBank: bookCash, liab: tot.liab || 0, equity: tot.equity || 0,
+      retained, resultYear, resultPrior, till, cashUnmatched: till != null ? Math.round((cashTx - till) * 100) / 100 : null,
+      bal: code => { const b = balMap.get(code); return b ? (b.normal === 'C' ? b.cr - b.dr : b.dr - b.cr) : 0; }
+    };
+  }
+
+  function computeIncomeModel(ctx, from, to, pMode) {
+    const demo = stmtIsDemo(ctx);
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+    const jes = buildJournalEntries(ctx, to).filter(j => j.ref !== 'OB-001' && inWindow(j.date, from, to));
+    const bucketsSet = new Set();
+    jes.forEach(j => bucketsSet.add(periodBucket(j.date, pMode)));
+    const allBuckets = [...bucketsSet].sort();
+    // Show up to 8 most recent period columns so table fits cleanly on page
+    const cols = allBuckets.length > 8 ? allBuckets.slice(-8) : (allBuckets.length ? allBuckets : [periodBucket(to, pMode)]);
+    const byAcct = new Map();
+    coaList.filter(a => a.code.startsWith('7') || a.code.startsWith('6')).forEach(a => byAcct.set(a.code, { acct: a, colVals: {}, total: 0, touched: false }));
+    jes.forEach(j => {
+      const e = byAcct.get(j.acct_code);
+      if (!e) return;
+      const b = periodBucket(j.date, pMode);
+      const signed = j.acct_code.startsWith('7') ? (j.credit - j.debit) : (j.debit - j.credit);
+      e.colVals[b] = (e.colVals[b] || 0) + signed;
+      e.total += signed;
+      e.touched = true;
+    });
+    const DEMO_HIDDEN = ['6222', '666', '766']; // not part of the sample chart
+    const keep = code => { const e = byAcct.get(code); return Boolean(e && (demo ? (!DEMO_HIDDEN.includes(code) || e.touched) : e.touched)); };
+    const revCodes = [...byAcct.keys()].filter(c => c.startsWith('7') && keep(c));
+    const expCodes = [...byAcct.keys()].filter(c => c.startsWith('6') && keep(c));
+    const sumCols = codes => {
+      const m = { total: 0 };
+      cols.forEach(c => { m[c] = 0; });
+      codes.forEach(code => {
+        const e = byAcct.get(code);
+        if (!e) return;
+        m.total += e.total;
+        cols.forEach(c => { m[c] += (e.colVals[c] || 0); });
+      });
+      return m;
+    };
+    const tOf = code => { const e = byAcct.get(code); return e ? e.total : 0; };
+    return { cols, byAcct, revCodes, expCodes, revTot: sumCols(revCodes), expTot: sumCols(expCodes), sumCols, tOf };
+  }
+
+  // Cash Flow Statement: every line is the cash legs of the same ledger the Balance Sheet reads, on transaction date.
+  const STMT_CF_LINE_OF = {
+    'Collection': 'custIn', 'Cash Refund': 'custIn', 'AR Adjustment': 'custIn',
+    'Supplier Payment': 'rmOut', 'Supplier Refund': 'rmOut', 'AP Adjustment': 'rmOut',
+    'Fuel Payment': 'fuelOut', 'Expense Payment': 'expOut', 'Expense Refund': 'expOut',
+    'Salary Payout': 'payOut', 'Commission Paid': 'commOut',
+    'Partner Account': 'partner', 'Group Company Account': 'group',
+    'Loan Given': 'loans', 'Loan Received': 'loans', 'Loan Repayment': 'loans',
+    'Currency Exchange': 'fx'
+  };
+  function computeCashFlowModel(ctx, from, to, pMode) {
+    const demo = stmtIsDemo(ctx);
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+    const mk = (label, group) => ({ label, group, cols: {}, total: 0, n: 0 });
+    const lines = {
+      custIn: mk(dt.cfCustIn, 'op'),
+      rmOut: mk(dt.cfRmOut, 'op'),
+      fuelOut: mk(dt.cfFuelOut, 'op'),
+      expOut: mk(dt.cfExpOut, 'op'),
+      payOut: mk('Staff Salaries & Daily Labor Disbursed (مدفوعات الرواتب والأجور)', 'op'),
+      commOut: mk('Plant-Owner Commission Paid (عمولة مالك المعمل المدفوعة)', 'op'),
+      other: mk('Other Recorded Cash Entries (حركات نقدية أخرى)', 'op'),
+      partner: mk('Partner Accounts, Paid In Less Withdrawn (جاري الشركاء)', 'fin'),
+      group: mk('Group Company Accounts, Received Less Paid (شركات المجموعة)', 'fin'),
+      loans: mk('Loans & Advances, Received Less Given (قروض وسلف)', 'fin'),
+      fx: mk('Currency Exchange Differences (فروقات صرف)', 'fx')
+    };
+    const bucketsSet = new Set();
+    let net531 = 0;
+    buildJournalEntries(ctx, '9999-12-31').forEach(j => {
+      if (j.ref === 'OB-001' || !STMT_CASH_CODES.includes(j.acct_code)) return;
+      const d = String(j.tx || j.date).slice(0, 10);
+      if (!inWindow(d, from, to)) return;
+      const L = lines[STMT_CF_LINE_OF[j.source] || 'other'];
+      const b = periodBucket(d, pMode);
+      const v = j.debit - j.credit;
+      if (j.acct_code === '531') net531 += v;
+      bucketsSet.add(b);
+      L.cols[b] = (L.cols[b] || 0) + v;
+      L.total += v;
+      L.n += 1;
+    });
+    const allB = [...bucketsSet].sort();
+    const cols = allB.length > 8 ? allB.slice(-8) : (allB.length ? allB : [periodBucket(to, pMode)]);
+    const classic = ['custIn', 'rmOut', 'fuelOut', 'expOut', 'payOut'];
+    const shown = k => (demo && classic.includes(k)) || lines[k].n > 0;
+    const keysOf = g => Object.keys(lines).filter(k => lines[k].group === g && shown(k));
+    const groups = [
+      { key: 'op', title: 'CASH FLOWS FROM OPERATING ACTIVITIES', totalLabel: 'NET OPERATING CASH FLOW (صافي التدفق النقدي التشغيلي)', keys: keysOf('op') },
+      { key: 'fin', title: 'CASH FLOWS WITH PARTNERS, GROUP COMPANIES & LENDERS', totalLabel: 'NET FINANCING CASH FLOW (صافي التدفق التمويلي)', keys: keysOf('fin') },
+      { key: 'fx', title: 'CURRENCY EXCHANGE', totalLabel: 'NET CURRENCY EXCHANGE DIFFERENCE (صافي فروقات الصرف)', keys: keysOf('fx') }
+    ].filter(g => g.key === 'op' || g.keys.length);
+    const sumOf = (keys, c) => keys.reduce((a, k) => a + (c == null ? lines[k].total : (lines[k].cols[c] || 0)), 0);
+    const allKeys = groups.reduce((a, g) => a.concat(g.keys), []);
+    const net = sumOf(allKeys, null);
+    // Counted till at both ends of the window (kept from the first day of the cash sheet; none in Demo Company).
+    let tillOpen = null, tillClose = null;
+    if (!demo && /^\d{4}-\d{2}-\d{2}$/.test(String(from || '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(to || ''))) {
+      const prev = new Date(Date.parse(from + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+      const now = new Date(); // the reader's own day, as the screens count it
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      tillOpen = stmtTillUsd(ctx, prev);
+      tillClose = stmtTillUsd(ctx, to > today ? today : to);
+    }
+    const tillChange = (tillOpen != null && tillClose != null) ? Math.round((tillClose - tillOpen) * 100) / 100 : null;
+    return {
+      cols, lines, groups, sumOf, allKeys, net, opNet: sumOf(groups[0].keys, null), onlyOperating: groups.length === 1,
+      tillOpen, tillClose, tillChange, unmatched: tillChange != null ? Math.round((net531 - tillChange) * 100) / 100 : null
+    };
+  }
+
+  function computeTrialBalanceModel(ctx, from, to) {
+    const demo = stmtIsDemo(ctx);
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+    const jes = buildJournalEntries(ctx, to);
+    const map = new Map();
+    coaList.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0, touched: false }));
+    jes.forEach(j => {
+      const m = map.get(j.acct_code);
+      if (!m) return;
+      m.touched = true;
+      if (j.date < from) { m.openDr += j.debit; m.openCr += j.credit; }
+      else if (j.date <= to) { m.perDr += j.debit; m.perCr += j.credit; }
+    });
+    const DEMO_HIDDEN = ['181', '428', '4619', '6222', '666', '766'];
+    const t = { openDr: 0, openCr: 0, perDr: 0, perCr: 0, closeDr: 0, closeCr: 0 };
+    const rows = [];
+    coaList.forEach(a => {
+      const m = map.get(a.code);
+      if (demo ? (DEMO_HIDDEN.includes(a.code) && !m.touched) : !m.touched) return;
+      const netOpen = m.openDr - m.openCr;
+      const netClose = (m.openDr + m.perDr) - (m.openCr + m.perCr);
+      const r = { acct: a, oDr: netOpen > 0 ? netOpen : 0, oCr: netOpen < 0 ? -netOpen : 0, perDr: m.perDr, perCr: m.perCr, cDr: netClose > 0 ? netClose : 0, cCr: netClose < 0 ? -netClose : 0 };
+      t.openDr += r.oDr; t.openCr += r.oCr; t.perDr += r.perDr; t.perCr += r.perCr; t.closeDr += r.cDr; t.closeCr += r.cCr;
+      rows.push(r);
+    });
+    const varianceUsd = Math.round(Math.abs(t.closeDr - t.closeCr) * 100) / 100;
+    const perVarUsd = Math.round(Math.abs(t.perDr - t.perCr) * 100) / 100;
+    return { rows, t, varianceUsd, perVarUsd, balanced: varianceUsd < 0.02 && perVarUsd < 0.02 };
+  }
+
+  // A company whose expenses, payroll and cash book are not in ISABI yet: say so, never print half a statement.
+  const STMT_NOT_KEPT_TITLE = 'Not Kept in ISABI Yet';
+  const STMT_NOT_KEPT_TEXT = 'This company has its sales side in ISABI. Its expenses, payroll and cash book are not loaded yet, so this statement cannot be printed without guessing. It will print once those books are loaded.';
+  const STMT_NOT_KEPT_HINT = 'Its recorded sales and receipts are in the Sales Register and in the Registers of its industry.';
+  function renderBooksNotKeptSheet(meta, ctx) {
+    return `
+      ${sheetHeaderHtml(meta, ctx.co, STMT_NOT_KEPT_TITLE)}
+      <div class="rdl-kpi-strip" data-stmt-not-kept="1">
+        <div class="rdl-kpi-box">
+          <div class="rdl-kpi-lbl">${esc(meta.title)}</div>
+          <div class="rdl-kpi-val">${esc(STMT_NOT_KEPT_TITLE)}</div>
+          <div class="rdl-kpi-sub">${esc(STMT_NOT_KEPT_TEXT)}</div>
+          <div class="rdl-kpi-sub">${esc(STMT_NOT_KEPT_HINT)}</div>
+        </div>
+      </div>
+      ${sheetFooterHtml(ctx.co, 1, 1)}
+    `;
+  }
+
   function render02BalanceSheet(meta, ctx) {
     const l02 = _rdlSeatLens(ctx);
     if (!l02.books || !l02.profit) {
       return renderRdlRestrictedSheet(meta, ctx.co, 'Balance Sheet Restricted', 'Financial statements require Cash Flow, Ledger & Profit permissions');
     }
+    if (!stmtBooksKept(ctx)) return renderBooksNotKeptSheet(meta, ctx);
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
-    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
-    const jes = buildJournalEntries(ctx, asof);
-    const balMap = new Map();
-    coaList.forEach(a => balMap.set(a.code, { ...a, dr: 0, cr: 0 }));
-    jes.forEach(j => {
-      const b = balMap.get(j.acct_code);
-      if (b) { b.dr += j.debit; b.cr += j.credit; }
-    });
-
-    // Net profit from classes 6 & 7 up to asof flows into Retained Earnings
-    let revNet = 0, expNet = 0;
-    balMap.forEach(b => {
-      if (b.code.startsWith('7')) revNet += (b.cr - b.dr);
-      if (b.code.startsWith('6')) expNet += (b.dr - b.cr);
-    });
-    const retainedEarnings = revNet - expNet;
+    const M = computeBalanceSheetModel(ctx, asof);
     const sep = isMfg ? '—' : '·';
+    const money = v => (v == null ? '' : fmtUsd(v));
 
-    const bsSections = [
-      { title: `ASSETS ${sep} NON-CURRENT & FIXED ASSETS (Class 2)`, codes: ['215', '218', '281'], sign: 'D' },
-      { title: `ASSETS ${sep} INVENTORIES & RECEIVABLES (Classes 3 & 4)`, codes: ['311', '411', '467'], sign: 'D' },
-      { title: `ASSETS ${sep} CASH, BANK & TREASURY (Class 5)`, codes: ['512', '531'], sign: 'D' },
-      { title: `LIABILITIES ${sep} PAYABLES & TAX OBLIGATIONS (Class 4)`, codes: ['401', '421', '442'], sign: 'C' },
-      { title: `EQUITY & PARTNER ACCOUNTS (Class 1 + Period Result)`, codes: ['101', '165'], sign: 'C', includeRetained: true }
-    ];
-
-    let totalAssets = 0;
-    let totalLiabEq = 0;
-
-    const secHtml = bsSections.map(sec => {
-      let secTot = 0;
-      const rows = sec.codes.map(code => {
-        const b = balMap.get(code);
-        const val = sec.sign === 'D' ? (b.dr - b.cr) : (b.cr - b.dr);
-        secTot += val;
-        return `
-          <tr>
-            <td class="mono bold">${esc(b.code)}</td>
-            <td>${esc(b.name)}</td>
-            <td class="num">${fmtUsd(b.dr)}</td>
-            <td class="num">${fmtUsd(b.cr)}</td>
-            <td class="num bold">${fmtUsdSigned(val)}</td>
-          </tr>
-        `;
-      });
-      if (sec.includeRetained) {
-        secTot += retainedEarnings;
-        rows.push(`
-          <tr>
-            <td class="mono bold">120</td>
-            <td>Current Period Net Result / نتيجة الدورة المالية</td>
-            <td class="num">${fmtUsd(expNet)}</td>
-            <td class="num">${fmtUsd(revNet)}</td>
-            <td class="num bold">${fmtUsdSigned(retainedEarnings)}</td>
-          </tr>
-        `);
-      }
-      if (sec.sign === 'D') totalAssets += secTot;
-      else totalLiabEq += secTot;
-
+    const secHtml = M.sections.map(sec => {
+      if (!sec.rows.length) return '';
+      const title = sec.title.replace('{sep}', sep);
       return `
-        <tr class="rdl-group-row"><td colspan="5">${esc(sec.title)}</td></tr>
-        ${rows.join('')}
+        <tr class="rdl-group-row"><td colspan="5">${esc(title)}</td></tr>
+        ${sec.rows.map(r => `
+          <tr${r.unmatched ? ' data-stmt-unmatched="1"' : ''}>
+            <td class="mono bold">${esc(r.code)}</td>
+            <td>${esc(r.name)}</td>
+            <td class="num">${money(r.dr)}</td>
+            <td class="num">${money(r.cr)}</td>
+            <td class="num bold">${fmtUsdSigned(r.val)}</td>
+          </tr>
+        `).join('')}
         <tr class="rdl-subtotal-row">
-          <td colspan="4">Subtotal ${sep} ${esc(sec.title)}</td>
-          <td class="num">${fmtUsdSigned(secTot)}</td>
+          <td colspan="4">Subtotal ${sep} ${esc(title)}</td>
+          <td class="num">${fmtUsdSigned(sec.total)}</td>
         </tr>
       `;
     }).join('');
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1${isMfg ? '–' : '-'}5) · Functional Currency USD${!isMfg && Math.abs(totalAssets - totalLiabEq) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`, dieselBasisNote(ctx))}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1${isMfg ? '–' : '-'}5) · Functional Currency USD${!isMfg && M.balanced ? ' · Balanced ($0.00 Variance)' : ''}`, stmtNotes(ctx, [M.till != null ? STMT_TILL_NOTE : '']))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3166,11 +3630,11 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="4">TOTAL ASSETS (مجموع الموجودات)</td>
-            <td class="num">${fmtUsdSigned(totalAssets)}</td>
+            <td class="num">${fmtUsdSigned(M.totalAssets)}</td>
           </tr>
           <tr class="rdl-total-row">
             <td colspan="4">TOTAL LIABILITIES & EQUITY (مجموع المطلوبات والرساميل الخاصة)</td>
-            <td class="num">${fmtUsdSigned(totalLiabEq)}</td>
+            <td class="num">${fmtUsdSigned(M.totalLiabEq)}</td>
           </tr>
         </tfoot>
       </table>
@@ -3184,53 +3648,18 @@
     if (!l03.books || !l03.profit) {
       return renderRdlRestrictedSheet(meta, ctx.co, 'Income Statement Restricted', 'Profit and loss statements require Cash Flow, Ledger & Profit permissions');
     }
+    if (!stmtBooksKept(ctx)) return renderBooksNotKeptSheet(meta, ctx);
     const p = ctx.rdl.params;
-    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
-    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
-    const jes = buildJournalEntries(ctx, p.to).filter(j => j.date !== '2020-01-01' && inWindow(j.date, p.from, p.to));
     const pMode = p.period || 'Month';
-    const bucketsSet = new Set();
-    jes.forEach(j => bucketsSet.add(periodBucket(j.date, pMode)));
-    const allBuckets = [...bucketsSet].sort();
-    // Show up to 8 most recent period columns so table fits cleanly on page
-    const cols = allBuckets.length > 8 ? allBuckets.slice(-8) : (allBuckets.length ? allBuckets : [periodBucket(p.to, pMode)]);
-
-    const plAccounts = coaList.filter(a => a.code.startsWith('7') || a.code.startsWith('6'));
-    const byAcctBucket = new Map();
-    plAccounts.forEach(a => byAcctBucket.set(a.code, { acct: a, colVals: {}, total: 0 }));
-
-    jes.forEach(j => {
-      if (!byAcctBucket.has(j.acct_code)) return;
-      const entry = byAcctBucket.get(j.acct_code);
-      const b = periodBucket(j.date, pMode);
-      const signed = j.acct_code.startsWith('7') ? (j.credit - j.debit) : (j.debit - j.credit);
-      entry.colVals[b] = (entry.colVals[b] || 0) + signed;
-      entry.total += signed;
-    });
-
-    const revCodes = byAcctBucket.has('758') ? ['701', '706', '758'] : ['701', '706'];
-    const expCodes = ['601', '615', '622', '641'];
-    const sumCols = (codes) => {
-      const m = { total: 0 };
-      cols.forEach(c => { m[c] = 0; });
-      codes.forEach(code => {
-        const e = byAcctBucket.get(code);
-        if (!e) return;
-        m.total += e.total;
-        cols.forEach(c => { m[c] += (e.colVals[c] || 0); });
-      });
-      return m;
-    };
-
-    const revTot = sumCols(revCodes);
-    const expTot = sumCols(expCodes);
+    const M = computeIncomeModel(ctx, p.from, p.to, pMode);
+    const cols = M.cols;
 
     const renderGroup = (title, codes) => {
-      const tot = sumCols(codes);
+      const tot = M.sumCols(codes);
       return `
         <tr class="rdl-group-row"><td colspan="${cols.length + 3}">${esc(title)}</td></tr>
         ${codes.map(code => {
-          const e = byAcctBucket.get(code);
+          const e = M.byAcct.get(code);
           return `
             <tr>
               <td class="mono bold">${esc(e.acct.code)}</td>
@@ -3249,7 +3678,7 @@
     };
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Columns by ${pMode} · Lebanese CoA Classes 6 & 7`, dieselBasisNote(ctx))}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Columns by ${pMode} · Lebanese CoA Classes 6 & 7`, stmtNotes(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3260,14 +3689,14 @@
           </tr>
         </thead>
         <tbody>
-          ${renderGroup(`OPERATING REVENUE (Class 7 · الإيرادات التشغيلية)`, revCodes)}
-          ${renderGroup(`OPERATING COSTS & EXPENSES (Class 6 · الأعباء والمصاريف)`, expCodes)}
+          ${renderGroup(`OPERATING REVENUE (Class 7 · الإيرادات التشغيلية)`, M.revCodes)}
+          ${renderGroup(`OPERATING COSTS & EXPENSES (Class 6 · الأعباء والمصاريف)`, M.expCodes)}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="2">NET OPERATING INCOME / EBITDA (صافي النتيجة التشغيلية)</td>
-            ${cols.map(c => `<td class="num">${fmtUsdSigned((revTot[c] || 0) - (expTot[c] || 0))}</td>`).join('')}
-            <td class="num">${fmtUsdSigned(revTot.total - expTot.total)}</td>
+            ${cols.map(c => `<td class="num">${fmtUsdSigned((M.revTot[c] || 0) - (M.expTot[c] || 0))}</td>`).join('')}
+            <td class="num">${fmtUsdSigned(M.revTot.total - M.expTot.total)}</td>
           </tr>
         </tfoot>
       </table>
@@ -3280,44 +3709,46 @@
     if (!l04.books) {
       return renderRdlRestrictedSheet(meta, ctx.co, 'Cash Flow Statement Restricted', 'Financial cash flow requires Cash Flow & Ledger permissions');
     }
+    if (!stmtBooksKept(ctx)) return renderBooksNotKeptSheet(meta, ctx);
     const p = ctx.rdl.params;
     const pMode = p.period || 'Month';
-    const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
-    const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(txDate(r), p.from, p.to));
-    const exps = ctx.expAll.filter(r => inWindow(txDate(r), p.from, p.to));
-    const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(txDate(r), p.from, p.to));
-    const fuels = ctx.fuelAll.filter(r => inWindow(txDate(r), p.from, p.to));
-    const pays = ctx.payAll.filter(r => inWindow(txDate(r), p.from, p.to));
-
-    const bucketsSet = new Set();
-    [...sales, ...exps, ...rms, ...fuels, ...pays].forEach(r => bucketsSet.add(periodBucket(txDate(r), pMode)));
-    const allB = [...bucketsSet].sort();
-    const cols = allB.length > 8 ? allB.slice(-8) : (allB.length ? allB : [periodBucket(p.to, pMode)]);
-
-    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const lines = {
-      custIn: { label: dt.cfCustIn, cols: {}, total: 0 },
-      rmOut: { label: dt.cfRmOut, cols: {}, total: 0 },
-      fuelOut: { label: dt.cfFuelOut, cols: {}, total: 0 },
-      expOut: { label: dt.cfExpOut, cols: {}, total: 0 },
-      payOut: { label: 'Staff Salaries & Daily Labor Disbursed (مدفوعات الرواتب والأجور)', cols: {}, total: 0 }
+    const M = computeCashFlowModel(ctx, p.from, p.to, pMode);
+    const cols = M.cols;
+    const lineRow = k => {
+      const L = M.lines[k];
+      return `
+              <tr>
+                <td>${esc(L.label)}</td>
+                ${cols.map(c => `<td class="num">${fmtUsdSigned(L.cols[c] || 0)}</td>`).join('')}
+                <td class="num bold">${fmtUsdSigned(L.total)}</td>
+              </tr>
+            `;
     };
-
-    const addVal = (key, d, val) => {
-      const b = periodBucket(d, pMode);
-      lines[key].cols[b] = (lines[key].cols[b] || 0) + val;
-      lines[key].total += val;
-    };
-
-    sales.forEach(r => addVal('custIn', txDate(r), Number(r.paid_usd || 0)));
-    rms.forEach(r => addVal('rmOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
-    // Diesel paid for is the diesel purchase line; drawing it from the tank (a fuel slip) moves no cash.
-    exps.forEach(r => addVal(r.is_diesel_buy ? 'fuelOut' : 'expOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
-    pays.forEach(r => addVal('payOut', txDate(r), -Number(r.paid_usd || r.net_usd || 0)));
-
-    const rowKeys = ['custIn', 'rmOut', 'fuelOut', 'expOut', 'payOut'];
+    const totalRow = (cls, label, keys) => `
+          <tr class="${cls}">
+            <td>${esc(label)}</td>
+            ${cols.map(c => `<td class="num">${fmtUsdSigned(M.sumOf(keys, c))}</td>`).join('')}
+            <td class="num">${fmtUsdSigned(M.sumOf(keys, null))}</td>
+          </tr>`;
+    const blank = cols.map(() => '<td class="num"></td>').join('');
+    const tillRows = M.tillChange == null ? '' : `
+          <tr class="rdl-subtotal-row" data-stmt-till="1">
+            <td>Counted Cash Till at Start and End of Period (الصندوق أول وآخر الفترة)</td>
+            ${blank}
+            <td class="num">${fmtUsdSigned(M.tillOpen)} / ${fmtUsdSigned(M.tillClose)}</td>
+          </tr>
+          <tr class="rdl-subtotal-row" data-stmt-till="1">
+            <td>Change in the Counted Cash Till (التغير في الصندوق)</td>
+            ${blank}
+            <td class="num">${fmtUsdSigned(M.tillChange)}</td>
+          </tr>
+          <tr class="rdl-subtotal-row" data-stmt-unmatched="1">
+            <td>Cash Entries Still to Be Matched to the Till (حركات نقدية قيد المطابقة مع الصندوق)</td>
+            ${blank}
+            <td class="num">${fmtUsdSigned(M.unmatched)}</td>
+          </tr>`;
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Direct Cash Flow Method · Period ${p.from} to ${p.to} · Columns by ${pMode}`, dieselBasisNote(ctx))}
+      ${sheetHeaderHtml(meta, ctx.co, `Direct Cash Flow Method · Period ${p.from} to ${p.to} · Columns by ${pMode}`, stmtNotes(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3327,27 +3758,16 @@
           </tr>
         </thead>
         <tbody>
-          <tr class="rdl-group-row"><td colspan="${cols.length + 2}">CASH FLOWS FROM OPERATING ACTIVITIES</td></tr>
-          ${rowKeys.map(k => {
-            const L = lines[k];
-            return `
-              <tr>
-                <td>${esc(L.label)}</td>
-                ${cols.map(c => `<td class="num">${fmtUsdSigned(L.cols[c] || 0)}</td>`).join('')}
-                <td class="num bold">${fmtUsdSigned(L.total)}</td>
-              </tr>
-            `;
-          }).join('')}
+          ${M.groups.map(g => `
+          <tr class="rdl-group-row"><td colspan="${cols.length + 2}">${esc(g.title)}</td></tr>
+          ${g.keys.map(lineRow).join('')}
+          ${M.onlyOperating ? '' : totalRow('rdl-subtotal-row', g.totalLabel, g.keys)}`).join('')}
         </tbody>
         <tfoot>
-          <tr class="rdl-total-row">
-            <td>NET OPERATING CASH FLOW (صافي التدفق النقدي التشغيلي)</td>
-            ${cols.map(c => {
-              const s = rowKeys.reduce((acc, k) => acc + (lines[k].cols[c] || 0), 0);
-              return `<td class="num">${fmtUsdSigned(s)}</td>`;
-            }).join('')}
-            <td class="num">${fmtUsdSigned(rowKeys.reduce((acc, k) => acc + lines[k].total, 0))}</td>
-          </tr>
+          ${M.onlyOperating
+            ? totalRow('rdl-total-row', M.groups[0].totalLabel, M.groups[0].keys)
+            : totalRow('rdl-total-row', 'NET CHANGE IN CASH, RECORDED ENTRIES (صافي التغير في النقد)', M.allKeys)}
+          ${tillRows}
         </tfoot>
       </table>
       ${sheetFooterHtml(ctx.co, 1, 1)}
@@ -3359,55 +3779,25 @@
     if (!l05.books) {
       return renderRdlRestrictedSheet(meta, ctx.co, 'Trial Balance Restricted', 'Trial balance requires Cash Flow & General Ledger permissions');
     }
+    if (!stmtBooksKept(ctx)) return renderBooksNotKeptSheet(meta, ctx);
     const p = ctx.rdl.params;
-    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
-    const jes = buildJournalEntries(ctx, p.to);
-    const map = new Map();
-    coaList.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0 }));
-
-    jes.forEach(j => {
-      const m = map.get(j.acct_code);
-      if (!m) return;
-      if (j.date < p.from) {
-        m.openDr += j.debit;
-        m.openCr += j.credit;
-      } else if (j.date <= p.to) {
-        m.perDr += j.debit;
-        m.perCr += j.credit;
-      }
-    });
-
-    let tOpenDr = 0, tOpenCr = 0, tPerDr = 0, tPerCr = 0, tCloseDr = 0, tCloseCr = 0;
-    const rowsHtml = coaList.map(a => {
-      const m = map.get(a.code);
-      const netOpen = m.openDr - m.openCr;
-      const oDr = netOpen > 0 ? netOpen : 0;
-      const oCr = netOpen < 0 ? -netOpen : 0;
-      const netClose = (m.openDr + m.perDr) - (m.openCr + m.perCr);
-      const cDr = netClose > 0 ? netClose : 0;
-      const cCr = netClose < 0 ? -netClose : 0;
-
-      tOpenDr += oDr; tOpenCr += oCr;
-      tPerDr += m.perDr; tPerCr += m.perCr;
-      tCloseDr += cDr; tCloseCr += cCr;
-
-      return `
+    const M = computeTrialBalanceModel(ctx, p.from, p.to);
+    const rowsHtml = M.rows.map(r => `
         <tr>
-          <td class="mono bold">${esc(a.code)}</td>
-          <td>${esc(a.name)}</td>
-          <td class="num">${fmtUsd(oDr)}</td>
-          <td class="num">${fmtUsd(oCr)}</td>
-          <td class="num">${fmtUsd(m.perDr)}</td>
-          <td class="num">${fmtUsd(m.perCr)}</td>
-          <td class="num bold">${fmtUsd(cDr)}</td>
-          <td class="num bold">${fmtUsd(cCr)}</td>
+          <td class="mono bold">${esc(r.acct.code)}</td>
+          <td>${esc(r.acct.name)}</td>
+          <td class="num">${fmtUsd(r.oDr)}</td>
+          <td class="num">${fmtUsd(r.oCr)}</td>
+          <td class="num">${fmtUsd(r.perDr)}</td>
+          <td class="num">${fmtUsd(r.perCr)}</td>
+          <td class="num bold">${fmtUsd(r.cDr)}</td>
+          <td class="num bold">${fmtUsd(r.cCr)}</td>
         </tr>
-      `;
-    }).join('');
+      `).join('');
 
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD${!isMfg && Math.abs(tCloseDr - tCloseCr) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`, dieselBasisNote(ctx))}
+      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD${!isMfg && Math.abs(M.t.closeDr - M.t.closeCr) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`, stmtNotes(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3427,12 +3817,12 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="2">TOTAL TRIAL BALANCE (مجموع ميزان المراجعة)</td>
-            <td class="num">${fmtUsd(tOpenDr)}</td>
-            <td class="num">${fmtUsd(tOpenCr)}</td>
-            <td class="num">${fmtUsd(tPerDr)}</td>
-            <td class="num">${fmtUsd(tPerCr)}</td>
-            <td class="num">${fmtUsd(tCloseDr)}</td>
-            <td class="num">${fmtUsd(tCloseCr)}</td>
+            <td class="num">${fmtUsd(M.t.openDr)}</td>
+            <td class="num">${fmtUsd(M.t.openCr)}</td>
+            <td class="num">${fmtUsd(M.t.perDr)}</td>
+            <td class="num">${fmtUsd(M.t.perCr)}</td>
+            <td class="num">${fmtUsd(M.t.closeDr)}</td>
+            <td class="num">${fmtUsd(M.t.closeCr)}</td>
           </tr>
         </tfoot>
       </table>
@@ -4349,7 +4739,7 @@
               <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
               <td class="mono">${esc(r.voucher || r.name || '-')}</td>
               <td class="bold">${esc(r.equip || '-')}</td>
-              <td>${esc(r.equip_type || 'Mixer')}</td>
+              <td>${esc(r.equip_type || 'Truck')}</td>
               <td>${esc(r.driver || '-')}</td>
               <td class="num">${r.odometer ? fmtNum(r.odometer, r.meter_unit === 'h' && r.odometer % 1 !== 0 ? 1 : 0) + (r.meter_unit ? ' ' + r.meter_unit : '') : '-'}</td>
               <td class="num bold">${fmtNum(r.liters, 1)}</td>
@@ -4636,7 +5026,7 @@
           ['Closing Balance', lSoa14.books ? fmtUsdSigned(closingBal, 2) : 'Restricted']
         ])}
       </div>
-      ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Ready-Mix Concrete Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
+      ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Trade Customer Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
       ${sentStatementBarHtml('customer', custName, ctx, closingBal)}
 
       <table class="rdl-table">
@@ -4982,12 +5372,12 @@
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Driver: ${drvFilter === 'ALL' ? 'All Drivers' : drvFilter} · Concrete Trips, Hauling & Diesel Consumption${!fuelMoneyHidden17 && unpricedFills17 > 0 ? ` · Fuel cost at recorded purchase prices, ${fmtNum(unpricedFills17, 0)} fills without a price on file` : ''}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Driver: ${drvFilter === 'ALL' ? 'All Drivers' : drvFilter} · Delivery Trips, Hauling & Diesel Consumption${!fuelMoneyHidden17 && unpricedFills17 > 0 ? ` · Fuel cost at recorded purchase prices, ${fmtNum(unpricedFills17, 0)} fills without a price on file` : ''}`)}
       <table class="rdl-table">
         <thead>
           <tr>
             <th>Driver Name</th>
-            <th class="num">Concrete Loads</th>
+            <th class="num">Sales Loads</th>
             <th class="num">Delivered Volume (m³)</th>
             <th class="num">Billed Value ($)</th>
             <th class="num">RM Hauling Trips</th>
@@ -5192,12 +5582,9 @@
     `;
   }
 
-  function render19PlRecon(meta, ctx) {
-    const l19 = _rdlSeatLens(ctx);
-    if (!l19.books || !l19.profit) {
-      return renderRdlRestrictedSheet(meta, ctx.co, 'Monthly P&L Reconciliation Restricted', 'P&L reconciliation requires Cash Flow, Ledger & Profit permissions');
-    }
-    const p = ctx.rdl.params;
+  // P&L Reconciliation: each operating stream totalled from its own register, against what the statements ledger
+  // posted for it. The two columns are computed separately, so a difference shows as a difference.
+  function computePlReconModel(ctx, p) {
     const yr = p.year || 'ALL';
     const mo = p.month || 'ALL';
     const matchYm = d => {
@@ -5208,12 +5595,13 @@
       if (yr === 'ALL' && mo === 'ALL') return inWindow(s, p.from, p.to);
       return true;
     };
-
-    const sales = ctx.salesAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-    const rms = ctx.rmAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-    const fuels = ctx.fuelAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-    const exps = ctx.expAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-    const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+    const inYm = r => matchYm(rowDate(r, ctx.basis));
+    const sales = ctx.salesAll.filter(inYm);
+    const rms = ctx.rmAll.filter(inYm);
+    const fuels = ctx.fuelAll.filter(inYm);
+    const exps = ctx.expAll.filter(inYm);
+    const pays = ctx.payAll.filter(inYm);
+    const convs = (ctx.convAll || []).filter(inYm);
 
     // Recharged costs are not sales: they leave the sales line and net against the expense line (same net result).
     const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
@@ -5223,24 +5611,59 @@
     // stock is not an expense yet, so it leaves the expense stream.
     const subFuel = fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0)
       + sales.reduce((s, r) => s + Number(r.diesel_cost_usd || 0), 0)
-      + (ctx.dieselAdjAll || []).filter(r => matchYm(rowDate(r, ctx.basis))).reduce((s, r) => s + Number(r.cost_usd || 0), 0)
+      + (ctx.dieselAdjAll || []).filter(inYm).reduce((s, r) => s + Number(r.cost_usd || 0), 0)
       + exps.reduce((s, r) => s + (r.diesel_stock ? Number(r.diesel_reval_usd || 0) : 0), 0);
-    const subExp =exps.reduce((s, r) => s + (r.diesel_stock ? 0 : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0) - subRecharge;
+    const subExp = exps.reduce((s, r) => s + (r.diesel_stock ? 0 : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0) - subRecharge;
     const subPay = pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
+    const commSales = sales.filter(r => Number(r.commission_usd || 0) > 0);
+    const subComm = commSales.reduce((s, r) => s + Math.round(Number(r.commission_usd || 0) * 100) / 100, 0);
+    const subFx = convs.reduce((s, r) => s + Math.round((r.in_usd - r.out_usd) * 100) / 100, 0);
+
+    // What the ledger posted, by account and by where the posting came from.
+    const jes = buildJournalEntries(ctx, '9999-12-31').filter(j => j.ref !== 'OB-001' && matchYm(j.date));
+    const gl = pred => jes.reduce((s, j) => s + (pred(j) ? (j.debit - j.credit) : 0), 0);
+    const RM_SRC = /^(Raw Material|Raw Transport|Direct Supply|Freight \/ Delivery)( Return)?$/;
+    const FUEL_SRC = /^(Fuel Log|Diesel Sold|Tank Count|Tank Revaluation)$/;
+    const glSales = -gl(j => j.acct_code.charAt(0) === '7' && j.acct_code !== '766');
+    const glRm = gl(j => j.acct_code === '601' && RM_SRC.test(j.source));
+    const glFuel = gl(j => j.acct_code === '601' && FUEL_SRC.test(j.source));
+    const glPay = gl(j => j.acct_code === '641' && j.source === 'Payroll');
+    const glComm = gl(j => j.acct_code === '6222');
+    const glFx = -gl(j => j.acct_code === '766' || j.acct_code === '666');
+    const glExp = gl(j => j.acct_code.charAt(0) === '6' && j.acct_code !== '6222' && j.acct_code !== '666') - glRm - glFuel - glPay;
 
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const reconRows = [
-      { stream: dt.plSales, acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: subSales, sign: 1 },
-      { stream: dt.plRm, acct: '601-DIR', count: rms.length, subTotal: subRm, glTotal: subRm, sign: -1 },
-      { stream: dt.plFuel, acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: subFuel, sign: -1 },
-      { stream: dt.plExp, acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: subExp, sign: -1 },
-      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: subPay, sign: -1 }
+    const rows = [
+      { stream: dt.plSales, acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: glSales, sign: 1 },
+      { stream: dt.plRm, acct: '601-DIR', count: rms.length, subTotal: subRm, glTotal: glRm, sign: -1 },
+      { stream: dt.plFuel, acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: glFuel, sign: -1 },
+      { stream: dt.plExp, acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: glExp, sign: -1 },
+      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: glPay, sign: -1 }
     ];
+    if (commSales.length || Math.abs(glComm) >= 0.005) rows.push({ stream: 'Plant-Owner Commission on Sales', acct: '6222', count: commSales.length, subTotal: subComm, glTotal: glComm, sign: -1 });
+    if (convs.length || Math.abs(glFx) >= 0.005) rows.push({ stream: 'Currency Exchange Differences', acct: '766 / 666', count: convs.length, subTotal: subFx, glTotal: glFx, sign: 1 });
+    // A dollar of rounding across thousands of vouchers is not a difference.
+    rows.forEach(r => { r.variance = Math.round((r.sign * (r.subTotal - r.glTotal)) * 100) / 100; r.ok = Math.abs(r.variance) < 1; });
+    const netSub = rows.reduce((s, r) => s + r.sign * r.subTotal, 0);
+    const netGl = rows.reduce((s, r) => s + r.sign * r.glTotal, 0);
+    const varianceUsd = Math.round(Math.abs(netSub - netGl) * 100) / 100;
+    return {
+      yr, mo, rows, netSub, netGl, varianceUsd, balanced: rows.every(r => r.ok),
+      subSales, subDirect: subRm + subFuel, subOpex: subExp + subPay + subComm - subFx,
+      totalVouchers: rows.reduce((s, r) => s + r.count, 0)
+    };
+  }
 
-    const netSub = subSales - (subRm + subFuel + subExp + subPay);
+  function render19PlRecon(meta, ctx) {
+    const l19 = _rdlSeatLens(ctx);
+    if (!l19.books || !l19.profit) {
+      return renderRdlRestrictedSheet(meta, ctx.co, 'Monthly P&L Reconciliation Restricted', 'P&L reconciliation requires Cash Flow, Ledger & Profit permissions');
+    }
+    if (!stmtBooksKept(ctx)) return renderBooksNotKeptSheet(meta, ctx);
+    const M = computePlReconModel(ctx, ctx.rdl.params);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Sub-Ledger to General Ledger Tie-Out · Year: ${yr} · Month: ${mo} · Zero Unexplained Variance`, dieselBasisNote(ctx))}
+      ${sheetHeaderHtml(meta, ctx.co, `Sub-Ledger to General Ledger Tie-Out · Year: ${M.yr} · Month: ${M.mo} · ${M.balanced ? 'Zero Unexplained Variance' : `Unexplained Variance ${fmtUsd(M.varianceUsd, 2)}`}`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -5254,25 +5677,25 @@
           </tr>
         </thead>
         <tbody>
-          ${reconRows.map(r => `
+          ${M.rows.map(r => `
             <tr>
               <td class="bold">${esc(r.stream)}</td>
               <td class="mono bold">${esc(r.acct)}</td>
               <td class="num">${fmtNum(r.count, 0)}</td>
               <td class="num">${fmtUsdSigned(r.sign * r.subTotal, 2)}</td>
               <td class="num">${fmtUsdSigned(r.sign * r.glTotal, 2)}</td>
-              <td class="num bold">$0.00</td>
-              <td><span class="rdl-badge-ok">RECONCILED ✓</span></td>
+              <td class="num bold">${fmtUsdSigned(r.variance, 2)}</td>
+              <td>${r.ok ? '<span class="rdl-badge-ok">RECONCILED ✓</span>' : '<span class="rdl-badge-warn">DIFFERENCE</span>'}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="3">NET RECONCILED P&L RESULT (صافي المطابقة التشغيلية)</td>
-            <td class="num">${fmtUsdSigned(netSub, 2)}</td>
-            <td class="num">${fmtUsdSigned(netSub, 2)}</td>
-            <td class="num">$0.00</td>
-            <td>100% TIED</td>
+            <td class="num">${fmtUsdSigned(M.netSub, 2)}</td>
+            <td class="num">${fmtUsdSigned(M.netGl, 2)}</td>
+            <td class="num">${fmtUsdSigned(M.netSub - M.netGl, 2)}</td>
+            <td>${M.balanced ? '100% TIED' : 'NOT TIED'}</td>
           </tr>
         </tfoot>
       </table>
@@ -5285,7 +5708,7 @@
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || {
-      key: isMfg ? '2738' : 'INV-001', vat_inv: isMfg ? '2738' : 'INV-001', invoice_no: isMfg ? '2738' : 'INV-001',
+      key: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', vat_inv: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', invoice_no: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '',
       customer: ctx.customers[0] || dt.custDefault,
       site: dt.siteDefault, date: p.to || '2026-10-21', co: ctx.co, loads: 0, qty: 0, total: 0, vat: 0, rows: []
     };
@@ -5299,7 +5722,7 @@
     const dash = isMfg ? '—' : '-';
 
     return `
-      ${sheetHeaderHtml(meta, grp.co || ctx.co, `Invoice ${grp.vat_inv || grp.invoice_no} · Customer ${grp.customer} · Date ${grp.date}`)}
+      ${sheetHeaderHtml(meta, grp.co || ctx.co, `Invoice ${grp.vat_inv || grp.invoice_no || '-'} · Customer ${grp.customer || '-'} · Date ${grp.date}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(grp.co || ctx.co)}
         ${metaRowsHtml([
@@ -5309,7 +5732,7 @@
           [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`]
         ])}
       </div>
-      ${partyBlockHtml('Bill To / الفاتورة إلى', grp.customer, grp.site ? `${isMfg ? 'Site' : 'Location'}: ${grp.site}` : '', isMfg ? 'Account 411 — Ready-Mix Concrete Customer' : dt.custSubTitle, '')}
+      ${partyBlockHtml('Bill To / الفاتورة إلى', grp.customer, grp.site ? `${isMfg ? 'Site' : 'Location'}: ${grp.site}` : '', isMfg ? 'Account 411 · Trade Customer' : dt.custSubTitle, '')}
 
       <table class="rdl-table">
         <thead>
@@ -5394,7 +5817,7 @@
             <th>Date</th>
             <th>${esc(dt.doc21ProdCol)}</th>
             <th>${esc(dt.doc21SiteCol)}</th>
-            <th>${esc(isMfg ? 'Mixer Truck' : dt.doc21Ref1Lbl)}</th>
+            <th>${esc(dt.doc21Ref1Lbl)}</th>
             <th>${esc(dt.doc21Ref2Lbl)}</th>
             <th class="num">${esc(isMfg ? 'Dispatched Volume (m³)' : dt.qtyCol)}</th>
             <th class="num">${esc(dt.rateCol)}</th>
@@ -5405,7 +5828,7 @@
           <tr>
             <td class="mono bold">${esc(tNo)}</td>
             <td class="mono">${esc(d)}</td>
-            <td class="bold">${esc(tk.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef))}</td>
+            <td class="bold">${esc(tk.product || (isMfg ? 'Material' : dt.rcptDescDef))}</td>
             <td>${esc(tk.site || dash)}</td>
             <td class="mono">${esc(tk.truck || dash)}</td>
             <td>${esc(tk.driver || dash)}</td>
@@ -5452,7 +5875,7 @@
     const rem = Math.max(0, Number(rc.total_usd || 0) - paid);
     const dash = '-';
     const descLine = isMfg
-      ? `Settlement against ${esc(rc.product || 'Concrete Supply')} (${fmtNum(rc.qty || 0, 1)} m³)`
+      ? `Settlement against ${esc(rc.product || 'Material Supply')} (${fmtNum(rc.qty || 0, 1)} m³)`
       : `Settlement against ${esc(rc.product || dt.rcptDescDef)}${Number(rc.qty || 0) > 0 ? ` (${fmtNum(rc.qty || 0, dt.qtyDp)} ${esc(dt.qtyUnit)})` : ''}`;
 
     return `
@@ -7173,7 +7596,7 @@
       const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
       const byProd = new Map();
       sales.forEach(r => {
-        const k = r.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef);
+        const k = r.product || (isMfg ? 'Material' : dt.rcptDescDef);
         byProd.set(k, (byProd.get(k) || 0) + Number(r.total_usd || 0));
       });
       const topProdEntry = [...byProd.entries()].sort((a, b) => b[1] - a[1])[0] || null;
@@ -7212,45 +7635,36 @@
         mkKpi('avg', 'Average Rate', 'متوسط السعر', 'Tarif moyen', fmtUsd(totQty > 0 ? totRev / totQty : 0, 2), `Per ${dt.qtyUnit}`, `لكل ${dt.qtyUnit}`, `Par ${dt.qtyUnit}`),
         mkKpi('fuel', 'Diesel & Utility', 'استهلاك المحروقات', 'Carburant consommé', `${fmtNum(totLiters, 0)} L`, `${fmtNum(fuels.length, 0)} fills`, `${fmtNum(fuels.length, 0)} تعبئة`, `${fmtNum(fuels.length, 0)} pleins`)
       ];
+    } else if (['02', '03', '04', '05'].includes(stmtId) && !stmtBooksKept(ctx)) {
+      // Expenses, payroll and cash of this company are not in ISABI yet: no figure is given, as on the printed sheet.
+      const nk = k => mkKpi(k, 'Not Kept in ISABI Yet', 'غير مسجل في ISABI بعد', 'Pas encore tenu dans ISABI', 'Not Kept Yet', 'Expenses, payroll and cash book not loaded', 'المصاريف والرواتب والصندوق غير محملة', 'Charges, paie et caisse non chargées');
+      facts = { notKeptInIsabi: true };
+      tieCheck = null;
+      kpis = [nk('a'), nk('b'), nk('c'), nk('d')];
     } else if (stmtId === '02') {
       const asof = p.asof || p.to;
       windowMode = 'asof';
       windowLabelEn = `As at ${asof}`;
       windowLabelAr = `كما في ${asof}`;
       windowLabelFr = `Au ${asof}`;
-      const coaList = ctx.coaAccounts || COA_ACCOUNTS;
-      const jes = buildJournalEntries(ctx, asof);
-      const balMap = new Map();
-      coaList.forEach(a => balMap.set(a.code, { ...a, dr: 0, cr: 0 }));
-      jes.forEach(j => {
-        const b = balMap.get(j.acct_code);
-        if (b) { b.dr += j.debit; b.cr += j.credit; }
-      });
-      let revNet = 0, expNet = 0;
-      balMap.forEach(b => {
-        if (b.code.startsWith('7')) revNet += (b.cr - b.dr);
-        if (b.code.startsWith('6')) expNet += (b.dr - b.cr);
-      });
-      const retainedEarnings = revNet - expNet;
-      const dBal = c => { const b = balMap.get(c); return b ? (b.dr - b.cr) : 0; };
-      const cBal = c => { const b = balMap.get(c); return b ? (b.cr - b.dr) : 0; };
-      const fixedAssets = dBal('215') + dBal('218') + dBal('281');
-      const currAssets = dBal('311') + dBal('411') + dBal('467');
-      const cashBank = dBal('512') + dBal('531');
-      const totalAssets = fixedAssets + currAssets + cashBank;
-      const liabClass4 = cBal('401') + cBal('421') + cBal('442');
-      const eqClass1 = cBal('101') + cBal('165') + retainedEarnings;
-      const totalLiabEq = liabClass4 + eqClass1;
-      const varianceUsd = Math.round(Math.abs(totalAssets - totalLiabEq) * 100) / 100;
-      const balanced = varianceUsd < 0.02;
+      const B = computeBalanceSheetModel(ctx, asof);
+      const retainedEarnings = B.retained;
+      const fixedAssets = B.fixedAssets;
+      const cashBank = B.till != null ? (B.till + B.bal('512')) : B.cashBank;
+      const totalAssets = B.totalAssets;
+      const liabClass4 = B.liab;
+      const totalLiabEq = B.totalLiabEq;
+      const varianceUsd = B.varianceUsd;
+      const balanced = B.balanced;
       tieCheck = { balanced, varianceUsd, kind: 'bs' };
       facts = (canViewBooks && canViewProfit) ? {
         asOfDate: asof,
         totalAssetsUsd: Math.round(totalAssets),
         totalLiabilitiesAndEquityUsd: Math.round(totalLiabEq),
         cashAndBankClass5Usd: Math.round(cashBank),
-        receivables411Usd: Math.round(dBal('411')),
-        payables401Usd: Math.round(cBal('401')),
+        cashEntriesStillToMatchTillUsd: B.cashUnmatched != null ? Math.round(B.cashUnmatched) : undefined,
+        receivables411Usd: Math.round(B.bal('411')),
+        payables401Usd: Math.round(B.bal('401')),
         periodNetResult120Usd: Math.round(retainedEarnings),
         balanceSheetVarianceUsd: varianceUsd,
         balanced
@@ -7267,24 +7681,17 @@
         mkKpi('tie', 'Balance Sheet Tie', 'مطابقة الميزانية', 'Équilibre du bilan', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste')
       ];
     } else if (stmtId === '03') {
-      const jes = buildJournalEntries(ctx, p.to).filter(j => j.date !== '2020-01-01' && inWindow(j.date, p.from, p.to));
-      let rev701 = 0, rev706 = 0, exp601 = 0, exp615 = 0, exp622 = 0, exp641 = 0;
-      jes.forEach(j => {
-        if (j.acct_code === '701') rev701 += (j.credit - j.debit);
-        else if (j.acct_code === '706' || j.acct_code === '758') rev706 += (j.credit - j.debit);
-        else if (j.acct_code === '601') exp601 += (j.debit - j.credit);
-        else if (j.acct_code === '615') exp615 += (j.debit - j.credit);
-        else if (j.acct_code === '622') exp622 += (j.debit - j.credit);
-        else if (j.acct_code === '641') exp641 += (j.debit - j.credit);
-      });
-      const revTotal = rev701 + rev706;
-      const expTotal = exp601 + exp615 + exp622 + exp641;
+      const I = computeIncomeModel(ctx, p.from, p.to, p.period || 'Month');
+      const exp601 = I.tOf('601');
+      const exp641 = I.tOf('641');
+      const revTotal = I.revTot.total;
+      const expTotal = I.expTot.total;
       const ebitda = revTotal - expTotal;
       const marginPct = revTotal > 0 ? Number(((ebitda / revTotal) * 100).toFixed(1)) : 0;
       facts = (canViewBooks && canViewProfit) ? {
         operatingRevenueClass7Usd: Math.round(revTotal),
         directCost601Usd: Math.round(exp601),
-        maintenanceAndServicesUsd: Math.round(exp615 + exp622),
+        maintenanceAndServicesUsd: Math.round(expTotal - exp601 - exp641),
         payroll641Usd: Math.round(exp641),
         operatingCostsClass6Usd: Math.round(expTotal),
         netOperatingIncomeUsd: Math.round(ebitda),
@@ -7303,61 +7710,40 @@
         mkKpi('margin', 'Operating Margin', 'هامش التشغيل', 'Marge opérationnelle', 'Restricted', 'Restricted by seat permissions', 'مقيد حسب صلاحيات المقعد', 'Restreint selon les droits du poste')
       ];
     } else if (stmtId === '04') {
-      const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
-      const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(txDate(r), p.from, p.to));
-      const exps = ctx.expAll.filter(r => inWindow(txDate(r), p.from, p.to));
-      const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(txDate(r), p.from, p.to));
-      const pays = ctx.payAll.filter(r => inWindow(txDate(r), p.from, p.to));
-      const custIn = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
-      const rmOut = rms.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
-      // Same split as the sheet: diesel paid for = the diesel purchase lines (a fuel slip moves no cash).
-      const fuelOut = exps.reduce((s, r) => s - (r.is_diesel_buy ? Number(r.paid_usd || r.total_usd || 0) : 0), 0);
-      const expOut = exps.reduce((s, r) => s - (r.is_diesel_buy ? 0 : Number(r.paid_usd || r.total_usd || 0)), 0);
-      const payOut = pays.reduce((s, r) => s - Number(r.paid_usd || r.net_usd || 0), 0);
-      const netCf = custIn + rmOut + fuelOut + expOut + payOut;
+      // The same cash legs as the printed sheet (the statements ledger, on transaction date).
+      const C = computeCashFlowModel(ctx, p.from, p.to, p.period || 'Month');
+      const tl = k => C.lines[k].total;
+      const custIn = tl('custIn');
+      const rmOut = tl('rmOut');
+      const fuelOut = tl('fuelOut');
+      const expOut = tl('expOut') + tl('commOut') + tl('other');
+      const payOut = tl('payOut');
+      const netCf = C.opNet;
       facts = {
         collectionsInUsd: canViewBooks ? Math.round(custIn) : undefined,
         supplierPaymentsOutUsd: canViewBooks ? Math.round(Math.abs(rmOut)) : undefined,
         fuelAndOpexOutUsd: Math.round(Math.abs(fuelOut + expOut)),
         payrollDisbursedOutUsd: Math.round(Math.abs(payOut)),
         netOperatingCashFlowUsd: canViewBooks ? Math.round(netCf) : undefined,
+        netChangeInCashUsd: canViewBooks ? Math.round(C.net) : undefined,
+        cashEntriesStillToMatchTillUsd: (canViewBooks && C.unmatched != null) ? Math.round(C.unmatched) : undefined,
         periodGrain: p.period || 'Month'
       };
       kpis = [
-        mkKpi('in', 'Cash Collections', 'التحصيلات النقدية', 'Encaissements clients', canViewBooks ? fmtUsdSigned(custIn) : 'Restricted', `${fmtNum(sales.length, 0)} entries`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} mouvements`, 'pos'),
+        mkKpi('in', 'Cash Collections', 'التحصيلات النقدية', 'Encaissements clients', canViewBooks ? fmtUsdSigned(custIn) : 'Restricted', `${fmtNum(C.lines.custIn.n, 0)} entries`, `${fmtNum(C.lines.custIn.n, 0)} حركة`, `${fmtNum(C.lines.custIn.n, 0)} mouvements`, 'pos'),
         mkKpi('sup', 'Supplier Outflows', 'تسديدات الموردين', 'Décaissements fournisseurs', canViewBooks ? fmtUsdSigned(rmOut) : 'Restricted', 'Direct supply & settlements', 'مشتريات وتسديدات', 'Achats et règlements'),
         mkKpi('opex', 'OPEX, Fuel & Payroll', 'المصاريف والرواتب', 'OPEX, carburant et paie', fmtUsdSigned(fuelOut + expOut + payOut), `Payroll ${fmtUsd(Math.abs(payOut))}`, `رواتب ${fmtUsd(Math.abs(payOut))}`, `Paie ${fmtUsd(Math.abs(payOut))}`),
         mkKpi('net', 'Net Operating Cash', 'صافي التدفق النقدي', 'Flux net d’exploitation', canViewBooks ? fmtUsdSigned(netCf) : 'Restricted', 'Direct method', 'الطريقة المباشرة', 'Méthode directe', netCf >= 0 ? 'ok' : 'neg')
       ];
     } else if (stmtId === '05') {
-      const coaList = ctx.coaAccounts || COA_ACCOUNTS;
-      const jes = buildJournalEntries(ctx, p.to);
-      const map = new Map();
-      coaList.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0 }));
-      jes.forEach(j => {
-        const m = map.get(j.acct_code);
-        if (!m) return;
-        if (j.date < p.from) { m.openDr += j.debit; m.openCr += j.credit; }
-        else if (j.date <= p.to) { m.perDr += j.debit; m.perCr += j.credit; }
-      });
-      let tOpenDr = 0, tOpenCr = 0, tPerDr = 0, tPerCr = 0, tCloseDr = 0, tCloseCr = 0;
-      coaList.forEach(a => {
-        const m = map.get(a.code);
-        const netOpen = m.openDr - m.openCr;
-        const netClose = (m.openDr + m.perDr) - (m.openCr + m.perCr);
-        tOpenDr += netOpen > 0 ? netOpen : 0;
-        tOpenCr += netOpen < 0 ? -netOpen : 0;
-        tPerDr += m.perDr;
-        tPerCr += m.perCr;
-        tCloseDr += netClose > 0 ? netClose : 0;
-        tCloseCr += netClose < 0 ? -netClose : 0;
-      });
-      const varianceUsd = Math.round(Math.abs(tCloseDr - tCloseCr) * 100) / 100;
-      const perVarUsd = Math.round(Math.abs(tPerDr - tPerCr) * 100) / 100;
-      const balanced = varianceUsd < 0.02 && perVarUsd < 0.02;
+      const T = computeTrialBalanceModel(ctx, p.from, p.to);
+      const tOpenDr = T.t.openDr, tOpenCr = T.t.openCr, tPerDr = T.t.perDr, tPerCr = T.t.perCr, tCloseDr = T.t.closeDr, tCloseCr = T.t.closeCr;
+      const acctCount = T.rows.length;
+      const varianceUsd = T.varianceUsd;
+      const balanced = T.balanced;
       tieCheck = { balanced, varianceUsd, kind: 'tb' };
       facts = {
-        coaAccountsCount: coaList.length,
+        coaAccountsCount: acctCount,
         openingDebitUsd: Math.round(tOpenDr),
         openingCreditUsd: Math.round(tOpenCr),
         periodDebitUsd: Math.round(tPerDr),
@@ -7368,7 +7754,7 @@
         balanced
       };
       kpis = [
-        mkKpi('open', 'Opening Trial Balance', 'رصيد الافتتاح', 'Solde d’ouverture', fmtUsd(tOpenDr), `${coaList.length} GL accounts`, `${coaList.length} حساب عام`, `${coaList.length} comptes généraux`),
+        mkKpi('open', 'Opening Trial Balance', 'رصيد الافتتاح', 'Solde d’ouverture', fmtUsd(tOpenDr), `${acctCount} GL accounts`, `${acctCount} حساب عام`, `${acctCount} comptes généraux`),
         mkKpi('per', 'Period Movement', 'حركة الفترة', 'Mouvements période', fmtUsd(tPerDr), `Cr ${fmtUsd(tPerCr)}`, `دائن ${fmtUsd(tPerCr)}`, `Crédit ${fmtUsd(tPerCr)}`),
         mkKpi('close', 'Closing Trial Balance', 'ميزان الإقفال', 'Balance de clôture', fmtUsd(tCloseDr), `Cr ${fmtUsd(tCloseCr)}`, `دائن ${fmtUsd(tCloseCr)}`, `Crédit ${fmtUsd(tCloseCr)}`),
         mkKpi('tie', 'Debit vs Credit Tie', 'مطابقة المدين والدائن', 'Équilibre Débit / Crédit', balanced ? '$0.00' : fmtUsd(varianceUsd, 2), balanced ? 'Classes 1-7 balanced' : 'Out of balance', balanced ? 'متوازن بالكامل' : 'غير متوازن', balanced ? 'Classes 1-7 équilibrées' : 'Écart détecté', balanced ? 'ok' : 'neg')
@@ -7905,55 +8291,46 @@
         mkKpi('in', 'Input VAT (Box B1)', 'الضريبة القابلة للحسم (B1)', 'TVA déductible (B1)', fmtUsd(inVat, 2), `${fmtNum(vatPaidRows.length, 0)} input vouchers`, `${fmtNum(vatPaidRows.length, 0)} سند حسم`, `${fmtNum(vatPaidRows.length, 0)} pièces déductibles`, 'pos'),
         mkKpi('net', 'Net VAT Payable', 'صافي الضريبة المتوجبة', 'TVA nette à payer', fmtUsdSigned(netVat, 2), `${fmtNum(vatFxRate, 0)} LL/$ MoF rate`, `سعر المالية ${fmtNum(vatFxRate, 0)} ل.ل`, `Taux MoF ${fmtNum(vatFxRate, 0)} LBP/$`, netVat <= 0 ? 'ok' : 'neutral')
       ];
+    } else if (stmtId === '19' && !stmtBooksKept(ctx)) {
+      const nk19 = k => mkKpi(k, 'Not Kept in ISABI Yet', 'غير مسجل في ISABI بعد', 'Pas encore tenu dans ISABI', 'Not Kept Yet', 'Expenses, payroll and cash book not loaded', 'المصاريف والرواتب والصندوق غير محملة', 'Charges, paie et caisse non chargées');
+      windowMode = 'recon';
+      facts = { notKeptInIsabi: true };
+      tieCheck = null;
+      kpis = [nk19('a'), nk19('b'), nk19('c'), nk19('d')];
     } else if (stmtId === '19') {
-      const yr = p.year || 'ALL';
-      const mo = p.month || 'ALL';
+      // The same comparison as the printed sheet: registers on one side, ledger postings on the other.
+      const R = computePlReconModel(ctx, p);
+      const yr = R.yr;
+      const mo = R.mo;
       windowMode = 'recon';
       windowLabelEn = (yr === 'ALL' && mo === 'ALL') ? `${p.from} to ${p.to}` : `Year ${yr} · Month ${mo}`;
       windowLabelAr = (yr === 'ALL' && mo === 'ALL') ? `${p.from} إلى ${p.to}` : `السنة ${yr} · الشهر ${mo}`;
       windowLabelFr = (yr === 'ALL' && mo === 'ALL') ? `${p.from} au ${p.to}` : `Année ${yr} · Mois ${mo}`;
-      const matchYm = d => {
-        const s = String(d || '').slice(0, 10);
-        if (!s) return false;
-        if (yr !== 'ALL' && s.slice(0, 4) !== yr) return false;
-        if (mo !== 'ALL' && s.slice(5, 7) !== mo) return false;
-        if (yr === 'ALL' && mo === 'ALL') return inWindow(s, p.from, p.to);
-        return true;
-      };
-      const sales = ctx.salesAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const rms = ctx.rmAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const fuels = ctx.fuelAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const exps = ctx.expAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
-      const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
-      // Same streams as the sheet: diesel at purchase cost when it leaves the tank; a stocked purchase is not OPEX yet.
-      const subDirect = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0) + fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0)
-        + sales.reduce((s, r) => s + Number(r.diesel_cost_usd || 0), 0)
-        + (ctx.dieselAdjAll || []).filter(r => matchYm(rowDate(r, ctx.basis))).reduce((s, r) => s + Number(r.cost_usd || 0), 0)
-        + exps.reduce((s, r) => s + (r.diesel_stock ? Number(r.diesel_reval_usd || 0) : 0), 0);
-      const subOpex =exps.reduce((s, r) => s + (r.diesel_stock ? 0 : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0) - subRecharge;
-      const netSub = subSales - (subDirect + subOpex);
-      const totalVouchers = sales.length + rms.length + fuels.length + exps.length + pays.length;
-      tieCheck = { balanced: true, varianceUsd: 0, kind: 'recon' };
+      const subSales = R.subSales;
+      const subDirect = R.subDirect;
+      const subOpex = R.subOpex;
+      const netSub = R.netSub;
+      const totalVouchers = R.totalVouchers;
+      const nStreams = R.rows.length;
+      tieCheck = { balanced: R.balanced, varianceUsd: R.varianceUsd, kind: 'recon' };
       facts = {
         vouchersReconciled: totalVouchers,
         subLedgerRevenue701Usd: Math.round(subSales),
         subLedgerDirect601Usd: Math.round(subDirect),
         subLedgerOpexAndPayrollUsd: Math.round(subOpex),
         reconciledNetResultUsd: Math.round(netSub),
-        glReconciliationVarianceUsd: 0,
-        balanced: true
+        glReconciliationVarianceUsd: R.varianceUsd,
+        balanced: R.balanced
       };
       kpis = [
         mkKpi('rev', 'Sub-Ledger Revenue', 'إيرادات السجلات الفرعية', 'Produits auxiliaires', fmtUsd(subSales, 2), 'Accounts 701 / 706', 'حسابات 701 / 706', 'Comptes 701 / 706', 'pos'),
         mkKpi('cost', 'Sub-Ledger Costs', 'كلفة ومصاريف السجلات', 'Charges auxiliaires', fmtUsd(subDirect + subOpex, 2), `${fmtNum(totalVouchers, 0)} vouchers`, `${fmtNum(totalVouchers, 0)} مستند`, `${fmtNum(totalVouchers, 0)} pièces`),
-        mkKpi('net', 'Reconciled Net P&L', 'صافي النتيجة المطابقة', 'Résultat net rapproché', fmtUsdSigned(netSub, 2), 'Sub-ledger = GL', 'مطابق للأستاذ العام', 'Auxiliaire = GL', netSub >= 0 ? 'pos' : 'neg'),
-        mkKpi('tie', 'GL Tie Variance', 'فرق المطابقة', 'Écart de rapprochement', '$0.00', '100% tied across 5 streams', 'مطابق 100% عبر 5 جداول', '100% cadré sur 5 flux', 'ok')
+        mkKpi('net', 'Reconciled Net P&L', 'صافي النتيجة المطابقة', 'Résultat net rapproché', fmtUsdSigned(netSub, 2), R.balanced ? 'Sub-ledger = GL' : 'Sub-ledger differs from GL', R.balanced ? 'مطابق للأستاذ العام' : 'يختلف عن الأستاذ العام', R.balanced ? 'Auxiliaire = GL' : 'Auxiliaire différent du GL', netSub >= 0 ? 'pos' : 'neg'),
+        mkKpi('tie', 'GL Tie Variance', 'فرق المطابقة', 'Écart de rapprochement', R.balanced ? '$0.00' : fmtUsd(R.varianceUsd, 2), R.balanced ? `100% tied across ${nStreams} streams` : 'Difference to review', R.balanced ? `مطابق 100% عبر ${nStreams} جداول` : 'فرق يحتاج مراجعة', R.balanced ? `100% cadré sur ${nStreams} flux` : 'Écart à examiner', R.balanced ? 'ok' : 'neg')
       ];
     } else if (stmtId === '20') {
       windowMode = 'document';
-      const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || { key: isMfg ? '2738' : 'INV-001', vat_inv: isMfg ? '2738' : 'INV-001', invoice_no: isMfg ? '2738' : 'INV-001', customer: ctx.customers[0] || dt.custDefault, site: dt.siteDefault, date: p.to || '2026-10-21', rows: [] };
+      const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || { key: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', vat_inv: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', invoice_no: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', customer: ctx.customers[0] || dt.custDefault, site: dt.siteDefault, date: p.to || '2026-10-21', rows: [] };
       const rows = grp.rows || [];
       const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
       const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
@@ -8250,7 +8627,7 @@
     const rdlLockSum = _rdlStmtLock();
     const sumPhSig = (rdlLockSum && typeof rdlLockSum.partyHygieneSig === 'function') ? rdlLockSum.partyHygieneSig(ctx.ind) : '0';
     const sumWmSig = (rdlLockSum && typeof rdlLockSum.watermarkSig === 'function') ? rdlLockSum.watermarkSig(ctx.ind) : '0';
-    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${canViewProfit ? '1' : '0'}|${rdlLens && rdlLens.expenses ? '1' : '0'}|${rdlLens && rdlLens.tax ? '1' : '0'}|${rdlLens && rdlLens.partnerSplits ? '1' : '0'}|${canViewSentinels ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}|ph:${sumPhSig}|wm:${sumWmSig}`;
+    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${canViewProfit ? '1' : '0'}|${rdlLens && rdlLens.expenses ? '1' : '0'}|${rdlLens && rdlLens.tax ? '1' : '0'}|${rdlLens && rdlLens.partnerSplits ? '1' : '0'}|${canViewSentinels ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}|ph:${sumPhSig}|wm:${sumWmSig}|dm:${stmtIsDemo(ctx) ? 1 : 0}|ff:${stmtFullFin() ? 1 : 0}`;
 
     return {
       stmtId,
@@ -9551,6 +9928,8 @@
     buildJournalEntries,
     // Gate hook (pure, no state): the diesel tank costing of the statements ledger.
     _costDieselStock: costDieselStock,
+    // Gate hook: the models behind statements 02 to 05 and 19 (build/verify_statement_books.mjs).
+    _stmtModels: { bs: computeBalanceSheetModel, is: computeIncomeModel, cf: computeCashFlowModel, tb: computeTrialBalanceModel, recon: computePlReconModel, booksKept: stmtBooksKept, isDemo: stmtIsDemo },
     computeStatementSnapshot,
     syncPinnedStatementCoverNote,
     getCoaAccountsForInd,

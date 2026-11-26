@@ -15770,7 +15770,90 @@
       "Likely Typo": "خطأ مطبعي محتمل",
       "Likely Typo: Future Date": "خطأ مطبعي محتمل: تاريخ مستقبلي",
       "Moved With a Batch": "نُقل ضمن دفعة",
-      "Late Entry": "إدخال متأخر"
+      "Late Entry": "إدخال متأخر",
+      "Period Overview": "ملخص الفترة",
+      "Built only from entries recorded in ISABI. Capital, assets and balances from before the first entry are not included.": "أُعدّ هذا البيان من القيود المسجلة في ISABI فقط. رأس المال والأصول والأرصدة السابقة لأول قيد غير مشمولة.",
+      "Cash is shown at the counted till. Recorded cash entries that do not yet agree with the till are listed on their own line.": "يظهر النقد بحسب جرد الصندوق. الحركات النقدية المسجلة التي لم تتطابق بعد مع الصندوق تظهر في سطر مستقل.",
+      "Partner, group-company and loan accounts are not shown for this seat, so cash here leaves them out.": "حسابات الشركاء وشركات المجموعة والقروض لا تظهر لهذا المقعد، لذلك لا يشملها النقد المعروض هنا.",
+      "Not Kept in ISABI Yet": "غير مسجل في ISABI بعد",
+      "This company has its sales side in ISABI. Its expenses, payroll and cash book are not loaded yet, so this statement cannot be printed without guessing. It will print once those books are loaded.": "مبيعات هذه الشركة مسجلة في ISABI. مصاريفها ورواتبها ودفتر صندوقها لم تُحمَّل بعد، لذلك لا يمكن طباعة هذا البيان من دون تقدير. سيُطبع فور تحميل هذه الدفاتر.",
+      "Its recorded sales and receipts are in the Sales Register and in the Registers of its industry.": "مبيعاتها ومقبوضاتها المسجلة متوفرة في سجل المبيعات وفي سجلات قطاعها.",
+      "Not Kept Yet": "غير مسجل بعد",
+      "Volume Sold": "الكمية المباعة",
+      "Material Supply": "توريد مواد",
+      "Currency Exchange": "صرف عملات",
+      "Partner Account": "حساب شريك",
+      "Group Company Account": "حساب شركة من المجموعة",
+      "Balance Carried In": "رصيد مدوّر",
+      "Commission Paid": "عمولة مدفوعة",
+      "Fuel Payment": "دفعة محروقات",
+      "Loan Given": "قرض ممنوح",
+      "Loan Received": "قرض مستلم",
+      "CASH FLOWS WITH PARTNERS, GROUP COMPANIES & LENDERS": "التدفقات النقدية مع الشركاء وشركات المجموعة والمقرضين",
+      "CURRENCY EXCHANGE": "صرف العملات",
+      "1. Sales & Revenue by Product": "1. المبيعات والإيرادات حسب المنتج",
+      "Material & Product Sales (Excl. VAT)": "مبيعات المواد والمنتجات (من دون الضريبة)",
+      "Raw Materials Intake & Haulage": "استلام المواد الأولية ونقلها",
+      "Total Certified Delivery": "إجمالي التسليم المصدّق",
+      "Plant Truck": "شاحنة المعمل",
+      "Trade Customer Account": "حساب زبون تجاري",
+      "Account 411 · Trade Customer": "الحساب 411 · زبون تجاري",
+      "DIFFERENCE": "فرق",
+      "NOT TIED": "غير مطابق",
+      "Plant-Owner Commission on Sales": "عمولة مالك المعمل على المبيعات",
+      "Currency Exchange Differences": "فروقات صرف العملات",
+      "Paid to group company": "مدفوع لشركة من المجموعة",
+      "Received from group company": "مقبوض من شركة من المجموعة",
+      "Paid out to partner account": "مسحوب على حساب شريك",
+      "Paid in by partner account": "مدفوع من حساب شريك",
+      "Loan received": "قرض مستلم",
+      "Loan balance carried in": "رصيد قرض مدوّر",
+      "Loan or advance given": "قرض أو سلفة ممنوحة",
+      "Repayment received": "تسديد مقبوض",
+      "Repayment paid": "تسديد مدفوع",
+      "Exchange difference, gain": "فرق صرف، ربح",
+      "Exchange difference, loss": "فرق صرف، خسارة",
+      "VAT on plant-owner commission": "الضريبة على عمولة مالك المعمل",
+      "Plant-owner commission paid": "عمولة مالك المعمل المدفوعة",
+      "Post & Sign-Off Sheet": "ترحيل وكشف التوقيع",
+      "Batch Sign-Off Sheet": "كشف توقيع الدفعة",
+      "Batch Payday Control": "رقابة صرف الرواتب الجماعية",
+      "Cash Disbursement Sign-Off Sheet": "كشف استلام وتوقيع صرف الرواتب",
+      "Sheet Language": "لغة الكشف",
+      "Print A4 Sheet": "طباعة كشف A4",
+      "Saved Payday Batches": "دفعات الرواتب المحفوظة",
+      "Your seat does not have permission to view payroll sign-off sheets.": "صلاحيتك لا تسمح بعرض كشوف توقيع الرواتب.",
+      "No active salary vouchers found in your seat scope for this batch.": "لا توجد سندات رواتب نشطة ضمن نطاق صلاحيتك لهذه الدفعة.",
+      "needs reload": "يتطلب إعادة تحميل",
+      "Cloud Sync · Store Capacity": "المزامنة السحابية · سعة المخزن",
+      "Cloud Sync Store Approaching Capacity Limit": "اقتراب سعة مخزن المزامنة السحابية من الحد الأقصى",
+      "Open Users & Security": "فتح المستخدمين والأمان",
+      "Operational Records": "السجلات التشغيلية",
+      "Industry Custom Records": "السجلات المخصصة للقطاعات",
+      "Industry Row Edits": "تعديلات صفوف القطاعات",
+      "Work Schedules & Policies": "جداول وسياسات الدوام",
+      "Face ID Templates": "بصمات الوجه البيومترية",
+      "Tablet Punches": "بصمات الأجهزة اللوحية",
+      "User Seats": "مقاعد المستخدمين",
+      "Sign-In Sessions": "جلسات تسجيل الدخول",
+      "Override Audit Log": "سجل تدقيق التجاوزات",
+      "Counterparty Aliases": "الأسماء البديلة للأطراف",
+      "Sentinel Reviews": "مراجعات المراقبات",
+      "Alert Rules": "قواعد التنبيهات",
+      "Role Tab Policies": "صلاحيات تبويبات الأدوار",
+      "Face ID Settings": "إعدادات التعرف على الوجه",
+      "Attendance Records": "سجلات الحضور والانصراف",
+      "Fuel Intakes": "حركات تعبئة المحروقات",
+      "Fuel Malfunctions": "فروقات وأعطال المحروقات",
+      "Equipment Directory": "دليل الآليات والشاحنات",
+      "Employment Contracts": "عقود العمل",
+      "Driver Assignments": "تعيينات السائقين",
+      "Project Sites": "مواقع المشاريع",
+      "Regions & Corridors": "المناطق والمسارات",
+      "Partner Distributions": "توزيعات الشركاء",
+      "Maintenance Defects": "بلاغات أعطال الصيانة",
+      "Removed Parts Custody": "عهدة القطع المستبدلة",
+      "Other Records": "سجلات أخرى"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31522,7 +31605,90 @@
       "Likely Typo": "Faute de saisie probable",
       "Likely Typo: Future Date": "Faute de saisie probable : date future",
       "Moved With a Batch": "Déplacé avec un lot",
-      "Late Entry": "Saisie tardive"
+      "Late Entry": "Saisie tardive",
+      "Period Overview": "Synthèse de la Période",
+      "Built only from entries recorded in ISABI. Capital, assets and balances from before the first entry are not included.": "Établi uniquement à partir des écritures saisies dans ISABI. Le capital, les actifs et les soldes antérieurs à la première écriture ne sont pas inclus.",
+      "Cash is shown at the counted till. Recorded cash entries that do not yet agree with the till are listed on their own line.": "La trésorerie est présentée au montant compté en caisse. Les mouvements de caisse saisis qui ne concordent pas encore avec la caisse figurent sur une ligne distincte.",
+      "Partner, group-company and loan accounts are not shown for this seat, so cash here leaves them out.": "Les comptes d’associés, de sociétés du groupe et de prêts ne sont pas affichés pour ce poste : la trésorerie présentée ici ne les comprend pas.",
+      "Not Kept in ISABI Yet": "Pas encore tenu dans ISABI",
+      "This company has its sales side in ISABI. Its expenses, payroll and cash book are not loaded yet, so this statement cannot be printed without guessing. It will print once those books are loaded.": "Les ventes de cette société sont dans ISABI. Ses charges, sa paie et son livre de caisse ne sont pas encore chargés : cet état ne peut donc pas être imprimé sans estimation. Il sera disponible dès que ces livres seront chargés.",
+      "Its recorded sales and receipts are in the Sales Register and in the Registers of its industry.": "Ses ventes et encaissements saisis figurent dans le registre des ventes et dans les registres de son secteur.",
+      "Not Kept Yet": "Pas encore tenu",
+      "Volume Sold": "Volume vendu",
+      "Material Supply": "Fourniture de matériaux",
+      "Currency Exchange": "Change de devises",
+      "Partner Account": "Compte d’associé",
+      "Group Company Account": "Compte de société du groupe",
+      "Balance Carried In": "Solde reporté",
+      "Commission Paid": "Commission payée",
+      "Fuel Payment": "Paiement carburant",
+      "Loan Given": "Prêt accordé",
+      "Loan Received": "Prêt reçu",
+      "CASH FLOWS WITH PARTNERS, GROUP COMPANIES & LENDERS": "FLUX DE TRÉSORERIE AVEC LES ASSOCIÉS, LES SOCIÉTÉS DU GROUPE ET LES PRÊTEURS",
+      "CURRENCY EXCHANGE": "CHANGE DE DEVISES",
+      "1. Sales & Revenue by Product": "1. Ventes et revenus par produit",
+      "Material & Product Sales (Excl. VAT)": "Ventes de matériaux et produits (hors TVA)",
+      "Raw Materials Intake & Haulage": "Réception et transport des matières premières",
+      "Total Certified Delivery": "Total livraison certifiée",
+      "Plant Truck": "Camion de l’usine",
+      "Trade Customer Account": "Compte client commercial",
+      "Account 411 · Trade Customer": "Compte 411 · Client commercial",
+      "DIFFERENCE": "ÉCART",
+      "NOT TIED": "NON CADRÉ",
+      "Plant-Owner Commission on Sales": "Commission du propriétaire de l’usine sur ventes",
+      "Currency Exchange Differences": "Écarts de change",
+      "Paid to group company": "Payé à une société du groupe",
+      "Received from group company": "Reçu d’une société du groupe",
+      "Paid out to partner account": "Versé au compte d’un associé",
+      "Paid in by partner account": "Apport du compte d’un associé",
+      "Loan received": "Prêt reçu",
+      "Loan balance carried in": "Solde de prêt reporté",
+      "Loan or advance given": "Prêt ou avance accordé",
+      "Repayment received": "Remboursement reçu",
+      "Repayment paid": "Remboursement payé",
+      "Exchange difference, gain": "Écart de change, gain",
+      "Exchange difference, loss": "Écart de change, perte",
+      "VAT on plant-owner commission": "TVA sur la commission du propriétaire de l’usine",
+      "Plant-owner commission paid": "Commission du propriétaire de l’usine payée",
+      "Post & Sign-Off Sheet": "Valider et feuille d'émargement",
+      "Batch Sign-Off Sheet": "Feuille d'émargement du lot",
+      "Batch Payday Control": "Contrôle de paie groupée",
+      "Cash Disbursement Sign-Off Sheet": "Feuille d'émargement et de décaissement",
+      "Sheet Language": "Langue de la feuille",
+      "Print A4 Sheet": "Imprimer feuille A4",
+      "Saved Payday Batches": "Lots de paie enregistrés",
+      "Your seat does not have permission to view payroll sign-off sheets.": "Votre poste ne permet pas d'afficher les feuilles d'émargement de paie.",
+      "No active salary vouchers found in your seat scope for this batch.": "Aucun bon de salaire actif trouvé dans votre périmètre pour ce lot.",
+      "needs reload": "rechargement requis",
+      "Cloud Sync · Store Capacity": "Synchronisation cloud · Capacité du stockage",
+      "Cloud Sync Store Approaching Capacity Limit": "Stockage de synchronisation cloud proche de la limite",
+      "Open Users & Security": "Ouvrir Utilisateurs & Sécurité",
+      "Operational Records": "Écritures opérationnelles",
+      "Industry Custom Records": "Écritures personnalisées sectorielles",
+      "Industry Row Edits": "Modifications de lignes sectorielles",
+      "Work Schedules & Policies": "Plannings & politiques horaires",
+      "Face ID Templates": "Modèles Face ID",
+      "Tablet Punches": "Pointages tablettes",
+      "User Seats": "Postes utilisateurs",
+      "Sign-In Sessions": "Sessions de connexion",
+      "Override Audit Log": "Journal d’audit des dérogations",
+      "Counterparty Aliases": "Alias des contreparties",
+      "Sentinel Reviews": "Validations des sentinelles",
+      "Alert Rules": "Règles d’alerte",
+      "Role Tab Policies": "Droits d’onglets par rôle",
+      "Face ID Settings": "Paramètres Face ID",
+      "Attendance Records": "Registres de présence",
+      "Fuel Intakes": "Ravitaillements carburant",
+      "Fuel Malfunctions": "Anomalies & écarts gasoil",
+      "Equipment Directory": "Répertoire des engins",
+      "Employment Contracts": "Contrats de travail",
+      "Driver Assignments": "Affectations des chauffeurs",
+      "Project Sites": "Sites de chantier",
+      "Regions & Corridors": "Régions & corridors",
+      "Partner Distributions": "Répartitions associés",
+      "Maintenance Defects": "Défauts de maintenance",
+      "Removed Parts Custody": "Garde des pièces déposées",
+      "Other Records": "Autres écritures"
     }
   };
 
@@ -33803,6 +33969,31 @@
       return lang === 'ar'
         ? `جميع إجماليات تسويات الموردين${m[1] ? ' والمواقع' : ''} التراكمية ضمن الرصيد الدائن المستحق (الهامش < ${m[2]}).`
         : `Tous les règlements cumulés fournisseurs${m[1] ? ' et sites' : ''} restent dans la limite des crédits dus (tolérance < ${m[2]}).`;
+    }
+
+    // Cloud Sync Store Capacity Sentinel (S21)
+    m = trimmed.match(/^Cloud Sync\s*·\s*Store Capacity\s*·\s*(.+)$/i);
+    if (m) return `${translateString('Cloud Sync · Store Capacity', lang)} · ${translateString(m[1].trim(), lang)}`;
+
+    m = trimmed.match(/^([\d.]+)\s+MB\s*\/\s*64\s+MB\s*\((\d+)%\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ميغابايت / 64 ميغابايت (${m[2]}%)` : `${m[1]} Mo / 64 Mo (${m[2]} %)`;
+
+    m = trimmed.match(/^Cloud sync payload reached ([\d.]+) MB across ([\d,]+) store parts \((\d+)% of the 64 MB sync limit, warning at 12\.0 MB\)\.(?:\s+Largest sections:\s+(.+)\.)?$/i);
+    if (m) {
+      const unitLbl = lang === 'ar' ? 'ميغابايت' : 'Mo';
+      const secTxt = m[4]
+        ? m[4].split(/,\s*/).map(seg => {
+            const sm = seg.match(/^(.+?)\s*\(([\d.]+)\s+MB\)$/i);
+            if (!sm) return translateString(seg.trim(), lang);
+            return `${translateString(sm[1].trim(), lang)} (${sm[2]} ${unitLbl})`;
+          }).join(lang === 'ar' ? '، ' : ', ')
+        : '';
+      const secPart = secTxt
+        ? (lang === 'ar' ? ` أكبر الأقسام: ${secTxt}.` : ` Sections principales : ${secTxt}.`)
+        : '';
+      return lang === 'ar'
+        ? `بلغ حجم حزمة المزامنة السحابية ${m[1]} ميغابايت عبر ${m[2]} أجزاء (${m[3]}% من حد 64 ميغابايت، التنبيه عند 12.0 ميغابايت).${secPart}`
+        : `Le volume de synchronisation cloud a atteint ${m[1]} Mo sur ${m[2]} segments (${m[3]} % du plafond de 64 Mo, alerte à 12,0 Mo).${secPart}`;
     }
 
     m = trimmed.match(/^Exceeds open leg credit by (\$[\d.,-]+)\s*·\s*Explain in Notes \(3\+ chars\)(?:\s*\(([\d,]+) raw loads at \$0\.00\))?$/i);
@@ -38097,6 +38288,39 @@
       const n = Number(String(m[1]).replace(/,/g, ''));
       return {
         out: lang === 'ar' ? `ترحيل ${m[1]} ${n === 1 ? 'سند' : 'سندات'}` : `Valider ${m[1]} ${n === 1 ? 'bon' : 'bons'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Post\s*&\s*Sign-Off\s*\(([\d,]+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `ترحيل وكشف (${m[1]})` : `Valider et feuille (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(Cash Only|Full Batch)\s*\(([\d,]+)\)$/i);
+    if (m) {
+      const isCashOnly = /cash/i.test(m[1]);
+      const lbl = isCashOnly
+        ? (lang === 'ar' ? 'نقدي فقط' : 'Espèces seules')
+        : (lang === 'ar' ? 'كامل الدفعة' : 'Lot complet');
+      return { out: `${lbl} (${m[2]})`, ok: true };
+    }
+
+    m = trimmed.match(/^Saved Payday Batches\s*\(([\d,]+)\):$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `دفعات الرواتب المحفوظة (${m[1]}):` : `Lots de paie enregistrés (${m[1]}) :`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^All batches\s*\(([\d,]+)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `كل الدفعات (${m[1]})` : `Tous les lots (${m[1]})`,
         ok: true
       };
     }
