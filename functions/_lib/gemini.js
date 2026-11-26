@@ -1030,7 +1030,7 @@ export async function handleEdgeSmartScan(request, env, body, session = null, op
     }
     const gRes = await resp.json();
     const candTxt = extractCandidateText(gRes) || '{}';
-    const parsedObj = extractFirstJsonObject(candTxt);
+    let parsedObj = extractFirstJsonObject(candTxt);
     return jsonResponse({ ok: true, mode: 'gemini_vision', edge: true, model: targetModel, parsed: parsedObj });
   } catch (ex) {
     return jsonResponse({
@@ -1162,7 +1162,7 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
     }
     const gRes = await resp.json();
     const candTxt = extractCandidateText(gRes) || '{}';
-    const parsedObj = extractFirstJsonObject(candTxt);
+    let parsedObj = extractFirstJsonObject(candTxt);
     if (taskKind === 'data_hygiene_aliases' && parsedObj && Array.isArray(parsedObj.pairs) && Array.isArray(body && body.allowedNames)) {
       const normName = v => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
       const allowedByNorm = new Map();
@@ -1180,6 +1180,106 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
         p.alias = aExact;
         return true;
       });
+    }
+    if (taskKind === 'ask_hub_nav_filters') {
+      const rawSpec = body && body.allowedFilterSpec && typeof body.allowedFilterSpec === 'object' ? body.allowedFilterSpec : null;
+      if (!parsedObj || !Array.isArray(parsedObj.suggestions) || !rawSpec) {
+        parsedObj = { suggestions: [] };
+      } else {
+        const rawCols = Array.isArray(rawSpec.columns) ? rawSpec.columns : [];
+        const rawNumCols = Array.isArray(rawSpec.numericCols) ? rawSpec.numericCols : [];
+        const rawValsByCol = (rawSpec.valuesByCol && typeof rawSpec.valuesByCol === 'object') ? rawSpec.valuesByCol : {};
+        const navView = String(rawSpec.view || '').trim().toLowerCase();
+        const blockedNavCols = new Set();
+        if (!seatLens.books) {
+          [
+            'ar_balance', 'ar_overdue', 'ar_current', 'ar_1_10', 'ar_11_30', 'ar_31_60', 'ar_1_60', 'ar_60_plus', 'ar_settled', 'credit_limit', 'receipts',
+            'ap_balance', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_settled',
+            'open_ar_usd', 'collected_usd', 'gross_usd', 'allocated_inv_usd', 'unallocated_adv_usd',
+            'balance_usd', 'paid_usd', 'broker_comm_usd', 'gross_ar_usd', 'invoiced_ttc', 'settled_usd', 'advance_usd', 'promise_usd',
+            'gross_prem_usd', 'open_ar_4112_usd', 'net_payable_4017_usd', 'settled_to_carrier_usd', 'client_cash_held_usd',
+            'broker_comm_7063_usd', 'expected_comm_4117_usd', 'statement_comm_usd', 'variance_usd',
+            'givenUsd', 'paidBackUsd', 'runningBalanceUsd', 'netUnpaidUsd', 'usd', 'principal', 'discount'
+          ].forEach(k => blockedNavCols.add(k));
+          if (!(navView === 'expenses' && seatLens.expenses)) {
+            blockedNavCols.add('amount');
+          }
+        }
+        if (!seatLens.expenses && !seatLens.books) {
+          [
+            'amount', 'total', 'cost', 'trans_cost', 'total_landed_usd', 'fob_usd', 'actual_usd', 'budget_usd',
+            'closing_usd', 'purchases_in_usd', 'claimed_usd', 'approved_usd', 'default_cost', 'total_spent',
+            'quarry_cr', 'quarry_pd', 'quarry_rem', 'trans_cr', 'trans_pd', 'trans_rem'
+          ].forEach(k => blockedNavCols.add(k));
+        }
+        if (!seatLens.tax) {
+          ['vat', 'vat_amount', 'vat_percent', 'vat_fx_rate'].forEach(k => blockedNavCols.add(k));
+        }
+        if (!seatLens.profit) {
+          ['margin_usd', 'net_comm_usd', 'stock_val_usd', 'landed_cost_usd', 'list_price_usd', 'wac_usd', 'retail_usd', 'unit_price', 'indiff_price'].forEach(k => blockedNavCols.add(k));
+        }
+        if (!seatLens.payrollDollars) {
+          blockedNavCols.add('month_earnings');
+        }
+        if (!seatLens.partnerSplits) {
+          ['partner', 'netUsd', 'inUsd', 'outUsd', 'partners_summary', 'gross_pool_usd', 'open_payable_usd'].forEach(k => blockedNavCols.add(k));
+        }
+        const allowedCols = new Set(rawCols.slice(0, 32).map(c => String(c || '').trim()).filter(c => c && !blockedNavCols.has(c)));
+        const numColSet = new Set(rawNumCols.slice(0, 24).map(c => String(c || '').trim()).filter(c => allowedCols.has(c)));
+        const normName = v => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const valLookup = {};
+        Object.entries(rawValsByCol).forEach(([ck, arr]) => {
+          const cks = String(ck || '').trim();
+          if (!allowedCols.has(cks) || !Array.isArray(arr)) return;
+          const mp = new Map();
+          arr.slice(0, 60).forEach(v => {
+            const sv = String(v || '').trim();
+            const nk = normName(sv);
+            if (nk && !mp.has(nk)) mp.set(nk, sv);
+          });
+          if (mp.size) valLookup[cks] = mp;
+        });
+        const cleanSugs = [];
+        for (const sug of parsedObj.suggestions) {
+          if (!sug || typeof sug !== 'object' || !sug.colFilters || typeof sug.colFilters !== 'object') continue;
+          const cleanCf = {};
+          let badField = false;
+          for (const [rCol, rVal] of Object.entries(sug.colFilters)) {
+            const ck = String(rCol || '').trim();
+            const sv = String(rVal == null ? '' : rVal).trim();
+            if (!ck || !sv || !allowedCols.has(ck)) {
+              badField = true;
+              break;
+            }
+            if (numColSet.has(ck)) {
+              if (!/^(?:>=|<=|!=|>|<|=)\s*-?\d+(?:\.\d+)?$/.test(sv) && !/^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d+(?:\.\d+)?$/.test(sv)) {
+                badField = true;
+                break;
+              }
+              cleanCf[ck] = sv;
+            } else {
+              const stripped = sv.replace(/^[=~]/, '').trim();
+              const exact = valLookup[ck] ? valLookup[ck].get(normName(stripped)) : '';
+              if (!exact) {
+                badField = true;
+                break;
+              }
+              cleanCf[ck] = ck === 'partners_summary' ? ('~' + exact) : exact;
+            }
+          }
+          if (badField || !Object.keys(cleanCf).length) continue;
+          const rawLbl = String(sug.label || Object.values(cleanCf).join(' · '))
+            .replace(/[\u2014\u2013]/g, '-')
+            .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+            .replace(/\bTHEO\b/gi, '')
+            .trim()
+            .slice(0, 48);
+          if (!rawLbl) continue;
+          cleanSugs.push({ label: rawLbl, colFilters: cleanCf });
+          if (cleanSugs.length >= 3) break;
+        }
+        parsedObj = { suggestions: cleanSugs };
+      }
     }
     return jsonResponse({
       ok: true,

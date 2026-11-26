@@ -625,6 +625,93 @@ async function run() {
     assert.ok(await verifyActiveEdgeSession(baseSess, { DB: makeMockDb({ hasSession: true, userRow: null, anyUser: false }) }));
   });
 
+  await check("handleEdgeAiEdge ask_hub_nav_filters enforces fail-closed spec, seatLens masks & key stripping", async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [{
+            text: JSON.stringify({
+              extraUnexpectedKey: 'must_strip',
+              suggestions: [
+                { label: 'Keep Valid', colFilters: { customer: 'zz_Customer_Alpha', total_ttc: '>500' } },
+                { label: 'Keep Expense Amt', colFilters: { amount: '>500' } },
+                { label: 'Drop Hallucinated', colFilters: { customer: 'ZZ_FAKE_PARTY' } },
+                { label: 'Drop Masked Books', colFilters: { open_ar_usd: '>500' } },
+                { label: 'Drop Masked Profit', colFilters: { net_comm_usd: '>100' } },
+                { label: 'Drop Masked Landed', colFilters: { landed_cost_usd: '>100' } },
+                { label: 'Drop Masked Partner', colFilters: { gross_pool_usd: '>100' } },
+                { label: 'Drop Masked PartnerStr', colFilters: { partners_summary: 'zz_Partner_One' } },
+                { label: 'Drop Masked Tax', colFilters: { vat_amount: '>10' } },
+                { label: 'Drop Bad Num', colFilters: { total_ttc: 'eval(1)' } }
+              ]
+            })
+          }]
+        }
+      }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    try {
+      const noBooksSess = Object.assign({ sub: 'u_nobooks' }, TEST_SEATS.find(x => x.name === 'u3_entry_partial').seat);
+
+      // 1. Omitted allowedFilterSpec must fail closed (0 suggestions, no extraUnexpectedKey)
+      const resMissing = await handleEdgeAiEdge(
+        new Request('https://isabisystems.com/app/api/ai-edge', { method: 'POST', headers: { 'cf-connecting-ip': '198.51.100.41' } }),
+        { GEMINI_API_KEY: 'test-key' },
+        { task: 'ask_hub_nav_filters', prompt: 'open sales zz' },
+        noBooksSess
+      );
+      assert.equal(resMissing.status, 200);
+      const bMissing = await resMissing.json();
+      assert.deepEqual(Object.keys(bMissing.result), ['suggestions']);
+      assert.equal(bMissing.result.suggestions.length, 0);
+
+      // 2. receipts view under books:false + expenses:true must still block amount, profit, tax, partnerSplits & books cols
+      const resRec = await handleEdgeAiEdge(
+        new Request('https://isabisystems.com/app/api/ai-edge', { method: 'POST', headers: { 'cf-connecting-ip': '198.51.100.42' } }),
+        { GEMINI_API_KEY: 'test-key' },
+        {
+          task: 'ask_hub_nav_filters',
+          prompt: 'open receipts zz',
+          allowedFilterSpec: {
+            view: 'receipts',
+            columns: ['customer', 'total_ttc', 'amount', 'open_ar_usd', 'net_comm_usd', 'landed_cost_usd', 'gross_pool_usd', 'partners_summary', 'vat_amount'],
+            numericCols: ['total_ttc', 'amount', 'open_ar_usd', 'net_comm_usd', 'landed_cost_usd', 'gross_pool_usd', 'vat_amount'],
+            valuesByCol: { customer: ['zz_Customer_Alpha'], partners_summary: ['zz_Partner_One'] }
+          }
+        },
+        noBooksSess
+      );
+      assert.equal(resRec.status, 200);
+      const bRec = await resRec.json();
+      assert.deepEqual(Object.keys(bRec.result), ['suggestions']);
+      assert.equal(bRec.result.suggestions.length, 1, `Expected only 1 valid suggestion on receipts, got ${JSON.stringify(bRec.result.suggestions)}`);
+      assert.deepEqual(bRec.result.suggestions[0].colFilters, { customer: 'zz_Customer_Alpha', total_ttc: '>500' });
+
+      // 3. expenses view with expenses:true allows amount while still blocking profit/tax/books/partnerSplits
+      const resExp = await handleEdgeAiEdge(
+        new Request('https://isabisystems.com/app/api/ai-edge', { method: 'POST', headers: { 'cf-connecting-ip': '198.51.100.43' } }),
+        { GEMINI_API_KEY: 'test-key' },
+        {
+          task: 'ask_hub_nav_filters',
+          prompt: 'open expenses zz',
+          allowedFilterSpec: {
+            view: 'expenses',
+            columns: ['customer', 'total_ttc', 'amount', 'open_ar_usd', 'net_comm_usd', 'vat_amount'],
+            numericCols: ['total_ttc', 'amount', 'open_ar_usd', 'net_comm_usd', 'vat_amount'],
+            valuesByCol: { customer: ['zz_Customer_Alpha'] }
+          }
+        },
+        noBooksSess
+      );
+      assert.equal(resExp.status, 200);
+      const bExp = await resExp.json();
+      assert.equal(bExp.result.suggestions.length, 2, `Expected Keep Valid + Keep Expense Amt on expenses, got ${JSON.stringify(bExp.result.suggestions)}`);
+      assert.deepEqual(bExp.result.suggestions[1].colFilters, { amount: '>500' });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   console.log(`\n[verify_seat_ai_mask_edge] ALL PASSED (${passed} checks)`);
 }
 
