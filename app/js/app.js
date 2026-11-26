@@ -128664,6 +128664,9 @@
         if (!shownSig || shownSig !== doneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
       }
       renderApp();
+      if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
+        window.MFG_FLEET_PNL.refresh();
+      }
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
         const _salRecCtx = buildSalaryVoucherReceiptContext(record);
         if (_salRecCtx && _salRecCtx.isAdvanceVoucher) {
@@ -131646,7 +131649,26 @@
         if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
         if (prefill.uom && $('f_rateper') && STATE.modalGroupOverride !== 'raw') $('f_rateper').value = prefill.uom;
       }
+      // Corridor Rate prefill from #fleet_equip Unpriced Loads: seed start date, unit & transport rate focus.
+      if (prefill._corridorRate && form === 'pricerule') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || '')) && $('f_date')) $('f_date').value = prefill.startdate;
+        if (prefill.uom && $('f_uom')) {
+          $('f_uom').value = prefill.uom;
+          FORM_UI.uomManual = true;
+        }
+        if (prefill.uom && $('f_rateper')) $('f_rateper').value = prefill.uom;
+        if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
+        if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
+      }
       recalcForm();
+      if (prefill._corridorRate && form === 'pricerule' && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+        const focusEl = ($('f_transunitprice') && $('wrap_pr_transprice') && !$('wrap_pr_transprice').hidden)
+          ? $('f_transunitprice')
+          : $('f_unitprice');
+        if (focusEl && typeof focusEl.focus === 'function') {
+          try { focusEl.focus({ preventScroll: true }); } catch (_) { focusEl.focus(); }
+        }
+      }
     }
     const prefillHasRepDate = Boolean(prefill && typeof prefill === 'object' && (prefill.rep_date || prefill.repDate || prefill.set_date || prefill.setDate));
     if (!editTargetRow && !pendingTargetRow && !prefillHasRepDate && isValidBatchRepDate(STATE.catchUpBatchRepDate)) {
@@ -201520,6 +201542,44 @@
     canViewPayrollDollarAmounts: typeof canViewPayrollDollarAmounts === 'function' ? canViewPayrollDollarAmounts : null,
     canAccessRdlReport: typeof canAccessRdlReport === 'function' ? canAccessRdlReport : null,
     seatLens: typeof seatLens === 'function' ? seatLens : null,
+    canSeeFleetBurn: () => (typeof canSeeFleetBurn === 'function' ? Boolean(canSeeFleetBurn()) : true),
+    findPriceRule: q => (typeof findRule === 'function' && q ? findRule(q) : null),
+    getVerifiedCorridorBurn: (company, siteName) => {
+      if (typeof canSeeFleetBurn === 'function' && !canSeeFleetBurn()) {
+        return { verified: false, restricted: true };
+      }
+      const geo = window.MFG_GEO;
+      const sn = String(siteName || '').trim();
+      if (!geo || !sn || typeof geo.estimateLegKm !== 'function') {
+        return { verified: false, restricted: false };
+      }
+      const co = typeof canonTwBu === 'function' ? canonTwBu(company || 'WTC') : String(company || 'WTC');
+      if (!window.__MFG_SPEED_CACHES_OFF && typeof geo.hasVerifiedRoutePair === 'function'
+        && !geo.hasVerifiedRoutePair({ type: 'bu', name: co }, { type: 'site', name: sn })) {
+        return { verified: false, restricted: false };
+      }
+      const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: sn }, SEED, { roundTripIfAnyBu: true, skipFuel: true });
+      if (!est || !est.verifiedRoute || !(Number(est.oneWayKm) > 0)) {
+        return { verified: false, restricted: false };
+      }
+      const basisKm = Number(est.roundTripKm || est.oneWayKm || 0);
+      const gf = typeof resolveRouteGradeFuel === 'function'
+        ? resolveRouteGradeFuel(co, basisKm, Object.assign({ showRoundTrip: Boolean(est.roundTripKm) }, est))
+        : { totalLitres: 0, effLPerKm: 0, gradeAdjusted: false };
+      return {
+        verified: true,
+        restricted: false,
+        oneWayKm: Number(est.oneWayKm || 0),
+        roundTripKm: basisKm,
+        elevAvailable: Boolean(est.elevAvailable),
+        elevGainM: est.elevAvailable && est.ascentM != null ? Number(est.ascentM) : null,
+        elevDropM: est.elevAvailable && est.descentM != null ? Number(est.descentM) : null,
+        maxGradePct: est.elevAvailable && est.maxGradePct != null ? Number(est.maxGradePct) : null,
+        totalLitres: Number(gf.totalLitres || 0),
+        effLPerKm: Number(gf.effLPerKm || 0),
+        gradeAdjusted: Boolean(gf.gradeAdjusted)
+      };
+    },
     isAppRecord: typeof isAppRecord === 'function' ? isAppRecord : null,
     ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
