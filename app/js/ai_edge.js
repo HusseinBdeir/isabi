@@ -3195,6 +3195,94 @@
     });
   }
 
+  async function extractVendorSoaVouchers(fileOrOpts, maybeOpts) {
+    const opts = (fileOrOpts && typeof fileOrOpts === 'object' && typeof fileOrOpts.name !== 'string' && !('size' in fileOrOpts))
+      ? fileOrOpts
+      : Object.assign({ file: fileOrOpts }, maybeOpts || {});
+    const file = opts.file;
+    if (!file) return { ok: false, mode: 'no_file', error: 'Select a PDF, image, or CSV statement file' };
+    if (Number(file.size || 0) > 4.5 * 1024 * 1024) {
+      return { ok: false, mode: 'too_large', error: 'File too large (max 4.5 MB)' };
+    }
+    const fName = String(file.name || '').trim();
+    const fType = String(file.type || '').toLowerCase();
+    try {
+      if (/^text\/|\.csv$|\.txt$/i.test(fType + ' ' + fName)) {
+        const rawTxt = await file.text();
+        return { ok: true, mode: 'local_text', text: String(rawTxt || '').trim(), fileName: fName };
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      const mimeType = fType || (/\.pdf$/i.test(fName) ? 'application/pdf' : 'image/jpeg');
+      let aiRes = null;
+      if (typeof window.__stmt16CompareTestAiHook === 'function') {
+        aiRes = await window.__stmt16CompareTestAiHook({
+          fileName: fName,
+          mimeType,
+          dataUrl,
+          supplier: opts.supplier || '',
+          legLabel: opts.legLabel || '',
+          industry: opts.industry || ''
+        });
+      } else {
+        const prompt = [
+          'Extract supplier/forwarder statement of account voucher lines as strict JSON.',
+          'Return {"rows":[{"date":"YYYY-MM-DD","ref":string,"kind":"invoice"|"payment","amount":number,"desc":string}],"statedClosingBalance":number|null}.',
+          'Put positive USD amounts in "amount". Classify bills, invoices, freight/customs charges, and debit notes as "invoice"; classify payments, wires, transfers, cheques, and receipts as "payment".',
+          'Omit opening/closing balance summary lines and total rows from "rows", and put the final statement balance in "statedClosingBalance" if printed.'
+        ].join(' ');
+        aiRes = await callAiEdgeJson('vendor_soa_extract', prompt, dataUrl, mimeType, {
+          tier: 'vision',
+          timeoutMs: 15000
+        });
+      }
+      if (!aiRes || typeof aiRes !== 'object') {
+        return { ok: false, mode: 'offline_fallback', error: 'Smart scan unavailable offline: paste statement lines below', fileName: fName };
+      }
+      if (typeof aiRes.rawText === 'string' && aiRes.rawText.trim()) {
+        return { ok: true, mode: 'ai_vision', text: aiRes.rawText.trim(), fileName: fName };
+      }
+      const rows = Array.isArray(aiRes.rows) ? aiRes.rows : (Array.isArray(aiRes.lines) ? aiRes.lines : (Array.isArray(aiRes.items) ? aiRes.items : []));
+      if (!rows.length) {
+        return { ok: false, mode: 'empty_extract', error: 'No statement lines detected in file', fileName: fName };
+      }
+      const numClean = v => {
+        if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+        const s = String(v == null ? '' : v).trim();
+        if (!s) return NaN;
+        const isParen = /^\([^)]+\)$/.test(s);
+        const cleaned = s.replace(/[\$€£,\s()]/g, '').replace(/^(?:usd)|(?:usd)$/gi, '');
+        const n = Number(cleaned);
+        if (!Number.isFinite(n)) return NaN;
+        return isParen && n > 0 ? -n : n;
+      };
+      const outLines = [];
+      const scb = aiRes.statedClosingBalance != null ? numClean(aiRes.statedClosingBalance) : NaN;
+      if (Number.isFinite(scb)) {
+        outLines.push(`# STATED_CLOSING: ${scb.toFixed(2)}`);
+      }
+      rows.forEach(r => {
+        if (!r || typeof r !== 'object') return;
+        const dt = sanitizeOutward(String(r.date || '').slice(0, 10));
+        const ref = sanitizeOutward(String(r.ref || r.voucher || r.ticket || r.invoice || '-')).replace(/\|/g, '/').trim() || '-';
+        const invAmt = numClean(r.invoiced ?? r.credit ?? 0);
+        const payAmt = numClean(r.paid ?? r.debit ?? 0);
+        const rawAmt = numClean(r.amount ?? (invAmt || payAmt || 0));
+        const kindRaw = String(r.kind || r.type || '').toLowerCase();
+        const isPay = kindRaw === 'payment' || kindRaw === 'paid' || kindRaw === 'settlement' || (Number.isFinite(payAmt) && payAmt > 0 && (!Number.isFinite(invAmt) || invAmt === 0));
+        const amt = Number.isFinite(rawAmt) ? rawAmt : 0;
+        if (!dt && Math.abs(amt) < 0.005) return;
+        const desc = sanitizeOutward(String(r.desc || r.description || r.material || '')).replace(/\|/g, ' ').trim();
+        outLines.push(`${dt || '-'} | ${ref} | ${isPay ? 'PAYMENT' : 'INVOICE'} | ${amt.toFixed(2)} | ${desc || '-'}`);
+      });
+      if (!outLines.length) {
+        return { ok: false, mode: 'empty_extract', error: 'No statement lines detected in file', fileName: fName };
+      }
+      return { ok: true, mode: 'ai_vision', text: outLines.join('\n'), fileName: fName };
+    } catch (_) {
+      return { ok: false, mode: 'extract_error', error: 'Could not read file: paste lines manually', fileName: fName };
+    }
+  }
+
   async function scanStatementFileIntoRecon(file) {
     if (!file) return null;
     if (Number(file.size || 0) > 4.5 * 1024 * 1024) {
@@ -11005,6 +11093,7 @@
     reconcileManufacturingSupplierStatement,
     postManufacturingStatementBatch,
     scanStatementFileIntoRecon,
+    extractVendorSoaVouchers,
     reconcileHospitalitySettlementBatch,
     postHospitalitySettlementBatch,
     reconcileRealEstateCamAndWires,

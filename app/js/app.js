@@ -12964,6 +12964,9 @@
     FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolLiveMatch = null;
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
     FACE_STATE.enrolStatusText = '';
     FACE_STATE.enrolStatusCls = '';
   }
@@ -13176,41 +13179,99 @@
     const hit = visUsers.find(u => u && String(u.id) === rawId);
     return hit || me;
   }
-  function usableFaces(includeUnsavedForUser, opts = {}) {
-    const list = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
-      id: u.id,
-      email: u.email,
-      name: u.full_name,
-      role: u.role,
-      companies: u.companies,
-      samples: userFaceSamples(u)
-    }));
-    if (opts && opts.includeKioskStaff && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
-      const seenNames = new Set(list.map(x => norm(x.name)));
-      Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
-        if (!bio || bio.face_cleared) return;
-        const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
-        if (!samples.length || !bio.name) return;
-        const nk = norm(bio.name || k);
-        if (seenNames.has(nk)) {
-          // If staffBiometrics has newer face samples for a human seat, keep the fresher samples
-          const existIdx = list.findIndex(x => norm(x.name) === nk);
-          if (existIdx >= 0 && samples.length >= list[existIdx].samples.length) {
-            list[existIdx].samples = samples;
-          }
-          return;
-        }
-        seenNames.add(nk);
-        list.push({
-          id: 'stfbio:' + nk,
-          email: '',
-          name: bio.name,
-          role: bio.role || 'Staff',
-          companies: bio.company || '',
-          samples
-        });
-      });
+  let _usableFacesCacheMap = { '0': null, '1': null };
+  let _usableFacesStamp = '';
+  let _kioskFacePoolCache = null;
+  let _kioskFacePoolStamp = '';
+
+  function _computeFacePoolStamp() {
+    const users = STATE.users || [];
+    const bios = STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object' ? STATE.staffBiometrics : null;
+    const uParts = [];
+    for (let i = 0; i < users.length; i++) {
+      const u = users[i];
+      if (!u) continue;
+      const sc = Array.isArray(u.face_samples) ? u.face_samples.length : 0;
+      const head0 = (sc > 0 && Array.isArray(u.face_samples[0]) && u.face_samples[0].length)
+        ? Math.round(Number(u.face_samples[0][0] || 0) * 1e4)
+        : 0;
+      if (sc > 0 || u.status === 'Suspended' || u.face_cleared) {
+        uParts.push(`${u.id || ''}:${u.status || ''}:${u.full_name || ''}:${u.email || ''}:${u.role || ''}:${sc}:${head0}:${u.face_cleared ? 1 : 0}:${u.face_updated_at || ''}`);
+      }
     }
+    const bParts = [];
+    if (bios) {
+      const keys = Object.keys(bios);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const b = bios[k];
+        if (!b) continue;
+        const sc = Array.isArray(b.face_samples) ? b.face_samples.length : 0;
+        const head0 = (sc > 0 && Array.isArray(b.face_samples[0]) && b.face_samples[0].length)
+          ? Math.round(Number(b.face_samples[0][0] || 0) * 1e4)
+          : 0;
+        bParts.push(`${k}:${b.name || ''}:${b.role || ''}:${b.company || ''}:${sc}:${head0}:${b.face_cleared ? 1 : 0}:${b.face_updated_at || b.updated_at || ''}`);
+      }
+    }
+    return `${users.length}|${uParts.join(',')}|${bParts.join(',')}`;
+  }
+
+  function invalidateFacePoolCache() {
+    _usableFacesStamp = '';
+    _usableFacesCacheMap['0'] = null;
+    _usableFacesCacheMap['1'] = null;
+    _kioskFacePoolStamp = '';
+    _kioskFacePoolCache = null;
+  }
+
+  function usableFaces(includeUnsavedForUser, opts = {}) {
+    const incKiosk = Boolean(opts && opts.includeKioskStaff);
+    const cacheKey = incKiosk ? '1' : '0';
+    const stamp = _computeFacePoolStamp();
+    if (_usableFacesStamp !== stamp) {
+      _usableFacesStamp = stamp;
+      _usableFacesCacheMap['0'] = null;
+      _usableFacesCacheMap['1'] = null;
+    }
+    let baseList = _usableFacesCacheMap[cacheKey];
+    if (!baseList) {
+      const built = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
+        id: u.id,
+        email: u.email,
+        name: u.full_name,
+        role: u.role,
+        companies: u.companies,
+        samples: userFaceSamples(u)
+      }));
+      if (incKiosk && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
+        const seenNames = new Set(built.map(x => norm(x.name)));
+        Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
+          if (!bio || bio.face_cleared) return;
+          const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
+          if (!samples.length || !bio.name) return;
+          const nk = norm(bio.name || k);
+          if (seenNames.has(nk)) {
+            const existIdx = built.findIndex(x => norm(x.name) === nk);
+            if (existIdx >= 0 && samples.length >= built[existIdx].samples.length) {
+              built[existIdx].samples = samples;
+            }
+            return;
+          }
+          seenNames.add(nk);
+          built.push({
+            id: 'stfbio:' + nk,
+            email: '',
+            name: bio.name,
+            role: bio.role || 'Staff',
+            companies: bio.company || '',
+            samples
+          });
+        });
+      }
+      _usableFacesCacheMap[cacheKey] = built;
+      baseList = built;
+    }
+    const list = baseList.slice();
     if (includeUnsavedForUser && FACE_STATE.enrolCaptures.length) {
       const idx = list.findIndex(x => (includeUnsavedForUser.email && x.email && norm(x.email) === norm(includeUnsavedForUser.email)) || norm(x.name) === norm(includeUnsavedForUser.full_name));
       const row = {
@@ -141331,6 +141392,17 @@
     );
   }
 
+  function isLockedKioskOrCompanionSurface() {
+    if (STATE.kioskLocked) return true;
+    if (typeof document === 'undefined') return false;
+    const b = document.body;
+    const h = document.documentElement;
+    return Boolean(
+      (b && b.classList.contains('kiosk-locked'))
+      || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))
+    );
+  }
+
   function isEligibleMobPeekTr(tr) {
     if (!tr || tr.tagName !== 'TR' || !tr.isConnected) return false;
     if (tr.hidden || (tr.style && tr.style.display === 'none') || tr.classList.contains('hidden')) return false;
@@ -153462,6 +153534,90 @@
   }
   if (typeof window !== 'undefined') window.__mfgSaveLocalAuthAndRecords = saveLocalAuthAndRecords;
 
+  let _bioFullSaveTimer = null;
+  let _bioCloudSyncTimer = null;
+  let _bioCloudSyncDirty = false;
+  const _activeBiometricNetOps = new Set();
+
+  function trackBiometricNetOp(promise) {
+    if (!promise || typeof promise.then !== 'function') return promise;
+    _activeBiometricNetOps.add(promise);
+    Promise.resolve(promise).catch(() => {}).finally(() => _activeBiometricNetOps.delete(promise));
+    return promise;
+  }
+
+  function saveBiometricsLocalFast() {
+    try {
+      const usersForLocalStore = rosterIsServerHeld()
+        ? (STATE.users || []).map(u => {
+            if (!u || typeof u !== 'object') return u;
+            const c = Object.assign({}, u, { pin_redacted: true });
+            delete c.pin_code;
+            delete c._verifiedPin;
+            return c;
+          })
+        : STATE.users;
+      appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(usersForLocalStore));
+      appStoreSetRaw('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
+    } catch (_) {}
+    scheduleDeferredFullLocalSave();
+  }
+
+  function scheduleDeferredFullLocalSave() {
+    if (_bioFullSaveTimer) clearTimeout(_bioFullSaveTimer);
+    _bioFullSaveTimer = setTimeout(() => {
+      _bioFullSaveTimer = null;
+      saveLocalAuthAndRecords();
+    }, 1200);
+  }
+
+  function scheduleBiometricCloudSync() {
+    _bioCloudSyncDirty = true;
+    setPendingCloudPush(true);
+    if (_bioCloudSyncTimer) clearTimeout(_bioCloudSyncTimer);
+    _bioCloudSyncTimer = setTimeout(async () => {
+      _bioCloudSyncTimer = null;
+      if (_activeBiometricNetOps.size > 0) {
+        try { await Promise.all(Array.from(_activeBiometricNetOps)); } catch (_) {}
+      }
+      _bioCloudSyncDirty = false;
+      syncWithCloud(true);
+    }, 900);
+  }
+
+  function cancelBiometricPendingTimers() {
+    if (_bioFullSaveTimer) {
+      clearTimeout(_bioFullSaveTimer);
+      _bioFullSaveTimer = null;
+    }
+    if (_bioCloudSyncTimer) {
+      clearTimeout(_bioCloudSyncTimer);
+      _bioCloudSyncTimer = null;
+    }
+    _bioCloudSyncDirty = false;
+  }
+
+  async function flushBiometricCloudSyncNow() {
+    if (_bioFullSaveTimer) {
+      clearTimeout(_bioFullSaveTimer);
+      _bioFullSaveTimer = null;
+      saveLocalAuthAndRecords();
+    }
+    if (_bioCloudSyncTimer || _bioCloudSyncDirty || _activeBiometricNetOps.size > 0) {
+      if (_bioCloudSyncTimer) {
+        clearTimeout(_bioCloudSyncTimer);
+        _bioCloudSyncTimer = null;
+      }
+      if (_activeBiometricNetOps.size > 0) {
+        try { await Promise.all(Array.from(_activeBiometricNetOps)); } catch (_) {}
+      }
+      if (_bioCloudSyncDirty) {
+        _bioCloudSyncDirty = false;
+        syncWithCloud(true);
+      }
+    }
+  }
+
   function mergeUserRow(existing, incoming) {
     if (!existing) {
       const baseNew = Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming);
@@ -158957,6 +159113,11 @@
       if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
       return;
     }
+    if (isLockedKioskOrCompanionSurface()) {
+      if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
+      reportUnsentToCloud(info);
+      return;
+    }
     const n = info.count;
     const isUpdate = info.reason === 'update';
     const sig = `${n}|${info.reason}|${info.sinceMs}`;
@@ -159062,7 +159223,7 @@
   let _devHoldGen = 0;
   async function loadDevicesHolding() {
     const myGen = ++_devHoldGen;
-    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser());
     if (!hasServerApi() || !ownerNow()) {
       if (myGen === _devHoldGen && (STATE.devicesHolding || STATE.devicesMinSyncShellVer)) {
         STATE.devicesHolding = null;
@@ -159098,7 +159259,7 @@
   function updateDevicesHoldingBar() {
     const el = $('devicesHoldingBar');
     if (!el) return;
-    const ownerNow = STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    const ownerNow = STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser());
     const myId = getDeviceIdent().id;
     const myEmail = norm((activeUser() || {}).email);
     const list = (ownerNow && Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding : [])
@@ -159184,7 +159345,7 @@
 
   async function dismissHeldDeviceReport(uid, devId) {
     if (!uid || !devId) return false;
-    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return false;
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || isLockedKioskOrCompanionSurface() || !isOwner(activeUser())) return false;
     ++_devHoldGen;
     const prev = Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding.slice() : null;
     if (prev) {
@@ -159643,7 +159804,7 @@
         const fetchUsers = !isDemoSandboxSession() && (!rosterIsServerHeld() || STATE.authed);
         const fetchSubStores = !isEdgeActive || STATE.authed || isDemoSandboxSession();
         const fetchWsGeo = Boolean(fetchSubStores && (STATE.authed || isDemoSandboxSession()));
-        const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()));
+        const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser()));
         let geoHoldStillPending = false;
         let indHoldStillPending = false;
         if (fetchWsGeo && !isDemoScopeActive()) {
@@ -163051,6 +163212,9 @@
         const u = STATE.users.find(x => String(x.id) === String(uidTarget));
         if (!u) return;
         FACE_STATE.enrolUserId = u.id;
+        FACE_STATE.lastLiveEnrolDet = null;
+        FACE_STATE.lastLiveEnrolAt = 0;
+        FACE_STATE.lastLiveEnrolSnap = '';
         syncEnrolBufferFromUser(u, true);
         updateEnrolStudioDom();
         const panel = $('faceEnrolPanel');
@@ -163122,6 +163286,9 @@
       const u = STATE.users.find(x => String(x.id) === String(uidTarget));
       if (!u) return;
       FACE_STATE.enrolUserId = u.id;
+      FACE_STATE.lastLiveEnrolDet = null;
+      FACE_STATE.lastLiveEnrolAt = 0;
+      FACE_STATE.lastLiveEnrolSnap = '';
       syncEnrolBufferFromUser(u, true);
       updateEnrolStudioDom();
       const panel = $('faceEnrolPanel');
@@ -163262,7 +163429,7 @@
         const valStr = String(opt.value || '');
         if (valStr.startsWith('stfbio:')) {
           if (!staffDirMap) {
-            staffDirMap = new Map((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : []).map(s => [norm(s.name), s]));
+            staffDirMap = new Map((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory({ biometricOnly: true }) : []).map(s => [norm(s.name), s]));
           }
           const stObj = buildKioskStaffTargetObject(valStr.slice(7), staffDirMap);
           if (stObj) {
@@ -163477,30 +163644,59 @@
     const overlayEl = $('enrolFaceOverlay');
     const hudTel = $('enrolHudTelemetry');
     const hudDot = $('enrolHudDot');
+    const enrolUser = enrolTargetUser();
+    const capLen = effectiveEnrolPoseCount(enrolUser);
+    const retakeSlot = FACE_STATE.enrolRetakeSlot;
+    const isCaptureMode = capLen < 3 || retakeSlot != null;
+    const activeSlot = retakeSlot != null ? retakeSlot : capLen;
     if (videoEl && !FACE_STATE.enrolBusy && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
       FACE_STATE.enrolBusy = true;
       try {
         await ensureFaceModelsLoaded();
-        const det = await window.Face.detectOne(videoEl, false);
-        if (det && det.descriptor) {
-          FACE_STATE.lastLiveEnrolDet = det;
-          FACE_STATE.lastLiveEnrolAt = Date.now();
-          if (window.Face.snapshot) FACE_STATE.lastLiveEnrolSnap = window.Face.snapshot(videoEl);
+        const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+        let det = null;
+        if (!isAuto && isCaptureMode && window.Face.detectPreview) {
+          det = await window.Face.detectPreview(videoEl);
+          if (!det) {
+            FACE_STATE.enrolPreviewMisses = (FACE_STATE.enrolPreviewMisses || 0) + 1;
+            if ((FACE_STATE.enrolPreviewMisses % 6) === 0) {
+              det = await window.Face.detectOne(videoEl, false);
+              if (det && det.descriptor) {
+                FACE_STATE.enrolPreviewMisses = 0;
+                FACE_STATE.lastLiveEnrolDet = det;
+                FACE_STATE.lastLiveEnrolAt = Date.now();
+              }
+            }
+          } else {
+            FACE_STATE.enrolPreviewMisses = 0;
+            const needDesc = !FACE_STATE.lastLiveEnrolDet || !FACE_STATE.lastLiveEnrolDet.descriptor || (Date.now() - (FACE_STATE.lastLiveEnrolAt || 0)) >= 650;
+            if (needDesc) {
+              const fullDet = await window.Face.detectOne(videoEl, false);
+              if (fullDet && fullDet.descriptor) {
+                det = fullDet;
+                FACE_STATE.lastLiveEnrolDet = fullDet;
+                FACE_STATE.lastLiveEnrolAt = Date.now();
+              }
+            }
+          }
+        } else {
+          FACE_STATE.enrolPreviewMisses = 0;
+          det = await window.Face.detectOne(videoEl, false);
+          if (det && det.descriptor) {
+            FACE_STATE.lastLiveEnrolDet = det;
+            FACE_STATE.lastLiveEnrolAt = Date.now();
+          }
         }
-        const enrolUser = enrolTargetUser();
-        const capLen = effectiveEnrolPoseCount(enrolUser);
-        const retakeSlot = FACE_STATE.enrolRetakeSlot;
-        const isCaptureMode = capLen < 3 || retakeSlot != null;
-        const activeSlot = retakeSlot != null ? retakeSlot : capLen;
 
         if (isCaptureMode) {
           FACE_STATE.enrolLiveMatch = null;
+          const hasLiveFace = Boolean(det && (det.descriptor || det.previewOnly));
           if (overlayEl && window.Face.drawOverlay) {
-            const col = det && det.descriptor ? '#22c55e' : '#D9A54A';
+            const col = hasLiveFace ? '#22c55e' : '#D9A54A';
             window.Face.drawOverlay(overlayEl, videoEl, det, col);
           }
           if (hudTel) {
-            if (det && det.descriptor) {
+            if (hasLiveFace) {
               const pct = Math.round(Math.max(0.72, Number(det.score || det.detScore || 0.9)) * 100);
               hudTel.textContent = `FACE READY · ${pct}% · CLICK CAPTURE POSE (${activeSlot + 1}/3)`;
               if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
@@ -163521,7 +163717,7 @@
       }
     }
     if (STATE.view === 'users' && FACE_STATE.enrolCamActive) {
-      FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, 60);
+      FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, isCaptureMode ? 60 : 140);
     }
   }
 
@@ -163609,18 +163805,21 @@
       STATE.staffBiometrics[bioKey] = bioEntry;
     }
 
-    saveLocalAuthAndRecords();
-    const syncTask = async () => {
-      if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
-        try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
-      }
-      if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }).catch(() => {})
+        : Promise.resolve(),
+      (bioKey && bioEntry) ? persistStaffBiometricEntryNow(bioKey, bioEntry) : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
       await syncWithCloud(true);
-    };
-    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) {
-      await syncTask();
     } else {
-      Promise.resolve().then(syncTask).catch(() => {});
+      scheduleBiometricCloudSync();
     }
   }
 
@@ -163747,6 +163946,9 @@
 
     // Auto-persist immediately on every captured pose
     await persistTargetFaceNow(target);
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
 
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolStatusText = '';
@@ -163790,6 +163992,9 @@
     FACE_STATE.enrolThumbs = [];
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolLiveMatch = null;
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
     target.face_samples = [];
     target.face_thumbs = [];
     target.face_enrolled = false;
@@ -163821,14 +164026,24 @@
       STATE.staffBiometrics[bioKey] = bioEntry;
     }
 
-    saveLocalAuthAndRecords();
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
     updateEnrolStudioDom();
     toast(`Cleared Face ID for ${target.full_name}`);
-    if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
+    const netOp = trackBiometricNetOp(Promise.all([
+      (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }).catch(() => {})
+        : Promise.resolve(),
+      (bioKey && bioEntry) ? persistStaffBiometricEntryNow(bioKey, bioEntry) : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
-    await syncWithCloud(true);
     return true;
   }
 
@@ -166013,6 +166228,7 @@
     try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     STATE.rawPricingCompareByGrade = false;
     STATE.rawPricingGradeFilter = 'ALL';
+    cancelBiometricPendingTimers();
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -166240,6 +166456,7 @@
     try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     STATE.rawPricingCompareByGrade = false;
     STATE.rawPricingGradeFilter = 'ALL';
+    cancelBiometricPendingTimers();
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -166259,6 +166476,9 @@
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearOtClusterCaches === 'function') window.MFG_AI_EDGE.clearOtClusterCaches();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
       try { window.MFG_AI_EDGE.resetTransientDemoInputs(); } catch (_) {}
+    }
+    if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
+      try { window.MFG_RDL.resetStmt16CompareState(); } catch (_) {}
     }
     if (isDemoSandboxSession()) {
       if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
@@ -168638,6 +168858,10 @@
   }
 
   function getKioskFacePoolWithAdminSeed() {
+    const stamp = _computeFacePoolStamp();
+    if (_kioskFacePoolStamp === stamp && _kioskFacePoolCache) {
+      return _kioskFacePoolCache.slice();
+    }
     const pool = usableFaces(null, { includeKioskStaff: true });
     const seedKeys = Object.keys(DEFAULT_FACE_SEEDS || {});
     const seedKey = seedKeys[0] || '';
@@ -168656,7 +168880,9 @@
         });
       }
     }
-    return pool;
+    _kioskFacePoolStamp = stamp;
+    _kioskFacePoolCache = pool;
+    return pool.slice();
   }
 
   function handleKioskAdminFaceDescriptor(det, opts = {}) {
@@ -169094,6 +169320,8 @@
     saveKioskStationConfig({ activeKiosk: targetKiosk, kioskLocked: true });
     syncNativeStationPreset(targetKiosk);
     syncKioskLockedUrl();
+    updateUnsentEntriesBar();
+    updateDevicesHoldingBar();
     renderApp();
     if (targetKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
@@ -169498,6 +169726,9 @@
     saveKioskStationConfig({ kioskLocked: STATE.kioskLocked });
     syncNativeStationPreset(STATE.kioskLocked ? STATE.activeKiosk : 'command');
     syncKioskLockedUrl();
+    updateUnsentEntriesBar();
+    updateDevicesHoldingBar();
+    if (!STATE.kioskLocked) loadDevicesHolding();
     renderApp();
     if (STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
@@ -169960,6 +170191,8 @@
           saveKioskStationConfig({ activeKiosk: nextRole, kioskLocked: true });
           syncNativeStationPreset(nextRole);
           syncKioskLockedUrl();
+          updateUnsentEntriesBar();
+          updateDevicesHoldingBar();
           renderApp();
           renderAdminInner();
           const roleTitle = (roleCards.find(r => r.id === nextRole) || {}).title || nextRole;
@@ -169979,6 +170212,9 @@
           syncNativeStationPreset('command');
           startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin');
           closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
+          updateUnsentEntriesBar();
+          updateDevicesHoldingBar();
+          loadDevicesHolding();
           setView(dest);
         });
       });
@@ -180701,7 +180937,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can enrol staff biometrics.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) {
       const opAllowed = allowedCompanyNames(operatorUser);
@@ -180798,12 +181034,22 @@
       entry.userObj.face_updated_at = nowIso;
     }
 
-    saveLocalAuthAndRecords();
-    await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      persistStaffBiometricEntryNow(targetKey, bioObj),
+      (entry.userObj && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }).catch(() => {})
+        : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    syncWithCloud(true);
     return { ok: true, staff: entry.name, count: samples.length, slot: usedSlot };
   }
 
@@ -180812,7 +181058,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can clear staff Face ID.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
     const opAllowedCos = allowedCompanyNames(operatorUser);
@@ -180822,6 +181068,10 @@
     if (isProtectedAdminSeatForEntry(entry.userObj, operatorUser)) {
       return { ok: false, reason: 'protected-admin-seat', error: 'Entry Operators cannot clear Admin or Supervisor Face ID.' };
     }
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastAt = 0;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
+    STAFF_FACE_MODAL_STATE.autoStreak = 0;
     const nowIso = new Date().toISOString();
     const targetKey = norm(entry.name);
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
@@ -180843,12 +181093,22 @@
       entry.userObj.face_cleared = true;
       entry.userObj.face_updated_at = nowIso;
     }
-    saveLocalAuthAndRecords();
-    await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      persistStaffBiometricEntryNow(targetKey, bioObj),
+      (entry.userObj && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }).catch(() => {})
+        : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    syncWithCloud(true);
     return { ok: true, staff: entry.name };
   }
 
@@ -180884,6 +181144,7 @@
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
     const statusFilter = String(opts.statusFilter || 'all').toLowerCase();
     const lite = Boolean(opts && opts.lite);
+    const bioOnly = Boolean(opts && opts.biometricOnly);
     const today = todayISO();
     const bioMap = (!lite && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {};
 
@@ -180953,16 +181214,53 @@
     // 1b. Include newly registered staff_members (created via Smart Entry or Enrol Studio) in the operator's allowed BUs
     const allAssigns = ((SEED.records && SEED.records.staff_assignments) || []).concat((STATE.customRecords && STATE.customRecords.staff_assignments) || []);
     const allStaffMembers = ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []);
+    const assignsByNorm = new Map();
+    for (let i = 0; i < allAssigns.length; i++) {
+      const sa = allAssigns[i];
+      if (!sa || sa.voided || !sa.company) continue;
+      const ak = norm(sa.staff);
+      if (!ak) continue;
+      let list = assignsByNorm.get(ak);
+      if (!list) { list = []; assignsByNorm.set(ak, list); }
+      list.push({ sa, coNorm: norm(canonCompany(sa.company)) });
+    }
+    const customSmList = (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members)) ? STATE.customRecords.staff_members : [];
+    const activeCustomSmAnyCo = new Set();
+    const activeCustomSmBlankCo = new Set();
+    const activeCustomSmByCo = new Set();
+    for (let i = 0; i < customSmList.length; i++) {
+      const c = customSmList[i];
+      if (!c || c.voided || c.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(c.status || '').trim())) continue;
+      const ck = norm(c.name || c.staff);
+      if (!ck) continue;
+      activeCustomSmAnyCo.add(ck);
+      if (!c.company) activeCustomSmBlankCo.add(ck);
+      else activeCustomSmByCo.add(`${norm(canonCompany(c.company))}|${ck}`);
+    }
     allStaffMembers.forEach(sm => {
       if (!sm || sm.voided) return;
       const smInactive = Boolean(sm.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(sm.status || '').trim()));
       const nm = String(sm.name || sm.staff || '').trim();
       const k = norm(nm);
       if (!k) return;
-      const isAppSm = Boolean(sm.source === 'app' || sm.is_app || (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members) && STATE.customRecords.staff_members.some(c => c && !c.voided && !c.archived && !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(c.status || '').trim()) && norm(c.name || c.staff) === k && (!sm.company || !c.company || norm(canonCompany(sm.company)) === norm(canonCompany(c.company))))));
-      if (!isAppSm && !sm.company) return;
       const rawSmCoHint = sm.company ? (canonCompany(sm.company) || sm.company) : '';
-      const matchSa = allAssigns.find(sa => sa && !sa.voided && norm(sa.staff) === k && sa.company && (!rawSmCoHint || norm(canonCompany(sa.company)) === norm(rawSmCoHint)));
+      const rawSmCoHintNorm = rawSmCoHint ? norm(rawSmCoHint) : '';
+      const isAppSm = Boolean(
+        sm.source === 'app'
+        || sm.is_app
+        || (!sm.company ? activeCustomSmAnyCo.has(k) : (activeCustomSmBlankCo.has(k) || activeCustomSmByCo.has(`${rawSmCoHintNorm}|${k}`)))
+      );
+      if (!isAppSm && !sm.company) return;
+      const saList = assignsByNorm.get(k);
+      let matchSa = null;
+      if (saList && saList.length) {
+        if (!rawSmCoHintNorm) matchSa = saList[0].sa;
+        else {
+          for (let j = 0; j < saList.length; j++) {
+            if (saList[j].coNorm === rawSmCoHintNorm) { matchSa = saList[j].sa; break; }
+          }
+        }
+      }
       const rawSmCo = sm.company || (matchSa && matchSa.company) || (isAppSm ? (scopedCo || defCo) : '');
       const smCo = rawSmCo ? (canonCompany(rawSmCo) || rawSmCo) : '';
       if (!smCo) return;
@@ -181058,10 +181356,10 @@
       const bio = bioMap[k] || null;
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-      const shiftToday = resolveStaffShiftForDate(nm, co, today);
-      const otToday = describeStaffOvertimeRule(nm, co, today);
-      const lateToday = describeStaffLatenessRule(nm, co, today);
-      const policyToday = describeStaffPolicyGroup(nm, co);
+      const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, co, today);
+      const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, co, today);
+      const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, co, today);
+      const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, co);
       out.push({
         id: u.id,
         name: nm,
@@ -181069,7 +181367,7 @@
         email: u.email || '',
         company: co,
         role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
-        schedHours: shiftToday.hours || staffScheduledHours(nm, co),
+        schedHours: bioOnly ? 8 : (shiftToday.hours || staffScheduledHours(nm, co)),
         shift: shiftToday,
         otDesc: otToday,
         lateDesc: lateToday,
@@ -181130,10 +181428,10 @@
           const bio = bioMap[k] || null;
           const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
           const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-          const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
-          const otToday = describeStaffOvertimeRule(nm, empCo, today);
-          const lateToday = describeStaffLatenessRule(nm, empCo, today);
-          const policyToday = describeStaffPolicyGroup(nm, empCo);
+          const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, empCo, today);
+          const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, empCo, today);
+          const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, empCo);
           out.push({
             id: emp.id || ('emp-' + k),
             name: nm,
@@ -181141,7 +181439,7 @@
             email: u ? (u.email || '') : '',
             company: empCo,
             role: emp.role || (sm && sm.role) || emp.type || 'Active Staff',
-            schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+            schedHours: bioOnly ? (Number(emp.working_hours || 0) || 8) : (shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo)),
             shift: shiftToday,
             otDesc: otToday,
             lateDesc: lateToday,
@@ -181188,10 +181486,10 @@
           const bio = bioMap[k] || null;
           const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
           const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-          const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
-          const otToday = describeStaffOvertimeRule(nm, empCo, today);
-          const lateToday = describeStaffLatenessRule(nm, empCo, today);
-          const policyToday = describeStaffPolicyGroup(nm, empCo);
+          const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, empCo, today);
+          const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, empCo, today);
+          const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, empCo);
           out.push({
             id: emp.id || ('emp-ended-' + k),
             name: nm,
@@ -181199,7 +181497,7 @@
             email: u ? (u.email || '') : '',
             company: empCo,
             role: emp.role || (sm && sm.role) || emp.type || 'Staff',
-            schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+            schedHours: bioOnly ? (Number(emp.working_hours || 0) || 8) : (shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo)),
             shift: shiftToday,
             otDesc: otToday,
             lateDesc: lateToday,
@@ -181228,7 +181526,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can set staff PINs.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
     const opAllowedCos = allowedCompanyNames(operatorUser);
@@ -181264,9 +181562,12 @@
       entry.userObj.seat_updated_at = nowIso;
     }
     STATE.kioskEditingPinStaff = '';
-    saveLocalAuthAndRecords();
-    persistStaffBiometricEntryNow(targetKey, bioObj);
-    syncWithCloud(true);
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    trackBiometricNetOp(persistStaffBiometricEntryNow(targetKey, bioObj));
+    if (isAuto) syncWithCloud(true);
+    else scheduleBiometricCloudSync();
     return { ok: true, staff: entry.name, pin: clean };
   }
 
@@ -181921,7 +182222,7 @@
   }
 
   function recordKioskAttendancePunch(opts = {}) {
-    const dirList = getKioskStaffDirectory();
+    const dirList = getKioskStaffDirectory({ biometricOnly: true });
     const staffRaw = String(opts.staff || STATE.kioskAttStaff || '').trim();
     const staffEntry = staffRaw
       ? dirList.find(s => norm(s.name) === norm(staffRaw))
@@ -182992,6 +183293,7 @@
   function closeStaffFaceEnrolModal() {
     const hadActiveCam = Boolean(STAFF_FACE_MODAL_STATE.camActive || STAFF_FACE_MODAL_STATE.camStarting || streamAlive());
     stopStaffEnrolModalCamera();
+    flushBiometricCloudSyncNow();
     STAFF_FACE_MODAL_STATE.open = false;
     STAFF_FACE_MODAL_STATE.operatorUser = null;
     STAFF_FACE_MODAL_STATE.newStaffOpen = false;
@@ -184599,12 +184901,13 @@
         scopeBySelectedCompany: true,
         strictCompanyScope: true,
         operatorUser: op,
-        includeEnded: true
+        includeEnded: true,
+        biometricOnly: true
       });
     }
-    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true });
+    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true, biometricOnly: true });
     if (indScoped.length) return indScoped;
-    return getKioskStaffDirectory({ operatorUser: op, includeEnded: true });
+    return getKioskStaffDirectory({ operatorUser: op, includeEnded: true, biometricOnly: true });
   }
 
   function getEnrolOperatorAllowedCompanies(operatorUser = null) {
@@ -185408,24 +185711,54 @@
     const videoEl = $('staffEnrolVideo');
     const overlayEl = $('staffEnrolOverlay');
     const badgeEl = $('staffEnrolLiveBadge');
+    const isVerifyMode = STAFF_FACE_MODAL_STATE.captures.length >= 3;
     if (videoEl && !STAFF_FACE_MODAL_STATE.busy && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && window.Face) {
       STAFF_FACE_MODAL_STATE.busy = true;
       try {
         await ensureFaceModelsLoaded();
-        const det = await window.Face.detectOne(videoEl, false);
-        if (det && det.descriptor) {
-          STAFF_FACE_MODAL_STATE.lastDet = det;
-          STAFF_FACE_MODAL_STATE.lastAt = Date.now();
-          if (window.Face.snapshot) STAFF_FACE_MODAL_STATE.lastSnap = window.Face.snapshot(videoEl);
+        const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+        let det = null;
+        if (!isAuto && !isVerifyMode && window.Face.detectPreview) {
+          det = await window.Face.detectPreview(videoEl);
+          if (!det) {
+            STAFF_FACE_MODAL_STATE.previewMisses = (STAFF_FACE_MODAL_STATE.previewMisses || 0) + 1;
+            if ((STAFF_FACE_MODAL_STATE.previewMisses % 6) === 0) {
+              det = await window.Face.detectOne(videoEl, false);
+              if (det && det.descriptor) {
+                STAFF_FACE_MODAL_STATE.previewMisses = 0;
+                STAFF_FACE_MODAL_STATE.lastDet = det;
+                STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+              }
+            }
+          } else {
+            STAFF_FACE_MODAL_STATE.previewMisses = 0;
+            const needDesc = !STAFF_FACE_MODAL_STATE.lastDet || !STAFF_FACE_MODAL_STATE.lastDet.descriptor || (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) >= 650;
+            if (needDesc) {
+              const fullDet = await window.Face.detectOne(videoEl, false);
+              if (fullDet && fullDet.descriptor) {
+                det = fullDet;
+                STAFF_FACE_MODAL_STATE.lastDet = fullDet;
+                STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+              }
+            }
+          }
+        } else {
+          STAFF_FACE_MODAL_STATE.previewMisses = 0;
+          det = await window.Face.detectOne(videoEl, false);
+          if (det && det.descriptor) {
+            STAFF_FACE_MODAL_STATE.lastDet = det;
+            STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+          }
         }
+        const cLen = STAFF_FACE_MODAL_STATE.captures.length;
+        const hasLiveFace = Boolean(det && (det.descriptor || (cLen < 3 && det.previewOnly)));
         if (overlayEl && window.Face.drawOverlay) {
-          window.Face.drawOverlay(overlayEl, videoEl, det, det && det.descriptor ? '#22c55e' : '#D9A54A');
+          window.Face.drawOverlay(overlayEl, videoEl, det, hasLiveFace ? '#22c55e' : '#D9A54A');
         }
         if (badgeEl) {
-          if (det && det.descriptor) {
+          if (hasLiveFace) {
             const pct = Math.round(Math.max(0.74, Number(det.score || det.detScore || 0.9)) * 100);
-            const cLen = STAFF_FACE_MODAL_STATE.captures.length;
-            if (cLen >= 3 && window.Face && window.Face.match) {
+            if (cLen >= 3 && det.descriptor && window.Face && window.Face.match) {
               const pool = usableFaces(null, { includeKioskStaff: true });
               const m = window.Face.match(det.descriptor, pool);
               const thr = Number(STATE.faceSettings.threshold || 0.50);
@@ -185473,9 +185806,16 @@
                     STAFF_FACE_MODAL_STATE.autoStreak = 0;
                     STAFF_FACE_MODAL_STATE.nextAutoAt = nowMs + 1350;
                     if (cLen === 1 && yaw != null) STAFF_FACE_MODAL_STATE.pose2Yaw = yaw;
+                    let captureDet = det && det.descriptor ? det : null;
+                    if (!captureDet && window.Face.detectOne) {
+                      captureDet = await window.Face.detectOne(videoEl, true);
+                    }
+                    if (!captureDet && STAFF_FACE_MODAL_STATE.lastDet && STAFF_FACE_MODAL_STATE.lastDet.descriptor && (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) < 1600) {
+                      captureDet = STAFF_FACE_MODAL_STATE.lastDet;
+                    }
                     const snapNow = (window.Face && window.Face.snapshot && window.Face.snapshot(videoEl)) || STAFF_FACE_MODAL_STATE.lastSnap || '';
                     STAFF_FACE_MODAL_STATE.busy = false;
-                    await captureStaffModalPose(det, snapNow);
+                    await captureStaffModalPose(captureDet, snapNow);
                     if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
                       STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 90);
                     }
@@ -185500,7 +185840,7 @@
       STAFF_FACE_MODAL_STATE.busy = false;
     }
     if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
-      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 60);
+      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, STAFF_FACE_MODAL_STATE.captures.length >= 3 ? 140 : 60);
     }
   }
 
@@ -185605,12 +185945,15 @@
       syncStaffFaceEnrolModalDom();
       return res;
     }
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastAt = 0;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
     const flashEl = $('staffEnrolShutterFlash');
     if (flashEl) {
       flashEl.classList.add('active');
       setTimeout(() => flashEl.classList.remove('active'), 180);
     }
-    const dir = getKioskStaffDirectory();
+    const dir = getKioskStaffDirectory({ biometricOnly: true, includeEnded: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     const faceInfo = getStaffFaceSamplesAndThumbs(staffName, entry ? entry.userObj : null);
     STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
@@ -185639,7 +185982,7 @@
     if (!curEntry && STAFF_FACE_MODAL_STATE.staffName) {
       const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
       const globalHit = getKioskStaffDirectory(
-        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true } : {}
+        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true, biometricOnly: true } : { includeEnded: true, biometricOnly: true }
       ).find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
       if (globalHit) {
         curEntry = globalHit;
@@ -185690,108 +186033,110 @@
         : `Guided 3-angle biometric capture for ${curEntry.name} (${curEntry.company})`;
     }
 
-    // Update Step 1 Roster coverage + chips + cards
-    const covLabel = $('sfeCoverageText');
-    if (covLabel) covLabel.innerHTML = `<strong>${enrolledActiveCount} of ${activeStaff.length}</strong> Active Staff Enrolled`;
-    const covBadge = $('sfeCoverageBadge');
-    if (covBadge) {
-      covBadge.textContent = missingActiveCount > 0 ? `${missingActiveCount} Need Face ID` : '100% Enrolled';
-      covBadge.className = `sfe-cov-pill ${missingActiveCount > 0 ? 'is-pending' : 'is-complete'}`;
-    }
-    const covFill = $('sfeCoverageFill');
-    if (covFill) covFill.style.width = `${Math.max(0, Math.min(100, covPct))}%`;
-
-    const fltBar = $('sfeStatusChips');
-    if (fltBar) {
-      const curFlt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
-      const chips = [
-        { k: 'active', lbl: `All Active (${activeStaff.length})` },
-        { k: 'missing', lbl: `Needs Face ID (${missingActiveCount})` },
-        { k: 'enrolled', lbl: `Enrolled (${enrolledAllCount})` }
-      ];
-      if (endedCount > 0) chips.push({ k: 'inactive', lbl: `Inactive (${endedCount})` });
-      fltBar.innerHTML = chips.map(c => `<button type="button" class="sfe-chip ${curFlt === c.k ? 'active' : ''}" data-sfe-filter="${c.k}">${esc(c.lbl)}</button>`).join('');
-      fltBar.querySelectorAll('[data-sfe-filter]').forEach(b => {
-        b.addEventListener('click', () => {
-          STAFF_FACE_MODAL_STATE.rosterFilter = b.getAttribute('data-sfe-filter') || 'active';
-          syncStaffFaceEnrolModalDom();
-        });
-      });
-    }
-
-    const opUser = getActiveEnrolOperatorUser();
-    const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
-    const scopeBadgeEl = $('sfeOperatorScopeBadge');
-    if (scopeBadgeEl) {
-      const opRoleLbl = isOwner(opUser) ? 'Owner' : (resolveCanonicalRoleKey(opUser && opUser.role) || (opUser && opUser.role) || 'Operator');
-      scopeBadgeEl.innerHTML = `${ic('building')} <span><strong>${esc((opUser && opUser.full_name) || 'Operator')}</strong> (${esc(opRoleLbl)}) · BU Scope: <strong>${esc(opAllowedCos.join(', '))}</strong></span>`;
-    }
-    const nsToggleBtn = $('sfeNewStaffToggleBtn');
-    if (nsToggleBtn) {
-      nsToggleBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.newStaffOpen));
-      nsToggleBtn.setAttribute('aria-expanded', STAFF_FACE_MODAL_STATE.newStaffOpen ? 'true' : 'false');
-    }
-    const nsDrawer = $('sfeNewStaffDrawer');
-    if (nsDrawer) {
-      nsDrawer.hidden = !STAFF_FACE_MODAL_STATE.newStaffOpen;
-      const nsCoSel = $('sfeNewStaffCo');
-      if (nsCoSel) {
-        const curSelCo = (STAFF_FACE_MODAL_STATE.rosterCo && opAllowedCos.includes(STAFF_FACE_MODAL_STATE.rosterCo))
-          ? STAFF_FACE_MODAL_STATE.rosterCo
-          : (nsCoSel.value && opAllowedCos.includes(nsCoSel.value) ? nsCoSel.value : opAllowedCos[0] || 'WTC');
-        nsCoSel.innerHTML = opAllowedCos.map(c => `<option value="${esc(c)}" ${c === curSelCo ? 'selected' : ''}>${esc(c)}</option>`).join('');
-        nsCoSel.disabled = opAllowedCos.length <= 1;
+    if (isRosterStep) {
+      // Update Step 1 Roster coverage + chips + cards only when Step 1 is visible
+      const covLabel = $('sfeCoverageText');
+      if (covLabel) covLabel.innerHTML = `<strong>${enrolledActiveCount} of ${activeStaff.length}</strong> Active Staff Enrolled`;
+      const covBadge = $('sfeCoverageBadge');
+      if (covBadge) {
+        covBadge.textContent = missingActiveCount > 0 ? `${missingActiveCount} Need Face ID` : '100% Enrolled';
+        covBadge.className = `sfe-cov-pill ${missingActiveCount > 0 ? 'is-pending' : 'is-complete'}`;
       }
-      const nsRoleDl = $('sfeNewStaffRoleList');
-      if (nsRoleDl) {
-        const targetCoForRoles = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || 'WTC';
-        const rolesList = getFrequencyRankedRolesForEnrol(targetCoForRoles);
-        nsRoleDl.innerHTML = rolesList.map(r => `<option value="${esc(r)}"></option>`).join('');
-        const nsRoleInp = $('sfeNewStaffRole');
-        if (nsRoleInp && !nsRoleInp.value && rolesList[0]) {
-          nsRoleInp.placeholder = `e.g. ${rolesList.slice(0, 3).join(', ')}`;
-        }
-      }
-    }
+      const covFill = $('sfeCoverageFill');
+      if (covFill) covFill.style.width = `${Math.max(0, Math.min(100, covPct))}%`;
 
-    const coBar = $('sfeCompanyChips');
-    if (coBar) {
-      const uniqueCos = [];
-      opAllowedCos.forEach(c => {
-        if (c && !uniqueCos.includes(c)) uniqueCos.push(c);
-      });
-      allStaff.forEach(s => {
-        if (s.company && (!opAllowedCos.length || opAllowedCos.includes(s.company)) && !uniqueCos.includes(s.company)) {
-          uniqueCos.push(s.company);
-        }
-      });
-      if (uniqueCos.length <= 1) {
-        if (uniqueCos.length === 1) STAFF_FACE_MODAL_STATE.rosterCo = uniqueCos[0];
-        coBar.hidden = true;
-        coBar.innerHTML = '';
-      } else {
-        coBar.hidden = false;
-        const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
-        coBar.innerHTML = [
-          `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Permitted BUs (${uniqueCos.length})</button>`
-        ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
-        coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
+      const fltBar = $('sfeStatusChips');
+      if (fltBar) {
+        const curFlt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
+        const chips = [
+          { k: 'active', lbl: `All Active (${activeStaff.length})` },
+          { k: 'missing', lbl: `Needs Face ID (${missingActiveCount})` },
+          { k: 'enrolled', lbl: `Enrolled (${enrolledAllCount})` }
+        ];
+        if (endedCount > 0) chips.push({ k: 'inactive', lbl: `Inactive (${endedCount})` });
+        fltBar.innerHTML = chips.map(c => `<button type="button" class="sfe-chip ${curFlt === c.k ? 'active' : ''}" data-sfe-filter="${c.k}">${esc(c.lbl)}</button>`).join('');
+        fltBar.querySelectorAll('[data-sfe-filter]').forEach(b => {
           b.addEventListener('click', () => {
-            STAFF_FACE_MODAL_STATE.rosterCo = b.getAttribute('data-sfe-co') || '';
+            STAFF_FACE_MODAL_STATE.rosterFilter = b.getAttribute('data-sfe-filter') || 'active';
             syncStaffFaceEnrolModalDom();
           });
         });
       }
-    }
 
-    const searchInp = $('staffEnrolRosterSearch');
-    if (searchInp && document.activeElement !== searchInp) {
-      searchInp.value = STAFF_FACE_MODAL_STATE.rosterSearch || '';
+      const opUser = getActiveEnrolOperatorUser();
+      const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
+      const scopeBadgeEl = $('sfeOperatorScopeBadge');
+      if (scopeBadgeEl) {
+        const opRoleLbl = isOwner(opUser) ? 'Owner' : (resolveCanonicalRoleKey(opUser && opUser.role) || (opUser && opUser.role) || 'Operator');
+        scopeBadgeEl.innerHTML = `${ic('building')} <span><strong>${esc((opUser && opUser.full_name) || 'Operator')}</strong> (${esc(opRoleLbl)}) · BU Scope: <strong>${esc(opAllowedCos.join(', '))}</strong></span>`;
+      }
+      const nsToggleBtn = $('sfeNewStaffToggleBtn');
+      if (nsToggleBtn) {
+        nsToggleBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.newStaffOpen));
+        nsToggleBtn.setAttribute('aria-expanded', STAFF_FACE_MODAL_STATE.newStaffOpen ? 'true' : 'false');
+      }
+      const nsDrawer = $('sfeNewStaffDrawer');
+      if (nsDrawer) {
+        nsDrawer.hidden = !STAFF_FACE_MODAL_STATE.newStaffOpen;
+        const nsCoSel = $('sfeNewStaffCo');
+        if (nsCoSel) {
+          const curSelCo = (STAFF_FACE_MODAL_STATE.rosterCo && opAllowedCos.includes(STAFF_FACE_MODAL_STATE.rosterCo))
+            ? STAFF_FACE_MODAL_STATE.rosterCo
+            : (nsCoSel.value && opAllowedCos.includes(nsCoSel.value) ? nsCoSel.value : opAllowedCos[0] || 'WTC');
+          nsCoSel.innerHTML = opAllowedCos.map(c => `<option value="${esc(c)}" ${c === curSelCo ? 'selected' : ''}>${esc(c)}</option>`).join('');
+          nsCoSel.disabled = opAllowedCos.length <= 1;
+        }
+        const nsRoleDl = $('sfeNewStaffRoleList');
+        if (nsRoleDl) {
+          const targetCoForRoles = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || 'WTC';
+          const rolesList = getFrequencyRankedRolesForEnrol(targetCoForRoles);
+          nsRoleDl.innerHTML = rolesList.map(r => `<option value="${esc(r)}"></option>`).join('');
+          const nsRoleInp = $('sfeNewStaffRole');
+          if (nsRoleInp && !nsRoleInp.value && rolesList[0]) {
+            nsRoleInp.placeholder = `e.g. ${rolesList.slice(0, 3).join(', ')}`;
+          }
+        }
+      }
+
+      const coBar = $('sfeCompanyChips');
+      if (coBar) {
+        const uniqueCos = [];
+        opAllowedCos.forEach(c => {
+          if (c && !uniqueCos.includes(c)) uniqueCos.push(c);
+        });
+        allStaff.forEach(s => {
+          if (s.company && (!opAllowedCos.length || opAllowedCos.includes(s.company)) && !uniqueCos.includes(s.company)) {
+            uniqueCos.push(s.company);
+          }
+        });
+        if (uniqueCos.length <= 1) {
+          if (uniqueCos.length === 1) STAFF_FACE_MODAL_STATE.rosterCo = uniqueCos[0];
+          coBar.hidden = true;
+          coBar.innerHTML = '';
+        } else {
+          coBar.hidden = false;
+          const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
+          coBar.innerHTML = [
+            `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Permitted BUs (${uniqueCos.length})</button>`
+          ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
+          coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
+            b.addEventListener('click', () => {
+              STAFF_FACE_MODAL_STATE.rosterCo = b.getAttribute('data-sfe-co') || '';
+              syncStaffFaceEnrolModalDom();
+            });
+          });
+        }
+      }
+
+      const searchInp = $('staffEnrolRosterSearch');
+      if (searchInp && document.activeElement !== searchInp) {
+        searchInp.value = STAFF_FACE_MODAL_STATE.rosterSearch || '';
+      }
+      renderStaffEnrolRosterGridOnly();
     }
-    renderStaffEnrolRosterGridOnly();
 
     if (!curEntry) {
-      stripNativeTitles(document);
+      stripNativeTitles(modal);
       return;
     }
 
@@ -185993,7 +186338,7 @@
     }
     const pinSaveBtn = $('staffEnrolPinSaveBtn');
     if (pinSaveBtn) pinSaveBtn.disabled = false;
-    stripNativeTitles(document);
+    stripNativeTitles(modal);
   }
 
   function openStaffFaceEnrolModal(staffName = '', opts = {}) {
@@ -209075,7 +209420,7 @@
     }
     window.addEventListener('online', () => { toast('Back online — syncing'); syncWithCloud(true); });
     window.addEventListener('offline', () => { STATE.cloudStatus = '● Offline Cache'; updateCloudBadges(); toast('Offline — entries are kept on this device and sync later', 'err'); });
-    window.addEventListener('pagehide', () => { if (STATE.pushAfterSync || STATE.pendingCloudPush) syncWithCloud(true); });
+    window.addEventListener('pagehide', () => { flushBiometricCloudSyncNow(); if (STATE.pushAfterSync || STATE.pendingCloudPush) syncWithCloud(true); });
 
     // Expose deterministic hooks for headless verification (build/verify_mfg.mjs)
     window.MFG_FACE_TEST = {
@@ -209284,6 +209629,34 @@
       formatSalaryAdvanceReceiptMessage: (ctx, langMode) => formatSalaryAdvanceReceiptMessage(ctx, langMode),
       openSalaryAdvanceReceiptModal: (rowOrId, opts = {}) => openSalaryAdvanceReceiptModal(rowOrId, opts),
       closeSalaryAdvanceReceiptModal: () => closeSalaryAdvanceReceiptModal(),
+      setKioskLockMode: (locked, authArg) => setKioskLockMode(Boolean(locked), authArg),
+      getKioskStaffDirectory: opts => getKioskStaffDirectory(opts || {}),
+      usableFaces: (u, opts) => usableFaces(u, opts || { includeKioskStaff: true }),
+      getKioskFacePoolWithAdminSeed: () => getKioskFacePoolWithAdminSeed(),
+      enrolStaffFacePose: (nm, detOrVec, thumb, slot) => enrolStaffFacePose(nm, detOrVec, thumb, slot),
+      clearStaffFaceId: nm => clearStaffFaceId(nm),
+      openStaffFaceEnrolModal: (nm, opts) => openStaffFaceEnrolModal(nm, opts || {}),
+      selectStaffForEnrolModal: (nm, opts) => selectStaffForEnrolModal(nm, opts || {}),
+      captureStaffModalPose: (det, thumb, slot) => captureStaffModalPose(det, thumb, slot),
+      closeStaffFaceEnrolModal: () => closeStaffFaceEnrolModal(),
+      updateUnsentEntriesBar: () => updateUnsentEntriesBar(),
+      updateDevicesHoldingBar: () => updateDevicesHoldingBar(),
+      setStaffModalLiveDet: vec => {
+        STAFF_FACE_MODAL_STATE.lastDet = vec ? { descriptor: vec, detScore: 0.95, multiple: false } : null;
+        STAFF_FACE_MODAL_STATE.lastAt = vec ? Date.now() : 0;
+      },
+      getStaffModalCacheState: () => ({
+        hasLastDet: Boolean(STAFF_FACE_MODAL_STATE.lastDet),
+        lastAt: STAFF_FACE_MODAL_STATE.lastAt || 0
+      }),
+      setEnrolLiveDet: vec => {
+        FACE_STATE.lastLiveEnrolDet = vec ? { descriptor: vec, detScore: 0.95, multiple: false } : null;
+        FACE_STATE.lastLiveEnrolAt = vec ? Date.now() : 0;
+      },
+      getEnrolLiveCacheState: () => ({
+        hasLastDet: Boolean(FACE_STATE.lastLiveEnrolDet),
+        lastAt: FACE_STATE.lastLiveEnrolAt || 0
+      }),
       openBatchPaydayModal: (opts = {}) => openBatchPaydayModal(opts),
       closeBatchPaydayModal: () => closeBatchPaydayModal(),
       buildBatchSignOffContext: (batchId, opts = {}) => buildBatchSignOffContext(batchId, opts),
