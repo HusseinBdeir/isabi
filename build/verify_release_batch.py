@@ -18,6 +18,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import types
 
 sys.stdout.reconfigure(encoding="utf-8")
 BUILD = pathlib.Path(__file__).resolve().parent
@@ -168,8 +169,9 @@ def is_ancestor(repo: pathlib.Path, sha: str, ref: str = "HEAD") -> bool:
 
 def main() -> int:  # noqa: PLR0915
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="isabi-release-batch-"))
-    saved = {k: os.environ.get(k) for k in ("ISABI_RELEASE_LOCK", NOW, LIVE, *IDENT)}
+    saved = {k: os.environ.get(k) for k in ("ISABI_RELEASE_LOCK", NOW, LIVE, RB.NO_KEEPALIVE_ENV, *IDENT)}
     os.environ.pop("ISABI_RELEASE_LOCK", None)
+    os.environ[RB.NO_KEEPALIVE_ENV] = "1"
     os.environ.update(IDENT)
     os.environ[LIVE] = "19.6.100"
     tick()
@@ -1391,6 +1393,168 @@ def main() -> int:  # noqa: PLR0915
             "re-joining an unchanged branch with only redundant RELEASE_GATES clears earlier gates to []",
         )
         quiet(RB.leave, A, eDedup["id"])
+
+        # 21. Background keepalive: refreshes waiting heartbeat (incl. short ID), exits on shipped/left_out/gone/max_s, dedups live PID, spawn wiring, and drive stays owner-gated
+        feature(appA, "wt/ka1", {"js/ka1.js": "ka1\n"})
+        tick()
+        eKA = quiet(RB.join, A, holder="session A", summary="keepalive test", app_branch="wt/ka1")
+        before_hb = entry(A, eKA["id"]).get("seenAt") or entry(A, eKA["id"]).get("queuedAt")
+        short_ka = eKA["id"].rsplit("-", 1)[-1]
+        tick(700)
+        rc_ka = RB.run_keepalive(A, short_ka, interval_s=0, max_ticks=1)
+        after_hb = entry(A, eKA["id"]).get("seenAt")
+        check(rc_ka == 0 and after_hb and after_hb > before_hb
+              and not RB._keepalive_pid_file(A, eKA["id"]).exists(),
+              "run_keepalive resolves short ID, refreshes heartbeat on a waiting entry, and removes its pid file on exit")
+
+        # Live peer PID in pid file -> second keepalive exits cleanly without touching entry
+        pid_file = RB._keepalive_pid_file(A, eKA["id"])
+        RB._write_local_json(A, pid_file.name, {"pid": os.getppid(), "entry_id": eKA["id"], "startedAt": after_hb})
+        tick(100)
+        rc_dup = RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=1)
+        check(rc_dup == 0 and entry(A, eKA["id"]).get("seenAt") == after_hb and pid_file.exists(),
+              "run_keepalive skips duplicate start when another live PID holds its lock")
+        RB._write_local_json(A, pid_file.name, None)
+
+        # Dead PID & corrupt/non-dict JSON in pid file -> reclaimed cleanly and removed on exit
+        tick(700)
+        RB._write_local_json(A, pid_file.name, {"pid": 99999999, "entry_id": eKA["id"]})
+        rc_dead = RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=1)
+        after_dead = entry(A, eKA["id"]).get("seenAt")
+        pid_file.write_text("[]", encoding="utf-8")
+        tick(700)
+        rc_nondict = RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=1)
+        after_nondict = entry(A, eKA["id"]).get("seenAt")
+        check(rc_dead == 0 and rc_nondict == 0 and after_dead and after_dead > after_hb
+              and after_nondict and after_nondict > after_dead and not pid_file.exists(),
+              "_claim_keepalive_pid reclaims dead-PID and corrupt/non-dict pid files cleanly")
+
+        # Transient read_line network outage -> recovers next tick; non-transient error -> exits cleanly; max_s=0 -> exits cleanly
+        old_read_line = RB.read_line
+        rl_calls = {"n": 0}
+        def _flaky_read_line(c):
+            rl_calls["n"] += 1
+            if rl_calls["n"] == 1:
+                raise RB.RL.LockError("Could not resolve host: release.isabi.test (timed out)")
+            return old_read_line(c)
+        RB.read_line = _flaky_read_line
+        try:
+            tick(700)
+            rc_flaky = RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=2)
+        finally:
+            RB.read_line = old_read_line
+        after_flaky = entry(A, eKA["id"]).get("seenAt")
+        check(rc_flaky == 0 and rl_calls["n"] >= 2 and after_flaky and after_flaky > after_nondict
+              and not pid_file.exists(),
+              "run_keepalive survives a transient read_line network error and touches on the next tick")
+        auth_calls = {"n": 0}
+        def _auth_err_read_line(c):
+            auth_calls["n"] += 1
+            raise RB.RL.LockError("auth failed (HTTP 403)")
+        RB.read_line = _auth_err_read_line
+        try:
+            rc_auth = RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=3)
+        finally:
+            RB.read_line = old_read_line
+        check(rc_auth == 0 and auth_calls["n"] == 1 and not pid_file.exists(),
+              "run_keepalive exits cleanly in 1 attempt on non-transient LockError")
+        check(RB.run_keepalive(A, eKA["id"], interval_s=0, max_s=0) == 0 and not pid_file.exists(),
+              "run_keepalive exits cleanly when max_s deadline expires")
+        # _resolve_keepalive_entry_id skips read_line for canonical IDs
+        canon_calls = {"n": 0}
+        RB.read_line = lambda c: (canon_calls.__setitem__("n", canon_calls["n"] + 1) or old_read_line(c))
+        try:
+            res_canon = RB._resolve_keepalive_entry_id(A, eKA["id"])
+        finally:
+            RB.read_line = old_read_line
+        check(res_canon == eKA["id"] and canon_calls["n"] == 0,
+              "_resolve_keepalive_entry_id returns canonical entry ID without network read_line")
+
+        # left_out state -> exits cleanly & removes pid file
+        RB._set_fields(A, eKA["id"], {"state": "left_out", "leftOutAt": RB.RL._iso(RB.RL._now()), "leftOutBy": "driver", "note": "test left out"})
+        check(RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=1) == 0 and not pid_file.exists(),
+              "run_keepalive exits cleanly on left_out entry")
+
+        # shipped state -> exits cleanly & removes pid file; gone entry -> exits cleanly
+        feature(appA, "wt/ka_ship", {"js/ka_ship.js": "ka_ship\n"})
+        tick()
+        eKAShip = quiet(RB.join, A, holder="session A", summary="ka shipped", app_branch="wt/ka_ship")
+        RB._set_fields(A, eKAShip["id"], {"state": "shipped", "shippedVersion": "19.6.999", "shippedBy": "driver", "shippedAt": RB.RL._iso(RB.RL._now())})
+        check(RB.run_keepalive(A, eKAShip["id"], interval_s=0, max_ticks=1) == 0
+              and not RB._keepalive_pid_file(A, eKAShip["id"]).exists(),
+              "run_keepalive exits cleanly on shipped entry")
+        quiet(RB.leave, A, eKA["id"])
+        quiet(RB.leave, A, eKAShip["id"])
+        check(RB.run_keepalive(A, eKA["id"], interval_s=0, max_ticks=1) == 0,
+              "run_keepalive exits cleanly once the entry leaves the line")
+
+        # _spawn_keepalive gates on ISABI_NO_KEEPALIVE=1, spawns detached keepalive when enabled, and falls back to CIM on Popen OSError
+        check(RB._spawn_keepalive(A, "id-1") is False, "_spawn_keepalive respects ISABI_NO_KEEPALIVE=1")
+        spawn_calls = []
+        run_calls = []
+        old_popen = RB.subprocess.Popen
+        old_sub_run = RB.subprocess.run
+        old_no_ka = os.environ.pop(RB.NO_KEEPALIVE_ENV, None)
+        try:
+            RB.subprocess.Popen = lambda cmd, **kw: spawn_calls.append((cmd, kw))
+            dup_pid_file = RB._keepalive_pid_file(A, "eid-dup")
+            RB._write_local_json(A, dup_pid_file.name, {"pid": os.getppid(), "entry_id": "eid-dup"})
+            ok_dup = RB._spawn_keepalive(A, "eid-dup")
+            RB._write_local_json(A, dup_pid_file.name, None)
+            check(ok_dup is True and len(spawn_calls) == 0,
+                  "_spawn_keepalive returns True without spawning when a live keepalive PID already runs")
+            ok_p = RB._spawn_keepalive(A, "eid-spawn")
+            check(ok_p is True and len(spawn_calls) == 1 and "keepalive" in spawn_calls[0][0] and "eid-spawn" in spawn_calls[0][0],
+                  "_spawn_keepalive builds detached keepalive worker command")
+            if os.name == "nt":
+                def _fail_popen(*a, **kw):
+                    raise OSError("breakaway denied")
+                RB.subprocess.Popen = _fail_popen
+                RB.subprocess.run = lambda cmd, **kw: (run_calls.append((cmd, kw)) or types.SimpleNamespace(returncode=0))
+                ok_cim = RB._spawn_keepalive(A, "eid-cim")
+                check(ok_cim is True and len(run_calls) == 1 and "eid-cim" in (run_calls[0][1].get("env") or {}).get("ISABI_KA_CMD", ""),
+                      "_spawn_keepalive falls back to Win32_Process CIM when Popen breakaway raises OSError")
+        finally:
+            RB.subprocess.Popen = old_popen
+            RB.subprocess.run = old_sub_run
+            os.environ[RB.NO_KEEPALIVE_ENV] = old_no_ka or "1"
+
+        # CLI main() honors --no-keepalive on ship and wait when returning WAITING
+        feature(appA, "wt/noka", {"js/noka.js": "noka\n"})
+        tick()
+        old_argv, old_ship, old_wait, old_spawn = sys.argv, RB.ship, RB.wait, RB._spawn_keepalive
+        cli_spawns = []
+        RB.ship = lambda *a, **kw: ("WAITING", "still waiting", None)
+        RB.wait = lambda *a, **kw: ("WAITING", "still waiting")
+        RB._spawn_keepalive = lambda *a, **kw: (cli_spawns.append(a) or True)
+        try:
+            sys.argv = ["release_batch.py", "ship", "--holder", "session A", "--summary", "noka", "--app-branch", "wt/noka", "--wait", "0", "--no-keepalive"]
+            rc_cli_ship = RB.main()
+            sys.argv = ["release_batch.py", "wait", "--id", "20261127T120000Z-a1b2c3d4", "--wait", "0", "--no-keepalive"]
+            rc_cli_wait = RB.main()
+        finally:
+            sys.argv, RB.ship, RB.wait, RB._spawn_keepalive = old_argv, old_ship, old_wait, old_spawn
+        check(rc_cli_ship == 0 and rc_cli_wait == 0 and len(cli_spawns) == 0,
+              "main() honors --no-keepalive on ship and wait")
+
+        # _joined_entry_id_for_ship resolves entry ID across stripped holder and two-branch join
+        feature(appA, "wt/jres", {"js/jres.js": "jres\n"})
+        feature(A, "wt/jres_s", {"functions/jres.js": "jres_s\n"})
+        tick()
+        eJRes = quiet(RB.join, A, holder="session A", summary="jres", app_branch="wt/jres", site_branch="wt/jres_s")
+        check(RB._joined_entry_id_for_ship(A, "session A", "wt/jres", "wt/jres_s") == eJRes["id"],
+              "_joined_entry_id_for_ship resolves two-branch ship entry ID")
+        quiet(RB.leave, A, eJRes["id"])
+
+        # Stopped session (>3h without keepalive) stays skipped in drive unless --stopped-sessions is explicitly given
+        feature(appB, "wt/st_owner", {"js/st_owner.js": "st_owner\n"})
+        tick()
+        eStOwner = quiet(RB.join, B, holder="session B", summary="stale owner gate", app_branch="wt/st_owner")
+        tick(RB.STALE_AFTER_MIN * 60 + 60)
+        st_no_opt = quiet(RB.drive, A, holder="driver A", batches=1, wait_s=0, stopped_sessions=False)
+        check(st_no_opt[0] == "EMPTY" and entry(A, eStOwner["id"]).get("state") == "waiting",
+              "drive keeps stopped sessions owner-gated (does not auto-adopt without --stopped-sessions)")
+        quiet(RB.leave, B, eStOwner["id"])
     finally:
         for k, v in saved.items():
             if v is None:
