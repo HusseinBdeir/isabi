@@ -96,6 +96,7 @@ Test: python build/verify_release_batch.py
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as dt
 import json
 import os
@@ -611,10 +612,137 @@ def _remote_branch(repo: Path, branch: str, label: str) -> str:
     return sha
 
 
-def _validate_join_gates(gates: tuple[str, ...] | list[str]) -> list[str]:
-    """Validate --gate flags before touching the queue or lock so malformed prefixes never poison a batch."""
+_POST_SYNC_ONLY_SCRIPTS = frozenset({
+    "build/verify_min_shell_parity.py",
+    "build/verify_deployed_shell.py",
+})
+_MAIN_SUITE_GATES = frozenset({
+    ("isabi-app", "build/verify_mfg.mjs", "node", ()),
+    ("isabi-app", "build/verify_mfg.mjs", "node", ("--mobile",)),
+    ("isabi-app", "build/verify_boot_saved_scope.mjs", "node", ()),
+})
+
+
+def _canonical_gate_spec(gate: str) -> tuple[str, str, str, tuple[str, ...]] | None:
+    """Return canonical (repo_key, script_rel, interp, extra_args) for a node/python gate, else None."""
+    where, sep, cmd = gate.partition(":")
+    where_l = where.strip().lower()
+    if not sep or where_l not in ("isabi-app", "mfg-web", "isabi"):
+        return None
+    repo_key = "isabi" if where_l == "isabi" else "isabi-app"
+    try:
+        argv = shlex.split(cmd.strip().replace("\\", "/"))
+    except ValueError:
+        return None
+    if len(argv) < 2 or argv[0] not in ("node", "python", "python3", "py"):
+        return None
+    rel = argv[1].removeprefix("./")
+    interp = "node" if argv[0] == "node" else "python"
+    return (repo_key, rel, interp, tuple(argv[2:]))
+
+
+def _parse_sync_app_gates_src(src: str) -> tuple[set[str], set[tuple[str, str, str]]]:
+    """Extract POST_SYNC_ONLY_GATES, RELEASE_GATES, and SPEED_GATE from sync_app.py AST without executing it."""
+    post_sync: set[str] = set()
+    sync_covered: set[tuple[str, str, str]] = set()
+    if not src:
+        return post_sync, sync_covered
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return post_sync, sync_covered
+    targets_wanted = {"POST_SYNC_ONLY_GATES", "RELEASE_GATES", "SPEED_GATE"}
+    raw_vals: dict[str, object] = {}
+    for node in tree.body:
+        val_node = None
+        names: list[str] = []
+        if isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            val_node = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = [node.target.id]
+            val_node = node.value
+        if val_node is None:
+            continue
+        hit = [n for n in names if n in targets_wanted]
+        if not hit:
+            continue
+        try:
+            val = ast.literal_eval(val_node)
+        except (ValueError, TypeError, SyntaxError):
+            continue
+        for n in hit:
+            raw_vals[n] = val
+    ps_raw = raw_vals.get("POST_SYNC_ONLY_GATES")
+    if isinstance(ps_raw, (list, tuple, set, frozenset)):
+        for item in ps_raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                rel = str(item[1]).replace("\\", "/").removeprefix("./")
+                if rel:
+                    post_sync.add(rel)
+            elif isinstance(item, str) and item.strip():
+                post_sync.add(item.strip().replace("\\", "/").removeprefix("./"))
+    rg_items: list[object] = []
+    rg_raw = raw_vals.get("RELEASE_GATES")
+    if isinstance(rg_raw, (list, tuple)):
+        rg_items.extend(rg_raw)
+    sg_raw = raw_vals.get("SPEED_GATE")
+    if isinstance(sg_raw, (list, tuple)) and len(sg_raw) == 3 and all(isinstance(x, str) for x in sg_raw):
+        rg_items.append(sg_raw)
+    for item in rg_items:
+        if isinstance(item, (list, tuple)) and len(item) >= 3:
+            repo_k = str(item[0]).strip().lower()
+            if repo_k == "mfg-web":
+                repo_k = "isabi-app"
+            rel = str(item[1]).replace("\\", "/").removeprefix("./")
+            interp = "node" if str(item[2]).strip().lower() == "node" else "python"
+            if repo_k in ("isabi", "isabi-app") and rel:
+                sync_covered.add((repo_k, rel, interp))
+    return post_sync, sync_covered
+
+
+def _sync_gate_sets_for_join(cwd: Path | None) -> tuple[set[str], set[tuple[str, str, str]]]:
+    """Read sync_app.py gates from origin/main (or working tree) for join-time --gate validation."""
+    src = ""
+    if cwd is not None:
+        raw_blob = _blob(cwd, f"{RL.REMOTE}/main:build/sync_app.py")
+        if raw_blob:
+            src = raw_blob.decode("utf-8", errors="replace")
+        else:
+            p = cwd / "build" / "sync_app.py"
+            if p.is_file():
+                try:
+                    src = p.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    src = ""
+    post_sync, sync_covered = _parse_sync_app_gates_src(src)
+    return set(_POST_SYNC_ONLY_SCRIPTS) | post_sync, sync_covered
+
+
+def _sync_gate_sets_for_lead(cwd: Path) -> tuple[set[str], set[tuple[str, str, str]]]:
+    """Read sync_app.py gates from the assembled batch worktree that lead's sync step will run."""
+    src = ""
+    p = cwd / "build" / "sync_app.py"
+    if p.is_file():
+        try:
+            src = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            src = ""
+    post_sync, sync_covered = _parse_sync_app_gates_src(src)
+    return set(_POST_SYNC_ONLY_SCRIPTS) | post_sync, sync_covered
+
+
+def _validate_join_gates(
+    gates: tuple[str, ...] | list[str],
+    *,
+    cwd: Path | None = None,
+    has_app: bool = False,
+    skipped_out: list[str] | None = None,
+) -> list[str]:
+    """Validate --gate flags before touching the queue or lock so malformed or post-sync-only gates never poison a batch."""
+    post_sync_scripts, sync_covered = _sync_gate_sets_for_join(cwd)
     cleaned: list[str] = []
-    seen: set[str] = set()
+    seen_specs: set[tuple[str, str, str, tuple[str, ...]] | str] = set()
     for raw in gates or ():
         g = " ".join(str(raw).split())
         if not g:
@@ -634,8 +762,21 @@ def _validate_join_gates(gates: tuple[str, ...] | list[str]) -> list[str]:
                 raise BatchError(
                     f"gate {g!r} must run a check script under build/ (verify_*, audit_* or check_*)"
                 )
-        if g not in seen:
-            seen.add(g)
+        spec = _canonical_gate_spec(g)
+        if spec is not None:
+            repo_k, rel, interp, extra_args = spec
+            if rel in post_sync_scripts:
+                raise BatchError(
+                    f"gate {g!r} checks post-sync bundle parity and fails before sync_app.py runs; "
+                    "omit it from --gate (sync_app.py RELEASE_GATES runs it automatically)"
+                )
+            if (extra_args == () and (repo_k, rel, interp) in sync_covered) or (has_app and spec in _MAIN_SUITE_GATES):
+                if skipped_out is not None and g not in skipped_out:
+                    skipped_out.append(g)
+                continue
+        dedup_key: tuple[str, str, str, tuple[str, ...]] | str = spec if spec is not None else g
+        if dedup_key not in seen_specs:
+            seen_specs.add(dedup_key)
             cleaned.append(g)
     return cleaned
 
@@ -648,7 +789,10 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         raise BatchError("--holder and --summary are both needed (who is shipping, and one line on what ships)")
     if not app_branch and not site_branch:
         raise BatchError("name what ships: --app-branch (isabi-app) and/or --site-branch (isabi)")
-    cleaned_gates = _validate_join_gates(gates)
+    skipped_gates: list[str] = []
+    cleaned_gates = _validate_join_gates(gates, cwd=cwd, has_app=bool(app_branch), skipped_out=skipped_gates)
+    if skipped_gates and not quiet:
+        print(f"NOTE: skipping redundant --gate already run during batch sync/main: {', '.join(skipped_gates)}")
     parts: dict[str, dict] = {}
     for kind, branch, repo in (("app", app_branch, app_root(cwd) if app_branch else None), ("site", site_branch, cwd)):
         if not branch:
@@ -681,7 +825,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         if old.get("state") == "waiting" and unchanged:
             changes = {"seenAt": RL._iso(RL._now())}
             gates_skipped_live = False
-            if cleaned_gates and (old.get("gates") or []) != cleaned_gates:
+            if gates and (old.get("gates") or []) != cleaned_gates:
                 if in_live_batch:
                     gates_skipped_live = True
                 else:
@@ -1988,7 +2132,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     steps), SHIPPED (live), LEFT_OUT, GONE, WAITING (run again), TURN (too little time left to form the batch here:
     run take), HALF_FORMED (a take here was cut off: run abort)."""
     batch_cap(max_changes)  # a bad limit stops here, before the change joins the line
-    gates = _validate_join_gates(gates)
+    _validate_join_gates(gates, cwd=cwd, has_app=bool(app_branch))
     app = app_root(cwd)
     # First of all: is the release already this worktree's own? (Its tree is then on the batch branch, maybe with
     # sync_app.py output in it, and must not be asked to be clean.)
@@ -2090,13 +2234,26 @@ def _gate_command(gate: str, cwd: Path, app: Path) -> tuple[Path, list[str]]:
 def _lead_units(cwd: Path, app: Path, batch: dict) -> list[dict]:
     """Every command of the release, in order. `retry`: a gate that failed runs again (a loaded PC times a browser
     gate out now and then); nothing after the gates is ever repeated by itself."""
+    post_sync_scripts, sync_covered = _sync_gate_sets_for_lead(cwd)
+    main_covered = _MAIN_SUITE_GATES if batch.get("shell") else frozenset()
     units: list[dict] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str, str, tuple[str, ...]] | str] = set()
     for e in batch["entries"]:
         for g in e.get("gates") or []:
             g = " ".join(str(g).split())
-            if g and g not in seen:
-                seen.add(g)
+            if not g:
+                continue
+            spec = _canonical_gate_spec(g)
+            if spec is not None:
+                if spec[1] in post_sync_scripts:
+                    continue
+                if spec[3] == () and spec[:3] in sync_covered:
+                    continue
+                if spec in main_covered:
+                    continue
+            dedup_key: tuple[str, str, str, tuple[str, ...]] | str = spec if spec is not None else g
+            if dedup_key not in seen:
+                seen.add(dedup_key)
                 units.append({"step": "gates", "key": f"gates:{g}", "label": g, "gate": g, "entry": e, "retry": True, "timeout": 3600})
     if batch.get("shell"):  # a Command Center change: the main regression suite, desktop then mobile, never in parallel
         units += [

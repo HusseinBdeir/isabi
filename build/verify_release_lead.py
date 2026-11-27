@@ -473,6 +473,40 @@ def main() -> int:  # noqa: PLR0915
         check([e["id"] for e in kept] == [old2["id"]] and kept[0].get("drivenBy") == "driver" and not RB._is_stale(V.entry(S[0], old2["id"]))
               and "kept in line by driver" in out, "status says who keeps a quiet session's change in line")
 
+        # 10b. _lead_units skips RELEASE_GATES / main suites via AST without executing sync_app.py
+        put(D / "build" / "sync_app.py", (
+            "raise SystemExit('never execute sync_app.py from _lead_units')\n"
+            "RELEASE_GATES = [('isabi-app', 'build/verify_a.mjs', 'node')]\n"
+            "SPEED_GATE = ('isabi-app', 'build/verify_speed_budget.mjs', 'node')\n"
+            "POST_SYNC_ONLY_GATES = (('isabi', 'build/verify_min_shell_parity.py'),)\n"
+        ))
+        try:
+            u_dedup = RB._lead_units(D, D_app, {
+                "shell": "19.6.101",
+                "entries": [{
+                    "id": "e1",
+                    "gates": [
+                        "isabi-app: node build/verify_a.mjs",
+                        "isabi-app: node build/verify_speed_budget.mjs",
+                        "isabi-app: node build/verify_mfg.mjs --mobile",
+                        "isabi: python build/verify_min_shell_parity.py",
+                        "isabi-app: node build/verify_a.mjs --mobile",
+                        "isabi-app: node build/verify_b.mjs",
+                        "mfg-web: node build/verify_b.mjs",
+                    ],
+                }],
+            })
+            lead_gate_labels = [u["label"] for u in u_dedup if u["step"] == "gates"]
+            check(
+                lead_gate_labels == [
+                    "isabi-app: node build/verify_a.mjs --mobile",
+                    "isabi-app: node build/verify_b.mjs",
+                ],
+                "_lead_units skips RELEASE_GATES/main/post-sync duplicates via AST without executing sync_app.py",
+            )
+        finally:
+            (D / "build" / "sync_app.py").unlink(missing_ok=True)
+
         # 11. wiring
         check(V.exits(RB.main, ["drive"]) == 2 and V.exits(RB.main, ["lead", "--max", "few"]) == 2,
               "the CLI refuses drive without --holder and a limit that is not a number (exit 2)")

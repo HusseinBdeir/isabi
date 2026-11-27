@@ -378,6 +378,107 @@ def run_tests(*, wait_only: bool = False) -> None:
                 assert rdo.head_sha() != head_v2
                 print("ok   --skip-suite emergency bypass allows commit without invoking suite")
 
+                # 4b. SEED_RELEASE_GATES wiring + real seed-gate execution, stamp reuse, and abort-before-commit
+                import sync_app as sa  # noqa: E402
+                assert len(sa.SEED_RELEASE_GATES) >= 7
+                assert set(sa.SEED_RELEASE_GATES) <= set(sa.RELEASE_GATES)
+                assert tuple(sa.SEED_RELEASE_GATES) == tuple(rdo.DEFAULT_SEED_RELEASE_GATES)
+                assert ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node") in sa.SEED_RELEASE_GATES
+                print("ok   sync_app.SEED_RELEASE_GATES matches release_data_only.DEFAULT_SEED_RELEASE_GATES (subset of RELEASE_GATES)")
+
+                sg_site, sg_app, sg_out = _seed_pair_repos(base / "sg")
+                (sg_site / "build").mkdir(parents=True, exist_ok=True)
+                (sg_site / "build" / "sync_app.py").write_text(
+                    "SEED_RELEASE_GATES = [\n"
+                    "    ('isabi-app', 'build/verify_public_names.py', 'python'),\n"
+                    "    ('isabi-app', 'build/verify_insp_return_and_compound_nav.mjs', 'node'),\n"
+                    "]\n",
+                    encoding="utf-8",
+                )
+                _git(sg_site, "add", "build/sync_app.py")
+                _git(sg_site, "commit", "-q", "-m", "commit sync_app SEED_RELEASE_GATES")
+                sg_log = base / "sg_gate_calls.log"
+                (sg_app / "build" / "verify_public_names.py").write_text(
+                    "import json, os, pathlib, sys\n"
+                    "assert os.environ.get('ISABI_APP_SRC') == os.getcwd(), (os.environ.get('ISABI_APP_SRC'), os.getcwd())\n"
+                    "assert 'ISABI_ROOT' not in os.environ and 'ISABI_NAMES_REQUIRE_REPO' not in os.environ\n"
+                    "core = json.loads(pathlib.Path('js/seed_core.json').read_text(encoding='utf-8'))\n"
+                    "with open(os.environ['TEST_SG_LOG'], 'a', encoding='utf-8') as fh:\n"
+                    "    fh.write(f'py:{core[\"rows\"]}\\n')\n"
+                    "print('PASS: stub public names')\n",
+                    encoding="utf-8",
+                )
+                (sg_app / "build" / "verify_insp_return_and_compound_nav.mjs").write_text(
+                    "import fs from 'node:fs';\n"
+                    "if (process.env.ISABI_APP_SRC !== process.cwd()) process.exit(2);\n"
+                    "if ('ISABI_ROOT' in process.env || 'ISABI_NAMES_REQUIRE_REPO' in process.env) process.exit(3);\n"
+                    "const core = JSON.parse(fs.readFileSync('js/seed_core.json', 'utf8'));\n"
+                    "fs.appendFileSync(process.env.TEST_SG_LOG, `mjs:${core.rows}\\n`);\n"
+                    "if (core.rows === 99) { console.error('FAIL: row-0 shift regression'); process.exit(1); }\n"
+                    "console.log('PASS: stub insp return');\n",
+                    encoding="utf-8",
+                )
+                _git(sg_app, "add", "-A")
+                _git(sg_app, "commit", "-q", "-m", "add seed gate stubs")
+
+                sg_c2 = json.dumps({"generated_at": "2026-11-20T09:00:00Z", "rows": 2}).encode("utf-8")
+                sg_r2 = json.dumps({"sales_tickets": [{"id": "s1"}, {"id": "s2"}]}).encode("utf-8")
+                (sg_app / "js" / "seed_core.json").write_bytes(sg_c2)
+                (sg_app / "js" / "seed_records.json").write_bytes(sg_r2)
+
+                rdo.ISABI = sg_site
+                rdo.ISABI_APP = sg_app
+                rdo.mods = lambda: (types.SimpleNamespace(OUT_DIR=sg_out), None)
+                rdo.git = lambda args, cwd=sg_site, text=True, input_bytes=None, check=True: subprocess.run(
+                    ["git", *args],
+                    cwd=str(sg_site if cwd == orig_isabi else cwd),
+                    capture_output=True,
+                    text=text if input_bytes is None else False,
+                    input=input_bytes,
+                    check=check,
+                )
+                sg_suite_calls = 0
+
+                def sg_suite_pass(_cwd: Path) -> int:
+                    nonlocal sg_suite_calls
+                    sg_suite_calls += 1
+                    return 0
+
+                rdo._run_node_suite = sg_suite_pass
+                os.environ["TEST_SG_LOG"] = str(sg_log)
+                try:
+                    rdo.run_desktop_suite_against_new_seed(skip_suite=False)
+                    assert sg_suite_calls == 1
+                    assert sg_log.read_text(encoding="utf-8").splitlines() == ["py:2", "mjs:2"]
+                    sg_stamp = json.loads((sg_out / "dataonly_suite_stamp.json").read_text(encoding="utf-8"))
+                    assert sg_stamp.get("seedGates") == [
+                        "isabi-app:build/verify_public_names.py",
+                        "isabi-app:build/verify_insp_return_and_compound_nav.mjs",
+                    ]
+                    # Stamp reuse skips both verify_mfg.mjs and seed gates
+                    rdo.stage_commit("topup sg v2")
+                    assert sg_suite_calls == 1
+                    assert sg_log.read_text(encoding="utf-8").splitlines() == ["py:2", "mjs:2"]
+                    sg_head_v2 = rdo.head_sha()
+
+                    # Seed gate failure aborts BEFORE commit and keeps index clean
+                    sg_c99 = json.dumps({"generated_at": "2026-11-20T10:00:00Z", "rows": 99}).encode("utf-8")
+                    (sg_app / "js" / "seed_core.json").write_bytes(sg_c99)
+                    sg_aborted = False
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        try:
+                            rdo.stage_commit("topup sg fail")
+                        except SystemExit as exc:
+                            sg_aborted = "verify_insp_return_and_compound_nav.mjs failed with exit 1" in str(exc)
+                    assert sg_aborted, "failing seed release gate must abort stage_commit"
+                    assert sg_suite_calls == 2
+                    assert sg_log.read_text(encoding="utf-8").splitlines() == ["py:2", "mjs:2", "py:99", "mjs:99"]
+                    assert rdo.head_sha() == sg_head_v2, "failing seed gate must abort BEFORE commit"
+                    assert not _git(sg_site, "diff", "--cached", "--name-only"), "failing seed gate must leave index clean"
+                    print("ok   seed release gates run inside isolated candidate sandbox, stamp-cache on pass, and abort before commit on fail")
+                finally:
+                    os.environ.pop("TEST_SG_LOG", None)
+
                 # 5. --wait-lock CLI validation
                 a_up = rdo.parse_cli_args(["upload", "--wait-lock"])
                 assert a_up.eff_wait_lock == 540 and a_up.poll_lock == 12, a_up
