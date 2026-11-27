@@ -553,7 +553,10 @@
           };
           if (!opts.silent && _ctx && typeof _ctx.rerenderWorkspace === 'function') {
             const ae = typeof document !== 'undefined' ? document.activeElement : null;
-            const isTypingOrEditing = Boolean(ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable));
+            const isTypingOrEditing = Boolean(
+              (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable))
+              || (typeof document !== 'undefined' && document.querySelector('#workspace .void-btn.armed, #workspace tr.rrow.is-row-selected'))
+            );
             const st = _ctx.getState ? _ctx.getState() : null;
             if (st && (st.view === 'reg_sites' || st.view === 'reg_regions')) {
               const refreshedInPlace = Boolean(window.MFG_GEO && typeof window.MFG_GEO.refreshStudioMapInPlace === 'function' && window.MFG_GEO.refreshStudioMapInPlace());

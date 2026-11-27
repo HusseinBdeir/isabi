@@ -1200,17 +1200,21 @@
             pushHaul('Marine Cargo Insurance', 'Marine Cargo Insurance', d.insurance_usd);
           }
         });
-      } else {
-        (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos) && !/cancelled/i.test(String(r.status || '')) && r.incoterm !== 'DDP').forEach(r => {
-          const addUsd = r2(r.landed_add_usd || 0);
-          if (addUsd <= 0) return;
-          pushRm({
-            id: `${r.id}-haul`, voucher: r.id, date: r.date, co: r.company, leg: 'haulage',
-            supplier: r.freight_vendor || 'Customs & Freight Clearing', material: `Freight, Customs & Clearing · ${r.container_bl || r.id}`,
-            qty: 1, unit: 'file', total_usd: addUsd, paid_usd: 0
-          });
-        });
       }
+      (trd.importRows || []).filter(r =>
+        coMatch(r.company, co, allowedCos)
+        && !/cancelled/i.test(String(r.status || ''))
+        && r.incoterm !== 'DDP'
+        && !coveredTrdImp.has(String(r.id || '').trim().toUpperCase())
+      ).forEach(r => {
+        const addUsd = r2(r.landed_add_usd || 0);
+        if (addUsd <= 0) return;
+        pushRm({
+          id: `${r.id}-haul`, voucher: r.id, date: r.date, co: r.company, leg: 'haulage',
+          supplier: r.freight_vendor || 'Customs & Freight Clearing', material: `Freight, Customs & Clearing · ${r.container_bl || r.id}`,
+          qty: 1, unit: 'file', total_usd: addUsd, paid_usd: 0
+        });
+      });
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
       const re = E.computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
       (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -5200,14 +5204,21 @@
     `;
   }
 
-  function render14CustomerStatement(meta, ctx) {
+  const STMT14_SHARE_LANG_KEY = 'isabi_stmt14_share_lang_v1';
+  const STMT14_SHARE_LANGS = ['en_ar', 'en', 'ar', 'fr'];
+  let _stmt14ShareState = null;
+
+  function buildStmt14Model(ctx) {
     const lSoa14 = _rdlSeatLens(ctx);
-    const p = ctx.rdl.params;
+    const p = (ctx && ctx.rdl && ctx.rdl.params) || {};
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const rawFilterCust = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
-    const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust, ctx.customers);
-    const allCustRows = (ctx.arLedgerAll || ctx.salesAll)
+    const custList = Array.isArray(ctx.customers) ? ctx.customers : [];
+    const rawFilterCust = (p.customer && p.customer !== 'ALL') ? p.customer : (custList[0] || dt.custDefault);
+    const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust, custList);
+    const from = String(p.from || '2024-01-01').slice(0, 10);
+    const to = String(p.to || '2026-12-31').slice(0, 10);
+    const allCustRows = (ctx.arLedgerAll || ctx.salesAll || [])
       .filter(r => r.customer === custName && ((lSoa14.books && r.is_receipt_row) || r.is_credit))
       .sort((a, b) => rowDate(a, ctx.basis).localeCompare(rowDate(b, ctx.basis)));
 
@@ -5215,29 +5226,438 @@
     const periodRows = [];
     allCustRows.forEach(r => {
       const d = rowDate(r, ctx.basis);
-      if (d < p.from) {
+      if (d < from) {
         openDr += Number(r.total_usd || 0);
         openCr += Number(r.paid_usd || 0);
-      } else if (d <= p.to) {
+      } else if (d <= to) {
         periodRows.push(r);
       }
     });
 
-    let runBal = openDr - openCr;
-    const totDr = periodRows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const totCr = periodRows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+    const openBal = r2(openDr - openCr);
+    const totDr = r2(periodRows.reduce((s, r) => s + Number(r.total_usd || 0), 0));
+    const totCr = r2(periodRows.reduce((s, r) => s + Number(r.paid_usd || 0), 0));
     const totM3 = periodRows.reduce((s, r) => s + Number(r.qty || 0), 0);
-    const closingBal = runBal + totDr - totCr;
+    const closingBal = r2(openBal + totDr - totCr);
     const bd14 = _computeStmt14PeriodBreakdown(periodRows, lSoa14.books);
     const siteList = [...new Set(allCustRows.filter(r => !r.is_receipt_row).map(r => r.site).filter(Boolean))].slice(0, 3).join(' · ');
+
+    return {
+      lSoa14,
+      isMfg,
+      dt,
+      co: ctx.co,
+      ind: ctx.ind || 'Manufacturing',
+      basis: ctx.basis,
+      from,
+      to,
+      custName,
+      allCustRows,
+      periodRows,
+      openDr,
+      openCr,
+      openBal,
+      totDr,
+      totCr,
+      totM3,
+      closingBal,
+      bd14,
+      siteList
+    };
+  }
+
+  function _resolveStmt14CustomerPhoneDigits(custName, ctx) {
+    if (!custName || custName === 'ALL') return '';
+    const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const targetNames = new Set([normLow(custName)]);
+    const lock14 = _rdlStmtLock();
+    if (lock14 && typeof lock14.getRollupMeta === 'function') {
+      try {
+        const metaR = lock14.getRollupMeta({
+          industry: (ctx && ctx.ind) || 'Manufacturing',
+          company: (ctx && ctx.co) || 'ALL',
+          partyType: 'customer',
+          partyName: custName
+        });
+        if (metaR && Array.isArray(metaR.mergedAliases)) {
+          metaR.mergedAliases.forEach(a => {
+            const k = normLow(a);
+            if (k) targetNames.add(k);
+          });
+        }
+      } catch (_) {}
+    }
+    const seedObj = (ctx && ctx.seed) || (typeof window !== 'undefined' && window.MFG_SEED) || {};
+    const stObj = (ctx && ctx.state) || (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || {};
+    const indCtx = (ctx && ctx.ind) || '';
+    const candidates = [];
+    const pushPhones = r => {
+      if (!r || r.voided) return;
+      candidates.push(r.phone, r.mobile, r.whatsapp, r.contact_phone, r.tenant_phone, r.client_phone);
+    };
+    const custLists = [
+      (seedObj.records && Array.isArray(seedObj.records.customers)) ? seedObj.records.customers : [],
+      (stObj.customRecords && Array.isArray(stObj.customRecords.customers)) ? stObj.customRecords.customers : []
+    ];
+    custLists.forEach(arr => {
+      arr.forEach(c => {
+        if (!c || c.voided) return;
+        if (c.industry && indCtx && c.industry !== indCtx) return;
+        const nm = normLow(c.name || c.customer);
+        if (nm && targetNames.has(nm)) pushPhones(c);
+      });
+    });
+    const domainTables = ['re_leases', 're_tenants', 're_buyers', 'trd_sales', 'trd_customers', 'hsp_memberships', 'ins_policies'];
+    const domSeed = seedObj.industryDomain || {};
+    const domCustom = stObj.industryCustomRows || {};
+    const indLive = seedObj.industryLive || {};
+    const liveArrays = [
+      indLive.realestate && indLive.realestate.leases,
+      indLive.realestate && indLive.realestate.tenants,
+      indLive.realestate && indLive.realestate.buyers,
+      indLive.trading && indLive.trading.sales,
+      indLive.trading && indLive.trading.customers,
+      indLive.hospitality && indLive.hospitality.memberships,
+      indLive.insurance && indLive.insurance.policies
+    ];
+    const pushIfMatch = arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(r => {
+        if (!r || r.voided) return;
+        const nm = normLow(r.name || r.customer || r.tenant || r.buyer || r.member_name || r.client_name || r.client);
+        if (nm && targetNames.has(nm)) pushPhones(r);
+      });
+    };
+    domainTables.forEach(tbl => {
+      pushIfMatch(domSeed[tbl]);
+      pushIfMatch(domCustom[tbl]);
+    });
+    liveArrays.forEach(pushIfMatch);
+    for (const raw of candidates) {
+      let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+      if (!digits) continue;
+      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+        digits = '961' + digits.replace(/^0/, '');
+      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+        digits = '961' + digits;
+      }
+      if (digits.length >= 8 && digits.length <= 15) return digits;
+    }
+    return '';
+  }
+
+  function _fmtStmt14MovementText(r, basis, lang) {
+    const d = rowDate(r, basis);
+    const ref = String(r.ticket_no || r.invoice_no || '-').trim() || '-';
+    const descParts = [r.site, r.product].map(x => _cleanOutwardCopy(x)).filter(x => x && x !== '-');
+    const fallbackDesc = lang === 'ar' ? (r.is_receipt_row ? 'إيصال قبض' : 'قيد') : (lang === 'fr' ? (r.is_receipt_row ? 'Reçu' : 'Écriture') : (r.is_receipt_row ? 'Receipt' : 'Entry'));
+    const desc = descParts.join(' / ') || fallbackDesc;
+    const dr = Number(r.total_usd || 0);
+    const cr = Number(r.paid_usd || 0);
+    let amtTxt = '';
+    if (Math.abs(dr) >= 0.005 && Math.abs(cr) >= 0.005) {
+      const bLbl = lang === 'ar' ? 'مدين' : (lang === 'fr' ? 'Facturé' : 'Billed');
+      const pLbl = lang === 'ar' ? 'دفعة' : (lang === 'fr' ? 'Réglé' : 'Paid');
+      amtTxt = `${bLbl} ${fmtUsdSigned(dr, 2)}, ${pLbl} ${fmtUsdSigned(cr, 2)}`;
+    } else if (Math.abs(dr) >= 0.005) {
+      amtTxt = dr > 0 ? `+${fmtUsd(dr, 2)}` : fmtUsdSigned(dr, 2);
+    } else if (Math.abs(cr) >= 0.005) {
+      amtTxt = cr > 0 ? `-${fmtUsd(cr, 2)}` : `+${fmtUsd(Math.abs(cr), 2)}`;
+    }
+    return `- ${d} | ${ref} | ${desc}${amtTxt ? ' | ' + amtTxt : ''}`;
+  }
+
+  function buildStmt14ConfirmationBlock(m, lang) {
+    if (!m || !m.lSoa14 || !m.lSoa14.books) return '';
+    const coInfo = CO_LEGAL[m.co] || { short: m.co || 'ISABI', legal: m.co || 'Statement of Account', ar: m.co || 'كشف حساب' };
+    const latest = m.periodRows.slice(-5);
+    const balWordEn = m.closingBal < -0.005 ? 'Credit / Advance in Your Favor' : 'Closing Balance Due';
+    const balWordAr = m.closingBal < -0.005 ? 'رصيد دائن لصالحكم' : 'الرصيد النهائي المستحق';
+    const balWordFr = m.closingBal < -0.005 ? 'Avoir / Avance en votre faveur' : 'Solde net à régler';
+    const showDiscBreakdown = Boolean(m.bd14 && m.bd14.hasPeriodDiscounts);
+    const hasCarried = Boolean(showDiscBreakdown && Math.abs(Number(m.bd14.totCarried || 0)) >= 0.005);
+
+    if (lang === 'ar') {
+      const lines = [
+        `${coInfo.ar || coInfo.short} - مصادقة كشف حساب زبون`,
+        `السادة: ${m.custName}`,
+        `الفترة: ${m.from} إلى ${m.to}`,
+        `الحركات خلال الفترة: ${fmtNum(m.periodRows.length, 0)}`,
+        `الرصيد الافتتاحي المدور: ${fmtUsdSigned(m.openBal, 2)}`,
+        `إجمالي الفواتير والمسحوبات في الفترة: ${fmtUsd(m.totDr, 2)}`,
+        `إجمالي الدفعات والتسويات: ${fmtUsd(m.totCr, 2)}`,
+        showDiscBreakdown ? `  المقبوض نقداً أو مصرفياً: ${_fmtStmtUnsignedOrNeg(m.bd14.totCashReceived)}` : '',
+        hasCarried ? `  رصيد منقول: ${_fmtStmtUnsignedOrNeg(m.bd14.totCarried)}` : '',
+        showDiscBreakdown ? `  الحسومات الممنوحة: ${_fmtStmtUnsignedOrNeg(m.bd14.totDiscount)}` : '',
+        `${balWordAr}: ${fmtUsdSigned(m.closingBal, 2)}`
+      ].filter(Boolean);
+      if (latest.length) {
+        lines.push('', 'آخر الحركات:');
+        latest.forEach(r => lines.push(_fmtStmt14MovementText(r, m.basis, 'ar')));
+      }
+      lines.push('', 'يرجى مراجعة الأرقام وتأكيد المطابقة، مع الشكر.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    if (lang === 'fr') {
+      const lines = [
+        `${coInfo.legal || coInfo.short} - Confirmation de solde client`,
+        `Client : ${m.custName}`,
+        `Période : ${m.from} au ${m.to}`,
+        `Écritures sur la période : ${fmtNum(m.periodRows.length, 0)}`,
+        `Solde d'ouverture : ${fmtUsdSigned(m.openBal, 2)}`,
+        `Total facturé sur la période : ${fmtUsd(m.totDr, 2)}`,
+        `Total encaissé et réglé : ${fmtUsd(m.totCr, 2)}`,
+        showDiscBreakdown ? `  Encaissé (trésorerie) : ${_fmtStmtUnsignedOrNeg(m.bd14.totCashReceived)}` : '',
+        hasCarried ? `  Solde reporté : ${_fmtStmtUnsignedOrNeg(m.bd14.totCarried)}` : '',
+        showDiscBreakdown ? `  Remises accordées : ${_fmtStmtUnsignedOrNeg(m.bd14.totDiscount)}` : '',
+        `${balWordFr} : ${fmtUsdSigned(m.closingBal, 2)}`
+      ].filter(Boolean);
+      if (latest.length) {
+        lines.push('', 'Derniers mouvements :');
+        latest.forEach(r => lines.push(_fmtStmt14MovementText(r, m.basis, 'fr')));
+      }
+      lines.push('', 'Merci de bien vouloir vérifier et nous confirmer votre accord sur ce relevé.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    const lines = [
+      `${coInfo.legal || coInfo.short} - Customer Balance Confirmation`,
+      `Customer: ${m.custName}`,
+      `Statement Period: ${m.from} to ${m.to}`,
+      `Period Entries: ${fmtNum(m.periodRows.length, 0)}`,
+      `Opening Balance: ${fmtUsdSigned(m.openBal, 2)}`,
+      `Period Billed: ${fmtUsd(m.totDr, 2)}`,
+      `Period Payments & Credits: ${fmtUsd(m.totCr, 2)}`,
+      showDiscBreakdown ? `  Cash Received: ${_fmtStmtUnsignedOrNeg(m.bd14.totCashReceived)}` : '',
+      hasCarried ? `  Carried Balance: ${_fmtStmtUnsignedOrNeg(m.bd14.totCarried)}` : '',
+      showDiscBreakdown ? `  Discounts: ${_fmtStmtUnsignedOrNeg(m.bd14.totDiscount)}` : '',
+      `${balWordEn}: ${fmtUsdSigned(m.closingBal, 2)}`
+    ].filter(Boolean);
+    if (latest.length) {
+      lines.push('', 'Latest Movements:');
+      latest.forEach(r => lines.push(_fmtStmt14MovementText(r, m.basis, 'en')));
+    }
+    lines.push('', 'Please review and confirm agreement at your convenience.');
+    return _cleanOutwardCopy(lines.join('\n'));
+  }
+
+  function buildStmt14ConfirmationText(m, langMode = 'en_ar') {
+    if (!m || !m.lSoa14 || !m.lSoa14.books) return '';
+    const mode = STMT14_SHARE_LANGS.includes(langMode) ? langMode : 'en_ar';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') {
+      return buildStmt14ConfirmationBlock(m, mode);
+    }
+    return _cleanOutwardCopy(`${buildStmt14ConfirmationBlock(m, 'en')}\n\n---\n\n${buildStmt14ConfirmationBlock(m, 'ar')}`);
+  }
+
+  function closeStmt14ShareModal() {
+    const modal = document.getElementById('stmt14ShareModal');
+    if (modal) {
+      modal.hidden = true;
+      modal.innerHTML = '';
+    }
+    if (_stmt14ShareState && _stmt14ShareState.keyHandler) {
+      document.removeEventListener('keydown', _stmt14ShareState.keyHandler, true);
+    }
+    const rf = _stmt14ShareState && _stmt14ShareState.returnFocus;
+    _stmt14ShareState = null;
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderStmt14ShareModalBody() {
+    const modal = document.getElementById('stmt14ShareModal');
+    if (!modal || !_stmt14ShareState) return;
+    const m = _stmt14ShareState.model;
+    const ctx = _stmt14ShareState.ctx;
+    const lang = _stmt14ShareState.lang || 'en_ar';
+    const text = buildStmt14ConfirmationText(m, lang);
+    const phoneDigits = _resolveStmt14CustomerPhoneDigits(m.custName, ctx);
+    const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const balCls = m.closingBal > 0.005 ? 'is-brass' : (m.closingBal < -0.005 ? 'is-good' : '');
+    const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-stmt14-share-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
+
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card" role="dialog" aria-modal="true" aria-labelledby="stmt14ShareTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow"><span>Customer Balance Confirmation</span></span>
+            <h2 id="stmt14ShareTitle" data-no-i18n="1">${esc(m.custName)}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="stmt14ShareCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="hld-share-kpis">
+            <div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>
+            <div class="hld-share-kpi"><span>Period Billed</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>
+            <div class="hld-share-kpi"><span>Payments & Credits</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
+            ${m.bd14.hasPeriodDiscounts ? `<div class="hld-share-kpi"><span>Cash Received</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.bd14.totCashReceived))}</b></div>` : ''}
+            ${(m.bd14.hasPeriodDiscounts && Math.abs(Number(m.bd14.totCarried || 0)) >= 0.005) ? `<div class="hld-share-kpi"><span>Carried Balance</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.bd14.totCarried))}</b></div>` : ''}
+            ${m.bd14.hasPeriodDiscounts ? `<div class="hld-share-kpi is-brass"><span>Discounts</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.bd14.totDiscount))}</b></div>` : ''}
+            <div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>
+          </div>
+          <div class="hld-share-langbar">
+            <span class="hld-share-lbl">Confirmation Language</span>
+            <div class="hld-share-seg" role="group" aria-label="Confirmation Language">
+              ${langBtn('en_ar', 'EN + عربي')}
+              ${langBtn('en', 'EN')}
+              ${langBtn('ar', 'عربي')}
+              ${langBtn('fr', 'FR')}
+            </div>
+          </div>
+          <textarea id="stmt14ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Customer confirmation message">${esc(text)}</textarea>
+          <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b>` : `<span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span>`}</p>
+          <div class="hld-share-actions">
+            <button type="button" class="btn btn-ghost-bar" id="stmt14SharePrintBtn">${ic('printer')} <span>Print / Save PDF</span></button>
+            <button type="button" class="btn btn-ghost-bar" id="stmt14ShareCopyBtn">${ic('copy')} <span>Copy Message</span></button>
+            <a class="btn btn-primary" id="stmt14ShareWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>Open WhatsApp</span></a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const ta = document.getElementById('stmt14ShareText');
+    const wa = document.getElementById('stmt14ShareWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        const cleanVal = _cleanOutwardCopy(ta.value);
+        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanVal)}`);
+      });
+    }
+    const closeBtn = document.getElementById('stmt14ShareCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeStmt14ShareModal);
+    modal.querySelectorAll('[data-stmt14-share-lang]').forEach(btn => btn.addEventListener('click', () => {
+      const nextL = btn.getAttribute('data-stmt14-share-lang');
+      if (!STMT14_SHARE_LANGS.includes(nextL) || !_stmt14ShareState) return;
+      _stmt14ShareState.lang = nextL;
+      try { localStorage.setItem(STMT14_SHARE_LANG_KEY, nextL); } catch (_) {}
+      renderStmt14ShareModalBody();
+    }));
+    const copyBtn = document.getElementById('stmt14ShareCopyBtn');
+    if (copyBtn && ta) {
+      copyBtn.addEventListener('click', () => {
+        const trCopyBtn = () => {
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            window.MFG_I18N.translateDom(copyBtn);
+          }
+        };
+        const done = () => {
+          copyBtn.innerHTML = '<span>Copied</span>';
+          trCopyBtn();
+          setTimeout(() => {
+            if (copyBtn.isConnected) {
+              copyBtn.innerHTML = `${ic('copy')} <span>Copy Message</span>`;
+              trCopyBtn();
+            }
+          }, 1500);
+        };
+        const cleanCopy = _cleanOutwardCopy(ta.value);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(cleanCopy).then(done).catch(() => { ta.select(); });
+        } else {
+          ta.select();
+        }
+      });
+    }
+    const printBtn = document.getElementById('stmt14SharePrintBtn');
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        closeStmt14ShareModal();
+        setTimeout(() => { try { window.print(); } catch (_) {} }, 60);
+      });
+    }
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(modal);
+    }
+  }
+
+  function _stmt14ShareScopeSig(ctx, m) {
+    const l = (m && m.lSoa14) || _rdlSeatLens(ctx);
+    const st = (ctx && ctx.state) || {};
+    const uid = st.activeUserId != null && st.activeUserId !== '' ? String(st.activeUserId) : (st.activeUserIdx != null ? String(st.activeUserIdx) : '');
+    const aCos = Array.isArray(st.allowedCompanyNames) ? st.allowedCompanyNames.join(',') : '';
+    return `${ctx.ind || ''}|${ctx.co || ''}|${(m && m.custName) || ''}|${(m && m.from) || ''}|${(m && m.to) || ''}|${ctx.basis || 'tx'}|${l.books ? 1 : 0}|${st._officialScopeActive ? 1 : 0}|${uid}|${aCos}`;
+  }
+
+  function _syncStmt14ShareModalScope(ctx, stObj) {
+    if (!_stmt14ShareState) return;
+    const st = stObj || (ctx && ctx.state) || {};
+    const curStId = String(st.activeStatement || '01').padStart(2, '0');
+    const curLens = _rdlSeatLens(ctx);
+    const curSig = _stmt14ShareScopeSig(ctx, buildStmt14Model(ctx));
+    if ((st.view && st.view !== 'statements') || curStId !== '14' || !curLens.books || Boolean(st.kioskLocked) || curSig !== _stmt14ShareState.scopeSig) {
+      closeStmt14ShareModal();
+    }
+  }
+
+  function openStmt14ShareModal(ctxOverride) {
+    if (typeof document === 'undefined' || !document.body) return false;
+    if (_stmt14ShareState) closeStmt14ShareModal();
+    const ent = window.MFG_ENTERPRISE;
+    const seedObj = window.MFG_SEED || (typeof SEED !== 'undefined' ? SEED : {});
+    const stObj = (ent && ent.STATE) || window.STATE || {};
+    const ctx = ctxOverride || buildRdlContext(seedObj, stObj);
+    const m = buildStmt14Model(ctx);
+    if (!m.lSoa14 || !m.lSoa14.books || (ctx.state && ctx.state.kioskLocked) || !m.custName || m.custName === 'ALL') {
+      return false;
+    }
+    let modal = document.getElementById('stmt14ShareModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'stmt14ShareModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      modal.addEventListener('click', ev => { if (ev.target === modal) closeStmt14ShareModal(); });
+      document.body.appendChild(modal);
+    }
+    let savedLang = 'en_ar';
+    try {
+      const ls = localStorage.getItem(STMT14_SHARE_LANG_KEY);
+      if (STMT14_SHARE_LANGS.includes(ls)) savedLang = ls;
+    } catch (_) {}
+    const keyHandler = ev => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        closeStmt14ShareModal();
+      }
+    };
+    document.addEventListener('keydown', keyHandler, true);
+    const scopeSig = _stmt14ShareScopeSig(ctx, m);
+    _stmt14ShareState = {
+      model: m,
+      ctx,
+      scopeSig,
+      lang: savedLang,
+      returnFocus: document.activeElement,
+      keyHandler
+    };
+    modal.hidden = false;
+    renderStmt14ShareModalBody();
+    return true;
+  }
+
+  function render14CustomerStatement(meta, ctx) {
+    const m = buildStmt14Model(ctx);
+    const { lSoa14, isMfg, dt, custName, periodRows, openDr, openCr, openBal, totDr, totCr, totM3, closingBal, bd14, siteList, from, to } = m;
+    let runBal = openBal;
     const dash = '-';
+    const canShare14 = Boolean(lSoa14.books && !(ctx.state && ctx.state.kioskLocked) && custName && custName !== 'ALL');
+    const actions14Html = canShare14
+      ? `<div class="rdl-stmt16-actions no-print"><div class="rdl-stmt16-btn-group"></div><div class="rdl-stmt16-btn-group"><button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt14ShareConfirmBtn">${ic('send_msg')} <span>Share Statement</span></button></div></div>`
+      : '';
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Customer Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Customer Statement of Account (SOA) · Period ${from} to ${to}`)}
+      ${actions14Html}
       <div class="rdl-doc-top">
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
-          ['Statement Period', `${p.from} .. ${p.to}`],
+          ['Statement Period', `${from} .. ${to}`],
           ['Account Code', '411 · Customers AR'],
           [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totM3, dt.qtyDp)} ${dt.qtyUnit} (${periodRows.filter(r => !r.is_receipt_row && !r.is_return).length} ${dt.txPlural})`],
           ['Closing Balance', lSoa14.books ? fmtUsdSigned(closingBal, 2) : 'Restricted']
@@ -5263,7 +5683,7 @@
         </thead>
         <tbody>
           <tr class="rdl-subtotal-row">
-            <td class="mono">${esc(p.from)}</td>
+            <td class="mono">${esc(from)}</td>
             <td colspan="6">Opening Balance Brought Forward (رصيد مدور)</td>
             <td class="num">${lSoa14.books ? fmtUsd(openDr, 2) : 'Restricted'}</td>
             <td class="num">${lSoa14.books ? fmtUsd(openCr, 2) : 'Restricted'}</td>
@@ -5433,6 +5853,7 @@
   const STMT16_SHARE_LANG_KEY = 'isabi_stmt16_share_lang_v1';
   const STMT16_SHARE_LANGS = ['en_ar', 'en', 'ar', 'fr'];
   let _stmt16ShareState = null;
+  let _stmt16DiscPrintTimer = null;
 
   function _stmt16LegDisplay(leg, ind) {
     const l = _normStmt16Leg(leg);
@@ -5463,6 +5884,8 @@
   };
 
   function resetStmt16CompareState() {
+    closeStmt14ShareModal();
+    closeStmt16ShareModal();
     _stmt16CompareState.open = false;
     _stmt16CompareState.scopeSig = '';
     _stmt16CompareState.text = '';
@@ -5698,6 +6121,8 @@
       const sIdx = t._stmtIdx != null ? t._stmtIdx : fallbackIdx;
       const crVal = round2Local(t.cr || 0);
       const drVal = canBooks ? round2Local(t.dr || 0) : 0;
+      const cashUsd = canBooks ? round2Local(t.cash_usd !== undefined ? t.cash_usd : drVal) : 0;
+      const discountUsd = canBooks ? round2Local(t.discount_usd || 0) : 0;
       const base = {
         stmtIdx: sIdx,
         date: String(t.date || '').slice(0, 10),
@@ -5707,14 +6132,15 @@
         type: String(t.type || ''),
         desc: String(t.desc || '')
       };
+      const payExtra = { kind: 'payment', amount: drVal, cashUsd, discountUsd };
       if (Math.abs(crVal) > 0.005 && drVal > 0.005) {
         return [
           Object.assign({}, base, { kind: 'invoice', amount: crVal }),
-          Object.assign({}, base, { kind: 'payment', amount: drVal })
+          Object.assign({}, base, payExtra)
         ];
       }
       if (drVal > 0.005 && Math.abs(crVal) <= 0.005) {
-        return [Object.assign({}, base, { kind: 'payment', amount: drVal })];
+        return [Object.assign({}, base, payExtra)];
       }
       return [Object.assign({}, base, { kind: 'invoice', amount: crVal })];
     };
@@ -5741,7 +6167,7 @@
     const isabiStatusByRow = new Map();
     const setIsabiRowStatus = (stmtIdx, hit) => {
       if (stmtIdx == null) return;
-      const prio = { amount_delta: 1, in_isabi_only: 2, matched: 3 };
+      const prio = { amount_delta: 1, unbooked_discount: 1, in_isabi_only: 2, matched: 3 };
       const prev = isabiStatusByRow.get(stmtIdx);
       if (!prev || (prio[hit.status] ?? 9) <= (prio[prev.status] ?? 9)) {
         isabiStatusByRow.set(stmtIdx, hit);
@@ -5772,6 +6198,20 @@
       setIsabiRowStatus(ir.stmtIdx, { status, deltaUsd, vendorRef: vr.ref, vendorAmt: vr.amount });
     };
 
+    const isUnbookedDiscPaymentMatch = (vr, ir) => Boolean(
+      canBooks
+      && vr && ir
+      && vr.kind === 'payment' && ir.kind === 'payment'
+      && ir.cashUsd > 0.005
+      && ir.discountUsd > 0.005
+      && Math.abs(vr.amount - ir.cashUsd) <= 0.02
+      && Math.abs(vr.amount - ir.amount) > 0.02
+    );
+    const fmtUnbookedDiscNote = (ir, dd = 0) => {
+      const off = (dd > 0 && dd < 9000) ? ` (Date ${dd}d offset)` : '';
+      return `Cash ${fmtUsd(ir.cashUsd, 2)} matches${off}; ${fmtUsd(ir.discountUsd, 2)} discount not on vendor SOA`;
+    };
+
     // Pass 1: exact ref + kind + amount within $0.02
     activeVendorRows.forEach((vr, vIdx) => {
       if (usedVendor.has(vIdx) || !vr.refNorm) return;
@@ -5783,6 +6223,19 @@
         if (bestIdx < 0 || dd < bestDiff) { bestIdx = iIdx; bestDiff = dd; }
       });
       if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', bestDiff > 0 && bestDiff < 9000 ? `Date ${bestDiff}d offset` : '');
+    });
+
+    // Pass 1b: exact ref + payment cash_usd match with ISABI settlement discount -> Unbooked Discount on Vendor SOA
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.refNorm) return;
+      let bestIdx = -1, bestDiff = 9999;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.refNorm !== vr.refNorm) return;
+        if (!isUnbookedDiscPaymentMatch(vr, ir)) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (bestIdx < 0 || dd < bestDiff) { bestIdx = iIdx; bestDiff = dd; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'unbooked_discount', fmtUnbookedDiscNote(isabiPeriodAll[bestIdx], bestDiff));
     });
 
     // Pass 2: exact ref + kind + amount delta
@@ -5820,6 +6273,25 @@
         }
       });
       if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', `Date ${bestDiff}d offset`);
+    });
+
+    // Pass 4b: exact date (then +-3d) payment cash_usd match with ISABI discount -> Unbooked Discount on Vendor SOA
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date || vr.kind !== 'payment') return;
+      const hitIdx = isabiPeriodAll.findIndex((ir, iIdx) =>
+        !usedIsabi.has(iIdx) && ir.date === vr.date && isUnbookedDiscPaymentMatch(vr, ir)
+      );
+      if (hitIdx >= 0) bindPair(vIdx, hitIdx, 'unbooked_discount', fmtUnbookedDiscNote(isabiPeriodAll[hitIdx], 0));
+    });
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date || vr.kind !== 'payment') return;
+      let bestIdx = -1, bestDiff = 99;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || !isUnbookedDiscPaymentMatch(vr, ir)) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (dd <= 3 && dd < bestDiff) { bestIdx = iIdx; bestDiff = dd; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'unbooked_discount', fmtUnbookedDiscNote(isabiPeriodAll[bestIdx], bestDiff));
     });
 
     // Pass 5: unique unmatched ISABI row on same exact date + kind -> amount delta
@@ -5926,11 +6398,12 @@
       matched: pairs.filter(r => r.status === 'matched').length,
       missingInIsabi: pairs.filter(r => r.status === 'missing_in_isabi').length,
       amountDelta: pairs.filter(r => r.status === 'amount_delta').length,
+      unbookedDiscount: pairs.filter(r => r.status === 'unbooked_discount').length,
       otherLegOrPeriod: pairs.filter(r => r.status === 'other_leg_or_period').length,
       duplicateVendor: pairs.filter(r => r.status === 'duplicate_vendor').length,
       inIsabiOnly: pairs.filter(r => r.status === 'in_isabi_only').length
     };
-    const exceptionsCount = counts.missingInIsabi + counts.amountDelta + counts.otherLegOrPeriod + counts.duplicateVendor + counts.inIsabiOnly;
+    const exceptionsCount = counts.missingInIsabi + counts.amountDelta + counts.unbookedDiscount + counts.otherLegOrPeriod + counts.duplicateVendor + counts.inIsabiOnly;
     const vendorInvoiceTot = round2Local(activeVendorRows.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
     const isabiInvoiceTot = round2Local(isabiPeriodAll.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
     const netDeltaUsd = round2Local(vendorInvoiceTot - isabiInvoiceTot);
@@ -5940,7 +6413,7 @@
       : null;
 
     pairs.sort((a, b) => {
-      const ord = { missing_in_isabi: 0, amount_delta: 1, duplicate_vendor: 2, other_leg_or_period: 3, in_isabi_only: 4, matched: 5 };
+      const ord = { missing_in_isabi: 0, amount_delta: 1, unbooked_discount: 2, duplicate_vendor: 3, other_leg_or_period: 4, in_isabi_only: 5, matched: 6 };
       const oa = ord[a.status] ?? 9, ob = ord[b.status] ?? 9;
       if (oa !== ob) return oa - ob;
       return String(a.date || '').localeCompare(String(b.date || ''));
@@ -5964,11 +6437,22 @@
 
   function _stmt16CmpStatusLabel(status) {
     if (status === 'matched') return { cls: 'is-good', text: 'Matched' };
+    if (status === 'unbooked_discount') return { cls: 'is-warn', text: 'Unbooked Discount on Vendor SOA' };
     if (status === 'amount_delta') return { cls: 'is-warn', text: 'Amount Delta' };
     if (status === 'other_leg_or_period') return { cls: 'is-info', text: 'Other Leg / Date' };
     if (status === 'duplicate_vendor') return { cls: 'is-err', text: 'Duplicate on SOA' };
     if (status === 'in_isabi_only') return { cls: 'is-muted', text: 'In ISABI Only' };
     return { cls: 'is-err', text: 'Missing in ISABI' };
+  }
+
+  function getStmt16DiscrepancyRows(cmp, canBooks) {
+    const rows = (cmp && Array.isArray(cmp.rows)) ? cmp.rows : [];
+    return rows.filter(r => {
+      if (!r) return false;
+      if (r.status !== 'missing_in_isabi' && r.status !== 'amount_delta' && r.status !== 'duplicate_vendor') return false;
+      if (!canBooks && r.kind === 'payment') return false;
+      return true;
+    });
   }
 
   function renderStmt16ComparePanelHtml(ctx, m, cmp) {
@@ -5977,15 +6461,23 @@
     const activeScope = cmp ? cmp.scope : (_stmt16CompareState.scopeMode === 'all' ? 'all' : 'invoices');
     const chip = _stmt16CompareState.filterChip || 'exceptions';
     const allRows = (cmp && cmp.rows) || [];
+    const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const canPostMissingForRow = r => Boolean(
+      r && r.status === 'missing_in_isabi' && ent && typeof ent.canPostStmt16MissingRow === 'function'
+      && ent.canPostStmt16MissingRow({ ind: ctx.ind, co: m.co, leg: m.leg, kind: r.kind, supName: m.supName, vendorAmt: r.vendorAmt, allLegsTx: m.allLegsTx })
+    );
     const shownRows = allRows.filter(r => {
       if (chip === 'exceptions') return r.status !== 'matched';
       if (chip === 'missing') return r.status === 'missing_in_isabi';
       if (chip === 'delta') return r.status === 'amount_delta';
+      if (chip === 'unbooked_disc') return r.status === 'unbooked_discount';
       if (chip === 'dup') return r.status === 'duplicate_vendor';
       if (chip === 'isabi_only') return r.status === 'in_isabi_only';
       if (chip === 'matched') return r.status === 'matched';
       return true;
     });
+    const showActionCol = Boolean(cmp && allRows.some(canPostMissingForRow));
     const chipBtn = (k, lbl, cnt) => `<button type="button" class="rdl-cmp-chip ${chip === k ? 'active' : ''}" data-stmt16-cmp-chip="${k}"><span>${lbl}</span>${cnt != null ? ` (<span data-no-i18n="1">${cnt}</span>)` : ''}</button>`;
 
     return `
@@ -6017,6 +6509,7 @@
               <button type="button" class="rdl-tb-btn" id="stmt16CompareScanBtn"${_stmt16CompareState.busy ? ' disabled' : ''}>${ic('upload')} <span>${_stmt16CompareState.busy ? 'Scanning...' : 'Upload PDF / Photo / CSV'}</span></button>
               <button type="button" class="rdl-tb-btn" id="stmt16CompareClearBtn"><span>Clear</span></button>
               <button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn" id="stmt16CompareRunBtn">${ic('bolt')} <span>Compare Lines</span></button>
+              ${discRows.length > 0 ? `<button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt16ShareDiscrepancyBtn">${ic('send_msg')} <span>Share Discrepancy Note</span> <b data-no-i18n="1">(${discRows.length})</b></button>` : ''}
             </div>
           </div>
         </div>
@@ -6025,6 +6518,7 @@
             <div class="rdl-cmp-kpi is-good"><small>Matched</small><b data-no-i18n="1">${cmp.counts.matched}</b></div>
             <div class="rdl-cmp-kpi is-err"><small>Missing in ISABI</small><b data-no-i18n="1">${cmp.counts.missingInIsabi}</b></div>
             <div class="rdl-cmp-kpi is-warn"><small>Amount Delta</small><b data-no-i18n="1">${cmp.counts.amountDelta}</b></div>
+            ${cmp.counts.unbookedDiscount > 0 ? `<div class="rdl-cmp-kpi is-warn"><small>Unbooked Discount on Vendor SOA</small><b data-no-i18n="1">${cmp.counts.unbookedDiscount}</b></div>` : ''}
             <div class="rdl-cmp-kpi is-info"><small>Other Leg / Date</small><b data-no-i18n="1">${cmp.counts.otherLegOrPeriod}</b></div>
             <div class="rdl-cmp-kpi is-muted"><small>In ISABI Only</small><b data-no-i18n="1">${cmp.counts.inIsabiOnly}</b></div>
             ${cmp.counts.duplicateVendor > 0 ? `<div class="rdl-cmp-kpi is-err"><small>Duplicate on SOA</small><b data-no-i18n="1">${cmp.counts.duplicateVendor}</b></div>` : ''}
@@ -6035,6 +6529,7 @@
             ${chipBtn('all', 'All Lines', allRows.length)}
             ${chipBtn('missing', 'Missing in ISABI', cmp.counts.missingInIsabi)}
             ${chipBtn('delta', 'Amount Delta', cmp.counts.amountDelta)}
+            ${cmp.counts.unbookedDiscount > 0 ? chipBtn('unbooked_disc', 'Unbooked Discount on Vendor SOA', cmp.counts.unbookedDiscount) : ''}
             ${cmp.counts.duplicateVendor > 0 ? chipBtn('dup', 'Duplicate on SOA', cmp.counts.duplicateVendor) : ''}
             ${chipBtn('isabi_only', 'In ISABI Only', cmp.counts.inIsabiOnly)}
             ${chipBtn('matched', 'Matched', cmp.counts.matched)}
@@ -6051,12 +6546,15 @@
                   <th class="num">Vendor ($)</th>
                   <th class="num">ISABI ($)</th>
                   <th class="num">Delta ($)</th>
+                  ${showActionCol ? `<th class="no-print">Action</th>` : ''}
                 </tr>
               </thead>
               <tbody>
                 ${shownRows.length ? shownRows.map(r => {
                   const stLbl = _stmt16CmpStatusLabel(r.status);
                   const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
+                  const origIdx = allRows.indexOf(r);
+                  const canPostThis = showActionCol && canPostMissingForRow(r) && origIdx >= 0;
                   return `
                     <tr>
                       <td><span class="rdl-cmp-inline-pill ${stLbl.cls}"><span>${stLbl.text}</span></span></td>
@@ -6067,9 +6565,10 @@
                       <td class="num mono" data-no-i18n="1">${r.vendorAmt ? fmtUsdSigned(r.vendorAmt, 2) : '-'}</td>
                       <td class="num mono" data-no-i18n="1">${r.isabiAmt ? fmtUsdSigned(r.isabiAmt, 2) : '-'}</td>
                       <td class="num mono" data-no-i18n="1">${Math.abs(r.deltaUsd || 0) > 0.005 ? fmtUsdSigned(r.deltaUsd, 2) : '$0.00'}</td>
+                      ${showActionCol ? `<td class="no-print">${canPostThis ? `<button type="button" class="rdl-tb-btn rdl-cmp-post-btn" data-stmt16-post-missing="${origIdx}">${ic('plus')} <span>+ Post Slip</span></button>` : '<span class="muted" data-no-i18n="1">-</span>'}</td>` : ''}
                     </tr>
                   `;
-                }).join('') : `<tr><td colspan="8" class="rdl-cmp-empty"><span>${cmp.exceptionsCount === 0 && chip === 'exceptions' ? 'All vendor lines match this Statement 16 leg' : 'No lines in this filter'}</span></td></tr>`}
+                }).join('') : `<tr><td colspan="${showActionCol ? 9 : 8}" class="rdl-cmp-empty"><span>${cmp.exceptionsCount === 0 && chip === 'exceptions' ? 'All vendor lines match this Statement 16 leg' : 'No lines in this filter'}</span></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -6427,6 +6926,135 @@
     return _cleanOutwardCopy(`${buildStmt16ConfirmationBlock(m, 'en')}\n\n---\n\n${buildStmt16ConfirmationBlock(m, 'ar')}`);
   }
 
+  function _csvSafeStmt16Cell(v) {
+    let s = _cleanOutwardCopy(String(v == null ? '' : v));
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    if (/[",\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  function buildStmt16DiscrepancyBlock(m, cmp, lang) {
+    if (!m || !cmp) return '';
+    const coInfo = CO_LEGAL[m.co] || CO_LEGAL.WTC;
+    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
+    const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
+    const missingCnt = discRows.filter(r => r.status === 'missing_in_isabi').length;
+    const deltaCnt = discRows.filter(r => r.status === 'amount_delta').length;
+    const dupCnt = discRows.filter(r => r.status === 'duplicate_vendor').length;
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const discDeltaSum = round2Local(discRows.reduce((s, r) => s + Number(r.deltaUsd || 0), 0));
+
+    const fmtRowLine = (r, l) => {
+      const dtStr = r.date || '-';
+      const refStr = r.vendorRef && r.vendorRef !== '-' ? r.vendorRef : (r.isabiRef || '-');
+      const descStr = _cleanOutwardCopy(r.vendorDesc || r.isabiDesc || '-');
+      const vAmt = fmtUsdSigned(r.vendorAmt || 0, 2);
+      const iAmt = fmtUsdSigned(r.isabiAmt || 0, 2);
+      const dAmt = fmtUsdSigned(r.deltaUsd || 0, 2);
+      if (r.status === 'missing_in_isabi') {
+        if (l === 'ar') return `- ${dtStr} | ${refStr} | ${descStr} | في كشفكم: ${vAmt} | غير مسجل لدينا (يرجى تزويدنا بالسند الموقع)`;
+        if (l === 'fr') return `- ${dtStr} | ${refStr} | ${descStr} | Sur votre relevé : ${vAmt} | Absent de nos livres (merci de transmettre le bon signé)`;
+        return `- ${dtStr} | ${refStr} | ${descStr} | On Vendor SOA: ${vAmt} | Missing in our records (please share signed slip)`;
+      }
+      if (r.status === 'duplicate_vendor') {
+        if (l === 'ar') return `- ${dtStr} | ${refStr} | ${descStr} | في كشفكم: ${vAmt} | مكرر في كشف الحساب المرسل`;
+        if (l === 'fr') return `- ${dtStr} | ${refStr} | ${descStr} | Votre relevé : ${vAmt} | Facturé en double sur votre relevé`;
+        return `- ${dtStr} | ${refStr} | ${descStr} | Vendor SOA: ${vAmt} | Listed more than once on vendor statement`;
+      }
+      if (l === 'ar') return `- ${dtStr} | ${refStr} | ${descStr} | في كشفكم: ${vAmt} | المسجل لدينا: ${iAmt} | الفرق: ${dAmt}`;
+      if (l === 'fr') return `- ${dtStr} | ${refStr} | ${descStr} | Votre relevé : ${vAmt} | Enregistré : ${iAmt} | Écart : ${dAmt}`;
+      return `- ${dtStr} | ${refStr} | ${descStr} | Vendor SOA: ${vAmt} | Recorded: ${iAmt} | Difference: ${dAmt}`;
+    };
+
+    if (lang === 'ar') {
+      const lines = [
+        `${coInfo.ar || coInfo.short} - مذكرة فروقات كشف حساب مورد`,
+        `السادة: ${m.supName}`,
+        `النطاق: ${m.legLbl.ar}`,
+        `الفترة: ${m.from} إلى ${m.to}`,
+        `عدد البنود غير المطابقة: ${fmtNum(discRows.length, 0)} (غير مسجل لدينا: ${fmtNum(missingCnt, 0)} | فروقات مبالغ: ${fmtNum(deltaCnt, 0)} | مكرر: ${fmtNum(dupCnt, 0)})`,
+        `صافي فرق الفروقات: ${fmtUsdSigned(discDeltaSum, 2)}`,
+        (canBooks && cmp.closingDeltaUsd != null) ? `فرق الرصيد الختامي المصرح به مقابل المسجل: ${fmtUsdSigned(cmp.closingDeltaUsd, 2)}` : ''
+      ].filter(Boolean);
+      if (discRows.length) {
+        lines.push('', 'تفاصيل الفروقات للمراجعة:');
+        discRows.forEach(r => lines.push(fmtRowLine(r, 'ar')));
+      }
+      lines.push('', 'يرجى تزويدنا بالسندات الناقصة أو مراجعة الفروقات أعلاه قبل استكمال المطابقة، مع الشكر.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    if (lang === 'fr') {
+      const lines = [
+        `${coInfo.legal || coInfo.short} - Note d'écarts sur relevé fournisseur`,
+        `Fournisseur / Partenaire : ${m.supName}`,
+        `Volet : ${m.legLbl.fr}`,
+        `Période : ${m.from} au ${m.to}`,
+        `Lignes en écart : ${fmtNum(discRows.length, 0)} (Absentes : ${fmtNum(missingCnt, 0)} | Écarts de montant : ${fmtNum(deltaCnt, 0)} | Doublons : ${fmtNum(dupCnt, 0)})`,
+        `Écart net des exceptions : ${fmtUsdSigned(discDeltaSum, 2)}`,
+        (canBooks && cmp.closingDeltaUsd != null) ? `Écart entre solde final déclaré et enregistré : ${fmtUsdSigned(cmp.closingDeltaUsd, 2)}` : ''
+      ].filter(Boolean);
+      if (discRows.length) {
+        lines.push('', 'Exceptions à vérifier :');
+        discRows.forEach(r => lines.push(fmtRowLine(r, 'fr')));
+      }
+      lines.push('', 'Merci de nous transmettre les bons manquants ou de vérifier ces lignes afin de finaliser le rapprochement.');
+      return _cleanOutwardCopy(lines.join('\n'));
+    }
+
+    const lines = [
+      `${coInfo.legal || coInfo.short} - Supplier Statement Discrepancy Note`,
+      `Counterparty: ${m.supName}`,
+      `Leg Scope: ${m.legLbl.en}`,
+      `Statement Period: ${m.from} to ${m.to}`,
+      `Unmatched Exceptions: ${fmtNum(discRows.length, 0)} (Missing in ISABI: ${fmtNum(missingCnt, 0)} | Amount Delta: ${fmtNum(deltaCnt, 0)} | Duplicate on SOA: ${fmtNum(dupCnt, 0)})`,
+      `Net Exception Delta: ${fmtUsdSigned(discDeltaSum, 2)}`,
+      (canBooks && cmp.closingDeltaUsd != null) ? `Stated vs Recorded Closing Variance: ${fmtUsdSigned(cmp.closingDeltaUsd, 2)}` : ''
+    ].filter(Boolean);
+    if (discRows.length) {
+      lines.push('', 'Exceptions Requiring Review:');
+      discRows.forEach(r => lines.push(fmtRowLine(r, 'en')));
+    }
+    lines.push('', 'Please share the missing signed slips or confirm the variance lines above so we can close reconciliation.');
+    return _cleanOutwardCopy(lines.join('\n'));
+  }
+
+  function buildStmt16DiscrepancyText(m, cmp, langMode = 'en_ar') {
+    if (!m || !cmp) return '';
+    const mode = STMT16_SHARE_LANGS.includes(langMode) ? langMode : 'en_ar';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') {
+      return buildStmt16DiscrepancyBlock(m, cmp, mode);
+    }
+    return _cleanOutwardCopy(`${buildStmt16DiscrepancyBlock(m, cmp, 'en')}\n\n---\n\n${buildStmt16DiscrepancyBlock(m, cmp, 'ar')}`);
+  }
+
+  function buildStmt16DiscrepancyCsv(m, cmp) {
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
+    const header = ['Status', 'Date', 'Vendor Ref', 'ISABI Ref', 'Details', 'Vendor (USD)', 'Recorded (USD)', 'Delta (USD)'];
+    const lines = [header.map(_csvSafeStmt16Cell).join(',')];
+    discRows.forEach(r => {
+      const stTxt = _stmt16CmpStatusLabel(r.status).text;
+      const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
+      const vAmt = Number(r.vendorAmt || 0).toFixed(2);
+      const iAmt = r.isabiAmt ? Number(r.isabiAmt).toFixed(2) : '0.00';
+      const dAmt = Number(r.deltaUsd || 0).toFixed(2);
+      lines.push([stTxt, r.date || '-', r.vendorRef || '-', r.isabiRef || '-', dtl, vAmt, iAmt, dAmt].map(_csvSafeStmt16Cell).join(','));
+    });
+    return lines.join('\r\n');
+  }
+
+  function _clearStmt16DiscrepancyPrintMode() {
+    if (_stmt16DiscPrintTimer) {
+      clearTimeout(_stmt16DiscPrintTimer);
+      _stmt16DiscPrintTimer = null;
+    }
+    if (typeof document === 'undefined') return;
+    if (document.body) document.body.classList.remove('is-printing-stmt16-discrepancy');
+    const sheet = document.getElementById('stmt16DiscrepancyPrintSheet');
+    if (sheet) sheet.hidden = true;
+  }
+
   function closeStmt16ShareModal() {
     const modal = document.getElementById('stmt16ShareModal');
     if (modal) {
@@ -6447,22 +7075,53 @@
     const modal = document.getElementById('stmt16ShareModal');
     if (!modal || !_stmt16ShareState) return;
     const m = _stmt16ShareState.model;
+    const cmp = _stmt16ShareState.cmp || null;
+    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
+    const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
+    const hasDisc = discRows.length > 0;
+    const mode = (_stmt16ShareState.mode === 'discrepancy' && hasDisc) ? 'discrepancy' : 'confirmation';
+    _stmt16ShareState.mode = mode;
     const lang = _stmt16ShareState.lang || 'en_ar';
-    const text = buildStmt16ConfirmationText(m, lang);
+    const text = mode === 'discrepancy'
+      ? buildStmt16DiscrepancyText(m, cmp, lang)
+      : buildStmt16ConfirmationText(m, lang);
     const phoneDigits = (typeof window !== 'undefined' && typeof window.__mfgResolveSupplierPhoneDigits === 'function')
       ? window.__mfgResolveSupplierPhoneDigits(m.supName)
       : '';
     const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
     const waHref = `${waPrefix}${encodeURIComponent(text)}`;
-    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
     const balCls = !canBooks ? '' : (m.closingBal > 0.005 ? 'is-brass' : (m.closingBal < -0.005 ? 'is-good' : ''));
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const discMissing = discRows.filter(r => r.status === 'missing_in_isabi').length;
+    const discDeltaDup = discRows.filter(r => r.status === 'amount_delta' || r.status === 'duplicate_vendor').length;
+    const discNetDelta = round2Local(discRows.reduce((s, r) => s + Number(r.deltaUsd || 0), 0));
     const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-stmt16-share-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
+    const modeBtn = (k, lbl, cnt) => `<button type="button" class="hld-share-lang-btn ${mode === k ? 'active' : ''}" data-stmt16-share-mode="${k}" aria-pressed="${mode === k ? 'true' : 'false'}"><span>${lbl}</span>${cnt != null ? ` <span data-no-i18n="1">(${cnt})</span>` : ''}</button>`;
+
+    const kpiHtml = mode === 'discrepancy'
+      ? `
+          <div class="hld-share-kpi"><span>Leg Scope</span><b>${esc(m.legLbl.en)}</b></div>
+          <div class="hld-share-kpi is-brass"><span>Unmatched Exceptions</span><b class="mono" data-no-i18n="1">${discRows.length}</b></div>
+          <div class="hld-share-kpi"><span>Missing in ISABI</span><b class="mono" data-no-i18n="1">${discMissing}</b></div>
+          <div class="hld-share-kpi"><span>Amount / Duplicate Issues</span><b class="mono" data-no-i18n="1">${discDeltaDup}</b></div>
+          <div class="hld-share-kpi is-brass"><span>Net Exception Delta</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(discNetDelta, 2))}</b></div>
+        `
+      : `
+          <div class="hld-share-kpi"><span>Leg Scope</span><b>${esc(m.legLbl.en)}</b></div>
+          ${canBooks ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>` : ''}
+          <div class="hld-share-kpi"><span>Period Accrued</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
+          ${canBooks ? `<div class="hld-share-kpi"><span>Settlements Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>` : ''}
+          ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi"><span>Cash Paid</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCashPaid))}</b></div>` : ''}
+          ${(canBooks && m.hasPeriodDiscounts && Math.abs(Number(m.totCarried || 0)) >= 0.005) ? `<div class="hld-share-kpi"><span>Carried Balance</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCarried))}</b></div>` : ''}
+          ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi is-brass"><span>Discounts</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totDiscount))}</b></div>` : ''}
+          ${canBooks ? `<div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>` : ''}
+        `;
 
     modal.innerHTML = `
       <div class="modal-card hld-share-card" role="dialog" aria-modal="true" aria-labelledby="stmt16ShareTitle">
         <div class="modal-header">
           <div>
-            <span class="modal-eyebrow"><span>Supplier Balance Confirmation</span> <span data-no-i18n="1">·</span> <span>${esc(m.legLbl.en)}</span></span>
+            <span class="modal-eyebrow"><span>${mode === 'discrepancy' ? 'Supplier Statement Discrepancy Note' : 'Supplier Balance Confirmation'}</span> <span data-no-i18n="1">·</span> <span>${esc(m.legLbl.en)}</span></span>
             <h2 id="stmt16ShareTitle" data-no-i18n="1">${esc(m.supName)}</h2>
           </div>
           <div class="modal-header-actions">
@@ -6470,16 +7129,16 @@
           </div>
         </div>
         <div class="modal-body">
-          <div class="hld-share-kpis">
-            <div class="hld-share-kpi"><span>Leg Scope</span><b>${esc(m.legLbl.en)}</b></div>
-            ${canBooks ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>` : ''}
-            <div class="hld-share-kpi"><span>Period Accrued</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
-            ${canBooks ? `<div class="hld-share-kpi"><span>Settlements Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>` : ''}
-            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi"><span>Cash Paid</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCashPaid))}</b></div>` : ''}
-            ${(canBooks && m.hasPeriodDiscounts && Math.abs(Number(m.totCarried || 0)) >= 0.005) ? `<div class="hld-share-kpi"><span>Carried Balance</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCarried))}</b></div>` : ''}
-            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi is-brass"><span>Discounts</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totDiscount))}</b></div>` : ''}
-            ${canBooks ? `<div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>` : ''}
-          </div>
+          ${hasDisc ? `
+            <div class="hld-share-mode-bar">
+              <span class="hld-share-lbl">Message Type</span>
+              <div class="hld-share-seg" role="group" aria-label="Message Type">
+                ${modeBtn('confirmation', 'Balance Confirmation', null)}
+                ${modeBtn('discrepancy', 'Discrepancy Note', discRows.length)}
+              </div>
+            </div>
+          ` : ''}
+          <div class="hld-share-kpis">${kpiHtml}</div>
           <div class="hld-share-langbar">
             <span class="hld-share-lbl">Confirmation Language</span>
             <div class="hld-share-seg" role="group" aria-label="Confirmation Language">
@@ -6489,9 +7148,10 @@
               ${langBtn('fr', 'FR')}
             </div>
           </div>
-          <textarea id="stmt16ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Supplier confirmation message">${esc(text)}</textarea>
+          <textarea id="stmt16ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="${mode === 'discrepancy' ? 'Supplier discrepancy note message' : 'Supplier confirmation message'}">${esc(text)}</textarea>
           <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>` : `<span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>`}</p>
           <div class="hld-share-actions">
+            ${mode === 'discrepancy' ? `<button type="button" class="btn btn-ghost-bar" id="stmt16ShareCsvBtn">${ic('download')} <span>Download CSV</span></button>` : ''}
             <button type="button" class="btn btn-ghost-bar" id="stmt16SharePrintBtn">${ic('printer')} <span>Print / Save PDF</span></button>
             <button type="button" class="btn btn-ghost-bar" id="stmt16ShareCopyBtn">${ic('copy')} <span>Copy Message</span></button>
             <a class="btn btn-primary" id="stmt16ShareWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>Open WhatsApp</span></a>
@@ -6510,6 +7170,12 @@
     }
     const closeBtn = document.getElementById('stmt16ShareCloseBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeStmt16ShareModal);
+    modal.querySelectorAll('[data-stmt16-share-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const nextM = btn.getAttribute('data-stmt16-share-mode');
+      if (!_stmt16ShareState || (nextM !== 'discrepancy' && nextM !== 'confirmation')) return;
+      _stmt16ShareState.mode = nextM;
+      renderStmt16ShareModalBody();
+    }));
     modal.querySelectorAll('[data-stmt16-share-lang]').forEach(btn => btn.addEventListener('click', () => {
       const nextL = btn.getAttribute('data-stmt16-share-lang');
       if (!STMT16_SHARE_LANGS.includes(nextL) || !_stmt16ShareState) return;
@@ -6517,6 +7183,22 @@
       try { localStorage.setItem(STMT16_SHARE_LANG_KEY, nextL); } catch (_) {}
       renderStmt16ShareModalBody();
     }));
+    const csvBtn = document.getElementById('stmt16ShareCsvBtn');
+    if (csvBtn && mode === 'discrepancy') {
+      csvBtn.addEventListener('click', () => {
+        const csvOut = buildStmt16DiscrepancyCsv(m, cmp);
+        const blob = new Blob(['\ufeff' + csvOut], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const safeSup = String(m.supName || 'Supplier').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 32);
+        a.href = url;
+        a.download = `Discrepancy_Note_${safeSup}_${m.to || 'soa'}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+    }
     const copyBtn = document.getElementById('stmt16ShareCopyBtn');
     if (copyBtn && ta) {
       copyBtn.addEventListener('click', () => {
@@ -6535,8 +7217,9 @@
             }
           }, 1500);
         };
+        const cleanCopy = _cleanOutwardCopy(ta.value);
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(ta.value).then(done).catch(() => { ta.select(); });
+          navigator.clipboard.writeText(cleanCopy).then(done).catch(() => { ta.select(); });
         } else {
           ta.select();
         }
@@ -6545,8 +7228,22 @@
     const printBtn = document.getElementById('stmt16SharePrintBtn');
     if (printBtn) {
       printBtn.addEventListener('click', () => {
+        const isDiscPrint = Boolean(_stmt16ShareState && _stmt16ShareState.mode === 'discrepancy');
         closeStmt16ShareModal();
-        setTimeout(() => { try { window.print(); } catch (_) {} }, 60);
+        if (isDiscPrint && document.body) {
+          if (_stmt16DiscPrintTimer) {
+            clearTimeout(_stmt16DiscPrintTimer);
+            _stmt16DiscPrintTimer = null;
+          }
+          const printSheet = document.getElementById('stmt16DiscrepancyPrintSheet');
+          if (printSheet) printSheet.hidden = false;
+          document.body.classList.add('is-printing-stmt16-discrepancy');
+          window.addEventListener('afterprint', _clearStmt16DiscrepancyPrintMode, { once: true });
+          _stmt16DiscPrintTimer = setTimeout(_clearStmt16DiscrepancyPrintMode, 15000);
+        } else {
+          _clearStmt16DiscrepancyPrintMode();
+        }
+        setTimeout(() => { try { window.print(); } catch (_) { _clearStmt16DiscrepancyPrintMode(); } }, 60);
       });
     }
     if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
@@ -6554,7 +7251,7 @@
     }
   }
 
-  function openStmt16ShareModal(ctxOverride) {
+  function openStmt16ShareModal(ctxOverride, opts = {}) {
     if (typeof document === 'undefined' || !document.body) return false;
     if (_stmt16ShareState) closeStmt16ShareModal();
     const ent = window.MFG_ENTERPRISE;
@@ -6563,6 +7260,13 @@
     const ctx = ctxOverride || buildRdlContext(seedObj, stObj);
     const m = buildStmt16Model(ctx);
     if (!m.lAp16.books && !m.lAp16.expenses) return false;
+    const canBooks = Boolean(m.lAp16 && m.lAp16.books);
+    const cmpNow = (opts && opts.cmp)
+      || (_stmt16CompareState.open && String(_stmt16CompareState.text || '').trim()
+        ? compareStmt16WithVendorRows(ctx, m, _stmt16CompareState.text, { scope: _stmt16CompareState.scopeMode })
+        : null);
+    const discRowsNow = getStmt16DiscrepancyRows(cmpNow, canBooks);
+    const reqMode = (opts && opts.mode === 'discrepancy' && discRowsNow.length > 0) ? 'discrepancy' : 'confirmation';
     let modal = document.getElementById('stmt16ShareModal');
     if (!modal) {
       modal = document.createElement('div');
@@ -6586,6 +7290,8 @@
     document.addEventListener('keydown', keyHandler, true);
     _stmt16ShareState = {
       model: m,
+      cmp: cmpNow,
+      mode: reqMode,
       lang: savedLang,
       returnFocus: document.activeElement,
       keyHandler
@@ -6593,6 +7299,75 @@
     modal.hidden = false;
     renderStmt16ShareModalBody();
     return true;
+  }
+
+  function renderStmt16DiscrepancyPrintSheetHtml(meta, ctx, m, cmp) {
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
+    if (!discRows.length) return '';
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const discDeltaSum = round2Local(discRows.reduce((s, r) => s + Number(r.deltaUsd || 0), 0));
+    const discMeta = Object.assign({}, meta, {
+      title: 'Supplier Statement Discrepancy Note',
+      ar: 'مذكرة فروقات كشف حساب مورد'
+    });
+    return `
+      <div id="stmt16DiscrepancyPrintSheet" class="rdl-stmt16-disc-print-only" hidden>
+        ${sheetHeaderHtml(discMeta, ctx.co, 'Supplier Statement Discrepancy Note')}
+        <div class="rdl-doc-top">
+          ${companyBlockHtml(ctx.co)}
+          <table class="rdl-meta-box">
+            <tbody>
+              <tr><td class="rdl-meta-lbl">Statement Period</td><td class="rdl-meta-val bold" data-no-i18n="1">${esc(`${m.from} .. ${m.to}`)}</td></tr>
+              <tr><td class="rdl-meta-lbl">Payable Leg</td><td class="rdl-meta-val"><span>${esc(m.legLbl.en)}</span></td></tr>
+              <tr><td class="rdl-meta-lbl">Unmatched Exceptions</td><td class="rdl-meta-val"><span data-no-i18n="1">${discRows.length}</span> <span>lines</span></td></tr>
+              <tr><td class="rdl-meta-lbl">Net Exception Delta</td><td class="rdl-meta-val" data-no-i18n="1">${esc(fmtUsdSigned(discDeltaSum, 2))}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        ${partyBlockHtml('Supplier Account / كشف حساب المورد', m.supName, '', 'Discrepancy Follow-Up Sheet', '')}
+        <table class="rdl-table rdl-stmt16-disc-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Vendor Ref</th>
+              <th>ISABI Ref</th>
+              <th>Details</th>
+              <th class="num">Vendor ($)</th>
+              <th class="num">Recorded ($)</th>
+              <th class="num">Delta ($)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${discRows.map(r => {
+              const stLbl = _stmt16CmpStatusLabel(r.status);
+              const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
+              return `
+                <tr>
+                  <td><span>${esc(stLbl.text)}</span></td>
+                  <td class="mono" data-no-i18n="1">${esc(r.date || '-')}</td>
+                  <td class="mono" data-no-i18n="1">${esc(r.vendorRef || '-')}</td>
+                  <td class="mono" data-no-i18n="1">${esc(r.isabiRef || '-')}</td>
+                  <td data-no-i18n="1">${esc(_cleanOutwardCopy(dtl))}</td>
+                  <td class="num mono" data-no-i18n="1">${r.vendorAmt ? fmtUsdSigned(r.vendorAmt, 2) : '-'}</td>
+                  <td class="num mono" data-no-i18n="1">${r.isabiAmt ? fmtUsdSigned(r.isabiAmt, 2) : '-'}</td>
+                  <td class="num mono" data-no-i18n="1">${Math.abs(r.deltaUsd || 0) > 0.005 ? fmtUsdSigned(r.deltaUsd, 2) : '$0.00'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="rdl-total-row">
+              <td colspan="7"><span>NET EXCEPTION DELTA</span> <span data-no-i18n="1">· ${esc(m.supName)} (</span><span>${esc(m.legLbl.en)}</span><span data-no-i18n="1">)</span></td>
+              <td class="num" data-no-i18n="1">${fmtUsdSigned(discDeltaSum, 2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        ${signatureRowHtml('Prepared by AP Accounting / إعداد محاسبة الموردين', 'Vendor Review / مراجعة المورد')}
+        ${sheetFooterHtml(ctx.co, 1, 1)}
+      </div>
+    `;
   }
 
   function render16SupplierStatement(meta, ctx) {
@@ -6636,6 +7411,7 @@
     let runBal = lAp16.books ? (openBal + earlyCr - earlyDr) : 0;
 
     return `
+      <div class="rdl-stmt16-normal-print">
       ${sheetHeaderHtml(meta, ctx.co, `Supplier Statement of Account (SOA) · ${legLbl.en} · Period ${from} to ${to}`)}
       <div class="rdl-stmt16-actions no-print">
         <div class="rdl-stmt16-btn-group">
@@ -6701,7 +7477,9 @@
               const stLbl = _stmt16CmpStatusLabel(cmpHit.status);
               const innerBadge = cmpHit.status === 'amount_delta'
                 ? `<span>Delta</span> <span data-no-i18n="1">${esc(fmtUsdSigned(cmpHit.deltaUsd, 2))}</span>`
-                : `<span>${esc(stLbl.text)}</span>`;
+                : (cmpHit.status === 'unbooked_discount'
+                    ? `<span>Unbooked Discount</span> <span data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(Math.abs(cmpHit.deltaUsd || 0)))}</span>`
+                    : `<span>${esc(stLbl.text)}</span>`);
               cmpBadgeHtml = ` <span class="rdl-cmp-inline-pill ${stLbl.cls} no-print">${innerBadge}</span>`;
             }
             return `
@@ -6739,6 +7517,8 @@
       })}
       ${signatureRowHtml('Prepared by AP Accounting / إعداد محاسبة الموردين', 'Supplier Confirmation / مصادقة المورد')}
       ${sheetFooterHtml(ctx.co, 1, 1)}
+      </div>
+      ${canCompare && cmpResult ? renderStmt16DiscrepancyPrintSheetHtml(meta, ctx, m, cmpResult) : ''}
     `;
   }
 
@@ -8834,7 +9614,7 @@
   function exportPrintableSheetCsv(meta, coKey) {
     const sheet = document.getElementById('printableSheet');
     if (!sheet) return;
-    const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
+    const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table):not(.rdl-stmt16-disc-table)')];
     if (!tables.length) return;
     const lines = [];
     tables.forEach((tbl, idx) => {
@@ -10175,6 +10955,7 @@
 
   function renderStatementsView(SEED, STATE) {
     const ctx = buildRdlContext(SEED, STATE);
+    _syncStmt14ShareModalScope(ctx, STATE);
     const catalog = getVisibleRdlCatalog(STATE);
     if (!catalog.length) {
       STATE.activeStatement = '';
@@ -10332,6 +11113,7 @@
 
     const refreshSheetAndParams = () => {
       const updatedCtx = buildRdlContext(SEED, STATE);
+      _syncStmt14ShareModalScope(updatedCtx, STATE);
       const catalog = getVisibleRdlCatalog(STATE);
       if (!catalog.length) {
         STATE.activeStatement = '';
@@ -10632,11 +11414,49 @@
           }
           return;
         }
+        const share14Btn = ev.target && ev.target.closest ? ev.target.closest('#stmt14ShareConfirmBtn') : null;
+        if (share14Btn && root.contains(share14Btn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openStmt14ShareModal();
+          return;
+        }
         const shareBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16ShareConfirmBtn') : null;
         if (shareBtn && root.contains(shareBtn)) {
           ev.preventDefault();
           ev.stopPropagation();
           openStmt16ShareModal();
+          return;
+        }
+        const shareDiscBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16ShareDiscrepancyBtn') : null;
+        if (shareDiscBtn && root.contains(shareDiscBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openStmt16ShareModal(null, { mode: 'discrepancy' });
+          return;
+        }
+        const postMissingBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-post-missing]') : null;
+        if (postMissingBtn && root.contains(postMissingBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const rIdx = Number(postMissingBtn.getAttribute('data-stmt16-post-missing'));
+          const cmpNow = _stmt16CompareState.lastResult;
+          const rowObj = (cmpNow && Array.isArray(cmpNow.rows) && Number.isInteger(rIdx) && rIdx >= 0)
+            ? cmpNow.rows[rIdx]
+            : null;
+          const ent = window.MFG_ENTERPRISE;
+          if (rowObj && ent && typeof ent.openStmt16MissingSlip === 'function') {
+            const curCtx = buildRdlContext(SEED, STATE);
+            const curM = buildStmt16Model(curCtx);
+            ent.openStmt16MissingSlip({
+              ind: curCtx.ind,
+              co: curM.co,
+              leg: curM.leg,
+              supName: curM.supName,
+              allLegsTx: curM.allLegsTx,
+              row: rowObj
+            });
+          }
           return;
         }
         const retBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-return]') : null;
@@ -11108,7 +11928,7 @@
     }
 
     function wireTableSorting() {
-      root.querySelectorAll('#printableSheet table.rdl-table:not(.rdl-cmp-table) thead th').forEach((th, colIdx) => {
+      root.querySelectorAll('#printableSheet table.rdl-table:not(.rdl-cmp-table):not(.rdl-stmt16-disc-table) thead th').forEach((th, colIdx) => {
         th.style.cursor = 'pointer';
         th.setAttribute('aria-label', `${enHeaderText(th)} — click to sort`);
         th.addEventListener('click', () => {
@@ -11205,7 +12025,7 @@
       }
 
       // 2. Interactive table grouping, inline filter & 12-row pagination for data tables
-      const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
+      const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table):not(.rdl-stmt16-disc-table)')];
       tables.forEach((tbl, tblIdx) => {
         const tbody = tbl.querySelector('tbody');
         const thead = tbl.querySelector('thead');
@@ -11562,9 +12382,16 @@
     renderSheet: renderRdlSheet,
     buildRdlContext,
     ensureState: ensureRdlState,
+    openStmt14ShareModal,
+    closeStmt14ShareModal,
+    buildStmt14Model,
+    buildStmt14ConfirmationText,
     openStmt16ShareModal,
     buildStmt16Model,
     buildStmt16ConfirmationText,
+    getStmt16DiscrepancyRows,
+    buildStmt16DiscrepancyText,
+    buildStmt16DiscrepancyCsv,
     parseStmt16VendorSoaText,
     compareStmt16WithVendorRows,
     resetStmt16CompareState,

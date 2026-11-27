@@ -4209,6 +4209,12 @@ html.ios-standalone #geoMapStudioDeck.is-full-window {
   height: 100vh !important;
   max-height: 100vh !important;
 }
+@supports (-webkit-touch-callout: none) {
+  html.ios-standalone #geoMapStudioDeck.is-full-window,
+  html.ios-standalone .geo-modal-map-wrap.is-picker-fullwin {
+    padding-top: var(--safe-top, env(safe-area-inset-top, 0px));
+  }
+}
 #geoMapStudioDeck.is-full-window > .geo-studio-topbar,
 #geoMapStudioDeck.is-full-window > .geo-unpinned-stepper,
 #geoMapStudioDeck.is-full-window > .geo-tool-drawer,

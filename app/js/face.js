@@ -54,8 +54,54 @@ const Face = (() => {
   let backend = "?";
   let detector = "tiny";
   let landmarksTiny = true;
+  let lastWebglPack = false;
 
   const M = () => MFG_FACE_CONFIG.match;
+
+  function shouldEnableWebglPackForEnv(env = {}) {
+    if (env.force === true) return true;
+    if (env.force === false) return false;
+    if (env.webdriver || env.headlessTest) return false;
+    const plat = String(env.platform || "");
+    const ua = String(env.userAgent || "");
+    const renderer = String(env.renderer || "");
+    if (/^win/i.test(plat) || /Windows NT/i.test(ua)) return false;
+    if (/Direct3D|D3D11|D3D9|SwiftShader|Basic Render|llvmpipe/i.test(renderer)) return false;
+    return true;
+  }
+
+  function detectWebglRenderer() {
+    if (typeof document === "undefined") return "";
+    let gl = null;
+    try {
+      const c = document.createElement("canvas");
+      gl = c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl");
+      if (!gl) return "";
+      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      return dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "") : "";
+    } catch (_) {
+      return "";
+    } finally {
+      try {
+        const lose = gl && gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+      } catch (_) {}
+    }
+  }
+
+  function shouldEnableWebglPack() {
+    const force = typeof window !== "undefined" && typeof window.__FACE_FORCE_WEBGL_PACK === "boolean"
+      ? window.__FACE_FORCE_WEBGL_PACK
+      : undefined;
+    const webdriver = typeof navigator !== "undefined" && Boolean(navigator.webdriver);
+    const headlessTest = typeof window !== "undefined" && Boolean(window.__MFG_HEADLESS_TEST);
+    const platform = typeof navigator !== "undefined" ? (navigator.platform || "") : "";
+    const userAgent = typeof navigator !== "undefined" ? (navigator.userAgent || "") : "";
+    const renderer = (force === undefined && !webdriver && !headlessTest && !/^win/i.test(platform) && !/Windows NT/i.test(userAgent))
+      ? detectWebglRenderer()
+      : "";
+    return shouldEnableWebglPackForEnv({ force, webdriver, headlessTest, platform, userAgent, renderer });
+  }
 
   function ensureFaceApiScript(immediate = false) {
     if (typeof faceapi !== "undefined") return Promise.resolve();
@@ -539,6 +585,40 @@ const Face = (() => {
     }
   }
 
+  async function runShaderWarmup(force = false) {
+    const isAuto = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (!force && (isAuto || backend !== "webgl" || typeof document === "undefined")) {
+      return false;
+    }
+    if (!ready || typeof faceapi === "undefined" || typeof document === "undefined") return false;
+    try {
+      const wcv = document.createElement("canvas");
+      wcv.width = 160;
+      wcv.height = 160;
+      const wctx = wcv.getContext("2d", { willReadFrequently: true }) || wcv.getContext("2d");
+      if (wctx) {
+        wctx.fillStyle = "#808080";
+        wctx.fillRect(0, 0, 160, 160);
+      }
+      const tOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.9 });
+      try { await faceapi.detectSingleFace(wcv, tOpts); } catch (_) {}
+      await new Promise(r => setTimeout(r, 0));
+      const lmNet = (!landmarksTiny && faceapi.nets.faceLandmark68Net && faceapi.nets.faceLandmark68Net.isLoaded)
+        ? faceapi.nets.faceLandmark68Net
+        : faceapi.nets.faceLandmark68TinyNet;
+      if (lmNet && typeof lmNet.detectLandmarks === "function") {
+        try { await lmNet.detectLandmarks(wcv); } catch (_) {}
+      }
+      await new Promise(r => setTimeout(r, 0));
+      if (faceapi.nets.faceRecognitionNet && faceapi.nets.faceRecognitionNet.isLoaded && typeof faceapi.computeFaceDescriptor === "function") {
+        try { await faceapi.computeFaceDescriptor(wcv); } catch (_) {}
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   let lastLoadFailAt = 0;
   async function load() {
     const isAutoTest = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
@@ -572,12 +652,13 @@ const Face = (() => {
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       markIfWanted();
       const base = "./vendor/models";
+      const webglPack = shouldEnableWebglPack();
+      lastWebglPack = webglPack;
       try {
         if (faceapi.tf && typeof faceapi.tf.env === "function") {
-          // Disable 2x2 vec4 packed im2col GLSL shaders on WebGL: prevents Windows D3D11/ANGLE fxc.exe
-          // from blocking the main thread for ~10.2s during gl.linkProgram while keeping ~45ms inference
-          // and bit-identical 128-d descriptors.
-          faceapi.tf.env().set("WEBGL_PACK", false);
+          // Disable 2x2 vec4 packed im2col GLSL shaders on Windows D3D11/ANGLE (prevents ~10.2s fxc.exe
+          // gl.linkProgram stall), while keeping WEBGL_PACK=true on Android/iOS/macOS GPUs for ~2-3x faster ticks.
+          faceapi.tf.env().set("WEBGL_PACK", webglPack);
         }
       } catch (_) {}
       let webglOk = false;
@@ -663,33 +744,7 @@ const Face = (() => {
       if (isAutoTest) {
         await ensureSsdLoaded();
       } else if (backend === "webgl" && typeof document !== "undefined") {
-        // Non-blocking yielded GLSL shader warmup so first live detection/enrolment has 0 compile stall
-        const runShaderWarmup = async () => {
-          try {
-            const wcv = document.createElement("canvas");
-            wcv.width = 160;
-            wcv.height = 160;
-            const wctx = wcv.getContext("2d", { willReadFrequently: true }) || wcv.getContext("2d");
-            if (wctx) {
-              wctx.fillStyle = "#808080";
-              wctx.fillRect(0, 0, 160, 160);
-            }
-            const tOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.9 });
-            await faceapi.detectSingleFace(wcv, tOpts).catch(() => {});
-            await new Promise(r => setTimeout(r, 0));
-            const lmNet = (!landmarksTiny && faceapi.nets.faceLandmark68Net && faceapi.nets.faceLandmark68Net.isLoaded)
-              ? faceapi.nets.faceLandmark68Net
-              : faceapi.nets.faceLandmark68TinyNet;
-            if (lmNet && typeof lmNet.detectLandmarks === "function") {
-              await lmNet.detectLandmarks(wcv).catch(() => {});
-            }
-            await new Promise(r => setTimeout(r, 0));
-            if (faceapi.nets.faceRecognitionNet && faceapi.nets.faceRecognitionNet.isLoaded && typeof faceapi.computeFaceDescriptor === "function") {
-              await faceapi.computeFaceDescriptor(wcv).catch(() => {});
-            }
-          } catch (_) {}
-        };
-        setTimeout(runShaderWarmup, 0);
+        setTimeout(() => { runShaderWarmup(false); }, 0);
       }
 
       ready = true;
@@ -1997,6 +2052,9 @@ const Face = (() => {
     isReady: () => ready,
     isDetectorReady: () => detectorReady,
     getBackend: () => backend,
+    shouldEnableWebglPackForEnv,
+    warmup: () => runShaderWarmup(true),
+    get webglPack() { return lastWebglPack; },
     detectOne,
     pickPrimaryDetection,
     detectPreview,

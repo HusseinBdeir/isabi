@@ -7046,6 +7046,315 @@
     return true;
   }
 
+  function resolveStmt16MissingSlipTarget(spec = {}) {
+    const ind = String(spec.ind || getActiveIndustry(STATE.company) || 'Manufacturing').trim();
+    const rawLeg = String(spec.leg || 'ALL').trim().toLowerCase();
+    const kind = String(spec.kind || 'invoice').trim().toLowerCase();
+    const supName = String(spec.supName || '').trim();
+    const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const allowedCos = allowedCompanyNames();
+    const allIndCos = getCompanyCatalog().filter(c => c.industry === ind).map(c => c.name);
+    const validCos = allIndCos.filter(c => isOwner(activeUser()) || allowedCos.includes(c));
+    let targetCo = (spec.co && spec.co !== 'ALL' && (!validCos.length || validCos.includes(spec.co))) ? spec.co : '';
+    if (!targetCo && Array.isArray(spec.allLegsTx)) {
+      const coCounts = new Map();
+      spec.allLegsTx.forEach(t => {
+        const tc = String((t && t.co) || '').trim();
+        if (tc && (!validCos.length || validCos.includes(tc))) {
+          coCounts.set(tc, (coCounts.get(tc) || 0) + 1);
+        }
+      });
+      if (coCounts.size) {
+        targetCo = Array.from(coCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+      }
+    }
+    if (!targetCo) {
+      const defCo = defaultEntryCompany();
+      targetCo = (validCos.includes(defCo) ? defCo : (validCos[0] || defCo));
+    }
+
+    let effLeg = (rawLeg === 'material' || rawLeg === 'transport' || rawLeg === 'expenses') ? rawLeg : '';
+    if (!effLeg) {
+      const legsSeen = new Set((spec.allLegsTx || []).filter(t => t && t.leg).map(t => String(t.leg).toLowerCase()));
+      if (legsSeen.size === 1) {
+        effLeg = Array.from(legsSeen)[0];
+      } else if (legsSeen.has('material')) {
+        effLeg = 'material';
+      } else if (legsSeen.has('transport')) {
+        effLeg = 'transport';
+      } else if (legsSeen.has('expenses')) {
+        effLeg = 'expenses';
+      } else if (ind === 'Manufacturing') {
+        const supRow = ((SEED.records && SEED.records.suppliers) || []).find(s => s && !s.voided && normLow(s.name) === normLow(supName));
+        const cat = String((supRow && supRow.category) || '').toLowerCase();
+        effLeg = /transport|haul/i.test(cat) ? 'transport' : (/material|quarry|crush/i.test(cat) ? 'material' : 'expenses');
+      } else if (ind === 'Automotive & Heavy Trading') {
+        effLeg = /freight|customs|clearing|forward|broker/i.test(supName) ? 'transport' : 'material';
+      } else {
+        effLeg = 'expenses';
+      }
+    }
+
+    if (kind === 'payment') {
+      const pLegMap = { material: 'quarry', transport: 'transportation', expenses: 'expense' };
+      return {
+        mode: 'entry',
+        form: 'settlement',
+        ind,
+        targetCo,
+        effLeg,
+        payableLeg: pLegMap[effLeg] || 'expense',
+        supName
+      };
+    }
+
+    if (effLeg === 'expenses' || ind === 'Holding & Treasury') {
+      return { mode: 'entry', form: 'expense', ind, targetCo, effLeg: 'expenses', supName };
+    }
+    if (ind === 'Manufacturing') {
+      return { mode: 'entry', form: 'raw', ind, targetCo, effLeg, supName };
+    }
+    if (ind === 'Automotive & Heavy Trading') {
+      return { mode: 'domain', formKey: 'trd_purchases', ind, targetCo, effLeg, supName };
+    }
+    if (ind === 'Real Estate & Property') {
+      return { mode: 'domain', formKey: 're_workorders', ind, targetCo, effLeg, supName };
+    }
+    if (ind === 'Hospitality & Resorts') {
+      const storeMatch = supName.match(/^(.+?)\s+Suppliers\s*\(/i);
+      if (effLeg === 'material' && storeMatch && storeMatch[1]) {
+        return { mode: 'domain', formKey: 'hsp_stock', ind, targetCo, effLeg, supName, storeName: storeMatch[1].trim() };
+      }
+      return { mode: 'entry', form: 'expense', ind, targetCo, effLeg: 'expenses', supName };
+    }
+    if (ind === 'Insurance & Brokerage') {
+      return { mode: 'domain', formKey: 'ins_remittances', ind, targetCo: 'Insurance Company', effLeg, supName };
+    }
+    return { mode: 'entry', form: 'expense', ind, targetCo, effLeg: 'expenses', supName };
+  }
+
+  function canPostStmt16MissingRow(spec = {}, u) {
+    u = u || activeUser();
+    if (STATE.kioskLocked || !canAccessRdlReport('16', u)) return false;
+    if (!(Number(spec.vendorAmt || 0) > 0.005)) return false;
+    const tgt = resolveStmt16MissingSlipTarget(spec);
+    if (!tgt) return false;
+    const lens = seatLens(u);
+    if (tgt.mode === 'entry') {
+      if (tgt.form === 'settlement') return Boolean(lens.books && canEnterForm('settlement', u));
+      if (tgt.form === 'expense') return Boolean(lens.expenses && canEnterForm('expense', u));
+      if (tgt.form === 'raw') return Boolean((lens.expenses || lens.books) && canEnterForm('raw', u));
+      return canEnterForm(tgt.form, u);
+    }
+    if (!canEnterDomainForm(tgt.formKey, u)) return false;
+    if (tgt.formKey === 'ins_remittances') return Boolean(lens.books && canEnterForm('settlement', u));
+    return Boolean(lens.expenses && canEnterForm('expense', u));
+  }
+
+  function openStmt16MissingSlip(spec = {}) {
+    const row = (spec && spec.row) || {};
+    if (row.status !== 'missing_in_isabi') return false;
+    const rawAmt = round2(Number(row.vendorAmt || 0));
+    if (!(rawAmt > 0.005)) return false;
+    const absAmt = rawAmt;
+    const mergedSpec = {
+      ind: spec.ind,
+      co: spec.co,
+      leg: spec.leg,
+      kind: row.kind || 'invoice',
+      supName: spec.supName,
+      vendorAmt: absAmt,
+      allLegsTx: spec.allLegsTx
+    };
+    if (!canPostStmt16MissingRow(mergedSpec)) {
+      toast('Your seat cannot post missing slips on this Statement 16 leg', 'err');
+      return false;
+    }
+    const tgt = resolveStmt16MissingSlipTarget(mergedSpec);
+    const rawRef = String(row.vendorRef || '').trim();
+    const cleanRef = (rawRef && rawRef !== '-') ? rawRef : '';
+    const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(row.date || '').slice(0, 10)) ? String(row.date).slice(0, 10) : '';
+    const cleanDescRaw = String(row.vendorDesc || cleanRef || '').replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF]/g, '').trim();
+    const cleanDesc = cleanDescRaw || 'Statement 16 discrepancy reconciliation';
+
+    if (tgt.mode === 'entry' && tgt.form === 'settlement') {
+      openEntryModal('settlement', {
+        co: tgt.targetCo,
+        supplier: tgt.supName,
+        method: 'Payment',
+        payable_leg: tgt.payableLeg,
+        lockPayableLeg: true,
+        amount: absAmt,
+        reference: cleanRef,
+        date: cleanDate,
+        rep_date: cleanDate,
+        notes: cleanDesc,
+        _stmt16Ctx: {
+          supplier: tgt.supName,
+          leg: tgt.effLeg,
+          payableLeg: tgt.payableLeg,
+          byCoOpen: { [tgt.targetCo]: absAmt }
+        },
+        _stmt16SlipLock: { supplier: tgt.supName, leg: tgt.effLeg }
+      }, { forceSwitch: true });
+      return true;
+    }
+
+    if (tgt.mode === 'entry' && tgt.form === 'expense') {
+      openEntryModal('expense', {
+        co: tgt.targetCo,
+        supplier: tgt.supName,
+        method: 'Credit',
+        reference: cleanRef,
+        date: cleanDate,
+        rep_date: cleanDate,
+        notes: cleanDesc,
+        _stmt16ExpenseSlip: {
+          supplier: tgt.supName,
+          amountUsd: absAmt,
+          ref: cleanRef,
+          txDate: cleanDate,
+          repDate: cleanDate,
+          desc: cleanDesc
+        }
+      }, { forceSwitch: true });
+      return true;
+    }
+
+    if (tgt.mode === 'entry' && tgt.form === 'raw') {
+      const tktDigits = cleanRef.replace(/[^0-9]/g, '');
+      const qtyMatch = cleanDesc.match(/(?:^|[\s(,])(\d+(?:\.\d+)?)\s*(ton|tons|t|m³|m3)(?=[\s).,;|]|$)/i);
+      let resolvedUom = 'Truck';
+      let parsedQty = 1;
+      if (qtyMatch && Number(qtyMatch[1]) > 0) {
+        const rawUnit = String(qtyMatch[2] || '').toLowerCase();
+        const candUom = (rawUnit === 'm3' || rawUnit === 'm³') ? 'm³' : 'Ton';
+        const candQty = Number(qtyMatch[1]);
+        if (Math.abs(round2(candQty * round2(absAmt / candQty)) - absAmt) <= 0.001) {
+          resolvedUom = candUom;
+          parsedQty = candQty;
+        }
+      }
+      openEntryModal('raw', {
+        co: tgt.targetCo,
+        ticket: tktDigits || cleanRef,
+        date: cleanDate,
+        rep_date: cleanDate,
+        notes: cleanDesc,
+        _stmt16RawSlip: {
+          leg: tgt.effLeg,
+          supplier: tgt.supName,
+          amountUsd: absAmt,
+          uom: resolvedUom,
+          qty: parsedQty,
+          ref: cleanRef,
+          txDate: cleanDate,
+          repDate: cleanDate,
+          desc: cleanDesc
+        }
+      }, { forceSwitch: true });
+      return true;
+    }
+
+    if (tgt.mode === 'domain' && tgt.formKey === 'trd_purchases') {
+      if (tgt.effLeg === 'transport') {
+        const curTrd = (typeof computeTradingOperations === 'function') ? computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) : null;
+        const existImp = cleanRef && curTrd && Array.isArray(curTrd.importRows)
+          ? curTrd.importRows.find(ir => ir && !ir.voided && String(ir.id || '').trim().toUpperCase() === cleanRef.toUpperCase() && canonCompany(ir.company) === canonCompany(tgt.targetCo))
+          : null;
+        if (existImp) {
+          openIndustryDomainEntryModal('trd_purchases', Object.assign({}, existImp, {
+            _workflowTargetId: existImp.id,
+            freight_vendor: tgt.supName,
+            landed_add_usd: round2(Number(existImp.landed_add_usd || 0) + absAmt),
+            _lockStmt16FreightVendor: true,
+            _stmt16Prefill: true
+          }));
+          return true;
+        }
+        openIndustryDomainEntryModal('trd_purchases', {
+          company: tgt.targetCo,
+          id: cleanRef || undefined,
+          bl: cleanRef || 'FRT-SOA-2026',
+          date: cleanDate || todayISO(),
+          supplier: 'OEM Import (Freight Clearing)',
+          ordered_qty: 1,
+          received_qty: 1,
+          incoterm: 'FOB',
+          fob_usd: 0,
+          landed_add_usd: absAmt,
+          freight_vendor: tgt.supName,
+          _lockStmt16FreightVendor: true,
+          _stmt16FreightOnly: true,
+          _stmt16Prefill: true
+        });
+        return true;
+      }
+      openIndustryDomainEntryModal('trd_purchases', {
+        company: tgt.targetCo,
+        id: cleanRef || undefined,
+        bl: cleanRef || 'BL-2026',
+        date: cleanDate || todayISO(),
+        supplier: tgt.supName,
+        ordered_qty: 1,
+        received_qty: 1,
+        incoterm: 'FOB',
+        fob_usd: absAmt,
+        landed_add_usd: 0,
+        _lockStmt16Supplier: true,
+        _stmt16Prefill: true
+      });
+      return true;
+    }
+
+    if (tgt.mode === 'domain' && tgt.formKey === 're_workorders') {
+      openIndustryDomainEntryModal('re_workorders', {
+        company: tgt.targetCo,
+        id: cleanRef || undefined,
+        date: cleanDate || todayISO(),
+        contractor: tgt.supName,
+        budget_usd: absAmt,
+        actual_usd: absAmt,
+        _lockStmt16Contractor: true,
+        _stmt16Prefill: true
+      });
+      return true;
+    }
+
+    if (tgt.mode === 'domain' && tgt.formKey === 'hsp_stock') {
+      openIndustryDomainEntryModal('hsp_stock', {
+        company: tgt.targetCo,
+        id: cleanRef || undefined,
+        date: cleanDate || todayISO(),
+        store: tgt.storeName || 'Main Commissary',
+        item_group: cleanDesc || 'F&B Stock',
+        opening_usd: 0,
+        purchases_in_usd: absAmt,
+        recipe_usage_usd: absAmt,
+        _lockStmt16Store: true,
+        _stmt16Prefill: true
+      });
+      return true;
+    }
+
+    if (tgt.mode === 'domain' && tgt.formKey === 'ins_remittances') {
+      openIndustryDomainEntryModal('ins_remittances', {
+        company: 'Insurance Company',
+        id: cleanRef || undefined,
+        date: cleanDate || todayISO(),
+        carrier: tgt.supName,
+        gwp: absAmt,
+        comm: 0,
+        settled: 0,
+        _lockStmt16Carrier: true,
+        _stmt16Prefill: true
+      });
+      return true;
+    }
+
+    return false;
+  }
+
   function getScopedModelSuppliers(mOverride, opts = {}) {
     const m = mOverride || getModel();
     const mdlSups = (m.suppliers || []).filter(s => s && s.Supplier);
@@ -9948,6 +10257,18 @@
         return /^truck$/i.test(String(rawU).trim()) ? 'Per Truck Load' : rawU;
       }
     }
+    if (
+      view && (view.startsWith('ureg_') || view.startsWith('tbl_')) &&
+      (colKey === 'role_category' || colKey === 'supply_mode' || colKey === 'site_category' || colKey === 'cost_class' || colKey === 'salary_status' || colKey === 'permit_status' || colKey === 'supplier_role' || colKey === 'automation_mode') &&
+      window.MFG_PBI && typeof window.MFG_PBI.cellValue === 'function'
+    ) {
+      const tkComp = viewToTableKey(view);
+      const relComp = hubRelForCell();
+      if (relComp) {
+        const cvComp = window.MFG_PBI.cellValue(r, colKey, tkComp, relComp);
+        if (cvComp !== undefined) return cvComp;
+      }
+    }
     if (r[colKey] !== undefined && r[colKey] !== null && r[colKey] !== '') return r[colKey];
     if (view && !view.startsWith('ureg_') && !view.startsWith('tbl_')) {
       if (colKey in r && colKey !== 'category1' && colKey !== 'category' && colKey !== 'notes' && colKey !== 'uom' && colKey !== 'odometer' && colKey !== 'hours') return r[colKey];
@@ -10747,10 +11068,10 @@
   function renderColFilterBar(view, colsOverride) {
     const pool = _tablePoolCache[view] || [];
     const defs = getColFilterDefsForView(view, colsOverride);
-    if (!defs.length) return '';
     const cf = (STATE.colFilters && STATE.colFilters[view]) || {};
     const tkBar = viewToTableKey(view);
     const activeEntries = Object.entries(cf).filter(([k, v]) => Boolean(v && String(v).trim()) && !isMaskedFieldAccessBlocked(tkBar, k));
+    if (!defs.length && !activeEntries.length) return '';
     const filteredCount = activeEntries.length ? applyColFiltersForView(pool, view).length : pool.length;
 
     return `
@@ -10903,12 +11224,13 @@
         ${distinctOpts.map(o => {
           const rawLabel = o.rawVal !== undefined ? o.rawVal : o.l.replace(/\s*\([\d,]+\)\s*$/, '');
           const cntBadge = o.count !== undefined ? fmtNum(o.count) : ((o.l.match(/\(([\d,]+)\)\s*$/) || [])[1] || '');
+          const isOptActive = curFilter === o.v || (curFilter.startsWith('=') && curFilter.slice(1) === o.v);
           return `
-            <button type="button" class="cf-pop-opt ${curFilter === o.v ? 'active' : ''}" data-cf-pop-val="${esc(o.v)}">
+            <button type="button" class="cf-pop-opt ${isOptActive ? 'active' : ''}" data-cf-pop-val="${esc(o.v)}">
               <span class="cf-pop-opt-lbl">${esc(rawLabel)}</span>
               <span class="cf-pop-opt-meta">
                 ${cntBadge ? `<b class="cf-pop-opt-cnt">${esc(cntBadge)}</b>` : ''}
-                ${curFilter === o.v ? '<span class="cf-pop-check">✓</span>' : ''}
+                ${isOptActive ? '<span class="cf-pop-check">✓</span>' : ''}
               </span>
             </button>
           `;
@@ -15822,7 +16144,7 @@
     if (SEED && SEED.records && (!Array.isArray(SEED.records.staff_members) || !Array.isArray(SEED.records.staff_roles) || !Array.isArray(SEED.records.staff_assignments)) && (Array.isArray(SEED.records.employments) || Array.isArray(SEED.records.salaries))) {
       ensureStaffMembersSeeded();
     }
-    if (_iifeBooted && SEED && SEED.records && SEED._recordsReady && !SEED._multiIndustrySpineSeeded && typeof ensureMultiIndustrySpineSeeded === 'function') {
+    if (_iifeBooted && SEED && SEED.records && (SEED._recordsReady || SEED._recordsDeferredForKiosk) && !SEED._multiIndustrySpineSeeded && typeof ensureMultiIndustrySpineSeeded === 'function') {
       ensureMultiIndustrySpineSeeded();
     }
     const rec = (SEED && SEED.records) || {};
@@ -35950,7 +36272,7 @@
                 return `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" data-ui-tip="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '-')}" aria-label="Print Ticket">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
                   <td>${r.sale_type === 'Unregistered' ? '<span class="has-sr-only" data-ui-tip="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
@@ -36884,7 +37206,7 @@
                 return `
                 <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'raw_purchases')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" data-ui-tip="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '-')}" aria-label="Print Raw Ticket">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
                   <td>${relLink('sites', r.site, r.site || '—', true)}${isBundledRow ? ' <span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier\'s price includes delivery; no separate transport charge">Delivered</span>' : ''}${tktTurnaroundBadge('raw_purchases', r)}</td>
                   <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
@@ -37153,7 +37475,7 @@
                   return `
                   <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
                     <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
-                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispShHtml}</span></td>
+                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" data-ui-tip="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '-')}" aria-label="Print Ticket">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispShHtml}</span></td>
                     <td>${coBadge(r.company)}</td>
                     <td>${relLink('customers', r.customer, r.customer, true)}</td>
                     <td>${r.site ? relLink('sites', r.site) : '—'}${tktTurnaroundBadge('sales_tickets', r)}</td>
@@ -38000,7 +38322,7 @@
                 return `
                 <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(f.id)}">
                   <td class="mono">${esc(recordDateDMY(f))}${repDateShiftBadge(f)}${appCell(f, 'fuel_intakes')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '-')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" title="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '')}">${ic('printer')}</button></span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '-')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" data-ui-tip="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '-')}" aria-label="Print Fuel Slip">${ic('printer')}</button></span></td>
                   <td>${coBadge(f.company)}</td>
                   <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}${renderEquipmentHealthBadge(f.equipment, f.company, true)}</td>
                   <td>${f.driver ? relLink('drivers', f.driver) : '-'}</td>
@@ -38154,9 +38476,9 @@
                       ? esc(mv.party)
                       : relLink('equipment', mv.party, mv.party, true)));
                 const printBtn = mv.rkey === 'fuel_intakes'
-                  ? `<button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(mv.id)}" title="Print Fuel Slip #${esc(mv.ref)}">${ic('printer')}</button>`
+                  ? `<button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(mv.id)}" data-ui-tip="Print Fuel Slip #${esc(mv.ref || '-')}" aria-label="Print Fuel Slip">${ic('printer')}</button>`
                   : (mv.rkey === 'sales_tickets'
-                    ? `<button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(mv.id)}" title="Print Diesel Sale Ticket #${esc(mv.ref)}">${ic('printer')}</button>`
+                    ? `<button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(mv.id)}" data-ui-tip="Print Diesel Sale Ticket #${esc(mv.ref || '-')}" aria-label="Print Ticket">${ic('printer')}</button>`
                     : '');
                 return `
                 <tr class="rrow" data-rkey="${esc(mv.rkey)}" data-rid="${esc(mv.id)}">
@@ -60276,7 +60598,7 @@
                   ? relLink(r.partyRel, r.party, r.party, true)
                   : `<button type="button" class="cf-party-btn" data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}"><span data-no-i18n="1">${esc(r.party)}</span></button>`;
                 const refHtml = r.ticketId
-                  ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button>${tktOtBadge(r.raw)}</span> <span class="mu">· ${esc(r.method)}</span>`
+                  ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" data-ui-tip="Preview / Print Ticket #${esc(r.ref || '-')}" aria-label="Print Ticket">${ic('printer')}</button>${tktOtBadge(r.raw)}</span> <span class="mu">· ${esc(r.method)}</span>`
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                 const cfCand = appOnlyCandMap ? appOnlyCandMap.get(`${r.rkey}:${r.id}`) : null;
                 return `
@@ -81301,7 +81623,7 @@
   }
 
   function ensureMultiIndustrySpineSeeded() {
-    if (!SEED || !SEED.records || !SEED._recordsReady) return;
+    if (!SEED || !SEED.records || (!SEED._recordsReady && !SEED._recordsDeferredForKiosk)) return;
     const demoActive = isDemoScopeActive();
     const recs = SEED.records;
     const ensureArr = k => {
@@ -86926,11 +87248,13 @@
         ${fldWrap('Override Bonus (%)', `<input type="number" id="ide_bonus_pct" class="mono" step="0.1" min="0" max="25" style="${inpStyle}" value="${esc(prefill.override_bonus_pct != null ? prefill.override_bonus_pct : '2.0')}">`)}
       `;
     } else if (spec.key === 'ins_remittances') {
-      const remCarriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
+      const remCarriers = (prefill._lockStmt16Carrier && prefill.carrier)
+        ? [prefill.carrier]
+        : freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
       fieldsHtml = `
         ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Remittance Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
+        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${prefill._lockStmt16Carrier ? roStyle : inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
         ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
         ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : (prefill.broker_comm_7063_usd != null ? prefill.broker_comm_7063_usd : '2250'))}">`)}
         ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.settled != null ? prefill.settled : (prefill.settled_to_carrier_usd != null ? prefill.settled_to_carrier_usd : '10000'))}">`)}
@@ -87043,7 +87367,7 @@
         ${fldWrap('Order Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || '4235 Msaytbeh Commercial Center')}">`)}
         ${fldWrap('Unit / Common Area *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 East Medical Suite')}">`)}
-        ${fldWrap('Contractor / Vendor *', `<input type="text" id="ide_contractor" style="${inpStyle}" value="${esc(prefill.contractor || 'MEP Tech Engineering SAL')}">`)}
+        ${fldWrap('Contractor / Vendor *', `<input type="text" id="ide_contractor" ${prefill._lockStmt16Contractor ? `readonly style="${roStyle}"` : `style="${inpStyle}"`} value="${esc(prefill.contractor || 'MEP Tech Engineering SAL')}">`)}
         ${fldWrap('Work Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Structural Fit-Out & HVAC (CAPEX)" ${/CAPEX/i.test(defCat) ? 'selected' : ''}>Structural Fit-Out & HVAC (CAPEX)</option><option value="Tenant-Fault Repair & Recharge" ${/Tenant/i.test(defCat) ? 'selected' : ''}>Tenant-Fault Repair & Recharge</option><option value="Generator & Common Area Maintenance" ${/Generator/i.test(defCat) ? 'selected' : ''}>Generator & Common Area Maintenance</option></select>`)}
         ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.budget_usd != null ? prefill.budget_usd : '12000')}">`)}
         ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.actual_usd != null ? prefill.actual_usd : '11500')}">`)}
@@ -87166,20 +87490,23 @@
                 ? 'Buyer uplift at factory/port: allocate full freight, insurance & customs in Landed Add.'
                 : 'Supplier price excludes ocean shipping; allocate Freight, Customs & Clearance in Landed Add.'));
       const trdIdLockAttr = (isEditMode || (prefill && prefill._workflowTargetId)) ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
+      const trdSupLockAttr = (prefill && prefill._lockStmt16Supplier) ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
+      const trdFrtLockAttr = (prefill && prefill._lockStmt16FreightVendor) ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
+      const trdFobMinAttr = (prefill && prefill._stmt16FreightOnly) ? '0' : '0.01';
       datalistsHtml = `<datalist id="dl_ide_trd_sups">${sups.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
         ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" ${trdIdLockAttr} value="${esc(prefill.id || 'IMP-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
-        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(defSup)}">`)}
+        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" ${trdSupLockAttr} value="${esc(defSup)}">`)}
         ${fldWrap('Port of Origin', `<input type="text" id="ide_origin" style="${inpStyle}" value="${esc(prefill.origin || 'Qingdao Port')}">`)}
         ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || prefill.container_bl || 'COSU6891992014 · 2x40HC')}">`)}
         ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defOrd)}">`)}
         ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : defOrd)}">`)}
         ${fldWrap('Freight Basis (Incoterm) *', `<select id="ide_incoterm" data-plain-options="1" style="${inpStyle}">${incoOpts.map(o => `<option value="${o.v}" ${defInco === o.v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>`, `<span id="ideIncotermHint">${esc(defIncoHint)}</span>`)}
-        ${fldWrap('Supplier Contract Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Supplier Contract Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="0.01" min="${trdFobMinAttr}" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defAdd)}">`)}
-        ${fldWrap('Clearing / Freight Agent', `<input type="text" id="ide_freight_vendor" style="${inpStyle}" value="${esc(prefill.freight_vendor || '')}" placeholder="Optional 3rd-party forwarder or broker">`, 'Separates freight/customs AP from OEM factory AP')}
+        ${fldWrap('Clearing / Freight Agent', `<input type="text" id="ide_freight_vendor" ${trdFrtLockAttr} value="${esc(prefill.freight_vendor || '')}" placeholder="Optional 3rd-party forwarder or broker">`, 'Separates freight/customs AP from OEM factory AP')}
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
     } else if (spec.key === 'trd_trucks') {
@@ -87290,7 +87617,7 @@
         ${fldWrap('Resort Property *', coSelectHtml)}
         ${fldWrap('Stock Sheet # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'STK-HSP-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
         ${fldWrap('Log Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Commissary / Cellar Store *', `<input type="text" id="ide_store" style="${inpStyle}" value="${esc(prefill.store || 'Main Kitchen & Cold Room')}">`)}
+        ${fldWrap('Commissary / Cellar Store *', `<input type="text" id="ide_store" ${prefill._lockStmt16Store ? `readonly style="${roStyle}"` : `style="${inpStyle}"`} value="${esc(prefill.store || 'Main Kitchen & Cold Room')}">`)}
         ${fldWrap('Item Group *', `<input type="text" id="ide_group" style="${inpStyle}" value="${esc(prefill.item_group || 'Prime Cuts & Seafood')}">`)}
         ${fldWrap('Opening Stock ($)', `<input type="number" id="ide_open" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.opening_usd != null ? prefill.opening_usd : '5000')}">`)}
         ${fldWrap('Purchases In ($) *', `<input type="number" id="ide_purch" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.purchases_in_usd != null ? prefill.purchases_in_usd : '8400')}">`)}
@@ -88251,6 +88578,10 @@
       });
     } else if (spec.key === 'trd_purchases') {
       const syncTrdImportTariff = () => {
+        if (prefill && prefill._stmt16Prefill) {
+          recalcLive();
+          return;
+        }
         const coStr = strVal('ide_company');
         const hit = lookupActiveTradingTariff(coStr, /Korri/i.test(coStr) ? 'Spare Parts & Tyres' : 'Heavy Truck Sale', strVal('ide_date') || today, strVal('ide_supplier'));
         const ordQty = Math.max(1, Math.round(numVal('ide_ord_qty') || 1));
@@ -110799,6 +111130,43 @@
     }
   }
 
+  function syncStmt16PolicyLock(fieldId, active, reason, unlockReason = '') {
+    const el = $(fieldId);
+    if (!el) return false;
+    const syncSelectOpts = isLocked => {
+      if (el.tagName !== 'SELECT') return;
+      Array.from(el.options || []).forEach(opt => {
+        if (isLocked) {
+          if (opt.value !== el.value) {
+            if (opt.dataset.stmt16OptDis !== '1') {
+              opt.dataset.stmt16PrevDis = opt.disabled ? '1' : '0';
+              opt.dataset.stmt16OptDis = '1';
+            }
+            opt.disabled = true;
+          } else {
+            opt.disabled = false;
+          }
+        } else if (opt.dataset.stmt16OptDis === '1') {
+          opt.disabled = opt.dataset.stmt16PrevDis === '1';
+          delete opt.dataset.stmt16OptDis;
+          delete opt.dataset.stmt16PrevDis;
+        }
+      });
+    };
+    if (active) {
+      el.dataset.stmt16Locked = '1';
+      const locked = applyFieldLockState(fieldId, true, reason);
+      syncSelectOpts(locked);
+      return locked;
+    }
+    if (el.dataset.stmt16Locked === '1') {
+      delete el.dataset.stmt16Locked;
+      syncSelectOpts(false);
+      return applyFieldLockState(fieldId, false, unlockReason);
+    }
+    return false;
+  }
+
   function activeFormHost() {
     const modal = $('entryModal');
     if (modal && !modal.hidden) return $('modalBody');
@@ -113775,7 +114143,7 @@
 
     if (truckChanged || winChanged) {
       if (truckChanged) {
-        FORM_UI.qtyManual = false;
+        if (!(winOpts && winOpts.preserveQty)) FORM_UI.qtyManual = false;
         FORM_UI.ownerManuallyPicked = false;
         FORM_UI.driverManual = false;
       }
@@ -115527,14 +115895,25 @@
     }
     const sInfo = site ? siteInfo(site, 'raw') : null;
 
+    const rawSlipLock = (!STATE.editingRecord && !pendRawEditRowEarly && FORM_UI.stmt16RawSlipLock) ? FORM_UI.stmt16RawSlipLock : null;
     if (!pendRawEditRowEarly && (!STATE.editingRecord || siteChanged)) {
       if ($('f_raw_bundled')) {
-        $('f_raw_bundled').value = (site && isSupplierDeliveredSite(sInfo || site)) ? '1' : '0';
+        $('f_raw_bundled').value = (rawSlipLock && rawSlipLock.leg === 'transport' && !isFieldAdminUnlocked('f_transportby'))
+          ? '0'
+          : ((site && isSupplierDeliveredSite(sInfo || site)) ? '1' : '0');
       }
       if (siteChanged && $('f_site_region')) {
         $('f_site_region').value = effectiveSiteRegion(sInfo, site);
       }
     }
+    if (rawSlipLock && !isFieldAdminUnlocked('f_transportby')) {
+      if (rawSlipLock.leg === 'transport' && $('f_transportby')) {
+        $('f_transportby').value = 'Third-party truck';
+      } else if (rawSlipLock.leg === 'material' && val('f_raw_bundled') !== '1' && $('f_transportby')) {
+        $('f_transportby').value = 'Company fleet';
+      }
+    }
+    syncStmt16PolicyLock('f_transportby', Boolean(rawSlipLock), 'Locked to Statement 16 payable leg', '');
 
     const isSuppDeliv = val('f_raw_bundled') === '1';
     const rawSelTb = val('f_transportby') || 'Company fleet';
@@ -115636,15 +116015,25 @@
     }
 
     // 2. Site -> Default Quarry Site Owner (Material Payee, resolved dynamically by Date & Price Agreement)
+    const rawMatSlipLock = (rawSlipLock && rawSlipLock.leg === 'material' && rawSlipLock.supplier) ? rawSlipLock.supplier : '';
+    const rawTrSlipLock = (rawSlipLock && rawSlipLock.leg === 'transport' && rawSlipLock.supplier) ? rawSlipLock.supplier : '';
     const siteSups = site ? resolveSuppliersForSite(site, company, effDate, product) : { activeSupplier: '', suppliers: [], hasActiveRule: false, multipleActive: false };
     const resolvedSiteOwner = siteSups.activeSupplier || '';
     const siteHasOwner = Boolean(resolvedSiteOwner && !siteSups.multipleActive);
-    const ownerLocked = applyFieldLockState('f_siteowner', siteHasOwner, siteHasOwner
-      ? (siteSups.hasActiveRule
-          ? `Locked to active ${site} Price Agreement supplier (${resolvedSiteOwner}) on ${effDate}`
-          : `Locked to ${site} supplier (${resolvedSiteOwner})`)
-      : 'Unlocked (Site has no active single supplier agreement)');
-    if ($('f_siteowner') && (!isFieldAdminUnlocked('f_siteowner') || isAutoEditUnlockedField('f_siteowner') || siteChanged || (rawDateChanged && siteSups.hasActiveRule) || (productChanged && siteSups.hasActiveRule))) {
+    if (rawMatSlipLock && $('f_siteowner') && !isFieldAdminUnlocked('f_siteowner')) {
+      $('f_siteowner').value = rawMatSlipLock;
+    }
+    const ownerLocked = rawMatSlipLock
+      ? syncStmt16PolicyLock('f_siteowner', true, `Locked to Statement 16 material supplier (${rawMatSlipLock})`, '')
+      : (() => {
+          syncStmt16PolicyLock('f_siteowner', false, '', '');
+          return applyFieldLockState('f_siteowner', siteHasOwner, siteHasOwner
+            ? (siteSups.hasActiveRule
+                ? `Locked to active ${site} Price Agreement supplier (${resolvedSiteOwner}) on ${effDate}`
+                : `Locked to ${site} supplier (${resolvedSiteOwner})`)
+            : 'Unlocked (Site has no active single supplier agreement)');
+        })();
+    if (!rawMatSlipLock && $('f_siteowner') && (!isFieldAdminUnlocked('f_siteowner') || isAutoEditUnlockedField('f_siteowner') || siteChanged || (rawDateChanged && siteSups.hasActiveRule) || (productChanged && siteSups.hasActiveRule))) {
       if (siteHasOwner && (ownerLocked || siteChanged || rawDateChanged || productChanged || !val('f_siteowner'))) {
         $('f_siteowner').value = resolvedSiteOwner;
       } else if (!siteHasOwner && siteChanged) {
@@ -115657,7 +116046,20 @@
 
     // 3. Cascading Truck Plate -> Truck Owner + Driver + Capacity (Date & Quarry Site Window Aware)
     const savedSuppDriver = isSuppDeliv ? val('f_driver') : '';
-    const { truckName, truckRow, truckOwner, ownerFromTruck, subCharter } = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site, siteOwner: owner, product, subTruck: _editSubTruckForForm(val('f_truck'), company, STATE.editingRecord) });
+    const fleetRes = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site, siteOwner: owner, product, subTruck: _editSubTruckForForm(val('f_truck'), company, STATE.editingRecord), preserveQty: Boolean(rawSlipLock) });
+    const truckName = fleetRes.truckName;
+    const truckRow = fleetRes.truckRow;
+    let truckOwner = fleetRes.truckOwner;
+    const ownerFromTruck = fleetRes.ownerFromTruck;
+    const subCharter = fleetRes.subCharter;
+    if (rawTrSlipLock && $('f_truckowner')) {
+      if (!isFieldAdminUnlocked('f_truckowner')) $('f_truckowner').value = rawTrSlipLock;
+      truckOwner = val('f_truckowner') || rawTrSlipLock;
+      syncStmt16PolicyLock('f_truckowner', true, `Locked to Statement 16 haulage supplier (${rawTrSlipLock})`, '');
+    } else if ($('f_truckowner') && $('f_truckowner').dataset.stmt16Locked === '1') {
+      delete $('f_truckowner').dataset.stmt16Locked;
+      if (!ownerFromTruck && !pendRawEditRowEarly) applyFieldLockState('f_truckowner', false, '');
+    }
     if (isSuppDeliv && !pendRawEditRowEarly) {
       applyFieldLockState('f_driver', false, 'Optional supplier driver on supplier-delivered loads');
       const drvElSupp = $('f_driver');
@@ -115683,11 +116085,11 @@
     const haulIsIndiff = is3PHauler && isTransIndiffRule(haulRule);
 
     if (companyChanged || siteChanged || ownerChanged || productChanged) {
-      if (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom')) FORM_UI.uomManual = false;
-      if (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice')) FORM_UI.priceManual = false;
-      if (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice')) FORM_UI.transManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom'))) FORM_UI.uomManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice'))) FORM_UI.priceManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice'))) FORM_UI.transManual = false;
     }
-    if (transportByChanged && (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice'))) {
+    if (transportByChanged && !rawSlipLock && (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice'))) {
       FORM_UI.transManual = false;
     }
     const prevUom = FORM_UI.lastUom || (uomEl ? uomEl.value : 'm³');
@@ -115701,9 +116103,9 @@
     const uomChanged = !FORM_UI.hydrating && prevUom !== uom;
     FORM_UI.lastUom = uom;
     if (uomChanged) {
-      if (!isFieldAdminUnlocked('f_qty') || isAutoEditUnlockedField('f_qty')) FORM_UI.qtyManual = false;
-      if (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice')) FORM_UI.priceManual = false;
-      if (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice')) FORM_UI.transManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_qty') || isAutoEditUnlockedField('f_qty'))) FORM_UI.qtyManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice'))) FORM_UI.priceManual = false;
+      if (!rawSlipLock && (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice'))) FORM_UI.transManual = false;
     }
     const isTonUom = /^tons?$/i.test(uom);
     const isTruckUom = /truck/i.test(uom);
@@ -115772,7 +116174,7 @@
         ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor > 0 ? rawTonFactor : '~1.5'})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
-    if (qtyEl() && (qtyLocked || (shouldLockQty && !FORM_UI.qtyManual)) && !(FORM_UI.ticketDisposition === 'return_wtc' && FORM_UI.qtyManual && val('f_qty') !== '')) {
+    if (qtyEl() && (qtyLocked || (shouldLockQty && !FORM_UI.qtyManual)) && !(rawSlipLock && FORM_UI.qtyManual) && !(FORM_UI.ticketDisposition === 'return_wtc' && FORM_UI.qtyManual && val('f_qty') !== '')) {
       if (isTruckUom) {
         qtyEl().value = '1';
       } else if (!isTonUom) {
@@ -116739,6 +117141,13 @@
         }
       }
     } else if (pricePending) {
+      const expSlipLockPend = (!STATE.editingRecord && !pendEditRow && FORM_UI.stmt16ExpenseSlipLock) ? FORM_UI.stmt16ExpenseSlipLock : null;
+      if (expSlipLockPend) {
+        if ($('f_supplier') && expSlipLockPend.supplier && !isFieldAdminUnlocked('f_supplier')) {
+          $('f_supplier').value = expSlipLockPend.supplier;
+        }
+        syncStmt16PolicyLock('f_supplier', true, `Locked to Statement 16 supplier (${expSlipLockPend.supplier || ''})`, '');
+      }
       if (!FORM_UI.wasPricePending) {
         FORM_UI.methodBeforePending = mthEl ? mthEl.value : 'Cash';
         FORM_UI.wasPricePending = true;
@@ -116765,14 +117174,29 @@
         }
       }
     } else {
-      applyFieldLockState('f_method', false, 'Select Cash or Credit');
-      if (mthEl) {
-        mthEl.disabled = false;
-        if (FORM_UI.wasPricePending) {
-          if (FORM_UI.methodBeforePending && !FORM_UI.methodManual) {
-            mthEl.value = FORM_UI.methodBeforePending;
+      const expSlipLock = (!STATE.editingRecord && !pendEditRow && FORM_UI.stmt16ExpenseSlipLock) ? FORM_UI.stmt16ExpenseSlipLock : null;
+      if (expSlipLock) {
+        if (mthEl) {
+          mthEl.disabled = false;
+          if (!isFieldAdminUnlocked('f_method') && mthEl.value !== 'Credit') mthEl.value = 'Credit';
+        }
+        syncStmt16PolicyLock('f_method', true, 'Locked to Credit AP from Statement 16', 'Select Cash or Credit');
+        if ($('f_supplier') && expSlipLock.supplier && !isFieldAdminUnlocked('f_supplier')) {
+          $('f_supplier').value = expSlipLock.supplier;
+        }
+        syncStmt16PolicyLock('f_supplier', true, `Locked to Statement 16 supplier (${expSlipLock.supplier || ''})`, '');
+      } else {
+        syncStmt16PolicyLock('f_method', false, '', 'Select Cash or Credit');
+        syncStmt16PolicyLock('f_supplier', false, '', '');
+        if (mthEl) {
+          mthEl.disabled = false;
+          if (FORM_UI.wasPricePending) {
+            applyFieldLockState('f_method', false, 'Select Cash or Credit');
+            if (FORM_UI.methodBeforePending && !FORM_UI.methodManual) {
+              mthEl.value = FORM_UI.methodBeforePending;
+            }
+            FORM_UI.wasPricePending = false;
           }
-          FORM_UI.wasPricePending = false;
         }
       }
       const clearPendingZeroAttr = el => {
@@ -117258,6 +117682,12 @@
     const lockCtx = (!STATE.editingRecord && FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx)
       ? FORM_UI.stmt16LegLockCtx
       : null;
+    if (lockCtx && FORM_UI.stmt16SettleSupplierLock) {
+      if ($('f_supplier') && !isFieldAdminUnlocked('f_supplier')) $('f_supplier').value = FORM_UI.stmt16SettleSupplierLock;
+      syncStmt16PolicyLock('f_supplier', true, `Locked to Statement 16 supplier (${FORM_UI.stmt16SettleSupplierLock})`, '');
+    } else {
+      syncStmt16PolicyLock('f_supplier', false, '', '');
+    }
     const methodEl = $('f_method');
     if (methodEl) {
       const blockVatForLeg = Boolean(lockCtx && lockCtx.payableLeg !== 'expense');
@@ -127613,7 +128043,7 @@
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
     FORM_UI.fuelBaseTouched = false; FORM_UI.fuelBaseAuto = false;
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
-    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.settleLegLocked = false; FORM_UI.settleAmtTouched = false; FORM_UI.stmt16LegLockCtx = null; FORM_UI.postAttempted = false;
+    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.settleLegLocked = false; FORM_UI.settleAmtTouched = false; FORM_UI.stmt16LegLockCtx = null; FORM_UI.stmt16SettleSupplierLock = ''; FORM_UI.stmt16ExpenseSlipLock = null; FORM_UI.stmt16RawSlipLock = null; FORM_UI.postAttempted = false;
     FORM_UI.rawSupplyModeManual = false; FORM_UI.transportByManual = false;
     FORM_UI.stagedOwnerDrivers = [];
     FORM_UI.expItems = [];
@@ -129880,15 +130310,20 @@
         }
         if (el.id === 'f_ticketno') FORM_UI.ticketManual = !!el.value;
         // Selecting or clearing a truck resets manual quantity, meter type & driver so the unit's category, capacity and default driver populate first
-        if (el.id === 'f_truck') { FORM_UI.qtyManual = false; FORM_UI.meterTypeManual = false; FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; }
+        if (el.id === 'f_truck') {
+          if (!FORM_UI.stmt16RawSlipLock) FORM_UI.qtyManual = false;
+          FORM_UI.meterTypeManual = false;
+          FORM_UI.ownerManuallyPicked = false;
+          FORM_UI.driverManual = false;
+        }
         if (el.id === 'f_truckowner' || el.id === 'f_saletype' || el.id === 'f_transportby') FORM_UI.driverManual = false;
         if (el.id === 'f_driver' && (isFieldAdminUnlocked('f_driver') || el.dataset.policyLockedNow !== '1')) FORM_UI.driverManual = true;
-        // Changing counterparty / product / site re-runs the agreement lookup unless Admin unlocked the price
-        if (['f_customer', 'f_product', 'f_site', 'f_siteowner', 'f_truckowner', 'f_truck', 'f_company', 'f_saletype', 'f_transportby'].includes(el.id)) {
+        // Changing counterparty / product / site re-runs the agreement lookup unless Admin unlocked the price or a Statement 16 slip prefill locked the SOA amount
+        if (!FORM_UI.stmt16RawSlipLock && ['f_customer', 'f_product', 'f_site', 'f_siteowner', 'f_truckowner', 'f_truck', 'f_company', 'f_saletype', 'f_transportby'].includes(el.id)) {
           if (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice')) FORM_UI.priceManual = false;
           if (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice')) FORM_UI.transManual = false;
         }
-        if (['f_customer', 'f_product', 'f_site', 'f_siteowner', 'f_company'].includes(el.id)) {
+        if (!FORM_UI.stmt16RawSlipLock && ['f_customer', 'f_product', 'f_site', 'f_siteowner', 'f_company'].includes(el.id)) {
           if (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom')) FORM_UI.uomManual = false;
         }
         if (el.id === 'f_customer' && (!isFieldAdminUnlocked('f_method') || isAutoEditUnlockedField('f_method'))) FORM_UI.methodManual = false;
@@ -131601,7 +132036,8 @@
               addErr('f_qty', c.tonGuard.hint);
             }
             if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
-            const agrErrR = ticketAgreementCheck('raw', {
+            const skipMatAgreeOnStmt16Haul = Boolean(FORM_UI.stmt16RawSlipLock && FORM_UI.stmt16RawSlipLock.leg === 'transport' && !(c.up > 0));
+            const agrErrR = skipMatAgreeOnStmt16Haul ? '' : ticketAgreementCheck('raw', {
               company, owner: c.owner, product: c.product, site: c.site, pricePending: Boolean(c.pricePending),
               date, repDate, effDate: (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date,
               orig: editCtx && editCtx.crKey === 'raw_purchases' ? editCtx.orig : null
@@ -136193,7 +136629,7 @@
       };
       if (!deferQueueOrReconPost) {
         emitSaveSuccessFeedback();
-        if (crKey === 'settlements' && STATE.view === 'statements' && String(STATE.activeStatement || '') === '16' && STATE.rdl && STATE.rdl.params && !STATE.rdl._dateTouched && record) {
+        if ((crKey === 'settlements' || crKey === 'raw_purchases' || crKey === 'expenses') && STATE.view === 'statements' && String(STATE.activeStatement || '') === '16' && STATE.rdl && STATE.rdl.params && !STATE.rdl._dateTouched && record) {
           const effSettleDate = String((STATE.basis === 'rep' ? (record.rep_date || record.date) : record.date) || '').slice(0, 10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(effSettleDate) && (!STATE.rdl.params.to || effSettleDate > STATE.rdl.params.to)) {
             STATE.rdl._autoExtendedTo = effSettleDate;
@@ -141376,7 +141812,36 @@
         if (!FORM_UI._advancingUnpricedQueue) FORM_UI.unpricedQueueSession = null;
         if (unpBar) { unpBar.hidden = true; unpBar.innerHTML = ''; }
       }
-      // Partner Truck Monthly Settlement & Statement 16 Leg prefill: leg, amount, method & rep_date.
+      const applyStmt16SlipDates = (indName, txStr, repStr) => {
+        const todayStr = todayISO();
+        const txCand = String(txStr || '').trim().slice(0, 10);
+        const txIso = (/^\d{4}-\d{2}-\d{2}$/.test(txCand) && txCand >= MIN_DATE && txCand <= todayStr) ? txCand : '';
+        const repCand = String(repStr || '').trim().slice(0, 10);
+        const repIso = (/^\d{4}-\d{2}-\d{2}$/.test(repCand) && repCand >= MIN_DATE && repCand <= todayStr) ? repCand : '';
+        const repCo = val('f_company') || defaultEntryCompany();
+        const chkClose = (tD, rD) => (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+          ? window.MFG_AI_EDGE.checkPeriodCloseGuard(repCo, tD, rD, { industry: indName || 'Manufacturing' })
+          : null;
+        if (txIso && $('f_date')) {
+          const txLock = chkClose(txIso, txIso);
+          if (!(txLock && txLock.blocked)) {
+            $('f_date').value = txIso;
+            if ($('f_repdate')) $('f_repdate').value = txIso;
+            FORM_UI.showRepDate = false;
+            FORM_UI.repDateManual = false;
+          }
+        }
+        const curTx = val('f_date') || todayStr;
+        if (repIso && $('f_repdate') && repIso !== curTx) {
+          const rLock = chkClose(curTx, repIso);
+          if (!(rLock && rLock.blocked)) {
+            $('f_repdate').value = repIso;
+            FORM_UI.showRepDate = true;
+            FORM_UI.repDateManual = true;
+          }
+        }
+      };
+      // Partner Truck Monthly Settlement & Statement 16 Leg prefill: leg, amount, method & date/rep_date.
       if (form === 'settlement') {
         if (prefill.method && $('f_method')) {
           setModalControlVal('f_method', String(prefill.method));
@@ -141388,11 +141853,13 @@
           FORM_UI.lastSettleSupplier = val('f_supplier') || '';
           FORM_UI.settleLegLocked = Boolean(prefill.lockPayableLeg);
           FORM_UI.stmt16LegLockCtx = prefill.lockPayableLeg ? (prefill._stmt16Ctx || { payableLeg: String(pfSettleLeg), byCoOpen: {} }) : null;
+          FORM_UI.stmt16SettleSupplierLock = (prefill._stmt16SlipLock && prefill._stmt16SlipLock.supplier) ? String(prefill._stmt16SlipLock.supplier) : '';
           FORM_UI.settleAmtTouched = false;
         } else {
           FORM_UI.settleLegManual = false;
           FORM_UI.settleLegLocked = false;
           FORM_UI.stmt16LegLockCtx = null;
+          FORM_UI.stmt16SettleSupplierLock = '';
           FORM_UI.settleAmtTouched = false;
         }
         if (prefill.amount != null && prefill.amount !== '' && Number.isFinite(Number(prefill.amount)) && $('f_amount')) {
@@ -141404,18 +141871,57 @@
         if (prefill.reference != null && prefill.reference !== '' && $('f_reference')) {
           setModalControlVal('f_reference', String(prefill.reference));
         }
-        const pfSettleRep = String(prefill.rep_date || prefill.repDate || '').trim().slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(pfSettleRep) && $('f_repdate')) {
-          const repCo = val('f_company') || defaultEntryCompany();
-          const txRef = val('f_date') || todayISO();
-          const pLock = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
-            ? window.MFG_AI_EDGE.checkPeriodCloseGuard(repCo, txRef, pfSettleRep, { industry: 'Manufacturing' })
-            : null;
-          if (!(pLock && pLock.blocked)) {
-            $('f_repdate').value = pfSettleRep;
-            FORM_UI.showRepDate = true;
-            FORM_UI.repDateManual = (pfSettleRep !== txRef);
-          }
+        applyStmt16SlipDates('Manufacturing', prefill.date || prefill.rep_date || prefill.repDate, prefill.rep_date || prefill.repDate);
+      } else if (form === 'expense' && prefill._stmt16ExpenseSlip) {
+        const es = prefill._stmt16ExpenseSlip;
+        FORM_UI.stmt16ExpenseSlipLock = { supplier: String(es.supplier || prefill.supplier || '') };
+        if ($('f_method')) setModalControlVal('f_method', 'Credit');
+        if (es.ref && $('f_reference')) setModalControlVal('f_reference', String(es.ref));
+        if (es.desc && $('f_notes')) setModalControlVal('f_notes', String(es.desc));
+        applyStmt16SlipDates(getActiveIndustry(STATE.company) || 'Manufacturing', es.txDate || prefill.date || es.repDate || prefill.rep_date, es.repDate || prefill.rep_date);
+        const amtUsd = round2(Number(es.amountUsd || 0));
+        if (amtUsd > 0) {
+          if ($('f_gross_amount')) $('f_gross_amount').value = amtUsd.toFixed(2);
+          if ($('f_amount')) $('f_amount').value = amtUsd.toFixed(2);
+          FORM_UI.lastExpAmtSource = 'amount';
+        }
+      } else if (form === 'raw' && prefill._stmt16RawSlip) {
+        const rs = prefill._stmt16RawSlip;
+        FORM_UI.stmt16RawSlipLock = { leg: rs.leg || 'material', supplier: String(rs.supplier || '') };
+        if ($('f_method')) setModalControlVal('f_method', 'Credit');
+        if (rs.ref) {
+          if ($('f_extinvoice')) $('f_extinvoice').value = String(rs.ref);
+          if ($('f_reference')) $('f_reference').value = String(rs.ref);
+        }
+        applyStmt16SlipDates('Manufacturing', rs.txDate || prefill.date || rs.repDate || prefill.rep_date, rs.repDate || prefill.rep_date);
+        const pfUom = String(rs.uom || 'Truck');
+        if ($('f_uom')) {
+          $('f_uom').value = pfUom;
+          FORM_UI.lastUom = pfUom;
+          FORM_UI.uomManual = true;
+        }
+        const pfQty = Number(rs.qty || 1) > 0 ? Number(rs.qty) : 1;
+        if ($('f_qty')) {
+          $('f_qty').value = String(pfQty);
+          FORM_UI.qtyManual = true;
+        }
+        const unitAmt = round2(Number(rs.amountUsd || 0) / pfQty);
+        if (rs.leg === 'transport') {
+          if ($('f_transportby')) $('f_transportby').value = 'Third-party truck';
+          FORM_UI.lastTransportBy = 'Third-party truck';
+          if ($('f_truckowner')) $('f_truckowner').value = String(rs.supplier || '');
+          if ($('f_unitprice')) $('f_unitprice').value = '0.00';
+          if ($('f_transunitprice')) $('f_transunitprice').value = unitAmt.toFixed(2);
+          FORM_UI.priceManual = true;
+          FORM_UI.transManual = true;
+        } else {
+          if ($('f_transportby')) $('f_transportby').value = 'Company fleet';
+          FORM_UI.lastTransportBy = 'Company fleet';
+          if ($('f_siteowner')) $('f_siteowner').value = String(rs.supplier || '');
+          if ($('f_unitprice')) $('f_unitprice').value = unitAmt.toFixed(2);
+          if ($('f_transunitprice')) $('f_transunitprice').value = '0.00';
+          FORM_UI.priceManual = true;
+          FORM_UI.transManual = true;
         }
       }
       recalcForm();
@@ -168157,6 +168663,8 @@
       SEED._coreReady = false;
       SEED.records = {};
       SEED.models = {};
+      SEED.industryLive = null;
+      resetDeferredSeedFlags();
       setPrivateNameBook(null);
       _seedHydrationGen++;
       _seedHydrationPromise = null;
@@ -168283,6 +168791,7 @@
         SEED.industryLive = null;
         SEED._coreReady = false;
         SEED._preAuthDeferred = true;
+        resetDeferredSeedFlags();
         SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._origModelMasters = null;
@@ -168655,6 +169164,7 @@
         SEED._coreReady = false;
         SEED._recordsReady = false;
         SEED._preAuthDeferred = true;
+        resetDeferredSeedFlags();
         SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._origModelMasters = null;
@@ -171765,7 +172275,16 @@
     syncKioskLockedUrl();
     updateUnsentEntriesBar();
     updateDevicesHoldingBar();
-    if (!STATE.kioskLocked) loadDevicesHolding();
+    if (!STATE.kioskLocked) {
+      loadDevicesHolding();
+      ensureKioskDeferredModulesLoaded('full')
+        .then(() => {
+          if (SEED._recordsDeferredForKiosk || !SEED._recordsReady) return hydrateSeedData();
+          return SEED;
+        })
+        .then(() => safeRender())
+        .catch(err => { console.warn('[kiosk-deferred]', err); toast('Could not load full workspace modules or records. Check connection and retry.', 'err'); });
+    }
     renderApp();
     if (STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
@@ -172232,13 +172751,22 @@
           updateDevicesHoldingBar();
           renderApp();
           renderAdminInner();
+          if (nextRole !== 'attendance') {
+            ensureKioskDeferredModulesLoaded('ops')
+              .then(() => {
+                if (SEED._recordsDeferredForKiosk || !SEED._recordsReady) return hydrateSeedData();
+                return SEED;
+              })
+              .then(() => safeRender())
+              .catch(err => { console.warn('[kiosk-deferred]', err); toast('Could not load full workspace modules or records. Check connection and retry.', 'err'); });
+          }
           const roleTitle = (roleCards.find(r => r.id === nextRole) || {}).title || nextRole;
           toast(`Switched tablet purpose to ${roleTitle}`, 'ok');
         });
       });
 
       modal.querySelectorAll('[data-ksa-exit]').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
           const dest = btn.getAttribute('data-ksa-exit') || 'overview';
           stopKioskAttCamera();
           STATE.kioskLocked = false;
@@ -172252,6 +172780,15 @@
           updateUnsentEntriesBar();
           updateDevicesHoldingBar();
           loadDevicesHolding();
+          try {
+            await ensureKioskDeferredModulesLoaded('full');
+            if (SEED._recordsDeferredForKiosk || !SEED._recordsReady) {
+              await hydrateSeedData();
+            }
+          } catch (err) {
+            console.warn('[kiosk-deferred]', err);
+            toast('Could not load full workspace modules or records. Check connection and retry.', 'err');
+          }
           setView(dest);
         });
       });
@@ -202600,6 +203137,15 @@
         syncNativeStationPreset(nextKiosk);
         syncKioskLockedUrl();
         renderApp();
+        if (nextKiosk !== 'attendance') {
+          ensureKioskDeferredModulesLoaded('ops')
+            .then(() => {
+              if (SEED._recordsDeferredForKiosk || !SEED._recordsReady) return hydrateSeedData();
+              return SEED;
+            })
+            .then(() => safeRender())
+            .catch(err => { console.warn('[kiosk-deferred]', err); toast('Could not load full workspace modules or records. Check connection and retry.', 'err'); });
+        }
       });
     });
 
@@ -204563,10 +205109,13 @@
           protoDot = document.createElement('u');
           protoDot.className = 'row-sel-dot';
           protoDot.setAttribute('data-row-sel', '1');
+          protoDot.setAttribute('data-ui-tip', 'Select row for live totals & bulk actions');
+          protoDot.setAttribute('aria-label', 'Select row');
           // No text node: the check is drawn only by CSS (u.row-sel-dot::after) and only on a selected row. A text
           // check here doubled it on hover and leaked a stray check into CSV exports (tableToCsv reads innerText).
           enhanceVisualWorkspace._protoDot = protoDot;
         }
+        const needDotI18n = Boolean(window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en');
         for (let i = 0; i < rrows.length; i++) {
           const tr = rrows[i];
           if (tr._hasSelDot || tr.hasAttribute('data-dops-expand') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) continue;
@@ -204580,7 +205129,9 @@
             if (firstTd.querySelector('.badge-app, .att-inline-badge, .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .void-btn:not(.row-void-hover)')) {
               firstTd.classList.add('td-has-inline-act');
             }
-            firstTd.appendChild(protoDot.cloneNode(true));
+            const dotClone = protoDot.cloneNode(true);
+            firstTd.appendChild(dotClone);
+            if (needDotI18n) _translateVoidEl(dotClone);
           }
         }
       }
@@ -205388,7 +205939,10 @@
           STATE.colFilters[view][col] = valStr;
         }
         STATE.shown = {};
+        const wsEl = $('workspace');
+        const keepY = wsEl ? wsEl.scrollTop : 0;
         renderApp();
+        if (wsEl) wsEl.scrollTop = keepY;
         return;
       }
 
@@ -209305,7 +209859,8 @@
     const normQKiosk = qKioskRaw === 'plant' ? 'sales' : qKioskRaw;
     const isAndroidKioskUa = /ISABIKiosk\//i.test(navigator.userAgent || '');
     const hasValidQKiosk = !!(normQKiosk && ['sales', 'raw', 'fuel', 'attendance'].includes(normQKiosk));
-    const dedicatedKioskBoot = !IS_AUTOMATED_TEST && (hasValidQKiosk || (isAndroidKioskUa && savedStationCfg && savedStationCfg.kioskLocked));
+    const allowKioskTestBoot = Boolean(/[?&]kiosk_lite=1\b/i.test(location.search) || window.__MFG_TEST_KIOSK_LITE === true);
+    const dedicatedKioskBoot = (!IS_AUTOMATED_TEST || allowKioskTestBoot) && (hasValidQKiosk || (isAndroidKioskUa && savedStationCfg && savedStationCfg.kioskLocked));
     if (hasValidQKiosk) {
       STATE.activeKiosk = normQKiosk;
       STATE.view = 'kiosks';
@@ -209898,10 +210453,6 @@
       const open = !sidebar.classList.contains('open');
       sidebar.classList.toggle('open', open);
       if (backdrop) backdrop.hidden = !open;
-    };
-    const closeRail = () => {
-      if (sidebar) sidebar.classList.remove('open');
-      if (backdrop) backdrop.hidden = true;
     };
     const toggleDesktopOrMobileRail = () => {
       if (window.innerWidth <= 860) {
@@ -211063,253 +211614,7 @@
         askDrawer.setAttribute('aria-hidden', 'true');
       }
     };
-    if (window.MFG_ASK && typeof window.MFG_ASK.init === 'function') {
-      window.MFG_ASK.init({
-        STATE,
-        SEED,
-        COMPANY_LABELS,
-        COMPANY_BU_MATCH,
-        SEED_DATE,
-        MFG_FX: window.MFG_FX,
-        getLbpFxRate,
-        activeUser,
-        allowedCompanyNames,
-        getCompanyCatalog,
-        getActiveIndustry,
-        renderIndustryDailyOps,
-        computeCeoPeriodBridgeSnapshot,
-        computeIndustryDashboardSnapshot,
-        computeInspector360Snapshot,
-        computeSentinelTriageSnapshot,
-        computeDailyHandoverSnapshot,
-        computeCashflowLiquiditySnapshot,
-        computeUniversalPageGuideSnapshot,
-        computeWhatIfScenarioSnapshot,
-        applyWhatIfGuardrailRule,
-        computeCollectionForecastSnapshot,
-        applyCollectionAlertRule,
-        computePayablesOptimizerSnapshot,
-        applyPayablesAlertRule,
-        computeTreasuryRunwaySnapshot,
-        applyTreasuryRunwayAlertRule,
-        computeInventoryOptimizerSnapshot,
-        applyInventoryAlertRule,
-        scopeMatchesCompanyKey,
-        isStudioCoKeyAllowedForUser,
-        canReviewSentinels,
-        markSentinelReviewed,
-        unmarkSentinelReviewed,
-        markAllFlaggedSentinelsReviewed,
-        renderApp,
-        toast,
-        closeRecordInspector,
-        canUsePocketBrief,
-        buildPocketBriefData,
-        buildPocketBriefSpeechText,
-        openPocketBrief,
-        closePocketBrief,
-        getKPI,
-        getModel,
-        filterRecords,
-        periodRange,
-        todayISO,
-        ticketSign,
-        ticketTons,
-        ticketMeters,
-        expenseSign,
-        isApCreditExpense,
-        isPendingPriceExpense,
-        sentinelSlice,
-        buildSentinelItems,
-        computeDieselTank,
-        getDieselTankLedger,
-        canSeeTaxBreakdown,
-        seatLens,
-        canViewHub,
-        canViewView,
-        canAccessPbiPage,
-        userHasFaceId,
-        getVisibleDirectoryUsers,
-        getUserDirectoryScopeTier,
-        setView,
-        VIEW_TITLES,
-        openHubWithFilter,
-        openInspectorTargetInHub,
-        getViewFilterPool,
-        inspectActiveRegisterSlice,
-        exportAskHubSliceCsv,
-        canShowAskSliceFinancials,
-        canExportAskSliceCsv,
-        isMaskedFieldAccessBlocked,
-        viewToTableKey,
-        getColLabel,
-        findNearPartyMatch,
-        canonicalizePartyByHygiene,
-        getConfirmedAliasesForCanonical,
-        isPartyHygieneDismissed,
-        setDateFilter,
-        openEntryModal,
-        showRecordInspector,
-        closeRail,
-        fmtUSD,
-        fmtLBP,
-        fmtNum,
-        esc
-      });
-    }
-    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.init === 'function') {
-      window.MFG_SMART_SCAN.init({
-        STATE,
-        SEED,
-        COMPANY_KEY_BY_NAME,
-        DOMAIN_NEAR_COPY_LABELS,
-        getFormUi: () => FORM_UI,
-        getFreqIndex,
-        getLbpFxRate,
-        todayISO,
-        activeUser,
-        isOwner,
-        isDemoScopeActive,
-        edgeApiFetch,
-        canonCompany,
-        ensureStaffMembersSeeded,
-        allowedCompanyNames,
-        defaultEntryCompany,
-        defaultWarehouseLocationForCompany,
-        ensureMultiIndustrySpineSeeded,
-        getActiveIndustry,
-        isFleetUniversalIndustry,
-        MFG_ONLY_MODAL_FORMS,
-        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
-        selectCompanyScope,
-        contextFormForView,
-        canEnterForm,
-        canEnterDomainForm,
-        canManageSiblingChronoSchedule,
-        INDUSTRY_DOMAIN_FORMS_BY_IND,
-        openEntryModal,
-        closeEntryModal,
-        openIndustryDomainEntryModal,
-        closeIndustryDomainEntryModal,
-        resolveDomainFormSpec,
-        computeTradingOperations,
-        recalcForm,
-        readAndCompressAttachmentFile,
-        openDocumentCameraCapture,
-        resolveDocDataUrl,
-        renderEntryAttachmentsListUI,
-        renderExpenseItemsBuilderRows,
-        renderRepairItemsBuilderRows,
-        openQuickExpenseCatalogDrawer,
-        resolveCanonicalEquipmentName,
-        resolveCatalogItem,
-        isSupplierIvaForCompany,
-        findNearCopyEntry,
-        findDomainNearCopyEntry,
-        findNearPartyMatch,
-        getScopedPartyCandidates,
-        resolveConfirmedPartyAlias,
-        canonicalizePartyByHygiene,
-        getConfirmedAliasesForCanonical,
-        isPartyHygieneDismissed,
-        nearCopyRowUsd,
-        nearCopySumUsd,
-        fmtDateDMY,
-        fmtUSD,
-        toast
-      });
-    }
-    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.init === 'function') {
-      window.MFG_AI_EDGE.init({
-        STATE,
-        SEED,
-        COMPANY_KEY_BY_NAME,
-        COMPANY_LABELS,
-        getFreqIndex,
-        todayISO,
-        defaultEntryCompany,
-        allowedCompanyNames,
-        getCompanyCatalog,
-        activeUser,
-        isDemoScopeActive,
-        getActiveIndustry,
-        isFleetUniversalIndustry,
-        MFG_ONLY_MODAL_FORMS,
-        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
-        canEnterForm,
-        canEnterAny,
-        canModifyData,
-        isOwner,
-        canAccessTable,
-        canViewPayrollDollarAmounts,
-        canModifyTextOnly,
-        isFieldAdminUnlocked,
-        canVoid,
-        canManageDataHygiene,
-        getPartyHygieneRules,
-        savePartyHygieneDecision,
-        comparePartyHygieneTs,
-        resolveConfirmedPartyAlias,
-        canonicalizePartyByHygiene,
-        getConfirmedAliasesForCanonical,
-        isPartyHygieneDismissed,
-        getScopedPartyCandidates,
-        openEntryModal,
-        openIndustryDomainEntryModal,
-        closeEntryModal,
-        recalcForm,
-        filterRecords,
-        getScopedPendingPriceRaw,
-        getScopedPendingPriceExpenses,
-        getScopedPendingSalaryEmployments,
-        getIndustryGlModel,
-        computeThreeLegPayablesBreakdown,
-        computeIntercompanyInteractions,
-        computeHoldingSchedules,
-        computeEnterpriseRollup,
-        computeHospitalityOperations,
-        computeTradingOperations,
-        computeRealEstateOperations,
-        computeInsuranceOperations,
-        lookupActiveHospitalityTariff,
-        lookupActiveRealEstateLeaseRate,
-        lookupActiveTradingTariff,
-        lookupActiveHoldingPartnerSplit,
-        lookupActiveHoldingLoanRate,
-        canViewView,
-        seatLens,
-        activeUser,
-        lookupActiveInsuranceAgreementRate,
-        saveIndustryWorkflowPatch,
-        getIndustryWorkflowPatch,
-        addIndustryCustomRow,
-        getKPI,
-        buildSentinelItems,
-        getOverpaidPayablesSentinelData,
-        openSetUnpricedSitePriceModal,
-        openStatementUnpricedQueueModal,
-        resolveUnpricedLastRateSuggestion,
-        normSiteMatch,
-        normSupPayable,
-        productInfo,
-        normUnpricedQueueUom,
-        buildUnpricedQueueStepKey,
-        cleanSiteLabel,
-        findRule,
-        ticketTons,
-        saveModalEntry,
-        showRecordInspector,
-        resolveCanonicalEquipmentName,
-        applyCustomRecordsToSeed,
-        saveLocalAuthAndRecords,
-        postRecordToLocalApi,
-        syncWithCloud,
-        renderApp,
-        toast,
-        fmtUSD,
-        fmtNum
-      });
-    }
+    initDeferredCommandModules();
     if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.bindContext === 'function') {
       window.MFG_TELEMATICS.bindContext({
         getState: () => STATE,
@@ -211943,6 +212248,7 @@
         if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
         if (Date.now() - _lastCloudSyncStartedAt < 10000) return;
         if (!STATE.pendingCloudPush && !STATE.pushAfterSync) {
+          if (STATE.kioskLocked && (Date.now() - _lastCloudSyncStartedAt < 60000)) return;
           if (Date.now() - _lastUserNavAt < 2500) return;
           const ae = document.activeElement;
           if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;
@@ -211956,6 +212262,9 @@
 
     // Expose deterministic hooks for headless verification (build/verify_mfg.mjs)
     window.MFG_FACE_TEST = {
+      idleSyncIntervalMs: () => (STATE.kioskLocked && !STATE.pendingCloudPush && !STATE.pushAfterSync ? 60000 : 15000),
+      ensureKioskDeferredModulesLoaded: tier => ensureKioskDeferredModulesLoaded(tier),
+      getKioskStaffDirectory: opts => getKioskStaffDirectory(opts),
       state: () => ({
         authed: STATE.authed,
         activeEmail: activeUser().email,
@@ -212827,7 +213136,7 @@
     '.grain-btn', '.basis-btn', '.date-seg-part', '.entity-picker-trigger', '.entity-picker-act-btn',
     '.ask-isabi-trigger', '.mobile-theme-btn', '#themeToggleBtn', '#signOutBtn', '#authShowcaseLink',
     '.sales-recon-card', '.recon-co-pill', '.rel-link', '.inspector-cell[data-edit-field]',
-    '.row-sel-dot', '.lsb-btn', '#topbarEyebrow', '#topbarTitle', '#sidebarNav .nav-item', '#cfTillScrubRange'
+    '.lsb-btn', '#topbarEyebrow', '#topbarTitle', '#sidebarNav .nav-item', '#cfTillScrubRange'
   ].join(', ');
 
   function stripOneNativeTitle(el, skipRailCheck = false) {
@@ -213298,7 +213607,7 @@
   }
 
   function mergeIndustryLiveSpineIntoRecords() {
-    if (!SEED || !SEED.records || !SEED._recordsReady || !SEED.industryLive) return;
+    if (!SEED || !SEED.records || (!SEED._recordsReady && !SEED._recordsDeferredForKiosk) || !SEED.industryLive) return;
     if (SEED._industryLiveSpineMergedRev === SEED._industryRev) return;
     SEED._industryLiveSpineMergedRev = SEED._industryRev;
     const insSpine = [];
@@ -214410,6 +214719,8 @@
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
+    canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
+    openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     openHoldingNetSettlementModal: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
@@ -214515,6 +214826,8 @@
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
+    canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
+    openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,
     todayISO: typeof todayISO === 'function' ? todayISO : null,
     retroactiveBackfillTradingTariff: typeof retroactiveBackfillTradingTariff === 'function' ? retroactiveBackfillTradingTariff : null,
     lookupActiveHoldingPartnerSplit: typeof lookupActiveHoldingPartnerSplit === 'function' ? lookupActiveHoldingPartnerSplit : null,
@@ -214678,6 +214991,296 @@
     return r.json();
   }
 
+  function closeRail() {
+    const sb = $('sidebar');
+    const bd = $('railBackdrop');
+    if (sb) sb.classList.remove('open');
+    if (bd) bd.hidden = true;
+  }
+
+  let _askModuleInited = false;
+  let _smartScanModuleInited = false;
+  let _aiEdgeModuleInited = false;
+
+  function initDeferredCommandModules() {
+    if (!_askModuleInited && window.MFG_ASK && typeof window.MFG_ASK.init === 'function') {
+      _askModuleInited = true;
+      window.MFG_ASK.init({
+        STATE,
+        SEED,
+        COMPANY_LABELS,
+        COMPANY_BU_MATCH,
+        SEED_DATE,
+        MFG_FX: window.MFG_FX,
+        getLbpFxRate,
+        activeUser,
+        allowedCompanyNames,
+        getCompanyCatalog,
+        getActiveIndustry,
+        renderIndustryDailyOps,
+        computeCeoPeriodBridgeSnapshot,
+        computeIndustryDashboardSnapshot,
+        computeInspector360Snapshot,
+        computeSentinelTriageSnapshot,
+        computeDailyHandoverSnapshot,
+        computeCashflowLiquiditySnapshot,
+        computeUniversalPageGuideSnapshot,
+        computeWhatIfScenarioSnapshot,
+        applyWhatIfGuardrailRule,
+        computeCollectionForecastSnapshot,
+        applyCollectionAlertRule,
+        computePayablesOptimizerSnapshot,
+        applyPayablesAlertRule,
+        computeTreasuryRunwaySnapshot,
+        applyTreasuryRunwayAlertRule,
+        computeInventoryOptimizerSnapshot,
+        applyInventoryAlertRule,
+        scopeMatchesCompanyKey,
+        isStudioCoKeyAllowedForUser,
+        canReviewSentinels,
+        markSentinelReviewed,
+        unmarkSentinelReviewed,
+        markAllFlaggedSentinelsReviewed,
+        renderApp,
+        toast,
+        closeRecordInspector,
+        canUsePocketBrief,
+        buildPocketBriefData,
+        buildPocketBriefSpeechText,
+        openPocketBrief,
+        closePocketBrief,
+        getKPI,
+        getModel,
+        filterRecords,
+        periodRange,
+        todayISO,
+        ticketSign,
+        ticketTons,
+        ticketMeters,
+        expenseSign,
+        isApCreditExpense,
+        isPendingPriceExpense,
+        sentinelSlice,
+        buildSentinelItems,
+        computeDieselTank,
+        getDieselTankLedger,
+        canSeeTaxBreakdown,
+        seatLens,
+        canViewHub,
+        canViewView,
+        canAccessPbiPage,
+        userHasFaceId,
+        getVisibleDirectoryUsers,
+        getUserDirectoryScopeTier,
+        setView,
+        VIEW_TITLES,
+        openHubWithFilter,
+        openInspectorTargetInHub,
+        getViewFilterPool,
+        inspectActiveRegisterSlice,
+        exportAskHubSliceCsv,
+        canShowAskSliceFinancials,
+        canExportAskSliceCsv,
+        isMaskedFieldAccessBlocked,
+        viewToTableKey,
+        getColLabel,
+        findNearPartyMatch,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
+        isPartyHygieneDismissed,
+        setDateFilter,
+        openEntryModal,
+        showRecordInspector,
+        closeRail,
+        fmtUSD,
+        fmtLBP,
+        fmtNum,
+        esc
+      });
+    }
+    if (!_smartScanModuleInited && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.init === 'function') {
+      _smartScanModuleInited = true;
+      window.MFG_SMART_SCAN.init({
+        STATE,
+        SEED,
+        COMPANY_KEY_BY_NAME,
+        DOMAIN_NEAR_COPY_LABELS,
+        getFormUi: () => FORM_UI,
+        getFreqIndex,
+        getLbpFxRate,
+        todayISO,
+        activeUser,
+        isOwner,
+        isDemoScopeActive,
+        edgeApiFetch,
+        canonCompany,
+        ensureStaffMembersSeeded,
+        allowedCompanyNames,
+        defaultEntryCompany,
+        defaultWarehouseLocationForCompany,
+        ensureMultiIndustrySpineSeeded,
+        getActiveIndustry,
+        isFleetUniversalIndustry,
+        MFG_ONLY_MODAL_FORMS,
+        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
+        selectCompanyScope,
+        contextFormForView,
+        canEnterForm,
+        canEnterDomainForm,
+        canManageSiblingChronoSchedule,
+        INDUSTRY_DOMAIN_FORMS_BY_IND,
+        openEntryModal,
+        closeEntryModal,
+        openIndustryDomainEntryModal,
+        closeIndustryDomainEntryModal,
+        resolveDomainFormSpec,
+        computeTradingOperations,
+        recalcForm,
+        readAndCompressAttachmentFile,
+        openDocumentCameraCapture,
+        resolveDocDataUrl,
+        renderEntryAttachmentsListUI,
+        renderExpenseItemsBuilderRows,
+        renderRepairItemsBuilderRows,
+        openQuickExpenseCatalogDrawer,
+        resolveCanonicalEquipmentName,
+        resolveCatalogItem,
+        isSupplierIvaForCompany,
+        findNearCopyEntry,
+        findDomainNearCopyEntry,
+        findNearPartyMatch,
+        getScopedPartyCandidates,
+        resolveConfirmedPartyAlias,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
+        isPartyHygieneDismissed,
+        nearCopyRowUsd,
+        nearCopySumUsd,
+        fmtDateDMY,
+        fmtUSD,
+        toast
+      });
+    }
+    if (!_aiEdgeModuleInited && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.init === 'function') {
+      _aiEdgeModuleInited = true;
+      window.MFG_AI_EDGE.init({
+        STATE,
+        SEED,
+        COMPANY_KEY_BY_NAME,
+        COMPANY_LABELS,
+        getFreqIndex,
+        todayISO,
+        defaultEntryCompany,
+        allowedCompanyNames,
+        getCompanyCatalog,
+        activeUser,
+        isDemoScopeActive,
+        getActiveIndustry,
+        isFleetUniversalIndustry,
+        MFG_ONLY_MODAL_FORMS,
+        isMfgOnlyModalForm: f => MFG_ONLY_MODAL_FORMS.has(f),
+        canEnterForm,
+        canEnterAny,
+        canModifyData,
+        isOwner,
+        canAccessTable,
+        canViewPayrollDollarAmounts,
+        canModifyTextOnly,
+        isFieldAdminUnlocked,
+        canVoid,
+        canManageDataHygiene,
+        getPartyHygieneRules,
+        savePartyHygieneDecision,
+        comparePartyHygieneTs,
+        resolveConfirmedPartyAlias,
+        canonicalizePartyByHygiene,
+        getConfirmedAliasesForCanonical,
+        isPartyHygieneDismissed,
+        getScopedPartyCandidates,
+        openEntryModal,
+        openIndustryDomainEntryModal,
+        closeEntryModal,
+        recalcForm,
+        filterRecords,
+        getScopedPendingPriceRaw,
+        getScopedPendingPriceExpenses,
+        getScopedPendingSalaryEmployments,
+        getIndustryGlModel,
+        computeThreeLegPayablesBreakdown,
+        computeIntercompanyInteractions,
+        computeHoldingSchedules,
+        computeEnterpriseRollup,
+        computeHospitalityOperations,
+        computeTradingOperations,
+        computeRealEstateOperations,
+        computeInsuranceOperations,
+        lookupActiveHospitalityTariff,
+        lookupActiveRealEstateLeaseRate,
+        lookupActiveTradingTariff,
+        lookupActiveHoldingPartnerSplit,
+        lookupActiveHoldingLoanRate,
+        canViewView,
+        seatLens,
+        activeUser,
+        lookupActiveInsuranceAgreementRate,
+        saveIndustryWorkflowPatch,
+        getIndustryWorkflowPatch,
+        addIndustryCustomRow,
+        getKPI,
+        buildSentinelItems,
+        getOverpaidPayablesSentinelData,
+        openSetUnpricedSitePriceModal,
+        openStatementUnpricedQueueModal,
+        resolveUnpricedLastRateSuggestion,
+        normSiteMatch,
+        normSupPayable,
+        productInfo,
+        normUnpricedQueueUom,
+        buildUnpricedQueueStepKey,
+        cleanSiteLabel,
+        findRule,
+        ticketTons,
+        saveModalEntry,
+        showRecordInspector,
+        resolveCanonicalEquipmentName,
+        applyCustomRecordsToSeed,
+        saveLocalAuthAndRecords,
+        postRecordToLocalApi,
+        syncWithCloud,
+        renderApp,
+        toast,
+        fmtUSD,
+        fmtNum
+      });
+    }
+  }
+
+  async function ensureKioskDeferredModulesLoaded(tier = 'full') {
+    if (typeof window.__MFG_ENSURE_DEFERRED_ASSETS === 'function') {
+      await window.__MFG_ENSURE_DEFERRED_ASSETS(tier);
+    }
+    initDeferredCommandModules();
+    return true;
+  }
+
+  function resetDeferredSeedFlags() {
+    SEED._recordsDeferredForKiosk = false;
+    SEED._liveIndustrySpineOnlyReady = false;
+    SEED._multiIndustrySpineSeeded = false;
+    SEED._industryLiveSpineMergedRev = -1;
+  }
+
+  function isAttendanceKioskLiteActive(isDemoSbx = isDemoSandboxSession()) {
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    return Boolean(
+      !isDemoSbx &&
+      STATE.kioskLocked &&
+      STATE.view === 'kiosks' &&
+      STATE.activeKiosk === 'attendance' &&
+      (window.__MFG_KIOSK_LITE_BOOT === 'attendance' || /[?&]kiosk_lite=1\b/i.test(location.search) || window.__MFG_TEST_KIOSK_LITE === true || !isAutoTest)
+    );
+  }
+
   function hydrateSeedData() {
     if (SEED._recordsReady && window.MFG_SEED) return Promise.resolve(SEED);
     const isDemoSbx = isDemoSandboxSession();
@@ -214695,7 +215298,18 @@
       }
       return Promise.resolve(SEED);
     }
-    if (_seedHydrationPromise) return _seedHydrationPromise;
+    if (_seedHydrationPromise) {
+      const inflight = _seedHydrationPromise;
+      if (!isAttendanceKioskLiteActive(isDemoSbx)) {
+        return inflight.then(res => {
+          if (!SEED._recordsReady && SEED._recordsDeferredForKiosk && !isAttendanceKioskLiteActive() && !_seedHydrationPromise && !(rosterIsServerHeld() && !STATE.authed)) {
+            return hydrateSeedData();
+          }
+          return res;
+        });
+      }
+      return inflight;
+    }
     SEED._preAuthDeferred = false;
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     const shouldYield = !isAutoTest;
@@ -214712,45 +215326,49 @@
 
     const seedEpoch = _authSessionEpoch;
     const hydrationGen = _seedHydrationGen;
+    const needCore = !(SEED._coreReady && SEED._recordsDeferredForKiosk);
+    const needInd = !(SEED.industryLive && SEED._recordsDeferredForKiosk);
     let myHydratePromise = null;
     myHydratePromise = (async () => {
       try {
-        const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
-        const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
-        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
-          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
-          return SEED;
+        const indFetchPromise = needInd ? fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null) : Promise.resolve(null);
+        if (needCore) {
+          const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
+          if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+            if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+            return SEED;
+          }
+          await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
+          // Signed out while the core was being unpacked (it yields): drop what it wrote behind the sign-in screen.
+          if (hydrationGen !== _seedHydrationGen || (useAuthedApi && seedEpoch !== _authSessionEpoch)) {
+            if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+            if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+            return SEED;
+          }
+          if (useAuthedApi && !isDemoSbx && !(corePayload && corePayload.namebook)) armNameBookRefetch(coreUrl);
+          if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
+            normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
+            _demoCompanyLiveSnap.coreReady = true;
+            _demoCompanyLiveSnap.needsCustomApply = true;
+          } else {
+            normalizeDistinctSiteCategories(SEED);
+            SEED._coreReady = true;
+            SEED._canonicalById = null;
+            SEED._canonicalByMain = null;
+            SEED._origModelMasters = null;
+            if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
+            const periodSelInit = $('periodSelect');
+            const gp = (((SEED.models || {})['manufacturing-group'] || {}).periods) || {};
+            if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
+            invalidateAllSeedCaches();
+            applyCustomRecordsToSeed();
+          }
+          window.__mfgCoreSeedLoaded = true;
+          try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
+          if ((STATE.authed || isAutoTest) && !_demoCompanySandboxActive) safeRender();
         }
-        await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
-        // Signed out while the core was being unpacked (it yields): drop what it wrote behind the sign-in screen.
-        if (hydrationGen !== _seedHydrationGen || (useAuthedApi && seedEpoch !== _authSessionEpoch)) {
-          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
-          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
-          return SEED;
-        }
-        if (useAuthedApi && !isDemoSbx && !(corePayload && corePayload.namebook)) armNameBookRefetch(coreUrl);
-        if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
-          normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
-          _demoCompanyLiveSnap.coreReady = true;
-          _demoCompanyLiveSnap.needsCustomApply = true;
-        } else {
-          normalizeDistinctSiteCategories(SEED);
-          SEED._coreReady = true;
-          SEED._canonicalById = null;
-          SEED._canonicalByMain = null;
-          SEED._origModelMasters = null;
-          if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
-          const periodSelInit = $('periodSelect');
-          const gp = (((SEED.models || {})['manufacturing-group'] || {}).periods) || {};
-          if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
-          invalidateAllSeedCaches();
-          applyCustomRecordsToSeed();
-        }
-        window.__mfgCoreSeedLoaded = true;
-        try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
-        if ((STATE.authed || isAutoTest) && !_demoCompanySandboxActive) safeRender();
 
-        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser && !FACE_STATE.authCamOnDemand) {
+        if (!STATE.authed && !isAutoTest && !STATE.kioskLocked && !FACE_STATE.authCamStoppedByUser && !FACE_STATE.authCamOnDemand) {
           await new Promise(resolve => {
             let done = false;
             const finish = () => { if (!done) { done = true; resolve(); } };
@@ -214761,6 +215379,31 @@
 
         if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          return SEED;
+        }
+        if (isAttendanceKioskLiteActive(isDemoSbx)) {
+          const indPayload = await indFetchPromise;
+          if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
+            if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+            return SEED;
+          }
+          if (indPayload) unpackIndustrySeedPayload(indPayload);
+          normalizeDistinctSiteCategories(SEED);
+          SEED._canonicalById = null;
+          SEED._canonicalByMain = null;
+          SEED._recordsDeferredForKiosk = true;
+          SEED._recordsReady = false;
+          SEED._liveIndustrySpineOnlyReady = false;
+          SEED._multiIndustrySpineSeeded = false;
+          SEED._industryLiveSpineMergedRev = -1;
+          if (indPayload || SEED.industryLive) mergeIndustryLiveSpineIntoRecords();
+          if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
+          invalidateAllSeedCaches();
+          applyCustomRecordsToSeed();
+          window.MFG_SEED = SEED;
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          try { window.dispatchEvent(new CustomEvent('mfg:kiosk-lite-seed-ready')); } catch (_) {}
+          if (STATE.authed || isAutoTest) safeRender();
           return SEED;
         }
         const [recPayload, indPayload, demoBundlePayloads] = await Promise.all([
@@ -214789,6 +215432,10 @@
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
           return SEED;
         }
+        SEED._recordsDeferredForKiosk = false;
+        SEED._liveIndustrySpineOnlyReady = false;
+        SEED._multiIndustrySpineSeeded = false;
+        SEED._industryLiveSpineMergedRev = -1;
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
         if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
@@ -214807,7 +215454,7 @@
           SEED._canonicalByMain = null;
           SEED._recordsReady = true;
           SEED._recordsLoadFailed = false;
-          if (indPayload) mergeIndustryLiveSpineIntoRecords();
+          if (indPayload || SEED.industryLive) mergeIndustryLiveSpineIntoRecords();
           if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
           invalidateAllSeedCaches();
           applyCustomRecordsToSeed();
@@ -214920,6 +215567,11 @@
   }
 
   _iifeBooted = true;
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  const startAppAfterModules = () => {
+    const p = window.__MFG_BOOT_MODULES_PROMISE;
+    if (p && typeof p.then === 'function') p.then(() => init(), () => init());
+    else init();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startAppAfterModules);
+  else startAppAfterModules();
 })();

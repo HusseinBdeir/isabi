@@ -4350,9 +4350,28 @@ table.data-table td {
   white-space: nowrap;
 }
 
+table.ledger-table tbody tr,
+table.data-table tbody tr {
+  transition: background-color 0.1s ease;
+}
+
+table.ledger-table tbody tr.rrow,
+table.data-table tbody tr.rrow {
+  cursor: pointer;
+}
+
 table.ledger-table tbody tr:hover td,
 table.data-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--brass) 5%, var(--surface));
+  background: color-mix(in srgb, var(--brass) 6.5%, var(--surface));
+}
+
+table.ledger-table tbody tr.rrow:hover > td:is(:first-child, .tbl-first-vis-cell),
+table.data-table tbody tr.rrow:hover > td:is(:first-child, .tbl-first-vis-cell) {
+  box-shadow: inset 3px 0 0 var(--brass);
+}
+[dir="rtl"] table.ledger-table tbody tr.rrow:hover > td:is(:first-child, .tbl-first-vis-cell),
+[dir="rtl"] table.data-table tbody tr.rrow:hover > td:is(:first-child, .tbl-first-vis-cell) {
+  box-shadow: inset -3px 0 0 var(--brass);
 }
 
 table.ledger-table .r,
@@ -4687,7 +4706,7 @@ body.modal-open { overflow: hidden; }
 
 /* Registers */
 th.sortable { cursor: pointer; user-select: none; }
-th.sortable:hover { color: var(--ink); }
+th.sortable:hover { color: var(--ink); background: color-mix(in srgb, var(--brass) 5%, var(--surface-2)); }
 th.sortable.on { color: var(--brass); }
 th.sortable i { font-style: normal; font-size: 9px; margin-left: 3px; color: var(--brass); }
 th.sortable i:empty { display: none; margin: 0; }
@@ -4747,12 +4766,25 @@ th.sortable i:empty { display: none; margin: 0; }
   color: var(--muted);
   box-shadow: 0 0 0 2px var(--surface);
 }
-td.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 23px; }
+td.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 25px; }
 td.td-has-inline-act.td-has-sel-dot > .void-btn.row-void-hover { inset-inline-end: 4px; }
-#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .staff-hr-pack-inline-btn, > .att-inline-badge) { padding-inline-end: 24px; }
-#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .staff-hr-pack-inline-btn, > .att-inline-badge):has(> .void-btn.row-void-hover) { padding-inline-end: 48px; }
+#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .att-inline-badge) { padding-inline-end: 24px; }
+#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .att-inline-badge):has(> .void-btn.row-void-hover) { padding-inline-end: 48px; }
+#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:not(.td-has-inline-act):has(> .staff-hr-pack-inline-btn):not(:has(> .void-btn.row-void-hover)) { padding-inline-end: 50px; }
+#workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:not(.td-has-inline-act):has(> .staff-hr-pack-inline-btn):has(> .void-btn.row-void-hover) { padding-inline-end: 74px; }
+td.td-has-inline-act > .staff-hr-pack-inline-btn {
+  position: static;
+  top: auto;
+  transform: none;
+  inset-inline-end: auto;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+  box-shadow: none;
+}
 @media (min-width: 861px) {
-  #workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .staff-hr-pack-inline-btn, > .att-inline-badge):has(> .void-btn.row-void-hover.armed) { padding-inline-end: 128px; }
+  #workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .att-inline-badge):has(> .void-btn.row-void-hover.armed) { padding-inline-end: 128px; }
+  #workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:not(.td-has-inline-act):has(> .staff-hr-pack-inline-btn):has(> .void-btn.row-void-hover.armed) { padding-inline-end: 150px; }
+  #workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:not(.td-has-inline-act):has(> .void-btn.row-void-hover.armed) > .staff-hr-pack-inline-btn { inset-inline-end: 124px; }
 }
 @media (max-width: 860px) {
   #workspace table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:has(> .fpnl-only-btn, > .staff-hr-pack-inline-btn, > .att-inline-badge) {
@@ -5165,6 +5197,51 @@ html.ios-standalone .app-shell {
   right: 0;
   width: 100%;
 }
+.pwa-status-bar-surface { display: none; }
+@supports (-webkit-touch-callout: none) and (background-clip: text) {
+  @media (display-mode: standalone) {
+    .pwa-status-bar-surface {
+      display: block;
+      position: fixed;
+      inset: 0 0 auto 0;
+      width: 100%;
+      height: 12px;
+      z-index: 2147483647;
+      pointer-events: none;
+      background-color: var(--surface);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+}
+@media print {
+  .pwa-status-bar-surface { display: none !important; }
+}
+@supports (-webkit-touch-callout: none) {
+  html.ios-standalone .top {
+    background: var(--surface);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  html.ios-standalone .auth-gate {
+    padding-top: calc(12px + var(--safe-top, 0px));
+  }
+  @media (min-width: 861px) {
+    html.ios-standalone {
+      --safe-top: calc(max(env(safe-area-inset-top, 0px), 24px) + 20px);
+    }
+    html.ios-standalone .top {
+      padding-top: calc(11px + var(--safe-top, 0px));
+    }
+    html.ios-standalone .rail .brand {
+      padding-top: calc(14px + var(--safe-top, 0px));
+    }
+    html.ios-standalone .ai-console-hdr {
+      padding-top: calc(12px + var(--safe-top, 0px));
+    }
+  }
+}
 .co-short { display: none; }
 .top-mobile-actions, .mobile-subnav, .mobile-bottom-dock, .mobile-period-toggle-btn, .mob-reg-summary-fold-bar { display: none; }
 .period-basis-row {
@@ -5212,9 +5289,16 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
 }
 
 @media (max-width: 860px) {
-  html.ios-standalone {
-    --safe-top: max(env(safe-area-inset-top, 0px), 47px);
-    --safe-bottom: 16px;
+  @supports (-webkit-touch-callout: none) {
+    html.ios-standalone {
+      --safe-top: calc(max(env(safe-area-inset-top, 0px), 52px) + 22px);
+      --safe-bottom: 16px;
+    }
+    @media (min-width: 744px) {
+      html.ios-standalone {
+        --safe-top: calc(max(env(safe-area-inset-top, 0px), 24px) + 20px);
+      }
+    }
   }
   .rail {
     width: min(278px, 84vw);
@@ -5531,6 +5615,14 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
   .dock-cta-ring svg {
     width: 15px;
     height: 15px;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  @media (orientation: landscape) and (max-height: 499px) {
+    html.ios-standalone {
+      --safe-top: env(safe-area-inset-top, 0px);
+    }
   }
 }
 
@@ -7769,18 +7861,17 @@ td.pbi-cell-amber {
   gap: 6px;
   padding: 3.5px 8.5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.96);
   border: 1px solid var(--brass-border);
   font-family: var(--font-mono);
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--ink);
-  backdrop-filter: blur(6px);
 }
 :root[data-theme="dark"] .enrol-hud-pill,
 :root[data-theme="dark"] .enrol-hud-spec {
-  background: rgba(8, 17, 36, 0.82);
+  background: rgba(8, 17, 36, 0.94);
   border-color: rgba(217, 165, 74, 0.38);
   color: #F4F2EE;
 }
@@ -7811,7 +7902,7 @@ td.pbi-cell-amber {
   gap: 5px;
   padding: 3.5px 9px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   border: 1px solid var(--brass-border);
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -7819,7 +7910,6 @@ td.pbi-cell-amber {
   letter-spacing: 0.04em;
   color: var(--ink);
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .enrol-hud-stop-btn:hover {
@@ -7828,7 +7918,7 @@ td.pbi-cell-amber {
   color: #081124;
 }
 :root[data-theme="dark"] .enrol-hud-stop-btn {
-  background: rgba(8, 17, 36, 0.86);
+  background: rgba(8, 17, 36, 0.94);
   border-color: rgba(217, 165, 74, 0.45);
   color: #F4F2EE;
 }
@@ -10329,7 +10419,8 @@ table.ledger-table tfoot tr td:last-child {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 1px 7px;
+  gap: 3px;
+  padding: 1.5px 7px;
   border-radius: 5px;
   border: 1px solid var(--line);
   background: var(--surface-2);
@@ -10341,16 +10432,30 @@ table.ledger-table tfoot tr td:last-child {
   cursor: pointer;
   transition: all 0.12s ease;
 }
+.reg-inline-conn-pill::after {
+  content: "▾";
+  font-size: 8.5px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
 .reg-inline-conn-pill:hover {
   border-color: var(--brass);
   background: var(--brass-tint);
   color: var(--ink);
+}
+.reg-inline-conn-pill:hover::after {
+  opacity: 1;
 }
 .reg-inline-conn-pill.active {
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
   font-weight: 700;
+}
+.reg-inline-conn-pill.active::after {
+  content: "▴";
+  opacity: 0.9;
 }
 
 @media (max-width: 960px) {
@@ -16584,13 +16689,20 @@ table.m-grid th.r {
 }
 #univRegPanel table.ledger-table:has(tr[data-rkey="staff_members"]) th,
 #univRegPanel table.ledger-table:has(tr[data-rkey="staff_members"]) td {
-  padding-left: 6px;
-  padding-right: 6px;
-  font-size: 11.4px;
+  padding-left: 7px;
+  padding-right: 7px;
+  font-size: 11.6px;
 }
 #univRegPanel table.ledger-table:has(tr[data-rkey="staff_members"]) thead th.r {
   white-space: normal;
   line-height: 1.15;
+}
+@media (min-width: 861px) {
+  #univRegPanel table.ledger-table:has(tr[data-rkey="staff_members"]) thead th:first-child,
+  #univRegPanel table.ledger-table:has(tr[data-rkey="staff_members"]) tbody td:first-child {
+    min-width: 196px;
+    white-space: nowrap;
+  }
 }
 table.ledger-table tbody td.r,
 table.ledger-table tfoot tr td.r,
@@ -20044,6 +20156,7 @@ th.sortable:focus-within .th-filter-btn {
   background: var(--surface);
   border-color: var(--brass);
   color: var(--brass);
+  box-shadow: 0 2px 6px rgba(11, 23, 48, 0.16);
 }
 .th-filter-btn:hover,
 .th-filter-btn.active {
@@ -23307,15 +23420,19 @@ table.ledger-table .rel-link .rel-arr {
 }
 
 .tkt-print-mini {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 5px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--muted-2);
-  opacity: 0.48;
+  opacity: 0.55;
   transition: opacity 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
 }
 tr.rrow:hover .tkt-print-mini,
 .tkt-print-mini:focus-visible {
-  opacity: 0.92;
+  opacity: 0.95;
   background: var(--surface-2);
   border-color: var(--line-strong);
   color: var(--ink);
@@ -23326,6 +23443,71 @@ tr.rrow:hover .tkt-print-mini,
   background: var(--brass);
   border-color: var(--brass);
   color: #0B1730;
+}
+
+/* Muted empty dashes/zeros, monogram badges, BU mini chips, and 1-click quick-filter badges */
+.cell-empty {
+  color: var(--muted-2);
+  opacity: 0.45;
+  font-weight: 400;
+}
+.cell-zero {
+  color: var(--muted);
+  opacity: 0.72;
+  font-weight: 400;
+}
+.co-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-inline-end: 3px;
+  vertical-align: middle;
+}
+b.reg-primary-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+b.reg-primary-name[data-monogram]::before {
+  content: attr(data-monogram);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  font-family: "Archivo", sans-serif;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--brass) 13%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--brass) 32%, var(--line));
+  color: var(--ink);
+}
+:root[data-theme="dark"] b.reg-primary-name[data-monogram]::before {
+  background: rgba(217, 165, 74, 0.16);
+  border-color: rgba(217, 165, 74, 0.34);
+  color: #FDE68A;
+}
+.badge.is-quick-filterable {
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.badge.is-quick-filterable:hover {
+  box-shadow: 0 0 0 1.5px var(--brass);
+}
+.badge.is-quick-filterable.is-qf-active {
+  box-shadow: 0 0 0 1.5px var(--brass), 0 2px 6px rgba(192, 137, 47, 0.25);
 }
 
 /* 8. Interactive KPI Insight Drill-Downs & Structured Architectural Entity Recon Strip (v16.2) */
@@ -23783,26 +23965,28 @@ tr.rrow td:first-child {
   box-shadow: none;
   pointer-events: auto;
 }
-/* Reserved inline-end gutter on <10-col tables so hover trash pill, armed Void? and [□] never collide with date text, rep-shift badge or inline attachment pills */
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
-  padding-inline-end: 24px;
-}
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-void-hover:not(.td-has-sel-dot):not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-inline-act.td-has-void-hover:is(:first-child, .tbl-first-vis-cell) {
+/* Reserved inline-end gutter so hover actions and row select never collide with text or inline pills */
+table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
   padding-inline-end: 26px;
 }
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot.td-has-void-hover:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
-  padding-inline-end: 46px;
+table:is(.ledger-table, .data-table) tbody td.td-has-void-hover:not(.td-has-sel-dot):not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
+table:is(.ledger-table, .data-table) tbody td.td-has-inline-act.td-has-void-hover:is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 28px;
 }
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-sel-dot.td-has-void-hover.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
-  padding-inline-end: 112px;
+table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot.td-has-void-hover:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 50px;
 }
-table:is(.ledger-table, .data-table):not(.tbl-cols-10):not(.tbl-cols-13):not(.tbl-cols-16) tbody td.td-has-inline-act.td-has-void-hover.td-void-armed:is(:first-child, .tbl-first-vis-cell) {
-  padding-inline-end: 92px;
+table:is(.ledger-table, .data-table) tbody td.td-has-sel-dot.td-has-void-hover.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell),
+table:is(.ledger-table, .data-table) tbody td.td-void-armed:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 114px;
 }
-/* Dense 10+ column tables (#rawPanel, #documentsPanel, #pricingPanel, #salesPanel, #payStaffRegPanel, tbl-cols-10/13/16): 0px added horizontal width via a clean 28px bottom action tray for 20px Rev 10 hover/armed pills */
-table:is(.ledger-table, .data-table):is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+table:is(.ledger-table, .data-table) tbody td.td-has-inline-act.td-has-void-hover.td-void-armed:is(:first-child, .tbl-first-vis-cell) {
+  padding-inline-end: 94px;
+}
+/* Narrow-date Manufacturing operational panels (#salesPanel, #rawPanel, #documentsPanel, #pricingPanel, #rawPricingPanel, #payAttStaffSumPanel, #payStaffRegPanel):
+   preserve 0px added width via compact bottom action slot for 20px hover/armed pills */
+#rawPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
+#documentsPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
 #salesPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
 #pricingPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
 #rawPricingPanel table.ledger-table tbody td:is(.td-has-sel-dot:not(.td-has-inline-act), .td-has-void-hover):is(:first-child, .tbl-first-vis-cell),
@@ -23813,7 +23997,8 @@ table:is(.ledger-table, .data-table):is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16
   padding-bottom: 28px;
   padding-inline-end: 4px;
 }
-table:is(.ledger-table, .data-table):is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#rawPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
+#documentsPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
 #salesPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
 #pricingPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
 #rawPricingPanel table.ledger-table tbody td:not(.td-has-inline-act):is(:first-child, .tbl-first-vis-cell) u.row-sel-dot,
@@ -23824,7 +24009,8 @@ table:is(.ledger-table, .data-table):is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16
   transform: none;
   inset-inline-end: 3px;
 }
-table:is(.ledger-table, .data-table):is(.tbl-cols-10, .tbl-cols-13, .tbl-cols-16) tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#rawPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
+#documentsPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
 #salesPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
 #pricingPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
 #rawPricingPanel table.ledger-table tbody td:is(.td-has-sel-dot, .td-has-void-hover):is(:first-child, .tbl-first-vis-cell) > .void-btn.row-void-hover,
@@ -23839,14 +24025,14 @@ u.row-sel-dot {
   align-items: center;
   justify-content: center;
   text-decoration: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: 5px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: transparent;
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
   margin-inline-start: 4px;
@@ -41312,6 +41498,13 @@ button.badge.btn-set-site-price {
   font-weight: 600;
   color: var(--muted);
 }
+.hld-share-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
 .hld-share-seg {
   display: inline-flex;
   border: 1px solid var(--line-strong);
@@ -43993,30 +44186,82 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
 .permit-status-badge {
   white-space: nowrap;
 }
-.emp-hr-pack-btn,
+.emp-hr-pack-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  margin-inline-start: 5px;
+  vertical-align: middle;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
 .staff-hr-pack-inline-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 6px;
-  min-width: 24px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  inset-inline-end: 25px;
+  z-index: 2;
+  padding: 0;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  margin: 0;
+  border-radius: 5px;
+  border: 1px solid var(--line-strong);
   background: var(--surface-2);
-  color: var(--ink);
+  color: var(--muted);
+  box-shadow: 0 0 0 2px var(--surface);
   cursor: pointer;
-  margin-inline-start: 6px;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
+}
+td.td-has-sel-dot:has(> .void-btn.row-void-hover) > .staff-hr-pack-inline-btn {
+  inset-inline-end: 49px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .staff-hr-pack-inline-btn {
+    opacity: 0;
+    pointer-events: none;
+  }
+  tr.rrow:hover .staff-hr-pack-inline-btn,
+  tr.rrow:focus-within .staff-hr-pack-inline-btn,
+  tr.rrow.is-row-selected .staff-hr-pack-inline-btn,
+  tr.rrow.is-mob-peek-current .staff-hr-pack-inline-btn,
+  .staff-hr-pack-inline-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .emp-hr-pack-btn svg,
 .staff-hr-pack-inline-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 .emp-hr-pack-btn:hover,
-.staff-hr-pack-inline-btn:hover {
-  border-color: var(--accent, #2563eb);
-  color: var(--accent, #2563eb);
+.staff-hr-pack-inline-btn:hover,
+.staff-hr-pack-inline-btn:focus-visible {
+  opacity: 1;
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: #7A5219;
+  outline: none;
+}
+:root[data-theme="dark"] .emp-hr-pack-btn:hover,
+:root[data-theme="dark"] .staff-hr-pack-inline-btn:hover,
+:root[data-theme="dark"] .staff-hr-pack-inline-btn:focus-visible {
+  border-color: var(--brass);
+  background: rgba(217, 165, 74, 0.18);
+  color: #FDE68A;
 }
 
 /* --- Bilingual HR Contract & NSSF Pack (Statement #28) --- */
@@ -49376,6 +49621,31 @@ html[data-theme="dark"] .ovk-movers-popover {
 .rdl-cmp-inline-pill.is-info { background: rgba(35, 86, 168, 0.14); color: #1E40AF; }
 .rdl-cmp-inline-pill.is-muted { background: rgba(122, 136, 155, 0.16); color: #475569; }
 .rdl-cmp-empty { text-align: center; padding: 14px; color: var(--muted, #64748B); }
+.rdl-cmp-post-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+  border-color: rgba(31, 122, 76, 0.42) !important;
+  color: #166534 !important;
+  background: rgba(31, 122, 76, 0.08) !important;
+}
+.rdl-cmp-post-btn:hover,
+.rdl-cmp-post-btn:focus-visible {
+  background: #1F7A4C !important;
+  color: #FFFFFF !important;
+  border-color: #166534 !important;
+}
+.rdl-cmp-post-btn svg { width: 12px; height: 12px; }
+:root[data-theme="dark"] .rdl-cmp-post-btn {
+  color: #86EFAC !important;
+  background: rgba(31, 122, 76, 0.2) !important;
+  border-color: rgba(134, 239, 172, 0.35) !important;
+}
+.rdl-stmt16-disc-print-only { display: none !important; }
 :root[data-theme="dark"] .rdl-cmp-pill-eyebrow { color: #93C5FD; background: rgba(59, 130, 246, 0.22); }
 :root[data-theme="dark"] .rdl-cmp-seg-btn { color: #E2E8F0; }
 :root[data-theme="dark"] .rdl-cmp-inline-pill.is-good { color: #86EFAC; }
@@ -49389,8 +49659,15 @@ html[data-theme="dark"] .ovk-movers-popover {
 }
 @media print {
   .rdl-stmt16-compare-panel,
-  .rdl-cmp-inline-pill {
+  .rdl-cmp-inline-pill,
+  .rdl-stmt16-disc-print-only {
     display: none !important;
+  }
+  body.is-printing-stmt16-discrepancy .rdl-stmt16-normal-print {
+    display: none !important;
+  }
+  body.is-printing-stmt16-discrepancy .rdl-stmt16-disc-print-only {
+    display: block !important;
   }
 }
 :root[data-theme="dark"] .raw-leg-act-btn {
@@ -49630,4 +49907,29 @@ html[data-theme="dark"] .ovk-movers-popover {
 }
 :root[data-theme="dark"] .raw-fleet-deduct-pill:hover {
   background: rgba(200, 157, 84, 0.28);
+}
+
+/* Zero-blur solid surfaces on dedicated kiosks and camera modals (Mali/Adreno GPU zero-copy video overlays) */
+body.kiosk-locked .modal-backdrop,
+body.kiosk-locked .mfg-ui-tooltip,
+body.kiosk-locked .toast,
+#kioskStationAdminModal,
+#staffFaceEnrolModal,
+#docCameraModal {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body.kiosk-locked .modal-backdrop,
+#kioskStationAdminModal,
+#staffFaceEnrolModal,
+#docCameraModal {
+  background: rgba(8, 17, 36, 0.86);
+}
+body.kiosk-locked .mfg-ui-tooltip,
+body.kiosk-locked .toast {
+  background: rgba(255, 255, 255, 0.99);
+}
+:root[data-theme="dark"] body.kiosk-locked .toast,
+:root[data-theme="dark"] body.kiosk-locked .mfg-ui-tooltip {
+  background: rgba(15, 23, 42, 0.98);
 }
