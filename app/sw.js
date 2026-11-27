@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.467';
+const SHELL_CACHE = 'isabi-mfg-v19.6.468';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,54 +8,54 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.467',
-  './css/geo_dispatch.css?v=19.6.467',
-  './css/daily_ops.css?v=19.6.467',
-  './css/ask_isabi.css?v=19.6.467',
-  './css/fleet_pnl.css?v=19.6.467',
-  './css/smart_scan.css?v=19.6.467',
-  './css/doc_scanner.css?v=19.6.467',
-  './css/ai_edge.css?v=19.6.467',
-  './css/telematics.css?v=19.6.467',
-  './css/step_up_auth.css?v=19.6.467',
-  './css/command_palette.css?v=19.6.467',
-  './css/workflow.css?v=19.6.467',
-  './js/face.js?v=19.6.467',
-  './js/endpoints.js?v=19.6.467',
-  './js/seed_manifest.js?v=19.6.467',
-  './js/icons.js?v=19.6.467',
-  './js/geo_dispatch.js?v=19.6.467',
-  './js/forms_engine.js?v=19.6.467',
-  './js/pbi_pages.js?v=19.6.467',
-  './js/rdl_reports.js?v=19.6.467',
-  './js/kiosk_print.js?v=19.6.467',
-  './js/table_columns.js?v=19.6.467',
-  './js/daily_ops.js?v=19.6.467',
-  './js/i18n.js?v=19.6.467',
-  './js/ask_isabi.js?v=19.6.467',
-  './js/fleet_pnl.js?v=19.6.467',
-  './js/doc_scanner.js?v=19.6.467',
-  './js/smart_scan.js?v=19.6.467',
-  './js/ai_edge.js?v=19.6.467',
-  './js/telematics.js?v=19.6.467',
-  './js/local_dev_roster.js?v=19.6.467',
-  './js/step_up_auth.js?v=19.6.467',
-  './js/passkeys.js?v=19.6.467',
-  './js/command_palette.js?v=19.6.467',
-  './js/a11y_dialog.js?v=19.6.467',
-  './js/approvals.js?v=19.6.467',
-  './js/void_log.js?v=19.6.467',
-  './js/saved_views.js?v=19.6.467',
-  './js/app.js?v=19.6.467',
-  './manifest.json?v=19.6.467',
-  './favicon.ico?v=19.6.467',
-  './favicon-dark.ico?v=19.6.467',
-  './icon.svg?v=19.6.467',
-  './icon-dark.svg?v=19.6.467',
-  './icon-180.png?v=19.6.467',
-  './icon-192.png?v=19.6.467',
-  './icon-512.png?v=19.6.467',
-  './icon-512-maskable.png?v=19.6.467'
+  './css/app.css?v=19.6.468',
+  './css/geo_dispatch.css?v=19.6.468',
+  './css/daily_ops.css?v=19.6.468',
+  './css/ask_isabi.css?v=19.6.468',
+  './css/fleet_pnl.css?v=19.6.468',
+  './css/smart_scan.css?v=19.6.468',
+  './css/doc_scanner.css?v=19.6.468',
+  './css/ai_edge.css?v=19.6.468',
+  './css/telematics.css?v=19.6.468',
+  './css/step_up_auth.css?v=19.6.468',
+  './css/command_palette.css?v=19.6.468',
+  './css/workflow.css?v=19.6.468',
+  './js/face.js?v=19.6.468',
+  './js/endpoints.js?v=19.6.468',
+  './js/seed_manifest.js?v=19.6.468',
+  './js/icons.js?v=19.6.468',
+  './js/geo_dispatch.js?v=19.6.468',
+  './js/forms_engine.js?v=19.6.468',
+  './js/pbi_pages.js?v=19.6.468',
+  './js/rdl_reports.js?v=19.6.468',
+  './js/kiosk_print.js?v=19.6.468',
+  './js/table_columns.js?v=19.6.468',
+  './js/daily_ops.js?v=19.6.468',
+  './js/i18n.js?v=19.6.468',
+  './js/ask_isabi.js?v=19.6.468',
+  './js/fleet_pnl.js?v=19.6.468',
+  './js/doc_scanner.js?v=19.6.468',
+  './js/smart_scan.js?v=19.6.468',
+  './js/ai_edge.js?v=19.6.468',
+  './js/telematics.js?v=19.6.468',
+  './js/local_dev_roster.js?v=19.6.468',
+  './js/step_up_auth.js?v=19.6.468',
+  './js/passkeys.js?v=19.6.468',
+  './js/command_palette.js?v=19.6.468',
+  './js/a11y_dialog.js?v=19.6.468',
+  './js/approvals.js?v=19.6.468',
+  './js/void_log.js?v=19.6.468',
+  './js/saved_views.js?v=19.6.468',
+  './js/app.js?v=19.6.468',
+  './manifest.json?v=19.6.468',
+  './favicon.ico?v=19.6.468',
+  './favicon-dark.ico?v=19.6.468',
+  './icon.svg?v=19.6.468',
+  './icon-dark.svg?v=19.6.468',
+  './icon-180.png?v=19.6.468',
+  './icon-192.png?v=19.6.468',
+  './icon-512.png?v=19.6.468',
+  './icon-512-maskable.png?v=19.6.468'
 ];
 
 // Face ID engine + weights (about 13.7 MB): warmed for offline use only on a device that uses Face ID
@@ -473,6 +473,88 @@ self.addEventListener('fetch', event => {
 });
 
 let warmingInProgress = false;
+let pendingWarmData = null;
+
+function mergePendingWarmData(nextData) {
+  if (!nextData || nextData.type !== 'WARM_DATA_CACHE') return;
+  if (!pendingWarmData) {
+    pendingWarmData = Object.assign({}, nextData);
+    return;
+  }
+  // Never let a kiosk-lite skipRecords request downgrade a queued full-records warm
+  if (pendingWarmData.skipRecords === false && nextData.skipRecords === true) {
+    pendingWarmData.warmFace = Boolean(pendingWarmData.warmFace || nextData.warmFace);
+    return;
+  }
+  pendingWarmData = Object.assign({}, nextData, {
+    warmFace: Boolean(pendingWarmData.warmFace || nextData.warmFace)
+  });
+}
+
+async function runWarmDataCache(rawData) {
+  const data = rawData || {};
+  try {
+    const cache = await caches.open(DATA_CACHE);
+    const manifest = data.manifest || {};
+    const targets = [];
+    if (!data.skipMap) MAP_ASSETS.forEach(u => targets.push(u));
+    if (data.warmFace) FACE_ASSETS.forEach(u => targets.push(u));
+    let activeCoreHref = '';
+    let activeRecHref = '';
+    let activeIndHref = '';
+    if (data.isDemo) {
+      if (manifest.demoCore) { targets.push(manifest.demoCore); activeCoreHref = new URL(manifest.demoCore, self.location.href).href; }
+      if (!data.skipRecords && manifest.demoRecords) { targets.push(manifest.demoRecords); activeRecHref = new URL(manifest.demoRecords, self.location.href).href; }
+      if (manifest.demoIndustries) { targets.push(manifest.demoIndustries); activeIndHref = new URL(manifest.demoIndustries, self.location.href).href; }
+    } else if (data.isServerHeld) {
+      if (data.authed === true) {
+        if (manifest.apiCore) { targets.push(manifest.apiCore); activeCoreHref = new URL(manifest.apiCore, self.location.href).href; }
+        if (!data.skipRecords && manifest.apiRecords) { targets.push(manifest.apiRecords); activeRecHref = new URL(manifest.apiRecords, self.location.href).href; }
+        if (manifest.apiIndustries) { targets.push(manifest.apiIndustries); activeIndHref = new URL(manifest.apiIndustries, self.location.href).href; }
+      }
+    } else {
+      if (manifest.core) { targets.push(manifest.core); activeCoreHref = new URL(manifest.core, self.location.href).href; }
+      if (!data.skipRecords && manifest.records) { targets.push(manifest.records); activeRecHref = new URL(manifest.records, self.location.href).href; }
+      if (manifest.industries) { targets.push(manifest.industries); activeIndHref = new URL(manifest.industries, self.location.href).href; }
+    }
+
+    // Prune superseded seed_*.json?d=<old> or /api/seed/*?d=<old> entries so DATA_CACHE stays lean across snapshots
+    const existingKeys = await cache.keys();
+    for (const req of existingKeys) {
+      if ((/\/seed_(?:demo_)?core\.json\b|\/api\/seed\/core\b/.test(req.url)) && activeCoreHref && req.url !== activeCoreHref) {
+        await cache.delete(req);
+      } else if ((/\/seed_(?:demo_)?records\.json\b|\/api\/seed\/records\b/.test(req.url)) && activeRecHref && req.url !== activeRecHref) {
+        await cache.delete(req);
+      } else if ((/\/seed_(?:demo_)?industries\.json\b|\/api\/seed\/industries\b/.test(req.url)) && activeIndHref && req.url !== activeIndHref) {
+        await cache.delete(req);
+      }
+    }
+
+    // Sequentially warm any missing offline assets at idle so active browsing never contends for bandwidth
+    for (const relUrl of targets) {
+      const absUrl = new URL(relUrl, self.location.href).href;
+      const isVendor = absUrl.includes('/vendor/');
+      const hit = await cache.match(absUrl, isVendor ? { ignoreSearch: true } : undefined);
+      const validHit = hit && isVendor ? await validateCachedVendorResponse(absUrl, hit) : hit;
+      if (!validHit) {
+        if (hit) await cache.delete(absUrl, isVendor ? { ignoreSearch: true } : undefined).catch(() => {});
+        try {
+          const res = await fetchDedup(absUrl, absUrl.includes('/api/seed/') ? { credentials: 'same-origin' } : undefined);
+          if (isCacheableAsset(absUrl, res)) await cache.put(absUrl, res);
+        } catch (_) {}
+      }
+    }
+  } finally {
+    warmingInProgress = false;
+    if (pendingWarmData) {
+      const next = pendingWarmData;
+      pendingWarmData = null;
+      warmingInProgress = true;
+      await runWarmDataCache(next);
+    }
+  }
+}
+
 self.addEventListener('message', event => {
   const data = event.data || {};
   if (data.type === 'PURGE_SEED_CACHE') {
@@ -488,66 +570,13 @@ self.addEventListener('message', event => {
     );
     return;
   }
-  if (data.type !== 'WARM_DATA_CACHE' || warmingInProgress) return;
+  if (data.type !== 'WARM_DATA_CACHE') return;
+  if (warmingInProgress) {
+    mergePendingWarmData(data);
+    return;
+  }
   warmingInProgress = true;
-  event.waitUntil(
-    (async () => {
-      try {
-        const cache = await caches.open(DATA_CACHE);
-        const manifest = data.manifest || {};
-        const targets = [];
-        MAP_ASSETS.forEach(u => targets.push(u));
-        if (data.warmFace) FACE_ASSETS.forEach(u => targets.push(u));
-        let activeCoreHref = '';
-        let activeRecHref = '';
-        let activeIndHref = '';
-        if (data.isDemo) {
-          if (manifest.demoCore) { targets.push(manifest.demoCore); activeCoreHref = new URL(manifest.demoCore, self.location.href).href; }
-          if (manifest.demoRecords) { targets.push(manifest.demoRecords); activeRecHref = new URL(manifest.demoRecords, self.location.href).href; }
-          if (manifest.demoIndustries) { targets.push(manifest.demoIndustries); activeIndHref = new URL(manifest.demoIndustries, self.location.href).href; }
-        } else if (data.isServerHeld) {
-          if (data.authed === true) {
-            if (manifest.apiCore) { targets.push(manifest.apiCore); activeCoreHref = new URL(manifest.apiCore, self.location.href).href; }
-            if (manifest.apiRecords) { targets.push(manifest.apiRecords); activeRecHref = new URL(manifest.apiRecords, self.location.href).href; }
-            if (manifest.apiIndustries) { targets.push(manifest.apiIndustries); activeIndHref = new URL(manifest.apiIndustries, self.location.href).href; }
-          }
-        } else {
-          if (manifest.core) { targets.push(manifest.core); activeCoreHref = new URL(manifest.core, self.location.href).href; }
-          if (manifest.records) { targets.push(manifest.records); activeRecHref = new URL(manifest.records, self.location.href).href; }
-          if (manifest.industries) { targets.push(manifest.industries); activeIndHref = new URL(manifest.industries, self.location.href).href; }
-        }
-
-        // Prune superseded seed_*.json?d=<old> or /api/seed/*?d=<old> entries so DATA_CACHE stays lean across snapshots
-        const existingKeys = await cache.keys();
-        for (const req of existingKeys) {
-          if ((/\/seed_(?:demo_)?core\.json\b|\/api\/seed\/core\b/.test(req.url)) && activeCoreHref && req.url !== activeCoreHref) {
-            await cache.delete(req);
-          } else if ((/\/seed_(?:demo_)?records\.json\b|\/api\/seed\/records\b/.test(req.url)) && activeRecHref && req.url !== activeRecHref) {
-            await cache.delete(req);
-          } else if ((/\/seed_(?:demo_)?industries\.json\b|\/api\/seed\/industries\b/.test(req.url)) && activeIndHref && req.url !== activeIndHref) {
-            await cache.delete(req);
-          }
-        }
-
-        // Sequentially warm any missing offline assets at idle so active browsing never contends for bandwidth
-        for (const relUrl of targets) {
-          const absUrl = new URL(relUrl, self.location.href).href;
-          const isVendor = absUrl.includes('/vendor/');
-          const hit = await cache.match(absUrl, isVendor ? { ignoreSearch: true } : undefined);
-          const validHit = hit && isVendor ? await validateCachedVendorResponse(absUrl, hit) : hit;
-          if (!validHit) {
-            if (hit) await cache.delete(absUrl, isVendor ? { ignoreSearch: true } : undefined).catch(() => {});
-            try {
-              const res = await fetchDedup(absUrl, absUrl.includes('/api/seed/') ? { credentials: 'same-origin' } : undefined);
-              if (isCacheableAsset(absUrl, res)) await cache.put(absUrl, res);
-            } catch (_) {}
-          }
-        }
-      } finally {
-        warmingInProgress = false;
-      }
-    })()
-  );
+  event.waitUntil(runWarmDataCache(data));
 });
 
 // ---------------------------------------------------------------- Web Push: Day-Close + Approvals Inbox

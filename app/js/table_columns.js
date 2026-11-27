@@ -228,7 +228,7 @@
       'tr.rrow td.tbl-first-vis-cell { position: relative; z-index: 0; }',
       ':is(.ledger-table, .data-table) tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; inset-inline-end: 3px; top: 50%; transform: translateY(-50%); margin-inline-start: 0; z-index: 3; box-shadow: 0 0 0 1.5px var(--surface); }',
       ':is(.ledger-table, .data-table) tbody td.tbl-first-vis-cell.td-has-inline-act u.row-sel-dot { position: static; inset-inline-end: auto; top: auto; transform: none; margin-inline-start: 4px; vertical-align: middle; box-shadow: none; pointer-events: auto; }',
-      'td.tbl-first-vis-cell.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 23px; }',
+      'td.tbl-first-vis-cell.td-has-sel-dot:not(.td-has-inline-act) > .void-btn.row-void-hover { inset-inline-end: 25px; }',
       'td.tbl-first-vis-cell.td-has-inline-act.td-has-sel-dot > .void-btn.row-void-hover { inset-inline-end: 4px; }',
       '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-inline-start: 3px; }'
     ].join('\n');
@@ -460,7 +460,7 @@
         if (start === firstVisCol) firstVisTd = cell;
       }
       if (firstVisCol > 0 && col0Td && firstVisTd && col0Td !== firstVisTd) {
-        col0Td.querySelectorAll('.badge-app, .att-inline-badge, button.void-btn').forEach(el => {
+        col0Td.querySelectorAll('.badge-app, .att-inline-badge, button.void-btn, .staff-hr-pack-inline-btn').forEach(el => {
           el.setAttribute('data-from-col0', '1');
           firstVisTd.appendChild(el);
         });

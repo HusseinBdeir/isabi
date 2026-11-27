@@ -11379,9 +11379,11 @@
       ${EDGE_STATE.hygieneCollapsed ? '' : `<div class="aie-dh-list" id="dhPendingList">${rowsHtml}</div>${resolvedHtml}`}
     `;
 
-    const tableWrap = hostPanel.querySelector(':scope > .table-wrap') || hostPanel.querySelector('.table-wrap');
-    if (tableWrap && panel.parentElement !== hostPanel) {
-      hostPanel.insertBefore(panel, tableWrap);
+    const anchorEl = hostPanel.querySelector(':scope > .pa-table-control-deck')
+      || hostPanel.querySelector(':scope > .table-wrap')
+      || hostPanel.querySelector('.table-wrap');
+    if (anchorEl && (panel.parentElement !== hostPanel || panel.nextElementSibling !== anchorEl)) {
+      hostPanel.insertBefore(panel, anchorEl);
     } else if (!panel.isConnected) {
       hostPanel.appendChild(panel);
     }

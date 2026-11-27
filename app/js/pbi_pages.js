@@ -1938,11 +1938,42 @@
     return 1;
   }
 
-  function formatCostClassHtml(clsTxt) {
+  function regNameMonogram(rawName) {
+    const clean = String(rawName || '').trim().replace(/^[^A-Za-z\u0600-\u06FF0-9]+/, '');
+    if (!clean || clean === '—' || clean === '-') return '';
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+
+  function wrapQuickFilterBadge(badgeHtml, qfCtx, colKey, valStr) {
+    if (!qfCtx || !qfCtx.view || !colKey) return badgeHtml;
+    const raw = String(valStr == null ? '' : valStr).trim();
+    if (!raw || raw === '—' || raw === '-') return badgeHtml;
+    const qfVal = '=' + raw;
+    const active = Boolean(qfCtx.cf && qfCtx.cf[colKey] === qfVal);
+    return badgeHtml.replace(
+      /class="badge([^"]*)"/,
+      `class="badge$1 is-quick-filterable${active ? ' is-qf-active' : ''}" data-quick-col-filter="${esc(qfCtx.view)}" data-qcf-col="${esc(colKey)}" data-qcf-val="${esc(qfVal)}" data-ui-tip="Click to filter column (click again to clear)"`
+    );
+  }
+
+  function wrapEmptyZeroCellHtml(innerHtml, rawVal, cellTxt, isMoney) {
+    if (cellTxt === '—' || cellTxt === '-') {
+      return `<span class="cell-empty">${esc(cellTxt)}</span>`;
+    }
+    if (isMoney && rawVal != null && rawVal !== '' && Number.isFinite(Number(rawVal)) && Math.abs(Number(rawVal)) < 0.005) {
+      return `<span class="cell-zero">${innerHtml}</span>`;
+    }
+    return innerHtml;
+  }
+
+  function formatCostClassHtml(clsTxt, qfCtx, colKey) {
     const s = String(clsTxt || '').trim();
     if (!s || s === '—') return '—';
     const cls = /Production/i.test(s) ? 'badge-cost-prod' : (/Capital/i.test(s) ? 'badge-cost-capex' : 'badge-cost-opex');
-    return `<span class="badge ${cls}">${esc(s)}</span>`;
+    return wrapQuickFilterBadge(`<span class="badge ${cls}">${esc(s)}</span>`, qfCtx, colKey || 'cost_class', s);
   }
 
   function resolveSiteCategoryPbi(r) {
@@ -1990,13 +2021,13 @@
       : '';
   }
 
-  function formatHubSpecialCellHtml(c, v, cell, r, tableKey) {
+  function formatHubSpecialCellHtml(c, v, cell, r, tableKey, qfCtx) {
     if (c === 'supply_mode') {
       if (/Mat \+ Trans|Delivery Included|Delivered/i.test(String(v || cell))) {
         return `<span class="quarry-landed-pill has-ico" data-ui-tip="Supplier's price includes delivery; Region optional until transported by own fleet or 3rd-party haulers">${pbiIcon('truck')}<span>Delivered</span></span>`;
       }
       if (/JV 50\/50/i.test(String(v || cell))) {
-        return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('jv')}<span>JV 50/50</span></span>`;
+        return wrapQuickFilterBadge(`<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('jv')}<span>JV 50/50</span></span>`, qfCtx, c, 'JV 50/50 Partner');
       }
       return `<span class="muted" data-ui-tip="Unified geographic site usable across raw purchases, sales deliveries, and agreements">Standard Site</span>`;
     }
@@ -2012,7 +2043,7 @@
     if (c === 'overtime') {
       return (v && v !== 0 && v !== 'No')
         ? `<span class="badge badge-warn tkt-ot-badge has-ico" data-ui-tip="Overtime shift load">${pbiIcon('overtime')}<span>OT</span></span>`
-        : '<span class="muted">-</span>';
+        : '<span class="cell-empty">-</span>';
     }
     if (c === 'iva' || c === 'vat_registered') {
       return (v && v !== 0 && v !== 'No')
@@ -2045,16 +2076,17 @@
         : `<span class="muted">${esc(cell)}</span>`;
     }
     if (c === 'salary_status' && cell && cell !== '—') {
+      let bHtml = '';
       if (/pending/i.test(cell)) {
-        return `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('clock')}<span>${esc(cell)}</span></span>`;
+        bHtml = `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('clock')}<span>${esc(cell)}</span></span>`;
+      } else if (/^active/i.test(cell)) {
+        bHtml = `<span class="badge badge-ok tkt-ot-badge has-ico">${pbiIcon('check')}<span>${esc(cell)}</span></span>`;
+      } else if (/daily|freelance/i.test(cell)) {
+        bHtml = `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('payroll')}<span>${esc(cell)}</span></span>`;
+      } else {
+        bHtml = `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('payroll_contracts')}<span>${esc(cell)}</span></span>`;
       }
-      if (/^active/i.test(cell)) {
-        return `<span class="badge badge-ok tkt-ot-badge has-ico">${pbiIcon('check')}<span>${esc(cell)}</span></span>`;
-      }
-      if (/daily|freelance/i.test(cell)) {
-        return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('payroll')}<span>${esc(cell)}</span></span>`;
-      }
-      return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('payroll_contracts')}<span>${esc(cell)}</span></span>`;
+      return wrapQuickFilterBadge(bHtml, qfCtx, c, cell);
     }
     if (c === 'permit_status' && cell && cell !== '—' && cell !== '-') {
       const ev = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
@@ -2064,15 +2096,20 @@
       const badgeCls = (tier === 'expired' || tier === 'critical_7')
         ? 'badge-bad'
         : ((tier === 'due_30' || tier === 'watch_60' || tier === 'missing_permit') ? 'badge-warn' : (tier === 'renewal_submitted' ? 'badge-info' : (tier === 'ok' ? 'badge-ok' : 'badge-muted')));
-      return `<span class="badge permit-status-badge permit-tier-${esc(tier)} ${badgeCls}">${esc(cell)}</span>`;
+      return wrapQuickFilterBadge(`<span class="badge permit-status-badge permit-tier-${esc(tier)} ${badgeCls}">${esc(cell)}</span>`, qfCtx, c, cell);
     }
     if (c === 'role_category' && cell && cell !== '—' && cell !== '-') {
-      if (/fleet|driver/i.test(cell)) return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>${esc(cell)}</span></span>`;
-      if (/plant|prod/i.test(cell)) return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('plant')}<span>${esc(cell)}</span></span>`;
-      if (/maint|workshop/i.test(cell)) return `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('wrench')}<span>${esc(cell)}</span></span>`;
-      if (/manag|admin/i.test(cell)) return `<span class="badge badge-ok tkt-ot-badge has-ico">${pbiIcon('users')}<span>${esc(cell)}</span></span>`;
-      if (/freelance|subcontract/i.test(cell)) return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('payroll')}<span>${esc(cell)}</span></span>`;
-      return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('pin')}<span>${esc(cell)}</span></span>`;
+      let rHtml = '';
+      if (/fleet|driver/i.test(cell)) rHtml = `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>${esc(cell)}</span></span>`;
+      else if (/plant|prod/i.test(cell)) rHtml = `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('plant')}<span>${esc(cell)}</span></span>`;
+      else if (/maint|workshop/i.test(cell)) rHtml = `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('wrench')}<span>${esc(cell)}</span></span>`;
+      else if (/manag|admin/i.test(cell)) rHtml = `<span class="badge badge-ok tkt-ot-badge has-ico">${pbiIcon('users')}<span>${esc(cell)}</span></span>`;
+      else if (/freelance|subcontract/i.test(cell)) rHtml = `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('payroll')}<span>${esc(cell)}</span></span>`;
+      else rHtml = `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('pin')}<span>${esc(cell)}</span></span>`;
+      return wrapQuickFilterBadge(rHtml, qfCtx, c, cell);
+    }
+    if (c === 'companies_list' && cell && cell !== '—' && cell !== '-') {
+      return String(cell).split(/,\s*/).map((co, idx) => (idx ? '<span class="sr-only">, </span>' : '') + `<span class="co-mini-chip">${esc(co)}</span>`).join('');
     }
     if (c === 'operates_equipment' && cell && cell !== '—') {
       const usesEq = /^yes$/i.test(String(v || cell).trim()) || v === true || v === 1;
@@ -9274,7 +9311,7 @@
                       ? ctx.relLink(r.partyRel, r.party, r.party, true)
                       : `<button type="button" class="cf-party-btn" data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}">${esc(r.party)}</button>`;
                     const refHtml = (r.ticketId && ctx.ic)
-                      ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ctx.ic('printer')}</button></span> <span class="mu">· ${esc(r.method)}</span>`
+                      ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" data-ui-tip="Preview / Print Ticket #${esc(r.ref || '-')}" aria-label="Print Ticket">${ctx.ic('printer')}</button></span> <span class="mu">· ${esc(r.method)}</span>`
                       : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                     return `
                     <tr${r.rkey ? ` class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}"` : ''}>
@@ -10969,11 +11006,12 @@
                       ? `<strong style="color:${signedTone}">${esc(cell)}</strong>`
                       : null;
                     const isMaskedPay = isMaskedHubColPbi(meta.key, c, r, _tblCtx, activeView.id);
+                    const tblQfCtx = { view: 'tbl_' + meta.key, cf: (STATE.colFilters && STATE.colFilters['tbl_' + meta.key]) || {} };
                     const innerHtml = isMaskedPay
                       ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
                       : (isLookup
                         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
+                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key, tblQfCtx) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell, tblQfCtx, c) : (c === 'cost_class' ? formatCostClassHtml(cell, tblQfCtx, c) : (c === 'automation_mode' ? formatAutomationModeHtml(cell, tblQfCtx, c) : esc(cell))))), v, cell, isMoney)));
                     return `<td class="${!isMaskedPay && (isMoney || isSignedUsd || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -11235,22 +11273,22 @@
     return lbl;
   }
 
-  function formatSupplierRoleHtml(roleTxt) {
+  function formatSupplierRoleHtml(roleTxt, qfCtx, colKey) {
     const r = String(roleTxt || '').trim();
     if (!r || r === '—') return '—';
     const cls = /(?:Quarry|Site) \+ Hauler|Truck Owner|Hauler/i.test(r)
       ? 'badge-brass'
       : (/Quarry|Site|Material/i.test(r) ? 'badge-info' : 'badge');
-    return `<span class="badge ${cls}">${esc(r)}</span>`;
+    return wrapQuickFilterBadge(`<span class="badge ${cls}">${esc(r)}</span>`, qfCtx, colKey || 'supplier_role', r);
   }
 
-  function formatAutomationModeHtml(modeTxt) {
+  function formatAutomationModeHtml(modeTxt, qfCtx, colKey) {
     const m = String(modeTxt || '').trim();
     if (!m || m === '-') return '-';
     const cls = /Direct Formula/i.test(m)
       ? 'badge-info'
       : (/Category Auto-Map/i.test(m) ? 'badge-brass' : 'badge');
-    return `<span class="badge ${cls}">${esc(m)}</span>`;
+    return wrapQuickFilterBadge(`<span class="badge ${cls}">${esc(m)}</span>`, qfCtx, colKey || 'automation_mode', m);
   }
 
   // ==================== UNIFIED SITES & REGIONS DUAL-TABLE WORKSPACE ====================
@@ -11321,13 +11359,14 @@
       const hasConnTarget = Boolean(inlineConnSpec && siteRelTablesMeta.some(rt => rt.key === inlineConnSpec.connKey));
       const partyKeyVal = hasConnTarget ? String(r.name || '').trim() : '';
       const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal);
+      const siteQfCtx = { view: 'ureg_' + tableKey, cf: (STATE.colFilters && STATE.colFilters['ureg_' + tableKey]) || {} };
       const innerHtml = isMaskedCell
         ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
         : (isLookup
           ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
           : (hasConnTarget && partyKeyVal
               ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
-              : (formatHubSpecialCellHtml(c, v, cell, r, tableKey) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell)))));
+              : (formatHubSpecialCellHtml(c, v, cell, r, tableKey, siteQfCtx) || wrapEmptyZeroCellHtml(c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell), v, cell, isMoney))));
       return `<td class="${!isMaskedCell && (isMoney || isNum) ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, tableKey)}` : innerHtml}</td>`;
     };
 
@@ -11867,7 +11906,7 @@
                       ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
                       : (isLookup
                         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
+                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))), v, cell, isMoney)));
                     return `<td class="${!isMaskedPay && (isMoney || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, connKey)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -12146,17 +12185,20 @@
                     const partyKeyVal = hasConnTarget ? String(r.name || r.code || '').trim() : '';
                     const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal) && (!inlineConnSpec.subRole || STATE.univConnSubRole === inlineConnSpec.subRole);
                     const isMaskedPay = isMaskedHubColPbi(meta.key, c, r, _regCtx, activeView.id);
+                    const uregQfCtx = { view: 'ureg_' + meta.key, cf: (STATE.colFilters && STATE.colFilters['ureg_' + meta.key]) || {} };
                     const innerHtml = isMaskedPay
                       ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
                       : (isLookup
                         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
                         : (hasConnTarget && partyKeyVal
                             ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''}${inlineConnSpec.subRole ? ` data-inline-conn-subrole="${esc(inlineConnSpec.subRole)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
-                            : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))))));
+                            : (formatHubSpecialCellHtml(c, v, cell, r, meta.key, uregQfCtx) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell, uregQfCtx, c) : (c === 'cost_class' ? formatCostClassHtml(cell, uregQfCtx, c) : (c === 'automation_mode' ? formatAutomationModeHtml(cell, uregQfCtx, c) : esc(cell))))), v, cell, isMoney))));
                     const staffPackBtn = (meta.key === 'staff_members' && canOpenHrPack && ci === 0 && r && r.id)
-                      ? `<button type="button" class="btn-xs staff-hr-pack-inline-btn" data-open-hr-pack data-hr-pack-staff="${esc(r.id)}" data-hr-pack-name="${esc(r.name || '')}" data-ui-tip="Contract &amp; NSSF Pack">${pbiIcon('printer')}</button>`
+                      ? `<button type="button" class="btn-xs staff-hr-pack-inline-btn" data-open-hr-pack data-hr-pack-staff="${esc(r.id)}" data-hr-pack-name="${esc(r.name || '')}" data-ui-tip="Contract &amp; NSSF Pack" aria-label="Contract &amp; NSSF Pack">${pbiIcon('printer')}</button>`
                       : '';
-                    return `<td class="${!isMaskedPay && (isMoney || isNum) ? 'r' : ''}${/^dob$|date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}${staffPackBtn}` : innerHtml}</td>`;
+                    const monoTxt = (ci === 0 && !isMaskedPay && (meta.key === 'staff_members' || meta.key === 'drivers' || meta.key === 'customers' || meta.key === 'suppliers')) ? regNameMonogram(cell) : '';
+                    const primaryCellHtml = monoTxt ? `<b class="reg-primary-name" data-monogram="${esc(monoTxt)}">${innerHtml}</b>` : `<b>${innerHtml}</b>`;
+                    return `<td class="${!isMaskedPay && (isMoney || isNum) ? 'r' : ''}${/^dob$|date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `${primaryCellHtml}${appCell(r, meta.key)}${staffPackBtn}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}

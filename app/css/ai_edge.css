@@ -974,16 +974,20 @@
 .aie-dh-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-top: 10px;
+  gap: 5px;
+  margin-top: 8px;
+  max-height: 126px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-end: 4px;
 }
 .aie-dh-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: 6px 10px;
   flex-wrap: wrap;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: 7px;
   border: 1px solid #E5DEC9;
   background: #FFFFFF;
