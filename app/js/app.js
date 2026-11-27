@@ -693,6 +693,7 @@
     showSalesTaxBreakdown: false,
     officialBookScope: false,
     draftBookScopeOverride: '',
+    draftIdleLockOverride: null,
     _officialScopeActive: false,
     _canSeeTaxBreakdown: false,
     rawSiteFilter: 'expense',
@@ -768,6 +769,16 @@
     kioskAttSiteCustom: false,
     kioskIdleStandbySec: 60,
     kioskNightSleep: true,
+    kioskFillLight: (() => {
+      try {
+        const raw = !IS_AUTOMATED_TEST ? appStoreGetRaw('isabi_mfg_kiosk_station_cfg_v1') : null;
+        const parsed = raw ? JSON.parse(raw) : null;
+        return !parsed || parsed.kioskFillLight !== false;
+      } catch (_) { return true; }
+    })(),
+    kioskOpticalStations: [],
+    kioskOpticalLoadedAt: 0,
+    kioskOpticalLoading: false,
     kioskAttStaff: '',
     kioskAttPin: '',
     kioskAttPinMsg: '',
@@ -13368,6 +13379,30 @@
     return fallback;
   }
 
+  const IDLE_LOCK_OPTIONS = [
+    { value: 0, label: 'Never (Stay Signed In)', short: 'Never' },
+    { value: 15, label: '15 Minutes Idle', short: '15m' },
+    { value: 30, label: '30 Minutes Idle', short: '30m' }
+  ];
+
+  function normalizeIdleLockMin(raw, fallback = 0) {
+    const n = Number(raw);
+    if (n === 15 || n === 30) return n;
+    if (n === 0) return 0;
+    return (fallback === 15 || fallback === 30) ? fallback : 0;
+  }
+
+  function effectiveSeatIdleLockMin(u) {
+    if (!u || u._lockedPlaceholder || u.isKioskStaffOnly) return 0;
+    return normalizeIdleLockMin(u.idle_lock_min, 0);
+  }
+
+  function seatIdleLockLabel(u) {
+    const mins = effectiveSeatIdleLockMin(u);
+    const opt = IDLE_LOCK_OPTIONS.find(o => o.value === mins) || IDLE_LOCK_OPTIONS[0];
+    return opt.label;
+  }
+
   function getWorkspaceAuthMode() {
     if (STATE.faceSettings && STATE.faceSettings.authMode) {
       return normalizeAuthMode(STATE.faceSettings.authMode, STATE.faceSettings.enforce2FA === true ? 'both' : 'either');
@@ -16918,11 +16953,12 @@
     if (!fIdx._lists) fIdx._lists = {};
     if (fIdx._lists.customers) return fIdx._lists.customers;
     const out = [];
-    (SEED.records.customers || []).forEach(c => out.push(c.name));
-    Object.values(SEED.models).forEach(m => (m.customers || []).forEach(c => out.push(c.Customer)));
-    SEED.records.sales_tickets.forEach(r => out.push(r.customer));
-    SEED.records.receipts.forEach(r => out.push(r.customer));
-    SEED.records.price_rules.forEach(r => out.push(r.customer));
+    const recs = (SEED && SEED.records) || {};
+    (recs.customers || []).forEach(c => out.push(c.name));
+    Object.values((SEED && SEED.models) || {}).forEach(m => (m.customers || []).forEach(c => out.push(c.Customer)));
+    (recs.sales_tickets || []).forEach(r => out.push(r.customer));
+    (recs.receipts || []).forEach(r => out.push(r.customer));
+    (recs.price_rules || []).forEach(r => out.push(r.customer));
     fIdx._lists.customers = uniqSorted(out, fIdx.customer);
     return fIdx._lists.customers;
   }
@@ -16932,12 +16968,13 @@
     const cKey = 'suppliers_' + (side || 'all');
     if (fIdx._lists[cKey]) return fIdx._lists[cKey];
     const out = [];
-    (SEED.records.suppliers || []).forEach(s => out.push(s.name));
-    Object.values(SEED.models).forEach(m => (m.suppliers || []).forEach(s => out.push(s.Supplier)));
-    SEED.records.raw_purchases.forEach(r => { out.push(r.site_owner); out.push(r.truck_owner); });
-    SEED.records.settlements.forEach(r => out.push(r.supplier));
-    SEED.records.expenses.forEach(r => out.push(r.supplier));
-    SEED.records.price_rules.forEach(r => out.push(r.supplier));
+    const recs = (SEED && SEED.records) || {};
+    (recs.suppliers || []).forEach(s => out.push(s.name));
+    Object.values((SEED && SEED.models) || {}).forEach(m => (m.suppliers || []).forEach(s => out.push(s.Supplier)));
+    (recs.raw_purchases || []).forEach(r => { out.push(r.site_owner); out.push(r.truck_owner); });
+    (recs.settlements || []).forEach(r => out.push(r.supplier));
+    (recs.expenses || []).forEach(r => out.push(r.supplier));
+    (recs.price_rules || []).forEach(r => out.push(r.supplier));
     const fMap = side === 'raw_owner' ? fIdx.siteOwner : (side === 'expense' ? fIdx.supplierExpense : fIdx.supplier);
     fIdx._lists[cKey] = uniqSorted(out, fMap);
     return fIdx._lists[cKey];
@@ -16947,17 +16984,18 @@
     if (!fIdx._lists) fIdx._lists = {};
     if (fIdx._lists.truckOwners) return fIdx._lists.truckOwners;
     const out = [];
-    (SEED.records.suppliers || []).forEach(s => {
+    const recs = (SEED && SEED.records) || {};
+    (recs.suppliers || []).forEach(s => {
       const catStr = [s.category, s.category1, s.category2, s.category3].concat(Array.isArray(s.categories) ? s.categories : []).filter(Boolean).join(', ');
       if (s.is_truck_owner || Number(s.trucks_count || 0) > 0 || /hauler|truck\s*owner|transport/i.test(catStr)) out.push(s.name);
     });
-    (SEED.records.customers || []).forEach(c => {
+    (recs.customers || []).forEach(c => {
       if (c && (c.is_truck_owner || Number(c.trucks_count || 0) > 0 || (Array.isArray(c.trucks) && c.trucks.length > 0))) out.push(c.name);
     });
-    (SEED.records.equipment || []).forEach(e => { if (e.supplier) out.push(e.supplier); });
-    (SEED.records.drivers || []).forEach(d => { if (d.truck_owner) out.push(d.truck_owner); });
-    SEED.records.raw_purchases.forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
-    SEED.records.sales_tickets.forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
+    (recs.equipment || []).forEach(e => { if (e.supplier) out.push(e.supplier); });
+    (recs.drivers || []).forEach(d => { if (d.truck_owner) out.push(d.truck_owner); });
+    (recs.raw_purchases || []).forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
+    (recs.sales_tickets || []).forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
     fIdx._lists.truckOwners = uniqSorted(out, fIdx.truckOwner);
     return fIdx._lists.truckOwners;
   }
@@ -20059,7 +20097,8 @@
   function productList(materialOnly, side, company) {
     // Tickets carry Material / ticket_product products only (m37 / m54 / m110) — oils and spare parts never go on a weighbridge ticket.
     // Ordered strictly by domain + company usage frequency descending (raw_purchases on 'raw', sales_tickets on 'sales', never cross-leaking).
-    const pool = materialOnly ? SEED.records.products.filter(p => p.ticket_product !== false && (!p.type || /material/i.test(p.type))) : SEED.records.products;
+    const rawProds = (SEED && SEED.records && Array.isArray(SEED.records.products)) ? SEED.records.products : [];
+    const pool = materialOnly ? rawProds.filter(p => p.ticket_product !== false && (!p.type || /material/i.test(p.type))) : rawProds;
     const fIdx = getFreqIndex();
     const seen = new Set();
     const out = [];
@@ -20204,7 +20243,7 @@
   }
   function productInfo(name) {
     const n = norm(name);
-    return SEED.records.products.find(p => norm(p.name) === n) || null;
+    return ((SEED && SEED.records && SEED.records.products) || []).find(p => norm(p.name) === n) || null;
   }
   function prevDayISO(dateStr) {
     if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return '';
@@ -86964,6 +87003,8 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    if (!STATE.authed && !STATE.kioskLocked) return false;
+    _userModalOpenedSeq++;
     prefill = prefill || {};
     wireModulePopoverHandlersOnce();
     closeAllModalModulePopovers();
@@ -87721,6 +87762,7 @@
     FORM_UI.ideSettleBase = null;
     modal._currentDomainSpec = spec;
     modal._currentDomainInd = ind;
+    modal._currentDomainPrefill = prefill ? Object.assign({}, prefill) : {};
     modal._getPendingDomainFiles = () => pendingDomainFiles;
     modal._clearScanPendingDomainFiles = () => {
       pendingDomainFiles = pendingDomainFiles.filter(f => !(f && f._fromSmartScan));
@@ -88836,6 +88878,7 @@
       if (spec.key === 'hld_interactions') return { id: ridNow, date: dtNow, fromCo: strVal('ide_from'), toCo: strVal('ide_to'), usd: numVal('ide_usd'), method: strVal('ide_method'), notes: strVal('ide_notes') };
       return null;
     };
+    modal._recalcLive = recalcLive;
     let domPostAttempted = false;
     const runDomainNearCopyCheck = () => {
       if (!isNearCopyDomainKey) {
@@ -88901,6 +88944,8 @@
         FORM_UI.ideSettleBase = null;
         if ($('ide_discount')) $('ide_discount').value = resolvedD.toFixed(2);
       }
+      const domM = $('indDomainEntryModal');
+      if (domM && !domM._domHydrating) domM._domDirty = true;
       syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit, false, 'ide');
       recalcLive();
     });
@@ -107118,6 +107163,7 @@
     const curCompanies = STATE.draftCompaniesOverride || (editUser ? normalizeCompaniesScope(editUser.companies) : 'WTC');
     const curAccess = STATE.draftAccessOverride || (editUser ? seatAccessValue(editUser) : 'partial|partial');
     const curBookScope = STATE.draftBookScopeOverride || (editUser ? getUserBookScope(editUser) : 'all');
+    const curIdleLockMin = STATE.draftIdleLockOverride != null ? normalizeIdleLockMin(STATE.draftIdleLockOverride, 0) : (editUser ? effectiveSeatIdleLockMin(editUser) : 0);
     const curStatus = editUser ? (editUser.status || 'Active') : 'Active';
     const isRedactedPinEdit = Boolean(editUser && editUser.pin_redacted && !editUser.pin_code);
     const curPin = editUser ? (isRedactedPinEdit ? '' : (editUser.pin_code || '')) : (STATE.newDraftPin || '3564');
@@ -107234,6 +107280,12 @@
                   <option value="official" ${curBookScope === 'official' ? 'selected' : ''}>Official / Fiscal (11% VAT Only)</option>
                 </select>
               </label>
+              <label class="seat-status-inline" for="nu_idle_lock_min">
+                <span>Desktop Auto-Lock:</span>
+                <select id="nu_idle_lock_min">
+                  ${IDLE_LOCK_OPTIONS.map(o => `<option value="${o.value}" ${curIdleLockMin === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+                </select>
+              </label>
               <label class="seat-status-inline" for="nu_entry_edit_mode">
                 <span>Record Edit Mode:</span>
                 <select id="nu_entry_edit_mode" ${previewPerms.rights.modify_data ? 'disabled' : ''}>
@@ -107308,6 +107360,7 @@
               <span>${pm.unlockCount ? `${pm.unlockCount}/${pm.unlockTotal}` : 'PIN'}</span>
             </span>
             ${getUserBookScope(u) === 'official' ? '<span class="urp-tag official">Official</span>' : ''}
+            ${effectiveSeatIdleLockMin(u) ? `<span class="urp-tag">${effectiveSeatIdleLockMin(u)}m Lock</span>` : ''}
           </span>
           <span class="urp-interactive-cue" aria-hidden="true">
             ${ic('sliders')}<i class="urp-caret">▾</i>
@@ -107535,6 +107588,10 @@
                 <select id="enrolSeatAuthModeSelect" class="enrol-select" ${(owner && !enrolUser.isKioskStaffOnly) ? '' : 'disabled'}>
                   <option value="inherit" ${(!enrolUser.auth_mode || enrolUser.auth_mode === 'inherit') ? 'selected' : ''}>Workspace Default (${esc((AUTH_MODE_OPTIONS.find(o => o.value === getWorkspaceAuthMode()) || AUTH_MODE_OPTIONS[1]).short)})</option>
                   ${AUTH_MODE_OPTIONS.map(o => `<option value="${esc(o.value)}" ${enrolUser.auth_mode === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+                </select>
+                <label class="enrol-config-lbl" for="enrolSeatIdleLockSelect" style="margin-top:6px">Desktop Idle Auto-Lock</label>
+                <select id="enrolSeatIdleLockSelect" class="enrol-select" ${(owner && !enrolUser.isKioskStaffOnly) ? '' : 'disabled'}>
+                  ${IDLE_LOCK_OPTIONS.map(o => `<option value="${o.value}" ${effectiveSeatIdleLockMin(enrolUser) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
                 </select>
               </div>
               <div class="enrol-config-card enrol-policy-card">
@@ -129175,6 +129232,7 @@
             if ($('f_late_hours')) $('f_late_hours').value = '0';
           }
         }
+        if (!FORM_UI.hydrating) FORM_UI.userInteracted = true;
         recalcForm();
       });
     });
@@ -130291,7 +130349,7 @@
         }
         if (el.id === 'f_time') FORM_UI.otManual = false;
         if (el.id === 'f_overtime') FORM_UI.otManual = true;
-        if (el.id === 'f_staff') { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
+        if (el.id === 'f_staff' && !FORM_UI.hydrating) { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
         if (el.id === 'f_workdays' || el.id === 'f_workhours' || el.id === 'f_vacdays' || el.id === 'f_role_cat') { el.dataset.userEdited = '1'; }
         if (el.id === 'f_paytype' && STATE.modalForm === 'employment' && $('f_vacdays') && $('f_vacdays').dataset.userEdited !== '1') {
           $('f_vacdays').value = '0';
@@ -140806,6 +140864,8 @@
   }
 
   function openEntryModal(formType, prefill = null, opts = null) {
+    if (!STATE.authed && !STATE.kioskLocked) return false;
+    _userModalOpenedSeq++;
     wireModulePopoverHandlersOnce();
     closeAllModalModulePopovers();
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
@@ -140902,6 +140962,10 @@
     const pendingRawRow = (form === 'raw' && pendingRawTargetId) ? findRawPurchaseRecordById(pendingRawTargetId) : null;
     const pendingSalRow = ((form === 'employment' || form === 'freelance') && pendingSalTargetId) ? findEmploymentRecordById(pendingSalTargetId) : null;
     const pendingTargetRow = pendingExpRow || pendingRawRow || pendingSalRow;
+    if (!editTargetRow && (pendingTargetId || pendingRawTargetId || pendingSalTargetId) && !pendingTargetRow) {
+      toast('Pending record was voided or finalized before opening', 'warn');
+      return;
+    }
     if (isNonMfgModalScope && !editTargetRow && !pendingTargetRow && (MFG_ONLY_MODAL_FORMS.has(formType) || MFG_ONLY_MODAL_FORMS.has(form))) {
       closeEntryModal(true);
       if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
@@ -142213,7 +142277,7 @@
     if (modal) modal.hidden = true;
     document.body.classList.remove('modal-open');
     if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
-    if (STATE.view === 'kiosks') {
+    if (STATE.view === 'kiosks' && STATE.authed) {
       const mBody = $('modalBody');
       if (mBody) mBody.innerHTML = '';
       STATE.renderPending = false;
@@ -155752,7 +155816,8 @@
 
   function mergeUserRow(existing, incoming) {
     if (!existing) {
-      const baseNew = Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming);
+      const baseNew = Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', idle_lock_min: 0, face_updated_at: '', seat_updated_at: '' }, incoming);
+      baseNew.idle_lock_min = normalizeIdleLockMin(baseNew.idle_lock_min, 0);
       if (incoming && incoming.pin_redacted && !incoming.pin_code) {
         baseNew.pin_code = '';
         baseNew.pin_redacted = true;
@@ -155924,6 +155989,10 @@
     }
     if (preferExistingSeat && existing.auth_mode != null) out.auth_mode = existing.auth_mode;
     else if (incoming.auth_mode != null) out.auth_mode = incoming.auth_mode;
+    if (preferExistingSeat && existing.idle_lock_min != null) out.idle_lock_min = normalizeIdleLockMin(existing.idle_lock_min, 0);
+    else if (incoming.idle_lock_min != null) out.idle_lock_min = normalizeIdleLockMin(incoming.idle_lock_min, 0);
+    else if (existing.idle_lock_min != null) out.idle_lock_min = normalizeIdleLockMin(existing.idle_lock_min, 0);
+    else out.idle_lock_min = 0;
     if (preferExistingSeat && existing.custom_perms != null) out.custom_perms = existing.custom_perms;
     else if (incoming.custom_perms != null) out.custom_perms = incoming.custom_perms;
     else if (existing.custom_perms != null) out.custom_perms = existing.custom_perms;
@@ -158061,6 +158130,155 @@
   let _swUpdateFirstSeenAt = 0;
   let _swIdleReloadTimer = null;
   let _swUpdateWaitUntilMs = 0;
+
+  const IDLE_ACTIVITY_LS_KEY = 'isabi_mfg_last_activity_at';
+  const IDLE_LOCK_SIGNAL_LS_KEY = 'isabi_mfg_idle_locked_at';
+  let _idleLockWatchdogTimer = null;
+  let _idleLockInFlight = false;
+  let _lastActivityLsWriteAt = 0;
+  let _idleLockedDraftSnap = null;
+  let _userModalOpenedSeq = 0;
+
+  function canSyncIdleActivityStorage() {
+    if (typeof localStorage === 'undefined') return false;
+    if (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) return false;
+    if (typeof isDemoSandboxSession === 'function' && isDemoSandboxSession()) return false;
+    if (IS_AUTOMATED_TEST && !window.__ISABI_TEST_IDLE_LOCK && !(Number(window.__ISABI_TEST_IDLE_LOCK_MS) > 0)) return false;
+    return true;
+  }
+
+  function readPersistedDesktopActivity(seatEmail) {
+    if (!canSyncIdleActivityStorage()) return { at: 0, email: '' };
+    const wantEm = seatEmail ? norm(seatEmail) : '';
+    try {
+      const raw = localStorage.getItem(IDLE_ACTIVITY_LS_KEY);
+      if (!raw) return { at: 0, email: '' };
+      const now = Date.now();
+      let ts = 0;
+      let em = '';
+      if (raw.trim().startsWith('{')) {
+        const parsed = JSON.parse(raw);
+        ts = Number(parsed && parsed.at || 0);
+        em = parsed && parsed.email ? norm(parsed.email) : '';
+      } else {
+        ts = Number(raw);
+      }
+      if (!Number.isFinite(ts) || ts <= 0 || ts > now + 5000) return { at: 0, email: '' };
+      if (wantEm && em && em !== wantEm) return { at: 0, email: '' };
+      return { at: ts, email: em };
+    } catch (_) {
+      return { at: 0, email: '' };
+    }
+  }
+
+  function isPersistedIdleLockedForSeat(seatEmail) {
+    if (!canSyncIdleActivityStorage()) return false;
+    const wantEm = seatEmail ? norm(seatEmail) : '';
+    try {
+      const raw = localStorage.getItem(IDLE_LOCK_SIGNAL_LS_KEY);
+      if (!raw) return false;
+      const sig = JSON.parse(raw);
+      const sigAt = Number(sig && sig.at || 0);
+      const sigEm = sig && sig.email ? norm(sig.email) : '';
+      if (!Number.isFinite(sigAt) || sigAt <= 0 || sigAt > Date.now() + 5000) return false;
+      if (wantEm && sigEm && sigEm !== wantEm) return false;
+      const act = readPersistedDesktopActivity(wantEm || sigEm);
+      return !(act.at > sigAt);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function publishIdleLockSignalForSeat(seatEmail) {
+    if (!canSyncIdleActivityStorage()) return;
+    try { localStorage.removeItem(IDLE_ACTIVITY_LS_KEY); } catch (_) {}
+    const cleanEm = norm(seatEmail || '');
+    if (!cleanEm) return;
+    try {
+      localStorage.setItem(IDLE_LOCK_SIGNAL_LS_KEY, JSON.stringify({ at: Date.now(), email: cleanEm }));
+    } catch (_) {}
+  }
+
+  function recordDesktopActivity(now = Date.now(), forceStorage = false) {
+    const ts = Number.isFinite(Number(now)) && Number(now) > 0 ? Number(now) : Date.now();
+    _lastUserActivityAt = ts;
+    const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
+    const curEm = (curSeat && curSeat.email) ? norm(curSeat.email) : '';
+    if (STATE.authed && canSyncIdleActivityStorage() && (forceStorage || (ts - _lastActivityLsWriteAt >= 1500))) {
+      _lastActivityLsWriteAt = ts;
+      try {
+        localStorage.setItem(IDLE_ACTIVITY_LS_KEY, JSON.stringify({ at: ts, email: curEm }));
+      } catch (_) {}
+    }
+  }
+
+  function getSharedLastActivityAt() {
+    let best = Number(_lastUserActivityAt) || 0;
+    const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
+    const curEm = (curSeat && curSeat.email) ? norm(curSeat.email) : '';
+    const stored = readPersistedDesktopActivity(curEm);
+    if (stored.at > best) best = stored.at;
+    return best;
+  }
+
+  function isDesktopIdleLockExcludedSurface() {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? String(navigator.userAgent) : '';
+    if (STATE.kioskLocked || PARAMS.has('kiosk') || /ISABIKiosk\//i.test(ua)) return true;
+    if (typeof document !== 'undefined') {
+      const b = document.body;
+      const h = document.documentElement;
+      if ((b && b.classList.contains('kiosk-locked')) || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function getEffectiveDesktopIdleLockMs() {
+    if (!STATE.authed || isDesktopIdleLockExcludedSurface()) return 0;
+    const u = (typeof activeUser === 'function' && activeUser()) || null;
+    if (!u || u._lockedPlaceholder || u.isKioskStaffOnly) return 0;
+    const testMs = Number((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK_MS) || 0);
+    const testAllowed = Boolean((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK) || testMs > 0);
+    if (IS_AUTOMATED_TEST && !testAllowed) return 0;
+    const mins = effectiveSeatIdleLockMin(u);
+    if (!mins) return 0;
+    if (testAllowed && testMs > 0) return Math.max(50, Math.round(testMs));
+    return mins * 60000;
+  }
+
+  function clearDesktopIdleLockWatchdog() {
+    if (_idleLockWatchdogTimer) {
+      clearInterval(_idleLockWatchdogTimer);
+      _idleLockWatchdogTimer = null;
+    }
+  }
+
+  function checkDesktopIdleAutoLockNow() {
+    if (_idleLockInFlight || !STATE.authed) return false;
+    const timeoutMs = getEffectiveDesktopIdleLockMs();
+    if (!timeoutMs) return false;
+    const lastAt = getSharedLastActivityAt();
+    if (!lastAt) return false;
+    if ((Date.now() - lastAt) >= timeoutMs) {
+      const u = (typeof activeUser === 'function' && activeUser()) || null;
+      const mins = effectiveSeatIdleLockMin(u);
+      if (mins > 0) {
+        triggerDesktopIdleAutoLock(mins, { fromTimer: true });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function syncDesktopIdleLockWatchdog() {
+    clearDesktopIdleLockWatchdog();
+    const timeoutMs = getEffectiveDesktopIdleLockMs();
+    if (!timeoutMs) return false;
+    const pollMs = Math.min(15000, Math.max(80, Math.floor(timeoutMs / 4)));
+    _idleLockWatchdogTimer = setInterval(checkDesktopIdleAutoLockNow, pollMs);
+    return true;
+  }
 
   const isActivePointerPress = now => {
     if (!_activePointerDown) return false;
@@ -160655,6 +160873,7 @@
           view: STATE.view,
           activeTableKey: STATE.activeTableKey || '',
           activeUnivRegKey: STATE.activeUnivRegKey || '',
+          idleSince: _lastUserActivityAt || Date.now(),
           ts: Date.now()
         };
         sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify(resumeObj));
@@ -163254,8 +163473,14 @@
       // browser now holds the verified person's session. Start the app afresh on that session: nothing
       // loaded or still in flight for the other seat is carried over.
       purgeOverlaysOnSessionOrKioskLock();   // also retires that seat's sync in flight
+      if (canSyncIdleActivityStorage()) {
+        const freshTs = Date.now();
+        try {
+          localStorage.setItem(IDLE_ACTIVITY_LS_KEY, JSON.stringify({ at: freshTs, email: norm(user.email) }));
+        } catch (_) {}
+      }
       try {
-        sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: user.email, ts: Date.now() }));
+        sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: user.email, ts: Date.now(), idleSince: Date.now() }));
       } catch (_) {}
       STATE.authed = false;   // nothing more is sent for the seat that was on screen while the page goes
       location.reload();
@@ -164359,6 +164584,8 @@
     STATE.draftRoleOverride = null;
     STATE.draftCompaniesOverride = null;
     STATE.draftAccessOverride = null;
+    STATE.draftBookScopeOverride = '';
+    STATE.draftIdleLockOverride = null;
     STATE.draftCustomPerms = null;
     hideRoleHoverCard(true);
     STATE.permMatrixTab = opts.permTab || 'all';
@@ -164478,6 +164705,7 @@
     const authModeRaw = val('nu_auth_mode');
     const authModeVal = (authModeRaw && authModeRaw !== 'inherit') ? normalizeAuthMode(authModeRaw, 'both') : '';
     const bookScopeVal = val('nu_book_scope') === 'official' ? 'official' : 'all';
+    const idleLockVal = normalizeIdleLockMin(val('nu_idle_lock_min'), 0);
     const entryEditModeEl = $('nu_entry_edit_mode');
     const entryTextOverride = (!isCustomRole && !ROLE_PRESETS[resolveCanonicalRoleKey(finalRole)]?.rights?.modify_data && (
       (STATE.draftCustomPerms && STATE.draftCustomPerms.rights && typeof STATE.draftCustomPerms.rights.modify_text === 'boolean') ||
@@ -164524,6 +164752,7 @@
       statements_access: acc[1] || 'partial',
       custom_perms: customPermsJson,
       book_scope: bookScopeVal,
+      idle_lock_min: idleLockVal,
       status: statusVal,
       auth_mode: authModeVal,
       last_login_at: prev.last_login_at || '',
@@ -164551,9 +164780,11 @@
     STATE.draftCompaniesOverride = null;
     STATE.draftAccessOverride = null;
     STATE.draftBookScopeOverride = '';
+    STATE.draftIdleLockOverride = null;
     STATE.draftCustomPerms = hasCustomPermsPayload ? customPermsObj : null;
     saveLocalAuthAndRecords();
     applyUserRlsAndPermissions();
+    syncDesktopIdleLockWatchdog();
     updateSeatEditorDom();
     updateEnrolStudioDom();
     toast(existingIdx >= 0 ? `✓ Seat updated · ${name} (${finalRole} · ${companies})` : `✓ Seat created · ${name} (PIN ${pin})`);
@@ -165647,6 +165878,8 @@
         STATE.draftRoleOverride = null;
         STATE.draftCompaniesOverride = null;
         STATE.draftAccessOverride = null;
+        STATE.draftBookScopeOverride = '';
+        STATE.draftIdleLockOverride = null;
         const cur = getEditingSeatUser();
         const curRoleCanon = cur ? resolveCanonicalRoleKey(cur.role) : 'Entry';
         const parsedCp = cur ? parseUserCustomPerms(cur.custom_perms) : null;
@@ -165796,9 +166029,12 @@
         if (panel) scrollWorkspaceTo(panel);
       });
     });
-    root.querySelectorAll('#nu_name, #nu_email, #nu_pin, #nu_role, #nu_companies, #nu_access, #nu_auth_mode, #nu_book_scope, #nu_status').forEach(inp => {
+    root.querySelectorAll('#nu_name, #nu_email, #nu_pin, #nu_role, #nu_companies, #nu_access, #nu_auth_mode, #nu_book_scope, #nu_idle_lock_min, #nu_status').forEach(inp => {
       inp.addEventListener('input', () => { STATE.userFormDirty = true; });
-      inp.addEventListener('change', () => { STATE.userFormDirty = true; });
+      inp.addEventListener('change', () => {
+        STATE.userFormDirty = true;
+        if (inp.id === 'nu_idle_lock_min') STATE.draftIdleLockOverride = normalizeIdleLockMin(inp.value, 0);
+      });
     });
   }
 
@@ -166030,6 +166266,12 @@
       if (inheritOpt) inheritOpt.textContent = `Workspace Default (${wsModeObj.short})`;
       seatAuthSel.value = (!enrolUser.isKioskStaffOnly && enrolUser.auth_mode && enrolUser.auth_mode !== 'inherit') ? enrolUser.auth_mode : 'inherit';
       seatAuthSel.disabled = !(isOwner() && !enrolUser.isKioskStaffOnly);
+    }
+
+    const seatIdleSel = $('enrolSeatIdleLockSelect');
+    if (seatIdleSel) {
+      seatIdleSel.value = String(effectiveSeatIdleLockMin(enrolUser));
+      seatIdleSel.disabled = !(isOwner() && !enrolUser.isKioskStaffOnly);
     }
 
     const wsAuthSel = $('enrolAuthModeSelect');
@@ -168251,6 +168493,20 @@
     });
   }
 
+  function isCompanyScopeAllowedForUser(user, coKey) {
+    if (!coKey) return true;
+    const allowedCos = getAllowedCompanyKeys(user);
+    if (allowedCos.includes(coKey)) return true;
+    if (!String(coKey).startsWith('industry:')) return false;
+    const targetInd = String(coKey).slice(9);
+    const allowedNames = allowedCompanyNames(user);
+    const catalog = getCompanyCatalog();
+    return allowedNames.some(n => {
+      const hit = catalog.find(c => c.name.toLowerCase() === n.toLowerCase());
+      return hit && hit.industry === targetInd;
+    });
+  }
+
   function applyUserRlsAndPermissions() {
     const user = activeUser();
     const rlsUserKey = `${(user && (user.id || user.email || user.full_name)) || ''}|${STATE.demoVisitor ? 1 : 0}|${getUserBookScope(user)}`;
@@ -168273,14 +168529,11 @@
     STATE.allowedCompanyNames = allowedNames;
     STATE._officialScopeActive = isOfficialScopeActive(user);
     STATE._canSeeTaxBreakdown = canSeeTaxBreakdown(user);
+    if (STATE.authed) syncDesktopIdleLockWatchdog();
     STATE.isOfficialRecord = isOfficialRecord;
     STATE.canAccessRdlReport = (r, uOpt) => canAccessRdlReport(r, uOpt !== undefined ? uOpt : activeUser());
 
-    const isPermittedIndScope = String(STATE.company || '').startsWith('industry:') && allowedNames.some(n => {
-      const hit = catalog.find(c => c.name.toLowerCase() === n.toLowerCase());
-      return hit && hit.industry === String(STATE.company).slice(9);
-    });
-    if (!STATE.kioskLocked && !allowedCos.includes(STATE.company) && !isPermittedIndScope) {
+    if (!STATE.kioskLocked && !isCompanyScopeAllowedForUser(user, STATE.company)) {
       STATE.company = allowedCos[0];
       clearCatchUpBatchRepDate();
     }
@@ -168749,6 +169002,7 @@
       window.MFG_GEO.exitInlinePickerFullWindow();
     }
     if (typeof closeEntryModal === 'function') closeEntryModal(true);
+    if (typeof closeIndustryDomainEntryModal === 'function') closeIndustryDomainEntryModal(true);
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.closeBatchIntakeModal === 'function') window.MFG_AI_EDGE.closeBatchIntakeModal();
     if (typeof closeRecordInspector === 'function') closeRecordInspector({ purgeDom: true, restoreFocus: false });
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true, restoreFocus: false });
@@ -168764,7 +169018,365 @@
     }
   }
 
+  function captureEntryModalControlsForIdleLock(containerEl) {
+    if (!containerEl) return [];
+    const seen = new Set();
+    const out = [];
+    containerEl.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+      if (!el || !el.id || el.type === 'file' || seen.has(el.id)) return;
+      seen.add(el.id);
+      if (el.type === 'checkbox') {
+        out.push({ id: el.id, tag: el.tagName, type: 'checkbox', checked: Boolean(el.checked) });
+        return;
+      }
+      if (el.type === 'radio') {
+        out.push({ id: el.id, tag: el.tagName, type: 'radio', checked: Boolean(el.checked), value: String(el.value || '') });
+        return;
+      }
+      let optLabel = '';
+      if (el.tagName === 'SELECT' && el.selectedIndex >= 0 && el.options[el.selectedIndex]) {
+        optLabel = String(el.options[el.selectedIndex].textContent || '').trim();
+      }
+      out.push({ id: el.id, tag: el.tagName, type: String(el.type || '').toLowerCase(), value: String(el.value || ''), optLabel });
+    });
+    return out;
+  }
+
+  function applyRestoredControlsForIdleLock(controls) {
+    for (const c of (controls || [])) {
+      if (!c || !c.id) continue;
+      if (c.type === 'radio') {
+        const el = $(c.id);
+        if (el) el.checked = Boolean(c.checked);
+      } else {
+        setModalControlVal(c.id, c.type === 'checkbox' ? c.checked : c.value, c.optLabel);
+      }
+    }
+  }
+
+  function captureUnsavedDraftForIdleLock(lockingUser) {
+    if (!lockingUser || lockingUser._lockedPlaceholder || lockingUser.isKioskStaffOnly) return null;
+    const email = norm(lockingUser.email || '');
+    const userId = String(lockingUser.id || '');
+    if (!email) return null;
+
+    const entryModal = $('entryModal');
+    if (entryModal && !entryModal.hidden && isEntryModalDirty()) {
+      return {
+        kind: 'entryModal',
+        email,
+        userId,
+        company: STATE.company || '',
+        view: STATE.view || '',
+        modalForm: STATE.modalForm || 'sales',
+        modalGroupOverride: STATE.modalGroupOverride || null,
+        editingRecord: STATE.editingRecord ? {
+          crKey: STATE.editingRecord.crKey,
+          id: STATE.editingRecord.id,
+          orig: STATE.editingRecord.orig ? Object.assign({}, STATE.editingRecord.orig) : null
+        } : null,
+        editingPendingExpenseId: STATE.editingPendingExpenseId || '',
+        editingPendingRawId: STATE.editingPendingRawId || '',
+        editingPendingSalaryId: STATE.editingPendingSalaryId || '',
+        formUiState: {
+          attachments: Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.map(a => Object.assign({}, a)) : [],
+          expItems: Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems.map(x => Object.assign({}, x)) : null,
+          repairItems: Array.isArray(FORM_UI.repairItems) ? FORM_UI.repairItems.map(x => Object.assign({}, x)) : null,
+          discInputUnit: FORM_UI.discInputUnit || 'usd',
+          settleGrossBase: FORM_UI.settleGrossBase != null ? FORM_UI.settleGrossBase : null,
+          lastExpAmtSource: FORM_UI.lastExpAmtSource || '',
+          attPreset: FORM_UI.attPreset || 'regular',
+          attClockManual: Boolean(FORM_UI.attClockManual),
+          lastAttDate: FORM_UI.lastAttDate || '',
+          lastAttStaff: FORM_UI.lastAttStaff || '',
+          lastAttShiftKey: FORM_UI.lastAttShiftKey || '',
+          lastAttTimeKey: FORM_UI.lastAttTimeKey || '',
+          salBackpayOn: Boolean(FORM_UI.salBackpayOn),
+          uomManual: Boolean(FORM_UI.uomManual),
+          malfUomManual: Boolean(FORM_UI.malfUomManual),
+          qtyManual: Boolean(FORM_UI.qtyManual),
+          priceManual: Boolean(FORM_UI.priceManual),
+          transManual: Boolean(FORM_UI.transManual),
+          driverManual: Boolean(FORM_UI.driverManual),
+          methodManual: Boolean(FORM_UI.methodManual),
+          repDateManual: Boolean(FORM_UI.repDateManual),
+          adminUnlocked: FORM_UI.adminUnlocked ? Object.assign({}, FORM_UI.adminUnlocked) : {}
+        },
+        controls: captureEntryModalControlsForIdleLock($('modalBody')),
+        capturedAt: Date.now()
+      };
+    }
+
+    const domModal = $('indDomainEntryModal');
+    if (domModal && !domModal.hidden && isIndDomainModalDirty() && domModal._currentDomainSpec && domModal._currentDomainSpec.key) {
+      return {
+        kind: 'indDomainModal',
+        email,
+        userId,
+        company: STATE.company || '',
+        view: STATE.view || '',
+        domainKey: String(domModal._currentDomainSpec.key),
+        ind: String(domModal._currentDomainInd || ''),
+        prefill: domModal._currentDomainPrefill ? Object.assign({}, domModal._currentDomainPrefill) : {},
+        ideDiscUnit: FORM_UI.ideDiscUnit || 'usd',
+        ideSettleBase: FORM_UI.ideSettleBase != null ? FORM_UI.ideSettleBase : null,
+        pendingFiles: (typeof domModal._getPendingDomainFiles === 'function')
+          ? domModal._getPendingDomainFiles().map(f => ((typeof Blob !== 'undefined' && f instanceof Blob) ? f : Object.assign({}, f)))
+          : [],
+        controls: captureEntryModalControlsForIdleLock($('indEntryModalBody')),
+        capturedAt: Date.now()
+      };
+    }
+    return null;
+  }
+
+  function isIndDomainEditTargetLive(snap) {
+    const pf = (snap && snap.prefill) || {};
+    const targetId = String(pf.id || '').trim();
+    const editKey = String(pf._editKey || '').trim();
+    const bucket = String(snap && snap.domainKey || '').trim();
+    const edits = typeof getIndustryRowEditStore === 'function'
+      ? getIndustryRowEditStore()
+      : ((STATE.industryRowEdits && typeof STATE.industryRowEdits === 'object') ? STATE.industryRowEdits : {});
+    if (editKey && edits[editKey] && (edits[editKey].voided || edits[editKey]._scheduleVoided)) return false;
+
+    if (bucket === 'trd_receipts' || bucket === 'hld_extended') {
+      const crKey = bucket === 'trd_receipts' ? 'receipts' : 'external_movements';
+      const pool = []
+        .concat((STATE.customRecords && Array.isArray(STATE.customRecords[crKey])) ? STATE.customRecords[crKey] : [])
+        .concat((SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : []);
+      if (targetId) {
+        const hit = pool.find(r => r && String(r.id || '').trim() === targetId);
+        if (!hit || hit.voided || hit.voided_at) return false;
+      }
+      return true;
+    }
+
+    const store = typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore() : (STATE.industryCustomRows || {});
+    if (bucket && Array.isArray(store[bucket]) && targetId) {
+      const custHit = store[bucket].find(r => r && String(r.id || '').trim() === targetId);
+      if (custHit && (custHit.voided || custHit._scheduleVoided)) return false;
+    }
+    return true;
+  }
+
+  async function restoreIdleLockedDraftAsync(snap, user, loginEpoch, modalSeqAtLogin = null) {
+    if (!snap || !user) return false;
+    try {
+      if (!isDemoSandboxSession() && !SEED._recordsReady && typeof hydrateSeedData === 'function') {
+        await Promise.race([
+          Promise.resolve(hydrateSeedData()).catch(() => {}),
+          new Promise(r => setTimeout(r, 15000))
+        ]);
+      }
+      if ((snap.company === DEMO_COMPANY_KEY || STATE.company === DEMO_COMPANY_KEY) && !isDemoSandboxSession()) {
+        if (snap.company === DEMO_COMPANY_KEY && STATE.company !== DEMO_COMPANY_KEY && isCompanyScopeAllowedForUser(user, DEMO_COMPANY_KEY)) {
+          STATE.company = DEMO_COMPANY_KEY;
+        }
+        if (typeof syncDemoScopeDataState === 'function') syncDemoScopeDataState();
+        if (typeof ensureDemoCompanySeedLoaded === 'function') {
+          await Promise.race([
+            Promise.resolve(ensureDemoCompanySeedLoaded()).catch(() => {}),
+            new Promise(r => setTimeout(r, 15000))
+          ]);
+        }
+      }
+      const isEditDraft = Boolean(
+        snap.editingRecord
+        || snap.editingPendingExpenseId
+        || snap.editingPendingRawId
+        || snap.editingPendingSalaryId
+        || (snap.prefill && snap.prefill._editMode)
+      );
+      if (isEditDraft && !isDemoSandboxSession() && hasServerApi() && syncInFlight) {
+        const syncDeadline = Date.now() + 6000;
+        for (let sStep = 0; sStep < 2 && syncInFlight && Date.now() < syncDeadline; sStep++) {
+          const curSync = syncInFlight;
+          await Promise.race([
+            Promise.resolve(curSync).catch(() => {}),
+            new Promise(r => setTimeout(r, Math.max(50, syncDeadline - Date.now())))
+          ]);
+          if (syncInFlight === curSync) break;
+        }
+      }
+    } catch (_) {}
+    if (!SEED._recordsReady) return false;
+    if (_authSessionEpoch !== loginEpoch || !STATE.authed) return false;
+    if (modalSeqAtLogin != null && _userModalOpenedSeq !== modalSeqAtLogin) return false;
+    const openEntryCheck = $('entryModal');
+    const openDomCheck = $('indDomainEntryModal');
+    if ((openEntryCheck && !openEntryCheck.hidden) || (openDomCheck && !openDomCheck.hidden)) return false;
+    const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
+    if (!curSeat || norm(curSeat.email) !== snap.email || (snap.userId && String(curSeat.id) !== snap.userId)) return false;
+
+    if (snap.company && !isCompanyScopeAllowedForUser(curSeat, snap.company)) return false;
+    let needsRender = false;
+    if (snap.company && STATE.company !== snap.company) {
+      STATE.company = snap.company;
+      needsRender = true;
+    }
+    if (snap.view && canViewView(snap.view, curSeat) && STATE.view !== snap.view) {
+      STATE.view = snap.view;
+      needsRender = true;
+    }
+    if (needsRender) renderApp();
+
+    if (snap.kind === 'entryModal') {
+      let opened = false;
+      if (snap.editingRecord) {
+        if (!canModifyRecord()) return false;
+        const crKey = snap.editingRecord.crKey;
+        const seedPool = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
+        const customPool = (STATE.customRecords && Array.isArray(STATE.customRecords[crKey])) ? STATE.customRecords[crKey] : [];
+        const liveRow = customPool.concat(seedPool).find(r => r && String(r.id) === String(snap.editingRecord.id));
+        if (!liveRow || liveRow.voided) return false;
+        openEntryModal(snap.modalForm, { editRecord: { crKey, row: liveRow } }, { groupId: snap.modalGroupOverride || undefined, forceSwitch: true });
+        opened = true;
+      } else if (snap.editingPendingExpenseId) {
+        const pendExpRow = findExpenseRecordById(snap.editingPendingExpenseId);
+        if (!pendExpRow || !isPendingPriceExpense(pendExpRow) || !(canModifyData() || canEnterForm('expense'))) return false;
+        openEntryModal('expense', { completePendingId: snap.editingPendingExpenseId }, { forceSwitch: true });
+        opened = true;
+      } else if (snap.editingPendingRawId) {
+        const pendRawRow = findRawPurchaseRecordById(snap.editingPendingRawId);
+        if (!pendRawRow || !isPendingPriceRaw(pendRawRow) || !(canModifyData() || canEnterForm('raw'))) return false;
+        openEntryModal('raw', { completePendingRawId: snap.editingPendingRawId }, { forceSwitch: true });
+        opened = true;
+      } else if (snap.editingPendingSalaryId) {
+        const pendForm = snap.modalForm || 'employment';
+        const pendSalRow = findEmploymentRecordById(snap.editingPendingSalaryId);
+        if (!pendSalRow || !isPendingSalaryEmployment(pendSalRow) || !canViewPayrollDollarAmounts() || !(canModifyData() || canEnterForm(pendForm))) return false;
+        openEntryModal(pendForm, { completePendingSalaryId: snap.editingPendingSalaryId }, { forceSwitch: true });
+        opened = true;
+      } else {
+        if (!canEnterForm(snap.modalForm)) return false;
+        openEntryModal(snap.modalForm, null, { groupId: snap.modalGroupOverride || undefined, forceSwitch: true });
+        opened = true;
+      }
+      const m = $('entryModal');
+      if (!opened || !m || m.hidden) return false;
+      const fUi = snap.formUiState || {};
+      if (Array.isArray(fUi.attachments)) FORM_UI.attachments = fUi.attachments.map(a => Object.assign({}, a));
+      if (Array.isArray(fUi.expItems)) {
+        FORM_UI.expItems = fUi.expItems.map(x => Object.assign({}, x));
+        if (typeof renderExpenseItemsBuilderRows === 'function') renderExpenseItemsBuilderRows();
+      }
+      if (Array.isArray(fUi.repairItems)) {
+        FORM_UI.repairItems = fUi.repairItems.map(x => Object.assign({}, x));
+        if (typeof renderRepairItemsBuilderRows === 'function') renderRepairItemsBuilderRows();
+      }
+      FORM_UI.discInputUnit = fUi.discInputUnit === 'pct' ? 'pct' : 'usd';
+      FORM_UI.settleGrossBase = fUi.settleGrossBase != null ? fUi.settleGrossBase : null;
+      FORM_UI.lastExpAmtSource = fUi.lastExpAmtSource || '';
+      FORM_UI.salBackpayOn = Boolean(fUi.salBackpayOn);
+      FORM_UI.uomManual = Boolean(fUi.uomManual);
+      FORM_UI.malfUomManual = Boolean(fUi.malfUomManual);
+      FORM_UI.qtyManual = Boolean(fUi.qtyManual);
+      FORM_UI.priceManual = Boolean(fUi.priceManual);
+      FORM_UI.transManual = Boolean(fUi.transManual);
+      FORM_UI.driverManual = Boolean(fUi.driverManual);
+      FORM_UI.methodManual = Boolean(fUi.methodManual);
+      FORM_UI.repDateManual = Boolean(fUi.repDateManual);
+      FORM_UI.adminUnlocked = (fUi.adminUnlocked && typeof fUi.adminUnlocked === 'object') ? Object.assign({}, fUi.adminUnlocked) : {};
+      if (typeof renderEntryAttachmentsListUI === 'function') renderEntryAttachmentsListUI();
+
+      const parentIds = new Set(['f_company', 'f_staff_company', 'f_date', 'f_trtype', 'f_ruletype', 'f_category', 'f_subcategory', 'f_product', 'f_customer', 'f_supplier', 'f_site', 'f_staff']);
+      const parentCtrls = (snap.controls || []).filter(c => c && parentIds.has(c.id));
+      FORM_UI.hydrating = true;
+      FORM_UI._lastModalInputId = '';
+      try {
+        if (parentCtrls.length) {
+          applyRestoredControlsForIdleLock(parentCtrls);
+          if (typeof recalcForm === 'function') recalcForm(true);
+        }
+        FORM_UI.discInputUnit = fUi.discInputUnit === 'pct' ? 'pct' : 'usd';
+        FORM_UI.settleGrossBase = fUi.settleGrossBase != null ? fUi.settleGrossBase : null;
+        FORM_UI.lastExpAmtSource = fUi.lastExpAmtSource || '';
+        FORM_UI._lastModalInputId = '';
+        applyRestoredControlsForIdleLock((snap.controls || []).filter(c => c && !parentIds.has(c.id)));
+        FORM_UI.attPreset = fUi.attPreset || 'regular';
+        FORM_UI.attClockManual = Boolean(fUi.attClockManual);
+        FORM_UI.lastAttDate = fUi.lastAttDate || '';
+        FORM_UI.lastAttStaff = fUi.lastAttStaff || '';
+        FORM_UI.lastAttShiftKey = fUi.lastAttShiftKey || '';
+        FORM_UI.lastAttTimeKey = fUi.lastAttTimeKey || '';
+        if (typeof syncDiscUnitPillsDom === 'function') {
+          syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(canModifyTextOnly()), 'modal');
+        }
+        if (typeof recalcForm === 'function') recalcForm();
+      } finally {
+        FORM_UI.hydrating = false;
+      }
+      if ($('f_uom')) FORM_UI.lastUom = val('f_uom');
+      FORM_UI.userInteracted = true;
+      toast('Restored your unsaved draft', 'ok');
+      return true;
+    }
+
+    if (snap.kind === 'indDomainModal') {
+      const isEdit = Boolean(snap.prefill && snap.prefill._editMode);
+      if (isEdit) {
+        if (!canModifyRecord() || canModifyTextOnly()) return false;
+        if (!isIndDomainEditTargetLive(snap)) return false;
+      } else if (!canEnterDomainForm(snap.domainKey)) {
+        return false;
+      }
+      const ok = openIndustryDomainEntryModal(snap.domainKey, Object.assign({}, snap.prefill || {}, { _pendingFiles: (snap.pendingFiles || []).slice() }));
+      const domM = $('indDomainEntryModal');
+      if (!ok || !domM || domM.hidden) return false;
+      domM._domHydrating = true;
+      FORM_UI.ideDiscUnit = snap.ideDiscUnit || 'usd';
+      FORM_UI.ideSettleBase = snap.ideSettleBase != null ? snap.ideSettleBase : null;
+      applyRestoredControlsForIdleLock(snap.controls || []);
+      const landedInp = $('ide_landed_add');
+      if (landedInp) landedInp.dataset.userEdited = '1';
+      if (typeof syncDiscUnitPillsDom === 'function') syncDiscUnitPillsDom(domM, FORM_UI.ideDiscUnit, false, 'ide');
+      domM._domHydrating = false;
+      if (typeof domM._recalcLive === 'function') {
+        try { domM._recalcLive(); } catch (_) {}
+      }
+      domM._domDirty = true;
+      _auxModalDirty = true;
+      toast('Restored your unsaved draft', 'ok');
+      return true;
+    }
+    return false;
+  }
+
+  function triggerDesktopIdleAutoLock(idleMinutes, opts = {}) {
+    if (_idleLockInFlight || !STATE.authed || isDesktopIdleLockExcludedSurface()) return false;
+    _idleLockInFlight = true;
+    try {
+      const lockingUser = (typeof activeUser === 'function' && activeUser()) || null;
+      if (!lockingUser || lockingUser._lockedPlaceholder || lockingUser.isKioskStaffOnly) return false;
+      const mins = normalizeIdleLockMin(idleMinutes, effectiveSeatIdleLockMin(lockingUser)) || effectiveSeatIdleLockMin(lockingUser) || 15;
+      const capturedDraft = captureUnsavedDraftForIdleLock(lockingUser);
+      _idleLockedDraftSnap = capturedDraft;
+      if (!(opts && opts.fromSiblingTab)) {
+        publishIdleLockSignalForSeat(lockingUser.email || '');
+      } else if (canSyncIdleActivityStorage()) {
+        try { localStorage.removeItem(IDLE_ACTIVITY_LS_KEY); } catch (_) {}
+      }
+      signOut({
+        idleAutoLock: true,
+        idleMinutes: mins,
+        idleLockEmail: lockingUser.email || ''
+      });
+      const lockMsg = capturedDraft
+        ? `Locked after ${mins}m of inactivity. Your unsaved draft is waiting for your next sign-in.`
+        : `Locked after ${mins}m of inactivity.`;
+      authError(lockMsg, { noShake: true });
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && $('authErrorBox')) {
+        window.MFG_I18N.translateDom($('authErrorBox'));
+      }
+      return true;
+    } finally {
+      _idleLockInFlight = false;
+    }
+  }
+
   function openAuthGate(prefillEmail, opts = {}) {
+    clearDesktopIdleLockWatchdog();
     // Every way back to the sign-in screen (sign-out, idle lock, session expiry) starts the next person clean:
     // no carried-over face misses and no held face descriptor that could ride along with their PIN.
     FACE_STATE.edgeMissCount = 0;
@@ -168903,6 +169515,7 @@
   function closeAuthGate() {
     STATE.authed = true;
     _authSignInSeq++;
+    syncDesktopIdleLockWatchdog();
     if (window.MFG_GEO && typeof window.MFG_GEO.markGeoSessionActive === 'function') {
       try {
         const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
@@ -169012,9 +169625,14 @@
     } catch (_) {}
   }
 
-  function signOut() {
+  function signOut(opts = {}) {
+    const isIdleLock = Boolean(opts && opts.idleAutoLock === true);
+    const idleLockEmail = isIdleLock ? String(opts.idleLockEmail || '').trim() : '';
+    clearDesktopIdleLockWatchdog();
+    if (!isIdleLock) _idleLockedDraftSnap = null;
     STATE.hubInspectorReturn = null;
     STATE.ovkMoversReturn = null;
+    if (STATE.authed) STATE.authed = false;
     purgeOverlaysOnSessionOrKioskLock();
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
@@ -169192,7 +169810,9 @@
       }
       try { localStorage.removeItem('isabi_mfg_geo_v1'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
-      try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
+      if (!isIdleLock) {
+        try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
+      }
       try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
       try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
@@ -169239,12 +169859,29 @@
     if (typeof _ovkPriorCacheMap !== 'undefined') _ovkPriorCacheMap.clear();
     if (typeof _ovkAiBriefCache !== 'undefined') _ovkAiBriefCache.clear();
     if (typeof closeOvkMoversPopover === 'function') closeOvkMoversPopover({ restoreFocus: false });
+    STATE.kioskOpticalStations = [];
+    STATE.kioskOpticalLoadedAt = 0;
+    STATE.kioskOpticalLoading = false;
+    KIOSK_ATT_STATE.fillLightActive = false;
+    KIOSK_ATT_STATE.lowLightSince = 0;
+    KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('is-att-fill-light');
+    }
     clearTimeout(toastTimer);
     clearTimeout(toastFadeTimer);
     const tEl = $('toast');
     if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
+    STATE.authed = false;
     closeMobileTopSheets();
     closeEntryModal(true);
+    closeIndustryDomainEntryModal(true);
+    ['modalBody', 'indEntryModalBody', 'workspace'].forEach(domId => {
+      const domEl = $(domId);
+      if (domEl) domEl.innerHTML = '';
+    });
+    const subBar = $('hubSubtabBar');
+    if (subBar) subBar.remove();
     if (typeof closeMobRowPeekSheet === 'function') closeMobRowPeekSheet({ purgeDom: true });
     if (typeof clearMobPeekRowHighlights === 'function') clearMobPeekRowHighlights(true);
     _shareSummaryGen++;
@@ -169263,7 +169900,7 @@
     const keep = new URLSearchParams();
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
-    openAuthGate('');
+    openAuthGate(isIdleLock ? idleLockEmail : '');
     // A server-held seat's private seed was dropped above: wait for the next sign-in in this tab and load it
     // again (without this, a second sign-in without a reload showed an empty workspace and no name book).
     if (rosterIsServerHeld() && !isDemoSandboxSession() && !STATE.authed) {
@@ -169674,12 +170311,24 @@
     STATE.sessions = STATE.sessions.slice(0, 50);
     saveLocalAuthAndRecords();
 
-    if (!getAllowedCompanyKeys(finalAuthedUser).includes(STATE.company)) {
+    const pendingIdleDraftSnap = _idleLockedDraftSnap;
+    _idleLockedDraftSnap = null;
+    const targetDraftCo = (pendingIdleDraftSnap && norm(finalAuthedUser.email) === pendingIdleDraftSnap.email && (!pendingIdleDraftSnap.userId || String(finalAuthedUser.id) === pendingIdleDraftSnap.userId) && pendingIdleDraftSnap.company && isCompanyScopeAllowedForUser(finalAuthedUser, pendingIdleDraftSnap.company))
+      ? pendingIdleDraftSnap.company
+      : '';
+    if (targetDraftCo) {
+      STATE.company = targetDraftCo;
+    } else if (!isCompanyScopeAllowedForUser(finalAuthedUser, STATE.company)) {
       STATE.company = getAllowedCompanyKeys(finalAuthedUser)[0];
       clearCatchUpBatchRepDate();
     }
     if (!canViewView(STATE.view, finalAuthedUser)) STATE.view = defaultViewFor(finalAuthedUser);
     closeAuthGate();
+    recordDesktopActivity(Date.now(), true);
+    if (canSyncIdleActivityStorage()) {
+      try { localStorage.removeItem(IDLE_LOCK_SIGNAL_LS_KEY); } catch (_) {}
+    }
+    syncDesktopIdleLockWatchdog();
     STATE.search = '';
     STATE.showAddUserForm = false;
     STATE.showSalesTaxBreakdown = false;
@@ -169688,6 +170337,11 @@
     renderApp();
     toastWelcome(finalAuthedUser, authMethod);
     syncWithCloud(true);
+    if (pendingIdleDraftSnap) {
+      const loginEpochForDraft = _authSessionEpoch;
+      const modalSeqAtLogin = _userModalOpenedSeq;
+      restoreIdleLockedDraftAsync(pendingIdleDraftSnap, finalAuthedUser, loginEpochForDraft, modalSeqAtLogin);
+    }
     if (isOwner(finalAuthedUser) && !isDemoScopeActive() && !isDemoSandboxSession()) {
       loadCashflowBehindNotice();
     } else {
@@ -170896,6 +171550,11 @@
     edgeVerifyBusy: false,
     edgeCooldownUntil: 0,
     visualState: '',
+    fillLightActive: false,
+    lowLightSince: 0,
+    fillLightHoldUntil: 0,
+    lastMotionOrFaceAt: 0,
+    lastProbeMeanLuma: null,
     bestDist: 9,
     lastVideoTime: -1,
     lastTimeMoveAt: 0,
@@ -170974,6 +171633,7 @@
       kioskAttDir: STATE.kioskAttDir || 'auto',
       kioskIdleStandbySec: Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60),
       kioskNightSleep: STATE.kioskNightSleep !== false,
+      kioskFillLight: STATE.kioskFillLight !== false,
       kioskLocked: !!STATE.kioskLocked,
       updatedAt: Date.now()
     }, extra || {});
@@ -172157,6 +172817,13 @@
     const canShow = !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.camPausedByUser;
     vpEl.classList.toggle('is-detecting', canShow && KIOSK_ATT_STATE.visualState === 'detecting');
     vpEl.classList.toggle('is-unrecognized', canShow && KIOSK_ATT_STATE.visualState === 'unrecognized');
+    const showFill = canShow && STATE.kioskFillLight !== false && Boolean(KIOSK_ATT_STATE.fillLightActive) && !KIOSK_ADMIN_MODAL_STATE.open;
+    vpEl.classList.toggle('is-fill-light', showFill);
+    const cardEl = typeof vpEl.closest === 'function' ? vpEl.closest('.kiosk-att-cam-card') : null;
+    if (cardEl) cardEl.classList.toggle('is-fill-light', showFill);
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.toggle('is-att-fill-light', Boolean(STATE.kioskLocked && showFill));
+    }
   }
 
   function syncKioskAttLiveUiInPlace() {
@@ -172313,7 +172980,7 @@
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
       KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = '';
       KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
-      purgeOverlaysOnSessionOrKioskLock();
+    purgeOverlaysOnSessionOrKioskLock();
     } else if (!KIOSK_ADMIN_MODAL_STATE.sessionActive) {
       startOrResetKioskAdminSession(activeUser().full_name || 'Admin');
     }
@@ -172404,6 +173071,10 @@
     wireKioskAdminActivityListenersOnce();
     const targetAction = opts && opts.targetAction === 'enrol' ? 'enrol' : 'admin';
     KIOSK_ADMIN_MODAL_STATE.targetAction = targetAction;
+    KIOSK_ATT_STATE.fillLightActive = false;
+    KIOSK_ATT_STATE.lowLightSince = 0;
+    KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+    syncKioskAttViewportVisualState();
     if (STATE.kioskLocked && KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser) {
       if (targetAction === 'enrol' || KIOSK_ADMIN_MODAL_STATE.sessionRole === 'entry') {
         touchKioskAdminActivity();
@@ -172758,6 +173429,36 @@
                     <span class="panel-meta">Auto-checks OTA every 60s + daily 05:25 AM refresh</span>
                   </div>
                 </div>
+                <div class="ksa-cfg-row">
+                  <span class="kiosk-bar-lbl">${ic('sparkles')} Warm Fill-Light</span>
+                  <div class="kiosk-seg-group" id="ksaFillLightGroup">
+                    <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight !== false ? 'active' : ''}" data-tone="amber" data-ksa-fill-light="auto">Auto Warm Halo</button>
+                    <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight === false ? 'active' : ''}" data-tone="muted" data-ksa-fill-light="off">Off</button>
+                  </div>
+                </div>
+                <div class="ksa-cfg-row">
+                  <span class="kiosk-bar-lbl">${ic('camera')} Optical Signal</span>
+                  <div class="kiosk-opt-local-card" id="ksaLocalOpticalSummary">
+                    ${(() => {
+                      const localDiag = window.MFG_KIOSK_OPT_DIAG && typeof window.MFG_KIOSK_OPT_DIAG.getLocalSummary === 'function'
+                        ? window.MFG_KIOSK_OPT_DIAG.getLocalSummary()
+                        : null;
+                      const lr = localDiag && localDiag.row;
+                      const ld = localDiag && localDiag.diag;
+                      const lScans = Number((lr && lr.scans_total) || 0);
+                      const lAvgScore = (lr && lr.det_score_count) ? (lr.det_score_sum / lr.det_score_count).toFixed(2) : '-';
+                      const lLowPct = lScans > 0 ? Math.round((Number(lr.det_low_light_count || 0) / lScans) * 100) : 0;
+                      const lSpoofPct = lScans > 0 ? Math.round((Number(lr.pad_spoof_count || 0) / lScans) * 100) : 0;
+                      return `
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                          <span class="badge ${(ld && ld.badgeCls) || ''}">${esc((ld && ld.statusLabel) || faceTr('Collecting Baseline'))}</span>
+                          <span class="mono">${fmtNum(lScans)} ${esc(faceTr('scans'))} · ${esc(faceTr('Score'))} ${esc(lAvgScore)} · ${esc(faceTr('Dim'))} ${lLowPct}% · ${esc(faceTr('Glare'))} ${lSpoofPct}% · HAL ${fmtNum((lr && lr.hal_restarts) || 0)}</span>
+                        </div>
+                        <button type="button" class="btn kiosk-mini-btn" id="ksaResetLocalDiagBtn">${esc(faceTr('Reset Counters'))}</button>
+                      `;
+                    })()}
+                  </div>
+                </div>
                 ${hasNative ? `
                   <div class="ksa-cfg-row">
                     <span class="kiosk-bar-lbl">${ic('expand')} Screen Rotation</span>
@@ -172939,6 +173640,33 @@
 
       $('ksaCheckUpdateBtn')?.addEventListener('click', () => {
         checkAndApplyKioskOtaUpdate({ silent: false });
+      });
+
+      modal.querySelectorAll('[data-ksa-fill-light]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskFillLight = btn.getAttribute('data-ksa-fill-light') !== 'off';
+          saveKioskStationConfig({ kioskFillLight: STATE.kioskFillLight });
+          if (!STATE.kioskFillLight) {
+            KIOSK_ATT_STATE.fillLightActive = false;
+            KIOSK_ATT_STATE.lowLightSince = 0;
+            KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+            syncKioskAttViewportVisualState();
+          }
+          renderAdminInner();
+          toast(
+            STATE.kioskFillLight
+              ? faceTr('Warm Fill-Light enabled (Auto Warm Halo in low light)')
+              : faceTr('Warm Fill-Light disabled'),
+            'ok'
+          );
+        });
+      });
+
+      $('ksaResetLocalDiagBtn')?.addEventListener('click', async () => {
+        const co = resolveKioskDiagCompany();
+        const devId = getKioskDiagDeviceId();
+        await resetKioskOpticalDiagStation(co, devId);
+        renderAdminInner();
       });
 
       $('ksaEnrolFaceBtn')?.addEventListener('click', () => {
@@ -178322,7 +179050,7 @@
   }
 
   function _syncOverlayModalState(shouldRefreshAtt = false) {
-    const anyModalOpen = ['staffScheduleModal', 'policyGroupModal', 'punchDriftModal', 'shiftTypeModal', 'policySimDiffDrawer', 'shiftCalPresetModal', 'covStandInModal']
+    const anyModalOpen = ['staffScheduleModal', 'policyGroupModal', 'punchDriftModal', 'shiftTypeModal', 'shiftShareModal', 'policySimDiffDrawer', 'shiftCalPresetModal', 'covStandInModal']
       .some(id => { const el = $(id); return el && !el.hidden; });
     if (!anyModalOpen) {
       document.body.classList.remove('modal-open');
@@ -185183,6 +185911,9 @@
     KIOSK_ATT_STATE.edgeVerifyBusy = false;
     KIOSK_ATT_STATE.edgeCooldownUntil = 0;
     KIOSK_ATT_STATE.visualState = '';
+    KIOSK_ATT_STATE.fillLightActive = false;
+    KIOSK_ATT_STATE.lowLightSince = 0;
+    KIOSK_ATT_STATE.fillLightHoldUntil = 0;
     KIOSK_ATT_STATE.lastVideoTime = -1;
     KIOSK_ATT_STATE.lastTimeMoveAt = 0;
     syncKioskAttViewportVisualState();
@@ -185246,6 +185977,520 @@
     try { v.requestVideoFrameCallback(onFrame); } catch (_) { v.__kioskRvfcWired = false; }
   }
 
+  const KIOSK_OPT_DIAG_LS_KEY = 'isabi_mfg_kiosk_opt_diag_v1';
+  const KIOSK_OPT_BAND_KEYS = ['dawn', 'day', 'dusk', 'night'];
+  const _kioskOptDiagState = {
+    hydrated: false,
+    byKey: {},
+    dirtyKeys: {},
+    lastFlushAt: 0,
+    lastScanAt: 0,
+    unsyncedScans: 0,
+    flushing: false
+  };
+
+  function getKioskOpticalBandKey(dateObj = null) {
+    const d = dateObj instanceof Date ? dateObj : new Date();
+    const h = d.getHours();
+    if (h >= 5 && h <= 7) return 'dawn';
+    if (h >= 8 && h <= 16) return 'day';
+    if (h >= 17 && h <= 19) return 'dusk';
+    return 'night';
+  }
+
+  function resolveKioskDiagCompany() {
+    const raw = (typeof defaultEntryCompany === 'function' ? defaultEntryCompany() : '') || COMPANY_BU_MATCH[STATE.company] || '';
+    const can = raw ? (typeof canonCompany === 'function' ? canonCompany(raw) : raw) : '';
+    if (can && !/^demo$/i.test(can)) return can;
+    const ind = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    const firstCo = (getCompanyCatalog().find(c => (c.industry || 'Manufacturing') === ind) || {}).name || '';
+    return firstCo || 'WTC';
+  }
+
+  function getKioskDiagDeviceId() {
+    let rawId = '';
+    try {
+      const ident = typeof getDeviceIdent === 'function' ? getDeviceIdent() : null;
+      rawId = String((ident && ident.id) || '').trim();
+    } catch (_) {}
+    const clean = rawId.replace(/[^A-Za-z0-9_-]/g, '');
+    if (clean.length >= 6) return clean.slice(0, 64);
+    const coTok = String(resolveKioskDiagCompany() || 'wtc').toLowerCase().replace(/[^a-z0-9]/g, '') || 'wtc';
+    return `kiosk_web_${coTok}`.slice(0, 64);
+  }
+
+  function hydrateKioskOptDiagMap() {
+    if (_kioskOptDiagState.hydrated) return _kioskOptDiagState.byKey;
+    _kioskOptDiagState.hydrated = true;
+    if (IS_AUTOMATED_TEST && !window.__MFG_TEST_OPT_DIAG_STORAGE) return _kioskOptDiagState.byKey;
+    try {
+      const raw = appStoreGetRaw(KIOSK_OPT_DIAG_LS_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        _kioskOptDiagState.byKey = parsed;
+      }
+    } catch (_) {}
+    return _kioskOptDiagState.byKey;
+  }
+
+  function saveKioskOptDiagMap() {
+    if (IS_AUTOMATED_TEST && !window.__MFG_TEST_OPT_DIAG_STORAGE) return;
+    try {
+      appStoreSetRaw(KIOSK_OPT_DIAG_LS_KEY, JSON.stringify(_kioskOptDiagState.byKey));
+    } catch (_) {}
+  }
+
+  function createEmptyKioskOptBands() {
+    const out = {};
+    for (const bk of KIOSK_OPT_BAND_KEYS) {
+      out[bk] = { scans: 0, low_light: 0, pad_spoof: 0, small_face: 0 };
+    }
+    return out;
+  }
+
+  function ensureLocalKioskOptDiagRow(company = '') {
+    const co = company || resolveKioskDiagCompany();
+    const devId = getKioskDiagDeviceId();
+    const coSlug = String(co || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'wtc';
+    const key = `${coSlug}:${devId}`;
+    const map = hydrateKioskOptDiagMap();
+    const shell = String(window.__MFG_SHELL_VER || '').trim();
+    const ind = typeof getActiveIndustry === 'function' ? getActiveIndustry(co) : 'Manufacturing';
+    const site = String(STATE.kioskAttSite || `${co} Main Entrance`).slice(0, 80);
+    let row = map[key];
+    if (!row || typeof row !== 'object') {
+      row = {
+        device_id: devId,
+        company: co,
+        industry: ind,
+        site,
+        shell,
+        fill_light_mode: STATE.kioskFillLight === false ? 'off' : 'auto',
+        scans_total: 0,
+        punches_ok: 0,
+        det_score_sum: 0,
+        det_score_count: 0,
+        det_low_light_count: 0,
+        fill_light_activations: 0,
+        small_face_count: 0,
+        pad_spoof_count: 0,
+        unrecognized_count: 0,
+        liveness_timeout_count: 0,
+        ambient_luma_sum: 0,
+        ambient_luma_count: 0,
+        edge_verify_count: 0,
+        edge_verify_ms_sum: 0,
+        edge_verify_p95_ms: 0,
+        edge_verify_fail_count: 0,
+        hal_restarts: 0,
+        edge_samples_ms: [],
+        bands: createEmptyKioskOptBands(),
+        reported_at: ''
+      };
+      map[key] = row;
+    } else {
+      row.company = co;
+      row.industry = ind;
+      row.site = site;
+      if (shell) row.shell = shell;
+      row.fill_light_mode = STATE.kioskFillLight === false ? 'off' : 'auto';
+      if (!row.bands || typeof row.bands !== 'object') row.bands = createEmptyKioskOptBands();
+      for (const bk of KIOSK_OPT_BAND_KEYS) {
+        if (!row.bands[bk] || typeof row.bands[bk] !== 'object') {
+          row.bands[bk] = { scans: 0, low_light: 0, pad_spoof: 0, small_face: 0 };
+        }
+      }
+      if (!Array.isArray(row.edge_samples_ms)) row.edge_samples_ms = [];
+    }
+    return { key, row };
+  }
+
+  function diagnoseKioskOpticalSignal(row) {
+    if (!row || typeof row !== 'object') {
+      return {
+        level: 'baseline',
+        rank: 3,
+        badgeCls: 'badge',
+        statusLabel: faceTr('Collecting Baseline'),
+        recommendation: faceTr('Collecting baseline scans before scoring placement.'),
+        worstBand: ''
+      };
+    }
+    const scans = Number(row.scans_total || 0);
+    const hal = Number(row.hal_restarts || 0);
+    if (scans < 5 && hal < 2) {
+      return {
+        level: 'baseline',
+        rank: 3,
+        badgeCls: 'badge',
+        statusLabel: faceTr('Collecting Baseline'),
+        recommendation: faceTr('Collecting baseline scans before scoring placement.'),
+        worstBand: ''
+      };
+    }
+    if (hal >= 3) {
+      return {
+        level: 'crit',
+        rank: 0,
+        badgeCls: 'badge-err',
+        statusLabel: faceTr('Camera Fault'),
+        recommendation: faceTr('Repeated black or frozen camera frames. Check USB cable, tablet cooling, or power delivery.'),
+        worstBand: ''
+      };
+    }
+    const padSpoof = Number(row.pad_spoof_count || 0);
+    const padRate = scans > 0 ? (padSpoof / scans) : 0;
+    const bands = (row.bands && typeof row.bands === 'object') ? row.bands : {};
+    let maxBandSpoof = 0;
+    let worstBand = '';
+    for (const bk of KIOSK_OPT_BAND_KEYS) {
+      const b = bands[bk];
+      const cnt = (b && Number(b.pad_spoof || 0)) || 0;
+      if (cnt > maxBandSpoof) {
+        maxBandSpoof = cnt;
+        worstBand = bk;
+      }
+    }
+    const worstShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
+    if (padRate >= 0.30) {
+      return {
+        level: 'crit',
+        rank: 0,
+        badgeCls: 'badge-err',
+        statusLabel: faceTr('High Glare / Backlight'),
+        recommendation: faceTr('Strong glare or window backlight is blocking scans. Shade glass or angle tablet away from open light.'),
+        worstBand
+      };
+    }
+    if (padRate >= 0.18 || (padRate >= 0.12 && worstShare >= 0.55)) {
+      return {
+        level: 'warn',
+        rank: 1,
+        badgeCls: 'badge-warn',
+        statusLabel: (worstBand === 'dawn' || worstBand === 'dusk') ? faceTr('Sun-Angle Glare') : faceTr('Window Glare'),
+        recommendation: faceTr('Recurring glare in one time band. Pivot tablet slightly away from glass reflections.'),
+        worstBand
+      };
+    }
+    const lowCnt = Number(row.det_low_light_count || 0);
+    const lowRate = scans > 0 ? (lowCnt / scans) : 0;
+    const lumaCnt = Number(row.ambient_luma_count || 0);
+    const meanLuma = lumaCnt > 0 ? (Number(row.ambient_luma_sum || 0) / lumaCnt) : 0;
+    if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) {
+      return {
+        level: 'warn',
+        rank: 1,
+        badgeCls: 'badge-warn',
+        statusLabel: faceTr('Low Entrance Light'),
+        recommendation: faceTr('Dim lighting is slowing matches. Keep Warm Fill-Light Auto on or add corridor lighting.'),
+        worstBand
+      };
+    }
+    const smallRate = scans > 0 ? (Number(row.small_face_count || 0) / scans) : 0;
+    if (smallRate >= 0.28) {
+      return {
+        level: 'warn',
+        rank: 1,
+        badgeCls: 'badge-warn',
+        statusLabel: faceTr('Stand-Off Distance'),
+        recommendation: faceTr('Staff are standing too far back. Lower mounting angle or mark a closer floor line.'),
+        worstBand
+      };
+    }
+    const edgeCnt = Number(row.edge_verify_count || 0);
+    const edgeP95 = Number(row.edge_verify_p95_ms || 0);
+    const edgeFailRate = edgeCnt > 0 ? (Number(row.edge_verify_fail_count || 0) / edgeCnt) : 0;
+    if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) {
+      return {
+        level: 'warn',
+        rank: 1,
+        badgeCls: 'badge-warn',
+        statusLabel: faceTr('Slow Edge Verify'),
+        recommendation: faceTr('High cloud verification latency or misses. Check entrance Wi-Fi strength and biometric sync.'),
+        worstBand
+      };
+    }
+    return {
+      level: 'healthy',
+      rank: 2,
+      badgeCls: 'badge-ok',
+      statusLabel: faceTr('Healthy'),
+      recommendation: faceTr('Signal quality, framing, and Edge speed are within healthy thresholds.'),
+      worstBand
+    };
+  }
+
+  function recordKioskOpticalDiagEvent(kind, extra = {}) {
+    if (isDemoScopeActive() || isDemoSandboxSession()) return null;
+    if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') {
+      if (!extra || !extra.allowOffView) return null;
+    }
+    const now = Number(extra.nowMs || Date.now());
+    const band = getKioskOpticalBandKey(extra.dateObj instanceof Date ? extra.dateObj : new Date(now));
+    const { key, row } = ensureLocalKioskOptDiagRow(extra.company || '');
+    const bandRow = row.bands[band];
+    let dirty = false;
+
+    if (kind === 'scan') {
+      if (!extra.force && (now - (_kioskOptDiagState.lastScanAt || 0)) < 650) {
+        return row;
+      }
+      _kioskOptDiagState.lastScanAt = now;
+      row.scans_total += 1;
+      bandRow.scans += 1;
+      _kioskOptDiagState.unsyncedScans += 1;
+      const sc = Number(extra.detScore);
+      if (Number.isFinite(sc) && sc > 0 && sc <= 1.5) {
+        row.det_score_sum = Math.round((Number(row.det_score_sum || 0) + sc) * 10000) / 10000;
+        row.det_score_count += 1;
+      }
+      if (extra.lowLight) {
+        row.det_low_light_count += 1;
+        bandRow.low_light += 1;
+      }
+      if (extra.smallFace) {
+        row.small_face_count += 1;
+        bandRow.small_face += 1;
+      }
+      const luma = extra.luma != null ? Number(extra.luma) : KIOSK_ATT_STATE.lastProbeMeanLuma;
+      if (luma != null && Number.isFinite(luma) && luma >= 0 && luma <= 255) {
+        row.ambient_luma_sum = Math.round((Number(row.ambient_luma_sum || 0) + luma) * 100) / 100;
+        row.ambient_luma_count += 1;
+      }
+      dirty = true;
+    } else if (kind === 'punch_ok') {
+      row.punches_ok += 1;
+      dirty = true;
+    } else if (kind === 'fill_light') {
+      row.fill_light_activations += 1;
+      dirty = true;
+    } else if (kind === 'pad_spoof') {
+      row.pad_spoof_count += 1;
+      bandRow.pad_spoof += 1;
+      dirty = true;
+    } else if (kind === 'unrecognized') {
+      row.unrecognized_count += 1;
+      dirty = true;
+    } else if (kind === 'liveness_timeout') {
+      row.liveness_timeout_count += 1;
+      dirty = true;
+    } else if (kind === 'hal_restart') {
+      row.hal_restarts += 1;
+      dirty = true;
+    } else if (kind === 'edge_verify') {
+      const ms = Math.max(0, Math.min(60000, Math.round(Number(extra.ms || 0))));
+      row.edge_verify_count += 1;
+      row.edge_verify_ms_sum += ms;
+      if (extra.failed) row.edge_verify_fail_count += 1;
+      row.edge_samples_ms.push(ms);
+      if (row.edge_samples_ms.length > 40) row.edge_samples_ms = row.edge_samples_ms.slice(-40);
+      const sorted = row.edge_samples_ms.slice().sort((a, b) => a - b);
+      const p95Idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+      row.edge_verify_p95_ms = sorted[p95Idx] || ms;
+      dirty = true;
+    }
+
+    const minScansNeeded = row.punches_ok + row.pad_spoof_count + row.unrecognized_count + row.liveness_timeout_count;
+    if (row.scans_total < minScansNeeded) {
+      const delta = minScansNeeded - row.scans_total;
+      row.scans_total += delta;
+      bandRow.scans += delta;
+    }
+
+    if (dirty) {
+      row.reported_at = new Date(now).toISOString();
+      _kioskOptDiagState.dirtyKeys[key] = true;
+      saveKioskOptDiagMap();
+      flushKioskOpticalDiagIfDue();
+    }
+    return row;
+  }
+
+  function serializeKioskOptDiagRow(row) {
+    const out = Object.assign({}, row);
+    delete out.edge_samples_ms;
+    return out;
+  }
+
+  function mergeKioskOpticalStationList(localRow) {
+    if (!localRow) return;
+    const list = Array.isArray(STATE.kioskOpticalStations) ? STATE.kioskOpticalStations.slice() : [];
+    const idx = list.findIndex(r => r && r.device_id === localRow.device_id && String(r.company || '') === String(localRow.company || ''));
+    const stamped = Object.assign({}, localRow, { reported_at: localRow.reported_at || new Date().toISOString() });
+    if (idx >= 0) list[idx] = stamped;
+    else list.unshift(stamped);
+    STATE.kioskOpticalStations = list;
+  }
+
+  async function flushKioskOpticalDiagNow(opts = {}) {
+    if (isDemoScopeActive() || isDemoSandboxSession()) return { ok: false, reason: 'demo' };
+    if (!hasServerApi() || !STATE.authed) return { ok: false, reason: 'offline' };
+    if (_kioskOptDiagState.flushing && !opts.force) return { ok: false, reason: 'busy' };
+    const map = hydrateKioskOptDiagMap();
+    const keys = Object.keys(_kioskOptDiagState.dirtyKeys);
+    if (!keys.length && !opts.force) return { ok: true, skipped: true };
+    const sendKey = keys[0] || ensureLocalKioskOptDiagRow().key;
+    const row = map[sendKey];
+    if (!row || (!row.scans_total && !row.hal_restarts && !opts.force)) return { ok: true, skipped: true };
+    _kioskOptDiagState.flushing = true;
+    _kioskOptDiagState.lastFlushAt = Date.now();
+    try {
+      const payload = serializeKioskOptDiagRow(row);
+      const res = await edgeApiFetch('./api/kiosk_optical_diag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res && res.ok) {
+        delete _kioskOptDiagState.dirtyKeys[sendKey];
+        _kioskOptDiagState.unsyncedScans = 0;
+        mergeKioskOpticalStationList(row);
+        return { ok: true };
+      }
+      return { ok: false, status: res ? res.status : 0 };
+    } catch (_) {
+      return { ok: false, reason: 'network' };
+    } finally {
+      _kioskOptDiagState.flushing = false;
+    }
+  }
+
+  function flushKioskOpticalDiagIfDue(opts = {}) {
+    if (IS_AUTOMATED_TEST && !window.__MFG_TEST_OPT_DIAG_SYNC) return;
+    if (isDemoScopeActive() || isDemoSandboxSession()) return;
+    if (!hasServerApi() || !STATE.authed) return;
+    const now = Date.now();
+    const elapsed = now - (_kioskOptDiagState.lastFlushAt || 0);
+    const dueByScans = (_kioskOptDiagState.unsyncedScans || 0) >= 10;
+    const dueByTime = elapsed >= 45000 && Object.keys(_kioskOptDiagState.dirtyKeys).length > 0;
+    const dueByPunch = Boolean(opts.immediatePunch && elapsed >= 12000);
+    if (dueByScans || dueByTime || dueByPunch) {
+      flushKioskOpticalDiagNow();
+    }
+  }
+
+  async function fetchKioskOpticalDiagStations(opts = {}) {
+    if (isDemoScopeActive() || !hasServerApi() || !STATE.authed) return [];
+    const now = Date.now();
+    if (!opts.force && STATE.kioskOpticalLoading) return STATE.kioskOpticalStations || [];
+    if (!opts.force && (now - (STATE.kioskOpticalLoadedAt || 0)) < 35000) return STATE.kioskOpticalStations || [];
+    STATE.kioskOpticalLoading = true;
+    try {
+      const res = await edgeApiFetch('./api/kiosk_optical_diag', { method: 'GET' });
+      const data = res && res.ok ? await res.json().catch(() => null) : null;
+      if (data && data.ok && Array.isArray(data.stations)) {
+        STATE.kioskOpticalStations = data.stations;
+        STATE.kioskOpticalLoadedAt = Date.now();
+        if (($('kioskOpticalDiagPanel') || $('payBiometricPolicySummaryCard')) && typeof refreshPayrollPolicySectionInPlace === 'function') {
+          if (opts.refreshUi !== false) refreshPayrollPolicySectionInPlace();
+        }
+      }
+    } catch (_) {
+    } finally {
+      STATE.kioskOpticalLoading = false;
+    }
+    return STATE.kioskOpticalStations || [];
+  }
+
+  async function resetKioskOpticalDiagStation(company, deviceId) {
+    const co = String(company || '').trim();
+    const dev = String(deviceId || '').trim();
+    if (!co || !dev) return false;
+    if (hasServerApi() && STATE.authed && !isDemoScopeActive()) {
+      try {
+        const res = await edgeApiFetch('./api/kiosk_optical_diag', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reset', company: co, device_id: dev })
+        });
+        if (!res || !res.ok) {
+          toast(faceTr('Could not reset station diagnostics on server.'), 'err');
+          return false;
+        }
+      } catch (_) {
+        toast(faceTr('Could not reset station diagnostics on server.'), 'err');
+        return false;
+      }
+    }
+    const coSlug = co.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const map = hydrateKioskOptDiagMap();
+    const localKey = `${coSlug}:${dev}`;
+    if (map[localKey]) {
+      delete map[localKey];
+      delete _kioskOptDiagState.dirtyKeys[localKey];
+      saveKioskOptDiagMap();
+    }
+    STATE.kioskOpticalStations = (Array.isArray(STATE.kioskOpticalStations) ? STATE.kioskOpticalStations : [])
+      .filter(s => !(s && s.device_id === dev && String(s.company || '') === co));
+    toast(faceTr('Optical diagnostics counters reset for station.'), 'ok');
+    return true;
+  }
+
+  function evaluateKioskFillLightState(ctx = {}) {
+    const eligible = Boolean(
+      STATE.kioskFillLight !== false &&
+      STATE.view === 'kiosks' &&
+      STATE.activeKiosk === 'attendance' &&
+      (KIOSK_ATT_STATE.camActive || ctx.forceEval) &&
+      !KIOSK_ATT_STATE.standbyIdle &&
+      !KIOSK_ATT_STATE.camPausedByUser &&
+      !KIOSK_ADMIN_MODAL_STATE.open
+    );
+    const prevActive = Boolean(KIOSK_ATT_STATE.fillLightActive);
+    if (!eligible) {
+      KIOSK_ATT_STATE.fillLightActive = false;
+      KIOSK_ATT_STATE.lowLightSince = 0;
+      KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+      if (prevActive) syncKioskAttViewportVisualState();
+      return false;
+    }
+    const now = Number(ctx.nowMs || Date.now());
+    const fgLowLight = Boolean(ctx.fgLowLight);
+    const meanLuma = ctx.meanLuma != null ? Number(ctx.meanLuma) : KIOSK_ATT_STATE.lastProbeMeanLuma;
+    const hasPresence = Boolean(
+      fgLowLight ||
+      ctx.hasFace ||
+      ((now - (KIOSK_ATT_STATE.lastMotionOrFaceAt || 0)) <= 2500)
+    );
+    const dimAmbient = Boolean(meanLuma != null && Number.isFinite(meanLuma) && meanLuma >= 12 && meanLuma < 56 && hasPresence);
+    const needsFill = fgLowLight || dimAmbient;
+    if (needsFill) {
+      if (!KIOSK_ATT_STATE.lowLightSince) {
+        KIOSK_ATT_STATE.lowLightSince = now;
+      }
+      if ((now - KIOSK_ATT_STATE.lowLightSince) >= 1500) {
+        if (!KIOSK_ATT_STATE.fillLightActive) {
+          KIOSK_ATT_STATE.fillLightActive = true;
+          recordKioskOpticalDiagEvent('fill_light', { nowMs: now });
+        }
+        KIOSK_ATT_STATE.fillLightHoldUntil = Math.max(KIOSK_ATT_STATE.fillLightHoldUntil || 0, now + 3500);
+      }
+    } else {
+      KIOSK_ATT_STATE.lowLightSince = 0;
+      if (KIOSK_ATT_STATE.fillLightActive && now >= (KIOSK_ATT_STATE.fillLightHoldUntil || 0)) {
+        KIOSK_ATT_STATE.fillLightActive = false;
+        KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+      }
+    }
+    if (Boolean(KIOSK_ATT_STATE.fillLightActive) !== prevActive) {
+      syncKioskAttViewportVisualState();
+    }
+    return Boolean(KIOSK_ATT_STATE.fillLightActive);
+  }
+
+  window.MFG_KIOSK_OPT_DIAG = {
+    getLocalSummary: () => {
+      const { row } = ensureLocalKioskOptDiagRow();
+      return { row: serializeKioskOptDiagRow(row), diag: diagnoseKioskOpticalSignal(row) };
+    },
+    recordEvent: recordKioskOpticalDiagEvent,
+    evaluateFillLight: evaluateKioskFillLightState,
+    diagnose: diagnoseKioskOpticalSignal,
+    flushNow: flushKioskOpticalDiagNow,
+    fetchStations: fetchKioskOpticalDiagStations,
+    resetStation: resetKioskOpticalDiagStation
+  };
+
   function scheduleKioskAttCameraWatchdogRestart(reason = 'watchdog', opts = {}) {
     if (typeof window === 'undefined') return false;
     if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return false;
@@ -185265,6 +186510,9 @@
       if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ADMIN_MODAL_STATE.open) {
         KIOSK_ATT_STATE.lastRestartAt = Date.now();
         KIOSK_ATT_STATE.restartCount = (KIOSK_ATT_STATE.restartCount || 0) + 1;
+        if (reason === 'black-frames' || reason === 'frame-frozen') {
+          recordKioskOpticalDiagEvent('hal_restart');
+        }
         if (reason === 'black-frames') {
           KIOSK_ATT_STATE.consecutiveBlackRestarts = (KIOSK_ATT_STATE.consecutiveBlackRestarts || 0) + 1;
         }
@@ -185527,7 +186775,12 @@
       liveRepeatQuiet: Boolean(opts.liveVideo && STATE.kioskLocked)
     });
     KIOSK_ATT_STATE.visualState = 'detecting';
+    KIOSK_ATT_STATE.fillLightActive = false;
+    KIOSK_ATT_STATE.lowLightSince = 0;
+    KIOSK_ATT_STATE.fillLightHoldUntil = 0;
     if (res.ok) {
+      recordKioskOpticalDiagEvent('punch_ok', { allowOffView: true });
+      flushKioskOpticalDiagIfDue({ immediatePunch: true });
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
         ? `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time}`
         : `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match). Camera paused.`;
@@ -185573,6 +186826,9 @@
         KIOSK_ATT_STATE.statusText = faceTr('Position your face inside the oval guide to clock in or out');
         KIOSK_ATT_STATE.statusCls = '';
       }
+      if (opts.liveVideo && !opts.instant) {
+        evaluateKioskFillLightState({ fgLowLight: false, hasFace: false });
+      }
       return { ok: false, reason: 'no-face' };
     }
     if (window.Face && typeof window.Face.isFiniteVec128 === 'function' && !window.Face.isFiniteVec128(det.descriptor)) {
@@ -185582,10 +186838,20 @@
     const detScore = Number(det.score || det.detScore || 0.9);
     const minFaceFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
     const isSmallFace = Boolean(det.faceSizeFrac != null && det.faceSizeFrac < minFaceFrac);
+    const isForegroundLowLight = Boolean(!isSmallFace && detScore >= 0.34 && (det.faceSizeFrac || 0) >= 0.20 && detScore < 0.42);
+    if (opts.liveVideo && !opts.instant) {
+      KIOSK_ATT_STATE.lastMotionOrFaceAt = Date.now();
+      recordKioskOpticalDiagEvent('scan', {
+        detScore,
+        lowLight: isForegroundLowLight,
+        smallFace: isSmallFace,
+        luma: KIOSK_ATT_STATE.lastProbeMeanLuma
+      });
+      evaluateKioskFillLightState({ fgLowLight: isForegroundLowLight, hasFace: !isSmallFace });
+    }
     if (opts.liveVideo && !opts.instant && (detScore < 0.42 || isSmallFace)) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       KIOSK_ATT_STATE.unknownStreak = 0;
-      const isForegroundLowLight = Boolean(!isSmallFace && detScore >= 0.34 && (det.faceSizeFrac || 0) >= 0.20);
       if (isForegroundLowLight) {
         KIOSK_ATT_STATE.visualState = 'unrecognized';
         KIOSK_ATT_STATE.statusText = faceTr('Hold steady in good light inside the oval guide.');
@@ -185684,6 +186950,7 @@
             }
             if (lvEdge && lvEdge.spoofSuspected) {
               resetKioskAttAccumulators();
+              recordKioskOpticalDiagEvent('pad_spoof');
               KIOSK_ATT_STATE.visualState = 'unrecognized';
               KIOSK_ATT_STATE.statusText = faceTr('Screen or photo detected. Step in front of the camera.');
               KIOSK_ATT_STATE.statusCls = 'warn';
@@ -185703,6 +186970,7 @@
               if (!KIOSK_ATT_STATE.livenessWaitStart) KIOSK_ATT_STATE.livenessWaitStart = Date.now();
               if ((Date.now() - KIOSK_ATT_STATE.livenessWaitStart) >= lvWindowMs) {
                 resetKioskAttAccumulators();
+                recordKioskOpticalDiagEvent('liveness_timeout');
                 KIOSK_ATT_STATE.visualState = 'unrecognized';
                 KIOSK_ATT_STATE.statusText = faceTr('Liveness check timed out. Blink or turn slightly inside the oval guide.');
                 KIOSK_ATT_STATE.statusCls = 'warn';
@@ -185738,6 +187006,7 @@
             return { ok: false, reason: 'invalid-descriptor' };
           }
           const verifyCamGen = KIOSK_ATT_STATE._camGen || 0;
+          const edgeVerifyStartMs = Date.now();
           return edgeApiFetch('./api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -185762,6 +187031,11 @@
               if (opts.liveVideo && !opts.instant && (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ATT_STATE.standbyIdle)) {
                 return { ok: false, reason: 'closed' };
               }
+              recordKioskOpticalDiagEvent('edge_verify', {
+                ms: Date.now() - edgeVerifyStartMs,
+                failed: Boolean(!j || !j.ok || j._rateLimited),
+                allowOffView: true
+              });
               if (j && j._rateLimited) {
                 const waitMs = Math.max(2000, Math.min(30000, (j.retryAfterSec || 12) * 1000));
                 KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + waitMs;
@@ -185780,6 +187054,7 @@
               if (!j || !j.ok || !j.user) {
                 KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + 900;
                 resetKioskAttAccumulators();
+                recordKioskOpticalDiagEvent('unrecognized');
                 KIOSK_ATT_STATE.unknownStreak = 2;
                 KIOSK_ATT_STATE.visualState = 'unrecognized';
                 KIOSK_ATT_STATE.statusText = STATE.kioskLocked
@@ -185811,6 +187086,8 @@
               if (verifyCamGen !== (KIOSK_ATT_STATE._camGen || 0)) {
                 return { ok: false, reason: 'closed' };
               }
+              recordKioskOpticalDiagEvent('edge_verify', { ms: Date.now() - edgeVerifyStartMs, failed: true, allowOffView: true });
+              recordKioskOpticalDiagEvent('unrecognized');
               KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + 900;
               resetKioskAttAccumulators();
               KIOSK_ATT_STATE.unknownStreak = 2;
@@ -185845,6 +187122,9 @@
           KIOSK_ATT_STATE.statusText = faceTr('Scanning face...');
           KIOSK_ATT_STATE.statusCls = '';
           return { ok: false, reason: dec.status };
+        }
+        if (KIOSK_ATT_STATE.unknownStreak === 2) {
+          recordKioskOpticalDiagEvent('unrecognized');
         }
       }
       KIOSK_ATT_STATE.visualState = 'unrecognized';
@@ -185890,6 +187170,7 @@
     }
     if (!opts.instant && lv && lv.spoofSuspected) {
       resetKioskAttAccumulators();
+      recordKioskOpticalDiagEvent('pad_spoof');
       KIOSK_ATT_STATE.visualState = 'unrecognized';
       KIOSK_ATT_STATE.statusText = faceTr('Screen or photo detected. Step in front of the camera.');
       KIOSK_ATT_STATE.statusCls = 'warn';
@@ -185909,6 +187190,7 @@
       if (!KIOSK_ATT_STATE.livenessWaitStart) KIOSK_ATT_STATE.livenessWaitStart = Date.now();
       if ((Date.now() - KIOSK_ATT_STATE.livenessWaitStart) >= lvWindowMs) {
         resetKioskAttAccumulators();
+        recordKioskOpticalDiagEvent('liveness_timeout');
         KIOSK_ATT_STATE.visualState = 'unrecognized';
         KIOSK_ATT_STATE.statusText = faceTr('Liveness check timed out. Blink or turn slightly inside the oval guide.');
         KIOSK_ATT_STATE.statusCls = 'warn';
@@ -185968,12 +187250,14 @@
       const prev = KIOSK_ATT_STATE.lastProbePixels;
       const curr = new Uint8Array(3072);
       let totalDiff = 0;
+      let totalLuma = 0;
       let nonBlackCount = 0;
       for (let i = 0, j = 0; i < 4096; i += 4, j += 3) {
         const r = data[i], g = data[i + 1], b = data[i + 2];
         curr[j] = r;
         curr[j + 1] = g;
         curr[j + 2] = b;
+        totalLuma += 0.299 * r + 0.587 * g + 0.114 * b;
         if (r + g + b > 18) nonBlackCount += 1;
         if (prev && prev.length === 3072) {
           totalDiff += Math.abs(r - prev[j]) + Math.abs(g - prev[j + 1]) + Math.abs(b - prev[j + 2]);
@@ -185981,19 +187265,24 @@
       }
       KIOSK_ATT_STATE.lastProbePixels = curr;
       const nonBlack = nonBlackCount >= 16;
+      const meanLuma = Math.round((totalLuma / 1024) * 10) / 10;
+      KIOSK_ATT_STATE.lastProbeMeanLuma = nonBlack ? meanLuma : null;
       if (!prev || prev.length !== 3072) {
         if (nonBlack) KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
-        return { ok: true, pixelsChanged: nonBlack, meanDiff: 10, nonBlack };
+        return { ok: true, pixelsChanged: nonBlack, meanDiff: 10, nonBlack, meanLuma };
       }
       const meanDiff = totalDiff / 3072;
       if (nonBlack && totalDiff > 0) {
         KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
       }
+      if (nonBlack && meanDiff >= 2.2) {
+        KIOSK_ATT_STATE.lastMotionOrFaceAt = Date.now();
+      }
       const recentRawNoise = (Date.now() - (KIOSK_ATT_STATE.lastPixelDiffAt || Date.now())) < 15000;
       const pixelsChanged = nonBlack && (totalDiff > 0 || ((rvfcAdvanced || qualityAdvanced) && recentRawNoise));
-      return { ok: true, pixelsChanged, meanDiff, nonBlack };
+      return { ok: true, pixelsChanged, meanDiff, nonBlack, meanLuma };
     } catch (_) {
-      return { ok: false, pixelsChanged: false, meanDiff: 0, nonBlack: false };
+      return { ok: false, pixelsChanged: false, meanDiff: 0, nonBlack: false, meanLuma: null };
     }
   }
 
@@ -186017,8 +187306,9 @@
     const hasDimensions = v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0;
     const curTime = typeof v.currentTime === 'number' ? v.currentTime : -1;
     const isSyntheticTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
-    const probe = (!isSyntheticTest && hasDimensions) ? probeKioskVideoFrameDiff(v) : { ok: false, pixelsChanged: true, meanDiff: 10, nonBlack: true };
+    const probe = (!isSyntheticTest && hasDimensions) ? probeKioskVideoFrameDiff(v) : { ok: false, pixelsChanged: true, meanDiff: 10, nonBlack: true, meanLuma: null };
     if (!isSyntheticTest && hasDimensions && probe.ok && !v.paused && document.visibilityState === 'visible') {
+      evaluateKioskFillLightState({ meanLuma: probe.meanLuma, hasFace: (KIOSK_ATT_STATE.streakCount || 0) > 0 });
       if (!probe.nonBlack) {
         KIOSK_ATT_STATE.blackFrameStreak = (KIOSK_ATT_STATE.blackFrameStreak || 0) + 1;
         if (KIOSK_ATT_STATE.blackFrameStreak === 4) {
@@ -193148,6 +194438,26 @@
           }
         }
       }
+      const hintEl = $('stmUnappliedExcHint');
+      if (hintEl) {
+        const isDiff = Boolean($('stmDiffChk')?.checked);
+        const activeGroups = getGroupedActiveExtraDayWindows();
+        const showUnapplied = isDiff && !draftSelectedExcDays.length && excInputsTouched && activeGroups.length !== 1;
+        hintEl.hidden = !showUnapplied;
+        if (showUnapplied) {
+          const msgEl = $('stmUnappliedExcMsg');
+          const msgKey = activeGroups.length >= 2
+            ? 'Click a weekday chip below to update, or pick a weekday above'
+            : 'Pick a weekday above to apply these hours';
+          if (msgEl && msgEl.dataset.stmMsgKey !== msgKey) {
+            msgEl.dataset.stmMsgKey = msgKey;
+            msgEl.textContent = msgKey;
+            if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+              try { window.MFG_I18N.translateDom(hintEl); } catch (_) {}
+            }
+          }
+        }
+      }
       const badge = $('stmExcLiveBadge');
       if (badge) {
         const isDiff = Boolean($('stmDiffChk')?.checked);
@@ -193281,6 +194591,10 @@
                     </div>
                   </div>
                 </div>
+                <div class="stm-unapplied-exc-hint" id="stmUnappliedExcHint" hidden>
+                  <span class="stm-unapplied-exc-msg" id="stmUnappliedExcMsg">Pick a weekday above to apply these hours</span>
+                  <button type="button" class="stm-exc-reset-pill" id="stmResetExcHoursBtn">Reset</button>
+                </div>
                 <div class="stm-exc-chips" id="stmWeekdayRulesList" style="margin-top:6px">${renderWeekdayRuleChipsHtml()}</div>
               </div>
               <div class="stm-exc-subcard">
@@ -193336,8 +194650,9 @@
           </div>
         </div>
         <div class="modal-foot" style="justify-content:space-between">
-          <div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${!cohortProp && existing && !existing.isBuiltin ? `<button type="button" class="btn btn-danger-outline" id="stmDeleteBtn">${ic('trash')}<span>Delete Shift Type</span></button>` : ''}
+            ${!cohortProp ? `<button type="button" class="btn btn-ghost-bar" id="stmShareBtn">${ic('send_msg')} <span>Share Shift Hours</span></button>` : ''}
           </div>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn" id="stmCancelBtn">Cancel</button>
@@ -193425,6 +194740,51 @@
       if ($('stmExcEnd')) $('stmExcEnd').value = pe;
       excInputsTouched = true;
       refreshStmExceptionsUi();
+    });
+    $('stmResetExcHoursBtn')?.addEventListener('click', () => {
+      const [rawS, rawE] = String(baselineExcSig || `${initExcStart}|${initExcEnd}`).split('|');
+      const stR = normalize24hClockTime(rawS || initExcStart, initExcStart);
+      const etR = normalize24hClockTime(rawE || initExcEnd, initExcEnd);
+      if ($('stmExcStart')) $('stmExcStart').value = stR;
+      if ($('stmExcEnd')) $('stmExcEnd').value = etR;
+      resetExcWindowDirty(`${stR}|${etR}`);
+      refreshStmExceptionsUi();
+    });
+    $('stmShareBtn')?.addEventListener('click', () => {
+      if (cohortProp) return;
+      const co = String($('stmCompany')?.value || defCo || 'WTC').trim();
+      const nm = String($('stmName')?.value || (existing && existing.name) || 'Shift Schedule').trim();
+      const sh = String($('stmShort')?.value || (existing && existing.short) || nm.split(/\s+/)[0]).trim();
+      const isSplit = Boolean($('stmSplitChk')?.checked);
+      const st = normalize24hClockTime($('stmStart')?.value, isSplit ? '11:00' : '08:00');
+      const et = normalize24hClockTime($('stmEnd')?.value, isSplit ? '15:00' : '16:00');
+      const spS2 = normalize24hClockTime($('stmSplitS2')?.value || '19:00', '19:00');
+      const spE2 = normalize24hClockTime($('stmSplitE2')?.value || '23:00', '23:00');
+      const gr = Number($('stmGrace')?.value || 10);
+      const effDt = String($('stmStartDate')?.value || todayISO()).slice(0, 10);
+      const isDiffOn = Boolean($('stmDiffChk')?.checked);
+      const draftDayMap = isDiffOn ? buildEffectiveDraftDayMap() : {};
+      const draftDateList = isDiffOn ? normalizeDateTimingsList(draftDateTimings) : [];
+      const draftShift = normalizeShiftTypeObj({
+        id: existing ? existing.id : (nm.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft_shift'),
+        name: nm,
+        short: sh,
+        company: co,
+        start_date: effDt,
+        split_enabled: isSplit,
+        split_start_1: isSplit ? st : '',
+        split_end_1: isSplit ? et : '',
+        split_start_2: isSplit ? spS2 : '',
+        split_end_2: isSplit ? spE2 : '',
+        start_time: st,
+        end_time: isSplit ? spE2 : et,
+        days: draftDays.slice(),
+        grace_min: gr,
+        day_timings: draftDayMap,
+        date_timings: draftDateList,
+        tone: draftTone
+      }, existing || undefined);
+      openShiftShareModal(draftShift.id, { company: co, draftShift });
     });
     $('stmAddWeekdayRuleBtn')?.addEventListener('click', () => {
       const { stClock, etClock } = currentExcWindow();
@@ -193702,6 +195062,759 @@
     // The first render ran while the previous (hidden) form was still in the page, so its pills could read that
     // form's exceptions box; repaint from this form's own state.
     refreshStmExceptionsUi();
+    return modal;
+  }
+
+  // ===================== 1-Tap Share Shift Hours WhatsApp / Print Roster Card =====================
+  const SHIFT_SHARE_LANG_KEY = 'isabi_shift_share_lang_v1';
+  const SHIFT_SHARE_LANGS = ['en_ar', 'en', 'ar', 'fr'];
+  let _shiftShareState = null;
+
+  function sanitizeShiftShareCopy(raw) {
+    return String(raw || '')
+      .replace(/\u2014/g, '-')
+      .replace(/\u2013/g, '-')
+      .replace(/\u2192/g, ' to ')
+      .replace(/->/g, ' to ')
+      .replace(/\bTHEO\b/gi, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
+      .trim();
+  }
+
+  function closeShiftShareModal() {
+    document.body.classList.remove('printing-shift-share-card');
+    const m = $('shiftShareModal');
+    if (m) {
+      m.hidden = true;
+      m.innerHTML = '';
+    }
+    const rf = _shiftShareState && _shiftShareState.returnFocus;
+    _shiftShareState = null;
+    _syncOverlayModalState(false);
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function formatShiftDaysLabelByLang(daysInput, lang = 'en') {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const set = new Set((Array.isArray(daysInput) ? daysInput : []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6));
+    const list = order.filter(d => set.has(d));
+    const names = {
+      en: { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' },
+      ar: { 0: 'الأحد', 1: 'الاثنين', 2: 'الثلاثاء', 3: 'الأربعاء', 4: 'الخميس', 5: 'الجمعة', 6: 'السبت' },
+      fr: { 0: 'Dim', 1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Jeu', 5: 'Ven', 6: 'Sam' }
+    };
+    const lMap = names[lang] || names.en;
+    const sep = lang === 'ar' ? '، ' : ', ';
+    if (!list.length) return lang === 'ar' ? 'لا يوجد' : (lang === 'fr' ? 'Aucun' : 'None');
+    if (list.length === 7) return lang === 'ar' ? 'يوميًا (كل الأسبوع)' : (lang === 'fr' ? 'Tous les jours' : 'Daily (All 7d)');
+    const runs = [];
+    for (const d of list) {
+      const idx = order.indexOf(d);
+      const last = runs[runs.length - 1];
+      if (last && idx === last.endIdx + 1) {
+        last.endIdx = idx;
+        last.days.push(d);
+      } else {
+        runs.push({ startIdx: idx, endIdx: idx, days: [d] });
+      }
+    }
+    return runs.map(r => {
+      if (r.days.length >= 3) return `${lMap[r.days[0]]}-${lMap[r.days[r.days.length - 1]]}`;
+      return r.days.map(d => lMap[d]).join(sep);
+    }).join(sep);
+  }
+
+  function formatShiftExceptionTimingByLang(item, lang = 'en') {
+    if (!item || typeof item !== 'object') return '';
+    const dateLbl = item.start_date === item.end_date
+      ? fmtDateDMY(item.start_date)
+      : (lang === 'ar'
+        ? `${fmtDateDMY(item.start_date)} إلى ${fmtDateDMY(item.end_date)}`
+        : (lang === 'fr'
+          ? `${fmtDateDMY(item.start_date)} au ${fmtDateDMY(item.end_date)}`
+          : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`));
+    const notePart = item.note ? `${item.note}: ` : '';
+    let winPart = '';
+    if (item.day_off) {
+      winPart = lang === 'ar' ? 'مغلق (عطلة)' : (lang === 'fr' ? 'Fermé' : 'Closed');
+    } else if (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null) {
+      if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null) {
+        const hrsVal = fmtNum(item.shorten_min / 60, item.shorten_min % 60 ? 1 : 0);
+        winPart = lang === 'ar' ? `دوام أقصر بـ ${hrsVal} س` : (lang === 'fr' ? `${hrsVal}h plus court` : `${hrsVal}h shorter`);
+      } else {
+        const sgn = n => (n > 0 ? `+${n}` : `${n}`);
+        const pieces = [];
+        const minLbl = lang === 'ar' ? 'د' : 'min';
+        if (item.start_shift_min) {
+          pieces.push(`${lang === 'ar' ? 'البداية' : (lang === 'fr' ? 'début' : 'start')} ${sgn(item.start_shift_min)} ${minLbl}`);
+        }
+        const endDelta = Number(item.end_shift_min || 0) - Number(item.shorten_min || 0);
+        if (endDelta) {
+          pieces.push(`${lang === 'ar' ? 'النهاية' : (lang === 'fr' ? 'fin' : 'end')} ${sgn(endDelta)} ${minLbl}`);
+        }
+        if (item.grace_min != null) {
+          pieces.push(`${lang === 'ar' ? 'السماح' : (lang === 'fr' ? 'tolérance' : 'grace')} ${item.grace_min} ${minLbl}`);
+        }
+        winPart = pieces.join(', ');
+      }
+    } else {
+      const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+      const hrTag = hrs > 0 ? ` (${fmtNum(hrs, 1)}${lang === 'ar' ? ' س' : 'h'})` : '';
+      winPart = `${item.start_time}-${item.end_time}${hrTag}`;
+    }
+    let scopeSuffix = '';
+    if (item.holScopeNote && item.holScopeNote.total > 0 && item.holScopeNote.elig < item.holScopeNote.total) {
+      const unitLbl = lang === 'ar' ? 'موظف' : (lang === 'fr' ? 'pers.' : 'staff');
+      scopeSuffix = ` (${fmtNum(item.holScopeNote.elig, 0)}/${fmtNum(item.holScopeNote.total, 0)} ${unitLbl})`;
+    } else if (item.holCompanyFallback) {
+      scopeSuffix = lang === 'ar' ? ' (للمستحقين)' : (lang === 'fr' ? ' (personnel éligible)' : ' (eligible staff)');
+    }
+    return sanitizeShiftShareCopy(`${notePart}${dateLbl} · ${winPart}${scopeSuffix}`);
+  }
+
+  function shiftTimingSignatureForShare(sh) {
+    if (!sh || typeof sh !== 'object') return '';
+    const days = (Array.isArray(sh.days) ? sh.days : [1, 2, 3, 4, 5, 6]).slice().sort((a, b) => a - b);
+    const dt = pruneDayTimingsToWorkdays(
+      normalizeDayTimingsMap(sh.day_timings, sh.sat_diff_enabled, sh.sat_start_time, sh.sat_end_time),
+      days
+    );
+    const daySig = SHIFT_DAY_ORDER_KEYS.map(k => (dt[k] ? `${k}:${dt[k].start_time}-${dt[k].end_time}` : '')).filter(Boolean).join(';');
+    const dateSig = normalizeDateTimingsList(sh.date_timings).map(d =>
+      `${d.start_date}..${d.end_date}:${d.day_off ? 'off' : `${d.start_time}-${d.end_time}`}:${d.shorten_min || 0}:${d.start_shift_min || 0}:${d.end_shift_min || 0}:${d.note || ''}`
+    ).join(';');
+    return [
+      sh.start_time || '',
+      sh.end_time || '',
+      sh.split_enabled ? 1 : 0,
+      sh.split_start_1 || '',
+      sh.split_end_1 || '',
+      sh.split_start_2 || '',
+      sh.split_end_2 || '',
+      days.join(','),
+      sh.grace_min != null ? Number(sh.grace_min) : 10,
+      daySig,
+      dateSig
+    ].join('|');
+  }
+
+  function buildShiftShareContext(shiftId = '', opts = {}) {
+    if (STATE.kioskLocked) return null;
+    const rawScopeCo = String(opts.company || '').trim();
+    const coList = getAttendanceDefaultsCompanies(rawScopeCo || STATE.company);
+    if (!coList.length) return null;
+    const primaryCo = (rawScopeCo && coList.some(c => norm(c) === norm(rawScopeCo)))
+      ? coList.find(c => norm(c) === norm(rawScopeCo))
+      : (COMPANY_BU_MATCH[STATE.company] || coList[0] || defaultEntryCompany() || 'WTC');
+    const draftShift = (opts && opts.draftShift && typeof opts.draftShift === 'object') ? opts.draftShift : null;
+    const scopeCompany = rawScopeCo || (coList.length === 1 ? primaryCo : '');
+    const staffDir = getKioskStaffDirectory({
+      scopeBySelectedCompany: true,
+      strictCompanyScope: coList.length === 1,
+      companyOverride: coList.length === 1 ? primaryCo : undefined,
+      includeEnded: false,
+      lite: true
+    }).filter(s => coList.some(c => norm(c) === norm(s.company)));
+
+    const crewByCoAndShift = new Map();
+    staffDir.forEach(s => {
+      const sCo = String(s.company || primaryCo).trim();
+      const rawId = getStaffWorkRule(s.name, sCo).shift_id || 'day_8_4';
+      const code = rawId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawId);
+      const ck = `${norm(sCo)}|${code}`;
+      if (!crewByCoAndShift.has(ck)) crewByCoAndShift.set(ck, []);
+      crewByCoAndShift.get(ck).push({
+        name: String(s.name || '').trim(),
+        role: String(s.role || '').trim(),
+        company: sCo
+      });
+    });
+
+    // Build company-accurate shift buckets so group scope never publishes a sister company's crew under different hours.
+    const bucketMap = new Map();
+    const buckets = [];
+    coList.forEach(co => {
+      const shifts = getShiftTypes(co).slice();
+      if (draftShift && norm(co) === norm(primaryCo)) {
+        const dId = normalizeShiftCodeAlias(draftShift.id || 'draft_shift') || 'draft_shift';
+        const dIdx = shifts.findIndex(s => s.id === dId);
+        const mergedDraft = Object.assign({}, draftShift, { id: dId, company: co, isDraftPreview: true });
+        if (dIdx >= 0) shifts[dIdx] = mergedDraft;
+        else shifts.unshift(mergedDraft);
+      }
+      const buDef = getBuDefaultShift(co);
+      const buDefCode = normalizeShiftCodeAlias((buDef && (buDef.shift_code || buDef.shift_id)) || '');
+      shifts.forEach((st, idx) => {
+        const sig = shiftTimingSignatureForShare(st);
+        const bKey = st.isDraftPreview ? `__draft__|${st.id}` : `${st.id}::${sig}`;
+        let b = bucketMap.get(bKey);
+        if (!b) {
+          b = {
+            shift: st,
+            shiftId: st.id,
+            sig,
+            matchingCos: [],
+            crew: [],
+            isDefault: false,
+            origIdx: buckets.length,
+            localIdx: idx
+          };
+          bucketMap.set(bKey, b);
+          buckets.push(b);
+        }
+        if (!b.matchingCos.some(c => norm(c) === norm(co))) b.matchingCos.push(co);
+        if (st.id === buDefCode || st.is_bu_default) b.isDefault = true;
+        const coCrew = crewByCoAndShift.get(`${norm(co)}|${st.id}`) || [];
+        coCrew.forEach(member => b.crew.push(member));
+      });
+    });
+
+    const idBucketCounts = new Map();
+    buckets.forEach(b => idBucketCounts.set(b.shiftId, (idBucketCounts.get(b.shiftId) || 0) + 1));
+
+    const shiftOptions = buckets.map(b => {
+      const splitByCo = (idBucketCounts.get(b.shiftId) || 0) > 1 && b.matchingCos.length < coList.length;
+      const ownerCo = b.matchingCos[0] || primaryCo;
+      const optionKey = b.shift.isDraftPreview
+        ? b.shiftId
+        : (splitByCo ? `${ownerCo}::${b.shiftId}` : b.shiftId);
+      return {
+        shift: b.shift,
+        optionKey,
+        ownerCo,
+        splitByCo,
+        matchingCos: b.matchingCos.slice(),
+        crew: b.crew,
+        headcount: b.crew.length,
+        isDefault: b.isDefault,
+        origIdx: b.origIdx
+      };
+    }).sort((a, b) => {
+      if (Boolean(a.shift.isDraftPreview) !== Boolean(b.shift.isDraftPreview)) return a.shift.isDraftPreview ? -1 : 1;
+      if (b.headcount !== a.headcount) return b.headcount - a.headcount;
+      if (b.isDefault !== a.isDefault) return (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0);
+      return a.origIdx - b.origIdx;
+    });
+
+    const rawWanted = String(shiftId || '').trim();
+    const wantedCoSplit = rawWanted.includes('::') ? rawWanted.split('::') : null;
+    const wantedCode = draftShift
+      ? (normalizeShiftCodeAlias(draftShift.id || 'draft_shift') || 'draft_shift')
+      : normalizeShiftCodeAlias(wantedCoSplit ? wantedCoSplit.slice(1).join('::') : rawWanted);
+    const pickedWrap = (wantedCoSplit && shiftOptions.find(o => o.optionKey === rawWanted))
+      || shiftOptions.find(o => o.shift.id === wantedCode)
+      || shiftOptions[0];
+    if (!pickedWrap) return null;
+
+    const st = pickedWrap.shift;
+    const matchingCos = pickedWrap.matchingCos.slice();
+    const isSingleCo = matchingCos.length <= 1;
+    const scopeLabel = matchingCos.join(', ');
+    const activeDays = (Array.isArray(st.days) && st.days.length ? st.days : [1, 2, 3, 4, 5, 6]).slice();
+    const offDays = [1, 2, 3, 4, 5, 6, 0].filter(d => !activeDays.includes(d));
+    const dayTimingsPruned = pruneDayTimingsToWorkdays(
+      normalizeDayTimingsMap(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time),
+      activeDays
+    );
+    const regDays = activeDays.filter(d => !dayTimingsPruned[String(d)]);
+    const excGroups = [];
+    const _excSeen = new Map();
+    SHIFT_DAY_ORDER_KEYS.forEach(dk => {
+      const w = dayTimingsPruned[dk];
+      if (!w || !w.start_time || !w.end_time) return;
+      const sig = `${w.start_time}-${w.end_time}`;
+      if (!_excSeen.has(sig)) {
+        const g = { sig, start_time: w.start_time, end_time: w.end_time, days: [] };
+        _excSeen.set(sig, g);
+        excGroups.push(g);
+      }
+      _excSeen.get(sig).days.push(Number(dk));
+    });
+
+    const buildRegularWindowTxt = lang => {
+      if (st.split_enabled && st.split_window_label) return st.split_window_label;
+      if (st.split_enabled && st.split_start_1 && st.split_end_1 && st.split_start_2 && st.split_end_2) {
+        return `${st.split_start_1}-${st.split_end_1} + ${st.split_start_2}-${st.split_end_2}`;
+      }
+      const ovn = st.overnight
+        ? (lang === 'ar' ? ' (+يوم)' : (lang === 'fr' ? ' (+1j)' : ' (+1d)'))
+        : '';
+      return `${st.start_time}-${st.end_time}${ovn}`;
+    };
+    const buildScheduleLine = lang => {
+      const segs = [];
+      if (regDays.length) {
+        segs.push(`${formatShiftDaysLabelByLang(regDays, lang)} ${buildRegularWindowTxt(lang)}`);
+      }
+      excGroups.forEach(g => {
+        segs.push(`${formatShiftDaysLabelByLang(g.days, lang)} ${g.start_time}-${g.end_time}`);
+      });
+      if (!segs.length) {
+        segs.push(`${formatShiftDaysLabelByLang(activeDays, lang)} ${buildRegularWindowTxt(lang)}`);
+      }
+      return sanitizeShiftShareCopy(segs.join(' | '));
+    };
+
+    const assignedStaff = pickedWrap.crew.slice()
+      .sort((a, b) => a.company.localeCompare(b.company) || a.name.localeCompare(b.name));
+
+    const today = todayISO();
+    const shiftDateExceptions = normalizeDateTimingsList(st.date_timings)
+      .filter(d => String(d.end_date || d.start_date || '') >= today);
+
+    // Include upcoming public holidays from companyPolicyDefaults[co].holidays (v19.6.342 source of truth).
+    const holBuckets = new Map();
+    matchingCos.forEach(co => {
+      const hCfg = getCompanyHolidayConfig(co);
+      const crewInCo = assignedStaff.filter(s => norm(s.company) === norm(co));
+      const allItems = [];
+      Object.keys(hCfg.years || {}).forEach(y => {
+        (hCfg.years[y] || []).forEach(it => allItems.push(it));
+      });
+      allItems.forEach(it => {
+        if (!it || String(it.end_date || it.start_date || '') < today) return;
+        let elig = 0;
+        let companyFallback = false;
+        if (crewInCo.length > 0) {
+          elig = crewInCo.filter(s =>
+            holidayPeopleReceiveOn(hCfg.people[norm(s.name)], it.start_date)
+            || holidayPeopleReceiveOn(hCfg.people[norm(s.name)], it.end_date)
+          ).length;
+          if (!elig) return;
+        } else if (hCfg.staff.length > 0) {
+          companyFallback = true;
+        } else {
+          return;
+        }
+        const hk = `${it.hol || it.name}|${it.start_date}|${it.end_date}`;
+        const prev = holBuckets.get(hk) || {
+          id: `hol_${hk}`,
+          start_date: it.start_date,
+          end_date: it.end_date,
+          day_off: true,
+          note: it.name || 'Holiday',
+          isPublicHoliday: true,
+          eligTotal: 0,
+          crewTotal: 0,
+          companyFallback: false
+        };
+        prev.eligTotal += elig;
+        prev.crewTotal += crewInCo.length;
+        if (companyFallback) prev.companyFallback = true;
+        holBuckets.set(hk, prev);
+      });
+    });
+
+    const holItems = Array.from(holBuckets.values()).map(h => {
+      const out = {
+        id: h.id,
+        start_date: h.start_date,
+        end_date: h.end_date,
+        day_off: true,
+        note: h.note,
+        isPublicHoliday: true
+      };
+      if (h.crewTotal > 0 && h.eligTotal < h.crewTotal) {
+        out.holScopeNote = { elig: h.eligTotal, total: h.crewTotal };
+      } else if (h.crewTotal === 0 && h.companyFallback) {
+        out.holCompanyFallback = true;
+      }
+      return out;
+    });
+
+    const mergedDatesMap = new Map();
+    shiftDateExceptions.concat(holItems).forEach(item => {
+      const mk = `${item.start_date}|${item.end_date}|${norm(item.note || '')}`;
+      if (!mergedDatesMap.has(mk)) mergedDatesMap.set(mk, item);
+    });
+    const upcomingDates = Array.from(mergedDatesMap.values())
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.end_date || '').localeCompare(String(b.end_date || '')))
+      .slice(0, 12);
+
+    return {
+      shift: st,
+      shiftId: st.id,
+      optionKey: pickedWrap.optionKey,
+      company: matchingCos[0] || primaryCo,
+      scopeCompany,
+      scopeLabel,
+      isSingleCo,
+      isDraftPreview: Boolean(st.isDraftPreview),
+      shiftOptions,
+      activeDays,
+      offDays,
+      graceMin: st.grace_min != null ? Number(st.grace_min) : 10,
+      effectiveDate: st.start_date ? fmtDateDMY(st.start_date) : '',
+      hours: Number(st.hours || computeShiftWorkedHours(st.start_time, st.end_time) || 8),
+      scheduleLine: {
+        en: buildScheduleLine('en'),
+        ar: buildScheduleLine('ar'),
+        fr: buildScheduleLine('fr')
+      },
+      workdaysLabel: {
+        en: formatShiftDaysLabelByLang(activeDays, 'en'),
+        ar: formatShiftDaysLabelByLang(activeDays, 'ar'),
+        fr: formatShiftDaysLabelByLang(activeDays, 'fr')
+      },
+      offDaysLabel: {
+        en: formatShiftDaysLabelByLang(offDays, 'en'),
+        ar: formatShiftDaysLabelByLang(offDays, 'ar'),
+        fr: formatShiftDaysLabelByLang(offDays, 'fr')
+      },
+      upcomingDates: upcomingDates.map(item => ({
+        item,
+        en: formatShiftExceptionTimingByLang(item, 'en'),
+        ar: formatShiftExceptionTimingByLang(item, 'ar'),
+        fr: formatShiftExceptionTimingByLang(item, 'fr')
+      })),
+      assignedCount: assignedStaff.length,
+      assignedStaff
+    };
+  }
+
+  function buildShiftShareNoticeText(ctx, lang = 'en_ar', includeRoster = false) {
+    if (!ctx || !ctx.shift) return '';
+    const st = ctx.shift;
+    const fmtSection = l => {
+      const lines = [];
+      if (l === 'ar') {
+        lines.push(`تعميم أوقات الدوام - ${ctx.scopeLabel}`);
+        lines.push(`الوردية: ${st.name}`);
+        lines.push(`أوقات العمل: ${ctx.scheduleLine.ar}`);
+        lines.push(`أيام العطلة الأسبوعية: ${ctx.offDaysLabel.ar}`);
+        lines.push(`فترة السماح عند الحضور: ${fmtNum(ctx.graceMin, 0)} دقيقة`);
+        if (ctx.effectiveDate) lines.push(`ساري من: ${ctx.effectiveDate}`);
+        lines.push(`عدد الموظفين: ${fmtNum(ctx.assignedCount, 0)}`);
+        if (ctx.upcomingDates.length) {
+          lines.push('التواريخ والاستثناءات القادمة:');
+          ctx.upcomingDates.forEach(d => lines.push(`- ${d.ar}`));
+        }
+        if (includeRoster && ctx.assignedStaff.length) {
+          lines.push('طاقم الوردية:');
+          ctx.assignedStaff.slice(0, 40).forEach(s => {
+            lines.push(`- ${s.name}${!ctx.isSingleCo ? ` (${s.company})` : ''}${s.role ? ` - ${s.role}` : ''}`);
+          });
+          if (ctx.assignedStaff.length > 40) {
+            lines.push(`- +${fmtNum(ctx.assignedStaff.length - 40, 0)} آخرين`);
+          }
+        }
+      } else if (l === 'fr') {
+        lines.push(`Note d'Horaires de Travail - ${ctx.scopeLabel}`);
+        lines.push(`Equipe / Horaire: ${st.name}`);
+        lines.push(`Heures: ${ctx.scheduleLine.fr}`);
+        lines.push(`Jours de repos: ${ctx.offDaysLabel.fr}`);
+        lines.push(`Tolérance d'arrivée: ${fmtNum(ctx.graceMin, 0)} min`);
+        if (ctx.effectiveDate) lines.push(`Date d'effet: ${ctx.effectiveDate}`);
+        lines.push(`Effectif assigné: ${fmtNum(ctx.assignedCount, 0)}`);
+        if (ctx.upcomingDates.length) {
+          lines.push('Exceptions et jours fériés à venir:');
+          ctx.upcomingDates.forEach(d => lines.push(`- ${d.fr}`));
+        }
+        if (includeRoster && ctx.assignedStaff.length) {
+          lines.push('Personnel assigné:');
+          ctx.assignedStaff.slice(0, 40).forEach(s => {
+            lines.push(`- ${s.name}${!ctx.isSingleCo ? ` (${s.company})` : ''}${s.role ? ` - ${s.role}` : ''}`);
+          });
+          if (ctx.assignedStaff.length > 40) {
+            lines.push(`- +${fmtNum(ctx.assignedStaff.length - 40, 0)} autres`);
+          }
+        }
+      } else {
+        lines.push(`Shift Schedule Notice - ${ctx.scopeLabel}`);
+        lines.push(`Shift: ${st.name}`);
+        lines.push(`Hours: ${ctx.scheduleLine.en}`);
+        lines.push(`Off Days: ${ctx.offDaysLabel.en}`);
+        lines.push(`Arrival Grace: ${fmtNum(ctx.graceMin, 0)} min`);
+        if (ctx.effectiveDate) lines.push(`Effective Date: ${ctx.effectiveDate}`);
+        lines.push(`Assigned Crew: ${fmtNum(ctx.assignedCount, 0)} staff`);
+        if (ctx.upcomingDates.length) {
+          lines.push('Upcoming Dates & Holidays:');
+          ctx.upcomingDates.forEach(d => lines.push(`- ${d.en}`));
+        }
+        if (includeRoster && ctx.assignedStaff.length) {
+          lines.push('Assigned Crew List:');
+          ctx.assignedStaff.slice(0, 40).forEach(s => {
+            lines.push(`- ${s.name}${!ctx.isSingleCo ? ` (${s.company})` : ''}${s.role ? ` - ${s.role}` : ''}`);
+          });
+          if (ctx.assignedStaff.length > 40) {
+            lines.push(`- +${fmtNum(ctx.assignedStaff.length - 40, 0)} more`);
+          }
+        }
+      }
+      return lines.join('\n');
+    };
+    if (lang === 'en_ar') {
+      return sanitizeShiftShareCopy(`${fmtSection('en')}\n\n${fmtSection('ar')}`);
+    }
+    return sanitizeShiftShareCopy(fmtSection(lang));
+  }
+
+  function renderShiftShareSheetHtml(ctx, lang = 'en_ar', includeRoster = false) {
+    if (!ctx || !ctx.shift) return '';
+    const st = ctx.shift;
+    const isAr = lang === 'ar';
+    const isBi = lang === 'en_ar';
+    const isFr = lang === 'fr';
+    const L = (en, ar, fr) => (isAr ? ar : (isFr ? fr : en));
+    const headTitle = L('Shift Schedule Notice', 'تعميم أوقات الدوام', "Note d'Horaires de Travail");
+    const hrsSuffix = isAr ? 'س' : 'h';
+    const crewRows = includeRoster && ctx.assignedStaff.length
+      ? ctx.assignedStaff.map(s => `
+          <tr>
+            <td><strong>${esc(s.name)}</strong></td>
+            ${!ctx.isSingleCo ? `<td>${esc(s.company)}</td>` : ''}
+            <td>${esc(s.role || '-')}</td>
+          </tr>
+        `).join('')
+      : '';
+    return `
+      <div class="shift-share-sheet" id="shiftSharePrintSheet" dir="${isAr ? 'rtl' : 'ltr'}" data-no-i18n="1">
+        <div class="sss-head">
+          <div>
+            <div class="sss-eyebrow">${esc(headTitle)} · ${esc(ctx.scopeLabel)}</div>
+            <h3 class="sss-title">${esc(st.name)}</h3>
+          </div>
+          <div class="sss-badges">
+            <span class="sss-hrs-pill mono">${fmtNum(ctx.hours, 1)}${hrsSuffix}</span>
+            ${ctx.effectiveDate ? `<span class="sss-eff-pill mono">${esc(L('Effective', 'ساري من', 'Effet'))} ${esc(ctx.effectiveDate)}</span>` : ''}
+          </div>
+        </div>
+        <div class="sss-banner">
+          <div class="sss-banner-main mono" dir="${isAr ? 'rtl' : 'ltr'}">${esc(isAr ? ctx.scheduleLine.ar : (isFr ? ctx.scheduleLine.fr : ctx.scheduleLine.en))}</div>
+          ${isBi ? `<div class="sss-banner-ar" dir="rtl">${esc(ctx.scheduleLine.ar)}</div>` : ''}
+        </div>
+        <div class="sss-kpis">
+          <div class="sss-kpi">
+            <span>${esc(L('Workdays', 'أيام العمل', 'Jours Ouvrés'))}</span>
+            <b>${esc(isAr ? ctx.workdaysLabel.ar : (isFr ? ctx.workdaysLabel.fr : ctx.workdaysLabel.en))}${isBi ? ` / ${esc(ctx.workdaysLabel.ar)}` : ''}</b>
+          </div>
+          <div class="sss-kpi">
+            <span>${esc(L('Off Days', 'العطلة الأسبوعية', 'Jours de repos'))}</span>
+            <b>${esc(isAr ? ctx.offDaysLabel.ar : (isFr ? ctx.offDaysLabel.fr : ctx.offDaysLabel.en))}${isBi ? ` / ${esc(ctx.offDaysLabel.ar)}` : ''}</b>
+          </div>
+          <div class="sss-kpi">
+            <span>${esc(L('Arrival Grace', 'فترة السماح', 'Tolérance'))}</span>
+            <b class="mono">${fmtNum(ctx.graceMin, 0)} ${esc(isAr ? 'دقيقة' : 'min')}</b>
+          </div>
+          <div class="sss-kpi">
+            <span>${esc(L('Assigned Crew', 'عدد الموظفين', 'Effectif'))}</span>
+            <b class="mono">${fmtNum(ctx.assignedCount, 0)} ${esc(L('staff', 'موظف', 'pers.'))}</b>
+          </div>
+        </div>
+        <div class="sss-dates-box">
+          <div class="sss-subhead">${esc(L('Upcoming Dates & Holidays', 'التواريخ والاستثناءات القادمة', 'Exceptions et jours fériés à venir'))}</div>
+          ${ctx.upcomingDates.length ? `
+            <ul class="sss-dates-list">
+              ${ctx.upcomingDates.map(d => `<li><span>${esc(isAr ? d.ar : (isFr ? d.fr : d.en))}</span>${isBi ? `<span class="sss-date-ar" dir="rtl">${esc(d.ar)}</span>` : ''}</li>`).join('')}
+            </ul>
+          ` : `<div class="sss-empty-note">${esc(L('No upcoming date or holiday exceptions', 'لا توجد استثناءات تواريخ قادمة', 'Aucune exception de date à venir'))}</div>`}
+        </div>
+        ${includeRoster ? `
+          <div class="sss-roster-box">
+            <div class="sss-subhead">${esc(L('Assigned Crew List', 'طاقم الوردية', 'Personnel assigné'))} (${fmtNum(ctx.assignedCount, 0)})</div>
+            ${ctx.assignedStaff.length ? `
+              <table class="sss-roster-table">
+                <thead>
+                  <tr>
+                    <th>${esc(L('Staff Member', 'الموظف', 'Collaborateur'))}</th>
+                    ${!ctx.isSingleCo ? `<th>${esc(L('Company', 'الشركة', 'Société'))}</th>` : ''}
+                    <th>${esc(L('Role', 'الوظيفة', 'Fonction'))}</th>
+                  </tr>
+                </thead>
+                <tbody>${crewRows}</tbody>
+              </table>
+            ` : `<div class="sss-empty-note">${esc(L('No active staff assigned to this shift yet', 'لا يوجد موظفون نشطون على هذه الوردية حالياً', 'Aucun personnel actif affecté à cet horaire'))}</div>`}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function renderShiftShareModalBody() {
+    const modal = $('shiftShareModal');
+    if (!modal || !_shiftShareState) return;
+    const ctx = _shiftShareState.ctx;
+    if (!ctx) return;
+    const lang = _shiftShareState.lang || 'en_ar';
+    const includeRoster = Boolean(_shiftShareState.includeRoster);
+    const noticeText = buildShiftShareNoticeText(ctx, lang, includeRoster);
+    const waHref = `https://wa.me/?text=${encodeURIComponent(noticeText)}`;
+    const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-shift-share-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
+
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card shift-share-modal-card">
+        <div class="modal-header no-print">
+          <div>
+            <span class="modal-eyebrow"><span>Shift Schedule Notice</span> <span data-no-i18n="1">·</span> <span data-no-i18n="1">${esc(ctx.scopeLabel)}</span></span>
+            <h2 id="shiftShareTitle" data-no-i18n="1">${esc(ctx.shift.name)}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="shiftShareCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body shift-share-modal-body">
+          <div class="shift-share-toolbar no-print">
+            <div class="ssm-field" style="min-width:170px;flex:1 1 180px;margin:0">
+              <label for="shiftShareShiftSel">Work Shift</label>
+              <select id="shiftShareShiftSel" class="kiosk-select" data-plain-options="1"${ctx.isDraftPreview ? ' disabled' : ''}>
+                ${ctx.shiftOptions.map(o => {
+                  const i18nApi = window.MFG_I18N;
+                  const activeL = (i18nApi && typeof i18nApi.getLang === 'function') ? i18nApi.getLang() : 'en';
+                  const baseNm = (activeL !== 'en' && o.shift.isBuiltin && i18nApi && typeof i18nApi.t === 'function')
+                    ? i18nApi.t(o.shift.name, activeL)
+                    : o.shift.name;
+                  const dispNm = o.splitByCo ? `${baseNm} (${o.ownerCo})` : baseNm;
+                  return `<option value="${esc(o.optionKey)}" data-no-i18n="1" ${o.optionKey === ctx.optionKey ? 'selected' : ''}>${esc(dispNm)} (${fmtNum(o.headcount, 0)})</option>`;
+                }).join('')}
+              </select>
+            </div>
+            <div class="hld-share-langbar" style="margin:0">
+              <span class="hld-share-lbl">Notice Language</span>
+              <div class="hld-share-seg" id="shiftShareLangSeg" role="group" aria-label="Notice Language">
+                ${langBtn('en_ar', 'EN + عربي')}
+                ${langBtn('en', 'EN')}
+                ${langBtn('ar', 'عربي')}
+                ${langBtn('fr', 'FR')}
+              </div>
+            </div>
+            <label class="shift-share-roster-chk">
+              <input type="checkbox" id="shiftShareInclRosterChk" ${includeRoster ? 'checked' : ''}>
+              <span>Include crew names</span>
+            </label>
+          </div>
+          ${renderShiftShareSheetHtml(ctx, lang, includeRoster)}
+          <textarea id="shiftShareText" class="hld-share-text no-print" rows="8" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Shift schedule notice text">${esc(noticeText)}</textarea>
+          <div class="hld-share-actions no-print">
+            <button type="button" class="btn btn-ghost-bar" id="shiftSharePrintBtn">${ic('printer')} <span>Print Roster Card</span></button>
+            <button type="button" class="btn btn-ghost-bar" id="shiftShareCopyBtn">${ic('copy')} <span>Copy Message</span></button>
+            <a class="btn btn-primary" id="shiftShareWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>Open WhatsApp</span></a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $('shiftShareCloseBtn')?.addEventListener('click', closeShiftShareModal);
+    $('shiftShareShiftSel')?.addEventListener('change', e => {
+      if (!_shiftShareState) return;
+      const nextCtx = buildShiftShareContext(e.target.value || '', { company: _shiftShareState.scopeCompany });
+      if (nextCtx) {
+        _shiftShareState.ctx = nextCtx;
+        renderShiftShareModalBody();
+      }
+    });
+    modal.querySelectorAll('[data-shift-share-lang]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!_shiftShareState) return;
+        const nextLang = btn.getAttribute('data-shift-share-lang') || 'en_ar';
+        if (!SHIFT_SHARE_LANGS.includes(nextLang)) return;
+        _shiftShareState.lang = nextLang;
+        try { localStorage.setItem(SHIFT_SHARE_LANG_KEY, nextLang); } catch (_) {}
+        renderShiftShareModalBody();
+      });
+    });
+    $('shiftShareInclRosterChk')?.addEventListener('change', e => {
+      if (!_shiftShareState) return;
+      _shiftShareState.includeRoster = Boolean(e.target.checked);
+      renderShiftShareModalBody();
+    });
+    const ta = $('shiftShareText');
+    const wa = $('shiftShareWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        const cleanVal = sanitizeShiftShareCopy(ta.value);
+        wa.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(cleanVal)}`);
+      });
+    }
+    const copyBtn = $('shiftShareCopyBtn');
+    if (copyBtn && ta) {
+      copyBtn.addEventListener('click', () => {
+        const trBtn = () => {
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            try { window.MFG_I18N.translateDom(copyBtn); } catch (_) {}
+          }
+        };
+        const done = () => {
+          copyBtn.innerHTML = '<span>Copied</span>';
+          trBtn();
+          setTimeout(() => {
+            if (copyBtn.isConnected) {
+              copyBtn.innerHTML = `${ic('copy')} <span>Copy Message</span>`;
+              trBtn();
+            }
+          }, 1500);
+        };
+        const fallbackExecCopy = () => {
+          ta.focus({ preventScroll: true });
+          ta.select();
+          try {
+            if (document.execCommand && document.execCommand('copy')) {
+              done();
+              return;
+            }
+          } catch (_) {}
+          toast('Selected notice text for manual copy', 'info');
+        };
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(ta.value).then(done).catch(fallbackExecCopy);
+        } else {
+          fallbackExecCopy();
+        }
+      });
+    }
+    $('shiftSharePrintBtn')?.addEventListener('click', () => {
+      const cleanup = () => { document.body.classList.remove('printing-shift-share-card'); };
+      document.body.classList.add('printing-shift-share-card');
+      window.addEventListener('afterprint', cleanup, { once: true });
+      setTimeout(() => {
+        try { window.print(); } catch (_) { cleanup(); }
+        setTimeout(() => {
+          if (!window.matchMedia || !window.matchMedia('print').matches) cleanup();
+        }, 60000);
+      }, 20);
+    });
+
+    stripNativeTitles(modal);
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+  }
+
+  function openShiftShareModal(shiftId = '', opts = {}) {
+    if (STATE.kioskLocked) return null;
+    const ctx = buildShiftShareContext(shiftId, opts);
+    if (!ctx) return null;
+    let modal = $('shiftShareModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'shiftShareModal';
+      modal.className = 'modal-backdrop shift-share-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'shiftShareTitle');
+      wireBackdropDismiss(modal, closeShiftShareModal);
+      document.body.appendChild(modal);
+    }
+    let savedLang = 'en_ar';
+    try {
+      const ls = localStorage.getItem(SHIFT_SHARE_LANG_KEY);
+      if (SHIFT_SHARE_LANGS.includes(ls)) savedLang = ls;
+    } catch (_) {}
+    _shiftShareState = {
+      ctx,
+      company: opts.company || ctx.company,
+      scopeCompany: ctx.scopeCompany,
+      lang: (opts.lang && SHIFT_SHARE_LANGS.includes(opts.lang)) ? opts.lang : savedLang,
+      includeRoster: Boolean(opts.includeRoster),
+      returnFocus: document.activeElement
+    };
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    if (typeof syncSwUpdateReadyPill === 'function') syncSwUpdateReadyPill();
+    renderShiftShareModalBody();
     return modal;
   }
 
@@ -199721,6 +201834,242 @@
     return modal;
   }
 
+  function getScopedKioskOpticalStations(opts = {}) {
+    const scopedCo = opts.scopedCo !== undefined ? opts.scopedCo : (COMPANY_BU_MATCH[STATE.company] || '');
+    const activeInd = opts.activeInd || (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    const viewerAllowedCos = Array.isArray(opts.viewerAllowedCos) ? opts.viewerAllowedCos : allowedCompanyNames(activeUser());
+
+    if (isDemoScopeActive()) {
+      const demoCo = scopedCo || 'Demo Company';
+      const nowIso = new Date().toISOString();
+      const synth = [
+        {
+          device_id: 'demo_gate_01',
+          company: demoCo,
+          industry: activeInd,
+          site: `${demoCo} Main Gate`,
+          shell: String(window.__MFG_SHELL_VER || 'live'),
+          fill_light_mode: 'auto',
+          scans_total: 42,
+          punches_ok: 40,
+          det_score_sum: 32.76,
+          det_score_count: 42,
+          det_low_light_count: 2,
+          fill_light_activations: 1,
+          small_face_count: 2,
+          pad_spoof_count: 0,
+          unrecognized_count: 1,
+          liveness_timeout_count: 0,
+          ambient_luma_sum: 4620,
+          ambient_luma_count: 42,
+          edge_verify_count: 4,
+          edge_verify_ms_sum: 840,
+          edge_verify_p95_ms: 240,
+          edge_verify_fail_count: 0,
+          hal_restarts: 0,
+          bands: { day: { scans: 36, low_light: 1, pad_spoof: 0, small_face: 2 }, dawn: { scans: 6, low_light: 1, pad_spoof: 0, small_face: 0 } },
+          reported_at: nowIso
+        },
+        {
+          device_id: 'demo_bay_02',
+          company: demoCo,
+          industry: activeInd,
+          site: `${demoCo} East Door`,
+          shell: String(window.__MFG_SHELL_VER || 'live'),
+          fill_light_mode: 'auto',
+          scans_total: 26,
+          punches_ok: 19,
+          det_score_sum: 11.44,
+          det_score_count: 26,
+          det_low_light_count: 11,
+          fill_light_activations: 6,
+          small_face_count: 1,
+          pad_spoof_count: 1,
+          unrecognized_count: 3,
+          liveness_timeout_count: 1,
+          ambient_luma_sum: 988,
+          ambient_luma_count: 26,
+          edge_verify_count: 5,
+          edge_verify_ms_sum: 1450,
+          edge_verify_p95_ms: 390,
+          edge_verify_fail_count: 0,
+          hal_restarts: 0,
+          bands: { dawn: { scans: 18, low_light: 9, pad_spoof: 1, small_face: 1 }, day: { scans: 8, low_light: 2, pad_spoof: 0, small_face: 0 } },
+          reported_at: nowIso
+        },
+        {
+          device_id: 'demo_yard_03',
+          company: demoCo,
+          industry: activeInd,
+          site: `${demoCo} Yard Turnstile`,
+          shell: String(window.__MFG_SHELL_VER || 'live'),
+          fill_light_mode: 'off',
+          scans_total: 15,
+          punches_ok: 9,
+          det_score_sum: 8.1,
+          det_score_count: 15,
+          det_low_light_count: 2,
+          fill_light_activations: 0,
+          small_face_count: 1,
+          pad_spoof_count: 5,
+          unrecognized_count: 1,
+          liveness_timeout_count: 0,
+          ambient_luma_sum: 2100,
+          ambient_luma_count: 15,
+          edge_verify_count: 2,
+          edge_verify_ms_sum: 920,
+          edge_verify_p95_ms: 480,
+          edge_verify_fail_count: 0,
+          hal_restarts: 3,
+          bands: { dawn: { scans: 10, low_light: 2, pad_spoof: 4, small_face: 1 }, day: { scans: 5, low_light: 0, pad_spoof: 1, small_face: 0 } },
+          reported_at: nowIso
+        }
+      ];
+      return synth.map(s => Object.assign({}, s, { diag: diagnoseKioskOpticalSignal(s) }))
+        .sort((a, b) => (a.diag.rank - b.diag.rank) || ((b.scans_total || 0) - (a.scans_total || 0)));
+    }
+
+    const byKey = new Map();
+    const serverRows = Array.isArray(STATE.kioskOpticalStations) ? STATE.kioskOpticalStations : [];
+    const localMap = hydrateKioskOptDiagMap();
+    const addRow = raw => {
+      if (!raw || typeof raw !== 'object' || !raw.device_id) return;
+      const co = typeof canonCompany === 'function' ? canonCompany(raw.company || '') : String(raw.company || '');
+      if (!co || /^demo$/i.test(co)) return;
+      const key = `${co.toLowerCase()}::${raw.device_id}`;
+      const existing = byKey.get(key);
+      const candTs = Date.parse(String(raw.reported_at || '')) || 0;
+      const prevTs = existing ? (Date.parse(String(existing.reported_at || '')) || 0) : -1;
+      if (!existing || candTs >= prevTs) {
+        byKey.set(key, Object.assign({}, raw, { company: co }));
+      }
+    };
+    serverRows.forEach(addRow);
+    Object.values(localMap).forEach(r => {
+      if (r && (r.scans_total > 0 || r.hal_restarts > 0)) addRow(serializeKioskOptDiagRow(r));
+    });
+
+    const indCoNames = new Set(
+      getCompanyCatalog()
+        .filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name)))
+        .map(c => c.name)
+    );
+    const out = [];
+    for (const r of byKey.values()) {
+      if (scopedCo) {
+        if (r.company !== scopedCo) continue;
+        if (viewerAllowedCos.length && !viewerAllowedCos.includes(r.company)) continue;
+      } else {
+        if (!indCoNames.has(r.company)) continue;
+      }
+      out.push(Object.assign({}, r, { diag: diagnoseKioskOpticalSignal(r) }));
+    }
+    out.sort((a, b) => {
+      if (a.diag.rank !== b.diag.rank) return a.diag.rank - b.diag.rank;
+      const scDiff = Number(b.scans_total || 0) - Number(a.scans_total || 0);
+      if (scDiff !== 0) return scDiff;
+      return String(b.reported_at || '').localeCompare(String(a.reported_at || ''));
+    });
+    return out;
+  }
+
+  function renderKioskOpticalDiagnosticsPanelHtml(opts = {}) {
+    const scopedCo = opts.scopedCo !== undefined ? opts.scopedCo : (COMPANY_BU_MATCH[STATE.company] || '');
+    const activeInd = opts.activeInd || (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    const viewerAllowedCos = Array.isArray(opts.viewerAllowedCos) ? opts.viewerAllowedCos : allowedCompanyNames(activeUser());
+    const showCoCol = opts.showCoCol !== undefined ? Boolean(opts.showCoCol) : !scopedCo;
+    const stations = Array.isArray(opts.stations) ? opts.stations : getScopedKioskOpticalStations({ scopedCo, activeInd, viewerAllowedCos });
+    const u = activeUser();
+    const roleLow = String((u && u.role) || '').toLowerCase();
+    const canResetDiag = !isDemoScopeActive() && (roleLow.includes('owner') || roleLow.includes('supervisor') || ['u1', 'u2'].includes(String((u && u.id) || '')));
+    const bandLabels = {
+      dawn: faceTr('Dawn'),
+      day: faceTr('Day'),
+      dusk: faceTr('Dusk'),
+      night: faceTr('Night')
+    };
+    const colCount = 7 + (showCoCol ? 1 : 0) + (canResetDiag ? 1 : 0);
+
+    return `
+      <div class="kiosk-opt-diag-workspace" id="kioskOpticalDiagPanel">
+        <div class="kiosk-opt-diag-head">
+          <div class="kiosk-opt-diag-title">
+            <strong>${esc(faceTr('Station Optical Signal & Lighting Health'))}</strong>
+            <span>${esc(faceTr('Per-tablet detection scores, glare spikes by shift band, fill-light activations, and camera stability'))}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${STATE.kioskOpticalLoading ? `<span class="badge">${esc(faceTr('Syncing...'))}</span>` : ''}
+            <button type="button" class="btn kiosk-mini-btn" id="kioskOptDiagRefreshBtn">${ic('rotate')} ${esc(faceTr('Refresh Signal'))}</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:420px">
+          <table class="ledger-table" id="kioskOpticalDiagTable">
+            <thead>
+              <tr>
+                <th>${esc(faceTr('Station / Entrance'))}</th>
+                ${showCoCol ? '<th>Co.</th>' : ''}
+                <th>${esc(faceTr('Signal Status'))}</th>
+                <th class="r">${esc(faceTr('Scans & Punches'))}</th>
+                <th>${esc(faceTr('Light & Framing'))}</th>
+                <th>${esc(faceTr('Glare & Time Bands'))}</th>
+                <th>${esc(faceTr('Cloud Verify & Camera'))}</th>
+                <th>${esc(faceTr('Placement Recommendation'))}</th>
+                ${canResetDiag ? `<th class="r">${esc(faceTr('Actions'))}</th>` : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${stations.map(st => {
+                const scans = Number(st.scans_total || 0);
+                const avgDet = st.det_score_count ? (st.det_score_sum / st.det_score_count).toFixed(2) : '-';
+                const meanLuma = st.ambient_luma_count ? Math.round(st.ambient_luma_sum / st.ambient_luma_count) : null;
+                const lowPct = scans > 0 ? Math.round((Number(st.det_low_light_count || 0) / scans) * 100) : 0;
+                const smallPct = scans > 0 ? Math.round((Number(st.small_face_count || 0) / scans) * 100) : 0;
+                const glarePct = scans > 0 ? Math.round((Number(st.pad_spoof_count || 0) / scans) * 100) : 0;
+                const edgeAvg = st.edge_verify_count ? Math.round(st.edge_verify_ms_sum / st.edge_verify_count) : 0;
+                const bands = (st.bands && typeof st.bands === 'object') ? st.bands : {};
+                const bandHtml = KIOSK_OPT_BAND_KEYS.map(bk => {
+                  const b = bands[bk];
+                  const bs = Number((b && b.scans) || 0);
+                  if (!bs) return '';
+                  const bg = Number((b && b.pad_spoof) || 0);
+                  return `<span class="kiosk-opt-band-pill mono">${esc(bandLabels[bk])} ${fmtNum(bs)}${bg > 0 ? ` · ${fmtNum(bg)}g` : ''}</span>`;
+                }).filter(Boolean).join('');
+                return `
+                  <tr data-opt-diag-row="${esc(st.device_id)}">
+                    <td>
+                      <strong>${esc(st.site || `${st.company} Entrance`)}</strong>
+                      <div class="drv-sub mono">${esc(String(st.device_id || '').slice(0, 14))}${st.shell ? ` · v${esc(st.shell)}` : ''} · ${st.fill_light_mode === 'off' ? esc(faceTr('Halo Off')) : esc(faceTr('Halo Auto'))}</div>
+                    </td>
+                    ${showCoCol ? `<td>${coBadge(st.company)}</td>` : ''}
+                    <td><span class="badge ${esc(st.diag.badgeCls)}">${esc(st.diag.statusLabel)}</span></td>
+                    <td class="r mono">
+                      <b>${fmtNum(scans)}</b> / ${fmtNum(st.punches_ok || 0)}
+                      <div class="drv-sub">${fmtNum(st.unrecognized_count || 0)} unk · ${fmtNum(st.liveness_timeout_count || 0)} to</div>
+                    </td>
+                    <td class="mono">
+                      <div>Score ${esc(avgDet)}${meanLuma != null ? ` · Luma ${fmtNum(meanLuma)}` : ''}</div>
+                      <div class="drv-sub">${lowPct}% dim · ${smallPct}% far · ${fmtNum(st.fill_light_activations || 0)} halo</div>
+                    </td>
+                    <td>
+                      <div class="mono">${glarePct}% glare (${fmtNum(st.pad_spoof_count || 0)})</div>
+                      ${bandHtml ? `<div class="kiosk-opt-band-row" style="margin-top:3px">${bandHtml}</div>` : ''}
+                    </td>
+                    <td class="mono">
+                      <div>${st.edge_verify_count ? `p95 ${fmtNum(st.edge_verify_p95_ms || edgeAvg)}ms (${fmtNum(st.edge_verify_fail_count || 0)} err)` : esc(faceTr('Local pool'))}</div>
+                      <div class="drv-sub">HAL restarts: ${fmtNum(st.hal_restarts || 0)}</div>
+                    </td>
+                    <td><div class="kiosk-opt-rec">${esc(st.diag.recommendation)}</div></td>
+                    ${canResetDiag ? `<td class="r"><button type="button" class="btn kiosk-mini-btn" data-reset-opt-diag-co="${esc(st.company)}" data-reset-opt-diag-dev="${esc(st.device_id)}">${esc(faceTr('Reset'))}</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('') || emptyRow(colCount, faceTr('No station optical diagnostics recorded yet for this scope.'))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderPayrollBiometricPolicySectionHtml() {
     if (STATE.payrollPolicyOpen) {
       return `
@@ -199740,6 +202089,8 @@
       if (k && !latestByStaff.has(k)) latestByStaff.set(k, p);
     });
     const onSiteCount = Array.from(latestByStaff.values()).filter(p => isPunchActiveOnSite(p, nowMs)).length;
+    const optStationsSummary = getScopedKioskOpticalStations({ scopedCo });
+    const optWarnCritCount = optStationsSummary.filter(s => s.diag && (s.diag.level === 'crit' || s.diag.level === 'warn')).length;
 
     const opUserBio = STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.operatorUser
       ? STAFF_FACE_MODAL_STATE.operatorUser
@@ -199803,6 +202154,7 @@
             ${renderLegacyTenthBackfillPillHtml({ company: scopedCo || '' })}
             <button type="button" class="btn" data-open-pay-policy="schedule">${ic('clock')} Shift Schedule</button>
             <button type="button" class="btn" data-open-pay-policy="lateness">${ic('warn')} Lateness &amp; OT Rules</button>
+            <button type="button" class="btn" data-open-pay-policy="diagnostics">${ic('camera')} Station Signal${optWarnCritCount > 0 ? ` (${fmtNum(optWarnCritCount)})` : ''}</button>
             <button type="button" class="btn" data-enrol-staff-face="">${ic('camera')} Enrol Face ID</button>
             <button type="button" class="btn btn-primary" data-open-pay-policy="roster">${ic('sliders')} Open Roster &amp; PINs</button>
           </div>
@@ -199992,7 +202344,7 @@
         btn.addEventListener('click', () => {
           const polTab = btn.getAttribute('data-open-pay-policy') || 'roster';
           STATE.payrollPolicyOpen = true;
-          STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(polTab) ? polTab : 'roster';
+          STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'diagnostics', 'all'].includes(polTab) ? polTab : 'roster';
           refreshPayrollPolicySectionInPlace();
           const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
           if (sec) scrollWorkspaceTo(sec, 8);
@@ -200055,8 +202407,10 @@
     } = getFilteredKioskRoster({ latestByStaff, nowMs });
     const activeStaffTotal = fullStaffDir.filter(s => !s.isEndedContract).length;
     const endedStaffTotal = fullStaffDir.filter(s => s.isEndedContract).length;
-    const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'all'];
+    const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'diagnostics', 'all'];
     const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : 'roster';
+    const optStations = getScopedKioskOpticalStations({ scopedCo: effectiveScopedCo, activeInd, viewerAllowedCos });
+    const optWarnCritCount = optStations.filter(s => s.diag && (s.diag.level === 'crit' || s.diag.level === 'warn')).length;
     const policyGroupsCatalog = getPolicyGroups(rawScopedCo);
     const countByCriteria = overrides => searchFilteredRoster.filter(s => checkStaffFilterCriteria(s, overrides)).length;
 
@@ -200527,6 +202881,9 @@
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'onsite' ? 'active' : ''}" data-tone="emerald" data-att-feed-filter="onsite">
                     On Site (${fmtNum(onSiteList.length)})
                   </button>
+                  <button type="button" class="kiosk-seg-btn ${feedFilter === 'diagnostics' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="diagnostics">
+                    ${esc(faceTr('Station Signal'))}${optWarnCritCount > 0 ? ` (${fmtNum(optWarnCritCount)})` : ''}
+                  </button>
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'all' ? 'active' : ''}" data-tone="amber" data-att-feed-filter="all">
                     Punch Log (${fmtNum(punches.length)})
                   </button>
@@ -200586,27 +202943,30 @@
                         ? st.split_window_label
                         : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`;
                       return `
-                        <button type="button" class="shift-type-card ${shiftDefBadge ? 'is-co-default' : ''}" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>
-                          <div class="stc-head">
-                            <div class="att-card-title-grp">
-                              <strong>${esc(st.name)}</strong>
-                              ${shiftDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(shiftDefBadge.tip)}">${esc(shiftDefBadge.label)}</span>` : ''}
+                        <div class="shift-type-card-slot" data-tone="${esc(st.tone)}">
+                          <button type="button" class="shift-type-card ${shiftDefBadge ? 'is-co-default' : ''}" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>
+                            <div class="stc-head">
+                              <div class="att-card-title-grp">
+                                <strong>${esc(st.name)}</strong>
+                                ${shiftDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(shiftDefBadge.tip)}">${esc(shiftDefBadge.label)}</span>` : ''}
+                              </div>
+                              <span class="stc-cnt ${assignedCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(assignedCnt)} staff</span>
                             </div>
-                            <span class="stc-cnt ${assignedCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(assignedCnt)} staff</span>
-                          </div>
-                          <div class="stc-time-row">
-                            <span class="stc-time mono">${esc(winTxt)}</span>
-                            <span class="stc-hrs-pill">${fmtNum(st.hours, 1)}h</span>
-                          </div>
-                          <div class="stc-foot">
-                            <div class="stc-chips">
-                              <span class="att-meta-pill">${esc(formatWorkdaysCompact(st.days))}</span>
-                              <span class="att-meta-pill">${fmtNum(st.grace_min != null ? st.grace_min : 10, 0)}m grace</span>
-                              ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
+                            <div class="stc-time-row">
+                              <span class="stc-time mono">${esc(winTxt)}</span>
+                              <span class="stc-hrs-pill">${fmtNum(st.hours, 1)}h</span>
                             </div>
-                            <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
-                          </div>
-                        </button>
+                            <div class="stc-foot">
+                              <div class="stc-chips">
+                                <span class="att-meta-pill">${esc(formatWorkdaysCompact(st.days))}</span>
+                                <span class="att-meta-pill">${fmtNum(st.grace_min != null ? st.grace_min : 10, 0)}m grace</span>
+                                ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
+                              </div>
+                              <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
+                            </div>
+                          </button>
+                          <button type="button" class="stc-share-btn no-print" data-share-shift-type="${esc(st.id)}"${editCoAttr} data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>
+                        </div>
                       `;
                     }).join('')}
                   </div>
@@ -200952,7 +203312,7 @@
                   </table>
                 </div>
               </div>
-            ` : `
+            ` : (feedFilter === 'diagnostics' && !STATE.kioskLocked ? renderKioskOpticalDiagnosticsPanelHtml({ scopedCo: effectiveScopedCo, activeInd, viewerAllowedCos, showCoCol, stations: optStations }) : `
               ${feedFilter === 'roster' && !STATE.kioskLocked ? `
                 <div class="att-tab-util-bar">
                   <div class="att-tab-util-left">
@@ -201135,7 +203495,7 @@
                   </table>
                 `}
               </div>
-            `)}
+            `))}
           </div>
     `;
   }
@@ -202136,6 +204496,14 @@
         openShiftTypeModal(btn.getAttribute('data-edit-shift-type') || '', editCo ? { company: editCo } : {});
       });
     });
+    container.querySelectorAll('[data-share-shift-type]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (STATE.kioskLocked) return;
+        const shareCo = btn.getAttribute('data-edit-co') || '';
+        openShiftShareModal(btn.getAttribute('data-share-shift-type') || '', shareCo ? { company: shareCo } : {});
+      });
+    });
     container.querySelectorAll('[data-edit-policy-group]').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -202173,8 +204541,31 @@
     feedCard.querySelectorAll('[data-att-feed-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         const nextF = btn.getAttribute('data-att-feed-filter') || 'all';
-        STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(nextF) ? nextF : 'all';
+        STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'diagnostics', 'all'].includes(nextF) ? nextF : 'all';
         refreshPayrollPolicySectionInPlace();
+        if (STATE.kioskAttFeedFilter === 'diagnostics' && !isDemoScopeActive()) {
+          fetchKioskOpticalDiagStations();
+        }
+      });
+    });
+    const optRefBtn = $('kioskOptDiagRefreshBtn');
+    if (optRefBtn) {
+      optRefBtn.addEventListener('click', () => {
+        if (isDemoScopeActive()) {
+          toast(faceTr('Demo Station Signal updated.'), 'ok');
+          return;
+        }
+        fetchKioskOpticalDiagStations({ force: true });
+      });
+    }
+    feedCard.querySelectorAll('[data-reset-opt-diag-dev]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const co = btn.getAttribute('data-reset-opt-diag-co') || '';
+        const devId = btn.getAttribute('data-reset-opt-diag-dev') || '';
+        if (!co || !devId) return;
+        const ok = await resetKioskOpticalDiagStation(co, devId);
+        if (ok) refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-open-staff-sched]').forEach(btn => {
@@ -203351,6 +205742,7 @@
           KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 35);
         }
       }
+      syncKioskAttViewportVisualState();
       const liveBadgeEl = $('kioskAttLiveBadge');
       if (liveBadgeEl) {
         liveBadgeEl.style.cursor = 'pointer';
@@ -203523,6 +205915,7 @@
       if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
       if ($('kioskAttendanceWorkspace')) wireModalSuggestions($('kioskAttendanceWorkspace'));
       if (!isDemoScopeActive()) hydrateStaffBiometricsOnce(false);
+      if (!STATE.kioskLocked && !isDemoScopeActive()) fetchKioskOpticalDiagStations();
     } else {
       if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
       // Kiosks 1, 2, 3 (Sales, Raw Material, Fuel & Lubricants)
@@ -204046,6 +206439,13 @@
   }
   function renderAppPass() {
     STATE.renderPending = false;
+    if (!STATE.authed && !STATE.kioskLocked) {
+      const wsLocked = $('workspace');
+      if (wsLocked && wsLocked.innerHTML) wsLocked.innerHTML = '';
+      const subLocked = $('hubSubtabBar');
+      if (subLocked) subLocked.remove();
+      return;
+    }
     _mapsQuotaSigBuilt = null;
     const popEl = $('mfgChartPopover');
     if (popEl && !popEl.hidden) popEl.hidden = true;
@@ -209014,13 +211414,14 @@
         btn.addEventListener('click', () => {
           const polTab = btn.getAttribute('data-open-pay-policy') || 'roster';
           STATE.payrollPolicyOpen = true;
-          STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(polTab) ? polTab : 'roster';
+          STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'diagnostics', 'all'].includes(polTab) ? polTab : 'roster';
           refreshPayrollPolicySectionInPlace();
           const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
           if (sec) scrollWorkspaceTo(sec, 8);
         });
       });
       wireAttendancePolicyCard(container);
+      if (!isDemoScopeActive()) fetchKioskOpticalDiagStations();
       const ppdAttBtn = $('payAttPrePaydayCardBtn');
       if (ppdAttBtn) {
         ppdAttBtn.addEventListener('click', () => {
@@ -209273,6 +211674,40 @@
         updateAuthFaceUi();
         toast(`Seat sign-in requirement for ${u.full_name}: ${seatAuthBadgeLabel(u)}`);
         if (!u.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
+          try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) {}
+        }
+        syncWithCloud(true);
+      });
+      const seatIdleSel = $('enrolSeatIdleLockSelect');
+      if (seatIdleSel) seatIdleSel.addEventListener('change', async e => {
+        const u = enrolTargetUser();
+        if (!u || u.isKioskStaffOnly || !isOwner()) return;
+        const nextMin = normalizeIdleLockMin(e.target.value, 0);
+        const prevMin = effectiveSeatIdleLockMin(u);
+        if (nextMin === prevMin) return;
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'seat_idle_lock_policy',
+            actionLabel: 'Change Desktop Idle Auto-Lock Policy',
+            targetRef: `${u.email || u.full_name} (${prevMin}m to ${nextMin}m)`,
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.value = String(prevMin);
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
+        u.idle_lock_min = nextMin;
+        u.seat_updated_at = new Date().toISOString();
+        saveLocalAuthAndRecords();
+        updateSeatEditorDom();
+        updateEnrolStudioDom();
+        syncDesktopIdleLockWatchdog();
+        toast(`Desktop auto-lock for ${u.full_name}: ${seatIdleLockLabel(u)}`);
+        if (hasServerApi() && !isDemoScopeActive()) {
           try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) {}
         }
         syncWithCloud(true);
@@ -209875,6 +212310,7 @@
     let swResumeView = '';
     let swResumeIdx = -1;
     let swResumePayload = null;
+    let swResumeIdleSince = 0;
     try {
       const rawSw = sessionStorage.getItem('isabi_mfg_sw_resume');
       sessionStorage.removeItem('isabi_mfg_sw_resume');
@@ -209882,6 +212318,9 @@
         const parsedSw = JSON.parse(rawSw);
         if (parsedSw && parsedSw.email && (Date.now() - Number(parsedSw.ts || 0)) < 30000) {
           swResumePayload = parsedSw;
+          if (Number.isFinite(Number(parsedSw.idleSince)) && Number(parsedSw.idleSince) > 0) {
+            swResumeIdleSince = Number(parsedSw.idleSince);
+          }
           if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
           const candIdx = STATE.users.findIndex(u => norm(u.email) === norm(parsedSw.email));
           if (candIdx >= 0 && STATE.users[candIdx].status !== 'Suspended') {
@@ -210010,12 +212449,40 @@
       const ownerSeat = STATE.users.find(u => isOwner(u)) || STATE.users[0];
       performLogin(ownerSeat.email, ownerSeat.pin_code || DEMO_FALLBACK_PIN, { bypass2FA: true, method: 'Interactive Sandbox' });
     } else if (swIdx >= 0 && STATE.users[swIdx].status !== 'Suspended') {
+      const swSeat = STATE.users[swIdx];
       STATE.activeUserIdx = swIdx;
-      if (!getAllowedCompanyKeys(STATE.users[swIdx]).includes(STATE.company)) {
-        STATE.company = defaultCompanyForUser(STATE.users[swIdx]);
+      if (!getAllowedCompanyKeys(swSeat).includes(STATE.company)) {
+        STATE.company = defaultCompanyForUser(swSeat);
       }
-      closeAuthGate();
-      if (!isDemoSandboxSession() && (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))) {
+      if (swResumeIdleSince > 0) {
+        _lastUserActivityAt = swResumeIdleSince;
+      }
+      const swLockMins = effectiveSeatIdleLockMin(swSeat);
+      const swTestMs = Number((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK_MS) || 0);
+      const swTestAllowed = Boolean((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK) || swTestMs > 0);
+      const swAutoAllowed = (!IS_AUTOMATED_TEST || swTestAllowed) && !isDesktopIdleLockExcludedSurface() && !swSeat._lockedPlaceholder && !swSeat.isKioskStaffOnly;
+      const swTimeoutMs = (swLockMins > 0 && swAutoAllowed)
+        ? ((swTestAllowed && swTestMs > 0) ? Math.max(50, Math.round(swTestMs)) : swLockMins * 60000)
+        : 0;
+      const swPersistedAct = canSyncIdleActivityStorage() ? readPersistedDesktopActivity(swSeat.email) : { at: 0, email: '' };
+      const swLockedBySig = canSyncIdleActivityStorage() && isPersistedIdleLockedForSeat(swSeat.email);
+      const swEffectiveActAt = Math.max(Number(swResumeIdleSince || 0), Number(swPersistedAct.at || 0));
+      if (swEffectiveActAt > 0 && swEffectiveActAt < Date.now()) {
+        _lastUserActivityAt = swEffectiveActAt;
+      }
+      const swElapsedMs = swEffectiveActAt > 0 ? (Date.now() - swEffectiveActAt) : 0;
+      const swIdleBlocked = Boolean(swTimeoutMs > 0 && (swLockedBySig || (swEffectiveActAt > 0 && swElapsedMs >= swTimeoutMs)));
+      if (swIdleBlocked) {
+        publishIdleLockSignalForSeat(swSeat.email || '');
+        signOut({ idleAutoLock: true, idleMinutes: swLockMins, idleLockEmail: swSeat.email || '' });
+        authError(`Locked after ${swLockMins}m of inactivity.`, { noShake: true });
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && $('authErrorBox')) {
+          window.MFG_I18N.translateDom($('authErrorBox'));
+        }
+      } else {
+        closeAuthGate();
+      }
+      if (!swIdleBlocked && !isDemoSandboxSession() && (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))) {
         edgeApiFetch(AUTH_ME_URL, { cache: 'no-store' })
           .then(async r => {
             if (!r) return;
@@ -210027,7 +212494,7 @@
             }
             if (!r.ok) return;
             const d = await r.json().catch(() => null);
-            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended' || (d.user.email && norm(d.user.email) !== norm(STATE.users[swIdx].email))) {
+            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended' || (d.user.email && norm(d.user.email) !== norm(swSeat.email))) {
               if (STATE.authed && typeof handleEdgeSessionExpired === 'function') {
                 handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
               }
@@ -210150,6 +212617,32 @@
         }
         if (swPayload && swPayload.activeTableKey) STATE.activeTableKey = swPayload.activeTableKey;
         if (swPayload && swPayload.activeUnivRegKey) STATE.activeUnivRegKey = swPayload.activeUnivRegKey;
+        const resumeLockMins = effectiveSeatIdleLockMin(resumedSeat);
+        const rTestMs = Number((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK_MS) || 0);
+        const rTestAllowed = Boolean((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK) || rTestMs > 0);
+        const resumeAutoAllowed = (!IS_AUTOMATED_TEST || rTestAllowed) && !isDesktopIdleLockExcludedSurface() && !resumedSeat._lockedPlaceholder && !resumedSeat.isKioskStaffOnly;
+        const resumeTimeoutMs = (resumeLockMins > 0 && resumeAutoAllowed)
+          ? ((rTestAllowed && rTestMs > 0) ? Math.max(50, Math.round(rTestMs)) : resumeLockMins * 60000)
+          : 0;
+        const swPayloadIdleSince = (swPayload && Number.isFinite(Number(swPayload.idleSince)) && Number(swPayload.idleSince) > 0)
+          ? Number(swPayload.idleSince)
+          : swResumeIdleSince;
+        const persistedAct = canSyncIdleActivityStorage() ? readPersistedDesktopActivity(resumedSeat.email) : { at: 0, email: '' };
+        const lockedBySig = canSyncIdleActivityStorage() && isPersistedIdleLockedForSeat(resumedSeat.email);
+        const effectiveActAt = Math.max(Number(swPayloadIdleSince || 0), Number(persistedAct.at || 0));
+        const elapsedSinceAct = effectiveActAt > 0 ? (Date.now() - effectiveActAt) : 0;
+        if (resumeTimeoutMs > 0 && (lockedBySig || (effectiveActAt > 0 && elapsedSinceAct >= resumeTimeoutMs))) {
+          publishIdleLockSignalForSeat(resumedSeat.email || '');
+          signOut({ idleAutoLock: true, idleMinutes: resumeLockMins, idleLockEmail: resumedSeat.email || '' });
+          authError(`Locked after ${resumeLockMins}m of inactivity.`, { noShake: true });
+          if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && $('authErrorBox')) {
+            window.MFG_I18N.translateDom($('authErrorBox'));
+          }
+          return;
+        }
+        if (effectiveActAt > 0 && effectiveActAt < Date.now()) {
+          _lastUserActivityAt = effectiveActAt;
+        }
         closeAuthGate();
         if (SEED._recordsReady && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
           window.MFG_GEO.hydrateSeedGeo(SEED, true);
@@ -210228,8 +212721,30 @@
         if (shouldProbeCookieResume) {
           probeBootAuthMe()
             .then(d => {
-              if (!STATE.authed && d && d.authenticated && d.impersonated) {
+              if (STATE.authed || !d || !d.authenticated) return;
+              if (d.impersonated) {
                 endSeatPreviewSessionAtBoot(d.user);
+                return;
+              }
+              if (d.user && d.user.status !== 'Suspended') {
+                const coldLockMins = effectiveSeatIdleLockMin(d.user);
+                const cTestMs = Number((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK_MS) || 0);
+                const cTestAllowed = Boolean((typeof window !== 'undefined' && window.__ISABI_TEST_IDLE_LOCK) || cTestMs > 0);
+                const coldAutoAllowed = (!IS_AUTOMATED_TEST || cTestAllowed) && !isDesktopIdleLockExcludedSurface() && !d.user._lockedPlaceholder && !d.user.isKioskStaffOnly;
+                const coldTimeoutMs = (coldLockMins > 0 && coldAutoAllowed)
+                  ? ((cTestAllowed && cTestMs > 0) ? Math.max(50, Math.round(cTestMs)) : coldLockMins * 60000)
+                  : 0;
+                const coldAct = canSyncIdleActivityStorage() ? readPersistedDesktopActivity(d.user.email) : { at: 0, email: '' };
+                const coldLockedBySig = canSyncIdleActivityStorage() && isPersistedIdleLockedForSeat(d.user.email);
+                const coldElapsedMs = coldAct.at > 0 ? (Date.now() - coldAct.at) : 0;
+                if (coldTimeoutMs > 0 && (coldLockedBySig || (coldAct.at > 0 && coldElapsedMs >= coldTimeoutMs))) {
+                  publishIdleLockSignalForSeat(d.user.email || '');
+                  sendSeatPreviewSignOut();
+                  authError(`Locked after ${coldLockMins}m of inactivity.`, { noShake: true });
+                  if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en' && $('authErrorBox')) {
+                    window.MFG_I18N.translateDom($('authErrorBox'));
+                  }
+                }
               }
             })
             .catch(() => {});
@@ -211977,6 +214492,8 @@
         if (psdDrawer && !psdDrawer.hidden) { closePolicySimulationDiffDrawer(); return; }
         const pgmModal = $('policyGroupModal');
         if (pgmModal && !pgmModal.hidden) { closePolicyGroupModal(); return; }
+        const shShareModal = $('shiftShareModal');
+        if (shShareModal && !shShareModal.hidden) { closeShiftShareModal(); return; }
         const stmModal = $('shiftTypeModal');
         if (stmModal && !stmModal.hidden) { closeShiftTypeModal(); return; }
         const pdrModal = $('punchDriftModal');
@@ -212305,11 +214822,13 @@
     };
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
+        if (STATE.authed && checkDesktopIdleAutoLockNow()) return;
         syncWithCloud(false);
         resumeActiveCamerasIfNeeded();
       }
     });
     window.addEventListener('focus', () => {
+      if (STATE.authed && checkDesktopIdleAutoLockNow()) return;
       if (document.visibilityState === 'visible') {
         if (Date.now() - _lastCloudSyncStartedAt > 3000) syncWithCloud(false);
         resumeActiveCamerasIfNeeded();
@@ -212714,6 +215233,9 @@
       setIndDrawerFilter: (scope, key, val) => setIndDrawerFilter(scope, key, val),
       clearIndDrawerFilters: scope => clearIndDrawerFilters(scope),
       getCompanyPolicyDefaultEntry: co => JSON.parse(JSON.stringify(ensureWorkSchedulesState().companyPolicyDefaults[norm(co)] || null)),
+      getCompanyHolidayConfig: co => getCompanyHolidayConfig(co),
+      saveCompanyHolidayConfig: (co, cfg) => saveCompanyHolidayConfig(co, cfg),
+      setStaffReceivesHolidays: (staff, co, on) => setStaffReceivesHolidays(staff, co, on),
       listShiftCalTargets: co => listShiftCalTargets(co),
       applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),
       setBuDefaultShift: (co, code, opts = {}) => setBuDefaultShift(co, code, opts),
@@ -212761,6 +215283,8 @@
       openStaffScheduleModal: (staff, opts = {}) => openStaffScheduleModal(staff, opts),
       closeStaffScheduleModal: () => closeStaffScheduleModal(),
       openShiftTypeModal: (shiftId, opts = {}) => openShiftTypeModal(shiftId, opts),
+      openShiftShareModal: (shiftId, opts = {}) => openShiftShareModal(shiftId, opts),
+      closeShiftShareModal: () => closeShiftShareModal(),
       rankShiftWindowPresets: (kind, co, opts = {}) => rankShiftWindowPresets(kind, co, opts),
       closeShiftTypeModal: () => closeShiftTypeModal(),
       openPolicyGroupModal: (groupId, seedSpec) => openPolicyGroupModal(groupId, seedSpec),
@@ -213095,6 +215619,34 @@
         timerActive: Boolean(_swIdleReloadTimer)
       })
     };
+    if (IS_AUTOMATED_TEST || (typeof window !== 'undefined' && (window.__ISABI_TEST_IDLE_LOCK || Number(window.__ISABI_TEST_IDLE_LOCK_MS) > 0))) {
+      window.__idleLockTest = {
+        backdateActivity: ms => {
+          const delta = Math.max(0, Number(ms) || 0);
+          const base = Math.min(_lastUserActivityAt || Date.now(), Date.now());
+          _lastUserActivityAt = Math.max(1, base - delta);
+          if (canSyncIdleActivityStorage()) {
+            try {
+              const curSeat = (typeof activeUser === 'function' && activeUser()) || null;
+              const curEm = (curSeat && curSeat.email) ? norm(curSeat.email) : '';
+              localStorage.setItem(IDLE_ACTIVITY_LS_KEY, JSON.stringify({ at: _lastUserActivityAt, email: curEm }));
+            } catch (_) {}
+          }
+        },
+        checkNow: () => checkDesktopIdleAutoLockNow(),
+        triggerNow: mins => triggerDesktopIdleAutoLock(mins),
+        syncWatchdog: () => syncDesktopIdleLockWatchdog(),
+        hasPendingDraft: () => Boolean(_idleLockedDraftSnap),
+        state: () => ({
+          authed: Boolean(STATE.authed),
+          timeoutMs: getEffectiveDesktopIdleLockMs(),
+          lastActivityAt: _lastUserActivityAt,
+          sharedLastActivityAt: getSharedLastActivityAt(),
+          watchdogActive: Boolean(_idleLockWatchdogTimer),
+          hasPendingDraft: Boolean(_idleLockedDraftSnap)
+        })
+      };
+    }
     const swPill = $('swUpdateReadyPill');
     if (swPill && !swPill._swPillWired) {
       swPill._swPillWired = true;
@@ -213112,8 +215664,31 @@
     if (window.__mfgPendingShellVer) scheduleSwIdleReload();
 
     const markUserActivity = () => {
-      _lastUserActivityAt = Date.now();
+      if (STATE.authed && checkDesktopIdleAutoLockNow()) return;
+      recordDesktopActivity(Date.now());
     };
+    if (!window._isabiIdleLockEventsWired) {
+      window._isabiIdleLockEventsWired = true;
+      window.addEventListener('storage', ev => {
+        if (!ev || !STATE.authed || !canSyncIdleActivityStorage()) return;
+        const cur = (typeof activeUser === 'function' && activeUser()) || null;
+        const curEm = cur && cur.email ? norm(cur.email) : '';
+        if (ev.key === IDLE_ACTIVITY_LS_KEY && ev.newValue) {
+          const parsed = readPersistedDesktopActivity(curEm);
+          if (parsed.at > _lastUserActivityAt) _lastUserActivityAt = parsed.at;
+          return;
+        }
+        if (ev.key === IDLE_LOCK_SIGNAL_LS_KEY && ev.newValue && !isDesktopIdleLockExcludedSurface()) {
+          try {
+            const sig = JSON.parse(ev.newValue);
+            const sigEm = sig && sig.email ? norm(sig.email) : '';
+            if (sigEm && curEm && sigEm === curEm) {
+              triggerDesktopIdleAutoLock(effectiveSeatIdleLockMin(cur), { fromSiblingTab: true });
+            }
+          } catch (_) {}
+        }
+      });
+    }
     const AUX_DIRTY_MODAL_SEL = '#indDomainEntryModal, #inspModifyDrawer, #indDomainModifyForm, #staffFaceEnrolModal, #staffScheduleModal, #shiftTypeModal, #policyGroupModal, #fatherBackfillModal, #backfillModal, #rateImpactModal, #stepUpAuthModal, #policySimDiffDrawer, #punchDriftModal, #aiBatchIntakeModal, #docPreviewModal, #docCameraModal';
     const ATT_MUTATOR_MODAL_SEL = '#staffFaceEnrolModal, #staffScheduleModal, #shiftTypeModal, #policyGroupModal';
     const ATT_NON_MUTATING_CLICK_SEL = [
@@ -213126,7 +215701,7 @@
       '#ssmNextStaffBtn', '#ssmPrevStaffBtn', '#ssmOpenFaceStudioBtn', '#ssmToggleShiftTableBtn',
       '#ssmCustomizePolicyGroupBtn', '#ssmNewPolicyGroupBtn', '#ssmSaveAsPolicyGroupBtn', '#ssmOpenNewShiftModalBtn',
       '[data-ssm-studio-tab]', '[data-ssm-bu-policy-sim]',
-      '#stmCloseBtn', '#stmCancelBtn', '#stmSaveBtn', '#stmDeleteBtn',
+      '#stmCloseBtn', '#stmCancelBtn', '#stmSaveBtn', '#stmDeleteBtn', '#stmResetExcHoursBtn', '#stmShareBtn',
       '#pgmCloseBtn', '#pgmCancelBtn', '#pgmSaveBtn', '#pgmDeleteBtn', '#pgmSimulateDiffBtn', '#pgmCancelVerEditBtn', '[data-pgm-open-sim]'
     ].join(', ');
     const markAuxFormDirtyIfInside = ev => {
