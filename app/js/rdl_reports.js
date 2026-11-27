@@ -10,6 +10,7 @@
   'use strict';
 
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
+  const r2 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
   const RDL_CATALOG = [
     { id: '01', code: '01', slug: 'daily_ops',     cat: 'Digest',         name: 'Daily Operations',      title: 'Daily Operations',      ar: 'ملخص العمليات اليومية', landscape: true,  params: ['from', 'to'] },
@@ -315,6 +316,7 @@
     const curGlobalSig = `${STATE.period || 'all'}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}`;
     if (STATE.rdl._lastGlobalPeriodSig !== undefined && STATE.rdl._lastGlobalPeriodSig !== curGlobalSig) {
       STATE.rdl._dateTouched = false;
+      STATE.rdl._autoExtendedTo = '';
     }
     STATE.rdl._lastGlobalPeriodSig = curGlobalSig;
     if (!STATE.rdl._dateTouched) {
@@ -341,6 +343,10 @@
         STATE.rdl.params.from = f;
         STATE.rdl.params.to = t;
         STATE.rdl.params.asof = t;
+      }
+      if (STATE.rdl._autoExtendedTo && /^\d{4}-\d{2}-\d{2}$/.test(STATE.rdl._autoExtendedTo) && STATE.rdl._autoExtendedTo > STATE.rdl.params.to) {
+        STATE.rdl.params.to = STATE.rdl._autoExtendedTo;
+        STATE.rdl.params.asof = STATE.rdl._autoExtendedTo;
       }
     }
     return STATE.rdl;
@@ -551,7 +557,9 @@
     { code: '701', name: 'Sales of Aggregates, Sand & Materials / مبيعات البحص والرمل والمواد', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
     { code: '706', name: 'Transport & Hauling Revenue / إيرادات النقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
     { code: '758', name: 'Other Operating Income (Scrap & Sundry Sales) / إيرادات تشغيلية أخرى', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-    { code: '766', name: 'Foreign Exchange Gains / أرباح فروقات الصرف', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+    { code: '766', name: 'Foreign Exchange Gains / أرباح فروقات الصرف', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '709', name: 'Discounts Allowed & Settlement Concessions / الحسومات الممنوحة للزبائن', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'D' },
+    { code: '7733', name: 'Discounts Received on Supplier Settlements / الحسومات المكتسبة من الموردين', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
   ];
 
   // ── Statement books: what the printed statements 02 to 07 may show ───────────────────────────────────────
@@ -942,7 +950,9 @@
       { code: '622', name: 'Contracted Services & General Operations / الخدمات الخارجية والمصاريف العامة', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
       { code: '641', name: 'Staff Salaries, Wages & Benefits / الرواتب والأجور', cls: '6 - Expenses', section: 'Payroll & Personnel', normal: 'D' },
       { code: '701', name: rev701Map[ind] || 'Primary Operating Revenue / الإيرادات التشغيلية', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-      { code: '706', name: 'Ancillary Services, Fees & Recoveries / إيرادات الخدمات والرسوم المساندة', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+      { code: '706', name: 'Ancillary Services, Fees & Recoveries / إيرادات الخدمات والرسوم المساندة', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+      { code: '709', name: 'Discounts Allowed & Settlement Concessions / الحسومات الممنوحة للزبائن', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'D' },
+      { code: '7733', name: 'Discounts Received on Supplier Settlements / الحسومات المكتسبة من الموردين', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
     ];
   }
 
@@ -955,7 +965,6 @@
     const settlementLedgerAll = [];
     const fuelAll = [];
     const extraReceipts = [];
-    const r2 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
     const pushSale = s => {
       const tot = r2(s.total_usd);
@@ -993,6 +1002,8 @@
     const pushRcpt = rc => {
       const amt = r2(rc.paid_usd || rc.amount || 0);
       if (Math.abs(amt) < 0.005) return;
+      const cashUsd = rc.cash_usd !== undefined ? r2(rc.cash_usd) : amt;
+      const discUsd = rc.discount_usd !== undefined ? r2(rc.discount_usd) : 0;
       const id = String(rc.id || ('RCPT-' + (receiptLedgerAll.length + 1)));
       const d = String(rc.date || '2026-09-30').slice(0, 10);
       receiptLedgerAll.push({
@@ -1013,6 +1024,8 @@
         vat_usd: 0,
         total_usd: 0,
         paid_usd: amt,
+        cash_usd: cashUsd,
+        discount_usd: discUsd,
         balance_usd: -amt,
         pay_method: rc.pay_method || 'Bank / Fresh USD',
         is_cash: false,
@@ -1230,11 +1243,16 @@
           });
         }
       });
-      (re.receipts || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+      (re.receipts || []).filter(r => coMatch(r.company, co, allowedCos) && !/^Security Deposit$/i.test(String(r.type || '').trim())).forEach(r => {
+        const cashUsd = r2(Math.max(0, Number(r.gross_usd || 0) - Number(r.deposit_gl4196_usd || 0)));
+        const rawDisc = r2(Math.max(0, Number(r.discount_usd || 0)));
+        const discUsd = r.allocated_inv_usd != null ? r2(Math.min(rawDisc, Math.max(0, Number(r.allocated_inv_usd || 0)))) : rawDisc;
+        const effPaid = r2(cashUsd + discUsd);
+        if (!(effPaid > 0.005)) return;
         pushRcpt({
           id: r.id, ref: r.id, date: r.date, co: r.company,
           customer: r.tenant, site: r.property, pay_method: r.method || 'Bank Transfer',
-          paid_usd: r.allocated_inv_usd || r.gross_usd
+          paid_usd: effPaid, cash_usd: cashUsd, discount_usd: discUsd
         });
       });
       (re.workorders || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -1315,17 +1333,21 @@
     }
 
     (rawReceipts || []).forEach(rc => {
+      const cashUsd = r2(rc.amount != null ? Number(rc.amount || 0) : Number(rc.usd_amount || 0));
+      const discUsd = r2(rc.discount || 0);
       pushRcpt({
         id: rc.id, ref: rc.name || rc.id, date: rc.date, co: rc.company || co,
         customer: rc.customer || 'Client Account', site: rc.notes || 'Receipt',
-        pay_method: rc.method || 'Cash USD', paid_usd: Number(rc.usd_amount || rc.amount || 0)
+        pay_method: rc.method || 'Cash USD', paid_usd: r2(cashUsd + discUsd), cash_usd: cashUsd, discount_usd: discUsd
       });
     });
     (rawSettlements || []).forEach(s => {
       if (!s || s.voided) return;
       const mth = String(s.method || 'Payment').trim();
-      if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|iva|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
-      const amt = r2(Number(s.usd_amount != null ? s.usd_amount : (s.amount || 0)) + Number(s.discount || 0));
+      if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
+      const cashUsd = r2(s.amount != null ? Number(s.amount || 0) : Number(s.usd_amount || 0));
+      const discUsd = r2(s.discount != null ? Number(s.discount || 0) : Number(s.diff || 0));
+      const amt = r2(cashUsd + discUsd);
       if (Math.abs(amt) > 0.005) {
         settlementLedgerAll.push({
           id: s.id, date: s.date, rep_date: s.rep_date || s.date, co: s.company || co,
@@ -1333,7 +1355,7 @@
           payable_leg: String(s.payable_leg || '').trim().toLowerCase(),
           pay_method: s.method || 'Bank', material: s.notes || 'Supplier Settlement',
           supplier: s.supplier || 'Vendor', driver: '', plate: '', qty: 0, unit: 'USD',
-          unit_price: 0, total_usd: 0, paid_usd: amt, is_settlement_row: true
+          unit_price: 0, total_usd: 0, paid_usd: amt, cash_usd: cashUsd, discount_usd: discUsd, is_settlement_row: true
         });
       }
     });
@@ -1677,7 +1699,9 @@
       rawReceipts.forEach(rc => {
         const m = String(rc.method || '').trim();
         if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
-        const amt = Number(rc.usd_amount !== undefined ? rc.usd_amount : (rc.amount || 0)) + Number(rc.discount || 0);
+        const cashPaid = r2(rc.amount != null ? Number(rc.amount || 0) : Number(rc.usd_amount || 0));
+        const discUsd = r2(rc.discount != null ? Number(rc.discount || 0) : 0);
+        const amt = r2(cashPaid + discUsd);
         if (Math.abs(amt) < 0.005) return;
         receiptLedgerAll.push({
           id: rc.id,
@@ -1697,6 +1721,8 @@
           vat_usd: 0,
           total_usd: 0,
           paid_usd: amt,
+          cash_usd: cashPaid,
+          discount_usd: discUsd,
           balance_usd: -amt,
           pay_method: rc.method || 'Cash',
           is_receipt_row: true
@@ -1856,9 +1882,9 @@
       });
       rawSettlements.forEach(s => {
         const m = String(s.method || '').trim();
-        const usd = Number(s.usd_amount !== undefined ? s.usd_amount : (s.amount || 0));
-        const diff = Number(s.diff !== undefined ? s.diff : (s.discount || 0));
-        const amt = usd + diff;
+        const usd = r2(s.amount != null ? Number(s.amount || 0) : Number(s.usd_amount || 0));
+        const diff = r2(s.discount != null ? Number(s.discount || 0) : Number(s.diff || 0));
+        const amt = r2(usd + diff);
         if (m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m.toLowerCase() === 'vat paid') {
           if (Math.abs(amt) >= 0.005) {
             vatPaidAll.push({
@@ -1895,6 +1921,8 @@
           unit_price: 0,
           total_usd: 0,
           paid_usd: amt,
+          cash_usd: usd,
+          discount_usd: diff,
           is_settlement_row: true
         });
       });
@@ -2632,19 +2660,31 @@
     (ctx.receiptLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || Math.abs(paid) < 0.005) return;
+      const cash = r.cash_usd !== undefined ? Number(r.cash_usd || 0) : paid;
+      const disc = r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0;
+      const tot = r2(cash + disc);
+      if (!d || (Math.abs(tot) < 0.005 && Math.abs(cash) < 0.005 && Math.abs(disc) < 0.005)) return;
       txOf(r, d);
       const cust = r.customer || 'Customer';
       const ref = String(r.invoice_no || r.ticket_no || 'RCPT');
       // Config and VATConfig are carried balances, not cash (owner 2026-11-18): clearing 467, never Cash 531.
       const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : (r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531');
-      if (paid > 0) {
-        pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, paid, 0);
-        pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, paid);
-      } else {
-        pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, Math.abs(paid), 0);
-        pushJe(d, ref, 'AR Adjustment', clearAcct, cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, 0, Math.abs(paid));
+      if (clearAcct === '467') {
+        if (tot > 0) {
+          pushJe(d, ref, 'Collection', '467', cust, `Customer receipt (${r.pay_method || 'Config'})`, tot, 0);
+          pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Config'})`, 0, tot);
+        } else {
+          pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, Math.abs(tot), 0);
+          pushJe(d, ref, 'AR Adjustment', '467', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, 0, Math.abs(tot));
+        }
+        return;
       }
+      if (cash > 0.004) pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, cash, 0);
+      else if (cash < -0.004) pushJe(d, ref, 'AR Adjustment', clearAcct, cust, `Customer balance adjustment (${r.pay_method || 'Cash'})`, 0, Math.abs(cash));
+      if (disc > 0.004) pushJe(d, ref, 'Settlement Discount', '709', cust, `Customer settlement discount (${r.pay_method || 'Payment'})`, disc, 0);
+      else if (disc < -0.004) pushJe(d, ref, 'Settlement Discount', '709', cust, `Customer discount reversal (${r.pay_method || 'Payment'})`, 0, Math.abs(disc));
+      if (tot > 0.004) pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, tot);
+      else if (tot < -0.004) pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Cash'})`, Math.abs(tot), 0);
     });
 
     (ctx.apRmLegsAll || ctx.rmAll).forEach(r => {
@@ -2677,18 +2717,30 @@
     (ctx.settlementLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || Math.abs(paid) < 0.005) return;
+      const cash = r.cash_usd !== undefined ? Number(r.cash_usd || 0) : paid;
+      const disc = r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0;
+      const tot = r2(cash + disc);
+      if (!d || (Math.abs(tot) < 0.005 && Math.abs(cash) < 0.005 && Math.abs(disc) < 0.005)) return;
       txOf(r, d);
       const sup = r.supplier || 'Supplier';
       const ref = String(r.voucher || r.name || 'SETL');
       const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : '531';
-      if (paid > 0) {
-        pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', paid, 0);
-        pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, paid);
-      } else {
-        pushJe(d, ref, 'AP Adjustment', clearAcct, sup, r.material || 'Supplier Balance Adjustment', Math.abs(paid), 0);
-        pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(paid));
+      if (clearAcct === '467') {
+        if (tot > 0) {
+          pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', tot, 0);
+          pushJe(d, ref, 'Supplier Payment', '467', sup, r.material || 'Supplier Settlement', 0, tot);
+        } else {
+          pushJe(d, ref, 'AP Adjustment', '467', sup, r.material || 'Supplier Balance Adjustment', Math.abs(tot), 0);
+          pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(tot));
+        }
+        return;
       }
+      if (tot > 0.004) pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', tot, 0);
+      else if (tot < -0.004) pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(tot));
+      if (cash > 0.004) pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, cash);
+      else if (cash < -0.004) pushJe(d, ref, 'AP Adjustment', clearAcct, sup, r.material || 'Supplier Balance Adjustment', Math.abs(cash), 0);
+      if (disc > 0.004) pushJe(d, ref, 'Settlement Discount', '7733', sup, r.material || 'Supplier Settlement Discount', 0, disc);
+      else if (disc < -0.004) pushJe(d, ref, 'Settlement Discount', '7733', sup, r.material || 'Supplier Discount Reversal', Math.abs(disc), 0);
     });
 
     // Diesel drawn from the tank, at the purchase cost of the litres in it (costDieselStock). Only for companies whose
@@ -3280,7 +3332,7 @@
 
     const totM3 = sales.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totRev = sales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+    const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0)), 0);
     const totExp = exps.reduce((s, r) => s + Number(r.total_usd || 0), 0) + rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
 
@@ -3312,7 +3364,7 @@
     rcpts.forEach(r => {
       const d = rowDate(r, ctx.basis);
       const g = byDay.get(d) || { date: d, loads: 0, m3: 0, sales: 0, collected: 0, exp: 0, rm: 0, fuelL: 0 };
-      g.collected += Number(r.paid_usd || 0);
+      g.collected += Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0));
       byDay.set(d, g);
     });
     exps.forEach(r => {
@@ -3534,7 +3586,7 @@
       e.total += signed;
       e.touched = true;
     });
-    const DEMO_HIDDEN = ['6222', '666', '766']; // not part of the sample chart
+    const DEMO_HIDDEN = ['6222', '666', '766', '709', '7733']; // not part of the sample chart
     const keep = code => { const e = byAcct.get(code); return Boolean(e && (demo ? (!DEMO_HIDDEN.includes(code) || e.touched) : e.touched)); };
     const revCodes = [...byAcct.keys()].filter(c => c.startsWith('7') && keep(c));
     const expCodes = [...byAcct.keys()].filter(c => c.startsWith('6') && keep(c));
@@ -3637,7 +3689,7 @@
       if (j.date < from) { m.openDr += j.debit; m.openCr += j.credit; }
       else if (j.date <= to) { m.perDr += j.debit; m.perCr += j.credit; }
     });
-    const DEMO_HIDDEN = ['181', '428', '4619', '6222', '666', '766'];
+    const DEMO_HIDDEN = ['181', '428', '4619', '6222', '666', '766', '709', '7733'];
     const t = { openDr: 0, openCr: 0, perDr: 0, perCr: 0, closeDr: 0, closeCr: 0 };
     const rows = [];
     coaList.forEach(a => {
@@ -5082,6 +5134,72 @@
       </div>`;
   }
 
+  function _fmtStmtUnsignedOrNeg(v) {
+    const n = r2(v);
+    return n >= -0.004 ? fmtUsd(Math.max(0, n), 2) : fmtUsdSigned(n, 2);
+  }
+
+  function _computeStmt14PeriodBreakdown(periodRows, canBooks) {
+    if (!canBooks) {
+      return { totCashReceived: 0, totDiscount: 0, totCarried: 0, totSettled: 0, hasPeriodDiscounts: false };
+    }
+    let rawCash = 0;
+    let rawDisc = 0;
+    let rawCarried = 0;
+    let rawSettled = 0;
+    (periodRows || []).forEach(r => {
+      const settled = Number((r && r.paid_usd) || 0);
+      const mth = String((r && (r.pay_method || r.method)) || '').trim();
+      const isCfg = /^(?:VAT)?Config$/i.test(mth);
+      if (Math.abs(settled) < 0.005 && !(r && r.cash_usd !== undefined && Math.abs(Number(r.discount_usd || 0)) >= 0.005)) return;
+      rawSettled += settled;
+      if (isCfg) {
+        rawCarried += settled;
+      } else if (r && r.cash_usd !== undefined) {
+        rawCash += Number(r.cash_usd || 0);
+        rawDisc += Number(r.discount_usd || 0);
+      } else {
+        rawCash += settled;
+      }
+    });
+    const totSettled = r2(rawSettled);
+    const totCarried = r2(rawCarried);
+    const totDiscount = r2(rawDisc);
+    let totCashReceived = r2(rawCash);
+    if (Math.abs((totCashReceived + totCarried + totDiscount) - totSettled) <= 0.02) {
+      totCashReceived = r2(totSettled - totCarried - totDiscount);
+    }
+    return {
+      totCashReceived,
+      totDiscount,
+      totCarried,
+      totSettled,
+      hasPeriodDiscounts: Math.abs(totDiscount) >= 0.005
+    };
+  }
+
+  function _renderStmtSettleTieoutHtml(opts) {
+    if (!opts || !opts.hasPeriodDiscounts) return '';
+    const items = [
+      { cls: 'is-cash', lbl: opts.cashLabel, val: _fmtStmtUnsignedOrNeg(opts.cashUsd) }
+    ];
+    if (Math.abs(Number(opts.carriedUsd || 0)) >= 0.005) {
+      items.push({ cls: 'is-carried', lbl: 'Carried Balance', val: _fmtStmtUnsignedOrNeg(opts.carriedUsd) });
+    }
+    items.push(
+      { cls: 'is-disc', lbl: 'Discounts', val: _fmtStmtUnsignedOrNeg(opts.discountUsd) },
+      { cls: 'is-total', lbl: 'Total Settled', val: _fmtStmtUnsignedOrNeg(opts.settledUsd) }
+    );
+    return `
+      <div class="rdl-settle-tieout" id="${esc(opts.id)}" data-stmt-settle-tieout="${esc(opts.stmtCode)}">
+        <span class="rdl-settle-tieout-title">${esc(opts.title || 'Period Settlement Breakdown')}</span>
+        <div class="rdl-settle-tieout-items">
+          ${items.map((it, i) => `${i > 0 ? '<span class="rdl-settle-tieout-sep" aria-hidden="true" data-no-i18n="1">·</span>' : ''}<span class="rdl-settle-tieout-item ${it.cls}"><span class="rdl-settle-tieout-lbl">${esc(it.lbl)}</span><b class="mono" data-no-i18n="1">${esc(it.val)}</b></span>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function render14CustomerStatement(meta, ctx) {
     const lSoa14 = _rdlSeatLens(ctx);
     const p = ctx.rdl.params;
@@ -5110,6 +5228,7 @@
     const totCr = periodRows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const totM3 = periodRows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const closingBal = runBal + totDr - totCr;
+    const bd14 = _computeStmt14PeriodBreakdown(periodRows, lSoa14.books);
     const siteList = [...new Set(allCustRows.filter(r => !r.is_receipt_row).map(r => r.site).filter(Boolean))].slice(0, 3).join(' · ');
     const dash = '-';
 
@@ -5181,6 +5300,17 @@
           </tr>
         </tfoot>
       </table>
+      ${_renderStmtSettleTieoutHtml({
+        id: 'stmt14SettleTieout',
+        stmtCode: '14',
+        hasPeriodDiscounts: bd14.hasPeriodDiscounts,
+        title: 'Period Settlement Breakdown',
+        cashLabel: 'Cash Received',
+        cashUsd: bd14.totCashReceived,
+        carriedUsd: bd14.totCarried,
+        discountUsd: bd14.totDiscount,
+        settledUsd: bd14.totSettled
+      })}
       ${signatureRowHtml('Prepared by Accounting / إعداد المحاسبة', 'Customer Confirmation / مصادقة الزبون')}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
@@ -5313,6 +5443,649 @@
     return { en: 'All Payable Legs', ar: 'كافة الأطراف (شامل)', fr: 'Tous les volets' };
   }
 
+  // ---- Statement 16 Leg-Scoped Vendor Statement Discrepancy Matcher (Hard Rule 15) ----
+  const _STMT16_GENERIC_REFS = new Set(['', '-', 'rm', 'exp', 'setl', 'st', 'lc', 'na', 'n/a', 'none']);
+  const _STMT16_SUMMARY_LINE_RE = /(?:^|\b)(?:total|subtotal|sub-total|grand\s+total|opening\s+bal(?:ance)?|closing\s+bal(?:ance)?|balance\s+(?:forward|b\/f|c\/f)|brought\s+forward|carried\s+forward|net\s+payable(?:\s+balance)?|solde\s+(?:initial|final|antérieur|d['’]ouverture|à\s+payer)|total\s+g[eé]n[eé]ral)(?:\b|$)|المجموع|الإجمالي|إجمالي\s+الفترة|رصيد\s*(?:مدور|سابق|نهائي|افتتاحي|مستحق)/i;
+  const _STMT16_CLOSING_LINE_RE = /(?:closing\s+bal(?:ance)?|net\s+payable(?:\s+balance)?|solde\s+(?:final|net|à\s+payer)|الرصيد\s*(?:النهائي|المستحق))/i;
+  const _STMT16_HEADER_LINE_RE = /^\s*(?:date|tx\s*date|voucher|ref|reference|description|amount|debit|credit|invoiced|paid)\b/i;
+
+  let _stmt16CompareState = {
+    open: false,
+    scopeSig: '',
+    text: '',
+    statusMsg: '',
+    statusTone: '',
+    busy: false,
+    scopeMode: 'auto',
+    filterChip: 'exceptions',
+    lastResult: null,
+    scanGen: 0
+  };
+
+  function resetStmt16CompareState() {
+    _stmt16CompareState.open = false;
+    _stmt16CompareState.scopeSig = '';
+    _stmt16CompareState.text = '';
+    _stmt16CompareState.statusMsg = '';
+    _stmt16CompareState.statusTone = '';
+    _stmt16CompareState.busy = false;
+    _stmt16CompareState.scopeMode = 'auto';
+    _stmt16CompareState.filterChip = 'exceptions';
+    _stmt16CompareState.lastResult = null;
+    _stmt16CompareState.scanGen += 1;
+  }
+
+  function _stmt16CompareScopeSig(ctx, m) {
+    const l = (m && m.lAp16) || _rdlSeatLens(ctx);
+    const st = (ctx && ctx.state) || {};
+    const uid = st.activeUserId != null && st.activeUserId !== '' ? String(st.activeUserId) : (st.activeUserIdx != null ? String(st.activeUserIdx) : '');
+    const aCos = Array.isArray(st.allowedCompanyNames) ? st.allowedCompanyNames.join(',') : '';
+    return `${ctx.ind || ''}|${ctx.co || ''}|${(m && m.supName) || ''}|${ctx.basis || 'tx'}|${l.books ? 1 : 0}|${st._officialScopeActive ? 1 : 0}|${uid}|${aCos}`;
+  }
+
+  function _syncStmt16CompareScope(ctx, m) {
+    const sig = _stmt16CompareScopeSig(ctx, m);
+    if (_stmt16CompareState.scopeSig && _stmt16CompareState.scopeSig !== sig) {
+      resetStmt16CompareState();
+    }
+    _stmt16CompareState.scopeSig = sig;
+  }
+
+  function _normStmt16CmpRef(raw) {
+    const clean = String(raw == null ? '' : raw).trim().toLowerCase().replace(/^#+/, '').replace(/\s+/g, '');
+    return _STMT16_GENERIC_REFS.has(clean) ? '' : clean;
+  }
+
+  function _normStmt16CmpDate(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) {
+      const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (m) {
+      const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+
+  function _parseStmt16CmpMoney(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s || /^(?:lbp|ll)\b/i.test(s) || /\b(?:lbp|ll)\s*$/i.test(s)) return NaN;
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)) return NaN;
+    const isParen = /^\([^)]+\)$/.test(s);
+    const cleaned = s.replace(/[\$€£,\s]/g, '').replace(/^(?:usd)|(?:usd)$/gi, '').replace(/[()]/g, '');
+    if (!/^[+-]?\d+(?:\.\d+)?$/.test(cleaned)) return NaN;
+    const v = Number(cleaned);
+    if (!Number.isFinite(v)) return NaN;
+    return isParen && v > 0 ? -v : v;
+  }
+
+  function _splitCsvRespectQuotes(line) {
+    const out = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  function _dayDiffIso(a, b) {
+    if (!a || !b) return 9999;
+    const ta = Date.parse(`${a}T00:00:00Z`);
+    const tb = Date.parse(`${b}T00:00:00Z`);
+    if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 9999;
+    return Math.round(Math.abs(ta - tb) / 86400000);
+  }
+
+  function parseStmt16VendorSoaText(rawText) {
+    const lines = String(rawText || '').replace(/\r\n?/g, '\n').split('\n');
+    const rows = [];
+    let statedClosingBalance = null;
+    let skippedSummaryCount = 0;
+    const unparsedLines = [];
+    const PAY_KW = /\b(?:payment|paid|settlement|receipt|transfer|wire|cheque|check|settl)\b|دفعة|تسديد|سداد|تحويل|شيك|r[eè]glement|paiement|virement/i;
+    const INV_KW = /\b(?:invoice|bill|credit|claim|supply|freight|customs|clearing|charge|inv)\b|فاتورة|توريد|استحقاق|facture/i;
+
+    lines.forEach((rawLine, idx) => {
+      const trimmed = String(rawLine || '').trim();
+      if (!trimmed) return;
+      const metaClose = trimmed.match(/^#\s*STATED_CLOSING:\s*([+-]?\d+(?:\.\d+)?)/i);
+      if (metaClose) {
+        const cv = Number(metaClose[1]);
+        if (Number.isFinite(cv)) statedClosingBalance = Math.round(cv * 100) / 100;
+        return;
+      }
+      if (trimmed.startsWith('#')) return;
+      if (_STMT16_SUMMARY_LINE_RE.test(trimmed)) {
+        skippedSummaryCount += 1;
+        if (_STMT16_CLOSING_LINE_RE.test(trimmed)) {
+          const numMatches = trimmed.match(/\(?\s*[+-]?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g) || [];
+          for (let k = numMatches.length - 1; k >= 0; k--) {
+            const mv = _parseStmt16CmpMoney(numMatches[k]);
+            if (Number.isFinite(mv)) {
+              statedClosingBalance = Math.round(mv * 100) / 100;
+              break;
+            }
+          }
+        }
+        return;
+      }
+      if (_STMT16_HEADER_LINE_RE.test(trimmed) && !/\d{2,}/.test(trimmed)) return;
+
+      let cols = null;
+      if (trimmed.includes('|')) cols = trimmed.split('|').map(c => c.trim());
+      else if (trimmed.includes('\t')) cols = trimmed.split('\t').map(c => c.trim());
+      else if (trimmed.includes(';')) cols = trimmed.split(';').map(c => c.trim());
+      else if (trimmed.includes(',')) {
+        const probeNoQuotes = trimmed.replace(/"[^"]*"/g, '').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+        if (probeNoQuotes.includes(',')) {
+          const csvProtected = trimmed.replace(/"[^"]*"|([+-]?\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d+))|(\$\s*\d{1,3}(?:,\d{3})+)|((?<!\d)\d{1,3}(?:,\d{3})+(?!\d))/g, (m0, g1, g2, g3) => {
+            if (g1 || g2 || g3) return m0.replace(/,/g, '');
+            return m0;
+          });
+          const csvCols = _splitCsvRespectQuotes(csvProtected);
+          if (csvCols.length >= 2) cols = csvCols;
+        }
+      }
+
+      let date = '', ref = '', kind = '', amount = NaN, desc = '';
+      if (cols && cols.length >= 2) {
+        const numTokens = [];
+        const textTokens = [];
+        cols.forEach(c => {
+          if (!c || c === '-') return;
+          const dHit = !date ? _normStmt16CmpDate(c) : '';
+          if (dHit) { date = dHit; return; }
+          if (/^(?:invoice|inv|bill|credit|claim|facture)$/i.test(c)) { kind = 'invoice'; return; }
+          if (/^(?:payment|paid|settlement|settl|receipt|paiement|règlement)$/i.test(c)) { kind = 'payment'; return; }
+          const mHit = _parseStmt16CmpMoney(c);
+          if (Number.isFinite(mHit)) { numTokens.push(mHit); return; }
+          textTokens.push(c);
+        });
+        if (!ref && textTokens.length) ref = textTokens[0];
+        if (textTokens.length > 1) desc = textTokens.slice(1).join(' · ');
+        else if (textTokens.length === 1) desc = textTokens[0];
+        if (numTokens.length === 1) {
+          amount = numTokens[0];
+        } else if (numTokens.length >= 2) {
+          // Two numeric columns (e.g. Debit/Paid | Credit/Invoiced, or Invoiced | Paid)
+          const nonZero = numTokens.filter(v => Math.abs(v) > 0.004);
+          amount = nonZero.length ? nonZero[nonZero.length - 1] : numTokens[numTokens.length - 1];
+        }
+      } else {
+        // Free-form text line (e.g. WhatsApp line: 2026-10-15 #INV-442 $1,250.00 Aggregate)
+        let work = trimmed;
+        const dm = work.match(/\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})\b/);
+        if (dm) {
+          date = _normStmt16CmpDate(dm[1]);
+          work = (work.slice(0, dm.index) + ' ' + work.slice(dm.index + dm[0].length)).trim();
+        }
+        const rm = work.match(/(?:#|ref[:\s]+|inv[:\s]+|bl[:\s]+)([A-Za-z0-9\-_/]+)/i) || work.match(/\b([A-Za-z]{1,6}[-_/]?\d{2,}[A-Za-z0-9\-_/]*)\b/);
+        if (rm) {
+          ref = rm[1];
+          work = (work.slice(0, rm.index) + ' ' + work.slice(rm.index + rm[0].length)).trim();
+        }
+        const ams = work.match(/\(?\s*[+-]?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g) || [];
+        for (let k = ams.length - 1; k >= 0; k--) {
+          const mv = _parseStmt16CmpMoney(ams[k]);
+          if (Number.isFinite(mv)) {
+            amount = mv;
+            const pos = work.lastIndexOf(ams[k]);
+            if (pos >= 0) work = (work.slice(0, pos) + ' ' + work.slice(pos + ams[k].length)).trim();
+            break;
+          }
+        }
+        desc = work.replace(/\s+/g, ' ').trim();
+      }
+
+      if (!Number.isFinite(amount)) {
+        unparsedLines.push(trimmed);
+        return;
+      }
+      if (!kind) {
+        if (PAY_KW.test(`${ref} ${desc}`)) kind = 'payment';
+        else if (INV_KW.test(`${ref} ${desc}`)) kind = 'invoice';
+        else kind = 'invoice';
+      }
+      const roundAmt = Math.round(Math.abs(amount) * 100) / 100;
+      const signedAmt = (kind === 'invoice' && amount < -0.005) ? -roundAmt : roundAmt;
+      rows.push({
+        idx: rows.length,
+        lineNo: idx + 1,
+        rawLine: trimmed,
+        date,
+        ref: String(ref || '-').trim() || '-',
+        refNorm: _normStmt16CmpRef(ref),
+        kind,
+        amount: signedAmt,
+        desc: String(desc || ref || '-').trim()
+      });
+    });
+
+    return { rows, statedClosingBalance, skippedSummaryCount, unparsedLines };
+  }
+
+  function compareStmt16WithVendorRows(ctx, m, vendorInput, opts = {}) {
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const parsed = (vendorInput && Array.isArray(vendorInput.rows))
+      ? vendorInput
+      : parseStmt16VendorSoaText(typeof vendorInput === 'string' ? vendorInput : '');
+    const vendorRows = parsed.rows || [];
+
+    const reqScope = String((opts && opts.scope) || 'auto').toLowerCase();
+    const hasVendorPayments = vendorRows.some(r => r.kind === 'payment');
+    const effScope = !canBooks
+      ? 'invoices'
+      : (reqScope === 'all' || reqScope === 'invoices' || reqScope === 'payments'
+          ? reqScope
+          : (hasVendorPayments ? 'all' : 'invoices'));
+
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const matchScopeKind = it => effScope === 'invoices' ? it.kind === 'invoice' : (effScope === 'payments' ? it.kind === 'payment' : true);
+    const toIsabiEntries = (t, fallbackIdx) => {
+      const sIdx = t._stmtIdx != null ? t._stmtIdx : fallbackIdx;
+      const crVal = round2Local(t.cr || 0);
+      const drVal = canBooks ? round2Local(t.dr || 0) : 0;
+      const base = {
+        stmtIdx: sIdx,
+        date: String(t.date || '').slice(0, 10),
+        ref: String(t.ref || '-').trim() || '-',
+        refNorm: _normStmt16CmpRef(t.ref),
+        leg: String(t.leg || 'material'),
+        type: String(t.type || ''),
+        desc: String(t.desc || '')
+      };
+      if (Math.abs(crVal) > 0.005 && drVal > 0.005) {
+        return [
+          Object.assign({}, base, { kind: 'invoice', amount: crVal }),
+          Object.assign({}, base, { kind: 'payment', amount: drVal })
+        ];
+      }
+      if (drVal > 0.005 && Math.abs(crVal) <= 0.005) {
+        return [Object.assign({}, base, { kind: 'payment', amount: drVal })];
+      }
+      return [Object.assign({}, base, { kind: 'invoice', amount: crVal })];
+    };
+
+    const isabiPeriodAll = (m && Array.isArray(m.periodRows) ? m.periodRows : [])
+      .flatMap((t, i) => toIsabiEntries(t, i))
+      .filter(it => (canBooks || it.kind !== 'payment') && matchScopeKind(it));
+
+    const otherPool = (m && Array.isArray(m.allLegsTx) ? m.allLegsTx : [])
+      .flatMap((t, i) => toIsabiEntries(t, i))
+      .filter(it => (canBooks || it.kind !== 'payment') && matchScopeKind(it))
+      .filter(it => {
+        const diffLeg = Boolean(m && m.leg && m.leg !== 'ALL' && it.leg !== m.leg);
+        const outWindow = Boolean(m && m.from && m.to && it.date && (it.date < m.from || it.date > m.to));
+        return diffLeg || outWindow;
+      });
+
+    // Exclude payment lines when !canBooks or scoped to Invoices Only (never leak settlement counts/deltas)
+    const activeVendorRows = vendorRows.filter(r => (canBooks || r.kind !== 'payment') && matchScopeKind(r));
+    const usedVendor = new Set();
+    const usedIsabi = new Set();
+    const pairs = [];
+    const matchedVendorKeys = new Set();
+    const isabiStatusByRow = new Map();
+    const setIsabiRowStatus = (stmtIdx, hit) => {
+      if (stmtIdx == null) return;
+      const prio = { amount_delta: 1, in_isabi_only: 2, matched: 3 };
+      const prev = isabiStatusByRow.get(stmtIdx);
+      if (!prev || (prio[hit.status] ?? 9) <= (prio[prev.status] ?? 9)) {
+        isabiStatusByRow.set(stmtIdx, hit);
+      }
+    };
+
+    const bindPair = (vIdx, iIdx, status, note = '') => {
+      usedVendor.add(vIdx);
+      usedIsabi.add(iIdx);
+      const vr = activeVendorRows[vIdx];
+      const ir = isabiPeriodAll[iIdx];
+      const deltaUsd = round2Local(vr.amount - ir.amount);
+      matchedVendorKeys.add(`${vr.date}|${vr.refNorm}|${vr.kind}|${vr.amount.toFixed(2)}`);
+      pairs.push({
+        status,
+        kind: vr.kind,
+        date: vr.date || ir.date,
+        vendorRef: vr.ref,
+        isabiRef: ir.ref,
+        vendorDesc: vr.desc,
+        isabiDesc: ir.desc,
+        vendorAmt: vr.amount,
+        isabiAmt: ir.amount,
+        deltaUsd,
+        note,
+        stmtIdx: ir.stmtIdx
+      });
+      setIsabiRowStatus(ir.stmtIdx, { status, deltaUsd, vendorRef: vr.ref, vendorAmt: vr.amount });
+    };
+
+    // Pass 1: exact ref + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.refNorm) return;
+      let bestIdx = -1, bestDiff = 9999;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind || ir.refNorm !== vr.refNorm) return;
+        if (Math.abs(vr.amount - ir.amount) > 0.02) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (bestIdx < 0 || dd < bestDiff) { bestIdx = iIdx; bestDiff = dd; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', bestDiff > 0 && bestDiff < 9000 ? `Date ${bestDiff}d offset` : '');
+    });
+
+    // Pass 2: exact ref + kind + amount delta
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.refNorm) return;
+      let bestIdx = -1, bestScore = 1e12;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind || ir.refNorm !== vr.refNorm) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        const ad = Math.abs(vr.amount - ir.amount);
+        const sc = (dd < 9000 ? dd * 1000 : 500000) + ad;
+        if (bestIdx < 0 || sc < bestScore) { bestIdx = iIdx; bestScore = sc; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'amount_delta', 'Same ref, amount differs');
+    });
+
+    // Pass 3: exact date + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      const hitIdx = isabiPeriodAll.findIndex((ir, iIdx) =>
+        !usedIsabi.has(iIdx) && ir.kind === vr.kind && ir.date === vr.date && Math.abs(vr.amount - ir.amount) <= 0.02
+      );
+      if (hitIdx >= 0) bindPair(vIdx, hitIdx, 'matched');
+    });
+
+    // Pass 4: ±3d date + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      let bestIdx = -1, bestDiff = 99;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (dd <= 3 && Math.abs(vr.amount - ir.amount) <= 0.02 && dd < bestDiff) {
+          bestIdx = iIdx; bestDiff = dd;
+        }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', `Date ${bestDiff}d offset`);
+    });
+
+    // Pass 5: unique unmatched ISABI row on same exact date + kind -> amount delta
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      const sameDateUnmatchedV = activeVendorRows.filter((x, xi) => !usedVendor.has(xi) && x.kind === vr.kind && x.date === vr.date);
+      const sameDateUnmatchedI = isabiPeriodAll.map((ir, iIdx) => ({ ir, iIdx })).filter(p => !usedIsabi.has(p.iIdx) && p.ir.kind === vr.kind && p.ir.date === vr.date);
+      if (sameDateUnmatchedV.length === 1 && sameDateUnmatchedI.length === 1) {
+        bindPair(vIdx, sameDateUnmatchedI[0].iIdx, 'amount_delta', 'Same date, amount differs');
+      }
+    });
+
+    // Pass 6 & 7: duplicates, booked other leg / period, or missing in ISABI
+    const usedOther = new Set();
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx)) return;
+      const dupKey = `${vr.date}|${vr.refNorm}|${vr.kind}|${vr.amount.toFixed(2)}`;
+      if (matchedVendorKeys.has(dupKey)) {
+        pairs.push({
+          status: 'duplicate_vendor',
+          kind: vr.kind,
+          date: vr.date,
+          vendorRef: vr.ref,
+          isabiRef: '-',
+          vendorDesc: vr.desc,
+          isabiDesc: 'Duplicate line on vendor statement',
+          vendorAmt: vr.amount,
+          isabiAmt: 0,
+          deltaUsd: vr.amount,
+          note: 'Repeated on vendor statement',
+          stmtIdx: null
+        });
+        return;
+      }
+      const otherIdx = otherPool.findIndex((or, oi) => {
+        if (usedOther.has(oi) || or.kind !== vr.kind) return false;
+        const amtOk = Math.abs(vr.amount - or.amount) <= 0.02;
+        if (vr.refNorm && or.refNorm === vr.refNorm && amtOk) return true;
+        if (vr.date && or.date === vr.date && amtOk) return true;
+        return false;
+      });
+      if (otherIdx >= 0) {
+        usedOther.add(otherIdx);
+        const or = otherPool[otherIdx];
+        const legDisplay = _stmt16LegDisplay(or.leg, ctx && ctx.ind).en;
+        const noteParts = [];
+        if (m && m.leg && m.leg !== 'ALL' && or.leg !== m.leg) noteParts.push(legDisplay);
+        if (m && m.from && m.to && or.date && (or.date < m.from || or.date > m.to)) noteParts.push(or.date);
+        pairs.push({
+          status: 'other_leg_or_period',
+          kind: vr.kind,
+          date: vr.date || or.date,
+          vendorRef: vr.ref,
+          isabiRef: or.ref,
+          vendorDesc: vr.desc,
+          isabiDesc: or.desc,
+          vendorAmt: vr.amount,
+          isabiAmt: or.amount,
+          deltaUsd: 0,
+          note: noteParts.join(' · '),
+          otherLeg: or.leg,
+          otherDate: or.date,
+          stmtIdx: null
+        });
+        return;
+      }
+      pairs.push({
+        status: 'missing_in_isabi',
+        kind: vr.kind,
+        date: vr.date,
+        vendorRef: vr.ref,
+        isabiRef: '-',
+        vendorDesc: vr.desc,
+        isabiDesc: 'Not posted in ISABI',
+        vendorAmt: vr.amount,
+        isabiAmt: 0,
+        deltaUsd: vr.amount,
+        note: '',
+        stmtIdx: null
+      });
+    });
+
+    // Remaining unmatched ISABI period rows
+    isabiPeriodAll.forEach((ir, iIdx) => {
+      if (usedIsabi.has(iIdx)) return;
+      pairs.push({
+        status: 'in_isabi_only',
+        kind: ir.kind,
+        date: ir.date,
+        vendorRef: '-',
+        isabiRef: ir.ref,
+        vendorDesc: 'On ISABI books only',
+        isabiDesc: ir.desc,
+        vendorAmt: 0,
+        isabiAmt: ir.amount,
+        deltaUsd: round2Local(-ir.amount),
+        note: '',
+        stmtIdx: ir.stmtIdx
+      });
+      setIsabiRowStatus(ir.stmtIdx, { status: 'in_isabi_only', deltaUsd: round2Local(-ir.amount), vendorRef: '-', vendorAmt: 0 });
+    });
+
+    const counts = {
+      matched: pairs.filter(r => r.status === 'matched').length,
+      missingInIsabi: pairs.filter(r => r.status === 'missing_in_isabi').length,
+      amountDelta: pairs.filter(r => r.status === 'amount_delta').length,
+      otherLegOrPeriod: pairs.filter(r => r.status === 'other_leg_or_period').length,
+      duplicateVendor: pairs.filter(r => r.status === 'duplicate_vendor').length,
+      inIsabiOnly: pairs.filter(r => r.status === 'in_isabi_only').length
+    };
+    const exceptionsCount = counts.missingInIsabi + counts.amountDelta + counts.otherLegOrPeriod + counts.duplicateVendor + counts.inIsabiOnly;
+    const vendorInvoiceTot = round2Local(activeVendorRows.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
+    const isabiInvoiceTot = round2Local(isabiPeriodAll.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
+    const netDeltaUsd = round2Local(vendorInvoiceTot - isabiInvoiceTot);
+    const statedClosingBalance = canBooks && parsed.statedClosingBalance != null ? parsed.statedClosingBalance : null;
+    const closingDeltaUsd = (canBooks && statedClosingBalance != null)
+      ? round2Local(statedClosingBalance - Number((m && m.closingBal) || 0))
+      : null;
+
+    pairs.sort((a, b) => {
+      const ord = { missing_in_isabi: 0, amount_delta: 1, duplicate_vendor: 2, other_leg_or_period: 3, in_isabi_only: 4, matched: 5 };
+      const oa = ord[a.status] ?? 9, ob = ord[b.status] ?? 9;
+      if (oa !== ob) return oa - ob;
+      return String(a.date || '').localeCompare(String(b.date || ''));
+    });
+
+    return {
+      scope: effScope,
+      canBooks,
+      vendorCount: activeVendorRows.length,
+      isabiCount: isabiPeriodAll.length,
+      skippedSummaryCount: parsed.skippedSummaryCount || 0,
+      counts,
+      exceptionsCount,
+      netDeltaUsd,
+      statedClosingBalance,
+      closingDeltaUsd,
+      rows: pairs,
+      isabiStatusByRow
+    };
+  }
+
+  function _stmt16CmpStatusLabel(status) {
+    if (status === 'matched') return { cls: 'is-good', text: 'Matched' };
+    if (status === 'amount_delta') return { cls: 'is-warn', text: 'Amount Delta' };
+    if (status === 'other_leg_or_period') return { cls: 'is-info', text: 'Other Leg / Date' };
+    if (status === 'duplicate_vendor') return { cls: 'is-err', text: 'Duplicate on SOA' };
+    if (status === 'in_isabi_only') return { cls: 'is-muted', text: 'In ISABI Only' };
+    return { cls: 'is-err', text: 'Missing in ISABI' };
+  }
+
+  function renderStmt16ComparePanelHtml(ctx, m, cmp) {
+    if (!_stmt16CompareState.open) return '';
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const activeScope = cmp ? cmp.scope : (_stmt16CompareState.scopeMode === 'all' ? 'all' : 'invoices');
+    const chip = _stmt16CompareState.filterChip || 'exceptions';
+    const allRows = (cmp && cmp.rows) || [];
+    const shownRows = allRows.filter(r => {
+      if (chip === 'exceptions') return r.status !== 'matched';
+      if (chip === 'missing') return r.status === 'missing_in_isabi';
+      if (chip === 'delta') return r.status === 'amount_delta';
+      if (chip === 'dup') return r.status === 'duplicate_vendor';
+      if (chip === 'isabi_only') return r.status === 'in_isabi_only';
+      if (chip === 'matched') return r.status === 'matched';
+      return true;
+    });
+    const chipBtn = (k, lbl, cnt) => `<button type="button" class="rdl-cmp-chip ${chip === k ? 'active' : ''}" data-stmt16-cmp-chip="${k}"><span>${lbl}</span>${cnt != null ? ` (<span data-no-i18n="1">${cnt}</span>)` : ''}</button>`;
+
+    return `
+      <div class="rdl-stmt16-compare-panel no-print" id="stmt16ComparePanel">
+        <div class="rdl-cmp-head">
+          <div class="rdl-cmp-title-wrap">
+            <span class="rdl-cmp-pill-eyebrow">${ic('sparkles')} <span>Compare Vendor Statement</span></span>
+            <strong data-no-i18n="1">${esc(m.supName)}</strong>
+            <span class="rdl-cmp-leg-tag"><span>${esc(m.legLbl.en)}</span></span>
+          </div>
+          <div class="rdl-cmp-tools">
+            ${canBooks ? `
+              <div class="rdl-cmp-scope-seg" role="group" aria-label="Comparison Scope">
+                <button type="button" class="rdl-cmp-seg-btn ${activeScope !== 'all' ? 'active' : ''}" data-stmt16-cmp-scope="invoices"><span>Invoices Only</span></button>
+                <button type="button" class="rdl-cmp-seg-btn ${activeScope === 'all' ? 'active' : ''}" data-stmt16-cmp-scope="all"><span>All Vouchers</span></button>
+              </div>
+            ` : `<span class="rdl-cmp-leg-tag"><span>Invoices Only</span></span>`}
+            <button type="button" class="rdl-tb-btn" id="stmt16CompareCloseBtn"><span>Close</span></button>
+          </div>
+        </div>
+        <div class="rdl-cmp-dropzone" id="stmt16CompareDropzone">
+          <textarea id="stmt16CompareInput" class="rdl-cmp-textarea" rows="4" spellcheck="false" placeholder="Paste vendor lines or drop PDF / photo / CSV (Date | Ref | Amount)" aria-label="Vendor statement lines">${esc(_stmt16CompareState.text || '')}</textarea>
+          <input type="file" id="stmt16CompareFileInput" accept=".pdf,image/*,.csv,.txt" hidden>
+          <div class="rdl-cmp-bar">
+            <div class="rdl-cmp-status">
+              ${_stmt16CompareState.statusMsg ? `<span class="rdl-cmp-status-badge ${_stmt16CompareState.statusTone || ''}">${esc(_stmt16CompareState.statusMsg)}</span>` : `<span>AI reads PDF or photo lines only; matching is deterministic</span>`}
+            </div>
+            <div class="rdl-cmp-btn-row">
+              <button type="button" class="rdl-tb-btn" id="stmt16CompareScanBtn"${_stmt16CompareState.busy ? ' disabled' : ''}>${ic('upload')} <span>${_stmt16CompareState.busy ? 'Scanning...' : 'Upload PDF / Photo / CSV'}</span></button>
+              <button type="button" class="rdl-tb-btn" id="stmt16CompareClearBtn"><span>Clear</span></button>
+              <button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn" id="stmt16CompareRunBtn">${ic('bolt')} <span>Compare Lines</span></button>
+            </div>
+          </div>
+        </div>
+        ${cmp ? `
+          <div class="rdl-cmp-kpis">
+            <div class="rdl-cmp-kpi is-good"><small>Matched</small><b data-no-i18n="1">${cmp.counts.matched}</b></div>
+            <div class="rdl-cmp-kpi is-err"><small>Missing in ISABI</small><b data-no-i18n="1">${cmp.counts.missingInIsabi}</b></div>
+            <div class="rdl-cmp-kpi is-warn"><small>Amount Delta</small><b data-no-i18n="1">${cmp.counts.amountDelta}</b></div>
+            <div class="rdl-cmp-kpi is-info"><small>Other Leg / Date</small><b data-no-i18n="1">${cmp.counts.otherLegOrPeriod}</b></div>
+            <div class="rdl-cmp-kpi is-muted"><small>In ISABI Only</small><b data-no-i18n="1">${cmp.counts.inIsabiOnly}</b></div>
+            ${cmp.counts.duplicateVendor > 0 ? `<div class="rdl-cmp-kpi is-err"><small>Duplicate on SOA</small><b data-no-i18n="1">${cmp.counts.duplicateVendor}</b></div>` : ''}
+            ${canBooks && cmp.closingDeltaUsd != null ? `<div class="rdl-cmp-kpi ${Math.abs(cmp.closingDeltaUsd) <= 0.02 ? 'is-good' : 'is-warn'}"><small>Closing Variance</small><b class="mono" data-no-i18n="1">${fmtUsdSigned(cmp.closingDeltaUsd, 2)}</b></div>` : ''}
+          </div>
+          <div class="rdl-cmp-chips">
+            ${chipBtn('exceptions', 'Discrepancies', cmp.exceptionsCount)}
+            ${chipBtn('all', 'All Lines', allRows.length)}
+            ${chipBtn('missing', 'Missing in ISABI', cmp.counts.missingInIsabi)}
+            ${chipBtn('delta', 'Amount Delta', cmp.counts.amountDelta)}
+            ${cmp.counts.duplicateVendor > 0 ? chipBtn('dup', 'Duplicate on SOA', cmp.counts.duplicateVendor) : ''}
+            ${chipBtn('isabi_only', 'In ISABI Only', cmp.counts.inIsabiOnly)}
+            ${chipBtn('matched', 'Matched', cmp.counts.matched)}
+          </div>
+          <div class="table-wrap rdl-cmp-table-wrap">
+            <table class="rdl-table rdl-cmp-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Vendor Ref</th>
+                  <th>ISABI Ref</th>
+                  <th>Details</th>
+                  <th class="num">Vendor ($)</th>
+                  <th class="num">ISABI ($)</th>
+                  <th class="num">Delta ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownRows.length ? shownRows.map(r => {
+                  const stLbl = _stmt16CmpStatusLabel(r.status);
+                  const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
+                  return `
+                    <tr>
+                      <td><span class="rdl-cmp-inline-pill ${stLbl.cls}"><span>${stLbl.text}</span></span></td>
+                      <td class="mono" data-no-i18n="1">${esc(r.date || '-')}</td>
+                      <td class="mono" data-no-i18n="1">${esc(r.vendorRef || '-')}</td>
+                      <td class="mono" data-no-i18n="1">${esc(r.isabiRef || '-')}</td>
+                      <td data-no-i18n="1">${esc(dtl)}</td>
+                      <td class="num mono" data-no-i18n="1">${r.vendorAmt ? fmtUsdSigned(r.vendorAmt, 2) : '-'}</td>
+                      <td class="num mono" data-no-i18n="1">${r.isabiAmt ? fmtUsdSigned(r.isabiAmt, 2) : '-'}</td>
+                      <td class="num mono" data-no-i18n="1">${Math.abs(r.deltaUsd || 0) > 0.005 ? fmtUsdSigned(r.deltaUsd, 2) : '$0.00'}</td>
+                    </tr>
+                  `;
+                }).join('') : `<tr><td colspan="8" class="rdl-cmp-empty"><span>${cmp.exceptionsCount === 0 && chip === 'exceptions' ? 'All vendor lines match this Statement 16 leg' : 'No lines in this filter'}</span></td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function _stmt16ToSettlementPayableLeg(leg) {
+    const l = _normStmt16Leg(leg);
+    if (l === 'material') return 'quarry';
+    if (l === 'transport') return 'transportation';
+    if (l === 'expenses') return 'expense';
+    return '';
+  }
+
   function _cleanOutwardCopy(s) {
     return String(s == null ? '' : s)
       .replace(/[\u2014\u2013]/g, '-')
@@ -5333,6 +6106,8 @@
     const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
     const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
     let tx = [];
+    let allLegsTx = [];
+    let unpricedZeroCount = 0;
 
     if (isMfg && typeof window !== 'undefined' && typeof window.__mfgComputeSupplierStatement16Vouchers === 'function') {
       const coKey16 = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
@@ -5346,18 +6121,37 @@
         partySig: sig16,
         partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
       });
-      tx = ((res16 && res16.vouchers) || []).filter(v => {
-        if (!lAp16.books && v.type === 'Settlement') return false;
-        return true;
-      }).map(v => ({
+      const resAll16 = leg === 'ALL'
+        ? res16
+        : window.__mfgComputeSupplierStatement16Vouchers({
+            company: coKey16,
+            basis: ctx.basis,
+            supplier: supName,
+            leg: 'ALL',
+            partySig: sig16,
+            partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
+          });
+      if (res16) {
+        if (leg === 'material') unpricedZeroCount = Number(res16.unpricedMatCount || 0);
+        else if (leg === 'transport') unpricedZeroCount = Number(res16.unpricedTransCount || 0);
+      }
+      const mapMfgVoucher = (v, idx) => ({
+        _stmtIdx: idx,
         date: v.date,
         ref: v.ref || 'RM',
+        co: String(v.co || '').trim(),
         leg: v.leg,
         type: leg === 'ALL' ? `${v.type} [${v.leg === 'material' ? 'Material' : (v.leg === 'transport' ? 'Transport' : 'Expenses')}]` : v.type,
+        pay_method: v.pay_method || '',
         desc: v.desc,
         cr: Number(v.cr || 0),
-        dr: lAp16.books ? Number(v.dr || 0) : 0
-      }));
+        dr: lAp16.books ? Number(v.dr || 0) : 0,
+        cash_usd: lAp16.books ? Number(v.cash_usd !== undefined ? v.cash_usd : (v.dr || 0)) : 0,
+        discount_usd: lAp16.books ? Number(v.discount_usd || 0) : 0,
+        carried_usd: lAp16.books ? Number(v.carried_usd || 0) : 0
+      });
+      tx = ((res16 && res16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
+      allLegsTx = ((resAll16 && resAll16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
     } else {
       const targetKey = normLow(supName);
       const supRmRows = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => normLow(r.supplier) === targetKey);
@@ -5383,33 +6177,51 @@
         } else {
           rowLeg = (r.leg === 'haulage' || r.leg === 'transport') ? 'transport' : 'material';
         }
-        if (leg !== 'ALL' && rowLeg !== leg) return;
         const srcBase = r.is_settlement_row ? 'Settlement' : (rowLeg === 'transport' ? (isMfg ? 'Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
         const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (rowLeg === 'transport' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
-        tx.push({
+        const mth = r.is_settlement_row ? String(r.pay_method || r.method || '').trim() : '';
+        const isCfg = r.is_settlement_row && /^(?:VAT)?Config$/i.test(mth);
+        const rawDr = Number(r.paid_usd || 0);
+        const rawCash = r.is_settlement_row ? (r.cash_usd !== undefined ? Number(r.cash_usd || 0) : rawDr) : rawDr;
+        const rawDisc = r.is_settlement_row ? (r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0) : 0;
+        const rowObj = {
           date: rowDate(r, ctx.basis),
           ref: r.voucher || r.name || 'RM',
+          co: String(r.co || r.company || '').trim(),
           leg: rowLeg,
           type: leg === 'ALL' ? `${srcBase} [${rowLeg === 'material' ? 'Material' : (rowLeg === 'transport' ? 'Transport' : 'Expenses')}]` : srcBase,
+          pay_method: mth,
           desc: descLbl,
           cr: Number(r.total_usd || 0),
-          dr: lAp16.books ? Number(r.paid_usd || 0) : 0
-        });
+          dr: lAp16.books ? rawDr : 0,
+          cash_usd: lAp16.books ? (isCfg ? 0 : rawCash) : 0,
+          discount_usd: lAp16.books ? (isCfg ? 0 : rawDisc) : 0,
+          carried_usd: lAp16.books ? (isCfg ? rawDr : 0) : 0
+        };
+        allLegsTx.push(rowObj);
+        if (leg === 'ALL' || rowLeg === leg) tx.push(rowObj);
       });
-      if (leg === 'ALL' || leg === 'expenses') {
-        supExpRows.forEach(r => {
-          tx.push({
-            date: rowDate(r, ctx.basis),
-            ref: r.voucher_no || r.invoice_no || 'EXP',
-            leg: 'expenses',
-            type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
-            desc: r.description || r.category || 'Vendor Invoice',
-            cr: Number(r.ap_credit_usd || 0),
-            dr: 0
-          });
-        });
-      }
+      supExpRows.forEach(r => {
+        const expObj = {
+          date: rowDate(r, ctx.basis),
+          ref: r.voucher_no || r.invoice_no || 'EXP',
+          co: String(r.co || r.company || '').trim(),
+          leg: 'expenses',
+          type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
+          pay_method: '',
+          desc: r.description || r.category || 'Vendor Invoice',
+          cr: Number(r.ap_credit_usd || 0),
+          dr: 0,
+          cash_usd: 0,
+          discount_usd: 0,
+          carried_usd: 0
+        };
+        allLegsTx.push(expObj);
+        if (leg === 'ALL' || leg === 'expenses') tx.push(expObj);
+      });
       tx.sort((a, b) => a.date.localeCompare(b.date));
+      tx.forEach((t, idx) => { t._stmtIdx = idx; });
+      allLegsTx.sort((a, b) => a.date.localeCompare(b.date));
     }
 
     const fromD = String(p.from || '2024-01-01').slice(0, 10);
@@ -5424,7 +6236,53 @@
     const openBal = lAp16.books ? round2Local(openCr - openDr) : 0;
     const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
     const totDr = lAp16.books ? periodRows.reduce((s, t) => s + t.dr, 0) : 0;
+    const totSettled16 = lAp16.books ? round2Local(totDr) : 0;
+    let totCashPaid = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.cash_usd || 0), 0)) : 0;
+    const totDiscount = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.discount_usd || 0), 0)) : 0;
+    const totCarried = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.carried_usd || 0), 0)) : 0;
+    if (lAp16.books && Math.abs((totCashPaid + totCarried + totDiscount) - totSettled16) <= 0.02) {
+      totCashPaid = round2Local(totSettled16 - totCarried - totDiscount);
+    }
+    const hasPeriodDiscounts = Boolean(lAp16.books && Math.abs(totDiscount) >= 0.005);
     const closingBal = lAp16.books ? round2Local(openBal + totCr - totDr) : 0;
+    const allTimeLegBal = lAp16.books ? round2Local(tx.reduce((s, t) => s + Number(t.cr || 0) - Number(t.dr || 0), 0)) : 0;
+
+    // Per-entity payable balances on this leg (prevents consolidated scope from attributing multi-entity sum to one BU)
+    const fallbackCoName = (ctx.co && ctx.co !== 'ALL') ? String(ctx.co) : '';
+    const allowedSet = (Array.isArray(ctx.allowedCos) && ctx.allowedCos.length) ? new Set(ctx.allowedCos) : null;
+    const coStats = new Map();
+    if (lAp16.books) {
+      tx.forEach(t => {
+        const cNm = String(t.co || fallbackCoName || '').trim();
+        if (!cNm || (allowedSet && !allowedSet.has(cNm))) return;
+        let st = coStats.get(cNm);
+        if (!st) { st = { closing: 0, allTime: 0 }; coStats.set(cNm, st); }
+        const net = Number(t.cr || 0) - Number(t.dr || 0);
+        st.allTime += net;
+        if (t.date <= toD) st.closing += net;
+      });
+    }
+    const byCoOpen = {};
+    const coOpenPairs = [];
+    coStats.forEach((st, cNm) => {
+      const cClose = round2Local(st.closing);
+      const cAll = round2Local(st.allTime);
+      if (cClose > 0.005 && cAll > 0.005) {
+        const safeUsd = round2Local(Math.min(cClose, cAll));
+        byCoOpen[cNm] = safeUsd;
+        coOpenPairs.push([cNm, safeUsd]);
+      }
+    });
+    coOpenPairs.sort((a, b) => b[1] - a[1]);
+
+    const payableLegCode = _stmt16ToSettlementPayableLeg(leg);
+    const settleMultiCo = coOpenPairs.length > 1;
+    const settleTargetCo = coOpenPairs.length ? coOpenPairs[0][0] : fallbackCoName;
+    const rawSafeBal = round2Local(Math.min(closingBal, allTimeLegBal));
+    const settlePrefillUsd = coOpenPairs.length ? round2Local(coOpenPairs[0][1]) : (rawSafeBal > 0.005 ? rawSafeBal : 0);
+    const cappedByPostPeriod = Boolean(leg !== 'ALL' && lAp16.books && closingBal > 0.005 && allTimeLegBal > 0.005 && (allTimeLegBal + 0.005 < closingBal));
+    const settledAfterPeriod = Boolean(leg !== 'ALL' && lAp16.books && closingBal > 0.005 && allTimeLegBal <= 0.005);
+    const canSettleLeg = Boolean(leg !== 'ALL' && payableLegCode && lAp16.books && closingBal > 0.005 && allTimeLegBal > 0.005 && settlePrefillUsd > 0.005);
 
     return {
       lAp16,
@@ -5436,14 +6294,29 @@
       supName,
       leg,
       legLbl,
+      payableLegCode,
       tx,
+      allLegsTx,
       periodRows,
       openCr,
       openDr,
       openBal,
       totCr,
       totDr,
-      closingBal
+      totCashPaid,
+      totDiscount,
+      totCarried,
+      hasPeriodDiscounts,
+      closingBal,
+      allTimeLegBal,
+      byCoOpen,
+      settleTargetCo,
+      settleMultiCo,
+      settlePrefillUsd,
+      cappedByPostPeriod,
+      settledAfterPeriod,
+      canSettleLeg,
+      unpricedZeroCount
     };
   }
 
@@ -5465,6 +6338,9 @@
     const balWordAr = m.closingBal < -0.005 ? 'رصيد مدفوع مقدماً' : 'صافي الرصيد المستحق';
     const balWordFr = m.closingBal < -0.005 ? 'Avance en votre faveur' : 'Solde net à payer';
 
+    const showDiscBreakdown = Boolean(canBooks && m.hasPeriodDiscounts);
+    const hasCarried = Boolean(showDiscBreakdown && Math.abs(Number(m.totCarried || 0)) >= 0.005);
+
     if (lang === 'ar') {
       const lines = [
         `${coInfo.ar || coInfo.short} - مصادقة كشف حساب مورد`,
@@ -5475,6 +6351,9 @@
         canBooks ? `الرصيد الافتتاحي المدور: ${fmtUsdSigned(m.openBal, 2)}` : '',
         `إجمالي الاستحقاق / التوريدات في الفترة: ${fmtUsd(m.totCr, 2)}`,
         canBooks ? `إجمالي الدفعات والتسويات: ${fmtUsd(m.totDr, 2)}` : '',
+        showDiscBreakdown ? `  المدفوع نقداً أو مصرفياً: ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+        hasCarried ? `  رصيد منقول: ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+        showDiscBreakdown ? `  الحسومات المكتسبة: ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
         canBooks ? `${balWordAr}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
       ].filter(Boolean);
       if (latest.length) {
@@ -5498,6 +6377,9 @@
         canBooks ? `Solde d'ouverture : ${fmtUsdSigned(m.openBal, 2)}` : '',
         `Total facturé / crédité : ${fmtUsd(m.totCr, 2)}`,
         canBooks ? `Total réglé : ${fmtUsd(m.totDr, 2)}` : '',
+        showDiscBreakdown ? `  Payé (trésorerie) : ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+        hasCarried ? `  Solde reporté : ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+        showDiscBreakdown ? `  Remises obtenues : ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
         canBooks ? `${balWordFr} : ${fmtUsdSigned(m.closingBal, 2)}` : ''
       ].filter(Boolean);
       if (latest.length) {
@@ -5520,6 +6402,9 @@
       canBooks ? `Opening Balance: ${fmtUsdSigned(m.openBal, 2)}` : '',
       `Period Accrued / Invoiced: ${fmtUsd(m.totCr, 2)}`,
       canBooks ? `Period Settlements Applied: ${fmtUsd(m.totDr, 2)}` : '',
+      showDiscBreakdown ? `  Cash Paid: ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+      hasCarried ? `  Carried Balance: ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+      showDiscBreakdown ? `  Settlement Discounts: ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
       canBooks ? `${balWordEn}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
     ].filter(Boolean);
     if (latest.length) {
@@ -5590,6 +6475,9 @@
             ${canBooks ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>` : ''}
             <div class="hld-share-kpi"><span>Period Accrued</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
             ${canBooks ? `<div class="hld-share-kpi"><span>Settlements Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi"><span>Cash Paid</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCashPaid))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts && Math.abs(Number(m.totCarried || 0)) >= 0.005) ? `<div class="hld-share-kpi"><span>Carried Balance</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCarried))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi is-brass"><span>Discounts</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totDiscount))}</b></div>` : ''}
             ${canBooks ? `<div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>` : ''}
           </div>
           <div class="hld-share-langbar">
@@ -5713,13 +6601,30 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Statement', 'Restricted by seat permissions');
     }
     const m = buildStmt16Model(ctx);
-    const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, closingBal, from, to, dt } = m;
+    const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, totCashPaid, totDiscount, totCarried, hasPeriodDiscounts, closingBal, from, to, dt } = m;
+    const round2Local16 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
     const dash = '-';
     const stObj = ctx.state || {};
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    _syncStmt16CompareScope(ctx, m);
+    const canCompare = Boolean((lAp16.books || lAp16.expenses) && !stObj.kioskLocked);
+    const cmpResult = (canCompare && _stmt16CompareState.open && String(_stmt16CompareState.text || '').trim())
+      ? compareStmt16WithVendorRows(ctx, m, _stmt16CompareState.text, { scope: _stmt16CompareState.scopeMode })
+      : null;
+    _stmt16CompareState.lastResult = cmpResult;
     const retCtx = stObj.stmt16ReturnCtx && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
       ? stObj.stmt16ReturnCtx
       : null;
     const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
+    const compareBtnHtml = canCompare
+      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn${_stmt16CompareState.open ? ' active' : ''}" id="stmt16CompareBtn">${ic('sparkles')} <span>Compare Vendor Statement</span></button>`
+      : '';
+    const canEnterSettle = Boolean(lAp16.books && !stObj.kioskLocked && ent && typeof ent.canEnterForm === 'function' && ent.canEnterForm('settlement'));
+    const settleBtnHtml = (canEnterSettle && m.canSettleLeg)
+      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-settle-btn" id="stmt16SettleLegBtn" data-stmt16-settle="1">${ic('check_circle')} <span>+ Settle Matched Leg</span></button>`
+      : ((canEnterSettle && m.settledAfterPeriod)
+          ? `<span class="rdl-stmt16-settled-note" data-stmt16-settled-later="1">${ic('check_circle')} <span>Settled after statement period</span></span>`
+          : '');
     const shareBtnHtml = `<button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt16ShareConfirmBtn">${ic('send_msg')} <span>Share Confirmation (WhatsApp / PDF)</span></button>`;
 
     const maxShown = 140;
@@ -5738,9 +6643,12 @@
           <span class="rdl-stmt16-leg-badge" data-stmt16-leg-badge="${esc(leg)}"><span>Leg Filter:</span> <span>${esc(legLbl.en)}</span></span>
         </div>
         <div class="rdl-stmt16-btn-group">
+          ${compareBtnHtml}
+          ${settleBtnHtml}
           ${shareBtnHtml}
         </div>
       </div>
+      ${canCompare ? renderStmt16ComparePanelHtml(ctx, m, cmpResult) : ''}
       <div class="rdl-doc-top">
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
@@ -5787,10 +6695,19 @@
           ` : ''}
           ${shownRows.map(t => {
             runBal += (t.cr - (lAp16.books ? t.dr : 0));
+            const cmpHit = (cmpResult && cmpResult.isabiStatusByRow && t._stmtIdx != null) ? cmpResult.isabiStatusByRow.get(t._stmtIdx) : null;
+            let cmpBadgeHtml = '';
+            if (cmpHit) {
+              const stLbl = _stmt16CmpStatusLabel(cmpHit.status);
+              const innerBadge = cmpHit.status === 'amount_delta'
+                ? `<span>Delta</span> <span data-no-i18n="1">${esc(fmtUsdSigned(cmpHit.deltaUsd, 2))}</span>`
+                : `<span>${esc(stLbl.text)}</span>`;
+              cmpBadgeHtml = ` <span class="rdl-cmp-inline-pill ${stLbl.cls} no-print">${innerBadge}</span>`;
+            }
             return `
               <tr>
                 <td class="mono">${esc(t.date)}</td>
-                <td class="mono" data-no-i18n="1">${esc(t.ref)}</td>
+                <td class="mono"><span data-no-i18n="1">${esc(t.ref)}</span>${cmpBadgeHtml}</td>
                 <td data-no-i18n="1">${esc(t.type)}</td>
                 <td data-no-i18n="1">${esc(t.desc)}</td>
                 <td class="num">${lAp16.books ? (t.dr !== 0 ? fmtUsdSigned(t.dr, 2) : dash) : 'Restricted'}</td>
@@ -5809,6 +6726,17 @@
           </tr>
         </tfoot>
       </table>
+      ${_renderStmtSettleTieoutHtml({
+        id: 'stmt16SettleTieout',
+        stmtCode: '16',
+        hasPeriodDiscounts,
+        title: 'Period Settlement Breakdown',
+        cashLabel: 'Cash Paid',
+        cashUsd: totCashPaid,
+        carriedUsd: totCarried,
+        discountUsd: totDiscount,
+        settledUsd: round2Local16(totDr)
+      })}
       ${signatureRowHtml('Prepared by AP Accounting / إعداد محاسبة الموردين', 'Supplier Confirmation / مصادقة المورد')}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
@@ -6138,7 +7066,8 @@
     const gl = pred => jes.reduce((s, j) => s + (pred(j) ? (j.debit - j.credit) : 0), 0);
     const RM_SRC = /^(Raw Material|Raw Transport|Direct Supply|Freight \/ Delivery)( Return)?$/;
     const FUEL_SRC = /^(Fuel Log|Diesel Sold|Tank Count|Tank Revaluation)$/;
-    const glSales = -gl(j => j.acct_code.charAt(0) === '7' && j.acct_code !== '766');
+    const glSales = -gl(j => j.acct_code.charAt(0) === '7' && j.acct_code !== '766' && j.acct_code !== '709' && j.acct_code !== '7733');
+    const glSettleDisc = -gl(j => j.acct_code === '709' || j.acct_code === '7733');
     const glRm = gl(j => j.acct_code === '601' && RM_SRC.test(j.source));
     const glFuel = gl(j => j.acct_code === '601' && FUEL_SRC.test(j.source));
     const glPay = gl(j => j.acct_code === '641' && j.source === 'Payroll');
@@ -6146,13 +7075,18 @@
     const glFx = -gl(j => j.acct_code === '766' || j.acct_code === '666');
     const glExp = gl(j => j.acct_code.charAt(0) === '6' && j.acct_code !== '6222' && j.acct_code !== '666') - glRm - glFuel - glPay;
 
+    const rcptsWin = (ctx.receiptLedgerAll || []).filter(r => !/^(VAT)?Config$/.test(String(r.pay_method || '')) && matchYm(rowDate(r, ctx.basis)) && Math.abs(Number(r.discount_usd || 0)) >= 0.005);
+    const stlsWin = (ctx.settlementLedgerAll || []).filter(r => !/^(VAT)?Config$/.test(String(r.pay_method || '')) && matchYm(rowDate(r, ctx.basis)) && Math.abs(Number(r.discount_usd || 0)) >= 0.005);
+    const netSettleDisc = r2(stlsWin.reduce((s, r) => s + Number(r.discount_usd || 0), 0) - rcptsWin.reduce((s, r) => s + Number(r.discount_usd || 0), 0));
+
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const rows = [
       { stream: dt.plSales, acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: glSales, sign: 1 },
       { stream: dt.plRm, acct: '601-DIR', count: rms.length, subTotal: subRm, glTotal: glRm, sign: -1 },
       { stream: dt.plFuel, acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: glFuel, sign: -1 },
       { stream: dt.plExp, acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: glExp, sign: -1 },
-      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: glPay, sign: -1 }
+      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: glPay, sign: -1 },
+      ...(rcptsWin.length || stlsWin.length || Math.abs(glSettleDisc) >= 0.005 ? [{ stream: 'Settlement Discounts (Net 7733 Cr / 709 Dr)', acct: '709 / 7733', count: rcptsWin.length + stlsWin.length, subTotal: netSettleDisc, glTotal: glSettleDisc, sign: 1 }] : [])
     ];
     if (commSales.length || Math.abs(glComm) >= 0.005) rows.push({ stream: 'Plant-Owner Commission on Sales', acct: '6222', count: commSales.length, subTotal: subComm, glTotal: glComm, sign: -1 });
     if (convs.length || Math.abs(glFx) >= 0.005) rows.push({ stream: 'Currency Exchange Differences', acct: '766 / 666', count: convs.length, subTotal: subFx, glTotal: glFx, sign: 1 });
@@ -7900,19 +8834,40 @@
   function exportPrintableSheetCsv(meta, coKey) {
     const sheet = document.getElementById('printableSheet');
     if (!sheet) return;
-    const tables = [...sheet.querySelectorAll('table.rdl-table')];
+    const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
     if (!tables.length) return;
     const lines = [];
     tables.forEach((tbl, idx) => {
       if (idx > 0) lines.push('');
       tbl.querySelectorAll('tr').forEach(tr => {
         const cells = [...tr.querySelectorAll('th,td')].map(td => {
-          const txt = (td.innerText || td.textContent || '').replace(/\s+/g, ' ').trim();
+          let rawTxt;
+          if (td.querySelector('.rdl-cmp-inline-pill, .no-print')) {
+            const cl = td.cloneNode(true);
+            cl.querySelectorAll('.rdl-cmp-inline-pill, .no-print').forEach(n => n.remove());
+            rawTxt = cl.textContent || '';
+          } else {
+            rawTxt = td.innerText || td.textContent || '';
+          }
+          const txt = rawTxt.replace(/\s+/g, ' ').trim();
           return `"${txt.replace(/"/g, '""')}"`;
         });
         if (cells.length) lines.push(cells.join(','));
       });
     });
+    const tieout = sheet.querySelector('[data-stmt-settle-tieout]');
+    if (tieout) {
+      const tieTitle = (tieout.querySelector('.rdl-settle-tieout-title')?.textContent || 'Period Settlement Breakdown').replace(/\s+/g, ' ').trim();
+      const tieCells = [...tieout.querySelectorAll('.rdl-settle-tieout-item')].map(el => {
+        const lbl = (el.querySelector('.rdl-settle-tieout-lbl')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const val = (el.querySelector('b')?.textContent || '').replace(/\s+/g, ' ').trim();
+        return `"${(`${lbl}: ${val}`).replace(/"/g, '""')}"`;
+      });
+      if (tieCells.length) {
+        lines.push('');
+        lines.push([`"${tieTitle.replace(/"/g, '""')}"`].concat(tieCells).join(','));
+      }
+    }
     const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -8106,7 +9061,7 @@
       const fuels = ctx.fuelAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
       const totQty = sales.reduce((s, r) => s + Number(r.qty || 0), 0);
       const totRev = sales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-      const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0)), 0);
       const totExp = exps.reduce((s, r) => s + Number(r.total_usd || 0), 0) + rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
       const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
       const byProd = new Map();
@@ -8582,13 +9537,15 @@
       const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust14, ctx.customers);
       const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && ((canViewBooks && r.is_receipt_row) || r.is_credit));
       let openDr = 0, openCr = 0, totDr = 0, totCr = 0, totQty = 0, pCount = 0;
+      const periodRows14 = [];
       allCustRows.forEach(r => {
         const d = rowDate(r, ctx.basis);
         if (d < p.from) { openDr += Number(r.total_usd || 0); openCr += Number(r.paid_usd || 0); }
-        else if (d <= p.to) { totDr += Number(r.total_usd || 0); totCr += Number(r.paid_usd || 0); totQty += Number(r.qty || 0); pCount += 1; }
+        else if (d <= p.to) { totDr += Number(r.total_usd || 0); totCr += Number(r.paid_usd || 0); totQty += Number(r.qty || 0); pCount += 1; periodRows14.push(r); }
       });
       const openBal = openDr - openCr;
       const closeBal = openBal + totDr - totCr;
+      const bd14Snap = _computeStmt14PeriodBreakdown(periodRows14, canViewBooks);
       facts = {
         customer: _stmtCleanParty(custName),
         periodEntries: pCount,
@@ -8597,6 +9554,8 @@
         openingBalanceUsd: canViewBooks ? Math.round(openBal) : undefined,
         periodBilledUsd: Math.round(totDr),
         periodSettledUsd: canViewBooks ? Math.round(totCr) : undefined,
+        periodCashReceivedUsd: (canViewBooks && bd14Snap.hasPeriodDiscounts) ? Math.round(bd14Snap.totCashReceived) : undefined,
+        periodDiscountsUsd: (canViewBooks && bd14Snap.hasPeriodDiscounts) ? Math.round(bd14Snap.totDiscount) : undefined,
         closingBalanceUsd: canViewBooks ? Math.round(closeBal) : undefined
       };
       kpis = [
@@ -8687,6 +9646,8 @@
         openingPayableUsd: canViewBooks ? Math.round(m16.openBal) : undefined,
         periodInvoicedUsd: Math.round(m16.totCr),
         periodPaidUsd: canViewBooks ? Math.round(m16.totDr) : undefined,
+        periodCashPaidUsd: (canViewBooks && m16.hasPeriodDiscounts) ? Math.round(m16.totCashPaid) : undefined,
+        periodDiscountsUsd: (canViewBooks && m16.hasPeriodDiscounts) ? Math.round(m16.totDiscount) : undefined,
         closingPayableUsd: canViewBooks ? Math.round(m16.closingBal) : undefined
       };
       kpis = [
@@ -9526,7 +10487,151 @@
     root._stmtSentRerender = rerenderFn;
     if (!root.dataset.stmtSentDelegated) {
       root.dataset.stmtSentDelegated = '1';
+      const handleStmt16CompareFile = async (fileObj) => {
+        if (!fileObj) return;
+        const curCtx = buildRdlContext(SEED, STATE);
+        const curLens = _rdlSeatLens(curCtx);
+        if ((curCtx.state && curCtx.state.kioskLocked) || (!curLens.books && !curLens.expenses)) return;
+        const curM = buildStmt16Model(curCtx);
+        _syncStmt16CompareScope(curCtx, curM);
+        const startGen = ++_stmt16CompareState.scanGen;
+        const startSig = _stmt16CompareState.scopeSig;
+        _stmt16CompareState.open = true;
+        _stmt16CompareState.busy = true;
+        _stmt16CompareState.statusMsg = 'Scanning vendor statement...';
+        _stmt16CompareState.statusTone = '';
+        if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+        const aie = window.MFG_AI_EDGE;
+        let res = null;
+        if (aie && typeof aie.extractVendorSoaVouchers === 'function') {
+          res = await aie.extractVendorSoaVouchers({
+            file: fileObj,
+            supplier: curM.supName,
+            legLabel: curM.legLbl.en,
+            industry: curCtx.ind
+          });
+        } else {
+          res = { ok: false, error: 'Smart scan unavailable offline: paste statement lines below' };
+        }
+        if (startGen !== _stmt16CompareState.scanGen || startSig !== _stmt16CompareState.scopeSig) return;
+        _stmt16CompareState.busy = false;
+        if (res && res.ok && res.text) {
+          _stmt16CompareState.text = res.text;
+          _stmt16CompareState.statusMsg = res.mode === 'local_text' ? 'Loaded CSV/text statement' : 'Extracted vendor statement lines';
+          _stmt16CompareState.statusTone = 'is-good';
+          _stmt16CompareState.filterChip = 'exceptions';
+        } else {
+          _stmt16CompareState.statusMsg = (res && res.error) || 'Could not read file: paste lines manually';
+          _stmt16CompareState.statusTone = 'is-warn';
+        }
+        if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+      };
+      root.addEventListener('input', ev => {
+        const ta = ev.target && ev.target.id === 'stmt16CompareInput' ? ev.target : null;
+        if (ta && root.contains(ta)) {
+          _stmt16CompareState.text = ta.value;
+        }
+      });
+      root.addEventListener('change', ev => {
+        const fi = ev.target && ev.target.id === 'stmt16CompareFileInput' ? ev.target : null;
+        if (fi && root.contains(fi) && fi.files && fi.files[0]) {
+          const pickedFile = fi.files[0];
+          fi.value = '';
+          handleStmt16CompareFile(pickedFile);
+        }
+      });
+      root.addEventListener('dragover', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (dz && root.contains(dz)) {
+          ev.preventDefault();
+          dz.classList.add('is-dragover');
+        }
+      });
+      root.addEventListener('dragleave', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (dz && root.contains(dz)) dz.classList.remove('is-dragover');
+      });
+      root.addEventListener('drop', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (!dz || !root.contains(dz)) return;
+        ev.preventDefault();
+        dz.classList.remove('is-dragover');
+        const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+        if (f) handleStmt16CompareFile(f);
+      });
       root.addEventListener('click', ev => {
+        const cmpToggle = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareBtn') : null;
+        if (cmpToggle && root.contains(cmpToggle)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const curCtx = buildRdlContext(SEED, STATE);
+          const curLens = _rdlSeatLens(curCtx);
+          if ((curCtx.state && curCtx.state.kioskLocked) || (!curLens.books && !curLens.expenses)) return;
+          _syncStmt16CompareScope(curCtx, buildStmt16Model(curCtx));
+          _stmt16CompareState.open = !_stmt16CompareState.open;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpClose = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareCloseBtn') : null;
+        if (cmpClose && root.contains(cmpClose)) {
+          ev.preventDefault();
+          _stmt16CompareState.open = false;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpScan = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareScanBtn') : null;
+        if (cmpScan && root.contains(cmpScan)) {
+          ev.preventDefault();
+          const fi = root.querySelector('#stmt16CompareFileInput');
+          if (fi) fi.click();
+          return;
+        }
+        const cmpClear = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareClearBtn') : null;
+        if (cmpClear && root.contains(cmpClear)) {
+          ev.preventDefault();
+          _stmt16CompareState.scanGen += 1;
+          _stmt16CompareState.busy = false;
+          _stmt16CompareState.text = '';
+          _stmt16CompareState.statusMsg = '';
+          _stmt16CompareState.statusTone = '';
+          _stmt16CompareState.lastResult = null;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpRun = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareRunBtn') : null;
+        if (cmpRun && root.contains(cmpRun)) {
+          ev.preventDefault();
+          const ta = root.querySelector('#stmt16CompareInput');
+          if (ta) _stmt16CompareState.text = ta.value;
+          _stmt16CompareState.filterChip = 'exceptions';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpScopeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-cmp-scope]') : null;
+        if (cmpScopeBtn && root.contains(cmpScopeBtn)) {
+          ev.preventDefault();
+          const nextSc = cmpScopeBtn.getAttribute('data-stmt16-cmp-scope') || 'invoices';
+          _stmt16CompareState.scopeMode = nextSc === 'all' ? 'all' : 'invoices';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpChipBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-cmp-chip]') : null;
+        if (cmpChipBtn && root.contains(cmpChipBtn)) {
+          ev.preventDefault();
+          _stmt16CompareState.filterChip = cmpChipBtn.getAttribute('data-stmt16-cmp-chip') || 'exceptions';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const settleBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16SettleLegBtn') : null;
+        if (settleBtn && root.contains(settleBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const ent = window.MFG_ENTERPRISE;
+          if (ent && typeof ent.openStmt16LegSettlement === 'function') {
+            ent.openStmt16LegSettlement();
+          }
+          return;
+        }
         const shareBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16ShareConfirmBtn') : null;
         if (shareBtn && root.contains(shareBtn)) {
           ev.preventDefault();
@@ -10003,7 +11108,7 @@
     }
 
     function wireTableSorting() {
-      root.querySelectorAll('#printableSheet table.rdl-table thead th').forEach((th, colIdx) => {
+      root.querySelectorAll('#printableSheet table.rdl-table:not(.rdl-cmp-table) thead th').forEach((th, colIdx) => {
         th.style.cursor = 'pointer';
         th.setAttribute('aria-label', `${enHeaderText(th)} — click to sort`);
         th.addEventListener('click', () => {
@@ -10100,7 +11205,7 @@
       }
 
       // 2. Interactive table grouping, inline filter & 12-row pagination for data tables
-      const tables = [...sheet.querySelectorAll('table.rdl-table')];
+      const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
       tables.forEach((tbl, tblIdx) => {
         const tbody = tbl.querySelector('tbody');
         const thead = tbl.querySelector('thead');
@@ -10460,6 +11565,9 @@
     openStmt16ShareModal,
     buildStmt16Model,
     buildStmt16ConfirmationText,
+    parseStmt16VendorSoaText,
+    compareStmt16WithVendorRows,
+    resetStmt16CompareState,
     getParamComboConfig,
     buildJournalEntries,
     // Gate hook (pure, no state): the diesel tank costing of the statements ledger.

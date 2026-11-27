@@ -662,6 +662,34 @@ const Face = (() => {
 
       if (isAutoTest) {
         await ensureSsdLoaded();
+      } else if (backend === "webgl" && typeof document !== "undefined") {
+        // Non-blocking yielded GLSL shader warmup so first live detection/enrolment has 0 compile stall
+        const runShaderWarmup = async () => {
+          try {
+            const wcv = document.createElement("canvas");
+            wcv.width = 160;
+            wcv.height = 160;
+            const wctx = wcv.getContext("2d", { willReadFrequently: true }) || wcv.getContext("2d");
+            if (wctx) {
+              wctx.fillStyle = "#808080";
+              wctx.fillRect(0, 0, 160, 160);
+            }
+            const tOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.9 });
+            await faceapi.detectSingleFace(wcv, tOpts).catch(() => {});
+            await new Promise(r => setTimeout(r, 0));
+            const lmNet = (!landmarksTiny && faceapi.nets.faceLandmark68Net && faceapi.nets.faceLandmark68Net.isLoaded)
+              ? faceapi.nets.faceLandmark68Net
+              : faceapi.nets.faceLandmark68TinyNet;
+            if (lmNet && typeof lmNet.detectLandmarks === "function") {
+              await lmNet.detectLandmarks(wcv).catch(() => {});
+            }
+            await new Promise(r => setTimeout(r, 0));
+            if (faceapi.nets.faceRecognitionNet && faceapi.nets.faceRecognitionNet.isLoaded && typeof faceapi.computeFaceDescriptor === "function") {
+              await faceapi.computeFaceDescriptor(wcv).catch(() => {});
+            }
+          } catch (_) {}
+        };
+        setTimeout(runShaderWarmup, 0);
       }
 
       ready = true;
@@ -734,6 +762,7 @@ const Face = (() => {
     return cv;
   }
 
+  let snapCanvas = null;
   function snapshot(src) {
     if (!src) return "";
     if (src.tagName === "VIDEO" && (src.readyState < 2 || !src.videoWidth || !src.videoHeight)) return "";
@@ -741,11 +770,12 @@ const Face = (() => {
     const sh = src.videoHeight || src.naturalHeight || src.height || 240;
     if (!sw || !sh) return "";
     const w = MFG_FACE_CONFIG.snapshotWidth;
-    const cv = document.createElement("canvas");
-    cv.width = w;
-    cv.height = Math.round((w * sh) / sw);
+    const h = Math.round((w * sh) / sw);
+    const cv = snapCanvas || (snapCanvas = document.createElement("canvas"));
+    if (cv.width !== w) cv.width = w;
+    if (cv.height !== h) cv.height = h;
     try {
-      cv.getContext("2d").drawImage(src, 0, 0, cv.width, cv.height);
+      cv.getContext("2d").drawImage(src, 0, 0, w, h);
       return cv.toDataURL("image/jpeg", MFG_FACE_CONFIG.snapshotQuality);
     } catch (_) {
       return "";
@@ -851,6 +881,7 @@ const Face = (() => {
   // (2) horizontally correlated localized PWM/refresh row-banding, (3) non-eye planar specular glare + flat shading,
   // and (4) paired straight dark device bezels flanking a bright interior.
   let padCanvas = null;
+  let padLumaBuf = null;
   function analyzePad(src, det) {
     const empty = { evaluated: false, frameSpoof: false, score: 0, reasons: [], metrics: null };
     const srcEl = (src && (src.rawSrc || src._rawSrc)) || src;
@@ -909,7 +940,9 @@ const Face = (() => {
 
     if (!rgba || rgba.length < cw * ch * 4 || faceW < 18 || faceH < 18) return empty;
 
-    const Y = new Float32Array(cw * ch);
+    const nPx = cw * ch;
+    if (!padLumaBuf || padLumaBuf.length < nPx) padLumaBuf = new Float32Array(nPx);
+    const Y = padLumaBuf.length === nPx ? padLumaBuf : padLumaBuf.subarray(0, nPx);
     for (let i = 0, p = 0; p < cw * ch; i += 4, p++) {
       Y[p] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
     }
@@ -1572,14 +1605,30 @@ const Face = (() => {
         const fw = frameWidth(frame) || 640;
         const fh = frame.videoHeight || frame.naturalHeight || frame.height || 480;
         const ccv = cropCanvas || (cropCanvas = document.createElement("canvas"));
-        ccv.width = 160;
-        ccv.height = 160;
-        const cctx = ccv.getContext("2d");
-        cctx.filter = "brightness(1.35) contrast(1.18)";
+        if (ccv.width !== 160) ccv.width = 160;
+        if (ccv.height !== 160) ccv.height = 160;
+        const cctx = ccv.getContext("2d", { willReadFrequently: true }) || ccv.getContext("2d");
         const sx = Math.round(fw * 0.24), sy = Math.round(fh * 0.14);
         const sw = Math.round(fw * 0.52), sh = Math.round(fh * 0.72);
         cctx.drawImage(frame, sx, sy, sw, sh, 0, 0, 160, 160);
-        cctx.filter = "none";
+        try {
+          if (!boostLut) {
+            boostLut = new Uint8ClampedArray(256);
+            for (let i = 0; i < 256; i++) {
+              const b = i * 1.38;
+              boostLut[i] = Math.max(0, Math.min(255, Math.round((b - 128) * 1.18 + 128)));
+            }
+          }
+          const img = cctx.getImageData(0, 0, 160, 160);
+          const d = img.data;
+          const lut = boostLut;
+          for (let i = 0, len = d.length; i < len; i += 4) {
+            d[i] = lut[d[i]];
+            d[i + 1] = lut[d[i + 1]];
+            d[i + 2] = lut[d[i + 2]];
+          }
+          cctx.putImageData(img, 0, 0);
+        } catch (_) {}
         const desc = await faceapi.computeFaceDescriptor(ccv);
         if (desc) {
           return {
@@ -1597,6 +1646,24 @@ const Face = (() => {
         }
       } catch (_) {}
     }
+    return null;
+  }
+
+  // Fast live preview helper (TinyFaceDetector 256 + landmarks, ZERO 128-d ResNet descriptor).
+  async function detectPreview(src) {
+    if (!detectorReady && !ready) return null;
+    const frame = frameToCanvas(src, 288);
+    if (!frame) return null;
+    try {
+      const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.24 });
+      const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny);
+      if (r) {
+        liveMissCount = 0;
+        const packed = pack({ detection: r.detection, landmarks: r.landmarks, descriptor: null }, frame, false);
+        packed.previewOnly = true;
+        return packed;
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -1868,6 +1935,7 @@ const Face = (() => {
     isDetectorReady: () => detectorReady,
     getBackend: () => backend,
     detectOne,
+    detectPreview,
     detectAll,
     landmarksOnly,
     match,

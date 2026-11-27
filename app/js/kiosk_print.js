@@ -46,6 +46,33 @@
     return normWidthStr(w) === '58mm' ? 58 : 80;
   }
 
+  const BOOT_PAPER_QUERY = (() => {
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const qp = String(new URLSearchParams(window.location.search).get('paper') || '').trim().toLowerCase();
+        if (qp === '58' || qp === '58mm') return '58mm';
+        if (qp === '80' || qp === '80mm') return '80mm';
+      }
+    } catch (_) {}
+    return '';
+  })();
+
+  function detectDefaultPaperWidth() {
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const sp = new URLSearchParams(window.location.search);
+        const qp = String(sp.get('paper') || '').trim().toLowerCase();
+        if (qp === '58' || qp === '58mm') return '58mm';
+        if (qp === '80' || qp === '80mm') return '80mm';
+      }
+      if (BOOT_PAPER_QUERY) return BOOT_PAPER_QUERY;
+      if (typeof window !== 'undefined' && Number(window.innerWidth) > 0 && window.innerWidth <= 600) {
+        return '58mm';
+      }
+    } catch (_) {}
+    return '80mm';
+  }
+
   function syncSettingsObj(cfg) {
     SETTINGS.paperWidth = normWidthNum(cfg.paperWidth);
     SETTINGS.priceMode = cfg.priceMode === 'unpriced' ? 'unpriced' : 'priced';
@@ -73,21 +100,37 @@
 
   function loadCfg() {
     if (_cfg) {
+      let hasStored = false;
+      try { hasStored = Boolean(localStorage.getItem(STORAGE_KEY)); } catch (_) {}
+      if (!hasStored && _cfg.paperWidthExplicit) _cfg = null;
+    }
+    if (_cfg) {
+      if (!_cfg.paperWidthExplicit) {
+        _cfg.paperWidth = detectDefaultPaperWidth();
+      }
       syncSettingsObj(_cfg);
       return _cfg;
     }
+    let hasExplicit = false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         _cfg = Object.assign({}, DEFAULT_CFG, parsed || {});
+        hasExplicit = Boolean(
+          parsed && (
+            parsed.paperWidthExplicit === true ||
+            (parsed.paperWidthExplicit == null && normWidthStr(parsed.paperWidth) === '58mm')
+          )
+        );
       } else {
         _cfg = Object.assign({}, DEFAULT_CFG);
       }
     } catch (_) {
       _cfg = Object.assign({}, DEFAULT_CFG);
     }
-    _cfg.paperWidth = normWidthStr(_cfg.paperWidth);
+    _cfg.paperWidthExplicit = hasExplicit;
+    _cfg.paperWidth = hasExplicit ? normWidthStr(_cfg.paperWidth) : detectDefaultPaperWidth();
     if (_cfg.priceMode !== 'unpriced' && _cfg.priceMode !== 'priced') _cfg.priceMode = 'priced';
     syncSettingsObj(_cfg);
     return _cfg;
@@ -95,7 +138,12 @@
 
   function saveCfg(patch = {}) {
     const cur = loadCfg();
-    if (patch.paperWidth != null) cur.paperWidth = normWidthStr(patch.paperWidth);
+    if (patch.paperWidth != null) {
+      cur.paperWidth = normWidthStr(patch.paperWidth);
+      cur.paperWidthExplicit = true;
+    } else {
+      cur.paperWidthExplicit = Boolean(cur.paperWidthExplicit);
+    }
     if (patch.priceMode != null) cur.priceMode = patch.priceMode === 'unpriced' ? 'unpriced' : 'priced';
     if (patch.channel != null || patch.transport != null) {
       const ch = String(patch.channel || patch.transport || 'rawbt');
@@ -112,6 +160,21 @@
     } catch (_) {}
     syncSettingsObj(cur);
     return cur;
+  }
+
+  function resetPaperWidthDefault() {
+    let parsed = null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) parsed = JSON.parse(raw);
+    } catch (_) {}
+    if (parsed && typeof parsed === 'object') {
+      parsed.paperWidthExplicit = false;
+      delete parsed.paperWidth;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch (_) {}
+    }
+    _cfg = null;
+    return loadCfg();
   }
 
   function savePrintSettings(patch = {}) {
@@ -1452,12 +1515,23 @@
   }
 
   loadCfg();
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', () => {
+      if (_cfg && _cfg.paperWidthExplicit) return;
+      const prev = SETTINGS.paperWidth;
+      loadCfg();
+      if (SETTINGS.paperWidth !== prev && typeof window.__mfgSyncKioskPrintControls === 'function') {
+        try { window.__mfgSyncKioskPrintControls(); } catch (_) {}
+      }
+    });
+  }
 
   window.MFG_PRINT = {
     SETTINGS,
     loadCfg,
     saveCfg,
     savePrintSettings,
+    resetPaperWidthDefault,
     paperCols,
     paperDots,
     normalizeTicketPayload,

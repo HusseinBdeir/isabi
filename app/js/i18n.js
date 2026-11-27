@@ -9830,7 +9830,7 @@
       "Staff Earnings Matrix, Site Transport & Freelance": "مصفوفة استحقاقات الموظفين وبدل نقل المواقع والمياومين",
       "Staff Employment": "توظيف موظف",
       "Staff Employment / Contract": "عقد عمل موظف",
-      "Staff Enrolment Face ID": "بصمة الوجه لتسجيل الموظفين",
+      "Staff Enrolment Face ID": "بصمة وجه تسجيل الموظفين",
       "Staff Headcount by Linked Role Category": "عدد الموظفين حسب فئة الدور المرتبطة",
       "Staff Meal": "وجبة موظفين",
       "Staff Member": "الموظف",
@@ -10284,7 +10284,7 @@
       "The request did not go through. Try again.": "لم يتم تنفيذ الطلب. أعد المحاولة.",
       "Thermal Slip": "إيصال حراري",
       "Thermal Ticket Preview (80mm · Priced)": "معاينة الإيصال الحراري (80 مم · مسعّر)",
-      "Thermal Ticket Preview (80mm)": "معاينة الإيصال الحراري (80مم)",
+      "Thermal Ticket Preview (80mm)": "معاينة الإيصال الحراري (80 مم)",
       "Thermal Voucher": "قسيمة حرارية",
       "These coordinates are outside the valid range.": "هذه الإحداثيات خارج النطاق الصالح.",
       "Third Party": "طرف ثالث",
@@ -15847,6 +15847,22 @@
       "Fuel Malfunctions": "فروقات وأعطال المحروقات",
       "Equipment Directory": "دليل الآليات والشاحنات",
       "Employment Contracts": "عقود العمل",
+      "Post & Next Unpriced": "ترحيل والانتقال للتالي غير المسعر",
+      "Queue:": "قائمة الانتظار:",
+      "Jump to site:": "الانتقال إلى موقع:",
+      "Switch active site in queue": "التبديل إلى الموقع النشط في القائمة",
+      "site": "موقع",
+      "sites": "مواقع",
+      "Post this rate and step to the next unpriced grade or site for this counterparty": "ترحيل هذا السعر والانتقال إلى الصنف أو الموقع التالي غير المسعر لهذا الطرف",
+      "Set Material & Transport Rate across unpriced sites & grades": "تحديد تسعيرة المواد والنقل عبر المواقع والأصناف غير المسعرة",
+      "Set Transport Rate across unpriced sites & grades": "تحديد تسعيرة النقل عبر المواقع والأصناف غير المسعرة",
+      "All unpriced sites and grades completed": "تم إكمال جميع المواقع والأصناف غير المسعرة",
+      "Export Mismatched": "تصدير البنود غير المطابقة",
+      "Mismatched Statement Lines": "بنود الكشف غير المطابقة",
+      "Export Language": "لغة التصدير",
+      "Download CSV": "تنزيل CSV",
+      "Mismatched summary copied": "تم نسخ ملخص البنود غير المطابقة",
+      "Mismatched lines CSV downloaded": "تم تنزيل ملف CSV للبنود غير المطابقة",
       "Driver Assignments": "تعيينات السائقين",
       "Project Sites": "مواقع المشاريع",
       "Regions & Corridors": "المناطق والمسارات",
@@ -16027,7 +16043,7 @@
       "Rate schedules require individual re-price review": "تتطلب جداول الأسعار مراجعة إعادة التسعير كلٌ على حدة",
       "Closed accounting period": "فترة محاسبية مقفلة",
       "Combined total": "الإجمالي المجمّع",
-      "skipped": "متخطّى",
+      "skipped": "متخطى",
       "Row is locked or outside your scope": "الصف مقفل أو خارج نطاق صلاحياتك",
       "Summary / analytics rows cannot be voided": "لا يمكن إلغاء صفوف الملخصات أو التحليلات",
       "No selected records can be bulk-voided": "لا توجد سجلات محددة قابلة للإلغاء الجماعي",
@@ -16143,7 +16159,167 @@
       "Closing Balance": "الرصيد الختامي",
       "Recipient WhatsApp:": "واتساب المستلم:",
       "Scoped strictly to": "محصور حصرياً بـ",
-      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "لا يوجد رقم واتساب محفوظ في الملف (يفتح واتساب لاختيار جهة الاتصال)"
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "لا يوجد رقم واتساب محفوظ في الملف (يفتح واتساب لاختيار جهة الاتصال)",
+      "Rear Camera": "الكاميرا الخلفية",
+      "Front Camera": "الكاميرا الأمامية",
+      "Slip Preview": "معاينة الإيصال",
+      "Recent": "الأخيرة",
+      "Starting Camera": "جارٍ تشغيل الكاميرا",
+      "Camera Ready": "الكاميرا جاهزة",
+      "Live Admin Scanner": "ماسح المشرف المباشر",
+      "Starting Front Camera...": "جارٍ تشغيل الكاميرا الأمامية...",
+      "Starting Rear Camera...": "جارٍ تشغيل الكاميرا الخلفية...",
+      "Starting front camera...": "جارٍ تشغيل الكاميرا الأمامية...",
+      "Starting rear camera...": "جارٍ تشغيل الكاميرا الخلفية...",
+      "Camera unavailable on this browser. Admin Face ID requires camera access.": "الكاميرا غير متوفرة على هذا المتصفح. تتطلب بصمة وجه المشرف الوصول إلى الكاميرا.",
+      "Unpriced Handover Pass": "تصريح تسليم غير مسعّر",
+      "Priced Official Voucher": "سند رسمي مسعّر",
+      "Pump Slip": "إيصال مضخة",
+      "Post & Print Ticket (58mm)": "ترحيل وطباعة الإيصال (58 مم)",
+      "Post & Print Gate Pass (58mm)": "ترحيل وطباعة تصريح الخروج (58 مم)",
+      "Post & Print Gate Pass (80mm)": "ترحيل وطباعة تصريح الخروج (80 مم)",
+      "Post & Print Scale Slip (58mm)": "ترحيل وطباعة فيشة القبان (58 مم)",
+      "Post & Print Scale Slip (80mm)": "ترحيل وطباعة فيشة القبان (80 مم)",
+      "Thermal Ticket Preview (58mm)": "معاينة الإيصال الحراري (58 مم)",
+      "Thermal Ticket Preview (58mm · Priced)": "معاينة الإيصال الحراري (58 مم · مسعّر)",
+      "Thermal Ticket Preview (58mm · Unpriced)": "معاينة الإيصال الحراري (58 مم · غير مسعّر)",
+      "Thermal Ticket Preview (80mm · Unpriced)": "معاينة الإيصال الحراري (80 مم · غير مسعّر)",
+      "Scan Admin/Supervisor Face ID for Station Setup, or ISABI Entry Operator Face ID to enrol staff in your Business Unit": "امسح بصمة وجه المشرف أو المدير لإعداد المحطة، أو مشغّل إدخال ISABI لتسجيل موظفي وحدتك",
+      "Scan an ISABI Entry Operator, Supervisor, or Admin Face ID to enrol staff in your assigned Business Unit": "امسح بصمة وجه مشغّل إدخال ISABI أو المشرف أو المدير لتسجيل موظفي وحدتك المعيّنة",
+      "5-Min Inactivity Auto-Logout": "تسجيل خروج تلقائي بعد 5 دقائق خمول",
+      "Camera permission denied or busy. Tap Restart Scanner to retry.": "تم رفض إذن الكاميرا أو أنها مشغولة. اضغط إعادة تشغيل الماسح للمحاولة مجدداً.",
+      "Position Admin or Manager face inside the oval guide": "ضع وجه المشرف أو المدير داخل الإطار البيضاوي",
+      "Position Admin, Supervisor, or ISABI Entry Operator face inside the oval guide": "ضع وجه المدير أو المشرف أو مشغّل إدخال ISABI داخل الإطار البيضاوي",
+      "Position ISABI Entry Operator, Supervisor, or Admin face inside the oval guide": "ضع وجه مشغّل إدخال ISABI أو المشرف أو المدير داخل الإطار البيضاوي",
+      "Look at the camera to verify Admin or Manager Face ID.": "انظر إلى الكاميرا للتحقق من بصمة وجه المشرف أو المدير.",
+      "Verifying Admin Face ID...": "جارٍ التحقق من بصمة وجه المشرف...",
+      "Print:": "الطباعة:",
+      "· Print:": "· الطباعة:",
+      "Starting Camera...": "جارٍ تشغيل الكاميرا...",
+      "Tap to Start Camera": "اضغط لتشغيل الكاميرا",
+      "Tap below to activate the front camera and capture each guided angle.": "اضغط أدناه لتفعيل الكاميرا والتقاط كل زاوية موجهة.",
+      "Center face inside oval": "وجّه الوجه داخل الإطار البيضاوي",
+      "Live Verify · Look at Camera": "تحقق مباشر · انظر إلى الكاميرا",
+      "By Owner": "حسب المالك",
+      "Hauler / Owner": "الناقل / المالك",
+      "All Haulers": "كل الناقلين",
+      "Unpaid Balance": "رصيد غير مسدّد",
+      "Multi-Truck": "متعدّد الشاحنات",
+      "Fleet Deductions": "حسومات الأسطول",
+      "Booked Haulage ($)": "أجرة النقل المسجّلة ($)",
+      "Fleet Deductions ($)": "حسومات الأسطول ($)",
+      "Net Operating ($)": "الصافي التشغيلي ($)",
+      "Filter hauler or truck...": "تصفية حسب الناقل أو الشاحنة...",
+      "Filter hauler or truck": "تصفية حسب الناقل أو الشاحنة",
+      "hauler": "ناقل",
+      "haulers": "ناقلين",
+      "No external haulers in Own Fleet cohort.": "لا يوجد ناقلون خارجيون ضمن شريحة أسطول الشركة.",
+      "Show All Haulers": "عرض كل الناقلين",
+      "No hauler accounts match the active filter.": "لا توجد حسابات ناقلين مطابقة للتصفية الحالية.",
+      "Open full owner account settlement sheet (defaults to Booked Revenue)": "فتح كشف تسوية حساب المالك الكامل (يفتتح على الإيراد المسجّل)",
+      "+ Settle Matched Leg": "+ تسديد الطرف المطابق",
+      "Settled after statement period": "تم التسديد بعد فترة الكشف",
+      "Locked to Statement 16 leg": "مقفل على طرف كشف الحساب ١٦",
+      "Adjusted for settlements after statement period": "معدل وفق التسديدات اللاحقة لفترة الكشف",
+      "Multi-entity balance: prefilled for selected entity": "رصيد متعدد الشركات: معبأ للشركة المحددة",
+      "Unpriced Loads ($0) on this leg": "نقلات غير مسعرة ($0) على هذا الطرف",
+      "entered": "مُدخل",
+      "Batch Summary": "ملخص الدفعة",
+      "Batch Queue Summary": "ملخص دفعة الإيصالات",
+      "Reopen": "إعادة فتح",
+      "Reopen First Skipped": "إعادة فتح أول متخطى",
+      "Finish & Dismiss": "إنهاء وإغلاق",
+      "Skipped slips": "الإيصالات المتخطاة",
+      "Slip already posted in this batch.": "تم ترحيل هذا الإيصال بالفعل في هذه الدفعة.",
+      "Multi-Slip Stack": "كومة إيصالات متعددة",
+      "Rapid-snap separate slips or invoices (each becomes 1 queue item)": "التقط إيصالات أو فواتير منفصلة بسرعة (كل لقطة تدخل كبند مستقل)",
+      "Rapid-snap separate slips or invoices into a 1-of-N entry queue": "التقط إيصالات أو فواتير منفصلة بسرعة إلى قائمة إدخال 1 من N",
+      "Slip locked. Hold steady or click Capture Slip.": "تم تثبيت الإيصال. اثبت أو اضغط التقاط الإيصال.",
+      "Slip captured! Place next slip or click Queue Slips.": "تم التقاط الإيصال! ضع الإيصال التالي أو اضغط إضافة للقائمة.",
+      "Capture Slip": "التقاط الإيصال",
+      "+ Add Slip": "+ إضافة إيصال",
+      "+ Slip": "+ إيصال",
+      "Queue 1 Slip": "إضافة إيصال واحد للقائمة",
+      "1 Slip Ready": "إيصال واحد جاهز",
+      "Send 1 Slip": "إرسال إيصال واحد",
+      "Arrived Late": "وصلت متأخرة",
+      "Dismiss All": "إغلاق الكل",
+      "Discount input unit": "وحدة إدخال الخصم",
+      "Discount (%)": "الخصم (%)",
+      "Settlement Discount": "خصم التسوية",
+      "Difference / Discount": "الفرق / الخصم",
+      "Standing Discount (%)": "الخصم الثابت (%)",
+      "Standing Disc %": "نسبة الخصم الثابت",
+      "Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply": "نسبة الخصم المتفق عليها اختيارياً · ترصد فواتير $0 وتتيح التطبيق بنقرة",
+      "Min Historical Discount Vouchers": "أدنى عدد سندات خصم تاريخية",
+      "Min Standing Discount (%)": "أدنى نسبة خصم ثابت (%)",
+      "Min Voucher Size ($ USD)": "أدنى قيمة سند ($ دولار)",
+      "Standing (%)": "الثابت (%)",
+      "Missed ($)": "المفقود ($)",
+      "Voucher ($)": "السند ($)",
+      "MISSED STANDING SUPPLIER DISCOUNTS": "خصومات الموردين الثابتة غير المطبقة",
+      "Supplier Standing-Discount Consistency Sentinel": "مراقب انتظام الخصومات الثابتة للموردين",
+      "Expenses & Payables, Suppliers Registry & AI Sentinels": "المصاريف والذمم الدائنة، سجل الموردين ومراقبو الذكاء الاصطناعي",
+      "High Discount & $0-Cash Settlement Note Guard": "حارس ملاحظات الخصم المرتفع وتسوية $0 نقدي",
+      "Sales Ticket, Expense, Receipt & Settlement Forms": "نماذج المبيعات والمصاريف والمقبوضات والتسويات",
+      "Discounts Allowed on Rent & Tenant Concessions": "خصومات وتسهيلات إيجار مسموح بها",
+      "Discount percentage cannot exceed 100%": "نسبة الخصم لا يمكن أن تتجاوز 100%",
+      "Discount percentage cannot exceed 100%.": "نسبة الخصم لا يمكن أن تتجاوز 100%.",
+      "Enter Subtotal or Item Price first so % discount can calculate": "أدخل المجموع الفرعي أو السعر أولاً لحساب الخصم %",
+      "Enter Subtotal or Item Price first so % discount can calculate.": "أدخل المجموع الفرعي أو السعر أولاً لحساب الخصم %.",
+      "Notes required (3+ chars) for $0.00 cash discount write-off.": "الملاحظة مطلوبة (3+ أحرف) لشطب رصيد بخصم $0.00 نقدي.",
+      "Cash amount must be above zero for VAT/IVA vouchers.": "المبلغ النقدي يجب أن يكون أكبر من الصفر لسندات الضريبة.",
+      "Enter a cash amount or settlement discount above zero.": "أدخل مبلغاً نقدياً أو خصم تسوية أكبر من الصفر.",
+      "Standing Discount (%) must be between 0 and 100.": "الخصم الثابت (%) يجب أن يكون بين 0 و 100.",
+      "Requires Expenses access": "يتطلب صلاحية المصاريف",
+      "0 missed standing discounts": "لا توجد خصومات ثابتة مفقودة",
+      "Standing discounts remain consistent across posted vouchers.": "انتظام خصومات الموردين متوافق عبر كافة السجلات.",
+      "Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.": "راجع السندات المرصودة في التنبيهات أو استخدم زر تطبيق الخصم بضغطة واحدة في نماذج المصاريف والتسويات.",
+      "Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).": "رصد الخصومات الثابتة وفحوصات $0 خصم مخفية (يتطلب صلاحية المصاريف).",
+      "Enter Amount Received first so % discount can calculate.": "أدخل المبلغ المستلم أولاً لحساب الخصم %.",
+      "Enter Amount Paid or Open AP first so % discount can calculate.": "أدخل المبلغ المدفوع أو الرصيد المفتوح أولاً لحساب الخصم %.",
+      "Enter cash received or a settlement discount above zero": "أدخل المبلغ النقدي المستلم أو خصم تسوية أكبر من الصفر",
+      "Enter cash paid or a settlement discount above zero": "أدخل المبلغ النقدي المدفوع أو خصم تسوية أكبر من الصفر",
+      "Security Deposit requires a positive cash Gross Receipt.": "يُشترط مبلغ إجمالي نقدي موجب لتأمين الضمان.",
+      "Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.": "الموزع على الفواتير + التأمين لا يمكن أن يتجاوز إجمالي المقبوض + خصم التسوية.",
+      "Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.": "يطبق خصم التسوية على تسديد فواتير الإيجار فقط، وليس على التأمين أو السلف.",
+      "Complete the Pending Expense price from the Expense modal before adding a discount.": "أكمل تسعير المصروف المعلّق من نافذة المصاريف قبل إضافة خصم.",
+      "Settlement Discount cannot be negative.": "خصم التسوية لا يمكن أن يكون سالباً.",
+      "Locked at $0.00 while Price Pending is selected": "مقفول عند $0.00 أثناء اختيار السعر معلق",
+      "Compare Vendor Statement": "مقارنة كشف حساب المورد",
+      "Invoices Only": "الفواتير فقط",
+      "All Vouchers": "كافة السندات",
+      "Comparison Scope": "نطاق المقارنة",
+      "Paste vendor lines or drop PDF / photo / CSV (Date | Ref | Amount)": "الصق سطور المورد أو أسقط PDF / صورة / CSV (التاريخ | المرجع | المبلغ)",
+      "Vendor statement lines": "سطور كشف حساب المورد",
+      "AI reads PDF or photo lines only; matching is deterministic": "يقرأ الذكاء الاصطناعي سطور PDF أو الصورة فقط؛ المطابقة حسابية حتمية",
+      "Upload PDF / Photo / CSV": "رفع PDF / صورة / CSV",
+      "Scanning...": "جارٍ المسح...",
+      "Compare Lines": "مقارنة السطور",
+      "Missing in ISABI": "مفقود في ISABI",
+      "Amount Delta": "فرق مبلغ",
+      "Other Leg / Date": "طرف أو تاريخ آخر",
+      "In ISABI Only": "في ISABI فقط",
+      "Duplicate on SOA": "مكرر في الكشف",
+      "Closing Variance": "فرق الرصيد الختامي",
+      "All Lines": "كل السطور",
+      "Vendor Ref": "مرجع المورد",
+      "ISABI Ref": "مرجع ISABI",
+      "Vendor ($)": "المورد ($)",
+      "ISABI ($)": "ISABI ($)",
+      "All vendor lines match this Statement 16 leg": "جميع سطور المورد مطابقة لهذا الطرف في كشف ١٦",
+      "No lines in this filter": "لا توجد سطور في هذا المرشح",
+      "Scanning vendor statement...": "جارٍ مسح كشف المورد...",
+      "Loaded CSV/text statement": "تم تحميل كشف CSV / نصي",
+      "Extracted vendor statement lines": "تم استخراج سطور كشف المورد",
+      "No statement lines detected in file": "لم يتم رصد سطور كشف حساب في الملف",
+      "Select a PDF, image, or CSV statement file": "اختر ملف كشف حساب PDF أو صورة أو CSV",
+      "Period Settlement Breakdown": "تفصيل التسويات خلال الفترة",
+      "Cash Received": "المقبوض نقداً ومصرفياً",
+      "Carried Balance": "رصيد منقول",
+      "Total Settled": "إجمالي التسوية",
+      "Raw Ticket": "إيصال مواد أولية",
+      "Expense Record": "سند مصروف"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -25955,7 +26131,7 @@
       "Staff Earnings Matrix, Site Transport & Freelance": "Matrice des gains salariés, transport chantier et extras",
       "Staff Employment": "Embauche collaborateur",
       "Staff Employment / Contract": "Contrat de Travail Collaborateur",
-      "Staff Enrolment Face ID": "Face ID Enrôlement du Personnel",
+      "Staff Enrolment Face ID": "Face ID Enrôlement Personnel",
       "Staff Headcount by Linked Role Category": "Effectif par Catégorie de Fonction",
       "Staff Meal": "Repas du personnel",
       "Staff Member": "Collaborateur",
@@ -26409,7 +26585,7 @@
       "The request did not go through. Try again.": "La demande n'a pas abouti. Réessayez.",
       "Thermal Slip": "Reçu Thermique",
       "Thermal Ticket Preview (80mm · Priced)": "Aperçu Reçu Thermique (80mm · Chiffré)",
-      "Thermal Ticket Preview (80mm)": "Aperçu Ticket Thermique (80mm)",
+      "Thermal Ticket Preview (80mm)": "Aperçu Reçu Thermique (80mm)",
       "Thermal Voucher": "Bon thermique",
       "These coordinates are outside the valid range.": "Ces coordonnées sont hors de la plage valide.",
       "Third Party": "Tiers",
@@ -31237,7 +31413,7 @@
       "Same day and party, already recorded on another form": "Même jour et même tiers, déjà saisi dans un autre formulaire",
       "Payments Exceeding Accrued Supplier & Site Credit": "Paiements dépassant le crédit dû aux fournisseurs et sites",
       "Payments Exceeding Accrued Supplier Credit": "Paiements dépassant le crédit dû aux fournisseurs",
-      "Payables & Procurement": "Dettes & Approvisionnements",
+      "Payables & Procurement": "Dettes fournisseurs & Achats",
       "Rule #32 · Payables & Sites": "Règle #32 · Dettes & Sites",
       "Rule #20 · Payables Audit": "Règle #20 · Audit Dettes",
       "Material & Transport, Suppliers & Payables & AI Sentinels": "Matières & Transport, Fournisseurs & Dettes & Sentinelles IA",
@@ -31972,6 +32148,22 @@
       "Fuel Malfunctions": "Anomalies & écarts gasoil",
       "Equipment Directory": "Répertoire des engins",
       "Employment Contracts": "Contrats de travail",
+      "Post & Next Unpriced": "Valider et tarif suivant",
+      "Queue:": "File d’attente :",
+      "Jump to site:": "Aller au chantier :",
+      "Switch active site in queue": "Basculer vers ce chantier dans la file",
+      "site": "chantier",
+      "sites": "chantiers",
+      "Post this rate and step to the next unpriced grade or site for this counterparty": "Valider ce tarif et passer à la catégorie ou au chantier non tarifé suivant pour ce tiers",
+      "Set Material & Transport Rate across unpriced sites & grades": "Définir les tarifs matière et transport sur les chantiers et catégories non tarifés",
+      "Set Transport Rate across unpriced sites & grades": "Définir le tarif transport sur les chantiers et catégories non tarifés",
+      "All unpriced sites and grades completed": "Tous les chantiers et catégories non tarifés sont complétés",
+      "Export Mismatched": "Exporter les écarts",
+      "Mismatched Statement Lines": "Lignes de relevé en écart",
+      "Export Language": "Langue d’export",
+      "Download CSV": "Télécharger CSV",
+      "Mismatched summary copied": "Résumé des écarts copié",
+      "Mismatched lines CSV downloaded": "CSV des lignes en écart téléchargé",
       "Driver Assignments": "Affectations des chauffeurs",
       "Project Sites": "Sites de chantier",
       "Regions & Corridors": "Régions & corridors",
@@ -32152,7 +32344,7 @@
       "Rate schedules require individual re-price review": "Les barèmes tarifaires exigent un contrôle de réévaluation individuel",
       "Closed accounting period": "Période comptable clôturée",
       "Combined total": "Total combiné",
-      "skipped": "ignoré(s)",
+      "skipped": "ignoré",
       "Row is locked or outside your scope": "Ligne verrouillée ou hors de votre périmètre",
       "Summary / analytics rows cannot be voided": "Les lignes de synthèse ou d'analyse ne peuvent pas être annulées",
       "No selected records can be bulk-voided": "Aucun enregistrement sélectionné ne peut être annulé en lot",
@@ -32268,7 +32460,167 @@
       "Closing Balance": "Solde de clôture",
       "Recipient WhatsApp:": "WhatsApp du destinataire :",
       "Scoped strictly to": "Limité strictement à",
-      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "Aucun numéro WhatsApp enregistré (WhatsApp ouvrira le sélecteur)"
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "Aucun numéro WhatsApp enregistré (WhatsApp ouvrira le sélecteur)",
+      "Rear Camera": "Caméra Arrière",
+      "Front Camera": "Caméra Avant",
+      "Slip Preview": "Aperçu Reçu",
+      "Recent": "Récents",
+      "Starting Camera": "Démarrage Caméra",
+      "Camera Ready": "Caméra Prête",
+      "Live Admin Scanner": "Scanner Admin Actif",
+      "Starting Front Camera...": "Démarrage caméra avant...",
+      "Starting Rear Camera...": "Démarrage caméra arrière...",
+      "Starting front camera...": "Démarrage caméra avant...",
+      "Starting rear camera...": "Démarrage caméra arrière...",
+      "Camera unavailable on this browser. Admin Face ID requires camera access.": "Caméra indisponible sur ce navigateur. Face ID Admin nécessite l’accès caméra.",
+      "Unpriced Handover Pass": "Bon de Remise Non Chiffré",
+      "Priced Official Voucher": "Bon Officiel Chiffré",
+      "Pump Slip": "Ticket Pompe",
+      "Post & Print Ticket (58mm)": "Valider & Imprimer (58mm)",
+      "Post & Print Gate Pass (58mm)": "Valider & Imprimer Bon Sortie (58mm)",
+      "Post & Print Gate Pass (80mm)": "Valider & Imprimer Bon Sortie (80mm)",
+      "Post & Print Scale Slip (58mm)": "Valider & Imprimer Ticket Bascule (58mm)",
+      "Post & Print Scale Slip (80mm)": "Valider & Imprimer Ticket Bascule (80mm)",
+      "Thermal Ticket Preview (58mm)": "Aperçu Reçu Thermique (58mm)",
+      "Thermal Ticket Preview (58mm · Priced)": "Aperçu Reçu Thermique (58mm · Chiffré)",
+      "Thermal Ticket Preview (58mm · Unpriced)": "Aperçu Reçu Thermique (58mm · Non Chiffré)",
+      "Thermal Ticket Preview (80mm · Unpriced)": "Aperçu Reçu Thermique (80mm · Non Chiffré)",
+      "Scan Admin/Supervisor Face ID for Station Setup, or ISABI Entry Operator Face ID to enrol staff in your Business Unit": "Scannez le Face ID Admin/Superviseur pour configurer la station, ou Opérateur ISABI pour enrôler votre unité",
+      "Scan an ISABI Entry Operator, Supervisor, or Admin Face ID to enrol staff in your assigned Business Unit": "Scannez le Face ID d’un Opérateur ISABI, Superviseur ou Admin pour enrôler le personnel de votre unité",
+      "5-Min Inactivity Auto-Logout": "Déconnexion auto après 5 min d’inactivité",
+      "Camera permission denied or busy. Tap Restart Scanner to retry.": "Accès caméra refusé ou occupé. Appuyez sur Redémarrer le scanner pour réessayer.",
+      "Position Admin or Manager face inside the oval guide": "Placez le visage de l’Admin ou du Responsable dans le guide ovale",
+      "Position Admin, Supervisor, or ISABI Entry Operator face inside the oval guide": "Placez le visage de l’Admin, Superviseur ou Opérateur ISABI dans le guide ovale",
+      "Position ISABI Entry Operator, Supervisor, or Admin face inside the oval guide": "Placez le visage d’un Opérateur ISABI, Superviseur ou Admin dans le guide ovale",
+      "Look at the camera to verify Admin or Manager Face ID.": "Regardez la caméra pour vérifier le Face ID Admin ou Responsable.",
+      "Verifying Admin Face ID...": "Vérification Face ID Admin...",
+      "Print:": "Impression :",
+      "· Print:": "· Impression :",
+      "Starting Camera...": "Démarrage caméra...",
+      "Tap to Start Camera": "Appuyer pour démarrer la caméra",
+      "Tap below to activate the front camera and capture each guided angle.": "Appuyez ci-dessous pour activer la caméra et capturer chaque angle guidé.",
+      "Center face inside oval": "Centrez le visage dans l’ovale",
+      "Live Verify · Look at Camera": "Vérif. en direct · Regardez la caméra",
+      "By Owner": "Par propriétaire",
+      "Hauler / Owner": "Transporteur / Propriétaire",
+      "All Haulers": "Tous les transporteurs",
+      "Unpaid Balance": "Solde impayé",
+      "Multi-Truck": "Multi-camions",
+      "Fleet Deductions": "Déductions flotte",
+      "Booked Haulage ($)": "Transport comptabilisé ($)",
+      "Fleet Deductions ($)": "Déductions flotte ($)",
+      "Net Operating ($)": "Net d'exploitation ($)",
+      "Filter hauler or truck...": "Filtrer transporteur ou camion...",
+      "Filter hauler or truck": "Filtrer transporteur ou camion",
+      "hauler": "transporteur",
+      "haulers": "transporteurs",
+      "No external haulers in Own Fleet cohort.": "Aucun transporteur externe dans la cohorte flotte propre.",
+      "Show All Haulers": "Afficher tous les transporteurs",
+      "No hauler accounts match the active filter.": "Aucun compte transporteur ne correspond au filtre actif.",
+      "Open full owner account settlement sheet (defaults to Booked Revenue)": "Ouvrir le relevé de règlement complet du compte propriétaire (par défaut Revenu Comptabilisé)",
+      "+ Settle Matched Leg": "+ Régler le volet rapproché",
+      "Settled after statement period": "Réglé après la période du relevé",
+      "Locked to Statement 16 leg": "Verrouillé sur le volet du relevé 16",
+      "Adjusted for settlements after statement period": "Ajusté selon les règlements postérieurs à la période",
+      "Multi-entity balance: prefilled for selected entity": "Solde multi-entités : prérempli pour l’entité sélectionnée",
+      "Unpriced Loads ($0) on this leg": "Chargements non tarifés (0 $) sur ce volet",
+      "entered": "saisi",
+      "Batch Summary": "Résumé du lot",
+      "Batch Queue Summary": "Résumé de la file du lot",
+      "Reopen": "Rouvrir",
+      "Reopen First Skipped": "Rouvrir le 1er ignoré",
+      "Finish & Dismiss": "Terminer et fermer",
+      "Skipped slips": "Pièces ignorées",
+      "Slip already posted in this batch.": "Cette pièce a déjà été comptabilisée dans ce lot.",
+      "Multi-Slip Stack": "Pile multi-pièces",
+      "Rapid-snap separate slips or invoices (each becomes 1 queue item)": "Capturez rapidement plusieurs justificatifs séparés (chacun devient 1 élément de file)",
+      "Rapid-snap separate slips or invoices into a 1-of-N entry queue": "Capturez rapidement des justificatifs séparés dans une file de saisie 1 sur N",
+      "Slip locked. Hold steady or click Capture Slip.": "Justificatif cadré. Restez stable ou cliquez sur Capturer la pièce.",
+      "Slip captured! Place next slip or click Queue Slips.": "Pièce capturée ! Placez la suivante ou cliquez sur Mettre en file.",
+      "Capture Slip": "Capturer la pièce",
+      "+ Add Slip": "+ Ajouter pièce",
+      "+ Slip": "+ Pièce",
+      "Queue 1 Slip": "Mettre 1 pièce en file",
+      "1 Slip Ready": "1 pièce prête",
+      "Send 1 Slip": "Envoyer 1 pièce",
+      "Arrived Late": "Arrivées tardives",
+      "Dismiss All": "Tout masquer",
+      "Discount input unit": "Unité de saisie remise",
+      "Discount (%)": "Remise (%)",
+      "Settlement Discount": "Escompte de règlement",
+      "Difference / Discount": "Écart / Remise",
+      "Standing Discount (%)": "Remise permanente (%)",
+      "Standing Disc %": "Remise perm. %",
+      "Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply": "Remise fournisseur convenue (opt.) · signale les factures à $0 et propose 1 clic",
+      "Min Historical Discount Vouchers": "Nb min. pièces avec remise",
+      "Min Standing Discount (%)": "Remise permanente min. (%)",
+      "Min Voucher Size ($ USD)": "Montant min. pièce ($ USD)",
+      "Standing (%)": "Perm. (%)",
+      "Missed ($)": "Manquée ($)",
+      "Voucher ($)": "Pièce ($)",
+      "MISSED STANDING SUPPLIER DISCOUNTS": "REMISES PERMANENTES FOURNISSEURS MANQUÉES",
+      "Supplier Standing-Discount Consistency Sentinel": "Sentinelle de régularité des remises fournisseurs",
+      "Expenses & Payables, Suppliers Registry & AI Sentinels": "Dépenses & Dettes, Répertoire Fournisseurs & AI Sentinels",
+      "High Discount & $0-Cash Settlement Note Guard": "Garde-fou remise élevée & règlement à $0 cash",
+      "Sales Ticket, Expense, Receipt & Settlement Forms": "Formulaires Ventes, Dépenses, Encaissements & Règlements",
+      "Discounts Allowed on Rent & Tenant Concessions": "Remises accordées sur loyers",
+      "Discount percentage cannot exceed 100%": "Le pourcentage de remise ne peut pas dépasser 100 %",
+      "Discount percentage cannot exceed 100%.": "Le pourcentage de remise ne peut pas dépasser 100 %.",
+      "Enter Subtotal or Item Price first so % discount can calculate": "Saisissez d'abord le sous-total ou le prix pour calculer %",
+      "Enter Subtotal or Item Price first so % discount can calculate.": "Saisissez d'abord le sous-total ou le prix pour calculer %.",
+      "Notes required (3+ chars) for $0.00 cash discount write-off.": "Motif requis en Notes (3+ car.) pour un solde par remise à 0,00 $ cash.",
+      "Cash amount must be above zero for VAT/IVA vouchers.": "Le montant cash doit être supérieur à zéro pour les pièces TVA.",
+      "Enter a cash amount or settlement discount above zero.": "Saisissez un montant cash ou une remise supérieure à zéro.",
+      "Standing Discount (%) must be between 0 and 100.": "La remise permanente (%) doit être comprise entre 0 et 100.",
+      "Requires Expenses access": "Accès Dépenses requis",
+      "0 missed standing discounts": "Aucune remise manquée",
+      "Standing discounts remain consistent across posted vouchers.": "La régularité des remises fournisseurs est conforme.",
+      "Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.": "Vérifiez les pièces signalées dans AI Sentinels ou utilisez le bouton Appliquer remise en 1 clic à la saisie.",
+      "Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).": "Le suivi des remises permanentes et des pièces à 0 $ de remise est masqué (accès Dépenses requis).",
+      "Enter Amount Received first so % discount can calculate.": "Saisissez d'abord le montant encaissé pour calculer le pourcentage.",
+      "Enter Amount Paid or Open AP first so % discount can calculate.": "Saisissez d'abord le montant payé ou le solde fournisseur pour calculer %.",
+      "Enter cash received or a settlement discount above zero": "Saisissez un montant encaissé ou une remise supérieure à zéro",
+      "Enter cash paid or a settlement discount above zero": "Saisissez un montant payé ou une remise supérieure à zéro",
+      "Security Deposit requires a positive cash Gross Receipt.": "Le dépôt de garantie exige un encaissement brut positif.",
+      "Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.": "Montant affecté + Dépôt ne peut pas dépasser Encaissement + Escompte.",
+      "Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.": "L'escompte s'applique uniquement aux loyers facturés, pas aux dépôts ni aux avances.",
+      "Complete the Pending Expense price from the Expense modal before adding a discount.": "Complétez d'abord le prix en attente dans le formulaire Dépense avant d'appliquer une remise.",
+      "Settlement Discount cannot be negative.": "L'escompte de règlement ne peut pas être négatif.",
+      "Locked at $0.00 while Price Pending is selected": "Verrouillé à 0,00 $ tant que Prix en attente est sélectionné",
+      "Compare Vendor Statement": "Comparer le relevé fournisseur",
+      "Invoices Only": "Factures uniquement",
+      "All Vouchers": "Toutes les pièces",
+      "Comparison Scope": "Portée de comparaison",
+      "Paste vendor lines or drop PDF / photo / CSV (Date | Ref | Amount)": "Collez les lignes fournisseur ou déposez PDF / photo / CSV (Date | Réf | Montant)",
+      "Vendor statement lines": "Lignes du relevé fournisseur",
+      "AI reads PDF or photo lines only; matching is deterministic": "L’IA lit uniquement les lignes du PDF ou de la photo ; le rapprochement est déterministe",
+      "Upload PDF / Photo / CSV": "Importer PDF / Photo / CSV",
+      "Scanning...": "Analyse en cours...",
+      "Compare Lines": "Comparer les lignes",
+      "Missing in ISABI": "Absent dans ISABI",
+      "Amount Delta": "Écart de montant",
+      "Other Leg / Date": "Autre volet / date",
+      "In ISABI Only": "Dans ISABI uniquement",
+      "Duplicate on SOA": "Doublon sur le relevé",
+      "Closing Variance": "Écart de solde final",
+      "All Lines": "Toutes les lignes",
+      "Vendor Ref": "Réf. fournisseur",
+      "ISABI Ref": "Réf. ISABI",
+      "Vendor ($)": "Fournisseur ($)",
+      "ISABI ($)": "ISABI ($)",
+      "All vendor lines match this Statement 16 leg": "Toutes les lignes fournisseur correspondent à ce volet du relevé 16",
+      "No lines in this filter": "Aucune ligne pour ce filtre",
+      "Scanning vendor statement...": "Analyse du relevé fournisseur...",
+      "Loaded CSV/text statement": "Relevé CSV / texte chargé",
+      "Extracted vendor statement lines": "Lignes du relevé fournisseur extraites",
+      "No statement lines detected in file": "Aucune ligne de relevé détectée dans le fichier",
+      "Select a PDF, image, or CSV statement file": "Sélectionnez un relevé PDF, image ou CSV",
+      "Period Settlement Breakdown": "Détail des règlements de la période",
+      "Cash Received": "Encaissé (trésorerie)",
+      "Carried Balance": "Solde reporté",
+      "Total Settled": "Total réglé",
+      "Raw Ticket": "Bon matière première",
+      "Expense Record": "Pièce de dépense"
     }
   };
 
@@ -34668,6 +35020,103 @@
         : `Le règlement dépasse le crédit ouvert (${legTr}) de ${m[2]}. Saisissez un motif en Notes (3+ car.) avant validation.`;
     }
 
+    m = trimmed.match(/^Discount > ([\d.,]+)% or \$0-cash needs Note$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `الخصم > ${m[1]}% أو شطب $0 يتطلب ملاحظة`
+        : `Remise > ${m[1]} % ou 0 $ cash exige Note`;
+    }
+
+    m = trimmed.match(/^Standing ([\d.,]+)% discount(?:\s*\((Agreed term|Usual across ([\d,]+) vouchers)\))?$/i);
+    if (m) {
+      const tagAr = !m[2] ? '' : (m[3] ? ` (المعتاد عبر ${m[3]} سندات)` : ' (شرط متفق عليه)');
+      const tagFr = !m[2] ? '' : (m[3] ? ` (habituelle sur ${m[3]} pièces)` : ' (condition convenue)');
+      return lang === 'ar' ? `خصم ثابت ${m[1]}%${tagAr}` : `Remise permanente ${m[1]} %${tagFr}`;
+    }
+
+    m = trimmed.match(/^Apply ([\d.,]+)% Discount(?:\s*\((\$[\d,.-]+)\))?$/i);
+    if (m) {
+      const valP = m[2] ? ` (${m[2]})` : '';
+      return lang === 'ar' ? `تطبيق خصم ${m[1]}%${valP}` : `Appliquer remise ${m[1]} %${valP}`;
+    }
+
+    m = trimmed.match(/^Resolved discount:\s*(\$[\d,.-]+)\s*\(([\d.,]+)% of (\$[\d,.-]+)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `الخصم المحتسب: ${m[1]} (${m[2]}% من ${m[3]})`
+        : `Remise calculée : ${m[1]} (${m[2]} % de ${m[3]})`;
+    }
+
+    m = trimmed.match(/^\$0\.00 cash write-off clears (\$[\d,.-]+) (AP|AR)(?: balance)?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `شطب $0.00 نقدي يغلق ${m[1]} من ${m[2] === 'AP' ? 'ذمة المورد' : 'ذمة العميل'}`
+        : `Solde à 0,00 $ cash : déduit ${m[1]} (${m[2]})`;
+    }
+
+    m = trimmed.match(/^(\$0\.00 cash discount write-off)\s*\((\$[\d,.-]+)\)\s*cannot exceed tenant Open AR\s*\((\$[\d,.-]+)\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `شطب الخصم النقدي $0.00 (${m[2]}) لا يمكن أن يتجاوز رصيد المستأجر المفتوح (${m[3]}).`
+        : `La remise à 0,00 $ cash (${m[2]}) ne peut pas dépasser les créances locatives ouvertes (${m[3]}).`;
+    }
+
+    m = trimmed.match(/^Settlement Discount\s*\((\$[\d,.-]+)\)\s*cannot exceed Allocated to Rent Invoices\s*\((\$[\d,.-]+)\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `خصم التسوية (${m[1]}) لا يمكن أن يتجاوز الموزع على فواتير الإيجار (${m[2]}).`
+        : `L'escompte (${m[1]}) ne peut pas dépasser le montant affecté aux loyers (${m[2]}).`;
+    }
+
+    m = trimmed.match(/^Settlement Discount exceeds\s*([\d.,]+)%\s*\((\$[\d,.-]+)\s*(?:of|on)\s*(\$[\d,.-]+)\)\.\s*Enter (?:a reason|an explanation) in (Notes|Reference \/ Note)\s*\(3\+ chars\)(?:\s*before posting)?\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `خصم التسوية يتجاوز ${m[1]}% (${m[2]} من ${m[3]}). أدخل توضيحاً في الملاحظات (3+ أحرف) قبل الترحيل.`
+        : `L'escompte dépasse ${m[1]} % (${m[2]} sur ${m[3]}). Saisissez une explication en Notes (3+ car.) avant validation.`;
+    }
+
+    m = trimmed.match(/^([\d.,]+%)\s+of settled total\s*\((\$[\d,.-]+)\)\s*·\s*(Explain in Notes \(3\+ chars\)|Note recorded)$/i);
+    if (m) {
+      const okN = /recorded/i.test(m[3]);
+      return lang === 'ar'
+        ? `${m[1]} من إجمالي التسوية (${m[2]}) · ${okN ? 'تم تسجيل الملاحظة' : 'أضف ملاحظة (3+ أحرف)'}`
+        : `${m[1]} du total réglé (${m[2]}) · ${okN ? 'Note enregistrée' : 'Préciser en Notes (3+ car.)'}`;
+    }
+
+    m = trimmed.match(/^([\d.,]+%)\s+off (Subtotal|\$[\d,.-]+)(\s*\(\$[\d,.-]+\))?(\s*-\s*high discount, consider adding a note)?$/i);
+    if (m) {
+      const targetStr = m[2].toLowerCase() === 'subtotal' ? (lang === 'ar' ? 'المجموع الفرعي' : 'le sous-total') : m[2];
+      const pfx = m[3] || '';
+      const warnSfx = m[4] ? (lang === 'ar' ? ' - خصم مرتفع، يُنصح بإضافة ملاحظة' : ' - remise élevée, ajoutez une note') : '';
+      return lang === 'ar'
+        ? `خصم ${m[1]} من ${targetStr}${pfx}${warnSfx}`
+        : `${m[1]} de remise sur ${targetStr}${pfx}${warnSfx}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+voucher\(s\)\s+\(>=\s*(\$[\d,.-]+)\)\s+across\s+([\d,]+)\s+standing-discount supplier\(s\) posted with \$0 discount:\s*(\$[\d,.-]+)\s+missed savings\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم رصد ${m[1]} سند(ات) (>= ${m[2]}) لدى ${m[3]} مورد(ين) بخصم ثابت سجلت بخصم $0: وفورات فائتة ${m[4]}.`
+        : `${m[1]} pièce(s) (>= ${m[2]}) pour ${m[3]} fournisseur(s) à remise permanente saisies avec 0 $ : ${m[4]} d'économies manquées.`;
+    }
+
+    m = trimmed.match(/^Monitoring\s+([\d,]+)\s+supplier\(s\)\s+with Master standing % or\s+([\d,]+)\+\s+vouchers\s+>=\s*([\d.,]+)%\s+\(cash rounding <=\s*\$10 ignored\):\s*0 missed discounts\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقبة ${m[1]} مورد(ين) بخصم ثابت أو ${m[2]}+ سندات >= ${m[3]}% (تجاهل تقريب <= $10): 0 خصومات مفقودة.`
+        : `Suivi de ${m[1]} fournisseur(s) à remise permanente ou ${m[2]}+ pièces >= ${m[3]} % (appoint <= 10 $ ignoré) : 0 remise manquée.`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+MISSED\s*·\s*(\$[\d,.-]+)$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} مفقود · ${m[2]}` : `${m[1]} MANQUÉ(S) · ${m[2]}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+TRACKED\s*·\s*OK$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} مراقب · سليم` : `${m[1]} SUIVIS · OK`;
+    }
+
     // Overpaid alert strip summary sentences (raw, suppliers, sibling expenses)
     if (/(?:(?:flagged|unpriced) sites in scope|sites overpaid \(\$[\d,.-]+\)|external \$0 raw loads|suppliers paid \$[\d,.-]+ above accrued credit|accounts overpaid totaling \$[\d,.-]+|unlinked BL\/LC advances)/i.test(trimmed)) {
       const segs = trimmed.split(/\s*·\s*/).map(seg => {
@@ -35401,13 +35850,44 @@
     m = trimmed.match(/^WTC vs\. BBConstruction Work Coverage Matrix\s*\((\d+)\s+Trips for Selected\s+(\d+)\s+Trucks\)$/i);
     if (m) return lang === 'ar' ? `مصفوفة تغطية العمل بين WTC و BBConstruction (${m[1]} نقلة للشاحنات الـ ${m[2]} المحددة)` : `Matrice de Couverture WTC vs BBConstruction (${m[1]} Voyages pour ${m[2]} Camions)`;
 
-    m = trimmed.match(/^ESC\/POS Stream Ready\s*·\s*([\d,]+)\s*bytes\s*·\s*80mm\s*\((\d+)\s*cols\)\s*·\s*(.+)$/i);
+    m = trimmed.match(/^ESC\/POS Stream Ready\s*·\s*([\d,]+)\s*bytes\s*·\s*(58|80)mm\s*\((\d+)\s*cols\)\s*·\s*(.+)$/i);
     if (m) {
-      const modeAr = /PRICED/i.test(m[3]) ? 'سند مسعّر' : 'تصريح مرور غير مسعّر';
-      const modeFr = /PRICED/i.test(m[3]) ? 'BON CHIFFRÉ' : 'BON NON CHIFFRÉ';
+      const modeAr = /PRICED/i.test(m[4]) && !/UNPRICED/i.test(m[4]) ? 'سند مسعّر' : 'تصريح مرور غير مسعّر';
+      const modeFr = /PRICED/i.test(m[4]) && !/UNPRICED/i.test(m[4]) ? 'BON CHIFFRÉ' : 'BON NON CHIFFRÉ';
       return lang === 'ar'
-        ? `بث الطباعة الحرارية جاهز · ${m[1]} بايت · 80مم (${m[2]} عموداً) · ${modeAr}`
-        : `Flux ESC/POS Prêt · ${m[1]} octets · 80mm (${m[2]} col.) · ${modeFr}`;
+        ? `بث الطباعة الحرارية جاهز · ${m[1]} بايت · ${m[2]}مم (${m[3]} عموداً) · ${modeAr}`
+        : `Flux ESC/POS Prêt · ${m[1]} octets · ${m[2]}mm (${m[3]} col.) · ${modeFr}`;
+    }
+
+    m = trimmed.match(/^Ready\s*·\s*(58|80)mm\s*\((\d+)\s*cols\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جاهز · ${m[1]}مم (${m[2]} عموداً)`
+        : `Prêt · ${m[1]}mm (${m[2]} col.)`;
+    }
+
+    m = trimmed.match(/^(58|80)mm\s*·\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} مم · ${inner}` : `${m[1]}mm · ${inner}`;
+    }
+
+    m = trimmed.match(/^Preparing lens for\s+(.+?)\.\s*Hold (?:device|tablet) steady at eye level\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جارٍ تجهيز العدسة لـ ${m[1]}. ثبّت الجهاز بمستوى النظر.`
+        : `Préparation de la caméra pour ${m[1]}. Maintenez l'appareil stable à hauteur des yeux.`;
+    }
+
+    m = trimmed.match(/^·\s*Print:\s*$/i);
+    if (m) {
+      return lang === 'ar' ? ' · الطباعة: ' : ' · Impression : ';
+    }
+
+    m = trimmed.match(/^Pose\s+(\d+)\s+of\s+3(?:\s*·\s*(.+))?$/i);
+    if (m) {
+      const suf = m[2] ? ` · ${translateCore(m[2].trim(), lang, depth + 1)}` : '';
+      return lang === 'ar' ? `الوضعية ${m[1]} من 3${suf}` : `Pose ${m[1]} sur 3${suf}`;
     }
 
     m = trimmed.match(/^TICKET\s+#\s*(\S+)$/i);
@@ -39107,6 +39587,117 @@
       };
     }
 
+    m = trimmed.match(/^Queue (\d+) Slips?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إضافة إيصال واحد للقائمة' : `إضافة ${n} إيصالات للقائمة`)
+          : `Mettre ${n} ${n === 1 ? 'pièce' : 'pièces'} en file`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+) Slips? Ready$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إيصال واحد جاهز' : `${n} إيصالات جاهزة`)
+          : (n === 1 ? '1 pièce prête' : `${n} pièces prêtes`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Send (\d+) Slips?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إرسال إيصال واحد' : `إرسال ${n} إيصالات`)
+          : `Envoyer ${n} ${n === 1 ? 'pièce' : 'pièces'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Send (\d+) Pages?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `إرسال ${n} ${n === 1 ? 'صفحة' : 'صفحات'}`
+          : `Envoyer ${n} ${n === 1 ? 'page' : 'pages'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Attach (\d+) Scans?( Anyway)?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      const anyway = Boolean(m[2]);
+      if (lang === 'ar') {
+        const unit = n === 1 ? 'مسح' : (n === 2 ? 'مسحين' : 'مسوحات');
+        return { out: `إرفاق ${n === 2 ? unit : `${n} ${unit}`}${anyway ? ' على أي حال' : ''}`, ok: true };
+      }
+      return { out: `Joindre ${n} ${n === 1 ? 'scan' : 'scans'}${anyway ? ' quand même' : ''}`, ok: true };
+    }
+
+    m = trimmed.match(/^(\d+) Cropped Scans? Ready$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `${n} ${n === 1 ? 'مسح مقصوص جاهز' : 'مسوحات مقصوصة جاهزة'}`
+          : (n === 1 ? '1 scan recadré prêt' : `${n} scans recadrés prêts`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Received (\d+) slips? from phone!$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `تم استلام ${n} ${n === 1 ? 'إيصال' : 'إيصالات'} من الهاتف!`
+          : `${n} ${n === 1 ? 'pièce reçue' : 'pièces reçues'} du téléphone !`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+) Page\(s\) Received$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar' ? `تم استلام ${n} صفحات` : `${n} page(s) reçue(s)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch queue complete:\s*(?:all\s+)?(\d+)\s+slips?\s+posted(?:\s*·\s*([+-]?\$[\d.,-]+)\s+total)?\.$/i);
+    if (m) {
+      const n = Number(m[1]);
+      const usdPart = m[2] ? ` · ${m[2]}` : '';
+      return {
+        out: lang === 'ar'
+          ? `اكتملت دفعة الإيصالات: تم ترحيل ${n} ${n === 1 ? 'إيصال' : 'إيصالات'}${usdPart ? usdPart + ' الإجمالي' : ''}.`
+          : `Lot terminé : ${n} ${n === 1 ? 'pièce comptabilisée' : 'pièces comptabilisées'}${usdPart ? usdPart + ' au total' : ''}.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch queue closed:\s*(\d+)\s+posted,\s*(\d+)\s+skipped(?:\s*·\s*([+-]?\$[\d.,-]+)\s+entered)?\.$/i);
+    if (m) {
+      const p = Number(m[1]);
+      const s = Number(m[2]);
+      const usdPart = m[3] ? ` · ${m[3]}` : '';
+      return {
+        out: lang === 'ar'
+          ? `تم إغلاق دفعة الإيصالات: ${p} مرحّل، ${s} متخطى${usdPart ? usdPart + ' مُدخل' : ''}.`
+          : `Lot clôturé : ${p} comptabilisé(s), ${s} ignoré(s)${usdPart ? usdPart + ' saisi(s)' : ''}.`,
+        ok: true
+      };
+    }
+
     m = trimmed.match(/^(.+?)\s+Cutover Audit$/i);
     if (m) return { out: lang === 'ar' ? `تدقيق فترة الانتقال (${translateMonthTokens(m[1], lang)})` : `Audit de Bascule (${translateMonthTokens(m[1], lang)})`, ok: true };
 
@@ -39299,6 +39890,26 @@
     if (m) {
       return {
         out: lang === 'ar' ? `توزيع على الفئات (${m[1]} سطور)` : `Ventiler par catégorie (${m[1]} lignes)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Diesel (-?\$[\d,.]+) · Workshop (-?\$[\d,.]+) · Driver (-?\$[\d,.]+)$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `المازوت ${m[1]} · الصيانة ${m[2]} · السائق ${m[3]}`
+          : `Gasoil ${m[1]} · Atelier ${m[2]} · Chauffeur ${m[3]}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Gross transport excludes (-?\$[\d,.]+) in Fleet deductions \(Diesel (-?\$[\d,.]+), Workshop (-?\$[\d,.]+), Driver (-?\$[\d,.]+)\)\. Click to open Owner Settlement Sheet\.$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `إجمالي النقل يستثني ${m[1]} كحسومات الأسطول (المازوت ${m[2]}، الصيانة ${m[3]}، السائق ${m[4]}). انقر لفتح كشف تسوية المالك.`
+          : `Le transport brut exclut ${m[1]} de déductions flotte (Gasoil ${m[2]}, Atelier ${m[3]}, Chauffeur ${m[4]}). Cliquez pour ouvrir le relevé de règlement propriétaire.`,
         ok: true
       };
     }

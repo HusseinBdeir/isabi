@@ -672,6 +672,8 @@
     cashflowBehind: null,
     sourceBehind: null,
     changedEntries: null,
+    devicesHolding: null,
+    devicesMinSyncShellVer: '',
     behindDayPrev: null,
     arChartMode: 'collections',
     salesChartMode: 'payment',
@@ -750,6 +752,7 @@
     activeKiosk: 'sales',
     kioskFuelSubmode: 'dispense',
     kioskLocked: false,
+    kioskHandheldDrawer: '',
     kioskUnlockPromptOpen: false,
     kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
     staffBiometrics: (() => {
@@ -1038,6 +1041,8 @@
     staffName: '',
     camActive: false,
     camStarting: false,
+    _camGen: 0,
+    facingMode: 'user',
     handsFree: false,
     pose2Yaw: null,
     loopTimer: null,
@@ -6617,6 +6622,8 @@
           quarry_cr: 0,
           trans_cr: 0,
           exp_cr_usd: 0,
+          zero_mat_cnt: 0,
+          zero_trans_cnt: 0,
           vouchers: []
         };
         legState.set(sn, entry);
@@ -6664,6 +6671,8 @@
               dr: 0,
               _seq: ++seq
             });
+          } else if (mth === 'Credit' && String(rp.product || '').trim().toLowerCase() !== 'remove' && Number(rp.qty || 0) > 0) {
+            eSo.zero_mat_cnt += 1;
           }
         }
       }
@@ -6688,6 +6697,8 @@
               dr: 0,
               _seq: ++seq
             });
+          } else if (mth === 'Credit' && rp.transport_by === 'Third-party truck' && Number(rp.qty || 0) > 0 && String(rp.product || '').trim().toLowerCase() !== 'remove') {
+            eTo.zero_trans_cnt += 1;
           }
         }
       }
@@ -6859,7 +6870,10 @@
         else if (Math.abs(eSp.trans_cr) > 0.005 && Math.abs(eSp.quarry_cr) <= 0.005 && Math.abs(eSp.exp_cr_usd) <= 0.005) rawLeg = 'transportation';
         else rawLeg = 'expense';
       }
-      const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const cashV = round2(sp.amount != null ? Number(sp.amount || 0) : Number(sp.usd_amount || 0));
+      const discV = round2(sp.discount != null ? Number(sp.discount || 0) : Number(sp.diff || 0));
+      const totV = round2(cashV + discV);
+      const isCfgPay = /^(?:VAT)?Config$/i.test(mth);
       const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return';
       let vLeg = '';
       if (rawLeg === 'quarry') {
@@ -6878,9 +6892,13 @@
         co: sp.company || '',
         leg: vLeg,
         type: 'Settlement',
+        pay_method: mth,
         desc: String(sp.notes || `Supplier Settlement (${mth} · ${legLbl})`).trim(),
         cr: 0,
         dr: totV,
+        cash_usd: isCfgPay ? 0 : cashV,
+        discount_usd: isCfgPay ? 0 : discV,
+        carried_usd: isCfgPay ? totV : 0,
         _seq: ++seq
       });
     }
@@ -6918,6 +6936,8 @@
       leg: legFilter,
       activeLegs,
       suppliersRanked,
+      unpricedMatCount: picked ? Number(picked.zero_mat_cnt || 0) : 0,
+      unpricedTransCount: picked ? Number(picked.zero_trans_cnt || 0) : 0,
       vouchers
     };
   }
@@ -6983,6 +7003,44 @@
     if (opts.openShare && window.MFG_RDL && typeof window.MFG_RDL.openStmt16ShareModal === 'function') {
       window.MFG_RDL.openStmt16ShareModal();
     }
+    return true;
+  }
+
+  function openStmt16LegSettlement() {
+    if (STATE.kioskLocked || !canAccessRdlReport('16') || !canEnterForm('settlement')) return false;
+    const lens = seatLens();
+    if (!lens || !lens.books) return false;
+    const rdl = window.MFG_RDL;
+    if (!rdl || typeof rdl.buildRdlContext !== 'function' || typeof rdl.buildStmt16Model !== 'function') return false;
+    const m = rdl.buildStmt16Model(rdl.buildRdlContext(SEED, STATE));
+    if (!m || !m.canSettleLeg || !m.payableLegCode || !(m.settlePrefillUsd > 0.005)) return false;
+    const allowedCos = allowedCompanyNames();
+    const targetCo = (m.settleTargetCo && (!allowedCos.length || allowedCos.includes(m.settleTargetCo)))
+      ? m.settleTargetCo
+      : defaultEntryCompany();
+    const coAmt = (m.byCoOpen && Number(m.byCoOpen[targetCo] || 0) > 0.005)
+      ? Number(m.byCoOpen[targetCo])
+      : Number(m.settlePrefillUsd);
+    openEntryModal('settlement', {
+      co: targetCo,
+      supplier: m.supName,
+      method: 'Payment',
+      payable_leg: m.payableLegCode,
+      amount: coAmt,
+      lockPayableLeg: true,
+      _stmt16Ctx: {
+        supplier: m.supName,
+        leg: m.leg,
+        legLabelEn: (m.legLbl && m.legLbl.en) || m.leg,
+        payableLeg: m.payableLegCode,
+        closingBal: Number(m.closingBal || 0),
+        allTimeLegBal: Number(m.allTimeLegBal || 0),
+        byCoOpen: m.byCoOpen || {},
+        multiCo: Boolean(m.settleMultiCo),
+        cappedByPostPeriod: Boolean(m.cappedByPostPeriod),
+        unpricedZeroCount: Number(m.unpricedZeroCount || 0)
+      }
+    }, { forceSwitch: true });
     return true;
   }
 
@@ -8628,6 +8686,7 @@
     drivers_list: 'Linked Drivers',
     haul_loads: 'Haul Loads',
     expenses_count: 'Expense Bills',
+    standing_discount_pct: 'Standing Disc %',
     iva: 'IVA (VAT)',
     mof_no: 'MOF Tax #',
     gps_status: 'GPS Pin',
@@ -12624,7 +12683,7 @@
       const tag = cur.tagName;
       if (tag === 'STYLE' || tag === 'SCRIPT' || cur.hidden) return;
       if (cur.style && cur.style.display === 'none') return;
-      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill') || cur.classList.contains('void-btn') || cur.classList.contains('row-sel-dot'))) return;
+      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill') || cur.classList.contains('void-btn') || cur.classList.contains('row-sel-dot') || cur.classList.contains('raw-fleet-deduct-pill') || cur.classList.contains('raw-leg-stmt-actions'))) return;
       if (tag === 'BR') { out += ' '; return; }
       const isBlock = tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'SMALL' || tag === 'TR' || tag === 'SECTION' || tag === 'BLOCKQUOTE' || /^H[1-6]$/.test(tag);
       if (isBlock) out += ' ';
@@ -12649,9 +12708,9 @@
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
         .map(td => {
           let txt = td.innerText;
-          if (td.querySelector('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot')) {
+          if (td.querySelector('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions')) {
             const clone = td.cloneNode(true);
-            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot').forEach(n => n.remove());
+            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions').forEach(n => n.remove());
             txt = clone.textContent;
           }
           return _csvQuoteCell(txt);
@@ -12912,6 +12971,9 @@
     FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolLiveMatch = null;
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
     FACE_STATE.enrolStatusText = '';
     FACE_STATE.enrolStatusCls = '';
   }
@@ -13124,41 +13186,99 @@
     const hit = visUsers.find(u => u && String(u.id) === rawId);
     return hit || me;
   }
-  function usableFaces(includeUnsavedForUser, opts = {}) {
-    const list = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
-      id: u.id,
-      email: u.email,
-      name: u.full_name,
-      role: u.role,
-      companies: u.companies,
-      samples: userFaceSamples(u)
-    }));
-    if (opts && opts.includeKioskStaff && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
-      const seenNames = new Set(list.map(x => norm(x.name)));
-      Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
-        if (!bio || bio.face_cleared) return;
-        const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
-        if (!samples.length || !bio.name) return;
-        const nk = norm(bio.name || k);
-        if (seenNames.has(nk)) {
-          // If staffBiometrics has newer face samples for a human seat, keep the fresher samples
-          const existIdx = list.findIndex(x => norm(x.name) === nk);
-          if (existIdx >= 0 && samples.length >= list[existIdx].samples.length) {
-            list[existIdx].samples = samples;
-          }
-          return;
-        }
-        seenNames.add(nk);
-        list.push({
-          id: 'stfbio:' + nk,
-          email: '',
-          name: bio.name,
-          role: bio.role || 'Staff',
-          companies: bio.company || '',
-          samples
-        });
-      });
+  let _usableFacesCacheMap = { '0': null, '1': null };
+  let _usableFacesStamp = '';
+  let _kioskFacePoolCache = null;
+  let _kioskFacePoolStamp = '';
+
+  function _computeFacePoolStamp() {
+    const users = STATE.users || [];
+    const bios = STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object' ? STATE.staffBiometrics : null;
+    const uParts = [];
+    for (let i = 0; i < users.length; i++) {
+      const u = users[i];
+      if (!u) continue;
+      const sc = Array.isArray(u.face_samples) ? u.face_samples.length : 0;
+      const head0 = (sc > 0 && Array.isArray(u.face_samples[0]) && u.face_samples[0].length)
+        ? Math.round(Number(u.face_samples[0][0] || 0) * 1e4)
+        : 0;
+      if (sc > 0 || u.status === 'Suspended' || u.face_cleared) {
+        uParts.push(`${u.id || ''}:${u.status || ''}:${u.full_name || ''}:${u.email || ''}:${u.role || ''}:${sc}:${head0}:${u.face_cleared ? 1 : 0}:${u.face_updated_at || ''}`);
+      }
     }
+    const bParts = [];
+    if (bios) {
+      const keys = Object.keys(bios);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const b = bios[k];
+        if (!b) continue;
+        const sc = Array.isArray(b.face_samples) ? b.face_samples.length : 0;
+        const head0 = (sc > 0 && Array.isArray(b.face_samples[0]) && b.face_samples[0].length)
+          ? Math.round(Number(b.face_samples[0][0] || 0) * 1e4)
+          : 0;
+        bParts.push(`${k}:${b.name || ''}:${b.role || ''}:${b.company || ''}:${sc}:${head0}:${b.face_cleared ? 1 : 0}:${b.face_updated_at || b.updated_at || ''}`);
+      }
+    }
+    return `${users.length}|${uParts.join(',')}|${bParts.join(',')}`;
+  }
+
+  function invalidateFacePoolCache() {
+    _usableFacesStamp = '';
+    _usableFacesCacheMap['0'] = null;
+    _usableFacesCacheMap['1'] = null;
+    _kioskFacePoolStamp = '';
+    _kioskFacePoolCache = null;
+  }
+
+  function usableFaces(includeUnsavedForUser, opts = {}) {
+    const incKiosk = Boolean(opts && opts.includeKioskStaff);
+    const cacheKey = incKiosk ? '1' : '0';
+    const stamp = _computeFacePoolStamp();
+    if (_usableFacesStamp !== stamp) {
+      _usableFacesStamp = stamp;
+      _usableFacesCacheMap['0'] = null;
+      _usableFacesCacheMap['1'] = null;
+    }
+    let baseList = _usableFacesCacheMap[cacheKey];
+    if (!baseList) {
+      const built = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
+        id: u.id,
+        email: u.email,
+        name: u.full_name,
+        role: u.role,
+        companies: u.companies,
+        samples: userFaceSamples(u)
+      }));
+      if (incKiosk && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
+        const seenNames = new Set(built.map(x => norm(x.name)));
+        Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
+          if (!bio || bio.face_cleared) return;
+          const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
+          if (!samples.length || !bio.name) return;
+          const nk = norm(bio.name || k);
+          if (seenNames.has(nk)) {
+            const existIdx = built.findIndex(x => norm(x.name) === nk);
+            if (existIdx >= 0 && samples.length >= built[existIdx].samples.length) {
+              built[existIdx].samples = samples;
+            }
+            return;
+          }
+          seenNames.add(nk);
+          built.push({
+            id: 'stfbio:' + nk,
+            email: '',
+            name: bio.name,
+            role: bio.role || 'Staff',
+            companies: bio.company || '',
+            samples
+          });
+        });
+      }
+      _usableFacesCacheMap[cacheKey] = built;
+      baseList = built;
+    }
+    const list = baseList.slice();
     if (includeUnsavedForUser && FACE_STATE.enrolCaptures.length) {
       const idx = list.findIndex(x => (includeUnsavedForUser.email && x.email && norm(x.email) === norm(includeUnsavedForUser.email)) || norm(x.name) === norm(includeUnsavedForUser.full_name));
       const row = {
@@ -13717,9 +13837,9 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|gross_usd|discount_usd|deposit_gl4196_usd|allocated_inv_usd|unallocated_adv_usd|paid_usd|total_usd|gross_prem_usd|policy_fee_usd|net_usd|ttc_usd|vat_usd|contract_usd|fob_usd|actual_usd|budget_usd|open_ar_usd|usd|lbp|diff|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|standing_discount_pct|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
-    'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
+    'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip', 'f_standing_disc',
     'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_gross_amount', 'f_amount', 'f_vat', 'f_net', 'f_total',
     'f_usd', 'f_lbp', 'f_fxrate', 'f_rate', 'f_vatpct', 'f_vatfx',
     'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
@@ -13794,7 +13914,7 @@
         lbl.appendChild(pill);
       }
     });
-    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn, [data-reg-zone-mode], #modalClearSitePinBtn, #modalSiteClearPinBtn, #modalRegClearZoneBtn').forEach(btn => {
+    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #discUnitPills button, #ideDiscUnitPills button, [data-apply-standing-disc], #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn, [data-reg-zone-mode], #modalClearSitePinBtn, #modalSiteClearPinBtn, #modalRegClearZoneBtn').forEach(btn => {
       btn.disabled = true;
     });
     return restoredAny;
@@ -29187,18 +29307,18 @@
     {
       id: 'G_DISCOUNT_WARN',
       code: '#03',
-      name: 'High Material Discount Note Guard',
-      domain: 'Sales & Material',
+      name: 'High Discount & $0-Cash Settlement Note Guard',
+      domain: 'Sales & Payables',
       behavior: 'block',
-      whereLabel: 'Sales Ticket Form',
+      whereLabel: 'Sales Ticket, Expense, Receipt & Settlement Forms',
       jumpForm: 'sales',
-      why: 'Prevents unapproved price giveaways or typing a dollar total into the discount box without leaving an audit explanation in Notes.',
+      why: 'Prevents unapproved price giveaways, $0-cash write-offs, or typing a dollar total into the discount box without leaving an audit explanation in Notes.',
       params: [
         { key: 'max_disc_pct', label: 'Discount Note Threshold', def: 20, min: 1, max: 90, step: 5, unit: '%' }
       ],
-      whatFn: p => `Flags any Sales Ticket discount exceeding <b>${fmtNum(p.max_disc_pct, 0)}%</b> of the material subtotal and requires a written explanation in Notes before saving.`,
-      threshFn: p => `Discount > ${fmtNum(p.max_disc_pct, 0)}% needs Note`,
-      previewFn: p => `Live example ($400.00 material load): Any discount above $${fmtNum(400 * (Number(p.max_disc_pct || 20) / 100), 2)} (${fmtNum(p.max_disc_pct, 0)}%) highlights amber and requires a Note before posting.`
+      whatFn: p => `Flags any Sales Ticket, Customer Receipt, or Supplier Settlement discount exceeding <b>${fmtNum(p.max_disc_pct, 0)}%</b> (and any $0.00-cash settlement discount clearing) and requires a written explanation in Notes before saving.`,
+      threshFn: p => `Discount > ${fmtNum(p.max_disc_pct, 0)}% or $0-cash needs Note`,
+      previewFn: p => `Live example ($400.00 voucher or receipt): Any discount above $${fmtNum(400 * (Number(p.max_disc_pct || 20) / 100), 2)} (${fmtNum(p.max_disc_pct, 0)}%) or $0.00-cash write-off highlights amber and requires a Note before posting.`
     },
     {
       id: 'S5',
@@ -29710,6 +29830,26 @@
       whatFn: p => `Flags any seat or gate till reaching ${fmtNum(p.max_shift_voids, 0)}+ voids in one shift/day, any entry voided after thermal printing, or any void followed within ${fmtNum(p.rekey_window_min, 0)} min by a lower active entry for the same party/cashier.`,
       threshFn: p => `${fmtNum(p.max_shift_voids, 0)}+ shift voids · After-print · Re-key <= ${fmtNum(p.rekey_window_min, 0)}m`,
       previewFn: p => `Live Sentinel: Watches operational Void Log + live gate POS voids across ${fmtNum(p.max_shift_voids, 0)}+ same-day actor voids, printed receipts voided later, and lower-amount re-keys within ${fmtNum(p.rekey_window_min, 0)} min.`
+    },
+    {
+      id: 'S22',
+      code: '#33',
+      name: 'Supplier Standing-Discount Consistency Sentinel',
+      domain: 'Payables & Procurement',
+      behavior: 'audit',
+      whereLabel: 'Expenses & Payables, Suppliers Registry & AI Sentinels',
+      jumpView: 'sentinels',
+      sentinelId: 'S22',
+      lockedActive: false,
+      why: 'Tracks supplier standing discount terms and deterministic median discount habits across expenses and settlements, nudging on form entry and flagging vouchers posted with $0 discount when a standing discount was expected.',
+      params: [
+        { key: 'min_vouchers', label: 'Min Historical Discount Vouchers', def: 3, min: 2, max: 20, step: 1, unit: 'vouchers' },
+        { key: 'min_standing_pct', label: 'Min Standing Discount (%)', def: 2, min: 0.5, max: 50, step: 0.5, unit: '%' },
+        { key: 'min_voucher_usd', label: 'Min Voucher Size ($ USD)', def: 100, min: 10, max: 5000, step: 25, unit: 'USD' }
+      ],
+      whatFn: p => `Learns suppliers with Master Standing Discount (%) or >= ${fmtNum(p.min_vouchers, 0)} historical vouchers at >= ${fmtNum(p.min_standing_pct, 1)}% discount (excluding <= $10 cash rounding and 100% write-offs) and flags >= $${fmtNum(p.min_voucher_usd, 0)} vouchers posted with $0 discount.`,
+      threshFn: p => `>= ${fmtNum(p.min_vouchers, 0)} vouchers · >= ${fmtNum(p.min_standing_pct, 1)}% · >= $${fmtNum(p.min_voucher_usd, 0)}`,
+      previewFn: p => `Live Sentinel: Surfaces 1-tap Apply X% Discount pills on Expense & Settlement and flags >= $${fmtNum(p.min_voucher_usd, 0)} $0-discount vouchers for standing-discount suppliers.`
     },
     {
       id: 'S20',
@@ -32314,7 +32454,7 @@
       : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
     let indSentByRule = null;
 
-    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON', 'S20']);
+    const universalRuleIds = new Set(['S22', 'G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON', 'S20']);
     const scopedBuiltInCatalog = isMfgScope
       ? ALERT_RULE_CATALOG
       : ALERT_RULE_CATALOG.filter(r => universalRuleIds.has(r.id));
@@ -33439,6 +33579,11 @@
         return `${d.scannedPunches}:${(d.clusters || []).map(c => `${c.id}=${c.count}`).join(',')}`;
       })()
       : 'x';
+    const sdSnOff = !isAlertRuleEnabled('S22');
+    const sdSn = sdSnOff ? null : getStandingDiscountSentinelData();
+    const sdSnSig = sdSnOff
+      ? 'off'
+      : (sdSn ? `${sdSn.restricted ? 'r' : '1'}:${sdSn.missedCount}:${sdSn.missedExpUsd}:${sdSn.qualifiedSupsCount}:${sdSn.minVouchers}:${sdSn.minPct}:${sdSn.minUsd}` : 'x');
     const swGeoSig = isNonMfgSn ? 'x' : _geoWearRevToken();
     const opSnOff = !isAlertRuleEnabled('S20');
     const opSn = opSnOff ? null : getOverpaidPayablesSentinelData();
@@ -33448,8 +33593,9 @@
     const csSnActive = Boolean(STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()) && isAlertRuleEnabled('S21') && _cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
     const csSig = csSnActive ? `${_cloudStoreHealthSnap.bytes}:${_cloudStoreHealthSnap.updatedAt}` : 'ok';
     const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}|op:${opSnSig}|cs:${csSig}`;
+    const _sdCacheKey = `${rawItemsKey}|sd:${sdSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
-    let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
+    let rawItems = _sentinelRawItemsCache.get(_sdCacheKey);
     if (!rawItems) {
       rawItems = [];
       if (isNonMfgSn) {
@@ -33472,6 +33618,8 @@
           navView: 'ledger',
           navLabel: 'Open Ledger'
         });
+        const sdIndItem = buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, activeIndForSn);
+        if (sdIndItem) rawItems.push(sdIndItem);
         buildIndustrySentinelItems(activeIndForSn).forEach(x => {
           if (x && !x.isCustom) rawItems.push(x);
         });
@@ -33835,6 +33983,8 @@
         navLabel: 'Open Staff Roster'
       });
 
+      const sdMfgItem = buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, 'Manufacturing');
+      if (sdMfgItem) rawItems.push(sdMfgItem);
       rawItems.push(_buildGeoAuditSentinelItem('Manufacturing', { id: 'S15', ruleId: 'S15', company: scope }));
       rawItems.push(_buildDwellDriftSentinelItem('Manufacturing', { id: 'S16', ruleId: 'S16', company: scope }));
       if ((canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.buildVoidSentinelItem === 'function') {
@@ -33878,7 +34028,7 @@
         });
       });
       if (_sentinelRawItemsCache.size > 16) _sentinelRawItemsCache.clear();
-      _sentinelRawItemsCache.set(rawItemsKey, rawItems);
+      _sentinelRawItemsCache.set(_sdCacheKey, rawItems);
     }
 
     const revStore = STATE.sentinelReviews || {};
@@ -34977,6 +35127,17 @@
 
       ${renderIndustrySentinelDetailPanel()}
       ${(() => {
+        const sdSnData = (isAlertRuleEnabled('S22') && seatLens().expenses) ? getStandingDiscountSentinelData() : null;
+        const hasSdRows = Boolean(sdSnData && !sdSnData.restricted && sdSnData.rows && sdSnData.rows.length > 0);
+        const sdTableHtml = hasSdRows ? miniTable('MISSED STANDING SUPPLIER DISCOUNTS', sdSnData.rows, [
+          { label: 'Date', key: 'date', mono: true },
+          { label: 'Co.', key: 'company' },
+          { label: 'Type', key: 'kind_label' },
+          { label: 'Supplier', key: 'supplier', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Voucher ($)', key: 'gross_usd', r: true, fmt: usd2 },
+          { label: 'Standing (%)', key: 'expected_pct', r: true, fmt: v => `${fmtNum(v || 0, 1)}% (${v >= 0 ? 'Term' : ''})`.replace(' (Term)', '') },
+          { label: 'Missed ($)', key: 'expected_disc_usd', r: true, fmt: usd2 }
+        ], 'snMissedStandingDisc') : '';
         const opSnData = (isAlertRuleEnabled('S20') && seatLens().expenses) ? getOverpaidPayablesSentinelData() : null;
         const hasOpSup = Boolean(opSnData && !opSnData.restricted && opSnData.rows && opSnData.rows.length > 0);
         const hasOpSites = Boolean(opSnData && !opSnData.restricted && !isNonMfgSn && opSnData.siteRows && opSnData.siteRows.length > 0);
@@ -35019,14 +35180,15 @@
             { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
             { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
           ], 'snCustomAlerts') : '';
-          return (opSupTableHtml || customTblHtml)
-            ? `<div class="mini-table-grid">${opSupTableHtml}${customTblHtml}</div>`
+          return (sdTableHtml || opSupTableHtml || customTblHtml)
+            ? `<div class="mini-table-grid">${sdTableHtml}${opSupTableHtml}${customTblHtml}</div>`
             : '';
         }
         return `
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
+        ${sdTableHtml}
         ${opSupTableHtml}
         ${opSiteTableHtml}
         ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS', overdueArRows || [], [
@@ -36170,6 +36332,52 @@
 
     // ---- 1a & 1b) Counterparty-level Site Owners & Combined Transportation Remaining Payables ----
     const legBrk = computeThreeLegPayablesBreakdown();
+    const unpMatBySup = new Map();
+    const unpHaulBySup = new Map();
+    const _recUnpSiteLoads = (mapObj, supKeyNorm, siteLabel, qtyVal) => {
+      if (!supKeyNorm || !siteLabel || String(siteLabel).trim().startsWith('(')) return;
+      let ent = mapObj.get(supKeyNorm);
+      if (!ent) { ent = { loads: 0, siteStats: new Map(), topSite: '' }; mapObj.set(supKeyNorm, ent); }
+      ent.loads += 1;
+      const cleanSt = cleanSiteLabel(siteLabel);
+      let stStat = ent.siteStats.get(cleanSt);
+      if (!stStat) {
+        stStat = { site: cleanSt, loads: 0, qty: 0 };
+        ent.siteStats.set(cleanSt, stStat);
+      }
+      stStat.loads += 1;
+      stStat.qty = round2(stStat.qty + Number(qtyVal || 0));
+    };
+    const _allScopedRawsForUnp = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
+    for (let i = 0; i < _allScopedRawsForUnp.length; i++) {
+      const rp = _allScopedRawsForUnp[i];
+      if (!rp || rp.voided || rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      const coN = normSupPayable(rp.company);
+      const qUnp = ticketProductQty(rp);
+      if (Number(rp.cost || 0) === 0) {
+        const soN = normSupPayable(rp.site_owner);
+        if (soN && soN !== 'excluded' && soN !== 'none' && soN !== coN) {
+          _recUnpSiteLoads(unpMatBySup, soN, rp.site, qUnp);
+        }
+      }
+      if (Number(rp.trans_cost || 0) === 0 && !/^company/i.test(String(rp.transport_by || '')) && !/^supplier-delivered$/i.test(String(rp.transport_by || '')) && !rp.includes_transport) {
+        const toN = normSupPayable(rp.truck_owner);
+        if (toN && toN !== 'excluded' && toN !== 'none' && toN !== coN) {
+          _recUnpSiteLoads(unpHaulBySup, toN, rp.site, qUnp);
+        }
+      }
+    }
+    const _pickTopUnp = ent => {
+      if (!ent || !ent.loads) return null;
+      if (!ent.topSite) {
+        const ranked = Array.from(ent.siteStats.values()).sort((a, b) =>
+          (b.loads - a.loads) || (b.qty - a.qty) || String(a.site).localeCompare(String(b.site))
+        );
+        ent.topSite = ranked.length ? ranked[0].site : '';
+      }
+      return ent.topSite ? ent : null;
+    };
     const siteOwnerAll = [];
     const transPayAll = [];
     const legRows = (legBrk && Array.isArray(legBrk.rows)) ? legBrk.rows : [];
@@ -36264,6 +36472,9 @@
       if (qRaw && !norm(r.supplier).includes(qRaw) && !norm(r.trans_scope).includes(qRaw)) return false;
       return rawTransPred(r);
     });
+    const haulerDeductMap = (canRawExp && window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.getHaulerDeductionsMap === 'function')
+      ? (window.MFG_FLEET_PNL.getHaulerDeductionsMap() || {})
+      : {};
     const transPayRows = sortRows(transPayPool, 'raw_trans_pay', canRawExp ? 'trans_rem' : 'trans_loads', 'desc');
     const shownTransPay = transPayRows.slice(0, shownCount('raw_trans_pay'));
     const isTrUnfiltered = !qRaw && activeTransChip === 'all' && transPayRows.length === transPayAll.length && legBrk && legBrk.totals;
@@ -36652,6 +36863,12 @@
                     ? rawSitesArr.map(sn => relLink('sites', sn, sn, true)).join(', ')
                     : `${rawSitesArr.slice(0, 2).map(sn => relLink('sites', sn, sn, true)).join(', ')} <span class="badge badge-neutral" data-ui-tip="${esc(rawSitesStr)}">+${rawSitesArr.length - 2}</span>`);
                 const basisCls = r.supply_basis === 'Delivery Included' ? 'badge-brass' : (r.supply_basis === 'Mixed' ? 'badge-info' : 'badge-neutral');
+                const unpMatSup = _pickTopUnp(unpMatBySup.get(normSupPayable(r.supplier)));
+                const unpMatSupHtml = unpMatSup
+                  ? (!STATE.kioskLocked && canEnterForm('pricerule_raw')
+                      ? ` <button type="button" class="badge badge-warn btn-set-site-price" data-set-site-price="${esc(unpMatSup.topSite)}" data-set-site-sup="${esc(r.supplier)}" data-ui-tip="Set Material &amp; Transport Rate across unpriced sites &amp; grades">Unpriced (${fmtNum(unpMatSup.loads)})</button>`
+                      : ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpMatSup.loads)})</span>`)
+                  : '';
                 const stmtActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
                   <span class="raw-leg-stmt-actions no-print">
                     <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="material" data-stmt-panel="rawSiteOwnersPanel" data-ui-tip="Open Statement 16 (Material Leg)" aria-label="Open Statement 16 (Material Leg)">${ic('statements')}</button>
@@ -36661,7 +36878,7 @@
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
                   <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtActsHtml}</td>
                   <td>${sitesCellHtml}</td>
-                  <td><span class="badge ${basisCls}">${esc(r.supply_basis)}</span></td>
+                  <td><span class="badge ${basisCls}">${esc(r.supply_basis)}</span>${unpMatSupHtml}</td>
                   <td class="r">${fmtNum(r.quarry_loads)}</td>
                   <td class="r">${r.quarry_qty ? `${fmtNum(r.quarry_qty, 0)} m³` : '—'}</td>
                   <td class="r">${canRawExp ? (Math.abs(r.quarry_cr) >= 0.005 ? fmtUSD(r.quarry_cr, 2) : '—') : '<span class="mu">Restricted</span>'}</td>
@@ -36714,15 +36931,29 @@
             <tbody>
               ${shownTransPay.map(r => {
                 const scopeCls = r.trans_scope === 'Supplier + Customer' ? 'badge-brass' : (r.trans_scope === 'Customer Trans' ? 'badge-info' : 'badge-neutral');
+                const unpHaulSup = _pickTopUnp(unpHaulBySup.get(normSupPayable(r.supplier)));
+                const unpHaulSupHtml = unpHaulSup
+                  ? (!STATE.kioskLocked && canEnterForm('pricerule_haul')
+                      ? ` <button type="button" class="badge badge-warn btn-set-site-price" data-set-site-price="${esc(unpHaulSup.topSite)}" data-set-site-leg="transport" data-set-site-sup="${esc(r.supplier)}" data-ui-tip="Set Transport Rate across unpriced sites &amp; grades">Unpriced (${fmtNum(unpHaulSup.loads)})</button>`
+                      : ` <span class="badge badge-warn" data-ui-tip="3rd-party haulage deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpHaulSup.loads)})</span>`)
+                  : '';
                 const stmtTrActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
                   <span class="raw-leg-stmt-actions no-print">
                     <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="transport" data-stmt-panel="rawTransPayPanel" data-ui-tip="Open Statement 16 (Transport Leg)" aria-label="Open Statement 16 (Transport Leg)">${ic('statements')}</button>
                     <button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-sup-stmt="${esc(r.supplier)}" data-stmt-leg="transport" data-stmt-share="1" data-stmt-panel="rawTransPayPanel" data-ui-tip="Share Leg Confirmation (WhatsApp / PDF)" aria-label="Share Leg Confirmation (WhatsApp / PDF)">${ic('send_msg')}</button>
                   </span>` : '';
+                const canonSup = (typeof canonicalizePartyByHygiene === 'function')
+                  ? (canonicalizePartyByHygiene('supplier', r.supplier, '', 'Manufacturing') || r.supplier)
+                  : r.supplier;
+                const supNormKey = String(canonSup || '').trim().replace(/\s+/g, ' ').toLowerCase();
+                const fleetDed = haulerDeductMap[supNormKey] || null;
+                const fleetDedHtml = (fleetDed && fleetDed.totalDeductions > 0.004)
+                  ? ` <button type="button" class="raw-fleet-deduct-pill no-print" data-open-partner-settle="${esc(fleetDed.accountKey)}" data-ui-tip="${esc(`Gross transport excludes ${fmtUSD(fleetDed.totalDeductions, 2)} in Fleet deductions (Diesel ${fmtUSD(fleetDed.dieselUsd, 0)}, Workshop ${fmtUSD(fleetDed.workshopUsd, 0)}, Driver ${fmtUSD(fleetDed.driverUsd, 0)}). Click to open Owner Settlement Sheet.`)}">${ic('fleet')}<span>Settlement Sheet</span> <b data-no-i18n="1">-${fmtUSD(fleetDed.totalDeductions, 0)}</b></button>`
+                  : '';
                 return `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
-                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtTrActsHtml}</td>
-                  <td><span class="badge ${scopeCls}">${esc(r.trans_scope)}</span></td>
+                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtTrActsHtml}${fleetDedHtml}</td>
+                  <td><span class="badge ${scopeCls}">${esc(r.trans_scope)}</span>${unpHaulSupHtml}</td>
                   <td class="r">${r.trans_sup_loads ? fmtNum(r.trans_sup_loads) : '—'}</td>
                   <td class="r">${r.trans_cust_loads ? fmtNum(r.trans_cust_loads) : '—'}</td>
                   <td class="r">${canRawExp ? (Math.abs(r.trans_sup_cr) >= 0.005 ? fmtUSD(r.trans_sup_cr, 2) : '—') : '<span class="mu">Restricted</span>'}</td>
@@ -40917,6 +41148,27 @@
     return getBuDefaultShift(companyRaw, d);
   }
 
+  // Every work_shifts row a save changes gets a new modified_at (owner report 2026-11-27, WTC Office: weekday
+  // hours "did not save"). Other devices take a synced row only when its modified_at is newer than their copy
+  // (mergeCustomRecords), so a row edited before kept its old stamp and they kept showing the old hours. The
+  // stamp is also kept above the row's own one, in case this device's clock is behind the one that last saved.
+  function stampWorkShiftRowModified(row, stampIso, prevIso) {
+    if (!row || typeof row !== 'object') return row;
+    let st = stampIso || nextMonotonicIso();
+    const prevMs = Date.parse(String(prevIso != null ? prevIso : (row.modified_at || '')));
+    const stMs = Date.parse(st);
+    if (Number.isFinite(prevMs) && Number.isFinite(stMs) && stMs <= prevMs) {
+      st = new Date(prevMs + 1).toISOString();
+      // Later stamps of this session (e.g. the series-neighbour pass) must not fall back below this one.
+      if (prevMs + 1 > _lastMonotonicMs) _lastMonotonicMs = prevMs + 1;
+    }
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    row.modified_at = st;
+    row.modified_by = u.full_name || u.email || 'admin';
+    row.modified_by_email = u.email || '';
+    return row;
+  }
+
   function setBuDefaultShift(companyRaw, shiftIdOrCode, opts = {}) {
     ensureWorkShiftsSeeded();
     const co = String(companyRaw || defaultEntryCompany() || 'WTC').trim();
@@ -40926,12 +41178,14 @@
     const list = (SEED.records && SEED.records.work_shifts) || [];
     if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
     let chosen = null;
+    const defStamp = nextMonotonicIso();
     list.forEach(r => {
       if (!r || r.voided || norm(r.company || 'WTC') !== coNorm) return;
       const isMatch = norm(r.id || '') === targetKey || norm(r.shift_code || '') === targetKey || norm(r.name || '') === targetKey;
       const nextDef = Boolean(isMatch && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO()));
       if (Boolean(r.is_bu_default) !== nextDef) {
         r.is_bu_default = nextDef;
+        stampWorkShiftRowModified(r, defStamp);
         hydrateWorkShiftRowComputed(r);
         const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
         if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], r);
@@ -40973,6 +41227,7 @@
           source: 'app',
           voided: false
         });
+        stampWorkShiftRowModified(chosen, defStamp);
         SEED.records.work_shifts.unshift(chosen);
         STATE.customRecords.work_shifts.unshift(Object.assign({}, chosen));
       }
@@ -41000,10 +41255,12 @@
 
     // If this row is marked as BU default, clear `is_bu_default` on other open shifts of a different shift_code in the same BU
     if (savedRow && !savedRow.voided && isBuDef && SEED && SEED.records && Array.isArray(SEED.records.work_shifts)) {
+      const undefStamp = nextMonotonicIso();
       SEED.records.work_shifts.forEach(other => {
         if (!other || other.voided || String(other.id) === String(savedRow.id)) return;
         if (norm(other.company || 'WTC') === coNorm && norm(other.shift_code || other.name || '') !== codeNorm && other.is_bu_default) {
           other.is_bu_default = false;
+          stampWorkShiftRowModified(other, undefStamp);
           hydrateWorkShiftRowComputed(other);
           if (Array.isArray(STATE.customRecords.work_shifts)) {
             const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(other.id));
@@ -69867,6 +70124,7 @@
       }
       _trdSeedAppRcptHits = seedHits;
     }
+    const trdDiscByCo = {};
     const custRcpts = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
     if (custRcpts.length || _trdSeedAppRcptHits.length) {
       const seenTrdRcptIds = new Set();
@@ -69882,13 +70140,20 @@
         const rKind = receiptKind(rr);
         if (rKind === 'Excluded' || rKind === 'Customer invoice' || rKind === 'Rent & Barter') return;
         const custName = String(rr.customer || '').trim();
-        const settleUsd = round2((Number(rr.amount || 0) || 0) + (Number(rr.discount || 0) || 0));
-        if (!custName || !(Math.abs(settleUsd) > 0.005)) return;
+        const cashPart = round2(Number(rr.amount || 0) || 0);
+        const discPart = Math.max(0, round2(Number(rr.discount || 0)));
+        if (!custName || !(Math.abs(cashPart) > 0.005 || discPart > 0.005)) return;
         const hitIdx = rawReceivableRows.findIndex(x => x && canonCompany(x.company) === rCo && norm(x.customer) === norm(custName));
         if (hitIdx >= 0) {
           const curRow = rawReceivableRows[hitIdx];
-          const nextSettled = round2((Number(curRow.settled_usd || 0) || 0) + settleUsd);
+          const prevSettled = Number(curRow.settled_usd || 0) || 0;
           const invTtc = Number(curRow.invoiced_ttc || 0) || 0;
+          const prevGross = Math.max(0, round2(invTtc - prevSettled));
+          const allocDisc = Math.min(discPart, prevGross);
+          const settleUsd = round2(cashPart + allocDisc);
+          if (!(Math.abs(settleUsd) > 0.005)) return;
+          if (allocDisc > 0) trdDiscByCo[rCo] = round2((trdDiscByCo[rCo] || 0) + allocDisc);
+          const nextSettled = round2(prevSettled + settleUsd);
           const nextGross = Math.max(0, round2(invTtc - nextSettled));
           const nextAdv = Math.max(0, round2(nextSettled - invTtc));
           const nextStatus = nextAdv > 0.005 ? 'Customer Advance (Credit)' : (nextGross <= 0.005 ? 'Settled' : (curRow.status || 'Open'));
@@ -69900,16 +70165,16 @@
             dso_days: nextGross <= 0.005 ? 0 : (curRow.dso_days || 0),
             status: nextStatus
           });
-        } else {
+        } else if (Math.abs(cashPart) > 0.005) {
           rawReceivableRows.unshift({
             id: rr.id || ('AR-' + rid),
             company: rCo,
             customer: custName,
             invoiced_ttc: 0,
-            settled_usd: settleUsd,
+            settled_usd: cashPart,
             gross_ar_usd: 0,
-            advance_usd: settleUsd,
-            net_ar_usd: round2(-settleUsd),
+            advance_usd: cashPart,
+            net_ar_usd: round2(-cashPart),
             dso_days: 0,
             promise_date: String(rr.date || ''),
             promise_usd: 0,
@@ -70170,6 +70435,7 @@
     const grossArUsd = round2(scopedAllAr.reduce((a, r) => a + r.gross_ar_usd, 0));
     const customerAdvancesUsd = round2(scopedAllAr.reduce((a, r) => a + r.advance_usd, 0));
     const activePromisesUsd = round2(scopedAllAr.reduce((a, r) => a + r.promise_usd, 0));
+    const totalReceiptDiscountUsd = round2([...scopeSet].reduce((a, c) => a + Number(trdDiscByCo[c] || 0), 0));
     const weightedDsoDays = scopeSet.size === 1
       ? (scopeSet.has('Korri Auto') ? 255.8 : 144.2)
       : 145.6;
@@ -70504,6 +70770,7 @@
         grossArUsd,
         customerAdvancesUsd,
         activePromisesUsd,
+        totalReceiptDiscountUsd,
         weightedDsoDays,
         totalFobUsd,
         totalLandedAddUsd,
@@ -72274,7 +72541,9 @@
           });
           if (rem > 0.005 && !isSeededRct) {
             rc.allocated_inv_usd = round2(Math.max(0, curAlloc - rem));
-            rc.unallocated_adv_usd = round2(Number(rc.unallocated_adv_usd || 0) + rem);
+            rc._overDiscountFlag = Number(rc.discount_usd || 0) > rc.allocated_inv_usd + 0.005;
+            const cashAllocatedPart = Math.max(0, round2(rc.allocated_inv_usd - Number(rc.discount_usd || 0)));
+            rc.unallocated_adv_usd = Math.max(0, round2(Number(rc.gross_usd || 0) - cashAllocatedPart - Number(rc.deposit_gl4196_usd || 0)));
             rc.status = rc.unallocated_adv_usd > 0.005 ? 'Advance Pool' : 'Allocated';
           }
         } else {
@@ -72392,6 +72661,7 @@
       return s + (ttc > 0 ? vat * Math.min(1, coll / ttc) : (coll > 0 ? vat : 0));
     }, 0));
     const totalCollectedRentUsd = round2(fInvoices.reduce((s, r) => s + Number(r.collected_usd || 0), 0));
+    const totalRentDiscountUsd = round2(fReceipts.reduce((s, r) => s + Math.min(Number(r.discount_usd || 0), Math.max(0, Number(r.allocated_inv_usd || 0))), 0));
     const openRentArUsd = round2(fInvoices.reduce((s, r) => s + Number(r.open_ar_usd || 0), 0));
     const unallocatedAdvancesUsd = round2(fReceipts.reduce((s, r) => s + Number(r.unallocated_adv_usd || 0), 0));
     const securityDepositsHeldUsd = round2(fReceipts.reduce((s, r) => s + Number(r.deposit_gl4196_usd || 0), 0));
@@ -72477,6 +72747,7 @@
         totalVat11Usd,
         official4235VatCollectedUsd,
         totalCollectedRentUsd,
+        totalRentDiscountUsd,
         openRentArUsd,
         unallocatedAdvancesUsd,
         securityDepositsHeldUsd,
@@ -72724,7 +72995,7 @@
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
                     <td>${esc(r.property)}</td>
                     <td>${esc(r.method)}</td>
-                    <td class="r mono">${canReLBooks ? `<strong>${fmtUSD(r.gross_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canReLBooks ? `<strong>${fmtUSD(r.gross_usd, 2)}</strong>${Number(r.discount_usd || 0) > 0 ? `<div class="muted" style="font-size:10.5px">Disc ${fmtUSD(r.discount_usd, 2)}</div>` : ''}` : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.allocated_inv_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.unallocated_adv_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.deposit_gl4196_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -82265,6 +82536,8 @@
       const cogs = dFloor(295000, s.totalSalesCost);
       const whVal = dFloor(380000, s.totalStockValUsd);
       const settledAr = round2(Math.max(0, Number(s.totalSalesTtc || 0) - Number(s.grossArUsd || 0)));
+      const trdDiscUsd = Math.min(settledAr, round2(Math.max(0, Number(s.totalReceiptDiscountUsd || 0))));
+      const cashSettledAr = round2(Math.max(0, settledAr - trdDiscUsd));
       rawTb = [
         { code: '101', name: 'Trading Share Capital & Statutory Reserves', cls: '1', debit: 0, credit: dConst(580000), source_module: 'Trading Equity', debit_rule: 'Dividend payouts', credit_rule: 'Korri Auto & Shacman capital & retained reserves' },
         { code: '218', name: 'Showroom, Heavy Workshop & PDI Bays', cls: '2', debit: dConst(265000), credit: 0, source_module: 'Showroom & Workshop Assets', debit_rule: 'Diagnostic bays, cranes & showroom fixtures', credit_rule: 'Accumulated depreciation' },
@@ -82274,8 +82547,9 @@
         { code: '4111', name: 'Customer Trade Receivables — Gross AR', cls: '4', debit: dFloor(442000, s.totalSalesTtc), credit: demoGl ? round2((s.totalSalesTtc || 442000) - (s.grossArUsd || 118000)) : settledAr, source_module: 'Trading AR & Ageing', debit_rule: 'Pre-printed book sales invoices', credit_rule: 'Customer cash, cheque & wire settlements' },
         { code: '4191', name: 'Customer Advances & Unapplied Deposits', cls: '4', debit: 0, credit: dFloor(34500, s.customerAdvancesUsd), source_module: 'Customer Advances', debit_rule: 'Applied against final vehicle delivery invoice', credit_rule: 'Down-payments & truck reservation deposits (never netted into 4111)' },
         { code: '4427', name: '11% Output VAT on Pre-Printed Invoice Books', cls: '4', debit: 0, credit: salesVat, source_module: 'Sales Invoicing', debit_rule: 'VAT returns filed', credit_rule: '11% output VAT on Korri Auto & Shacman tax invoices' },
-        { code: '5121', name: 'Showroom Cash Till & Trade Bank Accounts', cls: '5', debit: dFloor(395000, settledAr + Number(s.customerAdvancesUsd || 0)), credit: dFloor(148000, s.totalLandedAddUsd), source_module: 'Trading Treasury', debit_rule: 'Customer collections & advance deposits', credit_rule: 'Import LC wires, customs duties & showroom payroll' },
+        { code: '5121', name: 'Showroom Cash Till & Trade Bank Accounts', cls: '5', debit: dFloor(395000, cashSettledAr + Number(s.customerAdvancesUsd || 0)), credit: dFloor(148000, s.totalLandedAddUsd), source_module: 'Trading Treasury', debit_rule: 'Customer collections & advance deposits', credit_rule: 'Import LC wires, customs duties & showroom payroll' },
         { code: '607', name: 'Cost of Goods Sold — Landed Vehicles & Parts', cls: '6', debit: cogs, credit: 0, source_module: 'Sales & Landed Cost', debit_rule: 'Landed WAC cost of trucks & spare parts sold', credit_rule: 'Sales return restocking' },
+        ...(trdDiscUsd > 0 ? [{ code: '709', name: 'Discounts Allowed on Commercial Invoices', cls: '7', debit: trdDiscUsd, credit: 0, source_module: 'Trading AR & Ageing', debit_rule: 'Settlement discounts & rebates granted on customer collections', credit_rule: 'Discount reversals' }] : []),
         { code: '707', name: 'Commercial Vehicles & OEM Spare Parts Sales', cls: '7', debit: 0, credit: salesNet, source_module: 'Sales Invoicing', debit_rule: 'Credit notes & returns', credit_rule: 'Net HT sales across Korri Auto & Shacman invoice books' }
       ];
       soaStream = [].concat(
@@ -82283,6 +82557,7 @@
         makeVoucherPair('2026-10-30', coLbl, 'COGS-SH-2401', '607', 'Cost of Goods Sold — Landed Vehicles & Parts', '3701', 'Heavy Truck & Commercial Serial Stock (VINs)', 'Showroom & Warehouses', 'Landed WAC cost of trucks & spare parts sold', demoGl ? 76200 : cogs),
         makeVoucherPair('2026-10-28', coLbl, 'IMP-LC-109', '3702', '5-Warehouse OEM Spare Parts Inventory (WAC)', '4011', 'Foreign OEMs, Letters of Credit & Customs AP', 'OEM Export + Beirut Port', 'Capitalized FOB + customs + freight landed cost allocation', demoGl ? 64500 : round2(s.totalFobUsd + s.totalLandedAddUsd)),
         makeVoucherPair('2026-10-27', coLbl, 'ADV-DEP-18', '5121', 'Showroom Cash Till & Trade Bank Accounts', '4191', 'Customer Advances & Unapplied Deposits', 'Customer Advance Deposits', 'Unapplied customer advances tracked separately in GL 4191', dFloor(34500, s.customerAdvancesUsd)),
+        ...(trdDiscUsd > 0 ? makeVoucherPair('2026-10-27', coLbl, 'DISC-TRD-709', '709', 'Discounts Allowed on Commercial Invoices', '4111', 'Customer Trade Receivables — Gross AR', 'Trading Commercial Invoices', 'Settlement discounts granted on customer trade receipts', trdDiscUsd) : []),
         makeVoucherPair('2026-10-26', coLbl, 'VAT-INV-10', '4111', 'Customer Trade Receivables — Gross AR', '4427', '11% Output VAT on Pre-Printed Invoice Books', '11% Statutory VAT', 'Output VAT posted from pre-printed invoice books', salesVat)
       );
     } else if (ind === 'Real Estate & Property') {
@@ -82293,6 +82568,8 @@
       const vat4235 = dFloor(19800, s.totalVat11Usd);
       const deedPaid = dFloor(420000, s.salesPaidUsd);
       const woCost = dFloor(34000, s.woActualUsd);
+      const rentDiscUsd = Math.min(round2(Number(s.totalCollectedRentUsd || 0)), round2(Number(s.totalRentDiscountUsd || 0)));
+      const cashRentCollectedUsd = round2(Math.max(0, Number(s.totalCollectedRentUsd || 0) - rentDiscUsd));
       const ownEnt = round2((re.ownership || []).reduce((a, o) => a + Number(o.entitled_noi_usd || 0), 0));
       const ownDist = round2((re.ownership || []).reduce((a, o) => a + Number(o.distributed_usd || 0), 0));
       rawTb = [
@@ -82303,14 +82580,16 @@
         { code: '4196', name: 'Tenant Security Deposits & Deferred Rent', cls: '4', debit: 0, credit: dFloor(68000, s.securityDepositsHeldUsd), source_module: 'Lease Contracts', debit_rule: 'Deposit refund or damage offset at lease exit', credit_rule: 'Refundable security deposits held across active leases' },
         { code: '4427', name: '4235 Company S.A.L Official 11% Output VAT (#1..#6)', cls: '4', debit: 0, credit: vat4235, source_module: '4235 S.A.L VAT Register', debit_rule: 'Quarterly VAT declaration payment', credit_rule: '11% VAT on 4235 Company S.A.L sequential tax invoices #1..#6' },
         { code: '4515', name: 'Co-Owner NOI Distribution Accounts (/2400 Shares)', cls: '4', debit: dFloor(95000, ownDist), credit: dFloor(210000, ownEnt), source_module: 'Owner Distributions', debit_rule: 'Quarterly NOI cash payouts to co-owners', credit_rule: 'Net operating income allocated by /2400 Mulk deed shares' },
-        { code: '5121', name: 'Property Escrow & Rent Collection Bank Accounts', cls: '5', debit: round2(s.totalCollectedRentUsd + deedPaid), credit: dFloor(145000, ownDist), source_module: 'Real Estate Treasury', debit_rule: 'Rent collections & buyer deed instalments received', credit_rule: 'Contractor payouts & co-owner NOI distributions' },
+        { code: '5121', name: 'Property Escrow & Rent Collection Bank Accounts', cls: '5', debit: round2(cashRentCollectedUsd + deedPaid), credit: dFloor(145000, ownDist), source_module: 'Real Estate Treasury', debit_rule: 'Rent collections & buyer deed instalments received', credit_rule: 'Contractor payouts & co-owner NOI distributions' },
         { code: '614', name: 'Building Fit-Out, MEP Repairs & Municipal Taxes', cls: '6', debit: woCost, credit: 0, source_module: 'Work Orders & Recharges', debit_rule: 'Landlord maintenance & fit-out work orders', credit_rule: 'Tenant-fault repair recharges' },
+        ...(rentDiscUsd > 0 ? [{ code: '709', name: 'Discounts Allowed on Rent & Tenant Concessions', cls: '7', debit: rentDiscUsd, credit: 0, source_module: 'Tenant Receipts', debit_rule: 'Settlement discounts granted on rent receipts', credit_rule: 'Discount reversals' }] : []),
         { code: '706', name: 'Commercial & Residential Lease Rent & Deed Revenue', cls: '7', debit: 0, credit: round2(rentBase + deedPaid), source_module: 'Leases & Property Sales', debit_rule: 'Rent concessions', credit_rule: 'Recognized lease rental income + property sale revenue' }
       ];
       soaStream = [].concat(
         makeVoucherPair('2026-10-30', '4235 Company S.A.L', 'VAT-4235-06', '4111', 'Tenant Rent & Property Buyer Instalment AR', '706', 'Commercial & Residential Lease Rent & Deed Revenue', '4235 Msaytbeh Anchor Tenants', 'Official 4235 S.A.L commercial rent billing (Sequence #1..#6)', rentBase),
         makeVoucherPair('2026-10-30', '4235 Company S.A.L', 'VAT-4235-06V', '4111', 'Tenant Rent & Property Buyer Instalment AR', '4427', '4235 Company S.A.L Official 11% Output VAT (#1..#6)', '4235 Msaytbeh Anchor Tenants', '11% Output VAT on 4235 S.A.L official tax invoices', vat4235),
-        makeVoucherPair('2026-10-28', 'Properties', 'RCPT-RE-112', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Collected lease rent & buyer deed instalments', demoGl ? round2(s.totalCollectedRentUsd || 245000) : s.totalCollectedRentUsd),
+        makeVoucherPair('2026-10-28', 'Properties', 'RCPT-RE-112', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Collected lease rent & buyer deed instalments', demoGl ? round2(cashRentCollectedUsd || 245000) : cashRentCollectedUsd),
+        ...(rentDiscUsd > 0 ? makeVoucherPair('2026-10-28', 'Properties', 'DISC-RE-709', '709', 'Discounts Allowed on Rent & Tenant Concessions', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Settlement discounts granted on tenant receipts', rentDiscUsd) : []),
         makeVoucherPair('2026-10-26', 'Properties', 'DEP-4196-08', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4196', 'Tenant Security Deposits & Deferred Rent', 'Active Lease Tenants', 'Security deposits held in escrow across active leases', dFloor(68000, s.securityDepositsHeldUsd)),
         makeVoucherPair('2026-10-24', 'Properties', 'WO-MNT-19', '614', 'Building Fit-Out, MEP Repairs & Municipal Taxes', '4011', 'Fit-Out Contractors & Building Maintenance AP', 'MEP & Facade Contractors', 'Completed building maintenance & tenant fit-out work orders', woCost),
         makeVoucherPair('2026-10-22', 'Properties', 'NOI-2400-04', '4515', 'Co-Owner NOI Distribution Accounts (/2400 Shares)', '5121', 'Property Escrow & Rent Collection Bank Accounts', 'Mulk Co-Owners (/2400 Shares)', 'Quarterly Net Operating Income distribution by deed share', dFloor(95000, ownDist))
@@ -85811,7 +86090,10 @@
 
   function previewTradingReceiptFifo({ company, customer, method, totalSettledUsd, cashAmountUsd = null, editRow = null } = {}) {
     const settleNow = round2(Number(totalSettledUsd || 0) || 0);
-    if (!customer || !(settleNow > 0.005) || (cashAmountUsd != null && !(Number(cashAmountUsd) > 0.005))) {
+    if (!customer || !(settleNow > 0.005)) {
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
+    }
+    if (cashAmountUsd != null && Number(cashAmountUsd) < -0.005) {
       return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const rCo = canonCompany(company) || String(company || '').trim();
@@ -86078,8 +86360,9 @@
     return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
   }
 
-  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
+  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, discountUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
     const gross = Math.max(0, round2(Number(grossUsd || 0) || 0));
+    const disc = Math.max(0, round2(Number(discountUsd || 0) || 0));
     const dep = Math.max(0, round2(Number(depositUsd || 0) || 0));
     const coNorm = norm(company || '4235 Company S.A.L');
     const tenNorm = norm(tenant || '');
@@ -86097,9 +86380,10 @@
     if (allocatedInputUsd != null) {
       allocatedUsd = Math.max(0, round2(Number(allocatedInputUsd || 0) || 0));
     } else if (!skipAuto && tenNorm) {
-      allocatedUsd = round2(Math.min(Math.max(0, round2(gross - dep)), openBeforeUsd));
+      allocatedUsd = round2(Math.min(Math.max(0, round2(gross + disc - dep)), openBeforeUsd));
     }
-    const unallocatedUsd = Math.max(0, round2(gross - allocatedUsd - dep));
+    const cashAllocated = Math.max(0, round2(allocatedUsd - disc));
+    const unallocatedUsd = Math.max(0, round2(gross - cashAllocated - dep));
     const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - Math.min(allocatedUsd, openBeforeUsd)));
     const splitRows = [];
     if (allocatedUsd > 0.005) {
@@ -86240,6 +86524,9 @@
     }
     FORM_UI.domainNearCopyPeekItems = [];
     FORM_UI.domainFifoSplitPreview = null;
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
+    FORM_UI._lastIdeInputId = '';
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_AI_EDGE) {
@@ -86258,9 +86545,13 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    prefill = prefill || {};
     wireModulePopoverHandlersOnce();
     closeAllModalModulePopovers();
     FORM_UI.domainFifoSplitPreview = null;
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
+    FORM_UI._lastIdeInputId = '';
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
@@ -86630,7 +86921,8 @@
         ${fldWrap('Property *', `<input type="text" id="ide_property" list="dl_ide_re_rcpt_props" style="${inpStyle}" value="${esc(defProp)}">`)}
         ${fldWrap('Receipt Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}">${rTypes.map(t => `<option value="${esc(t)}" ${t === defType ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
         ${fldWrap('Payment Method', `<select id="ide_method" data-plain-options="1" style="${inpStyle}">${rMethods.map(m => `<option value="${esc(m)}" ${m === defMethod ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
-        ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
+        ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
+        ${fldWrap(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.ideDiscUnit, 'ide')}</span>`, `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount_usd != null ? prefill.discount_usd : '0')}">`)}
         ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Security Deposit ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_gl4196_usd != null ? prefill.deposit_gl4196_usd : '0')}">`)}
@@ -86747,7 +87039,7 @@
         ${fldWrap('Payment Method *', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Payment" ${defMth === 'Payment' ? 'selected' : ''}>Payment</option><option value="Barter" ${defMth === 'Barter' ? 'selected' : ''}>Barter</option><option value="VAT" ${defMth === 'VAT' ? 'selected' : ''}>VAT 11% receipt</option></select>`)}
         ${fldWrap('Amount Received ($) *', `<input type="number" id="ide_amount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.usd_amount != null ? prefill.usd_amount : (prefill.amount != null ? prefill.amount : ''))}" placeholder="0.00">`)}
         ${fldWrap('LBP Received (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(prefill.lbp_amount != null && Number(prefill.lbp_amount) !== 0 ? prefill.lbp_amount : '')}" placeholder="0">`)}
-        ${fldWrap('Settlement Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
+        ${fldWrap(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.ideDiscUnit, 'ide')}</span>`, `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
         ${fldWrap('Total Settled ($)', `<input type="text" id="ide_total_settled" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
@@ -87001,6 +87293,8 @@
     }
 
     let pendingDomainFiles = Array.isArray(prefill._pendingFiles) ? prefill._pendingFiles.slice() : [];
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
     modal._currentDomainSpec = spec;
     modal._currentDomainInd = ind;
     modal._getPendingDomainFiles = () => pendingDomainFiles;
@@ -87375,8 +87669,38 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(net + vat, 2);
       } else if (spec.key === 're_receipts') {
-        const gross = Math.max(0, round2(numVal('ide_gross')));
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const dep = Math.max(0, round2(numVal('ide_deposit')));
+        const rawGrossIn = Math.max(0, round2(numVal('ide_gross')));
+        const rawDiscIn = round2(numVal('ide_discount'));
+        if (FORM_UI.ideDiscUnit === 'pct' && FORM_UI._lastIdeInputId === 'ide_gross') {
+          const baseSnap = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : 0;
+          const rawCashIn = Math.max(0, round2(rawGrossIn - dep));
+          if (baseSnap > 0 && rawCashIn <= baseSnap + 0.005) {
+            const tweakedDisc = round2(Math.max(0, baseSnap - rawCashIn));
+            if ($('ide_discount')) $('ide_discount').value = tweakedDisc.toFixed(2);
+          } else {
+            const prevD = evalDiscInputState(rawDiscIn, baseSnap || rawCashIn, 'pct').usd;
+            if ($('ide_discount')) $('ide_discount').value = prevD.toFixed(2);
+          }
+          FORM_UI.ideDiscUnit = 'usd';
+          FORM_UI.ideSettleBase = null;
+          syncDiscUnitPillsDom(formEl, 'usd', false, 'ide');
+        }
+        let disc = 0;
+        let gross = rawGrossIn;
+        const discStRe = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, round2(rawGrossIn - dep))) : Math.max(0, round2(rawGrossIn - dep)), FORM_UI.ideDiscUnit);
+        if (FORM_UI.ideDiscUnit === 'pct') {
+          if (FORM_UI.ideSettleBase > 0) {
+            disc = Math.min(FORM_UI.ideSettleBase, discStRe.usd);
+            gross = Math.max(0, round2(FORM_UI.ideSettleBase + dep - disc));
+            if ($('ide_gross') && FORM_UI._lastIdeInputId !== 'ide_gross') $('ide_gross').value = gross.toFixed(2);
+          } else {
+            disc = discStRe.usd;
+          }
+        } else {
+          disc = discStRe.usd;
+        }
         const allocRaw = strVal('ide_allocated');
         const coR = strVal('ide_company') || defCo;
         const tenR = strVal('ide_tenant');
@@ -87387,28 +87711,71 @@
           tenant: tenR,
           receiptType: rType,
           grossUsd: gross,
+          discountUsd: disc,
           allocatedInputUsd: allocIn,
           depositUsd: dep,
           editRow: isEditMode ? prefill : null
         });
         const alloc = fifoRe.allocatedUsd;
-        if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - alloc - dep)), 2);
+        const cashAllocatedRe = Math.max(0, round2(alloc - disc));
+        if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - cashAllocatedRe - dep)), 2);
         syncFifoSplitBtn(fifoRe, tenR, 're_receipts');
+        if (discStRe.over100) {
+          showMsg('Discount percentage cannot exceed 100%.', true);
+          return false;
+        }
+        if (discStRe.raw < 0) {
+          showMsg('Settlement Discount cannot be negative.', true);
+          return false;
+        }
+        if (disc > 0.005 && (rType === 'Security Deposit' || rType === 'Advance Rent Tranche')) {
+          showMsg('Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.', true);
+          return false;
+        }
         if (gross > 0 && dep > gross + 0.005) {
           showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true);
           return false;
         }
-        if (gross > 0 && allocRaw !== '' && round2(alloc + dep) > gross + 0.005) {
-          showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true);
+        if (gross === 0 && dep > 0.005) {
+          showMsg('Security Deposit requires a positive cash Gross Receipt.', true);
+          return false;
+        }
+        if (allocRaw !== '' && round2(alloc + dep) > round2(gross + disc) + 0.005) {
+          showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.', true);
+          return false;
+        }
+        if (disc > alloc + 0.005 && rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche') {
+          showMsg(`Settlement Discount (${fmtUSD(disc, 2)}) cannot exceed Allocated to Rent Invoices (${fmtUSD(alloc, 2)}).`, true);
           return false;
         }
       } else if (spec.key === 'trd_receipts') {
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
+        if (FORM_UI.ideDiscUnit === 'pct' && (FORM_UI._lastIdeInputId === 'ide_amount' || FORM_UI._lastIdeInputId === 'ide_lbp')) {
+          const curCashUsd = round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));
+          const baseSnap = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : 0;
+          if (baseSnap > 0 && curCashUsd <= baseSnap + 0.005) {
+            if ($('ide_discount')) $('ide_discount').value = round2(Math.max(0, baseSnap - curCashUsd)).toFixed(2);
+          } else {
+            const prevD = evalDiscInputState(numVal('ide_discount'), baseSnap || curCashUsd, 'pct').usd;
+            if ($('ide_discount')) $('ide_discount').value = prevD.toFixed(2);
+          }
+          FORM_UI.ideDiscUnit = 'usd';
+          FORM_UI.ideSettleBase = null;
+          syncDiscUnitPillsDom(formEl, 'usd', false, 'ide');
+        }
         const usd = Math.max(0, numVal('ide_amount'));
         const lbp = Math.max(0, Math.round(numVal('ide_lbp')));
-        const disc = Math.max(0, numVal('ide_discount'));
-        const totAmt = round2(usd + (lbp / fx));
-        const settledTot = round2(totAmt + disc);
+        let totAmt = round2(usd + (lbp / fx));
+        const discStTrd = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : totAmt) : totAmt, FORM_UI.ideDiscUnit);
+        let disc = discStTrd.usd;
+        if (FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0) {
+          disc = Math.min(FORM_UI.ideSettleBase, discStTrd.usd);
+          const nextCashUsd = Math.max(0, round2(FORM_UI.ideSettleBase - disc - (lbp / fx)));
+          if ($('ide_amount') && FORM_UI._lastIdeInputId !== 'ide_amount') $('ide_amount').value = nextCashUsd.toFixed(2);
+          totAmt = round2(nextCashUsd + (lbp / fx));
+        }
+        const settledTot = round2(totAmt + Math.max(0, disc));
         if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(settledTot, 2);
         const trdCust = strVal('ide_customer');
         const fifoTrd = previewTradingReceiptFifo({
@@ -87422,6 +87789,14 @@
         if ($('ide_trd_allocated')) $('ide_trd_allocated').value = fmtUSD(fifoTrd.allocatedUsd, 2);
         if ($('ide_trd_unallocated')) $('ide_trd_unallocated').value = fmtUSD(fifoTrd.unallocatedUsd, 2);
         syncFifoSplitBtn(fifoTrd, trdCust, 'trd_receipts');
+        if (discStTrd.over100) {
+          showMsg('Discount percentage cannot exceed 100%.', true);
+          return false;
+        }
+        if (discStTrd.raw < 0) {
+          showMsg('Settlement Discount cannot be negative.', true);
+          return false;
+        }
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
@@ -87991,7 +88366,12 @@
         const vatN = /4235/i.test(coNow) ? round2(netN * 0.11) : 0;
         return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), tax_seq: strVal('ide_tax_seq'), net_usd: netN, amount_ttc_usd: round2(netN + vatN) };
       }
-      if (spec.key === 're_receipts') return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), method: strVal('ide_method'), gross_usd: numVal('ide_gross'), allocated_inv_usd: numVal('ide_allocated'), deposit_gl4196_usd: numVal('ide_deposit'), audit_flag: strVal('ide_notes') };
+      if (spec.key === 're_receipts') {
+        const discCandRe = FORM_UI.ideDiscUnit === 'pct'
+          ? evalDiscInputState(numVal('ide_discount'), FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, numVal('ide_gross') - numVal('ide_deposit')), 'pct').usd
+          : round2(numVal('ide_discount'));
+        return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), method: strVal('ide_method'), gross_usd: numVal('ide_gross'), discount_usd: discCandRe, allocated_inv_usd: numVal('ide_allocated'), deposit_gl4196_usd: numVal('ide_deposit'), audit_flag: strVal('ide_notes') };
+      }
       if (spec.key === 're_sales') return { id: ridNow, company: coNow, date: dtNow, buyer: strVal('ide_buyer'), unit: strVal('ide_unit'), contract_usd: numVal('ide_contract'), paid_usd: numVal('ide_paid') };
       if (spec.key === 're_workorders') return { id: ridNow, company: coNow, date: dtNow, contractor: strVal('ide_contractor'), property: strVal('ide_property'), budget_usd: numVal('ide_budget'), actual_usd: numVal('ide_actual') };
       if (spec.key === 'trd_sales') {
@@ -88003,7 +88383,10 @@
         const lbpN = Math.max(0, Math.round(numVal('ide_lbp')));
         const fxN = getLbpFxRate(dtNow) || 89500;
         const amtN = round2(usdN + (lbpN / fxN));
-        return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), method: strVal('ide_method') || 'Payment', amount: amtN, usd_amount: usdN, lbp_amount: lbpN, discount: round2(numVal('ide_discount')), reference: strVal('ide_ref'), notes: strVal('ide_notes') };
+        const discCandTrd = FORM_UI.ideDiscUnit === 'pct'
+          ? evalDiscInputState(numVal('ide_discount'), FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : amtN, 'pct').usd
+          : round2(numVal('ide_discount'));
+        return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), method: strVal('ide_method') || 'Payment', amount: amtN, usd_amount: usdN, lbp_amount: lbpN, discount: discCandTrd, reference: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
       if (spec.key === 'trd_purchases') {
         const fobN = numVal('ide_fob');
@@ -88046,8 +88429,13 @@
 
     formEl.querySelectorAll('input, select').forEach(el => {
       if (el.id === 'ide_nearcopyok') return;
-      const onFldEvt = () => {
-        recalcLive();
+      const onFldEvt = ev => {
+        FORM_UI._lastIdeInputId = (ev && ev.target && ev.target.id) || el.id || '';
+        try {
+          recalcLive();
+        } finally {
+          FORM_UI._lastIdeInputId = '';
+        }
         if (!isNearCopyDomainKey) return;
         if (domPostAttempted) {
           cancelDomainNearCopyLiveCheck();
@@ -88061,6 +88449,33 @@
     });
     const ideNcCb = $('ide_nearcopyok');
     if (ideNcCb) ideNcCb.addEventListener('change', () => { if (ideNcCb.checked) showMsg(''); });
+    formEl.addEventListener('click', ev => {
+      const unitBtn = ev.target && ev.target.closest ? ev.target.closest('[data-ide-disc-unit]') : null;
+      if (!unitBtn) return;
+      ev.preventDefault();
+      const nextUnit = unitBtn.getAttribute('data-ide-disc-unit') === 'pct' ? 'pct' : 'usd';
+      if (nextUnit === FORM_UI.ideDiscUnit) return;
+      const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
+      const curCash = spec.key === 're_receipts'
+        ? Math.max(0, round2(numVal('ide_gross') - numVal('ide_deposit')))
+        : round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));
+      const rawD = numVal('ide_discount');
+      const curBase = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : curCash;
+      if (nextUnit === 'pct') {
+        const usdD = Math.max(0, round2(rawD));
+        const baseForPct = round2(curCash + usdD);
+        FORM_UI.ideSettleBase = baseForPct > 0 ? baseForPct : null;
+        FORM_UI.ideDiscUnit = 'pct';
+        if ($('ide_discount')) $('ide_discount').value = (baseForPct > 0 && usdD > 0) ? String(round2((usdD / baseForPct) * 100)) : '0';
+      } else {
+        const resolvedD = evalDiscInputState(rawD, curBase, 'pct').usd;
+        FORM_UI.ideDiscUnit = 'usd';
+        FORM_UI.ideSettleBase = null;
+        if ($('ide_discount')) $('ide_discount').value = resolvedD.toFixed(2);
+      }
+      syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit, false, 'ide');
+      recalcLive();
+    });
     if (isEditMode) {
       bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender, #ide_property, #ide_outlet, #ide_cashier, #ide_producer').forEach(el => {
         el.dataset.partyInitVal = String(el.value || '');
@@ -88503,22 +88918,48 @@
         const tenant = strVal('ide_tenant');
         if (!tenant) { showMsg('Tenant Name is required.', true); return; }
         const gross = Math.max(0, round2(numVal('ide_gross')));
-        if (!(gross > 0)) { showMsg('Gross Receipt Amount ($) > 0 is required.', true); return; }
         const dep = Math.max(0, round2(numVal('ide_deposit')));
+        const discStRe = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, round2(gross - dep))) : Math.max(0, round2(gross - dep)), FORM_UI.ideDiscUnit);
+        if (discStRe.over100) { showMsg('Discount percentage cannot exceed 100%.', true); return; }
+        if (discStRe.raw < 0) { showMsg('Settlement Discount cannot be negative.', true); return; }
+        const disc = FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0 ? Math.min(FORM_UI.ideSettleBase, discStRe.usd) : Math.max(0, round2(discStRe.usd));
+        const nts = strVal('ide_notes') || '';
+        const reZeroErr = validateZeroCashSettlementWriteOff({ amount: gross, disc, method: strVal('ide_method') || 'Bank Transfer USD', notes: nts });
+        if (reZeroErr) { showMsg(reZeroErr.msg, true); return; }
         if (dep > gross + 0.005) { showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
+        if (gross === 0 && dep > 0.005) { showMsg('Security Deposit requires a positive cash Gross Receipt.', true); return; }
         const allocRaw = strVal('ide_allocated');
         const rType = strVal('ide_type') || 'Period Rent Settlement';
+        if (disc > 0.005 && (rType === 'Security Deposit' || rType === 'Advance Rent Tranche')) {
+          showMsg('Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.', true);
+          return;
+        }
+        const openArCheck = (typeof computeRealEstateOperations === 'function')
+          ? round2(((computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' }).invoices) || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0))
+          : 0;
+        if (gross === 0 && disc > openArCheck + 0.005) {
+          showMsg(`$0.00 cash discount write-off (${fmtUSD(disc, 2)}) cannot exceed tenant Open AR (${fmtUSD(openArCheck, 2)}).`, true);
+          return;
+        }
+        const reRentBase = round2(Math.max(0, gross - dep) + disc);
+        const maxDiscWarnPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+        if (isAlertRuleEnabled('G_DISCOUNT_WARN') && reRentBase > 0 && disc > reRentBase * (maxDiscWarnPct / 100) && nts.trim().length < 3) {
+          showMsg(`Settlement Discount exceeds ${fmtNum(maxDiscWarnPct, 0)}% (${fmtUSD(disc, 2)} on ${fmtUSD(reRentBase, 2)}). Enter an explanation in Reference / Note (3+ chars) before posting.`, true);
+          return;
+        }
         let alloc = 0;
         if (allocRaw !== '') {
           alloc = Math.max(0, round2(numVal('ide_allocated')));
-          if (round2(alloc + dep) > gross + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
+          if (round2(alloc + dep) > round2(gross + disc) + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.', true); return; }
         } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' });
-          const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), openAr));
+          alloc = round2(Math.min(Math.max(0, round2(gross + disc - dep)), openArCheck));
         }
-        const unalloc = Math.max(0, round2(gross - alloc - dep));
-        const nts = strVal('ide_notes') || '';
+        if (disc > alloc + 0.005) {
+          showMsg(`Settlement Discount (${fmtUSD(disc, 2)}) cannot exceed Allocated to Rent Invoices (${fmtUSD(alloc, 2)}).`, true);
+          return;
+        }
+        const cashAllocatedRe = Math.max(0, round2(alloc - disc));
+        const unalloc = Math.max(0, round2(gross - cashAllocatedRe - dep));
         addIndustryCustomRow('re_receipts', {
           id: recId,
           date: strVal('ide_date') || today,
@@ -88528,6 +88969,7 @@
           type: rType,
           method: strVal('ide_method') || 'Bank Transfer USD',
           gross_usd: gross,
+          discount_usd: disc,
           allocated_inv_usd: alloc,
           unallocated_adv_usd: unalloc,
           deposit_gl4196_usd: dep,
@@ -88650,18 +89092,41 @@
         const usdAmt = Math.max(0, round2(numVal('ide_amount')));
         const lbpAmt = Math.max(0, Math.round(numVal('ide_lbp')));
         const amt = round2(usdAmt + (lbpAmt / fx));
-        if (!(amt > 0)) { showMsg('Amount Received ($) > 0 is required.', true); return; }
-        const disc = Math.max(0, round2(numVal('ide_discount')));
+        const discStTrdSave = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : amt) : amt, FORM_UI.ideDiscUnit);
+        if (discStTrdSave.over100) { showMsg('Discount percentage cannot exceed 100%.', true); return; }
+        if (discStTrdSave.raw < 0) { showMsg('Settlement Discount cannot be negative.', true); return; }
+        const disc = FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0 ? Math.min(FORM_UI.ideSettleBase, discStTrdSave.usd) : Math.max(0, round2(discStTrdSave.usd));
         const mth = strVal('ide_method') || 'Payment';
         const ref = strVal('ide_ref');
         const notes = strVal('ide_notes');
-        const curSeat = activeUser() || {};
-        const nowStamp = new Date().toISOString();
         const curRctArr = (STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
         const seedRctArr = (SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
         const storedOrigRct = isEditMode ? (curRctArr.find(x => x && String(x.id) === String(recId)) || seedRctArr.find(x => x && String(x.id) === String(recId))) : null;
         const origRctSourceRaw = isEditMode ? String((storedOrigRct && storedOrigRct.source) ?? (prefill && prefill.source) ?? '').trim() : '';
         const keepNonAppSource = Boolean(isEditMode && (storedOrigRct || (prefill && prefill.source != null)) && origRctSourceRaw.toLowerCase() !== 'app');
+        const trdZeroErr = validateZeroCashSettlementWriteOff({ amount: amt, disc, method: mth, notes });
+        if (trdZeroErr) { showMsg(trdZeroErr.msg, true); return; }
+        if (amt <= 0.005 && disc > 0.005 && typeof computeTradingOperations === 'function') {
+          const trdOpsAr = computeTradingOperations({ ignoreSearch: true, ignoreRls: true });
+          const curCustAr = round2((trdOpsAr.receivableRows || []).filter(r => r && canonCompany(r.company) === canonCompany(co) && norm(r.customer || '') === norm(customer)).reduce((s, r) => s + Math.max(0, Number(r.gross_ar_usd || 0)), 0));
+          let origTrdCredit = 0;
+          if (isEditMode && storedOrigRct && !storedOrigRct.voided && canonCompany(storedOrigRct.company) === canonCompany(co) && norm(storedOrigRct.customer || '') === norm(customer)) {
+            origTrdCredit = round2(Math.max(0, Number(storedOrigRct.amount || 0)) + Math.max(0, Number(storedOrigRct.discount || 0)));
+          }
+          const availTrdAr = round2(curCustAr + origTrdCredit);
+          if (disc > availTrdAr + 0.005) {
+            showMsg(`$0.00 cash discount write-off (${fmtUSD(disc, 2)}) cannot exceed customer Open AR (${fmtUSD(availTrdAr, 2)}).`, true);
+            return;
+          }
+        }
+        const trdSettledTot = round2(amt + disc);
+        const maxDiscWarnTrdPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+        if (isAlertRuleEnabled('G_DISCOUNT_WARN') && trdSettledTot > 0 && disc > trdSettledTot * (maxDiscWarnTrdPct / 100) && String(notes || '').trim().length < 3) {
+          showMsg(`Settlement Discount exceeds ${fmtNum(maxDiscWarnTrdPct, 0)}% (${fmtUSD(disc, 2)} of ${fmtUSD(trdSettledTot, 2)} settled). Enter an explanation in Notes (3+ chars) before posting.`, true);
+          return;
+        }
+        const curSeat = activeUser() || {};
+        const nowStamp = new Date().toISOString();
         const rcptRec = {
           id: recId,
           name: `RCP ${dt} ${customer}`,
@@ -89256,7 +89721,63 @@
         && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function'
         && window.MFG_SMART_SCAN.hasActiveSlipQueue()
       );
-      let _domQueueToken = _hasQueueOnDomSave ? window.MFG_SMART_SCAN.beginQueuePostTransition() : null;
+      let _domQueueToken = null;
+      if (_hasQueueOnDomSave) {
+        const _domLens = typeof seatLens === 'function' ? seatLens() : { books: true, cashflow: true, expenses: true, partnerSplits: true, payrollDollars: true };
+        let _domUsd = Number(amtGuess || 0);
+        if (spec.key === 're_leases' || spec.key === 're_invoicing') {
+          const _reNet = numVal('ide_net');
+          const _reVat = /4235/i.test(strVal('ide_company')) ? round2(_reNet * 0.11) : 0;
+          _domUsd = round2(_reNet + _reVat);
+        } else if (spec.key === 're_receipts') {
+          _domUsd = round2(numVal('ide_gross'));
+        } else if (spec.key === 're_sales' || spec.key === 'hsp_memberships') {
+          _domUsd = round2(numVal('ide_contract'));
+        } else if (spec.key === 're_workorders') {
+          _domUsd = round2(numVal('ide_actual') || numVal('ide_budget'));
+        } else if (spec.key === 'trd_sales') {
+          const _trdNet = numVal('ide_net');
+          _domUsd = round2(_trdNet + round2(_trdNet * 0.11));
+        } else if (spec.key === 'trd_receipts') {
+          const _trdFx = getLbpFxRate(strVal('ide_date') || today) || numVal('ide_fx') || 89500;
+          _domUsd = round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / _trdFx) + Math.max(0, numVal('ide_discount')));
+        } else if (spec.key === 'trd_purchases') {
+          _domUsd = round2(numVal('ide_fob') + numVal('ide_landed_add'));
+        } else if (spec.key === 'hsp_revenue') {
+          _domUsd = round2(numVal('ide_tot'));
+        } else if (spec.key === 'hsp_pos') {
+          _domUsd = round2(numVal('ide_billed'));
+        } else if (spec.key === 'hld_loans') {
+          _domUsd = round2(numVal('ide_prin'));
+        } else if (spec.key === 'hld_extended') {
+          const _hldFx = numVal('ide_fx') || getLbpFxRate(strVal('ide_date') || today) || 89500;
+          _domUsd = round2(numVal('ide_usd') + (numVal('ide_lbp') / _hldFx));
+        } else if (spec.key === 'hld_interactions') {
+          const _hldFx = numVal('ide_fx') || getLbpFxRate(strVal('ide_date') || today) || 89500;
+          _domUsd = (strVal('ide_curr') === 'LBP' && !numVal('ide_usd'))
+            ? round2(Number(amtGuess || 0) / _hldFx)
+            : round2(numVal('ide_usd') || Number(amtGuess || 0));
+        } else if (spec.key === 'ins_policies') {
+          _domUsd = round2(numVal('ide_gwp'));
+        } else if (spec.key === 'ins_billing') {
+          _domUsd = round2(numVal('ide_collected') || numVal('ide_billed'));
+        } else if (spec.key === 'ins_claims') {
+          _domUsd = round2(numVal('ide_approved') > 0 ? numVal('ide_approved') : numVal('ide_claimed'));
+        } else if (spec.key === 'ins_remittances') {
+          _domUsd = round2(numVal('ide_settled') || numVal('ide_gwp'));
+        }
+        let _domUsdRedacted = true;
+        if (spec.key === 'hld_dividends' || spec.key === 'hld_partners') _domUsdRedacted = !Boolean(_domLens.books && _domLens.partnerSplits);
+        else if (spec.ind === 'Holding & Treasury' || /^hld_/i.test(spec.key)) _domUsdRedacted = !Boolean(_domLens.books);
+        else if (['hsp_purchases', 'hsp_stock', 'hsp_energy', 'trd_purchases', 'trd_imports', 'trd_customs', 're_workorders', 'ins_claims', 'ins_remittances', 'ins_statements'].includes(spec.key)) _domUsdRedacted = !Boolean(_domLens.expenses);
+        else if (['re_leases', 're_invoicing', 're_receipts', 're_sales', 'trd_sales', 'trd_receipts', 'hsp_revenue', 'hsp_pos', 'hsp_memberships', 'ins_policies', 'ins_billing'].includes(spec.key)) _domUsdRedacted = !Boolean(_domLens.cashflow || _domLens.books);
+        _domQueueToken = window.MFG_SMART_SCAN.beginQueuePostTransition({
+          crKey: spec.key,
+          recordId: String(recId || ''),
+          postedUsd: round2(_domUsd),
+          usdRedacted: _domUsdRedacted
+        });
+      }
       try {
         hideIndUnsavedPrompt();
         closeIndustryDomainEntryModal(true);
@@ -89353,7 +89874,7 @@
           picked.forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
           if (picked.length && !modal._domHydrating) modal._domDirty = true;
           renderPendingDomainAtts();
-        });
+        }, { attachmentOnly: true });
       });
     }
 
@@ -89425,13 +89946,13 @@
     }
     if (scanCamBtn) {
       scanCamBtn.addEventListener('click', () => {
-        openDocumentCameraCapture(async (files, method) => {
+        openDocumentCameraCapture(async (files, method, camOpts) => {
           const batch = Array.from(files || []);
           if (batch.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
             modal.classList.add('mob-ai-scan-open');
             modal.classList.remove('mob-ai-voice-open');
             syncIndMobAiUi();
-            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch, { captureMethod: method || 'Camera Scan' });
+            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch, Object.assign({ captureMethod: method || 'Camera Scan' }, camOpts || {}));
             syncIndMobAiUi();
           }
         }, { enablePrecheck: true });
@@ -90494,6 +91015,62 @@
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
 
+      if (rid === 'S22') {
+        const sdd = getStandingDiscountSentinelData({ user: u, company: evalCoKey });
+        const sRestricted = Boolean(sdd && sdd.restricted);
+        const sRows = (!sRestricted && sdd && Array.isArray(sdd.rows)) ? sdd.rows : [];
+        const sMinPct = Number((sdd && sdd.minPct) || getAlertParam('S22', 'min_standing_pct', 2) || 2);
+        const sMinVouch = Number((sdd && sdd.minVouchers) || getAlertParam('S22', 'min_vouchers', 3) || 3);
+        const sMinUsd = Number((sdd && sdd.minUsd) || getAlertParam('S22', 'min_voucher_usd', 100) || 100);
+        const topSd = sRows[0] || null;
+        expUsd = !sRestricted ? round2(Number((sdd && sdd.missedExpUsd) || 0)) : 0;
+        rowCnt = sRestricted ? 0 : sRows.length;
+        topParty = topSd ? String(topSd.supplier || 'Supplier') : (sRestricted ? 'Restricted' : 'All Clear');
+        topSubEn = topSd
+          ? `${fmtNum(topSd.expected_pct || 0, 1)}% standing · ${fmtUSD(topSd.expected_disc_usd || 0, 2)} missed`
+          : (sRestricted ? 'Requires Expenses access' : '0 missed standing discounts');
+        topSubAr = topSd
+          ? `خصم ثابت ${fmtNum(topSd.expected_pct || 0, 1)}% · مفقود ${fmtUSD(topSd.expected_disc_usd || 0, 2)}`
+          : (sRestricted ? 'يتطلب صلاحية المصاريف' : 'لا توجد خصومات ثابتة مفقودة');
+        topSubFr = topSd
+          ? `Remise ${fmtNum(topSd.expected_pct || 0, 1)}% · manquée ${fmtUSD(topSd.expected_disc_usd || 0, 2)}`
+          : (sRestricted ? 'Accès Dépenses requis' : 'Aucune remise manquée');
+        bEn = [
+          sRestricted
+            ? `Standing Supplier Discount monitoring is masked because this seat lacks Expenses access in ${companyEn}.`
+            : (rowCnt > 0
+                ? `${fmtNum(rowCnt, 0)} voucher(s) for ${fmtNum(sdd.missedSupsCount || 1, 0)} standing-discount supplier(s) posted $0 discount, totaling ${fmtUSD(expUsd, 2)} missed savings across ${companyEn}.`
+                : `All eligible vouchers for ${fmtNum((sdd && sdd.qualifiedSupsCount) || 0, 0)} standing-discount supplier(s) (>= ${fmtNum(sMinPct, 1)}% across ${fmtNum(sMinVouch, 0)}+ vouchers or Master Term) applied their expected discounts in ${companyEn}.`),
+          `Cash rounding dust (<= $10) and 100% write-offs are automatically excluded from percentage habits; vouchers >= $${fmtNum(sMinUsd, 0)} with explicit net-price notes stay cleared.`,
+          rowCnt > 0
+            ? 'Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.'
+            : 'Standing discounts remain consistent across posted vouchers.'
+        ];
+        bAr = [
+          sRestricted
+            ? `رصد الخصومات الثابتة للموردين مخفي لعدم توفر صلاحية المصاريف لهذا الحساب في ${companyAr}.`
+            : (rowCnt > 0
+                ? `تم رصد ${fmtNum(rowCnt, 0)} سندات لموردين لديهم خصم ثابت سُجّلت بخصم $0 بإجمالي وفورات فائتة ${fmtUSD(expUsd, 2)} عبر ${companyAr}.`
+                : `كافة السندات المؤهلة للموردين ذوي الخصم الثابت (>= ${fmtNum(sMinPct, 1)}% أو شروط البطاقة) استوفت خصوماتها المتوقعة في ${companyAr}.`),
+          `تُستبعد فروقات التقريب النقدي (<= $10) وشطوبات 100% تلقائياً من متوسط الخصم؛ وتُستثنى السندات المزوّدة بملاحظة السعر الصافي.`,
+          rowCnt > 0
+            ? 'راجع السندات المرصودة في التنبيهات أو استخدم زر تطبيق الخصم بضغطة واحدة في نماذج المصاريف والتسويات.'
+            : 'انتظام خصومات الموردين متوافق عبر كافة السجلات.'
+        ];
+        bFr = [
+          sRestricted
+            ? `Le suivi des remises permanentes fournisseurs est masqué faute d accès Dépenses pour ${companyFr}.`
+            : (rowCnt > 0
+                ? `${fmtNum(rowCnt, 0)} pièce(s) de fournisseur(s) à remise permanente ont été saisies avec $0 de remise, soit ${fmtUSD(expUsd, 2)} d économies manquées sur ${companyFr}.`
+                : `Toutes les pièces éligibles pour ${fmtNum((sdd && sdd.qualifiedSupsCount) || 0, 0)} fournisseur(s) à remise permanente (>= ${fmtNum(sMinPct, 1)}% ou fiche maître) respectent leurs remises sur ${companyFr}.`),
+          `L appoint de caisse (<= $10) et les remises à 100% sont exclus automatiquement ; les pièces avec note prix net explicite ne sont pas signalées.`,
+          rowCnt > 0
+            ? 'Vérifiez les pièces signalées dans AI Sentinels ou utilisez le bouton Appliquer remise en 1 clic à la saisie.'
+            : 'La régularité des remises fournisseurs est conforme.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
       if (rid === 'S13') {
         const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
         const s13WarnDays = getAlertParam('S13', 'warn_window_days', 60);
@@ -91394,6 +91971,7 @@
       const expValFr = expHasUsd ? fmtUSD(det.expUsd, det.expUsd < 100 && det.expUsd > 0 ? 2 : 0) : det.physValFr;
 
       const RULE_TITLES_LOC = {
+        S22: { ar: 'مراقب انتظام الخصومات الثابتة للموردين', fr: 'Sentinelle de régularité des remises fournisseurs' },
         S1: { ar: 'سلامة ميزان المراجعة للقيد المزدوج', fr: 'Intégrité de la balance générale en partie double' },
         S2: { ar: 'مطابقة خزان المازوت الفعلي والدفتري', fr: 'Rapprochement stock physique vs comptable gasoil' },
         S3: { ar: 'مراقب عدادات المسافات وساعات عمل الآليات', fr: 'Contrôle compteurs kilométriques & horaires flotte' },
@@ -102203,7 +102781,7 @@
         if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
         if (sBtn) {
           sBtn.addEventListener('click', () => {
-            openDocumentCameraCapture((files, method) => handleDomainFiles(files, method || 'Camera Scan'));
+            openDocumentCameraCapture((files, method) => handleDomainFiles(files, method || 'Camera Scan'), { attachmentOnly: true });
           });
         }
         if (fInp) {
@@ -108509,8 +109087,8 @@
           ${repDateField}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { hintId: 'hint_customer', hint: '' })}
           ${fld('Payment Method *', sel('f_method', [['Payment', 'Payment'], ['Barter', 'Barter'], ['VAT', 'VAT 11% receipt'], ['Rent', 'Rent offset'], ['VATRent', 'VAT on rent']], 'Payment'))}
-          ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
-          ${fld('Settlement Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
+          ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
+          ${fld(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}</span>`, inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
           ${nearCopyAmtJumpHtml()}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
@@ -108744,14 +109322,16 @@
               <span class="hint" id="hint_gross_amount"></span>
             </div>
             <div class="form-field" id="wrap_f_discount">
-              <label for="f_discount" class="exp-inline-bar-lbl">
+              <label for="f_discount" class="exp-inline-bar-lbl disc-unit-lbl-bar">
                 <span class="pa-fld-lbl" id="lbl_exp_discount">Discount ($)</span>
+                ${pendEditRow ? '' : renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}
               </label>
               <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expDiscInputWrap">
-                <span class="exp-cost-prefix">$</span>
+                <span class="exp-cost-prefix" id="expDiscPrefix">${FORM_UI.discInputUnit === 'pct' && !pendEditRow ? '%' : '$'}</span>
                 ${inp('f_discount', 'number', expDiscVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
               </div>
               <span class="hint" id="hint_discount"></span>
+              <div id="expDiscNudge" class="disc-stand-nudge" hidden></div>
             </div>
             <div class="form-field" id="wrap_f_amount">
               <label for="f_amount" class="exp-inline-bar-lbl">
@@ -108796,8 +109376,8 @@
           ['transportation', '2 · Transport'],
           ['expense', '3 · Expense (Bills & Overhead)']
         ], 'expense'), { id: 'wrap_f_payable_leg', hintId: 'hint_payable_leg', hint: '' })}
-        ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
-        ${fld('Difference / Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'))}
+        ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
+        ${fld(`<span class="disc-unit-lbl-bar"><span>Difference / Discount</span>${renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}</span>`, inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: '', afterHtml: '<div id="settleDiscNudge" class="disc-stand-nudge" hidden></div>' })}
         ${nearCopyAmtJumpHtml()}
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
@@ -108819,7 +109399,7 @@
   const FORM_UI = {
     priceManual: false, transManual: false, methodManual: false, uomManual: false, meterTypeManual: false,
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
-    ownerManuallyPicked: false, driverManual: false, settleLegManual: false, postAttempted: false,
+    ownerManuallyPicked: false, driverManual: false, settleLegManual: false, settleLegLocked: false, settleAmtTouched: false, stmt16LegLockCtx: null, postAttempted: false,
     stagedOwnerDrivers: [], expItems: [], repairItems: [], attachments: [],
     nearCopyPeekItems: [], domainNearCopyPeekItems: [],
     lastCompany: '', lastDate: '', lastCategory: null, lastSubcategory: '', initialSubcategory: '', expItem0Manual: false, catCache: null,
@@ -108827,9 +109407,71 @@
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastSettleSupplier: '', lastDupSig: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
-    unpricedSiteCtx: null,
+    unpricedSiteCtx: null, unpricedQueueSession: null, _advancingUnpricedQueue: false,
+    discInputUnit: 'usd', settleGrossBase: null, ideDiscUnit: 'usd', ideSettleBase: null,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
+
+  function renderDiscUnitPillsHtml(mode = 'usd', scope = 'modal') {
+    const attr = scope === 'ide' ? 'data-ide-disc-unit' : 'data-disc-unit';
+    const idAttr = scope === 'ide' ? 'id="ideDiscUnitPills"' : 'id="discUnitPills"';
+    const m = mode === 'pct' ? 'pct' : 'usd';
+    return `<span class="exp-price-mode-bar is-inline-lbl disc-unit-pills" ${idAttr} role="group" aria-label="Discount input unit"><button type="button" class="uom-qpill${m === 'usd' ? ' active' : ''}" ${attr}="usd">$</button><button type="button" class="uom-qpill${m === 'pct' ? ' active' : ''}" ${attr}="pct">%</button></span>`;
+  }
+  function syncDiscUnitPillsDom(hostEl, unitMode = 'usd', disabled = false, scope = 'modal') {
+    const root = hostEl || $('modalBody') || $('entryModal');
+    if (!root) return;
+    const isIde = scope === 'ide';
+    const wrap = root.querySelector(isIde ? '#ideDiscUnitPills' : '#discUnitPills');
+    const attr = isIde ? 'data-ide-disc-unit' : 'data-disc-unit';
+    const m = unitMode === 'pct' ? 'pct' : 'usd';
+    if (wrap) {
+      wrap.querySelectorAll(`[${attr}]`).forEach(b => {
+        b.classList.toggle('active', b.getAttribute(attr) === m);
+        b.disabled = Boolean(disabled);
+      });
+    }
+    if (!isIde) {
+      const pfx = root.querySelector('#expDiscPrefix');
+      if (pfx) pfx.textContent = m === 'pct' ? '%' : '$';
+      const lbl = root.querySelector('#lbl_exp_discount');
+      if (lbl) lbl.textContent = m === 'pct' ? 'Discount (%)' : 'Discount ($)';
+    }
+  }
+  function evalDiscInputState(rawVal, baseUsd, unitMode = 'usd') {
+    const raw = Number(rawVal);
+    if (!Number.isFinite(raw) || raw === 0) return { raw: 0, usd: 0, over100: false, noBase: false };
+    if (raw < 0) return { raw, usd: round2(raw), over100: false, noBase: false };
+    if (unitMode === 'pct') {
+      const over100 = raw > 100 + 1e-6;
+      const b = Number(baseUsd || 0);
+      const noBase = !(b > 0.005);
+      const usd = noBase ? 0 : round2(b * (raw / 100));
+      return { raw, usd, over100, noBase };
+    }
+    return { raw, usd: round2(raw), over100: false, noBase: false };
+  }
+  function validateZeroCashSettlementWriteOff({ amount = 0, disc = 0, method = 'Payment', notes = '' } = {}) {
+    const amt = round2(Number(amount || 0));
+    const d = round2(Number(disc || 0));
+    if (amt < 0) return { field: 'f_amount', msg: 'Amount cannot be negative.' };
+    if (d < 0) return { field: 'f_discount', msg: 'Discount cannot be negative.' };
+    if (amt <= 0.005) {
+      if (/^(VAT|VATConfig|VATRent|IVA)$/i.test(String(method || ''))) {
+        return { field: 'f_amount', msg: 'Cash amount must be above zero for VAT/IVA vouchers.' };
+      }
+      if (!(d > 0.005)) {
+        return { field: 'f_amount', msg: 'Enter a cash amount or settlement discount above zero.' };
+      }
+      if (String(notes || '').trim().length < 3) {
+        return { field: 'f_notes', msg: 'Notes required (3+ chars) for $0.00 cash discount write-off.' };
+      }
+    }
+    return null;
+  }
+  function hasExplicitNoDiscNote(notes) {
+    return /\b(?:no[\s-]?disc(?:ount)?|net[\s-]?price|agreed[\s-]?net|waived[\s-]?disc(?:ount)?)\b|بدون\s*خصم|صافي|sans\s*remise|prix\s*net/i.test(String(notes || ''));
+  }
 
   function renderEntryAttachmentsBarHtml(fType, canEdit = true) {
     const isDocForm = fType === 'document';
@@ -115307,8 +115949,48 @@
     const customer = val('f_customer');
     const cust = customerInfo(customer);
     const before = openArBalance(customer);
-    const amount = num('f_amount'), disc = num('f_discount');
-    const totCredit = round2(amount + disc);
+    const methodRct = val('f_method') || 'Payment';
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(canModifyTextOnly()), 'modal');
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI._lastModalInputId === 'f_amount') {
+      const typedNetRct = Math.max(0, num('f_amount'));
+      const baseSnap = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : 0;
+      if (baseSnap > 0 && typedNetRct <= baseSnap + 0.005) {
+        if ($('f_discount')) $('f_discount').value = round2(Math.max(0, baseSnap - typedNetRct)).toFixed(2);
+      } else {
+        const prevD = evalDiscInputState(num('f_discount'), baseSnap || typedNetRct, 'pct').usd;
+        if ($('f_discount')) $('f_discount').value = prevD.toFixed(2);
+      }
+      FORM_UI.discInputUnit = 'usd';
+      FORM_UI.settleGrossBase = null;
+      syncDiscUnitPillsDom($('modalBody'), 'usd', Boolean(canModifyTextOnly()), 'modal');
+    }
+    const rawAmtRct = num('f_amount');
+    const baseRctForPct = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : Math.max(0, rawAmtRct);
+    const discStRct = evalDiscInputState(num('f_discount'), baseRctForPct, FORM_UI.discInputUnit);
+    let amount = rawAmtRct;
+    let disc = discStRct.usd;
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI.settleGrossBase > 0) {
+      disc = Math.min(FORM_UI.settleGrossBase, discStRct.usd);
+      amount = Math.max(0, round2(FORM_UI.settleGrossBase - disc));
+      if ($('f_amount') && FORM_UI._lastModalInputId !== 'f_amount') $('f_amount').value = amount.toFixed(2);
+    }
+    const totCredit = round2(Math.max(0, amount) + Math.max(0, disc));
+    const zeroRctHintErr = (val('f_amount') !== '' || disc > 0) ? validateZeroCashSettlementWriteOff({ amount, disc, method: methodRct, notes: val('f_notes') }) : null;
+    const maxDiscWarnRctPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+    const highDiscRctWarn = isAlertRuleEnabled('G_DISCOUNT_WARN') && totCredit > 0 && disc > totCredit * (maxDiscWarnRctPct / 100);
+    if (discStRct.over100) {
+      setHint('hint_disc', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStRct.raw < 0) {
+      setHint('hint_disc', 'Discount cannot be negative', 'crit');
+    } else if (highDiscRctWarn) {
+      const pctTxtR = totCredit > 0 ? fmtNum((disc / totCredit) * 100, 1) : '0';
+      const noNoteYetR = String(val('f_notes') || '').trim().length < 3;
+      setHint('hint_disc', `${pctTxtR}% of settled total (${fmtUSD(disc, 2)})${noNoteYetR ? ' · Explain in Notes (3+ chars)' : ' · Note recorded'}`, noNoteYetR ? 'warn' : 'ok');
+    } else if (disc > 0 && FORM_UI.discInputUnit === 'pct') {
+      setHint('hint_disc', `Resolved discount: ${fmtUSD(disc, 2)} (${fmtNum(totCredit > 0 ? (disc / totCredit) * 100 : 0, 1)}% of ${fmtUSD(totCredit, 2)})`, 'ok');
+    } else {
+      setHint('hint_disc', 'Written off against the oldest ticket', '');
+    }
     const fIdx = _getFormIntelIndex();
     const ct = customer ? fIdx.creditTermsByCust.get(norm(customer)) : null;
     const ov60 = customer ? (fIdx.custOverdue60ByCust.get(norm(customer)) || 0) : 0;
@@ -115319,12 +116001,13 @@
     setText('calc_total', fmtUSD(totCredit, 2));
     const afterBal = before == null ? null : round2(before - totCredit);
     setText('calc_after', afterBal == null ? '—' : (afterBal < -0.005 ? `Advance +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
-    setText('calc_alloc', val('f_method') === 'VAT' ? 'VAT leg only' : (afterBal != null && afterBal < -0.005 ? 'Clears AR + Customer Advance' : 'FIFO oldest ticket first'));
+    setText('calc_alloc', methodRct === 'VAT' ? 'VAT leg only' : (afterBal != null && afterBal < -0.005 ? 'Clears AR + Customer Advance' : 'FIFO oldest ticket first'));
     const cSub = $('paCustSubgridWrap');
-    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, totCredit, val('f_method'));
+    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, totCredit, methodRct);
     if (before != null && totCredit > before + 0.005) setHint('hint_amount', `Exceeds open AR (${fmtUSD(before, 2)}) by ${fmtUSD(totCredit - before, 2)} · excess posts as Customer Advance`, 'warn');
     else if (before != null && before > 0 && Math.abs(totCredit - before) <= 0.01) setHint('hint_amount', `Settles ${customer}'s full open AR balance (${fmtUSD(before, 2)})`, 'ok');
-    else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    else if (amount <= 0.005 && disc > 0 && !/^(VAT|VATConfig|VATRent|IVA)$/i.test(methodRct)) setHint('hint_amount', zeroRctHintErr ? zeroRctHintErr.msg : `$0.00 cash write-off clears ${fmtUSD(disc, 2)} AR`, zeroRctHintErr ? 'warn' : 'ok');
+    else setHint('hint_amount', amount < 0 ? 'Cannot be negative' : (amount === 0 && disc <= 0 && val('f_amount') ? 'Enter cash received or a settlement discount above zero' : ''), (amount < 0 || (amount === 0 && disc <= 0 && val('f_amount'))) ? 'crit' : '');
 
     const rStrip = $('rcptQuickContextStrip');
     if (rStrip) {
@@ -115370,7 +116053,7 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { customer, cust, before, amount, disc, dupHit };
+    return { customer, cust, before, amount, disc, discOver100: discStRct.over100, discNoBase: discStRct.noBase, dupHit };
   }
 
   function recalcFuel() {
@@ -115786,6 +116469,23 @@
         : (document.activeElement === discEl ? 'discount'
           : (document.activeElement === amtEl ? 'amount'
             : (document.activeElement && /^f_exi_(?:cost|qty)_/.test(document.activeElement.id || '') ? 'item' : ''))));
+    if (FORM_UI.discInputUnit === 'pct' && !pendEditRow && !pricePending && FORM_UI.lastExpAmtSource === 'amount') {
+      const typedNetNow = num('f_amount');
+      const gCurForFlip = num('f_gross_amount');
+      const baseForFlip = gCurForFlip > 0 ? gCurForFlip : (typedNetNow > 0 ? round2(typedNetNow + evalDiscInputState(num('f_discount'), typedNetNow, 'pct').usd) : 0);
+      if (baseForFlip > 0 && typedNetNow <= baseForFlip + 0.005) {
+        if (discEl) discEl.value = Math.max(0, round2(baseForFlip - typedNetNow)).toFixed(2);
+      } else {
+        const fallbackUsdD = evalDiscInputState(num('f_discount'), gCurForFlip > 0 ? gCurForFlip : typedNetNow, 'pct').usd;
+        if (discEl) discEl.value = fallbackUsdD > 0 ? fallbackUsdD.toFixed(2) : '';
+      }
+      FORM_UI.discInputUnit = 'usd';
+    }
+    if ((pricePending || pendEditRow) && FORM_UI.discInputUnit === 'pct') {
+      FORM_UI.discInputUnit = 'usd';
+      if (discEl && pendEditRow && Number(pendEditRow.discount || 0) > 0) discEl.value = Number(pendEditRow.discount).toFixed(2);
+    }
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(pricePending || pendEditRow || canModifyTextOnly()), 'modal');
     if (!pendEditRow) {
       if (expCoNow !== FORM_UI.lastExpCompany) {
         const prevDefLoc = defaultWarehouseLocationForCompany(FORM_UI.lastExpCompany || expCoNow);
@@ -115985,7 +116685,15 @@
         clearPendingZeroAttr(discEl);
       }
       const rawDiscNow = num('f_discount');
-      const effDiscNow = rawDiscNow > 0 ? round2(rawDiscNow) : 0;
+      const preEstGross = isMultiTicketSplit
+        ? round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0) * vatMult)
+        : (num('f_gross_amount') > 0
+            ? num('f_gross_amount')
+            : ((hasItemTickets && FORM_UI.expItems.length === 1 && Number(FORM_UI.expItems[0].unit_cost || 0) > 0)
+                ? round2(round2((((FORM_UI.expItems[0].qty !== '' && FORM_UI.expItems[0].qty != null && isFinite(Number(FORM_UI.expItems[0].qty))) ? Number(FORM_UI.expItems[0].qty) : 1) || 1) * Number(FORM_UI.expItems[0].unit_cost || 0)) * vatMult)
+                : num('f_amount')));
+      const effDiscStNow = evalDiscInputState(rawDiscNow, preEstGross, FORM_UI.discInputUnit);
+      const effDiscNow = effDiscStNow.usd > 0 ? round2(effDiscStNow.usd) : 0;
       if (isMultiTicketSplit) {
         const sumPreVat = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
         const sumGross = round2(sumPreVat * vatMult);
@@ -116113,11 +116821,16 @@
     const supplier = val('f_supplier');
     const amount = pricePending ? 0 : num('f_amount');
     const rawDisc = pricePending ? 0 : num('f_discount');
-    const disc = pricePending ? 0 : round2(rawDisc);
-    const grossRaw = pricePending ? 0 : num('f_gross_amount');
-    const grossAmount = pricePending ? 0 : (grossRaw > 0 ? round2(grossRaw) : round2(amount + (disc > 0 ? disc : 0)));
     const qty = num('f_qty');
     const cats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
+    const grossRaw = pricePending ? 0 : num('f_gross_amount');
+    const expDiscUnitNow = pendEditRow ? 'usd' : FORM_UI.discInputUnit;
+    const baseForDiscSt = grossRaw > 0 ? grossRaw : (expDiscUnitNow === 'usd' ? round2(amount + Math.max(0, rawDisc)) : amount);
+    const discStExp = pricePending
+      ? { raw: 0, usd: 0, over100: false, noBase: false }
+      : evalDiscInputState(rawDisc, baseForDiscSt, expDiscUnitNow);
+    const disc = pricePending ? 0 : round2(discStExp.usd);
+    const grossAmount = pricePending ? 0 : (grossRaw > 0 ? round2(grossRaw) : round2(amount + (disc > 0 ? disc : 0)));
     let catNow = val('f_category');
     const subEl = $('f_subcategory');
     const rawSubVal = subEl ? String(subEl.value || '').trim() : '';
@@ -116212,7 +116925,7 @@
     const isBulkTankRefill = isFuelDiesel && !hasEquipTarget && !hasWhTarget;
     setText('lbl_exp_qty', isBulkTankRefill ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : (hasEquipTarget || hasWhTarget ? 'Quantity & Unit *' : 'Quantity & Unit')));
     setText('lbl_exp_gross', pricePending ? 'Subtotal ($)' : (isSupIva ? 'Subtotal Incl. VAT ($)' : 'Subtotal ($)'));
-    setText('lbl_exp_discount', 'Discount ($)');
+    setText('lbl_exp_discount', expDiscUnitNow === 'pct' ? 'Discount (%)' : 'Discount ($)');
     setText('lbl_exp_amount', pricePending ? 'Total ($)' : (isSupIva ? 'Total Incl. 11% VAT ($) *' : 'Total ($) *'));
     setText('lbl_calc_exp_total', (!pricePending && disc > 0) ? 'Net to Pay' : 'Amount');
     setHint('hint_subcat', (FORM_UI.postAttempted && !subNow) ? 'Required' : '', (FORM_UI.postAttempted && !subNow) ? 'crit' : '');
@@ -116255,7 +116968,11 @@
     if (discWrapEl) discWrapEl.classList.toggle('field-live-invalid', isDiscLiveInvalid);
     if (discEl) discEl.setAttribute('aria-invalid', isDiscLiveInvalid ? 'true' : 'false');
     if (pricePending) {
-      setHint('hint_discount', '', '');
+      setHint('hint_discount', 'Locked at $0.00 while Price Pending is selected', '');
+    } else if (discStExp.over100) {
+      setHint('hint_discount', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStExp.noBase) {
+      setHint('hint_discount', 'Enter Subtotal or Item Price first so % discount can calculate', 'warn');
     } else if (rawDisc < 0) {
       setHint('hint_discount', 'Discount cannot be negative', 'crit');
     } else if (disc > 0 && grossAmount > 0 && disc > grossAmount + 0.001) {
@@ -116265,13 +116982,29 @@
     } else if (disc > 0 && grossAmount > 0) {
       const discPct = (disc / grossAmount) * 100;
       const warnLim = typeof G_DISCOUNT_WARN === 'number' ? G_DISCOUNT_WARN : 0.20;
+      const pctSuffix = expDiscUnitNow === 'pct' ? ` (${fmtUSD(disc, 2)})` : '';
       if (disc > grossAmount * warnLim) {
-        setHint('hint_discount', `${fmtNum(discPct, 1)}% off Subtotal - high discount, consider adding a note`, 'warn');
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off Subtotal${pctSuffix} - high discount, consider adding a note`, 'warn');
       } else {
-        setHint('hint_discount', `${fmtNum(discPct, 1)}% off ${fmtUSD(grossAmount, 2)}`, 'ok');
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off ${fmtUSD(grossAmount, 2)}${pctSuffix}`, 'ok');
       }
     } else {
       setHint('hint_discount', '', '');
+    }
+    const expNudgeEl = $('expDiscNudge');
+    if (expNudgeEl) {
+      const sdIdx = (!pricePending && !pendEditRow && supplier && isAlertRuleEnabled('S22') && disc <= 0.005 && !hasExplicitNoDiscNote(val('f_notes')))
+        ? getSupplierStandingDiscountIndex({ company: val('f_company') || defaultEntryCompany() }).bySup.get(normSupPayable(supplier))
+        : null;
+      if (sdIdx && sdIdx.expectedPct > 0) {
+        const sugUsd = grossAmount > 0 ? round2(grossAmount * (sdIdx.expectedPct / 100)) : 0;
+        const srcTxt = sdIdx.source === 'master' ? 'Agreed term' : `Usual across ${sdIdx.habitCount} vouchers`;
+        expNudgeEl.hidden = false;
+        expNudgeEl.innerHTML = `<span class="badge badge-warn">Standing ${fmtNum(sdIdx.expectedPct, 1)}% discount (${srcTxt})</span><button type="button" class="att-preset-pill" data-apply-standing-disc="${sdIdx.expectedPct}">Apply ${fmtNum(sdIdx.expectedPct, 1)}% Discount${sugUsd > 0 ? ' (' + fmtUSD(sugUsd, 2) + ')' : ''}</button>`;
+      } else {
+        expNudgeEl.hidden = true;
+        expNudgeEl.innerHTML = '';
+      }
     }
     const discBreakdownSuffix = (!pricePending && disc > 0 && grossAmount > 0)
       ? ` (Subtotal ${fmtUSD(grossAmount, 2)} - Discount ${fmtUSD(disc, 2)})`
@@ -116382,7 +117115,7 @@
     commonDateChecks([]);
     renderAdminLockBar();
     FORM_UI.lastExpAmtSource = '';
-    return { method, supplier, amount, grossAmount, disc, qty, pricePending, dupHit };
+    return { method, supplier, amount, grossAmount, disc, discOver100: discStExp.over100, discNoBase: discStExp.noBase, qty, pricePending, dupHit };
   }
 
   function getEditSettlementOrigRelief(targetCo, supplier, targetLeg, targetMethod) {
@@ -116415,54 +117148,127 @@
   function recalcSettlement() {
     const supplier = val('f_supplier');
     const settleCo = val('f_company') || defaultEntryCompany();
+    if (FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx && normSupPayable(supplier) !== normSupPayable(FORM_UI.stmt16LegLockCtx.supplier)) {
+      FORM_UI.settleLegLocked = false;
+      FORM_UI.stmt16LegLockCtx = null;
+      FORM_UI.settleLegManual = false;
+    }
+    const lockCtx = (!STATE.editingRecord && FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx)
+      ? FORM_UI.stmt16LegLockCtx
+      : null;
+    const methodEl = $('f_method');
+    if (methodEl) {
+      const blockVatForLeg = Boolean(lockCtx && lockCtx.payableLeg !== 'expense');
+      Array.from(methodEl.options || []).forEach(opt => {
+        if (/^(VAT|VATConfig|IVA)$/i.test(String(opt.value || ''))) {
+          opt.disabled = blockVatForLeg;
+        }
+      });
+      if (blockVatForLeg && /^(VAT|VATConfig|IVA)$/i.test(String(methodEl.value || ''))) {
+        methodEl.value = 'Payment';
+      }
+    }
     const method = val('f_method') || 'Payment';
     if (supplier !== FORM_UI.lastSettleSupplier) {
       FORM_UI.lastSettleSupplier = supplier;
-      if (!STATE.editingRecord) FORM_UI.settleLegManual = false;
+      if (!STATE.editingRecord && !lockCtx) FORM_UI.settleLegManual = false;
     }
     const legInfo = getSupplierPayableLegsInfo(supplier, settleCo);
-    const isVatMethod = /^(VAT|VATConfig|IVA)$/i.test(method);
+    const isVatMethod = !lockCtx && /^(VAT|VATConfig|IVA)$/i.test(method);
     const legEl = $('f_payable_leg');
     if (legEl) {
-      if (isVatMethod) {
-        legEl.value = 'expense';
-      } else if (!FORM_UI.settleLegManual) {
-        legEl.value = inferSettlementPayableLeg(supplier, method, settleCo);
+      if (lockCtx && lockCtx.payableLeg) {
+        legEl.value = lockCtx.payableLeg;
+        legEl.disabled = true;
+        legEl.setAttribute('aria-disabled', 'true');
+        FORM_UI.settleLegManual = true;
+      } else {
+        legEl.disabled = false;
+        legEl.removeAttribute('aria-disabled');
+        if (isVatMethod) {
+          legEl.value = 'expense';
+        } else if (!FORM_UI.settleLegManual) {
+          legEl.value = inferSettlementPayableLeg(supplier, method, settleCo);
+        }
       }
     }
     const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.orig && STATE.editingRecord.orig.payable_leg) || '';
-    const payableLeg = isVatMethod ? 'expense' : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(supplier, method, settleCo));
+    const payableLeg = (lockCtx && lockCtx.payableLeg)
+      ? lockCtx.payableLeg
+      : (isVatMethod ? 'expense' : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(supplier, method, settleCo)));
     const singleScopeBu = COMPANY_BU_MATCH[STATE.company] || '';
     const sameSingleCo = Boolean(!settleCo || (singleScopeBu && canonCompany(settleCo) === singleScopeBu));
-    const before = sameSingleCo
+    const lockCoOpen = (lockCtx && lockCtx.byCoOpen && Object.prototype.hasOwnProperty.call(lockCtx.byCoOpen, settleCo))
+      ? Number(lockCtx.byCoOpen[settleCo] || 0)
+      : (lockCtx && (!lockCtx.byCoOpen || !Object.keys(lockCtx.byCoOpen).length) ? Number(lockCtx.allTimeLegBal || lockCtx.closingBal || 0) : 0);
+    const isNonMfgSettleCo = Boolean(settleCo && getActiveIndustry(settleCo) !== 'Manufacturing');
+    let before = sameSingleCo
       ? openApBalance(supplier)
       : (legInfo.row ? round2(Number(legInfo.quarryRem || 0) + Number(legInfo.transRem || 0) + Number(legInfo.expRem || 0)) : null);
-    const amount = num('f_amount'), disc = num('f_discount');
-    const totRelief = round2(amount + disc);
-    const legOpenRem = isVatMethod
+    if (lockCtx && (before == null || (isNonMfgSettleCo && (payableLeg === 'quarry' || payableLeg === 'transportation')) || (isNonMfgSettleCo && !legInfo.row))) {
+      before = (isNonMfgSettleCo && legInfo.row && (payableLeg === 'quarry' || payableLeg === 'transportation'))
+        ? Math.max(Number(before || 0), round2(lockCoOpen))
+        : round2(lockCoOpen);
+    }
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(canModifyTextOnly()), 'modal');
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI._lastModalInputId === 'f_amount') {
+      const typedNetAmt = Math.max(0, num('f_amount'));
+      const baseSnap = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : 0;
+      if (baseSnap > 0 && typedNetAmt <= baseSnap + 0.005) {
+        if ($('f_discount')) $('f_discount').value = round2(Math.max(0, baseSnap - typedNetAmt)).toFixed(2);
+      } else {
+        const prevD = evalDiscInputState(num('f_discount'), baseSnap || typedNetAmt, 'pct').usd;
+        if ($('f_discount')) $('f_discount').value = prevD.toFixed(2);
+      }
+      FORM_UI.discInputUnit = 'usd';
+      FORM_UI.settleGrossBase = null;
+      syncDiscUnitPillsDom($('modalBody'), 'usd', Boolean(canModifyTextOnly()), 'modal');
+    }
+    const rawAmtSt = num('f_amount');
+    const baseStForPct = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : Math.max(0, rawAmtSt);
+    const discStSet = evalDiscInputState(num('f_discount'), baseStForPct, FORM_UI.discInputUnit);
+    let amount = rawAmtSt;
+    let disc = discStSet.usd;
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI.settleGrossBase > 0) {
+      disc = Math.min(FORM_UI.settleGrossBase, discStSet.usd);
+      amount = Math.max(0, round2(FORM_UI.settleGrossBase - disc));
+      if ($('f_amount') && FORM_UI._lastModalInputId !== 'f_amount') $('f_amount').value = amount.toFixed(2);
+    }
+    const totRelief = round2(Math.max(0, amount) + Math.max(0, disc));
+    let legOpenRem = isVatMethod
       ? Number(legInfo.row ? (legInfo.row.exp_vat_rem_usd || legInfo.expRem || 0) : 0)
       : (payableLeg === 'quarry'
           ? Number(legInfo.row ? (legInfo.quarryRem || 0) : (sameSingleCo ? Number(before || 0) : 0))
           : (payableLeg === 'transportation'
               ? Number(legInfo.row ? (legInfo.transRem || 0) : (sameSingleCo ? Number(before || 0) : 0))
               : Number(legInfo.row ? (legInfo.expRem || 0) : (sameSingleCo ? Number(before || 0) : 0))));
+    if (lockCtx && isNonMfgSettleCo && (!legInfo.row || payableLeg === 'quarry' || payableLeg === 'transportation')) {
+      legOpenRem = (legInfo.row && (payableLeg === 'quarry' || payableLeg === 'transportation'))
+        ? Math.max(Number(legOpenRem || 0), round2(lockCoOpen))
+        : round2(lockCoOpen);
+    }
     const supZeroRawCnt = (!isVatMethod && supplier && getActiveIndustry(settleCo || STATE.company) === 'Manufacturing')
       ? ((SEED.records && SEED.records.raw_purchases) || []).filter(rp =>
           rp && !rp.voided && (!settleCo || norm(rp.company) === norm(settleCo))
-          && normSupPayable(rp.site_owner) === normSupPayable(supplier)
+          && ((payableLeg === 'transportation' && rp.transport_by === 'Third-party truck' && normSupPayable(rp.truck_owner) === normSupPayable(supplier))
+              || (payableLeg !== 'transportation' && normSupPayable(rp.site_owner) === normSupPayable(supplier)))
           && String(rp.method || 'Credit').trim() === 'Credit'
           && norm(rp.product) !== 'remove'
-          && Number(rp.cost || 0) === 0
+          && Number(rp.qty || 0) > 0
+          && Number(payableLeg === 'transportation' ? rp.trans_cost : rp.cost || 0) === 0
         ).length
       : 0;
+    const effZeroCnt = lockCtx ? Math.max(supZeroRawCnt, Number(lockCtx.unpricedZeroCount || 0)) : supZeroRawCnt;
     const minOverWarnUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
     const editOrigRel = getEditSettlementOrigRelief(settleCo, supplier, payableLeg, method);
     const legOpenWithEdit = round2(Number(legOpenRem || 0) + editOrigRel);
     const legExcessUsd = !isVatMethod && !/^(Config|VATConfig|VAT|IVA)$/i.test(method)
       ? round2(totRelief - Math.max(0, legOpenWithEdit))
       : 0;
-    setHint('hint_supplier', supplier && before == null && !legInfo.row ? 'Not in the AP book - check the spelling' : '', supplier && before == null && !legInfo.row ? 'warn' : '');
-    if (isVatMethod) {
+    setHint('hint_supplier', supplier && before == null && !legInfo.row && !lockCtx ? 'Not in the AP book - check the spelling' : '', supplier && before == null && !legInfo.row && !lockCtx ? 'warn' : '');
+    if (lockCtx) {
+      setHint('hint_payable_leg', 'Locked to Statement 16 leg', 'ok');
+    } else if (isVatMethod) {
       setHint('hint_payable_leg', 'VAT and IVA settlements apply to Leg 3 (Expense VAT)', '');
     } else if (supplier && legInfo.activeLegs.length >= 2) {
       const parts = [];
@@ -116485,13 +117291,46 @@
     const sSub = $('paSupSubgridWrap');
     const subLegFilter = !supplier ? 'all' : (payableLeg === 'quarry' ? 'material' : (payableLeg === 'transportation' ? 'haulage' : 'expense'));
     if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, subLegFilter);
+    const zeroSetErr = (val('f_amount') !== '' || disc > 0) ? validateZeroCashSettlementWriteOff({ amount, disc, method, notes: val('f_notes') }) : null;
+    const maxDiscWarnSetPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+    const highDiscSetWarn = isAlertRuleEnabled('G_DISCOUNT_WARN') && totRelief > 0 && disc > totRelief * (maxDiscWarnSetPct / 100);
+    if (discStSet.over100) {
+      setHint('hint_disc', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStSet.raw < 0) {
+      setHint('hint_disc', 'Discount cannot be negative', 'crit');
+    } else if (highDiscSetWarn) {
+      const pctTxt = totRelief > 0 ? fmtNum((disc / totRelief) * 100, 1) : '0';
+      const noNoteYet = String(val('f_notes') || '').trim().length < 3;
+      setHint('hint_disc', `${pctTxt}% of settled total (${fmtUSD(disc, 2)})${noNoteYet ? ' · Explain in Notes (3+ chars)' : ' · Note recorded'}`, noNoteYet ? 'warn' : 'ok');
+    } else if (disc > 0 && FORM_UI.discInputUnit === 'pct') {
+      setHint('hint_disc', `Resolved discount: ${fmtUSD(disc, 2)} (${fmtNum(totRelief > 0 ? (disc / totRelief) * 100 : 0, 1)}% of ${fmtUSD(totRelief, 2)})`, 'ok');
+    } else {
+      setHint('hint_disc', '', '');
+    }
+    const stNudgeEl = $('settleDiscNudge');
+    if (stNudgeEl) {
+      const sdIdxSt = (supplier && !isVatMethod && isAlertRuleEnabled('S22') && disc <= 0.005 && !hasExplicitNoDiscNote(val('f_notes')))
+        ? getSupplierStandingDiscountIndex({ company: settleCo }).bySup.get(normSupPayable(supplier))
+        : null;
+      if (sdIdxSt && sdIdxSt.expectedPct > 0) {
+        const previewBase = amount > 0 ? amount : Math.max(0, Number(before || 0));
+        const sugSetUsd = previewBase > 0 ? round2(previewBase * (sdIdxSt.expectedPct / 100)) : 0;
+        stNudgeEl.hidden = false;
+        stNudgeEl.innerHTML = `<span class="badge badge-warn">Standing ${fmtNum(sdIdxSt.expectedPct, 1)}% discount</span><button type="button" class="att-preset-pill" data-apply-standing-disc="${sdIdxSt.expectedPct}">Apply ${fmtNum(sdIdxSt.expectedPct, 1)}% Discount${sugSetUsd > 0 ? ' (' + fmtUSD(sugSetUsd, 2) + ')' : ''}</button>`;
+      } else {
+        stNudgeEl.hidden = true;
+        stNudgeEl.innerHTML = '';
+      }
+    }
     if (supplier && isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0) {
       const trdSettleHint = getActiveIndustry(settleCo) === 'Automotive & Heavy Trading' ? ' · Add BL #, LC #, or Import File # for advances' : '';
-      setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${supZeroRawCnt > 0 ? ` (${fmtNum(supZeroRawCnt)} raw loads at $0.00)` : ''}${trdSettleHint}`, 'warn');
+      setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${effZeroCnt > 0 ? ` (${fmtNum(effZeroCnt)} raw loads at $0.00)` : ''}${trdSettleHint}`, 'warn');
     } else if (before != null && totRelief > before + 0.005) {
       setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
+    } else if (amount <= 0.005 && disc > 0 && !isVatMethod) {
+      setHint('hint_amount', zeroSetErr ? zeroSetErr.msg : `$0.00 cash write-off clears ${fmtUSD(disc, 2)} AP balance`, zeroSetErr ? 'warn' : 'ok');
     } else {
-      setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+      setHint('hint_amount', amount < 0 ? 'Cannot be negative' : (amount === 0 && disc <= 0 && val('f_amount') ? 'Enter cash paid or a settlement discount above zero' : ''), (amount < 0 || (amount === 0 && disc <= 0 && val('f_amount'))) ? 'crit' : '');
     }
     const stStrip = $('settleQuickContextStrip');
     if (stStrip) {
@@ -116519,17 +117358,20 @@
                   ? `<span class="badge badge-info">Partial Settlement · ${fmtUSD(Math.max(0, openVal - totRelief), 2)} Remaining</span>`
                   : (openVal > 0 ? `<span class="badge badge-brass">Open AP: ${fmtUSD(openVal, 2)}</span>` : `<span class="badge badge-ok">AP Settled ($0.00)</span>`)));
         stStrip.hidden = false;
-        stStrip.className = 'att-contract-strip' + ((isAdv || totalSupPendCnt > 0 || supZeroRawCnt > 0 || (isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd)) ? ' is-warn' : (isFull ? ' is-ok' : ''));
+        stStrip.className = 'att-contract-strip' + ((isAdv || totalSupPendCnt > 0 || effZeroCnt > 0 || (isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd)) ? ' is-warn' : (isFull ? ' is-ok' : ''));
         stStrip.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <strong>${esc(supplier)}</strong> ${stBadge}
+            ${lockCtx ? `<span class="badge badge-ok">Locked to Statement 16 leg</span>` : ''}
+            ${lockCtx && lockCtx.cappedByPostPeriod ? `<span class="badge badge-info">Adjusted for settlements after statement period</span>` : ''}
+            ${lockCtx && lockCtx.multiCo ? `<span class="badge badge-info">Multi-entity balance: prefilled for selected entity</span>` : ''}
             ${isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0 ? `<span class="badge badge-err">Overpaid Leg (+${fmtUSD(legExcessUsd, 2)})</span>` : ''}
-            ${supZeroRawCnt > 0 ? `<span class="badge badge-warn">${fmtNum(supZeroRawCnt)} Unpriced Raw ($0.00)</span>` : ''}
+            ${effZeroCnt > 0 ? `<span class="badge badge-warn">${fmtNum(effZeroCnt)} Unpriced Raw ($0.00)</span>` : ''}
             ${totalSupPendCnt > 0 ? `<span class="badge badge-warn">${fmtNum(totalSupPendCnt)} Pending Price${supPendLitres > 0 ? ' (' + fmtNum(supPendLitres, 0) + ' L)' : ''} at $0.00</span>${canSetSupPending ? (supPendRows.length > 0 ? `<button type="button" class="att-preset-pill" data-set-pending-price-id="${esc(supPendRows[0].id)}">Enter Invoice Price First</button>` : `<button type="button" class="att-preset-pill" data-set-pending-raw-price-id="${esc(supPendRawRows[0].id)}">Enter Invoice Price First</button>`) : ''}` : ''}
-            ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
-            ${legMat > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legMat - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'quarry' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="quarry" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 2)})</button>` : ''}
-            ${legHaul > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legHaul - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'transportation' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="transportation" data-val="${legHaul.toFixed(2)}">Transport Leg (${fmtUSD(legHaul, 2)})</button>` : ''}
-            ${legExp > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legExp - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'expense' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="expense" data-val="${legExp.toFixed(2)}">Expense Leg (${fmtUSD(legExp, 2)})</button>` : ''}
+            ${!lockCtx && openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
+            ${!lockCtx && legMat > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legMat - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'quarry' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="quarry" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 2)})</button>` : ''}
+            ${!lockCtx && legHaul > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legHaul - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'transportation' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="transportation" data-val="${legHaul.toFixed(2)}">Transport Leg (${fmtUSD(legHaul, 2)})</button>` : ''}
+            ${!lockCtx && legExp > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legExp - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'expense' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="expense" data-val="${legExp.toFixed(2)}">Expense Leg (${fmtUSD(legExp, 2)})</button>` : ''}
           </div>
           <div class="att-contract-metrics">
             <span><small>Total Open AP</small><b>${before != null ? fmtUSD(before, 2) : '$0.00'}</b></span>
@@ -116553,7 +117395,7 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { supplier, before, amount, disc, payableLeg, dupHit, legOpenRem, legExcessUsd, supZeroRawCnt };
+    return { supplier, before, amount, disc, discOver100: discStSet.over100, discNoBase: discStSet.noBase, payableLeg, dupHit, legOpenRem, legExcessUsd, supZeroRawCnt: effZeroCnt, legInfoHasRow: Boolean(legInfo.row) };
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -118779,6 +119621,297 @@
       scrollPanel: '',
       navView: 'users',
       navLabel: 'Open Users & Security'
+    };
+  }
+
+  // Supplier Standing-Discount Consistency Sentinel (S22, Rule #33): deterministic across all 6 industries (Hard Rule 15)
+  let _sdIndexCache = new Map();
+  function getSupplierStandingDiscountIndex(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return { bySup: new Map(), minVouchers: 3, minPct: 2, minUsd: 100 };
+    const u = (opts && opts.user) || activeUser();
+    const minVouchers = Math.max(2, Math.round(Number(getAlertParam('S22', 'min_vouchers', 3)) || 3));
+    const minPct = Math.max(0.5, Number(getAlertParam('S22', 'min_standing_pct', 2)) || 2);
+    const minUsd = Math.max(1, Number(getAlertParam('S22', 'min_voucher_usd', 100)) || 100);
+    const ignoreCo = Boolean(opts && opts.ignoreCompany);
+    const coScope = (opts && opts.company) || STATE.company;
+    const allowedCos = allowedCompanyNames(u);
+    const offScope = typeof isOfficialScopeActive === 'function' ? isOfficialScopeActive(u) : false;
+    const recs = SEED.records || {};
+    const sdMemoKey = [
+      SEED._customRev || 0, STATE._customRev || 0,
+      (recs.expenses || []).length, (recs.settlements || []).length, (recs.suppliers || []).length,
+      (SEED._tableRev && SEED._tableRev.expenses) || 0,
+      (SEED._tableRev && SEED._tableRev.settlements) || 0,
+      (SEED._tableRev && SEED._tableRev.suppliers) || 0,
+      ignoreCo ? 'ALL' : String(coScope || ''), allowedCos.join(','), offScope ? 1 : 0,
+      _ALERT_RULES_REV, minVouchers, minPct, minUsd
+    ].join('|');
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF && _sdIndexCache.has(sdMemoKey)) {
+      return _sdIndexCache.get(sdMemoKey);
+    }
+    const supMap = new Map();
+    const ensureEntry = name => {
+      const k = normSupPayable(name);
+      if (!k) return null;
+      if (!supMap.has(k)) {
+        supMap.set(k, {
+          key: k,
+          supplier: String(name || '').trim(),
+          masterPct: 0,
+          expPcts: [],
+          settlePcts: [],
+          expEligibleTotal: 0,
+          settleEligibleTotal: 0,
+          ignoredRoundingCount: 0,
+          expMissed: [],
+          settleMissed: []
+        });
+      }
+      const cur = supMap.get(k);
+      if (String(name || '').trim().length > cur.supplier.length) cur.supplier = String(name || '').trim();
+      return cur;
+    };
+    const mergeActiveRecordsForSd = tbl => {
+      const custom = (STATE.customRecords && Array.isArray(STATE.customRecords[tbl])) ? STATE.customRecords[tbl] : [];
+      const seed = (recs && Array.isArray(recs[tbl])) ? recs[tbl] : [];
+      const seen = new Set();
+      const out = [];
+      const pushList = arr => {
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r) continue;
+          const rid = r.id != null ? String(r.id) : '';
+          if (rid) {
+            if (seen.has(rid)) continue;
+            seen.add(rid);
+          }
+          if (r.voided || r.voided_at || r._absorbedSeedTwin) continue;
+          if (offScope && tbl !== 'suppliers' && typeof isOfficialRecord === 'function' && !isOfficialRecord(r, tbl)) continue;
+          out.push(r);
+        }
+      };
+      pushList(custom);
+      pushList(seed);
+      return out;
+    };
+    const supRows = mergeActiveRecordsForSd('suppliers');
+    for (let i = 0; i < supRows.length; i++) {
+      const sr = supRows[i];
+      const pct = Number(sr.standing_discount_pct || 0);
+      if (pct > 0) {
+        const ent = ensureEntry(sr.name || sr.supplier);
+        if (ent && pct > ent.masterPct) ent.masterPct = round2(pct);
+      }
+    }
+    const expRows = mergeActiveRecordsForSd('expenses');
+    for (let i = 0; i < expRows.length; i++) {
+      const e = expRows[i];
+      if (!e || e.price_pending || /^(VAT|VATConfig|IVA|VAT Dis|Config|CR Return|C Return)$/i.test(String(e.method || '')) || Number(e.amount || 0) < 0) continue;
+      if (!ignoreCo && !matchesCashScopeCompany(e, coScope, allowedCos)) continue;
+      const ent = ensureEntry(e.supplier);
+      if (!ent) continue;
+      const disc = Math.max(0, round2(Number(e.discount || 0)));
+      const amt = Math.max(0, round2(Number(e.amount || 0)));
+      const gross = Number(e.gross_amount || 0) > 0 ? round2(Number(e.gross_amount)) : round2(amt + disc);
+      if (gross <= 0.01) continue;
+      if (disc > 0.005) {
+        const pct = (disc / gross) * 100;
+        if (disc <= 10.005 || (disc / gross) >= 0.995 || amt <= 0.005) {
+          if (disc <= 10.005) ent.ignoredRoundingCount += 1;
+        } else {
+          ent.expPcts.push(pct);
+          ent.expEligibleTotal += 1;
+        }
+      } else {
+        if (gross >= minUsd && !hasExplicitNoDiscNote(e.notes)) {
+          ent.expEligibleTotal += 1;
+          ent.expMissed.push({
+            id: e.id,
+            crKey: 'expenses',
+            kind_label: 'Expense',
+            date: String(e.date || '').slice(0, 10),
+            company: canonCompany(e.company || 'WTC') || String(e.company || 'WTC'),
+            supplier: ent.supplier || e.supplier,
+            gross_usd: gross
+          });
+        }
+      }
+    }
+    const setRows = mergeActiveRecordsForSd('settlements');
+    for (let i = 0; i < setRows.length; i++) {
+      const s = setRows[i];
+      if (!s || /^(VAT|VATConfig|IVA|Config)$/i.test(String(s.method || ''))) continue;
+      if (!ignoreCo && !matchesCashScopeCompany(s, coScope, allowedCos)) continue;
+      const ent = ensureEntry(s.supplier);
+      if (!ent) continue;
+      const disc = Math.max(0, round2(Number(s.discount || 0)));
+      const amt = Math.max(0, round2(Number(s.amount || 0)));
+      const settledTot = round2(amt + disc);
+      if (settledTot <= 0.01) continue;
+      if (disc > 0.005) {
+        const pct = (disc / settledTot) * 100;
+        if (amt <= 0.005 || disc <= 10.005 || (disc / settledTot) >= 0.995) {
+          if (disc <= 10.005) ent.ignoredRoundingCount += 1;
+        } else {
+          ent.settlePcts.push(pct);
+          ent.settleEligibleTotal += 1;
+        }
+      } else {
+        if (settledTot >= minUsd && !hasExplicitNoDiscNote(s.notes)) {
+          ent.settleEligibleTotal += 1;
+          ent.settleMissed.push({
+            id: s.id,
+            crKey: 'settlements',
+            kind_label: 'Settlement',
+            date: String(s.date || '').slice(0, 10),
+            company: canonCompany(s.company || 'WTC') || String(s.company || 'WTC'),
+            supplier: ent.supplier || s.supplier,
+            gross_usd: settledTot
+          });
+        }
+      }
+    }
+    const medianOf = arr => {
+      if (!arr.length) return 0;
+      const sorted = arr.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const bySup = new Map();
+    supMap.forEach((ent, k) => {
+      const allPcts = ent.expPcts.concat(ent.settlePcts);
+      const totalElig = ent.expEligibleTotal + ent.settleEligibleTotal;
+      const medPct = round2(medianOf(allPcts));
+      const consPct = totalElig > 0 ? round2((allPcts.length / totalElig) * 100) : 0;
+      const hasHist = allPcts.length >= minVouchers && consPct >= 50 && medPct >= minPct;
+      const expectedPct = ent.masterPct > 0 ? ent.masterPct : (hasHist ? medPct : 0);
+      const source = ent.masterPct > 0 ? 'master' : (hasHist ? 'history' : '');
+      const checkExp = ent.masterPct > 0 || ent.expPcts.length >= minVouchers;
+      const checkSettle = ent.settlePcts.length >= minVouchers || (ent.masterPct > 0 && ent.expPcts.length === 0 && ent.settleMissed.length > 0);
+      bySup.set(k, {
+        key: k,
+        supplier: ent.supplier,
+        masterPct: ent.masterPct,
+        observedPct: hasHist ? medPct : 0,
+        expectedPct,
+        source,
+        expHabitCount: ent.expPcts.length,
+        settleHabitCount: ent.settlePcts.length,
+        habitCount: allPcts.length,
+        consistencyPct: consPct,
+        ignoredRoundingCount: ent.ignoredRoundingCount,
+        checkExp,
+        checkSettle,
+        expMissed: checkExp ? ent.expMissed : [],
+        settleMissed: checkSettle ? ent.settleMissed : []
+      });
+    });
+    const res = { bySup, minVouchers, minPct, minUsd };
+    if (_sdIndexCache.size > 24) _sdIndexCache.clear();
+    _sdIndexCache.set(sdMemoKey, res);
+    return res;
+  }
+  function getStandingDiscountSentinelData(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    const u = (opts && opts.user) || activeUser();
+    const lens = seatLens(u);
+    if (!lens.expenses) {
+      return {
+        restricted: true,
+        rows: [],
+        missedCount: 0,
+        missedExpUsd: 0,
+        missedSupsCount: 0,
+        qualifiedSupsCount: 0,
+        minVouchers: Math.max(2, Math.round(Number(getAlertParam('S22', 'min_vouchers', 3)) || 3)),
+        minPct: Math.max(0.5, Number(getAlertParam('S22', 'min_standing_pct', 2)) || 2),
+        minUsd: Math.max(1, Number(getAlertParam('S22', 'min_voucher_usd', 100)) || 100)
+      };
+    }
+    const idx = getSupplierStandingDiscountIndex(opts);
+    const rows = [];
+    const missedSups = new Set();
+    let qualifiedSupsCount = 0;
+    let missedExpUsd = 0;
+    idx.bySup.forEach(s => {
+      if (!(s.expectedPct > 0)) return;
+      qualifiedSupsCount += 1;
+      const cands = s.expMissed.concat(s.settleMissed);
+      cands.forEach(c => {
+        const expDisc = round2(c.gross_usd * (s.expectedPct / 100));
+        if (!(expDisc > 0.005)) return;
+        missedExpUsd = round2(missedExpUsd + expDisc);
+        missedSups.add(s.key);
+        rows.push(Object.assign({}, c, {
+          expected_pct: s.expectedPct,
+          expected_disc_usd: expDisc,
+          source: s.source
+        }));
+      });
+    });
+    rows.sort((a, b) => Number(b.expected_disc_usd || 0) - Number(a.expected_disc_usd || 0) || String(b.date || '').localeCompare(String(a.date || '')));
+    return {
+      restricted: false,
+      rows,
+      missedCount: rows.length,
+      missedExpUsd,
+      missedSupsCount: missedSups.size,
+      qualifiedSupsCount,
+      minVouchers: idx.minVouchers,
+      minPct: idx.minPct,
+      minUsd: idx.minUsd
+    };
+  }
+  function buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, activeInd) {
+    const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const code = `${isMfg ? 'Rule #33' : 'Rule #11'} · Payables & Procurement`;
+    const minPct = Number((sdSn && sdSn.minPct) || getAlertParam('S22', 'min_standing_pct', 2) || 2);
+    const minVouch = Number((sdSn && sdSn.minVouchers) || getAlertParam('S22', 'min_vouchers', 3) || 3);
+    const minUsd = Number((sdSn && sdSn.minUsd) || getAlertParam('S22', 'min_voucher_usd', 100) || 100);
+    if (sdSnOff) {
+      return {
+        id: 'S22', ruleId: 'S22', code,
+        title: 'Supplier Standing-Discount Consistency Sentinel',
+        detail: 'Paused in Alerts & Thresholds.',
+        severity: 'ok', badge: 'PAUSED', company: scope,
+        rawMetric: 0, rawSecondary: 0, scrollPanel: null, navView: 'expenses', navLabel: 'Open Expenses'
+      };
+    }
+    if (!sdSn || sdSn.restricted) {
+      return {
+        id: 'S22', ruleId: 'S22', code,
+        title: 'Supplier Standing-Discount Consistency Sentinel',
+        detail: 'Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).',
+        severity: 'ok', badge: 'RESTRICTED', company: scope,
+        rawMetric: 0, rawSecondary: 0, scrollPanel: null, navView: 'expenses', navLabel: 'Open Expenses'
+      };
+    }
+    const cnt = Number(sdSn.missedCount || 0);
+    const expUsd = round2(Number(sdSn.missedExpUsd || 0));
+    const supsCnt = Number(sdSn.missedSupsCount || 0);
+    const qualCnt = Number(sdSn.qualifiedSupsCount || 0);
+    return {
+      id: 'S22', ruleId: 'S22', code,
+      title: 'Supplier Standing-Discount Consistency Sentinel',
+      detail: cnt > 0
+        ? `${fmtNum(cnt, 0)} voucher(s) (>= $${fmtNum(minUsd, 0)}) across ${fmtNum(supsCnt, 0)} standing-discount supplier(s) posted with $0 discount: ${fmtUSD(expUsd, 2)} missed savings.`
+        : `Monitoring ${fmtNum(qualCnt, 0)} supplier(s) with Master standing % or ${fmtNum(minVouch, 0)}+ vouchers >= ${fmtNum(minPct, 1)}% (cash rounding <= $10 ignored): 0 missed discounts.`,
+      severity: cnt > 0 ? 'warn' : 'ok',
+      badge: cnt > 0 ? `${fmtNum(cnt, 0)} MISSED · ${fmtUSD(expUsd, 0)}` : `${fmtNum(qualCnt, 0)} TRACKED · OK`,
+      company: scope,
+      rawMetric: cnt,
+      rawSecondary: Math.round(expUsd),
+      scrollPanel: cnt > 0 ? 'snMissedStandingDisc' : null,
+      navView: 'expenses',
+      navLabel: 'Open Expenses'
+    };
+  }
+  if (typeof window !== 'undefined') {
+    window.__mfgStandingDiscountSentinel = {
+      index: opts => getSupplierStandingDiscountIndex(opts),
+      data: opts => getStandingDiscountSentinelData(opts),
+      item: () => (buildSentinelItems() || []).find(x => x && x.id === 'S22') || null,
+      clearCache: () => { _sdIndexCache.clear(); }
     };
   }
 
@@ -124005,6 +125138,9 @@
       }
     }
     if (typeof stripNativeTitles === 'function') stripNativeTitles(document);
+    if (STATE.modalForm === 'pricerule' && typeof syncUnpricedNextBtnState === 'function') {
+      syncUnpricedNextBtnState();
+    }
     return res;
   }
 
@@ -125255,7 +126391,7 @@
       const getSelectOptions = () => {
         const plainOpts = selEl.dataset.plainOptions === '1' || selEl.id === 'f_ruletype' || selEl.id === 'insp_edit_rule_type';
         return Array.from(selEl.options)
-          .filter(o => !(o.value === '' && /^[-—]\s*select\b/i.test((o.textContent || '').trim())))
+          .filter(o => !o.disabled && !(o.value === '' && /^[-—]\s*select\b/i.test((o.textContent || '').trim())))
           .map(o => {
             const raw = (o.textContent || o.value || '').trim();
             const sp = plainOpts ? { label: raw, meta: '' } : splitOptionLabel(raw);
@@ -126347,7 +127483,7 @@
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
     FORM_UI.fuelBaseTouched = false; FORM_UI.fuelBaseAuto = false;
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
-    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.postAttempted = false;
+    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.settleLegLocked = false; FORM_UI.settleAmtTouched = false; FORM_UI.stmt16LegLockCtx = null; FORM_UI.postAttempted = false;
     FORM_UI.rawSupplyModeManual = false; FORM_UI.transportByManual = false;
     FORM_UI.stagedOwnerDrivers = [];
     FORM_UI.expItems = [];
@@ -126373,6 +127509,8 @@
     FORM_UI.lastSalStaffMonthKey = '';
     FORM_UI.salBackpayOn = false; FORM_UI.lastSalBackpayKey = '';
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = ''; FORM_UI.lastExpAmtSource = '';
+    FORM_UI.discInputUnit = 'usd'; FORM_UI.settleGrossBase = null; FORM_UI.ideDiscUnit = 'usd'; FORM_UI.ideSettleBase = null;
+    FORM_UI._lastModalInputId = ''; FORM_UI._lastIdeInputId = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketSeriesTabOpen = false; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
@@ -127032,18 +128170,85 @@
           recalcForm();
           return;
         }
+        const discUnitBtn = ev.target && ev.target.closest ? ev.target.closest('[data-disc-unit]') : null;
+        if (discUnitBtn && !discUnitBtn.disabled) {
+          ev.preventDefault();
+          const nextUnit = discUnitBtn.getAttribute('data-disc-unit') === 'pct' ? 'pct' : 'usd';
+          if (nextUnit !== FORM_UI.discInputUnit) {
+            const rawD = num('f_discount');
+            if (STATE.modalForm === 'expense') {
+              const gCur = num('f_gross_amount');
+              const aCur = num('f_amount');
+              const prevResolvedD = evalDiscInputState(rawD, gCur > 0 ? gCur : aCur, FORM_UI.discInputUnit).usd;
+              const baseG = gCur > 0 ? gCur : (aCur > 0 ? round2(aCur + Math.max(0, prevResolvedD)) : 0);
+              FORM_UI.discInputUnit = nextUnit;
+              if ($('f_discount')) {
+                if (nextUnit === 'pct') {
+                  $('f_discount').value = (baseG > 0 && prevResolvedD > 0) ? String(round2((prevResolvedD / baseG) * 100)) : '0';
+                } else {
+                  $('f_discount').value = prevResolvedD > 0 ? prevResolvedD.toFixed(2) : '';
+                }
+              }
+              FORM_UI.lastExpAmtSource = 'discount';
+            } else {
+              const curAmt = Math.max(0, num('f_amount'));
+              if (nextUnit === 'pct') {
+                const usdD = Math.max(0, round2(rawD));
+                const openFallback = STATE.modalForm === 'settlement' ? Math.max(0, Number(openApBalance(val('f_supplier')) || 0)) : Math.max(0, Number(openArBalance(val('f_customer')) || 0));
+                const baseForPct = (curAmt + usdD) > 0 ? round2(curAmt + usdD) : openFallback;
+                FORM_UI.settleGrossBase = baseForPct > 0 ? baseForPct : null;
+                FORM_UI.discInputUnit = 'pct';
+                if ($('f_discount')) $('f_discount').value = (baseForPct > 0 && usdD > 0) ? String(round2((usdD / baseForPct) * 100)) : '0';
+              } else {
+                const baseNow = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : round2(curAmt);
+                const resolvedD = evalDiscInputState(rawD, baseNow, 'pct').usd;
+                FORM_UI.discInputUnit = 'usd';
+                FORM_UI.settleGrossBase = null;
+                if ($('f_discount')) $('f_discount').value = resolvedD.toFixed(2);
+              }
+            }
+            syncDiscUnitPillsDom(body, FORM_UI.discInputUnit, false, 'modal');
+            recalcForm();
+          }
+          return;
+        }
+        const applySdBtn = ev.target && ev.target.closest ? ev.target.closest('[data-apply-standing-disc]') : null;
+        if (applySdBtn && !applySdBtn.disabled) {
+          ev.preventDefault();
+          const sdPct = Number(applySdBtn.getAttribute('data-apply-standing-disc') || 0);
+          if (sdPct > 0) {
+            if (STATE.modalForm === 'settlement') {
+              const curAmt = Math.max(0, num('f_amount'));
+              const prevD = evalDiscInputState(num('f_discount'), FORM_UI.settleGrossBase || curAmt, FORM_UI.discInputUnit).usd;
+              const openFallback = Math.max(0, Number(openApBalance(val('f_supplier')) || 0));
+              FORM_UI.settleGrossBase = (curAmt + prevD) > 0 ? round2(curAmt + prevD) : (openFallback > 0 ? openFallback : null);
+            } else if (STATE.modalForm === 'expense') {
+              FORM_UI.lastExpAmtSource = 'discount';
+            }
+            FORM_UI.discInputUnit = 'pct';
+            if ($('f_discount')) $('f_discount').value = String(round2(sdPct));
+            syncDiscUnitPillsDom(body, 'pct', false, 'modal');
+            recalcForm();
+          }
+          return;
+        }
         const qfBtn = ev.target && ev.target.closest ? ev.target.closest('[data-form-quickfill]') : null;
         if (qfBtn) {
           ev.preventDefault();
           const fid = qfBtn.getAttribute('data-form-quickfill');
           const valStr = qfBtn.getAttribute('data-val');
           const settleLeg = qfBtn.getAttribute('data-settle-leg');
-          if (settleLeg && $('f_payable_leg')) {
+          if (settleLeg && $('f_payable_leg') && !FORM_UI.settleLegLocked) {
             $('f_payable_leg').value = settleLeg;
             FORM_UI.settleLegManual = true;
           }
+          if (fid === 'f_amount' && (STATE.modalForm === 'receipt' || STATE.modalForm === 'settlement') && FORM_UI.discInputUnit === 'pct') {
+            const qv = Number(valStr || 0);
+            FORM_UI.settleGrossBase = qv > 0 ? round2(qv) : null;
+          }
           const targetEl = fid ? $(fid) : null;
           if (targetEl && valStr != null) {
+            if (fid === 'f_amount' && STATE.modalForm === 'settlement') FORM_UI.settleAmtTouched = true;
             targetEl.value = valStr;
             if (fid === 'f_usd' && $('f_lbp')) $('f_lbp').value = '';
             if (fid === 'f_lbp' && $('f_usd')) $('f_usd').value = '';
@@ -128527,8 +129732,22 @@
         if (el.id === 'f_paytype' && STATE.modalForm === 'employment' && $('f_vacdays') && $('f_vacdays').dataset.userEdited !== '1') {
           $('f_vacdays').value = '0';
         }
-        if (el.id === 'f_payable_leg') { FORM_UI.settleLegManual = true; }
-        if (STATE.modalForm === 'settlement' && el.id === 'f_company' && !STATE.editingRecord) { FORM_UI.settleLegManual = false; }
+        if (el.id === 'f_payable_leg' && !FORM_UI.settleLegLocked) { FORM_UI.settleLegManual = true; }
+        if (STATE.modalForm === 'settlement' && el.id === 'f_amount') { FORM_UI.settleAmtTouched = true; }
+        if (STATE.modalForm === 'settlement' && el.id === 'f_company' && !STATE.editingRecord) {
+          if (FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx) {
+            if (!FORM_UI.settleAmtTouched && $('f_amount')) {
+              const coMap = FORM_UI.stmt16LegLockCtx.byCoOpen || {};
+              if (Object.keys(coMap).length > 0) {
+                const nextCoOpen = round2(Math.max(0, Number(coMap[el.value] || 0)));
+                $('f_amount').value = nextCoOpen.toFixed(2);
+                if (FORM_UI.discInputUnit === 'pct') FORM_UI.settleGrossBase = nextCoOpen;
+              }
+            }
+          } else {
+            FORM_UI.settleLegManual = false;
+          }
+        }
         if (el.id === 'f_ticketno') FORM_UI.ticketManual = !!el.value;
         // Selecting or clearing a truck resets manual quantity, meter type & driver so the unit's category, capacity and default driver populate first
         if (el.id === 'f_truck') { FORM_UI.qtyManual = false; FORM_UI.meterTypeManual = false; FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; }
@@ -128549,7 +129768,12 @@
           else if (el.id === 'f_discount') FORM_UI.lastExpAmtSource = 'discount';
           else if (el.id === 'f_amount') FORM_UI.lastExpAmtSource = 'amount';
         }
-        recalcForm();
+        FORM_UI._lastModalInputId = el.id || '';
+        try {
+          recalcForm();
+        } finally {
+          FORM_UI._lastModalInputId = '';
+        }
       };
       el.addEventListener('input', handler);
       el.addEventListener('change', ev => {
@@ -128620,7 +129844,7 @@
       if (upBtn && fileInp) upBtn.addEventListener('click', () => fileInp.click());
       if (camBtn) {
         camBtn.addEventListener('click', () => {
-          openDocumentCameraCapture((files, method) => handleModalAttachmentFiles(files, method || 'Camera Scan'));
+          openDocumentCameraCapture((files, method) => handleModalAttachmentFiles(files, method || 'Camera Scan'), { attachmentOnly: true });
         });
       }
       if (fileInp) fileInp.addEventListener('change', async () => { try { await handleModalAttachmentFiles(fileInp.files, 'File Upload'); } finally { fileInp.value = ''; } });
@@ -130351,10 +131575,18 @@
         }
       }
     } else if (f === 'receipt') {
+      const rcptMth = val('f_method');
       if (!c.customer) addErr('f_customer', 'Customer is required.');
-      if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
-      if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
-      const rcptDup = findSameDayVoucherDuplicate('receipt', { company, date, customer: c.customer, method: val('f_method'), amount: c.amount, discount: c.disc, reference: val('f_reference') });
+      if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+      else if (c.discNoBase) addErr('f_discount', 'Enter Amount Received first so % discount can calculate.');
+      const zeroRctErr = validateZeroCashSettlementWriteOff({ amount: c.amount, disc: c.disc, method: rcptMth, notes });
+      if (zeroRctErr) addErr(zeroRctErr.field, zeroRctErr.msg);
+      const rcptTotSettle = round2(Math.max(0, c.amount) + Math.max(0, c.disc));
+      const maxDiscRctPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+      if (isAlertRuleEnabled('G_DISCOUNT_WARN') && rcptTotSettle > 0 && c.disc > rcptTotSettle * (maxDiscRctPct / 100) && String(notes || '').trim().length < 3) {
+        addErr('f_notes', `Settlement Discount exceeds ${fmtNum(maxDiscRctPct, 0)}% (${fmtUSD(c.disc, 2)} of ${fmtUSD(rcptTotSettle, 2)}). Enter a reason in Notes (3+ chars).`);
+      }
+      const rcptDup = findSameDayVoucherDuplicate('receipt', { company, date, customer: c.customer, method: rcptMth, amount: c.amount, discount: c.disc, reference: val('f_reference') });
       if (rcptDup && !($('f_dupok') && $('f_dupok').checked)) {
         addErr('f_dupok', rcptDup.sameRef
           ? `Duplicate reference "${cleanVoucherRef(val('f_reference'))}" already logged on ${date} (${rcptDup.summary}). Change the reference or tick the confirmation box.`
@@ -130390,7 +131622,9 @@
       if (!val('f_subcategory')) addErr('f_subcategory', 'Subcategory is required.');
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (!c.pricePending) {
-        if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
+        if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+        else if (c.discNoBase) addErr('f_discount', 'Enter Subtotal or Item Price first so % discount can calculate.');
+        else if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
         else if (c.disc > 0 && c.grossAmount > 0 && c.disc > c.grossAmount + 0.001) addErr('f_discount', 'Discount cannot exceed Subtotal.');
       }
       if (pendEditRow) {
@@ -130680,14 +131914,28 @@
         }
       }
     } else if (f === 'settlement') {
-      if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
-      if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
-      if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
       const settleMth = val('f_method');
+      if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
+      if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+      else if (c.discNoBase) addErr('f_discount', 'Enter Amount Paid or Open AP first so % discount can calculate.');
+      const zeroSetSaveErr = validateZeroCashSettlementWriteOff({ amount: c.amount, disc: c.disc, method: settleMth, notes });
+      if (zeroSetSaveErr) addErr(zeroSetSaveErr.field, zeroSetSaveErr.msg);
+      const stTotSave = round2(Math.max(0, c.amount) + Math.max(0, c.disc));
+      const maxDiscSetSavePct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+      if (isAlertRuleEnabled('G_DISCOUNT_WARN') && stTotSave > 0 && c.disc > stTotSave * (maxDiscSetSavePct / 100) && String(notes || '').trim().length < 3) {
+        addErr('f_notes', `Settlement Discount exceeds ${fmtNum(maxDiscSetSavePct, 0)}% (${fmtUSD(c.disc, 2)} of ${fmtUSD(stTotSave, 2)}). Enter a reason in Notes (3+ chars).`);
+      }
       const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.orig && STATE.editingRecord.orig.payable_leg) || '';
-      const effSettleLeg = /^(VAT|VATConfig|IVA)$/i.test(settleMth)
+      const lockedSettleLeg = (!STATE.editingRecord && FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx && FORM_UI.stmt16LegLockCtx.payableLeg
+        && (!c.supplier || normSupPayable(c.supplier) === normSupPayable(FORM_UI.stmt16LegLockCtx.supplier)))
+        ? String(FORM_UI.stmt16LegLockCtx.payableLeg)
+        : '';
+      if (lockedSettleLeg && lockedSettleLeg !== 'expense' && /^(VAT|VATConfig|IVA)$/i.test(settleMth)) {
+        addErr('f_method', 'VAT and IVA settlements apply to Leg 3 (Expense VAT)');
+      }
+      const effSettleLeg = lockedSettleLeg || (/^(VAT|VATConfig|IVA)$/i.test(settleMth)
         ? 'expense'
-        : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(c.supplier, settleMth, company));
+        : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(c.supplier, settleMth, company)));
       if (isAlertRuleEnabled('S20') && !/^(Config|VATConfig|VAT|IVA)$/i.test(settleMth)) {
         const minOverNoteUsd = Math.max(0, Number(getAlertParam('S20', 'min_overpaid_usd', 100)) || 100);
         const stTotRelief = round2(c.amount + c.disc);
@@ -130887,6 +132135,8 @@
       const isTo = isHaulerCategoryList(cats) || allDrvNames.length > 0 || allTruckNames.length > 0;
       if (isTo && !isHaulerCategoryList(cats)) cats.unshift('Hauler / Truck Owner');
       const supReg = val('f_region');
+      const standingDiscVal = num('f_standing_disc');
+      if (standingDiscVal < 0 || standingDiscVal > 100) addErr('f_standing_disc', 'Standing Discount (%) must be between 0 and 100.');
       record = {
         ...base,
         name: nm,
@@ -130897,6 +132147,7 @@
         category2: cats[1] || '',
         category3: cats[2] || '',
         method: val('f_method') || 'Credit',
+        standing_discount_pct: round2(Math.max(0, Math.min(100, standingDiscVal || 0))),
         phone: val('f_phone'),
         contact: val('f_phone'),
         region: supReg,
@@ -132628,6 +133879,11 @@
       if (orig.entered_at) record.entered_at = orig.entered_at;
       record.modified_by = who.email;
       record.modified_at = new Date().toISOString();
+      if (f === 'receipt' || f === 'settlement') {
+        delete record.usd_amount;
+        delete record.lbp_amount;
+        delete record.diff;
+      }
       if (f === 'sales' || f === 'raw') {
         if (orig.wb_truck && norm(record.truck) !== norm(orig.truck)) delete record.wb_truck;
         if (f === 'raw' && c && c.rawTot != null) record.total = c.rawTot;
@@ -132670,6 +133926,7 @@
         const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
         if (!anyPriceDriverEdited && !isDispZeroedEdit) {
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
+            if ((f === 'receipt' || f === 'settlement') && (k === 'usd_amount' || k === 'lbp_amount')) return;
             if (orig[k] !== undefined) record[k] = orig[k];
           });
         }
@@ -133493,6 +134750,20 @@
     const editCtx = STATE.editingRecord;
     const isEditingExisting = Boolean(editCtx && editCtx.id);
     const keepOpenNextDay = Boolean(!isEditingExisting && evOrOpts && typeof evOrOpts === 'object' && evOrOpts.nextDay && STATE.modalForm === 'attendance');
+    const keepOpenNextUnpriced = Boolean(
+      !isEditingExisting
+      && evOrOpts
+      && typeof evOrOpts === 'object'
+      && evOrOpts.nextUnpriced
+      && STATE.modalForm === 'pricerule'
+      && FORM_UI.unpricedQueueSession
+      && normSupPayable(val('f_supplier')) === FORM_UI.unpricedQueueSession.partyNorm
+      && (val('f_ruletype') === (FORM_UI.unpricedQueueSession.legMode === 'transport' ? 'Transport Price (Site)' : 'Purchase Price (Site)'))
+    );
+    const isUnpricedQueueAdvance = Boolean(
+      !isEditingExisting
+      && (keepOpenNextUnpriced || (afterSaveTarget && afterSaveTarget.type === 'unpriced_site'))
+    );
     const isUpdatingPending = Boolean(
       (STATE.editingPendingExpenseId && STATE.modalForm === 'expense')
       || (STATE.editingPendingRawId && STATE.modalForm === 'raw')
@@ -133546,9 +134817,11 @@
     STATE.saving = true;
     const sBtn = $('dynSaveModalBtn');
     const nBtn = $('dynSaveNextDayModalBtn');
+    const nUnpBtn = $('dynSaveNextUnpricedBtn');
     const origSBtnText = sBtn ? sBtn.textContent : ((isUpdatingPending || isEditingExisting) ? 'Save Changes' : 'Post Entry');
     if (sBtn) { sBtn.disabled = true; sBtn.textContent = (isUpdatingPending || isEditingExisting) ? 'Saving…' : 'Posting…'; }
     if (nBtn) { nBtn.disabled = true; }
+    if (nUnpBtn) { nUnpBtn.disabled = true; }
     try {
       const stagedExpenseItems = Array.isArray(record._staged_expense_items) ? record._staged_expense_items : [];
       const stagedRepairItems = Array.isArray(record._staged_repair_items) ? record._staged_repair_items : [];
@@ -133657,6 +134930,7 @@
           if ((pv.kept || pvSum.n > 0 || pvSum.lockedN > 0) && askedSig !== pvSig) {
             STATE.saving = false;
             if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+            if (nUnpBtn) { nUnpBtn.disabled = false; }
             const nextOptsRi = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
             nextOptsRi._rateImpactSig = pvSig;
             nextOptsRi._keptPeriodOk = true;
@@ -133677,6 +134951,7 @@
         if (keptPlanAsk) {
           STATE.saving = false;
           if (sBtn) { sBtn.disabled = false; sBtn.textContent = isEditingExisting ? 'Update' : 'Post'; }
+          if (nUnpBtn) { nUnpBtn.disabled = false; }
           const nextOptsKp = (evOrOpts && !(evOrOpts instanceof Event)) ? Object.assign({}, evOrOpts) : {};
           nextOptsKp._keptPeriodOk = true;
           promptRateChangeImpact({ mode: 'period', kept: keptPlanAsk }).then(okKp => { if (okKp) saveModalEntry(nextOptsKp); });
@@ -133707,7 +134982,14 @@
         }
       }
       const syncTurnaroundKeysAfterAssign = target => {
-        if (!target || (crKey !== 'sales_tickets' && crKey !== 'raw_purchases')) return;
+        if (!target) return;
+        if (crKey === 'receipts' || crKey === 'settlements') {
+          ['usd_amount', 'lbp_amount', 'diff'].forEach(lk => {
+            if (!Object.prototype.hasOwnProperty.call(record, lk)) delete target[lk];
+          });
+          return;
+        }
+        if (crKey !== 'sales_tickets' && crKey !== 'raw_purchases') return;
         ['gate_arrival', 'unload_dwell_min', 'site_departure', 'turnaround_flagged', '_turnaround_meta', '_turnaround_ephemeral'].forEach(tk => {
           if (!Object.prototype.hasOwnProperty.call(record, tk)) delete target[tk];
         });
@@ -134505,6 +135787,7 @@
       const restoreModalAfterServerFail = (tblName, conflictId, errObj, opts = {}) => {
         if (sBtn) { sBtn.disabled = false; sBtn.textContent = origSBtnText || 'Post'; }
         if (nBtn) { nBtn.disabled = false; }
+        if (nUnpBtn) { nUnpBtn.disabled = false; }
         const qTbl = (errObj && errObj.table) || tblName;
         const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
         const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
@@ -134586,11 +135869,12 @@
         }
       }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
-      STATE.saving = false;
+      if (!isUnpricedQueueAdvance) STATE.saving = false;
       const _hasQueueOnEntrySave = Boolean(
         !isEditingExisting
         && !isUpdatingPending
         && !keepOpenNextDay
+        && !isUnpricedQueueAdvance
         && window.MFG_SMART_SCAN
         && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function'
         && window.MFG_SMART_SCAN.hasActiveSlipQueue()
@@ -134601,6 +135885,28 @@
           const rTok = entryQToken;
           entryQToken = null;
           await window.MFG_SMART_SCAN.revertQueuePostTransition(rTok, { reopen: Boolean(reopen) });
+        }
+      };
+      const emitSaveSuccessFeedback = () => {
+        const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
+        if (malfHit) {
+          toast(`Malfunction posted (${record.name}) · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used (${fmtNum(malfHit.hit.malfAbsL, 0)} L / ${fmtNum(malfHit.hit.companyDieselUsedL, 0)} L >= ${malfHit.hit.malfunctionThresholdPct.toFixed(1)}% threshold)`, 'warn');
+        } else if (isUpdatingPending && crKey === 'expenses') {
+          toast(`Final price saved (${fmtUSD(record.amount, 2)}) · ${record.name}`, 'ok');
+        } else if (isUpdatingPending && crKey === 'employments') {
+          toast(`Final salary saved (${fmtUSD(record.amount, 2)}) · ${record.staff || record.name}`, 'ok');
+        } else if (isEditingExisting) {
+          toast(`${(CR_LABEL[crKey] || 'Record').replace(/^./, ch => ch.toUpperCase())} updated · ${record.name}${siteClosureToastSfx}`, 'ok');
+        } else {
+          toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
+        }
+        if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
+        if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
+        if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock))) {
+          // Already shown before Post: the report comes back only when the save found something else
+          const shownSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
+          const doneSig = `${keptPeriodModal ? keptPeriodModal.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactModal).sig}`;
+          if (!shownSig || shownSig !== doneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
         }
       };
       if (keepOpenNextDay) {
@@ -134626,6 +135932,8 @@
         recalcForm();
         FORM_UI.userInteracted = false;
         FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
+      } else if (isUnpricedQueueAdvance) {
+        // Keep #entryModal open until server posts settle so rollback leaves the form intact on error.
       } else if (!_hasQueueOnEntrySave && afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
           const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
@@ -134670,40 +135978,58 @@
         }
       } else {
         if (!isEditingExisting && !isUpdatingPending && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.hasActiveSlipQueue === 'function' && window.MFG_SMART_SCAN.hasActiveSlipQueue()) {
-          entryQToken = window.MFG_SMART_SCAN.beginQueuePostTransition();
+          const _qLens = typeof seatLens === 'function' ? seatLens() : { books: true, cashflow: true, expenses: true, partnerSplits: true, payrollDollars: true };
+          let _qUsd = 0;
+          if (crKey === 'conversions') {
+            _qUsd = Number(record.usd_amount ?? record.amount_usd ?? record.amount ?? 0);
+          } else if (crKey === 'sales_tickets') {
+            const _rawSale = Math.abs(Number(record.total_ttc ?? record.total ?? record.amount ?? 0));
+            _qUsd = String(record.sale_type || '') === 'Return' ? -_rawSale : _rawSale;
+          } else {
+            _qUsd = Number(record.total_ttc ?? record.total ?? record.amount_usd ?? record.amount ?? record.total_cost_usd ?? record.cost_usd ?? 0);
+          }
+          let _qRedacted = true;
+          if (crKey === 'salaries' || crKey === 'freelance_entries') _qRedacted = !Boolean(_qLens.payrollDollars);
+          else if (crKey === 'expenses' || crKey === 'settlements' || crKey === 'diesel_logs' || crKey === 'raw_purchases' || crKey === 'equipment_repairs' || crKey === 'fuel_intakes') _qRedacted = !Boolean(_qLens.expenses);
+          else if (crKey === 'jv_distributions') _qRedacted = !Boolean(_qLens.books && _qLens.partnerSplits);
+          else if (crKey === 'external_movements' || crKey === 'cash_movements' || crKey === 'conversions' || crKey === 'loans' || crKey === 'loan_settlements') _qRedacted = !Boolean(_qLens.books);
+          else if (crKey === 'sales_tickets' || crKey === 'receipts' || crKey === 'vat_invoices') _qRedacted = !Boolean(_qLens.cashflow || _qLens.books);
+          entryQToken = window.MFG_SMART_SCAN.beginQueuePostTransition({
+            crKey,
+            recordId: String(record.id || ''),
+            postedUsd: round2(_qUsd),
+            usdRedacted: _qRedacted
+          });
         }
         closeEntryModal(true);
       }
-      const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
-      if (malfHit) {
-        toast(`Malfunction posted (${record.name}) · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used (${fmtNum(malfHit.hit.malfAbsL, 0)} L / ${fmtNum(malfHit.hit.companyDieselUsedL, 0)} L >= ${malfHit.hit.malfunctionThresholdPct.toFixed(1)}% threshold)`, 'warn');
-      } else if (isUpdatingPending && crKey === 'expenses') {
-        toast(`Final price saved (${fmtUSD(record.amount, 2)}) · ${record.name}`, 'ok');
-      } else if (isUpdatingPending && crKey === 'employments') {
-        toast(`Final salary saved (${fmtUSD(record.amount, 2)}) · ${record.staff || record.name}`, 'ok');
-      } else if (isEditingExisting) {
-        toast(`${(CR_LABEL[crKey] || 'Record').replace(/^./, ch => ch.toUpperCase())} updated · ${record.name}${siteClosureToastSfx}`, 'ok');
-      } else {
-        toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
-      }
-      if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
-      if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
-      if (mfgRateImpactModal && (mfgRateImpactModal.rows.length || mfgRateImpactModal.kept.some(x => x && x.lock))) {
-        // Already shown before Post: the report comes back only when the save found something else
-        const shownSig = (evOrOpts && !(evOrOpts instanceof Event)) ? String(evOrOpts._rateImpactSig || '') : '';
-        const doneSig = `${keptPeriodModal ? keptPeriodModal.newFrom : ''}|${summarizeSiblingRepriceImpact(mfgRateImpactModal).sig}`;
-        if (!shownSig || shownSig !== doneSig) promptRateChangeImpact({ mode: 'result', impact: mfgRateImpactModal, kept: keptPeriodModal });
-      }
-      renderApp();
-      if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
-        window.MFG_FLEET_PNL.refresh();
-      }
-      if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
-        const _salRecCtx = buildSalaryVoucherReceiptContext(record);
-        if (_salRecCtx && _salRecCtx.isAdvanceVoucher) {
-          openSalaryAdvanceReceiptModal(record);
+      if (!isUnpricedQueueAdvance) {
+        emitSaveSuccessFeedback();
+        if (crKey === 'settlements' && STATE.view === 'statements' && String(STATE.activeStatement || '') === '16' && STATE.rdl && STATE.rdl.params && !STATE.rdl._dateTouched && record) {
+          const effSettleDate = String((STATE.basis === 'rep' ? (record.rep_date || record.date) : record.date) || '').slice(0, 10);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(effSettleDate) && (!STATE.rdl.params.to || effSettleDate > STATE.rdl.params.to)) {
+            STATE.rdl._autoExtendedTo = effSettleDate;
+            STATE.rdl.params.to = effSettleDate;
+            STATE.rdl.params.asof = effSettleDate;
+          }
+        }
+        renderApp();
+        if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
+          window.MFG_FLEET_PNL.refresh();
+        }
+        if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
+          const _salRecCtx = buildSalaryVoucherReceiptContext(record);
+          if (_salRecCtx && _salRecCtx.isAdvanceVoucher) {
+            openSalaryAdvanceReceiptModal(record);
+          }
         }
       }
+      const restoreOpenUnpricedBtnsOnFail = () => {
+        if (isUnpricedQueueAdvance) {
+          if (sBtn) { sBtn.disabled = false; sBtn.textContent = origSBtnText || 'Post'; }
+          if (nUnpBtn) { nUnpBtn.disabled = false; }
+        }
+      };
       if (!sameNameSaveSnap) {
         const rollbackSaveOnSameName = (tblName, conflictId, errObj) => {
           restoreModalAfterServerFail(tblName, conflictId, errObj, {
@@ -134731,6 +136057,7 @@
         const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
         if (mainPostRes && mainPostRes.blockedSameName) {
           rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
         }
@@ -134738,6 +136065,7 @@
           const rejectMsg = await extractServerRejectMsg(mainPostRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
         }
@@ -134751,6 +136079,7 @@
         if (extraPostRes && extraPostRes.blockedSameName) {
           await compensateMainRecordSave(extraPostRes);
           rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
         }
@@ -134759,6 +136088,7 @@
           const rejectMsg = await extractServerRejectMsg(extraPostRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
         }
@@ -134771,6 +136101,7 @@
           const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
         }
@@ -134784,8 +136115,85 @@
           const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
           if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
           else { toast(rejectMsg, 'err'); renderApp(); }
+          restoreOpenUnpricedBtnsOnFail();
           await revertEntryQToken(true);
           return;
+        }
+      }
+      if (isUnpricedQueueAdvance) {
+        STATE.saving = false;
+        emitSaveSuccessFeedback();
+        const sess = FORM_UI.unpricedQueueSession;
+        if (sess && sess.completedKeys instanceof Set) {
+          const stepUom = sess.legMode === 'transport' ? (record.rate_per || record.unit || 'm³') : (record.unit || 'm³');
+          const doneStepKey = buildUnpricedQueueStepKey(sess.legMode, record.company, sess.partyNorm, record.site, record.product, stepUom);
+          sess.completedKeys.add(doneStepKey);
+          if (sess.legMode === 'transport' && !String(record.product || '').trim()) {
+            const siteSkDone = normSiteMatch(record.site);
+            const coNormDone = norm(record.company);
+            const curQItems = (FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._unpricedQueue && FORM_UI.unpricedSiteCtx._unpricedQueue.items) || [];
+            curQItems.forEach(it => {
+              if (it && it.siteKey === siteSkDone && norm(it.company) === coNormDone) {
+                sess.completedKeys.add(it.stepKey);
+              }
+            });
+          }
+          sess.doneCount = Number(sess.doneCount || 0) + 1;
+        }
+        if (afterSaveTarget && afterSaveTarget.type === 'unpriced_site' && afterSaveTarget.siteName) {
+          FORM_UI._advancingUnpricedQueue = true;
+          try {
+            openSetUnpricedSitePriceModal(afterSaveTarget.siteName, {
+              transportOnly: Boolean(afterSaveTarget.transportOnly),
+              supplier: afterSaveTarget.supplier || (sess && sess.partyLabel) || '',
+              forceSwitch: true,
+              _continuingQueue: true
+            });
+          } finally {
+            FORM_UI._advancingUnpricedQueue = false;
+          }
+          renderApp();
+        } else if (sess) {
+          const remQ = buildUnpricedPartyQueue({
+            legMode: sess.legMode,
+            partyName: sess.partyLabel || record.supplier,
+            anchorSite: record.site,
+            completedKeys: sess.completedKeys
+          });
+          if (remQ && remQ.items.length > 0) {
+            const nxt = remQ.items[0];
+            FORM_UI._advancingUnpricedQueue = true;
+            try {
+              openSetUnpricedSitePriceModal(nxt.site, {
+                transportOnly: sess.legMode === 'transport',
+                supplier: nxt.supplier,
+                product: nxt.product,
+                uom: nxt.uom,
+                company: nxt.company,
+                earliestDate: nxt.earliestDate,
+                gradeKey: nxt.gradeKey,
+                forceSwitch: true,
+                _continuingQueue: true
+              });
+            } finally {
+              FORM_UI._advancingUnpricedQueue = false;
+            }
+            renderApp();
+          } else {
+            const donePartyLbl = sess.partyLabel || record.supplier || '';
+            FORM_UI.unpricedQueueSession = null;
+            closeEntryModal(true);
+            renderApp();
+            if (donePartyLbl) {
+              const doneMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+                ? window.MFG_I18N.t('All unpriced sites and grades completed', window.MFG_I18N.getLang())
+                : 'All unpriced sites and grades completed';
+              toast(`${doneMsg} · ${donePartyLbl}`, 'ok');
+            }
+          }
+        } else {
+          closeEntryModal(true);
+          renderApp();
         }
       }
       syncWithCloud(true);
@@ -137285,8 +138693,25 @@
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
+    if (!FORM_UI._advancingUnpricedQueue && !(target && target.type === 'unpriced_site')) {
+      FORM_UI.unpricedQueueSession = null;
+    }
     if (!target || target.type === 'close') {
       closeEntryModal(true);
+      return;
+    }
+    if (target.type === 'unpriced_site' && target.siteName) {
+      FORM_UI._advancingUnpricedQueue = true;
+      try {
+        openSetUnpricedSitePriceModal(target.siteName, {
+          transportOnly: Boolean(target.transportOnly),
+          supplier: target.supplier || '',
+          forceSwitch: true,
+          _continuingQueue: true
+        });
+      } finally {
+        FORM_UI._advancingUnpricedQueue = false;
+      }
       return;
     }
     if (target.type === 'domain_form' && target.domainFormKey) {
@@ -137539,6 +138964,7 @@
     });
 
     const groups = new Map();
+    const filterSupNorm = (opts && opts.supplier) ? normSupPayable(opts.supplier) : '';
     const raws = recs.raw_purchases || [];
     for (let i = 0; i < raws.length; i++) {
       const rp = raws[i];
@@ -137551,12 +138977,13 @@
       const soNorm = normSupPayable(rp.site_owner);
       const coNorm = normSupPayable(rp.company);
       if (!soNorm || soNorm === 'excluded' || soNorm === 'none' || soNorm === coNorm) continue;
+      if (filterSupNorm && soNorm !== filterSupNorm) continue;
 
       const co = String(rp.company || 'WTC');
       const supName = supCanonByNorm.get(soNorm) || String(rp.site_owner || '').trim();
       const prodName = String(rp.product || '').trim();
       const prodObj = prodName ? productInfo(prodName) : null;
-      const uom = String(rp.uom || (prodObj && prodObj.uom) || 'm³').trim();
+      const uom = normUnpricedQueueUom(rp.uom || (prodObj && prodObj.uom) || 'm³');
       const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
       const q = ticketProductQty(rp);
       const gKey = `${norm(co)}|${soNorm}|${norm(prodName)}|${norm(uom)}`;
@@ -137621,7 +139048,9 @@
       };
     }
 
-    const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey)) || grades[0];
+    const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey))
+      || (opts && opts.product && grades.find(x => norm(x.product) === norm(opts.product) && (!opts.company || norm(x.company) === norm(opts.company))))
+      || grades[0];
     return {
       site: canonSite,
       company: chosen.company,
@@ -137639,82 +139068,434 @@
     };
   }
 
-  function openSetUnpricedSitePriceModal(siteName, opts = {}) {
-    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return false;
-    if (opts && opts.transportOnly) {
-      if (!canEnterForm('pricerule_haul')) {
-        toast('Purchase agreement permission required to set site prices', 'err');
-        return false;
+  function resolveUnpricedHaulSitePrefill(siteRaw, opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    if (!canEnterForm('pricerule_haul')) return null;
+    const targetSk = normSiteMatch(siteRaw);
+    if (!targetSk || String(siteRaw || '').trim().startsWith('(')) return null;
+
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const isCoAllowed = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (buTarget && c !== buTarget) return false;
+      return true;
+    };
+
+    const recs = SEED.records || {};
+    let canonSite = cleanSiteLabel(siteRaw);
+    (recs.sites || []).some(st => {
+      if (st && !st.voided && st.name && normSiteMatch(st.name) === targetSk) {
+        canonSite = cleanSiteLabel(st.name);
+        return true;
       }
-      const cleanSt = cleanSiteLabel(siteName);
-      if (!cleanSt || String(cleanSt).startsWith('(')) return false;
-      const haulerSiteInfo = siteInfo(cleanSt, 'raw') || {};
-      const canonSt = haulerSiteInfo.name ? cleanSiteLabel(haulerSiteInfo.name) : cleanSt;
-      const co = (opts.company && allowedCompanyNames().includes(opts.company)) ? opts.company : defaultEntryCompany();
-      const supVal = String(opts.supplier || '').trim();
-      const prodVal = String(opts.product || '').trim();
-      let rawEarliest = String(opts.earliestDate || '').slice(0, 10);
-      let haulUom = String(opts.uom || '').trim();
-      const canonSk = normSiteMatch(canonSt);
-      const allRaws = (SEED && SEED.records && Array.isArray(SEED.records.raw_purchases)) ? SEED.records.raw_purchases : [];
-      for (let i = 0; i < allRaws.length; i++) {
-        const rp = allRaws[i];
-        if (!rp || rp.voided || normSiteMatch(rp.site) !== canonSk) continue;
-        if (co && rp.company && norm(rp.company) !== norm(co)) continue;
-        if (!rp.truck_owner || (supVal && norm(rp.truck_owner) !== norm(supVal))) continue;
-        if (/^company/i.test(String(rp.transport_by || '')) || /^supplier-delivered$/i.test(String(rp.transport_by || '')) || rp.includes_transport) continue;
-        if (String(rp.method || 'Credit').trim() !== 'Credit' || Number(rp.trans_cost || 0) !== 0) continue;
-        const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
-        if (dt && (!rawEarliest || dt < rawEarliest)) rawEarliest = dt;
-        if (!haulUom && rp.uom) haulUom = String(rp.uom).trim();
+      return false;
+    });
+    const supCanonByNorm = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supCanonByNorm.has(sn)) supCanonByNorm.set(sn, String(s.name).trim());
+    });
+
+    const filterSupNorm = (opts && opts.supplier) ? normSupPayable(opts.supplier) : '';
+    const groups = new Map();
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoAllowed(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      if (/^company/i.test(String(rp.transport_by || '')) || /^supplier-delivered$/i.test(String(rp.transport_by || '')) || rp.includes_transport) continue;
+      if (Number(rp.trans_cost || 0) !== 0) continue;
+      if (normSiteMatch(rp.site) !== targetSk) continue;
+      const toNorm = normSupPayable(rp.truck_owner);
+      const coNorm = normSupPayable(rp.company);
+      if (!toNorm || toNorm === 'excluded' || toNorm === 'none' || toNorm === coNorm) continue;
+      if (filterSupNorm && toNorm !== filterSupNorm) continue;
+
+      const co = String(rp.company || 'WTC');
+      const supName = supCanonByNorm.get(toNorm) || String(rp.truck_owner || '').trim();
+      const prodName = String(rp.product || '').trim();
+      const prodObj = prodName ? productInfo(prodName) : null;
+      const uom = normUnpricedQueueUom(rp.uom || (prodObj && prodObj.uom) || 'm³');
+      const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+      const q = ticketProductQty(rp);
+      const gKey = `${norm(co)}|${toNorm}|${norm(prodName)}|${norm(uom)}`;
+      let g = groups.get(gKey);
+      if (!g) {
+        g = {
+          gradeKey: gKey,
+          company: co,
+          supplier: supName,
+          product: prodName,
+          uom,
+          loads: 0,
+          qty: 0,
+          earliestDate: dt || todayISO()
+        };
+        groups.set(gKey, g);
       }
-      if (!haulUom && prodVal) {
-        const pInf = productInfo(prodVal);
-        if (pInf && pInf.uom) haulUom = pInf.uom;
-      }
-      if (!haulUom) haulUom = 'm³';
-      let effStart = rawEarliest || todayISO();
+      g.loads += 1;
+      g.qty = round2(g.qty + q);
+      if (dt && (!g.earliestDate || dt < g.earliestDate)) g.earliestDate = dt;
+    }
+
+    const grades = Array.from(groups.values()).sort((a, b) =>
+      (b.loads - a.loads) || (b.qty - a.qty) || String(a.earliestDate || '').localeCompare(String(b.earliestDate || ''))
+    );
+    grades.forEach(g => {
+      let effStart = g.earliestDate || todayISO();
       let clampedFrom = '';
       if (typeof getChronologicalSeriesBounds === 'function') {
         const bounds = getChronologicalSeriesBounds('price_rules', {
-          company: co,
+          company: g.company,
           rule_type: 'Transport Price (Site)',
-          site: canonSt,
-          supplier: supVal,
-          product: prodVal
+          site: canonSite,
+          supplier: g.supplier,
+          product: g.product
         }, null);
         if (bounds && bounds.minStart && bounds.minStart > effStart) {
           clampedFrom = effStart;
           effStart = bounds.minStart;
         }
       }
-      openEntryModal('pricerule_haul', {
-        _unpricedHaulPrefill: true,
-        ruleType: 'Transport Price (Site)',
-        company: co,
-        co,
-        site: canonSt,
-        supplier: supVal,
-        prod: prodVal,
-        product: prodVal,
-        uom: haulUom,
-        date: effStart,
+      g.earliestRawDate = g.earliestDate || '';
+      g.startdate = effStart;
+      g.clampedFrom = clampedFrom;
+    });
+
+    if (!grades.length) {
+      const fbCo = (opts.company && allowedCompanyNames(u).includes(opts.company)) ? opts.company : defaultEntryCompany();
+      const fbSup = String(opts.supplier || '').trim();
+      const fbProd = String(opts.product || '').trim();
+      let fbUom = String(opts.uom || '').trim();
+      if (!fbUom && fbProd) {
+        const pInf = productInfo(fbProd);
+        if (pInf && pInf.uom) fbUom = pInf.uom;
+      }
+      if (!fbUom) fbUom = 'm³';
+      const rawEarliest = String(opts.earliestDate || '').slice(0, 10);
+      let effStart = rawEarliest || todayISO();
+      let clampedFrom = '';
+      if (typeof getChronologicalSeriesBounds === 'function') {
+        const bounds = getChronologicalSeriesBounds('price_rules', {
+          company: fbCo,
+          rule_type: 'Transport Price (Site)',
+          site: canonSite,
+          supplier: fbSup,
+          product: fbProd
+        }, null);
+        if (bounds && bounds.minStart && bounds.minStart > effStart) {
+          clampedFrom = effStart;
+          effStart = bounds.minStart;
+        }
+      }
+      return {
+        site: canonSite,
+        company: fbCo,
+        co: fbCo,
+        supplier: fbSup,
+        product: fbProd,
+        prod: fbProd,
+        uom: fbUom,
         startdate: effStart,
         earliestRawDate: rawEarliest || effStart,
-        clampedFrom
-      }, opts && opts.forceSwitch ? { forceSwitch: true } : undefined);
-      return true;
+        clampedFrom,
+        loads: 0,
+        qty: 0,
+        grades: []
+      };
     }
-    if (!canEnterForm('pricerule_raw')) {
+
+    const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey))
+      || (opts && opts.product && grades.find(x => norm(x.product) === norm(opts.product) && (!opts.company || norm(x.company) === norm(opts.company))))
+      || grades[0];
+    return {
+      site: canonSite,
+      company: chosen.company,
+      co: chosen.company,
+      supplier: chosen.supplier,
+      product: chosen.product,
+      prod: chosen.product,
+      uom: chosen.uom,
+      startdate: chosen.startdate,
+      earliestRawDate: chosen.earliestRawDate,
+      clampedFrom: chosen.clampedFrom,
+      loads: chosen.loads,
+      qty: chosen.qty,
+      grades
+    };
+  }
+
+  function normUnpricedQueueUom(u) {
+    const s = String(u || '').trim();
+    if (/^tons?$/i.test(s)) return 'Ton';
+    if (/^trucks?$/i.test(s)) return 'Truck';
+    return 'm³';
+  }
+
+  function buildUnpricedQueueStepKey(legMode, company, partyNorm, siteName, product, uom) {
+    return `${legMode === 'transport' ? 'transport' : 'material'}|${norm(company || '')}|${String(partyNorm || '')}|${normSiteMatch(siteName || '')}|${norm(product || '')}|${norm(normUnpricedQueueUom(uom))}`;
+  }
+
+  function buildUnpricedPartyQueue(opts = {}) {
+    const legMode = opts && opts.legMode === 'transport' ? 'transport' : 'material';
+    const partyRaw = String((opts && opts.partyName) || '').trim();
+    const partyNorm = normSupPayable(partyRaw);
+    const emptyOut = { legMode, partyNorm, partyLabel: partyRaw, items: [], siteCount: 0, totalLoads: 0, siteSummaries: [] };
+    if (!SEED || !SEED._recordsReady || !partyNorm) return emptyOut;
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return emptyOut;
+    if (!canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw')) return emptyOut;
+
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const isCoAllowed = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (buTarget && c !== buTarget) return false;
+      return true;
+    };
+
+    const recs = SEED.records || {};
+    const siteCanonByNorm = new Map();
+    (recs.sites || []).forEach(st => {
+      if (!st || st.voided || !st.name) return;
+      const sk = normSiteMatch(st.name);
+      if (sk && !siteCanonByNorm.has(sk)) siteCanonByNorm.set(sk, cleanSiteLabel(st.name));
+    });
+    const supCanonByNorm = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supCanonByNorm.has(sn)) supCanonByNorm.set(sn, String(s.name).trim());
+    });
+    const partyLabel = supCanonByNorm.get(partyNorm) || partyRaw;
+    const completedSet = opts.completedKeys instanceof Set ? opts.completedKeys : new Set();
+
+    const buckets = new Map();
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoAllowed(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      const co = String(rp.company || 'WTC');
+      const coNorm = normSupPayable(co);
+      if (legMode === 'transport') {
+        if (/^company/i.test(String(rp.transport_by || '')) || /^supplier-delivered$/i.test(String(rp.transport_by || '')) || rp.includes_transport) continue;
+        if (Number(rp.trans_cost || 0) !== 0) continue;
+        if (normSupPayable(rp.truck_owner) !== partyNorm || partyNorm === coNorm) continue;
+      } else {
+        if (Number(rp.cost || 0) !== 0) continue;
+        if (normSupPayable(rp.site_owner) !== partyNorm || partyNorm === coNorm) continue;
+      }
+      const rawSiteLbl = cleanSiteLabel(rp.site);
+      if (!rawSiteLbl || rawSiteLbl.startsWith('(')) continue;
+      const siteSk = normSiteMatch(rawSiteLbl);
+      if (!siteSk) continue;
+      const canonSite = siteCanonByNorm.get(siteSk) || rawSiteLbl;
+      const prodName = String(rp.product || '').trim();
+      const prodObj = prodName ? productInfo(prodName) : null;
+      const uom = normUnpricedQueueUom(rp.uom || (prodObj && prodObj.uom) || 'm³');
+      const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+      const q = ticketProductQty(rp);
+      const stepKey = buildUnpricedQueueStepKey(legMode, co, partyNorm, canonSite, prodName, uom);
+      if (completedSet.has(stepKey)) continue;
+      let item = buckets.get(stepKey);
+      if (!item) {
+        item = {
+          stepKey,
+          gradeKey: `${norm(co)}|${partyNorm}|${norm(prodName)}|${norm(uom)}`,
+          company: co,
+          supplier: partyLabel,
+          partyNorm,
+          site: canonSite,
+          siteKey: siteSk,
+          product: prodName,
+          uom,
+          loads: 0,
+          qty: 0,
+          earliestDate: dt || todayISO()
+        };
+        buckets.set(stepKey, item);
+      }
+      item.loads += 1;
+      item.qty = round2(item.qty + q);
+      if (dt && (!item.earliestDate || dt < item.earliestDate)) item.earliestDate = dt;
+    }
+
+    const bySite = new Map();
+    buckets.forEach(item => {
+      let sg = bySite.get(item.siteKey);
+      if (!sg) {
+        sg = { site: item.site, siteKey: item.siteKey, loads: 0, qty: 0, items: [] };
+        bySite.set(item.siteKey, sg);
+      }
+      sg.loads += item.loads;
+      sg.qty = round2(sg.qty + item.qty);
+      sg.items.push(item);
+    });
+
+    const anchorSk = normSiteMatch((opts && opts.anchorSite) || '');
+    const preferredStepKey = String((opts && opts.preferredStepKey) || '');
+    const siteGroups = Array.from(bySite.values()).sort((a, b) => {
+      const aAnchor = anchorSk && a.siteKey === anchorSk ? 1 : 0;
+      const bAnchor = anchorSk && b.siteKey === anchorSk ? 1 : 0;
+      if (aAnchor !== bAnchor) return bAnchor - aAnchor;
+      return (b.loads - a.loads) || (b.qty - a.qty) || String(a.site).localeCompare(String(b.site));
+    });
+
+    const items = [];
+    let totalLoads = 0;
+    const siteSummaries = [];
+    siteGroups.forEach(sg => {
+      sg.items.sort((a, b) => {
+        const aPref = preferredStepKey && a.stepKey === preferredStepKey ? 1 : 0;
+        const bPref = preferredStepKey && b.stepKey === preferredStepKey ? 1 : 0;
+        if (aPref !== bPref) return bPref - aPref;
+        return (b.loads - a.loads) || (b.qty - a.qty) || String(a.earliestDate || '').localeCompare(String(b.earliestDate || ''));
+      });
+      sg.items.forEach(it => items.push(it));
+      totalLoads += sg.loads;
+      siteSummaries.push({
+        site: sg.site,
+        siteKey: sg.siteKey,
+        loads: sg.loads,
+        remainingSteps: sg.items.length,
+        isCurrentSite: Boolean(anchorSk && sg.siteKey === anchorSk)
+      });
+    });
+
+    return {
+      legMode,
+      partyNorm,
+      partyLabel,
+      items,
+      siteCount: siteGroups.length,
+      totalLoads,
+      siteSummaries
+    };
+  }
+
+  function syncUnpricedNextBtnState() {
+    const btn = $('dynSaveNextUnpricedBtn');
+    if (!btn) return;
+    const sess = FORM_UI.unpricedQueueSession;
+    const qCtx = FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._unpricedQueue;
+    const rt = val('f_ruletype');
+    const expectedRt = sess && sess.legMode === 'transport' ? 'Transport Price (Site)' : 'Purchase Price (Site)';
+    const curSupNorm = normSupPayable(val('f_supplier'));
+    const curProdNorm = norm(val('f_product'));
+    const curSiteSk = normSiteMatch(val('f_site'));
+    const curCoNorm = norm(val('f_company'));
+    const curUomNorm = norm(normUnpricedQueueUom(sess && sess.legMode === 'transport' ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³')));
+    const validMode = Boolean(
+      !STATE.editingRecord
+      && !STATE.editingPendingRawId
+      && STATE.modalForm === 'pricerule'
+      && sess
+      && qCtx
+      && Array.isArray(qCtx.items)
+      && rt === expectedRt
+      && curSupNorm === sess.partyNorm
+    );
+    if (!validMode) {
+      btn.hidden = true;
+      return;
+    }
+    const doneCnt = Number(sess.doneCount || 0);
+    const totalSteps = doneCnt + qCtx.items.length;
+    let activeIdx = qCtx.items.findIndex(it =>
+      norm(it.company) === curCoNorm
+      && it.siteKey === curSiteSk
+      && norm(it.product) === curProdNorm
+      && norm(normUnpricedQueueUom(it.uom)) === curUomNorm
+    );
+    if (activeIdx < 0) {
+      activeIdx = qCtx.items.findIndex(it => it.siteKey === curSiteSk && norm(it.product) === curProdNorm);
+    }
+    if (activeIdx < 0) activeIdx = 0;
+    const curStepItem = qCtx.items[activeIdx] || null;
+    const curSiteBlankProd = Boolean(sess.legMode === 'transport' && !curProdNorm);
+    const otherSteps = qCtx.items.filter((it, idx) => {
+      if (idx === activeIdx) return false;
+      if (curSiteBlankProd && curSiteSk && it.siteKey === curSiteSk && norm(it.company) === curCoNorm) return false;
+      return true;
+    }).length;
+    if (otherSteps < 1 || totalSteps <= 1) {
+      btn.hidden = true;
+      return;
+    }
+    const stepNum = Math.min(totalSteps, doneCnt + activeIdx + 1);
+    const cntSpan = btn.querySelector('[data-unp-step-count]');
+    if (cntSpan) cntSpan.textContent = `${stepNum}/${totalSteps}`;
+    btn.hidden = false;
+  }
+
+  function openSetUnpricedSitePriceModal(siteName, opts = {}) {
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return false;
+    const isHaul = Boolean(opts && opts.transportOnly);
+    if (!canEnterForm(isHaul ? 'pricerule_haul' : 'pricerule_raw')) {
       toast('Purchase agreement permission required to set site prices', 'err');
       return false;
     }
-    const resolved = resolveUnpricedSitePrefill(siteName, opts);
+    const resolved = isHaul ? resolveUnpricedHaulSitePrefill(siteName, opts) : resolveUnpricedSitePrefill(siteName, opts);
     if (!resolved) return false;
+    const legMode = isHaul ? 'transport' : 'material';
+    const partyRaw = String(resolved.supplier || opts.supplier || '').trim();
+    const partyNorm = normSupPayable(partyRaw);
+    const isContinuing = Boolean(
+      opts
+      && opts._continuingQueue
+      && FORM_UI.unpricedQueueSession
+      && FORM_UI.unpricedQueueSession.legMode === legMode
+      && (!partyNorm || FORM_UI.unpricedQueueSession.partyNorm === partyNorm)
+    );
+    const sess = isContinuing
+      ? FORM_UI.unpricedQueueSession
+      : (FORM_UI.unpricedQueueSession = {
+          legMode,
+          partyNorm,
+          partyLabel: partyRaw,
+          completedKeys: new Set(),
+          doneCount: 0
+        });
+    if (partyRaw && !sess.partyLabel) sess.partyLabel = partyRaw;
+    if (partyNorm && !sess.partyNorm) sess.partyNorm = partyNorm;
+    const prefStepKey = buildUnpricedQueueStepKey(legMode, resolved.company, sess.partyNorm, resolved.site, resolved.product, resolved.uom);
+    const queueSnap = buildUnpricedPartyQueue({
+      legMode,
+      partyName: sess.partyLabel || partyRaw,
+      anchorSite: resolved.site,
+      preferredStepKey: prefStepKey,
+      completedKeys: sess.completedKeys,
+      user: opts.user
+    });
+    const modalOpts = opts && opts.forceSwitch ? { forceSwitch: true } : undefined;
+    if (isHaul) {
+      openEntryModal('pricerule_haul', Object.assign({
+        _unpricedHaulPrefill: true,
+        _unpricedQueue: queueSnap,
+        ruleType: 'Transport Price (Site)',
+        prod: resolved.product,
+        date: resolved.startdate
+      }, resolved), modalOpts);
+      return true;
+    }
     openEntryModal('pricerule_raw', Object.assign({
       _unpricedSitePrefill: true,
+      _unpricedQueue: queueSnap,
       ruleType: 'Purchase Price (Site)'
-    }, resolved), opts && opts.forceSwitch ? { forceSwitch: true } : undefined);
+    }, resolved), modalOpts);
     return true;
   }
 
@@ -138112,6 +139893,14 @@
       const nextDayBtnHtml = (!editTargetRow && !pendingTargetRow && form === 'attendance')
         ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" data-ui-tip="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
         : '';
+      const _unpQMeta = (!editTargetRow && !pendingTargetRow && form === 'pricerule' && prefill && prefill._unpricedQueue && Array.isArray(prefill._unpricedQueue.items) && FORM_UI.unpricedQueueSession)
+        ? prefill._unpricedQueue
+        : null;
+      const _unpTotalSteps = _unpQMeta ? (Number(FORM_UI.unpricedQueueSession.doneCount || 0) + _unpQMeta.items.length) : 0;
+      const _unpStepNum = _unpQMeta ? Math.min(_unpTotalSteps, Number(FORM_UI.unpricedQueueSession.doneCount || 0) + 1) : 0;
+      const unpNextBtnHtml = (_unpQMeta && _unpTotalSteps > 1 && _unpQMeta.items.length > 1)
+        ? `<button type="button" class="btn-ghost-bar btn-save-next-unpriced" id="dynSaveNextUnpricedBtn" data-ui-tip="Post this rate and step to the next unpriced grade or site for this counterparty"><span>Post &amp; Next Unpriced</span> (<span data-unp-step-count="1" data-no-i18n="1">${_unpStepNum}/${_unpTotalSteps}</span>)</button>`
+        : '';
       const supQuickTicketBtnsHtml = (canVoidCurrent && isTicketEdit)
         ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" data-ui-tip="Customer rejected product: return load to plant at $0 and log Round-Trip KM (2x One-Way KM)">${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" data-ui-tip="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
         : '';
@@ -138132,6 +139921,7 @@
             ${voidBtnHtml}
             <button type="button" class="btn-ghost-bar" id="dynCancelModalBtn">${seatCanSaveEdit ? 'Cancel' : 'Close'}</button>
             ${nextDayBtnHtml}
+            ${unpNextBtnHtml}
             ${saveBtnHtml}
           </div>
         </div>
@@ -138141,12 +139931,14 @@
       if (mcReset) mcReset.scrollTop = 0;
       const cBtn = $('dynCancelModalBtn');
       const nBtn = $('dynSaveNextDayModalBtn');
+      const nUnpBtn = $('dynSaveNextUnpricedBtn');
       const sBtn = $('dynSaveModalBtn');
       const vBtn = $('modalVoidRecordBtn');
       const retQuickBtn = $('modalReturnWtcBtn');
       const remQuickBtn = $('modalRemoveSlipBtn');
       if (cBtn) cBtn.addEventListener('click', ev => closeEntryModal(false, ev));
       if (nBtn) nBtn.addEventListener('click', () => saveModalEntry({ nextDay: true }));
+      if (nUnpBtn) nUnpBtn.addEventListener('click', () => saveModalEntry({ nextUnpriced: true }));
       if (sBtn) sBtn.addEventListener('click', saveModalEntry);
       if (retQuickBtn) {
         retQuickBtn.addEventListener('click', () => {
@@ -138550,27 +140342,40 @@
         if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
         if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
       }
-      // 1-click "Set Site Price" prefill from Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites, Statement Recon)
+      // 1-click "Set Site Price" prefill from Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites, #rawSiteOwnersPanel, #rawTransPayPanel, Statement Recon)
       const unpBar = $('prUnpricedGradesBar');
-      if (prefill._unpricedSitePrefill && form === 'pricerule') {
+      if ((prefill._unpricedSitePrefill || prefill._unpricedHaulPrefill) && form === 'pricerule') {
+        const isHaulMode = Boolean(prefill._unpricedHaulPrefill);
+        const targetRuleType = isHaulMode ? 'Transport Price (Site)' : 'Purchase Price (Site)';
         FORM_UI.unpricedSiteCtx = prefill;
         const grades = Array.isArray(prefill.grades) ? prefill.grades : [];
-        let activeGradeIdx = Math.max(0, grades.findIndex(g => norm(g.product) === norm(prefill.product) && norm(g.supplier) === norm(prefill.supplier)));
+        let activeGradeIdx = Math.max(0, grades.findIndex(g =>
+          norm(g.product) === norm(prefill.product)
+          && norm(g.supplier) === norm(prefill.supplier)
+          && (!prefill.company || norm(g.company) === norm(prefill.company))
+          && (!prefill.uom || norm(g.uom) === norm(prefill.uom))
+        ));
         const applyUnpricedGradeToModal = g => {
           if (!g) return;
           if ($('f_company') && g.company && allowedCompanyNames().includes(g.company)) $('f_company').value = g.company;
-          if ($('f_ruletype')) $('f_ruletype').value = 'Purchase Price (Site)';
+          if ($('f_ruletype')) $('f_ruletype').value = targetRuleType;
           if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
           if ($('f_supplier')) { $('f_supplier').value = g.supplier || ''; FORM_UI.lastSupplier = ''; }
           if ($('f_product')) { $('f_product').value = g.product || ''; FORM_UI.lastProduct = ''; }
           if ($('f_uom') && g.uom) { $('f_uom').value = g.uom; FORM_UI.uomManual = true; }
-          if ($('f_unitprice')) { $('f_unitprice').value = ''; FORM_UI.priceManual = false; }
-          if ($('f_transunitprice')) { $('f_transunitprice').value = ''; }
+          if (isHaulMode) {
+            if ($('f_rateper') && g.uom) $('f_rateper').value = g.uom;
+            if ($('f_transunitprice')) { $('f_transunitprice').value = ''; FORM_UI.transManual = false; }
+          } else {
+            if ($('f_unitprice')) { $('f_unitprice').value = ''; FORM_UI.priceManual = false; }
+            if ($('f_transunitprice')) { $('f_transunitprice').value = ''; }
+          }
           if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(g.startdate || ''))) $('f_date').value = g.startdate;
           if ($('f_enddate')) $('f_enddate').value = '';
           recalcForm();
-          if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) && $('f_unitprice') && typeof $('f_unitprice').focus === 'function') {
-            try { $('f_unitprice').focus({ preventScroll: true }); } catch (_) { $('f_unitprice').focus(); }
+          const focusEl = isHaulMode ? $('f_transunitprice') : $('f_unitprice');
+          if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) && focusEl && typeof focusEl.focus === 'function') {
+            try { focusEl.focus({ preventScroll: true }); } catch (_) { focusEl.focus(); }
           }
         };
         const renderUnpricedGradesBar = () => {
@@ -138583,20 +140388,87 @@
           const dateNote = activeG.earliestRawDate
             ? `<span>Earliest $0 ticket:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(activeG.earliestRawDate))}</strong>${activeG.clampedFrom ? ` · <span>Adjusted after prior agreement:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(activeG.startdate))}</strong>` : ''}`
             : `<span>Prefilled site:</span> <strong data-no-i18n="1">${esc(prefill.site || '')}</strong>`;
+          const qSnap = prefill._unpricedQueue;
+          const qSess = FORM_UI.unpricedQueueSession;
+          const qDone = qSess ? Number(qSess.doneCount || 0) : 0;
+          const qTotal = qSnap ? (qDone + qSnap.items.length) : 0;
+          let queueRowHtml = '';
+          if (qSnap && qTotal > 1 && Array.isArray(qSnap.siteSummaries) && qSnap.siteSummaries.length) {
+            let curStepOffset = 0;
+            if (activeG && qSnap.items.length) {
+              const foundOff = qSnap.items.findIndex(it =>
+                it.siteKey === normSiteMatch(prefill.site)
+                && norm(it.product) === norm(activeG.product)
+                && norm(it.company) === norm(activeG.company)
+              );
+              if (foundOff >= 0) curStepOffset = foundOff;
+            }
+            const stepNum = Math.min(qTotal, qDone + curStepOffset + 1);
+            const shownSites = qSnap.siteSummaries.slice(0, 6);
+            const extraSiteCnt = Math.max(0, qSnap.siteSummaries.length - shownSites.length);
+            const sitePillsHtml = shownSites.map(ss =>
+              `<button type="button" class="att-preset-pill${ss.isCurrentSite ? ' active' : ''}" data-unpriced-queue-site="${esc(ss.site)}" data-ui-tip="Switch active site in queue"><span data-no-i18n="1">${esc(ss.site)} (${fmtNum(ss.loads, 0)})</span></button>`
+            ).join('') + (extraSiteCnt > 0 ? `<span class="badge badge-neutral" data-no-i18n="1">+${fmtNum(extraSiteCnt, 0)}</span>` : '');
+            queueRowHtml = `
+              <div class="pr-unpriced-queue-row" id="prUnpricedQueueStrip">
+                <div class="pr-unpriced-queue-head">
+                  <div><span>Queue:</span> <strong data-no-i18n="1">${esc(qSnap.partyLabel || activeG.supplier || '')}</strong> · <span class="badge badge-neutral"><span data-no-i18n="1">${stepNum}/${qTotal}</span></span></div>
+                  <span class="badge badge-neutral"><span data-no-i18n="1">${fmtNum(qSnap.siteCount, 0)}</span> <span>${qSnap.siteCount === 1 ? 'site' : 'sites'}</span></span>
+                </div>
+                ${qSnap.siteSummaries.length > 1 ? `<div class="pr-unpriced-queue-pills"><span>Jump to site:</span>${sitePillsHtml}</div>` : ''}
+              </div>
+            `;
+          }
           unpBar.innerHTML = `
             <div class="pr-unpriced-grades-head">
               <div><strong>Unpriced Loads Prefill</strong> · <span data-no-i18n="1">${esc(prefill.site || '')}</span> · ${dateNote}</div>
-              ${grades.length ? `<span class="badge badge-warn"><span data-no-i18n="1">${fmtNum(activeG.loads, 0)}</span> <span>loads</span> · <span data-no-i18n="1">${fmtNum(activeG.qty, 0)} ${esc(activeG.uom || 'm³')}</span></span>` : ''}
+              ${(grades.length || Number(activeG.loads || 0) > 0) ? `<span class="badge badge-warn"><span data-no-i18n="1">${fmtNum(activeG.loads, 0)}</span> <span>loads</span> · <span data-no-i18n="1">${fmtNum(activeG.qty, 0)} ${esc(activeG.uom || 'm³')}</span></span>` : ''}
             </div>
             ${grades.length > 1 ? `<div class="pr-unpriced-grades-pills"><span>Switch grade:</span>${pillsHtml}</div>` : ''}
+            ${queueRowHtml}
           `;
           unpBar.querySelectorAll('[data-unpriced-grade-idx]').forEach(btn => {
             btn.addEventListener('click', () => {
               const nextIdx = Number(btn.getAttribute('data-unpriced-grade-idx'));
               if (!Number.isFinite(nextIdx) || !grades[nextIdx]) return;
+              const activePriceRaw = isHaulMode ? val('f_transunitprice') : val('f_unitprice');
+              const noPriceTypedYet = !String(activePriceRaw || '').trim() || Number(activePriceRaw) === 0;
               activeGradeIdx = nextIdx;
               applyUnpricedGradeToModal(grades[nextIdx]);
+              if (noPriceTypedYet) {
+                FORM_UI.userInteracted = false;
+                FORM_UI.initialModalSig = getEntryModalStateSignature();
+                markEntryModalBaseline();
+              }
               renderUnpricedGradesBar();
+            });
+          });
+          unpBar.querySelectorAll('[data-unpriced-queue-site]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const targetSite = btn.getAttribute('data-unpriced-queue-site') || '';
+              if (!targetSite || normSiteMatch(targetSite) === normSiteMatch(prefill.site)) return;
+              const qParty = (qSnap && qSnap.partyLabel) || (qSess && qSess.partyLabel) || prefill.supplier || '';
+              if (isEntryModalDirty()) {
+                promptUnsavedEntrySwitch({
+                  type: 'unpriced_site',
+                  siteName: targetSite,
+                  transportOnly: isHaulMode,
+                  supplier: qParty,
+                  label: targetSite
+                });
+                return;
+              }
+              FORM_UI._advancingUnpricedQueue = true;
+              try {
+                openSetUnpricedSitePriceModal(targetSite, {
+                  transportOnly: isHaulMode,
+                  supplier: qParty,
+                  forceSwitch: true,
+                  _continuingQueue: true
+                });
+              } finally {
+                FORM_UI._advancingUnpricedQueue = false;
+              }
             });
           });
           if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
@@ -138604,34 +140476,26 @@
           }
         };
         if (grades[activeGradeIdx]) applyUnpricedGradeToModal(grades[activeGradeIdx]);
-        else if ($('f_ruletype')) $('f_ruletype').value = 'Purchase Price (Site)';
-        renderUnpricedGradesBar();
-      } else if (prefill._unpricedHaulPrefill && form === 'pricerule') {
-        FORM_UI.unpricedSiteCtx = prefill;
-        if ($('f_ruletype')) $('f_ruletype').value = 'Transport Price (Site)';
-        if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
-        if ($('f_supplier')) { $('f_supplier').value = prefill.supplier || ''; FORM_UI.lastSupplier = ''; }
-        if ($('f_product')) { $('f_product').value = prefill.product || ''; FORM_UI.lastProduct = ''; }
-        if ($('f_uom') && prefill.uom) { $('f_uom').value = prefill.uom; FORM_UI.uomManual = true; }
-        if ($('f_rateper') && prefill.uom) $('f_rateper').value = prefill.uom;
-        if ($('f_transunitprice')) $('f_transunitprice').value = '';
-        if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || ''))) $('f_date').value = prefill.startdate;
-        if ($('f_enddate')) $('f_enddate').value = '';
-        if (unpBar) {
-          unpBar.hidden = false;
-          const dateNote = prefill.earliestRawDate
-            ? `<span>Earliest $0 ticket:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(prefill.earliestRawDate))}</strong>${prefill.clampedFrom ? ` · <span>Adjusted after prior agreement:</span> <strong data-no-i18n="1">${esc(fmtDateDMY(prefill.startdate))}</strong>` : ''}`
-            : `<span>Prefilled site:</span> <strong data-no-i18n="1">${esc(prefill.site || '')}</strong>`;
-          unpBar.innerHTML = `<div class="pr-unpriced-grades-head"><div><strong>Unpriced Loads Prefill</strong> · <span data-no-i18n="1">${esc(prefill.site || '')}</span> · ${dateNote}</div></div>`;
-          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
-            try { window.MFG_I18N.translateDom(unpBar); } catch (_) {}
+        else {
+          if ($('f_ruletype')) $('f_ruletype').value = targetRuleType;
+          if (isHaulMode) {
+            if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
+            if ($('f_supplier')) { $('f_supplier').value = prefill.supplier || ''; FORM_UI.lastSupplier = ''; }
+            if ($('f_product')) { $('f_product').value = prefill.product || ''; FORM_UI.lastProduct = ''; }
+            if ($('f_uom') && prefill.uom) { $('f_uom').value = prefill.uom; FORM_UI.uomManual = true; }
+            if ($('f_rateper') && prefill.uom) $('f_rateper').value = prefill.uom;
+            if ($('f_transunitprice')) { $('f_transunitprice').value = ''; FORM_UI.transManual = false; }
+            if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || ''))) $('f_date').value = prefill.startdate;
+            if ($('f_enddate')) $('f_enddate').value = '';
           }
         }
+        renderUnpricedGradesBar();
       } else {
         FORM_UI.unpricedSiteCtx = null;
+        if (!FORM_UI._advancingUnpricedQueue) FORM_UI.unpricedQueueSession = null;
         if (unpBar) { unpBar.hidden = true; unpBar.innerHTML = ''; }
       }
-      // Partner Truck Monthly Settlement prefill from #fleet_equip (#fpnlSettlePayBtn): leg, amount, method & rep_date.
+      // Partner Truck Monthly Settlement & Statement 16 Leg prefill: leg, amount, method & rep_date.
       if (form === 'settlement') {
         if (prefill.method && $('f_method')) {
           setModalControlVal('f_method', String(prefill.method));
@@ -138641,8 +140505,14 @@
           setModalControlVal('f_payable_leg', String(pfSettleLeg));
           FORM_UI.settleLegManual = true;
           FORM_UI.lastSettleSupplier = val('f_supplier') || '';
+          FORM_UI.settleLegLocked = Boolean(prefill.lockPayableLeg);
+          FORM_UI.stmt16LegLockCtx = prefill.lockPayableLeg ? (prefill._stmt16Ctx || { payableLeg: String(pfSettleLeg), byCoOpen: {} }) : null;
+          FORM_UI.settleAmtTouched = false;
         } else {
           FORM_UI.settleLegManual = false;
+          FORM_UI.settleLegLocked = false;
+          FORM_UI.stmt16LegLockCtx = null;
+          FORM_UI.settleAmtTouched = false;
         }
         if (prefill.amount != null && prefill.amount !== '' && Number.isFinite(Number(prefill.amount)) && $('f_amount')) {
           setModalControlVal('f_amount', Number(prefill.amount).toFixed(2));
@@ -138843,7 +140713,7 @@
           if (typeof openDocumentCameraCapture === 'function') {
             openDocumentCameraCapture(files => {
               if (files && files[0]) applyStaffModalIdScan(files[0], 'Camera ID Scan');
-            }, { preset: 'card' });
+            }, { preset: 'card', attachmentOnly: true });
           } else {
             toast('Camera scanner is not available on this view.', 'err');
           }
@@ -138923,6 +140793,7 @@
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
+    if (!FORM_UI._advancingUnpricedQueue) FORM_UI.unpricedQueueSession = null;
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
     }
@@ -139215,19 +141086,28 @@
       FORM_UI.otManual = true;
       FORM_UI.ownerManuallyPicked = Boolean(row.truck_owner);
     } else if (form === 'receipt') {
+      const fxR = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+      const legCashR = row.amount != null ? row.amount : ((row.usd_amount != null || row.lbp_amount != null) ? round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / fxR)) : '');
+      const legDiscR = row.discount != null ? Number(row.discount) : Number(row.diff || 0);
       setModalControlVal('f_customer', row.customer || '');
       setModalControlVal('f_method', row.method || 'Payment');
-      setModalControlVal('f_amount', row.amount != null ? row.amount : '');
-      setModalControlVal('f_discount', row.discount != null ? Number(row.discount).toFixed(2) : '0.00');
+      setModalControlVal('f_amount', legCashR);
+      setModalControlVal('f_discount', Number(legDiscR || 0).toFixed(2));
       setModalControlVal('f_reference', row.reference || '');
     } else if (form === 'settlement') {
+      FORM_UI.settleLegLocked = false;
+      FORM_UI.stmt16LegLockCtx = null;
+      FORM_UI.settleAmtTouched = false;
+      const fxS = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+      const legCashS = row.amount != null ? row.amount : ((row.usd_amount != null || row.lbp_amount != null) ? round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / fxS)) : '');
+      const legDiscS = row.discount != null ? Number(row.discount) : Number(row.diff || 0);
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_method', row.method || 'Payment');
       setModalControlVal('f_payable_leg', row.payable_leg || inferSettlementPayableLeg(row.supplier, row.method, row.company));
       FORM_UI.settleLegManual = true;
       FORM_UI.lastSettleSupplier = row.supplier || '';
-      setModalControlVal('f_amount', row.amount != null ? row.amount : '');
-      setModalControlVal('f_discount', row.discount != null ? Number(row.discount).toFixed(2) : '0.00');
+      setModalControlVal('f_amount', legCashS);
+      setModalControlVal('f_discount', Number(legDiscS || 0).toFixed(2));
       setModalControlVal('f_reference', row.reference || '');
     } else if (form === 'fuel') {
       const rawItem = String(row.item || row.fuel_type || 'Diesel').trim();
@@ -139699,6 +141579,7 @@
       setModalControlVal('f_official_name', row.official_name || row.name || '');
       setModalControlVal('f_category', row.category || (Array.isArray(row.categories) ? row.categories.join(', ') : ''));
       setModalControlVal('f_method', row.method || 'Credit');
+      if ($('f_standing_disc')) setModalControlVal('f_standing_disc', row.standing_discount_pct != null && Number(row.standing_discount_pct) > 0 ? row.standing_discount_pct : '');
       setModalControlVal('f_phone', row.phone || row.contact || '');
       setModalControlVal('f_region', row.region || row.location || '');
       setModalControlVal('f_mof', row.mof_no || row.financial_no || '');
@@ -140149,6 +142030,17 @@
     const h = document.documentElement;
     return Boolean(
       (b && (b.classList.contains('kiosk-locked') || b.classList.contains('is-kiosks-view')))
+      || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))
+    );
+  }
+
+  function isLockedKioskOrCompanionSurface() {
+    if (STATE.kioskLocked) return true;
+    if (typeof document === 'undefined') return false;
+    const b = document.body;
+    const h = document.documentElement;
+    return Boolean(
+      (b && b.classList.contains('kiosk-locked'))
       || (h && (h.classList.contains('kiosk-prelock') || h.classList.contains('phone-scan-companion')))
     );
   }
@@ -142277,7 +144169,7 @@
     if (typeof v === 'object') return JSON.stringify(v);
     if (typeof v === 'number') {
       if (key === 'vat_percent') return fmtNum(v, Number.isInteger(v) ? 1 : 2) + '%';
-      if (key === 'jv_share' || key === 'share_pct' || key === 'percentage') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
+      if (key === 'jv_share' || key === 'share_pct' || key === 'percentage' || key === 'standing_discount_pct') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
       if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
       if (key === 'est_km' || key === 'est_round_trip_km' || key === 'distance_km' || key === 'radius_km') return `${fmtNum(v, 1)} km`;
       if (key === 'unload_dwell_min') return `${fmtNum(v, 0)} min`;
@@ -144390,10 +146282,11 @@
     if (!lens.expenses) {
       if (
         /^(?:raw_purchases|expenses|recurring_expenses|expense_items|settlements|repair_items|warehouse_movements|items|equipment_repairs|equipment_oil_logs|part_movements)$/i.test(tk)
-        && /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|warehouse_cost|outside_parts_cost|outside_labor_cost|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue|price_pending)$/i.test(fk)
+        && /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|gross_amount|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|warehouse_cost|outside_parts_cost|outside_labor_cost|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue|price_pending)$/i.test(fk)
       ) {
         return true;
       }
+      if (tk === 'suppliers' && fk === 'standing_discount_pct') return true;
       if (tk === 'price_rules' && (!row || /^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim()))) {
         if (/^(?:unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|price|trans_price|floor_price|indiff_price|trans_indiff_price|delivered_indiff_price)$/i.test(fk)) {
           return true;
@@ -144481,6 +146374,7 @@
         { key: 'name', label: 'Supplier / Hauler Name *', type: 'text', sec: 1 },
         { key: 'official_name', label: 'Official / Legal Name', type: 'text', sec: 1, placeholder: 'Legal vendor entity name' },
         { key: 'method', label: 'Default Settlement Method *', type: 'select', options: [['Credit', 'Credit (Account / AP)'], ['Cash', 'Cash (Immediate Settlement)']], sec: 3 },
+        { key: 'standing_discount_pct', label: 'Standing Discount (%)', type: 'number', step: '0.1', min: '0', max: '100', sec: 3, placeholder: '0 (optional)', getVal: r => { const v = (r.standing_discount_pct != null && r.standing_discount_pct !== '') ? Number(r.standing_discount_pct) : Number((supplierInfo(r.name || r.Supplier) || {}).standing_discount_pct || 0); return v > 0 ? v : ''; } },
         { key: 'category1', label: 'Primary Supplier Category *', type: 'select', options: [['', 'Select Primary Category']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category1 || (Array.isArray(r.categories) && r.categories[0]) || (r.category ? String(r.category).split(/\s*,\s*/)[0] : '') || '' },
         { key: 'category2', label: 'Secondary Category (Optional)', type: 'select', options: [['', 'None']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category2 || (Array.isArray(r.categories) && r.categories[1]) || (r.category ? String(r.category).split(/\s*,\s*/)[1] : '') || '' },
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...', getVal: r => r.phone || r.contact || (supplierInfo(r.name || r.Supplier) || {}).phone || '' },
@@ -149714,14 +151608,20 @@
         let mGross = getModNum('gross_amount');
         let mDisc = getModNum('discount');
         let mAmt = getModNum('amount');
-        const modFocusId = (document.activeElement && document.activeElement.id) || (modDrawer && modDrawer.dataset.lastExpFieldId) || '';
+        const activeExpId = (document.activeElement && /^insp_edit_(gross_amount|discount|amount)$/.test(document.activeElement.id)) ? document.activeElement.id : '';
+        const modFocusId = (modDrawer && modDrawer.dataset.lastExpFieldId) || activeExpId || '';
+        const grossEdited = $('insp_edit_gross_amount')?.dataset.userEdited === '1';
+        const discEdited = $('insp_edit_discount')?.dataset.userEdited === '1';
         if (modFocusId === 'insp_edit_gross_amount' || modFocusId === 'insp_edit_discount') {
-          if ($('insp_edit_amount') && (mGross > 0 || $('insp_edit_gross_amount')?.dataset.userEdited === '1')) {
+          if ($('insp_edit_amount') && (mGross > 0 || grossEdited)) {
             mAmt = Math.max(0, round2(mGross - Math.max(0, mDisc)));
             $('insp_edit_amount').value = mAmt.toFixed(2);
           }
         } else if (modFocusId === 'insp_edit_amount') {
-          if ($('insp_edit_gross_amount') && mAmt > 0) {
+          if (grossEdited && !discEdited && mGross > 0 && mAmt >= 0 && mGross >= mAmt) {
+            mDisc = round2(mGross - mAmt);
+            if ($('insp_edit_discount')) $('insp_edit_discount').value = mDisc.toFixed(2);
+          } else if ($('insp_edit_gross_amount') && mAmt > 0) {
             mGross = round2(mAmt + Math.max(0, mDisc));
             $('insp_edit_gross_amount').value = mGross.toFixed(2);
           }
@@ -150147,6 +152047,85 @@
         if (validationError) {
           toast(validationError, 'err');
           return;
+        }
+        if (key === 'suppliers' && 'standing_discount_pct' in pendingUpdates) {
+          const sdPctMod = pendingUpdates.standing_discount_pct == null ? 0 : Number(pendingUpdates.standing_discount_pct);
+          if (!Number.isFinite(sdPctMod) || sdPctMod < 0 || sdPctMod > 100) {
+            toast('Standing Discount (%) must be between 0 and 100.', 'err');
+            return;
+          }
+          pendingUpdates.standing_discount_pct = round2(sdPctMod);
+        }
+        const origFxMod = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+        const origCashLegacyMod = row.amount != null ? Number(row.amount || 0) : round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / origFxMod));
+        const origDiscLegacyMod = row.discount != null ? Number(row.discount || 0) : Number(row.diff || 0);
+        const notesClearedBelow3OnDisc = 'notes' in pendingUpdates && String(pendingUpdates.notes || '').trim().length < 3 && String(row.notes || '').trim().length >= 3 && origDiscLegacyMod > 0;
+        if ((key === 'receipts' || key === 'settlements') && ('amount' in pendingUpdates || 'discount' in pendingUpdates || 'method' in pendingUpdates || notesClearedBelow3OnDisc)) {
+          const candAmtMod = 'amount' in pendingUpdates ? Number(pendingUpdates.amount || 0) : origCashLegacyMod;
+          const candDiscMod = 'discount' in pendingUpdates ? Number(pendingUpdates.discount || 0) : origDiscLegacyMod;
+          const candMthMod = String('method' in pendingUpdates ? pendingUpdates.method : (row.method || 'Payment'));
+          const candNtsMod = String('notes' in pendingUpdates ? pendingUpdates.notes : (row.notes || ''));
+          if (candDiscMod < 0) {
+            toast('Settlement Discount cannot be negative.', 'err');
+            return;
+          }
+          const zModErr = validateZeroCashSettlementWriteOff({ amount: candAmtMod, disc: candDiscMod, method: candMthMod, notes: candNtsMod });
+          if (zModErr) {
+            toast(zModErr.msg, 'err');
+            return;
+          }
+          const totRelMod = round2(Math.max(0, candAmtMod) + Math.max(0, candDiscMod));
+          const maxDiscModPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+          if (isAlertRuleEnabled('G_DISCOUNT_WARN') && totRelMod > 0 && candDiscMod > totRelMod * (maxDiscModPct / 100) && candNtsMod.trim().length < 3) {
+            toast(`Settlement Discount exceeds ${fmtNum(maxDiscModPct, 0)}% (${fmtUSD(candDiscMod, 2)} of ${fmtUSD(totRelMod, 2)}). Enter a reason in Notes (3+ chars).`, 'err');
+            return;
+          }
+        }
+        if (key === 'expenses' && ('discount' in pendingUpdates || 'gross_amount' in pendingUpdates || 'amount' in pendingUpdates || 'price_pending' in pendingUpdates)) {
+          const isPendAfter = 'price_pending' in pendingUpdates ? Boolean(pendingUpdates.price_pending) : Boolean(row.price_pending);
+          const origGrossExp = Number(row.gross_amount || 0) > 0 ? Number(row.gross_amount) : round2(Number(row.amount || 0) + Number(row.discount || 0));
+          let candGrossExp = 'gross_amount' in pendingUpdates ? Number(pendingUpdates.gross_amount || 0) : origGrossExp;
+          let candDiscExp = 'discount' in pendingUpdates ? Number(pendingUpdates.discount || 0) : Number(row.discount || 0);
+          let candAmtExp = 'amount' in pendingUpdates ? Number(pendingUpdates.amount || 0) : Number(row.amount || 0);
+          if (isPendAfter && candDiscExp > 0.005) {
+            toast('Complete the Pending Expense price from the Expense modal before adding a discount.', 'err');
+            return;
+          }
+          if (candDiscExp < 0) {
+            toast('Discount cannot be negative.', 'err');
+            return;
+          }
+          if (!('price_pending' in pendingUpdates && pendingUpdates.price_pending === true)) {
+            if ('gross_amount' in pendingUpdates && 'amount' in pendingUpdates && !('discount' in pendingUpdates)) {
+              candDiscExp = round2(candGrossExp - candAmtExp);
+              if (candDiscExp < 0) {
+                toast('Total cannot exceed Subtotal when discount is not negative.', 'err');
+                return;
+              }
+              pendingUpdates.discount = candDiscExp;
+            } else if ('amount' in pendingUpdates && !('gross_amount' in pendingUpdates) && !('discount' in pendingUpdates)) {
+              candGrossExp = round2(candAmtExp + Math.max(0, candDiscExp));
+              pendingUpdates.gross_amount = candGrossExp;
+            } else {
+              if (candGrossExp > 0 && candDiscExp > candGrossExp + 0.001) {
+                toast(`Cannot exceed Subtotal (${fmtUSD(candGrossExp, 2)})`, 'err');
+                return;
+              }
+              candAmtExp = round2(candGrossExp - candDiscExp);
+              pendingUpdates.amount = candAmtExp;
+            }
+            const willRemainPending = isPendAfter && !(candAmtExp > 0);
+            if (!willRemainPending && candAmtExp <= 0) {
+              toast('Net total after discount must be above zero', 'err');
+              return;
+            }
+          }
+          const candExpNts = String('notes' in pendingUpdates ? pendingUpdates.notes : (row.notes || '')).trim();
+          const maxExpModPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+          if (isAlertRuleEnabled('G_DISCOUNT_WARN') && candGrossExp > 0 && candDiscExp > candGrossExp * (maxExpModPct / 100) && candExpNts.length < 3) {
+            toast(`Settlement Discount exceeds ${fmtNum(maxExpModPct, 0)}% (${fmtUSD(candDiscExp, 2)} of ${fmtUSD(candGrossExp, 2)}). Enter a reason in Notes (3+ chars).`, 'err');
+            return;
+          }
         }
         if (!UNIVERSAL_MAIN_SPEC[key] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
           const nextTxDt = pendingUpdates.date !== undefined ? pendingUpdates.date : (row.date || '');
@@ -150853,6 +152832,12 @@
           if ('defect_ref' in pendingUpdates && !('prior_defect_notified' in pendingUpdates)) {
             row.prior_defect_notified = Boolean(row.defect_ref);
           }
+        } else if (key === 'receipts' || key === 'settlements') {
+          if ('amount' in pendingUpdates) {
+            delete row.usd_amount;
+            delete row.lbp_amount;
+          }
+          if ('discount' in pendingUpdates) delete row.diff;
         } else if (key === 'expenses') {
           let modDisc = round2(Number(row.discount || 0));
           let modGross = round2(Number(row.gross_amount || 0));
@@ -151541,7 +153526,7 @@
       if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
       if (sBtn) {
         sBtn.addEventListener('click', () => {
-          openDocumentCameraCapture((files, method) => attachFilesDirectlyToRecord(key, row, files, method || 'Camera Scan'));
+          openDocumentCameraCapture((files, method) => attachFilesDirectlyToRecord(key, row, files, method || 'Camera Scan'), { attachmentOnly: true });
         });
       }
       if (fInp) fInp.addEventListener('change', async () => {
@@ -152190,6 +154175,90 @@
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
   }
   if (typeof window !== 'undefined') window.__mfgSaveLocalAuthAndRecords = saveLocalAuthAndRecords;
+
+  let _bioFullSaveTimer = null;
+  let _bioCloudSyncTimer = null;
+  let _bioCloudSyncDirty = false;
+  const _activeBiometricNetOps = new Set();
+
+  function trackBiometricNetOp(promise) {
+    if (!promise || typeof promise.then !== 'function') return promise;
+    _activeBiometricNetOps.add(promise);
+    Promise.resolve(promise).catch(() => {}).finally(() => _activeBiometricNetOps.delete(promise));
+    return promise;
+  }
+
+  function saveBiometricsLocalFast() {
+    try {
+      const usersForLocalStore = rosterIsServerHeld()
+        ? (STATE.users || []).map(u => {
+            if (!u || typeof u !== 'object') return u;
+            const c = Object.assign({}, u, { pin_redacted: true });
+            delete c.pin_code;
+            delete c._verifiedPin;
+            return c;
+          })
+        : STATE.users;
+      appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(usersForLocalStore));
+      appStoreSetRaw('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
+    } catch (_) {}
+    scheduleDeferredFullLocalSave();
+  }
+
+  function scheduleDeferredFullLocalSave() {
+    if (_bioFullSaveTimer) clearTimeout(_bioFullSaveTimer);
+    _bioFullSaveTimer = setTimeout(() => {
+      _bioFullSaveTimer = null;
+      saveLocalAuthAndRecords();
+    }, 1200);
+  }
+
+  function scheduleBiometricCloudSync() {
+    _bioCloudSyncDirty = true;
+    setPendingCloudPush(true);
+    if (_bioCloudSyncTimer) clearTimeout(_bioCloudSyncTimer);
+    _bioCloudSyncTimer = setTimeout(async () => {
+      _bioCloudSyncTimer = null;
+      if (_activeBiometricNetOps.size > 0) {
+        try { await Promise.all(Array.from(_activeBiometricNetOps)); } catch (_) {}
+      }
+      _bioCloudSyncDirty = false;
+      syncWithCloud(true);
+    }, 900);
+  }
+
+  function cancelBiometricPendingTimers() {
+    if (_bioFullSaveTimer) {
+      clearTimeout(_bioFullSaveTimer);
+      _bioFullSaveTimer = null;
+    }
+    if (_bioCloudSyncTimer) {
+      clearTimeout(_bioCloudSyncTimer);
+      _bioCloudSyncTimer = null;
+    }
+    _bioCloudSyncDirty = false;
+  }
+
+  async function flushBiometricCloudSyncNow() {
+    if (_bioFullSaveTimer) {
+      clearTimeout(_bioFullSaveTimer);
+      _bioFullSaveTimer = null;
+      saveLocalAuthAndRecords();
+    }
+    if (_bioCloudSyncTimer || _bioCloudSyncDirty || _activeBiometricNetOps.size > 0) {
+      if (_bioCloudSyncTimer) {
+        clearTimeout(_bioCloudSyncTimer);
+        _bioCloudSyncTimer = null;
+      }
+      if (_activeBiometricNetOps.size > 0) {
+        try { await Promise.all(Array.from(_activeBiometricNetOps)); } catch (_) {}
+      }
+      if (_bioCloudSyncDirty) {
+        _bioCloudSyncDirty = false;
+        syncWithCloud(true);
+      }
+    }
+  }
 
   function mergeUserRow(existing, incoming) {
     if (!existing) {
@@ -157686,6 +159755,11 @@
       if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
       return;
     }
+    if (isLockedKioskOrCompanionSurface()) {
+      if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
+      reportUnsentToCloud(info);
+      return;
+    }
     const n = info.count;
     const isUpdate = info.reason === 'update';
     const sig = `${n}|${info.reason}|${info.sinceMs}`;
@@ -157787,12 +159861,17 @@
   }
 
   // Owner: devices that reported entries they have not sent, and devices whose held entries arrived late.
+  const MIN_SYNC_SHELL_FALLBACK = '19.6.444';
   let _devHoldGen = 0;
   async function loadDevicesHolding() {
     const myGen = ++_devHoldGen;
-    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser());
     if (!hasServerApi() || !ownerNow()) {
-      if (myGen === _devHoldGen && STATE.devicesHolding) { STATE.devicesHolding = null; updateDevicesHoldingBar(); }
+      if (myGen === _devHoldGen && (STATE.devicesHolding || STATE.devicesMinSyncShellVer)) {
+        STATE.devicesHolding = null;
+        STATE.devicesMinSyncShellVer = '';
+        updateDevicesHoldingBar();
+      }
       return;
     }
     const ctrl = new AbortController();
@@ -157800,10 +159879,16 @@
     try {
       const r = await edgeApiFetch('./api/device_unsent', { signal: ctrl.signal });
       if (myGen !== _devHoldGen || !ownerNow()) return;
-      if (r && (r.status === 401 || r.status === 403)) STATE.devicesHolding = null;
-      else if (r && r.ok) {
+      if (r && (r.status === 401 || r.status === 403)) {
+        STATE.devicesHolding = null;
+        STATE.devicesMinSyncShellVer = '';
+      } else if (r && r.ok) {
         const d = await r.json().catch(() => null);
         if (myGen !== _devHoldGen || !ownerNow()) return;
+        if (d && typeof d.minSyncShellVer === 'string') {
+          const liveFloor = d.minSyncShellVer.trim();
+          if (/^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(liveFloor)) STATE.devicesMinSyncShellVer = liveFloor;
+        }
         if (d && Array.isArray(d.devices)) STATE.devicesHolding = d.devices;
       }
     } catch (_) {
@@ -157816,7 +159901,7 @@
   function updateDevicesHoldingBar() {
     const el = $('devicesHoldingBar');
     if (!el) return;
-    const ownerNow = STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    const ownerNow = STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser());
     const myId = getDeviceIdent().id;
     const myEmail = norm((activeUser() || {}).email);
     const list = (ownerNow && Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding : [])
@@ -157826,12 +159911,19 @@
       return;
     }
     const curShell = String(window.__MFG_SHELL_VER || '').trim();
-    const minSyncFloor = window.ISABI_HAS_EDGE_API ? '19.6.432' : '19.6.436';
+    const rawLiveFloor = String(STATE.devicesMinSyncShellVer || '').trim();
+    const minSyncFloor = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(rawLiveFloor) ? rawLiveFloor : MIN_SYNC_SHELL_FALLBACK;
     const effMinSyncVer = (curShell && compareShellVersions(minSyncFloor, curShell) > 0) ? curShell : minSyncFloor;
-    const sig = JSON.stringify([curShell, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
+    const sig = JSON.stringify([curShell, effMinSyncVer, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
     if (el.dataset.sig === sig && !el.hidden) return;
+    const holdingList = [];
+    const lateList = [];
+    list.forEach(d => {
+      if (d.state === 'sent_late') lateList.push(d);
+      else holdingList.push(d);
+    });
     const SHOWN = 4;
-    const segs = list.slice(0, SHOWN).map(d => {
+    const renderItem = d => {
       const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
       const who = String((seat && (seat.full_name || seat.name)) || d.name || d.email || 'Unknown seat').trim();
       const label = String(d.label || '').trim();
@@ -157862,11 +159954,31 @@
         ? `<span data-no-i18n="1">, </span><span>last heard</span> <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(heardMs))}</span>`
         : '';
       return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span>${heardHtml}${dismissHtml}</span>`;
-    });
-    const extra = list.length - Math.min(list.length, SHOWN);
-    const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+    };
+    const rowsHtml = [];
+    if (holdingList.length) {
+      const segs = holdingList.slice(0, SHOWN).map(renderItem);
+      const extra = holdingList.length - Math.min(holdingList.length, SHOWN);
+      const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+      rowsHtml.push(`<div class="cf-behind-note unsent-bar dev-hold-row dev-hold-active-row" id="devicesHoldingActiveRow"><span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span></div>`);
+    }
+    if (lateList.length) {
+      const segs = lateList.slice(0, SHOWN).map(renderItem);
+      const extra = lateList.length - Math.min(lateList.length, SHOWN);
+      const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+      const hasDismissableLate = lateList.some(d => {
+        const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+        const uid = String(d.user_id || (seat && seat.id) || '').trim();
+        const devId = String(d.device_id || '').trim();
+        return /^[A-Za-z0-9_-]{1,40}$/.test(uid) && /^[a-z0-9]{12,32}$/.test(devId);
+      });
+      const dismissAllHtml = hasDismissableLate
+        ? ' <button type="button" class="dev-hold-dismiss-all-btn" id="devHoldDismissAllLateBtn" data-dismiss-all-late="1"><span>Dismiss All</span></button>'
+        : '';
+      rowsHtml.push(`<div class="cf-behind-note unsent-bar dev-hold-row dev-hold-late-row" id="devicesHoldingLateRow"><span class="badge cf-behind-badge dev-late-badge"><span>Arrived Late</span><span data-no-i18n="1"> (${esc(fmtNum(lateList.length))})</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>${dismissAllHtml}</div>`);
+    }
     el.dataset.sig = sig;
-    el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>`;
+    el.innerHTML = rowsHtml.join('');
     el.hidden = false;
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(el);
@@ -157875,7 +159987,7 @@
 
   async function dismissHeldDeviceReport(uid, devId) {
     if (!uid || !devId) return false;
-    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return false;
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || isLockedKioskOrCompanionSurface() || !isOwner(activeUser())) return false;
     ++_devHoldGen;
     const prev = Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding.slice() : null;
     if (prev) {
@@ -157900,7 +160012,79 @@
     return false;
   }
 
+  async function dismissAllLateDeviceReports() {
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return false;
+    const myId = getDeviceIdent().id;
+    const myEmail = norm((activeUser() || {}).email);
+    const list = (Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding : [])
+      .filter(d => d && typeof d === 'object' && d.state === 'sent_late' && !(String(d.device_id || '') === myId && norm(d.email) === myEmail));
+    const keys = [];
+    const seen = new Set();
+    list.forEach(d => {
+      const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+      const uid = String(d.user_id || (seat && seat.id) || '').trim();
+      const devId = String(d.device_id || '').trim();
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(uid) || !/^[a-z0-9]{12,32}$/.test(devId)) return;
+      const k = `${uid}:${devId}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    });
+    if (!keys.length) return false;
+    ++_devHoldGen;
+    const keySet = new Set(keys);
+    const prev = Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding.slice() : null;
+    if (prev) {
+      STATE.devicesHolding = prev.filter(d => {
+        if (!d) return false;
+        if (d.state !== 'sent_late') return true;
+        const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+        const rowUid = String(d.user_id || (seat && seat.id) || '').trim();
+        return !keySet.has(`${rowUid}:${String(d.device_id || '').trim()}`);
+      });
+      updateDevicesHoldingBar();
+    }
+    try {
+      const chunks = [];
+      let curChunk = [];
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const nextLen = JSON.stringify({ action: 'dismiss_late', keys: curChunk.concat([k]) }).length;
+        if (curChunk.length > 0 && (curChunk.length >= 25 || nextLen > 1800)) {
+          chunks.push(curChunk);
+          curChunk = [k];
+        } else {
+          curChunk.push(k);
+        }
+      }
+      if (curChunk.length) chunks.push(curChunk);
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const r = await edgeApiFetch('./api/device_unsent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'dismiss_late', keys: chunks[ci] })
+        });
+        const d = r ? await r.json().catch(() => null) : null;
+        if (!r || !r.ok || !d || !d.ok) {
+          toast('Could not dismiss device report', 'err');
+          await loadDevicesHolding();
+          return false;
+        }
+      }
+      return true;
+    } catch (_) {}
+    toast('Could not dismiss device report', 'err');
+    await loadDevicesHolding();
+    return false;
+  }
+
   function onDevicesHoldingBarClick(ev) {
+    const allBtn = ev.target && ev.target.closest ? ev.target.closest('[data-dismiss-all-late]') : null;
+    if (allBtn) {
+      dismissAllLateDeviceReports();
+      return;
+    }
     const btn = ev.target && ev.target.closest ? ev.target.closest('[data-dismiss-user][data-dismiss-dev]') : null;
     if (!btn) return;
     const uid = String(btn.getAttribute('data-dismiss-user') || '').trim();
@@ -158262,7 +160446,7 @@
         const fetchUsers = !isDemoSandboxSession() && (!rosterIsServerHeld() || STATE.authed);
         const fetchSubStores = !isEdgeActive || STATE.authed || isDemoSandboxSession();
         const fetchWsGeo = Boolean(fetchSubStores && (STATE.authed || isDemoSandboxSession()));
-        const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()));
+        const fetchOwnerNotices = Boolean(fetchSubStores && STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && !isLockedKioskOrCompanionSurface() && isOwner(activeUser()));
         let geoHoldStillPending = false;
         let indHoldStillPending = false;
         if (fetchWsGeo && !isDemoScopeActive()) {
@@ -158796,10 +160980,50 @@
     return true;
   }
 
-  async function startFaceCamera(videoEl) {
+  function resolveStreamFacingMode(stream, fallbackMode = 'user') {
+    try {
+      const tr = stream && typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks()[0] : null;
+      const fm = tr && typeof tr.getSettings === 'function' ? String((tr.getSettings() || {}).facingMode || '').toLowerCase() : '';
+      if (fm === 'environment' || fm === 'user') return fm;
+    } catch (_) {}
+    return fallbackMode === 'environment' ? 'environment' : 'user';
+  }
+
+  async function requestFaceCameraStream(desiredMode, prefDims = {}, timeoutMs = 0) {
+    const primary = desiredMode === 'environment' ? 'environment' : 'user';
+    const secondary = primary === 'environment' ? 'user' : 'environment';
+    const deadline = timeoutMs > 0 ? (Date.now() + timeoutMs) : 0;
+    const attempts = [
+      { mode: primary, constraints: { video: Object.assign({ facingMode: { exact: primary } }, prefDims), audio: false } },
+      { mode: primary, constraints: { video: Object.assign({ facingMode: primary }, prefDims), audio: false } },
+      { mode: secondary, constraints: { video: { facingMode: secondary }, audio: false } },
+      { mode: primary, constraints: { video: true, audio: false } }
+    ];
+    let lastErr = null;
+    for (const att of attempts) {
+      const remMs = deadline > 0 ? Math.max(400, deadline - Date.now()) : 0;
+      if (deadline > 0 && Date.now() >= deadline) break;
+      try {
+        const s = (remMs > 0 && typeof requestKioskUserMediaWithTimeout === 'function')
+          ? await requestKioskUserMediaWithTimeout(att.constraints, remMs)
+          : await navigator.mediaDevices.getUserMedia(att.constraints);
+        return { stream: s, facingMode: resolveStreamFacingMode(s, att.mode) };
+      } catch (err) {
+        lastErr = err;
+        const errName = err && err.name ? String(err.name) : '';
+        if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError' || errName === 'SecurityError') {
+          throw err;
+        }
+      }
+    }
+    throw lastErr || new Error('Camera unavailable');
+  }
+
+  async function startFaceCamera(videoEl, camOpts = {}) {
     if (!videoEl) return false;
     try {
-      if (!streamAlive() && window.Face && typeof window.Face.consumeEarlyStream === 'function') {
+      const desiredFacing = (camOpts && camOpts.facingMode === 'environment') ? 'environment' : 'user';
+      if (desiredFacing === 'user' && !streamAlive() && window.Face && typeof window.Face.consumeEarlyStream === 'function') {
         const early = await window.Face.consumeEarlyStream({ keepOnAuthVideo: videoEl.id === 'authFaceVideo' });
         if (early && early.getVideoTracks && early.getVideoTracks().some(t => t.readyState === 'live')) {
           FACE_STATE.stream = early;
@@ -158811,15 +161035,20 @@
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
         const portrait = window.innerHeight > window.innerWidth;
         const isKiosk43 = videoEl.id === 'staffEnrolVideo' || videoEl.id === 'enrolFaceVideo';
-        const prefVideo = isKiosk43
-          ? { facingMode: 'user', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
+        const prefDims = isKiosk43
+          ? { width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
           : (portrait
-            ? { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }
-            : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } });
-        const s = await navigator.mediaDevices.getUserMedia({
-          video: prefVideo,
-          audio: false
-        }).catch(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false }));
+            ? { width: { ideal: 720 }, height: { ideal: 960 } }
+            : { width: { ideal: 1280 }, height: { ideal: 720 } });
+        const got = await requestFaceCameraStream(desiredFacing, prefDims, 0);
+        const s = got.stream;
+        if (camOpts && camOpts.enrolGen != null && camOpts.enrolGen !== STAFF_FACE_MODAL_STATE._camGen) {
+          try { s.getTracks().forEach(t => t.stop()); } catch (_) {}
+          return false;
+        }
+        if (videoEl.id === 'staffEnrolVideo') {
+          STAFF_FACE_MODAL_STATE.facingMode = got.facingMode;
+        }
         if (window.Face && window.Face.trackStream) window.Face.trackStream(s);
         FACE_STATE.stream = s;
       }
@@ -161625,6 +163854,9 @@
         const u = STATE.users.find(x => String(x.id) === String(uidTarget));
         if (!u) return;
         FACE_STATE.enrolUserId = u.id;
+        FACE_STATE.lastLiveEnrolDet = null;
+        FACE_STATE.lastLiveEnrolAt = 0;
+        FACE_STATE.lastLiveEnrolSnap = '';
         syncEnrolBufferFromUser(u, true);
         updateEnrolStudioDom();
         const panel = $('faceEnrolPanel');
@@ -161696,6 +163928,9 @@
       const u = STATE.users.find(x => String(x.id) === String(uidTarget));
       if (!u) return;
       FACE_STATE.enrolUserId = u.id;
+      FACE_STATE.lastLiveEnrolDet = null;
+      FACE_STATE.lastLiveEnrolAt = 0;
+      FACE_STATE.lastLiveEnrolSnap = '';
       syncEnrolBufferFromUser(u, true);
       updateEnrolStudioDom();
       const panel = $('faceEnrolPanel');
@@ -161836,7 +164071,7 @@
         const valStr = String(opt.value || '');
         if (valStr.startsWith('stfbio:')) {
           if (!staffDirMap) {
-            staffDirMap = new Map((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : []).map(s => [norm(s.name), s]));
+            staffDirMap = new Map((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory({ biometricOnly: true }) : []).map(s => [norm(s.name), s]));
           }
           const stObj = buildKioskStaffTargetObject(valStr.slice(7), staffDirMap);
           if (stObj) {
@@ -162051,30 +164286,59 @@
     const overlayEl = $('enrolFaceOverlay');
     const hudTel = $('enrolHudTelemetry');
     const hudDot = $('enrolHudDot');
+    const enrolUser = enrolTargetUser();
+    const capLen = effectiveEnrolPoseCount(enrolUser);
+    const retakeSlot = FACE_STATE.enrolRetakeSlot;
+    const isCaptureMode = capLen < 3 || retakeSlot != null;
+    const activeSlot = retakeSlot != null ? retakeSlot : capLen;
     if (videoEl && !FACE_STATE.enrolBusy && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
       FACE_STATE.enrolBusy = true;
       try {
         await ensureFaceModelsLoaded();
-        const det = await window.Face.detectOne(videoEl, false);
-        if (det && det.descriptor) {
-          FACE_STATE.lastLiveEnrolDet = det;
-          FACE_STATE.lastLiveEnrolAt = Date.now();
-          if (window.Face.snapshot) FACE_STATE.lastLiveEnrolSnap = window.Face.snapshot(videoEl);
+        const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+        let det = null;
+        if (!isAuto && isCaptureMode && window.Face.detectPreview) {
+          det = await window.Face.detectPreview(videoEl);
+          if (!det) {
+            FACE_STATE.enrolPreviewMisses = (FACE_STATE.enrolPreviewMisses || 0) + 1;
+            if ((FACE_STATE.enrolPreviewMisses % 6) === 0) {
+              det = await window.Face.detectOne(videoEl, false);
+              if (det && det.descriptor) {
+                FACE_STATE.enrolPreviewMisses = 0;
+                FACE_STATE.lastLiveEnrolDet = det;
+                FACE_STATE.lastLiveEnrolAt = Date.now();
+              }
+            }
+          } else {
+            FACE_STATE.enrolPreviewMisses = 0;
+            const needDesc = !FACE_STATE.lastLiveEnrolDet || !FACE_STATE.lastLiveEnrolDet.descriptor || (Date.now() - (FACE_STATE.lastLiveEnrolAt || 0)) >= 650;
+            if (needDesc) {
+              const fullDet = await window.Face.detectOne(videoEl, false);
+              if (fullDet && fullDet.descriptor) {
+                det = fullDet;
+                FACE_STATE.lastLiveEnrolDet = fullDet;
+                FACE_STATE.lastLiveEnrolAt = Date.now();
+              }
+            }
+          }
+        } else {
+          FACE_STATE.enrolPreviewMisses = 0;
+          det = await window.Face.detectOne(videoEl, false);
+          if (det && det.descriptor) {
+            FACE_STATE.lastLiveEnrolDet = det;
+            FACE_STATE.lastLiveEnrolAt = Date.now();
+          }
         }
-        const enrolUser = enrolTargetUser();
-        const capLen = effectiveEnrolPoseCount(enrolUser);
-        const retakeSlot = FACE_STATE.enrolRetakeSlot;
-        const isCaptureMode = capLen < 3 || retakeSlot != null;
-        const activeSlot = retakeSlot != null ? retakeSlot : capLen;
 
         if (isCaptureMode) {
           FACE_STATE.enrolLiveMatch = null;
+          const hasLiveFace = Boolean(det && (det.descriptor || det.previewOnly));
           if (overlayEl && window.Face.drawOverlay) {
-            const col = det && det.descriptor ? '#22c55e' : '#D9A54A';
+            const col = hasLiveFace ? '#22c55e' : '#D9A54A';
             window.Face.drawOverlay(overlayEl, videoEl, det, col);
           }
           if (hudTel) {
-            if (det && det.descriptor) {
+            if (hasLiveFace) {
               const pct = Math.round(Math.max(0.72, Number(det.score || det.detScore || 0.9)) * 100);
               hudTel.textContent = `FACE READY · ${pct}% · CLICK CAPTURE POSE (${activeSlot + 1}/3)`;
               if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
@@ -162095,7 +164359,7 @@
       }
     }
     if (STATE.view === 'users' && FACE_STATE.enrolCamActive) {
-      FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, 60);
+      FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, isCaptureMode ? 60 : 140);
     }
   }
 
@@ -162183,18 +164447,21 @@
       STATE.staffBiometrics[bioKey] = bioEntry;
     }
 
-    saveLocalAuthAndRecords();
-    const syncTask = async () => {
-      if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
-        try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
-      }
-      if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }).catch(() => {})
+        : Promise.resolve(),
+      (bioKey && bioEntry) ? persistStaffBiometricEntryNow(bioKey, bioEntry) : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
       await syncWithCloud(true);
-    };
-    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) {
-      await syncTask();
     } else {
-      Promise.resolve().then(syncTask).catch(() => {});
+      scheduleBiometricCloudSync();
     }
   }
 
@@ -162321,6 +164588,9 @@
 
     // Auto-persist immediately on every captured pose
     await persistTargetFaceNow(target);
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
 
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolStatusText = '';
@@ -162364,6 +164634,9 @@
     FACE_STATE.enrolThumbs = [];
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolLiveMatch = null;
+    FACE_STATE.lastLiveEnrolDet = null;
+    FACE_STATE.lastLiveEnrolAt = 0;
+    FACE_STATE.lastLiveEnrolSnap = '';
     target.face_samples = [];
     target.face_thumbs = [];
     target.face_enrolled = false;
@@ -162395,14 +164668,24 @@
       STATE.staffBiometrics[bioKey] = bioEntry;
     }
 
-    saveLocalAuthAndRecords();
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
     updateEnrolStudioDom();
     toast(`Cleared Face ID for ${target.full_name}`);
-    if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
+    const netOp = trackBiometricNetOp(Promise.all([
+      (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }).catch(() => {})
+        : Promise.resolve(),
+      (bioKey && bioEntry) ? persistStaffBiometricEntryNow(bioKey, bioEntry) : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
-    await syncWithCloud(true);
     return true;
   }
 
@@ -163318,6 +165601,7 @@
       STATE.rawPricingGradeFilter = 'ALL';
       clearCfScrubChipState();
     }
+    FORM_UI.unpricedQueueSession = null;
     STATE.indDrawerFilters = {};
     closeCoOverrideDiffPopover();
     STATE.shown = {};
@@ -164579,6 +166863,7 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    STATE.devicesMinSyncShellVer = '';
     _cloudStoreHealthSnap = null;
     if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
@@ -164586,6 +166871,8 @@
     try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     STATE.rawPricingCompareByGrade = false;
     STATE.rawPricingGradeFilter = 'ALL';
+    cancelBiometricPendingTimers();
+    FORM_UI.unpricedQueueSession = null;
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -164805,6 +167092,7 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    STATE.devicesMinSyncShellVer = '';
     _cloudStoreHealthSnap = null;
     if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
@@ -164812,6 +167100,8 @@
     try { localStorage.removeItem(BP_SIGNOFF_LANG_KEY); } catch (_) {}
     STATE.rawPricingCompareByGrade = false;
     STATE.rawPricingGradeFilter = 'ALL';
+    cancelBiometricPendingTimers();
+    FORM_UI.unpricedQueueSession = null;
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -164831,6 +167121,9 @@
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearOtClusterCaches === 'function') window.MFG_AI_EDGE.clearOtClusterCaches();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
       try { window.MFG_AI_EDGE.resetTransientDemoInputs(); } catch (_) {}
+    }
+    if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
+      try { window.MFG_RDL.resetStmt16CompareState(); } catch (_) {}
     }
     if (isDemoSandboxSession()) {
       if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
@@ -166680,6 +168973,8 @@
     activityWired: false,
     originKioskTab: 'attendance',
     camActive: false,
+    _camGen: 0,
+    facingMode: 'user',
     loopTimer: null,
     busy: false,
     streakAdmin: '',
@@ -167145,6 +169440,7 @@
   }
 
   function stopKioskAdminFaceCamera(keepSharedStream = false) {
+    KIOSK_ADMIN_MODAL_STATE._camGen = (KIOSK_ADMIN_MODAL_STATE._camGen || 0) + 1;
     KIOSK_ADMIN_MODAL_STATE.camActive = false;
     clearTimeout(KIOSK_ADMIN_MODAL_STATE.loopTimer);
     KIOSK_ADMIN_MODAL_STATE.loopTimer = null;
@@ -167171,26 +169467,46 @@
   }
 
   function syncKioskAdminFaceDomInPlace() {
+    const _ksaTr = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+      ? window.MFG_I18N.t(s)
+      : s;
     const hintEl = $('ksaFaceHint');
     if (hintEl) {
       const msg = KIOSK_ADMIN_MODAL_STATE.err || KIOSK_ADMIN_MODAL_STATE.statusText || 'Look at the camera to verify Admin or Manager Face ID.';
       const cls = KIOSK_ADMIN_MODAL_STATE.err ? 'warn' : (KIOSK_ADMIN_MODAL_STATE.statusCls || '');
       hintEl.className = 'kiosk-pin-hint' + (cls ? ' ' + cls : '');
-      hintEl.textContent = msg;
+      hintEl.textContent = _ksaTr(msg);
     }
     const badgeEl = $('ksaFaceLiveBadge');
     if (badgeEl) {
       badgeEl.className = 'badge ' + (KIOSK_ADMIN_MODAL_STATE.camActive ? 'badge-ok' : '');
-      badgeEl.textContent = KIOSK_ADMIN_MODAL_STATE.camActive ? 'Live Admin Scanner' : 'Camera Ready';
+      badgeEl.textContent = _ksaTr(KIOSK_ADMIN_MODAL_STATE.camActive ? 'Live Admin Scanner' : 'Camera Ready');
     }
+    const isRear = KIOSK_ADMIN_MODAL_STATE.facingMode === 'environment';
     const vp = $('ksaFaceViewport');
     if (vp) {
       vp.classList.toggle('is-live', !!KIOSK_ADMIN_MODAL_STATE.camActive);
       vp.classList.toggle('is-standby', !KIOSK_ADMIN_MODAL_STATE.camActive);
+      vp.classList.toggle('is-rear-cam', isRear);
+    }
+    const flipBtn = $('ksaFlipCamBtn');
+    if (flipBtn) {
+      flipBtn.setAttribute('data-facing', isRear ? 'environment' : 'user');
+    }
+    const flipLbl = $('ksaFlipCamLbl');
+    if (flipLbl) {
+      const nextLbl = isRear ? 'Front Camera' : 'Rear Camera';
+      flipLbl.textContent = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+        ? window.MFG_I18N.t(nextLbl)
+        : nextLbl;
     }
   }
 
   function getKioskFacePoolWithAdminSeed() {
+    const stamp = _computeFacePoolStamp();
+    if (_kioskFacePoolStamp === stamp && _kioskFacePoolCache) {
+      return _kioskFacePoolCache.slice();
+    }
     const pool = usableFaces(null, { includeKioskStaff: true });
     const seedKeys = Object.keys(DEFAULT_FACE_SEEDS || {});
     const seedKey = seedKeys[0] || '';
@@ -167209,7 +169525,9 @@
         });
       }
     }
-    return pool;
+    _kioskFacePoolStamp = stamp;
+    _kioskFacePoolCache = pool;
+    return pool.slice();
   }
 
   function handleKioskAdminFaceDescriptor(det, opts = {}) {
@@ -167551,9 +169869,11 @@
   }
 
   async function startKioskAdminFaceCamera() {
+    const camGen = ++KIOSK_ADMIN_MODAL_STATE._camGen;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (camGen !== KIOSK_ADMIN_MODAL_STATE._camGen) return false;
       KIOSK_ADMIN_MODAL_STATE.camActive = false;
-      KIOSK_ADMIN_MODAL_STATE.err = 'Camera unavailable on this browser. Admin Face ID requires a front camera.';
+      KIOSK_ADMIN_MODAL_STATE.err = 'Camera unavailable on this browser. Admin Face ID requires camera access.';
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
       syncKioskAdminFaceDomInPlace();
       return false;
@@ -167566,21 +169886,18 @@
         document.body.classList.remove('kiosk-idle-dimmed', 'kiosk-night-sleep');
       }
       await releaseAllKioskCameraHardware(380);
-      if (!KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+      if (camGen !== KIOSK_ADMIN_MODAL_STATE._camGen || !KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
         return false;
       }
       const modelsP = ensureFaceModelsLoaded();
-      const stream = await requestKioskUserMediaWithTimeout({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 20 } },
-        audio: false
-      }, 6000).catch(() => requestKioskUserMediaWithTimeout({
-        video: { facingMode: 'user' },
-        audio: false
-      }, 6000));
-      if (!KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+      const desiredFacing = KIOSK_ADMIN_MODAL_STATE.facingMode === 'environment' ? 'environment' : 'user';
+      const got = await requestFaceCameraStream(desiredFacing, { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 20 } }, 6000);
+      const stream = got.stream;
+      if (camGen !== KIOSK_ADMIN_MODAL_STATE._camGen || !KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
         try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
         return false;
       }
+      KIOSK_ADMIN_MODAL_STATE.facingMode = got.facingMode;
       if (window.Face && typeof window.Face.trackStream === 'function') {
         window.Face.trackStream(stream);
       }
@@ -167597,10 +169914,14 @@
         await v.play().catch(() => {});
       }
       await modelsP;
+      if (camGen !== KIOSK_ADMIN_MODAL_STATE._camGen || !KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+        return false;
+      }
       clearTimeout(KIOSK_ADMIN_MODAL_STATE.loopTimer);
       KIOSK_ADMIN_MODAL_STATE.loopTimer = setTimeout(kioskAdminFaceTick, 25);
       return true;
     } catch (_) {
+      if (camGen !== KIOSK_ADMIN_MODAL_STATE._camGen) return false;
       KIOSK_ADMIN_MODAL_STATE.camActive = false;
       KIOSK_ADMIN_MODAL_STATE.err = 'Camera permission denied or busy. Tap Restart Scanner to retry.';
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
@@ -167644,6 +169965,8 @@
     saveKioskStationConfig({ activeKiosk: targetKiosk, kioskLocked: true });
     syncNativeStationPreset(targetKiosk);
     syncKioskLockedUrl();
+    updateUnsentEntriesBar();
+    updateDevicesHoldingBar();
     renderApp();
     if (targetKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
@@ -168048,6 +170371,9 @@
     saveKioskStationConfig({ kioskLocked: STATE.kioskLocked });
     syncNativeStationPreset(STATE.kioskLocked ? STATE.activeKiosk : 'command');
     syncKioskLockedUrl();
+    updateUnsentEntriesBar();
+    updateDevicesHoldingBar();
+    if (!STATE.kioskLocked) loadDevicesHolding();
     renderApp();
     if (STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
@@ -168227,6 +170553,7 @@
       if (!KIOSK_ADMIN_MODAL_STATE.unlocked) {
         const hintMsg = KIOSK_ADMIN_MODAL_STATE.err || KIOSK_ADMIN_MODAL_STATE.statusText || 'Look at the camera to verify Admin or Manager Face ID.';
         const hintCls = KIOSK_ADMIN_MODAL_STATE.err ? 'warn' : (KIOSK_ADMIN_MODAL_STATE.statusCls || '');
+        const ksaFacing = KIOSK_ADMIN_MODAL_STATE.facingMode === 'environment' ? 'environment' : 'user';
         modal.innerHTML = `
           <div class="modal-card ksa-modal-card ksa-face-stage" id="ksaFaceStage">
             <div class="modal-head">
@@ -168243,7 +170570,7 @@
                 <span class="badge ${KIOSK_ADMIN_MODAL_STATE.camActive ? 'badge-ok' : ''}" id="ksaFaceLiveBadge">${KIOSK_ADMIN_MODAL_STATE.camActive ? 'Live Admin Scanner' : 'Starting Camera'}</span>
                 <span class="panel-meta">5-Min Inactivity Auto-Logout</span>
               </div>
-              <div class="kiosk-att-viewport ksa-face-viewport ${KIOSK_ADMIN_MODAL_STATE.camActive ? 'is-live' : 'is-standby'}" id="ksaFaceViewport">
+              <div class="kiosk-att-viewport ksa-face-viewport ${KIOSK_ADMIN_MODAL_STATE.camActive ? 'is-live' : 'is-standby'}${ksaFacing === 'environment' ? ' is-rear-cam' : ''}" id="ksaFaceViewport">
                 <video id="ksaAdminFaceVideo" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
                 <div class="kiosk-att-reticle" aria-hidden="true">
                   <span class="kiosk-finder-corner tl"></span>
@@ -168258,14 +170585,26 @@
               </div>
               <div class="ksa-face-actions">
                 <button type="button" class="btn" id="ksaCancelFaceBtn">Cancel</button>
+                <button type="button" class="btn" id="ksaFlipCamBtn" data-facing="${ksaFacing}">${ic('rotate')} <span id="ksaFlipCamLbl">${ksaFacing === 'environment' ? 'Front Camera' : 'Rear Camera'}</span></button>
                 <button type="button" class="btn btn-primary" id="ksaRetryFaceCamBtn">${ic('camera')} Restart Scanner</button>
               </div>
             </div>
           </div>
         `;
         stripNativeTitles(modal);
+        if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+          try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+        }
         $('ksaCloseBtn')?.addEventListener('click', () => closeKioskStationAdminModal());
         $('ksaCancelFaceBtn')?.addEventListener('click', () => closeKioskStationAdminModal());
+        $('ksaFlipCamBtn')?.addEventListener('click', () => {
+          touchKioskAdminActivity();
+          KIOSK_ADMIN_MODAL_STATE.facingMode = KIOSK_ADMIN_MODAL_STATE.facingMode === 'environment' ? 'user' : 'environment';
+          KIOSK_ADMIN_MODAL_STATE.err = '';
+          stopKioskAdminFaceCamera(false);
+          syncKioskAdminFaceDomInPlace();
+          startKioskAdminFaceCamera();
+        });
         $('ksaRetryFaceCamBtn')?.addEventListener('click', () => {
           KIOSK_ADMIN_MODAL_STATE.err = '';
           startKioskAdminFaceCamera();
@@ -168497,6 +170836,8 @@
           saveKioskStationConfig({ activeKiosk: nextRole, kioskLocked: true });
           syncNativeStationPreset(nextRole);
           syncKioskLockedUrl();
+          updateUnsentEntriesBar();
+          updateDevicesHoldingBar();
           renderApp();
           renderAdminInner();
           const roleTitle = (roleCards.find(r => r.id === nextRole) || {}).title || nextRole;
@@ -168516,6 +170857,9 @@
           syncNativeStationPreset('command');
           startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin');
           closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
+          updateUnsentEntriesBar();
+          updateDevicesHoldingBar();
+          loadDevicesHolding();
           setView(dest);
         });
       });
@@ -176760,6 +179104,8 @@
     const wantBuDef = spec.is_bu_default != null
       ? Boolean(spec.is_bu_default === true || spec.is_bu_default === 'Yes' || spec.is_bu_default === 1)
       : Boolean(sameStartRow && sameStartRow.is_bu_default);
+    // Every row this save changes gets a new modified_at (stampWorkShiftRowModified).
+    const modStamp = nextMonotonicIso();
     const wsRow = hydrateWorkShiftRowComputed({
       id: sameStartRow ? sameStartRow.id : (spec.ws_id || `ws_${norm(co).replace(/[^a-z0-9]+/g, '')}_${shiftCode}_${effStart.replace(/-/g, '')}`),
       company: co,
@@ -176797,6 +179143,7 @@
       entered_at: nowIso,
       voided: false
     });
+    stampWorkShiftRowModified(wsRow, modStamp, sameStartRow ? (sameStartRow.modified_at || '') : '');
     if (sameStartRow) {
       Object.assign(sameStartRow, wsRow);
     } else if (SEED.records && Array.isArray(SEED.records.work_shifts)) {
@@ -176809,6 +179156,7 @@
       pool.forEach(r => {
         if (r && !r.voided && String(r.id) !== String(wsRow.id) && norm(r.company || 'WTC') === norm(co) && r.is_bu_default) {
           r.is_bu_default = false;
+          stampWorkShiftRowModified(r, modStamp);
           hydrateWorkShiftRowComputed(r);
           const ocIdx = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
           if (ocIdx >= 0) Object.assign(STATE.customRecords.work_shifts[ocIdx], r);
@@ -179234,7 +181582,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can enrol staff biometrics.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) {
       const opAllowed = allowedCompanyNames(operatorUser);
@@ -179331,12 +181679,22 @@
       entry.userObj.face_updated_at = nowIso;
     }
 
-    saveLocalAuthAndRecords();
-    await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      persistStaffBiometricEntryNow(targetKey, bioObj),
+      (entry.userObj && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }).catch(() => {})
+        : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    syncWithCloud(true);
     return { ok: true, staff: entry.name, count: samples.length, slot: usedSlot };
   }
 
@@ -179345,7 +181703,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can clear staff Face ID.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
     const opAllowedCos = allowedCompanyNames(operatorUser);
@@ -179355,6 +181713,10 @@
     if (isProtectedAdminSeatForEntry(entry.userObj, operatorUser)) {
       return { ok: false, reason: 'protected-admin-seat', error: 'Entry Operators cannot clear Admin or Supervisor Face ID.' };
     }
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastAt = 0;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
+    STAFF_FACE_MODAL_STATE.autoStreak = 0;
     const nowIso = new Date().toISOString();
     const targetKey = norm(entry.name);
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
@@ -179376,12 +181738,22 @@
       entry.userObj.face_cleared = true;
       entry.userObj.face_updated_at = nowIso;
     }
-    saveLocalAuthAndRecords();
-    await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
-      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    invalidateFacePoolCache();
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    const netOp = trackBiometricNetOp(Promise.all([
+      persistStaffBiometricEntryNow(targetKey, bioObj),
+      (entry.userObj && hasServerApi() && !isDemoScopeActive())
+        ? edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }).catch(() => {})
+        : Promise.resolve()
+    ]));
+    if (isAuto) {
+      await netOp;
+      await syncWithCloud(true);
+    } else {
+      scheduleBiometricCloudSync();
     }
-    syncWithCloud(true);
     return { ok: true, staff: entry.name };
   }
 
@@ -179417,6 +181789,7 @@
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
     const statusFilter = String(opts.statusFilter || 'all').toLowerCase();
     const lite = Boolean(opts && opts.lite);
+    const bioOnly = Boolean(opts && opts.biometricOnly);
     const today = todayISO();
     const bioMap = (!lite && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {};
 
@@ -179486,16 +181859,53 @@
     // 1b. Include newly registered staff_members (created via Smart Entry or Enrol Studio) in the operator's allowed BUs
     const allAssigns = ((SEED.records && SEED.records.staff_assignments) || []).concat((STATE.customRecords && STATE.customRecords.staff_assignments) || []);
     const allStaffMembers = ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []);
+    const assignsByNorm = new Map();
+    for (let i = 0; i < allAssigns.length; i++) {
+      const sa = allAssigns[i];
+      if (!sa || sa.voided || !sa.company) continue;
+      const ak = norm(sa.staff);
+      if (!ak) continue;
+      let list = assignsByNorm.get(ak);
+      if (!list) { list = []; assignsByNorm.set(ak, list); }
+      list.push({ sa, coNorm: norm(canonCompany(sa.company)) });
+    }
+    const customSmList = (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members)) ? STATE.customRecords.staff_members : [];
+    const activeCustomSmAnyCo = new Set();
+    const activeCustomSmBlankCo = new Set();
+    const activeCustomSmByCo = new Set();
+    for (let i = 0; i < customSmList.length; i++) {
+      const c = customSmList[i];
+      if (!c || c.voided || c.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(c.status || '').trim())) continue;
+      const ck = norm(c.name || c.staff);
+      if (!ck) continue;
+      activeCustomSmAnyCo.add(ck);
+      if (!c.company) activeCustomSmBlankCo.add(ck);
+      else activeCustomSmByCo.add(`${norm(canonCompany(c.company))}|${ck}`);
+    }
     allStaffMembers.forEach(sm => {
       if (!sm || sm.voided) return;
       const smInactive = Boolean(sm.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(sm.status || '').trim()));
       const nm = String(sm.name || sm.staff || '').trim();
       const k = norm(nm);
       if (!k) return;
-      const isAppSm = Boolean(sm.source === 'app' || sm.is_app || (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members) && STATE.customRecords.staff_members.some(c => c && !c.voided && !c.archived && !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(c.status || '').trim()) && norm(c.name || c.staff) === k && (!sm.company || !c.company || norm(canonCompany(sm.company)) === norm(canonCompany(c.company))))));
-      if (!isAppSm && !sm.company) return;
       const rawSmCoHint = sm.company ? (canonCompany(sm.company) || sm.company) : '';
-      const matchSa = allAssigns.find(sa => sa && !sa.voided && norm(sa.staff) === k && sa.company && (!rawSmCoHint || norm(canonCompany(sa.company)) === norm(rawSmCoHint)));
+      const rawSmCoHintNorm = rawSmCoHint ? norm(rawSmCoHint) : '';
+      const isAppSm = Boolean(
+        sm.source === 'app'
+        || sm.is_app
+        || (!sm.company ? activeCustomSmAnyCo.has(k) : (activeCustomSmBlankCo.has(k) || activeCustomSmByCo.has(`${rawSmCoHintNorm}|${k}`)))
+      );
+      if (!isAppSm && !sm.company) return;
+      const saList = assignsByNorm.get(k);
+      let matchSa = null;
+      if (saList && saList.length) {
+        if (!rawSmCoHintNorm) matchSa = saList[0].sa;
+        else {
+          for (let j = 0; j < saList.length; j++) {
+            if (saList[j].coNorm === rawSmCoHintNorm) { matchSa = saList[j].sa; break; }
+          }
+        }
+      }
       const rawSmCo = sm.company || (matchSa && matchSa.company) || (isAppSm ? (scopedCo || defCo) : '');
       const smCo = rawSmCo ? (canonCompany(rawSmCo) || rawSmCo) : '';
       if (!smCo) return;
@@ -179591,10 +182001,10 @@
       const bio = bioMap[k] || null;
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-      const shiftToday = resolveStaffShiftForDate(nm, co, today);
-      const otToday = describeStaffOvertimeRule(nm, co, today);
-      const lateToday = describeStaffLatenessRule(nm, co, today);
-      const policyToday = describeStaffPolicyGroup(nm, co);
+      const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, co, today);
+      const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, co, today);
+      const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, co, today);
+      const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, co);
       out.push({
         id: u.id,
         name: nm,
@@ -179602,7 +182012,7 @@
         email: u.email || '',
         company: co,
         role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
-        schedHours: shiftToday.hours || staffScheduledHours(nm, co),
+        schedHours: bioOnly ? 8 : (shiftToday.hours || staffScheduledHours(nm, co)),
         shift: shiftToday,
         otDesc: otToday,
         lateDesc: lateToday,
@@ -179663,10 +182073,10 @@
           const bio = bioMap[k] || null;
           const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
           const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-          const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
-          const otToday = describeStaffOvertimeRule(nm, empCo, today);
-          const lateToday = describeStaffLatenessRule(nm, empCo, today);
-          const policyToday = describeStaffPolicyGroup(nm, empCo);
+          const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, empCo, today);
+          const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, empCo, today);
+          const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, empCo);
           out.push({
             id: emp.id || ('emp-' + k),
             name: nm,
@@ -179674,7 +182084,7 @@
             email: u ? (u.email || '') : '',
             company: empCo,
             role: emp.role || (sm && sm.role) || emp.type || 'Active Staff',
-            schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+            schedHours: bioOnly ? (Number(emp.working_hours || 0) || 8) : (shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo)),
             shift: shiftToday,
             otDesc: otToday,
             lateDesc: lateToday,
@@ -179721,10 +182131,10 @@
           const bio = bioMap[k] || null;
           const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
           const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-          const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
-          const otToday = describeStaffOvertimeRule(nm, empCo, today);
-          const lateToday = describeStaffLatenessRule(nm, empCo, today);
-          const policyToday = describeStaffPolicyGroup(nm, empCo);
+          const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, empCo, today);
+          const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, empCo, today);
+          const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = bioOnly ? '' : describeStaffPolicyGroup(nm, empCo);
           out.push({
             id: emp.id || ('emp-ended-' + k),
             name: nm,
@@ -179732,7 +182142,7 @@
             email: u ? (u.email || '') : '',
             company: empCo,
             role: emp.role || (sm && sm.role) || emp.type || 'Staff',
-            schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+            schedHours: bioOnly ? (Number(emp.working_hours || 0) || 8) : (shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo)),
             shift: shiftToday,
             otDesc: otToday,
             lateDesc: lateToday,
@@ -179761,7 +182171,7 @@
     if (!canUserEnrolStaff(operatorUser)) {
       return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can set staff PINs.' };
     }
-    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true, biometricOnly: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
     const opAllowedCos = allowedCompanyNames(operatorUser);
@@ -179797,9 +182207,12 @@
       entry.userObj.seat_updated_at = nowIso;
     }
     STATE.kioskEditingPinStaff = '';
-    saveLocalAuthAndRecords();
-    persistStaffBiometricEntryNow(targetKey, bioObj);
-    syncWithCloud(true);
+    const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAuto) saveLocalAuthAndRecords();
+    else saveBiometricsLocalFast();
+    trackBiometricNetOp(persistStaffBiometricEntryNow(targetKey, bioObj));
+    if (isAuto) syncWithCloud(true);
+    else scheduleBiometricCloudSync();
     return { ok: true, staff: entry.name, pin: clean };
   }
 
@@ -180454,7 +182867,7 @@
   }
 
   function recordKioskAttendancePunch(opts = {}) {
-    const dirList = getKioskStaffDirectory();
+    const dirList = getKioskStaffDirectory({ biometricOnly: true });
     const staffRaw = String(opts.staff || STATE.kioskAttStaff || '').trim();
     const staffEntry = staffRaw
       ? dirList.find(s => norm(s.name) === norm(staffRaw))
@@ -181504,6 +183917,7 @@
   }
 
   function stopStaffEnrolModalCamera() {
+    STAFF_FACE_MODAL_STATE._camGen = (STAFF_FACE_MODAL_STATE._camGen || 0) + 1;
     STAFF_FACE_MODAL_STATE.camActive = false;
     STAFF_FACE_MODAL_STATE.camStarting = false;
     clearTimeout(STAFF_FACE_MODAL_STATE.loopTimer);
@@ -181524,6 +183938,7 @@
   function closeStaffFaceEnrolModal() {
     const hadActiveCam = Boolean(STAFF_FACE_MODAL_STATE.camActive || STAFF_FACE_MODAL_STATE.camStarting || streamAlive());
     stopStaffEnrolModalCamera();
+    flushBiometricCloudSyncNow();
     STAFF_FACE_MODAL_STATE.open = false;
     STAFF_FACE_MODAL_STATE.operatorUser = null;
     STAFF_FACE_MODAL_STATE.newStaffOpen = false;
@@ -182958,7 +185373,7 @@
       if (typeof openDocumentCameraCapture === 'function') {
         openDocumentCameraCapture(files => {
           if (files && files.length) ingestBatchIdFiles(files);
-        }, { preset: 'card' });
+        }, { preset: 'card', attachmentOnly: true });
       } else {
         toast('Camera scanner is not available on this view.', 'err');
       }
@@ -183131,12 +185546,13 @@
         scopeBySelectedCompany: true,
         strictCompanyScope: true,
         operatorUser: op,
-        includeEnded: true
+        includeEnded: true,
+        biometricOnly: true
       });
     }
-    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true });
+    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true, biometricOnly: true });
     if (indScoped.length) return indScoped;
-    return getKioskStaffDirectory({ operatorUser: op, includeEnded: true });
+    return getKioskStaffDirectory({ operatorUser: op, includeEnded: true, biometricOnly: true });
   }
 
   function getEnrolOperatorAllowedCompanies(operatorUser = null) {
@@ -183940,24 +186356,54 @@
     const videoEl = $('staffEnrolVideo');
     const overlayEl = $('staffEnrolOverlay');
     const badgeEl = $('staffEnrolLiveBadge');
+    const isVerifyMode = STAFF_FACE_MODAL_STATE.captures.length >= 3;
     if (videoEl && !STAFF_FACE_MODAL_STATE.busy && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && window.Face) {
       STAFF_FACE_MODAL_STATE.busy = true;
       try {
         await ensureFaceModelsLoaded();
-        const det = await window.Face.detectOne(videoEl, false);
-        if (det && det.descriptor) {
-          STAFF_FACE_MODAL_STATE.lastDet = det;
-          STAFF_FACE_MODAL_STATE.lastAt = Date.now();
-          if (window.Face.snapshot) STAFF_FACE_MODAL_STATE.lastSnap = window.Face.snapshot(videoEl);
+        const isAuto = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+        let det = null;
+        if (!isAuto && !isVerifyMode && window.Face.detectPreview) {
+          det = await window.Face.detectPreview(videoEl);
+          if (!det) {
+            STAFF_FACE_MODAL_STATE.previewMisses = (STAFF_FACE_MODAL_STATE.previewMisses || 0) + 1;
+            if ((STAFF_FACE_MODAL_STATE.previewMisses % 6) === 0) {
+              det = await window.Face.detectOne(videoEl, false);
+              if (det && det.descriptor) {
+                STAFF_FACE_MODAL_STATE.previewMisses = 0;
+                STAFF_FACE_MODAL_STATE.lastDet = det;
+                STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+              }
+            }
+          } else {
+            STAFF_FACE_MODAL_STATE.previewMisses = 0;
+            const needDesc = !STAFF_FACE_MODAL_STATE.lastDet || !STAFF_FACE_MODAL_STATE.lastDet.descriptor || (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) >= 650;
+            if (needDesc) {
+              const fullDet = await window.Face.detectOne(videoEl, false);
+              if (fullDet && fullDet.descriptor) {
+                det = fullDet;
+                STAFF_FACE_MODAL_STATE.lastDet = fullDet;
+                STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+              }
+            }
+          }
+        } else {
+          STAFF_FACE_MODAL_STATE.previewMisses = 0;
+          det = await window.Face.detectOne(videoEl, false);
+          if (det && det.descriptor) {
+            STAFF_FACE_MODAL_STATE.lastDet = det;
+            STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+          }
         }
+        const cLen = STAFF_FACE_MODAL_STATE.captures.length;
+        const hasLiveFace = Boolean(det && (det.descriptor || (cLen < 3 && det.previewOnly)));
         if (overlayEl && window.Face.drawOverlay) {
-          window.Face.drawOverlay(overlayEl, videoEl, det, det && det.descriptor ? '#22c55e' : '#D9A54A');
+          window.Face.drawOverlay(overlayEl, videoEl, det, hasLiveFace ? '#22c55e' : '#D9A54A');
         }
         if (badgeEl) {
-          if (det && det.descriptor) {
+          if (hasLiveFace) {
             const pct = Math.round(Math.max(0.74, Number(det.score || det.detScore || 0.9)) * 100);
-            const cLen = STAFF_FACE_MODAL_STATE.captures.length;
-            if (cLen >= 3 && window.Face && window.Face.match) {
+            if (cLen >= 3 && det.descriptor && window.Face && window.Face.match) {
               const pool = usableFaces(null, { includeKioskStaff: true });
               const m = window.Face.match(det.descriptor, pool);
               const thr = Number(STATE.faceSettings.threshold || 0.50);
@@ -184005,9 +186451,16 @@
                     STAFF_FACE_MODAL_STATE.autoStreak = 0;
                     STAFF_FACE_MODAL_STATE.nextAutoAt = nowMs + 1350;
                     if (cLen === 1 && yaw != null) STAFF_FACE_MODAL_STATE.pose2Yaw = yaw;
+                    let captureDet = det && det.descriptor ? det : null;
+                    if (!captureDet && window.Face.detectOne) {
+                      captureDet = await window.Face.detectOne(videoEl, true);
+                    }
+                    if (!captureDet && STAFF_FACE_MODAL_STATE.lastDet && STAFF_FACE_MODAL_STATE.lastDet.descriptor && (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) < 1600) {
+                      captureDet = STAFF_FACE_MODAL_STATE.lastDet;
+                    }
                     const snapNow = (window.Face && window.Face.snapshot && window.Face.snapshot(videoEl)) || STAFF_FACE_MODAL_STATE.lastSnap || '';
                     STAFF_FACE_MODAL_STATE.busy = false;
-                    await captureStaffModalPose(det, snapNow);
+                    await captureStaffModalPose(captureDet, snapNow);
                     if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
                       STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 90);
                     }
@@ -184032,7 +186485,7 @@
       STAFF_FACE_MODAL_STATE.busy = false;
     }
     if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
-      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 60);
+      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, STAFF_FACE_MODAL_STATE.captures.length >= 3 ? 140 : 60);
     }
   }
 
@@ -184043,26 +186496,29 @@
       toast('Tap a staff member first to start Face ID capture', 'warn');
       return false;
     }
-    if (STAFF_FACE_MODAL_STATE.camStarting) return false;
-    const targetStaffAtStart = STAFF_FACE_MODAL_STATE.staffName;
     const videoEl = $('staffEnrolVideo');
     if (!videoEl) return false;
+    const camGen = ++STAFF_FACE_MODAL_STATE._camGen;
     STAFF_FACE_MODAL_STATE.camStarting = true;
     stopKioskAttCamera();
-    STAFF_FACE_MODAL_STATE.statusText = 'Starting front camera...';
+    const sfeFacing = STAFF_FACE_MODAL_STATE.facingMode === 'environment' ? 'environment' : 'user';
+    STAFF_FACE_MODAL_STATE.statusText = sfeFacing === 'environment' ? 'Starting rear camera...' : 'Starting front camera...';
     STAFF_FACE_MODAL_STATE.statusCls = '';
     STAFF_FACE_MODAL_STATE.autoStreak = 0;
     syncStaffFaceEnrolModalDom();
     await releaseAllKioskCameraHardware(260);
-    if (!STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture' || STAFF_FACE_MODAL_STATE.staffName !== targetStaffAtStart) {
-      STAFF_FACE_MODAL_STATE.camStarting = false;
+    if (camGen !== STAFF_FACE_MODAL_STATE._camGen || !STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture') {
+      if (camGen === STAFF_FACE_MODAL_STATE._camGen) STAFF_FACE_MODAL_STATE.camStarting = false;
       return false;
     }
     const modelsP = ensureFaceModelsLoaded().catch(() => {});
-    const ok = await startFaceCamera(videoEl);
+    const ok = await startFaceCamera(videoEl, { facingMode: sfeFacing, enrolGen: camGen });
     await modelsP;
+    if (camGen !== STAFF_FACE_MODAL_STATE._camGen) {
+      return false;
+    }
     STAFF_FACE_MODAL_STATE.camStarting = false;
-    if (!STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture' || STAFF_FACE_MODAL_STATE.staffName !== targetStaffAtStart) {
+    if (!STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture') {
       stopStaffEnrolModalCamera();
       return false;
     }
@@ -184134,12 +186590,15 @@
       syncStaffFaceEnrolModalDom();
       return res;
     }
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastAt = 0;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
     const flashEl = $('staffEnrolShutterFlash');
     if (flashEl) {
       flashEl.classList.add('active');
       setTimeout(() => flashEl.classList.remove('active'), 180);
     }
-    const dir = getKioskStaffDirectory();
+    const dir = getKioskStaffDirectory({ biometricOnly: true, includeEnded: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     const faceInfo = getStaffFaceSamplesAndThumbs(staffName, entry ? entry.userObj : null);
     STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
@@ -184168,7 +186627,7 @@
     if (!curEntry && STAFF_FACE_MODAL_STATE.staffName) {
       const lockCo = STAFF_FACE_MODAL_STATE.lockSingleCo || '';
       const globalHit = getKioskStaffDirectory(
-        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true } : {}
+        lockCo ? { companyOverride: lockCo, scopeBySelectedCompany: true, strictCompanyScope: true, includeEnded: true, biometricOnly: true } : { includeEnded: true, biometricOnly: true }
       ).find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
       if (globalHit) {
         curEntry = globalHit;
@@ -184219,108 +186678,110 @@
         : `Guided 3-angle biometric capture for ${curEntry.name} (${curEntry.company})`;
     }
 
-    // Update Step 1 Roster coverage + chips + cards
-    const covLabel = $('sfeCoverageText');
-    if (covLabel) covLabel.innerHTML = `<strong>${enrolledActiveCount} of ${activeStaff.length}</strong> Active Staff Enrolled`;
-    const covBadge = $('sfeCoverageBadge');
-    if (covBadge) {
-      covBadge.textContent = missingActiveCount > 0 ? `${missingActiveCount} Need Face ID` : '100% Enrolled';
-      covBadge.className = `sfe-cov-pill ${missingActiveCount > 0 ? 'is-pending' : 'is-complete'}`;
-    }
-    const covFill = $('sfeCoverageFill');
-    if (covFill) covFill.style.width = `${Math.max(0, Math.min(100, covPct))}%`;
-
-    const fltBar = $('sfeStatusChips');
-    if (fltBar) {
-      const curFlt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
-      const chips = [
-        { k: 'active', lbl: `All Active (${activeStaff.length})` },
-        { k: 'missing', lbl: `Needs Face ID (${missingActiveCount})` },
-        { k: 'enrolled', lbl: `Enrolled (${enrolledAllCount})` }
-      ];
-      if (endedCount > 0) chips.push({ k: 'inactive', lbl: `Inactive (${endedCount})` });
-      fltBar.innerHTML = chips.map(c => `<button type="button" class="sfe-chip ${curFlt === c.k ? 'active' : ''}" data-sfe-filter="${c.k}">${esc(c.lbl)}</button>`).join('');
-      fltBar.querySelectorAll('[data-sfe-filter]').forEach(b => {
-        b.addEventListener('click', () => {
-          STAFF_FACE_MODAL_STATE.rosterFilter = b.getAttribute('data-sfe-filter') || 'active';
-          syncStaffFaceEnrolModalDom();
-        });
-      });
-    }
-
-    const opUser = getActiveEnrolOperatorUser();
-    const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
-    const scopeBadgeEl = $('sfeOperatorScopeBadge');
-    if (scopeBadgeEl) {
-      const opRoleLbl = isOwner(opUser) ? 'Owner' : (resolveCanonicalRoleKey(opUser && opUser.role) || (opUser && opUser.role) || 'Operator');
-      scopeBadgeEl.innerHTML = `${ic('building')} <span><strong>${esc((opUser && opUser.full_name) || 'Operator')}</strong> (${esc(opRoleLbl)}) · BU Scope: <strong>${esc(opAllowedCos.join(', '))}</strong></span>`;
-    }
-    const nsToggleBtn = $('sfeNewStaffToggleBtn');
-    if (nsToggleBtn) {
-      nsToggleBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.newStaffOpen));
-      nsToggleBtn.setAttribute('aria-expanded', STAFF_FACE_MODAL_STATE.newStaffOpen ? 'true' : 'false');
-    }
-    const nsDrawer = $('sfeNewStaffDrawer');
-    if (nsDrawer) {
-      nsDrawer.hidden = !STAFF_FACE_MODAL_STATE.newStaffOpen;
-      const nsCoSel = $('sfeNewStaffCo');
-      if (nsCoSel) {
-        const curSelCo = (STAFF_FACE_MODAL_STATE.rosterCo && opAllowedCos.includes(STAFF_FACE_MODAL_STATE.rosterCo))
-          ? STAFF_FACE_MODAL_STATE.rosterCo
-          : (nsCoSel.value && opAllowedCos.includes(nsCoSel.value) ? nsCoSel.value : opAllowedCos[0] || 'WTC');
-        nsCoSel.innerHTML = opAllowedCos.map(c => `<option value="${esc(c)}" ${c === curSelCo ? 'selected' : ''}>${esc(c)}</option>`).join('');
-        nsCoSel.disabled = opAllowedCos.length <= 1;
+    if (isRosterStep) {
+      // Update Step 1 Roster coverage + chips + cards only when Step 1 is visible
+      const covLabel = $('sfeCoverageText');
+      if (covLabel) covLabel.innerHTML = `<strong>${enrolledActiveCount} of ${activeStaff.length}</strong> Active Staff Enrolled`;
+      const covBadge = $('sfeCoverageBadge');
+      if (covBadge) {
+        covBadge.textContent = missingActiveCount > 0 ? `${missingActiveCount} Need Face ID` : '100% Enrolled';
+        covBadge.className = `sfe-cov-pill ${missingActiveCount > 0 ? 'is-pending' : 'is-complete'}`;
       }
-      const nsRoleDl = $('sfeNewStaffRoleList');
-      if (nsRoleDl) {
-        const targetCoForRoles = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || 'WTC';
-        const rolesList = getFrequencyRankedRolesForEnrol(targetCoForRoles);
-        nsRoleDl.innerHTML = rolesList.map(r => `<option value="${esc(r)}"></option>`).join('');
-        const nsRoleInp = $('sfeNewStaffRole');
-        if (nsRoleInp && !nsRoleInp.value && rolesList[0]) {
-          nsRoleInp.placeholder = `e.g. ${rolesList.slice(0, 3).join(', ')}`;
-        }
-      }
-    }
+      const covFill = $('sfeCoverageFill');
+      if (covFill) covFill.style.width = `${Math.max(0, Math.min(100, covPct))}%`;
 
-    const coBar = $('sfeCompanyChips');
-    if (coBar) {
-      const uniqueCos = [];
-      opAllowedCos.forEach(c => {
-        if (c && !uniqueCos.includes(c)) uniqueCos.push(c);
-      });
-      allStaff.forEach(s => {
-        if (s.company && (!opAllowedCos.length || opAllowedCos.includes(s.company)) && !uniqueCos.includes(s.company)) {
-          uniqueCos.push(s.company);
-        }
-      });
-      if (uniqueCos.length <= 1) {
-        if (uniqueCos.length === 1) STAFF_FACE_MODAL_STATE.rosterCo = uniqueCos[0];
-        coBar.hidden = true;
-        coBar.innerHTML = '';
-      } else {
-        coBar.hidden = false;
-        const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
-        coBar.innerHTML = [
-          `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Permitted BUs (${uniqueCos.length})</button>`
-        ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
-        coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
+      const fltBar = $('sfeStatusChips');
+      if (fltBar) {
+        const curFlt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
+        const chips = [
+          { k: 'active', lbl: `All Active (${activeStaff.length})` },
+          { k: 'missing', lbl: `Needs Face ID (${missingActiveCount})` },
+          { k: 'enrolled', lbl: `Enrolled (${enrolledAllCount})` }
+        ];
+        if (endedCount > 0) chips.push({ k: 'inactive', lbl: `Inactive (${endedCount})` });
+        fltBar.innerHTML = chips.map(c => `<button type="button" class="sfe-chip ${curFlt === c.k ? 'active' : ''}" data-sfe-filter="${c.k}">${esc(c.lbl)}</button>`).join('');
+        fltBar.querySelectorAll('[data-sfe-filter]').forEach(b => {
           b.addEventListener('click', () => {
-            STAFF_FACE_MODAL_STATE.rosterCo = b.getAttribute('data-sfe-co') || '';
+            STAFF_FACE_MODAL_STATE.rosterFilter = b.getAttribute('data-sfe-filter') || 'active';
             syncStaffFaceEnrolModalDom();
           });
         });
       }
-    }
 
-    const searchInp = $('staffEnrolRosterSearch');
-    if (searchInp && document.activeElement !== searchInp) {
-      searchInp.value = STAFF_FACE_MODAL_STATE.rosterSearch || '';
+      const opUser = getActiveEnrolOperatorUser();
+      const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
+      const scopeBadgeEl = $('sfeOperatorScopeBadge');
+      if (scopeBadgeEl) {
+        const opRoleLbl = isOwner(opUser) ? 'Owner' : (resolveCanonicalRoleKey(opUser && opUser.role) || (opUser && opUser.role) || 'Operator');
+        scopeBadgeEl.innerHTML = `${ic('building')} <span><strong>${esc((opUser && opUser.full_name) || 'Operator')}</strong> (${esc(opRoleLbl)}) · BU Scope: <strong>${esc(opAllowedCos.join(', '))}</strong></span>`;
+      }
+      const nsToggleBtn = $('sfeNewStaffToggleBtn');
+      if (nsToggleBtn) {
+        nsToggleBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.newStaffOpen));
+        nsToggleBtn.setAttribute('aria-expanded', STAFF_FACE_MODAL_STATE.newStaffOpen ? 'true' : 'false');
+      }
+      const nsDrawer = $('sfeNewStaffDrawer');
+      if (nsDrawer) {
+        nsDrawer.hidden = !STAFF_FACE_MODAL_STATE.newStaffOpen;
+        const nsCoSel = $('sfeNewStaffCo');
+        if (nsCoSel) {
+          const curSelCo = (STAFF_FACE_MODAL_STATE.rosterCo && opAllowedCos.includes(STAFF_FACE_MODAL_STATE.rosterCo))
+            ? STAFF_FACE_MODAL_STATE.rosterCo
+            : (nsCoSel.value && opAllowedCos.includes(nsCoSel.value) ? nsCoSel.value : opAllowedCos[0] || 'WTC');
+          nsCoSel.innerHTML = opAllowedCos.map(c => `<option value="${esc(c)}" ${c === curSelCo ? 'selected' : ''}>${esc(c)}</option>`).join('');
+          nsCoSel.disabled = opAllowedCos.length <= 1;
+        }
+        const nsRoleDl = $('sfeNewStaffRoleList');
+        if (nsRoleDl) {
+          const targetCoForRoles = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || 'WTC';
+          const rolesList = getFrequencyRankedRolesForEnrol(targetCoForRoles);
+          nsRoleDl.innerHTML = rolesList.map(r => `<option value="${esc(r)}"></option>`).join('');
+          const nsRoleInp = $('sfeNewStaffRole');
+          if (nsRoleInp && !nsRoleInp.value && rolesList[0]) {
+            nsRoleInp.placeholder = `e.g. ${rolesList.slice(0, 3).join(', ')}`;
+          }
+        }
+      }
+
+      const coBar = $('sfeCompanyChips');
+      if (coBar) {
+        const uniqueCos = [];
+        opAllowedCos.forEach(c => {
+          if (c && !uniqueCos.includes(c)) uniqueCos.push(c);
+        });
+        allStaff.forEach(s => {
+          if (s.company && (!opAllowedCos.length || opAllowedCos.includes(s.company)) && !uniqueCos.includes(s.company)) {
+            uniqueCos.push(s.company);
+          }
+        });
+        if (uniqueCos.length <= 1) {
+          if (uniqueCos.length === 1) STAFF_FACE_MODAL_STATE.rosterCo = uniqueCos[0];
+          coBar.hidden = true;
+          coBar.innerHTML = '';
+        } else {
+          coBar.hidden = false;
+          const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
+          coBar.innerHTML = [
+            `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Permitted BUs (${uniqueCos.length})</button>`
+          ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
+          coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
+            b.addEventListener('click', () => {
+              STAFF_FACE_MODAL_STATE.rosterCo = b.getAttribute('data-sfe-co') || '';
+              syncStaffFaceEnrolModalDom();
+            });
+          });
+        }
+      }
+
+      const searchInp = $('staffEnrolRosterSearch');
+      if (searchInp && document.activeElement !== searchInp) {
+        searchInp.value = STAFF_FACE_MODAL_STATE.rosterSearch || '';
+      }
+      renderStaffEnrolRosterGridOnly();
     }
-    renderStaffEnrolRosterGridOnly();
 
     if (!curEntry) {
-      stripNativeTitles(document);
+      stripNativeTitles(modal);
       return;
     }
 
@@ -184353,8 +186814,21 @@
       }
     }
 
+    const sfeIsRear = STAFF_FACE_MODAL_STATE.facingMode === 'environment';
     const vp = $('staffEnrolViewport');
-    if (vp) vp.classList.toggle('is-live', STAFF_FACE_MODAL_STATE.camActive);
+    if (vp) {
+      vp.classList.toggle('is-live', STAFF_FACE_MODAL_STATE.camActive);
+      vp.classList.toggle('is-rear-cam', sfeIsRear);
+    }
+    const sfeFlipBtn = $('sfeFlipCamBtn');
+    if (sfeFlipBtn) sfeFlipBtn.setAttribute('data-facing', sfeIsRear ? 'environment' : 'user');
+    const sfeFlipLbl = $('sfeFlipCamLbl');
+    if (sfeFlipLbl) {
+      const nextLbl = sfeIsRear ? 'Front Camera' : 'Rear Camera';
+      sfeFlipLbl.textContent = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+        ? window.MFG_I18N.t(nextLbl)
+        : nextLbl;
+    }
     const ph = $('staffEnrolStandby');
     if (ph) {
       ph.hidden = STAFF_FACE_MODAL_STATE.camActive;
@@ -184362,8 +186836,8 @@
         if (STAFF_FACE_MODAL_STATE.camStarting) {
           ph.innerHTML = `
             <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
-            <strong>Starting Front Camera...</strong>
-            <p>Preparing lens for ${esc(curEntry.name)}. Hold tablet steady at eye level.</p>
+            <strong>${sfeIsRear ? 'Starting Rear Camera...' : 'Starting Front Camera...'}</strong>
+            <p>Preparing lens for ${esc(curEntry.name)}. Hold device steady at eye level.</p>
           `;
         } else if (capCount >= 3) {
           ph.innerHTML = `
@@ -184391,6 +186865,9 @@
             <span class="enrol-cam-wake-pill" style="margin-top:4px">${ic('camera')} <span>Tap to Start Camera</span></span>
           `;
         }
+        if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+          try { window.MFG_I18N.translateDom(ph); } catch (_) {}
+        }
       }
     }
 
@@ -184400,11 +186877,17 @@
         ? 'Starting Camera...'
         : (capCount >= 3 ? '✓ 3/3 Poses Saved' : `Pose ${capCount + 1} of 3`);
       badgeEl.className = capCount >= 3 ? 'badge badge-ok staff-enrol-live-pill' : 'badge staff-enrol-live-pill';
+      if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
     }
     const camBtn = $('staffEnrolStartCamBtn');
     if (camBtn) {
       camBtn.hidden = !STAFF_FACE_MODAL_STATE.camActive;
       camBtn.innerHTML = '■ Stop';
+      if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(camBtn); } catch (_) {}
+      }
     }
     const capBtn = $('staffEnrolCaptureBtn');
     if (capBtn) {
@@ -184500,7 +186983,7 @@
     }
     const pinSaveBtn = $('staffEnrolPinSaveBtn');
     if (pinSaveBtn) pinSaveBtn.disabled = false;
-    stripNativeTitles(document);
+    stripNativeTitles(modal);
   }
 
   function openStaffFaceEnrolModal(staffName = '', opts = {}) {
@@ -184765,6 +187248,7 @@
                 </div>
                 <div class="staff-enrol-btn-bar">
                   <button type="button" class="btn btn-primary sfe-primary-capture-btn" id="staffEnrolCaptureBtn">${ic('camera')} Capture Pose 1 of 3</button>
+                  <button type="button" class="btn sfe-flip-cam-btn" id="sfeFlipCamBtn" data-facing="${STAFF_FACE_MODAL_STATE.facingMode === 'environment' ? 'environment' : 'user'}">${ic('rotate')} <span id="sfeFlipCamLbl">${STAFF_FACE_MODAL_STATE.facingMode === 'environment' ? 'Front Camera' : 'Rear Camera'}</span></button>
                   <button type="button" class="sfe-chip sfe-handsfree-pill" id="sfeHandsFreeBtn" aria-pressed="false">Hands-Free Auto</button>
                   <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face ID</button>
                 </div>
@@ -185041,7 +187525,7 @@
       if (typeof openDocumentCameraCapture === 'function') {
         openDocumentCameraCapture(files => {
           if (files && files[0]) applySfeIdScan(files[0], 'Camera ID Scan');
-        }, { preset: 'card' });
+        }, { preset: 'card', attachmentOnly: true });
       } else {
         toast('Camera scanner is not available on this view.', 'err');
       }
@@ -185265,6 +187749,12 @@
         return;
       }
       await captureStaffModalPose();
+    });
+    $('sfeFlipCamBtn')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.facingMode = STAFF_FACE_MODAL_STATE.facingMode === 'environment' ? 'user' : 'environment';
+      stopStaffEnrolModalCamera();
+      syncStaffFaceEnrolModalDom();
+      startStaffEnrolModalCamera();
     });
     $('sfeHandsFreeBtn')?.addEventListener('click', () => {
       STAFF_FACE_MODAL_STATE.handsFree = !STAFF_FACE_MODAL_STATE.handsFree;
@@ -189680,7 +192170,10 @@
         if (!add.length && kept.length === before.length) return;
         const snap = Object.assign({}, row, { date_timings: before });
         row.date_timings = normalizeDateTimingsList(add.concat(kept));
-        row.updated_at = new Date().toISOString();
+        // modified_at too: sync compares modified_at before updated_at, so a row with an older modified_at
+        // would keep it and other devices would never take the new dates.
+        stampWorkShiftRowModified(row);
+        row.updated_at = row.modified_at;
         hydrateWorkShiftRowComputed(row);
         const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(row.id));
         if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], row);
@@ -196836,9 +199329,10 @@
         ? ` · Print: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm · ${pCfg.priceMode === 'unpriced' ? (activeInd !== 'Manufacturing' ? 'Unpriced Handover Pass' : (kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass')) : (activeInd !== 'Manufacturing' ? 'Priced Official Voucher' : (kMode === 'raw' ? 'Priced 2-Leg Voucher' : (kMode === 'fuel' ? 'Pump Slip' : 'Priced Invoice')))}</b>`
         : '';
 
+      const hhDrawer = (STATE.kioskHandheldDrawer === 'preview' || STATE.kioskHandheldDrawer === 'recent') ? STATE.kioskHandheldDrawer : '';
       workspaceBodyHtml = `
         ${quickStripHtml}
-        <div class="kiosk-work-grid ${showThermalPane ? '' : 'is-single-col'}">
+        <div class="kiosk-work-grid ${showThermalPane ? '' : 'is-single-col'}" id="kioskWorkGrid" data-hh-drawer="${esc(hhDrawer)}">
           <div class="panel-card kiosk-form-pane">
             <div class="panel-head">
               <div class="panel-title"><span>${esc(kioskHeadTitles[kMode] || kioskHeadTitles.sales)}</span></div>
@@ -196847,6 +199341,16 @@
             <div class="kiosk-form-body" id="kioskFormBody">
               ${activeInd !== 'Manufacturing' ? renderIndustryKioskFormHtml(activeInd, kMode, defCo) : renderEntryModalBody()}
             </div>
+            ${showThermalPane ? `
+              <div class="kiosk-hh-drawer-bar" id="kioskHandheldDrawerBar">
+                <button type="button" class="btn kiosk-hh-toggle-btn ${hhDrawer === 'preview' ? 'active' : ''}" id="kioskHhPreviewBtn" data-kiosk-hh-drawer="preview" aria-expanded="${hhDrawer === 'preview' ? 'true' : 'false'}">
+                  ${ic('receipt')} <span>Slip Preview</span> <span class="mono" data-no-i18n="1">(${pCfg.paperWidth}mm)</span>
+                </button>
+                <button type="button" class="btn kiosk-hh-toggle-btn ${hhDrawer === 'recent' ? 'active' : ''}" id="kioskHhRecentBtn" data-kiosk-hh-drawer="recent" aria-expanded="${hhDrawer === 'recent' ? 'true' : 'false'}">
+                  ${ic('clock')} <span>Recent</span> <span class="mono" data-no-i18n="1">(${recentCountVal})</span>
+                </button>
+              </div>
+            ` : ''}
             <div class="kiosk-action-bar">
               <div class="kiosk-action-note">
                 Operator: <b>${esc(activeUser().full_name)}</b>${footerThermalNote}
@@ -198289,6 +200793,7 @@
           stopKioskAttCamera();
         }
         STATE.activeKiosk = nextKiosk;
+        STATE.kioskHandheldDrawer = '';
         STATE.kioskAttPinMsg = '';
         saveKioskStationConfig({ activeKiosk: nextKiosk });
         syncNativeStationPreset(nextKiosk);
@@ -198748,6 +201253,71 @@
           }
         });
       }
+
+      const toggleHandheldDrawer = mode => {
+        const next = (mode === 'preview' || mode === 'recent') && STATE.kioskHandheldDrawer !== mode ? mode : '';
+        STATE.kioskHandheldDrawer = next;
+        const gridEl = $('kioskWorkGrid');
+        if (gridEl) gridEl.setAttribute('data-hh-drawer', next);
+        container.querySelectorAll('[data-kiosk-hh-drawer]').forEach(b => {
+          const isAct = b.getAttribute('data-kiosk-hh-drawer') === next && Boolean(next);
+          b.classList.toggle('active', isAct);
+          b.setAttribute('aria-expanded', isAct ? 'true' : 'false');
+        });
+        if (next === 'preview') {
+          updateKioskLiveThermalPreview();
+        }
+        if (next && gridEl) {
+          const pane = gridEl.querySelector('.kiosk-preview-pane');
+          if (pane && typeof pane.scrollIntoView === 'function') {
+            try { pane.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+          }
+        }
+        return next;
+      };
+      container.querySelectorAll('[data-kiosk-hh-drawer]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          toggleHandheldDrawer(btn.getAttribute('data-kiosk-hh-drawer') || '');
+        });
+      });
+
+      window.__mfgSyncKioskPrintControls = () => {
+        if (STATE.view !== 'kiosks' || !window.MFG_PRINT) return;
+        const curCfg = window.MFG_PRINT.loadCfg ? window.MFG_PRINT.loadCfg() : null;
+        const wNum = curCfg ? (curCfg.paperWidth === '58mm' ? 58 : 80) : window.MFG_PRINT.SETTINGS.paperWidth;
+        const kModeNow = STATE.activeKiosk || 'sales';
+        const pmNow = window.MFG_PRINT.SETTINGS.priceMode;
+        const _trEl = el => {
+          if (el && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+            try { window.MFG_I18N.translateDom(el); } catch (_) {}
+          }
+        };
+        const pBtn = $('kioskPostAndPrintBtn');
+        if (pBtn) {
+          pBtn.innerHTML = `${ic('printer')} Post &amp; Print ${(kModeNow === 'sales' || kModeNow === 'raw') && pmNow === 'unpriced' ? (kModeNow === 'raw' ? 'Scale Slip' : 'Gate Pass') : 'Ticket'} (${wNum}mm)`;
+          _trEl(pBtn);
+        }
+        document.querySelectorAll('[data-kiosk-paper]').forEach(b => {
+          b.classList.toggle('active', Number(b.getAttribute('data-kiosk-paper')) === wNum);
+        });
+        const prevBtn = $('kioskHhPreviewBtn');
+        if (prevBtn) {
+          const spans = prevBtn.querySelectorAll('span');
+          if (spans.length >= 2) spans[1].textContent = `(${wNum}mm)`;
+        }
+        const previewTitleEl = document.querySelector('.kiosk-thermal-card .panel-title span');
+        if (previewTitleEl) {
+          previewTitleEl.textContent = `Thermal Ticket Preview (${wNum}mm${(kModeNow === 'sales' || kModeNow === 'raw') ? ` · ${pmNow === 'unpriced' ? 'Unpriced' : 'Priced'}` : ''})`;
+          _trEl(previewTitleEl.parentElement || previewTitleEl);
+        }
+        const footLbl = $('kioskFooterPrintModeLbl');
+        if (footLbl) {
+          const activeIndNow = getActiveIndustry(STATE.company);
+          footLbl.textContent = `${wNum}mm · ${pmNow === 'unpriced' ? (activeIndNow !== 'Manufacturing' ? 'Unpriced Handover Pass' : (kModeNow === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass')) : (activeIndNow !== 'Manufacturing' ? 'Priced Official Voucher' : (kModeNow === 'raw' ? 'Priced 2-Leg Voucher' : (kModeNow === 'fuel' ? 'Pump Slip' : 'Priced Invoice')))}`;
+          _trEl(footLbl);
+        }
+        updateKioskLiveThermalPreview();
+      };
     }
   }
 
@@ -200205,7 +202775,7 @@
             firstTd.classList.add('td-has-sel-dot');
             firstTd.classList.toggle('td-has-void-hover', Boolean(firstTd.querySelector('.void-btn.row-void-hover')));
             firstTd.classList.toggle('td-has-rep-shift', Boolean(firstTd.querySelector('.rep-shift-ico')));
-            if (firstTd.querySelector('.badge-app, .att-inline-badge, .raw-leg-stmt-actions, .void-btn:not(.row-void-hover)')) {
+            if (firstTd.querySelector('.badge-app, .att-inline-badge, .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .void-btn:not(.row-void-hover)')) {
               firstTd.classList.add('td-has-inline-act');
             }
             firstTd.appendChild(protoDot.cloneNode(true));
@@ -200517,12 +203087,17 @@
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
 
-      // 1-click "Set Site Price" on Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites)
+      // 1-click "Set Site Price" on Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites, #rawSiteOwnersPanel, #rawTransPayPanel)
       const setSitePriceBtn = t.closest('[data-set-site-price]');
       if (setSitePriceBtn && container.contains(setSitePriceBtn)) {
         e.preventDefault();
         e.stopPropagation();
-        openSetUnpricedSitePriceModal(setSitePriceBtn.getAttribute('data-set-site-price') || '');
+        const legAttr = setSitePriceBtn.getAttribute('data-set-site-leg') || '';
+        const supAttr = setSitePriceBtn.getAttribute('data-set-site-sup') || '';
+        openSetUnpricedSitePriceModal(setSitePriceBtn.getAttribute('data-set-site-price') || '', {
+          transportOnly: legAttr === 'transport',
+          supplier: supAttr
+        });
         return;
       }
 
@@ -200597,6 +203172,17 @@
         e.preventDefault();
         e.stopPropagation();
         openOvkMoversPopover(ovkExplainBtn);
+        return;
+      }
+
+      const openPartnerSettleBtn = t.closest('[data-open-partner-settle]');
+      if (openPartnerSettleBtn && container.contains(openPartnerSettleBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetKey = openPartnerSettleBtn.getAttribute('data-open-partner-settle') || '';
+        if (targetKey && window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.openPartnerSettlementModal === 'function') {
+          window.MFG_FLEET_PNL.openPartnerSettlementModal(targetKey);
+        }
         return;
       }
 
@@ -203936,7 +206522,7 @@
       if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
       if (sBtn) {
         sBtn.addEventListener('click', () => {
-          openDocumentCameraCapture((files, method) => openModalWithFiles(files, method || 'Camera Scan'));
+          openDocumentCameraCapture((files, method) => openModalWithFiles(files, method || 'Camera Scan'), { attachmentOnly: true });
         });
       }
       if (fInp) fInp.addEventListener('change', async () => { try { await openModalWithFiles(fInp.files, 'File Upload'); } finally { fInp.value = ''; } });
@@ -207484,7 +210070,7 @@
     }
     window.addEventListener('online', () => { toast('Back online — syncing'); syncWithCloud(true); });
     window.addEventListener('offline', () => { STATE.cloudStatus = '● Offline Cache'; updateCloudBadges(); toast('Offline — entries are kept on this device and sync later', 'err'); });
-    window.addEventListener('pagehide', () => { if (STATE.pushAfterSync || STATE.pendingCloudPush) syncWithCloud(true); });
+    window.addEventListener('pagehide', () => { flushBiometricCloudSyncNow(); if (STATE.pushAfterSync || STATE.pendingCloudPush) syncWithCloud(true); });
 
     // Expose deterministic hooks for headless verification (build/verify_mfg.mjs)
     window.MFG_FACE_TEST = {
@@ -207693,6 +210279,34 @@
       formatSalaryAdvanceReceiptMessage: (ctx, langMode) => formatSalaryAdvanceReceiptMessage(ctx, langMode),
       openSalaryAdvanceReceiptModal: (rowOrId, opts = {}) => openSalaryAdvanceReceiptModal(rowOrId, opts),
       closeSalaryAdvanceReceiptModal: () => closeSalaryAdvanceReceiptModal(),
+      setKioskLockMode: (locked, authArg) => setKioskLockMode(Boolean(locked), authArg),
+      getKioskStaffDirectory: opts => getKioskStaffDirectory(opts || {}),
+      usableFaces: (u, opts) => usableFaces(u, opts || { includeKioskStaff: true }),
+      getKioskFacePoolWithAdminSeed: () => getKioskFacePoolWithAdminSeed(),
+      enrolStaffFacePose: (nm, detOrVec, thumb, slot) => enrolStaffFacePose(nm, detOrVec, thumb, slot),
+      clearStaffFaceId: nm => clearStaffFaceId(nm),
+      openStaffFaceEnrolModal: (nm, opts) => openStaffFaceEnrolModal(nm, opts || {}),
+      selectStaffForEnrolModal: (nm, opts) => selectStaffForEnrolModal(nm, opts || {}),
+      captureStaffModalPose: (det, thumb, slot) => captureStaffModalPose(det, thumb, slot),
+      closeStaffFaceEnrolModal: () => closeStaffFaceEnrolModal(),
+      updateUnsentEntriesBar: () => updateUnsentEntriesBar(),
+      updateDevicesHoldingBar: () => updateDevicesHoldingBar(),
+      setStaffModalLiveDet: vec => {
+        STAFF_FACE_MODAL_STATE.lastDet = vec ? { descriptor: vec, detScore: 0.95, multiple: false } : null;
+        STAFF_FACE_MODAL_STATE.lastAt = vec ? Date.now() : 0;
+      },
+      getStaffModalCacheState: () => ({
+        hasLastDet: Boolean(STAFF_FACE_MODAL_STATE.lastDet),
+        lastAt: STAFF_FACE_MODAL_STATE.lastAt || 0
+      }),
+      setEnrolLiveDet: vec => {
+        FACE_STATE.lastLiveEnrolDet = vec ? { descriptor: vec, detScore: 0.95, multiple: false } : null;
+        FACE_STATE.lastLiveEnrolAt = vec ? Date.now() : 0;
+      },
+      getEnrolLiveCacheState: () => ({
+        hasLastDet: Boolean(FACE_STATE.lastLiveEnrolDet),
+        lastAt: FACE_STATE.lastLiveEnrolAt || 0
+      }),
       openBatchPaydayModal: (opts = {}) => openBatchPaydayModal(opts),
       closeBatchPaydayModal: () => closeBatchPaydayModal(),
       buildBatchSignOffContext: (batchId, opts = {}) => buildBatchSignOffContext(batchId, opts),
@@ -207724,6 +210338,42 @@
         const s = window.MFG_PRINT.savePrintSettings(patch);
         if (STATE.view === 'kiosks') renderApp();
         return s;
+      },
+      openStationAdminModal: (opts = {}) => openKioskStationAdminModal(opts),
+      closeStationAdminModal: () => closeKioskStationAdminModal(),
+      flipAdminCamera: async () => {
+        KIOSK_ADMIN_MODAL_STATE.facingMode = KIOSK_ADMIN_MODAL_STATE.facingMode === 'environment' ? 'user' : 'environment';
+        KIOSK_ADMIN_MODAL_STATE.err = '';
+        stopKioskAdminFaceCamera(false);
+        syncKioskAdminFaceDomInPlace();
+        return await startKioskAdminFaceCamera();
+      },
+      getAdminModalState: () => ({
+        open: KIOSK_ADMIN_MODAL_STATE.open,
+        unlocked: KIOSK_ADMIN_MODAL_STATE.unlocked,
+        camActive: KIOSK_ADMIN_MODAL_STATE.camActive,
+        facingMode: KIOSK_ADMIN_MODAL_STATE.facingMode || 'user'
+      }),
+      openStaffEnrolModal: (staffName = '', opts = {}) => openStaffFaceEnrolModal(staffName, opts),
+      closeStaffEnrolModal: () => closeStaffFaceEnrolModal(),
+      flipEnrolCamera: async () => {
+        STAFF_FACE_MODAL_STATE.facingMode = STAFF_FACE_MODAL_STATE.facingMode === 'environment' ? 'user' : 'environment';
+        stopStaffEnrolModalCamera();
+        syncStaffFaceEnrolModalDom();
+        return await startStaffEnrolModalCamera();
+      },
+      getEnrolModalState: () => ({
+        open: STAFF_FACE_MODAL_STATE.open,
+        step: STAFF_FACE_MODAL_STATE.step,
+        camActive: STAFF_FACE_MODAL_STATE.camActive,
+        facingMode: STAFF_FACE_MODAL_STATE.facingMode || 'user'
+      }),
+      setHandheldDrawer: (mode = '') => {
+        const next = (mode === 'preview' || mode === 'recent') && STATE.kioskHandheldDrawer !== mode ? mode : '';
+        STATE.kioskHandheldDrawer = next;
+        const gridEl = $('kioskWorkGrid');
+        if (gridEl) gridEl.setAttribute('data-hh-drawer', next);
+        return next;
       },
       buildDraftRecord: () => buildDraftThermalRecordFromForm(),
       saveKioskEntry: (opts = {}) => saveKioskEntry(opts),
@@ -207802,6 +210452,7 @@
       getCompanyPolicyDefaultEntry: co => JSON.parse(JSON.stringify(ensureWorkSchedulesState().companyPolicyDefaults[norm(co)] || null)),
       listShiftCalTargets: co => listShiftCalTargets(co),
       applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),
+      setBuDefaultShift: (co, code, opts = {}) => setBuDefaultShift(co, code, opts),
       getStoredShiftVersions: (co, code) => getStoredShiftVersions(co, code),
       openShiftCalPresetModal: (opts = {}) => openShiftCalPresetModal(opts),
       computePunchDriftDigest: (opts = {}) => computePunchDriftDigest(opts),
@@ -208098,6 +210749,7 @@
       refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
       report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
       loadDevices: () => loadDevicesHolding(),
+      dismissAllLate: () => dismissAllLateDeviceReports(),
       device: () => getDeviceIdent(),
       setCloudStoreDocForTest: (doc, byteOverride) => {
         if (!window.__MFG_HEADLESS_TEST && !navigator.webdriver) return null;
@@ -209847,6 +212499,7 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
+    openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     openHoldingNetSettlementModal: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
@@ -209884,6 +212537,8 @@
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     resolveUnpricedSitePrefill: typeof resolveUnpricedSitePrefill === 'function' ? resolveUnpricedSitePrefill : null,
+    resolveUnpricedHaulSitePrefill: typeof resolveUnpricedHaulSitePrefill === 'function' ? resolveUnpricedHaulSitePrefill : null,
+    buildUnpricedPartyQueue: typeof buildUnpricedPartyQueue === 'function' ? buildUnpricedPartyQueue : null,
     openSetUnpricedSitePriceModal: typeof openSetUnpricedSitePriceModal === 'function' ? openSetUnpricedSitePriceModal : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
@@ -209946,6 +212601,7 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
+    openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     todayISO: typeof todayISO === 'function' ? todayISO : null,
     retroactiveBackfillTradingTariff: typeof retroactiveBackfillTradingTariff === 'function' ? retroactiveBackfillTradingTariff : null,
     lookupActiveHoldingPartnerSplit: typeof lookupActiveHoldingPartnerSplit === 'function' ? lookupActiveHoldingPartnerSplit : null,

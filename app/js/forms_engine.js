@@ -1244,6 +1244,7 @@
           ${fld('Phone', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
           ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           ${fld('Default Payment Method', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
+          ${fld('Standing Discount (%)', inp('f_standing_disc', 'number', '', 'step="0.1" min="0" max="100" inputmode="decimal" placeholder="0 (optional)"'), { hint: 'Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply' })}
           ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Tax / MOF registration #"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iva"><label for="f_iva">IVA / VAT Registered (11% Input VAT)</label></div>
           <div class="form-field span-3" id="wrap_sup_drivers"${isFleetInd ? '' : ' hidden'}>

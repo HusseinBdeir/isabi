@@ -34,6 +34,7 @@
     blobPreviewUrl: '',
     slipQueue: null,
     advancingQueueOnPost: false,
+    activatingSlip: false,
     lastMultiUnits: null,
     slipQueueCounter: 0
   };
@@ -1423,6 +1424,43 @@
     return '';
   }
 
+  function parseDiscountLine(rawLine) {
+    const s0 = normalizeDigits(String(rawLine || '')).replace(/[\u200f\u200e]/g, '').replace(/\u066a/g, '%').trim();
+    if (!s0) return null;
+    if (/^(?:payment\s*terms|terms|conditions\s+de\s+paiement|\u0634\u0631\u0648\u0637\s*\u0627\u0644\u062f\u0641\u0639)\b/i.test(s0)) return null;
+    const hasLbp = /(?:LBP|L\.L\.|\bLL\b|\u0644\.\u0644)/i.test(s0);
+    const hasUsd = /\$|\bUSD\b/i.test(s0);
+    if (/\b\d+\/\d+\s*net\s*\d+\b/i.test(s0) && !hasUsd && !hasLbp) return null;
+    const lblReEnFr = /^(?:(?:less|minus|total)\s+)?(?:(?:trade|commercial|cash|special|settlement|early)?\s*(?:discount|rebate|remise|rabais|ristourne)|less(?=\s*[:#(-]*\s*\d+(?:[.,]\d+)?\s*%))(?=$|[\s:#(-]|\d)/i;
+    const lblReAr = /^(?:(?:\u0625\u062c\u0645\u0627\u0644\u064a|\u0645\u062c\u0645\u0648\u0639)\s+)?(?:\u062e\u0635\u0645|\u062d\u0633\u0645)(?:\s+(?:\u062a\u062c\u0627\u0631\u064a|\u062e\u0627\u0635|\u0646\u0642\u062f\u064a|\u0625\u0636\u0627\u0641\u064a))?(?=$|[\s:#(\-\d%])/u;
+    const mLbl = s0.match(lblReEnFr) || s0.match(lblReAr);
+    if (!mLbl) return null;
+
+    let pct = 0;
+    const pctM = s0.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:%|percent|pct\b)/i);
+    if (pctM) {
+      const pv = Number(pctM[1].replace(',', '.'));
+      if (Number.isFinite(pv) && pv > 0 && pv <= 100) pct = pv;
+    }
+
+    const rest = s0
+      .slice(mLbl[0].length)
+      .replace(/-?\d+(?:[.,]\d+)?\s*(?:%|percent|pct\b)/gi, ' ')
+      .replace(/\(\s*\)/g, ' ')
+      .trim();
+
+    let usd = 0;
+    let lbp = 0;
+    if (/-?\d+(?:[.,]\d+)?/.test(rest)) {
+      const amt = Math.abs(parseMoneyValue(rest));
+      if (Number.isFinite(amt) && amt > 0) {
+        if (hasLbp && !hasUsd) lbp = amt;
+        else usd = amt;
+      }
+    }
+    return { pct, usd, lbp };
+  }
+
   function extractLabeledValue(lines, labelRegex) {
     for (const line of lines) {
       const parts = line.split(/\s*[·|]\s*/);
@@ -1466,38 +1504,51 @@
     // Totals, Subtotal, Discount, VAT & LBP detection
     let subtotalUsd = 0;
     let discountUsd = 0;
+    let discountPct = 0;
+    let discountLbp = 0;
     let vatUsd = 0;
     let totalUsd = 0;
     let lbpAmount = 0;
+    let explicitTotalLbp = 0;
     const hasVatKeyword = /(?:\b(?:vat|tva|11%|mof\s*#|tax\s*invoice)\b|\u0636\u0631\u064a\u0628\u0629\s*\u0627\u0644\u0642\u064a\u0645\u0629\s*\u0627\u0644\u0645\u0636\u0627\u0641\u0629)/i.test(cleanText);
 
     for (const line of lines) {
       const lbpM = line.match(/([\d,]{5,}(?:\.\d+)?)\s*(?:LBP|L\.L\.|LL|\u0644\.\u0644)/i)
         || line.match(/(?:LBP|L\.L\.|\u0644\.\u0644)\s*[:#-]?\s*([\d,]{5,}(?:\.\d+)?)/i);
-      if (lbpM) {
+      const discParsed = parseDiscountLine(line);
+      if (lbpM && !discParsed) {
         const v = parseMoneyValue(lbpM[1]);
         if (v > lbpAmount) lbpAmount = v;
       }
-      if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht)/i.test(line)) {
-        subtotalUsd = parseMoneyValue(line);
-      } else if (/^(?:(?:less\s+)?(?:discount|rebate|remise)|خصم|حسم)\b/i.test(line)) {
-        const dv = parseMoneyValue(line);
-        if (dv > 0) discountUsd = dv;
+      if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht|\u0627\u0644\u0645\u062c\u0645\u0648\u0639\s*\u0627\u0644\u0641\u0631\u0639\u064a|\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a\s*\u0627\u0644\u0641\u0631\u0639\u064a)/i.test(line)) {
+        if (!/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+          subtotalUsd = parseMoneyValue(line);
+        }
+      } else if (discParsed) {
+        if (discParsed.pct > 0) discountPct = discParsed.pct;
+        if (discParsed.usd > 0) discountUsd = discParsed.usd;
+        if (discParsed.lbp > 0) discountLbp = discParsed.lbp;
       } else if (/^(?:vat|tva|tax\s*\(?\s*11%|\u0636\u0631\u064a\u0628\u0629)/i.test(line)) {
         vatUsd = parseMoneyValue(line);
-      } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a)/i.test(line)) {
-        if (!/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+      } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a|\u0635\u0627\u0641\u064a\s*\u0627\u0644\u062f\u0641\u0639|\u0627\u0644\u0635\u0627\u0641\u064a)/i.test(line)) {
+        if (/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+          if (lbpM) {
+            const tvLbp = parseMoneyValue(lbpM[1]);
+            if (tvLbp > 0) explicitTotalLbp = tvLbp;
+          }
+        } else {
           const tv = parseMoneyValue(line);
           if (tv >= 0) totalUsd = tv;
         }
       }
     }
+    if (explicitTotalLbp > 0) lbpAmount = explicitTotalLbp;
 
     // Parse line items: supports "Desc | 2 Piece | $95.00 | $190.00" or consecutive SVG/PDF rows or "2 pcs x $95 = $190"
     const lineItems = [];
     for (let i = 0; i < lines.length; i++) {
       const ln = lines[i];
-      if (/^(subtotal|vat|tva|total|payment\s*terms|notes|company|supplier|customer|ref:|date:|description\s*\/?\s*item)/i.test(ln)) continue;
+      if (/^(subtotal|sub\s*-?\s*total|vat|tva|total|discount|rebate|remise|rabais|less\s+|payment\s*terms|notes|company|supplier|customer|ref:|date:|description\s*\/?\s*item|\u062e\u0635\u0645|\u062d\u0633\u0645|\u0627\u0644\u0645\u062c\u0645\u0648\u0639)/i.test(ln)) continue;
 
       const pipeMatch = ln.match(/^([^|$]{3,90}?)\s*(?:\||\t|\s{2,})\s*(\d+(?:\.\d+)?)\s*([A-Za-z³²\u0600-\u06FF]{1,12})?\s*(?:\||\t|\s{1,})\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(?:\||\t|\s{1,})\s*\$?\s*([\d,]+(?:\.\d+)?)$/);
       if (pipeMatch) {
@@ -1532,6 +1583,20 @@
 
     if (!subtotalUsd && lineItems.length) {
       subtotalUsd = round2(lineItems.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
+    }
+    const explicitDiscountUsd = discountUsd;
+    const explicitDiscountLbp = discountLbp;
+    if (discountUsd <= 0 && discountPct > 0 && discountPct <= 100) {
+      if (subtotalUsd > 0) {
+        discountUsd = round2(subtotalUsd * (discountPct / 100));
+      } else if (totalUsd > 0 && discountPct < 100) {
+        const netExVat = (vatUsd > 0 && totalUsd > vatUsd) ? round2(totalUsd - vatUsd) : totalUsd;
+        const inferredGross = round2(netExVat / (1 - (discountPct / 100)));
+        if (subtotalUsd <= 0) subtotalUsd = inferredGross;
+        discountUsd = round2(Math.max(0, inferredGross - netExVat));
+      } else if (totalUsd <= 0 && lbpAmount > 0 && discountLbp <= 0 && discountPct < 100) {
+        discountLbp = Math.round((lbpAmount / (1 - (discountPct / 100))) - lbpAmount);
+      }
     }
     if (!totalUsd && (subtotalUsd > 0 || vatUsd > 0)) {
       totalUsd = round2(Math.max(0, subtotalUsd + vatUsd - discountUsd));
@@ -1659,7 +1724,10 @@
       staff: staffHint,
       paymentMethod,
       subtotalExVat: subtotalUsd,
+      discountPct: discountPct || 0,
       discountAmount: discountUsd,
+      discountLbp: discountLbp || 0,
+      hasExplicitDiscount: Boolean(explicitDiscountUsd > 0 || explicitDiscountLbp > 0),
       vatAmount: vatUsd,
       totalAmount: totalUsd,
       lbpAmount,
@@ -1707,20 +1775,41 @@
     // Final-page totals override Page 1 "Carried Forward / Page 1 Subtotal"
     let finalSubtotal = 0;
     let finalDiscount = 0;
+    let finalDiscountPct = 0;
+    let finalDiscountLbp = 0;
     let finalVat = 0;
     let finalTotal = 0;
     let finalLbp = 0;
     for (let idx = perPage.length - 1; idx >= 0; idx--) {
       const p = perPage[idx];
       if (!finalTotal && p.totalAmount > 0) finalTotal = p.totalAmount;
-      if (!finalDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
+      if (!finalDiscount && p.hasExplicitDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
+      if (!finalDiscountPct && p.discountPct > 0) finalDiscountPct = p.discountPct;
+      if (!finalDiscountLbp && p.hasExplicitDiscount && p.discountLbp > 0) finalDiscountLbp = p.discountLbp;
       if (!finalVat && p.vatAmount > 0) finalVat = p.vatAmount;
       if (!finalSubtotal && p.subtotalExVat > 0) finalSubtotal = p.subtotalExVat;
       if (!finalLbp && p.lbpAmount > 0) finalLbp = p.lbpAmount;
     }
+    if (!finalDiscount && !finalDiscountPct) {
+      for (let idx = perPage.length - 1; idx >= 0; idx--) {
+        if (perPage[idx].discountAmount > 0) { finalDiscount = perPage[idx].discountAmount; break; }
+      }
+    }
     const linesSum = round2(mergedLines.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
     if (mergedLines.length > 1 && linesSum > finalSubtotal) {
       finalSubtotal = linesSum;
+    }
+    if (finalDiscount <= 0 && finalDiscountPct > 0 && finalDiscountPct <= 100) {
+      if (finalSubtotal > 0) {
+        finalDiscount = round2(finalSubtotal * (finalDiscountPct / 100));
+      } else if (finalTotal > 0 && finalDiscountPct < 100) {
+        const netExVat = (finalVat > 0 && finalTotal > finalVat) ? round2(finalTotal - finalVat) : finalTotal;
+        const inferredGross = round2(netExVat / (1 - (finalDiscountPct / 100)));
+        if (finalSubtotal <= 0) finalSubtotal = inferredGross;
+        finalDiscount = round2(Math.max(0, inferredGross - netExVat));
+      } else if (finalTotal <= 0 && finalLbp > 0 && finalDiscountLbp <= 0 && finalDiscountPct < 100) {
+        finalDiscountLbp = Math.round((finalLbp / (1 - (finalDiscountPct / 100))) - finalLbp);
+      }
     }
     const expectedNetFromParts = round2(Math.max(0, finalSubtotal + finalVat - finalDiscount));
     if ((finalSubtotal > 0 || finalVat > 0) && (finalTotal <= 0 || finalTotal < expectedNetFromParts - 0.05)) {
@@ -1759,7 +1848,9 @@
       paymentMethod: firstNonEmpty(p => p.paymentMethod),
       incoterm: firstNonEmpty(p => p.incoterm),
       subtotalExVat: finalSubtotal || full.subtotalExVat,
+      discountPct: finalDiscountPct || full.discountPct || 0,
       discountAmount: finalDiscount || full.discountAmount || 0,
+      discountLbp: finalDiscountLbp || full.discountLbp || 0,
       vatAmount: finalVat || full.vatAmount,
       totalAmount: finalTotal || full.totalAmount,
       lbpAmount: finalLbp || full.lbpAmount,
@@ -1849,9 +1940,10 @@
       '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|companyequipment|equipment|document",',
       '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",',
       '"category":"","subcategory":"","product":"","site":"","equipment":"","plateNo":"","model":"","vin":"","driver":"","staff":"",',
-      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
+      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountPct":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
       '"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",',
       '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}',
+      'Trade-discount rule: put any printed percentage discount (Less X% / Remise / خصم) in discountPct (0-100) and the printed currency discount amount in discountAmount; keep subtotalExVat as pre-discount ex-VAT subtotal and totalAmount as final net payable.',
       'ISO 3779 VIN rule: 17-character chassis VINs NEVER contain I, O, or Q; carefully disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
       pageCount > 1
         ? `Multi-Page Synthesis (${pageCount} pages): merge Page 1 identity headers (company, counterparty, reference, VIN) with Page 2+ schedules, continuation lineItems, and final-page Grand Total / VAT (ignore Page 1 Carried Forward subtotals).`
@@ -1927,6 +2019,25 @@
       if (candAudit && candAudit.isVin17) finalVinAudit = candAudit;
     }
 
+    const mergedSubExVat = pickNum(det.subtotalExVat, ai.subtotalExVat);
+    const mergedVatAmt = pickNum(det.vatAmount, ai.vatAmount);
+    const mergedTotalAmt = pickNum(det.totalAmount, ai.totalAmount);
+    const mergedLbpAmt = pickNum(det.lbpAmount, ai.lbpAmount);
+    const mergedDiscPct = pickNum(det.discountPct, ai.discountPct || ai.discount_pct);
+    let mergedDiscLbp = pickNum(det.discountLbp, ai.discountLbp || ai.discount_lbp);
+    let mergedDiscAmt = Math.abs(pickNum(det.discountAmount, ai.discountAmount || ai.discount));
+    if (mergedDiscAmt <= 0 && mergedDiscPct > 0 && mergedDiscPct <= 100) {
+      if (mergedSubExVat > 0) {
+        mergedDiscAmt = round2(mergedSubExVat * (mergedDiscPct / 100));
+      } else if (mergedTotalAmt > 0 && mergedDiscPct < 100) {
+        const netExVat = (mergedVatAmt > 0 && mergedTotalAmt > mergedVatAmt) ? round2(mergedTotalAmt - mergedVatAmt) : mergedTotalAmt;
+        const inferredGross = round2(netExVat / (1 - (mergedDiscPct / 100)));
+        mergedDiscAmt = round2(Math.max(0, inferredGross - netExVat));
+      } else if (mergedTotalAmt <= 0 && mergedLbpAmt > 0 && mergedDiscLbp <= 0 && mergedDiscPct < 100) {
+        mergedDiscLbp = Math.round((mergedLbpAmt / (1 - (mergedDiscPct / 100))) - mergedLbpAmt);
+      }
+    }
+
     return Object.assign({}, det, {
       formType: finalForm,
       company: pickStr(det.company, ai.company),
@@ -1947,11 +2058,13 @@
       driver: pickStr(det.driver, ai.driver),
       staff: pickStr(det.staff, ai.staff),
       paymentMethod: pickStr(det.paymentMethod, ai.paymentMethod),
-      subtotalExVat: pickNum(det.subtotalExVat, ai.subtotalExVat),
-      discountAmount: pickNum(det.discountAmount, ai.discountAmount || ai.discount),
-      vatAmount: pickNum(det.vatAmount, ai.vatAmount),
-      totalAmount: pickNum(det.totalAmount, ai.totalAmount),
-      lbpAmount: pickNum(det.lbpAmount, ai.lbpAmount),
+      subtotalExVat: mergedSubExVat,
+      discountPct: mergedDiscPct,
+      discountAmount: mergedDiscAmt,
+      discountLbp: mergedDiscLbp,
+      vatAmount: mergedVatAmt,
+      totalAmount: mergedTotalAmt,
+      lbpAmount: mergedLbpAmt,
       hasVat: Boolean(det.hasVat || ai.hasVat || Number(ai.vatAmount) > 0),
       pricePending: Boolean(det.pricePending || ai.pricePending),
       qty: pickNum(det.qty, ai.qty) || 1,
@@ -2369,6 +2482,10 @@
         const domToday = D.todayISO ? D.todayISO() : new Date().toISOString().slice(0, 10);
         const domFx = (D.getLbpFxRate ? Number(D.getLbpFxRate(parsed.date || domToday)) : 89500) || 89500;
         const domConvUsd = (parsed.totalAmount <= 0 && parsed.lbpAmount > 0) ? round2(parsed.lbpAmount / domFx) : 0;
+        const domConvDiscUsd = (parsed.discountAmount <= 0 && Number(parsed.discountLbp || 0) > 0) ? round2(Number(parsed.discountLbp) / domFx) : 0;
+        const domDiscUsd = (!parsed.pricePending && (Number(parsed.discountAmount || 0) > 0 || domConvDiscUsd > 0))
+          ? round2(Number(parsed.discountAmount || 0) || domConvDiscUsd)
+          : 0;
         const amt = parsed.totalAmount || domConvUsd || parsed.subtotalExVat || 0;
         const netAmt = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : amt;
         const prodDesc = matched.product || parsed.product || (Array.isArray(parsed.lines) && parsed.lines[0] && (parsed.lines[0].desc || parsed.lines[0].item_name)) || '';
@@ -2382,6 +2499,7 @@
           domKey = domainSourceForm === 'receipt' ? 'trd_receipts' : 'trd_sales';
           if (domKey === 'trd_receipts') {
             Object.assign(domFields, { ide_customer: matched.customer || parsed.customer || '', ide_amount: amt });
+            if (domDiscUsd > 0) domFields.ide_discount = domDiscUsd;
           } else {
             Object.assign(domFields, {
               ide_customer: matched.customer || parsed.customer || '',
@@ -2399,6 +2517,7 @@
               ide_tenant: matched.customer || parsed.customer || '',
               ide_gross: amt
             });
+            if (domDiscUsd > 0) domFields.ide_discount = domDiscUsd;
           } else {
             Object.assign(domFields, {
               ide_property: matched.site || parsed.site || '',
@@ -2578,6 +2697,10 @@
     // 4. Form-specific fields & line items
     const fxRate = (D.getLbpFxRate ? Number(D.getLbpFxRate(parsed.date || today)) : 89500) || 89500;
     const convertedLbpUsd = (parsed.totalAmount <= 0 && parsed.lbpAmount > 0) ? round2(parsed.lbpAmount / fxRate) : 0;
+    const convertedLbpDiscUsd = (parsed.discountAmount <= 0 && Number(parsed.discountLbp || 0) > 0) ? round2(Number(parsed.discountLbp) / fxRate) : 0;
+    const rawScanDiscUsd = (!parsed.pricePending && (Number(parsed.discountAmount || 0) > 0 || convertedLbpDiscUsd > 0))
+      ? round2(Number(parsed.discountAmount || 0) || convertedLbpDiscUsd)
+      : 0;
     if (convertedLbpUsd > 0 && !['salary', 'external', 'treasury', 'conversion'].includes(targetForm)) {
       extraNotes.push(`Converted from ${Number(parsed.lbpAmount).toLocaleString('en-US')} LBP @ ${fxRate.toLocaleString('en-US')}`);
     }
@@ -2621,18 +2744,41 @@
       // Populate multi-line FORM_UI.expItems (recalcExpense multiplies sumPreVat by 1.11 when supIsIva is true)
       if (FORM_UI && Array.isArray(FORM_UI.expItems)) {
         const defWhLoc = D.defaultWarehouseLocationForCompany ? D.defaultWarehouseLocationForCompany(activeCo) : '';
+        const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
+        const preVatDiscBeforeTax = Boolean(
+          rawScanDiscUsd > 0 && fullTotal > 0 && parsed.subtotalExVat > 0 && parsed.vatAmount > 0
+          && Math.abs(round2((parsed.subtotalExVat - rawScanDiscUsd) * 1.11) - fullTotal) <= 0.06
+        );
+        const effModalDisc = (!parsed.pricePending && rawScanDiscUsd > 0)
+          ? (preVatDiscBeforeTax ? round2(Math.max(0, round2(parsed.subtotalExVat * 1.11) - fullTotal)) : rawScanDiscUsd)
+          : 0;
+        const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0) && !preVatDiscBeforeTax;
+        const grossTotalForLine = preVatDiscBeforeTax
+          ? round2(parsed.subtotalExVat * 1.11)
+          : (effModalDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + effModalDisc)) : fullTotal);
+        let targetPreDiscSum = 0;
+        if (!parsed.pricePending) {
+          if (supIsIva) {
+            const subFitsDiscNet = preVatDiscBeforeTax || (parsed.subtotalExVat > 0 && !subIsInclGross && (!(effModalDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - effModalDisc - fullTotal) <= 0.06));
+            targetPreDiscSum = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
+          } else {
+            targetPreDiscSum = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && effModalDisc > 0 && !preVatDiscBeforeTax) ? parsed.subtotalExVat : grossTotalForLine;
+          }
+        }
         if (matched.groundedLines && matched.groundedLines.length > 0) {
           const linesSum = matched.groundedLines.reduce((s, x) => s + Number(x.line_total || 0), 0);
           let scaleFactor = 1;
-          if (parsed.subtotalExVat > 0 && parsed.totalAmount > parsed.subtotalExVat) {
-            if (supIsIva) {
-              // recalcExpense multiplies by 1.11, so lines must be pre-VAT
-              if (Math.abs(linesSum - parsed.totalAmount) < 0.1) {
-                scaleFactor = parsed.subtotalExVat / parsed.totalAmount;
+          if (!parsed.pricePending && linesSum > 0) {
+            if (effModalDisc > 0 && targetPreDiscSum > 0) {
+              if (Math.abs(linesSum - targetPreDiscSum) > 0.1) {
+                scaleFactor = targetPreDiscSum / linesSum;
               }
-            } else {
-              // recalcExpense multiplies by 1.0, so scale ex-VAT lines up to full TTC payable when VAT is on the bill
-              if (Math.abs(linesSum - parsed.subtotalExVat) < 0.1 && (isHospitality || parsed.hasVat)) {
+            } else if (parsed.subtotalExVat > 0 && parsed.totalAmount > parsed.subtotalExVat) {
+              if (supIsIva) {
+                if (Math.abs(linesSum - parsed.totalAmount) < 0.1) {
+                  scaleFactor = parsed.subtotalExVat / parsed.totalAmount;
+                }
+              } else if (Math.abs(linesSum - parsed.subtotalExVat) < 0.1 && (isHospitality || parsed.hasVat)) {
                 scaleFactor = parsed.totalAmount / parsed.subtotalExVat;
               }
             }
@@ -2649,19 +2795,6 @@
           }));
           FORM_UI.expItem0Manual = true;
         } else {
-          let baseAmt = 0;
-          const scanDisc = (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0) ? round2(Number(parsed.discountAmount)) : 0;
-          if (!parsed.pricePending) {
-            const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
-            const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0);
-            const grossTotalForLine = scanDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + scanDisc)) : fullTotal;
-            if (supIsIva) {
-              const subFitsDiscNet = parsed.subtotalExVat > 0 && !subIsInclGross && (!(scanDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - scanDisc - fullTotal) <= 0.05);
-              baseAmt = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
-            } else {
-              baseAmt = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && scanDisc > 0) ? parsed.subtotalExVat : grossTotalForLine;
-            }
-          }
           const effQty = parsed.qty > 0 ? parsed.qty : 1;
           FORM_UI.expItems = [{
             item_name: matched.product || matched.subcategory || matched.category || 'Scanned Expense Item',
@@ -2670,13 +2803,14 @@
             warehouse_location: defWhLoc,
             qty: effQty,
             uom: parsed.uom || 'Piece',
-            unit_cost: parsed.pricePending ? '' : round2(baseAmt / effQty)
+            unit_cost: parsed.pricePending ? '' : round2(targetPreDiscSum / effQty)
           }];
           FORM_UI.expItem0Manual = true;
         }
         if (D.renderExpenseItemsBuilderRows) D.renderExpenseItemsBuilderRows();
-        if (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0 && $('f_discount')) {
-          setInputValueAndFire('f_discount', round2(Number(parsed.discountAmount)), filledSet, warnSet, false);
+        if (!parsed.pricePending && effModalDisc > 0 && $('f_discount')) {
+          if (FORM_UI) FORM_UI.discInputUnit = 'usd';
+          setInputValueAndFire('f_discount', effModalDisc, filledSet, warnSet, false);
         }
         filledSet.add('f_exi_name_0');
         filledSet.add('f_exi_cost_0');
@@ -2779,6 +2913,10 @@
         setInputValueAndFire('f_amount', rcptUsd, filledSet, warnSet, convertedLbpUsd > 0);
       } else if (rcptUsd > 0 && $('f_usd')) {
         setInputValueAndFire('f_usd', rcptUsd, filledSet, warnSet, convertedLbpUsd > 0);
+      }
+      if (!parsed.pricePending && rawScanDiscUsd > 0 && $('f_discount')) {
+        if (FORM_UI) FORM_UI.discInputUnit = 'usd';
+        setInputValueAndFire('f_discount', rawScanDiscUsd, filledSet, warnSet, false);
       }
       if (parsed.lbpAmount > 0 && $('f_lbp')) {
         setInputValueAndFire('f_lbp', parsed.lbpAmount, filledSet, warnSet, false);
@@ -3850,7 +3988,15 @@
   function syncMobAiStepPills() {
     const hasQ = hasActiveSlipQueue();
     const q = SCAN_STATE.slipQueue;
-    const txt = hasQ ? `${q.currentIndex + 1} / ${q.total}` : '';
+    let txt = '';
+    if (hasQ) {
+      if (q.summaryOpen) {
+        const postedCnt = q.items.filter(it => it && it.status === 'posted').length;
+        txt = `${postedCnt} / ${q.total}`;
+      } else {
+        txt = `${q.currentIndex + 1} / ${q.total}`;
+      }
+    }
     ['entryMobAiStepPill', 'indMobAiStepPill'].forEach(pid => {
       const el = $(pid);
       if (!el) return;
@@ -3862,6 +4008,71 @@
         el.hidden = true;
       }
     });
+  }
+
+  const NON_MONEY_QUEUE_KEYS = new Set([
+    'customers', 'suppliers', 'sites', 'regions', 'products', 'items', 'categories',
+    'fx_rates', 'vat_rates', 'equipment', 'drivers', 'staff_members', 'roles',
+    'price_rules', 'raw_pricing', 'overtime_rates', 'work_shifts', 'employments',
+    'staff_assignments', 'documents', 'hsp_tariffs', 'trd_targets', 'ins_agreements',
+    'ins_catalogue', 'hld_partners', 'trd_trucks', 'trd_stock', 'hsp_stock', 'hsp_energy'
+  ]);
+
+  function formatBatchUsd(num) {
+    const n = Math.round((Number(num) || 0) * 100) / 100;
+    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n < 0 ? '-$' + abs : '$' + abs;
+  }
+
+  function summarizeQueueTotals(q) {
+    const items = (q && Array.isArray(q.items)) ? q.items : [];
+    const postedItems = items.filter(it => it && it.status === 'posted');
+    const skippedItems = items.filter(it => it && it.status === 'skipped');
+    const moneyItems = postedItems.filter(it => Boolean(it.hasMoneyTotal));
+    const anyRedacted = moneyItems.some(it => Boolean(it.usdRedacted));
+    const showUsd = moneyItems.length > 0 && !anyRedacted;
+    const totalUsd = Math.round(moneyItems.reduce((s, it) => s + (Number(it.postedUsd) || 0), 0) * 100) / 100;
+    return {
+      postedCnt: postedItems.length,
+      skippedCnt: skippedItems.length,
+      skippedItems,
+      showUsd,
+      totalUsd,
+      totalUsdFmt: showUsd ? formatBatchUsd(totalUsd) : ''
+    };
+  }
+
+  function renderQueueDoneSummaryHtml(q, isDomain) {
+    if (!q) return '';
+    const stats = summarizeQueueTotals(q);
+    const wrapId = isDomain ? 'indSsQueueDoneSummary' : 'ssQueueDoneSummary';
+    const reopenFirstId = isDomain ? 'indSsQueueReopenFirstBtn' : 'ssQueueReopenFirstBtn';
+    const dismissId = isDomain ? 'indSsQueueFinishDismissBtn' : 'ssQueueFinishDismissBtn';
+    const firstSk = stats.skippedItems[0];
+    const reopenChips = stats.skippedItems.map(sk => `
+      <button type="button" class="ss-alt-form-chip ss-reopen-chip" data-ss-reopen-idx="${sk.idx}">
+        ${ic('rotate')} <span>Reopen</span> <b data-no-i18n="1">#${sk.idx + 1} · ${esc(sk.fileName)}</b>
+      </button>
+    `).join('');
+    return `
+      <div class="ss-queue-bar ss-queue-done-summary" id="${wrapId}" role="region" aria-label="Batch Queue Summary">
+        <div class="ss-queue-hdr">
+          <div class="ss-queue-title">
+            <span class="ss-stat-pill is-form">${ic('check_circle')} <span>Batch Summary</span></span>
+            <span class="ss-stat-pill is-ok"><b data-no-i18n="1">${stats.postedCnt}</b> <span>posted</span></span>
+            <span class="ss-stat-pill is-warn"><b data-no-i18n="1">${stats.skippedCnt}</b> <span>skipped</span></span>
+            ${stats.showUsd ? `<span class="ss-stat-pill is-ok"><b data-no-i18n="1">${esc(stats.totalUsdFmt)}</b> <span>entered</span></span>` : ''}
+          </div>
+          <div class="ss-queue-actions">
+            ${firstSk ? `<button type="button" class="btn btn-primary btn-sm" id="${reopenFirstId}" data-ss-reopen-idx="${firstSk.idx}"><span>Reopen First Skipped</span></button>` : ''}
+            <button type="button" class="btn btn-outline-bar btn-sm" id="${dismissId}" data-ss-q-act="finish-dismiss"><span>Finish &amp; Dismiss</span></button>
+          </div>
+        </div>
+        <div class="ss-queue-pills" role="group" aria-label="Skipped slips">
+          ${reopenChips}
+        </div>
+      </div>
+    `;
   }
 
   function resolveQueueItemDisplayLabel(it) {
@@ -3877,6 +4088,7 @@
   function renderSlipQueueBarHtml() {
     if (!hasActiveSlipQueue()) return '';
     const q = SCAN_STATE.slipQueue;
+    if (q.summaryOpen) return renderQueueDoneSummaryHtml(q, false);
     const cur = q.items[q.currentIndex] || q.items[0];
     const postedCnt = q.items.filter(it => it.status === 'posted').length;
     const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
@@ -3889,7 +4101,8 @@
       ].filter(Boolean).join(' ');
       const stateIcon = it.status === 'posted' ? '✓' : (it.status === 'skipped' ? '-' : (it.status === 'extracting' ? '...' : ''));
       const ariaLbl = `Slip ${idx + 1} of ${q.total} (${it.status})`;
-      return `<button type="button" class="${cls}" data-ss-queue-idx="${idx}" aria-label="${esc(ariaLbl)}" aria-current="${isActive ? 'step' : 'false'}"><span data-no-i18n="1">${idx + 1}${stateIcon ? ' ' + stateIcon : ''}</span></button>`;
+      const disAttr = it.status === 'posted' ? ' disabled' : '';
+      return `<button type="button" class="${cls}" data-ss-queue-idx="${idx}" aria-label="${esc(ariaLbl)}" aria-current="${isActive ? 'step' : 'false'}"${disAttr}><span data-no-i18n="1">${idx + 1}${stateIcon ? ' ' + stateIcon : ''}</span></button>`;
     }).join('');
     const curFormLbl = resolveQueueItemDisplayLabel(cur);
     const curCo = cur && cur.targetCompany ? cur.targetCompany : '';
@@ -3925,8 +4138,31 @@
     rootEl.querySelectorAll('[data-ss-queue-idx]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
+        if (SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return;
         const idx = Number(btn.getAttribute('data-ss-queue-idx'));
         if (!Number.isNaN(idx)) await activateQueueSlip(idx);
+      });
+    });
+    rootEl.querySelectorAll('[data-ss-reopen-idx]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!hasActiveSlipQueue() || SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return;
+        const q = SCAN_STATE.slipQueue;
+        const idx = Number(btn.getAttribute('data-ss-reopen-idx'));
+        if (Number.isNaN(idx) || !q.items[idx]) return;
+        const wasSummary = Boolean(q.summaryOpen);
+        const it = q.items[idx];
+        const prevStatus = it.status;
+        q.summaryOpen = false;
+        if (it.status === 'skipped') {
+          it.status = (it.scanBundle || it.domExt) ? 'ready' : 'pending';
+        }
+        const res = await activateQueueSlip(idx, { fromPostAdvance: false, fromSummaryReopen: true });
+        if (!res && SCAN_STATE.slipQueue && SCAN_STATE.slipQueue.id === q.id && wasSummary) {
+          it.status = prevStatus;
+          q.summaryOpen = true;
+          refreshQueueBarsOnly();
+        }
       });
     });
     rootEl.querySelectorAll('[data-ss-q-act]').forEach(btn => {
@@ -3934,17 +4170,31 @@
         e.stopPropagation();
         const act = btn.getAttribute('data-ss-q-act');
         if (act === 'prev' && hasActiveSlipQueue()) {
+          if (SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return;
           const nextIdx = Math.max(0, SCAN_STATE.slipQueue.currentIndex - 1);
           await activateQueueSlip(nextIdx);
         } else if (act === 'next' && hasActiveSlipQueue()) {
+          if (SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return;
           const nextIdx = Math.min(SCAN_STATE.slipQueue.total - 1, SCAN_STATE.slipQueue.currentIndex + 1);
           await activateQueueSlip(nextIdx);
         } else if (act === 'skip') {
+          if (SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return;
           await skipCurrentQueueSlip();
         } else if (act === 'merge') {
           await mergeQueueToBundle();
         } else if (act === 'dismiss') {
           clearSlipQueue({ refreshUi: true });
+        } else if (act === 'finish-dismiss') {
+          const q = SCAN_STATE.slipQueue;
+          const stats = summarizeQueueTotals(q);
+          clearSlipQueue({ refreshUi: false });
+          if ($('entryModal') && !$('entryModal').hidden && typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+          if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') D.closeIndustryDomainEntryModal(true);
+          if (D && D.toast) {
+            D.toast(stats.showUsd
+              ? `Batch queue closed: ${stats.postedCnt} posted, ${stats.skippedCnt} skipped · ${stats.totalUsdFmt} entered.`
+              : `Batch queue closed: ${stats.postedCnt} posted, ${stats.skippedCnt} skipped.`, 'ok');
+          }
         }
       });
     });
@@ -3970,10 +4220,13 @@
     if (existingSplit) existingSplit.remove();
 
     if (hasActiveSlipQueue()) {
+      const q = SCAN_STATE.slipQueue;
       modal.classList.add('mob-ai-scan-open');
       modal.classList.remove('mob-ai-voice-open');
       const wrap = document.createElement('div');
-      wrap.innerHTML = renderSlipQueueBarHtml().replace('id="ssSlipQueueBar"', 'id="indSsSlipQueueBar"').replace('id="ssMergeQueueToBundleBtn"', 'id="indSsMergeQueueToBundleBtn"');
+      wrap.innerHTML = q.summaryOpen
+        ? renderQueueDoneSummaryHtml(q, true)
+        : renderSlipQueueBarHtml().replace('id="ssSlipQueueBar"', 'id="indSsSlipQueueBar"').replace('id="ssMergeQueueToBundleBtn"', 'id="indSsMergeQueueToBundleBtn"');
       const qEl = wrap.firstElementChild;
       if (qEl) {
         qEl.style.flexBasis = '100%';
@@ -4002,7 +4255,9 @@
   function shouldSplitActionBeOffered(units) {
     if (!Array.isArray(units) || units.length < 2) return false;
     const readable = units.filter(u => String((u && u.text) || '').trim().length >= 10);
-    return readable.length >= 2;
+    if (readable.length >= 2) return true;
+    const imageUnits = units.filter(u => u && u.attObj && /^image\/(?:jpeg|png|webp)/i.test(u.attObj.mime_type || ''));
+    return imageUnits.length >= 2;
   }
 
   function refreshQueueBarsOnly() {
@@ -4012,7 +4267,7 @@
     }
     const entryModal = $('entryModal');
     if (entryModal && !entryModal.hidden) {
-      const existing = $('ssSlipQueueBar');
+      const existing = $('ssSlipQueueBar') || $('ssQueueDoneSummary');
       if (existing) {
         const tmp = document.createElement('div');
         tmp.innerHTML = renderSlipQueueBarHtml();
@@ -4045,7 +4300,7 @@
     if (!container) return;
     const drafts = {};
     container.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-      if (!el.id || el.type === 'file' || el.type === 'hidden') return;
+      if (!el.id || el.type === 'file') return;
       if (!/^(?:f_|ide_)/.test(el.id)) return;
       drafts[el.id] = el.type === 'checkbox' ? Boolean(el.checked) : el.value;
     });
@@ -4058,20 +4313,49 @@
         item.manualEntryAttachments = Array.isArray(fui.attachments)
           ? fui.attachments.filter(a => a && !a._fromSmartScan).map(a => Object.assign({}, a))
           : [];
+        item.draftExpItems = Array.isArray(fui.expItems)
+          ? fui.expItems.map(r => Object.assign({}, r))
+          : null;
+        item.draftRepairItems = Array.isArray(fui.repairItems)
+          ? fui.repairItems.map(r => Object.assign({}, r))
+          : null;
       }
     }
   }
 
   function restoreSlipDraftValues(item) {
-    if (!item || !item.draftValues) return;
-    Object.entries(item.draftValues).forEach(([id, val]) => {
+    if (!item || (!item.draftValues && !item.draftExpItems && !item.draftRepairItems)) return;
+    if (typeof D.getFormUi === 'function') {
+      const fui = D.getFormUi();
+      if (fui && Array.isArray(item.draftExpItems)) {
+        fui.expItems = item.draftExpItems.map(r => Object.assign({}, r));
+        if (D.renderExpenseItemsBuilderRows) D.renderExpenseItemsBuilderRows();
+      }
+      if (fui && Array.isArray(item.draftRepairItems)) {
+        fui.repairItems = item.draftRepairItems.map(r => Object.assign({}, r));
+        if (D.renderRepairItemsBuilderRows) D.renderRepairItemsBuilderRows();
+      }
+    }
+    Object.entries(item.draftValues || {}).forEach(([id, val]) => {
       const el = $(id);
       if (!el || el.disabled || el.readOnly) return;
-      if (el.type === 'checkbox') el.checked = Boolean(val);
-      else el.value = String(val == null ? '' : val);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
+      if (el.type === 'checkbox') {
+        const nextChk = Boolean(val);
+        if (el.checked === nextChk) return;
+        el.checked = nextChk;
+      } else {
+        const nextStr = String(val == null ? '' : val);
+        if (String(el.value ?? '') === nextStr) return;
+        el.value = nextStr;
+      }
+      if (el.type !== 'hidden') {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     });
+    if (typeof D.recalcForm === 'function') {
+      try { D.recalcForm(); } catch (_) {}
+    }
   }
 
   async function extractQueueItem(item, queueId) {
@@ -4204,14 +4488,35 @@
 
   async function activateQueueSlip(idx, opts = {}) {
     if (!hasActiveSlipQueue()) return null;
+    if (SCAN_STATE.activatingSlip && !(opts && opts.nestedFallback)) return null;
+    SCAN_STATE.activatingSlip = true;
+    try {
+      return await activateQueueSlipBody(idx, opts);
+    } finally {
+      if (!(opts && opts.nestedFallback)) SCAN_STATE.activatingSlip = false;
+    }
+  }
+
+  async function activateQueueSlipBody(idx, opts = {}) {
+    if (!hasActiveSlipQueue()) return null;
     const q = SCAN_STATE.slipQueue;
     const targetIdx = Math.max(0, Math.min(q.total - 1, Number(idx || 0)));
     const prevIdx = q.currentIndex;
-    if (!opts.fromPostAdvance && prevIdx !== targetIdx && q.items[prevIdx]) {
-      captureActiveSlipDraftValues(q.items[prevIdx]);
-    }
+    const prevWasSummary = Boolean(q.summaryOpen);
     const item = q.items[targetIdx];
     if (!item) return null;
+    if (item.status === 'posted') {
+      if (D && D.toast) D.toast('Slip already posted in this batch.', 'ok');
+      return null;
+    }
+    if (!opts.fromPostAdvance && !prevWasSummary && prevIdx !== targetIdx && q.items[prevIdx]) {
+      captureActiveSlipDraftValues(q.items[prevIdx]);
+    }
+    const wasSkippedBeforeActivate = item.status === 'skipped';
+    if (item.status === 'skipped' && !opts.fromPostAdvance) {
+      item.status = (item.scanBundle || item.domExt) ? 'ready' : 'pending';
+      q.summaryOpen = false;
+    }
 
     if (item.status === 'pending' || item.status === 'extracting' || (!item.scanBundle && !item.domExt && item.status !== 'error')) {
       await extractQueueItem(item, q.id);
@@ -4224,13 +4529,13 @@
         item.status = 'skipped';
         const fbIdx = findNextUnpostedQueueIdx(q, targetIdx);
         if (fbIdx !== -1 && fbIdx !== targetIdx) {
-          return activateQueueSlip(fbIdx, { fromPostAdvance: true });
+          return activateQueueSlip(fbIdx, { fromPostAdvance: true, nestedFallback: true });
         }
-        SCAN_STATE.slipQueue = null;
-        SCAN_STATE.lastMultiUnits = null;
-        syncMobAiStepPills();
+        finishQueueAfterAllDecided(q, { closeOpenModals: true });
         return null;
       }
+      if (wasSkippedBeforeActivate) item.status = 'skipped';
+      if (prevWasSummary) q.summaryOpen = true;
       q.currentIndex = prevIdx;
       refreshQueueBarsOnly();
       return null;
@@ -4403,6 +4708,10 @@
       precheckAckSig: '',
       precheckOverrides: {},
       draftValues: null,
+      postedUsd: 0,
+      hasMoneyTotal: false,
+      usdRedacted: false,
+      postedRecordId: '',
       errorMsg: ''
     }));
     const queue = {
@@ -4412,6 +4721,7 @@
       captureMethod,
       total: items.length,
       currentIndex: 0,
+      summaryOpen: false,
       bgRunning: false,
       sourceItems: units.map(u => u.rawInput).filter(Boolean),
       lastUnitsSnapshot: units,
@@ -4433,13 +4743,23 @@
     return queue;
   }
 
-  function beginQueuePostTransition() {
-    if (!hasActiveSlipQueue()) return null;
+  function beginQueuePostTransition(postMeta) {
+    if (!hasActiveSlipQueue() || SCAN_STATE.slipQueue.summaryOpen) return null;
     const q = SCAN_STATE.slipQueue;
     const idx = q.currentIndex;
-    if (q.items[idx]) {
-      captureActiveSlipDraftValues(q.items[idx]);
-      q.items[idx].status = 'posted';
+    const it = q.items[idx];
+    if (it) {
+      captureActiveSlipDraftValues(it);
+      it.status = 'posted';
+      const meta = (postMeta && typeof postMeta === 'object') ? postMeta : {};
+      const crKey = String(meta.crKey || '');
+      const hasMoney = meta.hasMoneyTotal !== undefined
+        ? Boolean(meta.hasMoneyTotal)
+        : Boolean(crKey && !NON_MONEY_QUEUE_KEYS.has(crKey));
+      it.hasMoneyTotal = hasMoney;
+      it.postedUsd = hasMoney ? (Math.round((Number(meta.postedUsd) || 0) * 100) / 100) : 0;
+      it.usdRedacted = Boolean(meta.usdRedacted);
+      it.postedRecordId = String(meta.recordId || '');
     }
     SCAN_STATE.advancingQueueOnPost = true;
     return { queueId: q.id, postedIdx: idx };
@@ -4449,7 +4769,14 @@
     SCAN_STATE.advancingQueueOnPost = false;
     if (!token || !SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== token.queueId) return Promise.resolve(null);
     const q = SCAN_STATE.slipQueue;
-    if (q.items[token.postedIdx]) q.items[token.postedIdx].status = 'ready';
+    if (q.items[token.postedIdx]) {
+      const it = q.items[token.postedIdx];
+      it.status = 'ready';
+      it.postedUsd = 0;
+      it.hasMoneyTotal = false;
+      it.usdRedacted = false;
+      it.postedRecordId = '';
+    }
     q.currentIndex = token.postedIdx;
     if (opts && opts.reopen) {
       return activateQueueSlip(token.postedIdx, { fromPostAdvance: false });
@@ -4471,44 +4798,121 @@
     return -1;
   }
 
+  function showQueueDoneSummary(q) {
+    if (!q || !SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== q.id) return;
+    q.summaryOpen = true;
+    SCAN_STATE.lastScan = null;
+    SCAN_STATE.pendingPrecheckBundle = null;
+    SCAN_STATE.pendingDomainPrecheck = null;
+    SCAN_STATE.splitOpen = false;
+    unwrapSplitPreviewDom();
+    const skippedItems = q.items.filter(it => it && it.status === 'skipped');
+    const domOpen = Boolean($('indDomainEntryModal') && !$('indDomainEntryModal').hidden);
+    const entryOpen = Boolean($('entryModal') && !$('entryModal').hidden);
+    if (domOpen) {
+      mountOnDomainModal();
+      syncMobAiStepPills();
+      return;
+    }
+    if (entryOpen) {
+      renderSmartScanBarDom();
+      syncMobAiStepPills();
+      return;
+    }
+    const firstSkipped = skippedItems[0];
+    const canOpenDom = Boolean(
+      firstSkipped && firstSkipped.kind === 'domain' && firstSkipped.domExt
+      && seatHasCompanyInIndustry(firstSkipped.targetInd || firstSkipped.domExt.ind)
+      && (!D.canEnterDomainForm || D.canEnterDomainForm(firstSkipped.domExt.formKey))
+      && (!D.canManageSiblingChronoSchedule || D.canManageSiblingChronoSchedule(firstSkipped.domExt.formKey))
+      && typeof D.openIndustryDomainEntryModal === 'function'
+    );
+    SCAN_STATE.suppressResetOnModalSwitch = true;
+    SCAN_STATE.suppressDomResetOnSwitch = true;
+    try {
+      if (canOpenDom) {
+        D.openIndustryDomainEntryModal(firstSkipped.domExt.formKey, {
+          company: firstSkipped.domExt.company || undefined
+        });
+      } else if (typeof D.openEntryModal === 'function') {
+        const curInd = D.getActiveIndustry ? D.getActiveIndustry(D.STATE && D.STATE.company) : 'Manufacturing';
+        const candForm = (firstSkipped && firstSkipped.kind === 'shared' && firstSkipped.targetForm) || 'expense';
+        const safeForm = (!isBlockedFormForInd(candForm, curInd) && (!D.canEnterForm || D.canEnterForm(candForm)))
+          ? candForm
+          : (['expense', 'document', 'external', 'sales'].find(f => !isBlockedFormForInd(f, curInd) && (!D.canEnterForm || D.canEnterForm(f))) || 'expense');
+        D.openEntryModal(safeForm, null, { forceSwitch: true });
+      }
+    } finally {
+      SCAN_STATE.suppressResetOnModalSwitch = false;
+      SCAN_STATE.suppressDomResetOnSwitch = false;
+    }
+    if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden) {
+      mountOnDomainModal();
+      syncMobAiStepPills();
+      return;
+    }
+    if ($('entryModal') && !$('entryModal').hidden) {
+      const entryM = $('entryModal');
+      entryM.classList.add('mob-ai-scan-open');
+      entryM.classList.remove('mob-ai-voice-open');
+      renderSmartScanBarDom();
+      syncMobAiStepPills();
+      return;
+    }
+    const stats = summarizeQueueTotals(q);
+    clearSlipQueue({ refreshUi: false });
+    if (D && D.toast) {
+      D.toast(stats.showUsd
+        ? `Batch queue closed: ${stats.postedCnt} posted, ${stats.skippedCnt} skipped · ${stats.totalUsdFmt} entered.`
+        : `Batch queue closed: ${stats.postedCnt} posted, ${stats.skippedCnt} skipped.`, 'ok');
+    }
+  }
+
+  function finishQueueAfterAllDecided(q, opts = {}) {
+    const stats = summarizeQueueTotals(q);
+    if (stats.skippedCnt === 0) {
+      SCAN_STATE.slipQueue = null;
+      SCAN_STATE.lastMultiUnits = null;
+      if (opts && opts.closeOpenModals) {
+        if ($('entryModal') && !$('entryModal').hidden && typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
+        if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') D.closeIndustryDomainEntryModal(true);
+      }
+      syncMobAiStepPills();
+      if (D && D.toast) {
+        const slipWord = stats.postedCnt === 1 ? '1 slip' : `all ${stats.postedCnt} slips`;
+        D.toast(stats.showUsd
+          ? `Batch queue complete: ${slipWord} posted · ${stats.totalUsdFmt} total.`
+          : `Batch queue complete: ${slipWord} posted.`, 'ok');
+      }
+      return true;
+    }
+    showQueueDoneSummary(q);
+    return true;
+  }
+
   async function completeQueuePostTransition(token) {
     SCAN_STATE.advancingQueueOnPost = false;
     if (!token || !SCAN_STATE.slipQueue || SCAN_STATE.slipQueue.id !== token.queueId) return false;
     const q = SCAN_STATE.slipQueue;
     const nextIdx = findNextUnpostedQueueIdx(q, token.postedIdx);
     if (nextIdx === -1) {
-      const postedCnt = q.items.filter(it => it.status === 'posted').length;
-      const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
-      SCAN_STATE.slipQueue = null;
-      SCAN_STATE.lastMultiUnits = null;
-      syncMobAiStepPills();
-      if (D && D.toast) {
-        D.toast(skippedCnt > 0
-          ? `Batch queue complete: ${postedCnt} posted, ${skippedCnt} skipped.`
-          : `Batch queue complete: all ${postedCnt} slips posted.`, 'ok');
-      }
-      return true;
+      return finishQueueAfterAllDecided(q);
     }
     await activateQueueSlip(nextIdx, { fromPostAdvance: true });
     return true;
   }
 
   async function skipCurrentQueueSlip() {
-    if (!hasActiveSlipQueue()) return false;
+    if (!hasActiveSlipQueue() || SCAN_STATE.activatingSlip || SCAN_STATE.advancingQueueOnPost) return false;
     const q = SCAN_STATE.slipQueue;
     const idx = q.currentIndex;
-    if (q.items[idx]) q.items[idx].status = 'skipped';
+    if (q.items[idx]) {
+      captureActiveSlipDraftValues(q.items[idx]);
+      q.items[idx].status = 'skipped';
+    }
     const nextIdx = findNextUnpostedQueueIdx(q, idx);
     if (nextIdx === -1) {
-      const postedCnt = q.items.filter(it => it.status === 'posted').length;
-      const skippedCnt = q.items.filter(it => it.status === 'skipped').length;
-      SCAN_STATE.slipQueue = null;
-      SCAN_STATE.lastMultiUnits = null;
-      if ($('entryModal') && !$('entryModal').hidden && typeof D.closeEntryModal === 'function') D.closeEntryModal(true);
-      if ($('indDomainEntryModal') && !$('indDomainEntryModal').hidden && typeof D.closeIndustryDomainEntryModal === 'function') D.closeIndustryDomainEntryModal(true);
-      syncMobAiStepPills();
-      if (D && D.toast) D.toast(`Batch queue closed: ${postedCnt} posted, ${skippedCnt} skipped.`, 'ok');
-      return true;
+      return finishQueueAfterAllDecided(q, { closeOpenModals: true });
     }
     await activateQueueSlip(nextIdx, { fromPostAdvance: true });
     return true;
@@ -4574,22 +4978,34 @@
       return true;
     };
     let preExtractedUnits = null;
+    const forceQueueMode = Boolean(
+      (scanOpts && scanOpts.batchMode === 'queue')
+      || rawItems.some(it => it && typeof it === 'object' && (it._ssBatchMode === 'queue' || it._stackSlip))
+    );
+    const preserveQueueSingle = Boolean(
+      !forceQueueMode
+      && (!scanOpts || scanOpts.batchMode !== 'bundle')
+      && hasActiveSlipQueue()
+      && !(SCAN_STATE.slipQueue && SCAN_STATE.slipQueue.summaryOpen)
+    );
     if (scanOpts && scanOpts.batchMode !== 'bundle' && !scanOpts._singleQueueUnit) {
       SCAN_STATE.busy = true;
       try {
         const unitRes = await extractSlipUnitsFromInput(rawItems, captureMethod, isPreScanCurrent);
         if (unitRes.aborted || !isPreScanCurrent()) return null;
         preExtractedUnits = unitRes.units;
-        if (unitRes.units.length >= 2) {
-          SCAN_STATE.lastMultiUnits = { units: unitRes.units, captureMethod, sourceOrigin: 'entry' };
-          if (shouldDefaultToSlipQueue(unitRes.units)) {
+        if (unitRes.units.length >= 2 || (forceQueueMode && unitRes.units.length >= 1)) {
+          SCAN_STATE.lastMultiUnits = unitRes.units.length >= 2 ? { units: unitRes.units, captureMethod, sourceOrigin: 'entry' } : null;
+          if (forceQueueMode || shouldDefaultToSlipQueue(unitRes.units)) {
             return await startSlipQueue(unitRes.units, captureMethod, 'entry', unitRes.truncatedCount);
           }
         } else {
           SCAN_STATE.lastMultiUnits = null;
         }
-        SCAN_STATE.slipQueue = null;
-        syncMobAiStepPills();
+        if (!(preserveQueueSingle && unitRes.units.length <= 1)) {
+          SCAN_STATE.slipQueue = null;
+          syncMobAiStepPills();
+        }
       } finally {
         if (SCAN_STATE.entryScanGen === preScanGen) {
           SCAN_STATE.busy = false;
@@ -4814,6 +5230,17 @@
       if (scanBundle.blockedByRbac) return null;
       if (!scanBundle.routedDomainModal && !isEntryScanCurrent()) return null;
 
+      if (preserveQueueSingle && hasActiveSlipQueue() && SCAN_STATE.slipQueue && !SCAN_STATE.slipQueue.summaryOpen) {
+        const curIt = SCAN_STATE.slipQueue.items && SCAN_STATE.slipQueue.items[SCAN_STATE.slipQueue.currentIndex];
+        if (curIt) {
+          curIt.scanBundle = scanBundle;
+          if (scanBundle.fileName) curIt.fileName = scanBundle.fileName;
+          const p = scanBundle.parsed || {};
+          const nextTitle = p.ticket_no || p.invoice_no || p.supplier || p.customer || scanBundle.fileName;
+          if (nextTitle) curIt.title = String(nextTitle);
+        }
+        refreshQueueBarsOnly();
+      }
       notifyScanApplyOutcome(scanBundle, totalPages);
       return scanBundle;
     } catch (err) {
@@ -5263,10 +5690,10 @@
       camBtn.addEventListener('click', e => {
         e.stopPropagation();
         if (D && typeof D.openDocumentCameraCapture === 'function') {
-          D.openDocumentCameraCapture(async captured => {
+          D.openDocumentCameraCapture(async (captured, method, camOpts) => {
             const list = Array.isArray(captured) ? captured : (captured && captured.length ? Array.from(captured) : (captured ? [captured] : []));
             if (!list.length) return;
-            await scanFileOrAttachment(list, 'Live Camera Smart Scan');
+            await scanFileOrAttachment(list, method || 'Live Camera Smart Scan', camOpts || {});
           }, { enablePrecheck: true });
         } else {
           cInp.click();
@@ -5601,7 +6028,7 @@
     SCAN_STATE.splitOpen = false;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
-    if (!SCAN_STATE.advancingQueueOnPost) {
+    if (!SCAN_STATE.advancingQueueOnPost && !preserveVoice) {
       SCAN_STATE.slipQueue = null;
       SCAN_STATE.lastMultiUnits = null;
       syncMobAiStepPills();
@@ -6387,6 +6814,10 @@
         );
         if (opt) valToSet = opt.value;
       }
+      if (fId === 'ide_discount') {
+        const domUi = D.getFormUi ? D.getFormUi() : null;
+        if (domUi) { domUi.ideDiscUnit = 'usd'; domUi.ideSettleBase = null; }
+      }
       el.value = valToSet;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -6538,20 +6969,32 @@
     SCAN_STATE.domBusy = true;
     try {
       let preExtractedUnits = null;
+      const forceQueueDom = Boolean(
+        (opts && opts.batchMode === 'queue')
+        || batch.some(it => it && typeof it === 'object' && (it._ssBatchMode === 'queue' || it._stackSlip))
+      );
+      const preserveQueueDomSingle = Boolean(
+        !forceQueueDom
+        && (!opts || opts.batchMode !== 'bundle')
+        && hasActiveSlipQueue()
+        && !(SCAN_STATE.slipQueue && SCAN_STATE.slipQueue.summaryOpen)
+      );
       if (opts && opts.batchMode !== 'bundle' && !opts._singleQueueUnit) {
         const unitRes = await extractSlipUnitsFromInput(batch, opts.captureMethod || 'AI Smart Scan', isDomScanCurrent);
         if (unitRes.aborted || !isDomScanCurrent()) return null;
         preExtractedUnits = unitRes.units;
-        if (unitRes.units.length >= 2) {
-          SCAN_STATE.lastMultiUnits = { units: unitRes.units, captureMethod: opts.captureMethod || 'AI Smart Scan', sourceOrigin: 'domain' };
-          if (shouldDefaultToSlipQueue(unitRes.units)) {
+        if (unitRes.units.length >= 2 || (forceQueueDom && unitRes.units.length >= 1)) {
+          SCAN_STATE.lastMultiUnits = unitRes.units.length >= 2 ? { units: unitRes.units, captureMethod: opts.captureMethod || 'AI Smart Scan', sourceOrigin: 'domain' } : null;
+          if (forceQueueDom || shouldDefaultToSlipQueue(unitRes.units)) {
             return await startSlipQueue(unitRes.units, opts.captureMethod || 'AI Smart Scan', 'domain', unitRes.truncatedCount);
           }
         } else {
           SCAN_STATE.lastMultiUnits = null;
         }
-        SCAN_STATE.slipQueue = null;
-        syncMobAiStepPills();
+        if (!(preserveQueueDomSingle && unitRes.units.length <= 1)) {
+          SCAN_STATE.slipQueue = null;
+          syncMobAiStepPills();
+        }
       }
       const carriedPrecheck = collectCarriedPrecheckFlags(batch);
       const firstItem = batch[0] || null;
@@ -6875,7 +7318,18 @@
     }
       const oldBanner = $('indEntryPrecheckBanner');
       if (oldBanner) oldBanner.remove();
-      return applyDomainExtractionToModal(finalExt);
+      const applyDomRes = applyDomainExtractionToModal(finalExt);
+      if (applyDomRes && applyDomRes.ok && !applyDomRes.blocked && preserveQueueDomSingle && hasActiveSlipQueue() && SCAN_STATE.slipQueue && !SCAN_STATE.slipQueue.summaryOpen) {
+        const curDomIt = SCAN_STATE.slipQueue.items && SCAN_STATE.slipQueue.items[SCAN_STATE.slipQueue.currentIndex];
+        if (curDomIt) {
+          curDomIt.scanBundle = finalExt;
+          if (finalExt.fileName) curDomIt.fileName = finalExt.fileName;
+          const nextDomTitle = finalExt.label || finalExt.fileName;
+          if (nextDomTitle) curDomIt.title = String(nextDomTitle);
+        }
+        refreshQueueBarsOnly();
+      }
+      return applyDomRes;
     } finally {
       if (SCAN_STATE.domScanGen === domGen) {
         SCAN_STATE.domBusy = false;
@@ -8460,6 +8914,10 @@
     computeFatherNameBackfillReview,
     SAMPLE_SCANS,
     DOMAIN_SAMPLE_SCANS,
+    parseDiscountLine,
+    deterministicParseDocument,
+    synthesizeMultiPageDeterministic,
+    mergeParsedResults,
     _state: () => SCAN_STATE
   };
 })();

@@ -2211,7 +2211,7 @@
         group: 'ar_ap', kindCls: 'pay', kindLbl: 'Supplier Payment',
         isAfterHours: false, isRepShifted: hasRepShift(s), repDate: repDateOf(s), txDate: txDateOf(s), time: '',
         ref: compactRef(s.invoice || s.reference || s.name, s.id, 'ST'),
-        party: s.supplier || 'Supplier', detail: `${s.method || 'Cash'} Settlement`,
+        party: s.supplier || 'Supplier', detail: `${s.method || 'Cash'} Settlement${Number(s.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(s.discount, 2) : ''}`,
         qtyTxt: s.method || 'Cash', amount: amt, inflow: false, tier: 3,
         sortKey: String(Math.round(Math.abs(amt))).padStart(9, '0') + '_' + String(s.id || '')
       });
@@ -3815,7 +3815,7 @@
       return `
                 <tr class="dops-group-row dops-cash-grp${twoLine ? ' has-sub' : ''}${isExp ? ' is-expanded' : ''}${pinCls}${subEnd}" data-dops-expand="${esc(expKey)}" data-cash-group="${esc(g.key)}" data-cash-count="${g.count}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(g.count)} individual entries for ${esc(g.party)}">
                   <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span><span class="dops-kind ${g.badgeCls}">${esc(g.badgeTxt)}</span>${!isSingleCo ? `${coBadge(g.company)}` : ''}<strong>${esc(g.party)}</strong></div>${repLine ? `<div class="dops-cash-rep-line">${repLine}</div>` : ''}</td>
-                  <td class="dops-trunc"><span class="dops-cash-count">${fmtNum(g.count)} entries</span>${oneDetail ? `<span class="dops-cash-sum"> · ${esc(oneDetail)}</span>` : ''}${waysLine ? ` <small class="dops-cell-sub dops-cash-ways">${esc(waysLine)}</small>` : ''}</td>
+                  <td class="dops-trunc"><span class="dops-cash-count">${fmtNum(g.count)} entries</span>${oneDetail ? `<span class="dops-cash-sum" data-no-i18n="1"> · ${esc(oneDetail)}</span>` : ''}${waysLine ? ` <small class="dops-cell-sub dops-cash-ways">${esc(waysLine)}</small>` : ''}</td>
                   <td class="r">${amtHtml(g.net, g.isFx, g.isInflow)}</td>
                 </tr>${isExp ? g.items.map((m, mi) => `
                 <tr class="rrow dops-subrow dops-cash-sub${pinCls}${(mi === g.items.length - 1) ? endCls : ''}" data-rkey="${esc(m.rkey)}" data-rid="${esc(String(m.rid || ''))}">
