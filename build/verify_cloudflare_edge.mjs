@@ -266,8 +266,8 @@ function sendCdp(method, params = {}, timeoutMs = 15000) {
   });
 }
 
-async function evalJs(expression) {
-  const r = await sendCdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+async function evalJs(expression, timeoutMs = 15000) {
+  const r = await sendCdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, timeoutMs);
   if (r && r.exceptionDetails) {
     throw new Error(r.exceptionDetails.text || 'Runtime.evaluate exception');
   }
@@ -2805,7 +2805,7 @@ finally:
         sixDigitAuthed,
         sixDigitActiveEmail
       };
-    })()`);
+    })()`, 45000);
 
     // Capture active cookie before rapid sign-out -> immediate (<50ms) re-login race + immediate unload reload
     const cookiesBeforeRapid28 = await sendCdp('Network.getCookies', { urls: [`http://127.0.0.1:${PORT}/app/`] });
