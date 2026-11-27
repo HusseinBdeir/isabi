@@ -10569,6 +10569,7 @@ export async function handlePhoneScan(request, env, url, body, session) {
       sid: row.sid,
       tok: row.tok,
       status: isConsumed ? 'consumed' : (isExpired ? 'expired' : row.status),
+      preset: meta && meta.preset ? String(meta.preset) : undefined,
       pages,
       rtcOffer: row.rtc_offer ? safeJsonParse(row.rtc_offer, row.rtc_offer) : undefined,
       rtcAnswer: row.rtc_answer ? safeJsonParse(row.rtc_answer, row.rtc_answer) : undefined,
@@ -10753,6 +10754,9 @@ export async function handlePhoneScan(request, env, url, body, session) {
   }
 
   let status = String((body && body.status) || (existing && existing.status) || 'waiting').slice(0, 40);
+  if (body && body.preset) {
+    existingMeta.preset = String(body.preset).slice(0, 24);
+  }
   const rtcOffer = body && body.rtcOffer ? JSON.stringify(body.rtcOffer) : String((existing && existing.rtc_offer) || '');
   const rtcAnswer = body && body.rtcAnswer ? JSON.stringify(body.rtcAnswer) : String((existing && existing.rtc_answer) || '');
   if (rtcOffer.length > 32768 || rtcAnswer.length > 32768) {
@@ -10763,24 +10767,34 @@ export async function handlePhoneScan(request, env, url, body, session) {
   const safeSid = sid.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
   if (Array.isArray(body && body.pages) && body.pages.length) {
-    for (const pg of body.pages.slice(0, 8)) {
+    for (const pg of body.pages.slice(0, 20)) {
       if (!pg || !pg.dataUrl) continue;
       const rawDataUrl = String(pg.dataUrl);
       if (rawDataUrl.length > 5600000) {
         return jsonResponse({ ok: false, error: 'Scanned page exceeds 4 MB limit.' }, 413);
       }
-      if (mergedPages.length >= 8) break;
+      const declMime = pg.mimeType ? String(pg.mimeType) : '';
+      const imgChk = validateBase64MediaDataUrl(rawDataUrl, { allowPdfAndHeic: true, declaredMime: declMime });
+      if (!imgChk.ok) {
+        return jsonResponse({ ok: false, error: 'Unsupported image format for phone scan.' }, 400);
+      }
+      if (mergedPages.length >= 20) break;
       const pid = String(pg.id || `pg-${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
       if (seenIds.has(pid)) continue;
       seenIds.add(pid);
+      const safeFileName = pg.fileName ? String(pg.fileName).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) : '';
+      const isStackSlip = Boolean(pg.stackSlip);
+      const pageMeta = { id: pid, mimeType: imgChk.mimeType || 'image/jpeg', ts: nowMs };
+      if (safeFileName) pageMeta.fileName = safeFileName;
+      if (isStackSlip) pageMeta.stackSlip = true;
       if (env.BUCKET) {
         const r2Key = `phone-scan/${safeSid}/${pid}.txt`;
         await env.BUCKET.put(r2Key, rawDataUrl, {
           httpMetadata: { contentType: 'text/plain; charset=utf-8' }
         });
-        mergedPages.push({ id: pid, mimeType: pg.mimeType || 'image/jpeg', r2Key, ts: nowMs });
+        mergedPages.push(Object.assign({}, pageMeta, { r2Key }));
       } else {
-        mergedPages.push({ id: pid, mimeType: pg.mimeType || 'image/jpeg', dataUrl: rawDataUrl, ts: nowMs });
+        mergedPages.push(Object.assign({}, pageMeta, { dataUrl: rawDataUrl }));
       }
     }
     status = 'pages_ready';
@@ -10789,7 +10803,7 @@ export async function handlePhoneScan(request, env, url, body, session) {
   await env.DB.prepare(
     `INSERT OR REPLACE INTO phone_scan_sessions (sid, tok, status, pages_json, rtc_offer, rtc_answer, meta_json, updated_ms)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-  ).bind(sid, tok, status, JSON.stringify(mergedPages.slice(0, 8)), rtcOffer, rtcAnswer, JSON.stringify(existingMeta || {}), nowMs).run();
+  ).bind(sid, tok, status, JSON.stringify(mergedPages.slice(0, 20)), rtcOffer, rtcAnswer, JSON.stringify(existingMeta || {}), nowMs).run();
 
   return jsonResponse({ ok: true, status, pageCount: mergedPages.length });
 }
