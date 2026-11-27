@@ -13381,6 +13381,10 @@
     STATE.faceSettings.enforce2FA = (m === 'both');
     STATE.faceSettings.authModeV8Explicit = true;
     STATE.faceSettings.updated_at = new Date().toISOString();
+    if (m === 'pin_only' && !STATE.authed && !FACE_STATE.pending2faUser) {
+      if (typeof stopAuthFaceScanner === 'function') stopAuthFaceScanner();
+      if (typeof setAuthHint === 'function') setAuthHint('', '');
+    }
     return m;
   }
 
@@ -162052,7 +162056,14 @@
       if (rFsTs && rFsTs > lFsTs) {
         STATE.faceSettings = Object.assign({}, STATE.faceSettings || {}, remote.faceSettings);
         changed = true;
-        if (!STATE.authed) updateAuthFaceUi();
+        if (!STATE.authed) {
+          if (getWorkspaceAuthMode() === 'pin_only' && !FACE_STATE.pending2faUser) {
+            stopAuthFaceScanner();
+            setAuthHint('', '');
+          } else {
+            updateAuthFaceUi();
+          }
+        }
       } else if (!isPushing && !remote._scopedForSession && lFsTs && lFsTs > rFsTs) {
         needPush = true;
       }
@@ -162131,7 +162142,12 @@
     }
     if (!Array.isArray(usersArr) || !usersArr.length) {
       if (!STATE.authed) {
-        updateAuthFaceUi();
+        if (getWorkspaceAuthMode() === 'pin_only' && !FACE_STATE.pending2faUser) {
+          stopAuthFaceScanner();
+          setAuthHint('', '');
+        } else {
+          updateAuthFaceUi();
+        }
       }
       return false;
     }
@@ -162163,7 +162179,12 @@
     applyUserRlsAndPermissions();
     if (!STATE.authed) {
       renderQuickSeatsInAuthGate();
-      updateAuthFaceUi();
+      if (getWorkspaceAuthMode() === 'pin_only' && !FACE_STATE.pending2faUser) {
+        stopAuthFaceScanner();
+        setAuthHint('', '');
+      } else {
+        updateAuthFaceUi();
+      }
       if (typeof syncAuthSelectedSeatUi === 'function') syncAuthSelectedSeatUi();
     } else if (STATE.view !== prevV || STATE.company !== prevC || STATE.view === 'users') {
       safeRender();
@@ -162897,6 +162918,9 @@
           FACE_STATE.stream = early;
           if (window.Face.trackStream) window.Face.trackStream(early);
         }
+      }
+      if (videoEl.id === 'authFaceVideo' && !(camOpts && camOpts.forceStart) && !streamAlive() && window.Face && typeof window.Face.didEarlyAttemptFail === 'function' && window.Face.didEarlyAttemptFail()) {
+        return false;
       }
       if (!streamAlive()) {
         if (FACE_STATE.stream) { try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {} }
@@ -163939,6 +163963,12 @@
       updateAuthFaceUi();
       return false;
     }
+    if (getWorkspaceAuthMode() === 'pin_only' && !FACE_STATE.pending2faUser) {
+      stopFaceCamera();
+      updateAuthFaceUi();
+      setAuthHint('', '');
+      return false;
+    }
     if ((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !forceStart) {
       FACE_STATE.camStarting = false;
       updateAuthFaceUi();
@@ -163986,7 +164016,8 @@
       return true;
     }
     // Start loading Face ID neural models + WebGL shaders immediately in parallel with hardware camera warmup
-    // (never wait for startFaceCamera or mfg:core-seed-ready before starting Face.load)
+    // when camera use is already established on this device; on ungranted first visits, wait until getUserMedia
+    // resolves with a live stream so camera-less or ungranted browsers transfer 0 B of Face ID models.
     const startModelsWhenReady = () => {
       if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
       return ensureFaceModelsLoaded().then(() => {
@@ -164011,11 +164042,30 @@
         return false;
       });
     };
-    const modelsPromise = startModelsWhenReady();
+    if (window.Face && typeof window.Face.refreshCameraPermissionState === 'function') {
+      await window.Face.refreshCameraPermissionState().catch(() => {});
+      if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
+        stopFaceCamera();
+        updateAuthFaceUi();
+        return false;
+      }
+      if (getWorkspaceAuthMode() === 'pin_only' && !FACE_STATE.pending2faUser) {
+        stopFaceCamera();
+        updateAuthFaceUi();
+        setAuthHint('', '');
+        return false;
+      }
+    }
+    const preloadBeforeCam = Boolean(
+      window.Face &&
+      typeof window.Face.canPreloadModelsBeforeCamera === 'function' &&
+      window.Face.canPreloadModelsBeforeCamera()
+    );
+    let modelsPromise = preloadBeforeCam ? startModelsWhenReady() : null;
     FACE_STATE.camStarting = true;
     updateAuthFaceUi();
     const runStart = (async () => {
-      const camOk = await startFaceCamera(videoEl);
+      const camOk = await startFaceCamera(videoEl, { forceStart });
       FACE_STATE.camStarting = false;
       if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
         stopFaceCamera();
@@ -164023,11 +164073,23 @@
         return false;
       }
       FACE_STATE.camActive = camOk;
-      updateAuthFaceUi();
       if (!camOk) {
+        const usedBefore = Boolean(window.Face && typeof window.Face.deviceUsesFaceId === 'function' && window.Face.deviceUsesFaceId());
+        if (!forceStart && !usedBefore && !FACE_STATE.pending2faUser) {
+          if (window.Face && typeof window.Face.noteAutoStartDeclined === 'function') window.Face.noteAutoStartDeclined();
+          FACE_STATE.authCamOnDemand = true;
+          const offEl = $('authCamOffOverlay');
+          if (offEl) offEl.hidden = false;
+          updateAuthFaceUi();
+          setAuthHint('', '');
+          return false;
+        }
+        updateAuthFaceUi();
         setAuthHint('Camera unavailable', 'warn');
         return false;
       }
+      if (!modelsPromise) modelsPromise = startModelsWhenReady();
+      updateAuthFaceUi();
       const hasEnrolled = hasAnyEnrolledFaceId();
       const faceAlreadyReady = Boolean(window.Face && (window.Face.ready || window.Face.detectorReady));
       const videoReadyNow = Boolean($('authCamViewport')?.classList.contains('is-video-ready'));
@@ -209980,7 +210042,17 @@
               endSeatPreviewSessionAtBoot(d.user);
               return;
             }
+            const resumedFast = ensureCanonicalMultiIndustrySeat(Object.assign({}, d.user, { pin_redacted: true }));
+            delete resumedFast.pin_code;
+            delete resumedFast._verifiedPin;
+            const curIdx = STATE.users.findIndex(u => norm(u.email) === norm(resumedFast.email));
+            const targetIdx = curIdx >= 0 ? curIdx : swIdx;
+            if (STATE.users[targetIdx]) {
+              STATE.users[targetIdx] = mergeUserRow(STATE.users[targetIdx], resumedFast);
+              STATE.activeUserIdx = targetIdx;
+            }
             _edgeCookieAuthed = true;
+            if (STATE.view === 'users') safeRender();
             if (typeof syncWithCloud === 'function') syncWithCloud(false);
           })
           .catch(() => {});
@@ -212201,7 +212273,7 @@
       if (!STATE.authed) updateAuthFaceUi();
     });
     // Cloud relay: on start, when the tab comes back, when the network returns
-    const faceEngineWarming = Boolean(window.Face && !window.Face.ready && (typeof window.Face.gateAutoStartNow !== 'function' || window.Face.gateAutoStartNow()));
+    const faceEngineWarming = Boolean(window.Face && !window.Face.ready && (typeof window.Face.canPreloadModelsBeforeCamera === 'function' ? window.Face.canPreloadModelsBeforeCamera() : (typeof window.Face.gateAutoStartNow !== 'function' || window.Face.gateAutoStartNow())));
     if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST && faceEngineWarming) {
       let syncedInit = false;
       const runInitSync = () => {
