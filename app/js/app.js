@@ -6870,7 +6870,10 @@
         else if (Math.abs(eSp.trans_cr) > 0.005 && Math.abs(eSp.quarry_cr) <= 0.005 && Math.abs(eSp.exp_cr_usd) <= 0.005) rawLeg = 'transportation';
         else rawLeg = 'expense';
       }
-      const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const cashV = round2(sp.amount != null ? Number(sp.amount || 0) : Number(sp.usd_amount || 0));
+      const discV = round2(sp.discount != null ? Number(sp.discount || 0) : Number(sp.diff || 0));
+      const totV = round2(cashV + discV);
+      const isCfgPay = /^(?:VAT)?Config$/i.test(mth);
       const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return';
       let vLeg = '';
       if (rawLeg === 'quarry') {
@@ -6889,9 +6892,13 @@
         co: sp.company || '',
         leg: vLeg,
         type: 'Settlement',
+        pay_method: mth,
         desc: String(sp.notes || `Supplier Settlement (${mth} · ${legLbl})`).trim(),
         cr: 0,
         dr: totV,
+        cash_usd: isCfgPay ? 0 : cashV,
+        discount_usd: isCfgPay ? 0 : discV,
+        carried_usd: isCfgPay ? totV : 0,
         _seq: ++seq
       });
     }
@@ -87662,6 +87669,7 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(net + vat, 2);
       } else if (spec.key === 're_receipts') {
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const dep = Math.max(0, round2(numVal('ide_deposit')));
         const rawGrossIn = Math.max(0, round2(numVal('ide_gross')));
         const rawDiscIn = round2(numVal('ide_discount'));
@@ -87741,6 +87749,7 @@
           return false;
         }
       } else if (spec.key === 'trd_receipts') {
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
         if (FORM_UI.ideDiscUnit === 'pct' && (FORM_UI._lastIdeInputId === 'ide_amount' || FORM_UI._lastIdeInputId === 'ide_lbp')) {
           const curCashUsd = round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));

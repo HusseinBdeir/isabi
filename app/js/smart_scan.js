@@ -1424,6 +1424,43 @@
     return '';
   }
 
+  function parseDiscountLine(rawLine) {
+    const s0 = normalizeDigits(String(rawLine || '')).replace(/[\u200f\u200e]/g, '').replace(/\u066a/g, '%').trim();
+    if (!s0) return null;
+    if (/^(?:payment\s*terms|terms|conditions\s+de\s+paiement|\u0634\u0631\u0648\u0637\s*\u0627\u0644\u062f\u0641\u0639)\b/i.test(s0)) return null;
+    const hasLbp = /(?:LBP|L\.L\.|\bLL\b|\u0644\.\u0644)/i.test(s0);
+    const hasUsd = /\$|\bUSD\b/i.test(s0);
+    if (/\b\d+\/\d+\s*net\s*\d+\b/i.test(s0) && !hasUsd && !hasLbp) return null;
+    const lblReEnFr = /^(?:(?:less|minus|total)\s+)?(?:(?:trade|commercial|cash|special|settlement|early)?\s*(?:discount|rebate|remise|rabais|ristourne)|less(?=\s*[:#(-]*\s*\d+(?:[.,]\d+)?\s*%))(?=$|[\s:#(-]|\d)/i;
+    const lblReAr = /^(?:(?:\u0625\u062c\u0645\u0627\u0644\u064a|\u0645\u062c\u0645\u0648\u0639)\s+)?(?:\u062e\u0635\u0645|\u062d\u0633\u0645)(?:\s+(?:\u062a\u062c\u0627\u0631\u064a|\u062e\u0627\u0635|\u0646\u0642\u062f\u064a|\u0625\u0636\u0627\u0641\u064a))?(?=$|[\s:#(\-\d%])/u;
+    const mLbl = s0.match(lblReEnFr) || s0.match(lblReAr);
+    if (!mLbl) return null;
+
+    let pct = 0;
+    const pctM = s0.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:%|percent|pct\b)/i);
+    if (pctM) {
+      const pv = Number(pctM[1].replace(',', '.'));
+      if (Number.isFinite(pv) && pv > 0 && pv <= 100) pct = pv;
+    }
+
+    const rest = s0
+      .slice(mLbl[0].length)
+      .replace(/-?\d+(?:[.,]\d+)?\s*(?:%|percent|pct\b)/gi, ' ')
+      .replace(/\(\s*\)/g, ' ')
+      .trim();
+
+    let usd = 0;
+    let lbp = 0;
+    if (/-?\d+(?:[.,]\d+)?/.test(rest)) {
+      const amt = Math.abs(parseMoneyValue(rest));
+      if (Number.isFinite(amt) && amt > 0) {
+        if (hasLbp && !hasUsd) lbp = amt;
+        else usd = amt;
+      }
+    }
+    return { pct, usd, lbp };
+  }
+
   function extractLabeledValue(lines, labelRegex) {
     for (const line of lines) {
       const parts = line.split(/\s*[·|]\s*/);
@@ -1467,38 +1504,51 @@
     // Totals, Subtotal, Discount, VAT & LBP detection
     let subtotalUsd = 0;
     let discountUsd = 0;
+    let discountPct = 0;
+    let discountLbp = 0;
     let vatUsd = 0;
     let totalUsd = 0;
     let lbpAmount = 0;
+    let explicitTotalLbp = 0;
     const hasVatKeyword = /(?:\b(?:vat|tva|11%|mof\s*#|tax\s*invoice)\b|\u0636\u0631\u064a\u0628\u0629\s*\u0627\u0644\u0642\u064a\u0645\u0629\s*\u0627\u0644\u0645\u0636\u0627\u0641\u0629)/i.test(cleanText);
 
     for (const line of lines) {
       const lbpM = line.match(/([\d,]{5,}(?:\.\d+)?)\s*(?:LBP|L\.L\.|LL|\u0644\.\u0644)/i)
         || line.match(/(?:LBP|L\.L\.|\u0644\.\u0644)\s*[:#-]?\s*([\d,]{5,}(?:\.\d+)?)/i);
-      if (lbpM) {
+      const discParsed = parseDiscountLine(line);
+      if (lbpM && !discParsed) {
         const v = parseMoneyValue(lbpM[1]);
         if (v > lbpAmount) lbpAmount = v;
       }
-      if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht)/i.test(line)) {
-        subtotalUsd = parseMoneyValue(line);
-      } else if (/^(?:(?:less\s+)?(?:discount|rebate|remise)|خصم|حسم)\b/i.test(line)) {
-        const dv = parseMoneyValue(line);
-        if (dv > 0) discountUsd = dv;
+      if (/^(?:sub\s*-?\s*total|net\s*ex-?vat|montant\s*ht|total\s*ht|\u0627\u0644\u0645\u062c\u0645\u0648\u0639\s*\u0627\u0644\u0641\u0631\u0639\u064a|\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a\s*\u0627\u0644\u0641\u0631\u0639\u064a)/i.test(line)) {
+        if (!/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+          subtotalUsd = parseMoneyValue(line);
+        }
+      } else if (discParsed) {
+        if (discParsed.pct > 0) discountPct = discParsed.pct;
+        if (discParsed.usd > 0) discountUsd = discParsed.usd;
+        if (discParsed.lbp > 0) discountLbp = discParsed.lbp;
       } else if (/^(?:vat|tva|tax\s*\(?\s*11%|\u0636\u0631\u064a\u0628\u0629)/i.test(line)) {
         vatUsd = parseMoneyValue(line);
-      } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a)/i.test(line)) {
-        if (!/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+      } else if (/^(?:(?:\b(?:grand\s*total|total(?:\s+(?:ttc|due|amount|usd))?|amount(?:\s+(?:due|paid|received))?|net\s*payable|montant\s*ttc)\b)|\u0627\u0644\u0645\u062c\u0645\u0648\u0639|\u0627\u0644\u0627\u062c\u0645\u0627\u0644\u064a|\u0635\u0627\u0641\u064a\s*\u0627\u0644\u062f\u0641\u0639|\u0627\u0644\u0635\u0627\u0641\u064a)/i.test(line)) {
+        if (/LBP|L\.L\.|\u0644\.\u0644/i.test(line)) {
+          if (lbpM) {
+            const tvLbp = parseMoneyValue(lbpM[1]);
+            if (tvLbp > 0) explicitTotalLbp = tvLbp;
+          }
+        } else {
           const tv = parseMoneyValue(line);
           if (tv >= 0) totalUsd = tv;
         }
       }
     }
+    if (explicitTotalLbp > 0) lbpAmount = explicitTotalLbp;
 
     // Parse line items: supports "Desc | 2 Piece | $95.00 | $190.00" or consecutive SVG/PDF rows or "2 pcs x $95 = $190"
     const lineItems = [];
     for (let i = 0; i < lines.length; i++) {
       const ln = lines[i];
-      if (/^(subtotal|vat|tva|total|payment\s*terms|notes|company|supplier|customer|ref:|date:|description\s*\/?\s*item)/i.test(ln)) continue;
+      if (/^(subtotal|sub\s*-?\s*total|vat|tva|total|discount|rebate|remise|rabais|less\s+|payment\s*terms|notes|company|supplier|customer|ref:|date:|description\s*\/?\s*item|\u062e\u0635\u0645|\u062d\u0633\u0645|\u0627\u0644\u0645\u062c\u0645\u0648\u0639)/i.test(ln)) continue;
 
       const pipeMatch = ln.match(/^([^|$]{3,90}?)\s*(?:\||\t|\s{2,})\s*(\d+(?:\.\d+)?)\s*([A-Za-z³²\u0600-\u06FF]{1,12})?\s*(?:\||\t|\s{1,})\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(?:\||\t|\s{1,})\s*\$?\s*([\d,]+(?:\.\d+)?)$/);
       if (pipeMatch) {
@@ -1533,6 +1583,20 @@
 
     if (!subtotalUsd && lineItems.length) {
       subtotalUsd = round2(lineItems.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
+    }
+    const explicitDiscountUsd = discountUsd;
+    const explicitDiscountLbp = discountLbp;
+    if (discountUsd <= 0 && discountPct > 0 && discountPct <= 100) {
+      if (subtotalUsd > 0) {
+        discountUsd = round2(subtotalUsd * (discountPct / 100));
+      } else if (totalUsd > 0 && discountPct < 100) {
+        const netExVat = (vatUsd > 0 && totalUsd > vatUsd) ? round2(totalUsd - vatUsd) : totalUsd;
+        const inferredGross = round2(netExVat / (1 - (discountPct / 100)));
+        if (subtotalUsd <= 0) subtotalUsd = inferredGross;
+        discountUsd = round2(Math.max(0, inferredGross - netExVat));
+      } else if (totalUsd <= 0 && lbpAmount > 0 && discountLbp <= 0 && discountPct < 100) {
+        discountLbp = Math.round((lbpAmount / (1 - (discountPct / 100))) - lbpAmount);
+      }
     }
     if (!totalUsd && (subtotalUsd > 0 || vatUsd > 0)) {
       totalUsd = round2(Math.max(0, subtotalUsd + vatUsd - discountUsd));
@@ -1660,7 +1724,10 @@
       staff: staffHint,
       paymentMethod,
       subtotalExVat: subtotalUsd,
+      discountPct: discountPct || 0,
       discountAmount: discountUsd,
+      discountLbp: discountLbp || 0,
+      hasExplicitDiscount: Boolean(explicitDiscountUsd > 0 || explicitDiscountLbp > 0),
       vatAmount: vatUsd,
       totalAmount: totalUsd,
       lbpAmount,
@@ -1708,20 +1775,41 @@
     // Final-page totals override Page 1 "Carried Forward / Page 1 Subtotal"
     let finalSubtotal = 0;
     let finalDiscount = 0;
+    let finalDiscountPct = 0;
+    let finalDiscountLbp = 0;
     let finalVat = 0;
     let finalTotal = 0;
     let finalLbp = 0;
     for (let idx = perPage.length - 1; idx >= 0; idx--) {
       const p = perPage[idx];
       if (!finalTotal && p.totalAmount > 0) finalTotal = p.totalAmount;
-      if (!finalDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
+      if (!finalDiscount && p.hasExplicitDiscount && p.discountAmount > 0) finalDiscount = p.discountAmount;
+      if (!finalDiscountPct && p.discountPct > 0) finalDiscountPct = p.discountPct;
+      if (!finalDiscountLbp && p.hasExplicitDiscount && p.discountLbp > 0) finalDiscountLbp = p.discountLbp;
       if (!finalVat && p.vatAmount > 0) finalVat = p.vatAmount;
       if (!finalSubtotal && p.subtotalExVat > 0) finalSubtotal = p.subtotalExVat;
       if (!finalLbp && p.lbpAmount > 0) finalLbp = p.lbpAmount;
     }
+    if (!finalDiscount && !finalDiscountPct) {
+      for (let idx = perPage.length - 1; idx >= 0; idx--) {
+        if (perPage[idx].discountAmount > 0) { finalDiscount = perPage[idx].discountAmount; break; }
+      }
+    }
     const linesSum = round2(mergedLines.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
     if (mergedLines.length > 1 && linesSum > finalSubtotal) {
       finalSubtotal = linesSum;
+    }
+    if (finalDiscount <= 0 && finalDiscountPct > 0 && finalDiscountPct <= 100) {
+      if (finalSubtotal > 0) {
+        finalDiscount = round2(finalSubtotal * (finalDiscountPct / 100));
+      } else if (finalTotal > 0 && finalDiscountPct < 100) {
+        const netExVat = (finalVat > 0 && finalTotal > finalVat) ? round2(finalTotal - finalVat) : finalTotal;
+        const inferredGross = round2(netExVat / (1 - (finalDiscountPct / 100)));
+        if (finalSubtotal <= 0) finalSubtotal = inferredGross;
+        finalDiscount = round2(Math.max(0, inferredGross - netExVat));
+      } else if (finalTotal <= 0 && finalLbp > 0 && finalDiscountLbp <= 0 && finalDiscountPct < 100) {
+        finalDiscountLbp = Math.round((finalLbp / (1 - (finalDiscountPct / 100))) - finalLbp);
+      }
     }
     const expectedNetFromParts = round2(Math.max(0, finalSubtotal + finalVat - finalDiscount));
     if ((finalSubtotal > 0 || finalVat > 0) && (finalTotal <= 0 || finalTotal < expectedNetFromParts - 0.05)) {
@@ -1760,7 +1848,9 @@
       paymentMethod: firstNonEmpty(p => p.paymentMethod),
       incoterm: firstNonEmpty(p => p.incoterm),
       subtotalExVat: finalSubtotal || full.subtotalExVat,
+      discountPct: finalDiscountPct || full.discountPct || 0,
       discountAmount: finalDiscount || full.discountAmount || 0,
+      discountLbp: finalDiscountLbp || full.discountLbp || 0,
       vatAmount: finalVat || full.vatAmount,
       totalAmount: finalTotal || full.totalAmount,
       lbpAmount: finalLbp || full.lbpAmount,
@@ -1850,9 +1940,10 @@
       '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|companyequipment|equipment|document",',
       '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",',
       '"category":"","subcategory":"","product":"","site":"","equipment":"","plateNo":"","model":"","vin":"","driver":"","staff":"",',
-      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
+      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"discountPct":0,"discountAmount":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
       '"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",',
       '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}',
+      'Trade-discount rule: put any printed percentage discount (Less X% / Remise / خصم) in discountPct (0-100) and the printed currency discount amount in discountAmount; keep subtotalExVat as pre-discount ex-VAT subtotal and totalAmount as final net payable.',
       'ISO 3779 VIN rule: 17-character chassis VINs NEVER contain I, O, or Q; carefully disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
       pageCount > 1
         ? `Multi-Page Synthesis (${pageCount} pages): merge Page 1 identity headers (company, counterparty, reference, VIN) with Page 2+ schedules, continuation lineItems, and final-page Grand Total / VAT (ignore Page 1 Carried Forward subtotals).`
@@ -1928,6 +2019,25 @@
       if (candAudit && candAudit.isVin17) finalVinAudit = candAudit;
     }
 
+    const mergedSubExVat = pickNum(det.subtotalExVat, ai.subtotalExVat);
+    const mergedVatAmt = pickNum(det.vatAmount, ai.vatAmount);
+    const mergedTotalAmt = pickNum(det.totalAmount, ai.totalAmount);
+    const mergedLbpAmt = pickNum(det.lbpAmount, ai.lbpAmount);
+    const mergedDiscPct = pickNum(det.discountPct, ai.discountPct || ai.discount_pct);
+    let mergedDiscLbp = pickNum(det.discountLbp, ai.discountLbp || ai.discount_lbp);
+    let mergedDiscAmt = Math.abs(pickNum(det.discountAmount, ai.discountAmount || ai.discount));
+    if (mergedDiscAmt <= 0 && mergedDiscPct > 0 && mergedDiscPct <= 100) {
+      if (mergedSubExVat > 0) {
+        mergedDiscAmt = round2(mergedSubExVat * (mergedDiscPct / 100));
+      } else if (mergedTotalAmt > 0 && mergedDiscPct < 100) {
+        const netExVat = (mergedVatAmt > 0 && mergedTotalAmt > mergedVatAmt) ? round2(mergedTotalAmt - mergedVatAmt) : mergedTotalAmt;
+        const inferredGross = round2(netExVat / (1 - (mergedDiscPct / 100)));
+        mergedDiscAmt = round2(Math.max(0, inferredGross - netExVat));
+      } else if (mergedTotalAmt <= 0 && mergedLbpAmt > 0 && mergedDiscLbp <= 0 && mergedDiscPct < 100) {
+        mergedDiscLbp = Math.round((mergedLbpAmt / (1 - (mergedDiscPct / 100))) - mergedLbpAmt);
+      }
+    }
+
     return Object.assign({}, det, {
       formType: finalForm,
       company: pickStr(det.company, ai.company),
@@ -1948,11 +2058,13 @@
       driver: pickStr(det.driver, ai.driver),
       staff: pickStr(det.staff, ai.staff),
       paymentMethod: pickStr(det.paymentMethod, ai.paymentMethod),
-      subtotalExVat: pickNum(det.subtotalExVat, ai.subtotalExVat),
-      discountAmount: pickNum(det.discountAmount, ai.discountAmount || ai.discount),
-      vatAmount: pickNum(det.vatAmount, ai.vatAmount),
-      totalAmount: pickNum(det.totalAmount, ai.totalAmount),
-      lbpAmount: pickNum(det.lbpAmount, ai.lbpAmount),
+      subtotalExVat: mergedSubExVat,
+      discountPct: mergedDiscPct,
+      discountAmount: mergedDiscAmt,
+      discountLbp: mergedDiscLbp,
+      vatAmount: mergedVatAmt,
+      totalAmount: mergedTotalAmt,
+      lbpAmount: mergedLbpAmt,
       hasVat: Boolean(det.hasVat || ai.hasVat || Number(ai.vatAmount) > 0),
       pricePending: Boolean(det.pricePending || ai.pricePending),
       qty: pickNum(det.qty, ai.qty) || 1,
@@ -2370,6 +2482,10 @@
         const domToday = D.todayISO ? D.todayISO() : new Date().toISOString().slice(0, 10);
         const domFx = (D.getLbpFxRate ? Number(D.getLbpFxRate(parsed.date || domToday)) : 89500) || 89500;
         const domConvUsd = (parsed.totalAmount <= 0 && parsed.lbpAmount > 0) ? round2(parsed.lbpAmount / domFx) : 0;
+        const domConvDiscUsd = (parsed.discountAmount <= 0 && Number(parsed.discountLbp || 0) > 0) ? round2(Number(parsed.discountLbp) / domFx) : 0;
+        const domDiscUsd = (!parsed.pricePending && (Number(parsed.discountAmount || 0) > 0 || domConvDiscUsd > 0))
+          ? round2(Number(parsed.discountAmount || 0) || domConvDiscUsd)
+          : 0;
         const amt = parsed.totalAmount || domConvUsd || parsed.subtotalExVat || 0;
         const netAmt = parsed.subtotalExVat > 0 ? parsed.subtotalExVat : amt;
         const prodDesc = matched.product || parsed.product || (Array.isArray(parsed.lines) && parsed.lines[0] && (parsed.lines[0].desc || parsed.lines[0].item_name)) || '';
@@ -2383,6 +2499,7 @@
           domKey = domainSourceForm === 'receipt' ? 'trd_receipts' : 'trd_sales';
           if (domKey === 'trd_receipts') {
             Object.assign(domFields, { ide_customer: matched.customer || parsed.customer || '', ide_amount: amt });
+            if (domDiscUsd > 0) domFields.ide_discount = domDiscUsd;
           } else {
             Object.assign(domFields, {
               ide_customer: matched.customer || parsed.customer || '',
@@ -2400,6 +2517,7 @@
               ide_tenant: matched.customer || parsed.customer || '',
               ide_gross: amt
             });
+            if (domDiscUsd > 0) domFields.ide_discount = domDiscUsd;
           } else {
             Object.assign(domFields, {
               ide_property: matched.site || parsed.site || '',
@@ -2579,6 +2697,10 @@
     // 4. Form-specific fields & line items
     const fxRate = (D.getLbpFxRate ? Number(D.getLbpFxRate(parsed.date || today)) : 89500) || 89500;
     const convertedLbpUsd = (parsed.totalAmount <= 0 && parsed.lbpAmount > 0) ? round2(parsed.lbpAmount / fxRate) : 0;
+    const convertedLbpDiscUsd = (parsed.discountAmount <= 0 && Number(parsed.discountLbp || 0) > 0) ? round2(Number(parsed.discountLbp) / fxRate) : 0;
+    const rawScanDiscUsd = (!parsed.pricePending && (Number(parsed.discountAmount || 0) > 0 || convertedLbpDiscUsd > 0))
+      ? round2(Number(parsed.discountAmount || 0) || convertedLbpDiscUsd)
+      : 0;
     if (convertedLbpUsd > 0 && !['salary', 'external', 'treasury', 'conversion'].includes(targetForm)) {
       extraNotes.push(`Converted from ${Number(parsed.lbpAmount).toLocaleString('en-US')} LBP @ ${fxRate.toLocaleString('en-US')}`);
     }
@@ -2622,18 +2744,41 @@
       // Populate multi-line FORM_UI.expItems (recalcExpense multiplies sumPreVat by 1.11 when supIsIva is true)
       if (FORM_UI && Array.isArray(FORM_UI.expItems)) {
         const defWhLoc = D.defaultWarehouseLocationForCompany ? D.defaultWarehouseLocationForCompany(activeCo) : '';
+        const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
+        const preVatDiscBeforeTax = Boolean(
+          rawScanDiscUsd > 0 && fullTotal > 0 && parsed.subtotalExVat > 0 && parsed.vatAmount > 0
+          && Math.abs(round2((parsed.subtotalExVat - rawScanDiscUsd) * 1.11) - fullTotal) <= 0.06
+        );
+        const effModalDisc = (!parsed.pricePending && rawScanDiscUsd > 0)
+          ? (preVatDiscBeforeTax ? round2(Math.max(0, round2(parsed.subtotalExVat * 1.11) - fullTotal)) : rawScanDiscUsd)
+          : 0;
+        const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0) && !preVatDiscBeforeTax;
+        const grossTotalForLine = preVatDiscBeforeTax
+          ? round2(parsed.subtotalExVat * 1.11)
+          : (effModalDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + effModalDisc)) : fullTotal);
+        let targetPreDiscSum = 0;
+        if (!parsed.pricePending) {
+          if (supIsIva) {
+            const subFitsDiscNet = preVatDiscBeforeTax || (parsed.subtotalExVat > 0 && !subIsInclGross && (!(effModalDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - effModalDisc - fullTotal) <= 0.06));
+            targetPreDiscSum = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
+          } else {
+            targetPreDiscSum = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && effModalDisc > 0 && !preVatDiscBeforeTax) ? parsed.subtotalExVat : grossTotalForLine;
+          }
+        }
         if (matched.groundedLines && matched.groundedLines.length > 0) {
           const linesSum = matched.groundedLines.reduce((s, x) => s + Number(x.line_total || 0), 0);
           let scaleFactor = 1;
-          if (parsed.subtotalExVat > 0 && parsed.totalAmount > parsed.subtotalExVat) {
-            if (supIsIva) {
-              // recalcExpense multiplies by 1.11, so lines must be pre-VAT
-              if (Math.abs(linesSum - parsed.totalAmount) < 0.1) {
-                scaleFactor = parsed.subtotalExVat / parsed.totalAmount;
+          if (!parsed.pricePending && linesSum > 0) {
+            if (effModalDisc > 0 && targetPreDiscSum > 0) {
+              if (Math.abs(linesSum - targetPreDiscSum) > 0.1) {
+                scaleFactor = targetPreDiscSum / linesSum;
               }
-            } else {
-              // recalcExpense multiplies by 1.0, so scale ex-VAT lines up to full TTC payable when VAT is on the bill
-              if (Math.abs(linesSum - parsed.subtotalExVat) < 0.1 && (isHospitality || parsed.hasVat)) {
+            } else if (parsed.subtotalExVat > 0 && parsed.totalAmount > parsed.subtotalExVat) {
+              if (supIsIva) {
+                if (Math.abs(linesSum - parsed.totalAmount) < 0.1) {
+                  scaleFactor = parsed.subtotalExVat / parsed.totalAmount;
+                }
+              } else if (Math.abs(linesSum - parsed.subtotalExVat) < 0.1 && (isHospitality || parsed.hasVat)) {
                 scaleFactor = parsed.totalAmount / parsed.subtotalExVat;
               }
             }
@@ -2650,19 +2795,6 @@
           }));
           FORM_UI.expItem0Manual = true;
         } else {
-          let baseAmt = 0;
-          const scanDisc = (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0) ? round2(Number(parsed.discountAmount)) : 0;
-          if (!parsed.pricePending) {
-            const fullTotal = parsed.totalAmount || convertedLbpUsd || parsed.subtotalExVat || 0;
-            const subIsInclGross = parsed.subtotalExVat > fullTotal && !(supIsIva && parsed.vatAmount > 0);
-            const grossTotalForLine = scanDisc > 0 && fullTotal > 0 ? (subIsInclGross ? parsed.subtotalExVat : round2(fullTotal + scanDisc)) : fullTotal;
-            if (supIsIva) {
-              const subFitsDiscNet = parsed.subtotalExVat > 0 && !subIsInclGross && (!(scanDisc > 0 && fullTotal > 0) || Math.abs(round2(parsed.subtotalExVat * 1.11) - scanDisc - fullTotal) <= 0.05);
-              baseAmt = subFitsDiscNet ? parsed.subtotalExVat : round2(grossTotalForLine / 1.11);
-            } else {
-              baseAmt = (parsed.subtotalExVat > 0 && parsed.subtotalExVat >= fullTotal && scanDisc > 0) ? parsed.subtotalExVat : grossTotalForLine;
-            }
-          }
           const effQty = parsed.qty > 0 ? parsed.qty : 1;
           FORM_UI.expItems = [{
             item_name: matched.product || matched.subcategory || matched.category || 'Scanned Expense Item',
@@ -2671,13 +2803,14 @@
             warehouse_location: defWhLoc,
             qty: effQty,
             uom: parsed.uom || 'Piece',
-            unit_cost: parsed.pricePending ? '' : round2(baseAmt / effQty)
+            unit_cost: parsed.pricePending ? '' : round2(targetPreDiscSum / effQty)
           }];
           FORM_UI.expItem0Manual = true;
         }
         if (D.renderExpenseItemsBuilderRows) D.renderExpenseItemsBuilderRows();
-        if (!parsed.pricePending && Number(parsed.discountAmount || 0) > 0 && $('f_discount')) {
-          setInputValueAndFire('f_discount', round2(Number(parsed.discountAmount)), filledSet, warnSet, false);
+        if (!parsed.pricePending && effModalDisc > 0 && $('f_discount')) {
+          if (FORM_UI) FORM_UI.discInputUnit = 'usd';
+          setInputValueAndFire('f_discount', effModalDisc, filledSet, warnSet, false);
         }
         filledSet.add('f_exi_name_0');
         filledSet.add('f_exi_cost_0');
@@ -2780,6 +2913,10 @@
         setInputValueAndFire('f_amount', rcptUsd, filledSet, warnSet, convertedLbpUsd > 0);
       } else if (rcptUsd > 0 && $('f_usd')) {
         setInputValueAndFire('f_usd', rcptUsd, filledSet, warnSet, convertedLbpUsd > 0);
+      }
+      if (!parsed.pricePending && rawScanDiscUsd > 0 && $('f_discount')) {
+        if (FORM_UI) FORM_UI.discInputUnit = 'usd';
+        setInputValueAndFire('f_discount', rawScanDiscUsd, filledSet, warnSet, false);
       }
       if (parsed.lbpAmount > 0 && $('f_lbp')) {
         setInputValueAndFire('f_lbp', parsed.lbpAmount, filledSet, warnSet, false);
@@ -6677,6 +6814,10 @@
         );
         if (opt) valToSet = opt.value;
       }
+      if (fId === 'ide_discount') {
+        const domUi = D.getFormUi ? D.getFormUi() : null;
+        if (domUi) { domUi.ideDiscUnit = 'usd'; domUi.ideSettleBase = null; }
+      }
       el.value = valToSet;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -8773,6 +8914,10 @@
     computeFatherNameBackfillReview,
     SAMPLE_SCANS,
     DOMAIN_SAMPLE_SCANS,
+    parseDiscountLine,
+    deterministicParseDocument,
+    synthesizeMultiPageDeterministic,
+    mergeParsedResults,
     _state: () => SCAN_STATE
   };
 })();
