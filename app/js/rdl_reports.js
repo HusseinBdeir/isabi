@@ -5134,6 +5134,72 @@
       </div>`;
   }
 
+  function _fmtStmtUnsignedOrNeg(v) {
+    const n = r2(v);
+    return n >= -0.004 ? fmtUsd(Math.max(0, n), 2) : fmtUsdSigned(n, 2);
+  }
+
+  function _computeStmt14PeriodBreakdown(periodRows, canBooks) {
+    if (!canBooks) {
+      return { totCashReceived: 0, totDiscount: 0, totCarried: 0, totSettled: 0, hasPeriodDiscounts: false };
+    }
+    let rawCash = 0;
+    let rawDisc = 0;
+    let rawCarried = 0;
+    let rawSettled = 0;
+    (periodRows || []).forEach(r => {
+      const settled = Number((r && r.paid_usd) || 0);
+      const mth = String((r && (r.pay_method || r.method)) || '').trim();
+      const isCfg = /^(?:VAT)?Config$/i.test(mth);
+      if (Math.abs(settled) < 0.005 && !(r && r.cash_usd !== undefined && Math.abs(Number(r.discount_usd || 0)) >= 0.005)) return;
+      rawSettled += settled;
+      if (isCfg) {
+        rawCarried += settled;
+      } else if (r && r.cash_usd !== undefined) {
+        rawCash += Number(r.cash_usd || 0);
+        rawDisc += Number(r.discount_usd || 0);
+      } else {
+        rawCash += settled;
+      }
+    });
+    const totSettled = r2(rawSettled);
+    const totCarried = r2(rawCarried);
+    const totDiscount = r2(rawDisc);
+    let totCashReceived = r2(rawCash);
+    if (Math.abs((totCashReceived + totCarried + totDiscount) - totSettled) <= 0.02) {
+      totCashReceived = r2(totSettled - totCarried - totDiscount);
+    }
+    return {
+      totCashReceived,
+      totDiscount,
+      totCarried,
+      totSettled,
+      hasPeriodDiscounts: Math.abs(totDiscount) >= 0.005
+    };
+  }
+
+  function _renderStmtSettleTieoutHtml(opts) {
+    if (!opts || !opts.hasPeriodDiscounts) return '';
+    const items = [
+      { cls: 'is-cash', lbl: opts.cashLabel, val: _fmtStmtUnsignedOrNeg(opts.cashUsd) }
+    ];
+    if (Math.abs(Number(opts.carriedUsd || 0)) >= 0.005) {
+      items.push({ cls: 'is-carried', lbl: 'Carried Balance', val: _fmtStmtUnsignedOrNeg(opts.carriedUsd) });
+    }
+    items.push(
+      { cls: 'is-disc', lbl: 'Discounts', val: _fmtStmtUnsignedOrNeg(opts.discountUsd) },
+      { cls: 'is-total', lbl: 'Total Settled', val: _fmtStmtUnsignedOrNeg(opts.settledUsd) }
+    );
+    return `
+      <div class="rdl-settle-tieout" id="${esc(opts.id)}" data-stmt-settle-tieout="${esc(opts.stmtCode)}">
+        <span class="rdl-settle-tieout-title">${esc(opts.title || 'Period Settlement Breakdown')}</span>
+        <div class="rdl-settle-tieout-items">
+          ${items.map((it, i) => `${i > 0 ? '<span class="rdl-settle-tieout-sep" aria-hidden="true" data-no-i18n="1">·</span>' : ''}<span class="rdl-settle-tieout-item ${it.cls}"><span class="rdl-settle-tieout-lbl">${esc(it.lbl)}</span><b class="mono" data-no-i18n="1">${esc(it.val)}</b></span>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function render14CustomerStatement(meta, ctx) {
     const lSoa14 = _rdlSeatLens(ctx);
     const p = ctx.rdl.params;
@@ -5162,6 +5228,7 @@
     const totCr = periodRows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const totM3 = periodRows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const closingBal = runBal + totDr - totCr;
+    const bd14 = _computeStmt14PeriodBreakdown(periodRows, lSoa14.books);
     const siteList = [...new Set(allCustRows.filter(r => !r.is_receipt_row).map(r => r.site).filter(Boolean))].slice(0, 3).join(' · ');
     const dash = '-';
 
@@ -5233,6 +5300,17 @@
           </tr>
         </tfoot>
       </table>
+      ${_renderStmtSettleTieoutHtml({
+        id: 'stmt14SettleTieout',
+        stmtCode: '14',
+        hasPeriodDiscounts: bd14.hasPeriodDiscounts,
+        title: 'Period Settlement Breakdown',
+        cashLabel: 'Cash Received',
+        cashUsd: bd14.totCashReceived,
+        carriedUsd: bd14.totCarried,
+        discountUsd: bd14.totDiscount,
+        settledUsd: bd14.totSettled
+      })}
       ${signatureRowHtml('Prepared by Accounting / إعداد المحاسبة', 'Customer Confirmation / مصادقة الزبون')}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
@@ -6064,9 +6142,13 @@
         co: String(v.co || '').trim(),
         leg: v.leg,
         type: leg === 'ALL' ? `${v.type} [${v.leg === 'material' ? 'Material' : (v.leg === 'transport' ? 'Transport' : 'Expenses')}]` : v.type,
+        pay_method: v.pay_method || '',
         desc: v.desc,
         cr: Number(v.cr || 0),
-        dr: lAp16.books ? Number(v.dr || 0) : 0
+        dr: lAp16.books ? Number(v.dr || 0) : 0,
+        cash_usd: lAp16.books ? Number(v.cash_usd !== undefined ? v.cash_usd : (v.dr || 0)) : 0,
+        discount_usd: lAp16.books ? Number(v.discount_usd || 0) : 0,
+        carried_usd: lAp16.books ? Number(v.carried_usd || 0) : 0
       });
       tx = ((res16 && res16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
       allLegsTx = ((resAll16 && resAll16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
@@ -6097,15 +6179,24 @@
         }
         const srcBase = r.is_settlement_row ? 'Settlement' : (rowLeg === 'transport' ? (isMfg ? 'Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
         const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (rowLeg === 'transport' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
+        const mth = r.is_settlement_row ? String(r.pay_method || r.method || '').trim() : '';
+        const isCfg = r.is_settlement_row && /^(?:VAT)?Config$/i.test(mth);
+        const rawDr = Number(r.paid_usd || 0);
+        const rawCash = r.is_settlement_row ? (r.cash_usd !== undefined ? Number(r.cash_usd || 0) : rawDr) : rawDr;
+        const rawDisc = r.is_settlement_row ? (r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0) : 0;
         const rowObj = {
           date: rowDate(r, ctx.basis),
           ref: r.voucher || r.name || 'RM',
           co: String(r.co || r.company || '').trim(),
           leg: rowLeg,
           type: leg === 'ALL' ? `${srcBase} [${rowLeg === 'material' ? 'Material' : (rowLeg === 'transport' ? 'Transport' : 'Expenses')}]` : srcBase,
+          pay_method: mth,
           desc: descLbl,
           cr: Number(r.total_usd || 0),
-          dr: lAp16.books ? Number(r.paid_usd || 0) : 0
+          dr: lAp16.books ? rawDr : 0,
+          cash_usd: lAp16.books ? (isCfg ? 0 : rawCash) : 0,
+          discount_usd: lAp16.books ? (isCfg ? 0 : rawDisc) : 0,
+          carried_usd: lAp16.books ? (isCfg ? rawDr : 0) : 0
         };
         allLegsTx.push(rowObj);
         if (leg === 'ALL' || rowLeg === leg) tx.push(rowObj);
@@ -6117,9 +6208,13 @@
           co: String(r.co || r.company || '').trim(),
           leg: 'expenses',
           type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
+          pay_method: '',
           desc: r.description || r.category || 'Vendor Invoice',
           cr: Number(r.ap_credit_usd || 0),
-          dr: 0
+          dr: 0,
+          cash_usd: 0,
+          discount_usd: 0,
+          carried_usd: 0
         };
         allLegsTx.push(expObj);
         if (leg === 'ALL' || leg === 'expenses') tx.push(expObj);
@@ -6141,6 +6236,14 @@
     const openBal = lAp16.books ? round2Local(openCr - openDr) : 0;
     const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
     const totDr = lAp16.books ? periodRows.reduce((s, t) => s + t.dr, 0) : 0;
+    const totSettled16 = lAp16.books ? round2Local(totDr) : 0;
+    let totCashPaid = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.cash_usd || 0), 0)) : 0;
+    const totDiscount = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.discount_usd || 0), 0)) : 0;
+    const totCarried = lAp16.books ? round2Local(periodRows.reduce((s, t) => s + Number(t.carried_usd || 0), 0)) : 0;
+    if (lAp16.books && Math.abs((totCashPaid + totCarried + totDiscount) - totSettled16) <= 0.02) {
+      totCashPaid = round2Local(totSettled16 - totCarried - totDiscount);
+    }
+    const hasPeriodDiscounts = Boolean(lAp16.books && Math.abs(totDiscount) >= 0.005);
     const closingBal = lAp16.books ? round2Local(openBal + totCr - totDr) : 0;
     const allTimeLegBal = lAp16.books ? round2Local(tx.reduce((s, t) => s + Number(t.cr || 0) - Number(t.dr || 0), 0)) : 0;
 
@@ -6200,6 +6303,10 @@
       openBal,
       totCr,
       totDr,
+      totCashPaid,
+      totDiscount,
+      totCarried,
+      hasPeriodDiscounts,
       closingBal,
       allTimeLegBal,
       byCoOpen,
@@ -6231,6 +6338,9 @@
     const balWordAr = m.closingBal < -0.005 ? 'رصيد مدفوع مقدماً' : 'صافي الرصيد المستحق';
     const balWordFr = m.closingBal < -0.005 ? 'Avance en votre faveur' : 'Solde net à payer';
 
+    const showDiscBreakdown = Boolean(canBooks && m.hasPeriodDiscounts);
+    const hasCarried = Boolean(showDiscBreakdown && Math.abs(Number(m.totCarried || 0)) >= 0.005);
+
     if (lang === 'ar') {
       const lines = [
         `${coInfo.ar || coInfo.short} - مصادقة كشف حساب مورد`,
@@ -6241,6 +6351,9 @@
         canBooks ? `الرصيد الافتتاحي المدور: ${fmtUsdSigned(m.openBal, 2)}` : '',
         `إجمالي الاستحقاق / التوريدات في الفترة: ${fmtUsd(m.totCr, 2)}`,
         canBooks ? `إجمالي الدفعات والتسويات: ${fmtUsd(m.totDr, 2)}` : '',
+        showDiscBreakdown ? `  المدفوع نقداً أو مصرفياً: ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+        hasCarried ? `  رصيد منقول: ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+        showDiscBreakdown ? `  الحسومات المكتسبة: ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
         canBooks ? `${balWordAr}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
       ].filter(Boolean);
       if (latest.length) {
@@ -6264,6 +6377,9 @@
         canBooks ? `Solde d'ouverture : ${fmtUsdSigned(m.openBal, 2)}` : '',
         `Total facturé / crédité : ${fmtUsd(m.totCr, 2)}`,
         canBooks ? `Total réglé : ${fmtUsd(m.totDr, 2)}` : '',
+        showDiscBreakdown ? `  Payé (trésorerie) : ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+        hasCarried ? `  Solde reporté : ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+        showDiscBreakdown ? `  Remises obtenues : ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
         canBooks ? `${balWordFr} : ${fmtUsdSigned(m.closingBal, 2)}` : ''
       ].filter(Boolean);
       if (latest.length) {
@@ -6286,6 +6402,9 @@
       canBooks ? `Opening Balance: ${fmtUsdSigned(m.openBal, 2)}` : '',
       `Period Accrued / Invoiced: ${fmtUsd(m.totCr, 2)}`,
       canBooks ? `Period Settlements Applied: ${fmtUsd(m.totDr, 2)}` : '',
+      showDiscBreakdown ? `  Cash Paid: ${_fmtStmtUnsignedOrNeg(m.totCashPaid)}` : '',
+      hasCarried ? `  Carried Balance: ${_fmtStmtUnsignedOrNeg(m.totCarried)}` : '',
+      showDiscBreakdown ? `  Settlement Discounts: ${_fmtStmtUnsignedOrNeg(m.totDiscount)}` : '',
       canBooks ? `${balWordEn}: ${fmtUsdSigned(m.closingBal, 2)}` : ''
     ].filter(Boolean);
     if (latest.length) {
@@ -6356,6 +6475,9 @@
             ${canBooks ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.openBal, 2))}</b></div>` : ''}
             <div class="hld-share-kpi"><span>Period Accrued</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totCr, 2))}</b></div>
             ${canBooks ? `<div class="hld-share-kpi"><span>Settlements Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUsd(m.totDr, 2))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi"><span>Cash Paid</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCashPaid))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts && Math.abs(Number(m.totCarried || 0)) >= 0.005) ? `<div class="hld-share-kpi"><span>Carried Balance</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totCarried))}</b></div>` : ''}
+            ${(canBooks && m.hasPeriodDiscounts) ? `<div class="hld-share-kpi is-brass"><span>Discounts</span><b class="mono" data-no-i18n="1">${esc(_fmtStmtUnsignedOrNeg(m.totDiscount))}</b></div>` : ''}
             ${canBooks ? `<div class="hld-share-kpi ${balCls}"><span>Closing Balance</span><b class="mono" data-no-i18n="1">${esc(fmtUsdSigned(m.closingBal, 2))}</b></div>` : ''}
           </div>
           <div class="hld-share-langbar">
@@ -6479,7 +6601,8 @@
       return renderRdlRestrictedSheet(meta, ctx.co, 'Supplier Statement', 'Restricted by seat permissions');
     }
     const m = buildStmt16Model(ctx);
-    const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, closingBal, from, to, dt } = m;
+    const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, totCashPaid, totDiscount, totCarried, hasPeriodDiscounts, closingBal, from, to, dt } = m;
+    const round2Local16 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
     const dash = '-';
     const stObj = ctx.state || {};
     const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
@@ -6603,6 +6726,17 @@
           </tr>
         </tfoot>
       </table>
+      ${_renderStmtSettleTieoutHtml({
+        id: 'stmt16SettleTieout',
+        stmtCode: '16',
+        hasPeriodDiscounts,
+        title: 'Period Settlement Breakdown',
+        cashLabel: 'Cash Paid',
+        cashUsd: totCashPaid,
+        carriedUsd: totCarried,
+        discountUsd: totDiscount,
+        settledUsd: round2Local16(totDr)
+      })}
       ${signatureRowHtml('Prepared by AP Accounting / إعداد محاسبة الموردين', 'Supplier Confirmation / مصادقة المورد')}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
@@ -8721,6 +8855,19 @@
         if (cells.length) lines.push(cells.join(','));
       });
     });
+    const tieout = sheet.querySelector('[data-stmt-settle-tieout]');
+    if (tieout) {
+      const tieTitle = (tieout.querySelector('.rdl-settle-tieout-title')?.textContent || 'Period Settlement Breakdown').replace(/\s+/g, ' ').trim();
+      const tieCells = [...tieout.querySelectorAll('.rdl-settle-tieout-item')].map(el => {
+        const lbl = (el.querySelector('.rdl-settle-tieout-lbl')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const val = (el.querySelector('b')?.textContent || '').replace(/\s+/g, ' ').trim();
+        return `"${(`${lbl}: ${val}`).replace(/"/g, '""')}"`;
+      });
+      if (tieCells.length) {
+        lines.push('');
+        lines.push([`"${tieTitle.replace(/"/g, '""')}"`].concat(tieCells).join(','));
+      }
+    }
     const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -9390,13 +9537,15 @@
       const custName = _rdlResolveFilterName(ctx, 'customer', rawFilterCust14, ctx.customers);
       const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && ((canViewBooks && r.is_receipt_row) || r.is_credit));
       let openDr = 0, openCr = 0, totDr = 0, totCr = 0, totQty = 0, pCount = 0;
+      const periodRows14 = [];
       allCustRows.forEach(r => {
         const d = rowDate(r, ctx.basis);
         if (d < p.from) { openDr += Number(r.total_usd || 0); openCr += Number(r.paid_usd || 0); }
-        else if (d <= p.to) { totDr += Number(r.total_usd || 0); totCr += Number(r.paid_usd || 0); totQty += Number(r.qty || 0); pCount += 1; }
+        else if (d <= p.to) { totDr += Number(r.total_usd || 0); totCr += Number(r.paid_usd || 0); totQty += Number(r.qty || 0); pCount += 1; periodRows14.push(r); }
       });
       const openBal = openDr - openCr;
       const closeBal = openBal + totDr - totCr;
+      const bd14Snap = _computeStmt14PeriodBreakdown(periodRows14, canViewBooks);
       facts = {
         customer: _stmtCleanParty(custName),
         periodEntries: pCount,
@@ -9405,6 +9554,8 @@
         openingBalanceUsd: canViewBooks ? Math.round(openBal) : undefined,
         periodBilledUsd: Math.round(totDr),
         periodSettledUsd: canViewBooks ? Math.round(totCr) : undefined,
+        periodCashReceivedUsd: (canViewBooks && bd14Snap.hasPeriodDiscounts) ? Math.round(bd14Snap.totCashReceived) : undefined,
+        periodDiscountsUsd: (canViewBooks && bd14Snap.hasPeriodDiscounts) ? Math.round(bd14Snap.totDiscount) : undefined,
         closingBalanceUsd: canViewBooks ? Math.round(closeBal) : undefined
       };
       kpis = [
@@ -9495,6 +9646,8 @@
         openingPayableUsd: canViewBooks ? Math.round(m16.openBal) : undefined,
         periodInvoicedUsd: Math.round(m16.totCr),
         periodPaidUsd: canViewBooks ? Math.round(m16.totDr) : undefined,
+        periodCashPaidUsd: (canViewBooks && m16.hasPeriodDiscounts) ? Math.round(m16.totCashPaid) : undefined,
+        periodDiscountsUsd: (canViewBooks && m16.hasPeriodDiscounts) ? Math.round(m16.totDiscount) : undefined,
         closingPayableUsd: canViewBooks ? Math.round(m16.closingBal) : undefined
       };
       kpis = [
