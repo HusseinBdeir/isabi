@@ -1304,14 +1304,20 @@ def main() -> int:  # noqa: PLR0915
             ("isabi-app:   ", "has no command"),
             ("isabi-app: node build/../verify_a.mjs", "must run a check script under build/"),
             ("isabi: python build/deploy_cloudflare.py --pages-only", "must run a check script under build/"),
+            ("isabi: python build/verify_min_shell_parity.py", "post-sync bundle parity"),
+            ("isabi: python build/verify_deployed_shell.py", "post-sync bundle parity"),
+            ("isabi: python3 build/verify_min_shell_parity.py --extra", "post-sync bundle parity"),
         ]
         check(all(sub in raises(RB.join, A, holder="session A", summary="bad gate", app_branch="wt/gchk", gates=[g])[1]
                   for g, sub in bad_gates)
               and "does not say where it runs" in raises(RB.ship, A, holder="session A", summary="bad gate",
                                                        app_branch="wt/gchk", gates=["node build/verify_a.mjs"],
                                                        wait_s=0, poll_s=0, quiet=True)[1]
+              and "post-sync bundle parity" in raises(RB.ship, A, holder="session A", summary="post-sync gate",
+                                                      app_branch="wt/gchk", gates=["isabi: python build/verify_min_shell_parity.py"],
+                                                      wait_s=0, poll_s=0, quiet=True)[1]
               and line_ids(A) == line_before and RL.read_remote_lock(A) == ("", {}),
-              "join and ship reject malformed or dangerous --gate arguments before touching queue or lock")
+              "join and ship reject malformed, dangerous, or post-sync-only --gate arguments before touching queue or lock")
         tick()
         eG1 = quiet(RB.join, A, holder="session A", summary="gate fix", app_branch="wt/gchk",
                     gates=["isabi-app: node build/verify_a.mjs"])
@@ -1321,6 +1327,70 @@ def main() -> int:  # noqa: PLR0915
         check(eG2["id"] == eG1["id"] and entry(A, eG1["id"]).get("gates") == ["isabi-app: node build/verify_b.mjs"],
               "re-joining an unchanged branch with a corrected --gate updates gates in place while keeping its slot")
         quiet(RB.leave, A, eG1["id"])
+
+        # 20. Auto-dedup of RELEASE_GATES / SPEED_GATE / built-in main suites at join time
+        git(seed, "fetch", "-q", "origin")
+        git(seed, "reset", "--hard", "origin/main")
+        put(seed / "build" / "sync_app.py", (
+            "RELEASE_GATES = [\n"
+            "    ('isabi-app', 'build/verify_a.mjs', 'node'),\n"
+            "    ('isabi', 'build/verify_y.py', 'python'),\n"
+            "]\n"
+            "SPEED_GATE = ('isabi-app', 'build/verify_speed_budget.mjs', 'node')\n"
+            "POST_SYNC_ONLY_GATES = (('isabi', 'build/verify_min_shell_parity.py'),)\n"
+        ))
+        git(seed, "add", "build/sync_app.py")
+        git(seed, "commit", "-q", "-m", "add sync_app gates")
+        git(seed, "push", "-q", "origin", "HEAD:main")
+        git(A, "fetch", "-q", "origin")
+        dedup_buf = io.StringIO()
+        tick()
+        with contextlib.redirect_stdout(dedup_buf):
+            eDedup = RB.join(
+                A,
+                holder="session A",
+                summary="gate dedup",
+                app_branch="wt/gchk",
+                gates=[
+                    "isabi-app: node build/verify_a.mjs",
+                    "mfg-web: python3 build/verify_y.py",
+                    "isabi: python build/verify_y.py",
+                    "isabi-app: node build/verify_speed_budget.mjs",
+                    "isabi-app: node build/verify_mfg.mjs",
+                    "isabi-app: node build/verify_mfg.mjs --mobile",
+                    "isabi-app: node build/verify_boot_saved_scope.mjs",
+                    "isabi-app: node build/verify_a.mjs --mobile",
+                    "isabi-app: node build/verify_custom.mjs",
+                    "mfg-web: node build/verify_custom.mjs",
+                ],
+            )
+        dedup_out = dedup_buf.getvalue()
+        check(
+            entry(A, eDedup["id"]).get("gates") == [
+                "mfg-web: python3 build/verify_y.py",
+                "isabi-app: node build/verify_a.mjs --mobile",
+                "isabi-app: node build/verify_custom.mjs",
+            ]
+            and "NOTE: skipping redundant --gate already run during batch sync/main" in dedup_out,
+            "join strips parameterless RELEASE_GATES/SPEED_GATE and main suites while keeping custom args, wrong-repo mismatch, and unique gates",
+        )
+        tick()
+        eDedupKeep = quiet(RB.join, A, holder="session A", summary="gate dedup", app_branch="wt/gchk")
+        check(
+            eDedupKeep["id"] == eDedup["id"]
+            and len(entry(A, eDedup["id"]).get("gates") or []) == 3,
+            "re-joining with no --gate flags preserves existing gates",
+        )
+        tick()
+        eDedupCleared = quiet(
+            RB.join, A, holder="session A", summary="gate dedup", app_branch="wt/gchk",
+            gates=["isabi-app: node build/verify_a.mjs"],
+        )
+        check(
+            eDedupCleared["id"] == eDedup["id"] and entry(A, eDedup["id"]).get("gates") == [],
+            "re-joining an unchanged branch with only redundant RELEASE_GATES clears earlier gates to []",
+        )
+        quiet(RB.leave, A, eDedup["id"])
     finally:
         for k, v in saved.items():
             if v is None:

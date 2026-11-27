@@ -146,6 +146,25 @@ def gate_timeout_s() -> int:
 SPEED_GATE = ("isabi-app", "build/verify_speed_budget.mjs", "node")
 SPEED_GATE_TIMEOUT_S = 2700
 
+# Gates in RELEASE_GATES that inspect the synced `isabi/app/` bundle or `deployed_shell.js == app/sw.js`
+# and therefore fail pre-sync without `ISABI_SYNC_IN_PROGRESS=1` whenever `isabi-app` changed.
+POST_SYNC_ONLY_GATES = (
+    ("isabi", "build/verify_min_shell_parity.py"),
+    ("isabi", "build/verify_deployed_shell.py"),
+)
+
+# Subset of RELEASE_GATES whose assertions depend on operational seed JSONs, demo seeds, namebook, or data/mfg.db;
+# also executed by `build/release_data_only.py` against candidate top-up seeds before committing to main.
+SEED_RELEASE_GATES = (
+    ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),
+    ("isabi-app", "build/verify_near_copy.mjs", "node"),
+    ("isabi-app", "build/verify_public_names.py", "python"),
+    ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),
+    ("isabi-app", "build/verify_statement_books.mjs", "node"),
+    ("isabi-app", "build/verify_multi_slip_stepper.mjs", "node"),
+    ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node"),
+)
+
 
 def _node_runtime() -> tuple[str, dict] | None:
     """node on PATH, else the same fallbacks as audit_showcase_i18n.find_node_runtime (VS Code's Electron)."""

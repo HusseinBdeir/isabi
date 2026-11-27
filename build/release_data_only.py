@@ -40,6 +40,7 @@ against what is on disk.
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as dt
 import hashlib
 import inspect
@@ -73,6 +74,18 @@ EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "s
 NO_RELEASE_LOCK = False  # set from --no-release-lock in main()
 DEFAULT_WAIT_LOCK_S = 540
 DEFAULT_POLL_LOCK_S = 12
+GATE_TIMEOUT_S = 600
+GATE_TIMEOUT_ENV = "ISABI_GATE_TIMEOUT_S"
+GATE_TIMEOUT_MAX_S = 3600
+DEFAULT_SEED_RELEASE_GATES = (
+    ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),
+    ("isabi-app", "build/verify_near_copy.mjs", "node"),
+    ("isabi-app", "build/verify_public_names.py", "python"),
+    ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),
+    ("isabi-app", "build/verify_statement_books.mjs", "node"),
+    ("isabi-app", "build/verify_multi_slip_stepper.mjs", "node"),
+    ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node"),
+)
 _mono = time.monotonic
 _sleep = time.sleep
 _LEGACY_NET_ERR_RE = re.compile(
@@ -199,6 +212,50 @@ def _suite_stamp_path() -> Path:
     return E.OUT_DIR / "dataonly_suite_stamp.json"
 
 
+def gate_timeout_s() -> int:
+    raw = (os.environ.get(GATE_TIMEOUT_ENV) or "").strip()
+    if not raw.isdigit():
+        return GATE_TIMEOUT_S
+    return max(GATE_TIMEOUT_S, min(int(raw), GATE_TIMEOUT_MAX_S))
+
+
+def seed_release_gates() -> tuple[tuple[str, str, str], ...]:
+    """Read SEED_RELEASE_GATES from committed HEAD:build/sync_app.py (AST only), falling back to DEFAULT_SEED_RELEASE_GATES."""
+    res = git(["cat-file", "blob", "HEAD:build/sync_app.py"], check=False)
+    if res.returncode == 0 and res.stdout:
+        try:
+            tree = ast.parse(res.stdout)
+        except SyntaxError:
+            tree = None
+        if tree is not None:
+            for node in tree.body:
+                val_node = None
+                names: list[str] = []
+                if isinstance(node, ast.Assign):
+                    names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                    val_node = node.value
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    names = [node.target.id]
+                    val_node = node.value
+                if val_node is None or "SEED_RELEASE_GATES" not in names:
+                    continue
+                try:
+                    val = ast.literal_eval(val_node)
+                except (ValueError, TypeError, SyntaxError):
+                    continue
+                if isinstance(val, (list, tuple)) and val:
+                    parsed: list[tuple[str, str, str]] = []
+                    valid = True
+                    for item in val:
+                        if not (isinstance(item, (list, tuple)) and len(item) == 3 and all(isinstance(x, str) for x in item)):
+                            valid = False
+                            break
+                        parsed.append((item[0], item[1], item[2]))
+                    if valid and parsed:
+                        return tuple(parsed)
+    return DEFAULT_SEED_RELEASE_GATES
+
+
 def _expected_suite_stamp(core_h: str, recs_h: str) -> dict:
     return {
         "coreHash": core_h,
@@ -209,6 +266,7 @@ def _expected_suite_stamp(core_h: str, recs_h: str) -> dict:
         "isabiHead": head_sha(),
         "isabiAppHead": git(["rev-parse", "HEAD"], cwd=ISABI_APP).stdout.strip(),
         "shellVersion": shell_version(),
+        "seedGates": [f"{r}:{p}" for r, p, _ in seed_release_gates()],
     }
 
 
@@ -276,6 +334,54 @@ def _run_node_suite(suite_cwd: Path) -> int:
     node_exe, node_env = rt
     r = subprocess.run([node_exe, "build/verify_mfg.mjs"], cwd=str(suite_cwd), env=node_env, check=False)
     return int(r.returncode)
+
+
+def _run_seed_release_gates(suite_cwd: Path) -> None:
+    """Run all seed- and mfg.db-sensitive RELEASE_GATES against the isolated candidate sandbox."""
+    for repo, rel, interp in seed_release_gates():
+        gate_cwd = suite_cwd if repo == "isabi-app" else ISABI
+        script_path = gate_cwd / Path(rel)
+        if not script_path.is_file():
+            print(f"[data-only] SKIP: seed release gate {repo}/{rel} is not in candidate sandbox")
+            continue
+        if interp == "python":
+            exe, env = sys.executable, dict(os.environ)
+        else:
+            rt = _node_runtime()
+            if rt is None:
+                raise SystemExit(f"ABORT: node runtime not found for seed release gate {repo}/{rel}")
+            exe, env = rt
+        env["ISABI_APP_SRC"] = str(suite_cwd)
+        env["PYTHON"] = sys.executable
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        if repo == "isabi-app":
+            env.pop("ISABI_ROOT", None)
+            env.pop("ISABI_NAMES_REQUIRE_REPO", None)
+        else:
+            env["ISABI_ROOT"] = str(ISABI)
+        try:
+            chk = subprocess.run(
+                [exe, rel],
+                cwd=str(gate_cwd),
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=gate_timeout_s(),
+                stdin=subprocess.DEVNULL,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise SystemExit(f"ABORT: seed release gate {repo}/{rel} timed out after {gate_timeout_s()} s") from None
+        if chk.returncode != 0:
+            if chk.stdout:
+                print(chk.stdout[-4000:], file=sys.stderr)
+            if chk.stderr:
+                print(chk.stderr[-4000:], file=sys.stderr)
+            raise SystemExit(f"ABORT: seed release gate {repo}/{rel} failed with exit {chk.returncode}")
+        tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
+        print(f"[data-only] OK: seed release gate {repo}/{rel}: {tail}", flush=True)
 
 
 def _build_candidate_manifest_and_index(hm: dict, core: bytes, recs: bytes, core_h: str, recs_h: str) -> tuple[dict, bytes, bytes, str]:
@@ -367,6 +473,7 @@ def run_desktop_suite_against_new_seed(skip_suite: bool = False) -> None:
         rc = _run_node_suite(tmp_dir)
         if rc != 0:
             raise SystemExit(f"ABORT: desktop suite (node build/verify_mfg.mjs) failed with exit {rc} against candidate seed {core_h}/{recs_h}")
+        _run_seed_release_gates(tmp_dir)
         stamp_path.parent.mkdir(parents=True, exist_ok=True)
         stamp_payload = {**expected, "passed": True, "ts": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
         stamp_path.write_text(json.dumps(stamp_payload, indent=2), encoding="utf-8")
