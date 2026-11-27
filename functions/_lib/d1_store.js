@@ -306,7 +306,7 @@ function createPurgeOverrideAccumulator() {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
-export const MIN_SYNC_SHELL_VER = '19.6.450';
+export const MIN_SYNC_SHELL_VER = '19.6.456';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
