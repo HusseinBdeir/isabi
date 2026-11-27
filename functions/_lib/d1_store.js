@@ -9,12 +9,15 @@ import {
   canAccessCompany,
   canAccessGeoIndustrySession,
   canAccessSentinelScope,
+  canEnrolStaffBiometricsSession,
   canEnterSite,
   canManageUsersSeat,
+  canReadStaffBiometricCompany,
   canonEntityKey,
   canonGeoIndustryKey,
   canReviewSentinelsSession,
   canWriteGeoConfigSession,
+  canWriteStaffBiometricCompany,
   canWriteWorkSchedulesSession,
   checkD1RateLimit,
   checkSlidingRateLimit,
@@ -1293,45 +1296,6 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const faceDesc = body && body.face_descriptor;
   const isFaceMethod = /^face\s*id/i.test(method);
   const ipHash = await hashClientIp(request);
-  // Any Face ID request that is not a step-up (sign-in screen, enrolment check, with or without an email or
-  // a PIN): misses count on the face-only key, so faces in front of a camera can never lock PIN sign-in for
-  // the office IP. (Named for the common case; a Face ID + PIN request counts here too.)
-  const isFaceNoPin = Boolean(isFaceMethod && !(body && body.step_up === true));
-  // Face ID with no email and no PIN (anonymous probe): the answer never says which seat matched or why.
-  const isFaceProbe = Boolean(isFaceNoPin && !email && !pin && !(body && body.verify_only === true));
-
-  const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceNoPin);
-  if (lockState.locked) {
-    return jsonResponse({
-      ok: false,
-      rate_limited: true,
-      retry_after_sec: lockState.retryAfterSec,
-      error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(lockState.retryAfterSec / 60))} minute(s).`
-    }, 429, { 'Retry-After': String(lockState.retryAfterSec) });
-  }
-
-  let row = null;
-  // opts.pinMiss: a wrong PIN ALWAYS counts on the PIN keys (IP + email), whatever the method, so a
-  // `Face ID + PIN 2FA` request can never move PIN guessing onto the face key that face sign-ins reset.
-  const failAuth = async (errMsg, status = 401, opts = {}) => {
-    const res = (isFaceNoPin && !opts.pinMiss)
-      ? await recordFaceProbeFailure(env.DB, ipHash)
-      : await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
-    if (isFaceProbe && !res.throttled) {
-      // Never tell an anonymous face probe which seat it matched or why it was refused.
-      return jsonResponse({ ok: false, error: 'Face ID not recognized.' }, 401);
-    }
-    if (res.throttled) {
-      return jsonResponse({
-        ok: false,
-        rate_limited: true,
-        retry_after_sec: res.retryAfterSec,
-        error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(res.retryAfterSec / 60))} minute(s).`
-      }, 429, { 'Retry-After': String(res.retryAfterSec) });
-    }
-    return jsonResponse({ ok: false, error: errMsg }, status);
-  };
-
   const isStepUp = Boolean(body && body.step_up === true);
   const isVerifyOnly = Boolean((body && body.verify_only === true) || isStepUp);
   let callerSess = null;
@@ -1349,9 +1313,74 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       }
     }
     if (method === 'Owner Impersonation' && (!callerSess || !isOwnerOrFullGroupSession(callerSess))) {
-      return failAuth('Active Owner session required for seat impersonation.');
+      const rlImp = await recordAuthFailure(env.DB, ipHash, email || '');
+      if (rlImp.throttled) {
+        return jsonResponse({
+          ok: false,
+          rate_limited: true,
+          retry_after_sec: rlImp.retryAfterSec,
+          error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(rlImp.retryAfterSec / 60))} minute(s).`
+        }, 429, { 'Retry-After': String(rlImp.retryAfterSec) });
+      }
+      return jsonResponse({ ok: false, error: 'Active Owner session required for seat impersonation.' }, 401);
     }
   }
+  const isKioskVerifyOnly = Boolean(callerSess && isVerifyOnly && !isStepUp && isFaceMethod);
+
+  // Any Face ID request that is not a step-up (sign-in screen, with or without an email or a PIN):
+  // misses count on the face-only key, so faces in front of a camera can never lock PIN sign-in for
+  // the office IP. Authenticated kiosk verify_only probes never read or write rl:lock_face (using a
+  // soft per-session limit instead) so unknown walk-ups cannot lock out plant login across shared NAT.
+  const isFaceNoPin = Boolean(isFaceMethod && !isStepUp && !isKioskVerifyOnly);
+  // Face ID with no email and no PIN (anonymous probe): the answer never says which seat matched or why.
+  const isFaceProbe = Boolean(isFaceNoPin && !email && !pin && !isVerifyOnly);
+
+  if (!isKioskVerifyOnly) {
+    const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceNoPin);
+    if (lockState.locked) {
+      return jsonResponse({
+        ok: false,
+        rate_limited: true,
+        retry_after_sec: lockState.retryAfterSec,
+        error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(lockState.retryAfterSec / 60))} minute(s).`
+      }, 429, { 'Retry-After': String(lockState.retryAfterSec) });
+    }
+  }
+
+  let row = null;
+  // opts.pinMiss: a wrong PIN ALWAYS counts on the PIN keys (IP + email), whatever the method, so a
+  // `Face ID + PIN 2FA` request can never move PIN guessing onto the face key that face sign-ins reset.
+  const failAuth = async (errMsg, status = 401, opts = {}) => {
+    if (isKioskVerifyOnly && !opts.pinMiss) {
+      const sessKey = String((callerSess && (callerSess.sid || callerSess.sub || callerSess.email)) || ipHash);
+      const memKiosk = checkSlidingRateLimit(`kiosk_face_verify:${sessKey}`, 40, 60000);
+      if (!memKiosk.allowed) {
+        return jsonResponse({
+          ok: false,
+          rate_limited: true,
+          retry_after_sec: 15,
+          error: 'Too many unrecognized Face ID checks. Please pause a moment.'
+        }, 429, { 'Retry-After': '15' });
+      }
+      return jsonResponse({ ok: false, error: 'Face ID not recognized.' }, 401);
+    }
+    const res = (isFaceNoPin && !opts.pinMiss)
+      ? await recordFaceProbeFailure(env.DB, ipHash)
+      : await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
+    if (isFaceProbe && !res.throttled) {
+      // Never tell an anonymous face probe which seat it matched or why it was refused.
+      return jsonResponse({ ok: false, error: 'Face ID not recognized.' }, 401);
+    }
+    if (res.throttled) {
+      return jsonResponse({
+        ok: false,
+        rate_limited: true,
+        retry_after_sec: res.retryAfterSec,
+        error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(res.retryAfterSec / 60))} minute(s).`
+      }, 429, { 'Retry-After': String(res.retryAfterSec) });
+    }
+    return jsonResponse({ ok: false, error: errMsg }, status);
+  };
 
   let allActiveCache = null;
   const loadAllActive = async () => {
@@ -1552,7 +1581,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
 
   if (isVerifyOnly) {
-    await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null, keepEmail: !pinVerified && verifiedFaceDist !== null });
+    if (!isKioskVerifyOnly) {
+      await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null, keepEmail: !pinVerified && verifiedFaceDist !== null });
+    }
     if (isStepUp && callerSess && callerSess.sid) {
       await writeStepUpReceipt(env.DB, callerSess.sid, row.id, method || 'Step-Up');
     }
@@ -5580,6 +5611,43 @@ export async function handleAlertRules(request, env, session, body) {
   return jsonResponse({ ok: true, saved });
 }
 
+function normBioStaffKey(v) {
+  return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function canonicalizeStaffBioCompanyList(raw) {
+  const cos = parseAllowedCompanies(raw).filter(c => c && c !== '*');
+  const out = [];
+  const seen = new Set();
+  for (const c of cos) {
+    const canon = canonicalizeCompanyName(c);
+    if (canon && !seen.has(canon)) {
+      seen.add(canon);
+      out.push(canon);
+    }
+  }
+  return out.join(', ');
+}
+
+async function loadProtectedAdminNormNames(db) {
+  const out = new Set();
+  if (!db) return out;
+  try {
+    const res = await db.prepare('SELECT id, full_name, role FROM users').all();
+    for (const r of (res.results || [])) {
+      if (!r) continue;
+      const rStr = String(r.role || '').toLowerCase();
+      const isProt = String(r.id || '') === 'u1' || String(r.id || '') === 'u2'
+        || /owner|admin|super|manager|director/.test(rStr)
+        || canManageUsersSeat({ sub: r.id, role: r.role });
+      if (!isProt) continue;
+      const nk = normBioStaffKey(r.full_name || '');
+      if (nk) out.add(nk);
+    }
+  } catch (_) {}
+  return out;
+}
+
 export async function handleStaffBiometrics(request, env, session, body) {
   if (!env || !env.DB) return jsonResponse({ ok: true, staff_biometrics: {} });
   if (!session) {
@@ -5594,32 +5662,60 @@ export async function handleStaffBiometrics(request, env, session, body) {
       const obj = safeJsonParse(r.payload_json, null);
       if (!r.staff_key || !obj) continue;
       const co = String(r.company || obj.company || '').trim();
-      if (restrictRls && co && !canAccessCompany(session, co)) continue;
+      if (restrictRls && (!co || !canReadStaffBiometricCompany(session, co))) continue;
       out[r.staff_key] = obj;
     }
     return jsonResponse({ ok: true, staff_biometrics: out });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
-  if (!canManageUsersSeat(session)) return jsonResponse({ ok: false, error: 'Supervisor or Owner required to enroll biometrics.' }, 403);
+  if (!canEnrolStaffBiometricsSession(session)) {
+    return jsonResponse({ ok: false, error: 'Entry Operator, Supervisor, or Owner required to enroll biometrics.' }, 403);
+  }
   const mapIn = {};
   if (body && body.key && body.entry) {
-    mapIn[String(body.key)] = body.entry;
+    const nk = normBioStaffKey(body.key).slice(0, 160);
+    if (nk) mapIn[nk] = body.entry;
   } else if (body && body.staff_biometrics && typeof body.staff_biometrics === 'object') {
-    Object.assign(mapIn, body.staff_biometrics);
+    for (const [k0, v0] of Object.entries(body.staff_biometrics)) {
+      const nk = normBioStaffKey(k0).slice(0, 160);
+      if (nk && v0 && typeof v0 === 'object') mapIn[nk] = v0;
+    }
   }
+  const protectedAdminNames = !isOwnerOrFullGroupSession(session)
+    ? await loadProtectedAdminNormNames(env.DB)
+    : null;
   let saved = 0;
+  let blockedReason = '';
   for (const [sk, entry] of Object.entries(mapIn)) {
     if (!sk || !entry || typeof entry !== 'object') continue;
-    const co = canonicalizeCompanyName(entry.company || '');
-    if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
-    const inTs = String(entry.updated_at || new Date().toISOString());
+    if (protectedAdminNames && (protectedAdminNames.has(normBioStaffKey(sk)) || protectedAdminNames.has(normBioStaffKey(entry.name || '')))) {
+      blockedReason = 'Entry Operators and single-BU Supervisors cannot modify Owner or protected Admin Face ID.';
+      continue;
+    }
+    const co = canonicalizeStaffBioCompanyList(entry.company || '');
+    if (restrictRls && (!co || !canWriteStaffBiometricCompany(session, co))) {
+      blockedReason = 'Biometric update denied for companies outside your Business Unit scope.';
+      continue;
+    }
+    const inTs = String(entry.updated_at || entry.face_updated_at || new Date().toISOString());
     const ex = await env.DB.prepare('SELECT updated_at, company FROM staff_biometrics WHERE staff_key = ?1').bind(sk).first();
-    if (ex && restrictRls && ex.company && !canAccessCompany(session, ex.company)) continue;
-    if (ex && String(ex.updated_at || '') > inTs) continue;
+    if (ex && restrictRls && (!ex.company || !canWriteStaffBiometricCompany(session, ex.company))) {
+      blockedReason = 'Existing biometric record belongs to a Business Unit outside your scope.';
+      continue;
+    }
+    if (ex && compareIsoTsMs(inTs, ex.updated_at || '') < 0) continue;
+    const storedEntry = Object.assign({}, entry, {
+      company: co,
+      updated_at: inTs,
+      face_updated_at: String(entry.face_updated_at || inTs)
+    });
     await env.DB.prepare(
       'INSERT OR REPLACE INTO staff_biometrics (staff_key, company, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)'
-    ).bind(sk, co, JSON.stringify(entry), inTs).run();
+    ).bind(sk, co, JSON.stringify(storedEntry), inTs).run();
     saved++;
+  }
+  if (saved === 0 && blockedReason && Object.keys(mapIn).length > 0) {
+    return jsonResponse({ ok: false, error: blockedReason }, 403);
   }
   return jsonResponse({ ok: true, saved });
 }
@@ -7738,27 +7834,6 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         }
       }
 
-      const prevSb = (hasPrev && prevStorePayload.staffBiometrics && typeof prevStorePayload.staffBiometrics === 'object') ? prevStorePayload.staffBiometrics : {};
-      const curSb = (storePayload.staffBiometrics && typeof storePayload.staffBiometrics === 'object') ? storePayload.staffBiometrics : {};
-      for (const [sk, entry] of Object.entries(curSb)) {
-        if (!sk || !entry || typeof entry !== 'object') continue;
-        if (prevSb[sk] && stableRowSig(prevSb[sk]) === stableRowSig(entry)) continue;
-        const co = canonicalizeCompanyName(entry.company || '');
-        if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
-        subStmts.push(
-          db.prepare('INSERT OR REPLACE INTO staff_biometrics (staff_key, company, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
-            .bind(sk, co, JSON.stringify(entry), String(entry.updated_at || ''))
-        );
-      }
-      if (hasPrev) {
-        for (const [sk, pEntry] of Object.entries(prevSb)) {
-          if (sk in curSb) continue;
-          const pCo = canonicalizeCompanyName((pEntry && pEntry.company) || '');
-          if (restrictRls && (!pCo || !canAccessCompany(session, pCo))) continue;
-          subStmts.push(db.prepare('DELETE FROM staff_biometrics WHERE staff_key = ?1').bind(String(sk)));
-        }
-      }
-
       if (Array.isArray(storePayload.users) && storePayload.users.length) {
         const prevUsers = (hasPrev && Array.isArray(prevStorePayload.users)) ? prevStorePayload.users : [];
         const prevUserSigByEmail = new Map();
@@ -7888,6 +7963,36 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
             db.prepare('UPDATE users SET last_login_at = ?1, face_samples = ?2, face_thumbs = ?3, face_updated_at = ?4 WHERE id = ?5')
               .bind(lastLog, fsJson, ftJson, fUpd, exSelf.id)
           );
+        }
+      }
+    }
+
+    if ((!session || canEnrolStaffBiometricsSession(session)) && (storePayload.staffBiometrics || (hasPrev && prevStorePayload.staffBiometrics))) {
+      const bioProtectedAdminNames = (session && !isOwnerOrFullGroupSession(session))
+        ? await loadProtectedAdminNormNames(db)
+        : null;
+      const prevSb = (hasPrev && prevStorePayload.staffBiometrics && typeof prevStorePayload.staffBiometrics === 'object') ? prevStorePayload.staffBiometrics : {};
+      const curSb = (storePayload.staffBiometrics && typeof storePayload.staffBiometrics === 'object') ? storePayload.staffBiometrics : {};
+      for (const [sk, entry] of Object.entries(curSb)) {
+        if (!sk || !entry || typeof entry !== 'object') continue;
+        if (prevSb[sk] && stableRowSig(prevSb[sk]) === stableRowSig(entry)) continue;
+        if (bioProtectedAdminNames && (bioProtectedAdminNames.has(normBioStaffKey(sk)) || bioProtectedAdminNames.has(normBioStaffKey(entry.name || '')))) continue;
+        const co = canonicalizeStaffBioCompanyList(entry.company || '');
+        if (restrictRls && (!co || !canWriteStaffBiometricCompany(session, co))) continue;
+        const bioTs = String(entry.updated_at || entry.face_updated_at || '');
+        const entryOut = Object.assign({}, entry, { company: co, updated_at: bioTs });
+        subStmts.push(
+          db.prepare('INSERT OR REPLACE INTO staff_biometrics (staff_key, company, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
+            .bind(sk, co, JSON.stringify(entryOut), bioTs)
+        );
+      }
+      if (hasPrev && canManageSeats) {
+        for (const [sk, pEntry] of Object.entries(prevSb)) {
+          if (sk in curSb) continue;
+          if (bioProtectedAdminNames && (bioProtectedAdminNames.has(normBioStaffKey(sk)) || bioProtectedAdminNames.has(normBioStaffKey((pEntry && pEntry.name) || '')))) continue;
+          const pCo = canonicalizeStaffBioCompanyList((pEntry && pEntry.company) || '');
+          if (restrictRls && (!pCo || !canWriteStaffBiometricCompany(session, pCo))) continue;
+          subStmts.push(db.prepare('DELETE FROM staff_biometrics WHERE staff_key = ?1').bind(String(sk)));
         }
       }
     }
@@ -8415,30 +8520,57 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     };
     incomingDoc.workSchedules = mergeWorkSchedulesDocs(pWs, sanitizedWs, session, true);
   }
+  const canEnrolBio = canEnrolStaffBiometricsSession(session);
+  if (!canEnrolBio) {
+    if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
+    else delete incomingDoc.staffBiometrics;
+  } else if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
+    const protectedAdminNames = !isOwnerOrFullGroupSession(session)
+      ? await loadProtectedAdminNormNames(db)
+      : null;
+    const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
+    const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
+    const safeSb = {};
+    for (const [sk, pv] of Object.entries(pSb)) {
+      const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
+      const hasInc = Object.prototype.hasOwnProperty.call(iSb, sk);
+      const iv = hasInc ? iSb[sk] : null;
+      const pTs = pv && typeof pv === 'object' ? String(pv.updated_at || pv.face_updated_at || '') : '';
+      const iTs = iv && typeof iv === 'object' ? String(iv.updated_at || iv.face_updated_at || '') : '';
+      const isProtected = Boolean(
+        protectedAdminNames && (protectedAdminNames.has(normBioStaffKey(sk)) || protectedAdminNames.has(normBioStaffKey(pv && pv.name)))
+      );
+      if ((!canManageSeats && !hasInc) || !pCo || !canWriteStaffBiometricCompany(session, pCo) || isProtected || (iv && iTs && pTs && compareIsoTsMs(iTs, pTs) < 0)) {
+        safeSb[sk] = pv;
+      }
+    }
+    for (const [sk, iv] of Object.entries(iSb)) {
+      if (sk in safeSb) continue;
+      if (!iv || typeof iv !== 'object') {
+        if (sk in pSb) safeSb[sk] = pSb[sk];
+        continue;
+      }
+      if (protectedAdminNames && (protectedAdminNames.has(normBioStaffKey(sk)) || protectedAdminNames.has(normBioStaffKey(iv.name || '')))) {
+        if (sk in pSb) safeSb[sk] = pSb[sk];
+        continue;
+      }
+      const iCo = canonicalizeStaffBioCompanyList(iv.company || '');
+      if (iCo && canWriteStaffBiometricCompany(session, iCo)) {
+        const normUpd = String(iv.updated_at || iv.face_updated_at || '');
+        safeSb[sk] = Object.assign({}, iv, { company: iCo, updated_at: normUpd || iv.updated_at || '' });
+      } else if (sk in pSb) {
+        safeSb[sk] = pSb[sk];
+      }
+    }
+    incomingDoc.staffBiometrics = safeSb;
+  }
   if (!canManageSeats) {
     if (prev.alertRules !== undefined) incomingDoc.alertRules = prev.alertRules;
     else delete incomingDoc.alertRules;
-    if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
-    else delete incomingDoc.staffBiometrics;
     if (prev.partyHygiene !== undefined) incomingDoc.partyHygiene = prev.partyHygiene;
     else delete incomingDoc.partyHygiene;
   } else {
     mergePartyHygieneStoreDoc(incomingDoc, prev, session);
-    if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
-      const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
-      const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
-      const safeSb = {};
-      for (const [sk, pv] of Object.entries(pSb)) {
-        const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
-        if (!pCo || !canAccessCompany(session, pCo)) safeSb[sk] = pv;
-      }
-      for (const [sk, iv] of Object.entries(iSb)) {
-        if (sk in safeSb || !iv || typeof iv !== 'object') continue;
-        const iCo = String(iv.company || '').trim();
-        if (iCo && canAccessCompany(session, iCo)) safeSb[sk] = iv;
-      }
-      incomingDoc.staffBiometrics = safeSb;
-    }
     if (prev.alertRules || incomingDoc.alertRules) {
       const pAr = (prev.alertRules && typeof prev.alertRules === 'object') ? prev.alertRules : { overrides: {}, custom: [] };
       const iAr = (incomingDoc.alertRules && typeof incomingDoc.alertRules === 'object') ? incomingDoc.alertRules : { overrides: {}, custom: [] };
@@ -9163,7 +9295,7 @@ function scopeStoreDocForSession(docObj, session) {
     for (const [sk, bv] of Object.entries(docObj.staffBiometrics)) {
       if (!bv || typeof bv !== 'object') continue;
       const co = String(bv.company || '').trim();
-      if (co && canAccessCompany(session, co)) scopedSb[sk] = bv;
+      if (co && canReadStaffBiometricCompany(session, co)) scopedSb[sk] = bv;
     }
     copyDoc.staffBiometrics = scopedSb;
   }
