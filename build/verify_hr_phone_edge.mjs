@@ -743,6 +743,99 @@ try {
     }
   );
 
+  // 8d. Multi-Slip Stack (/api/phone-scan non-id_card): accepts up to 20 pages, caps at 20, preserves preset/fileName/stackSlip in both R2 & inline branches
+  const sidStk = 'ps_stk_' + Date.now();
+  const tokStk = 'tok_stk_secret';
+  const stackPages22 = Array.from({ length: 22 }, (_, i) => ({
+    id: `stk-${i + 1}`,
+    fileName: `Phone_Slip_${i + 1}.jpg`,
+    stackSlip: true,
+    mimeType: 'image/png',
+    dataUrl: TINY_PNG_DATA_URL
+  }));
+  const stkIpHdr = { 'CF-Connecting-IP': '198.51.100.84', 'X-Forwarded-For': '198.51.100.84' };
+  const stkInit = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidStk,
+    k: tokStk,
+    status: 'waiting',
+    preset: 'stack'
+  }, Object.assign({ 'X-ISABI-Session': ctx.ownerTok }, stkIpHdr));
+  const stkPost = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidStk,
+    k: tokStk,
+    status: 'pages_ready',
+    preset: 'stack',
+    pages: stackPages22
+  }, stkIpHdr);
+  const stkGet = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sidStk)}&k=${encodeURIComponent(tokStk)}`, null, stkIpHdr);
+
+  const sidStkR2 = 'ps_stkr2_' + Date.now();
+  const tokStkR2 = 'tok_stkr2_secret';
+  const stkR2Init = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidStkR2,
+    k: tokStkR2,
+    status: 'waiting',
+    preset: 'stack'
+  }, Object.assign({ 'X-ISABI-Session': ctx.ownerTok }, stkIpHdr));
+  const r2StackPages = [
+    { id: 'r2-1', fileName: 'Phone_Slip_1.jpg', stackSlip: true, mimeType: 'image/jpeg', dataUrl: bigCardDataUrl },
+    { id: 'r2-2', fileName: 'Phone_Slip_2.jpg', stackSlip: true, mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL }
+  ];
+  const stkR2Post = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidStkR2,
+    k: tokStkR2,
+    status: 'pages_ready',
+    preset: 'stack',
+    pages: r2StackPages
+  }, stkIpHdr);
+  const stkR2Get = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sidStkR2)}&k=${encodeURIComponent(tokStkR2)}`, null, stkIpHdr);
+  const stkR2Keys = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sidStkR2));
+
+  const badSvgPost = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidStk,
+    k: tokStk,
+    status: 'pages_ready',
+    preset: 'stack',
+    pages: [{
+      id: 'bad-svg-1',
+      fileName: 'xss.svg',
+      stackSlip: true,
+      mimeType: 'image/svg+xml',
+      dataUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg=='
+    }]
+  }, stkIpHdr);
+
+  ok('8d. Multi-Slip Stack non-id_card /api/phone-scan caps at 20 (>8), preserves metadata across inline & R2, and rejects SVG with 400',
+    stkInit.status === 200
+    && stkPost.status === 200
+    && stkGet.status === 200
+    && stkGet.json?.session?.preset === 'stack'
+    && stkGet.json?.session?.pages?.length === 20
+    && stkGet.json?.session?.pages?.[0]?.fileName === 'Phone_Slip_1.jpg'
+    && stkGet.json?.session?.pages?.[0]?.stackSlip === true
+    && stkR2Init.status === 200
+    && stkR2Post.status === 200
+    && stkR2Get.status === 200
+    && stkR2Get.json?.session?.preset === 'stack'
+    && stkR2Get.json?.session?.pages?.length === 2
+    && stkR2Get.json?.session?.pages?.[0]?.fileName === 'Phone_Slip_1.jpg'
+    && stkR2Get.json?.session?.pages?.[0]?.stackSlip === true
+    && stkR2Keys.length >= 1 && stkR2Keys.length <= 2
+    && badSvgPost.status === 400,
+    {
+      stkStatus: stkPost.status,
+      stkLen: stkGet.json?.session?.pages?.length,
+      stkPreset: stkGet.json?.session?.preset,
+      stk0FileName: stkGet.json?.session?.pages?.[0]?.fileName,
+      stk0StackSlip: stkGet.json?.session?.pages?.[0]?.stackSlip,
+      r2Len: stkR2Get.json?.session?.pages?.length,
+      r2Keys: stkR2Keys.length,
+      r2File0: stkR2Get.json?.session?.pages?.[0]?.fileName,
+      r2Slip0: stkR2Get.json?.session?.pages?.[0]?.stackSlip,
+      badSvgStatus: badSvgPost.status
+    }
+  );
+
   console.log(`\nverify_hr_phone_edge: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 } catch (err) {
