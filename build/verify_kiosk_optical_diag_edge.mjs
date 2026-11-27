@@ -349,11 +349,39 @@ assert('6d reset station removed cleanly', stAfter.length === 2 && !stAfter.some
 
 // 7. Helper unit sanity (diagnoseKioskOpticalHealthRank & listKioskOpticalDiagRows retention)
 assert('7a baseline rank for low scan count', diagnoseKioskOpticalHealthRank({ scans_total: 2, hal_restarts: 0 }).level === 'baseline');
+assert('7a2 apk_outdated rank is warn even at 0 scans', diagnoseKioskOpticalHealthRank({ scans_total: 0, hal_restarts: 0, hw_brightness: 'apk_outdated' }).level === 'warn');
+assert('7a3 web/ready low scan count remains baseline', diagnoseKioskOpticalHealthRank({ scans_total: 0, hal_restarts: 0, hw_brightness: 'ready' }).level === 'baseline');
 const filteredStale = listKioskOpticalDiagRows([
   { payload_json: JSON.stringify({ company: 'Lions Transport', device_id: 'd_stale', scans_total: 20, reported_at: new Date(Date.now() - 40 * 86400000).toISOString() }) },
   { payload_json: JSON.stringify({ company: '4235 Company S.A.L.', device_id: 'd_fresh', scans_total: 20, reported_at: new Date().toISOString() }) }
 ], Date.now());
 assert('7b 30d retention drops stale row and keeps 4235 Company S.A.L.', filteredStale.length === 1 && filteredStale[0].device_id === 'd_fresh');
+
+// 8. apk_ver, hw_brightness & hw_boost_activations validation + zero-scan apk_outdated sort
+const pOutdatedZero = await postSt(WTC_ENTRY, {
+  device_id: 'dev_wtc_apk_old_0', company: 'WTC', site: 'WTC Old APK Door',
+  apk_ver: '1.2.0', hw_brightness: 'apk_outdated', hw_boost_activations: 0, scans_total: 0
+});
+const pReadyLow = await postSt(WTC_ENTRY, {
+  device_id: 'dev_wtc_apk_new_1', company: 'WTC', site: 'WTC New APK Door',
+  apk_ver: '1.3.0', hw_brightness: 'ready', hw_boost_activations: 7, scans_total: 1
+});
+const pBadHw = await postSt(WTC_ENTRY, {
+  device_id: 'dev_wtc_bad_hw_2', company: 'WTC', site: 'WTC Bad Fields',
+  apk_ver: 'bad-ver-$$', hw_brightness: 'hacked', hw_boost_activations: -5, scans_total: 1
+});
+assert('8a apk_ver/hw_brightness/hw_boost_activations accepted', pOutdatedZero.status === 200 && pReadyLow.status === 200 && pBadHw.status === 200);
+const list8 = await api('kiosk_optical_diag', { method: 'GET', token: WTC_SUP });
+const st8 = (list8.json && list8.json.stations) || [];
+const rOld = st8.find(s => s.device_id === 'dev_wtc_apk_old_0');
+const rNew = st8.find(s => s.device_id === 'dev_wtc_apk_new_1');
+const rBad = st8.find(s => s.device_id === 'dev_wtc_bad_hw_2');
+assert('8b outdated 0-scan APK surfaces as warn ahead of baseline & sanitizes invalid fields',
+  rOld && rOld.health_level === 'warn' && rOld.apk_ver === '1.2.0' &&
+  rNew && rNew.health_level === 'baseline' && rNew.hw_brightness === 'ready' && rNew.hw_boost_activations === 7 &&
+  rBad && rBad.apk_ver === '' && rBad.hw_brightness === 'web' && rBad.hw_boost_activations === 0,
+  JSON.stringify({ rOld, rNew, rBad })
+);
 
 console.log(`verify_kiosk_optical_diag_edge: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

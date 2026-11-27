@@ -6853,29 +6853,32 @@ export function diagnoseKioskOpticalHealthRank(row) {
   if (!row || typeof row !== 'object') return { level: 'baseline', rank: 3 };
   const scans = Number(row.scans_total || 0);
   const hal = Number(row.hal_restarts || 0);
-  if (scans < 5 && hal < 2) return { level: 'baseline', rank: 3 };
   if (hal >= 3) return { level: 'crit', rank: 0 };
-  const padSpoof = Number(row.pad_spoof_count || 0);
-  const padRate = scans > 0 ? padSpoof / scans : 0;
-  let maxBandSpoof = 0;
-  const bands = (row.bands && typeof row.bands === 'object') ? row.bands : {};
-  for (const bk of KIOSK_OPTICAL_BAND_KEYS) {
-    const b = bands[bk];
-    if (b && typeof b === 'object') maxBandSpoof = Math.max(maxBandSpoof, Number(b.pad_spoof || 0));
+  if (scans >= 5) {
+    const padSpoof = Number(row.pad_spoof_count || 0);
+    const padRate = scans > 0 ? padSpoof / scans : 0;
+    let maxBandSpoof = 0;
+    const bands = (row.bands && typeof row.bands === 'object') ? row.bands : {};
+    for (const bk of KIOSK_OPTICAL_BAND_KEYS) {
+      const b = bands[bk];
+      if (b && typeof b === 'object') maxBandSpoof = Math.max(maxBandSpoof, Number(b.pad_spoof || 0));
+    }
+    const worstBandSpoofShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
+    if (padRate >= 0.30) return { level: 'crit', rank: 0 };
+    if (padRate >= 0.18 || (padRate >= 0.12 && worstBandSpoofShare >= 0.55)) return { level: 'warn', rank: 1 };
+    const lowRate = scans > 0 ? Number(row.det_low_light_count || 0) / scans : 0;
+    const lumaCnt = Number(row.ambient_luma_count || 0);
+    const meanLuma = lumaCnt > 0 ? Number(row.ambient_luma_sum || 0) / lumaCnt : 0;
+    if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) return { level: 'warn', rank: 1 };
+    const smallRate = scans > 0 ? Number(row.small_face_count || 0) / scans : 0;
+    if (smallRate >= 0.28) return { level: 'warn', rank: 1 };
+    const edgeCnt = Number(row.edge_verify_count || 0);
+    const edgeP95 = Number(row.edge_verify_p95_ms || 0);
+    const edgeFailRate = edgeCnt > 0 ? Number(row.edge_verify_fail_count || 0) / edgeCnt : 0;
+    if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) return { level: 'warn', rank: 1 };
   }
-  const worstBandSpoofShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
-  if (padRate >= 0.30) return { level: 'crit', rank: 0 };
-  if (padRate >= 0.18 || (padRate >= 0.12 && worstBandSpoofShare >= 0.55)) return { level: 'warn', rank: 1 };
-  const lowRate = scans > 0 ? Number(row.det_low_light_count || 0) / scans : 0;
-  const lumaCnt = Number(row.ambient_luma_count || 0);
-  const meanLuma = lumaCnt > 0 ? Number(row.ambient_luma_sum || 0) / lumaCnt : 0;
-  if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) return { level: 'warn', rank: 1 };
-  const smallRate = scans > 0 ? Number(row.small_face_count || 0) / scans : 0;
-  if (smallRate >= 0.28) return { level: 'warn', rank: 1 };
-  const edgeCnt = Number(row.edge_verify_count || 0);
-  const edgeP95 = Number(row.edge_verify_p95_ms || 0);
-  const edgeFailRate = edgeCnt > 0 ? Number(row.edge_verify_fail_count || 0) / edgeCnt : 0;
-  if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) return { level: 'warn', rank: 1 };
+  if (row.hw_brightness === 'apk_outdated') return { level: 'warn', rank: 1 };
+  if (scans < 5 && hal < 2) return { level: 'baseline', rank: 3 };
   return { level: 'healthy', rank: 2 };
 }
 
@@ -6900,6 +6903,10 @@ export function validateKioskOpticalDiagReport(body) {
   const site = cleanDeviceUnsentText(body.site || `${company} Main Entrance`, 80) || `${company} Main Entrance`;
   const shellRaw = String(body.shell == null ? '' : body.shell).trim();
   const shell = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(shellRaw) ? shellRaw : '';
+  const apkRaw = String(body.apk_ver == null ? '' : body.apk_ver).trim();
+  const apkVer = /^\d{1,3}(?:\.\d{1,5}){0,3}$/.test(apkRaw) ? apkRaw : '';
+  const hwRaw = String(body.hw_brightness == null ? '' : body.hw_brightness).trim().toLowerCase();
+  const hwBrightness = (hwRaw === 'ready' || hwRaw === 'apk_outdated') ? hwRaw : 'web';
   const fillLightMode = String(body.fill_light_mode || 'auto').trim().toLowerCase() === 'off' ? 'off' : 'auto';
   const rawBands = (body.bands && typeof body.bands === 'object' && !Array.isArray(body.bands)) ? body.bands : {};
   const bands = {};
@@ -6920,6 +6927,9 @@ export function validateKioskOpticalDiagReport(body) {
       industry: canonKioskOpticalIndustry(body.industry, company),
       site,
       shell,
+      apk_ver: apkVer,
+      hw_brightness: hwBrightness,
+      hw_boost_activations: clampOpticalInt(body.hw_boost_activations),
       fill_light_mode: fillLightMode,
       scans_total: clampOpticalInt(body.scans_total),
       punches_ok: clampOpticalInt(body.punches_ok),
