@@ -5365,6 +5365,641 @@
     return { en: 'All Payable Legs', ar: 'كافة الأطراف (شامل)', fr: 'Tous les volets' };
   }
 
+  // ---- Statement 16 Leg-Scoped Vendor Statement Discrepancy Matcher (Hard Rule 15) ----
+  const _STMT16_GENERIC_REFS = new Set(['', '-', 'rm', 'exp', 'setl', 'st', 'lc', 'na', 'n/a', 'none']);
+  const _STMT16_SUMMARY_LINE_RE = /(?:^|\b)(?:total|subtotal|sub-total|grand\s+total|opening\s+bal(?:ance)?|closing\s+bal(?:ance)?|balance\s+(?:forward|b\/f|c\/f)|brought\s+forward|carried\s+forward|net\s+payable(?:\s+balance)?|solde\s+(?:initial|final|antérieur|d['’]ouverture|à\s+payer)|total\s+g[eé]n[eé]ral)(?:\b|$)|المجموع|الإجمالي|إجمالي\s+الفترة|رصيد\s*(?:مدور|سابق|نهائي|افتتاحي|مستحق)/i;
+  const _STMT16_CLOSING_LINE_RE = /(?:closing\s+bal(?:ance)?|net\s+payable(?:\s+balance)?|solde\s+(?:final|net|à\s+payer)|الرصيد\s*(?:النهائي|المستحق))/i;
+  const _STMT16_HEADER_LINE_RE = /^\s*(?:date|tx\s*date|voucher|ref|reference|description|amount|debit|credit|invoiced|paid)\b/i;
+
+  let _stmt16CompareState = {
+    open: false,
+    scopeSig: '',
+    text: '',
+    statusMsg: '',
+    statusTone: '',
+    busy: false,
+    scopeMode: 'auto',
+    filterChip: 'exceptions',
+    lastResult: null,
+    scanGen: 0
+  };
+
+  function resetStmt16CompareState() {
+    _stmt16CompareState.open = false;
+    _stmt16CompareState.scopeSig = '';
+    _stmt16CompareState.text = '';
+    _stmt16CompareState.statusMsg = '';
+    _stmt16CompareState.statusTone = '';
+    _stmt16CompareState.busy = false;
+    _stmt16CompareState.scopeMode = 'auto';
+    _stmt16CompareState.filterChip = 'exceptions';
+    _stmt16CompareState.lastResult = null;
+    _stmt16CompareState.scanGen += 1;
+  }
+
+  function _stmt16CompareScopeSig(ctx, m) {
+    const l = (m && m.lAp16) || _rdlSeatLens(ctx);
+    const st = (ctx && ctx.state) || {};
+    const uid = st.activeUserId != null && st.activeUserId !== '' ? String(st.activeUserId) : (st.activeUserIdx != null ? String(st.activeUserIdx) : '');
+    const aCos = Array.isArray(st.allowedCompanyNames) ? st.allowedCompanyNames.join(',') : '';
+    return `${ctx.ind || ''}|${ctx.co || ''}|${(m && m.supName) || ''}|${ctx.basis || 'tx'}|${l.books ? 1 : 0}|${st._officialScopeActive ? 1 : 0}|${uid}|${aCos}`;
+  }
+
+  function _syncStmt16CompareScope(ctx, m) {
+    const sig = _stmt16CompareScopeSig(ctx, m);
+    if (_stmt16CompareState.scopeSig && _stmt16CompareState.scopeSig !== sig) {
+      resetStmt16CompareState();
+    }
+    _stmt16CompareState.scopeSig = sig;
+  }
+
+  function _normStmt16CmpRef(raw) {
+    const clean = String(raw == null ? '' : raw).trim().toLowerCase().replace(/^#+/, '').replace(/\s+/g, '');
+    return _STMT16_GENERIC_REFS.has(clean) ? '' : clean;
+  }
+
+  function _normStmt16CmpDate(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) {
+      const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (m) {
+      const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+
+  function _parseStmt16CmpMoney(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s || /^(?:lbp|ll)\b/i.test(s) || /\b(?:lbp|ll)\s*$/i.test(s)) return NaN;
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)) return NaN;
+    const isParen = /^\([^)]+\)$/.test(s);
+    const cleaned = s.replace(/[\$€£,\s]/g, '').replace(/^(?:usd)|(?:usd)$/gi, '').replace(/[()]/g, '');
+    if (!/^[+-]?\d+(?:\.\d+)?$/.test(cleaned)) return NaN;
+    const v = Number(cleaned);
+    if (!Number.isFinite(v)) return NaN;
+    return isParen && v > 0 ? -v : v;
+  }
+
+  function _splitCsvRespectQuotes(line) {
+    const out = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  function _dayDiffIso(a, b) {
+    if (!a || !b) return 9999;
+    const ta = Date.parse(`${a}T00:00:00Z`);
+    const tb = Date.parse(`${b}T00:00:00Z`);
+    if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 9999;
+    return Math.round(Math.abs(ta - tb) / 86400000);
+  }
+
+  function parseStmt16VendorSoaText(rawText) {
+    const lines = String(rawText || '').replace(/\r\n?/g, '\n').split('\n');
+    const rows = [];
+    let statedClosingBalance = null;
+    let skippedSummaryCount = 0;
+    const unparsedLines = [];
+    const PAY_KW = /\b(?:payment|paid|settlement|receipt|transfer|wire|cheque|check|settl)\b|دفعة|تسديد|سداد|تحويل|شيك|r[eè]glement|paiement|virement/i;
+    const INV_KW = /\b(?:invoice|bill|credit|claim|supply|freight|customs|clearing|charge|inv)\b|فاتورة|توريد|استحقاق|facture/i;
+
+    lines.forEach((rawLine, idx) => {
+      const trimmed = String(rawLine || '').trim();
+      if (!trimmed) return;
+      const metaClose = trimmed.match(/^#\s*STATED_CLOSING:\s*([+-]?\d+(?:\.\d+)?)/i);
+      if (metaClose) {
+        const cv = Number(metaClose[1]);
+        if (Number.isFinite(cv)) statedClosingBalance = Math.round(cv * 100) / 100;
+        return;
+      }
+      if (trimmed.startsWith('#')) return;
+      if (_STMT16_SUMMARY_LINE_RE.test(trimmed)) {
+        skippedSummaryCount += 1;
+        if (_STMT16_CLOSING_LINE_RE.test(trimmed)) {
+          const numMatches = trimmed.match(/\(?\s*[+-]?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g) || [];
+          for (let k = numMatches.length - 1; k >= 0; k--) {
+            const mv = _parseStmt16CmpMoney(numMatches[k]);
+            if (Number.isFinite(mv)) {
+              statedClosingBalance = Math.round(mv * 100) / 100;
+              break;
+            }
+          }
+        }
+        return;
+      }
+      if (_STMT16_HEADER_LINE_RE.test(trimmed) && !/\d{2,}/.test(trimmed)) return;
+
+      let cols = null;
+      if (trimmed.includes('|')) cols = trimmed.split('|').map(c => c.trim());
+      else if (trimmed.includes('\t')) cols = trimmed.split('\t').map(c => c.trim());
+      else if (trimmed.includes(';')) cols = trimmed.split(';').map(c => c.trim());
+      else if (trimmed.includes(',')) {
+        const probeNoQuotes = trimmed.replace(/"[^"]*"/g, '').replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+        if (probeNoQuotes.includes(',')) {
+          const csvProtected = trimmed.replace(/"[^"]*"|([+-]?\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d+))|(\$\s*\d{1,3}(?:,\d{3})+)|((?<!\d)\d{1,3}(?:,\d{3})+(?!\d))/g, (m0, g1, g2, g3) => {
+            if (g1 || g2 || g3) return m0.replace(/,/g, '');
+            return m0;
+          });
+          const csvCols = _splitCsvRespectQuotes(csvProtected);
+          if (csvCols.length >= 2) cols = csvCols;
+        }
+      }
+
+      let date = '', ref = '', kind = '', amount = NaN, desc = '';
+      if (cols && cols.length >= 2) {
+        const numTokens = [];
+        const textTokens = [];
+        cols.forEach(c => {
+          if (!c || c === '-') return;
+          const dHit = !date ? _normStmt16CmpDate(c) : '';
+          if (dHit) { date = dHit; return; }
+          if (/^(?:invoice|inv|bill|credit|claim|facture)$/i.test(c)) { kind = 'invoice'; return; }
+          if (/^(?:payment|paid|settlement|settl|receipt|paiement|règlement)$/i.test(c)) { kind = 'payment'; return; }
+          const mHit = _parseStmt16CmpMoney(c);
+          if (Number.isFinite(mHit)) { numTokens.push(mHit); return; }
+          textTokens.push(c);
+        });
+        if (!ref && textTokens.length) ref = textTokens[0];
+        if (textTokens.length > 1) desc = textTokens.slice(1).join(' · ');
+        else if (textTokens.length === 1) desc = textTokens[0];
+        if (numTokens.length === 1) {
+          amount = numTokens[0];
+        } else if (numTokens.length >= 2) {
+          // Two numeric columns (e.g. Debit/Paid | Credit/Invoiced, or Invoiced | Paid)
+          const nonZero = numTokens.filter(v => Math.abs(v) > 0.004);
+          amount = nonZero.length ? nonZero[nonZero.length - 1] : numTokens[numTokens.length - 1];
+        }
+      } else {
+        // Free-form text line (e.g. WhatsApp line: 2026-10-15 #INV-442 $1,250.00 Aggregate)
+        let work = trimmed;
+        const dm = work.match(/\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})\b/);
+        if (dm) {
+          date = _normStmt16CmpDate(dm[1]);
+          work = (work.slice(0, dm.index) + ' ' + work.slice(dm.index + dm[0].length)).trim();
+        }
+        const rm = work.match(/(?:#|ref[:\s]+|inv[:\s]+|bl[:\s]+)([A-Za-z0-9\-_/]+)/i) || work.match(/\b([A-Za-z]{1,6}[-_/]?\d{2,}[A-Za-z0-9\-_/]*)\b/);
+        if (rm) {
+          ref = rm[1];
+          work = (work.slice(0, rm.index) + ' ' + work.slice(rm.index + rm[0].length)).trim();
+        }
+        const ams = work.match(/\(?\s*[+-]?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g) || [];
+        for (let k = ams.length - 1; k >= 0; k--) {
+          const mv = _parseStmt16CmpMoney(ams[k]);
+          if (Number.isFinite(mv)) {
+            amount = mv;
+            const pos = work.lastIndexOf(ams[k]);
+            if (pos >= 0) work = (work.slice(0, pos) + ' ' + work.slice(pos + ams[k].length)).trim();
+            break;
+          }
+        }
+        desc = work.replace(/\s+/g, ' ').trim();
+      }
+
+      if (!Number.isFinite(amount)) {
+        unparsedLines.push(trimmed);
+        return;
+      }
+      if (!kind) {
+        if (PAY_KW.test(`${ref} ${desc}`)) kind = 'payment';
+        else if (INV_KW.test(`${ref} ${desc}`)) kind = 'invoice';
+        else kind = 'invoice';
+      }
+      const roundAmt = Math.round(Math.abs(amount) * 100) / 100;
+      const signedAmt = (kind === 'invoice' && amount < -0.005) ? -roundAmt : roundAmt;
+      rows.push({
+        idx: rows.length,
+        lineNo: idx + 1,
+        rawLine: trimmed,
+        date,
+        ref: String(ref || '-').trim() || '-',
+        refNorm: _normStmt16CmpRef(ref),
+        kind,
+        amount: signedAmt,
+        desc: String(desc || ref || '-').trim()
+      });
+    });
+
+    return { rows, statedClosingBalance, skippedSummaryCount, unparsedLines };
+  }
+
+  function compareStmt16WithVendorRows(ctx, m, vendorInput, opts = {}) {
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const parsed = (vendorInput && Array.isArray(vendorInput.rows))
+      ? vendorInput
+      : parseStmt16VendorSoaText(typeof vendorInput === 'string' ? vendorInput : '');
+    const vendorRows = parsed.rows || [];
+
+    const reqScope = String((opts && opts.scope) || 'auto').toLowerCase();
+    const hasVendorPayments = vendorRows.some(r => r.kind === 'payment');
+    const effScope = !canBooks
+      ? 'invoices'
+      : (reqScope === 'all' || reqScope === 'invoices' || reqScope === 'payments'
+          ? reqScope
+          : (hasVendorPayments ? 'all' : 'invoices'));
+
+    const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+    const matchScopeKind = it => effScope === 'invoices' ? it.kind === 'invoice' : (effScope === 'payments' ? it.kind === 'payment' : true);
+    const toIsabiEntries = (t, fallbackIdx) => {
+      const sIdx = t._stmtIdx != null ? t._stmtIdx : fallbackIdx;
+      const crVal = round2Local(t.cr || 0);
+      const drVal = canBooks ? round2Local(t.dr || 0) : 0;
+      const base = {
+        stmtIdx: sIdx,
+        date: String(t.date || '').slice(0, 10),
+        ref: String(t.ref || '-').trim() || '-',
+        refNorm: _normStmt16CmpRef(t.ref),
+        leg: String(t.leg || 'material'),
+        type: String(t.type || ''),
+        desc: String(t.desc || '')
+      };
+      if (Math.abs(crVal) > 0.005 && drVal > 0.005) {
+        return [
+          Object.assign({}, base, { kind: 'invoice', amount: crVal }),
+          Object.assign({}, base, { kind: 'payment', amount: drVal })
+        ];
+      }
+      if (drVal > 0.005 && Math.abs(crVal) <= 0.005) {
+        return [Object.assign({}, base, { kind: 'payment', amount: drVal })];
+      }
+      return [Object.assign({}, base, { kind: 'invoice', amount: crVal })];
+    };
+
+    const isabiPeriodAll = (m && Array.isArray(m.periodRows) ? m.periodRows : [])
+      .flatMap((t, i) => toIsabiEntries(t, i))
+      .filter(it => (canBooks || it.kind !== 'payment') && matchScopeKind(it));
+
+    const otherPool = (m && Array.isArray(m.allLegsTx) ? m.allLegsTx : [])
+      .flatMap((t, i) => toIsabiEntries(t, i))
+      .filter(it => (canBooks || it.kind !== 'payment') && matchScopeKind(it))
+      .filter(it => {
+        const diffLeg = Boolean(m && m.leg && m.leg !== 'ALL' && it.leg !== m.leg);
+        const outWindow = Boolean(m && m.from && m.to && it.date && (it.date < m.from || it.date > m.to));
+        return diffLeg || outWindow;
+      });
+
+    // Exclude payment lines when !canBooks or scoped to Invoices Only (never leak settlement counts/deltas)
+    const activeVendorRows = vendorRows.filter(r => (canBooks || r.kind !== 'payment') && matchScopeKind(r));
+    const usedVendor = new Set();
+    const usedIsabi = new Set();
+    const pairs = [];
+    const matchedVendorKeys = new Set();
+    const isabiStatusByRow = new Map();
+    const setIsabiRowStatus = (stmtIdx, hit) => {
+      if (stmtIdx == null) return;
+      const prio = { amount_delta: 1, in_isabi_only: 2, matched: 3 };
+      const prev = isabiStatusByRow.get(stmtIdx);
+      if (!prev || (prio[hit.status] ?? 9) <= (prio[prev.status] ?? 9)) {
+        isabiStatusByRow.set(stmtIdx, hit);
+      }
+    };
+
+    const bindPair = (vIdx, iIdx, status, note = '') => {
+      usedVendor.add(vIdx);
+      usedIsabi.add(iIdx);
+      const vr = activeVendorRows[vIdx];
+      const ir = isabiPeriodAll[iIdx];
+      const deltaUsd = round2Local(vr.amount - ir.amount);
+      matchedVendorKeys.add(`${vr.date}|${vr.refNorm}|${vr.kind}|${vr.amount.toFixed(2)}`);
+      pairs.push({
+        status,
+        kind: vr.kind,
+        date: vr.date || ir.date,
+        vendorRef: vr.ref,
+        isabiRef: ir.ref,
+        vendorDesc: vr.desc,
+        isabiDesc: ir.desc,
+        vendorAmt: vr.amount,
+        isabiAmt: ir.amount,
+        deltaUsd,
+        note,
+        stmtIdx: ir.stmtIdx
+      });
+      setIsabiRowStatus(ir.stmtIdx, { status, deltaUsd, vendorRef: vr.ref, vendorAmt: vr.amount });
+    };
+
+    // Pass 1: exact ref + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.refNorm) return;
+      let bestIdx = -1, bestDiff = 9999;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind || ir.refNorm !== vr.refNorm) return;
+        if (Math.abs(vr.amount - ir.amount) > 0.02) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (bestIdx < 0 || dd < bestDiff) { bestIdx = iIdx; bestDiff = dd; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', bestDiff > 0 && bestDiff < 9000 ? `Date ${bestDiff}d offset` : '');
+    });
+
+    // Pass 2: exact ref + kind + amount delta
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.refNorm) return;
+      let bestIdx = -1, bestScore = 1e12;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind || ir.refNorm !== vr.refNorm) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        const ad = Math.abs(vr.amount - ir.amount);
+        const sc = (dd < 9000 ? dd * 1000 : 500000) + ad;
+        if (bestIdx < 0 || sc < bestScore) { bestIdx = iIdx; bestScore = sc; }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'amount_delta', 'Same ref, amount differs');
+    });
+
+    // Pass 3: exact date + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      const hitIdx = isabiPeriodAll.findIndex((ir, iIdx) =>
+        !usedIsabi.has(iIdx) && ir.kind === vr.kind && ir.date === vr.date && Math.abs(vr.amount - ir.amount) <= 0.02
+      );
+      if (hitIdx >= 0) bindPair(vIdx, hitIdx, 'matched');
+    });
+
+    // Pass 4: ±3d date + kind + amount within $0.02
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      let bestIdx = -1, bestDiff = 99;
+      isabiPeriodAll.forEach((ir, iIdx) => {
+        if (usedIsabi.has(iIdx) || ir.kind !== vr.kind) return;
+        const dd = _dayDiffIso(vr.date, ir.date);
+        if (dd <= 3 && Math.abs(vr.amount - ir.amount) <= 0.02 && dd < bestDiff) {
+          bestIdx = iIdx; bestDiff = dd;
+        }
+      });
+      if (bestIdx >= 0) bindPair(vIdx, bestIdx, 'matched', `Date ${bestDiff}d offset`);
+    });
+
+    // Pass 5: unique unmatched ISABI row on same exact date + kind -> amount delta
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx) || !vr.date) return;
+      const sameDateUnmatchedV = activeVendorRows.filter((x, xi) => !usedVendor.has(xi) && x.kind === vr.kind && x.date === vr.date);
+      const sameDateUnmatchedI = isabiPeriodAll.map((ir, iIdx) => ({ ir, iIdx })).filter(p => !usedIsabi.has(p.iIdx) && p.ir.kind === vr.kind && p.ir.date === vr.date);
+      if (sameDateUnmatchedV.length === 1 && sameDateUnmatchedI.length === 1) {
+        bindPair(vIdx, sameDateUnmatchedI[0].iIdx, 'amount_delta', 'Same date, amount differs');
+      }
+    });
+
+    // Pass 6 & 7: duplicates, booked other leg / period, or missing in ISABI
+    const usedOther = new Set();
+    activeVendorRows.forEach((vr, vIdx) => {
+      if (usedVendor.has(vIdx)) return;
+      const dupKey = `${vr.date}|${vr.refNorm}|${vr.kind}|${vr.amount.toFixed(2)}`;
+      if (matchedVendorKeys.has(dupKey)) {
+        pairs.push({
+          status: 'duplicate_vendor',
+          kind: vr.kind,
+          date: vr.date,
+          vendorRef: vr.ref,
+          isabiRef: '-',
+          vendorDesc: vr.desc,
+          isabiDesc: 'Duplicate line on vendor statement',
+          vendorAmt: vr.amount,
+          isabiAmt: 0,
+          deltaUsd: vr.amount,
+          note: 'Repeated on vendor statement',
+          stmtIdx: null
+        });
+        return;
+      }
+      const otherIdx = otherPool.findIndex((or, oi) => {
+        if (usedOther.has(oi) || or.kind !== vr.kind) return false;
+        const amtOk = Math.abs(vr.amount - or.amount) <= 0.02;
+        if (vr.refNorm && or.refNorm === vr.refNorm && amtOk) return true;
+        if (vr.date && or.date === vr.date && amtOk) return true;
+        return false;
+      });
+      if (otherIdx >= 0) {
+        usedOther.add(otherIdx);
+        const or = otherPool[otherIdx];
+        const legDisplay = _stmt16LegDisplay(or.leg, ctx && ctx.ind).en;
+        const noteParts = [];
+        if (m && m.leg && m.leg !== 'ALL' && or.leg !== m.leg) noteParts.push(legDisplay);
+        if (m && m.from && m.to && or.date && (or.date < m.from || or.date > m.to)) noteParts.push(or.date);
+        pairs.push({
+          status: 'other_leg_or_period',
+          kind: vr.kind,
+          date: vr.date || or.date,
+          vendorRef: vr.ref,
+          isabiRef: or.ref,
+          vendorDesc: vr.desc,
+          isabiDesc: or.desc,
+          vendorAmt: vr.amount,
+          isabiAmt: or.amount,
+          deltaUsd: 0,
+          note: noteParts.join(' · '),
+          otherLeg: or.leg,
+          otherDate: or.date,
+          stmtIdx: null
+        });
+        return;
+      }
+      pairs.push({
+        status: 'missing_in_isabi',
+        kind: vr.kind,
+        date: vr.date,
+        vendorRef: vr.ref,
+        isabiRef: '-',
+        vendorDesc: vr.desc,
+        isabiDesc: 'Not posted in ISABI',
+        vendorAmt: vr.amount,
+        isabiAmt: 0,
+        deltaUsd: vr.amount,
+        note: '',
+        stmtIdx: null
+      });
+    });
+
+    // Remaining unmatched ISABI period rows
+    isabiPeriodAll.forEach((ir, iIdx) => {
+      if (usedIsabi.has(iIdx)) return;
+      pairs.push({
+        status: 'in_isabi_only',
+        kind: ir.kind,
+        date: ir.date,
+        vendorRef: '-',
+        isabiRef: ir.ref,
+        vendorDesc: 'On ISABI books only',
+        isabiDesc: ir.desc,
+        vendorAmt: 0,
+        isabiAmt: ir.amount,
+        deltaUsd: round2Local(-ir.amount),
+        note: '',
+        stmtIdx: ir.stmtIdx
+      });
+      setIsabiRowStatus(ir.stmtIdx, { status: 'in_isabi_only', deltaUsd: round2Local(-ir.amount), vendorRef: '-', vendorAmt: 0 });
+    });
+
+    const counts = {
+      matched: pairs.filter(r => r.status === 'matched').length,
+      missingInIsabi: pairs.filter(r => r.status === 'missing_in_isabi').length,
+      amountDelta: pairs.filter(r => r.status === 'amount_delta').length,
+      otherLegOrPeriod: pairs.filter(r => r.status === 'other_leg_or_period').length,
+      duplicateVendor: pairs.filter(r => r.status === 'duplicate_vendor').length,
+      inIsabiOnly: pairs.filter(r => r.status === 'in_isabi_only').length
+    };
+    const exceptionsCount = counts.missingInIsabi + counts.amountDelta + counts.otherLegOrPeriod + counts.duplicateVendor + counts.inIsabiOnly;
+    const vendorInvoiceTot = round2Local(activeVendorRows.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
+    const isabiInvoiceTot = round2Local(isabiPeriodAll.filter(r => r.kind === 'invoice').reduce((s, r) => s + r.amount, 0));
+    const netDeltaUsd = round2Local(vendorInvoiceTot - isabiInvoiceTot);
+    const statedClosingBalance = canBooks && parsed.statedClosingBalance != null ? parsed.statedClosingBalance : null;
+    const closingDeltaUsd = (canBooks && statedClosingBalance != null)
+      ? round2Local(statedClosingBalance - Number((m && m.closingBal) || 0))
+      : null;
+
+    pairs.sort((a, b) => {
+      const ord = { missing_in_isabi: 0, amount_delta: 1, duplicate_vendor: 2, other_leg_or_period: 3, in_isabi_only: 4, matched: 5 };
+      const oa = ord[a.status] ?? 9, ob = ord[b.status] ?? 9;
+      if (oa !== ob) return oa - ob;
+      return String(a.date || '').localeCompare(String(b.date || ''));
+    });
+
+    return {
+      scope: effScope,
+      canBooks,
+      vendorCount: activeVendorRows.length,
+      isabiCount: isabiPeriodAll.length,
+      skippedSummaryCount: parsed.skippedSummaryCount || 0,
+      counts,
+      exceptionsCount,
+      netDeltaUsd,
+      statedClosingBalance,
+      closingDeltaUsd,
+      rows: pairs,
+      isabiStatusByRow
+    };
+  }
+
+  function _stmt16CmpStatusLabel(status) {
+    if (status === 'matched') return { cls: 'is-good', text: 'Matched' };
+    if (status === 'amount_delta') return { cls: 'is-warn', text: 'Amount Delta' };
+    if (status === 'other_leg_or_period') return { cls: 'is-info', text: 'Other Leg / Date' };
+    if (status === 'duplicate_vendor') return { cls: 'is-err', text: 'Duplicate on SOA' };
+    if (status === 'in_isabi_only') return { cls: 'is-muted', text: 'In ISABI Only' };
+    return { cls: 'is-err', text: 'Missing in ISABI' };
+  }
+
+  function renderStmt16ComparePanelHtml(ctx, m, cmp) {
+    if (!_stmt16CompareState.open) return '';
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    const activeScope = cmp ? cmp.scope : (_stmt16CompareState.scopeMode === 'all' ? 'all' : 'invoices');
+    const chip = _stmt16CompareState.filterChip || 'exceptions';
+    const allRows = (cmp && cmp.rows) || [];
+    const shownRows = allRows.filter(r => {
+      if (chip === 'exceptions') return r.status !== 'matched';
+      if (chip === 'missing') return r.status === 'missing_in_isabi';
+      if (chip === 'delta') return r.status === 'amount_delta';
+      if (chip === 'dup') return r.status === 'duplicate_vendor';
+      if (chip === 'isabi_only') return r.status === 'in_isabi_only';
+      if (chip === 'matched') return r.status === 'matched';
+      return true;
+    });
+    const chipBtn = (k, lbl, cnt) => `<button type="button" class="rdl-cmp-chip ${chip === k ? 'active' : ''}" data-stmt16-cmp-chip="${k}"><span>${lbl}</span>${cnt != null ? ` (<span data-no-i18n="1">${cnt}</span>)` : ''}</button>`;
+
+    return `
+      <div class="rdl-stmt16-compare-panel no-print" id="stmt16ComparePanel">
+        <div class="rdl-cmp-head">
+          <div class="rdl-cmp-title-wrap">
+            <span class="rdl-cmp-pill-eyebrow">${ic('sparkles')} <span>Compare Vendor Statement</span></span>
+            <strong data-no-i18n="1">${esc(m.supName)}</strong>
+            <span class="rdl-cmp-leg-tag"><span>${esc(m.legLbl.en)}</span></span>
+          </div>
+          <div class="rdl-cmp-tools">
+            ${canBooks ? `
+              <div class="rdl-cmp-scope-seg" role="group" aria-label="Comparison Scope">
+                <button type="button" class="rdl-cmp-seg-btn ${activeScope !== 'all' ? 'active' : ''}" data-stmt16-cmp-scope="invoices"><span>Invoices Only</span></button>
+                <button type="button" class="rdl-cmp-seg-btn ${activeScope === 'all' ? 'active' : ''}" data-stmt16-cmp-scope="all"><span>All Vouchers</span></button>
+              </div>
+            ` : `<span class="rdl-cmp-leg-tag"><span>Invoices Only</span></span>`}
+            <button type="button" class="rdl-tb-btn" id="stmt16CompareCloseBtn"><span>Close</span></button>
+          </div>
+        </div>
+        <div class="rdl-cmp-dropzone" id="stmt16CompareDropzone">
+          <textarea id="stmt16CompareInput" class="rdl-cmp-textarea" rows="4" spellcheck="false" placeholder="Paste vendor lines or drop PDF / photo / CSV (Date | Ref | Amount)" aria-label="Vendor statement lines">${esc(_stmt16CompareState.text || '')}</textarea>
+          <input type="file" id="stmt16CompareFileInput" accept=".pdf,image/*,.csv,.txt" hidden>
+          <div class="rdl-cmp-bar">
+            <div class="rdl-cmp-status">
+              ${_stmt16CompareState.statusMsg ? `<span class="rdl-cmp-status-badge ${_stmt16CompareState.statusTone || ''}">${esc(_stmt16CompareState.statusMsg)}</span>` : `<span>AI reads PDF or photo lines only; matching is deterministic</span>`}
+            </div>
+            <div class="rdl-cmp-btn-row">
+              <button type="button" class="rdl-tb-btn" id="stmt16CompareScanBtn"${_stmt16CompareState.busy ? ' disabled' : ''}>${ic('upload')} <span>${_stmt16CompareState.busy ? 'Scanning...' : 'Upload PDF / Photo / CSV'}</span></button>
+              <button type="button" class="rdl-tb-btn" id="stmt16CompareClearBtn"><span>Clear</span></button>
+              <button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn" id="stmt16CompareRunBtn">${ic('bolt')} <span>Compare Lines</span></button>
+            </div>
+          </div>
+        </div>
+        ${cmp ? `
+          <div class="rdl-cmp-kpis">
+            <div class="rdl-cmp-kpi is-good"><small>Matched</small><b data-no-i18n="1">${cmp.counts.matched}</b></div>
+            <div class="rdl-cmp-kpi is-err"><small>Missing in ISABI</small><b data-no-i18n="1">${cmp.counts.missingInIsabi}</b></div>
+            <div class="rdl-cmp-kpi is-warn"><small>Amount Delta</small><b data-no-i18n="1">${cmp.counts.amountDelta}</b></div>
+            <div class="rdl-cmp-kpi is-info"><small>Other Leg / Date</small><b data-no-i18n="1">${cmp.counts.otherLegOrPeriod}</b></div>
+            <div class="rdl-cmp-kpi is-muted"><small>In ISABI Only</small><b data-no-i18n="1">${cmp.counts.inIsabiOnly}</b></div>
+            ${cmp.counts.duplicateVendor > 0 ? `<div class="rdl-cmp-kpi is-err"><small>Duplicate on SOA</small><b data-no-i18n="1">${cmp.counts.duplicateVendor}</b></div>` : ''}
+            ${canBooks && cmp.closingDeltaUsd != null ? `<div class="rdl-cmp-kpi ${Math.abs(cmp.closingDeltaUsd) <= 0.02 ? 'is-good' : 'is-warn'}"><small>Closing Variance</small><b class="mono" data-no-i18n="1">${fmtUsdSigned(cmp.closingDeltaUsd, 2)}</b></div>` : ''}
+          </div>
+          <div class="rdl-cmp-chips">
+            ${chipBtn('exceptions', 'Discrepancies', cmp.exceptionsCount)}
+            ${chipBtn('all', 'All Lines', allRows.length)}
+            ${chipBtn('missing', 'Missing in ISABI', cmp.counts.missingInIsabi)}
+            ${chipBtn('delta', 'Amount Delta', cmp.counts.amountDelta)}
+            ${cmp.counts.duplicateVendor > 0 ? chipBtn('dup', 'Duplicate on SOA', cmp.counts.duplicateVendor) : ''}
+            ${chipBtn('isabi_only', 'In ISABI Only', cmp.counts.inIsabiOnly)}
+            ${chipBtn('matched', 'Matched', cmp.counts.matched)}
+          </div>
+          <div class="table-wrap rdl-cmp-table-wrap">
+            <table class="rdl-table rdl-cmp-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Vendor Ref</th>
+                  <th>ISABI Ref</th>
+                  <th>Details</th>
+                  <th class="num">Vendor ($)</th>
+                  <th class="num">ISABI ($)</th>
+                  <th class="num">Delta ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownRows.length ? shownRows.map(r => {
+                  const stLbl = _stmt16CmpStatusLabel(r.status);
+                  const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
+                  return `
+                    <tr>
+                      <td><span class="rdl-cmp-inline-pill ${stLbl.cls}"><span>${stLbl.text}</span></span></td>
+                      <td class="mono" data-no-i18n="1">${esc(r.date || '-')}</td>
+                      <td class="mono" data-no-i18n="1">${esc(r.vendorRef || '-')}</td>
+                      <td class="mono" data-no-i18n="1">${esc(r.isabiRef || '-')}</td>
+                      <td data-no-i18n="1">${esc(dtl)}</td>
+                      <td class="num mono" data-no-i18n="1">${r.vendorAmt ? fmtUsdSigned(r.vendorAmt, 2) : '-'}</td>
+                      <td class="num mono" data-no-i18n="1">${r.isabiAmt ? fmtUsdSigned(r.isabiAmt, 2) : '-'}</td>
+                      <td class="num mono" data-no-i18n="1">${Math.abs(r.deltaUsd || 0) > 0.005 ? fmtUsdSigned(r.deltaUsd, 2) : '$0.00'}</td>
+                    </tr>
+                  `;
+                }).join('') : `<tr><td colspan="8" class="rdl-cmp-empty"><span>${cmp.exceptionsCount === 0 && chip === 'exceptions' ? 'All vendor lines match this Statement 16 leg' : 'No lines in this filter'}</span></td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   function _stmt16ToSettlementPayableLeg(leg) {
     const l = _normStmt16Leg(leg);
     if (l === 'material') return 'quarry';
@@ -5393,6 +6028,7 @@
     const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
     const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
     let tx = [];
+    let allLegsTx = [];
     let unpricedZeroCount = 0;
 
     if (isMfg && typeof window !== 'undefined' && typeof window.__mfgComputeSupplierStatement16Vouchers === 'function') {
@@ -5407,14 +6043,22 @@
         partySig: sig16,
         partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
       });
+      const resAll16 = leg === 'ALL'
+        ? res16
+        : window.__mfgComputeSupplierStatement16Vouchers({
+            company: coKey16,
+            basis: ctx.basis,
+            supplier: supName,
+            leg: 'ALL',
+            partySig: sig16,
+            partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
+          });
       if (res16) {
         if (leg === 'material') unpricedZeroCount = Number(res16.unpricedMatCount || 0);
         else if (leg === 'transport') unpricedZeroCount = Number(res16.unpricedTransCount || 0);
       }
-      tx = ((res16 && res16.vouchers) || []).filter(v => {
-        if (!lAp16.books && v.type === 'Settlement') return false;
-        return true;
-      }).map(v => ({
+      const mapMfgVoucher = (v, idx) => ({
+        _stmtIdx: idx,
         date: v.date,
         ref: v.ref || 'RM',
         co: String(v.co || '').trim(),
@@ -5423,7 +6067,9 @@
         desc: v.desc,
         cr: Number(v.cr || 0),
         dr: lAp16.books ? Number(v.dr || 0) : 0
-      }));
+      });
+      tx = ((res16 && res16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
+      allLegsTx = ((resAll16 && resAll16.vouchers) || []).filter(v => lAp16.books || v.type !== 'Settlement').map(mapMfgVoucher);
     } else {
       const targetKey = normLow(supName);
       const supRmRows = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => normLow(r.supplier) === targetKey);
@@ -5449,10 +6095,9 @@
         } else {
           rowLeg = (r.leg === 'haulage' || r.leg === 'transport') ? 'transport' : 'material';
         }
-        if (leg !== 'ALL' && rowLeg !== leg) return;
         const srcBase = r.is_settlement_row ? 'Settlement' : (rowLeg === 'transport' ? (isMfg ? 'Transport' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
         const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (rowLeg === 'transport' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
-        tx.push({
+        const rowObj = {
           date: rowDate(r, ctx.basis),
           ref: r.voucher || r.name || 'RM',
           co: String(r.co || r.company || '').trim(),
@@ -5461,23 +6106,27 @@
           desc: descLbl,
           cr: Number(r.total_usd || 0),
           dr: lAp16.books ? Number(r.paid_usd || 0) : 0
-        });
+        };
+        allLegsTx.push(rowObj);
+        if (leg === 'ALL' || rowLeg === leg) tx.push(rowObj);
       });
-      if (leg === 'ALL' || leg === 'expenses') {
-        supExpRows.forEach(r => {
-          tx.push({
-            date: rowDate(r, ctx.basis),
-            ref: r.voucher_no || r.invoice_no || 'EXP',
-            co: String(r.co || r.company || '').trim(),
-            leg: 'expenses',
-            type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
-            desc: r.description || r.category || 'Vendor Invoice',
-            cr: Number(r.ap_credit_usd || 0),
-            dr: 0
-          });
-        });
-      }
+      supExpRows.forEach(r => {
+        const expObj = {
+          date: rowDate(r, ctx.basis),
+          ref: r.voucher_no || r.invoice_no || 'EXP',
+          co: String(r.co || r.company || '').trim(),
+          leg: 'expenses',
+          type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
+          desc: r.description || r.category || 'Vendor Invoice',
+          cr: Number(r.ap_credit_usd || 0),
+          dr: 0
+        };
+        allLegsTx.push(expObj);
+        if (leg === 'ALL' || leg === 'expenses') tx.push(expObj);
+      });
       tx.sort((a, b) => a.date.localeCompare(b.date));
+      tx.forEach((t, idx) => { t._stmtIdx = idx; });
+      allLegsTx.sort((a, b) => a.date.localeCompare(b.date));
     }
 
     const fromD = String(p.from || '2024-01-01').slice(0, 10);
@@ -5544,6 +6193,7 @@
       legLbl,
       payableLegCode,
       tx,
+      allLegsTx,
       periodRows,
       openCr,
       openDr,
@@ -5833,10 +6483,19 @@
     const dash = '-';
     const stObj = ctx.state || {};
     const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    _syncStmt16CompareScope(ctx, m);
+    const canCompare = Boolean((lAp16.books || lAp16.expenses) && !stObj.kioskLocked);
+    const cmpResult = (canCompare && _stmt16CompareState.open && String(_stmt16CompareState.text || '').trim())
+      ? compareStmt16WithVendorRows(ctx, m, _stmt16CompareState.text, { scope: _stmt16CompareState.scopeMode })
+      : null;
+    _stmt16CompareState.lastResult = cmpResult;
     const retCtx = stObj.stmt16ReturnCtx && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
       ? stObj.stmt16ReturnCtx
       : null;
     const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
+    const compareBtnHtml = canCompare
+      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn${_stmt16CompareState.open ? ' active' : ''}" id="stmt16CompareBtn">${ic('sparkles')} <span>Compare Vendor Statement</span></button>`
+      : '';
     const canEnterSettle = Boolean(lAp16.books && !stObj.kioskLocked && ent && typeof ent.canEnterForm === 'function' && ent.canEnterForm('settlement'));
     const settleBtnHtml = (canEnterSettle && m.canSettleLeg)
       ? `<button type="button" class="rdl-tb-btn rdl-stmt16-settle-btn" id="stmt16SettleLegBtn" data-stmt16-settle="1">${ic('check_circle')} <span>+ Settle Matched Leg</span></button>`
@@ -5861,10 +6520,12 @@
           <span class="rdl-stmt16-leg-badge" data-stmt16-leg-badge="${esc(leg)}"><span>Leg Filter:</span> <span>${esc(legLbl.en)}</span></span>
         </div>
         <div class="rdl-stmt16-btn-group">
+          ${compareBtnHtml}
           ${settleBtnHtml}
           ${shareBtnHtml}
         </div>
       </div>
+      ${canCompare ? renderStmt16ComparePanelHtml(ctx, m, cmpResult) : ''}
       <div class="rdl-doc-top">
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
@@ -5911,10 +6572,19 @@
           ` : ''}
           ${shownRows.map(t => {
             runBal += (t.cr - (lAp16.books ? t.dr : 0));
+            const cmpHit = (cmpResult && cmpResult.isabiStatusByRow && t._stmtIdx != null) ? cmpResult.isabiStatusByRow.get(t._stmtIdx) : null;
+            let cmpBadgeHtml = '';
+            if (cmpHit) {
+              const stLbl = _stmt16CmpStatusLabel(cmpHit.status);
+              const innerBadge = cmpHit.status === 'amount_delta'
+                ? `<span>Delta</span> <span data-no-i18n="1">${esc(fmtUsdSigned(cmpHit.deltaUsd, 2))}</span>`
+                : `<span>${esc(stLbl.text)}</span>`;
+              cmpBadgeHtml = ` <span class="rdl-cmp-inline-pill ${stLbl.cls} no-print">${innerBadge}</span>`;
+            }
             return `
               <tr>
                 <td class="mono">${esc(t.date)}</td>
-                <td class="mono" data-no-i18n="1">${esc(t.ref)}</td>
+                <td class="mono"><span data-no-i18n="1">${esc(t.ref)}</span>${cmpBadgeHtml}</td>
                 <td data-no-i18n="1">${esc(t.type)}</td>
                 <td data-no-i18n="1">${esc(t.desc)}</td>
                 <td class="num">${lAp16.books ? (t.dr !== 0 ? fmtUsdSigned(t.dr, 2) : dash) : 'Restricted'}</td>
@@ -8030,14 +8700,22 @@
   function exportPrintableSheetCsv(meta, coKey) {
     const sheet = document.getElementById('printableSheet');
     if (!sheet) return;
-    const tables = [...sheet.querySelectorAll('table.rdl-table')];
+    const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
     if (!tables.length) return;
     const lines = [];
     tables.forEach((tbl, idx) => {
       if (idx > 0) lines.push('');
       tbl.querySelectorAll('tr').forEach(tr => {
         const cells = [...tr.querySelectorAll('th,td')].map(td => {
-          const txt = (td.innerText || td.textContent || '').replace(/\s+/g, ' ').trim();
+          let rawTxt;
+          if (td.querySelector('.rdl-cmp-inline-pill, .no-print')) {
+            const cl = td.cloneNode(true);
+            cl.querySelectorAll('.rdl-cmp-inline-pill, .no-print').forEach(n => n.remove());
+            rawTxt = cl.textContent || '';
+          } else {
+            rawTxt = td.innerText || td.textContent || '';
+          }
+          const txt = rawTxt.replace(/\s+/g, ' ').trim();
           return `"${txt.replace(/"/g, '""')}"`;
         });
         if (cells.length) lines.push(cells.join(','));
@@ -9656,7 +10334,141 @@
     root._stmtSentRerender = rerenderFn;
     if (!root.dataset.stmtSentDelegated) {
       root.dataset.stmtSentDelegated = '1';
+      const handleStmt16CompareFile = async (fileObj) => {
+        if (!fileObj) return;
+        const curCtx = buildRdlContext(SEED, STATE);
+        const curLens = _rdlSeatLens(curCtx);
+        if ((curCtx.state && curCtx.state.kioskLocked) || (!curLens.books && !curLens.expenses)) return;
+        const curM = buildStmt16Model(curCtx);
+        _syncStmt16CompareScope(curCtx, curM);
+        const startGen = ++_stmt16CompareState.scanGen;
+        const startSig = _stmt16CompareState.scopeSig;
+        _stmt16CompareState.open = true;
+        _stmt16CompareState.busy = true;
+        _stmt16CompareState.statusMsg = 'Scanning vendor statement...';
+        _stmt16CompareState.statusTone = '';
+        if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+        const aie = window.MFG_AI_EDGE;
+        let res = null;
+        if (aie && typeof aie.extractVendorSoaVouchers === 'function') {
+          res = await aie.extractVendorSoaVouchers({
+            file: fileObj,
+            supplier: curM.supName,
+            legLabel: curM.legLbl.en,
+            industry: curCtx.ind
+          });
+        } else {
+          res = { ok: false, error: 'Smart scan unavailable offline: paste statement lines below' };
+        }
+        if (startGen !== _stmt16CompareState.scanGen || startSig !== _stmt16CompareState.scopeSig) return;
+        _stmt16CompareState.busy = false;
+        if (res && res.ok && res.text) {
+          _stmt16CompareState.text = res.text;
+          _stmt16CompareState.statusMsg = res.mode === 'local_text' ? 'Loaded CSV/text statement' : 'Extracted vendor statement lines';
+          _stmt16CompareState.statusTone = 'is-good';
+          _stmt16CompareState.filterChip = 'exceptions';
+        } else {
+          _stmt16CompareState.statusMsg = (res && res.error) || 'Could not read file: paste lines manually';
+          _stmt16CompareState.statusTone = 'is-warn';
+        }
+        if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+      };
+      root.addEventListener('input', ev => {
+        const ta = ev.target && ev.target.id === 'stmt16CompareInput' ? ev.target : null;
+        if (ta && root.contains(ta)) {
+          _stmt16CompareState.text = ta.value;
+        }
+      });
+      root.addEventListener('change', ev => {
+        const fi = ev.target && ev.target.id === 'stmt16CompareFileInput' ? ev.target : null;
+        if (fi && root.contains(fi) && fi.files && fi.files[0]) {
+          const pickedFile = fi.files[0];
+          fi.value = '';
+          handleStmt16CompareFile(pickedFile);
+        }
+      });
+      root.addEventListener('dragover', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (dz && root.contains(dz)) {
+          ev.preventDefault();
+          dz.classList.add('is-dragover');
+        }
+      });
+      root.addEventListener('dragleave', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (dz && root.contains(dz)) dz.classList.remove('is-dragover');
+      });
+      root.addEventListener('drop', ev => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareDropzone') : null;
+        if (!dz || !root.contains(dz)) return;
+        ev.preventDefault();
+        dz.classList.remove('is-dragover');
+        const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+        if (f) handleStmt16CompareFile(f);
+      });
       root.addEventListener('click', ev => {
+        const cmpToggle = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareBtn') : null;
+        if (cmpToggle && root.contains(cmpToggle)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const curCtx = buildRdlContext(SEED, STATE);
+          const curLens = _rdlSeatLens(curCtx);
+          if ((curCtx.state && curCtx.state.kioskLocked) || (!curLens.books && !curLens.expenses)) return;
+          _syncStmt16CompareScope(curCtx, buildStmt16Model(curCtx));
+          _stmt16CompareState.open = !_stmt16CompareState.open;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpClose = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareCloseBtn') : null;
+        if (cmpClose && root.contains(cmpClose)) {
+          ev.preventDefault();
+          _stmt16CompareState.open = false;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpScan = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareScanBtn') : null;
+        if (cmpScan && root.contains(cmpScan)) {
+          ev.preventDefault();
+          const fi = root.querySelector('#stmt16CompareFileInput');
+          if (fi) fi.click();
+          return;
+        }
+        const cmpClear = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareClearBtn') : null;
+        if (cmpClear && root.contains(cmpClear)) {
+          ev.preventDefault();
+          _stmt16CompareState.scanGen += 1;
+          _stmt16CompareState.busy = false;
+          _stmt16CompareState.text = '';
+          _stmt16CompareState.statusMsg = '';
+          _stmt16CompareState.statusTone = '';
+          _stmt16CompareState.lastResult = null;
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpRun = ev.target && ev.target.closest ? ev.target.closest('#stmt16CompareRunBtn') : null;
+        if (cmpRun && root.contains(cmpRun)) {
+          ev.preventDefault();
+          const ta = root.querySelector('#stmt16CompareInput');
+          if (ta) _stmt16CompareState.text = ta.value;
+          _stmt16CompareState.filterChip = 'exceptions';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpScopeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-cmp-scope]') : null;
+        if (cmpScopeBtn && root.contains(cmpScopeBtn)) {
+          ev.preventDefault();
+          const nextSc = cmpScopeBtn.getAttribute('data-stmt16-cmp-scope') || 'invoices';
+          _stmt16CompareState.scopeMode = nextSc === 'all' ? 'all' : 'invoices';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
+        const cmpChipBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-cmp-chip]') : null;
+        if (cmpChipBtn && root.contains(cmpChipBtn)) {
+          ev.preventDefault();
+          _stmt16CompareState.filterChip = cmpChipBtn.getAttribute('data-stmt16-cmp-chip') || 'exceptions';
+          if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
+          return;
+        }
         const settleBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16SettleLegBtn') : null;
         if (settleBtn && root.contains(settleBtn)) {
           ev.preventDefault();
@@ -10143,7 +10955,7 @@
     }
 
     function wireTableSorting() {
-      root.querySelectorAll('#printableSheet table.rdl-table thead th').forEach((th, colIdx) => {
+      root.querySelectorAll('#printableSheet table.rdl-table:not(.rdl-cmp-table) thead th').forEach((th, colIdx) => {
         th.style.cursor = 'pointer';
         th.setAttribute('aria-label', `${enHeaderText(th)} — click to sort`);
         th.addEventListener('click', () => {
@@ -10240,7 +11052,7 @@
       }
 
       // 2. Interactive table grouping, inline filter & 12-row pagination for data tables
-      const tables = [...sheet.querySelectorAll('table.rdl-table')];
+      const tables = [...sheet.querySelectorAll('table.rdl-table:not(.rdl-cmp-table)')];
       tables.forEach((tbl, tblIdx) => {
         const tbody = tbl.querySelector('tbody');
         const thead = tbl.querySelector('thead');
@@ -10600,6 +11412,9 @@
     openStmt16ShareModal,
     buildStmt16Model,
     buildStmt16ConfirmationText,
+    parseStmt16VendorSoaText,
+    compareStmt16WithVendorRows,
+    resetStmt16CompareState,
     getParamComboConfig,
     buildJournalEntries,
     // Gate hook (pure, no state): the diesel tank costing of the statements ledger.
