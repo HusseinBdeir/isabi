@@ -16313,7 +16313,13 @@
       "Loaded CSV/text statement": "تم تحميل كشف CSV / نصي",
       "Extracted vendor statement lines": "تم استخراج سطور كشف المورد",
       "No statement lines detected in file": "لم يتم رصد سطور كشف حساب في الملف",
-      "Select a PDF, image, or CSV statement file": "اختر ملف كشف حساب PDF أو صورة أو CSV"
+      "Select a PDF, image, or CSV statement file": "اختر ملف كشف حساب PDF أو صورة أو CSV",
+      "Period Settlement Breakdown": "تفصيل التسويات خلال الفترة",
+      "Cash Received": "المقبوض نقداً ومصرفياً",
+      "Carried Balance": "رصيد منقول",
+      "Total Settled": "إجمالي التسوية",
+      "Raw Ticket": "إيصال مواد أولية",
+      "Expense Record": "سند مصروف"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -32608,7 +32614,13 @@
       "Loaded CSV/text statement": "Relevé CSV / texte chargé",
       "Extracted vendor statement lines": "Lignes du relevé fournisseur extraites",
       "No statement lines detected in file": "Aucune ligne de relevé détectée dans le fichier",
-      "Select a PDF, image, or CSV statement file": "Sélectionnez un relevé PDF, image ou CSV"
+      "Select a PDF, image, or CSV statement file": "Sélectionnez un relevé PDF, image ou CSV",
+      "Period Settlement Breakdown": "Détail des règlements de la période",
+      "Cash Received": "Encaissé (trésorerie)",
+      "Carried Balance": "Solde reporté",
+      "Total Settled": "Total réglé",
+      "Raw Ticket": "Bon matière première",
+      "Expense Record": "Pièce de dépense"
     }
   };
 
