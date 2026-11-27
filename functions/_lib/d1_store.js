@@ -1006,6 +1006,7 @@ export function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   delete d.pin_code;
   delete d.pin_hash;
   d.pin_redacted = hasStoredPin;
+  d.idle_lock_min = normalizeIdleLockMin(d.idle_lock_min);
   const parsedSamples = safeJsonParse(d.face_samples, []);
   const validSamples = Array.isArray(parsedSamples) ? parsedSamples.filter(isValidFaceVec) : [];
   const parsedThumbs = safeJsonParse(d.face_thumbs, []);
@@ -1029,6 +1030,19 @@ export function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
     d.face_thumbs = validThumbs;
   }
   return d;
+}
+
+function normalizeIdleLockMin(raw) {
+  if (typeof raw === 'boolean' || raw === null || raw === '') return 0;
+  const n = Number(raw);
+  return (n === 15 || n === 30) ? n : 0;
+}
+
+function isStrictOwnerSession(session) {
+  if (!session) return false;
+  const role = String(session.role || '').toLowerCase();
+  const sub = String(session.sub || session.id || session.user_id || '').trim().toLowerCase();
+  return role.includes('owner') || (!role && sub === 'u1');
 }
 
 function normalizeServerAuthMode(mode, fallback = 'either') {
@@ -2603,7 +2617,8 @@ export async function handleUsersPost(request, env, session, body) {
       ? String(u.face_updated_at || new Date().toISOString())
       : String(existing.face_updated_at || '');
     const lastLogin = String(u.last_login_at || existing.last_login_at || '');
-    const lockedPayload = stripBiometricsForPayload(Object.assign({}, safeJsonParse(existing.payload_json, {}), {
+    const exPjSelf = safeJsonParse(existing.payload_json, {});
+    const lockedPayload = stripBiometricsForPayload(Object.assign({}, exPjSelf, {
       id: existing.id,
       full_name: existing.full_name,
       email: existing.email,
@@ -2616,7 +2631,8 @@ export async function handleUsersPost(request, env, session, body) {
       face_required: Boolean(existing.face_required),
       face_updated_at: fUpd,
       seat_updated_at: existing.seat_updated_at,
-      auth_mode: existing.auth_mode || ''
+      auth_mode: existing.auth_mode || '',
+      idle_lock_min: normalizeIdleLockMin(exPjSelf.idle_lock_min)
     }));
     await env.DB.prepare(
       `UPDATE users SET last_login_at = ?1, face_samples = ?2, face_thumbs = ?3, face_updated_at = ?4, payload_json = ?5 WHERE id = ?6`
@@ -2702,8 +2718,12 @@ export async function handleUsersPost(request, env, session, body) {
   const effStmts = String(u.statements_access || (existing && existing.statements_access) || 'partial');
   const effStatus = String(u.status || (existing && existing.status) || 'Active');
   const effLastLogin = String(u.last_login_at || (existing && existing.last_login_at) || '');
+  const exPjMgr = existing ? safeJsonParse(existing.payload_json, {}) : {};
+  const effIdleLockMin = isStrictOwnerSession(session)
+    ? ('idle_lock_min' in u ? normalizeIdleLockMin(u.idle_lock_min) : normalizeIdleLockMin(exPjMgr.idle_lock_min))
+    : normalizeIdleLockMin(exPjMgr.idle_lock_min);
 
-  const cleanPayload = stripBiometricsForPayload(Object.assign({}, u, {
+  const cleanPayload = stripBiometricsForPayload(Object.assign({}, exPjMgr, u, {
     id: uid,
     full_name: String(u.full_name),
     email: emailClean,
@@ -2716,7 +2736,8 @@ export async function handleUsersPost(request, env, session, body) {
     face_required: Boolean(fReq),
     face_updated_at: fUpd,
     seat_updated_at: seatUpd,
-    auth_mode: authModeVal
+    auth_mode: authModeVal,
+    idle_lock_min: effIdleLockMin
   }));
 
   await env.DB.prepare(
@@ -5497,10 +5518,37 @@ async function patchMfgStoreSubDoc(db, mutatorFn, updatedBy = '') {
 async function overlayCanonicalSubStoresOnMfgDoc(db, docObj) {
   if (!db || !docObj || typeof docObj !== 'object') return docObj;
   try {
-    const [sqlAr, wsRow] = await Promise.all([
+    const [sqlAr, wsRow, uRows] = await Promise.all([
       loadCanonicalAlertRulesFromDb(db),
-      db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first()
+      db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first(),
+      Array.isArray(docObj.users) ? db.prepare('SELECT id, email, seat_updated_at, payload_json FROM users').all() : Promise.resolve(null)
     ]);
+    if (Array.isArray(docObj.users) && uRows && Array.isArray(uRows.results) && uRows.results.length) {
+      const byId = new Map();
+      const byEm = new Map();
+      for (const ur of uRows.results) {
+        if (!ur) continue;
+        const pj = safeJsonParse(ur.payload_json, {});
+        const rec = {
+          idle_lock_min: normalizeIdleLockMin(pj && pj.idle_lock_min),
+          seat_updated_at: String(ur.seat_updated_at || '')
+        };
+        if (ur.id) byId.set(String(ur.id).trim(), rec);
+        if (ur.email) byEm.set(String(ur.email).trim().toLowerCase(), rec);
+      }
+      docObj.users = docObj.users.map(u => {
+        if (!u || typeof u !== 'object') return u;
+        const em = u.email ? String(u.email).trim().toLowerCase() : '';
+        const uid = u.id ? String(u.id).trim() : '';
+        const sqlRec = (em && byEm.get(em)) || (uid && byId.get(uid)) || null;
+        if (!sqlRec) return Object.assign({}, u, { idle_lock_min: normalizeIdleLockMin(u.idle_lock_min) });
+        const docTs = String(u.seat_updated_at || '');
+        const sqlTs = sqlRec.seat_updated_at || '';
+        const patched = Object.assign({}, u, { idle_lock_min: sqlRec.idle_lock_min });
+        if (sqlTs && (!docTs || tsCmp(docTs, sqlTs) <= 0)) patched.seat_updated_at = sqlTs;
+        return patched;
+      });
+    }
     if (sqlAr.rowCount > 0) {
       const baseAr = (docObj.alertRules && typeof docObj.alertRules === 'object') ? docObj.alertRules : { overrides: {}, custom: [] };
       const mergedOv = Object.assign({}, baseAr.overrides || {});
@@ -8183,7 +8231,10 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               ? JSON.stringify(u.custom_perms)
               : (typeof u.custom_perms === 'string' && u.custom_perms.trim() ? u.custom_perms.trim() : ((exU && exU.custom_perms) || '{}'));
             const authModeVal = String('auth_mode' in u ? (u.auth_mode || '') : ((exU && exU.auth_mode) || ''));
-            const seatUpd = String(u.seat_updated_at || (exU && exU.seat_updated_at) || new Date().toISOString());
+            const seatNotStale = !(exU && exU.seat_updated_at && (!u.seat_updated_at || tsCmp(u.seat_updated_at, exU.seat_updated_at) < 0));
+            const seatUpd = seatNotStale
+              ? String(u.seat_updated_at || (exU && exU.seat_updated_at) || new Date().toISOString())
+              : String(exU.seat_updated_at);
             const mirrorSessEmail = session ? String(session.email || '').trim().toLowerCase() : '';
             const isSelfMirror = Boolean(exU && mirrorSessEmail && mirrorSessEmail === String(exU.email || '').trim().toLowerCase());
             const preserveExPin = Boolean(
@@ -8209,7 +8260,12 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
             const effStmts = String(u.statements_access || (exU && exU.statements_access) || 'partial');
             const effStatus = String(u.status || (exU && exU.status) || 'Active');
             const effLastLogin = String(u.last_login_at || (exU && exU.last_login_at) || '');
-            const cleanPayload = stripBiometricsForPayload(Object.assign({}, u, {
+            const exPjSync = exU ? safeJsonParse(exU.payload_json, {}) : {};
+            const canWriteIdleLockSync = !session || isStrictOwnerSession(session);
+            const effIdleLockMinSync = (canWriteIdleLockSync && seatNotStale && ('idle_lock_min' in u))
+              ? normalizeIdleLockMin(u.idle_lock_min)
+              : normalizeIdleLockMin(exPjSync.idle_lock_min);
+            const cleanPayload = stripBiometricsForPayload(Object.assign({}, exPjSync, u, {
               id: uid,
               full_name: String(u.full_name),
               email: emClean,
@@ -8222,7 +8278,8 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               face_required: Boolean(fReq),
               face_updated_at: fUpd,
               seat_updated_at: seatUpd,
-              auth_mode: authModeVal
+              auth_mode: authModeVal,
+              idle_lock_min: effIdleLockMinSync
             }));
             delete cleanPayload.pin_redacted;
             delete cleanPayload.face_redacted;
@@ -8451,12 +8508,28 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
   const canManageSeats = canManageUsersSeat(session);
 
   // Load canonical baseline users from prevDoc or D1 fallback (closes empty-prevDoc bootstrap gap)
+  let sqlIdleById = new Map();
+  let sqlIdleByEm = new Map();
   let baseUsers = Array.isArray(prev.users) && prev.users.length ? prev.users : null;
-  if (!baseUsers && db) {
+  if (db) {
     const uRows = await db.prepare('SELECT * FROM users ORDER BY id').all();
-    baseUsers = (uRows.results || []).map(r => hydrateUserRow(r, false, false));
+    const sqlHydrated = (uRows.results || []).map(r => hydrateUserRow(r, false, false));
+    for (const su of sqlHydrated) {
+      if (!su || typeof su !== 'object') continue;
+      if (su.id) sqlIdleById.set(String(su.id).trim(), normalizeIdleLockMin(su.idle_lock_min));
+      if (su.email) sqlIdleByEm.set(String(su.email).trim().toLowerCase(), normalizeIdleLockMin(su.idle_lock_min));
+    }
+    if (!baseUsers) baseUsers = sqlHydrated;
   }
   baseUsers = baseUsers || [];
+  const canonicalIdleFor = pu => {
+    if (!pu || typeof pu !== 'object') return 0;
+    const em = pu.email ? String(pu.email).trim().toLowerCase() : '';
+    const uid = pu.id ? String(pu.id).trim() : '';
+    if (em && sqlIdleByEm.has(em)) return sqlIdleByEm.get(em);
+    if (uid && sqlIdleById.has(uid)) return sqlIdleById.get(uid);
+    return normalizeIdleLockMin(pu.idle_lock_min);
+  };
 
   // 1. Protect seat privileges/PINs in mfg_web_store.users
   const incByEmail = new Map();
@@ -8475,9 +8548,10 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         for (const k of ['last_login_at', 'face_samples', 'face_thumbs', 'face_updated_at', 'face_cleared']) {
           if (k in iu) safeSelf[k] = iu[k];
         }
+        safeSelf.idle_lock_min = canonicalIdleFor(pu);
         return safeSelf;
       }
-      return pu;
+      return Object.assign({}, pu, { idle_lock_min: canonicalIdleFor(pu) });
     });
   } else {
     // Single-BU Supervisor: preserve Owner/cross-BU seats and reject Owner/cross-BU assignments
@@ -8491,17 +8565,18 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       const puCos = parseAllowedCompanies(pu.companies);
       const puProtected = pu.id === 'u1' || pu.id === 'u2' || puRole.includes('owner') || !puCos.length || puCos.includes('*') || puCos.some(c => !canAccessCompany(session, c));
       if (puProtected || !incByEmail.has(em)) {
-        safeUsers.push(pu);
+        safeUsers.push(Object.assign({}, pu, { idle_lock_min: canonicalIdleFor(pu) }));
         continue;
       }
       const iu = incByEmail.get(em);
       const iuRole = String(iu.role || pu.role || '').toLowerCase();
       const iuCos = parseAllowedCompanies(iu.companies || pu.companies || '');
       if (iuRole.includes('owner') || !iuCos.length || iuCos.includes('*') || iuCos.some(c => !canAccessCompany(session, c))) {
-        safeUsers.push(pu);
+        safeUsers.push(Object.assign({}, pu, { idle_lock_min: canonicalIdleFor(pu) }));
         continue;
       }
       const mergedSeat = Object.assign({}, pu, iu);
+      mergedSeat.idle_lock_min = canonicalIdleFor(pu);
       const isSelfSup = Boolean(sessEmail && em === sessEmail);
       if (iu.pin_redacted || !String(iu.pin_code || '').trim() || !isSelfSup) {
         if (pu.pin_code) mergedSeat.pin_code = pu.pin_code;
@@ -8516,7 +8591,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       const iuRole = String(iu.role || '').toLowerCase();
       const iuCos = parseAllowedCompanies(iu.companies || '');
       if (iuRole.includes('owner') || !iuCos.length || iuCos.includes('*') || iuCos.some(c => !canAccessCompany(session, c))) continue;
-      safeUsers.push(iu);
+      safeUsers.push(Object.assign({}, iu, { idle_lock_min: 0 }));
     }
     incomingDoc.users = safeUsers;
   }
@@ -10936,6 +11011,47 @@ export async function handleSync(request, env, session, body, _ctx) {
           incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics);
         }
         mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session);
+        if (isStrictOwnerSession(session) && Array.isArray(incomingDoc.users) && env.DB) {
+          const uRowsOwn = await env.DB.prepare('SELECT id, email, seat_updated_at, payload_json FROM users ORDER BY id').all();
+          const sqlByIdOwn = new Map();
+          const sqlByEmOwn = new Map();
+          for (const ur of (uRowsOwn.results || [])) {
+            if (!ur) continue;
+            const pj = safeJsonParse(ur.payload_json, {});
+            const rec = { seat_updated_at: String(ur.seat_updated_at || ''), idle_lock_min: normalizeIdleLockMin(pj && pj.idle_lock_min) };
+            if (ur.id) sqlByIdOwn.set(String(ur.id).trim(), rec);
+            if (ur.email) sqlByEmOwn.set(String(ur.email).trim().toLowerCase(), rec);
+          }
+          incomingDoc.users = incomingDoc.users.map(iu => {
+            if (!iu || typeof iu !== 'object') return iu;
+            const hit = (iu.email && sqlByEmOwn.get(String(iu.email).trim().toLowerCase())) || (iu.id && sqlByIdOwn.get(String(iu.id).trim())) || null;
+            if (hit && hit.seat_updated_at && (!iu.seat_updated_at || tsCmp(iu.seat_updated_at, hit.seat_updated_at) < 0)) {
+              return Object.assign({}, iu, { idle_lock_min: hit.idle_lock_min, seat_updated_at: hit.seat_updated_at });
+            }
+            return iu;
+          });
+        } else if (!isStrictOwnerSession(session) && Array.isArray(incomingDoc.users)) {
+          let sqlUsers = null;
+          if (env.DB) {
+            const uRows = await env.DB.prepare('SELECT id, email, payload_json FROM users ORDER BY id').all();
+            sqlUsers = (uRows.results || []).map(r => hydrateUserRow(r, false, false));
+          }
+          const baseUsers = (sqlUsers && sqlUsers.length)
+            ? sqlUsers
+            : (Array.isArray(prevDoc && prevDoc.users) ? prevDoc.users : []);
+          const byId = new Map();
+          const byEm = new Map();
+          for (const pu of baseUsers) {
+            if (!pu || typeof pu !== 'object') continue;
+            if (pu.id) byId.set(String(pu.id).trim(), pu);
+            if (pu.email) byEm.set(String(pu.email).trim().toLowerCase(), pu);
+          }
+          incomingDoc.users = incomingDoc.users.map(iu => {
+            if (!iu || typeof iu !== 'object') return iu;
+            const hit = (iu.email && byEm.get(String(iu.email).trim().toLowerCase())) || (iu.id && byId.get(String(iu.id).trim())) || null;
+            return Object.assign({}, iu, { idle_lock_min: hit ? normalizeIdleLockMin(hit.idle_lock_min) : 0 });
+          });
+        }
       } else {
         await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
       }
