@@ -16340,6 +16340,62 @@
       "Power Saver · Tap to Wake": "توفير الطاقة · المس للتنشيط",
       "Tap to Start": "اضغط للبدء",
       "Hold steady in good light inside the oval guide.": "ثبّت وجهك في إضاءة جيدة داخل الإطار البيضاوي.",
+      "Warm Fill-Light": "إضاءة الشاشة الدافئة",
+      "Auto Warm Halo": "هالة دافئة تلقائية",
+      "Optical Signal": "الإشارة البصرية",
+      "scans": "عمليات مسح",
+      "Score": "الدقة",
+      "Dim": "خافت",
+      "Glare": "وهج",
+      "Luma": "السطوع",
+      "Reset Counters": "تصفير العدادات",
+      "Warm Fill-Light enabled (Auto Warm Halo in low light)": "تم تفعيل الإضاءة الدافئة التلقائية عند ضعف الإضاءة",
+      "Warm Fill-Light disabled": "تم إيقاف الإضاءة الدافئة",
+      "Collecting Baseline": "جمع خط الأساس",
+      "Collecting baseline scans before scoring placement.": "جارٍ جمع قراءات أولية قبل تقييم موقع الجهاز.",
+      "Camera Fault": "عطل في الكاميرا",
+      "Repeated black or frozen camera frames. Check USB cable, tablet cooling, or power delivery.": "إطارات سوداء أو متجمدة متكررة. افحص كابل USB أو حرارة الجهاز أو التغذية الكهربائية.",
+      "High Glare / Backlight": "وهج مرتفع / إضاءة خلفية",
+      "Strong glare or window backlight is blocking scans. Shade glass or angle tablet away from open light.": "الوهج القوي أو الإضاءة الخلفية يعيقان المسح. ظلّل الزجاج أو وجّه الجهاز بعيداً عن الضوء المباشر.",
+      "Sun-Angle Glare": "وهج زاوية الشمس",
+      "Window Glare": "وهج النافذة",
+      "Recurring glare in one time band. Pivot tablet slightly away from glass reflections.": "وهج متكرر في فترة زمنية محددة. أدر الجهاز قليلاً بعيداً عن انعكاسات الزجاج.",
+      "Low Entrance Light": "إضاءة مدخل خافتة",
+      "Dim lighting is slowing matches. Keep Warm Fill-Light Auto on or add corridor lighting.": "الإضاءة الخافتة تبطئ المطابقة. أبقِ الهالة الدافئة تلقائية أو أضف إنارة للممر.",
+      "Stand-Off Distance": "مسافة الوقوف بعيدة",
+      "Staff are standing too far back. Lower mounting angle or mark a closer floor line.": "الموظفون يقفون بعيداً عن الكاميرا. خفّض زاوية التثبيت أو ضع علامة وقوف أقرب.",
+      "Slow Edge Verify": "بطء التحقق السحابي",
+      "High cloud verification latency or misses. Check entrance Wi-Fi strength and biometric sync.": "ارتفاع زمن أو إخفاقات التحقق السحابي. افحص إشارة الواي فاي عند المدخل ومزامنة البصمة.",
+      "Signal quality, framing, and Edge speed are within healthy thresholds.": "جودة الإشارة والتأطير وسرعة التحقق ضمن الحدود السليمة.",
+      "Station Signal": "إشارة المحطات",
+      "Station Optical Signal & Lighting Health": "جودة الإشارة البصرية وإضاءة المحطات",
+      "Per-tablet detection scores, glare spikes by shift band, fill-light activations, and camera stability": "درجات الكشف لكل جهاز، وموجات الوهج حسب الفترة، وتفعيل الإضاءة الدافئة، واستقرار الكاميرا",
+      "Syncing...": "جارٍ المزامنة...",
+      "Refresh Signal": "تحديث الإشارة",
+      "Station / Entrance": "المحطة / المدخل",
+      "Signal Status": "حالة الإشارة",
+      "Scans & Punches": "المسح والبصمات",
+      "Light & Framing": "الإضاءة والتأطير",
+      "Glare & Time Bands": "الوهج وفترات اليوم",
+      "Cloud Verify & Camera": "السحابة والكاميرا",
+      "Placement Recommendation": "توصية التموضع",
+      "Dawn": "الفجر",
+      "Dusk": "الغسق",
+      "Halo Auto": "هالة تلقائية",
+      "Halo Off": "هالة متوقفة",
+      "Local pool": "محلي",
+      "No station optical diagnostics recorded yet for this scope.": "لم تُسجّل قراءات إشارة بصرية بعد لهذا النطاق.",
+      "Could not reset station diagnostics on server.": "تعذر تصفير قراءات المحطة على الخادم.",
+      "Optical diagnostics counters reset for station.": "تم تصفير عدادات الإشارة البصرية للمحطة.",
+      "Demo Station Signal updated.": "تم تحديث إشارة محطات العرض التجريبي.",
+      "HAL restarts:": "إعادات تشغيل الكاميرا:",
+      "glare": "وهج",
+      "dim": "خافت",
+      "far": "بعيد",
+      "halo": "هالة",
+      "unk": "غير معروف",
+      "ms": "مللي ث",
+      "err": "خطأ",
       "Too many Face ID checks. Pausing briefly.": "عدد محاولات التحقق كبير. توقف مؤقتاً.",
       "Everything else on this device was sent. Add a void reason to send it.": "أُرسل كل ما عدا ذلك من هذا الجهاز. أضف سبب الإلغاء لإرساله.",
       "void refused by the cloud": "إلغاء رفضته السحابة",
@@ -16542,7 +16598,25 @@
       "Payments & Credits": "الدفعات والتسويات",
       "Unbooked Discount on Vendor SOA": "حسم غير مقيد لدى المورد",
       "Unbooked Discount": "حسم غير مقيد",
-      "Could not load full workspace modules or records. Check connection and retry.": "تعذّر تحميل وحدات مساحة العمل الكاملة أو السجلات. تحقّق من الاتصال وأعد المحاولة."
+      "Could not load full workspace modules or records. Check connection and retry.": "تعذّر تحميل وحدات مساحة العمل الكاملة أو السجلات. تحقّق من الاتصال وأعد المحاولة.",
+      "Desktop Auto-Lock:": "القفل التلقائي لسطح المكتب:",
+      "Desktop Idle Auto-Lock": "القفل التلقائي عند الخمول (سطح المكتب)",
+      "Never (Stay Signed In)": "أبداً (البقاء قيد الدخول)",
+      "15 Minutes Idle": "بعد 15 دقيقة خمول",
+      "30 Minutes Idle": "بعد 30 دقيقة خمول",
+      "15m Lock": "قفل 15د",
+      "30m Lock": "قفل 30د",
+      "Change Desktop Idle Auto-Lock Policy": "تغيير سياسة القفل التلقائي عند الخمول",
+      "Restored your unsaved draft": "تمت استعادة المسودة غير المحفوظة",
+      "Share Shift Hours": "مشاركة ساعات الوردية",
+      "Pick a weekday above to apply these hours": "اختر يوم عمل أعلاه لتطبيق هذه الساعات",
+      "Click a weekday chip below to update, or pick a weekday above": "اضغط على شارة يوم أدناه للتحديث، أو اختر يوماً أعلاه",
+      "Shift Schedule Notice": "تعميم أوقات الدوام",
+      "Work Shift": "الوردية",
+      "Notice Language": "لغة التعميم",
+      "Include crew names": "تضمين أسماء طاقم الوردية",
+      "Shift schedule notice text": "نص تعميم أوقات الوردية",
+      "Print Roster Card": "طباعة بطاقة الدوام"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -32864,6 +32938,62 @@
       "Power Saver · Tap to Wake": "Économie d'énergie · Toucher pour réveiller",
       "Tap to Start": "Appuyer pour démarrer",
       "Hold steady in good light inside the oval guide.": "Restez stable sous un bon éclairage dans le guide ovale.",
+      "Warm Fill-Light": "Éclairage d'appoint chaud",
+      "Auto Warm Halo": "Halo chaud automatique",
+      "Optical Signal": "Signal optique",
+      "scans": "analyses",
+      "Score": "Score",
+      "Dim": "Faible",
+      "Glare": "Éblouissement",
+      "Luma": "Luminance",
+      "Reset Counters": "Réinitialiser les compteurs",
+      "Warm Fill-Light enabled (Auto Warm Halo in low light)": "Éclairage d'appoint chaud activé (halo auto en faible lumière)",
+      "Warm Fill-Light disabled": "Éclairage d'appoint chaud désactivé",
+      "Collecting Baseline": "Collecte de référence",
+      "Collecting baseline scans before scoring placement.": "Collecte des premières mesures avant d'évaluer l'emplacement.",
+      "Camera Fault": "Défaut caméra",
+      "Repeated black or frozen camera frames. Check USB cable, tablet cooling, or power delivery.": "Images noires ou figées répétées. Vérifiez le câble USB, la température ou l'alimentation.",
+      "High Glare / Backlight": "Éblouissement / Contre-jour élevé",
+      "Strong glare or window backlight is blocking scans. Shade glass or angle tablet away from open light.": "Un fort éblouissement ou contre-jour bloque la lecture. Ombragez la vitre ou inclinez la tablette.",
+      "Sun-Angle Glare": "Éblouissement solaire",
+      "Window Glare": "Reflet de fenêtre",
+      "Recurring glare in one time band. Pivot tablet slightly away from glass reflections.": "Reflets récurrents sur une plage horaire. Pivotez légèrement la tablette loin des vitres.",
+      "Low Entrance Light": "Éclairage d'entrée faible",
+      "Dim lighting is slowing matches. Keep Warm Fill-Light Auto on or add corridor lighting.": "La faible lumière ralentit la reconnaissance. Gardez le halo chaud auto actif ou ajoutez de l'éclairage.",
+      "Stand-Off Distance": "Distance trop grande",
+      "Staff are standing too far back. Lower mounting angle or mark a closer floor line.": "Le personnel se tient trop loin. Abaissez l'angle de fixation ou marquez une ligne plus proche.",
+      "Slow Edge Verify": "Vérification cloud lente",
+      "High cloud verification latency or misses. Check entrance Wi-Fi strength and biometric sync.": "Latence ou échecs élevés de vérification cloud. Vérifiez le signal Wi-Fi d'entrée et la synchro.",
+      "Signal quality, framing, and Edge speed are within healthy thresholds.": "Qualité du signal, cadrage et vitesse cloud dans les seuils normaux.",
+      "Station Signal": "Signal des bornes",
+      "Station Optical Signal & Lighting Health": "Santé du signal optique et d'éclairage des bornes",
+      "Per-tablet detection scores, glare spikes by shift band, fill-light activations, and camera stability": "Scores de détection par tablette, pics d'éblouissement par plage horaire, halo chaud et stabilité caméra",
+      "Syncing...": "Synchronisation...",
+      "Refresh Signal": "Actualiser le signal",
+      "Station / Entrance": "Borne / Entrée",
+      "Signal Status": "État du signal",
+      "Scans & Punches": "Lectures et pointages",
+      "Light & Framing": "Lumière et cadrage",
+      "Glare & Time Bands": "Reflets et plages horaires",
+      "Cloud Verify & Camera": "Cloud et caméra",
+      "Placement Recommendation": "Recommandation d'installation",
+      "Dawn": "Aube",
+      "Dusk": "Crépuscule",
+      "Halo Auto": "Halo auto",
+      "Halo Off": "Halo désactivé",
+      "Local pool": "Base locale",
+      "No station optical diagnostics recorded yet for this scope.": "Aucun diagnostic optique enregistré pour ce périmètre.",
+      "Could not reset station diagnostics on server.": "Impossible de réinitialiser les diagnostics de la borne sur le serveur.",
+      "Optical diagnostics counters reset for station.": "Compteurs de diagnostic optique réinitialisés pour la borne.",
+      "Demo Station Signal updated.": "Signal des bornes démo actualisé.",
+      "HAL restarts:": "Redémarrages caméra :",
+      "glare": "reflets",
+      "dim": "sombre",
+      "far": "loin",
+      "halo": "halo",
+      "unk": "inc.",
+      "ms": "ms",
+      "err": "err",
       "Too many Face ID checks. Pausing briefly.": "Trop de vérifications Face ID. Courte pause.",
       "Everything else on this device was sent. Add a void reason to send it.": "Tout le reste de cet appareil a été envoyé. Ajoutez un motif d'annulation pour l'envoyer.",
       "void refused by the cloud": "annulation refusée par le cloud",
@@ -33066,7 +33196,25 @@
       "Payments & Credits": "Règlements et avoirs",
       "Unbooked Discount on Vendor SOA": "Remise non comptabilisée chez le fournisseur",
       "Unbooked Discount": "Remise non comptabilisée",
-      "Could not load full workspace modules or records. Check connection and retry.": "Impossible de charger les modules ou les enregistrements complets. Vérifiez la connexion et réessayez."
+      "Could not load full workspace modules or records. Check connection and retry.": "Impossible de charger les modules ou les enregistrements complets. Vérifiez la connexion et réessayez.",
+      "Desktop Auto-Lock:": "Verrouillage auto bureau :",
+      "Desktop Idle Auto-Lock": "Verrouillage auto d'inactivité (bureau)",
+      "Never (Stay Signed In)": "Jamais (rester connecté)",
+      "15 Minutes Idle": "Après 15 min d'inactivité",
+      "30 Minutes Idle": "Après 30 min d'inactivité",
+      "15m Lock": "Verr. 15m",
+      "30m Lock": "Verr. 30m",
+      "Change Desktop Idle Auto-Lock Policy": "Modifier la politique de verrouillage auto",
+      "Restored your unsaved draft": "Brouillon non enregistré restauré",
+      "Share Shift Hours": "Partager les horaires",
+      "Pick a weekday above to apply these hours": "Sélectionnez un jour ci-dessus pour appliquer ces heures",
+      "Click a weekday chip below to update, or pick a weekday above": "Cliquez sur une pastille ci-dessous pour modifier, ou choisissez un jour ci-dessus",
+      "Shift Schedule Notice": "Note d'Horaires de Travail",
+      "Work Shift": "Horaire de travail",
+      "Notice Language": "Langue de la note",
+      "Include crew names": "Inclure les noms du personnel",
+      "Shift schedule notice text": "Texte de la note d'horaires",
+      "Print Roster Card": "Imprimer la fiche horaire"
     }
   };
 
@@ -40436,6 +40584,37 @@
         ? trimmed.replace(/^Net\b/, 'الصافي').replace(/\bVAT\b/, 'الضريبة')
         : trimmed.replace(/^Net\b/, 'Net').replace(/\bVAT\b/, 'TVA');
       return { out: rep, ok: true };
+    }
+
+    m = trimmed.match(/^Desktop auto-lock for (.+?):\s*(Never \(Stay Signed In\)|15 Minutes Idle|30 Minutes Idle)$/i);
+    if (m) {
+      const subLbl = translateCore(m[2].trim(), lang, depth + 1);
+      return {
+        out: lang === 'ar'
+          ? `القفل التلقائي لمقعد ${m[1]}: ${subLbl}`
+          : `Verrouillage auto pour ${m[1]} : ${subLbl}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Locked after (\d+)m of inactivity\. Your unsaved draft is waiting for your next sign-in\.$/i);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `تم القفل بعد ${m[1]} دقيقة من عدم النشاط. مسودتك غير المحفوظة بانتظار تسجيل دخولك التالي.`
+          : `Verrouillé après ${m[1]} min d'inactivité. Votre brouillon non enregistré vous attend à la prochaine connexion.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Locked after (\d+)m of inactivity\.$/i);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `تم القفل بعد ${m[1]} دقيقة من عدم النشاط.`
+          : `Verrouillé après ${m[1]} min d'inactivité.`,
+        ok: true
+      };
     }
 
     const cntHit = translateCountNoun(trimmed, lang);
