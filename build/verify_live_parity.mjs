@@ -447,10 +447,11 @@ async function main() {
     } catch (_) {}
   }
   const assetRefs = new Set();
-  const assetRe = /(?:src|href)="([^"]+\.(?:js|css)(?:\?[^"]*)?)"/g;
+  const assetRe = /(?:(?:src|href)="([^"]+\.(?:js|css)(?:\?[^"]*)?)"|['"]((?:js|css)\/[A-Za-z0-9_./-]+\.(?:js|css)(?:\?[^'"\s]*)?)['"])/g;
   let am;
   while ((am = assetRe.exec(appIndexProbe.text)) !== null) {
-    const ref = am[1];
+    const ref = am[1] || am[2];
+    if (!ref) continue;
     if (/^https?:\/\//i.test(ref) && !ref.startsWith(ORIGIN)) continue;
     if (/seed_.*\.json/i.test(ref)) continue;
     const absUrl = new URL(ref, APP_ORIGIN_BASE).toString();
