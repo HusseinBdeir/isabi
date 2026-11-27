@@ -1325,10 +1325,15 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
     }
   }
   html.ios-standalone .d-header,
-  html.ios-standalone .site-header,
-  html.ios-standalone .ai-drawer-hdr {
+  html.ios-standalone .site-header {
     padding-top: var(--ios-pwa-top-clear);
     background: var(--d-bg);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  html.ios-standalone .ai-drawer-hdr {
+    padding-top: var(--ios-pwa-top-clear);
+    background: var(--ai-hdr, var(--d-bg));
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }

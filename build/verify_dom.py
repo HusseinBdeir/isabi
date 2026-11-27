@@ -1323,7 +1323,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   try {
     await tick(60);
     var bd = document.getElementById('tour-modal-backdrop');
-    var o = { lenStart: history.length, openedOnLoad: Boolean(bd && !bd.hidden), hashOnLoad: location.hash };
+    var surf = document.querySelector('.pwa-status-bar-surface');
+    var o = {
+      lenStart: history.length,
+      openedOnLoad: Boolean(bd && !bd.hidden),
+      hashOnLoad: location.hash,
+      surfCount: document.querySelectorAll('.pwa-status-bar-surface').length,
+      surfDisp: surf ? getComputedStyle(surf).display : null
+    };
     var cb = document.getElementById('close-tour-modal');
     if (cb) cb.click();
     await tick(80);
@@ -1341,6 +1348,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 """
         d_td = run_side_probe('_diag_tourdeep.html', tour_deep_script, 'tdeep-json', '#tour', win_w=1366, win_h=768, budget=3000)
         assert 'error' not in d_td and d_td['openedOnLoad'] and d_td['stillOnPage'] and d_td['closedOnClose'] and d_td['hashAfter'] == '' and d_td['lenEnd'] == d_td['lenStart'], f"Shared link #tour probe failed: {d_td}"
+        assert d_td['surfCount'] == 1 and d_td['surfDisp'] == 'none', f"Non-iOS status-bar surface isolation failed: {d_td}"
+        assert '--ios-pwa-top-clear' in base_html and 'isabi-systems-pwa-v6.42' in open(os.path.join(repo_root, 'sw.js'), 'r', encoding='utf-8').read(), "Missing v6.42 or --ios-pwa-top-clear parity"
         print('[DEEP-LINK] Shared link #tour opens walkthrough modal & closes without leaving page')
 
         d_desk = probe_viewport(1366, 768, 'DESK')
