@@ -73,6 +73,7 @@ const seat = async (id, name, email, role, cos) => {
 const OWNER_TOK = await seat('u1', 'Owner Seat', 'owner@example.test', 'Full Access (Owner)', 'All');
 const WTC_ENTRY_TOK = await seat('u7', 'WTC Entry', 'wtc.entry@example.test', 'Entry', 'WTC');
 const VIEWER_TOK = await seat('u8', 'WTC Viewer', 'wtc.viewer@example.test', 'Read-Only Viewer', 'WTC');
+const WTC_SUP_TOK = await seat('u9', 'WTC Sup', 'wtc.sup@example.test', 'Supervisor', 'WTC');
 
 const SHELL = effectiveMinSyncShellVer() || DEPLOYED_SHELL_VER || '19.6.440';
 
@@ -602,6 +603,218 @@ console.log('\n[3. Negative RLS & Read-Only boundary on delta deletes/mutations]
     && attAfterView.has('at-wtc-valid-1')
     && !attAfterView.has('at-viewer-forged'),
     Array.from(attAfterView));
+}
+
+console.log('\n[4. staff_biometrics Entry-seat enrolment, Admin protection & multi-company RLS]');
+{
+  const fakeVec = Array.from({ length: 128 }, (_, i) => Number((Math.sin(i + 1) * 0.1).toFixed(5)));
+  const entryWriteWtc = await api('staff_biometrics', {
+    token: WTC_ENTRY_TOK,
+    body: {
+      key: 'ramy wtc worker',
+      entry: {
+        name: 'Ramy WTC Worker',
+        company: 'WTC',
+        role: 'Operator',
+        face_samples: [fakeVec],
+        face_cleared: false,
+        updated_at: '2026-11-26T09:00:00Z'
+      }
+    }
+  });
+  ok('4a. WTC Entry seat POST /api/staff_biometrics succeeds for own BU',
+    entryWriteWtc.status === 200 && entryWriteWtc.json?.ok === true && entryWriteWtc.json?.saved === 1,
+    entryWriteWtc);
+
+  const entryWriteBbc = await api('staff_biometrics', {
+    token: WTC_ENTRY_TOK,
+    body: {
+      key: 'bbc alien worker',
+      entry: {
+        name: 'BBC Alien Worker',
+        company: 'BBConstruction',
+        role: 'Operator',
+        face_samples: [fakeVec],
+        face_cleared: false,
+        updated_at: '2026-11-26T09:01:00Z'
+      }
+    }
+  });
+  ok('4b. WTC Entry seat POST /api/staff_biometrics blocked (403) for BBConstruction',
+    entryWriteBbc.status === 403 && entryWriteBbc.json?.ok === false,
+    entryWriteBbc);
+
+  const entryOverwriteOwner = await api('staff_biometrics', {
+    token: WTC_ENTRY_TOK,
+    body: {
+      key: 'owner seat',
+      entry: {
+        name: 'Owner Seat',
+        company: 'WTC',
+        role: 'Owner',
+        face_samples: [fakeVec],
+        face_cleared: false,
+        updated_at: '2026-11-26T09:02:00Z'
+      }
+    }
+  });
+  ok('4c. WTC Entry seat POST /api/staff_biometrics blocked (403) when targeting Owner/Supervisor seat',
+    entryOverwriteOwner.status === 403 && entryOverwriteOwner.json?.ok === false,
+    entryOverwriteOwner);
+
+  const ownerSeedMulti = await api('staff_biometrics', {
+    token: OWNER_TOK,
+    body: {
+      staff_biometrics: {
+        'owner seat': {
+          name: 'Owner Seat',
+          company: 'WTC, BBConstruction, Lions Transport',
+          role: 'Owner',
+          face_samples: [fakeVec],
+          face_cleared: false,
+          updated_at: '2026-11-26T09:03:00Z'
+        },
+        'bbc only staff': {
+          name: 'BBC Only Staff',
+          company: 'BBConstruction',
+          role: 'Staff',
+          face_samples: [fakeVec],
+          face_cleared: false,
+          updated_at: '2026-11-26T09:03:00Z'
+        }
+      }
+    }
+  });
+  ok('4d. Owner seeds multi-BU + BBConstruction staff_biometrics rows',
+    ownerSeedMulti.status === 200 && ownerSeedMulti.json?.saved === 2,
+    ownerSeedMulti);
+
+  const entryGet = await api('staff_biometrics', { method: 'GET', token: WTC_ENTRY_TOK });
+  const gotKeys = Object.keys(entryGet.json?.staff_biometrics || {});
+  ok('4e. WTC Entry seat GET /api/staff_biometrics receives multi-BU & WTC rows, excludes BBConstruction-only',
+    entryGet.status === 200
+    && gotKeys.includes('ramy wtc worker')
+    && gotKeys.includes('owner seat')
+    && !gotKeys.includes('bbc only staff'),
+    gotKeys);
+
+  const gWtcBio = await api('sync', { token: WTC_ENTRY_TOK, body: { op: 'get_mfg', doc: 'mfg_web_store' } });
+  const wtcBioTs = gWtcBio.json?.updatedAt || gWtcBio.json?.docs?.mfg_web_store?.updatedAt;
+  const entrySyncRes = await api('sync', {
+    token: WTC_ENTRY_TOK,
+    body: {
+      op: 'patch',
+      key: '',
+      ackOnly: true,
+      ifMatchUpdatedAt: wtcBioTs,
+      patch: {
+        mfg_web_store: {
+          _deltaPatch: 1,
+          minShellVer: SHELL,
+          updatedAt: '2026-11-26T09:10:00.000Z',
+          updatedBy: 'wtc.entry@example.test',
+          staffBiometrics: {
+            'ramy wtc worker': { name: 'Ramy WTC Worker', company: 'BBConstruction', updated_at: '2026-11-26T09:10:00Z' },
+            'owner seat': { name: 'Owner Seat', company: 'WTC', face_cleared: true, updated_at: '2026-11-26T09:10:00Z' }
+          }
+        }
+      }
+    }
+  });
+  // Seed initial WTC staffBiometrics into mfg_web_store via Owner first or verify baseline wtc|zzteststaffgamma omitted by WTC Entry was preserved
+  const afterEntrySync = readStoredMfgDoc();
+  const sbAfter = afterEntrySync?.doc?.staffBiometrics || {};
+  ok('4f. WTC Entry /api/sync preserves omitted WTC row (wtc|zzteststaffgamma) & blocks out-of-scope / Owner-overwrite',
+    entrySyncRes.status === 200
+    && Boolean(sbAfter['wtc|zzteststaffgamma'])
+    && !sbAfter['ramy wtc worker']
+    && !sbAfter['owner seat'],
+    Object.keys(sbAfter));
+
+  const viewerBioPost = await api('staff_biometrics', {
+    token: VIEWER_TOK,
+    body: { key: 'viewer hack', entry: { name: 'Viewer Hack', company: 'WTC', face_samples: [fakeVec], updated_at: '2026-11-26T09:11:00Z' } }
+  });
+  ok('4g. Read-Only Viewer POST /api/staff_biometrics rejected (403)',
+    viewerBioPost.status === 403 && viewerBioPost.json?.ok === false,
+    viewerBioPost);
+
+  // 4h. 6+ failed authenticated verify_only probes never lock out rl:lock_face on shared plant IP
+  const fakeUnknownVec = Array.from({ length: 128 }, (_, i) => Number((Math.cos(i * 1.9 + 0.4) * 0.17).toFixed(5)));
+  let allMissesUnthrottled = true;
+  for (let k = 0; k < 7; k++) {
+    const pRes = await api('auth/login', {
+      token: WTC_ENTRY_TOK,
+      body: { method: 'Face ID', verify_only: true, allow_pin_only_verify: true, face_descriptor: fakeUnknownVec }
+    });
+    if (pRes.status !== 401) allMissesUnthrottled = false;
+  }
+  const anonLoginAfter = await api('auth/login', {
+    token: '',
+    headers: { 'X-ISABI-Session': '' },
+    body: { method: 'Face ID', face_descriptor: fakeUnknownVec }
+  });
+  ok('4h. 7 authenticated verify_only misses do not trigger rl:lock_face (429) on shared plant IP login',
+    allMissesUnthrottled && anonLoginAfter.status === 401 && !anonLoginAfter.json?.rate_limited,
+    { allMissesUnthrottled, anonLoginAfter });
+
+  // 4i. WTC Entry /api/sync staffBiometrics upsert mirrors into relational staff_biometrics table
+  const gEntry2 = await api('sync', { token: WTC_ENTRY_TOK, body: { op: 'get_mfg', doc: 'mfg_web_store' } });
+  const tsEntry2 = gEntry2.json?.updatedAt || gEntry2.json?.docs?.mfg_web_store?.updatedAt;
+  const entrySyncUpsert = await api('sync', {
+    token: WTC_ENTRY_TOK,
+    body: {
+      op: 'patch',
+      key: '',
+      ackOnly: true,
+      ifMatchUpdatedAt: tsEntry2,
+      patch: {
+        mfg_web_store: {
+          _deltaPatch: 1,
+          minShellVer: SHELL,
+          updatedAt: '2026-11-27T10:05:00.000Z',
+          updatedBy: 'wtc.entry@example.test',
+          staffBiometrics: {
+            'entry sync mirrored worker': {
+              name: 'Entry Sync Mirrored Worker',
+              company: 'WTC',
+              role: 'Operator',
+              face_samples: [fakeVec],
+              updated_at: '2026-11-27T10:05:00.100Z'
+            }
+          }
+        }
+      }
+    }
+  });
+  const entryGetAfterSync = await api('staff_biometrics', { method: 'GET', token: WTC_ENTRY_TOK });
+  ok('4i. WTC Entry /api/sync staffBiometrics upsert mirrors to relational GET /api/staff_biometrics',
+    entrySyncUpsert.status === 200 && Boolean(entryGetAfterSync.json?.staff_biometrics?.['entry sync mirrored worker']),
+    Object.keys(entryGetAfterSync.json?.staff_biometrics || {}));
+
+  // 4j. Same-second Z vs .mmmZ timestamp comparison accepts newer .500Z update over Z baseline
+  await api('staff_biometrics', {
+    token: WTC_ENTRY_TOK,
+    body: { key: 'ts race worker', entry: { name: 'Ts Race Worker', company: 'WTC', pin_code: '1111', updated_at: '2026-11-27T10:00:00Z' } }
+  });
+  const tsMsUpd = await api('staff_biometrics', {
+    token: WTC_ENTRY_TOK,
+    body: { key: 'ts race worker', entry: { name: 'Ts Race Worker', company: 'WTC', pin_code: '2222', updated_at: '2026-11-27T10:00:00.500Z' } }
+  });
+  const tsGetAfter = await api('staff_biometrics', { method: 'GET', token: WTC_ENTRY_TOK });
+  ok('4j. Same-second .500Z biometric update supersedes Z baseline instead of being dropped',
+    tsMsUpd.status === 200 && tsMsUpd.json?.saved === 1
+    && tsGetAfter.json?.staff_biometrics?.['ts race worker']?.pin_code === '2222',
+    tsGetAfter.json?.staff_biometrics?.['ts race worker']);
+
+  // 4k. Single-BU Supervisor blocked (403) when targeting protected Owner seat in staff_biometrics
+  const supOverwriteOwner = await api('staff_biometrics', {
+    token: WTC_SUP_TOK,
+    body: { key: 'owner seat', entry: { name: 'Owner Seat', company: 'WTC', pin_code: '9999', updated_at: '2026-11-27T10:06:00Z' } }
+  });
+  ok('4k. Single-BU Supervisor POST /api/staff_biometrics blocked (403) when targeting Owner seat',
+    supOverwriteOwner.status === 403 && supOverwriteOwner.json?.ok === false,
+    supOverwriteOwner);
 }
 
 console.log(`\nSummary: ${pass} passed, ${fail} failed`);

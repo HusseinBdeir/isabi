@@ -415,6 +415,43 @@ export function canManageUsersSeat(session) {
   return role.includes('owner') || role.includes('supervisor') || session.sub === 'u1' || session.sub === 'u2';
 }
 
+export function canEnrolStaffBiometricsSession(session) {
+  if (!session) return false;
+  if (session.locked || session.kioskLocked || /^kiosk_/i.test(String(session.sub || ''))) return false;
+  if (isOwnerOrFullGroupSession(session) || canManageUsersSeat(session)) return true;
+  const role = String(session.role || '').trim().toLowerCase();
+  if (/owner|admin|super|manager|director|entry/.test(role)) return true;
+  if (role === 'custom') {
+    let perms = session.custom_perms;
+    if (typeof perms === 'string') {
+      try { perms = JSON.parse(perms); } catch (_) { perms = null; }
+    }
+    if (perms && typeof perms === 'object') {
+      const rights = (perms.rights && typeof perms.rights === 'object') ? perms.rights : perms;
+      const forms = (perms.forms && typeof perms.forms === 'object') ? perms.forms : perms;
+      return Boolean(
+        rights.enter_master || rights.enter_dispatch || forms.enter_master || forms.staff || forms.employment
+        || perms.canManageUsers || perms.manageUsers
+      );
+    }
+  }
+  return false;
+}
+
+export function canReadStaffBiometricCompany(session, rawCompanyStr) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const cos = parseAllowedCompanies(rawCompanyStr).filter(c => c && c !== '*');
+  return cos.length > 0 && cos.some(c => canAccessCompany(session, c));
+}
+
+export function canWriteStaffBiometricCompany(session, rawCompanyStr) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const cos = parseAllowedCompanies(rawCompanyStr).filter(c => c && c !== '*');
+  return cos.length > 0 && cos.every(c => canAccessCompany(session, c));
+}
+
 export function canWriteWorkSchedulesSession(session) {
   if (!session) return false;
   if (isOwnerOrFullGroupSession(session)) return true;
