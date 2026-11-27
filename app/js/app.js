@@ -672,6 +672,8 @@
     cashflowBehind: null,
     sourceBehind: null,
     changedEntries: null,
+    devicesHolding: null,
+    devicesMinSyncShellVer: '',
     behindDayPrev: null,
     arChartMode: 'collections',
     salesChartMode: 'payment',
@@ -158041,12 +158043,17 @@
   }
 
   // Owner: devices that reported entries they have not sent, and devices whose held entries arrived late.
+  const MIN_SYNC_SHELL_FALLBACK = '19.6.444';
   let _devHoldGen = 0;
   async function loadDevicesHolding() {
     const myGen = ++_devHoldGen;
     const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
     if (!hasServerApi() || !ownerNow()) {
-      if (myGen === _devHoldGen && STATE.devicesHolding) { STATE.devicesHolding = null; updateDevicesHoldingBar(); }
+      if (myGen === _devHoldGen && (STATE.devicesHolding || STATE.devicesMinSyncShellVer)) {
+        STATE.devicesHolding = null;
+        STATE.devicesMinSyncShellVer = '';
+        updateDevicesHoldingBar();
+      }
       return;
     }
     const ctrl = new AbortController();
@@ -158054,10 +158061,16 @@
     try {
       const r = await edgeApiFetch('./api/device_unsent', { signal: ctrl.signal });
       if (myGen !== _devHoldGen || !ownerNow()) return;
-      if (r && (r.status === 401 || r.status === 403)) STATE.devicesHolding = null;
-      else if (r && r.ok) {
+      if (r && (r.status === 401 || r.status === 403)) {
+        STATE.devicesHolding = null;
+        STATE.devicesMinSyncShellVer = '';
+      } else if (r && r.ok) {
         const d = await r.json().catch(() => null);
         if (myGen !== _devHoldGen || !ownerNow()) return;
+        if (d && typeof d.minSyncShellVer === 'string') {
+          const liveFloor = d.minSyncShellVer.trim();
+          if (/^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(liveFloor)) STATE.devicesMinSyncShellVer = liveFloor;
+        }
         if (d && Array.isArray(d.devices)) STATE.devicesHolding = d.devices;
       }
     } catch (_) {
@@ -158080,12 +158093,19 @@
       return;
     }
     const curShell = String(window.__MFG_SHELL_VER || '').trim();
-    const minSyncFloor = window.ISABI_HAS_EDGE_API ? '19.6.432' : '19.6.436';
+    const rawLiveFloor = String(STATE.devicesMinSyncShellVer || '').trim();
+    const minSyncFloor = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(rawLiveFloor) ? rawLiveFloor : MIN_SYNC_SHELL_FALLBACK;
     const effMinSyncVer = (curShell && compareShellVersions(minSyncFloor, curShell) > 0) ? curShell : minSyncFloor;
-    const sig = JSON.stringify([curShell, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
+    const sig = JSON.stringify([curShell, effMinSyncVer, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
     if (el.dataset.sig === sig && !el.hidden) return;
+    const holdingList = [];
+    const lateList = [];
+    list.forEach(d => {
+      if (d.state === 'sent_late') lateList.push(d);
+      else holdingList.push(d);
+    });
     const SHOWN = 4;
-    const segs = list.slice(0, SHOWN).map(d => {
+    const renderItem = d => {
       const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
       const who = String((seat && (seat.full_name || seat.name)) || d.name || d.email || 'Unknown seat').trim();
       const label = String(d.label || '').trim();
@@ -158116,11 +158136,31 @@
         ? `<span data-no-i18n="1">, </span><span>last heard</span> <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(heardMs))}</span>`
         : '';
       return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span>${heardHtml}${dismissHtml}</span>`;
-    });
-    const extra = list.length - Math.min(list.length, SHOWN);
-    const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+    };
+    const rowsHtml = [];
+    if (holdingList.length) {
+      const segs = holdingList.slice(0, SHOWN).map(renderItem);
+      const extra = holdingList.length - Math.min(holdingList.length, SHOWN);
+      const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+      rowsHtml.push(`<div class="cf-behind-note unsent-bar dev-hold-row dev-hold-active-row" id="devicesHoldingActiveRow"><span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span></div>`);
+    }
+    if (lateList.length) {
+      const segs = lateList.slice(0, SHOWN).map(renderItem);
+      const extra = lateList.length - Math.min(lateList.length, SHOWN);
+      const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+      const hasDismissableLate = lateList.some(d => {
+        const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+        const uid = String(d.user_id || (seat && seat.id) || '').trim();
+        const devId = String(d.device_id || '').trim();
+        return /^[A-Za-z0-9_-]{1,40}$/.test(uid) && /^[a-z0-9]{12,32}$/.test(devId);
+      });
+      const dismissAllHtml = hasDismissableLate
+        ? ' <button type="button" class="dev-hold-dismiss-all-btn" id="devHoldDismissAllLateBtn" data-dismiss-all-late="1"><span>Dismiss All</span></button>'
+        : '';
+      rowsHtml.push(`<div class="cf-behind-note unsent-bar dev-hold-row dev-hold-late-row" id="devicesHoldingLateRow"><span class="badge cf-behind-badge dev-late-badge"><span>Arrived Late</span><span data-no-i18n="1"> (${esc(fmtNum(lateList.length))})</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>${dismissAllHtml}</div>`);
+    }
     el.dataset.sig = sig;
-    el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>`;
+    el.innerHTML = rowsHtml.join('');
     el.hidden = false;
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(el);
@@ -158154,7 +158194,79 @@
     return false;
   }
 
+  async function dismissAllLateDeviceReports() {
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) return false;
+    const myId = getDeviceIdent().id;
+    const myEmail = norm((activeUser() || {}).email);
+    const list = (Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding : [])
+      .filter(d => d && typeof d === 'object' && d.state === 'sent_late' && !(String(d.device_id || '') === myId && norm(d.email) === myEmail));
+    const keys = [];
+    const seen = new Set();
+    list.forEach(d => {
+      const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+      const uid = String(d.user_id || (seat && seat.id) || '').trim();
+      const devId = String(d.device_id || '').trim();
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(uid) || !/^[a-z0-9]{12,32}$/.test(devId)) return;
+      const k = `${uid}:${devId}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    });
+    if (!keys.length) return false;
+    ++_devHoldGen;
+    const keySet = new Set(keys);
+    const prev = Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding.slice() : null;
+    if (prev) {
+      STATE.devicesHolding = prev.filter(d => {
+        if (!d) return false;
+        if (d.state !== 'sent_late') return true;
+        const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+        const rowUid = String(d.user_id || (seat && seat.id) || '').trim();
+        return !keySet.has(`${rowUid}:${String(d.device_id || '').trim()}`);
+      });
+      updateDevicesHoldingBar();
+    }
+    try {
+      const chunks = [];
+      let curChunk = [];
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const nextLen = JSON.stringify({ action: 'dismiss_late', keys: curChunk.concat([k]) }).length;
+        if (curChunk.length > 0 && (curChunk.length >= 25 || nextLen > 1800)) {
+          chunks.push(curChunk);
+          curChunk = [k];
+        } else {
+          curChunk.push(k);
+        }
+      }
+      if (curChunk.length) chunks.push(curChunk);
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const r = await edgeApiFetch('./api/device_unsent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'dismiss_late', keys: chunks[ci] })
+        });
+        const d = r ? await r.json().catch(() => null) : null;
+        if (!r || !r.ok || !d || !d.ok) {
+          toast('Could not dismiss device report', 'err');
+          await loadDevicesHolding();
+          return false;
+        }
+      }
+      return true;
+    } catch (_) {}
+    toast('Could not dismiss device report', 'err');
+    await loadDevicesHolding();
+    return false;
+  }
+
   function onDevicesHoldingBarClick(ev) {
+    const allBtn = ev.target && ev.target.closest ? ev.target.closest('[data-dismiss-all-late]') : null;
+    if (allBtn) {
+      dismissAllLateDeviceReports();
+      return;
+    }
     const btn = ev.target && ev.target.closest ? ev.target.closest('[data-dismiss-user][data-dismiss-dev]') : null;
     if (!btn) return;
     const uid = String(btn.getAttribute('data-dismiss-user') || '').trim();
@@ -164878,6 +164990,7 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    STATE.devicesMinSyncShellVer = '';
     _cloudStoreHealthSnap = null;
     if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
@@ -165104,6 +165217,7 @@
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
     STATE.devicesHolding = null;
+    STATE.devicesMinSyncShellVer = '';
     _cloudStoreHealthSnap = null;
     if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     STATE.shareOutwardLang = '';
@@ -208597,6 +208711,7 @@
       refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
       report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
       loadDevices: () => loadDevicesHolding(),
+      dismissAllLate: () => dismissAllLateDeviceReports(),
       device: () => getDeviceIdent(),
       setCloudStoreDocForTest: (doc, byteOverride) => {
         if (!window.__MFG_HEADLESS_TEST && !navigator.webdriver) return null;

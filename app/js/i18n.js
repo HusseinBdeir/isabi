@@ -16225,7 +16225,9 @@
       "+ Slip": "+ إيصال",
       "Queue 1 Slip": "إضافة إيصال واحد للقائمة",
       "1 Slip Ready": "إيصال واحد جاهز",
-      "Send 1 Slip": "إرسال إيصال واحد"
+      "Send 1 Slip": "إرسال إيصال واحد",
+      "Arrived Late": "وصلت متأخرة",
+      "Dismiss All": "إغلاق الكل"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -32432,7 +32434,9 @@
       "+ Slip": "+ Pièce",
       "Queue 1 Slip": "Mettre 1 pièce en file",
       "1 Slip Ready": "1 pièce prête",
-      "Send 1 Slip": "Envoyer 1 pièce"
+      "Send 1 Slip": "Envoyer 1 pièce",
+      "Arrived Late": "Arrivées tardives",
+      "Dismiss All": "Tout masquer"
     }
   };
 
