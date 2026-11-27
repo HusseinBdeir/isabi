@@ -9392,7 +9392,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           && !hasSiteSurfaceMutation(canonTable, pr, sanIr)
           && !hasNonVoidFieldChange(pr, sanIr)
         );
-        const mergedIr = isSparsePureVoid
+        let mergedIr = isSparsePureVoid
           ? restoreSiteSurfaceFromBase(restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr), pr)
           : sanIr;
         if (isSparsePureVoid && voidNoteChanged) {
