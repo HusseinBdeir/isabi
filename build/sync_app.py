@@ -76,6 +76,8 @@ RELEASE_GATES = [
     ("isabi", "build/verify_seat_ai_mask_edge.mjs", "node"),         # zero canViewHub('books'), 12-seat JS/Python parity, Edge & server.py AI mask
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
     ("isabi-app", "build/verify_face_or_pin_local.py", "python"),    # server.py sign-in: Face ID or PIN, never both
+    ("isabi", "build/verify_kiosk_optical_diag_edge.mjs", "node"),
+    ("isabi-app", "build/verify_kiosk_optical_and_bio_sync.mjs", "node"),
     ("isabi-app", "build/verify_seat_preview_resume.mjs", "node"),   # a seat preview (Impersonate) is never resumed on reopening; Face ID decides the seat
     ("isabi-app", "build/verify_records_rbac_parity.py", "python"),  # Local server.py vs Edge d1_store.js /api/records RBAC & DDL parity
     ("isabi-app", "build/verify_face_pad_unit.mjs", "node"),        # passive Face ID liveness + PAD + source bypass guards

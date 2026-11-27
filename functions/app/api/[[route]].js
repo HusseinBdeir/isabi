@@ -16,6 +16,7 @@ import {
   handleGeoAuditGet,
   handleGeoGateSuggestions,
   handleIndustryDomainStore,
+  handleKioskOpticalDiag,
   handleKvDoc,
   handleOverrideRequests,
   handlePhoneScan,
@@ -77,6 +78,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/source_behind',
   '/changed_entries',
   '/device_unsent',
+  '/kiosk_optical_diag',
   '/industry_domain_store',
   '/day-close-push',
   '/push/config'
@@ -277,6 +279,7 @@ async function routeAppApi(context) {
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
       if (subPath === '/device_unsent') return jsonResponse({ ok: true, demo: true, devices: [], minSyncShellVer: effectiveMinSyncShellVer() });
+      if (subPath === '/kiosk_optical_diag') return jsonResponse({ ok: true, demo: true, stations: [] });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
       if (subPath === '/day-close-push') return jsonResponse({ ok: true, demo: true, subscribed: false, endpointCount: 0, vapidPublicKey: '', closeHourBeirut: 18, whatsappPhone: '', lang: 'en', scopeKey: '', lastSentDate: '' });
       if (subPath === '/push/config') return jsonResponse({ ok: true, demo: true, enabled: false, publicKey: '', reason: 'demo' });
@@ -387,6 +390,13 @@ async function routeAppApi(context) {
       return jsonResponse({ ok: false, error: maxUnsentBytes > 2048 ? 'Device report exceeds 4 KB limit.' : 'Device report exceeds 2 KB limit.' }, 413);
     }
     return handleDeviceUnsent(request, env, session, body, { parseError, emptyBody });
+  }
+
+  if (subPath === '/kiosk_optical_diag') {
+    if (rawBytes > 4096) {
+      return jsonResponse({ ok: false, error: 'Diagnostics report exceeds 4 KB limit.' }, 413);
+    }
+    return handleKioskOpticalDiag(request, env, session, body, { parseError, emptyBody });
   }
 
   if (subPath === '/industry_domain_store') {

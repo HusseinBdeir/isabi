@@ -5615,6 +5615,31 @@ function normBioStaffKey(v) {
   return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+export function normalizeStaffBiometricsMap(rawMap, opts = {}) {
+  const out = {};
+  if (!rawMap || typeof rawMap !== 'object' || Array.isArray(rawMap)) return out;
+  const keepInvalid = Boolean(opts && opts.keepInvalid);
+  for (const [rawSk, val] of Object.entries(rawMap)) {
+    const nk = normBioStaffKey(rawSk).slice(0, 160);
+    if (!nk) continue;
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
+      if (keepInvalid && !(nk in out)) out[nk] = val;
+      continue;
+    }
+    const existing = out[nk];
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      out[nk] = val;
+      continue;
+    }
+    const candTs = String(val.updated_at || val.face_updated_at || '');
+    const existTs = String(existing.updated_at || existing.face_updated_at || '');
+    if (compareIsoTsMs(candTs, existTs) >= 0) {
+      out[nk] = val;
+    }
+  }
+  return out;
+}
+
 function canonicalizeStaffBioCompanyList(raw) {
   const cos = parseAllowedCompanies(raw).filter(c => c && c !== '*');
   const out = [];
@@ -5660,10 +5685,14 @@ export async function handleStaffBiometrics(request, env, session, body) {
     const out = {};
     for (const r of (res.results || [])) {
       const obj = safeJsonParse(r.payload_json, null);
-      if (!r.staff_key || !obj) continue;
+      const nk = normBioStaffKey(r && r.staff_key).slice(0, 160);
+      if (!nk || !obj) continue;
       const co = String(r.company || obj.company || '').trim();
       if (restrictRls && (!co || !canReadStaffBiometricCompany(session, co))) continue;
-      out[r.staff_key] = obj;
+      const prev = out[nk];
+      if (!prev || compareIsoTsMs(String(obj.updated_at || obj.face_updated_at || ''), String(prev.updated_at || prev.face_updated_at || '')) >= 0) {
+        out[nk] = obj;
+      }
     }
     return jsonResponse({ ok: true, staff_biometrics: out });
   }
@@ -6708,6 +6737,242 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
      ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
   ).bind(docKey, JSON.stringify(stored), nowIso).run();
   return jsonResponse({ ok: true, saved: true, state: 'holding' });
+}
+
+const KIOSK_OPTICAL_DIAG_PREFIX = 'kiosk_optical_diag:';
+const KIOSK_OPTICAL_DIAG_MAX_ROWS = 200;
+const KIOSK_OPTICAL_DIAG_RETENTION_DAYS = 30;
+const KIOSK_OPTICAL_BAND_KEYS = Object.freeze(['dawn', 'day', 'dusk', 'night']);
+const KIOSK_OPTICAL_INDUSTRY_ALIASES = {
+  manufacturing: 'Manufacturing',
+  mfg: 'Manufacturing',
+  holding: 'Holding & Treasury',
+  'holding & treasury': 'Holding & Treasury',
+  hospitality: 'Hospitality & Resorts',
+  'hospitality & resorts': 'Hospitality & Resorts',
+  trading: 'Automotive & Heavy Trading',
+  'automotive & heavy trading': 'Automotive & Heavy Trading',
+  'real estate': 'Real Estate & Property',
+  'real estate & property': 'Real Estate & Property',
+  realestate: 'Real Estate & Property',
+  insurance: 'Insurance & Brokerage',
+  'insurance & brokerage': 'Insurance & Brokerage'
+};
+const KIOSK_OPTICAL_COMPANY_IND = {
+  wtc: 'Manufacturing',
+  bbconstruction: 'Manufacturing',
+  'lions transport': 'Manufacturing',
+  'bdeir holding': 'Holding & Treasury',
+  blanca: 'Hospitality & Resorts',
+  'la una': 'Hospitality & Resorts',
+  palms: 'Hospitality & Resorts',
+  voile: 'Hospitality & Resorts',
+  platinum: 'Hospitality & Resorts',
+  'korri auto': 'Automotive & Heavy Trading',
+  shacman: 'Automotive & Heavy Trading',
+  properties: 'Real Estate & Property',
+  '4235 company s.a.l': 'Real Estate & Property',
+  'insurance company': 'Insurance & Brokerage'
+};
+
+export function isKioskOpticalDiagDoc(docKey) {
+  const k = String(docKey || '');
+  return k === 'kiosk_optical_diag' || k.startsWith(KIOSK_OPTICAL_DIAG_PREFIX);
+}
+
+function clampOpticalInt(v, max = 1000000) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(max, Math.round(n));
+}
+
+function clampOpticalNum(v, max = 1000000, dp = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const clamped = Math.min(max, n);
+  const f = Math.pow(10, dp);
+  return Math.round(clamped * f) / f;
+}
+
+function canonKioskOpticalIndustry(rawInd, company) {
+  const k = String(rawInd || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (k && KIOSK_OPTICAL_INDUSTRY_ALIASES[k]) return KIOSK_OPTICAL_INDUSTRY_ALIASES[k];
+  const ck = canonEntityKey(company || '');
+  return KIOSK_OPTICAL_COMPANY_IND[ck] || 'Manufacturing';
+}
+
+export function diagnoseKioskOpticalHealthRank(row) {
+  if (!row || typeof row !== 'object') return { level: 'baseline', rank: 3 };
+  const scans = Number(row.scans_total || 0);
+  const hal = Number(row.hal_restarts || 0);
+  if (scans < 5 && hal < 2) return { level: 'baseline', rank: 3 };
+  if (hal >= 3) return { level: 'crit', rank: 0 };
+  const padSpoof = Number(row.pad_spoof_count || 0);
+  const padRate = scans > 0 ? padSpoof / scans : 0;
+  let maxBandSpoof = 0;
+  const bands = (row.bands && typeof row.bands === 'object') ? row.bands : {};
+  for (const bk of KIOSK_OPTICAL_BAND_KEYS) {
+    const b = bands[bk];
+    if (b && typeof b === 'object') maxBandSpoof = Math.max(maxBandSpoof, Number(b.pad_spoof || 0));
+  }
+  const worstBandSpoofShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
+  if (padRate >= 0.30) return { level: 'crit', rank: 0 };
+  if (padRate >= 0.18 || (padRate >= 0.12 && worstBandSpoofShare >= 0.55)) return { level: 'warn', rank: 1 };
+  const lowRate = scans > 0 ? Number(row.det_low_light_count || 0) / scans : 0;
+  const lumaCnt = Number(row.ambient_luma_count || 0);
+  const meanLuma = lumaCnt > 0 ? Number(row.ambient_luma_sum || 0) / lumaCnt : 0;
+  if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) return { level: 'warn', rank: 1 };
+  const smallRate = scans > 0 ? Number(row.small_face_count || 0) / scans : 0;
+  if (smallRate >= 0.28) return { level: 'warn', rank: 1 };
+  const edgeCnt = Number(row.edge_verify_count || 0);
+  const edgeP95 = Number(row.edge_verify_p95_ms || 0);
+  const edgeFailRate = edgeCnt > 0 ? Number(row.edge_verify_fail_count || 0) / edgeCnt : 0;
+  if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) return { level: 'warn', rank: 1 };
+  return { level: 'healthy', rank: 2 };
+}
+
+export function validateKioskOpticalDiagReport(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'Invalid optical diagnostics payload.' };
+  }
+  const deviceId = String(body.device_id == null ? '' : body.device_id).trim();
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(deviceId)) {
+    return { ok: false, error: 'Invalid device id.' };
+  }
+  const company = canonicalizeCompanyName(body.company || '');
+  if (!company || !isKnownCanonicalCompany(company)) {
+    return { ok: false, error: 'Valid canonical company required.' };
+  }
+  if (body.action === 'reset') {
+    return { ok: true, val: { action: 'reset', device_id: deviceId, company } };
+  }
+  if (body.action !== undefined) {
+    return { ok: false, error: 'Invalid action.' };
+  }
+  const site = cleanDeviceUnsentText(body.site || `${company} Main Entrance`, 80) || `${company} Main Entrance`;
+  const shellRaw = String(body.shell == null ? '' : body.shell).trim();
+  const shell = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(shellRaw) ? shellRaw : '';
+  const fillLightMode = String(body.fill_light_mode || 'auto').trim().toLowerCase() === 'off' ? 'off' : 'auto';
+  const rawBands = (body.bands && typeof body.bands === 'object' && !Array.isArray(body.bands)) ? body.bands : {};
+  const bands = {};
+  for (const bk of KIOSK_OPTICAL_BAND_KEYS) {
+    const rb = (rawBands[bk] && typeof rawBands[bk] === 'object') ? rawBands[bk] : {};
+    bands[bk] = {
+      scans: clampOpticalInt(rb.scans),
+      low_light: clampOpticalInt(rb.low_light),
+      pad_spoof: clampOpticalInt(rb.pad_spoof),
+      small_face: clampOpticalInt(rb.small_face)
+    };
+  }
+  return {
+    ok: true,
+    val: {
+      device_id: deviceId,
+      company,
+      industry: canonKioskOpticalIndustry(body.industry, company),
+      site,
+      shell,
+      fill_light_mode: fillLightMode,
+      scans_total: clampOpticalInt(body.scans_total),
+      punches_ok: clampOpticalInt(body.punches_ok),
+      det_score_sum: clampOpticalNum(body.det_score_sum, 1000000, 4),
+      det_score_count: clampOpticalInt(body.det_score_count),
+      det_low_light_count: clampOpticalInt(body.det_low_light_count),
+      fill_light_activations: clampOpticalInt(body.fill_light_activations),
+      small_face_count: clampOpticalInt(body.small_face_count),
+      pad_spoof_count: clampOpticalInt(body.pad_spoof_count),
+      unrecognized_count: clampOpticalInt(body.unrecognized_count),
+      liveness_timeout_count: clampOpticalInt(body.liveness_timeout_count),
+      ambient_luma_sum: clampOpticalNum(body.ambient_luma_sum, 255000000, 2),
+      ambient_luma_count: clampOpticalInt(body.ambient_luma_count),
+      edge_verify_count: clampOpticalInt(body.edge_verify_count),
+      edge_verify_ms_sum: clampOpticalInt(body.edge_verify_ms_sum, 60000000000),
+      edge_verify_p95_ms: clampOpticalInt(body.edge_verify_p95_ms, 60000),
+      edge_verify_fail_count: clampOpticalInt(body.edge_verify_fail_count),
+      hal_restarts: clampOpticalInt(body.hal_restarts),
+      bands
+    }
+  };
+}
+
+export function listKioskOpticalDiagRows(rows, nowMs, canReadCompany = null) {
+  const out = [];
+  const maxAgeMs = KIOSK_OPTICAL_DIAG_RETENTION_DAYS * 86400000;
+  for (const row of (rows || [])) {
+    const p = safeJsonParse(row && row.payload_json, null);
+    if (!p || typeof p !== 'object' || Array.isArray(p)) continue;
+    const repMs = Date.parse(String(p.reported_at || ''));
+    if (!Number.isFinite(repMs) || (nowMs - repMs) > maxAgeMs) continue;
+    const co = canonicalizeCompanyName(p.company || '');
+    if (!co) continue;
+    if (typeof canReadCompany === 'function' && !canReadCompany(co)) continue;
+    const diag = diagnoseKioskOpticalHealthRank(p);
+    out.push(Object.assign({}, p, { company: co, health_level: diag.level, _rank: diag.rank }));
+  }
+  out.sort((a, b) => {
+    if (a._rank !== b._rank) return a._rank - b._rank;
+    const scDiff = Number(b.scans_total || 0) - Number(a.scans_total || 0);
+    if (scDiff !== 0) return scDiff;
+    return String(b.reported_at || '').localeCompare(String(a.reported_at || ''));
+  });
+  for (const item of out) delete item._rank;
+  return out;
+}
+
+export async function handleKioskOpticalDiag(request, env, session, body, bodyMeta = null) {
+  if (request.method === 'GET') {
+    if (isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, stations: [] });
+    if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+    if (!env || !env.DB) return jsonResponse({ ok: true, stations: [] });
+    const fullGroup = isOwnerOrFullGroupSession(session);
+    const res = await env.DB.prepare(
+      "SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE 'kiosk_optical_diag:%' ORDER BY updated_at DESC LIMIT ?1"
+    ).bind(KIOSK_OPTICAL_DIAG_MAX_ROWS).all();
+    const stations = listKioskOpticalDiagRows(res.results || [], Date.now(), fullGroup ? null : co => canAccessCompany(session, co));
+    return jsonResponse({ ok: true, stations });
+  }
+  if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+  if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (bodyMeta && (bodyMeta.parseError || bodyMeta.emptyBody)) {
+    return jsonResponse({ ok: false, error: 'Valid non-empty JSON body required.' }, 400);
+  }
+  const chk = validateKioskOpticalDiagReport(body);
+  if (!chk.ok) return jsonResponse({ ok: false, error: chk.error }, 400);
+  const val = chk.val;
+  if (!isOwnerOrFullGroupSession(session) && !canAccessCompany(session, val.company)) {
+    return jsonResponse({ ok: false, error: 'Company scope denied for station optical diagnostics.' }, 403);
+  }
+  const seatId = String(session.sub || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+  if (!seatId) return jsonResponse({ ok: false, error: 'Seat not recognised.' }, 403);
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
+  const rl = await checkD1RateLimit(env, `kiosk-opt-diag:${seatId}`, 40, 600);
+  if (!rl.allowed) return jsonResponse({ ok: false, error: 'Too many optical diagnostics updates. Try again later.' }, 429);
+  const coSlug = String(val.company || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const docKey = `${KIOSK_OPTICAL_DIAG_PREFIX}${coSlug}:${val.device_id}`;
+  if (val.action === 'reset') {
+    if (!canManageUsersSeat(session)) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner permissions required to reset station diagnostics.' }, 403);
+    }
+    const delRes = await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).run();
+    const deleted = Number(delRes && delRes.meta && delRes.meta.changes) || 0;
+    return jsonResponse({ ok: true, reset: deleted > 0, doc_key: docKey });
+  }
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const cutoffIso = new Date(nowMs - KIOSK_OPTICAL_DIAG_RETENTION_DAYS * 86400000).toISOString();
+  await env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'kiosk_optical_diag:%' AND updated_at < ?1").bind(cutoffIso).run();
+  const stored = Object.assign({}, val, {
+    doc_key: docKey,
+    reported_at: nowIso,
+    reported_by_seat: seatId
+  });
+  await env.DB.prepare(
+    `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
+     VALUES (?1, ?2, ?3, ?4, 1)
+     ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by, rev = edge_kv_store.rev + 1`
+  ).bind(docKey, JSON.stringify(stored), nowIso, String(session.email || seatId)).run();
+  return jsonResponse({ ok: true, doc_key: docKey, reported_at: nowIso });
 }
 
 export async function handleIndustryDomainStore(request, env, session, body, ctx = null) {
@@ -8000,32 +8265,48 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       }
     }
 
-    if ((!session || canEnrolStaffBiometricsSession(session)) && (storePayload.staffBiometrics || (hasPrev && prevStorePayload.staffBiometrics))) {
+    const rawPrevSbForBio = (hasPrev && prevStorePayload.staffBiometrics && typeof prevStorePayload.staffBiometrics === 'object') ? prevStorePayload.staffBiometrics : {};
+    const legacyBioAliasKeys = new Set();
+    for (const rawSk of Object.keys(rawPrevSbForBio)) {
+      const nk = normBioStaffKey(rawSk).slice(0, 160);
+      if (nk && nk !== rawSk) legacyBioAliasKeys.add(nk);
+    }
+    const canCallerEnrolBio = !session || canEnrolStaffBiometricsSession(session);
+    if ((canCallerEnrolBio || legacyBioAliasKeys.size > 0) && (storePayload.staffBiometrics || (hasPrev && prevStorePayload.staffBiometrics))) {
       const bioProtectedAdminNames = (session && !isOwnerOrFullGroupSession(session))
         ? await loadProtectedAdminNormNames(db)
         : null;
-      const prevSb = (hasPrev && prevStorePayload.staffBiometrics && typeof prevStorePayload.staffBiometrics === 'object') ? prevStorePayload.staffBiometrics : {};
-      const curSb = (storePayload.staffBiometrics && typeof storePayload.staffBiometrics === 'object') ? storePayload.staffBiometrics : {};
+      const rawPrevSb = rawPrevSbForBio;
+      const prevSb = normalizeStaffBiometricsMap(rawPrevSb);
+      const curSb = canCallerEnrolBio ? normalizeStaffBiometricsMap(storePayload.staffBiometrics) : prevSb;
+      const upsertedBioKeys = new Set();
       for (const [sk, entry] of Object.entries(curSb)) {
         if (!sk || !entry || typeof entry !== 'object') continue;
-        if (prevSb[sk] && stableRowSig(prevSb[sk]) === stableRowSig(entry)) continue;
-        if (bioProtectedAdminNames && (bioProtectedAdminNames.has(normBioStaffKey(sk)) || bioProtectedAdminNames.has(normBioStaffKey(entry.name || '')))) continue;
+        const isLegacyMigKey = legacyBioAliasKeys.has(sk);
+        if (!canCallerEnrolBio && !isLegacyMigKey) continue;
+        if ((sk in rawPrevSb) && !isLegacyMigKey && prevSb[sk] && stableRowSig(prevSb[sk]) === stableRowSig(entry)) continue;
+        if (canCallerEnrolBio && bioProtectedAdminNames && (bioProtectedAdminNames.has(normBioStaffKey(sk)) || bioProtectedAdminNames.has(normBioStaffKey(entry.name || '')))) continue;
         const co = canonicalizeStaffBioCompanyList(entry.company || '');
-        if (restrictRls && (!co || !canWriteStaffBiometricCompany(session, co))) continue;
+        if (canCallerEnrolBio && !isLegacyMigKey && restrictRls && (!co || !canWriteStaffBiometricCompany(session, co))) continue;
         const bioTs = String(entry.updated_at || entry.face_updated_at || '');
         const entryOut = Object.assign({}, entry, { company: co, updated_at: bioTs });
+        upsertedBioKeys.add(sk);
         subStmts.push(
           db.prepare('INSERT OR REPLACE INTO staff_biometrics (staff_key, company, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
             .bind(sk, co, JSON.stringify(entryOut), bioTs)
         );
       }
-      if (hasPrev && canManageSeats) {
-        for (const [sk, pEntry] of Object.entries(prevSb)) {
-          if (sk in curSb) continue;
-          if (bioProtectedAdminNames && (bioProtectedAdminNames.has(normBioStaffKey(sk)) || bioProtectedAdminNames.has(normBioStaffKey((pEntry && pEntry.name) || '')))) continue;
+      if (hasPrev) {
+        for (const [rawSk, pEntry] of Object.entries(rawPrevSb)) {
+          const sk = normBioStaffKey(rawSk).slice(0, 160);
+          if (!sk) continue;
+          if (sk in curSb && rawSk === sk) continue;
+          const isAliasCleanup = (sk in curSb) && rawSk !== sk && (upsertedBioKeys.has(sk) || (sk in rawPrevSb));
+          if (!isAliasCleanup && (!canCallerEnrolBio || !canManageSeats)) continue;
+          if (!isAliasCleanup && bioProtectedAdminNames && (bioProtectedAdminNames.has(sk) || bioProtectedAdminNames.has(normBioStaffKey((pEntry && pEntry.name) || '')))) continue;
           const pCo = canonicalizeStaffBioCompanyList((pEntry && pEntry.company) || '');
-          if (restrictRls && (!pCo || !canWriteStaffBiometricCompany(session, pCo))) continue;
-          subStmts.push(db.prepare('DELETE FROM staff_biometrics WHERE staff_key = ?1').bind(String(sk)));
+          if (!isAliasCleanup && restrictRls && (!pCo || !canWriteStaffBiometricCompany(session, pCo))) continue;
+          subStmts.push(db.prepare('DELETE FROM staff_biometrics WHERE staff_key = ?1').bind(String(rawSk)));
         }
       }
     }
@@ -8555,14 +8836,14 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
   }
   const canEnrolBio = canEnrolStaffBiometricsSession(session);
   if (!canEnrolBio) {
-    if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
+    if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(prev.staffBiometrics);
     else delete incomingDoc.staffBiometrics;
   } else if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
     const protectedAdminNames = !isOwnerOrFullGroupSession(session)
       ? await loadProtectedAdminNormNames(db)
       : null;
-    const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
-    const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
+    const pSb = normalizeStaffBiometricsMap(prev.staffBiometrics);
+    const iSb = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics, { keepInvalid: true });
     const safeSb = {};
     for (const [sk, pv] of Object.entries(pSb)) {
       const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
@@ -9012,7 +9293,7 @@ function expandDeltaMfgPatch(incomingDoc, prevDoc) {
   const delIndRow = (incomingDoc._deletedIndRowIds && typeof incomingDoc._deletedIndRowIds === 'object' && !Array.isArray(incomingDoc._deletedIndRowIds)) ? incomingDoc._deletedIndRowIds : {};
   const delIndEdit = Array.isArray(incomingDoc._deletedIndEditKeys) ? new Set(incomingDoc._deletedIndEditKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
   const delPunch = Array.isArray(incomingDoc._deletedPunchIds) ? new Set(incomingDoc._deletedPunchIds.map(x => String(x || '').trim()).filter(Boolean)) : null;
-  const delBio = Array.isArray(incomingDoc._deletedBioKeys) ? new Set(incomingDoc._deletedBioKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
+  const delBio = Array.isArray(incomingDoc._deletedBioKeys) ? new Set(incomingDoc._deletedBioKeys.map(x => normBioStaffKey(x).slice(0, 160)).filter(Boolean)) : null;
   const delSr = Array.isArray(incomingDoc._deletedSrKeys) ? new Set(incomingDoc._deletedSrKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
   const delPh = Array.isArray(incomingDoc._deletedPhKeys) ? new Set(incomingDoc._deletedPhKeys.map(x => String(x || '').trim()).filter(Boolean)) : null;
   stripDeltaWireFields(incomingDoc);
@@ -9151,14 +9432,15 @@ function expandDeltaMfgPatch(incomingDoc, prevDoc) {
   }
 
   if (Object.prototype.hasOwnProperty.call(incomingDoc, 'staffBiometrics') || (delBio && delBio.size)) {
-    const mergedSb = Object.assign({}, (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {});
+    const mergedSb = normalizeStaffBiometricsMap(prev.staffBiometrics);
     if (delBio) delBio.forEach(k => delete mergedSb[k]);
     if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
-      Object.assign(mergedSb, incomingDoc.staffBiometrics);
+      const incNormSb = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics, { keepInvalid: true });
+      Object.assign(mergedSb, incNormSb);
     }
     incomingDoc.staffBiometrics = mergedSb;
   } else if (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') {
-    incomingDoc.staffBiometrics = prev.staffBiometrics;
+    incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(prev.staffBiometrics);
   }
 
   if (Object.prototype.hasOwnProperty.call(incomingDoc, 'sentinelReviews') || (delSr && delSr.size)) {
@@ -9188,11 +9470,14 @@ function scopeStoreDocForSession(docObj, session) {
   if (!docObj || typeof docObj !== 'object') return docObj;
   const isBuildTicket = Boolean(session && session.build_ticket);
   if (session && isOwnerOrFullGroupSession(session)) {
-    if (isBuildTicket && !Array.isArray(docObj.users)) return docObj;
+    if (isBuildTicket && !Array.isArray(docObj.users) && !(docObj.staffBiometrics && typeof docObj.staffBiometrics === 'object')) return docObj;
     const ownerCopy = Object.assign({}, docObj);
     if (!isBuildTicket) delete ownerCopy._retiredSysTopupIds;
     if (Array.isArray(docObj.users)) {
       ownerCopy.users = docObj.users.map(redactFaceSamplesFromUserObj);
+    }
+    if (docObj.staffBiometrics && typeof docObj.staffBiometrics === 'object') {
+      ownerCopy.staffBiometrics = normalizeStaffBiometricsMap(docObj.staffBiometrics);
     }
     return ownerCopy;
   }
@@ -9324,8 +9609,9 @@ function scopeStoreDocForSession(docObj, session) {
   }
 
   if (docObj.staffBiometrics && typeof docObj.staffBiometrics === 'object') {
+    const normSb = normalizeStaffBiometricsMap(docObj.staffBiometrics);
     const scopedSb = {};
-    for (const [sk, bv] of Object.entries(docObj.staffBiometrics)) {
+    for (const [sk, bv] of Object.entries(normSb)) {
       if (!bv || typeof bv !== 'object') continue;
       const co = String(bv.company || '').trim();
       if (co && canReadStaffBiometricCompany(session, co)) scopedSb[sk] = bv;
@@ -10473,6 +10759,9 @@ export async function handleSync(request, env, session, body, _ctx) {
   if (isDeviceUnsentDoc(docKey) || patchDocKeys.some(isDeviceUnsentDoc)) {
     return jsonResponse({ ok: false, error: 'Device reports are managed from /api/device_unsent.' }, 403);
   }
+  if (isKioskOpticalDiagDoc(docKey) || patchDocKeys.some(isKioskOpticalDiagDoc)) {
+    return jsonResponse({ ok: false, error: 'Station optical diagnostics are managed from /api/kiosk_optical_diag.' }, 400);
+  }
   if (
     body &&
     body.op === 'patch' &&
@@ -10636,10 +10925,16 @@ export async function handleSync(request, env, session, body, _ctx) {
         expandDeltaMfgPatch(incomingDoc, prevDoc);
       } else {
         stripDeltaWireFields(incomingDoc);
+        if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
+          incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics, { keepInvalid: true });
+        }
       }
       crSyncMeta = {};
       pruneBloatedShiftBackfillAttRows(incomingDoc, prevDoc, crSyncMeta);
       if (isOwnerOrFullGroupSession(session)) {
+        if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
+          incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics);
+        }
         mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session);
       } else {
         await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
