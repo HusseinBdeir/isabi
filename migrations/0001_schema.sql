@@ -340,6 +340,33 @@ CREATE TABLE IF NOT EXISTS edge_kv_store (
   rev INTEGER DEFAULT 1
 );
 
+-- Row sync (functions/_lib/row_sync.js): which entry of mfg_web_store changed at which revision. A derived index of
+-- the stored document, valid only while store_row_meta.doc_ts equals the document's updated_at; rebuilt from the
+-- document whenever the two differ. mode 0 switches partial answers off; audit_bad above 0 does the same.
+CREATE TABLE IF NOT EXISTS store_row_index (
+  doc_key TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  hash TEXT NOT NULL DEFAULT '',
+  rev INTEGER NOT NULL DEFAULT 0,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (doc_key, bucket, row_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_row_index_rev ON store_row_index (doc_key, rev);
+
+CREATE TABLE IF NOT EXISTS store_row_meta (
+  doc_key TEXT PRIMARY KEY,
+  epoch TEXT NOT NULL,
+  rev INTEGER NOT NULL DEFAULT 0,
+  doc_ts TEXT NOT NULL DEFAULT '',
+  floor_rev INTEGER NOT NULL DEFAULT 0,
+  mode INTEGER NOT NULL DEFAULT 2,
+  audit_ok INTEGER NOT NULL DEFAULT 0,
+  audit_bad INTEGER NOT NULL DEFAULT 0,
+  audit_note TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sentinel_reviews (
   id TEXT PRIMARY KEY,
   rule_id TEXT DEFAULT '',
