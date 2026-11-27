@@ -386,34 +386,51 @@ def verify_min_sync_shell_parity(
     *,
     max_lag: int = MAX_MIN_SHELL_LAG,
 ) -> str:
-    """Assert d1_store.js and server.py define the exact same MIN_SYNC_SHELL_VER and stay within max_lag of sw_ver."""
+    """Assert d1_store.js and server.py match MIN_SYNC_SHELL_VER, js/app.js MIN_SYNC_SHELL_FALLBACK <= MIN_SYNC_SHELL_VER on the same major/minor branch, and stay within max_lag of sw_ver."""
     if not _PLAIN_SHELL_VER_RE.fullmatch(str(sw_ver or "").strip()):
         raise SystemExit(f"ERROR: Invalid sw.js shell version {sw_ver!r} for MIN_SYNC_SHELL_VER parity check")
     d1_path = os.path.join(isabi_root, "functions", "_lib", "d1_store.js")
     srv_path = os.path.join(app_src_root, "server.py")
+    app_js_path = os.path.join(app_src_root, "js", "app.js")
     if not os.path.isfile(d1_path):
         raise SystemExit(f"ERROR: Missing {d1_path} for MIN_SYNC_SHELL_VER parity check")
     if not os.path.isfile(srv_path):
         raise SystemExit(f"ERROR: Missing {srv_path} for MIN_SYNC_SHELL_VER parity check")
+    if not os.path.isfile(app_js_path):
+        raise SystemExit(f"ERROR: Missing {app_js_path} for MIN_SYNC_SHELL_FALLBACK parity check")
     with open(d1_path, "r", encoding="utf-8") as fh:
         m_d1 = re.search(r"export\s+const\s+MIN_SYNC_SHELL_VER\s*=\s*['\"]([^'\"]+)['\"]", fh.read())
     with open(srv_path, "r", encoding="utf-8") as fh:
         m_srv = re.search(r"^MIN_SYNC_SHELL_VER\s*=\s*['\"]([^'\"]+)['\"]", fh.read(), re.M)
+    with open(app_js_path, "r", encoding="utf-8") as fh:
+        m_app = re.search(r"\bMIN_SYNC_SHELL_FALLBACK\s*=\s*['\"]([^'\"]+)['\"]", fh.read())
     if not m_d1:
         raise SystemExit(f"ERROR: Could not parse MIN_SYNC_SHELL_VER in {d1_path}")
     if not m_srv:
         raise SystemExit(f"ERROR: Could not parse MIN_SYNC_SHELL_VER in {srv_path}")
+    if not m_app:
+        raise SystemExit(f"ERROR: Could not parse MIN_SYNC_SHELL_FALLBACK in {app_js_path}")
     d1_ver = m_d1.group(1).strip()
     srv_ver = m_srv.group(1).strip()
-    for lbl, val in (("d1_store.js", d1_ver), ("server.py", srv_ver)):
+    app_fb_ver = m_app.group(1).strip()
+    for lbl, val in (("d1_store.js", d1_ver), ("server.py", srv_ver), ("js/app.js MIN_SYNC_SHELL_FALLBACK", app_fb_ver)):
         if not _PLAIN_SHELL_VER_RE.fullmatch(val):
             raise SystemExit(f"ERROR: Invalid MIN_SYNC_SHELL_VER={val!r} in {lbl}")
     if d1_ver != srv_ver:
         raise SystemExit(
             f"ERROR: MIN_SYNC_SHELL_VER parity mismatch: d1_store.js={d1_ver} vs server.py={srv_ver}"
         )
-    sw_parts = [int(x) for x in sw_ver.strip().split(".")]
     fl_parts = [int(x) for x in d1_ver.split(".")]
+    fb_parts = [int(x) for x in app_fb_ver.split(".")]
+    if len(fb_parts) < 3 or tuple(fb_parts[:-1]) != tuple(fl_parts[:-1]):
+        raise SystemExit(
+            f"ERROR: js/app.js MIN_SYNC_SHELL_FALLBACK={app_fb_ver} major/minor branch differs from MIN_SYNC_SHELL_VER={d1_ver}"
+        )
+    if fb_parts[-1] > fl_parts[-1]:
+        raise SystemExit(
+            f"ERROR: js/app.js MIN_SYNC_SHELL_FALLBACK={app_fb_ver} exceeds MIN_SYNC_SHELL_VER={d1_ver}"
+        )
+    sw_parts = [int(x) for x in sw_ver.strip().split(".")]
     if len(sw_parts) < 3 or len(fl_parts) < 3:
         raise SystemExit(
             f"ERROR: Expected 3-part dotted versions for MIN_SYNC_SHELL_VER ({d1_ver}) and sw.js ({sw_ver})"
