@@ -3381,7 +3381,8 @@
         if (!pr) return;
         prevSelMap.set(`${pr.idx}|${pr.ticketRef}|${pr.matchedSupplier}`, {
           selected: Boolean(pr.selected),
-          gateBlocked: Boolean(pr.gateBlocked)
+          gateBlocked: Boolean(pr.gateBlocked),
+          status: pr.status || ''
         });
       });
     }
@@ -3427,7 +3428,13 @@
       });
     }
 
-    const getRuleRate = pr => Number((pr && (pr.unit_price ?? pr.price ?? pr.rate ?? pr.material_price ?? pr.trans_unit_price ?? pr.trans_price ?? pr.transport_price)) || 0);
+    const getRuleRate = pr => {
+      if (!pr) return 0;
+      if (/^Transport Price|^Haulage/i.test(String(pr.rule_type || ''))) {
+        return Number(pr.trans_unit_price ?? pr.trans_price ?? pr.transport_rate ?? pr.indiff_price ?? pr.trans_indiff_price ?? pr.unit_price ?? pr.price ?? pr.rate ?? 0);
+      }
+      return Number(pr.unit_price ?? pr.price ?? pr.rate ?? pr.material_price ?? pr.indiff_price ?? pr.trans_unit_price ?? pr.trans_price ?? 0);
+    };
     const getRawQty = rp => Number((rp && (rp.qty ?? rp.tons ?? rp.m3_qty ?? rp.m3)) || 0);
     const rawQtyInTons = rp => {
       if (!rp) return 0;
@@ -3450,7 +3457,7 @@
       const siteHint = siteTagMatch ? cleanAiSiteLabel(siteTagMatch[1]) : '';
       const itemDescRaw = (parts[2] || 'Raw Aggregate').replace(/^site\s*:\s*/i, '').trim();
       const itemDesc = itemDescRaw || (siteHint || 'Raw Aggregate');
-      const qtyMatch = line.match(/([\d,.]+)\s*(?:ton|t\b|m3|m³|طن)/i);
+      const qtyMatch = line.match(/([\d,.]+)\s*(?:ton|t\b|m3|m³|trucks?|طن|نقلة)/i);
       const rateMatch = line.match(/rate\s*:\s*\$?([\d,.]+)/i);
       const billedMatch = line.match(/billed\s*:\s*\$?([\d,.]+)/i);
       const dateMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
@@ -3468,23 +3475,36 @@
       const confPct = ranked.length ? Math.min(99, Math.round(70 + ranked[0].score * 29)) : 86;
 
       // Cross-check logged raw_purchases weighbridge loads & unpriced $0 tickets deterministically
+      // Prefer exact/substring ticket match when the statement reference hits logged ticket(s),
+      // falling back to site/product aggregation only for summary lines without a matching ticket ref.
       const cleanRefNorm = normAiSiteTxt(ticketRef.replace(/^#/, ''));
-      const matchedRawRows = rawPurchases.filter(rp => {
-        if (!rp || rp.voided) return false;
+      const exactTicketMatches = [];
+      const fallbackSiteMatches = [];
+      for (let ri = 0; ri < rawPurchases.length; ri++) {
+        const rp = rawPurchases[ri];
+        if (!rp || rp.voided) continue;
         const rpTicket = normAiSiteTxt(String(rp.ticket_no || rp.id || rp.ref || '').replace(/^#/, ''));
         const sameSo = normAiSiteTxt(rp.site_owner) === supNorm;
         const sameTo = normAiSiteTxt(rp.truck_owner) === supNorm;
         const ticketExact = cleanRefNorm && rpTicket && rpTicket === cleanRefNorm;
         const ticketSub = cleanRefNorm.length >= 4 && rpTicket && rpTicket.includes(cleanRefNorm) && (sameSo || sameTo);
-        if (ticketSub) return true;
-        if (ticketExact && (sameSo || sameTo || !supNorm)) return true;
-        if (!sameSo && !sameTo) return false;
-        if (siteHint) return normAiSiteTxt(rp.site) === normAiSiteTxt(siteHint);
+        if (ticketSub || (ticketExact && (sameSo || sameTo || !supNorm))) {
+          exactTicketMatches.push(rp);
+          continue;
+        }
+        if (!sameSo && !sameTo) continue;
+        if (siteHint) {
+          if (normAiSiteTxt(rp.site) === normAiSiteTxt(siteHint)) fallbackSiteMatches.push(rp);
+          continue;
+        }
         const rpProdNorm = normAiSiteTxt(rp.product);
         const rpSiteNorm = normAiSiteTxt(rp.site);
         const descNorm = normAiSiteTxt(itemDesc);
-        return Boolean(descNorm && ((rpProdNorm && descNorm.includes(rpProdNorm)) || (rpSiteNorm && descNorm.includes(rpSiteNorm))));
-      });
+        if (descNorm && ((rpProdNorm && descNorm.includes(rpProdNorm)) || (rpSiteNorm && descNorm.includes(rpSiteNorm)))) {
+          fallbackSiteMatches.push(rp);
+        }
+      }
+      const matchedRawRows = exactTicketMatches.length ? exactTicketMatches : fallbackSiteMatches;
 
       const isMatZero = rp => {
         if (String(rp.method || 'Credit').trim() !== 'Credit') return false;
@@ -3633,15 +3653,37 @@
         }) || null;
       }
       const hitRuleRate = hitRule ? getRuleRate(hitRule) : 0;
-      const hitRuleUnit = hitRule ? String((inferredLeg === 'transportation' ? (hitRule.rate_per || hitRule.unit) : hitRule.unit) || 'm³') : 'Ton';
-      if (!rateMatch && hitRuleRate > 0) {
+      const hitRuleUnit = hitRule
+        ? normUomFn((inferredLeg === 'transportation' ? (hitRule.rate_per || hitRule.unit) : hitRule.unit) || 'm³')
+        : 'Ton';
+      if (!isDemoShowcaseSample && hitRuleRate > 0) {
+        contractRate = hitRuleRate;
+      } else if (!rateMatch && hitRuleRate > 0) {
         contractRate = hitRuleRate;
       }
 
-      const expectedNet = round2(qty * contractRate);
+      const loadsCount = Math.max(1, loadsTagMatch ? Number(String(loadsTagMatch[1]).replace(/,/g, '')) : (matchedRawRows.length || 1));
+      let expectedUnits = qty;
+      if (!isDemoShowcaseSample && hitRuleRate > 0) {
+        if (/^truck/i.test(hitRuleUnit)) {
+          expectedUnits = /^truck/i.test(stmtBilledUnit) ? qty : loadsCount;
+        } else if (/^m[³3]$/i.test(hitRuleUnit) && stmtBilledUnit === 'Ton') {
+          const loggedM3 = matchedRawRows.reduce((s, rp) => s + (rp && /^m[³3]$/i.test(String(rp.uom || '')) ? getRawQty(rp) : 0), 0);
+          expectedUnits = loggedM3 > 0 ? loggedM3 : round4(qty / 1.6);
+        }
+      }
+      const expectedNet = (!isDemoShowcaseSample && hitRuleRate > 0)
+        ? round2(expectedUnits * contractRate)
+        : round2(qty * contractRate);
       const vatUsd = isIva ? round2(expectedNet * 0.11) : 0;
       const expectedUsd = round2(expectedNet + vatUsd);
       const varianceUsd = round2(billedUsd - expectedUsd);
+      const netBilledUsd = isIva ? (billedUsd / 1.11) : billedUsd;
+      const effBilledRate = (!isDemoShowcaseSample && hitRuleRate > 0)
+        ? ((normUomFn(stmtBilledUnit) === normUomFn(hitRuleUnit) && stmtBilledRate > 0)
+          ? stmtBilledRate
+          : (expectedUnits > 0 ? round4(netBilledUsd / expectedUnits) : stmtBilledRate))
+        : stmtBilledRate;
       const refTruckLoad = /cement/i.test(itemDesc) ? 30.0 : (/sakher/i.test(itemDesc) ? 42.0 : 36.0);
       const tonDriftPct = (!matchedRawRows.length && refTruckLoad > 0)
         ? round2(((qty - refTruckLoad) / refTruckLoad) * 100)
@@ -3677,10 +3719,33 @@
         ? gateReason
         : (Math.abs(varianceUsd) < 0.5 && !hasScaleDrift ? 'Matched' : (hasScaleDrift ? 'Scale Drift (>3%)' : 'Rate Variance'));
 
+      const canReviewLeg = inferredLeg === 'transportation' || inferredLeg === 'quarry';
+      const isRateDiffCandidate = Boolean(
+        !isDemoShowcaseSample
+        && canReviewLeg
+        && hitRule
+        && hitRule.id
+        && hitRuleRate > 0
+        && matchedZeroLoads === 0
+        && !exceedsLoggedQty
+        && !hasScaleDrift
+        && effBilledRate > 0
+        && Math.abs(effBilledRate - hitRuleRate) >= 0.005
+        && Math.abs(varianceUsd) >= 0.5
+      );
+      const rateDiffLeg = inferredLeg === 'transportation' ? 'transport' : 'material';
+      const rateDiffSite = matchedSite || (hitRule && cleanAiSiteLabel(hitRule.site || '')) || '';
+      const rateDiffProd = matchedProduct || (hitRule && String(hitRule.product || '').trim()) || '';
+      const rateDiffKey = isRateDiffCandidate
+        ? `${rateDiffLeg}|${normAiSiteTxt(matchedCompany || (hitRule && hitRule.company) || '')}|${supNorm}|${normAiSiteTxt(rateDiffSite)}|${normAiSiteTxt(rateDiffProd)}|${normAiSiteTxt(hitRuleUnit)}|${String(hitRule.id)}`
+        : '';
+
       const prevSelKey = `${idx + 1}|${sanitizeOutward(ticketRef)}|${sanitizeOutward(matchedSup)}`;
       const prevSelEntry = preserveSelection ? prevSelMap.get(prevSelKey) : null;
       const rowSelected = prevSelEntry
-        ? ((prevSelEntry.gateBlocked && !gateBlocked) ? true : Boolean(prevSelEntry.selected))
+        ? (((prevSelEntry.gateBlocked && !gateBlocked) || (prevSelEntry.status !== 'Matched' && status === 'Matched' && !gateBlocked))
+          ? true
+          : Boolean(prevSelEntry.selected))
         : !gateBlocked;
 
       return {
@@ -3704,7 +3769,18 @@
         stmtBilledRate,
         stmtBilledUnit,
         statementHint: stmtHintBase,
-        hitRuleRate: round2(hitRuleRate),
+        hitRuleId: hitRule && hitRule.id ? String(hitRule.id) : '',
+        hitRuleType: hitRule && hitRule.rule_type ? String(hitRule.rule_type) : '',
+        hitRuleSite: hitRule && hitRule.site ? sanitizeOutward(cleanAiSiteLabel(hitRule.site)) : '',
+        hitRuleStart: hitRule && hitRule.start_date ? String(hitRule.start_date).slice(0, 10) : '',
+        hitRuleRate: round4(hitRuleRate),
+        hitRuleUnit,
+        effBilledRate: round4(effBilledRate),
+        isRateDiffCandidate,
+        rateDiffKey,
+        rateDiffLeg,
+        rateDiffSite: sanitizeOutward(rateDiffSite),
+        rateDiffProd: sanitizeOutward(rateDiffProd),
         cumCashPaid,
         effectiveDocCap,
         projectedExcessUsd,
@@ -4071,6 +4147,77 @@
     return specs;
   }
 
+  function collectMfgReconRateDiffSpecs(rows) {
+    if (!D || !D.STATE || D.STATE.kioskLocked) return [];
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+    if (activeInd !== 'Manufacturing') return [];
+    if (typeof D.seatLens === 'function' && !Boolean(D.seatLens().expenses)) return [];
+    if (typeof D.canModifyData === 'function' && !D.canModifyData()) return [];
+    const allowedCos = typeof D.allowedCompanyNames === 'function' ? D.allowedCompanyNames() : [];
+    const byKey = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(r => {
+      if (!r || !r.isRateDiffCandidate || !r.rateDiffKey || !r.hitRuleId) return;
+      const legMode = r.rateDiffLeg === 'transport' ? 'transport' : 'material';
+      if (typeof D.canEnterForm === 'function' && !D.canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw')) return;
+      const co = String(r.matchedCompany || (typeof D.defaultEntryCompany === 'function' ? D.defaultEntryCompany() : '') || 'WTC');
+      if (co && allowedCos.length && !allowedCos.includes(co)) return;
+      let sp = byKey.get(r.rateDiffKey);
+      if (!sp) {
+        sp = {
+          stepKey: r.rateDiffKey,
+          legMode,
+          company: sanitizeOutward(co),
+          supplier: sanitizeOutward(r.matchedSupplier || ''),
+          site: sanitizeOutward(r.rateDiffSite || r.matchedSite || r.hitRuleSite || ''),
+          product: sanitizeOutward(r.rateDiffProd || r.matchedProduct || ''),
+          uom: r.hitRuleUnit || 'Ton',
+          hitRuleId: String(r.hitRuleId),
+          hitRuleType: String(r.hitRuleType || ''),
+          hitRuleSite: sanitizeOutward(r.hitRuleSite || ''),
+          hitRuleStart: String(r.hitRuleStart || '').slice(0, 10),
+          activeRate: round4(r.hitRuleRate),
+          activeUnit: r.hitRuleUnit || 'Ton',
+          billedRate: round4(r.effBilledRate),
+          billedUnit: r.hitRuleUnit || 'Ton',
+          earliestDiffDate: String(r.date || '').slice(0, 10),
+          rowCount: 0,
+          varianceUsdSum: 0,
+          rowIndices: [],
+          ticketRefs: []
+        };
+        byKey.set(r.rateDiffKey, sp);
+      }
+      sp.rowCount += 1;
+      sp.varianceUsdSum = round2(sp.varianceUsdSum + Number(r.varianceUsd || 0));
+      if (Number.isFinite(Number(r.idx))) sp.rowIndices.push(Number(r.idx) - 1);
+      if (r.ticketRef) sp.ticketRefs.push(sanitizeOutward(r.ticketRef));
+      const dt10 = String(r.date || '').slice(0, 10);
+      if (dt10 && (!sp.earliestDiffDate || dt10 < sp.earliestDiffDate)) sp.earliestDiffDate = dt10;
+    });
+    return Array.from(byKey.values());
+  }
+
+  function keepActiveReconRateDiffSpec(spec) {
+    if (!spec || !Array.isArray(EDGE_STATE.mfgReconRows)) return 0;
+    let changed = 0;
+    const idxSet = new Set(Array.isArray(spec.rowIndices) ? spec.rowIndices : []);
+    EDGE_STATE.mfgReconRows.forEach((r, idx) => {
+      if (!r) return;
+      if ((spec.stepKey && r.rateDiffKey === spec.stepKey) || idxSet.has(idx)) {
+        if (r.selected) {
+          r.selected = false;
+          changed += 1;
+        }
+      }
+    });
+    const existingPanel = document.getElementById('mfgAiStatementReconPanel');
+    if (existingPanel) {
+      existingPanel.remove();
+      mountMfgStatementReconPanel();
+    }
+    return changed;
+  }
+
   function snapshotActiveMfgReconState() {
     if (!EDGE_STATE.mfgReconText || !String(EDGE_STATE.mfgReconText).trim()) return null;
     return {
@@ -4132,6 +4279,7 @@
     const gatedRows = rows.filter(r => r && r.gateBlocked);
     const unpricedRowCount = rows.filter(r => r && r.matchedZeroLoads > 0).length;
     const stmtQueueSpecs = (!hideExpenses && !D.STATE.kioskLocked) ? collectMfgReconUnpricedQueueSpecs(rows) : [];
+    const rateDiffSpecs = (!hideExpenses && !D.STATE.kioskLocked) ? collectMfgReconRateDiffSpecs(rows) : [];
     const mismatchedRows = (!hideExpenses && !D.STATE.kioskLocked) ? getMfgReconMismatchedRows(rows) : [];
     const mismatchLang = ['en_ar', 'en', 'ar', 'fr'].includes(EDGE_STATE.mfgMismatchLang) ? EDGE_STATE.mfgMismatchLang : 'en_ar';
     const mismatchText = (EDGE_STATE.mfgMismatchExportOpen && mismatchedRows.length)
@@ -4201,6 +4349,7 @@
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiScanStmtBtn"${EDGE_STATE.mfgScanBusy ? ' disabled' : ''}>${ic('sparkles')} <span>Scan WhatsApp PDF / Photo</span></button>` : ''}
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiLoadSampleBtn">Load Example</button>` : ''}
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiRunReconBtn">${ic('bolt')} <span>Run 3-Way Match</span></button>` : ''}
+          ${(!hideExpenses && !D.STATE.kioskLocked && rateDiffSpecs.length && D && typeof D.openStatementRateDiffQueueModal === 'function') ? `<button type="button" class="aie-btn" id="mfgAiReviewRateDiffsBtn">${ic('pricing')} <span>Review Rate Diffs</span> (<span data-no-i18n="1">${rateDiffSpecs.length}</span>)</button>` : ''}
           ${(!hideExpenses && !D.STATE.kioskLocked && mismatchedRows.length) ? `<button type="button" class="aie-btn" id="mfgAiExportMismatchBtn">${ic('send_msg')} <span>Export Mismatched</span> (<span data-no-i18n="1">${mismatchedRows.length}</span>)</button>` : ''}
           ${canWrite ? `<button type="button" class="aie-btn is-brass" id="mfgAiPostReconBtn">${ic('check_circle')} <span>+ Post Matched Settlements</span></button>` : ''}
         </div>
@@ -4250,6 +4399,7 @@
                   <td>
                     <span data-no-i18n="1">${hideExpenses ? esc(tr('Restricted')) : esc(r.itemDesc)}</span>
                     ${(!hideExpenses && r.matchedZeroLoads > 0) ? `<div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="aie-pill is-warn"><span>Unpriced ($0 Loads)</span> (<span data-no-i18n="1">${r.matchedZeroLoads}</span>)</span>${(!D.STATE.kioskLocked && !hideExpenses && (typeof D.canEnterForm === 'function' ? D.canEnterForm(r.zeroLegMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw') : canWrite) && r.matchedSite) ? `<button type="button" class="btn-set-site-price" data-aie-recon-row-idx="${rIdx}" data-aie-set-site-price="${esc(r.matchedSite)}" data-aie-set-site-leg="${esc(r.zeroLegMode || 'material')}" data-aie-set-site-sup="${esc(r.matchedSupplier)}" data-aie-set-site-prod="${esc(r.matchedProduct || '')}" data-aie-set-site-uom="${esc(r.matchedUom || '')}" data-aie-set-site-date="${esc(r.earliestZeroDate || r.date || '')}" data-aie-set-site-co="${esc(r.matchedCompany || '')}">Set Site Price</button>` : ''}</div>` : ''}
+                    ${(!hideExpenses && r.isRateDiffCandidate) ? `<div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="aie-pill is-warn"><span>Active:</span> <span data-no-i18n="1">${fmtUSD(r.hitRuleRate, 2)}/${esc(r.hitRuleUnit)}</span> · <span>Billed:</span> <span data-no-i18n="1">${fmtUSD(r.effBilledRate, 2)}/${esc(r.hitRuleUnit)}</span></span>${(!D.STATE.kioskLocked && (typeof D.canModifyData === 'function' ? D.canModifyData() : canWrite) && (typeof D.canEnterForm === 'function' ? D.canEnterForm(r.rateDiffLeg === 'transport' ? 'pricerule_haul' : 'pricerule_raw') : canWrite) && D && typeof D.openStatementRateDiffQueueModal === 'function') ? `<button type="button" class="btn-set-site-price" data-aie-review-rate-diff="${esc(r.rateDiffKey)}">Review Rate</button>` : ''}</div>` : ''}
                   </td>
                   <td class="r mono" data-no-i18n="1">${fmtNum(r.qty, 1)}</td>
                   <td class="r mono" data-no-i18n="1">${maskAmt(fmtUSD(r.expectedUsd, 2))}</td>
@@ -4324,6 +4474,26 @@
         });
       };
     }
+    const reviewDiffsBtn = panel.querySelector('#mfgAiReviewRateDiffsBtn');
+    if (reviewDiffsBtn && rateDiffSpecs.length && D && typeof D.openStatementRateDiffQueueModal === 'function') {
+      reviewDiffsBtn.onclick = () => {
+        D.openStatementRateDiffQueueModal(rateDiffSpecs, {
+          onQueueMutated: refreshMfgStatementReconAfterPriceChange,
+          onKeepActiveSpec: keepActiveReconRateDiffSpec
+        });
+      };
+    }
+    panel.querySelectorAll('[data-aie-review-rate-diff]').forEach(btn => {
+      btn.onclick = () => {
+        const diffKey = btn.getAttribute('data-aie-review-rate-diff') || '';
+        if (!diffKey || !rateDiffSpecs.length || !D || typeof D.openStatementRateDiffQueueModal !== 'function') return;
+        D.openStatementRateDiffQueueModal(rateDiffSpecs, {
+          preferredStepKey: diffKey,
+          onQueueMutated: refreshMfgStatementReconAfterPriceChange,
+          onKeepActiveSpec: keepActiveReconRateDiffSpec
+        });
+      };
+    });
     panel.querySelectorAll('[data-aie-set-site-price]').forEach(btn => {
       btn.onclick = () => {
         const rowIdx = Number(btn.getAttribute('data-aie-recon-row-idx'));
@@ -11534,6 +11704,9 @@
     snapshotActiveMfgReconState,
     refreshMfgStatementReconAfterPriceChange,
     postManufacturingStatementBatch,
+    collectMfgReconUnpricedQueueSpecs,
+    collectMfgReconRateDiffSpecs,
+    keepActiveReconRateDiffSpec,
     getMfgReconMismatchedRows,
     buildMfgReconMismatchText,
     buildMfgReconMismatchCsv,

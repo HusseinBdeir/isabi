@@ -41608,6 +41608,55 @@ button.badge.btn-set-site-price {
   color: #FAF6EE;
   border-color: rgba(217, 165, 74, 0.48);
 }
+.btn-req-missing-rates {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-height: 24px;
+  font-weight: 600;
+}
+.btn-req-missing-rates svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.pr-rate-diff-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pr-rate-diff-active-pill,
+.pr-rate-diff-billed-pill {
+  font-weight: 600;
+}
+.pr-rate-diff-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pr-skip-rate-diff-btn {
+  border: 1px solid var(--line, #D6CFC2);
+  background: var(--card, #FFFFFF);
+  color: var(--ink, #281D15);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pr-skip-rate-diff-btn:hover {
+  border-color: var(--brass, #C0892F);
+}
+:root[data-theme="dark"] .pr-skip-rate-diff-btn {
+  background: rgba(250, 246, 238, 0.08);
+  border-color: rgba(250, 246, 238, 0.22);
+  color: var(--ink, #FAF6EE);
+}
 
 .pr-floor-strip.is-below {
   border-inline-start-color: var(--crit);

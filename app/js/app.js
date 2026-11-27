@@ -36787,12 +36787,14 @@
     const legBrk = computeThreeLegPayablesBreakdown();
     const unpMatBySup = new Map();
     const unpHaulBySup = new Map();
-    const _recUnpSiteLoads = (mapObj, supKeyNorm, siteLabel, qtyVal) => {
+    const _recUnpSiteLoads = (mapObj, supKeyNorm, siteLabel, qtyVal, prodLabel, uomLabel) => {
       if (!supKeyNorm || !siteLabel || String(siteLabel).trim().startsWith('(')) return;
       let ent = mapObj.get(supKeyNorm);
-      if (!ent) { ent = { loads: 0, siteStats: new Map(), topSite: '' }; mapObj.set(supKeyNorm, ent); }
+      if (!ent) { ent = { loads: 0, siteStats: new Map(), combos: new Set(), topSite: '' }; mapObj.set(supKeyNorm, ent); }
       ent.loads += 1;
       const cleanSt = cleanSiteLabel(siteLabel);
+      const comboKey = `${normSiteMatch(cleanSt)}|${norm(prodLabel || '')}|${norm(normUnpricedQueueUom(uomLabel || 'm³'))}`;
+      ent.combos.add(comboKey);
       let stStat = ent.siteStats.get(cleanSt);
       if (!stStat) {
         stStat = { site: cleanSt, loads: 0, qty: 0 };
@@ -36808,16 +36810,19 @@
       if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
       const coN = normSupPayable(rp.company);
       const qUnp = ticketProductQty(rp);
+      const rpProd = String(rp.product || '').trim();
+      const rpProdObj = rpProd ? productInfo(rpProd) : null;
+      const rpUom = normUnpricedQueueUom(rp.uom || (rpProdObj && rpProdObj.uom) || 'm³');
       if (Number(rp.cost || 0) === 0) {
         const soN = normSupPayable(rp.site_owner);
         if (soN && soN !== 'excluded' && soN !== 'none' && soN !== coN) {
-          _recUnpSiteLoads(unpMatBySup, soN, rp.site, qUnp);
+          _recUnpSiteLoads(unpMatBySup, soN, rp.site, qUnp, rpProd, rpUom);
         }
       }
       if (Number(rp.trans_cost || 0) === 0 && !/^company/i.test(String(rp.transport_by || '')) && !/^supplier-delivered$/i.test(String(rp.transport_by || '')) && !rp.includes_transport) {
         const toN = normSupPayable(rp.truck_owner);
         if (toN && toN !== 'excluded' && toN !== 'none' && toN !== coN) {
-          _recUnpSiteLoads(unpHaulBySup, toN, rp.site, qUnp);
+          _recUnpSiteLoads(unpHaulBySup, toN, rp.site, qUnp, rpProd, rpUom);
         }
       }
     }
@@ -37317,10 +37322,13 @@
                     : `${rawSitesArr.slice(0, 2).map(sn => relLink('sites', sn, sn, true)).join(', ')} <span class="badge badge-neutral" data-ui-tip="${esc(rawSitesStr)}">+${rawSitesArr.length - 2}</span>`);
                 const basisCls = r.supply_basis === 'Delivery Included' ? 'badge-brass' : (r.supply_basis === 'Mixed' ? 'badge-info' : 'badge-neutral');
                 const unpMatSup = _pickTopUnp(unpMatBySup.get(normSupPayable(r.supplier)));
+                const unpMatReqHtml = (unpMatSup && !STATE.kioskLocked && canRawExp && (canEnterForm('pricerule_raw') || canAccessRdlReport('16')))
+                  ? ` <button type="button" class="badge badge-neutral btn-req-missing-rates no-print" data-req-missing-rates="${esc(r.supplier)}" data-req-missing-leg="material" data-ui-tip="Generate EN/AR/FR WhatsApp quote request for missing rates">${ic('send_msg')} <span>Request Missing Rates</span> (<span data-no-i18n="1">${fmtNum(unpMatSup.combos ? unpMatSup.combos.size : 1)}</span>)</button>`
+                  : '';
                 const unpMatSupHtml = unpMatSup
-                  ? (!STATE.kioskLocked && canEnterForm('pricerule_raw')
+                  ? ((!STATE.kioskLocked && canEnterForm('pricerule_raw')
                       ? ` <button type="button" class="badge badge-warn btn-set-site-price" data-set-site-price="${esc(unpMatSup.topSite)}" data-set-site-sup="${esc(r.supplier)}" data-ui-tip="Set Material &amp; Transport Rate across unpriced sites &amp; grades">Unpriced (${fmtNum(unpMatSup.loads)})</button>`
-                      : ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpMatSup.loads)})</span>`)
+                      : ` <span class="badge badge-warn" data-ui-tip="External supplier deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpMatSup.loads)})</span>`) + unpMatReqHtml)
                   : '';
                 const stmtActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
                   <span class="raw-leg-stmt-actions no-print">
@@ -37385,10 +37393,13 @@
               ${shownTransPay.map(r => {
                 const scopeCls = r.trans_scope === 'Supplier + Customer' ? 'badge-brass' : (r.trans_scope === 'Customer Trans' ? 'badge-info' : 'badge-neutral');
                 const unpHaulSup = _pickTopUnp(unpHaulBySup.get(normSupPayable(r.supplier)));
+                const unpHaulReqHtml = (unpHaulSup && !STATE.kioskLocked && canRawExp && (canEnterForm('pricerule_haul') || canAccessRdlReport('16')))
+                  ? ` <button type="button" class="badge badge-neutral btn-req-missing-rates no-print" data-req-missing-rates="${esc(r.supplier)}" data-req-missing-leg="transport" data-ui-tip="Generate EN/AR/FR WhatsApp quote request for missing haulage rates">${ic('send_msg')} <span>Request Missing Rates</span> (<span data-no-i18n="1">${fmtNum(unpHaulSup.combos ? unpHaulSup.combos.size : 1)}</span>)</button>`
+                  : '';
                 const unpHaulSupHtml = unpHaulSup
-                  ? (!STATE.kioskLocked && canEnterForm('pricerule_haul')
+                  ? ((!STATE.kioskLocked && canEnterForm('pricerule_haul')
                       ? ` <button type="button" class="badge badge-warn btn-set-site-price" data-set-site-price="${esc(unpHaulSup.topSite)}" data-set-site-leg="transport" data-set-site-sup="${esc(r.supplier)}" data-ui-tip="Set Transport Rate across unpriced sites &amp; grades">Unpriced (${fmtNum(unpHaulSup.loads)})</button>`
-                      : ` <span class="badge badge-warn" data-ui-tip="3rd-party haulage deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpHaulSup.loads)})</span>`)
+                      : ` <span class="badge badge-warn" data-ui-tip="3rd-party haulage deliveries logged at $0.00 Credit">Unpriced (${fmtNum(unpHaulSup.loads)})</span>`) + unpHaulReqHtml)
                   : '';
                 const stmtTrActsHtml = (canRawExp && canAccessRdlReport('16')) ? `
                   <span class="raw-leg-stmt-actions no-print">
@@ -109893,6 +109904,7 @@
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastSettleSupplier: '', lastDupSig: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     unpricedSiteCtx: null, unpricedQueueSession: null, _advancingUnpricedQueue: false,
+    rateDiffQueueSession: null, _advancingRateDiffQueue: false,
     discInputUnit: 'usd', settleGrossBase: null, ideDiscUnit: 'usd', ideSettleBase: null,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
@@ -135410,15 +135422,38 @@
       !isEditingExisting
       && (keepOpenNextUnpriced || (afterSaveTarget && afterSaveTarget.type === 'unpriced_site'))
     );
+    const activeRateDiffSess = FORM_UI.rateDiffQueueSession;
+    const isModalInRateDiffQueue = Boolean(
+      STATE.modalForm === 'pricerule'
+      && activeRateDiffSess
+      && Array.isArray(activeRateDiffSess.specs)
+      && activeRateDiffSess.specs.length > 0
+      && activeRateDiffSess.currentStepKey
+    );
+    const keepOpenNextRateDiff = Boolean(
+      isModalInRateDiffQueue
+      && evOrOpts
+      && typeof evOrOpts === 'object'
+      && evOrOpts.nextRateDiff
+    );
+    const isRateDiffQueueAdvance = Boolean(
+      isModalInRateDiffQueue
+      && (keepOpenNextRateDiff || (afterSaveTarget && afterSaveTarget.type === 'rate_diff_step'))
+    );
     const deferQueueOrReconPost = Boolean(
       isUnpricedQueueAdvance
+      || isRateDiffQueueAdvance
+      || isModalInRateDiffQueue
       || (!isEditingExisting && STATE.modalForm === 'pricerule' && ((FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._fromStatementRecon) || isModalInUnpQueue))
     );
-    const stmtReconRefreshMeta = (STATE.modalForm === 'pricerule' && !isEditingExisting)
+    const stmtReconRefreshMeta = (STATE.modalForm === 'pricerule' && (!isEditingExisting || isModalInRateDiffQueue))
       ? {
-          fromRecon: Boolean((FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._fromStatementRecon) || (activeUnpSess && activeUnpSess.mode === 'statement')),
-          onMutated: (activeUnpSess && typeof activeUnpSess.onQueueMutated === 'function') ? activeUnpSess.onQueueMutated : null,
+          fromRecon: Boolean((FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._fromStatementRecon) || (activeUnpSess && activeUnpSess.mode === 'statement') || isModalInRateDiffQueue),
+          onMutated: (activeRateDiffSess && typeof activeRateDiffSess.onQueueMutated === 'function')
+            ? activeRateDiffSess.onQueueMutated
+            : ((activeUnpSess && typeof activeUnpSess.onQueueMutated === 'function') ? activeUnpSess.onQueueMutated : null),
           isStmtQueue: Boolean(activeUnpSess && activeUnpSess.mode === 'statement'),
+          isRateDiffQueue: isModalInRateDiffQueue,
           stepUomHint: activeUnpSess ? (val('f_ruletype') === 'Transport Price (Site)' ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³')) : '',
           reconSnap: (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.snapshotActiveMfgReconState === 'function')
             ? window.MFG_AI_EDGE.snapshotActiveMfgReconState()
@@ -136545,7 +136580,7 @@
         }
       }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
-      if (!isUnpricedQueueAdvance) STATE.saving = false;
+      if (!deferQueueOrReconPost) STATE.saving = false;
       const _hasQueueOnEntrySave = Boolean(
         !isEditingExisting
         && !isUpdatingPending
@@ -136808,13 +136843,34 @@
           return;
         }
       }
-      if (deferQueueOrReconPost && !isUnpricedQueueAdvance) {
+      if (deferQueueOrReconPost && !isUnpricedQueueAdvance && !isRateDiffQueueAdvance) {
         STATE.saving = false;
+        let allRdDone = false;
+        if (isModalInRateDiffQueue && FORM_UI.rateDiffQueueSession) {
+          const rdSessDone = FORM_UI.rateDiffQueueSession;
+          if (rdSessDone.resolvedKeys instanceof Set && rdSessDone.currentStepKey) {
+            rdSessDone.resolvedKeys.add(rdSessDone.currentStepKey);
+          }
+          allRdDone = Boolean(
+            Array.isArray(rdSessDone.specs)
+            && rdSessDone.specs.every(sp =>
+              !sp
+              || (rdSessDone.resolvedKeys && rdSessDone.resolvedKeys.has(sp.stepKey))
+              || (rdSessDone.keptActiveKeys && rdSessDone.keptActiveKeys.has(sp.stepKey))
+            )
+          );
+          FORM_UI.rateDiffQueueSession = null;
+        }
         closeEntryModal(true);
         emitSaveSuccessFeedback();
         renderApp();
         runSavedMfgReconRefresh();
-        if (stmtReconRefreshMeta && stmtReconRefreshMeta.fromRecon && stmtReconRefreshMeta.isStmtQueue && stmtReconRefreshMeta.stmtSessClone) {
+        if (stmtReconRefreshMeta && stmtReconRefreshMeta.isRateDiffQueue && allRdDone) {
+          const doneRdMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+            ? window.MFG_I18N.t('Rate variance review completed', window.MFG_I18N.getLang())
+            : 'Rate variance review completed';
+          toast(doneRdMsg, 'ok');
+        } else if (stmtReconRefreshMeta && stmtReconRefreshMeta.fromRecon && stmtReconRefreshMeta.isStmtQueue && stmtReconRefreshMeta.stmtSessClone) {
           const recLegDone = /^Transport Price \(Site\)$/i.test(String(record.rule_type || '')) ? 'transport' : 'material';
           const recPartyDone = normSupPayable(record.supplier || '');
           const stepUomDone = recLegDone === 'transport' ? (record.rate_per || record.unit || 'm³') : (record.unit || 'm³');
@@ -136827,6 +136883,42 @@
               : 'All unpriced statement sites completed';
             toast(doneMsg, 'ok');
           }
+        }
+        if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
+          window.MFG_FLEET_PNL.refresh();
+        }
+      } else if (isRateDiffQueueAdvance) {
+        STATE.saving = false;
+        emitSaveSuccessFeedback();
+        const rdSess = FORM_UI.rateDiffQueueSession;
+        if (rdSess && rdSess.resolvedKeys instanceof Set && rdSess.currentStepKey) {
+          rdSess.resolvedKeys.add(rdSess.currentStepKey);
+        }
+        runSavedMfgReconRefresh();
+        if (afterSaveTarget && afterSaveTarget.type === 'rate_diff_step' && afterSaveTarget.stepKey) {
+          openRateDiffQueueStep(afterSaveTarget.stepKey, { advancing: true });
+          renderApp();
+        } else if (rdSess && Array.isArray(rdSess.specs)) {
+          const nextStep = rdSess.specs.find(sp =>
+            sp && !(rdSess.resolvedKeys && rdSess.resolvedKeys.has(sp.stepKey)) && !(rdSess.keptActiveKeys && rdSess.keptActiveKeys.has(sp.stepKey))
+          );
+          if (nextStep) {
+            openRateDiffQueueStep(nextStep.stepKey, { advancing: true });
+            renderApp();
+          } else {
+            FORM_UI.rateDiffQueueSession = null;
+            closeEntryModal(true);
+            renderApp();
+            runSavedMfgReconRefresh();
+            const doneRdMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+              ? window.MFG_I18N.t('Rate variance review completed', window.MFG_I18N.getLang())
+              : 'Rate variance review completed';
+            toast(doneRdMsg, 'ok');
+          }
+        } else {
+          FORM_UI.rateDiffQueueSession = null;
+          closeEntryModal(true);
+          renderApp();
         }
         if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
           window.MFG_FLEET_PNL.refresh();
@@ -139442,10 +139534,18 @@
     FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (!FORM_UI._advancingUnpricedQueue && !(target && target.type === 'unpriced_site')) {
       FORM_UI.unpricedQueueSession = null;
-    FORM_UI.unpricedSiteCtx = null;
+      FORM_UI.unpricedSiteCtx = null;
     }
+    if (!FORM_UI._advancingRateDiffQueue && !(target && target.type === 'rate_diff_step')) {
+      FORM_UI.rateDiffQueueSession = null;
+    }
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
     if (!target || target.type === 'close') {
       closeEntryModal(true);
+      return;
+    }
+    if (target.type === 'rate_diff_step' && target.stepKey) {
+      openRateDiffQueueStep(target.stepKey, { advancing: true });
       return;
     }
     if (target.type === 'unpriced_site' && target.siteName) {
@@ -140863,6 +140963,642 @@
     return true;
   }
 
+  // ---- Request Missing Rates (Counterparty-Safe EN/AR/FR Quote Request) ----
+  let _rawMissingRatesState = null;
+
+  function cleanMissingRatesOutward(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .replace(/\(\s*S20\s*\)/gi, '')
+      .replace(/\b(?:S20|7z-[a-z0-9-]+|THEO)\b/gi, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/->|\u2192/g, '-')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+  }
+
+  function buildMissingRatesRequestModel(opts = {}) {
+    const legMode = opts && opts.legMode === 'transport' ? 'transport' : 'material';
+    const partyRaw = String((opts && opts.partyName) || '').trim();
+    const partyNorm = normSupPayable(partyRaw);
+    const u = (opts && opts.user) || activeUser();
+    const lens = typeof seatLens === 'function' ? seatLens(u) : { expenses: false };
+    const canLegForm = canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw');
+    const canAccess = Boolean(!STATE.kioskLocked && getActiveIndustry(STATE.company) === 'Manufacturing' && SEED && SEED._recordsReady && lens && lens.expenses && (canLegForm || canAccessRdlReport('16')));
+    if (!canAccess || !partyNorm) {
+      return { ok: false, legMode, partyLabel: cleanMissingRatesOutward(partyRaw), lines: [], totalLoads: 0, siteCount: 0, minDate: '' };
+    }
+
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const isCoAllowed = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (buTarget && c !== buTarget) return false;
+      return true;
+    };
+
+    const recs = SEED.records || {};
+    const siteCanonByNorm = new Map();
+    (recs.sites || []).forEach(st => {
+      if (!st || st.voided || !st.name) return;
+      const sk = normSiteMatch(st.name);
+      if (sk && !siteCanonByNorm.has(sk)) siteCanonByNorm.set(sk, cleanSiteLabel(st.name));
+    });
+    const supCanonByNorm = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supCanonByNorm.has(sn)) supCanonByNorm.set(sn, String(s.name).trim());
+    });
+    const partyLabel = cleanMissingRatesOutward(supCanonByNorm.get(partyNorm) || partyRaw);
+
+    const buckets = new Map();
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoAllowed(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      const co = String(rp.company || 'WTC');
+      const coNorm = normSupPayable(co);
+      if (legMode === 'transport') {
+        if (/^company/i.test(String(rp.transport_by || '')) || /^supplier-delivered$/i.test(String(rp.transport_by || '')) || rp.includes_transport) continue;
+        if (Number(rp.trans_cost || 0) !== 0) continue;
+        if (normSupPayable(rp.truck_owner) !== partyNorm || partyNorm === coNorm) continue;
+      } else {
+        if (Number(rp.cost || 0) !== 0) continue;
+        if (normSupPayable(rp.site_owner) !== partyNorm || partyNorm === coNorm) continue;
+      }
+      const rawSiteLbl = cleanSiteLabel(rp.site);
+      if (!rawSiteLbl || rawSiteLbl.startsWith('(')) continue;
+      const siteSk = normSiteMatch(rawSiteLbl);
+      if (!siteSk) continue;
+      const canonSite = cleanMissingRatesOutward(siteCanonByNorm.get(siteSk) || rawSiteLbl);
+      const prodName = cleanMissingRatesOutward(String(rp.product || '').trim());
+      const prodObj = prodName ? productInfo(prodName) : null;
+      const uom = cleanMissingRatesOutward(normUnpricedQueueUom(rp.uom || (prodObj && prodObj.uom) || 'm³'));
+      const dt = String(rp.rep_date || rp.date || '').slice(0, 10) || todayISO();
+      const bKey = `${siteSk}|${norm(prodName)}|${norm(uom)}`;
+      let b = buckets.get(bKey);
+      if (!b) {
+        b = {
+          site: canonSite,
+          siteKey: siteSk,
+          product: prodName,
+          uom,
+          earliestDate: dt,
+          loads: 0
+        };
+        buckets.set(bKey, b);
+      }
+      b.loads += 1;
+      if (dt && (!b.earliestDate || dt < b.earliestDate)) b.earliestDate = dt;
+    }
+
+    const lines = Array.from(buckets.values()).sort((a, b) =>
+      (b.loads - a.loads) || String(a.earliestDate || '').localeCompare(String(b.earliestDate || '')) || String(a.site).localeCompare(String(b.site))
+    );
+    const totalLoads = lines.reduce((s, x) => s + Number(x.loads || 0), 0);
+    const siteCount = new Set(lines.map(x => x.siteKey)).size;
+    const minDate = lines.reduce((m, x) => (x.earliestDate && (!m || x.earliestDate < m) ? x.earliestDate : m), '');
+    return {
+      ok: lines.length > 0,
+      legMode,
+      partyNorm,
+      partyLabel,
+      lines,
+      totalLoads,
+      siteCount,
+      minDate
+    };
+  }
+
+  function _fmtMissingRateUnit(uom, lang) {
+    const u = String(uom || 'm³').trim();
+    if (lang === 'ar') {
+      if (/^ton$/i.test(u)) return 'طن';
+      if (/^truck$/i.test(u)) return 'نقلة';
+      return 'م³';
+    }
+    if (lang === 'fr') {
+      if (/^ton$/i.test(u)) return 'Tonne';
+      if (/^truck$/i.test(u)) return 'Voyage';
+      return 'm³';
+    }
+    return u;
+  }
+
+  function buildMissingRatesRequestBlock(model, lang) {
+    if (!model || !Array.isArray(model.lines) || !model.lines.length) return '';
+    const party = cleanMissingRatesOutward(model.partyLabel || '');
+    const isTrans = model.legMode === 'transport';
+    const out = [];
+    if (lang === 'ar') {
+      out.push(`تحية طيبة ${party}،`);
+      out.push(isTrans ? 'يرجى تأكيد أسعار النقل الإفرادية للتوريدات التالية:' : 'يرجى تأكيد الأسعار الإفرادية للتوريدات التالية:');
+      model.lines.forEach((ln, idx) => {
+        const gradeLbl = ln.product ? cleanMissingRatesOutward(ln.product) : (isTrans ? 'نقل' : 'مواد');
+        const unitLbl = _fmtMissingRateUnit(ln.uom, 'ar');
+        const dtLbl = fmtDateDMY(ln.earliestDate);
+        out.push(`${idx + 1}. ${cleanMissingRatesOutward(ln.site)} | ${gradeLbl} (لكل ${unitLbl}) | اعتباراً من ${dtLbl} | ${fmtNum(ln.loads, 0)} نقلة`);
+      });
+      out.push('يرجى الرد بالسعر المتفق عليه لكل بند لتحديث كشف الحساب. شكراً لتعاونكم.');
+      return out.map(cleanMissingRatesOutward).join('\n');
+    }
+    if (lang === 'fr') {
+      out.push(`Bonjour ${party},`);
+      out.push(isTrans ? 'Merci de confirmer vos tarifs de transport unitaires pour les livraisons suivantes :' : 'Merci de confirmer vos tarifs unitaires pour les livraisons suivantes :');
+      model.lines.forEach((ln, idx) => {
+        const gradeLbl = ln.product ? cleanMissingRatesOutward(ln.product) : (isTrans ? 'Transport' : 'Matériau');
+        const unitLbl = _fmtMissingRateUnit(ln.uom, 'fr');
+        const dtLbl = fmtDateDMY(ln.earliestDate);
+        const loadWord = Number(ln.loads) === 1 ? 'voyage' : 'voyages';
+        out.push(`${idx + 1}. ${cleanMissingRatesOutward(ln.site)} | ${gradeLbl} (par ${unitLbl}) | Depuis le ${dtLbl} | ${fmtNum(ln.loads, 0)} ${loadWord}`);
+      });
+      out.push('Merci de répondre avec le tarif unitaire convenu pour chaque ligne afin de mettre à jour votre relevé.');
+      return out.map(cleanMissingRatesOutward).join('\n');
+    }
+    out.push(`Hello ${party},`);
+    out.push(isTrans ? 'Please confirm your haulage unit rates for the following deliveries:' : 'Please confirm your unit rates for the following deliveries:');
+    model.lines.forEach((ln, idx) => {
+      const gradeLbl = ln.product ? cleanMissingRatesOutward(ln.product) : (isTrans ? 'Haulage' : 'Material');
+      const unitLbl = _fmtMissingRateUnit(ln.uom, 'en');
+      const dtLbl = fmtDateDMY(ln.earliestDate);
+      const loadWord = Number(ln.loads) === 1 ? 'load' : 'loads';
+      out.push(`${idx + 1}. ${cleanMissingRatesOutward(ln.site)} | ${gradeLbl} (per ${unitLbl}) | From ${dtLbl} | ${fmtNum(ln.loads, 0)} ${loadWord}`);
+    });
+    out.push('Please reply with the agreed unit rate for each line so we can update your statement. Thank you.');
+    return out.map(cleanMissingRatesOutward).join('\n');
+  }
+
+  function buildMissingRatesRequestText(model, langMode = 'en_ar') {
+    if (!model || !model.ok) return '';
+    const mode = ['en_ar', 'en', 'ar', 'fr'].includes(langMode) ? langMode : 'en_ar';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') return buildMissingRatesRequestBlock(model, mode);
+    return `${buildMissingRatesRequestBlock(model, 'en')}\n\n---\n\n${buildMissingRatesRequestBlock(model, 'ar')}`;
+  }
+
+  function buildMissingRatesRequestCsv(model) {
+    if (!model || !model.ok) return '';
+    const csvSafe = v => {
+      let s = cleanMissingRatesOutward(String(v == null ? '' : v));
+      if (/^[\t\r ]*[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const legLbl = model.legMode === 'transport' ? 'Transport' : 'Material';
+    const header = ['Supplier', 'Leg', 'Site', 'Material / Grade', 'Unit', 'Earliest Delivery Date', 'Loads'].join(',');
+    const rows = model.lines.map(ln => [
+      csvSafe(model.partyLabel),
+      csvSafe(legLbl),
+      csvSafe(ln.site),
+      csvSafe(ln.product || (model.legMode === 'transport' ? 'Haulage' : 'Material')),
+      csvSafe(ln.uom || 'm³'),
+      csvSafe(ln.earliestDate || ''),
+      String(Number(ln.loads || 0))
+    ].join(','));
+    return '\uFEFF' + [header].concat(rows).join('\r\n');
+  }
+
+  function closeRawMissingRatesModal() {
+    const modal = $('rawMissingRatesModal');
+    if (modal) {
+      modal.hidden = true;
+      modal.innerHTML = '';
+    }
+    if (_rawMissingRatesState && _rawMissingRatesState.keyHandler) {
+      document.removeEventListener('keydown', _rawMissingRatesState.keyHandler, true);
+    }
+    const rf = _rawMissingRatesState && _rawMissingRatesState.returnFocus;
+    _rawMissingRatesState = null;
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderRawMissingRatesModalBody() {
+    const modal = $('rawMissingRatesModal');
+    if (!modal || !_rawMissingRatesState) return;
+    const m = _rawMissingRatesState.model;
+    const lang = _rawMissingRatesState.lang || 'en_ar';
+    const text = buildMissingRatesRequestText(m, lang);
+    const phoneDigits = typeof resolveSupplierPhoneDigits === 'function' ? resolveSupplierPhoneDigits(m.partyLabel) : '';
+    const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const legTitle = m.legMode === 'transport' ? 'Transport Leg' : 'Material Leg';
+    const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-rmr-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
+
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card" role="dialog" aria-modal="true" aria-labelledby="rawMissingRatesTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow"><span>Missing Rate Request</span> <span data-no-i18n="1">·</span> <span>${esc(legTitle)}</span></span>
+            <h2 id="rawMissingRatesTitle" data-no-i18n="1">${esc(m.partyLabel)}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="rawMissingRatesCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="hld-share-kpis">
+            <div class="hld-share-kpi"><span>Missing Rate Lines</span><b class="mono" data-no-i18n="1">${fmtNum(m.lines.length, 0)}</b></div>
+            <div class="hld-share-kpi is-brass"><span>Unpriced Loads</span><b class="mono" data-no-i18n="1">${fmtNum(m.totalLoads, 0)}</b></div>
+            <div class="hld-share-kpi"><span>Sites</span><b class="mono" data-no-i18n="1">${fmtNum(m.siteCount, 0)}</b></div>
+            <div class="hld-share-kpi"><span>Earliest Delivery</span><b class="mono" data-no-i18n="1">${esc(fmtDateDMY(m.minDate))}</b></div>
+          </div>
+          <div class="hld-share-langbar">
+            <span class="hld-share-lbl">Request Language</span>
+            <div class="hld-share-seg" id="rawMissingRatesLangSeg" role="group" aria-label="Request Language">
+              ${langBtn('en_ar', 'EN + عربي')}
+              ${langBtn('en', 'EN')}
+              ${langBtn('ar', 'عربي')}
+              ${langBtn('fr', 'FR')}
+            </div>
+          </div>
+          <textarea id="rawMissingRatesText" class="hld-share-text" rows="12" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Missing rate request message">${esc(text)}</textarea>
+          <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b> <span data-no-i18n="1">·</span> ` : ''}<span>Counterparty-safe quote request (site, grade/unit, earliest date, load count only; no internal rates or customer names).</span></p>
+          <div class="hld-share-actions">
+            <button type="button" class="btn btn-ghost-bar" id="rawMissingRatesCsvBtn">${ic('download')} <span>Download CSV</span></button>
+            <button type="button" class="btn btn-ghost-bar" id="rawMissingRatesCopyBtn">${ic('copy')} <span>Copy Message</span></button>
+            <a class="btn btn-primary" id="rawMissingRatesWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>Open WhatsApp</span></a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const ta = $('rawMissingRatesText');
+    const wa = $('rawMissingRatesWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanMissingRatesOutward(ta.value))}`);
+      });
+    }
+    const closeBtn = $('rawMissingRatesCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeRawMissingRatesModal);
+    modal.querySelectorAll('[data-rmr-lang]').forEach(btn => btn.addEventListener('click', () => {
+      const nextL = btn.getAttribute('data-rmr-lang');
+      if (!['en_ar', 'en', 'ar', 'fr'].includes(nextL) || !_rawMissingRatesState) return;
+      _rawMissingRatesState.lang = nextL;
+      renderRawMissingRatesModalBody();
+    }));
+    const csvBtn = $('rawMissingRatesCsvBtn');
+    if (csvBtn) {
+      csvBtn.addEventListener('click', () => {
+        const csvStr = buildMissingRatesRequestCsv(m);
+        if (!csvStr) return;
+        const slug = String(m.partyLabel || 'supplier').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 32);
+        const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Missing_Rates_Request_${slug}_${todayISO()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast('CSV downloaded', 'ok');
+      });
+    }
+    const copyBtn = $('rawMissingRatesCopyBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const msgVal = cleanMissingRatesOutward(ta ? ta.value : text);
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(msgVal);
+          }
+          copyBtn.innerHTML = `${ic('check_circle')} <span>Copied</span>`;
+          if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(copyBtn);
+          setTimeout(() => {
+            if (copyBtn.isConnected) {
+              copyBtn.innerHTML = `${ic('copy')} <span>Copy Message</span>`;
+              if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(copyBtn);
+            }
+          }, 1800);
+        } catch (_) {
+          if (ta) { ta.focus(); ta.select(); }
+          toast('Message selected for manual copy', 'info');
+        }
+      });
+    }
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+  }
+
+  function openRawMissingRatesModal(partyName, opts = {}) {
+    const model = buildMissingRatesRequestModel(Object.assign({}, opts, { partyName }));
+    if (!model || !model.ok) {
+      if (STATE.kioskLocked || !(typeof seatLens === 'function' && seatLens().expenses)) return false;
+      toast('No unpriced deliveries found for this supplier in the current scope', 'info');
+      return false;
+    }
+    let modal = $('rawMissingRatesModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'rawMissingRatesModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      modal.addEventListener('click', ev => { if (ev.target === modal) closeRawMissingRatesModal(); });
+      document.body.appendChild(modal);
+    }
+    if (_rawMissingRatesState && _rawMissingRatesState.keyHandler) {
+      document.removeEventListener('keydown', _rawMissingRatesState.keyHandler, true);
+    }
+    const appLang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const defLang = appLang === 'fr' ? 'fr' : 'en_ar';
+    const keyHandler = ev => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+        closeRawMissingRatesModal();
+      }
+    };
+    _rawMissingRatesState = {
+      model,
+      lang: defLang,
+      returnFocus: document.activeElement,
+      keyHandler
+    };
+    document.addEventListener('keydown', keyHandler, true);
+    modal.hidden = false;
+    renderRawMissingRatesModalBody();
+    return true;
+  }
+
+  // ---- Statement Recon Review Rate Diffs (M) Sequential Queue ----
+  function syncRateDiffNextBtnState() {
+    const sess = FORM_UI.rateDiffQueueSession;
+    const btn = $('dynSaveNextUnpricedBtn');
+    if (!btn || !sess || !Array.isArray(sess.specs)) return;
+    const remaining = sess.specs.filter(sp =>
+      sp && !(sess.resolvedKeys && sess.resolvedKeys.has(sp.stepKey)) && !(sess.keptActiveKeys && sess.keptActiveKeys.has(sp.stepKey))
+    );
+    const curIdx = Math.max(0, remaining.findIndex(sp => sp.stepKey === sess.currentStepKey));
+    const handledCount = (sess.resolvedKeys ? sess.resolvedKeys.size : 0) + (sess.keptActiveKeys ? sess.keptActiveKeys.size : 0);
+    const totalCount = sess.specs.length;
+    if (remaining.length <= 1 || totalCount <= 1) {
+      btn.hidden = true;
+      return;
+    }
+    const stepNum = Math.min(totalCount, handledCount + curIdx + 1);
+    const cntSpan = btn.querySelector('[data-unp-step-count]');
+    if (cntSpan) cntSpan.textContent = `${stepNum}/${totalCount}`;
+    btn.hidden = false;
+  }
+
+  function renderRateDiffModalBar(ctx) {
+    const unpBar = $('prUnpricedGradesBar');
+    const sess = FORM_UI.rateDiffQueueSession;
+    if (!unpBar || !ctx || !ctx.spec || !sess || !Array.isArray(sess.specs)) return;
+    const sp = ctx.spec;
+    const remaining = sess.specs.filter(x =>
+      x && !(sess.resolvedKeys && sess.resolvedKeys.has(x.stepKey)) && !(sess.keptActiveKeys && sess.keptActiveKeys.has(x.stepKey))
+    );
+    const handledCount = (sess.resolvedKeys ? sess.resolvedKeys.size : 0) + (sess.keptActiveKeys ? sess.keptActiveKeys.size : 0);
+    const curRemIdx = Math.max(0, remaining.findIndex(x => x.stepKey === sp.stepKey));
+    const stepNum = Math.min(sess.specs.length, handledCount + curRemIdx + 1);
+    const totalSteps = sess.specs.length;
+    const isLastStep = remaining.length <= 1;
+
+    const deltaVal = round4(Number(sp.billedRate || 0) - Number(sp.activeRate || 0));
+    const deltaSign = deltaVal > 0 ? '+' : (deltaVal < 0 ? '-' : '');
+    const deltaTxt = `${deltaSign}${fmtUSD(Math.abs(deltaVal), 2)}/${esc(sp.activeUnit || 'Ton')}`;
+    const sinceTxt = sp.hitRuleStart ? fmtDateDMY(sp.hitRuleStart) : '';
+    const diffDateTxt = sp.earliestDiffDate ? fmtDateDMY(sp.earliestDiffDate) : '';
+    const stepPillsHtml = remaining.slice(0, 6).map(x =>
+      `<button type="button" class="att-preset-pill${x.stepKey === sp.stepKey ? ' active' : ''}" data-rate-diff-step-key="${esc(x.stepKey)}"><span data-no-i18n="1">${esc(x.site || x.supplier)} (${fmtUSD(x.billedRate, 2)})</span></button>`
+    ).join('') + (remaining.length > 6 ? `<span class="badge badge-neutral" data-no-i18n="1">+${fmtNum(remaining.length - 6, 0)}</span>` : '');
+
+    unpBar.hidden = false;
+    unpBar.innerHTML = `
+      <div class="pr-unpriced-grades-head">
+        <div>
+          <strong>Rate Variance Review</strong> · <span data-no-i18n="1">${esc(sp.site || sp.supplier)}</span> · <span data-no-i18n="1">${esc(sp.supplier)}</span>
+          ${diffDateTxt ? ` · <span>Statement date:</span> <strong data-no-i18n="1">${esc(diffDateTxt)}</strong>` : ''}
+        </div>
+        <span class="badge badge-warn"><span data-no-i18n="1">${fmtNum(sp.rowCount || 1, 0)}</span> <span>statement lines</span></span>
+      </div>
+      <div class="pr-rate-diff-compare-row" id="prRateDiffCompareRow">
+        <span class="badge badge-neutral pr-rate-diff-active-pill"><span>Active agreement:</span> <strong data-no-i18n="1">${fmtUSD(sp.activeRate, 2)}/${esc(sp.activeUnit || 'Ton')}</strong>${sinceTxt ? ` <span data-no-i18n="1">(${esc(sinceTxt)})</span>` : ''}</span>
+        <span class="badge badge-warn pr-rate-diff-billed-pill"><span>Statement billed:</span> <strong data-no-i18n="1">${fmtUSD(sp.billedRate, 2)}/${esc(sp.billedUnit || sp.activeUnit || 'Ton')}</strong> (<span data-no-i18n="1">${deltaTxt}</span>)</span>
+      </div>
+      <div class="pr-unpriced-suggest-row" id="prUnpricedSuggestRow">
+        <button type="button" class="att-preset-pill pr-use-last-chip" id="prApplyStmtRateChip" data-ui-tip="Apply statement billed rate so approved mid-month revisions post cleanly"><span>Use Billed:</span> <strong data-no-i18n="1">${fmtUSD(sp.billedRate, 2)}/${esc(sp.billedUnit || sp.activeUnit || 'Ton')}</strong></button>
+      </div>
+      <div class="pr-unpriced-queue-row" id="prUnpricedQueueStrip">
+        <div class="pr-unpriced-queue-head">
+          <div><span>Rate Diff Queue:</span> <span class="badge badge-neutral"><span data-no-i18n="1">${stepNum}/${totalSteps}</span></span></div>
+          <div class="pr-rate-diff-queue-actions">
+            <button type="button" class="pr-skip-rate-diff-btn" id="prSkipRateDiffBtn" data-ui-tip="Keep active agreement rate unchanged and exclude this corridor from settlement so it stays flagged for supplier dispute"><span>${isLastStep ? 'Keep Active & Finish' : 'Keep Active & Next'}</span></button>
+          </div>
+        </div>
+        ${remaining.length > 1 ? `<div class="pr-unpriced-queue-pills"><span>Switch corridor:</span>${stepPillsHtml}</div>` : ''}
+      </div>
+    `;
+
+    const applyChip = $('prApplyStmtRateChip');
+    if (applyChip) {
+      applyChip.addEventListener('click', () => {
+        const isHaul = val('f_ruletype') === 'Transport Price (Site)' || sp.legMode === 'transport';
+        const rateStr = String(sp.billedRate);
+        const unitStr = String(sp.billedUnit || sp.activeUnit || '');
+        if (isHaul) {
+          if ($('f_rateper') && unitStr) $('f_rateper').value = unitStr;
+          if ($('f_transunitprice')) {
+            $('f_transunitprice').value = rateStr;
+            FORM_UI.transManual = true;
+            $('f_transunitprice').dispatchEvent(new Event('input', { bubbles: true }));
+            $('f_transunitprice').dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        } else {
+          if ($('f_uom') && unitStr) { $('f_uom').value = unitStr; FORM_UI.uomManual = true; }
+          if ($('f_unitprice')) {
+            $('f_unitprice').value = rateStr;
+            FORM_UI.priceManual = true;
+            $('f_unitprice').dispatchEvent(new Event('input', { bubbles: true }));
+            $('f_unitprice').dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+        FORM_UI.userInteracted = true;
+        FORM_UI.touchedAll = true;
+        if (FORM_UI.touchedFields instanceof Set) {
+          FORM_UI.touchedFields.add(isHaul ? 'f_transunitprice' : 'f_unitprice');
+        }
+        applyChip.classList.add('active');
+        recalcForm();
+        const nBtn = $('dynSaveNextUnpricedBtn');
+        const focusTarget = (nBtn && !nBtn.hidden) ? nBtn : $('dynSaveModalBtn');
+        if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) && focusTarget && typeof focusTarget.focus === 'function') {
+          try { focusTarget.focus({ preventScroll: true }); } catch (_) {}
+        }
+      });
+    }
+
+    const skipBtn = $('prSkipRateDiffBtn');
+    if (skipBtn) {
+      skipBtn.addEventListener('click', () => {
+        const curSess = FORM_UI.rateDiffQueueSession;
+        if (!curSess) return;
+        if (curSess.keptActiveKeys instanceof Set) curSess.keptActiveKeys.add(sp.stepKey);
+        if (typeof curSess.onKeepActiveSpec === 'function') {
+          try { curSess.onKeepActiveSpec(sp); } catch (_) {}
+        }
+        const nextRemaining = curSess.specs.find(x =>
+          x && !(curSess.resolvedKeys && curSess.resolvedKeys.has(x.stepKey)) && !(curSess.keptActiveKeys && curSess.keptActiveKeys.has(x.stepKey))
+        );
+        if (nextRemaining) {
+          openRateDiffQueueStep(nextRemaining.stepKey, { advancing: true });
+          return;
+        }
+        FORM_UI.rateDiffQueueSession = null;
+        closeEntryModal(true);
+        renderApp();
+        if (typeof curSess.onQueueMutated === 'function') {
+          try { curSess.onQueueMutated(); } catch (_) {}
+        }
+        const doneMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+          ? window.MFG_I18N.t('Rate variance review completed', window.MFG_I18N.getLang())
+          : 'Rate variance review completed';
+        toast(doneMsg, 'ok');
+      });
+    }
+
+    unpBar.querySelectorAll('[data-rate-diff-step-key]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nextKey = btn.getAttribute('data-rate-diff-step-key') || '';
+        if (!nextKey || nextKey === sp.stepKey) return;
+        if (isEntryModalDirty()) {
+          promptUnsavedEntrySwitch({
+            type: 'rate_diff_step',
+            stepKey: nextKey,
+            label: btn.textContent ? btn.textContent.trim() : nextKey
+          });
+          return;
+        }
+        openRateDiffQueueStep(nextKey, { advancing: true });
+      });
+    });
+
+    syncRateDiffNextBtnState();
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(unpBar); } catch (_) {}
+    }
+  }
+
+  function openRateDiffQueueStep(targetStepKey, opts = {}) {
+    const sess = FORM_UI.rateDiffQueueSession;
+    if (!sess || !Array.isArray(sess.specs) || !sess.specs.length) return false;
+    const spec = sess.specs.find(s => s && s.stepKey === targetStepKey) || sess.specs[0];
+    if (!spec) return false;
+    sess.currentStepKey = spec.stepKey;
+    const hitRule = spec.hitRuleId ? resolveInspectorRecord('price_rules', spec.hitRuleId) : null;
+    const validRule = (hitRule && !hitRule.voided) ? hitRule : null;
+    const isSiteSpecific = Boolean(validRule && normSiteMatch(validRule.site || '') && (!spec.site || normSiteMatch(validRule.site) === normSiteMatch(spec.site)));
+    FORM_UI._advancingRateDiffQueue = true;
+    try {
+      if (isSiteSpecific) {
+        const origStart = String(validRule.start_date || '').slice(0, 10);
+        const bounds = typeof getChronologicalSeriesBounds === 'function'
+          ? getChronologicalSeriesBounds('price_rules', validRule, validRule)
+          : { maxStart: '' };
+        let suggestedStartDate = origStart || spec.earliestDiffDate || todayISO();
+        if (spec.earliestDiffDate && /^\d{4}-\d{2}-\d{2}$/.test(spec.earliestDiffDate) && (!origStart || spec.earliestDiffDate > origStart)) {
+          if (!bounds || !bounds.maxStart || spec.earliestDiffDate <= bounds.maxStart) {
+            suggestedStartDate = spec.earliestDiffDate;
+          }
+        }
+        openEntryModalForRecord('price_rules', validRule.id, {
+          forceSwitch: true,
+          _rateDiffCtx: {
+            spec,
+            isSiteSpecificRule: true,
+            origStart,
+            suggestedStartDate
+          }
+        });
+      } else {
+        const formKey = spec.legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw';
+        const ruleTypeLbl = spec.legMode === 'transport' ? 'Transport Price (Site)' : 'Purchase Price (Site)';
+        let suggestedStartDate = spec.earliestDiffDate || todayISO();
+        if (typeof getChronologicalSeriesBounds === 'function') {
+          const bounds = getChronologicalSeriesBounds('price_rules', {
+            company: spec.company,
+            rule_type: ruleTypeLbl,
+            site: spec.site,
+            supplier: spec.supplier,
+            product: spec.product
+          }, null);
+          if (bounds && bounds.minStart && bounds.minStart > suggestedStartDate) {
+            suggestedStartDate = bounds.minStart;
+          }
+        }
+        openEntryModal(formKey, {
+          company: spec.company,
+          ruleType: ruleTypeLbl,
+          supplier: spec.supplier,
+          site: spec.site,
+          prod: spec.product,
+          uom: spec.uom,
+          date: suggestedStartDate,
+          _rateDiffCtx: {
+            spec,
+            isSiteSpecificRule: false,
+            origStart: spec.hitRuleStart || '',
+            suggestedStartDate
+          }
+        }, { forceSwitch: true });
+      }
+    } finally {
+      FORM_UI._advancingRateDiffQueue = false;
+    }
+    return true;
+  }
+
+  function openStatementRateDiffQueueModal(specs, opts = {}) {
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return false;
+    if (!(typeof seatLens === 'function' && seatLens().expenses)) return false;
+    if (typeof canModifyData === 'function' && !canModifyData()) return false;
+    const list = Array.isArray(specs) ? specs : [];
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const validSpecs = [];
+    const seen = new Set();
+    list.forEach(sp => {
+      if (!sp || !sp.stepKey || !sp.hitRuleId) return;
+      const legMode = sp.legMode === 'transport' ? 'transport' : 'material';
+      if (!canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw')) return;
+      const co = String(sp.company || defaultEntryCompany() || 'WTC');
+      if (allowed.length && !allowed.includes(co)) return;
+      if (buTarget && co !== buTarget) return;
+      if (seen.has(sp.stepKey)) return;
+      seen.add(sp.stepKey);
+      validSpecs.push(Object.assign({}, sp, { company: co, legMode }));
+    });
+    if (!validSpecs.length) return false;
+    const prefKey = String((opts && opts.preferredStepKey) || '');
+    if (prefKey) {
+      validSpecs.sort((a, b) => (a.stepKey === prefKey ? -1 : (b.stepKey === prefKey ? 1 : 0)));
+    }
+    FORM_UI.unpricedQueueSession = null;
+    FORM_UI.unpricedSiteCtx = null;
+    FORM_UI.rateDiffQueueSession = null;
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
+    FORM_UI.rateDiffQueueSession = {
+      specs: validSpecs,
+      resolvedKeys: new Set(),
+      keptActiveKeys: new Set(),
+      currentStepKey: validSpecs[0].stepKey,
+      onQueueMutated: typeof opts.onQueueMutated === 'function' ? opts.onQueueMutated : null,
+      onKeepActiveSpec: typeof opts.onKeepActiveSpec === 'function' ? opts.onKeepActiveSpec : null
+    };
+    return openRateDiffQueueStep(validSpecs[0].stepKey);
+  }
+
   function openEntryModal(formType, prefill = null, opts = null) {
     if (!STATE.authed && !STATE.kioskLocked) return false;
     _userModalOpenedSeq++;
@@ -141268,9 +142004,16 @@
         : null;
       const _unpTotalSteps = _unpQMeta ? (Number(FORM_UI.unpricedQueueSession.doneCount || 0) + _unpQMeta.items.length) : 0;
       const _unpStepNum = _unpQMeta ? Math.min(_unpTotalSteps, Number(FORM_UI.unpricedQueueSession.doneCount || 0) + 1) : 0;
-      const unpNextBtnHtml = (_unpQMeta && _unpTotalSteps > 1 && _unpQMeta.items.length > 1)
-        ? `<button type="button" class="btn-ghost-bar btn-save-next-unpriced" id="dynSaveNextUnpricedBtn" data-ui-tip="Post this rate and step to the next unpriced grade or site for this counterparty"><span>Post &amp; Next Unpriced</span> (<span data-unp-step-count="1" data-no-i18n="1">${_unpStepNum}/${_unpTotalSteps}</span>)</button>`
-        : '';
+      const _rdQMeta = ((!editTargetRow || seatCanSaveEdit) && form === 'pricerule' && prefill && prefill._rateDiffCtx && FORM_UI.rateDiffQueueSession && Array.isArray(FORM_UI.rateDiffQueueSession.specs))
+        ? FORM_UI.rateDiffQueueSession
+        : null;
+      const _rdTotalSteps = _rdQMeta ? _rdQMeta.specs.length : 0;
+      const _rdRemaining = _rdQMeta ? _rdQMeta.specs.filter(x => x && !(_rdQMeta.resolvedKeys && _rdQMeta.resolvedKeys.has(x.stepKey)) && !(_rdQMeta.keptActiveKeys && _rdQMeta.keptActiveKeys.has(x.stepKey))) : [];
+      const unpNextBtnHtml = (_rdQMeta && _rdRemaining.length > 1)
+        ? `<button type="button" class="btn-ghost-bar btn-save-next-unpriced" id="dynSaveNextUnpricedBtn" data-ui-tip="Post this revised rate and step to the next rate variance corridor"><span>Post &amp; Next</span> (<span data-unp-step-count="1" data-no-i18n="1">1/${_rdTotalSteps}</span>)</button>`
+        : ((_unpQMeta && _unpTotalSteps > 1 && _unpQMeta.items.length > 1)
+          ? `<button type="button" class="btn-ghost-bar btn-save-next-unpriced" id="dynSaveNextUnpricedBtn" data-ui-tip="Post this rate and step to the next unpriced grade or site for this counterparty"><span>Post &amp; Next Unpriced</span> (<span data-unp-step-count="1" data-no-i18n="1">${_unpStepNum}/${_unpTotalSteps}</span>)</button>`
+          : '');
       const supQuickTicketBtnsHtml = (canVoidCurrent && isTicketEdit)
         ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" data-ui-tip="Customer rejected product: return load to plant at $0 and log Round-Trip KM (2x One-Way KM)">${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" data-ui-tip="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
         : '';
@@ -141308,7 +142051,7 @@
       const remQuickBtn = $('modalRemoveSlipBtn');
       if (cBtn) cBtn.addEventListener('click', ev => closeEntryModal(false, ev));
       if (nBtn) nBtn.addEventListener('click', () => saveModalEntry({ nextDay: true }));
-      if (nUnpBtn) nUnpBtn.addEventListener('click', () => saveModalEntry({ nextUnpriced: true }));
+      if (nUnpBtn) nUnpBtn.addEventListener('click', () => saveModalEntry(FORM_UI.rateDiffQueueSession ? { nextRateDiff: true } : { nextUnpriced: true }));
       if (sBtn) sBtn.addEventListener('click', saveModalEntry);
       if (retQuickBtn) {
         retQuickBtn.addEventListener('click', () => {
@@ -141398,7 +142141,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#pinBatchRepDateBtn, #nearCopyAmtJump, #ideNearCopyAmtJump, .party-typo-keep-btn, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#pinBatchRepDateBtn, #nearCopyAmtJump, #ideNearCopyAmtJump, .party-typo-keep-btn, .near-copy-peek-chip, #ncPeekCloseBtn, #nearCopyPeekPopover, #ideFifoSplitBtn, #fifoSplitPeekCloseBtn, #fifoSplitPeekPopover, #btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip, #prReqMissingRatesBtn, [data-rate-diff-step-key], #prSkipRateDiffBtn')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -141767,6 +142510,17 @@
           const activeSup = activeG.supplier || prefill.supplier || '';
           const activeProd = activeG.product || prefill.product || '';
           const activeCo = activeG.company || prefill.company || '';
+          const canReqMissingNow = Boolean(
+            !STATE.kioskLocked
+            && (!qSess || qSess.mode !== 'statement')
+            && activeSup
+            && typeof seatLens === 'function'
+            && seatLens().expenses
+            && (canEnterForm(isHaulMode ? 'pricerule_haul' : 'pricerule_raw') || canAccessRdlReport('16'))
+          );
+          const reqRatesBtnHtml = canReqMissingNow
+            ? `<button type="button" class="badge badge-neutral btn-req-missing-rates" id="prReqMissingRatesBtn" data-ui-tip="Generate EN/AR/FR WhatsApp quote request for missing rates">${ic('send_msg')} <span>Request Missing Rates</span></button>`
+            : '';
           let queueRowHtml = '';
           if (qSnap && qTotal > 1 && Array.isArray(qSnap.siteSummaries) && qSnap.siteSummaries.length) {
             let curStepOffset = 0;
@@ -141796,9 +142550,18 @@
               <div class="pr-unpriced-queue-row" id="prUnpricedQueueStrip">
                 <div class="pr-unpriced-queue-head">
                   <div>${queueTitlePrefix}${queuePartyInfo} <span class="badge badge-neutral"><span data-no-i18n="1">${stepNum}/${qTotal}</span></span></div>
-                  <span class="badge badge-neutral"><span data-no-i18n="1">${fmtNum(qSnap.siteCount, 0)}</span> <span>${qSnap.siteCount === 1 ? 'site' : 'sites'}</span></span>
+                  <div class="pr-rate-diff-queue-actions">${reqRatesBtnHtml}<span class="badge badge-neutral"><span data-no-i18n="1">${fmtNum(qSnap.siteCount, 0)}</span> <span>${qSnap.siteCount === 1 ? 'site' : 'sites'}</span></span></div>
                 </div>
                 ${qSnap.siteSummaries.length > 1 ? `<div class="pr-unpriced-queue-pills"><span>Jump to site:</span>${sitePillsHtml}</div>` : ''}
+              </div>
+            `;
+          } else if (reqRatesBtnHtml) {
+            queueRowHtml = `
+              <div class="pr-unpriced-queue-row" id="prUnpricedQueueStrip">
+                <div class="pr-unpriced-queue-head">
+                  <div><strong data-no-i18n="1">${esc(activeSup)}</strong></div>
+                  <div class="pr-rate-diff-queue-actions">${reqRatesBtnHtml}</div>
+                </div>
               </div>
             `;
           }
@@ -141812,6 +142575,10 @@
             ${queueRowHtml}
           `;
           syncUnpricedSuggestRow(true);
+          const reqMissingBtn = $('prReqMissingRatesBtn');
+          if (reqMissingBtn && activeSup) {
+            reqMissingBtn.addEventListener('click', () => openRawMissingRatesModal(activeSup, { legMode: activeLegMode }));
+          }
           unpBar.querySelectorAll('[data-unpriced-grade-idx]').forEach(btn => {
             btn.addEventListener('click', () => {
               const nextIdx = Number(btn.getAttribute('data-unpriced-grade-idx'));
@@ -141878,7 +142645,10 @@
       } else {
         FORM_UI.unpricedSiteCtx = null;
         if (!FORM_UI._advancingUnpricedQueue) FORM_UI.unpricedQueueSession = null;
-        if (unpBar) { unpBar.hidden = true; unpBar.innerHTML = ''; }
+        if (!(prefill && prefill._rateDiffCtx && form === 'pricerule')) {
+          if (!FORM_UI._advancingRateDiffQueue) FORM_UI.rateDiffQueueSession = null;
+          if (unpBar) { unpBar.hidden = true; unpBar.innerHTML = ''; }
+        }
       }
       const applyStmt16SlipDates = (indName, txStr, repStr) => {
         const todayStr = todayISO();
@@ -142229,6 +142999,16 @@
     syncCatchUpBatchDateBar();
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
+    if (prefill && prefill._rateDiffCtx && form === 'pricerule' && FORM_UI.rateDiffQueueSession) {
+      const rdCtx = prefill._rateDiffCtx;
+      if (rdCtx.suggestedStartDate && $('f_date') && $('f_date').value !== rdCtx.suggestedStartDate) {
+        $('f_date').value = rdCtx.suggestedStartDate;
+        recalcForm();
+        FORM_UI.userInteracted = false;
+        FORM_UI.initialModalSig = getEntryModalStateSignature();
+      }
+      renderRateDiffModalBar(rdCtx);
+    }
   }
 
   function closeEntryModal(force, ev) {
@@ -142249,6 +143029,7 @@
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (!FORM_UI._advancingUnpricedQueue) FORM_UI.unpricedQueueSession = null;
+    if (!FORM_UI._advancingRateDiffQueue) FORM_UI.rateDiffQueueSession = null;
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
     }
@@ -143433,7 +144214,7 @@
       return;
     }
     closeRecordInspector({ restoreFocus: false });
-    openEntryModal(formType, { editRecord: { crKey: targetKey, row: targetRow } }, { forceSwitch: true });
+    openEntryModal(formType, Object.assign({ editRecord: { crKey: targetKey, row: targetRow } }, (opts && opts._rateDiffCtx) ? { _rateDiffCtx: opts._rateDiffCtx } : {}), { forceSwitch: true });
   }
 
   function openRecordFromTableRow(crKey, id, trEl) {
@@ -167769,6 +168550,7 @@
     if (prevCompany !== coKey) {
       if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
       if (typeof closeHoldingNetSettlementModal === 'function') closeHoldingNetSettlementModal();
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
       STATE.hubInspectorReturn = null;
       STATE.ovkMoversReturn = null;
       if (STATE.catchUpBatchRepDate && STATE.catchUpBatchScope && String(coKey || '') !== STATE.catchUpBatchScope) {
@@ -167784,6 +168566,8 @@
     }
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
+    FORM_UI.rateDiffQueueSession = null;
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
     STATE.indDrawerFilters = {};
     closeCoOverrideDiffPopover();
     STATE.shown = {};
@@ -168993,6 +169777,7 @@
 
   function purgeOverlaysOnSessionOrKioskLock() {
     if (typeof closeHoldingNetSettlementModal === 'function') closeHoldingNetSettlementModal();
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     if (typeof closeBatchPaydayModal === 'function') closeBatchPaydayModal({ force: true });
     if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
@@ -169428,6 +170213,8 @@
     cancelBiometricPendingTimers();
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
+    FORM_UI.rateDiffQueueSession = null;
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -169667,6 +170454,8 @@
     cancelBiometricPendingTimers();
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
+    FORM_UI.rateDiffQueueSession = null;
+    if (typeof closeRawMissingRatesModal === 'function') closeRawMissingRatesModal();
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -207902,6 +208691,17 @@
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
 
+      // 1-click "Request Missing Rates (K)" WhatsApp/CSV card (#rawSiteOwnersPanel, #rawTransPayPanel)
+      const reqMissingRatesBtn = t.closest('[data-req-missing-rates]');
+      if (reqMissingRatesBtn && container.contains(reqMissingRatesBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const supName = reqMissingRatesBtn.getAttribute('data-req-missing-rates') || '';
+        const legAttr = reqMissingRatesBtn.getAttribute('data-req-missing-leg') || 'material';
+        if (supName) openRawMissingRatesModal(supName, { legMode: legAttr === 'transport' ? 'transport' : 'material' });
+        return;
+      }
+
       // 1-click "Set Site Price" on Unpriced (N) sites (#sitesPanel, #rawOverpaidAlertBar, #snOverpaidSites, #rawSiteOwnersPanel, #rawTransPayPanel)
       const setSitePriceBtn = t.closest('[data-set-site-price]');
       if (setSitePriceBtn && container.contains(setSitePriceBtn)) {
@@ -214481,6 +215281,8 @@
           document.querySelectorAll('.tbl-col-popover').forEach(p => { p.hidden = true; });
           return;
         }
+        const rmrModal = $('rawMissingRatesModal');
+        if (rmrModal && !rmrModal.hidden) { e.preventDefault(); closeRawMissingRatesModal(); return; }
         const camDocModal = $('docCameraModal');
         if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
         const fbModal = $('fatherBackfillModal');
@@ -217411,6 +218213,12 @@
     buildStatementUnpricedQueue: typeof buildStatementUnpricedQueue === 'function' ? buildStatementUnpricedQueue : null,
     openSetUnpricedSitePriceModal: typeof openSetUnpricedSitePriceModal === 'function' ? openSetUnpricedSitePriceModal : null,
     openStatementUnpricedQueueModal: typeof openStatementUnpricedQueueModal === 'function' ? openStatementUnpricedQueueModal : null,
+    openStatementRateDiffQueueModal: typeof openStatementRateDiffQueueModal === 'function' ? openStatementRateDiffQueueModal : null,
+    buildMissingRatesRequestModel: typeof buildMissingRatesRequestModel === 'function' ? buildMissingRatesRequestModel : null,
+    buildMissingRatesRequestText: typeof buildMissingRatesRequestText === 'function' ? buildMissingRatesRequestText : null,
+    buildMissingRatesRequestCsv: typeof buildMissingRatesRequestCsv === 'function' ? buildMissingRatesRequestCsv : null,
+    openRawMissingRatesModal: typeof openRawMissingRatesModal === 'function' ? openRawMissingRatesModal : null,
+    closeRawMissingRatesModal: typeof closeRawMissingRatesModal === 'function' ? closeRawMissingRatesModal : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
@@ -217878,6 +218686,7 @@
         getOverpaidPayablesSentinelData,
         openSetUnpricedSitePriceModal,
         openStatementUnpricedQueueModal,
+        openStatementRateDiffQueueModal,
         resolveUnpricedLastRateSuggestion,
         normSiteMatch,
         normSupPayable,
