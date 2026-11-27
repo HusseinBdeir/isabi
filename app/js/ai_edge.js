@@ -44,6 +44,8 @@
     mfgReconCustomRev: -1,
     mfgReconPostedCount: 0,
     mfgPostBusy: false,
+    mfgMismatchExportOpen: false,
+    mfgMismatchLang: 'en_ar',
     mfgScanGen: 0,
     mfgScanBusy: false,
     mfgScanFromAi: false,
@@ -3802,6 +3804,159 @@
     }
   }
 
+  function isMfgReconMismatchedRow(r) {
+    if (!r || r.status === 'Matched') return false;
+    const internalZeroOnly = Number(r.matchedZeroLoads || 0) > 0
+      && Number(r.hitRuleRate || 0) <= 0
+      && !r.exceedsLoggedQty
+      && !r.hasScaleDrift
+      && Math.abs(Number(r.varianceUsd || 0)) < 0.5;
+    if (internalZeroOnly) return false;
+    return Boolean(
+      r.exceedsLoggedQty
+      || r.hasScaleDrift
+      || Math.abs(Number(r.varianceUsd || 0)) >= 0.5
+      || r.exceedsS20QuotedCap
+    );
+  }
+
+  function getMfgReconMismatchedRows(rowsOpt) {
+    if (!D || !D.STATE || D.STATE.kioskLocked) return [];
+    if (typeof D.seatLens === 'function' && !Boolean(D.seatLens().expenses)) return [];
+    const list = Array.isArray(rowsOpt)
+      ? rowsOpt
+      : (Array.isArray(EDGE_STATE.mfgReconRows) ? EDGE_STATE.mfgReconRows : []);
+    return list.filter(isMfgReconMismatchedRow);
+  }
+
+  function cleanMfgMismatchOutward(str) {
+    return sanitizeOutward(String(str == null ? '' : str))
+      .replace(/\(\s*S20\s*\)/gi, '')
+      .replace(/\b(?:S20|7z-[a-z0-9-]+)\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function mfgReconMismatchReason(r, lang) {
+    if (r.exceedsLoggedQty) {
+      if (lang === 'ar') return 'الكمية المفوترة تتجاوز القبان';
+      if (lang === 'fr') return 'Quantité facturée supérieure à la bascule';
+      return 'Billed quantity exceeds weighbridge';
+    }
+    if (r.hasScaleDrift && Number(r.loggedQty || 0) <= 0) {
+      if (lang === 'ar') return 'الإيصال غير مسجل على القبان';
+      if (lang === 'fr') return 'Bon introuvable sur la bascule';
+      return 'Ticket not found on weighbridge';
+    }
+    if (r.hasScaleDrift) {
+      if (lang === 'ar') return 'فرق في وزن القبان';
+      if (lang === 'fr') return 'Écart de poids bascule';
+      return 'Weighbridge quantity variance';
+    }
+    if (Math.abs(Number(r.varianceUsd || 0)) >= 0.5) {
+      if (lang === 'ar') return 'فرق في السعر أو المبلغ';
+      if (lang === 'fr') return 'Écart de tarif ou de montant';
+      return 'Rate or amount variance';
+    }
+    if (lang === 'ar') return 'المطالبة تتجاوز التوريدات الموثقة';
+    if (lang === 'fr') return 'Réclamation supérieure aux livraisons documentées';
+    return 'Claim exceeds documented deliveries';
+  }
+
+  function buildMfgReconMismatchBlock(mismatched, lang) {
+    const sumBilled = round2(mismatched.reduce((s, r) => s + Number(r.billedUsd || 0), 0));
+    const sumExpected = round2(mismatched.reduce((s, r) => s + Number(r.expectedUsd || 0), 0));
+    const sumDiff = round2(sumBilled - sumExpected);
+    const diffSign = sumDiff > 0 ? '+' : (sumDiff < 0 ? '-' : '');
+    const fmtDiff = `${diffSign}$${fmtNum(Math.abs(sumDiff), 2)}`;
+    const uniqueSups = Array.from(new Set(mismatched.map(r => cleanMfgMismatchOutward(r.matchedSupplier)).filter(Boolean)));
+    const supLabel = uniqueSups.length === 1 ? uniqueSups[0] : (uniqueSups.length > 1 ? uniqueSups.join(', ') : '');
+    const lines = [];
+    if (lang === 'ar') {
+      lines.push('ملاحظات مطابقة كشف المورد (البنود غير المطابقة)');
+      if (supLabel) lines.push(`المورد: ${supLabel}`);
+      lines.push(`عدد البنود غير المطابقة: ${fmtNum(mismatched.length, 0)} | مفوتر: $${fmtNum(sumBilled, 2)} | متوقع: $${fmtNum(sumExpected, 2)} | الفرق: ${fmtDiff}`);
+      lines.push('');
+      mismatched.forEach(r => {
+        const dSign = Number(r.varianceUsd || 0) > 0 ? '+' : (Number(r.varianceUsd || 0) < 0 ? '-' : '');
+        const dTxt = `${dSign}$${fmtNum(Math.abs(Number(r.varianceUsd || 0)), 2)}`;
+        const wbQty = Number(r.loggedQty || 0) > 0 ? `${fmtNum(r.loggedQty, 1)} طن` : 'غير مسجل';
+        const ref = cleanMfgMismatchOutward(r.ticketRef);
+        const item = cleanMfgMismatchOutward(r.itemDesc);
+        const supPart = uniqueSups.length > 1 ? `${cleanMfgMismatchOutward(r.matchedSupplier)} | ` : '';
+        lines.push(`- ${r.date} | ${ref} | ${supPart}${item} | المفوتر: ${fmtNum(r.qty, 1)} طن ($${fmtNum(r.billedUsd, 2)}) | القبان: ${wbQty} ($${fmtNum(r.expectedUsd, 2)}) | الفرق: ${dTxt} | ${mfgReconMismatchReason(r, 'ar')}`);
+      });
+      lines.push('', 'يرجى مراجعة هذه البنود وتأكيد التصحيح.');
+      return lines.map(l => cleanMfgMismatchOutward(l)).join('\n').replace(/\n{3,}/g, '\n\n');
+    }
+    if (lang === 'fr') {
+      lines.push('Écarts de rapprochement fournisseur');
+      if (supLabel) lines.push(`Fournisseur : ${supLabel}`);
+      lines.push(`Lignes en écart : ${fmtNum(mismatched.length, 0)} | Facturé : $${fmtNum(sumBilled, 2)} | Attendu : $${fmtNum(sumExpected, 2)} | Écart : ${fmtDiff}`);
+      lines.push('');
+      mismatched.forEach(r => {
+        const dSign = Number(r.varianceUsd || 0) > 0 ? '+' : (Number(r.varianceUsd || 0) < 0 ? '-' : '');
+        const dTxt = `${dSign}$${fmtNum(Math.abs(Number(r.varianceUsd || 0)), 2)}`;
+        const wbQty = Number(r.loggedQty || 0) > 0 ? `${fmtNum(r.loggedQty, 1)} t` : '0.0 t';
+        const ref = cleanMfgMismatchOutward(r.ticketRef);
+        const item = cleanMfgMismatchOutward(r.itemDesc);
+        const supPart = uniqueSups.length > 1 ? `${cleanMfgMismatchOutward(r.matchedSupplier)} | ` : '';
+        lines.push(`- ${r.date} | ${ref} | ${supPart}${item} | Facturé : ${fmtNum(r.qty, 1)} t ($${fmtNum(r.billedUsd, 2)}) | Bascule : ${wbQty} ($${fmtNum(r.expectedUsd, 2)}) | Écart : ${dTxt} | ${mfgReconMismatchReason(r, 'fr')}`);
+      });
+      lines.push('', 'Merci de vérifier ces écarts et de nous transmettre les pièces corrigées.');
+      return lines.map(l => cleanMfgMismatchOutward(l)).join('\n').replace(/\n{3,}/g, '\n\n');
+    }
+    lines.push('Supplier Statement Discrepancy Notice (Mismatched Lines)');
+    if (supLabel) lines.push(`Supplier: ${supLabel}`);
+    lines.push(`Mismatched Lines: ${fmtNum(mismatched.length, 0)} | Statement Billed: $${fmtNum(sumBilled, 2)} | Recorded Expected: $${fmtNum(sumExpected, 2)} | Net Difference: ${fmtDiff}`);
+    lines.push('');
+    mismatched.forEach(r => {
+      const dSign = Number(r.varianceUsd || 0) > 0 ? '+' : (Number(r.varianceUsd || 0) < 0 ? '-' : '');
+      const dTxt = `${dSign}$${fmtNum(Math.abs(Number(r.varianceUsd || 0)), 2)}`;
+      const wbQty = Number(r.loggedQty || 0) > 0 ? `${fmtNum(r.loggedQty, 1)} Ton` : 'Not logged';
+      const ref = cleanMfgMismatchOutward(r.ticketRef);
+      const item = cleanMfgMismatchOutward(r.itemDesc);
+      const supPart = uniqueSups.length > 1 ? `${cleanMfgMismatchOutward(r.matchedSupplier)} | ` : '';
+      lines.push(`- ${r.date} | ${ref} | ${supPart}${item} | Billed: ${fmtNum(r.qty, 1)} Ton ($${fmtNum(r.billedUsd, 2)}) | Recorded: ${wbQty} ($${fmtNum(r.expectedUsd, 2)}) | Diff: ${dTxt} | ${mfgReconMismatchReason(r, 'en')}`);
+    });
+    lines.push('', 'Please review these discrepancies and send corrected weighbridge slips.');
+    return lines.map(l => cleanMfgMismatchOutward(l)).join('\n').replace(/\n{3,}/g, '\n\n');
+  }
+
+  function buildMfgReconMismatchText(rowsOpt, langMode = 'en_ar') {
+    const mismatched = getMfgReconMismatchedRows(rowsOpt);
+    if (!mismatched.length) return '';
+    const mode = ['en_ar', 'en', 'ar', 'fr'].includes(langMode) ? langMode : 'en_ar';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') {
+      return buildMfgReconMismatchBlock(mismatched, mode);
+    }
+    return `${buildMfgReconMismatchBlock(mismatched, 'en')}\n\n---\n\n${buildMfgReconMismatchBlock(mismatched, 'ar')}`;
+  }
+
+  function buildMfgReconMismatchCsv(rowsOpt) {
+    const mismatched = getMfgReconMismatchedRows(rowsOpt);
+    if (!mismatched.length) return '';
+    const csvSafeText = v => {
+      let s = cleanMfgMismatchOutward(String(v == null ? '' : v));
+      if (/^[\t\r ]*[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['Date', 'Ticket / Ref', 'Supplier', 'Material / Leg', 'Billed Qty (Ton)', 'Weighbridge Qty (Ton)', 'Expected (USD)', 'Billed (USD)', 'Difference (USD)', 'Discrepancy Reason'].join(',');
+    const bodyRows = mismatched.map(r => [
+      csvSafeText(r.date || ''),
+      csvSafeText(r.ticketRef || ''),
+      csvSafeText(r.matchedSupplier || ''),
+      csvSafeText(r.itemDesc || ''),
+      Number(r.qty || 0).toFixed(1),
+      Number(r.loggedQty || 0).toFixed(1),
+      Number(r.expectedUsd || 0).toFixed(2),
+      Number(r.billedUsd || 0).toFixed(2),
+      Number(r.varianceUsd || 0).toFixed(2),
+      csvSafeText(mfgReconMismatchReason(r, 'en'))
+    ].join(','));
+    return '\uFEFF' + [header].concat(bodyRows).join('\r\n');
+  }
+
   function mountMfgStatementReconPanel() {
     const ws = $('workspace');
     if (!ws || !ensureFreshPanel('mfgAiStatementReconPanel') || !D || !D.STATE) return;
@@ -3824,6 +3979,18 @@
     const openApUsd = apBridge && apBridge.totals ? round2(Number(apBridge.totals.closingBalance || apBridge.totals.netPayable || 0)) : sumExp;
     const gatedRows = rows.filter(r => r && r.gateBlocked);
     const unpricedRowCount = rows.filter(r => r && r.matchedZeroLoads > 0).length;
+    const mismatchedRows = (!hideExpenses && !D.STATE.kioskLocked) ? getMfgReconMismatchedRows(rows) : [];
+    const mismatchLang = ['en_ar', 'en', 'ar', 'fr'].includes(EDGE_STATE.mfgMismatchLang) ? EDGE_STATE.mfgMismatchLang : 'en_ar';
+    const mismatchText = (EDGE_STATE.mfgMismatchExportOpen && mismatchedRows.length)
+      ? buildMfgReconMismatchText(mismatchedRows, mismatchLang)
+      : '';
+    const uniqueMismatchSups = Array.from(new Set(mismatchedRows.map(r => cleanMfgMismatchOutward(r.matchedSupplier)).filter(Boolean)));
+    const mmPhoneDigits = (uniqueMismatchSups.length === 1 && typeof window !== 'undefined' && typeof window.__mfgResolveSupplierPhoneDigits === 'function')
+      ? window.__mfgResolveSupplierPhoneDigits(uniqueMismatchSups[0])
+      : '';
+    const mmWaHref = mismatchText
+      ? `${mmPhoneDigits ? `https://wa.me/${mmPhoneDigits}?text=` : 'https://wa.me/?text='}${encodeURIComponent(mismatchText)}`
+      : '#';
     const maskAmt = v => (hideExpenses ? `<span class="muted">Restricted</span>` : v);
 
     const panel = document.createElement('div');
@@ -3878,8 +4045,31 @@
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiScanStmtBtn"${EDGE_STATE.mfgScanBusy ? ' disabled' : ''}>${ic('sparkles')} <span>Scan WhatsApp PDF / Photo</span></button>` : ''}
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiLoadSampleBtn">Load Example</button>` : ''}
           ${!hideExpenses ? `<button type="button" class="aie-btn" id="mfgAiRunReconBtn">${ic('bolt')} <span>Run 3-Way Match</span></button>` : ''}
+          ${(!hideExpenses && !D.STATE.kioskLocked && mismatchedRows.length) ? `<button type="button" class="aie-btn" id="mfgAiExportMismatchBtn">${ic('send_msg')} <span>Export Mismatched</span> (<span data-no-i18n="1">${mismatchedRows.length}</span>)</button>` : ''}
           ${canWrite ? `<button type="button" class="aie-btn is-brass" id="mfgAiPostReconBtn">${ic('check_circle')} <span>+ Post Matched Settlements</span></button>` : ''}
         </div>
+        ${(EDGE_STATE.mfgMismatchExportOpen && mismatchedRows.length && !hideExpenses && !D.STATE.kioskLocked) ? `
+          <div class="aie-mismatch-export-bar" id="mfgAiMismatchExportBar">
+            <div class="aie-mismatch-export-head">
+              <div>
+                <strong>Mismatched Statement Lines</strong>
+                <span class="aie-pill is-warn" data-no-i18n="1">${mismatchedRows.length}</span>
+              </div>
+              <div class="aie-mismatch-export-actions">
+                <div class="aie-lang-seg" role="group" aria-label="Export Language">
+                  <button type="button" class="aie-lang-btn${mismatchLang === 'en_ar' ? ' active' : ''}" data-aie-mm-lang="en_ar" data-no-i18n="1">EN + عربي</button>
+                  <button type="button" class="aie-lang-btn${mismatchLang === 'en' ? ' active' : ''}" data-aie-mm-lang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn${mismatchLang === 'ar' ? ' active' : ''}" data-aie-mm-lang="ar" data-no-i18n="1">عربي</button>
+                  <button type="button" class="aie-lang-btn${mismatchLang === 'fr' ? ' active' : ''}" data-aie-mm-lang="fr" data-no-i18n="1">FR</button>
+                </div>
+                <button type="button" class="aie-btn" id="mfgAiMismatchCsvBtn">${ic('download')} <span>Download CSV</span></button>
+                <button type="button" class="aie-btn" id="mfgAiMismatchCopyBtn">${ic('copy')} <span>Copy Summary</span></button>
+                <a class="aie-btn is-brass" id="mfgAiMismatchWaBtn" href="${esc(mmWaHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} <span>WhatsApp</span></a>
+              </div>
+            </div>
+            <pre class="aie-mismatch-preview" id="mfgAiMismatchPreview" dir="${mismatchLang === 'ar' ? 'rtl' : 'ltr'}" data-no-i18n="1">${esc(mismatchText)}</pre>
+          </div>
+        ` : ''}
         <div class="table-wrap" style="margin-top:8px">
           <table class="ledger-table">
             <thead>
@@ -4015,6 +4205,71 @@
           reconcileManufacturingSupplierStatement(ta.value);
         }
         postManufacturingStatementBatch();
+      };
+    }
+    const expMmBtn = panel.querySelector('#mfgAiExportMismatchBtn');
+    if (expMmBtn) {
+      expMmBtn.onclick = () => {
+        EDGE_STATE.mfgMismatchExportOpen = !EDGE_STATE.mfgMismatchExportOpen;
+        panel.remove();
+        mountMfgStatementReconPanel();
+      };
+    }
+    panel.querySelectorAll('[data-aie-mm-lang]').forEach(btn => {
+      btn.onclick = () => {
+        const nextL = btn.getAttribute('data-aie-mm-lang') || 'en_ar';
+        EDGE_STATE.mfgMismatchLang = ['en_ar', 'en', 'ar', 'fr'].includes(nextL) ? nextL : 'en_ar';
+        panel.remove();
+        mountMfgStatementReconPanel();
+      };
+    });
+    const mmCopyBtn = panel.querySelector('#mfgAiMismatchCopyBtn');
+    if (mmCopyBtn) {
+      mmCopyBtn.onclick = async () => {
+        const txtOut = buildMfgReconMismatchText(mismatchedRows, mismatchLang);
+        if (!txtOut) return;
+        let copied = false;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(txtOut);
+            copied = true;
+          }
+        } catch (_) {}
+        if (!copied) {
+          try {
+            const tmp = document.createElement('textarea');
+            tmp.value = txtOut;
+            tmp.setAttribute('readonly', '1');
+            tmp.style.position = 'fixed';
+            tmp.style.opacity = '0';
+            document.body.appendChild(tmp);
+            tmp.select();
+            copied = document.execCommand('copy');
+            tmp.remove();
+          } catch (_) {}
+        }
+        if (D && typeof D.toast === 'function') {
+          D.toast(tr(copied ? 'Mismatched summary copied' : 'Could not copy summary'), copied ? 'ok' : 'warn');
+        }
+      };
+    }
+    const mmCsvBtn = panel.querySelector('#mfgAiMismatchCsvBtn');
+    if (mmCsvBtn) {
+      mmCsvBtn.onclick = () => {
+        const csvOut = buildMfgReconMismatchCsv(mismatchedRows);
+        if (!csvOut) return;
+        const blob = new Blob([csvOut], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Mismatched_Statement_Lines_${(D && typeof D.todayISO === 'function' ? D.todayISO() : 'export')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+        if (D && typeof D.toast === 'function') {
+          D.toast(tr('Mismatched lines CSV downloaded'), 'ok');
+        }
       };
     }
   }
@@ -7714,6 +7969,7 @@
     EDGE_STATE.insReconRows = null;
     EDGE_STATE.mfgReconText = '';
     EDGE_STATE.mfgReconRows = null;
+    EDGE_STATE.mfgMismatchExportOpen = false;
     EDGE_STATE.hspReconText = '';
     EDGE_STATE.hspReconRows = null;
     EDGE_STATE.reReconText = '';
@@ -11092,6 +11348,9 @@
     postInsuranceBordereauBatch,
     reconcileManufacturingSupplierStatement,
     postManufacturingStatementBatch,
+    getMfgReconMismatchedRows,
+    buildMfgReconMismatchText,
+    buildMfgReconMismatchCsv,
     scanStatementFileIntoRecon,
     extractVendorSoaVouchers,
     reconcileHospitalitySettlementBatch,
