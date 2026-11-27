@@ -2300,9 +2300,41 @@
         const ns = norm(s);
         if (!s || s.length < minLen || coStopSet.has(ns) || (!allowCoNames && coNameStopSet.has(ns)) || (excludeNormSet && excludeNormSet.has(ns))) continue;
         counts.set(ns, (counts.get(ns) || 0) + 1);
-        if (!uniq.has(ns)) uniq.set(ns, s);
+        if (!uniq.has(ns) || (cleanQ.includes(s) && !cleanQ.includes(uniq.get(ns)))) uniq.set(ns, s);
       }
-      // Pass 1: exact whole-token match (highest priority)
+      const hKind = colToHygieneKind(colKey);
+      const rankedCands = Array.from(uniq.values()).sort((a, b) => rankCandidate(b, colKey, counts) - rankCandidate(a, colKey, counts));
+      const findTypoHit = (minCandLen, mustContainVal) => {
+        if (!hKind || !_ctx || typeof _ctx.findNearPartyMatch !== 'function' || !rankedCands.length) return '';
+        if (!cachedNgrams) cachedNgrams = buildResidualNgrams();
+        const strippedMap = new Map();
+        const candPool = [];
+        rankedCands.forEach(c => {
+          candPool.push(c);
+          const base = c.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+          if (base && base.length >= 4 && !strippedMap.has(norm(base))) {
+            strippedMap.set(norm(base), c);
+            if (norm(base) !== norm(c)) candPool.push(base);
+          }
+        });
+        for (let i = 0; i < cachedNgrams.length; i++) {
+          const ng = cachedNgrams[i];
+          if (minCandLen && ng.length < minCandLen) continue;
+          if (mustContainVal && !hasWholeVal(mustContainVal, ng)) continue;
+          if (excludeNormSet && excludeNormSet.has(norm(ng))) continue;
+          const hit = _ctx.findNearPartyMatch(ng, candPool, { kind: hKind, company: activeIndCoName, ind: targetInd });
+          if (hit) {
+            const resolved = strippedMap.get(norm(hit)) || hit;
+            if (minCandLen && resolved.length < minCandLen) continue;
+            matchedSpans.push(ng);
+            matchedSpans.push(resolved);
+            return resolved;
+          }
+        }
+        return '';
+      };
+
+      // Pass 1: exact whole-token match (highest priority; prefer longer full-name 1-edit typo over short partial match)
       let best = '';
       let bestLen = 0;
       let bestFreq = -1;
@@ -2316,13 +2348,13 @@
         }
       });
       if (best) {
+        const longerTypo = findTypoHit(bestLen + 3, best);
+        if (longerTypo) return longerTypo;
         matchedSpans.push(best);
         return best;
       }
 
       // Pass 2: confirmed Data Hygiene alias match
-      const hKind = colToHygieneKind(colKey);
-      const rankedCands = Array.from(uniq.values()).sort((a, b) => rankCandidate(b, colKey, counts) - rankCandidate(a, colKey, counts));
       if (hKind && _ctx && typeof _ctx.getConfirmedAliasesForCanonical === 'function') {
         for (let i = 0; i < rankedCands.length; i++) {
           const canon = rankedCands[i];
@@ -2338,31 +2370,7 @@
       }
 
       // Pass 3: deterministic 1-edit-distance typo resolution via findNearPartyMatch
-      if (hKind && _ctx && typeof _ctx.findNearPartyMatch === 'function' && rankedCands.length) {
-        if (!cachedNgrams) cachedNgrams = buildResidualNgrams();
-        const strippedMap = new Map();
-        const candPool = [];
-        rankedCands.forEach(c => {
-          candPool.push(c);
-          const base = c.replace(/\s*\([^)]*\)\s*$/g, '').trim();
-          if (base && base.length >= 4 && !strippedMap.has(norm(base))) {
-            strippedMap.set(norm(base), c);
-            if (norm(base) !== norm(c)) candPool.push(base);
-          }
-        });
-        for (let i = 0; i < cachedNgrams.length; i++) {
-          const ng = cachedNgrams[i];
-          if (excludeNormSet && excludeNormSet.has(norm(ng))) continue;
-          const hit = _ctx.findNearPartyMatch(ng, candPool, { kind: hKind, company: activeIndCoName, ind: targetInd });
-          if (hit) {
-            const resolved = strippedMap.get(norm(hit)) || hit;
-            matchedSpans.push(ng);
-            matchedSpans.push(resolved);
-            return resolved;
-          }
-        }
-      }
-      return '';
+      return findTypoHit(0, '');
     };
 
     const isUnpricedQ = /\b(unpriced|pending\s+price|missing\s+price|no\s+price|sans\s+prix|non\s+tarif[ée]|mesh\s+msa3ar|mish\s+msa3ar|bala\s+se3er|bdoon\s+se3er)\b|غير\s*مسع[رّ]|بدون\s*سعر|بانتظار\s*السعر/i.test(low);
@@ -2420,20 +2428,29 @@
         }
       }
       if (destView === 'sales' || destView === 'raw' || destView === 'pricing' || destView === 'raw_pricing') {
-        const siteHit = pickBestCandidate(
-          [].concat((seedRecs.sites || []).map(s => s && s.name), scopedSales.map(r => r && r.site), scopedRaw.map(r => r && r.site)),
-          'site',
-          3,
-          new Set(Object.values(out).map(norm))
-        );
-        if (siteHit) out.site = siteHit;
-        const prodHit = pickBestCandidate(
-          [].concat((seedRecs.products || []).map(p => p && p.name), scopedSales.map(r => r && r.product), scopedRaw.map(r => r && r.product)),
-          'product',
-          2,
-          new Set(Object.values(out).map(norm))
-        );
-        if (prodHit) out.product = prodHit;
+        const matchProd = () => {
+          const prodHit = pickBestCandidate(
+            [].concat((seedRecs.products || []).map(p => p && p.name), scopedSales.map(r => r && r.product), scopedRaw.map(r => r && r.product)),
+            'product',
+            2,
+            new Set(Object.values(out).map(norm))
+          );
+          if (prodHit) out.product = prodHit;
+        };
+        const matchSite = () => {
+          const siteCands = (destView === 'sales' && scopedSales.length > 0)
+            ? scopedSales.map(r => r && r.site)
+            : [].concat((seedRecs.sites || []).map(s => s && s.name), scopedSales.map(r => r && r.site), scopedRaw.map(r => r && r.site));
+          const siteHit = pickBestCandidate(siteCands, 'site', 3, new Set(Object.values(out).map(norm)));
+          if (siteHit) out.site = siteHit;
+        };
+        if (destView === 'sales' || destView === 'pricing') {
+          matchProd();
+          matchSite();
+        } else {
+          matchSite();
+          matchProd();
+        }
       }
       if (destView === 'sales' || destView === 'raw' || destView === 'expenses' || destView === 'fleet' || destView === 'fleet_maint') {
         if (canHub('fleet', scope && scope.user) || destView === 'sales' || destView === 'raw' || destView === 'expenses') {

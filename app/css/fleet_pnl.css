@@ -1526,3 +1526,15 @@ body[data-theme="dark"] .fpnl-picker-pop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.fpnl-owner-toolbar {
+  gap: 10px;
+}
+
+.fpnl-owner-cell {
+  min-width: 190px;
+}
+
+#fpnlOwnerTable tfoot tr td {
+  white-space: nowrap !important;
+}

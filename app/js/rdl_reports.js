@@ -315,6 +315,7 @@
     const curGlobalSig = `${STATE.period || 'all'}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}`;
     if (STATE.rdl._lastGlobalPeriodSig !== undefined && STATE.rdl._lastGlobalPeriodSig !== curGlobalSig) {
       STATE.rdl._dateTouched = false;
+      STATE.rdl._autoExtendedTo = '';
     }
     STATE.rdl._lastGlobalPeriodSig = curGlobalSig;
     if (!STATE.rdl._dateTouched) {
@@ -341,6 +342,10 @@
         STATE.rdl.params.from = f;
         STATE.rdl.params.to = t;
         STATE.rdl.params.asof = t;
+      }
+      if (STATE.rdl._autoExtendedTo && /^\d{4}-\d{2}-\d{2}$/.test(STATE.rdl._autoExtendedTo) && STATE.rdl._autoExtendedTo > STATE.rdl.params.to) {
+        STATE.rdl.params.to = STATE.rdl._autoExtendedTo;
+        STATE.rdl.params.asof = STATE.rdl._autoExtendedTo;
       }
     }
     return STATE.rdl;
@@ -1324,7 +1329,7 @@
     (rawSettlements || []).forEach(s => {
       if (!s || s.voided) return;
       const mth = String(s.method || 'Payment').trim();
-      if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|iva|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
+      if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
       const amt = r2(Number(s.usd_amount != null ? s.usd_amount : (s.amount || 0)) + Number(s.discount || 0));
       if (Math.abs(amt) > 0.005) {
         settlementLedgerAll.push({
@@ -5313,6 +5318,14 @@
     return { en: 'All Payable Legs', ar: 'كافة الأطراف (شامل)', fr: 'Tous les volets' };
   }
 
+  function _stmt16ToSettlementPayableLeg(leg) {
+    const l = _normStmt16Leg(leg);
+    if (l === 'material') return 'quarry';
+    if (l === 'transport') return 'transportation';
+    if (l === 'expenses') return 'expense';
+    return '';
+  }
+
   function _cleanOutwardCopy(s) {
     return String(s == null ? '' : s)
       .replace(/[\u2014\u2013]/g, '-')
@@ -5333,6 +5346,7 @@
     const supName = _rdlResolveFilterName(ctx, 'supplier', rawFilterSup, ctx.suppliers);
     const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
     let tx = [];
+    let unpricedZeroCount = 0;
 
     if (isMfg && typeof window !== 'undefined' && typeof window.__mfgComputeSupplierStatement16Vouchers === 'function') {
       const coKey16 = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
@@ -5346,12 +5360,17 @@
         partySig: sig16,
         partyResolver: (raw, rCo, d) => _rdlResolveRollup('Manufacturing', 'supplier', raw, ctx.co, d, rCo)
       });
+      if (res16) {
+        if (leg === 'material') unpricedZeroCount = Number(res16.unpricedMatCount || 0);
+        else if (leg === 'transport') unpricedZeroCount = Number(res16.unpricedTransCount || 0);
+      }
       tx = ((res16 && res16.vouchers) || []).filter(v => {
         if (!lAp16.books && v.type === 'Settlement') return false;
         return true;
       }).map(v => ({
         date: v.date,
         ref: v.ref || 'RM',
+        co: String(v.co || '').trim(),
         leg: v.leg,
         type: leg === 'ALL' ? `${v.type} [${v.leg === 'material' ? 'Material' : (v.leg === 'transport' ? 'Transport' : 'Expenses')}]` : v.type,
         desc: v.desc,
@@ -5389,6 +5408,7 @@
         tx.push({
           date: rowDate(r, ctx.basis),
           ref: r.voucher || r.name || 'RM',
+          co: String(r.co || r.company || '').trim(),
           leg: rowLeg,
           type: leg === 'ALL' ? `${srcBase} [${rowLeg === 'material' ? 'Material' : (rowLeg === 'transport' ? 'Transport' : 'Expenses')}]` : srcBase,
           desc: descLbl,
@@ -5401,6 +5421,7 @@
           tx.push({
             date: rowDate(r, ctx.basis),
             ref: r.voucher_no || r.invoice_no || 'EXP',
+            co: String(r.co || r.company || '').trim(),
             leg: 'expenses',
             type: leg === 'ALL' ? `${r.category || 'Credit Expense'} [Expenses]` : (r.category || 'Credit Expense'),
             desc: r.description || r.category || 'Vendor Invoice',
@@ -5425,6 +5446,44 @@
     const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
     const totDr = lAp16.books ? periodRows.reduce((s, t) => s + t.dr, 0) : 0;
     const closingBal = lAp16.books ? round2Local(openBal + totCr - totDr) : 0;
+    const allTimeLegBal = lAp16.books ? round2Local(tx.reduce((s, t) => s + Number(t.cr || 0) - Number(t.dr || 0), 0)) : 0;
+
+    // Per-entity payable balances on this leg (prevents consolidated scope from attributing multi-entity sum to one BU)
+    const fallbackCoName = (ctx.co && ctx.co !== 'ALL') ? String(ctx.co) : '';
+    const allowedSet = (Array.isArray(ctx.allowedCos) && ctx.allowedCos.length) ? new Set(ctx.allowedCos) : null;
+    const coStats = new Map();
+    if (lAp16.books) {
+      tx.forEach(t => {
+        const cNm = String(t.co || fallbackCoName || '').trim();
+        if (!cNm || (allowedSet && !allowedSet.has(cNm))) return;
+        let st = coStats.get(cNm);
+        if (!st) { st = { closing: 0, allTime: 0 }; coStats.set(cNm, st); }
+        const net = Number(t.cr || 0) - Number(t.dr || 0);
+        st.allTime += net;
+        if (t.date <= toD) st.closing += net;
+      });
+    }
+    const byCoOpen = {};
+    const coOpenPairs = [];
+    coStats.forEach((st, cNm) => {
+      const cClose = round2Local(st.closing);
+      const cAll = round2Local(st.allTime);
+      if (cClose > 0.005 && cAll > 0.005) {
+        const safeUsd = round2Local(Math.min(cClose, cAll));
+        byCoOpen[cNm] = safeUsd;
+        coOpenPairs.push([cNm, safeUsd]);
+      }
+    });
+    coOpenPairs.sort((a, b) => b[1] - a[1]);
+
+    const payableLegCode = _stmt16ToSettlementPayableLeg(leg);
+    const settleMultiCo = coOpenPairs.length > 1;
+    const settleTargetCo = coOpenPairs.length ? coOpenPairs[0][0] : fallbackCoName;
+    const rawSafeBal = round2Local(Math.min(closingBal, allTimeLegBal));
+    const settlePrefillUsd = coOpenPairs.length ? round2Local(coOpenPairs[0][1]) : (rawSafeBal > 0.005 ? rawSafeBal : 0);
+    const cappedByPostPeriod = Boolean(leg !== 'ALL' && lAp16.books && closingBal > 0.005 && allTimeLegBal > 0.005 && (allTimeLegBal + 0.005 < closingBal));
+    const settledAfterPeriod = Boolean(leg !== 'ALL' && lAp16.books && closingBal > 0.005 && allTimeLegBal <= 0.005);
+    const canSettleLeg = Boolean(leg !== 'ALL' && payableLegCode && lAp16.books && closingBal > 0.005 && allTimeLegBal > 0.005 && settlePrefillUsd > 0.005);
 
     return {
       lAp16,
@@ -5436,6 +5495,7 @@
       supName,
       leg,
       legLbl,
+      payableLegCode,
       tx,
       periodRows,
       openCr,
@@ -5443,7 +5503,16 @@
       openBal,
       totCr,
       totDr,
-      closingBal
+      closingBal,
+      allTimeLegBal,
+      byCoOpen,
+      settleTargetCo,
+      settleMultiCo,
+      settlePrefillUsd,
+      cappedByPostPeriod,
+      settledAfterPeriod,
+      canSettleLeg,
+      unpricedZeroCount
     };
   }
 
@@ -5716,10 +5785,17 @@
     const { supName, leg, legLbl, periodRows, openCr, openDr, openBal, totCr, totDr, closingBal, from, to, dt } = m;
     const dash = '-';
     const stObj = ctx.state || {};
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
     const retCtx = stObj.stmt16ReturnCtx && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
       ? stObj.stmt16ReturnCtx
       : null;
     const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
+    const canEnterSettle = Boolean(lAp16.books && !stObj.kioskLocked && ent && typeof ent.canEnterForm === 'function' && ent.canEnterForm('settlement'));
+    const settleBtnHtml = (canEnterSettle && m.canSettleLeg)
+      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-settle-btn" id="stmt16SettleLegBtn" data-stmt16-settle="1">${ic('check_circle')} <span>+ Settle Matched Leg</span></button>`
+      : ((canEnterSettle && m.settledAfterPeriod)
+          ? `<span class="rdl-stmt16-settled-note" data-stmt16-settled-later="1">${ic('check_circle')} <span>Settled after statement period</span></span>`
+          : '');
     const shareBtnHtml = `<button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt16ShareConfirmBtn">${ic('send_msg')} <span>Share Confirmation (WhatsApp / PDF)</span></button>`;
 
     const maxShown = 140;
@@ -5738,6 +5814,7 @@
           <span class="rdl-stmt16-leg-badge" data-stmt16-leg-badge="${esc(leg)}"><span>Leg Filter:</span> <span>${esc(legLbl.en)}</span></span>
         </div>
         <div class="rdl-stmt16-btn-group">
+          ${settleBtnHtml}
           ${shareBtnHtml}
         </div>
       </div>
@@ -9527,6 +9604,16 @@
     if (!root.dataset.stmtSentDelegated) {
       root.dataset.stmtSentDelegated = '1';
       root.addEventListener('click', ev => {
+        const settleBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16SettleLegBtn') : null;
+        if (settleBtn && root.contains(settleBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const ent = window.MFG_ENTERPRISE;
+          if (ent && typeof ent.openStmt16LegSettlement === 'function') {
+            ent.openStmt16LegSettlement();
+          }
+          return;
+        }
         const shareBtn = ev.target && ev.target.closest ? ev.target.closest('#stmt16ShareConfirmBtn') : null;
         if (shareBtn && root.contains(shareBtn)) {
           ev.preventDefault();
