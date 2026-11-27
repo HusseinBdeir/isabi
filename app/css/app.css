@@ -18639,7 +18639,17 @@ body.kiosk-locked .app-shell {
   border: 2px dashed rgba(255, 255, 255, 0.78);
   border-radius: 50%;
   box-shadow: 0 0 0 999px rgba(11, 23, 48, 0.24);
-  transition: opacity 0.18s ease;
+  transition: opacity 0.18s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.kiosk-att-viewport.is-detecting .kiosk-att-oval {
+  border-style: solid;
+  border-color: rgba(74, 210, 138, 0.95);
+  box-shadow: 0 0 0 999px rgba(11, 23, 48, 0.24), 0 0 0 3px rgba(74, 210, 138, 0.28);
+}
+.kiosk-att-viewport.is-unrecognized .kiosk-att-oval {
+  border-style: solid;
+  border-color: rgba(245, 158, 11, 0.95);
+  box-shadow: 0 0 0 999px rgba(11, 23, 48, 0.24), 0 0 0 3px rgba(245, 158, 11, 0.25);
 }
 .kiosk-att-viewport.is-standby .kiosk-att-oval {
   opacity: 0;
@@ -29313,6 +29323,29 @@ label.exp-inline-bar-lbl {
   line-height: 1.3;
   max-width: 100%;
   box-sizing: border-box;
+}
+.stm-exc-chip-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.stm-exc-chip-edit:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.stm-exc-chip-edit:focus-visible:not(:disabled) {
+  text-decoration: underline;
+  outline: 1.5px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 .stm-exc-chip-rm {
   display: inline-flex;
@@ -40886,6 +40919,28 @@ button.badge.btn-set-site-price {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+.pr-unpriced-suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pr-stmt-billed-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  user-select: text;
+}
+.pr-use-last-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: rgba(180, 118, 22, 0.45);
+}
+.pr-use-last-chip.active {
+  border-color: var(--brass, #C0892F);
 }
 :root[data-theme="dark"] .pr-unpriced-grades-bar {
   background: rgba(217, 165, 74, 0.12);

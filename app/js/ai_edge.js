@@ -190,6 +190,10 @@
     return Math.round((Number(n) || 0) * 100) / 100;
   }
 
+  function round4(n) {
+    return Math.round((Number(n) || 0) * 10000) / 10000;
+  }
+
   // Hardcoded sample figures and identities are for the public demo sandbox only (same rule as industryDemoRows
   // in app.js). A signed-in workspace gets `live`: an empty list, a zero, or a blank placeholder.
   function demoOnly(sample, live) {
@@ -3499,8 +3503,9 @@
       const matZeroRows = matchedRawRows.filter(isMatZero);
       const haulZeroRows = matchedRawRows.filter(isHaulZero);
       const zeroLoadRows = matZeroRows.length ? matZeroRows : haulZeroRows;
+      const combinedZeroRows = Array.from(new Set(matZeroRows.concat(haulZeroRows)));
       const zeroLegMode = matZeroRows.length ? 'material' : (haulZeroRows.length ? 'transport' : '');
-      const matchedZeroLoads = zeroLoadRows.length;
+      const matchedZeroLoads = combinedZeroRows.length;
       const loggedQty = round2(matchedRawRows.reduce((s, rp) => s + rawQtyInTons(rp), 0));
       let matchedSite = siteHint;
       if (!matchedSite && zeroLoadRows.length) matchedSite = cleanAiSiteLabel(zeroLoadRows[0].site || '');
@@ -3528,6 +3533,74 @@
         : ((zeroLegMode === 'material' || hasQuarryMatch || /quarry|مقالع|كسارة|sakher|aggregate|sand|gravel/i.test(matchedSup + ' ' + itemDesc))
           ? 'quarry'
           : 'expense');
+
+      const isIva = /holcim|ciment|sibline|official/i.test(matchedSup + ' ' + itemDesc);
+      const normUomFn = (D && typeof D.normUnpricedQueueUom === 'function')
+        ? D.normUnpricedQueueUom
+        : (u => (/^tons?$/i.test(String(u || '').trim()) ? 'Ton' : (/^trucks?$/i.test(String(u || '').trim()) ? 'Truck' : 'm³')));
+      const stmtBilledUnit = /\btons?\b|\bt\b|طن/i.test(line)
+        ? 'Ton'
+        : (/m3|m³|م3/i.test(line) ? 'm³' : (/\btrucks?\b|نقلة/i.test(line) ? 'Truck' : normUomFn(matchedUom || 'Ton')));
+      const parsedExplicitRate = rateMatch ? Number(String(rateMatch[1] || '').replace(/,/g, '')) : 0;
+      const stmtBilledRate = parsedExplicitRate > 0
+        ? round4(parsedExplicitRate)
+        : ((billedUsd > 0 && qty > 0) ? (isIva ? round4((billedUsd / 1.11) / qty) : round4(billedUsd / qty)) : 0);
+      const stmtHintBase = stmtBilledRate > 0
+        ? { billedRate: stmtBilledRate, billedUnit: stmtBilledUnit, billedUsd: round2(billedUsd), qty: round2(qty), ticketRef: sanitizeOutward(ticketRef) }
+        : null;
+
+      const zeroBucketMap = new Map();
+      if (combinedZeroRows.length) {
+        const seedSites = (D && D.SEED && D.SEED.records && Array.isArray(D.SEED.records.sites)) ? D.SEED.records.sites : [];
+        const normSiteFn = (D && typeof D.normSiteMatch === 'function') ? D.normSiteMatch : normAiSiteTxt;
+        const normPartyFn = (D && typeof D.normSupPayable === 'function') ? D.normSupPayable : normAiSiteTxt;
+        const siteCanonMap = new Map();
+        seedSites.forEach(st => {
+          if (!st || st.voided || !st.name) return;
+          const sk = normSiteFn(st.name);
+          if (sk && !siteCanonMap.has(sk)) siteCanonMap.set(sk, cleanAiSiteLabel(st.name));
+        });
+        const addZeroBucketsForLeg = (legRows, bucketLeg) => {
+          legRows.forEach(rp => {
+            const rawSiteLbl = cleanAiSiteLabel(rp && rp.site);
+            if (!rawSiteLbl || rawSiteLbl.startsWith('(')) return;
+            const sk = normSiteFn(rawSiteLbl);
+            if (!sk) return;
+            const canonSite = siteCanonMap.get(sk) || rawSiteLbl;
+            const co = String((rp && rp.company) || matchedCompany || 'WTC');
+            const rawParty = bucketLeg === 'transport' ? String((rp && rp.truck_owner) || matchedSup || '').trim() : String((rp && rp.site_owner) || matchedSup || '').trim();
+            const pNorm = normPartyFn(rawParty);
+            const prodName = String((rp && rp.product) || '').trim();
+            const prodObj = (prodName && D && typeof D.productInfo === 'function') ? D.productInfo(prodName) : null;
+            const uom = normUomFn((rp && rp.uom) || (prodObj && prodObj.uom) || 'm³');
+            const dt10 = String((rp && (rp.rep_date || rp.date)) || '').slice(0, 10);
+            const stepKey = (D && typeof D.buildUnpricedQueueStepKey === 'function')
+              ? D.buildUnpricedQueueStepKey(bucketLeg, co, pNorm, canonSite, prodName, uom)
+              : `${bucketLeg}|${normAiSiteTxt(co)}|${pNorm}|${sk}|${normAiSiteTxt(prodName)}|${normAiSiteTxt(uom)}`;
+            let bk = zeroBucketMap.get(stepKey);
+            if (!bk) {
+              bk = {
+                stepKey,
+                legMode: bucketLeg,
+                company: sanitizeOutward(co),
+                supplier: sanitizeOutward(matchedSup || rawParty),
+                site: sanitizeOutward(canonSite),
+                product: sanitizeOutward(prodName),
+                uom,
+                earliestDate: dt10 || rowDate,
+                loads: 0,
+                statementHint: stmtHintBase
+              };
+              zeroBucketMap.set(stepKey, bk);
+            }
+            bk.loads += 1;
+            if (dt10 && (!bk.earliestDate || dt10 < bk.earliestDate)) bk.earliestDate = dt10;
+          });
+        };
+        if (matZeroRows.length) addZeroBucketsForLeg(matZeroRows, 'material');
+        if (haulZeroRows.length) addZeroBucketsForLeg(haulZeroRows, 'transport');
+      }
+      const zeroBuckets = Array.from(zeroBucketMap.values());
 
       const matchedSiteNorm = normAiSiteTxt(matchedSite);
       const wantRuleTypes = inferredLeg === 'transportation'
@@ -3565,7 +3638,6 @@
         contractRate = hitRuleRate;
       }
 
-      const isIva = /holcim|ciment|sibline|official/i.test(matchedSup + ' ' + itemDesc);
       const expectedNet = round2(qty * contractRate);
       const vatUsd = isIva ? round2(expectedNet * 0.11) : 0;
       const expectedUsd = round2(expectedNet + vatUsd);
@@ -3628,6 +3700,10 @@
         matchedUom: sanitizeOutward(matchedUom),
         zeroLegMode,
         earliestZeroDate,
+        zeroBuckets,
+        stmtBilledRate,
+        stmtBilledUnit,
+        statementHint: stmtHintBase,
         hitRuleRate: round2(hitRuleRate),
         cumCashPaid,
         effectiveDocCap,
@@ -3957,6 +4033,82 @@
     return '\uFEFF' + [header].concat(bodyRows).join('\r\n');
   }
 
+  function collectMfgReconUnpricedQueueSpecs(rows) {
+    if (!D || !D.STATE || D.STATE.kioskLocked) return [];
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+    if (activeInd !== 'Manufacturing') return [];
+    if (typeof D.seatLens === 'function' && !Boolean(D.seatLens().expenses)) return [];
+    const allowedCos = typeof D.allowedCompanyNames === 'function' ? D.allowedCompanyNames() : [];
+    const specs = [];
+    const seenKeys = new Set();
+    (Array.isArray(rows) ? rows : []).forEach(r => {
+      if (!r || Number(r.matchedZeroLoads || 0) <= 0) return;
+      const bks = (Array.isArray(r.zeroBuckets) && r.zeroBuckets.length)
+        ? r.zeroBuckets
+        : ((r.matchedSite && r.matchedSupplier) ? [{
+            stepKey: (D && typeof D.buildUnpricedQueueStepKey === 'function')
+              ? D.buildUnpricedQueueStepKey(r.zeroLegMode || 'material', r.matchedCompany || '', (D.normSupPayable ? D.normSupPayable(r.matchedSupplier) : normAiSiteTxt(r.matchedSupplier)), r.matchedSite, r.matchedProduct || '', r.matchedUom || 'm³')
+              : `${r.zeroLegMode || 'material'}|${normAiSiteTxt(r.matchedCompany || '')}|${normAiSiteTxt(r.matchedSupplier)}|${normAiSiteTxt(r.matchedSite)}|${normAiSiteTxt(r.matchedProduct || '')}`,
+            legMode: r.zeroLegMode === 'transport' ? 'transport' : 'material',
+            company: r.matchedCompany || '',
+            supplier: r.matchedSupplier || '',
+            site: r.matchedSite || '',
+            product: r.matchedProduct || '',
+            uom: r.matchedUom || '',
+            earliestDate: r.earliestZeroDate || r.date || '',
+            statementHint: r.statementHint || null
+          }] : []);
+      bks.forEach(bk => {
+        if (!bk || !bk.site || !bk.supplier) return;
+        const legMode = bk.legMode === 'transport' ? 'transport' : 'material';
+        if (typeof D.canEnterForm === 'function' && !D.canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw')) return;
+        if (bk.company && allowedCos.length && !allowedCos.includes(bk.company)) return;
+        if (seenKeys.has(bk.stepKey)) return;
+        seenKeys.add(bk.stepKey);
+        specs.push(bk);
+      });
+    });
+    return specs;
+  }
+
+  function snapshotActiveMfgReconState() {
+    if (!EDGE_STATE.mfgReconText || !String(EDGE_STATE.mfgReconText).trim()) return null;
+    return {
+      text: EDGE_STATE.mfgReconText,
+      open: Boolean(EDGE_STATE.mfgReconOpen),
+      mmOpen: Boolean(EDGE_STATE.mfgMismatchExportOpen),
+      mmLang: EDGE_STATE.mfgMismatchLang || 'en_ar',
+      gateOverride: Boolean(EDGE_STATE.mfgGateOverride),
+      gateReason: EDGE_STATE.mfgGateOverrideReason || '',
+      prevRows: Array.isArray(EDGE_STATE.mfgReconRows)
+        ? EDGE_STATE.mfgReconRows.map(r => Object.assign({}, r))
+        : null
+    };
+  }
+
+  function refreshMfgStatementReconAfterPriceChange(snap = null) {
+    if (!D || !D.STATE) return 0;
+    if (snap && snap.text) {
+      EDGE_STATE.mfgReconText = snap.text;
+      EDGE_STATE.mfgReconOpen = Boolean(snap.open);
+      EDGE_STATE.mfgMismatchExportOpen = Boolean(snap.mmOpen);
+      if (snap.mmLang) EDGE_STATE.mfgMismatchLang = snap.mmLang;
+      EDGE_STATE.mfgGateOverride = Boolean(snap.gateOverride);
+      EDGE_STATE.mfgGateOverrideReason = snap.gateReason || '';
+      if (!EDGE_STATE.mfgReconRows && Array.isArray(snap.prevRows)) {
+        EDGE_STATE.mfgReconRows = snap.prevRows;
+      }
+    }
+    if (!EDGE_STATE.mfgReconText || !String(EDGE_STATE.mfgReconText).trim()) return 0;
+    const rows = reconcileManufacturingSupplierStatement(EDGE_STATE.mfgReconText, { preserveSelection: true });
+    const existingPanel = document.getElementById('mfgAiStatementReconPanel');
+    if (existingPanel) {
+      existingPanel.remove();
+      mountMfgStatementReconPanel();
+    }
+    return Array.isArray(rows) ? rows.length : 0;
+  }
+
   function mountMfgStatementReconPanel() {
     const ws = $('workspace');
     if (!ws || !ensureFreshPanel('mfgAiStatementReconPanel') || !D || !D.STATE) return;
@@ -3979,6 +4131,7 @@
     const openApUsd = apBridge && apBridge.totals ? round2(Number(apBridge.totals.closingBalance || apBridge.totals.netPayable || 0)) : sumExp;
     const gatedRows = rows.filter(r => r && r.gateBlocked);
     const unpricedRowCount = rows.filter(r => r && r.matchedZeroLoads > 0).length;
+    const stmtQueueSpecs = (!hideExpenses && !D.STATE.kioskLocked) ? collectMfgReconUnpricedQueueSpecs(rows) : [];
     const mismatchedRows = (!hideExpenses && !D.STATE.kioskLocked) ? getMfgReconMismatchedRows(rows) : [];
     const mismatchLang = ['en_ar', 'en', 'ar', 'fr'].includes(EDGE_STATE.mfgMismatchLang) ? EDGE_STATE.mfgMismatchLang : 'en_ar';
     const mismatchText = (EDGE_STATE.mfgMismatchExportOpen && mismatchedRows.length)
@@ -4020,7 +4173,7 @@
             <span><span>${esc(EDGE_STATE.mfgScanStatus || 'Scanning supplier statement...')}</span>${EDGE_STATE.mfgScanStatusDetail ? `: <strong data-no-i18n="1">${esc(EDGE_STATE.mfgScanStatusDetail)}</strong>` : ''}</span>
           </div>
         ` : ''}
-        ${(!hideExpenses && (gatedRows.length || unpricedRowCount)) ? `
+        ${(!hideExpenses && (gatedRows.length || unpricedRowCount || stmtQueueSpecs.length)) ? `
           <div class="aie-recon-gate-bar" id="mfgAiGateBar" style="margin-top:8px">
             <span>
               <strong>S20 Gatekeeper Hold</strong>:
@@ -4028,15 +4181,18 @@
               ${(gatedRows.length && unpricedRowCount) ? ' · ' : ''}
               ${unpricedRowCount ? `<span data-no-i18n="1">${unpricedRowCount}</span> <span>Unpriced ($0 Loads)</span>` : ''}
             </span>
-            ${(gatedRows.length && canWrite) ? `
-              <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
-                  <input type="checkbox" id="mfgAiGateOverrideChk"${EDGE_STATE.mfgGateOverride ? ' checked' : ''}>
-                  <span>Allow S20 Override</span>
-                </label>
-                <input type="text" class="aie-input" id="mfgAiGateOverrideReason" style="min-width:190px;padding:3px 8px;font-size:12px" placeholder="Override reason (3+ chars)" value="${esc(EDGE_STATE.mfgGateOverrideReason || '')}"${EDGE_STATE.mfgGateOverride ? '' : ' hidden'}>
-              </div>
-            ` : ''}
+            <div class="aie-recon-gate-actions">
+              ${(stmtQueueSpecs.length && !D.STATE.kioskLocked && D && typeof D.openStatementUnpricedQueueModal === 'function') ? `<button type="button" class="aie-btn is-brass" id="mfgAiPriceAllUnpricedBtn">${ic('pricing')} <span>Price All Unpriced Sites</span> (<span data-no-i18n="1">${stmtQueueSpecs.length}</span>)</button>` : ''}
+              ${(gatedRows.length && canWrite) ? `
+                <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="mfgAiGateOverrideChk"${EDGE_STATE.mfgGateOverride ? ' checked' : ''}>
+                    <span>Allow S20 Override</span>
+                  </label>
+                  <input type="text" class="aie-input" id="mfgAiGateOverrideReason" style="min-width:190px;padding:3px 8px;font-size:12px" placeholder="Override reason (3+ chars)" value="${esc(EDGE_STATE.mfgGateOverrideReason || '')}"${EDGE_STATE.mfgGateOverride ? '' : ' hidden'}>
+                </div>
+              ` : ''}
+            </div>
           </div>
         ` : ''}
         <textarea class="aie-batch-textarea" id="mfgAiReconInput" style="margin-top:8px" placeholder="${esc(hideExpenses ? 'Restricted' : SAMPLE_MFG_SUPPLIER_STATEMENT)}" aria-label="Supplier Weighbridge Statement Lines" data-no-i18n="1"${hideExpenses ? ' disabled' : ''}>${hideExpenses ? '' : esc(EDGE_STATE.mfgReconText || demoOnly(SAMPLE_MFG_SUPPLIER_STATEMENT, ''))}</textarea>
@@ -4093,7 +4249,7 @@
                   <td data-no-i18n="1">${hideExpenses ? esc(tr('Restricted')) : esc(r.matchedSupplier)}</td>
                   <td>
                     <span data-no-i18n="1">${hideExpenses ? esc(tr('Restricted')) : esc(r.itemDesc)}</span>
-                    ${(!hideExpenses && r.matchedZeroLoads > 0) ? `<div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="aie-pill is-warn"><span>Unpriced ($0 Loads)</span> (<span data-no-i18n="1">${r.matchedZeroLoads}</span>)</span>${(!D.STATE.kioskLocked && !hideExpenses && (typeof D.canEnterForm === 'function' ? D.canEnterForm(r.zeroLegMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw') : canWrite) && r.matchedSite) ? `<button type="button" class="btn-set-site-price" data-aie-set-site-price="${esc(r.matchedSite)}" data-aie-set-site-leg="${esc(r.zeroLegMode || 'material')}" data-aie-set-site-sup="${esc(r.matchedSupplier)}" data-aie-set-site-prod="${esc(r.matchedProduct || '')}" data-aie-set-site-uom="${esc(r.matchedUom || '')}" data-aie-set-site-date="${esc(r.earliestZeroDate || r.date || '')}" data-aie-set-site-co="${esc(r.matchedCompany || '')}">Set Site Price</button>` : ''}</div>` : ''}
+                    ${(!hideExpenses && r.matchedZeroLoads > 0) ? `<div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="aie-pill is-warn"><span>Unpriced ($0 Loads)</span> (<span data-no-i18n="1">${r.matchedZeroLoads}</span>)</span>${(!D.STATE.kioskLocked && !hideExpenses && (typeof D.canEnterForm === 'function' ? D.canEnterForm(r.zeroLegMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw') : canWrite) && r.matchedSite) ? `<button type="button" class="btn-set-site-price" data-aie-recon-row-idx="${rIdx}" data-aie-set-site-price="${esc(r.matchedSite)}" data-aie-set-site-leg="${esc(r.zeroLegMode || 'material')}" data-aie-set-site-sup="${esc(r.matchedSupplier)}" data-aie-set-site-prod="${esc(r.matchedProduct || '')}" data-aie-set-site-uom="${esc(r.matchedUom || '')}" data-aie-set-site-date="${esc(r.earliestZeroDate || r.date || '')}" data-aie-set-site-co="${esc(r.matchedCompany || '')}">Set Site Price</button>` : ''}</div>` : ''}
                   </td>
                   <td class="r mono" data-no-i18n="1">${fmtNum(r.qty, 1)}</td>
                   <td class="r mono" data-no-i18n="1">${maskAmt(fmtUSD(r.expectedUsd, 2))}</td>
@@ -4160,24 +4316,50 @@
         if (rows[idx]) rows[idx].selected = Boolean(chk.checked);
       };
     });
+    const priceAllBtn = panel.querySelector('#mfgAiPriceAllUnpricedBtn');
+    if (priceAllBtn && stmtQueueSpecs.length && D && typeof D.openStatementUnpricedQueueModal === 'function') {
+      priceAllBtn.onclick = () => {
+        D.openStatementUnpricedQueueModal(stmtQueueSpecs, {
+          onQueueMutated: refreshMfgStatementReconAfterPriceChange
+        });
+      };
+    }
     panel.querySelectorAll('[data-aie-set-site-price]').forEach(btn => {
       btn.onclick = () => {
-        const siteVal = btn.getAttribute('data-aie-set-site-price') || '';
-        const legVal = btn.getAttribute('data-aie-set-site-leg') || 'material';
-        const supVal = btn.getAttribute('data-aie-set-site-sup') || '';
-        const prodVal = btn.getAttribute('data-aie-set-site-prod') || '';
-        const uomVal = btn.getAttribute('data-aie-set-site-uom') || '';
-        const dtVal = btn.getAttribute('data-aie-set-site-date') || '';
-        const coVal = btn.getAttribute('data-aie-set-site-co') || '';
-        if (siteVal && D && typeof D.openSetUnpricedSitePriceModal === 'function') {
-          D.openSetUnpricedSitePriceModal(siteVal, legVal === 'transport' ? {
-            transportOnly: true,
+        const rowIdx = Number(btn.getAttribute('data-aie-recon-row-idx'));
+        const rowObj = (Number.isFinite(rowIdx) && rows[rowIdx]) ? rows[rowIdx] : null;
+        const firstBk = rowObj && Array.isArray(rowObj.zeroBuckets) && rowObj.zeroBuckets[0];
+        const siteVal = (firstBk && firstBk.site) || btn.getAttribute('data-aie-set-site-price') || '';
+        const legVal = (firstBk && firstBk.legMode) || btn.getAttribute('data-aie-set-site-leg') || 'material';
+        const supVal = (firstBk && firstBk.supplier) || btn.getAttribute('data-aie-set-site-sup') || '';
+        const prodVal = (firstBk && firstBk.product) || btn.getAttribute('data-aie-set-site-prod') || '';
+        const uomVal = (firstBk && firstBk.uom) || btn.getAttribute('data-aie-set-site-uom') || '';
+        const dtVal = (firstBk && firstBk.earliestDate) || btn.getAttribute('data-aie-set-site-date') || '';
+        const coVal = (firstBk && firstBk.company) || btn.getAttribute('data-aie-set-site-co') || '';
+        const stmtHint = (firstBk && firstBk.statementHint) || (rowObj && rowObj.statementHint) || null;
+        if (!siteVal || !D) return;
+        if (stmtQueueSpecs.length > 0 && typeof D.openStatementUnpricedQueueModal === 'function') {
+          const prefKey = (firstBk && firstBk.stepKey)
+            || (typeof D.buildUnpricedQueueStepKey === 'function'
+              ? D.buildUnpricedQueueStepKey(legVal, coVal, (D.normSupPayable ? D.normSupPayable(supVal) : normAiSiteTxt(supVal)), siteVal, prodVal, uomVal)
+              : '');
+          D.openStatementUnpricedQueueModal(stmtQueueSpecs, {
+            preferredStepKey: prefKey,
+            onQueueMutated: refreshMfgStatementReconAfterPriceChange
+          });
+          return;
+        }
+        if (typeof D.openSetUnpricedSitePriceModal === 'function') {
+          D.openSetUnpricedSitePriceModal(siteVal, {
+            transportOnly: legVal === 'transport',
             supplier: supVal,
             product: prodVal,
             uom: uomVal,
             earliestDate: dtVal,
-            company: coVal
-          } : undefined);
+            company: coVal,
+            statementHint: stmtHint,
+            _fromStatementRecon: true
+          });
         }
       };
     });
@@ -11347,6 +11529,8 @@
     reconcileCarrierBordereau,
     postInsuranceBordereauBatch,
     reconcileManufacturingSupplierStatement,
+    snapshotActiveMfgReconState,
+    refreshMfgStatementReconAfterPriceChange,
     postManufacturingStatementBatch,
     getMfgReconMismatchedRows,
     buildMfgReconMismatchText,

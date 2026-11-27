@@ -742,6 +742,13 @@ const Face = (() => {
       sh = Math.max(160, Math.round(vh * cropHFrac));
       sx = Math.round((vw - sw) * 0.50);
       sy = Math.round((vh - sh) * (isAuthCam ? 0.52 : 0.50));
+    } else if (vh > vw * 1.15 && src.id !== "authFaceVideo") {
+      // Match 4:3 object-fit:cover viewports on portrait phones (e.g. 480x640 -> central 480x500 band)
+      sw = vw;
+      sh = Math.max(160, Math.round(vw * (500 / 480)));
+      if (sh > vh) sh = vh;
+      sx = 0;
+      sy = Math.round((vh - sh) * 0.50);
     }
     const scale = (maxDim && Math.max(sw, sh) > maxDim) ? (maxDim / Math.max(sw, sh)) : 1;
     const cw = Math.max(64, Math.round(sw * scale));
@@ -1462,6 +1469,46 @@ const Face = (() => {
     return out;
   }
 
+  function pickPrimaryDetection(rs, frame) {
+    if (!Array.isArray(rs) || !rs.length) return { picked: null, multiple: false };
+    if (rs.length === 1) return { picked: rs[0], multiple: false };
+    const fw = frameWidth(frame) || 288;
+    const fh = (frame && (frame.videoHeight || frame.naturalHeight || frame.height)) || 216;
+    let best = null;
+    let bestRank = -1;
+    for (let i = 0; i < rs.length; i++) {
+      const cand = rs[i];
+      const box = cand && cand.detection && cand.detection.box;
+      if (!box) continue;
+      const bw = Math.max(1, Number(box.width || 0));
+      const bh = Math.max(1, Number(box.height || 0));
+      const cx = (Number(box.x || 0) + bw * 0.5) / fw;
+      const cy = (Number(box.y || 0) + bh * 0.5) / fh;
+      const distCenter = Math.hypot(cx - 0.5, cy - 0.5);
+      const centerWeight = Math.max(0.35, 1.15 - distCenter * 0.9);
+      const detScore = Math.max(0.45, Number((cand.detection && cand.detection.score) || 0));
+      const rankScore = (bw * bh) * centerWeight * detScore;
+      if (rankScore > bestRank) {
+        bestRank = rankScore;
+        best = cand;
+      }
+    }
+    if (!best) return { picked: null, multiple: false };
+    const bestW = Math.max(1, Number((best.detection && best.detection.box && best.detection.box.width) || 1));
+    let multiple = false;
+    for (let i = 0; i < rs.length; i++) {
+      const cand = rs[i];
+      if (!cand || cand === best || !cand.detection || !cand.detection.box) continue;
+      const cw = Number(cand.detection.box.width || 0);
+      const cs = Number(cand.detection.score || 0);
+      if ((cw / fw) >= 0.16 && cw >= bestW * 0.55 && cs >= 0.45) {
+        multiple = true;
+        break;
+      }
+    }
+    return { picked: best, multiple };
+  }
+
   let boostCanvas = null;
   let boostLut = null;
   let cropCanvas = null;
@@ -1477,10 +1524,11 @@ const Face = (() => {
     if (detectorOnlyMode) {
       try {
         const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.24 });
-        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny);
-        if (r) {
+        const rs = await faceapi.detectAllFaces(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny);
+        const { picked, multiple } = pickPrimaryDetection(rs, frame);
+        if (picked) {
           liveMissCount = 0;
-          const packed = pack({ detection: r.detection, landmarks: r.landmarks, descriptor: null }, frame, false);
+          const packed = pack({ detection: picked.detection, landmarks: picked.landmarks, descriptor: null }, frame, multiple);
           packed.modelLoading = true;
           return packed;
         }
@@ -1522,27 +1570,33 @@ const Face = (() => {
       return bcv;
     };
 
+    const runMultiPass = async (targetFrame, detOpts) => {
+      const rs = await faceapi.detectAllFaces(targetFrame, detOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptors();
+      const { picked, multiple } = pickPrimaryDetection(rs, targetFrame);
+      return picked ? pack(picked, targetFrame, multiple) : null;
+    };
+
     if (isLiveVideo && !allowCropFallback) {
-      // Fast live-video path (~18-25ms): single-pass TinyFaceDetector(256) on normal frames.
-      // The backlit shadow-lift pass (buildBoostFrame + second neural pass) is throttled to run
-      // only every 6th missed frame so wall-mounted tablets never suffer GPU/ISP buffer starvation.
+      // Fast live-video path (~18-25ms): single-pass TinyFaceDetector(256) with foreground-priority selection.
+      // Mid-resolution Tiny(320) runs on every 3rd miss and the backlit shadow-lift pass on every 6th miss.
       const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.24 });
+      const midTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.22 });
       const boostTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.22 });
       if (preferBoostPass) {
         try {
           const bcv = buildBoostFrame();
-          const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          const rb = await runMultiPass(bcv, boostTinyOpts);
           if (rb) {
             liveMissCount = 0;
-            return pack(rb, bcv, false);
+            return rb;
           }
         } catch (_) {}
         preferBoostPass = false;
         try {
-          const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          const r = await runMultiPass(frame, fastTinyOpts);
           if (r) {
             liveMissCount = 0;
-            return pack(r, frame, false);
+            return r;
           }
         } catch (_) {
           return null;
@@ -1551,23 +1605,32 @@ const Face = (() => {
         return null;
       } else {
         try {
-          const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          const r = await runMultiPass(frame, fastTinyOpts);
           if (r) {
             liveMissCount = 0;
-            return pack(r, frame, false);
+            return r;
           }
         } catch (_) {
           return null;
         }
         liveMissCount += 1;
+        if ((liveMissCount % 6) === 3) {
+          try {
+            const rm = await runMultiPass(frame, midTinyOpts);
+            if (rm) {
+              liveMissCount = 0;
+              return rm;
+            }
+          } catch (_) {}
+        }
         if ((liveMissCount % 6) === 0) {
           try {
             const bcv = buildBoostFrame();
-            const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+            const rb = await runMultiPass(bcv, boostTinyOpts);
             if (rb) {
               preferBoostPass = true;
               liveMissCount = 0;
-              return pack(rb, bcv, false);
+              return rb;
             }
           } catch (_) {}
         }
@@ -1576,28 +1639,28 @@ const Face = (() => {
     }
 
     // Static image / manual capture path: Primary detector -> TinyFaceDetector(416) -> SSD fallback
-    let r = await faceapi.detectSingleFace(frame, opts()).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+    let r = await runMultiPass(frame, opts());
     if (!r) {
       const fallbackOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.22 });
-      r = await faceapi.detectSingleFace(frame, fallbackOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+      r = await runMultiPass(frame, fallbackOpts);
     }
     if (!r && allowCropFallback) {
       await ensureSsdLoaded();
       if (detector === "ssd") {
-        r = await faceapi.detectSingleFace(frame, opts("ssd")).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        r = await runMultiPass(frame, opts("ssd"));
       }
     }
-    if (r) return pack(r, frame, false);
+    if (r) return r;
 
     try {
       const bcv = buildBoostFrame();
       const boostOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.18 });
-      r = await faceapi.detectSingleFace(bcv, boostOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+      r = await runMultiPass(bcv, boostOpts);
       if (!r && detector === "ssd" && allowCropFallback) {
         const boostSsdOpts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.20 });
-        r = await faceapi.detectSingleFace(bcv, boostSsdOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        r = await runMultiPass(bcv, boostSsdOpts);
       }
-      if (r) return pack(r, bcv, false);
+      if (r) return r;
     } catch (_) {}
     if (allowCropFallback) {
       // Fallback 3: Explicit manual capture in extreme backlighting -> compute 128-d descriptor from central reticle crop
@@ -1935,6 +1998,7 @@ const Face = (() => {
     isDetectorReady: () => detectorReady,
     getBackend: () => backend,
     detectOne,
+    pickPrimaryDetection,
     detectPreview,
     detectAll,
     landmarksOnly,

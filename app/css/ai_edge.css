@@ -1164,6 +1164,12 @@
   font-weight: 600;
   cursor: pointer;
 }
+.aie-recon-gate-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .aie-pill.is-err {
   background: rgba(180, 35, 42, 0.12);
   color: #991B1B;
