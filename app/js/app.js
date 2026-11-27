@@ -639,7 +639,8 @@
     : (initPeriod === 'custom' ? (SAVED_FILTER.dateGrain || 'all') : 'all');
 
   const STATE = {
-    view: 'overview',
+    // Signing in with no screen in the address opens Daily Operations (owner 2026-11-26)
+    view: 'daily_ops',
     company: (SAVED_FILTER.company && typeof SAVED_FILTER.company === 'string' && SAVED_FILTER.company !== DEMO_COMPANY_KEY) ? SAVED_FILTER.company : 'manufacturing-group',
     demoCompanyIndustry: 'Hospitality & Resorts',
     companySwitchIndFilter: 'all',
@@ -2457,6 +2458,7 @@
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase(); }
   function round1(n) { return Math.round(Number(n || 0) * 10) / 10; }
   function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+  function round4(n) { return Math.round(Number(n || 0) * 10000) / 10000; }
 
   function todayISO() {
     const d = new Date();
@@ -6870,7 +6872,10 @@
         else if (Math.abs(eSp.trans_cr) > 0.005 && Math.abs(eSp.quarry_cr) <= 0.005 && Math.abs(eSp.exp_cr_usd) <= 0.005) rawLeg = 'transportation';
         else rawLeg = 'expense';
       }
-      const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const cashV = round2(sp.amount != null ? Number(sp.amount || 0) : Number(sp.usd_amount || 0));
+      const discV = round2(sp.discount != null ? Number(sp.discount || 0) : Number(sp.diff || 0));
+      const totV = round2(cashV + discV);
+      const isCfgPay = /^(?:VAT)?Config$/i.test(mth);
       const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return';
       let vLeg = '';
       if (rawLeg === 'quarry') {
@@ -6889,9 +6894,13 @@
         co: sp.company || '',
         leg: vLeg,
         type: 'Settlement',
+        pay_method: mth,
         desc: String(sp.notes || `Supplier Settlement (${mth} · ${legLbl})`).trim(),
         cr: 0,
         dr: totV,
+        cash_usd: isCfgPay ? 0 : cashV,
+        discount_usd: isCfgPay ? 0 : discV,
+        carried_usd: isCfgPay ? totV : 0,
         _seq: ++seq
       });
     }
@@ -12977,7 +12986,7 @@
   function hasAnyEnrolledFaceId() {
     if (usableFaces().length > 0) return true;
     if (STATE.users.some(u => u && u.status !== 'Suspended' && userHasFaceId(u))) return true;
-    if (hasServerApi() && !isDemoSandboxSession() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !_usersApiHydratedOnce) return true;
+    if (hasServerApi() && !isDemoSandboxSession() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && (!_usersApiHydratedOnce || !STATE.authed || !STATE.users.some(u => u && isOwner(u)))) return true;
     return false;
   }
 
@@ -14554,9 +14563,9 @@
       group: 'exec',
       tabs: [
         // Daily Operations is Tab 1, so the sidebar hub opens on it (owner 2026-11-25); the period
-        // screen keeps view id 'overview' and page title 'Executive Overview', only its tab reads Period Overview.
+        // screen keeps view id 'overview' and page title 'Executive Overview', only its tab reads Performance (owner 2026-11-26).
         { view: 'daily_ops', label: 'Daily Operations', icon: 'daily_ops' },
-        { view: 'overview', match: ['overview', 'overview_revenue', 'overview_profit', 'overview_cash', 'overview_wc'], label: 'Period Overview', icon: 'overview' },
+        { view: 'overview', match: ['overview', 'overview_revenue', 'overview_profit', 'overview_cash', 'overview_wc'], label: 'Performance', icon: 'overview' },
         { view: 'entities', label: 'Entity Comparison', icon: 'entities' }
       ]
     },
@@ -15543,6 +15552,8 @@
 
   function defaultViewFor(u) {
     u = u || activeUser();
+    // Daily Operations first, as the Executive Overview hub's Tab 1 (owner 2026-11-26)
+    if (canViewView('daily_ops', u)) return 'daily_ops';
     if (canViewView('overview', u)) return 'overview';
     const seatInd = typeof getSeatPrimaryIndustry === 'function' ? getSeatPrimaryIndustry(u) : 'Manufacturing';
     const indDefaultMap = {
@@ -87662,6 +87673,7 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(net + vat, 2);
       } else if (spec.key === 're_receipts') {
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const dep = Math.max(0, round2(numVal('ide_deposit')));
         const rawGrossIn = Math.max(0, round2(numVal('ide_gross')));
         const rawDiscIn = round2(numVal('ide_discount'));
@@ -87741,6 +87753,7 @@
           return false;
         }
       } else if (spec.key === 'trd_receipts') {
+        syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit || 'usd', false, 'ide');
         const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
         if (FORM_UI.ideDiscUnit === 'pct' && (FORM_UI._lastIdeInputId === 'ide_amount' || FORM_UI._lastIdeInputId === 'ide_lbp')) {
           const curCashUsd = round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));
@@ -134741,20 +134754,48 @@
     const editCtx = STATE.editingRecord;
     const isEditingExisting = Boolean(editCtx && editCtx.id);
     const keepOpenNextDay = Boolean(!isEditingExisting && evOrOpts && typeof evOrOpts === 'object' && evOrOpts.nextDay && STATE.modalForm === 'attendance');
-    const keepOpenNextUnpriced = Boolean(
+    const activeUnpSess = FORM_UI.unpricedQueueSession;
+    const isModalInUnpQueue = Boolean(
       !isEditingExisting
+      && STATE.modalForm === 'pricerule'
+      && activeUnpSess
+      && isCurrentModalMatchingUnpricedQueue(activeUnpSess)
+    );
+    const keepOpenNextUnpriced = Boolean(
+      isModalInUnpQueue
       && evOrOpts
       && typeof evOrOpts === 'object'
       && evOrOpts.nextUnpriced
-      && STATE.modalForm === 'pricerule'
-      && FORM_UI.unpricedQueueSession
-      && normSupPayable(val('f_supplier')) === FORM_UI.unpricedQueueSession.partyNorm
-      && (val('f_ruletype') === (FORM_UI.unpricedQueueSession.legMode === 'transport' ? 'Transport Price (Site)' : 'Purchase Price (Site)'))
     );
     const isUnpricedQueueAdvance = Boolean(
       !isEditingExisting
       && (keepOpenNextUnpriced || (afterSaveTarget && afterSaveTarget.type === 'unpriced_site'))
     );
+    const deferQueueOrReconPost = Boolean(
+      isUnpricedQueueAdvance
+      || (!isEditingExisting && STATE.modalForm === 'pricerule' && ((FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._fromStatementRecon) || isModalInUnpQueue))
+    );
+    const stmtReconRefreshMeta = (STATE.modalForm === 'pricerule' && !isEditingExisting)
+      ? {
+          fromRecon: Boolean((FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._fromStatementRecon) || (activeUnpSess && activeUnpSess.mode === 'statement')),
+          onMutated: (activeUnpSess && typeof activeUnpSess.onQueueMutated === 'function') ? activeUnpSess.onQueueMutated : null,
+          isStmtQueue: Boolean(activeUnpSess && activeUnpSess.mode === 'statement'),
+          stepUomHint: activeUnpSess ? (val('f_ruletype') === 'Transport Price (Site)' ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³')) : '',
+          reconSnap: (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.snapshotActiveMfgReconState === 'function')
+            ? window.MFG_AI_EDGE.snapshotActiveMfgReconState()
+            : null,
+          stmtSessClone: (activeUnpSess && activeUnpSess.mode === 'statement')
+            ? {
+                mode: 'statement',
+                allowedStepKeys: new Set(activeUnpSess.allowedStepKeys),
+                stepOrderMap: new Map(activeUnpSess.stepOrderMap),
+                stmtHintsByStepKey: new Map(activeUnpSess.stmtHintsByStepKey),
+                allowedParties: new Set(activeUnpSess.allowedParties),
+                completedKeys: new Set(activeUnpSess.completedKeys)
+              }
+            : null
+        }
+      : null;
     const isUpdatingPending = Boolean(
       (STATE.editingPendingExpenseId && STATE.modalForm === 'expense')
       || (STATE.editingPendingRawId && STATE.modalForm === 'raw')
@@ -134871,6 +134912,9 @@
       }
       if (crKey === 'items' || crKey === 'expenses' || crKey === 'warehouse_movements' || crKey === 'equipment_repairs' || (Array.isArray(pendingCatalogAdds) && pendingCatalogAdds.length)) {
         rollbackSeedTables.push('items', 'expense_items', 'repair_items');
+      }
+      if (crKey === 'price_rules') {
+        rollbackSeedTables.push('price_rules', 'raw_purchases', 'sales_tickets');
       }
       const modalSaveRollbackSnap = (hasServerApi() && !isDemoScopeActive())
         ? _captureLedgerAndGeoRollbackSnap(
@@ -135923,8 +135967,8 @@
         recalcForm();
         FORM_UI.userInteracted = false;
         FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
-      } else if (isUnpricedQueueAdvance) {
-        // Keep #entryModal open until server posts settle so rollback leaves the form intact on error.
+      } else if (deferQueueOrReconPost) {
+        // Keep #entryModal open until server posts settle so rollback leaves the form and queue intact on error.
       } else if (!_hasQueueOnEntrySave && afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
           const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
@@ -135994,7 +136038,17 @@
         }
         closeEntryModal(true);
       }
-      if (!isUnpricedQueueAdvance) {
+      const runSavedMfgReconRefresh = () => {
+        if (!stmtReconRefreshMeta) return;
+        const hasSnap = Boolean(stmtReconRefreshMeta.reconSnap || stmtReconRefreshMeta.fromRecon);
+        if (!hasSnap) return;
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.refreshMfgStatementReconAfterPriceChange === 'function') {
+          try { window.MFG_AI_EDGE.refreshMfgStatementReconAfterPriceChange(stmtReconRefreshMeta.reconSnap || null); } catch (_) {}
+        } else if (typeof stmtReconRefreshMeta.onMutated === 'function') {
+          try { stmtReconRefreshMeta.onMutated(stmtReconRefreshMeta.reconSnap || null); } catch (_) {}
+        }
+      };
+      if (!deferQueueOrReconPost) {
         emitSaveSuccessFeedback();
         if (crKey === 'settlements' && STATE.view === 'statements' && String(STATE.activeStatement || '') === '16' && STATE.rdl && STATE.rdl.params && !STATE.rdl._dateTouched && record) {
           const effSettleDate = String((STATE.basis === 'rep' ? (record.rep_date || record.date) : record.date) || '').slice(0, 10);
@@ -136005,6 +136059,7 @@
           }
         }
         renderApp();
+        runSavedMfgReconRefresh();
         if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
           window.MFG_FLEET_PNL.refresh();
         }
@@ -136016,7 +136071,8 @@
         }
       }
       const restoreOpenUnpricedBtnsOnFail = () => {
-        if (isUnpricedQueueAdvance) {
+        runSavedMfgReconRefresh();
+        if (deferQueueOrReconPost) {
           if (sBtn) { sBtn.disabled = false; sBtn.textContent = origSBtnText || 'Post'; }
           if (nUnpBtn) { nUnpBtn.disabled = false; }
         }
@@ -136111,32 +136167,65 @@
           return;
         }
       }
-      if (isUnpricedQueueAdvance) {
+      if (deferQueueOrReconPost && !isUnpricedQueueAdvance) {
+        STATE.saving = false;
+        closeEntryModal(true);
+        emitSaveSuccessFeedback();
+        renderApp();
+        runSavedMfgReconRefresh();
+        if (stmtReconRefreshMeta && stmtReconRefreshMeta.fromRecon && stmtReconRefreshMeta.isStmtQueue && stmtReconRefreshMeta.stmtSessClone) {
+          const recLegDone = /^Transport Price \(Site\)$/i.test(String(record.rule_type || '')) ? 'transport' : 'material';
+          const recPartyDone = normSupPayable(record.supplier || '');
+          const stepUomDone = recLegDone === 'transport' ? (record.rate_per || record.unit || 'm³') : (record.unit || 'm³');
+          const doneKey = buildUnpricedQueueStepKey(recLegDone, record.company, recPartyDone, record.site, record.product, stepUomDone);
+          stmtReconRefreshMeta.stmtSessClone.completedKeys.add(doneKey);
+          const remAfterPost = buildStatementUnpricedQueue(stmtReconRefreshMeta.stmtSessClone);
+          if (!remAfterPost || !remAfterPost.items || remAfterPost.items.length === 0) {
+            const doneMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+              ? window.MFG_I18N.t('All unpriced statement sites completed', window.MFG_I18N.getLang())
+              : 'All unpriced statement sites completed';
+            toast(doneMsg, 'ok');
+          }
+        }
+        if (window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.refresh === 'function') {
+          window.MFG_FLEET_PNL.refresh();
+        }
+      } else if (isUnpricedQueueAdvance) {
         STATE.saving = false;
         emitSaveSuccessFeedback();
         const sess = FORM_UI.unpricedQueueSession;
         if (sess && sess.completedKeys instanceof Set) {
-          const stepUom = sess.legMode === 'transport' ? (record.rate_per || record.unit || 'm³') : (record.unit || 'm³');
-          const doneStepKey = buildUnpricedQueueStepKey(sess.legMode, record.company, sess.partyNorm, record.site, record.product, stepUom);
+          const recLeg = /^Transport Price \(Site\)$/i.test(String(record.rule_type || '')) ? 'transport' : 'material';
+          const recPartyNorm = normSupPayable(record.supplier || sess.partyNorm || '');
+          const stepUom = recLeg === 'transport' ? (record.rate_per || record.unit || 'm³') : (record.unit || 'm³');
+          const doneStepKey = buildUnpricedQueueStepKey(recLeg, record.company, recPartyNorm, record.site, record.product, stepUom);
           sess.completedKeys.add(doneStepKey);
-          if (sess.legMode === 'transport' && !String(record.product || '').trim()) {
+          if (recLeg === 'transport' && !String(record.product || '').trim()) {
             const siteSkDone = normSiteMatch(record.site);
             const coNormDone = norm(record.company);
             const curQItems = (FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._unpricedQueue && FORM_UI.unpricedSiteCtx._unpricedQueue.items) || [];
             curQItems.forEach(it => {
-              if (it && it.siteKey === siteSkDone && norm(it.company) === coNormDone) {
+              if (it && it.siteKey === siteSkDone && norm(it.company) === coNormDone && (!it.partyNorm || it.partyNorm === recPartyNorm)) {
                 sess.completedKeys.add(it.stepKey);
               }
             });
           }
           sess.doneCount = Number(sess.doneCount || 0) + 1;
         }
+        runSavedMfgReconRefresh();
         if (afterSaveTarget && afterSaveTarget.type === 'unpriced_site' && afterSaveTarget.siteName) {
           FORM_UI._advancingUnpricedQueue = true;
           try {
             openSetUnpricedSitePriceModal(afterSaveTarget.siteName, {
               transportOnly: Boolean(afterSaveTarget.transportOnly),
               supplier: afterSaveTarget.supplier || (sess && sess.partyLabel) || '',
+              product: afterSaveTarget.product || '',
+              uom: afterSaveTarget.uom || '',
+              company: afterSaveTarget.company || '',
+              earliestDate: afterSaveTarget.earliestDate || '',
+              gradeKey: afterSaveTarget.gradeKey || '',
+              statementHint: afterSaveTarget.statementHint || null,
+              _fromStatementRecon: Boolean(afterSaveTarget._fromStatementRecon || (sess && sess.mode === 'statement')),
               forceSwitch: true,
               _continuingQueue: true
             });
@@ -136145,24 +136234,29 @@
           }
           renderApp();
         } else if (sess) {
-          const remQ = buildUnpricedPartyQueue({
-            legMode: sess.legMode,
-            partyName: sess.partyLabel || record.supplier,
-            anchorSite: record.site,
-            completedKeys: sess.completedKeys
-          });
+          const remQ = sess.mode === 'statement'
+            ? buildStatementUnpricedQueue(sess)
+            : buildUnpricedPartyQueue({
+                legMode: sess.legMode,
+                partyName: sess.partyLabel || record.supplier,
+                anchorSite: record.site,
+                completedKeys: sess.completedKeys
+              });
           if (remQ && remQ.items.length > 0) {
             const nxt = remQ.items[0];
+            const nxtLeg = nxt.legMode || sess.legMode;
             FORM_UI._advancingUnpricedQueue = true;
             try {
               openSetUnpricedSitePriceModal(nxt.site, {
-                transportOnly: sess.legMode === 'transport',
+                transportOnly: nxtLeg === 'transport',
                 supplier: nxt.supplier,
                 product: nxt.product,
                 uom: nxt.uom,
                 company: nxt.company,
                 earliestDate: nxt.earliestDate,
                 gradeKey: nxt.gradeKey,
+                statementHint: nxt.statementHint || null,
+                _fromStatementRecon: Boolean(sess.mode === 'statement'),
                 forceSwitch: true,
                 _continuingQueue: true
               });
@@ -136171,11 +136265,19 @@
             }
             renderApp();
           } else {
+            const isStmtMode = sess.mode === 'statement';
             const donePartyLbl = sess.partyLabel || record.supplier || '';
             FORM_UI.unpricedQueueSession = null;
+            FORM_UI.unpricedSiteCtx = null;
             closeEntryModal(true);
             renderApp();
-            if (donePartyLbl) {
+            runSavedMfgReconRefresh();
+            if (isStmtMode) {
+              const doneStmtMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+                ? window.MFG_I18N.t('All unpriced statement sites completed', window.MFG_I18N.getLang())
+                : 'All unpriced statement sites completed';
+              toast(doneStmtMsg, 'ok');
+            } else if (donePartyLbl) {
               const doneMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
                 ? window.MFG_I18N.t('All unpriced sites and grades completed', window.MFG_I18N.getLang())
                 : 'All unpriced sites and grades completed';
@@ -136276,7 +136378,7 @@
   const MASTER_DIRECTORY_VOID_TABLES = new Set([
     'sites', 'regions', 'customers', 'suppliers', 'staff_members', 'company_equipment', 'equipment',
     'staff_roles', 'staff_assignments', 'work_shifts', 'documents', 'accounts', 'companies', 'partners',
-    'settings', 're_properties', 're_units', 're_ownership', 're_valuations', 'trd_trucks', 'trd_stock',
+    'settings', 'employments', 're_properties', 're_units', 're_ownership', 're_valuations', 'trd_trucks', 'trd_stock',
     'trd_suppliers', 'ins_catalogue', 'ins_carriers', 'ins_brokers', 'ins_agents', 'hsp_stock',
     'hsp_outlets', 'hsp_rooms', 'hld_entities', 'hld_partners_dir'
   ]);
@@ -136357,9 +136459,14 @@
     const row = s.row || {};
     const snap = (row.void_snapshot && typeof row.void_snapshot === 'object') ? row.void_snapshot : {};
     const titleStr = String(row.tableTitle || s.tableTitle || '').trim();
+    // Exactly the cloud's exemption (checkMandatoryVoidReasonEdge in functions/_lib/d1_store.js, server.py): a void
+    // this device lets through without a reason must never be one the cloud refuses at sync (owner 2026-11-25: the
+    // shared registers such as products and items, and any table with a directory-like title, used to be exempt here
+    // only, so their voids went out with no reason and held the device's sync).
     const isMaster = Boolean(
-      (tblLow && (MASTER_DIRECTORY_VOID_TABLES.has(tblLow) || UNIVERSAL_MAIN_SPEC[tblLow])) ||
-      (titleStr && MASTER_DIRECTORY_TITLE_RX.test(titleStr) && (!tblLow || MASTER_DIRECTORY_VOID_TABLES.has(tblLow) || tblLow === tableRaw.toLowerCase()))
+      (tblLow && MASTER_DIRECTORY_VOID_TABLES.has(tblLow)) ||
+      // (a row passed by its title alone has no table key here; the cloud then checks it under its edit key, "<...>::<...>")
+      (titleStr && MASTER_DIRECTORY_TITLE_RX.test(titleStr) && (!tblLow || MASTER_DIRECTORY_VOID_TABLES.has(tblLow) || /^wf::/i.test(tblLow) || tblLow.includes('::') || tblLow === titleStr.toLowerCase()))
     );
     const isSystemOrWorkbook = Boolean(
       row._systemTopup
@@ -136387,6 +136494,14 @@
     let daysOld = 0;
     if (rowDate && /^\d{4}-\d{2}-\d{2}$/.test(today)) {
       daysOld = Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(rowDate + 'T00:00:00Z')) / 86400000);
+    }
+    // The cloud counts the age in Beirut: near midnight a device on another clock must not be a day younger.
+    if (rowDate) {
+      let beirutToday = '';
+      try { beirutToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Beirut' }).format(new Date()); } catch (_) { beirutToday = ''; }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(beirutToday)) {
+        daysOld = Math.max(daysOld, Math.round((Date.parse(beirutToday + 'T00:00:00Z') - Date.parse(rowDate + 'T00:00:00Z')) / 86400000));
+      }
     }
     const byAll = backdatedDays === 0;
     const byAmount = absUsd >= minUsd && minUsd >= 0 && (minUsd > 0 || absUsd >= 0);
@@ -138686,6 +138801,7 @@
     FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (!FORM_UI._advancingUnpricedQueue && !(target && target.type === 'unpriced_site')) {
       FORM_UI.unpricedQueueSession = null;
+    FORM_UI.unpricedSiteCtx = null;
     }
     if (!target || target.type === 'close') {
       closeEntryModal(true);
@@ -138697,6 +138813,13 @@
         openSetUnpricedSitePriceModal(target.siteName, {
           transportOnly: Boolean(target.transportOnly),
           supplier: target.supplier || '',
+          product: target.product || '',
+          uom: target.uom || '',
+          company: target.company || '',
+          earliestDate: target.earliestDate || '',
+          gradeKey: target.gradeKey || '',
+          statementHint: target.statementHint || null,
+          _fromStatementRecon: Boolean(target._fromStatementRecon || (FORM_UI.unpricedQueueSession && FORM_UI.unpricedQueueSession.mode === 'statement')),
           forceSwitch: true,
           _continuingQueue: true
         });
@@ -139022,24 +139145,52 @@
     });
 
     if (!grades.length) {
+      const fbCo = (opts.company && allowedCompanyNames(u).includes(opts.company)) ? opts.company : defaultEntryCompany();
       const sInf = siteInfo(canonSite, 'raw') || {};
+      const fbSup = String(opts.supplier || sInf.supplier || sInf.site_owner || '').trim();
+      const fbProd = String(opts.product || '').trim();
+      let fbUom = String(opts.uom || '').trim();
+      if (!fbUom && fbProd) {
+        const pInf = productInfo(fbProd);
+        if (pInf && pInf.uom) fbUom = pInf.uom;
+      }
+      fbUom = normUnpricedQueueUom(fbUom || 'm³');
+      const rawEarliest = String(opts.earliestDate || '').slice(0, 10);
+      let effStart = rawEarliest || todayISO();
+      let clampedFrom = '';
+      if (typeof getChronologicalSeriesBounds === 'function') {
+        const bounds = getChronologicalSeriesBounds('price_rules', {
+          company: fbCo,
+          rule_type: 'Purchase Price (Site)',
+          site: canonSite,
+          supplier: fbSup,
+          product: fbProd
+        }, null);
+        if (bounds && bounds.minStart && bounds.minStart > effStart) {
+          clampedFrom = effStart;
+          effStart = bounds.minStart;
+        }
+      }
       return {
         site: canonSite,
-        company: defaultEntryCompany(),
-        co: defaultEntryCompany(),
-        supplier: String(sInf.supplier || '').trim(),
-        product: '',
-        prod: '',
-        uom: 'm³',
-        startdate: todayISO(),
-        earliestRawDate: '',
+        company: fbCo,
+        co: fbCo,
+        supplier: fbSup,
+        product: fbProd,
+        prod: fbProd,
+        uom: fbUom,
+        startdate: effStart,
+        earliestRawDate: rawEarliest || (opts.earliestDate ? effStart : ''),
+        clampedFrom,
         loads: 0,
         qty: 0,
         grades: []
       };
     }
 
+    const optUomNorm = opts && opts.uom ? norm(normUnpricedQueueUom(opts.uom)) : '';
     const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey))
+      || (opts && opts.product && optUomNorm && grades.find(x => norm(x.product) === norm(opts.product) && norm(normUnpricedQueueUom(x.uom)) === optUomNorm && (!opts.company || norm(x.company) === norm(opts.company))))
       || (opts && opts.product && grades.find(x => norm(x.product) === norm(opts.product) && (!opts.company || norm(x.company) === norm(opts.company))))
       || grades[0];
     return {
@@ -139204,7 +139355,9 @@
       };
     }
 
+    const optUomNorm = opts && opts.uom ? norm(normUnpricedQueueUom(opts.uom)) : '';
     const chosen = (opts && opts.gradeKey && grades.find(x => x.gradeKey === opts.gradeKey))
+      || (opts && opts.product && optUomNorm && grades.find(x => norm(x.product) === norm(opts.product) && norm(normUnpricedQueueUom(x.uom)) === optUomNorm && (!opts.company || norm(x.company) === norm(opts.company))))
       || (opts && opts.product && grades.find(x => norm(x.product) === norm(opts.product) && (!opts.company || norm(x.company) === norm(opts.company))))
       || grades[0];
     return {
@@ -139222,6 +139375,392 @@
       qty: chosen.qty,
       grades
     };
+  }
+
+  function fmtUnpricedRateLabel(rate, uom) {
+    const num = round4(rate);
+    const hasSubCent = Math.abs(num - round2(num)) >= 0.00005;
+    const usdStr = hasSubCent ? `$${num.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}` : fmtUSD(num, 2);
+    return `${usdStr}/${uom || 'm³'}`;
+  }
+
+  function resolveUnpricedLastRateSuggestion(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    const u = opts.user || activeUser();
+    if (typeof seatLens === 'function' && !seatLens(u).expenses) return null;
+
+    const isHaul = opts && opts.legMode === 'transport';
+    const targetCoNorm = norm((opts && opts.company) || '');
+    const targetPartyNorm = normSupPayable((opts && opts.supplier) || '');
+    const targetSiteRaw = cleanSiteLabel((opts && opts.site) || '');
+    const targetSiteKey = normSiteMatch(targetSiteRaw);
+    const targetProdNorm = norm((opts && opts.product) || '');
+    const targetUom = normUnpricedQueueUom((opts && opts.uom) || 'm³');
+    const targetUomNorm = norm(targetUom);
+    if (!targetSiteKey) return null;
+
+    const allowed = allowedCompanyNames(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const targetSiteObj = siteInfo(targetSiteRaw);
+    const targetBundled = Boolean(targetSiteObj && isSupplierDeliveredSite(targetSiteObj));
+    const rules = _mergedActivePriceRules();
+    const cands = [];
+
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      if (!r || r.voided || r.active === false) continue;
+      const rCo = String(r.company || '').trim();
+      if (rCo) {
+        if (allowed.length && !allowed.includes(rCo)) continue;
+        if (buTarget && rCo !== buTarget) continue;
+        if (targetCoNorm && norm(rCo) !== targetCoNorm) continue;
+      }
+      const exactCo = Boolean(rCo && targetCoNorm && norm(rCo) === targetCoNorm) ? 1 : 0;
+      const rt = String(r.rule_type || '').trim();
+      const rSiteKey = normSiteMatch(r.site || '');
+      if (!rSiteKey) continue;
+      const rProdNorm = norm(r.product || '');
+
+      if (isHaul) {
+        if (rt !== 'Transport Price (Site)') continue;
+        // Haulage corridors depend on site distance, so never suggest a sibling site's transport rate.
+        if (rSiteKey !== targetSiteKey) continue;
+        const rSupNorm = normSupPayable(r.supplier || '');
+        if (!targetPartyNorm || rSupNorm !== targetPartyNorm) continue;
+        const isTrIndiff = typeof isTransIndiffRule === 'function' && isTransIndiffRule(r);
+        const rate = isTrIndiff ? Number(ruleTransIndiffPrice(r) || 0) : Number(r.trans_unit_price ?? r.trans_price ?? 0);
+        const ruleUom = isTrIndiff ? 'Truck' : normUnpricedQueueUom(r.rate_per || r.unit || 'm³');
+        if (!(rate > 0) || norm(ruleUom) !== targetUomNorm) continue;
+        if (targetProdNorm) {
+          if (rProdNorm && rProdNorm !== targetProdNorm) continue;
+        } else if (rProdNorm) {
+          continue;
+        }
+        const exactProd = (targetProdNorm && rProdNorm === targetProdNorm) || (!targetProdNorm && !rProdNorm) ? 1 : 0;
+        const sd = String(r.start_date || '').slice(0, 10);
+        const edRaw = String(r.end_date || '').trim();
+        const edKey = (!edRaw || /^open$/i.test(edRaw)) ? '9999-12-31' : edRaw.slice(0, 10);
+        cands.push({
+          rule: r,
+          rate: round4(rate),
+          sameSite: 1,
+          exactProd,
+          exactCo,
+          edKey,
+          sdKey: sd,
+          modKey: String(r.modified_at || ''),
+          idKey: String(r.id || '')
+        });
+      } else {
+        if (rt !== 'Purchase Price (Site)') continue;
+        if (typeof isQuarryPricingOutlier === 'function' && isQuarryPricingOutlier(r)) continue;
+        const isMatIndiff = typeof isMatIndiffRule === 'function' && isMatIndiffRule(r);
+        const rate = isMatIndiff ? Number(ruleIndiffPrice(r) || 0) : Number(r.unit_price ?? r.price ?? 0);
+        const ruleUom = isMatIndiff ? 'Truck' : normUnpricedQueueUom(r.unit || 'm³');
+        if (!(rate > 0) || norm(ruleUom) !== targetUomNorm) continue;
+
+        const rSiteObj = siteInfo(r.site || '');
+        const rSupRaw = String(r.supplier || (rSiteObj && (rSiteObj.supplier || rSiteObj.site_owner)) || '').trim();
+        const rSupNorm = normSupPayable(rSupRaw);
+        const sameSite = rSiteKey === targetSiteKey ? 1 : 0;
+        if (sameSite) {
+          if (rSupNorm && targetPartyNorm && rSupNorm !== targetPartyNorm) continue;
+          if (targetProdNorm) {
+            if (rProdNorm && rProdNorm !== targetProdNorm) continue;
+          } else if (rProdNorm) {
+            continue;
+          }
+        } else {
+          if (!targetPartyNorm || rSupNorm !== targetPartyNorm) continue;
+          if (!targetProdNorm || rProdNorm !== targetProdNorm) continue;
+          const rBundled = Boolean(typeof isBundledRawPriceRule === 'function' && isBundledRawPriceRule(r));
+          if (rBundled !== targetBundled) continue;
+        }
+        const exactProd = (targetProdNorm && rProdNorm === targetProdNorm) || (!targetProdNorm && !rProdNorm) ? 1 : 0;
+        const sd = String(r.start_date || '').slice(0, 10);
+        const edRaw = String(r.end_date || '').trim();
+        const edKey = (!edRaw || /^open$/i.test(edRaw)) ? '9999-12-31' : edRaw.slice(0, 10);
+        cands.push({
+          rule: r,
+          rate: round4(rate),
+          sameSite,
+          exactProd,
+          exactCo,
+          edKey,
+          sdKey: sd,
+          modKey: String(r.modified_at || ''),
+          idKey: String(r.id || '')
+        });
+      }
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) =>
+      (b.sameSite - a.sameSite)
+      || (b.exactProd - a.exactProd)
+      || (b.exactCo - a.exactCo)
+      || b.edKey.localeCompare(a.edKey)
+      || b.sdKey.localeCompare(a.sdKey)
+      || b.modKey.localeCompare(a.modKey)
+      || b.idKey.localeCompare(a.idKey)
+    );
+    const best = cands[0];
+    return {
+      rate: best.rate,
+      uom: targetUom,
+      kind: best.sameSite ? 'same_site' : 'sibling_site',
+      sourceSite: cleanSiteLabel(best.rule.site || ''),
+      startDate: best.sdKey,
+      endDate: String(best.rule.end_date || '').slice(0, 10),
+      ruleId: best.idKey
+    };
+  }
+
+  function isCurrentModalMatchingUnpricedQueue(sess) {
+    if (!sess) return false;
+    const rt = val('f_ruletype');
+    const curLeg = rt === 'Transport Price (Site)' ? 'transport' : (rt === 'Purchase Price (Site)' ? 'material' : '');
+    if (!curLeg) return false;
+    const curSupNorm = normSupPayable(val('f_supplier'));
+    if (sess.mode === 'statement') {
+      return Boolean(sess.allowedParties instanceof Set && sess.allowedParties.has(`${curLeg}|${curSupNorm}`));
+    }
+    return curLeg === sess.legMode && curSupNorm === sess.partyNorm;
+  }
+
+  function buildStatementUnpricedQueue(sess, opts = {}) {
+    const emptyOut = {
+      mode: 'statement',
+      legMode: 'mixed',
+      partyNorm: '',
+      partyLabel: '',
+      items: [],
+      siteCount: 0,
+      totalLoads: 0,
+      siteSummaries: [],
+      stepSummaries: []
+    };
+    if (!sess || !SEED || !SEED._recordsReady || !(sess.allowedStepKeys instanceof Set) || !sess.allowedStepKeys.size) return emptyOut;
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return emptyOut;
+
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const offScope = isOfficialScopeActive(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const isCoAllowed = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (buTarget && c !== buTarget) return false;
+      return true;
+    };
+    const canRaw = canEnterForm('pricerule_raw');
+    const canHaul = canEnterForm('pricerule_haul');
+    if (!canRaw && !canHaul) return emptyOut;
+
+    const recs = SEED.records || {};
+    const siteCanonByNorm = new Map();
+    (recs.sites || []).forEach(st => {
+      if (!st || st.voided || !st.name) return;
+      const sk = normSiteMatch(st.name);
+      if (sk && !siteCanonByNorm.has(sk)) siteCanonByNorm.set(sk, cleanSiteLabel(st.name));
+    });
+    const supCanonByNorm = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sn = normSupPayable(s.name);
+      if (sn && !supCanonByNorm.has(sn)) supCanonByNorm.set(sn, String(s.name).trim());
+    });
+
+    const completedSet = sess.completedKeys instanceof Set ? sess.completedKeys : new Set();
+    const buckets = new Map();
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoAllowed(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (rawSign(rp) <= 0 || norm(rp.product) === 'remove') continue;
+      if (String(rp.method || 'Credit').trim() !== 'Credit') continue;
+      const co = String(rp.company || 'WTC');
+      const coNorm = normSupPayable(co);
+      const rawSiteLbl = cleanSiteLabel(rp.site);
+      if (!rawSiteLbl || rawSiteLbl.startsWith('(')) continue;
+      const siteSk = normSiteMatch(rawSiteLbl);
+      if (!siteSk) continue;
+      const canonSite = siteCanonByNorm.get(siteSk) || rawSiteLbl;
+      const prodName = String(rp.product || '').trim();
+      const prodObj = prodName ? productInfo(prodName) : null;
+      const uom = normUnpricedQueueUom(rp.uom || (prodObj && prodObj.uom) || 'm³');
+      const dt = String(rp.rep_date || rp.date || '').slice(0, 10);
+      const q = ticketProductQty(rp);
+
+      const legsToCheck = [];
+      if (canRaw && Number(rp.cost || 0) === 0) {
+        const soNorm = normSupPayable(rp.site_owner);
+        if (soNorm && soNorm !== 'excluded' && soNorm !== 'none' && soNorm !== coNorm) {
+          legsToCheck.push({ legMode: 'material', partyNorm: soNorm, rawParty: String(rp.site_owner || '').trim() });
+        }
+      }
+      if (canHaul && !/^company/i.test(String(rp.transport_by || '')) && !/^supplier-delivered$/i.test(String(rp.transport_by || '')) && !rp.includes_transport && Number(rp.trans_cost || 0) === 0) {
+        const toNorm = normSupPayable(rp.truck_owner);
+        if (toNorm && toNorm !== 'excluded' && toNorm !== 'none' && toNorm !== coNorm) {
+          legsToCheck.push({ legMode: 'transport', partyNorm: toNorm, rawParty: String(rp.truck_owner || '').trim() });
+        }
+      }
+
+      for (let li = 0; li < legsToCheck.length; li++) {
+        const { legMode, partyNorm, rawParty } = legsToCheck[li];
+        const stepKey = buildUnpricedQueueStepKey(legMode, co, partyNorm, canonSite, prodName, uom);
+        if (!sess.allowedStepKeys.has(stepKey) || completedSet.has(stepKey)) continue;
+        let item = buckets.get(stepKey);
+        if (!item) {
+          const partyLabel = supCanonByNorm.get(partyNorm) || rawParty;
+          item = {
+            stepKey,
+            legMode,
+            gradeKey: `${norm(co)}|${partyNorm}|${norm(prodName)}|${norm(uom)}`,
+            company: co,
+            supplier: partyLabel,
+            partyNorm,
+            site: canonSite,
+            siteKey: siteSk,
+            product: prodName,
+            uom,
+            loads: 0,
+            qty: 0,
+            earliestDate: dt || todayISO(),
+            statementHint: (sess.stmtHintsByStepKey && sess.stmtHintsByStepKey.get(stepKey)) || null
+          };
+          buckets.set(stepKey, item);
+        }
+        item.loads += 1;
+        item.qty = round2(item.qty + q);
+        if (dt && (!item.earliestDate || dt < item.earliestDate)) item.earliestDate = dt;
+      }
+    }
+
+    const orderMap = sess.stepOrderMap instanceof Map ? sess.stepOrderMap : new Map();
+    const preferredStepKey = String((opts && opts.preferredStepKey) || '');
+    const items = Array.from(buckets.values()).sort((a, b) => {
+      const aPref = preferredStepKey && a.stepKey === preferredStepKey ? 1 : 0;
+      const bPref = preferredStepKey && b.stepKey === preferredStepKey ? 1 : 0;
+      if (aPref !== bPref) return bPref - aPref;
+      const ao = orderMap.has(a.stepKey) ? orderMap.get(a.stepKey) : 999999;
+      const bo = orderMap.has(b.stepKey) ? orderMap.get(b.stepKey) : 999999;
+      if (ao !== bo) return ao - bo;
+      return (b.loads - a.loads) || (b.qty - a.qty) || String(a.site).localeCompare(String(b.site));
+    });
+
+    const distinctSiteLegs = new Set();
+    let totalLoads = 0;
+    const siteSummaries = [];
+    const seenSummary = new Set();
+    const anchorStepKey = preferredStepKey || (items[0] && items[0].stepKey) || '';
+    items.forEach(it => {
+      totalLoads += it.loads;
+      distinctSiteLegs.add(`${it.legMode}|${it.siteKey}`);
+      const sumKey = `${it.legMode}|${it.partyNorm}|${it.siteKey}`;
+      if (!seenSummary.has(sumKey)) {
+        seenSummary.add(sumKey);
+        const sameGroupItems = items.filter(x => x.legMode === it.legMode && x.partyNorm === it.partyNorm && x.siteKey === it.siteKey);
+        const grpLoads = sameGroupItems.reduce((s, x) => s + Number(x.loads || 0), 0);
+        siteSummaries.push({
+          stepKey: it.stepKey,
+          legMode: it.legMode,
+          supplier: it.supplier,
+          product: it.product,
+          uom: it.uom,
+          company: it.company,
+          earliestDate: it.earliestDate,
+          gradeKey: it.gradeKey,
+          statementHint: it.statementHint || null,
+          site: it.site,
+          siteKey: it.siteKey,
+          loads: grpLoads,
+          remainingSteps: sameGroupItems.length,
+          isCurrentSite: sameGroupItems.some(x => x.stepKey === anchorStepKey)
+        });
+      }
+    });
+
+    const uniqueParties = Array.from(new Set(items.map(it => it.supplier).filter(Boolean)));
+    return {
+      mode: 'statement',
+      legMode: items.length === 1 ? items[0].legMode : 'mixed',
+      partyNorm: uniqueParties.length === 1 ? items[0].partyNorm : '',
+      partyCount: uniqueParties.length,
+      partyLabel: uniqueParties.length === 1 ? uniqueParties[0] : '',
+      items,
+      siteCount: distinctSiteLegs.size,
+      totalLoads,
+      siteSummaries,
+      stepSummaries: items
+    };
+  }
+
+  function openStatementUnpricedQueueModal(stmtSpecs, opts = {}) {
+    if (STATE.kioskLocked || getActiveIndustry(STATE.company) !== 'Manufacturing') return false;
+    const list = Array.isArray(stmtSpecs) ? stmtSpecs : [];
+    const u = opts.user || activeUser();
+    const allowed = allowedCompanyNames(u);
+    const buTarget = COMPANY_BU_MATCH[STATE.company] || null;
+    const allowedStepKeys = new Set();
+    const stepOrderMap = new Map();
+    const stmtHintsByStepKey = new Map();
+    const allowedParties = new Set();
+    const validSpecs = [];
+
+    list.forEach(sp => {
+      if (!sp || !sp.site || !sp.supplier) return;
+      const legMode = sp.legMode === 'transport' ? 'transport' : 'material';
+      if (!canEnterForm(legMode === 'transport' ? 'pricerule_haul' : 'pricerule_raw')) return;
+      const co = String(sp.company || defaultEntryCompany() || 'WTC');
+      if (allowed.length && !allowed.includes(co)) return;
+      if (buTarget && co !== buTarget) return;
+      const partyNorm = normSupPayable(sp.supplier);
+      if (!partyNorm) return;
+      const uom = normUnpricedQueueUom(sp.uom || 'm³');
+      const sk = buildUnpricedQueueStepKey(legMode, co, partyNorm, sp.site, sp.product || '', uom);
+      if (!allowedStepKeys.has(sk)) {
+        stepOrderMap.set(sk, validSpecs.length);
+        allowedStepKeys.add(sk);
+        allowedParties.add(`${legMode}|${partyNorm}`);
+        if (sp.statementHint) stmtHintsByStepKey.set(sk, sp.statementHint);
+        validSpecs.push(Object.assign({}, sp, { legMode, company: co, partyNorm, uom, stepKey: sk }));
+      }
+    });
+    if (!validSpecs.length) return false;
+
+    const sess = {
+      mode: 'statement',
+      legMode: validSpecs[0].legMode,
+      partyNorm: validSpecs[0].partyNorm,
+      partyLabel: validSpecs[0].supplier,
+      allowedStepKeys,
+      stepOrderMap,
+      stmtHintsByStepKey,
+      allowedParties,
+      completedKeys: new Set(),
+      doneCount: 0,
+      onQueueMutated: (opts && typeof opts.onQueueMutated === 'function') ? opts.onQueueMutated : null
+    };
+    FORM_UI.unpricedQueueSession = sess;
+
+    const prefKey = String((opts && opts.preferredStepKey) || validSpecs[0].stepKey || '');
+    const queueSnap = buildStatementUnpricedQueue(sess, { preferredStepKey: prefKey, user: u });
+    const first = (queueSnap && queueSnap.items && queueSnap.items[0]) || validSpecs[0];
+    return openSetUnpricedSitePriceModal(first.site, {
+      transportOnly: first.legMode === 'transport',
+      supplier: first.supplier,
+      product: first.product || '',
+      uom: first.uom || '',
+      company: first.company || '',
+      earliestDate: first.earliestDate || '',
+      gradeKey: first.gradeKey || '',
+      statementHint: first.statementHint || stmtHintsByStepKey.get(first.stepKey) || null,
+      _fromStatementRecon: true,
+      _continuingQueue: true,
+      user: u
+    });
   }
 
   function normUnpricedQueueUom(u) {
@@ -139377,18 +139916,151 @@
     };
   }
 
+  function syncUnpricedSuggestRow(forceRebuild = false) {
+    const rowEl = $('prUnpricedSuggestRow');
+    if (!rowEl) return;
+    const prefill = FORM_UI.unpricedSiteCtx;
+    if (!prefill || STATE.modalForm !== 'pricerule' || STATE.editingRecord || STATE.editingPendingRawId) {
+      rowEl.hidden = true;
+      rowEl.innerHTML = '';
+      delete rowEl.dataset.suggestSig;
+      return;
+    }
+    const rt = val('f_ruletype');
+    if (rt !== 'Purchase Price (Site)' && rt !== 'Transport Price (Site)') {
+      rowEl.hidden = true;
+      rowEl.innerHTML = '';
+      delete rowEl.dataset.suggestSig;
+      return;
+    }
+    const liveHaul = rt === 'Transport Price (Site)';
+    const liveLegMode = liveHaul ? 'transport' : 'material';
+    const liveCo = val('f_company') || prefill.company || '';
+    const liveSup = val('f_supplier') || prefill.supplier || '';
+    const liveSite = val('f_site') || prefill.site || '';
+    const liveProd = val('f_product') || '';
+    const liveUom = normUnpricedQueueUom(liveHaul ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³'));
+    const liveStepKey = buildUnpricedQueueStepKey(liveLegMode, liveCo, normSupPayable(liveSup), liveSite, liveProd, liveUom);
+
+    const qSess = FORM_UI.unpricedQueueSession;
+    let stmtHint = (qSess && qSess.stmtHintsByStepKey && qSess.stmtHintsByStepKey.get(liveStepKey)) || null;
+    if (!stmtHint) {
+      const ctxGrades = Array.isArray(prefill.grades) ? prefill.grades : [];
+      const ctxMatchGrade = ctxGrades.find(g => {
+        const gKey = buildUnpricedQueueStepKey(
+          prefill._unpricedHaulPrefill ? 'transport' : 'material',
+          g.company || prefill.company || '',
+          normSupPayable(g.supplier || prefill.supplier || ''),
+          prefill.site || '',
+          g.product || '',
+          g.uom || prefill.uom || 'm³'
+        );
+        return gKey === liveStepKey;
+      });
+      if (ctxMatchGrade && ctxMatchGrade.statementHint) {
+        stmtHint = ctxMatchGrade.statementHint;
+      } else if (prefill.statementHint) {
+        const pfKey = buildUnpricedQueueStepKey(
+          prefill._unpricedHaulPrefill ? 'transport' : 'material',
+          prefill.company || '',
+          normSupPayable(prefill.supplier || ''),
+          prefill.site || '',
+          prefill.product || '',
+          prefill.uom || 'm³'
+        );
+        if (pfKey === liveStepKey) stmtHint = prefill.statementHint;
+      }
+    }
+    const canSeeExpensesHint = (typeof seatLens === 'function') ? Boolean(seatLens().expenses) : true;
+    const hasStmtHint = Boolean(stmtHint && Number(stmtHint.billedRate) > 0 && canSeeExpensesHint);
+    const lastSug = resolveUnpricedLastRateSuggestion({
+      legMode: liveLegMode,
+      company: liveCo,
+      supplier: liveSup,
+      site: liveSite,
+      product: liveProd,
+      uom: liveUom
+    });
+    const curEnteredRate = Number(liveHaul ? val('f_transunitprice') : val('f_unitprice'));
+    const lastChipActive = Boolean(lastSug && curEnteredRate > 0 && Math.abs(curEnteredRate - Number(lastSug.rate)) < 0.00005);
+
+    if (!hasStmtHint && !lastSug) {
+      rowEl.hidden = true;
+      rowEl.innerHTML = '';
+      delete rowEl.dataset.suggestSig;
+      return;
+    }
+
+    const sig = JSON.stringify([
+      liveStepKey,
+      lastSug ? [lastSug.kind, lastSug.rate, lastSug.uom, lastSug.sourceSite] : null,
+      hasStmtHint ? [stmtHint.billedRate, stmtHint.billedUnit || liveUom, stmtHint.ticketRef || ''] : null
+    ]);
+    if (forceRebuild || rowEl.dataset.suggestSig !== sig) {
+      rowEl.dataset.suggestSig = sig;
+      const stmtHintHtml = hasStmtHint
+        ? `<span class="badge badge-neutral pr-stmt-billed-hint" id="prStmtBilledHint" data-ui-tip="Reference rate read from the supplier statement line; enter or confirm the agreed rate below"><span>Statement billed:</span> <strong data-no-i18n="1">${esc(fmtUnpricedRateLabel(stmtHint.billedRate, stmtHint.billedUnit || liveUom))}</strong>${stmtHint.ticketRef ? ` · <span data-no-i18n="1">${esc(stmtHint.ticketRef)}</span>` : ''}</span>`
+        : '';
+      const lastChipTip = lastSug
+        ? (lastSug.kind === 'same_site' ? 'Apply latest same-site agreement rate' : 'Apply rate from sibling quarry site')
+        : '';
+      const lastRateLbl = lastSug ? fmtUnpricedRateLabel(lastSug.rate, lastSug.uom) : '';
+      const lastChipHtml = lastSug
+        ? `<button type="button" class="att-preset-pill pr-use-last-chip${lastChipActive ? ' active' : ''}" id="prUseLastRateChip" data-last-rate-kind="${esc(lastSug.kind)}" data-last-rate-val="${esc(String(lastSug.rate))}" data-last-rate-uom="${esc(lastSug.uom)}" data-ui-tip="${esc(lastChipTip)}">${lastSug.kind === 'same_site' ? `<span>Use Last:</span> <strong data-no-i18n="1">${esc(lastRateLbl)}</strong>` : `<span>Use Last</span> (<span data-no-i18n="1">${esc(lastSug.sourceSite)}</span>): <strong data-no-i18n="1">${esc(lastRateLbl)}</strong>`}</button>`
+        : '';
+      rowEl.hidden = false;
+      rowEl.innerHTML = `${lastChipHtml}${stmtHintHtml}`;
+      const lastChipEl = $('prUseLastRateChip');
+      if (lastChipEl && lastSug) {
+        lastChipEl.addEventListener('click', () => {
+          const clickHaul = val('f_ruletype') === 'Transport Price (Site)';
+          const rateVal = String(lastChipEl.getAttribute('data-last-rate-val') || lastSug.rate || '');
+          const uomVal = String(lastChipEl.getAttribute('data-last-rate-uom') || lastSug.uom || '');
+          if (clickHaul) {
+            if ($('f_rateper') && uomVal) $('f_rateper').value = uomVal;
+            if ($('f_transunitprice')) {
+              $('f_transunitprice').value = rateVal;
+              FORM_UI.transManual = true;
+            }
+          } else {
+            if ($('f_uom') && uomVal) { $('f_uom').value = uomVal; FORM_UI.uomManual = true; }
+            if ($('f_unitprice')) {
+              $('f_unitprice').value = rateVal;
+              FORM_UI.priceManual = true;
+            }
+          }
+          FORM_UI.userInteracted = true;
+          recalcForm();
+          const nUnp = $('dynSaveNextUnpricedBtn');
+          const nextBtnFocus = (nUnp && !nUnp.hidden) ? nUnp : $('dynSaveModalBtn');
+          if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) && nextBtnFocus && typeof nextBtnFocus.focus === 'function') {
+            try { nextBtnFocus.focus({ preventScroll: true }); } catch (_) { nextBtnFocus.focus(); }
+          }
+        });
+      }
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        try { window.MFG_I18N.translateDom(rowEl); } catch (_) {}
+      }
+    } else {
+      rowEl.hidden = false;
+      const chipEl = $('prUseLastRateChip');
+      if (chipEl) chipEl.classList.toggle('active', lastChipActive);
+    }
+  }
+
   function syncUnpricedNextBtnState() {
+    syncUnpricedSuggestRow(false);
     const btn = $('dynSaveNextUnpricedBtn');
     if (!btn) return;
     const sess = FORM_UI.unpricedQueueSession;
     const qCtx = FORM_UI.unpricedSiteCtx && FORM_UI.unpricedSiteCtx._unpricedQueue;
     const rt = val('f_ruletype');
-    const expectedRt = sess && sess.legMode === 'transport' ? 'Transport Price (Site)' : 'Purchase Price (Site)';
+    const curLeg = rt === 'Transport Price (Site)' ? 'transport' : (rt === 'Purchase Price (Site)' ? 'material' : '');
     const curSupNorm = normSupPayable(val('f_supplier'));
     const curProdNorm = norm(val('f_product'));
     const curSiteSk = normSiteMatch(val('f_site'));
     const curCoNorm = norm(val('f_company'));
-    const curUomNorm = norm(normUnpricedQueueUom(sess && sess.legMode === 'transport' ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³')));
+    const curUomNorm = norm(normUnpricedQueueUom(curLeg === 'transport' ? (val('f_rateper') || val('f_uom') || 'm³') : (val('f_uom') || 'm³')));
     const validMode = Boolean(
       !STATE.editingRecord
       && !STATE.editingPendingRawId
@@ -139396,8 +140068,7 @@
       && sess
       && qCtx
       && Array.isArray(qCtx.items)
-      && rt === expectedRt
-      && curSupNorm === sess.partyNorm
+      && isCurrentModalMatchingUnpricedQueue(sess)
     );
     if (!validMode) {
       btn.hidden = true;
@@ -139406,20 +140077,26 @@
     const doneCnt = Number(sess.doneCount || 0);
     const totalSteps = doneCnt + qCtx.items.length;
     let activeIdx = qCtx.items.findIndex(it =>
-      norm(it.company) === curCoNorm
+      (it.legMode || sess.legMode) === curLeg
+      && (!it.partyNorm || it.partyNorm === curSupNorm)
+      && norm(it.company) === curCoNorm
       && it.siteKey === curSiteSk
       && norm(it.product) === curProdNorm
       && norm(normUnpricedQueueUom(it.uom)) === curUomNorm
     );
     if (activeIdx < 0) {
-      activeIdx = qCtx.items.findIndex(it => it.siteKey === curSiteSk && norm(it.product) === curProdNorm);
+      activeIdx = qCtx.items.findIndex(it =>
+        (it.legMode || sess.legMode) === curLeg
+        && (!it.partyNorm || it.partyNorm === curSupNorm)
+        && it.siteKey === curSiteSk
+        && norm(it.product) === curProdNorm
+      );
     }
     if (activeIdx < 0) activeIdx = 0;
-    const curStepItem = qCtx.items[activeIdx] || null;
-    const curSiteBlankProd = Boolean(sess.legMode === 'transport' && !curProdNorm);
+    const curSiteBlankProd = Boolean(curLeg === 'transport' && !curProdNorm);
     const otherSteps = qCtx.items.filter((it, idx) => {
       if (idx === activeIdx) return false;
-      if (curSiteBlankProd && curSiteSk && it.siteKey === curSiteSk && norm(it.company) === curCoNorm) return false;
+      if (curSiteBlankProd && curSiteSk && (it.legMode || sess.legMode) === 'transport' && (!it.partyNorm || it.partyNorm === curSupNorm) && it.siteKey === curSiteSk && norm(it.company) === curCoNorm) return false;
       return true;
     }).length;
     if (otherSteps < 1 || totalSteps <= 1) {
@@ -139444,49 +140121,104 @@
     const legMode = isHaul ? 'transport' : 'material';
     const partyRaw = String(resolved.supplier || opts.supplier || '').trim();
     const partyNorm = normSupPayable(partyRaw);
-    const isContinuing = Boolean(
+    const existingSess = FORM_UI.unpricedQueueSession;
+    const isContinuingStmt = Boolean(
       opts
       && opts._continuingQueue
-      && FORM_UI.unpricedQueueSession
-      && FORM_UI.unpricedQueueSession.legMode === legMode
-      && (!partyNorm || FORM_UI.unpricedQueueSession.partyNorm === partyNorm)
+      && existingSess
+      && existingSess.mode === 'statement'
     );
-    const sess = isContinuing
-      ? FORM_UI.unpricedQueueSession
+    const isContinuingParty = Boolean(
+      opts
+      && opts._continuingQueue
+      && existingSess
+      && existingSess.mode !== 'statement'
+      && existingSess.legMode === legMode
+      && (!partyNorm || existingSess.partyNorm === partyNorm)
+    );
+    const sess = (isContinuingStmt || isContinuingParty)
+      ? existingSess
       : (FORM_UI.unpricedQueueSession = {
+          mode: 'party',
           legMode,
           partyNorm,
           partyLabel: partyRaw,
           completedKeys: new Set(),
           doneCount: 0
         });
-    if (partyRaw && !sess.partyLabel) sess.partyLabel = partyRaw;
-    if (partyNorm && !sess.partyNorm) sess.partyNorm = partyNorm;
-    const prefStepKey = buildUnpricedQueueStepKey(legMode, resolved.company, sess.partyNorm, resolved.site, resolved.product, resolved.uom);
-    const queueSnap = buildUnpricedPartyQueue({
-      legMode,
-      partyName: sess.partyLabel || partyRaw,
-      anchorSite: resolved.site,
-      preferredStepKey: prefStepKey,
-      completedKeys: sess.completedKeys,
-      user: opts.user
-    });
+    if (sess.mode !== 'statement') {
+      if (partyRaw && !sess.partyLabel) sess.partyLabel = partyRaw;
+      if (partyNorm && !sess.partyNorm) sess.partyNorm = partyNorm;
+    }
+    const effPartyNorm = partyNorm || sess.partyNorm;
+    const prefStepKey = buildUnpricedQueueStepKey(legMode, resolved.company, effPartyNorm, resolved.site, resolved.product, resolved.uom);
+    if (sess.mode === 'statement' && Array.isArray(resolved.grades) && resolved.grades.length && sess.allowedStepKeys instanceof Set) {
+      const filteredGrades = resolved.grades.filter(g => {
+        const gk = buildUnpricedQueueStepKey(legMode, g.company, effPartyNorm, resolved.site, g.product, g.uom);
+        return sess.allowedStepKeys.has(gk) && !(sess.completedKeys && sess.completedKeys.has(gk));
+      });
+      if (filteredGrades.length) {
+        filteredGrades.forEach(g => {
+          const gk = buildUnpricedQueueStepKey(legMode, g.company, effPartyNorm, resolved.site, g.product, g.uom);
+          const hint = sess.stmtHintsByStepKey && sess.stmtHintsByStepKey.get(gk);
+          if (hint) g.statementHint = hint;
+        });
+        resolved.grades = filteredGrades;
+        const matchChosen = filteredGrades.find(x =>
+          norm(x.product) === norm(resolved.product)
+          && norm(normUnpricedQueueUom(x.uom)) === norm(normUnpricedQueueUom(resolved.uom))
+          && norm(x.company) === norm(resolved.company)
+        ) || filteredGrades[0];
+        if (matchChosen) {
+          resolved.company = matchChosen.company;
+          resolved.co = matchChosen.company;
+          resolved.supplier = matchChosen.supplier;
+          resolved.product = matchChosen.product;
+          resolved.prod = matchChosen.product;
+          resolved.uom = matchChosen.uom;
+          resolved.startdate = matchChosen.startdate;
+          resolved.earliestRawDate = matchChosen.earliestRawDate;
+          resolved.clampedFrom = matchChosen.clampedFrom;
+          resolved.loads = matchChosen.loads;
+          resolved.qty = matchChosen.qty;
+          resolved.statementHint = matchChosen.statementHint || resolved.statementHint || null;
+        }
+      }
+    }
+    const activePrefKey = buildUnpricedQueueStepKey(legMode, resolved.company, effPartyNorm, resolved.site, resolved.product, resolved.uom);
+    const activeStmtHint = (opts && opts.statementHint)
+      || resolved.statementHint
+      || (sess.mode === 'statement' && sess.stmtHintsByStepKey && sess.stmtHintsByStepKey.get(activePrefKey))
+      || null;
+    const queueSnap = sess.mode === 'statement'
+      ? buildStatementUnpricedQueue(sess, { preferredStepKey: activePrefKey, user: opts.user })
+      : buildUnpricedPartyQueue({
+          legMode,
+          partyName: sess.partyLabel || partyRaw,
+          anchorSite: resolved.site,
+          preferredStepKey: prefStepKey,
+          completedKeys: sess.completedKeys,
+          user: opts.user
+        });
     const modalOpts = opts && opts.forceSwitch ? { forceSwitch: true } : undefined;
+    const extraFlags = {
+      _unpricedQueue: queueSnap,
+      statementHint: activeStmtHint,
+      _fromStatementRecon: Boolean((opts && opts._fromStatementRecon) || sess.mode === 'statement')
+    };
     if (isHaul) {
       openEntryModal('pricerule_haul', Object.assign({
         _unpricedHaulPrefill: true,
-        _unpricedQueue: queueSnap,
         ruleType: 'Transport Price (Site)',
         prod: resolved.product,
         date: resolved.startdate
-      }, resolved), modalOpts);
+      }, resolved, extraFlags), modalOpts);
       return true;
     }
     openEntryModal('pricerule_raw', Object.assign({
       _unpricedSitePrefill: true,
-      _unpricedQueue: queueSnap,
       ruleType: 'Purchase Price (Site)'
-    }, resolved), modalOpts);
+    }, resolved, extraFlags), modalOpts);
     return true;
   }
 
@@ -140354,8 +141086,8 @@
           if ($('f_supplier')) { $('f_supplier').value = g.supplier || ''; FORM_UI.lastSupplier = ''; }
           if ($('f_product')) { $('f_product').value = g.product || ''; FORM_UI.lastProduct = ''; }
           if ($('f_uom') && g.uom) { $('f_uom').value = g.uom; FORM_UI.uomManual = true; }
+          if ($('f_rateper') && g.uom) $('f_rateper').value = g.uom;
           if (isHaulMode) {
-            if ($('f_rateper') && g.uom) $('f_rateper').value = g.uom;
             if ($('f_transunitprice')) { $('f_transunitprice').value = ''; FORM_UI.transManual = false; }
           } else {
             if ($('f_unitprice')) { $('f_unitprice').value = ''; FORM_UI.priceManual = false; }
@@ -140383,14 +141115,21 @@
           const qSess = FORM_UI.unpricedQueueSession;
           const qDone = qSess ? Number(qSess.doneCount || 0) : 0;
           const qTotal = qSnap ? (qDone + qSnap.items.length) : 0;
+          const isStmtQueue = Boolean((qSnap && qSnap.mode === 'statement') || (qSess && qSess.mode === 'statement'));
+          const activeLegMode = isHaulMode ? 'transport' : 'material';
+          const activeSup = activeG.supplier || prefill.supplier || '';
+          const activeProd = activeG.product || prefill.product || '';
+          const activeCo = activeG.company || prefill.company || '';
           let queueRowHtml = '';
           if (qSnap && qTotal > 1 && Array.isArray(qSnap.siteSummaries) && qSnap.siteSummaries.length) {
             let curStepOffset = 0;
-            if (activeG && qSnap.items.length) {
+            if (qSnap.items.length) {
               const foundOff = qSnap.items.findIndex(it =>
-                it.siteKey === normSiteMatch(prefill.site)
-                && norm(it.product) === norm(activeG.product)
-                && norm(it.company) === norm(activeG.company)
+                (it.legMode || activeLegMode) === activeLegMode
+                && (!it.partyNorm || it.partyNorm === normSupPayable(activeSup))
+                && it.siteKey === normSiteMatch(prefill.site)
+                && norm(it.product) === norm(activeProd)
+                && norm(it.company) === norm(activeCo)
               );
               if (foundOff >= 0) curStepOffset = foundOff;
             }
@@ -140398,12 +141137,18 @@
             const shownSites = qSnap.siteSummaries.slice(0, 6);
             const extraSiteCnt = Math.max(0, qSnap.siteSummaries.length - shownSites.length);
             const sitePillsHtml = shownSites.map(ss =>
-              `<button type="button" class="att-preset-pill${ss.isCurrentSite ? ' active' : ''}" data-unpriced-queue-site="${esc(ss.site)}" data-ui-tip="Switch active site in queue"><span data-no-i18n="1">${esc(ss.site)} (${fmtNum(ss.loads, 0)})</span></button>`
+              `<button type="button" class="att-preset-pill${ss.isCurrentSite ? ' active' : ''}" data-unpriced-queue-site="${esc(ss.site)}"${ss.stepKey ? ` data-unpriced-queue-step="${esc(ss.stepKey)}"` : ''} data-ui-tip="Switch active site in queue"><span data-no-i18n="1">${esc(ss.site)} (${fmtNum(ss.loads, 0)})</span></button>`
             ).join('') + (extraSiteCnt > 0 ? `<span class="badge badge-neutral" data-no-i18n="1">+${fmtNum(extraSiteCnt, 0)}</span>` : '');
+            const queueTitlePrefix = isStmtQueue ? '<span>Statement Queue:</span>' : '<span>Queue:</span>';
+            const queuePartyInfo = qSnap.partyLabel
+              ? ` <strong data-no-i18n="1">${esc(qSnap.partyLabel)}</strong> ·`
+              : (Number(qSnap.partyCount || 0) > 1
+                ? ` <strong data-no-i18n="1">${fmtNum(qSnap.partyCount, 0)}</strong> <span>suppliers</span> ·`
+                : ((!isStmtQueue && activeSup) ? ` <strong data-no-i18n="1">${esc(activeSup)}</strong> ·` : ''));
             queueRowHtml = `
               <div class="pr-unpriced-queue-row" id="prUnpricedQueueStrip">
                 <div class="pr-unpriced-queue-head">
-                  <div><span>Queue:</span> <strong data-no-i18n="1">${esc(qSnap.partyLabel || activeG.supplier || '')}</strong> · <span class="badge badge-neutral"><span data-no-i18n="1">${stepNum}/${qTotal}</span></span></div>
+                  <div>${queueTitlePrefix}${queuePartyInfo} <span class="badge badge-neutral"><span data-no-i18n="1">${stepNum}/${qTotal}</span></span></div>
                   <span class="badge badge-neutral"><span data-no-i18n="1">${fmtNum(qSnap.siteCount, 0)}</span> <span>${qSnap.siteCount === 1 ? 'site' : 'sites'}</span></span>
                 </div>
                 ${qSnap.siteSummaries.length > 1 ? `<div class="pr-unpriced-queue-pills"><span>Jump to site:</span>${sitePillsHtml}</div>` : ''}
@@ -140415,9 +141160,11 @@
               <div><strong>Unpriced Loads Prefill</strong> · <span data-no-i18n="1">${esc(prefill.site || '')}</span> · ${dateNote}</div>
               ${(grades.length || Number(activeG.loads || 0) > 0) ? `<span class="badge badge-warn"><span data-no-i18n="1">${fmtNum(activeG.loads, 0)}</span> <span>loads</span> · <span data-no-i18n="1">${fmtNum(activeG.qty, 0)} ${esc(activeG.uom || 'm³')}</span></span>` : ''}
             </div>
+            <div class="pr-unpriced-suggest-row" id="prUnpricedSuggestRow" hidden></div>
             ${grades.length > 1 ? `<div class="pr-unpriced-grades-pills"><span>Switch grade:</span>${pillsHtml}</div>` : ''}
             ${queueRowHtml}
           `;
+          syncUnpricedSuggestRow(true);
           unpBar.querySelectorAll('[data-unpriced-grade-idx]').forEach(btn => {
             btn.addEventListener('click', () => {
               const nextIdx = Number(btn.getAttribute('data-unpriced-grade-idx'));
@@ -140437,26 +141184,39 @@
           unpBar.querySelectorAll('[data-unpriced-queue-site]').forEach(btn => {
             btn.addEventListener('click', () => {
               const targetSite = btn.getAttribute('data-unpriced-queue-site') || '';
-              if (!targetSite || normSiteMatch(targetSite) === normSiteMatch(prefill.site)) return;
-              const qParty = (qSnap && qSnap.partyLabel) || (qSess && qSess.partyLabel) || prefill.supplier || '';
+              const targetStepKey = btn.getAttribute('data-unpriced-queue-step') || '';
+              const ssObj = (qSnap && Array.isArray(qSnap.siteSummaries))
+                ? (qSnap.siteSummaries.find(x => (targetStepKey && x.stepKey === targetStepKey) || normSiteMatch(x.site) === normSiteMatch(targetSite)) || null)
+                : null;
+              if (!targetSite) return;
+              if (!isStmtQueue && normSiteMatch(targetSite) === normSiteMatch(prefill.site)) return;
+              if (isStmtQueue && ssObj && ssObj.isCurrentSite) return;
+              const qParty = (ssObj && ssObj.supplier) || (qSnap && qSnap.partyLabel) || (qSess && qSess.partyLabel) || prefill.supplier || '';
+              const qTransportOnly = ssObj && ssObj.legMode ? (ssObj.legMode === 'transport') : isHaulMode;
+              const qOpts = {
+                transportOnly: qTransportOnly,
+                supplier: qParty,
+                product: (ssObj && ssObj.product) || '',
+                uom: (ssObj && ssObj.uom) || '',
+                company: (ssObj && ssObj.company) || '',
+                earliestDate: (ssObj && ssObj.earliestDate) || '',
+                gradeKey: (ssObj && ssObj.gradeKey) || '',
+                statementHint: (ssObj && ssObj.statementHint) || null,
+                _fromStatementRecon: Boolean(isStmtQueue || prefill._fromStatementRecon),
+                forceSwitch: true,
+                _continuingQueue: true
+              };
               if (isEntryModalDirty()) {
-                promptUnsavedEntrySwitch({
+                promptUnsavedEntrySwitch(Object.assign({
                   type: 'unpriced_site',
                   siteName: targetSite,
-                  transportOnly: isHaulMode,
-                  supplier: qParty,
                   label: targetSite
-                });
+                }, qOpts));
                 return;
               }
               FORM_UI._advancingUnpricedQueue = true;
               try {
-                openSetUnpricedSitePriceModal(targetSite, {
-                  transportOnly: isHaulMode,
-                  supplier: qParty,
-                  forceSwitch: true,
-                  _continuingQueue: true
-                });
+                openSetUnpricedSitePriceModal(targetSite, qOpts);
               } finally {
                 FORM_UI._advancingUnpricedQueue = false;
               }
@@ -140466,20 +141226,7 @@
             try { window.MFG_I18N.translateDom(unpBar); } catch (_) {}
           }
         };
-        if (grades[activeGradeIdx]) applyUnpricedGradeToModal(grades[activeGradeIdx]);
-        else {
-          if ($('f_ruletype')) $('f_ruletype').value = targetRuleType;
-          if (isHaulMode) {
-            if ($('f_site')) { $('f_site').value = prefill.site || ''; FORM_UI.lastSite = ''; }
-            if ($('f_supplier')) { $('f_supplier').value = prefill.supplier || ''; FORM_UI.lastSupplier = ''; }
-            if ($('f_product')) { $('f_product').value = prefill.product || ''; FORM_UI.lastProduct = ''; }
-            if ($('f_uom') && prefill.uom) { $('f_uom').value = prefill.uom; FORM_UI.uomManual = true; }
-            if ($('f_rateper') && prefill.uom) $('f_rateper').value = prefill.uom;
-            if ($('f_transunitprice')) { $('f_transunitprice').value = ''; FORM_UI.transManual = false; }
-            if ($('f_date') && /^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || ''))) $('f_date').value = prefill.startdate;
-            if ($('f_enddate')) $('f_enddate').value = '';
-          }
-        }
+        applyUnpricedGradeToModal(grades[activeGradeIdx] || prefill);
         renderUnpricedGradesBar();
       } else {
         FORM_UI.unpricedSiteCtx = null;
@@ -159256,14 +160003,16 @@
     update: 'Update the app to send them.',
     blocked: 'The cloud refused them. Tell the Owner.',
     retrying: 'Still trying to send them.',
-    other_seat: 'Another seat keyed them on this device and must sign in to send them.'
+    other_seat: 'Another seat keyed them on this device and must sign in to send them.',
+    set_aside: 'Everything else on this device was sent. Add a void reason to send it.'
   };
   const UNSENT_REASON_SHORT = {
     offline: 'device offline',
     sign_in: 'needs sign-in',
     update: 'needs app update',
     blocked: 'refused by the cloud',
-    retrying: 'still retrying'
+    retrying: 'still retrying',
+    set_aside: 'void refused by the cloud'
   };
   let _unsentSinceMs = 0;
   let _unsentScoped = false;        // the seat signed in now sends only its own companies' rows
@@ -159517,6 +160266,9 @@
         }
       }
     }
+    // Voids set aside: the bar and the Owner's report now show them (they never count as waiting entries), or the
+    // bar goes once the cloud took the last of them
+    updateUnsentEntriesBar();
     if (_unsentReported) reportUnsentToCloud(null);
     else if (_unsentLatePending) {
       if (Date.now() - _unsentLatePending.at > 48 * 3600000) dropUnsentLatePending();   // too old to be news
@@ -159564,6 +160316,7 @@
     _unsentScoped = false;
     _unsentAllowedCos = null;
     _unsentKnown = null;
+    _setAsideScopeSeat = '';
   }
 
   // This mode has no cloud to send to (a plant server on the local network, or the Demo sandbox): nothing waits.
@@ -159614,6 +160367,7 @@
   // allowed (a Set, or null): the companies the seat signed in sends; other companies' rows are not its to count.
   function _countRowsTouchedSince(store, sinceMs, industry, allowed) {
     let n = 0;
+    const saKeys = setAsideKeySet();
     Object.keys(store || {}).forEach(k => {
       const arr = store[k];
       if (!Array.isArray(arr)) return;
@@ -159621,6 +160375,7 @@
         const r = arr[i];
         if (!r) continue;
         if (industry && isTillOwnedRowId(String(r.id || r.code || '').trim())) continue;
+        if (saKeys && saKeys.has(industry ? setAsideKey('industryCustomRows', k, String(r.id || r.code || '').trim()) : setAsideKey('customRecords', k, r.id))) continue;
         if (allowed) {
           if (industry ? !allowed.has(_unsentCanonCo(r.company || r.resort || r.entity || '')) : !unsentCrRowInScope(k, r, allowed)) continue;
         }
@@ -159664,6 +160419,7 @@
     let n = 0;
     const hit = co => { n++; if (lackCos) lackCos.add(co); };
     const allowed = known.allowedCos;
+    const saKeys = setAsideKeySet();   // voids set aside are listed on their own, never as waiting entries
     Object.keys(STATE.customRecords || {}).forEach(k => {
       const mine = STATE.customRecords[k];
       if (!Array.isArray(mine) || !mine.length) return;
@@ -159671,6 +160427,7 @@
         if (!r || !r.id) return;
         if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) return;
         if (allowed && !unsentCrRowInScope(k, r, allowed)) return;
+        if (saKeys && saKeys.has(setAsideKey('customRecords', k, r.id))) return;
         const co = unsentClearKey(k, r);
         const held = known.idx.get(`${k}\u0001${r.id}`);
         if (held === undefined) {
@@ -159696,6 +160453,7 @@
         if (!pid || isTillOwnedRowId(pid)) return;
         const co = _unsentCanonCo(r.company || r.resort || r.entity || '');
         if (allowed && !allowed.has(co)) return;
+        if (saKeys && saKeys.has(setAsideKey('industryCustomRows', bk, pid))) return;
         const held = known.ind.get(`${bk}\u0001${pid}`);
         if (!held || Boolean(r.voided) !== Boolean(held[0]) || Number(r.rev || 1) > held[1] || _indRowStamp(r) > held[2]) hit(co);
       });
@@ -159716,8 +160474,274 @@
     return n;
   }
 
+  // ---- Voids the cloud refused, set aside (owner 2026-11-25) ---------------------------------------------------------
+  // A seat's device held a day of entries behind voids the cloud refused for having no reason, and the Owner could only
+  // read "refused by the cloud". The sync now names every refused void (`refused` on its 400, packSyncVoidRefusals in
+  // functions/_lib/d1_store.js and server.py). The device sets those voids aside and sends everything else: each one
+  // stays voided here, and while it has no reason the push carries the cloud's own copy of that row (or leaves out a
+  // row the cloud has never held), so nothing waits behind it. Add Reason on the Not Sent bar, or restoring the entry,
+  // ends it. The Owner's Held on Device bar lists the device with the cloud's reason (report reason `set_aside`).
+  const SET_ASIDE_VOIDS_KEY = 'isabi_mfg_set_aside_voids_v1';
+  const SET_ASIDE_KINDS = ['customRecords', 'industryCustomRows', 'industryRowEdits'];
+  let _setAsideVoids = [];         // [{ kind, table, id, error, at, label, company }]
+  let _setAsideRemote = null;      // the cloud document the push is built against (doSync's latest read of it)
+  let _lastPushRefusal = null;     // { status, code, error }: the last push the cloud refused, for the Owner's list
+  let _setAsideScopeSeat = '';     // the seat whose scope the last read of the cloud gave (_unsentScoped / _unsentAllowedCos)
+  try {
+    if (!IS_AUTOMATED_TEST) {
+      const rawSa = JSON.parse(appStoreGetRaw(SET_ASIDE_VOIDS_KEY) || '[]');
+      // Never trimmed: an entry dropped while its void still waits would be refused again and hold the sync
+      if (Array.isArray(rawSa)) _setAsideVoids = rawSa.filter(validSetAsideEntry);
+    }
+  } catch (_) { _setAsideVoids = []; }
+
+  function validSetAsideEntry(e) {
+    return Boolean(e && typeof e === 'object' && SET_ASIDE_KINDS.includes(e.kind) && typeof e.id === 'string' && e.id && typeof e.table === 'string');
+  }
+  function saveSetAsideVoids() {
+    if (IS_AUTOMATED_TEST) return;
+    try {
+      if (_setAsideVoids.length) appStoreSetRaw(SET_ASIDE_VOIDS_KEY, JSON.stringify(_setAsideVoids));
+      else appStoreRemoveRaw(SET_ASIDE_VOIDS_KEY);
+    } catch (_) {}
+  }
+  function setAsideKey(kind, table, id) {
+    return `${kind}\u0001${kind === 'industryRowEdits' ? '' : String(table || '')}\u0001${String(id == null ? '' : id).trim()}`;
+  }
+  const _setAsideRowId = r => String((r && r.id != null) ? r.id : '').trim();
+  const _setAsideIndId = r => String((r && (r.id || r.code)) || '').trim();
+  const _setAsideReason = r => String((r && (r.void_reason || r.voidReason)) || '').trim();
+  function findSetAsideLocalRow(e) {
+    if (!e) return null;
+    if (e.kind === 'customRecords') {
+      const arr = STATE.customRecords && STATE.customRecords[e.table];
+      return Array.isArray(arr) ? (arr.find(r => r && _setAsideRowId(r) === e.id) || null) : null;
+    }
+    let st = {};
+    if (e.kind === 'industryCustomRows') {
+      try { st = getIndustryCustomRowsStore() || {}; } catch (_) { st = {}; }
+      const arr = st[e.table];
+      return Array.isArray(arr) ? (arr.find(r => r && _setAsideIndId(r) === e.id) || null) : null;
+    }
+    if (e.kind === 'industryRowEdits') {
+      try { st = getIndustryRowEditStore() || {}; } catch (_) { st = {}; }
+      const v = st[e.id];
+      return (v && typeof v === 'object') ? v : null;
+    }
+    return null;
+  }
+  // The voids still set aside: one ends when its row is gone, is no longer voided, or now carries a reason.
+  function activeSetAsideVoids() {
+    if (!_setAsideVoids.length) return _setAsideVoids;
+    const keep = _setAsideVoids.filter(e => {
+      const row = findSetAsideLocalRow(e);
+      return Boolean(row && row.voided && _setAsideReason(row).length < 3);
+    });
+    if (keep.length !== _setAsideVoids.length) { _setAsideVoids = keep; saveSetAsideVoids(); }
+    return _setAsideVoids;
+  }
+  function setAsideKeySet() {
+    const list = activeSetAsideVoids();
+    return list.length ? new Set(list.map(e => setAsideKey(e.kind, e.table, e.id))) : null;
+  }
+  function setAsideLabel(row, e) {
+    const r = row || {};
+    const snap = (r.void_snapshot && typeof r.void_snapshot === 'object') ? r.void_snapshot : {};
+    return String(r.ticket_no || r.invoice_no || r.name || r.ref || r.staff || r.driver || r.equipment
+      || snap.ticket_no || snap.name || snap.ref || snap.label || e.id || '').trim().slice(0, 80);
+  }
+  // A 400 `void_reason_required`: sets its refused voids aside. Returns how many were newly set aside.
+  function setAsideRefusedVoids(errObj) {
+    const list = (errObj && Array.isArray(errObj.refused)) ? errObj.refused : [];
+    let added = 0;
+    const known = new Map(_setAsideVoids.map(e => [setAsideKey(e.kind, e.table, e.id), e]));
+    list.forEach(x => {
+      if (!x || typeof x !== 'object' || !SET_ASIDE_KINDS.includes(x.kind)) return;
+      const id = String(x.id == null ? '' : x.id).trim();
+      if (!id) return;
+      const e = { kind: x.kind, table: String(x.table || ''), id, error: String(x.error || (errObj && errObj.error) || '').slice(0, 240), at: Date.now() };
+      const row = findSetAsideLocalRow(e);
+      if (!row || !row.voided || _setAsideReason(row).length >= 3) return;
+      const k = setAsideKey(e.kind, e.table, e.id);
+      const prev = known.get(k);
+      if (prev) { prev.error = e.error; return; }
+      e.label = setAsideLabel(row, e);
+      e.company = String(row.company || row.resort || row.entity || '').trim().slice(0, 60);
+      e.seat = norm((activeUser() || {}).email || '');
+      _setAsideVoids.push(e);
+      known.set(k, e);
+      added++;
+    });
+    saveSetAsideVoids();
+    return added;
+  }
+  // The cloud already holds the void (another device or seat voided the entry with a reason): the device takes the
+  // cloud's void as it stands and the set-aside ends. Run on every read of the cloud, before the merge.
+  function settleSetAsideFromCloud(remote) {
+    const list = activeSetAsideVoids();
+    if (!list.length || !remote || typeof remote !== 'object') return;
+    const voidKeys = ['voided_by', 'voided_by_email', 'voided_at', 'void_reason'];
+    let settled = false;
+    list.forEach(e => {
+      let cloudRow = null;
+      if (e.kind === 'customRecords') {
+        const arr = remote.customRecords && remote.customRecords[e.table];
+        cloudRow = Array.isArray(arr) ? arr.find(r => r && _setAsideRowId(r) === e.id) : null;
+      } else if (e.kind === 'industryCustomRows') {
+        const arr = remote.industryCustomRows && remote.industryCustomRows[e.table];
+        cloudRow = Array.isArray(arr) ? arr.find(r => r && _setAsideIndId(r) === e.id) : null;
+      } else if (e.kind === 'industryRowEdits') {
+        cloudRow = remote.industryRowEdits && remote.industryRowEdits[e.id];
+      }
+      if (!cloudRow || typeof cloudRow !== 'object' || !cloudRow.voided) return;
+      const row = findSetAsideLocalRow(e);
+      if (row) {
+        voidKeys.forEach(k => { if (cloudRow[k] !== undefined) row[k] = cloudRow[k]; else if (k === 'void_reason') delete row[k]; });
+        delete row.voidReason;
+        if (e.kind === 'industryRowEdits' || e.kind === 'industryCustomRows') {
+          ['rev', 'updated_at', 'updatedAt'].forEach(k => { if (cloudRow[k] !== undefined) row[k] = cloudRow[k]; });
+        }
+      }
+      e._settled = true;
+      settled = true;
+    });
+    if (!settled) return;
+    _setAsideVoids = _setAsideVoids.filter(e => !e._settled);
+    saveSetAsideVoids();
+    try { saveLocalAuthAndRecords(); } catch (_) {}
+  }
+  // The set-aside voids the seat signed in now may see and fix: rows of its own companies once a read of the cloud
+  // has given its scope (doSync), and before that only those it set aside itself. A shared device never shows one
+  // seat's voids to another seat of other companies.
+  function seatSetAsideVoids() {
+    const list = activeSetAsideVoids();
+    if (!list.length || !STATE.authed) return [];
+    const me = norm((activeUser() || {}).email || '');
+    if (me && _setAsideScopeSeat === me) {
+      if (!_unsentScoped || !_unsentAllowedCos) return list;   // a whole-store seat (Owner, full group)
+      return list.filter(e => !e.company || _unsentSharedCo(e.company) || _unsentAllowedCos.has(_unsentCanonCo(e.company)));
+    }
+    return list.filter(e => e.seat && e.seat === me);
+  }
+  // An outgoing push: each set-aside void becomes the cloud's own copy of its row (left out when the cloud has never
+  // held it), so the push carries no change to it. Only the payload's own containers are replaced; the device's
+  // rows are never touched.
+  function applySetAsideToPayload(payload) {
+    const list = activeSetAsideVoids();
+    if (!list.length || !payload || typeof payload !== 'object') return payload;
+    const rem = (_setAsideRemote && typeof _setAsideRemote === 'object') ? _setAsideRemote : {};
+    list.forEach(e => {
+      if (e.kind === 'customRecords') {
+        const arr = payload.customRecords && payload.customRecords[e.table];
+        if (!Array.isArray(arr)) return;
+        const remArr = (rem.customRecords && Array.isArray(rem.customRecords[e.table])) ? rem.customRecords[e.table] : [];
+        const remRaw = remArr.find(r => r && _setAsideRowId(r) === e.id);
+        // Slimmed like the delta base (snapshotRemoteForDelta), so the cloud's own copy is no change to send.
+        const remRow = remRaw ? _slimRecordForCloud(remRaw) : null;
+        payload.customRecords[e.table] = remRow
+          ? arr.map(r => (r && _setAsideRowId(r) === e.id) ? remRow : r)
+          : arr.filter(r => !(r && _setAsideRowId(r) === e.id));
+      } else if (e.kind === 'industryCustomRows') {
+        const icr = payload.industryCustomRows;
+        const arr = icr && icr[e.table];
+        if (!Array.isArray(arr)) return;
+        const remArr = (rem.industryCustomRows && Array.isArray(rem.industryCustomRows[e.table])) ? rem.industryCustomRows[e.table] : [];
+        const remRaw = remArr.find(r => r && _setAsideIndId(r) === e.id);
+        // Offloaded like the delta base (snapshotRemoteForDelta), so the cloud's own copy is no change to send.
+        const remRow = remRaw
+          ? (typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs({ [e.table]: [remRaw] })[e.table][0] : remRaw)
+          : null;
+        payload.industryCustomRows = Object.assign({}, icr, {
+          [e.table]: remRow ? arr.map(r => (r && _setAsideIndId(r) === e.id) ? remRow : r) : arr.filter(r => !(r && _setAsideIndId(r) === e.id))
+        });
+      } else if (e.kind === 'industryRowEdits') {
+        const ire = payload.industryRowEdits;
+        if (!ire || typeof ire !== 'object' || !Object.prototype.hasOwnProperty.call(ire, e.id)) return;
+        const next = Object.assign({}, ire);
+        const remEv = rem.industryRowEdits && rem.industryRowEdits[e.id];
+        if (remEv && typeof remEv === 'object') next[e.id] = remEv;
+        else delete next[e.id];
+        payload.industryRowEdits = next;
+      }
+    });
+    return payload;
+  }
+  function noteCloudPushRefusal(status, errObj) {
+    _lastPushRefusal = {
+      status: Number(status) || 0,
+      code: String((errObj && errObj.code) || '').slice(0, 40),
+      error: String((errObj && errObj.error) || '').slice(0, 240)
+    };
+  }
+  function setAsideEntriesInfo() {
+    const sa = seatSetAsideVoids();
+    if (!sa.length) return null;
+    const nowMs = Date.now();
+    // (the cloud takes a wait of at most 90 days: an older set-aside is reported as 89 days old, never dropped)
+    const sinceMs = Math.max(nowMs - 89 * 86400000, sa.reduce((m, e) => Math.min(m, Number(e.at) || nowMs), nowMs));
+    return {
+      sinceMs,
+      ageMs: nowMs - sinceMs,
+      count: sa.length,
+      reason: 'set_aside',
+      due: true,
+      setAside: sa,
+      refusal: { status: 400, code: 'void_reason_required', error: String(sa[0].error || '') }
+    };
+  }
+  function openSetAsideReasonPrompt() {
+    const sa = seatSetAsideVoids();
+    if (!sa.length) { updateUnsentEntriesBar(); return; }
+    if (!canVoid()) { toast('Only Supervisor, Admin, or authorized Custom seats can void or delete records', 'err'); return; }
+    const e = sa[0];
+    openVoidReasonPromptModal({
+      title: 'Void Reason Required',
+      recordLabel: e.label || e.id,
+      subtitle: e.error,
+      reqEval: {},
+      initialReason: '',
+      onConfirm: typed => { applySetAsideReason(e, typed); }
+    });
+  }
+  // The reason typed for a set-aside void: written on the row (and its seed copy), the set-aside ends, the void goes
+  // out with the next push.
+  function applySetAsideReason(e, typed) {
+    const reason = String(typed || '').trim().slice(0, 500);
+    if (!e || reason.length < 3) return false;
+    const row = findSetAsideLocalRow(e);
+    if (row && row.voided) {
+      const nowIso = new Date().toISOString();
+      row.void_reason = reason;
+      delete row.voidReason;
+      if (e.kind === 'customRecords') {
+        const seedArr = SEED.records && SEED.records[e.table];
+        const seedRow = Array.isArray(seedArr) ? seedArr.find(x => x && _setAsideRowId(x) === e.id) : null;
+        if (seedRow && seedRow !== row && seedRow.voided) seedRow.void_reason = reason;
+        saveLocalAuthAndRecords();
+      } else if (e.kind === 'industryCustomRows') {
+        row.updated_at = nowIso;
+        row.updatedAt = nowIso;
+        row.rev = Math.max(1, Number(row.rev || 1) + 1);
+        saveIndustryCustomRowsStore({ skipServerPost: true });
+      } else {
+        row.updated_at = nowIso;
+        row.updatedAt = nowIso;
+        delete row._revBumped;
+        saveIndustryRowEditStore(getIndustryRowEditStore(), { skipServerPost: true });
+      }
+    }
+    const k = setAsideKey(e.kind, e.table, e.id);
+    _setAsideVoids = _setAsideVoids.filter(x => setAsideKey(x.kind, x.table, x.id) !== k);
+    saveSetAsideVoids();
+    updateUnsentEntriesBar();
+    toast('Void reason added. Sending it now.', 'ok');
+    syncWithCloud(true);
+    return true;
+  }
+
   function unsentEntriesInfo() {
-    if (!_unsentSinceMs || !STATE.authed || isDemoScopeActive() || isDemoSandboxSession()) return null;
+    if (!STATE.authed || isDemoScopeActive() || isDemoSandboxSession()) return null;
+    if (!_unsentSinceMs) return setAsideEntriesInfo();
     const ageMs = Date.now() - _unsentSinceMs;
     const st = String(STATE.cloudStatus || '');
     const count = countUnsentEntries();
@@ -159728,7 +160752,9 @@
         : (/Sign-in|Sign In/i.test(st) ? 'sign_in'
           : (/Refresh app/i.test(st) ? 'update'
             : (/read-only|blocked/i.test(st) ? 'blocked' : 'retrying'))));
-    return { sinceMs: _unsentSinceMs, ageMs, count, reason, due: ageMs >= UNSENT_WARN_AFTER_MS };
+    const out = { sinceMs: _unsentSinceMs, ageMs, count, reason, due: ageMs >= UNSENT_WARN_AFTER_MS };
+    if (reason === 'blocked' && _lastPushRefusal && _lastPushRefusal.status) out.refusal = _lastPushRefusal;
+    return out;
   }
 
   function fmtUnsentStamp(ms) {
@@ -159741,7 +160767,9 @@
   function updateUnsentEntriesBar() {
     const el = $('unsentEntriesBar');
     if (!el) return;
-    const info = unsentEntriesInfo();
+    let info = unsentEntriesInfo();
+    // A wait too young to show yet never hides voids set aside
+    if ((!info || !info.due) && STATE.authed && !isDemoScopeActive() && !isDemoSandboxSession()) info = setAsideEntriesInfo() || info;
     if (!info || !info.due) {
       if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
       return;
@@ -159753,15 +160781,32 @@
     }
     const n = info.count;
     const isUpdate = info.reason === 'update';
-    const sig = `${n}|${info.reason}|${info.sinceMs}`;
+    const isSetAside = info.reason === 'set_aside';
+    const ref = info.refusal || null;
+    const firstSa = isSetAside && info.setAside && info.setAside[0] ? info.setAside[0] : null;
+    const sig = `${n}|${info.reason}|${info.sinceMs}|${ref ? `${ref.status}|${ref.error}` : ''}|${firstSa ? setAsideKey(firstSa.kind, firstSa.table, firstSa.id) : ''}`;
     if (el.dataset.sig !== sig || el.hidden) {   // unchanged: leave the bar (and a focused button) alone
-      const lead = n > 0
-        ? `<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b> <span>${n === 1 ? 'entry on this device has not reached the cloud since' : 'entries on this device have not reached the cloud since'}</span>`
-        : '<span>Changes on this device have not reached the cloud since</span>';
+      // Why the cloud refused, in its own words (shown as sent: the server's text is not translated)
+      const refHtml = (ref && ref.status && !isSetAside)
+        ? ` <span class="unsent-bar-refusal" data-no-i18n="1">(${esc(String(ref.status))}${ref.error ? ': ' + esc(ref.error) : ''})</span>`
+        : '';
+      let lead;
+      let btnHtml;
+      if (isSetAside) {
+        lead = `<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b> <span>${n === 1 ? 'void on this device was not accepted by the cloud since' : 'voids on this device were not accepted by the cloud since'}</span>`;
+        btnHtml = ` <button type="button" class="btn btn-sm unsent-bar-btn" id="unsentAddReasonBtn" data-unsent-act="reason"><span>Add Reason</span></button>`;
+      } else {
+        lead = n > 0
+          ? `<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b> <span>${n === 1 ? 'entry on this device has not reached the cloud since' : 'entries on this device have not reached the cloud since'}</span>`
+          : '<span>Changes on this device have not reached the cloud since</span>';
+        // Another seat's entries: this seat cannot send them, so there is no button to press.
+        btnHtml = info.reason === 'other_seat' ? '' : ` <button type="button" class="btn btn-sm unsent-bar-btn" id="unsentSendNowBtn" data-unsent-act="${isUpdate ? 'update' : 'send'}"><span>${isUpdate ? 'Update App' : 'Send Now'}</span></button>`;
+      }
+      const saHtml = firstSa
+        ? ` <span class="cf-behind-party" data-no-i18n="1">${esc(firstSa.label || firstSa.id)}</span><span data-no-i18n="1">: ${esc(firstSa.error || '')}</span>`
+        : '';
       el.dataset.sig = sig;
-      // Another seat's entries: this seat cannot send them, so there is no button to press.
-      const btnHtml = info.reason === 'other_seat' ? '' : ` <button type="button" class="btn btn-sm unsent-bar-btn" id="unsentSendNowBtn" data-unsent-act="${isUpdate ? 'update' : 'send'}"><span>${isUpdate ? 'Update App' : 'Send Now'}</span></button>`;
-      el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Not Sent</span></span> <span class="cf-behind-items">${lead} <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(info.sinceMs))}</span><span data-no-i18n="1">.</span> <span class="unsent-bar-reason">${esc(UNSENT_REASON_TEXT[info.reason])}</span></span>${btnHtml}`;
+      el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Not Sent</span></span> <span class="cf-behind-items">${lead} <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(info.sinceMs))}</span><span data-no-i18n="1">.</span>${saHtml} <span class="unsent-bar-reason">${esc(UNSENT_REASON_TEXT[info.reason])}</span>${refHtml}</span>${btnHtml}`;
       el.hidden = false;
     }
     reportUnsentToCloud(info);
@@ -159777,10 +160822,13 @@
     if (!STATE.authed || isDemoScopeActive() || isDemoSandboxSession()) return;
     if (info) {
       if (info.reason === 'other_seat' || info.reason === 'offline') return;
-      if (_unsentSyncLeftAtMs < info.sinceMs + UNSENT_WARN_AFTER_MS || _unsentSyncLeftAtMs <= _lastOnlineAtMs) return;
+      // A set-aside void is known for certain (the cloud named it): no wait-and-see before it is reported.
+      if (info.reason !== 'set_aside' && (_unsentSyncLeftAtMs < info.sinceMs + UNSENT_WARN_AFTER_MS || _unsentSyncLeftAtMs <= _lastOnlineAtMs)) return;
       if (Date.now() - _unsentReportedAtMs < UNSENT_REPORT_EVERY_MS) return;
     } else if (!late) {
       if (!_unsentReported) return;
+      // Voids still set aside keep the report open: it changes to them on the next report, never clears.
+      if (seatSetAsideVoids().length) return;
       // The Edge decides which reports this seat may close: its own always, and those of seats whose companies it
       // sends (its sync has just sent everything it can send from this device). While some stay open the device
       // asks again, at most every few minutes, so the seat that can close them does so when it signs in.
@@ -159793,6 +160841,7 @@
       : (late
         ? { device_id: dev.id, label: dev.label, count: late.count, since: new Date(late.sinceMs).toISOString(), sent_late: true, shell: shellVer }
         : { device_id: dev.id, label: dev.label, count: 0, all_seats: true, shell: shellVer });
+    if (info && info.refusal && info.refusal.status) payload.refusal = { status: info.refusal.status, code: info.refusal.code || '', error: info.refusal.error || '' };
     _unsentReportInflight = true;
     if (info) _unsentReportedAtMs = Date.now();
     const ctrl = new AbortController();
@@ -159833,6 +160882,10 @@
   function onUnsentBarClick(ev) {
     const btn = ev.target && ev.target.closest ? ev.target.closest('[data-unsent-act]') : null;
     if (!btn) return;
+    if (btn.getAttribute('data-unsent-act') === 'reason') {
+      openSetAsideReasonPrompt();
+      return;
+    }
     if (btn.getAttribute('data-unsent-act') === 'update') {
       // Entries are kept on the device across the reload; the new version sends them at its first sync.
       saveLocalAuthAndRecords();
@@ -159905,7 +160958,7 @@
     const rawLiveFloor = String(STATE.devicesMinSyncShellVer || '').trim();
     const minSyncFloor = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(rawLiveFloor) ? rawLiveFloor : MIN_SYNC_SHELL_FALLBACK;
     const effMinSyncVer = (curShell && compareShellVersions(minSyncFloor, curShell) > 0) ? curShell : minSyncFloor;
-    const sig = JSON.stringify([curShell, effMinSyncVer, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at])]);
+    const sig = JSON.stringify([curShell, effMinSyncVer, list.map(d => [d.user_id, d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.shell, d.reported_at, d.sent_at, d.refusal_status, d.refusal_text])]);
     if (el.dataset.sig === sig && !el.hidden) return;
     const holdingList = [];
     const lateList = [];
@@ -159944,7 +160997,15 @@
       const heardHtml = Number.isFinite(heardMs)
         ? `<span data-no-i18n="1">, </span><span>last heard</span> <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(heardMs))}</span>`
         : '';
-      return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span>${heardHtml}${dismissHtml}</span>`;
+      // The cloud's own status and words for the refusal (owner 2026-11-25), so the fix is known without the device
+      const refStatus = Number(d.refusal_status) || 0;
+      const refText = String(d.refusal_text || '').trim();
+      const refHtml = refStatus
+        ? ` <span class="dev-hold-refusal" data-no-i18n="1">(${esc(String(refStatus))}${refText ? ': ' + esc(refText) : ''})</span>`
+        : '';
+      const isVoidAside = String(d.reason || '') === 'set_aside';
+      const heldWords = isVoidAside ? (n === 1 ? 'void set aside since' : 'voids set aside since') : (n === 1 ? 'entry held since' : 'entries held since');
+      return `<span class="cf-behind-co dev-hold-item${isVoidAside ? ' is-set-aside' : ''}">${head} <span>${heldWords}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span>${refHtml}${heardHtml}${dismissHtml}</span>`;
     };
     const rowsHtml = [];
     if (holdingList.length) {
@@ -160103,7 +161164,7 @@
     window.addEventListener('offline', () => updateUnsentEntriesBar());
     // The bar appears on the clock, not on a sync: an offline device makes no sync that would draw it.
     if (!IS_AUTOMATED_TEST) {
-      setInterval(() => { if (_unsentSinceMs && document.visibilityState !== 'hidden') updateUnsentEntriesBar(); }, 60000);
+      setInterval(() => { if ((_unsentSinceMs || _setAsideVoids.length) && document.visibilityState !== 'hidden') updateUnsentEntriesBar(); }, 60000);
     }
   })();
 
@@ -160389,6 +161450,48 @@
     return _usersHydrateInFlight;
   }
 
+  let _staffBioHydrateInFlight = null;
+  let _staffBioHydratedEpoch = -1;
+  let _staffBioLastFetchedAt = 0;
+  function hydrateStaffBiometricsOnce(force = false) {
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive()) return Promise.resolve(false);
+    if (!force && _staffBioHydratedEpoch === _authSessionEpoch && (Date.now() - _staffBioLastFetchedAt) < 15000) return Promise.resolve(true);
+    if (_staffBioHydrateInFlight) return _staffBioHydrateInFlight;
+    const hydrateEpoch = _authSessionEpoch;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4500);
+    let p = null;
+    p = edgeApiFetch('./api/staff_biometrics', { signal: ctrl.signal })
+      .then(r => (r && r.ok ? r.json().catch(() => null) : null))
+      .then(d => {
+        clearTimeout(t);
+        if (hydrateEpoch !== _authSessionEpoch || !STATE.authed) return false;
+        _staffBioHydratedEpoch = hydrateEpoch;
+        _staffBioLastFetchedAt = Date.now();
+        if (d && d.staff_biometrics && typeof d.staff_biometrics === 'object') {
+          const changed = mergeStaffBiometrics(d.staff_biometrics);
+          if (changed) {
+            invalidateFacePoolCache();
+            saveBiometricsLocalFast();
+            if (STATE.view === 'kiosks') {
+              if (!syncKioskAttLiveUiInPlace()) safeRender();
+            } else if (STATE.view === 'payroll_attendance' || STATE.view === 'users' || $('staffFaceEnrolModal')) {
+              safeRender();
+            }
+          }
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false)
+      .finally(() => {
+        clearTimeout(t);
+        if (_staffBioHydrateInFlight === p) _staffBioHydrateInFlight = null;
+      });
+    _staffBioHydrateInFlight = p;
+    return _staffBioHydrateInFlight;
+  }
+
   async function doSync(pushChanges) {
     if (isDemoScopeActive() && !isDemoSandboxSession()) {
       STATE.cloudStatus = '● Demo Sandbox';
@@ -160594,6 +161697,9 @@
 
       const docs = (store && store.docs) || store || {};
       const remote = docs[CLOUD_DOC_KEY] || (store && store.customRecords ? store : {});
+      _setAsideRemote = docs[CLOUD_DOC_KEY] ? remote : null;
+      if (_setAsideRemote) settleSetAsideFromCloud(remote);
+      const saKeysSync = setAsideKeySet();
       const isScopedRemote = Boolean(remote && remote._scopedForSession);
       const auSync = activeUser();
       const canManageSyncSeats = /Owner|Supervisor|Manager|Admin/i.test(String((auSync && auSync.role) || ''));
@@ -160611,6 +161717,7 @@
       // What the cloud holds, read before the merge. Only kept while something waits or is about to be pushed.
       _unsentScoped = isScopedRemote;
       _unsentAllowedCos = isScopedRemote ? allowedCoSet : null;
+      _setAsideScopeSeat = norm((auSync && auSync.email) || '');
       if (_unsentSinceMs || pushChanges || STATE.pendingCloudPush) noteCloudHeldEntries(remote, isScopedRemote ? allowedCoSet : null);
       else _unsentKnown = null;
       if (_unsentSinceMs && _unsentKnown) {
@@ -160689,6 +161796,8 @@
             // Same rule as the unsent count (unsentCrRowInScope): a shared-register row this seat keyed (a new catalog
             // item, an "All BUs" region) is pushed here too, so a sync never calls the device in step without it.
             if (isScopedRemote && !unsentCrRowInScope(k, r, allowedCoSet)) return;
+            // A void set aside goes out only once it has a reason: until then it is no change to push
+            if (saKeysSync && saKeysSync.has(setAsideKey('customRecords', k, r.id))) return;
             const remR = remById.get(String(r.id));
             if (!remR) {
               if (remote.updatedAt && Array.isArray(remCr[k]) && isAppRecord(r) && isDroppableSysTopupStub(k, r)) return;
@@ -160710,6 +161819,7 @@
         Object.entries(myIndEdits).forEach(([ek, ev]) => {
           if (!ev || typeof ev !== 'object' || isTillOwnedEditKey(ek)) return;
           if (!canPushCo(ev.company || ev.resort || ev.entity)) return;
+          if (saKeysSync && saKeysSync.has(setAsideKey('industryRowEdits', '', ek))) return;
           const rv = remIndEdits[ek];
           if (!rv || Boolean(ev.voided) !== Boolean(rv.voided) || Number(ev.rev || 1) > Number(rv.rev || 1) || String(ev.updated_at || ev.updatedAt || '') > String(rv.updated_at || rv.updatedAt || '')) {
             pushChanges = true;
@@ -160724,6 +161834,7 @@
             const pid = r && String(r.id || r.code || '').trim();
             if (!pid || isTillOwnedRowId(pid)) return;
             if (!canPushCo(r.company || r.resort || r.entity)) return;
+            if (saKeysSync && saKeysSync.has(setAsideKey('industryCustomRows', bk, pid))) return;
             const rr = remB.get(pid);
             if (!rr || Boolean(r.voided) !== Boolean(rr.voided) || Number(r.rev || 1) > Number(rr.rev || 1) || String(r.updated_at || r.updatedAt || r._updatedAt || r._createdAt || '') > String(rr.updated_at || rr.updatedAt || rr._updatedAt || rr._createdAt || '')) {
               pushChanges = true;
@@ -160809,7 +161920,8 @@
         for (let casAttempt = 0; casAttempt < 3; casAttempt++) {
           if (abortedByAuthChange()) return;
           const seqBeforePayload = _localPushSeq;
-          const fullPayload = cloudPayload();
+          // Set refused voids aside on the full document first: the delta is then cut from what is really sent.
+          const fullPayload = applySetAsideToPayload(cloudPayload());
           const useDelta = Boolean(_serverDeltaSyncCapable && expectedUpdatedAt && deltaBaseSnap && deltaBaseSnap.updatedAt === expectedUpdatedAt);
           const payload = useDelta
             ? buildDeltaCloudPayload(fullPayload, deltaBaseSnap, { isScopedRemote, allowedCoSet, canPushCo })
@@ -160836,6 +161948,15 @@
               handleShellOutdated426(putErr);
               break;
             }
+            noteCloudPushRefusal(putRes.status, putErr);
+            // Voids refused for having no reason: set them aside and send the rest at once
+            if (putRes.status === 400 && putErr && putErr.code === 'void_reason_required') {
+              const setAsideNow = setAsideRefusedVoids(putErr);
+              if (setAsideNow > 0) {
+                toast(setAsideNow === 1 ? 'A void without a reason was set aside. Everything else is being sent.' : 'Voids without a reason were set aside. Everything else is being sent.', 'warn');
+                if (casAttempt < 2) continue;
+              }
+            }
             if (putRes.status === 409 && putErr && putErr.code === 'same_name_conflict') {
               const removed = quarantineSameNameRejectedRecord(putErr.table, putErr.conflictId || putErr.id, putErr, remote.customRecords || {});
               toast(putErr.error || 'Duplicate active staff name blocked by server.', 'err');
@@ -160856,6 +161977,8 @@
             if (typeof putJson.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = putJson.deltaSyncV1;
             const cDocs = (putJson.docs && typeof putJson.docs === 'object') ? putJson.docs : {};
             const freshRemote = cDocs[CLOUD_DOC_KEY] || {};
+            _setAsideRemote = freshRemote;
+            settleSetAsideFromCloud(freshRemote);
             expectedUpdatedAt = String(putJson.updatedAt || freshRemote.updatedAt || '');
             deltaBaseSnap = (_serverDeltaSyncCapable && expectedUpdatedAt && !putJson.storeUnreadable)
               ? snapshotRemoteForDelta(freshRemote, expectedUpdatedAt)
@@ -160867,6 +161990,7 @@
             continue;
           }
           casSucceeded = true;
+          _lastPushRefusal = null;
           if (putJson && typeof putJson.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = putJson.deltaSyncV1;
           STATE.cloudStatus = '● Cloud Live';
           if (putJson && putJson.retiredDropped && typeof putJson.retiredDropped === 'object') {
@@ -161353,7 +162477,9 @@
       // browser now holds the verified person's session. Start the app afresh on that session: nothing
       // loaded or still in flight for the other seat is carried over.
       purgeOverlaysOnSessionOrKioskLock();   // also retires that seat's sync in flight
-      try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
+      try {
+        sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: user.email, ts: Date.now() }));
+      } catch (_) {}
       STATE.authed = false;   // nothing more is sent for the seat that was on screen while the page goes
       location.reload();
       return true;
@@ -161559,7 +162685,7 @@
     const minSpanMs = enforceLiveVideo ? 650 : 0;
     // When a live webcam already matched a user on frame 1+, allow a +0.06 head-turn/blink tolerance for that same user so movement never resets the streak
     const isSameStreakUserOnLiveVideo = !!(opts && opts.videoEl && FACE_STATE.streakUser && FACE_STATE.streakCount >= 1 && m && m.best && norm(m.best.email) === norm(FACE_STATE.streakUser.email));
-    const cfg = Object.assign({}, window.Face.CONFIG, {
+    const cfg = Object.assign({}, (window.Face && window.Face.CONFIG) || {}, {
       threshold: isSameStreakUserOnLiveVideo ? (baseThr + 0.06) : baseThr,
       margin: isSameStreakUserOnLiveVideo ? Math.max(0.04, Number(STATE.faceSettings.margin || 0.08) - 0.03) : Number(STATE.faceSettings.margin || 0.08),
       weakAbove: Number(STATE.faceSettings.weakAbove || 0.45),
@@ -162054,6 +163180,7 @@
   let _authCamStartPromise = null;
   async function startAuthFaceScanner(forceStart = false) {
     if (PARAMS.get('phone_scan') || PARAMS.get('ps') || PARAMS.get('gate_pin')) return false;
+    if (!forceStart && window.__mfgSwResuming) return false;
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
       stopFaceCamera();
       updateAuthFaceUi();
@@ -164185,7 +165312,13 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ method: 'Face ID', verify_only: true, allow_pin_only_verify: true, face_descriptor: vecArr })
             })
-              .then(r => (r.ok ? r.json() : null))
+              .then(r => {
+                if (r && r.status === 429) {
+                  FACE_STATE.enrolEdgeVerifyAt = Date.now() + 8000;
+                  return null;
+                }
+                return r && r.ok ? r.json().catch(() => null) : null;
+              })
               .then(j => {
                 if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive || FACE_STATE.enrolRetakeSlot != null) return;
                 const curTarget = enrolTargetUser();
@@ -165593,6 +166726,7 @@
       clearCfScrubChipState();
     }
     FORM_UI.unpricedQueueSession = null;
+    FORM_UI.unpricedSiteCtx = null;
     STATE.indDrawerFilters = {};
     closeCoOverrideDiffPopover();
     STATE.shown = {};
@@ -166864,6 +167998,7 @@
     STATE.rawPricingGradeFilter = 'ALL';
     cancelBiometricPendingTimers();
     FORM_UI.unpricedQueueSession = null;
+    FORM_UI.unpricedSiteCtx = null;
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -166892,6 +168027,7 @@
     setAuthStreak(0, 3);
     const serverHeld = rosterIsServerHeld();
     if (serverHeld && !isDemoSandboxSession()) {
+      _usersApiHydratedOnce = false;
       _seedHydrationPromise = null;
       if (!SEED._recordsReady) {
         SEED.records = {};
@@ -166983,6 +168119,7 @@
     resetCloudSyncEtagCache();
     if (hasServerApi() && !isDemoSandboxSession()) {
       hydrateServerUsersOnce();
+      hydrateStaffBiometricsOnce();
     }
     try { window.dispatchEvent(new CustomEvent('mfg:auth-gate-closed')); } catch (_) {}
     if (!SEED._recordsReady) {
@@ -167093,6 +168230,7 @@
     STATE.rawPricingGradeFilter = 'ALL';
     cancelBiometricPendingTimers();
     FORM_UI.unpricedQueueSession = null;
+    FORM_UI.unpricedSiteCtx = null;
     noteUnsentSeatLeft();
     updateDevicesHoldingBar();
     updateUnsentEntriesBar();
@@ -168936,12 +170074,16 @@
     livenessHistory: [],
     lastPadResult: null,
     unknownStreak: 0,
+    edgeVerifyBusy: false,
+    edgeCooldownUntil: 0,
+    visualState: '',
     bestDist: 9,
     lastVideoTime: -1,
     lastTimeMoveAt: 0,
     lastRestartAt: 0,
     restartCount: 0,
     lastWatchdogReason: '',
+    _camGen: 0,
     statusText: 'Look inside the oval guide to clock in or out.',
     statusCls: '',
     lastSnap: '',
@@ -170190,6 +171332,14 @@
     });
   }
 
+  function syncKioskAttViewportVisualState() {
+    const vpEl = $('kioskAttViewport');
+    if (!vpEl) return;
+    const canShow = !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.camPausedByUser;
+    vpEl.classList.toggle('is-detecting', canShow && KIOSK_ATT_STATE.visualState === 'detecting');
+    vpEl.classList.toggle('is-unrecognized', canShow && KIOSK_ATT_STATE.visualState === 'unrecognized');
+  }
+
   function syncKioskAttLiveUiInPlace() {
     const stEl = $('kioskAttCamStatus');
     if (stEl) {
@@ -170200,16 +171350,19 @@
     if (badgeEl) {
       if (KIOSK_ATT_STATE.camActive && (KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4) {
         badgeEl.className = 'badge badge-warn';
-        badgeEl.textContent = 'Reconnecting Camera...';
+        badgeEl.textContent = faceTr('Reconnecting Camera...');
       } else if (KIOSK_ATT_STATE.camActive) {
         badgeEl.className = 'badge badge-ok';
-        badgeEl.textContent = 'Live Camera';
+        badgeEl.textContent = faceTr('Live Camera');
       } else if (KIOSK_ATT_STATE.standbyIdle) {
         badgeEl.className = 'badge';
-        badgeEl.textContent = KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake';
+        badgeEl.textContent = faceTr(KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake');
       } else if (STATE.kioskLocked) {
         badgeEl.className = 'badge';
-        badgeEl.textContent = KIOSK_ATT_STATE.camStarting ? 'Starting Camera...' : 'Tap to Start';
+        badgeEl.textContent = faceTr(KIOSK_ATT_STATE.camStarting ? 'Starting Camera...' : 'Tap to Start');
+      } else {
+        badgeEl.className = 'badge';
+        badgeEl.textContent = `${fmtNum(countEnrolledKioskFaces())} ${faceTr('Face ID Ready')}`;
       }
     }
     const vpEl = $('kioskAttViewport');
@@ -170217,6 +171370,7 @@
       vpEl.classList.toggle('is-live', !!KIOSK_ATT_STATE.camActive);
       vpEl.classList.toggle('is-standby', !KIOSK_ATT_STATE.camActive);
       vpEl.classList.toggle('is-idle-saver', !!KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.camActive);
+      syncKioskAttViewportVisualState();
       if (KIOSK_ATT_STATE.camActive) {
         vpEl.querySelectorAll('.kiosk-cam-standby-card').forEach(c => c.remove());
       } else if (KIOSK_ATT_STATE.standbyIdle) {
@@ -179143,6 +180297,7 @@
     const cIdx = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(wsRow.id));
     if (cIdx >= 0) Object.assign(STATE.customRecords.work_shifts[cIdx], wsRow);
     else STATE.customRecords.work_shifts.unshift(Object.assign({}, wsRow));
+    const extraPosts = [];
     if (wantBuDef && co && norm(co) !== norm('All BUs') && norm(co) !== norm('All Companies')) {
       pool.forEach(r => {
         if (r && !r.voided && String(r.id) !== String(wsRow.id) && norm(r.company || 'WTC') === norm(co) && r.is_bu_default) {
@@ -179152,16 +180307,21 @@
           const ocIdx = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
           if (ocIdx >= 0) Object.assign(STATE.customRecords.work_shifts[ocIdx], r);
           else STATE.customRecords.work_shifts.unshift(Object.assign({}, r));
+          extraPosts.push(['work_shifts', Object.assign({}, r)]);
         }
       });
     }
 
-    const extraPosts = [];
     syncChronologicalSeriesNeighbors('work_shifts', wsRow, origSnap, extraPosts);
     const bf = (spec.backfill !== false) ? backfillShiftTimingChange(wsRow, origSnap, extraPosts) : { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0 };
-    if (SEED) SEED._workShiftsSeededRev = '';
+    if (SEED) {
+      SEED._workShiftsSeededRev = '';
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      if (SEED._tableRev) SEED._tableRev.work_shifts = (SEED._tableRev.work_shifts || 0) + 1;
+    }
     ensureWorkShiftsSeeded();
     saveLocalAuthAndRecords();
+    postRecordPairsChunked([['work_shifts', wsRow], ...extraPosts]);
     postWorkScheduleMutation({ op: 'upsert_shift', item: normalized });
     syncWithCloud(true);
     return { ok: true, shiftType: normalized, workShiftRow: wsRow, backfill: bf };
@@ -181992,6 +183152,9 @@
       const bio = bioMap[k] || null;
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
+      const serverEnrolledCnt = (u && !(bio && bio.face_cleared) && u.face_enrolled && u.face_redacted)
+        ? Math.max(1, Number(u.face_sample_count || 3))
+        : 0;
       const shiftToday = bioOnly ? null : resolveStaffShiftForDate(nm, co, today);
       const otToday = bioOnly ? '' : describeStaffOvertimeRule(nm, co, today);
       const lateToday = bioOnly ? '' : describeStaffLatenessRule(nm, co, today);
@@ -182010,8 +183173,8 @@
         policyDesc: policyToday,
         pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
         hasExplicitPin: Boolean(explicitPin),
-        hasFace: faceInfo.samples.length > 0,
-        faceCount: faceInfo.samples.length,
+        hasFace: faceInfo.samples.length > 0 || serverEnrolledCnt > 0,
+        faceCount: faceInfo.samples.length || serverEnrolledCnt,
         hasActiveContract: true,
         isEndedContract: false,
         contractStatus: 'Active',
@@ -183152,6 +184315,7 @@
   }
 
   function stopKioskAttCamera() {
+    KIOSK_ATT_STATE._camGen = (KIOSK_ATT_STATE._camGen || 0) + 1;
     KIOSK_ATT_STATE.camActive = false;
     KIOSK_ATT_STATE.camStarting = false;
     KIOSK_ATT_STATE.blackFrameStreak = 0;
@@ -183170,8 +184334,12 @@
     KIOSK_ATT_STATE.livenessHistory = [];
     KIOSK_ATT_STATE.lastPadResult = null;
     KIOSK_ATT_STATE.unknownStreak = 0;
+    KIOSK_ATT_STATE.edgeVerifyBusy = false;
+    KIOSK_ATT_STATE.edgeCooldownUntil = 0;
+    KIOSK_ATT_STATE.visualState = '';
     KIOSK_ATT_STATE.lastVideoTime = -1;
     KIOSK_ATT_STATE.lastTimeMoveAt = 0;
+    syncKioskAttViewportVisualState();
     const v = $('kioskAttVideo');
     if (v && v.srcObject) {
       try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
@@ -183262,7 +184430,23 @@
     return true;
   }
 
+  function countEnrolledKioskFaces() {
+    const dirList = getKioskStaffDirectory({ biometricOnly: true });
+    const seen = new Set();
+    let total = 0;
+    for (const s of dirList) {
+      if (!s || !s.hasFace) continue;
+      const k = norm(s.name || '');
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      total += 1;
+    }
+    return total;
+  }
+
   async function startKioskAttCamera(opts = {}) {
+    KIOSK_ATT_STATE._camGen = (KIOSK_ATT_STATE._camGen || 0) + 1;
+    if (!isDemoScopeActive()) hydrateStaffBiometricsOnce(true);
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       KIOSK_ATT_STATE.camStarting = false;
       KIOSK_ATT_STATE.statusText = 'Camera unavailable on this browser.';
@@ -183382,6 +184566,9 @@
       KIOSK_ATT_STATE.busy = false;
       KIOSK_ATT_STATE.missedFrames = 0;
       KIOSK_ATT_STATE.unknownStreak = 0;
+      KIOSK_ATT_STATE.edgeVerifyBusy = false;
+      KIOSK_ATT_STATE.edgeCooldownUntil = 0;
+      KIOSK_ATT_STATE.visualState = '';
       KIOSK_ATT_STATE.blackFrameStreak = 0;
       KIOSK_ATT_STATE.softRebindAt = 0;
       KIOSK_ATT_STATE.lastProbePixels = null;
@@ -183451,6 +184638,71 @@
     }
   }
 
+  function completeKioskAttFaceMatch(matchedName, matchDist, opts = {}) {
+    const dirList = getKioskStaffDirectory({ biometricOnly: true });
+    const staffInScope = dirList.some(s => norm(s.name) === norm(matchedName) && s.hasFace);
+    if (!staffInScope) {
+      KIOSK_ATT_STATE.unknownStreak = 2;
+      KIOSK_ATT_STATE.visualState = 'unrecognized';
+      KIOSK_ATT_STATE.statusText = faceTr('Face not recognized for this company scope.');
+      KIOSK_ATT_STATE.statusCls = 'warn';
+      const stElScope = $('kioskAttCamStatus');
+      if (stElScope) {
+        stElScope.textContent = KIOSK_ATT_STATE.statusText;
+        stElScope.className = 'kiosk-att-status warn';
+      }
+      syncKioskAttViewportVisualState();
+      return { ok: false, reason: 'out-of-scope', staff: matchedName };
+    }
+    const recentGuard = checkKioskRecentPunchGuard(matchedName, opts);
+    // Only capture a new camera snapshot when recording a fresh punch (never on <5m repeat looks)
+    if (!recentGuard && opts.videoEl && window.Face && window.Face.snapshot) {
+      KIOSK_ATT_STATE.lastSnap = window.Face.snapshot(opts.videoEl, 240) || '';
+    }
+    if (opts.liveVideo) {
+      if (STATE.kioskLocked) {
+        KIOSK_ATT_STATE.cooldownUntil = Date.now() + (recentGuard ? 2500 : 4500);
+      } else if (!recentGuard) {
+        stopKioskAttCamera();
+      }
+    }
+    const distNum = typeof matchDist === 'number' && Number.isFinite(matchDist) ? matchDist : 0.25;
+    const conf = Math.max(0.75, Math.min(0.99, 1 - distNum * 0.6));
+    const res = recordKioskAttendancePunch({
+      staff: matchedName,
+      method: 'Face ID',
+      confidence: conf,
+      snapshot: opts.snapshot || (!recentGuard ? KIOSK_ATT_STATE.lastSnap : '') || '',
+      bypassDebounce: !!opts.bypassDebounce,
+      date: opts.date,
+      time: opts.time,
+      direction: opts.direction,
+      forceEarlyOut: !!opts.forceEarlyOut,
+      liveRepeatQuiet: Boolean(opts.liveVideo && STATE.kioskLocked)
+    });
+    KIOSK_ATT_STATE.visualState = 'detecting';
+    if (res.ok) {
+      KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+        ? `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time}`
+        : `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match). Camera paused.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
+    } else if (res.reason === 'already-clocked-in-recent') {
+      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} is already Clocked IN since ${res.punch ? res.punch.time : ''}.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
+    } else {
+      const ageLbl = res.ageSec != null && res.ageSec >= 60 ? `${Math.floor(res.ageSec / 60)} min ago` : (res.ageSec != null ? `${res.ageSec}s ago` : '');
+      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} already clocked ${res.punch ? res.punch.direction : ''} at ${res.punch ? res.punch.time : ''}${ageLbl ? ' (' + ageLbl + ')' : ''}.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
+    }
+    const stEl = $('kioskAttCamStatus');
+    if (stEl) {
+      stEl.textContent = KIOSK_ATT_STATE.statusText;
+      stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
+    }
+    syncKioskAttViewportVisualState();
+    return res;
+  }
+
   function handleKioskAttDescriptor(det, opts = {}) {
     if (det && det.modelLoading && !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = 0;
@@ -183465,70 +184717,300 @@
       KIOSK_ATT_STATE.livenessHistory = [];
       KIOSK_ATT_STATE.livenessWaitStart = 0;
       KIOSK_ATT_STATE.lastPadResult = null;
+      KIOSK_ATT_STATE.visualState = '';
     };
     if (!det || !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       KIOSK_ATT_STATE.unknownStreak = 0;
       if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
         resetKioskAttAccumulators();
+        KIOSK_ATT_STATE.statusText = faceTr('Position your face inside the oval guide to clock in or out');
+        KIOSK_ATT_STATE.statusCls = '';
       }
-      KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
-      KIOSK_ATT_STATE.statusCls = '';
       return { ok: false, reason: 'no-face' };
     }
     if (window.Face && typeof window.Face.isFiniteVec128 === 'function' && !window.Face.isFiniteVec128(det.descriptor)) {
       resetKioskAttAccumulators();
       return { ok: false, reason: 'invalid-descriptor' };
     }
+    const detScore = Number(det.score || det.detScore || 0.9);
+    const minFaceFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
+    const isSmallFace = Boolean(det.faceSizeFrac != null && det.faceSizeFrac < minFaceFrac);
+    if (opts.liveVideo && !opts.instant && (detScore < 0.42 || isSmallFace)) {
+      KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
+      KIOSK_ATT_STATE.unknownStreak = 0;
+      const isForegroundLowLight = Boolean(!isSmallFace && detScore >= 0.34 && (det.faceSizeFrac || 0) >= 0.20);
+      if (isForegroundLowLight) {
+        KIOSK_ATT_STATE.visualState = 'unrecognized';
+        KIOSK_ATT_STATE.statusText = faceTr('Hold steady in good light inside the oval guide.');
+        KIOSK_ATT_STATE.statusCls = 'warn';
+        return { ok: false, reason: 'low-light' };
+      }
+      if (KIOSK_ATT_STATE.missedFrames >= 3) {
+        resetKioskAttAccumulators();
+      } else {
+        KIOSK_ATT_STATE.visualState = '';
+      }
+      KIOSK_ATT_STATE.statusText = (isSmallFace && detScore >= 0.55)
+        ? faceTr('Move slightly closer to the camera')
+        : faceTr('Position your face inside the oval guide to clock in or out');
+      KIOSK_ATT_STATE.statusCls = '';
+      return { ok: false, reason: isSmallFace ? 'too-small' : 'background-ignored' };
+    }
     KIOSK_ATT_STATE.missedFrames = 0;
-    if (Number(det.score || det.detScore || 0.9) >= 0.42) {
+    if (detScore >= 0.42) {
       KIOSK_ATT_STATE.lastActivityAt = Date.now();
     }
+
     const pool = getKioskFacePoolWithAdminSeed();
-    if (!pool.length || !window.Face) {
-      KIOSK_ATT_STATE.statusText = 'No Face ID profiles enrolled yet. Enrol staff in Station Admin.';
+    const canRemoteVerify = Boolean(
+      hasServerApi() &&
+      STATE.authed &&
+      !isDemoSandboxSession() &&
+      !isDemoScopeActive() &&
+      (() => {
+        const dirScoped = getKioskStaffDirectory({ biometricOnly: true });
+        return (STATE.users || []).some(u =>
+          u &&
+          u.status !== 'Suspended' &&
+          !isGenericTerminalSeat(u) &&
+          u.face_redacted &&
+          u.face_enrolled &&
+          dirScoped.some(s => s && s.hasFace && (String(s.id || '') === String(u.id || '') || norm(s.name) === norm(u.full_name)))
+        );
+      })()
+    );
+    if ((!pool.length || !window.Face) && !canRemoteVerify) {
+      KIOSK_ATT_STATE.visualState = 'unrecognized';
+      KIOSK_ATT_STATE.statusText = faceTr('No Face ID profiles enrolled yet. Enrol staff in Station Admin.');
       KIOSK_ATT_STATE.statusCls = 'warn';
       return { ok: false, reason: 'no-pool' };
     }
-    const m = window.Face.match(det.descriptor, pool);
-    const thr = Number(STATE.faceSettings.threshold || 0.50);
-    const dec = window.Face.decide(m, Object.assign({}, window.Face.CONFIG, { threshold: thr }), { faceSizeFrac: det.faceSizeFrac || 0.26 });
-    if (!dec.ok || !dec.best) {
-      KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
-      if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
-        resetKioskAttAccumulators();
-      }
-      // On live video without opts.instant, ignore low-score background/ceiling-light detections (detScore < 0.42 or bestDist > 0.65)
-      // and require 2 consecutive unknown face frames before showing the amber "Face not recognized" banner.
-      if (opts.liveVideo && !opts.instant) {
-        const detScore = Number(det.score || det.detScore || 0);
-        const bestDist = (m && typeof m.bestDist === 'number') ? m.bestDist : 9;
-        if (detScore < 0.42 || bestDist > 0.65) {
-          KIOSK_ATT_STATE.unknownStreak = 0;
-          KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
-          KIOSK_ATT_STATE.statusCls = '';
-          return { ok: false, reason: 'background-ignored' };
-        }
-        KIOSK_ATT_STATE.unknownStreak = (KIOSK_ATT_STATE.unknownStreak || 0) + 1;
-        if (KIOSK_ATT_STATE.unknownStreak < 2) {
-          KIOSK_ATT_STATE.statusText = 'Look straight ahead inside the oval guide...';
-          KIOSK_ATT_STATE.statusCls = '';
-          return { ok: false, reason: dec.status };
-        }
-      }
-      KIOSK_ATT_STATE.statusText = 'Face not recognized. Look straight ahead inside the oval guide.';
-      KIOSK_ATT_STATE.statusCls = 'warn';
-      return { ok: false, reason: dec.status };
-    }
-    KIOSK_ATT_STATE.unknownStreak = 0;
 
-    const matchedName = dec.best.name;
+    const m = (pool.length && window.Face) ? window.Face.match(det.descriptor, pool) : null;
+    const thr = Number(STATE.faceSettings.threshold || 0.50);
+    const dec = (m && window.Face)
+      ? window.Face.decide(m, Object.assign({}, window.Face.CONFIG, { threshold: thr }), { faceSizeFrac: det.faceSizeFrac || 0.26 })
+      : { ok: false, status: 'no-enrolled' };
+
     const hasLivePixels = hasLiveVideoPixels(opts);
     const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
     const shouldEvalLiveness = Boolean(opts.liveVideo && !opts.instant && STATE.faceSettings.liveness !== false && (enforceLiveVideo || det.landmarks || typeof det.ear === 'number' || (det.pose && typeof det.pose === 'object')));
     const needFrames = opts.instant ? 1 : (shouldEvalLiveness ? 3 : (opts.liveVideo ? 2 : Math.max(2, Number(STATE.faceSettings.confirmFrames || 3))));
     const minSpanMs = (shouldEvalLiveness && enforceLiveVideo) ? 500 : 0;
 
+    if (!dec.ok || !dec.best) {
+      if (canRemoteVerify) {
+        if (Date.now() < (KIOSK_ATT_STATE.edgeCooldownUntil || 0)) {
+          return { ok: false, reason: 'cooldown' };
+        }
+        const rawVec = Array.from(det.descriptor);
+        if (rawVec.length === 128) {
+          if (!opts.instant) {
+            if (KIOSK_ATT_STATE.streakStaff === '__edge_probe__') {
+              KIOSK_ATT_STATE.streakCount += 1;
+              KIOSK_ATT_STATE.streakVecs.push(rawVec);
+              if (KIOSK_ATT_STATE.streakVecs.length > 8) {
+                KIOSK_ATT_STATE.streakVecs = KIOSK_ATT_STATE.streakVecs.slice(-8);
+              }
+              if (window.Face && typeof window.Face.checkDescriptorStability === 'function' && !window.Face.checkDescriptorStability(KIOSK_ATT_STATE.streakVecs, 0.26)) {
+                KIOSK_ATT_STATE.streakCount = 1;
+                KIOSK_ATT_STATE.streakVecs = [rawVec];
+                KIOSK_ATT_STATE.streakStartedAt = Date.now();
+                KIOSK_ATT_STATE.livenessHistory = [];
+              }
+            } else {
+              KIOSK_ATT_STATE.streakStaff = '__edge_probe__';
+              KIOSK_ATT_STATE.streakCount = 1;
+              KIOSK_ATT_STATE.streakVecs = [rawVec];
+              KIOSK_ATT_STATE.streakStartedAt = Date.now();
+              KIOSK_ATT_STATE.livenessHistory = [];
+            }
+            let lvEdge = { ok: true, spoofSuspected: false };
+            if (shouldEvalLiveness) {
+              lvEdge = recordAndEvalFaceLiveness(KIOSK_ATT_STATE, det, opts, { minFrames: needFrames, minSpanMs });
+            } else if (hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function') {
+              const padOnly = window.Face.analyzePad(opts.videoEl, det);
+              KIOSK_ATT_STATE.lastPadResult = padOnly;
+              if (padOnly && padOnly.frameSpoof) {
+                lvEdge = { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: padOnly.reasons || [] };
+              }
+            }
+            if (lvEdge && lvEdge.spoofSuspected) {
+              resetKioskAttAccumulators();
+              KIOSK_ATT_STATE.visualState = 'unrecognized';
+              KIOSK_ATT_STATE.statusText = faceTr('Screen or photo detected. Step in front of the camera.');
+              KIOSK_ATT_STATE.statusCls = 'warn';
+              return { ok: false, reason: 'spoof-detected', padReasons: lvEdge.padReasons || [] };
+            }
+            const elapsedOkEdge = !minSpanMs || ((Date.now() - (KIOSK_ATT_STATE.streakStartedAt || Date.now())) >= minSpanMs);
+            if (KIOSK_ATT_STATE.streakCount < needFrames || !elapsedOkEdge) {
+              KIOSK_ATT_STATE.livenessWaitStart = 0;
+              KIOSK_ATT_STATE.unknownStreak = 0;
+              KIOSK_ATT_STATE.visualState = 'detecting';
+              KIOSK_ATT_STATE.statusText = faceTr('Verifying Face ID...');
+              KIOSK_ATT_STATE.statusCls = 'ok';
+              return { ok: false, reason: 'building-streak', streak: KIOSK_ATT_STATE.streakCount, needFrames };
+            }
+            if (shouldEvalLiveness && !(lvEdge && lvEdge.ok)) {
+              const lvWindowMs = Number((window.Face && window.Face.config && window.Face.config.liveness && window.Face.config.liveness.windowSec) || 4.5) * 1000;
+              if (!KIOSK_ATT_STATE.livenessWaitStart) KIOSK_ATT_STATE.livenessWaitStart = Date.now();
+              if ((Date.now() - KIOSK_ATT_STATE.livenessWaitStart) >= lvWindowMs) {
+                resetKioskAttAccumulators();
+                KIOSK_ATT_STATE.visualState = 'unrecognized';
+                KIOSK_ATT_STATE.statusText = faceTr('Liveness check timed out. Blink or turn slightly inside the oval guide.');
+                KIOSK_ATT_STATE.statusCls = 'warn';
+                const stElTimeout = $('kioskAttCamStatus');
+                if (stElTimeout) {
+                  stElTimeout.textContent = KIOSK_ATT_STATE.statusText;
+                  stElTimeout.className = 'kiosk-att-status warn';
+                }
+                syncKioskAttViewportVisualState();
+                return { ok: false, reason: 'liveness-timeout' };
+              }
+              KIOSK_ATT_STATE.streakCount = needFrames - 1;
+              KIOSK_ATT_STATE.visualState = 'detecting';
+              KIOSK_ATT_STATE.statusText = faceTr('Verifying live presence...');
+              KIOSK_ATT_STATE.statusCls = 'ok';
+              return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ATT_STATE.streakCount, needFrames };
+            }
+            KIOSK_ATT_STATE.livenessWaitStart = 0;
+          }
+          if (KIOSK_ATT_STATE.edgeVerifyBusy) {
+            return { ok: false, reason: 'verifying' };
+          }
+          KIOSK_ATT_STATE.edgeVerifyBusy = true;
+          KIOSK_ATT_STATE.visualState = 'detecting';
+          KIOSK_ATT_STATE.statusText = faceTr('Verifying Face ID...');
+          KIOSK_ATT_STATE.statusCls = 'ok';
+          const vecArr = (!opts.instant && KIOSK_ATT_STATE.streakVecs.length && window.Face && typeof window.Face.averageDescriptors === 'function')
+            ? window.Face.averageDescriptors(KIOSK_ATT_STATE.streakVecs)
+            : rawVec;
+          if (!vecArr) {
+            KIOSK_ATT_STATE.edgeVerifyBusy = false;
+            resetKioskAttAccumulators();
+            return { ok: false, reason: 'invalid-descriptor' };
+          }
+          const verifyCamGen = KIOSK_ATT_STATE._camGen || 0;
+          return edgeApiFetch('./api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              method: 'Face ID',
+              verify_only: true,
+              allow_pin_only_verify: true,
+              face_descriptor: vecArr
+            })
+          })
+            .then(async r => {
+              if (r && r.status === 429) {
+                const j429 = await r.json().catch(() => null);
+                return { _rateLimited: true, retryAfterSec: Number((j429 && j429.retry_after_sec) || 12) };
+              }
+              return r && r.ok ? r.json().catch(() => null) : null;
+            })
+            .then(j => {
+              if (verifyCamGen !== (KIOSK_ATT_STATE._camGen || 0)) {
+                return { ok: false, reason: 'closed' };
+              }
+              if (opts.liveVideo && !opts.instant && (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ATT_STATE.standbyIdle)) {
+                return { ok: false, reason: 'closed' };
+              }
+              if (j && j._rateLimited) {
+                const waitMs = Math.max(2000, Math.min(30000, (j.retryAfterSec || 12) * 1000));
+                KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + waitMs;
+                resetKioskAttAccumulators();
+                KIOSK_ATT_STATE.visualState = 'unrecognized';
+                KIOSK_ATT_STATE.statusText = faceTr('Too many Face ID checks. Pausing briefly.');
+                KIOSK_ATT_STATE.statusCls = 'warn';
+                const stEl429 = $('kioskAttCamStatus');
+                if (stEl429) {
+                  stEl429.textContent = KIOSK_ATT_STATE.statusText;
+                  stEl429.className = 'kiosk-att-status warn';
+                }
+                syncKioskAttViewportVisualState();
+                return { ok: false, reason: 'rate-limited' };
+              }
+              if (!j || !j.ok || !j.user) {
+                KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + 900;
+                resetKioskAttAccumulators();
+                KIOSK_ATT_STATE.unknownStreak = 2;
+                KIOSK_ATT_STATE.visualState = 'unrecognized';
+                KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+                  ? faceTr('Face not recognized. Look straight ahead inside the oval guide.')
+                  : faceTr('Face not recognized. Look straight ahead or tap Enrol Face ID.');
+                KIOSK_ATT_STATE.statusCls = 'warn';
+                const stElFail = $('kioskAttCamStatus');
+                if (stElFail) {
+                  stElFail.textContent = KIOSK_ATT_STATE.statusText;
+                  stElFail.className = 'kiosk-att-status warn';
+                }
+                syncKioskAttViewportVisualState();
+                return { ok: false, reason: 'unrecognized' };
+              }
+              let existingIdx = STATE.users.findIndex(u => u && ((j.user.id && String(u.id) === String(j.user.id)) || norm(u.email) === norm(j.user.email)));
+              if (existingIdx < 0 && j.user.email) {
+                STATE.users.push(mergeUserRow(null, j.user));
+                existingIdx = STATE.users.length - 1;
+              } else if (existingIdx >= 0) {
+                STATE.users[existingIdx] = mergeUserRow(STATE.users[existingIdx], j.user);
+              }
+              const matchedSeat = existingIdx >= 0 ? STATE.users[existingIdx] : j.user;
+              const matchedName = String((matchedSeat && matchedSeat.full_name) || j.user.full_name || '').trim();
+              resetKioskAttAccumulators();
+              KIOSK_ATT_STATE.unknownStreak = 0;
+              return completeKioskAttFaceMatch(matchedName, typeof j.face_dist === 'number' ? j.face_dist : 0.35, opts);
+            })
+            .catch(() => {
+              if (verifyCamGen !== (KIOSK_ATT_STATE._camGen || 0)) {
+                return { ok: false, reason: 'closed' };
+              }
+              KIOSK_ATT_STATE.edgeCooldownUntil = Date.now() + 900;
+              resetKioskAttAccumulators();
+              KIOSK_ATT_STATE.unknownStreak = 2;
+              KIOSK_ATT_STATE.visualState = 'unrecognized';
+              KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+                ? faceTr('Face not recognized. Look straight ahead inside the oval guide.')
+                : faceTr('Face not recognized. Look straight ahead or tap Enrol Face ID.');
+              KIOSK_ATT_STATE.statusCls = 'warn';
+              const stElErr = $('kioskAttCamStatus');
+              if (stElErr) {
+                stElErr.textContent = KIOSK_ATT_STATE.statusText;
+                stElErr.className = 'kiosk-att-status warn';
+              }
+              syncKioskAttViewportVisualState();
+              return { ok: false, reason: 'unrecognized' };
+            })
+            .finally(() => {
+              if (verifyCamGen === (KIOSK_ATT_STATE._camGen || 0)) {
+                KIOSK_ATT_STATE.edgeVerifyBusy = false;
+              }
+            });
+        }
+      }
+      KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
+      if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
+        resetKioskAttAccumulators();
+      }
+      if (opts.liveVideo && !opts.instant) {
+        KIOSK_ATT_STATE.unknownStreak = (KIOSK_ATT_STATE.unknownStreak || 0) + 1;
+        if (KIOSK_ATT_STATE.unknownStreak < 2) {
+          KIOSK_ATT_STATE.visualState = 'detecting';
+          KIOSK_ATT_STATE.statusText = faceTr('Scanning face...');
+          KIOSK_ATT_STATE.statusCls = '';
+          return { ok: false, reason: dec.status };
+        }
+      }
+      KIOSK_ATT_STATE.visualState = 'unrecognized';
+      KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+        ? faceTr('Face not recognized. Look straight ahead inside the oval guide.')
+        : faceTr('Face not recognized. Look straight ahead or tap Enrol Face ID.');
+      KIOSK_ATT_STATE.statusCls = 'warn';
+      return { ok: false, reason: dec.status };
+    }
+    KIOSK_ATT_STATE.unknownStreak = 0;
+
+    const matchedName = dec.best.name;
     const curVec = Array.from(det.descriptor);
     if (KIOSK_ATT_STATE.streakStaff === matchedName) {
       KIOSK_ATT_STATE.streakCount += 1;
@@ -183561,10 +185043,8 @@
       }
     }
     if (!opts.instant && lv && lv.spoofSuspected) {
-      KIOSK_ATT_STATE.streakCount = 0;
-      KIOSK_ATT_STATE.streakStaff = '';
-      KIOSK_ATT_STATE.streakVecs = [];
-      KIOSK_ATT_STATE.streakStartedAt = 0;
+      resetKioskAttAccumulators();
+      KIOSK_ATT_STATE.visualState = 'unrecognized';
       KIOSK_ATT_STATE.statusText = faceTr('Screen or photo detected. Step in front of the camera.');
       KIOSK_ATT_STATE.statusCls = 'warn';
       return { ok: false, reason: 'spoof-detected', padReasons: lv.padReasons || [] };
@@ -183573,7 +185053,8 @@
     const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ATT_STATE.streakStartedAt || Date.now())) >= minSpanMs);
     if (KIOSK_ATT_STATE.streakCount < needFrames || !elapsedOk) {
       KIOSK_ATT_STATE.livenessWaitStart = 0;
-      KIOSK_ATT_STATE.statusText = `Recognizing ${matchedName}...`;
+      KIOSK_ATT_STATE.visualState = 'detecting';
+      KIOSK_ATT_STATE.statusText = `${faceTr('Recognizing')} ${matchedName}...`;
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'building-streak', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
     }
@@ -183582,6 +185063,7 @@
       if (!KIOSK_ATT_STATE.livenessWaitStart) KIOSK_ATT_STATE.livenessWaitStart = Date.now();
       if ((Date.now() - KIOSK_ATT_STATE.livenessWaitStart) >= lvWindowMs) {
         resetKioskAttAccumulators();
+        KIOSK_ATT_STATE.visualState = 'unrecognized';
         KIOSK_ATT_STATE.statusText = faceTr('Liveness check timed out. Blink or turn slightly inside the oval guide.');
         KIOSK_ATT_STATE.statusCls = 'warn';
         const stElTimeout = $('kioskAttCamStatus');
@@ -183589,9 +185071,11 @@
           stElTimeout.textContent = KIOSK_ATT_STATE.statusText;
           stElTimeout.className = 'kiosk-att-status warn';
         }
+        syncKioskAttViewportVisualState();
         return { ok: false, reason: 'liveness-timeout', staff: matchedName };
       }
       KIOSK_ATT_STATE.streakCount = needFrames - 1;
+      KIOSK_ATT_STATE.visualState = 'detecting';
       KIOSK_ATT_STATE.statusText = faceTr('Verifying live presence...');
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
@@ -183599,50 +185083,7 @@
     KIOSK_ATT_STATE.livenessWaitStart = 0;
 
     resetKioskAttAccumulators();
-    const recentGuard = checkKioskRecentPunchGuard(matchedName, opts);
-    // Only capture a new camera snapshot when recording a fresh punch (never on <5m repeat looks)
-    if (!recentGuard && opts.videoEl && window.Face && window.Face.snapshot) {
-      KIOSK_ATT_STATE.lastSnap = window.Face.snapshot(opts.videoEl, 240) || '';
-    }
-    if (opts.liveVideo) {
-      if (STATE.kioskLocked) {
-        KIOSK_ATT_STATE.cooldownUntil = Date.now() + (recentGuard ? 2500 : 4500);
-      } else if (!recentGuard) {
-        stopKioskAttCamera();
-      }
-    }
-    const conf = Math.max(0.75, Math.min(0.99, 1 - (m.bestDist || 0.2) * 0.6));
-    const res = recordKioskAttendancePunch({
-      staff: matchedName,
-      method: 'Face ID',
-      confidence: conf,
-      snapshot: opts.snapshot || (!recentGuard ? KIOSK_ATT_STATE.lastSnap : '') || '',
-      bypassDebounce: !!opts.bypassDebounce,
-      date: opts.date,
-      time: opts.time,
-      direction: opts.direction,
-      forceEarlyOut: !!opts.forceEarlyOut,
-      liveRepeatQuiet: Boolean(opts.liveVideo && STATE.kioskLocked)
-    });
-    if (res.ok) {
-      KIOSK_ATT_STATE.statusText = STATE.kioskLocked
-        ? `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time}`
-        : `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match). Camera paused.`;
-      KIOSK_ATT_STATE.statusCls = 'ok';
-    } else if (res.reason === 'already-clocked-in-recent') {
-      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} is already Clocked IN since ${res.punch ? res.punch.time : ''}.`;
-      KIOSK_ATT_STATE.statusCls = 'ok';
-    } else {
-      const ageLbl = res.ageSec != null && res.ageSec >= 60 ? `${Math.floor(res.ageSec / 60)} min ago` : (res.ageSec != null ? `${res.ageSec}s ago` : '');
-      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} already clocked ${res.punch ? res.punch.direction : ''} at ${res.punch ? res.punch.time : ''}${ageLbl ? ' (' + ageLbl + ')' : ''}.`;
-      KIOSK_ATT_STATE.statusCls = 'ok';
-    }
-    const stEl = $('kioskAttCamStatus');
-    if (stEl) {
-      stEl.textContent = KIOSK_ATT_STATE.statusText;
-      stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
-    }
-    return res;
+    return completeKioskAttFaceMatch(matchedName, m ? m.bestDist : 0.2, opts);
   }
 
   let kioskFreezeProbeCanvas = null;
@@ -183804,13 +185245,15 @@
     }
     if (KIOSK_ATT_STATE.cooldownUntil > 0 && KIOSK_ATT_STATE.cooldownUntil <= Date.now()) {
       KIOSK_ATT_STATE.cooldownUntil = 0;
-      KIOSK_ATT_STATE.statusText = 'Look inside the oval guide to clock in or out';
+      KIOSK_ATT_STATE.visualState = '';
+      KIOSK_ATT_STATE.statusText = faceTr('Look inside the oval guide to clock in or out');
       KIOSK_ATT_STATE.statusCls = 'ok';
       const stEl = $('kioskAttCamStatus');
       if (stEl) {
         stEl.textContent = KIOSK_ATT_STATE.statusText;
         stEl.className = 'kiosk-att-status ok';
       }
+      syncKioskAttViewportVisualState();
     }
     let shouldRunDetector = frameAdvanced && hasDimensions && !KIOSK_ATT_STATE.busy && Boolean(window.Face);
     if (shouldRunDetector && !isSyntheticTest && !KIOSK_ATT_STATE.streakCount && probe.ok && probe.meanDiff < 1.5) {
@@ -183835,6 +185278,7 @@
           stEl.textContent = KIOSK_ATT_STATE.statusText;
           stEl.className = 'kiosk-att-status ' + (KIOSK_ATT_STATE.statusCls || '');
         }
+        syncKioskAttViewportVisualState();
       } catch (_) {
       } finally {
         const inferDurMs = Math.max(0, Date.now() - inferStartAt);
@@ -186980,6 +188424,7 @@
   function openStaffFaceEnrolModal(staffName = '', opts = {}) {
     stopKioskAttCamera();
     stopStaffEnrolModalCamera();
+    if (!isDemoScopeActive()) hydrateStaffBiometricsOnce(true);
     if (staffName && typeof staffName === 'object') {
       opts = staffName;
       staffName = (opts && opts.staffName) || '';
@@ -190688,6 +192133,25 @@
         };
       });
     });
+    const getGroupedActiveExtraDayWindows = (dayMap = draftExtraDayMap) => {
+      const pruned = pruneDayTimingsToWorkdays(dayMap, draftDays);
+      const grouped = new Map();
+      SHIFT_DAY_ORDER_KEYS.forEach(dk => {
+        const w = pruned[dk];
+        if (!w || !w.start_time || !w.end_time) return;
+        const sig = `${w.start_time}|${w.end_time}`;
+        if (!grouped.has(sig)) grouped.set(sig, { sig, start_time: w.start_time, end_time: w.end_time, days: [] });
+        grouped.get(sig).days.push(dk);
+      });
+      return Array.from(grouped.values());
+    };
+    const initActiveGroups = getGroupedActiveExtraDayWindows();
+    if (initActiveGroups.length === 1) {
+      initExcStart = initActiveGroups[0].start_time;
+      initExcEnd = initActiveGroups[0].end_time;
+    }
+    let baselineExcSig = `${initExcStart}|${initExcEnd}`;
+    let excInputsTouched = false;
     const initEffDate = (draftPatch && draftPatch.effective_from)
       ? String(draftPatch.effective_from).slice(0, 10)
       : ((existing && existing.start_date) || todayISO());
@@ -190730,17 +192194,37 @@
       document.body.appendChild(modal);
     }
 
+    const currentExcWindow = () => {
+      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
+      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
+      return { stClock, etClock, sig: `${stClock}|${etClock}` };
+    };
+    const hasPendingExcWindowEdit = () => Boolean($('stmDiffChk')?.checked) && (excInputsTouched || currentExcWindow().sig !== baselineExcSig);
+    const resetExcWindowDirty = sigOpt => {
+      baselineExcSig = sigOpt || currentExcWindow().sig;
+      excInputsTouched = false;
+    };
+
     const buildEffectiveDraftDayMap = () => {
       const out = Object.assign({}, draftExtraDayMap);
       const isDiffOn = Boolean($('stmDiffChk')?.checked);
       if (!isDiffOn) return {};
-      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
-      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
-      if (draftSelectedExcDays.length && stClock && etClock) {
+      const { stClock, etClock } = currentExcWindow();
+      if (stClock && etClock) {
         const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
-        draftSelectedExcDays.forEach(dIdx => {
-          out[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
-        });
+        if (draftSelectedExcDays.length) {
+          draftSelectedExcDays.forEach(dIdx => {
+            out[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
+          });
+        } else if (hasPendingExcWindowEdit()) {
+          // When a single saved weekday window exists and no other weekday is selected, Start/End edits apply directly to it.
+          const activeGroups = getGroupedActiveExtraDayWindows();
+          if (activeGroups.length === 1) {
+            activeGroups[0].days.forEach(dk => {
+              out[dk] = { start_time: stClock, end_time: etClock, hours: hrs };
+            });
+          }
+        }
       }
       return pruneDayTimingsToWorkdays(out, draftDays);
     };
@@ -190770,19 +192254,17 @@
     };
 
     const renderWeekdayRuleChipsHtml = () => {
-      const grouped = new Map();
-      SHIFT_DAY_ORDER_KEYS.forEach(dk => {
-        const w = draftExtraDayMap[dk];
-        if (!w || !w.start_time || !w.end_time) return;
-        const sig = `${w.start_time}|${w.end_time}`;
-        if (!grouped.has(sig)) grouped.set(sig, { sig, start_time: w.start_time, end_time: w.end_time, days: [] });
-        grouped.get(sig).days.push(dk);
-      });
-      if (!grouped.size) return '';
-      return Array.from(grouped.values()).map(g => {
+      const baseActiveGroups = getGroupedActiveExtraDayWindows();
+      const showSinglePreview = !draftSelectedExcDays.length && baseActiveGroups.length === 1 && hasPendingExcWindowEdit();
+      const groups = showSinglePreview
+        ? getGroupedActiveExtraDayWindows(buildEffectiveDraftDayMap())
+        : baseActiveGroups;
+      if (!groups.length) return '';
+      return groups.map(g => {
         const dayLbl = g.days.map(k => SHIFT_DAY_SHORT_NAMES[k] || 'Day').join(', ');
         const hrs = computeShiftWorkedHours(g.start_time, g.end_time) || 0;
-        return `<span class="stm-exc-chip"><span><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" data-ui-tip="Remove weekday timing" aria-label="Remove weekday timing">${ic('trash')}</button></span>`;
+        const dayKeysAttr = esc(g.days.join(','));
+        return `<span class="stm-exc-chip"><button type="button" class="stm-exc-chip-edit" data-stm-edit-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Edit weekday timing"><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</button><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Remove weekday timing" aria-label="Remove weekday timing">${ic('trash')}</button></span>`;
       }).join('');
     };
 
@@ -190808,6 +192290,18 @@
       if (aBar) aBar.innerHTML = renderActiveDayPillsHtml();
       const dBox = $('stmDateRulesList');
       if (dBox) dBox.innerHTML = renderDateRuleChipsHtml();
+      const addBtn = $('stmAddWeekdayRuleBtn');
+      if (addBtn) {
+        const isUpdateMode = !draftSelectedExcDays.length && getGroupedActiveExtraDayWindows().length === 1 && hasPendingExcWindowEdit();
+        const nextLbl = isUpdateMode ? 'Update Weekday Window' : '+ Add Weekday Window';
+        if (addBtn.dataset.stmBtnKey !== nextLbl) {
+          addBtn.dataset.stmBtnKey = nextLbl;
+          addBtn.textContent = nextLbl;
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            try { window.MFG_I18N.translateDom(addBtn); } catch (_) {}
+          }
+        }
+      }
       const badge = $('stmExcLiveBadge');
       if (badge) {
         const isDiff = Boolean($('stmDiffChk')?.checked);
@@ -191050,6 +192544,7 @@
         draftExtraDayMap = {};
         draftSelectedExcDays = [];
         draftDateTimings = [];
+        resetExcWindowDirty();
       }
       refreshStmExceptionsUi();
     });
@@ -191067,8 +192562,12 @@
       refreshStmExceptionsUi();
     });
     ['stmExcStart', 'stmExcEnd'].forEach(id => {
-      $(id)?.addEventListener('change', refreshStmExceptionsUi);
-      $(id)?.addEventListener('input', refreshStmExceptionsUi);
+      const onExcInput = () => {
+        excInputsTouched = currentExcWindow().sig !== baselineExcSig;
+        refreshStmExceptionsUi();
+      };
+      $(id)?.addEventListener('change', onExcInput);
+      $(id)?.addEventListener('input', onExcInput);
     });
     $('stmExcPresetChips')?.addEventListener('click', ev => {
       const btn = ev.target.closest('[data-stm-exc-preset]');
@@ -191078,30 +192577,76 @@
       if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
       if ($('stmExcStart')) $('stmExcStart').value = ps;
       if ($('stmExcEnd')) $('stmExcEnd').value = pe;
+      excInputsTouched = true;
       refreshStmExceptionsUi();
     });
     $('stmAddWeekdayRuleBtn')?.addEventListener('click', () => {
+      const { stClock, etClock } = currentExcWindow();
+      const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
       if (!draftSelectedExcDays.length) {
+        const activeGroups = getGroupedActiveExtraDayWindows();
+        if (activeGroups.length === 1) {
+          activeGroups[0].days.forEach(dk => {
+            draftExtraDayMap[dk] = { start_time: stClock, end_time: etClock, hours: hrs };
+          });
+          resetExcWindowDirty(`${stClock}|${etClock}`);
+          refreshStmExceptionsUi();
+          return;
+        }
         toast('Select at least one weekday first', 'warn');
         return;
       }
-      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
-      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
-      const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
       draftSelectedExcDays.filter(dIdx => draftDays.includes(dIdx)).forEach(dIdx => {
         draftExtraDayMap[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
       });
       draftSelectedExcDays = [];
+      resetExcWindowDirty(`${stClock}|${etClock}`);
       refreshStmExceptionsUi();
     });
     $('stmWeekdayRulesList')?.addEventListener('click', e => {
+      const editBtn = e.target.closest('[data-stm-edit-day-sig]');
+      if (editBtn) {
+        const { stClock: curSt, etClock: curEt } = currentExcWindow();
+        if (draftSelectedExcDays.length && curSt && curEt) {
+          const curHrs = computeShiftWorkedHours(curSt, curEt) || 8.0;
+          draftSelectedExcDays.filter(dIdx => draftDays.includes(dIdx)).forEach(dIdx => {
+            draftExtraDayMap[String(dIdx)] = { start_time: curSt, end_time: curEt, hours: curHrs };
+          });
+        }
+        const rawSig = String(editBtn.getAttribute('data-stm-edit-day-sig') || '');
+        const rawKeys = String(editBtn.getAttribute('data-stm-day-keys') || '').split(',').filter(Boolean);
+        const dayKeys = rawKeys.length
+          ? rawKeys
+          : Object.keys(draftExtraDayMap).filter(k => draftExtraDayMap[k] && `${draftExtraDayMap[k].start_time}|${draftExtraDayMap[k].end_time}` === rawSig);
+        const firstWin = dayKeys.length ? draftExtraDayMap[dayKeys[0]] : null;
+        const [sigS, sigE] = rawSig.split('|');
+        const stLoad = normalize24hClockTime(sigS || (firstWin && firstWin.start_time) || initExcStart, initExcStart);
+        const etLoad = normalize24hClockTime(sigE || (firstWin && firstWin.end_time) || initExcEnd, initExcEnd);
+        dayKeys.forEach(k => { delete draftExtraDayMap[k]; });
+        draftSelectedExcDays = dayKeys.map(Number).filter(d => draftDays.includes(d)).sort((a, b) => a - b);
+        if ($('stmExcStart')) $('stmExcStart').value = stLoad;
+        if ($('stmExcEnd')) $('stmExcEnd').value = etLoad;
+        resetExcWindowDirty(`${stLoad}|${etLoad}`);
+        refreshStmExceptionsUi();
+        if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) {
+          $('stmExcEnd')?.focus({ preventScroll: true });
+        }
+        return;
+      }
       const rmBtn = e.target.closest('[data-stm-rm-day-sig]');
       if (!rmBtn) return;
       const sig = rmBtn.getAttribute('data-stm-rm-day-sig') || '';
+      const rmKeys = String(rmBtn.getAttribute('data-stm-day-keys') || '').split(',').filter(Boolean);
+      rmKeys.forEach(k => { delete draftExtraDayMap[k]; });
       Object.keys(draftExtraDayMap).forEach(k => {
         const w = draftExtraDayMap[k];
         if (w && `${w.start_time}|${w.end_time}` === sig) delete draftExtraDayMap[k];
       });
+      if (rmKeys.length) {
+        const rmNumSet = new Set(rmKeys.map(Number));
+        draftSelectedExcDays = draftSelectedExcDays.filter(d => !rmNumSet.has(d));
+      }
+      resetExcWindowDirty();
       refreshStmExceptionsUi();
     });
     $('stmDateFrom')?.addEventListener('change', e => {
@@ -191167,6 +192712,7 @@
           delete draftExtraDayMap[dk];
         }
         draftSelectedExcDays = draftSelectedExcDays.filter(x => x !== d);
+        if (!draftSelectedExcDays.length && !getGroupedActiveExtraDayWindows().length) resetExcWindowDirty();
       } else {
         draftDays = draftDays.concat([d]).sort((a, b) => a - b);
         if (draftOffDayMap[dk]) {
@@ -191195,6 +192741,7 @@
         toast(`Removed shift type ${existing.name}`);
         closeShiftTypeModal();
         if (typeof opts.onSaved === 'function') opts.onSaved(null);
+        else renderApp();
       } else {
         toast(r.error || 'Cannot delete', 'warn');
       }
@@ -191226,6 +192773,7 @@
           toast(`Saved cohort draft for ${res.updatedCount} staff (${cohortProp.role} - ${cohortProp.site}) effective ${fmtDateDMY(effDt)}${res.backfilledRows ? ` · Recalculated ${res.backfilledRows} logs` : ''}`, 'ok');
           closeShiftTypeModal();
           if (typeof opts.onSaved === 'function') opts.onSaved(res);
+          else renderApp();
         } else {
           toast((res && res.error) || 'Could not apply cohort draft', 'err');
         }
@@ -191238,6 +192786,19 @@
       if (!draftDays.length) {
         toast('Switch on at least one workday', 'warn');
         return;
+      }
+      if (isDiffOn && !draftSelectedExcDays.length && excInputsTouched) {
+        const activeGroups = getGroupedActiveExtraDayWindows();
+        if (activeGroups.length === 0) {
+          toast('Select at least one weekday for these hours first', 'warn');
+          modal.querySelector('#stmExcDaysBar [data-stm-exc-day]')?.focus({ preventScroll: true });
+          return;
+        }
+        if (activeGroups.length >= 2) {
+          toast('Click the weekday chip to update, or select a weekday first', 'warn');
+          modal.querySelector('#stmWeekdayRulesList [data-stm-edit-day-sig]')?.focus({ preventScroll: true });
+          return;
+        }
       }
       // Hours set aside for days the shift does not work are always saved unchanged: the exceptions box only
       // governs what it shows (workday windows and dates). To clear them, switch the day on (its hours show as
@@ -191287,6 +192848,7 @@
         toast(`Saved ${co} shift: ${res.shiftType.name} (${winTxt}${excTxt}) effective ${fmtDateDMY(effDt)}${doBackfill ? ` · Backfilled ${bf.staffUpdated || 0} staff` : ''}`, 'ok');
         closeShiftTypeModal();
         if (typeof opts.onSaved === 'function') opts.onSaved(res.shiftType);
+        else renderApp();
       } else {
         toast(res.error || 'Could not save shift type', 'err');
       }
@@ -199115,7 +200677,7 @@
     let workspaceBodyHtml = '';
     if (kMode === 'attendance') {
       const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
-      const enrolledFaceCount = usableFaces(null, { includeKioskStaff: true }).length;
+      const enrolledFaceCount = countEnrolledKioskFaces();
       const selectedStaff = (!STATE.kioskLocked && STATE.kioskAttStaff && staffDir.some(s => norm(s.name) === norm(STATE.kioskAttStaff)))
         ? staffDir.find(s => norm(s.name) === norm(STATE.kioskAttStaff)).name
         : '';
@@ -199191,10 +200753,10 @@
             <div class="panel-card kiosk-att-cam-card">
               <div class="panel-head">
                 <div class="panel-title"><span>${ic('camera')} Face ID Clock-In</span></div>
-                <span class="badge ${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? 'badge-warn' : 'badge-ok') : ''}" id="kioskAttLiveBadge">${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? 'Reconnecting Camera...' : 'Live Camera') : (KIOSK_ATT_STATE.standbyIdle ? (KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake') : (STATE.kioskLocked ? 'Tap to Start' : `${fmtNum(enrolledFaceCount)} Face ID Ready`))}</span>
+                <span class="badge ${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? 'badge-warn' : 'badge-ok') : ''}" id="kioskAttLiveBadge">${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? faceTr('Reconnecting Camera...') : faceTr('Live Camera')) : (KIOSK_ATT_STATE.standbyIdle ? faceTr(KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake') : (STATE.kioskLocked ? faceTr('Tap to Start') : `${fmtNum(enrolledFaceCount)} ${faceTr('Face ID Ready')}`))}</span>
               </div>
               <div class="kiosk-att-cam-body">
-                <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'} ${!KIOSK_ATT_STATE.camActive && KIOSK_ATT_STATE.standbyIdle ? 'is-idle-saver' : ''}" id="kioskAttViewport">
+                <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'} ${!KIOSK_ATT_STATE.camActive && KIOSK_ATT_STATE.standbyIdle ? 'is-idle-saver' : ''} ${KIOSK_ATT_STATE.camActive && KIOSK_ATT_STATE.visualState === 'detecting' ? 'is-detecting' : (KIOSK_ATT_STATE.camActive && KIOSK_ATT_STATE.visualState === 'unrecognized' ? 'is-unrecognized' : '')}" id="kioskAttViewport">
                   <video id="kioskAttVideo" autoplay muted playsinline></video>
                   <div class="kiosk-att-reticle" aria-hidden="true">
                     <span class="kiosk-finder-corner tl"></span>
@@ -200784,6 +202346,7 @@
           stopKioskAttCamera();
         }
         STATE.activeKiosk = nextKiosk;
+        if (nextKiosk === 'attendance' && !isDemoScopeActive()) hydrateStaffBiometricsOnce(true);
         STATE.kioskHandheldDrawer = '';
         STATE.kioskAttPinMsg = '';
         saveKioskStationConfig({ activeKiosk: nextKiosk });
@@ -201104,6 +202667,7 @@
       wireAttendancePolicyCard(container);
       if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
       if ($('kioskAttendanceWorkspace')) wireModalSuggestions($('kioskAttendanceWorkspace'));
+      if (!isDemoScopeActive()) hydrateStaffBiometricsOnce(false);
     } else {
       if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
       // Kiosks 1, 2, 3 (Sales, Raw Material, Fuel & Lubricants)
@@ -203284,6 +204848,7 @@
         const targetKiosk = kioskJumpBtn.getAttribute('data-kiosk-jump') || 'sales';
         const targetFeed = kioskJumpBtn.getAttribute('data-kiosk-feed') || '';
         STATE.activeKiosk = targetKiosk;
+        if (targetKiosk === 'attendance' && !isDemoScopeActive()) hydrateStaffBiometricsOnce(true);
         if (targetFeed) {
           STATE.kioskAttFeedFilter = targetFeed;
           STATE.kioskAttSetupOpen = true;
@@ -207446,12 +209011,15 @@
     let swResumeEmail = '';
     let swResumeView = '';
     let swResumeIdx = -1;
+    let swResumePayload = null;
     try {
       const rawSw = sessionStorage.getItem('isabi_mfg_sw_resume');
       sessionStorage.removeItem('isabi_mfg_sw_resume');
       if (rawSw) {
         const parsedSw = JSON.parse(rawSw);
         if (parsedSw && parsedSw.email && (Date.now() - Number(parsedSw.ts || 0)) < 30000) {
+          swResumePayload = parsedSw;
+          if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
           const candIdx = STATE.users.findIndex(u => norm(u.email) === norm(parsedSw.email));
           if (candIdx >= 0 && STATE.users[candIdx].status !== 'Suspended') {
             swResumeIdx = candIdx;
@@ -207462,9 +209030,11 @@
             } else if (!allowedCo.includes(STATE.company)) {
               STATE.company = defaultCompanyForUser(STATE.users[candIdx]);
             }
-            if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
             if (parsedSw.activeTableKey) STATE.activeTableKey = parsedSw.activeTableKey;
             if (parsedSw.activeUnivRegKey) STATE.activeUnivRegKey = parsedSw.activeUnivRegKey;
+          } else if (candIdx >= 0 && STATE.users[candIdx].status === 'Suspended') {
+            swResumePayload = null;
+            swResumeView = '';
           }
         }
       }
@@ -207653,76 +209223,143 @@
       }
     } else {
       history.replaceState({ view: STATE.view }, '', lockedCleanUrl);
+      const clearSwResumingDom = () => {
+        window.__mfgSwResuming = false;
+        document.documentElement.classList.remove('sw-resuming');
+      };
       const shouldProbeCookieResume = Boolean(
         !isDemoSandboxSession() &&
         !invitePin &&
         (rosterIsServerHeld() || (hasServerApi() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)))
       );
-      openAuthGate(inviteEmail || '', { preserveStoredGeo: shouldProbeCookieResume });
-      if (shouldProbeCookieResume) {
-        const probeBootAuthMe = (attempt = 0) => edgeApiFetch(AUTH_ME_URL, { cache: 'no-store' })
-          .then(r => {
-            if (r && r.status >= 500 && attempt < 2) {
-              return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
-            }
-            return r && r.ok ? r.json() : null;
-          })
-          .catch(err => {
-            if (attempt < 2 && !STATE.authed) {
-              return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
-            }
-            throw err;
-          });
+      const probeBootAuthMe = (attempt = 0) => edgeApiFetch(AUTH_ME_URL, { cache: 'no-store' })
+        .then(r => {
+          if (r && r.status >= 500 && attempt < 2) {
+            return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
+          }
+          return r && r.ok ? r.json() : null;
+        })
+        .catch(err => {
+          if (attempt < 2 && !STATE.authed) {
+            return new Promise(res => setTimeout(res, 150 * (attempt + 1))).then(() => probeBootAuthMe(attempt + 1));
+          }
+          throw err;
+        });
+      const hydrateBootResumedSeat = (userObj, swPayload) => {
+        _edgeCookieAuthed = true;
+        const resumedSeat = ensureCanonicalMultiIndustrySeat(Object.assign({}, userObj, { pin_redacted: true }));
+        delete resumedSeat.pin_code;
+        delete resumedSeat._verifiedPin;
+        if (window.MFG_GEO && typeof window.MFG_GEO.getGeoSessionSeat === 'function') {
+          const prevGeoSeat = window.MFG_GEO.getGeoSessionSeat();
+          const hasUnattributedGeo = Boolean(!prevGeoSeat && typeof window.MFG_GEO.hasGeoStoreData === 'function' && window.MFG_GEO.hasGeoStoreData());
+          if (((prevGeoSeat && prevGeoSeat !== norm(resumedSeat.email)) || hasUnattributedGeo) && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+            window.MFG_GEO.resetGeoStoreSession();
+          }
+        }
+        const exIdx = STATE.users.findIndex(u => norm(u.email) === norm(resumedSeat.email));
+        if (exIdx >= 0) {
+          STATE.users[exIdx] = mergeUserRow(STATE.users[exIdx], resumedSeat);
+          STATE.activeUserIdx = exIdx;
+        } else {
+          STATE.users.unshift(resumedSeat);
+          STATE.activeUserIdx = 0;
+        }
+        const allowedCo = getAllowedCompanyKeys(resumedSeat);
+        if (swPayload && swPayload.company && swPayload.company !== DEMO_COMPANY_KEY && COMPANY_LABELS[swPayload.company] && !PARAMS.get('industry') && allowedCo.includes(swPayload.company)) {
+          STATE.company = swPayload.company;
+        } else if (!allowedCo.includes(STATE.company)) {
+          STATE.company = defaultCompanyForUser(resumedSeat);
+        }
+        if (swPayload && swPayload.view && VIEW_TITLES[swPayload.view] && !PARAMS.get('view')) {
+          STATE.view = swPayload.view;
+        }
+        if (swPayload && swPayload.activeTableKey) STATE.activeTableKey = swPayload.activeTableKey;
+        if (swPayload && swPayload.activeUnivRegKey) STATE.activeUnivRegKey = swPayload.activeUnivRegKey;
+        closeAuthGate();
+        if (SEED._recordsReady && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+          window.MFG_GEO.hydrateSeedGeo(SEED, true);
+        }
+        safeRender();
+        if (typeof syncWithCloud === 'function') syncWithCloud(false);
+      };
+
+      if (swResumePayload && shouldProbeCookieResume) {
+        // Server-held one-shot update / cross-seat reload: keep #authGate hidden while confirming session
+        // with the server so the camera never flashes during an in-place upgrade.
+        window.__mfgSwResuming = true;
+        document.documentElement.classList.add('sw-resuming');
         probeBootAuthMe()
           .then(d => {
-            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended') {
-              if (!STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+            if (STATE.authed) { clearSwResumingDom(); return; }
+            if (!d || !d.authenticated || !d.user || d.user.status === 'Suspended' || norm(d.user.email) !== norm(swResumePayload.email)) {
+              clearSwResumingDom();
+              if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
                 window.MFG_GEO.resetGeoStoreSession();
               }
+              openAuthGate(inviteEmail || '', { preserveStoredGeo: false });
               return;
             }
-            if (STATE.authed) return;
             if (d.impersonated) {
-              // The saved session is an Owner's seat preview (Impersonate). It is never carried into a
-              // freshly opened app: end it and keep the sign-in screen up, so Face ID or the PIN decides
-              // who is at the device.
+              clearSwResumingDom();
+              openAuthGate(inviteEmail || '', { preserveStoredGeo: false });
               endSeatPreviewSessionAtBoot(d.user);
               return;
             }
-            _edgeCookieAuthed = true;
-            const resumedSeat = ensureCanonicalMultiIndustrySeat(Object.assign({}, d.user, { pin_redacted: true }));
-            delete resumedSeat.pin_code;
-            delete resumedSeat._verifiedPin;
-            if (window.MFG_GEO && typeof window.MFG_GEO.getGeoSessionSeat === 'function') {
-              const prevGeoSeat = window.MFG_GEO.getGeoSessionSeat();
-              const hasUnattributedGeo = Boolean(!prevGeoSeat && typeof window.MFG_GEO.hasGeoStoreData === 'function' && window.MFG_GEO.hasGeoStoreData());
-              if (((prevGeoSeat && prevGeoSeat !== norm(resumedSeat.email)) || hasUnattributedGeo) && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+            clearSwResumingDom();
+            hydrateBootResumedSeat(d.user, swResumePayload);
+          })
+          .catch(() => {
+            clearSwResumingDom();
+            if (!STATE.authed) {
+              if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+                try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
+              }
+              openAuthGate(inviteEmail || '', { preserveStoredGeo: false });
+            }
+          });
+      } else if (dedicatedKioskBoot && shouldProbeCookieResume) {
+        clearSwResumingDom();
+        openAuthGate(savedKioskSeatEmail || inviteEmail || '', { preserveStoredGeo: true });
+        probeBootAuthMe()
+          .then(d => {
+            if (STATE.authed) return;
+            if (d && d.authenticated && d.impersonated) {
+              endSeatPreviewSessionAtBoot(d.user);
+              return;
+            }
+            const hasStationKey = Boolean(
+              localStorage.getItem('isabi_mfg_kiosk_key_' + String(STATE.activeKiosk || 'sales')) ||
+              localStorage.getItem('isabi_kiosk_station_key')
+            );
+            if (!hasStationKey || !d || !d.authenticated || !d.user || d.user.status === 'Suspended') {
+              if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
                 window.MFG_GEO.resetGeoStoreSession();
               }
+              return;
             }
-            const exIdx = STATE.users.findIndex(u => norm(u.email) === norm(resumedSeat.email));
-            if (exIdx >= 0) {
-              STATE.users[exIdx] = mergeUserRow(STATE.users[exIdx], resumedSeat);
-              STATE.activeUserIdx = exIdx;
-            } else {
-              STATE.users.unshift(resumedSeat);
-              STATE.activeUserIdx = 0;
-            }
-            if (!getAllowedCompanyKeys(resumedSeat).includes(STATE.company)) {
-              STATE.company = defaultCompanyForUser(resumedSeat);
-            }
-            closeAuthGate();
-            if (SEED._recordsReady && window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
-              window.MFG_GEO.hydrateSeedGeo(SEED, true);
-            }
-            safeRender();
-            if (typeof syncWithCloud === 'function') syncWithCloud(false);
+            hydrateBootResumedSeat(d.user, null);
           })
-          .catch(_ => {
+          .catch(() => {
             if (!STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
               try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
             }
           });
+      } else {
+        // Cold page open, new tab, or manual reload: always remain locked on #authGate so live Face ID,
+        // PIN, or Passkey verifies who is at the device. Probe /api/auth/me only to retire any leftover
+        // Owner Impersonation preview session cleanly.
+        clearSwResumingDom();
+        openAuthGate(inviteEmail || '', { preserveStoredGeo: false });
+        if (shouldProbeCookieResume) {
+          probeBootAuthMe()
+            .then(d => {
+              if (!STATE.authed && d && d.authenticated && d.impersonated) {
+                endSeatPreviewSessionAtBoot(d.user);
+              }
+            })
+            .catch(() => {});
+        }
       }
     }
 
@@ -209403,6 +211040,13 @@
         buildSentinelItems,
         getOverpaidPayablesSentinelData,
         openSetUnpricedSitePriceModal,
+        openStatementUnpricedQueueModal,
+        resolveUnpricedLastRateSuggestion,
+        normSiteMatch,
+        normSupPayable,
+        productInfo,
+        normUnpricedQueueUom,
+        buildUnpricedQueueStepKey,
         cleanSiteLabel,
         findRule,
         ticketTons,
@@ -210019,7 +211663,7 @@
       syncWithCloud(false);
     }
     const resumeActiveCamerasIfNeeded = () => {
-      if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
+      if (navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
       if (!STATE.authed && !FACE_STATE.authCamStoppedByUser && !streamAlive()) {
         startAuthFaceScanner(false);
         return;
@@ -210320,6 +211964,7 @@
       }),
       switchKiosk: (kioskMode, fuelSub) => {
         if (['sales', 'raw', 'fuel', 'attendance'].includes(kioskMode)) STATE.activeKiosk = kioskMode;
+        if (STATE.activeKiosk === 'attendance' && !isDemoScopeActive()) hydrateStaffBiometricsOnce(true);
         if (fuelSub) STATE.kioskFuelSubmode = fuelSub;
         setView('kiosks');
         return STATE.activeKiosk;
@@ -210512,7 +212157,7 @@
         saveLocalAuthAndRecords();
         if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
       },
-      feedKioskFaceDescriptor: (vec, opts = {}) => handleKioskAttDescriptor({
+      feedKioskFaceDescriptor: (vec, opts = {}) => Promise.resolve(handleKioskAttDescriptor({
         descriptor: vec,
         score: opts.detScore != null ? Number(opts.detScore) : 0.96,
         detScore: opts.detScore != null ? Number(opts.detScore) : 0.96,
@@ -210524,7 +212169,15 @@
         landmarkModel: opts.landmarkModel || undefined,
         padEyeBox: opts.padEyeBox || undefined,
         multiple: false
-      }, opts),
+      }, opts)).then(res => {
+        const stEl = $('kioskAttCamStatus');
+        if (stEl && KIOSK_ATT_STATE.statusText) {
+          stEl.textContent = KIOSK_ATT_STATE.statusText;
+          stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
+        }
+        syncKioskAttViewportVisualState();
+        return res;
+      }),
       getKioskAttCameraState: () => ({
         camActive: KIOSK_ATT_STATE.camActive,
         camStarting: KIOSK_ATT_STATE.camStarting,
@@ -210535,6 +212188,7 @@
         restartCount: KIOSK_ATT_STATE.restartCount,
         lastWatchdogReason: KIOSK_ATT_STATE.lastWatchdogReason,
         unknownStreak: KIOSK_ATT_STATE.unknownStreak,
+        visualState: KIOSK_ATT_STATE.visualState,
         statusText: KIOSK_ATT_STATE.statusText,
         statusCls: KIOSK_ATT_STATE.statusCls
       }),
@@ -210702,6 +212356,24 @@
     window.__slimRecordForCloud = r => _slimRecordForCloud(r);
     window.__sliceCustomRecordsForCloud = (k, arr, cap) => sliceCustomRecordsForCloud(k, arr, cap);
     window.__syncWithCloud = (p) => syncWithCloud(p);   // build/verify_legacy_pos_report.mjs drives the push loop
+    // build/verify_void_set_aside.mjs: voids the cloud refused, set aside
+    window.__setAsideVoids = {
+      list: () => activeSetAsideVoids().map(e => Object.assign({}, e)),
+      seatList: () => seatSetAsideVoids().map(e => Object.assign({}, e)),
+      info: () => unsentEntriesInfo() || setAsideEntriesInfo(),
+      lastRefusal: () => (_lastPushRefusal ? Object.assign({}, _lastPushRefusal) : null),
+      applyReason: (idx, txt) => applySetAsideReason(activeSetAsideVoids()[Number(idx) || 0], txt),
+      openPrompt: () => openSetAsideReasonPrompt(),
+      evaluate: spec => evaluateVoidReasonRequirement(spec),
+      updateBar: () => updateUnsentEntriesBar(),
+      showDevicesHolding: list => { STATE.devicesHolding = list; updateDevicesHoldingBar(); },
+      setScope: (email, cos) => {
+        _setAsideScopeSeat = norm(email || '');
+        _unsentScoped = Array.isArray(cos);
+        _unsentAllowedCos = Array.isArray(cos) ? new Set(cos.map(c => _unsentCanonCo(c))) : null;
+      },
+      reset: () => { _setAsideVoids = []; _lastPushRefusal = null; _setAsideRemote = null; }
+    };
     window.__mfgHandleGeo401 = () => {
       if ((STATE.authed || hasServerApi()) && !isDemoSandboxSession()) {
         handleEdgeSessionExpired({ rearmSeedOnNextLogin: true });
@@ -210843,7 +212515,7 @@
       if (!tgt || !tgt.closest(ATT_MUTATOR_MODAL_SEL)) return;
       const btn = tgt.closest('button, [role="button"], .kiosk-qchip, [data-ssm-day], [data-ssm-shift], [data-ssm-perk], [data-stm-day], [data-stm-tone], [data-pgm-perk], [data-pgm-tone]');
       if (!btn || btn.closest(ATT_NON_MUTATING_CLICK_SEL) || btn.disabled) return;
-      if (btn.matches('.kiosk-qchip, [data-ssm-day], [data-ssm-shift], [data-ssm-preset], [data-ssm-day-preset], [data-ssm-custom-preset], [data-ssm-late-pen], [data-ssm-late-when-card], [data-ssm-count-from-card], [data-ssm-ot-mode], [data-ssm-ot-thresh], [data-ssm-ot-snap], [data-ssm-grace-chip], [data-ssm-early-grace-chip], [data-ssm-mult-chip], [data-ssm-ot-mult-chip], [data-ssm-cap-chip], [data-ssm-vac-chip], [data-ssm-hdmin-chip], [data-ssm-workdays-basis], [data-ssm-no-out], [data-ssm-holidays], [data-ssm-policy-group], [data-ssm-policy-late-mult], [data-ssm-brk-rm], [data-ssm-perk], [data-ssm-rm-date-exc], [data-ssm-pass-preset], [data-ssm-pol-edit-win], [data-ssm-pol-del-win], [data-ssm-save-shift-row], [data-ssm-row-set-def], [data-ssm-bu-default], [data-ssm-bu-policy-apply], [data-ssm-ws-row] button, [data-stm-day], [data-stm-exc-day], [data-stm-exc-preset], [data-stm-split-preset], [data-stm-tone], [data-stm-rm-day-sig], [data-stm-rm-date], [data-pgm-ot-thresh], [data-pgm-ot-early], [data-pgm-ot-from], [data-pgm-ot-snap], [data-pgm-ot-blk], [data-pgm-ot-at], [data-pgm-late-mult], [data-pgm-ot-mult], [data-pgm-ot-mode], [data-pgm-vac], [data-pgm-wd], [data-pgm-noout], [data-pgm-brk-del], [data-pgm-perk], [data-pgm-tone], [data-pgm-edit-ver], [data-pgm-del-ver], #ssmAddCustomPerkBtn, #ssmAddDateExcBtn, #ssmAddLateBracketBtn, #ssmAddOvBtn, #ssmAddPassBtn, #ssmAddShiftRowBtn, #ssmApplyCompanyLateBtn, #ssmResetBtn, #ssmQuickPinSaveBtn, #stmAddDateRuleBtn, #stmAddWeekdayRuleBtn, #pgmAddBrkBtn, #pgmAddPerkBtn, #pgmBrkPreset15Btn, #pgmForkCompanyBtn, #staffEnrolCaptureBtn, #staffEnrolClearBtn, #sfeHandsFreeBtn, #sfeScanIdSampleBtn, #sfeIdScanClearBtn, [data-staff-pose-slot], [data-sfe-rm-att], #sfeSameNameSuggestBtn')) {
+      if (btn.matches('.kiosk-qchip, [data-ssm-day], [data-ssm-shift], [data-ssm-preset], [data-ssm-day-preset], [data-ssm-custom-preset], [data-ssm-late-pen], [data-ssm-late-when-card], [data-ssm-count-from-card], [data-ssm-ot-mode], [data-ssm-ot-thresh], [data-ssm-ot-snap], [data-ssm-grace-chip], [data-ssm-early-grace-chip], [data-ssm-mult-chip], [data-ssm-ot-mult-chip], [data-ssm-cap-chip], [data-ssm-vac-chip], [data-ssm-hdmin-chip], [data-ssm-workdays-basis], [data-ssm-no-out], [data-ssm-holidays], [data-ssm-policy-group], [data-ssm-policy-late-mult], [data-ssm-brk-rm], [data-ssm-perk], [data-ssm-rm-date-exc], [data-ssm-pass-preset], [data-ssm-pol-edit-win], [data-ssm-pol-del-win], [data-ssm-save-shift-row], [data-ssm-row-set-def], [data-ssm-bu-default], [data-ssm-bu-policy-apply], [data-ssm-ws-row] button, [data-stm-day], [data-stm-exc-day], [data-stm-exc-preset], [data-stm-split-preset], [data-stm-tone], [data-stm-edit-day-sig], [data-stm-rm-day-sig], [data-stm-rm-date], [data-pgm-ot-thresh], [data-pgm-ot-early], [data-pgm-ot-from], [data-pgm-ot-snap], [data-pgm-ot-blk], [data-pgm-ot-at], [data-pgm-late-mult], [data-pgm-ot-mult], [data-pgm-ot-mode], [data-pgm-vac], [data-pgm-wd], [data-pgm-noout], [data-pgm-brk-del], [data-pgm-perk], [data-pgm-tone], [data-pgm-edit-ver], [data-pgm-del-ver], #ssmAddCustomPerkBtn, #ssmAddDateExcBtn, #ssmAddLateBracketBtn, #ssmAddOvBtn, #ssmAddPassBtn, #ssmAddShiftRowBtn, #ssmApplyCompanyLateBtn, #ssmResetBtn, #ssmQuickPinSaveBtn, #stmAddDateRuleBtn, #stmAddWeekdayRuleBtn, #pgmAddBrkBtn, #pgmAddPerkBtn, #pgmBrkPreset15Btn, #pgmForkCompanyBtn, #staffEnrolCaptureBtn, #staffEnrolClearBtn, #sfeHandsFreeBtn, #sfeScanIdSampleBtn, #sfeIdScanClearBtn, [data-staff-pose-slot], [data-sfe-rm-att], #sfeSameNameSuggestBtn')) {
         _auxModalDirty = true;
       }
     };
@@ -212529,8 +214201,11 @@
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     resolveUnpricedSitePrefill: typeof resolveUnpricedSitePrefill === 'function' ? resolveUnpricedSitePrefill : null,
     resolveUnpricedHaulSitePrefill: typeof resolveUnpricedHaulSitePrefill === 'function' ? resolveUnpricedHaulSitePrefill : null,
+    resolveUnpricedLastRateSuggestion: typeof resolveUnpricedLastRateSuggestion === 'function' ? resolveUnpricedLastRateSuggestion : null,
     buildUnpricedPartyQueue: typeof buildUnpricedPartyQueue === 'function' ? buildUnpricedPartyQueue : null,
+    buildStatementUnpricedQueue: typeof buildStatementUnpricedQueue === 'function' ? buildStatementUnpricedQueue : null,
     openSetUnpricedSitePriceModal: typeof openSetUnpricedSitePriceModal === 'function' ? openSetUnpricedSitePriceModal : null,
+    openStatementUnpricedQueueModal: typeof openStatementUnpricedQueueModal === 'function' ? openStatementUnpricedQueueModal : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
